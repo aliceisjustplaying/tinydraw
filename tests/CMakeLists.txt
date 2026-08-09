@@ -1,5 +1,6 @@
 add_executable(tinydraw_tests
   coordinate_transform_test.cpp
+  coverage_tile_test.cpp
   host_input_test.cpp
   ink_stream_test.cpp
   perfect_freehand_test.cpp

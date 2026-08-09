@@ -1,5 +1,6 @@
 add_library(tinydraw_core STATIC
   src/coordinate_transform.cpp
+  src/coverage_tile.cpp
   src/ink_stream.cpp
   src/perfect_freehand.cpp
 )
