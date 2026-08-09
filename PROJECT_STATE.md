@@ -32,16 +32,19 @@ provisional tail. On the sustained XL workload, active-coverage reads fell from 
 8,213,504 bytes (47.8%), and max per-update PSRAM reads fell from 64 to 48 KiB with identical pixels.
 
 Stop making speculative speed changes until hardware supplies cycle/latency evidence.
-The sustained-XL harness has exposed a separate screen-bounded lift-time burst (30 tiles and 357,376
-bytes each direction); measure it on hardware before deciding whether to spread finalization across
-frames. Shared one-step Undo/New history follows performance work unless hardware arrives first.
+The sustained-XL harness has exposed a separate screen-bounded lift-time burst; measure it on
+hardware before deciding whether to spread finalization across frames. Ten-level dirty-tile Undo is
+now shared by host and firmware. The same 1,000-sample XL workload captures 235,520 history bytes at
+lift and restores 235,520 bytes on Undo instead of copying a 329,728-byte full canvas for every
+stroke. These are traffic counts, not latency evidence.
 
 Our QEMU commands override Espressif's 32 MB default with an 8 MB quad-PSRAM model and assert that
 size at boot. That is valid integration evidence for IDF's capability allocator, but not evidence
 for the Waveshare board's physical PSRAM mode, capacity,
-bandwidth, DMA behavior, or timing. Verify those on the exact board revision. Do not use QEMU
-wall-clock speed as performance evidence. Keep native debug/release/ASan, headless QEMU, and
-graphics QEMU green. Do not introduce PlatformIO or globally source ESP-IDF.
+bandwidth, DMA behavior, or timing. Verify those on the exact board revision. The incoming hardware
+may be V1 (SH8601 + FT3168) or V2 (CO5300 + CST820); keep both adapter paths and detect/confirm the
+revision before selecting one. Do not use QEMU wall-clock speed as performance evidence. Keep native
+debug/release/ASan, headless QEMU, and graphics QEMU green. Do not introduce PlatformIO or globally source ESP-IDF.
 
 Durable implementation preferences from the user:
 
@@ -66,7 +69,8 @@ Controls:
 - color shows the selected ink and opens a second row with four large color choices;
 - size shows the selected width and opens a second row with S/M/L/XL choices;
 - drag with the primary mouse button to draw or erase;
-- `Cmd-Z` also undoes, `C` starts a new drawing, and `Esc` quits.
+- `Cmd-Z` also undoes up to ten completed operations, `C` starts an undoable new drawing, and `Esc`
+  quits.
 
 The window models a 368×448 RGB565 canvas. On a 14-inch 2021 MacBook Pro at default
 scaling it opens at approximately the physical 1.8-inch panel size: a 145×177-point drawable
@@ -82,10 +86,10 @@ window. It remains resizable for inspection. Drawing currently has:
 - a persistent committed canvas plus dirty-tile active-stroke coverage.
 
 The prototype is useful for visual and input-loop testing, but it is not yet the embedded product.
-Its tldraw-inspired UI is intentionally direct-drawn and minimal. Undo is currently one host
-snapshot rather than a bounded embedded snapshot ring. There is no persistent point arena or
-hardware driver. A real ESP-IDF ESP32-S3 target now compiles the shared core, boots under Espressif
-QEMU, replays the deterministic zigzag stroke, and shows the stroke plus the shared six-control
+Its tldraw-inspired UI is intentionally direct-drawn and minimal. Undo stores ten bounded dirty-tile
+before-images in caller-provided memory and is shared by host and firmware. There is no persistent
+point arena or hardware driver. A real ESP-IDF ESP32-S3 target now compiles the shared core, boots
+under Espressif QEMU, replays the deterministic zigzag stroke, and shows the stroke plus the shared six-control
 TinyDraw toolbar in QEMU's virtual framebuffer. QEMU input remains scripted rather than interactive.
 
 ## Fast development loop
@@ -109,8 +113,9 @@ Daily commands:
 
 Expected current results:
 
-- 49 doctest cases;
-- 12 CTest entries, including sustained-XL characterization and process-level replay/UI checks;
+- 54 doctest cases;
+- 13 CTest entries, including sustained-XL/Undo characterization and process-level replay/UI/Undo
+  checks;
 - debug, release, ASan, and UBSan green;
 - incremental debug suite typically well below one second.
 
@@ -171,14 +176,16 @@ The official `espressif/esp_lcd_qemu_rgb` component is locked at 1.0.2.
   - shared one-pass tiled primitive renderer and explicitly owned scratch arena.
 - `core/include/tinydraw/graphics/stroke_raster.h`
   - bounded dirty-tile active-stroke raster, persistent coverage union, and operation statistics.
+- `core/include/tinydraw/graphics/tile_undo_history.h`
+  - ten fixed dirty-tile before-image entries with caller-owned storage and exact tile restore.
 - `core/include/tinydraw/ui/toolbar.h`
   - platform-independent tldraw-inspired toolbar hit testing, state, sizing, and RGB565 drawing.
 
 ### Host adapter
 
 - `host/main.cpp`
-  - interactive SDL shell, replay/UI-preview CLI, toolbar behavior, one-step host undo, dirty-tile
-    stroke orchestration, and PPM output.
+  - interactive SDL shell, replay/UI-preview CLI, toolbar behavior, ten-step dirty-tile undo,
+    dirty-tile stroke orchestration, and PPM output.
 - `host/input_coordinates.h`
   - SDL2-compat logical mouse-coordinate policy.
 
@@ -398,12 +405,34 @@ At lift:
 
 1. promote the final tail and cap through `RibbonStream::finish()`;
 2. union that final geometry into active coverage;
-3. composite each touched tile exactly once into `committed_pixels`;
-4. clear active coverage.
+3. copy each touched tile's already-loaded pre-composite pixels into the current Undo entry;
+4. composite each touched tile exactly once into `committed_pixels`;
+5. clear active coverage.
 
-`C`/New and cancellation discard active coverage and restore the committed canvas. A core test
-proves provisional pixels never enter persistence; another compares incremental final output to a
-one-pass whole-stroke coverage union.
+Cancellation discards active coverage and restores the committed canvas. `C`/New captures all 42
+tiles as one undoable operation before clearing. A core test proves provisional pixels never enter
+persistence; another compares incremental final output to a one-pass whole-stroke coverage union.
+
+## Dirty-tile Undo
+
+`TileUndoHistory` deliberately uses a simple fixed layout rather than compression or a variable-size
+arena:
+
+- ten entries × 42 tile slots × 64×64 RGB565 = 3,440,640 bytes of reserved storage;
+- storage is caller-owned (`std::vector` on host, `MALLOC_CAP_SPIRAM` in firmware);
+- each entry has a 42-element touched-tile map in internal memory;
+- only actual pixels in touched tiles are copied, including correctly sized right/bottom edge tiles;
+- the oldest entry is overwritten after ten completed operations; there is no redo;
+- stroke capture reuses the internal working tile after the committed canvas read, avoiding another
+  committed-canvas read;
+- Undo restores and submits only saved tiles;
+- New is undoable and intentionally captures the whole screen.
+
+The fixed 3.28 MiB reservation is larger than a variable arena but guarantees ten operations,
+including ten worst-case full-screen operations, and keeps ownership, eviction, and failure behavior
+obvious. Together with committed RGB565 and active coverage, modeled PSRAM use is about 3.75 MiB.
+QEMU proves that allocation against the 8 MiB model, not that either physical board revision has the
+same bandwidth or allocator behavior.
 
 ## Bugs found and lessons retained
 
@@ -498,7 +527,11 @@ Core behavior tests cover:
 - overlap idempotence, off-canvas geometry, malformed primitives, tile crossings, and stats;
 - committed-canvas isolation, incremental/one-pass pixel equivalence, explicit memory-traffic
   accounting, and bounded XL update work;
-- a 1,000-sample sustained XL path with separate update-time and lift-time budgets.
+- a 1,000-sample sustained XL path with separate update-time, lift-time, history-capture, and Undo
+  traffic budgets;
+- ten-entry eviction, exact dirty restore, full-screen New capture, and capture-from-raster-scratch;
+- process-level draw A → draw B → Undo twice → redraw → erase/Undo → New/Undo exact-pixel flow,
+  including toolbar `can_undo` state.
 
 Process-level E2E tests cover:
 
@@ -510,8 +543,8 @@ Process-level E2E tests cover:
 
 The QEMU process-level test checks accepted-point, primitive, touched-tile, geometry-bound,
 memory-capability, frame-count, dirty-work, display-byte, and modeled-PSRAM-traffic results. The
-seven-frame fixture reports 372,736 display bytes, 593,920 PSRAM reads, 303,104 writes, and a
-237,568-byte per-frame maximum in either direction. Graphics mode additionally requires
+seven-frame fixture reports 372,736 display bytes, 593,920 PSRAM reads, 438,272 writes, a
+237,568-byte maximum read frame, and a 372,736-byte maximum write frame. Graphics mode additionally requires
 `TINYDRAW_UI_OK canvas=1 controls=6`, emitted only after checks prove the dedicated framebuffer still
 contains a white canvas, blue stroke, and shared toolbar, receives exactly the reported dirty-tile
 count, and refreshes exactly once for each of seven input frames. Bounds use a tolerance; the RGB565
@@ -544,10 +577,12 @@ comparison, not ESP32 timing evidence.
 
 `./scripts/dev perf` now supplies the durable characterization: 1,000 XL samples over an
 eight-second-equivalent continuous path, 2,052 tile submissions total, max 4 tiles and 16 primitive
-visits per update, max 48 KiB PSRAM reads and 16 KiB writes per update. Lift touches 30 tiles and
-reads/writes 357,376 bytes. CI locks down these operation/traffic ceilings rather than fragile
-wall-clock thresholds. The lift burst is screen-area-bounded, not stroke-length-bounded, but would
-need redesign before a much larger backing canvas.
+visits per update, max 48 KiB PSRAM reads and 16 KiB writes per update. Lift touches 30 tiles, reads
+357,376 raster bytes, and writes 592,896 external-memory bytes including 235,520 bytes of history.
+Undo restores and submits those same 30 tiles: 235,520 history bytes read, canvas bytes written, and
+display bytes. CI locks down these operation/traffic ceilings rather than fragile wall-clock
+thresholds. The burst is screen-area-bounded, not stroke-length-bounded, but would need redesign
+before a much larger backing canvas.
 
 The active embedded memory model and partial submission path now run in QEMU. Physical panel/touch
 adapters and real-board capability, DMA, and performance evidence remain unimplemented.
@@ -562,8 +597,8 @@ PSRAM, and incrementally replays seven input frames. Its accepted result is:
 ```text
 accepted=7 primitives=13 tiles=14 bounds=27.83,37.83,341.44,411.44
 frames=7 dirty=46 max_tiles=17 visits=133
- display=372736 psram_read=593920 psram_write=303104
- max_psram_read=237568 max_psram_write=237568
+ display=372736 psram_read=593920 psram_write=438272
+ max_psram_read=237568 max_psram_write=372736
 ```
 
 The RGB565 FNV checksum remains informational. `./scripts/esp32 qemu` verifies modeled PSRAM boot,
@@ -587,19 +622,28 @@ provisional tail only to scratch before display composition. Sustained XL active
 47.8%; max update PSRAM reads fell 25%. Display traffic, writes, geometry visits, and pixels stayed
 unchanged.
 
-### 3. Next: shared one-step history
+### 3. Completed: ten-entry dirty-tile history
 
-Move current Undo/New snapshot semantics out of the SDL shell and add the deterministic full-flow
-E2E described above. Start with one snapshot; no generic command framework, arbitrary-depth history,
-or point arena.
+Undo/New semantics now live in the shared core. Host and firmware reserve ten fixed tile-addressed
+slots; stroke completion writes only touched before-images, Undo restores/submits only those tiles,
+and New is a full-screen undoable entry. Exact host E2E, sanitizer, traffic characterization, and
+8 MiB QEMU allocation checks are green. There is intentionally no redo, compression, generic
+command framework, variable arena, or point history.
 
-### 4. Later software tuning
+### 4. Next: physical performance and revision identification
+
+When hardware arrives, first identify V1 versus V2, prove actual PSRAM capacity/mode, and measure
+stroke lift plus dirty Undo on-device. Do not choose SH8601/FT3168 versus CO5300/CST820 adapters from
+availability guesses. Keep drawing behavior unchanged until those measurements identify a real
+bottleneck.
+
+### 5. Later software tuning
 
 Only add runtime tuning controls, deeper history, queues/tasks, or more instrumentation when a real
 host/hardware loop consumes them. The current synchronous replay is intentionally simpler than a
 speculative firmware task graph.
 
-### 5. Physical hardware integration
+### 6. Physical hardware integration
 
 When the board arrives, validate what QEMU cannot:
 
