@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+build="$root/out/build/esp32"
+action="${1:-build}"
+
+if ! command -v eim >/dev/null 2>&1; then
+  echo "eim is required; run ./scripts/bootstrap-idf" >&2
+  exit 1
+fi
+
+case "$action" in
+  build)
+    cd "$root/esp32"
+    eim run "idf.py -B '$build' build"
+    ;;
+  clean)
+    rm -rf "$build" "$root/esp32/sdkconfig"
+    ;;
+  *)
+    echo "usage: $0 {build|clean}" >&2
+    exit 2
+    ;;
+esac

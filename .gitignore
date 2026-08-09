@@ -1,5 +1,7 @@
 /out/
 /.pi-subagents/
 /reference/perfect-freehand/
+/esp32/sdkconfig
+/eim_config.toml
 .DS_Store
 *.dSYM/
