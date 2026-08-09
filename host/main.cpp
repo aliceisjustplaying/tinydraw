@@ -154,6 +154,18 @@ int replay(const std::string& input_path, const std::string& output_path) {
   return EXIT_SUCCESS;
 }
 
+int ui_preview(const std::string& output_path) {
+  std::vector<std::uint16_t> pixels(
+      static_cast<std::size_t>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight));
+  clear_canvas(pixels, true);
+  tinydraw::draw_toolbar(pixels, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight, {});
+  if (!write_ppm(output_path, pixels)) {
+    std::fprintf(stderr, "cannot write UI preview: %s\n", output_path.c_str());
+    return EXIT_FAILURE;
+  }
+  return EXIT_SUCCESS;
+}
+
 int interactive() {
   if (SDL_Init(SDL_INIT_VIDEO) != 0) {
     std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
@@ -332,8 +344,14 @@ int main(int argc, char** argv) {
   if (argc == 5 && std::string(argv[1]) == "--replay" && std::string(argv[3]) == "--output") {
     return replay(argv[2], argv[4]);
   }
+  if (argc == 4 && std::string(argv[1]) == "--ui-preview" && std::string(argv[2]) == "--output") {
+    return ui_preview(argv[3]);
+  }
   if (argc != 1) {
-    std::fprintf(stderr, "usage: %s [--replay INPUT --output IMAGE.ppm]\n", argv[0]);
+    std::fprintf(stderr,
+                 "usage: %s [--replay INPUT --output IMAGE.ppm | --ui-preview --output "
+                 "IMAGE.ppm]\n",
+                 argv[0]);
     return EXIT_FAILURE;
   }
   return interactive();

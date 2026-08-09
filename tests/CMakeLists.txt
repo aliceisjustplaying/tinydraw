@@ -87,6 +87,27 @@ if(TARGET tinydraw_host)
   )
 
   add_test(
+    NAME tinydraw_ui_preview_e2e
+    COMMAND tinydraw_host
+      --ui-preview
+      --output "${REPLAY_OUTPUT_DIR}/ui-preview.ppm"
+  )
+  set_tests_properties(tinydraw_ui_preview_e2e PROPERTIES
+    FIXTURES_SETUP ui_preview
+    TIMEOUT 5
+  )
+
+  add_test(
+    NAME tinydraw_ui_preview_snapshot
+    COMMAND ${CMAKE_COMMAND} -E compare_files
+      "${REPLAY_OUTPUT_DIR}/ui-preview.ppm"
+      "${PROJECT_SOURCE_DIR}/testdata/snapshots/ui-preview.ppm"
+  )
+  set_tests_properties(tinydraw_ui_preview_snapshot PROPERTIES
+    FIXTURES_REQUIRED ui_preview
+  )
+
+  add_test(
     NAME tinydraw_replay_rejects_invalid_lifecycle
     COMMAND tinydraw_host
       --replay "${PROJECT_SOURCE_DIR}/testdata/strokes/invalid-lifecycle.stroke"
