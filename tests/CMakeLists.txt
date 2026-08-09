@@ -33,4 +33,20 @@ if(TARGET tinydraw_host)
   set_tests_properties(tinydraw_replay_golden PROPERTIES
     FIXTURES_REQUIRED replay_zigzag
   )
+
+  add_test(
+    NAME tinydraw_replay_rejects_invalid_lifecycle
+    COMMAND tinydraw_host
+      --replay "${PROJECT_SOURCE_DIR}/testdata/strokes/invalid-lifecycle.stroke"
+      --output "${REPLAY_OUTPUT_DIR}/invalid-lifecycle.ppm"
+  )
+  set_tests_properties(tinydraw_replay_rejects_invalid_lifecycle PROPERTIES WILL_FAIL TRUE)
+
+  add_test(
+    NAME tinydraw_replay_rejects_invalid_syntax
+    COMMAND tinydraw_host
+      --replay "${PROJECT_SOURCE_DIR}/testdata/strokes/invalid-syntax.stroke"
+      --output "${REPLAY_OUTPUT_DIR}/invalid-syntax.ppm"
+  )
+  set_tests_properties(tinydraw_replay_rejects_invalid_syntax PROPERTIES WILL_FAIL TRUE)
 endif()

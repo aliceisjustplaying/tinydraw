@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -105,10 +106,24 @@ int replay(const std::string& input_path, const std::string& output_path) {
   tinydraw::InkPoint previous{};
   std::size_t point_count = 0;
 
-  std::string action;
-  tinydraw::TouchPoint touch{};
-  while (input >> action >> touch.x >> touch.y >> touch.timestamp_us) {
-    if (action == "down") {
+  std::string line;
+  std::size_t line_number = 0;
+  while (std::getline(input, line)) {
+    ++line_number;
+    if (line.empty()) {
+      continue;
+    }
+
+    std::istringstream fields(line);
+    std::string action;
+    std::string trailing;
+    tinydraw::TouchPoint touch{};
+    if (!(fields >> action >> touch.x >> touch.y >> touch.timestamp_us) || (fields >> trailing)) {
+      std::fprintf(stderr, "invalid replay syntax on line %zu\n", line_number);
+      return EXIT_FAILURE;
+    }
+
+    if (action == "down" && !stream.active()) {
       previous = stream.begin(touch);
       draw_disc(pixels, previous.position, previous.radius);
     } else if ((action == "move" || action == "up") && stream.active()) {
@@ -119,13 +134,13 @@ int replay(const std::string& input_path, const std::string& output_path) {
         stream.end();
       }
     } else {
-      std::fprintf(stderr, "invalid replay action or lifecycle: %s\n", action.c_str());
+      std::fprintf(stderr, "invalid replay lifecycle on line %zu\n", line_number);
       return EXIT_FAILURE;
     }
     ++point_count;
   }
 
-  if (!input.eof() || stream.active() || point_count == 0U) {
+  if (stream.active() || point_count == 0U) {
     std::fprintf(stderr, "incomplete replay: %s\n", input_path.c_str());
     return EXIT_FAILURE;
   }
@@ -179,6 +194,7 @@ int interactive() {
           (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)) {
         running = false;
       } else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_c) {
+        stream.end();
         clear_canvas(pixels, true);
       } else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
         float x = 0.0F;
@@ -194,7 +210,14 @@ int interactive() {
             stream.update({.x = x, .y = y, .timestamp_us = event.motion.timestamp * 1'000U});
         draw_segment(pixels, previous, current);
         previous = current;
-      } else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT) {
+      } else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT &&
+                 stream.active()) {
+        float x = 0.0F;
+        float y = 0.0F;
+        SDL_RenderWindowToLogical(renderer, event.button.x, event.button.y, &x, &y);
+        const auto current =
+            stream.update({.x = x, .y = y, .timestamp_us = event.button.timestamp * 1'000U});
+        draw_segment(pixels, previous, current);
         stream.end();
       }
     }
