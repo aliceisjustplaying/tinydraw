@@ -34,7 +34,7 @@ window. It remains resizable for inspection. Drawing currently has:
 - 4×4 supersampled antialiasing into 8-bit coverage;
 - RGB565 compositing;
 - overlap union without self-intersection holes;
-- separate committed and provisional host framebuffers.
+- a persistent committed canvas plus dirty-tile active-stroke coverage.
 
 The prototype is useful for visual and input-loop testing, but it is not yet the embedded product.
 Its tldraw-inspired UI is intentionally direct-drawn and minimal. Undo is currently one host
@@ -62,7 +62,7 @@ Daily commands:
 
 Expected current results:
 
-- 45 doctest cases;
+- 48 doctest cases;
 - 11 CTest entries, including process-level replay and UI snapshot checks;
 - debug, release, ASan, and UBSan green;
 - incremental debug suite typically well below one second.
@@ -120,15 +120,17 @@ Do not add PlatformIO or source ESP-IDF globally. QEMU has not been installed or
 - `core/include/tinydraw/graphics/coverage_tile.h`
   - fixed 64×64 8-bit coverage tile and RGB565 compositing.
 - `core/include/tinydraw/graphics/ribbon_renderer.h`
-  - shared tiled primitive renderer and explicitly owned scratch arena.
+  - shared one-pass tiled primitive renderer and explicitly owned scratch arena.
+- `core/include/tinydraw/graphics/stroke_raster.h`
+  - bounded dirty-tile active-stroke raster, persistent coverage union, and operation statistics.
 - `core/include/tinydraw/ui/toolbar.h`
   - platform-independent tldraw-inspired toolbar hit testing, state, sizing, and RGB565 drawing.
 
 ### Host adapter
 
 - `host/main.cpp`
-  - interactive SDL shell, replay/UI-preview CLI, toolbar behavior, one-step host undo, temporary
-    full host canvas, provisional/committed orchestration, and PPM output.
+  - interactive SDL shell, replay/UI-preview CLI, toolbar behavior, one-step host undo, dirty-tile
+    stroke orchestration, and PPM output.
 - `host/input_coordinates.h`
   - SDL2-compat logical mouse-coordinate policy.
 
@@ -274,9 +276,16 @@ RibbonPrimitive[]
 - one `CoverageTile` (~4 KiB);
 - one 64×64 RGB565 working tile (~8 KiB).
 
-The ~12 KiB scratch arena is a member of `RibbonRenderer`, not a render-function stack frame. The
-host places its renderer in static storage. Embedded code must explicitly place the renderer in
+The ~12 KiB scratch arena is a member rather than a render-function stack frame. Both
+`RibbonRenderer` and `StrokeRaster` own one such arena. Embedded code must explicitly place it in
 appropriate internal SRAM rather than on a modest task stack.
+
+`StrokeRaster` additionally receives a 368×448 active-stroke coverage plane (164,864 bytes). This
+belongs in PSRAM-equivalent memory, not task stack or DMA SRAM. Newly append-stable geometry is
+max-unioned into that plane. Only tiles intersecting the old tail, new commits, or new tail are
+regenerated for display. At lift, touched tiles are composited into RGB565 once and the active
+coverage is cleared. This preserves same-stroke AA union across arbitrarily late self-overlaps
+without retaining or rerasterizing the whole primitive history.
 
 Coverage union currently uses:
 
@@ -306,28 +315,27 @@ stream inactive.
 
 ## Critical committed/provisional invariant
 
-The host currently models the required invariant:
+`StrokeRaster` now enforces and directly tests the required invariant:
 
 > The persistent canvas contains committed geometry only.
 
 During an active stroke:
 
-1. copy `committed_pixels` to temporary `pixels`;
-2. accumulate append-stable geometry from `RibbonStream` and replace only its provisional tail;
-3. render the active geometry into temporary `pixels` and display it;
-4. do not write that provisional result to `committed_pixels`.
+1. max-union newly stable primitives into the active 8-bit coverage plane;
+2. restore only dirty visible tiles from `committed_pixels`;
+3. union the current provisional tail in tile scratch and display it;
+4. leave `committed_pixels` byte-for-byte unchanged.
 
 At lift:
 
-1. call `InkStream::finish()` and `RibbonStream::finish()`;
-2. promote the final tail and cap in the geometry stream;
-3. render the completed stroke once into `committed_pixels`;
-4. clear active host geometry.
+1. promote the final tail and cap through `RibbonStream::finish()`;
+2. union that final geometry into active coverage;
+3. composite each touched tile exactly once into `committed_pixels`;
+4. clear active coverage.
 
-`C` resets both streams, clears active geometry, and clears committed pixels.
-
-This invariant is structurally present in the host, but the definitive regression test should live
-in the upcoming reusable committed-canvas/tile module rather than remain coupled to SDL code.
+`C`/New and cancellation discard active coverage and restore the committed canvas. A core test
+proves provisional pixels never enter persistence; another compares incremental final output to a
+one-pass whole-stroke coverage union.
 
 ## Bugs found and lessons retained
 
@@ -392,7 +400,8 @@ Core behavior tests cover:
 - max-union idempotence;
 - sRGB-space RGB565 compositing;
 - ribbon primitive structure, reversals, duplicate points, and round joins;
-- overlap idempotence, off-canvas geometry, malformed primitives, tile crossings, and stats.
+- overlap idempotence, off-canvas geometry, malformed primitives, tile crossings, and stats;
+- committed-canvas isolation, incremental/one-pass pixel equivalence, and bounded XL update work.
 
 Process-level E2E tests cover:
 
@@ -409,44 +418,32 @@ host and Xtensa pixel identity.
 
 These are known and intentionally not hidden:
 
-- the host copies the full 368×448 framebuffer for every displayed provisional frame;
-- ribbon geometry generation is now incremental, but the host retains the emitted primitives in a
-  `std::vector` and rerasterizes the full active stroke each frame;
-- dirty tile enumeration uses one global primitive bounding rectangle, so a long diagonal visits
-  many untouched tiles;
-- every visited tile scans every primitive;
-- `build_pf_ribbon` uses temporary `std::vector`s for unique points, vectors, sections, and output;
-- batch PF reference functions also allocate vectors;
-- a 1000-point headless debug replay was approximately 0.08 seconds on the current Mac, but that
-  measures one final render—not interactive per-frame rerasterization—and is not evidence of ESP32
-  performance;
+- active geometry generation and raster work are bounded per input update;
+- SDL still uploads the full 368×448 texture every display loop; dirty panel submission remains for
+  the display backend;
+- the host allocates the active coverage plane and canvases with `std::vector`; embedded placement
+  is not implemented yet;
+- `build_pf_ribbon` and batch PF reference functions still allocate vectors, but neither is in the
+  interactive hot path;
 - QEMU will not be accepted as cycle-accurate performance evidence.
 
-The active embedded path is therefore not ready. Do not carry host vectors, full-canvas copies, or
-whole-stroke rerasterization into ESP32 integration.
+The reproduced 500-point XL prefix workload previously took 4,479 ms in an optimized host build,
+with successive 50-point blocks growing from 41 ms to 1,040 ms. Through `StrokeRaster`, the same
+workload took 220 ms total in one local run and no longer grew with stroke history. This is a host
+comparison, not ESP32 timing evidence. CI locks down bounded tile/primitive operation counts rather
+than fragile wall-clock thresholds.
+
+The active embedded path is still not ready: PSRAM/internal-SRAM placement and partial panel
+submission remain unimplemented.
 
 ## Exact next engineering steps
 
-### 1. Dirty-tile provisional renderer and raster horizon
-
-Stop rebuilding the full stroke and copying the full framebuffer each frame.
-
-- determine the raster commit horizon separately from the proven geometry horizon;
-- avoid compositing overlapping antialiased pieces into RGB565 on separate updates, which would
-  darken edges even when each geometry piece is stable;
-- return dirty bounds from geometry updates;
-- enumerate only intersecting tiles;
-- maintain distinct newly committed and provisional coverage;
-- regenerate only provisional tiles from committed background;
-- test directly that provisional pixels never enter persistent canvas;
-- track tiles, pixels, coverage operations, and display bytes.
-
-### 2. Bounded stroke storage
+### 1. Bounded stroke storage and memory placement
 
 Add fixed-size chunks in a bounded arena, with explicit limits and overflow policy. The active path
 must not depend on `std::vector` allocation succeeding.
 
-### 3. Finish host-visible product behavior
+### 2. Finish host-visible product behavior
 
 The host now has four colors, pen/eraser tools, four sizes, one-step undo, and a new-drawing
 button. After streaming rendering is stable:
@@ -455,7 +452,7 @@ button. After streaming rendering is stable:
 - replace the host-only one-step snapshot with a bounded undo ring;
 - add runtime tuning controls and stats only where they aid hardware tuning.
 
-### 4. ESP-IDF and QEMU
+### 3. ESP-IDF and QEMU
 
 Only after the native memory and streaming semantics are enforceable:
 
@@ -513,13 +510,16 @@ fe4f0b9 feat: enlarge toolbar with style popovers
 0544a6f docs: record enlarged toolbar layout
 7f8f292 feat: consolidate controls into one toolbar row
 e59a530 fix: match tldraw eraser silhouette
+f52f28b feat: add bounded dirty-tile stroke raster
+bc3fabb fix: rasterize active strokes incrementally
+65f38ef test: bound XL stroke tile work
 ```
 
 A high-effort Opus review verified the foundation and identified small correctness preconditions
 before streaming work. Float-to-int raster bounds, zero-area convex coverage, non-finite stream
-input, and PPM attributes were fixed immediately afterward. Geometry streaming is now implemented;
-the direct persistent-canvas invariant test remains part of the upcoming raster-horizon milestone.
-See `OPUS_REVIEW_2026-08-09.md` for the review evidence and priorities.
+input, and PPM attributes were fixed immediately afterward. Geometry streaming and the dirty-tile
+raster horizon are now implemented and directly tested. See `OPUS_REVIEW_2026-08-09.md` for the
+review evidence and priorities.
 
 The misleading intermediate cursor-scaling and polygon-rendering approaches remain in history as
 useful diagnosis context but are not present in the current tree.

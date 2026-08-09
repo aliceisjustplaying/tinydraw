@@ -66,11 +66,11 @@ needed. Its direct-drawn floating dock follows tldraw's visual hierarchy. Undo, 
 selected color, selected size, and new-drawing fill one row; tapping color or size opens one row of
 large choices above it.
 
-The interactive host renders PF-style ribbons as triangles and round joins/caps into 8-bit 64×64
-coverage tiles. Pieces from one update are unioned before a single sRGB-space RGB565 composite, so
-self-overlap cannot create holes or repeated edge darkening. PF baseline geometry remains checked
-against the upstream oracle. Provisional pixels are rendered from a temporary framebuffer copy and
-never enter the committed canvas.
+The interactive host renders PF-style ribbons as convex spans and round joins/caps into 8-bit
+64×64 coverage tiles. `StrokeRaster` max-unions stable geometry into an active coverage plane and
+regenerates only tiles touched by the changing tail. This keeps long-stroke work bounded and
+prevents self-overlap holes or repeated edge darkening. The persistent RGB565 canvas remains
+unchanged until lift; core tests compare the incremental result with one-pass coverage union.
 
 The sanitizer preset excludes the host executable because Homebrew's `sdl2-compat` loader aborts
 under Apple's sanitizer runtime before application code starts. All SDL-free project code remains
