@@ -28,6 +28,11 @@ case "$command_name" in
     cmake --build --preset host-debug --target tinydraw_host
     exec "$root/out/build/host-debug/host/tinydraw_host"
     ;;
+  perf)
+    cmake --preset host-release
+    cmake --build --preset host-release --target tinydraw_perf_characterization
+    exec "$root/out/build/host-release/tests/tinydraw_perf_characterization"
+    ;;
   format|format-check)
     formatter="${CLANG_FORMAT:-}"
     if [[ -z "$formatter" ]]; then
@@ -55,7 +60,7 @@ case "$command_name" in
     fi
     ;;
   *)
-    echo "usage: $0 {test|run|asan|release|format|format-check}" >&2
+    echo "usage: $0 {test|run|perf|asan|release|format|format-check}" >&2
     exit 2
     ;;
 esac
