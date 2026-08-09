@@ -30,12 +30,33 @@ RibbonPrimitive circle(Point center, float radius) {
   return {.kind = RibbonPrimitiveKind::kCircle, .center = center, .radius = radius};
 }
 
-RibbonPrimitive triangle(Point first, Point second, Point third) {
+RibbonPrimitive convex(std::array<Point, 4> points, int point_count) {
   return {
       .kind = RibbonPrimitiveKind::kConvex,
-      .points = {first, second, third, {}},
-      .point_count = 3,
+      .points = points,
+      .point_count = point_count,
   };
+}
+
+float cross(Point first, Point second, Point third) {
+  return (second.x - first.x) * (third.y - second.y) - (second.y - first.y) * (third.x - second.x);
+}
+
+bool is_convex_quad(const std::array<Point, 4>& points) {
+  float sign = 0.0F;
+  for (std::size_t index = 0; index < points.size(); ++index) {
+    const float value = cross(points[index], points[(index + 1U) % points.size()],
+                              points[(index + 2U) % points.size()]);
+    if (value == 0.0F) {
+      continue;
+    }
+    if (sign == 0.0F) {
+      sign = value;
+    } else if ((value > 0.0F) != (sign > 0.0F)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 struct Section {
@@ -87,10 +108,16 @@ std::vector<RibbonPrimitive> build_pf_ribbon(std::span<const InkPoint> input) {
   primitives.reserve(points.size() * 3U);
   primitives.push_back(circle(points.front().position, points.front().radius));
   for (std::size_t index = 0; index + 1U < points.size(); ++index) {
-    primitives.push_back(
-        triangle(sections[index].left, sections[index + 1U].left, sections[index].right));
-    primitives.push_back(
-        triangle(sections[index].right, sections[index + 1U].left, sections[index + 1U].right));
+    const std::array quad{sections[index].left, sections[index + 1U].left,
+                          sections[index + 1U].right, sections[index].right};
+    if (is_convex_quad(quad)) {
+      primitives.push_back(convex(quad, 4));
+    } else {
+      primitives.push_back(
+          convex({sections[index].left, sections[index + 1U].left, sections[index].right, {}}, 3));
+      primitives.push_back(convex(
+          {sections[index].right, sections[index + 1U].left, sections[index + 1U].right, {}}, 3));
+    }
     if (index + 2U < points.size() && dot(vectors[index + 1U], vectors[index + 2U]) < 0.0F) {
       primitives.push_back(circle(points[index + 1U].position, points[index + 1U].radius));
     }

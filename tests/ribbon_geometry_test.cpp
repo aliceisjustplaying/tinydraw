@@ -2,6 +2,7 @@
 
 #include <doctest.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 
@@ -26,14 +27,14 @@ TEST_CASE("PF ribbon emits unionable triangles and round caps") {
 
   const auto primitives = tinydraw::build_pf_ribbon(points);
 
-  REQUIRE(primitives.size() == 6U);
+  REQUIRE(primitives.size() == 4U);
   CHECK(primitives.front().kind == tinydraw::RibbonPrimitiveKind::kCircle);
   CHECK(primitives.front().radius == doctest::Approx(2.0F));
   CHECK(primitives.back().kind == tinydraw::RibbonPrimitiveKind::kCircle);
   CHECK(primitives.back().radius == doctest::Approx(4.0F));
   for (std::size_t index = 1; index + 1U < primitives.size(); ++index) {
     CHECK(primitives[index].kind == tinydraw::RibbonPrimitiveKind::kConvex);
-    CHECK(primitives[index].point_count == 3);
+    CHECK(primitives[index].point_count == 4);
   }
 }
 
@@ -43,9 +44,13 @@ TEST_CASE("a reversing ribbon adds explicit corner coverage") {
 
   const auto primitives = tinydraw::build_pf_ribbon(points);
 
-  REQUIRE(primitives.size() == 7U);
-  CHECK(primitives[3].kind == tinydraw::RibbonPrimitiveKind::kCircle);
-  CHECK(primitives[3].center.x == doctest::Approx(20.0F));
+  const auto corner = std::find_if(
+      primitives.begin() + 1, primitives.end() - 1, [](const tinydraw::RibbonPrimitive& primitive) {
+        return primitive.kind == tinydraw::RibbonPrimitiveKind::kCircle &&
+               primitive.center.x == 20.0F;
+      });
+  REQUIRE(corner != primitives.end() - 1);
+  CHECK(corner->center.x == doctest::Approx(20.0F));
 }
 
 TEST_CASE("ribbon geometry remains finite for duplicate points") {
