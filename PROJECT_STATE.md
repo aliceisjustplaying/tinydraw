@@ -7,6 +7,30 @@ This is the durable engineering handoff for the repository. Read it together wit
 high-effort whole-codebase review is preserved in `OPUS_REVIEW_2026-08-09.md`. Update this file
 whenever a milestone changes the current behavior, constraints, or next step.
 
+## Next-session resume point
+
+The user chose **minimal ESP-IDF/QEMU integration next**, before further memory abstraction. No
+physical hardware is required for this slice. At the start of the next context:
+
+```sh
+git status --short
+./scripts/dev test
+./scripts/bootstrap-idf    # network/toolchain install; run only if IDF v6.0.2 is absent
+```
+
+Then build the smallest ESP32-S3 vertical slice described under "Exact next engineering steps."
+Keep the native loop green and do not introduce PlatformIO, globally source ESP-IDF, or use QEMU
+wall-clock speed as hardware evidence.
+
+Durable implementation preferences from the user:
+
+- prioritize something visible/runnable and end-to-end verification;
+- keep modules and commits small; commit frequently and atomically;
+- aggressively avoid speculative architecture and dependencies;
+- keep ASan/UBSan green for all SDL-free code;
+- use tldraw as the UI reference, with one default toolbar row and one popup row;
+- document state meticulously before compaction.
+
 ## Current user-visible state
 
 TinyDraw is runnable as a native macOS host prototype:
@@ -438,12 +462,44 @@ submission remain unimplemented.
 
 ## Exact next engineering steps
 
-### 1. Bounded stroke storage and memory placement
+### 1. Minimal ESP-IDF / QEMU vertical slice
 
-Add fixed-size chunks in a bounded arena, with explicit limits and overflow policy. The active path
-must not depend on `std::vector` allocation succeeding.
+Do this before further memory abstraction so the embedded seams respond to a real target rather
+than speculation:
 
-### 2. Finish host-visible product behavior
+1. scaffold a small `esp32/` ESP-IDF project targeting ESP32-S3;
+2. compile the existing platform-independent core as an IDF component without changing the native
+   CMake loop;
+3. embed one deterministic stroke fixture and run it during a headless firmware test;
+4. print structural results: accepted points, primitive/tile counts, bounds, and an informational
+   framebuffer checksum;
+5. boot that firmware under Espressif QEMU and capture the completion marker in an automated test;
+6. add `esp_lcd_qemu_rgb` behind the existing narrow `DisplayBackend` only after the headless slice
+   works.
+
+Acceptance:
+
+- host debug/release/sanitizers remain green;
+- an isolated `eim run "idf.py ..."` build succeeds for `esp32s3`;
+- QEMU boots without hardware and completes the deterministic replay;
+- cross-target assertions use structural values/tolerances, not ARM64/Xtensa pixel identity;
+- no performance claims are made from QEMU.
+
+### 2. Embedded memory placement and dirty display submission
+
+Once the real IDF target exists:
+
+- supply committed RGB565 canvas and active coverage from explicit PSRAM allocations;
+- place coverage/RGB tile scratch and DMA buffers in internal-capability memory;
+- add capability assertions and deliberate allocation-failure behavior;
+- submit only dirty rectangles through `DisplayBackend` instead of a full frame;
+- keep the current fixed-capacity geometry stream allocation-free per update.
+
+Do **not** add a point-storage arena merely because the initial plan mentioned one. Completed
+strokes are flattened, and no current feature needs editable point history. Reconsider only if a
+real feature introduces that requirement.
+
+### 3. Finish host-visible product behavior
 
 The host now has four colors, pen/eraser tools, four sizes, one-step undo, and a new-drawing
 button. After streaming rendering is stable:
@@ -452,17 +508,14 @@ button. After streaming rendering is stable:
 - replace the host-only one-step snapshot with a bounded undo ring;
 - add runtime tuning controls and stats only where they aid hardware tuning.
 
-### 3. ESP-IDF and QEMU
+### 4. Physical hardware integration
 
-Only after the native memory and streaming semantics are enforceable:
+When the board arrives, validate what QEMU cannot:
 
-- scaffold ESP32-S3 IDF target;
-- install Espressif QEMU;
-- use `esp_lcd_qemu_rgb` behind `DisplayBackend`;
-- allocate committed canvas as PSRAM-equivalent;
-- place tiles and DMA source buffers explicitly in internal memory;
-- add capability assertions;
-- replay the same stroke fixtures and compare structural stats with tolerance.
+- touch-controller initialization, transforms, cadence, and finger feel;
+- AMOLED controller offsets, rotation, color order, and partial-window writes;
+- actual PSRAM/DMA capability restrictions and bandwidth;
+- latency, sustained XL strokes, thermal/power behavior, and visual AA quality.
 
 ## Commit milestone history
 

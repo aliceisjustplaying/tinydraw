@@ -79,10 +79,10 @@ sanitized; full host replay runs in both debug and release presets.
 The TypeScript `perfect-freehand` reference and pinned commit are documented in
 `reference/PERFECT_FREEHAND.md`. It is cloned locally but is not a build dependency or submodule.
 
-## ESP-IDF (deferred until the native interfaces exist)
+## ESP-IDF / QEMU (next milestone)
 
-ESP-IDF is intentionally not mixed into the host CMake project or global shell startup. The
-pinned version is in `.idf-version`. Install it separately when `esp32/` work starts:
+ESP-IDF remains isolated from the host CMake project and global shell startup. The pinned version
+is in `.idf-version`. Install it separately before scaffolding the minimal ESP32-S3 target:
 
 ```sh
 ./scripts/bootstrap-idf
@@ -90,8 +90,9 @@ eim run "idf.py --version"
 ```
 
 PlatformIO is not used. Espressif's installation manager owns IDF's Python and toolchain, keeping
-the host loop independent from the system Python. QEMU will be installed through IDF tooling when
-the ESP target is scaffolded.
+the host loop independent from the system Python. Start with a headless deterministic replay under
+QEMU, then add the virtual RGB backend. QEMU proves build/boot/integration, never physical timing or
+real PSRAM/DMA capability behavior.
 
 ## Dependency policy
 
