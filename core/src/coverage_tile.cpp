@@ -39,10 +39,18 @@ int blend_channel(int destination, int source, int alpha) {
 
 }  // namespace
 
-CoverageTile::CoverageTile(int origin_x, int origin_y, int width, int height)
-    : origin_x_(origin_x), origin_y_(origin_y), width_(width), height_(height) {
+CoverageTile::CoverageTile(int origin_x, int origin_y, int width, int height) {
+  reset(origin_x, origin_y, width, height);
+}
+
+void CoverageTile::reset(int origin_x, int origin_y, int width, int height) {
   assert(width > 0 && width <= kTileSize);
   assert(height > 0 && height <= kTileSize);
+  origin_x_ = origin_x;
+  origin_y_ = origin_y;
+  width_ = width;
+  height_ = height;
+  clear();
 }
 
 void CoverageTile::clear() { coverage_.fill(0U); }

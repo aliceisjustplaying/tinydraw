@@ -35,9 +35,10 @@ void set_pixel(std::vector<std::uint16_t>& pixels, int x, int y, std::uint16_t c
 
 void draw_ribbon(std::vector<std::uint16_t>& pixels,
                  const std::vector<tinydraw::InkPoint>& points) {
+  static tinydraw::RibbonRenderer renderer;
   const auto primitives = tinydraw::build_pf_ribbon(points);
-  static_cast<void>(tinydraw::render_ribbon(primitives, pixels, tinydraw::kCanvasWidth,
-                                            tinydraw::kCanvasHeight, kInk));
+  static_cast<void>(
+      renderer.render(primitives, pixels, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight, kInk));
 }
 
 void clear_canvas(std::vector<std::uint16_t>& pixels, bool show_grid) {

@@ -14,6 +14,7 @@ class CoverageTile {
  public:
   CoverageTile(int origin_x, int origin_y, int width = kTileSize, int height = kTileSize);
 
+  void reset(int origin_x, int origin_y, int width = kTileSize, int height = kTileSize);
   void clear();
   void union_coverage(int x, int y, std::uint8_t coverage);
   [[nodiscard]] std::uint8_t coverage_at(int x, int y) const;

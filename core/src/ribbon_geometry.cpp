@@ -30,7 +30,7 @@ RibbonPrimitive circle(Point center, float radius) {
   return {.kind = RibbonPrimitiveKind::kCircle, .center = center, .radius = radius};
 }
 
-RibbonPrimitive convex(std::array<Point, 4> points, int point_count) {
+RibbonPrimitive convex(std::array<Point, 4> points, std::uint8_t point_count) {
   return {
       .kind = RibbonPrimitiveKind::kConvex,
       .points = points,

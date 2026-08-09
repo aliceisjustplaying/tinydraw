@@ -1,8 +1,10 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <span>
 
+#include "tinydraw/graphics/coverage_tile.h"
 #include "tinydraw/ink/ribbon_geometry.h"
 
 namespace tinydraw {
@@ -12,10 +14,17 @@ struct RibbonRenderStats {
   std::uint32_t pixels_considered = 0;
 };
 
-// Rasterize every piece into 8-bit tile coverage, union overlaps, then composite
-// the logical stroke exactly once into the RGB565 canvas.
-[[nodiscard]] RibbonRenderStats render_ribbon(std::span<const RibbonPrimitive> primitives,
-                                              std::span<std::uint16_t> canvas, int width,
-                                              int height, std::uint16_t color);
+// Owns the 12 KiB tile scratch arena so callers can place it explicitly in
+// internal SRAM rather than consuming an embedded task's stack.
+class RibbonRenderer {
+ public:
+  [[nodiscard]] RibbonRenderStats render(std::span<const RibbonPrimitive> primitives,
+                                         std::span<std::uint16_t> canvas, int width, int height,
+                                         std::uint16_t color);
+
+ private:
+  CoverageTile coverage_{0, 0};
+  std::array<std::uint16_t, kTileSize * kTileSize> working_{};
+};
 
 }  // namespace tinydraw

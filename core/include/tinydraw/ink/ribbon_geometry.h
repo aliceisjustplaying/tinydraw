@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -13,7 +14,7 @@ enum class RibbonPrimitiveKind { kConvex, kCircle };
 struct RibbonPrimitive {
   RibbonPrimitiveKind kind = RibbonPrimitiveKind::kConvex;
   std::array<Point, 4> points{};
-  int point_count = 0;
+  std::uint8_t point_count = 0;
   Point center{};
   float radius = 0.0F;
 };

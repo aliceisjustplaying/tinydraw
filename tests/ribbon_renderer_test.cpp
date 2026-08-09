@@ -18,9 +18,10 @@ TEST_CASE("overlapping primitives composite only once") {
   const std::array duplicated{circle, circle};
   std::vector<std::uint16_t> once(width * height, 0xFFFFU);
   std::vector<std::uint16_t> twice = once;
+  tinydraw::RibbonRenderer renderer;
 
-  static_cast<void>(tinydraw::render_ribbon(one, once, width, height, 0x001FU));
-  static_cast<void>(tinydraw::render_ribbon(duplicated, twice, width, height, 0x001FU));
+  static_cast<void>(renderer.render(one, once, width, height, 0x001FU));
+  static_cast<void>(renderer.render(duplicated, twice, width, height, 0x001FU));
 
   CHECK(once == twice);
 }
@@ -34,12 +35,28 @@ TEST_CASE("geometry outside the canvas does no tile work") {
       .radius = 5.0F,
   }};
   std::vector<std::uint16_t> canvas(width * height, 0xFFFFU);
+  tinydraw::RibbonRenderer renderer;
 
-  const auto stats = tinydraw::render_ribbon(primitives, canvas, width, height, 0x001FU);
+  const auto stats = renderer.render(primitives, canvas, width, height, 0x001FU);
 
   CHECK(stats.tiles_rasterized == 0U);
   CHECK(std::all_of(canvas.begin(), canvas.end(),
                     [](std::uint16_t pixel) { return pixel == 0xFFFFU; }));
+}
+
+TEST_CASE("malformed convex primitives are ignored safely") {
+  constexpr int width = 64;
+  constexpr int height = 64;
+  const std::array primitives{tinydraw::RibbonPrimitive{
+      .kind = tinydraw::RibbonPrimitiveKind::kConvex,
+      .point_count = 5U,
+  }};
+  std::vector<std::uint16_t> canvas(width * height, 0xFFFFU);
+  tinydraw::RibbonRenderer renderer;
+
+  const auto stats = renderer.render(primitives, canvas, width, height, 0x001FU);
+
+  CHECK(stats.tiles_rasterized == 0U);
 }
 
 TEST_CASE("dirty ribbon bounds enumerate every crossed tile") {
@@ -51,8 +68,9 @@ TEST_CASE("dirty ribbon bounds enumerate every crossed tile") {
       .radius = 5.0F,
   }};
   std::vector<std::uint16_t> canvas(width * height, 0xFFFFU);
+  tinydraw::RibbonRenderer renderer;
 
-  const auto stats = tinydraw::render_ribbon(primitives, canvas, width, height, 0x001FU);
+  const auto stats = renderer.render(primitives, canvas, width, height, 0x001FU);
 
   CHECK(stats.tiles_rasterized == 2U);
   CHECK(stats.pixels_considered == 2U * 64U * 64U);
