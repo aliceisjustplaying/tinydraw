@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+version="$(tr -d '[:space:]' < "$root/.idf-version")"
+
+if ! command -v brew >/dev/null 2>&1; then
+  echo "Homebrew is required: https://brew.sh" >&2
+  exit 1
+fi
+
+if ! command -v eim >/dev/null 2>&1; then
+  brew tap espressif/eim
+  brew install eim
+fi
+
+eim install -i "$version"
+
+cat <<EOF
+ESP-IDF $version is installed in its isolated environment.
+Use this only once esp32/ exists:
+  eim run "idf.py --version"
+  eim run "idf.py build"
+Do not source ESP-IDF globally; it is intentionally separate from the host loop.
+EOF

@@ -1,0 +1,4 @@
+/out/
+/.pi-subagents/
+.DS_Store
+*.dSYM/

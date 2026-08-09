@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$root"
+
+command_name="${1:-test}"
+
+configure_build_test() {
+  local preset="$1"
+  cmake --preset "$preset"
+  cmake --build --preset "$preset"
+  ctest --preset "$preset"
+}
+
+case "$command_name" in
+  test)
+    configure_build_test host-debug
+    ;;
+  asan)
+    configure_build_test host-asan
+    ;;
+  release)
+    configure_build_test host-release
+    ;;
+  run)
+    cmake --preset host-debug
+    cmake --build --preset host-debug --target tinydraw_host
+    exec "$root/out/build/host-debug/host/tinydraw_host"
+    ;;
+  format|format-check)
+    formatter="${CLANG_FORMAT:-}"
+    if [[ -z "$formatter" ]]; then
+      formatter="$(command -v clang-format || true)"
+    fi
+    if [[ -z "$formatter" && -x /opt/homebrew/opt/llvm/bin/clang-format ]]; then
+      formatter=/opt/homebrew/opt/llvm/bin/clang-format
+    fi
+    if [[ -z "$formatter" ]]; then
+      echo "clang-format not found; run ./scripts/bootstrap-macos" >&2
+      exit 1
+    fi
+    mapfile_supported=false
+    if builtin help mapfile >/dev/null 2>&1; then mapfile_supported=true; fi
+    if [[ "$mapfile_supported" == true ]]; then
+      mapfile -t files < <(find core host tests -type f \( -name '*.cpp' -o -name '*.h' \) | sort)
+    else
+      files=()
+      while IFS= read -r file; do files+=("$file"); done < <(find core host tests -type f \( -name '*.cpp' -o -name '*.h' \) | sort)
+    fi
+    if [[ "$command_name" == format ]]; then
+      "$formatter" -i "${files[@]}"
+    else
+      "$formatter" --dry-run --Werror "${files[@]}"
+    fi
+    ;;
+  *)
+    echo "usage: $0 {test|run|asan|release|format|format-check}" >&2
+    exit 2
+    ;;
+esac

@@ -1,0 +1,6 @@
+brew "cmake"
+brew "ninja"
+brew "ccache"
+brew "llvm"
+brew "pkgconf"
+brew "sdl2-compat"

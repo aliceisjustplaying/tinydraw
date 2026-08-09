@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if ! command -v brew >/dev/null 2>&1; then
+  echo "Homebrew is required: https://brew.sh" >&2
+  exit 1
+fi
+
+brew bundle --file "$root/Brewfile"
+
+echo
+echo "Host dependencies are ready. Validating the loop..."
+"$root/scripts/dev" test
+"$root/scripts/dev" asan
