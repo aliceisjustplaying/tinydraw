@@ -3,7 +3,8 @@
 Last updated: 2026-08-09
 
 This is the durable engineering handoff for the repository. Read it together with
-`INITIAL_RESEARCH.md`, which remains the product and architecture specification. Update this file
+`INITIAL_RESEARCH.md`, which remains the product and architecture specification. The complete
+high-effort whole-codebase review is preserved in `OPUS_REVIEW_2026-08-09.md`. Update this file
 whenever a milestone changes the current behavior, constraints, or next step.
 
 ## Current user-visible state
@@ -394,8 +395,9 @@ These are known and intentionally not hidden:
 - every visited tile scans every primitive;
 - `build_pf_ribbon` uses temporary `std::vector`s for unique points, vectors, sections, and output;
 - batch PF reference functions also allocate vectors;
-- a 1000-point headless debug replay was approximately 0.08 seconds on the current Mac, but this is
-  not evidence of ESP32 performance;
+- a 1000-point headless debug replay was approximately 0.08 seconds on the current Mac, but that
+  measures one final render—not the interactive per-sample rebuild—and is not evidence of ESP32
+  performance;
 - QEMU will not be accepted as cycle-accurate performance evidence.
 
 The active embedded path is therefore not ready. Do not carry these allocations or whole-stroke
@@ -490,7 +492,13 @@ a6325f1 feat: render PF ribbons through coverage tiles
 07ff533 fix: rasterize convex ribbon spans without seams
 17b5704 fix: move ribbon scratch buffers off task stack
 6c15de4 fix: close coverage gaps at ribbon joins
+6cd7bd9 docs: record complete engineering handoff
 ```
+
+A subsequent high-effort Opus review verified the foundation and identified small correctness
+preconditions before streaming work: guard float-to-int raster bounds, reject zero-area convex
+coverage, choose a non-finite input policy, and add the committed/provisional invariant test during
+the streaming milestone. See `OPUS_REVIEW_2026-08-09.md` for evidence and priorities.
 
 The misleading intermediate cursor-scaling and polygon-rendering approaches remain in history as
 useful diagnosis context but are not present in the current tree.
