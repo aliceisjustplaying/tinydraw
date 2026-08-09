@@ -144,8 +144,7 @@ std::size_t CoverageTile::index_of(int x, int y) const {
 
 void composite_rgb565(const CoverageTile& coverage, std::uint16_t source,
                       std::span<std::uint16_t> destination) {
-  const std::size_t pixel_count = static_cast<std::size_t>(coverage.width() * coverage.height());
-  assert(destination.size() >= pixel_count);
+  assert(destination.size() >= static_cast<std::size_t>(coverage.width() * coverage.height()));
 
   const int source_red = (source >> 11U) & 0x1FU;
   const int source_green = (source >> 5U) & 0x3FU;
