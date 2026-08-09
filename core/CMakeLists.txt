@@ -6,6 +6,7 @@ add_library(tinydraw_core STATIC
   src/ribbon_geometry.cpp
   src/ribbon_renderer.cpp
   src/stroke_raster.cpp
+  src/tile_undo_history.cpp
   src/toolbar.cpp
 )
 
