@@ -15,12 +15,13 @@
 #include "tinydraw/graphics/ribbon_renderer.h"
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
+#include "tinydraw/ui/toolbar.h"
 
 namespace {
 
 constexpr std::uint16_t kBackground = 0xFFFFU;
 constexpr std::uint16_t kGrid = 0xDEDBU;
-constexpr std::uint16_t kInk = 0x001FU;
+constexpr std::uint16_t kReplayInk = 0x001FU;
 
 std::optional<tinydraw::Point> mouse_to_logical(int x, int y) {
   return tinydraw::host::event_to_logical({.x = static_cast<float>(x), .y = static_cast<float>(y)});
@@ -43,10 +44,10 @@ void apply_ribbon_update(std::vector<tinydraw::RibbonPrimitive>& geometry,
 }
 
 void draw_ribbon(std::vector<std::uint16_t>& pixels,
-                 std::span<const tinydraw::RibbonPrimitive> primitives) {
+                 std::span<const tinydraw::RibbonPrimitive> primitives, std::uint16_t color) {
   static tinydraw::RibbonRenderer renderer;
   static_cast<void>(
-      renderer.render(primitives, pixels, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight, kInk));
+      renderer.render(primitives, pixels, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight, color));
 }
 
 void clear_canvas(std::vector<std::uint16_t>& pixels, bool show_grid) {
@@ -128,7 +129,7 @@ int replay(const std::string& input_path, const std::string& output_path) {
                                          : ribbon.append(stream.update(touch));
       apply_ribbon_update(geometry, committed_count, update);
       if (action == "up") {
-        draw_ribbon(pixels, geometry);
+        draw_ribbon(pixels, geometry, kReplayInk);
       }
     } else {
       std::fprintf(stderr, "invalid replay lifecycle on line %zu\n", line_number);
@@ -181,11 +182,36 @@ int interactive() {
       static_cast<std::size_t>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight));
   clear_canvas(committed_pixels, true);
   std::vector<std::uint16_t> pixels = committed_pixels;
+  std::vector<std::uint16_t> undo_pixels;
+  tinydraw::ToolbarState toolbar;
   tinydraw::InkStream stream;
   tinydraw::RibbonStream ribbon;
   std::vector<tinydraw::RibbonPrimitive> geometry;
   std::size_t committed_count = 0U;
   tinydraw::InkPoint last_ink_point{};
+  std::uint16_t stroke_color = tinydraw::rgb565(toolbar.color);
+
+  const auto reset_active_stroke = [&] {
+    stream.end();
+    ribbon.reset();
+    geometry.clear();
+    committed_count = 0U;
+  };
+  const auto start_new_drawing = [&] {
+    reset_active_stroke();
+    clear_canvas(committed_pixels, true);
+    undo_pixels.clear();
+    toolbar.can_undo = false;
+  };
+  const auto undo = [&] {
+    if (!toolbar.can_undo) {
+      return;
+    }
+    reset_active_stroke();
+    committed_pixels = undo_pixels;
+    undo_pixels.clear();
+    toolbar.can_undo = false;
+  };
 
   bool running = true;
   while (running) {
@@ -195,16 +221,62 @@ int interactive() {
           (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)) {
         running = false;
       } else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_c) {
-        stream.end();
-        ribbon.reset();
-        geometry.clear();
-        committed_count = 0U;
-        clear_canvas(committed_pixels, true);
+        start_new_drawing();
+      } else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_z &&
+                 (event.key.keysym.mod & KMOD_GUI) != 0) {
+        undo();
       } else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
         const auto point = mouse_to_logical(event.button.x, event.button.y);
         if (!point.has_value()) {
           continue;
         }
+        if (tinydraw::toolbar_contains(*point)) {
+          switch (tinydraw::toolbar_action_at(*point)) {
+            case tinydraw::ToolbarAction::kSelectPen:
+              toolbar.tool = tinydraw::DrawingTool::kPen;
+              break;
+            case tinydraw::ToolbarAction::kSelectEraser:
+              toolbar.tool = tinydraw::DrawingTool::kEraser;
+              break;
+            case tinydraw::ToolbarAction::kSelectBlack:
+              toolbar.color = tinydraw::InkColor::kBlack;
+              toolbar.tool = tinydraw::DrawingTool::kPen;
+              break;
+            case tinydraw::ToolbarAction::kSelectBlue:
+              toolbar.color = tinydraw::InkColor::kBlue;
+              toolbar.tool = tinydraw::DrawingTool::kPen;
+              break;
+            case tinydraw::ToolbarAction::kSelectRed:
+              toolbar.color = tinydraw::InkColor::kRed;
+              toolbar.tool = tinydraw::DrawingTool::kPen;
+              break;
+            case tinydraw::ToolbarAction::kSelectGreen:
+              toolbar.color = tinydraw::InkColor::kGreen;
+              toolbar.tool = tinydraw::DrawingTool::kPen;
+              break;
+            case tinydraw::ToolbarAction::kCycleSize: {
+              toolbar.size = tinydraw::next_pen_size(toolbar.size);
+              tinydraw::InkConfig config = stream.config();
+              config.size = tinydraw::brush_size(toolbar.size);
+              stream.set_config(config);
+              break;
+            }
+            case tinydraw::ToolbarAction::kUndo:
+              undo();
+              break;
+            case tinydraw::ToolbarAction::kNewDrawing:
+              start_new_drawing();
+              break;
+            case tinydraw::ToolbarAction::kNone:
+              break;
+          }
+          continue;
+        }
+        undo_pixels = committed_pixels;
+        toolbar.can_undo = true;
+        stroke_color = toolbar.tool == tinydraw::DrawingTool::kEraser
+                           ? kBackground
+                           : tinydraw::rgb565(toolbar.color);
         geometry.clear();
         committed_count = 0U;
         last_ink_point = stream.begin(
@@ -224,7 +296,7 @@ int interactive() {
         last_ink_point = stream.finish(
             {.x = point.x, .y = point.y, .timestamp_us = event.button.timestamp * 1'000U});
         apply_ribbon_update(geometry, committed_count, ribbon.finish(last_ink_point));
-        draw_ribbon(committed_pixels, geometry);
+        draw_ribbon(committed_pixels, geometry, stroke_color);
         geometry.clear();
         committed_count = 0U;
       }
@@ -232,8 +304,9 @@ int interactive() {
 
     pixels = committed_pixels;
     if (stream.active()) {
-      draw_ribbon(pixels, geometry);
+      draw_ribbon(pixels, geometry, stroke_color);
     }
+    tinydraw::draw_toolbar(pixels, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight, toolbar);
     SDL_UpdateTexture(texture, nullptr, pixels.data(),
                       tinydraw::kCanvasWidth * static_cast<int>(sizeof(std::uint16_t)));
     SDL_SetRenderDrawColor(renderer, 24, 24, 24, 255);
