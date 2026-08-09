@@ -22,6 +22,8 @@ namespace {
 constexpr std::uint16_t kBackground = 0xFFFFU;
 constexpr std::uint16_t kGrid = 0xDEDBU;
 constexpr std::uint16_t kReplayInk = 0x001FU;
+constexpr int kHostScaleNumerator = 5;
+constexpr int kHostScaleDenominator = 4;
 
 std::optional<tinydraw::Point> mouse_to_logical(int x, int y) {
   return tinydraw::host::event_to_logical({.x = static_cast<float>(x), .y = static_cast<float>(y)});
@@ -156,10 +158,11 @@ int interactive() {
     return EXIT_FAILURE;
   }
 
-  SDL_Window* window = SDL_CreateWindow("TinyDraw host — drag to test ink input",
-                                        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                        tinydraw::kCanvasWidth * 2, tinydraw::kCanvasHeight * 2,
-                                        SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+  SDL_Window* window = SDL_CreateWindow(
+      "TinyDraw host — drag to test ink input", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+      tinydraw::kCanvasWidth * kHostScaleNumerator / kHostScaleDenominator,
+      tinydraw::kCanvasHeight * kHostScaleNumerator / kHostScaleDenominator,
+      SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
   SDL_Renderer* renderer = window == nullptr ? nullptr : SDL_CreateRenderer(window, -1, 0);
   SDL_Texture* texture =
       renderer == nullptr
