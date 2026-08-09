@@ -1,5 +1,6 @@
 add_library(tinydraw_core STATIC
   src/coordinate_transform.cpp
+  src/ink_stream.cpp
 )
 
 add_library(tinydraw::core ALIAS tinydraw_core)
