@@ -199,7 +199,9 @@ int interactive() {
   std::vector<std::uint16_t> pixels = committed_pixels;
   std::vector<std::uint16_t> undo_pixels;
   tinydraw::ToolbarState toolbar;
-  tinydraw::InkStream stream;
+  tinydraw::InkConfig initial_brush;
+  initial_brush.size = tinydraw::brush_size(toolbar.size);
+  tinydraw::InkStream stream(initial_brush);
   tinydraw::RibbonStream ribbon;
   std::vector<tinydraw::RibbonPrimitive> geometry;
   std::size_t committed_count = 0U;
@@ -304,6 +306,9 @@ int interactive() {
               break;
             case tinydraw::ToolbarAction::kSelectLarge:
               select_size(tinydraw::PenSize::kLarge);
+              break;
+            case tinydraw::ToolbarAction::kSelectExtraLarge:
+              select_size(tinydraw::PenSize::kExtraLarge);
               break;
             case tinydraw::ToolbarAction::kUndo:
               undo();

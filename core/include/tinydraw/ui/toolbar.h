@@ -9,7 +9,7 @@ namespace tinydraw {
 
 enum class DrawingTool { kPen, kEraser };
 enum class InkColor { kBlack, kBlue, kRed, kGreen };
-enum class PenSize { kSmall, kMedium, kLarge };
+enum class PenSize { kSmall, kMedium, kLarge, kExtraLarge };
 enum class ToolbarAction {
   kNone,
   kSelectPen,
@@ -23,6 +23,7 @@ enum class ToolbarAction {
   kSelectSmall,
   kSelectMedium,
   kSelectLarge,
+  kSelectExtraLarge,
   kUndo,
   kNewDrawing,
 };
