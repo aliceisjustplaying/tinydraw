@@ -17,7 +17,8 @@ TinyDraw is runnable as a native macOS host prototype:
 
 Controls:
 
-- use the floating bottom dock to select pen, eraser, one of four colors, or cycle S/M/L sizes;
+- use the full-width bottom dock for pen, eraser, color, and size;
+- tap color or size to open a second row of large choices: four colors or S/M/L;
 - use the small dock above it for one-step undo or a new blank drawing;
 - drag with the primary mouse button to draw or erase;
 - `Cmd-Z` also undoes, `C` starts a new drawing, and `Esc` quits.
@@ -61,7 +62,7 @@ Daily commands:
 
 Expected current results:
 
-- 43 doctest cases;
+- 45 doctest cases;
 - 11 CTest entries, including process-level replay and UI snapshot checks;
 - debug, release, ASan, and UBSan green;
 - incremental debug suite typically well below one second.
@@ -507,6 +508,8 @@ bbc6c54 feat: wire toolbar drawing controls
 831da0d chore: open host near hardware scale
 a7523da fix: match host window to physical display size
 61b5f41 test: snapshot toolbar end to end
+8024447 docs: record drawing toolbar and physical scale
+fe4f0b9 feat: enlarge toolbar with style popovers
 ```
 
 A high-effort Opus review verified the foundation and identified small correctness preconditions
