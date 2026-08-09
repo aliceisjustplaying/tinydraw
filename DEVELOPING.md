@@ -94,7 +94,7 @@ Daily firmware commands:
 ./scripts/esp32 build          # compile the shared core for ESP32-S3
 ./scripts/esp32 qemu           # headless boot + asserted replay marker
 ./scripts/esp32 graphics-test  # short automated virtual-framebuffer check
-./scripts/esp32 graphics       # visible QEMU window; Ctrl-A then X to close
+./scripts/esp32 graphics       # visible stroke + shared toolbar; Ctrl-A then X to close
 ./scripts/esp32 clean
 ```
 
@@ -105,8 +105,10 @@ informational because cross-architecture pixel identity is not an oracle.
 
 The visible graphics build is separate because `esp_lcd_qemu_rgb` requires QEMU's virtual
 framebuffer device and cannot be initialized in `-nographic` mode. Raster output is submitted one
-64×64 tile at a time through `DisplayBackend`, avoiding a second full framebuffer in this test
-firmware.
+64×64 tile at a time through `DisplayBackend`. The existing shared toolbar renderer then draws
+directly into QEMU's own RGB565 framebuffer and refreshes it, avoiding a second full framebuffer in
+this test firmware. This screen is a scripted visual integration check; QEMU does not yet provide
+interactive pointer/touch input to TinyDraw.
 
 PlatformIO is not used. Espressif's installation manager owns IDF's Python and toolchain, keeping
 the host loop independent from the system Python. QEMU proves build/boot/integration, never physical

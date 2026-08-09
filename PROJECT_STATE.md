@@ -64,8 +64,8 @@ The prototype is useful for visual and input-loop testing, but it is not yet the
 Its tldraw-inspired UI is intentionally direct-drawn and minimal. Undo is currently one host
 snapshot rather than a bounded embedded snapshot ring. There is no persistent point arena or
 hardware driver. A real ESP-IDF ESP32-S3 target now compiles the shared core, boots under Espressif
-QEMU, replays the deterministic zigzag stroke, and can show its RGB565 tiles in QEMU's virtual
-framebuffer.
+QEMU, replays the deterministic zigzag stroke, and shows the stroke plus the shared six-control
+TinyDraw toolbar in QEMU's virtual framebuffer. QEMU input remains scripted rather than interactive.
 
 ## Fast development loop
 
@@ -167,6 +167,8 @@ The official `espressif/esp_lcd_qemu_rgb` component is locked at 1.0.2.
   - minimal ESP-IDF project compiling the same `core/src` files as Xtensa C++20;
   - deterministic seven-point firmware replay with structural marker and informational checksum;
   - `QemuDisplayBackend`, a thin `esp_lcd_qemu_rgb` implementation of `DisplayBackend`;
+  - visible graphics mode renders the shared toolbar directly into QEMU's own RGB565 framebuffer,
+    avoiding a second full-frame allocation, then refreshes the virtual panel;
   - locked managed-component manifest; downloaded `managed_components/` remains ignored.
 - `scripts/esp32`
   - isolated build, headless QEMU assertion, and visible graphics commands.
@@ -470,8 +472,10 @@ Process-level E2E tests cover:
 - invalid syntax rejection.
 
 The QEMU process-level test checks accepted-point, primitive, touched-tile, and geometry-bound
-results. Bounds use a tolerance; the RGB565 checksum is logged but intentionally not asserted as a
-cross-architecture oracle. Host and Xtensa pixel identity is not required.
+results. Graphics mode additionally requires `TINYDRAW_UI_OK controls=6`, emitted only after the
+shared toolbar has drawn into the virtual framebuffer and the panel refresh succeeds. Bounds use a
+tolerance; the RGB565 checksum is logged but intentionally not asserted as a cross-architecture
+oracle. Host and Xtensa pixel identity is not required.
 
 ## Current performance and allocation limitations
 
@@ -612,6 +616,8 @@ e13f955 test: verify firmware replay under QEMU
 eb2801d feat: render firmware replay in QEMU display
 21ada89 docs: record ESP32-S3 QEMU milestone
 0c1bded fix: expose installed QEMU to graphics launcher
+8c0ffd6 docs: record QEMU launcher path fix
+95288bf feat: show shared toolbar in QEMU
 ```
 
 A high-effort Opus review verified the foundation and identified small correctness preconditions
