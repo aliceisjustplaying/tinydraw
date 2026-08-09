@@ -3,6 +3,7 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 build="$root/out/build/esp32"
+graphics_build="$root/out/build/esp32-graphics"
 action="${1:-build}"
 
 if ! command -v eim >/dev/null 2>&1; then
@@ -19,11 +20,21 @@ case "$action" in
     "$0" build
     python3 "$root/tools/qemu-replay.py"
     ;;
+  graphics|graphics-test)
+    cd "$root/esp32"
+    eim run "idf.py -B '$graphics_build' -DTINYDRAW_QEMU_GRAPHICS=ON build"
+    if [[ "$action" == graphics-test ]]; then
+      python3 "$root/tools/qemu-replay.py" --build "$graphics_build" --graphics
+    else
+      echo "Close QEMU with Ctrl-A, then X."
+      eim run "idf.py -B '$graphics_build' qemu --graphics"
+    fi
+    ;;
   clean)
-    rm -rf "$build" "$root/esp32/sdkconfig"
+    rm -rf "$build" "$graphics_build" "$root/esp32/sdkconfig"
     ;;
   *)
-    echo "usage: $0 {build|qemu|clean}" >&2
+    echo "usage: $0 {build|qemu|graphics|graphics-test|clean}" >&2
     exit 2
     ;;
 esac

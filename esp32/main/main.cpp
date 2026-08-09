@@ -9,7 +9,11 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#ifdef TINYDRAW_QEMU_GRAPHICS
+#include "qemu_display.h"
+#endif
 #include "tinydraw/geometry.h"
+#include "tinydraw/platform/display_backend.h"
 #include "tinydraw/graphics/coverage_tile.h"
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
@@ -68,7 +72,8 @@ struct RasterResult {
   std::uint32_t checksum = 2'166'136'261U;
 };
 
-RasterResult raster_checksum(std::span<const tinydraw::RibbonPrimitive> primitives) {
+RasterResult raster_checksum(std::span<const tinydraw::RibbonPrimitive> primitives,
+                             tinydraw::DisplayBackend* display) {
   static tinydraw::CoverageTile coverage(0, 0);
   static std::array<std::uint16_t, tinydraw::kTileSize * tinydraw::kTileSize> pixels{};
   RasterResult result;
@@ -90,6 +95,9 @@ RasterResult raster_checksum(std::span<const tinydraw::RibbonPrimitive> primitiv
       const std::size_t pixel_count = static_cast<std::size_t>(width * height);
       std::fill_n(pixels.begin(), pixel_count, kBackground);
       tinydraw::composite_rgb565(coverage, kInk, std::span(pixels.data(), pixel_count));
+      if (display != nullptr) {
+        display->push_rect(tile_x, tile_y, width, height, pixels.data());
+      }
 
       bool touched = false;
       for (int y = 0; y < height; ++y) {
@@ -136,9 +144,19 @@ extern "C" void app_main() {
     return;
   }
 
+  tinydraw::DisplayBackend* display = nullptr;
+#ifdef TINYDRAW_QEMU_GRAPHICS
+  tinydraw::esp32::QemuDisplayBackend qemu_display;
+  if (!qemu_display.ready()) {
+    std::printf("TINYDRAW_REPLAY_FAIL reason=qemu_display\n");
+    return;
+  }
+  display = &qemu_display;
+#endif
+
   const auto geometry = std::span(primitives.data(), primitive_count);
   const Bounds bounds = primitive_bounds(geometry);
-  const RasterResult raster = raster_checksum(geometry);
+  const RasterResult raster = raster_checksum(geometry, display);
   std::printf(
       "TINYDRAW_REPLAY_OK accepted=%u primitives=%u tiles=%u "
       "bounds=%.2f,%.2f,%.2f,%.2f checksum=%08lx\n",

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Boot the ESP32-S3 firmware and verify its deterministic replay marker."""
 
+import argparse
 import os
 import re
 import select
@@ -11,7 +12,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-BUILD = ROOT / "out/build/esp32"
+DEFAULT_BUILD = ROOT / "out/build/esp32"
 EXPECTED_COUNTS = (7, 13, 14)
 EXPECTED_BOUNDS = (27.83, 37.83, 341.44, 411.44)
 BOUNDS_TOLERANCE = 0.05
@@ -47,10 +48,17 @@ def stop(process: subprocess.Popen[bytes]) -> None:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--build", type=Path, default=DEFAULT_BUILD)
+    parser.add_argument("--graphics", action="store_true")
+    arguments = parser.parse_args()
+    build = arguments.build.resolve()
+
     qemu = find_qemu()
     environment = os.environ.copy()
     environment["PATH"] = f"{qemu.parent}:{environment['PATH']}"
-    command = f"idf.py -B '{BUILD}' qemu --qemu-extra-args '-nographic'"
+    qemu_options = "--graphics" if arguments.graphics else "--qemu-extra-args '-nographic'"
+    command = f"idf.py -B '{build}' qemu {qemu_options}"
     process = subprocess.Popen(
         ["eim", "run", command],
         cwd=ROOT / "esp32",

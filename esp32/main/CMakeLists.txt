@@ -3,6 +3,7 @@ set(TINYDRAW_CORE "${CMAKE_CURRENT_LIST_DIR}/../../core")
 idf_component_register(
   SRCS
     "main.cpp"
+    "qemu_display.cpp"
     "${TINYDRAW_CORE}/src/coordinate_transform.cpp"
     "${TINYDRAW_CORE}/src/coverage_tile.cpp"
     "${TINYDRAW_CORE}/src/ink_stream.cpp"
@@ -12,6 +13,10 @@ idf_component_register(
     "${TINYDRAW_CORE}/src/stroke_raster.cpp"
     "${TINYDRAW_CORE}/src/toolbar.cpp"
   INCLUDE_DIRS "${TINYDRAW_CORE}/include"
+  PRIV_REQUIRES esp_lcd_qemu_rgb
 )
 
 target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_20)
+if(TINYDRAW_QEMU_GRAPHICS)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_QEMU_GRAPHICS=1)
+endif()
