@@ -588,63 +588,13 @@ When the board arrives, validate what QEMU cannot:
 
 ## Commit milestone history
 
-Chronological commits through this handoff:
+The repository history was rewritten once to replace placeholder author and committer metadata with
+`alice <aliceisjustplaying@gmail.com>`, so older handoff documents and chat transcripts may contain
+obsolete commit IDs. The commit subjects and trees were preserved. Use Git as the source of truth:
 
-```text
-76a6177 chore: bootstrap native development loop
-13cc4d0 chore: pin perfect-freehand reference
-fd5c98e fix: keep sanitizer preset SDL-free
-41ce512 feat: add timestamp-aware ink stream
-f9ccded test: add end-to-end stroke replay golden
-b78315e fix: handle regressing touch timestamps
-de16b72 fix: enforce input lifecycle end to end
-99f9554 test: label replay image as characterization snapshot
-bfe726e test: add perfect-freehand reference oracle
-71b5789 feat: port perfect-freehand stroke points
-41f2bd7 feat: port perfect-freehand outline geometry
-05ba5a6 feat: render PF geometry end to end
-992af1d fix: preserve exact stroke endpoint on lift
-cfbd5e1 fix: map Retina mouse coordinates in window space
-376b922 fix: union overlapping stroke segments
-be48c6b fix: trust SDL logical mouse coordinates
-75f0e9b feat: add antialiased coverage tiles
-188fb77 feat: emit unionable PF ribbon primitives
-ad16176 fix: keep release coverage build warning-free
-a6325f1 feat: render PF ribbons through coverage tiles
-07ff533 fix: rasterize convex ribbon spans without seams
-17b5704 fix: move ribbon scratch buffers off task stack
-6c15de4 fix: close coverage gaps at ribbon joins
-6cd7bd9 docs: record complete engineering handoff
-1120a05 docs: preserve Opus whole-codebase review
-3fe4ad1 chore: mark PPM snapshots as binary
-d9a1960 fix: reject unsafe raster and input degenerates
-4d2d70d feat: stream append-stable ribbon geometry
-81fe7d7 test: prove ribbon stream finalization bounds
-dcebd49 feat: drive host geometry through ribbon stream
-94f0b73 docs: record streaming geometry milestone
-9ea62f5 feat: add tldraw-inspired drawing toolbar
-bbc6c54 feat: wire toolbar drawing controls
-831da0d chore: open host near hardware scale
-a7523da fix: match host window to physical display size
-61b5f41 test: snapshot toolbar end to end
-8024447 docs: record drawing toolbar and physical scale
-fe4f0b9 feat: enlarge toolbar with style popovers
-0544a6f docs: record enlarged toolbar layout
-7f8f292 feat: consolidate controls into one toolbar row
-e59a530 fix: match tldraw eraser silhouette
-f52f28b feat: add bounded dirty-tile stroke raster
-bc3fabb fix: rasterize active strokes incrementally
-65f38ef test: bound XL stroke tile work
-aa94e9c feat: add headless ESP32-S3 replay firmware
-e13f955 test: verify firmware replay under QEMU
-64f6934 chore: ignore Python bytecode
-eb2801d feat: render firmware replay in QEMU display
-21ada89 docs: record ESP32-S3 QEMU milestone
-0c1bded fix: expose installed QEMU to graphics launcher
-8c0ffd6 docs: record QEMU launcher path fix
-95288bf feat: show shared toolbar in QEMU
-d8cc89c docs: record visible QEMU toolbar
-b167261 fix: compose QEMU frame before one refresh
+```sh
+git log --reverse --oneline
+git log --format='%an <%ae> | %cn <%ce>' | sort -u
 ```
 
 A high-effort Opus review verified the foundation and identified small correctness preconditions
