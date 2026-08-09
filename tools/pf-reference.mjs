@@ -98,7 +98,13 @@ async function generateFixture(pf, name) {
   const output = path.join(root, 'testdata/reference', `pf-${name}.json`)
   await mkdir(path.dirname(output), { recursive: true })
   await writeFile(output, `${JSON.stringify(fixture, null, 2)}\n`)
+  const outlineOutput = path.join(root, 'testdata/reference', `pf-${name}.outline`)
+  await writeFile(
+    outlineOutput,
+    `${outline.map(([x, y]) => `${x} ${y}`).join('\n')}\n`,
+  )
   console.log(`wrote ${path.relative(root, output)}`)
+  console.log(`wrote ${path.relative(root, outlineOutput)}`)
 }
 
 async function analyzeDependencies(pf, name) {

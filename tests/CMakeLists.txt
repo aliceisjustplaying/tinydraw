@@ -4,6 +4,9 @@ add_executable(tinydraw_tests
   perfect_freehand_test.cpp
 )
 target_link_libraries(tinydraw_tests PRIVATE tinydraw::core tinydraw_project_options)
+target_compile_definitions(tinydraw_tests PRIVATE
+  TINYDRAW_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+)
 target_include_directories(tinydraw_tests SYSTEM PRIVATE
   ${PROJECT_SOURCE_DIR}/third_party/doctest
 )
