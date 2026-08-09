@@ -429,6 +429,13 @@ virtual framebuffer blocked before replay. The headless build now leaves the dis
 a separate graphics build enables `TINYDRAW_QEMU_GRAPHICS`, instantiates `QemuDisplayBackend`, and
 runs QEMU with `--graphics`. Keep headless integration and visible display checks separate.
 
+The isolated `eim` installation places on-request QEMU below a nested tools directory that its
+activation PATH does not include automatically. The Python test harness already located that binary,
+but the first interactive `graphics` command bypassed the harness and failed with
+`qemu-system-xtensa is not installed`. `scripts/esp32` now locates the executable and prepends its
+parent directory for every QEMU action. The exact visible command was verified through replay
+completion under a timeout.
+
 ## Test policy and current coverage
 
 Host-only snapshots may be byte-exact under the controlled host toolchain. They currently cover:
@@ -603,6 +610,8 @@ aa94e9c feat: add headless ESP32-S3 replay firmware
 e13f955 test: verify firmware replay under QEMU
 64f6934 chore: ignore Python bytecode
 eb2801d feat: render firmware replay in QEMU display
+21ada89 docs: record ESP32-S3 QEMU milestone
+0c1bded fix: expose installed QEMU to graphics launcher
 ```
 
 A high-effort Opus review verified the foundation and identified small correctness preconditions
