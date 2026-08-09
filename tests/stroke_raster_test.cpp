@@ -36,8 +36,6 @@ struct RecordingDisplay final : tinydraw::DisplayBackend {
                   pixels.begin() + (y + row) * tinydraw::kCanvasWidth + x);
     }
   }
-
-  [[nodiscard]] bool busy() const override { return false; }
 };
 
 std::size_t changed_pixels(const std::vector<std::uint16_t>& pixels) {

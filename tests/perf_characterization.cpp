@@ -22,7 +22,6 @@ constexpr std::uint16_t kInk = 0x001FU;
 class NullDisplay final : public tinydraw::DisplayBackend {
  public:
   void push_rect(int, int, int, int, const std::uint16_t*) override { ++pushes; }
-  [[nodiscard]] bool busy() const override { return false; }
 
   std::uint32_t pushes = 0U;
 };

@@ -109,16 +109,18 @@ TileUndoStats TileUndoHistory::undo(std::span<std::uint16_t> committed,
     const int width = std::min(kTileSize, kCanvasWidth - x);
     const int height = std::min(kTileSize, kCanvasHeight - y);
     const auto source = tile_storage(next_, tile_index);
+    const auto pixel_count = static_cast<std::size_t>(width * height);
+    std::copy_n(source.begin(), pixel_count, working_.begin());
     for (int row = 0; row < height; ++row) {
-      const auto source_row = source.begin() + row * width;
+      const auto working_row = working_.begin() + row * width;
       const auto canvas_row = committed.begin() + (y + row) * kCanvasWidth + x;
-      std::copy_n(source_row, width, canvas_row);
+      std::copy_n(working_row, width, canvas_row);
       if (!visible.empty()) {
-        std::copy_n(source_row, width, visible.begin() + (y + row) * kCanvasWidth + x);
+        std::copy_n(working_row, width, visible.begin() + (y + row) * kCanvasWidth + x);
       }
     }
     if (display != nullptr) {
-      display->push_rect(x, y, width, height, source.data());
+      display->push_rect(x, y, width, height, working_.data());
     }
     const auto bytes = static_cast<std::uint32_t>(width * height) * sizeof(std::uint16_t);
     ++stats.tiles_restored;

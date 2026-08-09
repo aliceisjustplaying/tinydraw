@@ -25,7 +25,7 @@ MARKER = re.compile(
 )
 MEMORY_MARKER = (
     b"TINYDRAW_MEMORY_OK committed=329728 coverage=164864 "
-    b"history=3440640 scratch=internal"
+    b"history=3440640 scratch=dma_internal"
 )
 PSRAM_MARKER = b"esp_psram: Found 8MB PSRAM device"
 

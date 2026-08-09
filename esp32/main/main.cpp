@@ -96,7 +96,6 @@ std::uint32_t touched_tiles(std::span<const std::uint16_t> pixels) {
 class NullDisplay final : public tinydraw::DisplayBackend {
  public:
   void push_rect(int, int, int, int, const std::uint16_t*) override { ++pushes; }
-  [[nodiscard]] bool busy() const override { return false; }
 
   std::uint32_t pushes = 0U;
 };
@@ -161,7 +160,7 @@ extern "C" void app_main() {
     std::printf("TINYDRAW_REPLAY_FAIL reason=canvas_memory\n");
     return;
   }
-  std::printf("TINYDRAW_MEMORY_OK committed=%u coverage=%u history=%u scratch=internal\n",
+  std::printf("TINYDRAW_MEMORY_OK committed=%u coverage=%u history=%u scratch=dma_internal\n",
               static_cast<unsigned>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight * 2),
               static_cast<unsigned>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight),
               static_cast<unsigned>(tinydraw::TileUndoHistory::kRequiredPixels * 2U));

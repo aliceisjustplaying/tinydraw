@@ -56,6 +56,7 @@ class TileUndoHistory {
                                                             int tile_index) const;
 
   std::span<std::uint16_t> storage_;
+  std::array<std::uint16_t, kTilePixels> working_{};
   std::array<TileFlags, kMaxEntries> tiles_{};
   std::size_t next_ = 0U;
   std::size_t count_ = 0U;
