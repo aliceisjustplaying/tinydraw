@@ -118,7 +118,7 @@ TEST_CASE("timestamp-aware stream points finalize into PF geometry") {
   points.push_back(stream.begin({.x = 30.0F, .y = 40.0F, .timestamp_us = 1'000U}));
   points.push_back(stream.update({.x = 80.0F, .y = 90.0F, .timestamp_us = 9'000U}));
   points.push_back(stream.update({.x = 150.0F, .y = 50.0F, .timestamp_us = 17'000U}));
-  points.push_back(stream.update({.x = 220.0F, .y = 180.0F, .timestamp_us = 25'000U}));
+  points.push_back(stream.finish({.x = 220.0F, .y = 180.0F, .timestamp_us = 25'000U}));
 
   const auto outline =
       tinydraw::perfect_freehand::get_stroke_from_stream(points, stream.config(), true);
@@ -134,7 +134,7 @@ TEST_CASE("an immediate lift finalizes as a visible PF dot") {
   tinydraw::InkStream stream;
   std::vector<tinydraw::InkPoint> points;
   points.push_back(stream.begin({.x = 20.0F, .y = 30.0F, .timestamp_us = 1'000U}));
-  points.push_back(stream.update({.x = 20.0F, .y = 30.0F, .timestamp_us = 1'000U}));
+  points.push_back(stream.finish({.x = 20.0F, .y = 30.0F, .timestamp_us = 1'000U}));
 
   const auto outline =
       tinydraw::perfect_freehand::get_stroke_from_stream(points, stream.config(), true);

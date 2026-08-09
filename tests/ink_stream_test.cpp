@@ -99,6 +99,17 @@ TEST_CASE("timestamp wrap-around preserves the short elapsed interval") {
   CHECK(point.position.x == doctest::Approx(7.025F));
 }
 
+TEST_CASE("finishing a stroke preserves the exact lift coordinate") {
+  tinydraw::InkStream stream;
+  static_cast<void>(stream.begin({.x = 0.0F, .y = 0.0F, .timestamp_us = 1'000U}));
+
+  const auto point = stream.finish({.x = 100.0F, .y = 50.0F, .timestamp_us = 9'000U});
+
+  CHECK(point.position.x == doctest::Approx(100.0F));
+  CHECK(point.position.y == doctest::Approx(50.0F));
+  CHECK_FALSE(stream.active());
+}
+
 TEST_CASE("ending a stroke permits a new independent stroke") {
   tinydraw::InkStream stream;
   static_cast<void>(stream.begin({.x = 1.0F, .y = 2.0F, .timestamp_us = 0U}));

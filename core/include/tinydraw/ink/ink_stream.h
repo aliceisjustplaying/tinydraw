@@ -21,6 +21,7 @@ class InkStream {
 
   [[nodiscard]] InkPoint begin(TouchPoint point);
   [[nodiscard]] InkPoint update(TouchPoint point);
+  [[nodiscard]] InkPoint finish(TouchPoint point);
   void end();
 
   [[nodiscard]] bool active() const { return active_; }
@@ -28,6 +29,7 @@ class InkStream {
   void set_config(InkConfig config) { config_ = config; }
 
  private:
+  [[nodiscard]] InkPoint ingest(TouchPoint point, bool complete);
   [[nodiscard]] float radius_for(float pressure) const;
 
   InkConfig config_;

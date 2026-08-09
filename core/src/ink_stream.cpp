@@ -27,8 +27,16 @@ InkPoint InkStream::begin(TouchPoint point) {
   return previous_;
 }
 
-InkPoint InkStream::update(TouchPoint point) {
-  assert(active_ && "InkStream::update requires an active stroke");
+InkPoint InkStream::update(TouchPoint point) { return ingest(point, false); }
+
+InkPoint InkStream::finish(TouchPoint point) {
+  const InkPoint result = ingest(point, true);
+  active_ = false;
+  return result;
+}
+
+InkPoint InkStream::ingest(TouchPoint point, bool complete) {
+  assert(active_ && "InkStream input requires an active stroke");
 
   const std::uint32_t elapsed_us = point.timestamp_us - previous_.timestamp_us;
   const bool timestamp_moved_backward = elapsed_us > 0x7FFF'FFFFU;
@@ -43,7 +51,7 @@ InkPoint InkStream::update(TouchPoint point) {
 
   const float streamline = std::clamp(config_.streamline, 0.0F, 1.0F);
   const float nominal_alpha = 0.15F + (1.0F - streamline) * 0.85F;
-  const float alpha = 1.0F - std::pow(1.0F - nominal_alpha, interval_ratio);
+  const float alpha = complete ? 1.0F : 1.0F - std::pow(1.0F - nominal_alpha, interval_ratio);
 
   const Point adjusted{
       .x = previous_.position.x + (point.x - previous_.position.x) * alpha,

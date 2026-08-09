@@ -177,12 +177,11 @@ int replay(const std::string& input_path, const std::string& output_path) {
       stroke_points.clear();
       stroke_points.push_back(stream.begin(touch));
     } else if ((action == "move" || action == "up") && stream.active()) {
-      stroke_points.push_back(stream.update(touch));
+      stroke_points.push_back(action == "up" ? stream.finish(touch) : stream.update(touch));
       if (action == "up") {
         const auto outline = tinydraw::perfect_freehand::get_stroke_from_stream(
             stroke_points, stream.config(), true);
         fill_polygon(pixels, outline);
-        stream.end();
       }
     } else {
       std::fprintf(stderr, "invalid replay lifecycle on line %zu\n", line_number);
@@ -268,11 +267,10 @@ int interactive() {
         float y = 0.0F;
         SDL_RenderWindowToLogical(renderer, event.button.x, event.button.y, &x, &y);
         stroke_points.push_back(
-            stream.update({.x = x, .y = y, .timestamp_us = event.button.timestamp * 1'000U}));
+            stream.finish({.x = x, .y = y, .timestamp_us = event.button.timestamp * 1'000U}));
         const auto outline = tinydraw::perfect_freehand::get_stroke_from_stream(
             stroke_points, stream.config(), true);
         fill_polygon(committed_pixels, outline);
-        stream.end();
         stroke_points.clear();
       }
     }
