@@ -117,8 +117,9 @@ refreshes exactly once. The shared toolbar renderer uses that same memory. This 
 visual integration check; QEMU does not yet provide interactive pointer/touch input to TinyDraw.
 
 PlatformIO is not used. Espressif's installation manager owns IDF's Python and toolchain, keeping
-the host loop independent from the system Python. Espressif QEMU models a 32 MB quad-PSRAM device,
-which proves our explicit capability-allocation path against the emulator. It does not prove the
+the host loop independent from the system Python. Our QEMU commands override Espressif's 32 MB
+default with an 8 MB quad-PSRAM model and assert the reported size at boot. This proves our explicit
+capability-allocation path against the emulator. It does not prove the
 physical board's PSRAM mode, capacity, bandwidth, DMA behavior, or timing; those remain hardware
 checks.
 

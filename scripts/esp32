@@ -39,7 +39,7 @@ case "$action" in
       python3 "$root/tools/qemu-replay.py" --build "$graphics_build" --graphics
     else
       echo "Close QEMU with Ctrl-A, then X."
-      eim run "idf.py -B '$graphics_build' qemu --graphics"
+      eim run "idf.py -B '$graphics_build' qemu --graphics --qemu-extra-args '-m 8M'"
     fi
     ;;
   clean)

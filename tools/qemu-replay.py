@@ -22,6 +22,7 @@ MARKER = re.compile(
     rb"frames=(\d+) dirty=(\d+) max_tiles=(\d+) visits=(\d+)"
 )
 MEMORY_MARKER = b"TINYDRAW_MEMORY_OK committed=329728 coverage=164864 scratch=internal"
+PSRAM_MARKER = b"esp_psram: Found 8MB PSRAM device"
 
 
 def find_qemu() -> Path:
@@ -59,8 +60,13 @@ def main() -> int:
     qemu = find_qemu()
     environment = os.environ.copy()
     environment["PATH"] = f"{qemu.parent}:{environment['PATH']}"
-    qemu_options = "--graphics" if arguments.graphics else "--qemu-extra-args '-nographic'"
-    command = f"idf.py -B '{build}' qemu {qemu_options}"
+    graphics_option = "--graphics" if arguments.graphics else ""
+    qemu_options = (
+        "--qemu-extra-args '-m 8M'"
+        if arguments.graphics
+        else "--qemu-extra-args '-nographic -m 8M'"
+    )
+    command = f"idf.py -B '{build}' qemu {graphics_option} {qemu_options}"
     process = subprocess.Popen(
         ["eim", "run", command],
         cwd=ROOT / "esp32",
@@ -101,9 +107,9 @@ def main() -> int:
         print("\nQEMU graphics run lacked toolbar marker", file=sys.stderr)
         return 1
 
-    if MEMORY_MARKER not in output:
+    if PSRAM_MARKER not in output or MEMORY_MARKER not in output:
         sys.stderr.buffer.write(output)
-        print("\nQEMU completion lacked PSRAM/internal-memory capability marker", file=sys.stderr)
+        print("\nQEMU completion lacked 8 MB PSRAM/capability marker", file=sys.stderr)
         return 1
 
     match = MARKER.search(output)

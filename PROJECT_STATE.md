@@ -33,8 +33,9 @@ state, and only then decide whether more undo depth is worth PSRAM. Do not add a
 framework or point arena. If hardware arrives first, defer this slice and begin the physical-board
 checklist instead.
 
-Espressif QEMU models a 32 MB quad-PSRAM device. That is valid integration evidence for IDF's
-capability allocator, but not evidence for the Waveshare board's physical PSRAM mode, capacity,
+Our QEMU commands override Espressif's 32 MB default with an 8 MB quad-PSRAM model and assert that
+size at boot. That is valid integration evidence for IDF's capability allocator, but not evidence
+for the Waveshare board's physical PSRAM mode, capacity,
 bandwidth, DMA behavior, or timing. Verify those on the exact board revision. Do not use QEMU
 wall-clock speed as performance evidence. Keep native debug/release/ASan, headless QEMU, and
 graphics QEMU green. Do not introduce PlatformIO or globally source ESP-IDF.
@@ -555,8 +556,8 @@ The framebuffer adapter remains behind `TINYDRAW_QEMU_GRAPHICS`: initializing
 second firmware-visible framebuffer. Host debug/release/ASan, headless QEMU, and graphics QEMU were
 green at this milestone.
 
-QEMU proves the application uses IDF's capability allocator correctly against its modeled 32 MB
-quad-PSRAM device. It does not prove the physical board's likely different memory wiring, capacity,
+QEMU proves the application uses IDF's capability allocator correctly against our configured 8 MB
+quad-PSRAM model. It does not prove the physical board's memory wiring, usable capacity,
 DMA behavior, timing, or panel correctness.
 
 ### 2. Next: shared one-step canvas history and full-flow E2E
