@@ -13,7 +13,6 @@
 #include "input_coordinates.h"
 #include "tinydraw/geometry.h"
 #include "tinydraw/ink/ink_stream.h"
-#include "tinydraw/ink/perfect_freehand.h"
 
 namespace {
 
@@ -62,44 +61,6 @@ void draw_segment(std::vector<std::uint16_t>& pixels, const tinydraw::InkPoint& 
     const float t = static_cast<float>(step) / static_cast<float>(steps);
     draw_disc(pixels, {.x = from.position.x + delta_x * t, .y = from.position.y + delta_y * t},
               from.radius + (to.radius - from.radius) * t);
-  }
-}
-
-void fill_polygon(std::vector<std::uint16_t>& pixels, const std::vector<tinydraw::Point>& polygon) {
-  if (polygon.size() < 3U) {
-    return;
-  }
-
-  float minimum_y = polygon.front().y;
-  float maximum_y = minimum_y;
-  for (const auto point : polygon) {
-    minimum_y = std::min(minimum_y, point.y);
-    maximum_y = std::max(maximum_y, point.y);
-  }
-  const int first_y = std::max(0, static_cast<int>(std::floor(minimum_y)));
-  const int last_y = std::min(tinydraw::kCanvasHeight - 1, static_cast<int>(std::ceil(maximum_y)));
-  std::vector<float> intersections;
-  intersections.reserve(polygon.size());
-  for (int y = first_y; y <= last_y; ++y) {
-    intersections.clear();
-    const float scan_y = static_cast<float>(y) + 0.5F;
-    for (std::size_t index = 0; index < polygon.size(); ++index) {
-      const auto start = polygon[index];
-      const auto end = polygon[(index + 1U) % polygon.size()];
-      if ((start.y <= scan_y && end.y > scan_y) || (end.y <= scan_y && start.y > scan_y)) {
-        const float amount = (scan_y - start.y) / (end.y - start.y);
-        intersections.push_back(start.x + (end.x - start.x) * amount);
-      }
-    }
-    std::sort(intersections.begin(), intersections.end());
-    for (std::size_t index = 0; index + 1U < intersections.size(); index += 2U) {
-      const int first_x = std::max(0, static_cast<int>(std::ceil(intersections[index])));
-      const int last_x = std::min(tinydraw::kCanvasWidth - 1,
-                                  static_cast<int>(std::floor(intersections[index + 1U])));
-      for (int x = first_x; x <= last_x; ++x) {
-        set_pixel(pixels, x, y, kInk);
-      }
-    }
   }
 }
 
@@ -188,9 +149,7 @@ int replay(const std::string& input_path, const std::string& output_path) {
     } else if ((action == "move" || action == "up") && stream.active()) {
       stroke_points.push_back(action == "up" ? stream.finish(touch) : stream.update(touch));
       if (action == "up") {
-        const auto outline = tinydraw::perfect_freehand::get_stroke_from_stream(
-            stroke_points, stream.config(), true);
-        fill_polygon(pixels, outline);
+        draw_preview(pixels, stroke_points);
       }
     } else {
       std::fprintf(stderr, "invalid replay lifecycle on line %zu\n", line_number);
@@ -278,9 +237,7 @@ int interactive() {
             stroke_points.empty() ? tinydraw::Point{} : stroke_points.back().position);
         stroke_points.push_back(stream.finish(
             {.x = point.x, .y = point.y, .timestamp_us = event.button.timestamp * 1'000U}));
-        const auto outline = tinydraw::perfect_freehand::get_stroke_from_stream(
-            stroke_points, stream.config(), true);
-        fill_polygon(committed_pixels, outline);
+        draw_preview(committed_pixels, stroke_points);
         stroke_points.clear();
       }
     }

@@ -41,6 +41,27 @@ if(TARGET tinydraw_host)
   )
 
   add_test(
+    NAME tinydraw_overlap_e2e
+    COMMAND tinydraw_host
+      --replay "${PROJECT_SOURCE_DIR}/testdata/strokes/dependency-probe.stroke"
+      --output "${REPLAY_OUTPUT_DIR}/dependency-probe.ppm"
+  )
+  set_tests_properties(tinydraw_overlap_e2e PROPERTIES
+    FIXTURES_SETUP replay_overlap
+    TIMEOUT 5
+  )
+
+  add_test(
+    NAME tinydraw_overlap_snapshot
+    COMMAND ${CMAKE_COMMAND} -E compare_files
+      "${REPLAY_OUTPUT_DIR}/dependency-probe.ppm"
+      "${PROJECT_SOURCE_DIR}/testdata/snapshots/dependency-probe.ppm"
+  )
+  set_tests_properties(tinydraw_overlap_snapshot PROPERTIES
+    FIXTURES_REQUIRED replay_overlap
+  )
+
+  add_test(
     NAME tinydraw_replay_rejects_invalid_lifecycle
     COMMAND tinydraw_host
       --replay "${PROJECT_SOURCE_DIR}/testdata/strokes/invalid-lifecycle.stroke"
