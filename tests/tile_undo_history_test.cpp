@@ -64,7 +64,7 @@ TEST_CASE("tile undo keeps ten entries and evicts the oldest") {
   CHECK_FALSE(history.can_undo());
 }
 
-TEST_CASE("discarding an entry at capacity honestly evicts the oldest") {
+TEST_CASE("empty operation preserves a full undo history") {
   std::vector<std::uint16_t> storage(tinydraw::TileUndoHistory::kRequiredPixels);
   tinydraw::TileUndoHistory history(storage);
   std::vector<std::uint16_t> tile(64U * 64U, kWhite);
@@ -75,9 +75,21 @@ TEST_CASE("discarding an entry at capacity honestly evicts the oldest") {
     static_cast<void>(history.commit_entry());
   }
   history.begin_entry();
-  history.discard_entry();
 
-  CHECK(history.entry_count() == tinydraw::TileUndoHistory::kMaxEntries - 1U);
+  CHECK(history.commit_entry() == 0U);
+  CHECK(history.entry_count() == tinydraw::TileUndoHistory::kMaxEntries);
+}
+
+TEST_CASE("noncanonical tile dimensions are rejected") {
+  std::vector<std::uint16_t> storage(tinydraw::TileUndoHistory::kRequiredPixels);
+  tinydraw::TileUndoHistory history(storage);
+  std::vector<std::uint16_t> partial_tile(32U * 32U, kWhite);
+
+  history.begin_entry();
+  history.capture_tile(0, 0, 32, 32, partial_tile);
+
+  CHECK(history.commit_entry() == 0U);
+  CHECK_FALSE(history.can_undo());
 }
 
 TEST_CASE("clear can be saved as one all-tile undo entry") {

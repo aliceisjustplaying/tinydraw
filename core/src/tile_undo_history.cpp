@@ -19,22 +19,26 @@ void TileUndoHistory::begin_entry() {
   if (!valid_ || entry_open_) {
     return;
   }
-  if (count_ == kMaxEntries) {
-    --count_;
-  }
-  tiles_[next_].fill(false);
   entry_open_ = true;
+  entry_has_tiles_ = false;
 }
 
 void TileUndoHistory::capture_tile(int x, int y, int width, int height,
                                    std::span<const std::uint16_t> packed_pixels) {
-  if (!valid_ || !entry_open_ || x < 0 || y < 0 || x % kTileSize != 0 || y % kTileSize != 0 ||
-      width <= 0 || height <= 0 || width > kTileSize || height > kTileSize ||
-      x + width > kCanvasWidth || y + height > kCanvasHeight ||
+  if (!valid_ || !entry_open_ || x < 0 || y < 0 || x >= kCanvasWidth || y >= kCanvasHeight ||
+      x % kTileSize != 0 || y % kTileSize != 0 || width != std::min(kTileSize, kCanvasWidth - x) ||
+      height != std::min(kTileSize, kCanvasHeight - y) ||
       packed_pixels.size() < static_cast<std::size_t>(width * height)) {
     return;
   }
 
+  if (!entry_has_tiles_) {
+    if (count_ == kMaxEntries) {
+      --count_;
+    }
+    tiles_[next_].fill(false);
+    entry_has_tiles_ = true;
+  }
   const int tile_index = y / kTileSize * kTilesAcross + x / kTileSize;
   if (tiles_[next_][static_cast<std::size_t>(tile_index)]) {
     return;
@@ -48,6 +52,13 @@ void TileUndoHistory::capture_tile(int x, int y, int width, int height,
 void TileUndoHistory::capture_canvas(std::span<const std::uint16_t> canvas) {
   if (!valid_ || !entry_open_ || canvas.size() < kCanvasPixels) {
     return;
+  }
+  if (!entry_has_tiles_) {
+    if (count_ == kMaxEntries) {
+      --count_;
+    }
+    tiles_[next_].fill(false);
+    entry_has_tiles_ = true;
   }
   for (int tile_index = 0; tile_index < kTileCount; ++tile_index) {
     const int x = tile_index % kTilesAcross * kTileSize;
@@ -68,24 +79,23 @@ std::uint32_t TileUndoHistory::commit_entry() {
     return 0U;
   }
   entry_open_ = false;
+  if (!entry_has_tiles_) {
+    return 0U;
+  }
+  entry_has_tiles_ = false;
 
   const auto tile_count =
       static_cast<std::uint32_t>(std::count(tiles_[next_].begin(), tiles_[next_].end(), true));
-  if (tile_count == 0U) {
-    return 0U;
-  }
-
   next_ = (next_ + 1U) % kMaxEntries;
   count_ = std::min(count_ + 1U, kMaxEntries);
   return tile_count;
 }
 
-void TileUndoHistory::discard_entry() { entry_open_ = false; }
-
 void TileUndoHistory::clear() {
   count_ = 0U;
   next_ = 0U;
   entry_open_ = false;
+  entry_has_tiles_ = false;
   for (auto& flags : tiles_) {
     flags.fill(false);
   }

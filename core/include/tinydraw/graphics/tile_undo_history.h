@@ -41,7 +41,6 @@ class TileUndoHistory {
                     std::span<const std::uint16_t> packed_pixels);
   void capture_canvas(std::span<const std::uint16_t> canvas);
   [[nodiscard]] std::uint32_t commit_entry();
-  void discard_entry();
   void clear();
 
   [[nodiscard]] TileUndoStats undo(std::span<std::uint16_t> committed,
@@ -61,6 +60,7 @@ class TileUndoHistory {
   std::size_t next_ = 0U;
   std::size_t count_ = 0U;
   bool entry_open_ = false;
+  bool entry_has_tiles_ = false;
   bool valid_ = false;
 };
 
