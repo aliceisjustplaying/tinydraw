@@ -13,10 +13,12 @@ constexpr std::uint16_t kMuted = 0x8410U;
 constexpr std::uint16_t kBorder = 0xDEDBU;
 constexpr std::uint16_t kShadow = 0xBDF7U;
 constexpr std::uint16_t kSelected = 0x349FU;
-constexpr int kMainTop = 386;
-constexpr int kMainBottom = 442;
-constexpr int kAuxTop = 326;
-constexpr int kAuxBottom = 378;
+constexpr int kMainTop = 374;
+constexpr int kMainBottom = 444;
+constexpr int kAuxTop = 296;
+constexpr int kAuxBottom = 366;
+constexpr int kPaletteTop = 218;
+constexpr int kPaletteBottom = 288;
 
 void set_pixel(std::span<std::uint16_t> canvas, int width, int height, int x, int y,
                std::uint16_t color) {
@@ -89,55 +91,65 @@ bool inside(Point point, float x0, float y0, float x1, float y1) {
 
 void draw_dock(std::span<std::uint16_t> canvas, int width, int height, int x0, int y0, int x1,
                int y1) {
-  rounded_rect(canvas, width, height, x0 + 2, y0 + 3, x1 + 2, y1 + 3, 10, kShadow);
-  rounded_rect(canvas, width, height, x0 - 1, y0 - 1, x1 + 1, y1 + 1, 10, kBorder);
-  rounded_rect(canvas, width, height, x0, y0, x1, y1, 9, kWhite);
+  rounded_rect(canvas, width, height, x0 + 2, y0 + 3, x1 + 2, y1 + 3, 11, kShadow);
+  rounded_rect(canvas, width, height, x0 - 1, y0 - 1, x1 + 1, y1 + 1, 11, kBorder);
+  rounded_rect(canvas, width, height, x0, y0, x1, y1, 10, kWhite);
 }
 
 void draw_pen(std::span<std::uint16_t> canvas, int width, int height, std::uint16_t color) {
-  line(canvas, width, height, 27, 424, 43, 403, color, 2);
-  line(canvas, width, height, 27, 424, 31, 412, color, 2);
-  line(canvas, width, height, 31, 412, 43, 403, color, 2);
+  line(canvas, width, height, 40, 423, 64, 394, color, 3);
+  line(canvas, width, height, 40, 423, 45, 407, color, 3);
+  line(canvas, width, height, 45, 407, 64, 394, color, 3);
 }
 
 void draw_eraser(std::span<std::uint16_t> canvas, int width, int height, std::uint16_t color) {
-  line(canvas, width, height, 73, 421, 89, 403, color, 2);
-  line(canvas, width, height, 89, 403, 97, 411, color, 2);
-  line(canvas, width, height, 97, 411, 81, 429, color, 2);
-  line(canvas, width, height, 81, 429, 73, 421, color, 2);
-  line(canvas, width, height, 77, 425, 85, 429, color, 2);
+  line(canvas, width, height, 124, 418, 146, 394, color, 3);
+  line(canvas, width, height, 146, 394, 158, 406, color, 3);
+  line(canvas, width, height, 158, 406, 136, 430, color, 3);
+  line(canvas, width, height, 136, 430, 124, 418, color, 3);
+  line(canvas, width, height, 130, 424, 142, 430, color, 3);
 }
 
 }  // namespace
 
-bool toolbar_contains(Point point) {
-  return inside(point, 8.0F, static_cast<float>(kMainTop), 318.0F,
-                static_cast<float>(kMainBottom)) ||
-         inside(point, 8.0F, static_cast<float>(kAuxTop), 112.0F, static_cast<float>(kAuxBottom));
+bool toolbar_contains(Point point, const ToolbarState& state) {
+  const bool fixed_dock =
+      inside(point, 4.0F, static_cast<float>(kMainTop), 364.0F, static_cast<float>(kMainBottom)) ||
+      inside(point, 4.0F, static_cast<float>(kAuxTop), 184.0F, static_cast<float>(kAuxBottom));
+  return fixed_dock || ((state.colors_open || state.sizes_open) &&
+                        inside(point, 4.0F, static_cast<float>(kPaletteTop), 364.0F,
+                               static_cast<float>(kPaletteBottom)));
 }
 
-ToolbarAction toolbar_action_at(Point point) {
-  if (inside(point, 14.0F, 392.0F, 60.0F, 436.0F)) {
+ToolbarAction toolbar_action_at(Point point, const ToolbarState& state) {
+  if (state.sizes_open && inside(point, 8.0F, 224.0F, 360.0F, 282.0F)) {
+    constexpr std::array actions{ToolbarAction::kSelectSmall, ToolbarAction::kSelectMedium,
+                                 ToolbarAction::kSelectLarge};
+    const auto index = static_cast<std::size_t>((point.x - 8.0F) / (352.0F / 3.0F));
+    return actions[std::min(index, actions.size() - 1U)];
+  }
+  if (state.colors_open && inside(point, 8.0F, 224.0F, 360.0F, 282.0F)) {
+    constexpr std::array actions{ToolbarAction::kSelectBlack, ToolbarAction::kSelectBlue,
+                                 ToolbarAction::kSelectRed, ToolbarAction::kSelectGreen};
+    const auto index = static_cast<std::size_t>((point.x - 8.0F) / 88.0F);
+    return actions[std::min(index, actions.size() - 1U)];
+  }
+  if (inside(point, 8.0F, 380.0F, 96.0F, 440.0F)) {
     return ToolbarAction::kSelectPen;
   }
-  if (inside(point, 62.0F, 392.0F, 108.0F, 436.0F)) {
+  if (inside(point, 96.0F, 380.0F, 184.0F, 440.0F)) {
     return ToolbarAction::kSelectEraser;
   }
-  constexpr std::array actions{ToolbarAction::kSelectBlack, ToolbarAction::kSelectBlue,
-                               ToolbarAction::kSelectRed, ToolbarAction::kSelectGreen};
-  for (std::size_t index = 0; index < actions.size(); ++index) {
-    const float x0 = 112.0F + static_cast<float>(index) * 36.0F;
-    if (inside(point, x0, 392.0F, x0 + 36.0F, 436.0F)) {
-      return actions[index];
-    }
+  if (inside(point, 184.0F, 380.0F, 272.0F, 440.0F)) {
+    return ToolbarAction::kToggleColors;
   }
-  if (inside(point, 262.0F, 392.0F, 310.0F, 436.0F)) {
-    return ToolbarAction::kCycleSize;
+  if (inside(point, 272.0F, 380.0F, 360.0F, 440.0F)) {
+    return ToolbarAction::kToggleSizes;
   }
-  if (inside(point, 14.0F, 330.0F, 60.0F, 374.0F)) {
+  if (inside(point, 8.0F, 302.0F, 96.0F, 360.0F)) {
     return ToolbarAction::kUndo;
   }
-  if (inside(point, 62.0F, 330.0F, 108.0F, 374.0F)) {
+  if (inside(point, 96.0F, 302.0F, 180.0F, 360.0F)) {
     return ToolbarAction::kNewDrawing;
   }
   return ToolbarAction::kNone;
@@ -169,64 +181,75 @@ float brush_size(PenSize size) {
   return 6.0F;
 }
 
-PenSize next_pen_size(PenSize size) {
-  switch (size) {
-    case PenSize::kSmall:
-      return PenSize::kMedium;
-    case PenSize::kMedium:
-      return PenSize::kLarge;
-    case PenSize::kLarge:
-      return PenSize::kSmall;
-  }
-  return PenSize::kMedium;
-}
-
 void draw_toolbar(std::span<std::uint16_t> canvas, int width, int height,
                   const ToolbarState& state) {
   if (width <= 0 || height <= 0 || canvas.size() < static_cast<std::size_t>(width * height)) {
     return;
   }
-  draw_dock(canvas, width, height, 8, kMainTop, 318, kMainBottom);
-  draw_dock(canvas, width, height, 8, kAuxTop, 112, kAuxBottom);
+  draw_dock(canvas, width, height, 4, kMainTop, 364, kMainBottom);
+  draw_dock(canvas, width, height, 4, kAuxTop, 184, kAuxBottom);
 
   if (state.tool == DrawingTool::kPen) {
-    rounded_rect(canvas, width, height, 14, 392, 60, 436, 8, kSelected);
+    rounded_rect(canvas, width, height, 8, 380, 96, 440, 9, kSelected);
   } else {
-    rounded_rect(canvas, width, height, 62, 392, 108, 436, 8, kSelected);
+    rounded_rect(canvas, width, height, 96, 380, 184, 440, 9, kSelected);
   }
   draw_pen(canvas, width, height, state.tool == DrawingTool::kPen ? kWhite : kInk);
   draw_eraser(canvas, width, height, state.tool == DrawingTool::kEraser ? kWhite : kInk);
 
-  constexpr std::array colors{InkColor::kBlack, InkColor::kBlue, InkColor::kRed, InkColor::kGreen};
-  constexpr std::array centers{130, 166, 202, 238};
-  for (std::size_t index = 0; index < colors.size(); ++index) {
-    if (state.color == colors[index]) {
-      fill_circle(canvas, width, height, centers[index], 414, 12, kSelected);
-      fill_circle(canvas, width, height, centers[index], 414, 9, kWhite);
-    }
-    fill_circle(canvas, width, height, centers[index], 414, 7, rgb565(colors[index]));
-  }
+  fill_circle(canvas, width, height, 228, 410, 18, kSelected);
+  fill_circle(canvas, width, height, 228, 410, 14, kWhite);
+  fill_circle(canvas, width, height, 228, 410, 11, rgb565(state.color));
 
   constexpr std::array sizes{PenSize::kSmall, PenSize::kMedium, PenSize::kLarge};
-  constexpr std::array size_centers{275, 286, 298};
-  constexpr std::array radii{2, 4, 6};
+  constexpr std::array size_centers{296, 316, 339};
+  constexpr std::array radii{3, 6, 9};
   for (std::size_t index = 0; index < sizes.size(); ++index) {
-    fill_circle(canvas, width, height, size_centers[index], 414, radii[index],
+    fill_circle(canvas, width, height, size_centers[index], 410, radii[index],
                 state.size == sizes[index] ? kSelected : kMuted);
   }
 
   const std::uint16_t undo_color = state.can_undo ? kInk : kMuted;
-  line(canvas, width, height, 29, 352, 47, 352, undo_color, 2);
-  line(canvas, width, height, 29, 352, 36, 345, undo_color, 2);
-  line(canvas, width, height, 29, 352, 36, 359, undo_color, 2);
+  line(canvas, width, height, 34, 331, 70, 331, undo_color, 3);
+  line(canvas, width, height, 34, 331, 46, 319, undo_color, 3);
+  line(canvas, width, height, 34, 331, 46, 343, undo_color, 3);
 
   // New drawing: page outline and plus sign.
-  line(canvas, width, height, 73, 339, 93, 339, kInk, 1);
-  line(canvas, width, height, 93, 339, 93, 365, kInk, 1);
-  line(canvas, width, height, 93, 365, 73, 365, kInk, 1);
-  line(canvas, width, height, 73, 365, 73, 339, kInk, 1);
-  line(canvas, width, height, 79, 352, 87, 352, kInk, 1);
-  line(canvas, width, height, 83, 348, 83, 356, kInk, 1);
+  line(canvas, width, height, 124, 313, 154, 313, kInk, 2);
+  line(canvas, width, height, 154, 313, 154, 349, kInk, 2);
+  line(canvas, width, height, 154, 349, 124, 349, kInk, 2);
+  line(canvas, width, height, 124, 349, 124, 313, kInk, 2);
+  line(canvas, width, height, 132, 331, 146, 331, kInk, 2);
+  line(canvas, width, height, 139, 324, 139, 338, kInk, 2);
+
+  if (!state.colors_open && !state.sizes_open) {
+    return;
+  }
+  draw_dock(canvas, width, height, 4, kPaletteTop, 364, kPaletteBottom);
+  if (state.colors_open) {
+    constexpr std::array colors{InkColor::kBlack, InkColor::kBlue, InkColor::kRed,
+                                InkColor::kGreen};
+    constexpr std::array centers{52, 140, 228, 316};
+    for (std::size_t index = 0; index < colors.size(); ++index) {
+      if (state.color == colors[index]) {
+        fill_circle(canvas, width, height, centers[index], 253, 21, kSelected);
+        fill_circle(canvas, width, height, centers[index], 253, 18, kWhite);
+      }
+      fill_circle(canvas, width, height, centers[index], 253, 15, rgb565(colors[index]));
+    }
+    return;
+  }
+
+  constexpr std::array palette_sizes{PenSize::kSmall, PenSize::kMedium, PenSize::kLarge};
+  constexpr std::array centers{66, 184, 302};
+  constexpr std::array palette_radii{6, 11, 17};
+  for (std::size_t index = 0; index < palette_sizes.size(); ++index) {
+    if (state.size == palette_sizes[index]) {
+      fill_circle(canvas, width, height, centers[index], 253, palette_radii[index] + 5, kSelected);
+      fill_circle(canvas, width, height, centers[index], 253, palette_radii[index] + 2, kWhite);
+    }
+    fill_circle(canvas, width, height, centers[index], 253, palette_radii[index], kInk);
+  }
 }
 
 }  // namespace tinydraw

@@ -18,7 +18,11 @@ enum class ToolbarAction {
   kSelectBlue,
   kSelectRed,
   kSelectGreen,
-  kCycleSize,
+  kToggleColors,
+  kToggleSizes,
+  kSelectSmall,
+  kSelectMedium,
+  kSelectLarge,
   kUndo,
   kNewDrawing,
 };
@@ -28,13 +32,14 @@ struct ToolbarState {
   InkColor color = InkColor::kBlue;
   PenSize size = PenSize::kMedium;
   bool can_undo = false;
+  bool colors_open = false;
+  bool sizes_open = false;
 };
 
-[[nodiscard]] bool toolbar_contains(Point point);
-[[nodiscard]] ToolbarAction toolbar_action_at(Point point);
+[[nodiscard]] bool toolbar_contains(Point point, const ToolbarState& state);
+[[nodiscard]] ToolbarAction toolbar_action_at(Point point, const ToolbarState& state);
 [[nodiscard]] std::uint16_t rgb565(InkColor color);
 [[nodiscard]] float brush_size(PenSize size);
-[[nodiscard]] PenSize next_pen_size(PenSize size);
 
 void draw_toolbar(std::span<std::uint16_t> canvas, int width, int height,
                   const ToolbarState& state);

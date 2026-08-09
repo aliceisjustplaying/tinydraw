@@ -206,6 +206,17 @@ int interactive() {
   tinydraw::InkPoint last_ink_point{};
   std::uint16_t stroke_color = tinydraw::rgb565(toolbar.color);
 
+  const auto close_popups = [&] {
+    toolbar.colors_open = false;
+    toolbar.sizes_open = false;
+  };
+  const auto select_size = [&](tinydraw::PenSize size) {
+    toolbar.size = size;
+    tinydraw::InkConfig config = stream.config();
+    config.size = tinydraw::brush_size(size);
+    stream.set_config(config);
+    close_popups();
+  };
   const auto reset_active_stroke = [&] {
     stream.end();
     ribbon.reset();
@@ -217,6 +228,7 @@ int interactive() {
     clear_canvas(committed_pixels, true);
     undo_pixels.clear();
     toolbar.can_undo = false;
+    close_popups();
   };
   const auto undo = [&] {
     if (!toolbar.can_undo) {
@@ -226,6 +238,7 @@ int interactive() {
     committed_pixels = undo_pixels;
     undo_pixels.clear();
     toolbar.can_undo = false;
+    close_popups();
   };
 
   bool running = true;
@@ -245,37 +258,53 @@ int interactive() {
         if (!point.has_value()) {
           continue;
         }
-        if (tinydraw::toolbar_contains(*point)) {
-          switch (tinydraw::toolbar_action_at(*point)) {
+        if (tinydraw::toolbar_contains(*point, toolbar)) {
+          switch (tinydraw::toolbar_action_at(*point, toolbar)) {
             case tinydraw::ToolbarAction::kSelectPen:
               toolbar.tool = tinydraw::DrawingTool::kPen;
+              close_popups();
               break;
             case tinydraw::ToolbarAction::kSelectEraser:
               toolbar.tool = tinydraw::DrawingTool::kEraser;
+              close_popups();
               break;
             case tinydraw::ToolbarAction::kSelectBlack:
               toolbar.color = tinydraw::InkColor::kBlack;
               toolbar.tool = tinydraw::DrawingTool::kPen;
+              toolbar.colors_open = false;
               break;
             case tinydraw::ToolbarAction::kSelectBlue:
               toolbar.color = tinydraw::InkColor::kBlue;
               toolbar.tool = tinydraw::DrawingTool::kPen;
+              toolbar.colors_open = false;
               break;
             case tinydraw::ToolbarAction::kSelectRed:
               toolbar.color = tinydraw::InkColor::kRed;
               toolbar.tool = tinydraw::DrawingTool::kPen;
+              toolbar.colors_open = false;
               break;
             case tinydraw::ToolbarAction::kSelectGreen:
               toolbar.color = tinydraw::InkColor::kGreen;
               toolbar.tool = tinydraw::DrawingTool::kPen;
+              toolbar.colors_open = false;
               break;
-            case tinydraw::ToolbarAction::kCycleSize: {
-              toolbar.size = tinydraw::next_pen_size(toolbar.size);
-              tinydraw::InkConfig config = stream.config();
-              config.size = tinydraw::brush_size(toolbar.size);
-              stream.set_config(config);
+            case tinydraw::ToolbarAction::kToggleColors:
+              toolbar.colors_open = !toolbar.colors_open;
+              toolbar.sizes_open = false;
               break;
-            }
+            case tinydraw::ToolbarAction::kToggleSizes:
+              toolbar.sizes_open = !toolbar.sizes_open;
+              toolbar.colors_open = false;
+              break;
+            case tinydraw::ToolbarAction::kSelectSmall:
+              select_size(tinydraw::PenSize::kSmall);
+              break;
+            case tinydraw::ToolbarAction::kSelectMedium:
+              select_size(tinydraw::PenSize::kMedium);
+              break;
+            case tinydraw::ToolbarAction::kSelectLarge:
+              select_size(tinydraw::PenSize::kLarge);
+              break;
             case tinydraw::ToolbarAction::kUndo:
               undo();
               break;
@@ -287,6 +316,7 @@ int interactive() {
           }
           continue;
         }
+        close_popups();
         undo_pixels = committed_pixels;
         toolbar.can_undo = true;
         stroke_color = toolbar.tool == tinydraw::DrawingTool::kEraser
