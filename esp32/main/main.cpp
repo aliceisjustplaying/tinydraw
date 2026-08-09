@@ -175,10 +175,8 @@ extern "C" void app_main() {
                              : canvas.raster().update(update, kInk);
     accumulate(total, update, stats);
 #ifdef TINYDRAW_QEMU_GRAPHICS
-    if (final) {
-      tinydraw::draw_toolbar(qemu_display.framebuffer(), tinydraw::kCanvasWidth,
-                             tinydraw::kCanvasHeight, toolbar);
-    }
+    tinydraw::draw_toolbar(qemu_display.framebuffer(), tinydraw::kCanvasWidth,
+                           tinydraw::kCanvasHeight, toolbar);
     return qemu_display.refresh();
 #else
     return true;
