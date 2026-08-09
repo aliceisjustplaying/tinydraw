@@ -11,6 +11,8 @@
 
 namespace tinydraw {
 
+class TileUndoHistory;
+
 struct StrokeRasterStats {
   std::uint32_t tiles_updated = 0;
   std::uint32_t primitive_tile_visits = 0;
@@ -20,6 +22,7 @@ struct StrokeRasterStats {
   std::uint32_t committed_bytes_written = 0;
   std::uint32_t coverage_bytes_read = 0;
   std::uint32_t coverage_bytes_written = 0;
+  std::uint32_t history_bytes_written = 0;
 };
 
 // Incrementally unions one active stroke into a coverage plane. The persistent
@@ -32,7 +35,8 @@ class StrokeRaster {
                DisplayBackend& display);
 
   [[nodiscard]] StrokeRasterStats update(const RibbonUpdate& update, std::uint16_t color);
-  [[nodiscard]] StrokeRasterStats finish(const RibbonUpdate& update, std::uint16_t color);
+  [[nodiscard]] StrokeRasterStats finish(const RibbonUpdate& update, std::uint16_t color,
+                                         TileUndoHistory* history = nullptr);
   void cancel();
 
  private:
@@ -46,9 +50,10 @@ class StrokeRaster {
   void load_coverage_tile(int tile_x, int tile_y, StrokeRasterStats& stats);
   void store_coverage_tile(int tile_x, int tile_y, StrokeRasterStats& stats);
   void rasterize(const RibbonPrimitiveBatch& primitives, StrokeRasterStats& stats);
-  void compose_visible_tile(int tile_x, int tile_y, std::uint16_t color, StrokeRasterStats& stats);
-  void compose_committed_tile(int tile_x, int tile_y, std::uint16_t color,
-                              StrokeRasterStats& stats);
+  void compose_visible_tile(int tile_x, int tile_y, std::uint16_t color, StrokeRasterStats& stats,
+                            TileUndoHistory* history = nullptr);
+  void compose_committed_tile(int tile_x, int tile_y, std::uint16_t color, StrokeRasterStats& stats,
+                              TileUndoHistory* history);
 
   std::span<std::uint16_t> committed_;
   std::span<std::uint16_t> visible_;

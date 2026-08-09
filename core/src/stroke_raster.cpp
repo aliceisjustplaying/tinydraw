@@ -5,6 +5,8 @@
 #include <cmath>
 #include <limits>
 
+#include "tinydraw/graphics/tile_undo_history.h"
+
 namespace tinydraw {
 namespace {
 
@@ -90,11 +92,15 @@ StrokeRasterStats StrokeRaster::update(const RibbonUpdate& update, std::uint16_t
   return stats;
 }
 
-StrokeRasterStats StrokeRaster::finish(const RibbonUpdate& update, std::uint16_t color) {
+StrokeRasterStats StrokeRaster::finish(const RibbonUpdate& update, std::uint16_t color,
+                                       TileUndoHistory* history) {
   assert(update.provisional.empty());
   StrokeRasterStats stats;
   if (!valid_ || !update.provisional.empty()) {
     return stats;
+  }
+  if (history != nullptr) {
+    history->begin_entry();
   }
   TileFlags committed_tiles{};
   mark_tiles(update.committed, committed_tiles);
@@ -118,10 +124,13 @@ StrokeRasterStats StrokeRaster::finish(const RibbonUpdate& update, std::uint16_t
     const int tile_x = tile_index % kTilesAcross * kTileSize;
     const int tile_y = tile_index / kTilesAcross * kTileSize;
     load_coverage_tile(tile_x, tile_y, stats);
-    compose_committed_tile(tile_x, tile_y, color, stats);
+    compose_committed_tile(tile_x, tile_y, color, stats, history);
     touched_[static_cast<std::size_t>(tile_index)] = false;
   }
 
+  if (history != nullptr) {
+    static_cast<void>(history->commit_entry());
+  }
   provisional_ = {};
   return stats;
 }
@@ -214,7 +223,7 @@ void StrokeRaster::rasterize(const RibbonPrimitiveBatch& primitives, StrokeRaste
 }
 
 void StrokeRaster::compose_visible_tile(int tile_x, int tile_y, std::uint16_t color,
-                                        StrokeRasterStats& stats) {
+                                        StrokeRasterStats& stats, TileUndoHistory* history) {
   const std::size_t tile_pixels = static_cast<std::size_t>(coverage_.width() * coverage_.height());
   for (int y = 0; y < coverage_.height(); ++y) {
     for (int x = 0; x < coverage_.width(); ++x) {
@@ -223,6 +232,11 @@ void StrokeRaster::compose_visible_tile(int tile_x, int tile_y, std::uint16_t co
       working_[tile_index] = committed_[canvas_index];
       stats.committed_bytes_read += sizeof(std::uint16_t);
     }
+  }
+  if (history != nullptr && history->valid()) {
+    history->capture_tile(tile_x, tile_y, coverage_.width(), coverage_.height(),
+                          std::span<const std::uint16_t>(working_.data(), tile_pixels));
+    stats.history_bytes_written += static_cast<std::uint32_t>(tile_pixels * sizeof(std::uint16_t));
   }
   composite_rgb565(coverage_, color, std::span(working_.data(), tile_pixels));
   for (int y = 0; y < coverage_.height(); ++y) {
@@ -243,8 +257,8 @@ void StrokeRaster::compose_visible_tile(int tile_x, int tile_y, std::uint16_t co
 }
 
 void StrokeRaster::compose_committed_tile(int tile_x, int tile_y, std::uint16_t color,
-                                          StrokeRasterStats& stats) {
-  compose_visible_tile(tile_x, tile_y, color, stats);
+                                          StrokeRasterStats& stats, TileUndoHistory* history) {
+  compose_visible_tile(tile_x, tile_y, color, stats, history);
   for (int y = 0; y < coverage_.height(); ++y) {
     for (int x = 0; x < coverage_.width(); ++x) {
       const auto canvas_index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x + x);

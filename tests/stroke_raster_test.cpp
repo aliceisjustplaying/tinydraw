@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "tinydraw/graphics/ribbon_renderer.h"
+#include "tinydraw/graphics/tile_undo_history.h"
 #include "tinydraw/ink/ink_stream.h"
 
 namespace {
@@ -80,6 +81,26 @@ TEST_CASE("provisional stroke pixels never enter the persistent canvas") {
   CHECK(changed_pixels(fixture.committed) > 0U);
   CHECK(std::all_of(fixture.coverage.begin(), fixture.coverage.end(),
                     [](std::uint8_t value) { return value == 0U; }));
+}
+
+TEST_CASE("stroke finish captures dirty tiles from the committed read") {
+  RasterFixture fixture;
+  const auto initial = fixture.committed;
+  std::vector<std::uint16_t> undo_storage(tinydraw::TileUndoHistory::kRequiredPixels);
+  tinydraw::TileUndoHistory history(undo_storage);
+  tinydraw::RibbonStream ribbon;
+  const tinydraw::InkPoint first{.position = {40.0F, 80.0F}, .radius = 8.0F};
+  const tinydraw::InkPoint second{.position = {80.0F, 90.0F}, .radius = 8.0F};
+
+  static_cast<void>(fixture.raster.update(ribbon.append(first), kInk));
+  const auto stats = fixture.raster.finish(ribbon.finish(second), kInk, &history);
+
+  CHECK(history.entry_count() == 1U);
+  CHECK(stats.history_bytes_written == stats.committed_bytes_read);
+  CHECK(changed_pixels(fixture.committed) > 0U);
+  CHECK(history.undo(fixture.committed, fixture.visible).tiles_restored > 0U);
+  CHECK(fixture.committed == initial);
+  CHECK(fixture.visible == initial);
 }
 
 TEST_CASE("incremental stroke raster can submit dirty tiles without a visible canvas") {
