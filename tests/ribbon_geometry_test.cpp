@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <vector>
 
 namespace {
 
@@ -19,7 +20,42 @@ tinydraw::InkPoint ink_point(float x, float y, float radius) {
   };
 }
 
+void check_primitive(const tinydraw::RibbonPrimitive& actual,
+                     const tinydraw::RibbonPrimitive& expected) {
+  CHECK(actual.kind == expected.kind);
+  CHECK(actual.point_count == expected.point_count);
+  CHECK(actual.center.x == doctest::Approx(expected.center.x));
+  CHECK(actual.center.y == doctest::Approx(expected.center.y));
+  CHECK(actual.radius == doctest::Approx(expected.radius));
+  for (std::size_t index = 0; index < expected.point_count; ++index) {
+    CHECK(actual.points[index].x == doctest::Approx(expected.points[index].x));
+    CHECK(actual.points[index].y == doctest::Approx(expected.points[index].y));
+  }
+}
+
 }  // namespace
+
+TEST_CASE("streaming ribbon reproduces each growing batch without changing committed pieces") {
+  const std::array points{ink_point(10.0F, 20.0F, 2.0F), ink_point(20.0F, 20.0F, 3.0F),
+                          ink_point(25.0F, 30.0F, 4.0F), ink_point(35.0F, 25.0F, 2.5F)};
+  tinydraw::RibbonStream stream;
+  std::vector<tinydraw::RibbonPrimitive> committed;
+
+  for (std::size_t point_count = 1; point_count <= points.size(); ++point_count) {
+    const auto update = stream.append(points[point_count - 1U]);
+    committed.insert(committed.end(), update.committed.begin(), update.committed.end());
+
+    std::vector<tinydraw::RibbonPrimitive> visible = committed;
+    visible.insert(visible.end(), update.provisional.begin(), update.provisional.end());
+    const auto batch =
+        tinydraw::build_pf_ribbon(std::span<const tinydraw::InkPoint>{points}.first(point_count));
+
+    REQUIRE(visible.size() == batch.size());
+    for (std::size_t index = 0; index < batch.size(); ++index) {
+      check_primitive(visible[index], batch[index]);
+    }
+  }
+}
 
 TEST_CASE("PF ribbon emits unionable triangles and round caps") {
   const std::array points{ink_point(10.0F, 20.0F, 2.0F), ink_point(20.0F, 20.0F, 3.0F),

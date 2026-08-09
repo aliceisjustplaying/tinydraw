@@ -1,5 +1,6 @@
 #include "tinydraw/ink/ribbon_geometry.h"
 
+#include <cassert>
 #include <cmath>
 
 namespace tinydraw {
@@ -64,7 +65,119 @@ struct Section {
   Point right;
 };
 
+Section section(Point position, float radius, Point direction) {
+  const Point offset = multiply(perpendicular(direction), radius);
+  return {
+      .left = subtract(position, offset),
+      .right = add(position, offset),
+  };
+}
+
+template <typename Emit>
+void emit_span(Section start, Section end, Emit emit) {
+  const std::array quad{start.left, end.left, end.right, start.right};
+  if (is_convex_quad(quad)) {
+    emit(convex(quad, 4));
+    return;
+  }
+  emit(convex({start.left, end.left, start.right, {}}, 3));
+  emit(convex({start.right, end.left, end.right, {}}, 3));
+}
+
+Point blended_direction(Point current, Point next) {
+  const float direction_dot = dot(current, next);
+  return direction_dot < 0.0F ? current : interpolate(next, current, direction_dot);
+}
+
 }  // namespace
+
+void RibbonPrimitiveBatch::push_back(RibbonPrimitive primitive) {
+  assert(count_ < primitives_.size());
+  primitives_[count_++] = primitive;
+}
+
+RibbonUpdate RibbonStream::append(InkPoint point) {
+  RibbonUpdate update;
+  if (point_count_ == 0U) {
+    first_ = point;
+    last_ = point;
+    point_count_ = 1U;
+    update.provisional.push_back(circle(point.position, point.radius));
+    return update;
+  }
+
+  if (equal(last_.position, point.position)) {
+    if (point_count_ == 1U) {
+      update.provisional.push_back(circle(last_.position, last_.radius));
+      return update;
+    }
+    if (first_cap_pending_) {
+      update.provisional.push_back(circle(first_.position, first_.radius));
+    }
+    const Point direction = unit(subtract(prior_.position, last_.position));
+    emit_span({.left = tail_left_, .right = tail_right_},
+              section(last_.position, last_.radius, direction),
+              [&](RibbonPrimitive primitive) { update.provisional.push_back(primitive); });
+    update.provisional.push_back(circle(last_.position, last_.radius));
+    return update;
+  }
+
+  if (point_count_ == 1U) {
+    prior_ = last_;
+    last_ = point;
+    const Point direction = unit(subtract(prior_.position, last_.position));
+    const Section start = section(prior_.position, prior_.radius, direction);
+    tail_left_ = start.left;
+    tail_right_ = start.right;
+    point_count_ = 2U;
+    first_cap_pending_ = true;
+
+    update.provisional.push_back(circle(first_.position, first_.radius));
+    emit_span(start, section(last_.position, last_.radius, direction),
+              [&](RibbonPrimitive primitive) { update.provisional.push_back(primitive); });
+    update.provisional.push_back(circle(last_.position, last_.radius));
+    return update;
+  }
+
+  const Point current = unit(subtract(prior_.position, last_.position));
+  const Point next = unit(subtract(last_.position, point.position));
+  const Section stable_end =
+      section(last_.position, last_.radius, blended_direction(current, next));
+  if (first_cap_pending_) {
+    update.committed.push_back(circle(first_.position, first_.radius));
+    first_cap_pending_ = false;
+  }
+  emit_span({.left = tail_left_, .right = tail_right_}, stable_end,
+            [&](RibbonPrimitive primitive) { update.committed.push_back(primitive); });
+  update.committed.push_back(circle(last_.position, last_.radius));
+
+  prior_ = last_;
+  last_ = point;
+  tail_left_ = stable_end.left;
+  tail_right_ = stable_end.right;
+  ++point_count_;
+
+  const Section provisional_end = section(last_.position, last_.radius, next);
+  emit_span(stable_end, provisional_end,
+            [&](RibbonPrimitive primitive) { update.provisional.push_back(primitive); });
+  update.provisional.push_back(circle(last_.position, last_.radius));
+  return update;
+}
+
+RibbonUpdate RibbonStream::finish(InkPoint point) {
+  RibbonUpdate update = append(point);
+  for (const RibbonPrimitive& primitive : update.provisional) {
+    update.committed.push_back(primitive);
+  }
+  update.provisional = {};
+  reset();
+  return update;
+}
+
+void RibbonStream::reset() {
+  point_count_ = 0U;
+  first_cap_pending_ = false;
+}
 
 std::vector<RibbonPrimitive> build_pf_ribbon(std::span<const InkPoint> input) {
   if (input.empty()) {
