@@ -26,12 +26,16 @@ flow through `StrokeRaster` one frame at a time: 46 dirty-tile submissions total
 frame, and exactly seven graphics refreshes. The process harness requires memory, structure,
 bounded-work, and UI markers.
 
-The next software slice is **small shared canvas history for Undo/New plus a full-flow E2E replay**.
-Keep it deliberately narrow: preserve the current one-step behavior first, move clear/snapshot/
-restore semantics out of the SDL shell, prove draw → undo → redraw → new through pixels and toolbar
-state, and only then decide whether more undo depth is worth PSRAM. Do not add a generic command
-framework or point arena. If hardware arrives first, defer this slice and begin the physical-board
-checklist instead.
+Performance now takes precedence over shared history. The next software slice is a small,
+behavior-preserving reduction of duplicate active-coverage reads during `StrokeRaster::update`.
+Committed and provisional work currently reload the same tile when their flags overlap; process
+that tile once, store committed coverage before adding the provisional tail, and compare
+`./scripts/dev perf` before/after counters. Do not change pixels or add caching architecture.
+
+After that, stop making speculative speed changes until hardware supplies cycle/latency evidence.
+The sustained-XL harness has exposed a separate screen-bounded lift-time burst (30 tiles and 357,376
+bytes each direction); measure it on hardware before deciding whether to spread finalization across
+frames. Shared one-step Undo/New history follows performance work unless hardware arrives first.
 
 Our QEMU commands override Espressif's 32 MB default with an 8 MB quad-PSRAM model and assert that
 size at boot. That is valid integration evidence for IDF's capability allocator, but not evidence
@@ -107,7 +111,7 @@ Daily commands:
 Expected current results:
 
 - 49 doctest cases;
-- 11 CTest entries, including process-level replay and UI snapshot checks;
+- 12 CTest entries, including sustained-XL characterization and process-level replay/UI checks;
 - debug, release, ASan, and UBSan green;
 - incremental debug suite typically well below one second.
 
@@ -201,7 +205,9 @@ The official `espressif/esp_lcd_qemu_rgb` component is locked at 1.0.2.
 
 - `tests/`
   - public-interface behavior tests for transforms, input, PF reference fidelity, coverage,
-    primitives, and rendering.
+    primitives, and rendering;
+  - `perf_characterization.cpp`, a deterministic 1,000-sample XL operation and memory-traffic
+    budget with no wall-clock assertion.
 - `testdata/strokes/`
   - deterministic replay recordings, including invalid input and tight-join stress cases.
 - `testdata/reference/`
@@ -491,7 +497,9 @@ Core behavior tests cover:
 - sRGB-space RGB565 compositing;
 - ribbon primitive structure, reversals, duplicate points, and round joins;
 - overlap idempotence, off-canvas geometry, malformed primitives, tile crossings, and stats;
-- committed-canvas isolation, incremental/one-pass pixel equivalence, and bounded XL update work.
+- committed-canvas isolation, incremental/one-pass pixel equivalence, explicit memory-traffic
+  accounting, and bounded XL update work;
+- a 1,000-sample sustained XL path with separate update-time and lift-time budgets.
 
 Process-level E2E tests cover:
 
@@ -502,7 +510,9 @@ Process-level E2E tests cover:
 - invalid syntax rejection.
 
 The QEMU process-level test checks accepted-point, primitive, touched-tile, geometry-bound,
-memory-capability, frame-count, and bounded dirty-work results. Graphics mode additionally requires
+memory-capability, frame-count, dirty-work, display-byte, and modeled-PSRAM-traffic results. The
+seven-frame fixture reports 372,736 display bytes, 659,456 PSRAM reads, 303,104 writes, and a
+237,568-byte per-frame maximum in either direction. Graphics mode additionally requires
 `TINYDRAW_UI_OK canvas=1 controls=6`, emitted only after checks prove the dedicated framebuffer still
 contains a white canvas, blue stroke, and shared toolbar, receives exactly the reported dirty-tile
 count, and refreshes exactly once for each of seven input frames. Bounds use a tolerance; the RGB565
@@ -514,6 +524,10 @@ pixel identity is not required.
 These are known and intentionally not hidden:
 
 - active geometry generation and raster work are bounded per input update;
+- committed and provisional processing can currently reload overlapping coverage tiles during one
+  update; the next small optimization should remove that duplicate read;
+- lift composites every tile touched by the stroke in one frame; this is bounded to 42 screen tiles
+  today but must be measured before any larger-than-screen canvas work;
 - SDL still uploads the full 368×448 texture every display loop; dirty panel submission remains for
   the display backend;
 - the host allocates the active coverage plane and canvases with `std::vector`; firmware uses
@@ -528,8 +542,14 @@ These are known and intentionally not hidden:
 The reproduced 500-point XL prefix workload previously took 4,479 ms in an optimized host build,
 with successive 50-point blocks growing from 41 ms to 1,040 ms. Through `StrokeRaster`, the same
 workload took 220 ms total in one local run and no longer grew with stroke history. This is a host
-comparison, not ESP32 timing evidence. CI locks down bounded tile/primitive operation counts rather
-than fragile wall-clock thresholds.
+comparison, not ESP32 timing evidence.
+
+`./scripts/dev perf` now supplies the durable characterization: 1,000 XL samples over an
+eight-second-equivalent continuous path, 2,052 tile submissions total, max 4 tiles and 16 primitive
+visits per update, max 64 KiB PSRAM reads and 16 KiB writes per update. Lift touches 30 tiles and
+reads/writes 357,376 bytes. CI locks down these operation/traffic ceilings rather than fragile
+wall-clock thresholds. The lift burst is screen-area-bounded, not stroke-length-bounded, but would
+need redesign before a much larger backing canvas.
 
 The active embedded memory model and partial submission path now run in QEMU. Physical panel/touch
 adapters and real-board capability, DMA, and performance evidence remain unimplemented.
@@ -544,6 +564,8 @@ PSRAM, and incrementally replays seven input frames. Its accepted result is:
 ```text
 accepted=7 primitives=13 tiles=14 bounds=27.83,37.83,341.44,411.44
 frames=7 dirty=46 max_tiles=17 visits=133
+ display=372736 psram_read=659456 psram_write=303104
+ max_psram_read=237568 max_psram_write=237568
 ```
 
 The RGB565 FNV checksum remains informational. `./scripts/esp32 qemu` verifies modeled PSRAM boot,
@@ -560,28 +582,33 @@ QEMU proves the application uses IDF's capability allocator correctly against ou
 quad-PSRAM model. It does not prove the physical board's memory wiring, usable capacity,
 DMA behavior, timing, or panel correctness.
 
-### 2. Next: shared one-step canvas history and full-flow E2E
+### 2. Next: remove duplicate coverage reads
 
-The host already exposes Undo and New, but their persistence logic lives in the SDL shell. Implement
-the smallest shared canvas-history module that preserves current one-step behavior:
+In `StrokeRaster::update`, committed tiles and dirty visible tiles are currently processed in two
+loops. When a tile belongs to both sets, its active coverage is loaded from PSRAM twice. Merge the
+per-tile processing while preserving this order inside an overlapping tile:
 
-- snapshot committed RGB565 pixels before a completed drawing mutation;
-- restore once for Undo and clear for New;
-- expose only the state needed for `toolbar.can_undo`;
-- run a deterministic draw → undo → redraw → new flow and assert pixels plus toolbar state;
-- keep the host behavior unchanged and allocation outside the input hot path.
+1. load active coverage once;
+2. rasterize and store newly committed pieces;
+3. add the provisional tail only to scratch;
+4. compose and submit the visible tile.
 
-Start with one snapshot. Do not build a generic command framework, arbitrary-depth history, or point
-arena. Once the real footprint is visible, decide whether additional PSRAM snapshots have enough
-product value to justify their cost.
+Prove pixel identity with the existing suites and use `./scripts/dev perf` to record the traffic
+reduction. This should simplify the loop rather than introduce a cache.
 
-### 3. Later software tuning
+### 3. Then: shared one-step history
+
+Move current Undo/New snapshot semantics out of the SDL shell and add the deterministic full-flow
+E2E described above. Start with one snapshot; no generic command framework, arbitrary-depth history,
+or point arena.
+
+### 4. Later software tuning
 
 Only add runtime tuning controls, deeper history, queues/tasks, or more instrumentation when a real
 host/hardware loop consumes them. The current synchronous replay is intentionally simpler than a
 speculative firmware task graph.
 
-### 4. Physical hardware integration
+### 5. Physical hardware integration
 
 When the board arrives, validate what QEMU cannot:
 

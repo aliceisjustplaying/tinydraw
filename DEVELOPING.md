@@ -22,6 +22,7 @@ machine was bootstrapped with Apple Clang 21 and SDL 2.32 through `sdl2-compat`.
 ```sh
 ./scripts/dev test          # debug build + all native tests
 ./scripts/dev run           # SDL host; floating tool dock, Cmd-Z undo, C new, Esc quit
+./scripts/dev perf          # deterministic sustained-XL operation/traffic report
 ./scripts/dev asan          # AddressSanitizer + UndefinedBehaviorSanitizer on SDL-free core
 ./scripts/dev release       # optimized build + tests
 ./scripts/dev format-check
@@ -72,6 +73,13 @@ regenerates only tiles touched by the changing tail. This keeps long-stroke work
 prevents self-overlap holes or repeated edge darkening. The persistent RGB565 canvas remains
 unchanged until lift; core tests compare the incremental result with one-pass coverage union.
 
+`./scripts/dev perf` runs 1,000 XL samples over an eight-second-equivalent continuous path. It does
+not use wall-clock thresholds. It reports and bounds tile visits, display bytes, committed-canvas
+traffic, and active-coverage traffic. Current release characterization has max per-update work of
+4 tiles, 16 primitive/tile visits, 64 KiB modeled-PSRAM reads, and 16 KiB writes. Stroke completion
+is reported separately: the fixture finishes 30 touched tiles with 357,376 bytes read and written.
+That screen-bounded lift-time burst needs real-hardware latency measurement.
+
 The sanitizer preset excludes the host executable because Homebrew's `sdl2-compat` loader aborts
 under Apple's sanitizer runtime before application code starts. All SDL-free project code remains
 sanitized; full host replay runs in both debug and release presets.
@@ -107,8 +115,9 @@ harness accepts a run.
 
 The headless harness checks accepted-point, primitive, touched-tile, geometry-bound, memory-placement,
 and bounded incremental-work results. The seven-point replay submits 46 dirty tiles in total, never
-more than 17 in one frame. Its checksum is informational because cross-architecture pixel identity
-is not an oracle.
+more than 17 in one frame. It also reports 372,736 display bytes, 659,456 modeled-PSRAM read bytes,
+303,104 write bytes, and a 237,568-byte maximum in either direction for one frame. Its checksum is
+informational because cross-architecture pixel identity is not an oracle.
 
 The visible graphics build is separate because `esp_lcd_qemu_rgb` requires QEMU's virtual
 framebuffer device and cannot be initialized in `-nographic` mode. Each input frame copies only the
