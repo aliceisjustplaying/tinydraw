@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_BUILD = ROOT / "out/build/esp32"
+DEFAULT_BUILD = ROOT / "out/build/esp32-qemu"
 EXPECTED_COUNTS = (7, 13, 14)
 EXPECTED_BOUNDS = (27.83, 37.83, 341.44, 411.44)
 BOUNDS_TOLERANCE = 0.05
