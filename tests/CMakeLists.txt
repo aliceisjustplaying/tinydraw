@@ -1,6 +1,7 @@
 add_executable(tinydraw_tests
   coordinate_transform_test.cpp
   ink_stream_test.cpp
+  perfect_freehand_test.cpp
 )
 target_link_libraries(tinydraw_tests PRIVATE tinydraw::core tinydraw_project_options)
 target_include_directories(tinydraw_tests SYSTEM PRIVATE
