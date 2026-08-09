@@ -9,7 +9,8 @@ whenever a milestone changes the current behavior, constraints, or next step.
 
 ## Current resume point
 
-The minimal ESP-IDF/QEMU vertical slice is complete. No physical hardware was needed. Resume with:
+The PSRAM-backed incremental ESP-IDF/QEMU slice is complete. No physical hardware was needed.
+Resume with:
 
 ```sh
 git status --short
@@ -18,24 +19,25 @@ git status --short
 ./scripts/esp32 graphics      # visible QEMU framebuffer; Ctrl-A then X to close
 ```
 
-The next engineering slice is **PSRAM-backed incremental firmware drawing**. The current firmware
-builds final ribbon geometry and rasterizes it tile-by-tile once; it does not yet exercise
-`StrokeRaster` per touch update. Next:
+The firmware now allocates its 329,728-byte committed RGB565 canvas and 164,864-byte active
+coverage plane with explicit `MALLOC_CAP_SPIRAM`, allocates `StrokeRaster` and tile scratch with
+`MALLOC_CAP_INTERNAL`, and verifies all three pointer classes at runtime. The seven fixture touches
+flow through `StrokeRaster` one frame at a time: 46 dirty-tile submissions total, at most 17 in a
+frame, and exactly seven graphics refreshes. The process harness requires memory, structure,
+bounded-work, and UI markers.
 
-1. add the smallest ESP-IDF-owned canvas allocation layer;
-2. allocate committed RGB565 pixels (~330 KiB) and active 8-bit coverage (~165 KiB) with explicit
-   PSRAM capabilities;
-3. keep coverage/RGB tile scratch in internal-capability memory;
-4. feed the seven scripted touches through `StrokeRaster` update-by-update;
-5. copy only dirty tile/rectangle results to `DisplayBackend` and refresh once per simulated input
-   frame;
-6. assert allocation capabilities, completion, final structure, and bounded operation counts.
+The next software slice is **small shared canvas history for Undo/New plus a full-flow E2E replay**.
+Keep it deliberately narrow: preserve the current one-step behavior first, move clear/snapshot/
+restore semantics out of the SDL shell, prove draw → undo → redraw → new through pixels and toolbar
+state, and only then decide whether more undo depth is worth PSRAM. Do not add a generic command
+framework or point arena. If hardware arrives first, defer this slice and begin the physical-board
+checklist instead.
 
-First determine what Espressif QEMU actually models for ESP32-S3 PSRAM. Do not silently replace a
-missing capability with ordinary heap and call that proof; separate QEMU integration evidence from
-hardware-only capability evidence. Do not use QEMU wall-clock speed as drawing-performance evidence.
-Keep native debug/release/ASan, headless QEMU, and graphics QEMU green. Do not introduce PlatformIO
-or globally source ESP-IDF.
+Espressif QEMU models a 32 MB quad-PSRAM device. That is valid integration evidence for IDF's
+capability allocator, but not evidence for the Waveshare board's physical PSRAM mode, capacity,
+bandwidth, DMA behavior, or timing. Verify those on the exact board revision. Do not use QEMU
+wall-clock speed as performance evidence. Keep native debug/release/ASan, headless QEMU, and
+graphics QEMU green. Do not introduce PlatformIO or globally source ESP-IDF.
 
 Durable implementation preferences from the user:
 
@@ -103,7 +105,7 @@ Daily commands:
 
 Expected current results:
 
-- 48 doctest cases;
+- 49 doctest cases;
 - 11 CTest entries, including process-level replay and UI snapshot checks;
 - debug, release, ASan, and UBSan green;
 - incremental debug suite typically well below one second.
@@ -180,10 +182,13 @@ The official `espressif/esp_lcd_qemu_rgb` component is locked at 1.0.2.
 
 - `esp32/`
   - minimal ESP-IDF project compiling the same `core/src` files as Xtensa C++20;
-  - deterministic seven-point firmware replay with structural marker and informational checksum;
+  - deterministic seven-point incremental firmware replay with structural/work markers and an
+    informational checksum;
+  - `FirmwareCanvas`, which capability-allocates committed/coverage state in modeled PSRAM and the
+    raster/tile scratch in internal RAM;
   - `QemuDisplayBackend`, a thin `esp_lcd_qemu_rgb` implementation of `DisplayBackend`;
-  - visible graphics mode renders the shared toolbar directly into QEMU's own RGB565 framebuffer,
-    avoiding a second full-frame allocation, then refreshes the virtual panel;
+  - visible graphics mode receives only dirty tiles, refreshes once per simulated input frame, and
+    renders the shared toolbar into QEMU's own RGB565 framebuffer;
   - locked managed-component manifest; downloaded `managed_components/` remains ignored.
 - `scripts/esp32`
   - isolated build, headless QEMU assertion, and visible graphics commands.
@@ -495,12 +500,13 @@ Process-level E2E tests cover:
 - invalid lifecycle rejection;
 - invalid syntax rejection.
 
-The QEMU process-level test checks accepted-point, primitive, touched-tile, and geometry-bound
-results. Graphics mode additionally requires `TINYDRAW_UI_OK canvas=1 controls=6`, emitted only
-after checks prove the dedicated framebuffer still contains a white canvas, blue stroke, and shared
-toolbar and the panel's single final refresh succeeds. Bounds use a
-tolerance; the RGB565 checksum is logged but intentionally not asserted as a cross-architecture
-oracle. Host and Xtensa pixel identity is not required.
+The QEMU process-level test checks accepted-point, primitive, touched-tile, geometry-bound,
+memory-capability, frame-count, and bounded dirty-work results. Graphics mode additionally requires
+`TINYDRAW_UI_OK canvas=1 controls=6`, emitted only after checks prove the dedicated framebuffer still
+contains a white canvas, blue stroke, and shared toolbar, receives exactly the reported dirty-tile
+count, and refreshes exactly once for each of seven input frames. Bounds use a tolerance; the RGB565
+checksum is logged but intentionally not asserted as a cross-architecture oracle. Host and Xtensa
+pixel identity is not required.
 
 ## Current performance and allocation limitations
 
@@ -509,15 +515,14 @@ These are known and intentionally not hidden:
 - active geometry generation and raster work are bounded per input update;
 - SDL still uploads the full 368×448 texture every display loop; dirty panel submission remains for
   the display backend;
-- the host allocates the active coverage plane and canvases with `std::vector`; embedded placement
-  is not implemented yet;
+- the host allocates the active coverage plane and canvases with `std::vector`; firmware uses
+  explicit PSRAM/internal capability allocations;
 - `build_pf_ribbon` and batch PF reference functions still allocate vectors, but neither is in the
   interactive hot path;
 - QEMU will not be accepted as cycle-accurate performance evidence;
-- the firmware replay rasterizes directly into one 64×64 tile and does not yet allocate the
-  interactive committed canvas or active-coverage plane;
-- the graphics build submits full raster tiles through `DisplayBackend`; interactive dirty
-  rectangles and physical-panel transport remain future work.
+- the firmware replay is scripted rather than driven by a real touch IRQ/task;
+- the graphics build submits dirty raster tiles through `DisplayBackend`; physical-panel transport
+  and measured DMA/bus behavior remain future work.
 
 The reproduced 500-point XL prefix workload previously took 4,479 ms in an optimized host build,
 with successive 50-point blocks growing from 41 ms to 1,040 ms. Through `StrokeRaster`, the same
@@ -525,57 +530,55 @@ workload took 220 ms total in one local run and no longer grew with stroke histo
 comparison, not ESP32 timing evidence. CI locks down bounded tile/primitive operation counts rather
 than fragile wall-clock thresholds.
 
-The active embedded path is still not ready: PSRAM/internal-SRAM placement and partial panel
-submission remain unimplemented.
+The active embedded memory model and partial submission path now run in QEMU. Physical panel/touch
+adapters and real-board capability, DMA, and performance evidence remain unimplemented.
 
 ## Exact next engineering steps
 
 ### 1. Completed: ESP-IDF / QEMU vertical slice
 
-The ESP32-S3 target now compiles every shared core source as Xtensa C++20. Its deterministic
-seven-point replay emits:
+The ESP32-S3 target compiles every shared core source as Xtensa C++20, boots with modeled quad
+PSRAM, and incrementally replays seven input frames. Its accepted result is:
 
 ```text
 accepted=7 primitives=13 tiles=14 bounds=27.83,37.83,341.44,411.44
+frames=7 dirty=46 max_tiles=17 visits=133
 ```
 
-It also emits an informational RGB565 FNV checksum. `./scripts/esp32 qemu` builds, boots headlessly,
-waits through a FreeRTOS context switch (which caught an initial main-task stack overflow), and
-asserts the structural marker. `./scripts/esp32 graphics-test` verifies the same path with the
-virtual framebuffer enabled. `./scripts/esp32 graphics` leaves the QEMU window open for visual
-inspection.
+The RGB565 FNV checksum remains informational. `./scripts/esp32 qemu` verifies modeled PSRAM boot,
+external/internal capability placement, structure, bounded work, and a post-replay FreeRTOS context
+switch. `./scripts/esp32 graphics-test` additionally verifies 46 dirty submissions, seven refreshes,
+and final toolbar/canvas pixels. `./scripts/esp32 graphics` leaves the window open for inspection.
 
-The framebuffer adapter is compiled behind `TINYDRAW_QEMU_GRAPHICS`: initializing
-`esp_lcd_qemu_rgb` without QEMU's `--graphics` device blocks, so the automated headless build must
-not instantiate it. The visible build sends each completed raster tile through the pre-existing
-`DisplayBackend`; it does not allocate a full extra framebuffer.
+The framebuffer adapter remains behind `TINYDRAW_QEMU_GRAPHICS`: initializing
+`esp_lcd_qemu_rgb` without QEMU's `--graphics` device blocks. The visible build does not allocate a
+second firmware-visible framebuffer. Host debug/release/ASan, headless QEMU, and graphics QEMU were
+green at this milestone.
 
-Host debug/release/sanitizers remained green after this slice. QEMU proves target compilation,
-boot, replay, display integration, and structural agreement only—not timing, PSRAM behavior, DMA
-behavior, or physical-panel correctness.
+QEMU proves the application uses IDF's capability allocator correctly against its modeled 32 MB
+quad-PSRAM device. It does not prove the physical board's likely different memory wiring, capacity,
+DMA behavior, timing, or panel correctness.
 
-### 2. Next: embedded memory placement and dirty display submission
+### 2. Next: shared one-step canvas history and full-flow E2E
 
-Once the real IDF target exists:
+The host already exposes Undo and New, but their persistence logic lives in the SDL shell. Implement
+the smallest shared canvas-history module that preserves current one-step behavior:
 
-- supply committed RGB565 canvas and active coverage from explicit PSRAM allocations;
-- place coverage/RGB tile scratch and DMA buffers in internal-capability memory;
-- add capability assertions and deliberate allocation-failure behavior;
-- submit only dirty rectangles through `DisplayBackend` instead of a full frame;
-- keep the current fixed-capacity geometry stream allocation-free per update.
+- snapshot committed RGB565 pixels before a completed drawing mutation;
+- restore once for Undo and clear for New;
+- expose only the state needed for `toolbar.can_undo`;
+- run a deterministic draw → undo → redraw → new flow and assert pixels plus toolbar state;
+- keep the host behavior unchanged and allocation outside the input hot path.
 
-Do **not** add a point-storage arena merely because the initial plan mentioned one. Completed
-strokes are flattened, and no current feature needs editable point history. Reconsider only if a
-real feature introduces that requirement.
+Start with one snapshot. Do not build a generic command framework, arbitrary-depth history, or point
+arena. Once the real footprint is visible, decide whether additional PSRAM snapshots have enough
+product value to justify their cost.
 
-### 3. Finish host-visible product behavior
+### 3. Later software tuning
 
-The host now has four colors, pen/eraser tools, four sizes, one-step undo, and a new-drawing
-button. After streaming rendering is stable:
-
-- move new/clear behavior through the shared canvas module;
-- replace the host-only one-step snapshot with a bounded undo ring;
-- add runtime tuning controls and stats only where they aid hardware tuning.
+Only add runtime tuning controls, deeper history, queues/tasks, or more instrumentation when a real
+host/hardware loop consumes them. The current synchronous replay is intentionally simpler than a
+speculative firmware task graph.
 
 ### 4. Physical hardware integration
 
