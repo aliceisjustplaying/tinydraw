@@ -96,6 +96,7 @@ TEST_CASE("XL stroke update work stays bounded as the gesture grows") {
   tinydraw::RibbonStream ribbon;
   std::uint32_t maximum_tile_visits = 0U;
   std::uint32_t maximum_tiles = 0U;
+  bool display_counts_match = true;
 
   for (int index = 0; index < 500; ++index) {
     const float step = static_cast<float>(index);
@@ -108,8 +109,11 @@ TEST_CASE("XL stroke update work stays bounded as the gesture grows") {
     const auto stats = fixture.raster.update(ribbon.append(point), kInk);
     maximum_tile_visits = std::max(maximum_tile_visits, stats.primitive_tile_visits);
     maximum_tiles = std::max(maximum_tiles, stats.tiles_updated);
+    display_counts_match =
+        display_counts_match && stats.display_bytes == stats.pixels_composited * 2U;
   }
 
   CHECK(maximum_tile_visits <= 100U);
   CHECK(maximum_tiles <= 20U);
+  CHECK(display_counts_match);
 }

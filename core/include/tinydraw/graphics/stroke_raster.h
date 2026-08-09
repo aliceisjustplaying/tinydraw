@@ -14,6 +14,7 @@ struct StrokeRasterStats {
   std::uint32_t tiles_updated = 0;
   std::uint32_t primitive_tile_visits = 0;
   std::uint32_t pixels_composited = 0;
+  std::uint32_t display_bytes = 0;
 };
 
 // Incrementally unions one active stroke into a coverage plane. The persistent

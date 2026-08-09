@@ -225,6 +225,7 @@ void StrokeRaster::compose_visible_tile(int tile_x, int tile_y, std::uint16_t co
   }
   ++stats.tiles_updated;
   stats.pixels_composited += static_cast<std::uint32_t>(tile_pixels);
+  stats.display_bytes += static_cast<std::uint32_t>(tile_pixels * sizeof(std::uint16_t));
 }
 
 void StrokeRaster::compose_committed_tile(int tile_x, int tile_y, std::uint16_t color,
