@@ -19,7 +19,9 @@ BOUNDS_TOLERANCE = 0.05
 MARKER = re.compile(
     rb"TINYDRAW_REPLAY_OK accepted=(\d+) primitives=(\d+) tiles=(\d+) "
     rb"bounds=([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+) checksum=([0-9a-fA-F]{8}) "
-    rb"frames=(\d+) dirty=(\d+) max_tiles=(\d+) visits=(\d+)"
+    rb"frames=(\d+) dirty=(\d+) max_tiles=(\d+) visits=(\d+) "
+    rb"display=(\d+) psram_read=(\d+) psram_write=(\d+) "
+    rb"max_psram_read=(\d+) max_psram_write=(\d+)"
 )
 MEMORY_MARKER = b"TINYDRAW_MEMORY_OK committed=329728 coverage=164864 scratch=internal"
 PSRAM_MARKER = b"esp_psram: Found 8MB PSRAM device"
@@ -128,11 +130,33 @@ def main() -> int:
         return 1
 
     checksum = match.group(8).decode("ascii")
-    frames, dirty, maximum_tiles, visits = (int(value) for value in match.groups()[8:12])
-    if frames != EXPECTED_COUNTS[0] or maximum_tiles > 20 or dirty == 0 or visits == 0:
+    (
+        frames,
+        dirty,
+        maximum_tiles,
+        visits,
+        display,
+        psram_read,
+        psram_write,
+        maximum_psram_read,
+        maximum_psram_write,
+    ) = (int(value) for value in match.groups()[8:17])
+    if (
+        frames != EXPECTED_COUNTS[0]
+        or maximum_tiles > 20
+        or dirty == 0
+        or visits == 0
+        or display == 0
+        or psram_read < display
+        or psram_write == 0
+        or maximum_psram_read > 512 * 1024
+        or maximum_psram_write > 512 * 1024
+    ):
         print(
             f"unexpected incremental work: frames={frames} dirty={dirty} "
-            f"max_tiles={maximum_tiles} visits={visits}",
+            f"max_tiles={maximum_tiles} visits={visits} display={display} "
+            f"psram_read={psram_read} psram_write={psram_write} "
+            f"max_psram_read={maximum_psram_read} max_psram_write={maximum_psram_write}",
             file=sys.stderr,
         )
         return 1
@@ -140,7 +164,9 @@ def main() -> int:
         "QEMU replay passed: "
         f"accepted={counts[0]} primitives={counts[1]} tiles={counts[2]} "
         f"bounds={bounds} frames={frames} dirty={dirty} max_tiles={maximum_tiles} "
-        f"visits={visits} checksum={checksum} (informational)"
+        f"visits={visits} display={display} psram_read={psram_read} "
+        f"psram_write={psram_write} max_psram_read={maximum_psram_read} "
+        f"max_psram_write={maximum_psram_write} checksum={checksum} (informational)"
     )
     return 0
 

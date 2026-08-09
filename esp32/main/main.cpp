@@ -108,8 +108,12 @@ struct ReplayStats {
   std::uint32_t primitive_tile_visits = 0U;
   std::uint32_t pixels_composited = 0U;
   std::uint32_t display_bytes = 0U;
+  std::uint32_t psram_bytes_read = 0U;
+  std::uint32_t psram_bytes_written = 0U;
   std::uint32_t maximum_tiles_per_frame = 0U;
   std::uint32_t maximum_visits_per_frame = 0U;
+  std::uint32_t maximum_psram_read_per_frame = 0U;
+  std::uint32_t maximum_psram_write_per_frame = 0U;
 };
 
 void accumulate(ReplayStats& total, const tinydraw::RibbonUpdate& update,
@@ -120,9 +124,16 @@ void accumulate(ReplayStats& total, const tinydraw::RibbonUpdate& update,
   total.primitive_tile_visits += frame.primitive_tile_visits;
   total.pixels_composited += frame.pixels_composited;
   total.display_bytes += frame.display_bytes;
+  const auto psram_read = frame.committed_bytes_read + frame.coverage_bytes_read;
+  const auto psram_written = frame.committed_bytes_written + frame.coverage_bytes_written;
+  total.psram_bytes_read += psram_read;
+  total.psram_bytes_written += psram_written;
   total.maximum_tiles_per_frame = std::max(total.maximum_tiles_per_frame, frame.tiles_updated);
   total.maximum_visits_per_frame =
       std::max(total.maximum_visits_per_frame, frame.primitive_tile_visits);
+  total.maximum_psram_read_per_frame = std::max(total.maximum_psram_read_per_frame, psram_read);
+  total.maximum_psram_write_per_frame =
+      std::max(total.maximum_psram_write_per_frame, psram_written);
 }
 
 }  // namespace
@@ -191,6 +202,8 @@ extern "C" void app_main() {
   const auto final_tiles = touched_tiles(committed);
   const auto checksum = canvas_checksum(committed);
   if (total.maximum_tiles_per_frame > 20U || total.maximum_visits_per_frame > 80U ||
+      total.maximum_psram_read_per_frame > 512U * 1024U ||
+      total.maximum_psram_write_per_frame > 512U * 1024U ||
       total.display_bytes != total.pixels_composited * 2U) {
     std::printf(
         "TINYDRAW_REPLAY_FAIL reason=unbounded_work max_tiles=%lu max_visits=%lu bytes=%lu "
@@ -217,14 +230,19 @@ extern "C" void app_main() {
 #endif
   std::printf(
       "TINYDRAW_REPLAY_OK accepted=%u primitives=%u tiles=%u "
-      "bounds=%.2f,%.2f,%.2f,%.2f checksum=%08lx frames=%u dirty=%u max_tiles=%u visits=%u\n",
+      "bounds=%.2f,%.2f,%.2f,%.2f checksum=%08lx frames=%u dirty=%u max_tiles=%u visits=%u "
+      "display=%u psram_read=%u psram_write=%u max_psram_read=%u max_psram_write=%u\n",
       static_cast<unsigned>(kFixture.size()), static_cast<unsigned>(total.primitives),
       static_cast<unsigned>(final_tiles), static_cast<double>(total.bounds.minimum_x),
       static_cast<double>(total.bounds.minimum_y), static_cast<double>(total.bounds.maximum_x),
       static_cast<double>(total.bounds.maximum_y), static_cast<unsigned long>(checksum),
       static_cast<unsigned>(kFixture.size()), static_cast<unsigned>(total.tiles_updated),
       static_cast<unsigned>(total.maximum_tiles_per_frame),
-      static_cast<unsigned>(total.primitive_tile_visits));
+      static_cast<unsigned>(total.primitive_tile_visits),
+      static_cast<unsigned>(total.display_bytes), static_cast<unsigned>(total.psram_bytes_read),
+      static_cast<unsigned>(total.psram_bytes_written),
+      static_cast<unsigned>(total.maximum_psram_read_per_frame),
+      static_cast<unsigned>(total.maximum_psram_write_per_frame));
   vTaskDelay(1);
   std::printf("TINYDRAW_QEMU_DONE\n");
 }
