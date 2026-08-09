@@ -3,5 +3,6 @@
 /reference/perfect-freehand/
 /esp32/sdkconfig
 /eim_config.toml
+__pycache__/
 .DS_Store
 *.dSYM/
