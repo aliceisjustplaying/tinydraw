@@ -18,9 +18,24 @@ git status --short
 ./scripts/esp32 graphics      # visible QEMU framebuffer; Ctrl-A then X to close
 ```
 
-The next engineering slice is explicit embedded memory placement and dirty display submission,
-described below. Keep the native and QEMU loops green. Do not introduce PlatformIO, globally source
-ESP-IDF, or use QEMU wall-clock speed as hardware evidence.
+The next engineering slice is **PSRAM-backed incremental firmware drawing**. The current firmware
+builds final ribbon geometry and rasterizes it tile-by-tile once; it does not yet exercise
+`StrokeRaster` per touch update. Next:
+
+1. add the smallest ESP-IDF-owned canvas allocation layer;
+2. allocate committed RGB565 pixels (~330 KiB) and active 8-bit coverage (~165 KiB) with explicit
+   PSRAM capabilities;
+3. keep coverage/RGB tile scratch in internal-capability memory;
+4. feed the seven scripted touches through `StrokeRaster` update-by-update;
+5. copy only dirty tile/rectangle results to `DisplayBackend` and refresh once per simulated input
+   frame;
+6. assert allocation capabilities, completion, final structure, and bounded operation counts.
+
+First determine what Espressif QEMU actually models for ESP32-S3 PSRAM. Do not silently replace a
+missing capability with ordinary heap and call that proof; separate QEMU integration evidence from
+hardware-only capability evidence. Do not use QEMU wall-clock speed as drawing-performance evidence.
+Keep native debug/release/ASan, headless QEMU, and graphics QEMU green. Do not introduce PlatformIO
+or globally source ESP-IDF.
 
 Durable implementation preferences from the user:
 
