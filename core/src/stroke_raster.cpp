@@ -40,13 +40,16 @@ StrokeRaster::StrokeRaster(std::span<std::uint16_t> committed, std::span<std::ui
                            std::span<std::uint8_t> active_coverage)
     : committed_(committed), visible_(visible), active_coverage_(active_coverage) {
   constexpr auto pixel_count = static_cast<std::size_t>(kCanvasWidth * kCanvasHeight);
-  assert(committed_.size() >= pixel_count);
-  assert(visible_.size() >= pixel_count);
-  assert(active_coverage_.size() >= pixel_count);
+  valid_ = committed_.size() >= pixel_count && visible_.size() >= pixel_count &&
+           active_coverage_.size() >= pixel_count;
+  assert(valid_);
 }
 
 StrokeRasterStats StrokeRaster::update(const RibbonUpdate& update, std::uint16_t color) {
   StrokeRasterStats stats;
+  if (!valid_) {
+    return stats;
+  }
   TileFlags committed_tiles{};
   TileFlags dirty_tiles{};
   mark_tiles(provisional_, dirty_tiles);
@@ -84,6 +87,9 @@ StrokeRasterStats StrokeRaster::update(const RibbonUpdate& update, std::uint16_t
 StrokeRasterStats StrokeRaster::finish(const RibbonUpdate& update, std::uint16_t color) {
   assert(update.provisional.empty());
   StrokeRasterStats stats;
+  if (!valid_ || !update.provisional.empty()) {
+    return stats;
+  }
   TileFlags committed_tiles{};
   mark_tiles(update.committed, committed_tiles);
 
@@ -115,6 +121,9 @@ StrokeRasterStats StrokeRaster::finish(const RibbonUpdate& update, std::uint16_t
 }
 
 void StrokeRaster::cancel() {
+  if (!valid_) {
+    return;
+  }
   for (int tile_index = 0; tile_index < kTileCount; ++tile_index) {
     if (!touched_[static_cast<std::size_t>(tile_index)]) {
       continue;

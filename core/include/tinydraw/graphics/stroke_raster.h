@@ -45,6 +45,7 @@ class StrokeRaster {
   std::span<std::uint16_t> committed_;
   std::span<std::uint16_t> visible_;
   std::span<std::uint8_t> active_coverage_;
+  bool valid_ = false;
   RibbonPrimitiveBatch provisional_;
   TileFlags touched_{};
   CoverageTile coverage_{0, 0};
