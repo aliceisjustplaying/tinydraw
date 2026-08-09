@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "input_coordinates.h"
 #include "tinydraw/geometry.h"
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/perfect_freehand.h"
@@ -19,6 +20,14 @@ namespace {
 constexpr std::uint16_t kBackground = 0xFFFFU;
 constexpr std::uint16_t kGrid = 0xDEDBU;
 constexpr std::uint16_t kInk = 0x001FU;
+
+std::optional<tinydraw::Point> mouse_to_logical(SDL_Window* window, int x, int y) {
+  int window_width = 0;
+  int window_height = 0;
+  SDL_GetWindowSize(window, &window_width, &window_height);
+  return tinydraw::host::window_to_logical({.x = static_cast<float>(x), .y = static_cast<float>(y)},
+                                           window_width, window_height);
+}
 
 void set_pixel(std::vector<std::uint16_t>& pixels, int x, int y, std::uint16_t color) {
   if (x < 0 || x >= tinydraw::kCanvasWidth || y < 0 || y >= tinydraw::kCanvasHeight) {
@@ -249,25 +258,26 @@ int interactive() {
         stroke_points.clear();
         clear_canvas(committed_pixels, true);
       } else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
-        float x = 0.0F;
-        float y = 0.0F;
-        SDL_RenderWindowToLogical(renderer, event.button.x, event.button.y, &x, &y);
+        const auto point = mouse_to_logical(window, event.button.x, event.button.y);
+        if (!point.has_value()) {
+          continue;
+        }
         stroke_points.clear();
-        stroke_points.push_back(
-            stream.begin({.x = x, .y = y, .timestamp_us = event.button.timestamp * 1'000U}));
+        stroke_points.push_back(stream.begin(
+            {.x = point->x, .y = point->y, .timestamp_us = event.button.timestamp * 1'000U}));
       } else if (event.type == SDL_MOUSEMOTION && stream.active()) {
-        float x = 0.0F;
-        float y = 0.0F;
-        SDL_RenderWindowToLogical(renderer, event.motion.x, event.motion.y, &x, &y);
-        stroke_points.push_back(
-            stream.update({.x = x, .y = y, .timestamp_us = event.motion.timestamp * 1'000U}));
+        const auto point = mouse_to_logical(window, event.motion.x, event.motion.y);
+        if (point.has_value()) {
+          stroke_points.push_back(stream.update(
+              {.x = point->x, .y = point->y, .timestamp_us = event.motion.timestamp * 1'000U}));
+        }
       } else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT &&
                  stream.active()) {
-        float x = 0.0F;
-        float y = 0.0F;
-        SDL_RenderWindowToLogical(renderer, event.button.x, event.button.y, &x, &y);
-        stroke_points.push_back(
-            stream.finish({.x = x, .y = y, .timestamp_us = event.button.timestamp * 1'000U}));
+        const auto mapped = mouse_to_logical(window, event.button.x, event.button.y);
+        const tinydraw::Point point = mapped.value_or(
+            stroke_points.empty() ? tinydraw::Point{} : stroke_points.back().position);
+        stroke_points.push_back(stream.finish(
+            {.x = point.x, .y = point.y, .timestamp_us = event.button.timestamp * 1'000U}));
         const auto outline = tinydraw::perfect_freehand::get_stroke_from_stream(
             stroke_points, stream.config(), true);
         fill_polygon(committed_pixels, outline);
