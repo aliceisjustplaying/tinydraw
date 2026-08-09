@@ -7,6 +7,7 @@
 #include <limits>
 #include <span>
 
+#include "firmware_canvas.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #ifdef TINYDRAW_QEMU_GRAPHICS
@@ -67,6 +68,12 @@ std::uint32_t hash_pixel(std::uint32_t hash, std::uint16_t pixel) {
   hash = (hash ^ static_cast<std::uint8_t>(pixel >> 8U)) * kFnvPrime;
   return (hash ^ static_cast<std::uint8_t>(pixel)) * kFnvPrime;
 }
+
+class NullDisplay final : public tinydraw::DisplayBackend {
+ public:
+  void push_rect(int, int, int, int, const std::uint16_t*) override {}
+  [[nodiscard]] bool busy() const override { return false; }
+};
 
 struct RasterResult {
   std::uint32_t tiles_touched = 0;
@@ -145,7 +152,8 @@ extern "C" void app_main() {
     return;
   }
 
-  tinydraw::DisplayBackend* display = nullptr;
+  NullDisplay null_display;
+  tinydraw::DisplayBackend* display = &null_display;
 #ifdef TINYDRAW_QEMU_GRAPHICS
   tinydraw::esp32::QemuDisplayBackend qemu_display;
   if (!qemu_display.ready()) {
@@ -154,6 +162,14 @@ extern "C" void app_main() {
   }
   display = &qemu_display;
 #endif
+  tinydraw::esp32::FirmwareCanvas canvas(*display);
+  if (!canvas.ready() || !canvas.capabilities_valid()) {
+    std::printf("TINYDRAW_REPLAY_FAIL reason=canvas_memory\n");
+    return;
+  }
+  std::printf("TINYDRAW_MEMORY_OK committed=%u coverage=%u scratch=internal\n",
+              static_cast<unsigned>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight * 2),
+              static_cast<unsigned>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight));
 
   const auto geometry = std::span(primitives.data(), primitive_count);
   const Bounds bounds = primitive_bounds(geometry);
