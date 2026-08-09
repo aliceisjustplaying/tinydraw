@@ -76,7 +76,7 @@ unchanged until lift; core tests compare the incremental result with one-pass co
 `./scripts/dev perf` runs 1,000 XL samples over an eight-second-equivalent continuous path. It does
 not use wall-clock thresholds. It reports and bounds tile visits, display bytes, committed-canvas
 traffic, and active-coverage traffic. Current release characterization has max per-update work of
-4 tiles, 16 primitive/tile visits, 64 KiB modeled-PSRAM reads, and 16 KiB writes. Stroke completion
+4 tiles, 16 primitive/tile visits, 48 KiB modeled-PSRAM reads, and 16 KiB writes. Stroke completion
 is reported separately: the fixture finishes 30 touched tiles with 357,376 bytes read and written.
 That screen-bounded lift-time burst needs real-hardware latency measurement.
 
@@ -115,7 +115,7 @@ harness accepts a run.
 
 The headless harness checks accepted-point, primitive, touched-tile, geometry-bound, memory-placement,
 and bounded incremental-work results. The seven-point replay submits 46 dirty tiles in total, never
-more than 17 in one frame. It also reports 372,736 display bytes, 659,456 modeled-PSRAM read bytes,
+more than 17 in one frame. It also reports 372,736 display bytes, 593,920 modeled-PSRAM read bytes,
 303,104 write bytes, and a 237,568-byte maximum in either direction for one frame. Its checksum is
 informational because cross-architecture pixel identity is not an oracle.
 

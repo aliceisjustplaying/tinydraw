@@ -26,13 +26,12 @@ flow through `StrokeRaster` one frame at a time: 46 dirty-tile submissions total
 frame, and exactly seven graphics refreshes. The process harness requires memory, structure,
 bounded-work, and UI markers.
 
-Performance now takes precedence over shared history. The next software slice is a small,
-behavior-preserving reduction of duplicate active-coverage reads during `StrokeRaster::update`.
-Committed and provisional work currently reload the same tile when their flags overlap; process
-that tile once, store committed coverage before adding the provisional tail, and compare
-`./scripts/dev perf` before/after counters. Do not change pixels or add caching architecture.
+The first performance pass is complete. `StrokeRaster::update` now processes overlapping committed
+and dirty flags in one tile load while still storing committed coverage before adding the
+provisional tail. On the sustained XL workload, active-coverage reads fell from 15,739,904 to
+8,213,504 bytes (47.8%), and max per-update PSRAM reads fell from 64 to 48 KiB with identical pixels.
 
-After that, stop making speculative speed changes until hardware supplies cycle/latency evidence.
+Stop making speculative speed changes until hardware supplies cycle/latency evidence.
 The sustained-XL harness has exposed a separate screen-bounded lift-time burst (30 tiles and 357,376
 bytes each direction); measure it on hardware before deciding whether to spread finalization across
 frames. Shared one-step Undo/New history follows performance work unless hardware arrives first.
@@ -511,7 +510,7 @@ Process-level E2E tests cover:
 
 The QEMU process-level test checks accepted-point, primitive, touched-tile, geometry-bound,
 memory-capability, frame-count, dirty-work, display-byte, and modeled-PSRAM-traffic results. The
-seven-frame fixture reports 372,736 display bytes, 659,456 PSRAM reads, 303,104 writes, and a
+seven-frame fixture reports 372,736 display bytes, 593,920 PSRAM reads, 303,104 writes, and a
 237,568-byte per-frame maximum in either direction. Graphics mode additionally requires
 `TINYDRAW_UI_OK canvas=1 controls=6`, emitted only after checks prove the dedicated framebuffer still
 contains a white canvas, blue stroke, and shared toolbar, receives exactly the reported dirty-tile
@@ -524,8 +523,7 @@ pixel identity is not required.
 These are known and intentionally not hidden:
 
 - active geometry generation and raster work are bounded per input update;
-- committed and provisional processing can currently reload overlapping coverage tiles during one
-  update; the next small optimization should remove that duplicate read;
+- committed and provisional processing now share one active-coverage load for overlapping tiles;
 - lift composites every tile touched by the stroke in one frame; this is bounded to 42 screen tiles
   today but must be measured before any larger-than-screen canvas work;
 - SDL still uploads the full 368×448 texture every display loop; dirty panel submission remains for
@@ -546,7 +544,7 @@ comparison, not ESP32 timing evidence.
 
 `./scripts/dev perf` now supplies the durable characterization: 1,000 XL samples over an
 eight-second-equivalent continuous path, 2,052 tile submissions total, max 4 tiles and 16 primitive
-visits per update, max 64 KiB PSRAM reads and 16 KiB writes per update. Lift touches 30 tiles and
+visits per update, max 48 KiB PSRAM reads and 16 KiB writes per update. Lift touches 30 tiles and
 reads/writes 357,376 bytes. CI locks down these operation/traffic ceilings rather than fragile
 wall-clock thresholds. The lift burst is screen-area-bounded, not stroke-length-bounded, but would
 need redesign before a much larger backing canvas.
@@ -564,7 +562,7 @@ PSRAM, and incrementally replays seven input frames. Its accepted result is:
 ```text
 accepted=7 primitives=13 tiles=14 bounds=27.83,37.83,341.44,411.44
 frames=7 dirty=46 max_tiles=17 visits=133
- display=372736 psram_read=659456 psram_write=303104
+ display=372736 psram_read=593920 psram_write=303104
  max_psram_read=237568 max_psram_write=237568
 ```
 
@@ -582,21 +580,14 @@ QEMU proves the application uses IDF's capability allocator correctly against ou
 quad-PSRAM model. It does not prove the physical board's memory wiring, usable capacity,
 DMA behavior, timing, or panel correctness.
 
-### 2. Next: remove duplicate coverage reads
+### 2. Completed: remove duplicate coverage reads
 
-In `StrokeRaster::update`, committed tiles and dirty visible tiles are currently processed in two
-loops. When a tile belongs to both sets, its active coverage is loaded from PSRAM twice. Merge the
-per-tile processing while preserving this order inside an overlapping tile:
+`StrokeRaster::update` now loads each relevant tile once, stores stable coverage, then adds the
+provisional tail only to scratch before display composition. Sustained XL active-coverage reads fell
+47.8%; max update PSRAM reads fell 25%. Display traffic, writes, geometry visits, and pixels stayed
+unchanged.
 
-1. load active coverage once;
-2. rasterize and store newly committed pieces;
-3. add the provisional tail only to scratch;
-4. compose and submit the visible tile.
-
-Prove pixel identity with the existing suites and use `./scripts/dev perf` to record the traffic
-reduction. This should simplify the loop rather than introduce a cache.
-
-### 3. Then: shared one-step history
+### 3. Next: shared one-step history
 
 Move current Undo/New snapshot semantics out of the SDL shell and add the deterministic full-flow
 E2E described above. Start with one snapshot; no generic command framework, arbitrary-depth history,
