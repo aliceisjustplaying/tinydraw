@@ -139,8 +139,10 @@ void StrokeRaster::cancel() {
   if (!valid_) {
     return;
   }
+  TileFlags dirty_tiles = touched_;
+  mark_tiles(provisional_, dirty_tiles);
   for (int tile_index = 0; tile_index < kTileCount; ++tile_index) {
-    if (!touched_[static_cast<std::size_t>(tile_index)]) {
+    if (!dirty_tiles[static_cast<std::size_t>(tile_index)]) {
       continue;
     }
     const int tile_x = tile_index % kTilesAcross * kTileSize;
@@ -148,15 +150,22 @@ void StrokeRaster::cancel() {
     const int tile_width = std::min(kTileSize, kCanvasWidth - tile_x);
     const int tile_height = std::min(kTileSize, kCanvasHeight - tile_y);
     for (int y = 0; y < tile_height; ++y) {
-      for (int x = 0; x < tile_width; ++x) {
-        const auto index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x + x);
-        active_coverage_[index] = 0U;
+      const auto canvas_index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x);
+      const auto tile_index_in_working = static_cast<std::size_t>(y * tile_width);
+      std::fill_n(active_coverage_.begin() + static_cast<std::ptrdiff_t>(canvas_index), tile_width,
+                  0U);
+      std::copy_n(committed_.begin() + static_cast<std::ptrdiff_t>(canvas_index), tile_width,
+                  working_.begin() + static_cast<std::ptrdiff_t>(tile_index_in_working));
+      if (!visible_.empty()) {
+        std::copy_n(committed_.begin() + static_cast<std::ptrdiff_t>(canvas_index), tile_width,
+                    visible_.begin() + static_cast<std::ptrdiff_t>(canvas_index));
       }
+    }
+    if (display_ != nullptr) {
+      display_->push_rect(tile_x, tile_y, tile_width, tile_height, working_.data());
     }
     touched_[static_cast<std::size_t>(tile_index)] = false;
   }
-  std::copy_n(committed_.begin(), static_cast<std::size_t>(kCanvasWidth * kCanvasHeight),
-              visible_.begin());
   provisional_ = {};
 }
 

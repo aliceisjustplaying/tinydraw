@@ -124,6 +124,26 @@ TEST_CASE("incremental stroke raster can submit dirty tiles without a visible ca
   CHECK(display.pixels == committed);
 }
 
+TEST_CASE("firmware-style cancel restores provisional display tiles") {
+  std::vector<std::uint16_t> committed(kPixelCount, kBackground);
+  std::vector<std::uint8_t> coverage(kPixelCount, 0U);
+  RecordingDisplay display;
+  tinydraw::StrokeRaster raster{committed, coverage, display};
+  tinydraw::RibbonStream ribbon;
+  const tinydraw::InkPoint first{.position = {40.0F, 80.0F}, .radius = 8.0F};
+  const tinydraw::InkPoint second{.position = {80.0F, 90.0F}, .radius = 8.0F};
+
+  static_cast<void>(raster.update(ribbon.append(first), kInk));
+  static_cast<void>(raster.update(ribbon.append(second), kInk));
+  CHECK(changed_pixels(display.pixels) > 0U);
+
+  raster.cancel();
+
+  CHECK(display.pixels == committed);
+  CHECK(changed_pixels(committed) == 0U);
+  CHECK(std::all_of(coverage.begin(), coverage.end(), [](auto value) { return value == 0U; }));
+}
+
 TEST_CASE("incremental stroke raster matches one-pass coverage union") {
   RasterFixture fixture;
   tinydraw::RibbonStream ribbon;
