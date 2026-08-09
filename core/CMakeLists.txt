@@ -5,6 +5,7 @@ add_library(tinydraw_core STATIC
   src/perfect_freehand.cpp
   src/ribbon_geometry.cpp
   src/ribbon_renderer.cpp
+  src/toolbar.cpp
 )
 
 add_library(tinydraw::core ALIAS tinydraw_core)
