@@ -338,6 +338,9 @@ int interactive() {
         if (!point.has_value()) {
           continue;
         }
+        if (stream.active()) {
+          reset_active_stroke();
+        }
         if (tinydraw::toolbar_contains(*point, toolbar)) {
           pixels = committed_pixels;
           switch (tinydraw::toolbar_action_at(*point, toolbar)) {
