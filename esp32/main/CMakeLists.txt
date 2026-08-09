@@ -13,7 +13,7 @@ idf_component_register(
     "${TINYDRAW_CORE}/src/stroke_raster.cpp"
     "${TINYDRAW_CORE}/src/toolbar.cpp"
   INCLUDE_DIRS "${TINYDRAW_CORE}/include"
-  PRIV_REQUIRES esp_lcd_qemu_rgb
+  PRIV_REQUIRES esp_lcd_qemu_rgb esp_psram
 )
 
 target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_20)
