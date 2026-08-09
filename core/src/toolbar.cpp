@@ -110,11 +110,17 @@ void draw_pen(std::span<std::uint16_t> canvas, int width, int height, std::uint1
 }
 
 void draw_eraser(std::span<std::uint16_t> canvas, int width, int height, std::uint16_t color) {
-  line(canvas, width, height, 138, 414, 154, 397, color, 1);
-  line(canvas, width, height, 154, 397, 170, 411, color, 1);
-  line(canvas, width, height, 170, 411, 153, 428, color, 1);
-  line(canvas, width, height, 153, 428, 138, 414, color, 1);
-  line(canvas, width, height, 145, 421, 162, 404, color, 1);
+  // Keep the same two-part silhouette as tldraw's eraser: a tilted block plus
+  // the exposed lower rubber, separated across the short axis.
+  line(canvas, width, height, 147, 409, 158, 398, color, 1);
+  line(canvas, width, height, 158, 398, 168, 408, color, 1);
+  line(canvas, width, height, 168, 408, 157, 419, color, 1);
+  line(canvas, width, height, 147, 409, 157, 419, color, 1);
+  line(canvas, width, height, 147, 409, 143, 413, color, 1);
+  line(canvas, width, height, 143, 413, 143, 416, color, 1);
+  line(canvas, width, height, 143, 416, 149, 422, color, 1);
+  line(canvas, width, height, 149, 422, 153, 423, color, 1);
+  line(canvas, width, height, 153, 423, 157, 419, color, 1);
 }
 
 void draw_new(std::span<std::uint16_t> canvas, int width, int height, std::uint16_t color) {
