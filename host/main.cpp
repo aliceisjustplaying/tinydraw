@@ -20,12 +20,8 @@ constexpr std::uint16_t kBackground = 0xFFFFU;
 constexpr std::uint16_t kGrid = 0xDEDBU;
 constexpr std::uint16_t kInk = 0x001FU;
 
-std::optional<tinydraw::Point> mouse_to_logical(SDL_Window* window, int x, int y) {
-  int window_width = 0;
-  int window_height = 0;
-  SDL_GetWindowSize(window, &window_width, &window_height);
-  return tinydraw::host::window_to_logical({.x = static_cast<float>(x), .y = static_cast<float>(y)},
-                                           window_width, window_height);
+std::optional<tinydraw::Point> mouse_to_logical(int x, int y) {
+  return tinydraw::host::event_to_logical({.x = static_cast<float>(x), .y = static_cast<float>(y)});
 }
 
 void set_pixel(std::vector<std::uint16_t>& pixels, int x, int y, std::uint16_t color) {
@@ -217,7 +213,7 @@ int interactive() {
         stroke_points.clear();
         clear_canvas(committed_pixels, true);
       } else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
-        const auto point = mouse_to_logical(window, event.button.x, event.button.y);
+        const auto point = mouse_to_logical(event.button.x, event.button.y);
         if (!point.has_value()) {
           continue;
         }
@@ -225,14 +221,14 @@ int interactive() {
         stroke_points.push_back(stream.begin(
             {.x = point->x, .y = point->y, .timestamp_us = event.button.timestamp * 1'000U}));
       } else if (event.type == SDL_MOUSEMOTION && stream.active()) {
-        const auto point = mouse_to_logical(window, event.motion.x, event.motion.y);
+        const auto point = mouse_to_logical(event.motion.x, event.motion.y);
         if (point.has_value()) {
           stroke_points.push_back(stream.update(
               {.x = point->x, .y = point->y, .timestamp_us = event.motion.timestamp * 1'000U}));
         }
       } else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT &&
                  stream.active()) {
-        const auto mapped = mouse_to_logical(window, event.button.x, event.button.y);
+        const auto mapped = mouse_to_logical(event.button.x, event.button.y);
         const tinydraw::Point point = mapped.value_or(
             stroke_points.empty() ? tinydraw::Point{} : stroke_points.back().position);
         stroke_points.push_back(stream.finish(
