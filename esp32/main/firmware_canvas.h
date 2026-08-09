@@ -5,6 +5,7 @@
 #include <span>
 
 #include "tinydraw/graphics/stroke_raster.h"
+#include "tinydraw/graphics/tile_undo_history.h"
 #include "tinydraw/platform/display_backend.h"
 
 namespace tinydraw::esp32 {
@@ -21,12 +22,16 @@ class FirmwareCanvas {
   [[nodiscard]] bool capabilities_valid() const;
   [[nodiscard]] std::span<std::uint16_t> committed();
   [[nodiscard]] StrokeRaster& raster() { return *raster_; }
+  [[nodiscard]] TileUndoHistory& undo_history() { return *undo_history_; }
 
  private:
   static constexpr std::size_t kPixelCount = static_cast<std::size_t>(kCanvasWidth * kCanvasHeight);
 
   std::uint16_t* committed_ = nullptr;
   std::uint8_t* active_coverage_ = nullptr;
+  std::uint16_t* undo_storage_ = nullptr;
+  void* undo_history_storage_ = nullptr;
+  TileUndoHistory* undo_history_ = nullptr;
   void* raster_storage_ = nullptr;
   StrokeRaster* raster_ = nullptr;
 };

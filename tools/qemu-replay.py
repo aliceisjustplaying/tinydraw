@@ -23,7 +23,10 @@ MARKER = re.compile(
     rb"display=(\d+) psram_read=(\d+) psram_write=(\d+) "
     rb"max_psram_read=(\d+) max_psram_write=(\d+)"
 )
-MEMORY_MARKER = b"TINYDRAW_MEMORY_OK committed=329728 coverage=164864 scratch=internal"
+MEMORY_MARKER = (
+    b"TINYDRAW_MEMORY_OK committed=329728 coverage=164864 "
+    b"history=3440640 scratch=internal"
+)
 PSRAM_MARKER = b"esp_psram: Found 8MB PSRAM device"
 
 

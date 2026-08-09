@@ -125,7 +125,8 @@ void accumulate(ReplayStats& total, const tinydraw::RibbonUpdate& update,
   total.pixels_composited += frame.pixels_composited;
   total.display_bytes += frame.display_bytes;
   const auto psram_read = frame.committed_bytes_read + frame.coverage_bytes_read;
-  const auto psram_written = frame.committed_bytes_written + frame.coverage_bytes_written;
+  const auto psram_written =
+      frame.committed_bytes_written + frame.coverage_bytes_written + frame.history_bytes_written;
   total.psram_bytes_read += psram_read;
   total.psram_bytes_written += psram_written;
   total.maximum_tiles_per_frame = std::max(total.maximum_tiles_per_frame, frame.tiles_updated);
@@ -160,17 +161,18 @@ extern "C" void app_main() {
     std::printf("TINYDRAW_REPLAY_FAIL reason=canvas_memory\n");
     return;
   }
-  std::printf("TINYDRAW_MEMORY_OK committed=%u coverage=%u scratch=internal\n",
+  std::printf("TINYDRAW_MEMORY_OK committed=%u coverage=%u history=%u scratch=internal\n",
               static_cast<unsigned>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight * 2),
-              static_cast<unsigned>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight));
+              static_cast<unsigned>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight),
+              static_cast<unsigned>(tinydraw::TileUndoHistory::kRequiredPixels * 2U));
 
   tinydraw::InkStream ink;
   tinydraw::RibbonStream ribbon;
   ReplayStats total;
 
   const auto process_frame = [&](const tinydraw::RibbonUpdate& update, bool final) {
-    const auto stats =
-        final ? canvas.raster().finish(update, kInk) : canvas.raster().update(update, kInk);
+    const auto stats = final ? canvas.raster().finish(update, kInk, &canvas.undo_history())
+                             : canvas.raster().update(update, kInk);
     accumulate(total, update, stats);
 #ifdef TINYDRAW_QEMU_GRAPHICS
     if (final) {

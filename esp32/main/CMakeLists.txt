@@ -12,6 +12,7 @@ idf_component_register(
     "${TINYDRAW_CORE}/src/ribbon_geometry.cpp"
     "${TINYDRAW_CORE}/src/ribbon_renderer.cpp"
     "${TINYDRAW_CORE}/src/stroke_raster.cpp"
+    "${TINYDRAW_CORE}/src/tile_undo_history.cpp"
     "${TINYDRAW_CORE}/src/toolbar.cpp"
   INCLUDE_DIRS "${TINYDRAW_CORE}/include"
   PRIV_REQUIRES esp_lcd_qemu_rgb esp_psram
