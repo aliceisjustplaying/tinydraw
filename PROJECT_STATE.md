@@ -18,34 +18,15 @@ git status --short
 ./scripts/esp32 graphics      # visible QEMU framebuffer; Ctrl-A then X to close
 ```
 
-The firmware now allocates its 329,728-byte committed RGB565 canvas and 164,864-byte active
-coverage plane with explicit `MALLOC_CAP_SPIRAM`. `StrokeRaster`, `TileUndoHistory`, and both tile
-scratch buffers use DMA-capable internal RAM. Runtime checks verify external, internal, and DMA
-capabilities. The seven fixture touches
-flow through `StrokeRaster` one frame at a time: 46 dirty-tile submissions total, at most 17 in a
-frame, and exactly seven graphics refreshes. The process harness requires memory, structure,
-bounded-work, and UI markers.
+The native drawing/UI loop, bounded streaming raster, ten-level dirty-tile Undo, PSRAM-backed
+ESP-IDF target, and headless/graphics QEMU checks are complete. Physical panel and touch adapters
+remain unimplemented. The next evidence must come from identifying and measuring the actual V1 or
+V2 board; do not make speculative speed changes from QEMU timing.
 
-The first performance pass is complete. `StrokeRaster::update` now processes overlapping committed
-and dirty flags in one tile load while still storing committed coverage before adding the
-provisional tail. On the sustained XL workload, active-coverage reads fell from 15,739,904 to
-8,213,504 bytes (47.8%), and max per-update PSRAM reads fell from 64 to 48 KiB with identical pixels.
-
-Stop making speculative speed changes until hardware supplies cycle/latency evidence.
-The sustained-XL harness has exposed a separate screen-bounded lift-time burst; measure it on
-hardware before deciding whether to spread finalization across frames. Ten-level dirty-tile Undo is
-now shared by host and firmware. The same 1,000-sample XL workload captures 235,520 history bytes at
-lift and restores 235,520 bytes on Undo instead of copying a 329,728-byte full canvas for every
-stroke. These are traffic counts, not latency evidence.
-
-Physical firmware builds use 240 MHz, performance optimization, and the ESP32-S3R8's octal PSRAM.
-QEMU builds use a separate configuration with the same CPU/optimization settings and its required
-8 MB quad-PSRAM model. `scripts/esp32` asserts these effective settings after every build. QEMU is
-valid integration evidence for IDF's capability allocator, but not evidence for physical capacity,
-bandwidth, DMA behavior, or timing. Verify those on the exact board revision. The incoming hardware
-may be V1 (SH8601 + FT3168) or V2 (CO5300 + CST820); keep both adapter paths and detect/confirm the
-revision before selecting one. Do not use QEMU wall-clock speed as performance evidence. Keep native
-debug/release/ASan, headless QEMU, and graphics QEMU green. Do not introduce PlatformIO or globally source ESP-IDF.
+Physical builds use performance optimization, 240 MHz, and octal PSRAM. Separate QEMU builds use
+the same CPU/optimization settings and the emulator's required 8 MB quad-PSRAM model.
+`scripts/esp32` asserts those settings. Keep native debug/release/ASan, headless QEMU, and graphics
+QEMU green. Do not introduce PlatformIO or globally source ESP-IDF.
 
 Durable implementation preferences from the user:
 
@@ -89,9 +70,10 @@ window. It remains resizable for inspection. Drawing currently has:
 The prototype is useful for visual and input-loop testing, but it is not yet the embedded product.
 Its tldraw-inspired UI is intentionally direct-drawn and minimal. Undo stores ten bounded dirty-tile
 before-images in caller-provided memory and is shared by host and firmware. There is no persistent
-point arena or hardware driver. A real ESP-IDF ESP32-S3 target now compiles the shared core, boots
-under Espressif QEMU, replays the deterministic zigzag stroke, and shows the stroke plus the shared
-six-control TinyDraw toolbar in QEMU's virtual framebuffer. QEMU input remains scripted rather than interactive.
+point arena or physical panel/touch driver. A real ESP-IDF ESP32-S3 target compiles the shared core,
+boots under Espressif QEMU, replays the deterministic zigzag stroke, and shows the stroke plus the
+shared six-control TinyDraw toolbar in QEMU's virtual framebuffer. QEMU input remains scripted
+rather than interactive.
 
 ## Fast development loop
 
@@ -117,8 +99,7 @@ Expected current results:
 - 56 doctest cases;
 - 13 CTest entries, including sustained-XL/Undo characterization and process-level replay/UI/Undo
   checks;
-- debug, release, ASan, and UBSan green;
-- incremental debug suite typically well below one second.
+- debug, release, ASan, and UBSan green.
 
 The ASan preset excludes the SDL executable because Homebrew `sdl2-compat` aborts in its external
 SDL3 loader under Apple's sanitizer runtime before application code starts. All SDL-free project
@@ -164,7 +145,7 @@ The official `espressif/esp_lcd_qemu_rgb` component is locked at 1.0.2.
 - `core/include/tinydraw/platform/coordinate_transform.h`
   - touch-controller → logical and logical → panel transforms.
 - `core/include/tinydraw/platform/display_backend.h`
-  - narrow display submission seam for later host/QEMU/hardware adapters.
+  - synchronous no-retention display submission seam used by QEMU and future physical adapters.
 - `core/include/tinydraw/ink/ink_stream.h`
   - active stroke lifecycle and dt-adaptive filtering/pressure.
 - `core/include/tinydraw/ink/perfect_freehand.h`
@@ -316,7 +297,8 @@ Two related implementations currently coexist intentionally:
 The visible path is PF-style but is not yet a perfect structural reproduction of all upstream
 outline suppression and corner tessellation behavior. The batch builder remains a behavioral
 comparison target for the visible path. Tests prove that accumulating stream commits plus the
-current provisional tail reproduces the batch builder after every appended point.
+current provisional tail reproduces `build_pf_ribbon` after every appended point; they do not claim
+structural equivalence to upstream's complete outline.
 
 ## PF dependency finding
 
@@ -339,7 +321,7 @@ long-stroke tests now encode this structural commit rule.
 
 ## Raster pipeline
 
-Current logical stroke rendering:
+The one-pass `RibbonRenderer` reference path is:
 
 ```text
 RibbonPrimitive[]
@@ -442,73 +424,25 @@ obvious. Together with committed RGB565 and active coverage, modeled PSRAM use i
 QEMU proves that allocation against the 8 MiB model, not that either physical board revision has the
 same bandwidth or allocator behavior.
 
-## Bugs found and lessons retained
+## Durable pitfalls
 
-### Snapshot terminology
-
-The first output image was called a golden despite being generated by our own code. It was renamed
-to a characterization snapshot. Only upstream PF fixtures are independent geometry oracles.
-
-### Cursor mapped to northwest / bottom-right mapped to center
-
-An initial Retina hypothesis led to manual window scaling, which did not change the bug. A direct
-user probe—single click at bottom-right—proved SDL events were already logical. The second scaling
-was removed and the exact case was regression-tested.
-
-### Self-overlap holes
-
-Filling upstream PF's whole returned outline as one even-odd polygon produced large holes where a
-stroke crossed itself. The visible path now emits and coverage-unions simple pieces. Never restore a
-whole self-intersecting polygon raster path.
-
-### Internal diagonal seams
-
-Splitting every normal ribbon span into two independently sampled triangles could leave partial
-coverage along the shared diagonal under max-union. Convex spans now rasterize as one quad;
-triangles are only a non-convex fallback.
-
-### White slits and speckles at tight joins
-
-Cross-sections alone left uncovered wedges at frequent tight turns. Every accepted interior stream
-point now emits explicit round join coverage. `tight-joins.stroke` and its reviewed snapshot retain
-the reproduction.
-
-### Exact release endpoint
-
-Filtering the final mouse-up coordinate shortened completed strokes. `InkStream::finish()` now
-forces the exact release coordinate while preserving the normal timestamp/pressure update.
-
-### Embedded stack pressure
-
-The first tile renderer held roughly 12.6 KiB of working buffers in one function frame. Scratch is
-now owned by `RibbonRenderer`, allowing static/internal-SRAM placement. The first QEMU firmware
-replay also kept its bounded primitive array on ESP-IDF's main-task stack; QEMU completed the replay
-and then reported a stack-canary failure. Moving that array to static storage fixed it. The QEMU
-harness waits for a post-replay FreeRTOS context switch before accepting completion so this class of
-failure is not hidden.
-
-### QEMU framebuffer requires graphics mode
-
-`esp_lcd_qemu_rgb` is a QEMU-only MMIO device. Constructing it in a `-nographic` machine without the
-virtual framebuffer blocked before replay. The headless build now leaves the display pointer null;
-a separate graphics build enables `TINYDRAW_QEMU_GRAPHICS`, instantiates `QemuDisplayBackend`, and
-runs QEMU with `--graphics`. Keep headless integration and visible display checks separate.
-
-The first graphics implementation mixed `esp_lcd_panel_draw_bitmap()` tile submissions with a final
-`esp_lcd_rgb_qemu_refresh()`. The component's source shows that each bitmap call is a synchronous
-emulated MMIO update with a busy-wait, while refresh redraws from a separate dedicated framebuffer.
-This made the stroke paint progressively over roughly two seconds, then replaced it with the
-mostly-black direct framebuffer containing only the toolbar. `QemuDisplayBackend::push_rect()` now
-copies tiles into the dedicated framebuffer; the toolbar draws into the same memory and one refresh
-submits the complete frame. This delay was therefore an avoidable adapter bug amplified by QEMU,
-not useful hardware performance evidence.
-
-The isolated `eim` installation places on-request QEMU below a nested tools directory that its
-activation PATH does not include automatically. The Python test harness already located that binary,
-but the first interactive `graphics` command bypassed the harness and failed with
-`qemu-system-xtensa is not installed`. `scripts/esp32` now locates the executable and prepends its
-parent directory for every QEMU action. The exact visible command was verified through replay
-completion under a timeout.
+- Characterization snapshots are generated by TinyDraw and are not goldens. Only upstream PF
+  fixtures are independent geometry oracles.
+- Current `sdl2-compat` mouse events are already renderer-logical. Scaling them again maps the
+  bottom-right toward the center; the regression is directly tested.
+- A whole self-intersecting PF outline creates overlap holes. Keep the visible path as unioned simple
+  pieces.
+- Independently rasterized triangles can expose their shared diagonal under max-union. Normal convex
+  spans remain single quads; triangles are only a non-convex fallback.
+- Tight turns need explicit round join coverage. `tight-joins.stroke` retains that reproduction.
+- `InkStream::finish()` must preserve the exact release coordinate rather than filtering it short.
+- Tile scratch and bounded primitive storage must not live on the ESP-IDF task stack. The QEMU
+  harness requires a post-replay context switch to expose delayed stack-canary failures.
+- Headless QEMU must not initialize `esp_lcd_qemu_rgb`; graphics mode uses a separate build and
+  virtual framebuffer. Dirty tiles and toolbar pixels must share that framebuffer before one
+  refresh, rather than mixing bitmap MMIO writes with framebuffer refresh.
+- `scripts/esp32` locates `qemu-system-xtensa` explicitly because `eim` activation does not always
+  add its nested binary directory to `PATH`.
 
 ## Test policy and current coverage
 
@@ -597,83 +531,16 @@ submissions have a synchronous no-retention contract, so a physical adapter must
 before returning. Physical panel/touch adapters and real-board DMA/performance evidence remain
 unimplemented.
 
-## Exact next engineering steps
+## Next engineering step
 
-### 1. Completed: ESP-IDF / QEMU vertical slice
+When hardware arrives:
 
-The ESP32-S3 target compiles every shared core source as optimized Xtensa C++20 at 240 MHz. Physical
-builds select octal PSRAM; separate QEMU builds boot with modeled quad PSRAM and incrementally replay
-seven input frames. Its accepted result is:
+1. identify V1 (SH8601 + FT3168) versus V2 (CO5300 + CST820) before selecting adapters;
+2. confirm the physical octal-PSRAM build boots with the expected capacity;
+3. validate touch transforms/cadence and panel offsets, rotation, color order, and partial writes;
+4. measure sustained XL drawing, lift, dirty Undo, DMA/bus behavior, power, and visual AA quality.
 
-```text
-accepted=7 primitives=13 tiles=14 bounds=27.83,37.83,341.44,411.44
-frames=7 dirty=46 max_tiles=17 visits=133
- display=372736 psram_read=593920 psram_write=438272
- max_psram_read=237568 max_psram_write=372736
-```
-
-The RGB565 FNV checksum remains informational. `./scripts/esp32 qemu` verifies modeled PSRAM boot,
-external/internal/DMA capability placement, structure, bounded work, and a post-replay FreeRTOS
-context switch. `./scripts/esp32 graphics-test` additionally verifies 46 dirty submissions, seven refreshes,
-and final toolbar/canvas pixels. `./scripts/esp32 graphics` leaves the window open for inspection.
-
-The framebuffer adapter remains behind `TINYDRAW_QEMU_GRAPHICS`: initializing
-`esp_lcd_qemu_rgb` without QEMU's `--graphics` device blocks. The visible build does not allocate a
-second firmware-visible framebuffer. Host debug/release/ASan, headless QEMU, and graphics QEMU were
-green at this milestone.
-
-QEMU proves the application uses IDF's capability allocator correctly against our configured 8 MB
-quad-PSRAM model. It does not prove the physical board's memory wiring, usable capacity,
-DMA behavior, timing, or panel correctness.
-
-### 2. Completed: remove duplicate coverage reads
-
-`StrokeRaster::update` now loads each relevant tile once, stores stable coverage, then adds the
-provisional tail only to scratch before display composition. Sustained XL active-coverage reads fell
-47.8%; max update PSRAM reads fell 25%. Display traffic, writes, geometry visits, and pixels stayed
-unchanged.
-
-### 3. Completed: ten-entry dirty-tile history
-
-Undo/New semantics now live in the shared core. Host and firmware reserve ten fixed tile-addressed
-slots; stroke completion writes only touched before-images, Undo restores/submits only those tiles,
-and New is a full-screen undoable entry. Exact host E2E, sanitizer, traffic characterization, and
-8 MiB QEMU allocation checks are green. There is intentionally no redo, compression, generic
-command framework, variable arena, or point history.
-
-### 4. Next: physical performance and revision identification
-
-When hardware arrives, first identify V1 versus V2, confirm that the physical octal-PSRAM build
-boots with the expected capacity, and measure stroke lift plus dirty Undo on-device. Do not choose
-SH8601/FT3168 versus CO5300/CST820 adapters from availability guesses. Keep drawing behavior unchanged until those measurements identify a real
-bottleneck.
-
-### 5. Later software tuning
-
-Only add runtime tuning controls, deeper history, queues/tasks, or more instrumentation when a real
-host/hardware loop consumes them. The current synchronous replay is intentionally simpler than a
-speculative firmware task graph.
-
-### 6. Physical hardware integration
-
-When the board arrives, validate what QEMU cannot:
-
-- touch-controller initialization, transforms, cadence, and finger feel;
-- AMOLED controller offsets, rotation, color order, and partial-window writes;
-- actual PSRAM/DMA capability restrictions and bandwidth;
-- latency, sustained XL strokes, thermal/power behavior, and visual AA quality.
-
-## Commit milestone history
-
-The repository history was rewritten once to replace placeholder author and committer metadata with
-`alice <aliceisjustplaying@gmail.com>`, so older handoff documents and chat transcripts may contain
-obsolete commit IDs. The commit subjects and trees were preserved. Use Git as the source of truth:
-
-```sh
-git log --reverse --oneline
-git log --format='%an <%ae> | %cn <%ce>' | sort -u
-```
-
-Independent whole-repository reviews informed the tested raster, lifecycle, memory-placement, and
-Undo invariants documented above. The misleading intermediate cursor-scaling and polygon-rendering
-approaches remain in Git history but are not present in the current tree.
+Keep drawing behavior unchanged until those measurements expose a real bottleneck. Only add queues,
+tasks, deeper history, runtime tuning, or larger-canvas machinery when a measured hardware or host
+loop needs them. The synchronous replay is intentionally simpler than a speculative firmware task
+graph.
