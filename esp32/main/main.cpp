@@ -7,6 +7,8 @@
 #include <limits>
 #include <span>
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "tinydraw/geometry.h"
 #include "tinydraw/graphics/coverage_tile.h"
 #include "tinydraw/ink/ink_stream.h"
@@ -108,7 +110,7 @@ RasterResult raster_checksum(std::span<const tinydraw::RibbonPrimitive> primitiv
 extern "C" void app_main() {
   tinydraw::InkStream ink;
   tinydraw::RibbonStream ribbon;
-  std::array<tinydraw::RibbonPrimitive, kMaximumPrimitives> primitives{};
+  static std::array<tinydraw::RibbonPrimitive, kMaximumPrimitives> primitives{};
   std::size_t primitive_count = 0U;
 
   const auto keep_committed = [&](const tinydraw::RibbonUpdate& update) {
@@ -144,4 +146,6 @@ extern "C" void app_main() {
       static_cast<unsigned>(raster.tiles_touched), static_cast<double>(bounds.minimum_x),
       static_cast<double>(bounds.minimum_y), static_cast<double>(bounds.maximum_x),
       static_cast<double>(bounds.maximum_y), static_cast<unsigned long>(raster.checksum));
+  vTaskDelay(1);
+  std::printf("TINYDRAW_QEMU_DONE\n");
 }

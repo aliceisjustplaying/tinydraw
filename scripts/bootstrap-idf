@@ -16,10 +16,13 @@ fi
 
 eim install -i "$version"
 
+if ! find "$HOME/.espressif/tools" -path '*qemu-system-xtensa' -type f -perm -111 -print -quit | grep -q .; then
+  eim run 'python "$IDF_PATH/tools/idf_tools.py" install qemu-xtensa'
+fi
+
 cat <<EOF
-ESP-IDF $version is installed in its isolated environment.
-Use this only once esp32/ exists:
-  eim run "idf.py --version"
-  eim run "idf.py build"
-Do not source ESP-IDF globally; it is intentionally separate from the host loop.
+ESP-IDF $version and ESP32-S3 QEMU are installed in their isolated environment.
+Use the project wrappers rather than sourcing ESP-IDF globally:
+  ./scripts/esp32 build
+  ./scripts/esp32 qemu
 EOF

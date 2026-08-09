@@ -15,11 +15,15 @@ case "$action" in
     cd "$root/esp32"
     eim run "idf.py -B '$build' build"
     ;;
+  qemu)
+    "$0" build
+    python3 "$root/tools/qemu-replay.py"
+    ;;
   clean)
     rm -rf "$build" "$root/esp32/sdkconfig"
     ;;
   *)
-    echo "usage: $0 {build|clean}" >&2
+    echo "usage: $0 {build|qemu|clean}" >&2
     exit 2
     ;;
 esac
