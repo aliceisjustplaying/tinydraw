@@ -8,3 +8,29 @@ target_include_directories(tinydraw_tests SYSTEM PRIVATE
 )
 
 add_test(NAME tinydraw_tests COMMAND tinydraw_tests)
+
+if(TARGET tinydraw_host)
+  set(REPLAY_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/replay")
+  file(MAKE_DIRECTORY "${REPLAY_OUTPUT_DIR}")
+
+  add_test(
+    NAME tinydraw_replay_e2e
+    COMMAND tinydraw_host
+      --replay "${PROJECT_SOURCE_DIR}/testdata/strokes/zigzag.stroke"
+      --output "${REPLAY_OUTPUT_DIR}/zigzag.ppm"
+  )
+  set_tests_properties(tinydraw_replay_e2e PROPERTIES
+    FIXTURES_SETUP replay_zigzag
+    TIMEOUT 5
+  )
+
+  add_test(
+    NAME tinydraw_replay_golden
+    COMMAND ${CMAKE_COMMAND} -E compare_files
+      "${REPLAY_OUTPUT_DIR}/zigzag.ppm"
+      "${PROJECT_SOURCE_DIR}/testdata/golden/zigzag.ppm"
+  )
+  set_tests_properties(tinydraw_replay_golden PROPERTIES
+    FIXTURES_REQUIRED replay_zigzag
+  )
+endif()

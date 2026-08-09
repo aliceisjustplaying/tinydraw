@@ -1,13 +1,16 @@
 #include <SDL.h>
 
 #include <algorithm>
-#include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
+#include <string>
 #include <vector>
 
 #include "tinydraw/geometry.h"
+#include "tinydraw/ink/ink_stream.h"
 
 namespace {
 
@@ -23,18 +26,39 @@ void set_pixel(std::vector<std::uint16_t>& pixels, int x, int y, std::uint16_t c
   pixels[index] = color;
 }
 
-void draw_dot(std::vector<std::uint16_t>& pixels, int x, int y) {
-  for (int offset_y = -2; offset_y <= 2; ++offset_y) {
-    for (int offset_x = -2; offset_x <= 2; ++offset_x) {
-      if ((offset_x * offset_x) + (offset_y * offset_y) <= 4) {
-        set_pixel(pixels, x + offset_x, y + offset_y, kInk);
+void draw_disc(std::vector<std::uint16_t>& pixels, tinydraw::Point center, float radius) {
+  const int extent = static_cast<int>(std::ceil(radius));
+  const int center_x = static_cast<int>(std::round(center.x));
+  const int center_y = static_cast<int>(std::round(center.y));
+  const float radius_squared = radius * radius;
+  for (int offset_y = -extent; offset_y <= extent; ++offset_y) {
+    for (int offset_x = -extent; offset_x <= extent; ++offset_x) {
+      const float x = static_cast<float>(offset_x);
+      const float y = static_cast<float>(offset_y);
+      if (x * x + y * y <= radius_squared) {
+        set_pixel(pixels, center_x + offset_x, center_y + offset_y, kInk);
       }
     }
   }
 }
 
-void clear_canvas(std::vector<std::uint16_t>& pixels) {
+void draw_segment(std::vector<std::uint16_t>& pixels, const tinydraw::InkPoint& from,
+                  const tinydraw::InkPoint& to) {
+  const float delta_x = to.position.x - from.position.x;
+  const float delta_y = to.position.y - from.position.y;
+  const int steps = std::max(1, static_cast<int>(std::ceil(std::hypot(delta_x, delta_y))));
+  for (int step = 1; step <= steps; ++step) {
+    const float t = static_cast<float>(step) / static_cast<float>(steps);
+    draw_disc(pixels, {.x = from.position.x + delta_x * t, .y = from.position.y + delta_y * t},
+              from.radius + (to.radius - from.radius) * t);
+  }
+}
+
+void clear_canvas(std::vector<std::uint16_t>& pixels, bool show_grid) {
   std::fill(pixels.begin(), pixels.end(), kBackground);
+  if (!show_grid) {
+    return;
+  }
   for (int y = 0; y < tinydraw::kCanvasHeight; y += 64) {
     for (int x = 0; x < tinydraw::kCanvasWidth; ++x) {
       set_pixel(pixels, x, y, kGrid);
@@ -47,15 +71,79 @@ void clear_canvas(std::vector<std::uint16_t>& pixels) {
   }
 }
 
-}  // namespace
+bool write_ppm(const std::string& path, const std::vector<std::uint16_t>& pixels) {
+  std::ofstream output(path, std::ios::binary);
+  if (!output) {
+    return false;
+  }
+  output << "P6\n" << tinydraw::kCanvasWidth << ' ' << tinydraw::kCanvasHeight << "\n255\n";
+  std::vector<char> rgb;
+  rgb.reserve(pixels.size() * 3U);
+  for (const std::uint16_t pixel : pixels) {
+    const auto red = static_cast<unsigned char>(((pixel >> 11U) & 0x1FU) * 255U / 31U);
+    const auto green = static_cast<unsigned char>(((pixel >> 5U) & 0x3FU) * 255U / 63U);
+    const auto blue = static_cast<unsigned char>((pixel & 0x1FU) * 255U / 31U);
+    rgb.push_back(static_cast<char>(red));
+    rgb.push_back(static_cast<char>(green));
+    rgb.push_back(static_cast<char>(blue));
+  }
+  output.write(rgb.data(), static_cast<std::streamsize>(rgb.size()));
+  return output.good();
+}
 
-int main() {
+int replay(const std::string& input_path, const std::string& output_path) {
+  std::ifstream input(input_path);
+  if (!input) {
+    std::fprintf(stderr, "cannot open replay: %s\n", input_path.c_str());
+    return EXIT_FAILURE;
+  }
+
+  std::vector<std::uint16_t> pixels(
+      static_cast<std::size_t>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight));
+  clear_canvas(pixels, false);
+  tinydraw::InkStream stream;
+  tinydraw::InkPoint previous{};
+  std::size_t point_count = 0;
+
+  std::string action;
+  tinydraw::TouchPoint touch{};
+  while (input >> action >> touch.x >> touch.y >> touch.timestamp_us) {
+    if (action == "down") {
+      previous = stream.begin(touch);
+      draw_disc(pixels, previous.position, previous.radius);
+    } else if ((action == "move" || action == "up") && stream.active()) {
+      const auto current = stream.update(touch);
+      draw_segment(pixels, previous, current);
+      previous = current;
+      if (action == "up") {
+        stream.end();
+      }
+    } else {
+      std::fprintf(stderr, "invalid replay action or lifecycle: %s\n", action.c_str());
+      return EXIT_FAILURE;
+    }
+    ++point_count;
+  }
+
+  if (!input.eof() || stream.active() || point_count == 0U) {
+    std::fprintf(stderr, "incomplete replay: %s\n", input_path.c_str());
+    return EXIT_FAILURE;
+  }
+  if (!write_ppm(output_path, pixels)) {
+    std::fprintf(stderr, "cannot write replay image: %s\n", output_path.c_str());
+    return EXIT_FAILURE;
+  }
+  std::printf("replayed %zu points to %s\n", point_count, output_path.c_str());
+  return EXIT_SUCCESS;
+}
+
+int interactive() {
   if (SDL_Init(SDL_INIT_VIDEO) != 0) {
     std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
     return EXIT_FAILURE;
   }
 
-  SDL_Window* window = SDL_CreateWindow("TinyDraw host — drag to test logical input",
+  SDL_Window* window = SDL_CreateWindow("TinyDraw host — drag to test ink input",
                                         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                         tinydraw::kCanvasWidth * 2, tinydraw::kCanvasHeight * 2,
                                         SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
@@ -79,7 +167,9 @@ int main() {
 
   std::vector<std::uint16_t> pixels(
       static_cast<std::size_t>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight));
-  clear_canvas(pixels);
+  clear_canvas(pixels, true);
+  tinydraw::InkStream stream;
+  tinydraw::InkPoint previous{};
 
   bool running = true;
   while (running) {
@@ -89,12 +179,23 @@ int main() {
           (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)) {
         running = false;
       } else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_c) {
-        clear_canvas(pixels);
-      } else if (event.type == SDL_MOUSEMOTION && (event.motion.state & SDL_BUTTON_LMASK) != 0U) {
-        float logical_x = 0.0F;
-        float logical_y = 0.0F;
-        SDL_RenderWindowToLogical(renderer, event.motion.x, event.motion.y, &logical_x, &logical_y);
-        draw_dot(pixels, static_cast<int>(logical_x), static_cast<int>(logical_y));
+        clear_canvas(pixels, true);
+      } else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
+        float x = 0.0F;
+        float y = 0.0F;
+        SDL_RenderWindowToLogical(renderer, event.button.x, event.button.y, &x, &y);
+        previous = stream.begin({.x = x, .y = y, .timestamp_us = event.button.timestamp * 1'000U});
+        draw_disc(pixels, previous.position, previous.radius);
+      } else if (event.type == SDL_MOUSEMOTION && stream.active()) {
+        float x = 0.0F;
+        float y = 0.0F;
+        SDL_RenderWindowToLogical(renderer, event.motion.x, event.motion.y, &x, &y);
+        const auto current =
+            stream.update({.x = x, .y = y, .timestamp_us = event.motion.timestamp * 1'000U});
+        draw_segment(pixels, previous, current);
+        previous = current;
+      } else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT) {
+        stream.end();
       }
     }
 
@@ -112,4 +213,17 @@ int main() {
   SDL_DestroyWindow(window);
   SDL_Quit();
   return EXIT_SUCCESS;
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+  if (argc == 5 && std::string(argv[1]) == "--replay" && std::string(argv[3]) == "--output") {
+    return replay(argv[2], argv[4]);
+  }
+  if (argc != 1) {
+    std::fprintf(stderr, "usage: %s [--replay INPUT --output IMAGE.ppm]\n", argv[0]);
+    return EXIT_FAILURE;
+  }
+  return interactive();
 }

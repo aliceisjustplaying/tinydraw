@@ -19,7 +19,7 @@ machine was bootstrapped with Apple Clang 21 and SDL 2.32 through `sdl2-compat`.
 ```sh
 ./scripts/dev test          # debug build + all native tests
 ./scripts/dev run           # SDL host; drag to draw, C clears, Esc quits
-./scripts/dev asan          # AddressSanitizer + UndefinedBehaviorSanitizer
+./scripts/dev asan          # AddressSanitizer + UndefinedBehaviorSanitizer on SDL-free core
 ./scripts/dev release       # optimized build + tests
 ./scripts/dev format-check
 ./scripts/dev format
@@ -35,6 +35,28 @@ ctest --preset host-debug
 
 Build products and `compile_commands.json` stay below `out/build/<preset>/`. Editors should use
 `out/build/host-debug/compile_commands.json`.
+
+## End-to-end replay
+
+The host executable can run without a window and drive the real input/filter/render path from a
+stroke recording:
+
+```sh
+out/build/host-debug/host/tinydraw_host \
+  --replay testdata/strokes/zigzag.stroke \
+  --output /tmp/zigzag.ppm
+```
+
+CTest regenerates this image and compares it byte-for-byte with the host golden. This gives us a
+cheap end-to-end regression test now; the same recordings will later drive QEMU and hardware, with
+structural/tolerance comparisons instead of cross-target pixel equality.
+
+The sanitizer preset excludes the host executable because Homebrew's `sdl2-compat` loader aborts
+under Apple's sanitizer runtime before application code starts. All SDL-free project code remains
+sanitized; full host replay runs in both debug and release presets.
+
+The TypeScript `perfect-freehand` reference and pinned commit are documented in
+`reference/PERFECT_FREEHAND.md`. It is cloned locally but is not a build dependency or submodule.
 
 ## ESP-IDF (deferred until the native interfaces exist)
 
