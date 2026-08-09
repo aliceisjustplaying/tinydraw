@@ -11,16 +11,28 @@ if ! command -v eim >/dev/null 2>&1; then
   exit 1
 fi
 
+enable_qemu() {
+  local executable
+  executable="$(find "$HOME/.espressif/tools" -path '*qemu-system-xtensa' -type f ! -name '._*' -perm -111 -print -quit)"
+  if [[ -z "$executable" ]]; then
+    echo "qemu-system-xtensa is required; run ./scripts/bootstrap-idf" >&2
+    exit 1
+  fi
+  export PATH="$(dirname "$executable"):$PATH"
+}
+
 case "$action" in
   build)
     cd "$root/esp32"
     eim run "idf.py -B '$build' build"
     ;;
   qemu)
+    enable_qemu
     "$0" build
     python3 "$root/tools/qemu-replay.py"
     ;;
   graphics|graphics-test)
+    enable_qemu
     cd "$root/esp32"
     eim run "idf.py -B '$graphics_build' -DTINYDRAW_QEMU_GRAPHICS=ON build"
     if [[ "$action" == graphics-test ]]; then
