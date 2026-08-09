@@ -57,6 +57,57 @@ TEST_CASE("streaming ribbon reproduces each growing batch without changing commi
   }
 }
 
+TEST_CASE("finishing a streaming ribbon commits the exact final batch and resets the stream") {
+  const std::array points{ink_point(10.0F, 20.0F, 2.0F), ink_point(20.0F, 20.0F, 3.0F),
+                          ink_point(25.0F, 30.0F, 4.0F)};
+  tinydraw::RibbonStream stream;
+  std::vector<tinydraw::RibbonPrimitive> committed;
+
+  for (std::size_t index = 0; index + 1U < points.size(); ++index) {
+    const auto update = stream.append(points[index]);
+    committed.insert(committed.end(), update.committed.begin(), update.committed.end());
+  }
+  const auto final_update = stream.finish(points.back());
+  committed.insert(committed.end(), final_update.committed.begin(), final_update.committed.end());
+
+  const auto batch = tinydraw::build_pf_ribbon(points);
+  REQUIRE(committed.size() == batch.size());
+  CHECK(final_update.provisional.empty());
+  CHECK_FALSE(stream.active());
+  for (std::size_t index = 0; index < batch.size(); ++index) {
+    check_primitive(committed[index], batch[index]);
+  }
+}
+
+TEST_CASE("streaming ribbon output stays bounded during a long stroke") {
+  tinydraw::RibbonStream stream;
+  std::size_t committed_count = 0U;
+
+  for (int index = 0; index < 1'000; ++index) {
+    const float coordinate = static_cast<float>(index);
+    const auto update = stream.append(ink_point(coordinate, std::fmod(coordinate, 17.0F), 3.0F));
+    CHECK(update.committed.size() <= 4U);
+    CHECK(update.provisional.size() <= 4U);
+    committed_count += update.committed.size();
+  }
+
+  CHECK(committed_count > 900U);
+  CHECK(stream.active());
+}
+
+TEST_CASE("duplicate streaming points do not grow or alter the ribbon") {
+  tinydraw::RibbonStream stream;
+  const auto point = ink_point(10.0F, 20.0F, 2.0F);
+  const auto first = stream.append(point);
+  const auto duplicate = stream.append(point);
+
+  REQUIRE(first.provisional.size() == duplicate.provisional.size());
+  REQUIRE(duplicate.committed.empty());
+  for (std::size_t index = 0; index < first.provisional.size(); ++index) {
+    check_primitive(duplicate.provisional.begin()[index], first.provisional.begin()[index]);
+  }
+}
+
 TEST_CASE("PF ribbon emits unionable triangles and round caps") {
   const std::array points{ink_point(10.0F, 20.0F, 2.0F), ink_point(20.0F, 20.0F, 3.0F),
                           ink_point(30.0F, 20.0F, 4.0F)};
