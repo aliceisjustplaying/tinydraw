@@ -7,20 +7,20 @@ This is the durable engineering handoff for the repository. Read it together wit
 high-effort whole-codebase review is preserved in `OPUS_REVIEW_2026-08-09.md`. Update this file
 whenever a milestone changes the current behavior, constraints, or next step.
 
-## Next-session resume point
+## Current resume point
 
-The user chose **minimal ESP-IDF/QEMU integration next**, before further memory abstraction. No
-physical hardware is required for this slice. At the start of the next context:
+The minimal ESP-IDF/QEMU vertical slice is complete. No physical hardware was needed. Resume with:
 
 ```sh
 git status --short
 ./scripts/dev test
-./scripts/bootstrap-idf    # network/toolchain install; run only if IDF v6.0.2 is absent
+./scripts/esp32 qemu          # automated headless Xtensa replay
+./scripts/esp32 graphics      # visible QEMU framebuffer; Ctrl-A then X to close
 ```
 
-Then build the smallest ESP32-S3 vertical slice described under "Exact next engineering steps."
-Keep the native loop green and do not introduce PlatformIO, globally source ESP-IDF, or use QEMU
-wall-clock speed as hardware evidence.
+The next engineering slice is explicit embedded memory placement and dirty display submission,
+described below. Keep the native and QEMU loops green. Do not introduce PlatformIO, globally source
+ESP-IDF, or use QEMU wall-clock speed as hardware evidence.
 
 Durable implementation preferences from the user:
 
@@ -62,8 +62,10 @@ window. It remains resizable for inspection. Drawing currently has:
 
 The prototype is useful for visual and input-loop testing, but it is not yet the embedded product.
 Its tldraw-inspired UI is intentionally direct-drawn and minimal. Undo is currently one host
-snapshot rather than a bounded embedded snapshot ring. There is no persistent point arena,
-ESP-IDF target, QEMU target, or hardware driver.
+snapshot rather than a bounded embedded snapshot ring. There is no persistent point arena or
+hardware driver. A real ESP-IDF ESP32-S3 target now compiles the shared core, boots under Espressif
+QEMU, replays the deterministic zigzag stroke, and can show its RGB565 tiles in QEMU's virtual
+framebuffer.
 
 ## Fast development loop
 
@@ -112,14 +114,15 @@ Host baseline used so far:
 
 Build products and `compile_commands.json` stay under `out/build/<preset>/`.
 
-ESP-IDF is pinned in `.idf-version` to v6.0.2 but is intentionally isolated from the native build.
-Install it later with:
+ESP-IDF is pinned in `.idf-version` to v6.0.2 and remains isolated from the native build. The
+current machine has v6.0.2 plus `qemu-xtensa` installed through `eim`. A new machine uses:
 
 ```sh
 ./scripts/bootstrap-idf
 ```
 
-Do not add PlatformIO or source ESP-IDF globally. QEMU has not been installed or integrated yet.
+Do not add PlatformIO or source ESP-IDF globally. `scripts/esp32` enters the isolated environment.
+The official `espressif/esp_lcd_qemu_rgb` component is locked at 1.0.2.
 
 ## Source map
 
@@ -157,6 +160,19 @@ Do not add PlatformIO or source ESP-IDF globally. QEMU has not been installed or
     stroke orchestration, and PPM output.
 - `host/input_coordinates.h`
   - SDL2-compat logical mouse-coordinate policy.
+
+### ESP32-S3 / QEMU adapter
+
+- `esp32/`
+  - minimal ESP-IDF project compiling the same `core/src` files as Xtensa C++20;
+  - deterministic seven-point firmware replay with structural marker and informational checksum;
+  - `QemuDisplayBackend`, a thin `esp_lcd_qemu_rgb` implementation of `DisplayBackend`;
+  - locked managed-component manifest; downloaded `managed_components/` remains ignored.
+- `scripts/esp32`
+  - isolated build, headless QEMU assertion, and visible graphics commands.
+- `tools/qemu-replay.py`
+  - boots QEMU, captures completion, rejects firmware/stack failures, and checks structural values
+    with bounds tolerance while treating the framebuffer checksum as informational.
 
 ### Tests and reference data
 
@@ -400,7 +416,18 @@ forces the exact release coordinate while preserving the normal timestamp/pressu
 ### Embedded stack pressure
 
 The first tile renderer held roughly 12.6 KiB of working buffers in one function frame. Scratch is
-now owned by `RibbonRenderer`, allowing static/internal-SRAM placement.
+now owned by `RibbonRenderer`, allowing static/internal-SRAM placement. The first QEMU firmware
+replay also kept its bounded primitive array on ESP-IDF's main-task stack; QEMU completed the replay
+and then reported a stack-canary failure. Moving that array to static storage fixed it. The QEMU
+harness waits for a post-replay FreeRTOS context switch before accepting completion so this class of
+failure is not hidden.
+
+### QEMU framebuffer requires graphics mode
+
+`esp_lcd_qemu_rgb` is a QEMU-only MMIO device. Constructing it in a `-nographic` machine without the
+virtual framebuffer blocked before replay. The headless build now leaves the display pointer null;
+a separate graphics build enables `TINYDRAW_QEMU_GRAPHICS`, instantiates `QemuDisplayBackend`, and
+runs QEMU with `--graphics`. Keep headless integration and visible display checks separate.
 
 ## Test policy and current coverage
 
@@ -435,8 +462,9 @@ Process-level E2E tests cover:
 - invalid lifecycle rejection;
 - invalid syntax rejection.
 
-Cross-target tests do not exist yet. When added, compare structure/bounds/counts with tolerances—not
-host and Xtensa pixel identity.
+The QEMU process-level test checks accepted-point, primitive, touched-tile, and geometry-bound
+results. Bounds use a tolerance; the RGB565 checksum is logged but intentionally not asserted as a
+cross-architecture oracle. Host and Xtensa pixel identity is not required.
 
 ## Current performance and allocation limitations
 
@@ -449,7 +477,11 @@ These are known and intentionally not hidden:
   is not implemented yet;
 - `build_pf_ribbon` and batch PF reference functions still allocate vectors, but neither is in the
   interactive hot path;
-- QEMU will not be accepted as cycle-accurate performance evidence.
+- QEMU will not be accepted as cycle-accurate performance evidence;
+- the firmware replay rasterizes directly into one 64×64 tile and does not yet allocate the
+  interactive committed canvas or active-coverage plane;
+- the graphics build submits full raster tiles through `DisplayBackend`; interactive dirty
+  rectangles and physical-panel transport remain future work.
 
 The reproduced 500-point XL prefix workload previously took 4,479 ms in an optimized host build,
 with successive 50-point blocks growing from 41 ms to 1,040 ms. Through `StrokeRaster`, the same
@@ -462,30 +494,31 @@ submission remain unimplemented.
 
 ## Exact next engineering steps
 
-### 1. Minimal ESP-IDF / QEMU vertical slice
+### 1. Completed: ESP-IDF / QEMU vertical slice
 
-Do this before further memory abstraction so the embedded seams respond to a real target rather
-than speculation:
+The ESP32-S3 target now compiles every shared core source as Xtensa C++20. Its deterministic
+seven-point replay emits:
 
-1. scaffold a small `esp32/` ESP-IDF project targeting ESP32-S3;
-2. compile the existing platform-independent core as an IDF component without changing the native
-   CMake loop;
-3. embed one deterministic stroke fixture and run it during a headless firmware test;
-4. print structural results: accepted points, primitive/tile counts, bounds, and an informational
-   framebuffer checksum;
-5. boot that firmware under Espressif QEMU and capture the completion marker in an automated test;
-6. add `esp_lcd_qemu_rgb` behind the existing narrow `DisplayBackend` only after the headless slice
-   works.
+```text
+accepted=7 primitives=13 tiles=14 bounds=27.83,37.83,341.44,411.44
+```
 
-Acceptance:
+It also emits an informational RGB565 FNV checksum. `./scripts/esp32 qemu` builds, boots headlessly,
+waits through a FreeRTOS context switch (which caught an initial main-task stack overflow), and
+asserts the structural marker. `./scripts/esp32 graphics-test` verifies the same path with the
+virtual framebuffer enabled. `./scripts/esp32 graphics` leaves the QEMU window open for visual
+inspection.
 
-- host debug/release/sanitizers remain green;
-- an isolated `eim run "idf.py ..."` build succeeds for `esp32s3`;
-- QEMU boots without hardware and completes the deterministic replay;
-- cross-target assertions use structural values/tolerances, not ARM64/Xtensa pixel identity;
-- no performance claims are made from QEMU.
+The framebuffer adapter is compiled behind `TINYDRAW_QEMU_GRAPHICS`: initializing
+`esp_lcd_qemu_rgb` without QEMU's `--graphics` device blocks, so the automated headless build must
+not instantiate it. The visible build sends each completed raster tile through the pre-existing
+`DisplayBackend`; it does not allocate a full extra framebuffer.
 
-### 2. Embedded memory placement and dirty display submission
+Host debug/release/sanitizers remained green after this slice. QEMU proves target compilation,
+boot, replay, display integration, and structural agreement only—not timing, PSRAM behavior, DMA
+behavior, or physical-panel correctness.
+
+### 2. Next: embedded memory placement and dirty display submission
 
 Once the real IDF target exists:
 
@@ -566,6 +599,10 @@ e59a530 fix: match tldraw eraser silhouette
 f52f28b feat: add bounded dirty-tile stroke raster
 bc3fabb fix: rasterize active strokes incrementally
 65f38ef test: bound XL stroke tile work
+aa94e9c feat: add headless ESP32-S3 replay firmware
+e13f955 test: verify firmware replay under QEMU
+64f6934 chore: ignore Python bytecode
+eb2801d feat: render firmware replay in QEMU display
 ```
 
 A high-effort Opus review verified the foundation and identified small correctness preconditions

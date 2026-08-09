@@ -79,20 +79,38 @@ sanitized; full host replay runs in both debug and release presets.
 The TypeScript `perfect-freehand` reference and pinned commit are documented in
 `reference/PERFECT_FREEHAND.md`. It is cloned locally but is not a build dependency or submodule.
 
-## ESP-IDF / QEMU (next milestone)
+## ESP-IDF / QEMU
 
 ESP-IDF remains isolated from the host CMake project and global shell startup. The pinned version
-is in `.idf-version`. Install it separately before scaffolding the minimal ESP32-S3 target:
+is in `.idf-version`. One-time setup installs v6.0.2 and the Xtensa QEMU tool:
 
 ```sh
 ./scripts/bootstrap-idf
-eim run "idf.py --version"
 ```
 
+Daily firmware commands:
+
+```sh
+./scripts/esp32 build          # compile the shared core for ESP32-S3
+./scripts/esp32 qemu           # headless boot + asserted replay marker
+./scripts/esp32 graphics-test  # short automated virtual-framebuffer check
+./scripts/esp32 graphics       # visible QEMU window; Ctrl-A then X to close
+./scripts/esp32 clean
+```
+
+The firmware embeds the same seven points as `zigzag.stroke`, passes them through `InkStream`,
+`RibbonStream`, 4×4 coverage, RGB565 composition, and optionally `QemuDisplayBackend`. The headless
+harness checks accepted-point, primitive, touched-tile, and geometry-bound results. Its checksum is
+informational because cross-architecture pixel identity is not an oracle.
+
+The visible graphics build is separate because `esp_lcd_qemu_rgb` requires QEMU's virtual
+framebuffer device and cannot be initialized in `-nographic` mode. Raster output is submitted one
+64×64 tile at a time through `DisplayBackend`, avoiding a second full framebuffer in this test
+firmware.
+
 PlatformIO is not used. Espressif's installation manager owns IDF's Python and toolchain, keeping
-the host loop independent from the system Python. Start with a headless deterministic replay under
-QEMU, then add the virtual RGB backend. QEMU proves build/boot/integration, never physical timing or
-real PSRAM/DMA capability behavior.
+the host loop independent from the system Python. QEMU proves build/boot/integration, never physical
+timing or real PSRAM/DMA capability behavior.
 
 ## Dependency policy
 
