@@ -60,14 +60,22 @@ TEST_CASE("provisional stroke pixels never enter the persistent canvas") {
   const tinydraw::InkPoint first{.position = {40.0F, 80.0F}, .radius = 8.0F};
   const tinydraw::InkPoint second{.position = {80.0F, 90.0F}, .radius = 8.0F};
 
-  static_cast<void>(fixture.raster.update(ribbon.append(first), kInk));
-  static_cast<void>(fixture.raster.update(ribbon.append(second), kInk));
+  const auto first_stats = fixture.raster.update(ribbon.append(first), kInk);
+  const auto second_stats = fixture.raster.update(ribbon.append(second), kInk);
 
+  CHECK(first_stats.display_bytes == first_stats.committed_bytes_read);
+  CHECK(second_stats.display_bytes == second_stats.committed_bytes_read);
+  CHECK(first_stats.committed_bytes_written == 0U);
+  CHECK(second_stats.committed_bytes_written == 0U);
+  CHECK(first_stats.coverage_bytes_read > 0U);
   CHECK(changed_pixels(fixture.visible) > 0U);
   CHECK(changed_pixels(fixture.committed) == 0U);
 
-  static_cast<void>(fixture.raster.finish(ribbon.finish(second), kInk));
+  const auto finish_stats = fixture.raster.finish(ribbon.finish(second), kInk);
 
+  CHECK(finish_stats.display_bytes == finish_stats.committed_bytes_read);
+  CHECK(finish_stats.committed_bytes_written == finish_stats.display_bytes);
+  CHECK(finish_stats.coverage_bytes_written >= finish_stats.committed_bytes_written / 2U);
   CHECK(fixture.visible == fixture.committed);
   CHECK(changed_pixels(fixture.committed) > 0U);
   CHECK(std::all_of(fixture.coverage.begin(), fixture.coverage.end(),
@@ -146,7 +154,8 @@ TEST_CASE("XL stroke update work stays bounded as the gesture grows") {
     maximum_tile_visits = std::max(maximum_tile_visits, stats.primitive_tile_visits);
     maximum_tiles = std::max(maximum_tiles, stats.tiles_updated);
     display_counts_match =
-        display_counts_match && stats.display_bytes == stats.pixels_composited * 2U;
+        display_counts_match && stats.display_bytes == stats.pixels_composited * 2U &&
+        stats.display_bytes == stats.committed_bytes_read && stats.committed_bytes_written == 0U;
   }
 
   CHECK(maximum_tile_visits <= 100U);

@@ -16,6 +16,10 @@ struct StrokeRasterStats {
   std::uint32_t primitive_tile_visits = 0;
   std::uint32_t pixels_composited = 0;
   std::uint32_t display_bytes = 0;
+  std::uint32_t committed_bytes_read = 0;
+  std::uint32_t committed_bytes_written = 0;
+  std::uint32_t coverage_bytes_read = 0;
+  std::uint32_t coverage_bytes_written = 0;
 };
 
 // Incrementally unions one active stroke into a coverage plane. The persistent
@@ -39,8 +43,8 @@ class StrokeRaster {
   using TileFlags = std::array<bool, kTileCount>;
 
   void mark_tiles(const RibbonPrimitiveBatch& primitives, TileFlags& flags) const;
-  void load_coverage_tile(int tile_x, int tile_y);
-  void store_coverage_tile(int tile_x, int tile_y);
+  void load_coverage_tile(int tile_x, int tile_y, StrokeRasterStats& stats);
+  void store_coverage_tile(int tile_x, int tile_y, StrokeRasterStats& stats);
   void rasterize(const RibbonPrimitiveBatch& primitives, StrokeRasterStats& stats);
   void compose_visible_tile(int tile_x, int tile_y, std::uint16_t color, StrokeRasterStats& stats);
   void compose_committed_tile(int tile_x, int tile_y, std::uint16_t color,

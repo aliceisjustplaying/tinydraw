@@ -71,9 +71,9 @@ StrokeRasterStats StrokeRaster::update(const RibbonUpdate& update, std::uint16_t
     }
     const int tile_x = tile_index % kTilesAcross * kTileSize;
     const int tile_y = tile_index / kTilesAcross * kTileSize;
-    load_coverage_tile(tile_x, tile_y);
+    load_coverage_tile(tile_x, tile_y, stats);
     rasterize(update.committed, stats);
-    store_coverage_tile(tile_x, tile_y);
+    store_coverage_tile(tile_x, tile_y, stats);
     touched_[static_cast<std::size_t>(tile_index)] = true;
   }
 
@@ -83,7 +83,7 @@ StrokeRasterStats StrokeRaster::update(const RibbonUpdate& update, std::uint16_t
     }
     const int tile_x = tile_index % kTilesAcross * kTileSize;
     const int tile_y = tile_index / kTilesAcross * kTileSize;
-    load_coverage_tile(tile_x, tile_y);
+    load_coverage_tile(tile_x, tile_y, stats);
     rasterize(update.provisional, stats);
     compose_visible_tile(tile_x, tile_y, color, stats);
   }
@@ -107,9 +107,9 @@ StrokeRasterStats StrokeRaster::finish(const RibbonUpdate& update, std::uint16_t
     }
     const int tile_x = tile_index % kTilesAcross * kTileSize;
     const int tile_y = tile_index / kTilesAcross * kTileSize;
-    load_coverage_tile(tile_x, tile_y);
+    load_coverage_tile(tile_x, tile_y, stats);
     rasterize(update.committed, stats);
-    store_coverage_tile(tile_x, tile_y);
+    store_coverage_tile(tile_x, tile_y, stats);
     touched_[static_cast<std::size_t>(tile_index)] = true;
   }
 
@@ -119,7 +119,7 @@ StrokeRasterStats StrokeRaster::finish(const RibbonUpdate& update, std::uint16_t
     }
     const int tile_x = tile_index % kTilesAcross * kTileSize;
     const int tile_y = tile_index / kTilesAcross * kTileSize;
-    load_coverage_tile(tile_x, tile_y);
+    load_coverage_tile(tile_x, tile_y, stats);
     compose_committed_tile(tile_x, tile_y, color, stats);
     touched_[static_cast<std::size_t>(tile_index)] = false;
   }
@@ -181,7 +181,7 @@ void StrokeRaster::mark_tiles(const RibbonPrimitiveBatch& primitives, TileFlags&
   }
 }
 
-void StrokeRaster::load_coverage_tile(int tile_x, int tile_y) {
+void StrokeRaster::load_coverage_tile(int tile_x, int tile_y, StrokeRasterStats& stats) {
   const int tile_width = std::min(kTileSize, kCanvasWidth - tile_x);
   const int tile_height = std::min(kTileSize, kCanvasHeight - tile_y);
   coverage_.reset(tile_x, tile_y, tile_width, tile_height);
@@ -189,15 +189,17 @@ void StrokeRaster::load_coverage_tile(int tile_x, int tile_y) {
     for (int x = 0; x < tile_width; ++x) {
       const auto index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x + x);
       coverage_.union_coverage(tile_x + x, tile_y + y, active_coverage_[index]);
+      ++stats.coverage_bytes_read;
     }
   }
 }
 
-void StrokeRaster::store_coverage_tile(int tile_x, int tile_y) {
+void StrokeRaster::store_coverage_tile(int tile_x, int tile_y, StrokeRasterStats& stats) {
   for (int y = 0; y < coverage_.height(); ++y) {
     for (int x = 0; x < coverage_.width(); ++x) {
       const auto index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x + x);
       active_coverage_[index] = coverage_.coverage_at(tile_x + x, tile_y + y);
+      ++stats.coverage_bytes_written;
     }
   }
 }
@@ -221,6 +223,7 @@ void StrokeRaster::compose_visible_tile(int tile_x, int tile_y, std::uint16_t co
       const auto canvas_index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x + x);
       const auto tile_index = static_cast<std::size_t>(y * coverage_.width() + x);
       working_[tile_index] = committed_[canvas_index];
+      stats.committed_bytes_read += sizeof(std::uint16_t);
     }
   }
   composite_rgb565(coverage_, color, std::span(working_.data(), tile_pixels));
@@ -249,6 +252,8 @@ void StrokeRaster::compose_committed_tile(int tile_x, int tile_y, std::uint16_t 
       const auto canvas_index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x + x);
       committed_[canvas_index] = working_[static_cast<std::size_t>(y * coverage_.width() + x)];
       active_coverage_[canvas_index] = 0U;
+      stats.committed_bytes_written += sizeof(std::uint16_t);
+      ++stats.coverage_bytes_written;
     }
   }
 }
