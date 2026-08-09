@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "tinydraw/geometry.h"
+#include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink_config.h"
 
 namespace tinydraw::perfect_freehand {
@@ -27,5 +28,10 @@ struct StrokePoint {
 
 [[nodiscard]] std::vector<Point> get_stroke(std::span<const Point> input, const InkConfig& config,
                                             bool complete);
+
+// Finalize points emitted by the timestamp-aware interactive stream without
+// applying PF's sample-dependent streamline and pressure passes a second time.
+[[nodiscard]] std::vector<Point> get_stroke_from_stream(std::span<const InkPoint> input,
+                                                        const InkConfig& config, bool complete);
 
 }  // namespace tinydraw::perfect_freehand

@@ -38,8 +38,8 @@ Build products and `compile_commands.json` stay below `out/build/<preset>/`. Edi
 
 ## End-to-end replay
 
-The host executable can run without a window and drive the real input/filter/render path from a
-stroke recording:
+The host executable can run without a window and drive the real input/filter/PF-geometry/render
+path from a stroke recording:
 
 ```sh
 out/build/host-debug/host/tinydraw_host \
@@ -52,6 +52,11 @@ is a characterization test: it proves determinism and catches unintended changes
 independent correctness oracle. PF-derived reference geometry will provide that oracle later. The
 same recordings will drive QEMU and hardware, using structural/tolerance comparisons instead of
 cross-target pixel equality.
+
+The interactive host shows a lightweight provisional preview while dragging, then commits the PF
+outline on lift. Provisional pixels are rendered from a temporary framebuffer copy and never enter
+the committed canvas. The current hard-edged scanline polygon fill is host-only scaffolding; the
+shared coverage-tile rasterizer will replace it.
 
 The sanitizer preset excludes the host executable because Homebrew's `sdl2-compat` loader aborts
 under Apple's sanitizer runtime before application code starts. All SDL-free project code remains

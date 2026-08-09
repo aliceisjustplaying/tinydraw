@@ -12,6 +12,7 @@
 
 #include "tinydraw/geometry.h"
 #include "tinydraw/ink/ink_stream.h"
+#include "tinydraw/ink/perfect_freehand.h"
 
 namespace {
 
@@ -52,6 +53,55 @@ void draw_segment(std::vector<std::uint16_t>& pixels, const tinydraw::InkPoint& 
     const float t = static_cast<float>(step) / static_cast<float>(steps);
     draw_disc(pixels, {.x = from.position.x + delta_x * t, .y = from.position.y + delta_y * t},
               from.radius + (to.radius - from.radius) * t);
+  }
+}
+
+void fill_polygon(std::vector<std::uint16_t>& pixels, const std::vector<tinydraw::Point>& polygon) {
+  if (polygon.size() < 3U) {
+    return;
+  }
+
+  float minimum_y = polygon.front().y;
+  float maximum_y = minimum_y;
+  for (const auto point : polygon) {
+    minimum_y = std::min(minimum_y, point.y);
+    maximum_y = std::max(maximum_y, point.y);
+  }
+  const int first_y = std::max(0, static_cast<int>(std::floor(minimum_y)));
+  const int last_y = std::min(tinydraw::kCanvasHeight - 1, static_cast<int>(std::ceil(maximum_y)));
+  std::vector<float> intersections;
+  intersections.reserve(polygon.size());
+  for (int y = first_y; y <= last_y; ++y) {
+    intersections.clear();
+    const float scan_y = static_cast<float>(y) + 0.5F;
+    for (std::size_t index = 0; index < polygon.size(); ++index) {
+      const auto start = polygon[index];
+      const auto end = polygon[(index + 1U) % polygon.size()];
+      if ((start.y <= scan_y && end.y > scan_y) || (end.y <= scan_y && start.y > scan_y)) {
+        const float amount = (scan_y - start.y) / (end.y - start.y);
+        intersections.push_back(start.x + (end.x - start.x) * amount);
+      }
+    }
+    std::sort(intersections.begin(), intersections.end());
+    for (std::size_t index = 0; index + 1U < intersections.size(); index += 2U) {
+      const int first_x = std::max(0, static_cast<int>(std::ceil(intersections[index])));
+      const int last_x = std::min(tinydraw::kCanvasWidth - 1,
+                                  static_cast<int>(std::floor(intersections[index + 1U])));
+      for (int x = first_x; x <= last_x; ++x) {
+        set_pixel(pixels, x, y, kInk);
+      }
+    }
+  }
+}
+
+void draw_preview(std::vector<std::uint16_t>& pixels,
+                  const std::vector<tinydraw::InkPoint>& points) {
+  if (points.empty()) {
+    return;
+  }
+  draw_disc(pixels, points.front().position, points.front().radius);
+  for (std::size_t index = 1; index < points.size(); ++index) {
+    draw_segment(pixels, points[index - 1U], points[index]);
   }
 }
 
@@ -103,7 +153,7 @@ int replay(const std::string& input_path, const std::string& output_path) {
       static_cast<std::size_t>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight));
   clear_canvas(pixels, false);
   tinydraw::InkStream stream;
-  tinydraw::InkPoint previous{};
+  std::vector<tinydraw::InkPoint> stroke_points;
   std::size_t point_count = 0;
 
   std::string line;
@@ -124,13 +174,14 @@ int replay(const std::string& input_path, const std::string& output_path) {
     }
 
     if (action == "down" && !stream.active()) {
-      previous = stream.begin(touch);
-      draw_disc(pixels, previous.position, previous.radius);
+      stroke_points.clear();
+      stroke_points.push_back(stream.begin(touch));
     } else if ((action == "move" || action == "up") && stream.active()) {
-      const auto current = stream.update(touch);
-      draw_segment(pixels, previous, current);
-      previous = current;
+      stroke_points.push_back(stream.update(touch));
       if (action == "up") {
+        const auto outline = tinydraw::perfect_freehand::get_stroke_from_stream(
+            stroke_points, stream.config(), true);
+        fill_polygon(pixels, outline);
         stream.end();
       }
     } else {
@@ -180,11 +231,12 @@ int interactive() {
   SDL_RenderSetLogicalSize(renderer, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight);
   SDL_SetTextureScaleMode(texture, SDL_ScaleModeNearest);
 
-  std::vector<std::uint16_t> pixels(
+  std::vector<std::uint16_t> committed_pixels(
       static_cast<std::size_t>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight));
-  clear_canvas(pixels, true);
+  clear_canvas(committed_pixels, true);
+  std::vector<std::uint16_t> pixels = committed_pixels;
   tinydraw::InkStream stream;
-  tinydraw::InkPoint previous{};
+  std::vector<tinydraw::InkPoint> stroke_points;
 
   bool running = true;
   while (running) {
@@ -195,33 +247,40 @@ int interactive() {
         running = false;
       } else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_c) {
         stream.end();
-        clear_canvas(pixels, true);
+        stroke_points.clear();
+        clear_canvas(committed_pixels, true);
       } else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
         float x = 0.0F;
         float y = 0.0F;
         SDL_RenderWindowToLogical(renderer, event.button.x, event.button.y, &x, &y);
-        previous = stream.begin({.x = x, .y = y, .timestamp_us = event.button.timestamp * 1'000U});
-        draw_disc(pixels, previous.position, previous.radius);
+        stroke_points.clear();
+        stroke_points.push_back(
+            stream.begin({.x = x, .y = y, .timestamp_us = event.button.timestamp * 1'000U}));
       } else if (event.type == SDL_MOUSEMOTION && stream.active()) {
         float x = 0.0F;
         float y = 0.0F;
         SDL_RenderWindowToLogical(renderer, event.motion.x, event.motion.y, &x, &y);
-        const auto current =
-            stream.update({.x = x, .y = y, .timestamp_us = event.motion.timestamp * 1'000U});
-        draw_segment(pixels, previous, current);
-        previous = current;
+        stroke_points.push_back(
+            stream.update({.x = x, .y = y, .timestamp_us = event.motion.timestamp * 1'000U}));
       } else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT &&
                  stream.active()) {
         float x = 0.0F;
         float y = 0.0F;
         SDL_RenderWindowToLogical(renderer, event.button.x, event.button.y, &x, &y);
-        const auto current =
-            stream.update({.x = x, .y = y, .timestamp_us = event.button.timestamp * 1'000U});
-        draw_segment(pixels, previous, current);
+        stroke_points.push_back(
+            stream.update({.x = x, .y = y, .timestamp_us = event.button.timestamp * 1'000U}));
+        const auto outline = tinydraw::perfect_freehand::get_stroke_from_stream(
+            stroke_points, stream.config(), true);
+        fill_polygon(committed_pixels, outline);
         stream.end();
+        stroke_points.clear();
       }
     }
 
+    pixels = committed_pixels;
+    if (stream.active()) {
+      draw_preview(pixels, stroke_points);
+    }
     SDL_UpdateTexture(texture, nullptr, pixels.data(),
                       tinydraw::kCanvasWidth * static_cast<int>(sizeof(std::uint16_t)));
     SDL_SetRenderDrawColor(renderer, 24, 24, 24, 255);

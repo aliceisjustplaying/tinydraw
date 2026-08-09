@@ -285,4 +285,43 @@ std::vector<Point> get_stroke(std::span<const Point> input, const InkConfig& con
   return get_stroke_outline(points, config, complete);
 }
 
+std::vector<Point> get_stroke_from_stream(std::span<const InkPoint> input, const InkConfig& config,
+                                          bool complete) {
+  if (input.empty()) {
+    return {};
+  }
+
+  std::vector<StrokePoint> points;
+  points.reserve(input.size());
+  points.push_back({
+      .position = input.front().position,
+      .pressure = input.front().pressure,
+      .vector = kUnitOffset,
+      .distance = 0.0F,
+      .running_length = 0.0F,
+  });
+  float running_length = 0.0F;
+  for (std::size_t index = 1; index < input.size(); ++index) {
+    const Point previous = points.back().position;
+    const Point current = input[index].position;
+    if (equal(previous, current)) {
+      continue;
+    }
+    const float point_distance = distance(previous, current);
+    running_length += point_distance;
+    points.push_back({
+        .position = current,
+        .pressure = input[index].pressure,
+        .vector = unit(subtract(previous, current)),
+        .distance = point_distance,
+        .running_length = running_length,
+    });
+  }
+  points.front().vector = points.size() > 1U ? points[1].vector : Point{};
+
+  InkConfig outline_config = config;
+  outline_config.simulate_pressure = false;
+  return get_stroke_outline(points, outline_config, complete);
+}
+
 }  // namespace tinydraw::perfect_freehand
