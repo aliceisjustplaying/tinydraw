@@ -65,6 +65,27 @@ if(TARGET tinydraw_host)
   )
 
   add_test(
+    NAME tinydraw_tight_joins_e2e
+    COMMAND tinydraw_host
+      --replay "${PROJECT_SOURCE_DIR}/testdata/strokes/tight-joins.stroke"
+      --output "${REPLAY_OUTPUT_DIR}/tight-joins.ppm"
+  )
+  set_tests_properties(tinydraw_tight_joins_e2e PROPERTIES
+    FIXTURES_SETUP replay_tight_joins
+    TIMEOUT 5
+  )
+
+  add_test(
+    NAME tinydraw_tight_joins_snapshot
+    COMMAND ${CMAKE_COMMAND} -E compare_files
+      "${REPLAY_OUTPUT_DIR}/tight-joins.ppm"
+      "${PROJECT_SOURCE_DIR}/testdata/snapshots/tight-joins.ppm"
+  )
+  set_tests_properties(tinydraw_tight_joins_snapshot PROPERTIES
+    FIXTURES_REQUIRED replay_tight_joins
+  )
+
+  add_test(
     NAME tinydraw_replay_rejects_invalid_lifecycle
     COMMAND tinydraw_host
       --replay "${PROJECT_SOURCE_DIR}/testdata/strokes/invalid-lifecycle.stroke"

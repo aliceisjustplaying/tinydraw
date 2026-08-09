@@ -27,15 +27,17 @@ TEST_CASE("PF ribbon emits unionable triangles and round caps") {
 
   const auto primitives = tinydraw::build_pf_ribbon(points);
 
-  REQUIRE(primitives.size() == 4U);
+  REQUIRE(primitives.size() == 5U);
   CHECK(primitives.front().kind == tinydraw::RibbonPrimitiveKind::kCircle);
   CHECK(primitives.front().radius == doctest::Approx(2.0F));
+  CHECK(primitives[2].kind == tinydraw::RibbonPrimitiveKind::kCircle);
+  CHECK(primitives[2].center.x == doctest::Approx(20.0F));
   CHECK(primitives.back().kind == tinydraw::RibbonPrimitiveKind::kCircle);
   CHECK(primitives.back().radius == doctest::Approx(4.0F));
-  for (std::size_t index = 1; index + 1U < primitives.size(); ++index) {
-    CHECK(primitives[index].kind == tinydraw::RibbonPrimitiveKind::kConvex);
-    CHECK(primitives[index].point_count == 4);
-  }
+  CHECK(primitives[1].kind == tinydraw::RibbonPrimitiveKind::kConvex);
+  CHECK(primitives[1].point_count == 4);
+  CHECK(primitives[3].kind == tinydraw::RibbonPrimitiveKind::kConvex);
+  CHECK(primitives[3].point_count == 4);
 }
 
 TEST_CASE("a reversing ribbon adds explicit corner coverage") {

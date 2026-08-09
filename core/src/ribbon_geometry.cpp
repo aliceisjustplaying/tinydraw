@@ -118,7 +118,7 @@ std::vector<RibbonPrimitive> build_pf_ribbon(std::span<const InkPoint> input) {
       primitives.push_back(convex(
           {sections[index].right, sections[index + 1U].left, sections[index + 1U].right, {}}, 3));
     }
-    if (index + 2U < points.size() && dot(vectors[index + 1U], vectors[index + 2U]) < 0.0F) {
+    if (index + 2U < points.size()) {
       primitives.push_back(circle(points[index + 1U].position, points[index + 1U].radius));
     }
   }
