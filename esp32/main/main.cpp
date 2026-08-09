@@ -163,12 +163,15 @@ extern "C" void app_main() {
   toolbar.can_undo = true;
   auto framebuffer = qemu_display.framebuffer();
   tinydraw::draw_toolbar(framebuffer, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight, toolbar);
+  const auto background_corner = static_cast<std::size_t>(0);
+  const auto stroke_center = static_cast<std::size_t>(40 * tinydraw::kCanvasWidth + 30);
   const auto color_center = static_cast<std::size_t>(410 * tinydraw::kCanvasWidth + 213);
-  if (framebuffer[color_center] != tinydraw::rgb565(toolbar.color) || !qemu_display.refresh()) {
+  if (framebuffer[background_corner] != kBackground || framebuffer[stroke_center] != kInk ||
+      framebuffer[color_center] != tinydraw::rgb565(toolbar.color) || !qemu_display.refresh()) {
     std::printf("TINYDRAW_REPLAY_FAIL reason=qemu_ui\n");
     return;
   }
-  std::printf("TINYDRAW_UI_OK controls=6\n");
+  std::printf("TINYDRAW_UI_OK canvas=1 controls=6\n");
 #endif
   std::printf(
       "TINYDRAW_REPLAY_OK accepted=%u primitives=%u tiles=%u "
