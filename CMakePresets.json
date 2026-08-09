@@ -31,6 +31,7 @@
       "displayName": "Host ASan + UBSan",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
+        "TINYDRAW_BUILD_HOST": "OFF",
         "TINYDRAW_ENABLE_SANITIZERS": "ON"
       }
     },
