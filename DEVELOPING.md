@@ -1,5 +1,8 @@
 # Developing TinyDraw
 
+For the current architecture, implemented milestones, known limitations, and exact next steps, read
+[`PROJECT_STATE.md`](PROJECT_STATE.md).
+
 The native ARM64 macOS build is the primary development loop. `tinydraw_core` has no SDL or
 ESP-IDF dependency. SDL is only a thin host shell around a 368×448 RGB565 framebuffer.
 
