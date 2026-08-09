@@ -3,6 +3,7 @@
 #include <doctest.h>
 
 #include <cmath>
+#include <limits>
 
 TEST_CASE("a stroke starts at the touch-down point") {
   tinydraw::InkStream stream;
@@ -74,6 +75,23 @@ TEST_CASE("equal timestamps remain finite and advance the stroke") {
   CHECK(std::isfinite(point.pressure));
   CHECK(std::isfinite(point.radius));
   CHECK(point.position.x > 10.0F);
+}
+
+TEST_CASE("non-finite touch samples do not poison stream state") {
+  tinydraw::InkStream stream;
+  const auto invalid_begin =
+      stream.begin({.x = std::numeric_limits<float>::quiet_NaN(), .y = 10.0F, .timestamp_us = 0U});
+  CHECK_FALSE(stream.active());
+  CHECK(std::isfinite(invalid_begin.position.x));
+
+  const auto initial = stream.begin({.x = 10.0F, .y = 20.0F, .timestamp_us = 1'000U});
+  const auto ignored = stream.update(
+      {.x = std::numeric_limits<float>::quiet_NaN(), .y = 30.0F, .timestamp_us = 9'000U});
+  const auto recovered = stream.update({.x = 20.0F, .y = 30.0F, .timestamp_us = 9'000U});
+
+  CHECK(ignored.position.x == doctest::Approx(initial.position.x));
+  CHECK(ignored.timestamp_us == initial.timestamp_us);
+  CHECK(std::isfinite(recovered.position.x));
 }
 
 TEST_CASE("a backward timestamp uses a nominal interval without poisoning the next sample") {

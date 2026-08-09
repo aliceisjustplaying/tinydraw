@@ -9,6 +9,11 @@ namespace {
 
 constexpr int kSamplesPerAxis = 4;
 constexpr int kSampleCount = kSamplesPerAxis * kSamplesPerAxis;
+constexpr float kMaximumCoordinateMagnitude = 1'000'000.0F;
+
+bool safe_coordinate(float value) {
+  return std::isfinite(value) && std::abs(value) <= kMaximumCoordinateMagnitude;
+}
 
 std::uint8_t sample_coverage(int covered_samples) {
   return static_cast<std::uint8_t>(covered_samples * 255 / kSampleCount);
@@ -30,7 +35,7 @@ bool point_in_convex(Point sample, std::span<const Point> polygon) {
       return false;
     }
   }
-  return true;
+  return sign != 0.0F;
 }
 
 int blend_channel(int destination, int source, int alpha) {
@@ -68,15 +73,28 @@ std::uint8_t CoverageTile::coverage_at(int x, int y) const {
 }
 
 void CoverageTile::rasterize_circle(Point center, float radius) {
-  if (radius <= 0.0F) {
+  if (!safe_coordinate(center.x) || !safe_coordinate(center.y) || !safe_coordinate(radius) ||
+      radius <= 0.0F) {
     return;
   }
-  const int first_x = std::max(origin_x_, static_cast<int>(std::floor(center.x - radius - 1.0F)));
-  const int last_x =
-      std::min(origin_x_ + width_ - 1, static_cast<int>(std::ceil(center.x + radius + 1.0F)));
-  const int first_y = std::max(origin_y_, static_cast<int>(std::floor(center.y - radius - 1.0F)));
-  const int last_y =
-      std::min(origin_y_ + height_ - 1, static_cast<int>(std::ceil(center.y + radius + 1.0F)));
+  const float minimum_x = center.x - radius - 1.0F;
+  const float maximum_x = center.x + radius + 1.0F;
+  const float minimum_y = center.y - radius - 1.0F;
+  const float maximum_y = center.y + radius + 1.0F;
+  if (maximum_x < static_cast<float>(origin_x_) ||
+      minimum_x > static_cast<float>(origin_x_ + width_ - 1) ||
+      maximum_y < static_cast<float>(origin_y_) ||
+      minimum_y > static_cast<float>(origin_y_ + height_ - 1)) {
+    return;
+  }
+  const int first_x = static_cast<int>(std::floor(std::clamp(
+      minimum_x, static_cast<float>(origin_x_), static_cast<float>(origin_x_ + width_ - 1))));
+  const int last_x = static_cast<int>(std::ceil(std::clamp(
+      maximum_x, static_cast<float>(origin_x_), static_cast<float>(origin_x_ + width_ - 1))));
+  const int first_y = static_cast<int>(std::floor(std::clamp(
+      minimum_y, static_cast<float>(origin_y_), static_cast<float>(origin_y_ + height_ - 1))));
+  const int last_y = static_cast<int>(std::ceil(std::clamp(
+      maximum_y, static_cast<float>(origin_y_), static_cast<float>(origin_y_ + height_ - 1))));
   const float radius_squared = radius * radius;
 
   for (int y = first_y; y <= last_y; ++y) {
@@ -109,15 +127,28 @@ void CoverageTile::rasterize_convex(std::span<const Point> polygon) {
   float minimum_y = polygon.front().y;
   float maximum_y = minimum_y;
   for (const Point point : polygon) {
+    if (!safe_coordinate(point.x) || !safe_coordinate(point.y)) {
+      return;
+    }
     minimum_x = std::min(minimum_x, point.x);
     maximum_x = std::max(maximum_x, point.x);
     minimum_y = std::min(minimum_y, point.y);
     maximum_y = std::max(maximum_y, point.y);
   }
-  const int first_x = std::max(origin_x_, static_cast<int>(std::floor(minimum_x)));
-  const int last_x = std::min(origin_x_ + width_ - 1, static_cast<int>(std::ceil(maximum_x)));
-  const int first_y = std::max(origin_y_, static_cast<int>(std::floor(minimum_y)));
-  const int last_y = std::min(origin_y_ + height_ - 1, static_cast<int>(std::ceil(maximum_y)));
+  if (maximum_x < static_cast<float>(origin_x_) ||
+      minimum_x > static_cast<float>(origin_x_ + width_ - 1) ||
+      maximum_y < static_cast<float>(origin_y_) ||
+      minimum_y > static_cast<float>(origin_y_ + height_ - 1)) {
+    return;
+  }
+  const int first_x = static_cast<int>(std::floor(std::clamp(
+      minimum_x, static_cast<float>(origin_x_), static_cast<float>(origin_x_ + width_ - 1))));
+  const int last_x = static_cast<int>(std::ceil(std::clamp(
+      maximum_x, static_cast<float>(origin_x_), static_cast<float>(origin_x_ + width_ - 1))));
+  const int first_y = static_cast<int>(std::floor(std::clamp(
+      minimum_y, static_cast<float>(origin_y_), static_cast<float>(origin_y_ + height_ - 1))));
+  const int last_y = static_cast<int>(std::ceil(std::clamp(
+      maximum_y, static_cast<float>(origin_y_), static_cast<float>(origin_y_ + height_ - 1))));
 
   for (int y = first_y; y <= last_y; ++y) {
     for (int x = first_x; x <= last_x; ++x) {

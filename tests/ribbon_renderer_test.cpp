@@ -44,6 +44,23 @@ TEST_CASE("geometry outside the canvas does no tile work") {
                     [](std::uint16_t pixel) { return pixel == 0xFFFFU; }));
 }
 
+TEST_CASE("extreme finite coordinates are rejected before integer conversion") {
+  constexpr int width = 64;
+  constexpr int height = 64;
+  const std::array primitives{tinydraw::RibbonPrimitive{
+      .kind = tinydraw::RibbonPrimitiveKind::kConvex,
+      .points = {tinydraw::Point{-1.0e30F, 10.0F}, tinydraw::Point{10.0F, 10.0F},
+                 tinydraw::Point{10.0F, 20.0F}, tinydraw::Point{-1.0e30F, 20.0F}},
+      .point_count = 4U,
+  }};
+  std::vector<std::uint16_t> canvas(width * height, 0xFFFFU);
+  tinydraw::RibbonRenderer renderer;
+
+  const auto stats = renderer.render(primitives, canvas, width, height, 0x001FU);
+
+  CHECK(stats.tiles_rasterized == 0U);
+}
+
 TEST_CASE("malformed convex primitives are ignored safely") {
   constexpr int width = 64;
   constexpr int height = 64;

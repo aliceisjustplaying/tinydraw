@@ -8,6 +8,8 @@
 namespace tinydraw {
 namespace {
 
+constexpr float kMaximumCoordinateMagnitude = 1'000'000.0F;
+
 struct Bounds {
   float minimum_x = std::numeric_limits<float>::max();
   float minimum_y = std::numeric_limits<float>::max();
@@ -15,17 +17,22 @@ struct Bounds {
   float maximum_y = std::numeric_limits<float>::lowest();
 };
 
-bool finite(Point point) { return std::isfinite(point.x) && std::isfinite(point.y); }
+bool safe(Point point) {
+  return std::isfinite(point.x) && std::isfinite(point.y) &&
+         std::abs(point.x) <= kMaximumCoordinateMagnitude &&
+         std::abs(point.y) <= kMaximumCoordinateMagnitude;
+}
 
 bool valid(const RibbonPrimitive& primitive) {
   if (primitive.kind == RibbonPrimitiveKind::kCircle) {
-    return finite(primitive.center) && std::isfinite(primitive.radius) && primitive.radius > 0.0F;
+    return safe(primitive.center) && std::isfinite(primitive.radius) && primitive.radius > 0.0F &&
+           primitive.radius <= kMaximumCoordinateMagnitude;
   }
   if (primitive.point_count < 3U || primitive.point_count > primitive.points.size()) {
     return false;
   }
   for (std::uint8_t index = 0; index < primitive.point_count; ++index) {
-    if (!finite(primitive.points[index])) {
+    if (!safe(primitive.points[index])) {
       return false;
     }
   }
@@ -73,10 +80,16 @@ RibbonRenderStats RibbonRenderer::render(std::span<const RibbonPrimitive> primit
       bounds.minimum_y >= static_cast<float>(height)) {
     return {};
   }
-  const int first_x = std::clamp(static_cast<int>(std::floor(bounds.minimum_x)), 0, width - 1);
-  const int first_y = std::clamp(static_cast<int>(std::floor(bounds.minimum_y)), 0, height - 1);
-  const int last_x = std::clamp(static_cast<int>(std::ceil(bounds.maximum_x)), 0, width - 1);
-  const int last_y = std::clamp(static_cast<int>(std::ceil(bounds.maximum_y)), 0, height - 1);
+  const float maximum_canvas_x = static_cast<float>(width - 1);
+  const float maximum_canvas_y = static_cast<float>(height - 1);
+  const int first_x =
+      static_cast<int>(std::floor(std::clamp(bounds.minimum_x, 0.0F, maximum_canvas_x)));
+  const int first_y =
+      static_cast<int>(std::floor(std::clamp(bounds.minimum_y, 0.0F, maximum_canvas_y)));
+  const int last_x =
+      static_cast<int>(std::ceil(std::clamp(bounds.maximum_x, 0.0F, maximum_canvas_x)));
+  const int last_y =
+      static_cast<int>(std::ceil(std::clamp(bounds.maximum_y, 0.0F, maximum_canvas_y)));
 
   RibbonRenderStats stats;
   const int first_tile_x = first_x / kTileSize * kTileSize;

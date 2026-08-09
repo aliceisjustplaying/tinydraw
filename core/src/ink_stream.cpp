@@ -10,11 +10,18 @@ namespace {
 constexpr float kInitialPressure = 0.25F;
 constexpr float kMinimumRadius = 0.01F;
 
+bool valid(TouchPoint point) { return std::isfinite(point.x) && std::isfinite(point.y); }
+
 }  // namespace
 
 InkStream::InkStream(InkConfig config) : config_(config) {}
 
 InkPoint InkStream::begin(TouchPoint point) {
+  if (!valid(point)) {
+    active_ = false;
+    previous_ = {};
+    return previous_;
+  }
   active_ = true;
   previous_ = {
       .position = {.x = point.x, .y = point.y},
@@ -37,6 +44,9 @@ InkPoint InkStream::finish(TouchPoint point) {
 
 InkPoint InkStream::ingest(TouchPoint point, bool complete) {
   assert(active_ && "InkStream input requires an active stroke");
+  if (!valid(point)) {
+    return previous_;
+  }
 
   const std::uint32_t elapsed_us = point.timestamp_us - previous_.timestamp_us;
   const bool timestamp_moved_backward = elapsed_us > 0x7FFF'FFFFU;
