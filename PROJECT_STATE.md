@@ -3,8 +3,7 @@
 Last updated: 2026-08-09
 
 This is the durable engineering handoff for the repository. Read it together with
-`INITIAL_RESEARCH.md`, which remains the product and architecture specification. The complete
-high-effort whole-codebase review is preserved in `OPUS_REVIEW_2026-08-09.md`. Update this file
+`INITIAL_RESEARCH.md`, which remains the product and architecture specification. Update this file
 whenever a milestone changes the current behavior, constraints, or next step.
 
 ## Current resume point
@@ -675,11 +674,6 @@ git log --reverse --oneline
 git log --format='%an <%ae> | %cn <%ce>' | sort -u
 ```
 
-A high-effort Opus review verified the foundation and identified small correctness preconditions
-before streaming work. Float-to-int raster bounds, zero-area convex coverage, non-finite stream
-input, and PPM attributes were fixed immediately afterward. Geometry streaming and the dirty-tile
-raster horizon are now implemented and directly tested. See `OPUS_REVIEW_2026-08-09.md` for the
-review evidence and priorities.
-
-The misleading intermediate cursor-scaling and polygon-rendering approaches remain in history as
-useful diagnosis context but are not present in the current tree.
+Independent whole-repository reviews informed the tested raster, lifecycle, memory-placement, and
+Undo invariants documented above. The misleading intermediate cursor-scaling and polygon-rendering
+approaches remain in Git history but are not present in the current tree.
