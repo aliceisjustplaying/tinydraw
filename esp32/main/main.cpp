@@ -17,6 +17,7 @@
 #include "tinydraw/graphics/coverage_tile.h"
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
+#include "tinydraw/ui/toolbar.h"
 
 namespace {
 
@@ -157,6 +158,18 @@ extern "C" void app_main() {
   const auto geometry = std::span(primitives.data(), primitive_count);
   const Bounds bounds = primitive_bounds(geometry);
   const RasterResult raster = raster_checksum(geometry, display);
+#ifdef TINYDRAW_QEMU_GRAPHICS
+  tinydraw::ToolbarState toolbar;
+  toolbar.can_undo = true;
+  auto framebuffer = qemu_display.framebuffer();
+  tinydraw::draw_toolbar(framebuffer, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight, toolbar);
+  const auto color_center = static_cast<std::size_t>(410 * tinydraw::kCanvasWidth + 213);
+  if (framebuffer[color_center] != tinydraw::rgb565(toolbar.color) || !qemu_display.refresh()) {
+    std::printf("TINYDRAW_REPLAY_FAIL reason=qemu_ui\n");
+    return;
+  }
+  std::printf("TINYDRAW_UI_OK controls=6\n");
+#endif
   std::printf(
       "TINYDRAW_REPLAY_OK accepted=%u primitives=%u tiles=%u "
       "bounds=%.2f,%.2f,%.2f,%.2f checksum=%08lx\n",

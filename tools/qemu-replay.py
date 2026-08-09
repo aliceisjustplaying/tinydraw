@@ -92,6 +92,11 @@ def main() -> int:
         return 1
 
     stop(process)
+    if arguments.graphics and b"TINYDRAW_UI_OK controls=6" not in output:
+        sys.stderr.buffer.write(output)
+        print("\nQEMU graphics run lacked toolbar marker", file=sys.stderr)
+        return 1
+
     match = MARKER.search(output)
     if match is None:
         sys.stderr.buffer.write(output)
