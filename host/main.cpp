@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <span>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -33,10 +34,17 @@ void set_pixel(std::vector<std::uint16_t>& pixels, int x, int y, std::uint16_t c
   pixels[index] = color;
 }
 
+void apply_ribbon_update(std::vector<tinydraw::RibbonPrimitive>& geometry,
+                         std::size_t& committed_count, const tinydraw::RibbonUpdate& update) {
+  geometry.resize(committed_count);
+  geometry.insert(geometry.end(), update.committed.begin(), update.committed.end());
+  committed_count = geometry.size();
+  geometry.insert(geometry.end(), update.provisional.begin(), update.provisional.end());
+}
+
 void draw_ribbon(std::vector<std::uint16_t>& pixels,
-                 const std::vector<tinydraw::InkPoint>& points) {
+                 std::span<const tinydraw::RibbonPrimitive> primitives) {
   static tinydraw::RibbonRenderer renderer;
-  const auto primitives = tinydraw::build_pf_ribbon(points);
   static_cast<void>(
       renderer.render(primitives, pixels, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight, kInk));
 }
@@ -89,7 +97,9 @@ int replay(const std::string& input_path, const std::string& output_path) {
       static_cast<std::size_t>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight));
   clear_canvas(pixels, false);
   tinydraw::InkStream stream;
-  std::vector<tinydraw::InkPoint> stroke_points;
+  tinydraw::RibbonStream ribbon;
+  std::vector<tinydraw::RibbonPrimitive> geometry;
+  std::size_t committed_count = 0U;
   std::size_t point_count = 0;
 
   std::string line;
@@ -110,12 +120,15 @@ int replay(const std::string& input_path, const std::string& output_path) {
     }
 
     if (action == "down" && !stream.active()) {
-      stroke_points.clear();
-      stroke_points.push_back(stream.begin(touch));
+      geometry.clear();
+      committed_count = 0U;
+      apply_ribbon_update(geometry, committed_count, ribbon.append(stream.begin(touch)));
     } else if ((action == "move" || action == "up") && stream.active()) {
-      stroke_points.push_back(action == "up" ? stream.finish(touch) : stream.update(touch));
+      const auto update = action == "up" ? ribbon.finish(stream.finish(touch))
+                                         : ribbon.append(stream.update(touch));
+      apply_ribbon_update(geometry, committed_count, update);
       if (action == "up") {
-        draw_ribbon(pixels, stroke_points);
+        draw_ribbon(pixels, geometry);
       }
     } else {
       std::fprintf(stderr, "invalid replay lifecycle on line %zu\n", line_number);
@@ -169,7 +182,10 @@ int interactive() {
   clear_canvas(committed_pixels, true);
   std::vector<std::uint16_t> pixels = committed_pixels;
   tinydraw::InkStream stream;
-  std::vector<tinydraw::InkPoint> stroke_points;
+  tinydraw::RibbonStream ribbon;
+  std::vector<tinydraw::RibbonPrimitive> geometry;
+  std::size_t committed_count = 0U;
+  tinydraw::InkPoint last_ink_point{};
 
   bool running = true;
   while (running) {
@@ -180,37 +196,43 @@ int interactive() {
         running = false;
       } else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_c) {
         stream.end();
-        stroke_points.clear();
+        ribbon.reset();
+        geometry.clear();
+        committed_count = 0U;
         clear_canvas(committed_pixels, true);
       } else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
         const auto point = mouse_to_logical(event.button.x, event.button.y);
         if (!point.has_value()) {
           continue;
         }
-        stroke_points.clear();
-        stroke_points.push_back(stream.begin(
-            {.x = point->x, .y = point->y, .timestamp_us = event.button.timestamp * 1'000U}));
+        geometry.clear();
+        committed_count = 0U;
+        last_ink_point = stream.begin(
+            {.x = point->x, .y = point->y, .timestamp_us = event.button.timestamp * 1'000U});
+        apply_ribbon_update(geometry, committed_count, ribbon.append(last_ink_point));
       } else if (event.type == SDL_MOUSEMOTION && stream.active()) {
         const auto point = mouse_to_logical(event.motion.x, event.motion.y);
         if (point.has_value()) {
-          stroke_points.push_back(stream.update(
-              {.x = point->x, .y = point->y, .timestamp_us = event.motion.timestamp * 1'000U}));
+          last_ink_point = stream.update(
+              {.x = point->x, .y = point->y, .timestamp_us = event.motion.timestamp * 1'000U});
+          apply_ribbon_update(geometry, committed_count, ribbon.append(last_ink_point));
         }
       } else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT &&
                  stream.active()) {
         const auto mapped = mouse_to_logical(event.button.x, event.button.y);
-        const tinydraw::Point point = mapped.value_or(
-            stroke_points.empty() ? tinydraw::Point{} : stroke_points.back().position);
-        stroke_points.push_back(stream.finish(
-            {.x = point.x, .y = point.y, .timestamp_us = event.button.timestamp * 1'000U}));
-        draw_ribbon(committed_pixels, stroke_points);
-        stroke_points.clear();
+        const tinydraw::Point point = mapped.value_or(last_ink_point.position);
+        last_ink_point = stream.finish(
+            {.x = point.x, .y = point.y, .timestamp_us = event.button.timestamp * 1'000U});
+        apply_ribbon_update(geometry, committed_count, ribbon.finish(last_ink_point));
+        draw_ribbon(committed_pixels, geometry);
+        geometry.clear();
+        committed_count = 0U;
       }
     }
 
     pixels = committed_pixels;
     if (stream.active()) {
-      draw_ribbon(pixels, stroke_points);
+      draw_ribbon(pixels, geometry);
     }
     SDL_UpdateTexture(texture, nullptr, pixels.data(),
                       tinydraw::kCanvasWidth * static_cast<int>(sizeof(std::uint16_t)));
