@@ -118,10 +118,10 @@ Daily firmware commands:
 The firmware embeds the same seven points as `zigzag.stroke` and feeds them incrementally through
 `InkStream`, `RibbonStream`, `StrokeRaster`, 4×4 coverage, RGB565 composition, and optionally
 `QemuDisplayBackend`. The committed 329,728-byte RGB565 canvas, 164,864-byte active coverage plane,
-and 3,440,640-byte ten-entry Undo store are allocated only with `MALLOC_CAP_SPIRAM`; `StrokeRaster`,
-Undo metadata, and
-tile scratch are allocated only with `MALLOC_CAP_INTERNAL`. Runtime pointer checks must emit
-`TINYDRAW_MEMORY_OK` before the harness accepts a run.
+and 3,440,640-byte ten-entry Undo store are allocated only with `MALLOC_CAP_SPIRAM`.
+`StrokeRaster`, `TileUndoHistory`, and both tile scratch buffers use DMA-capable internal RAM.
+Runtime external, internal, and DMA pointer checks must emit `TINYDRAW_MEMORY_OK` before the harness
+accepts a run.
 
 The headless harness checks accepted-point, primitive, touched-tile, geometry-bound, memory-placement,
 and bounded incremental-work results. The seven-point replay submits 46 dirty tiles in total, never
@@ -131,16 +131,19 @@ checksum is informational because cross-architecture pixel identity is not an or
 
 The visible graphics build is separate because `esp_lcd_qemu_rgb` requires QEMU's virtual
 framebuffer device and cannot be initialized in `-nographic` mode. Each input frame copies only the
-dirty 64×64-or-smaller tiles through `DisplayBackend` into QEMU's dedicated RGB565 framebuffer and
-refreshes exactly once. The shared toolbar renderer uses that same memory. This screen is a scripted
-visual integration check; QEMU does not yet provide interactive pointer/touch input to TinyDraw.
+dirty 64×64-or-smaller tiles through `DisplayBackend` into QEMU's dedicated RGB565 framebuffer,
+redraws the shared toolbar, and refreshes exactly once. `DisplayBackend::push_rect` is synchronous:
+a backend must complete or stage a transfer before returning and must not retain the source span.
+This screen is a scripted visual integration check; QEMU does not yet provide interactive
+pointer/touch input to TinyDraw.
 
 PlatformIO is not used. Espressif's installation manager owns IDF's Python and toolchain, keeping
-the host loop independent from the system Python. Our QEMU commands override Espressif's 32 MB
-default with an 8 MB quad-PSRAM model and assert the reported size at boot. This proves our explicit
-capability-allocation path against the emulator. It does not prove the
-physical board's PSRAM mode, capacity, bandwidth, DMA behavior, or timing; those remain hardware
-checks. The board may be V1 (SH8601 display + FT3168 touch) or V2 (CO5300 + CST820), so identify the
+the host loop independent from the system Python. Physical builds use performance optimization,
+240 MHz, and the ESP32-S3R8's octal PSRAM. QEMU uses a separate build directory and configuration
+with the same optimization/CPU settings and its required 8 MB quad-PSRAM model. `scripts/esp32`
+asserts those effective settings after each build. This proves our explicit capability-allocation
+path against the emulator. It does not prove the physical board's PSRAM capacity, bandwidth, DMA
+behavior, or timing; those remain hardware checks. The board may be V1 (SH8601 display + FT3168 touch) or V2 (CO5300 + CST820), so identify the
 revision before selecting adapters and preserve both paths until then.
 
 ## Dependency policy

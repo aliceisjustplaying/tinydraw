@@ -20,8 +20,9 @@ git status --short
 ```
 
 The firmware now allocates its 329,728-byte committed RGB565 canvas and 164,864-byte active
-coverage plane with explicit `MALLOC_CAP_SPIRAM`, allocates `StrokeRaster` and tile scratch with
-`MALLOC_CAP_INTERNAL`, and verifies all three pointer classes at runtime. The seven fixture touches
+coverage plane with explicit `MALLOC_CAP_SPIRAM`. `StrokeRaster`, `TileUndoHistory`, and both tile
+scratch buffers use DMA-capable internal RAM. Runtime checks verify external, internal, and DMA
+capabilities. The seven fixture touches
 flow through `StrokeRaster` one frame at a time: 46 dirty-tile submissions total, at most 17 in a
 frame, and exactly seven graphics refreshes. The process harness requires memory, structure,
 bounded-work, and UI markers.
@@ -38,9 +39,10 @@ now shared by host and firmware. The same 1,000-sample XL workload captures 235,
 lift and restores 235,520 bytes on Undo instead of copying a 329,728-byte full canvas for every
 stroke. These are traffic counts, not latency evidence.
 
-Our QEMU commands override Espressif's 32 MB default with an 8 MB quad-PSRAM model and assert that
-size at boot. That is valid integration evidence for IDF's capability allocator, but not evidence
-for the Waveshare board's physical PSRAM mode, capacity,
+Physical firmware builds use 240 MHz, performance optimization, and the ESP32-S3R8's octal PSRAM.
+QEMU builds use a separate configuration with the same CPU/optimization settings and its required
+8 MB quad-PSRAM model. `scripts/esp32` asserts these effective settings after every build. QEMU is
+valid integration evidence for IDF's capability allocator, but not evidence for physical capacity,
 bandwidth, DMA behavior, or timing. Verify those on the exact board revision. The incoming hardware
 may be V1 (SH8601 + FT3168) or V2 (CO5300 + CST820); keep both adapter paths and detect/confirm the
 revision before selecting one. Do not use QEMU wall-clock speed as performance evidence. Keep native
@@ -89,8 +91,8 @@ The prototype is useful for visual and input-loop testing, but it is not yet the
 Its tldraw-inspired UI is intentionally direct-drawn and minimal. Undo stores ten bounded dirty-tile
 before-images in caller-provided memory and is shared by host and firmware. There is no persistent
 point arena or hardware driver. A real ESP-IDF ESP32-S3 target now compiles the shared core, boots
-under Espressif QEMU, replays the deterministic zigzag stroke, and shows the stroke plus the shared six-control
-TinyDraw toolbar in QEMU's virtual framebuffer. QEMU input remains scripted rather than interactive.
+under Espressif QEMU, replays the deterministic zigzag stroke, and shows the stroke plus the shared
+six-control TinyDraw toolbar in QEMU's virtual framebuffer. QEMU input remains scripted rather than interactive.
 
 ## Fast development loop
 
@@ -113,7 +115,7 @@ Daily commands:
 
 Expected current results:
 
-- 54 doctest cases;
+- 56 doctest cases;
 - 13 CTest entries, including sustained-XL/Undo characterization and process-level replay/UI/Undo
   checks;
 - debug, release, ASan, and UBSan green;
@@ -195,14 +197,15 @@ The official `espressif/esp_lcd_qemu_rgb` component is locked at 1.0.2.
   - minimal ESP-IDF project compiling the same `core/src` files as Xtensa C++20;
   - deterministic seven-point incremental firmware replay with structural/work markers and an
     informational checksum;
-  - `FirmwareCanvas`, which capability-allocates committed/coverage state in modeled PSRAM and the
-    raster/tile scratch in internal RAM;
+  - `FirmwareCanvas`, which capability-allocates committed/coverage/history state in PSRAM and both
+    raster/Undo tile scratch buffers in DMA-capable internal RAM;
   - `QemuDisplayBackend`, a thin `esp_lcd_qemu_rgb` implementation of `DisplayBackend`;
-  - visible graphics mode receives only dirty tiles, refreshes once per simulated input frame, and
-    renders the shared toolbar into QEMU's own RGB565 framebuffer;
+  - visible graphics mode receives only dirty tiles, redraws the shared toolbar before every frame,
+    and refreshes once per simulated input frame;
   - locked managed-component manifest; downloaded `managed_components/` remains ignored.
 - `scripts/esp32`
-  - isolated build, headless QEMU assertion, and visible graphics commands.
+  - isolated physical-octal and QEMU-quad build directories, effective-config assertions, headless
+    replay, and visible graphics commands.
 - `tools/qemu-replay.py`
   - boots QEMU, captures completion, rejects firmware/stack failures, and checks structural values
     with bounds tolerance while treating the framebuffer checksum as informational.
@@ -246,6 +249,9 @@ update(point);     // dt-adaptive filtered sample
 finish(point);     // exact lift coordinate and ends the stroke
 end();             // cancellation/reset without a final point
 ```
+
+A new touch-down while a stroke is still active first cancels the abandoned lifecycle across
+`InkStream`, `RibbonStream`, and `StrokeRaster`; it cannot weld the new stroke to stale geometry.
 
 Important timestamp policies:
 
@@ -409,9 +415,11 @@ At lift:
 4. composite each touched tile exactly once into `committed_pixels`;
 5. clear active coverage.
 
-Cancellation discards active coverage and restores the committed canvas. `C`/New captures all 42
-tiles as one undoable operation before clearing. A core test proves provisional pixels never enter
-persistence; another compares incremental final output to a one-pass whole-stroke coverage union.
+Cancellation clears coverage only in touched/provisional tiles, restores those tiles from the
+committed canvas, and submits them to the display. This works when the optional host-visible span is
+absent, as it is in firmware. `C`/New captures all 42 tiles as one undoable operation before
+clearing. Core tests prove provisional pixels never enter persistence, firmware-style cancellation
+repaints the display, and incremental final output matches a one-pass whole-stroke coverage union.
 
 ## Dirty-tile Undo
 
@@ -421,11 +429,12 @@ arena:
 - ten entries × 42 tile slots × 64×64 RGB565 = 3,440,640 bytes of reserved storage;
 - storage is caller-owned (`std::vector` on host, `MALLOC_CAP_SPIRAM` in firmware);
 - each entry has a 42-element touched-tile map in internal memory;
-- only actual pixels in touched tiles are copied, including correctly sized right/bottom edge tiles;
-- the oldest entry is overwritten after ten completed operations; there is no redo;
+- only canonical 64×64 or clamped edge tiles are accepted and copied;
+- the oldest entry is overwritten after ten completed non-empty operations; empty/off-canvas
+  operations preserve the existing history; there is no redo;
 - stroke capture reuses the internal working tile after the committed canvas read, avoiding another
   committed-canvas read;
-- Undo restores and submits only saved tiles;
+- Undo stages each PSRAM tile through DMA-capable internal scratch, then restores and submits it;
 - New is undoable and intentionally captures the whole screen.
 
 The fixed 3.28 MiB reservation is larger than a variable arena but guarantees ten operations,
@@ -584,15 +593,18 @@ display bytes. CI locks down these operation/traffic ceilings rather than fragil
 thresholds. The burst is screen-area-bounded, not stroke-length-bounded, but would need redesign
 before a much larger backing canvas.
 
-The active embedded memory model and partial submission path now run in QEMU. Physical panel/touch
-adapters and real-board capability, DMA, and performance evidence remain unimplemented.
+The active embedded memory model and partial submission path now run in QEMU. `DisplayBackend`
+submissions have a synchronous no-retention contract, so a physical adapter must finish or stage DMA
+before returning. Physical panel/touch adapters and real-board DMA/performance evidence remain
+unimplemented.
 
 ## Exact next engineering steps
 
 ### 1. Completed: ESP-IDF / QEMU vertical slice
 
-The ESP32-S3 target compiles every shared core source as Xtensa C++20, boots with modeled quad
-PSRAM, and incrementally replays seven input frames. Its accepted result is:
+The ESP32-S3 target compiles every shared core source as optimized Xtensa C++20 at 240 MHz. Physical
+builds select octal PSRAM; separate QEMU builds boot with modeled quad PSRAM and incrementally replay
+seven input frames. Its accepted result is:
 
 ```text
 accepted=7 primitives=13 tiles=14 bounds=27.83,37.83,341.44,411.44
@@ -602,8 +614,8 @@ frames=7 dirty=46 max_tiles=17 visits=133
 ```
 
 The RGB565 FNV checksum remains informational. `./scripts/esp32 qemu` verifies modeled PSRAM boot,
-external/internal capability placement, structure, bounded work, and a post-replay FreeRTOS context
-switch. `./scripts/esp32 graphics-test` additionally verifies 46 dirty submissions, seven refreshes,
+external/internal/DMA capability placement, structure, bounded work, and a post-replay FreeRTOS
+context switch. `./scripts/esp32 graphics-test` additionally verifies 46 dirty submissions, seven refreshes,
 and final toolbar/canvas pixels. `./scripts/esp32 graphics` leaves the window open for inspection.
 
 The framebuffer adapter remains behind `TINYDRAW_QEMU_GRAPHICS`: initializing
@@ -632,9 +644,9 @@ command framework, variable arena, or point history.
 
 ### 4. Next: physical performance and revision identification
 
-When hardware arrives, first identify V1 versus V2, prove actual PSRAM capacity/mode, and measure
-stroke lift plus dirty Undo on-device. Do not choose SH8601/FT3168 versus CO5300/CST820 adapters from
-availability guesses. Keep drawing behavior unchanged until those measurements identify a real
+When hardware arrives, first identify V1 versus V2, confirm that the physical octal-PSRAM build
+boots with the expected capacity, and measure stroke lift plus dirty Undo on-device. Do not choose
+SH8601/FT3168 versus CO5300/CST820 adapters from availability guesses. Keep drawing behavior unchanged until those measurements identify a real
 bottleneck.
 
 ### 5. Later software tuning
