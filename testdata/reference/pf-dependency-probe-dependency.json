@@ -1,0 +1,166 @@
+{
+  "source": {
+    "library": "steveruizok/perfect-freehand",
+    "commit": "176e00f2399f4969e1b0965c5921d96a3e50ce9f",
+    "input": "testdata/strokes/dependency-probe.stroke"
+  },
+  "caveat": "Outline arrays concatenate left track, end cap, reversed right track, and start cap. Prefix stability measures only the stable beginning of the left track; it is evidence, not yet a commit-horizon proof.",
+  "options": {
+    "size": 6,
+    "thinning": 0.55,
+    "smoothing": 0.55,
+    "streamline": 0.35,
+    "simulatePressure": true,
+    "start": {
+      "cap": true,
+      "taper": false
+    },
+    "end": {
+      "cap": true,
+      "taper": false
+    },
+    "last": false
+  },
+  "observations": [
+    {
+      "inputCount": 1,
+      "strokePointCount": 2,
+      "outlinePointCount": 44,
+      "stableOutlinePrefixFromPrevious": 0,
+      "previousOutlineTailChanged": 0
+    },
+    {
+      "inputCount": 2,
+      "strokePointCount": 4,
+      "outlinePointCount": 50,
+      "stableOutlinePrefixFromPrevious": 0,
+      "previousOutlineTailChanged": 44
+    },
+    {
+      "inputCount": 3,
+      "strokePointCount": 3,
+      "outlinePointCount": 48,
+      "stableOutlinePrefixFromPrevious": 0,
+      "previousOutlineTailChanged": 50
+    },
+    {
+      "inputCount": 4,
+      "strokePointCount": 4,
+      "outlinePointCount": 50,
+      "stableOutlinePrefixFromPrevious": 0,
+      "previousOutlineTailChanged": 48
+    },
+    {
+      "inputCount": 5,
+      "strokePointCount": 5,
+      "outlinePointCount": 52,
+      "stableOutlinePrefixFromPrevious": 0,
+      "previousOutlineTailChanged": 50
+    },
+    {
+      "inputCount": 6,
+      "strokePointCount": 6,
+      "outlinePointCount": 54,
+      "stableOutlinePrefixFromPrevious": 0,
+      "previousOutlineTailChanged": 52
+    },
+    {
+      "inputCount": 7,
+      "strokePointCount": 7,
+      "outlinePointCount": 56,
+      "stableOutlinePrefixFromPrevious": 0,
+      "previousOutlineTailChanged": 54
+    },
+    {
+      "inputCount": 8,
+      "strokePointCount": 8,
+      "outlinePointCount": 58,
+      "stableOutlinePrefixFromPrevious": 0,
+      "previousOutlineTailChanged": 56
+    },
+    {
+      "inputCount": 9,
+      "strokePointCount": 9,
+      "outlinePointCount": 60,
+      "stableOutlinePrefixFromPrevious": 0,
+      "previousOutlineTailChanged": 58
+    },
+    {
+      "inputCount": 10,
+      "strokePointCount": 10,
+      "outlinePointCount": 62,
+      "stableOutlinePrefixFromPrevious": 0,
+      "previousOutlineTailChanged": 60
+    },
+    {
+      "inputCount": 11,
+      "strokePointCount": 11,
+      "outlinePointCount": 64,
+      "stableOutlinePrefixFromPrevious": 9,
+      "previousOutlineTailChanged": 53
+    },
+    {
+      "inputCount": 12,
+      "strokePointCount": 12,
+      "outlinePointCount": 66,
+      "stableOutlinePrefixFromPrevious": 10,
+      "previousOutlineTailChanged": 54
+    },
+    {
+      "inputCount": 13,
+      "strokePointCount": 13,
+      "outlinePointCount": 68,
+      "stableOutlinePrefixFromPrevious": 11,
+      "previousOutlineTailChanged": 55
+    },
+    {
+      "inputCount": 14,
+      "strokePointCount": 14,
+      "outlinePointCount": 70,
+      "stableOutlinePrefixFromPrevious": 12,
+      "previousOutlineTailChanged": 56
+    },
+    {
+      "inputCount": 15,
+      "strokePointCount": 15,
+      "outlinePointCount": 72,
+      "stableOutlinePrefixFromPrevious": 13,
+      "previousOutlineTailChanged": 57
+    },
+    {
+      "inputCount": 16,
+      "strokePointCount": 16,
+      "outlinePointCount": 74,
+      "stableOutlinePrefixFromPrevious": 14,
+      "previousOutlineTailChanged": 58
+    },
+    {
+      "inputCount": 17,
+      "strokePointCount": 17,
+      "outlinePointCount": 76,
+      "stableOutlinePrefixFromPrevious": 15,
+      "previousOutlineTailChanged": 59
+    },
+    {
+      "inputCount": 18,
+      "strokePointCount": 18,
+      "outlinePointCount": 78,
+      "stableOutlinePrefixFromPrevious": 16,
+      "previousOutlineTailChanged": 60
+    },
+    {
+      "inputCount": 19,
+      "strokePointCount": 19,
+      "outlinePointCount": 80,
+      "stableOutlinePrefixFromPrevious": 17,
+      "previousOutlineTailChanged": 61
+    },
+    {
+      "inputCount": 20,
+      "strokePointCount": 20,
+      "outlinePointCount": 82,
+      "stableOutlinePrefixFromPrevious": 18,
+      "previousOutlineTailChanged": 62
+    }
+  ]
+}
