@@ -14,6 +14,7 @@
 #include "tinydraw/geometry.h"
 #include "tinydraw/graphics/ribbon_renderer.h"
 #include "tinydraw/graphics/stroke_raster.h"
+#include "tinydraw/graphics/tile_undo_history.h"
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
 #include "tinydraw/ui/toolbar.h"
@@ -167,6 +168,79 @@ int ui_preview(const std::string& output_path) {
   return EXIT_SUCCESS;
 }
 
+bool draw_test_stroke(tinydraw::StrokeRaster& raster, tinydraw::TileUndoHistory& history,
+                      tinydraw::Point start, tinydraw::Point end, std::uint16_t color,
+                      std::uint32_t timestamp_us) {
+  tinydraw::InkStream ink;
+  tinydraw::RibbonStream ribbon;
+  static_cast<void>(raster.update(
+      ribbon.append(ink.begin({.x = start.x, .y = start.y, .timestamp_us = timestamp_us})), color));
+  static_cast<void>(
+      raster.update(ribbon.append(ink.update({.x = (start.x + end.x) * 0.5F,
+                                              .y = (start.y + end.y) * 0.5F,
+                                              .timestamp_us = timestamp_us + 8'000U})),
+                    color));
+  static_cast<void>(raster.finish(
+      ribbon.finish(ink.finish({.x = end.x, .y = end.y, .timestamp_us = timestamp_us + 16'000U})),
+      color, &history));
+  return history.can_undo();
+}
+
+int undo_e2e() {
+  std::vector<std::uint16_t> committed(
+      static_cast<std::size_t>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight));
+  clear_canvas(committed, true);
+  const auto blank = committed;
+  std::vector<std::uint16_t> visible = committed;
+  std::vector<std::uint8_t> coverage(committed.size(), 0U);
+  std::vector<std::uint16_t> undo_storage(tinydraw::TileUndoHistory::kRequiredPixels);
+  tinydraw::TileUndoHistory history(undo_storage);
+  tinydraw::StrokeRaster raster(committed, visible, coverage);
+  tinydraw::ToolbarState toolbar;
+
+  const auto undo = [&] {
+    static_cast<void>(history.undo(committed, visible));
+    toolbar.can_undo = history.can_undo();
+  };
+  const auto draw = [&](tinydraw::Point start, tinydraw::Point end, std::uint16_t color,
+                        std::uint32_t timestamp_us) {
+    toolbar.can_undo = draw_test_stroke(raster, history, start, end, color, timestamp_us);
+  };
+
+  draw({30.0F, 40.0F}, {140.0F, 110.0F}, kReplayInk, 1'000U);
+  const auto first_stroke = committed;
+  draw({220.0F, 80.0F}, {320.0F, 180.0F}, 0xF800U, 20'000U);
+  const auto second_stroke = committed;
+  undo();
+  const bool undid_second = committed == first_stroke && visible == committed && toolbar.can_undo;
+  undo();
+  const bool undid_first = committed == blank && visible == committed && !toolbar.can_undo;
+
+  draw({30.0F, 40.0F}, {140.0F, 110.0F}, kReplayInk, 40'000U);
+  draw({30.0F, 40.0F}, {140.0F, 110.0F}, kBackground, 60'000U);
+  const bool erased = committed != first_stroke;
+  undo();
+  const bool undid_eraser = committed == first_stroke && toolbar.can_undo;
+
+  history.begin_entry();
+  history.capture_canvas(committed);
+  static_cast<void>(history.commit_entry());
+  clear_canvas(committed, true);
+  visible = committed;
+  toolbar.can_undo = history.can_undo();
+  const bool started_new = committed == blank && toolbar.can_undo;
+  undo();
+  const bool undid_new = committed == first_stroke && visible == committed && toolbar.can_undo;
+
+  if (first_stroke == blank || second_stroke == first_stroke || !undid_second || !undid_first ||
+      !erased || !undid_eraser || !started_new || !undid_new) {
+    std::fprintf(stderr, "dirty-tile undo E2E failed\n");
+    return EXIT_FAILURE;
+  }
+  std::printf("TINYDRAW_UNDO_OK depth=10 draw=1 erase=1 new=1 exact=1\n");
+  return EXIT_SUCCESS;
+}
+
 int interactive() {
   if (SDL_Init(SDL_INIT_VIDEO) != 0) {
     std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
@@ -198,7 +272,8 @@ int interactive() {
       static_cast<std::size_t>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight));
   clear_canvas(committed_pixels, true);
   std::vector<std::uint16_t> pixels = committed_pixels;
-  std::vector<std::uint16_t> undo_pixels;
+  std::vector<std::uint16_t> undo_storage(tinydraw::TileUndoHistory::kRequiredPixels);
+  tinydraw::TileUndoHistory undo_history(undo_storage);
   std::vector<std::uint8_t> active_coverage(
       static_cast<std::size_t>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight), 0U);
   tinydraw::StrokeRaster stroke_raster(committed_pixels, pixels, active_coverage);
@@ -228,21 +303,21 @@ int interactive() {
   };
   const auto start_new_drawing = [&] {
     reset_active_stroke();
+    undo_history.begin_entry();
+    undo_history.capture_canvas(committed_pixels);
+    static_cast<void>(undo_history.commit_entry());
     clear_canvas(committed_pixels, true);
     pixels = committed_pixels;
-    undo_pixels.clear();
-    toolbar.can_undo = false;
+    toolbar.can_undo = undo_history.can_undo();
     close_popups();
   };
   const auto undo = [&] {
-    if (!toolbar.can_undo) {
+    if (!undo_history.can_undo()) {
       return;
     }
     reset_active_stroke();
-    committed_pixels = undo_pixels;
-    pixels = committed_pixels;
-    undo_pixels.clear();
-    toolbar.can_undo = false;
+    static_cast<void>(undo_history.undo(committed_pixels, pixels));
+    toolbar.can_undo = undo_history.can_undo();
     close_popups();
   };
 
@@ -326,8 +401,6 @@ int interactive() {
           continue;
         }
         close_popups();
-        undo_pixels = committed_pixels;
-        toolbar.can_undo = true;
         stroke_color = toolbar.tool == tinydraw::DrawingTool::kEraser
                            ? kBackground
                            : tinydraw::rgb565(toolbar.color);
@@ -347,7 +420,9 @@ int interactive() {
         const tinydraw::Point point = mapped.value_or(last_ink_point.position);
         last_ink_point = stream.finish(
             {.x = point.x, .y = point.y, .timestamp_us = event.button.timestamp * 1'000U});
-        static_cast<void>(stroke_raster.finish(ribbon.finish(last_ink_point), stroke_color));
+        static_cast<void>(
+            stroke_raster.finish(ribbon.finish(last_ink_point), stroke_color, &undo_history));
+        toolbar.can_undo = undo_history.can_undo();
       }
     }
 
@@ -377,10 +452,13 @@ int main(int argc, char** argv) {
   if (argc == 4 && std::string(argv[1]) == "--ui-preview" && std::string(argv[2]) == "--output") {
     return ui_preview(argv[3]);
   }
+  if (argc == 2 && std::string(argv[1]) == "--undo-e2e") {
+    return undo_e2e();
+  }
   if (argc != 1) {
     std::fprintf(stderr,
                  "usage: %s [--replay INPUT --output IMAGE.ppm | --ui-preview --output "
-                 "IMAGE.ppm]\n",
+                 "IMAGE.ppm | --undo-e2e]\n",
                  argv[0]);
     return EXIT_FAILURE;
   }

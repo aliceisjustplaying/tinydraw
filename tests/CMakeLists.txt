@@ -128,4 +128,10 @@ if(TARGET tinydraw_host)
       --output "${REPLAY_OUTPUT_DIR}/invalid-syntax.ppm"
   )
   set_tests_properties(tinydraw_replay_rejects_invalid_syntax PROPERTIES WILL_FAIL TRUE)
+
+  add_test(NAME tinydraw_undo_e2e COMMAND tinydraw_host --undo-e2e)
+  set_tests_properties(tinydraw_undo_e2e PROPERTIES
+    PASS_REGULAR_EXPRESSION "TINYDRAW_UNDO_OK depth=10 draw=1 erase=1 new=1 exact=1"
+    TIMEOUT 5
+  )
 endif()
