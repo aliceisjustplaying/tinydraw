@@ -17,12 +17,14 @@ TinyDraw is runnable as a native macOS host prototype:
 
 Controls:
 
-- drag with the primary mouse button to draw;
-- release to commit the stroke;
-- `C` clears the canvas and active provisional state;
-- `Esc` quits.
+- use the floating bottom dock to select pen, eraser, one of four colors, or cycle S/M/L sizes;
+- use the small dock above it for one-step undo or a new blank drawing;
+- drag with the primary mouse button to draw or erase;
+- `Cmd-Z` also undoes, `C` starts a new drawing, and `Esc` quits.
 
-The window models a 368×448 RGB565 canvas. Drawing currently has:
+The window models a 368×448 RGB565 canvas. On a 14-inch 2021 MacBook Pro at default
+scaling it opens at approximately the physical 1.8-inch panel size: a 145×177-point drawable
+window. It remains resizable for inspection. Drawing currently has:
 
 - timestamp-adaptive streamlining;
 - simulated pressure and variable width;
@@ -34,8 +36,9 @@ The window models a 368×448 RGB565 canvas. Drawing currently has:
 - separate committed and provisional host framebuffers.
 
 The prototype is useful for visual and input-loop testing, but it is not yet the embedded product.
-There is no toolbar, colors UI, undo, snapshots, persistent point arena, ESP-IDF target, QEMU target,
-or hardware driver.
+Its tldraw-inspired UI is intentionally direct-drawn and minimal. Undo is currently one host
+snapshot rather than a bounded embedded snapshot ring. There is no persistent point arena,
+ESP-IDF target, QEMU target, or hardware driver.
 
 ## Fast development loop
 
@@ -58,8 +61,8 @@ Daily commands:
 
 Expected current results:
 
-- 39 doctest cases;
-- 9 CTest entries, including process-level replay and snapshot checks;
+- 43 doctest cases;
+- 11 CTest entries, including process-level replay and UI snapshot checks;
 - debug, release, ASan, and UBSan green;
 - incremental debug suite typically well below one second.
 
@@ -117,12 +120,14 @@ Do not add PlatformIO or source ESP-IDF globally. QEMU has not been installed or
   - fixed 64×64 8-bit coverage tile and RGB565 compositing.
 - `core/include/tinydraw/graphics/ribbon_renderer.h`
   - shared tiled primitive renderer and explicitly owned scratch arena.
+- `core/include/tinydraw/ui/toolbar.h`
+  - platform-independent tldraw-inspired toolbar hit testing, state, sizing, and RGB565 drawing.
 
 ### Host adapter
 
 - `host/main.cpp`
-  - interactive SDL shell, replay CLI, temporary full host canvas, provisional/committed orchestration,
-    and PPM output.
+  - interactive SDL shell, replay/UI-preview CLI, toolbar behavior, one-step host undo, temporary
+    full host canvas, provisional/committed orchestration, and PPM output.
 - `host/input_coordinates.h`
   - SDL2-compat logical mouse-coordinate policy.
 
@@ -391,7 +396,8 @@ Core behavior tests cover:
 Process-level E2E tests cover:
 
 - replay parsing through output image;
-- reviewed snapshots;
+- reviewed stroke snapshots;
+- a tldraw-style toolbar preview and characterization snapshot;
 - invalid lifecycle rejection;
 - invalid syntax rejection.
 
@@ -439,15 +445,14 @@ Stop rebuilding the full stroke and copying the full framebuffer each frame.
 Add fixed-size chunks in a bounded arena, with explicit limits and overflow policy. The active path
 must not depend on `std::vector` allocation succeeding.
 
-### 3. Host-visible product behavior
+### 3. Finish host-visible product behavior
 
-Once streaming rendering is stable:
+The host now has four colors, pen/eraser tools, three sizes, one-step undo, and a new-drawing
+button. After streaming rendering is stable:
 
-- four colors;
-- clear through the shared canvas module;
-- snapshot undo ring;
-- optional brush sizes;
-- runtime tuning controls and stats.
+- move new/clear behavior through the shared canvas module;
+- replace the host-only one-step snapshot with a bounded undo ring;
+- add runtime tuning controls and stats only where they aid hardware tuning.
 
 ### 4. ESP-IDF and QEMU
 
@@ -496,6 +501,12 @@ d9a1960 fix: reject unsafe raster and input degenerates
 4d2d70d feat: stream append-stable ribbon geometry
 81fe7d7 test: prove ribbon stream finalization bounds
 dcebd49 feat: drive host geometry through ribbon stream
+94f0b73 docs: record streaming geometry milestone
+9ea62f5 feat: add tldraw-inspired drawing toolbar
+bbc6c54 feat: wire toolbar drawing controls
+831da0d chore: open host near hardware scale
+a7523da fix: match host window to physical display size
+61b5f41 test: snapshot toolbar end to end
 ```
 
 A high-effort Opus review verified the foundation and identified small correctness preconditions

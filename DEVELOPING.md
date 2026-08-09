@@ -21,7 +21,7 @@ machine was bootstrapped with Apple Clang 21 and SDL 2.32 through `sdl2-compat`.
 
 ```sh
 ./scripts/dev test          # debug build + all native tests
-./scripts/dev run           # SDL host; drag to draw, C clears, Esc quits
+./scripts/dev run           # SDL host; floating tool dock, Cmd-Z undo, C new, Esc quit
 ./scripts/dev asan          # AddressSanitizer + UndefinedBehaviorSanitizer on SDL-free core
 ./scripts/dev release       # optimized build + tests
 ./scripts/dev format-check
@@ -48,13 +48,22 @@ from a stroke recording:
 out/build/host-debug/host/tinydraw_host \
   --replay testdata/strokes/zigzag.stroke \
   --output /tmp/zigzag.ppm
+
+out/build/host-debug/host/tinydraw_host \
+  --ui-preview \
+  --output /tmp/ui-preview.ppm
 ```
 
-CTest regenerates this image and compares it byte-for-byte with the approved host snapshot. This
+CTest regenerates these images and compares it byte-for-byte with the approved host snapshot. This
 is a characterization test: it proves determinism and catches unintended changes, but it is not an
 independent correctness oracle. PF-derived reference geometry will provide that oracle later. The
 same recordings will drive QEMU and hardware, using structural/tolerance comparisons instead of
 cross-target pixel equality.
+
+The interactive host opens at roughly the real physical size of the 1.8-inch display on a
+14-inch 2021 MacBook Pro at default scaling; resize the window when a larger inspection view is
+needed. Its direct-drawn floating dock follows tldraw's visual hierarchy while fitting pen,
+eraser, four colors, three sizes, undo, and new-drawing controls into the portrait canvas.
 
 The interactive host renders PF-style ribbons as triangles and round joins/caps into 8-bit 64×64
 coverage tiles. Pieces from one update are unioned before a single sRGB-space RGB565 composite, so
