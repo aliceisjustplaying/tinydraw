@@ -38,7 +38,7 @@ Build products and `compile_commands.json` stay below `out/build/<preset>/`. Edi
 
 ## End-to-end replay
 
-The host executable can run without a window and drive the real input/filter/capsule-render path
+The host executable can run without a window and drive the real input/filter/PF-ribbon/render path
 from a stroke recording:
 
 ```sh
@@ -53,12 +53,11 @@ independent correctness oracle. PF-derived reference geometry will provide that 
 same recordings will drive QEMU and hardware, using structural/tolerance comparisons instead of
 cross-target pixel equality.
 
-The interactive host uses the same simple variable-radius capsule path for provisional and
-committed pixels. Overlapping pieces are unioned by writing solid coverage, avoiding the holes that
-a self-intersecting whole-outline polygon produced. PF geometry remains independently checked
-against the upstream oracle; it will return to the visible path as simple ribbon pieces when the
-shared coverage-tile rasterizer exists. Provisional pixels are rendered from a temporary framebuffer
-copy and never enter the committed canvas.
+The interactive host renders PF-style ribbons as triangles and round joins/caps into 8-bit 64×64
+coverage tiles. Pieces from one update are unioned before a single sRGB-space RGB565 composite, so
+self-overlap cannot create holes or repeated edge darkening. PF baseline geometry remains checked
+against the upstream oracle. Provisional pixels are rendered from a temporary framebuffer copy and
+never enter the committed canvas.
 
 The sanitizer preset excludes the host executable because Homebrew's `sdl2-compat` loader aborts
 under Apple's sanitizer runtime before application code starts. All SDL-free project code remains

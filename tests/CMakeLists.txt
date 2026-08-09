@@ -5,6 +5,7 @@ add_executable(tinydraw_tests
   ink_stream_test.cpp
   perfect_freehand_test.cpp
   ribbon_geometry_test.cpp
+  ribbon_renderer_test.cpp
 )
 target_link_libraries(tinydraw_tests PRIVATE tinydraw::core tinydraw_project_options)
 target_compile_definitions(tinydraw_tests PRIVATE

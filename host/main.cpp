@@ -1,7 +1,6 @@
 #include <SDL.h>
 
 #include <algorithm>
-#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -12,7 +11,9 @@
 
 #include "input_coordinates.h"
 #include "tinydraw/geometry.h"
+#include "tinydraw/graphics/ribbon_renderer.h"
 #include "tinydraw/ink/ink_stream.h"
+#include "tinydraw/ink/ribbon_geometry.h"
 
 namespace {
 
@@ -32,43 +33,11 @@ void set_pixel(std::vector<std::uint16_t>& pixels, int x, int y, std::uint16_t c
   pixels[index] = color;
 }
 
-void draw_disc(std::vector<std::uint16_t>& pixels, tinydraw::Point center, float radius) {
-  const int extent = static_cast<int>(std::ceil(radius));
-  const int center_x = static_cast<int>(std::round(center.x));
-  const int center_y = static_cast<int>(std::round(center.y));
-  const float radius_squared = radius * radius;
-  for (int offset_y = -extent; offset_y <= extent; ++offset_y) {
-    for (int offset_x = -extent; offset_x <= extent; ++offset_x) {
-      const float x = static_cast<float>(offset_x);
-      const float y = static_cast<float>(offset_y);
-      if (x * x + y * y <= radius_squared) {
-        set_pixel(pixels, center_x + offset_x, center_y + offset_y, kInk);
-      }
-    }
-  }
-}
-
-void draw_segment(std::vector<std::uint16_t>& pixels, const tinydraw::InkPoint& from,
-                  const tinydraw::InkPoint& to) {
-  const float delta_x = to.position.x - from.position.x;
-  const float delta_y = to.position.y - from.position.y;
-  const int steps = std::max(1, static_cast<int>(std::ceil(std::hypot(delta_x, delta_y))));
-  for (int step = 1; step <= steps; ++step) {
-    const float t = static_cast<float>(step) / static_cast<float>(steps);
-    draw_disc(pixels, {.x = from.position.x + delta_x * t, .y = from.position.y + delta_y * t},
-              from.radius + (to.radius - from.radius) * t);
-  }
-}
-
-void draw_preview(std::vector<std::uint16_t>& pixels,
-                  const std::vector<tinydraw::InkPoint>& points) {
-  if (points.empty()) {
-    return;
-  }
-  draw_disc(pixels, points.front().position, points.front().radius);
-  for (std::size_t index = 1; index < points.size(); ++index) {
-    draw_segment(pixels, points[index - 1U], points[index]);
-  }
+void draw_ribbon(std::vector<std::uint16_t>& pixels,
+                 const std::vector<tinydraw::InkPoint>& points) {
+  const auto primitives = tinydraw::build_pf_ribbon(points);
+  static_cast<void>(tinydraw::render_ribbon(primitives, pixels, tinydraw::kCanvasWidth,
+                                            tinydraw::kCanvasHeight, kInk));
 }
 
 void clear_canvas(std::vector<std::uint16_t>& pixels, bool show_grid) {
@@ -145,7 +114,7 @@ int replay(const std::string& input_path, const std::string& output_path) {
     } else if ((action == "move" || action == "up") && stream.active()) {
       stroke_points.push_back(action == "up" ? stream.finish(touch) : stream.update(touch));
       if (action == "up") {
-        draw_preview(pixels, stroke_points);
+        draw_ribbon(pixels, stroke_points);
       }
     } else {
       std::fprintf(stderr, "invalid replay lifecycle on line %zu\n", line_number);
@@ -233,14 +202,14 @@ int interactive() {
             stroke_points.empty() ? tinydraw::Point{} : stroke_points.back().position);
         stroke_points.push_back(stream.finish(
             {.x = point.x, .y = point.y, .timestamp_us = event.button.timestamp * 1'000U}));
-        draw_preview(committed_pixels, stroke_points);
+        draw_ribbon(committed_pixels, stroke_points);
         stroke_points.clear();
       }
     }
 
     pixels = committed_pixels;
     if (stream.active()) {
-      draw_preview(pixels, stroke_points);
+      draw_ribbon(pixels, stroke_points);
     }
     SDL_UpdateTexture(texture, nullptr, pixels.data(),
                       tinydraw::kCanvasWidth * static_cast<int>(sizeof(std::uint16_t)));
