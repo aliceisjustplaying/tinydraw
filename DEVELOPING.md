@@ -62,9 +62,9 @@ cross-target pixel equality.
 
 The interactive host opens at roughly the real physical size of the 1.8-inch display on a
 14-inch 2021 MacBook Pro at default scaling; resize the window when a larger inspection view is
-needed. Its direct-drawn floating dock follows tldraw's visual hierarchy: four large primary
-buttons fill the bottom row, color and size choices open as a second row, and undo/new remain in a
-small utility dock above.
+needed. Its direct-drawn floating dock follows tldraw's visual hierarchy. Undo, pen, eraser,
+selected color, selected size, and new-drawing fill one row; tapping color or size opens one row of
+large choices above it.
 
 The interactive host renders PF-style ribbons as triangles and round joins/caps into 8-bit 64×64
 coverage tiles. Pieces from one update are unioned before a single sRGB-space RGB565 composite, so

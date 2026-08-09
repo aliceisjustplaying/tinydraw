@@ -17,9 +17,9 @@ TinyDraw is runnable as a native macOS host prototype:
 
 Controls:
 
-- use the full-width bottom dock for pen, eraser, color, and size;
-- tap color or size to open a second row of large choices: four colors or S/M/L;
-- use the small dock above it for one-step undo or a new blank drawing;
+- the default full-width row is `[undo] [pen] [eraser] [color] [size] [new]`;
+- color shows the selected ink and opens a second row with four large color choices;
+- size shows the selected width and opens a second row with S/M/L/XL choices;
 - drag with the primary mouse button to draw or erase;
 - `Cmd-Z` also undoes, `C` starts a new drawing, and `Esc` quits.
 
@@ -448,7 +448,7 @@ must not depend on `std::vector` allocation succeeding.
 
 ### 3. Finish host-visible product behavior
 
-The host now has four colors, pen/eraser tools, three sizes, one-step undo, and a new-drawing
+The host now has four colors, pen/eraser tools, four sizes, one-step undo, and a new-drawing
 button. After streaming rendering is stable:
 
 - move new/clear behavior through the shared canvas module;
@@ -510,6 +510,9 @@ a7523da fix: match host window to physical display size
 61b5f41 test: snapshot toolbar end to end
 8024447 docs: record drawing toolbar and physical scale
 fe4f0b9 feat: enlarge toolbar with style popovers
+0544a6f docs: record enlarged toolbar layout
+7f8f292 feat: consolidate controls into one toolbar row
+e59a530 fix: match tldraw eraser silhouette
 ```
 
 A high-effort Opus review verified the foundation and identified small correctness preconditions
