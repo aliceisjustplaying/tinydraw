@@ -66,26 +66,24 @@ StrokeRasterStats StrokeRaster::update(const RibbonUpdate& update, std::uint16_t
   mark_tiles(update.provisional, dirty_tiles);
 
   for (int tile_index = 0; tile_index < kTileCount; ++tile_index) {
-    if (!committed_tiles[static_cast<std::size_t>(tile_index)]) {
+    const auto flag_index = static_cast<std::size_t>(tile_index);
+    const bool has_committed = committed_tiles[flag_index];
+    const bool is_dirty = dirty_tiles[flag_index];
+    if (!has_committed && !is_dirty) {
       continue;
     }
     const int tile_x = tile_index % kTilesAcross * kTileSize;
     const int tile_y = tile_index / kTilesAcross * kTileSize;
     load_coverage_tile(tile_x, tile_y, stats);
-    rasterize(update.committed, stats);
-    store_coverage_tile(tile_x, tile_y, stats);
-    touched_[static_cast<std::size_t>(tile_index)] = true;
-  }
-
-  for (int tile_index = 0; tile_index < kTileCount; ++tile_index) {
-    if (!dirty_tiles[static_cast<std::size_t>(tile_index)]) {
-      continue;
+    if (has_committed) {
+      rasterize(update.committed, stats);
+      store_coverage_tile(tile_x, tile_y, stats);
+      touched_[flag_index] = true;
     }
-    const int tile_x = tile_index % kTilesAcross * kTileSize;
-    const int tile_y = tile_index / kTilesAcross * kTileSize;
-    load_coverage_tile(tile_x, tile_y, stats);
-    rasterize(update.provisional, stats);
-    compose_visible_tile(tile_x, tile_y, color, stats);
+    if (is_dirty) {
+      rasterize(update.provisional, stats);
+      compose_visible_tile(tile_x, tile_y, color, stats);
+    }
   }
 
   provisional_ = update.provisional;

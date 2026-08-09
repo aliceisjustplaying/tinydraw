@@ -100,8 +100,9 @@ int main() {
   const auto finish_psram_written =
       total.finish.committed_bytes_written + total.finish.coverage_bytes_written;
   const bool bounded = total.maximum_update_tiles <= 20U && total.maximum_update_visits <= 100U &&
-                       total.maximum_update_psram_read <= 400U * 1024U &&
-                       total.maximum_update_psram_written <= 200U * 1024U &&
+                       total.maximum_update_psram_read <= 48U * 1024U &&
+                       total.maximum_update_psram_written <= 16U * 1024U &&
+                       total.coverage_read <= 9U * 1024U * 1024U &&
                        total.finish.tiles_updated <= 42U && finish_psram_read <= 512U * 1024U &&
                        finish_psram_written <= 512U * 1024U;
 
