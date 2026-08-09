@@ -1,11 +1,9 @@
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <limits>
-#include <span>
 
 #include "firmware_canvas.h"
 #include "freertos/FreeRTOS.h"
@@ -14,8 +12,6 @@
 #include "qemu_display.h"
 #endif
 #include "tinydraw/geometry.h"
-#include "tinydraw/platform/display_backend.h"
-#include "tinydraw/graphics/coverage_tile.h"
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
 #include "tinydraw/ui/toolbar.h"
@@ -33,7 +29,6 @@ constexpr std::array<tinydraw::TouchPoint, 7> kFixture{{
     {.x = 280.0F, .y = 350.0F, .timestamp_us = 1'046'000U},
     {.x = 340.0F, .y = 410.0F, .timestamp_us = 1'055'000U},
 }};
-constexpr std::size_t kMaximumPrimitives = 32U;
 
 struct Bounds {
   float minimum_x = std::numeric_limits<float>::max();
@@ -49,8 +44,7 @@ void include(Bounds& bounds, tinydraw::Point point, float padding = 0.0F) {
   bounds.maximum_y = std::max(bounds.maximum_y, point.y + padding);
 }
 
-Bounds primitive_bounds(std::span<const tinydraw::RibbonPrimitive> primitives) {
-  Bounds bounds;
+void include(Bounds& bounds, const tinydraw::RibbonPrimitiveBatch& primitives) {
   for (const auto& primitive : primitives) {
     if (primitive.kind == tinydraw::RibbonPrimitiveKind::kCircle) {
       include(bounds, primitive.center, primitive.radius);
@@ -60,7 +54,6 @@ Bounds primitive_bounds(std::span<const tinydraw::RibbonPrimitive> primitives) {
       include(bounds, primitive.points[index]);
     }
   }
-  return bounds;
 }
 
 std::uint32_t hash_pixel(std::uint32_t hash, std::uint16_t pixel) {
@@ -69,89 +62,71 @@ std::uint32_t hash_pixel(std::uint32_t hash, std::uint16_t pixel) {
   return (hash ^ static_cast<std::uint8_t>(pixel)) * kFnvPrime;
 }
 
-class NullDisplay final : public tinydraw::DisplayBackend {
- public:
-  void push_rect(int, int, int, int, const std::uint16_t*) override {}
-  [[nodiscard]] bool busy() const override { return false; }
-};
+std::uint32_t canvas_checksum(std::span<const std::uint16_t> pixels) {
+  std::uint32_t hash = 2'166'136'261U;
+  for (const auto pixel : pixels) {
+    hash = hash_pixel(hash, pixel);
+  }
+  return hash;
+}
 
-struct RasterResult {
-  std::uint32_t tiles_touched = 0;
-  std::uint32_t checksum = 2'166'136'261U;
-};
-
-RasterResult raster_checksum(std::span<const tinydraw::RibbonPrimitive> primitives,
-                             tinydraw::DisplayBackend* display) {
-  static tinydraw::CoverageTile coverage(0, 0);
-  static std::array<std::uint16_t, tinydraw::kTileSize * tinydraw::kTileSize> pixels{};
-  RasterResult result;
-
+std::uint32_t touched_tiles(std::span<const std::uint16_t> pixels) {
+  std::uint32_t count = 0U;
   for (int tile_y = 0; tile_y < tinydraw::kCanvasHeight; tile_y += tinydraw::kTileSize) {
     for (int tile_x = 0; tile_x < tinydraw::kCanvasWidth; tile_x += tinydraw::kTileSize) {
       const int width = std::min(tinydraw::kTileSize, tinydraw::kCanvasWidth - tile_x);
       const int height = std::min(tinydraw::kTileSize, tinydraw::kCanvasHeight - tile_y);
-      coverage.reset(tile_x, tile_y, width, height);
-      for (const auto& primitive : primitives) {
-        if (primitive.kind == tinydraw::RibbonPrimitiveKind::kCircle) {
-          coverage.rasterize_circle(primitive.center, primitive.radius);
-        } else {
-          coverage.rasterize_convex(
-              std::span(primitive.points.data(), primitive.point_count));
-        }
-      }
-
-      const std::size_t pixel_count = static_cast<std::size_t>(width * height);
-      std::fill_n(pixels.begin(), pixel_count, kBackground);
-      tinydraw::composite_rgb565(coverage, kInk, std::span(pixels.data(), pixel_count));
-      if (display != nullptr) {
-        display->push_rect(tile_x, tile_y, width, height, pixels.data());
-      }
-
       bool touched = false;
-      for (int y = 0; y < height; ++y) {
+      for (int y = 0; y < height && !touched; ++y) {
         for (int x = 0; x < width; ++x) {
-          const auto index = static_cast<std::size_t>(y * width + x);
-          touched = touched || pixels[index] != kBackground;
-          result.checksum = hash_pixel(result.checksum, pixels[index]);
+          const auto index = static_cast<std::size_t>((tile_y + y) * tinydraw::kCanvasWidth + tile_x + x);
+          if (pixels[index] != kBackground) {
+            touched = true;
+            break;
+          }
         }
       }
-      result.tiles_touched += touched ? 1U : 0U;
+      count += touched ? 1U : 0U;
     }
   }
-  return result;
+  return count;
+}
+
+class NullDisplay final : public tinydraw::DisplayBackend {
+ public:
+  void push_rect(int, int, int, int, const std::uint16_t*) override { ++pushes; }
+  [[nodiscard]] bool busy() const override { return false; }
+
+  std::uint32_t pushes = 0U;
+};
+
+struct ReplayStats {
+  Bounds bounds;
+  std::uint32_t primitives = 0U;
+  std::uint32_t tiles_updated = 0U;
+  std::uint32_t primitive_tile_visits = 0U;
+  std::uint32_t pixels_composited = 0U;
+  std::uint32_t display_bytes = 0U;
+  std::uint32_t maximum_tiles_per_frame = 0U;
+  std::uint32_t maximum_visits_per_frame = 0U;
+};
+
+void accumulate(ReplayStats& total, const tinydraw::RibbonUpdate& update,
+                const tinydraw::StrokeRasterStats& frame) {
+  include(total.bounds, update.committed);
+  total.primitives += static_cast<std::uint32_t>(update.committed.size());
+  total.tiles_updated += frame.tiles_updated;
+  total.primitive_tile_visits += frame.primitive_tile_visits;
+  total.pixels_composited += frame.pixels_composited;
+  total.display_bytes += frame.display_bytes;
+  total.maximum_tiles_per_frame = std::max(total.maximum_tiles_per_frame, frame.tiles_updated);
+  total.maximum_visits_per_frame =
+      std::max(total.maximum_visits_per_frame, frame.primitive_tile_visits);
 }
 
 }  // namespace
 
 extern "C" void app_main() {
-  tinydraw::InkStream ink;
-  tinydraw::RibbonStream ribbon;
-  static std::array<tinydraw::RibbonPrimitive, kMaximumPrimitives> primitives{};
-  std::size_t primitive_count = 0U;
-
-  const auto keep_committed = [&](const tinydraw::RibbonUpdate& update) {
-    for (const auto& primitive : update.committed) {
-      if (primitive_count >= primitives.size()) {
-        std::printf("TINYDRAW_REPLAY_FAIL reason=primitive_capacity\n");
-        return false;
-      }
-      primitives[primitive_count++] = primitive;
-    }
-    return true;
-  };
-
-  if (!keep_committed(ribbon.append(ink.begin(kFixture.front())))) {
-    return;
-  }
-  for (std::size_t index = 1; index + 1U < kFixture.size(); ++index) {
-    if (!keep_committed(ribbon.append(ink.update(kFixture[index])))) {
-      return;
-    }
-  }
-  if (!keep_committed(ribbon.finish(ink.finish(kFixture.back())))) {
-    return;
-  }
-
   NullDisplay null_display;
   tinydraw::DisplayBackend* display = &null_display;
 #ifdef TINYDRAW_QEMU_GRAPHICS
@@ -161,7 +136,13 @@ extern "C" void app_main() {
     return;
   }
   display = &qemu_display;
+  std::fill(qemu_display.framebuffer().begin(), qemu_display.framebuffer().end(), kBackground);
+  tinydraw::ToolbarState toolbar;
+  toolbar.can_undo = true;
+  tinydraw::draw_toolbar(qemu_display.framebuffer(), tinydraw::kCanvasWidth,
+                         tinydraw::kCanvasHeight, toolbar);
 #endif
+
   tinydraw::esp32::FirmwareCanvas canvas(*display);
   if (!canvas.ready() || !canvas.capabilities_valid()) {
     std::printf("TINYDRAW_REPLAY_FAIL reason=canvas_memory\n");
@@ -171,19 +152,61 @@ extern "C" void app_main() {
               static_cast<unsigned>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight * 2),
               static_cast<unsigned>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight));
 
-  const auto geometry = std::span(primitives.data(), primitive_count);
-  const Bounds bounds = primitive_bounds(geometry);
-  const RasterResult raster = raster_checksum(geometry, display);
+  tinydraw::InkStream ink;
+  tinydraw::RibbonStream ribbon;
+  ReplayStats total;
+
+  const auto process_frame = [&](const tinydraw::RibbonUpdate& update, bool final) {
+    const auto stats = final ? canvas.raster().finish(update, kInk)
+                             : canvas.raster().update(update, kInk);
+    accumulate(total, update, stats);
 #ifdef TINYDRAW_QEMU_GRAPHICS
-  tinydraw::ToolbarState toolbar;
-  toolbar.can_undo = true;
-  auto framebuffer = qemu_display.framebuffer();
-  tinydraw::draw_toolbar(framebuffer, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight, toolbar);
+    if (final) {
+      tinydraw::draw_toolbar(qemu_display.framebuffer(), tinydraw::kCanvasWidth,
+                             tinydraw::kCanvasHeight, toolbar);
+    }
+    return qemu_display.refresh();
+#else
+    return true;
+#endif
+  };
+
+  if (!process_frame(ribbon.append(ink.begin(kFixture.front())), false)) {
+    std::printf("TINYDRAW_REPLAY_FAIL reason=frame_refresh\n");
+    return;
+  }
+  for (std::size_t index = 1; index + 1U < kFixture.size(); ++index) {
+    if (!process_frame(ribbon.append(ink.update(kFixture[index])), false)) {
+      std::printf("TINYDRAW_REPLAY_FAIL reason=frame_refresh\n");
+      return;
+    }
+  }
+  if (!process_frame(ribbon.finish(ink.finish(kFixture.back())), true)) {
+    std::printf("TINYDRAW_REPLAY_FAIL reason=frame_refresh\n");
+    return;
+  }
+
+  const auto committed = canvas.committed();
+  const auto final_tiles = touched_tiles(committed);
+  const auto checksum = canvas_checksum(committed);
+  if (total.maximum_tiles_per_frame > 20U || total.maximum_visits_per_frame > 80U ||
+      total.display_bytes != total.pixels_composited * 2U) {
+    std::printf("TINYDRAW_REPLAY_FAIL reason=unbounded_work max_tiles=%lu max_visits=%lu bytes=%lu pixels=%lu\n",
+                static_cast<unsigned long>(total.maximum_tiles_per_frame),
+                static_cast<unsigned long>(total.maximum_visits_per_frame),
+                static_cast<unsigned long>(total.display_bytes),
+                static_cast<unsigned long>(total.pixels_composited));
+    return;
+  }
+#ifdef TINYDRAW_QEMU_GRAPHICS
+  const auto framebuffer = qemu_display.framebuffer();
   const auto background_corner = static_cast<std::size_t>(0);
   const auto stroke_center = static_cast<std::size_t>(40 * tinydraw::kCanvasWidth + 30);
   const auto color_center = static_cast<std::size_t>(410 * tinydraw::kCanvasWidth + 213);
   if (framebuffer[background_corner] != kBackground || framebuffer[stroke_center] != kInk ||
-      framebuffer[color_center] != tinydraw::rgb565(toolbar.color) || !qemu_display.refresh()) {
+      framebuffer[color_center] != tinydraw::rgb565(toolbar.color) ||
+      qemu_display.refresh_count() != kFixture.size() ||
+      qemu_display.push_count() != total.tiles_updated) {
     std::printf("TINYDRAW_REPLAY_FAIL reason=qemu_ui\n");
     return;
   }
@@ -191,11 +214,14 @@ extern "C" void app_main() {
 #endif
   std::printf(
       "TINYDRAW_REPLAY_OK accepted=%u primitives=%u tiles=%u "
-      "bounds=%.2f,%.2f,%.2f,%.2f checksum=%08lx\n",
-      static_cast<unsigned>(kFixture.size()), static_cast<unsigned>(primitive_count),
-      static_cast<unsigned>(raster.tiles_touched), static_cast<double>(bounds.minimum_x),
-      static_cast<double>(bounds.minimum_y), static_cast<double>(bounds.maximum_x),
-      static_cast<double>(bounds.maximum_y), static_cast<unsigned long>(raster.checksum));
+      "bounds=%.2f,%.2f,%.2f,%.2f checksum=%08lx frames=%u dirty=%u max_tiles=%u visits=%u\n",
+      static_cast<unsigned>(kFixture.size()), static_cast<unsigned>(total.primitives),
+      static_cast<unsigned>(final_tiles), static_cast<double>(total.bounds.minimum_x),
+      static_cast<double>(total.bounds.minimum_y), static_cast<double>(total.bounds.maximum_x),
+      static_cast<double>(total.bounds.maximum_y), static_cast<unsigned long>(checksum),
+      static_cast<unsigned>(kFixture.size()), static_cast<unsigned>(total.tiles_updated),
+      static_cast<unsigned>(total.maximum_tiles_per_frame),
+      static_cast<unsigned>(total.primitive_tile_visits));
   vTaskDelay(1);
   std::printf("TINYDRAW_QEMU_DONE\n");
 }

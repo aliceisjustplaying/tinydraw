@@ -39,7 +39,11 @@ std::span<std::uint16_t> QemuDisplayBackend::framebuffer() {
 }
 
 bool QemuDisplayBackend::refresh() {
-  return panel_ != nullptr && esp_lcd_rgb_qemu_refresh(panel_) == ESP_OK;
+  if (panel_ == nullptr || esp_lcd_rgb_qemu_refresh(panel_) != ESP_OK) {
+    return false;
+  }
+  ++refresh_count_;
+  return true;
 }
 
 void QemuDisplayBackend::push_rect(int x, int y, int width, int height,
@@ -49,6 +53,7 @@ void QemuDisplayBackend::push_rect(int x, int y, int width, int height,
       height > kCanvasHeight - y) {
     return;
   }
+  ++push_count_;
   for (int row = 0; row < height; ++row) {
     const auto source_offset = static_cast<std::size_t>(row * width);
     const auto destination_offset =

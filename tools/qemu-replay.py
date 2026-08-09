@@ -18,8 +18,10 @@ EXPECTED_BOUNDS = (27.83, 37.83, 341.44, 411.44)
 BOUNDS_TOLERANCE = 0.05
 MARKER = re.compile(
     rb"TINYDRAW_REPLAY_OK accepted=(\d+) primitives=(\d+) tiles=(\d+) "
-    rb"bounds=([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+) checksum=([0-9a-fA-F]{8})"
+    rb"bounds=([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+) checksum=([0-9a-fA-F]{8}) "
+    rb"frames=(\d+) dirty=(\d+) max_tiles=(\d+) visits=(\d+)"
 )
+MEMORY_MARKER = b"TINYDRAW_MEMORY_OK committed=329728 coverage=164864 scratch=internal"
 
 
 def find_qemu() -> Path:
@@ -83,8 +85,10 @@ def main() -> int:
             if not chunk:
                 raise RuntimeError(f"QEMU exited before completion (status {process.wait()})")
             output.extend(chunk)
-            if b"TINYDRAW_REPLAY_FAIL" in output or b"stack overflow" in output:
-                raise RuntimeError("firmware reported a replay or stack failure")
+            failure = re.search(rb"TINYDRAW_REPLAY_FAIL[^\r\n]*(?:\r?\n)", output)
+            if failure is not None or b"stack overflow" in output:
+                detail = failure.group(0).decode("ascii", errors="replace").strip() if failure else "stack overflow"
+                raise RuntimeError(f"firmware reported failure: {detail}")
     except Exception as error:
         stop(process)
         sys.stderr.buffer.write(output)
@@ -95,6 +99,11 @@ def main() -> int:
     if arguments.graphics and b"TINYDRAW_UI_OK canvas=1 controls=6" not in output:
         sys.stderr.buffer.write(output)
         print("\nQEMU graphics run lacked toolbar marker", file=sys.stderr)
+        return 1
+
+    if MEMORY_MARKER not in output:
+        sys.stderr.buffer.write(output)
+        print("\nQEMU completion lacked PSRAM/internal-memory capability marker", file=sys.stderr)
         return 1
 
     match = MARKER.search(output)
@@ -113,10 +122,19 @@ def main() -> int:
         return 1
 
     checksum = match.group(8).decode("ascii")
+    frames, dirty, maximum_tiles, visits = (int(value) for value in match.groups()[8:12])
+    if frames != EXPECTED_COUNTS[0] or maximum_tiles > 20 or dirty == 0 or visits == 0:
+        print(
+            f"unexpected incremental work: frames={frames} dirty={dirty} "
+            f"max_tiles={maximum_tiles} visits={visits}",
+            file=sys.stderr,
+        )
+        return 1
     print(
         "QEMU replay passed: "
         f"accepted={counts[0]} primitives={counts[1]} tiles={counts[2]} "
-        f"bounds={bounds} checksum={checksum} (informational)"
+        f"bounds={bounds} frames={frames} dirty={dirty} max_tiles={maximum_tiles} "
+        f"visits={visits} checksum={checksum} (informational)"
     )
     return 0
 
