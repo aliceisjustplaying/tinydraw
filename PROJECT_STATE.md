@@ -431,6 +431,15 @@ virtual framebuffer blocked before replay. The headless build now leaves the dis
 a separate graphics build enables `TINYDRAW_QEMU_GRAPHICS`, instantiates `QemuDisplayBackend`, and
 runs QEMU with `--graphics`. Keep headless integration and visible display checks separate.
 
+The first graphics implementation mixed `esp_lcd_panel_draw_bitmap()` tile submissions with a final
+`esp_lcd_rgb_qemu_refresh()`. The component's source shows that each bitmap call is a synchronous
+emulated MMIO update with a busy-wait, while refresh redraws from a separate dedicated framebuffer.
+This made the stroke paint progressively over roughly two seconds, then replaced it with the
+mostly-black direct framebuffer containing only the toolbar. `QemuDisplayBackend::push_rect()` now
+copies tiles into the dedicated framebuffer; the toolbar draws into the same memory and one refresh
+submits the complete frame. This delay was therefore an avoidable adapter bug amplified by QEMU,
+not useful hardware performance evidence.
+
 The isolated `eim` installation places on-request QEMU below a nested tools directory that its
 activation PATH does not include automatically. The Python test harness already located that binary,
 but the first interactive `graphics` command bypassed the harness and failed with
@@ -472,8 +481,9 @@ Process-level E2E tests cover:
 - invalid syntax rejection.
 
 The QEMU process-level test checks accepted-point, primitive, touched-tile, and geometry-bound
-results. Graphics mode additionally requires `TINYDRAW_UI_OK controls=6`, emitted only after the
-shared toolbar has drawn into the virtual framebuffer and the panel refresh succeeds. Bounds use a
+results. Graphics mode additionally requires `TINYDRAW_UI_OK canvas=1 controls=6`, emitted only
+after checks prove the dedicated framebuffer still contains a white canvas, blue stroke, and shared
+toolbar and the panel's single final refresh succeeds. Bounds use a
 tolerance; the RGB565 checksum is logged but intentionally not asserted as a cross-architecture
 oracle. Host and Xtensa pixel identity is not required.
 
@@ -618,6 +628,8 @@ eb2801d feat: render firmware replay in QEMU display
 0c1bded fix: expose installed QEMU to graphics launcher
 8c0ffd6 docs: record QEMU launcher path fix
 95288bf feat: show shared toolbar in QEMU
+d8cc89c docs: record visible QEMU toolbar
+b167261 fix: compose QEMU frame before one refresh
 ```
 
 A high-effort Opus review verified the foundation and identified small correctness preconditions

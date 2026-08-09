@@ -104,10 +104,11 @@ harness checks accepted-point, primitive, touched-tile, and geometry-bound resul
 informational because cross-architecture pixel identity is not an oracle.
 
 The visible graphics build is separate because `esp_lcd_qemu_rgb` requires QEMU's virtual
-framebuffer device and cannot be initialized in `-nographic` mode. Raster output is submitted one
-64×64 tile at a time through `DisplayBackend`. The existing shared toolbar renderer then draws
-directly into QEMU's own RGB565 framebuffer and refreshes it, avoiding a second full framebuffer in
-this test firmware. This screen is a scripted visual integration check; QEMU does not yet provide
+framebuffer device and cannot be initialized in `-nographic` mode. Raster output is copied one
+64×64 tile at a time through `DisplayBackend` into QEMU's dedicated RGB565 framebuffer. The existing
+shared toolbar renderer draws into that same memory, then one refresh presents the complete frame.
+This avoids both a second full framebuffer and dozens of slow synchronous emulated panel updates.
+This screen is a scripted visual integration check; QEMU does not yet provide
 interactive pointer/touch input to TinyDraw.
 
 PlatformIO is not used. Espressif's installation manager owns IDF's Python and toolchain, keeping
