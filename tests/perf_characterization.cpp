@@ -7,6 +7,7 @@
 
 #include "tinydraw/geometry.h"
 #include "tinydraw/graphics/stroke_raster.h"
+#include "tinydraw/graphics/tile_undo_history.h"
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
 
@@ -80,6 +81,8 @@ int main() {
   std::vector<std::uint8_t> coverage(kPixelCount, 0U);
   NullDisplay display;
   tinydraw::StrokeRaster raster(committed, coverage, display);
+  std::vector<std::uint16_t> undo_storage(tinydraw::TileUndoHistory::kRequiredPixels);
+  tinydraw::TileUndoHistory history(undo_storage);
   tinydraw::InkConfig config;
   config.size = 20.0F;
   tinydraw::InkStream ink(config);
@@ -90,28 +93,39 @@ int main() {
   for (std::size_t index = 1U; index + 1U < kSampleCount; ++index) {
     accumulate(total, raster.update(ribbon.append(ink.update(sample(index))), kInk));
   }
-  accumulate(total, raster.finish(ribbon.finish(ink.finish(sample(kSampleCount - 1U))), kInk),
+  accumulate(total,
+             raster.finish(ribbon.finish(ink.finish(sample(kSampleCount - 1U))), kInk, &history),
              true);
+  const auto raster_pushes = display.pushes;
+  const auto undo = history.undo(committed, {}, &display);
 
-  const bool accounting_valid =
-      total.display_bytes == total.committed_read && display.pushes == total.tiles;
+  const bool accounting_valid = total.display_bytes == total.committed_read &&
+                                raster_pushes == total.tiles &&
+                                undo.history_bytes_read == undo.canvas_bytes_written &&
+                                undo.history_bytes_read == undo.display_bytes &&
+                                display.pushes == raster_pushes + undo.tiles_restored &&
+                                std::all_of(committed.begin(), committed.end(),
+                                            [](auto pixel) { return pixel == kBackground; });
   const auto finish_psram_read =
       total.finish.committed_bytes_read + total.finish.coverage_bytes_read;
-  const auto finish_psram_written =
-      total.finish.committed_bytes_written + total.finish.coverage_bytes_written;
+  const auto finish_psram_written = total.finish.committed_bytes_written +
+                                    total.finish.coverage_bytes_written +
+                                    total.finish.history_bytes_written;
   const bool bounded = total.maximum_update_tiles <= 20U && total.maximum_update_visits <= 100U &&
                        total.maximum_update_psram_read <= 48U * 1024U &&
                        total.maximum_update_psram_written <= 16U * 1024U &&
                        total.coverage_read <= 9U * 1024U * 1024U &&
                        total.finish.tiles_updated <= 42U && finish_psram_read <= 512U * 1024U &&
-                       finish_psram_written <= 512U * 1024U;
+                       finish_psram_written <= 1024U * 1024U && undo.tiles_restored <= 42U &&
+                       undo.history_bytes_read <= 512U * 1024U;
 
   std::printf(
       "TINYDRAW_PERF samples=%u tiles=%llu visits=%llu display=%llu "
       "committed_read=%llu committed_write=%llu coverage_read=%llu coverage_write=%llu "
       "max_update_tiles=%u max_update_visits=%u max_update_psram_read=%u "
       "max_update_psram_write=%u finish_tiles=%u finish_psram_read=%u "
-      "finish_psram_write=%u\n",
+      "finish_psram_write=%u history_capture_write=%u undo_tiles=%u undo_history_read=%u "
+      "undo_canvas_write=%u undo_display=%u\n",
       static_cast<unsigned>(kSampleCount), static_cast<unsigned long long>(total.tiles),
       static_cast<unsigned long long>(total.visits),
       static_cast<unsigned long long>(total.display_bytes),
@@ -121,6 +135,7 @@ int main() {
       static_cast<unsigned long long>(total.coverage_written), total.maximum_update_tiles,
       total.maximum_update_visits, total.maximum_update_psram_read,
       total.maximum_update_psram_written, total.finish.tiles_updated, finish_psram_read,
-      finish_psram_written);
+      finish_psram_written, total.finish.history_bytes_written, undo.tiles_restored,
+      undo.history_bytes_read, undo.canvas_bytes_written, undo.display_bytes);
   return accounting_valid && bounded ? 0 : 1;
 }
