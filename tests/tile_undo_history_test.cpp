@@ -64,6 +64,22 @@ TEST_CASE("tile undo keeps ten entries and evicts the oldest") {
   CHECK_FALSE(history.can_undo());
 }
 
+TEST_CASE("discarding an entry at capacity honestly evicts the oldest") {
+  std::vector<std::uint16_t> storage(tinydraw::TileUndoHistory::kRequiredPixels);
+  tinydraw::TileUndoHistory history(storage);
+  std::vector<std::uint16_t> tile(64U * 64U, kWhite);
+
+  for (std::size_t entry = 0U; entry < tinydraw::TileUndoHistory::kMaxEntries; ++entry) {
+    history.begin_entry();
+    history.capture_tile(0, 0, 64, 64, tile);
+    static_cast<void>(history.commit_entry());
+  }
+  history.begin_entry();
+  history.discard_entry();
+
+  CHECK(history.entry_count() == tinydraw::TileUndoHistory::kMaxEntries - 1U);
+}
+
 TEST_CASE("clear can be saved as one all-tile undo entry") {
   std::vector<std::uint16_t> storage(tinydraw::TileUndoHistory::kRequiredPixels);
   tinydraw::TileUndoHistory history(storage);

@@ -16,8 +16,11 @@ TileUndoHistory::TileUndoHistory(std::span<std::uint16_t> storage) : storage_(st
 }
 
 void TileUndoHistory::begin_entry() {
-  if (!valid_) {
+  if (!valid_ || entry_open_) {
     return;
+  }
+  if (count_ == kMaxEntries) {
+    --count_;
   }
   tiles_[next_].fill(false);
   entry_open_ = true;
