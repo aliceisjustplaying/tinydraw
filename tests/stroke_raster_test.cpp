@@ -24,6 +24,21 @@ struct RasterFixture {
   tinydraw::StrokeRaster raster{committed, visible, coverage};
 };
 
+struct RecordingDisplay final : tinydraw::DisplayBackend {
+  std::vector<std::uint16_t> pixels = std::vector<std::uint16_t>(kPixelCount, kBackground);
+  std::uint32_t pushes = 0U;
+
+  void push_rect(int x, int y, int width, int height, const std::uint16_t* rgb565) override {
+    ++pushes;
+    for (int row = 0; row < height; ++row) {
+      std::copy_n(rgb565 + row * width, width,
+                  pixels.begin() + (y + row) * tinydraw::kCanvasWidth + x);
+    }
+  }
+
+  [[nodiscard]] bool busy() const override { return false; }
+};
+
 std::size_t changed_pixels(const std::vector<std::uint16_t>& pixels) {
   return static_cast<std::size_t>(std::count_if(
       pixels.begin(), pixels.end(), [](std::uint16_t pixel) { return pixel != kBackground; }));
@@ -57,6 +72,27 @@ TEST_CASE("provisional stroke pixels never enter the persistent canvas") {
   CHECK(changed_pixels(fixture.committed) > 0U);
   CHECK(std::all_of(fixture.coverage.begin(), fixture.coverage.end(),
                     [](std::uint8_t value) { return value == 0U; }));
+}
+
+TEST_CASE("incremental stroke raster can submit dirty tiles without a visible canvas") {
+  std::vector<std::uint16_t> committed(kPixelCount, kBackground);
+  std::vector<std::uint8_t> coverage(kPixelCount, 0U);
+  RecordingDisplay display;
+  tinydraw::StrokeRaster raster{committed, coverage, display};
+  tinydraw::RibbonStream ribbon;
+  const tinydraw::InkPoint first{.position = {40.0F, 80.0F}, .radius = 8.0F};
+  const tinydraw::InkPoint second{.position = {80.0F, 90.0F}, .radius = 8.0F};
+
+  static_cast<void>(raster.update(ribbon.append(first), kInk));
+  static_cast<void>(raster.update(ribbon.append(second), kInk));
+
+  CHECK(display.pushes > 0U);
+  CHECK(changed_pixels(display.pixels) > 0U);
+  CHECK(changed_pixels(committed) == 0U);
+
+  static_cast<void>(raster.finish(ribbon.finish(second), kInk));
+
+  CHECK(display.pixels == committed);
 }
 
 TEST_CASE("incremental stroke raster matches one-pass coverage union") {

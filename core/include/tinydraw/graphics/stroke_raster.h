@@ -7,6 +7,7 @@
 #include "tinydraw/geometry.h"
 #include "tinydraw/graphics/coverage_tile.h"
 #include "tinydraw/ink/ribbon_geometry.h"
+#include "tinydraw/platform/display_backend.h"
 
 namespace tinydraw {
 
@@ -23,6 +24,8 @@ class StrokeRaster {
  public:
   StrokeRaster(std::span<std::uint16_t> committed, std::span<std::uint16_t> visible,
                std::span<std::uint8_t> active_coverage);
+  StrokeRaster(std::span<std::uint16_t> committed, std::span<std::uint8_t> active_coverage,
+               DisplayBackend& display);
 
   [[nodiscard]] StrokeRasterStats update(const RibbonUpdate& update, std::uint16_t color);
   [[nodiscard]] StrokeRasterStats finish(const RibbonUpdate& update, std::uint16_t color);
@@ -46,6 +49,7 @@ class StrokeRaster {
   std::span<std::uint16_t> committed_;
   std::span<std::uint16_t> visible_;
   std::span<std::uint8_t> active_coverage_;
+  DisplayBackend* display_ = nullptr;
   bool valid_ = false;
   RibbonPrimitiveBatch provisional_;
   TileFlags touched_{};

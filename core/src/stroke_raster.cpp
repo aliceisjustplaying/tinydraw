@@ -45,6 +45,14 @@ StrokeRaster::StrokeRaster(std::span<std::uint16_t> committed, std::span<std::ui
   assert(valid_);
 }
 
+StrokeRaster::StrokeRaster(std::span<std::uint16_t> committed,
+                           std::span<std::uint8_t> active_coverage, DisplayBackend& display)
+    : committed_(committed), active_coverage_(active_coverage), display_(&display) {
+  constexpr auto pixel_count = static_cast<std::size_t>(kCanvasWidth * kCanvasHeight);
+  valid_ = committed_.size() >= pixel_count && active_coverage_.size() >= pixel_count;
+  assert(valid_);
+}
+
 StrokeRasterStats StrokeRaster::update(const RibbonUpdate& update, std::uint16_t color) {
   StrokeRasterStats stats;
   if (!valid_) {
@@ -220,8 +228,13 @@ void StrokeRaster::compose_visible_tile(int tile_x, int tile_y, std::uint16_t co
     for (int x = 0; x < coverage_.width(); ++x) {
       const auto canvas_index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x + x);
       const auto tile_index = static_cast<std::size_t>(y * coverage_.width() + x);
-      visible_[canvas_index] = working_[tile_index];
+      if (!visible_.empty()) {
+        visible_[canvas_index] = working_[tile_index];
+      }
     }
+  }
+  if (display_ != nullptr) {
+    display_->push_rect(tile_x, tile_y, coverage_.width(), coverage_.height(), working_.data());
   }
   ++stats.tiles_updated;
   stats.pixels_composited += static_cast<std::uint32_t>(tile_pixels);
@@ -234,7 +247,7 @@ void StrokeRaster::compose_committed_tile(int tile_x, int tile_y, std::uint16_t 
   for (int y = 0; y < coverage_.height(); ++y) {
     for (int x = 0; x < coverage_.width(); ++x) {
       const auto canvas_index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x + x);
-      committed_[canvas_index] = visible_[canvas_index];
+      committed_[canvas_index] = working_[static_cast<std::size_t>(y * coverage_.width() + x)];
       active_coverage_[canvas_index] = 0U;
     }
   }
