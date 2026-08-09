@@ -1,4 +1,5 @@
 /out/
 /.pi-subagents/
+/reference/perfect-freehand/
 .DS_Store
 *.dSYM/
