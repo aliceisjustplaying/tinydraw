@@ -58,7 +58,7 @@ Daily commands:
 
 Expected current results:
 
-- 35 doctest cases;
+- 39 doctest cases;
 - 9 CTest entries, including process-level replay and snapshot checks;
 - debug, release, ASan, and UBSan green;
 - incremental debug suite typically well below one second.
@@ -112,7 +112,7 @@ Do not add PlatformIO or source ESP-IDF globally. QEMU has not been installed or
 - `core/include/tinydraw/ink/perfect_freehand.h`
   - understandable batch PF behavioral baseline used for oracle comparisons and finalization tests.
 - `core/include/tinydraw/ink/ribbon_geometry.h`
-  - visible-path PF-style ribbon primitives: convex spans and circles.
+  - visible-path PF-style ribbon primitives plus the fixed-capacity `RibbonStream`.
 - `core/include/tinydraw/graphics/coverage_tile.h`
   - fixed 64×64 8-bit coverage tile and RGB565 compositing.
 - `core/include/tinydraw/graphics/ribbon_renderer.h`
@@ -150,7 +150,7 @@ SDL logical mouse event
   → TouchPoint with timestamp
   → InkStream
   → adjusted InkPoint {position, pressure, radius, distance, running length}
-  → PF-style ribbon primitives
+  → RibbonStream {newly stable primitives + replacement provisional tail}
   → coverage tiles
   → RGB565 canvas
 ```
@@ -221,11 +221,14 @@ Two related implementations currently coexist intentionally:
    - emits simple convex spans plus circles instead of one self-intersecting outline polygon;
    - preserves pressure width and PF-style vector blending;
    - adds a round circle at every accepted interior sample to close joins;
-   - falls back to two triangles if a four-point span is non-convex.
+   - falls back to two triangles if a four-point span is non-convex;
+   - now has a fixed-capacity `RibbonStream` that emits only newly append-stable pieces and a
+     replacement one-span tail.
 
 The visible path is PF-style but is not yet a perfect structural reproduction of all upstream
-outline suppression and corner tessellation behavior. The batch baseline remains the independent
-comparison target while the streaming implementation evolves.
+outline suppression and corner tessellation behavior. The batch builder remains a behavioral
+comparison target for the visible path. Tests prove that accumulating stream commits plus the
+current provisional tail reproduces the batch builder after every appended point.
 
 ## PF dependency finding
 
@@ -239,8 +242,12 @@ Empirical result:
 - the report is evidence, not a general proof, because upstream's returned array concatenates the
   left track, end cap, reversed right track, and start cap.
 
-Do not hardcode a commit horizon from this observation alone. The next streaming geometry module
-must encode its dependency structurally and prove append stability with regression tests.
+`RibbonStream` does not copy upstream's mutable ten-point initial-pressure estimate. It accepts
+already causal `InkPoint` radii from `InkStream`; an accepted point's radius is immutable. Under
+that explicit policy, section `i` becomes stable when point `i + 1` supplies its only forward
+direction dependency, and the span ending at that section can be emitted. The implementation keeps
+two points and one pending section rather than a guessed sample window. Prefix-equivalence and
+long-stroke tests now encode this structural commit rule.
 
 ## Raster pipeline
 
@@ -300,18 +307,18 @@ The host currently models the required invariant:
 During an active stroke:
 
 1. copy `committed_pixels` to temporary `pixels`;
-2. regenerate visible provisional ribbon geometry into temporary `pixels`;
-3. display temporary `pixels`;
+2. accumulate append-stable geometry from `RibbonStream` and replace only its provisional tail;
+3. render the active geometry into temporary `pixels` and display it;
 4. do not write that provisional result to `committed_pixels`.
 
 At lift:
 
-1. call `InkStream::finish()`;
-2. build final ribbon pieces;
-3. render them once into `committed_pixels`;
-4. clear active stroke points.
+1. call `InkStream::finish()` and `RibbonStream::finish()`;
+2. promote the final tail and cap in the geometry stream;
+3. render the completed stroke once into `committed_pixels`;
+4. clear active host geometry.
 
-`C` ends the active stream, clears provisional points, and clears committed pixels.
+`C` resets both streams, clears active geometry, and clears committed pixels.
 
 This invariant is structurally present in the host, but the definitive regression test should live
 in the upcoming reusable committed-canvas/tile module rather than remain coupled to SDL code.
@@ -373,6 +380,8 @@ Core behavior tests cover:
 - SDL logical input coordinates;
 - timestamp equality, regression, wrap, cadence changes, and exact finish;
 - PF stroke points, complete outlines, dots, duplicates, and stream finalization;
+- streaming ribbon prefix equivalence, exact finalization, duplicate handling, and bounded output
+  across 1000 points;
 - circle and convex AA coverage;
 - max-union idempotence;
 - sRGB-space RGB565 compositing;
@@ -394,61 +403,43 @@ host and Xtensa pixel identity.
 These are known and intentionally not hidden:
 
 - the host copies the full 368×448 framebuffer for every displayed provisional frame;
-- the active host path rebuilds all ribbon primitives and rerenders the full active stroke each
-  frame;
+- ribbon geometry generation is now incremental, but the host retains the emitted primitives in a
+  `std::vector` and rerasterizes the full active stroke each frame;
 - dirty tile enumeration uses one global primitive bounding rectangle, so a long diagonal visits
   many untouched tiles;
 - every visited tile scans every primitive;
 - `build_pf_ribbon` uses temporary `std::vector`s for unique points, vectors, sections, and output;
 - batch PF reference functions also allocate vectors;
 - a 1000-point headless debug replay was approximately 0.08 seconds on the current Mac, but that
-  measures one final render—not the interactive per-sample rebuild—and is not evidence of ESP32
+  measures one final render—not interactive per-frame rerasterization—and is not evidence of ESP32
   performance;
 - QEMU will not be accepted as cycle-accurate performance evidence.
 
-The active embedded path is therefore not ready. Do not carry these allocations or whole-stroke
-rebuilds into ESP32 integration.
+The active embedded path is therefore not ready. Do not carry host vectors, full-canvas copies, or
+whole-stroke rerasterization into ESP32 integration.
 
 ## Exact next engineering steps
 
-### 1. Streaming ribbon state and proven commit horizon
-
-Introduce bounded streaming geometry state that emits:
-
-```text
-newly committed primitives
-+
-small provisional tail
-+
-provisional/final cap
-```
-
-Requirements:
-
-- no general heap allocation per touch update;
-- initial-pressure warm-up behavior explicitly handled;
-- append-stability tests prove the commit boundary;
-- no guessed fixed window without dependency evidence;
-- exact lift endpoint;
-- end taper remains disabled.
-
-### 2. Dirty-tile provisional renderer
+### 1. Dirty-tile provisional renderer and raster horizon
 
 Stop rebuilding the full stroke and copying the full framebuffer each frame.
 
+- determine the raster commit horizon separately from the proven geometry horizon;
+- avoid compositing overlapping antialiased pieces into RGB565 on separate updates, which would
+  darken edges even when each geometry piece is stable;
 - return dirty bounds from geometry updates;
 - enumerate only intersecting tiles;
 - maintain distinct newly committed and provisional coverage;
 - regenerate only provisional tiles from committed background;
-- test that provisional pixels never enter persistent canvas;
+- test directly that provisional pixels never enter persistent canvas;
 - track tiles, pixels, coverage operations, and display bytes.
 
-### 3. Bounded stroke storage
+### 2. Bounded stroke storage
 
 Add fixed-size chunks in a bounded arena, with explicit limits and overflow policy. The active path
 must not depend on `std::vector` allocation succeeding.
 
-### 4. Host-visible product behavior
+### 3. Host-visible product behavior
 
 Once streaming rendering is stable:
 
@@ -458,7 +449,7 @@ Once streaming rendering is stable:
 - optional brush sizes;
 - runtime tuning controls and stats.
 
-### 5. ESP-IDF and QEMU
+### 4. ESP-IDF and QEMU
 
 Only after the native memory and streaming semantics are enforceable:
 
@@ -502,13 +493,16 @@ a6325f1 feat: render PF ribbons through coverage tiles
 1120a05 docs: preserve Opus whole-codebase review
 3fe4ad1 chore: mark PPM snapshots as binary
 d9a1960 fix: reject unsafe raster and input degenerates
+4d2d70d feat: stream append-stable ribbon geometry
+81fe7d7 test: prove ribbon stream finalization bounds
+dcebd49 feat: drive host geometry through ribbon stream
 ```
 
-A subsequent high-effort Opus review verified the foundation and identified small correctness
-preconditions before streaming work. Float-to-int raster bounds, zero-area convex coverage,
-non-finite stream input, and PPM attributes were fixed immediately afterward. The direct
-committed/provisional invariant test remains part of the streaming milestone. See
-`OPUS_REVIEW_2026-08-09.md` for evidence and priorities.
+A high-effort Opus review verified the foundation and identified small correctness preconditions
+before streaming work. Float-to-int raster bounds, zero-area convex coverage, non-finite stream
+input, and PPM attributes were fixed immediately afterward. Geometry streaming is now implemented;
+the direct persistent-canvas invariant test remains part of the upcoming raster-horizon milestone.
+See `OPUS_REVIEW_2026-08-09.md` for the review evidence and priorities.
 
 The misleading intermediate cursor-scaling and polygon-rendering approaches remain in history as
 useful diagnosis context but are not present in the current tree.
