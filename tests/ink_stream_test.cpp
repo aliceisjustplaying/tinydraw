@@ -76,6 +76,29 @@ TEST_CASE("equal timestamps remain finite and advance the stroke") {
   CHECK(point.position.x > 10.0F);
 }
 
+TEST_CASE("a backward timestamp uses a nominal interval without poisoning the next sample") {
+  tinydraw::InkStream stream;
+  static_cast<void>(stream.begin({.x = 0.0F, .y = 0.0F, .timestamp_us = 10'000U}));
+
+  const auto regressed = stream.update({.x = 10.0F, .y = 0.0F, .timestamp_us = 9'000U});
+  const auto recovered = stream.update({.x = 20.0F, .y = 0.0F, .timestamp_us = 18'000U});
+
+  CHECK(regressed.timestamp_us == 10'000U);
+  CHECK(regressed.position.x < 10.0F);
+  CHECK(recovered.timestamp_us == 18'000U);
+  CHECK(recovered.position.x < 20.0F);
+}
+
+TEST_CASE("timestamp wrap-around preserves the short elapsed interval") {
+  tinydraw::InkStream stream;
+  static_cast<void>(stream.begin({.x = 0.0F, .y = 0.0F, .timestamp_us = 0xFFFF'F000U}));
+
+  const auto point = stream.update({.x = 10.0F, .y = 0.0F, .timestamp_us = 0x0000'0F40U});
+
+  CHECK(point.timestamp_us == 0x0000'0F40U);
+  CHECK(point.position.x == doctest::Approx(7.025F));
+}
+
 TEST_CASE("ending a stroke permits a new independent stroke") {
   tinydraw::InkStream stream;
   static_cast<void>(stream.begin({.x = 1.0F, .y = 2.0F, .timestamp_us = 0U}));

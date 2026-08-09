@@ -31,11 +31,14 @@ InkPoint InkStream::update(TouchPoint point) {
   assert(active_ && "InkStream::update requires an active stroke");
 
   const std::uint32_t elapsed_us = point.timestamp_us - previous_.timestamp_us;
+  const bool timestamp_moved_backward = elapsed_us > 0x7FFF'FFFFU;
   const float nominal_dt_ms = std::max(0.001F, config_.nominal_dt_ms);
-  // Some touch controllers can emit equal timestamps. Treat those samples as one
-  // nominal interval: freezing the filter is less useful than making progress.
-  const float elapsed_ms =
-      elapsed_us == 0U ? nominal_dt_ms : static_cast<float>(elapsed_us) / 1'000.0F;
+  // Equal or backward timestamps cannot provide a useful interval. Treat them as
+  // one nominal interval and retain the last valid timestamp. Unsigned subtraction
+  // still handles the normal uint32_t wrap-around case.
+  const float elapsed_ms = elapsed_us == 0U || timestamp_moved_backward
+                               ? nominal_dt_ms
+                               : static_cast<float>(elapsed_us) / 1'000.0F;
   const float interval_ratio = elapsed_ms / nominal_dt_ms;
 
   const float streamline = std::clamp(config_.streamline, 0.0F, 1.0F);
@@ -68,7 +71,7 @@ InkPoint InkStream::update(TouchPoint point) {
       .radius = radius_for(pressure),
       .distance = distance,
       .running_length = previous_.running_length + distance,
-      .timestamp_us = point.timestamp_us,
+      .timestamp_us = timestamp_moved_backward ? previous_.timestamp_us : point.timestamp_us,
   };
   return previous_;
 }
