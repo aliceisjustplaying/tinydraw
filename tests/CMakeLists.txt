@@ -25,12 +25,12 @@ if(TARGET tinydraw_host)
   )
 
   add_test(
-    NAME tinydraw_replay_golden
+    NAME tinydraw_replay_snapshot
     COMMAND ${CMAKE_COMMAND} -E compare_files
       "${REPLAY_OUTPUT_DIR}/zigzag.ppm"
-      "${PROJECT_SOURCE_DIR}/testdata/golden/zigzag.ppm"
+      "${PROJECT_SOURCE_DIR}/testdata/snapshots/zigzag.ppm"
   )
-  set_tests_properties(tinydraw_replay_golden PROPERTIES
+  set_tests_properties(tinydraw_replay_snapshot PROPERTIES
     FIXTURES_REQUIRED replay_zigzag
   )
 

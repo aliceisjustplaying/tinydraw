@@ -47,9 +47,11 @@ out/build/host-debug/host/tinydraw_host \
   --output /tmp/zigzag.ppm
 ```
 
-CTest regenerates this image and compares it byte-for-byte with the host golden. This gives us a
-cheap end-to-end regression test now; the same recordings will later drive QEMU and hardware, with
-structural/tolerance comparisons instead of cross-target pixel equality.
+CTest regenerates this image and compares it byte-for-byte with the approved host snapshot. This
+is a characterization test: it proves determinism and catches unintended changes, but it is not an
+independent correctness oracle. PF-derived reference geometry will provide that oracle later. The
+same recordings will drive QEMU and hardware, using structural/tolerance comparisons instead of
+cross-target pixel equality.
 
 The sanitizer preset excludes the host executable because Homebrew's `sdl2-compat` loader aborts
 under Apple's sanitizer runtime before application code starts. All SDL-free project code remains
@@ -77,7 +79,7 @@ the ESP target is scaffolded.
 - `core/`: C++ standard library only; no SDL, ESP-IDF, or desktop assumptions.
 - `host/`: SDL2-compatible APIs, found through pkg-config.
 - `tests/`: pinned doctest 2.5.3 under `third_party/doctest`.
-- Add image/golden, fuzz, and benchmark dependencies only when those loops have real consumers.
+- Add image-reference, fuzz, and benchmark dependencies only when those loops have real consumers.
 
 Do not assess ESP32 performance from QEMU. Host tests establish correctness, QEMU establishes
 integration and structural agreement, and physical hardware establishes timing and drawing feel.
