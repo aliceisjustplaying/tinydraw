@@ -146,6 +146,22 @@ count, committed count, and tiles touched. Prefer operation counts over fragile 
 - No real hardware timing, DMA, PSRAM, panel, or touch evidence.
 - The active host path still depends on vector allocations and whole-stroke rebuilds.
 
+## Post-review resolution
+
+Immediately after this review, the parent agent applied the small local fixes recommended by the
+correctness findings:
+
+- raster entry points reject non-finite/extreme coordinates;
+- bounds clamp in floating-point space before integer conversion;
+- repeated/collinear zero-area convex polygons produce no coverage;
+- non-finite `InkStream` samples no longer poison stream state;
+- regression tests cover each case under ASan/UBSan;
+- `*.ppm` is explicitly marked binary.
+
+These landed in `d9a1960` and `3fe4ad1`. The committed/provisional invariant test and operation-count
+checks remain intentionally attached to the upcoming streaming module, where the correct reusable
+seam will exist.
+
 ## Recommended immediate order
 
 1. Fix float-cast UB and zero-area coverage with small tests.

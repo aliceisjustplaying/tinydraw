@@ -58,7 +58,7 @@ Daily commands:
 
 Expected current results:
 
-- 32 doctest cases;
+- 35 doctest cases;
 - 9 CTest entries, including process-level replay and snapshot checks;
 - debug, release, ASan, and UBSan green;
 - incremental debug suite typically well below one second.
@@ -281,9 +281,15 @@ linear-light blending.
 
 Malformed public primitives are rejected if:
 
-- a circle is non-finite or has non-positive radius;
+- a circle is non-finite, unreasonably large, or has non-positive radius;
 - a convex primitive has fewer than 3 or more than 4 points;
-- a convex point is non-finite.
+- a convex point is non-finite or unreasonably large.
+
+Coverage entry points independently reject non-finite/extreme coordinates. Raster bounds are
+clamped in floating-point space before integer conversion, preventing out-of-range float-to-int
+undefined behavior. Repeated-point and collinear zero-area polygons produce no coverage.
+`InkStream` ignores non-finite updates without poisoning prior state; an invalid begin leaves the
+stream inactive.
 
 ## Critical committed/provisional invariant
 
@@ -493,12 +499,16 @@ a6325f1 feat: render PF ribbons through coverage tiles
 17b5704 fix: move ribbon scratch buffers off task stack
 6c15de4 fix: close coverage gaps at ribbon joins
 6cd7bd9 docs: record complete engineering handoff
+1120a05 docs: preserve Opus whole-codebase review
+3fe4ad1 chore: mark PPM snapshots as binary
+d9a1960 fix: reject unsafe raster and input degenerates
 ```
 
 A subsequent high-effort Opus review verified the foundation and identified small correctness
-preconditions before streaming work: guard float-to-int raster bounds, reject zero-area convex
-coverage, choose a non-finite input policy, and add the committed/provisional invariant test during
-the streaming milestone. See `OPUS_REVIEW_2026-08-09.md` for evidence and priorities.
+preconditions before streaming work. Float-to-int raster bounds, zero-area convex coverage,
+non-finite stream input, and PPM attributes were fixed immediately afterward. The direct
+committed/provisional invariant test remains part of the streaming milestone. See
+`OPUS_REVIEW_2026-08-09.md` for evidence and priorities.
 
 The misleading intermediate cursor-scaling and polygon-rendering approaches remain in history as
 useful diagnosis context but are not present in the current tree.
