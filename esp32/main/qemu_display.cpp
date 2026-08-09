@@ -48,16 +48,14 @@ bool QemuDisplayBackend::refresh() {
 
 void QemuDisplayBackend::push_rect(int x, int y, int width, int height,
                                    const std::uint16_t* rgb565) {
-  if (!ready() || rgb565 == nullptr || x < 0 || y < 0 || x >= kCanvasWidth ||
-      y >= kCanvasHeight || width <= 0 || height <= 0 || width > kCanvasWidth - x ||
-      height > kCanvasHeight - y) {
+  if (!ready() || rgb565 == nullptr || x < 0 || y < 0 || x >= kCanvasWidth || y >= kCanvasHeight ||
+      width <= 0 || height <= 0 || width > kCanvasWidth - x || height > kCanvasHeight - y) {
     return;
   }
   ++push_count_;
   for (int row = 0; row < height; ++row) {
     const auto source_offset = static_cast<std::size_t>(row * width);
-    const auto destination_offset =
-        static_cast<std::size_t>((y + row) * kCanvasWidth + x);
+    const auto destination_offset = static_cast<std::size_t>((y + row) * kCanvasWidth + x);
     std::copy_n(rgb565 + source_offset, width, framebuffer_ + destination_offset);
   }
 }

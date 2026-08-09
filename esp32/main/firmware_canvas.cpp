@@ -18,16 +18,16 @@ constexpr std::uint32_t kInternalCaps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
 FirmwareCanvas::FirmwareCanvas(DisplayBackend& display) {
   committed_ = static_cast<std::uint16_t*>(
       heap_caps_malloc(kPixelCount * sizeof(std::uint16_t), kExternalCaps));
-  active_coverage_ =
-      static_cast<std::uint8_t*>(heap_caps_calloc(kPixelCount, sizeof(std::uint8_t), kExternalCaps));
+  active_coverage_ = static_cast<std::uint8_t*>(
+      heap_caps_calloc(kPixelCount, sizeof(std::uint8_t), kExternalCaps));
   raster_storage_ = heap_caps_malloc(sizeof(StrokeRaster), kInternalCaps);
   if (committed_ == nullptr || active_coverage_ == nullptr || raster_storage_ == nullptr) {
     return;
   }
 
   std::fill_n(committed_, kPixelCount, kBackground);
-  raster_ = new (raster_storage_)
-      StrokeRaster(std::span(committed_, kPixelCount), std::span(active_coverage_, kPixelCount), display);
+  raster_ = new (raster_storage_) StrokeRaster(std::span(committed_, kPixelCount),
+                                               std::span(active_coverage_, kPixelCount), display);
 }
 
 FirmwareCanvas::~FirmwareCanvas() {

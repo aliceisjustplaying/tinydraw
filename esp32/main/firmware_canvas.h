@@ -23,8 +23,7 @@ class FirmwareCanvas {
   [[nodiscard]] StrokeRaster& raster() { return *raster_; }
 
  private:
-  static constexpr std::size_t kPixelCount =
-      static_cast<std::size_t>(kCanvasWidth * kCanvasHeight);
+  static constexpr std::size_t kPixelCount = static_cast<std::size_t>(kCanvasWidth * kCanvasHeight);
 
   std::uint16_t* committed_ = nullptr;
   std::uint8_t* active_coverage_ = nullptr;

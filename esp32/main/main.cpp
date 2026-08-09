@@ -79,7 +79,8 @@ std::uint32_t touched_tiles(std::span<const std::uint16_t> pixels) {
       bool touched = false;
       for (int y = 0; y < height && !touched; ++y) {
         for (int x = 0; x < width; ++x) {
-          const auto index = static_cast<std::size_t>((tile_y + y) * tinydraw::kCanvasWidth + tile_x + x);
+          const auto index =
+              static_cast<std::size_t>((tile_y + y) * tinydraw::kCanvasWidth + tile_x + x);
           if (pixels[index] != kBackground) {
             touched = true;
             break;
@@ -157,8 +158,8 @@ extern "C" void app_main() {
   ReplayStats total;
 
   const auto process_frame = [&](const tinydraw::RibbonUpdate& update, bool final) {
-    const auto stats = final ? canvas.raster().finish(update, kInk)
-                             : canvas.raster().update(update, kInk);
+    const auto stats =
+        final ? canvas.raster().finish(update, kInk) : canvas.raster().update(update, kInk);
     accumulate(total, update, stats);
 #ifdef TINYDRAW_QEMU_GRAPHICS
     if (final) {
@@ -191,11 +192,13 @@ extern "C" void app_main() {
   const auto checksum = canvas_checksum(committed);
   if (total.maximum_tiles_per_frame > 20U || total.maximum_visits_per_frame > 80U ||
       total.display_bytes != total.pixels_composited * 2U) {
-    std::printf("TINYDRAW_REPLAY_FAIL reason=unbounded_work max_tiles=%lu max_visits=%lu bytes=%lu pixels=%lu\n",
-                static_cast<unsigned long>(total.maximum_tiles_per_frame),
-                static_cast<unsigned long>(total.maximum_visits_per_frame),
-                static_cast<unsigned long>(total.display_bytes),
-                static_cast<unsigned long>(total.pixels_composited));
+    std::printf(
+        "TINYDRAW_REPLAY_FAIL reason=unbounded_work max_tiles=%lu max_visits=%lu bytes=%lu "
+        "pixels=%lu\n",
+        static_cast<unsigned long>(total.maximum_tiles_per_frame),
+        static_cast<unsigned long>(total.maximum_visits_per_frame),
+        static_cast<unsigned long>(total.display_bytes),
+        static_cast<unsigned long>(total.pixels_composited));
     return;
   }
 #ifdef TINYDRAW_QEMU_GRAPHICS
