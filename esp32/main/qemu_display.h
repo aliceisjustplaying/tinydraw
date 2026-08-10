@@ -20,7 +20,8 @@ class QemuDisplayBackend final : public DisplayBackend {
   [[nodiscard]] bool refresh();
   [[nodiscard]] std::uint32_t refresh_count() const { return refresh_count_; }
   [[nodiscard]] std::uint32_t push_count() const { return push_count_; }
-  void push_rect(int x, int y, int width, int height, const std::uint16_t* rgb565) override;
+  void push_rect(int x, int y, int width, int height, const std::uint16_t* rgb565,
+                 int stride = 0) override;
 
  private:
   esp_lcd_panel_handle_t panel_ = nullptr;

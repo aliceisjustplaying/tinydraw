@@ -33,6 +33,8 @@ class StrokeRaster {
                std::span<std::uint8_t> active_coverage);
   StrokeRaster(std::span<std::uint16_t> committed, std::span<std::uint8_t> active_coverage,
                DisplayBackend& display);
+  StrokeRaster(std::span<std::uint16_t> committed, std::span<std::uint16_t> visible,
+               std::span<std::uint8_t> active_coverage, DisplayBackend& display);
 
   [[nodiscard]] StrokeRasterStats update(const RibbonUpdate& update, std::uint16_t color);
   [[nodiscard]] StrokeRasterStats finish(const RibbonUpdate& update, std::uint16_t color,
@@ -51,6 +53,7 @@ class StrokeRaster {
   void load_coverage_tile(int tile_x, int tile_y, StrokeRasterStats& stats);
   void store_coverage_tile(int tile_x, int tile_y, StrokeRasterStats& stats);
   void rasterize(const RibbonPrimitiveBatch& primitives, StrokeRasterStats& stats);
+  void present_tiles(const TileFlags& tiles);
   void compose_visible_tile(int tile_x, int tile_y, std::uint16_t color, StrokeRasterStats& stats,
                             TileUndoHistory* history = nullptr);
   void compose_committed_tile(int tile_x, int tile_y, std::uint16_t color, StrokeRasterStats& stats,

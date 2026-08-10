@@ -95,7 +95,7 @@ std::uint32_t touched_tiles(std::span<const std::uint16_t> pixels) {
 
 class NullDisplay final : public tinydraw::DisplayBackend {
  public:
-  void push_rect(int, int, int, int, const std::uint16_t*) override { ++pushes; }
+  void push_rect(int, int, int, int, const std::uint16_t*, int = 0) override { ++pushes; }
 
   std::uint32_t pushes = 0U;
 };

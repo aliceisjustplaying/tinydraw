@@ -29,7 +29,7 @@ namespace {
 constexpr std::uint16_t kBackground = 0xFFFFU;
 constexpr int kPanelGapX = 0x10;
 constexpr int kTransferPixels = 4096;
-constexpr int kTransferQueueDepth = 8;
+constexpr int kTransferQueueDepth = 3;
 constexpr int kToolbarTop = 374;
 constexpr int kPopupTop = 296;
 
@@ -155,9 +155,26 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
                            tinydraw::kCanvasWidth, tinydraw::kCanvasHeight, toolbar_);
   }
 
-  void push_rect(int x, int y, int width, int height, const std::uint16_t* pixels) override {
-    if (!ready_ || pixels == nullptr || width <= 0 || height <= 0 ||
-        width * height > kTransferPixels) {
+  void push_rect(int x, int y, int width, int height, const std::uint16_t* pixels,
+                 int stride = 0) override {
+    if (!ready_ || pixels == nullptr || width <= 0 || height <= 0) {
+      return;
+    }
+    const int source_stride = stride == 0 ? width : stride;
+    if (source_stride < width) {
+      return;
+    }
+    if (width * height > kTransferPixels) {
+      int rows_per_transfer = kTransferPixels / width;
+      rows_per_transfer -= rows_per_transfer % 2;
+      if (rows_per_transfer <= 0) {
+        return;
+      }
+      for (int row = 0; row < height; row += rows_per_transfer) {
+        const int rows = std::min(rows_per_transfer, height - row);
+        push_rect(x, y + row, width, rows,
+                  pixels + static_cast<std::ptrdiff_t>(row * source_stride), source_stride);
+      }
       return;
     }
     const auto transfer_started = esp_timer_get_time();
@@ -172,7 +189,8 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
       for (int column = 0; column < width; ++column) {
         const int panel_x = x + column;
         const int panel_y = y + row;
-        const std::size_t source = static_cast<std::size_t>(row * width + column);
+        const std::size_t source = static_cast<std::size_t>(row * source_stride + column);
+        const std::size_t destination = static_cast<std::size_t>(row * width + column);
         const std::size_t canvas =
             static_cast<std::size_t>(panel_y * tinydraw::kCanvasWidth + panel_x);
         const auto point =
@@ -180,7 +198,7 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
         const bool toolbar_pixel =
             panel_y >= toolbar_top_ && tinydraw::toolbar_contains(point, toolbar_);
         const std::uint16_t pixel = toolbar_pixel ? overlay_[canvas] : pixels[source];
-        transfer[source] = swap_bytes(pixel);
+        transfer[destination] = swap_bytes(pixel);
       }
     }
     prepare_us_ += esp_timer_get_time() - prepare_started;
@@ -220,6 +238,8 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
   bool ready_ = false;
 };
 
+enum class TouchRead { kPoint, kNoTouch, kError };
+
 class PhysicalTouch {
  public:
   PhysicalTouch() {
@@ -235,7 +255,7 @@ class PhysicalTouch {
     }
     esp_lcd_panel_io_i2c_config_t io_config{};
     io_config.dev_addr = ESP_LCD_TOUCH_IO_I2C_CST816S_ADDRESS;
-    io_config.scl_speed_hz = 100000;
+    io_config.scl_speed_hz = 400000;
     io_config.control_phase_bytes = 1;
     io_config.lcd_cmd_bits = 8;
     io_config.flags.disable_control_phase = true;
@@ -254,19 +274,19 @@ class PhysicalTouch {
 
   [[nodiscard]] bool ready() const { return ready_; }
 
-  bool read(tinydraw::Point& point) {
+  TouchRead read(tinydraw::Point& point) {
     if (!ready_ || esp_lcd_touch_read_data(touch_) != ESP_OK) {
-      return false;
+      return TouchRead::kError;
     }
     std::uint16_t x = 0;
     std::uint16_t y = 0;
     std::uint16_t strength = 0;
     std::uint8_t count = 0;
     if (!esp_lcd_touch_get_coordinates(touch_, &x, &y, &strength, &count, 1) || count == 0) {
-      return false;
+      return TouchRead::kNoTouch;
     }
     point = {.x = static_cast<float>(x), .y = static_cast<float>(y)};
-    return true;
+    return TouchRead::kPoint;
   }
 
  private:
@@ -308,6 +328,7 @@ void run_hardware_app() {
   bool pressed = false;
   std::uint32_t loop_count = 0;
   std::uint32_t stroke_samples = 0;
+  std::uint8_t no_touch_polls = 0;
   std::int64_t stroke_render_us = 0;
   std::int64_t maximum_render_us = 0;
 
@@ -338,6 +359,7 @@ void run_hardware_app() {
     canvas.undo_history().capture_canvas(canvas.committed());
     static_cast<void>(canvas.undo_history().commit_entry());
     std::fill(canvas.committed().begin(), canvas.committed().end(), kBackground);
+    std::fill(canvas.visible().begin(), canvas.visible().end(), kBackground);
     close_popups();
     toolbar.can_undo = canvas.undo_history().can_undo();
     display.set_toolbar(toolbar);
@@ -348,7 +370,7 @@ void run_hardware_app() {
       return;
     }
     reset_stroke();
-    static_cast<void>(canvas.undo_history().undo(canvas.committed(), {}, &display));
+    static_cast<void>(canvas.undo_history().undo(canvas.committed(), canvas.visible(), &display));
     close_popups();
     update_toolbar();
   };
@@ -417,7 +439,15 @@ void run_hardware_app() {
   std::printf("TINYDRAW_HARDWARE_OK display=CO5300 touch=CST820\n");
   while (true) {
     tinydraw::Point point{};
-    const bool touching = touch.read(point);
+    const TouchRead touch_read = touch.read(point);
+    if (touch_read == TouchRead::kError) {
+      vTaskDelay(pdMS_TO_TICKS(1));
+      continue;
+    }
+    const bool touching = touch_read == TouchRead::kPoint;
+    if (touching) {
+      no_touch_polls = 0;
+    }
     if (touching && !pressed) {
       std::printf("[DEBUG-hw1] down x=%.0f y=%.0f\n", static_cast<double>(point.x),
                   static_cast<double>(point.y));
@@ -451,7 +481,7 @@ void run_hardware_app() {
       const auto elapsed = esp_timer_get_time() - started;
       stroke_render_us += elapsed;
       maximum_render_us = std::max(maximum_render_us, elapsed);
-    } else if (!touching && pressed) {
+    } else if (!touching && pressed && ++no_touch_polls >= 3U) {
       std::printf("[DEBUG-hw1] up x=%.0f y=%.0f active=%u\n", static_cast<double>(last_touch.x),
                   static_cast<double>(last_touch.y), ink.active());
       pressed = false;
@@ -475,9 +505,9 @@ void run_hardware_app() {
       }
     }
     ++loop_count;
-    if (loop_count % 125U == 0U) {
+    if (loop_count % 1000U == 0U) {
       std::printf("[DEBUG-hw1] alive pressed=%u active=%u\n", pressed, ink.active());
     }
-    vTaskDelay(pdMS_TO_TICKS(8));
+    vTaskDelay(pdMS_TO_TICKS(1));
   }
 }

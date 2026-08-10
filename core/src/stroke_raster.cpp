@@ -55,6 +55,18 @@ StrokeRaster::StrokeRaster(std::span<std::uint16_t> committed,
   assert(valid_);
 }
 
+StrokeRaster::StrokeRaster(std::span<std::uint16_t> committed, std::span<std::uint16_t> visible,
+                           std::span<std::uint8_t> active_coverage, DisplayBackend& display)
+    : committed_(committed),
+      visible_(visible),
+      active_coverage_(active_coverage),
+      display_(&display) {
+  constexpr auto pixel_count = static_cast<std::size_t>(kCanvasWidth * kCanvasHeight);
+  valid_ = committed_.size() >= pixel_count && visible_.size() >= pixel_count &&
+           active_coverage_.size() >= pixel_count;
+  assert(valid_);
+}
+
 StrokeRasterStats StrokeRaster::update(const RibbonUpdate& update, std::uint16_t color) {
   StrokeRasterStats stats;
   if (!valid_) {
@@ -88,6 +100,7 @@ StrokeRasterStats StrokeRaster::update(const RibbonUpdate& update, std::uint16_t
     }
   }
 
+  present_tiles(dirty_tiles);
   provisional_ = update.provisional;
   return stats;
 }
@@ -117,6 +130,7 @@ StrokeRasterStats StrokeRaster::finish(const RibbonUpdate& update, std::uint16_t
     touched_[static_cast<std::size_t>(tile_index)] = true;
   }
 
+  const TileFlags presented_tiles = committed_tiles;
   for (int tile_index = 0; tile_index < kTileCount; ++tile_index) {
     if (!touched_[static_cast<std::size_t>(tile_index)]) {
       continue;
@@ -128,6 +142,7 @@ StrokeRasterStats StrokeRaster::finish(const RibbonUpdate& update, std::uint16_t
     touched_[static_cast<std::size_t>(tile_index)] = false;
   }
 
+  present_tiles(presented_tiles);
   if (history != nullptr) {
     static_cast<void>(history->commit_entry());
   }
@@ -161,11 +176,12 @@ void StrokeRaster::cancel() {
                     visible_.begin() + static_cast<std::ptrdiff_t>(canvas_index));
       }
     }
-    if (display_ != nullptr) {
+    if (display_ != nullptr && visible_.empty()) {
       display_->push_rect(tile_x, tile_y, tile_width, tile_height, working_.data());
     }
     touched_[static_cast<std::size_t>(tile_index)] = false;
   }
+  present_tiles(dirty_tiles);
   provisional_ = {};
 }
 
@@ -231,6 +247,33 @@ void StrokeRaster::rasterize(const RibbonPrimitiveBatch& primitives, StrokeRaste
   }
 }
 
+void StrokeRaster::present_tiles(const TileFlags& tiles) {
+  if (display_ == nullptr || visible_.empty()) {
+    return;
+  }
+  int first_x = kCanvasWidth;
+  int first_y = kCanvasHeight;
+  int last_x = 0;
+  int last_y = 0;
+  for (int tile_index = 0; tile_index < kTileCount; ++tile_index) {
+    if (!tiles[static_cast<std::size_t>(tile_index)]) {
+      continue;
+    }
+    const int tile_x = tile_index % kTilesAcross * kTileSize;
+    const int tile_y = tile_index / kTilesAcross * kTileSize;
+    first_x = std::min(first_x, tile_x);
+    first_y = std::min(first_y, tile_y);
+    last_x = std::max(last_x, std::min(tile_x + kTileSize, kCanvasWidth));
+    last_y = std::max(last_y, std::min(tile_y + kTileSize, kCanvasHeight));
+  }
+  if (first_x >= last_x || first_y >= last_y) {
+    return;
+  }
+  const auto offset = static_cast<std::size_t>(first_y * kCanvasWidth + first_x);
+  display_->push_rect(first_x, first_y, last_x - first_x, last_y - first_y,
+                      visible_.data() + offset, kCanvasWidth);
+}
+
 void StrokeRaster::compose_visible_tile(int tile_x, int tile_y, std::uint16_t color,
                                         StrokeRasterStats& stats, TileUndoHistory* history) {
   const std::size_t tile_pixels = static_cast<std::size_t>(coverage_.width() * coverage_.height());
@@ -257,7 +300,7 @@ void StrokeRaster::compose_visible_tile(int tile_x, int tile_y, std::uint16_t co
       }
     }
   }
-  if (display_ != nullptr) {
+  if (display_ != nullptr && visible_.empty()) {
     display_->push_rect(tile_x, tile_y, coverage_.width(), coverage_.height(), working_.data());
   }
   ++stats.tiles_updated;

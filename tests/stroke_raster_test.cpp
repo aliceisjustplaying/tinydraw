@@ -29,10 +29,12 @@ struct RecordingDisplay final : tinydraw::DisplayBackend {
   std::vector<std::uint16_t> pixels = std::vector<std::uint16_t>(kPixelCount, kBackground);
   std::uint32_t pushes = 0U;
 
-  void push_rect(int x, int y, int width, int height, const std::uint16_t* rgb565) override {
+  void push_rect(int x, int y, int width, int height, const std::uint16_t* rgb565,
+                 int stride = 0) override {
+    const int source_stride = stride == 0 ? width : stride;
     ++pushes;
     for (int row = 0; row < height; ++row) {
-      std::copy_n(rgb565 + row * width, width,
+      std::copy_n(rgb565 + row * source_stride, width,
                   pixels.begin() + (y + row) * tinydraw::kCanvasWidth + x);
     }
   }
@@ -99,6 +101,25 @@ TEST_CASE("stroke finish captures dirty tiles from the committed read") {
   CHECK(history.undo(fixture.committed, fixture.visible).tiles_restored > 0U);
   CHECK(fixture.committed == initial);
   CHECK(fixture.visible == initial);
+}
+
+TEST_CASE("stroke raster presents one complete dirty region when a visible canvas is available") {
+  std::vector<std::uint16_t> committed(kPixelCount, kBackground);
+  std::vector<std::uint16_t> visible = committed;
+  std::vector<std::uint8_t> coverage(kPixelCount, 0U);
+  RecordingDisplay display;
+  tinydraw::StrokeRaster raster{committed, visible, coverage, display};
+  tinydraw::RibbonStream ribbon;
+  const tinydraw::InkPoint first{.position = {40.0F, 80.0F}, .radius = 8.0F};
+  const tinydraw::InkPoint second{.position = {80.0F, 90.0F}, .radius = 8.0F};
+
+  static_cast<void>(raster.update(ribbon.append(first), kInk));
+  CHECK(display.pushes == 1U);
+  CHECK(display.pixels == visible);
+
+  static_cast<void>(raster.update(ribbon.append(second), kInk));
+  CHECK(display.pushes == 2U);
+  CHECK(display.pixels == visible);
 }
 
 TEST_CASE("incremental stroke raster can submit dirty tiles without a visible canvas") {

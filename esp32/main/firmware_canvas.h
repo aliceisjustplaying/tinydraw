@@ -21,6 +21,7 @@ class FirmwareCanvas {
   [[nodiscard]] bool ready() const { return raster_ != nullptr; }
   [[nodiscard]] bool capabilities_valid() const;
   [[nodiscard]] std::span<std::uint16_t> committed();
+  [[nodiscard]] std::span<std::uint16_t> visible();
   [[nodiscard]] StrokeRaster& raster() { return *raster_; }
   [[nodiscard]] TileUndoHistory& undo_history() { return *undo_history_; }
 
@@ -28,6 +29,7 @@ class FirmwareCanvas {
   static constexpr std::size_t kPixelCount = static_cast<std::size_t>(kCanvasWidth * kCanvasHeight);
 
   std::uint16_t* committed_ = nullptr;
+  std::uint16_t* visible_ = nullptr;
   std::uint8_t* active_coverage_ = nullptr;
   std::uint16_t* undo_storage_ = nullptr;
   void* undo_history_storage_ = nullptr;
