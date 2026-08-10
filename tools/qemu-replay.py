@@ -20,6 +20,7 @@ MARKER = re.compile(
     rb"TINYDRAW_REPLAY_OK accepted=(\d+) primitives=(\d+) tiles=(\d+) "
     rb"bounds=([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+) checksum=([0-9a-fA-F]{8}) "
     rb"frames=(\d+) dirty=(\d+) max_tiles=(\d+) visits=(\d+) "
+    rb"max_visits=(\d+) finish_tiles=(\d+) finish_visits=(\d+) "
     rb"display=(\d+) psram_read=(\d+) psram_write=(\d+) "
     rb"max_psram_read=(\d+) max_psram_write=(\d+)"
 )
@@ -138,15 +139,21 @@ def main() -> int:
         dirty,
         maximum_tiles,
         visits,
+        maximum_visits,
+        finish_tiles,
+        finish_visits,
         display,
         psram_read,
         psram_write,
         maximum_psram_read,
         maximum_psram_write,
-    ) = (int(value) for value in match.groups()[8:17])
+    ) = (int(value) for value in match.groups()[8:20])
     if (
         frames != EXPECTED_COUNTS[0]
         or maximum_tiles > 20
+        or maximum_visits > 80
+        or finish_tiles > 48
+        or finish_visits > 96
         or dirty == 0
         or visits == 0
         or display == 0
@@ -157,7 +164,8 @@ def main() -> int:
     ):
         print(
             f"unexpected incremental work: frames={frames} dirty={dirty} "
-            f"max_tiles={maximum_tiles} visits={visits} display={display} "
+            f"max_tiles={maximum_tiles} visits={visits} max_visits={maximum_visits} "
+            f"finish_tiles={finish_tiles} finish_visits={finish_visits} display={display} "
             f"psram_read={psram_read} psram_write={psram_write} "
             f"max_psram_read={maximum_psram_read} max_psram_write={maximum_psram_write}",
             file=sys.stderr,
@@ -167,7 +175,8 @@ def main() -> int:
         "QEMU replay passed: "
         f"accepted={counts[0]} primitives={counts[1]} tiles={counts[2]} "
         f"bounds={bounds} frames={frames} dirty={dirty} max_tiles={maximum_tiles} "
-        f"visits={visits} display={display} psram_read={psram_read} "
+        f"visits={visits} max_visits={maximum_visits} finish_tiles={finish_tiles} "
+        f"finish_visits={finish_visits} display={display} psram_read={psram_read} "
         f"psram_write={psram_write} max_psram_read={maximum_psram_read} "
         f"max_psram_write={maximum_psram_write} checksum={checksum} (informational)"
     )

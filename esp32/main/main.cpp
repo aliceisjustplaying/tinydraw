@@ -109,14 +109,16 @@ struct ReplayStats {
   std::uint32_t display_bytes = 0U;
   std::uint32_t psram_bytes_read = 0U;
   std::uint32_t psram_bytes_written = 0U;
-  std::uint32_t maximum_tiles_per_frame = 0U;
-  std::uint32_t maximum_visits_per_frame = 0U;
+  std::uint32_t maximum_tiles_per_update = 0U;
+  std::uint32_t maximum_visits_per_update = 0U;
+  std::uint32_t finish_tiles = 0U;
+  std::uint32_t finish_visits = 0U;
   std::uint32_t maximum_psram_read_per_frame = 0U;
   std::uint32_t maximum_psram_write_per_frame = 0U;
 };
 
 void accumulate(ReplayStats& total, const tinydraw::RibbonUpdate& update,
-                const tinydraw::StrokeRasterStats& frame) {
+                const tinydraw::StrokeRasterStats& frame, bool final) {
   include(total.bounds, update.committed);
   total.primitives += static_cast<std::uint32_t>(update.committed.size());
   total.tiles_updated += frame.tiles_updated;
@@ -128,9 +130,14 @@ void accumulate(ReplayStats& total, const tinydraw::RibbonUpdate& update,
       frame.committed_bytes_written + frame.coverage_bytes_written + frame.history_bytes_written;
   total.psram_bytes_read += psram_read;
   total.psram_bytes_written += psram_written;
-  total.maximum_tiles_per_frame = std::max(total.maximum_tiles_per_frame, frame.tiles_updated);
-  total.maximum_visits_per_frame =
-      std::max(total.maximum_visits_per_frame, frame.primitive_tile_visits);
+  if (final) {
+    total.finish_tiles = frame.tiles_updated;
+    total.finish_visits = frame.primitive_tile_visits;
+  } else {
+    total.maximum_tiles_per_update = std::max(total.maximum_tiles_per_update, frame.tiles_updated);
+    total.maximum_visits_per_update =
+        std::max(total.maximum_visits_per_update, frame.primitive_tile_visits);
+  }
   total.maximum_psram_read_per_frame = std::max(total.maximum_psram_read_per_frame, psram_read);
   total.maximum_psram_write_per_frame =
       std::max(total.maximum_psram_write_per_frame, psram_written);
@@ -180,7 +187,7 @@ extern "C" void app_main() {
   const auto process_frame = [&](const tinydraw::RibbonUpdate& update, bool final) {
     const auto stats = final ? canvas.raster().finish(update, kInk, &canvas.undo_history())
                              : canvas.raster().update(update, kInk);
-    accumulate(total, update, stats);
+    accumulate(total, update, stats, final);
 #ifdef TINYDRAW_QEMU_GRAPHICS
     tinydraw::draw_toolbar(qemu_display.framebuffer(), tinydraw::kCanvasWidth,
                            tinydraw::kCanvasHeight, toolbar);
@@ -208,15 +215,18 @@ extern "C" void app_main() {
   const auto committed = canvas.committed();
   const auto final_tiles = touched_tiles(committed);
   const auto checksum = canvas_checksum(committed);
-  if (total.maximum_tiles_per_frame > 20U || total.maximum_visits_per_frame > 80U ||
+  if (total.maximum_tiles_per_update > 20U || total.maximum_visits_per_update > 80U ||
+      total.finish_tiles > 48U || total.finish_visits > 96U ||
       total.maximum_psram_read_per_frame > 512U * 1024U ||
       total.maximum_psram_write_per_frame > 512U * 1024U ||
       total.display_bytes != total.pixels_composited * 2U) {
     std::printf(
-        "TINYDRAW_REPLAY_FAIL reason=unbounded_work max_tiles=%lu max_visits=%lu bytes=%lu "
-        "pixels=%lu\n",
-        static_cast<unsigned long>(total.maximum_tiles_per_frame),
-        static_cast<unsigned long>(total.maximum_visits_per_frame),
+        "TINYDRAW_REPLAY_FAIL reason=unbounded_work max_tiles=%lu max_visits=%lu "
+        "finish_tiles=%lu finish_visits=%lu bytes=%lu pixels=%lu\n",
+        static_cast<unsigned long>(total.maximum_tiles_per_update),
+        static_cast<unsigned long>(total.maximum_visits_per_update),
+        static_cast<unsigned long>(total.finish_tiles),
+        static_cast<unsigned long>(total.finish_visits),
         static_cast<unsigned long>(total.display_bytes),
         static_cast<unsigned long>(total.pixels_composited));
     return;
@@ -229,23 +239,27 @@ extern "C" void app_main() {
   if (framebuffer[background_corner] != kBackground || framebuffer[stroke_center] != kInk ||
       framebuffer[color_center] != tinydraw::rgb565(toolbar.color) ||
       qemu_display.refresh_count() != kFixture.size() ||
-      qemu_display.push_count() != total.tiles_updated) {
+      qemu_display.push_count() != kFixture.size()) {
     std::printf("TINYDRAW_REPLAY_FAIL reason=qemu_ui\n");
     return;
   }
-  std::printf("TINYDRAW_UI_OK canvas=1 controls=6\n");
+  std::printf("TINYDRAW_UI_OK canvas=1 controls=6 pushes=%lu\n",
+              static_cast<unsigned long>(qemu_display.push_count()));
 #endif
   std::printf(
       "TINYDRAW_REPLAY_OK accepted=%u primitives=%u tiles=%u "
       "bounds=%.2f,%.2f,%.2f,%.2f checksum=%08lx frames=%u dirty=%u max_tiles=%u visits=%u "
-      "display=%u psram_read=%u psram_write=%u max_psram_read=%u max_psram_write=%u\n",
+      "max_visits=%u finish_tiles=%u finish_visits=%u display=%u psram_read=%u "
+      "psram_write=%u max_psram_read=%u max_psram_write=%u\n",
       static_cast<unsigned>(kFixture.size()), static_cast<unsigned>(total.primitives),
       static_cast<unsigned>(final_tiles), static_cast<double>(total.bounds.minimum_x),
       static_cast<double>(total.bounds.minimum_y), static_cast<double>(total.bounds.maximum_x),
       static_cast<double>(total.bounds.maximum_y), static_cast<unsigned long>(checksum),
       static_cast<unsigned>(kFixture.size()), static_cast<unsigned>(total.tiles_updated),
-      static_cast<unsigned>(total.maximum_tiles_per_frame),
+      static_cast<unsigned>(total.maximum_tiles_per_update),
       static_cast<unsigned>(total.primitive_tile_visits),
+      static_cast<unsigned>(total.maximum_visits_per_update),
+      static_cast<unsigned>(total.finish_tiles), static_cast<unsigned>(total.finish_visits),
       static_cast<unsigned>(total.display_bytes), static_cast<unsigned>(total.psram_bytes_read),
       static_cast<unsigned>(total.psram_bytes_written),
       static_cast<unsigned>(total.maximum_psram_read_per_frame),
