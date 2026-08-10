@@ -135,12 +135,11 @@ StrokePoint stroke_point(const tinydraw::InkPoint& point) {
   return {.x = point.position.x, .y = point.position.y, .radius = point.radius};
 }
 
-StrokePoint live_join(StrokePoint first, StrokePoint second) {
-  constexpr float amount = 0.9F;
+StrokePoint midpoint(StrokePoint first, StrokePoint second) {
   return {
-      .x = first.x + (second.x - first.x) * amount,
-      .y = first.y + (second.y - first.y) * amount,
-      .radius = first.radius + (second.radius - first.radius) * amount,
+      .x = (first.x + second.x) * 0.5F,
+      .y = (first.y + second.y) * 0.5F,
+      .radius = (first.radius + second.radius) * 0.5F,
   };
 }
 
@@ -636,11 +635,11 @@ int main() {
       stroke_samples = 1;
     } else if (stroke_samples == 1) {
       previous.radius = current.radius;
-      curve_start = live_join(previous, current);
+      curve_start = midpoint(previous, current);
       submitted_pixels = draw_segment(previous, curve_start);
       stroke_samples = 2;
     } else {
-      const StrokePoint curve_end = live_join(previous, current);
+      const StrokePoint curve_end = midpoint(previous, current);
       submitted_pixels = draw_curve(curve_start, previous, curve_end);
       curve_start = curve_end;
       ++stroke_samples;
