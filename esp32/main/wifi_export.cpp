@@ -21,6 +21,7 @@ namespace {
 
 constexpr char kSsid[] = "TinyDraw";
 constexpr std::size_t kPixelCount = static_cast<std::size_t>(kCanvasWidth * kCanvasHeight);
+constexpr std::size_t kPngCapacity = 512U * 1024U;
 
 std::span<const std::uint16_t> export_canvas;
 std::array<png_byte, static_cast<std::size_t>(kCanvasWidth * 3)> png_row;
@@ -38,17 +39,18 @@ p{line-height:1.4}
 <a href="/drawing.png" download="tinydraw.png">Open image</a><button onclick="drawing.src='/drawing.png?t='+Date.now()">Refresh</button></main>)HTML";
 
 struct PngWriteContext {
-  httpd_req_t* request = nullptr;
-  bool failed = false;
+  png_bytep output = nullptr;
+  std::size_t size = 0;
+  std::size_t capacity = 0;
 };
 
 void png_write(png_structp png, png_bytep data, png_size_t length) {
   auto& context = *static_cast<PngWriteContext*>(png_get_io_ptr(png));
-  if (httpd_resp_send_chunk(context.request, reinterpret_cast<const char*>(data), length) !=
-      ESP_OK) {
-    context.failed = true;
-    png_error(png, "HTTP write failed");
+  if (length > context.capacity - context.size) {
+    png_error(png, "PNG output buffer full");
   }
+  std::memcpy(context.output + context.size, data, length);
+  context.size += length;
 }
 
 void png_flush(png_structp) {}
@@ -72,24 +74,27 @@ esp_err_t drawing_handler(httpd_req_t* request) {
     return httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Drawing unavailable");
   }
 
-  httpd_resp_set_type(request, "image/png");
-  httpd_resp_set_hdr(request, "Content-Disposition", "inline; filename=\"tinydraw.png\"");
-  httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+  auto* output =
+      static_cast<png_bytep>(heap_caps_malloc(kPngCapacity, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (output == nullptr) {
+    return httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR,
+                               "Drawing export unavailable");
+  }
 
   png_structp png = png_create_write_struct_2(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr,
                                               nullptr, png_allocate, png_release);
   png_infop info = png == nullptr ? nullptr : png_create_info_struct(png);
   if (png == nullptr || info == nullptr) {
     png_destroy_write_struct(&png, &info);
+    heap_caps_free(output);
     return ESP_FAIL;
   }
 
-  PngWriteContext context{.request = request};
+  PngWriteContext context{.output = output, .capacity = kPngCapacity};
   if (setjmp(png_jmpbuf(png)) != 0) {
     png_destroy_write_struct(&png, &info);
-    return context.failed ? ESP_FAIL
-                          : httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR,
-                                                "PNG encoding failed");
+    heap_caps_free(output);
+    return httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "PNG encoding failed");
   }
 
   png_set_write_fn(png, &context, png_write, png_flush);
@@ -114,7 +119,14 @@ esp_err_t drawing_handler(httpd_req_t* request) {
   }
   png_write_end(png, info);
   png_destroy_write_struct(&png, &info);
-  return httpd_resp_send_chunk(request, nullptr, 0);
+
+  httpd_resp_set_type(request, "image/png");
+  httpd_resp_set_hdr(request, "Content-Disposition", "inline; filename=\"tinydraw.png\"");
+  httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+  const esp_err_t result =
+      httpd_resp_send(request, reinterpret_cast<const char*>(output), context.size);
+  heap_caps_free(output);
+  return result;
 }
 
 bool initialize_networking() {
