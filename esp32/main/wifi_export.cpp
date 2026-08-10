@@ -27,7 +27,8 @@ constexpr int kExportHeight = WorldCanvas::kHeight;
 constexpr std::size_t kPixelCount = WorldCanvas::kRequiredPixels;
 constexpr std::size_t kPngCapacity = 512U * 1024U;
 
-std::span<const std::uint16_t> export_canvas;
+const WorldCanvas* export_world = nullptr;
+std::span<const std::uint16_t> export_viewport;
 std::array<png_byte, static_cast<std::size_t>(kExportWidth * 3)> png_row;
 
 constexpr char kPage[] = R"HTML(<!doctype html>
@@ -74,10 +75,13 @@ esp_err_t send_page(httpd_req_t* request) {
 esp_err_t root_handler(httpd_req_t* request) { return send_page(request); }
 
 esp_err_t drawing_handler(httpd_req_t* request) {
-  if (export_canvas.size() < kPixelCount) {
+  if (export_world == nullptr || export_world->pixels().size() < kPixelCount ||
+      export_viewport.size() < WorldCanvas::kViewportPixels) {
     return httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Drawing unavailable");
   }
 
+  const ViewOrigin origin = export_world->origin();
+  const auto world_pixels = export_world->pixels();
   const std::int64_t started_at = esp_timer_get_time();
   auto* output =
       static_cast<png_bytep>(heap_caps_malloc(kPngCapacity, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
@@ -111,7 +115,12 @@ esp_err_t drawing_handler(httpd_req_t* request) {
 
   for (int y = 0; y < kExportHeight; ++y) {
     for (int x = 0; x < kExportWidth; ++x) {
-      const std::uint16_t pixel = export_canvas[static_cast<std::size_t>(y * kExportWidth + x)];
+      const bool in_viewport = x >= origin.x && x < origin.x + kCanvasWidth && y >= origin.y &&
+                               y < origin.y + kCanvasHeight;
+      const std::size_t index =
+          in_viewport ? static_cast<std::size_t>((y - origin.y) * kCanvasWidth + x - origin.x)
+                      : static_cast<std::size_t>(y * kExportWidth + x);
+      const std::uint16_t pixel = in_viewport ? export_viewport[index] : world_pixels[index];
       const std::uint8_t red = static_cast<std::uint8_t>((pixel >> 11U) & 0x1FU);
       const std::uint8_t green = static_cast<std::uint8_t>((pixel >> 5U) & 0x3FU);
       const std::uint8_t blue = static_cast<std::uint8_t>(pixel & 0x1FU);
@@ -166,12 +175,13 @@ bool initialize_networking() {
 
 }  // namespace
 
-bool start_wifi_export(std::span<const std::uint16_t> canvas) {
-  if (canvas.size() < kPixelCount || !initialize_networking() ||
-      esp_netif_create_default_wifi_ap() == nullptr) {
+bool start_wifi_export(const WorldCanvas& world, std::span<const std::uint16_t> viewport) {
+  if (world.pixels().size() < kPixelCount || viewport.size() < WorldCanvas::kViewportPixels ||
+      !initialize_networking() || esp_netif_create_default_wifi_ap() == nullptr) {
     return false;
   }
-  export_canvas = canvas.first(kPixelCount);
+  export_world = &world;
+  export_viewport = viewport.first(WorldCanvas::kViewportPixels);
 
   wifi_init_config_t initialization = WIFI_INIT_CONFIG_DEFAULT();
   if (esp_wifi_init(&initialization) != ESP_OK) {

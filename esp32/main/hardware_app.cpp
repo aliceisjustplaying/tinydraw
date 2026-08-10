@@ -491,7 +491,7 @@ void run_hardware_app() {
   tinydraw::ToolbarState toolbar;
   display.set_toolbar(toolbar);
   display.push_canvas(canvas.committed());
-  if (!tinydraw::esp32::start_wifi_export(canvas.world().pixels())) {
+  if (!tinydraw::esp32::start_wifi_export(canvas.world(), canvas.committed())) {
     std::printf("TINYDRAW_EXPORT_FAIL\n");
   }
 
