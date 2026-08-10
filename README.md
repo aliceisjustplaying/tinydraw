@@ -1,5 +1,11 @@
 # TinyDraw
 
+<p align="center">
+  <a href="assets/readme/tinydraw-drawing.jpg"><img src="assets/readme/tinydraw-drawing.jpg" alt="TinyDraw running on the AMOLED board" width="32%"></a>
+  <a href="assets/readme/tinydraw-colors.jpg"><img src="assets/readme/tinydraw-colors.jpg" alt="TinyDraw color palette" width="32%"></a>
+  <a href="assets/readme/tinydraw-sizes.jpg"><img src="assets/readme/tinydraw-sizes.jpg" alt="TinyDraw brush sizes" width="32%"></a>
+</p>
+
 TinyDraw is a small finger-drawing app for the 368×448 Waveshare ESP32-S3 Touch
 AMOLED 1.8-inch V2 board. It runs on the CO5300 display with CST820 touch. A
 macOS app and ESP-IDF/QEMU targets exercise the same C++20 drawing core.
