@@ -88,6 +88,10 @@ void blend_pixel(int x, int y, std::uint16_t color, int coverage) {
     return;
   }
   const auto index = static_cast<std::size_t>(y * kWidth + x);
+  if (coverage >= 255) {
+    framebuffer[index] = panel_pixel(color);
+    return;
+  }
   const std::uint16_t background = panel_pixel(framebuffer[index]);
   const auto blend = [coverage](int foreground, int behind) {
     return (foreground * coverage + behind * (255 - coverage) + 127) / 255;
@@ -111,11 +115,24 @@ void stamp_dot(StrokePoint point) {
   const int center_y = static_cast<int>(std::lround(point.y));
   for (int row = -extent; row <= extent; ++row) {
     for (int column = -extent; column <= extent; ++column) {
+      const int center_dx = (center_x + column) * 8 - point_x8;
+      const int center_dy = (center_y + row) * 8 - point_y8;
+      const int far_x = std::abs(center_dx) + 3;
+      const int far_y = std::abs(center_dy) + 3;
+      if (far_x * far_x + far_y * far_y <= radius_squared) {
+        blend_pixel(center_x + column, center_y + row, color, 255);
+        continue;
+      }
+      const int near_x = std::max(0, std::abs(center_dx) - 3);
+      const int near_y = std::max(0, std::abs(center_dy) - 3);
+      if (near_x * near_x + near_y * near_y > radius_squared) {
+        continue;
+      }
       int covered = 0;
       for (const int sample_y : sample_offsets) {
         for (const int sample_x : sample_offsets) {
-          const int dx = (center_x + column) * 8 - point_x8 + sample_x;
-          const int dy = (center_y + row) * 8 - point_y8 + sample_y;
+          const int dx = center_dx + sample_x;
+          const int dy = center_dy + sample_y;
           covered += dx * dx + dy * dy <= radius_squared ? 1 : 0;
         }
       }
