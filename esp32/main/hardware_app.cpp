@@ -18,6 +18,7 @@
 #include "esp_timer.h"
 #include "firmware_canvas.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "tinydraw/ink/ink_stream.h"
@@ -298,6 +299,56 @@ class PhysicalTouch {
 
 std::uint32_t timestamp_us() { return static_cast<std::uint32_t>(esp_timer_get_time()); }
 
+struct TouchEvent {
+  tinydraw::Point point;
+  std::uint32_t timestamp_us = 0;
+  bool touching = false;
+};
+
+struct TouchTaskContext {
+  PhysicalTouch* touch = nullptr;
+  QueueHandle_t queue = nullptr;
+};
+
+void enqueue_latest(QueueHandle_t queue, const TouchEvent& event) {
+  if (xQueueSend(queue, &event, 0) == pdTRUE) {
+    return;
+  }
+  TouchEvent discarded;
+  static_cast<void>(xQueueReceive(queue, &discarded, 0));
+  static_cast<void>(xQueueSend(queue, &event, 0));
+}
+
+void touch_task(void* argument) {
+  auto& context = *static_cast<TouchTaskContext*>(argument);
+  tinydraw::Point last_point{};
+  bool touching = false;
+  std::uint32_t no_touch_started_us = 0;
+  while (true) {
+    tinydraw::Point point{};
+    const TouchRead read = context.touch->read(point);
+    const std::uint32_t now = timestamp_us();
+    if (read == TouchRead::kPoint) {
+      no_touch_started_us = 0;
+      if (!touching || point.x != last_point.x || point.y != last_point.y) {
+        enqueue_latest(context.queue, {.point = point, .timestamp_us = now, .touching = true});
+        last_point = point;
+      }
+      touching = true;
+    } else if (read == TouchRead::kNoTouch && touching) {
+      if (no_touch_started_us == 0U) {
+        no_touch_started_us = now;
+      } else if (now - no_touch_started_us >= 20'000U) {
+        enqueue_latest(context.queue,
+                       {.point = last_point, .timestamp_us = now, .touching = false});
+        touching = false;
+        no_touch_started_us = 0;
+      }
+    }
+    vTaskDelay(pdMS_TO_TICKS(1));
+  }
+}
+
 }  // namespace
 
 void run_hardware_app() {
@@ -326,9 +377,7 @@ void run_hardware_app() {
   tinydraw::Point last_touch{};
   std::uint16_t stroke_color = tinydraw::rgb565(toolbar.color);
   bool pressed = false;
-  std::uint32_t loop_count = 0;
   std::uint32_t stroke_samples = 0;
-  std::uint32_t no_touch_started_us = 0;
   std::int64_t stroke_render_us = 0;
   std::int64_t maximum_render_us = 0;
 
@@ -436,20 +485,22 @@ void run_hardware_app() {
     update_toolbar();
   };
 
+  QueueHandle_t touch_queue = xQueueCreate(32U, sizeof(TouchEvent));
+  TouchTaskContext touch_context{.touch = &touch, .queue = touch_queue};
+  if (touch_queue == nullptr || xTaskCreatePinnedToCore(touch_task, "tinydraw_touch", 4096U,
+                                                        &touch_context, 5U, nullptr, 1) != pdPASS) {
+    std::printf("TINYDRAW_HARDWARE_FAIL touch_task=0\n");
+    return;
+  }
+
   std::printf("TINYDRAW_HARDWARE_OK display=CO5300 touch=CST820\n");
   while (true) {
-    tinydraw::Point point{};
-    const TouchRead touch_read = touch.read(point);
-    if (touch_read == TouchRead::kError) {
-      vTaskDelay(pdMS_TO_TICKS(1));
+    TouchEvent event;
+    if (xQueueReceive(touch_queue, &event, portMAX_DELAY) != pdTRUE) {
       continue;
     }
-    const bool touching = touch_read == TouchRead::kPoint;
-    if (touching) {
-      no_touch_started_us = 0;
-    } else if (pressed && no_touch_started_us == 0U) {
-      no_touch_started_us = timestamp_us();
-    }
+    const tinydraw::Point point = event.point;
+    const bool touching = event.touching;
     if (touching && !pressed) {
       std::printf("[DEBUG-hw1] down x=%.0f y=%.0f\n", static_cast<double>(point.x),
                   static_cast<double>(point.y));
@@ -462,7 +513,7 @@ void run_hardware_app() {
         stroke_color = toolbar.tool == tinydraw::DrawingTool::kEraser
                            ? kBackground
                            : tinydraw::rgb565(toolbar.color);
-        last_ink = ink.begin({.x = point.x, .y = point.y, .timestamp_us = timestamp_us()});
+        last_ink = ink.begin({.x = point.x, .y = point.y, .timestamp_us = event.timestamp_us});
         stroke_samples = 1;
         stroke_render_us = 0;
         maximum_render_us = 0;
@@ -476,20 +527,20 @@ void run_hardware_app() {
     } else if (touching && pressed && ink.active() &&
                (point.x != last_touch.x || point.y != last_touch.y)) {
       last_touch = point;
-      last_ink = ink.update({.x = point.x, .y = point.y, .timestamp_us = timestamp_us()});
+      last_ink = ink.update({.x = point.x, .y = point.y, .timestamp_us = event.timestamp_us});
       ++stroke_samples;
       const auto started = esp_timer_get_time();
       static_cast<void>(canvas.raster().update(ribbon.append(last_ink), stroke_color));
       const auto elapsed = esp_timer_get_time() - started;
       stroke_render_us += elapsed;
       maximum_render_us = std::max(maximum_render_us, elapsed);
-    } else if (!touching && pressed && timestamp_us() - no_touch_started_us >= 20'000U) {
+    } else if (!touching && pressed) {
       std::printf("[DEBUG-hw1] up x=%.0f y=%.0f active=%u\n", static_cast<double>(last_touch.x),
                   static_cast<double>(last_touch.y), ink.active());
       pressed = false;
       if (ink.active()) {
         last_ink =
-            ink.finish({.x = last_touch.x, .y = last_touch.y, .timestamp_us = timestamp_us()});
+            ink.finish({.x = last_touch.x, .y = last_touch.y, .timestamp_us = event.timestamp_us});
         const auto started = esp_timer_get_time();
         static_cast<void>(
             canvas.raster().finish(ribbon.finish(last_ink), stroke_color, &canvas.undo_history()));
@@ -506,10 +557,5 @@ void run_hardware_app() {
         update_toolbar();
       }
     }
-    ++loop_count;
-    if (loop_count % 1000U == 0U) {
-      std::printf("[DEBUG-hw1] alive pressed=%u active=%u\n", pressed, ink.active());
-    }
-    vTaskDelay(pdMS_TO_TICKS(1));
   }
 }
