@@ -11,6 +11,7 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "nvs_flash.h"
 #include "png.h"
@@ -74,6 +75,7 @@ esp_err_t drawing_handler(httpd_req_t* request) {
     return httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Drawing unavailable");
   }
 
+  const std::int64_t started_at = esp_timer_get_time();
   auto* output =
       static_cast<png_bytep>(heap_caps_malloc(kPngCapacity, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   if (output == nullptr) {
@@ -101,7 +103,7 @@ esp_err_t drawing_handler(httpd_req_t* request) {
   png_set_IHDR(png, info, kCanvasWidth, kCanvasHeight, 8, PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
                PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
   png_set_filter(png, PNG_FILTER_TYPE_BASE, PNG_FILTER_NONE);
-  png_set_compression_level(png, 0);
+  png_set_compression_level(png, 1);
   png_write_info(png, info);
 
   for (int y = 0; y < kCanvasHeight; ++y) {
@@ -119,12 +121,17 @@ esp_err_t drawing_handler(httpd_req_t* request) {
   }
   png_write_end(png, info);
   png_destroy_write_struct(&png, &info);
+  const std::int64_t encoded_at = esp_timer_get_time();
 
   httpd_resp_set_type(request, "image/png");
   httpd_resp_set_hdr(request, "Content-Disposition", "inline; filename=\"tinydraw.png\"");
   httpd_resp_set_hdr(request, "Cache-Control", "no-store");
   const esp_err_t result =
       httpd_resp_send(request, reinterpret_cast<const char*>(output), context.size);
+  std::printf("TINYDRAW_EXPORT_IMAGE bytes=%lu encode_us=%lld send_us=%lld result=%ld\n",
+              static_cast<unsigned long>(context.size),
+              static_cast<long long>(encoded_at - started_at),
+              static_cast<long long>(esp_timer_get_time() - encoded_at), static_cast<long>(result));
   heap_caps_free(output);
   return result;
 }
