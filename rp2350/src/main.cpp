@@ -167,7 +167,7 @@ void handle_toolbar(int x) {
     fill_rect(0, 0, kWidth, kToolbarTop, kWhite);
   }
   draw_toolbar();
-  AMOLED_1IN8_DisplayWindows(0, cell == 4 ? 0 : kToolbarTop, kWidth, kHeight, framebuffer.data());
+  AMOLED_1IN8_Display(framebuffer.data());
 }
 
 void send_framebuffer() {
@@ -207,10 +207,8 @@ std::uint32_t flush_ink_bounds(int minimum_x, int minimum_y, int maximum_x, int 
   if (right <= left || bottom <= top) {
     return 0;
   }
-  AMOLED_1IN8_DisplayWindows(static_cast<std::uint32_t>(left), static_cast<std::uint32_t>(top),
-                             static_cast<std::uint32_t>(right), static_cast<std::uint32_t>(bottom),
-                             framebuffer.data());
-  return static_cast<std::uint32_t>((right - left) * (bottom - top));
+  AMOLED_1IN8_Display(framebuffer.data());
+  return static_cast<std::uint32_t>(kWidth * kHeight);
 }
 
 std::uint32_t draw_segment(int start_x, int start_y, int end_x, int end_y) {
