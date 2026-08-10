@@ -72,10 +72,10 @@ board. See [`DEVELOPING.md`](DEVELOPING.md) for the development loop.
 ./scripts/rp2350 bootstrap
 ./scripts/rp2350 build
 ./scripts/rp2350 capture PORT /tmp/tinydraw-rp2350.png
+./scripts/rp2350 metrics PORT
 ```
 
-This early target validates the SH8601 display, FT3168 touch, continuous strokes, and USB
-framebuffer capture with a screen-sized drawing buffer.
+This early target validates the SH8601 display, FT3168 touch, continuous strokes, USB framebuffer capture, and physical timing with a screen-sized drawing buffer.
 
 ## License
 MIT

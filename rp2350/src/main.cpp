@@ -27,6 +27,19 @@ constexpr std::uint16_t kGrey = 0x9D56;
 
 std::array<std::uint16_t, static_cast<std::size_t>(kWidth* kHeight)> framebuffer;
 
+struct PerformanceStats {
+  std::uint32_t updates = 0;
+  std::uint32_t strokes = 0;
+  std::uint64_t update_us = 0;
+  std::uint64_t maximum_update_us = 0;
+  std::uint64_t submitted_pixels = 0;
+  std::uint64_t touch_interval_us = 0;
+  std::uint64_t maximum_touch_interval_us = 0;
+  std::uint32_t touch_intervals = 0;
+};
+
+PerformanceStats performance;
+
 constexpr std::uint16_t panel_pixel(std::uint16_t color) {
   return static_cast<std::uint16_t>((color << 8U) | (color >> 8U));
 }
@@ -114,7 +127,27 @@ void send_framebuffer() {
   std::fflush(stdout);
 }
 
-void draw_segment(int start_x, int start_y, int end_x, int end_y) {
+void send_performance() {
+  const auto average_update_us =
+      performance.updates == 0 ? 0 : performance.update_us / performance.updates;
+  const auto average_touch_interval_us =
+      performance.touch_intervals == 0
+          ? 0
+          : performance.touch_interval_us / performance.touch_intervals;
+  std::printf(
+      "TINYDRAW_PERF updates=%lu strokes=%lu average_us=%llu max_us=%llu pixels=%llu "
+      "touch_average_us=%llu touch_max_us=%llu\n",
+      static_cast<unsigned long>(performance.updates),
+      static_cast<unsigned long>(performance.strokes),
+      static_cast<unsigned long long>(average_update_us),
+      static_cast<unsigned long long>(performance.maximum_update_us),
+      static_cast<unsigned long long>(performance.submitted_pixels),
+      static_cast<unsigned long long>(average_touch_interval_us),
+      static_cast<unsigned long long>(performance.maximum_touch_interval_us));
+  std::fflush(stdout);
+}
+
+std::uint32_t draw_segment(int start_x, int start_y, int end_x, int end_y) {
   int x = start_x;
   int y = start_y;
   const int step_x = start_x < end_x ? 1 : -1;
@@ -143,11 +176,13 @@ void draw_segment(int start_x, int start_y, int end_x, int end_y) {
   const int top = std::max(0, std::min(start_y, end_y) - kInkRadius) & ~1;
   const int right = std::min(kWidth, (std::max(start_x, end_x) + kInkRadius + 2) & ~1);
   const int bottom = std::min(kHeight, (std::max(start_y, end_y) + kInkRadius + 2) & ~1);
-  if (right > left && bottom > top) {
-    AMOLED_1IN8_DisplayWindows(static_cast<std::uint32_t>(left), static_cast<std::uint32_t>(top),
-                               static_cast<std::uint32_t>(right),
-                               static_cast<std::uint32_t>(bottom), framebuffer.data());
+  if (right <= left || bottom <= top) {
+    return 0;
   }
+  AMOLED_1IN8_DisplayWindows(static_cast<std::uint32_t>(left), static_cast<std::uint32_t>(top),
+                             static_cast<std::uint32_t>(right), static_cast<std::uint32_t>(bottom),
+                             framebuffer.data());
+  return static_cast<std::uint32_t>((right - left) * (bottom - top));
 }
 
 }  // namespace
@@ -181,19 +216,39 @@ int main() {
   bool drawing = false;
   int previous_x = 0;
   int previous_y = 0;
+  std::uint64_t previous_touch_us = 0;
   while (true) {
-    if (getchar_timeout_us(0) == 'S') {
+    const int command = getchar_timeout_us(0);
+    if (command == 'S') {
       send_framebuffer();
+    } else if (command == 'P') {
+      send_performance();
     }
     if (FT3168_ReadState(FT3168_FINGER_NUMBER) != 0) {
       FT3168_Get_Point();
+      const auto update_started = time_us_64();
       const int x = static_cast<int>(FT3168.x_point);
       const int y = static_cast<int>(FT3168.y_point);
-      draw_segment(drawing ? previous_x : x, drawing ? previous_y : y, x, y);
+      const auto submitted_pixels =
+          draw_segment(drawing ? previous_x : x, drawing ? previous_y : y, x, y);
+      const auto update_us = time_us_64() - update_started;
+      ++performance.updates;
+      performance.update_us += update_us;
+      performance.maximum_update_us = std::max(performance.maximum_update_us, update_us);
+      performance.submitted_pixels += submitted_pixels;
+      if (drawing) {
+        const auto touch_interval_us = update_started - previous_touch_us;
+        performance.touch_interval_us += touch_interval_us;
+        performance.maximum_touch_interval_us =
+            std::max(performance.maximum_touch_interval_us, touch_interval_us);
+        ++performance.touch_intervals;
+      }
       previous_x = x;
       previous_y = y;
+      previous_touch_us = update_started;
       drawing = true;
-    } else {
+    } else if (drawing) {
+      ++performance.strokes;
       drawing = false;
     }
     sleep_ms(5);

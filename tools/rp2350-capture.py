@@ -15,6 +15,7 @@ import time
 import zlib
 
 HEADER = re.compile(rb"TINYDRAW_FRAME (\d+) (\d+) RGB565BE (\d+)\r?\n")
+METRICS = re.compile(rb"TINYDRAW_PERF [^\r\n]+\r?\n")
 
 
 def read_until(fd: int, pattern: re.Pattern[bytes], timeout: float) -> re.Match[bytes]:
@@ -100,15 +101,24 @@ def configure_serial(fd: int) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--metrics", action="store_true", help="request timing metrics")
     parser.add_argument("port", help="RP2350 serial port, e.g. /dev/cu.usbmodem1101")
-    parser.add_argument("output", type=Path, help="output PNG path")
+    parser.add_argument("output", nargs="?", type=Path, help="output PNG path")
     args = parser.parse_args()
+    if not args.metrics and args.output is None:
+        parser.error("output is required unless --metrics is used")
 
     fd = os.open(args.port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
     try:
         configure_serial(fd)
         time.sleep(0.5)
         termios.tcflush(fd, termios.TCIFLUSH)
+        if args.metrics:
+            os.write(fd, b"P\n")
+            match = read_until(fd, METRICS, timeout=5.0)
+            print(match.group().decode("ascii").strip())
+            return
+
         os.write(fd, b"S\n")
         match = read_until(fd, HEADER, timeout=5.0)
         width, height, byte_count = (int(value) for value in match.groups())
