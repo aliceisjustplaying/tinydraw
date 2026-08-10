@@ -1,10 +1,17 @@
 set(TINYDRAW_CORE "${CMAKE_CURRENT_LIST_DIR}/../../core")
 
+set(TINYDRAW_PLATFORM_SRCS "qemu_display.cpp")
+set(TINYDRAW_PLATFORM_REQUIRES esp_lcd_qemu_rgb)
+if(NOT TINYDRAW_QEMU)
+  list(APPEND TINYDRAW_PLATFORM_SRCS "hardware_app.cpp")
+  list(APPEND TINYDRAW_PLATFORM_REQUIRES esp_lcd_co5300 esp_lcd_touch_cst816s)
+endif()
+
 idf_component_register(
   SRCS
     "firmware_canvas.cpp"
     "main.cpp"
-    "qemu_display.cpp"
+    ${TINYDRAW_PLATFORM_SRCS}
     "${TINYDRAW_CORE}/src/coordinate_transform.cpp"
     "${TINYDRAW_CORE}/src/coverage_tile.cpp"
     "${TINYDRAW_CORE}/src/ink_stream.cpp"
@@ -15,10 +22,13 @@ idf_component_register(
     "${TINYDRAW_CORE}/src/tile_undo_history.cpp"
     "${TINYDRAW_CORE}/src/toolbar.cpp"
   INCLUDE_DIRS "${TINYDRAW_CORE}/include"
-  PRIV_REQUIRES esp_lcd_qemu_rgb esp_psram
+  PRIV_REQUIRES ${TINYDRAW_PLATFORM_REQUIRES} esp_psram esp_timer
 )
 
 target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_20)
+if(TINYDRAW_QEMU)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_QEMU=1)
+endif()
 if(TINYDRAW_QEMU_GRAPHICS)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_QEMU_GRAPHICS=1)
 endif()

@@ -138,7 +138,15 @@ void accumulate(ReplayStats& total, const tinydraw::RibbonUpdate& update,
 
 }  // namespace
 
+#ifndef TINYDRAW_QEMU
+void run_hardware_app();
+#endif
+
 extern "C" void app_main() {
+#ifndef TINYDRAW_QEMU
+  run_hardware_app();
+  return;
+#endif
   NullDisplay null_display;
   tinydraw::DisplayBackend* display = &null_display;
 #ifdef TINYDRAW_QEMU_GRAPHICS

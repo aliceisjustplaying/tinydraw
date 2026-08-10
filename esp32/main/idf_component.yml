@@ -1,2 +1,4 @@
 dependencies:
+  espressif/esp_lcd_co5300: "^2.1.0"
   espressif/esp_lcd_qemu_rgb: "^1.0.2"
+  espressif/esp_lcd_touch_cst816s: "^1.1.1~2"

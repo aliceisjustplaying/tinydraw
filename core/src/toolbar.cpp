@@ -149,45 +149,39 @@ int size_radius(PenSize size) {
 }  // namespace
 
 bool toolbar_contains(Point point, const ToolbarState& state) {
-  const bool main_row =
-      inside(point, 4.0F, static_cast<float>(kMainTop), 364.0F, static_cast<float>(kMainBottom));
+  const bool main_row = inside(point, 0.0F, static_cast<float>(kMainTop),
+                               static_cast<float>(kCanvasWidth), static_cast<float>(kCanvasHeight));
   return main_row || ((state.colors_open || state.sizes_open) &&
-                      inside(point, 4.0F, static_cast<float>(kPaletteTop), 364.0F,
-                             static_cast<float>(kPaletteBottom)));
+                      inside(point, 0.0F, static_cast<float>(kPaletteTop),
+                             static_cast<float>(kCanvasWidth), static_cast<float>(kMainTop)));
 }
 
 ToolbarAction toolbar_action_at(Point point, const ToolbarState& state) {
-  if (state.sizes_open && inside(point, 8.0F, 302.0F, 360.0F, 360.0F)) {
-    constexpr std::array actions{ToolbarAction::kSelectSmall, ToolbarAction::kSelectMedium,
-                                 ToolbarAction::kSelectLarge, ToolbarAction::kSelectExtraLarge};
-    const auto index = static_cast<std::size_t>((point.x - 8.0F) / 88.0F);
-    return actions[std::min(index, actions.size() - 1U)];
-  }
-  if (state.colors_open && inside(point, 8.0F, 302.0F, 360.0F, 360.0F)) {
+  if ((state.sizes_open || state.colors_open) &&
+      inside(point, 0.0F, static_cast<float>(kPaletteTop), static_cast<float>(kCanvasWidth),
+             static_cast<float>(kMainTop))) {
+    const auto index =
+        std::min(static_cast<std::size_t>(point.x * 4.0F / kCanvasWidth), std::size_t{3});
+    if (state.sizes_open) {
+      constexpr std::array actions{ToolbarAction::kSelectSmall, ToolbarAction::kSelectMedium,
+                                   ToolbarAction::kSelectLarge, ToolbarAction::kSelectExtraLarge};
+      return actions[index];
+    }
     constexpr std::array actions{ToolbarAction::kSelectBlack, ToolbarAction::kSelectBlue,
                                  ToolbarAction::kSelectRed, ToolbarAction::kSelectGreen};
-    const auto index = static_cast<std::size_t>((point.x - 8.0F) / 88.0F);
-    return actions[std::min(index, actions.size() - 1U)];
+    return actions[index];
   }
-  if (inside(point, 8.0F, 380.0F, 67.0F, 440.0F)) {
-    return ToolbarAction::kUndo;
+  if (!inside(point, 0.0F, static_cast<float>(kMainTop), static_cast<float>(kCanvasWidth),
+              static_cast<float>(kCanvasHeight))) {
+    return ToolbarAction::kNone;
   }
-  if (inside(point, 67.0F, 380.0F, 126.0F, 440.0F)) {
-    return ToolbarAction::kSelectPen;
-  }
-  if (inside(point, 126.0F, 380.0F, 184.0F, 440.0F)) {
-    return ToolbarAction::kSelectEraser;
-  }
-  if (inside(point, 184.0F, 380.0F, 243.0F, 440.0F)) {
-    return ToolbarAction::kToggleColors;
-  }
-  if (inside(point, 243.0F, 380.0F, 302.0F, 440.0F)) {
-    return ToolbarAction::kToggleSizes;
-  }
-  if (inside(point, 302.0F, 380.0F, 360.0F, 440.0F)) {
-    return ToolbarAction::kNewDrawing;
-  }
-  return ToolbarAction::kNone;
+  constexpr std::array actions{
+      ToolbarAction::kUndo,         ToolbarAction::kSelectPen,   ToolbarAction::kSelectEraser,
+      ToolbarAction::kToggleColors, ToolbarAction::kToggleSizes, ToolbarAction::kNewDrawing,
+  };
+  const auto index =
+      std::min(static_cast<std::size_t>(point.x * 6.0F / kCanvasWidth), std::size_t{5});
+  return actions[index];
 }
 
 std::uint16_t rgb565(InkColor color) {
