@@ -12,7 +12,7 @@ has variable-width ink, twelve colors, ten Undos, and a 736×896 canvas.
 - Recent long strokes average **2.5–3.4 ms per drawing update**.
 - Fast XL diagonals can peak at **16.1 ms**.
 - The CST820 reports a new position every **13–14 ms**, or **75–77 Hz**.
-- Panning fell from **71–74 ms to 9.8–10.1 ms per frame**, about **7× faster**.
+- At 80 MHz, panning fell from **71–74 ms to 9.8–10.1 ms per frame**, about **7× faster**.
 - An export experiment produced a **35,010-byte PNG** in **0.69 s** and sent it in **1.27 s**.
 - Removing that experiment cut the active firmware to **310,784 bytes**, with **70%** of its
   1 MiB app partition free.
@@ -82,7 +82,7 @@ microseconds of measured queue delay.
 | Part | Value |
 | --- | --- |
 | MCU | ESP32-S3 rev 0.2, two cores at 240 MHz |
-| Display | CO5300, 368×448 RGB565 AMOLED, 80 MHz QSPI |
+| Display | CO5300, 368×448 RGB565 AMOLED, 60 MHz QSPI |
 | Touch | CST820 `0xB7`, firmware `0x02`, 400 kHz I²C |
 | Memory | 8 MiB octal PSRAM at 80 MHz, 16 MiB flash |
 | 736×896 world | 1,318,912 bytes in PSRAM |
@@ -98,7 +98,8 @@ TinyDraw keeps two full canvases in PSRAM: committed ink and the current visible
 Three smaller internal-RAM buffers queue panel transfers. The CO5300 accepts pixel updates
 rather than a framebuffer swap, so a conventional full-screen flip would still send all
 329,728 bytes. At 80 MHz quad SPI, its raw transfer floor is about 8.2 ms before setup and
-copying. Dirty-region transfers keep the under-finger path shorter.
+copying. At the current 60 MHz setting, that floor is about 11.0 ms. Dirty-region
+transfers keep the under-finger path shorter.
 
 ## UI and Undo
 
@@ -115,8 +116,11 @@ full 168-tile canvas.
 
 The drawing world is 736×896, four times the display area. Early panning copied the whole
 viewport and took 71–74 ms per frame. Reading the world directly, swapping two pixels at a
-time, using 80 MHz QSPI, and enlarging DMA chunks brought it to 9.8–10.1 ms. Finger-up
-settling takes about 47–53 ms.
+time, using 80 MHz QSPI, and enlarging DMA chunks brought it to 9.8–10.1 ms. Random
+colored lines later appeared on the panel. With Wi-Fi removed, they still recurred at
+80 MHz. A 60 MHz build passed 30 seconds idle followed by drawing and fast panning without
+an artifact. This points to display-bus timing rather than Wi-Fi, though more device time is
+needed to call it conclusive. Current 60 MHz panning timing has not yet been recaptured.
 
 A short-lived Wi-Fi prototype served the full world as a PNG. Its state and 512 KiB output
 buffer lived in PSRAM. Light compression produced one 35,010-byte image; 4 KiB writes
@@ -147,4 +151,5 @@ work.
 2. Cross an XL stroke over itself, then make a sharp turn to show solid joins.
 3. Extend the stroke to show that old points no longer slow new input.
 4. Pan across the 2×2 world, then undo and demonstrate confirmed New.
-5. Close with **4,479 ms to 220 ms** for ink and **74 ms to 10 ms** for panning.
+5. Close with **4,479 ms to 220 ms** for ink and the measured **74 ms to 10 ms**
+   80 MHz panning result; the stability build now uses 60 MHz.

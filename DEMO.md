@@ -58,7 +58,10 @@ Key numbers:
 - Host 500-point stroke: **4,479 ms → 220 ms**
 - First physical update: **19.9 ms average, 72.9 ms worst**
 - Current long strokes: about **2.5–3.4 ms average**
-- Panning: **71–74 ms → about 10 ms per frame**
+- Panning at 80 MHz: **71–74 ms → about 10 ms per frame**
+
+The stability build uses a 60 MHz display clock after occasional stray lines at
+80 MHz. Its panning timing still needs a fresh capture.
 
 ## 3:40 — Why the result is trustworthy
 

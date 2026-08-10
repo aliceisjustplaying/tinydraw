@@ -13,9 +13,9 @@ macOS app and ESP-IDF/QEMU targets exercise the same C++20 drawing core.
 - Bounded 32×32 drawing updates and dirty-tile Undo in 8 MiB PSRAM
 - Native replays, exact snapshots, ASan/UBSan, QEMU, and device telemetry
 
-Recent long strokes average about 2.5–3.4 ms per update. Panning takes about
-9.8–10.1 ms per frame. The CST820 supplies positions at 75–77 Hz, so very fast
-XL diagonals can still show some drawing lag. Drawings are not yet persistent.
+Recent long strokes average about 2.5–3.4 ms per update. Panning stays near the
+75–77 Hz touch rate. The display now runs at a conservative 60 MHz after 80 MHz
+produced occasional stray lines. Drawings are not yet persistent.
 
 ## Run the macOS app
 
