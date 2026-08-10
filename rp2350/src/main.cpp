@@ -505,6 +505,10 @@ int main() {
       sleep_ms(5);
       continue;
     }
+    if (drawing && x == static_cast<int>(last_touch.x) && y == static_cast<int>(last_touch.y)) {
+      sleep_ms(1);
+      continue;
+    }
 
     const auto update_started = time_us_64();
     last_touch = {.x = static_cast<float>(x),
