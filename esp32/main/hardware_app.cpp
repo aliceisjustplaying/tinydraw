@@ -271,6 +271,20 @@ class PhysicalTouch {
     touch_config.levels.reset = 0;
     touch_config.levels.interrupt = 0;
     ready_ = esp_lcd_touch_new_i2c_cst816s(io_, &touch_config, &touch_) == ESP_OK;
+    if (ready_) {
+      std::uint8_t chip_id = 0;
+      std::uint8_t firmware = 0;
+      std::uint8_t scan_period = 0;
+      std::uint8_t interrupt_mode = 0;
+      const bool registers_read =
+          esp_lcd_panel_io_rx_param(io_, 0xA7, &chip_id, 1) == ESP_OK &&
+          esp_lcd_panel_io_rx_param(io_, 0xA9, &firmware, 1) == ESP_OK &&
+          esp_lcd_panel_io_rx_param(io_, 0xEE, &scan_period, 1) == ESP_OK &&
+          esp_lcd_panel_io_rx_param(io_, 0xFA, &interrupt_mode, 1) == ESP_OK;
+      std::printf("[DEBUG-touch-rate] registers=%u id=0x%02x firmware=0x%02x "
+                  "scan_period=0x%02x irq=0x%02x\n",
+                  registers_read, chip_id, firmware, scan_period, interrupt_mode);
+    }
   }
 
   [[nodiscard]] bool ready() const { return ready_; }
@@ -378,6 +392,10 @@ void run_hardware_app() {
   std::uint16_t stroke_color = tinydraw::rgb565(toolbar.color);
   bool pressed = false;
   std::uint32_t stroke_samples = 0;
+  std::uint32_t stroke_started_us = 0;
+  std::uint32_t previous_touch_us = 0;
+  std::uint64_t touch_intervals_us = 0;
+  std::uint32_t maximum_touch_interval_us = 0;
   std::uint32_t maximum_input_lag_us = 0;
   UBaseType_t maximum_queue_depth = 0;
   std::int64_t stroke_render_us = 0;
@@ -519,6 +537,10 @@ void run_hardware_app() {
                            : tinydraw::rgb565(toolbar.color);
         last_ink = ink.begin({.x = point.x, .y = point.y, .timestamp_us = event.timestamp_us});
         stroke_samples = 1;
+        stroke_started_us = event.timestamp_us;
+        previous_touch_us = event.timestamp_us;
+        touch_intervals_us = 0;
+        maximum_touch_interval_us = 0;
         maximum_input_lag_us = input_lag_us;
         maximum_queue_depth = queue_depth;
         stroke_render_us = 0;
@@ -534,6 +556,10 @@ void run_hardware_app() {
                (point.x != last_touch.x || point.y != last_touch.y)) {
       last_touch = point;
       last_ink = ink.update({.x = point.x, .y = point.y, .timestamp_us = event.timestamp_us});
+      const std::uint32_t touch_interval_us = event.timestamp_us - previous_touch_us;
+      previous_touch_us = event.timestamp_us;
+      touch_intervals_us += touch_interval_us;
+      maximum_touch_interval_us = std::max(maximum_touch_interval_us, touch_interval_us);
       ++stroke_samples;
       maximum_input_lag_us = std::max(maximum_input_lag_us, input_lag_us);
       maximum_queue_depth = std::max(maximum_queue_depth, queue_depth);
@@ -556,6 +582,7 @@ void run_hardware_app() {
         std::printf(
             "[DEBUG-perf1] samples=%lu updates_us=%lld average_us=%lld max_us=%lld "
             "finish_us=%lld display_prepare_us=%lld display_transfer_us=%lld pushes=%lu "
+            "stroke_us=%lu touch_average_us=%llu touch_max_us=%lu "
             "max_input_lag_us=%lu max_queue=%lu\n",
             static_cast<unsigned long>(stroke_samples), static_cast<long long>(stroke_render_us),
             static_cast<long long>(stroke_samples == 0 ? 0 : stroke_render_us / stroke_samples),
@@ -563,6 +590,11 @@ void run_hardware_app() {
             static_cast<long long>(display.prepare_us()),
             static_cast<long long>(display.transfer_us()),
             static_cast<unsigned long>(display.push_count()),
+            static_cast<unsigned long>(event.timestamp_us - stroke_started_us),
+            static_cast<unsigned long long>(stroke_samples <= 1
+                                                ? 0
+                                                : touch_intervals_us / (stroke_samples - 1U)),
+            static_cast<unsigned long>(maximum_touch_interval_us),
             static_cast<unsigned long>(maximum_input_lag_us),
             static_cast<unsigned long>(maximum_queue_depth));
         update_toolbar();
