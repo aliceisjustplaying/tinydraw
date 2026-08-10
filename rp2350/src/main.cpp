@@ -20,7 +20,7 @@ constexpr int kWidth = AMOLED_1IN8_WIDTH;
 constexpr int kHeight = AMOLED_1IN8_HEIGHT;
 constexpr std::uint16_t kWhite = 0xFFFF;
 constexpr std::uint16_t kBlack = 0x1D1D;
-constexpr std::uint16_t kBlue = 0x4469;
+constexpr std::uint16_t kBlue = 0x433D;
 constexpr std::uint16_t kLightBlue = 0x4D1E;
 constexpr std::uint16_t kGrey = 0x9D56;
 
