@@ -54,6 +54,12 @@ void png_write(png_structp png, png_bytep data, png_size_t length) {
 
 void png_flush(png_structp) {}
 
+png_voidp png_allocate(png_structp, png_alloc_size_t size) {
+  return heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+}
+
+void png_release(png_structp, png_voidp memory) { heap_caps_free(memory); }
+
 esp_err_t send_page(httpd_req_t* request) {
   httpd_resp_set_type(request, "text/html");
   httpd_resp_set_hdr(request, "Cache-Control", "no-store");
@@ -71,7 +77,8 @@ esp_err_t drawing_handler(httpd_req_t* request) {
   httpd_resp_set_hdr(request, "Content-Disposition", "inline; filename=\"tinydraw.png\"");
   httpd_resp_set_hdr(request, "Cache-Control", "no-store");
 
-  png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+  png_structp png = png_create_write_struct_2(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr,
+                                              nullptr, png_allocate, png_release);
   png_infop info = png == nullptr ? nullptr : png_create_info_struct(png);
   if (png == nullptr || info == nullptr) {
     png_destroy_write_struct(&png, &info);
