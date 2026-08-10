@@ -378,7 +378,7 @@ int main() {
 
   FT3168_Init(FT3168_Point_Mode);
   DEV_KEY_Config(Touch_INT_PIN);
-  std::printf("TINYDRAW_RP2350_SMOKE_OK display=SH8601 touch=FT3168\n");
+  std::printf("TINYDRAW_RP2350_OK display=SH8601 touch=FT3168\n");
 
   bool touch_down = false;
   bool toolbar_gesture = false;

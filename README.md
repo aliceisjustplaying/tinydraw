@@ -6,9 +6,9 @@
   <a href="assets/readme/tinydraw-sizes.jpg"><img src="assets/readme/tinydraw-sizes.jpg" alt="TinyDraw brush sizes" width="32%"></a>
 </p>
 
-TinyDraw is a small finger-drawing app for the 368×448 Waveshare ESP32-S3 Touch
-AMOLED 1.8-inch V2 board. It runs on the CO5300 display with CST820 touch. A
-macOS app and ESP-IDF/QEMU targets exercise the same C++20 drawing core.
+TinyDraw is a small finger-drawing app for Waveshare's 368×448 ESP32-S3 and
+RP2350 Touch AMOLED 1.8-inch boards. A macOS app and ESP-IDF/QEMU targets
+exercise the same C++20 drawing and UI core.
 
 ## Current state
 
@@ -18,6 +18,7 @@ macOS app and ESP-IDF/QEMU targets exercise the same C++20 drawing core.
 - A fixed 736×896 canvas, four times the screen area, with near-touch-rate panning
 - Bounded 32×32 drawing updates and dirty-tile Undo in 8 MiB PSRAM
 - Native replays, exact snapshots, ASan/UBSan, QEMU, and device telemetry
+- RP2350: shared UI, screen-sized ink, eraser, colors, sizes, and confirmed New
 
 Recent long strokes average about 2.5–3.4 ms per update. Panning stays near the
 75–77 Hz touch rate. The display now runs at a conservative 60 MHz after 80 MHz
@@ -67,7 +68,7 @@ QEMU verifies firmware integration and the 8 MiB memory model. Performance
 measurements in [`FINDINGS.md`](FINDINGS.md) come from the host and physical
 board. See [`DEVELOPING.md`](DEVELOPING.md) for the development loop.
 
-## Build the RP2350 smoke target
+## Build the RP2350 app
 ```sh
 ./scripts/rp2350 bootstrap
 ./scripts/rp2350 build
@@ -75,7 +76,6 @@ board. See [`DEVELOPING.md`](DEVELOPING.md) for the development loop.
 ./scripts/rp2350 metrics PORT
 ```
 
-This early target validates the SH8601 display, FT3168 touch, continuous strokes, USB framebuffer capture, and physical timing with a screen-sized drawing buffer.
-
+The RP2350 uses one SRAM framebuffer and reliable full-frame SH8601 updates; its smaller memory budget currently excludes the ESP32's pan and Undo features.
 ## License
 MIT
