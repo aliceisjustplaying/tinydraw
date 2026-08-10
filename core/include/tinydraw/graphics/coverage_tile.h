@@ -9,6 +9,7 @@
 namespace tinydraw {
 
 inline constexpr int kTileSize = 64;
+inline constexpr int kStrokeTileSize = 32;
 
 class CoverageTile {
  public:

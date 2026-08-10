@@ -18,12 +18,13 @@ struct TileUndoStats {
   std::uint32_t display_bytes = 0;
 };
 
-// Ten deterministic undo slots. Each slot has room for every 64x64 tile, but
+// Ten deterministic undo slots. Each slot has room for every raster tile, but
 // only tiles changed by an operation are copied. This keeps capture and restore
 // traffic proportional to dirty area without a variable-size arena.
 class TileUndoHistory {
  public:
   static constexpr std::size_t kMaxEntries = 10U;
+  static constexpr int kTileSize = kStrokeTileSize;
   static constexpr int kTilesAcross = (kCanvasWidth + kTileSize - 1) / kTileSize;
   static constexpr int kTilesDown = (kCanvasHeight + kTileSize - 1) / kTileSize;
   static constexpr int kTileCount = kTilesAcross * kTilesDown;

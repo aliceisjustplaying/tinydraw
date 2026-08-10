@@ -40,6 +40,7 @@ class StrokeRaster {
   void cancel();
 
  private:
+  static constexpr int kTileSize = kStrokeTileSize;
   static constexpr int kTilesAcross = (kCanvasWidth + kTileSize - 1) / kTileSize;
   static constexpr int kTilesDown = (kCanvasHeight + kTileSize - 1) / kTileSize;
   static constexpr int kTileCount = kTilesAcross * kTilesDown;
