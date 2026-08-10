@@ -85,7 +85,7 @@ int main() {
   tinydraw::InkConfig config;
   config.size = 20.0F;
   tinydraw::InkStream ink(config);
-  tinydraw::RibbonStream ribbon;
+  tinydraw::CurvedRibbonStream ribbon;
   Totals total;
 
   accumulate(total, raster.update(ribbon.append(ink.begin(sample(0U))), kInk));

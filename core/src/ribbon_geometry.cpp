@@ -89,6 +89,56 @@ Point blended_direction(Point current, Point next) {
   return direction_dot < 0.0F ? current : interpolate(next, current, direction_dot);
 }
 
+InkPoint midpoint(InkPoint start, InkPoint end) {
+  InkPoint result = end;
+  result.position = interpolate(start.position, end.position, 0.5F);
+  result.radius = (start.radius + end.radius) * 0.5F;
+  return result;
+}
+
+InkPoint quadratic_middle(InkPoint start, InkPoint control, InkPoint end) {
+  InkPoint result = control;
+  result.position = add(multiply(start.position, 0.25F),
+                        add(multiply(control.position, 0.5F), multiply(end.position, 0.25F)));
+  result.radius = start.radius * 0.25F + control.radius * 0.5F + end.radius * 0.25F;
+  return result;
+}
+
+Point direction_or(Point start, Point end, Point fallback_start, Point fallback_end) {
+  const Point direction = unit(subtract(start, end));
+  return equal(direction, {}) ? unit(subtract(fallback_start, fallback_end)) : direction;
+}
+
+template <typename Emit>
+void emit_quadratic(InkPoint start, InkPoint control, InkPoint end, Emit emit) {
+  constexpr float overlap = 0.75F;
+  const InkPoint middle = quadratic_middle(start, control, end);
+  const Point chord = unit(subtract(start.position, end.position));
+  const Point start_direction =
+      direction_or(start.position, control.position, start.position, end.position);
+  const Point middle_direction = equal(chord, {}) ? start_direction : chord;
+  const Point end_direction =
+      direction_or(control.position, end.position, start.position, end.position);
+  const Section start_section = section(start.position, start.radius, start_direction);
+  const Section middle_before =
+      section(add(middle.position, multiply(middle_direction, overlap)), middle.radius,
+              middle_direction);
+  const Section middle_after =
+      section(subtract(middle.position, multiply(middle_direction, overlap)), middle.radius,
+              middle_direction);
+  const Section end_section =
+      section(subtract(end.position, multiply(end_direction, overlap)), end.radius, end_direction);
+  emit_span(start_section, middle_after, emit);
+  emit_span(middle_before, end_section, emit);
+}
+
+template <typename Emit>
+void emit_tail(InkPoint start, InkPoint end, Emit emit) {
+  const Point direction = unit(subtract(start.position, end.position));
+  emit_span(section(start.position, start.radius, direction),
+            section(end.position, end.radius, direction), emit);
+}
+
 }  // namespace
 
 void RibbonPrimitiveBatch::push_back(RibbonPrimitive primitive) {
@@ -175,6 +225,77 @@ RibbonUpdate RibbonStream::finish(InkPoint point) {
 }
 
 void RibbonStream::reset() {
+  point_count_ = 0U;
+  first_cap_pending_ = false;
+}
+
+RibbonUpdate CurvedRibbonStream::append(InkPoint point) {
+  RibbonUpdate update;
+  if (point_count_ == 0U) {
+    first_ = point;
+    stable_ = point;
+    last_ = point;
+    point_count_ = 1U;
+    update.provisional.push_back(circle(point.position, point.radius));
+    return update;
+  }
+
+  if (equal(last_.position, point.position)) {
+    if (point_count_ == 1U) {
+      update.provisional.push_back(circle(last_.position, last_.radius));
+      return update;
+    }
+    if (first_cap_pending_) {
+      update.provisional.push_back(circle(first_.position, first_.radius));
+    }
+    emit_tail(stable_, last_, [&](RibbonPrimitive primitive) {
+      update.provisional.push_back(primitive);
+    });
+    update.provisional.push_back(circle(last_.position, last_.radius));
+    return update;
+  }
+
+  if (point_count_ == 1U) {
+    last_ = point;
+    point_count_ = 2U;
+    first_cap_pending_ = true;
+    update.provisional.push_back(circle(first_.position, first_.radius));
+    emit_tail(stable_, last_, [&](RibbonPrimitive primitive) {
+      update.provisional.push_back(primitive);
+    });
+    update.provisional.push_back(circle(last_.position, last_.radius));
+    return update;
+  }
+
+  const InkPoint stable_end = midpoint(last_, point);
+  if (first_cap_pending_) {
+    update.committed.push_back(circle(first_.position, first_.radius));
+    first_cap_pending_ = false;
+  }
+  emit_quadratic(stable_, last_, stable_end, [&](RibbonPrimitive primitive) {
+    update.committed.push_back(primitive);
+  });
+
+  stable_ = stable_end;
+  last_ = point;
+  ++point_count_;
+  emit_tail(stable_, last_,
+            [&](RibbonPrimitive primitive) { update.provisional.push_back(primitive); });
+  update.provisional.push_back(circle(last_.position, last_.radius));
+  return update;
+}
+
+RibbonUpdate CurvedRibbonStream::finish(InkPoint point) {
+  RibbonUpdate update = append(point);
+  for (const RibbonPrimitive& primitive : update.provisional) {
+    update.committed.push_back(primitive);
+  }
+  update.provisional = {};
+  reset();
+  return update;
+}
+
+void CurvedRibbonStream::reset() {
   point_count_ = 0U;
   first_cap_pending_ = false;
 }

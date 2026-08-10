@@ -386,7 +386,7 @@ void run_hardware_app() {
   tinydraw::InkConfig brush;
   brush.size = tinydraw::brush_size(toolbar.size);
   tinydraw::InkStream ink(brush);
-  tinydraw::RibbonStream ribbon;
+  tinydraw::CurvedRibbonStream ribbon;
   tinydraw::InkPoint last_ink{};
   tinydraw::Point last_touch{};
   std::uint16_t stroke_color = tinydraw::rgb565(toolbar.color);

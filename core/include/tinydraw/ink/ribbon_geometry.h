@@ -29,10 +29,11 @@ class RibbonPrimitiveBatch {
 
  private:
   friend class RibbonStream;
+  friend class CurvedRibbonStream;
   void push_back(RibbonPrimitive primitive);
 
-  // One update can stabilize a split span and join, then finalize another split span and cap.
-  std::array<RibbonPrimitive, 7> primitives_{};
+  // Enough for a split two-span curve, initial cap, split provisional tail, and final cap.
+  std::array<RibbonPrimitive, 8> primitives_{};
   std::size_t count_ = 0;
 };
 
@@ -57,6 +58,24 @@ class RibbonStream {
   InkPoint last_{};
   Point tail_left_{};
   Point tail_right_{};
+  std::size_t point_count_ = 0;
+  bool first_cap_pending_ = false;
+};
+
+// Reconstructs a smooth midpoint-quadratic path from sparse controller reports.
+// Stable curves lag by one input point; a replaceable straight tail still reaches the finger.
+class CurvedRibbonStream {
+ public:
+  [[nodiscard]] RibbonUpdate append(InkPoint point);
+  [[nodiscard]] RibbonUpdate finish(InkPoint point);
+  void reset();
+
+  [[nodiscard]] bool active() const { return point_count_ != 0U; }
+
+ private:
+  InkPoint first_{};
+  InkPoint stable_{};
+  InkPoint last_{};
   std::size_t point_count_ = 0;
   bool first_cap_pending_ = false;
 };

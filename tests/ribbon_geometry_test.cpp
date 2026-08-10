@@ -1,5 +1,7 @@
 #include "tinydraw/ink/ribbon_geometry.h"
 
+#include "tinydraw/graphics/coverage_tile.h"
+
 #include <doctest.h>
 
 #include <algorithm>
@@ -106,6 +108,68 @@ TEST_CASE("duplicate streaming points do not grow or alter the ribbon") {
   for (std::size_t index = 0; index < first.provisional.size(); ++index) {
     check_primitive(duplicate.provisional.begin()[index], first.provisional.begin()[index]);
   }
+}
+
+TEST_CASE("curved ribbon stabilizes midpoint curves while its tail reaches the latest point") {
+  tinydraw::CurvedRibbonStream stream;
+  const auto first = stream.append(ink_point(10.0F, 30.0F, 2.0F));
+  const auto second = stream.append(ink_point(30.0F, 10.0F, 4.0F));
+  const auto third = stream.append(ink_point(50.0F, 30.0F, 6.0F));
+
+  CHECK(first.committed.empty());
+  CHECK(second.committed.empty());
+  CHECK_FALSE(third.committed.empty());
+  CHECK_FALSE(third.provisional.empty());
+  CHECK(third.provisional.end()[-1].kind == tinydraw::RibbonPrimitiveKind::kCircle);
+  CHECK(third.provisional.end()[-1].center.x == doctest::Approx(50.0F));
+  CHECK(third.provisional.end()[-1].center.y == doctest::Approx(30.0F));
+  CHECK(third.provisional.end()[-1].radius == doctest::Approx(6.0F));
+}
+
+TEST_CASE("curved ribbon pieces fully cover their internal join") {
+  tinydraw::CurvedRibbonStream stream;
+  static_cast<void>(stream.append(ink_point(5.0F, 50.0F, 8.0F)));
+  static_cast<void>(stream.append(ink_point(25.0F, 5.0F, 8.0F)));
+  const auto update = stream.append(ink_point(55.0F, 50.0F, 8.0F));
+  tinydraw::CoverageTile coverage(0, 0);
+  for (const auto& primitive : update.committed) {
+    if (primitive.kind == tinydraw::RibbonPrimitiveKind::kCircle) {
+      coverage.rasterize_circle(primitive.center, primitive.radius);
+    } else {
+      coverage.rasterize_convex(
+          std::span(primitive.points.data(), primitive.point_count));
+    }
+  }
+
+  CHECK(coverage.coverage_at(24, 23) == 255U);
+}
+
+TEST_CASE("curved ribbon finish commits its visible tail and resets") {
+  tinydraw::CurvedRibbonStream stream;
+  const auto first = ink_point(10.0F, 20.0F, 2.0F);
+  const auto last = ink_point(40.0F, 50.0F, 4.0F);
+  static_cast<void>(stream.append(first));
+  static_cast<void>(stream.append(last));
+
+  const auto update = stream.finish(last);
+
+  CHECK_FALSE(update.committed.empty());
+  CHECK(update.provisional.empty());
+  CHECK_FALSE(stream.active());
+  CHECK(update.committed.end()[-1].kind == tinydraw::RibbonPrimitiveKind::kCircle);
+  CHECK(update.committed.end()[-1].center.x == doctest::Approx(last.position.x));
+  CHECK(update.committed.end()[-1].center.y == doctest::Approx(last.position.y));
+}
+
+TEST_CASE("curved ribbon output remains bounded for long sparse strokes") {
+  tinydraw::CurvedRibbonStream stream;
+  for (int index = 0; index < 1'000; ++index) {
+    const float coordinate = static_cast<float>(index);
+    const auto update = stream.append(ink_point(coordinate, std::fmod(coordinate, 31.0F), 8.0F));
+    CHECK(update.committed.size() <= 5U);
+    CHECK(update.provisional.size() <= 3U);
+  }
+  CHECK(stream.active());
 }
 
 TEST_CASE("PF ribbon emits unionable triangles and round caps") {
