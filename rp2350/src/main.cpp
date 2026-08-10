@@ -376,6 +376,5 @@ int main() {
     previous_y = y;
     previous_touch_us = update_started;
     drawing = true;
-    sleep_ms(5);
   }
 }
