@@ -55,10 +55,10 @@ case "$command_name" in
     mapfile_supported=false
     if builtin help mapfile >/dev/null 2>&1; then mapfile_supported=true; fi
     if [[ "$mapfile_supported" == true ]]; then
-      mapfile -t files < <(find core host tests esp32/main -type f \( -name '*.cpp' -o -name '*.h' \) | sort)
+      mapfile -t files < <(find core host tests esp32/main rp2350/src -type f \( -name '*.cpp' -o -name '*.h' \) | sort)
     else
       files=()
-      while IFS= read -r file; do files+=("$file"); done < <(find core host tests esp32/main -type f \( -name '*.cpp' -o -name '*.h' \) | sort)
+      while IFS= read -r file; do files+=("$file"); done < <(find core host tests esp32/main rp2350/src -type f \( -name '*.cpp' -o -name '*.h' \) | sort)
     fi
     if [[ "$command_name" == format ]]; then
       "$formatter" -i "${files[@]}"

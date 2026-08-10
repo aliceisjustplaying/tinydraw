@@ -67,6 +67,15 @@ QEMU verifies firmware integration and the 8 MiB memory model. Performance
 measurements in [`FINDINGS.md`](FINDINGS.md) come from the host and physical
 board. See [`DEVELOPING.md`](DEVELOPING.md) for the development loop.
 
+## Build the RP2350 smoke target
+
+```sh
+./scripts/rp2350 bootstrap
+./scripts/rp2350 build
+```
+
+This first target validates the SH8601 display and FT3168 touch with a screen-sized drawing buffer.
+
 ## License
 
 MIT

@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+sdk="$root/out/deps/pico-sdk"
+build="$root/out/build/rp2350"
+sdk_version="$(tr -d '[:space:]' < "$root/.pico-sdk-version")"
+toolchain_version="15.2.rel1"
+toolchain_name="arm-gnu-toolchain-$toolchain_version-darwin-arm64-arm-none-eabi"
+toolchain="$root/out/deps/$toolchain_name"
+archive="$root/out/downloads/$toolchain_name.tar.xz"
+toolchain_sha="1938a84b7105c192e3fb4fa5e893ba25f425f7ddab40515ae608cd40f68669a8"
+action="${1:-build}"
+
+bootstrap() {
+  if ! command -v brew >/dev/null 2>&1; then
+    echo "Homebrew is required: https://brew.sh" >&2
+    exit 1
+  fi
+  packages=()
+  command -v cmake >/dev/null 2>&1 || packages+=(cmake)
+  command -v ninja >/dev/null 2>&1 || packages+=(ninja)
+  if (( ${#packages[@]} > 0 )); then
+    brew install "${packages[@]}"
+  fi
+
+  if [[ ! -x "$toolchain/bin/arm-none-eabi-gcc" ]]; then
+    mkdir -p "$root/out/deps" "$root/out/downloads"
+    if [[ ! -f "$archive" ]]; then
+      curl -fL --retry 2 \
+        "https://armkeil.blob.core.windows.net/developer/files/downloads/gnu/$toolchain_version/binrel/$toolchain_name.tar.xz" \
+        -o "$archive"
+    fi
+    echo "$toolchain_sha  $archive" | shasum -a 256 -c -
+    tar -xJf "$archive" -C "$root/out/deps"
+  fi
+
+  if [[ ! -d "$sdk/.git" ]]; then
+    git clone --branch "$sdk_version" --depth 1 \
+      https://github.com/raspberrypi/pico-sdk.git "$sdk"
+  fi
+  git -C "$sdk" submodule update --init --depth 1 lib/tinyusb
+}
+
+enable_environment() {
+  export PICO_SDK_PATH="$sdk"
+  export PICO_TOOLCHAIN_PATH="$toolchain"
+  export PATH="$toolchain/bin:$PATH"
+}
+
+case "$action" in
+  bootstrap)
+    bootstrap
+    ;;
+  build)
+    if [[ ! -d "$sdk/.git" || ! -x "$toolchain/bin/arm-none-eabi-gcc" ]]; then
+      echo "RP2350 tools are missing; run ./scripts/rp2350 bootstrap" >&2
+      exit 1
+    fi
+    enable_environment
+    cmake -S "$root/rp2350" -B "$build" -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release -DPICO_BOARD=pico2
+    cmake --build "$build"
+    echo "UF2: $build/tinydraw_rp2350.uf2"
+    ;;
+  clean)
+    rm -rf "$build"
+    ;;
+  *)
+    echo "usage: $0 {bootstrap|build|clean}" >&2
+    exit 2
+    ;;
+esac
