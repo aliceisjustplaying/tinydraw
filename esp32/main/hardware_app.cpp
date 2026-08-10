@@ -30,7 +30,7 @@ namespace {
 
 constexpr std::uint16_t kBackground = 0xFFFFU;
 constexpr int kPanelGapX = 0x10;
-constexpr int kTransferPixels = 4096;
+constexpr int kTransferPixels = 8192;
 constexpr int kTransferQueueDepth = 3;
 // Even-aligned transfer bounds around the three independently changing overlays.
 constexpr int kMainOverlayTop = 372;
@@ -272,7 +272,7 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
   void push_canvas(std::span<const std::uint16_t> canvas, int top = 0,
                    int bottom = tinydraw::kCanvasHeight) {
     // The CO5300 requires even transfer-window boundaries.
-    constexpr int rows_per_transfer = 10;
+    constexpr int rows_per_transfer = (kTransferPixels / tinydraw::kCanvasWidth) & ~1;
     for (int y = top; y < bottom; y += rows_per_transfer) {
       const int height = std::min(rows_per_transfer, bottom - y);
       push_rect(0, y, tinydraw::kCanvasWidth, height,
@@ -287,7 +287,7 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
   }
 
   void push_world(std::span<const std::uint16_t> world, tinydraw::ViewOrigin origin, int bottom) {
-    constexpr int rows_per_transfer = 10;
+    constexpr int rows_per_transfer = (kTransferPixels / tinydraw::kCanvasWidth) & ~1;
     for (int y = 0; y < bottom; y += rows_per_transfer) {
       const int height = std::min(rows_per_transfer, bottom - y);
       const auto offset =
