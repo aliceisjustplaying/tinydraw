@@ -147,6 +147,20 @@ void send_performance() {
   std::fflush(stdout);
 }
 
+std::uint32_t flush_ink_bounds(int minimum_x, int minimum_y, int maximum_x, int maximum_y) {
+  const int left = std::max(0, minimum_x - kInkRadius) & ~1;
+  const int top = std::max(0, minimum_y - kInkRadius) & ~1;
+  const int right = std::min(kWidth, (maximum_x + kInkRadius + 2) & ~1);
+  const int bottom = std::min(kHeight, (maximum_y + kInkRadius + 2) & ~1);
+  if (right <= left || bottom <= top) {
+    return 0;
+  }
+  AMOLED_1IN8_DisplayWindows(static_cast<std::uint32_t>(left), static_cast<std::uint32_t>(top),
+                             static_cast<std::uint32_t>(right), static_cast<std::uint32_t>(bottom),
+                             framebuffer.data());
+  return static_cast<std::uint32_t>((right - left) * (bottom - top));
+}
+
 std::uint32_t draw_segment(int start_x, int start_y, int end_x, int end_y) {
   int x = start_x;
   int y = start_y;
@@ -172,17 +186,29 @@ std::uint32_t draw_segment(int start_x, int start_y, int end_x, int end_y) {
     }
   }
 
-  const int left = std::max(0, std::min(start_x, end_x) - kInkRadius) & ~1;
-  const int top = std::max(0, std::min(start_y, end_y) - kInkRadius) & ~1;
-  const int right = std::min(kWidth, (std::max(start_x, end_x) + kInkRadius + 2) & ~1);
-  const int bottom = std::min(kHeight, (std::max(start_y, end_y) + kInkRadius + 2) & ~1);
-  if (right <= left || bottom <= top) {
-    return 0;
+  return flush_ink_bounds(std::min(start_x, end_x), std::min(start_y, end_y),
+                          std::max(start_x, end_x), std::max(start_y, end_y));
+}
+
+std::uint32_t draw_curve(int start_x, int start_y, int control_x, int control_y, int end_x,
+                         int end_y) {
+  const int path_length = std::abs(control_x - start_x) + std::abs(control_y - start_y) +
+                          std::abs(end_x - control_x) + std::abs(end_y - control_y);
+  const int steps = std::max(1, (path_length + 1) / 2);
+  const std::int64_t denominator = static_cast<std::int64_t>(steps) * steps;
+  for (int step = 0; step <= steps; ++step) {
+    const std::int64_t inverse = steps - step;
+    const std::int64_t x_numerator = inverse * inverse * start_x + 2 * inverse * step * control_x +
+                                     static_cast<std::int64_t>(step) * step * end_x;
+    const std::int64_t y_numerator = inverse * inverse * start_y + 2 * inverse * step * control_y +
+                                     static_cast<std::int64_t>(step) * step * end_y;
+    stamp_dot(static_cast<int>((x_numerator + denominator / 2) / denominator),
+              static_cast<int>((y_numerator + denominator / 2) / denominator));
   }
-  AMOLED_1IN8_DisplayWindows(static_cast<std::uint32_t>(left), static_cast<std::uint32_t>(top),
-                             static_cast<std::uint32_t>(right), static_cast<std::uint32_t>(bottom),
-                             framebuffer.data());
-  return static_cast<std::uint32_t>((right - left) * (bottom - top));
+
+  return flush_ink_bounds(
+      std::min({start_x, control_x, end_x}), std::min({start_y, control_y, end_y}),
+      std::max({start_x, control_x, end_x}), std::max({start_y, control_y, end_y}));
 }
 
 }  // namespace
@@ -214,8 +240,11 @@ int main() {
   std::printf("TINYDRAW_RP2350_SMOKE_OK display=SH8601 touch=FT3168\n");
 
   bool drawing = false;
+  int stroke_samples = 0;
   int previous_x = 0;
   int previous_y = 0;
+  int curve_start_x = 0;
+  int curve_start_y = 0;
   std::uint64_t previous_touch_us = 0;
   while (true) {
     const int command = getchar_timeout_us(0);
@@ -229,8 +258,24 @@ int main() {
       const auto update_started = time_us_64();
       const int x = static_cast<int>(FT3168.x_point);
       const int y = static_cast<int>(FT3168.y_point);
-      const auto submitted_pixels =
-          draw_segment(drawing ? previous_x : x, drawing ? previous_y : y, x, y);
+      std::uint32_t submitted_pixels = 0;
+      if (!drawing) {
+        submitted_pixels = draw_segment(x, y, x, y);
+        stroke_samples = 1;
+      } else if (stroke_samples == 1) {
+        curve_start_x = (previous_x + x) / 2;
+        curve_start_y = (previous_y + y) / 2;
+        submitted_pixels = draw_segment(previous_x, previous_y, curve_start_x, curve_start_y);
+        stroke_samples = 2;
+      } else {
+        const int curve_end_x = (previous_x + x) / 2;
+        const int curve_end_y = (previous_y + y) / 2;
+        submitted_pixels = draw_curve(curve_start_x, curve_start_y, previous_x, previous_y,
+                                      curve_end_x, curve_end_y);
+        curve_start_x = curve_end_x;
+        curve_start_y = curve_end_y;
+        ++stroke_samples;
+      }
       const auto update_us = time_us_64() - update_started;
       ++performance.updates;
       performance.update_us += update_us;
@@ -248,6 +293,15 @@ int main() {
       previous_touch_us = update_started;
       drawing = true;
     } else if (drawing) {
+      if (stroke_samples >= 2) {
+        const auto update_started = time_us_64();
+        performance.submitted_pixels += draw_curve(curve_start_x, curve_start_y, previous_x,
+                                                   previous_y, previous_x, previous_y);
+        const auto update_us = time_us_64() - update_started;
+        ++performance.updates;
+        performance.update_us += update_us;
+        performance.maximum_update_us = std::max(performance.maximum_update_us, update_us);
+      }
       ++performance.strokes;
       drawing = false;
     }
