@@ -92,10 +92,6 @@ void FT3168_Init(uint8_t mode) {
 
     sleep_ms(20);
 
-    // The controller defaults to about 60 reports per second. A 10 ms active
-    // period requests its documented 100 Hz maximum.
-    FT3168_I2C_Write_Byte(REG_ACTIVE_PERIOD, 10);
-
     int32_t id = FT3168_ReadID();
     printf("FT3168Register_WhoAmI = %d\n", id);
     if(id != 0x03) { // FT3168的ID应为0x03
