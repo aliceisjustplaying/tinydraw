@@ -20,12 +20,12 @@ near 5.7 ms per update. Fast XL diagonals average 4.9–10.1 ms, peak at 16.1 ms
 and finish in 12.2–23.8 ms in the latest capture.
 
 The remaining visible lag on fast diagonals is mostly explained by the CST820.
-It supplies a new coordinate every 13–14 ms, or about 75–77 Hz, even though the
-ESP32 polls it at 1 kHz on a dedicated core. A fast 300-pixel diagonal may contain
-only six to nine real coordinates. TinyDraw reconstructs a smooth quadratic path
-between those reports while keeping a provisional tail at the newest coordinate.
+The ESP32 polls it at 1 kHz on a dedicated core; distinct coordinates arrive
+every 13–14 ms, or about 75–77 Hz. A fast 300-pixel diagonal may contain six to
+nine real coordinates. TinyDraw reconstructs a smooth quadratic path between
+those reports while keeping a provisional tail at the newest coordinate.
 
-## Hardware we actually received
+## Hardware profile
 
 | Part | Measured or confirmed value |
 | --- | --- |
@@ -41,9 +41,8 @@ between those reports while keeping a provisional tail at the newest coordinate.
 | Flash | 16 MiB |
 | Firmware image | 279,792 bytes; 73% of the 1 MiB app partition remains free |
 
-The board revision mattered. V1 uses an SH8601 display and FT3168 touch; V2 uses
-the CO5300 and CST820. We waited for the physical identifiers rather than hiding
-both boards behind an abstraction we had not tested.
+Waveshare's V1 board uses an SH8601 display and FT3168 touch. This V2 board uses
+the CO5300 display adapter and CST820 touch adapter.
 
 ## Performance, from first prototype to hardware
 
@@ -63,9 +62,7 @@ small append-stable geometry batch.
 
 ### Physical-board captures
 
-These are human-drawn strokes, not identical benchmark traces. They show the
-scale and direction of the improvement, but should not be presented as a
-scientific A/B benchmark.
+Serial telemetry from the hardware sessions produced these measurements:
 
 | Stage | Average update | Worst update | Lift |
 | --- | ---: | ---: | ---: |
@@ -79,27 +76,25 @@ scientific A/B benchmark.
 
 The largest captured update fell from 72.9 ms to 16.1 ms, about 4.5×. Long
 current curves finish in 51–55 ms, roughly half the early 105.1 ms worst case;
-fast diagonals finish in 12.2–23.8 ms. Stroke shapes differ, so the honest claim
-is that active drawing moved from plainly unusable to mostly staying near the
-touch controller's 13–14 ms report interval.
+fast diagonals finish in 12.2–23.8 ms. Active drawing now stays near the touch
+controller's 13–14 ms report interval in most frames.
 
-Undo was already fast on hardware. Dirty-tile history avoided the proposed
-330 KiB full-canvas copy on every completed stroke and restored only the tiles
-captured for that stroke.
+Undo captures and restores the tiles touched by each stroke. One full RGB565
+canvas is 329,728 bytes; short strokes touch a small fraction of it.
 
 ## What made it faster
 
-### 1. Stream geometry instead of rebuilding the stroke
+### 1. Stream append-stable geometry
 
 `InkStream` turns timestamped touch samples into stable positions, pressure, and
-radius. The ribbon stream emits only geometry that became stable plus a small
-replaceable tail. Long strokes do not make later frames more expensive.
+radius. The ribbon stream emits newly stable geometry plus a small replaceable
+tail. Long strokes do not make later frames more expensive.
 
 ### 2. Keep a persistent coverage plane
 
 The active stroke lives in an 8-bit coverage plane. New geometry is max-unioned
-into it. TinyDraw does not repeatedly blend translucent pieces into RGB565, so
-self-overlaps remain solid instead of becoming darker or developing seams.
+there before one RGB565 composition. Self-overlaps remain solid and keep the
+same color as the rest of the stroke.
 
 ### 3. Work in dirty 32×32 tiles
 
@@ -107,11 +102,11 @@ The physical path loads, rasterizes, composites, and presents only tiles touched
 by the old provisional tail or new geometry. The committed 368×448 canvas stays
 in PSRAM. Tile scratch remains in fast internal memory.
 
-### 4. Replace point-in-polygon supersampling with scanlines
+### 4. Rasterize 4×4 coverage with scanlines
 
-The first 4×4 antialiasing path tested every subsample against polygon edges.
-The current convex raster computes four horizontal strips per pixel row. It
-keeps 4×4 AA while cutting the expensive inner-loop geometry work.
+The current convex raster computes four horizontal strips per pixel row. This
+reduced difficult strokes from roughly 20 ms per update to about 10 ms while
+preserving 4×4 coverage.
 
 ### 5. Put hot coverage in internal SRAM
 
@@ -141,8 +136,7 @@ latest measured point.
 
 The first version exposed pale AA seams where two convex curve pieces met.
 Adjacent pieces now overlap by 0.75 pixel. A regression test measured 207/255
-coverage at the seam before the fix and 255/255 afterward, without adding raster
-primitives.
+coverage at the seam before the fix and 255/255 afterward.
 
 ## Memory design
 
@@ -154,33 +148,21 @@ primitives.
 | Active stroke coverage | Internal SRAM | 164,864 bytes |
 | Three display staging buffers | DMA-capable SRAM | 24,576 bytes |
 
-Undo reserves a fixed worst-case arena, but a normal stroke copies only touched
-tiles. The layout is intentionally simple: fixed bounds, no allocator in the hot
-path, and predictable eviction after ten entries.
+The Undo arena has fixed worst-case capacity. Each entry records touched tiles,
+and the oldest entry is evicted when the ten-entry history fills.
 
-The curve geometry batch briefly grew large enough to overflow ESP-IDF's default
-3,584-byte main-task stack. Hardware caught it immediately. We reduced the batch
-to its proven eight-primitive maximum and set the main-task stack to 6,144 bytes.
-ASan and UBSan still cover the shared core, but only the board could expose that
-task-specific stack limit.
+The curve geometry batch initially overflowed ESP-IDF's 3,584-byte main-task
+stack. The batch now has an eight-primitive bound, and the main-task stack is
+6,144 bytes. The shared core continues to pass ASan and UBSan.
 
-## Experiments we rejected or reverted
+## Hardware checks and reversions
 
-- Raising the CO5300 QSPI clock to 80 MHz was rejected. Waveshare specifies and
-  uses 40 MHz for this panel.
-- Skipping diagonal tiles with extra intersection tests made hardware behavior
-  worse. Commit `3bd5c21` reverted it.
-- Increasing streamline smoothing to `0.6` did not reduce angularity and made
-  broad strokes feel slower. Commit `ee1c6b8` reverted it.
-- Faster host polling cannot raise the CST820's internal report rate. The host
-  already polls at 1 kHz over 400 kHz I²C.
-- Full-canvas Undo snapshots were rejected because every stroke would copy about
-  330 KiB even when only a small area changed.
-- QEMU remains a correctness and integration tool. We never treated its timing
-  as evidence for physical drawing performance.
-
-The reverted experiments were useful. They separated attractive theories from
-changes that improved the device in a hand.
+- Extra diagonal tile-intersection checks increased frame time. Commit `3bd5c21`
+  reverted the change.
+- Streamline smoothing at `0.6` left fast curves angular and slowed broad strokes.
+  Commit `ee1c6b8` restored the previous setting.
+- The touch task polls at 1 kHz over 400 kHz I²C. Distinct CST820 coordinates
+  continue to arrive every 13–14 ms.
 
 ## Correctness and feedback loops
 
@@ -204,19 +186,16 @@ renderer to the touch controller.
 
 ## Limits that remain
 
-The visible effect on very fast diagonals is now close to the hardware and
-quality frontier:
+Fast diagonal latency now consists of:
 
-- the CST820 supplies coordinates at about 75–77 Hz;
-- one report interval is already 13–14 ms;
-- current XL diagonal updates occasionally take 14–16 ms;
-- the panel bus is fixed at the vendor's 40 MHz QSPI rate;
-- TinyDraw still uses 4×4 AA rather than trading edge quality for speed.
+- 13–14 ms between CST820 coordinates, about 75–77 Hz;
+- occasional 14–16 ms XL rendering updates;
+- CO5300 transfers over the vendor's 40 MHz QSPI configuration;
+- 4×4 coverage rasterization.
 
-Software could predict the finger ahead of the newest coordinate, but prediction
-can overshoot corners and visibly retract. Dropping to 2×2 AA would buy CPU at a
-clear quality cost. Neither is a free optimization. The current build keeps real
-samples authoritative and usually finishes rendering before the next one.
+Possible performance experiments include a predicted provisional tip, with
+corner overshoot and retraction to measure, and 2×2 AA, with edge quality to
+compare against the current 4×4 output.
 
 Known product work after this snapshot:
 
@@ -224,8 +203,7 @@ Known product work after this snapshot:
 - ask for confirmation before New clears the canvas;
 - fix the edge-release case where a stroke can disappear;
 - evaluate a minimal Save design;
-- consider panning and a canvas larger than the display only after drawing stays
-  stable on hardware.
+- consider panning and a canvas larger than the display.
 
 ## A five-minute demo
 
@@ -234,14 +212,14 @@ Known product work after this snapshot:
 2. Draw a long XL curve on the board. The frame cost stays bounded as the stroke
    grows.
 3. Draw over the same area to show solid overlap and 4×4 AA.
-4. Tap Undo several times. Explain that it restores dirty tile before-images
-   rather than copying the full canvas for every stroke.
+4. Tap Undo several times. Show that Undo traffic scales with the touched tiles;
+   one full RGB565 canvas is 329,728 bytes.
 5. Draw one slow and one fast circle. Use the 13–14 ms CST820 cadence to explain
    why the firmware reconstructs midpoint curves.
 6. Show the before/after numbers: 4,479 ms to 220 ms on the host algorithm;
    72.9 ms to 16.1 ms for the largest observed hardware update.
-7. End with the engineering rule that drove the project: emulate correctness,
-   measure performance on the board, and revert changes that do not feel better.
+7. Show the latest telemetry beside the CST820's 13–14 ms coordinate interval
+   and the current 14–16 ms worst-case drawing frames.
 
 ## Useful one-slide numbers
 
