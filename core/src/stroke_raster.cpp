@@ -67,49 +67,6 @@ Region region_of(Bounds bounds) {
   return {.x = x, .y = y, .width = right - x, .height = bottom - y};
 }
 
-bool primitive_intersects_tile(const RibbonPrimitive& primitive, int tile_x, int tile_y,
-                               int tile_width, int tile_height) {
-  const float left = static_cast<float>(tile_x) - 1.0F;
-  const float top = static_cast<float>(tile_y) - 1.0F;
-  const float right = static_cast<float>(tile_x + tile_width) + 1.0F;
-  const float bottom = static_cast<float>(tile_y + tile_height) + 1.0F;
-  if (primitive.kind == RibbonPrimitiveKind::kCircle) {
-    const float nearest_x = std::clamp(primitive.center.x, left, right) - primitive.center.x;
-    const float nearest_y = std::clamp(primitive.center.y, top, bottom) - primitive.center.y;
-    return nearest_x * nearest_x + nearest_y * nearest_y <= primitive.radius * primitive.radius;
-  }
-
-  const std::array rectangle{Point{left, top}, Point{right, top}, Point{right, bottom},
-                             Point{left, bottom}};
-  const auto polygon = std::span(primitive.points.data(), primitive.point_count);
-  for (std::size_t index = 0; index < polygon.size(); ++index) {
-    const Point start = polygon[index];
-    const Point end = polygon[(index + 1U) % polygon.size()];
-    const Point axis{.x = end.y - start.y, .y = start.x - end.x};
-    if (axis.x == 0.0F && axis.y == 0.0F) {
-      continue;
-    }
-    float polygon_minimum = axis.x * polygon.front().x + axis.y * polygon.front().y;
-    float polygon_maximum = polygon_minimum;
-    for (const Point point : polygon.subspan(1U)) {
-      const float projection = axis.x * point.x + axis.y * point.y;
-      polygon_minimum = std::min(polygon_minimum, projection);
-      polygon_maximum = std::max(polygon_maximum, projection);
-    }
-    float rectangle_minimum = axis.x * rectangle.front().x + axis.y * rectangle.front().y;
-    float rectangle_maximum = rectangle_minimum;
-    for (const Point point : std::span(rectangle).subspan(1U)) {
-      const float projection = axis.x * point.x + axis.y * point.y;
-      rectangle_minimum = std::min(rectangle_minimum, projection);
-      rectangle_maximum = std::max(rectangle_maximum, projection);
-    }
-    if (polygon_maximum < rectangle_minimum || rectangle_maximum < polygon_minimum) {
-      return false;
-    }
-  }
-  return true;
-}
-
 }  // namespace
 
 StrokeRaster::StrokeRaster(std::span<std::uint16_t> committed, std::span<std::uint16_t> visible,
@@ -288,13 +245,7 @@ void StrokeRaster::mark_tiles(const RibbonPrimitiveBatch& primitives, TileFlags&
         static_cast<int>(std::ceil(std::clamp(bounds.maximum_y, 0.0F, maximum_y))) / kTileSize;
     for (int tile_y = first_tile_y; tile_y <= last_tile_y; ++tile_y) {
       for (int tile_x = first_tile_x; tile_x <= last_tile_x; ++tile_x) {
-        const int pixel_x = tile_x * kTileSize;
-        const int pixel_y = tile_y * kTileSize;
-        const int tile_width = std::min(kTileSize, kCanvasWidth - pixel_x);
-        const int tile_height = std::min(kTileSize, kCanvasHeight - pixel_y);
-        if (primitive_intersects_tile(primitive, pixel_x, pixel_y, tile_width, tile_height)) {
-          flags[static_cast<std::size_t>(tile_y * kTilesAcross + tile_x)] = true;
-        }
+        flags[static_cast<std::size_t>(tile_y * kTilesAcross + tile_x)] = true;
       }
     }
   }
