@@ -1,6 +1,7 @@
 #include <SDL.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -15,6 +16,7 @@
 #include "tinydraw/graphics/ribbon_renderer.h"
 #include "tinydraw/graphics/stroke_raster.h"
 #include "tinydraw/graphics/tile_undo_history.h"
+#include "tinydraw/graphics/world_canvas.h"
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
 #include "tinydraw/ui/toolbar.h"
@@ -250,6 +252,8 @@ int interactive() {
       static_cast<std::size_t>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight));
   clear_canvas(committed_pixels);
   std::vector<std::uint16_t> pixels = committed_pixels;
+  std::vector<std::uint16_t> world_storage(tinydraw::WorldCanvas::kRequiredPixels);
+  tinydraw::WorldCanvas world(world_storage);
   std::vector<std::uint16_t> undo_storage(tinydraw::TileUndoHistory::kRequiredPixels);
   tinydraw::TileUndoHistory undo_history(undo_storage);
   std::vector<std::uint8_t> active_coverage(
@@ -264,6 +268,7 @@ int interactive() {
   std::uint16_t stroke_color = tinydraw::rgb565(toolbar.color);
 
   const auto close_popups = [&] {
+    toolbar.tools_open = false;
     toolbar.colors_open = false;
     toolbar.sizes_open = false;
   };
@@ -287,11 +292,10 @@ int interactive() {
   };
   const auto start_new_drawing = [&] {
     reset_active_stroke();
-    undo_history.begin_entry();
+    undo_history.begin_entry(world.origin());
     undo_history.capture_canvas(committed_pixels);
     static_cast<void>(undo_history.commit_entry());
-    clear_canvas(committed_pixels);
-    pixels = committed_pixels;
+    static_cast<void>(world.clear(committed_pixels, pixels));
     toolbar.can_undo = undo_history.can_undo();
     toolbar.confirm_new = false;
     close_popups();
@@ -301,9 +305,24 @@ int interactive() {
       return;
     }
     reset_active_stroke();
+    static_cast<void>(world.capture(committed_pixels));
+    if (const auto origin = undo_history.next_undo_origin(); origin.has_value()) {
+      static_cast<void>(world.show(*origin, committed_pixels, pixels));
+    }
     static_cast<void>(undo_history.undo(committed_pixels, pixels));
+    static_cast<void>(world.capture(committed_pixels));
     toolbar.can_undo = undo_history.can_undo();
     close_popups();
+  };
+
+  bool panning = false;
+  tinydraw::Point pan_start_touch{};
+  tinydraw::ViewOrigin pan_start_origin{};
+  const auto pan_to = [&](tinydraw::Point point) {
+    const int delta_x = static_cast<int>(std::lround(point.x - pan_start_touch.x));
+    const int delta_y = static_cast<int>(std::lround(point.y - pan_start_touch.y));
+    static_cast<void>(world.show({pan_start_origin.x - delta_x, pan_start_origin.y - delta_y},
+                                 committed_pixels, pixels));
   };
 
   bool running = true;
@@ -339,6 +358,10 @@ int interactive() {
               toolbar.tool = tinydraw::DrawingTool::kPen;
               close_popups();
               break;
+            case tinydraw::ToolbarAction::kSelectPan:
+              toolbar.tool = tinydraw::DrawingTool::kPan;
+              close_popups();
+              break;
             case tinydraw::ToolbarAction::kSelectEraser:
               toolbar.tool = tinydraw::DrawingTool::kEraser;
               close_popups();
@@ -346,14 +369,21 @@ int interactive() {
             case tinydraw::ToolbarAction::kSelectColor:
               toolbar.color = tinydraw::toolbar_color_at(*point, toolbar).value_or(toolbar.color);
               toolbar.tool = tinydraw::DrawingTool::kPen;
+              close_popups();
+              break;
+            case tinydraw::ToolbarAction::kToggleTools:
+              toolbar.tools_open = !toolbar.tools_open;
               toolbar.colors_open = false;
+              toolbar.sizes_open = false;
               break;
             case tinydraw::ToolbarAction::kToggleColors:
               toolbar.colors_open = !toolbar.colors_open;
+              toolbar.tools_open = false;
               toolbar.sizes_open = false;
               break;
             case tinydraw::ToolbarAction::kToggleSizes:
               toolbar.sizes_open = !toolbar.sizes_open;
+              toolbar.tools_open = false;
               toolbar.colors_open = false;
               break;
             case tinydraw::ToolbarAction::kSelectSmall:
@@ -386,12 +416,24 @@ int interactive() {
           continue;
         }
         close_popups();
+        if (toolbar.tool == tinydraw::DrawingTool::kPan) {
+          static_cast<void>(world.capture(committed_pixels));
+          pan_start_touch = *point;
+          pan_start_origin = world.origin();
+          panning = true;
+          continue;
+        }
         stroke_color = toolbar.tool == tinydraw::DrawingTool::kEraser
                            ? kBackground
                            : tinydraw::rgb565(toolbar.color);
         last_ink_point = stream.begin(
             {.x = point->x, .y = point->y, .timestamp_us = event.button.timestamp * 1'000U});
         static_cast<void>(stroke_raster.update(ribbon.append(last_ink_point), stroke_color));
+      } else if (event.type == SDL_MOUSEMOTION && panning) {
+        if (const auto point = mouse_to_logical(event.motion.x, event.motion.y);
+            point.has_value()) {
+          pan_to(*point);
+        }
       } else if (event.type == SDL_MOUSEMOTION && stream.active()) {
         const auto point = mouse_to_logical(event.motion.x, event.motion.y);
         if (point.has_value()) {
@@ -400,13 +442,20 @@ int interactive() {
           static_cast<void>(stroke_raster.update(ribbon.append(last_ink_point), stroke_color));
         }
       } else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT &&
+                 panning) {
+        if (const auto point = mouse_to_logical(event.button.x, event.button.y);
+            point.has_value()) {
+          pan_to(*point);
+        }
+        panning = false;
+      } else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT &&
                  stream.active()) {
         const auto mapped = mouse_to_logical(event.button.x, event.button.y);
         const tinydraw::Point point = mapped.value_or(last_ink_point.position);
         last_ink_point = stream.finish(
             {.x = point.x, .y = point.y, .timestamp_us = event.button.timestamp * 1'000U});
-        static_cast<void>(
-            stroke_raster.finish(ribbon.finish(last_ink_point), stroke_color, &undo_history));
+        static_cast<void>(stroke_raster.finish(ribbon.finish(last_ink_point), stroke_color,
+                                               &undo_history, world.origin()));
         toolbar.can_undo = undo_history.can_undo();
       }
     }
@@ -441,6 +490,9 @@ int main(int argc, char** argv) {
     if (std::string(argv[1]) == "--color-palette-preview") {
       return ui_preview(argv[3], {.colors_open = true});
     }
+    if (std::string(argv[1]) == "--tool-palette-preview") {
+      return ui_preview(argv[3], {.tools_open = true});
+    }
     if (std::string(argv[1]) == "--new-dialog-preview") {
       return ui_preview(argv[3], {.confirm_new = true});
     }
@@ -452,6 +504,7 @@ int main(int argc, char** argv) {
     std::fprintf(stderr,
                  "usage: %s [--replay INPUT --output IMAGE.ppm | --ui-preview --output "
                  "IMAGE.ppm | --color-palette-preview --output IMAGE.ppm | "
+                 "--tool-palette-preview --output IMAGE.ppm | "
                  "--new-dialog-preview --output IMAGE.ppm | --undo-e2e]\n",
                  argv[0]);
     return EXIT_FAILURE;

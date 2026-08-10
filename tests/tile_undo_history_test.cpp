@@ -59,6 +59,22 @@ TEST_CASE("tile undo restores only captured pixels") {
   CHECK_FALSE(history.can_undo());
 }
 
+TEST_CASE("tile undo keeps the viewport origin for each operation") {
+  std::vector<std::uint16_t> storage(tinydraw::TileUndoHistory::kRequiredPixels);
+  tinydraw::TileUndoHistory history(storage);
+  std::vector<std::uint16_t> canvas(kPixelCount, kWhite);
+  std::vector<std::uint16_t> before(static_cast<std::size_t>(kUndoTileSize * kUndoTileSize),
+                                    kWhite);
+
+  history.begin_entry({123, 234});
+  history.capture_tile(0, 0, kUndoTileSize, kUndoTileSize, before);
+  CHECK(history.commit_entry() == 1U);
+  CHECK(history.next_undo_origin() == tinydraw::ViewOrigin{123, 234});
+
+  static_cast<void>(history.undo(canvas));
+  CHECK_FALSE(history.next_undo_origin().has_value());
+}
+
 TEST_CASE("tile undo submits adjacent restored tiles as one display run") {
   std::vector<std::uint16_t> storage(tinydraw::TileUndoHistory::kRequiredPixels);
   tinydraw::TileUndoHistory history(storage);

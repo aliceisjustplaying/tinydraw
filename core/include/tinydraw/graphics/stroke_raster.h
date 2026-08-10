@@ -6,6 +6,7 @@
 
 #include "tinydraw/geometry.h"
 #include "tinydraw/graphics/coverage_tile.h"
+#include "tinydraw/graphics/world_canvas.h"
 #include "tinydraw/ink/ribbon_geometry.h"
 #include "tinydraw/platform/display_backend.h"
 
@@ -38,7 +39,8 @@ class StrokeRaster {
 
   [[nodiscard]] StrokeRasterStats update(const RibbonUpdate& update, std::uint16_t color);
   [[nodiscard]] StrokeRasterStats finish(const RibbonUpdate& update, std::uint16_t color,
-                                         TileUndoHistory* history = nullptr);
+                                         TileUndoHistory* history = nullptr,
+                                         ViewOrigin origin = {});
   void cancel();
 
  private:

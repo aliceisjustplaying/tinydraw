@@ -8,7 +8,7 @@
 
 namespace tinydraw {
 
-enum class DrawingTool { kPen, kEraser };
+enum class DrawingTool { kPen, kPan, kEraser };
 enum class InkColor {
   kBlack,
   kGrey,
@@ -27,8 +27,10 @@ enum class PenSize { kSmall, kMedium, kLarge, kExtraLarge };
 enum class ToolbarAction {
   kNone,
   kSelectPen,
+  kSelectPan,
   kSelectEraser,
   kSelectColor,
+  kToggleTools,
   kToggleColors,
   kToggleSizes,
   kSelectSmall,
@@ -46,6 +48,7 @@ struct ToolbarState {
   InkColor color = InkColor::kBlue;
   PenSize size = PenSize::kMedium;
   bool can_undo = false;
+  bool tools_open = false;
   bool colors_open = false;
   bool sizes_open = false;
   bool confirm_new = false;

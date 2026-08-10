@@ -142,14 +142,14 @@ StrokeRasterStats StrokeRaster::update(const RibbonUpdate& update, std::uint16_t
 }
 
 StrokeRasterStats StrokeRaster::finish(const RibbonUpdate& update, std::uint16_t color,
-                                       TileUndoHistory* history) {
+                                       TileUndoHistory* history, ViewOrigin origin) {
   assert(update.provisional.empty());
   StrokeRasterStats stats;
   if (!valid_ || !update.provisional.empty()) {
     return stats;
   }
   if (history != nullptr) {
-    history->begin_entry();
+    history->begin_entry(origin);
   }
   TileFlags committed_tiles{};
   mark_tiles(update.committed, committed_tiles);

@@ -3,10 +3,12 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 
 #include "tinydraw/geometry.h"
 #include "tinydraw/graphics/coverage_tile.h"
+#include "tinydraw/graphics/world_canvas.h"
 #include "tinydraw/platform/display_backend.h"
 
 namespace tinydraw {
@@ -37,11 +39,12 @@ class TileUndoHistory {
   [[nodiscard]] bool can_undo() const { return count_ > 0U; }
   [[nodiscard]] std::size_t entry_count() const { return count_; }
 
-  void begin_entry();
+  void begin_entry(ViewOrigin origin = {});
   void capture_tile(int x, int y, int width, int height,
                     std::span<const std::uint16_t> packed_pixels);
   void capture_canvas(std::span<const std::uint16_t> canvas);
   [[nodiscard]] std::uint32_t commit_entry();
+  [[nodiscard]] std::optional<ViewOrigin> next_undo_origin() const;
   void clear();
 
   [[nodiscard]] TileUndoStats undo(std::span<std::uint16_t> committed,
@@ -58,6 +61,8 @@ class TileUndoHistory {
   std::span<std::uint16_t> storage_;
   std::array<std::uint16_t, kTilePixels> working_{};
   std::array<TileFlags, kMaxEntries> tiles_{};
+  std::array<ViewOrigin, kMaxEntries> origins_{};
+  ViewOrigin entry_origin_{};
   std::size_t next_ = 0U;
   std::size_t count_ = 0U;
   bool entry_open_ = false;

@@ -117,13 +117,28 @@ void draw_undo(std::span<std::uint16_t> canvas, int width, int height, std::uint
   line(canvas, width, height, 32, 410, 44, 422, color, 2);
 }
 
-void draw_pen(std::span<std::uint16_t> canvas, int width, int height, std::uint16_t color) {
-  line(canvas, width, height, 92, 419, 109, 398, color, 1);
-  line(canvas, width, height, 98, 425, 115, 404, color, 1);
-  line(canvas, width, height, 109, 398, 115, 404, color, 1);
-  line(canvas, width, height, 92, 419, 88, 429, color, 1);
-  line(canvas, width, height, 98, 425, 88, 429, color, 1);
-  line(canvas, width, height, 92, 419, 98, 425, color, 1);
+void draw_pen(std::span<std::uint16_t> canvas, int width, int height, int center_x, int center_y,
+              std::uint16_t color) {
+  line(canvas, width, height, center_x - 10, center_y + 8, center_x + 7, center_y - 13, color, 1);
+  line(canvas, width, height, center_x - 4, center_y + 14, center_x + 13, center_y - 7, color, 1);
+  line(canvas, width, height, center_x + 7, center_y - 13, center_x + 13, center_y - 7, color, 1);
+  line(canvas, width, height, center_x - 10, center_y + 8, center_x - 14, center_y + 18, color, 1);
+  line(canvas, width, height, center_x - 4, center_y + 14, center_x - 14, center_y + 18, color, 1);
+  line(canvas, width, height, center_x - 10, center_y + 8, center_x - 4, center_y + 14, color, 1);
+}
+
+void draw_hand(std::span<std::uint16_t> canvas, int width, int height, int center_x, int center_y,
+               std::uint16_t color) {
+  line(canvas, width, height, center_x - 10, center_y - 2, center_x - 10, center_y - 13, color, 1);
+  line(canvas, width, height, center_x - 4, center_y - 4, center_x - 4, center_y - 17, color, 1);
+  line(canvas, width, height, center_x + 2, center_y - 4, center_x + 2, center_y - 18, color, 1);
+  line(canvas, width, height, center_x + 8, center_y - 2, center_x + 8, center_y - 14, color, 1);
+  line(canvas, width, height, center_x - 10, center_y - 2, center_x - 16, center_y - 7, color, 1);
+  line(canvas, width, height, center_x - 16, center_y - 7, center_x - 19, center_y - 3, color, 1);
+  line(canvas, width, height, center_x - 19, center_y - 3, center_x - 8, center_y + 16, color, 1);
+  line(canvas, width, height, center_x - 8, center_y + 16, center_x + 8, center_y + 16, color, 1);
+  line(canvas, width, height, center_x + 8, center_y + 16, center_x + 12, center_y + 5, color, 1);
+  line(canvas, width, height, center_x + 12, center_y + 5, center_x + 8, center_y - 2, color, 1);
 }
 
 void draw_eraser(std::span<std::uint16_t> canvas, int width, int height, std::uint16_t color) {
@@ -240,10 +255,11 @@ bool toolbar_contains(Point point, const ToolbarState& state) {
   const bool color_palette =
       state.colors_open && inside(point, 0.0F, static_cast<float>(kColorPaletteHitTop),
                                   static_cast<float>(kCanvasWidth), static_cast<float>(kMainTop));
-  const bool size_palette =
-      state.sizes_open && inside(point, 0.0F, static_cast<float>(kSizePaletteHitTop),
-                                 static_cast<float>(kCanvasWidth), static_cast<float>(kMainTop));
-  return main_row || color_palette || size_palette;
+  const bool compact_palette =
+      (state.tools_open || state.sizes_open) &&
+      inside(point, 0.0F, static_cast<float>(kSizePaletteHitTop), static_cast<float>(kCanvasWidth),
+             static_cast<float>(kMainTop));
+  return main_row || color_palette || compact_palette;
 }
 
 bool toolbar_overlay_contains(Point point, const ToolbarState& state) {
@@ -252,7 +268,7 @@ bool toolbar_overlay_contains(Point point, const ToolbarState& state) {
              static_cast<float>(kMainBottom + 4));
   const int palette_top = state.colors_open ? kColorPaletteTop : kSizePaletteTop;
   const bool palette =
-      (state.colors_open || state.sizes_open) &&
+      (state.tools_open || state.colors_open || state.sizes_open) &&
       inside(point, 0.0F, static_cast<float>(palette_top - 1), static_cast<float>(kCanvasWidth),
              static_cast<float>(kPaletteBottom + 4));
   const bool dialog =
@@ -269,7 +285,7 @@ int toolbar_overlay_top(const ToolbarState& state) {
   if (state.colors_open) {
     return kColorPaletteTop - 1;
   }
-  if (state.sizes_open) {
+  if (state.tools_open || state.sizes_open) {
     return kSizePaletteTop - 1;
   }
   return kMainTop - 1;
@@ -288,6 +304,11 @@ ToolbarAction toolbar_action_at(Point point, const ToolbarState& state) {
   if (toolbar_color_at(point, state).has_value()) {
     return ToolbarAction::kSelectColor;
   }
+  if (state.tools_open && inside(point, 0.0F, static_cast<float>(kSizePaletteHitTop),
+                                 static_cast<float>(kCanvasWidth), static_cast<float>(kMainTop))) {
+    return point.x < static_cast<float>(kCanvasWidth) * 0.5F ? ToolbarAction::kSelectPen
+                                                             : ToolbarAction::kSelectPan;
+  }
   if (state.sizes_open && inside(point, 0.0F, static_cast<float>(kSizePaletteHitTop),
                                  static_cast<float>(kCanvasWidth), static_cast<float>(kMainTop))) {
     const auto index =
@@ -302,14 +323,20 @@ ToolbarAction toolbar_action_at(Point point, const ToolbarState& state) {
   }
   const auto main_index =
       std::min(static_cast<std::size_t>(point.x * 6.0F / kCanvasWidth), std::size_t{5});
-  if (state.colors_open || state.sizes_open) {
-    if ((state.colors_open && main_index == 3U) || (state.sizes_open && main_index == 4U)) {
-      return state.colors_open ? ToolbarAction::kToggleColors : ToolbarAction::kToggleSizes;
+  if (state.tools_open || state.colors_open || state.sizes_open) {
+    if (state.tools_open && main_index == 1U) {
+      return ToolbarAction::kToggleTools;
+    }
+    if (state.colors_open && main_index == 3U) {
+      return ToolbarAction::kToggleColors;
+    }
+    if (state.sizes_open && main_index == 4U) {
+      return ToolbarAction::kToggleSizes;
     }
     return ToolbarAction::kNone;
   }
   constexpr std::array actions{
-      ToolbarAction::kUndo,         ToolbarAction::kSelectPen,   ToolbarAction::kSelectEraser,
+      ToolbarAction::kUndo,         ToolbarAction::kToggleTools, ToolbarAction::kSelectEraser,
       ToolbarAction::kToggleColors, ToolbarAction::kToggleSizes, ToolbarAction::kNewDrawing,
   };
   return actions[main_index];
@@ -383,14 +410,18 @@ void draw_toolbar(std::span<std::uint16_t> canvas, int width, int height,
   fill_rect(canvas, width, height, 0, kMainTop - 1, width, kMainTop + 1, kBorder);
   fill_rect(canvas, width, height, 0, kMainBottom, width, kMainBottom + 1, kBorder);
 
-  if (state.tool == DrawingTool::kPen) {
-    rounded_rect(canvas, width, height, 73, 380, 128, 440, 9, kSelected);
-  } else {
+  if (state.tool == DrawingTool::kEraser) {
     rounded_rect(canvas, width, height, 128, 380, 184, 440, 9, kSelected);
+  } else {
+    rounded_rect(canvas, width, height, 73, 380, 128, 440, 9, kSelected);
   }
 
   draw_undo(canvas, width, height, state.can_undo ? kInk : kMuted);
-  draw_pen(canvas, width, height, state.tool == DrawingTool::kPen ? kWhite : kInk);
+  if (state.tool == DrawingTool::kPan) {
+    draw_hand(canvas, width, height, 102, 411, kWhite);
+  } else {
+    draw_pen(canvas, width, height, 102, 411, state.tool == DrawingTool::kPen ? kWhite : kInk);
+  }
   draw_eraser(canvas, width, height, state.tool == DrawingTool::kEraser ? kWhite : kInk);
 
   fill_circle(canvas, width, height, 212, 410, 18, kSelected);
@@ -407,7 +438,7 @@ void draw_toolbar(std::span<std::uint16_t> canvas, int width, int height,
     draw_new_dialog(canvas, width, height);
     return;
   }
-  if (!state.colors_open && !state.sizes_open) {
+  if (!state.tools_open && !state.colors_open && !state.sizes_open) {
     return;
   }
   const int palette_top = state.colors_open ? kColorPaletteTop : kSizePaletteTop;
@@ -427,6 +458,16 @@ void draw_toolbar(std::span<std::uint16_t> canvas, int width, int height,
         fill_circle(canvas, width, height, center_x, center_y, 15, rgb565(color));
       }
     }
+    return;
+  }
+  if (state.tools_open) {
+    if (state.tool == DrawingTool::kPen) {
+      fill_circle(canvas, width, height, 96, 331, 26, kSelected);
+    } else if (state.tool == DrawingTool::kPan) {
+      fill_circle(canvas, width, height, 272, 331, 26, kSelected);
+    }
+    draw_pen(canvas, width, height, 96, 331, kInk);
+    draw_hand(canvas, width, height, 272, 331, kInk);
     return;
   }
 

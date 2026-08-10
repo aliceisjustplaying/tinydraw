@@ -136,6 +136,27 @@ if(TARGET tinydraw_host)
   )
 
   add_test(
+    NAME tinydraw_tool_palette_e2e
+    COMMAND tinydraw_host
+      --tool-palette-preview
+      --output "${REPLAY_OUTPUT_DIR}/tool-palette.ppm"
+  )
+  set_tests_properties(tinydraw_tool_palette_e2e PROPERTIES
+    FIXTURES_SETUP tool_palette
+    TIMEOUT 5
+  )
+
+  add_test(
+    NAME tinydraw_tool_palette_snapshot
+    COMMAND ${CMAKE_COMMAND} -E compare_files
+      "${REPLAY_OUTPUT_DIR}/tool-palette.ppm"
+      "${PROJECT_SOURCE_DIR}/testdata/snapshots/tool-palette.ppm"
+  )
+  set_tests_properties(tinydraw_tool_palette_snapshot PROPERTIES
+    FIXTURES_REQUIRED tool_palette
+  )
+
+  add_test(
     NAME tinydraw_new_dialog_e2e
     COMMAND tinydraw_host
       --new-dialog-preview

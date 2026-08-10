@@ -15,12 +15,13 @@ TileUndoHistory::TileUndoHistory(std::span<std::uint16_t> storage) : storage_(st
   assert(valid_);
 }
 
-void TileUndoHistory::begin_entry() {
+void TileUndoHistory::begin_entry(ViewOrigin origin) {
   if (!valid_ || entry_open_) {
     return;
   }
   entry_open_ = true;
   entry_has_tiles_ = false;
+  entry_origin_ = origin;
 }
 
 void TileUndoHistory::capture_tile(int x, int y, int width, int height,
@@ -37,6 +38,7 @@ void TileUndoHistory::capture_tile(int x, int y, int width, int height,
       --count_;
     }
     tiles_[next_].fill(false);
+    origins_[next_] = entry_origin_;
     entry_has_tiles_ = true;
   }
   const int tile_index = y / kTileSize * kTilesAcross + x / kTileSize;
@@ -58,6 +60,7 @@ void TileUndoHistory::capture_canvas(std::span<const std::uint16_t> canvas) {
       --count_;
     }
     tiles_[next_].fill(false);
+    origins_[next_] = entry_origin_;
     entry_has_tiles_ = true;
   }
   for (int tile_index = 0; tile_index < kTileCount; ++tile_index) {
@@ -89,6 +92,14 @@ std::uint32_t TileUndoHistory::commit_entry() {
   next_ = (next_ + 1U) % kMaxEntries;
   count_ = std::min(count_ + 1U, kMaxEntries);
   return tile_count;
+}
+
+std::optional<ViewOrigin> TileUndoHistory::next_undo_origin() const {
+  if (!valid_ || entry_open_ || count_ == 0U) {
+    return std::nullopt;
+  }
+  const auto entry = (next_ + kMaxEntries - 1U) % kMaxEntries;
+  return origins_[entry];
 }
 
 void TileUndoHistory::clear() {
