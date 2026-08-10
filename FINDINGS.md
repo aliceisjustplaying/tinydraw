@@ -90,6 +90,12 @@ microseconds of measured queue delay.
 Physical bring-up established the V2 pin layout, panel offset, and color format. A full
 startup redraw clears panel memory left by the factory demo or an earlier session.
 
+TinyDraw keeps two full canvases in PSRAM: committed ink and the current visible image.
+Three smaller internal-RAM buffers queue panel transfers. The CO5300 accepts pixel updates
+rather than a framebuffer swap, so a conventional full-screen flip would still send all
+329,728 bytes. At 40 MHz quad SPI, the raw transfer floor is about 16.5 ms before setup and
+copying. Dirty-region transfers keep the under-finger path shorter.
+
 ## UI and Undo
 
 The default toolbar is `[undo] [pen] [eraser] [color] [size] [new]`. Color and size open
