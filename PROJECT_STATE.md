@@ -88,8 +88,20 @@ clean through 1,012 observed updates and reduced average drawing time from
 
 The FT3168 normally reports changed coordinates every 14.8–16.3 ms. Fast curves
 can therefore have 20–30 pixel gaps between raw points. Quadratic midpoint curves
-fill the path between reports. A 100 Hz register experiment and a five-byte touch
-burst both made input worse and were reverted.
+fill the path between reports. Touch polling now stops when the active-low GPIO 4
+signal rises at lift. Reading only on the rise was jittery and was reverted. A
+100 Hz register experiment and a five-byte touch burst also made input worse.
+
+RP2350 now uses the same 0.35 streamline setting as ESP32, making velocity-based
+width changes more visible. It delays the first raster until the second point can
+supply a measured starting width; taps still render on release.
+
+The remaining visible lift issue comes from the midpoint curve: live drawing stops
+halfway through the latest sample interval, then draws the withheld half on lift.
+Moving that join to 90% did not remove the effect and made circles more angular, so
+that experiment was reverted. ESP32 looks better because its tiled ribbon renderer
+can replace a provisional tail; RP2350 permanently stamps quadratic circles into
+one framebuffer.
 
 `./scripts/rp2350 capture` currently produces an image that can disagree with the
 physical panel after banded updates. Timing and touch traces remain useful. Treat
@@ -181,12 +193,15 @@ updates, toolbar use, and repeated drawing without visible corruption.
 
 ## Next work
 
-1. Repair or replace RP2350 USB framebuffer capture so it matches the panel.
-2. Investigate FT3168 data-ready timing only with trace evidence; keep the stable
-   default report configuration until a tested programming guide is available.
-3. Decide whether the RP2350 feature set needs a small Undo history. SRAM is the
-   binding constraint.
-4. Rebase `feat/rp2350-port` onto `main` after review and physical sign-off.
+1. Design a small replaceable RP2350 provisional tail that does not consume a
+   second framebuffer or add visible input lag. Keep the current midpoint version
+   as the baseline.
+2. Add bounded Undo with a compact operation log and whole-view replay. Target
+   5–10 recent operations without slowing live drawing.
+3. Build bounded vector-backed panning on the same operation log if replay timing
+   remains acceptable.
+4. Repair RP2350 USB framebuffer capture so it matches the panel.
+5. Rebase `feat/rp2350-port` onto `main` after review and physical sign-off.
 
 Keep ESP32 tests green while changing shared code. RP2350-only driver work must not
 change the ESP32 firmware target.

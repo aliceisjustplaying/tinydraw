@@ -151,9 +151,16 @@ peaked at 3.23 ms.
 
 Touch sampling runs on the second RP2350 core, so display transfers cannot block
 I²C reads. The FT3168 normally supplies new coordinates every 14.8–16.3 ms, about
-60–68 Hz. A 100 Hz register experiment did not improve that rate and caused long
-stalls, so it was removed. Fast motion can still leave 20–30 pixels between raw
-points; midpoint curves smooth those gaps.
+60–68 Hz. Polling is gated by the controller's active-low touch signal to avoid
+reads after lift. A 100 Hz register experiment did not improve the report rate and
+was removed. Fast motion can still leave 20–30 pixels between raw points; midpoint
+curves smooth those gaps.
+
+RP2350 shares ESP32's velocity-based width calculation and now uses the same 0.35
+streamline setting. Its simpler raster permanently stamps quadratic circles. The
+ESP32 renderer keeps a replaceable ribbon tail, which gives it cleaner curves and
+lift behavior. An RP experiment that exposed 90% rather than 50% of the newest
+segment made circles more angular and was reverted.
 
 The USB framebuffer capture currently disagrees with the physical panel after
 banded updates. Repeated captures are stable, while the panel remains correct.
