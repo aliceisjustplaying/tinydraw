@@ -2,8 +2,9 @@
 
 Snapshot: 2026-08-10
 
-TinyDraw runs on the 368×448 Waveshare ESP32-S3 Touch AMOLED 1.8-inch V2 board. It
-has variable-width ink, twelve colors, ten Undos, and a 736×896 canvas.
+TinyDraw runs on Waveshare's 368×448 ESP32-S3 and RP2350 Touch AMOLED 1.8-inch
+boards. Both use the shared ink and toolbar code. The ESP32 build adds ten Undos
+and a 736×896 canvas.
 
 ## Numbers for the demo
 
@@ -16,6 +17,8 @@ has variable-width ink, twelve colors, ten Undos, and a 736×896 canvas.
 - An export experiment produced a **35,010-byte PNG** in **0.69 s** and sent it in **1.27 s**.
 - Removing that experiment cut the active firmware to **310,784 bytes**, with **70%** of its
   1 MiB app partition free.
+- On RP2350, full-width display bands cut average drawing updates from **9.44 ms to
+  1.17 ms**, an **8.1× speedup**.
 
 ## From prototype to physical device
 
@@ -128,6 +131,35 @@ prevented socket stalls. iOS connectivity and caching made the demo unreliable. 
 removed from the active firmware before the RP2350 port; it was not proven to cause the
 reported display stripes.
 
+## RP2350 port
+
+The RP2350 board uses an SH8601 display, an FT3168 touch controller, and 520 KiB of
+SRAM. One 368×448 framebuffer takes 329,728 bytes. The toolbar popup backup and
+other static data bring BSS to 479,776 bytes, leaving no room for the ESP32's
+larger canvas or Undo history.
+
+The first pressure-aware XL build averaged 33.4 ms per update. Keeping pixels in
+panel byte order reduced that to 17.0 ms. Fixed-point edge smoothing and cheap
+inside/outside tests reached 9.44 ms, of which 8.84 ms was the full-screen QSPI
+transfer.
+
+A single 160×160 partial update worked in 1.394 ms. Repeated arbitrary rectangles
+produced visible panel corruption. Full-width horizontal bands use contiguous
+framebuffer rows and held up for 1,012 drawing updates without a physical artifact.
+That run averaged 1.17 ms and peaked at 3.28 ms. A later run averaged 1.39 ms and
+peaked at 3.23 ms.
+
+Touch sampling runs on the second RP2350 core, so display transfers cannot block
+I²C reads. The FT3168 normally supplies new coordinates every 14.8–16.3 ms, about
+60–68 Hz. A 100 Hz register experiment did not improve that rate and caused long
+stalls, so it was removed. Fast motion can still leave 20–30 pixels between raw
+points; midpoint curves smooth those gaps.
+
+The USB framebuffer capture currently disagrees with the physical panel after
+banded updates. Repeated captures are stable, while the panel remains correct.
+Treat physical inspection and timing logs as the current RP2350 display evidence
+until that diagnostic path is fixed.
+
 ## Verification
 
 Twenty native test groups cover exact replays, snapshots, Perfect Freehand examples,
@@ -141,9 +173,10 @@ Fast diagonals can still show the stroke being drawn. Frame work can take 16.1 m
 next touch position arrives 13–14 ms later. A full-canvas Undo sends 329,728 bytes and is
 visibly slower.
 
-There is no persistent Save. The canvas is a fixed 2×2 raster, not an unbounded document.
-A future save format and a larger sparse canvas must preserve bounded drawing and panning
-work.
+There is no persistent Save. The ESP32 canvas is a fixed 2×2 raster, not an
+unbounded document. The RP2350 has a screen-sized canvas without Undo or pan.
+Fast RP2350 curves remain limited by the FT3168's roughly 60 Hz coordinate stream,
+and its USB framebuffer capture needs repair.
 
 ## Five-minute demo
 

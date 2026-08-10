@@ -14,15 +14,13 @@ exercise the same C++20 drawing and UI core.
 
 - Variable-width, Perfect Freehand-style ink with smooth sparse-input curves
 - Solid self-overlaps, rounded sharp turns, and 4×4 edge smoothing
-- Pen, eraser, pan, twelve tldraw colors, four sizes, confirmed New, and ten Undos
-- A fixed 736×896 canvas, four times the screen area, with near-touch-rate panning
-- Bounded 32×32 drawing updates and dirty-tile Undo in 8 MiB PSRAM
+- ESP32: pan, ten Undos, and a fixed 736×896 canvas in 8 MiB PSRAM
+- RP2350: screen-sized ink, eraser, colors, sizes, and confirmed New
 - Native replays, exact snapshots, ASan/UBSan, QEMU, and device telemetry
-- RP2350: shared UI, screen-sized ink, eraser, colors, sizes, and confirmed New
 
-Recent long strokes average about 2.5–3.4 ms per update. Panning stays near the
-75–77 Hz touch rate. The display now runs at a conservative 60 MHz after 80 MHz
-produced occasional stray lines. Drawings are not yet persistent.
+ESP32 long strokes average about 2.5–3.4 ms per update. RP2350 strokes average
+about 1.2–1.4 ms using reliable full-width display bands. Drawings are not yet
+persistent.
 
 ## Run the macOS app
 
@@ -72,10 +70,12 @@ board. See [`DEVELOPING.md`](DEVELOPING.md) for the development loop.
 ```sh
 ./scripts/rp2350 bootstrap
 ./scripts/rp2350 build
-./scripts/rp2350 capture PORT /tmp/tinydraw-rp2350.png
 ./scripts/rp2350 metrics PORT
+./scripts/rp2350 trace PORT
 ```
 
-The RP2350 uses one SRAM framebuffer and reliable full-frame SH8601 updates; its smaller memory budget currently excludes the ESP32's pan and Undo features.
+The RP2350 uses one SRAM framebuffer. Full-width SH8601 bands keep drawing fast;
+arbitrary display rectangles proved unreliable. Its smaller memory budget
+currently excludes the ESP32's pan and Undo features.
 ## License
 MIT
