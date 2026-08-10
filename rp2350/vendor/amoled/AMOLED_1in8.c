@@ -222,6 +222,9 @@ void AMOLED_1IN8_Display(UWORD *Image)
     
     // Waiting for DMA transfer to complete
     while(dma_channel_is_busy(dma_tx));
+    // DMA completion only means the final bytes reached the PIO FIFO.
+    // Let the state machine shift them onto the panel before raising CS.
+    busy_wait_us_32(1);
     QSPI_Deselect(qspi);             
 }
 
@@ -266,5 +269,8 @@ void AMOLED_1IN8_DisplayWindows(uint32_t Xstart, uint32_t Ystart, uint32_t Xend,
         while(dma_channel_is_busy(dma_tx));
     }
 
+    // DMA completion only means the final bytes reached the PIO FIFO.
+    // Let the state machine shift them onto the panel before raising CS.
+    busy_wait_us_32(1);
     QSPI_Deselect(qspi);
 }
