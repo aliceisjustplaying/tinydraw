@@ -36,6 +36,37 @@ Bounds bounds_of(const RibbonPrimitive& primitive) {
   return bounds;
 }
 
+void include(Bounds& destination, const RibbonPrimitiveBatch& primitives) {
+  for (const RibbonPrimitive& primitive : primitives) {
+    const Bounds source = bounds_of(primitive);
+    destination.minimum_x = std::min(destination.minimum_x, source.minimum_x);
+    destination.minimum_y = std::min(destination.minimum_y, source.minimum_y);
+    destination.maximum_x = std::max(destination.maximum_x, source.maximum_x);
+    destination.maximum_y = std::max(destination.maximum_y, source.maximum_y);
+  }
+}
+
+struct Region {
+  int x = 0;
+  int y = 0;
+  int width = 0;
+  int height = 0;
+};
+
+Region region_of(Bounds bounds) {
+  if (!std::isfinite(bounds.minimum_x) || !std::isfinite(bounds.minimum_y) ||
+      !std::isfinite(bounds.maximum_x) || !std::isfinite(bounds.maximum_y)) {
+    return {};
+  }
+  const int x = std::max(0, static_cast<int>(std::floor(bounds.minimum_x))) & ~1;
+  const int y = std::max(0, static_cast<int>(std::floor(bounds.minimum_y))) & ~1;
+  const int right =
+      std::min(kCanvasWidth, (static_cast<int>(std::ceil(bounds.maximum_x)) + 2) & ~1);
+  const int bottom =
+      std::min(kCanvasHeight, (static_cast<int>(std::ceil(bounds.maximum_y)) + 2) & ~1);
+  return {.x = x, .y = y, .width = right - x, .height = bottom - y};
+}
+
 }  // namespace
 
 StrokeRaster::StrokeRaster(std::span<std::uint16_t> committed, std::span<std::uint16_t> visible,
@@ -100,7 +131,12 @@ StrokeRasterStats StrokeRaster::update(const RibbonUpdate& update, std::uint16_t
     }
   }
 
-  present_tiles(dirty_tiles);
+  Bounds presentation_bounds;
+  include(presentation_bounds, provisional_);
+  include(presentation_bounds, update.committed);
+  include(presentation_bounds, update.provisional);
+  const Region presentation = region_of(presentation_bounds);
+  present_region(presentation.x, presentation.y, presentation.width, presentation.height);
   provisional_ = update.provisional;
   return stats;
 }
@@ -130,7 +166,6 @@ StrokeRasterStats StrokeRaster::finish(const RibbonUpdate& update, std::uint16_t
     touched_[static_cast<std::size_t>(tile_index)] = true;
   }
 
-  const TileFlags presented_tiles = committed_tiles;
   for (int tile_index = 0; tile_index < kTileCount; ++tile_index) {
     if (!touched_[static_cast<std::size_t>(tile_index)]) {
       continue;
@@ -142,7 +177,10 @@ StrokeRasterStats StrokeRaster::finish(const RibbonUpdate& update, std::uint16_t
     touched_[static_cast<std::size_t>(tile_index)] = false;
   }
 
-  present_tiles(presented_tiles);
+  Bounds presentation_bounds;
+  include(presentation_bounds, update.committed);
+  const Region presentation = region_of(presentation_bounds);
+  present_region(presentation.x, presentation.y, presentation.width, presentation.height);
   if (history != nullptr) {
     static_cast<void>(history->commit_entry());
   }
@@ -247,6 +285,14 @@ void StrokeRaster::rasterize(const RibbonPrimitiveBatch& primitives, StrokeRaste
   }
 }
 
+void StrokeRaster::present_region(int x, int y, int width, int height) {
+  if (display_ == nullptr || visible_.empty() || width <= 0 || height <= 0) {
+    return;
+  }
+  const auto offset = static_cast<std::size_t>(y * kCanvasWidth + x);
+  display_->push_rect(x, y, width, height, visible_.data() + offset, kCanvasWidth);
+}
+
 void StrokeRaster::present_tiles(const TileFlags& tiles) {
   if (display_ == nullptr || visible_.empty()) {
     return;
@@ -269,9 +315,7 @@ void StrokeRaster::present_tiles(const TileFlags& tiles) {
   if (first_x >= last_x || first_y >= last_y) {
     return;
   }
-  const auto offset = static_cast<std::size_t>(first_y * kCanvasWidth + first_x);
-  display_->push_rect(first_x, first_y, last_x - first_x, last_y - first_y,
-                      visible_.data() + offset, kCanvasWidth);
+  present_region(first_x, first_y, last_x - first_x, last_y - first_y);
 }
 
 void StrokeRaster::compose_visible_tile(int tile_x, int tile_y, std::uint16_t color,

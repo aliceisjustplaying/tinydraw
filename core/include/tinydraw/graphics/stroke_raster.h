@@ -53,6 +53,7 @@ class StrokeRaster {
   void load_coverage_tile(int tile_x, int tile_y, StrokeRasterStats& stats);
   void store_coverage_tile(int tile_x, int tile_y, StrokeRasterStats& stats);
   void rasterize(const RibbonPrimitiveBatch& primitives, StrokeRasterStats& stats);
+  void present_region(int x, int y, int width, int height);
   void present_tiles(const TileFlags& tiles);
   void compose_visible_tile(int tile_x, int tile_y, std::uint16_t color, StrokeRasterStats& stats,
                             TileUndoHistory* history = nullptr);
