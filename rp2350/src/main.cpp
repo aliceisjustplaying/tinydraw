@@ -370,6 +370,38 @@ void send_trace() {
   std::fflush(stdout);
 }
 
+void run_partial_display_probe() {
+  constexpr int left = 104;
+  constexpr int top = 96;
+  constexpr int width = 160;
+  constexpr int height = 160;
+  std::fill(framebuffer.begin(), framebuffer.end(), panel_pixel(kWhite));
+  render_toolbar();
+  present_framebuffer();
+
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      std::uint16_t color = 0;
+      if (x >= width / 2 && y < height / 2) {
+        color = 0xF800;
+      } else if (x < width / 2 && y >= height / 2) {
+        color = 0x07E0;
+      } else if (x >= width / 2 && y >= height / 2) {
+        color = 0x001F;
+      }
+      const auto pixel = panel_pixel(color);
+      overlay_pixels[static_cast<std::size_t>(y * width + x)] = pixel;
+      framebuffer[static_cast<std::size_t>((top + y) * kWidth + left + x)] = pixel;
+    }
+  }
+
+  const auto started = time_us_64();
+  AMOLED_1IN8_DisplayWindowPacked(left, top, left + width, top + height, overlay_pixels.data());
+  const auto elapsed_us = time_us_64() - started;
+  std::printf("TINYDRAW_WINDOW_PROBE us=%llu\n", static_cast<unsigned long long>(elapsed_us));
+  std::fflush(stdout);
+}
+
 void send_performance() {
   const auto display_started = time_us_64();
   present_framebuffer();
@@ -506,6 +538,8 @@ int main() {
       send_performance();
     } else if (command == 'T') {
       send_trace();
+    } else if (command == 'W') {
+      run_partial_display_probe();
     }
 
     TouchEvent event{};

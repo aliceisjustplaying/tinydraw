@@ -48,6 +48,8 @@ void AMOLED_1IN8_Init();
 void AMOLED_1IN8_SetBrightness(uint8_t brightness);
 void AMOLED_1IN8_SetWindows(uint32_t Xstart, uint32_t Ystart, uint32_t Xend, uint32_t Yend);
 void AMOLED_1IN8_Display(UWORD *Image);
+void AMOLED_1IN8_DisplayWindowPacked(uint32_t Xstart, uint32_t Ystart, uint32_t Xend,
+                                    uint32_t Yend, UWORD *Image);
 void AMOLED_1IN8_DisplayWindows(uint32_t Xstart, uint32_t Ystart, uint32_t Xend, uint32_t Yend, UWORD *Image);
 void AMOLED_1IN8_Clear(UWORD Color);
 
