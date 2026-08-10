@@ -73,8 +73,8 @@ TEST_CASE("tile undo submits adjacent restored tiles as one display run") {
   history.capture_tile(96, 128, kUndoTileSize, kUndoTileSize, before);
   CHECK(history.commit_entry() == 2U);
   for (int y = 128; y < 128 + kUndoTileSize; ++y) {
-    std::fill_n(canvas.begin() + static_cast<std::ptrdiff_t>(index_of(64, y)),
-                2 * kUndoTileSize, kBlue);
+    std::fill_n(canvas.begin() + static_cast<std::ptrdiff_t>(index_of(64, y)), 2 * kUndoTileSize,
+                kBlue);
   }
   visible = canvas;
   display.pixels = canvas;
@@ -82,8 +82,7 @@ TEST_CASE("tile undo submits adjacent restored tiles as one display run") {
   const auto stats = history.undo(canvas, visible, &display);
 
   CHECK(stats.tiles_restored == 2U);
-  CHECK(stats.display_bytes ==
-        static_cast<std::uint32_t>(2 * kUndoTileSize * kUndoTileSize * 2));
+  CHECK(stats.display_bytes == static_cast<std::uint32_t>(2 * kUndoTileSize * kUndoTileSize * 2));
   CHECK(display.pushes == 1U);
   CHECK(display.pixels == canvas);
   CHECK(canvas == visible);

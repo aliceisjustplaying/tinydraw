@@ -155,12 +155,10 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
     const bool main_changed = toolbar_.tool != toolbar.tool || toolbar_.color != toolbar.color ||
                               toolbar_.size != toolbar.size ||
                               toolbar_.can_undo != toolbar.can_undo;
-    const bool palette_changed = toolbar_.colors_open != toolbar.colors_open ||
-                                 toolbar_.sizes_open != toolbar.sizes_open ||
-                                 ((toolbar_.colors_open || toolbar.colors_open) &&
-                                  toolbar_.color != toolbar.color) ||
-                                 ((toolbar_.sizes_open || toolbar.sizes_open) &&
-                                  toolbar_.size != toolbar.size);
+    const bool palette_changed =
+        toolbar_.colors_open != toolbar.colors_open || toolbar_.sizes_open != toolbar.sizes_open ||
+        ((toolbar_.colors_open || toolbar.colors_open) && toolbar_.color != toolbar.color) ||
+        ((toolbar_.sizes_open || toolbar.sizes_open) && toolbar_.size != toolbar.size);
     main_dirty_ = main_dirty_ || main_changed;
     palette_dirty_ = palette_dirty_ || palette_changed;
     dialog_dirty_ = dialog_dirty_ || toolbar_.confirm_new != toolbar.confirm_new;
@@ -175,8 +173,7 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
                     kMainOverlayTop - kPaletteOverlayTop);
     }
     if (dialog_dirty_) {
-      clear_overlay(kDialogOverlayX, kDialogOverlayTop, kDialogOverlayWidth,
-                    kDialogOverlayHeight);
+      clear_overlay(kDialogOverlayX, kDialogOverlayTop, kDialogOverlayWidth, kDialogOverlayHeight);
     }
     tinydraw::draw_toolbar(std::span(overlay_, static_cast<std::size_t>(tinydraw::kCanvasWidth *
                                                                         tinydraw::kCanvasHeight)),
@@ -254,16 +251,15 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
 
   void refresh_toolbar(std::span<const std::uint16_t> canvas) {
     if (dialog_dirty_) {
-      const auto offset = static_cast<std::size_t>(kDialogOverlayTop * tinydraw::kCanvasWidth +
-                                                   kDialogOverlayX);
+      const auto offset =
+          static_cast<std::size_t>(kDialogOverlayTop * tinydraw::kCanvasWidth + kDialogOverlayX);
       push_rect(kDialogOverlayX, kDialogOverlayTop, kDialogOverlayWidth, kDialogOverlayHeight,
                 canvas.data() + offset, tinydraw::kCanvasWidth);
     }
     if (palette_dirty_) {
       const auto offset = static_cast<std::size_t>(kPaletteOverlayTop * tinydraw::kCanvasWidth);
-      push_rect(0, kPaletteOverlayTop, tinydraw::kCanvasWidth,
-                kMainOverlayTop - kPaletteOverlayTop, canvas.data() + offset,
-                tinydraw::kCanvasWidth);
+      push_rect(0, kPaletteOverlayTop, tinydraw::kCanvasWidth, kMainOverlayTop - kPaletteOverlayTop,
+                canvas.data() + offset, tinydraw::kCanvasWidth);
     }
     if (main_dirty_) {
       const auto offset = static_cast<std::size_t>(kMainOverlayTop * tinydraw::kCanvasWidth);
@@ -341,9 +337,10 @@ class PhysicalTouch {
           esp_lcd_panel_io_rx_param(io_, 0xA9, &firmware, 1) == ESP_OK &&
           esp_lcd_panel_io_rx_param(io_, 0xEE, &scan_period, 1) == ESP_OK &&
           esp_lcd_panel_io_rx_param(io_, 0xFA, &interrupt_mode, 1) == ESP_OK;
-      std::printf("[DEBUG-touch-rate] registers=%u id=0x%02x firmware=0x%02x "
-                  "scan_period=0x%02x irq=0x%02x\n",
-                  registers_read, chip_id, firmware, scan_period, interrupt_mode);
+      std::printf(
+          "[DEBUG-touch-rate] registers=%u id=0x%02x firmware=0x%02x "
+          "scan_period=0x%02x irq=0x%02x\n",
+          registers_read, chip_id, firmware, scan_period, interrupt_mode);
     }
   }
 
@@ -505,8 +502,7 @@ void run_hardware_app() {
     reset_stroke();
     display.reset_timing();
     const auto started = esp_timer_get_time();
-    const auto stats =
-        canvas.undo_history().undo(canvas.committed(), canvas.visible(), &display);
+    const auto stats = canvas.undo_history().undo(canvas.committed(), canvas.visible(), &display);
     close_popups();
     update_toolbar();
     std::printf(
@@ -701,9 +697,8 @@ void run_hardware_app() {
             static_cast<long long>(display.transfer_us()),
             static_cast<unsigned long>(display.push_count()),
             static_cast<unsigned long>(event.timestamp_us - stroke_started_us),
-            static_cast<unsigned long long>(stroke_samples <= 1
-                                                ? 0
-                                                : touch_intervals_us / (stroke_samples - 1U)),
+            static_cast<unsigned long long>(
+                stroke_samples <= 1 ? 0 : touch_intervals_us / (stroke_samples - 1U)),
             static_cast<unsigned long>(maximum_touch_interval_us),
             static_cast<unsigned long>(maximum_input_lag_us),
             static_cast<unsigned long>(maximum_queue_depth));

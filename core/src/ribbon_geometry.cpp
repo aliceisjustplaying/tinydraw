@@ -126,9 +126,8 @@ void emit_quadratic(InkPoint start, InkPoint control, InkPoint end, Emit emit) {
   const Point end_direction =
       direction_or(control.position, end.position, start.position, end.position);
   const Section start_section = section(start.position, start.radius, start_direction);
-  const Section middle_before =
-      section(add(middle.position, multiply(middle_direction, overlap)), middle.radius,
-              middle_direction);
+  const Section middle_before = section(add(middle.position, multiply(middle_direction, overlap)),
+                                        middle.radius, middle_direction);
   const Section middle_after =
       section(subtract(middle.position, multiply(middle_direction, overlap)), middle.radius,
               middle_direction);
@@ -254,9 +253,8 @@ RibbonUpdate CurvedRibbonStream::append(InkPoint point) {
     if (first_cap_pending_) {
       update.provisional.push_back(circle(first_.position, first_.radius));
     }
-    emit_tail(stable_, last_, [&](RibbonPrimitive primitive) {
-      update.provisional.push_back(primitive);
-    });
+    emit_tail(stable_, last_,
+              [&](RibbonPrimitive primitive) { update.provisional.push_back(primitive); });
     update.provisional.push_back(circle(last_.position, last_.radius));
     return update;
   }
@@ -266,9 +264,8 @@ RibbonUpdate CurvedRibbonStream::append(InkPoint point) {
     point_count_ = 2U;
     first_cap_pending_ = true;
     update.provisional.push_back(circle(first_.position, first_.radius));
-    emit_tail(stable_, last_, [&](RibbonPrimitive primitive) {
-      update.provisional.push_back(primitive);
-    });
+    emit_tail(stable_, last_,
+              [&](RibbonPrimitive primitive) { update.provisional.push_back(primitive); });
     update.provisional.push_back(circle(last_.position, last_.radius));
     return update;
   }
@@ -278,9 +275,8 @@ RibbonUpdate CurvedRibbonStream::append(InkPoint point) {
     update.committed.push_back(circle(first_.position, first_.radius));
     first_cap_pending_ = false;
   }
-  emit_quadratic(stable_, last_, stable_end, [&](RibbonPrimitive primitive) {
-    update.committed.push_back(primitive);
-  });
+  emit_quadratic(stable_, last_, stable_end,
+                 [&](RibbonPrimitive primitive) { update.committed.push_back(primitive); });
   if (sharp_turn(stable_.position, last_.position, point.position)) {
     update.committed.push_back(circle(last_.position, last_.radius));
   }

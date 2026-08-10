@@ -234,18 +234,17 @@ bool toolbar_contains(Point point, const ToolbarState& state) {
 }
 
 bool toolbar_overlay_contains(Point point, const ToolbarState& state) {
-  const bool main_dock = inside(point, 0.0F, static_cast<float>(kMainTop - 1),
-                                static_cast<float>(kCanvasWidth),
-                                static_cast<float>(kMainBottom + 4));
-  const bool palette = (state.colors_open || state.sizes_open) &&
-                       inside(point, 0.0F, static_cast<float>(kPaletteTop - 1),
-                              static_cast<float>(kCanvasWidth),
-                              static_cast<float>(kPaletteBottom + 4));
-  const bool dialog = state.confirm_new &&
-                      inside(point, static_cast<float>(kDialogLeft - 1),
-                             static_cast<float>(kDialogTop - 1),
-                             static_cast<float>(kDialogRight + 4),
-                             static_cast<float>(kDialogBottom + 5));
+  const bool main_dock =
+      inside(point, 0.0F, static_cast<float>(kMainTop - 1), static_cast<float>(kCanvasWidth),
+             static_cast<float>(kMainBottom + 4));
+  const bool palette =
+      (state.colors_open || state.sizes_open) &&
+      inside(point, 0.0F, static_cast<float>(kPaletteTop - 1), static_cast<float>(kCanvasWidth),
+             static_cast<float>(kPaletteBottom + 4));
+  const bool dialog =
+      state.confirm_new &&
+      inside(point, static_cast<float>(kDialogLeft - 1), static_cast<float>(kDialogTop - 1),
+             static_cast<float>(kDialogRight + 4), static_cast<float>(kDialogBottom + 5));
   return main_dock || palette || dialog;
 }
 

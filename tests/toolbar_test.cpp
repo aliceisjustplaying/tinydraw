@@ -63,8 +63,7 @@ TEST_CASE("floating controls include forgiving vertical tap margins") {
   tinydraw::ToolbarState state;
   CHECK(tinydraw::toolbar_contains({360.0F, 409.0F}, state));
   CHECK(tinydraw::toolbar_contains({96.0F, 367.0F}, state));
-  CHECK(tinydraw::toolbar_action_at({96.0F, 367.0F}, state) ==
-        tinydraw::ToolbarAction::kSelectPen);
+  CHECK(tinydraw::toolbar_action_at({96.0F, 367.0F}, state) == tinydraw::ToolbarAction::kSelectPen);
   CHECK_FALSE(tinydraw::toolbar_contains({96.0F, 365.0F}, state));
   CHECK_FALSE(tinydraw::toolbar_contains({180.0F, 331.0F}, state));
 
@@ -85,8 +84,7 @@ TEST_CASE("new drawing confirmation captures input and exposes large choices") {
         tinydraw::ToolbarAction::kCancelNewDrawing);
   CHECK(tinydraw::toolbar_action_at({260.0F, 230.0F}, state) ==
         tinydraw::ToolbarAction::kConfirmNewDrawing);
-  CHECK(tinydraw::toolbar_action_at({180.0F, 160.0F}, state) ==
-        tinydraw::ToolbarAction::kNone);
+  CHECK(tinydraw::toolbar_action_at({180.0F, 160.0F}, state) == tinydraw::ToolbarAction::kNone);
 
   CHECK(tinydraw::toolbar_overlay_contains({180.0F, 160.0F}, state));
   CHECK_FALSE(tinydraw::toolbar_overlay_contains({10.0F, 10.0F}, state));

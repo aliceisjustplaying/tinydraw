@@ -1,13 +1,13 @@
 #include "tinydraw/ink/ribbon_geometry.h"
 
-#include "tinydraw/graphics/coverage_tile.h"
-
 #include <doctest.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <vector>
+
+#include "tinydraw/graphics/coverage_tile.h"
 
 namespace {
 
@@ -136,8 +136,7 @@ TEST_CASE("curved ribbon pieces fully cover their internal join") {
     if (primitive.kind == tinydraw::RibbonPrimitiveKind::kCircle) {
       coverage.rasterize_circle(primitive.center, primitive.radius);
     } else {
-      coverage.rasterize_convex(
-          std::span(primitive.points.data(), primitive.point_count));
+      coverage.rasterize_convex(std::span(primitive.points.data(), primitive.point_count));
     }
   }
 

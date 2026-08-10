@@ -160,8 +160,7 @@ TileUndoStats TileUndoHistory::undo(std::span<std::uint16_t> committed,
         display->push_rect(x, y, width, height,
                            source.data() + static_cast<std::size_t>(y * kCanvasWidth + x),
                            kCanvasWidth);
-        stats.display_bytes +=
-            static_cast<std::uint32_t>(width * height) * sizeof(std::uint16_t);
+        stats.display_bytes += static_cast<std::uint32_t>(width * height) * sizeof(std::uint16_t);
       }
     }
   }

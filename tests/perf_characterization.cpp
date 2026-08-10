@@ -99,13 +99,13 @@ int main() {
   const auto undo = history.undo(committed, {}, &display);
   const auto undo_pushes = display.pushes - raster_pushes;
 
-  const bool accounting_valid = total.display_bytes == total.committed_read &&
-                                raster_pushes == total.tiles &&
-                                undo.history_bytes_read == undo.canvas_bytes_written &&
-                                undo.history_bytes_read == undo.display_bytes &&
-                                undo_pushes > 0U && undo_pushes < undo.tiles_restored &&
-                                std::all_of(committed.begin(), committed.end(),
-                                            [](auto pixel) { return pixel == kBackground; });
+  const bool accounting_valid =
+      total.display_bytes == total.committed_read && raster_pushes == total.tiles &&
+      undo.history_bytes_read == undo.canvas_bytes_written &&
+      undo.history_bytes_read == undo.display_bytes && undo_pushes > 0U &&
+      undo_pushes < undo.tiles_restored &&
+      std::all_of(
+          committed.begin(), committed.end(), [](auto pixel) { return pixel == kBackground; });
   const auto finish_psram_read =
       total.finish.committed_bytes_read + total.finish.coverage_bytes_read;
   const auto finish_psram_written = total.finish.committed_bytes_written +
