@@ -287,13 +287,19 @@ ToolbarAction toolbar_action_at(Point point, const ToolbarState& state) {
               static_cast<float>(kCanvasHeight))) {
     return ToolbarAction::kNone;
   }
+  const auto main_index =
+      std::min(static_cast<std::size_t>(point.x * 6.0F / kCanvasWidth), std::size_t{5});
+  if (state.colors_open || state.sizes_open) {
+    if ((state.colors_open && main_index == 3U) || (state.sizes_open && main_index == 4U)) {
+      return state.colors_open ? ToolbarAction::kToggleColors : ToolbarAction::kToggleSizes;
+    }
+    return ToolbarAction::kNone;
+  }
   constexpr std::array actions{
       ToolbarAction::kUndo,         ToolbarAction::kSelectPen,   ToolbarAction::kSelectEraser,
       ToolbarAction::kToggleColors, ToolbarAction::kToggleSizes, ToolbarAction::kNewDrawing,
   };
-  const auto index =
-      std::min(static_cast<std::size_t>(point.x * 6.0F / kCanvasWidth), std::size_t{5});
-  return actions[index];
+  return actions[main_index];
 }
 
 std::uint16_t rgb565(InkColor color) {

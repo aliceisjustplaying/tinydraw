@@ -34,6 +34,10 @@ TEST_CASE("four large color controls appear in one second row") {
   CHECK(tinydraw::toolbar_action_at({316.0F, 331.0F}, state) ==
         tinydraw::ToolbarAction::kSelectGreen);
   CHECK(tinydraw::toolbar_contains({52.0F, 331.0F}, state));
+  CHECK(tinydraw::toolbar_action_at({37.0F, 409.0F}, state) == tinydraw::ToolbarAction::kNone);
+  CHECK(tinydraw::toolbar_action_at({213.0F, 409.0F}, state) ==
+        tinydraw::ToolbarAction::kToggleColors);
+  CHECK(tinydraw::toolbar_action_at({331.0F, 409.0F}, state) == tinydraw::ToolbarAction::kNone);
 }
 
 TEST_CASE("four large size controls appear in one second row") {
@@ -50,6 +54,9 @@ TEST_CASE("four large size controls appear in one second row") {
   CHECK(tinydraw::toolbar_action_at({316.0F, 331.0F}, state) ==
         tinydraw::ToolbarAction::kSelectExtraLarge);
   CHECK(tinydraw::toolbar_contains({316.0F, 331.0F}, state));
+  CHECK(tinydraw::toolbar_action_at({96.0F, 409.0F}, state) == tinydraw::ToolbarAction::kNone);
+  CHECK(tinydraw::toolbar_action_at({272.0F, 409.0F}, state) ==
+        tinydraw::ToolbarAction::kToggleSizes);
 }
 
 TEST_CASE("floating controls include forgiving vertical tap margins") {
