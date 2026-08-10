@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -80,6 +81,13 @@ struct TouchEvent {
 };
 
 queue_t touch_events;
+std::atomic<bool> touch_report_ready = false;
+
+void touch_report_callback(uint gpio, std::uint32_t events) {
+  if (gpio == Touch_INT_PIN && (events & GPIO_IRQ_EDGE_RISE) != 0U) {
+    touch_report_ready.store(true, std::memory_order_release);
+  }
+}
 
 void enqueue_touch(TouchEvent event) {
   if (queue_try_add(&touch_events, &event)) {
@@ -94,30 +102,38 @@ void sample_touch() {
   bool touching = false;
   std::uint16_t last_x = 0;
   std::uint16_t last_y = 0;
-  std::uint32_t no_touch_started_us = 0;
+  std::uint32_t last_report_us = time_us_32();
+  gpio_set_irq_enabled_with_callback(Touch_INT_PIN, GPIO_IRQ_EDGE_RISE, true,
+                                     touch_report_callback);
   while (true) {
-    if (FT3168_ReadState(FT3168_FINGER_NUMBER) != 0) {
-      FT3168_Get_Point();
-      no_touch_started_us = 0;
-      const auto x = static_cast<std::uint16_t>(FT3168.x_point);
-      const auto y = static_cast<std::uint16_t>(FT3168.y_point);
-      if (!touching || x != last_x || y != last_y) {
-        enqueue_touch({.x = x, .y = y, .timestamp_us = time_us_32(), .touching = true});
-        last_x = x;
-        last_y = y;
-      }
-      touching = true;
-    } else if (touching) {
+    if (touch_report_ready.exchange(false, std::memory_order_acquire)) {
       const std::uint32_t now = time_us_32();
-      if (no_touch_started_us == 0) {
-        no_touch_started_us = now;
-      } else if (now - no_touch_started_us >= 10'000U) {
+      last_report_us = now;
+      if (FT3168_ReadState(FT3168_FINGER_NUMBER) != 0) {
+        FT3168_Get_Point();
+        const auto x = static_cast<std::uint16_t>(FT3168.x_point);
+        const auto y = static_cast<std::uint16_t>(FT3168.y_point);
+        if (!touching || x != last_x || y != last_y) {
+          enqueue_touch({.x = x, .y = y, .timestamp_us = now, .touching = true});
+          last_x = x;
+          last_y = y;
+        }
+        touching = true;
+      } else if (touching) {
         enqueue_touch({.x = last_x, .y = last_y, .timestamp_us = now, .touching = false});
         touching = false;
-        no_touch_started_us = 0;
       }
+    } else {
+      const std::uint32_t now = time_us_32();
+      if (touching && now - last_report_us >= 25'000U) {
+        if (FT3168_ReadState(FT3168_FINGER_NUMBER) == 0) {
+          enqueue_touch({.x = last_x, .y = last_y, .timestamp_us = now, .touching = false});
+          touching = false;
+        }
+        last_report_us = now;
+      }
+      sleep_ms(1);
     }
-    sleep_ms(1);
   }
 }
 
