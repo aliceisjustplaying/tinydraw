@@ -89,6 +89,12 @@ Point blended_direction(Point current, Point next) {
   return direction_dot < 0.0F ? current : interpolate(next, current, direction_dot);
 }
 
+bool sharp_turn(Point start, Point control, Point end) {
+  const Point incoming = unit(subtract(start, control));
+  const Point outgoing = unit(subtract(control, end));
+  return !equal(incoming, {}) && !equal(outgoing, {}) && dot(incoming, outgoing) < 0.0F;
+}
+
 InkPoint midpoint(InkPoint start, InkPoint end) {
   InkPoint result = end;
   result.position = interpolate(start.position, end.position, 0.5F);
@@ -275,6 +281,9 @@ RibbonUpdate CurvedRibbonStream::append(InkPoint point) {
   emit_quadratic(stable_, last_, stable_end, [&](RibbonPrimitive primitive) {
     update.committed.push_back(primitive);
   });
+  if (sharp_turn(stable_.position, last_.position, point.position)) {
+    update.committed.push_back(circle(last_.position, last_.radius));
+  }
 
   stable_ = stable_end;
   last_ = point;

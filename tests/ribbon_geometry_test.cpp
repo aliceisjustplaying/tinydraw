@@ -144,6 +144,23 @@ TEST_CASE("curved ribbon pieces fully cover their internal join") {
   CHECK(coverage.coverage_at(24, 23) == 255U);
 }
 
+TEST_CASE("curved ribbon rounds a sharp internal turn") {
+  tinydraw::CurvedRibbonStream stream;
+  static_cast<void>(stream.append(ink_point(10.0F, 28.0F, 6.0F)));
+  static_cast<void>(stream.append(ink_point(20.0F, 8.0F, 6.0F)));
+  const auto update = stream.append(ink_point(30.0F, 28.0F, 6.0F));
+  tinydraw::CoverageTile coverage(0, 0);
+  for (const auto& primitive : update.committed) {
+    if (primitive.kind == tinydraw::RibbonPrimitiveKind::kCircle) {
+      coverage.rasterize_circle(primitive.center, primitive.radius);
+    } else {
+      coverage.rasterize_convex(std::span(primitive.points.data(), primitive.point_count));
+    }
+  }
+
+  CHECK(coverage.coverage_at(20, 3) == 255U);
+}
+
 TEST_CASE("curved ribbon finish commits its visible tail and resets") {
   tinydraw::CurvedRibbonStream stream;
   const auto first = ink_point(10.0F, 20.0F, 2.0F);
