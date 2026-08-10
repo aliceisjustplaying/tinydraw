@@ -532,18 +532,21 @@ int main() {
     if (!drawing) {
       return;
     }
+    const auto update_started = time_us_64();
+    std::uint32_t submitted_pixels = 0;
     if (stroke_samples >= 2) {
-      const auto update_started = time_us_64();
       last_touch.timestamp_us = static_cast<std::uint32_t>(update_started);
       const StrokePoint end = stroke_point(ink.finish(last_touch));
-      performance.submitted_pixels += draw_curve(curve_start, previous, end);
-      const auto update_us = time_us_64() - update_started;
-      ++performance.updates;
-      performance.update_us += update_us;
-      performance.maximum_update_us = std::max(performance.maximum_update_us, update_us);
+      submitted_pixels = draw_curve(curve_start, previous, end);
     } else {
       ink.end();
+      submitted_pixels = draw_segment(previous, previous);
     }
+    const auto update_us = time_us_64() - update_started;
+    ++performance.updates;
+    performance.update_us += update_us;
+    performance.maximum_update_us = std::max(performance.maximum_update_us, update_us);
+    performance.submitted_pixels += submitted_pixels;
     ++performance.strokes;
     drawing = false;
   };
@@ -630,9 +633,9 @@ int main() {
         stroke_point(drawing ? ink.update(last_touch) : ink.begin(last_touch));
     std::uint32_t submitted_pixels = 0;
     if (!drawing) {
-      submitted_pixels = draw_segment(current, current);
       stroke_samples = 1;
     } else if (stroke_samples == 1) {
+      previous.radius = current.radius;
       curve_start = midpoint(previous, current);
       submitted_pixels = draw_segment(previous, curve_start);
       stroke_samples = 2;
