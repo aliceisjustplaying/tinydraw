@@ -371,7 +371,6 @@ void run_hardware_app() {
 
   tinydraw::InkConfig brush;
   brush.size = tinydraw::brush_size(toolbar.size);
-  brush.streamline = 0.6F;
   tinydraw::InkStream ink(brush);
   tinydraw::RibbonStream ribbon;
   tinydraw::InkPoint last_ink{};
