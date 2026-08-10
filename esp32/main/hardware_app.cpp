@@ -31,6 +31,13 @@ constexpr std::uint16_t kBackground = 0xFFFFU;
 constexpr int kPanelGapX = 0x10;
 constexpr int kTransferPixels = 4096;
 constexpr int kTransferQueueDepth = 3;
+// Even-aligned transfer bounds around the three independently changing overlays.
+constexpr int kMainOverlayTop = 372;
+constexpr int kPaletteOverlayTop = 294;
+constexpr int kDialogOverlayX = 26;
+constexpr int kDialogOverlayTop = 124;
+constexpr int kDialogOverlayWidth = 318;
+constexpr int kDialogOverlayHeight = 168;
 
 DMA_ATTR std::array<std::array<std::uint16_t, kTransferPixels>, kTransferQueueDepth>
     transfer_pixels;
@@ -144,10 +151,20 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
   [[nodiscard]] std::uint32_t push_count() const { return push_count_; }
 
   void set_toolbar(const tinydraw::ToolbarState& toolbar) {
+    const bool main_changed = toolbar_.tool != toolbar.tool || toolbar_.color != toolbar.color ||
+                              toolbar_.size != toolbar.size ||
+                              toolbar_.can_undo != toolbar.can_undo;
+    const bool palette_changed = toolbar_.colors_open != toolbar.colors_open ||
+                                 toolbar_.sizes_open != toolbar.sizes_open ||
+                                 ((toolbar_.colors_open || toolbar.colors_open) &&
+                                  toolbar_.color != toolbar.color) ||
+                                 ((toolbar_.sizes_open || toolbar.sizes_open) &&
+                                  toolbar_.size != toolbar.size);
+    main_dirty_ = main_dirty_ || main_changed;
+    palette_dirty_ = palette_dirty_ || palette_changed;
+    dialog_dirty_ = dialog_dirty_ || toolbar_.confirm_new != toolbar.confirm_new;
     toolbar_ = toolbar;
-    const int new_top = tinydraw::toolbar_overlay_top(toolbar);
-    toolbar_refresh_top_ = std::min(toolbar_top_, new_top);
-    toolbar_top_ = new_top;
+    toolbar_top_ = tinydraw::toolbar_overlay_top(toolbar);
     std::fill_n(overlay_, tinydraw::kCanvasWidth * tinydraw::kCanvasHeight, kBackground);
     tinydraw::draw_toolbar(std::span(overlay_, static_cast<std::size_t>(tinydraw::kCanvasWidth *
                                                                         tinydraw::kCanvasHeight)),
@@ -216,11 +233,35 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
       push_rect(0, y, tinydraw::kCanvasWidth, height,
                 canvas.data() + static_cast<std::size_t>(y * tinydraw::kCanvasWidth));
     }
+    if (top == 0) {
+      main_dirty_ = false;
+      palette_dirty_ = false;
+      dialog_dirty_ = false;
+    }
   }
 
   void refresh_toolbar(std::span<const std::uint16_t> canvas) {
-    push_canvas(canvas, toolbar_refresh_top_);
-    toolbar_refresh_top_ = toolbar_top_;
+    if (dialog_dirty_) {
+      const auto offset = static_cast<std::size_t>(kDialogOverlayTop * tinydraw::kCanvasWidth +
+                                                   kDialogOverlayX);
+      push_rect(kDialogOverlayX, kDialogOverlayTop, kDialogOverlayWidth, kDialogOverlayHeight,
+                canvas.data() + offset, tinydraw::kCanvasWidth);
+    }
+    if (palette_dirty_) {
+      const auto offset = static_cast<std::size_t>(kPaletteOverlayTop * tinydraw::kCanvasWidth);
+      push_rect(0, kPaletteOverlayTop, tinydraw::kCanvasWidth,
+                kMainOverlayTop - kPaletteOverlayTop, canvas.data() + offset,
+                tinydraw::kCanvasWidth);
+    }
+    if (main_dirty_) {
+      const auto offset = static_cast<std::size_t>(kMainOverlayTop * tinydraw::kCanvasWidth);
+      push_rect(0, kMainOverlayTop, tinydraw::kCanvasWidth,
+                tinydraw::kCanvasHeight - kMainOverlayTop, canvas.data() + offset,
+                tinydraw::kCanvasWidth);
+    }
+    main_dirty_ = false;
+    palette_dirty_ = false;
+    dialog_dirty_ = false;
   }
 
  private:
@@ -229,7 +270,9 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
   std::uint16_t* overlay_ = nullptr;
   tinydraw::ToolbarState toolbar_{};
   int toolbar_top_ = tinydraw::toolbar_overlay_top(toolbar_);
-  int toolbar_refresh_top_ = tinydraw::toolbar_overlay_top(toolbar_);
+  bool main_dirty_ = false;
+  bool palette_dirty_ = false;
+  bool dialog_dirty_ = false;
   std::int64_t prepare_us_ = 0;
   std::int64_t transfer_us_ = 0;
   std::uint32_t push_count_ = 0;
