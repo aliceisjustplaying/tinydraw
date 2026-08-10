@@ -1,70 +1,72 @@
 # TinyDraw
 
-TinyDraw is a small finger-drawing app for the Waveshare ESP32-S3 Touch AMOLED
-1.8-inch board. The display is 368×448 pixels. The interface borrows tldraw's
-basic shape while staying practical for a tiny touchscreen and an ESP32.
-
-This is an early hardware-independent build. The drawing engine, macOS test app,
-and ESP-IDF/QEMU firmware path work. Physical display and touch drivers still
-need a board.
+TinyDraw is a small finger-drawing app for the 368×448 Waveshare ESP32-S3 Touch
+AMOLED 1.8-inch V2 board. It runs on the physical CO5300 display with CST820
+touch. A macOS app and ESP-IDF/QEMU build exercise the same C++20 drawing core.
 
 ## Current state
 
-- Pressure-like variable-width ink with Perfect Freehand-style geometry
-- 4×4 antialiasing into an RGB565 canvas
-- Bounded dirty-tile rendering for long strokes and self-overlaps
+- Variable-width, Perfect Freehand-style ink
+- Smooth curve reconstruction for sparse touch input
+- 4×4 antialiasing into a 16-bit-color canvas
+- Bounded 32×32 updates for long strokes and self-overlaps
 - Pen, eraser, four colors, four sizes, New, and ten levels of Undo
-- Dirty-tile Undo stored in PSRAM instead of full-canvas copies
-- A tldraw-inspired one-row toolbar with color and size popups
-- Shared C++20 drawing core for macOS and ESP32-S3
-- Debug, release, ASan/UBSan, replay, QEMU, and graphics tests
+- One-row tldraw-inspired toolbar with color and size popups
+- Dirty-tile Undo stored in the board's 8 MiB PSRAM
+- Native replays, exact snapshots, ASan/UBSan, QEMU, and hardware telemetry
 
-The native app is useful now:
+The hardware build is usable. Long curves average about 5.7 ms per update. The
+CST820 supplies distinct coordinates at roughly 75–77 Hz; very fast XL diagonals
+can still show some drawing lag.
+
+Current product work includes larger toolbar tap targets, confirmation before
+New, an edge-release stroke bug, and a possible Save feature.
+
+## Run the macOS app
 
 ```sh
 ./scripts/bootstrap-macos   # once
 ./scripts/dev run
 ```
 
-It opens near the physical size of the real 1.8-inch panel on a 14-inch 2021
-MacBook Pro at default scaling. Resize it if you want a closer look. Draw with
-the mouse, use `Cmd-Z` to undo, `C` for a new drawing, and `Esc` to quit.
+It opens near the panel's physical size on a 14-inch 2021 MacBook Pro at default
+scaling. Draw with the mouse, use `Cmd-Z` to undo, `C` for New, and `Esc` to quit.
 
-## Development
+## Test and profile
 
 ```sh
-./scripts/dev test          # native debug tests and end-to-end replays
+./scripts/dev test          # native tests and end-to-end replays
 ./scripts/dev release       # optimized build and tests
-./scripts/dev asan          # ASan and UBSan on SDL-free project code
-./scripts/dev perf          # deterministic raster and memory-traffic report
+./scripts/dev asan          # ASan and UBSan on the shared drawing core
+./scripts/dev perf          # sustained XL work and memory-traffic report
 ./scripts/dev format-check
 ```
+
+## Build firmware
 
 ESP-IDF v6.0.2 and QEMU stay isolated from the native toolchain:
 
 ```sh
-./scripts/bootstrap-idf     # once
-./scripts/esp32 build
-./scripts/esp32 qemu        # headless firmware replay
-./scripts/esp32 graphics    # visible virtual framebuffer; Ctrl-A, X to close
+./scripts/bootstrap-idf       # once
+./scripts/esp32 build         # physical ESP32-S3 firmware
+./scripts/esp32 qemu          # headless firmware replay
+./scripts/esp32 graphics-test # automated virtual display check
+./scripts/esp32 graphics      # visible QEMU framebuffer
 ```
 
-QEMU checks integration and an 8 MiB modeled PSRAM allocation. It does not tell
-us how fast the physical board will draw.
+Flash a connected board with:
 
-## Hardware work ahead
+```sh
+cd esp32
+eim run "idf.py -B ../out/build/esp32 -p PORT flash"
+```
 
-Waveshare sells two revisions:
+QEMU verifies firmware integration and the 8 MiB memory model. Performance
+numbers come from the physical board.
 
-- V1: SH8601 display and FT3168 touch
-- V2: CO5300 display and CST820 touch
-
-The incoming board could be either one. We will identify it before choosing the
-display and touch adapters, then measure PSRAM bandwidth, stroke-lift latency,
-Undo latency, partial display writes, and touch-to-pixel feel on-device.
-
-See [`PROJECT_STATE.md`](PROJECT_STATE.md) for the detailed engineering handoff
-and [`DEVELOPING.md`](DEVELOPING.md) for setup and test notes.
+See [`FINDINGS.md`](FINDINGS.md) for measurements and demo notes,
+[`DEVELOPING.md`](DEVELOPING.md) for the development loop, and
+[`PROJECT_STATE.md`](PROJECT_STATE.md) for the detailed engineering handoff.
 
 ## License
 
