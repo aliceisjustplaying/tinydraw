@@ -34,6 +34,7 @@ at default scaling. Draw with the mouse, use `Cmd-Z` to undo, `C` for New, and
 Join the open `TinyDraw` Wi-Fi network, choose **Use Without Internet**, then
 open `http://192.168.4.1/drawing.png` in Safari. Add a changing query such as
 `?t=2` to bypass browser caching. Airplane Mode keeps iOS on the offline network.
+A short press of the upper side button (BOOT) toggles Wi-Fi off or on.
 
 ## Test and profile
 

@@ -7,6 +7,7 @@ if(NOT TINYDRAW_QEMU)
   list(APPEND TINYDRAW_PLATFORM_REQUIRES
     esp_lcd_co5300
     esp_lcd_touch_cst816s
+    esp_driver_gpio
     esp_wifi
     esp_http_server
     nvs_flash

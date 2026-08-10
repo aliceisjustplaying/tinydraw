@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "driver/gpio.h"
 #include "esp_err.h"
 #include "esp_event.h"
 #include "esp_heap_caps.h"
@@ -14,6 +15,8 @@
 #include "esp_netif.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "nvs_flash.h"
 #include "png.h"
 #include "tinydraw/graphics/world_canvas.h"
@@ -26,10 +29,13 @@ constexpr int kExportWidth = WorldCanvas::kWidth;
 constexpr int kExportHeight = WorldCanvas::kHeight;
 constexpr std::size_t kPixelCount = WorldCanvas::kRequiredPixels;
 constexpr std::size_t kPngCapacity = 512U * 1024U;
+constexpr gpio_num_t kWifiButton = GPIO_NUM_0;
+constexpr std::int8_t kWifiPower = 40;  // Quarter-dBm units: 10 dBm.
 
 const WorldCanvas* export_world = nullptr;
 std::span<const std::uint16_t> export_viewport;
 std::array<png_byte, static_cast<std::size_t>(kExportWidth * 3)> png_row;
+bool wifi_enabled = true;
 
 constexpr char kPage[] = R"HTML(<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -154,6 +160,44 @@ esp_err_t drawing_handler(httpd_req_t* request) {
   return result;
 }
 
+bool set_wifi_enabled(bool enabled) {
+  const esp_err_t result = enabled ? esp_wifi_start() : esp_wifi_stop();
+  if (result != ESP_OK || (enabled && esp_wifi_set_max_tx_power(kWifiPower) != ESP_OK)) {
+    std::printf("TINYDRAW_WIFI_TOGGLE_FAIL enabled=%u error=%ld\n", enabled,
+                static_cast<long>(result));
+    return false;
+  }
+  wifi_enabled = enabled;
+  std::printf("TINYDRAW_WIFI_%s\n", enabled ? "ON" : "OFF");
+  return true;
+}
+
+void wifi_button_task(void*) {
+  while (true) {
+    if (gpio_get_level(kWifiButton) != 0) {
+      vTaskDelay(pdMS_TO_TICKS(20));
+      continue;
+    }
+    static_cast<void>(set_wifi_enabled(!wifi_enabled));
+    do {
+      vTaskDelay(pdMS_TO_TICKS(20));
+    } while (gpio_get_level(kWifiButton) == 0);
+    vTaskDelay(pdMS_TO_TICKS(50));
+  }
+}
+
+bool start_wifi_button() {
+  gpio_config_t configuration{};
+  configuration.pin_bit_mask = 1ULL << kWifiButton;
+  configuration.mode = GPIO_MODE_INPUT;
+  configuration.pull_up_en = GPIO_PULLUP_ENABLE;
+  configuration.pull_down_en = GPIO_PULLDOWN_DISABLE;
+  configuration.intr_type = GPIO_INTR_DISABLE;
+  return gpio_config(&configuration) == ESP_OK &&
+         xTaskCreate(wifi_button_task, "tinydraw_wifi_button", 3072U, nullptr, 2U, nullptr) ==
+             pdPASS;
+}
+
 bool initialize_networking() {
   esp_err_t result = nvs_flash_init();
   if (result == ESP_ERR_NVS_NO_FREE_PAGES || result == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -195,7 +239,7 @@ bool start_wifi_export(const WorldCanvas& world, std::span<const std::uint16_t> 
   configuration.ap.authmode = WIFI_AUTH_OPEN;
   if (esp_wifi_set_mode(WIFI_MODE_AP) != ESP_OK ||
       esp_wifi_set_config(WIFI_IF_AP, &configuration) != ESP_OK || esp_wifi_start() != ESP_OK ||
-      esp_wifi_set_max_tx_power(40) != ESP_OK) {
+      esp_wifi_set_max_tx_power(kWifiPower) != ESP_OK) {
     return false;
   }
 
@@ -213,7 +257,7 @@ bool start_wifi_export(const WorldCanvas& world, std::span<const std::uint16_t> 
   const httpd_uri_t drawing{
       .uri = "/drawing.png", .method = HTTP_GET, .handler = drawing_handler, .user_ctx = nullptr};
   if (httpd_register_uri_handler(server, &root) != ESP_OK ||
-      httpd_register_uri_handler(server, &drawing) != ESP_OK) {
+      httpd_register_uri_handler(server, &drawing) != ESP_OK || !start_wifi_button()) {
     return false;
   }
   std::printf(
