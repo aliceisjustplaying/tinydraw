@@ -426,9 +426,25 @@ void send_performance() {
   std::fflush(stdout);
 }
 
-std::uint32_t submit_frame() {
-  present_framebuffer();
-  return static_cast<std::uint32_t>(kWidth * kHeight);
+std::uint32_t submit_stroke_band(std::span<const StrokePoint> points) {
+  float minimum_y = points.front().y;
+  float maximum_y = points.front().y;
+  float maximum_radius = points.front().radius;
+  for (const auto& point : points.subspan(1)) {
+    minimum_y = std::min(minimum_y, point.y);
+    maximum_y = std::max(maximum_y, point.y);
+    maximum_radius = std::max(maximum_radius, point.radius);
+  }
+  const int top = std::max(0, static_cast<int>(std::floor(minimum_y - maximum_radius - 2.0F)));
+  const int bottom =
+      std::min(kDrawingBottom, static_cast<int>(std::ceil(maximum_y + maximum_radius + 2.0F)));
+  if (top >= bottom) {
+    return 0;
+  }
+  AMOLED_1IN8_DisplayWindowPacked(0, static_cast<std::uint32_t>(top), kWidth,
+                                  static_cast<std::uint32_t>(bottom),
+                                  framebuffer.data() + static_cast<std::ptrdiff_t>(top * kWidth));
+  return static_cast<std::uint32_t>(kWidth * (bottom - top));
 }
 
 float sample_spacing(float minimum_radius) {
@@ -448,7 +464,8 @@ std::uint32_t draw_segment(StrokePoint start, StrokePoint end) {
         .radius = start.radius + (end.radius - start.radius) * amount,
     });
   }
-  return submit_frame();
+  const std::array bounds{start, end};
+  return submit_stroke_band(bounds);
 }
 
 std::uint32_t draw_curve(StrokePoint start, StrokePoint control, StrokePoint end) {
@@ -469,7 +486,8 @@ std::uint32_t draw_curve(StrokePoint start, StrokePoint control, StrokePoint end
                   amount * amount * end.radius,
     });
   }
-  return submit_frame();
+  const std::array bounds{start, control, end};
+  return submit_stroke_band(bounds);
 }
 
 }  // namespace
