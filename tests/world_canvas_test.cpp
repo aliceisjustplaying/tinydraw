@@ -1,0 +1,53 @@
+#include "tinydraw/graphics/world_canvas.h"
+
+#include <doctest.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+namespace {
+
+constexpr std::uint16_t kWhite = 0xFFFFU;
+constexpr std::uint16_t kInk = 0x433DU;
+constexpr std::size_t screen_index(int x, int y) {
+  return static_cast<std::size_t>(y * tinydraw::kCanvasWidth + x);
+}
+
+}  // namespace
+
+TEST_CASE("a captured viewport can be shown from another world origin") {
+  std::vector<std::uint16_t> storage(tinydraw::WorldCanvas::kRequiredPixels);
+  tinydraw::WorldCanvas world(storage);
+  std::vector<std::uint16_t> committed(tinydraw::WorldCanvas::kViewportPixels, kWhite);
+  std::vector<std::uint16_t> visible(tinydraw::WorldCanvas::kViewportPixels, 0U);
+
+  const auto initial = world.origin();
+  CHECK(initial.x == tinydraw::kCanvasWidth / 2);
+  CHECK(initial.y == tinydraw::kCanvasHeight / 2);
+  committed[screen_index(100, 100)] = kInk;
+  CHECK(world.capture(committed));
+
+  CHECK(world.show({initial.x + 50, initial.y + 25}, committed, visible));
+  CHECK(world.origin() == tinydraw::ViewOrigin{initial.x + 50, initial.y + 25});
+  CHECK(committed[screen_index(50, 75)] == kInk);
+  CHECK(visible == committed);
+}
+
+TEST_CASE("world origins clamp to the pannable area and clear back to center") {
+  std::vector<std::uint16_t> storage(tinydraw::WorldCanvas::kRequiredPixels);
+  tinydraw::WorldCanvas world(storage);
+  std::vector<std::uint16_t> committed(tinydraw::WorldCanvas::kViewportPixels, 0U);
+
+  CHECK(world.show({-100, 10'000}, committed));
+  CHECK(world.origin() ==
+        tinydraw::ViewOrigin{0, tinydraw::WorldCanvas::kHeight - tinydraw::kCanvasHeight});
+  CHECK_FALSE(world.show(world.origin(), committed));
+
+  committed[screen_index(20, 20)] = kInk;
+  CHECK(world.capture(committed));
+  CHECK(world.clear(committed));
+  CHECK(world.origin() ==
+        tinydraw::ViewOrigin{tinydraw::kCanvasWidth / 2, tinydraw::kCanvasHeight / 2});
+  CHECK(committed[screen_index(20, 20)] == kWhite);
+}
