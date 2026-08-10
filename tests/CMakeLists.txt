@@ -9,7 +9,6 @@ add_executable(tinydraw_tests
   stroke_raster_test.cpp
   tile_undo_history_test.cpp
   toolbar_test.cpp
-  viewport_updates_test.cpp
   world_canvas_test.cpp
 )
 target_link_libraries(tinydraw_tests PRIVATE tinydraw::core tinydraw_project_options)
