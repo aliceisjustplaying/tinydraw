@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -160,7 +161,9 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
                               toolbar_.size != toolbar.size ||
                               toolbar_.can_undo != toolbar.can_undo;
     const bool palette_changed =
-        toolbar_.colors_open != toolbar.colors_open || toolbar_.sizes_open != toolbar.sizes_open ||
+        toolbar_.tools_open != toolbar.tools_open || toolbar_.colors_open != toolbar.colors_open ||
+        toolbar_.sizes_open != toolbar.sizes_open ||
+        ((toolbar_.tools_open || toolbar.tools_open) && toolbar_.tool != toolbar.tool) ||
         ((toolbar_.colors_open || toolbar.colors_open) && toolbar_.color != toolbar.color) ||
         ((toolbar_.sizes_open || toolbar.sizes_open) && toolbar_.size != toolbar.size);
     main_dirty_ = main_dirty_ || main_changed;
@@ -243,15 +246,16 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
     ++push_count_;
   }
 
-  void push_canvas(std::span<const std::uint16_t> canvas, int top = 0) {
+  void push_canvas(std::span<const std::uint16_t> canvas, int top = 0,
+                   int bottom = tinydraw::kCanvasHeight) {
     // The CO5300 requires even transfer-window boundaries.
     constexpr int rows_per_transfer = 10;
-    for (int y = top; y < tinydraw::kCanvasHeight; y += rows_per_transfer) {
-      const int height = std::min(rows_per_transfer, tinydraw::kCanvasHeight - y);
+    for (int y = top; y < bottom; y += rows_per_transfer) {
+      const int height = std::min(rows_per_transfer, bottom - y);
       push_rect(0, y, tinydraw::kCanvasWidth, height,
                 canvas.data() + static_cast<std::size_t>(y * tinydraw::kCanvasWidth));
     }
-    if (top == 0) {
+    if (top == 0 && bottom == tinydraw::kCanvasHeight) {
       main_dirty_ = false;
       palette_dirty_ = false;
       palette_refresh_top_ = kMainOverlayTop;
@@ -461,6 +465,9 @@ void run_hardware_app() {
   tinydraw::Point last_touch{};
   std::uint16_t stroke_color = tinydraw::rgb565(toolbar.color);
   bool pressed = false;
+  bool panning = false;
+  tinydraw::Point pan_start_touch{};
+  tinydraw::ViewOrigin pan_start_origin{};
   bool toolbar_pressed = false;
   tinydraw::Point toolbar_sum{};
   std::uint32_t toolbar_samples = 0;
@@ -475,6 +482,7 @@ void run_hardware_app() {
   std::int64_t maximum_render_us = 0;
 
   const auto close_popups = [&] {
+    toolbar.tools_open = false;
     toolbar.colors_open = false;
     toolbar.sizes_open = false;
   };
@@ -495,13 +503,20 @@ void run_hardware_app() {
     ink.set_config(config);
     close_popups();
   };
+  const auto pan_to = [&](tinydraw::Point point) {
+    const int delta_x = static_cast<int>(std::lround(point.x - pan_start_touch.x));
+    const int delta_y = static_cast<int>(std::lround(point.y - pan_start_touch.y));
+    if (canvas.world().show({pan_start_origin.x - delta_x, pan_start_origin.y - delta_y},
+                            canvas.committed(), canvas.visible())) {
+      display.push_canvas(canvas.committed(), 0, kMainOverlayTop);
+    }
+  };
   const auto new_drawing = [&] {
     reset_stroke();
-    canvas.undo_history().begin_entry();
+    canvas.undo_history().begin_entry(canvas.world().origin());
     canvas.undo_history().capture_canvas(canvas.committed());
     static_cast<void>(canvas.undo_history().commit_entry());
-    std::fill(canvas.committed().begin(), canvas.committed().end(), kBackground);
-    std::fill(canvas.visible().begin(), canvas.visible().end(), kBackground);
+    static_cast<void>(canvas.world().clear(canvas.committed(), canvas.visible()));
     toolbar.confirm_new = false;
     close_popups();
     toolbar.can_undo = canvas.undo_history().can_undo();
@@ -515,14 +530,28 @@ void run_hardware_app() {
     reset_stroke();
     display.reset_timing();
     const auto started = esp_timer_get_time();
-    const auto stats = canvas.undo_history().undo(canvas.committed(), canvas.visible(), &display);
+    static_cast<void>(canvas.world().capture(canvas.committed()));
+    const auto undo_origin = canvas.undo_history().next_undo_origin();
+    const bool view_changed = undo_origin.has_value() && *undo_origin != canvas.world().origin();
+    if (view_changed) {
+      static_cast<void>(canvas.world().show(*undo_origin, canvas.committed(), canvas.visible()));
+    }
+    const auto stats = canvas.undo_history().undo(canvas.committed(), canvas.visible(),
+                                                  view_changed ? nullptr : &display);
+    static_cast<void>(canvas.world().capture(canvas.committed()));
     close_popups();
-    update_toolbar();
+    toolbar.can_undo = canvas.undo_history().can_undo();
+    display.set_toolbar(toolbar);
+    if (view_changed) {
+      display.push_canvas(canvas.committed());
+    } else {
+      display.refresh_toolbar(canvas.committed());
+    }
     std::printf(
-        "[DEBUG-undo1] tiles=%lu bytes=%lu elapsed_us=%lld prepare_us=%lld "
+        "[DEBUG-undo1] tiles=%lu bytes=%lu view_changed=%u elapsed_us=%lld prepare_us=%lld "
         "transfer_us=%lld pushes=%lu\n",
         static_cast<unsigned long>(stats.tiles_restored),
-        static_cast<unsigned long>(stats.display_bytes),
+        static_cast<unsigned long>(stats.display_bytes), view_changed,
         static_cast<long long>(esp_timer_get_time() - started),
         static_cast<long long>(display.prepare_us()), static_cast<long long>(display.transfer_us()),
         static_cast<unsigned long>(display.push_count()));
@@ -533,6 +562,10 @@ void run_hardware_app() {
         toolbar.tool = tinydraw::DrawingTool::kPen;
         close_popups();
         break;
+      case tinydraw::ToolbarAction::kSelectPan:
+        toolbar.tool = tinydraw::DrawingTool::kPan;
+        close_popups();
+        break;
       case tinydraw::ToolbarAction::kSelectEraser:
         toolbar.tool = tinydraw::DrawingTool::kEraser;
         close_popups();
@@ -540,14 +573,21 @@ void run_hardware_app() {
       case tinydraw::ToolbarAction::kSelectColor:
         toolbar.color = tinydraw::toolbar_color_at(point, toolbar).value_or(toolbar.color);
         toolbar.tool = tinydraw::DrawingTool::kPen;
+        close_popups();
+        break;
+      case tinydraw::ToolbarAction::kToggleTools:
+        toolbar.tools_open = !toolbar.tools_open;
         toolbar.colors_open = false;
+        toolbar.sizes_open = false;
         break;
       case tinydraw::ToolbarAction::kToggleColors:
         toolbar.colors_open = !toolbar.colors_open;
+        toolbar.tools_open = false;
         toolbar.sizes_open = false;
         break;
       case tinydraw::ToolbarAction::kToggleSizes:
         toolbar.sizes_open = !toolbar.sizes_open;
+        toolbar.tools_open = false;
         toolbar.colors_open = false;
         break;
       case tinydraw::ToolbarAction::kSelectSmall:
@@ -595,6 +635,15 @@ void run_hardware_app() {
     if (xQueueReceive(touch_queue, &event, portMAX_DELAY) != pdTRUE) {
       continue;
     }
+    if (panning && event.touching) {
+      TouchEvent latest;
+      while (xQueueReceive(touch_queue, &latest, 0) == pdTRUE) {
+        event = latest;
+        if (!event.touching) {
+          break;
+        }
+      }
+    }
     const tinydraw::Point point = event.point;
     const bool touching = event.touching;
     const std::uint32_t input_lag_us = timestamp_us() - event.timestamp_us;
@@ -618,6 +667,13 @@ void run_hardware_app() {
         toolbar_samples = 1;
       } else {
         close_popups();
+        if (toolbar.tool == tinydraw::DrawingTool::kPan) {
+          static_cast<void>(canvas.world().capture(canvas.committed()));
+          pan_start_touch = point;
+          pan_start_origin = canvas.world().origin();
+          panning = true;
+          continue;
+        }
         stroke_color = toolbar.tool == tinydraw::DrawingTool::kEraser
                            ? kBackground
                            : tinydraw::rgb565(toolbar.color);
@@ -646,6 +702,10 @@ void run_hardware_app() {
         toolbar_sum.y += point.y;
         ++toolbar_samples;
       }
+    } else if (touching && pressed && panning &&
+               (point.x != last_touch.x || point.y != last_touch.y)) {
+      last_touch = point;
+      pan_to(point);
     } else if (touching && pressed && ink.active() &&
                (point.x != last_touch.x || point.y != last_touch.y)) {
       last_touch = point;
@@ -676,12 +736,17 @@ void run_hardware_app() {
         }
         continue;
       }
+      if (panning) {
+        pan_to(point);
+        panning = false;
+        continue;
+      }
       if (ink.active()) {
         last_ink =
             ink.finish({.x = last_touch.x, .y = last_touch.y, .timestamp_us = event.timestamp_us});
         const auto started = esp_timer_get_time();
-        static_cast<void>(
-            canvas.raster().finish(ribbon.finish(last_ink), stroke_color, &canvas.undo_history()));
+        static_cast<void>(canvas.raster().finish(ribbon.finish(last_ink), stroke_color,
+                                                 &canvas.undo_history(), canvas.world().origin()));
         const auto finish_us = esp_timer_get_time() - started;
         std::printf(
             "[DEBUG-perf1] samples=%lu updates_us=%lld average_us=%lld max_us=%lld "
