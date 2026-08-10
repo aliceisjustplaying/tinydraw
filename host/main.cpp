@@ -150,7 +150,7 @@ int ui_preview(const std::string& output_path, const tinydraw::ToolbarState& too
 
 bool draw_test_stroke(tinydraw::StrokeRaster& raster, tinydraw::TileUndoHistory& history,
                       tinydraw::Point start, tinydraw::Point end, std::uint16_t color,
-                      std::uint32_t timestamp_us) {
+                      std::uint32_t timestamp_us, tinydraw::ViewOrigin origin = {}) {
   tinydraw::InkStream ink;
   tinydraw::RibbonStream ribbon;
   static_cast<void>(raster.update(
@@ -162,7 +162,7 @@ bool draw_test_stroke(tinydraw::StrokeRaster& raster, tinydraw::TileUndoHistory&
                     color));
   static_cast<void>(raster.finish(
       ribbon.finish(ink.finish({.x = end.x, .y = end.y, .timestamp_us = timestamp_us + 16'000U})),
-      color, &history));
+      color, &history, origin));
   return history.can_undo();
 }
 
@@ -218,6 +218,52 @@ int undo_e2e() {
     return EXIT_FAILURE;
   }
   std::printf("TINYDRAW_UNDO_OK depth=10 draw=1 erase=1 new=1 exact=1\n");
+  return EXIT_SUCCESS;
+}
+
+int pan_e2e() {
+  std::vector<std::uint16_t> committed(tinydraw::WorldCanvas::kViewportPixels, kBackground);
+  std::vector<std::uint16_t> visible = committed;
+  std::vector<std::uint16_t> world_storage(tinydraw::WorldCanvas::kRequiredPixels);
+  std::vector<std::uint16_t> undo_storage(tinydraw::TileUndoHistory::kRequiredPixels);
+  std::vector<std::uint8_t> coverage(committed.size(), 0U);
+  tinydraw::WorldCanvas world(world_storage);
+  tinydraw::TileUndoHistory history(undo_storage);
+  tinydraw::StrokeRaster raster(committed, visible, coverage);
+
+  const auto first_origin = world.origin();
+  draw_test_stroke(raster, history, {30.0F, 40.0F}, {140.0F, 110.0F}, kReplayInk, 1'000U,
+                   first_origin);
+  const auto first_stroke = committed;
+  static_cast<void>(world.capture(committed));
+
+  const tinydraw::ViewOrigin second_origin{first_origin.x + 200, first_origin.y};
+  static_cast<void>(world.show(second_origin, committed, visible));
+  const auto blank_second_view = committed;
+  static_cast<void>(world.show(first_origin, committed, visible));
+  const bool first_survived_pan = committed == first_stroke;
+  static_cast<void>(world.show(second_origin, committed, visible));
+
+  draw_test_stroke(raster, history, {220.0F, 80.0F}, {320.0F, 180.0F}, 0xF800U, 20'000U,
+                   second_origin);
+  static_cast<void>(history.undo(committed, visible));
+  static_cast<void>(world.capture(committed));
+  const bool undid_second = committed == blank_second_view;
+
+  const auto undo_origin = history.next_undo_origin();
+  if (undo_origin.has_value()) {
+    static_cast<void>(world.show(*undo_origin, committed, visible));
+  }
+  static_cast<void>(history.undo(committed, visible));
+  const bool returned_to_first_view = world.origin() == first_origin;
+  const bool undid_first =
+      std::ranges::all_of(committed, [](std::uint16_t pixel) { return pixel == kBackground; });
+
+  if (!first_survived_pan || !undid_second || !returned_to_first_view || !undid_first) {
+    std::fprintf(stderr, "pannable canvas E2E failed\n");
+    return EXIT_FAILURE;
+  }
+  std::printf("TINYDRAW_PAN_OK world=2x2 draw=1 undo_across_views=1 exact=1\n");
   return EXIT_SUCCESS;
 }
 
@@ -500,12 +546,15 @@ int main(int argc, char** argv) {
   if (argc == 2 && std::string(argv[1]) == "--undo-e2e") {
     return undo_e2e();
   }
+  if (argc == 2 && std::string(argv[1]) == "--pan-e2e") {
+    return pan_e2e();
+  }
   if (argc != 1) {
     std::fprintf(stderr,
                  "usage: %s [--replay INPUT --output IMAGE.ppm | --ui-preview --output "
                  "IMAGE.ppm | --color-palette-preview --output IMAGE.ppm | "
                  "--tool-palette-preview --output IMAGE.ppm | "
-                 "--new-dialog-preview --output IMAGE.ppm | --undo-e2e]\n",
+                 "--new-dialog-preview --output IMAGE.ppm | --undo-e2e | --pan-e2e]\n",
                  argv[0]);
     return EXIT_FAILURE;
   }
