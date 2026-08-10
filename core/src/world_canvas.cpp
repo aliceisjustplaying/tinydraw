@@ -42,14 +42,22 @@ bool WorldCanvas::capture(std::span<const std::uint16_t> viewport) {
   return true;
 }
 
-bool WorldCanvas::show(ViewOrigin origin, std::span<std::uint16_t> committed,
-                       std::span<std::uint16_t> visible) {
-  if (!valid_ || !valid_viewport(committed) || (!visible.empty() && !valid_viewport(visible))) {
+bool WorldCanvas::move_to(ViewOrigin origin) {
+  if (!valid_) {
     return false;
   }
   const ViewOrigin next = clamp_origin(origin);
   const bool changed = next != origin_;
   origin_ = next;
+  return changed;
+}
+
+bool WorldCanvas::show(ViewOrigin origin, std::span<std::uint16_t> committed,
+                       std::span<std::uint16_t> visible) {
+  if (!valid_ || !valid_viewport(committed) || (!visible.empty() && !valid_viewport(visible))) {
+    return false;
+  }
+  const bool changed = move_to(origin);
   copy_to_viewport(committed);
   if (!visible.empty()) {
     copy_to_viewport(visible);

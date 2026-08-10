@@ -34,6 +34,18 @@ TEST_CASE("a captured viewport can be shown from another world origin") {
   CHECK(visible == committed);
 }
 
+TEST_CASE("moving the world origin does not copy a viewport") {
+  std::vector<std::uint16_t> storage(tinydraw::WorldCanvas::kRequiredPixels);
+  tinydraw::WorldCanvas world(storage);
+  std::vector<std::uint16_t> viewport(tinydraw::WorldCanvas::kViewportPixels, kInk);
+
+  const auto initial = world.origin();
+  CHECK(world.move_to({initial.x + 30, initial.y + 40}));
+  CHECK(world.origin() == tinydraw::ViewOrigin{initial.x + 30, initial.y + 40});
+  CHECK(viewport[screen_index(10, 10)] == kInk);
+  CHECK_FALSE(world.move_to(world.origin()));
+}
+
 TEST_CASE("world origins clamp to the pannable area and clear back to center") {
   std::vector<std::uint16_t> storage(tinydraw::WorldCanvas::kRequiredPixels);
   tinydraw::WorldCanvas world(storage);
