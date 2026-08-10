@@ -8,6 +8,7 @@ add_library(tinydraw_core STATIC
   src/stroke_raster.cpp
   src/tile_undo_history.cpp
   src/toolbar.cpp
+  src/viewport_updates.cpp
   src/world_canvas.cpp
 )
 

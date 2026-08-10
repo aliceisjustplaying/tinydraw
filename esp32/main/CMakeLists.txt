@@ -21,6 +21,7 @@ idf_component_register(
     "${TINYDRAW_CORE}/src/stroke_raster.cpp"
     "${TINYDRAW_CORE}/src/tile_undo_history.cpp"
     "${TINYDRAW_CORE}/src/toolbar.cpp"
+    "${TINYDRAW_CORE}/src/viewport_updates.cpp"
     "${TINYDRAW_CORE}/src/world_canvas.cpp"
   INCLUDE_DIRS "${TINYDRAW_CORE}/include"
   PRIV_REQUIRES ${TINYDRAW_PLATFORM_REQUIRES} esp_psram esp_timer
