@@ -44,6 +44,7 @@
 #define REG_Y1_L         		0x06
 #define REG_MONITOR_MODE		0x86
 #define REG_MONITOR_TIME		0x87
+#define REG_ACTIVE_PERIOD       0x88
 #define FT3168_RD_DEVICE_ID 	0xA0
 #define REG_POWER_MODE      	0xA5
 #define FT3168_RD_WR_DEVICE_GESTUREID_MODE 			0xD0
