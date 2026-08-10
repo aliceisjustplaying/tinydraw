@@ -97,7 +97,7 @@ esp_err_t drawing_handler(httpd_req_t* request) {
   png_set_IHDR(png, info, kCanvasWidth, kCanvasHeight, 8, PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
                PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
   png_set_filter(png, PNG_FILTER_TYPE_BASE, PNG_FILTER_NONE);
-  png_set_compression_level(png, 1);
+  png_set_compression_level(png, 0);
   png_write_info(png, info);
 
   for (int y = 0; y < kCanvasHeight; ++y) {
@@ -165,6 +165,7 @@ bool start_wifi_export(std::span<const std::uint16_t> canvas) {
 
   httpd_config_t server_configuration = HTTPD_DEFAULT_CONFIG();
   server_configuration.stack_size = 8192;
+  server_configuration.send_wait_timeout = 20;
   server_configuration.max_open_sockets = 4;
   server_configuration.lru_purge_enable = true;
   httpd_handle_t server = nullptr;
