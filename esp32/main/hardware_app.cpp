@@ -328,7 +328,7 @@ void run_hardware_app() {
   bool pressed = false;
   std::uint32_t loop_count = 0;
   std::uint32_t stroke_samples = 0;
-  std::uint8_t no_touch_polls = 0;
+  std::uint32_t no_touch_started_us = 0;
   std::int64_t stroke_render_us = 0;
   std::int64_t maximum_render_us = 0;
 
@@ -446,7 +446,9 @@ void run_hardware_app() {
     }
     const bool touching = touch_read == TouchRead::kPoint;
     if (touching) {
-      no_touch_polls = 0;
+      no_touch_started_us = 0;
+    } else if (pressed && no_touch_started_us == 0U) {
+      no_touch_started_us = timestamp_us();
     }
     if (touching && !pressed) {
       std::printf("[DEBUG-hw1] down x=%.0f y=%.0f\n", static_cast<double>(point.x),
@@ -481,7 +483,7 @@ void run_hardware_app() {
       const auto elapsed = esp_timer_get_time() - started;
       stroke_render_us += elapsed;
       maximum_render_us = std::max(maximum_render_us, elapsed);
-    } else if (!touching && pressed && ++no_touch_polls >= 3U) {
+    } else if (!touching && pressed && timestamp_us() - no_touch_started_us >= 20'000U) {
       std::printf("[DEBUG-hw1] up x=%.0f y=%.0f active=%u\n", static_cast<double>(last_touch.x),
                   static_cast<double>(last_touch.y), ink.active());
       pressed = false;
