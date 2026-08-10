@@ -142,13 +142,15 @@ uint16_t FT3168_ReadState(Value_Information info) {
 function :	Get the coordinate value of FT3168 contact
 parameter:
 ******************************************************************************/
-void FT3168_Get_Point() {
-    uint8_t fingers = (uint8_t)FT3168_ReadState(FT3168_FINGER_NUMBER);
-    if(fingers != 0) 
-    {
-        FT3168.x_point = (int)FT3168_ReadState(FT3168_COORDINATE_X);
-        FT3168.y_point = (int)FT3168_ReadState(FT3168_COORDINATE_Y);
+uint8_t FT3168_Get_Point() {
+    uint8_t report[5];
+    FT3168_I2C_Read_nByte(REG_FINGER_NUM, report, sizeof(report));
+    if((report[0] & 0x0F) == 0) {
+        return 0;
     }
+    FT3168.x_point = ((uint16_t)(report[1] & 0x0F) << 8) | report[2];
+    FT3168.y_point = ((uint16_t)(report[3] & 0x0F) << 8) | report[4];
+    return 1;
 }
 
 /******************************************************************************
