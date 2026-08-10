@@ -18,6 +18,21 @@ std::size_t index_of(int x, int y) {
   return static_cast<std::size_t>(y * tinydraw::kCanvasWidth + x);
 }
 
+struct RecordingDisplay final : tinydraw::DisplayBackend {
+  std::vector<std::uint16_t> pixels = std::vector<std::uint16_t>(kPixelCount, kWhite);
+  std::uint32_t pushes = 0U;
+
+  void push_rect(int x, int y, int width, int height, const std::uint16_t* rgb565,
+                 int stride = 0) override {
+    const int source_stride = stride == 0 ? width : stride;
+    ++pushes;
+    for (int row = 0; row < height; ++row) {
+      std::copy_n(rgb565 + row * source_stride, width,
+                  pixels.begin() + (y + row) * tinydraw::kCanvasWidth + x);
+    }
+  }
+};
+
 }  // namespace
 
 TEST_CASE("tile undo restores only captured pixels") {
@@ -42,6 +57,36 @@ TEST_CASE("tile undo restores only captured pixels") {
   CHECK(canvas == visible);
   CHECK(canvas[index_of(64, 128)] == kWhite);
   CHECK_FALSE(history.can_undo());
+}
+
+TEST_CASE("tile undo submits adjacent restored tiles as one display run") {
+  std::vector<std::uint16_t> storage(tinydraw::TileUndoHistory::kRequiredPixels);
+  tinydraw::TileUndoHistory history(storage);
+  std::vector<std::uint16_t> canvas(kPixelCount, kWhite);
+  std::vector<std::uint16_t> visible = canvas;
+  std::vector<std::uint16_t> before(static_cast<std::size_t>(kUndoTileSize * kUndoTileSize),
+                                    kWhite);
+  RecordingDisplay display;
+
+  history.begin_entry();
+  history.capture_tile(64, 128, kUndoTileSize, kUndoTileSize, before);
+  history.capture_tile(96, 128, kUndoTileSize, kUndoTileSize, before);
+  CHECK(history.commit_entry() == 2U);
+  for (int y = 128; y < 128 + kUndoTileSize; ++y) {
+    std::fill_n(canvas.begin() + static_cast<std::ptrdiff_t>(index_of(64, y)),
+                2 * kUndoTileSize, kBlue);
+  }
+  visible = canvas;
+  display.pixels = canvas;
+
+  const auto stats = history.undo(canvas, visible, &display);
+
+  CHECK(stats.tiles_restored == 2U);
+  CHECK(stats.display_bytes ==
+        static_cast<std::uint32_t>(2 * kUndoTileSize * kUndoTileSize * 2));
+  CHECK(display.pushes == 1U);
+  CHECK(display.pixels == canvas);
+  CHECK(canvas == visible);
 }
 
 TEST_CASE("tile undo keeps ten entries and evicts the oldest") {

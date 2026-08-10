@@ -129,15 +129,40 @@ TileUndoStats TileUndoHistory::undo(std::span<std::uint16_t> committed,
         std::copy_n(working_row, width, visible.begin() + (y + row) * kCanvasWidth + x);
       }
     }
-    if (display != nullptr) {
-      display->push_rect(x, y, width, height, working_.data());
-    }
     const auto bytes = static_cast<std::uint32_t>(width * height) * sizeof(std::uint16_t);
     ++stats.tiles_restored;
     stats.history_bytes_read += bytes;
     stats.canvas_bytes_written += bytes;
-    if (display != nullptr) {
-      stats.display_bytes += bytes;
+  }
+
+  if (display != nullptr) {
+    const std::span<const std::uint16_t> source = visible.empty() ? committed : visible;
+    for (int tile_y = 0; tile_y < kTilesDown; ++tile_y) {
+      int tile_x = 0;
+      while (tile_x < kTilesAcross) {
+        while (tile_x < kTilesAcross &&
+               !tiles_[next_][static_cast<std::size_t>(tile_y * kTilesAcross + tile_x)]) {
+          ++tile_x;
+        }
+        const int first_tile_x = tile_x;
+        while (tile_x < kTilesAcross &&
+               tiles_[next_][static_cast<std::size_t>(tile_y * kTilesAcross + tile_x)]) {
+          ++tile_x;
+        }
+        if (first_tile_x == tile_x) {
+          continue;
+        }
+        const int x = first_tile_x * kTileSize;
+        const int y = tile_y * kTileSize;
+        const int right = std::min(tile_x * kTileSize, kCanvasWidth);
+        const int height = std::min(kTileSize, kCanvasHeight - y);
+        const int width = right - x;
+        display->push_rect(x, y, width, height,
+                           source.data() + static_cast<std::size_t>(y * kCanvasWidth + x),
+                           kCanvasWidth);
+        stats.display_bytes +=
+            static_cast<std::uint32_t>(width * height) * sizeof(std::uint16_t);
+      }
     }
   }
 

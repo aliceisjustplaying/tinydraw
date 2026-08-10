@@ -97,12 +97,13 @@ int main() {
              true);
   const auto raster_pushes = display.pushes;
   const auto undo = history.undo(committed, {}, &display);
+  const auto undo_pushes = display.pushes - raster_pushes;
 
   const bool accounting_valid = total.display_bytes == total.committed_read &&
                                 raster_pushes == total.tiles &&
                                 undo.history_bytes_read == undo.canvas_bytes_written &&
                                 undo.history_bytes_read == undo.display_bytes &&
-                                display.pushes == raster_pushes + undo.tiles_restored &&
+                                undo_pushes > 0U && undo_pushes < undo.tiles_restored &&
                                 std::all_of(committed.begin(), committed.end(),
                                             [](auto pixel) { return pixel == kBackground; });
   const auto finish_psram_read =
@@ -127,7 +128,7 @@ int main() {
       "max_update_tiles=%u max_update_visits=%u max_update_psram_read=%u "
       "max_update_psram_write=%u finish_tiles=%u finish_psram_read=%u "
       "finish_psram_write=%u history_capture_write=%u undo_tiles=%u undo_history_read=%u "
-      "undo_canvas_write=%u undo_display=%u\n",
+      "undo_canvas_write=%u undo_display=%u undo_pushes=%u\n",
       static_cast<unsigned>(kSampleCount), static_cast<unsigned long long>(total.tiles),
       static_cast<unsigned long long>(total.visits),
       static_cast<unsigned long long>(total.display_bytes),
@@ -138,6 +139,6 @@ int main() {
       total.maximum_update_visits, total.maximum_update_psram_read,
       total.maximum_update_psram_written, total.finish.tiles_updated, finish_psram_read,
       finish_psram_written, total.finish.history_bytes_written, undo.tiles_restored,
-      undo.history_bytes_read, undo.canvas_bytes_written, undo.display_bytes);
+      undo.history_bytes_read, undo.canvas_bytes_written, undo.display_bytes, undo_pushes);
   return accounting_valid && bounded ? 0 : 1;
 }
