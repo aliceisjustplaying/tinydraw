@@ -393,6 +393,7 @@ int main() {
 
   tinydraw::InkConfig brush;
   brush.size = tinydraw::brush_size(toolbar.size);
+  brush.streamline = 0.65F;
   tinydraw::InkStream ink(brush);
   bool touch_down = false;
   bool toolbar_gesture = false;
