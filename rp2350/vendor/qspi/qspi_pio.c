@@ -68,6 +68,9 @@ parameter:
     qspi : QSPI structure
 ******************************************************************************/	
 void QSPI_Select(pio_qspi_t qspi){
+    // TXSTALL is sticky. Clear it before each transaction so Deselect can
+    // detect when this transaction's final byte has left the state machine.
+    qspi.pio->fdebug = 1u << (PIO_FDEBUG_TXSTALL_LSB + qspi.sm);
     gpio_put(qspi.pin_cs,0);
 }
 
@@ -77,6 +80,10 @@ parameter:
     qspi : QSPI structure
 ******************************************************************************/	
 void QSPI_Deselect(pio_qspi_t qspi){
+    const uint32_t tx_stall = 1u << (PIO_FDEBUG_TXSTALL_LSB + qspi.sm);
+    while((qspi.pio->fdebug & tx_stall) == 0) {
+        tight_loop_contents();
+    }
     gpio_put(qspi.pin_cs,1);
 }
 
