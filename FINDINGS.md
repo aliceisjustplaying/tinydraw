@@ -3,7 +3,7 @@
 Snapshot: 2026-08-10
 
 TinyDraw runs on the 368×448 Waveshare ESP32-S3 Touch AMOLED 1.8-inch V2 board. It
-has variable-width ink, 4×4 edge smoothing, a compact toolbar, and ten levels of Undo.
+has variable-width ink, 4×4 edge smoothing, twelve colors, and ten levels of Undo.
 
 ## Numbers for the demo
 
@@ -13,7 +13,7 @@ has variable-width ink, 4×4 edge smoothing, a compact toolbar, and ten levels o
 - Fast XL diagonals average **4.9–10.1 ms** and peak at **16.1 ms**.
 - The CST820 reports a new position every **13–14 ms**, or **75–77 Hz**.
 - New dialog traffic fell from **237,728 to 106,848 bytes**, a **55% reduction**.
-- The firmware is **284,576 bytes**; 73% of its app partition is free.
+- The firmware is **285,664 bytes**; 73% of its app partition is free.
 
 ## From prototype to physical device
 
@@ -103,7 +103,7 @@ full 168-tile canvas.
 
 ## Verification
 
-Fifteen native test groups cover exact replays, snapshots, Perfect Freehand examples,
+Seventeen native test groups cover exact replays, snapshots, Perfect Freehand examples,
 self-overlaps, seams, input states, UI, Undo, and a 1,000-point XL workload. ASan, UBSan,
 headless QEMU, and visible QEMU pass. Device logs report drawing, display, touch, lift,
 dialog, and Undo timing.

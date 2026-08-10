@@ -33,7 +33,6 @@ constexpr int kTransferPixels = 4096;
 constexpr int kTransferQueueDepth = 3;
 // Even-aligned transfer bounds around the three independently changing overlays.
 constexpr int kMainOverlayTop = 372;
-constexpr int kPaletteOverlayTop = 294;
 constexpr int kDialogOverlayX = 26;
 constexpr int kDialogOverlayTop = 124;
 constexpr int kDialogOverlayWidth = 318;
@@ -76,6 +75,11 @@ bool on_transfer_done(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t*,
 
 std::uint16_t swap_bytes(std::uint16_t pixel) {
   return static_cast<std::uint16_t>((pixel << 8U) | (pixel >> 8U));
+}
+
+int palette_overlay_top(tinydraw::ToolbarState state) {
+  state.confirm_new = false;
+  return tinydraw::toolbar_overlay_top(state) & ~1;
 }
 
 class PhysicalDisplay final : public tinydraw::DisplayBackend {
@@ -160,7 +164,12 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
         ((toolbar_.colors_open || toolbar.colors_open) && toolbar_.color != toolbar.color) ||
         ((toolbar_.sizes_open || toolbar.sizes_open) && toolbar_.size != toolbar.size);
     main_dirty_ = main_dirty_ || main_changed;
-    palette_dirty_ = palette_dirty_ || palette_changed;
+    if (palette_changed) {
+      const int changed_top = std::min(palette_overlay_top(toolbar_), palette_overlay_top(toolbar));
+      palette_refresh_top_ =
+          palette_dirty_ ? std::min(palette_refresh_top_, changed_top) : changed_top;
+      palette_dirty_ = true;
+    }
     dialog_dirty_ = dialog_dirty_ || toolbar_.confirm_new != toolbar.confirm_new;
     toolbar_ = toolbar;
     toolbar_top_ = tinydraw::toolbar_overlay_top(toolbar);
@@ -169,8 +178,8 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
                     tinydraw::kCanvasHeight - kMainOverlayTop);
     }
     if (palette_dirty_) {
-      clear_overlay(0, kPaletteOverlayTop, tinydraw::kCanvasWidth,
-                    kMainOverlayTop - kPaletteOverlayTop);
+      clear_overlay(0, palette_refresh_top_, tinydraw::kCanvasWidth,
+                    kMainOverlayTop - palette_refresh_top_);
     }
     if (dialog_dirty_) {
       clear_overlay(kDialogOverlayX, kDialogOverlayTop, kDialogOverlayWidth, kDialogOverlayHeight);
@@ -245,6 +254,7 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
     if (top == 0) {
       main_dirty_ = false;
       palette_dirty_ = false;
+      palette_refresh_top_ = kMainOverlayTop;
       dialog_dirty_ = false;
     }
   }
@@ -257,9 +267,10 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
                 canvas.data() + offset, tinydraw::kCanvasWidth);
     }
     if (palette_dirty_) {
-      const auto offset = static_cast<std::size_t>(kPaletteOverlayTop * tinydraw::kCanvasWidth);
-      push_rect(0, kPaletteOverlayTop, tinydraw::kCanvasWidth, kMainOverlayTop - kPaletteOverlayTop,
-                canvas.data() + offset, tinydraw::kCanvasWidth);
+      const auto offset = static_cast<std::size_t>(palette_refresh_top_ * tinydraw::kCanvasWidth);
+      push_rect(0, palette_refresh_top_, tinydraw::kCanvasWidth,
+                kMainOverlayTop - palette_refresh_top_, canvas.data() + offset,
+                tinydraw::kCanvasWidth);
     }
     if (main_dirty_) {
       const auto offset = static_cast<std::size_t>(kMainOverlayTop * tinydraw::kCanvasWidth);
@@ -269,6 +280,7 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
     }
     main_dirty_ = false;
     palette_dirty_ = false;
+    palette_refresh_top_ = kMainOverlayTop;
     dialog_dirty_ = false;
   }
 
@@ -287,6 +299,7 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
   int toolbar_top_ = tinydraw::toolbar_overlay_top(toolbar_);
   bool main_dirty_ = false;
   bool palette_dirty_ = false;
+  int palette_refresh_top_ = kMainOverlayTop;
   bool dialog_dirty_ = false;
   std::int64_t prepare_us_ = 0;
   std::int64_t transfer_us_ = 0;
@@ -524,23 +537,8 @@ void run_hardware_app() {
         toolbar.tool = tinydraw::DrawingTool::kEraser;
         close_popups();
         break;
-      case tinydraw::ToolbarAction::kSelectBlack:
-        toolbar.color = tinydraw::InkColor::kBlack;
-        toolbar.tool = tinydraw::DrawingTool::kPen;
-        toolbar.colors_open = false;
-        break;
-      case tinydraw::ToolbarAction::kSelectBlue:
-        toolbar.color = tinydraw::InkColor::kBlue;
-        toolbar.tool = tinydraw::DrawingTool::kPen;
-        toolbar.colors_open = false;
-        break;
-      case tinydraw::ToolbarAction::kSelectRed:
-        toolbar.color = tinydraw::InkColor::kRed;
-        toolbar.tool = tinydraw::DrawingTool::kPen;
-        toolbar.colors_open = false;
-        break;
-      case tinydraw::ToolbarAction::kSelectGreen:
-        toolbar.color = tinydraw::InkColor::kGreen;
+      case tinydraw::ToolbarAction::kSelectColor:
+        toolbar.color = tinydraw::toolbar_color_at(point, toolbar).value_or(toolbar.color);
         toolbar.tool = tinydraw::DrawingTool::kPen;
         toolbar.colors_open = false;
         break;

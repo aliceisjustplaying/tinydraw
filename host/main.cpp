@@ -156,12 +156,11 @@ int replay(const std::string& input_path, const std::string& output_path) {
   return EXIT_SUCCESS;
 }
 
-int ui_preview(const std::string& output_path, bool confirm_new = false) {
+int ui_preview(const std::string& output_path, const tinydraw::ToolbarState& toolbar = {}) {
   std::vector<std::uint16_t> pixels(
       static_cast<std::size_t>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight));
   clear_canvas(pixels, true);
-  tinydraw::draw_toolbar(pixels, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight,
-                         {.confirm_new = confirm_new});
+  tinydraw::draw_toolbar(pixels, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight, toolbar);
   if (!write_ppm(output_path, pixels)) {
     std::fprintf(stderr, "cannot write UI preview: %s\n", output_path.c_str());
     return EXIT_FAILURE;
@@ -366,23 +365,8 @@ int interactive() {
               toolbar.tool = tinydraw::DrawingTool::kEraser;
               close_popups();
               break;
-            case tinydraw::ToolbarAction::kSelectBlack:
-              toolbar.color = tinydraw::InkColor::kBlack;
-              toolbar.tool = tinydraw::DrawingTool::kPen;
-              toolbar.colors_open = false;
-              break;
-            case tinydraw::ToolbarAction::kSelectBlue:
-              toolbar.color = tinydraw::InkColor::kBlue;
-              toolbar.tool = tinydraw::DrawingTool::kPen;
-              toolbar.colors_open = false;
-              break;
-            case tinydraw::ToolbarAction::kSelectRed:
-              toolbar.color = tinydraw::InkColor::kRed;
-              toolbar.tool = tinydraw::DrawingTool::kPen;
-              toolbar.colors_open = false;
-              break;
-            case tinydraw::ToolbarAction::kSelectGreen:
-              toolbar.color = tinydraw::InkColor::kGreen;
+            case tinydraw::ToolbarAction::kSelectColor:
+              toolbar.color = tinydraw::toolbar_color_at(*point, toolbar).value_or(toolbar.color);
               toolbar.tool = tinydraw::DrawingTool::kPen;
               toolbar.colors_open = false;
               break;
@@ -476,8 +460,11 @@ int main(int argc, char** argv) {
     if (std::string(argv[1]) == "--ui-preview") {
       return ui_preview(argv[3]);
     }
+    if (std::string(argv[1]) == "--color-palette-preview") {
+      return ui_preview(argv[3], {.colors_open = true});
+    }
     if (std::string(argv[1]) == "--new-dialog-preview") {
-      return ui_preview(argv[3], true);
+      return ui_preview(argv[3], {.confirm_new = true});
     }
   }
   if (argc == 2 && std::string(argv[1]) == "--undo-e2e") {
@@ -486,7 +473,8 @@ int main(int argc, char** argv) {
   if (argc != 1) {
     std::fprintf(stderr,
                  "usage: %s [--replay INPUT --output IMAGE.ppm | --ui-preview --output "
-                 "IMAGE.ppm | --new-dialog-preview --output IMAGE.ppm | --undo-e2e]\n",
+                 "IMAGE.ppm | --color-palette-preview --output IMAGE.ppm | "
+                 "--new-dialog-preview --output IMAGE.ppm | --undo-e2e]\n",
                  argv[0]);
     return EXIT_FAILURE;
   }

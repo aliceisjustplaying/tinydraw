@@ -8,7 +8,7 @@ macOS app and ESP-IDF/QEMU targets exercise the same C++20 drawing core.
 
 - Variable-width, Perfect Freehand-style ink with smooth sparse-input curves
 - Solid self-overlaps, rounded sharp turns, and 4×4 edge smoothing
-- Pen, eraser, four colors, four sizes, confirmed New, and ten levels of Undo
+- Pen, eraser, twelve tldraw colors, four sizes, confirmed New, and ten levels of Undo
 - One-row tldraw-inspired toolbar with modal color and size pickers
 - Bounded 32×32 drawing updates and dirty-tile Undo in 8 MiB PSRAM
 - Native replays, exact snapshots, ASan/UBSan, QEMU, and device telemetry

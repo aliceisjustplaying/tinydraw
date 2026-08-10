@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <span>
 
 #include "tinydraw/geometry.h"
@@ -8,16 +9,26 @@
 namespace tinydraw {
 
 enum class DrawingTool { kPen, kEraser };
-enum class InkColor { kBlack, kBlue, kRed, kGreen };
+enum class InkColor {
+  kBlack,
+  kGrey,
+  kLightViolet,
+  kViolet,
+  kBlue,
+  kLightBlue,
+  kYellow,
+  kOrange,
+  kGreen,
+  kLightGreen,
+  kLightRed,
+  kRed,
+};
 enum class PenSize { kSmall, kMedium, kLarge, kExtraLarge };
 enum class ToolbarAction {
   kNone,
   kSelectPen,
   kSelectEraser,
-  kSelectBlack,
-  kSelectBlue,
-  kSelectRed,
-  kSelectGreen,
+  kSelectColor,
   kToggleColors,
   kToggleSizes,
   kSelectSmall,
@@ -44,6 +55,7 @@ struct ToolbarState {
 [[nodiscard]] bool toolbar_overlay_contains(Point point, const ToolbarState& state);
 [[nodiscard]] int toolbar_overlay_top(const ToolbarState& state);
 [[nodiscard]] ToolbarAction toolbar_action_at(Point point, const ToolbarState& state);
+[[nodiscard]] std::optional<InkColor> toolbar_color_at(Point point, const ToolbarState& state);
 [[nodiscard]] std::uint16_t rgb565(InkColor color);
 [[nodiscard]] float brush_size(PenSize size);
 

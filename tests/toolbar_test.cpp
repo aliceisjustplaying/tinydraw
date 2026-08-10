@@ -2,6 +2,7 @@
 
 #include <doctest.h>
 
+#include <array>
 #include <vector>
 
 TEST_CASE("default toolbar keeps every control in one full-width row") {
@@ -19,25 +20,52 @@ TEST_CASE("default toolbar keeps every control in one full-width row") {
         tinydraw::ToolbarAction::kNewDrawing);
 }
 
-TEST_CASE("four large color controls appear in one second row") {
+TEST_CASE("tldraw color controls fill a three by four popup") {
   tinydraw::ToolbarState state;
-  CHECK(tinydraw::toolbar_action_at({52.0F, 331.0F}, state) == tinydraw::ToolbarAction::kNone);
-  CHECK_FALSE(tinydraw::toolbar_contains({52.0F, 331.0F}, state));
+  CHECK(tinydraw::toolbar_action_at({52.0F, 207.0F}, state) == tinydraw::ToolbarAction::kNone);
+  CHECK_FALSE(tinydraw::toolbar_contains({52.0F, 207.0F}, state));
 
   state.colors_open = true;
-  CHECK(tinydraw::toolbar_action_at({52.0F, 331.0F}, state) ==
-        tinydraw::ToolbarAction::kSelectBlack);
-  CHECK(tinydraw::toolbar_action_at({140.0F, 331.0F}, state) ==
-        tinydraw::ToolbarAction::kSelectBlue);
-  CHECK(tinydraw::toolbar_action_at({228.0F, 331.0F}, state) ==
-        tinydraw::ToolbarAction::kSelectRed);
-  CHECK(tinydraw::toolbar_action_at({316.0F, 331.0F}, state) ==
-        tinydraw::ToolbarAction::kSelectGreen);
-  CHECK(tinydraw::toolbar_contains({52.0F, 331.0F}, state));
+  constexpr std::array colors{
+      tinydraw::InkColor::kBlack,       tinydraw::InkColor::kGrey,
+      tinydraw::InkColor::kLightViolet, tinydraw::InkColor::kViolet,
+      tinydraw::InkColor::kBlue,        tinydraw::InkColor::kLightBlue,
+      tinydraw::InkColor::kYellow,      tinydraw::InkColor::kOrange,
+      tinydraw::InkColor::kGreen,       tinydraw::InkColor::kLightGreen,
+      tinydraw::InkColor::kLightRed,    tinydraw::InkColor::kRed,
+  };
+  constexpr std::array centers_x{52.0F, 140.0F, 228.0F, 316.0F};
+  constexpr std::array centers_y{207.0F, 273.0F, 339.0F};
+  for (std::size_t row = 0; row < centers_y.size(); ++row) {
+    for (std::size_t column = 0; column < centers_x.size(); ++column) {
+      const tinydraw::Point point{centers_x[column], centers_y[row]};
+      CHECK(tinydraw::toolbar_action_at(point, state) == tinydraw::ToolbarAction::kSelectColor);
+      CHECK(tinydraw::toolbar_color_at(point, state) == colors[row * centers_x.size() + column]);
+    }
+  }
+  CHECK(tinydraw::toolbar_contains({52.0F, 207.0F}, state));
+  CHECK(tinydraw::toolbar_overlay_contains({52.0F, 207.0F}, state));
+  CHECK(tinydraw::toolbar_overlay_top(state) == 179);
   CHECK(tinydraw::toolbar_action_at({37.0F, 409.0F}, state) == tinydraw::ToolbarAction::kNone);
   CHECK(tinydraw::toolbar_action_at({213.0F, 409.0F}, state) ==
         tinydraw::ToolbarAction::kToggleColors);
   CHECK(tinydraw::toolbar_action_at({331.0F, 409.0F}, state) == tinydraw::ToolbarAction::kNone);
+}
+
+TEST_CASE("palette uses tldraw's twelve default colors") {
+  constexpr std::array colors{
+      tinydraw::InkColor::kBlack,       tinydraw::InkColor::kGrey,
+      tinydraw::InkColor::kLightViolet, tinydraw::InkColor::kViolet,
+      tinydraw::InkColor::kBlue,        tinydraw::InkColor::kLightBlue,
+      tinydraw::InkColor::kYellow,      tinydraw::InkColor::kOrange,
+      tinydraw::InkColor::kGreen,       tinydraw::InkColor::kLightGreen,
+      tinydraw::InkColor::kLightRed,    tinydraw::InkColor::kRed,
+  };
+  constexpr std::array rgb565{0x18E3U, 0x9D56U, 0xE43EU, 0xA9F9U, 0x433DU, 0x4D1EU,
+                              0xF569U, 0xE343U, 0x0C8DU, 0x4D8BU, 0xFBAEU, 0xE186U};
+  for (std::size_t index = 0; index < colors.size(); ++index) {
+    CHECK(tinydraw::rgb565(colors[index]) == rgb565[index]);
+  }
 }
 
 TEST_CASE("four large size controls appear in one second row") {
@@ -54,6 +82,7 @@ TEST_CASE("four large size controls appear in one second row") {
   CHECK(tinydraw::toolbar_action_at({316.0F, 331.0F}, state) ==
         tinydraw::ToolbarAction::kSelectExtraLarge);
   CHECK(tinydraw::toolbar_contains({316.0F, 331.0F}, state));
+  CHECK(tinydraw::toolbar_overlay_top(state) == 295);
   CHECK(tinydraw::toolbar_action_at({96.0F, 409.0F}, state) == tinydraw::ToolbarAction::kNone);
   CHECK(tinydraw::toolbar_action_at({272.0F, 409.0F}, state) ==
         tinydraw::ToolbarAction::kToggleSizes);
@@ -68,11 +97,12 @@ TEST_CASE("floating controls include forgiving vertical tap margins") {
   CHECK_FALSE(tinydraw::toolbar_contains({180.0F, 331.0F}, state));
 
   state.colors_open = true;
-  CHECK(tinydraw::toolbar_contains({52.0F, 289.0F}, state));
-  CHECK(tinydraw::toolbar_action_at({52.0F, 289.0F}, state) ==
-        tinydraw::ToolbarAction::kSelectBlack);
-  CHECK_FALSE(tinydraw::toolbar_contains({52.0F, 287.0F}, state));
-  CHECK_FALSE(tinydraw::toolbar_contains({180.0F, 250.0F}, state));
+  CHECK(tinydraw::toolbar_contains({52.0F, 173.0F}, state));
+  CHECK(tinydraw::toolbar_action_at({52.0F, 173.0F}, state) ==
+        tinydraw::ToolbarAction::kSelectColor);
+  CHECK(tinydraw::toolbar_color_at({52.0F, 173.0F}, state) == tinydraw::InkColor::kBlack);
+  CHECK_FALSE(tinydraw::toolbar_contains({52.0F, 171.0F}, state));
+  CHECK_FALSE(tinydraw::toolbar_contains({180.0F, 150.0F}, state));
 }
 
 TEST_CASE("new drawing confirmation captures input and exposes large choices") {
@@ -116,7 +146,7 @@ TEST_CASE("toolbar rendering reflects tool and palette state without touching op
 
   CHECK(pen_canvas != eraser_canvas);
   CHECK(pen_canvas != palette_canvas);
-  const auto open_canvas_pixel = static_cast<std::size_t>(250 * tinydraw::kCanvasWidth + 180);
+  const auto open_canvas_pixel = static_cast<std::size_t>(150 * tinydraw::kCanvasWidth + 180);
   const auto top_border_pixel = static_cast<std::size_t>(373 * tinydraw::kCanvasWidth);
   const auto bottom_border_pixel = static_cast<std::size_t>(444 * tinydraw::kCanvasWidth + 367);
   CHECK(pen_canvas[open_canvas_pixel] == 0xFFFFU);

@@ -114,6 +114,27 @@ if(TARGET tinydraw_host)
   )
 
   add_test(
+    NAME tinydraw_color_palette_e2e
+    COMMAND tinydraw_host
+      --color-palette-preview
+      --output "${REPLAY_OUTPUT_DIR}/color-palette.ppm"
+  )
+  set_tests_properties(tinydraw_color_palette_e2e PROPERTIES
+    FIXTURES_SETUP color_palette
+    TIMEOUT 5
+  )
+
+  add_test(
+    NAME tinydraw_color_palette_snapshot
+    COMMAND ${CMAKE_COMMAND} -E compare_files
+      "${REPLAY_OUTPUT_DIR}/color-palette.ppm"
+      "${PROJECT_SOURCE_DIR}/testdata/snapshots/color-palette.ppm"
+  )
+  set_tests_properties(tinydraw_color_palette_snapshot PROPERTIES
+    FIXTURES_REQUIRED color_palette
+  )
+
+  add_test(
     NAME tinydraw_new_dialog_e2e
     COMMAND tinydraw_host
       --new-dialog-preview

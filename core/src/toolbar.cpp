@@ -16,7 +16,8 @@ constexpr std::uint16_t kShadow = 0xBDF7U;
 constexpr std::uint16_t kSelected = 0x349FU;
 constexpr int kMainTop = 374;
 constexpr int kMainBottom = 444;
-constexpr int kPaletteTop = 296;
+constexpr int kColorPaletteTop = 180;
+constexpr int kSizePaletteTop = 296;
 constexpr int kPaletteBottom = 366;
 constexpr int kDialogLeft = 28;
 constexpr int kDialogTop = 126;
@@ -24,7 +25,15 @@ constexpr int kDialogRight = 340;
 constexpr int kDialogBottom = 286;
 constexpr int kHitSlop = 8;
 constexpr int kMainHitTop = kMainTop - kHitSlop;
-constexpr int kPaletteHitTop = kPaletteTop - kHitSlop;
+constexpr int kColorPaletteHitTop = kColorPaletteTop - kHitSlop;
+constexpr int kSizePaletteHitTop = kSizePaletteTop - kHitSlop;
+constexpr std::array kColors{
+    InkColor::kBlack, InkColor::kGrey,       InkColor::kLightViolet, InkColor::kViolet,
+    InkColor::kBlue,  InkColor::kLightBlue,  InkColor::kYellow,      InkColor::kOrange,
+    InkColor::kGreen, InkColor::kLightGreen, InkColor::kLightRed,    InkColor::kRed,
+};
+constexpr std::array kPaletteCentersX{52, 140, 228, 316};
+constexpr std::array kColorCentersY{207, 273, 339};
 
 void set_pixel(std::span<std::uint16_t> canvas, int width, int height, int x, int y,
                std::uint16_t color) {
@@ -228,18 +237,23 @@ bool toolbar_contains(Point point, const ToolbarState& state) {
   }
   const bool main_row = inside(point, 0.0F, static_cast<float>(kMainHitTop),
                                static_cast<float>(kCanvasWidth), static_cast<float>(kCanvasHeight));
-  return main_row || ((state.colors_open || state.sizes_open) &&
-                      inside(point, 0.0F, static_cast<float>(kPaletteHitTop),
-                             static_cast<float>(kCanvasWidth), static_cast<float>(kMainTop)));
+  const bool color_palette =
+      state.colors_open && inside(point, 0.0F, static_cast<float>(kColorPaletteHitTop),
+                                  static_cast<float>(kCanvasWidth), static_cast<float>(kMainTop));
+  const bool size_palette =
+      state.sizes_open && inside(point, 0.0F, static_cast<float>(kSizePaletteHitTop),
+                                 static_cast<float>(kCanvasWidth), static_cast<float>(kMainTop));
+  return main_row || color_palette || size_palette;
 }
 
 bool toolbar_overlay_contains(Point point, const ToolbarState& state) {
   const bool main_dock =
       inside(point, 0.0F, static_cast<float>(kMainTop - 1), static_cast<float>(kCanvasWidth),
              static_cast<float>(kMainBottom + 4));
+  const int palette_top = state.colors_open ? kColorPaletteTop : kSizePaletteTop;
   const bool palette =
       (state.colors_open || state.sizes_open) &&
-      inside(point, 0.0F, static_cast<float>(kPaletteTop - 1), static_cast<float>(kCanvasWidth),
+      inside(point, 0.0F, static_cast<float>(palette_top - 1), static_cast<float>(kCanvasWidth),
              static_cast<float>(kPaletteBottom + 4));
   const bool dialog =
       state.confirm_new &&
@@ -252,8 +266,11 @@ int toolbar_overlay_top(const ToolbarState& state) {
   if (state.confirm_new) {
     return kDialogTop - 1;
   }
-  if (state.colors_open || state.sizes_open) {
-    return kPaletteTop - 1;
+  if (state.colors_open) {
+    return kColorPaletteTop - 1;
+  }
+  if (state.sizes_open) {
+    return kSizePaletteTop - 1;
   }
   return kMainTop - 1;
 }
@@ -268,18 +285,15 @@ ToolbarAction toolbar_action_at(Point point, const ToolbarState& state) {
     }
     return ToolbarAction::kNone;
   }
-  if ((state.sizes_open || state.colors_open) &&
-      inside(point, 0.0F, static_cast<float>(kPaletteHitTop), static_cast<float>(kCanvasWidth),
-             static_cast<float>(kMainTop))) {
+  if (toolbar_color_at(point, state).has_value()) {
+    return ToolbarAction::kSelectColor;
+  }
+  if (state.sizes_open && inside(point, 0.0F, static_cast<float>(kSizePaletteHitTop),
+                                 static_cast<float>(kCanvasWidth), static_cast<float>(kMainTop))) {
     const auto index =
         std::min(static_cast<std::size_t>(point.x * 4.0F / kCanvasWidth), std::size_t{3});
-    if (state.sizes_open) {
-      constexpr std::array actions{ToolbarAction::kSelectSmall, ToolbarAction::kSelectMedium,
-                                   ToolbarAction::kSelectLarge, ToolbarAction::kSelectExtraLarge};
-      return actions[index];
-    }
-    constexpr std::array actions{ToolbarAction::kSelectBlack, ToolbarAction::kSelectBlue,
-                                 ToolbarAction::kSelectRed, ToolbarAction::kSelectGreen};
+    constexpr std::array actions{ToolbarAction::kSelectSmall, ToolbarAction::kSelectMedium,
+                                 ToolbarAction::kSelectLarge, ToolbarAction::kSelectExtraLarge};
     return actions[index];
   }
   if (!inside(point, 0.0F, static_cast<float>(kMainHitTop), static_cast<float>(kCanvasWidth),
@@ -301,18 +315,49 @@ ToolbarAction toolbar_action_at(Point point, const ToolbarState& state) {
   return actions[main_index];
 }
 
+std::optional<InkColor> toolbar_color_at(Point point, const ToolbarState& state) {
+  if (!state.colors_open ||
+      !inside(point, 0.0F, static_cast<float>(kColorPaletteHitTop),
+              static_cast<float>(kCanvasWidth), static_cast<float>(kMainTop))) {
+    return std::nullopt;
+  }
+  const auto column =
+      std::min(static_cast<std::size_t>(point.x * 4.0F / kCanvasWidth), std::size_t{3});
+  const auto row =
+      std::min(static_cast<std::size_t>((point.y - static_cast<float>(kColorPaletteHitTop)) * 3.0F /
+                                        static_cast<float>(kMainTop - kColorPaletteHitTop)),
+               std::size_t{2});
+  return kColors[row * kPaletteCentersX.size() + column];
+}
+
 std::uint16_t rgb565(InkColor color) {
   switch (color) {
     case InkColor::kBlack:
-      return 0x0000U;
+      return 0x18E3U;
+    case InkColor::kGrey:
+      return 0x9D56U;
+    case InkColor::kLightViolet:
+      return 0xE43EU;
+    case InkColor::kViolet:
+      return 0xA9F9U;
     case InkColor::kBlue:
-      return 0x001FU;
-    case InkColor::kRed:
-      return 0xF800U;
+      return 0x433DU;
+    case InkColor::kLightBlue:
+      return 0x4D1EU;
+    case InkColor::kYellow:
+      return 0xF569U;
+    case InkColor::kOrange:
+      return 0xE343U;
     case InkColor::kGreen:
-      return 0x07E0U;
+      return 0x0C8DU;
+    case InkColor::kLightGreen:
+      return 0x4D8BU;
+    case InkColor::kLightRed:
+      return 0xFBAEU;
+    case InkColor::kRed:
+      return 0xE186U;
   }
-  return 0x0000U;
+  return 0x18E3U;
 }
 
 float brush_size(PenSize size) {
@@ -365,33 +410,35 @@ void draw_toolbar(std::span<std::uint16_t> canvas, int width, int height,
   if (!state.colors_open && !state.sizes_open) {
     return;
   }
-  draw_dock(canvas, width, height, 4, kPaletteTop, 364, kPaletteBottom);
-  fill_rect(canvas, width, height, 0, kPaletteTop - 1, width, kPaletteTop + 1, kBorder);
+  const int palette_top = state.colors_open ? kColorPaletteTop : kSizePaletteTop;
+  draw_dock(canvas, width, height, 4, palette_top, 364, kPaletteBottom);
+  fill_rect(canvas, width, height, 0, palette_top - 1, width, palette_top + 1, kBorder);
   fill_rect(canvas, width, height, 0, kPaletteBottom, width, kPaletteBottom + 1, kBorder);
   if (state.colors_open) {
-    constexpr std::array colors{InkColor::kBlack, InkColor::kBlue, InkColor::kRed,
-                                InkColor::kGreen};
-    constexpr std::array centers{52, 140, 228, 316};
-    for (std::size_t index = 0; index < colors.size(); ++index) {
-      if (state.color == colors[index]) {
-        fill_circle(canvas, width, height, centers[index], 331, 21, kSelected);
-        fill_circle(canvas, width, height, centers[index], 331, 18, kWhite);
+    for (std::size_t row = 0; row < kColorCentersY.size(); ++row) {
+      for (std::size_t column = 0; column < kPaletteCentersX.size(); ++column) {
+        const auto color = kColors[row * kPaletteCentersX.size() + column];
+        const int center_x = kPaletteCentersX[column];
+        const int center_y = kColorCentersY[row];
+        if (state.color == color) {
+          fill_circle(canvas, width, height, center_x, center_y, 21, kSelected);
+          fill_circle(canvas, width, height, center_x, center_y, 18, kWhite);
+        }
+        fill_circle(canvas, width, height, center_x, center_y, 15, rgb565(color));
       }
-      fill_circle(canvas, width, height, centers[index], 331, 15, rgb565(colors[index]));
     }
     return;
   }
 
   constexpr std::array palette_sizes{PenSize::kSmall, PenSize::kMedium, PenSize::kLarge,
                                      PenSize::kExtraLarge};
-  constexpr std::array centers{52, 140, 228, 316};
   for (std::size_t index = 0; index < palette_sizes.size(); ++index) {
     const int radius = size_radius(palette_sizes[index]);
     if (state.size == palette_sizes[index]) {
-      fill_circle(canvas, width, height, centers[index], 331, radius + 5, kSelected);
-      fill_circle(canvas, width, height, centers[index], 331, radius + 2, kWhite);
+      fill_circle(canvas, width, height, kPaletteCentersX[index], 331, radius + 5, kSelected);
+      fill_circle(canvas, width, height, kPaletteCentersX[index], 331, radius + 2, kWhite);
     }
-    fill_circle(canvas, width, height, centers[index], 331, radius, kInk);
+    fill_circle(canvas, width, height, kPaletteCentersX[index], 331, radius, kInk);
   }
 }
 
