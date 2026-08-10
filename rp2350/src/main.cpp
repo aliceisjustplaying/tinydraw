@@ -101,8 +101,10 @@ void blend_pixel(int x, int y, std::uint16_t color, int coverage) {
 void stamp_dot(StrokePoint point) {
   constexpr std::array sample_offsets{-3, -1, 1, 3};
   const int extent = static_cast<int>(std::ceil(point.radius)) + 1;
-  const float scaled_radius = point.radius * 8.0F;
-  const float radius_squared = scaled_radius * scaled_radius;
+  const int point_x8 = static_cast<int>(std::lround(point.x * 8.0F));
+  const int point_y8 = static_cast<int>(std::lround(point.y * 8.0F));
+  const int scaled_radius = static_cast<int>(std::lround(point.radius * 8.0F));
+  const int radius_squared = scaled_radius * scaled_radius;
   const std::uint16_t color =
       toolbar.tool == tinydraw::DrawingTool::kEraser ? kWhite : tinydraw::rgb565(toolbar.color);
   const int center_x = static_cast<int>(std::lround(point.x));
@@ -112,10 +114,8 @@ void stamp_dot(StrokePoint point) {
       int covered = 0;
       for (const int sample_y : sample_offsets) {
         for (const int sample_x : sample_offsets) {
-          const float dx = (static_cast<float>(center_x + column) - point.x) * 8.0F +
-                           static_cast<float>(sample_x);
-          const float dy =
-              (static_cast<float>(center_y + row) - point.y) * 8.0F + static_cast<float>(sample_y);
+          const int dx = (center_x + column) * 8 - point_x8 + sample_x;
+          const int dy = (center_y + row) * 8 - point_y8 + sample_y;
           covered += dx * dx + dy * dy <= radius_squared ? 1 : 0;
         }
       }
