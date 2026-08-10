@@ -1,26 +1,21 @@
 # TinyDraw
 
 TinyDraw is a small finger-drawing app for the 368×448 Waveshare ESP32-S3 Touch
-AMOLED 1.8-inch V2 board. It runs on the physical CO5300 display with CST820
-touch. A macOS app and ESP-IDF/QEMU build exercise the same C++20 drawing core.
+AMOLED 1.8-inch V2 board. It runs on the CO5300 display with CST820 touch. A
+macOS app and ESP-IDF/QEMU targets exercise the same C++20 drawing core.
 
 ## Current state
 
-- Variable-width, Perfect Freehand-style ink
-- Smooth curve reconstruction for sparse touch input
-- 4×4 antialiasing into a 16-bit-color canvas
-- Bounded 32×32 updates for long strokes and self-overlaps
-- Pen, eraser, four colors, four sizes, New, and ten levels of Undo
-- One-row tldraw-inspired toolbar with color and size popups
-- Dirty-tile Undo stored in the board's 8 MiB PSRAM
-- Native replays, exact snapshots, ASan/UBSan, QEMU, and hardware telemetry
+- Variable-width, Perfect Freehand-style ink with smooth sparse-input curves
+- Solid self-overlaps, rounded sharp turns, and 4×4 edge smoothing
+- Pen, eraser, four colors, four sizes, confirmed New, and ten levels of Undo
+- One-row tldraw-inspired toolbar with modal color and size pickers
+- Bounded 32×32 drawing updates and dirty-tile Undo in 8 MiB PSRAM
+- Native replays, exact snapshots, ASan/UBSan, QEMU, and device telemetry
 
-The hardware build is usable. Long curves average about 5.7 ms per update. The
-CST820 supplies distinct coordinates at roughly 75–77 Hz; very fast XL diagonals
-can still show some drawing lag.
-
-Current product work includes larger toolbar tap targets, confirmation before
-New, an edge-release stroke bug, and a possible Save feature.
+The physical build is usable. Long curves average 5.7–5.8 ms per update. The
+CST820 reports positions at about 75–77 Hz, so very fast XL diagonals can still
+show some drawing lag. Save and a larger pannable canvas are not implemented.
 
 ## Run the macOS app
 
@@ -29,16 +24,17 @@ New, an edge-release stroke bug, and a possible Save feature.
 ./scripts/dev run
 ```
 
-It opens near the panel's physical size on a 14-inch 2021 MacBook Pro at default
-scaling. Draw with the mouse, use `Cmd-Z` to undo, `C` for New, and `Esc` to quit.
+The window opens near the panel's physical size on a 14-inch 2021 MacBook Pro
+at default scaling. Draw with the mouse, use `Cmd-Z` to undo, `C` for New, and
+`Esc` to quit.
 
 ## Test and profile
 
 ```sh
 ./scripts/dev test          # native tests and end-to-end replays
 ./scripts/dev release       # optimized build and tests
-./scripts/dev asan          # ASan and UBSan on the shared drawing core
-./scripts/dev perf          # sustained XL work and memory-traffic report
+./scripts/dev asan          # ASan and UBSan on the shared core
+./scripts/dev perf          # sustained XL work and memory traffic
 ./scripts/dev format-check
 ```
 
@@ -58,15 +54,12 @@ Flash a connected board with:
 
 ```sh
 cd esp32
-eim run "idf.py -B ../out/build/esp32 -p PORT flash"
+eim run "idf.py -B ../out/build/esp32 -p PORT flash monitor"
 ```
 
 QEMU verifies firmware integration and the 8 MiB memory model. Performance
-numbers come from the physical board.
-
-See [`FINDINGS.md`](FINDINGS.md) for measurements and demo notes,
-[`DEVELOPING.md`](DEVELOPING.md) for the development loop, and
-[`PROJECT_STATE.md`](PROJECT_STATE.md) for the detailed engineering handoff.
+measurements in [`FINDINGS.md`](FINDINGS.md) come from the host and physical
+board. See [`DEVELOPING.md`](DEVELOPING.md) for the development loop.
 
 ## License
 

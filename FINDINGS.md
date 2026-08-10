@@ -2,138 +2,125 @@
 
 Snapshot: 2026-08-10
 
-TinyDraw runs on the 368×448 Waveshare ESP32-S3 Touch AMOLED 1.8-inch V2 board.
-The physical build supports variable-width ink, 4×4 antialiasing, a compact
-toolbar, and ten levels of Undo.
+TinyDraw runs on the 368×448 Waveshare ESP32-S3 Touch AMOLED 1.8-inch V2 board. It
+has variable-width ink, 4×4 edge smoothing, a compact toolbar, and ten levels of Undo.
 
-## Headline numbers
+## Numbers for the demo
 
-- A 500-point XL host stroke fell from **4,479 ms to 220 ms**, a **20.4×**
-  improvement.
-- The largest observed hardware update fell from **72.9 ms to 16.1 ms**, about
-  **4.5×**.
-- Current long curves average **5.7–5.8 ms per update**.
+- A 500-point XL host stroke fell from **4,479 ms to 220 ms**, a **20.4× speedup**.
+- The largest observed board update fell from **72.9 ms to 16.1 ms**, about **4.5× faster**.
+- Long curves average **5.7–5.8 ms per drawing update**.
 - Fast XL diagonals average **4.9–10.1 ms** and peak at **16.1 ms**.
-- The CST820 supplies coordinates every **13–14 ms**, about **75–77 Hz**.
+- The CST820 reports a new position every **13–14 ms**, or **75–77 Hz**.
+- New dialog traffic fell from **237,728 to 106,848 bytes**, a **55% reduction**.
+- The firmware is **284,576 bytes**; 73% of its app partition is free.
 
-## Findings from the first build
+## From prototype to physical device
 
-### The host loop
+### A fast loop before the board arrived
 
-A platform-independent drawing engine and small macOS app established the
-368×448 drawing loop before the board arrived. Recorded strokes produce exact
-image snapshots.
+The first milestone was a C++20 drawing core and macOS app at the real 368×448
+resolution. Recorded input replays produce exact image snapshots. ASan and UBSan cover
+the SDL-free core.
 
-SDL already returned canvas-sized mouse positions. Applying Retina scaling again
-mapped a bottom-right click near the center; automated tests now cover the center
-and corners. The memory-safety test runs on the drawing engine because the
-Homebrew SDL loader crashes when that test mode starts.
+An early Retina bug scaled SDL positions twice, placing a bottom-right click near the
+center. Center and corner tests now protect the corrected mapping.
 
-### Perfect Freehand
+ESP-IDF and QEMU came next. QEMU boots the same core, models 8 MiB of PSRAM, and checks
+a headless replay and the visible framebuffer.
 
-Pinned Perfect Freehand examples verify TinyDraw's shape calculations. Perfect
-Freehand can revise the widths of its first points after seeing up to ten inputs.
-TinyDraw locks each accepted point's width and uses the next point to settle its
-direction.
+### Getting the ink right
 
-Drawing the whole outline as one shape produced holes where it crossed itself.
-The live renderer keeps two points and draws small four-sided pieces, circles,
-and occasional triangles.
+Pinned Perfect Freehand examples became an oracle for stroke points and outline geometry.
+TinyDraw then moved to a streaming form that finishes old sections while the finger moves.
 
-### Solid overlaps and input states
+One complete outline left holes where a stroke crossed itself. The current renderer unions
+coverage into a grayscale mask, then applies color once. Overlapping spans and round joins
+close pale shared edges; the seam regression went from 207/255 to 255/255 opacity.
 
-An active stroke first builds a grayscale mask. Overlapping pieces keep the
-higher value, and TinyDraw applies the color once. Self-overlaps stay solid.
-Four-sided pieces, round joins, and a 0.75-pixel overlap close pale shared edges;
-the seam test improved from 207/255 to 255/255 opacity.
+Start, move, finish, and cancel are explicit input states. The final lift position is kept,
+and touch ending at the edge no longer discards the stroke. Sharp turns over 90 degrees get
+a round join, removing chopped tops on thick handwritten letters without changing the
+performance benchmark.
 
-Every stroke has start, move, finish, and cancel states. Bad timestamps use a
-safe default interval, finish reaches the lift position, and cancel clears the
-unfinished stroke.
+### Keeping stroke cost bounded
 
-### Embedded memory
+The first live renderer repeated the whole stroke-so-far. Successive 50-point blocks grew
+from **41 ms to 1,040 ms**, and a 500-point XL host stroke took **4,479 ms**.
 
-Large drawing scratch buffers live outside the small task stack. The curved
-stroke batch exceeded ESP-IDF's 3,584-byte default stack; it now holds at most
-eight shapes, and the task has 6,144 bytes.
+Streaming geometry, a two-point live tail, and dirty 32×32 regions limit work to the latest
+input. The host workload now takes **220 ms**. Large scratch storage moved off the task
+stack after the first curved firmware replay exceeded ESP-IDF's default stack.
 
-## Performance progression
+On the board, the active coverage mask lives in internal RAM. Canvases and Undo history
+live in PSRAM. Coverage runs a row at a time, display bounds stay tight, transfers are
+queued, and touch sampling runs on the second CPU core. Two experiments that hurt timing
+or line quality were reverted.
 
-The original renderer repeated work for the full stroke-so-far. Successive
-50-point blocks grew from 41 ms to 1,040 ms. The current renderer works on the
-part of the screen changing in that frame.
+## Physical performance progression
 
-| Stage | Average update | Worst update | Lift |
+| Captured stage | Average update | Worst update | Finger lift |
 | --- | ---: | ---: | ---: |
-| Early physical XL worst case | 19.9 ms | 72.9 ms | 105.1 ms |
-| 32×32 changed blocks | 21.0 ms | 65.9 ms | 64.7 ms |
-| Row-based 4×4 edge smoothing | 10.1 ms | 25.5 ms | 35.1 ms |
-| Hot mask in internal memory | 5.8–7.7 ms | 9.1–20.4 ms | 19.1–38.8 ms |
+| First physical XL capture | 19.9 ms | 72.9 ms | 105.1 ms |
+| 32×32 dirty regions | 21.0 ms | 65.9 ms | 64.7 ms |
+| Row-based 4×4 smoothing | 10.1 ms | 25.5 ms | 35.1 ms |
+| Coverage mask in internal RAM | 5.8–7.7 ms | 9.1–20.4 ms | 19.1–38.8 ms |
 | Tight display bounds | 8.1–8.4 ms | 15.3–22.0 ms | 18.9–28.8 ms |
-| Current long curves | 5.7–5.8 ms | 10.7–11.3 ms | 51–55 ms |
-| Current fast diagonals | 4.9–10.1 ms | 7.4–16.1 ms | 12.2–23.8 ms |
+| Long curves | 5.7–5.8 ms | 10.7–11.3 ms | 51–55 ms |
+| Fast XL diagonals | 4.9–10.1 ms | 7.4–16.1 ms | 12.2–23.8 ms |
 
-The gains came from finalizing small stroke sections as input arrives, updating
-changed 32×32 blocks, drawing coverage a row at a time, keeping the hot mask in
-fast internal memory, sending compact display updates, queueing panel transfers,
-and reading touch on the second CPU core.
+A slow circle produced 107 positions over 1.45 seconds. A fast 300-pixel diagonal can
+contain only six to nine. Curve fitting makes sparse input smoother while a short live
+segment follows the newest position. The touch queue usually stays empty, with 12–15
+microseconds of measured queue delay.
 
-Diagonal intersection checks and stronger input smoothing increased latency and
-were reverted in `3bd5c21` and `ee1c6b8`.
-
-## Physical hardware
+## Board and memory
 
 | Part | Value |
 | --- | --- |
-| MCU | ESP32-S3 rev 0.2, dual core, 240 MHz |
-| Display | CO5300, 368×448 16-bit-color AMOLED, 40 MHz QSPI |
+| MCU | ESP32-S3 rev 0.2, two cores at 240 MHz |
+| Display | CO5300, 368×448 RGB565 AMOLED, 40 MHz QSPI |
 | Touch | CST820 `0xB7`, firmware `0x02`, 400 kHz I²C |
-| Touch task | 1 kHz on core 1 |
-| Distinct coordinates | Every 13–14 ms |
 | Memory | 8 MiB octal PSRAM at 80 MHz, 16 MiB flash |
-| Firmware image | 279,792 bytes; 73% of the app partition remains free |
+| Two canvases | 659,456 bytes in PSRAM |
+| Ten Undo entries | 3,440,640 bytes in PSRAM |
+| Active coverage | 164,864 bytes in internal RAM |
+| Three display buffers | 24,576 bytes in internal RAM |
 
-A slow circle produced 107 points over 1.45 seconds; a fast 300-pixel diagonal
-can contain six to nine. TinyDraw fits smooth curves through recent points and
-keeps a short live segment at the newest position. The touch queue usually stays
-empty, with 12–15 microseconds of queueing delay. Some XL frames take 14–16 ms.
+Physical bring-up established the V2 pin layout, panel offset, and color format. A full
+startup redraw clears panel memory left by the factory demo or an earlier session.
 
-## Memory and Undo
+## UI and Undo
 
-| Allocation | Location | Size |
-| --- | --- | ---: |
-| Two 16-bit-color canvases | External PSRAM | 659,456 bytes |
-| Ten-entry Undo storage | External PSRAM | 3,440,640 bytes |
-| Active stroke mask | Fast internal RAM | 164,864 bytes |
-| Three display buffers | Transfer-ready internal RAM | 24,576 bytes |
+The default toolbar is `[undo] [pen] [eraser] [color] [size] [new]`. Color and size open
+a second, modal row. Board testing led to larger tap targets, controls fitted inside the
+rounded corners, and confirmation before New.
 
-Undo stores touched-tile before-images and evicts the oldest of ten entries. It
-remained fast through the hardware renderer changes.
+Undo keeps before-images only for touched regions. A 1,000-point trace restores 209,920
+bytes; batching adjacent regions reduced display submissions from 105 to 14. Physical
+examples range from 10.8 ms for 2 tiles, through 35.5 ms for 43 tiles, to 109.2 ms for the
+full 168-tile canvas.
 
 ## Verification
 
-The project has 13 automated test groups, full drawing replays, exact snapshots,
-Perfect Freehand examples, a 1,000-point XL workload, memory-safety checks, and
-headless plus visible emulation. Device logs record drawing, lift, display,
-touch timing, input lag, and queued work. Emulation verifies that the firmware
-fits together; hardware captures provide timing.
+Fifteen native test groups cover exact replays, snapshots, Perfect Freehand examples,
+self-overlaps, seams, input states, UI, Undo, and a 1,000-point XL workload. ASan, UBSan,
+headless QEMU, and visible QEMU pass. Device logs report drawing, display, touch, lift,
+dialog, and Undo timing.
 
 ## Current limits and next work
 
-Fast diagonal latency combines a 13–14 ms touch interval, occasional 14–16 ms
-XL frames, 40 MHz display transfers, and 4×4 edge smoothing. Remaining
-experiments include predicting the next finger position and comparing 2×2 with
-4×4 edge smoothing.
+Fast diagonals can still show the stroke being drawn. Frame work can take 16.1 ms and the
+next touch position arrives 13–14 ms later. A full-canvas Undo sends 329,728 bytes and is
+visibly slower.
 
-Product work includes larger toolbar tap targets, confirmation before New,
-the edge-release stroke bug, a minimal Save design, and eventually panning over
-a canvas larger than the display.
+There is no persistent Save yet. The next steps are a compact save format, then a sparse
+canvas larger than the display with panning. Both must preserve bounded drawing work.
 
 ## Five-minute demo
 
-1. Draw a long XL curve to show bounded frame cost.
-2. Cross it over itself to show solid overlaps and 4×4 edge smoothing.
-3. Undo several operations; history traffic scales with touched tiles.
-4. Draw slow and fast circles, then show the 13–14 ms CST820 cadence.
-5. Finish with **4,479 ms to 220 ms** on the host and **72.9 ms to 16.1 ms**
-   for the largest observed hardware update.
+1. Draw one slow curve and one fast diagonal to show touch sampling limits.
+2. Cross an XL stroke over itself, then make a sharp turn to show solid joins.
+3. Extend the stroke to show that old points no longer slow new input.
+4. Undo several strokes, then demonstrate New, Cancel, and confirmation.
+5. Close with **4,479 ms to 220 ms** on the host and **72.9 ms to 16.1 ms** on the board.
