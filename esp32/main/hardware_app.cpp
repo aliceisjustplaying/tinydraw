@@ -263,6 +263,17 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
     }
   }
 
+  void push_world(std::span<const std::uint16_t> world, tinydraw::ViewOrigin origin, int bottom) {
+    constexpr int rows_per_transfer = 10;
+    for (int y = 0; y < bottom; y += rows_per_transfer) {
+      const int height = std::min(rows_per_transfer, bottom - y);
+      const auto offset =
+          static_cast<std::size_t>((origin.y + y) * tinydraw::WorldCanvas::kWidth + origin.x);
+      push_rect(0, y, tinydraw::kCanvasWidth, height, world.data() + offset,
+                tinydraw::WorldCanvas::kWidth);
+    }
+  }
+
   void refresh_toolbar(std::span<const std::uint16_t> canvas) {
     if (dialog_dirty_) {
       const auto offset =
@@ -510,11 +521,10 @@ void run_hardware_app() {
     const int delta_x = static_cast<int>(std::lround(point.x - pan_start_touch.x));
     const int delta_y = static_cast<int>(std::lround(point.y - pan_start_touch.y));
     const auto started = esp_timer_get_time();
-    if (!canvas.world().show({pan_start_origin.x - delta_x, pan_start_origin.y - delta_y},
-                             canvas.committed(), canvas.visible())) {
+    if (!canvas.world().move_to({pan_start_origin.x - delta_x, pan_start_origin.y - delta_y})) {
       return;
     }
-    display.push_canvas(canvas.committed(), 0, kMainOverlayTop);
+    display.push_world(canvas.world().pixels(), canvas.world().origin(), kMainOverlayTop);
     const auto elapsed = esp_timer_get_time() - started;
     ++pan_frames;
     pan_render_us += elapsed;
@@ -752,14 +762,18 @@ void run_hardware_app() {
       if (panning) {
         pan_to(point);
         panning = false;
+        const auto settle_started = esp_timer_get_time();
+        static_cast<void>(
+            canvas.world().show(canvas.world().origin(), canvas.committed(), canvas.visible()));
+        const auto settle_us = esp_timer_get_time() - settle_started;
         const auto bytes = static_cast<std::uint64_t>(pan_frames) * tinydraw::kCanvasWidth *
                            kMainOverlayTop * sizeof(std::uint16_t);
         std::printf(
             "TINYDRAW_PAN_PERF frames=%lu bytes=%llu average_us=%lld max_us=%lld "
-            "prepare_us=%lld transfer_us=%lld pushes=%lu\n",
+            "settle_us=%lld prepare_us=%lld transfer_us=%lld pushes=%lu\n",
             static_cast<unsigned long>(pan_frames), static_cast<unsigned long long>(bytes),
             static_cast<long long>(pan_frames == 0 ? 0 : pan_render_us / pan_frames),
-            static_cast<long long>(maximum_pan_render_us),
+            static_cast<long long>(maximum_pan_render_us), static_cast<long long>(settle_us),
             static_cast<long long>(display.prepare_us()),
             static_cast<long long>(display.transfer_us()),
             static_cast<unsigned long>(display.push_count()));
