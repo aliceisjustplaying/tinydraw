@@ -52,10 +52,20 @@ TEST_CASE("four large size controls appear in one second row") {
   CHECK(tinydraw::toolbar_contains({316.0F, 331.0F}, state));
 }
 
-TEST_CASE("floating controls consume only their own screen regions") {
-  const tinydraw::ToolbarState state;
+TEST_CASE("floating controls include forgiving vertical tap margins") {
+  tinydraw::ToolbarState state;
   CHECK(tinydraw::toolbar_contains({360.0F, 409.0F}, state));
+  CHECK(tinydraw::toolbar_contains({96.0F, 367.0F}, state));
+  CHECK(tinydraw::toolbar_action_at({96.0F, 367.0F}, state) ==
+        tinydraw::ToolbarAction::kSelectPen);
+  CHECK_FALSE(tinydraw::toolbar_contains({96.0F, 365.0F}, state));
   CHECK_FALSE(tinydraw::toolbar_contains({180.0F, 331.0F}, state));
+
+  state.colors_open = true;
+  CHECK(tinydraw::toolbar_contains({52.0F, 289.0F}, state));
+  CHECK(tinydraw::toolbar_action_at({52.0F, 289.0F}, state) ==
+        tinydraw::ToolbarAction::kSelectBlack);
+  CHECK_FALSE(tinydraw::toolbar_contains({52.0F, 287.0F}, state));
   CHECK_FALSE(tinydraw::toolbar_contains({180.0F, 250.0F}, state));
 }
 

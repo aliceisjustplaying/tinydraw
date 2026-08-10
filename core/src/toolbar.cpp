@@ -17,6 +17,9 @@ constexpr int kMainTop = 374;
 constexpr int kMainBottom = 444;
 constexpr int kPaletteTop = 296;
 constexpr int kPaletteBottom = 366;
+constexpr int kHitSlop = 8;
+constexpr int kMainHitTop = kMainTop - kHitSlop;
+constexpr int kPaletteHitTop = kPaletteTop - kHitSlop;
 
 void set_pixel(std::span<std::uint16_t> canvas, int width, int height, int x, int y,
                std::uint16_t color) {
@@ -149,16 +152,16 @@ int size_radius(PenSize size) {
 }  // namespace
 
 bool toolbar_contains(Point point, const ToolbarState& state) {
-  const bool main_row = inside(point, 0.0F, static_cast<float>(kMainTop),
+  const bool main_row = inside(point, 0.0F, static_cast<float>(kMainHitTop),
                                static_cast<float>(kCanvasWidth), static_cast<float>(kCanvasHeight));
   return main_row || ((state.colors_open || state.sizes_open) &&
-                      inside(point, 0.0F, static_cast<float>(kPaletteTop),
+                      inside(point, 0.0F, static_cast<float>(kPaletteHitTop),
                              static_cast<float>(kCanvasWidth), static_cast<float>(kMainTop)));
 }
 
 ToolbarAction toolbar_action_at(Point point, const ToolbarState& state) {
   if ((state.sizes_open || state.colors_open) &&
-      inside(point, 0.0F, static_cast<float>(kPaletteTop), static_cast<float>(kCanvasWidth),
+      inside(point, 0.0F, static_cast<float>(kPaletteHitTop), static_cast<float>(kCanvasWidth),
              static_cast<float>(kMainTop))) {
     const auto index =
         std::min(static_cast<std::size_t>(point.x * 4.0F / kCanvasWidth), std::size_t{3});
@@ -171,7 +174,7 @@ ToolbarAction toolbar_action_at(Point point, const ToolbarState& state) {
                                  ToolbarAction::kSelectRed, ToolbarAction::kSelectGreen};
     return actions[index];
   }
-  if (!inside(point, 0.0F, static_cast<float>(kMainTop), static_cast<float>(kCanvasWidth),
+  if (!inside(point, 0.0F, static_cast<float>(kMainHitTop), static_cast<float>(kCanvasWidth),
               static_cast<float>(kCanvasHeight))) {
     return ToolbarAction::kNone;
   }

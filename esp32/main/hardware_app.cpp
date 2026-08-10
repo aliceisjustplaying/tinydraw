@@ -391,6 +391,9 @@ void run_hardware_app() {
   tinydraw::Point last_touch{};
   std::uint16_t stroke_color = tinydraw::rgb565(toolbar.color);
   bool pressed = false;
+  bool toolbar_pressed = false;
+  tinydraw::Point toolbar_sum{};
+  std::uint32_t toolbar_samples = 0;
   std::uint32_t stroke_samples = 0;
   std::uint32_t stroke_started_us = 0;
   std::uint32_t previous_touch_us = 0;
@@ -529,7 +532,9 @@ void run_hardware_app() {
       pressed = true;
       last_touch = point;
       if (tinydraw::toolbar_contains(point, toolbar)) {
-        toolbar_action(point);
+        toolbar_pressed = true;
+        toolbar_sum = point;
+        toolbar_samples = 1;
       } else {
         close_popups();
         stroke_color = toolbar.tool == tinydraw::DrawingTool::kEraser
@@ -552,6 +557,14 @@ void run_hardware_app() {
         stroke_render_us += elapsed;
         maximum_render_us = std::max(maximum_render_us, elapsed);
       }
+    } else if (touching && pressed && toolbar_pressed &&
+               (point.x != last_touch.x || point.y != last_touch.y)) {
+      last_touch = point;
+      if (tinydraw::toolbar_contains(point, toolbar)) {
+        toolbar_sum.x += point.x;
+        toolbar_sum.y += point.y;
+        ++toolbar_samples;
+      }
     } else if (touching && pressed && ink.active() &&
                (point.x != last_touch.x || point.y != last_touch.y)) {
       last_touch = point;
@@ -572,6 +585,16 @@ void run_hardware_app() {
       std::printf("[DEBUG-hw1] up x=%.0f y=%.0f active=%u\n", static_cast<double>(last_touch.x),
                   static_cast<double>(last_touch.y), ink.active());
       pressed = false;
+      if (toolbar_pressed) {
+        toolbar_pressed = false;
+        const float divisor = static_cast<float>(toolbar_samples == 0 ? 1 : toolbar_samples);
+        const tinydraw::Point tap{.x = toolbar_sum.x / divisor, .y = toolbar_sum.y / divisor};
+        toolbar_samples = 0;
+        if (tinydraw::toolbar_contains(tap, toolbar)) {
+          toolbar_action(tap);
+        }
+        continue;
+      }
       if (ink.active()) {
         last_ink =
             ink.finish({.x = last_touch.x, .y = last_touch.y, .timestamp_us = event.timestamp_us});
