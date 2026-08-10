@@ -10,7 +10,6 @@ if(NOT TINYDRAW_QEMU)
     esp_wifi
     esp_http_server
     nvs_flash
-    dns_server
     espressif__libpng
   )
 endif()

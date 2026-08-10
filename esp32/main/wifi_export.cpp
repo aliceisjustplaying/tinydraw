@@ -5,7 +5,6 @@
 #include <cstdio>
 #include <cstring>
 
-#include "dns_server.h"
 #include "esp_err.h"
 #include "esp_event.h"
 #include "esp_heap_caps.h"
@@ -118,8 +117,6 @@ esp_err_t drawing_handler(httpd_req_t* request) {
   return httpd_resp_send_chunk(request, nullptr, 0);
 }
 
-esp_err_t not_found_handler(httpd_req_t* request, httpd_err_code_t) { return send_page(request); }
-
 bool initialize_networking() {
   esp_err_t result = nvs_flash_init();
   if (result == ESP_ERR_NVS_NO_FREE_PAGES || result == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -177,19 +174,9 @@ bool start_wifi_export(std::span<const std::uint16_t> canvas) {
   const httpd_uri_t drawing{
       .uri = "/drawing.png", .method = HTTP_GET, .handler = drawing_handler, .user_ctx = nullptr};
   if (httpd_register_uri_handler(server, &root) != ESP_OK ||
-      httpd_register_uri_handler(server, &drawing) != ESP_OK ||
-      httpd_register_err_handler(server, HTTPD_404_NOT_FOUND, not_found_handler) != ESP_OK) {
+      httpd_register_uri_handler(server, &drawing) != ESP_OK) {
     return false;
   }
-
-  dns_server_config_t dns_configuration{};
-  dns_configuration.num_of_entries = 1;
-  dns_configuration.item[0].name = "*";
-  dns_configuration.item[0].if_key = "WIFI_AP_DEF";
-  if (start_dns_server(&dns_configuration) == nullptr) {
-    return false;
-  }
-  esp_log_level_set("example_dns_redirect_server", ESP_LOG_ERROR);
   std::printf(
       "TINYDRAW_EXPORT_OK ssid=%s url=http://192.168.4.1 internal_free=%lu psram_free=%lu\n", kSsid,
       static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
