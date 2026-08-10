@@ -31,8 +31,8 @@ constexpr std::uint16_t kBackground = 0xFFFFU;
 constexpr int kPanelGapX = 0x10;
 constexpr int kTransferPixels = 4096;
 constexpr int kTransferQueueDepth = 3;
-constexpr int kToolbarTop = 374;
-constexpr int kPopupTop = 296;
+constexpr int kToolbarTop = 366;
+constexpr int kPopupTop = 288;
 
 DMA_ATTR std::array<std::array<std::uint16_t, kTransferPixels>, kTransferQueueDepth>
     transfer_pixels;
