@@ -90,6 +90,7 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
     if (transfer_semaphore == nullptr || overlay_ == nullptr) {
       return;
     }
+    std::fill_n(overlay_, tinydraw::kCanvasWidth * tinydraw::kCanvasHeight, kBackground);
 
     spi_bus_config_t bus_config{};
     bus_config.sclk_io_num = GPIO_NUM_11;
@@ -165,7 +166,18 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
     dialog_dirty_ = dialog_dirty_ || toolbar_.confirm_new != toolbar.confirm_new;
     toolbar_ = toolbar;
     toolbar_top_ = tinydraw::toolbar_overlay_top(toolbar);
-    std::fill_n(overlay_, tinydraw::kCanvasWidth * tinydraw::kCanvasHeight, kBackground);
+    if (main_dirty_) {
+      clear_overlay(0, kMainOverlayTop, tinydraw::kCanvasWidth,
+                    tinydraw::kCanvasHeight - kMainOverlayTop);
+    }
+    if (palette_dirty_) {
+      clear_overlay(0, kPaletteOverlayTop, tinydraw::kCanvasWidth,
+                    kMainOverlayTop - kPaletteOverlayTop);
+    }
+    if (dialog_dirty_) {
+      clear_overlay(kDialogOverlayX, kDialogOverlayTop, kDialogOverlayWidth,
+                    kDialogOverlayHeight);
+    }
     tinydraw::draw_toolbar(std::span(overlay_, static_cast<std::size_t>(tinydraw::kCanvasWidth *
                                                                         tinydraw::kCanvasHeight)),
                            tinydraw::kCanvasWidth, tinydraw::kCanvasHeight, toolbar_);
@@ -265,6 +277,13 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
   }
 
  private:
+  void clear_overlay(int x, int y, int width, int height) {
+    for (int row = 0; row < height; ++row) {
+      auto* start = overlay_ + static_cast<std::ptrdiff_t>((y + row) * tinydraw::kCanvasWidth + x);
+      std::fill_n(start, width, kBackground);
+    }
+  }
+
   esp_lcd_panel_io_handle_t io_ = nullptr;
   esp_lcd_panel_handle_t panel_ = nullptr;
   std::uint16_t* overlay_ = nullptr;
@@ -580,6 +599,14 @@ void run_hardware_app() {
                   static_cast<double>(point.y));
       pressed = true;
       last_touch = point;
+      if (toolbar.confirm_new) {
+        const auto action = tinydraw::toolbar_action_at(point, toolbar);
+        if (action == tinydraw::ToolbarAction::kCancelNewDrawing ||
+            action == tinydraw::ToolbarAction::kConfirmNewDrawing) {
+          toolbar_action(point);
+          continue;
+        }
+      }
       if (tinydraw::toolbar_contains(point, toolbar)) {
         toolbar_pressed = true;
         toolbar_sum = point;
