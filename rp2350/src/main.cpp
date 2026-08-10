@@ -60,7 +60,7 @@ void set_pixel(int x, int y, std::uint16_t color) {
   if (x < 0 || x >= kWidth || y < 0 || y >= kHeight) {
     return;
   }
-  framebuffer[static_cast<std::size_t>(y * kWidth + x)] = panel_pixel(color);
+  framebuffer[static_cast<std::size_t>(y * kWidth + x)] = color;
 }
 
 void blend_pixel(int x, int y, std::uint16_t color, int coverage) {
@@ -68,14 +68,14 @@ void blend_pixel(int x, int y, std::uint16_t color, int coverage) {
     return;
   }
   const auto index = static_cast<std::size_t>(y * kWidth + x);
-  const std::uint16_t background = panel_pixel(framebuffer[index]);
+  const std::uint16_t background = framebuffer[index];
   const auto blend = [coverage](int foreground, int behind) {
     return (foreground * coverage + behind * (255 - coverage) + 127) / 255;
   };
   const int red = blend((color >> 11) & 0x1F, (background >> 11) & 0x1F);
   const int green = blend((color >> 5) & 0x3F, (background >> 5) & 0x3F);
   const int blue = blend(color & 0x1F, background & 0x1F);
-  framebuffer[index] = panel_pixel(static_cast<std::uint16_t>((red << 11) | (green << 5) | blue));
+  framebuffer[index] = static_cast<std::uint16_t>((red << 11) | (green << 5) | blue);
 }
 
 void fill_rect(int x, int y, int width, int height, std::uint16_t color) {
@@ -86,7 +86,7 @@ void fill_rect(int x, int y, int width, int height, std::uint16_t color) {
   for (int row = top; row < bottom; ++row) {
     std::fill(framebuffer.begin() + static_cast<std::ptrdiff_t>(row * kWidth + left),
               framebuffer.begin() + static_cast<std::ptrdiff_t>(row * kWidth + right),
-              panel_pixel(color));
+              color);
   }
 }
 
@@ -152,6 +152,8 @@ void draw_toolbar() {
   fill_rect(new_center - 9, kToolbarTop + 30, 18, 4, kBlack);
 }
 
+void present_framebuffer();
+
 void handle_toolbar(int x) {
   const int cell = std::clamp(x * kToolbarCells / kWidth, 0, kToolbarCells - 1);
   if (cell == 0) {
@@ -167,14 +169,28 @@ void handle_toolbar(int x) {
     fill_rect(0, 0, kWidth, kToolbarTop, kWhite);
   }
   draw_toolbar();
+  present_framebuffer();
+}
+
+void swap_framebuffer_bytes() {
+  for (auto& pixel : framebuffer) {
+    pixel = panel_pixel(pixel);
+  }
+}
+
+void present_framebuffer() {
+  swap_framebuffer_bytes();
   AMOLED_1IN8_Display(framebuffer.data());
+  swap_framebuffer_bytes();
 }
 
 void send_framebuffer() {
   constexpr auto byte_count = framebuffer.size() * sizeof(framebuffer.front());
   std::printf("TINYDRAW_FRAME %d %d RGB565BE %zu\n", kWidth, kHeight, byte_count);
   std::fflush(stdout);
+  swap_framebuffer_bytes();
   std::fwrite(framebuffer.data(), 1, byte_count, stdout);
+  swap_framebuffer_bytes();
   std::fflush(stdout);
 }
 
@@ -207,7 +223,7 @@ std::uint32_t flush_ink_bounds(int minimum_x, int minimum_y, int maximum_x, int 
   if (right <= left || bottom <= top) {
     return 0;
   }
-  AMOLED_1IN8_Display(framebuffer.data());
+  present_framebuffer();
   return static_cast<std::uint32_t>(kWidth * kHeight);
 }
 
@@ -275,9 +291,9 @@ int main() {
   AMOLED_1IN8_Init();
   AMOLED_1IN8_SetBrightness(80);
 
-  std::fill(framebuffer.begin(), framebuffer.end(), panel_pixel(kWhite));
+  std::fill(framebuffer.begin(), framebuffer.end(), kWhite);
   draw_toolbar();
-  AMOLED_1IN8_Display(framebuffer.data());
+  present_framebuffer();
 
   FT3168_Init(FT3168_Point_Mode);
   DEV_KEY_Config(Touch_INT_PIN);
