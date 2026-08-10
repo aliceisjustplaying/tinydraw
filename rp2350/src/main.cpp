@@ -4,6 +4,9 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <span>
+
+#include "tinydraw/ui/toolbar.h"
 
 // DEV_Config defines types used by the vendor panel header.
 // clang-format off
@@ -19,25 +22,29 @@ namespace {
 
 constexpr int kWidth = AMOLED_1IN8_WIDTH;
 constexpr int kHeight = AMOLED_1IN8_HEIGHT;
-constexpr int kToolbarTop = 384;
-constexpr int kToolbarCells = 5;
+constexpr int kDrawingBottom = 372;
+constexpr int kPaletteBackingTop = 179;
+constexpr int kDialogBackingX = 26;
+constexpr int kDialogBackingY = 124;
+constexpr int kDialogBackingWidth = 318;
+constexpr int kDialogBackingHeight = 168;
 constexpr std::uint16_t kWhite = 0xFFFF;
-constexpr std::uint16_t kBlack = 0x18E3;
-constexpr std::uint16_t kBlue = 0x433D;
-constexpr std::uint16_t kRed = 0xE186;
-constexpr std::uint16_t kGreen = 0x0C8D;
-constexpr std::uint16_t kGrey = 0x9D56;
-constexpr std::uint16_t kToolbar = 0xEF7D;
-constexpr std::uint16_t kSelected = 0xD61F;
-constexpr std::array<std::uint16_t, 4> kColors{kBlack, kBlue, kRed, kGreen};
-constexpr std::array<int, 3> kRadii{3, 7, 12};
+constexpr std::size_t kPaletteBackingPixels =
+    static_cast<std::size_t>(kWidth * (kDrawingBottom - kPaletteBackingTop));
 
-enum class Tool { kPen, kEraser };
+std::array<std::uint16_t, static_cast<std::size_t>(kWidth * kHeight)> framebuffer;
+std::array<std::uint16_t, kPaletteBackingPixels> overlay_pixels;
+tinydraw::ToolbarState toolbar;
 
-std::array<std::uint16_t, static_cast<std::size_t>(kWidth* kHeight)> framebuffer;
-Tool tool = Tool::kPen;
-std::size_t color_index = 1;
-std::size_t size_index = 1;
+struct OverlayBackup {
+  int x = 0;
+  int y = 0;
+  int width = 0;
+  int height = 0;
+  bool active = false;
+};
+
+OverlayBackup overlay_backup;
 
 struct PerformanceStats {
   std::uint32_t updates = 0;
@@ -56,15 +63,22 @@ constexpr std::uint16_t panel_pixel(std::uint16_t color) {
   return static_cast<std::uint16_t>((color << 8U) | (color >> 8U));
 }
 
-void set_pixel(int x, int y, std::uint16_t color) {
-  if (x < 0 || x >= kWidth || y < 0 || y >= kHeight) {
-    return;
+int brush_radius() {
+  switch (toolbar.size) {
+    case tinydraw::PenSize::kSmall:
+      return 3;
+    case tinydraw::PenSize::kMedium:
+      return 7;
+    case tinydraw::PenSize::kLarge:
+      return 12;
+    case tinydraw::PenSize::kExtraLarge:
+      return 18;
   }
-  framebuffer[static_cast<std::size_t>(y * kWidth + x)] = color;
+  return 7;
 }
 
 void blend_pixel(int x, int y, std::uint16_t color, int coverage) {
-  if (x < 0 || x >= kWidth || y < 0 || y >= kToolbarTop || coverage <= 0) {
+  if (x < 0 || x >= kWidth || y < 0 || y >= kDrawingBottom || coverage <= 0) {
     return;
   }
   const auto index = static_cast<std::size_t>(y * kWidth + x);
@@ -78,35 +92,14 @@ void blend_pixel(int x, int y, std::uint16_t color, int coverage) {
   framebuffer[index] = static_cast<std::uint16_t>((red << 11) | (green << 5) | blue);
 }
 
-void fill_rect(int x, int y, int width, int height, std::uint16_t color) {
-  const int left = std::clamp(x, 0, kWidth);
-  const int top = std::clamp(y, 0, kHeight);
-  const int right = std::clamp(x + width, 0, kWidth);
-  const int bottom = std::clamp(y + height, 0, kHeight);
-  for (int row = top; row < bottom; ++row) {
-    std::fill(framebuffer.begin() + static_cast<std::ptrdiff_t>(row * kWidth + left),
-              framebuffer.begin() + static_cast<std::ptrdiff_t>(row * kWidth + right),
-              color);
-  }
-}
-
-void fill_circle(int center_x, int center_y, int radius, std::uint16_t color,
-                 int clip_bottom = kHeight) {
-  for (int row = -radius; row <= radius; ++row) {
-    for (int column = -radius; column <= radius; ++column) {
-      if (column * column + row * row <= radius * radius && center_y + row < clip_bottom) {
-        set_pixel(center_x + column, center_y + row, color);
-      }
-    }
-  }
-}
-
 void stamp_dot(int x, int y) {
   constexpr std::array sample_offsets{-3, -1, 1, 3};
-  const int radius = kRadii[size_index];
+  const int radius = brush_radius();
   const int scaled_radius = radius * 8;
   const int radius_squared = scaled_radius * scaled_radius;
-  const std::uint16_t color = tool == Tool::kEraser ? kWhite : kColors[color_index];
+  const std::uint16_t color = toolbar.tool == tinydraw::DrawingTool::kEraser
+                                  ? kWhite
+                                  : tinydraw::rgb565(toolbar.color);
   for (int row = -radius; row <= radius; ++row) {
     for (int column = -radius; column <= radius; ++column) {
       int covered = 0;
@@ -122,54 +115,142 @@ void stamp_dot(int x, int y) {
   }
 }
 
-void draw_toolbar() {
-  fill_rect(0, kToolbarTop, kWidth, kHeight - kToolbarTop, kToolbar);
-  fill_rect(0, kToolbarTop, kWidth, 2, kGrey);
-  const int cell_width = kWidth / kToolbarCells;
-  const int pen_center = cell_width / 2;
-  const int eraser_center = pen_center + cell_width;
-  if (tool == Tool::kPen) {
-    fill_rect(5, kToolbarTop + 7, cell_width - 10, 50, kSelected);
-  } else {
-    fill_rect(cell_width + 5, kToolbarTop + 7, cell_width - 10, 50, kSelected);
-  }
-
-  for (int offset = -12; offset <= 12; ++offset) {
-    fill_circle(pen_center + offset, kToolbarTop + 32 - offset, 2, kBlack);
-  }
-  fill_rect(eraser_center - 13, kToolbarTop + 22, 26, 20, kWhite);
-  fill_rect(eraser_center - 13, kToolbarTop + 22, 26, 2, kBlack);
-  fill_rect(eraser_center - 13, kToolbarTop + 40, 26, 2, kBlack);
-  fill_rect(eraser_center - 13, kToolbarTop + 22, 2, 20, kBlack);
-  fill_rect(eraser_center + 11, kToolbarTop + 22, 2, 20, kBlack);
-
-  fill_circle(pen_center + cell_width * 2, kToolbarTop + 32, 13, kColors[color_index]);
-  fill_circle(pen_center + cell_width * 3, kToolbarTop + 32, kRadii[size_index], kBlack);
-
-  const int new_center = pen_center + cell_width * 4;
-  fill_rect(new_center - 14, kToolbarTop + 16, 28, 32, kWhite);
-  fill_rect(new_center - 2, kToolbarTop + 23, 4, 18, kBlack);
-  fill_rect(new_center - 9, kToolbarTop + 30, 18, 4, kBlack);
-}
-
 void present_framebuffer();
 
-void handle_toolbar(int x) {
-  const int cell = std::clamp(x * kToolbarCells / kWidth, 0, kToolbarCells - 1);
-  if (cell == 0) {
-    tool = Tool::kPen;
-  } else if (cell == 1) {
-    tool = Tool::kEraser;
-  } else if (cell == 2) {
-    color_index = (color_index + 1) % kColors.size();
-    tool = Tool::kPen;
-  } else if (cell == 3) {
-    size_index = (size_index + 1) % kRadii.size();
-  } else {
-    fill_rect(0, 0, kWidth, kToolbarTop, kWhite);
+void save_overlay(int x, int y, int width, int height) {
+  const auto pixel_count = static_cast<std::size_t>(width * height);
+  if (overlay_backup.active || x < 0 || y < 0 || x + width > kWidth || y + height > kHeight ||
+      pixel_count > overlay_pixels.size()) {
+    return;
   }
-  draw_toolbar();
+  for (int row = 0; row < height; ++row) {
+    std::copy_n(framebuffer.begin() + static_cast<std::ptrdiff_t>((y + row) * kWidth + x), width,
+                overlay_pixels.begin() + static_cast<std::ptrdiff_t>(row * width));
+  }
+  overlay_backup = {.x = x, .y = y, .width = width, .height = height, .active = true};
+}
+
+void restore_overlay() {
+  if (!overlay_backup.active) {
+    return;
+  }
+  for (int row = 0; row < overlay_backup.height; ++row) {
+    std::copy_n(overlay_pixels.begin() + static_cast<std::ptrdiff_t>(row * overlay_backup.width),
+                overlay_backup.width,
+                framebuffer.begin() + static_cast<std::ptrdiff_t>(
+                                          (overlay_backup.y + row) * kWidth + overlay_backup.x));
+  }
+  overlay_backup.active = false;
+}
+
+void close_popups() {
+  toolbar.tools_open = false;
+  toolbar.colors_open = false;
+  toolbar.sizes_open = false;
+}
+
+void save_toolbar_overlay() {
+  if (toolbar.confirm_new) {
+    save_overlay(kDialogBackingX, kDialogBackingY, kDialogBackingWidth, kDialogBackingHeight);
+    return;
+  }
+  if (toolbar.tools_open || toolbar.colors_open || toolbar.sizes_open) {
+    const int top = tinydraw::toolbar_overlay_top(toolbar);
+    save_overlay(0, top, kWidth, kDrawingBottom - top);
+  }
+}
+
+void render_toolbar() {
+  tinydraw::draw_toolbar(std::span<std::uint16_t>(framebuffer), kWidth, kHeight, toolbar);
+}
+
+void show_toolbar() {
+  render_toolbar();
   present_framebuffer();
+}
+
+void set_popup(bool tools, bool colors, bool sizes) {
+  restore_overlay();
+  close_popups();
+  toolbar.tools_open = tools;
+  toolbar.colors_open = colors;
+  toolbar.sizes_open = sizes;
+  save_toolbar_overlay();
+  show_toolbar();
+}
+
+void handle_toolbar(tinydraw::Point point) {
+  const auto action = tinydraw::toolbar_action_at(point, toolbar);
+  switch (action) {
+    case tinydraw::ToolbarAction::kSelectPen:
+      restore_overlay();
+      close_popups();
+      toolbar.tool = tinydraw::DrawingTool::kPen;
+      break;
+    case tinydraw::ToolbarAction::kSelectPan:
+      restore_overlay();
+      close_popups();
+      toolbar.tool = tinydraw::DrawingTool::kPen;
+      break;
+    case tinydraw::ToolbarAction::kSelectEraser:
+      toolbar.tool = tinydraw::DrawingTool::kEraser;
+      break;
+    case tinydraw::ToolbarAction::kSelectColor:
+      restore_overlay();
+      toolbar.color = tinydraw::toolbar_color_at(point, toolbar).value_or(toolbar.color);
+      toolbar.tool = tinydraw::DrawingTool::kPen;
+      close_popups();
+      break;
+    case tinydraw::ToolbarAction::kToggleTools:
+      set_popup(!toolbar.tools_open, false, false);
+      return;
+    case tinydraw::ToolbarAction::kToggleColors:
+      set_popup(false, !toolbar.colors_open, false);
+      return;
+    case tinydraw::ToolbarAction::kToggleSizes:
+      set_popup(false, false, !toolbar.sizes_open);
+      return;
+    case tinydraw::ToolbarAction::kSelectSmall:
+      restore_overlay();
+      toolbar.size = tinydraw::PenSize::kSmall;
+      close_popups();
+      break;
+    case tinydraw::ToolbarAction::kSelectMedium:
+      restore_overlay();
+      toolbar.size = tinydraw::PenSize::kMedium;
+      close_popups();
+      break;
+    case tinydraw::ToolbarAction::kSelectLarge:
+      restore_overlay();
+      toolbar.size = tinydraw::PenSize::kLarge;
+      close_popups();
+      break;
+    case tinydraw::ToolbarAction::kSelectExtraLarge:
+      restore_overlay();
+      toolbar.size = tinydraw::PenSize::kExtraLarge;
+      close_popups();
+      break;
+    case tinydraw::ToolbarAction::kNewDrawing:
+      restore_overlay();
+      close_popups();
+      toolbar.confirm_new = true;
+      save_toolbar_overlay();
+      break;
+    case tinydraw::ToolbarAction::kCancelNewDrawing:
+      restore_overlay();
+      toolbar.confirm_new = false;
+      break;
+    case tinydraw::ToolbarAction::kConfirmNewDrawing:
+      overlay_backup.active = false;
+      std::fill_n(framebuffer.begin(), static_cast<std::size_t>(kWidth * kDrawingBottom), kWhite);
+      toolbar.confirm_new = false;
+      close_popups();
+      break;
+    case tinydraw::ToolbarAction::kUndo:
+    case tinydraw::ToolbarAction::kNone:
+      return;
+  }
+  show_toolbar();
 }
 
 void swap_framebuffer_bytes() {
@@ -215,11 +296,11 @@ void send_performance() {
 }
 
 std::uint32_t flush_ink_bounds(int minimum_x, int minimum_y, int maximum_x, int maximum_y) {
-  const int radius = kRadii[size_index];
+  const int radius = brush_radius();
   const int left = std::max(0, minimum_x - radius) & ~1;
   const int top = std::max(0, minimum_y - radius) & ~1;
   const int right = std::min(kWidth, (maximum_x + radius + 2) & ~1);
-  const int bottom = std::min(kToolbarTop, (maximum_y + radius + 2) & ~1);
+  const int bottom = std::min(kDrawingBottom, (maximum_y + radius + 2) & ~1);
   if (right <= left || bottom <= top) {
     return 0;
   }
@@ -260,7 +341,7 @@ std::uint32_t draw_curve(int start_x, int start_y, int control_x, int control_y,
                          int end_y) {
   const int path_length = std::abs(control_x - start_x) + std::abs(control_y - start_y) +
                           std::abs(end_x - control_x) + std::abs(end_y - control_y);
-  const int sample_spacing = kRadii[size_index] <= 3 ? 1 : 2;
+  const int sample_spacing = brush_radius() <= 3 ? 1 : 2;
   const int steps = std::max(1, (path_length + sample_spacing - 1) / sample_spacing);
   const std::int64_t denominator = static_cast<std::int64_t>(steps) * steps;
   for (int step = 0; step <= steps; ++step) {
@@ -292,7 +373,7 @@ int main() {
   AMOLED_1IN8_SetBrightness(80);
 
   std::fill(framebuffer.begin(), framebuffer.end(), kWhite);
-  draw_toolbar();
+  render_toolbar();
   present_framebuffer();
 
   FT3168_Init(FT3168_Point_Mode);
@@ -301,6 +382,8 @@ int main() {
 
   bool touch_down = false;
   bool toolbar_gesture = false;
+  tinydraw::Point toolbar_sum{};
+  std::uint32_t toolbar_samples = 0;
   bool drawing = false;
   int stroke_samples = 0;
   int previous_x = 0;
@@ -335,9 +418,16 @@ int main() {
     }
 
     if (FT3168_ReadState(FT3168_FINGER_NUMBER) == 0) {
-      finish_stroke();
+      if (touch_down && toolbar_gesture) {
+        const float divisor = static_cast<float>(toolbar_samples == 0 ? 1 : toolbar_samples);
+        handle_toolbar({.x = toolbar_sum.x / divisor, .y = toolbar_sum.y / divisor});
+      } else if (touch_down) {
+        finish_stroke();
+      }
       touch_down = false;
       toolbar_gesture = false;
+      toolbar_sum = {};
+      toolbar_samples = 0;
       sleep_ms(5);
       continue;
     }
@@ -345,14 +435,32 @@ int main() {
     FT3168_Get_Point();
     const int x = static_cast<int>(FT3168.x_point);
     const int y = static_cast<int>(FT3168.y_point);
-    if (!touch_down && y >= kToolbarTop) {
-      handle_toolbar(x);
-      toolbar_gesture = true;
+    const tinydraw::Point point{.x = static_cast<float>(x), .y = static_cast<float>(y)};
+    if (!touch_down) {
+      touch_down = true;
+      if (tinydraw::toolbar_contains(point, toolbar)) {
+        toolbar_gesture = true;
+        toolbar_sum = point;
+        toolbar_samples = 1;
+        sleep_ms(5);
+        continue;
+      }
+      if (toolbar.tools_open || toolbar.colors_open || toolbar.sizes_open) {
+        restore_overlay();
+        close_popups();
+        render_toolbar();
+      }
     }
-    touch_down = true;
-    if (toolbar_gesture || y >= kToolbarTop) {
-      finish_stroke();
-      toolbar_gesture = true;
+    if (toolbar_gesture) {
+      if (tinydraw::toolbar_contains(point, toolbar)) {
+        toolbar_sum.x += point.x;
+        toolbar_sum.y += point.y;
+        ++toolbar_samples;
+      }
+      sleep_ms(5);
+      continue;
+    }
+    if (y >= kDrawingBottom) {
       sleep_ms(5);
       continue;
     }

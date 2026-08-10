@@ -17,6 +17,7 @@ pico_sdk_init()
 
 add_executable(tinydraw_rp2350
   src/main.cpp
+  ../core/src/toolbar.cpp
   vendor/amoled/AMOLED_1in8.c
   vendor/config/DEV_Config.c
   vendor/qspi/qspi_pio.c
@@ -28,6 +29,7 @@ pico_generate_pio_header(tinydraw_rp2350
 )
 
 target_include_directories(tinydraw_rp2350 PRIVATE
+  ../core/include
   vendor/amoled
   vendor/config
   vendor/qspi
