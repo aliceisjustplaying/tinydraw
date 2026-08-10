@@ -480,6 +480,9 @@ void run_hardware_app() {
   UBaseType_t maximum_queue_depth = 0;
   std::int64_t stroke_render_us = 0;
   std::int64_t maximum_render_us = 0;
+  std::uint32_t pan_frames = 0;
+  std::int64_t pan_render_us = 0;
+  std::int64_t maximum_pan_render_us = 0;
 
   const auto close_popups = [&] {
     toolbar.tools_open = false;
@@ -506,10 +509,16 @@ void run_hardware_app() {
   const auto pan_to = [&](tinydraw::Point point) {
     const int delta_x = static_cast<int>(std::lround(point.x - pan_start_touch.x));
     const int delta_y = static_cast<int>(std::lround(point.y - pan_start_touch.y));
-    if (canvas.world().show({pan_start_origin.x - delta_x, pan_start_origin.y - delta_y},
-                            canvas.committed(), canvas.visible())) {
-      display.push_canvas(canvas.committed(), 0, kMainOverlayTop);
+    const auto started = esp_timer_get_time();
+    if (!canvas.world().show({pan_start_origin.x - delta_x, pan_start_origin.y - delta_y},
+                             canvas.committed(), canvas.visible())) {
+      return;
     }
+    display.push_canvas(canvas.committed(), 0, kMainOverlayTop);
+    const auto elapsed = esp_timer_get_time() - started;
+    ++pan_frames;
+    pan_render_us += elapsed;
+    maximum_pan_render_us = std::max(maximum_pan_render_us, elapsed);
   };
   const auto new_drawing = [&] {
     reset_stroke();
@@ -671,6 +680,10 @@ void run_hardware_app() {
           static_cast<void>(canvas.world().capture(canvas.committed()));
           pan_start_touch = point;
           pan_start_origin = canvas.world().origin();
+          pan_frames = 0;
+          pan_render_us = 0;
+          maximum_pan_render_us = 0;
+          display.reset_timing();
           panning = true;
           continue;
         }
@@ -739,6 +752,17 @@ void run_hardware_app() {
       if (panning) {
         pan_to(point);
         panning = false;
+        const auto bytes = static_cast<std::uint64_t>(pan_frames) * tinydraw::kCanvasWidth *
+                           kMainOverlayTop * sizeof(std::uint16_t);
+        std::printf(
+            "TINYDRAW_PAN_PERF frames=%lu bytes=%llu average_us=%lld max_us=%lld "
+            "prepare_us=%lld transfer_us=%lld pushes=%lu\n",
+            static_cast<unsigned long>(pan_frames), static_cast<unsigned long long>(bytes),
+            static_cast<long long>(pan_frames == 0 ? 0 : pan_render_us / pan_frames),
+            static_cast<long long>(maximum_pan_render_us),
+            static_cast<long long>(display.prepare_us()),
+            static_cast<long long>(display.transfer_us()),
+            static_cast<unsigned long>(display.push_count()));
         continue;
       }
       if (ink.active()) {
