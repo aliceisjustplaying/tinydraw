@@ -11,6 +11,7 @@ namespace {
 
 constexpr std::uint16_t kBackground = 0xFFFFU;
 constexpr std::uint32_t kExternalCaps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+constexpr std::uint32_t kInternalCaps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
 constexpr std::uint32_t kDmaInternalCaps = MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT;
 
 }  // namespace
@@ -21,7 +22,7 @@ FirmwareCanvas::FirmwareCanvas(DisplayBackend& display) {
   visible_ = static_cast<std::uint16_t*>(
       heap_caps_malloc(kPixelCount * sizeof(std::uint16_t), kExternalCaps));
   active_coverage_ = static_cast<std::uint8_t*>(
-      heap_caps_calloc(kPixelCount, sizeof(std::uint8_t), kExternalCaps));
+      heap_caps_calloc(kPixelCount, sizeof(std::uint8_t), kInternalCaps));
   undo_storage_ = static_cast<std::uint16_t*>(
       heap_caps_malloc(TileUndoHistory::kRequiredPixels * sizeof(std::uint16_t), kExternalCaps));
   undo_history_storage_ = heap_caps_malloc(sizeof(TileUndoHistory), kDmaInternalCaps);
@@ -57,7 +58,7 @@ FirmwareCanvas::~FirmwareCanvas() {
 
 bool FirmwareCanvas::capabilities_valid() const {
   return ready() && esp_ptr_external_ram(committed_) && esp_ptr_external_ram(visible_) &&
-         esp_ptr_external_ram(active_coverage_) && esp_ptr_external_ram(undo_storage_) &&
+         esp_ptr_internal(active_coverage_) && esp_ptr_external_ram(undo_storage_) &&
          esp_ptr_internal(undo_history_storage_) && esp_ptr_dma_capable(undo_history_storage_) &&
          esp_ptr_internal(raster_storage_) && esp_ptr_dma_capable(raster_storage_);
 }
