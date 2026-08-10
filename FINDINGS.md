@@ -77,10 +77,11 @@ scientific A/B benchmark.
 | Current curved path, long curves | 5.7–5.8 ms | 10.7–11.3 ms | 51–55 ms total lift work |
 | Current curved path, fast diagonals | 4.9–10.1 ms | 7.4–16.1 ms | 12.2–23.8 ms |
 
-The largest captured update fell from 72.9 ms to 16.1 ms, about 4.5×. The worst
-captured lift fell from 105.1 ms to 23.8 ms, about 4.4×. Stroke shapes differ, so
-the honest claim is that the worst observed behavior moved from plainly unusable
-to mostly staying near the touch controller's 13–14 ms report interval.
+The largest captured update fell from 72.9 ms to 16.1 ms, about 4.5×. Long
+current curves finish in 51–55 ms, roughly half the early 105.1 ms worst case;
+fast diagonals finish in 12.2–23.8 ms. Stroke shapes differ, so the honest claim
+is that active drawing moved from plainly unusable to mostly staying near the
+touch controller's 13–14 ms report interval.
 
 Undo was already fast on hardware. Dirty-tile history avoided the proposed
 330 KiB full-canvas copy on every completed stroke and restored only the tiles
