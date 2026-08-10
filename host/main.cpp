@@ -156,11 +156,12 @@ int replay(const std::string& input_path, const std::string& output_path) {
   return EXIT_SUCCESS;
 }
 
-int ui_preview(const std::string& output_path) {
+int ui_preview(const std::string& output_path, bool confirm_new = false) {
   std::vector<std::uint16_t> pixels(
       static_cast<std::size_t>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight));
   clear_canvas(pixels, true);
-  tinydraw::draw_toolbar(pixels, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight, {});
+  tinydraw::draw_toolbar(pixels, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight,
+                         {.confirm_new = confirm_new});
   if (!write_ppm(output_path, pixels)) {
     std::fprintf(stderr, "cannot write UI preview: %s\n", output_path.c_str());
     return EXIT_FAILURE;
@@ -301,6 +302,12 @@ int interactive() {
     ribbon.reset();
     stroke_raster.cancel();
   };
+  const auto request_new_drawing = [&] {
+    reset_active_stroke();
+    pixels = committed_pixels;
+    close_popups();
+    toolbar.confirm_new = true;
+  };
   const auto start_new_drawing = [&] {
     reset_active_stroke();
     undo_history.begin_entry();
@@ -309,6 +316,7 @@ int interactive() {
     clear_canvas(committed_pixels, true);
     pixels = committed_pixels;
     toolbar.can_undo = undo_history.can_undo();
+    toolbar.confirm_new = false;
     close_popups();
   };
   const auto undo = [&] {
@@ -325,11 +333,17 @@ int interactive() {
   while (running) {
     SDL_Event event{};
     while (SDL_PollEvent(&event) != 0) {
-      if (event.type == SDL_QUIT ||
-          (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)) {
+      if (event.type == SDL_QUIT) {
         running = false;
+      } else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) {
+        if (toolbar.confirm_new) {
+          toolbar.confirm_new = false;
+          pixels = committed_pixels;
+        } else {
+          running = false;
+        }
       } else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_c) {
-        start_new_drawing();
+        request_new_drawing();
       } else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_z &&
                  (event.key.keysym.mod & KMOD_GUI) != 0) {
         undo();
@@ -396,6 +410,12 @@ int interactive() {
               undo();
               break;
             case tinydraw::ToolbarAction::kNewDrawing:
+              request_new_drawing();
+              break;
+            case tinydraw::ToolbarAction::kCancelNewDrawing:
+              toolbar.confirm_new = false;
+              break;
+            case tinydraw::ToolbarAction::kConfirmNewDrawing:
               start_new_drawing();
               break;
             case tinydraw::ToolbarAction::kNone:
@@ -452,8 +472,13 @@ int main(int argc, char** argv) {
   if (argc == 5 && std::string(argv[1]) == "--replay" && std::string(argv[3]) == "--output") {
     return replay(argv[2], argv[4]);
   }
-  if (argc == 4 && std::string(argv[1]) == "--ui-preview" && std::string(argv[2]) == "--output") {
-    return ui_preview(argv[3]);
+  if (argc == 4 && std::string(argv[2]) == "--output") {
+    if (std::string(argv[1]) == "--ui-preview") {
+      return ui_preview(argv[3]);
+    }
+    if (std::string(argv[1]) == "--new-dialog-preview") {
+      return ui_preview(argv[3], true);
+    }
   }
   if (argc == 2 && std::string(argv[1]) == "--undo-e2e") {
     return undo_e2e();
@@ -461,7 +486,7 @@ int main(int argc, char** argv) {
   if (argc != 1) {
     std::fprintf(stderr,
                  "usage: %s [--replay INPUT --output IMAGE.ppm | --ui-preview --output "
-                 "IMAGE.ppm | --undo-e2e]\n",
+                 "IMAGE.ppm | --new-dialog-preview --output IMAGE.ppm | --undo-e2e]\n",
                  argv[0]);
     return EXIT_FAILURE;
   }

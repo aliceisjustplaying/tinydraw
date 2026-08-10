@@ -114,6 +114,27 @@ if(TARGET tinydraw_host)
   )
 
   add_test(
+    NAME tinydraw_new_dialog_e2e
+    COMMAND tinydraw_host
+      --new-dialog-preview
+      --output "${REPLAY_OUTPUT_DIR}/new-dialog.ppm"
+  )
+  set_tests_properties(tinydraw_new_dialog_e2e PROPERTIES
+    FIXTURES_SETUP new_dialog
+    TIMEOUT 5
+  )
+
+  add_test(
+    NAME tinydraw_new_dialog_snapshot
+    COMMAND ${CMAKE_COMMAND} -E compare_files
+      "${REPLAY_OUTPUT_DIR}/new-dialog.ppm"
+      "${PROJECT_SOURCE_DIR}/testdata/snapshots/new-dialog.ppm"
+  )
+  set_tests_properties(tinydraw_new_dialog_snapshot PROPERTIES
+    FIXTURES_REQUIRED new_dialog
+  )
+
+  add_test(
     NAME tinydraw_replay_rejects_invalid_lifecycle
     COMMAND tinydraw_host
       --replay "${PROJECT_SOURCE_DIR}/testdata/strokes/invalid-lifecycle.stroke"

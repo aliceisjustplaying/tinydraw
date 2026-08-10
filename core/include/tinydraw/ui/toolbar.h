@@ -26,6 +26,8 @@ enum class ToolbarAction {
   kSelectExtraLarge,
   kUndo,
   kNewDrawing,
+  kCancelNewDrawing,
+  kConfirmNewDrawing,
 };
 
 struct ToolbarState {
@@ -35,9 +37,12 @@ struct ToolbarState {
   bool can_undo = false;
   bool colors_open = false;
   bool sizes_open = false;
+  bool confirm_new = false;
 };
 
 [[nodiscard]] bool toolbar_contains(Point point, const ToolbarState& state);
+[[nodiscard]] bool toolbar_overlay_contains(Point point, const ToolbarState& state);
+[[nodiscard]] int toolbar_overlay_top(const ToolbarState& state);
 [[nodiscard]] ToolbarAction toolbar_action_at(Point point, const ToolbarState& state);
 [[nodiscard]] std::uint16_t rgb565(InkColor color);
 [[nodiscard]] float brush_size(PenSize size);

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdlib>
+#include <string_view>
 
 namespace tinydraw {
 namespace {
@@ -17,6 +18,10 @@ constexpr int kMainTop = 366;
 constexpr int kMainBottom = 436;
 constexpr int kPaletteTop = 288;
 constexpr int kPaletteBottom = 358;
+constexpr int kDialogLeft = 28;
+constexpr int kDialogTop = 126;
+constexpr int kDialogRight = 340;
+constexpr int kDialogBottom = 286;
 constexpr int kHitSlop = 8;
 constexpr int kMainHitTop = kMainTop - kHitSlop;
 constexpr int kPaletteHitTop = kPaletteTop - kHitSlop;
@@ -136,6 +141,71 @@ void draw_new(std::span<std::uint16_t> canvas, int width, int height, std::uint1
   line(canvas, width, height, 331, 395, 331, 409, color, 1);
 }
 
+std::array<std::uint8_t, 7> glyph_rows(char character) {
+  switch (character) {
+    case 'A':
+      return {0x0EU, 0x11U, 0x11U, 0x1FU, 0x11U, 0x11U, 0x11U};
+    case 'D':
+      return {0x1EU, 0x11U, 0x11U, 0x11U, 0x11U, 0x11U, 0x1EU};
+    case 'E':
+      return {0x1FU, 0x10U, 0x10U, 0x1EU, 0x10U, 0x10U, 0x1FU};
+    case 'G':
+      return {0x0EU, 0x11U, 0x10U, 0x17U, 0x11U, 0x11U, 0x0EU};
+    case 'I':
+      return {0x1FU, 0x04U, 0x04U, 0x04U, 0x04U, 0x04U, 0x1FU};
+    case 'N':
+      return {0x11U, 0x19U, 0x15U, 0x13U, 0x11U, 0x11U, 0x11U};
+    case 'O':
+      return {0x0EU, 0x11U, 0x11U, 0x11U, 0x11U, 0x11U, 0x0EU};
+    case 'R':
+      return {0x1EU, 0x11U, 0x11U, 0x1EU, 0x14U, 0x12U, 0x11U};
+    case 'S':
+      return {0x0FU, 0x10U, 0x10U, 0x0EU, 0x01U, 0x01U, 0x1EU};
+    case 'W':
+      return {0x11U, 0x11U, 0x11U, 0x15U, 0x15U, 0x1BU, 0x11U};
+    case 'Y':
+      return {0x11U, 0x11U, 0x0AU, 0x04U, 0x04U, 0x04U, 0x04U};
+    case '?':
+      return {0x0EU, 0x11U, 0x02U, 0x04U, 0x04U, 0x00U, 0x04U};
+    default:
+      return {};
+  }
+}
+
+void draw_text(std::span<std::uint16_t> canvas, int width, int height, int x, int y,
+               std::string_view text, std::uint16_t color, int scale = 2) {
+  for (const char character : text) {
+    const auto rows = glyph_rows(character);
+    for (int row = 0; row < 7; ++row) {
+      for (int column = 0; column < 5; ++column) {
+        if ((rows[static_cast<std::size_t>(row)] & (1U << (4 - column))) != 0U) {
+          fill_rect(canvas, width, height, x + column * scale, y + row * scale,
+                    x + (column + 1) * scale, y + (row + 1) * scale, color);
+        }
+      }
+    }
+    x += 6 * scale;
+  }
+}
+
+void draw_new_dialog(std::span<std::uint16_t> canvas, int width, int height) {
+  rounded_rect(canvas, width, height, kDialogLeft + 3, kDialogTop + 4, kDialogRight + 3,
+               kDialogBottom + 4, 17, kShadow);
+  rounded_rect(canvas, width, height, kDialogLeft - 1, kDialogTop - 1, kDialogRight + 1,
+               kDialogBottom + 1, 17, kBorder);
+  rounded_rect(canvas, width, height, kDialogLeft, kDialogTop, kDialogRight, kDialogBottom, 16,
+               kWhite);
+  draw_text(canvas, width, height, 113, 158, "NEW DRAWING?", kInk);
+
+  rounded_rect(canvas, width, height, 44, 204, 178, 266, 10, kBorder);
+  rounded_rect(canvas, width, height, 46, 206, 176, 264, 9, kWhite);
+  draw_text(canvas, width, height, 100, 228, "NO", kInk);
+
+  rounded_rect(canvas, width, height, 190, 204, 324, 266, 10, kSelected);
+  rounded_rect(canvas, width, height, 192, 206, 322, 264, 9, kSelected);
+  draw_text(canvas, width, height, 240, 228, "YES", kWhite);
+}
+
 int size_radius(PenSize size) {
   switch (size) {
     case PenSize::kSmall:
@@ -153,6 +223,10 @@ int size_radius(PenSize size) {
 }  // namespace
 
 bool toolbar_contains(Point point, const ToolbarState& state) {
+  if (state.confirm_new) {
+    return inside(point, 0.0F, 0.0F, static_cast<float>(kCanvasWidth),
+                  static_cast<float>(kCanvasHeight));
+  }
   const bool main_row = inside(point, 0.0F, static_cast<float>(kMainHitTop),
                                static_cast<float>(kCanvasWidth), static_cast<float>(kCanvasHeight));
   return main_row || ((state.colors_open || state.sizes_open) &&
@@ -160,7 +234,42 @@ bool toolbar_contains(Point point, const ToolbarState& state) {
                              static_cast<float>(kCanvasWidth), static_cast<float>(kMainTop)));
 }
 
+bool toolbar_overlay_contains(Point point, const ToolbarState& state) {
+  const bool main_dock = inside(point, 2.0F, static_cast<float>(kMainTop - 1),
+                                static_cast<float>(kCanvasWidth),
+                                static_cast<float>(kMainBottom + 4));
+  const bool palette = (state.colors_open || state.sizes_open) &&
+                       inside(point, 2.0F, static_cast<float>(kPaletteTop - 1),
+                              static_cast<float>(kCanvasWidth),
+                              static_cast<float>(kPaletteBottom + 4));
+  const bool dialog = state.confirm_new &&
+                      inside(point, static_cast<float>(kDialogLeft - 1),
+                             static_cast<float>(kDialogTop - 1),
+                             static_cast<float>(kDialogRight + 4),
+                             static_cast<float>(kDialogBottom + 5));
+  return main_dock || palette || dialog;
+}
+
+int toolbar_overlay_top(const ToolbarState& state) {
+  if (state.confirm_new) {
+    return kDialogTop - 1;
+  }
+  if (state.colors_open || state.sizes_open) {
+    return kPaletteTop - 1;
+  }
+  return kMainTop - 1;
+}
+
 ToolbarAction toolbar_action_at(Point point, const ToolbarState& state) {
+  if (state.confirm_new) {
+    if (inside(point, 36.0F, 194.0F, 184.0F, 276.0F)) {
+      return ToolbarAction::kCancelNewDrawing;
+    }
+    if (inside(point, 184.0F, 194.0F, 332.0F, 276.0F)) {
+      return ToolbarAction::kConfirmNewDrawing;
+    }
+    return ToolbarAction::kNone;
+  }
   if ((state.sizes_open || state.colors_open) &&
       inside(point, 0.0F, static_cast<float>(kPaletteHitTop), static_cast<float>(kCanvasWidth),
              static_cast<float>(kMainTop))) {
@@ -243,6 +352,10 @@ void draw_toolbar(std::span<std::uint16_t> canvas, int width, int height,
   fill_circle(canvas, width, height, 272, 402, selected_size_radius, kInk);
   draw_new(canvas, width, height, kInk);
 
+  if (state.confirm_new) {
+    draw_new_dialog(canvas, width, height);
+    return;
+  }
   if (!state.colors_open && !state.sizes_open) {
     return;
   }

@@ -69,6 +69,23 @@ TEST_CASE("floating controls include forgiving vertical tap margins") {
   CHECK_FALSE(tinydraw::toolbar_contains({180.0F, 250.0F}, state));
 }
 
+TEST_CASE("new drawing confirmation captures input and exposes large choices") {
+  const tinydraw::ToolbarState state{.confirm_new = true};
+
+  CHECK(tinydraw::toolbar_contains({10.0F, 10.0F}, state));
+  CHECK(tinydraw::toolbar_contains({180.0F, 180.0F}, state));
+  CHECK(tinydraw::toolbar_action_at({100.0F, 230.0F}, state) ==
+        tinydraw::ToolbarAction::kCancelNewDrawing);
+  CHECK(tinydraw::toolbar_action_at({260.0F, 230.0F}, state) ==
+        tinydraw::ToolbarAction::kConfirmNewDrawing);
+  CHECK(tinydraw::toolbar_action_at({180.0F, 160.0F}, state) ==
+        tinydraw::ToolbarAction::kNone);
+
+  CHECK(tinydraw::toolbar_overlay_contains({180.0F, 160.0F}, state));
+  CHECK_FALSE(tinydraw::toolbar_overlay_contains({10.0F, 10.0F}, state));
+  CHECK(tinydraw::toolbar_overlay_top(state) == 125);
+}
+
 TEST_CASE("pen sizes expose four bounded choices") {
   CHECK(tinydraw::brush_size(tinydraw::PenSize::kSmall) <
         tinydraw::brush_size(tinydraw::PenSize::kMedium));
@@ -100,4 +117,18 @@ TEST_CASE("toolbar rendering reflects tool and palette state without touching op
   CHECK(eraser_canvas[open_canvas_pixel] == 0xFFFFU);
   CHECK(palette_canvas[open_canvas_pixel] == 0xFFFFU);
   CHECK(pen_canvas[top_border_pixel] == 0xDEDBU);
+}
+
+TEST_CASE("new drawing confirmation renders without covering the canvas") {
+  const auto pixel_count =
+      static_cast<std::size_t>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight);
+  std::vector<std::uint16_t> canvas(pixel_count, 0x001FU);
+
+  tinydraw::draw_toolbar(canvas, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight,
+                         {.confirm_new = true});
+
+  const auto untouched_pixel = static_cast<std::size_t>(20 * tinydraw::kCanvasWidth + 20);
+  const auto dialog_pixel = static_cast<std::size_t>(140 * tinydraw::kCanvasWidth + 180);
+  CHECK(canvas[untouched_pixel] == 0x001FU);
+  CHECK(canvas[dialog_pixel] == 0xFFFFU);
 }

@@ -31,8 +31,6 @@ constexpr std::uint16_t kBackground = 0xFFFFU;
 constexpr int kPanelGapX = 0x10;
 constexpr int kTransferPixels = 4096;
 constexpr int kTransferQueueDepth = 3;
-constexpr int kToolbarTop = 366;
-constexpr int kPopupTop = 288;
 
 DMA_ATTR std::array<std::array<std::uint16_t, kTransferPixels>, kTransferQueueDepth>
     transfer_pixels;
@@ -147,7 +145,7 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
 
   void set_toolbar(const tinydraw::ToolbarState& toolbar) {
     toolbar_ = toolbar;
-    const int new_top = (toolbar.colors_open || toolbar.sizes_open) ? kPopupTop : kToolbarTop;
+    const int new_top = tinydraw::toolbar_overlay_top(toolbar);
     toolbar_refresh_top_ = std::min(toolbar_top_, new_top);
     toolbar_top_ = new_top;
     std::fill_n(overlay_, tinydraw::kCanvasWidth * tinydraw::kCanvasHeight, kBackground);
@@ -197,7 +195,7 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
         const auto point =
             tinydraw::Point{static_cast<float>(panel_x) + 0.5F, static_cast<float>(panel_y) + 0.5F};
         const bool toolbar_pixel =
-            panel_y >= toolbar_top_ && tinydraw::toolbar_contains(point, toolbar_);
+            panel_y >= toolbar_top_ && tinydraw::toolbar_overlay_contains(point, toolbar_);
         const std::uint16_t pixel = toolbar_pixel ? overlay_[canvas] : pixels[source];
         transfer[destination] = swap_bytes(pixel);
       }
@@ -230,8 +228,8 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
   esp_lcd_panel_handle_t panel_ = nullptr;
   std::uint16_t* overlay_ = nullptr;
   tinydraw::ToolbarState toolbar_{};
-  int toolbar_top_ = kToolbarTop;
-  int toolbar_refresh_top_ = kToolbarTop;
+  int toolbar_top_ = tinydraw::toolbar_overlay_top(toolbar_);
+  int toolbar_refresh_top_ = tinydraw::toolbar_overlay_top(toolbar_);
   std::int64_t prepare_us_ = 0;
   std::int64_t transfer_us_ = 0;
   std::uint32_t push_count_ = 0;
@@ -432,6 +430,7 @@ void run_hardware_app() {
     static_cast<void>(canvas.undo_history().commit_entry());
     std::fill(canvas.committed().begin(), canvas.committed().end(), kBackground);
     std::fill(canvas.visible().begin(), canvas.visible().end(), kBackground);
+    toolbar.confirm_new = false;
     close_popups();
     toolbar.can_undo = canvas.undo_history().can_undo();
     display.set_toolbar(toolbar);
@@ -500,6 +499,13 @@ void run_hardware_app() {
         undo();
         return;
       case tinydraw::ToolbarAction::kNewDrawing:
+        close_popups();
+        toolbar.confirm_new = true;
+        break;
+      case tinydraw::ToolbarAction::kCancelNewDrawing:
+        toolbar.confirm_new = false;
+        break;
+      case tinydraw::ToolbarAction::kConfirmNewDrawing:
         new_drawing();
         return;
       case tinydraw::ToolbarAction::kNone:
