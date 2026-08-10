@@ -13,7 +13,19 @@ If the board is unavailable, run the macOS app or QEMU replay.
 > The first version redrew the entire stroke whenever the finger moved. A 500-point
 > host stroke took 4.5 seconds, and every new section cost more than the last.
 
-## 1:00 — Four drawing beats
+## 1:00 — Show the development loop
+
+> Before the hardware arrived, I built a native macOS simulator around the same C++
+> drawing core. SDL replaces the AMOLED and touch controller with a small window and
+> mouse input. It still uses the real 368×448 resolution and opens near the physical
+> size of the 1.8-inch display.
+
+> Recorded touch sequences run without a window and produce exact image snapshots.
+> That gave me a fast edit-test loop with sanitizers. QEMU is a separate layer that
+> boots the ESP-IDF firmware and checks its 8 MB memory setup. The board is still the
+> final test for touch rate, display transfer time, power, and visual behavior.
+
+## 1:40 — Four drawing beats
 
 1. Draw a slow curve, then a fast diagonal.
    > The touch controller gives about 75 positions per second. Width is simulated from
@@ -29,7 +41,7 @@ If the board is unavailable, run the macOS app or QEMU replay.
 4. Pan around the 736×896 world, then Undo across views.
    > Panning streams the visible part of the world directly to the display.
 
-## 2:30 — Explain why it is fast
+## 2:50 — Explain why it is fast
 
 > The main optimization was refusing to repeat work.
 
@@ -48,7 +60,7 @@ Key numbers:
 - Current long strokes: about **2.5–3.4 ms average**
 - Panning: **71–74 ms → about 10 ms per frame**
 
-## 3:30 — Export to the phone
+## 3:40 — Export to the phone
 
 Join the open `TinyDraw` Wi-Fi network and open
 `http://192.168.4.1/drawing.png?t=1`. Airplane Mode keeps iOS attached to the
@@ -59,12 +71,12 @@ offline network. Change the query value to bypass Safari caching.
 
 The upper side button toggles Wi-Fi off or on.
 
-## 4:15 — Why the result is trustworthy
+## 4:20 — Why the result is trustworthy
 
 > The shared drawing core has 20 native and end-to-end test groups, exact image
 > snapshots, ASan, UBSan, QEMU coverage, and timing captured on the physical board.
 
-## 4:35 — Current limits
+## 4:40 — Current limits
 
 - Very fast diagonals can reveal the live drawing update.
 - Very fast pans can briefly tear because the panel has no synchronized framebuffer swap.
