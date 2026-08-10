@@ -63,6 +63,21 @@ void set_pixel(int x, int y, std::uint16_t color) {
   framebuffer[static_cast<std::size_t>(y * kWidth + x)] = panel_pixel(color);
 }
 
+void blend_pixel(int x, int y, std::uint16_t color, int coverage) {
+  if (x < 0 || x >= kWidth || y < 0 || y >= kToolbarTop || coverage <= 0) {
+    return;
+  }
+  const auto index = static_cast<std::size_t>(y * kWidth + x);
+  const std::uint16_t background = panel_pixel(framebuffer[index]);
+  const auto blend = [coverage](int foreground, int behind) {
+    return (foreground * coverage + behind * (255 - coverage) + 127) / 255;
+  };
+  const int red = blend((color >> 11) & 0x1F, (background >> 11) & 0x1F);
+  const int green = blend((color >> 5) & 0x3F, (background >> 5) & 0x3F);
+  const int blue = blend(color & 0x1F, background & 0x1F);
+  framebuffer[index] = panel_pixel(static_cast<std::uint16_t>((red << 11) | (green << 5) | blue));
+}
+
 void fill_rect(int x, int y, int width, int height, std::uint16_t color) {
   const int left = std::clamp(x, 0, kWidth);
   const int top = std::clamp(y, 0, kHeight);
@@ -87,8 +102,24 @@ void fill_circle(int center_x, int center_y, int radius, std::uint16_t color,
 }
 
 void stamp_dot(int x, int y) {
-  fill_circle(x, y, kRadii[size_index], tool == Tool::kEraser ? kWhite : kColors[color_index],
-              kToolbarTop);
+  constexpr std::array sample_offsets{-3, -1, 1, 3};
+  const int radius = kRadii[size_index];
+  const int scaled_radius = radius * 8;
+  const int radius_squared = scaled_radius * scaled_radius;
+  const std::uint16_t color = tool == Tool::kEraser ? kWhite : kColors[color_index];
+  for (int row = -radius; row <= radius; ++row) {
+    for (int column = -radius; column <= radius; ++column) {
+      int covered = 0;
+      for (const int sample_y : sample_offsets) {
+        for (const int sample_x : sample_offsets) {
+          const int dx = column * 8 + sample_x;
+          const int dy = row * 8 + sample_y;
+          covered += dx * dx + dy * dy <= radius_squared ? 1 : 0;
+        }
+      }
+      blend_pixel(x + column, y + row, color, covered * 255 / 16);
+    }
+  }
 }
 
 void draw_toolbar() {
@@ -215,7 +246,8 @@ std::uint32_t draw_curve(int start_x, int start_y, int control_x, int control_y,
                          int end_y) {
   const int path_length = std::abs(control_x - start_x) + std::abs(control_y - start_y) +
                           std::abs(end_x - control_x) + std::abs(end_y - control_y);
-  const int steps = std::max(1, (path_length + 1) / 2);
+  const int sample_spacing = kRadii[size_index] <= 3 ? 1 : 2;
+  const int steps = std::max(1, (path_length + sample_spacing - 1) / sample_spacing);
   const std::int64_t denominator = static_cast<std::int64_t>(steps) * steps;
   for (int step = 0; step <= steps; ++step) {
     const std::int64_t inverse = steps - step;
