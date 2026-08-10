@@ -23,10 +23,17 @@ case "$command_name" in
   release)
     configure_build_test host-release
     ;;
-  run)
+  run|run-2x|run-3x)
+    scale="${2:-1}"
+    if [[ "$command_name" == run-2x ]]; then scale=2; fi
+    if [[ "$command_name" == run-3x ]]; then scale=3; fi
+    if [[ ! "$scale" =~ ^[123]$ ]]; then
+      echo "scale must be 1, 2, or 3" >&2
+      exit 2
+    fi
     cmake --preset host-debug
     cmake --build --preset host-debug --target tinydraw_host
-    exec "$root/out/build/host-debug/host/tinydraw_host"
+    exec "$root/out/build/host-debug/host/tinydraw_host" --scale "$scale"
     ;;
   perf)
     cmake --preset host-release
@@ -60,7 +67,7 @@ case "$command_name" in
     fi
     ;;
   *)
-    echo "usage: $0 {test|run|perf|asan|release|format|format-check}" >&2
+    echo "usage: $0 {test|run|run-2x|run-3x|perf|asan|release|format|format-check}" >&2
     exit 2
     ;;
 esac

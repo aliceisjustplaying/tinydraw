@@ -267,7 +267,7 @@ int pan_e2e() {
   return EXIT_SUCCESS;
 }
 
-int interactive() {
+int interactive(int window_scale) {
   if (SDL_Init(SDL_INIT_VIDEO) != 0) {
     std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
     return EXIT_FAILURE;
@@ -275,7 +275,8 @@ int interactive() {
 
   SDL_Window* window = SDL_CreateWindow(
       "TinyDraw host — drag to test ink input", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-      kPhysicalWindowWidth, kPhysicalWindowHeight, SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+      kPhysicalWindowWidth * window_scale, kPhysicalWindowHeight * window_scale,
+      SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
   SDL_Renderer* renderer = window == nullptr ? nullptr : SDL_CreateRenderer(window, -1, 0);
   SDL_Texture* texture =
       renderer == nullptr
@@ -549,14 +550,21 @@ int main(int argc, char** argv) {
   if (argc == 2 && std::string(argv[1]) == "--pan-e2e") {
     return pan_e2e();
   }
+  if (argc == 3 && std::string(argv[1]) == "--scale") {
+    char* end = nullptr;
+    const long scale = std::strtol(argv[2], &end, 10);
+    if (end != argv[2] && *end == '\0' && scale >= 1 && scale <= 3) {
+      return interactive(static_cast<int>(scale));
+    }
+  }
   if (argc != 1) {
     std::fprintf(stderr,
-                 "usage: %s [--replay INPUT --output IMAGE.ppm | --ui-preview --output "
-                 "IMAGE.ppm | --color-palette-preview --output IMAGE.ppm | "
+                 "usage: %s [--scale {1|2|3} | --replay INPUT --output IMAGE.ppm | "
+                 "--ui-preview --output IMAGE.ppm | --color-palette-preview --output IMAGE.ppm | "
                  "--tool-palette-preview --output IMAGE.ppm | "
                  "--new-dialog-preview --output IMAGE.ppm | --undo-e2e | --pan-e2e]\n",
                  argv[0]);
     return EXIT_FAILURE;
   }
-  return interactive();
+  return interactive(1);
 }

@@ -22,7 +22,7 @@ XL diagonals can still show some drawing lag. Drawings are not yet persistent.
 
 ```sh
 ./scripts/bootstrap-macos   # once
-./scripts/dev run
+./scripts/dev run            # use run-2x or run-3x for a larger demo window
 ```
 
 The window opens near the panel's physical size on a 14-inch 2021 MacBook Pro
