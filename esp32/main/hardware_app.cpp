@@ -22,6 +22,7 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "tinydraw/graphics/viewport_updates.h"
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
 #include "tinydraw/ui/toolbar.h"
@@ -43,6 +44,7 @@ DMA_ATTR std::array<std::array<std::uint16_t, kTransferPixels>, kTransferQueueDe
     transfer_pixels;
 StaticSemaphore_t transfer_semaphore_storage;
 SemaphoreHandle_t transfer_semaphore = nullptr;
+std::array<tinydraw::Rect, tinydraw::kMaxViewportUpdateRegions> viewport_update_regions;
 
 constexpr std::array<std::uint8_t, 1> init_fe{0x00};
 constexpr std::array<std::uint8_t, 1> init_c4{0x80};
@@ -82,6 +84,13 @@ int palette_overlay_top(tinydraw::ToolbarState state) {
   state.confirm_new = false;
   return tinydraw::toolbar_overlay_top(state) & ~1;
 }
+
+struct ChangedCanvasStats {
+  std::size_t planned_pixels = 0;
+  std::size_t submitted_pixels = 0;
+  std::size_t regions = 0;
+  bool full_refresh = false;
+};
 
 class PhysicalDisplay final : public tinydraw::DisplayBackend {
  public:
@@ -261,6 +270,35 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
       palette_refresh_top_ = kMainOverlayTop;
       dialog_dirty_ = false;
     }
+  }
+
+  ChangedCanvasStats push_changed_canvas(std::span<const std::uint16_t> canvas,
+                                         std::span<std::uint16_t> displayed, int bottom) {
+    const auto plan =
+        tinydraw::plan_viewport_updates(displayed, canvas, bottom, viewport_update_regions);
+    const std::size_t full_pixels = static_cast<std::size_t>(tinydraw::kCanvasWidth * bottom);
+    ChangedCanvasStats stats{.planned_pixels = plan.pixels, .regions = plan.regions};
+    if (!plan.complete || plan.pixels * 5U >= full_pixels * 3U) {
+      push_canvas(canvas, 0, bottom);
+      for (int y = 0; y < bottom; ++y) {
+        const auto offset = static_cast<std::size_t>(y * tinydraw::kCanvasWidth);
+        std::copy_n(canvas.begin() + static_cast<std::ptrdiff_t>(offset), tinydraw::kCanvasWidth,
+                    displayed.begin() + static_cast<std::ptrdiff_t>(offset));
+      }
+      stats.submitted_pixels = full_pixels;
+      stats.full_refresh = true;
+      return stats;
+    }
+
+    const auto regions = std::span(viewport_update_regions).first(plan.regions);
+    for (const tinydraw::Rect region : regions) {
+      const auto offset = static_cast<std::size_t>(region.y0 * tinydraw::kCanvasWidth + region.x0);
+      push_rect(region.x0, region.y0, region.x1 - region.x0, region.y1 - region.y0,
+                canvas.data() + offset, tinydraw::kCanvasWidth);
+    }
+    tinydraw::sync_viewport_updates(canvas, displayed, regions);
+    stats.submitted_pixels = plan.pixels;
+    return stats;
   }
 
   void refresh_toolbar(std::span<const std::uint16_t> canvas) {
@@ -480,6 +518,12 @@ void run_hardware_app() {
   UBaseType_t maximum_queue_depth = 0;
   std::int64_t stroke_render_us = 0;
   std::int64_t maximum_render_us = 0;
+  std::uint32_t pan_frames = 0;
+  std::uint32_t pan_full_refreshes = 0;
+  std::uint64_t pan_planned_pixels = 0;
+  std::uint64_t pan_submitted_pixels = 0;
+  std::int64_t pan_render_us = 0;
+  std::int64_t maximum_pan_render_us = 0;
 
   const auto close_popups = [&] {
     toolbar.tools_open = false;
@@ -506,10 +550,20 @@ void run_hardware_app() {
   const auto pan_to = [&](tinydraw::Point point) {
     const int delta_x = static_cast<int>(std::lround(point.x - pan_start_touch.x));
     const int delta_y = static_cast<int>(std::lround(point.y - pan_start_touch.y));
-    if (canvas.world().show({pan_start_origin.x - delta_x, pan_start_origin.y - delta_y},
-                            canvas.committed(), canvas.visible())) {
-      display.push_canvas(canvas.committed(), 0, kMainOverlayTop);
+    const auto started = esp_timer_get_time();
+    if (!canvas.world().show({pan_start_origin.x - delta_x, pan_start_origin.y - delta_y},
+                             canvas.committed())) {
+      return;
     }
+    const auto stats =
+        display.push_changed_canvas(canvas.committed(), canvas.visible(), kMainOverlayTop);
+    const auto elapsed = esp_timer_get_time() - started;
+    ++pan_frames;
+    pan_full_refreshes += stats.full_refresh ? 1U : 0U;
+    pan_planned_pixels += stats.planned_pixels;
+    pan_submitted_pixels += stats.submitted_pixels;
+    pan_render_us += elapsed;
+    maximum_pan_render_us = std::max(maximum_pan_render_us, elapsed);
   };
   const auto new_drawing = [&] {
     reset_stroke();
@@ -671,6 +725,13 @@ void run_hardware_app() {
           static_cast<void>(canvas.world().capture(canvas.committed()));
           pan_start_touch = point;
           pan_start_origin = canvas.world().origin();
+          pan_frames = 0;
+          pan_full_refreshes = 0;
+          pan_planned_pixels = 0;
+          pan_submitted_pixels = 0;
+          pan_render_us = 0;
+          maximum_pan_render_us = 0;
+          display.reset_timing();
           panning = true;
           continue;
         }
@@ -739,6 +800,22 @@ void run_hardware_app() {
       if (panning) {
         pan_to(point);
         panning = false;
+        const auto legacy_pixels =
+            static_cast<std::uint64_t>(pan_frames) * tinydraw::kCanvasWidth * kMainOverlayTop;
+        std::printf(
+            "TINYDRAW_PAN_PERF frames=%lu planned_bytes=%llu submitted_bytes=%llu "
+            "legacy_bytes=%llu full=%lu average_us=%lld max_us=%lld prepare_us=%lld "
+            "transfer_us=%lld pushes=%lu\n",
+            static_cast<unsigned long>(pan_frames),
+            static_cast<unsigned long long>(pan_planned_pixels * 2U),
+            static_cast<unsigned long long>(pan_submitted_pixels * 2U),
+            static_cast<unsigned long long>(legacy_pixels * 2U),
+            static_cast<unsigned long>(pan_full_refreshes),
+            static_cast<long long>(pan_frames == 0 ? 0 : pan_render_us / pan_frames),
+            static_cast<long long>(maximum_pan_render_us),
+            static_cast<long long>(display.prepare_us()),
+            static_cast<long long>(display.transfer_us()),
+            static_cast<unsigned long>(display.push_count()));
         continue;
       }
       if (ink.active()) {
