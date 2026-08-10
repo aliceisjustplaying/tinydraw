@@ -22,7 +22,6 @@
 namespace {
 
 constexpr std::uint16_t kBackground = 0xFFFFU;
-constexpr std::uint16_t kGrid = 0xDEDBU;
 constexpr std::uint16_t kReplayInk = 0x001FU;
 // A 1.8-inch 368x448 panel is about 1.14 x 1.39 inches. On the 254-PPI Retina
 // panel of a 14-inch 2021 MacBook Pro at default scaling, SDL uses 127 points per inch.
@@ -31,14 +30,6 @@ constexpr int kPhysicalWindowHeight = 177;
 
 std::optional<tinydraw::Point> mouse_to_logical(int x, int y) {
   return tinydraw::host::event_to_logical({.x = static_cast<float>(x), .y = static_cast<float>(y)});
-}
-
-void set_pixel(std::vector<std::uint16_t>& pixels, int x, int y, std::uint16_t color) {
-  if (x < 0 || x >= tinydraw::kCanvasWidth || y < 0 || y >= tinydraw::kCanvasHeight) {
-    return;
-  }
-  const auto index = static_cast<std::size_t>(y * tinydraw::kCanvasWidth + x);
-  pixels[index] = color;
 }
 
 void apply_ribbon_update(std::vector<tinydraw::RibbonPrimitive>& geometry,
@@ -56,21 +47,8 @@ void draw_ribbon(std::vector<std::uint16_t>& pixels,
       renderer.render(primitives, pixels, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight, color));
 }
 
-void clear_canvas(std::vector<std::uint16_t>& pixels, bool show_grid) {
+void clear_canvas(std::vector<std::uint16_t>& pixels) {
   std::fill(pixels.begin(), pixels.end(), kBackground);
-  if (!show_grid) {
-    return;
-  }
-  for (int y = 0; y < tinydraw::kCanvasHeight; y += 64) {
-    for (int x = 0; x < tinydraw::kCanvasWidth; ++x) {
-      set_pixel(pixels, x, y, kGrid);
-    }
-  }
-  for (int x = 0; x < tinydraw::kCanvasWidth; x += 64) {
-    for (int y = 0; y < tinydraw::kCanvasHeight; ++y) {
-      set_pixel(pixels, x, y, kGrid);
-    }
-  }
 }
 
 bool write_ppm(const std::string& path, const std::vector<std::uint16_t>& pixels) {
@@ -102,7 +80,7 @@ int replay(const std::string& input_path, const std::string& output_path) {
 
   std::vector<std::uint16_t> pixels(
       static_cast<std::size_t>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight));
-  clear_canvas(pixels, false);
+  clear_canvas(pixels);
   tinydraw::InkStream stream;
   tinydraw::RibbonStream ribbon;
   std::vector<tinydraw::RibbonPrimitive> geometry;
@@ -159,7 +137,7 @@ int replay(const std::string& input_path, const std::string& output_path) {
 int ui_preview(const std::string& output_path, const tinydraw::ToolbarState& toolbar = {}) {
   std::vector<std::uint16_t> pixels(
       static_cast<std::size_t>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight));
-  clear_canvas(pixels, true);
+  clear_canvas(pixels);
   tinydraw::draw_toolbar(pixels, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight, toolbar);
   if (!write_ppm(output_path, pixels)) {
     std::fprintf(stderr, "cannot write UI preview: %s\n", output_path.c_str());
@@ -189,7 +167,7 @@ bool draw_test_stroke(tinydraw::StrokeRaster& raster, tinydraw::TileUndoHistory&
 int undo_e2e() {
   std::vector<std::uint16_t> committed(
       static_cast<std::size_t>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight));
-  clear_canvas(committed, true);
+  clear_canvas(committed);
   const auto blank = committed;
   std::vector<std::uint16_t> visible = committed;
   std::vector<std::uint8_t> coverage(committed.size(), 0U);
@@ -225,7 +203,7 @@ int undo_e2e() {
   history.begin_entry();
   history.capture_canvas(committed);
   static_cast<void>(history.commit_entry());
-  clear_canvas(committed, true);
+  clear_canvas(committed);
   visible = committed;
   toolbar.can_undo = history.can_undo();
   const bool started_new = committed == blank && toolbar.can_undo;
@@ -270,7 +248,7 @@ int interactive() {
 
   std::vector<std::uint16_t> committed_pixels(
       static_cast<std::size_t>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight));
-  clear_canvas(committed_pixels, true);
+  clear_canvas(committed_pixels);
   std::vector<std::uint16_t> pixels = committed_pixels;
   std::vector<std::uint16_t> undo_storage(tinydraw::TileUndoHistory::kRequiredPixels);
   tinydraw::TileUndoHistory undo_history(undo_storage);
@@ -312,7 +290,7 @@ int interactive() {
     undo_history.begin_entry();
     undo_history.capture_canvas(committed_pixels);
     static_cast<void>(undo_history.commit_entry());
-    clear_canvas(committed_pixels, true);
+    clear_canvas(committed_pixels);
     pixels = committed_pixels;
     toolbar.can_undo = undo_history.can_undo();
     toolbar.confirm_new = false;
