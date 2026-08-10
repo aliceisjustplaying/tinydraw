@@ -75,8 +75,12 @@ case "$action" in
     port="${2:?usage: $0 metrics PORT}"
     exec python3 "$root/tools/rp2350-capture.py" --metrics "$port"
     ;;
+  trace)
+    port="${2:?usage: $0 trace PORT}"
+    exec python3 "$root/tools/rp2350-capture.py" --trace "$port"
+    ;;
   *)
-    echo "usage: $0 {bootstrap|build|clean|capture PORT [OUTPUT.png]|metrics PORT}" >&2
+    echo "usage: $0 {bootstrap|build|clean|capture PORT [OUTPUT.png]|metrics PORT|trace PORT}" >&2
     exit 2
     ;;
 esac

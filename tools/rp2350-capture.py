@@ -16,6 +16,9 @@ import zlib
 
 HEADER = re.compile(rb"TINYDRAW_FRAME (\d+) (\d+) RGB565BE (\d+)\r?\n")
 METRICS = re.compile(rb"TINYDRAW_PERF [^\r\n]+\r?\n")
+TRACE = re.compile(
+    rb"TINYDRAW_TRACE count=\d+\r?\n.*?TINYDRAW_TRACE_END\r?\n", re.DOTALL
+)
 
 
 def read_until(fd: int, pattern: re.Pattern[bytes], timeout: float) -> re.Match[bytes]:
@@ -102,11 +105,14 @@ def configure_serial(fd: int) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--metrics", action="store_true", help="request timing metrics")
+    parser.add_argument("--trace", action="store_true", help="request the last touch trace")
     parser.add_argument("port", help="RP2350 serial port, e.g. /dev/cu.usbmodem1101")
     parser.add_argument("output", nargs="?", type=Path, help="output PNG path")
     args = parser.parse_args()
-    if not args.metrics and args.output is None:
-        parser.error("output is required unless --metrics is used")
+    if args.metrics and args.trace:
+        parser.error("--metrics and --trace are mutually exclusive")
+    if not args.metrics and not args.trace and args.output is None:
+        parser.error("output is required unless --metrics or --trace is used")
 
     fd = os.open(args.port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
     try:
@@ -116,6 +122,11 @@ def main() -> None:
         if args.metrics:
             os.write(fd, b"P\n")
             match = read_until(fd, METRICS, timeout=5.0)
+            print(match.group().decode("ascii").strip())
+            return
+        if args.trace:
+            os.write(fd, b"T\n")
+            match = read_until(fd, TRACE, timeout=5.0)
             print(match.group().decode("ascii").strip())
             return
 

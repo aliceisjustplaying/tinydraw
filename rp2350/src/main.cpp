@@ -61,6 +61,15 @@ struct PerformanceStats {
 
 PerformanceStats performance;
 
+struct TracePoint {
+  std::uint16_t x;
+  std::uint16_t y;
+  std::uint32_t timestamp_us;
+};
+
+std::array<TracePoint, 256> trace_points;
+std::size_t trace_count = 0;
+
 constexpr std::uint16_t panel_pixel(std::uint16_t color) {
   return static_cast<std::uint16_t>((color << 8U) | (color >> 8U));
 }
@@ -300,6 +309,16 @@ void send_framebuffer() {
   std::fflush(stdout);
 }
 
+void send_trace() {
+  std::printf("TINYDRAW_TRACE count=%zu\n", trace_count);
+  for (std::size_t index = 0; index < trace_count; ++index) {
+    const auto& point = trace_points[index];
+    std::printf("%u,%u,%lu\n", point.x, point.y, static_cast<unsigned long>(point.timestamp_us));
+  }
+  std::printf("TINYDRAW_TRACE_END\n");
+  std::fflush(stdout);
+}
+
 void send_performance() {
   const auto display_started = time_us_64();
   present_framebuffer();
@@ -432,6 +451,8 @@ int main() {
       send_framebuffer();
     } else if (command == 'P') {
       send_performance();
+    } else if (command == 'T') {
+      send_trace();
     }
 
     if (FT3168_ReadState(FT3168_FINGER_NUMBER) == 0) {
@@ -489,6 +510,16 @@ int main() {
     last_touch = {.x = static_cast<float>(x),
                   .y = static_cast<float>(y),
                   .timestamp_us = static_cast<std::uint32_t>(update_started)};
+    if (!drawing) {
+      trace_count = 0;
+    }
+    if (trace_count < trace_points.size()) {
+      trace_points[trace_count++] = {
+          .x = static_cast<std::uint16_t>(x),
+          .y = static_cast<std::uint16_t>(y),
+          .timestamp_us = last_touch.timestamp_us,
+      };
+    }
     const StrokePoint current =
         stroke_point(drawing ? ink.update(last_touch) : ink.begin(last_touch));
     std::uint32_t submitted_pixels = 0;
