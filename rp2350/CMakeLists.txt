@@ -43,6 +43,7 @@ target_compile_options(tinydraw_rp2350 PRIVATE
 
 target_link_libraries(tinydraw_rp2350 PRIVATE
   pico_stdlib
+  pico_multicore
   hardware_adc
   hardware_clocks
   hardware_dma

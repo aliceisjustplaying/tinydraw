@@ -7,6 +7,8 @@
 #include <cstdlib>
 #include <span>
 
+#include "pico/multicore.h"
+#include "pico/util/queue.h"
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ui/toolbar.h"
 
@@ -69,6 +71,55 @@ struct TracePoint {
 
 std::array<TracePoint, 256> trace_points;
 std::size_t trace_count = 0;
+
+struct TouchEvent {
+  std::uint16_t x;
+  std::uint16_t y;
+  std::uint32_t timestamp_us;
+  bool touching;
+};
+
+queue_t touch_events;
+
+void enqueue_touch(TouchEvent event) {
+  if (queue_try_add(&touch_events, &event)) {
+    return;
+  }
+  TouchEvent discarded{};
+  static_cast<void>(queue_try_remove(&touch_events, &discarded));
+  static_cast<void>(queue_try_add(&touch_events, &event));
+}
+
+void sample_touch() {
+  bool touching = false;
+  std::uint16_t last_x = 0;
+  std::uint16_t last_y = 0;
+  std::uint32_t no_touch_started_us = 0;
+  while (true) {
+    if (FT3168_ReadState(FT3168_FINGER_NUMBER) != 0) {
+      FT3168_Get_Point();
+      no_touch_started_us = 0;
+      const auto x = static_cast<std::uint16_t>(FT3168.x_point);
+      const auto y = static_cast<std::uint16_t>(FT3168.y_point);
+      if (!touching || x != last_x || y != last_y) {
+        enqueue_touch({.x = x, .y = y, .timestamp_us = time_us_32(), .touching = true});
+        last_x = x;
+        last_y = y;
+      }
+      touching = true;
+    } else if (touching) {
+      const std::uint32_t now = time_us_32();
+      if (no_touch_started_us == 0) {
+        no_touch_started_us = now;
+      } else if (now - no_touch_started_us >= 10'000U) {
+        enqueue_touch({.x = last_x, .y = last_y, .timestamp_us = now, .touching = false});
+        touching = false;
+        no_touch_started_us = 0;
+      }
+    }
+    sleep_ms(1);
+  }
+}
 
 constexpr std::uint16_t panel_pixel(std::uint16_t color) {
   return static_cast<std::uint16_t>((color << 8U) | (color >> 8U));
@@ -408,6 +459,8 @@ int main() {
 
   FT3168_Init(FT3168_Point_Mode);
   DEV_KEY_Config(Touch_INT_PIN);
+  queue_init(&touch_events, sizeof(TouchEvent), 32);
+  multicore_launch_core1(sample_touch);
   std::printf("TINYDRAW_RP2350_OK display=SH8601 touch=FT3168\n");
 
   tinydraw::InkConfig brush;
@@ -423,7 +476,7 @@ int main() {
   StrokePoint previous{};
   StrokePoint curve_start{};
   tinydraw::TouchPoint last_touch{};
-  std::uint64_t previous_touch_us = 0;
+  std::uint32_t previous_touch_us = 0;
 
   const auto finish_stroke = [&] {
     if (!drawing) {
@@ -455,7 +508,12 @@ int main() {
       send_trace();
     }
 
-    if (FT3168_ReadState(FT3168_FINGER_NUMBER) == 0) {
+    TouchEvent event{};
+    if (!queue_try_remove(&touch_events, &event)) {
+      sleep_ms(1);
+      continue;
+    }
+    if (!event.touching) {
       if (touch_down && toolbar_gesture) {
         const float divisor = static_cast<float>(toolbar_samples == 0 ? 1 : toolbar_samples);
         handle_toolbar({.x = toolbar_sum.x / divisor, .y = toolbar_sum.y / divisor});
@@ -469,13 +527,11 @@ int main() {
       toolbar_gesture = false;
       toolbar_sum = {};
       toolbar_samples = 0;
-      sleep_ms(5);
       continue;
     }
 
-    FT3168_Get_Point();
-    const int x = static_cast<int>(FT3168.x_point);
-    const int y = static_cast<int>(FT3168.y_point);
+    const int x = static_cast<int>(event.x);
+    const int y = static_cast<int>(event.y);
     const tinydraw::Point point{.x = static_cast<float>(x), .y = static_cast<float>(y)};
     if (!touch_down) {
       touch_down = true;
@@ -505,15 +561,9 @@ int main() {
       sleep_ms(5);
       continue;
     }
-    if (drawing && x == static_cast<int>(last_touch.x) && y == static_cast<int>(last_touch.y)) {
-      sleep_ms(1);
-      continue;
-    }
-
     const auto update_started = time_us_64();
-    last_touch = {.x = static_cast<float>(x),
-                  .y = static_cast<float>(y),
-                  .timestamp_us = static_cast<std::uint32_t>(update_started)};
+    last_touch = {
+        .x = static_cast<float>(x), .y = static_cast<float>(y), .timestamp_us = event.timestamp_us};
     if (!drawing) {
       trace_count = 0;
     }
@@ -546,14 +596,14 @@ int main() {
     performance.maximum_update_us = std::max(performance.maximum_update_us, update_us);
     performance.submitted_pixels += submitted_pixels;
     if (drawing) {
-      const auto touch_interval_us = update_started - previous_touch_us;
+      const std::uint32_t touch_interval_us = last_touch.timestamp_us - previous_touch_us;
       performance.touch_interval_us += touch_interval_us;
-      performance.maximum_touch_interval_us =
-          std::max(performance.maximum_touch_interval_us, touch_interval_us);
+      performance.maximum_touch_interval_us = std::max(
+          performance.maximum_touch_interval_us, static_cast<std::uint64_t>(touch_interval_us));
       ++performance.touch_intervals;
     }
     previous = current;
-    previous_touch_us = update_started;
+    previous_touch_us = last_touch.timestamp_us;
     drawing = true;
   }
 }
