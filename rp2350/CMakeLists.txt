@@ -17,6 +17,7 @@ pico_sdk_init()
 
 add_executable(tinydraw_rp2350
   src/main.cpp
+  ../core/src/ink_stream.cpp
   ../core/src/toolbar.cpp
   vendor/amoled/AMOLED_1in8.c
   vendor/config/DEV_Config.c

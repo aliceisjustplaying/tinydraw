@@ -1,11 +1,13 @@
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <span>
 
+#include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ui/toolbar.h"
 
 // DEV_Config defines types used by the vendor panel header.
@@ -32,7 +34,7 @@ constexpr std::uint16_t kWhite = 0xFFFF;
 constexpr std::size_t kPaletteBackingPixels =
     static_cast<std::size_t>(kWidth * (kDrawingBottom - kPaletteBackingTop));
 
-std::array<std::uint16_t, static_cast<std::size_t>(kWidth * kHeight)> framebuffer;
+std::array<std::uint16_t, static_cast<std::size_t>(kWidth* kHeight)> framebuffer;
 std::array<std::uint16_t, kPaletteBackingPixels> overlay_pixels;
 tinydraw::ToolbarState toolbar;
 
@@ -63,18 +65,22 @@ constexpr std::uint16_t panel_pixel(std::uint16_t color) {
   return static_cast<std::uint16_t>((color << 8U) | (color >> 8U));
 }
 
-int brush_radius() {
-  switch (toolbar.size) {
-    case tinydraw::PenSize::kSmall:
-      return 3;
-    case tinydraw::PenSize::kMedium:
-      return 7;
-    case tinydraw::PenSize::kLarge:
-      return 12;
-    case tinydraw::PenSize::kExtraLarge:
-      return 18;
-  }
-  return 7;
+struct StrokePoint {
+  float x;
+  float y;
+  float radius;
+};
+
+StrokePoint stroke_point(const tinydraw::InkPoint& point) {
+  return {.x = point.position.x, .y = point.position.y, .radius = point.radius};
+}
+
+StrokePoint midpoint(StrokePoint first, StrokePoint second) {
+  return {
+      .x = (first.x + second.x) * 0.5F,
+      .y = (first.y + second.y) * 0.5F,
+      .radius = (first.radius + second.radius) * 0.5F,
+  };
 }
 
 void blend_pixel(int x, int y, std::uint16_t color, int coverage) {
@@ -92,25 +98,28 @@ void blend_pixel(int x, int y, std::uint16_t color, int coverage) {
   framebuffer[index] = static_cast<std::uint16_t>((red << 11) | (green << 5) | blue);
 }
 
-void stamp_dot(int x, int y) {
+void stamp_dot(StrokePoint point) {
   constexpr std::array sample_offsets{-3, -1, 1, 3};
-  const int radius = brush_radius();
-  const int scaled_radius = radius * 8;
-  const int radius_squared = scaled_radius * scaled_radius;
-  const std::uint16_t color = toolbar.tool == tinydraw::DrawingTool::kEraser
-                                  ? kWhite
-                                  : tinydraw::rgb565(toolbar.color);
-  for (int row = -radius; row <= radius; ++row) {
-    for (int column = -radius; column <= radius; ++column) {
+  const int extent = static_cast<int>(std::ceil(point.radius)) + 1;
+  const float scaled_radius = point.radius * 8.0F;
+  const float radius_squared = scaled_radius * scaled_radius;
+  const std::uint16_t color =
+      toolbar.tool == tinydraw::DrawingTool::kEraser ? kWhite : tinydraw::rgb565(toolbar.color);
+  const int center_x = static_cast<int>(std::lround(point.x));
+  const int center_y = static_cast<int>(std::lround(point.y));
+  for (int row = -extent; row <= extent; ++row) {
+    for (int column = -extent; column <= extent; ++column) {
       int covered = 0;
       for (const int sample_y : sample_offsets) {
         for (const int sample_x : sample_offsets) {
-          const int dx = column * 8 + sample_x;
-          const int dy = row * 8 + sample_y;
+          const float dx = (static_cast<float>(center_x + column) - point.x) * 8.0F +
+                           static_cast<float>(sample_x);
+          const float dy =
+              (static_cast<float>(center_y + row) - point.y) * 8.0F + static_cast<float>(sample_y);
           covered += dx * dx + dy * dy <= radius_squared ? 1 : 0;
         }
       }
-      blend_pixel(x + column, y + row, color, covered * 255 / 16);
+      blend_pixel(center_x + column, center_y + row, color, covered * 255 / 16);
     }
   }
 }
@@ -295,68 +304,50 @@ void send_performance() {
   std::fflush(stdout);
 }
 
-std::uint32_t flush_ink_bounds(int minimum_x, int minimum_y, int maximum_x, int maximum_y) {
-  const int radius = brush_radius();
-  const int left = std::max(0, minimum_x - radius) & ~1;
-  const int top = std::max(0, minimum_y - radius) & ~1;
-  const int right = std::min(kWidth, (maximum_x + radius + 2) & ~1);
-  const int bottom = std::min(kDrawingBottom, (maximum_y + radius + 2) & ~1);
-  if (right <= left || bottom <= top) {
-    return 0;
-  }
+std::uint32_t submit_frame() {
   present_framebuffer();
   return static_cast<std::uint32_t>(kWidth * kHeight);
 }
 
-std::uint32_t draw_segment(int start_x, int start_y, int end_x, int end_y) {
-  int x = start_x;
-  int y = start_y;
-  const int step_x = start_x < end_x ? 1 : -1;
-  const int step_y = start_y < end_y ? 1 : -1;
-  const int delta_x = std::abs(end_x - start_x);
-  const int delta_y = -std::abs(end_y - start_y);
-  int error = delta_x + delta_y;
-
-  while (true) {
-    stamp_dot(x, y);
-    if (x == end_x && y == end_y) {
-      break;
-    }
-    const int doubled_error = error * 2;
-    if (doubled_error >= delta_y) {
-      error += delta_y;
-      x += step_x;
-    }
-    if (doubled_error <= delta_x) {
-      error += delta_x;
-      y += step_y;
-    }
-  }
-
-  return flush_ink_bounds(std::min(start_x, end_x), std::min(start_y, end_y),
-                          std::max(start_x, end_x), std::max(start_y, end_y));
+float sample_spacing(float minimum_radius) {
+  return std::clamp(minimum_radius * 0.5F, 0.75F, 2.0F);
 }
 
-std::uint32_t draw_curve(int start_x, int start_y, int control_x, int control_y, int end_x,
-                         int end_y) {
-  const int path_length = std::abs(control_x - start_x) + std::abs(control_y - start_y) +
-                          std::abs(end_x - control_x) + std::abs(end_y - control_y);
-  const int sample_spacing = brush_radius() <= 3 ? 1 : 2;
-  const int steps = std::max(1, (path_length + sample_spacing - 1) / sample_spacing);
-  const std::int64_t denominator = static_cast<std::int64_t>(steps) * steps;
+std::uint32_t draw_segment(StrokePoint start, StrokePoint end) {
+  const float distance = std::hypot(end.x - start.x, end.y - start.y);
+  const int steps = std::max(
+      1,
+      static_cast<int>(std::ceil(distance / sample_spacing(std::min(start.radius, end.radius)))));
   for (int step = 0; step <= steps; ++step) {
-    const std::int64_t inverse = steps - step;
-    const std::int64_t x_numerator = inverse * inverse * start_x + 2 * inverse * step * control_x +
-                                     static_cast<std::int64_t>(step) * step * end_x;
-    const std::int64_t y_numerator = inverse * inverse * start_y + 2 * inverse * step * control_y +
-                                     static_cast<std::int64_t>(step) * step * end_y;
-    stamp_dot(static_cast<int>((x_numerator + denominator / 2) / denominator),
-              static_cast<int>((y_numerator + denominator / 2) / denominator));
+    const float amount = static_cast<float>(step) / static_cast<float>(steps);
+    stamp_dot({
+        .x = start.x + (end.x - start.x) * amount,
+        .y = start.y + (end.y - start.y) * amount,
+        .radius = start.radius + (end.radius - start.radius) * amount,
+    });
   }
+  return submit_frame();
+}
 
-  return flush_ink_bounds(
-      std::min({start_x, control_x, end_x}), std::min({start_y, control_y, end_y}),
-      std::max({start_x, control_x, end_x}), std::max({start_y, control_y, end_y}));
+std::uint32_t draw_curve(StrokePoint start, StrokePoint control, StrokePoint end) {
+  const float path_length = std::hypot(control.x - start.x, control.y - start.y) +
+                            std::hypot(end.x - control.x, end.y - control.y);
+  const float minimum_radius = std::min({start.radius, control.radius, end.radius});
+  const int steps =
+      std::max(1, static_cast<int>(std::ceil(path_length / sample_spacing(minimum_radius))));
+  for (int step = 0; step <= steps; ++step) {
+    const float amount = static_cast<float>(step) / static_cast<float>(steps);
+    const float inverse = 1.0F - amount;
+    stamp_dot({
+        .x = inverse * inverse * start.x + 2.0F * inverse * amount * control.x +
+             amount * amount * end.x,
+        .y = inverse * inverse * start.y + 2.0F * inverse * amount * control.y +
+             amount * amount * end.y,
+        .radius = inverse * inverse * start.radius + 2.0F * inverse * amount * control.radius +
+                  amount * amount * end.radius,
+    });
+  }
+  return submit_frame();
 }
 
 }  // namespace
@@ -380,16 +371,18 @@ int main() {
   DEV_KEY_Config(Touch_INT_PIN);
   std::printf("TINYDRAW_RP2350_OK display=SH8601 touch=FT3168\n");
 
+  tinydraw::InkConfig brush;
+  brush.size = tinydraw::brush_size(toolbar.size);
+  tinydraw::InkStream ink(brush);
   bool touch_down = false;
   bool toolbar_gesture = false;
   tinydraw::Point toolbar_sum{};
   std::uint32_t toolbar_samples = 0;
   bool drawing = false;
   int stroke_samples = 0;
-  int previous_x = 0;
-  int previous_y = 0;
-  int curve_start_x = 0;
-  int curve_start_y = 0;
+  StrokePoint previous{};
+  StrokePoint curve_start{};
+  tinydraw::TouchPoint last_touch{};
   std::uint64_t previous_touch_us = 0;
 
   const auto finish_stroke = [&] {
@@ -398,12 +391,15 @@ int main() {
     }
     if (stroke_samples >= 2) {
       const auto update_started = time_us_64();
-      performance.submitted_pixels +=
-          draw_curve(curve_start_x, curve_start_y, previous_x, previous_y, previous_x, previous_y);
+      last_touch.timestamp_us = static_cast<std::uint32_t>(update_started);
+      const StrokePoint end = stroke_point(ink.finish(last_touch));
+      performance.submitted_pixels += draw_curve(curve_start, previous, end);
       const auto update_us = time_us_64() - update_started;
       ++performance.updates;
       performance.update_us += update_us;
       performance.maximum_update_us = std::max(performance.maximum_update_us, update_us);
+    } else {
+      ink.end();
     }
     ++performance.strokes;
     drawing = false;
@@ -421,6 +417,9 @@ int main() {
       if (touch_down && toolbar_gesture) {
         const float divisor = static_cast<float>(toolbar_samples == 0 ? 1 : toolbar_samples);
         handle_toolbar({.x = toolbar_sum.x / divisor, .y = toolbar_sum.y / divisor});
+        auto config = ink.config();
+        config.size = tinydraw::brush_size(toolbar.size);
+        ink.set_config(config);
       } else if (touch_down) {
         finish_stroke();
       }
@@ -466,22 +465,23 @@ int main() {
     }
 
     const auto update_started = time_us_64();
+    last_touch = {.x = static_cast<float>(x),
+                  .y = static_cast<float>(y),
+                  .timestamp_us = static_cast<std::uint32_t>(update_started)};
+    const StrokePoint current =
+        stroke_point(drawing ? ink.update(last_touch) : ink.begin(last_touch));
     std::uint32_t submitted_pixels = 0;
     if (!drawing) {
-      submitted_pixels = draw_segment(x, y, x, y);
+      submitted_pixels = draw_segment(current, current);
       stroke_samples = 1;
     } else if (stroke_samples == 1) {
-      curve_start_x = (previous_x + x) / 2;
-      curve_start_y = (previous_y + y) / 2;
-      submitted_pixels = draw_segment(previous_x, previous_y, curve_start_x, curve_start_y);
+      curve_start = midpoint(previous, current);
+      submitted_pixels = draw_segment(previous, curve_start);
       stroke_samples = 2;
     } else {
-      const int curve_end_x = (previous_x + x) / 2;
-      const int curve_end_y = (previous_y + y) / 2;
-      submitted_pixels = draw_curve(curve_start_x, curve_start_y, previous_x, previous_y,
-                                    curve_end_x, curve_end_y);
-      curve_start_x = curve_end_x;
-      curve_start_y = curve_end_y;
+      const StrokePoint curve_end = midpoint(previous, current);
+      submitted_pixels = draw_curve(curve_start, previous, curve_end);
+      curve_start = curve_end;
       ++stroke_samples;
     }
     const auto update_us = time_us_64() - update_started;
@@ -496,8 +496,7 @@ int main() {
           std::max(performance.maximum_touch_interval_us, touch_interval_us);
       ++performance.touch_intervals;
     }
-    previous_x = x;
-    previous_y = y;
+    previous = current;
     previous_touch_us = update_started;
     drawing = true;
   }
