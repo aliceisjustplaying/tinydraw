@@ -98,7 +98,7 @@ void FT3168_Init(uint8_t mode);
 void FT3168_Reset();
 uint16_t FT3168_ReadID();
 uint16_t FT3168_ReadState(Value_Information info);
-uint8_t FT3168_Get_Point();
+void FT3168_Get_Point();
 uint8_t FT3168_Get_Gesture();
 
 #endif // !_FT3168_H_

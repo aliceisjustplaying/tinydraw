@@ -96,7 +96,8 @@ void sample_touch() {
   std::uint16_t last_y = 0;
   std::uint32_t no_touch_started_us = 0;
   while (true) {
-    if (FT3168_Get_Point() != 0) {
+    if (FT3168_ReadState(FT3168_FINGER_NUMBER) != 0) {
+      FT3168_Get_Point();
       no_touch_started_us = 0;
       const auto x = static_cast<std::uint16_t>(FT3168.x_point);
       const auto y = static_cast<std::uint16_t>(FT3168.y_point);
