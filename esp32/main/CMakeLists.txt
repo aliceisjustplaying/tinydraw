@@ -3,16 +3,8 @@ set(TINYDRAW_CORE "${CMAKE_CURRENT_LIST_DIR}/../../core")
 set(TINYDRAW_PLATFORM_SRCS "qemu_display.cpp")
 set(TINYDRAW_PLATFORM_REQUIRES esp_lcd_qemu_rgb)
 if(NOT TINYDRAW_QEMU)
-  list(APPEND TINYDRAW_PLATFORM_SRCS "hardware_app.cpp" "wifi_export.cpp")
-  list(APPEND TINYDRAW_PLATFORM_REQUIRES
-    esp_lcd_co5300
-    esp_lcd_touch_cst816s
-    esp_driver_gpio
-    esp_wifi
-    esp_http_server
-    nvs_flash
-    espressif__libpng
-  )
+  list(APPEND TINYDRAW_PLATFORM_SRCS "hardware_app.cpp")
+  list(APPEND TINYDRAW_PLATFORM_REQUIRES esp_lcd_co5300 esp_lcd_touch_cst816s)
 endif()
 
 idf_component_register(

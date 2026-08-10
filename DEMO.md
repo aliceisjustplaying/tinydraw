@@ -60,27 +60,15 @@ Key numbers:
 - Current long strokes: about **2.5–3.4 ms average**
 - Panning: **71–74 ms → about 10 ms per frame**
 
-## 3:40 — Export to the phone
-
-Join the open `TinyDraw` Wi-Fi network and open
-`http://192.168.4.1/drawing.png?t=1`. Airplane Mode keeps iOS attached to the
-offline network. Change the query value to bypass Safari caching.
-
-> The board encodes the full world as PNG in PSRAM. One measured image was 35 KB,
-> encoded in 0.69 seconds and transferred in 1.27 seconds.
-
-The upper side button toggles Wi-Fi off or on.
-
-## 4:20 — Why the result is trustworthy
+## 3:40 — Why the result is trustworthy
 
 > The shared drawing core has 20 native and end-to-end test groups, exact image
 > snapshots, ASan, UBSan, QEMU coverage, and timing captured on the physical board.
 
-## 4:40 — Current limits
+## 4:10 — Current limits
 
 - Very fast diagonals can reveal the live drawing update.
 - Very fast pans can briefly tear because the panel has no synchronized framebuffer swap.
-- Wi-Fi export depends on iOS remaining on a network without internet.
 - Drawings are not persistent after power loss.
 - The current world is fixed at 2×2 screens; 3×3 is the next practical size.
 

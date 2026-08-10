@@ -3,7 +3,7 @@
 Snapshot: 2026-08-10
 
 TinyDraw runs on the 368×448 Waveshare ESP32-S3 Touch AMOLED 1.8-inch V2 board. It
-has variable-width ink, twelve colors, ten Undos, a 736×896 canvas, and Wi-Fi export.
+has variable-width ink, twelve colors, ten Undos, and a 736×896 canvas.
 
 ## Numbers for the demo
 
@@ -13,8 +13,9 @@ has variable-width ink, twelve colors, ten Undos, a 736×896 canvas, and Wi-Fi e
 - Fast XL diagonals can peak at **16.1 ms**.
 - The CST820 reports a new position every **13–14 ms**, or **75–77 Hz**.
 - Panning fell from **71–74 ms to 9.8–10.1 ms per frame**, about **7× faster**.
-- A measured full-world PNG was **35,010 bytes**, encoded in **0.69 s**, and sent in **1.27 s**.
-- The Wi-Fi build is **988,896 bytes**; 6% of its 1 MiB app partition is free.
+- An export experiment produced a **35,010-byte PNG** in **0.69 s** and sent it in **1.27 s**.
+- Removing that experiment cut the active firmware to **310,784 bytes**, with **70%** of its
+  1 MiB app partition free.
 
 ## From prototype to physical device
 
@@ -110,25 +111,25 @@ bytes; batching adjacent regions reduced display submissions from 105 to 14. Phy
 examples range from 10.8 ms for 2 tiles, through 35.5 ms for 43 tiles, to 109.2 ms for the
 full 168-tile canvas.
 
-## Larger canvas and export
+## Larger canvas and export experiment
 
 The drawing world is 736×896, four times the display area. Early panning copied the whole
 viewport and took 71–74 ms per frame. Reading the world directly, swapping two pixels at a
 time, using 80 MHz QSPI, and enlarging DMA chunks brought it to 9.8–10.1 ms. Finger-up
 settling takes about 47–53 ms.
 
-The board exposes an open `TinyDraw` Wi-Fi network and serves the full world as a PNG. PNG
-state and a 512 KiB output buffer live in PSRAM. Light compression reduced one captured
-export to 35,010 bytes; 4 KiB network writes avoided socket stalls. iOS may leave an offline
-network or cache the prior image, so the demo uses Airplane Mode and a changing query string.
-Wi-Fi power is capped at 10 dBm because the phone is nearby.
+A short-lived Wi-Fi prototype served the full world as a PNG. Its state and 512 KiB output
+buffer lived in PSRAM. Light compression produced one 35,010-byte image; 4 KiB writes
+prevented socket stalls. iOS connectivity and caching made the demo unreliable. Wi-Fi was
+removed from the active firmware before the RP2350 port; it was not proven to cause the
+reported display stripes.
 
 ## Verification
 
 Twenty native test groups cover exact replays, snapshots, Perfect Freehand examples,
 self-overlaps, seams, input states, UI, Undo, panning, and a 1,000-point XL workload. ASan,
 UBSan, headless QEMU, and visible QEMU pass. Device logs report drawing, display, touch,
-lift, panning, Undo, and export timing.
+lift, panning, and Undo timing.
 
 ## Current limits and next work
 
@@ -137,8 +138,8 @@ next touch position arrives 13–14 ms later. A full-canvas Undo sends 329,728 b
 visibly slower.
 
 There is no persistent Save. The canvas is a fixed 2×2 raster, not an unbounded document.
-The Wi-Fi workflow depends on iOS staying connected to a network without internet. A future
-save format and a larger sparse canvas must preserve bounded drawing and panning work.
+A future save format and a larger sparse canvas must preserve bounded drawing and panning
+work.
 
 ## Five-minute demo
 
@@ -146,5 +147,4 @@ save format and a larger sparse canvas must preserve bounded drawing and panning
 2. Cross an XL stroke over itself, then make a sharp turn to show solid joins.
 3. Extend the stroke to show that old points no longer slow new input.
 4. Pan across the 2×2 world, then undo and demonstrate confirmed New.
-5. Export the full canvas to a phone over `TinyDraw` Wi-Fi.
-6. Close with **4,479 ms to 220 ms** for ink and **74 ms to 10 ms** for panning.
+5. Close with **4,479 ms to 220 ms** for ink and **74 ms to 10 ms** for panning.

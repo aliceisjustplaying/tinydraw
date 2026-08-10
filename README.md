@@ -11,7 +11,6 @@ macOS app and ESP-IDF/QEMU targets exercise the same C++20 drawing core.
 - Pen, eraser, pan, twelve tldraw colors, four sizes, confirmed New, and ten Undos
 - A fixed 736×896 canvas, four times the screen area, with near-touch-rate panning
 - Bounded 32×32 drawing updates and dirty-tile Undo in 8 MiB PSRAM
-- Full-canvas PNG export over a local `TinyDraw` Wi-Fi network
 - Native replays, exact snapshots, ASan/UBSan, QEMU, and device telemetry
 
 Recent long strokes average about 2.5–3.4 ms per update. Panning takes about
@@ -28,13 +27,6 @@ XL diagonals can still show some drawing lag. Drawings are not yet persistent.
 The window opens near the panel's physical size on a 14-inch 2021 MacBook Pro
 at default scaling. Draw with the mouse, use `Cmd-Z` to undo, `C` for New, and
 `Esc` to quit.
-
-## Export from the board
-
-Join the open `TinyDraw` Wi-Fi network, choose **Use Without Internet**, then
-open `http://192.168.4.1/drawing.png` in Safari. Add a changing query such as
-`?t=2` to bypass browser caching. Airplane Mode keeps iOS on the offline network.
-A short press of the upper side button (BOOT) toggles Wi-Fi off or on.
 
 ## Test and profile
 
