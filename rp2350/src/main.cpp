@@ -426,46 +426,9 @@ void send_performance() {
   std::fflush(stdout);
 }
 
-std::uint32_t submit_stroke_region(std::span<const StrokePoint> points) {
-  float minimum_x = points.front().x;
-  float minimum_y = points.front().y;
-  float maximum_x = points.front().x;
-  float maximum_y = points.front().y;
-  float maximum_radius = points.front().radius;
-  for (const auto& point : points.subspan(1)) {
-    minimum_x = std::min(minimum_x, point.x);
-    minimum_y = std::min(minimum_y, point.y);
-    maximum_x = std::max(maximum_x, point.x);
-    maximum_y = std::max(maximum_y, point.y);
-    maximum_radius = std::max(maximum_radius, point.radius);
-  }
-
-  int left = std::max(0, static_cast<int>(std::floor(minimum_x - maximum_radius - 2.0F)));
-  const int top = std::max(0, static_cast<int>(std::floor(minimum_y - maximum_radius - 2.0F)));
-  int right = std::min(kWidth, static_cast<int>(std::ceil(maximum_x + maximum_radius + 2.0F)));
-  const int bottom =
-      std::min(kDrawingBottom, static_cast<int>(std::ceil(maximum_y + maximum_radius + 2.0F)));
-  left &= ~1;
-  right = std::min(kWidth, (right + 1) & ~1);
-  if (left >= right || top >= bottom) {
-    return 0;
-  }
-
-  const int width = right - left;
-  const int rows_per_chunk = static_cast<int>(overlay_pixels.size()) / width;
-  for (int chunk_top = top; chunk_top < bottom; chunk_top += rows_per_chunk) {
-    const int rows = std::min(rows_per_chunk, bottom - chunk_top);
-    for (int row = 0; row < rows; ++row) {
-      std::copy_n(
-          framebuffer.begin() + static_cast<std::ptrdiff_t>((chunk_top + row) * kWidth + left),
-          width, overlay_pixels.begin() + static_cast<std::ptrdiff_t>(row * width));
-    }
-    AMOLED_1IN8_DisplayWindowPacked(
-        static_cast<std::uint32_t>(left), static_cast<std::uint32_t>(chunk_top),
-        static_cast<std::uint32_t>(right), static_cast<std::uint32_t>(chunk_top + rows),
-        overlay_pixels.data());
-  }
-  return static_cast<std::uint32_t>(width * (bottom - top));
+std::uint32_t submit_frame() {
+  present_framebuffer();
+  return static_cast<std::uint32_t>(kWidth * kHeight);
 }
 
 float sample_spacing(float minimum_radius) {
@@ -485,8 +448,7 @@ std::uint32_t draw_segment(StrokePoint start, StrokePoint end) {
         .radius = start.radius + (end.radius - start.radius) * amount,
     });
   }
-  const std::array bounds{start, end};
-  return submit_stroke_region(bounds);
+  return submit_frame();
 }
 
 std::uint32_t draw_curve(StrokePoint start, StrokePoint control, StrokePoint end) {
@@ -507,8 +469,7 @@ std::uint32_t draw_curve(StrokePoint start, StrokePoint control, StrokePoint end
                   amount * amount * end.radius,
     });
   }
-  const std::array bounds{start, control, end};
-  return submit_stroke_region(bounds);
+  return submit_frame();
 }
 
 }  // namespace
