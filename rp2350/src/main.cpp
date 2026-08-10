@@ -88,14 +88,14 @@ void blend_pixel(int x, int y, std::uint16_t color, int coverage) {
     return;
   }
   const auto index = static_cast<std::size_t>(y * kWidth + x);
-  const std::uint16_t background = framebuffer[index];
+  const std::uint16_t background = panel_pixel(framebuffer[index]);
   const auto blend = [coverage](int foreground, int behind) {
     return (foreground * coverage + behind * (255 - coverage) + 127) / 255;
   };
   const int red = blend((color >> 11) & 0x1F, (background >> 11) & 0x1F);
   const int green = blend((color >> 5) & 0x3F, (background >> 5) & 0x3F);
   const int blue = blend(color & 0x1F, background & 0x1F);
-  framebuffer[index] = static_cast<std::uint16_t>((red << 11) | (green << 5) | blue);
+  framebuffer[index] = panel_pixel(static_cast<std::uint16_t>((red << 11) | (green << 5) | blue));
 }
 
 void stamp_dot(StrokePoint point) {
@@ -169,8 +169,12 @@ void save_toolbar_overlay() {
   }
 }
 
+void swap_framebuffer_bytes();
+
 void render_toolbar() {
+  swap_framebuffer_bytes();
   tinydraw::draw_toolbar(std::span<std::uint16_t>(framebuffer), kWidth, kHeight, toolbar);
+  swap_framebuffer_bytes();
 }
 
 void show_toolbar() {
@@ -251,7 +255,8 @@ void handle_toolbar(tinydraw::Point point) {
       break;
     case tinydraw::ToolbarAction::kConfirmNewDrawing:
       overlay_backup.active = false;
-      std::fill_n(framebuffer.begin(), static_cast<std::size_t>(kWidth * kDrawingBottom), kWhite);
+      std::fill_n(framebuffer.begin(), static_cast<std::size_t>(kWidth * kDrawingBottom),
+                  panel_pixel(kWhite));
       toolbar.confirm_new = false;
       close_popups();
       break;
@@ -268,23 +273,20 @@ void swap_framebuffer_bytes() {
   }
 }
 
-void present_framebuffer() {
-  swap_framebuffer_bytes();
-  AMOLED_1IN8_Display(framebuffer.data());
-  swap_framebuffer_bytes();
-}
+void present_framebuffer() { AMOLED_1IN8_Display(framebuffer.data()); }
 
 void send_framebuffer() {
   constexpr auto byte_count = framebuffer.size() * sizeof(framebuffer.front());
   std::printf("TINYDRAW_FRAME %d %d RGB565BE %zu\n", kWidth, kHeight, byte_count);
   std::fflush(stdout);
-  swap_framebuffer_bytes();
   std::fwrite(framebuffer.data(), 1, byte_count, stdout);
-  swap_framebuffer_bytes();
   std::fflush(stdout);
 }
 
 void send_performance() {
+  const auto display_started = time_us_64();
+  present_framebuffer();
+  const auto display_probe_us = time_us_64() - display_started;
   const auto average_update_us =
       performance.updates == 0 ? 0 : performance.update_us / performance.updates;
   const auto average_touch_interval_us =
@@ -293,14 +295,15 @@ void send_performance() {
           : performance.touch_interval_us / performance.touch_intervals;
   std::printf(
       "TINYDRAW_PERF updates=%lu strokes=%lu average_us=%llu max_us=%llu pixels=%llu "
-      "touch_average_us=%llu touch_max_us=%llu\n",
+      "touch_average_us=%llu touch_max_us=%llu display_probe_us=%llu\n",
       static_cast<unsigned long>(performance.updates),
       static_cast<unsigned long>(performance.strokes),
       static_cast<unsigned long long>(average_update_us),
       static_cast<unsigned long long>(performance.maximum_update_us),
       static_cast<unsigned long long>(performance.submitted_pixels),
       static_cast<unsigned long long>(average_touch_interval_us),
-      static_cast<unsigned long long>(performance.maximum_touch_interval_us));
+      static_cast<unsigned long long>(performance.maximum_touch_interval_us),
+      static_cast<unsigned long long>(display_probe_us));
   std::fflush(stdout);
 }
 
@@ -363,7 +366,7 @@ int main() {
   AMOLED_1IN8_Init();
   AMOLED_1IN8_SetBrightness(80);
 
-  std::fill(framebuffer.begin(), framebuffer.end(), kWhite);
+  std::fill(framebuffer.begin(), framebuffer.end(), panel_pixel(kWhite));
   render_toolbar();
   present_framebuffer();
 
