@@ -503,9 +503,20 @@ void run_hardware_app() {
       return;
     }
     reset_stroke();
-    static_cast<void>(canvas.undo_history().undo(canvas.committed(), canvas.visible(), &display));
+    display.reset_timing();
+    const auto started = esp_timer_get_time();
+    const auto stats =
+        canvas.undo_history().undo(canvas.committed(), canvas.visible(), &display);
     close_popups();
     update_toolbar();
+    std::printf(
+        "[DEBUG-undo1] tiles=%lu bytes=%lu elapsed_us=%lld prepare_us=%lld "
+        "transfer_us=%lld pushes=%lu\n",
+        static_cast<unsigned long>(stats.tiles_restored),
+        static_cast<unsigned long>(stats.display_bytes),
+        static_cast<long long>(esp_timer_get_time() - started),
+        static_cast<long long>(display.prepare_us()), static_cast<long long>(display.transfer_us()),
+        static_cast<unsigned long>(display.push_count()));
   };
   const auto toolbar_action = [&](tinydraw::Point point) {
     switch (tinydraw::toolbar_action_at(point, toolbar)) {
