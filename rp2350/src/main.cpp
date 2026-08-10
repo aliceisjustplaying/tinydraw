@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 
 // DEV_Config defines types used by the vendor panel header.
 // clang-format off
@@ -93,20 +94,47 @@ void draw_text(int x, int y, const char* text, int scale, std::uint16_t color) {
   }
 }
 
-void draw_dot(int x, int y) {
-  constexpr int radius = 7;
-  for (int row = -radius; row <= radius; ++row) {
-    for (int column = -radius; column <= radius; ++column) {
-      if (column * column + row * row <= radius * radius) {
+constexpr int kInkRadius = 7;
+
+void stamp_dot(int x, int y) {
+  for (int row = -kInkRadius; row <= kInkRadius; ++row) {
+    for (int column = -kInkRadius; column <= kInkRadius; ++column) {
+      if (column * column + row * row <= kInkRadius * kInkRadius) {
         set_pixel(x + column, y + row, kBlue);
       }
     }
   }
+}
 
-  const int left = std::max(0, x - radius) & ~1;
-  const int top = std::max(0, y - radius) & ~1;
-  const int right = std::min(kWidth, (x + radius + 2) & ~1);
-  const int bottom = std::min(kHeight, (y + radius + 2) & ~1);
+void draw_segment(int start_x, int start_y, int end_x, int end_y) {
+  int x = start_x;
+  int y = start_y;
+  const int step_x = start_x < end_x ? 1 : -1;
+  const int step_y = start_y < end_y ? 1 : -1;
+  const int delta_x = std::abs(end_x - start_x);
+  const int delta_y = -std::abs(end_y - start_y);
+  int error = delta_x + delta_y;
+
+  while (true) {
+    stamp_dot(x, y);
+    if (x == end_x && y == end_y) {
+      break;
+    }
+    const int doubled_error = error * 2;
+    if (doubled_error >= delta_y) {
+      error += delta_y;
+      x += step_x;
+    }
+    if (doubled_error <= delta_x) {
+      error += delta_x;
+      y += step_y;
+    }
+  }
+
+  const int left = std::max(0, std::min(start_x, end_x) - kInkRadius) & ~1;
+  const int top = std::max(0, std::min(start_y, end_y) - kInkRadius) & ~1;
+  const int right = std::min(kWidth, (std::max(start_x, end_x) + kInkRadius + 2) & ~1);
+  const int bottom = std::min(kHeight, (std::max(start_y, end_y) + kInkRadius + 2) & ~1);
   if (right > left && bottom > top) {
     AMOLED_1IN8_DisplayWindows(static_cast<std::uint32_t>(left), static_cast<std::uint32_t>(top),
                                static_cast<std::uint32_t>(right),
@@ -142,10 +170,20 @@ int main() {
   DEV_KEY_Config(Touch_INT_PIN);
   std::printf("TINYDRAW_RP2350_SMOKE_OK display=SH8601 touch=FT3168\n");
 
+  bool drawing = false;
+  int previous_x = 0;
+  int previous_y = 0;
   while (true) {
     if (FT3168_ReadState(FT3168_FINGER_NUMBER) != 0) {
       FT3168_Get_Point();
-      draw_dot(static_cast<int>(FT3168.x_point), static_cast<int>(FT3168.y_point));
+      const int x = static_cast<int>(FT3168.x_point);
+      const int y = static_cast<int>(FT3168.y_point);
+      draw_segment(drawing ? previous_x : x, drawing ? previous_y : y, x, y);
+      previous_x = x;
+      previous_y = y;
+      drawing = true;
+    } else {
+      drawing = false;
     }
     sleep_ms(5);
   }
