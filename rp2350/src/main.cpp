@@ -19,13 +19,25 @@ namespace {
 
 constexpr int kWidth = AMOLED_1IN8_WIDTH;
 constexpr int kHeight = AMOLED_1IN8_HEIGHT;
+constexpr int kToolbarTop = 384;
+constexpr int kToolbarCells = 5;
 constexpr std::uint16_t kWhite = 0xFFFF;
-constexpr std::uint16_t kBlack = 0x1D1D;
+constexpr std::uint16_t kBlack = 0x18E3;
 constexpr std::uint16_t kBlue = 0x433D;
-constexpr std::uint16_t kLightBlue = 0x4D1E;
+constexpr std::uint16_t kRed = 0xE186;
+constexpr std::uint16_t kGreen = 0x0C8D;
 constexpr std::uint16_t kGrey = 0x9D56;
+constexpr std::uint16_t kToolbar = 0xEF7D;
+constexpr std::uint16_t kSelected = 0xD61F;
+constexpr std::array<std::uint16_t, 4> kColors{kBlack, kBlue, kRed, kGreen};
+constexpr std::array<int, 3> kRadii{3, 7, 12};
+
+enum class Tool { kPen, kEraser };
 
 std::array<std::uint16_t, static_cast<std::size_t>(kWidth* kHeight)> framebuffer;
+Tool tool = Tool::kPen;
+std::size_t color_index = 1;
+std::size_t size_index = 1;
 
 struct PerformanceStats {
   std::uint32_t updates = 0;
@@ -63,60 +75,68 @@ void fill_rect(int x, int y, int width, int height, std::uint16_t color) {
   }
 }
 
-using Glyph = std::array<std::uint8_t, 7>;
-
-constexpr Glyph glyph(char value) {
-  switch (value) {
-    case 'A':
-      return {0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11};
-    case 'D':
-      return {0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E};
-    case 'E':
-      return {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F};
-    case 'H':
-      return {0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11};
-    case 'I':
-      return {0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x1F};
-    case 'N':
-      return {0x11, 0x19, 0x19, 0x15, 0x13, 0x13, 0x11};
-    case 'R':
-      return {0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11};
-    case 'T':
-      return {0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04};
-    case 'W':
-      return {0x11, 0x11, 0x11, 0x15, 0x15, 0x1B, 0x11};
-    case 'Y':
-      return {0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04};
-    default:
-      return {};
-  }
-}
-
-void draw_text(int x, int y, const char* text, int scale, std::uint16_t color) {
-  for (const char* character = text; *character != '\0'; ++character) {
-    const auto pixels = glyph(*character);
-    for (int row = 0; row < 7; ++row) {
-      for (int column = 0; column < 5; ++column) {
-        if ((pixels[static_cast<std::size_t>(row)] & (1U << (4 - column))) == 0) {
-          continue;
-        }
-        fill_rect(x + column * scale, y + row * scale, scale, scale, color);
+void fill_circle(int center_x, int center_y, int radius, std::uint16_t color,
+                 int clip_bottom = kHeight) {
+  for (int row = -radius; row <= radius; ++row) {
+    for (int column = -radius; column <= radius; ++column) {
+      if (column * column + row * row <= radius * radius && center_y + row < clip_bottom) {
+        set_pixel(center_x + column, center_y + row, color);
       }
     }
-    x += 6 * scale;
   }
 }
-
-constexpr int kInkRadius = 7;
 
 void stamp_dot(int x, int y) {
-  for (int row = -kInkRadius; row <= kInkRadius; ++row) {
-    for (int column = -kInkRadius; column <= kInkRadius; ++column) {
-      if (column * column + row * row <= kInkRadius * kInkRadius) {
-        set_pixel(x + column, y + row, kBlue);
-      }
-    }
+  fill_circle(x, y, kRadii[size_index], tool == Tool::kEraser ? kWhite : kColors[color_index],
+              kToolbarTop);
+}
+
+void draw_toolbar() {
+  fill_rect(0, kToolbarTop, kWidth, kHeight - kToolbarTop, kToolbar);
+  fill_rect(0, kToolbarTop, kWidth, 2, kGrey);
+  const int cell_width = kWidth / kToolbarCells;
+  const int pen_center = cell_width / 2;
+  const int eraser_center = pen_center + cell_width;
+  if (tool == Tool::kPen) {
+    fill_rect(5, kToolbarTop + 7, cell_width - 10, 50, kSelected);
+  } else {
+    fill_rect(cell_width + 5, kToolbarTop + 7, cell_width - 10, 50, kSelected);
   }
+
+  for (int offset = -12; offset <= 12; ++offset) {
+    fill_circle(pen_center + offset, kToolbarTop + 32 - offset, 2, kBlack);
+  }
+  fill_rect(eraser_center - 13, kToolbarTop + 22, 26, 20, kWhite);
+  fill_rect(eraser_center - 13, kToolbarTop + 22, 26, 2, kBlack);
+  fill_rect(eraser_center - 13, kToolbarTop + 40, 26, 2, kBlack);
+  fill_rect(eraser_center - 13, kToolbarTop + 22, 2, 20, kBlack);
+  fill_rect(eraser_center + 11, kToolbarTop + 22, 2, 20, kBlack);
+
+  fill_circle(pen_center + cell_width * 2, kToolbarTop + 32, 13, kColors[color_index]);
+  fill_circle(pen_center + cell_width * 3, kToolbarTop + 32, kRadii[size_index], kBlack);
+
+  const int new_center = pen_center + cell_width * 4;
+  fill_rect(new_center - 14, kToolbarTop + 16, 28, 32, kWhite);
+  fill_rect(new_center - 2, kToolbarTop + 23, 4, 18, kBlack);
+  fill_rect(new_center - 9, kToolbarTop + 30, 18, 4, kBlack);
+}
+
+void handle_toolbar(int x) {
+  const int cell = std::clamp(x * kToolbarCells / kWidth, 0, kToolbarCells - 1);
+  if (cell == 0) {
+    tool = Tool::kPen;
+  } else if (cell == 1) {
+    tool = Tool::kEraser;
+  } else if (cell == 2) {
+    color_index = (color_index + 1) % kColors.size();
+    tool = Tool::kPen;
+  } else if (cell == 3) {
+    size_index = (size_index + 1) % kRadii.size();
+  } else {
+    fill_rect(0, 0, kWidth, kToolbarTop, kWhite);
+  }
+  draw_toolbar();
+  AMOLED_1IN8_DisplayWindows(0, cell == 4 ? 0 : kToolbarTop, kWidth, kHeight, framebuffer.data());
 }
 
 void send_framebuffer() {
@@ -148,10 +168,11 @@ void send_performance() {
 }
 
 std::uint32_t flush_ink_bounds(int minimum_x, int minimum_y, int maximum_x, int maximum_y) {
-  const int left = std::max(0, minimum_x - kInkRadius) & ~1;
-  const int top = std::max(0, minimum_y - kInkRadius) & ~1;
-  const int right = std::min(kWidth, (maximum_x + kInkRadius + 2) & ~1);
-  const int bottom = std::min(kHeight, (maximum_y + kInkRadius + 2) & ~1);
+  const int radius = kRadii[size_index];
+  const int left = std::max(0, minimum_x - radius) & ~1;
+  const int top = std::max(0, minimum_y - radius) & ~1;
+  const int right = std::min(kWidth, (maximum_x + radius + 2) & ~1);
+  const int bottom = std::min(kToolbarTop, (maximum_y + radius + 2) & ~1);
   if (right <= left || bottom <= top) {
     return 0;
   }
@@ -225,20 +246,15 @@ int main() {
   AMOLED_1IN8_SetBrightness(80);
 
   std::fill(framebuffer.begin(), framebuffer.end(), panel_pixel(kWhite));
-  fill_rect(0, 0, kWidth, 76, kBlue);
-  draw_text(88, 22, "TINYDRAW", 4, kWhite);
-  draw_text(106, 112, "DRAW HERE", 3, kBlack);
-  fill_rect(36, 164, kWidth - 72, 2, kGrey);
-  fill_rect(36, 388, kWidth - 72, 2, kGrey);
-  fill_rect(36, 164, 2, 226, kGrey);
-  fill_rect(kWidth - 38, 164, 2, 226, kGrey);
-  fill_rect(156, 414, 56, 8, kLightBlue);
+  draw_toolbar();
   AMOLED_1IN8_Display(framebuffer.data());
 
   FT3168_Init(FT3168_Point_Mode);
   DEV_KEY_Config(Touch_INT_PIN);
   std::printf("TINYDRAW_RP2350_SMOKE_OK display=SH8601 touch=FT3168\n");
 
+  bool touch_down = false;
+  bool toolbar_gesture = false;
   bool drawing = false;
   int stroke_samples = 0;
   int previous_x = 0;
@@ -246,6 +262,24 @@ int main() {
   int curve_start_x = 0;
   int curve_start_y = 0;
   std::uint64_t previous_touch_us = 0;
+
+  const auto finish_stroke = [&] {
+    if (!drawing) {
+      return;
+    }
+    if (stroke_samples >= 2) {
+      const auto update_started = time_us_64();
+      performance.submitted_pixels +=
+          draw_curve(curve_start_x, curve_start_y, previous_x, previous_y, previous_x, previous_y);
+      const auto update_us = time_us_64() - update_started;
+      ++performance.updates;
+      performance.update_us += update_us;
+      performance.maximum_update_us = std::max(performance.maximum_update_us, update_us);
+    }
+    ++performance.strokes;
+    drawing = false;
+  };
+
   while (true) {
     const int command = getchar_timeout_us(0);
     if (command == 'S') {
@@ -253,58 +287,65 @@ int main() {
     } else if (command == 'P') {
       send_performance();
     }
-    if (FT3168_ReadState(FT3168_FINGER_NUMBER) != 0) {
-      FT3168_Get_Point();
-      const auto update_started = time_us_64();
-      const int x = static_cast<int>(FT3168.x_point);
-      const int y = static_cast<int>(FT3168.y_point);
-      std::uint32_t submitted_pixels = 0;
-      if (!drawing) {
-        submitted_pixels = draw_segment(x, y, x, y);
-        stroke_samples = 1;
-      } else if (stroke_samples == 1) {
-        curve_start_x = (previous_x + x) / 2;
-        curve_start_y = (previous_y + y) / 2;
-        submitted_pixels = draw_segment(previous_x, previous_y, curve_start_x, curve_start_y);
-        stroke_samples = 2;
-      } else {
-        const int curve_end_x = (previous_x + x) / 2;
-        const int curve_end_y = (previous_y + y) / 2;
-        submitted_pixels = draw_curve(curve_start_x, curve_start_y, previous_x, previous_y,
-                                      curve_end_x, curve_end_y);
-        curve_start_x = curve_end_x;
-        curve_start_y = curve_end_y;
-        ++stroke_samples;
-      }
-      const auto update_us = time_us_64() - update_started;
-      ++performance.updates;
-      performance.update_us += update_us;
-      performance.maximum_update_us = std::max(performance.maximum_update_us, update_us);
-      performance.submitted_pixels += submitted_pixels;
-      if (drawing) {
-        const auto touch_interval_us = update_started - previous_touch_us;
-        performance.touch_interval_us += touch_interval_us;
-        performance.maximum_touch_interval_us =
-            std::max(performance.maximum_touch_interval_us, touch_interval_us);
-        ++performance.touch_intervals;
-      }
-      previous_x = x;
-      previous_y = y;
-      previous_touch_us = update_started;
-      drawing = true;
-    } else if (drawing) {
-      if (stroke_samples >= 2) {
-        const auto update_started = time_us_64();
-        performance.submitted_pixels += draw_curve(curve_start_x, curve_start_y, previous_x,
-                                                   previous_y, previous_x, previous_y);
-        const auto update_us = time_us_64() - update_started;
-        ++performance.updates;
-        performance.update_us += update_us;
-        performance.maximum_update_us = std::max(performance.maximum_update_us, update_us);
-      }
-      ++performance.strokes;
-      drawing = false;
+
+    if (FT3168_ReadState(FT3168_FINGER_NUMBER) == 0) {
+      finish_stroke();
+      touch_down = false;
+      toolbar_gesture = false;
+      sleep_ms(5);
+      continue;
     }
+
+    FT3168_Get_Point();
+    const int x = static_cast<int>(FT3168.x_point);
+    const int y = static_cast<int>(FT3168.y_point);
+    if (!touch_down && y >= kToolbarTop) {
+      handle_toolbar(x);
+      toolbar_gesture = true;
+    }
+    touch_down = true;
+    if (toolbar_gesture || y >= kToolbarTop) {
+      finish_stroke();
+      toolbar_gesture = true;
+      sleep_ms(5);
+      continue;
+    }
+
+    const auto update_started = time_us_64();
+    std::uint32_t submitted_pixels = 0;
+    if (!drawing) {
+      submitted_pixels = draw_segment(x, y, x, y);
+      stroke_samples = 1;
+    } else if (stroke_samples == 1) {
+      curve_start_x = (previous_x + x) / 2;
+      curve_start_y = (previous_y + y) / 2;
+      submitted_pixels = draw_segment(previous_x, previous_y, curve_start_x, curve_start_y);
+      stroke_samples = 2;
+    } else {
+      const int curve_end_x = (previous_x + x) / 2;
+      const int curve_end_y = (previous_y + y) / 2;
+      submitted_pixels = draw_curve(curve_start_x, curve_start_y, previous_x, previous_y,
+                                    curve_end_x, curve_end_y);
+      curve_start_x = curve_end_x;
+      curve_start_y = curve_end_y;
+      ++stroke_samples;
+    }
+    const auto update_us = time_us_64() - update_started;
+    ++performance.updates;
+    performance.update_us += update_us;
+    performance.maximum_update_us = std::max(performance.maximum_update_us, update_us);
+    performance.submitted_pixels += submitted_pixels;
+    if (drawing) {
+      const auto touch_interval_us = update_started - previous_touch_us;
+      performance.touch_interval_us += touch_interval_us;
+      performance.maximum_touch_interval_us =
+          std::max(performance.maximum_touch_interval_us, touch_interval_us);
+      ++performance.touch_intervals;
+    }
+    previous_x = x;
+    previous_y = y;
+    previous_touch_us = update_started;
+    drawing = true;
     sleep_ms(5);
   }
 }
