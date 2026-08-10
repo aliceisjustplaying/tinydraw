@@ -175,10 +175,12 @@ extern "C" void app_main() {
     std::printf("TINYDRAW_REPLAY_FAIL reason=canvas_memory\n");
     return;
   }
-  std::printf("TINYDRAW_MEMORY_OK committed=%u coverage=%u history=%u scratch=dma_internal\n",
-              static_cast<unsigned>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight * 2),
-              static_cast<unsigned>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight),
-              static_cast<unsigned>(tinydraw::TileUndoHistory::kRequiredPixels * 2U));
+  std::printf(
+      "TINYDRAW_MEMORY_OK committed=%u coverage=%u history=%u world=%u scratch=dma_internal\n",
+      static_cast<unsigned>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight * 2),
+      static_cast<unsigned>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight),
+      static_cast<unsigned>(tinydraw::TileUndoHistory::kRequiredPixels * 2U),
+      static_cast<unsigned>(tinydraw::WorldCanvas::kRequiredPixels * 2U));
 
   tinydraw::InkStream ink;
   tinydraw::RibbonStream ribbon;
