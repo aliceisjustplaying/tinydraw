@@ -194,7 +194,8 @@ bool start_wifi_export(const WorldCanvas& world, std::span<const std::uint16_t> 
   configuration.ap.max_connection = 2;
   configuration.ap.authmode = WIFI_AUTH_OPEN;
   if (esp_wifi_set_mode(WIFI_MODE_AP) != ESP_OK ||
-      esp_wifi_set_config(WIFI_IF_AP, &configuration) != ESP_OK || esp_wifi_start() != ESP_OK) {
+      esp_wifi_set_config(WIFI_IF_AP, &configuration) != ESP_OK || esp_wifi_start() != ESP_OK ||
+      esp_wifi_set_max_tx_power(40) != ESP_OK) {
     return false;
   }
 
