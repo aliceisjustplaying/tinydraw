@@ -39,8 +39,8 @@ constexpr int kDialogOverlayTop = 124;
 constexpr int kDialogOverlayWidth = 318;
 constexpr int kDialogOverlayHeight = 168;
 
-DMA_ATTR std::array<std::array<std::uint16_t, kTransferPixels>, kTransferQueueDepth>
-    transfer_pixels;
+alignas(4) DMA_ATTR
+    std::array<std::array<std::uint16_t, kTransferPixels>, kTransferQueueDepth> transfer_pixels;
 StaticSemaphore_t transfer_semaphore_storage;
 SemaphoreHandle_t transfer_semaphore = nullptr;
 
@@ -74,9 +74,17 @@ bool on_transfer_done(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t*,
   return woke == pdTRUE;
 }
 
-std::uint16_t swap_bytes(std::uint16_t pixel) {
+constexpr std::uint16_t swap_bytes(std::uint16_t pixel) {
   return static_cast<std::uint16_t>((pixel << 8U) | (pixel >> 8U));
 }
+
+constexpr std::uint32_t swap_pixel_pair(std::uint16_t first, std::uint16_t second) {
+  const std::uint32_t pixels =
+      static_cast<std::uint32_t>(first) | (static_cast<std::uint32_t>(second) << 16U);
+  return ((pixels >> 8U) & 0x00FF00FFU) | ((pixels << 8U) & 0xFF00FF00U);
+}
+
+static_assert(swap_pixel_pair(0x1234U, 0xABCDU) == 0xCDAB3412U);
 
 int palette_overlay_top(tinydraw::ToolbarState state) {
   state.confirm_new = false;
@@ -222,20 +230,35 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
     transfer_us_ += esp_timer_get_time() - transfer_started;
 
     const auto prepare_started = esp_timer_get_time();
-    for (int row = 0; row < height; ++row) {
-      for (int column = 0; column < width; ++column) {
-        const int panel_x = x + column;
-        const int panel_y = y + row;
-        const std::size_t source = static_cast<std::size_t>(row * source_stride + column);
-        const std::size_t destination = static_cast<std::size_t>(row * width + column);
-        const std::size_t canvas =
-            static_cast<std::size_t>(panel_y * tinydraw::kCanvasWidth + panel_x);
-        const auto point =
-            tinydraw::Point{static_cast<float>(panel_x) + 0.5F, static_cast<float>(panel_y) + 0.5F};
-        const bool toolbar_pixel =
-            panel_y >= toolbar_top_ && tinydraw::toolbar_overlay_contains(point, toolbar_);
-        const std::uint16_t pixel = toolbar_pixel ? overlay_[canvas] : pixels[source];
-        transfer[destination] = swap_bytes(pixel);
+    if (y + height <= toolbar_top_ && width % 2 == 0) {
+      for (int row = 0; row < height; ++row) {
+        const auto source = pixels + static_cast<std::ptrdiff_t>(row * source_stride);
+        auto* destination = reinterpret_cast<std::uint32_t*>(
+            transfer.data() + static_cast<std::ptrdiff_t>(row * width));
+        int column = 0;
+        for (; column + 1 < width; column += 2) {
+          destination[column / 2] = swap_pixel_pair(source[column], source[column + 1]);
+        }
+        if (column < width) {
+          transfer[static_cast<std::size_t>(row * width + column)] = swap_bytes(source[column]);
+        }
+      }
+    } else {
+      for (int row = 0; row < height; ++row) {
+        for (int column = 0; column < width; ++column) {
+          const int panel_x = x + column;
+          const int panel_y = y + row;
+          const std::size_t source = static_cast<std::size_t>(row * source_stride + column);
+          const std::size_t destination = static_cast<std::size_t>(row * width + column);
+          const std::size_t canvas =
+              static_cast<std::size_t>(panel_y * tinydraw::kCanvasWidth + panel_x);
+          const auto point = tinydraw::Point{static_cast<float>(panel_x) + 0.5F,
+                                             static_cast<float>(panel_y) + 0.5F};
+          const bool toolbar_pixel =
+              panel_y >= toolbar_top_ && tinydraw::toolbar_overlay_contains(point, toolbar_);
+          const std::uint16_t pixel = toolbar_pixel ? overlay_[canvas] : pixels[source];
+          transfer[destination] = swap_bytes(pixel);
+        }
       }
     }
     prepare_us_ += esp_timer_get_time() - prepare_started;
