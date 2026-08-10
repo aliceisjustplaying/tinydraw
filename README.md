@@ -68,14 +68,14 @@ measurements in [`FINDINGS.md`](FINDINGS.md) come from the host and physical
 board. See [`DEVELOPING.md`](DEVELOPING.md) for the development loop.
 
 ## Build the RP2350 smoke target
-
 ```sh
 ./scripts/rp2350 bootstrap
 ./scripts/rp2350 build
+./scripts/rp2350 capture PORT /tmp/tinydraw-rp2350.png
 ```
 
-This first target validates the SH8601 display and FT3168 touch with a screen-sized drawing buffer.
+This early target validates the SH8601 display, FT3168 touch, continuous strokes, and USB
+framebuffer capture with a screen-sized drawing buffer.
 
 ## License
-
 MIT

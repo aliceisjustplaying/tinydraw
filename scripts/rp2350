@@ -66,8 +66,13 @@ case "$action" in
   clean)
     rm -rf "$build"
     ;;
+  capture)
+    port="${2:?usage: $0 capture PORT [OUTPUT.png]}"
+    output="${3:-/tmp/tinydraw-rp2350.png}"
+    exec python3 "$root/tools/rp2350-capture.py" "$port" "$output"
+    ;;
   *)
-    echo "usage: $0 {bootstrap|build|clean}" >&2
+    echo "usage: $0 {bootstrap|build|clean|capture PORT [OUTPUT.png]}" >&2
     exit 2
     ;;
 esac

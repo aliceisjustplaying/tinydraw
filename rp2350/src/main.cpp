@@ -106,6 +106,14 @@ void stamp_dot(int x, int y) {
   }
 }
 
+void send_framebuffer() {
+  constexpr auto byte_count = framebuffer.size() * sizeof(framebuffer.front());
+  std::printf("TINYDRAW_FRAME %d %d RGB565BE %zu\n", kWidth, kHeight, byte_count);
+  std::fflush(stdout);
+  std::fwrite(framebuffer.data(), 1, byte_count, stdout);
+  std::fflush(stdout);
+}
+
 void draw_segment(int start_x, int start_y, int end_x, int end_y) {
   int x = start_x;
   int y = start_y;
@@ -174,6 +182,9 @@ int main() {
   int previous_x = 0;
   int previous_y = 0;
   while (true) {
+    if (getchar_timeout_us(0) == 'S') {
+      send_framebuffer();
+    }
     if (FT3168_ReadState(FT3168_FINGER_NUMBER) != 0) {
       FT3168_Get_Point();
       const int x = static_cast<int>(FT3168.x_point);
