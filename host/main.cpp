@@ -309,7 +309,7 @@ int interactive() {
   tinydraw::InkConfig initial_brush;
   initial_brush.size = tinydraw::brush_size(toolbar.size);
   tinydraw::InkStream stream(initial_brush);
-  tinydraw::RibbonStream ribbon;
+  tinydraw::CurvedRibbonStream ribbon;
   tinydraw::InkPoint last_ink_point{};
   std::uint16_t stroke_color = tinydraw::rgb565(toolbar.color);
 
