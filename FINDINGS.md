@@ -3,17 +3,18 @@
 Snapshot: 2026-08-10
 
 TinyDraw runs on the 368×448 Waveshare ESP32-S3 Touch AMOLED 1.8-inch V2 board. It
-has variable-width ink, 4×4 edge smoothing, twelve colors, and ten levels of Undo.
+has variable-width ink, twelve colors, ten Undos, a 736×896 canvas, and Wi-Fi export.
 
 ## Numbers for the demo
 
 - A 500-point XL host stroke fell from **4,479 ms to 220 ms**, a **20.4× speedup**.
 - The largest observed board update fell from **72.9 ms to 16.1 ms**, about **4.5× faster**.
-- Long curves average **5.7–5.8 ms per drawing update**.
-- Fast XL diagonals average **4.9–10.1 ms** and peak at **16.1 ms**.
+- Recent long strokes average **2.5–3.4 ms per drawing update**.
+- Fast XL diagonals can peak at **16.1 ms**.
 - The CST820 reports a new position every **13–14 ms**, or **75–77 Hz**.
-- New dialog traffic fell from **237,728 to 106,848 bytes**, a **55% reduction**.
-- The firmware is **285,664 bytes**; 73% of its app partition is free.
+- Panning fell from **71–74 ms to 9.8–10.1 ms per frame**, about **7× faster**.
+- A measured full-world PNG was **35,010 bytes**, encoded in **0.69 s**, and sent in **1.27 s**.
+- The Wi-Fi build is **988,896 bytes**; 6% of its 1 MiB app partition is free.
 
 ## From prototype to physical device
 
@@ -68,6 +69,7 @@ or line quality were reverted.
 | Tight display bounds | 8.1–8.4 ms | 15.3–22.0 ms | 18.9–28.8 ms |
 | Long curves | 5.7–5.8 ms | 10.7–11.3 ms | 51–55 ms |
 | Fast XL diagonals | 4.9–10.1 ms | 7.4–16.1 ms | 12.2–23.8 ms |
+| Current long traces | 2.5–3.4 ms | 4.8–10.1 ms | 29–62 ms |
 
 A slow circle produced 107 positions over 1.45 seconds. A fast 300-pixel diagonal can
 contain only six to nine. Curve fitting makes sparse input smoother while a short live
@@ -79,13 +81,14 @@ microseconds of measured queue delay.
 | Part | Value |
 | --- | --- |
 | MCU | ESP32-S3 rev 0.2, two cores at 240 MHz |
-| Display | CO5300, 368×448 RGB565 AMOLED, 40 MHz QSPI |
+| Display | CO5300, 368×448 RGB565 AMOLED, 80 MHz QSPI |
 | Touch | CST820 `0xB7`, firmware `0x02`, 400 kHz I²C |
 | Memory | 8 MiB octal PSRAM at 80 MHz, 16 MiB flash |
-| Two canvases | 659,456 bytes in PSRAM |
+| 736×896 world | 1,318,912 bytes in PSRAM |
+| Two viewport canvases | 659,456 bytes in PSRAM |
 | Ten Undo entries | 3,440,640 bytes in PSRAM |
 | Active coverage | 164,864 bytes in internal RAM |
-| Three display buffers | 24,576 bytes in internal RAM |
+| Three display buffers | 49,152 bytes in internal RAM |
 
 Physical bring-up established the V2 pin layout, panel offset, and color format. A full
 startup redraw clears panel memory left by the factory demo or an earlier session.
@@ -93,7 +96,7 @@ startup redraw clears panel memory left by the factory demo or an earlier sessio
 TinyDraw keeps two full canvases in PSRAM: committed ink and the current visible image.
 Three smaller internal-RAM buffers queue panel transfers. The CO5300 accepts pixel updates
 rather than a framebuffer swap, so a conventional full-screen flip would still send all
-329,728 bytes. At 40 MHz quad SPI, the raw transfer floor is about 16.5 ms before setup and
+329,728 bytes. At 80 MHz quad SPI, its raw transfer floor is about 8.2 ms before setup and
 copying. Dirty-region transfers keep the under-finger path shorter.
 
 ## UI and Undo
@@ -107,12 +110,25 @@ bytes; batching adjacent regions reduced display submissions from 105 to 14. Phy
 examples range from 10.8 ms for 2 tiles, through 35.5 ms for 43 tiles, to 109.2 ms for the
 full 168-tile canvas.
 
+## Larger canvas and export
+
+The drawing world is 736×896, four times the display area. Early panning copied the whole
+viewport and took 71–74 ms per frame. Reading the world directly, swapping two pixels at a
+time, using 80 MHz QSPI, and enlarging DMA chunks brought it to 9.8–10.1 ms. Finger-up
+settling takes about 47–53 ms.
+
+The board exposes an open `TinyDraw` Wi-Fi network and serves the full world as a PNG. PNG
+state and a 512 KiB output buffer live in PSRAM. Light compression reduced one captured
+export to 35,010 bytes; 4 KiB network writes avoided socket stalls. iOS may leave an offline
+network or cache the prior image, so the demo uses Airplane Mode and a changing query string.
+Wi-Fi power is capped at 10 dBm because the phone is nearby.
+
 ## Verification
 
-Seventeen native test groups cover exact replays, snapshots, Perfect Freehand examples,
-self-overlaps, seams, input states, UI, Undo, and a 1,000-point XL workload. ASan, UBSan,
-headless QEMU, and visible QEMU pass. Device logs report drawing, display, touch, lift,
-dialog, and Undo timing.
+Twenty native test groups cover exact replays, snapshots, Perfect Freehand examples,
+self-overlaps, seams, input states, UI, Undo, panning, and a 1,000-point XL workload. ASan,
+UBSan, headless QEMU, and visible QEMU pass. Device logs report drawing, display, touch,
+lift, panning, Undo, and export timing.
 
 ## Current limits and next work
 
@@ -120,13 +136,15 @@ Fast diagonals can still show the stroke being drawn. Frame work can take 16.1 m
 next touch position arrives 13–14 ms later. A full-canvas Undo sends 329,728 bytes and is
 visibly slower.
 
-There is no persistent Save yet. The next steps are a compact save format, then a sparse
-canvas larger than the display with panning. Both must preserve bounded drawing work.
+There is no persistent Save. The canvas is a fixed 2×2 raster, not an unbounded document.
+The Wi-Fi workflow depends on iOS staying connected to a network without internet. A future
+save format and a larger sparse canvas must preserve bounded drawing and panning work.
 
 ## Five-minute demo
 
 1. Draw one slow curve and one fast diagonal to show touch sampling limits.
 2. Cross an XL stroke over itself, then make a sharp turn to show solid joins.
 3. Extend the stroke to show that old points no longer slow new input.
-4. Undo several strokes, then demonstrate New, Cancel, and confirmation.
-5. Close with **4,479 ms to 220 ms** on the host and **72.9 ms to 16.1 ms** on the board.
+4. Pan across the 2×2 world, then undo and demonstrate confirmed New.
+5. Export the full canvas to a phone over `TinyDraw` Wi-Fi.
+6. Close with **4,479 ms to 220 ms** for ink and **74 ms to 10 ms** for panning.
