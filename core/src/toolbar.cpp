@@ -14,10 +14,10 @@ constexpr std::uint16_t kMuted = 0x8410U;
 constexpr std::uint16_t kBorder = 0xDEDBU;
 constexpr std::uint16_t kShadow = 0xBDF7U;
 constexpr std::uint16_t kSelected = 0x349FU;
-constexpr int kMainTop = 366;
-constexpr int kMainBottom = 436;
-constexpr int kPaletteTop = 288;
-constexpr int kPaletteBottom = 358;
+constexpr int kMainTop = 374;
+constexpr int kMainBottom = 444;
+constexpr int kPaletteTop = 296;
+constexpr int kPaletteBottom = 366;
 constexpr int kDialogLeft = 28;
 constexpr int kDialogTop = 126;
 constexpr int kDialogRight = 340;
@@ -100,45 +100,44 @@ void draw_dock(std::span<std::uint16_t> canvas, int width, int height, int x0, i
   rounded_rect(canvas, width, height, x0 + 2, y0 + 3, x1 + 2, y1 + 3, 11, kShadow);
   rounded_rect(canvas, width, height, x0 - 1, y0 - 1, x1 + 1, y1 + 1, 11, kBorder);
   rounded_rect(canvas, width, height, x0, y0, x1, y1, 10, kWhite);
-  fill_rect(canvas, width, height, x0 + 10, y0, x1 - 10, y0 + 2, kBorder);
 }
 
 void draw_undo(std::span<std::uint16_t> canvas, int width, int height, std::uint16_t color) {
-  line(canvas, width, height, 24, 402, 54, 402, color, 2);
-  line(canvas, width, height, 24, 402, 36, 390, color, 2);
-  line(canvas, width, height, 24, 402, 36, 414, color, 2);
+  line(canvas, width, height, 32, 410, 62, 410, color, 2);
+  line(canvas, width, height, 32, 410, 44, 398, color, 2);
+  line(canvas, width, height, 32, 410, 44, 422, color, 2);
 }
 
 void draw_pen(std::span<std::uint16_t> canvas, int width, int height, std::uint16_t color) {
-  line(canvas, width, height, 87, 411, 104, 390, color, 1);
-  line(canvas, width, height, 93, 417, 110, 396, color, 1);
-  line(canvas, width, height, 104, 390, 110, 396, color, 1);
-  line(canvas, width, height, 87, 411, 83, 421, color, 1);
-  line(canvas, width, height, 93, 417, 83, 421, color, 1);
-  line(canvas, width, height, 87, 411, 93, 417, color, 1);
+  line(canvas, width, height, 92, 419, 109, 398, color, 1);
+  line(canvas, width, height, 98, 425, 115, 404, color, 1);
+  line(canvas, width, height, 109, 398, 115, 404, color, 1);
+  line(canvas, width, height, 92, 419, 88, 429, color, 1);
+  line(canvas, width, height, 98, 425, 88, 429, color, 1);
+  line(canvas, width, height, 92, 419, 98, 425, color, 1);
 }
 
 void draw_eraser(std::span<std::uint16_t> canvas, int width, int height, std::uint16_t color) {
   // Keep the same two-part silhouette as tldraw's eraser: a tilted block plus
   // the exposed lower rubber, separated across the short axis.
-  line(canvas, width, height, 147, 401, 158, 390, color, 1);
-  line(canvas, width, height, 158, 390, 168, 400, color, 1);
-  line(canvas, width, height, 168, 400, 157, 411, color, 1);
-  line(canvas, width, height, 147, 401, 157, 411, color, 1);
-  line(canvas, width, height, 147, 401, 143, 405, color, 1);
-  line(canvas, width, height, 143, 405, 143, 408, color, 1);
-  line(canvas, width, height, 143, 408, 149, 414, color, 1);
-  line(canvas, width, height, 149, 414, 153, 415, color, 1);
-  line(canvas, width, height, 153, 415, 157, 411, color, 1);
+  line(canvas, width, height, 148, 409, 159, 398, color, 1);
+  line(canvas, width, height, 159, 398, 169, 408, color, 1);
+  line(canvas, width, height, 169, 408, 158, 419, color, 1);
+  line(canvas, width, height, 148, 409, 158, 419, color, 1);
+  line(canvas, width, height, 148, 409, 144, 413, color, 1);
+  line(canvas, width, height, 144, 413, 144, 416, color, 1);
+  line(canvas, width, height, 144, 416, 150, 422, color, 1);
+  line(canvas, width, height, 150, 422, 154, 423, color, 1);
+  line(canvas, width, height, 154, 423, 158, 419, color, 1);
 }
 
 void draw_new(std::span<std::uint16_t> canvas, int width, int height, std::uint16_t color) {
-  line(canvas, width, height, 318, 385, 344, 385, color, 1);
-  line(canvas, width, height, 344, 385, 344, 419, color, 1);
-  line(canvas, width, height, 344, 419, 318, 419, color, 1);
-  line(canvas, width, height, 318, 419, 318, 385, color, 1);
-  line(canvas, width, height, 324, 402, 338, 402, color, 1);
-  line(canvas, width, height, 331, 395, 331, 409, color, 1);
+  line(canvas, width, height, 309, 393, 335, 393, color, 1);
+  line(canvas, width, height, 335, 393, 335, 427, color, 1);
+  line(canvas, width, height, 335, 427, 309, 427, color, 1);
+  line(canvas, width, height, 309, 427, 309, 393, color, 1);
+  line(canvas, width, height, 315, 410, 329, 410, color, 1);
+  line(canvas, width, height, 322, 403, 322, 417, color, 1);
 }
 
 std::array<std::uint8_t, 7> glyph_rows(char character) {
@@ -235,11 +234,11 @@ bool toolbar_contains(Point point, const ToolbarState& state) {
 }
 
 bool toolbar_overlay_contains(Point point, const ToolbarState& state) {
-  const bool main_dock = inside(point, 2.0F, static_cast<float>(kMainTop - 1),
+  const bool main_dock = inside(point, 0.0F, static_cast<float>(kMainTop - 1),
                                 static_cast<float>(kCanvasWidth),
                                 static_cast<float>(kMainBottom + 4));
   const bool palette = (state.colors_open || state.sizes_open) &&
-                       inside(point, 2.0F, static_cast<float>(kPaletteTop - 1),
+                       inside(point, 0.0F, static_cast<float>(kPaletteTop - 1),
                               static_cast<float>(kCanvasWidth),
                               static_cast<float>(kPaletteBottom + 4));
   const bool dialog = state.confirm_new &&
@@ -331,25 +330,27 @@ void draw_toolbar(std::span<std::uint16_t> canvas, int width, int height,
     return;
   }
   draw_dock(canvas, width, height, 4, kMainTop, 364, kMainBottom);
+  fill_rect(canvas, width, height, 0, kMainTop - 1, width, kMainTop + 1, kBorder);
+  fill_rect(canvas, width, height, 0, kMainBottom, width, kMainBottom + 1, kBorder);
 
   if (state.tool == DrawingTool::kPen) {
-    rounded_rect(canvas, width, height, 67, 372, 126, 432, 9, kSelected);
+    rounded_rect(canvas, width, height, 73, 380, 128, 440, 9, kSelected);
   } else {
-    rounded_rect(canvas, width, height, 126, 372, 184, 432, 9, kSelected);
+    rounded_rect(canvas, width, height, 128, 380, 184, 440, 9, kSelected);
   }
 
   draw_undo(canvas, width, height, state.can_undo ? kInk : kMuted);
   draw_pen(canvas, width, height, state.tool == DrawingTool::kPen ? kWhite : kInk);
   draw_eraser(canvas, width, height, state.tool == DrawingTool::kEraser ? kWhite : kInk);
 
-  fill_circle(canvas, width, height, 213, 402, 18, kSelected);
-  fill_circle(canvas, width, height, 213, 402, 15, kWhite);
-  fill_circle(canvas, width, height, 213, 402, 13, rgb565(state.color));
+  fill_circle(canvas, width, height, 212, 410, 18, kSelected);
+  fill_circle(canvas, width, height, 212, 410, 15, kWhite);
+  fill_circle(canvas, width, height, 212, 410, 13, rgb565(state.color));
 
   const int selected_size_radius = size_radius(state.size);
-  fill_circle(canvas, width, height, 272, 402, selected_size_radius + 4, kSelected);
-  fill_circle(canvas, width, height, 272, 402, selected_size_radius + 2, kWhite);
-  fill_circle(canvas, width, height, 272, 402, selected_size_radius, kInk);
+  fill_circle(canvas, width, height, 267, 410, selected_size_radius + 4, kSelected);
+  fill_circle(canvas, width, height, 267, 410, selected_size_radius + 2, kWhite);
+  fill_circle(canvas, width, height, 267, 410, selected_size_radius, kInk);
   draw_new(canvas, width, height, kInk);
 
   if (state.confirm_new) {
@@ -360,16 +361,18 @@ void draw_toolbar(std::span<std::uint16_t> canvas, int width, int height,
     return;
   }
   draw_dock(canvas, width, height, 4, kPaletteTop, 364, kPaletteBottom);
+  fill_rect(canvas, width, height, 0, kPaletteTop - 1, width, kPaletteTop + 1, kBorder);
+  fill_rect(canvas, width, height, 0, kPaletteBottom, width, kPaletteBottom + 1, kBorder);
   if (state.colors_open) {
     constexpr std::array colors{InkColor::kBlack, InkColor::kBlue, InkColor::kRed,
                                 InkColor::kGreen};
     constexpr std::array centers{52, 140, 228, 316};
     for (std::size_t index = 0; index < colors.size(); ++index) {
       if (state.color == colors[index]) {
-        fill_circle(canvas, width, height, centers[index], 323, 21, kSelected);
-        fill_circle(canvas, width, height, centers[index], 323, 18, kWhite);
+        fill_circle(canvas, width, height, centers[index], 331, 21, kSelected);
+        fill_circle(canvas, width, height, centers[index], 331, 18, kWhite);
       }
-      fill_circle(canvas, width, height, centers[index], 323, 15, rgb565(colors[index]));
+      fill_circle(canvas, width, height, centers[index], 331, 15, rgb565(colors[index]));
     }
     return;
   }
@@ -380,10 +383,10 @@ void draw_toolbar(std::span<std::uint16_t> canvas, int width, int height,
   for (std::size_t index = 0; index < palette_sizes.size(); ++index) {
     const int radius = size_radius(palette_sizes[index]);
     if (state.size == palette_sizes[index]) {
-      fill_circle(canvas, width, height, centers[index], 323, radius + 5, kSelected);
-      fill_circle(canvas, width, height, centers[index], 323, radius + 2, kWhite);
+      fill_circle(canvas, width, height, centers[index], 331, radius + 5, kSelected);
+      fill_circle(canvas, width, height, centers[index], 331, radius + 2, kWhite);
     }
-    fill_circle(canvas, width, height, centers[index], 323, radius, kInk);
+    fill_circle(canvas, width, height, centers[index], 331, radius, kInk);
   }
 }
 

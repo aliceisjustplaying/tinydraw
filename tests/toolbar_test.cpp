@@ -21,51 +21,51 @@ TEST_CASE("default toolbar keeps every control in one full-width row") {
 
 TEST_CASE("four large color controls appear in one second row") {
   tinydraw::ToolbarState state;
-  CHECK(tinydraw::toolbar_action_at({52.0F, 323.0F}, state) == tinydraw::ToolbarAction::kNone);
-  CHECK_FALSE(tinydraw::toolbar_contains({52.0F, 323.0F}, state));
+  CHECK(tinydraw::toolbar_action_at({52.0F, 331.0F}, state) == tinydraw::ToolbarAction::kNone);
+  CHECK_FALSE(tinydraw::toolbar_contains({52.0F, 331.0F}, state));
 
   state.colors_open = true;
-  CHECK(tinydraw::toolbar_action_at({52.0F, 323.0F}, state) ==
+  CHECK(tinydraw::toolbar_action_at({52.0F, 331.0F}, state) ==
         tinydraw::ToolbarAction::kSelectBlack);
-  CHECK(tinydraw::toolbar_action_at({140.0F, 323.0F}, state) ==
+  CHECK(tinydraw::toolbar_action_at({140.0F, 331.0F}, state) ==
         tinydraw::ToolbarAction::kSelectBlue);
-  CHECK(tinydraw::toolbar_action_at({228.0F, 323.0F}, state) ==
+  CHECK(tinydraw::toolbar_action_at({228.0F, 331.0F}, state) ==
         tinydraw::ToolbarAction::kSelectRed);
-  CHECK(tinydraw::toolbar_action_at({316.0F, 323.0F}, state) ==
+  CHECK(tinydraw::toolbar_action_at({316.0F, 331.0F}, state) ==
         tinydraw::ToolbarAction::kSelectGreen);
-  CHECK(tinydraw::toolbar_contains({52.0F, 323.0F}, state));
+  CHECK(tinydraw::toolbar_contains({52.0F, 331.0F}, state));
 }
 
 TEST_CASE("four large size controls appear in one second row") {
   tinydraw::ToolbarState state;
-  CHECK(tinydraw::toolbar_action_at({52.0F, 323.0F}, state) == tinydraw::ToolbarAction::kNone);
+  CHECK(tinydraw::toolbar_action_at({52.0F, 331.0F}, state) == tinydraw::ToolbarAction::kNone);
 
   state.sizes_open = true;
-  CHECK(tinydraw::toolbar_action_at({52.0F, 323.0F}, state) ==
+  CHECK(tinydraw::toolbar_action_at({52.0F, 331.0F}, state) ==
         tinydraw::ToolbarAction::kSelectSmall);
-  CHECK(tinydraw::toolbar_action_at({140.0F, 323.0F}, state) ==
+  CHECK(tinydraw::toolbar_action_at({140.0F, 331.0F}, state) ==
         tinydraw::ToolbarAction::kSelectMedium);
-  CHECK(tinydraw::toolbar_action_at({228.0F, 323.0F}, state) ==
+  CHECK(tinydraw::toolbar_action_at({228.0F, 331.0F}, state) ==
         tinydraw::ToolbarAction::kSelectLarge);
-  CHECK(tinydraw::toolbar_action_at({316.0F, 323.0F}, state) ==
+  CHECK(tinydraw::toolbar_action_at({316.0F, 331.0F}, state) ==
         tinydraw::ToolbarAction::kSelectExtraLarge);
-  CHECK(tinydraw::toolbar_contains({316.0F, 323.0F}, state));
+  CHECK(tinydraw::toolbar_contains({316.0F, 331.0F}, state));
 }
 
 TEST_CASE("floating controls include forgiving vertical tap margins") {
   tinydraw::ToolbarState state;
-  CHECK(tinydraw::toolbar_contains({360.0F, 401.0F}, state));
-  CHECK(tinydraw::toolbar_contains({96.0F, 359.0F}, state));
-  CHECK(tinydraw::toolbar_action_at({96.0F, 359.0F}, state) ==
+  CHECK(tinydraw::toolbar_contains({360.0F, 409.0F}, state));
+  CHECK(tinydraw::toolbar_contains({96.0F, 367.0F}, state));
+  CHECK(tinydraw::toolbar_action_at({96.0F, 367.0F}, state) ==
         tinydraw::ToolbarAction::kSelectPen);
-  CHECK_FALSE(tinydraw::toolbar_contains({96.0F, 357.0F}, state));
-  CHECK_FALSE(tinydraw::toolbar_contains({180.0F, 323.0F}, state));
+  CHECK_FALSE(tinydraw::toolbar_contains({96.0F, 365.0F}, state));
+  CHECK_FALSE(tinydraw::toolbar_contains({180.0F, 331.0F}, state));
 
   state.colors_open = true;
-  CHECK(tinydraw::toolbar_contains({52.0F, 281.0F}, state));
-  CHECK(tinydraw::toolbar_action_at({52.0F, 281.0F}, state) ==
+  CHECK(tinydraw::toolbar_contains({52.0F, 289.0F}, state));
+  CHECK(tinydraw::toolbar_action_at({52.0F, 289.0F}, state) ==
         tinydraw::ToolbarAction::kSelectBlack);
-  CHECK_FALSE(tinydraw::toolbar_contains({52.0F, 279.0F}, state));
+  CHECK_FALSE(tinydraw::toolbar_contains({52.0F, 287.0F}, state));
   CHECK_FALSE(tinydraw::toolbar_contains({180.0F, 250.0F}, state));
 }
 
@@ -112,11 +112,13 @@ TEST_CASE("toolbar rendering reflects tool and palette state without touching op
   CHECK(pen_canvas != eraser_canvas);
   CHECK(pen_canvas != palette_canvas);
   const auto open_canvas_pixel = static_cast<std::size_t>(250 * tinydraw::kCanvasWidth + 180);
-  const auto top_border_pixel = static_cast<std::size_t>(366 * tinydraw::kCanvasWidth + 180);
+  const auto top_border_pixel = static_cast<std::size_t>(373 * tinydraw::kCanvasWidth);
+  const auto bottom_border_pixel = static_cast<std::size_t>(444 * tinydraw::kCanvasWidth + 367);
   CHECK(pen_canvas[open_canvas_pixel] == 0xFFFFU);
   CHECK(eraser_canvas[open_canvas_pixel] == 0xFFFFU);
   CHECK(palette_canvas[open_canvas_pixel] == 0xFFFFU);
   CHECK(pen_canvas[top_border_pixel] == 0xDEDBU);
+  CHECK(pen_canvas[bottom_border_pixel] == 0xDEDBU);
 }
 
 TEST_CASE("new drawing confirmation renders without covering the canvas") {
