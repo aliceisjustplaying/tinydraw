@@ -14,7 +14,7 @@ import termios
 import time
 import zlib
 
-HEADER = re.compile(rb"TINYDRAW_FRAME (\d+) (\d+) RGB565BE (\d+)\n")
+HEADER = re.compile(rb"TINYDRAW_FRAME (\d+) (\d+) RGB565BE (\d+)\r?\n")
 
 
 def read_until(fd: int, pattern: re.Pattern[bytes], timeout: float) -> re.Match[bytes]:
@@ -107,7 +107,9 @@ def main() -> None:
     fd = os.open(args.port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
     try:
         configure_serial(fd)
-        os.write(fd, b"S")
+        time.sleep(0.5)
+        termios.tcflush(fd, termios.TCIFLUSH)
+        os.write(fd, b"S\n")
         match = read_until(fd, HEADER, timeout=5.0)
         width, height, byte_count = (int(value) for value in match.groups())
         expected = width * height * 2
