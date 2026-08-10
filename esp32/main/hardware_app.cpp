@@ -112,7 +112,7 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
     io_config.cs_gpio_num = GPIO_NUM_12;
     io_config.dc_gpio_num = GPIO_NUM_NC;
     io_config.spi_mode = 0;
-    io_config.pclk_hz = 40 * 1000 * 1000;
+    io_config.pclk_hz = 80 * 1000 * 1000;
     io_config.trans_queue_depth = kTransferQueueDepth;
     io_config.on_color_trans_done = on_transfer_done;
     io_config.lcd_cmd_bits = 32;
