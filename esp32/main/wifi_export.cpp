@@ -1,5 +1,6 @@
 #include "wifi_export.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdio>
@@ -128,8 +129,14 @@ esp_err_t drawing_handler(httpd_req_t* request) {
   httpd_resp_set_type(request, "image/png");
   httpd_resp_set_hdr(request, "Content-Disposition", "inline; filename=\"tinydraw.png\"");
   httpd_resp_set_hdr(request, "Cache-Control", "no-store");
-  const esp_err_t result =
-      httpd_resp_send(request, reinterpret_cast<const char*>(output), context.size);
+  esp_err_t result = ESP_OK;
+  for (std::size_t offset = 0; offset < context.size && result == ESP_OK; offset += 4096U) {
+    const std::size_t length = std::min<std::size_t>(4096U, context.size - offset);
+    result = httpd_resp_send_chunk(request, reinterpret_cast<const char*>(output + offset), length);
+  }
+  if (result == ESP_OK) {
+    result = httpd_resp_send_chunk(request, nullptr, 0);
+  }
   std::printf("TINYDRAW_EXPORT_IMAGE bytes=%lu encode_us=%lld send_us=%lld result=%ld\n",
               static_cast<unsigned long>(context.size),
               static_cast<long long>(encoded_at - started_at),
