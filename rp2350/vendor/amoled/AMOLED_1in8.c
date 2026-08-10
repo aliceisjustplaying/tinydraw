@@ -29,7 +29,12 @@
 #include "DEV_Config.h"
 #include "AMOLED_1in8.h"
 
+#include <string.h>
+
+#define PARTIAL_TRANSFER_BUFFER_BYTES (32 * 1024)
+
 AMOLED_1IN8_ATTRIBUTES AMOLED_1IN8;
+static UBYTE partial_transfer_buffer[PARTIAL_TRANSFER_BUFFER_BYTES];
 
 /********************************************************************************
 function:	Sets the start position and size of the display area
@@ -238,39 +243,38 @@ parameter:
         Image   ：  Image data
 ******************************************************************************/
 void AMOLED_1IN8_DisplayWindows(uint32_t Xstart, uint32_t Ystart, uint32_t Xend, uint32_t Yend, UWORD *Image) {
-    
     if(Yend > AMOLED_1IN8.HEIGHT) Yend = AMOLED_1IN8.HEIGHT;
     if(Xend > AMOLED_1IN8.WIDTH) Xend = AMOLED_1IN8.WIDTH;
+    if(Xstart >= Xend || Ystart >= Yend) return;
 
-    // Send command in one-line mode
-    // QSPI_1Wrie_Mode(&qspi);
-    AMOLED_1IN8_SetWindows(Xstart, Ystart, Xend, Yend);
-    QSPI_Select(qspi);
-    QSPI_Pixel_Write(qspi, 0x2c);
+    const uint32_t bytes_per_row = (Xend - Xstart) * 2;
+    uint32_t rows_per_chunk = PARTIAL_TRANSFER_BUFFER_BYTES / bytes_per_row;
+    if(rows_per_chunk == 0) rows_per_chunk = 1;
 
-    // Four-wire mode sends RGB data
-    // QSPI_4Wrie_Mode(&qspi);
     channel_config_set_dreq(&c, pio_get_dreq(qspi.pio, qspi.sm, true));
 
-    int i;
-    uint32_t pixel_offset;
-    UBYTE *partial_image;
-    for (i = Ystart; i < Yend; i++) {
-        pixel_offset = (i * AMOLED_1IN8.WIDTH + Xstart) * 2;
-        partial_image = (UBYTE *)Image + pixel_offset;
-        dma_channel_configure(dma_tx, 
-                            &c,
-                            &qspi.pio->txf[qspi.sm],  // Destination pointer (PIO TX FIFO)
-                            partial_image,            // Source pointer (data buffer)
-                            (Xend-Xstart)*2,          // Data length (unit: number of transmissions)
-                            true);                    // Start transferring immediately
+    for(uint32_t chunk_y = Ystart; chunk_y < Yend; chunk_y += rows_per_chunk) {
+        uint32_t rows = Yend - chunk_y;
+        if(rows > rows_per_chunk) rows = rows_per_chunk;
 
-        // Waiting for DMA transfer to complete
+        for(uint32_t row = 0; row < rows; row++) {
+            const uint32_t pixel_offset = ((chunk_y + row) * AMOLED_1IN8.WIDTH + Xstart) * 2;
+            memcpy(partial_transfer_buffer + row * bytes_per_row,
+                   (UBYTE *)Image + pixel_offset,
+                   bytes_per_row);
+        }
+
+        AMOLED_1IN8_SetWindows(Xstart, chunk_y, Xend, chunk_y + rows);
+        QSPI_Select(qspi);
+        QSPI_Pixel_Write(qspi, 0x2c);
+        dma_channel_configure(dma_tx,
+                              &c,
+                              &qspi.pio->txf[qspi.sm],
+                              partial_transfer_buffer,
+                              bytes_per_row * rows,
+                              true);
         while(dma_channel_is_busy(dma_tx));
+        busy_wait_us_32(1);
+        QSPI_Deselect(qspi);
     }
-
-    // DMA completion only means the final bytes reached the PIO FIFO.
-    // Let the state machine shift them onto the panel before raising CS.
-    busy_wait_us_32(1);
-    QSPI_Deselect(qspi);
 }
