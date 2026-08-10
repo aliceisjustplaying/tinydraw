@@ -15,17 +15,19 @@
 #include "esp_wifi.h"
 #include "nvs_flash.h"
 #include "png.h"
-#include "tinydraw/geometry.h"
+#include "tinydraw/graphics/world_canvas.h"
 
 namespace tinydraw::esp32 {
 namespace {
 
 constexpr char kSsid[] = "TinyDraw";
-constexpr std::size_t kPixelCount = static_cast<std::size_t>(kCanvasWidth * kCanvasHeight);
+constexpr int kExportWidth = WorldCanvas::kWidth;
+constexpr int kExportHeight = WorldCanvas::kHeight;
+constexpr std::size_t kPixelCount = WorldCanvas::kRequiredPixels;
 constexpr std::size_t kPngCapacity = 512U * 1024U;
 
 std::span<const std::uint16_t> export_canvas;
-std::array<png_byte, static_cast<std::size_t>(kCanvasWidth * 3)> png_row;
+std::array<png_byte, static_cast<std::size_t>(kExportWidth * 3)> png_row;
 
 constexpr char kPage[] = R"HTML(<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -100,15 +102,15 @@ esp_err_t drawing_handler(httpd_req_t* request) {
   }
 
   png_set_write_fn(png, &context, png_write, png_flush);
-  png_set_IHDR(png, info, kCanvasWidth, kCanvasHeight, 8, PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
+  png_set_IHDR(png, info, kExportWidth, kExportHeight, 8, PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
                PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
   png_set_filter(png, PNG_FILTER_TYPE_BASE, PNG_FILTER_NONE);
   png_set_compression_level(png, 1);
   png_write_info(png, info);
 
-  for (int y = 0; y < kCanvasHeight; ++y) {
-    for (int x = 0; x < kCanvasWidth; ++x) {
-      const std::uint16_t pixel = export_canvas[static_cast<std::size_t>(y * kCanvasWidth + x)];
+  for (int y = 0; y < kExportHeight; ++y) {
+    for (int x = 0; x < kExportWidth; ++x) {
+      const std::uint16_t pixel = export_canvas[static_cast<std::size_t>(y * kExportWidth + x)];
       const std::uint8_t red = static_cast<std::uint8_t>((pixel >> 11U) & 0x1FU);
       const std::uint8_t green = static_cast<std::uint8_t>((pixel >> 5U) & 0x3FU);
       const std::uint8_t blue = static_cast<std::uint8_t>(pixel & 0x1FU);
