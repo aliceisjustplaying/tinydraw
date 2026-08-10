@@ -25,6 +25,7 @@
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
 #include "tinydraw/ui/toolbar.h"
+#include "wifi_export.h"
 
 namespace {
 
@@ -490,6 +491,9 @@ void run_hardware_app() {
   tinydraw::ToolbarState toolbar;
   display.set_toolbar(toolbar);
   display.push_canvas(canvas.committed());
+  if (!tinydraw::esp32::start_wifi_export(canvas.committed())) {
+    std::printf("TINYDRAW_EXPORT_FAIL\n");
+  }
 
   tinydraw::InkConfig brush;
   brush.size = tinydraw::brush_size(toolbar.size);
