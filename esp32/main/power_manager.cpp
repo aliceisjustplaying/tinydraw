@@ -12,10 +12,15 @@ constexpr std::uint8_t kStatusRegister = 0x00;
 constexpr std::uint8_t kAdcControlRegister = 0x30;
 constexpr std::uint8_t kBatteryVoltageRegister = 0x34;
 constexpr std::uint8_t kBatteryPercentageRegister = 0xA4;
+constexpr std::uint8_t kPowerOffControlRegister = 0x22;
+constexpr std::uint8_t kPowerKeyTimingRegister = 0x27;
 constexpr std::uint8_t kBatteryPresent = 1U << 3U;
 constexpr std::uint8_t kVbusGood = 1U << 5U;
 constexpr std::uint8_t kBatteryVoltageAdc = 1U << 0U;
 constexpr std::uint8_t kChargingDirection = 1U;
+constexpr std::uint8_t kEnableLongPressShutdown = 1U << 1U;
+constexpr std::uint8_t kRestartAfterLongPress = 1U << 0U;
+constexpr std::uint8_t kPowerKeyTimingMask = 0x0FU;
 constexpr int kI2cTimeoutMs = 20;
 
 }  // namespace
@@ -43,12 +48,28 @@ PowerManager::PowerManager(i2c_master_bus_handle_t bus) {
     return;
   }
   ready_ = true;
+  power_button_ready_ = configure_power_button();
 }
 
 PowerManager::~PowerManager() {
   if (device_ != nullptr) {
     static_cast<void>(i2c_master_bus_rm_device(device_));
   }
+}
+
+bool PowerManager::configure_power_button() const {
+  std::uint8_t power_off_control = 0;
+  std::uint8_t timing = 0;
+  if (!read_register(kPowerOffControlRegister, power_off_control) ||
+      !read_register(kPowerKeyTimingRegister, timing)) {
+    return false;
+  }
+
+  power_off_control = static_cast<std::uint8_t>((power_off_control | kEnableLongPressShutdown) &
+                                                ~kRestartAfterLongPress);
+  timing = static_cast<std::uint8_t>(timing & ~kPowerKeyTimingMask);
+  return write_register(kPowerOffControlRegister, power_off_control) &&
+         write_register(kPowerKeyTimingRegister, timing);
 }
 
 PowerStatus PowerManager::read() const {

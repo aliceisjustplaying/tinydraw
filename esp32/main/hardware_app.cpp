@@ -641,10 +641,11 @@ void run_hardware_app() {
   toolbar.battery_charging = initial_power_status.charging;
   toolbar.external_power = initial_power_status.external_power;
   std::printf(
-      "TINYDRAW_POWER_READY ready=%u valid=%u battery=%d voltage_mv=%u charging=%u vbus=%u\n",
-      power.ready(), initial_power_status.valid, initial_power_status.percentage,
-      initial_power_status.battery_mv, initial_power_status.charging,
-      initial_power_status.external_power);
+      "TINYDRAW_POWER_READY ready=%u button=%u valid=%u battery=%d voltage_mv=%u "
+      "charging=%u vbus=%u\n",
+      power.ready(), power.power_button_ready(), initial_power_status.valid,
+      initial_power_status.percentage, initial_power_status.battery_mv,
+      initial_power_status.charging, initial_power_status.external_power);
   display.set_toolbar(toolbar);
   display.push_canvas(canvas.committed());
 
