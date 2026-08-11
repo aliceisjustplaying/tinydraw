@@ -15,6 +15,7 @@ add_executable(tinydraw_tests
   tile_undo_history_test.cpp
   toolbar_test.cpp
   vector_document_test.cpp
+  viewport_renderer_test.cpp
   world_canvas_test.cpp
 )
 target_link_libraries(tinydraw_tests PRIVATE tinydraw::core tinydraw_project_options)
