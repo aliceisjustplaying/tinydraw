@@ -148,7 +148,7 @@ behavior, or timing; those remain hardware checks. The active target is the V2 b
 display, CST820 touch controller, 8 MiB octal PSRAM, 16 MiB flash, and AXP2101 power manager.
 
 The physical build autosaves changed 32×32 world tiles after 500 ms idle. It samples the PMU every
-five seconds only while touch is idle. Short BOOT presses toggle demo recording and a long press
+second only while touch is idle. Short BOOT presses toggle demo recording and a long press
 replays it. The lower PMU button performs a four-second hardware shutdown and short-press cold
 boot; no sleep mode exists yet.
 

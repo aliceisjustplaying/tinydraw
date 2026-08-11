@@ -143,8 +143,8 @@ newest changes.
 ## Battery and power
 
 The AXP2101 reports percentage, battery voltage, charging direction, and USB power over
-the touch controller's I²C bus. TinyDraw samples it every five seconds while touch is
-idle, keeping PMU traffic out of the drawing path. The top-right badge is a passive
+the touch controller's I²C bus. TinyDraw samples it every second while touch is idle,
+keeping PMU traffic out of the drawing path. The top-right badge is a passive
 overlay: strokes remain in the canvas beneath it and touch passes through it.
 
 The CO5300 requires even transfer-window bounds. An odd-width battery refresh distorted
@@ -222,8 +222,8 @@ next touch position arrives 13–14 ms later. A full-canvas Undo sends 329,728 b
 visibly slower.
 
 ESP32 persistence currently keeps one autosaved drawing. It has no document picker,
-manual save slots, redundant crash-safe snapshot, or sleep mode. Battery percentage
-refreshes every five seconds. The canvas remains a fixed 2×2 raster. The RP2350 has a
+manual save slots, redundant crash-safe snapshot, or sleep mode. Battery status
+refreshes every second while touch is idle. The canvas remains a fixed 2×2 raster. The RP2350 has a
 screen-sized canvas without persistence, Undo, or pan.
 Fast RP2350 curves remain limited by the FT3168's roughly 60 Hz coordinate stream,
 and its USB framebuffer capture needs repair.

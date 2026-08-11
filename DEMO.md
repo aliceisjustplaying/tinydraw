@@ -92,5 +92,5 @@ The stability build uses a 60 MHz display clock after occasional stray lines at
 - **Why a coverage mask?** It prevents pale holes where a stroke overlaps itself.
 - **Memory?** The world uses 1.32 MB, two viewport canvases use 659 KB, and ten Undo
   entries use 3.44 MB of the board's 8 MB PSRAM.
-- **How often does battery status refresh?** Every five seconds, only while touch is idle.
+- **How often does battery status refresh?** Every second, only while touch is idle.
 - **Does it sleep?** No. The PMU button performs a full power-off and cold boot.
