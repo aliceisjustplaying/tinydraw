@@ -3,6 +3,7 @@ add_executable(tinydraw_tests
   coverage_tile_test.cpp
   demo_tape_test.cpp
   drawing_snapshot_test.cpp
+  fat16_disk_test.cpp
   host_input_test.cpp
   ink_stream_test.cpp
   perfect_freehand_test.cpp
@@ -24,6 +25,17 @@ target_include_directories(tinydraw_tests SYSTEM PRIVATE
 )
 
 add_test(NAME tinydraw_tests COMMAND tinydraw_tests)
+
+add_executable(tinydraw_fat16_image fat16_image.cpp)
+target_link_libraries(tinydraw_fat16_image PRIVATE tinydraw::core tinydraw_project_options)
+set(FAT16_IMAGE "${CMAKE_CURRENT_BINARY_DIR}/tinydraw-fat16.img")
+add_test(NAME tinydraw_fat16_generate COMMAND tinydraw_fat16_image "${FAT16_IMAGE}")
+set_tests_properties(tinydraw_fat16_generate PROPERTIES FIXTURES_SETUP fat16_image)
+find_program(FSCK_FAT NAMES fsck_msdos fsck.fat)
+if(FSCK_FAT)
+  add_test(NAME tinydraw_fat16_fsck COMMAND "${FSCK_FAT}" -n "${FAT16_IMAGE}")
+  set_tests_properties(tinydraw_fat16_fsck PROPERTIES FIXTURES_REQUIRED fat16_image)
+endif()
 
 add_executable(tinydraw_perf_characterization perf_characterization.cpp)
 target_link_libraries(tinydraw_perf_characterization PRIVATE tinydraw::core tinydraw_project_options)

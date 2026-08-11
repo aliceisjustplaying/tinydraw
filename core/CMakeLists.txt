@@ -25,6 +25,7 @@ add_library(tinydraw_core STATIC
   src/coverage_tile.cpp
   src/demo_tape.cpp
   src/drawing_snapshot.cpp
+  src/fat16_disk.cpp
   src/ink_stream.cpp
   src/perfect_freehand.cpp
   src/png_encoder.cpp
