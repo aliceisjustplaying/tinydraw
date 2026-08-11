@@ -1,0 +1,5 @@
+TINYDRAW_INTERACTIVE_PAN_V1 workload=periodic_handwriting1000 cache=3x3 band_rows=32 presented_rows=372 timing_capacity=256
+ZOOM zoom=50 gestures=0 frames=0 samples=0 direct_avg_us=0 direct_median_us=0 direct_p95_us=0 direct_max_us=0 event_avg_us=0 event_median_us=0 event_p95_us=0 event_max_us=0 miss_frames=0 max_missing_pixels=0 max_velocity_px_s=0 center_ready_us=0 full_ready_us=0
+ZOOM zoom=100 gestures=26 frames=108 samples=108 direct_avg_us=27434 direct_median_us=26028 direct_p95_us=31068 direct_max_us=33478 event_avg_us=32227 event_median_us=30676 event_p95_us=41119 event_max_us=52277 miss_frames=0 max_missing_pixels=0 max_velocity_px_s=6307 center_ready_us=3177921 full_ready_us=27906720
+ZOOM zoom=200 gestures=10 frames=185 samples=185 direct_avg_us=30066 direct_median_us=30313 direct_p95_us=33381 direct_max_us=33519 event_avg_us=37126 event_median_us=36604 event_p95_us=45529 event_max_us=60988 miss_frames=184 max_missing_pixels=136896 max_velocity_px_s=4063 center_ready_us=3173831 full_ready_us=0
+DONE

@@ -1,0 +1,2 @@
+TINYDRAW_RASTER_PAN_V1 frames=30 pixels=368 rows=372 delta=32 min_us=25445 median_us=25452 average_us=25451 max_us=25458
+DONE

@@ -37,8 +37,14 @@
 #include "tinydraw/ink/ribbon_geometry.h"
 #include "tinydraw/ui/toolbar.h"
 #include "usb_export.h"
+#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+#include "interactive_pan_benchmark.h"
+#endif
 #ifdef TINYDRAW_PHASE2_PROTOTYPE
 #include "phase2_prototype_runner.h"
+#endif
+#ifdef TINYDRAW_RASTER_PAN_BENCHMARK
+#include "raster_pan_benchmark.h"
 #endif
 #ifdef TINYDRAW_VECTOR_BENCHMARK
 #include "vector_benchmark_runner.h"
@@ -60,8 +66,13 @@ constexpr gpio_num_t kDemoButton = GPIO_NUM_0;
 constexpr std::uint32_t kDemoLongPressUs = 800'000U;
 constexpr std::uint32_t kPowerRefreshUs = 1'000'000U;
 constexpr std::size_t kDemoCapacity = 8192U;
+#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+constexpr std::size_t kVectorStrokeCapacity = 1'000U;
+constexpr std::size_t kVectorSampleCapacity = 12'000U;
+#else
 constexpr std::size_t kVectorStrokeCapacity = 512U;
 constexpr std::size_t kVectorSampleCapacity = 8192U;
+#endif
 constexpr std::uint16_t kIoExpanderAddress = 0x20;
 constexpr std::uint8_t kIoExpanderOutputRegister = 0x01;
 constexpr std::uint8_t kIoExpanderConfigRegister = 0x03;
@@ -687,6 +698,7 @@ void touch_task(void* argument) {
       }
     }
 
+#ifndef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
     const bool next_raw_button_down = gpio_get_level(kDemoButton) == 0;
     if (next_raw_button_down != raw_button_down) {
       raw_button_down = next_raw_button_down;
@@ -716,6 +728,7 @@ void touch_task(void* argument) {
       replay_demo(context, recorded.empty() ? context.built_in_demo : recorded);
       long_press_handled = true;
     }
+#endif
     if (!touching && context.power != nullptr && context.power->ready() &&
         now - power_sampled_us >= kPowerRefreshUs) {
       const auto power_status = context.power->read();
@@ -800,6 +813,10 @@ void run_hardware_app() {
       initial_power_status.charging, initial_power_status.external_power);
   display.set_toolbar(toolbar);
   display.push_canvas(canvas.committed());
+#ifdef TINYDRAW_RASTER_PAN_BENCHMARK
+  vTaskDelay(pdMS_TO_TICKS(500));
+  tinydraw::esp32::run_raster_pan_benchmark(canvas.world(), display, kMainOverlayTop);
+#endif
 #ifdef TINYDRAW_VECTOR_BENCHMARK
   toolbar.recording = true;
   display.set_toolbar(toolbar);
@@ -834,7 +851,7 @@ void run_hardware_app() {
   display.set_toolbar(toolbar);
   display.refresh_toolbar(canvas.committed());
 #endif
-#ifndef TINYDRAW_PHASE2_PROTOTYPE
+#if !defined(TINYDRAW_PHASE2_PROTOTYPE) && !defined(TINYDRAW_INTERACTIVE_PAN_BENCHMARK)
   static_cast<void>(tinydraw::esp32::start_time_sync(clock));
 #endif
 
@@ -870,6 +887,9 @@ void run_hardware_app() {
   std::int64_t pan_render_us = 0;
   std::int64_t maximum_pan_render_us = 0;
   std::uint32_t export_toast_until_us = 0;
+#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+  tinydraw::esp32::InteractivePanBenchmark* interactive_pan_benchmark = nullptr;
+#endif
 
   const auto close_popups = [&] {
     toolbar.tools_open = false;
@@ -895,15 +915,29 @@ void run_hardware_app() {
     ink.set_config(config);
     close_popups();
   };
-  const auto pan_to = [&](tinydraw::Point point) {
+  const auto pan_to = [&](tinydraw::Point point, std::uint32_t event_us) {
     const int delta_x = static_cast<int>(std::lround(point.x - pan_start_touch.x));
     const int delta_y = static_cast<int>(std::lround(point.y - pan_start_touch.y));
     const auto started = esp_timer_get_time();
     if (!canvas.world().move_to({pan_start_origin.x - delta_x, pan_start_origin.y - delta_y})) {
       return;
     }
+#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+    tinydraw::esp32::interactive_pan_benchmark_view_changed(*interactive_pan_benchmark,
+                                                            canvas.world().origin());
+    tinydraw::esp32::interactive_pan_benchmark_lock_cache(*interactive_pan_benchmark);
+#endif
     display.push_world(canvas.world().pixels(), canvas.world().origin(), kMainOverlayTop);
-    const auto elapsed = esp_timer_get_time() - started;
+    const auto finished = esp_timer_get_time();
+    const auto elapsed = finished - started;
+#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+    // Snapshot readiness before allowing the renderer to publish another band,
+    // so miss metrics describe the pixels that were actually presented.
+    tinydraw::esp32::interactive_pan_benchmark_record_frame(
+        *interactive_pan_benchmark, canvas.world().origin(), event_us,
+        static_cast<std::uint32_t>(elapsed), static_cast<std::uint32_t>(finished) - event_us);
+    tinydraw::esp32::interactive_pan_benchmark_unlock_cache(*interactive_pan_benchmark);
+#endif
     ++pan_frames;
     pan_render_us += elapsed;
     maximum_pan_render_us = std::max(maximum_pan_render_us, elapsed);
@@ -1018,7 +1052,44 @@ void run_hardware_app() {
     update_toolbar();
   };
   const auto toolbar_action = [&](tinydraw::Point point) {
-    switch (tinydraw::toolbar_action_at(point, toolbar)) {
+    const auto action = tinydraw::toolbar_action_at(point, toolbar);
+#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+    if (action == tinydraw::ToolbarAction::kSelectSmall ||
+        action == tinydraw::ToolbarAction::kSelectMedium ||
+        action == tinydraw::ToolbarAction::kSelectLarge) {
+      const int zoom_percent = action == tinydraw::ToolbarAction::kSelectSmall    ? 50
+                               : action == tinydraw::ToolbarAction::kSelectMedium ? 100
+                                                                                  : 200;
+      toolbar.size = action == tinydraw::ToolbarAction::kSelectSmall    ? tinydraw::PenSize::kSmall
+                     : action == tinydraw::ToolbarAction::kSelectMedium ? tinydraw::PenSize::kMedium
+                                                                        : tinydraw::PenSize::kLarge;
+      close_popups();
+      if (!tinydraw::esp32::interactive_pan_benchmark_set_zoom(*interactive_pan_benchmark,
+                                                               zoom_percent)) {
+        std::printf("TINYDRAW_INTERACTIVE_PAN_FAIL zoom=%d\n", zoom_percent);
+      }
+      update_toolbar();
+      tinydraw::esp32::interactive_pan_benchmark_lock_cache(*interactive_pan_benchmark);
+      display.push_world(canvas.world().pixels(), canvas.world().origin(), kMainOverlayTop);
+      tinydraw::esp32::interactive_pan_benchmark_unlock_cache(*interactive_pan_benchmark);
+      return;
+    }
+    if (action == tinydraw::ToolbarAction::kSelectExtraLarge) {
+      close_popups();
+      toolbar.recording = false;
+      static_cast<void>(
+          tinydraw::esp32::finish_interactive_pan_benchmark(*interactive_pan_benchmark));
+      update_toolbar();
+      return;
+    }
+    if (action != tinydraw::ToolbarAction::kToggleSizes &&
+        action != tinydraw::ToolbarAction::kNone) {
+      close_popups();
+      update_toolbar();
+      return;
+    }
+#endif
+    switch (action) {
       case tinydraw::ToolbarAction::kSelectPen:
         toolbar.tool = tinydraw::DrawingTool::kPen;
         close_popups();
@@ -1119,6 +1190,27 @@ void run_hardware_app() {
     std::printf("TINYDRAW_HARDWARE_FAIL touch_task=0\n");
     return;
   }
+
+#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+  drawing_store.suspend();
+  toolbar.tool = tinydraw::DrawingTool::kPan;
+  toolbar.size = tinydraw::PenSize::kMedium;
+  toolbar.recording = true;
+  close_popups();
+  display.set_toolbar(toolbar);
+  display.refresh_toolbar(canvas.committed());
+  interactive_pan_benchmark = tinydraw::esp32::start_interactive_pan_benchmark(
+      vector_document, canvas.world(), canvas.visible(), kMainOverlayTop);
+  if (interactive_pan_benchmark == nullptr) {
+    std::printf("TINYDRAW_HARDWARE_FAIL interactive_pan_benchmark=0\n");
+    return;
+  }
+  xQueueReset(touch_queue);
+  tinydraw::esp32::interactive_pan_benchmark_lock_cache(*interactive_pan_benchmark);
+  display.push_world(canvas.world().pixels(), canvas.world().origin(), kMainOverlayTop);
+  tinydraw::esp32::interactive_pan_benchmark_unlock_cache(*interactive_pan_benchmark);
+  std::printf("TINYDRAW_INTERACTIVE_PAN_READY zoom=100 controls=S:50 M:100 L:200 XL:finish\n");
+#endif
 
 #ifdef TINYDRAW_PHASE2_PROTOTYPE
   toolbar.recording = true;
@@ -1251,13 +1343,19 @@ void run_hardware_app() {
       } else {
         close_popups();
         if (toolbar.tool == tinydraw::DrawingTool::kPan) {
+#ifndef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
           static_cast<void>(canvas.world().capture(canvas.committed()));
+#endif
           pan_start_touch = point;
           pan_start_origin = canvas.world().origin();
           pan_frames = 0;
           pan_render_us = 0;
           maximum_pan_render_us = 0;
           display.reset_timing();
+#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+          tinydraw::esp32::interactive_pan_benchmark_begin_pan(
+              *interactive_pan_benchmark, pan_start_origin, event.timestamp_us);
+#endif
           panning = true;
           continue;
         }
@@ -1307,7 +1405,7 @@ void run_hardware_app() {
     } else if (touching && pressed && panning &&
                (point.x != last_touch.x || point.y != last_touch.y)) {
       last_touch = point;
-      pan_to(point);
+      pan_to(point, event.timestamp_us);
     } else if (touching && pressed && ink.active() &&
                (point.x != last_touch.x || point.y != last_touch.y)) {
       last_touch = point;
@@ -1355,15 +1453,20 @@ void run_hardware_app() {
         continue;
       }
       if (panning) {
-        pan_to(point);
+        pan_to(point, event.timestamp_us);
         panning = false;
+        std::int64_t settle_us = 0;
+#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+        tinydraw::esp32::interactive_pan_benchmark_end_pan(*interactive_pan_benchmark);
+#else
         const auto settle_started = esp_timer_get_time();
         static_cast<void>(
             canvas.world().show(canvas.world().origin(), canvas.committed(), canvas.visible()));
-        const auto settle_us = esp_timer_get_time() - settle_started;
+        settle_us = esp_timer_get_time() - settle_started;
         if (!demo_replaying && !persistence_resync_needed) {
           drawing_store.save_origin(canvas.world());
         }
+#endif
         const auto bytes = static_cast<std::uint64_t>(pan_frames) * tinydraw::kCanvasWidth *
                            kMainOverlayTop * sizeof(std::uint16_t);
         std::printf(

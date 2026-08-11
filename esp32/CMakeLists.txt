@@ -5,6 +5,21 @@ option(TINYDRAW_QEMU "Build against QEMU's quad-PSRAM model" OFF)
 option(TINYDRAW_QEMU_GRAPHICS "Enable the QEMU-only virtual display" OFF)
 option(TINYDRAW_VECTOR_BENCHMARK "Run vector viewport benchmarks after startup" OFF)
 option(TINYDRAW_PHASE2_PROTOTYPE "Run cached-pan/progressive-zoom prototype after startup" OFF)
+option(TINYDRAW_RASTER_PAN_BENCHMARK "Measure the production raster pan path after startup" OFF)
+option(TINYDRAW_INTERACTIVE_PAN_BENCHMARK "Run the interactive vector-cache pan prototype" OFF)
+set(TINYDRAW_BENCHMARK_MODE_COUNT 0)
+foreach(TINYDRAW_BENCHMARK_MODE
+    TINYDRAW_VECTOR_BENCHMARK
+    TINYDRAW_PHASE2_PROTOTYPE
+    TINYDRAW_RASTER_PAN_BENCHMARK
+    TINYDRAW_INTERACTIVE_PAN_BENCHMARK)
+  if(${TINYDRAW_BENCHMARK_MODE})
+    math(EXPR TINYDRAW_BENCHMARK_MODE_COUNT "${TINYDRAW_BENCHMARK_MODE_COUNT} + 1")
+  endif()
+endforeach()
+if(TINYDRAW_BENCHMARK_MODE_COUNT GREATER 1)
+  message(FATAL_ERROR "Enable only one TinyDraw benchmark mode per build")
+endif()
 set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig")
 if(TINYDRAW_QEMU)
   set(SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.qemu.defaults")
