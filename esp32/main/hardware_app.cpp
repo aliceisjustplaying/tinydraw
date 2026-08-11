@@ -48,6 +48,15 @@ constexpr gpio_num_t kDemoButton = GPIO_NUM_0;
 constexpr std::uint32_t kDemoLongPressUs = 800'000U;
 constexpr std::uint32_t kPowerRefreshUs = 5'000'000U;
 constexpr std::size_t kDemoCapacity = 8192U;
+constexpr std::uint16_t kIoExpanderAddress = 0x20;
+constexpr std::uint8_t kIoExpanderOutputRegister = 0x01;
+constexpr std::uint8_t kIoExpanderConfigRegister = 0x03;
+constexpr std::uint8_t kIoExpanderLcdReset = 1U << 0U;
+constexpr std::uint8_t kIoExpanderDisplayPower = 1U << 1U;
+constexpr std::uint8_t kIoExpanderTouchReset = 1U << 2U;
+constexpr std::uint8_t kIoExpanderSdChipSelect = 1U << 7U;
+constexpr std::uint8_t kIoExpanderOutputs =
+    kIoExpanderLcdReset | kIoExpanderDisplayPower | kIoExpanderTouchReset | kIoExpanderSdChipSelect;
 
 alignas(4) DMA_ATTR
     std::array<std::array<std::uint16_t, kTransferPixels>, kTransferQueueDepth> transfer_pixels;
@@ -96,6 +105,45 @@ constexpr std::uint32_t swap_pixel_pair(std::uint16_t first, std::uint16_t secon
 
 static_assert(swap_pixel_pair(0x1234U, 0xABCDU) == 0xCDAB3412U);
 
+bool reset_panel_power() {
+  i2c_master_bus_config_t bus_config{};
+  bus_config.i2c_port = I2C_NUM_0;
+  bus_config.sda_io_num = GPIO_NUM_15;
+  bus_config.scl_io_num = GPIO_NUM_14;
+  bus_config.clk_source = I2C_CLK_SRC_DEFAULT;
+  bus_config.glitch_ignore_cnt = 7;
+  bus_config.flags.enable_internal_pullup = true;
+  i2c_master_bus_handle_t bus = nullptr;
+  if (i2c_new_master_bus(&bus_config, &bus) != ESP_OK) {
+    return false;
+  }
+
+  i2c_device_config_t device_config{};
+  device_config.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+  device_config.device_address = kIoExpanderAddress;
+  device_config.scl_speed_hz = 400000;
+  i2c_master_dev_handle_t device = nullptr;
+  if (i2c_master_bus_add_device(bus, &device_config, &device) != ESP_OK) {
+    static_cast<void>(i2c_del_master_bus(bus));
+    return false;
+  }
+
+  const auto write = [&](std::uint8_t address, std::uint8_t value) {
+    const std::array payload{address, value};
+    return i2c_master_transmit(device, payload.data(), payload.size(), 100) == ESP_OK;
+  };
+  const bool configured =
+      write(kIoExpanderConfigRegister, static_cast<std::uint8_t>(~kIoExpanderOutputs));
+  const bool powered_down = configured && write(kIoExpanderOutputRegister, kIoExpanderSdChipSelect);
+  vTaskDelay(pdMS_TO_TICKS(20));
+  const bool powered_up = powered_down && write(kIoExpanderOutputRegister, kIoExpanderOutputs);
+  vTaskDelay(pdMS_TO_TICKS(150));
+
+  const bool removed = i2c_master_bus_rm_device(device) == ESP_OK;
+  const bool deleted = i2c_del_master_bus(bus) == ESP_OK;
+  return powered_up && removed && deleted;
+}
+
 int palette_overlay_top(tinydraw::ToolbarState state) {
   state.confirm_new = false;
   return tinydraw::toolbar_overlay_top(state) & ~1;
@@ -104,6 +152,7 @@ int palette_overlay_top(tinydraw::ToolbarState state) {
 class PhysicalDisplay final : public tinydraw::DisplayBackend {
  public:
   PhysicalDisplay() {
+    std::printf("TINYDRAW_PANEL_HARD_RESET=%u\n", reset_panel_power());
     transfer_semaphore = xSemaphoreCreateCountingStatic(kTransferQueueDepth, kTransferQueueDepth,
                                                         &transfer_semaphore_storage);
     overlay_ = static_cast<std::uint16_t*>(heap_caps_malloc(
@@ -283,8 +332,7 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
               static_cast<std::size_t>(panel_y * tinydraw::kCanvasWidth + panel_x);
           const auto point = tinydraw::Point{static_cast<float>(panel_x) + 0.5F,
                                              static_cast<float>(panel_y) + 0.5F};
-          const bool toolbar_pixel =
-              panel_y >= toolbar_top_ && tinydraw::toolbar_overlay_contains(point, toolbar_);
+          const bool toolbar_pixel = tinydraw::toolbar_overlay_contains(point, toolbar_);
           const std::uint16_t pixel = toolbar_pixel ? overlay_[canvas] : pixels[source];
           transfer[destination] = swap_bytes(pixel);
         }
