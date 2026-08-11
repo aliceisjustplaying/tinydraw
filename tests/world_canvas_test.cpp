@@ -27,8 +27,10 @@ TEST_CASE("a captured viewport can be shown from another world origin") {
   std::vector<std::uint16_t> visible(tinydraw::WorldCanvas::kViewportPixels, 0U);
 
   const auto initial = world.origin();
-  CHECK(initial.x == tinydraw::kCanvasWidth / 2);
-  CHECK(initial.y == tinydraw::kCanvasHeight / 2);
+  CHECK(tinydraw::WorldCanvas::kWidth == tinydraw::kCanvasWidth * 3);
+  CHECK(tinydraw::WorldCanvas::kHeight == tinydraw::kCanvasHeight * 3);
+  CHECK(initial.x == tinydraw::kCanvasWidth);
+  CHECK(initial.y == tinydraw::kCanvasHeight);
   committed[screen_index(100, 100)] = kInk;
   CHECK(world.capture(committed));
 
@@ -90,7 +92,6 @@ TEST_CASE("world origins clamp to the pannable area and clear back to center") {
   committed[screen_index(20, 20)] = kInk;
   CHECK(world.capture(committed));
   CHECK(world.clear(committed));
-  CHECK(world.origin() ==
-        tinydraw::ViewOrigin{tinydraw::kCanvasWidth / 2, tinydraw::kCanvasHeight / 2});
+  CHECK(world.origin() == tinydraw::ViewOrigin{tinydraw::kCanvasWidth, tinydraw::kCanvasHeight});
   CHECK(committed[screen_index(20, 20)] == kWhite);
 }

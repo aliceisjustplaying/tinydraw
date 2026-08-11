@@ -52,15 +52,18 @@ TEST_CASE("drawing snapshot schedules only sectors touched by a stroke") {
   snapshot.include_segment({40.0F, 40.0F}, {42.0F, 42.0F}, 2.0F, {0, 0});
   CHECK(snapshot.schedule({0, 0}) == 1U);
   CHECK(snapshot.pending_sector_count() == 1U);
-  CHECK(snapshot.sector_pending(12U));
+  constexpr std::size_t touched_tile =
+      static_cast<std::size_t>(tinydraw::DrawingSnapshot::kTilesAcross + 1);
+  constexpr std::size_t touched_sector = touched_tile / tinydraw::DrawingSnapshot::kTilesPerSector;
+  CHECK(snapshot.sector_pending(touched_sector));
 
   std::vector<std::uint16_t> sector(tinydraw::DrawingSnapshot::kSectorPixels);
-  REQUIRE(snapshot.copy_sector(12U, world, sector));
-  CHECK(snapshot.sector_matches(12U, world, sector));
+  REQUIRE(snapshot.copy_sector(touched_sector, world, sector));
+  CHECK(snapshot.sector_matches(touched_sector, world, sector));
   world[world_index(40, 40)] = kWhite;
-  CHECK_FALSE(snapshot.sector_matches(12U, world, sector));
+  CHECK_FALSE(snapshot.sector_matches(touched_sector, world, sector));
 
-  snapshot.acknowledge_sector(12U);
+  snapshot.acknowledge_sector(touched_sector);
   CHECK(snapshot.pending_sector_count() == 0U);
 }
 
@@ -68,4 +71,24 @@ TEST_CASE("drawing snapshot marks every tile crossed by a sparse segment") {
   tinydraw::DrawingSnapshot snapshot;
   snapshot.include_segment({30.0F, 30.0F}, {70.0F, 70.0F}, 3.0F, {0, 0});
   CHECK(snapshot.schedule({0, 0}) == 9U);
+}
+
+TEST_CASE("drawing snapshot pads and restores the partial right edge tile") {
+  tinydraw::DrawingSnapshot snapshot;
+  std::vector<std::uint16_t> world(tinydraw::WorldCanvas::kRequiredPixels, kWhite);
+  const int edge_x = tinydraw::WorldCanvas::kWidth - 1;
+  const int edge_y = tinydraw::WorldCanvas::kHeight - 1;
+  world[world_index(edge_x, edge_y)] = kBlue;
+
+  std::vector<std::uint16_t> sector(tinydraw::DrawingSnapshot::kSectorPixels, 0U);
+  REQUIRE(snapshot.copy_sector(tinydraw::DrawingSnapshot::kSectorCount - 1U, world, sector));
+  constexpr std::size_t second_tile = tinydraw::DrawingSnapshot::kTilePixels;
+  const std::size_t edge_pixel =
+      second_tile + 31U * static_cast<std::size_t>(tinydraw::DrawingSnapshot::kTileSize) + 15U;
+  CHECK(sector[edge_pixel] == kBlue);
+  CHECK(sector[edge_pixel + 1U] == kWhite);
+
+  std::vector<std::uint16_t> restored(world.size(), 0U);
+  REQUIRE(snapshot.load_sector(tinydraw::DrawingSnapshot::kSectorCount - 1U, sector, restored));
+  CHECK(restored[world_index(edge_x, edge_y)] == kBlue);
 }

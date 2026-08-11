@@ -707,6 +707,12 @@ void run_hardware_app() {
   } else {
     std::printf("TINYDRAW_AUTOSAVE_DISABLED\n");
   }
+  std::printf(
+      "TINYDRAW_PSRAM world_bytes=%lu free=%lu largest=%lu minimum=%lu\n",
+      static_cast<unsigned long>(tinydraw::WorldCanvas::kRequiredPixels * sizeof(std::uint16_t)),
+      static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)),
+      static_cast<unsigned long>(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM)),
+      static_cast<unsigned long>(heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM)));
 
   const auto initial_power_status = power.read();
   tinydraw::esp32::PowerStatus current_power_status = initial_power_status;

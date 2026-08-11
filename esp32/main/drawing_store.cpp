@@ -22,7 +22,7 @@ namespace {
 constexpr char kPartitionLabel[] = "drawing";
 constexpr auto kPartitionSubtype = static_cast<esp_partition_subtype_t>(0x40);
 constexpr std::uint32_t kHeaderMagic = 0x57415244U;
-constexpr std::uint32_t kHeaderVersion = 1U;
+constexpr std::uint32_t kHeaderVersion = 2U;
 constexpr std::size_t kHeaderBytes = DrawingSnapshot::kSectorBytes;
 constexpr std::size_t kDataOffset = kHeaderBytes;
 constexpr std::size_t kRequiredPartitionBytes =

@@ -263,7 +263,7 @@ int pan_e2e() {
     std::fprintf(stderr, "pannable canvas E2E failed\n");
     return EXIT_FAILURE;
   }
-  std::printf("TINYDRAW_PAN_OK world=2x2 draw=1 undo_across_views=1 exact=1\n");
+  std::printf("TINYDRAW_PAN_OK world=3x3 draw=1 undo_across_views=1 exact=1\n");
   return EXIT_SUCCESS;
 }
 

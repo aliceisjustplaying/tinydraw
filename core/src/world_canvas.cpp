@@ -101,7 +101,7 @@ bool WorldCanvas::clear(std::span<std::uint16_t> committed, std::span<std::uint1
     return false;
   }
   std::fill_n(storage_.begin(), kRequiredPixels, kBackground);
-  origin_ = {kCanvasWidth / 2, kCanvasHeight / 2};
+  origin_ = {(kWidth - kCanvasWidth) / 2, (kHeight - kCanvasHeight) / 2};
   std::fill_n(committed.begin(), kViewportPixels, kBackground);
   if (!visible.empty()) {
     std::fill_n(visible.begin(), kViewportPixels, kBackground);

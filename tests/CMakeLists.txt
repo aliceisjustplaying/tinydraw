@@ -203,7 +203,7 @@ if(TARGET tinydraw_host)
 
   add_test(NAME tinydraw_pan_e2e COMMAND tinydraw_host --pan-e2e)
   set_tests_properties(tinydraw_pan_e2e PROPERTIES
-    PASS_REGULAR_EXPRESSION "TINYDRAW_PAN_OK world=2x2 draw=1 undo_across_views=1 exact=1"
+    PASS_REGULAR_EXPRESSION "TINYDRAW_PAN_OK world=3x3 draw=1 undo_across_views=1 exact=1"
     TIMEOUT 5
   )
 endif()
