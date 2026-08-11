@@ -25,7 +25,7 @@ constexpr int kDialogLeft = 28;
 constexpr int kDialogTop = 126;
 constexpr int kDialogRight = 340;
 constexpr int kDialogBottom = 286;
-constexpr int kBatteryLeft = 244;
+constexpr int kBatteryLeft = 228;
 constexpr int kBatteryTop = 18;
 constexpr int kBatteryRight = 340;
 constexpr int kBatteryBottom = 56;
@@ -224,18 +224,21 @@ std::array<std::uint8_t, 7> glyph_rows(char character) {
 }
 
 void draw_text(std::span<std::uint16_t> canvas, int width, int height, int x, int y,
-               std::string_view text, std::uint16_t color, int scale = 2) {
+               std::string_view text, std::uint16_t color, int scale = 2,
+               int scale_denominator = 1) {
   for (const char character : text) {
     const auto rows = glyph_rows(character);
     for (int row = 0; row < 7; ++row) {
       for (int column = 0; column < 5; ++column) {
         if ((rows[static_cast<std::size_t>(row)] & (1U << (4 - column))) != 0U) {
-          fill_rect(canvas, width, height, x + column * scale, y + row * scale,
-                    x + (column + 1) * scale, y + (row + 1) * scale, color);
+          fill_rect(canvas, width, height, x + column * scale / scale_denominator,
+                    y + row * scale / scale_denominator,
+                    x + (column + 1) * scale / scale_denominator,
+                    y + (row + 1) * scale / scale_denominator, color);
         }
       }
     }
-    x += 6 * scale;
+    x += 6 * scale / scale_denominator;
   }
 }
 
@@ -253,9 +256,9 @@ void draw_battery(std::span<std::uint16_t> canvas, int width, int height,
   rounded_rect(canvas, width, height, kBatteryLeft, kBatteryTop, kBatteryRight, kBatteryBottom, 8,
                kWhite);
 
-  constexpr int icon_left = 252;
+  constexpr int icon_left = 236;
   constexpr int icon_top = 27;
-  constexpr int icon_right = 282;
+  constexpr int icon_right = 266;
   constexpr int icon_bottom = 49;
   const std::uint16_t outline = state.battery_charging ? kSelected : kInk;
   fill_rect(canvas, width, height, icon_left, icon_top, icon_right, icon_top + 2, outline);
@@ -285,10 +288,10 @@ void draw_battery(std::span<std::uint16_t> canvas, int width, int height,
     label[length++] = static_cast<char>('0' + (percentage / 10) % 10);
   }
   label[length++] = static_cast<char>('0' + percentage % 10);
-  if (percentage < 100) {
-    label[length++] = '%';
-  }
-  draw_text(canvas, width, height, 290, 30, std::string_view(label.data(), length), kInk, 2);
+  label[length++] = '%';
+  constexpr int text_advance = 6 * 9 / 4;
+  const int text_x = kBatteryRight - 8 - static_cast<int>(length) * text_advance;
+  draw_text(canvas, width, height, text_x, 29, std::string_view(label.data(), length), kInk, 9, 4);
 }
 
 void draw_new_dialog(std::span<std::uint16_t> canvas, int width, int height) {
