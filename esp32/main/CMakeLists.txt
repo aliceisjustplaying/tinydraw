@@ -48,9 +48,9 @@ idf_component_register(
 )
 
 target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_20)
+idf_component_get_property(TINYUSB_LIB espressif__tinyusb COMPONENT_LIB)
+target_include_directories(${TINYUSB_LIB} PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
 if(NOT TINYDRAW_QEMU)
-  idf_component_get_property(TINYUSB_LIB espressif__tinyusb COMPONENT_LIB)
-  target_include_directories(${TINYUSB_LIB} PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
   target_compile_definitions(${COMPONENT_LIB} PRIVATE
     MEM_SHRINK=3
     PNG_MAX_BUFFERED_PIXELS=3313
