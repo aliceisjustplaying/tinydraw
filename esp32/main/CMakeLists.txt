@@ -17,10 +17,12 @@ if(NOT TINYDRAW_QEMU)
     "hardware_app.cpp"
     "image_export_store.cpp"
     "power_manager.cpp"
+    "usb_export.cpp"
+    "${TINYDRAW_CORE}/src/fat16_disk.cpp"
     "${TINYDRAW_CORE}/src/png_encoder.cpp"
     ${TINYDRAW_PNGENC_SRCS}
   )
-  list(APPEND TINYDRAW_PLATFORM_REQUIRES esp_lcd_co5300 esp_lcd_touch_cst816s)
+  list(APPEND TINYDRAW_PLATFORM_REQUIRES esp_lcd_co5300 esp_lcd_touch_cst816s tinyusb esp_hw_support)
 endif()
 
 idf_component_register(
@@ -40,13 +42,15 @@ idf_component_register(
     "${TINYDRAW_CORE}/src/tile_undo_history.cpp"
     "${TINYDRAW_CORE}/src/toolbar.cpp"
     "${TINYDRAW_CORE}/src/world_canvas.cpp"
-  INCLUDE_DIRS "${TINYDRAW_CORE}/include"
+  INCLUDE_DIRS "." "${TINYDRAW_CORE}/include"
   PRIV_INCLUDE_DIRS "${TINYDRAW_PNGENC}"
   PRIV_REQUIRES ${TINYDRAW_PLATFORM_REQUIRES} esp_partition esp_psram esp_timer
 )
 
 target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_20)
 if(NOT TINYDRAW_QEMU)
+  idf_component_get_property(TINYUSB_LIB espressif__tinyusb COMPONENT_LIB)
+  target_include_directories(${TINYUSB_LIB} PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
   target_compile_definitions(${COMPONENT_LIB} PRIVATE
     MEM_SHRINK=3
     PNG_MAX_BUFFERED_PIXELS=3313

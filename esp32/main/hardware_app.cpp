@@ -32,6 +32,7 @@
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
 #include "tinydraw/ui/toolbar.h"
+#include "usb_export.h"
 
 namespace {
 
@@ -729,6 +730,7 @@ void run_hardware_app() {
 
   tinydraw::esp32::DrawingStore drawing_store;
   tinydraw::esp32::ImageExportStore image_export_store;
+  tinydraw::esp32::UsbExport usb_export(image_export_store);
   if (drawing_store.ready()) {
     if (!drawing_store.restore(canvas.world(), canvas.committed(), canvas.visible())) {
       std::printf("TINYDRAW_AUTOSAVE_RESTORE_FAIL\n");
@@ -908,22 +910,27 @@ void run_hardware_app() {
   };
   const auto export_image = [&] {
     reset_stroke();
+    usb_export.prepare_export();
     static_cast<void>(canvas.world().capture(canvas.committed()));
     toolbar.exporting = true;
     toolbar.export_ready = false;
+    toolbar.export_toast = true;
+    close_popups();
     update_toolbar();
     vTaskDelay(pdMS_TO_TICKS(20));
     const auto stats = image_export_store.encode(canvas.world().pixels());
-    toolbar.exporting = false;
-    toolbar.export_ready = stats.success;
-    toolbar.export_toast = true;
-    export_toast_until_us = timestamp_us() + 3'000'000U;
-    close_popups();
-    update_toolbar();
     std::printf("TINYDRAW_EXPORT success=%u bytes=%lu elapsed_us=%lld free_psram=%lu\n",
                 stats.success, static_cast<unsigned long>(stats.bytes),
                 static_cast<long long>(stats.elapsed_us),
                 static_cast<unsigned long>(stats.free_psram));
+    std::fflush(stdout);
+    const bool usb_ready = usb_export.finish_export(stats.success);
+    toolbar.exporting = false;
+    toolbar.export_ready = stats.success && usb_ready;
+    toolbar.export_toast = true;
+    export_toast_until_us = timestamp_us() + 3'000'000U;
+    close_popups();
+    update_toolbar();
   };
   const auto toolbar_action = [&](tinydraw::Point point) {
     switch (tinydraw::toolbar_action_at(point, toolbar)) {

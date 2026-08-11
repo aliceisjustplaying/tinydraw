@@ -320,8 +320,12 @@ void draw_export_toast(std::span<std::uint16_t> canvas, int width, int height,
   rounded_rect(canvas, width, height, kToastLeft - 1, kToastTop - 1, kToastRight + 1,
                kToastBottom + 1, 12, kBorder);
   rounded_rect(canvas, width, height, kToastLeft, kToastTop, kToastRight, kToastBottom, 11, kWhite);
-  draw_text(canvas, width, height, 139, 84, state.export_ready ? "SAVED" : "ERROR",
-            state.export_ready ? kInk : kRecording, 3);
+  if (state.exporting) {
+    draw_text(canvas, width, height, 130, 84, "SAVING", kInk, 3);
+  } else {
+    draw_text(canvas, width, height, 139, 84, state.export_ready ? "SAVED" : "ERROR",
+              state.export_ready ? kInk : kRecording, 3);
+  }
 }
 
 void draw_new_dialog(std::span<std::uint16_t> canvas, int width, int height) {

@@ -57,6 +57,22 @@ dependencies:
       registry_url: https://components.espressif.com/
       type: service
     version: 1.1.1~2
+  espressif/tinyusb:
+    component_hash: a72b7d67472914ab76309340fd50d578b31e310963d45ad0f81144bde3314752
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    targets:
+    - esp32s2
+    - esp32s3
+    - esp32p4
+    - esp32h4
+    - esp32s31
+    version: 0.21.0~1
   idf:
     source:
       type: idf
@@ -65,6 +81,7 @@ direct_dependencies:
 - espressif/esp_lcd_co5300
 - espressif/esp_lcd_qemu_rgb
 - espressif/esp_lcd_touch_cst816s
-manifest_hash: 7217df0d53c40a39bf514920b3e8a08afdb005c794502125e291cd124962cc0a
+- espressif/tinyusb
+manifest_hash: f59ef50049373bd64753df4b795d953357f95b67c66518fc5abac7d1589cea19
 target: esp32s3
 version: 3.0.0
