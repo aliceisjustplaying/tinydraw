@@ -404,6 +404,7 @@ warm-cache pass does not imply a cold-cache pass.
    1,000-stroke document after applying LOD and cache reuse?
 6. What evidence would justify stopping rather than building the next
    prototype?
+7. What other tricks/moves/etc may we be missing?
 
 ## Evidence and code references
 
@@ -435,7 +436,3 @@ Relevant code:
 - `esp32/main/raster_pan_benchmark.cpp`
 - `esp32/main/interactive_pan_benchmark.cpp`
 - `esp32/main/hardware_app.cpp`
-
-The working tree is intentionally dirty. The raster-pan and interactive-pan
-prototype code, reports, and findings have not been committed at the time of
-this brief.
