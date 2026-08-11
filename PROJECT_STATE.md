@@ -7,10 +7,10 @@ performance history, and `INITIAL_RESEARCH.md` contains the original product spe
 
 ## Resume point
 
-ESP32 battery status, PMU off/on, and autosave restore work on the physical board.
-The sanitizer, release, performance, QEMU, ESP32, and RP2350 checks pass. Plan the
-3×3 canvas next, then continue with USB-C image export. The RP2350 remains at its
-documented reduced scope.
+The ESP32 now boots with a 1104×1344 world, ten Undos, autosave, battery status,
+and PMU off/on. It has 889,416 bytes of PSRAM free after startup. Complete the
+physical 3×3 edge, Undo, and power-cycle checks, then continue with USB-C image
+export. The RP2350 remains at its documented reduced scope.
 
 Start with:
 
@@ -52,7 +52,7 @@ Hardware:
 
 Features:
 
-- 736×896 world, four screen areas
+- 1104×1344 world, nine screen areas
 - single-finger pan selected from the pen/tools popup
 - ten dirty-tile Undos
 - debounced, tile-granular flash autosave and boot restore
@@ -68,12 +68,13 @@ at 9.8–10.1 ms at 80 MHz; current 60 MHz panning needs a fresh capture. With a
 battery installed, firmware startup explicitly resets the still-powered CO5300
 through the board's I/O expander, preventing black or stale screens after MCU reset.
 
-Autosave keeps a 1,318,912-byte PSRAM shadow in row-major form. Changed 32×32
-tiles serialize two per 4 KiB flash sector after 500 ms without touch input. Rapid
-strokes coalesce. New schedules the whole world; Undo schedules its viewport; pan
-updates the saved origin. A 2 MiB `drawing` partition survives normal app flashes.
-One physical 18-sector save took 2.266878 seconds in the background task. A battery
-shutdown and cold boot restored the saved drawing on-device.
+Autosave reads changed 32×32 tiles directly from the world into one 4 KiB staging
+buffer after 500 ms without touch input. This removed the former full-world PSRAM
+shadow. Rapid strokes coalesce. New schedules the whole world; Undo schedules its
+viewport; pan updates the saved origin. A 3 MiB `drawing` partition survives normal
+app flashes. The 3×3 format intentionally invalidated the old 2×2 save once. One
+physical 18-sector save took 2.266878 seconds in the background task before this
+refactor; battery power-cycle validation of the new format is pending.
 
 Short BOOT presses start and stop touch recording; a red toolbar dot shows the
 recording state. Holding BOOT replays the latest RAM tape from a blank canvas.
@@ -210,11 +211,12 @@ At this handoff:
 
 - all 20 native CTest entries pass;
 - ASan and UBSan pass both sanitizer entries;
-- the RP2350 Release build passes without compiler warnings;
-- the ESP32 physical build passes with 69% of its app partition free;
-- the ESP32 QEMU graphics replay passes;
+- the ESP32 3×3 build passes with 69% of its app partition free;
+- the QEMU graphics replay and RP2350 Release build pass;
+- the 3×3 physical firmware boots with 889,416 bytes PSRAM free and an 884,736-byte
+  largest free block;
 - battery percentage, charging state, deterministic panel reset, PMU off/on, and
-  autosave restore have been checked on the ESP32-S3 V2 board.
+  the earlier 2×2 autosave restore have been checked on the ESP32-S3 V2 board.
 
 The RP2350 physical test covered fast medium and XL curves, 1,012 banded display
 updates, toolbar use, and repeated drawing without visible corruption.
@@ -223,13 +225,12 @@ updates, toolbar use, and repeated drawing without visible corruption.
 
 Resume on the ESP32 build:
 
-1. Plan and measure a 1104×1344 (3×3-screen) canvas without hurting drawing or panning.
-2. Remove or shrink the autosave shadow if the 3×3 memory budget requires it.
-3. Revisit Undo depth and storage alongside the canvas and save format.
+1. Pan to all 3×3 edges and corners; check fast strokes and ten Undos across views.
+2. Verify new-format autosave with rapid strokes, New, Undo, and a battery power cycle.
+3. Capture fresh 60 MHz pan timing and watch PSRAM telemetry for regressions.
 4. Export a drawing over USB-C. Start with a small read-only TinyUSB MSC volume
    containing one image, and verify iPhone Files behavior before expanding it.
-5. Test rapid-stroke coalescing and New/Undo persistence on hardware.
-6. Consider event-driven AXP2101 status refresh and a tested sleep mode separately.
+5. Consider event-driven AXP2101 status refresh and a tested sleep mode separately.
 
 Deferred RP2350 work includes a replaceable provisional tail, bounded vector
 Undo/panning, accurate USB framebuffer capture, and PWR-button dormant mode.

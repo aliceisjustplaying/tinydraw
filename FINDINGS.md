@@ -4,7 +4,7 @@ Snapshot: 2026-08-11
 
 TinyDraw runs on Waveshare's 368×448 ESP32-S3 and RP2350 Touch AMOLED 1.8-inch
 boards. Both use the shared ink and toolbar code. The ESP32 build adds ten Undos
-and a 736×896 canvas.
+and a 1104×1344 canvas.
 
 ## Numbers for the demo
 
@@ -90,12 +90,13 @@ microseconds of measured queue delay.
 | Touch | CST820 `0xB7`, firmware `0x02`, 400 kHz I²C |
 | Power | AXP2101 `0x34`, battery gauge, charger, and hardware power button |
 | Memory | 8 MiB octal PSRAM at 80 MHz, 16 MiB flash |
-| 736×896 world | 1,318,912 bytes in PSRAM |
+| 1104×1344 world | 2,967,552 bytes in PSRAM |
 | Two viewport canvases | 659,456 bytes in PSRAM |
 | Ten Undo entries | 3,440,640 bytes in PSRAM |
-| Autosave shadow | 1,318,912 bytes in PSRAM |
+| Autosave staging | 4,096 bytes in internal RAM |
 | Active coverage | 164,864 bytes in internal RAM |
 | Three display buffers | 49,152 bytes in internal RAM |
+| Free after physical startup | 889,416 bytes in PSRAM |
 
 Physical bring-up established the V2 pin layout, panel offset, and color format. A full
 startup redraw clears panel memory left by the factory demo or an earlier session. Once
@@ -123,21 +124,20 @@ full 168-tile canvas.
 
 ## Autosave
 
-ESP32 autosave has a dedicated 2 MiB flash partition and a 1,318,912-byte PSRAM
-shadow of the 736×896 world. A stroke marks world-aligned 32×32 tiles as its input
-arrives. Two serialized tiles fit one 4 KiB erase sector. At lift, only those tiles
-are copied into the world and save shadow.
+ESP32 autosave has a dedicated 3 MiB flash partition. A stroke marks world-aligned
+32×32 tiles as input arrives, and two serialized tiles fit one 4 KiB erase sector.
+The save task reads one pending sector directly from the world into a 4 KiB staging
+buffer. Removing the former full-world save shadow made the 3×3 world fit in PSRAM.
 
 Flash work begins after 500 ms without touch input and runs on a low-priority task.
 New schedules the complete world, Undo schedules the current viewport, and panning
-updates the saved viewport origin. Rapid strokes update the pending shadow before it
-is written. Boot reads the tiled sectors, reconstructs the row-major world, and shows
-the saved origin.
+updates the saved viewport origin. If drawing resumes during a write, that sector
+stays pending. Boot reconstructs the row-major world and shows the saved origin.
 
-Host tests cover full-world serialization, tile-selective writes, origin restore, and
-partial world capture. On-device autosave is active; one 18-sector write took 2.266878
-seconds on the low-priority background task. A battery shutdown and cold boot restored
-the saved drawing. Power loss inside the 500 ms idle window can lose the newest changes.
+Host tests cover full-world serialization, partial right-edge tiles, selective writes,
+and origin restore. One earlier 18-sector write took 2.266878 seconds. The 3×3 save
+format intentionally replaced the old 2×2 format; its battery power-cycle check is
+still pending. Changes inside the 500 ms idle window can be lost on power-off.
 
 ## Battery and power
 
@@ -156,8 +156,10 @@ Light and deep sleep are not implemented.
 
 ## Larger canvas and export experiment
 
-The drawing world is 736×896, four times the display area. Early panning copied the whole
-viewport and took 71–74 ms per frame. Reading the world directly, swapping two pixels at a
+The drawing world grew from 736×896 to 1104×1344, nine times the display area. A naive
+3×3 build plus the old autosave shadow would exceed 8 MiB PSRAM. Direct sector staging
+kept ten Undos and left 889,416 bytes free at physical startup. Early panning copied the
+whole viewport and took 71–74 ms per frame. Reading the world directly, swapping two pixels at a
 time, using 80 MHz QSPI, and enlarging DMA chunks brought it to 9.8–10.1 ms. Random
 colored lines later appeared on the panel. With Wi-Fi removed, they still recurred at
 80 MHz. A 60 MHz build passed 30 seconds idle followed by drawing and fast panning without
@@ -222,8 +224,8 @@ visibly slower.
 
 ESP32 persistence currently keeps one autosaved drawing. It has no document picker,
 manual save slots, redundant crash-safe snapshot, or sleep mode. Battery status
-refreshes every second while touch is idle. The canvas remains a fixed 2×2 raster. The RP2350 has a
-screen-sized canvas without persistence, Undo, or pan.
+refreshes every second while touch is idle. The canvas is a fixed 3×3 raster. The
+RP2350 has a screen-sized canvas without persistence, Undo, or pan.
 Fast RP2350 curves remain limited by the FT3168's roughly 60 Hz coordinate stream,
 and its USB framebuffer capture needs repair.
 
@@ -232,7 +234,7 @@ and its USB framebuffer capture needs repair.
 1. Draw one slow curve and one fast diagonal to show touch sampling limits.
 2. Cross an XL stroke over itself, then make a sharp turn to show solid joins.
 3. Extend the stroke to show that old points no longer slow new input.
-4. Pan across the 2×2 world, then undo and demonstrate confirmed New.
+4. Pan across the 3×3 world, then undo and demonstrate confirmed New.
 5. Point out autosave, charging status, and battery-powered off/on.
 6. Close with **4,479 ms to 220 ms** for ink and the measured **74 ms to 10 ms**
    80 MHz panning result; the stability build now uses 60 MHz.

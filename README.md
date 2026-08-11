@@ -13,14 +13,14 @@ exercise the same C++20 drawing and UI core.
 ## Current state
 - Variable-width, Perfect Freehand-style ink with 4×4 edge smoothing
 - Solid self-overlaps, rounded sharp turns, twelve colors, and four sizes
-- ESP32: pan, ten Undos, 736×896 canvas, flash autosave, and battery status
+- ESP32: pan, ten Undos, 1104×1344 canvas, flash autosave, and battery status
 - ESP32: touch record/replay for hands-free demos and battery-powered off/on
 - RP2350: screen-sized ink, eraser, colors, sizes, and confirmed New
 - Native replays, exact snapshots, ASan/UBSan, QEMU, and device telemetry
 
 ESP32 long strokes average 2.5–3.4 ms per update. Autosave starts after 500 ms
-idle; one 18-sector device write took 2.27 s in its background task. Battery
-Autosave restore, charging state, and PMU power-off/on are verified on the board.
+idle; one 18-sector device write took 2.27 s in its background task. Autosave
+restore, charging state, and PMU power-off/on are verified on the board.
 The RP2350 averages 1.2–1.4 ms and is not persistent.
 
 The RP2350 build has no pan or Undo, and its permanent circle-stamp raster looks

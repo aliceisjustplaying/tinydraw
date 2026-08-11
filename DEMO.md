@@ -7,7 +7,7 @@ If the board is unavailable, run the macOS app or QEMU replay.
 
 > This is a 368×448 AMOLED drawing app on an ESP32-S3. It has variable-width ink,
 > twelve colors, panning, ten Undos, flash autosave, battery status, and a canvas
-> four times the screen area.
+> nine times the screen area.
 
 ## 0:30 — Explain the original problem
 
@@ -39,7 +39,7 @@ If the board is unavailable, run the macOS app or QEMU replay.
 3. Scribble continuously for several seconds.
    > Old sections become final, so a long stroke does not make each new point slower.
 
-4. Pan around the 736×896 world, then Undo across views.
+4. Pan around the 1104×1344 world, then Undo across views.
    > Panning streams the visible part of the world directly to the display.
 
 ## 2:50 — Explain why it is fast
@@ -80,7 +80,7 @@ The stability build uses a 60 MHz display clock after occasional stray lines at
 - Very fast diagonals can reveal the live drawing update.
 - Very fast pans can briefly tear because the panel has no synchronized framebuffer swap.
 - Autosave holds one drawing and can lose changes made within 500 ms of power-off.
-- The current world is fixed at 2×2 screens; 3×3 is the next practical size.
+- The current world is fixed at 3×3 screens; more space needs a different storage model.
 - Power-off is a cold shutdown; sleep is not implemented.
 
 ## If someone asks
@@ -90,7 +90,7 @@ The stability build uses a 60 MHz display clock after occasional stray lines at
   A full flip still transfers 329,728 bytes.
 - **Why three display buffers?** They total 49,152 bytes and let transfers queue.
 - **Why a coverage mask?** It prevents pale holes where a stroke overlaps itself.
-- **Memory?** The world uses 1.32 MB, two viewport canvases use 659 KB, and ten Undo
-  entries use 3.44 MB of the board's 8 MB PSRAM.
+- **Memory?** The world uses 2.97 MB, two viewport canvases use 659 KB, and ten Undo
+  entries use 3.44 MB. About 889 KB of the board's 8 MB PSRAM remains after startup.
 - **How often does battery status refresh?** Every second, only while touch is idle.
 - **Does it sleep?** No. The PMU button performs a full power-off and cold boot.
