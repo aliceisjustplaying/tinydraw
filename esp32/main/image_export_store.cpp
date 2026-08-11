@@ -64,8 +64,14 @@ class PartitionOutput final : public PngOutput {
       offset += count;
       bytes = bytes.subspan(count);
     }
-    return bytes.empty() || esp_partition_write(partition_, kPngOffset + offset, bytes.data(),
-                                                bytes.size()) == ESP_OK;
+    if (bytes.empty()) {
+      return true;
+    }
+    const std::size_t physical_offset = kPngOffset + offset;
+    if (!erase_through(physical_offset + bytes.size())) {
+      return false;
+    }
+    return esp_partition_write(partition_, physical_offset, bytes.data(), bytes.size()) == ESP_OK;
   }
 
   bool read(std::size_t offset, std::span<std::uint8_t> bytes) override {
@@ -88,8 +94,22 @@ class PartitionOutput final : public PngOutput {
     return offset <= capacity && size <= capacity - offset;
   }
 
+  bool erase_through(std::size_t physical_end) {
+    const std::size_t aligned_end = (physical_end + kPageBytes - 1U) & ~(kPageBytes - 1U);
+    if (aligned_end <= erased_through_) {
+      return true;
+    }
+    const bool erased = esp_partition_erase_range(partition_, erased_through_,
+                                                  aligned_end - erased_through_) == ESP_OK;
+    if (erased) {
+      erased_through_ = aligned_end;
+    }
+    return erased;
+  }
+
   const esp_partition_t* partition_;
   std::span<std::uint8_t> first_page_;
+  std::size_t erased_through_ = kPngOffset + kPageBytes;
 };
 
 }  // namespace
@@ -147,7 +167,7 @@ ImageExportStats ImageExportStore::encode(std::span<const std::uint16_t> world) 
 
   image_size_ = 0;
   std::fill_n(first_page, kPageBytes, 0xFFU);
-  const bool erased = esp_partition_erase_range(partition, 0, partition->size) == ESP_OK;
+  const bool erased = esp_partition_erase_range(partition, 0, kPngOffset + kPageBytes) == ESP_OK;
   PartitionOutput output(partition, std::span(first_page, kPageBytes));
   PngEncodeResult result;
   if (erased) {
