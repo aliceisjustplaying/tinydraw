@@ -26,6 +26,7 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "power_manager.h"
 #include "tinydraw/demo/demo_tape.h"
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
@@ -45,6 +46,7 @@ constexpr int kDialogOverlayWidth = 318;
 constexpr int kDialogOverlayHeight = 168;
 constexpr gpio_num_t kDemoButton = GPIO_NUM_0;
 constexpr std::uint32_t kDemoLongPressUs = 800'000U;
+constexpr std::uint32_t kPowerRefreshUs = 5'000'000U;
 constexpr std::size_t kDemoCapacity = 8192U;
 
 alignas(4) DMA_ATTR
@@ -176,7 +178,10 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
     const bool main_changed = toolbar_.tool != toolbar.tool || toolbar_.color != toolbar.color ||
                               toolbar_.size != toolbar.size ||
                               toolbar_.can_undo != toolbar.can_undo ||
-                              toolbar_.recording != toolbar.recording;
+                              toolbar_.recording != toolbar.recording ||
+                              toolbar_.battery_percentage != toolbar.battery_percentage ||
+                              toolbar_.battery_charging != toolbar.battery_charging ||
+                              toolbar_.external_power != toolbar.external_power;
     const bool palette_changed =
         toolbar_.tools_open != toolbar.tools_open || toolbar_.colors_open != toolbar.colors_open ||
         toolbar_.sizes_open != toolbar.sizes_open ||
@@ -405,6 +410,7 @@ class PhysicalTouch {
   }
 
   [[nodiscard]] bool ready() const { return ready_; }
+  [[nodiscard]] i2c_master_bus_handle_t bus() const { return bus_; }
 
   TouchRead read(tinydraw::Point& point) {
     if (!ready_ || esp_lcd_touch_read_data(touch_) != ESP_OK) {
@@ -439,10 +445,12 @@ enum class AppEventKind : std::uint8_t {
   kDemoRecordingStopped,
   kDemoReplayStarted,
   kDemoReplayStopped,
+  kPowerStatusChanged,
 };
 
 struct AppEvent {
   TouchEvent touch{};
+  tinydraw::esp32::PowerStatus power{};
   AppEventKind kind = AppEventKind::kTouch;
 };
 
@@ -451,6 +459,8 @@ struct TouchTaskContext {
   QueueHandle_t queue = nullptr;
   tinydraw::DemoTape* tape = nullptr;
   std::span<const tinydraw::DemoSample> built_in_demo;
+  tinydraw::esp32::PowerManager* power = nullptr;
+  tinydraw::esp32::PowerStatus power_status{};
 };
 
 void enqueue_latest(QueueHandle_t queue, const AppEvent& event) {
@@ -530,6 +540,7 @@ void touch_task(void* argument) {
   bool long_press_handled = false;
   std::uint32_t raw_button_changed_us = timestamp_us();
   std::uint32_t button_pressed_us = 0;
+  std::uint32_t power_sampled_us = timestamp_us();
   while (true) {
     tinydraw::Point point{};
     const TouchRead read = context.touch->read(point);
@@ -580,6 +591,17 @@ void touch_task(void* argument) {
       replay_demo(context, recorded.empty() ? context.built_in_demo : recorded);
       long_press_handled = true;
     }
+    if (!touching && context.power != nullptr && context.power->ready() &&
+        now - power_sampled_us >= kPowerRefreshUs) {
+      const auto power_status = context.power->read();
+      power_sampled_us = now;
+      if (power_status.valid && power_status != context.power_status) {
+        const AppEvent event{.power = power_status, .kind = AppEventKind::kPowerStatusChanged};
+        if (xQueueSend(context.queue, &event, 0) == pdTRUE) {
+          context.power_status = power_status;
+        }
+      }
+    }
     vTaskDelay(pdMS_TO_TICKS(1));
   }
 }
@@ -589,6 +611,7 @@ void touch_task(void* argument) {
 void run_hardware_app() {
   PhysicalDisplay display;
   PhysicalTouch touch;
+  tinydraw::esp32::PowerManager power(touch.bus());
   if (!display.ready() || !touch.ready()) {
     std::printf("TINYDRAW_HARDWARE_FAIL display=%u touch=%u\n", display.ready(), touch.ready());
     return;
@@ -611,7 +634,17 @@ void run_hardware_app() {
     std::printf("TINYDRAW_AUTOSAVE_DISABLED\n");
   }
 
+  const auto initial_power_status = power.read();
+  tinydraw::esp32::PowerStatus current_power_status = initial_power_status;
   tinydraw::ToolbarState toolbar;
+  toolbar.battery_percentage = initial_power_status.percentage;
+  toolbar.battery_charging = initial_power_status.charging;
+  toolbar.external_power = initial_power_status.external_power;
+  std::printf(
+      "TINYDRAW_POWER_READY ready=%u valid=%u battery=%d voltage_mv=%u charging=%u vbus=%u\n",
+      power.ready(), initial_power_status.valid, initial_power_status.percentage,
+      initial_power_status.battery_mv, initial_power_status.charging,
+      initial_power_status.external_power);
   display.set_toolbar(toolbar);
   display.push_canvas(canvas.committed());
 
@@ -703,6 +736,9 @@ void run_hardware_app() {
     toolbar_pressed = false;
     toolbar_samples = 0;
     toolbar = {};
+    toolbar.battery_percentage = current_power_status.percentage;
+    toolbar.battery_charging = current_power_status.charging;
+    toolbar.external_power = current_power_status.external_power;
     auto config = ink.config();
     config.size = tinydraw::brush_size(toolbar.size);
     ink.set_config(config);
@@ -838,6 +874,8 @@ void run_hardware_app() {
       .queue = touch_queue,
       .tape = &demo_tape,
       .built_in_demo = tinydraw::esp32::demo::kBuiltInDemo,
+      .power = &power,
+      .power_status = initial_power_status,
   };
   if (xTaskCreatePinnedToCore(touch_task, "tinydraw_touch", 4096U, &touch_context, 5U, nullptr,
                               1) != pdPASS) {
@@ -862,6 +900,17 @@ void run_hardware_app() {
     }
     if (app_event.kind == AppEventKind::kResetForDemo) {
       reset_for_demo();
+      continue;
+    }
+    if (app_event.kind == AppEventKind::kPowerStatusChanged) {
+      current_power_status = app_event.power;
+      toolbar.battery_percentage = current_power_status.percentage;
+      toolbar.battery_charging = current_power_status.charging;
+      toolbar.external_power = current_power_status.external_power;
+      update_toolbar();
+      std::printf("TINYDRAW_POWER battery=%d voltage_mv=%u charging=%u vbus=%u\n",
+                  current_power_status.percentage, current_power_status.battery_mv,
+                  current_power_status.charging, current_power_status.external_power);
       continue;
     }
     if (app_event.kind == AppEventKind::kDemoRecordingStarted ||
