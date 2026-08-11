@@ -256,21 +256,19 @@ void StrokeRaster::load_coverage_tile(int tile_x, int tile_y, StrokeRasterStats&
   const int tile_height = std::min(kTileSize, kCanvasHeight - tile_y);
   coverage_.reset(tile_x, tile_y, tile_width, tile_height);
   for (int y = 0; y < tile_height; ++y) {
-    for (int x = 0; x < tile_width; ++x) {
-      const auto index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x + x);
-      coverage_.union_coverage(tile_x + x, tile_y + y, active_coverage_[index]);
-      ++stats.coverage_bytes_read;
-    }
+    const auto index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x);
+    std::copy_n(active_coverage_.begin() + static_cast<std::ptrdiff_t>(index), tile_width,
+                coverage_.row(y));
+    stats.coverage_bytes_read += static_cast<std::uint32_t>(tile_width);
   }
 }
 
 void StrokeRaster::store_coverage_tile(int tile_x, int tile_y, StrokeRasterStats& stats) {
   for (int y = 0; y < coverage_.height(); ++y) {
-    for (int x = 0; x < coverage_.width(); ++x) {
-      const auto index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x + x);
-      active_coverage_[index] = coverage_.coverage_at(tile_x + x, tile_y + y);
-      ++stats.coverage_bytes_written;
-    }
+    const auto index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x);
+    std::copy_n(coverage_.row(y), coverage_.width(),
+                active_coverage_.begin() + static_cast<std::ptrdiff_t>(index));
+    stats.coverage_bytes_written += static_cast<std::uint32_t>(coverage_.width());
   }
 }
 

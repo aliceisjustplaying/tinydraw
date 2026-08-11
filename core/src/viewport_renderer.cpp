@@ -67,7 +67,11 @@ ViewportRenderStats ViewportRenderer::render(const VectorDocument& document, Cam
       const StrokeSample sample = samples[index];
       const InkPoint point{
           .position = camera_project(camera, sample.x, sample.y),
+          .pressure = 0.0F,
           .radius = camera_project_radius(camera, sample.radius, options.minimum_screen_radius),
+          .distance = 0.0F,
+          .running_length = 0.0F,
+          .timestamp_us = 0U,
       };
       const bool final = index + 1U == samples.size();
       const RibbonUpdate update = final ? ribbon.finish(point) : ribbon.append(point);
@@ -130,19 +134,16 @@ void ViewportRenderer::load_tile(int tile_x, int tile_y) {
   const int height = std::min(kTileSize, kCanvasHeight - tile_y);
   coverage_.reset(tile_x, tile_y, width, height);
   for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; ++x) {
-      const auto index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x + x);
-      coverage_.union_coverage(tile_x + x, tile_y + y, scratch_[index]);
-    }
+    const auto index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x);
+    std::copy_n(scratch_.begin() + static_cast<std::ptrdiff_t>(index), width, coverage_.row(y));
   }
 }
 
 void ViewportRenderer::store_tile(int tile_x, int tile_y) {
   for (int y = 0; y < coverage_.height(); ++y) {
-    for (int x = 0; x < coverage_.width(); ++x) {
-      const auto index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x + x);
-      scratch_[index] = coverage_.coverage_at(tile_x + x, tile_y + y);
-    }
+    const auto index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x);
+    std::copy_n(coverage_.row(y), coverage_.width(),
+                scratch_.begin() + static_cast<std::ptrdiff_t>(index));
   }
 }
 

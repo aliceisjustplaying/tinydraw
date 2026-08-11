@@ -49,7 +49,19 @@ void CoverageTile::reset(int origin_x, int origin_y, int width, int height) {
   clear();
 }
 
-void CoverageTile::clear() { coverage_.fill(0U); }
+void CoverageTile::clear() {
+  std::fill_n(coverage_.begin(), static_cast<std::size_t>(width_ * height_), 0U);
+}
+
+std::uint8_t* CoverageTile::row(int y) {
+  assert(y >= 0 && y < height_);
+  return coverage_.data() + static_cast<std::ptrdiff_t>(y * width_);
+}
+
+const std::uint8_t* CoverageTile::row(int y) const {
+  assert(y >= 0 && y < height_);
+  return coverage_.data() + static_cast<std::ptrdiff_t>(y * width_);
+}
 
 void CoverageTile::union_coverage(int x, int y, std::uint8_t coverage) {
   if (!contains(x, y)) {
@@ -207,7 +219,7 @@ bool CoverageTile::contains(int x, int y) const {
 std::size_t CoverageTile::index_of(int x, int y) const {
   const int local_x = x - origin_x_;
   const int local_y = y - origin_y_;
-  return static_cast<std::size_t>(local_y * kTileSize + local_x);
+  return static_cast<std::size_t>(local_y * width_ + local_x);
 }
 
 void composite_rgb565(const CoverageTile& coverage, std::uint16_t source,
@@ -218,8 +230,9 @@ void composite_rgb565(const CoverageTile& coverage, std::uint16_t source,
   const int source_green = (source >> 5U) & 0x3FU;
   const int source_blue = source & 0x1FU;
   for (int y = 0; y < coverage.height(); ++y) {
+    const std::uint8_t* coverage_row = coverage.row(y);
     for (int x = 0; x < coverage.width(); ++x) {
-      const int alpha = coverage.coverage_at(coverage.origin_x() + x, coverage.origin_y() + y);
+      const int alpha = coverage_row[x];
       if (alpha == 0) {
         continue;
       }

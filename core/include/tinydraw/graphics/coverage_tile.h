@@ -27,6 +27,8 @@ class CoverageTile {
   [[nodiscard]] int origin_y() const { return origin_y_; }
   [[nodiscard]] int width() const { return width_; }
   [[nodiscard]] int height() const { return height_; }
+  [[nodiscard]] std::uint8_t* row(int y);
+  [[nodiscard]] const std::uint8_t* row(int y) const;
   [[nodiscard]] const std::uint8_t* data() const { return coverage_.data(); }
 
  private:
