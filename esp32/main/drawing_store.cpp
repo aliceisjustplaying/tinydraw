@@ -99,7 +99,6 @@ struct DrawingStore::Impl {
         }
       }
       snapshot->load_origin({header.origin_x, header.origin_y});
-      restored = true;
     } else {
       if (esp_partition_erase_range(partition, 0, kRequiredPartitionBytes) != ESP_OK ||
           !write_header(make_header(snapshot->origin()))) {
@@ -226,7 +225,6 @@ struct DrawingStore::Impl {
   TaskHandle_t task = nullptr;
   std::uint32_t last_activity_us = 0;
   bool ready = false;
-  bool restored = false;
 };
 
 DrawingStore::DrawingStore() : impl_(new (std::nothrow) Impl) {}

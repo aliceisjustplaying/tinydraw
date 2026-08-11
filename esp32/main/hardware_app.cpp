@@ -604,6 +604,8 @@ void run_hardware_app() {
   if (drawing_store.ready()) {
     if (!drawing_store.restore(canvas.world(), canvas.committed(), canvas.visible())) {
       std::printf("TINYDRAW_AUTOSAVE_RESTORE_FAIL\n");
+    } else {
+      std::printf("TINYDRAW_AUTOSAVE_READY\n");
     }
   } else {
     std::printf("TINYDRAW_AUTOSAVE_DISABLED\n");
