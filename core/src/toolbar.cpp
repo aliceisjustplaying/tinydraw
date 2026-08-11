@@ -25,7 +25,7 @@ constexpr int kDialogLeft = 28;
 constexpr int kDialogTop = 126;
 constexpr int kDialogRight = 340;
 constexpr int kDialogBottom = 286;
-constexpr int kBatteryLeft = 228;
+constexpr int kBatteryLeft = 222;
 constexpr int kBatteryTop = 18;
 constexpr int kBatteryRight = 340;
 constexpr int kBatteryBottom = 54;
@@ -256,9 +256,9 @@ void draw_battery(std::span<std::uint16_t> canvas, int width, int height,
   rounded_rect(canvas, width, height, kBatteryLeft, kBatteryTop, kBatteryRight, kBatteryBottom, 8,
                kWhite);
 
-  constexpr int icon_left = 236;
+  constexpr int icon_left = kBatteryLeft + 8;
   constexpr int icon_top = 28;
-  constexpr int icon_right = 266;
+  constexpr int icon_right = icon_left + 30;
   constexpr int icon_bottom = 45;
   const std::uint16_t outline = state.battery_charging ? kSelected : kInk;
   fill_rect(canvas, width, height, icon_left, icon_top, icon_right, icon_top + 2, outline);
