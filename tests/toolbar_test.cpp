@@ -216,10 +216,14 @@ TEST_CASE("battery status appears in the toolbar without covering the canvas") {
   CHECK(tinydraw::toolbar_overlay_contains({300.0F, 30.0F}, half_state));
   const auto overlay = tinydraw::battery_overlay_rect(half_state);
   REQUIRE(overlay.has_value());
-  CHECK(overlay->x0 == 201);
-  CHECK(overlay->y0 == 17);
+  CHECK(overlay->x0 == 200);
+  CHECK(overlay->y0 == 16);
   CHECK(overlay->x1 == 348);
   CHECK(overlay->y1 == 72);
+  CHECK((overlay->x0 & 1) == 0);
+  CHECK((overlay->y0 & 1) == 0);
+  CHECK((overlay->x1 & 1) == 0);
+  CHECK((overlay->y1 & 1) == 0);
 }
 
 TEST_CASE("new drawing confirmation renders without covering the canvas") {

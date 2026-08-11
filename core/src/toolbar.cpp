@@ -345,7 +345,7 @@ std::optional<Rect> battery_overlay_rect(const ToolbarState& state) {
   if (state.battery_percentage < 0) {
     return std::nullopt;
   }
-  return Rect{kBatteryLeft - 1, kBatteryTop - 1, kBatteryRight + 4, kBatteryBottom + 6};
+  return Rect{kBatteryLeft - 2, kBatteryTop - 2, kBatteryRight + 4, kBatteryBottom + 6};
 }
 
 bool toolbar_overlay_contains(Point point, const ToolbarState& state) {
