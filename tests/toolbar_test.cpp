@@ -204,7 +204,7 @@ TEST_CASE("battery status appears in the toolbar without covering the canvas") {
   tinydraw::draw_toolbar(half, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight, half_state);
   tinydraw::draw_toolbar(charging, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight, charging_state);
 
-  const auto battery_outline = static_cast<std::size_t>(20 * tinydraw::kCanvasWidth + 249);
+  const auto battery_outline = static_cast<std::size_t>(31 * tinydraw::kCanvasWidth + 214);
   const auto open_canvas_pixel = static_cast<std::size_t>(100 * tinydraw::kCanvasWidth + 307);
   CHECK(absent != half);
   CHECK(half != charging);
@@ -216,10 +216,10 @@ TEST_CASE("battery status appears in the toolbar without covering the canvas") {
   CHECK(tinydraw::toolbar_overlay_contains({300.0F, 30.0F}, half_state));
   const auto overlay = tinydraw::battery_overlay_rect(half_state);
   REQUIRE(overlay.has_value());
-  CHECK(overlay->x0 == 237);
-  CHECK(overlay->y0 == 7);
-  CHECK(overlay->x1 == 360);
-  CHECK(overlay->y1 == 58);
+  CHECK(overlay->x0 == 201);
+  CHECK(overlay->y0 == 17);
+  CHECK(overlay->x1 == 348);
+  CHECK(overlay->y1 == 72);
 }
 
 TEST_CASE("new drawing confirmation renders without covering the canvas") {
