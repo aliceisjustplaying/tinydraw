@@ -257,9 +257,9 @@ void draw_battery(std::span<std::uint16_t> canvas, int width, int height,
                kWhite);
 
   constexpr int icon_left = 236;
-  constexpr int icon_top = 27;
+  constexpr int icon_top = 28;
   constexpr int icon_right = 266;
-  constexpr int icon_bottom = 49;
+  constexpr int icon_bottom = 45;
   const std::uint16_t outline = state.battery_charging ? kSelected : kInk;
   fill_rect(canvas, width, height, icon_left, icon_top, icon_right, icon_top + 2, outline);
   fill_rect(canvas, width, height, icon_left, icon_bottom - 2, icon_right, icon_bottom, outline);

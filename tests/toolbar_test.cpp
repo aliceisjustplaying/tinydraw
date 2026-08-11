@@ -204,7 +204,7 @@ TEST_CASE("battery status appears in the toolbar without covering the canvas") {
   tinydraw::draw_toolbar(half, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight, half_state);
   tinydraw::draw_toolbar(charging, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight, charging_state);
 
-  const auto battery_outline = static_cast<std::size_t>(27 * tinydraw::kCanvasWidth + 236);
+  const auto battery_outline = static_cast<std::size_t>(28 * tinydraw::kCanvasWidth + 236);
   const auto open_canvas_pixel = static_cast<std::size_t>(100 * tinydraw::kCanvasWidth + 307);
   CHECK(absent != half);
   CHECK(half != charging);
