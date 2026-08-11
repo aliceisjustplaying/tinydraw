@@ -3,6 +3,8 @@
 #include <cstdint>
 
 #include "driver/i2c_master.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "pcf85063a.h"
 #include "tinydraw/export/fat16_disk.h"
 
@@ -24,6 +26,8 @@ class RtcClock {
 
  private:
   pcf85063a_dev_t device_{};
+  StaticSemaphore_t mutex_storage_{};
+  SemaphoreHandle_t mutex_ = nullptr;
   bool ready_ = false;
 };
 

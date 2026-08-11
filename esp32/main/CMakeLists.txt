@@ -18,12 +18,13 @@ if(NOT TINYDRAW_QEMU)
     "image_export_store.cpp"
     "power_manager.cpp"
     "rtc_clock.cpp"
+    "time_sync.cpp"
     "usb_export.cpp"
     "${TINYDRAW_CORE}/src/fat16_disk.cpp"
     "${TINYDRAW_CORE}/src/png_encoder.cpp"
     ${TINYDRAW_PNGENC_SRCS}
   )
-  list(APPEND TINYDRAW_PLATFORM_REQUIRES esp_lcd_co5300 esp_lcd_touch_cst816s pcf85063a tinyusb esp_hw_support)
+  list(APPEND TINYDRAW_PLATFORM_REQUIRES esp_event esp_lcd_co5300 esp_lcd_touch_cst816s esp_netif esp_wifi pcf85063a tinyusb esp_hw_support)
 endif()
 
 idf_component_register(

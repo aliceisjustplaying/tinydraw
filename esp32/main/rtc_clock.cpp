@@ -78,7 +78,9 @@ FatDateTime build_time() {
 }  // namespace
 
 RtcClock::RtcClock(i2c_master_bus_handle_t bus) {
-  if (bus == nullptr || pcf85063a_init(&device_, bus, PCF85063A_ADDRESS) != ESP_OK) {
+  mutex_ = xSemaphoreCreateMutexStatic(&mutex_storage_);
+  if (bus == nullptr || mutex_ == nullptr ||
+      pcf85063a_init(&device_, bus, PCF85063A_ADDRESS) != ESP_OK) {
     return;
   }
   ready_ = true;
@@ -101,16 +103,16 @@ RtcClock::~RtcClock() {
 }
 
 bool RtcClock::read(FatDateTime& time) {
-  if (!ready_) {
+  if (!ready_ || xSemaphoreTake(mutex_, pdMS_TO_TICKS(100)) != pdTRUE) {
     return false;
   }
   std::uint8_t seconds = 0;
-  if (pcf85063a_read_register(&device_, kSecondsRegister, &seconds, 1) != ESP_OK ||
-      (seconds & kOscillatorStopped) != 0U) {
-    return false;
-  }
   pcf85063a_datetime_t value{};
-  if (pcf85063a_get_time_date(&device_, &value) != ESP_OK) {
+  const bool read_ok = pcf85063a_read_register(&device_, kSecondsRegister, &seconds, 1) == ESP_OK &&
+                       (seconds & kOscillatorStopped) == 0U &&
+                       pcf85063a_get_time_date(&device_, &value) == ESP_OK;
+  xSemaphoreGive(mutex_);
+  if (!read_ok) {
     return false;
   }
   const FatDateTime candidate{.year = value.year,
@@ -127,7 +129,7 @@ bool RtcClock::read(FatDateTime& time) {
 }
 
 bool RtcClock::set(const FatDateTime& time) {
-  if (!ready_ || !valid_time(time)) {
+  if (!ready_ || !valid_time(time) || xSemaphoreTake(mutex_, pdMS_TO_TICKS(100)) != pdTRUE) {
     return false;
   }
   const pcf85063a_datetime_t value{.year = time.year,
@@ -137,7 +139,9 @@ bool RtcClock::set(const FatDateTime& time) {
                                    .hour = time.hour,
                                    .min = time.minute,
                                    .sec = time.second};
-  return pcf85063a_set_time_date(&device_, value) == ESP_OK;
+  const bool written = pcf85063a_set_time_date(&device_, value) == ESP_OK;
+  xSemaphoreGive(mutex_);
+  return written;
 }
 
 }  // namespace tinydraw::esp32

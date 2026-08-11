@@ -3,6 +3,7 @@
 /reference/perfect-freehand/
 /esp32/sdkconfig
 /esp32/managed_components/
+/esp32/main/wifi_credentials.local.h
 /eim_config.toml
 __pycache__/
 .DS_Store

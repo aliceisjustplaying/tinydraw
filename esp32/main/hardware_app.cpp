@@ -29,6 +29,7 @@
 #include "image_export_store.h"
 #include "power_manager.h"
 #include "rtc_clock.h"
+#include "time_sync.h"
 #include "tinydraw/demo/demo_tape.h"
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
@@ -764,6 +765,7 @@ void run_hardware_app() {
       initial_power_status.charging, initial_power_status.external_power);
   display.set_toolbar(toolbar);
   display.push_canvas(canvas.committed());
+  static_cast<void>(tinydraw::esp32::start_time_sync(clock));
 
   tinydraw::InkConfig brush;
   brush.size = tinydraw::brush_size(toolbar.size);
