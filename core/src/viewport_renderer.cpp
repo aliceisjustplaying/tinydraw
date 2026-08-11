@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 
 namespace tinydraw {
@@ -33,9 +34,23 @@ PrimitiveBounds bounds_of(const RibbonPrimitive& primitive) {
   return bounds;
 }
 
+bool intersects_tile(PrimitiveBounds bounds, int x, int y, int width, int height) {
+  return bounds.x0 < static_cast<float>(x + width) && bounds.x1 >= static_cast<float>(x) &&
+         bounds.y0 < static_cast<float>(y + height) && bounds.y1 >= static_cast<float>(y);
+}
+
 }  // namespace
 
 ViewportRenderer::ViewportRenderer(std::span<std::uint8_t> scratch) : scratch_(scratch) {}
+
+bool ViewportRenderer::valid() const {
+  return primitive_capacity() >= 8U &&
+         reinterpret_cast<std::uintptr_t>(scratch_.data()) % alignof(RibbonPrimitive) == 0U;
+}
+
+std::size_t ViewportRenderer::primitive_capacity() const {
+  return scratch_.size_bytes() / sizeof(RibbonPrimitive);
+}
 
 ViewportRenderStats ViewportRenderer::render(const VectorDocument& document, Camera camera,
                                              std::span<std::uint16_t> destination,
@@ -43,12 +58,13 @@ ViewportRenderStats ViewportRenderer::render(const VectorDocument& document, Cam
   ViewportRenderStats stats;
   if (!valid() || destination.size() < kPixelCount || !camera_valid(camera) ||
       !std::isfinite(options.minimum_screen_radius) || options.minimum_screen_radius < 0.0F) {
+    stats.complete = false;
     return stats;
   }
 
   std::fill_n(destination.begin(), kPixelCount, options.background);
-  std::fill_n(scratch_.begin(), kScratchBytes, 0U);
   const RectF viewport = camera_world_viewport(camera);
+  auto arena = primitive_arena();
 
   for (const VectorStroke& stroke : document.strokes()) {
     ++stats.strokes_tested;
@@ -62,6 +78,7 @@ ViewportRenderStats ViewportRenderer::render(const VectorDocument& document, Cam
     ++stats.strokes_intersecting;
 
     TileFlags stroke_tiles{};
+    std::size_t primitive_count = 0U;
     CurvedRibbonStream ribbon;
     for (std::size_t index = 0; index < samples.size(); ++index) {
       const StrokeSample sample = samples[index];
@@ -75,21 +92,34 @@ ViewportRenderStats ViewportRenderer::render(const VectorDocument& document, Cam
       };
       const bool final = index + 1U == samples.size();
       const RibbonUpdate update = final ? ribbon.finish(point) : ribbon.append(point);
-      rasterize(update.committed, stroke_tiles, stats);
+      if (!append(update.committed, primitive_count, stroke_tiles)) {
+        stats.complete = false;
+        return stats;
+      }
       ++stats.samples_processed;
     }
 
+    stats.primitives_rasterized += static_cast<std::uint32_t>(primitive_count);
     const std::uint16_t color =
         stroke.tool == VectorTool::kEraser ? options.background : stroke.color;
-    composite_stroke(destination, stroke_tiles, color, stats);
+    composite_stroke(destination, std::span<const RibbonPrimitive>(arena.data(), primitive_count),
+                     stroke_tiles, color, stats);
+    if (options.yield != nullptr && options.yield_every_strokes > 0U &&
+        stats.strokes_intersecting % options.yield_every_strokes == 0U) {
+      options.yield(options.yield_context);
+    }
   }
   return stats;
 }
 
-void ViewportRenderer::rasterize(const RibbonPrimitiveBatch& primitives, TileFlags& stroke_tiles,
-                                 ViewportRenderStats& stats) {
-  TileFlags batch_tiles{};
-  for (const RibbonPrimitive& primitive : primitives) {
+bool ViewportRenderer::append(const RibbonPrimitiveBatch& batch, std::size_t& primitive_count,
+                              TileFlags& stroke_tiles) {
+  auto arena = primitive_arena();
+  if (batch.size() > arena.size() - primitive_count) {
+    return false;
+  }
+  for (const RibbonPrimitive& primitive : batch) {
+    arena[primitive_count++] = primitive;
     const PrimitiveBounds bounds = bounds_of(primitive);
     if (!std::isfinite(bounds.x0) || !std::isfinite(bounds.y0) || !std::isfinite(bounds.x1) ||
         !std::isfinite(bounds.y1) || bounds.x1 < 0.0F || bounds.y1 < 0.0F ||
@@ -103,51 +133,15 @@ void ViewportRenderer::rasterize(const RibbonPrimitiveBatch& primitives, TileFla
     const int last_y = std::clamp(static_cast<int>(std::ceil(bounds.y1)), 0, kCanvasHeight - 1);
     for (int tile_y = first_y / kTileSize; tile_y <= last_y / kTileSize; ++tile_y) {
       for (int tile_x = first_x / kTileSize; tile_x <= last_x / kTileSize; ++tile_x) {
-        batch_tiles[static_cast<std::size_t>(tile_y * kTilesAcross + tile_x)] = true;
+        stroke_tiles[static_cast<std::size_t>(tile_y * kTilesAcross + tile_x)] = true;
       }
     }
   }
-
-  stats.primitives_rasterized += static_cast<std::uint32_t>(primitives.size());
-  for (int tile_index = 0; tile_index < kTileCount; ++tile_index) {
-    if (!batch_tiles[static_cast<std::size_t>(tile_index)]) {
-      continue;
-    }
-    const int tile_x = tile_index % kTilesAcross * kTileSize;
-    const int tile_y = tile_index / kTilesAcross * kTileSize;
-    load_tile(tile_x, tile_y);
-    for (const RibbonPrimitive& primitive : primitives) {
-      if (primitive.kind == RibbonPrimitiveKind::kCircle) {
-        coverage_.rasterize_circle(primitive.center, primitive.radius);
-      } else {
-        coverage_.rasterize_convex(std::span(primitive.points.data(), primitive.point_count));
-      }
-      ++stats.primitive_tile_visits;
-    }
-    store_tile(tile_x, tile_y);
-    stroke_tiles[static_cast<std::size_t>(tile_index)] = true;
-  }
-}
-
-void ViewportRenderer::load_tile(int tile_x, int tile_y) {
-  const int width = std::min(kTileSize, kCanvasWidth - tile_x);
-  const int height = std::min(kTileSize, kCanvasHeight - tile_y);
-  coverage_.reset(tile_x, tile_y, width, height);
-  for (int y = 0; y < height; ++y) {
-    const auto index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x);
-    std::copy_n(scratch_.begin() + static_cast<std::ptrdiff_t>(index), width, coverage_.row(y));
-  }
-}
-
-void ViewportRenderer::store_tile(int tile_x, int tile_y) {
-  for (int y = 0; y < coverage_.height(); ++y) {
-    const auto index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x);
-    std::copy_n(coverage_.row(y), coverage_.width(),
-                scratch_.begin() + static_cast<std::ptrdiff_t>(index));
-  }
+  return true;
 }
 
 void ViewportRenderer::composite_stroke(std::span<std::uint16_t> destination,
+                                        std::span<const RibbonPrimitive> primitives,
                                         const TileFlags& stroke_tiles, std::uint16_t color,
                                         ViewportRenderStats& stats) {
   for (int tile_index = 0; tile_index < kTileCount; ++tile_index) {
@@ -156,9 +150,21 @@ void ViewportRenderer::composite_stroke(std::span<std::uint16_t> destination,
     }
     const int tile_x = tile_index % kTilesAcross * kTileSize;
     const int tile_y = tile_index / kTilesAcross * kTileSize;
-    load_tile(tile_x, tile_y);
-    const int width = coverage_.width();
-    const int height = coverage_.height();
+    const int width = std::min(kTileSize, kCanvasWidth - tile_x);
+    const int height = std::min(kTileSize, kCanvasHeight - tile_y);
+    coverage_.reset(tile_x, tile_y, width, height);
+    for (const RibbonPrimitive& primitive : primitives) {
+      if (!intersects_tile(bounds_of(primitive), tile_x, tile_y, width, height)) {
+        continue;
+      }
+      if (primitive.kind == RibbonPrimitiveKind::kCircle) {
+        coverage_.rasterize_circle(primitive.center, primitive.radius);
+      } else {
+        coverage_.rasterize_convex(std::span(primitive.points.data(), primitive.point_count));
+      }
+      ++stats.primitive_tile_visits;
+    }
+
     for (int y = 0; y < height; ++y) {
       const auto canvas_index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x);
       const auto tile_offset = static_cast<std::size_t>(y * width);
@@ -172,10 +178,13 @@ void ViewportRenderer::composite_stroke(std::span<std::uint16_t> destination,
       const auto tile_offset = static_cast<std::size_t>(y * width);
       std::copy_n(working_.begin() + static_cast<std::ptrdiff_t>(tile_offset), width,
                   destination.begin() + static_cast<std::ptrdiff_t>(canvas_index));
-      std::fill_n(scratch_.begin() + static_cast<std::ptrdiff_t>(canvas_index), width, 0U);
     }
     ++stats.tiles_composited;
   }
+}
+
+std::span<RibbonPrimitive> ViewportRenderer::primitive_arena() {
+  return std::span(reinterpret_cast<RibbonPrimitive*>(scratch_.data()), primitive_capacity());
 }
 
 }  // namespace tinydraw

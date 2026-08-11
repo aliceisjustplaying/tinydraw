@@ -5,6 +5,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 build="$root/out/build/esp32"
 qemu_build="$root/out/build/esp32-qemu"
 graphics_build="$root/out/build/esp32-graphics"
+vector_build="$root/out/build/esp32-vector-benchmark"
 action="${1:-build}"
 
 if ! command -v eim >/dev/null 2>&1; then
@@ -36,6 +37,17 @@ case "$action" in
     eim run "idf.py -B '$build' build"
     assert_config "$build/sdkconfig" OCT
     ;;
+  vector-benchmark)
+    port="${2:-}"
+    if [[ -z "$port" ]]; then
+      echo "usage: $0 vector-benchmark PORT" >&2
+      exit 2
+    fi
+    cd "$root/esp32"
+    eim run "idf.py -B '$vector_build' -DTINYDRAW_VECTOR_BENCHMARK=ON build"
+    assert_config "$vector_build/sdkconfig" OCT
+    eim run "idf.py -B '$vector_build' -p '$port' flash"
+    ;;
   qemu)
     enable_qemu
     cd "$root/esp32"
@@ -56,10 +68,10 @@ case "$action" in
     fi
     ;;
   clean)
-    rm -rf "$build" "$qemu_build" "$graphics_build"
+    rm -rf "$build" "$qemu_build" "$graphics_build" "$vector_build"
     ;;
   *)
-    echo "usage: $0 {build|qemu|graphics|graphics-test|clean}" >&2
+    echo "usage: $0 {build|vector-benchmark PORT|qemu|graphics|graphics-test|clean}" >&2
     exit 2
     ;;
 esac

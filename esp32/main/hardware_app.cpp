@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -36,6 +37,9 @@
 #include "tinydraw/ink/ribbon_geometry.h"
 #include "tinydraw/ui/toolbar.h"
 #include "usb_export.h"
+#ifdef TINYDRAW_VECTOR_BENCHMARK
+#include "vector_benchmark_runner.h"
+#endif
 
 namespace {
 
@@ -751,7 +755,6 @@ void run_hardware_app() {
               static_cast<unsigned long>(kVectorStrokeCapacity * sizeof(tinydraw::VectorStroke) +
                                          kVectorSampleCapacity * sizeof(tinydraw::StrokeSample)),
               static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
-
   tinydraw::esp32::DrawingStore drawing_store;
   tinydraw::esp32::ImageExportStore image_export_store;
   tinydraw::esp32::UsbExport usb_export(image_export_store);
@@ -786,6 +789,39 @@ void run_hardware_app() {
       initial_power_status.charging, initial_power_status.external_power);
   display.set_toolbar(toolbar);
   display.push_canvas(canvas.committed());
+#ifdef TINYDRAW_VECTOR_BENCHMARK
+  toolbar.recording = true;
+  display.set_toolbar(toolbar);
+  display.refresh_toolbar(canvas.committed());
+  std::printf("TINYDRAW_VECTOR_BENCH_PENDING delay_ms=1000 stack_bytes=16384\n");
+  std::fflush(stdout);
+  vTaskDelay(pdMS_TO_TICKS(1'000));
+  // The renderer's ribbon path recurses through ~1 KiB RibbonUpdate frames and
+  // overflows the 6 KiB main-task stack; give the benchmark its own task.
+  {
+    struct BenchmarkTask {
+      std::span<std::uint16_t> destination;
+      std::atomic<bool> done{false};
+    } benchmark_task{.destination = canvas.visible()};
+    const auto entry = [](void* raw) {
+      auto* task = static_cast<BenchmarkTask*>(raw);
+      tinydraw::esp32::run_vector_benchmarks(task->destination);
+      task->done.store(true);
+      vTaskDelete(nullptr);
+    };
+    if (xTaskCreate(entry, "vector_bench", 16'384U, &benchmark_task, 2U, nullptr) == pdPASS) {
+      while (!benchmark_task.done.load()) {
+        vTaskDelay(pdMS_TO_TICKS(50));
+      }
+    } else {
+      std::printf("TINYDRAW_VECTOR_BENCH_FAIL task=0\n");
+    }
+  }
+  std::copy(canvas.committed().begin(), canvas.committed().end(), canvas.visible().begin());
+  toolbar.recording = false;
+  display.set_toolbar(toolbar);
+  display.refresh_toolbar(canvas.committed());
+#endif
   static_cast<void>(tinydraw::esp32::start_time_sync(clock));
 
   tinydraw::InkConfig brush;

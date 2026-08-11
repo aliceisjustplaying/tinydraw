@@ -15,6 +15,9 @@ namespace tinydraw {
 struct ViewportRenderOptions {
   std::uint16_t background = 0xFFFFU;
   float minimum_screen_radius = 0.0F;
+  void (*yield)(void*) = nullptr;
+  void* yield_context = nullptr;
+  std::uint32_t yield_every_strokes = 0;
 };
 
 struct ViewportRenderStats {
@@ -24,10 +27,12 @@ struct ViewportRenderStats {
   std::uint32_t primitives_rasterized = 0;
   std::uint32_t primitive_tile_visits = 0;
   std::uint32_t tiles_composited = 0;
+  bool complete = true;
 };
 
 // Rebuilds one raster viewport without display transfers or live-stroke state.
-// Scratch holds one byte of coverage per viewport pixel and may live in PSRAM.
+// Scratch is a bounded temporary RibbonPrimitive arena; no coverage plane or
+// generated geometry becomes part of the document.
 class ViewportRenderer {
  public:
   static constexpr std::size_t kPixelCount = static_cast<std::size_t>(kCanvasWidth * kCanvasHeight);
@@ -35,7 +40,8 @@ class ViewportRenderer {
 
   explicit ViewportRenderer(std::span<std::uint8_t> scratch);
 
-  [[nodiscard]] bool valid() const { return scratch_.size() >= kScratchBytes; }
+  [[nodiscard]] bool valid() const;
+  [[nodiscard]] std::size_t primitive_capacity() const;
   [[nodiscard]] ViewportRenderStats render(const VectorDocument& document, Camera camera,
                                            std::span<std::uint16_t> destination,
                                            ViewportRenderOptions options = {});
@@ -47,12 +53,12 @@ class ViewportRenderer {
   static constexpr int kTileCount = kTilesAcross * kTilesDown;
   using TileFlags = std::array<bool, kTileCount>;
 
-  void rasterize(const RibbonPrimitiveBatch& primitives, TileFlags& stroke_tiles,
-                 ViewportRenderStats& stats);
-  void load_tile(int tile_x, int tile_y);
-  void store_tile(int tile_x, int tile_y);
-  void composite_stroke(std::span<std::uint16_t> destination, const TileFlags& stroke_tiles,
+  [[nodiscard]] bool append(const RibbonPrimitiveBatch& batch, std::size_t& primitive_count,
+                            TileFlags& stroke_tiles);
+  void composite_stroke(std::span<std::uint16_t> destination,
+                        std::span<const RibbonPrimitive> primitives, const TileFlags& stroke_tiles,
                         std::uint16_t color, ViewportRenderStats& stats);
+  [[nodiscard]] std::span<RibbonPrimitive> primitive_arena();
 
   std::span<std::uint8_t> scratch_;
   CoverageTile coverage_{0, 0, kTileSize, kTileSize};
