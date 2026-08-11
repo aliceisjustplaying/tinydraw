@@ -42,6 +42,21 @@ bool WorldCanvas::capture(std::span<const std::uint16_t> viewport) {
   return true;
 }
 
+bool WorldCanvas::replace(std::span<const std::uint16_t> pixels, ViewOrigin origin,
+                          std::span<std::uint16_t> committed, std::span<std::uint16_t> visible) {
+  if (!valid_ || pixels.size() < kRequiredPixels || !valid_viewport(committed) ||
+      (!visible.empty() && !valid_viewport(visible))) {
+    return false;
+  }
+  std::copy_n(pixels.begin(), kRequiredPixels, storage_.begin());
+  origin_ = clamp_origin(origin);
+  copy_to_viewport(committed);
+  if (!visible.empty()) {
+    copy_to_viewport(visible);
+  }
+  return true;
+}
+
 bool WorldCanvas::move_to(ViewOrigin origin) {
   if (!valid_) {
     return false;

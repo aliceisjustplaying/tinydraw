@@ -115,9 +115,26 @@ bool DrawingSnapshot::load_sector(std::size_t index, std::span<const std::uint16
 
 bool DrawingSnapshot::sector_matches(std::size_t index,
                                      std::span<const std::uint16_t> serialized) const {
-  std::array<std::uint16_t, kSectorPixels> current{};
-  return copy_sector(index, current) && serialized.size() >= kSectorPixels &&
-         std::equal(current.begin(), current.end(), serialized.begin());
+  if (!valid_ || index >= kSectorCount || serialized.size() < kSectorPixels) {
+    return false;
+  }
+  for (std::size_t tile_in_sector = 0; tile_in_sector < kTilesPerSector; ++tile_in_sector) {
+    const std::size_t tile = index * kTilesPerSector + tile_in_sector;
+    const int tile_x = static_cast<int>(tile % static_cast<std::size_t>(kTilesAcross));
+    const int tile_y = static_cast<int>(tile / static_cast<std::size_t>(kTilesAcross));
+    const auto expected =
+        serialized.begin() + static_cast<std::ptrdiff_t>(tile_in_sector * kTilePixels);
+    for (int row = 0; row < kTileSize; ++row) {
+      const auto current = storage_.begin() + static_cast<std::ptrdiff_t>(
+                                                  (tile_y * kTileSize + row) * WorldCanvas::kWidth +
+                                                  tile_x * kTileSize);
+      if (!std::equal(current, current + kTileSize,
+                      expected + static_cast<std::ptrdiff_t>(row * kTileSize))) {
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 bool DrawingSnapshot::sector_pending(std::size_t index) const {

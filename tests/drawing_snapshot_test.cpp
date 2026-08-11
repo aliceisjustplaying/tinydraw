@@ -31,9 +31,18 @@ TEST_CASE("drawing snapshot round-trips a complete world and viewport origin") {
   CHECK(snapshot.pending_sector_count() == tinydraw::DrawingSnapshot::kSectorCount);
   CHECK(snapshot.metadata_pending());
 
+  std::vector<std::uint16_t> restored_storage(tinydraw::DrawingSnapshot::kRequiredPixels, kWhite);
+  tinydraw::DrawingSnapshot restored_snapshot(restored_storage);
+  std::vector<std::uint16_t> sector(tinydraw::DrawingSnapshot::kSectorPixels);
+  for (std::size_t index = 0; index < tinydraw::DrawingSnapshot::kSectorCount; ++index) {
+    REQUIRE(snapshot.copy_sector(index, sector));
+    REQUIRE(restored_snapshot.load_sector(index, sector));
+  }
+  restored_snapshot.load_origin(snapshot.origin());
+
   std::vector<std::uint16_t> restored(world.size(), 0U);
   tinydraw::ViewOrigin restored_origin{};
-  CHECK(snapshot.restore(restored, restored_origin));
+  CHECK(restored_snapshot.restore(restored, restored_origin));
   CHECK(restored == world);
   CHECK(restored_origin == tinydraw::ViewOrigin{123, 234});
 }

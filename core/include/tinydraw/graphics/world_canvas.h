@@ -31,6 +31,9 @@ class WorldCanvas {
   [[nodiscard]] std::span<const std::uint16_t> pixels() const;
 
   [[nodiscard]] bool capture(std::span<const std::uint16_t> viewport);
+  [[nodiscard]] bool replace(std::span<const std::uint16_t> pixels, ViewOrigin origin,
+                             std::span<std::uint16_t> committed,
+                             std::span<std::uint16_t> visible = {});
   [[nodiscard]] bool move_to(ViewOrigin origin);
   [[nodiscard]] bool show(ViewOrigin origin, std::span<std::uint16_t> committed,
                           std::span<std::uint16_t> visible = {});
