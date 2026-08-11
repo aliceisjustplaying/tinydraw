@@ -8,6 +8,7 @@
 #include <new>
 #include <span>
 
+#include "esp_cpu.h"
 #include "esp_heap_caps.h"
 #include "esp_partition.h"
 #include "esp_system.h"
@@ -42,6 +43,12 @@ constexpr std::array kCases{
 constexpr std::array kZooms{0.25F, 0.5F, 1.0F, 2.0F};
 
 void benchmark_yield(void*) { vTaskDelay(1U); }
+
+std::uint32_t benchmark_cycles() { return static_cast<std::uint32_t>(esp_cpu_get_cycle_count()); }
+
+constexpr std::uint64_t kCyclesPerMicrosecond = 240U;
+
+std::uint64_t to_microseconds(std::uint64_t cycles) { return cycles / kCyclesPerMicrosecond; }
 
 bool persist_report(const esp_partition_t* partition, std::size_t offset, const char* report) {
   return esp_partition_erase_range(partition, offset, kReportBytes) == ESP_OK &&
@@ -134,13 +141,10 @@ void run_vector_benchmarks(std::span<std::uint16_t> destination) {
                   static_cast<unsigned>(zoom * 100.0F),
                   static_cast<unsigned long>(benchmark.strokes));
       std::fflush(stdout);
-      append_report(report, report_size, "CASE_START pattern=%s zoom=%u strokes=%lu\n",
-                    pattern_name, static_cast<unsigned>(zoom * 100.0F),
-                    static_cast<unsigned long>(benchmark.strokes));
-      static_cast<void>(persist_report(export_partition, report_offset, report));
       ViewportRenderOptions options;
       options.yield = benchmark_yield;
-      options.yield_every_strokes = 8U;
+      options.yield_every_tiles = 16U;
+      options.now = benchmark_cycles;
       const auto started = esp_timer_get_time();
       const auto stats = renderer->render(document, {.zoom = zoom}, destination, options);
       const auto elapsed = esp_timer_get_time() - started;
@@ -165,7 +169,8 @@ void run_vector_benchmarks(std::span<std::uint16_t> destination) {
       append_report(
           report, report_size,
           "pattern=%s zoom=%u strokes=%lu intersecting=%lu samples=%lu processed=%lu "
-          "primitives=%lu visits=%lu tiles=%lu bytes=%lu elapsed_us=%lld free=%lu largest=%lu\n",
+          "primitives=%lu visits=%lu tiles=%lu bytes=%lu elapsed_us=%lld free=%lu largest=%lu "
+          "clear_us=%llu geo_us=%llu ras_us=%llu cmp_us=%llu\n",
           pattern_name, static_cast<unsigned>(zoom * 100.0F),
           static_cast<unsigned long>(stats.strokes_tested),
           static_cast<unsigned long>(stats.strokes_intersecting),
@@ -175,7 +180,11 @@ void run_vector_benchmarks(std::span<std::uint16_t> destination) {
           static_cast<unsigned long>(stats.primitive_tile_visits),
           static_cast<unsigned long>(stats.tiles_composited),
           static_cast<unsigned long>(document_bytes), static_cast<long long>(elapsed),
-          static_cast<unsigned long>(free), static_cast<unsigned long>(largest));
+          static_cast<unsigned long>(free), static_cast<unsigned long>(largest),
+          static_cast<unsigned long long>(to_microseconds(stats.clear_ticks)),
+          static_cast<unsigned long long>(to_microseconds(stats.geometry_ticks)),
+          static_cast<unsigned long long>(to_microseconds(stats.raster_ticks)),
+          static_cast<unsigned long long>(to_microseconds(stats.composite_ticks)));
       static_cast<void>(persist_report(export_partition, report_offset, report));
       vTaskDelay(1U);
     }
