@@ -25,13 +25,18 @@ if(NOT TINYDRAW_QEMU)
     ${TINYDRAW_PNGENC_SRCS}
   )
   list(APPEND TINYDRAW_PLATFORM_REQUIRES esp_event esp_lcd_co5300 esp_lcd_touch_cst816s esp_netif esp_wifi nvs_flash pcf85063a tinyusb esp_hw_support)
-  if(TINYDRAW_VECTOR_BENCHMARK)
+  if(TINYDRAW_VECTOR_BENCHMARK OR TINYDRAW_PHASE2_PROTOTYPE)
     list(APPEND TINYDRAW_PLATFORM_SRCS
-      "vector_benchmark_runner.cpp"
       "${TINYDRAW_CORE}/src/camera.cpp"
       "${TINYDRAW_CORE}/src/vector_benchmark.cpp"
       "${TINYDRAW_CORE}/src/viewport_renderer.cpp"
     )
+  endif()
+  if(TINYDRAW_VECTOR_BENCHMARK)
+    list(APPEND TINYDRAW_PLATFORM_SRCS "vector_benchmark_runner.cpp")
+  endif()
+  if(TINYDRAW_PHASE2_PROTOTYPE)
+    list(APPEND TINYDRAW_PLATFORM_SRCS "phase2_prototype_runner.cpp")
   endif()
 endif()
 
@@ -69,6 +74,9 @@ if(NOT TINYDRAW_QEMU)
 endif()
 if(TINYDRAW_VECTOR_BENCHMARK)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_BENCHMARK=1)
+endif()
+if(TINYDRAW_PHASE2_PROTOTYPE)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_PHASE2_PROTOTYPE=1)
 endif()
 if(TINYDRAW_QEMU)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_QEMU=1)

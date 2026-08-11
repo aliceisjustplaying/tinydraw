@@ -37,6 +37,9 @@
 #include "tinydraw/ink/ribbon_geometry.h"
 #include "tinydraw/ui/toolbar.h"
 #include "usb_export.h"
+#ifdef TINYDRAW_PHASE2_PROTOTYPE
+#include "phase2_prototype_runner.h"
+#endif
 #ifdef TINYDRAW_VECTOR_BENCHMARK
 #include "vector_benchmark_runner.h"
 #endif
@@ -575,6 +578,9 @@ struct TouchTaskContext {
   std::span<const tinydraw::DemoSample> built_in_demo;
   tinydraw::esp32::PowerManager* power = nullptr;
   tinydraw::esp32::PowerStatus power_status{};
+#ifdef TINYDRAW_PHASE2_PROTOTYPE
+  tinydraw::esp32::Phase2TouchProbe* phase2_probe = nullptr;
+#endif
 };
 
 void enqueue_latest(QueueHandle_t queue, const AppEvent& event) {
@@ -659,6 +665,11 @@ void touch_task(void* argument) {
     tinydraw::Point point{};
     const TouchRead read = context.touch->read(point);
     const std::uint32_t now = timestamp_us();
+#ifdef TINYDRAW_PHASE2_PROTOTYPE
+    if (context.phase2_probe != nullptr) {
+      context.phase2_probe->record(now);
+    }
+#endif
     if (read == TouchRead::kPoint) {
       no_touch_started_us = 0;
       if (!touching || point.x != last_point.x || point.y != last_point.y) {
@@ -823,7 +834,9 @@ void run_hardware_app() {
   display.set_toolbar(toolbar);
   display.refresh_toolbar(canvas.committed());
 #endif
+#ifndef TINYDRAW_PHASE2_PROTOTYPE
   static_cast<void>(tinydraw::esp32::start_time_sync(clock));
+#endif
 
   tinydraw::InkConfig brush;
   brush.size = tinydraw::brush_size(toolbar.size);
@@ -1087,6 +1100,9 @@ void run_hardware_app() {
   demo_button_config.pull_up_en = GPIO_PULLUP_ENABLE;
   ESP_ERROR_CHECK(gpio_config(&demo_button_config));
 
+#ifdef TINYDRAW_PHASE2_PROTOTYPE
+  tinydraw::esp32::Phase2TouchProbe phase2_touch_probe;
+#endif
   TouchTaskContext touch_context{
       .touch = &touch,
       .queue = touch_queue,
@@ -1094,12 +1110,60 @@ void run_hardware_app() {
       .built_in_demo = tinydraw::esp32::demo::kBuiltInDemo,
       .power = &power,
       .power_status = initial_power_status,
+#ifdef TINYDRAW_PHASE2_PROTOTYPE
+      .phase2_probe = &phase2_touch_probe,
+#endif
   };
   if (xTaskCreatePinnedToCore(touch_task, "tinydraw_touch", 4096U, &touch_context, 5U, nullptr,
                               1) != pdPASS) {
     std::printf("TINYDRAW_HARDWARE_FAIL touch_task=0\n");
     return;
   }
+
+#ifdef TINYDRAW_PHASE2_PROTOTYPE
+  toolbar.recording = true;
+  display.set_toolbar(toolbar);
+  display.refresh_toolbar(canvas.committed());
+  std::printf("TINYDRAW_PHASE2_PENDING delay_ms=1000 stack_bytes=16384\n");
+  std::fflush(stdout);
+  vTaskDelay(pdMS_TO_TICKS(1'000));
+  {
+    struct PrototypeTask {
+      std::span<std::uint16_t> cache;
+      std::span<std::uint16_t> reference;
+      tinydraw::DisplayBackend* display = nullptr;
+      tinydraw::esp32::Phase2TouchProbe* touch_probe = nullptr;
+      std::atomic<bool> done{false};
+    } prototype_task{
+        .cache = canvas.visible(),
+        .reference = canvas.committed(),
+        .display = &display,
+        .touch_probe = &phase2_touch_probe,
+    };
+    const auto entry = [](void* raw) {
+      auto* task = static_cast<PrototypeTask*>(raw);
+      tinydraw::esp32::run_phase2_prototype(task->cache, task->reference, *task->display,
+                                            *task->touch_probe);
+      task->done.store(true);
+      vTaskDelete(nullptr);
+    };
+    if (xTaskCreatePinnedToCore(entry, "phase2_proto", 16'384U, &prototype_task, 2U, nullptr, 0) ==
+        pdPASS) {
+      while (!prototype_task.done.load()) {
+        vTaskDelay(pdMS_TO_TICKS(50));
+      }
+    } else {
+      std::printf("TINYDRAW_PHASE2_FAIL task=0\n");
+    }
+  }
+  xQueueReset(touch_queue);
+  static_cast<void>(
+      canvas.world().show(canvas.world().origin(), canvas.committed(), canvas.visible()));
+  toolbar.recording = false;
+  display.set_toolbar(toolbar);
+  display.push_canvas(canvas.committed());
+  static_cast<void>(tinydraw::esp32::start_time_sync(clock));
+#endif
 
   std::printf("TINYDRAW_HARDWARE_OK display=CO5300 touch=CST820 demo_capacity=%lu\n",
               static_cast<unsigned long>(kDemoCapacity));

@@ -92,17 +92,40 @@ std::span<std::uint16_t> ViewportRenderer::entries() {
 ViewportRenderStats ViewportRenderer::render(const VectorDocument& document, Camera camera,
                                              std::span<std::uint16_t> destination,
                                              ViewportRenderOptions options) {
+  return render_region(document, camera, destination,
+                       {.x0 = 0, .y0 = 0, .x1 = kCanvasWidth, .y1 = kCanvasHeight}, options);
+}
+
+ViewportRenderStats ViewportRenderer::render_region(const VectorDocument& document, Camera camera,
+                                                    std::span<std::uint16_t> destination,
+                                                    Rect region, ViewportRenderOptions options) {
   ViewportRenderStats stats;
-  if (!valid() || destination.size() < kPixelCount || !camera_valid(camera) ||
+  const bool region_valid = region.x0 >= 0 && region.y0 >= 0 && region.x1 <= kCanvasWidth &&
+                            region.y1 <= kCanvasHeight && region.x0 <= region.x1 &&
+                            region.y0 <= region.y1;
+  if (!valid() || destination.size() < kPixelCount || !camera_valid(camera) || !region_valid ||
       !std::isfinite(options.minimum_screen_radius) || options.minimum_screen_radius < 0.0F) {
     stats.complete = false;
     return stats;
   }
+  if (region.x0 == region.x1 || region.y0 == region.y1) {
+    return stats;
+  }
 
   const std::uint32_t clear_started = tick(options.now);
-  std::fill_n(destination.begin(), kPixelCount, options.background);
+  for (int y = region.y0; y < region.y1; ++y) {
+    const auto row =
+        destination.begin() + static_cast<std::ptrdiff_t>(y * kCanvasWidth + region.x0);
+    std::fill_n(row, static_cast<std::size_t>(region.x1 - region.x0), options.background);
+  }
   stats.clear_ticks += static_cast<std::uint32_t>(tick(options.now) - clear_started);
-  const RectF viewport = camera_world_viewport(camera);
+  const double inverse_zoom = 1.0 / static_cast<double>(camera.zoom);
+  const RectF viewport{
+      .x0 = static_cast<float>(camera.x + static_cast<double>(region.x0) * inverse_zoom),
+      .y0 = static_cast<float>(camera.y + static_cast<double>(region.y0) * inverse_zoom),
+      .x1 = static_cast<float>(camera.x + static_cast<double>(region.x1) * inverse_zoom),
+      .y1 = static_cast<float>(camera.y + static_cast<double>(region.y1) * inverse_zoom),
+  };
 
   Batch batch;
   const auto strokes = document.strokes();
@@ -121,7 +144,7 @@ ViewportRenderStats ViewportRenderer::render(const VectorDocument& document, Cam
     }
 
     const Batch checkpoint = batch;
-    if (render_stroke_geometry(stroke, samples, camera, options, batch, stats)) {
+    if (render_stroke_geometry(stroke, samples, camera, region, options, batch, stats)) {
       ++stats.strokes_intersecting;
       stats.samples_processed += static_cast<std::uint32_t>(samples.size());
       ++stroke_index;
@@ -135,17 +158,17 @@ ViewportRenderStats ViewportRenderer::render(const VectorDocument& document, Cam
       return stats;
     }
     batch = checkpoint;
-    composite_batch(destination, batch, options, stats);
+    composite_batch(destination, batch, region, options, stats);
     batch = {};
   }
-  composite_batch(destination, batch, options, stats);
+  composite_batch(destination, batch, region, options, stats);
   return stats;
 }
 
 bool ViewportRenderer::render_stroke_geometry(const VectorStroke& stroke,
                                               std::span<const StrokeSample> samples, Camera camera,
-                                              const ViewportRenderOptions& options, Batch& batch,
-                                              ViewportRenderStats& stats) {
+                                              Rect region, const ViewportRenderOptions& options,
+                                              Batch& batch, ViewportRenderStats& stats) {
   const std::uint32_t geometry_started = tick(options.now);
   auto arena = primitives();
   auto rects = tile_rects();
@@ -183,17 +206,24 @@ bool ViewportRenderer::render_stroke_geometry(const VectorStroke& stroke,
             std::clamp(static_cast<int>(std::floor(bounds.y0)), 0, kCanvasHeight - 1);
         const int last_x = std::clamp(static_cast<int>(std::ceil(bounds.x1)), 0, kCanvasWidth - 1);
         const int last_y = std::clamp(static_cast<int>(std::ceil(bounds.y1)), 0, kCanvasHeight - 1);
-        rect.x0 = static_cast<std::uint8_t>(first_x / kTileSize);
-        rect.y0 = static_cast<std::uint8_t>(first_y / kTileSize);
-        rect.x1 = static_cast<std::uint8_t>(last_x / kTileSize);
-        rect.y1 = static_cast<std::uint8_t>(last_y / kTileSize);
-        const std::size_t touched = static_cast<std::size_t>(rect.x1 - rect.x0 + 1) *
-                                    static_cast<std::size_t>(rect.y1 - rect.y0 + 1);
-        if (touched > kBatchEntryCapacity - batch.entry_count) {
-          stats.geometry_ticks += static_cast<std::uint32_t>(tick(options.now) - geometry_started);
-          return false;
+        const int first_tile_x = std::max(first_x / kTileSize, region.x0 / kTileSize);
+        const int first_tile_y = std::max(first_y / kTileSize, region.y0 / kTileSize);
+        const int last_tile_x = std::min(last_x / kTileSize, (region.x1 - 1) / kTileSize);
+        const int last_tile_y = std::min(last_y / kTileSize, (region.y1 - 1) / kTileSize);
+        if (first_tile_x <= last_tile_x && first_tile_y <= last_tile_y) {
+          rect.x0 = static_cast<std::uint8_t>(first_tile_x);
+          rect.y0 = static_cast<std::uint8_t>(first_tile_y);
+          rect.x1 = static_cast<std::uint8_t>(last_tile_x);
+          rect.y1 = static_cast<std::uint8_t>(last_tile_y);
+          const std::size_t touched = static_cast<std::size_t>(rect.x1 - rect.x0 + 1) *
+                                      static_cast<std::size_t>(rect.y1 - rect.y0 + 1);
+          if (touched > kBatchEntryCapacity - batch.entry_count) {
+            stats.geometry_ticks +=
+                static_cast<std::uint32_t>(tick(options.now) - geometry_started);
+            return false;
+          }
+          batch.entry_count += touched;
         }
-        batch.entry_count += touched;
       }
       rects[slot] = rect;
       ++batch.primitive_count;
@@ -218,7 +248,7 @@ bool ViewportRenderer::render_stroke_geometry(const VectorStroke& stroke,
 }
 
 void ViewportRenderer::composite_batch(std::span<std::uint16_t> destination, const Batch& batch,
-                                       const ViewportRenderOptions& options,
+                                       Rect region, const ViewportRenderOptions& options,
                                        ViewportRenderStats& stats) {
   if (batch.range_count == 0U) {
     return;
@@ -260,6 +290,7 @@ void ViewportRenderer::composite_batch(std::span<std::uint16_t> destination, con
       .batch = &batch,
       .destination = destination,
       .options = &options,
+      .region = region,
       .lane_count = options.execute != nullptr ? kLanes : 1,
   };
   if (options.execute != nullptr) {
@@ -296,10 +327,14 @@ void ViewportRenderer::composite_lane(void* raw, int lane) {
       continue;
     }
     const std::uint16_t offset = renderer.tile_offsets_[static_cast<std::size_t>(tile)];
-    const int tile_x = tile % kTilesAcross * kTileSize;
-    const int tile_y = tile / kTilesAcross * kTileSize;
-    const int width = std::min(kTileSize, kCanvasWidth - tile_x);
-    const int height = std::min(kTileSize, kCanvasHeight - tile_y);
+    const int grid_x = tile % kTilesAcross * kTileSize;
+    const int grid_y = tile / kTilesAcross * kTileSize;
+    const int tile_x = std::max(grid_x, work->region.x0);
+    const int tile_y = std::max(grid_y, work->region.y0);
+    const int tile_right = std::min({grid_x + kTileSize, kCanvasWidth, work->region.x1});
+    const int tile_bottom = std::min({grid_y + kTileSize, kCanvasHeight, work->region.y1});
+    const int width = tile_right - tile_x;
+    const int height = tile_bottom - tile_y;
 
     const std::uint32_t read_started = tick(options.now);
     for (int y = 0; y < height; ++y) {

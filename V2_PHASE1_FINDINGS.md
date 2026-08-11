@@ -1,5 +1,8 @@
 # Vector Infinite Canvas — Phase 1 Findings (ESP32-S3)
 
+> Phase 2 cached-pan/progressive-zoom prototype completed successfully. See
+> `V2_PHASE2_PROTOTYPE_FINDINGS.md` for the physical results and updated verdict.
+
 Status as of 2026-08-11, branch `feat/vector-rebuild-prototype`. Companion to
 `V2_INITIAL_SPEC.md`. All numbers are from the physical ESP32-S3 at 240 MHz,
 octal PSRAM at 80 MHz, rebuilding the full 368×448 RGB565 viewport.

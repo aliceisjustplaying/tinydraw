@@ -1,0 +1,19 @@
+TINYDRAW_PHASE2_V1 reset_reason=11 free_before=678256 largest_before=671744
+ALLOC free=334692 largest=327680 free_internal=22044 largest_internal=12288
+PAN case=visible1000 dx=32 dy=0 strip_us=21743 present_us=45477 full_us=189881 exact=1 complete=1 strip_strokes=0 strip_tiles=0 full_strokes=622 polls=22 touch_avg_us=970 touch_max_us=1029
+PAN case=visible1000 dx=0 dy=32 strip_us=24940 present_us=45464 full_us=194713 exact=1 complete=1 strip_strokes=0 strip_tiles=0 full_strokes=641 polls=25 touch_avg_us=975 touch_max_us=1067
+ZOOM case=visible1000 zoom=50 preview_us=564874 preview_present_us=45453 first_band_us=7694 refine_us=221726 exact=1 complete=1 preview_polls=565 preview_touch_avg_us=998 preview_touch_max_us=1005 polls=220 touch_avg_us=1004 touch_max_us=1999
+ZOOM case=visible1000 zoom=200 preview_us=551101 preview_present_us=45458 first_band_us=22830 refine_us=255380 exact=1 complete=1 preview_polls=550 preview_touch_avg_us=1000 preview_touch_max_us=2004 polls=252 touch_avg_us=1010 touch_max_us=1887
+MEM case=visible1000 free=334692 largest=327680 minimum=334692
+PAN case=handwriting1000 dx=32 dy=0 strip_us=21756 present_us=45396 full_us=1331452 exact=0 complete=1 strip_strokes=0 strip_tiles=0 full_strokes=731 polls=22 touch_avg_us=988 touch_max_us=1420
+PAN case=handwriting1000 dx=0 dy=32 strip_us=24915 present_us=45445 full_us=1373746 exact=0 complete=1 strip_strokes=0 strip_tiles=0 full_strokes=740 polls=25 touch_avg_us=990 touch_max_us=1415
+ZOOM case=handwriting1000 zoom=50 preview_us=564886 preview_present_us=45420 first_band_us=7759 refine_us=1340215 exact=1 complete=1 preview_polls=565 preview_touch_avg_us=999 preview_touch_max_us=1428 polls=1339 touch_avg_us=1000 touch_max_us=2005
+ZOOM case=handwriting1000 zoom=200 preview_us=551100 preview_present_us=45453 first_band_us=84076 refine_us=1154695 exact=1 complete=1 preview_polls=550 preview_touch_avg_us=1001 preview_touch_max_us=1999 polls=1152 touch_avg_us=1001 touch_max_us=1999
+MEM case=handwriting1000 free=334692 largest=327680 minimum=334692
+PAN case=dense100 dx=32 dy=0 strip_us=20961 present_us=45533 full_us=2053893 exact=1 complete=1 strip_strokes=0 strip_tiles=0 full_strokes=100 polls=21 touch_avg_us=968 touch_max_us=1044
+PAN case=dense100 dx=0 dy=32 strip_us=24127 present_us=45482 full_us=2073905 exact=1 complete=1 strip_strokes=0 strip_tiles=0 full_strokes=100 polls=24 touch_avg_us=975 touch_max_us=1009
+ZOOM case=dense100 zoom=50 preview_us=564912 preview_present_us=45453 first_band_us=6716 refine_us=2420458 exact=1 complete=1 preview_polls=564 preview_touch_avg_us=1000 preview_touch_max_us=2002 polls=2416 touch_avg_us=1001 touch_max_us=2035
+ZOOM case=dense100 zoom=200 preview_us=551067 preview_present_us=45484 first_band_us=366016 refine_us=5198355 exact=1 complete=1 preview_polls=551 preview_touch_avg_us=998 preview_touch_max_us=1004 polls=5192 touch_avg_us=1001 touch_max_us=2162
+MEM case=dense100 free=334692 largest=327680 minimum=334692
+DONE free=334692 largest=327680 minimum=334692
+

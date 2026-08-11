@@ -61,6 +61,14 @@ class ViewportRenderer {
                                            std::span<std::uint16_t> destination,
                                            ViewportRenderOptions options = {});
 
+  // Rebuilds only a half-open screen-space region and leaves every pixel
+  // outside it untouched. This is the seam used by cached pan strips and
+  // progressive refinement; output inside the region is identical to a full
+  // render at the same camera.
+  [[nodiscard]] ViewportRenderStats render_region(const VectorDocument& document, Camera camera,
+                                                  std::span<std::uint16_t> destination, Rect region,
+                                                  ViewportRenderOptions options = {});
+
  private:
   static constexpr int kTileSize = kStrokeTileSize;
   static constexpr int kTilesAcross = (kCanvasWidth + kTileSize - 1) / kTileSize;
@@ -101,15 +109,16 @@ class ViewportRenderer {
     const Batch* batch = nullptr;
     std::span<std::uint16_t> destination;
     const ViewportRenderOptions* options = nullptr;
+    Rect region{};
     int lane_count = 1;
     std::array<ViewportRenderStats, kLanes> lane_stats{};
   };
 
   [[nodiscard]] bool render_stroke_geometry(const VectorStroke& stroke,
                                             std::span<const StrokeSample> samples, Camera camera,
-                                            const ViewportRenderOptions& options, Batch& batch,
-                                            ViewportRenderStats& stats);
-  void composite_batch(std::span<std::uint16_t> destination, const Batch& batch,
+                                            Rect region, const ViewportRenderOptions& options,
+                                            Batch& batch, ViewportRenderStats& stats);
+  void composite_batch(std::span<std::uint16_t> destination, const Batch& batch, Rect region,
                        const ViewportRenderOptions& options, ViewportRenderStats& stats);
   static void composite_lane(void* raw, int lane);
 

@@ -2,6 +2,7 @@
 
 #include <doctest.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -124,6 +125,67 @@ TEST_CASE("ordered eraser strokes remove raster ink") {
 
   CHECK(rebuilt[pixel(100, 100)] == kWhite);
   CHECK(rebuilt[pixel(108, 100)] != kWhite);
+}
+
+TEST_CASE("region render matches a full render and preserves pixels outside the region") {
+  std::array<tinydraw::VectorStroke, 3> stroke_storage;
+  std::array<tinydraw::StrokeSample, 9> sample_storage;
+  tinydraw::VectorDocument document(stroke_storage, sample_storage);
+  REQUIRE(document.begin_stroke(kBlue, tinydraw::VectorTool::kPen,
+                                {.x = 30.0F, .y = 90.0F, .radius = 7.0F}));
+  REQUIRE(document.append({.x = 180.0F, .y = 140.0F, .radius = 7.0F}));
+  REQUIRE(document.append({.x = 340.0F, .y = 210.0F, .radius = 7.0F}));
+  REQUIRE(document.finish_stroke());
+
+  std::vector<std::uint8_t> scratch(kPixels);
+  std::vector<std::uint16_t> full(kPixels, 0U);
+  std::vector<std::uint16_t> partial(kPixels, 0x1234U);
+  tinydraw::ViewportRenderer renderer(scratch);
+  static_cast<void>(renderer.render(document, {}, full));
+  const tinydraw::Rect region{.x0 = 73, .y0 = 61, .x1 = 289, .y1 = 277};
+  const auto stats = renderer.render_region(document, {}, partial, region);
+
+  REQUIRE(stats.complete);
+  for (int y = 0; y < tinydraw::kCanvasHeight; ++y) {
+    for (int x = 0; x < tinydraw::kCanvasWidth; ++x) {
+      const bool inside = x >= region.x0 && x < region.x1 && y >= region.y0 && y < region.y1;
+      CHECK(partial[pixel(x, y)] == (inside ? full[pixel(x, y)] : 0x1234U));
+    }
+  }
+}
+
+TEST_CASE("cached integer pan plus exposed strip render equals a full rebuild") {
+  std::array<tinydraw::VectorStroke, 3> stroke_storage;
+  std::array<tinydraw::StrokeSample, 9> sample_storage;
+  tinydraw::VectorDocument document(stroke_storage, sample_storage);
+  REQUIRE(document.begin_stroke(kBlue, tinydraw::VectorTool::kPen,
+                                {.x = 20.0F, .y = 40.0F, .radius = 6.0F}));
+  REQUIRE(document.append({.x = 220.0F, .y = 180.0F, .radius = 8.0F}));
+  REQUIRE(document.append({.x = 430.0F, .y = 300.0F, .radius = 5.0F}));
+  REQUIRE(document.finish_stroke());
+
+  std::vector<std::uint8_t> scratch(kPixels);
+  std::vector<std::uint16_t> cached(kPixels);
+  std::vector<std::uint16_t> expected(kPixels);
+  tinydraw::ViewportRenderer renderer(scratch);
+  const tinydraw::Camera old_camera{.x = 0.0, .y = 0.0, .zoom = 1.0F};
+  constexpr int kPanPixels = 37;
+  const tinydraw::Camera new_camera{.x = kPanPixels, .y = 0.0, .zoom = 1.0F};
+  static_cast<void>(renderer.render(document, old_camera, cached));
+  static_cast<void>(renderer.render(document, new_camera, expected));
+
+  for (int y = 0; y < tinydraw::kCanvasHeight; ++y) {
+    auto* row = cached.data() + static_cast<std::ptrdiff_t>(y * tinydraw::kCanvasWidth);
+    std::move(row + kPanPixels, row + tinydraw::kCanvasWidth, row);
+  }
+  const auto stats = renderer.render_region(document, new_camera, cached,
+                                            {.x0 = tinydraw::kCanvasWidth - kPanPixels,
+                                             .y0 = 0,
+                                             .x1 = tinydraw::kCanvasWidth,
+                                             .y1 = tinydraw::kCanvasHeight});
+
+  CHECK(stats.complete);
+  CHECK(cached == expected);
 }
 
 TEST_CASE("empty document clears a reused viewport") {
