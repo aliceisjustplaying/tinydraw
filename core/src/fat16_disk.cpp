@@ -81,7 +81,28 @@ void make_fat_sector(std::span<std::uint8_t> sector, std::uint32_t fat_sector,
   }
 }
 
-void make_root_sector(std::span<std::uint8_t> sector, std::size_t file_size) {
+bool valid_fat_time(const FatDateTime& time) {
+  return time.year >= 1980U && time.year <= 2107U && time.month >= 1U && time.month <= 12U &&
+         time.day >= 1U && time.day <= 31U && time.hour <= 23U && time.minute <= 59U &&
+         time.second <= 59U;
+}
+
+std::uint16_t fat_date(const FatDateTime& time) {
+  const auto encoded = ((static_cast<std::uint32_t>(time.year) - 1980U) << 9U) |
+                       (static_cast<std::uint32_t>(time.month) << 5U) |
+                       static_cast<std::uint32_t>(time.day);
+  return static_cast<std::uint16_t>(encoded);
+}
+
+std::uint16_t fat_time(const FatDateTime& time) {
+  const auto encoded = (static_cast<std::uint32_t>(time.hour) << 11U) |
+                       (static_cast<std::uint32_t>(time.minute) << 5U) |
+                       (static_cast<std::uint32_t>(time.second) / 2U);
+  return static_cast<std::uint16_t>(encoded);
+}
+
+void make_root_sector(std::span<std::uint8_t> sector, std::size_t file_size,
+                      const FatDateTime& modified_time) {
   std::memcpy(sector.data(), "TINYDRAW   ", 11);
   sector[11] = 0x08U;
   if (file_size == 0U) {
@@ -90,6 +111,15 @@ void make_root_sector(std::span<std::uint8_t> sector, std::size_t file_size) {
   auto file = sector.subspan(32U, 32U);
   std::memcpy(file.data(), "DRAWING PNG", 11);
   file[11] = 0x21U;
+  if (valid_fat_time(modified_time)) {
+    const auto date = fat_date(modified_time);
+    const auto time = fat_time(modified_time);
+    put_u16(file, 14, time);
+    put_u16(file, 16, date);
+    put_u16(file, 18, date);
+    put_u16(file, 22, time);
+    put_u16(file, 24, date);
+  }
   put_u16(file, 26, 2U);
   put_u32(file, 28, static_cast<std::uint32_t>(file_size));
 }
@@ -122,7 +152,7 @@ bool Fat16ExportDisk::read(std::uint32_t lba, std::uint32_t offset,
     const auto clusters = static_cast<std::uint32_t>((file_size + kBlockSize - 1U) / kBlockSize);
     make_fat_sector(sector, lba - kSecondFat, clusters);
   } else if (lba == kRootSector) {
-    make_root_sector(sector, file_size);
+    make_root_sector(sector, file_size, modified_time_);
   }
   std::copy_n(sector.begin() + static_cast<std::ptrdiff_t>(offset), output.size(), output.begin());
   return true;

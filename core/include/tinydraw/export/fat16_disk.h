@@ -6,6 +6,15 @@
 
 namespace tinydraw {
 
+struct FatDateTime {
+  std::uint16_t year = 0;
+  std::uint8_t month = 0;
+  std::uint8_t day = 0;
+  std::uint8_t hour = 0;
+  std::uint8_t minute = 0;
+  std::uint8_t second = 0;
+};
+
 class ReadOnlyFile {
  public:
   virtual ~ReadOnlyFile() = default;
@@ -22,11 +31,13 @@ class Fat16ExportDisk {
 
   explicit Fat16ExportDisk(const ReadOnlyFile& file) : file_(file) {}
 
+  void set_modified_time(FatDateTime time) { modified_time_ = time; }
   [[nodiscard]] bool read(std::uint32_t lba, std::uint32_t offset,
                           std::span<std::uint8_t> output) const;
 
  private:
   const ReadOnlyFile& file_;
+  FatDateTime modified_time_{};
 };
 
 }  // namespace tinydraw

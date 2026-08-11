@@ -15,6 +15,7 @@ class UsbExport {
   explicit UsbExport(const ImageExportStore& store);
 
   [[nodiscard]] bool active() const { return active_; }
+  void set_modified_time(FatDateTime time) { disk_.set_modified_time(time); }
   void prepare_export();
   [[nodiscard]] bool finish_export(bool image_available);
   [[nodiscard]] bool read(std::uint32_t lba, std::uint32_t offset,

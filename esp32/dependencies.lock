@@ -77,11 +77,22 @@ dependencies:
     source:
       type: idf
     version: 6.0.2
+  waveshare/pcf85063a:
+    component_hash: 13696b7d953566b8eaf50b904754d002ef602a352fc3dc9e22d2137e8dd40ca2
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.3.2'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 2.0.0
 direct_dependencies:
 - espressif/esp_lcd_co5300
 - espressif/esp_lcd_qemu_rgb
 - espressif/esp_lcd_touch_cst816s
 - espressif/tinyusb
-manifest_hash: f59ef50049373bd64753df4b795d953357f95b67c66518fc5abac7d1589cea19
+- waveshare/pcf85063a
+manifest_hash: 6561b347869ab64d4bf90d8f2cdbe1a8c1e2935f4e5578bce035be5c21c65be8
 target: esp32s3
 version: 3.0.0

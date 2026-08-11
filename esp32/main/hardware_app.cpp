@@ -28,6 +28,7 @@
 #include "freertos/task.h"
 #include "image_export_store.h"
 #include "power_manager.h"
+#include "rtc_clock.h"
 #include "tinydraw/demo/demo_tape.h"
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
@@ -717,6 +718,7 @@ void run_hardware_app() {
   PhysicalDisplay display;
   PhysicalTouch touch;
   tinydraw::esp32::PowerManager power(touch.bus());
+  tinydraw::esp32::RtcClock clock(touch.bus());
   if (!display.ready() || !touch.ready()) {
     std::printf("TINYDRAW_HARDWARE_FAIL display=%u touch=%u\n", display.ready(), touch.ready());
     return;
@@ -911,6 +913,10 @@ void run_hardware_app() {
   const auto export_image = [&] {
     reset_stroke();
     usb_export.prepare_export();
+    tinydraw::FatDateTime modified_time;
+    if (clock.read(modified_time)) {
+      usb_export.set_modified_time(modified_time);
+    }
     static_cast<void>(canvas.world().capture(canvas.committed()));
     toolbar.exporting = true;
     toolbar.export_ready = false;

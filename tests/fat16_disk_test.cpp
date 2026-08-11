@@ -48,7 +48,9 @@ TEST_CASE("FAT16 export disk exposes DRAWING.PNG without a disk image buffer") {
     image[index] = static_cast<std::uint8_t>(index);
   }
   const MemoryFile file(image);
-  const tinydraw::Fat16ExportDisk disk(file);
+  tinydraw::Fat16ExportDisk disk(file);
+  disk.set_modified_time(
+      {.year = 2026, .month = 8, .day = 11, .hour = 17, .minute = 42, .second = 59});
   std::array<std::uint8_t, 512> sector{};
 
   REQUIRE(disk.read(0, 0, sector));
@@ -67,6 +69,11 @@ TEST_CASE("FAT16 export disk exposes DRAWING.PNG without a disk image buffer") {
   REQUIRE(disk.read(129, 0, sector));
   CHECK(std::memcmp(sector.data() + 32, "DRAWING PNG", 11) == 0);
   CHECK(sector[43] == 0x21U);
+  CHECK(u16(sector, 46) == 0x8D5DU);
+  CHECK(u16(sector, 48) == 0x5D0BU);
+  CHECK(u16(sector, 50) == 0x5D0BU);
+  CHECK(u16(sector, 54) == 0x8D5DU);
+  CHECK(u16(sector, 56) == 0x5D0BU);
   CHECK(u16(sector, 58) == 2U);
   CHECK(u32(sector, 60) == image.size());
 
