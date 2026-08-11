@@ -14,13 +14,14 @@ exercise the same C++20 drawing and UI core.
 - Variable-width, Perfect Freehand-style ink with 4×4 edge smoothing
 - Solid self-overlaps, rounded sharp turns, twelve colors, and four sizes
 - ESP32: pan, ten Undos, 3×3 canvas, autosave, battery, and USB PNG export
-- ESP32: touch record/replay for hands-free demos and battery-powered off/on
+- ESP32: onboard clock, one-shot NTP correction, demos, and battery-powered off/on
 - RP2350: screen-sized ink, eraser, colors, sizes, and confirmed New
 - Native replays, exact snapshots, ASan/UBSan, QEMU, and device telemetry
 
 ESP32 long strokes average 2.5–3.4 ms per update. Autosave, charging, and PMU
 power-off/on are verified. Export mounts the full 1104×1344 drawing as
-`TINYDRAW/DRAWING.PNG`; macOS Finder is verified. The RP2350 averages 1.2–1.4 ms
+`TINYDRAW/DRAWING.PNG` with the RTC-backed local time; macOS Finder is verified.
+Wi-Fi shuts down after correcting the clock. The RP2350 averages 1.2–1.4 ms
 but has no pan, Undo, or persistence. [`PROJECT_STATE.md`](PROJECT_STATE.md) has details.
 
 ## Run the macOS app
