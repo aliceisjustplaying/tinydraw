@@ -163,7 +163,7 @@ bool ViewportRenderer::render_stroke_geometry(const VectorStroke& stroke,
         .timestamp_us = 0U,
     };
     const bool final = index + 1U == samples.size();
-    const RibbonUpdate update = final ? ribbon.finish(point) : ribbon.append(point);
+    const RibbonUpdate update = final ? ribbon.finish(point) : ribbon.append(point, false);
     if (update.committed.size() > arena.size() - batch.primitive_count) {
       stats.geometry_ticks += static_cast<std::uint32_t>(tick(options.now) - geometry_started);
       return false;
@@ -224,9 +224,7 @@ void ViewportRenderer::composite_batch(std::span<std::uint16_t> destination, con
     return;
   }
   ++stats.batches;
-  auto arena = primitives();
   auto rects = tile_rects();
-  auto range_list = ranges();
   auto entry_pool = entries();
 
   // Counting sort of primitive indices into per-tile bins, in primitive order.
@@ -257,13 +255,47 @@ void ViewportRenderer::composite_batch(std::span<std::uint16_t> destination, con
   }
   stats.geometry_ticks += static_cast<std::uint32_t>(tick(options.now) - bin_started);
 
+  TileWork work{
+      .renderer = this,
+      .batch = &batch,
+      .destination = destination,
+      .options = &options,
+      .lane_count = options.execute != nullptr ? kLanes : 1,
+  };
+  if (options.execute != nullptr) {
+    options.execute(options.execute_context, &ViewportRenderer::composite_lane, &work);
+  } else {
+    composite_lane(&work, 0);
+  }
+  for (const ViewportRenderStats& lane : work.lane_stats) {
+    stats.primitive_tile_visits += lane.primitive_tile_visits;
+    stats.tiles_composited += lane.tiles_composited;
+    stats.raster_ticks += lane.raster_ticks;
+    stats.composite_ticks += lane.composite_ticks;
+  }
+}
+
+void ViewportRenderer::composite_lane(void* raw, int lane) {
+  auto* work = static_cast<TileWork*>(raw);
+  ViewportRenderer& renderer = *work->renderer;
+  const Batch& batch = *work->batch;
+  const ViewportRenderOptions& options = *work->options;
+  std::span<std::uint16_t> destination = work->destination;
+  ViewportRenderStats& stats = work->lane_stats[static_cast<std::size_t>(lane)];
+  auto arena = renderer.primitives();
+  auto range_list = renderer.ranges();
+  auto entry_pool = renderer.entries();
+  CoverageTile& coverage = renderer.lanes_[static_cast<std::size_t>(lane)].coverage;
+  auto& working = renderer.lanes_[static_cast<std::size_t>(lane)].working;
+  static_cast<void>(batch);
+
   std::uint32_t tiles_since_yield = 0U;
-  for (int tile = 0; tile < kTileCount; ++tile) {
-    const std::uint16_t count = tile_counts_[static_cast<std::size_t>(tile)];
+  for (int tile = lane; tile < kTileCount; tile += work->lane_count) {
+    const std::uint16_t count = renderer.tile_counts_[static_cast<std::size_t>(tile)];
     if (count == 0U) {
       continue;
     }
-    const std::uint16_t offset = tile_offsets_[static_cast<std::size_t>(tile)];
+    const std::uint16_t offset = renderer.tile_offsets_[static_cast<std::size_t>(tile)];
     const int tile_x = tile % kTilesAcross * kTileSize;
     const int tile_y = tile / kTilesAcross * kTileSize;
     const int width = std::min(kTileSize, kCanvasWidth - tile_x);
@@ -273,7 +305,7 @@ void ViewportRenderer::composite_batch(std::span<std::uint16_t> destination, con
     for (int y = 0; y < height; ++y) {
       const auto canvas_index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x);
       std::copy_n(destination.begin() + static_cast<std::ptrdiff_t>(canvas_index), width,
-                  working_.begin() + static_cast<std::ptrdiff_t>(y * width));
+                  working.begin() + static_cast<std::ptrdiff_t>(y * width));
     }
     stats.composite_ticks += static_cast<std::uint32_t>(tick(options.now) - read_started);
 
@@ -289,28 +321,28 @@ void ViewportRenderer::composite_batch(std::span<std::uint16_t> destination, con
       }
       const StrokeRange range = range_list[range_index];
       const std::uint32_t raster_started = tick(options.now);
-      coverage_.reset(tile_x, tile_y, width, height);
+      coverage.reset(tile_x, tile_y, width, height);
       while (entry < entry_end && entry_pool[entry] < range.first + range.count) {
         const RibbonPrimitive& primitive = arena[entry_pool[entry]];
         if (primitive.kind == RibbonPrimitiveKind::kCircle) {
-          coverage_.rasterize_circle(primitive.center, primitive.radius);
+          coverage.rasterize_circle(primitive.center, primitive.radius);
         } else {
-          coverage_.rasterize_convex(std::span(primitive.points.data(), primitive.point_count));
+          coverage.rasterize_convex(std::span(primitive.points.data(), primitive.point_count));
         }
         ++stats.primitive_tile_visits;
         ++entry;
       }
       const std::uint32_t blend_started = tick(options.now);
       stats.raster_ticks += static_cast<std::uint32_t>(blend_started - raster_started);
-      composite_rgb565(coverage_, range.color,
-                       std::span(working_.data(), static_cast<std::size_t>(width * height)));
+      composite_rgb565(coverage, range.color,
+                       std::span(working.data(), static_cast<std::size_t>(width * height)));
       stats.composite_ticks += static_cast<std::uint32_t>(tick(options.now) - blend_started);
     }
 
     const std::uint32_t write_started = tick(options.now);
     for (int y = 0; y < height; ++y) {
       const auto canvas_index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x);
-      std::copy_n(working_.begin() + static_cast<std::ptrdiff_t>(y * width), width,
+      std::copy_n(working.begin() + static_cast<std::ptrdiff_t>(y * width), width,
                   destination.begin() + static_cast<std::ptrdiff_t>(canvas_index));
     }
     stats.composite_ticks += static_cast<std::uint32_t>(tick(options.now) - write_started);

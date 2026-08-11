@@ -21,6 +21,12 @@ struct ViewportRenderOptions {
   // Optional monotonic tick source (e.g. CPU cycle counter). Wrap-safe deltas
   // accumulate into the phase tick counters below; nullptr disables timing.
   std::uint32_t (*now)() = nullptr;
+  // Optional two-lane executor for tile compositing. It must invoke
+  // work(work_context, 0) and work(work_context, 1), potentially concurrently,
+  // and return only after both complete. Tiles are partitioned by lane, so
+  // output is identical to sequential rendering. nullptr runs sequentially.
+  void (*execute)(void* context, void (*work)(void*, int lane), void* work_context) = nullptr;
+  void* execute_context = nullptr;
 };
 
 struct ViewportRenderStats {
@@ -83,12 +89,29 @@ class ViewportRenderer {
     std::size_t entry_count = 0;
   };
 
+  static constexpr int kLanes = 2;
+
+  struct LaneBuffers {
+    CoverageTile coverage{0, 0, kTileSize, kTileSize};
+    std::array<std::uint16_t, kTileSize * kTileSize> working{};
+  };
+
+  struct TileWork {
+    ViewportRenderer* renderer = nullptr;
+    const Batch* batch = nullptr;
+    std::span<std::uint16_t> destination;
+    const ViewportRenderOptions* options = nullptr;
+    int lane_count = 1;
+    std::array<ViewportRenderStats, kLanes> lane_stats{};
+  };
+
   [[nodiscard]] bool render_stroke_geometry(const VectorStroke& stroke,
                                             std::span<const StrokeSample> samples, Camera camera,
                                             const ViewportRenderOptions& options, Batch& batch,
                                             ViewportRenderStats& stats);
   void composite_batch(std::span<std::uint16_t> destination, const Batch& batch,
                        const ViewportRenderOptions& options, ViewportRenderStats& stats);
+  static void composite_lane(void* raw, int lane);
 
   [[nodiscard]] std::span<RibbonPrimitive> primitives();
   [[nodiscard]] std::span<TileRect> tile_rects();
@@ -98,8 +121,7 @@ class ViewportRenderer {
   std::span<std::uint8_t> scratch_;
   std::array<std::uint16_t, kTileCount> tile_counts_{};
   std::array<std::uint16_t, kTileCount> tile_offsets_{};
-  CoverageTile coverage_{0, 0, kTileSize, kTileSize};
-  std::array<std::uint16_t, kTileSize * kTileSize> working_{};
+  std::array<LaneBuffers, kLanes> lanes_{};
 };
 
 }  // namespace tinydraw

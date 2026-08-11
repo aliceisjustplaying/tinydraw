@@ -14,6 +14,7 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "tinydraw/document/vector_benchmark.h"
 #include "tinydraw/graphics/viewport_renderer.h"
@@ -43,6 +44,37 @@ constexpr std::array kCases{
 constexpr std::array kZooms{0.25F, 0.5F, 1.0F, 2.0F};
 
 void benchmark_yield(void*) { vTaskDelay(1U); }
+
+// Renders lane 1 on the second core. Priority stays strictly below the touch
+// task (priority 5, core 1) so rebuilds can never delay input capture; the
+// worker merely soaks up idle core-1 time between touch polls.
+constexpr UBaseType_t kWorkerPriority = 1U;
+
+struct ParallelBridge {
+  SemaphoreHandle_t start = nullptr;
+  SemaphoreHandle_t done = nullptr;
+  void (*work)(void*, int) = nullptr;
+  void* work_context = nullptr;
+  TaskHandle_t worker = nullptr;
+};
+
+void parallel_worker(void* raw) {
+  auto* bridge = static_cast<ParallelBridge*>(raw);
+  while (true) {
+    xSemaphoreTake(bridge->start, portMAX_DELAY);
+    bridge->work(bridge->work_context, 1);
+    xSemaphoreGive(bridge->done);
+  }
+}
+
+void execute_parallel(void* raw, void (*work)(void*, int), void* work_context) {
+  auto* bridge = static_cast<ParallelBridge*>(raw);
+  bridge->work = work;
+  bridge->work_context = work_context;
+  xSemaphoreGive(bridge->start);
+  work(work_context, 0);
+  xSemaphoreTake(bridge->done, portMAX_DELAY);
+}
 
 std::uint32_t benchmark_cycles() { return static_cast<std::uint32_t>(esp_cpu_get_cycle_count()); }
 
@@ -114,6 +146,21 @@ void run_vector_benchmarks(std::span<std::uint16_t> destination) {
                 static_cast<unsigned long>(largest_before));
   static_cast<void>(persist_report(export_partition, report_offset, report));
 
+  ParallelBridge bridge;
+  bridge.start = xSemaphoreCreateBinary();
+  bridge.done = xSemaphoreCreateBinary();
+  if (bridge.start == nullptr || bridge.done == nullptr ||
+      xTaskCreatePinnedToCore(parallel_worker, "vector_lane1", 12'288U, &bridge, kWorkerPriority,
+                              &bridge.worker, 1) != pdPASS) {
+    std::printf("TINYDRAW_VECTOR_BENCH_FAIL worker=0\n");
+    heap_caps_free(report);
+    heap_caps_free(renderer_storage);
+    heap_caps_free(scratch);
+    heap_caps_free(samples);
+    heap_caps_free(strokes);
+    return;
+  }
+
   VectorDocument document(std::span(strokes, kMaxStrokes), std::span(samples, kMaxSamples));
   auto* renderer =
       new (renderer_storage) ViewportRenderer(std::span(scratch, ViewportRenderer::kScratchBytes));
@@ -145,6 +192,8 @@ void run_vector_benchmarks(std::span<std::uint16_t> destination) {
       options.yield = benchmark_yield;
       options.yield_every_tiles = 16U;
       options.now = benchmark_cycles;
+      options.execute = execute_parallel;
+      options.execute_context = &bridge;
       const auto started = esp_timer_get_time();
       const auto stats = renderer->render(document, {.zoom = zoom}, destination, options);
       const auto elapsed = esp_timer_get_time() - started;
@@ -196,6 +245,9 @@ void run_vector_benchmarks(std::span<std::uint16_t> destination) {
   std::printf("TINYDRAW_VECTOR_BENCH_REPORT success=%u offset=0x%lx bytes=%lu\n", report_result,
               static_cast<unsigned long>(report_offset), static_cast<unsigned long>(report_size));
 
+  vTaskDelete(bridge.worker);
+  vSemaphoreDelete(bridge.start);
+  vSemaphoreDelete(bridge.done);
   renderer->~ViewportRenderer();
   heap_caps_free(report);
   heap_caps_free(renderer_storage);

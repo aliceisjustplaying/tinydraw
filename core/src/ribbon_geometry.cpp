@@ -237,18 +237,23 @@ void RibbonStream::reset() {
   first_cap_pending_ = false;
 }
 
-RibbonUpdate CurvedRibbonStream::append(InkPoint point) {
+RibbonUpdate CurvedRibbonStream::append(InkPoint point, bool provisional_needed) {
   RibbonUpdate update;
   if (point_count_ == 0U) {
     first_ = point;
     stable_ = point;
     last_ = point;
     point_count_ = 1U;
-    update.provisional.push_back(circle(point.position, point.radius));
+    if (provisional_needed) {
+      update.provisional.push_back(circle(point.position, point.radius));
+    }
     return update;
   }
 
   if (equal(last_.position, point.position)) {
+    if (!provisional_needed) {
+      return update;
+    }
     if (point_count_ == 1U) {
       update.provisional.push_back(circle(last_.position, last_.radius));
       return update;
@@ -266,10 +271,12 @@ RibbonUpdate CurvedRibbonStream::append(InkPoint point) {
     last_ = point;
     point_count_ = 2U;
     first_cap_pending_ = true;
-    update.provisional.push_back(circle(first_.position, first_.radius));
-    emit_tail(stable_, last_,
-              [&](RibbonPrimitive primitive) { update.provisional.push_back(primitive); });
-    update.provisional.push_back(circle(last_.position, last_.radius));
+    if (provisional_needed) {
+      update.provisional.push_back(circle(first_.position, first_.radius));
+      emit_tail(stable_, last_,
+                [&](RibbonPrimitive primitive) { update.provisional.push_back(primitive); });
+      update.provisional.push_back(circle(last_.position, last_.radius));
+    }
     return update;
   }
 
@@ -287,9 +294,11 @@ RibbonUpdate CurvedRibbonStream::append(InkPoint point) {
   stable_ = stable_end;
   last_ = point;
   ++point_count_;
-  emit_tail(stable_, last_,
-            [&](RibbonPrimitive primitive) { update.provisional.push_back(primitive); });
-  update.provisional.push_back(circle(last_.position, last_.radius));
+  if (provisional_needed) {
+    emit_tail(stable_, last_,
+              [&](RibbonPrimitive primitive) { update.provisional.push_back(primitive); });
+    update.provisional.push_back(circle(last_.position, last_.radius));
+  }
   return update;
 }
 

@@ -809,7 +809,8 @@ void run_hardware_app() {
       task->done.store(true);
       vTaskDelete(nullptr);
     };
-    if (xTaskCreate(entry, "vector_bench", 16'384U, &benchmark_task, 2U, nullptr) == pdPASS) {
+    if (xTaskCreatePinnedToCore(entry, "vector_bench", 16'384U, &benchmark_task, 2U, nullptr, 0) ==
+        pdPASS) {
       while (!benchmark_task.done.load()) {
         vTaskDelay(pdMS_TO_TICKS(50));
       }

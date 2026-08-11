@@ -66,7 +66,9 @@ class RibbonStream {
 // Stable curves lag by one input point; a replaceable straight tail still reaches the finger.
 class CurvedRibbonStream {
  public:
-  [[nodiscard]] RibbonUpdate append(InkPoint point);
+  // provisional_needed=false skips building the replaceable display tail for
+  // offline replay; committed geometry is identical either way.
+  [[nodiscard]] RibbonUpdate append(InkPoint point, bool provisional_needed = true);
   [[nodiscard]] RibbonUpdate finish(InkPoint point);
   void reset();
 
