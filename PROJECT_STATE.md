@@ -7,9 +7,9 @@ performance history, and `INITIAL_RESEARCH.md` contains the original product spe
 
 ## Resume point
 
-Current work is on `feat/rp2350-port`. The RP2350 port draws smoothly with the
-shared ink and toolbar code. Its latest physical optimization sends full-width
-horizontal display bands instead of the whole screen.
+The RP2350 port is complete at its documented reduced scope. After it lands on
+`main`, continue with ESP32 persistence, canvas sizing, Undo, and USB-C image
+export. The RP2350 still builds and remains available for later refinement.
 
 Start with:
 
@@ -17,7 +17,7 @@ Start with:
 git status --short
 ./scripts/dev test
 ./scripts/dev asan
-./scripts/rp2350 build
+./scripts/esp32 build
 ```
 
 Keep commits small and push them often. Do not flash by an ambiguous serial port
@@ -107,6 +107,10 @@ one framebuffer.
 physical panel after banded updates. Timing and touch traces remain useful. Treat
 physical inspection as the display correctness check until capture is repaired.
 
+The enclosed RP2350 unit has a battery but its side PWR button has no shutdown
+handler in TinyDraw. Unplugging USB does not turn off battery power. A future
+handler should blank the panel and enter a tested dormant mode.
+
 ## Safe flashing
 
 Both devices may be connected at once. The RP2350 has Raspberry Pi VID `0x2e8a`;
@@ -193,15 +197,14 @@ updates, toolbar use, and repeated drawing without visible corruption.
 
 ## Next work
 
-1. Design a small replaceable RP2350 provisional tail that does not consume a
-   second framebuffer or add visible input lag. Keep the current midpoint version
-   as the baseline.
-2. Add bounded Undo with a compact operation log and whole-view replay. Target
-   5–10 recent operations without slowing live drawing.
-3. Build bounded vector-backed panning on the same operation log if replay timing
-   remains acceptable.
-4. Repair RP2350 USB framebuffer capture so it matches the panel.
-5. Rebase `feat/rp2350-port` onto `main` after review and physical sign-off.
+Resume on the ESP32 build:
 
-Keep ESP32 tests green while changing shared code. RP2350-only driver work must not
-change the ESP32 firmware target.
+1. Define and implement persistent Save/Load for the current world.
+2. Measure how far the 736×896 canvas can grow without hurting drawing or panning.
+3. Revisit Undo depth and storage alongside the chosen canvas and save format.
+4. Export a drawing over USB-C. Start with a small read-only TinyUSB MSC volume
+   containing one image, and verify iPhone Files behavior before expanding it.
+
+Deferred RP2350 work includes a replaceable provisional tail, bounded vector
+Undo/panning, accurate USB framebuffer capture, and PWR-button dormant mode.
+Keep both firmware builds and shared-core tests green.

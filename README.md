@@ -12,15 +12,19 @@ exercise the same C++20 drawing and UI core.
 
 ## Current state
 
-- Variable-width, Perfect Freehand-style ink with smooth sparse-input curves
-- Solid self-overlaps, rounded sharp turns, and 4×4 edge smoothing
+- Variable-width, Perfect Freehand-style ink with 4×4 edge smoothing
+- Solid self-overlaps, rounded sharp turns, twelve colors, and four sizes
 - ESP32: pan, ten Undos, and a fixed 736×896 canvas in 8 MiB PSRAM
 - RP2350: screen-sized ink, eraser, colors, sizes, and confirmed New
 - Native replays, exact snapshots, ASan/UBSan, QEMU, and device telemetry
 
 ESP32 long strokes average about 2.5–3.4 ms per update. RP2350 strokes average
-about 1.2–1.4 ms using reliable full-width display bands. Drawings are not yet
-persistent.
+about 1.2–1.4 ms using full-width display bands. Drawings are not persistent.
+
+The RP2350 build is intentionally smaller. It has no pan or Undo, its permanent
+circle-stamp raster looks rougher than the ESP32 ribbon renderer, and the newest
+half-segment appears on lift. USB framebuffer captures can disagree with the
+physical panel. [`PROJECT_STATE.md`](PROJECT_STATE.md) records these limits.
 
 ## Run the macOS app
 
@@ -29,9 +33,8 @@ persistent.
 ./scripts/dev run            # use run-2x or run-3x for a larger demo window
 ```
 
-The window opens near the panel's physical size on a 14-inch 2021 MacBook Pro
-at default scaling. Draw with the mouse, use `Cmd-Z` to undo, `C` for New, and
-`Esc` to quit.
+The window opens near the panel's physical size on a 14-inch 2021 MacBook Pro.
+Draw with the mouse, use `Cmd-Z` to undo, `C` for New, and `Esc` to quit.
 
 ## Test and profile
 
@@ -43,30 +46,21 @@ at default scaling. Draw with the mouse, use `Cmd-Z` to undo, `C` for New, and
 ./scripts/dev format-check
 ```
 
-## Build firmware
-
-ESP-IDF v6.0.2 and QEMU stay isolated from the native toolchain:
+## Build ESP32 firmware
 
 ```sh
-./scripts/bootstrap-idf       # once
-./scripts/esp32 build         # physical ESP32-S3 firmware
-./scripts/esp32 qemu          # headless firmware replay
-./scripts/esp32 graphics-test # automated virtual display check
-./scripts/esp32 graphics      # visible QEMU framebuffer
+./scripts/bootstrap-idf       # once; installs isolated ESP-IDF v6.0.2
+./scripts/esp32 build
+./scripts/esp32 qemu
+./scripts/esp32 graphics-test
+./scripts/esp32 graphics
 ```
 
-Flash a connected board with:
+Flash with `eim run "idf.py -B ../out/build/esp32 -p PORT flash monitor"` from
+`esp32/`. QEMU checks firmware integration and the 8 MiB memory model.
 
-```sh
-cd esp32
-eim run "idf.py -B ../out/build/esp32 -p PORT flash monitor"
-```
+## Build RP2350 firmware
 
-QEMU verifies firmware integration and the 8 MiB memory model. Performance
-measurements in [`FINDINGS.md`](FINDINGS.md) come from the host and physical
-board. See [`DEVELOPING.md`](DEVELOPING.md) for the development loop.
-
-## Build the RP2350 app
 ```sh
 ./scripts/rp2350 bootstrap
 ./scripts/rp2350 build
@@ -74,8 +68,8 @@ board. See [`DEVELOPING.md`](DEVELOPING.md) for the development loop.
 ./scripts/rp2350 trace PORT
 ```
 
-The RP2350 uses one SRAM framebuffer. Full-width SH8601 bands keep drawing fast;
-arbitrary display rectangles proved unreliable. Its smaller memory budget
-currently excludes the ESP32's pan and Undo features.
+The RP2350 uses one SRAM framebuffer. Repeated arbitrary SH8601 rectangles were
+unreliable; full-width bands stay fast and physically stable. See
+[`FINDINGS.md`](FINDINGS.md) for measurements and development history.
 ## License
 MIT
