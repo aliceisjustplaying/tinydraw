@@ -137,6 +137,10 @@ bool DrawingSnapshot::sector_matches(std::size_t index,
   return true;
 }
 
+bool DrawingSnapshot::tile_included(std::size_t index) const {
+  return index < kTileCount && included_tiles_[index];
+}
+
 bool DrawingSnapshot::sector_pending(std::size_t index) const {
   return index < kSectorCount && pending_sectors_[index];
 }

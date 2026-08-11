@@ -262,11 +262,27 @@ void DrawingStore::include_segment(Point from, Point to, float radius, ViewOrigi
 }
 
 void DrawingStore::save_stroke(WorldCanvas& world, std::span<const std::uint16_t> viewport) {
-  if (!ready() || !world.capture(viewport)) {
+  if (!ready() || viewport.size() < WorldCanvas::kViewportPixels) {
     return;
   }
   xSemaphoreTake(impl_->mutex, portMAX_DELAY);
-  static_cast<void>(impl_->snapshot->capture(world.pixels(), world.origin()));
+  const ViewOrigin origin = world.origin();
+  for (std::size_t tile = 0; tile < DrawingSnapshot::kTileCount; ++tile) {
+    if (!impl_->snapshot->tile_included(tile)) {
+      continue;
+    }
+    const int world_x =
+        static_cast<int>(tile % static_cast<std::size_t>(DrawingSnapshot::kTilesAcross)) *
+        DrawingSnapshot::kTileSize;
+    const int world_y =
+        static_cast<int>(tile / static_cast<std::size_t>(DrawingSnapshot::kTilesAcross)) *
+        DrawingSnapshot::kTileSize;
+    static_cast<void>(world.capture_rect(
+        viewport,
+        {world_x - origin.x, world_y - origin.y, world_x - origin.x + DrawingSnapshot::kTileSize,
+         world_y - origin.y + DrawingSnapshot::kTileSize}));
+  }
+  static_cast<void>(impl_->snapshot->capture(world.pixels(), origin));
   impl_->request_save();
   xSemaphoreGive(impl_->mutex);
 }

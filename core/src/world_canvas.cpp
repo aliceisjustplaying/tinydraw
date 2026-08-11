@@ -30,14 +30,25 @@ std::span<const std::uint16_t> WorldCanvas::pixels() const {
 }
 
 bool WorldCanvas::capture(std::span<const std::uint16_t> viewport) {
+  return capture_rect(viewport, {0, 0, kCanvasWidth, kCanvasHeight});
+}
+
+bool WorldCanvas::capture_rect(std::span<const std::uint16_t> viewport, Rect rect) {
   if (!valid_ || !valid_viewport(viewport)) {
     return false;
   }
-  for (int row = 0; row < kCanvasHeight; ++row) {
-    const auto source = viewport.begin() + static_cast<std::ptrdiff_t>(row * kCanvasWidth);
+  rect.x0 = std::clamp(rect.x0, 0, kCanvasWidth);
+  rect.y0 = std::clamp(rect.y0, 0, kCanvasHeight);
+  rect.x1 = std::clamp(rect.x1, rect.x0, kCanvasWidth);
+  rect.y1 = std::clamp(rect.y1, rect.y0, kCanvasHeight);
+  const int width = rect.x1 - rect.x0;
+  for (int row = rect.y0; row < rect.y1; ++row) {
+    const auto source =
+        viewport.begin() + static_cast<std::ptrdiff_t>(row * kCanvasWidth + rect.x0);
     const auto destination =
-        storage_.begin() + static_cast<std::ptrdiff_t>((origin_.y + row) * kWidth + origin_.x);
-    std::copy_n(source, kCanvasWidth, destination);
+        storage_.begin() +
+        static_cast<std::ptrdiff_t>((origin_.y + row) * kWidth + origin_.x + rect.x0);
+    std::copy_n(source, width, destination);
   }
   return true;
 }

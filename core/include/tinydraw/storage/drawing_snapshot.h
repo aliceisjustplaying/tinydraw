@@ -39,6 +39,7 @@ class DrawingSnapshot {
   [[nodiscard]] bool load_sector(std::size_t index, std::span<const std::uint16_t> input);
   [[nodiscard]] bool sector_matches(std::size_t index,
                                     std::span<const std::uint16_t> serialized) const;
+  [[nodiscard]] bool tile_included(std::size_t index) const;
   [[nodiscard]] bool sector_pending(std::size_t index) const;
   [[nodiscard]] std::size_t pending_sector_count() const;
   void acknowledge_sector(std::size_t index);

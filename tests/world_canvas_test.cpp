@@ -38,6 +38,19 @@ TEST_CASE("a captured viewport can be shown from another world origin") {
   CHECK(visible == committed);
 }
 
+TEST_CASE("capturing a rectangle leaves the rest of the world untouched") {
+  std::vector<std::uint16_t> storage(tinydraw::WorldCanvas::kRequiredPixels);
+  tinydraw::WorldCanvas world(storage);
+  std::vector<std::uint16_t> viewport(tinydraw::WorldCanvas::kViewportPixels, kWhite);
+  viewport[screen_index(10, 10)] = kInk;
+  viewport[screen_index(200, 200)] = kInk;
+
+  CHECK(world.capture_rect(viewport, {0, 0, 32, 32}));
+  CHECK_FALSE(world.show(world.origin(), viewport));
+  CHECK(viewport[screen_index(10, 10)] == kInk);
+  CHECK(viewport[screen_index(200, 200)] == kWhite);
+}
+
 TEST_CASE("moving the world origin does not copy a viewport") {
   std::vector<std::uint16_t> storage(tinydraw::WorldCanvas::kRequiredPixels);
   tinydraw::WorldCanvas world(storage);
