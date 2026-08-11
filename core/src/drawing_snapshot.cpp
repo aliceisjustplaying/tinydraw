@@ -4,10 +4,19 @@
 #include <cmath>
 
 namespace tinydraw {
+namespace {
 
-DrawingSnapshot::DrawingSnapshot(std::span<std::uint16_t> storage) : storage_(storage) {
-  valid_ = storage_.size() >= kRequiredPixels;
+constexpr std::uint16_t kBackground = 0xFFFFU;
+
+bool valid_world(std::span<const std::uint16_t> world) {
+  return world.size() >= WorldCanvas::kRequiredPixels;
 }
+
+bool valid_world(std::span<std::uint16_t> world) {
+  return world.size() >= WorldCanvas::kRequiredPixels;
+}
+
+}  // namespace
 
 void DrawingSnapshot::include_all() { included_tiles_.fill(true); }
 
@@ -28,113 +37,96 @@ void DrawingSnapshot::include_segment(Point from, Point to, float radius, ViewOr
   include_world_rect(x0, y0, x1, y1);
 }
 
-std::size_t DrawingSnapshot::capture(std::span<const std::uint16_t> world, ViewOrigin origin) {
-  if (!valid_ || world.size() < WorldCanvas::kRequiredPixels) {
-    return 0U;
-  }
-  std::size_t captured = 0;
+std::size_t DrawingSnapshot::schedule(ViewOrigin origin) {
+  std::size_t scheduled = 0;
   for (std::size_t tile = 0; tile < kTileCount; ++tile) {
     if (!included_tiles_[tile]) {
       continue;
     }
-    const int tile_x = static_cast<int>(tile % static_cast<std::size_t>(kTilesAcross));
-    const int tile_y = static_cast<int>(tile / static_cast<std::size_t>(kTilesAcross));
-    for (int row = 0; row < kTileSize; ++row) {
-      const auto offset = static_cast<std::ptrdiff_t>(
-          (tile_y * kTileSize + row) * WorldCanvas::kWidth + tile_x * kTileSize);
-      std::copy_n(world.begin() + offset, kTileSize, storage_.begin() + offset);
-    }
     pending_sectors_[tile / kTilesPerSector] = true;
     included_tiles_[tile] = false;
-    ++captured;
+    ++scheduled;
   }
   if (origin != origin_) {
     origin_ = origin;
     metadata_pending_ = true;
   }
-  return captured;
+  return scheduled;
 }
 
-bool DrawingSnapshot::restore(std::span<std::uint16_t> world, ViewOrigin& origin) const {
-  if (!valid_ || world.size() < WorldCanvas::kRequiredPixels) {
+bool DrawingSnapshot::copy_sector(std::size_t index, std::span<const std::uint16_t> world,
+                                  std::span<std::uint16_t> output) const {
+  if (index >= kSectorCount || !valid_world(world) || output.size() < kSectorPixels) {
     return false;
   }
-  std::copy_n(storage_.begin(), kRequiredPixels, world.begin());
-  origin = origin_;
-  return true;
-}
-
-void DrawingSnapshot::initialize_blank() {
-  if (!valid_) {
-    return;
-  }
-  std::fill_n(storage_.begin(), kRequiredPixels, 0xFFFFU);
-  included_tiles_.fill(false);
-  pending_sectors_.fill(false);
-  origin_ = {kCanvasWidth / 2, kCanvasHeight / 2};
-  metadata_pending_ = false;
-}
-
-bool DrawingSnapshot::copy_sector(std::size_t index, std::span<std::uint16_t> output) const {
-  if (!valid_ || index >= kSectorCount || output.size() < kSectorPixels) {
-    return false;
-  }
+  std::fill_n(output.begin(), kSectorPixels, kBackground);
   for (std::size_t tile_in_sector = 0; tile_in_sector < kTilesPerSector; ++tile_in_sector) {
     const std::size_t tile = index * kTilesPerSector + tile_in_sector;
-    const int tile_x = static_cast<int>(tile % static_cast<std::size_t>(kTilesAcross));
-    const int tile_y = static_cast<int>(tile / static_cast<std::size_t>(kTilesAcross));
+    const int tile_x = static_cast<int>(tile % static_cast<std::size_t>(kTilesAcross)) * kTileSize;
+    const int tile_y = static_cast<int>(tile / static_cast<std::size_t>(kTilesAcross)) * kTileSize;
+    const int width = std::min(kTileSize, WorldCanvas::kWidth - tile_x);
+    const int height = std::min(kTileSize, WorldCanvas::kHeight - tile_y);
     auto destination = output.begin() + static_cast<std::ptrdiff_t>(tile_in_sector * kTilePixels);
-    for (int row = 0; row < kTileSize; ++row) {
-      const auto source = storage_.begin() + static_cast<std::ptrdiff_t>(
-                                                 (tile_y * kTileSize + row) * WorldCanvas::kWidth +
-                                                 tile_x * kTileSize);
-      std::copy_n(source, kTileSize, destination + static_cast<std::ptrdiff_t>(row * kTileSize));
+    for (int row = 0; row < height; ++row) {
+      const auto source = world.begin() + static_cast<std::ptrdiff_t>(
+                                              (tile_y + row) * WorldCanvas::kWidth + tile_x);
+      std::copy_n(source, width, destination + static_cast<std::ptrdiff_t>(row * kTileSize));
     }
   }
   return true;
 }
 
-bool DrawingSnapshot::load_sector(std::size_t index, std::span<const std::uint16_t> input) {
-  if (!valid_ || index >= kSectorCount || input.size() < kSectorPixels) {
+bool DrawingSnapshot::load_sector(std::size_t index, std::span<const std::uint16_t> input,
+                                  std::span<std::uint16_t> world) const {
+  if (index >= kSectorCount || input.size() < kSectorPixels || !valid_world(world)) {
     return false;
   }
   for (std::size_t tile_in_sector = 0; tile_in_sector < kTilesPerSector; ++tile_in_sector) {
     const std::size_t tile = index * kTilesPerSector + tile_in_sector;
-    const int tile_x = static_cast<int>(tile % static_cast<std::size_t>(kTilesAcross));
-    const int tile_y = static_cast<int>(tile / static_cast<std::size_t>(kTilesAcross));
+    const int tile_x = static_cast<int>(tile % static_cast<std::size_t>(kTilesAcross)) * kTileSize;
+    const int tile_y = static_cast<int>(tile / static_cast<std::size_t>(kTilesAcross)) * kTileSize;
+    const int width = std::min(kTileSize, WorldCanvas::kWidth - tile_x);
+    const int height = std::min(kTileSize, WorldCanvas::kHeight - tile_y);
     const auto source = input.begin() + static_cast<std::ptrdiff_t>(tile_in_sector * kTilePixels);
-    for (int row = 0; row < kTileSize; ++row) {
-      auto destination = storage_.begin() +
-                         static_cast<std::ptrdiff_t>(
-                             (tile_y * kTileSize + row) * WorldCanvas::kWidth + tile_x * kTileSize);
-      std::copy_n(source + static_cast<std::ptrdiff_t>(row * kTileSize), kTileSize, destination);
+    for (int row = 0; row < height; ++row) {
+      auto destination = world.begin() +
+                         static_cast<std::ptrdiff_t>((tile_y + row) * WorldCanvas::kWidth + tile_x);
+      std::copy_n(source + static_cast<std::ptrdiff_t>(row * kTileSize), width, destination);
     }
   }
   return true;
 }
 
-bool DrawingSnapshot::sector_matches(std::size_t index,
+bool DrawingSnapshot::sector_matches(std::size_t index, std::span<const std::uint16_t> world,
                                      std::span<const std::uint16_t> serialized) const {
-  if (!valid_ || index >= kSectorCount || serialized.size() < kSectorPixels) {
+  if (index >= kSectorCount || !valid_world(world) || serialized.size() < kSectorPixels) {
     return false;
   }
   for (std::size_t tile_in_sector = 0; tile_in_sector < kTilesPerSector; ++tile_in_sector) {
     const std::size_t tile = index * kTilesPerSector + tile_in_sector;
-    const int tile_x = static_cast<int>(tile % static_cast<std::size_t>(kTilesAcross));
-    const int tile_y = static_cast<int>(tile / static_cast<std::size_t>(kTilesAcross));
+    const int tile_x = static_cast<int>(tile % static_cast<std::size_t>(kTilesAcross)) * kTileSize;
+    const int tile_y = static_cast<int>(tile / static_cast<std::size_t>(kTilesAcross)) * kTileSize;
+    const int width = std::min(kTileSize, WorldCanvas::kWidth - tile_x);
+    const int height = std::min(kTileSize, WorldCanvas::kHeight - tile_y);
     const auto expected =
         serialized.begin() + static_cast<std::ptrdiff_t>(tile_in_sector * kTilePixels);
-    for (int row = 0; row < kTileSize; ++row) {
-      const auto current = storage_.begin() + static_cast<std::ptrdiff_t>(
-                                                  (tile_y * kTileSize + row) * WorldCanvas::kWidth +
-                                                  tile_x * kTileSize);
-      if (!std::equal(current, current + kTileSize,
+    for (int row = 0; row < height; ++row) {
+      const auto current = world.begin() + static_cast<std::ptrdiff_t>(
+                                               (tile_y + row) * WorldCanvas::kWidth + tile_x);
+      if (!std::equal(current, current + width,
                       expected + static_cast<std::ptrdiff_t>(row * kTileSize))) {
         return false;
       }
     }
   }
   return true;
+}
+
+void DrawingSnapshot::initialize_blank() {
+  included_tiles_.fill(false);
+  pending_sectors_.fill(false);
+  origin_ = {(WorldCanvas::kWidth - kCanvasWidth) / 2, (WorldCanvas::kHeight - kCanvasHeight) / 2};
+  metadata_pending_ = false;
 }
 
 bool DrawingSnapshot::tile_included(std::size_t index) const {

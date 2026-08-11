@@ -24,6 +24,11 @@ WorldCanvas::WorldCanvas(std::span<std::uint16_t> storage) : storage_(storage) {
   }
 }
 
+std::span<std::uint16_t> WorldCanvas::pixels() {
+  return valid_ ? std::span<std::uint16_t>(storage_.data(), kRequiredPixels)
+                : std::span<std::uint16_t>{};
+}
+
 std::span<const std::uint16_t> WorldCanvas::pixels() const {
   return valid_ ? std::span<const std::uint16_t>(storage_.data(), kRequiredPixels)
                 : std::span<const std::uint16_t>{};

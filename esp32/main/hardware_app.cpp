@@ -968,7 +968,9 @@ void run_hardware_app() {
     if (app_event.kind == AppEventKind::kDemoReplayStarted ||
         app_event.kind == AppEventKind::kDemoReplayStopped) {
       demo_replaying = app_event.kind == AppEventKind::kDemoReplayStarted;
-      if (!demo_replaying) {
+      if (demo_replaying) {
+        drawing_store.suspend();
+      } else {
         persistence_resync_needed = true;
       }
       continue;

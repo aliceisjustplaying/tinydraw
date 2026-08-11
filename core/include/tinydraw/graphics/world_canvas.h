@@ -28,6 +28,7 @@ class WorldCanvas {
 
   [[nodiscard]] bool valid() const { return valid_; }
   [[nodiscard]] ViewOrigin origin() const { return origin_; }
+  [[nodiscard]] std::span<std::uint16_t> pixels();
   [[nodiscard]] std::span<const std::uint16_t> pixels() const;
 
   [[nodiscard]] bool capture(std::span<const std::uint16_t> viewport);

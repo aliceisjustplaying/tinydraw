@@ -34,8 +34,8 @@ struct SnapshotHeader {
   std::uint32_t version = kHeaderVersion;
   std::uint32_t width = WorldCanvas::kWidth;
   std::uint32_t height = WorldCanvas::kHeight;
-  std::int32_t origin_x = kCanvasWidth / 2;
-  std::int32_t origin_y = kCanvasHeight / 2;
+  std::int32_t origin_x = (WorldCanvas::kWidth - kCanvasWidth) / 2;
+  std::int32_t origin_y = (WorldCanvas::kHeight - kCanvasHeight) / 2;
   std::uint32_t checksum = 0;
 };
 
@@ -68,42 +68,23 @@ struct DrawingStore::Impl {
   Impl() {
     partition =
         esp_partition_find_first(ESP_PARTITION_TYPE_DATA, kPartitionSubtype, kPartitionLabel);
-    snapshot_storage = static_cast<std::uint16_t*>(
-        heap_caps_malloc(DrawingSnapshot::kRequiredPixels * sizeof(std::uint16_t),
-                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     sector_buffer = static_cast<std::uint16_t*>(
         heap_caps_malloc(DrawingSnapshot::kSectorBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
     mutex = xSemaphoreCreateMutexStatic(&mutex_storage);
     if (partition == nullptr || partition->size < kRequiredPartitionBytes ||
-        snapshot_storage == nullptr || sector_buffer == nullptr || mutex == nullptr) {
+        sector_buffer == nullptr || mutex == nullptr) {
       return;
     }
 
-    snapshot = new (std::nothrow)
-        DrawingSnapshot(std::span(snapshot_storage, DrawingSnapshot::kRequiredPixels));
-    if (snapshot == nullptr || !snapshot->valid()) {
-      return;
-    }
-    snapshot->initialize_blank();
-
+    snapshot.initialize_blank();
     SnapshotHeader header;
-    const bool header_loaded =
+    saved_drawing =
         esp_partition_read(partition, 0, &header, sizeof(header)) == ESP_OK && valid_header(header);
-    if (header_loaded) {
-      for (std::size_t sector = 0; sector < DrawingSnapshot::kSectorCount; ++sector) {
-        if (esp_partition_read(partition, kDataOffset + sector * DrawingSnapshot::kSectorBytes,
-                               sector_buffer, DrawingSnapshot::kSectorBytes) != ESP_OK ||
-            !snapshot->load_sector(sector,
-                                   std::span(sector_buffer, DrawingSnapshot::kSectorPixels))) {
-          return;
-        }
-      }
-      snapshot->load_origin({header.origin_x, header.origin_y});
-    } else {
-      if (esp_partition_erase_range(partition, 0, kRequiredPartitionBytes) != ESP_OK ||
-          !write_header(make_header(snapshot->origin()))) {
-        return;
-      }
+    if (saved_drawing) {
+      snapshot.load_origin({header.origin_x, header.origin_y});
+    } else if (esp_partition_erase_range(partition, 0, kRequiredPartitionBytes) != ESP_OK ||
+               !write_header(make_header(snapshot.origin()))) {
+      return;
     }
 
     last_activity_us = static_cast<std::uint32_t>(esp_timer_get_time());
@@ -115,9 +96,7 @@ struct DrawingStore::Impl {
     if (task != nullptr) {
       vTaskDelete(task);
     }
-    delete snapshot;
     heap_caps_free(sector_buffer);
-    heap_caps_free(snapshot_storage);
   }
 
   bool write_header(const SnapshotHeader& header) {
@@ -133,11 +112,23 @@ struct DrawingStore::Impl {
     }
     xSemaphoreTake(mutex, portMAX_DELAY);
     last_activity_us = static_cast<std::uint32_t>(esp_timer_get_time());
+    ++generation;
+    xSemaphoreGive(mutex);
+  }
+
+  void pause() {
+    if (!ready) {
+      return;
+    }
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    suspended = true;
+    ++generation;
     xSemaphoreGive(mutex);
   }
 
   void request_save() {
     last_activity_us = static_cast<std::uint32_t>(esp_timer_get_time());
+    ++generation;
     xTaskNotifyGive(task);
   }
 
@@ -150,6 +141,10 @@ struct DrawingStore::Impl {
       const auto started = esp_timer_get_time();
       while (true) {
         xSemaphoreTake(mutex, portMAX_DELAY);
+        if (suspended || world_pixels.size() < WorldCanvas::kRequiredPixels) {
+          xSemaphoreGive(mutex);
+          break;
+        }
         const std::uint32_t elapsed =
             static_cast<std::uint32_t>(esp_timer_get_time()) - last_activity_us;
         if (elapsed < kIdleDelayUs) {
@@ -161,15 +156,19 @@ struct DrawingStore::Impl {
 
         std::size_t sector = DrawingSnapshot::kSectorCount;
         for (std::size_t candidate = 0; candidate < DrawingSnapshot::kSectorCount; ++candidate) {
-          if (snapshot->sector_pending(candidate)) {
+          if (snapshot.sector_pending(candidate)) {
             sector = candidate;
             break;
           }
         }
         if (sector < DrawingSnapshot::kSectorCount) {
-          static_cast<void>(snapshot->copy_sector(
-              sector, std::span(sector_buffer, DrawingSnapshot::kSectorPixels)));
+          const std::uint32_t copied_generation = generation;
+          const bool copied = snapshot.copy_sector(
+              sector, world_pixels, std::span(sector_buffer, DrawingSnapshot::kSectorPixels));
           xSemaphoreGive(mutex);
+          if (!copied) {
+            break;
+          }
           const bool written =
               esp_partition_erase_range(partition,
                                         kDataOffset + sector * DrawingSnapshot::kSectorBytes,
@@ -177,10 +176,11 @@ struct DrawingStore::Impl {
               esp_partition_write(partition, kDataOffset + sector * DrawingSnapshot::kSectorBytes,
                                   sector_buffer, DrawingSnapshot::kSectorBytes) == ESP_OK;
           xSemaphoreTake(mutex, portMAX_DELAY);
-          if (written && snapshot->sector_matches(
-                             sector, std::span<const std::uint16_t>(
-                                         sector_buffer, DrawingSnapshot::kSectorPixels))) {
-            snapshot->acknowledge_sector(sector);
+          if (written && copied_generation == generation &&
+              snapshot.sector_matches(
+                  sector, world_pixels,
+                  std::span<const std::uint16_t>(sector_buffer, DrawingSnapshot::kSectorPixels))) {
+            snapshot.acknowledge_sector(sector);
             ++sectors_written;
           }
           xSemaphoreGive(mutex);
@@ -190,13 +190,15 @@ struct DrawingStore::Impl {
           continue;
         }
 
-        if (snapshot->metadata_pending()) {
-          const SnapshotHeader header = make_header(snapshot->origin());
+        if (snapshot.metadata_pending()) {
+          const SnapshotHeader header = make_header(snapshot.origin());
+          const std::uint32_t copied_generation = generation;
           xSemaphoreGive(mutex);
           const bool written = write_header(header);
           xSemaphoreTake(mutex, portMAX_DELAY);
-          if (written && snapshot->origin() == ViewOrigin{header.origin_x, header.origin_y}) {
-            snapshot->acknowledge_metadata();
+          if (written && copied_generation == generation &&
+              snapshot.origin() == ViewOrigin{header.origin_x, header.origin_y}) {
+            snapshot.acknowledge_metadata();
           }
           xSemaphoreGive(mutex);
           if (!written) {
@@ -217,13 +219,16 @@ struct DrawingStore::Impl {
   }
 
   const esp_partition_t* partition = nullptr;
-  std::uint16_t* snapshot_storage = nullptr;
   std::uint16_t* sector_buffer = nullptr;
-  DrawingSnapshot* snapshot = nullptr;
+  DrawingSnapshot snapshot;
+  std::span<std::uint16_t> world_pixels{};
   StaticSemaphore_t mutex_storage{};
   SemaphoreHandle_t mutex = nullptr;
   TaskHandle_t task = nullptr;
   std::uint32_t last_activity_us = 0;
+  std::uint32_t generation = 0;
+  bool saved_drawing = false;
+  bool suspended = false;
   bool ready = false;
 };
 
@@ -238,14 +243,40 @@ bool DrawingStore::restore(WorldCanvas& world, std::span<std::uint16_t> committe
   if (!ready()) {
     return false;
   }
-  return world.replace(
-      std::span<const std::uint16_t>(impl_->snapshot_storage, DrawingSnapshot::kRequiredPixels),
-      impl_->snapshot->origin(), committed, visible);
+  xSemaphoreTake(impl_->mutex, portMAX_DELAY);
+  impl_->world_pixels = world.pixels();
+  bool loaded = impl_->world_pixels.size() >= WorldCanvas::kRequiredPixels;
+  if (loaded && impl_->saved_drawing) {
+    for (std::size_t sector = 0; sector < DrawingSnapshot::kSectorCount; ++sector) {
+      if (esp_partition_read(impl_->partition, kDataOffset + sector * DrawingSnapshot::kSectorBytes,
+                             impl_->sector_buffer, DrawingSnapshot::kSectorBytes) != ESP_OK ||
+          !impl_->snapshot.load_sector(
+              sector,
+              std::span<const std::uint16_t>(impl_->sector_buffer, DrawingSnapshot::kSectorPixels),
+              impl_->world_pixels)) {
+        loaded = false;
+        break;
+      }
+    }
+  }
+  if (!loaded) {
+    static_cast<void>(world.clear(committed, visible));
+  } else {
+    static_cast<void>(world.show(impl_->snapshot.origin(), committed, visible));
+  }
+  xSemaphoreGive(impl_->mutex);
+  return loaded;
 }
 
 void DrawingStore::activity() {
   if (ready()) {
     impl_->note_activity();
+  }
+}
+
+void DrawingStore::suspend() {
+  if (ready()) {
+    impl_->pause();
   }
 }
 
@@ -255,7 +286,7 @@ void DrawingStore::include_segment(Point from, Point to, float radius, ViewOrigi
   }
   xSemaphoreTake(impl_->mutex, portMAX_DELAY);
   impl_->last_activity_us = static_cast<std::uint32_t>(esp_timer_get_time());
-  impl_->snapshot->include_segment(from, to, radius, origin);
+  impl_->snapshot.include_segment(from, to, radius, origin);
   xSemaphoreGive(impl_->mutex);
 }
 
@@ -264,9 +295,10 @@ void DrawingStore::save_stroke(WorldCanvas& world, std::span<const std::uint16_t
     return;
   }
   xSemaphoreTake(impl_->mutex, portMAX_DELAY);
+  impl_->world_pixels = world.pixels();
   const ViewOrigin origin = world.origin();
   for (std::size_t tile = 0; tile < DrawingSnapshot::kTileCount; ++tile) {
-    if (!impl_->snapshot->tile_included(tile)) {
+    if (!impl_->snapshot.tile_included(tile)) {
       continue;
     }
     const int world_x =
@@ -280,18 +312,23 @@ void DrawingStore::save_stroke(WorldCanvas& world, std::span<const std::uint16_t
         {world_x - origin.x, world_y - origin.y, world_x - origin.x + DrawingSnapshot::kTileSize,
          world_y - origin.y + DrawingSnapshot::kTileSize}));
   }
-  static_cast<void>(impl_->snapshot->capture(world.pixels(), origin));
+  static_cast<void>(impl_->snapshot.schedule(origin));
   impl_->request_save();
   xSemaphoreGive(impl_->mutex);
 }
 
 void DrawingStore::save_viewport(WorldCanvas& world, std::span<const std::uint16_t> viewport) {
-  if (!ready() || !world.capture(viewport)) {
+  if (!ready() || viewport.size() < WorldCanvas::kViewportPixels) {
     return;
   }
   xSemaphoreTake(impl_->mutex, portMAX_DELAY);
-  impl_->snapshot->include_viewport(world.origin());
-  static_cast<void>(impl_->snapshot->capture(world.pixels(), world.origin()));
+  if (!world.capture(viewport)) {
+    xSemaphoreGive(impl_->mutex);
+    return;
+  }
+  impl_->world_pixels = world.pixels();
+  impl_->snapshot.include_viewport(world.origin());
+  static_cast<void>(impl_->snapshot.schedule(world.origin()));
   impl_->request_save();
   xSemaphoreGive(impl_->mutex);
 }
@@ -301,8 +338,10 @@ void DrawingStore::save_all(WorldCanvas& world) {
     return;
   }
   xSemaphoreTake(impl_->mutex, portMAX_DELAY);
-  impl_->snapshot->include_all();
-  static_cast<void>(impl_->snapshot->capture(world.pixels(), world.origin()));
+  impl_->world_pixels = world.pixels();
+  impl_->suspended = false;
+  impl_->snapshot.include_all();
+  static_cast<void>(impl_->snapshot.schedule(world.origin()));
   impl_->request_save();
   xSemaphoreGive(impl_->mutex);
 }
@@ -312,7 +351,7 @@ void DrawingStore::save_origin(const WorldCanvas& world) {
     return;
   }
   xSemaphoreTake(impl_->mutex, portMAX_DELAY);
-  static_cast<void>(impl_->snapshot->capture(world.pixels(), world.origin()));
+  static_cast<void>(impl_->snapshot.schedule(world.origin()));
   impl_->request_save();
   xSemaphoreGive(impl_->mutex);
 }

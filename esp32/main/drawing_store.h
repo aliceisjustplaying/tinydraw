@@ -22,6 +22,7 @@ class DrawingStore {
                              std::span<std::uint16_t> visible);
 
   void activity();
+  void suspend();
   void include_segment(Point from, Point to, float radius, ViewOrigin origin);
   void save_stroke(WorldCanvas& world, std::span<const std::uint16_t> viewport);
   void save_viewport(WorldCanvas& world, std::span<const std::uint16_t> viewport);
