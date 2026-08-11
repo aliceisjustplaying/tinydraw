@@ -3,7 +3,7 @@ set(TINYDRAW_CORE "${CMAKE_CURRENT_LIST_DIR}/../../core")
 set(TINYDRAW_PLATFORM_SRCS "qemu_display.cpp")
 set(TINYDRAW_PLATFORM_REQUIRES esp_lcd_qemu_rgb)
 if(NOT TINYDRAW_QEMU)
-  list(APPEND TINYDRAW_PLATFORM_SRCS "hardware_app.cpp")
+  list(APPEND TINYDRAW_PLATFORM_SRCS "drawing_store.cpp" "hardware_app.cpp")
   list(APPEND TINYDRAW_PLATFORM_REQUIRES esp_lcd_co5300 esp_lcd_touch_cst816s)
 endif()
 
@@ -25,7 +25,7 @@ idf_component_register(
     "${TINYDRAW_CORE}/src/toolbar.cpp"
     "${TINYDRAW_CORE}/src/world_canvas.cpp"
   INCLUDE_DIRS "${TINYDRAW_CORE}/include"
-  PRIV_REQUIRES ${TINYDRAW_PLATFORM_REQUIRES} esp_psram esp_timer
+  PRIV_REQUIRES ${TINYDRAW_PLATFORM_REQUIRES} esp_partition esp_psram esp_timer
 )
 
 target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_20)
