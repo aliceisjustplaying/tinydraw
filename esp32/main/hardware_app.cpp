@@ -178,10 +178,10 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
     const bool main_changed = toolbar_.tool != toolbar.tool || toolbar_.color != toolbar.color ||
                               toolbar_.size != toolbar.size ||
                               toolbar_.can_undo != toolbar.can_undo ||
-                              toolbar_.recording != toolbar.recording ||
-                              toolbar_.battery_percentage != toolbar.battery_percentage ||
-                              toolbar_.battery_charging != toolbar.battery_charging ||
-                              toolbar_.external_power != toolbar.external_power;
+                              toolbar_.recording != toolbar.recording;
+    const bool battery_changed = toolbar_.battery_percentage != toolbar.battery_percentage ||
+                                 toolbar_.battery_charging != toolbar.battery_charging ||
+                                 toolbar_.external_power != toolbar.external_power;
     const bool palette_changed =
         toolbar_.tools_open != toolbar.tools_open || toolbar_.colors_open != toolbar.colors_open ||
         toolbar_.sizes_open != toolbar.sizes_open ||
@@ -189,6 +189,12 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
         ((toolbar_.colors_open || toolbar.colors_open) && toolbar_.color != toolbar.color) ||
         ((toolbar_.sizes_open || toolbar.sizes_open) && toolbar_.size != toolbar.size);
     main_dirty_ = main_dirty_ || main_changed;
+    if (battery_changed) {
+      const auto old_rect = tinydraw::battery_overlay_rect(toolbar_);
+      const auto new_rect = tinydraw::battery_overlay_rect(toolbar);
+      battery_refresh_ = old_rect.value_or(new_rect.value_or(tinydraw::Rect{}));
+      battery_dirty_ = old_rect.has_value() || new_rect.has_value();
+    }
     if (palette_changed) {
       const int changed_top = std::min(palette_overlay_top(toolbar_), palette_overlay_top(toolbar));
       palette_refresh_top_ =
@@ -201,6 +207,11 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
     if (main_dirty_) {
       clear_overlay(0, kMainOverlayTop, tinydraw::kCanvasWidth,
                     tinydraw::kCanvasHeight - kMainOverlayTop);
+    }
+    if (battery_dirty_) {
+      clear_overlay(battery_refresh_.x0, battery_refresh_.y0,
+                    battery_refresh_.x1 - battery_refresh_.x0,
+                    battery_refresh_.y1 - battery_refresh_.y0);
     }
     if (palette_dirty_) {
       clear_overlay(0, palette_refresh_top_, tinydraw::kCanvasWidth,
@@ -244,7 +255,11 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
     transfer_us_ += esp_timer_get_time() - transfer_started;
 
     const auto prepare_started = esp_timer_get_time();
-    if (y + height <= toolbar_top_ && width % 2 == 0) {
+    const auto battery_rect = tinydraw::battery_overlay_rect(toolbar_);
+    const bool intersects_battery = battery_rect.has_value() && x < battery_rect->x1 &&
+                                    x + width > battery_rect->x0 && y < battery_rect->y1 &&
+                                    y + height > battery_rect->y0;
+    if (y + height <= toolbar_top_ && !intersects_battery && width % 2 == 0) {
       for (int row = 0; row < height; ++row) {
         const auto source = pixels + static_cast<std::ptrdiff_t>(row * source_stride);
         auto* destination = reinterpret_cast<std::uint32_t*>(
@@ -294,6 +309,7 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
     }
     if (top == 0 && bottom == tinydraw::kCanvasHeight) {
       main_dirty_ = false;
+      battery_dirty_ = false;
       palette_dirty_ = false;
       palette_refresh_top_ = kMainOverlayTop;
       dialog_dirty_ = false;
@@ -312,6 +328,13 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
   }
 
   void refresh_toolbar(std::span<const std::uint16_t> canvas) {
+    if (battery_dirty_) {
+      const auto offset = static_cast<std::size_t>(battery_refresh_.y0 * tinydraw::kCanvasWidth +
+                                                   battery_refresh_.x0);
+      push_rect(battery_refresh_.x0, battery_refresh_.y0, battery_refresh_.x1 - battery_refresh_.x0,
+                battery_refresh_.y1 - battery_refresh_.y0, canvas.data() + offset,
+                tinydraw::kCanvasWidth);
+    }
     if (dialog_dirty_) {
       const auto offset =
           static_cast<std::size_t>(kDialogOverlayTop * tinydraw::kCanvasWidth + kDialogOverlayX);
@@ -331,6 +354,7 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
                 tinydraw::kCanvasWidth);
     }
     main_dirty_ = false;
+    battery_dirty_ = false;
     palette_dirty_ = false;
     palette_refresh_top_ = kMainOverlayTop;
     dialog_dirty_ = false;
@@ -350,6 +374,8 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
   tinydraw::ToolbarState toolbar_{};
   int toolbar_top_ = tinydraw::toolbar_overlay_top(toolbar_);
   bool main_dirty_ = false;
+  bool battery_dirty_ = false;
+  tinydraw::Rect battery_refresh_{};
   bool palette_dirty_ = false;
   int palette_refresh_top_ = kMainOverlayTop;
   bool dialog_dirty_ = false;

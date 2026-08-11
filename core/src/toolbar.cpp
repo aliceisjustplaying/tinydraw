@@ -25,6 +25,10 @@ constexpr int kDialogLeft = 28;
 constexpr int kDialogTop = 126;
 constexpr int kDialogRight = 340;
 constexpr int kDialogBottom = 286;
+constexpr int kBatteryLeft = 238;
+constexpr int kBatteryTop = 8;
+constexpr int kBatteryRight = 356;
+constexpr int kBatteryBottom = 52;
 constexpr int kHitSlop = 8;
 constexpr int kMainHitTop = kMainTop - kHitSlop;
 constexpr int kColorPaletteHitTop = kColorPaletteTop - kHitSlop;
@@ -242,31 +246,34 @@ void draw_battery(std::span<std::uint16_t> canvas, int width, int height,
   }
 
   const int percentage = std::clamp(state.battery_percentage, 0, 100);
-  constexpr int battery_left = 307;
-  constexpr int battery_top = 377;
-  constexpr int battery_right = 324;
-  constexpr int battery_bottom = 386;
+  rounded_rect(canvas, width, height, kBatteryLeft + 2, kBatteryTop + 3, kBatteryRight + 2,
+               kBatteryBottom + 3, 11, kShadow);
+  rounded_rect(canvas, width, height, kBatteryLeft - 1, kBatteryTop - 1, kBatteryRight + 1,
+               kBatteryBottom + 1, 11, kBorder);
+  rounded_rect(canvas, width, height, kBatteryLeft, kBatteryTop, kBatteryRight, kBatteryBottom, 10,
+               kWhite);
+
+  constexpr int icon_left = 249;
+  constexpr int icon_top = 20;
+  constexpr int icon_right = 279;
+  constexpr int icon_bottom = 40;
   const std::uint16_t outline = state.battery_charging ? kSelected : kInk;
-  fill_rect(canvas, width, height, battery_left, battery_top, battery_right, battery_top + 1,
+  fill_rect(canvas, width, height, icon_left, icon_top, icon_right, icon_top + 2, outline);
+  fill_rect(canvas, width, height, icon_left, icon_bottom - 2, icon_right, icon_bottom, outline);
+  fill_rect(canvas, width, height, icon_left, icon_top, icon_left + 2, icon_bottom, outline);
+  fill_rect(canvas, width, height, icon_right - 2, icon_top, icon_right, icon_bottom, outline);
+  fill_rect(canvas, width, height, icon_right, icon_top + 6, icon_right + 4, icon_bottom - 6,
             outline);
-  fill_rect(canvas, width, height, battery_left, battery_bottom - 1, battery_right, battery_bottom,
-            outline);
-  fill_rect(canvas, width, height, battery_left, battery_top, battery_left + 1, battery_bottom,
-            outline);
-  fill_rect(canvas, width, height, battery_right - 1, battery_top, battery_right, battery_bottom,
-            outline);
-  fill_rect(canvas, width, height, battery_right, battery_top + 3, battery_right + 2,
-            battery_bottom - 3, outline);
-  const int level_width = percentage * (battery_right - battery_left - 4) / 100;
-  fill_rect(canvas, width, height, battery_left + 2, battery_top + 2,
-            battery_left + 2 + level_width, battery_bottom - 2, outline);
+  const int level_width = percentage * (icon_right - icon_left - 8) / 100;
+  fill_rect(canvas, width, height, icon_left + 4, icon_top + 4, icon_left + 4 + level_width,
+            icon_bottom - 4, outline);
   if (state.battery_charging) {
-    line(canvas, width, height, battery_left + 10, battery_top + 1, battery_left + 6,
-         battery_top + 4, kCharging, 0);
-    line(canvas, width, height, battery_left + 6, battery_top + 4, battery_left + 10,
-         battery_top + 4, kCharging, 0);
-    line(canvas, width, height, battery_left + 10, battery_top + 4, battery_left + 6,
-         battery_bottom - 1, kCharging, 0);
+    line(canvas, width, height, icon_left + 19, icon_top + 2, icon_left + 11, icon_top + 10,
+         kCharging, 1);
+    line(canvas, width, height, icon_left + 11, icon_top + 10, icon_left + 18, icon_top + 10,
+         kCharging, 1);
+    line(canvas, width, height, icon_left + 18, icon_top + 10, icon_left + 10, icon_bottom - 2,
+         kCharging, 1);
   }
 
   std::array<char, 4> label{};
@@ -279,8 +286,8 @@ void draw_battery(std::span<std::uint16_t> canvas, int width, int height,
   }
   label[length++] = static_cast<char>('0' + percentage % 10);
   label[length++] = '%';
-  draw_text(canvas, width, height, 360 - static_cast<int>(length * 6U), battery_top,
-            std::string_view(label.data(), length), kInk, 1);
+  draw_text(canvas, width, height, 348 - static_cast<int>(length * 12U), 19,
+            std::string_view(label.data(), length), kInk, 2);
 }
 
 void draw_new_dialog(std::span<std::uint16_t> canvas, int width, int height) {
@@ -334,7 +341,18 @@ bool toolbar_contains(Point point, const ToolbarState& state) {
   return main_row || color_palette || compact_palette;
 }
 
+std::optional<Rect> battery_overlay_rect(const ToolbarState& state) {
+  if (state.battery_percentage < 0) {
+    return std::nullopt;
+  }
+  return Rect{kBatteryLeft - 1, kBatteryTop - 1, kBatteryRight + 4, kBatteryBottom + 6};
+}
+
 bool toolbar_overlay_contains(Point point, const ToolbarState& state) {
+  const bool battery =
+      battery_overlay_rect(state).has_value() &&
+      inside(point, static_cast<float>(kBatteryLeft - 1), static_cast<float>(kBatteryTop - 1),
+             static_cast<float>(kBatteryRight + 4), static_cast<float>(kBatteryBottom + 6));
   const bool main_dock =
       inside(point, 0.0F, static_cast<float>(kMainTop - 1), static_cast<float>(kCanvasWidth),
              static_cast<float>(kMainBottom + 4));
@@ -347,7 +365,7 @@ bool toolbar_overlay_contains(Point point, const ToolbarState& state) {
       state.confirm_new &&
       inside(point, static_cast<float>(kDialogLeft - 1), static_cast<float>(kDialogTop - 1),
              static_cast<float>(kDialogRight + 4), static_cast<float>(kDialogBottom + 5));
-  return main_dock || palette || dialog;
+  return battery || main_dock || palette || dialog;
 }
 
 int toolbar_overlay_top(const ToolbarState& state) {

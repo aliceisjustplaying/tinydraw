@@ -59,6 +59,7 @@ struct ToolbarState {
 };
 
 [[nodiscard]] bool toolbar_contains(Point point, const ToolbarState& state);
+[[nodiscard]] std::optional<Rect> battery_overlay_rect(const ToolbarState& state);
 [[nodiscard]] bool toolbar_overlay_contains(Point point, const ToolbarState& state);
 [[nodiscard]] int toolbar_overlay_top(const ToolbarState& state);
 [[nodiscard]] ToolbarAction toolbar_action_at(Point point, const ToolbarState& state);
