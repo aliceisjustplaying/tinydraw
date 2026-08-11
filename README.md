@@ -13,19 +13,15 @@ exercise the same C++20 drawing and UI core.
 ## Current state
 - Variable-width, Perfect Freehand-style ink with 4×4 edge smoothing
 - Solid self-overlaps, rounded sharp turns, twelve colors, and four sizes
-- ESP32: pan, ten Undos, 1104×1344 canvas, flash autosave, and battery status
+- ESP32: pan, ten Undos, 3×3 canvas, autosave, battery, and USB PNG export
 - ESP32: touch record/replay for hands-free demos and battery-powered off/on
 - RP2350: screen-sized ink, eraser, colors, sizes, and confirmed New
 - Native replays, exact snapshots, ASan/UBSan, QEMU, and device telemetry
 
-ESP32 long strokes average 2.5–3.4 ms per update. Autosave starts after 500 ms
-idle; one 18-sector device write took 2.27 s in its background task. Autosave
-restore, charging state, and PMU power-off/on are verified on the board.
-The RP2350 averages 1.2–1.4 ms and is not persistent.
-
-The RP2350 build has no pan or Undo, and its permanent circle-stamp raster looks
-rougher than the ESP32 ribbon renderer. USB framebuffer captures can disagree
-with its physical panel. [`PROJECT_STATE.md`](PROJECT_STATE.md) has the details.
+ESP32 long strokes average 2.5–3.4 ms per update. Autosave, charging, and PMU
+power-off/on are verified. Export mounts the full 1104×1344 drawing as
+`TINYDRAW/DRAWING.PNG`; macOS Finder is verified. The RP2350 averages 1.2–1.4 ms
+but has no pan, Undo, or persistence. [`PROJECT_STATE.md`](PROJECT_STATE.md) has details.
 
 ## Run the macOS app
 ```sh
@@ -53,10 +49,10 @@ Draw with the mouse, use `Cmd-Z` to undo, `C` for New, and `Esc` to quit.
 ```
 
 Flash with `eim run "idf.py -B ../out/build/esp32 -p PORT flash monitor"` from
-`esp32/`. Use an explicit port when both boards are connected. On the physical
-board, short BOOT toggles demo recording and holding BOOT replays it. On battery,
-hold the lower PMU button for four seconds to turn off; short-press it to start.
-There is no sleep mode yet.
+`esp32/`; use an explicit port. Export replaces USB serial with a read-only drive.
+To flash again on battery, power off, hold BOOT, and short-press power for a cold
+boot. Short BOOT records/replays demos. Hold the lower button four seconds to
+power off; short-press it to start. There is no sleep mode yet.
 
 ## Build RP2350 firmware
 ```sh

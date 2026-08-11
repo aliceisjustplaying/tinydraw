@@ -151,11 +151,18 @@ second only while touch is idle. Short BOOT presses toggle demo recording and a 
 replays it. The lower PMU button performs a four-second hardware shutdown and short-press cold
 boot; no sleep mode exists yet.
 
+Export streams the 1104×1344 RGB565 world through PNGenc into a raw flash partition. A read-only
+FAT16 volume is synthesized one requested sector at a time and served through TinyUSB MSC. Starting
+MSC replaces USB Serial/JTAG because both use the S3's internal PHY. On a battery-powered board,
+eject the volume, power off, then hold BOOT during power-on to recover the ROM flashing port.
+
 ## Dependency policy
 
 - `core/`: C++ standard library only; no SDL, ESP-IDF, or desktop assumptions.
 - `host/`: SDL2-compatible APIs, found through pkg-config.
 - `tests/`: pinned doctest 2.5.3 under `third_party/doctest`.
+- `third_party/pngenc`: vendored low-memory streaming PNG encoder.
+- ESP32 USB export: pinned Espressif TinyUSB component through the IDF component manager.
 - Add image-reference, fuzz, and benchmark dependencies only when those loops have real consumers.
 
 Do not assess ESP32 performance from QEMU. Host tests establish correctness, QEMU establishes

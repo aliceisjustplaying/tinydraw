@@ -7,10 +7,10 @@ performance history, and `INITIAL_RESEARCH.md` contains the original product spe
 
 ## Resume point
 
-The ESP32 now boots with a 1104×1344 world, ten Undos, autosave, battery status,
-and PMU off/on. It has 889,416 bytes of PSRAM free after startup. Complete the
-physical 3×3 edge, Undo, and power-cycle checks, then continue with USB-C image
-export. The RP2350 remains at its documented reduced scope.
+The ESP32 now has a 1104×1344 world, ten Undos, autosave, battery status, PMU
+off/on, and read-only USB PNG export. macOS Finder has opened and copied the full
+canvas from the synthesized `TINYDRAW` drive; iPhone Files validation is pending.
+The RP2350 remains at its documented reduced scope.
 
 Start with:
 
@@ -37,8 +37,8 @@ New requires confirmation. Drawing uses variable width, simulated pressure,
 rounded joins, and 4×4 edge smoothing.
 
 ESP32 drawings autosave to flash. Its passive top-right badge reports battery
-percentage and charging without blocking drawing beneath it. RP2350 drawings are
-not persistent.
+percentage and charging without blocking drawing beneath it. Export encodes the
+full world as PNG and exposes it over USB. RP2350 drawings are not persistent.
 
 ### ESP32-S3 V2
 
@@ -48,6 +48,7 @@ Hardware:
 - CO5300 AMOLED over 60 MHz QSPI
 - CST820 touch at 400 kHz
 - AXP2101 battery/charger PMU at I²C address `0x34`
+- PCF85063 real-time clock, not yet initialized by TinyDraw
 - 8 MiB octal PSRAM and 16 MiB flash
 
 Features:
@@ -58,6 +59,7 @@ Features:
 - debounced, tile-granular flash autosave and boot restore
 - touch recording/replay for hands-free demos
 - battery percentage and charging status from the AXP2101 PMU
+- full-canvas PNG export as a read-only USB mass-storage volume
 - verified four-second battery shutdown and short-press power-on
 - pen, eraser, colors, sizes, and confirmed New
 - touch sampling on the second core
@@ -75,6 +77,14 @@ viewport; pan updates the saved origin. A 3 MiB `drawing` partition survives nor
 app flashes. The 3×3 format intentionally invalidated the old 2×2 save once. One
 physical 18-sector save took 2.266878 seconds in the background task before this
 refactor; battery power-cycle validation of the new format is pending.
+
+Export uses PNGenc with a row buffer and writes directly to a dedicated 5 MiB
+flash partition. A fixed 8 MiB FAT16 volume is synthesized sector by sector, so
+no disk image or second world copy exists in RAM. The volume contains one file,
+`DRAWING.PNG`, and is read-only. A physical full-world export took about 5.4
+seconds and left 791,108 bytes of PSRAM free. The `SAVING` toast changes to
+`SAVED` for three seconds. macOS Finder reads the 1104×1344 PNG; iPhone Files is
+not yet checked. The RTC exists, but its unset time leaves the FAT date unset.
 
 Short BOOT presses start and stop touch recording; a red toolbar dot shows the
 recording state. Holding BOOT replays the latest RAM tape from a blank canvas.
@@ -159,7 +169,10 @@ Build the ESP32 without flashing:
 ./scripts/esp32 graphics-test
 ```
 
-Use an explicit ESP32 port when flashing physical firmware.
+Use an explicit ESP32 port when flashing physical firmware. Export switches the
+S3's shared USB PHY from Serial/JTAG to mass storage. On battery, unplugging USB
+does not reset it. Eject `TINYDRAW`, power off with a four-second lower-button
+hold, then hold BOOT while short-pressing power to recover the ROM serial port.
 
 ## Development loop
 
@@ -209,14 +222,15 @@ The ESP32 and host share the full tiled ribbon raster and Undo implementation.
 
 At this handoff:
 
-- all 20 native CTest entries pass;
-- ASan and UBSan pass both sanitizer entries;
-- the ESP32 3×3 build passes with 69% of its app partition free;
+- all 22 native CTest entries pass, including FAT16 generation and `fsck_msdos`;
+- ASan and UBSan pass all four sanitizer entries;
+- the ESP32 USB build passes with 63% of its app partition free;
 - the QEMU graphics replay and RP2350 Release build pass;
 - the 3×3 physical firmware boots with 889,416 bytes PSRAM free and an 884,736-byte
   largest free block;
 - battery percentage, charging state, deterministic panel reset, PMU off/on, and
-  the earlier 2×2 autosave restore have been checked on the ESP32-S3 V2 board.
+  the earlier 2×2 autosave restore, USB mounting, and PNG copying have been checked
+  on the ESP32-S3 V2 board and macOS.
 
 The RP2350 physical test covered fast medium and XL curves, 1,012 banded display
 updates, toolbar use, and repeated drawing without visible corruption.
@@ -225,12 +239,12 @@ updates, toolbar use, and repeated drawing without visible corruption.
 
 Resume on the ESP32 build:
 
-1. Pan to all 3×3 edges and corners; check fast strokes and ten Undos across views.
-2. Verify new-format autosave with rapid strokes, New, Undo, and a battery power cycle.
-3. Capture fresh 60 MHz pan timing and watch PSRAM telemetry for regressions.
-4. Export a drawing over USB-C. Start with a small read-only TinyUSB MSC volume
-   containing one image, and verify iPhone Files behavior before expanding it.
-5. Consider event-driven AXP2101 status refresh and a tested sleep mode separately.
+1. Verify the `TINYDRAW` volume and `DRAWING.PNG` in modern iPhone Files.
+2. Pan to all 3×3 edges and corners; check fast strokes and ten Undos across views.
+3. Verify new-format autosave with rapid strokes, New, Undo, and a battery power cycle.
+4. Capture fresh 60 MHz pan timing and watch PSRAM telemetry for regressions.
+5. Initialize the PCF85063 RTC only when there is a clear time-setting UX.
+6. Consider event-driven AXP2101 status refresh and a tested sleep mode separately.
 
 Deferred RP2350 work includes a replaceable provisional tail, bounded vector
 Undo/panning, accurate USB framebuffer capture, and PWR-button dormant mode.

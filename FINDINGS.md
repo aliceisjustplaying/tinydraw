@@ -14,7 +14,8 @@ and a 1104×1344 canvas.
 - Fast XL diagonals can peak at **16.1 ms**.
 - The CST820 reports a new position every **13–14 ms**, or **75–77 Hz**.
 - At 80 MHz, panning fell from **71–74 ms to 9.8–10.1 ms per frame**, about **7× faster**.
-- An export experiment produced a **35,010-byte PNG** in **0.69 s** and sent it in **1.27 s**.
+- Current full-world USB export encodes a **1104×1344 PNG in about 5.4 s**.
+- The export path retained **791,108 bytes of free PSRAM** in a physical run.
 - One physical autosave wrote **18 flash sectors in 2.266878 s** on its background task.
 - Removing the export experiment cut the active firmware to **310,784 bytes**, with **70%** of its
   1 MiB app partition free.
@@ -89,6 +90,7 @@ microseconds of measured queue delay.
 | Display | CO5300, 368×448 RGB565 AMOLED, 60 MHz QSPI |
 | Touch | CST820 `0xB7`, firmware `0x02`, 400 kHz I²C |
 | Power | AXP2101 `0x34`, battery gauge, charger, and hardware power button |
+| Clock | PCF85063 RTC; TinyDraw does not initialize or set it yet |
 | Memory | 8 MiB octal PSRAM at 80 MHz, 16 MiB flash |
 | 1104×1344 world | 2,967,552 bytes in PSRAM |
 | Two viewport canvases | 659,456 bytes in PSRAM |
@@ -154,7 +156,7 @@ The lower PMU button is device-verified: holding it for four seconds cuts batter
 and a short press starts the board. This is a full shutdown and cold boot, not sleep.
 Light and deep sleep are not implemented.
 
-## Larger canvas and export experiment
+## Larger canvas and image export
 
 The drawing world grew from 736×896 to 1104×1344, nine times the display area. A naive
 3×3 build plus the old autosave shadow would exceed 8 MiB PSRAM. Direct sector staging
@@ -171,6 +173,21 @@ buffer lived in PSRAM. Light compression produced one 35,010-byte image; 4 KiB w
 prevented socket stalls. iOS connectivity and caching made the demo unreliable. Wi-Fi was
 removed from the active firmware before the RP2350 port; it was not proven to cause the
 reported display stripes.
+
+The current exporter uses PNGenc with about 49 KiB of workspace and one scanline. It streams
+compressed bytes into a dedicated 5 MiB flash partition, erasing only sectors it uses. One
+full-world device run took 5.411 seconds, produced 163,065 bytes, and left 791,108 bytes of
+PSRAM free. The UI displays `SAVING`, then a three-second `SAVED` or `ERROR` result.
+
+TinyUSB exposes the latest image as `DRAWING.PNG` on a synthesized, read-only 8 MiB FAT16
+volume named `TINYDRAW`. FAT sectors are generated on demand, so the device does not hold a
+disk image in RAM. `fsck_msdos` validates the generated volume. macOS Finder mounted it and
+opened the 1104×1344 image. Modern iPhone Files remains to be checked.
+
+USB Mass Storage and USB Serial/JTAG share the S3's internal USB PHY. Export therefore ends
+the serial session. On battery, unplugging does not reboot the board; entering the ROM
+bootloader requires a full PMU power-off followed by holding BOOT during power-on. The board
+has a PCF85063 RTC, but TinyDraw does not set it, so the exported file date is currently unset.
 
 ## RP2350 port
 
@@ -210,11 +227,11 @@ until that diagnostic path is fixed.
 
 ## Verification
 
-Twenty native test groups cover exact replays, snapshots, Perfect Freehand examples,
+Twenty-two native test groups cover exact replays, snapshots, Perfect Freehand examples,
 self-overlaps, seams, input states, UI, Undo, panning, and a 1,000-point XL workload. ASan,
 UBSan, headless QEMU, and visible QEMU pass. Device logs report drawing, display, touch,
 lift, panning, Undo, autosave, and power status. Physical checks cover battery reporting,
-charging, deterministic panel startup, PMU off/on, and autosave restore.
+charging, deterministic panel startup, PMU off/on, autosave restore, and USB export on macOS.
 
 ## Current limits and next work
 
@@ -223,9 +240,11 @@ next touch position arrives 13–14 ms later. A full-canvas Undo sends 329,728 b
 visibly slower.
 
 ESP32 persistence currently keeps one autosaved drawing. It has no document picker,
-manual save slots, redundant crash-safe snapshot, or sleep mode. Battery status
-refreshes every second while touch is idle. The canvas is a fixed 3×3 raster. The
-RP2350 has a screen-sized canvas without persistence, Undo, or pan.
+manual save slots, redundant crash-safe snapshot, or sleep mode. USB export takes
+about five seconds, has no progress percentage, and leaves the serial port unavailable
+until a cold BOOT-mode restart. The export timestamp is unset. Battery status refreshes
+every second while touch is idle. The canvas is a fixed 3×3 raster. The RP2350 has a
+screen-sized canvas without persistence, Undo, or pan.
 Fast RP2350 curves remain limited by the FT3168's roughly 60 Hz coordinate stream,
 and its USB framebuffer capture needs repair.
 
@@ -235,6 +254,6 @@ and its USB framebuffer capture needs repair.
 2. Cross an XL stroke over itself, then make a sharp turn to show solid joins.
 3. Extend the stroke to show that old points no longer slow new input.
 4. Pan across the 3×3 world, then undo and demonstrate confirmed New.
-5. Point out autosave, charging status, and battery-powered off/on.
+5. Export the full canvas as `TINYDRAW/DRAWING.PNG`, then point out autosave and battery power.
 6. Close with **4,479 ms to 220 ms** for ink and the measured **74 ms to 10 ms**
    80 MHz panning result; the stability build now uses 60 MHz.
