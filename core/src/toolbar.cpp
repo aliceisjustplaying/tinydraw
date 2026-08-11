@@ -271,11 +271,11 @@ void draw_battery(std::span<std::uint16_t> canvas, int width, int height,
   fill_rect(canvas, width, height, icon_left + 4, icon_top + 4, icon_left + 4 + level_width,
             icon_bottom - 4, outline);
   if (state.battery_charging) {
-    line(canvas, width, height, icon_left + 19, icon_top + 2, icon_left + 11, icon_top + 10,
+    line(canvas, width, height, icon_left + 19, icon_top + 1, icon_left + 11, icon_top + 9,
          kCharging, 1);
-    line(canvas, width, height, icon_left + 11, icon_top + 10, icon_left + 18, icon_top + 10,
+    line(canvas, width, height, icon_left + 11, icon_top + 9, icon_left + 18, icon_top + 9,
          kCharging, 1);
-    line(canvas, width, height, icon_left + 18, icon_top + 10, icon_left + 10, icon_bottom - 2,
+    line(canvas, width, height, icon_left + 18, icon_top + 9, icon_left + 10, icon_bottom - 3,
          kCharging, 1);
   }
 
