@@ -7,10 +7,10 @@ performance history, and `INITIAL_RESEARCH.md` contains the original product spe
 
 ## Resume point
 
-ESP32 tile-granular autosave is implemented and builds without the disconnected
-board. Verify save timing and power-cycle restore on hardware next, then continue
-with canvas sizing and USB-C image export. The RP2350 remains at its documented
-reduced scope.
+ESP32 battery status and PMU off/on now work on the physical board. Autosave has
+written flash on-device; verify drawing restore through a battery power cycle next.
+Then continue with canvas sizing and USB-C image export. The RP2350 remains at its
+documented reduced scope.
 
 Start with:
 
@@ -36,7 +36,9 @@ The color popup has twelve tldraw colors. The size popup has S, M, L, and XL.
 New requires confirmation. Drawing uses variable width, simulated pressure,
 rounded joins, and 4×4 edge smoothing.
 
-ESP32 drawings autosave to flash. RP2350 drawings are not persistent.
+ESP32 drawings autosave to flash. Its passive top-right badge reports battery
+percentage and charging without blocking drawing beneath it. RP2350 drawings are
+not persistent.
 
 ### ESP32-S3 V2
 
@@ -45,6 +47,7 @@ Hardware:
 - ESP32-S3, two 240 MHz cores
 - CO5300 AMOLED over 60 MHz QSPI
 - CST820 touch at 400 kHz
+- AXP2101 battery/charger PMU at I²C address `0x34`
 - 8 MiB octal PSRAM and 16 MiB flash
 
 Features:
@@ -54,22 +57,29 @@ Features:
 - ten dirty-tile Undos
 - debounced, tile-granular flash autosave and boot restore
 - touch recording/replay for hands-free demos
+- battery percentage and charging status from the AXP2101 PMU
+- verified four-second battery shutdown and short-press power-on
 - pen, eraser, colors, sizes, and confirmed New
 - touch sampling on the second core
 
 The display bus was reduced from 80 MHz to 60 MHz after occasional colored lines
 appeared. Recent long strokes average 2.5–3.4 ms per update. Panning was measured
-at 9.8–10.1 ms at 80 MHz; current 60 MHz panning needs a fresh capture.
+at 9.8–10.1 ms at 80 MHz; current 60 MHz panning needs a fresh capture. With a
+battery installed, firmware startup explicitly resets the still-powered CO5300
+through the board's I/O expander, preventing black or stale screens after MCU reset.
 
 Autosave keeps a 1,318,912-byte PSRAM shadow in row-major form. Changed 32×32
 tiles serialize two per 4 KiB flash sector after 500 ms without touch input. Rapid
 strokes coalesce. New schedules the whole world; Undo schedules its viewport; pan
 updates the saved origin. A 2 MiB `drawing` partition survives normal app flashes.
-Hardware timing and power-cycle recovery still need verification.
+One physical 18-sector save took 2.266878 seconds in the background task. Restore
+through battery shutdown still needs an explicit visual check.
 
 Short BOOT presses start and stop touch recording; a red toolbar dot shows the
 recording state. Holding BOOT replays the latest RAM tape from a blank canvas.
-Demo replay does not write flash. Wi-Fi export remains removed and is documented
+Demo replay does not write flash. Holding the lower PMU button for four seconds
+powers the battery-backed board off; a short press starts it again. TinyDraw does
+not yet use light or deep sleep. Wi-Fi export remains removed and is documented
 as an experiment in `FINDINGS.md`.
 
 ### RP2350
@@ -202,7 +212,9 @@ At this handoff:
 - ASan and UBSan pass both sanitizer entries;
 - the RP2350 Release build passes without compiler warnings;
 - the ESP32 physical build passes with 69% of its app partition free;
-- the ESP32 QEMU graphics replay passes.
+- the ESP32 QEMU graphics replay passes;
+- battery percentage, charging state, deterministic panel reset, and PMU off/on
+  have been checked on the ESP32-S3 V2 board.
 
 The RP2350 physical test covered fast medium and XL curves, 1,012 banded display
 updates, toolbar use, and repeated drawing without visible corruption.
@@ -211,11 +223,12 @@ updates, toolbar use, and repeated drawing without visible corruption.
 
 Resume on the ESP32 build:
 
-1. Verify autosave latency, rapid-stroke coalescing, New/Undo, and power-cycle restore.
+1. Verify autosave restore, rapid-stroke coalescing, and New/Undo persistence.
 2. Measure how far the 736×896 canvas can grow without hurting drawing or panning.
 3. Revisit Undo depth and storage alongside the canvas and save format.
 4. Export a drawing over USB-C. Start with a small read-only TinyUSB MSC volume
    containing one image, and verify iPhone Files behavior before expanding it.
+5. Consider event-driven AXP2101 status refresh and a tested sleep mode separately.
 
 Deferred RP2350 work includes a replaceable provisional tail, bounded vector
 Undo/panning, accurate USB framebuffer capture, and PWR-button dormant mode.

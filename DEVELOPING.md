@@ -64,10 +64,10 @@ same recordings will drive QEMU and hardware, using structural/tolerance compari
 cross-target pixel equality.
 
 The interactive host opens at roughly the real physical size of the 1.8-inch display on a
-14-inch 2021 MacBook Pro at default scaling; resize the window when a larger inspection view is
-needed. Its direct-drawn floating dock follows tldraw's visual hierarchy. Undo, pen, eraser,
-selected color, selected size, and new-drawing fill one row; tapping color or size opens one row of
-large choices above it.
+14-inch 2021 MacBook Pro at default scaling; `run-2x` and `run-3x` provide larger demo views.
+Its direct-drawn floating dock follows tldraw's visual hierarchy. Undo, tools, eraser, selected
+color, selected size, and new-drawing fill one row; tapping tools, color, or size opens one row
+of large choices above it.
 
 The interactive host renders PF-style ribbons as convex spans and round joins/caps into 8-bit
 64×64 coverage tiles. `StrokeRaster` max-unions stable geometry into an active coverage plane and
@@ -138,13 +138,19 @@ This screen is a scripted visual integration check; QEMU does not yet provide in
 pointer/touch input to TinyDraw.
 
 PlatformIO is not used. Espressif's installation manager owns IDF's Python and toolchain, keeping
-the host loop independent from the system Python. Physical builds use performance optimization,
+the host loop independent from the system Python. Flash through an explicit serial port when both
+physical boards are connected. Physical builds use performance optimization,
 240 MHz, and the ESP32-S3R8's octal PSRAM. QEMU uses a separate build directory and configuration
 with the same optimization/CPU settings and its required 8 MB quad-PSRAM model. `scripts/esp32`
 asserts those effective settings after each build. This proves our explicit capability-allocation
 path against the emulator. It does not prove the physical board's PSRAM capacity, bandwidth, DMA
-behavior, or timing; those remain hardware checks. The board may be V1 (SH8601 display + FT3168 touch) or V2 (CO5300 + CST820), so identify the
-revision before selecting adapters and preserve both paths until then.
+behavior, or timing; those remain hardware checks. The active target is the V2 board with a CO5300
+display, CST820 touch controller, 8 MiB octal PSRAM, 16 MiB flash, and AXP2101 power manager.
+
+The physical build autosaves changed 32×32 world tiles after 500 ms idle. It samples the PMU every
+five seconds only while touch is idle. Short BOOT presses toggle demo recording and a long press
+replays it. The lower PMU button performs a four-second hardware shutdown and short-press cold
+boot; no sleep mode exists yet.
 
 ## Dependency policy
 

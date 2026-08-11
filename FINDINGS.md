@@ -15,7 +15,8 @@ and a 736×896 canvas.
 - The CST820 reports a new position every **13–14 ms**, or **75–77 Hz**.
 - At 80 MHz, panning fell from **71–74 ms to 9.8–10.1 ms per frame**, about **7× faster**.
 - An export experiment produced a **35,010-byte PNG** in **0.69 s** and sent it in **1.27 s**.
-- Removing that experiment cut the active firmware to **310,784 bytes**, with **70%** of its
+- One physical autosave wrote **18 flash sectors in 2.266878 s** on its background task.
+- Removing the export experiment cut the active firmware to **310,784 bytes**, with **70%** of its
   1 MiB app partition free.
 - On RP2350, full-width display bands cut average drawing updates from **9.44 ms to
   1.17 ms**, an **8.1× speedup**.
@@ -87,6 +88,7 @@ microseconds of measured queue delay.
 | MCU | ESP32-S3 rev 0.2, two cores at 240 MHz |
 | Display | CO5300, 368×448 RGB565 AMOLED, 60 MHz QSPI |
 | Touch | CST820 `0xB7`, firmware `0x02`, 400 kHz I²C |
+| Power | AXP2101 `0x34`, battery gauge, charger, and hardware power button |
 | Memory | 8 MiB octal PSRAM at 80 MHz, 16 MiB flash |
 | 736×896 world | 1,318,912 bytes in PSRAM |
 | Two viewport canvases | 659,456 bytes in PSRAM |
@@ -96,7 +98,10 @@ microseconds of measured queue delay.
 | Three display buffers | 49,152 bytes in internal RAM |
 
 Physical bring-up established the V2 pin layout, panel offset, and color format. A full
-startup redraw clears panel memory left by the factory demo or an earlier session.
+startup redraw clears panel memory left by the factory demo or an earlier session. Once
+a battery was installed, resetting only the ESP32 could leave the CO5300 powered in a
+stale state, producing a black screen. Startup now pulses panel power and reset through
+the board's `0x20` I/O expander before initializing the display.
 
 TinyDraw keeps two full canvases in PSRAM: committed ink and the current visible image.
 Three smaller internal-RAM buffers queue panel transfers. The CO5300 accepts pixel updates
@@ -130,9 +135,25 @@ is written. Boot reads the tiled sectors, reconstructs the row-major world, and 
 the saved origin.
 
 Host tests cover full-world serialization, tile-selective writes, origin restore, and
-partial world capture. The physical firmware and custom partition table build. Device
-save latency, flash stalls, and power-cycle restore still require measurement. Power
-loss inside the 500 ms idle window can lose the newest changes.
+partial world capture. On-device autosave is active; one 18-sector write took 2.266878
+seconds on the low-priority background task. Drawing restore through battery shutdown
+still needs a direct visual check. Power loss inside the 500 ms idle window can lose the
+newest changes.
+
+## Battery and power
+
+The AXP2101 reports percentage, battery voltage, charging direction, and USB power over
+the touch controller's I²C bus. TinyDraw samples it every five seconds while touch is
+idle, keeping PMU traffic out of the drawing path. The top-right badge is a passive
+overlay: strokes remain in the canvas beneath it and touch passes through it.
+
+The CO5300 requires even transfer-window bounds. An odd-width battery refresh distorted
+the badge; aligning all four bounds fixed it. The current rendered icon and percentage
+are both exactly 17 pixels tall. The charging bolt is centered to the nearest half pixel.
+
+The lower PMU button is device-verified: holding it for four seconds cuts battery power,
+and a short press starts the board. This is a full shutdown and cold boot, not sleep.
+Light and deep sleep are not implemented.
 
 ## Larger canvas and export experiment
 
@@ -191,7 +212,8 @@ until that diagnostic path is fixed.
 Twenty native test groups cover exact replays, snapshots, Perfect Freehand examples,
 self-overlaps, seams, input states, UI, Undo, panning, and a 1,000-point XL workload. ASan,
 UBSan, headless QEMU, and visible QEMU pass. Device logs report drawing, display, touch,
-lift, panning, and Undo timing.
+lift, panning, Undo, autosave, and power status. Physical checks cover battery reporting,
+charging, deterministic panel startup, and PMU off/on.
 
 ## Current limits and next work
 
@@ -200,8 +222,9 @@ next touch position arrives 13–14 ms later. A full-canvas Undo sends 329,728 b
 visibly slower.
 
 ESP32 persistence currently keeps one autosaved drawing. It has no document picker,
-manual save slots, or redundant crash-safe snapshot. The canvas remains a fixed 2×2
-raster. The RP2350 has a screen-sized canvas without persistence, Undo, or pan.
+manual save slots, redundant crash-safe snapshot, or sleep mode. Battery percentage
+refreshes every five seconds. The canvas remains a fixed 2×2 raster. The RP2350 has a
+screen-sized canvas without persistence, Undo, or pan.
 Fast RP2350 curves remain limited by the FT3168's roughly 60 Hz coordinate stream,
 and its USB framebuffer capture needs repair.
 
@@ -211,5 +234,6 @@ and its USB framebuffer capture needs repair.
 2. Cross an XL stroke over itself, then make a sharp turn to show solid joins.
 3. Extend the stroke to show that old points no longer slow new input.
 4. Pan across the 2×2 world, then undo and demonstrate confirmed New.
-5. Close with **4,479 ms to 220 ms** for ink and the measured **74 ms to 10 ms**
+5. Point out autosave, charging status, and battery-powered off/on.
+6. Close with **4,479 ms to 220 ms** for ink and the measured **74 ms to 10 ms**
    80 MHz panning result; the stability build now uses 60 MHz.

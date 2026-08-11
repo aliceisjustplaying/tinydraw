@@ -6,7 +6,8 @@ If the board is unavailable, run the macOS app or QEMU replay.
 ## 0:00 — Draw while introducing it
 
 > This is a 368×448 AMOLED drawing app on an ESP32-S3. It has variable-width ink,
-> twelve colors, panning, ten Undos, and a canvas four times the screen area.
+> twelve colors, panning, ten Undos, flash autosave, battery status, and a canvas
+> four times the screen area.
 
 ## 0:30 — Explain the original problem
 
@@ -63,17 +64,24 @@ Key numbers:
 The stability build uses a 60 MHz display clock after occasional stray lines at
 80 MHz. Its panning timing still needs a fresh capture.
 
-## 3:40 — Why the result is trustworthy
+## 3:40 — Persistence and battery power
+
+> Changed 32×32 tiles autosave to a dedicated flash partition after drawing stops.
+> The AXP2101 supplies percentage and charging state. The lower button provides a
+> four-second hardware shutdown and short-press cold boot.
+
+## 4:05 — Why the result is trustworthy
 
 > The shared drawing core has 20 native and end-to-end test groups, exact image
 > snapshots, ASan, UBSan, QEMU coverage, and timing captured on the physical board.
 
-## 4:10 — Current limits
+## 4:35 — Current limits
 
 - Very fast diagonals can reveal the live drawing update.
 - Very fast pans can briefly tear because the panel has no synchronized framebuffer swap.
-- Drawings are not persistent after power loss.
+- Autosave holds one drawing and can lose changes made within 500 ms of power-off.
 - The current world is fixed at 2×2 screens; 3×3 is the next practical size.
+- Power-off is a cold shutdown; sleep is not implemented.
 
 ## If someone asks
 
@@ -84,3 +92,5 @@ The stability build uses a 60 MHz display clock after occasional stray lines at
 - **Why a coverage mask?** It prevents pale holes where a stroke overlaps itself.
 - **Memory?** The world uses 1.32 MB, two viewport canvases use 659 KB, and ten Undo
   entries use 3.44 MB of the board's 8 MB PSRAM.
+- **How often does battery status refresh?** Every five seconds, only while touch is idle.
+- **Does it sleep?** No. The PMU button performs a full power-off and cold boot.
