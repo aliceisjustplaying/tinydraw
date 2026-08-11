@@ -25,10 +25,10 @@ constexpr int kDialogLeft = 28;
 constexpr int kDialogTop = 126;
 constexpr int kDialogRight = 340;
 constexpr int kDialogBottom = 286;
-constexpr int kBatteryLeft = 240;
-constexpr int kBatteryTop = 22;
-constexpr int kBatteryRight = 342;
-constexpr int kBatteryBottom = 64;
+constexpr int kBatteryLeft = 244;
+constexpr int kBatteryTop = 18;
+constexpr int kBatteryRight = 340;
+constexpr int kBatteryBottom = 56;
 constexpr int kHitSlop = 8;
 constexpr int kMainHitTop = kMainTop - kHitSlop;
 constexpr int kColorPaletteHitTop = kColorPaletteTop - kHitSlop;
@@ -253,10 +253,10 @@ void draw_battery(std::span<std::uint16_t> canvas, int width, int height,
   rounded_rect(canvas, width, height, kBatteryLeft, kBatteryTop, kBatteryRight, kBatteryBottom, 8,
                kWhite);
 
-  constexpr int icon_left = 248;
-  constexpr int icon_top = 32;
-  constexpr int icon_right = 274;
-  constexpr int icon_bottom = 54;
+  constexpr int icon_left = 252;
+  constexpr int icon_top = 27;
+  constexpr int icon_right = 282;
+  constexpr int icon_bottom = 49;
   const std::uint16_t outline = state.battery_charging ? kSelected : kInk;
   fill_rect(canvas, width, height, icon_left, icon_top, icon_right, icon_top + 2, outline);
   fill_rect(canvas, width, height, icon_left, icon_bottom - 2, icon_right, icon_bottom, outline);
@@ -288,7 +288,7 @@ void draw_battery(std::span<std::uint16_t> canvas, int width, int height,
   if (percentage < 100) {
     label[length++] = '%';
   }
-  draw_text(canvas, width, height, 282, 32, std::string_view(label.data(), length), kInk, 3);
+  draw_text(canvas, width, height, 290, 30, std::string_view(label.data(), length), kInk, 2);
 }
 
 void draw_new_dialog(std::span<std::uint16_t> canvas, int width, int height) {
