@@ -15,6 +15,7 @@ if(NOT TINYDRAW_QEMU)
   list(APPEND TINYDRAW_PLATFORM_SRCS
     "drawing_store.cpp"
     "hardware_app.cpp"
+    "image_export_store.cpp"
     "power_manager.cpp"
     "${TINYDRAW_CORE}/src/png_encoder.cpp"
     ${TINYDRAW_PNGENC_SRCS}
