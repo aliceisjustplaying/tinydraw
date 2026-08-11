@@ -15,6 +15,7 @@
 #include "esp_wifi_default.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "nvs_flash.h"
 #include "time_sync_config.h"
 
 namespace tinydraw::esp32 {
@@ -27,7 +28,8 @@ constexpr TickType_t kConnectPoll = pdMS_TO_TICKS(100);
 constexpr int kConnectPolls = 100;
 constexpr TickType_t kNtpTimeout = pdMS_TO_TICKS(10'000);
 
-void stop_network(esp_netif_t* station, bool wifi_initialized, bool sntp_initialized) {
+void stop_network(esp_netif_t* station, bool wifi_initialized, bool sntp_initialized,
+                  bool nvs_initialized) {
   if (sntp_initialized) {
     esp_netif_sntp_deinit();
   }
@@ -39,9 +41,12 @@ void stop_network(esp_netif_t* station, bool wifi_initialized, bool sntp_initial
   if (station != nullptr) {
     esp_netif_destroy_default_wifi(station);
   }
+  if (nvs_initialized) {
+    static_cast<void>(nvs_flash_deinit());
+  }
 }
 
-bool connect_to_hotspot(esp_netif_t*& station, bool& wifi_initialized) {
+bool connect_to_hotspot(esp_netif_t*& station, bool& wifi_initialized, bool& nvs_initialized) {
   const esp_err_t netif_result = esp_netif_init();
   if (netif_result != ESP_OK && netif_result != ESP_ERR_INVALID_STATE) {
     return false;
@@ -55,12 +60,26 @@ bool connect_to_hotspot(esp_netif_t*& station, bool& wifi_initialized) {
     return false;
   }
 
+  esp_err_t nvs_result = nvs_flash_init();
+  if (nvs_result == ESP_ERR_NVS_NO_FREE_PAGES || nvs_result == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    nvs_result = nvs_flash_erase();
+    if (nvs_result == ESP_OK) {
+      nvs_result = nvs_flash_init();
+    }
+  }
+  if (nvs_result != ESP_OK) {
+    return false;
+  }
+  nvs_initialized = true;
+
   wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
-  init.nvs_enable = 0;
   if (esp_wifi_init(&init) != ESP_OK) {
     return false;
   }
   wifi_initialized = true;
+  if (esp_wifi_set_storage(WIFI_STORAGE_RAM) != ESP_OK) {
+    return false;
+  }
 
   wifi_config_t config{};
   std::copy_n(kSsid.begin(), kSsid.size(), config.sta.ssid);
@@ -93,9 +112,10 @@ bool sync_clock(RtcClock& clock) {
   esp_netif_t* station = nullptr;
   bool wifi_initialized = false;
   bool sntp_initialized = false;
+  bool nvs_initialized = false;
   bool success = false;
 
-  if (connect_to_hotspot(station, wifi_initialized)) {
+  if (connect_to_hotspot(station, wifi_initialized, nvs_initialized)) {
     const esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
     if (esp_netif_sntp_init(&config) == ESP_OK) {
       sntp_initialized = true;
@@ -122,7 +142,7 @@ bool sync_clock(RtcClock& clock) {
     }
   }
 
-  stop_network(station, wifi_initialized, sntp_initialized);
+  stop_network(station, wifi_initialized, sntp_initialized, nvs_initialized);
   std::printf("TINYDRAW_NTP_DONE success=%u wifi_stopped=1\n", success);
   return success;
 }

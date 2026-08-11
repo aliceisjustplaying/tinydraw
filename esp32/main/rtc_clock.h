@@ -10,8 +10,8 @@
 
 namespace tinydraw::esp32 {
 
-// The board RTC stores UTC calendar fields and keeps ticking while battery power
-// is available. An invalid clock is seeded from the firmware build timestamp.
+// The board RTC stores configured local calendar fields and keeps ticking while
+// battery power is available. An invalid clock uses the firmware build timestamp.
 class RtcClock {
  public:
   explicit RtcClock(i2c_master_bus_handle_t bus);

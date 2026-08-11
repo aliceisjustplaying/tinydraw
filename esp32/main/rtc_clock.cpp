@@ -91,7 +91,7 @@ RtcClock::RtcClock(i2c_master_bus_handle_t bus) {
   if ((!retained || before(current, compiled)) && set(compiled)) {
     current = compiled;
   }
-  std::printf("TINYDRAW_RTC ready=1 retained=%u utc=%04u-%02u-%02uT%02u:%02u:%02uZ\n", retained,
+  std::printf("TINYDRAW_RTC ready=1 retained=%u local=%04u-%02u-%02uT%02u:%02u:%02u\n", retained,
               current.year, current.month, current.day, current.hour, current.minute,
               current.second);
 }
