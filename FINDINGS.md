@@ -1,6 +1,6 @@
 # TinyDraw findings
 
-Snapshot: 2026-08-10
+Snapshot: 2026-08-11
 
 TinyDraw runs on Waveshare's 368×448 ESP32-S3 and RP2350 Touch AMOLED 1.8-inch
 boards. Both use the shared ink and toolbar code. The ESP32 build adds ten Undos
@@ -91,6 +91,7 @@ microseconds of measured queue delay.
 | 736×896 world | 1,318,912 bytes in PSRAM |
 | Two viewport canvases | 659,456 bytes in PSRAM |
 | Ten Undo entries | 3,440,640 bytes in PSRAM |
+| Autosave shadow | 1,318,912 bytes in PSRAM |
 | Active coverage | 164,864 bytes in internal RAM |
 | Three display buffers | 49,152 bytes in internal RAM |
 
@@ -114,6 +115,24 @@ Undo keeps before-images only for touched regions. A 1,000-point trace restores 
 bytes; batching adjacent regions reduced display submissions from 105 to 14. Physical
 examples range from 10.8 ms for 2 tiles, through 35.5 ms for 43 tiles, to 109.2 ms for the
 full 168-tile canvas.
+
+## Autosave
+
+ESP32 autosave has a dedicated 2 MiB flash partition and a 1,318,912-byte PSRAM
+shadow of the 736×896 world. A stroke marks world-aligned 32×32 tiles as its input
+arrives. Two serialized tiles fit one 4 KiB erase sector. At lift, only those tiles
+are copied into the world and save shadow.
+
+Flash work begins after 500 ms without touch input and runs on a low-priority task.
+New schedules the complete world, Undo schedules the current viewport, and panning
+updates the saved viewport origin. Rapid strokes update the pending shadow before it
+is written. Boot reads the tiled sectors, reconstructs the row-major world, and shows
+the saved origin.
+
+Host tests cover full-world serialization, tile-selective writes, origin restore, and
+partial world capture. The physical firmware and custom partition table build. Device
+save latency, flash stalls, and power-cycle restore still require measurement. Power
+loss inside the 500 ms idle window can lose the newest changes.
 
 ## Larger canvas and export experiment
 
@@ -180,8 +199,9 @@ Fast diagonals can still show the stroke being drawn. Frame work can take 16.1 m
 next touch position arrives 13–14 ms later. A full-canvas Undo sends 329,728 bytes and is
 visibly slower.
 
-There is no persistent Save. The ESP32 canvas is a fixed 2×2 raster, not an
-unbounded document. The RP2350 has a screen-sized canvas without Undo or pan.
+ESP32 persistence currently keeps one autosaved drawing. It has no document picker,
+manual save slots, or redundant crash-safe snapshot. The canvas remains a fixed 2×2
+raster. The RP2350 has a screen-sized canvas without persistence, Undo, or pan.
 Fast RP2350 curves remain limited by the FT3168's roughly 60 Hz coordinate stream,
 and its USB framebuffer capture needs repair.
 

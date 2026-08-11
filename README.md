@@ -14,12 +14,12 @@ exercise the same C++20 drawing and UI core.
 
 - Variable-width, Perfect Freehand-style ink with 4×4 edge smoothing
 - Solid self-overlaps, rounded sharp turns, twelve colors, and four sizes
-- ESP32: pan, ten Undos, and a fixed 736×896 canvas in 8 MiB PSRAM
+- ESP32: pan, ten Undos, a 736×896 canvas, and tile-granular flash autosave
 - RP2350: screen-sized ink, eraser, colors, sizes, and confirmed New
 - Native replays, exact snapshots, ASan/UBSan, QEMU, and device telemetry
 
-ESP32 long strokes average about 2.5–3.4 ms per update. RP2350 strokes average
-about 1.2–1.4 ms using full-width display bands. Drawings are not persistent.
+ESP32 long strokes average 2.5–3.4 ms per update and save after 500 ms idle;
+physical save timing awaits reconnect. RP2350 averages 1.2–1.4 ms and is not persistent.
 
 The RP2350 build is intentionally smaller. It has no pan or Undo, its permanent
 circle-stamp raster looks rougher than the ESP32 ribbon renderer, and the newest
