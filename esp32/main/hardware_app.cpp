@@ -31,6 +31,7 @@
 #include "rtc_clock.h"
 #include "time_sync.h"
 #include "tinydraw/demo/demo_tape.h"
+#include "tinydraw/document/vector_document.h"
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
 #include "tinydraw/ui/toolbar.h"
@@ -52,6 +53,8 @@ constexpr gpio_num_t kDemoButton = GPIO_NUM_0;
 constexpr std::uint32_t kDemoLongPressUs = 800'000U;
 constexpr std::uint32_t kPowerRefreshUs = 1'000'000U;
 constexpr std::size_t kDemoCapacity = 8192U;
+constexpr std::size_t kVectorStrokeCapacity = 512U;
+constexpr std::size_t kVectorSampleCapacity = 8192U;
 constexpr std::uint16_t kIoExpanderAddress = 0x20;
 constexpr std::uint8_t kIoExpanderOutputRegister = 0x01;
 constexpr std::uint8_t kIoExpanderConfigRegister = 0x03;
@@ -731,6 +734,24 @@ void run_hardware_app() {
     return;
   }
 
+  auto* vector_strokes = static_cast<tinydraw::VectorStroke*>(heap_caps_malloc(
+      kVectorStrokeCapacity * sizeof(tinydraw::VectorStroke), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  auto* vector_samples = static_cast<tinydraw::StrokeSample*>(heap_caps_malloc(
+      kVectorSampleCapacity * sizeof(tinydraw::StrokeSample), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (vector_strokes == nullptr || vector_samples == nullptr) {
+    std::printf("TINYDRAW_HARDWARE_FAIL vector_strokes=%u vector_samples=%u\n",
+                vector_strokes != nullptr, vector_samples != nullptr);
+    return;
+  }
+  tinydraw::VectorDocument vector_document(std::span(vector_strokes, kVectorStrokeCapacity),
+                                           std::span(vector_samples, kVectorSampleCapacity));
+  std::printf("TINYDRAW_VECTOR_READY strokes=%lu samples=%lu bytes=%lu free_psram=%lu\n",
+              static_cast<unsigned long>(kVectorStrokeCapacity),
+              static_cast<unsigned long>(kVectorSampleCapacity),
+              static_cast<unsigned long>(kVectorStrokeCapacity * sizeof(tinydraw::VectorStroke) +
+                                         kVectorSampleCapacity * sizeof(tinydraw::StrokeSample)),
+              static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
+
   tinydraw::esp32::DrawingStore drawing_store;
   tinydraw::esp32::ImageExportStore image_export_store;
   tinydraw::esp32::UsbExport usb_export(image_export_store);
@@ -781,6 +802,8 @@ void run_hardware_app() {
   tinydraw::Point previous_saved_touch{};
   tinydraw::Point pan_start_touch{};
   tinydraw::ViewOrigin pan_start_origin{};
+  tinydraw::ViewOrigin vector_stroke_origin{};
+  bool vector_stroke_recording = false;
   bool toolbar_pressed = false;
   tinydraw::Point toolbar_sum{};
   std::uint32_t toolbar_samples = 0;
@@ -807,6 +830,8 @@ void run_hardware_app() {
     ink.end();
     ribbon.reset();
     canvas.raster().cancel();
+    vector_document.cancel_stroke();
+    vector_stroke_recording = false;
   };
   const auto update_toolbar = [&] {
     toolbar.can_undo = canvas.undo_history().can_undo();
@@ -835,6 +860,8 @@ void run_hardware_app() {
   };
   const auto new_drawing = [&] {
     reset_stroke();
+    vector_document.clear();
+    vector_stroke_recording = false;
     canvas.undo_history().begin_entry(canvas.world().origin());
     canvas.undo_history().capture_canvas(canvas.committed());
     static_cast<void>(canvas.undo_history().commit_entry());
@@ -1142,6 +1169,16 @@ void run_hardware_app() {
                                         canvas.world().origin());
         }
         last_ink = ink.begin({.x = point.x, .y = point.y, .timestamp_us = event.timestamp_us});
+        vector_stroke_origin = canvas.world().origin();
+        vector_stroke_recording =
+            !demo_replaying &&
+            vector_document.begin_stroke(
+                stroke_color,
+                toolbar.tool == tinydraw::DrawingTool::kEraser ? tinydraw::VectorTool::kEraser
+                                                               : tinydraw::VectorTool::kPen,
+                {.x = last_ink.position.x + static_cast<float>(vector_stroke_origin.x),
+                 .y = last_ink.position.y + static_cast<float>(vector_stroke_origin.y),
+                 .radius = last_ink.radius});
         stroke_samples = 1;
         stroke_started_us = event.timestamp_us;
         previous_touch_us = event.timestamp_us;
@@ -1179,6 +1216,17 @@ void run_hardware_app() {
       }
       previous_saved_touch = point;
       last_ink = ink.update({.x = point.x, .y = point.y, .timestamp_us = event.timestamp_us});
+      if (vector_stroke_recording &&
+          !vector_document.append(
+              {.x = last_ink.position.x + static_cast<float>(vector_stroke_origin.x),
+               .y = last_ink.position.y + static_cast<float>(vector_stroke_origin.y),
+               .radius = last_ink.radius})) {
+        vector_document.cancel_stroke();
+        vector_stroke_recording = false;
+        std::printf("TINYDRAW_VECTOR_FULL strokes=%lu samples=%lu\n",
+                    static_cast<unsigned long>(vector_document.stroke_count()),
+                    static_cast<unsigned long>(vector_document.sample_count()));
+      }
       const std::uint32_t touch_interval_us = event.timestamp_us - previous_touch_us;
       previous_touch_us = event.timestamp_us;
       touch_intervals_us += touch_interval_us;
@@ -1231,6 +1279,23 @@ void run_hardware_app() {
       if (ink.active()) {
         last_ink =
             ink.finish({.x = last_touch.x, .y = last_touch.y, .timestamp_us = event.timestamp_us});
+        if (vector_stroke_recording) {
+          if (vector_document.append(
+                  {.x = last_ink.position.x + static_cast<float>(vector_stroke_origin.x),
+                   .y = last_ink.position.y + static_cast<float>(vector_stroke_origin.y),
+                   .radius = last_ink.radius}) &&
+              vector_document.finish_stroke()) {
+            std::printf("TINYDRAW_VECTOR_STROKE strokes=%lu samples=%lu\n",
+                        static_cast<unsigned long>(vector_document.stroke_count()),
+                        static_cast<unsigned long>(vector_document.sample_count()));
+          } else {
+            vector_document.cancel_stroke();
+            std::printf("TINYDRAW_VECTOR_FULL strokes=%lu samples=%lu\n",
+                        static_cast<unsigned long>(vector_document.stroke_count()),
+                        static_cast<unsigned long>(vector_document.sample_count()));
+          }
+          vector_stroke_recording = false;
+        }
         const auto started = esp_timer_get_time();
         static_cast<void>(canvas.raster().finish(ribbon.finish(last_ink), stroke_color,
                                                  &canvas.undo_history(), canvas.world().origin()));

@@ -43,6 +43,7 @@ idf_component_register(
     "${TINYDRAW_CORE}/src/stroke_raster.cpp"
     "${TINYDRAW_CORE}/src/tile_undo_history.cpp"
     "${TINYDRAW_CORE}/src/toolbar.cpp"
+    "${TINYDRAW_CORE}/src/vector_document.cpp"
     "${TINYDRAW_CORE}/src/world_canvas.cpp"
   INCLUDE_DIRS "." "${TINYDRAW_CORE}/include"
   PRIV_INCLUDE_DIRS "${TINYDRAW_PNGENC}"
