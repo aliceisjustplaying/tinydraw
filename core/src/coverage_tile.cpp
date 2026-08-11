@@ -101,11 +101,16 @@ void CoverageTile::rasterize_circle(Point center, float radius) {
   const float radius_squared = radius * radius;
 
   for (int y = first_y; y <= last_y; ++y) {
+    const float sample_top = static_cast<float>(y) + sample_offset(0);
+    const float sample_bottom = static_cast<float>(y) + sample_offset(kSamplesPerAxis - 1);
+    std::array<float, kSamplesPerAxis> delta_y_squared;
+    for (int sample_y = 0; sample_y < kSamplesPerAxis; ++sample_y) {
+      const float delta_y = static_cast<float>(y) + sample_offset(sample_y) - center.y;
+      delta_y_squared[static_cast<std::size_t>(sample_y)] = delta_y * delta_y;
+    }
     for (int x = first_x; x <= last_x; ++x) {
       const float sample_left = static_cast<float>(x) + sample_offset(0);
       const float sample_right = static_cast<float>(x) + sample_offset(kSamplesPerAxis - 1);
-      const float sample_top = static_cast<float>(y) + sample_offset(0);
-      const float sample_bottom = static_cast<float>(y) + sample_offset(kSamplesPerAxis - 1);
       const float nearest_x = std::clamp(center.x, sample_left, sample_right) - center.x;
       const float nearest_y = std::clamp(center.y, sample_top, sample_bottom) - center.y;
       if (nearest_x * nearest_x + nearest_y * nearest_y > radius_squared) {
@@ -119,12 +124,17 @@ void CoverageTile::rasterize_circle(Point center, float radius) {
         union_coverage(x, y, 255U);
         continue;
       }
+      std::array<float, kSamplesPerAxis> delta_x_squared;
+      for (int sample_x = 0; sample_x < kSamplesPerAxis; ++sample_x) {
+        const float delta_x = static_cast<float>(x) + sample_offset(sample_x) - center.x;
+        delta_x_squared[static_cast<std::size_t>(sample_x)] = delta_x * delta_x;
+      }
       int covered = 0;
       for (int sample_y = 0; sample_y < kSamplesPerAxis; ++sample_y) {
         for (int sample_x = 0; sample_x < kSamplesPerAxis; ++sample_x) {
-          const float delta_x = static_cast<float>(x) + sample_offset(sample_x) - center.x;
-          const float delta_y = static_cast<float>(y) + sample_offset(sample_y) - center.y;
-          if (delta_x * delta_x + delta_y * delta_y <= radius_squared) {
+          if (delta_x_squared[static_cast<std::size_t>(sample_x)] +
+                  delta_y_squared[static_cast<std::size_t>(sample_y)] <=
+              radius_squared) {
             ++covered;
           }
         }
@@ -173,6 +183,32 @@ void CoverageTile::rasterize_convex(std::span<const Point> polygon) {
   const int last_y = static_cast<int>(std::ceil(std::clamp(
       maximum_y, static_cast<float>(origin_y_), static_cast<float>(origin_y_ + height_ - 1))));
 
+  // The S3 FPU has no divide instruction, so hoist one reciprocal per edge
+  // out of the scanline loop instead of dividing on every sample row.
+  struct ScanEdge {
+    Point start;
+    Point end;
+    float minimum_y;
+    float maximum_y;
+    float inverse_delta_y;
+  };
+  std::array<ScanEdge, 4> edges;
+  std::size_t edge_count = 0;
+  for (std::size_t index = 0; index < polygon.size(); ++index) {
+    const Point start = polygon[index];
+    const Point end = polygon[(index + 1U) % polygon.size()];
+    if (start.y == end.y) {
+      continue;
+    }
+    edges[edge_count++] = {
+        .start = start,
+        .end = end,
+        .minimum_y = std::min(start.y, end.y),
+        .maximum_y = std::max(start.y, end.y),
+        .inverse_delta_y = 1.0F / (end.y - start.y),
+    };
+  }
+
   for (int y = first_y; y <= last_y; ++y) {
     std::array<std::uint8_t, kTileSize> covered{};
     for (int sample_y = 0; sample_y < kSamplesPerAxis; ++sample_y) {
@@ -180,17 +216,14 @@ void CoverageTile::rasterize_convex(std::span<const Point> polygon) {
       float scan_minimum_x = 0.0F;
       float scan_maximum_x = 0.0F;
       bool found = false;
-      for (std::size_t index = 0; index < polygon.size(); ++index) {
-        const Point start = polygon[index];
-        const Point end = polygon[(index + 1U) % polygon.size()];
-        const float minimum_edge_y = std::min(start.y, end.y);
-        const float maximum_edge_y = std::max(start.y, end.y);
-        if (start.y == end.y || scan_y < minimum_edge_y || scan_y > maximum_edge_y) {
+      for (std::size_t index = 0; index < edge_count; ++index) {
+        const ScanEdge& edge = edges[index];
+        if (scan_y < edge.minimum_y || scan_y > edge.maximum_y) {
           continue;
         }
-        const float amount = (scan_y - start.y) / (end.y - start.y);
-        include_strip_x(start.x + amount * (end.x - start.x), scan_minimum_x, scan_maximum_x,
-                        found);
+        const float amount = (scan_y - edge.start.y) * edge.inverse_delta_y;
+        include_strip_x(edge.start.x + amount * (edge.end.x - edge.start.x), scan_minimum_x,
+                        scan_maximum_x, found);
       }
       if (!found) {
         continue;
@@ -198,6 +231,17 @@ void CoverageTile::rasterize_convex(std::span<const Point> polygon) {
       const int scan_first_x = std::max(first_x, static_cast<int>(std::floor(scan_minimum_x)) - 1);
       const int scan_last_x = std::min(last_x, static_cast<int>(std::ceil(scan_maximum_x)) + 1);
       for (int x = scan_first_x; x <= scan_last_x; ++x) {
+        // Sample columns ascend, so testing the outermost two columns decides
+        // fully-inside and fully-outside pixels without per-column tests.
+        const float first_sample = static_cast<float>(x) + sample_offset(0);
+        const float last_sample = static_cast<float>(x) + sample_offset(kSamplesPerAxis - 1);
+        if (first_sample >= scan_minimum_x && last_sample <= scan_maximum_x) {
+          covered[static_cast<std::size_t>(x - origin_x_)] += kSamplesPerAxis;
+          continue;
+        }
+        if (last_sample < scan_minimum_x || first_sample > scan_maximum_x) {
+          continue;
+        }
         for (int sample_x = 0; sample_x < kSamplesPerAxis; ++sample_x) {
           const float scan_x = static_cast<float>(x) + sample_offset(sample_x);
           if (scan_x >= scan_minimum_x && scan_x <= scan_maximum_x) {

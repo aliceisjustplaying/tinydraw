@@ -21,7 +21,10 @@ Point perpendicular(Point point) { return {.x = point.y, .y = -point.x}; }
 float dot(Point left, Point right) { return left.x * right.x + left.y * right.y; }
 
 Point unit(Point point) {
-  const float length = std::hypot(point.x, point.y);
+  // std::sqrt of the squared length: our coordinates stay far from float
+  // overflow, and this avoids std::hypot's software guard paths on targets
+  // without hardware divide/sqrt.
+  const float length = std::sqrt(point.x * point.x + point.y * point.y);
   return length == 0.0F ? Point{} : Point{.x = point.x / length, .y = point.y / length};
 }
 
