@@ -53,6 +53,9 @@ struct ToolbarState {
   bool sizes_open = false;
   bool confirm_new = false;
   bool recording = false;
+  int battery_percentage = -1;
+  bool battery_charging = false;
+  bool external_power = false;
 };
 
 [[nodiscard]] bool toolbar_contains(Point point, const ToolbarState& state);

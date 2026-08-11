@@ -190,6 +190,30 @@ TEST_CASE("recording indicator appears only while recording") {
   CHECK(recording[indicator] == 0xE186U);
 }
 
+TEST_CASE("battery status appears in the toolbar without covering the canvas") {
+  const auto pixel_count =
+      static_cast<std::size_t>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight);
+  std::vector<std::uint16_t> absent(pixel_count, 0xFFFFU);
+  std::vector<std::uint16_t> half = absent;
+  std::vector<std::uint16_t> charging = absent;
+
+  tinydraw::draw_toolbar(absent, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight, {});
+  tinydraw::draw_toolbar(half, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight,
+                         {.battery_percentage = 50});
+  tinydraw::draw_toolbar(
+      charging, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight,
+      {.battery_percentage = 50, .battery_charging = true, .external_power = true});
+
+  const auto battery_outline = static_cast<std::size_t>(377 * tinydraw::kCanvasWidth + 307);
+  const auto open_canvas_pixel = static_cast<std::size_t>(100 * tinydraw::kCanvasWidth + 307);
+  CHECK(absent != half);
+  CHECK(half != charging);
+  CHECK(half[battery_outline] == 0x2104U);
+  CHECK(charging[battery_outline] == 0x349FU);
+  CHECK(half[open_canvas_pixel] == 0xFFFFU);
+  CHECK(charging[open_canvas_pixel] == 0xFFFFU);
+}
+
 TEST_CASE("new drawing confirmation renders without covering the canvas") {
   const auto pixel_count =
       static_cast<std::size_t>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight);

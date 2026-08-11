@@ -15,6 +15,7 @@ constexpr std::uint16_t kBorder = 0xDEDBU;
 constexpr std::uint16_t kShadow = 0xBDF7U;
 constexpr std::uint16_t kSelected = 0x349FU;
 constexpr std::uint16_t kRecording = 0xE186U;
+constexpr std::uint16_t kCharging = 0xF569U;
 constexpr int kMainTop = 374;
 constexpr int kMainBottom = 444;
 constexpr int kColorPaletteTop = 180;
@@ -189,6 +190,28 @@ std::array<std::uint8_t, 7> glyph_rows(char character) {
       return {0x11U, 0x11U, 0x11U, 0x15U, 0x15U, 0x1BU, 0x11U};
     case 'Y':
       return {0x11U, 0x11U, 0x0AU, 0x04U, 0x04U, 0x04U, 0x04U};
+    case '0':
+      return {0x0EU, 0x11U, 0x13U, 0x15U, 0x19U, 0x11U, 0x0EU};
+    case '1':
+      return {0x04U, 0x0CU, 0x14U, 0x04U, 0x04U, 0x04U, 0x1FU};
+    case '2':
+      return {0x0EU, 0x11U, 0x01U, 0x02U, 0x04U, 0x08U, 0x1FU};
+    case '3':
+      return {0x1EU, 0x01U, 0x01U, 0x0EU, 0x01U, 0x01U, 0x1EU};
+    case '4':
+      return {0x02U, 0x06U, 0x0AU, 0x12U, 0x1FU, 0x02U, 0x02U};
+    case '5':
+      return {0x1FU, 0x10U, 0x10U, 0x1EU, 0x01U, 0x01U, 0x1EU};
+    case '6':
+      return {0x0EU, 0x10U, 0x10U, 0x1EU, 0x11U, 0x11U, 0x0EU};
+    case '7':
+      return {0x1FU, 0x01U, 0x02U, 0x04U, 0x08U, 0x08U, 0x08U};
+    case '8':
+      return {0x0EU, 0x11U, 0x11U, 0x0EU, 0x11U, 0x11U, 0x0EU};
+    case '9':
+      return {0x0EU, 0x11U, 0x11U, 0x0FU, 0x01U, 0x01U, 0x0EU};
+    case '%':
+      return {0x19U, 0x1AU, 0x04U, 0x04U, 0x0BU, 0x13U, 0x00U};
     case '?':
       return {0x0EU, 0x11U, 0x02U, 0x04U, 0x04U, 0x00U, 0x04U};
     default:
@@ -210,6 +233,54 @@ void draw_text(std::span<std::uint16_t> canvas, int width, int height, int x, in
     }
     x += 6 * scale;
   }
+}
+
+void draw_battery(std::span<std::uint16_t> canvas, int width, int height,
+                  const ToolbarState& state) {
+  if (state.battery_percentage < 0) {
+    return;
+  }
+
+  const int percentage = std::clamp(state.battery_percentage, 0, 100);
+  constexpr int battery_left = 307;
+  constexpr int battery_top = 377;
+  constexpr int battery_right = 324;
+  constexpr int battery_bottom = 386;
+  const std::uint16_t outline = state.battery_charging ? kSelected : kInk;
+  fill_rect(canvas, width, height, battery_left, battery_top, battery_right, battery_top + 1,
+            outline);
+  fill_rect(canvas, width, height, battery_left, battery_bottom - 1, battery_right, battery_bottom,
+            outline);
+  fill_rect(canvas, width, height, battery_left, battery_top, battery_left + 1, battery_bottom,
+            outline);
+  fill_rect(canvas, width, height, battery_right - 1, battery_top, battery_right, battery_bottom,
+            outline);
+  fill_rect(canvas, width, height, battery_right, battery_top + 3, battery_right + 2,
+            battery_bottom - 3, outline);
+  const int level_width = percentage * (battery_right - battery_left - 4) / 100;
+  fill_rect(canvas, width, height, battery_left + 2, battery_top + 2,
+            battery_left + 2 + level_width, battery_bottom - 2, outline);
+  if (state.battery_charging) {
+    line(canvas, width, height, battery_left + 10, battery_top + 1, battery_left + 6,
+         battery_top + 4, kCharging, 0);
+    line(canvas, width, height, battery_left + 6, battery_top + 4, battery_left + 10,
+         battery_top + 4, kCharging, 0);
+    line(canvas, width, height, battery_left + 10, battery_top + 4, battery_left + 6,
+         battery_bottom - 1, kCharging, 0);
+  }
+
+  std::array<char, 4> label{};
+  std::size_t length = 0;
+  if (percentage == 100) {
+    label[length++] = '1';
+  }
+  if (percentage >= 10) {
+    label[length++] = static_cast<char>('0' + (percentage / 10) % 10);
+  }
+  label[length++] = static_cast<char>('0' + percentage % 10);
+  label[length++] = '%';
+  draw_text(canvas, width, height, 360 - static_cast<int>(length * 6U), battery_top,
+            std::string_view(label.data(), length), kInk, 1);
 }
 
 void draw_new_dialog(std::span<std::uint16_t> canvas, int width, int height) {
@@ -437,6 +508,7 @@ void draw_toolbar(std::span<std::uint16_t> canvas, int width, int height,
   if (state.recording) {
     fill_circle(canvas, width, height, 184, 382, 5, kRecording);
   }
+  draw_battery(canvas, width, height, state);
 
   if (state.confirm_new) {
     draw_new_dialog(canvas, width, height);
