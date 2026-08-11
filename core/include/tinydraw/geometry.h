@@ -17,6 +17,13 @@ struct Rect {
   int y1;
 };
 
+struct RectF {
+  float x0 = 0.0F;
+  float y0 = 0.0F;
+  float x1 = 0.0F;
+  float y1 = 0.0F;
+};
+
 struct PanelGeometry {
   int x_offset = 0;
   int y_offset = 0;
