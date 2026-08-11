@@ -337,6 +337,7 @@ void handle_toolbar(tinydraw::Point point) {
       toolbar.confirm_new = false;
       close_popups();
       break;
+    case tinydraw::ToolbarAction::kExport:
     case tinydraw::ToolbarAction::kUndo:
     case tinydraw::ToolbarAction::kNone:
       return;

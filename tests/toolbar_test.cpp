@@ -34,6 +34,17 @@ TEST_CASE("pen and hand controls appear in a modal tool popup") {
   CHECK(tinydraw::toolbar_action_at({213.0F, 409.0F}, state) == tinydraw::ToolbarAction::kNone);
 }
 
+TEST_CASE("export-enabled tool popup exposes pen pan and export") {
+  tinydraw::ToolbarState state;
+  state.tools_open = true;
+  state.can_export = true;
+
+  CHECK(tinydraw::toolbar_action_at({62.0F, 331.0F}, state) == tinydraw::ToolbarAction::kSelectPen);
+  CHECK(tinydraw::toolbar_action_at({184.0F, 331.0F}, state) ==
+        tinydraw::ToolbarAction::kSelectPan);
+  CHECK(tinydraw::toolbar_action_at({306.0F, 331.0F}, state) == tinydraw::ToolbarAction::kExport);
+}
+
 TEST_CASE("tldraw color controls fill a three by four popup") {
   tinydraw::ToolbarState state;
   CHECK(tinydraw::toolbar_action_at({52.0F, 207.0F}, state) == tinydraw::ToolbarAction::kNone);
@@ -134,6 +145,19 @@ TEST_CASE("new drawing confirmation captures input and exposes large choices") {
   CHECK(tinydraw::toolbar_overlay_contains({180.0F, 160.0F}, state));
   CHECK_FALSE(tinydraw::toolbar_overlay_contains({10.0F, 10.0F}, state));
   CHECK(tinydraw::toolbar_overlay_top(state) == 125);
+}
+
+TEST_CASE("export result toast overlays without capturing drawing input") {
+  const tinydraw::ToolbarState state{.export_ready = true, .export_toast = true};
+
+  const auto rect = tinydraw::export_toast_rect(state);
+  REQUIRE(rect.has_value());
+  CHECK(rect->x0 == 102);
+  CHECK(rect->y0 == 68);
+  CHECK(rect->x1 == 268);
+  CHECK(rect->y1 == 126);
+  CHECK(tinydraw::toolbar_overlay_contains({184.0F, 95.0F}, state));
+  CHECK_FALSE(tinydraw::toolbar_contains({184.0F, 95.0F}, state));
 }
 
 TEST_CASE("pen sizes expose four bounded choices") {

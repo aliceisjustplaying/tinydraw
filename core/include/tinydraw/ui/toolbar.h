@@ -37,6 +37,7 @@ enum class ToolbarAction {
   kSelectMedium,
   kSelectLarge,
   kSelectExtraLarge,
+  kExport,
   kUndo,
   kNewDrawing,
   kCancelNewDrawing,
@@ -48,6 +49,10 @@ struct ToolbarState {
   InkColor color = InkColor::kBlue;
   PenSize size = PenSize::kMedium;
   bool can_undo = false;
+  bool can_export = false;
+  bool exporting = false;
+  bool export_ready = false;
+  bool export_toast = false;
   bool tools_open = false;
   bool colors_open = false;
   bool sizes_open = false;
@@ -60,6 +65,7 @@ struct ToolbarState {
 
 [[nodiscard]] bool toolbar_contains(Point point, const ToolbarState& state);
 [[nodiscard]] std::optional<Rect> battery_overlay_rect(const ToolbarState& state);
+[[nodiscard]] std::optional<Rect> export_toast_rect(const ToolbarState& state);
 [[nodiscard]] bool toolbar_overlay_contains(Point point, const ToolbarState& state);
 [[nodiscard]] int toolbar_overlay_top(const ToolbarState& state);
 [[nodiscard]] ToolbarAction toolbar_action_at(Point point, const ToolbarState& state);

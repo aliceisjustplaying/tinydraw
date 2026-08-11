@@ -29,6 +29,10 @@ constexpr int kBatteryLeft = 222;
 constexpr int kBatteryTop = 18;
 constexpr int kBatteryRight = 340;
 constexpr int kBatteryBottom = 54;
+constexpr int kToastLeft = 104;
+constexpr int kToastTop = 70;
+constexpr int kToastRight = 264;
+constexpr int kToastBottom = 120;
 constexpr int kHitSlop = 8;
 constexpr int kMainHitTop = kMainTop - kHitSlop;
 constexpr int kColorPaletteHitTop = kColorPaletteTop - kHitSlop;
@@ -147,6 +151,16 @@ void draw_hand(std::span<std::uint16_t> canvas, int width, int height, int cente
   line(canvas, width, height, center_x + 12, center_y + 5, center_x + 8, center_y - 2, color, 1);
 }
 
+void draw_export(std::span<std::uint16_t> canvas, int width, int height, int center_x, int center_y,
+                 std::uint16_t color) {
+  line(canvas, width, height, center_x, center_y - 15, center_x, center_y + 5, color, 1);
+  line(canvas, width, height, center_x, center_y + 5, center_x - 8, center_y - 3, color, 1);
+  line(canvas, width, height, center_x, center_y + 5, center_x + 8, center_y - 3, color, 1);
+  line(canvas, width, height, center_x - 14, center_y + 9, center_x - 14, center_y + 16, color, 1);
+  line(canvas, width, height, center_x - 14, center_y + 16, center_x + 14, center_y + 16, color, 1);
+  line(canvas, width, height, center_x + 14, center_y + 16, center_x + 14, center_y + 9, color, 1);
+}
+
 void draw_eraser(std::span<std::uint16_t> canvas, int width, int height, std::uint16_t color) {
   // Keep the same two-part silhouette as tldraw's eraser: a tilted block plus
   // the exposed lower rubber, separated across the short axis.
@@ -190,6 +204,8 @@ std::array<std::uint8_t, 7> glyph_rows(char character) {
       return {0x1EU, 0x11U, 0x11U, 0x1EU, 0x14U, 0x12U, 0x11U};
     case 'S':
       return {0x0FU, 0x10U, 0x10U, 0x0EU, 0x01U, 0x01U, 0x1EU};
+    case 'V':
+      return {0x11U, 0x11U, 0x11U, 0x11U, 0x11U, 0x0AU, 0x04U};
     case 'W':
       return {0x11U, 0x11U, 0x11U, 0x15U, 0x15U, 0x1BU, 0x11U};
     case 'Y':
@@ -294,6 +310,20 @@ void draw_battery(std::span<std::uint16_t> canvas, int width, int height,
   draw_text(canvas, width, height, text_x, 28, std::string_view(label.data(), length), kInk, 5, 2);
 }
 
+void draw_export_toast(std::span<std::uint16_t> canvas, int width, int height,
+                       const ToolbarState& state) {
+  if (!state.export_toast) {
+    return;
+  }
+  rounded_rect(canvas, width, height, kToastLeft + 2, kToastTop + 3, kToastRight + 2,
+               kToastBottom + 3, 12, kShadow);
+  rounded_rect(canvas, width, height, kToastLeft - 1, kToastTop - 1, kToastRight + 1,
+               kToastBottom + 1, 12, kBorder);
+  rounded_rect(canvas, width, height, kToastLeft, kToastTop, kToastRight, kToastBottom, 11, kWhite);
+  draw_text(canvas, width, height, 139, 84, state.export_ready ? "SAVED" : "ERROR",
+            state.export_ready ? kInk : kRecording, 3);
+}
+
 void draw_new_dialog(std::span<std::uint16_t> canvas, int width, int height) {
   rounded_rect(canvas, width, height, kDialogLeft + 3, kDialogTop + 4, kDialogRight + 3,
                kDialogBottom + 4, 17, kShadow);
@@ -352,11 +382,22 @@ std::optional<Rect> battery_overlay_rect(const ToolbarState& state) {
   return Rect{kBatteryLeft - 2, kBatteryTop - 2, kBatteryRight + 4, kBatteryBottom + 6};
 }
 
+std::optional<Rect> export_toast_rect(const ToolbarState& state) {
+  if (!state.export_toast) {
+    return std::nullopt;
+  }
+  return Rect{kToastLeft - 2, kToastTop - 2, kToastRight + 4, kToastBottom + 6};
+}
+
 bool toolbar_overlay_contains(Point point, const ToolbarState& state) {
   const bool battery =
       battery_overlay_rect(state).has_value() &&
       inside(point, static_cast<float>(kBatteryLeft - 1), static_cast<float>(kBatteryTop - 1),
              static_cast<float>(kBatteryRight + 4), static_cast<float>(kBatteryBottom + 6));
+  const bool export_toast =
+      export_toast_rect(state).has_value() &&
+      inside(point, static_cast<float>(kToastLeft - 1), static_cast<float>(kToastTop - 1),
+             static_cast<float>(kToastRight + 4), static_cast<float>(kToastBottom + 6));
   const bool main_dock =
       inside(point, 0.0F, static_cast<float>(kMainTop - 1), static_cast<float>(kCanvasWidth),
              static_cast<float>(kMainBottom + 4));
@@ -369,7 +410,7 @@ bool toolbar_overlay_contains(Point point, const ToolbarState& state) {
       state.confirm_new &&
       inside(point, static_cast<float>(kDialogLeft - 1), static_cast<float>(kDialogTop - 1),
              static_cast<float>(kDialogRight + 4), static_cast<float>(kDialogBottom + 5));
-  return battery || main_dock || palette || dialog;
+  return battery || export_toast || main_dock || palette || dialog;
 }
 
 int toolbar_overlay_top(const ToolbarState& state) {
@@ -400,8 +441,15 @@ ToolbarAction toolbar_action_at(Point point, const ToolbarState& state) {
   }
   if (state.tools_open && inside(point, 0.0F, static_cast<float>(kSizePaletteHitTop),
                                  static_cast<float>(kCanvasWidth), static_cast<float>(kMainTop))) {
-    return point.x < static_cast<float>(kCanvasWidth) * 0.5F ? ToolbarAction::kSelectPen
-                                                             : ToolbarAction::kSelectPan;
+    if (!state.can_export) {
+      return point.x < static_cast<float>(kCanvasWidth) * 0.5F ? ToolbarAction::kSelectPen
+                                                               : ToolbarAction::kSelectPan;
+    }
+    constexpr std::array actions{ToolbarAction::kSelectPen, ToolbarAction::kSelectPan,
+                                 ToolbarAction::kExport};
+    const auto index =
+        std::min(static_cast<std::size_t>(point.x * 3.0F / kCanvasWidth), std::size_t{2});
+    return actions[index];
   }
   if (state.sizes_open && inside(point, 0.0F, static_cast<float>(kSizePaletteHitTop),
                                  static_cast<float>(kCanvasWidth), static_cast<float>(kMainTop))) {
@@ -531,6 +579,7 @@ void draw_toolbar(std::span<std::uint16_t> canvas, int width, int height,
     fill_circle(canvas, width, height, 184, 382, 5, kRecording);
   }
   draw_battery(canvas, width, height, state);
+  draw_export_toast(canvas, width, height, state);
 
   if (state.confirm_new) {
     draw_new_dialog(canvas, width, height);
@@ -559,13 +608,22 @@ void draw_toolbar(std::span<std::uint16_t> canvas, int width, int height,
     return;
   }
   if (state.tools_open) {
-    if (state.tool == DrawingTool::kPen) {
-      fill_circle(canvas, width, height, 96, 331, 26, kSelected);
-    } else if (state.tool == DrawingTool::kPan) {
-      fill_circle(canvas, width, height, 272, 331, 26, kSelected);
+    const int pen_x = state.can_export ? 62 : 96;
+    const int pan_x = state.can_export ? 184 : 272;
+    if (!state.exporting && state.tool == DrawingTool::kPen) {
+      fill_circle(canvas, width, height, pen_x, 331, 26, kSelected);
+    } else if (!state.exporting && state.tool == DrawingTool::kPan) {
+      fill_circle(canvas, width, height, pan_x, 331, 26, kSelected);
     }
-    draw_pen(canvas, width, height, 96, 331, kInk);
-    draw_hand(canvas, width, height, 272, 331, kInk);
+    draw_pen(canvas, width, height, pen_x, 331, kInk);
+    draw_hand(canvas, width, height, pan_x, 331, kInk);
+    if (state.can_export) {
+      constexpr int export_x = 306;
+      if (state.exporting) {
+        fill_circle(canvas, width, height, export_x, 331, 26, kSelected);
+      }
+      draw_export(canvas, width, height, export_x, 331, state.exporting ? kWhite : kInk);
+    }
     return;
   }
 

@@ -26,6 +26,7 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "image_export_store.h"
 #include "power_manager.h"
 #include "tinydraw/demo/demo_tape.h"
 #include "tinydraw/ink/ink_stream.h"
@@ -231,9 +232,13 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
     const bool battery_changed = toolbar_.battery_percentage != toolbar.battery_percentage ||
                                  toolbar_.battery_charging != toolbar.battery_charging ||
                                  toolbar_.external_power != toolbar.external_power;
+    const bool toast_changed = toolbar_.export_toast != toolbar.export_toast ||
+                               ((toolbar_.export_toast || toolbar.export_toast) &&
+                                toolbar_.export_ready != toolbar.export_ready);
     const bool palette_changed =
         toolbar_.tools_open != toolbar.tools_open || toolbar_.colors_open != toolbar.colors_open ||
-        toolbar_.sizes_open != toolbar.sizes_open ||
+        toolbar_.sizes_open != toolbar.sizes_open || toolbar_.can_export != toolbar.can_export ||
+        toolbar_.exporting != toolbar.exporting || toolbar_.export_ready != toolbar.export_ready ||
         ((toolbar_.tools_open || toolbar.tools_open) && toolbar_.tool != toolbar.tool) ||
         ((toolbar_.colors_open || toolbar.colors_open) && toolbar_.color != toolbar.color) ||
         ((toolbar_.sizes_open || toolbar.sizes_open) && toolbar_.size != toolbar.size);
@@ -243,6 +248,12 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
       const auto new_rect = tinydraw::battery_overlay_rect(toolbar);
       battery_refresh_ = old_rect.value_or(new_rect.value_or(tinydraw::Rect{}));
       battery_dirty_ = old_rect.has_value() || new_rect.has_value();
+    }
+    if (toast_changed) {
+      const auto old_rect = tinydraw::export_toast_rect(toolbar_);
+      const auto new_rect = tinydraw::export_toast_rect(toolbar);
+      toast_refresh_ = old_rect.value_or(new_rect.value_or(tinydraw::Rect{}));
+      toast_dirty_ = old_rect.has_value() || new_rect.has_value();
     }
     if (palette_changed) {
       const int changed_top = std::min(palette_overlay_top(toolbar_), palette_overlay_top(toolbar));
@@ -261,6 +272,10 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
       clear_overlay(battery_refresh_.x0, battery_refresh_.y0,
                     battery_refresh_.x1 - battery_refresh_.x0,
                     battery_refresh_.y1 - battery_refresh_.y0);
+    }
+    if (toast_dirty_) {
+      clear_overlay(toast_refresh_.x0, toast_refresh_.y0, toast_refresh_.x1 - toast_refresh_.x0,
+                    toast_refresh_.y1 - toast_refresh_.y0);
     }
     if (palette_dirty_) {
       clear_overlay(0, palette_refresh_top_, tinydraw::kCanvasWidth,
@@ -308,7 +323,11 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
     const bool intersects_battery = battery_rect.has_value() && x < battery_rect->x1 &&
                                     x + width > battery_rect->x0 && y < battery_rect->y1 &&
                                     y + height > battery_rect->y0;
-    if (y + height <= toolbar_top_ && !intersects_battery && width % 2 == 0) {
+    const auto toast_rect = tinydraw::export_toast_rect(toolbar_);
+    const bool intersects_toast = toast_rect.has_value() && x < toast_rect->x1 &&
+                                  x + width > toast_rect->x0 && y < toast_rect->y1 &&
+                                  y + height > toast_rect->y0;
+    if (y + height <= toolbar_top_ && !intersects_battery && !intersects_toast && width % 2 == 0) {
       for (int row = 0; row < height; ++row) {
         const auto source = pixels + static_cast<std::ptrdiff_t>(row * source_stride);
         auto* destination = reinterpret_cast<std::uint32_t*>(
@@ -358,6 +377,7 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
     if (top == 0 && bottom == tinydraw::kCanvasHeight) {
       main_dirty_ = false;
       battery_dirty_ = false;
+      toast_dirty_ = false;
       palette_dirty_ = false;
       palette_refresh_top_ = kMainOverlayTop;
       dialog_dirty_ = false;
@@ -383,6 +403,13 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
                 battery_refresh_.y1 - battery_refresh_.y0, canvas.data() + offset,
                 tinydraw::kCanvasWidth);
     }
+    if (toast_dirty_) {
+      const auto offset =
+          static_cast<std::size_t>(toast_refresh_.y0 * tinydraw::kCanvasWidth + toast_refresh_.x0);
+      push_rect(toast_refresh_.x0, toast_refresh_.y0, toast_refresh_.x1 - toast_refresh_.x0,
+                toast_refresh_.y1 - toast_refresh_.y0, canvas.data() + offset,
+                tinydraw::kCanvasWidth);
+    }
     if (dialog_dirty_) {
       const auto offset =
           static_cast<std::size_t>(kDialogOverlayTop * tinydraw::kCanvasWidth + kDialogOverlayX);
@@ -403,6 +430,7 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
     }
     main_dirty_ = false;
     battery_dirty_ = false;
+    toast_dirty_ = false;
     palette_dirty_ = false;
     palette_refresh_top_ = kMainOverlayTop;
     dialog_dirty_ = false;
@@ -424,6 +452,8 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
   bool main_dirty_ = false;
   bool battery_dirty_ = false;
   tinydraw::Rect battery_refresh_{};
+  bool toast_dirty_ = false;
+  tinydraw::Rect toast_refresh_{};
   bool palette_dirty_ = false;
   int palette_refresh_top_ = kMainOverlayTop;
   bool dialog_dirty_ = false;
@@ -698,6 +728,7 @@ void run_hardware_app() {
   }
 
   tinydraw::esp32::DrawingStore drawing_store;
+  tinydraw::esp32::ImageExportStore image_export_store;
   if (drawing_store.ready()) {
     if (!drawing_store.restore(canvas.world(), canvas.committed(), canvas.visible())) {
       std::printf("TINYDRAW_AUTOSAVE_RESTORE_FAIL\n");
@@ -717,6 +748,7 @@ void run_hardware_app() {
   const auto initial_power_status = power.read();
   tinydraw::esp32::PowerStatus current_power_status = initial_power_status;
   tinydraw::ToolbarState toolbar;
+  toolbar.can_export = image_export_store.ready();
   toolbar.battery_percentage = initial_power_status.percentage;
   toolbar.battery_charging = initial_power_status.charging;
   toolbar.external_power = initial_power_status.external_power;
@@ -758,6 +790,7 @@ void run_hardware_app() {
   std::uint32_t pan_frames = 0;
   std::int64_t pan_render_us = 0;
   std::int64_t maximum_pan_render_us = 0;
+  std::uint32_t export_toast_until_us = 0;
 
   const auto close_popups = [&] {
     toolbar.tools_open = false;
@@ -800,6 +833,7 @@ void run_hardware_app() {
     canvas.undo_history().capture_canvas(canvas.committed());
     static_cast<void>(canvas.undo_history().commit_entry());
     static_cast<void>(canvas.world().clear(canvas.committed(), canvas.visible()));
+    toolbar.export_ready = false;
     toolbar.confirm_new = false;
     close_popups();
     toolbar.can_undo = canvas.undo_history().can_undo();
@@ -817,6 +851,7 @@ void run_hardware_app() {
     toolbar_pressed = false;
     toolbar_samples = 0;
     toolbar = {};
+    toolbar.can_export = image_export_store.ready();
     toolbar.battery_percentage = current_power_status.percentage;
     toolbar.battery_charging = current_power_status.charging;
     toolbar.external_power = current_power_status.external_power;
@@ -846,6 +881,7 @@ void run_hardware_app() {
                                                   view_changed ? nullptr : &display);
     static_cast<void>(canvas.world().capture(canvas.committed()));
     close_popups();
+    toolbar.export_ready = false;
     toolbar.can_undo = canvas.undo_history().can_undo();
     display.set_toolbar(toolbar);
     if (view_changed) {
@@ -869,6 +905,25 @@ void run_hardware_app() {
         static_cast<long long>(esp_timer_get_time() - started),
         static_cast<long long>(display.prepare_us()), static_cast<long long>(display.transfer_us()),
         static_cast<unsigned long>(display.push_count()));
+  };
+  const auto export_image = [&] {
+    reset_stroke();
+    static_cast<void>(canvas.world().capture(canvas.committed()));
+    toolbar.exporting = true;
+    toolbar.export_ready = false;
+    update_toolbar();
+    vTaskDelay(pdMS_TO_TICKS(20));
+    const auto stats = image_export_store.encode(canvas.world().pixels());
+    toolbar.exporting = false;
+    toolbar.export_ready = stats.success;
+    toolbar.export_toast = true;
+    export_toast_until_us = timestamp_us() + 3'000'000U;
+    close_popups();
+    update_toolbar();
+    std::printf("TINYDRAW_EXPORT success=%u bytes=%lu elapsed_us=%lld free_psram=%lu\n",
+                stats.success, static_cast<unsigned long>(stats.bytes),
+                static_cast<long long>(stats.elapsed_us),
+                static_cast<unsigned long>(stats.free_psram));
   };
   const auto toolbar_action = [&](tinydraw::Point point) {
     switch (tinydraw::toolbar_action_at(point, toolbar)) {
@@ -916,6 +971,9 @@ void run_hardware_app() {
       case tinydraw::ToolbarAction::kSelectExtraLarge:
         select_size(tinydraw::PenSize::kExtraLarge);
         break;
+      case tinydraw::ToolbarAction::kExport:
+        export_image();
+        return;
       case tinydraw::ToolbarAction::kUndo:
         undo();
         return;
@@ -967,8 +1025,14 @@ void run_hardware_app() {
   std::printf("TINYDRAW_HARDWARE_OK display=CO5300 touch=CST820 demo_capacity=%lu\n",
               static_cast<unsigned long>(kDemoCapacity));
   while (true) {
+    if (toolbar.export_toast &&
+        static_cast<std::int32_t>(timestamp_us() - export_toast_until_us) >= 0) {
+      toolbar.export_toast = false;
+      update_toolbar();
+    }
     AppEvent app_event;
-    if (xQueueReceive(touch_queue, &app_event, portMAX_DELAY) != pdTRUE) {
+    const TickType_t wait = toolbar.export_toast ? pdMS_TO_TICKS(50) : portMAX_DELAY;
+    if (xQueueReceive(touch_queue, &app_event, wait) != pdTRUE) {
       continue;
     }
     if (app_event.kind == AppEventKind::kDemoReplayStarted ||
@@ -1003,6 +1067,10 @@ void run_hardware_app() {
       continue;
     }
     TouchEvent event = app_event.touch;
+    if (toolbar.export_toast) {
+      toolbar.export_toast = false;
+      update_toolbar();
+    }
     if (panning && event.touching) {
       AppEvent latest;
       while (xQueuePeek(touch_queue, &latest, 0) == pdTRUE && latest.kind == AppEventKind::kTouch) {
@@ -1152,6 +1220,7 @@ void run_hardware_app() {
         static_cast<void>(canvas.raster().finish(ribbon.finish(last_ink), stroke_color,
                                                  &canvas.undo_history(), canvas.world().origin()));
         const auto finish_us = esp_timer_get_time() - started;
+        toolbar.export_ready = false;
         if (!demo_replaying) {
           if (persistence_resync_needed) {
             static_cast<void>(canvas.world().capture(canvas.committed()));

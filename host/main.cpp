@@ -445,6 +445,8 @@ int interactive(int window_scale) {
             case tinydraw::ToolbarAction::kSelectExtraLarge:
               select_size(tinydraw::PenSize::kExtraLarge);
               break;
+            case tinydraw::ToolbarAction::kExport:
+              break;
             case tinydraw::ToolbarAction::kUndo:
               undo();
               break;
