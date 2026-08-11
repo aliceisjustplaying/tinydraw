@@ -14,6 +14,7 @@ add_executable(tinydraw_tests
   stroke_raster_test.cpp
   tile_undo_history_test.cpp
   toolbar_test.cpp
+  vector_benchmark_test.cpp
   vector_document_test.cpp
   viewport_renderer_test.cpp
   world_canvas_test.cpp
@@ -43,6 +44,9 @@ endif()
 add_executable(tinydraw_perf_characterization perf_characterization.cpp)
 target_link_libraries(tinydraw_perf_characterization PRIVATE tinydraw::core tinydraw_project_options)
 add_test(NAME tinydraw_perf_characterization COMMAND tinydraw_perf_characterization)
+
+add_executable(tinydraw_vector_rebuild_benchmark vector_rebuild_benchmark.cpp)
+target_link_libraries(tinydraw_vector_rebuild_benchmark PRIVATE tinydraw::core tinydraw_project_options)
 
 if(TARGET tinydraw_host)
   set(REPLAY_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/replay")
