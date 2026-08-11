@@ -7,6 +7,7 @@
 #include <span>
 
 #include "demo_recording.h"
+#include "drawing_store.h"
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
 #include "driver/spi_master.h"
@@ -436,6 +437,8 @@ enum class AppEventKind : std::uint8_t {
   kResetForDemo,
   kDemoRecordingStarted,
   kDemoRecordingStopped,
+  kDemoReplayStarted,
+  kDemoReplayStopped,
 };
 
 struct AppEvent {
@@ -503,8 +506,8 @@ void replay_demo(TouchTaskContext& context, std::span<const tinydraw::DemoSample
     return;
   }
   xQueueReset(context.queue);
-  const AppEvent reset{.kind = AppEventKind::kResetForDemo};
-  ESP_ERROR_CHECK(xQueueSend(context.queue, &reset, portMAX_DELAY) == pdTRUE ? ESP_OK : ESP_FAIL);
+  enqueue_control(context.queue, AppEventKind::kDemoReplayStarted);
+  enqueue_control(context.queue, AppEventKind::kResetForDemo);
 
   std::printf("TINYDRAW_DEMO_REPLAY_BEGIN count=%lu\n", static_cast<unsigned long>(samples.size()));
   const std::uint32_t replay_started_us = timestamp_us();
@@ -513,6 +516,7 @@ void replay_demo(TouchTaskContext& context, std::span<const tinydraw::DemoSample
     enqueue_latest(context.queue,
                    {.touch = tinydraw::replay_demo_sample(sample, replay_started_us)});
   }
+  enqueue_control(context.queue, AppEventKind::kDemoReplayStopped);
   std::printf("TINYDRAW_DEMO_REPLAY_END\n");
 }
 
@@ -596,6 +600,15 @@ void run_hardware_app() {
     return;
   }
 
+  tinydraw::esp32::DrawingStore drawing_store;
+  if (drawing_store.ready()) {
+    if (!drawing_store.restore(canvas.world(), canvas.committed(), canvas.visible())) {
+      std::printf("TINYDRAW_AUTOSAVE_RESTORE_FAIL\n");
+    }
+  } else {
+    std::printf("TINYDRAW_AUTOSAVE_DISABLED\n");
+  }
+
   tinydraw::ToolbarState toolbar;
   display.set_toolbar(toolbar);
   display.push_canvas(canvas.committed());
@@ -609,6 +622,9 @@ void run_hardware_app() {
   std::uint16_t stroke_color = tinydraw::rgb565(toolbar.color);
   bool pressed = false;
   bool panning = false;
+  bool demo_replaying = false;
+  bool persistence_resync_needed = false;
+  tinydraw::Point previous_saved_touch{};
   tinydraw::Point pan_start_touch{};
   tinydraw::ViewOrigin pan_start_origin{};
   bool toolbar_pressed = false;
@@ -673,6 +689,10 @@ void run_hardware_app() {
     toolbar.can_undo = canvas.undo_history().can_undo();
     display.set_toolbar(toolbar);
     display.push_canvas(canvas.committed());
+    if (!demo_replaying) {
+      drawing_store.save_all(canvas.world());
+      persistence_resync_needed = false;
+    }
   };
   const auto reset_for_demo = [&] {
     reset_stroke();
@@ -713,6 +733,14 @@ void run_hardware_app() {
       display.push_canvas(canvas.committed());
     } else {
       display.refresh_toolbar(canvas.committed());
+    }
+    if (!demo_replaying) {
+      if (persistence_resync_needed) {
+        drawing_store.save_all(canvas.world());
+      } else {
+        drawing_store.save_viewport(canvas.world(), canvas.committed());
+      }
+      persistence_resync_needed = false;
     }
     std::printf(
         "[DEBUG-undo1] tiles=%lu bytes=%lu view_changed=%u elapsed_us=%lld prepare_us=%lld "
@@ -822,6 +850,14 @@ void run_hardware_app() {
     if (xQueueReceive(touch_queue, &app_event, portMAX_DELAY) != pdTRUE) {
       continue;
     }
+    if (app_event.kind == AppEventKind::kDemoReplayStarted ||
+        app_event.kind == AppEventKind::kDemoReplayStopped) {
+      demo_replaying = app_event.kind == AppEventKind::kDemoReplayStarted;
+      if (!demo_replaying) {
+        persistence_resync_needed = true;
+      }
+      continue;
+    }
     if (app_event.kind == AppEventKind::kResetForDemo) {
       reset_for_demo();
       continue;
@@ -845,6 +881,9 @@ void run_hardware_app() {
     }
     const tinydraw::Point point = event.point;
     const bool touching = event.touching;
+    if (!demo_replaying) {
+      drawing_store.activity();
+    }
     const std::uint32_t input_lag_us = timestamp_us() - event.timestamp_us;
     const UBaseType_t queue_depth = uxQueueMessagesWaiting(touch_queue);
     if (touching && !pressed) {
@@ -880,6 +919,11 @@ void run_hardware_app() {
         stroke_color = toolbar.tool == tinydraw::DrawingTool::kEraser
                            ? kBackground
                            : tinydraw::rgb565(toolbar.color);
+        previous_saved_touch = point;
+        if (!demo_replaying) {
+          drawing_store.include_segment(point, point, ink.config().size + 4.0F,
+                                        canvas.world().origin());
+        }
         last_ink = ink.begin({.x = point.x, .y = point.y, .timestamp_us = event.timestamp_us});
         stroke_samples = 1;
         stroke_started_us = event.timestamp_us;
@@ -912,6 +956,11 @@ void run_hardware_app() {
     } else if (touching && pressed && ink.active() &&
                (point.x != last_touch.x || point.y != last_touch.y)) {
       last_touch = point;
+      if (!demo_replaying) {
+        drawing_store.include_segment(previous_saved_touch, point, ink.config().size + 4.0F,
+                                      canvas.world().origin());
+      }
+      previous_saved_touch = point;
       last_ink = ink.update({.x = point.x, .y = point.y, .timestamp_us = event.timestamp_us});
       const std::uint32_t touch_interval_us = event.timestamp_us - previous_touch_us;
       previous_touch_us = event.timestamp_us;
@@ -946,6 +995,9 @@ void run_hardware_app() {
         static_cast<void>(
             canvas.world().show(canvas.world().origin(), canvas.committed(), canvas.visible()));
         const auto settle_us = esp_timer_get_time() - settle_started;
+        if (!demo_replaying && !persistence_resync_needed) {
+          drawing_store.save_origin(canvas.world());
+        }
         const auto bytes = static_cast<std::uint64_t>(pan_frames) * tinydraw::kCanvasWidth *
                            kMainOverlayTop * sizeof(std::uint16_t);
         std::printf(
@@ -966,6 +1018,15 @@ void run_hardware_app() {
         static_cast<void>(canvas.raster().finish(ribbon.finish(last_ink), stroke_color,
                                                  &canvas.undo_history(), canvas.world().origin()));
         const auto finish_us = esp_timer_get_time() - started;
+        if (!demo_replaying) {
+          if (persistence_resync_needed) {
+            static_cast<void>(canvas.world().capture(canvas.committed()));
+            drawing_store.save_all(canvas.world());
+          } else {
+            drawing_store.save_stroke(canvas.world(), canvas.committed());
+          }
+          persistence_resync_needed = false;
+        }
         std::printf(
             "[DEBUG-perf1] samples=%lu updates_us=%lld average_us=%lld max_us=%lld "
             "finish_us=%lld display_prepare_us=%lld display_transfer_us=%lld pushes=%lu "
