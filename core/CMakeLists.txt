@@ -1,6 +1,7 @@
 add_library(tinydraw_core STATIC
   src/coordinate_transform.cpp
   src/coverage_tile.cpp
+  src/demo_tape.cpp
   src/ink_stream.cpp
   src/perfect_freehand.cpp
   src/ribbon_geometry.cpp

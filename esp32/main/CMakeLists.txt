@@ -14,6 +14,7 @@ idf_component_register(
     ${TINYDRAW_PLATFORM_SRCS}
     "${TINYDRAW_CORE}/src/coordinate_transform.cpp"
     "${TINYDRAW_CORE}/src/coverage_tile.cpp"
+    "${TINYDRAW_CORE}/src/demo_tape.cpp"
     "${TINYDRAW_CORE}/src/ink_stream.cpp"
     "${TINYDRAW_CORE}/src/perfect_freehand.cpp"
     "${TINYDRAW_CORE}/src/ribbon_geometry.cpp"
