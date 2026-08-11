@@ -6,6 +6,8 @@
 #include <cstdio>
 #include <span>
 
+#include "demo_recording.h"
+#include "driver/gpio.h"
 #include "driver/i2c_master.h"
 #include "driver/spi_master.h"
 #include "esp_attr.h"
@@ -16,12 +18,14 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_touch.h"
 #include "esp_lcd_touch_cst816s.h"
+#include "esp_rom_sys.h"
 #include "esp_timer.h"
 #include "firmware_canvas.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "tinydraw/demo/demo_tape.h"
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
 #include "tinydraw/ui/toolbar.h"
@@ -38,6 +42,9 @@ constexpr int kDialogOverlayX = 26;
 constexpr int kDialogOverlayTop = 124;
 constexpr int kDialogOverlayWidth = 318;
 constexpr int kDialogOverlayHeight = 168;
+constexpr gpio_num_t kDemoButton = GPIO_NUM_0;
+constexpr std::uint32_t kDemoLongPressUs = 800'000U;
+constexpr std::size_t kDemoCapacity = 8192U;
 
 alignas(4) DMA_ATTR
     std::array<std::array<std::uint16_t, kTransferPixels>, kTransferQueueDepth> transfer_pixels;
@@ -421,24 +428,81 @@ class PhysicalTouch {
 
 std::uint32_t timestamp_us() { return static_cast<std::uint32_t>(esp_timer_get_time()); }
 
-struct TouchEvent {
-  tinydraw::Point point;
-  std::uint32_t timestamp_us = 0;
-  bool touching = false;
+using TouchEvent = tinydraw::DemoInputEvent;
+
+enum class AppEventKind : std::uint8_t { kTouch, kResetForDemo };
+
+struct AppEvent {
+  TouchEvent touch{};
+  AppEventKind kind = AppEventKind::kTouch;
 };
 
 struct TouchTaskContext {
   PhysicalTouch* touch = nullptr;
   QueueHandle_t queue = nullptr;
+  tinydraw::DemoTape* tape = nullptr;
+  std::span<const tinydraw::DemoSample> built_in_demo;
 };
 
-void enqueue_latest(QueueHandle_t queue, const TouchEvent& event) {
+void enqueue_latest(QueueHandle_t queue, const AppEvent& event) {
   if (xQueueSend(queue, &event, 0) == pdTRUE) {
     return;
   }
-  TouchEvent discarded;
+  AppEvent discarded;
   static_cast<void>(xQueueReceive(queue, &discarded, 0));
   static_cast<void>(xQueueSend(queue, &event, 0));
+}
+
+void emit_touch(TouchTaskContext& context, const TouchEvent& event) {
+  if (context.tape->recording()) {
+    static_cast<void>(context.tape->record(event));
+  }
+  enqueue_latest(context.queue, {.touch = event});
+}
+
+void dump_demo(std::span<const tinydraw::DemoSample> samples, bool overflowed) {
+  std::printf("TINYDRAW_DEMO_BEGIN count=%lu overflow=%u\n",
+              static_cast<unsigned long>(samples.size()), overflowed);
+  for (std::size_t index = 0; index < samples.size(); ++index) {
+    const auto& sample = samples[index];
+    std::printf("TINYDRAW_DEMO %lu %u %u %u\n", static_cast<unsigned long>(sample.offset_us),
+                sample.x, sample.y, sample.touching);
+    if (index % 64U == 63U) {
+      vTaskDelay(pdMS_TO_TICKS(1));
+    }
+  }
+  std::printf("TINYDRAW_DEMO_END\n");
+}
+
+void wait_for_demo_offset(std::uint32_t replay_started_us, std::uint32_t offset_us) {
+  while (timestamp_us() - replay_started_us < offset_us) {
+    const std::uint32_t elapsed = timestamp_us() - replay_started_us;
+    const std::uint32_t remaining = offset_us - elapsed;
+    if (remaining > 2'000U) {
+      vTaskDelay(pdMS_TO_TICKS((remaining - 1'000U) / 1'000U));
+    } else {
+      esp_rom_delay_us(remaining);
+    }
+  }
+}
+
+void replay_demo(TouchTaskContext& context, std::span<const tinydraw::DemoSample> samples) {
+  if (samples.empty()) {
+    std::printf("TINYDRAW_DEMO_EMPTY\n");
+    return;
+  }
+  xQueueReset(context.queue);
+  const AppEvent reset{.kind = AppEventKind::kResetForDemo};
+  ESP_ERROR_CHECK(xQueueSend(context.queue, &reset, portMAX_DELAY) == pdTRUE ? ESP_OK : ESP_FAIL);
+
+  std::printf("TINYDRAW_DEMO_REPLAY_BEGIN count=%lu\n", static_cast<unsigned long>(samples.size()));
+  const std::uint32_t replay_started_us = timestamp_us();
+  for (const auto& sample : samples) {
+    wait_for_demo_offset(replay_started_us, sample.offset_us);
+    enqueue_latest(context.queue,
+                   {.touch = tinydraw::replay_demo_sample(sample, replay_started_us)});
+  }
+  std::printf("TINYDRAW_DEMO_REPLAY_END\n");
 }
 
 void touch_task(void* argument) {
@@ -446,6 +510,11 @@ void touch_task(void* argument) {
   tinydraw::Point last_point{};
   bool touching = false;
   std::uint32_t no_touch_started_us = 0;
+  bool raw_button_down = false;
+  bool button_down = false;
+  bool long_press_handled = false;
+  std::uint32_t raw_button_changed_us = timestamp_us();
+  std::uint32_t button_pressed_us = 0;
   while (true) {
     tinydraw::Point point{};
     const TouchRead read = context.touch->read(point);
@@ -453,7 +522,7 @@ void touch_task(void* argument) {
     if (read == TouchRead::kPoint) {
       no_touch_started_us = 0;
       if (!touching || point.x != last_point.x || point.y != last_point.y) {
-        enqueue_latest(context.queue, {.point = point, .timestamp_us = now, .touching = true});
+        emit_touch(context, {.point = point, .timestamp_us = now, .touching = true});
         last_point = point;
       }
       touching = true;
@@ -461,11 +530,38 @@ void touch_task(void* argument) {
       if (no_touch_started_us == 0U) {
         no_touch_started_us = now;
       } else if (now - no_touch_started_us >= 20'000U) {
-        enqueue_latest(context.queue,
-                       {.point = last_point, .timestamp_us = now, .touching = false});
+        emit_touch(context, {.point = last_point, .timestamp_us = now, .touching = false});
         touching = false;
         no_touch_started_us = 0;
       }
+    }
+
+    const bool next_raw_button_down = gpio_get_level(kDemoButton) == 0;
+    if (next_raw_button_down != raw_button_down) {
+      raw_button_down = next_raw_button_down;
+      raw_button_changed_us = now;
+    }
+    if (raw_button_down != button_down && now - raw_button_changed_us >= 25'000U) {
+      button_down = raw_button_down;
+      if (button_down) {
+        button_pressed_us = now;
+        long_press_handled = false;
+      } else if (context.tape->recording()) {
+        context.tape->stop_recording();
+        std::printf("TINYDRAW_DEMO_RECORDING_END count=%lu overflow=%u\n",
+                    static_cast<unsigned long>(context.tape->size()), context.tape->overflowed());
+        dump_demo(context.tape->samples(), context.tape->overflowed());
+      } else if (!long_press_handled) {
+        context.tape->begin_recording(now);
+        std::printf("TINYDRAW_DEMO_RECORDING_BEGIN capacity=%lu\n",
+                    static_cast<unsigned long>(kDemoCapacity));
+      }
+    }
+    if (button_down && !context.tape->recording() && !long_press_handled &&
+        now - button_pressed_us >= kDemoLongPressUs) {
+      const auto recorded = context.tape->samples();
+      replay_demo(context, recorded.empty() ? context.built_in_demo : recorded);
+      long_press_handled = true;
     }
     vTaskDelay(pdMS_TO_TICKS(1));
   }
@@ -562,6 +658,22 @@ void run_hardware_app() {
     toolbar.confirm_new = false;
     close_popups();
     toolbar.can_undo = canvas.undo_history().can_undo();
+    display.set_toolbar(toolbar);
+    display.push_canvas(canvas.committed());
+  };
+  const auto reset_for_demo = [&] {
+    reset_stroke();
+    pressed = false;
+    panning = false;
+    toolbar_pressed = false;
+    toolbar_samples = 0;
+    toolbar = {};
+    auto config = ink.config();
+    config.size = tinydraw::brush_size(toolbar.size);
+    ink.set_config(config);
+    stroke_color = tinydraw::rgb565(toolbar.color);
+    canvas.undo_history().clear();
+    static_cast<void>(canvas.world().clear(canvas.committed(), canvas.visible()));
     display.set_toolbar(toolbar);
     display.push_canvas(canvas.committed());
   };
@@ -663,24 +775,50 @@ void run_hardware_app() {
     update_toolbar();
   };
 
-  QueueHandle_t touch_queue = xQueueCreate(32U, sizeof(TouchEvent));
-  TouchTaskContext touch_context{.touch = &touch, .queue = touch_queue};
-  if (touch_queue == nullptr || xTaskCreatePinnedToCore(touch_task, "tinydraw_touch", 4096U,
-                                                        &touch_context, 5U, nullptr, 1) != pdPASS) {
+  auto* demo_storage = static_cast<tinydraw::DemoSample*>(heap_caps_malloc(
+      kDemoCapacity * sizeof(tinydraw::DemoSample), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  QueueHandle_t touch_queue = xQueueCreate(32U, sizeof(AppEvent));
+  if (demo_storage == nullptr || touch_queue == nullptr) {
+    std::printf("TINYDRAW_HARDWARE_FAIL demo_storage=%u touch_queue=%u\n", demo_storage != nullptr,
+                touch_queue != nullptr);
+    return;
+  }
+  tinydraw::DemoTape demo_tape(std::span(demo_storage, kDemoCapacity));
+  gpio_config_t demo_button_config{};
+  demo_button_config.pin_bit_mask = 1ULL << static_cast<unsigned>(kDemoButton);
+  demo_button_config.mode = GPIO_MODE_INPUT;
+  demo_button_config.pull_up_en = GPIO_PULLUP_ENABLE;
+  ESP_ERROR_CHECK(gpio_config(&demo_button_config));
+
+  TouchTaskContext touch_context{
+      .touch = &touch,
+      .queue = touch_queue,
+      .tape = &demo_tape,
+      .built_in_demo = tinydraw::esp32::demo::kBuiltInDemo,
+  };
+  if (xTaskCreatePinnedToCore(touch_task, "tinydraw_touch", 4096U, &touch_context, 5U, nullptr,
+                              1) != pdPASS) {
     std::printf("TINYDRAW_HARDWARE_FAIL touch_task=0\n");
     return;
   }
 
-  std::printf("TINYDRAW_HARDWARE_OK display=CO5300 touch=CST820\n");
+  std::printf("TINYDRAW_HARDWARE_OK display=CO5300 touch=CST820 demo_capacity=%lu\n",
+              static_cast<unsigned long>(kDemoCapacity));
   while (true) {
-    TouchEvent event;
-    if (xQueueReceive(touch_queue, &event, portMAX_DELAY) != pdTRUE) {
+    AppEvent app_event;
+    if (xQueueReceive(touch_queue, &app_event, portMAX_DELAY) != pdTRUE) {
       continue;
     }
+    if (app_event.kind == AppEventKind::kResetForDemo) {
+      reset_for_demo();
+      continue;
+    }
+    TouchEvent event = app_event.touch;
     if (panning && event.touching) {
-      TouchEvent latest;
-      while (xQueueReceive(touch_queue, &latest, 0) == pdTRUE) {
-        event = latest;
+      AppEvent latest;
+      while (xQueuePeek(touch_queue, &latest, 0) == pdTRUE && latest.kind == AppEventKind::kTouch) {
+        static_cast<void>(xQueueReceive(touch_queue, &latest, 0));
+        event = latest.touch;
         if (!event.touching) {
           break;
         }
