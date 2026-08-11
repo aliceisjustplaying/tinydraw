@@ -46,11 +46,21 @@ void CoverageTile::reset(int origin_x, int origin_y, int width, int height) {
   origin_y_ = origin_y;
   width_ = width;
   height_ = height;
-  clear();
+  std::fill_n(coverage_.begin(), static_cast<std::size_t>(width_ * height_), 0U);
+  dirty_left_ = 0;
+  dirty_top_ = 0;
+  dirty_right_ = -1;
+  dirty_bottom_ = -1;
 }
 
 void CoverageTile::clear() {
-  std::fill_n(coverage_.begin(), static_cast<std::size_t>(width_ * height_), 0U);
+  for (int y = dirty_top_; y <= dirty_bottom_; ++y) {
+    std::fill_n(row(y) + dirty_left_, static_cast<std::size_t>(dirty_right_ - dirty_left_ + 1), 0U);
+  }
+  dirty_left_ = 0;
+  dirty_top_ = 0;
+  dirty_right_ = -1;
+  dirty_bottom_ = -1;
 }
 
 std::uint8_t* CoverageTile::row(int y) {
@@ -63,9 +73,43 @@ const std::uint8_t* CoverageTile::row(int y) const {
   return coverage_.data() + static_cast<std::ptrdiff_t>(y * width_);
 }
 
-void CoverageTile::union_coverage(int x, int y, std::uint8_t coverage) {
-  if (!contains(x, y)) {
+void CoverageTile::mark_dirty(int left, int top, int right, int bottom) {
+  left = std::max(left, 0);
+  top = std::max(top, 0);
+  right = std::min(right, width_ - 1);
+  bottom = std::min(bottom, height_ - 1);
+  if (left > right || top > bottom) {
     return;
+  }
+  if (dirty_right_ < dirty_left_) {
+    dirty_left_ = left;
+    dirty_top_ = top;
+    dirty_right_ = right;
+    dirty_bottom_ = bottom;
+  } else {
+    dirty_left_ = std::min(dirty_left_, left);
+    dirty_top_ = std::min(dirty_top_, top);
+    dirty_right_ = std::max(dirty_right_, right);
+    dirty_bottom_ = std::max(dirty_bottom_, bottom);
+  }
+}
+
+void CoverageTile::union_coverage(int x, int y, std::uint8_t coverage) {
+  if (coverage == 0U || !contains(x, y)) {
+    return;
+  }
+  const int local_x = x - origin_x_;
+  const int local_y = y - origin_y_;
+  if (dirty_right_ < dirty_left_) {
+    dirty_left_ = local_x;
+    dirty_right_ = local_x;
+    dirty_top_ = local_y;
+    dirty_bottom_ = local_y;
+  } else {
+    dirty_left_ = std::min(dirty_left_, local_x);
+    dirty_right_ = std::max(dirty_right_, local_x);
+    dirty_top_ = std::min(dirty_top_, local_y);
+    dirty_bottom_ = std::max(dirty_bottom_, local_y);
   }
   auto& current = coverage_[index_of(x, y)];
   current = std::max(current, coverage);
@@ -273,9 +317,9 @@ void composite_rgb565(const CoverageTile& coverage, std::uint16_t source,
   const int source_red = (source >> 11U) & 0x1FU;
   const int source_green = (source >> 5U) & 0x3FU;
   const int source_blue = source & 0x1FU;
-  for (int y = 0; y < coverage.height(); ++y) {
+  for (int y = coverage.dirty_top(); y <= coverage.dirty_bottom(); ++y) {
     const std::uint8_t* coverage_row = coverage.row(y);
-    for (int x = 0; x < coverage.width(); ++x) {
+    for (int x = coverage.dirty_left(); x <= coverage.dirty_right(); ++x) {
       const int alpha = coverage_row[x];
       if (alpha == 0) {
         continue;

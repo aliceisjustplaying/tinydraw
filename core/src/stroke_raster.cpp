@@ -261,6 +261,7 @@ void StrokeRaster::load_coverage_tile(int tile_x, int tile_y, StrokeRasterStats&
                 coverage_.row(y));
     stats.coverage_bytes_read += static_cast<std::uint32_t>(tile_width);
   }
+  coverage_.mark_dirty(0, 0, tile_width - 1, tile_height - 1);
 }
 
 void StrokeRaster::store_coverage_tile(int tile_x, int tile_y, StrokeRasterStats& stats) {

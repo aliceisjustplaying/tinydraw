@@ -31,6 +31,15 @@ class CoverageTile {
   [[nodiscard]] const std::uint8_t* row(int y) const;
   [[nodiscard]] const std::uint8_t* data() const { return coverage_.data(); }
 
+  // Local-coordinate bounds of possibly-nonzero coverage; empty when
+  // left > right. Lets clearing and compositing skip untouched pixels.
+  // Callers that write through row() must call mark_dirty for that region.
+  void mark_dirty(int left, int top, int right, int bottom);
+  [[nodiscard]] int dirty_left() const { return dirty_left_; }
+  [[nodiscard]] int dirty_top() const { return dirty_top_; }
+  [[nodiscard]] int dirty_right() const { return dirty_right_; }
+  [[nodiscard]] int dirty_bottom() const { return dirty_bottom_; }
+
  private:
   [[nodiscard]] bool contains(int x, int y) const;
   [[nodiscard]] std::size_t index_of(int x, int y) const;
@@ -39,6 +48,10 @@ class CoverageTile {
   int origin_y_;
   int width_;
   int height_;
+  int dirty_left_ = 0;
+  int dirty_top_ = 0;
+  int dirty_right_ = -1;
+  int dirty_bottom_ = -1;
   std::array<std::uint8_t, kTileSize * kTileSize> coverage_{};
 };
 
