@@ -219,7 +219,7 @@ TEST_CASE("battery status appears in the toolbar without covering the canvas") {
   CHECK(overlay->x0 == 226);
   CHECK(overlay->y0 == 16);
   CHECK(overlay->x1 == 344);
-  CHECK(overlay->y1 == 62);
+  CHECK(overlay->y1 == 60);
   CHECK((overlay->x0 & 1) == 0);
   CHECK((overlay->y0 & 1) == 0);
   CHECK((overlay->x1 & 1) == 0);

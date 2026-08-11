@@ -28,7 +28,7 @@ constexpr int kDialogBottom = 286;
 constexpr int kBatteryLeft = 228;
 constexpr int kBatteryTop = 18;
 constexpr int kBatteryRight = 340;
-constexpr int kBatteryBottom = 56;
+constexpr int kBatteryBottom = 54;
 constexpr int kHitSlop = 8;
 constexpr int kMainHitTop = kMainTop - kHitSlop;
 constexpr int kColorPaletteHitTop = kColorPaletteTop - kHitSlop;
@@ -289,9 +289,9 @@ void draw_battery(std::span<std::uint16_t> canvas, int width, int height,
   }
   label[length++] = static_cast<char>('0' + percentage % 10);
   label[length++] = '%';
-  constexpr int text_advance = 6 * 9 / 4;
+  constexpr int text_advance = 6 * 5 / 2;
   const int text_x = kBatteryRight - 8 - static_cast<int>(length) * text_advance;
-  draw_text(canvas, width, height, text_x, 29, std::string_view(label.data(), length), kInk, 9, 4);
+  draw_text(canvas, width, height, text_x, 28, std::string_view(label.data(), length), kInk, 5, 2);
 }
 
 void draw_new_dialog(std::span<std::uint16_t> canvas, int width, int height) {
