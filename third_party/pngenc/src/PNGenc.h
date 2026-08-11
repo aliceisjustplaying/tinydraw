@@ -21,7 +21,7 @@
 //
 #ifndef __PNGENC__
 #define __PNGENC__
-#if defined( __MACH__ ) || defined( __LINUX__ ) || defined( __MCUXPRESSO )
+#if defined( __MACH__ ) || defined( __LINUX__ ) || defined( __MCUXPRESSO ) || defined( ESP_PLATFORM )
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -49,10 +49,12 @@
 // 0 = 256K + 6K needed
 // 1 = 128K + 6K needed
 // 2 = 64K ...
+#ifndef MEM_SHRINK
 #if defined( __LINUX__ ) || defined (__MACH__)
 #define MEM_SHRINK 0
 #else
 #define MEM_SHRINK 3
+#endif
 #endif
 
 /* Defines and variables */
