@@ -25,10 +25,10 @@ constexpr int kDialogLeft = 28;
 constexpr int kDialogTop = 126;
 constexpr int kDialogRight = 340;
 constexpr int kDialogBottom = 286;
-constexpr int kBatteryLeft = 202;
-constexpr int kBatteryTop = 18;
+constexpr int kBatteryLeft = 218;
+constexpr int kBatteryTop = 22;
 constexpr int kBatteryRight = 344;
-constexpr int kBatteryBottom = 66;
+constexpr int kBatteryBottom = 64;
 constexpr int kHitSlop = 8;
 constexpr int kMainHitTop = kMainTop - kHitSlop;
 constexpr int kColorPaletteHitTop = kColorPaletteTop - kHitSlop;
@@ -247,15 +247,15 @@ void draw_battery(std::span<std::uint16_t> canvas, int width, int height,
 
   const int percentage = std::clamp(state.battery_percentage, 0, 100);
   rounded_rect(canvas, width, height, kBatteryLeft + 2, kBatteryTop + 3, kBatteryRight + 2,
-               kBatteryBottom + 3, 11, kShadow);
+               kBatteryBottom + 3, 9, kShadow);
   rounded_rect(canvas, width, height, kBatteryLeft - 1, kBatteryTop - 1, kBatteryRight + 1,
-               kBatteryBottom + 1, 11, kBorder);
-  rounded_rect(canvas, width, height, kBatteryLeft, kBatteryTop, kBatteryRight, kBatteryBottom, 10,
+               kBatteryBottom + 1, 9, kBorder);
+  rounded_rect(canvas, width, height, kBatteryLeft, kBatteryTop, kBatteryRight, kBatteryBottom, 8,
                kWhite);
 
-  constexpr int icon_left = 214;
-  constexpr int icon_top = 31;
-  constexpr int icon_right = 246;
+  constexpr int icon_left = 228;
+  constexpr int icon_top = 33;
+  constexpr int icon_right = 254;
   constexpr int icon_bottom = 53;
   const std::uint16_t outline = state.battery_charging ? kSelected : kInk;
   fill_rect(canvas, width, height, icon_left, icon_top, icon_right, icon_top + 2, outline);
@@ -286,8 +286,10 @@ void draw_battery(std::span<std::uint16_t> canvas, int width, int height,
   }
   label[length++] = static_cast<char>('0' + percentage % 10);
   label[length++] = '%';
-  draw_text(canvas, width, height, 334 - static_cast<int>(length * 12U), 30,
-            std::string_view(label.data(), length), kInk, 2);
+  const int label_x = 334 - static_cast<int>(length * 12U);
+  const std::string_view label_view(label.data(), length);
+  draw_text(canvas, width, height, label_x, 34, label_view, kInk, 2);
+  draw_text(canvas, width, height, label_x + 1, 34, label_view, kInk, 2);
 }
 
 void draw_new_dialog(std::span<std::uint16_t> canvas, int width, int height) {
