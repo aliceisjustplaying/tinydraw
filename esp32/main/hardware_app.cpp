@@ -174,7 +174,8 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
   void set_toolbar(const tinydraw::ToolbarState& toolbar) {
     const bool main_changed = toolbar_.tool != toolbar.tool || toolbar_.color != toolbar.color ||
                               toolbar_.size != toolbar.size ||
-                              toolbar_.can_undo != toolbar.can_undo;
+                              toolbar_.can_undo != toolbar.can_undo ||
+                              toolbar_.recording != toolbar.recording;
     const bool palette_changed =
         toolbar_.tools_open != toolbar.tools_open || toolbar_.colors_open != toolbar.colors_open ||
         toolbar_.sizes_open != toolbar.sizes_open ||
@@ -430,7 +431,12 @@ std::uint32_t timestamp_us() { return static_cast<std::uint32_t>(esp_timer_get_t
 
 using TouchEvent = tinydraw::DemoInputEvent;
 
-enum class AppEventKind : std::uint8_t { kTouch, kResetForDemo };
+enum class AppEventKind : std::uint8_t {
+  kTouch,
+  kResetForDemo,
+  kDemoRecordingStarted,
+  kDemoRecordingStopped,
+};
 
 struct AppEvent {
   TouchEvent touch{};
@@ -451,6 +457,11 @@ void enqueue_latest(QueueHandle_t queue, const AppEvent& event) {
   AppEvent discarded;
   static_cast<void>(xQueueReceive(queue, &discarded, 0));
   static_cast<void>(xQueueSend(queue, &event, 0));
+}
+
+void enqueue_control(QueueHandle_t queue, AppEventKind kind) {
+  const AppEvent event{.kind = kind};
+  ESP_ERROR_CHECK(xQueueSend(queue, &event, portMAX_DELAY) == pdTRUE ? ESP_OK : ESP_FAIL);
 }
 
 void emit_touch(TouchTaskContext& context, const TouchEvent& event) {
@@ -548,11 +559,13 @@ void touch_task(void* argument) {
         long_press_handled = false;
       } else if (context.tape->recording()) {
         context.tape->stop_recording();
+        enqueue_control(context.queue, AppEventKind::kDemoRecordingStopped);
         std::printf("TINYDRAW_DEMO_RECORDING_END count=%lu overflow=%u\n",
                     static_cast<unsigned long>(context.tape->size()), context.tape->overflowed());
         dump_demo(context.tape->samples(), context.tape->overflowed());
       } else if (!long_press_handled) {
         context.tape->begin_recording(now);
+        enqueue_control(context.queue, AppEventKind::kDemoRecordingStarted);
         std::printf("TINYDRAW_DEMO_RECORDING_BEGIN capacity=%lu\n",
                     static_cast<unsigned long>(kDemoCapacity));
       }
@@ -811,6 +824,12 @@ void run_hardware_app() {
     }
     if (app_event.kind == AppEventKind::kResetForDemo) {
       reset_for_demo();
+      continue;
+    }
+    if (app_event.kind == AppEventKind::kDemoRecordingStarted ||
+        app_event.kind == AppEventKind::kDemoRecordingStopped) {
+      toolbar.recording = app_event.kind == AppEventKind::kDemoRecordingStarted;
+      update_toolbar();
       continue;
     }
     TouchEvent event = app_event.touch;

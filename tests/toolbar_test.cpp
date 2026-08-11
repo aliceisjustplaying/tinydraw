@@ -175,6 +175,21 @@ TEST_CASE("toolbar rendering reflects tool and palette state without touching op
   CHECK(pen_canvas[bottom_border_pixel] == 0xDEDBU);
 }
 
+TEST_CASE("recording indicator appears only while recording") {
+  const auto pixel_count =
+      static_cast<std::size_t>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight);
+  std::vector<std::uint16_t> idle(pixel_count, 0xFFFFU);
+  std::vector<std::uint16_t> recording = idle;
+
+  tinydraw::draw_toolbar(idle, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight, {});
+  tinydraw::draw_toolbar(recording, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight,
+                         {.recording = true});
+
+  const auto indicator = static_cast<std::size_t>(382 * tinydraw::kCanvasWidth + 184);
+  CHECK(idle[indicator] != 0xE186U);
+  CHECK(recording[indicator] == 0xE186U);
+}
+
 TEST_CASE("new drawing confirmation renders without covering the canvas") {
   const auto pixel_count =
       static_cast<std::size_t>(tinydraw::kCanvasWidth * tinydraw::kCanvasHeight);

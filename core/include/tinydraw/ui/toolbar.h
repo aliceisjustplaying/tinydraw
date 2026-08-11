@@ -52,6 +52,7 @@ struct ToolbarState {
   bool colors_open = false;
   bool sizes_open = false;
   bool confirm_new = false;
+  bool recording = false;
 };
 
 [[nodiscard]] bool toolbar_contains(Point point, const ToolbarState& state);

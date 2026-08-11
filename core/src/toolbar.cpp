@@ -14,6 +14,7 @@ constexpr std::uint16_t kMuted = 0x8410U;
 constexpr std::uint16_t kBorder = 0xDEDBU;
 constexpr std::uint16_t kShadow = 0xBDF7U;
 constexpr std::uint16_t kSelected = 0x349FU;
+constexpr std::uint16_t kRecording = 0xE186U;
 constexpr int kMainTop = 374;
 constexpr int kMainBottom = 444;
 constexpr int kColorPaletteTop = 180;
@@ -433,6 +434,9 @@ void draw_toolbar(std::span<std::uint16_t> canvas, int width, int height,
   fill_circle(canvas, width, height, 267, 410, selected_size_radius + 2, kWhite);
   fill_circle(canvas, width, height, 267, 410, selected_size_radius, kInk);
   draw_new(canvas, width, height, kInk);
+  if (state.recording) {
+    fill_circle(canvas, width, height, 184, 382, 5, kRecording);
+  }
 
   if (state.confirm_new) {
     draw_new_dialog(canvas, width, height);
