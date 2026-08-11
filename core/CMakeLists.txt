@@ -21,6 +21,7 @@ if(TINYDRAW_ENABLE_SANITIZERS)
 endif()
 
 add_library(tinydraw_core STATIC
+  src/camera.cpp
   src/coordinate_transform.cpp
   src/coverage_tile.cpp
   src/demo_tape.cpp

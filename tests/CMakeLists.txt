@@ -1,4 +1,5 @@
 add_executable(tinydraw_tests
+  camera_test.cpp
   coordinate_transform_test.cpp
   coverage_tile_test.cpp
   demo_tape_test.cpp
