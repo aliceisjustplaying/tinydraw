@@ -83,11 +83,10 @@ through the host process.
 `./scripts/dev perf` runs 1,000 XL samples over an eight-second-equivalent continuous path. It does
 not use wall-clock thresholds. It reports and bounds tile visits, display bytes, committed-canvas
 traffic, active-coverage traffic, history capture, and Undo restore. Current release
-characterization has max per-update work of 4 tiles, 16 primitive/tile visits, 48 KiB
-modeled-PSRAM reads, and 16 KiB writes. Stroke completion touches 30 tiles, reads 357,376 raster
-bytes, and writes 592,896 external-memory bytes including 235,520 history bytes. Undo reads,
-restores, and submits 235,520 bytes. That screen-bounded burst needs real-hardware latency
-measurement.
+characterization has max per-update work of 6 tiles, 24 primitive/tile visits, 18,432 bytes of
+modeled-PSRAM reads, and 4,096 bytes of writes. Stroke completion touches 105 tiles, reads 318,976
+raster bytes, and writes 528,896 external-memory bytes including 209,920 history bytes. Undo reads,
+restores, and submits 209,920 bytes in 14 display pushes.
 
 The sanitizer preset excludes the host executable because Homebrew's `sdl2-compat` loader aborts
 under Apple's sanitizer runtime before application code starts. All SDL-free project code remains

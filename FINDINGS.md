@@ -136,9 +136,8 @@ the saved origin.
 
 Host tests cover full-world serialization, tile-selective writes, origin restore, and
 partial world capture. On-device autosave is active; one 18-sector write took 2.266878
-seconds on the low-priority background task. Drawing restore through battery shutdown
-still needs a direct visual check. Power loss inside the 500 ms idle window can lose the
-newest changes.
+seconds on the low-priority background task. A battery shutdown and cold boot restored
+the saved drawing. Power loss inside the 500 ms idle window can lose the newest changes.
 
 ## Battery and power
 
@@ -213,7 +212,7 @@ Twenty native test groups cover exact replays, snapshots, Perfect Freehand examp
 self-overlaps, seams, input states, UI, Undo, panning, and a 1,000-point XL workload. ASan,
 UBSan, headless QEMU, and visible QEMU pass. Device logs report drawing, display, touch,
 lift, panning, Undo, autosave, and power status. Physical checks cover battery reporting,
-charging, deterministic panel startup, and PMU off/on.
+charging, deterministic panel startup, PMU off/on, and autosave restore.
 
 ## Current limits and next work
 

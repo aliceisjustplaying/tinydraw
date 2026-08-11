@@ -20,7 +20,7 @@ exercise the same C++20 drawing and UI core.
 
 ESP32 long strokes average 2.5–3.4 ms per update. Autosave starts after 500 ms
 idle; one 18-sector device write took 2.27 s in its background task. Battery
-percentage, charging state, and PMU power-off/on are verified on the board.
+Autosave restore, charging state, and PMU power-off/on are verified on the board.
 The RP2350 averages 1.2–1.4 ms and is not persistent.
 
 The RP2350 build has no pan or Undo, and its permanent circle-stamp raster looks
