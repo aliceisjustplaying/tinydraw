@@ -1,0 +1,104 @@
+[14:20:33] I (103) esp_image: segment 0: paddr=00010020 vaddr=3c030020 sizeESP-ROM:esp32s3-20210327
+[14:20:33] Build:Mar 27 2021
+[14:20:33] rst:0x15 (USB_UART_CHIP_RESET),boot:0x2b (SPI_FAST_FLASH_BOOT)
+[14:20:33] Saved PC:0x4037b802
+[14:20:33] SPIWP:0xee
+[14:20:33] mode:DIO, clock div:1
+[14:20:33] load:0x3fce2820,len:0x1664
+[14:20:33] load:0x403c8700,len:0xf38
+[14:20:33] load:0x403cb700,len:0x31e8
+[14:20:33] entry 0x403c8930
+[14:20:34] I (24) boot: ESP-IDF v6.0.2 2nd stage bootloader
+[14:20:34] I (24) boot: compile time Aug 11 2026 22:53:49
+[14:20:34] I (25) boot: Multicore bootloader
+[14:20:34] I (25) boot: chip revision: v0.2
+[14:20:34] I (28) boot: efuse block revision: v1.3
+[14:20:34] I (31) qio_mode: Enabling default flash chip QIO
+[14:20:34] I (36) boot.esp32s3: Boot SPI Speed : 80MHz
+[14:20:34] I (39) boot.esp32s3: SPI Mode       : QIO
+[14:20:34] I (43) boot.esp32s3: SPI Flash Size : 16MB
+[14:20:34] I (47) boot: Enabling RNG early entropy source...
+[14:20:34] I (51) boot: Partition Table:
+[14:20:34] I (54) boot: ## Label            Usage          Type ST Offset   Length
+[14:20:34] I (60) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+[14:20:34] I (67) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+[14:20:34] I (73) boot:  2 factory          factory app      00 00 00010000 00100000
+[14:20:34] I (80) boot:  3 drawing          Unknown data     01 40 00110000 00300000
+[14:20:34] I (86) boot:  4 export           Unknown data     01 41 00410000 00500000
+[14:20:34] I (93) boot:  5 coredump         Unknown data     01 03 00910000 00010000
+[14:20:34] I (100) boot: End of partition table
+[14:20:34] I (103) esp_image: segment 0: paddr=00010020 vaddr=3c030020 size=0f038h ( 61496) map
+[14:20:34] I (120) esp_image: segment 1: paddr=0001f060 vaddr=3fc94500 size=00fb8h (  4024) load
+[14:20:34] I (121) esp_image: segment 2: paddr=00020020 vaddr=42000020 size=2d864h (186468) map
+[14:20:34] I (154) esp_image: segment 3: paddr=0004d88c vaddr=3fc954b8 size=0e74ch ( 59212) load
+[14:20:34] I (165) esp_image: segment 4: paddr=0005bfe0 vaddr=40374000 size=104b4h ( 66740) load
+[14:20:34] I (179) esp_image: segment 5: paddr=0006c49c vaddr=50000000 size=00024h (    36) load
+[14:20:34] I (189) boot: Loaded app from partition at offset 0x10000
+[14:20:34] I (189) boot: Disabling RNG early entropy source...
+[14:20:34] I (199) octal_psram: vendor id    : 0x0d (AP)
+[14:20:34] I (200) octal_psram: dev id       : 0x02 (generation 3)
+[14:20:34] I (200) octal_psram: density      : 0x03 (64 Mbit)
+[14:20:34] I (202) octal_psram: good-die     : 0x01 (Pass)
+[14:20:34] I (206) octal_psram: Latency      : 0x01 (Fixed)
+[14:20:34] I (210) octal_psram: VCC          : 0x01 (3V)
+[14:20:34] I (214) octal_psram: SRF          : 0x01 (Fast Refresh)
+[14:20:34] I (219) octal_psram: BurstType    : 0x01 (Hybrid Wrap)
+[14:20:34] I (224) octal_psram: BurstLen     : 0x01 (32 Byte)
+[14:20:34] I (229) octal_psram: Readlatency  : 0x02 (10 cycles@Fixed)
+[14:20:34] I (234) octal_psram: DriveStrength: 0x00 (1/1)
+[14:20:34] I (238) MSPI Timing: Enter psram timing tuning
+[14:20:34] I (243) esp_psram: Found 8MB PSRAM device
+[14:20:34] I (246) esp_psram: Speed: 80MHz
+[14:20:34] I (249) cpu_start: Multicore app
+[14:20:34] I (665) esp_psram: SPI SRAM memory test OK
+[14:20:34] I (673) cpu_start: GPIO 44 and 43 are used as console UART I/O pins
+[14:20:34] I (674) cpu_start: Pro cpu start user code
+[14:20:34] I (674) cpu_start: cpu freq: 240000000 Hz
+[14:20:34] I (675) app_init: Application information:
+[14:20:34] I (679) app_init: Project name:     tinydraw_esp32
+[14:20:34] I (684) app_init: App version:      61dd649-dirty
+[14:20:34] I (688) app_init: Compile time:     Aug 12 2026 14:13:26
+[14:20:34] I (693) app_init: ELF file SHA256:  03e70fd76...
+[14:20:34] I (698) app_init: ESP-IDF:          v6.0.2
+[14:20:34] I (701) efuse_init: Min chip rev:     v0.0
+[14:20:34] I (705) efuse_init: Max chip rev:     v0.99
+[14:20:34] I (709) efuse_init: Chip rev:         v0.2
+[14:20:34] I (713) heap_init: Initializing. RAM available for dynamic allocation:
+[14:20:34] I (719) heap_init: At 3FCA4720 len 00044FF0 (275 KiB): RAM
+[14:20:34] I (724) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+[14:20:34] I (730) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
+[14:20:34] I (735) heap_init: At 600FE000 len 00001FE8 (7 KiB): RTCRAM
+[14:20:34] I (740) esp_psram: Adding pool of 8192K of PSRAM memory to heap allocator
+[14:20:34] I (747) spi_flash: detected chip: generic
+[14:20:34] I (750) spi_flash: flash io: qio
+[14:20:34] I (754) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+[14:20:34] I (760) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+[14:20:34] I (767) main_task: Started on CPU0
+[14:20:34] I (770) main_task: Calling app_main()
+[14:20:34] TINYDRAW_PANEL_HARD_RESET=1
+[14:20:34] I (954) co5300: version: 2.1.0
+[14:20:34] I (954) co5300_spi: LCD panel create success, version: 2.1.0
+[14:20:35] W (1034) co5300_spi: The 3Ah command has been used and will be overwritten by external initialization sequence
+[14:20:35] I (1134) CST816S: IC id: 183
+[14:20:35] [DEBUG-touch-rate] registers=1 id=0xb7 firmware=0x02 scan_period=0x00 irq=0x70
+[14:20:35] I (1137) PCF85063A: PCF85063A initialized successfully
+[14:20:35] TINYDRAW_RTC ready=1 retained=1 local=2026-08-12T14:20:28
+[14:20:35] TINYDRAW_VECTOR_READY strokes=1100 samples=16384 bytes=227408 free_psram=661364
+[14:20:35] TINYDRAW_AUTOSAVE_READY
+[14:20:35] TINYDRAW_PSRAM world_bytes=2967552 free=661364 largest=655360 minimum=661364
+[14:20:35] TINYDRAW_POWER_READY ready=1 button=1 valid=1 battery=100 voltage_mv=4088 charging=0 vbus=1
+[14:20:39] TINYDRAW_INTERACTIVE_PAN_READY zoom=100 controls=S:50 M:100 L:200 XL:finish
+[14:20:39] TINYDRAW_AUTO_INIT initial_atlas_us=4121753
+[14:20:41] TINYDRAW_AUTO_ZOOM cycle=0 zoom=50 changed=1 prep_us=25486 push_us=26203 total_us=51689
+[14:20:47] TINYDRAW_AUTO_ZOOM cycle=1 zoom=100 changed=1 prep_us=84620 push_us=26104 total_us=110724
+[14:20:52] TINYDRAW_AUTO_ZOOM cycle=2 zoom=200 changed=1 prep_us=84436 push_us=26169 total_us=110605
+[14:20:57] TINYDRAW_AUTO_ZOOM cycle=3 zoom=100 changed=1 prep_us=36192 push_us=26133 total_us=62325
+[14:21:02] TINYDRAW_AUTO_ZOOM cycle=4 zoom=50 changed=1 prep_us=25700 push_us=26157 total_us=51857
+[14:21:07] TINYDRAW_AUTO_ZOOM cycle=5 zoom=100 changed=1 prep_us=84622 push_us=26143 total_us=110765
+[14:21:12] TINYDRAW_AUTO_ZOOM cycle=6 zoom=200 changed=1 prep_us=84411 push_us=26188 total_us=110599
+[14:21:17] TINYDRAW_AUTO_ZOOM cycle=7 zoom=100 changed=1 prep_us=37207 push_us=26126 total_us=63333
+[14:21:22] TINYDRAW_AUTO_ZOOM cycle=8 zoom=50 changed=1 prep_us=25699 push_us=26147 total_us=51846
+[14:21:27] TINYDRAW_AUTO_ZOOM cycle=9 zoom=100 changed=1 prep_us=84610 push_us=26155 total_us=110765
+[14:21:32] TINYDRAW_AUTO_ZOOM cycle=10 zoom=200 changed=1 prep_us=84465 push_us=26213 total_us=110678
+[14:21:37] TINYDRAW_AUTO_ZOOM cycle=11 zoom=100 changed=1 prep_us=39203 push_us=26109 total_us=65312
+[14:21:42] TINYDRAW_AUTO_ZOOM_DONE

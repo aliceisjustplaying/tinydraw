@@ -1,0 +1,57 @@
+diff --git a/esp32/main/hardware_app.cpp b/esp32/main/hardware_app.cpp
+index 4712c9f..4919adb 100644
+--- a/esp32/main/hardware_app.cpp
++++ b/esp32/main/hardware_app.cpp
+@@ -1247,6 +1247,7 @@ void run_hardware_app() {
+   close_popups();
+   display.set_toolbar(toolbar);
+   display.refresh_toolbar(canvas.committed());
++  const std::int64_t benchmark_init_started = esp_timer_get_time();
+   interactive_pan_benchmark = tinydraw::esp32::start_interactive_pan_benchmark(
+       vector_document, canvas.world(), canvas.prototype_materialization_storage(), canvas.visible(),
+       kMainOverlayTop, display, enqueue_refinement_published, touch_queue);
+@@ -1260,6 +1261,44 @@ void run_hardware_app() {
+   tinydraw::esp32::interactive_pan_benchmark_record_zoom_present(*interactive_pan_benchmark);
+   tinydraw::esp32::interactive_pan_benchmark_unlock_cache(*interactive_pan_benchmark);
+   std::printf("TINYDRAW_INTERACTIVE_PAN_READY zoom=100 controls=S:50 M:100 L:200 XL:finish\n");
++  std::printf("TINYDRAW_AUTO_INIT initial_atlas_us=%lld\n",
++              static_cast<long long>(esp_timer_get_time() - benchmark_init_started));
++  // Hands-free A/B zoom driver: exercises the same set_zoom -> push_world ->
++  // record_zoom_present path the toolbar uses, without touch input, and prints
++  // driver-side wall times so baseline and patched firmware are comparable
++  // regardless of internal metric definitions.
++  {
++    constexpr std::array<int, 12> kAutoZoomSequence{50,  100, 200, 100, 50,  100,
++                                                    200, 100, 50,  100, 200, 100};
++    std::fflush(stdout);
++    vTaskDelay(pdMS_TO_TICKS(2'000));
++    for (std::size_t cycle = 0; cycle < kAutoZoomSequence.size(); ++cycle) {
++      const int percent = kAutoZoomSequence[cycle];
++      const std::int64_t auto_zoom_started = esp_timer_get_time();
++      const bool changed = tinydraw::esp32::interactive_pan_benchmark_set_zoom(
++          *interactive_pan_benchmark, percent);
++      const std::int64_t auto_zoom_prepared = esp_timer_get_time();
++      std::int64_t auto_zoom_pushed = auto_zoom_prepared;
++      if (changed) {
++        tinydraw::esp32::interactive_pan_benchmark_lock_cache(*interactive_pan_benchmark);
++        display.push_world(canvas.world().pixels(), canvas.world().origin(), kMainOverlayTop);
++        tinydraw::esp32::interactive_pan_benchmark_record_zoom_present(*interactive_pan_benchmark);
++        tinydraw::esp32::interactive_pan_benchmark_unlock_cache(*interactive_pan_benchmark);
++        auto_zoom_pushed = esp_timer_get_time();
++      }
++      std::printf(
++          "TINYDRAW_AUTO_ZOOM cycle=%u zoom=%d changed=%u prep_us=%lld push_us=%lld "
++          "total_us=%lld\n",
++          static_cast<unsigned>(cycle), percent, changed,
++          static_cast<long long>(auto_zoom_prepared - auto_zoom_started),
++          static_cast<long long>(changed ? auto_zoom_pushed - auto_zoom_prepared : -1),
++          static_cast<long long>(changed ? auto_zoom_pushed - auto_zoom_started : -1));
++      std::fflush(stdout);
++      vTaskDelay(pdMS_TO_TICKS(5'000));
++    }
++    std::printf("TINYDRAW_AUTO_ZOOM_DONE\n");
++    std::fflush(stdout);
++  }
+ #endif
+ 
+ #ifdef TINYDRAW_PHASE2_PROTOTYPE
