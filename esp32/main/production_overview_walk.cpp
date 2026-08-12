@@ -160,16 +160,15 @@ void run_production_overview_walk() {
   MaterializedCanvas canvas(std::span(overview, production::kOverviewPixels), std::span(slot, 1),
                             std::span(tile_pixels, production::kTilePixels), DocumentRevision{0});
   PhysicalDisplay display(false);
-  std::unique_ptr<std::uint16_t[]> overview_source(new (std::nothrow)
-                                                       std::uint16_t[production::kOverviewPixels]);
+  auto* overview_source =
+      static_cast<std::uint16_t*>(heap_caps_malloc(production::kOverviewBytes, kExternalCaps));
   if (overview_source == nullptr) {
     std::printf("TINYDRAW_PRODUCTION_WALK_FAIL reason=overview_source\n");
     return;
   }
-  std::copy_n(overview, production::kOverviewPixels, overview_source.get());
+  std::copy_n(overview, production::kOverviewPixels, overview_source);
   if (!canvas.ready() ||
-      !canvas.publish_overview({0},
-                               std::span(overview_source.get(), production::kOverviewPixels)) ||
+      !canvas.publish_overview({0}, std::span(overview_source, production::kOverviewPixels)) ||
       !display.ready()) {
     std::printf("TINYDRAW_PRODUCTION_WALK_FAIL reason=bootstrap canvas=%u display=%u\n",
                 canvas.ready(), display.ready());
