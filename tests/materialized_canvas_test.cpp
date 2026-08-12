@@ -329,6 +329,7 @@ TEST_CASE("pinned sources cannot be replaced and validate only while pinned") {
   auto pinned_tile = canvas.pin(key);
   REQUIRE(pinned_tile.has_value());
   CHECK(canvas.validate(*pinned_tile));
+  CHECK_FALSE(canvas.pin(key));
   CHECK(unpinned_lookup->pin_token == 0U);
   CHECK_FALSE(canvas.publish_tile(key, {0}, production::MaterializationQuality::kSettled, tile));
   CHECK_FALSE(canvas.publish_overview({1}, revised_overview));
@@ -344,6 +345,7 @@ TEST_CASE("pinned sources cannot be replaced and validate only while pinned") {
   REQUIRE(pinned_overview.has_value());
   CHECK(pinned_overview->source().kind == production::SourceKind::kOverview);
   CHECK(canvas.validate(*pinned_overview));
+  CHECK_FALSE(canvas.pin(missing));
   CHECK(unpinned_overview->pin_token == 0U);
   CHECK_FALSE(canvas.publish_overview({2}, overview));
   pinned_overview->reset();

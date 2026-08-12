@@ -161,15 +161,20 @@ bool MaterializedCanvas::publish_overview(DocumentRevision revision,
                                           std::span<const std::uint16_t> pixels) {
   const bool revision_is_publishable = overview_valid_ ? revision.value > current_revision_.value
                                                        : revision.value >= current_revision_.value;
+  const bool exact_bootstrap_source = !overview_valid_ &&
+                                      pixels.data() == overview_pixels_.data() &&
+                                      pixels.size() == overview_pixels_.size();
   const bool source_is_publishable =
-      !overview_valid_ || !spans_overlap(pixels, std::span(overview_pixels_));
+      exact_bootstrap_source || !spans_overlap(pixels, std::span(overview_pixels_));
   const bool tile_is_pinned = std::any_of(slots_.begin(), slots_.end(),
                                           [](const auto& slot) { return slot.pin_token_ != 0U; });
   if (!ready() || !revision_is_publishable || !source_is_publishable || overview_pin_token_ != 0U ||
       tile_is_pinned || pixels.size() != kOverviewPixels) {
     return false;
   }
-  std::copy(pixels.begin(), pixels.end(), overview_pixels_.begin());
+  if (!exact_bootstrap_source) {
+    std::copy(pixels.begin(), pixels.end(), overview_pixels_.begin());
+  }
   for (auto& slot : slots_) {
     if (slot.occupied_) {
       slot.occupied_ = false;
@@ -315,6 +320,9 @@ std::optional<PinnedSource> MaterializedCanvas::pin(TileKey key) {
     return std::nullopt;
   }
   if (source->kind == SourceKind::kOverview) {
+    if (overview_pin_token_ != 0U) {
+      return std::nullopt;
+    }
     source->pin_token = next_pin_token_++;
     overview_pin_token_ = source->pin_token;
   } else {
@@ -322,6 +330,9 @@ std::optional<PinnedSource> MaterializedCanvas::pin(TileKey key) {
       return std::nullopt;
     }
     MaterializedSlotStorage& slot = slots_[source->slot_index.value()];
+    if (slot.pin_token_ != 0U) {
+      return std::nullopt;
+    }
     source->pin_token = next_pin_token_++;
     slot.pin_token_ = source->pin_token;
     touch(slot);

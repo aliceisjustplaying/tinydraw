@@ -132,6 +132,7 @@ class MaterializedSlotStorage {
 
 class MaterializedCanvas;
 
+// A pin must not outlive its owning MaterializedCanvas.
 class PinnedSource {
  public:
   ~PinnedSource();
