@@ -78,3 +78,19 @@ identity, not a permanent renderer-work size:
 `MaterializedCanvas` owns no hidden allocation. The overview pixels and fixed
 slot metadata are caller-owned; pixel-pool allocation and its hardware receipt
 belong to Task #53.
+
+## Task #53 memory plan
+
+[`memory_layout.h`](include/tinydraw/production/memory_layout.h) records the
+first complete allocation plan. Its capacity assumptions are explicit:
+
+- 4,000 operations and 80,000 compact 8-byte samples;
+- four materialized zoom LOD span tables and 90,000 compact 6-byte LOD samples;
+- 128 tile slots;
+- two 128×128 renderer workspaces plus 64 KiB shared geometry storage;
+- a 368×76 overlay and two 368×32 staging strips.
+
+The opt-in `TINYDRAW_PRODUCTION_MEMORY_PROBE` firmware allocates every region
+simultaneously, then attempts a separate 1.5 MiB allocation. This is an
+allocation receipt, not proof that the eventual encoders and renderers fit the
+reserved capacities or meet interaction gates.

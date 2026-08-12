@@ -11,6 +11,9 @@
 #ifdef TINYDRAW_QEMU_GRAPHICS
 #include "qemu_display.h"
 #endif
+#ifdef TINYDRAW_PRODUCTION_MEMORY_PROBE
+#include "production_memory_probe.h"
+#endif
 #include "tinydraw/geometry.h"
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
@@ -150,6 +153,10 @@ void run_hardware_app();
 #endif
 
 extern "C" void app_main() {
+#ifdef TINYDRAW_PRODUCTION_MEMORY_PROBE
+  tinydraw::esp32::run_production_memory_probe();
+  return;
+#endif
 #ifndef TINYDRAW_QEMU
   run_hardware_app();
   return;
