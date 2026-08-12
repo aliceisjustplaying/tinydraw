@@ -340,6 +340,9 @@ class InteractivePanBenchmark {
   std::atomic<bool> paused{false};
   std::atomic<bool> zoom_presentation_pending{false};
   std::atomic<bool> stroke_mutation_active{false};
+  std::atomic<bool> pan_active{false};
+  std::uint32_t pan_rejected_views = 0U;
+  std::uint32_t pan_maximum_missing_pixels = 0U;
   bool has_complete_initial_atlas = false;
   std::atomic<std::uint32_t> document_revision{1U};
   std::atomic<bool> finished{false};
@@ -486,21 +489,45 @@ int choose_job(const InteractivePanBenchmark& benchmark) {
 }
 
 void present_job(InteractivePanBenchmark& benchmark, int job) {
-  if (!benchmark.has_complete_initial_atlas) {
+  if (!benchmark.has_complete_initial_atlas || benchmark.pan_active.load()) {
     return;
   }
   const JobRect rect = job_rect(job);
   const int view_x = benchmark.view_x.load();
   const int view_y = benchmark.view_y.load();
-  const int x0 = std::max(rect.x0, view_x);
-  const int y0 = std::max(rect.y0, view_y);
-  const int x1 = std::min(rect.x1, view_x + kCanvasWidth);
-  const int y1 = std::min(rect.y1, view_y + benchmark.presented_rows);
-  if (x0 >= x1 || y0 >= y1) {
+  const int intersect_y0 = std::max(rect.y0, view_y);
+  const int intersect_y1 = std::min(rect.y1, view_y + benchmark.presented_rows);
+  if (std::max(rect.x0, view_x) >= std::min(rect.x1, view_x + kCanvasWidth) ||
+      intersect_y0 >= intersect_y1) {
     return;
   }
-  const auto offset = static_cast<std::size_t>(y0 * WorldCanvas::kWidth + x0);
-  benchmark.display.push_rect(x0 - view_x, y0 - view_y, x1 - x0, y1 - y0,
+
+  // CO5300 QSPI publications must keep even transfer-window boundaries. A
+  // clipped cache job can begin at an arbitrary screen x while panning; those
+  // partial writes visibly skew later panel rows. Publish an even-aligned,
+  // full-width horizontal band only after every cache job backing that band is
+  // current. Zoom, pan, and settled presentation already use this safe shape.
+  const int screen_y0 = std::max(0, (intersect_y0 - view_y) & ~1);
+  const int screen_y1 = std::min(benchmark.presented_rows, (intersect_y1 - view_y + 1) & ~1);
+  const JobRect publication{
+      .x0 = view_x,
+      .y0 = view_y + screen_y0,
+      .x1 = view_x + kCanvasWidth,
+      .y1 = view_y + screen_y1,
+  };
+  const std::uint32_t revision = benchmark.document_revision.load();
+  for (int candidate = 0; candidate < kJobCount; ++candidate) {
+    if (!intersects(job_rect(candidate), publication)) {
+      continue;
+    }
+    const auto slot = static_cast<std::size_t>(candidate);
+    if (benchmark.ready[slot].load() == kInvalidReady ||
+        benchmark.job_revision[slot].load() != revision) {
+      return;
+    }
+  }
+  const auto offset = static_cast<std::size_t>((view_y + screen_y0) * WorldCanvas::kWidth + view_x);
+  benchmark.display.push_rect(0, screen_y0, kCanvasWidth, screen_y1 - screen_y0,
                               benchmark.world.pixels().data() + offset, WorldCanvas::kWidth);
 }
 
@@ -618,6 +645,7 @@ void render_task_entry(void* raw) {
     // geometry supertask. A centered viewport needs one traversal instead of
     // repeating the same 1,000-stroke traversal for twelve 32-row bands.
     while (benchmark.requested_generation.load() == generation && !benchmark.paused.load() &&
+           !benchmark.pan_active.load() &&
            (!benchmark.fallback_source_pinned ||
             benchmark.fallback_source_document_revision == benchmark.document_revision.load())) {
       const int view_x = benchmark.view_x.load();
@@ -1684,6 +1712,14 @@ void interactive_pan_benchmark_record_draw_update(InteractivePanBenchmark& bench
 
 void interactive_pan_benchmark_begin_pan(InteractivePanBenchmark& benchmark, ViewOrigin origin,
                                          std::uint32_t event_us) {
+  // Cancel settled rendering, but keep the render task runnable. It can repair
+  // pinned-source provenance and fill cache runway between foreground pan
+  // frames; pausing it here starved repair for as long as the user kept moving.
+  benchmark.pan_active.store(true);
+  benchmark.pan_rejected_views = 0U;
+  benchmark.pan_maximum_missing_pixels = 0U;
+  benchmark.requested_generation.fetch_add(1U);
+  xTaskNotifyGive(benchmark.render_task);
   const int index = benchmark.active_zoom_index.load();
   auto& metrics = benchmark.metrics[static_cast<std::size_t>(index)];
   ++metrics.gestures;
@@ -1697,7 +1733,10 @@ bool interactive_pan_benchmark_view_ready(const InteractivePanBenchmark& benchma
 }
 
 bool interactive_pan_benchmark_view_changed(InteractivePanBenchmark& benchmark, ViewOrigin origin) {
-  if (!interactive_pan_benchmark_view_ready(benchmark, origin)) {
+  const std::uint32_t missing = missing_pixels(benchmark, origin);
+  if (missing != 0U) {
+    ++benchmark.pan_rejected_views;
+    benchmark.pan_maximum_missing_pixels = std::max(benchmark.pan_maximum_missing_pixels, missing);
     return false;
   }
   benchmark.view_x.store(origin.x);
@@ -1737,7 +1776,32 @@ void interactive_pan_benchmark_record_frame(InteractivePanBenchmark& benchmark, 
   metrics.previous_event_us = event_us;
 }
 
-void interactive_pan_benchmark_end_pan(InteractivePanBenchmark&) {}
+void interactive_pan_benchmark_end_pan(InteractivePanBenchmark& benchmark) {
+  benchmark.pan_active.store(false);
+  const ViewOrigin origin{benchmark.view_x.load(), benchmark.view_y.load()};
+  std::size_t visible_ink = 0U;
+  std::uint32_t visible_hash = 2166136261U;
+  xSemaphoreTake(benchmark.cache_mutex, portMAX_DELAY);
+  for (int y = 0; y < benchmark.presented_rows; ++y) {
+    const auto row = static_cast<std::size_t>((origin.y + y) * WorldCanvas::kWidth + origin.x);
+    for (int x = 0; x < kCanvasWidth; ++x) {
+      const std::uint16_t pixel = benchmark.world.pixels()[row + static_cast<std::size_t>(x)];
+      visible_ink += pixel != kBackground;
+      visible_hash = (visible_hash ^ pixel) * 16777619U;
+    }
+  }
+  xSemaphoreGive(benchmark.cache_mutex);
+  std::printf(
+      "TINYDRAW_PAN_CONTENT zoom=%d origin=%d,%d visible_ink=%lu visible_hash=%08lx "
+      "rejected_views=%lu max_missing_pixels=%lu\n",
+      kZoomPercents[static_cast<std::size_t>(benchmark.active_zoom_index.load())], origin.x,
+      origin.y, static_cast<unsigned long>(visible_ink), static_cast<unsigned long>(visible_hash),
+      static_cast<unsigned long>(benchmark.pan_rejected_views),
+      static_cast<unsigned long>(benchmark.pan_maximum_missing_pixels));
+  benchmark.generation_started_us.store(static_cast<std::uint32_t>(esp_timer_get_time()));
+  benchmark.requested_generation.fetch_add(1U);
+  xTaskNotifyGive(benchmark.render_task);
+}
 
 void interactive_pan_benchmark_lock_cache(InteractivePanBenchmark& benchmark) {
   xSemaphoreTake(benchmark.cache_mutex, portMAX_DELAY);
