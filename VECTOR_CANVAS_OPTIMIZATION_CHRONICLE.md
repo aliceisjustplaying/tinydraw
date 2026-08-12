@@ -188,3 +188,7 @@ We reverted the span implementation. The failed run remains in `second_review_ha
 The current compromise rebuilds one LOD buffer when crossing above or below 100%. The normal map uses 2.0 world-unit center error and 0.75 radius error. The 200% map uses 1.0 and 0.375, capping those errors at 2 and 0.75 screen pixels. One buffer avoids storing two maps under the prototype’s tight PSRAM budget.
 
 The tighter map improves 200% over raw geometry but does not reach 500 ms. Latest physical settled results are about 489 ms at 50%, 800–851 ms at 100%, and 747–748 ms at 200%. The next optimization should change coverage representation without per-row square roots. Ordered sparse microtiles with incremental or fixed-point scan conversion remain the leading direction.
+
+The clean-commit rerun is `second_review_hardware_ab/4fc345e-auto-hardware.log`.
+Its firmware reports `App version: 4fc345e` and reproduces the dynamic-LOD
+results, so the evidence now identifies the exact committed source.

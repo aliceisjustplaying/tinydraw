@@ -261,3 +261,18 @@ In the dynamic-LOD run:
 - post-allocation PSRAM was 76,056 bytes with a 147,456-byte LOD allocation.
 
 The interaction fallback and small-pan runway pass. Settled 100/200 remains over target. Drawing latency and visual behavior still require an interactive hardware pass; the automated mutation path is vector-only and does not substitute for live pen/eraser testing.
+
+### Exact-commit hardware identity
+
+After committing the Grok follow-up as `4fc345e`, the same automated run was
+flashed again. `4fc345e-auto-hardware.log` reports:
+
+```text
+App version: 4fc345e
+```
+
+Its metrics reproduce the preceding dynamic-LOD run: 12/12 accepted zooms,
+7–20 ms first physical feedback, 40–55 ms complete fallback, every edge/runway
+assertion passing, and post-mutation refusal/repair/retry passing. This closes
+the earlier evidence-chain caveat where logs named `caed9b5-dirty` rather than
+the commit under review.
