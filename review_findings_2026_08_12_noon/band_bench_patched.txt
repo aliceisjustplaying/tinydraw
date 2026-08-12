@@ -1,0 +1,16 @@
+z=100 chunk=16 avg_us=54765 ratio=1.02 candidates_per_pass=15747 tested_per_pass=15747 samples_per_pass=36624 prims_per_pass=35512 visits_per_pass=45265 tiles_per_pass=332
+z=100 chunk=32 avg_us=52903 ratio=0.99 candidates_per_pass=8651 tested_per_pass=8663 samples_per_pass=24324 prims_per_pass=29562 visits_per_pass=37653 tiles_per_pass=310
+z=100 chunk=64 avg_us=52441 ratio=0.98 candidates_per_pass=5103 tested_per_pass=5115 samples_per_pass=17820 prims_per_pass=26367 visits_per_pass=38146 tiles_per_pass=449
+z=100 chunk=96 avg_us=54081 ratio=1.01 candidates_per_pass=3402 tested_per_pass=3415 samples_per_pass=15936 prims_per_pass=25432 visits_per_pass=38285 tiles_per_pass=587
+z=100 chunk=112 avg_us=55219 ratio=1.03 candidates_per_pass=2701 tested_per_pass=2715 samples_per_pass=14892 prims_per_pass=24979 visits_per_pass=39656 tiles_per_pass=833
+z=100 chunk=224 avg_us=54245 ratio=1.01 candidates_per_pass=1701 tested_per_pass=1715 samples_per_pass=12960 prims_per_pass=24046 visits_per_pass=38492 tiles_per_pass=1260
+z=100 chunk=448 avg_us=53637 ratio=1.00 candidates_per_pass=1000 tested_per_pass=1015 samples_per_pass=12000 prims_per_pass=23573 visits_per_pass=38564 tiles_per_pass=2265
+z=100 full_avg_us=53544 full_candidates=1000 tested=1015 samples=12000 prims=23573 visits=38564 tiles=2265
+z=200 chunk=16 avg_us=37616 ratio=1.03 candidates_per_pass=19678 tested_per_pass=19678 samples_per_pass=21960 prims_per_pass=14202 visits_per_pass=19969 tiles_per_pass=336
+z=200 chunk=32 avg_us=38283 ratio=1.05 candidates_per_pass=10266 tested_per_pass=10266 samples_per_pass=13212 prims_per_pass=10945 visits_per_pass=15362 tiles_per_pass=168
+z=200 chunk=64 avg_us=35225 ratio=0.97 candidates_per_pass=5133 tested_per_pass=5133 samples_per_pass=8844 prims_per_pass=9348 visits_per_pass=15530 tiles_per_pass=168
+z=200 chunk=96 avg_us=36700 ratio=1.01 candidates_per_pass=3731 tested_per_pass=3735 samples_per_pass=7572 prims_per_pass=8900 visits_per_pass=15580 tiles_per_pass=312
+z=200 chunk=112 avg_us=35593 ratio=0.98 candidates_per_pass=3030 tested_per_pass=3034 samples_per_pass=6984 prims_per_pass=8658 visits_per_pass=16357 tiles_per_pass=384
+z=200 chunk=224 avg_us=35508 ratio=0.97 candidates_per_pass=1628 tested_per_pass=1632 samples_per_pass=5724 prims_per_pass=8175 visits_per_pass=15656 tiles_per_pass=504
+z=200 chunk=448 avg_us=35779 ratio=0.98 candidates_per_pass=927 tested_per_pass=932 samples_per_pass=5088 prims_per_pass=7959 visits_per_pass=15683 tiles_per_pass=920
+z=200 full_avg_us=36482 full_candidates=927 tested=932 samples=5088 prims=7959 visits=15683 tiles=920
