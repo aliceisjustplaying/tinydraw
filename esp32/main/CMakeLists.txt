@@ -11,11 +11,37 @@ set(TINYDRAW_PNGENC_SRCS
 
 set(TINYDRAW_PLATFORM_SRCS "qemu_display.cpp")
 set(TINYDRAW_PLATFORM_REQUIRES esp_lcd_qemu_rgb)
-if(NOT TINYDRAW_QEMU)
+set(TINYDRAW_APP_SRCS
+  "firmware_canvas.cpp"
+  "main.cpp"
+  "${TINYDRAW_CORE}/src/coordinate_transform.cpp"
+  "${TINYDRAW_CORE}/src/coverage_tile.cpp"
+  "${TINYDRAW_CORE}/src/demo_tape.cpp"
+  "${TINYDRAW_CORE}/src/drawing_snapshot.cpp"
+  "${TINYDRAW_CORE}/src/ink_stream.cpp"
+  "${TINYDRAW_CORE}/src/perfect_freehand.cpp"
+  "${TINYDRAW_CORE}/src/ribbon_geometry.cpp"
+  "${TINYDRAW_CORE}/src/ribbon_renderer.cpp"
+  "${TINYDRAW_CORE}/src/stroke_raster.cpp"
+  "${TINYDRAW_CORE}/src/tile_undo_history.cpp"
+  "${TINYDRAW_CORE}/src/toolbar.cpp"
+  "${TINYDRAW_CORE}/src/world_canvas.cpp"
+)
+if(TINYDRAW_PRODUCTION_OVERVIEW_WALK)
+  set(TINYDRAW_APP_SRCS
+    "physical_display.cpp"
+    "production_overview_walk.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/../../production/src/materialized_canvas.cpp"
+    "${TINYDRAW_CORE}/src/toolbar.cpp"
+  )
+  set(TINYDRAW_PLATFORM_SRCS "")
+  set(TINYDRAW_PLATFORM_REQUIRES esp_lcd_co5300)
+elseif(NOT TINYDRAW_QEMU)
   list(APPEND TINYDRAW_PLATFORM_SRCS
     "drawing_store.cpp"
     "hardware_app.cpp"
     "image_export_store.cpp"
+    "physical_display.cpp"
     "power_manager.cpp"
     "rtc_clock.cpp"
     "time_sync.cpp"
@@ -57,21 +83,8 @@ endif()
 
 idf_component_register(
   SRCS
-    "firmware_canvas.cpp"
-    "main.cpp"
+    ${TINYDRAW_APP_SRCS}
     ${TINYDRAW_PLATFORM_SRCS}
-    "${TINYDRAW_CORE}/src/coordinate_transform.cpp"
-    "${TINYDRAW_CORE}/src/coverage_tile.cpp"
-    "${TINYDRAW_CORE}/src/demo_tape.cpp"
-    "${TINYDRAW_CORE}/src/drawing_snapshot.cpp"
-    "${TINYDRAW_CORE}/src/ink_stream.cpp"
-    "${TINYDRAW_CORE}/src/perfect_freehand.cpp"
-    "${TINYDRAW_CORE}/src/ribbon_geometry.cpp"
-    "${TINYDRAW_CORE}/src/ribbon_renderer.cpp"
-    "${TINYDRAW_CORE}/src/stroke_raster.cpp"
-    "${TINYDRAW_CORE}/src/tile_undo_history.cpp"
-    "${TINYDRAW_CORE}/src/toolbar.cpp"
-    "${TINYDRAW_CORE}/src/world_canvas.cpp"
   INCLUDE_DIRS "." "${TINYDRAW_CORE}/include" "${CMAKE_CURRENT_LIST_DIR}/../../production/include"
   PRIV_INCLUDE_DIRS "${TINYDRAW_PNGENC}"
   PRIV_REQUIRES ${TINYDRAW_PLATFORM_REQUIRES} esp_partition esp_psram esp_timer espcoredump
@@ -100,6 +113,9 @@ if(TINYDRAW_INTERACTIVE_PAN_BENCHMARK)
 endif()
 if(TINYDRAW_PRODUCTION_MEMORY_PROBE)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_PRODUCTION_MEMORY_PROBE=1)
+endif()
+if(TINYDRAW_PRODUCTION_OVERVIEW_WALK)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_PRODUCTION_OVERVIEW_WALK=1)
 endif()
 if(TINYDRAW_QEMU)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_QEMU=1)
