@@ -88,6 +88,14 @@ alignas(4) DMA_ATTR
 StaticSemaphore_t transfer_semaphore_storage;
 SemaphoreHandle_t transfer_semaphore = nullptr;
 
+// Panel transfers complete strictly in submission order, so one monotonically
+// increasing pair of counters plus a completion-timestamp ring provides honest
+// "first/last physical strip" endpoints. The ISR is the only completion writer.
+constexpr std::size_t kTransferHistory = 64U;
+std::atomic<std::uint32_t> transfer_submits{0U};
+std::atomic<std::uint32_t> transfer_completes{0U};
+std::array<std::atomic<std::int64_t>, kTransferHistory> transfer_complete_times{};
+
 constexpr std::array<std::uint8_t, 1> init_fe{0x00};
 constexpr std::array<std::uint8_t, 1> init_c4{0x80};
 constexpr std::array<std::uint8_t, 1> init_3a{0x55};
@@ -113,9 +121,32 @@ const std::array<co5300_lcd_init_cmd_t, 11> panel_init{{
 }};
 
 bool on_transfer_done(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t*, void*) {
+  const std::uint32_t sequence = transfer_completes.load(std::memory_order_relaxed);
+  transfer_complete_times[sequence % kTransferHistory].store(esp_timer_get_time(),
+                                                             std::memory_order_relaxed);
+  transfer_completes.store(sequence + 1U, std::memory_order_release);
   BaseType_t woke = pdFALSE;
   xSemaphoreGiveFromISR(transfer_semaphore, &woke);
   return woke == pdTRUE;
+}
+
+std::uint32_t transfer_submit_count(void*) {
+  return transfer_submits.load(std::memory_order_acquire);
+}
+
+std::uint32_t transfer_complete_count(void*) {
+  return transfer_completes.load(std::memory_order_acquire);
+}
+
+// Returns the completion time of 1-based transfer `sequence`, or -1 when the
+// sequence has not completed or its slot has been overwritten by newer ones.
+std::int64_t transfer_complete_time_us(void*, std::uint32_t sequence) {
+  const std::uint32_t completed = transfer_completes.load(std::memory_order_acquire);
+  if (sequence == 0U || sequence > completed || completed - sequence >= kTransferHistory) {
+    return -1;
+  }
+  return transfer_complete_times[(sequence - 1U) % kTransferHistory].load(
+      std::memory_order_relaxed);
 }
 
 constexpr std::uint16_t swap_bytes(std::uint16_t pixel) {
@@ -385,6 +416,7 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
     const auto submit_started = esp_timer_get_time();
     ESP_ERROR_CHECK(
         esp_lcd_panel_draw_bitmap(panel_, x, y, x + width, y + height, transfer.data()));
+    transfer_submits.fetch_add(1U, std::memory_order_release);
     transfer_us_ += esp_timer_get_time() - submit_started;
     ++push_count_;
   }
@@ -1110,13 +1142,8 @@ void run_hardware_app() {
       if (!zoom_changed) {
         std::printf("TINYDRAW_INTERACTIVE_PAN_FAIL zoom=%d\n", zoom_percent);
       }
+      // set_zoom presents the transition itself as center-out strips.
       update_toolbar();
-      if (zoom_changed) {
-        tinydraw::esp32::interactive_pan_benchmark_lock_cache(*interactive_pan_benchmark);
-        display.push_world(canvas.world().pixels(), canvas.world().origin(), kMainOverlayTop);
-        tinydraw::esp32::interactive_pan_benchmark_record_zoom_present(*interactive_pan_benchmark);
-        tinydraw::esp32::interactive_pan_benchmark_unlock_cache(*interactive_pan_benchmark);
-      }
       return;
     }
     if (action == tinydraw::ToolbarAction::kSelectExtraLarge) {
@@ -1253,9 +1280,14 @@ void run_hardware_app() {
   close_popups();
   display.set_toolbar(toolbar);
   display.refresh_toolbar(canvas.committed());
+  const std::int64_t benchmark_init_started = esp_timer_get_time();
   interactive_pan_benchmark = tinydraw::esp32::start_interactive_pan_benchmark(
       vector_document, canvas.world(), canvas.prototype_materialization_storage(), canvas.visible(),
-      kMainOverlayTop, display, enqueue_refinement_published, touch_queue);
+      kMainOverlayTop, display, enqueue_refinement_published, touch_queue,
+      {.submit_count = transfer_submit_count,
+       .complete_count = transfer_complete_count,
+       .complete_time_us = transfer_complete_time_us,
+       .context = nullptr});
   if (interactive_pan_benchmark == nullptr) {
     std::printf("TINYDRAW_HARDWARE_FAIL interactive_pan_benchmark=0\n");
     return;
@@ -1266,6 +1298,51 @@ void run_hardware_app() {
   tinydraw::esp32::interactive_pan_benchmark_record_zoom_present(*interactive_pan_benchmark);
   tinydraw::esp32::interactive_pan_benchmark_unlock_cache(*interactive_pan_benchmark);
   std::printf("TINYDRAW_INTERACTIVE_PAN_READY zoom=100 controls=S:50 M:100 L:200 XL:finish\n");
+  std::printf("TINYDRAW_AUTO_INIT initial_atlas_us=%lld\n",
+              static_cast<long long>(esp_timer_get_time() - benchmark_init_started));
+  // Hands-free A/B zoom driver: exercises the same set_zoom -> push_world ->
+  // record_zoom_present path the toolbar uses, without touch input, and prints
+  // driver-side wall times so baseline and patched firmware are comparable
+  // regardless of internal metric definitions.
+  {
+    constexpr std::array<int, 12> kAutoZoomSequence{50,  100, 200, 100, 50,  100,
+                                                    200, 100, 50,  100, 200, 100};
+    std::fflush(stdout);
+    vTaskDelay(pdMS_TO_TICKS(2'000));
+    for (std::size_t cycle = 0; cycle < kAutoZoomSequence.size(); ++cycle) {
+      const int percent = kAutoZoomSequence[cycle];
+      const std::int64_t auto_zoom_started = esp_timer_get_time();
+      const bool changed = tinydraw::esp32::interactive_pan_benchmark_set_zoom(
+          *interactive_pan_benchmark, percent);
+      const std::int64_t auto_zoom_returned = esp_timer_get_time();
+      tinydraw::esp32::ZoomTransitionTiming timing;
+      if (changed && tinydraw::esp32::interactive_pan_benchmark_last_zoom_timing(
+                         *interactive_pan_benchmark, percent, timing)) {
+        std::printf(
+            "TINYDRAW_AUTO_ZOOM cycle=%u zoom=%d changed=1 total_us=%lld cancel_us=%lu "
+            "first_ready_us=%lu first_submit_us=%lu first_complete_us=%lu last_submit_us=%lu "
+            "last_complete_us=%lu fallback_us=%lu settled_us=%lu\n",
+            static_cast<unsigned>(cycle), percent,
+            static_cast<long long>(auto_zoom_returned - auto_zoom_started),
+            static_cast<unsigned long>(timing.cancel_done_us),
+            static_cast<unsigned long>(timing.first_strip_ready_us),
+            static_cast<unsigned long>(timing.first_strip_submit_us),
+            static_cast<unsigned long>(timing.first_strip_complete_us),
+            static_cast<unsigned long>(timing.last_visible_submit_us),
+            static_cast<unsigned long>(timing.last_visible_complete_us),
+            static_cast<unsigned long>(timing.fallback_ready_us),
+            static_cast<unsigned long>(timing.settled_us));
+      } else {
+        std::printf("TINYDRAW_AUTO_ZOOM cycle=%u zoom=%d changed=0 total_us=%lld\n",
+                    static_cast<unsigned>(cycle), percent,
+                    static_cast<long long>(auto_zoom_returned - auto_zoom_started));
+      }
+      std::fflush(stdout);
+      vTaskDelay(pdMS_TO_TICKS(5'000));
+    }
+    std::printf("TINYDRAW_AUTO_ZOOM_DONE\n");
+    std::fflush(stdout);
+  }
 #endif
 
 #ifdef TINYDRAW_PHASE2_PROTOTYPE

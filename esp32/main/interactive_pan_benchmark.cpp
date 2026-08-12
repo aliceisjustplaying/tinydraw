@@ -44,6 +44,9 @@ constexpr std::uint8_t kDerivedReady = 1U;
 constexpr std::uint8_t kSettledReady = 2U;
 constexpr std::uint8_t kExactReady = 3U;
 constexpr std::uint32_t kExternalCaps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+// One 368-wide, 22-row strip is exactly one 8,192-pixel panel transaction, so
+// each strip's transfer-completion callback is an honest physical endpoint.
+constexpr int kStripRows = 22;
 constexpr std::uint32_t kInternalCaps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
 constexpr esp_partition_subtype_t kExportSubtype = static_cast<esp_partition_subtype_t>(0x41);
 constexpr std::size_t kIndexWords = (1'100U + 63U) / 64U;
@@ -114,6 +117,20 @@ int interval_distance(int left0, int left1, int right0, int right1) {
 }
 
 void benchmark_yield(void*) { vTaskDelay(pdMS_TO_TICKS(1)); }
+
+// Maps presentation position 0..strip_count-1 onto strip indices center-out:
+// center, center+1, center-1, center+2, ... Exactly one overflow can occur at
+// the final position when strip_count is even; it mirrors to the uncovered
+// opposite side.
+int center_out_strip(int position, int strip_count) {
+  const int center = strip_count / 2;
+  const int offset = (position + 1) / 2;
+  const int candidate = position % 2 == 1 ? center + offset : center - offset;
+  if (candidate >= 0 && candidate < strip_count) {
+    return candidate;
+  }
+  return position % 2 == 1 ? center - offset : center + offset;
+}
 
 Camera atlas_camera(float zoom) {
   const double focus_x = static_cast<double>(kCenterOriginX) + kCanvasWidth / 2.0;
@@ -251,7 +268,8 @@ class InteractivePanBenchmark {
                           TimingStorage& timings_value, std::span<std::uint64_t> index_cells_value,
                           std::span<std::uint64_t> index_query_value, void* renderer_storage,
                           void (*refinement_published_value)(void*),
-                          void* refinement_published_context_value)
+                          void* refinement_published_context_value,
+                          DisplayTransferTelemetry transfer_telemetry_value)
       : document(document_value),
         world(world_value),
         materialization_storage(materialization_storage_value),
@@ -264,7 +282,8 @@ class InteractivePanBenchmark {
         renderer(new (renderer_storage) ViewportRenderer(scratch_value)),
         renderer_storage_(renderer_storage),
         refinement_published(refinement_published_value),
-        refinement_published_context(refinement_published_context_value) {
+        refinement_published_context(refinement_published_context_value),
+        transfer_telemetry(transfer_telemetry_value) {
     for (auto& value : ready) {
       value.store(0U);
     }
@@ -290,6 +309,7 @@ class InteractivePanBenchmark {
   std::uint64_t* index_storage_ = nullptr;
   void (*refinement_published)(void*) = nullptr;
   void* refinement_published_context = nullptr;
+  DisplayTransferTelemetry transfer_telemetry{};
   SemaphoreHandle_t cache_mutex = nullptr;
   TaskHandle_t render_task = nullptr;
   std::array<std::atomic<std::uint8_t>, kJobCount> ready{};
@@ -306,6 +326,12 @@ class InteractivePanBenchmark {
   std::array<std::atomic<std::uint32_t>, kZoomPercents.size()> first_valid_us{};
   std::array<std::atomic<std::uint32_t>, kZoomPercents.size()> fallback_ready_us{};
   std::array<std::atomic<std::uint32_t>, kZoomPercents.size()> settled_us{};
+  std::array<std::atomic<std::uint32_t>, kZoomPercents.size()> cancel_done_us{};
+  std::array<std::atomic<std::uint32_t>, kZoomPercents.size()> first_strip_ready_us{};
+  std::array<std::atomic<std::uint32_t>, kZoomPercents.size()> first_strip_submit_us{};
+  std::array<std::atomic<std::uint32_t>, kZoomPercents.size()> first_strip_complete_us{};
+  std::array<std::atomic<std::uint32_t>, kZoomPercents.size()> last_visible_submit_us{};
+  std::array<std::atomic<std::uint32_t>, kZoomPercents.size()> last_visible_complete_us{};
   std::atomic<int> requested_zoom_index{1};
   std::atomic<int> active_zoom_index{1};
   Camera active_atlas = atlas_camera(1.0F);
@@ -651,7 +677,9 @@ bool persist_report(InteractivePanBenchmark& benchmark) {
                   "direct_median_us=%lu direct_p95_us=%lu direct_max_us=%lu event_avg_us=%llu "
                   "event_median_us=%lu event_p95_us=%lu event_max_us=%lu miss_frames=%lu "
                   "max_missing_pixels=%lu max_velocity_px_s=%lu first_valid_us=%lu "
-                  "fallback_ready_us=%lu settled_us=%lu center_ready_us=%lu full_ready_us=%lu\n",
+                  "fallback_ready_us=%lu settled_us=%lu center_ready_us=%lu full_ready_us=%lu "
+                  "cancel_done_us=%lu first_ready_us=%lu first_submit_us=%lu "
+                  "first_complete_us=%lu last_submit_us=%lu last_complete_us=%lu\n",
                   kZoomPercents[index], static_cast<unsigned long>(metrics.attempts),
                   static_cast<unsigned long>(metrics.failed_attempts),
                   static_cast<unsigned long>(metrics.maximum_cancellation_us),
@@ -672,7 +700,13 @@ bool persist_report(InteractivePanBenchmark& benchmark) {
                   static_cast<unsigned long>(benchmark.fallback_ready_us[index].load()),
                   static_cast<unsigned long>(benchmark.settled_us[index].load()),
                   static_cast<unsigned long>(benchmark.center_ready_us[index].load()),
-                  static_cast<unsigned long>(benchmark.full_ready_us[index].load()));
+                  static_cast<unsigned long>(benchmark.full_ready_us[index].load()),
+                  static_cast<unsigned long>(benchmark.cancel_done_us[index].load()),
+                  static_cast<unsigned long>(benchmark.first_strip_ready_us[index].load()),
+                  static_cast<unsigned long>(benchmark.first_strip_submit_us[index].load()),
+                  static_cast<unsigned long>(benchmark.first_strip_complete_us[index].load()),
+                  static_cast<unsigned long>(benchmark.last_visible_submit_us[index].load()),
+                  static_cast<unsigned long>(benchmark.last_visible_complete_us[index].load()));
   }
   const auto draw_median = quantile(benchmark.timings.draw, benchmark.draw_samples, 1U, 2U);
   const auto draw_p95 = quantile(benchmark.timings.draw, benchmark.draw_samples, 95U, 100U);
@@ -728,7 +762,8 @@ void destroy_benchmark(InteractivePanBenchmark& benchmark) {
 InteractivePanBenchmark* start_interactive_pan_benchmark(
     VectorDocument& document, WorldCanvas& world, std::span<std::uint16_t> materialization_storage,
     std::span<std::uint16_t> render_buffer, int presented_rows, DisplayBackend& display,
-    void (*refinement_published)(void*), void* refinement_published_context) {
+    void (*refinement_published)(void*), void* refinement_published_context,
+    DisplayTransferTelemetry transfer_telemetry) {
   if (!world.valid() || materialization_storage.size() < WorldCanvas::kRequiredPixels ||
       render_buffer.size() < ViewportRenderer::kPixelCount ||
       document.stroke_capacity() < kStrokeCount || document.sample_capacity() < kSampleCount ||
@@ -757,7 +792,7 @@ InteractivePanBenchmark* start_interactive_pan_benchmark(
       std::span(scratch, ViewportRenderer::kScratchBytes), *timings,
       std::span(index_storage, StrokeMacrogrid::kCellCount * kIndexWords),
       std::span(index_storage + StrokeMacrogrid::kCellCount * kIndexWords, kIndexWords),
-      renderer_storage, refinement_published, refinement_published_context);
+      renderer_storage, refinement_published, refinement_published_context, transfer_telemetry);
   benchmark->index_storage_ = index_storage;
   if (!populate_coherent_handwriting(document) || !benchmark->macrogrid.rebuild(document)) {
     destroy_benchmark(*benchmark);
@@ -817,6 +852,8 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
       static_cast<std::uint32_t>(esp_timer_get_time()) - cancellation_started;
   attempt_metrics.maximum_cancellation_us =
       std::max(attempt_metrics.maximum_cancellation_us, cancellation_us);
+  const std::uint32_t cancel_done_elapsed =
+      static_cast<std::uint32_t>(esp_timer_get_time()) - event_started;
   if (benchmark.rendering.load()) {
     ++attempt_metrics.failed_attempts;
     benchmark.zoom_presentation_pending.store(false);
@@ -830,6 +867,12 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
   benchmark.first_valid_us[static_cast<std::size_t>(index)].store(0U);
   benchmark.fallback_ready_us[static_cast<std::size_t>(index)].store(0U);
   benchmark.settled_us[static_cast<std::size_t>(index)].store(0U);
+  benchmark.cancel_done_us[static_cast<std::size_t>(index)].store(cancel_done_elapsed);
+  benchmark.first_strip_ready_us[static_cast<std::size_t>(index)].store(0U);
+  benchmark.first_strip_submit_us[static_cast<std::size_t>(index)].store(0U);
+  benchmark.first_strip_complete_us[static_cast<std::size_t>(index)].store(0U);
+  benchmark.last_visible_submit_us[static_cast<std::size_t>(index)].store(0U);
+  benchmark.last_visible_complete_us[static_cast<std::size_t>(index)].store(0U);
 
   xSemaphoreTake(benchmark.cache_mutex, portMAX_DELAY);
   const float new_zoom = static_cast<float>(zoom_percent) / 100.0F;
@@ -888,21 +931,10 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
     }
   }
 
-  // Only materialize what will be physically presented on this interaction.
-  // The other eight atlas cells remain invalid and are filled/refined later.
-  // The inactive arena is already white because set_zoom waits for
-  // materialization_state == 2.
-  if (new_zoom > old_camera.zoom) {
-    resample_bilinear_rgb565_region(
-        benchmark.world.pixels(), WorldCanvas::kWidth, WorldCanvas::kHeight, old_camera,
-        benchmark.materialization_storage, WorldCanvas::kWidth, WorldCanvas::kHeight,
-        WorldCanvas::kWidth, new_camera, visible, kBackground);
-  } else {
-    resample_valid_raster_region(
-        benchmark.world.pixels(), WorldCanvas::kWidth, WorldCanvas::kHeight, old_camera,
-        benchmark.materialization_storage, WorldCanvas::kWidth, WorldCanvas::kHeight,
-        WorldCanvas::kWidth, new_camera, visible, kBackground);
-  }
+  // Exchange storage first: the inactive arena is already white because
+  // set_zoom waited for materialization_state == 2, so visible strips can be
+  // materialized into it and pushed as each becomes ready while the retired
+  // atlas stays readable as the resample source.
   const auto old_storage = benchmark.world.exchange_storage(benchmark.materialization_storage);
   if (old_storage.empty()) {
     xSemaphoreGive(benchmark.cache_mutex);
@@ -914,33 +946,125 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
   }
   benchmark.materialization_storage = old_storage;
   benchmark.fallback_source_atlas = old_camera;
-  benchmark.materialization_state.store(0U);
   benchmark.requested_zoom_index.store(index);
   benchmark.active_zoom_index.store(index);
   benchmark.active_atlas = new_camera;
   benchmark.requested_generation.fetch_add(1U);
   benchmark.generation_started_us.store(event_started);
-  benchmark.paused.store(false);
   for (std::size_t job = 0; job < benchmark.ready.size(); ++job) {
     const JobRect rect = job_rect(static_cast<int>(job));
-    const Rect pixels{rect.x0, rect.y0, rect.x1, rect.y1};
     const bool visible_job = intersects(rect, {visible.x0, visible.y0, visible.x1, visible.y1});
-    const bool valid = benchmark.has_complete_initial_atlas && visible_job &&
-                       fallback_valid[job];
+    const bool valid = benchmark.has_complete_initial_atlas && visible_job && fallback_valid[job];
     benchmark.job_revision[job].store(benchmark.document_revision.load());
-    benchmark.ready[job].store(valid ? (new_zoom > old_camera.zoom ? kSettledReady : kDerivedReady)
-                                     : kInvalidReady);
+    // Nearest-resampled first previews are derived quality in both zoom
+    // directions; settled output now requires a settled or exact pass.
+    benchmark.ready[job].store(valid ? kDerivedReady : kInvalidReady);
   }
   benchmark.view_x.store(kCenterOriginX);
   benchmark.view_y.store(kCenterOriginY);
   static_cast<void>(benchmark.world.move_to({kCenterOriginX, kCenterOriginY}));
+
+  // Materialize and physically submit the visible region as center-out
+  // nearest-resampled strips, pipelining resampling against DMA transfers.
+  const DisplayTransferTelemetry& telemetry = benchmark.transfer_telemetry;
+  const bool telemetry_available = telemetry.submit_count != nullptr &&
+                                   telemetry.complete_count != nullptr &&
+                                   telemetry.complete_time_us != nullptr;
+  const auto slot = static_cast<std::size_t>(index);
+  std::uint32_t first_submit_sequence = 0U;
+  std::uint32_t last_submit_sequence = 0U;
+  const int strip_count = (benchmark.presented_rows + kStripRows - 1) / kStripRows;
+  for (int position = 0; position < strip_count; ++position) {
+    const int strip = center_out_strip(position, strip_count);
+    const int row0 = strip * kStripRows;
+    const int row1 = std::min(row0 + kStripRows, benchmark.presented_rows);
+    const Rect region{visible.x0, visible.y0 + row0, visible.x1, visible.y0 + row1};
+    resample_valid_raster_region(benchmark.materialization_storage, WorldCanvas::kWidth,
+                                 WorldCanvas::kHeight, old_camera, benchmark.world.pixels(),
+                                 WorldCanvas::kWidth, WorldCanvas::kHeight, WorldCanvas::kWidth,
+                                 new_camera, region, kBackground);
+    if (position == 0) {
+      benchmark.first_strip_ready_us[slot].store(static_cast<std::uint32_t>(esp_timer_get_time()) -
+                                                 event_started);
+    }
+    if (!benchmark.has_complete_initial_atlas) {
+      continue;
+    }
+    const auto offset = static_cast<std::size_t>(region.y0 * WorldCanvas::kWidth + region.x0);
+    benchmark.display.push_rect(0, row0, kCanvasWidth, row1 - row0,
+                                benchmark.world.pixels().data() + offset, WorldCanvas::kWidth);
+    const std::uint32_t submitted =
+        static_cast<std::uint32_t>(esp_timer_get_time()) - event_started;
+    if (telemetry_available) {
+      const std::uint32_t sequence = telemetry.submit_count(telemetry.context);
+      if (first_submit_sequence == 0U) {
+        first_submit_sequence = sequence;
+      }
+      last_submit_sequence = sequence;
+    }
+    if (position == 0) {
+      benchmark.first_strip_submit_us[slot].store(submitted);
+    }
+    benchmark.last_visible_submit_us[slot].store(submitted);
+  }
   const std::uint32_t fallback_elapsed =
       static_cast<std::uint32_t>(esp_timer_get_time()) - event_started;
-  benchmark.fallback_ready_us[static_cast<std::size_t>(index)].store(fallback_elapsed);
-  if (new_zoom > old_camera.zoom) {
-    benchmark.settled_us[static_cast<std::size_t>(index)].store(fallback_elapsed);
-  }
+  benchmark.fallback_ready_us[slot].store(fallback_elapsed);
+  benchmark.materialization_state.store(0U);
+  benchmark.zoom_presentation_pending.store(false);
+  benchmark.paused.store(false);
   xSemaphoreGive(benchmark.cache_mutex);
+  xTaskNotifyGive(benchmark.render_task);
+
+  // Outside the cache lock: wait briefly for the queued strip transfers to
+  // physically complete, then record completion-based endpoints.
+  if (telemetry_available && last_submit_sequence != 0U) {
+    const std::uint32_t wait_started = static_cast<std::uint32_t>(esp_timer_get_time());
+    while (telemetry.complete_count(telemetry.context) < last_submit_sequence &&
+           static_cast<std::uint32_t>(esp_timer_get_time()) - wait_started < 1'000'000U) {
+      vTaskDelay(pdMS_TO_TICKS(1));
+    }
+    const std::int64_t first_completed =
+        telemetry.complete_time_us(telemetry.context, first_submit_sequence);
+    const std::int64_t last_completed =
+        telemetry.complete_time_us(telemetry.context, last_submit_sequence);
+    if (first_completed >= 0) {
+      const std::uint32_t elapsed = static_cast<std::uint32_t>(first_completed) - event_started;
+      benchmark.first_strip_complete_us[slot].store(elapsed);
+      benchmark.first_valid_us[slot].store(elapsed);
+    }
+    if (last_completed >= 0) {
+      const std::uint32_t elapsed = static_cast<std::uint32_t>(last_completed) - event_started;
+      benchmark.last_visible_complete_us[slot].store(elapsed);
+      if (zoom_percent <= 100) {
+        benchmark.settled_us[slot].store(elapsed);
+      }
+    }
+  } else if (benchmark.has_complete_initial_atlas) {
+    // Without completion telemetry, fall back to submit-time endpoints.
+    benchmark.first_valid_us[slot].store(benchmark.first_strip_submit_us[slot].load());
+    if (zoom_percent <= 100) {
+      benchmark.settled_us[slot].store(benchmark.last_visible_submit_us[slot].load());
+    }
+  }
+  return true;
+}
+
+bool interactive_pan_benchmark_last_zoom_timing(const InteractivePanBenchmark& benchmark,
+                                                int zoom_percent, ZoomTransitionTiming& timing) {
+  const int index = zoom_index(zoom_percent);
+  if (index < 0) {
+    return false;
+  }
+  const auto slot = static_cast<std::size_t>(index);
+  timing.cancel_done_us = benchmark.cancel_done_us[slot].load();
+  timing.first_strip_ready_us = benchmark.first_strip_ready_us[slot].load();
+  timing.first_strip_submit_us = benchmark.first_strip_submit_us[slot].load();
+  timing.first_strip_complete_us = benchmark.first_strip_complete_us[slot].load();
+  timing.last_visible_submit_us = benchmark.last_visible_submit_us[slot].load();
+  timing.last_visible_complete_us = benchmark.last_visible_complete_us[slot].load();
+  timing.fallback_ready_us = benchmark.fallback_ready_us[slot].load();
+  timing.settled_us = benchmark.settled_us[slot].load();
   return true;
 }
 
