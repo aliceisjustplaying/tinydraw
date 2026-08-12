@@ -7,16 +7,16 @@
 
 namespace tinydraw {
 
-// Allocation-free sample simplification used by the settled renderer. Samples
-// are emitted in document order; the first and last input sample are retained.
-// Interior samples are dropped when their center is within `minimum_distance`
-// of the last retained center and their radius differs by no more than
-// `maximum_radius_delta`. The result is a visual LOD, not canonical geometry.
+// Allocation-free, error-bounded sample simplification used by the settled
+// renderer. The first and last samples, direction reversals, and radius extrema
+// are retained. Every removed center stays within `maximum_center_error` of the
+// replacement chord, and its radius stays within `maximum_radius_error` of the
+// chord-interpolated radius. The result is visual LOD, not canonical geometry.
 //
 // Returns an empty span when output cannot hold the required endpoints.
 [[nodiscard]] std::span<StrokeSample> simplify_stroke_samples(std::span<const StrokeSample> input,
                                                               std::span<StrokeSample> output,
-                                                              float minimum_distance,
-                                                              float maximum_radius_delta);
+                                                              float maximum_center_error,
+                                                              float maximum_radius_error);
 
 }  // namespace tinydraw

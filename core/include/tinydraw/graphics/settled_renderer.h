@@ -17,9 +17,6 @@ struct SettledRenderOptions {
   std::span<const StrokeSample> lod_samples{};
   std::span<const std::uint32_t> lod_first_sample{};
   std::span<const std::uint16_t> lod_sample_count{};
-  // Screen-space centerline spacing used when no precomputed LOD is supplied.
-  // Zero preserves every source sample.
-  float minimum_screen_sample_spacing = 0.0F;
   // Optional conservative candidate bitset in document order, one bit per
   // stroke index, identical to ViewportRenderOptions::candidate_strokes.
   std::span<const std::uint64_t> candidate_strokes{};
@@ -28,6 +25,8 @@ struct SettledRenderOptions {
   // Optional microsecond clock used only for profiling counters in the result.
   std::uint64_t (*clock_us)(void* context) = nullptr;
   void* clock_context = nullptr;
+  // Optional bounded-latency hook used inside long capsule scan loops.
+  bool (*cancelled_frequently)(void* context) = nullptr;
 };
 
 struct SettledRenderStats {
@@ -49,9 +48,10 @@ struct SettledRenderStats {
 // `destination` is a full kCanvasWidth x kCanvasHeight RGB565 canvas;
 // `region` selects the rendered part and is cleared to the background first.
 // `scratch` provides one byte of per-pixel union coverage and must hold at
-// least the region's area. Cancellation is checked between strokes; a
-// cancelled render returns complete=false and leaves the region partially
-// rendered.
+// least the region's area. Cancellation is checked between strokes and, when
+// `cancelled_frequently` is supplied, at bounded raster/composite row
+// intervals. A cancelled render returns complete=false and leaves the region
+// partially rendered; callers must not publish it.
 SettledRenderStats settled_render_region(const VectorDocument& document, Camera camera,
                                          std::span<std::uint16_t> destination, Rect region,
                                          std::span<std::uint8_t> scratch,

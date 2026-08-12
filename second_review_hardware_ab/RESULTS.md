@@ -130,13 +130,97 @@ results over 12 accepted transitions:
 
 | Zoom | Before | LOD settled range | Result |
 |---:|---:|---:|---|
-| 50% | 747–749 ms | **337–338 ms** | passes <500 ms |
-| 100% | 1.23–1.24 s | **587–605 ms** | 17–21% over target |
-| 200% | 902–905 ms | **464 ms** | passes <500 ms |
+| 50% | 747–749 ms | **337–338 ms cache-ready** | physical completion not yet measured |
+| 100% | 1.23–1.24 s | **587–605 ms cache-ready** | over target |
+| 200% | 902–905 ms | **464 ms cache-ready** | physical completion likely over 500 ms |
 
 First physical strip remained 7–37 ms and complete visible fallback 40–72 ms,
 except cancellation-inclusive 50% transitions remained below 50 ms. All 12
-transitions succeeded. Profiling shows 100% remains dominated by about 399 ms
+transitions succeeded. These settled numbers were later found to stop before
+full-viewport submission/completion and therefore must not be treated as the
+physical settled gate. Profiling shows 100% remains dominated by about 399 ms
 capsule rasterization plus 85 ms compositing and 52 ms publication; reaching a
 reliable sub-500-ms 100% pass likely needs geometry reuse across the twelve
 bands or a two-core settled rasterizer rather than more scalar micro-tuning.
+
+## Follow-up: correctness review and physical settled endpoints
+
+A GPT-5.6 Sol review (`SOL_REVIEW_ITERATION_1.md`) rejected the initial settled
+claim and found correctness gaps in the first LOD, publication endpoint,
+post-mutation source ownership, and cross-core display access. The follow-up
+iteration now:
+
+- uses an iterative centerline/radius error-bounded LOD and tests loops,
+  hairpins, pressure pulses, painter order, and eraser behavior;
+- treats malformed or incomplete LOD maps as an atomic raw-geometry fallback;
+- measures settled latency only after the final display-transfer completion,
+  with generation/revision/view revalidation;
+- checks cancellation inside long capsule scan loops;
+- keeps the fallback arena pinned across mutations and repairs only affected
+  exact source bands before atomically advancing its revision;
+- serializes benchmark display mutation, staging, and timing snapshots through
+  the cache/display mutex;
+- shares the canonical coverage arena with settled rendering, avoiding an
+  additional 164,864-byte PSRAM allocation.
+
+`review-fixes-mutation-auto.log` is the latest physical run. All 12 unchanged-
+document zoom transitions succeeded. Honest physical endpoints were:
+
+| Zoom | First strip complete | Visible fallback complete | Visible settled complete |
+|---:|---:|---:|---:|
+| 50% | 7.1 ms typical; 80.2 ms cancellation-inclusive | 48.7 ms typical; 123 ms worst | **390–464 ms** |
+| 100% | 7.9–12.8 ms | 43.7–49.2 ms | **676–682 ms** |
+| 200% | 65–79 ms cancellation-inclusive | 98–113 ms | **650–651 ms** |
+
+The fallback interaction gates still pass. The settled <500 ms target passes at
+50% but not at 100% or 200%.
+
+Grouping all visible bands in one cache cell into a single geometry traversal
+reduced segment setup substantially, but physical settled latency only improved
+from about 708 to 676–682 ms at 100% and from about 656 to 650–651 ms at 200%.
+Pixel coverage and compositing—not repeated document traversal—are now the main
+measured bottlenecks. This falsifies the expectation that grouping alone would
+reach the settled target.
+
+The same run automatically appended a vector stroke, attempted a zoom while the
+pinned source was stale, waited for incremental exact repair, and retried. The
+result was:
+
+```text
+TINYDRAW_FALLBACK_REPAIRED revision=2
+TINYDRAW_AUTO_MUTATION started=1 committed=1 stale_zoom_accepted=0 repaired_zoom_accepted=1
+```
+
+Thus the stale source was refused and zoom capability recovered after repair.
+This validates one mutation path; it is not yet an exhaustive state-machine
+proof for arbitrary cancellation, repeated mutations, erasing, or pan overlap.
+
+## Grok handoff checkpoint
+
+`grok-handoff-auto-hardware.log` records the exact state handed to the next
+independent reviewer. It includes the second Sol review fixes: mutation edge
+bands are invalid unless the live raster captured the whole band, settled
+publication is bound to the viewport snapshot whose readiness was proved,
+spatial-index append failure disables candidate culling, cancellation is
+bounded during compositing, and every local radius extremum is retained.
+
+Results:
+
+- 12/12 unchanged-document zoom transitions accepted;
+- first physical strip: about 7 ms typical, 71 ms worst;
+- complete physical fallback: about 42–49 ms typical, 113 ms worst;
+- settled physical completion: 50% 396–459 ms, 100% 674–677 ms, 200% 632 ms;
+- mutation test: stale zoom refused, exact fallback repair completed, retry
+  accepted;
+- post-benchmark-allocation PSRAM: 125,208 bytes free, 124,928-byte largest
+  block;
+- LOD: 19,844 canonical samples to 7,537 settled samples, 90,444 of 98,304
+  allocated bytes.
+
+The pressure-extremum correction trades approximately 11 KB and modest settled
+work for correctness. It does not change the conclusion: first/full fallback
+passes, while settled 100% and 200% remain above the eventual 500 ms goal.
+Current automated zoom coverage remains 50/100/200%. Desired production zoom
+coverage includes at least 25%, 400%, and ideally 800%; those levels require
+separate provenance, quality, memory, drawing, pan, and visual validation and
+are not implied by this checkpoint.

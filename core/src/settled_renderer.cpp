@@ -49,18 +49,23 @@ std::uint64_t clock_us(const SettledRenderOptions& options) {
 // Unions the analytic coverage of one variable-radius capsule into the
 // region-local scratch buffer and returns the touched local bounds.
 LocalRect rasterize_capsule(ScreenSample from, ScreenSample to, Rect region, int region_width,
-                            std::span<std::uint8_t> scratch) {
+                            std::span<std::uint8_t> scratch, const SettledRenderOptions& options,
+                            bool& aborted) {
   const float maximum_radius = std::max(from.radius, to.radius);
   const float pad = maximum_radius + kEdgePixels;
+  const float minimum_x = std::clamp(std::min(from.x, to.x) - pad, static_cast<float>(region.x0),
+                                     static_cast<float>(region.x1));
+  const float minimum_y = std::clamp(std::min(from.y, to.y) - pad, static_cast<float>(region.y0),
+                                     static_cast<float>(region.y1));
+  const float maximum_x = std::clamp(std::max(from.x, to.x) + pad, static_cast<float>(region.x0),
+                                     static_cast<float>(region.x1));
+  const float maximum_y = std::clamp(std::max(from.y, to.y) + pad, static_cast<float>(region.y0),
+                                     static_cast<float>(region.y1));
   const LocalRect bounds{
-      .x0 = std::max(static_cast<int>(std::floor(std::min(from.x, to.x) - pad)), region.x0) -
-            region.x0,
-      .y0 = std::max(static_cast<int>(std::floor(std::min(from.y, to.y) - pad)), region.y0) -
-            region.y0,
-      .x1 = std::min(static_cast<int>(std::ceil(std::max(from.x, to.x) + pad)) + 1, region.x1) -
-            region.x0,
-      .y1 = std::min(static_cast<int>(std::ceil(std::max(from.y, to.y) + pad)) + 1, region.y1) -
-            region.y0,
+      .x0 = static_cast<int>(std::floor(minimum_x)) - region.x0,
+      .y0 = static_cast<int>(std::floor(minimum_y)) - region.y0,
+      .x1 = std::min(static_cast<int>(std::ceil(maximum_x)) + 1, region.x1) - region.x0,
+      .y1 = std::min(static_cast<int>(std::ceil(maximum_y)) + 1, region.y1) - region.y0,
   };
   if (bounds.empty()) {
     return {};
@@ -75,6 +80,11 @@ LocalRect rasterize_capsule(ScreenSample from, ScreenSample to, Rect region, int
   const float half_edge = 0.5F * kEdgePixels;
 
   for (int local_y = bounds.y0; local_y < bounds.y1; ++local_y) {
+    if ((local_y & 7) == 0 && options.cancelled_frequently != nullptr &&
+        options.cancelled_frequently(options.cancellation_context)) {
+      aborted = true;
+      return {};
+    }
     const float pixel_y = static_cast<float>(region.y0 + local_y) + 0.5F;
     const float to_pixel_y = pixel_y - from.y;
     const float first_to_pixel_x = static_cast<float>(region.x0 + bounds.x0) + 0.5F - from.x;
@@ -111,12 +121,17 @@ LocalRect rasterize_capsule(ScreenSample from, ScreenSample to, Rect region, int
   return bounds;
 }
 
-void composite_and_clear(std::span<std::uint16_t> destination, Rect region, int region_width,
-                         std::span<std::uint8_t> scratch, LocalRect dirty, std::uint16_t color) {
+bool composite_and_clear(std::span<std::uint16_t> destination, Rect region, int region_width,
+                         std::span<std::uint8_t> scratch, LocalRect dirty, std::uint16_t color,
+                         const SettledRenderOptions& options) {
   const std::uint32_t source_red = (color >> 11U) & 0x1FU;
   const std::uint32_t source_green = (color >> 5U) & 0x3FU;
   const std::uint32_t source_blue = color & 0x1FU;
   for (int local_y = dirty.y0; local_y < dirty.y1; ++local_y) {
+    if ((local_y & 7) == 0 && options.cancelled_frequently != nullptr &&
+        options.cancelled_frequently(options.cancellation_context)) {
+      return false;
+    }
     std::uint8_t* coverage_row =
         scratch.data() + static_cast<std::ptrdiff_t>(local_y * region_width);
     std::uint16_t* destination_row =
@@ -143,6 +158,7 @@ void composite_and_clear(std::span<std::uint16_t> destination, Rect region, int 
       destination_row[local_x] = static_cast<std::uint16_t>((red << 11U) | (green << 5U) | blue);
     }
   }
+  return true;
 }
 
 }  // namespace
@@ -194,6 +210,20 @@ SettledRenderStats settled_render_region(const VectorDocument& document, Camera 
   };
 
   const auto strokes = document.strokes();
+  const bool lod_maps_absent = options.lod_first_sample.empty() && options.lod_sample_count.empty();
+  bool lod_maps_valid = lod_maps_absent || (options.lod_first_sample.size() >= strokes.size() &&
+                                            options.lod_sample_count.size() >= strokes.size());
+  if (lod_maps_valid && !lod_maps_absent) {
+    for (std::size_t stroke_index = 0; stroke_index < strokes.size(); ++stroke_index) {
+      const std::size_t first = options.lod_first_sample[stroke_index];
+      const std::size_t count = options.lod_sample_count[stroke_index];
+      if (count == 0U || first > options.lod_samples.size() ||
+          count > options.lod_samples.size() - first) {
+        lod_maps_valid = false;
+        break;
+      }
+    }
+  }
   for (std::size_t stroke_index = 0; stroke_index < strokes.size(); ++stroke_index) {
     if (!options.candidate_strokes.empty()) {
       const std::size_t word = stroke_index / 64U;
@@ -213,9 +243,7 @@ SettledRenderStats settled_render_region(const VectorDocument& document, Camera 
       continue;
     }
     std::span<const StrokeSample> samples = document.samples(stroke);
-    if (!options.lod_first_sample.empty() && !options.lod_sample_count.empty() &&
-        stroke_index < options.lod_first_sample.size() &&
-        stroke_index < options.lod_sample_count.size()) {
+    if (lod_maps_valid && !lod_maps_absent) {
       const std::size_t first = options.lod_first_sample[stroke_index];
       const std::size_t count = options.lod_sample_count[stroke_index];
       if (first <= options.lod_samples.size() && count <= options.lod_samples.size() - first) {
@@ -239,22 +267,21 @@ SettledRenderStats settled_render_region(const VectorDocument& document, Camera 
 
     LocalRect stroke_dirty;
     const std::uint64_t raster_started = clock_us(options);
+    bool aborted = false;
     ScreenSample previous = project(samples[0]);
     if (samples.size() == 1U) {
-      stroke_dirty.include(rasterize_capsule(previous, previous, region, region_width, scratch));
+      stroke_dirty.include(
+          rasterize_capsule(previous, previous, region, region_width, scratch, options, aborted));
       ++stats.segments_rendered;
     }
-    const float minimum_spacing_squared =
-        options.minimum_screen_sample_spacing * options.minimum_screen_sample_spacing;
     for (std::size_t index = 1U; index < samples.size(); ++index) {
-      const bool last = index + 1U == samples.size();
       const ScreenSample current = project(samples[index]);
-      const float delta_x = current.x - previous.x;
-      const float delta_y = current.y - previous.y;
-      if (!last && delta_x * delta_x + delta_y * delta_y < minimum_spacing_squared) {
-        continue;
+      stroke_dirty.include(
+          rasterize_capsule(previous, current, region, region_width, scratch, options, aborted));
+      if (aborted) {
+        stats.complete = false;
+        return stats;
       }
-      stroke_dirty.include(rasterize_capsule(previous, current, region, region_width, scratch));
       ++stats.segments_rendered;
       previous = current;
     }
@@ -264,7 +291,11 @@ SettledRenderStats settled_render_region(const VectorDocument& document, Camera 
       phase_started = now;
     }
     if (!stroke_dirty.empty()) {
-      composite_and_clear(destination, region, region_width, scratch, stroke_dirty, color);
+      if (!composite_and_clear(destination, region, region_width, scratch, stroke_dirty, color,
+                               options)) {
+        stats.complete = false;
+        return stats;
+      }
       if (options.clock_us != nullptr) {
         const std::uint64_t now = clock_us(options);
         stats.composite_us += now - phase_started;

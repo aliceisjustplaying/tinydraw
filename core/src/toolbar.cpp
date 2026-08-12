@@ -162,7 +162,7 @@ void draw_export(std::span<std::uint16_t> canvas, int width, int height, int cen
 }
 
 void draw_eraser(std::span<std::uint16_t> canvas, int width, int height, std::uint16_t color) {
-  // Keep the same two-part silhouette as tldraw's eraser: a tilted block plus
+  // Keep the eraser legible at toolbar scale: a tilted block plus
   // the exposed lower rubber, separated across the short axis.
   line(canvas, width, height, 148, 409, 159, 398, color, 1);
   line(canvas, width, height, 159, 398, 169, 408, color, 1);
