@@ -1,0 +1,715 @@
+[20:44:59] TINYDRAW_PUBLICATION id=57 kind=band zoom=50 generation=33 revisTINYDRAW_POWER battery=100 voltage_mv=4094 charging=0 vbus=1
+[20:45:00] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:45:01] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:45:02] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:45:03] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:45:05] TINYDRAW_POWER battery=100 voltage_mv=4088 charging=0 vbus=1
+[20:45:06] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:45:07] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:45:08] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:45:09] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:45:12] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:45:13] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:45:14] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:45:15] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:45:16] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:45:17] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:45:18] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:45:20] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:45:21] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:45:22] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:45:24] TINYDRAW_POWER battery=100 voltage_mv=4088 charging=0 vbus=1
+[20:45:25] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:45:26] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:45:28] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:45:29] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:45:31] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:45:33] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:45:35] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:45:36] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:45:37] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:45:38] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:45:39] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:45:40] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:45:41] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:45:42] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:45:43] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:45:45] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:45:46] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:45:49] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:45:50] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:45:51] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:45:52] TINYDRAW_POWER battery=100 voltage_mv=4094 charging=0 vbus=1
+[20:45:53] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[20:45:54] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:45:55] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:45:56] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:45:57] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:45:58] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:45:59] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:46:00] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:46:01] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:46:02] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:46:03] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:46:04] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:46:06] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:46:07] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:46:08] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:46:09] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:46:12] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:46:14] TINYDRAW_POWER battery=100 voltage_mv=4094 charging=0 vbus=1
+[20:46:15] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:46:16] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:46:17] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:46:18] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:46:19] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:46:21] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:46:22] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:46:23] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:46:24] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:46:25] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:46:26] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:46:27] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[20:46:29] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:46:30] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[20:46:31] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:46:32] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:46:34] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[20:46:36] TINYDRAW_POWER battery=100 voltage_mv=4088 charging=0 vbus=1
+[20:46:37] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:46:38] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:46:39] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:46:42] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:46:43] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:46:44] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:46:45] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:46:47] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:46:48] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:46:49] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[20:46:50] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:46:52] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:46:53] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:46:54] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:46:55] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:46:57] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:46:58] TINYDRAW_POWER battery=99 voltage_mv=4093 charging=0 vbus=1
+[20:46:59] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[20:47:00] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:47:01] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:47:03] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:47:04] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:47:05] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:47:06] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:47:09] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:47:10] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:47:11] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:47:12] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:47:13] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:47:15] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:47:16] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:47:17] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:47:19] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[20:47:20] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:47:21] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:47:23] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:47:25] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:47:26] TINYDRAW_POWER battery=100 voltage_mv=4094 charging=0 vbus=1
+[20:47:27] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:47:28] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:47:29] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[20:47:30] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:47:31] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:47:32] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:47:33] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:47:34] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:47:35] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:47:36] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:47:37] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:47:39] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:47:40] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:47:41] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[20:47:42] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:47:43] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:47:45] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:47:47] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:47:48] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:47:49] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:47:50] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:47:51] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:47:52] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[20:47:53] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:47:54] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:47:55] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:47:57] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:47:58] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:47:59] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:47:59] [DEBUG-hw1] down x=146 y=185
+[20:48:01] [DEBUG-hw1] up x=77 y=193 active=0
+[20:48:01] TINYDRAW_PAN_CONTENT zoom=50 origin=437,440 visible_ink=33734 visible_hash=f8dee814 expected_strokes=1001 rejected_views=0 max_missing_pixels=0
+[20:48:01] TINYDRAW_PAN_PERF frames=61 bytes=16701312 average_us=26086 max_us=26139 settle_us=0 prepare_us=1158056 transfer_us=424073 pushes=1037
+[20:48:01] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:48:01] [DEBUG-hw1] down x=72 y=181
+[20:48:01] [DEBUG-hw1] up x=316 y=198 active=0
+[20:48:01] TINYDRAW_PAN_CONTENT zoom=50 origin=193,423 visible_ink=19621 visible_hash=44aff8e3 expected_strokes=656 rejected_views=0 max_missing_pixels=0
+[20:48:01] TINYDRAW_PAN_PERF frames=4 bytes=1095168 average_us=26094 max_us=26114 settle_us=0 prepare_us=75774 transfer_us=27973 pushes=68
+[20:48:01] [DEBUG-hw1] down x=329 y=190
+[20:48:02] [DEBUG-hw1] up x=89 y=197 active=0
+[20:48:02] TINYDRAW_PAN_CONTENT zoom=50 origin=433,416 visible_ink=33734 visible_hash=a7d8c3ac expected_strokes=1001 rejected_views=0 max_missing_pixels=0
+[20:48:02] TINYDRAW_PAN_PERF frames=4 bytes=1095168 average_us=26100 max_us=26134 settle_us=0 prepare_us=75843 transfer_us=27962 pushes=68
+[20:48:02] [DEBUG-hw1] down x=97 y=97
+[20:48:02] [DEBUG-hw1] up x=146 y=366 active=0
+[20:48:02] TINYDRAW_PAN_CONTENT zoom=50 origin=384,147 visible_ink=0 visible_hash=e0a83a05 expected_strokes=0 rejected_views=0 max_missing_pixels=0
+[20:48:02] TINYDRAW_PAN_PERF frames=3 bytes=821376 average_us=26082 max_us=26114 settle_us=0 prepare_us=56761 transfer_us=21025 pushes=51
+[20:48:02] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:48:02] [DEBUG-hw1] down x=130 y=240
+[20:48:02] [DEBUG-hw1] up x=133 y=54 active=0
+[20:48:02] TINYDRAW_PAN_CONTENT zoom=50 origin=381,333 visible_ink=25762 visible_hash=c61402e2 expected_strokes=828 rejected_views=0 max_missing_pixels=0
+[20:48:03] TINYDRAW_PAN_PERF frames=3 bytes=821376 average_us=26088 max_us=26130 settle_us=0 prepare_us=56996 transfer_us=20828 pushes=51
+[20:48:03] [DEBUG-hw1] down x=149 y=332
+[20:48:03] [DEBUG-hw1] up x=154 y=42 active=0
+[20:48:03] TINYDRAW_PAN_CONTENT zoom=50 origin=376,623 visible_ink=21349 visible_hash=8e80a418 expected_strokes=635 rejected_views=0 max_missing_pixels=0
+[20:48:03] TINYDRAW_PAN_PERF frames=4 bytes=1095168 average_us=26099 max_us=26153 settle_us=0 prepare_us=75806 transfer_us=27979 pushes=68
+[20:48:03] [DEBUG-hw1] down x=162 y=120
+[20:48:03] [DEBUG-hw1] up x=351 y=299 active=0
+[20:48:03] TINYDRAW_PAN_CONTENT zoom=50 origin=187,444 visible_ink=18449 visible_hash=6d7dfa12 expected_strokes=620 rejected_views=0 max_missing_pixels=0
+[20:48:03] TINYDRAW_PAN_PERF frames=8 bytes=2190336 average_us=26104 max_us=26172 settle_us=0 prepare_us=151931 transfer_us=55642 pushes=136
+[20:48:03] [DEBUG-hw1] down x=253 y=124
+[20:48:03] [DEBUG-hw1] up x=65 y=288 active=0
+[20:48:03] TINYDRAW_PAN_CONTENT zoom=50 origin=375,280 visible_ink=17226 visible_hash=0f5ed563 expected_strokes=603 rejected_views=0 max_missing_pixels=0
+[20:48:03] TINYDRAW_PAN_PERF frames=4 bytes=1095168 average_us=26106 max_us=26143 settle_us=0 prepare_us=75733 transfer_us=28074 pushes=68
+[20:48:04] [DEBUG-hw1] down x=123 y=310
+[20:48:04] [DEBUG-hw1] up x=141 y=137 active=0
+[20:48:04] TINYDRAW_PAN_CONTENT zoom=50 origin=357,453 visible_ink=33734 visible_hash=cb2f0414 expected_strokes=1001 rejected_views=0 max_missing_pixels=0
+[20:48:04] TINYDRAW_PAN_PERF frames=29 bytes=7939968 average_us=26104 max_us=26183 settle_us=0 prepare_us=550805 transfer_us=201807 pushes=493
+[20:48:04] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[20:48:05] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:48:06] TINYDRAW_POWER battery=100 voltage_mv=4094 charging=0 vbus=1
+[20:48:07] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:48:09] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:48:09] [DEBUG-hw1] down x=278 y=445
+[20:48:09] [DEBUG-hw1] up x=277 y=445 active=0
+[20:48:10] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:48:11] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:48:11] [DEBUG-hw1] down x=16 y=359
+[20:48:11] [DEBUG-hw1] up x=22 y=373 active=0
+[20:48:12] TINYDRAW_PUBLICATION id=64 kind=zoom_fallback zoom=50 generation=53 revision=2 origin=368,448 y0=0 rows=372 submit_first=2651 submit_last=2667 ink=32554 hash=6aa7a7ec
+[20:48:12] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:48:12] TINYDRAW_PUBLICATION id=65 kind=settled zoom=50 generation=53 revision=2 origin=368,448 y0=0 rows=372 submit_first=2676 submit_last=2692 ink=33643 hash=16105363
+[20:48:12] TINYDRAW_SETTLED_PROFILE zoom=50 generation=53 bands=12 segments=6538 clear_us=13413 raster_us=247607 composite_us=42320 publish_us=67024 complete=1
+[20:48:12] TINYDRAW_PUBLICATION id=66 kind=band zoom=50 generation=53 revision=2 origin=368,448 y0=0 rows=32 submit_first=2693 submit_last=2694 ink=0 hash=72fde7c5
+[20:48:12] TINYDRAW_PUBLICATION id=67 kind=band zoom=50 generation=53 revision=2 origin=368,448 y0=32 rows=32 submit_first=2695 submit_last=2696 ink=0 hash=72fde7c5
+[20:48:12] TINYDRAW_PUBLICATION id=68 kind=band zoom=50 generation=53 revision=2 origin=368,448 y0=64 rows=32 submit_first=2697 submit_last=2698 ink=180 hash=b48e6a41
+[20:48:13] TINYDRAW_PUBLICATION id=69 kind=band zoom=50 generation=53 revision=2 origin=368,448 y0=96 rows=32 submit_first=2699 submit_last=2700 ink=5250 hash=ff026aa6
+[20:48:13] [DEBUG-hw1] down x=207 y=205
+[20:48:14] [DEBUG-hw1] up x=221 y=223 active=0
+[20:48:14] TINYDRAW_PAN_CONTENT zoom=50 origin=354,430 visible_ink=33683 visible_hash=f60ae90b expected_strokes=1001 rejected_views=0 max_missing_pixels=0
+[20:48:14] TINYDRAW_PAN_PERF frames=29 bytes=7939968 average_us=26094 max_us=26156 settle_us=0 prepare_us=550607 transfer_us=201766 pushes=493
+[20:48:14] TINYDRAW_PUBLICATION id=70 kind=settled zoom=50 generation=55 revision=2 origin=354,430 y0=0 rows=372 submit_first=3194 submit_last=3210 ink=33683 hash=f60ae90b
+[20:48:14] TINYDRAW_SETTLED_PROFILE zoom=50 generation=55 bands=14 segments=0 clear_us=14958 raster_us=0 composite_us=0 publish_us=70839 complete=1
+[20:48:14] TINYDRAW_PUBLICATION id=71 kind=band zoom=50 generation=55 revision=2 origin=354,430 y0=0 rows=18 submit_first=3211 submit_last=3211 ink=0 hash=8865cf65
+[20:48:14] TINYDRAW_PUBLICATION id=72 kind=band zoom=50 generation=55 revision=2 origin=354,430 y0=0 rows=18 submit_first=3212 submit_last=3212 ink=0 hash=8865cf65
+[20:48:14] TINYDRAW_PUBLICATION id=73 kind=band zoom=50 generation=55 revision=2 origin=354,430 y0=18 rows=32 submit_first=3213 submit_last=3214 ink=0 hash=72fde7c5
+[20:48:14] TINYDRAW_PUBLICATION id=74 kind=band zoom=50 generation=55 revision=2 origin=354,430 y0=50 rows=32 submit_first=3215 submit_last=3216 ink=0 hash=72fde7c5
+[20:48:14] TINYDRAW_PUBLICATION id=75 kind=band zoom=50 generation=55 revision=2 origin=354,430 y0=82 rows=32 submit_first=3217 submit_last=3218 ink=180 hash=0c50fe59
+[20:48:14] TINYDRAW_PUBLICATION id=76 kind=band zoom=50 generation=55 revision=2 origin=354,430 y0=114 rows=32 submit_first=3219 submit_last=3220 ink=5250 hash=d3bebffe
+[20:48:14] TINYDRAW_PUBLICATION id=77 kind=band zoom=50 generation=55 revision=2 origin=354,430 y0=146 rows=32 submit_first=3221 submit_last=3222 ink=5323 hash=363f05d7
+[20:48:14] TINYDRAW_PUBLICATION id=78 kind=band zoom=50 generation=55 revision=2 origin=354,430 y0=178 rows=32 submit_first=3223 submit_last=3224 ink=5280 hash=8285cbda
+[20:48:14] TINYDRAW_PUBLICATION id=79 kind=band zoom=50 generation=55 revision=2 origin=354,430 y0=210 rows=32 submit_first=3225 submit_last=3226 ink=5226 hash=4fe89755
+[20:48:14] TINYDRAW_PUBLICATION id=80 kind=band zoom=50 generation=55 revision=2 origin=354,430 y0=242 rows=32 submit_first=3227 submit_last=3228 ink=5125 hash=9ebe7c1a
+[20:48:14] TINYDRAW_PUBLICATION id=81 kind=band zoom=50 generation=55 revision=2 origin=354,430 y0=274 rows=32 submit_first=3229 submit_last=3230 ink=5384 hash=dc6605b8
+[20:48:14] TINYDRAW_PUBLICATION id=82 kind=band zoom=50 generation=55 revision=2 origin=354,430 y0=306 rows=32 submit_first=3231 submit_last=3232 ink=1915 hash=1bce6413
+[20:48:14] TINYDRAW_PUBLICATION id=83 kind=band zoom=50 generation=55 revision=2 origin=354,430 y0=338 rows=32 submit_first=3233 submit_last=3234 ink=0 hash=72fde7c5
+[20:48:14] TINYDRAW_PUBLICATION id=84 kind=band zoom=50 generation=55 revision=2 origin=354,430 y0=370 rows=2 submit_first=3235 submit_last=3235 ink=0 hash=c45aaa65
+[20:48:15] TINYDRAW_PUBLICATION id=85 kind=band zoom=50 generation=55 revision=2 origin=354,430 y0=146 rows=32 submit_first=3236 submit_last=3237 ink=5330 hash=b51b4695
+[20:48:15] TINYDRAW_PUBLICATION id=86 kind=band zoom=50 generation=55 revision=2 origin=354,430 y0=178 rows=32 submit_first=3238 submit_last=3239 ink=5311 hash=bace408c
+[20:48:15] TINYDRAW_PUBLICATION id=87 kind=band zoom=50 generation=55 revision=2 origin=354,430 y0=210 rows=32 submit_first=3240 submit_last=3241 ink=5239 hash=9edda8bc
+[20:48:16] TINYDRAW_PUBLICATION id=88 kind=band zoom=50 generation=55 revision=2 origin=354,430 y0=242 rows=32 submit_first=3242 submit_last=3243 ink=5133 hash=912883ec
+[20:48:16] TINYDRAW_PUBLICATION id=89 kind=band zoom=50 generation=55 revision=2 origin=354,430 y0=274 rows=32 submit_first=3244 submit_last=3245 ink=5390 hash=5cb5e832
+[20:48:16] TINYDRAW_PUBLICATION id=90 kind=band zoom=50 generation=55 revision=2 origin=354,430 y0=306 rows=32 submit_first=3246 submit_last=3247 ink=1929 hash=9f88146e
+[20:48:16] TINYDRAW_PUBLICATION id=91 kind=band zoom=50 generation=55 revision=2 origin=354,430 y0=338 rows=32 submit_first=3248 submit_last=3249 ink=0 hash=72fde7c5
+[20:48:16] TINYDRAW_PUBLICATION id=92 kind=band zoom=50 generation=55 revision=2 origin=354,430 y0=370 rows=2 submit_first=3250 submit_last=3250 ink=0 hash=c45aaa65
+[20:48:17] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:48:18] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[20:48:19] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:48:20] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:48:21] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:48:22] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:48:23] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:48:26] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:48:27] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:48:29] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:48:30] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:48:31] TINYDRAW_POWER battery=100 voltage_mv=4094 charging=0 vbus=1
+[20:48:32] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:48:33] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:48:34] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:48:36] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:48:37] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:48:38] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:48:39] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[20:48:40] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:48:41] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:48:42] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:48:43] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:48:44] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[20:48:45] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:48:47] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:48:50] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:48:51] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:48:52] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:48:53] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:48:54] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:48:55] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:48:56] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:48:57] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:48:59] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[20:49:00] TINYDRAW_POWER battery=100 voltage_mv=4088 charging=0 vbus=1
+[20:49:01] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:49:02] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:49:05] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:49:06] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:49:07] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[20:49:07] [DEBUG-hw1] down x=293 y=32
+[20:49:07] [DEBUG-hw1] up x=307 y=42 active=0
+[20:49:07] TINYDRAW_PAN_CONTENT zoom=50 origin=340,420 visible_ink=33762 visible_hash=4369a353 expected_strokes=1001 rejected_views=0 max_missing_pixels=0
+[20:49:07] TINYDRAW_PAN_PERF frames=8 bytes=2190336 average_us=26092 max_us=26147 settle_us=0 prepare_us=151743 transfer_us=55774 pushes=136
+[20:49:08] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:49:09] [DEBUG-hw1] down x=242 y=447
+[20:49:09] [DEBUG-hw1] up x=241 y=447 active=0
+[20:49:10] [DEBUG-hw1] down x=234 y=445
+[20:49:10] [DEBUG-hw1] up x=234 y=445 active=0
+[20:49:10] [DEBUG-hw1] down x=302 y=446
+[20:49:10] [DEBUG-hw1] up x=302 y=446 active=0
+[20:49:12] [DEBUG-hw1] down x=133 y=351
+[20:49:12] [DEBUG-hw1] up x=133 y=351 active=0
+[20:49:12] TINYDRAW_PUBLICATION id=93 kind=zoom_fallback zoom=100 generation=59 revision=2 origin=368,448 y0=0 rows=372 submit_first=3409 submit_last=3425 ink=83712 hash=c0b4da6e
+[20:49:12] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:49:12] TINYDRAW_PUBLICATION id=94 kind=settled zoom=100 generation=59 revision=2 origin=368,448 y0=0 rows=372 submit_first=3434 submit_last=3450 ink=83267 hash=65a41adf
+[20:49:12] TINYDRAW_SETTLED_PROFILE zoom=100 generation=59 bands=12 segments=5027 clear_us=13291 raster_us=375175 composite_us=82728 publish_us=66835 complete=1
+[20:49:13] TINYDRAW_PUBLICATION id=95 kind=band zoom=100 generation=59 revision=2 origin=368,448 y0=0 rows=32 submit_first=3451 submit_last=3452 ink=0 hash=72fde7c5
+[20:49:13] TINYDRAW_PUBLICATION id=96 kind=band zoom=100 generation=59 revision=2 origin=368,448 y0=32 rows=32 submit_first=3453 submit_last=3454 ink=870 hash=9db5efef
+[20:49:13] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:49:13] TINYDRAW_PUBLICATION id=97 kind=band zoom=100 generation=59 revision=2 origin=368,448 y0=64 rows=32 submit_first=3455 submit_last=3456 ink=8529 hash=49c84e7b
+[20:49:13] TINYDRAW_PUBLICATION id=98 kind=band zoom=100 generation=59 revision=2 origin=368,448 y0=96 rows=32 submit_first=3457 submit_last=3458 ink=8760 hash=a4531923
+[20:49:14] TINYDRAW_PUBLICATION id=99 kind=band zoom=100 generation=59 revision=2 origin=368,448 y0=128 rows=32 submit_first=3459 submit_last=3460 ink=8912 hash=bf8dda43
+[20:49:14] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:49:14] TINYDRAW_PUBLICATION id=100 kind=band zoom=100 generation=59 revision=2 origin=368,448 y0=160 rows=32 submit_first=3461 submit_last=3462 ink=8579 hash=e870b318
+[20:49:14] TINYDRAW_PUBLICATION id=101 kind=band zoom=100 generation=59 revision=2 origin=368,448 y0=192 rows=32 submit_first=3463 submit_last=3464 ink=8952 hash=8b523e2e
+[20:49:15] [DEBUG-hw1] down x=236 y=208
+[20:49:15] [DEBUG-hw1] up x=103 y=76 active=0
+[20:49:15] TINYDRAW_PAN_CONTENT zoom=100 origin=501,580 visible_ink=91110 visible_hash=c1b7af77 expected_strokes=735 rejected_views=0 max_missing_pixels=0
+[20:49:15] TINYDRAW_PAN_PERF frames=24 bytes=6571008 average_us=26102 max_us=26211 settle_us=0 prepare_us=456003 transfer_us=166720 pushes=408
+[20:49:15] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:49:15] [DEBUG-hw1] down x=21 y=170
+[20:49:16] [DEBUG-hw1] up x=27 y=204 active=0
+[20:49:16] TINYDRAW_PAN_CONTENT zoom=100 origin=495,546 visible_ink=102480 visible_hash=0ffb936f expected_strokes=849 rejected_views=0 max_missing_pixels=0
+[20:49:16] TINYDRAW_PAN_PERF frames=31 bytes=8487552 average_us=26107 max_us=26203 settle_us=0 prepare_us=588833 transfer_us=215839 pushes=527
+[20:49:17] TINYDRAW_PUBLICATION id=102 kind=settled zoom=100 generation=63 revision=2 origin=495,546 y0=0 rows=372 submit_first=4400 submit_last=4416 ink=102236 hash=3fde3a72
+[20:49:17] [DEBUG-hw1] down x=29 y=247
+[20:49:17] TINYDRAW_SETTLED_PROFILE zoom=100 generation=63 bands=20 segments=7448 clear_us=26126 raster_us=493350 composite_us=106996 publish_us=83939 complete=1
+[20:49:18] [DEBUG-hw1] up x=155 y=398 active=0
+[20:49:18] TINYDRAW_PAN_CONTENT zoom=100 origin=369,395 visible_ink=70069 visible_hash=c2721e46 expected_strokes=620 rejected_views=0 max_missing_pixels=0
+[20:49:18] TINYDRAW_PAN_PERF frames=26 bytes=7118592 average_us=26140 max_us=26726 settle_us=0 prepare_us=494730 transfer_us=181045 pushes=442
+[20:49:18] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:49:18] [DEBUG-hw1] down x=30 y=258
+[20:49:18] TINYDRAW_PUBLICATION id=103 kind=settled zoom=100 generation=65 revision=2 origin=369,395 y0=0 rows=372 submit_first=4859 submit_last=4875 ink=70067 hash=dbbf5086
+[20:49:18] TINYDRAW_SETTLED_PROFILE zoom=100 generation=65 bands=14 segments=1122 clear_us=23682 raster_us=53384 composite_us=10730 publish_us=71411 complete=0
+[20:49:18] [DEBUG-hw1] up x=36 y=210 active=0
+[20:49:18] TINYDRAW_PAN_CONTENT zoom=100 origin=363,443 visible_ink=80950 visible_hash=57f153a3 expected_strokes=703 rejected_views=0 max_missing_pixels=0
+[20:49:18] TINYDRAW_PAN_PERF frames=13 bytes=3559296 average_us=26318 max_us=28709 settle_us=0 prepare_us=249484 transfer_us=90636 pushes=221
+[20:49:19] TINYDRAW_PUBLICATION id=104 kind=settled zoom=100 generation=67 revision=2 origin=363,443 y0=0 rows=372 submit_first=5097 submit_last=5113 ink=80950 hash=57f153a3
+[20:49:19] TINYDRAW_SETTLED_PROFILE zoom=100 generation=67 bands=13 segments=0 clear_us=14300 raster_us=0 composite_us=0 publish_us=69114 complete=1
+[20:49:19] TINYDRAW_PUBLICATION id=105 kind=band zoom=100 generation=67 revision=2 origin=363,443 y0=0 rows=6 submit_first=5114 submit_last=5114 ink=0 hash=dba2d3a5
+[20:49:19] TINYDRAW_PUBLICATION id=106 kind=band zoom=100 generation=67 revision=2 origin=363,443 y0=0 rows=6 submit_first=5115 submit_last=5115 ink=0 hash=dba2d3a5
+[20:49:19] TINYDRAW_PUBLICATION id=107 kind=band zoom=100 generation=67 revision=2 origin=363,443 y0=4 rows=34 submit_first=5116 submit_last=5117 ink=0 hash=4f0af465
+[20:49:19] TINYDRAW_PUBLICATION id=108 kind=band zoom=100 generation=67 revision=2 origin=363,443 y0=36 rows=34 submit_first=5118 submit_last=5119 ink=1061 hash=1be94c0c
+[20:49:19] TINYDRAW_PUBLICATION id=109 kind=band zoom=100 generation=67 revision=2 origin=363,443 y0=68 rows=34 submit_first=5120 submit_last=5121 ink=8801 hash=4b697d0e
+[20:49:19] [DEBUG-hw1] down x=295 y=218
+[20:49:19] TINYDRAW_PUBLICATION id=110 kind=band zoom=100 generation=67 revision=2 origin=363,443 y0=100 rows=34 submit_first=5122 submit_last=5123 ink=9131 hash=ad7a4473
+[20:49:19] [DEBUG-hw1] up x=42 y=85 active=0
+[20:49:19] TINYDRAW_PAN_CONTENT zoom=100 origin=616,576 visible_ink=54757 visible_hash=acb2b11b expected_strokes=445 rejected_views=0 max_missing_pixels=0
+[20:49:19] TINYDRAW_PAN_PERF frames=7 bytes=1916544 average_us=26104 max_us=26176 settle_us=0 prepare_us=132870 transfer_us=48788 pushes=119
+[20:49:19] TINYDRAW_PUBLICATION id=111 kind=settled zoom=100 generation=69 revision=2 origin=616,576 y0=0 rows=372 submit_first=5243 submit_last=5259 ink=54758 hash=ddb5b1ac
+[20:49:19] TINYDRAW_SETTLED_PROFILE zoom=100 generation=69 bands=4 segments=474 clear_us=3910 raster_us=23104 composite_us=4157 publish_us=50462 complete=1
+[20:49:19] [DEBUG-hw1] down x=149 y=179
+[20:49:19] [DEBUG-hw1] up x=342 y=221 active=0
+[20:49:19] TINYDRAW_PAN_CONTENT zoom=100 origin=423,534 visible_ink=117317 visible_hash=64cbd6ec expected_strokes=979 rejected_views=0 max_missing_pixels=0
+[20:49:19] TINYDRAW_PAN_PERF frames=8 bytes=2190336 average_us=26091 max_us=26137 settle_us=0 prepare_us=151913 transfer_us=55588 pushes=136
+[20:49:19] [DEBUG-hw1] down x=179 y=132
+[20:49:20] [DEBUG-hw1] up x=199 y=8 active=0
+[20:49:20] TINYDRAW_PAN_CONTENT zoom=100 origin=403,658 visible_ink=76384 visible_hash=bb859f14 expected_strokes=624 rejected_views=0 max_missing_pixels=0
+[20:49:20] TINYDRAW_PAN_PERF frames=11 bytes=3011712 average_us=26128 max_us=26236 settle_us=0 prepare_us=209017 transfer_us=76702 pushes=187
+[20:49:20] TINYDRAW_PUBLICATION id=112 kind=settled zoom=100 generation=73 revision=2 origin=403,658 y0=0 rows=372 submit_first=5583 submit_last=5599 ink=76384 hash=bb859f14
+[20:49:20] TINYDRAW_SETTLED_PROFILE zoom=100 generation=73 bands=10 segments=474 clear_us=10737 raster_us=22814 composite_us=4254 publish_us=62806 complete=1
+[20:49:20] [DEBUG-hw1] down x=263 y=127
+[20:49:21] [DEBUG-hw1] up x=223 y=260 active=0
+[20:49:21] TINYDRAW_PAN_CONTENT zoom=100 origin=443,525 visible_ink=118815 visible_hash=943e4fcc expected_strokes=992 rejected_views=0 max_missing_pixels=0
+[20:49:21] TINYDRAW_PAN_PERF frames=63 bytes=17248896 average_us=26095 max_us=26172 settle_us=0 prepare_us=1196558 transfer_us=437815 pushes=1071
+[20:49:21] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:49:22] TINYDRAW_PUBLICATION id=113 kind=band zoom=100 generation=75 revision=2 origin=443,525 y0=146 rows=34 submit_first=6671 submit_last=6672 ink=11065 hash=628049d7
+[20:49:22] [DEBUG-hw1] down x=288 y=445
+[20:49:22] TINYDRAW_PUBLICATION id=114 kind=band zoom=100 generation=75 revision=2 origin=443,525 y0=178 rows=34 submit_first=6673 submit_last=6674 ink=10961 hash=52182b55
+[20:49:22] [DEBUG-hw1] up x=288 y=445 active=0
+[20:49:22] TINYDRAW_PUBLICATION id=115 kind=band zoom=100 generation=75 revision=2 origin=443,525 y0=210 rows=34 submit_first=6679 submit_last=6680 ink=10298 hash=b56ee88d
+[20:49:22] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:49:23] TINYDRAW_PUBLICATION id=116 kind=band zoom=100 generation=75 revision=2 origin=443,525 y0=242 rows=34 submit_first=6681 submit_last=6682 ink=10637 hash=90b019b0
+[20:49:23] TINYDRAW_PUBLICATION id=117 kind=band zoom=100 generation=75 revision=2 origin=443,525 y0=274 rows=34 submit_first=6683 submit_last=6684 ink=10331 hash=39ec0d85
+[20:49:23] TINYDRAW_PUBLICATION id=118 kind=band zoom=100 generation=75 revision=2 origin=443,525 y0=306 rows=34 submit_first=6685 submit_last=6686 ink=10988 hash=ee2d6c42
+[20:49:23] TINYDRAW_PUBLICATION id=119 kind=band zoom=100 generation=75 revision=2 origin=443,525 y0=338 rows=34 submit_first=6687 submit_last=6688 ink=11127 hash=de89ceb9
+[20:49:23] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:49:23] TINYDRAW_PUBLICATION id=120 kind=band zoom=100 generation=75 revision=2 origin=443,525 y0=0 rows=20 submit_first=6689 submit_last=6689 ink=6526 hash=b9658e9a
+[20:49:23] TINYDRAW_PUBLICATION id=121 kind=band zoom=100 generation=75 revision=2 origin=443,525 y0=18 rows=34 submit_first=6690 submit_last=6691 ink=11168 hash=354b4d26
+[20:49:24] TINYDRAW_PUBLICATION id=122 kind=band zoom=100 generation=75 revision=2 origin=443,525 y0=50 rows=34 submit_first=6692 submit_last=6693 ink=11149 hash=2f7a95bd
+[20:49:24] [DEBUG-hw1] down x=234 y=373
+[20:49:24] TINYDRAW_PUBLICATION id=123 kind=band zoom=100 generation=75 revision=2 origin=443,525 y0=82 rows=34 submit_first=6694 submit_last=6695 ink=10943 hash=527adcb1
+[20:49:24] TINYDRAW_PUBLICATION id=124 kind=band zoom=100 generation=75 revision=2 origin=443,525 y0=114 rows=34 submit_first=6696 submit_last=6697 ink=10972 hash=20f51c87
+[20:49:24] [DEBUG-hw1] up x=233 y=372 active=0
+[20:49:24] TINYDRAW_PUBLICATION id=125 kind=zoom_fallback zoom=200 generation=77 revision=2 origin=368,448 y0=0 rows=372 submit_first=6698 submit_last=6714 ink=129484 hash=77bb8a61
+[20:49:24] TINYDRAW_SETTLED_LOD quality=high center_error_milli=1000 radius_error_milli=375 input=19846 output=10089 bytes=121068
+[20:49:24] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[20:49:24] TINYDRAW_PUBLICATION id=126 kind=settled zoom=200 generation=77 revision=2 origin=368,448 y0=0 rows=372 submit_first=6723 submit_last=6739 ink=127196 hash=4db4dacd
+[20:49:24] TINYDRAW_SETTLED_PROFILE zoom=200 generation=77 bands=12 segments=2986 clear_us=13234 raster_us=404316 composite_us=101705 publish_us=67153 complete=1
+[20:49:25] TINYDRAW_PUBLICATION id=127 kind=band zoom=200 generation=77 revision=2 origin=368,448 y0=0 rows=32 submit_first=6740 submit_last=6741 ink=11012 hash=2032b68e
+[20:49:25] TINYDRAW_PUBLICATION id=128 kind=band zoom=200 generation=77 revision=2 origin=368,448 y0=32 rows=32 submit_first=6742 submit_last=6743 ink=11078 hash=6c367dff
+[20:49:25] TINYDRAW_PUBLICATION id=129 kind=band zoom=200 generation=77 revision=2 origin=368,448 y0=64 rows=32 submit_first=6744 submit_last=6745 ink=11539 hash=074a70ba
+[20:49:25] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:49:25] TINYDRAW_PUBLICATION id=130 kind=band zoom=200 generation=77 revision=2 origin=368,448 y0=96 rows=32 submit_first=6746 submit_last=6747 ink=11561 hash=ef000e55
+[20:49:26] TINYDRAW_PUBLICATION id=131 kind=band zoom=200 generation=77 revision=2 origin=368,448 y0=128 rows=32 submit_first=6748 submit_last=6749 ink=10827 hash=2f06eae1
+[20:49:26] [DEBUG-hw1] down x=8 y=294
+[20:49:26] [DEBUG-hw1] up x=33 y=254 active=0
+[20:49:26] TINYDRAW_PAN_CONTENT zoom=200 origin=343,488 visible_ink=127534 visible_hash=d20448c2 expected_strokes=311 rejected_views=0 max_missing_pixels=0
+[20:49:26] TINYDRAW_PAN_PERF frames=14 bytes=3833088 average_us=26104 max_us=26204 settle_us=0 prepare_us=265840 transfer_us=97499 pushes=238
+[20:49:26] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:49:27] TINYDRAW_PUBLICATION id=132 kind=settled zoom=200 generation=79 revision=2 origin=343,488 y0=0 rows=372 submit_first=6988 submit_last=7004 ink=127181 hash=fa6b5308
+[20:49:27] TINYDRAW_SETTLED_PROFILE zoom=200 generation=79 bands=20 segments=4757 clear_us=26542 raster_us=589144 composite_us=146828 publish_us=83935 complete=1
+[20:49:27] TINYDRAW_PUBLICATION id=133 kind=band zoom=200 generation=79 revision=2 origin=343,488 y0=0 rows=24 submit_first=7005 submit_last=7006 ink=8574 hash=03df50d9
+[20:49:27] TINYDRAW_PUBLICATION id=134 kind=band zoom=200 generation=79 revision=2 origin=343,488 y0=24 rows=32 submit_first=7007 submit_last=7008 ink=11598 hash=81100662
+[20:49:27] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:49:27] TINYDRAW_PUBLICATION id=135 kind=band zoom=200 generation=79 revision=2 origin=343,488 y0=56 rows=32 submit_first=7009 submit_last=7010 ink=11554 hash=d370ade2
+[20:49:28] TINYDRAW_PUBLICATION id=136 kind=band zoom=200 generation=79 revision=2 origin=343,488 y0=88 rows=32 submit_first=7011 submit_last=7012 ink=10773 hash=4f3578cb
+[20:49:28] TINYDRAW_PUBLICATION id=137 kind=band zoom=200 generation=79 revision=2 origin=343,488 y0=120 rows=32 submit_first=7013 submit_last=7014 ink=11156 hash=cc3badd7
+[20:49:28] TINYDRAW_PUBLICATION id=138 kind=band zoom=200 generation=79 revision=2 origin=343,488 y0=152 rows=32 submit_first=7015 submit_last=7016 ink=10545 hash=c962eef6
+[20:49:28] TINYDRAW_PUBLICATION id=139 kind=band zoom=200 generation=79 revision=2 origin=343,488 y0=184 rows=32 submit_first=7017 submit_last=7018 ink=10423 hash=da2fb68d
+[20:49:28] TINYDRAW_PUBLICATION id=140 kind=band zoom=200 generation=79 revision=2 origin=343,488 y0=216 rows=32 submit_first=7019 submit_last=7020 ink=10384 hash=68c87706
+[20:49:28] TINYDRAW_PUBLICATION id=141 kind=band zoom=200 generation=79 revision=2 origin=343,488 y0=248 rows=32 submit_first=7021 submit_last=7022 ink=11104 hash=29d25ee8
+[20:49:28] TINYDRAW_PUBLICATION id=142 kind=band zoom=200 generation=79 revision=2 origin=343,488 y0=280 rows=32 submit_first=7023 submit_last=7024 ink=10696 hash=d253386c
+[20:49:28] TINYDRAW_PUBLICATION id=143 kind=band zoom=200 generation=79 revision=2 origin=343,488 y0=312 rows=32 submit_first=7025 submit_last=7026 ink=11035 hash=98405c50
+[20:49:28] TINYDRAW_PUBLICATION id=144 kind=band zoom=200 generation=79 revision=2 origin=343,488 y0=344 rows=28 submit_first=7027 submit_last=7028 ink=9270 hash=458478ca
+[20:49:28] TINYDRAW_PUBLICATION id=145 kind=band zoom=200 generation=79 revision=2 origin=343,488 y0=120 rows=32 submit_first=7029 submit_last=7030 ink=11120 hash=27e9af5d
+[20:49:29] TINYDRAW_PUBLICATION id=146 kind=band zoom=200 generation=79 revision=2 origin=343,488 y0=152 rows=32 submit_first=7031 submit_last=7032 ink=10512 hash=55a21a8b
+[20:49:29] TINYDRAW_PUBLICATION id=147 kind=band zoom=200 generation=79 revision=2 origin=343,488 y0=184 rows=32 submit_first=7033 submit_last=7034 ink=10342 hash=844dc867
+[20:49:29] TINYDRAW_PUBLICATION id=148 kind=band zoom=200 generation=79 revision=2 origin=343,488 y0=216 rows=32 submit_first=7035 submit_last=7036 ink=10406 hash=4e4c4c6b
+[20:49:29] TINYDRAW_PUBLICATION id=149 kind=band zoom=200 generation=79 revision=2 origin=343,488 y0=248 rows=32 submit_first=7037 submit_last=7038 ink=11062 hash=55985557
+[20:49:29] TINYDRAW_PUBLICATION id=150 kind=band zoom=200 generation=79 revision=2 origin=343,488 y0=280 rows=32 submit_first=7039 submit_last=7040 ink=10666 hash=f280f6a1
+[20:49:29] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:49:29] TINYDRAW_PUBLICATION id=151 kind=band zoom=200 generation=79 revision=2 origin=343,488 y0=312 rows=32 submit_first=7041 submit_last=7042 ink=11008 hash=e11f5631
+[20:49:29] TINYDRAW_PUBLICATION id=152 kind=band zoom=200 generation=79 revision=2 origin=343,488 y0=344 rows=28 submit_first=7043 submit_last=7044 ink=9223 hash=6bbbde18
+[20:49:30] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:49:32] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:49:34] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:49:35] [DEBUG-hw1] down x=104 y=205
+[20:49:36] [DEBUG-hw1] up x=173 y=30 active=0
+[20:49:36] TINYDRAW_PAN_CONTENT zoom=200 origin=274,663 visible_ink=125425 visible_hash=6574ba5e expected_strokes=287 rejected_views=0 max_missing_pixels=0
+[20:49:36] TINYDRAW_PAN_PERF frames=32 bytes=8761344 average_us=26097 max_us=26148 settle_us=0 prepare_us=607561 transfer_us=222648 pushes=544
+[20:49:36] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:49:37] [DEBUG-hw1] down x=127 y=131
+[20:49:37] [DEBUG-hw1] up x=83 y=281 active=0
+[20:49:37] TINYDRAW_PAN_CONTENT zoom=200 origin=318,513 visible_ink=126773 visible_hash=7bc53fb1 expected_strokes=313 rejected_views=0 max_missing_pixels=0
+[20:49:37] TINYDRAW_PAN_PERF frames=23 bytes=6297216 average_us=26086 max_us=26129 settle_us=0 prepare_us=436926 transfer_us=159666 pushes=391
+[20:49:37] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[20:49:38] [DEBUG-hw1] down x=284 y=274
+[20:49:38] [DEBUG-hw1] up x=67 y=356 active=0
+[20:49:38] TINYDRAW_PAN_CONTENT zoom=200 origin=535,431 visible_ink=114389 visible_hash=7accbe0d expected_strokes=267 rejected_views=0 max_missing_pixels=0
+[20:49:38] TINYDRAW_PAN_PERF frames=7 bytes=1916544 average_us=26097 max_us=26120 settle_us=0 prepare_us=132947 transfer_us=48673 pushes=119
+[20:49:38] [DEBUG-hw1] down x=75 y=221
+[20:49:40] [DEBUG-hw1] up x=301 y=263 active=0
+[20:49:40] TINYDRAW_PAN_CONTENT zoom=200 origin=309,389 visible_ink=127999 visible_hash=be3a60f1 expected_strokes=332 rejected_views=0 max_missing_pixels=0
+[20:49:40] TINYDRAW_PAN_PERF frames=85 bytes=23272320 average_us=26092 max_us=26167 settle_us=0 prepare_us=1613808 transfer_us=591205 pushes=1445
+[20:49:40] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:49:40] [DEBUG-hw1] down x=69 y=105
+[20:49:42] [DEBUG-hw1] up x=136 y=334 active=0
+[20:49:42] TINYDRAW_PAN_CONTENT zoom=200 origin=242,160 visible_ink=105333 visible_hash=c10c0a6b expected_strokes=288 rejected_views=0 max_missing_pixels=0
+[20:49:42] TINYDRAW_PAN_PERF frames=60 bytes=16427520 average_us=26093 max_us=26147 settle_us=0 prepare_us=1138902 transfer_us=417551 pushes=1020
+[20:49:42] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:49:42] [DEBUG-hw1] down x=280 y=169
+[20:49:43] [DEBUG-hw1] up x=61 y=52 active=0
+[20:49:43] TINYDRAW_PAN_CONTENT zoom=200 origin=461,277 visible_ink=128792 visible_hash=12069b87 expected_strokes=346 rejected_views=0 max_missing_pixels=0
+[20:49:43] TINYDRAW_PAN_PERF frames=31 bytes=8487552 average_us=26090 max_us=26173 settle_us=0 prepare_us=588596 transfer_us=215511 pushes=527
+[20:49:43] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:49:47] TINYDRAW_POWER battery=99 voltage_mv=4091 charging=0 vbus=1
+[20:49:48] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:49:49] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:49:50] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:49:51] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:49:52] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:49:53] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:49:55] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:49:56] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:49:57] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:49:58] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:49:59] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:50:00] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:50:01] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:50:02] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:50:04] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:50:05] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:50:06] [DEBUG-hw1] down x=83 y=442
+[20:50:06] [DEBUG-hw1] up x=82 y=442 active=0
+[20:50:06] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:50:06] [DEBUG-hw1] down x=15 y=354
+[20:50:07] [DEBUG-hw1] up x=15 y=354 active=0
+[20:50:07] [DEBUG-hw1] down x=203 y=438
+[20:50:07] [DEBUG-hw1] up x=203 y=438 active=0
+[20:50:07] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:50:08] [DEBUG-hw1] down x=225 y=290
+[20:50:08] [DEBUG-hw1] up x=224 y=289 active=0
+[20:50:08] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:50:09] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:50:10] [DEBUG-hw1] down x=12 y=312
+[20:50:12] [DEBUG-hw1] up x=342 y=118 active=1
+[20:50:12] TINYDRAW_VECTOR_STROKE strokes=1002 samples=20070
+[20:50:12] [DEBUG-perf1] samples=223 updates_us=378591 average_us=1697 max_us=3222 finish_us=60283 display_prepare_us=11506 display_transfer_us=48821 pushes=224 stroke_us=2957997 touch_average_us=13189 touch_max_us=26001 max_input_lag_us=43424 max_queue=3
+[20:50:13] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:50:14] [DEBUG-hw1] down x=76 y=446
+[20:50:14] [DEBUG-hw1] up x=76 y=446 active=0
+[20:50:15] [DEBUG-hw1] down x=171 y=351
+[20:50:15] TINYDRAW_FALLBACK_REPAIRED revision=3
+[20:50:15] [DEBUG-hw1] up x=171 y=351 active=0
+[20:50:15] [DEBUG-hw1] down x=75 y=208
+[20:50:16] [DEBUG-hw1] up x=93 y=100 active=0
+[20:50:16] TINYDRAW_PAN_CONTENT zoom=200 origin=443,385 visible_ink=128792 visible_hash=04ba8f3e expected_strokes=314 rejected_views=0 max_missing_pixels=0
+[20:50:16] TINYDRAW_PAN_PERF frames=38 bytes=10404096 average_us=26096 max_us=26168 settle_us=0 prepare_us=721959 transfer_us=263936 pushes=646
+[20:50:16] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:50:17] [DEBUG-hw1] down x=303 y=438
+[20:50:17] [DEBUG-hw1] up x=301 y=438 active=0
+[20:50:17] TINYDRAW_PUBLICATION id=153 kind=settled zoom=200 generation=96 revision=3 origin=443,385 y0=0 rows=372 submit_first=12013 submit_last=12029 ink=127026 hash=382cdd42
+[20:50:17] TINYDRAW_SETTLED_PROFILE zoom=200 generation=96 bands=20 segments=5423 clear_us=26221 raster_us=592176 composite_us=150441 publish_us=106115 complete=1
+[20:50:17] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:50:17] TINYDRAW_PUBLICATION id=154 kind=band zoom=200 generation=96 revision=3 origin=443,385 y0=0 rows=32 submit_first=12030 submit_last=12031 ink=11616 hash=f384190a
+[20:50:18] TINYDRAW_PUBLICATION id=155 kind=band zoom=200 generation=96 revision=3 origin=443,385 y0=30 rows=34 submit_first=12032 submit_last=12033 ink=11726 hash=9be5b88a
+[20:50:18] TINYDRAW_PUBLICATION id=156 kind=band zoom=200 generation=96 revision=3 origin=443,385 y0=0 rows=32 submit_first=12034 submit_last=12035 ink=11609 hash=e89fb3cd
+[20:50:18] TINYDRAW_PUBLICATION id=157 kind=band zoom=200 generation=96 revision=3 origin=443,385 y0=30 rows=34 submit_first=12036 submit_last=12037 ink=11718 hash=f1f3570a
+[20:50:18] [DEBUG-hw1] down x=38 y=358
+[20:50:18] TINYDRAW_PUBLICATION id=158 kind=band zoom=200 generation=96 revision=3 origin=443,385 y0=62 rows=34 submit_first=12038 submit_last=12039 ink=11961 hash=34d66e8d
+[20:50:18] [DEBUG-hw1] up x=35 y=358 active=0
+[20:50:18] TINYDRAW_PUBLICATION id=159 kind=zoom_fallback zoom=50 generation=98 revision=3 origin=368,448 y0=0 rows=372 submit_first=12040 submit_last=12056 ink=32670 hash=e091063d
+[20:50:18] TINYDRAW_SETTLED_LOD quality=normal center_error_milli=2000 radius_error_milli=750 input=20070 output=7605 bytes=91260
+[20:50:18] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:50:19] TINYDRAW_PUBLICATION id=160 kind=settled zoom=50 generation=98 revision=3 origin=368,448 y0=0 rows=372 submit_first=12065 submit_last=12081 ink=33658 hash=a70c1f58
+[20:50:19] TINYDRAW_SETTLED_PROFILE zoom=50 generation=98 bands=12 segments=6603 clear_us=13288 raster_us=252293 composite_us=42947 publish_us=66741 complete=1
+[20:50:19] TINYDRAW_PUBLICATION id=161 kind=band zoom=50 generation=98 revision=3 origin=368,448 y0=0 rows=32 submit_first=12082 submit_last=12083 ink=0 hash=72fde7c5
+[20:50:19] TINYDRAW_PUBLICATION id=162 kind=band zoom=50 generation=98 revision=3 origin=368,448 y0=32 rows=32 submit_first=12084 submit_last=12085 ink=0 hash=72fde7c5
+[20:50:19] TINYDRAW_PUBLICATION id=163 kind=band zoom=50 generation=98 revision=3 origin=368,448 y0=64 rows=32 submit_first=12086 submit_last=12087 ink=0 hash=72fde7c5
+[20:50:19] TINYDRAW_PUBLICATION id=164 kind=band zoom=50 generation=98 revision=3 origin=368,448 y0=96 rows=32 submit_first=12088 submit_last=12089 ink=4580 hash=03d01a03
+[20:50:19] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:50:20] TINYDRAW_PUBLICATION id=165 kind=band zoom=50 generation=98 revision=3 origin=368,448 y0=128 rows=32 submit_first=12090 submit_last=12091 ink=5346 hash=a77ba949
+[20:50:20] TINYDRAW_PUBLICATION id=166 kind=band zoom=50 generation=98 revision=3 origin=368,448 y0=160 rows=32 submit_first=12092 submit_last=12093 ink=5319 hash=435e86f5
+[20:50:20] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:50:21] TINYDRAW_PUBLICATION id=167 kind=band zoom=50 generation=98 revision=3 origin=368,448 y0=192 rows=32 submit_first=12094 submit_last=12095 ink=5275 hash=ee4b7018
+[20:50:21] TINYDRAW_PUBLICATION id=168 kind=band zoom=50 generation=98 revision=3 origin=368,448 y0=224 rows=32 submit_first=12096 submit_last=12097 ink=5089 hash=3702245e
+[20:50:21] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:50:22] TINYDRAW_PUBLICATION id=169 kind=band zoom=50 generation=98 revision=3 origin=368,448 y0=256 rows=32 submit_first=12098 submit_last=12099 ink=5347 hash=b7f34947
+[20:50:22] TINYDRAW_PUBLICATION id=170 kind=band zoom=50 generation=98 revision=3 origin=368,448 y0=288 rows=32 submit_first=12100 submit_last=12101 ink=2839 hash=3e598b34
+[20:50:22] TINYDRAW_PUBLICATION id=171 kind=band zoom=50 generation=98 revision=3 origin=368,448 y0=320 rows=32 submit_first=12102 submit_last=12103 ink=0 hash=72fde7c5
+[20:50:22] TINYDRAW_PUBLICATION id=172 kind=band zoom=50 generation=98 revision=3 origin=368,448 y0=352 rows=20 submit_first=12104 submit_last=12104 ink=0 hash=d3b00c05
+[20:50:22] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:50:23] [DEBUG-hw1] down x=296 y=447
+[20:50:23] [DEBUG-hw1] up x=293 y=447 active=0
+[20:50:24] [DEBUG-hw1] down x=238 y=361
+[20:50:24] [DEBUG-hw1] up x=238 y=361 active=0
+[20:50:24] TINYDRAW_PUBLICATION id=173 kind=zoom_fallback zoom=200 generation=100 revision=3 origin=368,448 y0=0 rows=372 submit_first=12109 submit_last=12125 ink=129318 hash=9214b382
+[20:50:24] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:50:24] TINYDRAW_SETTLED_LOD quality=high center_error_milli=1000 radius_error_milli=375 input=20070 output=10185 bytes=122220
+[20:50:25] TINYDRAW_PUBLICATION id=174 kind=settled zoom=200 generation=100 revision=3 origin=368,448 y0=0 rows=372 submit_first=12134 submit_last=12150 ink=127083 hash=92265482
+[20:50:25] TINYDRAW_SETTLED_PROFILE zoom=200 generation=100 bands=12 segments=3331 clear_us=13234 raster_us=431836 composite_us=112435 publish_us=66702 complete=1
+[20:50:25] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:50:26] TINYDRAW_PUBLICATION id=175 kind=band zoom=200 generation=100 revision=3 origin=368,448 y0=0 rows=32 submit_first=12151 submit_last=12152 ink=11609 hash=fab3c269
+[20:50:26] [DEBUG-hw1] down x=162 y=68
+[20:50:27] [DEBUG-hw1] up x=206 y=17 active=0
+[20:50:27] TINYDRAW_PAN_CONTENT zoom=200 origin=324,499 visible_ink=127326 visible_hash=fd12ecee expected_strokes=317 rejected_views=0 max_missing_pixels=0
+[20:50:27] TINYDRAW_PAN_PERF frames=50 bytes=13689600 average_us=26097 max_us=26148 settle_us=0 prepare_us=949348 transfer_us=347892 pushes=850
+[20:50:27] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:50:27] [DEBUG-hw1] down x=274 y=434
+[20:50:27] [DEBUG-hw1] up x=273 y=434 active=0
+[20:50:28] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:50:28] TINYDRAW_PUBLICATION id=176 kind=settled zoom=200 generation=102 revision=3 origin=324,499 y0=0 rows=372 submit_first=13007 submit_last=13023 ink=126846 hash=78dc9aa5
+[20:50:28] TINYDRAW_SETTLED_PROFILE zoom=200 generation=102 bands=26 segments=5990 clear_us=31928 raster_us=754405 composite_us=196210 publish_us=118747 complete=1
+[20:50:28] TINYDRAW_PUBLICATION id=177 kind=band zoom=200 generation=102 revision=3 origin=324,499 y0=0 rows=14 submit_first=13024 submit_last=13024 ink=4621 hash=b491b877
+[20:50:28] TINYDRAW_PUBLICATION id=178 kind=band zoom=200 generation=102 revision=3 origin=324,499 y0=12 rows=34 submit_first=13025 submit_last=13026 ink=11652 hash=a2c687ce
+[20:50:28] [DEBUG-hw1] down x=116 y=362
+[20:50:28] TINYDRAW_PUBLICATION id=179 kind=band zoom=200 generation=102 revision=3 origin=324,499 y0=44 rows=34 submit_first=13027 submit_last=13028 ink=11808 hash=777c3908
+[20:50:29] [DEBUG-hw1] up x=116 y=362 active=0
+[20:50:29] TINYDRAW_PUBLICATION id=180 kind=zoom_fallback zoom=100 generation=104 revision=3 origin=368,448 y0=0 rows=372 submit_first=13029 submit_last=13045 ink=116908 hash=3d5bab6b
+[20:50:29] TINYDRAW_SETTLED_LOD quality=normal center_error_milli=2000 radius_error_milli=750 input=20070 output=7605 bytes=91260
+[20:50:29] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:50:29] TINYDRAW_PUBLICATION id=181 kind=settled zoom=100 generation=104 revision=3 origin=368,448 y0=0 rows=372 submit_first=13054 submit_last=13070 ink=116610 hash=2d9c624d
+[20:50:29] TINYDRAW_SETTLED_PROFILE zoom=100 generation=104 bands=12 segments=6595 clear_us=13299 raster_us=505886 composite_us=113493 publish_us=66756 complete=1
+[20:50:30] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:50:30] [DEBUG-hw1] down x=50 y=447
+[20:50:30] TINYDRAW_PUBLICATION id=182 kind=band zoom=100 generation=104 revision=3 origin=368,448 y0=0 rows=32 submit_first=13071 submit_last=13072 ink=10250 hash=81385570
+[20:50:30] [DEBUG-hw1] up x=51 y=447 active=0
+[20:50:30] TINYDRAW_PUBLICATION id=183 kind=band zoom=100 generation=104 revision=3 origin=368,448 y0=32 rows=32 submit_first=13073 submit_last=13074 ink=10407 hash=4d3afa25
+[20:50:31] [DEBUG-hw1] down x=71 y=431
+[20:50:31] [DEBUG-hw1] up x=70 y=430 active=0
+[20:50:31] TINYDRAW_PUBLICATION id=184 kind=band zoom=100 generation=104 revision=3 origin=368,448 y0=64 rows=32 submit_first=13079 submit_last=13080 ink=10161 hash=8db0b8e9
+[20:50:31] TINYDRAW_PUBLICATION id=185 kind=band zoom=100 generation=104 revision=3 origin=368,448 y0=96 rows=32 submit_first=13081 submit_last=13082 ink=10118 hash=56a37f4b
+[20:50:31] [DEBUG-hw1] down x=13 y=354
+[20:50:31] [DEBUG-hw1] up x=14 y=354 active=0
+[20:50:32] TINYDRAW_PUBLICATION id=186 kind=band zoom=100 generation=104 revision=3 origin=368,448 y0=128 rows=32 submit_first=13091 submit_last=13092 ink=10264 hash=6ecc0b73
+[20:50:32] [DEBUG-hw1] down x=202 y=424
+[20:50:32] TINYDRAW_PUBLICATION id=187 kind=band zoom=100 generation=104 revision=3 origin=368,448 y0=160 rows=32 submit_first=13093 submit_last=13094 ink=10328 hash=b2e016f0
+[20:50:32] [DEBUG-hw1] up x=202 y=424 active=0
+[20:50:32] TINYDRAW_PUBLICATION id=188 kind=band zoom=100 generation=104 revision=3 origin=368,448 y0=192 rows=32 submit_first=13104 submit_last=13105 ink=10014 hash=ec91e316
+[20:50:33] TINYDRAW_PUBLICATION id=189 kind=band zoom=100 generation=104 revision=3 origin=368,448 y0=224 rows=32 submit_first=13106 submit_last=13107 ink=9588 hash=ebd55430
+[20:50:33] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:50:33] [DEBUG-hw1] down x=101 y=291
+[20:50:33] TINYDRAW_PUBLICATION id=190 kind=band zoom=100 generation=104 revision=3 origin=368,448 y0=256 rows=32 submit_first=13108 submit_last=13109 ink=9673 hash=10090362
+[20:50:33] [DEBUG-hw1] up x=101 y=291 active=0
+[20:50:33] TINYDRAW_PUBLICATION id=191 kind=band zoom=100 generation=104 revision=3 origin=368,448 y0=288 rows=32 submit_first=13123 submit_last=13124 ink=9609 hash=da9decdf
+[20:50:33] [DEBUG-hw1] down x=45 y=285
+[20:50:36] [DEBUG-hw1] up x=72 y=298 active=1
+[20:50:36] TINYDRAW_VECTOR_STROKE strokes=1003 samples=20239
+[20:50:36] [DEBUG-perf1] samples=168 updates_us=368676 average_us=2194 max_us=4104 finish_us=59216 display_prepare_us=10918 display_transfer_us=37162 pushes=169 stroke_us=2239978 touch_average_us=13227 touch_max_us=26000 max_input_lag_us=39204 max_queue=3
+[20:50:36] [DEBUG-hw1] down x=268 y=445
+[20:50:37] [DEBUG-hw1] up x=270 y=445 active=0
+[20:50:37] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:50:37] [DEBUG-hw1] down x=40 y=361
+[20:50:37] [DEBUG-hw1] up x=40 y=361 active=0
+[20:50:37] TINYDRAW_INTERACTIVE_PAN_FAIL zoom=50
+[20:50:38] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:50:39] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:50:40] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:50:40] TINYDRAW_FALLBACK_REPAIRED revision=4
+[20:50:41] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:50:41] TINYDRAW_PUBLICATION id=192 kind=settled zoom=100 generation=109 revision=4 origin=368,448 y0=0 rows=372 submit_first=13306 submit_last=13322 ink=118101 hash=2a17146a
+[20:50:41] TINYDRAW_SETTLED_PROFILE zoom=100 generation=109 bands=12 segments=6717 clear_us=13273 raster_us=543788 composite_us=129634 publish_us=67626 complete=1
+[20:50:41] TINYDRAW_PUBLICATION id=193 kind=band zoom=100 generation=109 revision=4 origin=368,448 y0=0 rows=32 submit_first=13323 submit_last=13324 ink=10250 hash=81385570
+[20:50:42] TINYDRAW_PUBLICATION id=194 kind=band zoom=100 generation=109 revision=4 origin=368,448 y0=32 rows=32 submit_first=13325 submit_last=13326 ink=10434 hash=83941aa4
+[20:50:42] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[20:50:42] TINYDRAW_PUBLICATION id=195 kind=band zoom=100 generation=109 revision=4 origin=368,448 y0=64 rows=32 submit_first=13327 submit_last=13328 ink=10169 hash=f870d0b3
+[20:50:43] TINYDRAW_PUBLICATION id=196 kind=band zoom=100 generation=109 revision=4 origin=368,448 y0=96 rows=32 submit_first=13329 submit_last=13330 ink=10279 hash=032e91b1
+[20:50:43] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:50:43] TINYDRAW_PUBLICATION id=197 kind=band zoom=100 generation=109 revision=4 origin=368,448 y0=128 rows=32 submit_first=13331 submit_last=13332 ink=10279 hash=add08a69
+[20:50:43] TINYDRAW_PUBLICATION id=198 kind=band zoom=100 generation=109 revision=4 origin=368,448 y0=160 rows=32 submit_first=13333 submit_last=13334 ink=10495 hash=dbaa4eba
+[20:50:44] TINYDRAW_PUBLICATION id=199 kind=band zoom=100 generation=109 revision=4 origin=368,448 y0=192 rows=32 submit_first=13335 submit_last=13336 ink=10197 hash=2a07a90b
+[20:50:44] TINYDRAW_PUBLICATION id=200 kind=band zoom=100 generation=109 revision=4 origin=368,448 y0=224 rows=32 submit_first=13337 submit_last=13338 ink=9819 hash=1e5fdbcc
+[20:50:44] TINYDRAW_PUBLICATION id=201 kind=band zoom=100 generation=109 revision=4 origin=368,448 y0=256 rows=32 submit_first=13339 submit_last=13340 ink=9916 hash=ac4f2bc9
+[20:50:45] TINYDRAW_PUBLICATION id=202 kind=band zoom=100 generation=109 revision=4 origin=368,448 y0=288 rows=32 submit_first=13341 submit_last=13342 ink=9889 hash=a5280683
+[20:50:45] TINYDRAW_PUBLICATION id=203 kind=band zoom=100 generation=109 revision=4 origin=368,448 y0=320 rows=32 submit_first=13343 submit_last=13344 ink=10341 hash=a2232115
+[20:50:45] TINYDRAW_PUBLICATION id=204 kind=band zoom=100 generation=109 revision=4 origin=368,448 y0=352 rows=20 submit_first=13345 submit_last=13345 ink=6424 hash=86dcf50e
+[20:50:46] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:50:47] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:50:48] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:50:50] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:50:51] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:50:52] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:50:53] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:50:54] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:50:55] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:50:58] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:51:02] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:51:03] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:51:04] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:51:07] [DEBUG-hw1] down x=269 y=431
+[20:51:07] [DEBUG-hw1] up x=269 y=430 active=0
+[20:51:07] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:51:08] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:51:08] [DEBUG-hw1] down x=271 y=447
+[20:51:08] [DEBUG-hw1] up x=271 y=447 active=0
+[20:51:14] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:51:15] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:51:16] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:51:17] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:51:18] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:51:19] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:51:20] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:51:21] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:51:21] [DEBUG-hw1] down x=159 y=442
+[20:51:21] [DEBUG-hw1] up x=153 y=441 active=0
+[20:51:22] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:51:23] [DEBUG-hw1] down x=352 y=123
+[20:51:23] [DEBUG-hw1] up x=11 y=326 active=1
+[20:51:23] TINYDRAW_VECTOR_STROKE strokes=1004 samples=20266
+[20:51:23] [DEBUG-perf1] samples=26 updates_us=48892 average_us=1880 max_us=3076 finish_us=36629 display_prepare_us=1311 display_transfer_us=5961 pushes=27 stroke_us=370997 touch_average_us=13599 touch_max_us=26005 max_input_lag_us=24451 max_queue=1
+[20:51:23] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:51:23] [DEBUG-hw1] down x=254 y=109
+[20:51:23] [DEBUG-hw1] up x=28 y=360 active=1
+[20:51:23] TINYDRAW_VECTOR_STROKE strokes=1005 samples=20284
+[20:51:23] [DEBUG-perf1] samples=17 updates_us=35979 average_us=2116 max_us=3847 finish_us=36203 display_prepare_us=1164 display_transfer_us=4206 pushes=18 stroke_us=239985 touch_average_us=13123 touch_max_us=13999 max_input_lag_us=42149 max_queue=3
+[20:51:24] [DEBUG-hw1] down x=293 y=73
+[20:51:24] [DEBUG-hw1] up x=31 y=387 active=1
+[20:51:24] TINYDRAW_VECTOR_STROKE strokes=1006 samples=20298
+[20:51:24] [DEBUG-perf1] samples=13 updates_us=36356 average_us=2796 max_us=4222 finish_us=38748 display_prepare_us=3090 display_transfer_us=3125 pushes=14 stroke_us=186981 touch_average_us=13081 touch_max_us=14000 max_input_lag_us=43869 max_queue=3
+[20:51:24] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:51:24] [DEBUG-hw1] down x=310 y=108
+[20:51:25] [DEBUG-hw1] up x=325 y=328 active=1
+[20:51:25] TINYDRAW_VECTOR_STROKE strokes=1007 samples=20378
+[20:51:25] [DEBUG-perf1] samples=79 updates_us=176954 average_us=2239 max_us=4688 finish_us=40962 display_prepare_us=7349 display_transfer_us=17811 pushes=80 stroke_us=1075986 touch_average_us=13397 touch_max_us=26001 max_input_lag_us=38900 max_queue=2
+[20:51:25] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:51:26] [DEBUG-hw1] down x=280 y=441
+[20:51:26] [DEBUG-hw1] up x=280 y=441 active=0
+[20:51:26] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:51:26] [DEBUG-hw1] down x=213 y=355
+[20:51:27] [DEBUG-hw1] up x=213 y=355 active=0
+[20:51:27] TINYDRAW_INTERACTIVE_PAN_FAIL zoom=200
+[20:51:27] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:51:28] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[20:51:28] [DEBUG-hw1] down x=64 y=258
+[20:51:29] [DEBUG-hw1] up x=36 y=308 active=1
+[20:51:29] TINYDRAW_VECTOR_STROKE strokes=1008 samples=20435
+[20:51:29] [DEBUG-perf1] samples=56 updates_us=93727 average_us=1673 max_us=2332 finish_us=39828 display_prepare_us=1795 display_transfer_us=12313 pushes=57 stroke_us=774978 touch_average_us=13526 touch_max_us=38990 max_input_lag_us=13628 max_queue=1
+[20:51:29] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:51:30] [DEBUG-hw1] down x=49 y=127
+[20:51:30] [DEBUG-hw1] up x=69 y=243 active=1
+[20:51:30] TINYDRAW_VECTOR_STROKE strokes=1009 samples=20505
+[20:51:30] [DEBUG-perf1] samples=69 updates_us=131828 average_us=1910 max_us=2728 finish_us=45589 display_prepare_us=3094 display_transfer_us=15219 pushes=70 stroke_us=918946 touch_average_us=13058 touch_max_us=14003 max_input_lag_us=39265 max_queue=3
+[20:51:30] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:51:31] [DEBUG-hw1] down x=70 y=447
+[20:51:31] [DEBUG-hw1] up x=70 y=447 active=0
+[20:51:31] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:51:32] [DEBUG-hw1] down x=164 y=361
+[20:51:32] [DEBUG-hw1] up x=167 y=359 active=0
+[20:51:33] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:51:33] [DEBUG-hw1] down x=113 y=197
+[20:51:35] TINYDRAW_FALLBACK_REPAIRED revision=10
+[20:51:35] [DEBUG-hw1] up x=164 y=106 active=0
+[20:51:35] TINYDRAW_PAN_CONTENT zoom=100 origin=453,406 visible_ink=68306 visible_hash=bc068969 expected_strokes=665 rejected_views=103 max_missing_pixels=23488
+[20:51:35] TINYDRAW_PAN_PERF frames=31 bytes=8487552 average_us=30821 max_us=31385 settle_us=0 prepare_us=747568 transfer_us=198019 pushes=527
+[20:51:35] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:51:35] TINYDRAW_PUBLICATION id=205 kind=band zoom=100 generation=126 revision=10 origin=453,406 y0=74 rows=32 submit_first=14175 submit_last=14176 ink=7608 hash=cb1e2fc8
+[20:51:36] TINYDRAW_PUBLICATION id=206 kind=band zoom=100 generation=126 revision=10 origin=453,406 y0=106 rows=32 submit_first=14177 submit_last=14178 ink=6968 hash=d7394eea
+[20:51:36] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:51:36] TINYDRAW_PUBLICATION id=207 kind=band zoom=100 generation=126 revision=10 origin=453,406 y0=138 rows=32 submit_first=14179 submit_last=14180 ink=5878 hash=73a35e3d
+[20:51:36] [DEBUG-hw1] down x=362 y=130
+[20:51:36] [DEBUG-hw1] up x=362 y=130 active=0
+[20:51:36] TINYDRAW_PAN_CONTENT zoom=100 origin=453,406 visible_ink=68306 visible_hash=bc068969 expected_strokes=665 rejected_views=0 max_missing_pixels=0
+[20:51:36] TINYDRAW_PAN_PERF frames=0 bytes=0 average_us=0 max_us=0 settle_us=0 prepare_us=0 transfer_us=0 pushes=0
+[20:51:37] TINYDRAW_PUBLICATION id=208 kind=band zoom=100 generation=128 revision=10 origin=453,406 y0=170 rows=32 submit_first=14181 submit_last=14182 ink=5739 hash=335eabb8
+[20:51:37] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:51:37] TINYDRAW_PUBLICATION id=209 kind=band zoom=100 generation=128 revision=10 origin=453,406 y0=202 rows=32 submit_first=14183 submit_last=14184 ink=6231 hash=5009be55
+[20:51:38] TINYDRAW_PUBLICATION id=210 kind=band zoom=100 generation=128 revision=10 origin=453,406 y0=234 rows=32 submit_first=14185 submit_last=14186 ink=6129 hash=25d7eba9
+[20:51:38] TINYDRAW_PUBLICATION id=211 kind=band zoom=100 generation=128 revision=10 origin=453,406 y0=266 rows=32 submit_first=14187 submit_last=14188 ink=5716 hash=34810b47
+[20:51:38] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:51:38] TINYDRAW_PUBLICATION id=212 kind=band zoom=100 generation=128 revision=10 origin=453,406 y0=298 rows=32 submit_first=14189 submit_last=14190 ink=5514 hash=9b636024
+[20:51:39] TINYDRAW_PUBLICATION id=213 kind=band zoom=100 generation=128 revision=10 origin=453,406 y0=330 rows=32 submit_first=14191 submit_last=14192 ink=6351 hash=c483e079
+[20:51:39] TINYDRAW_PUBLICATION id=214 kind=band zoom=100 generation=128 revision=10 origin=453,406 y0=362 rows=10 submit_first=14193 submit_last=14193 ink=2237 hash=5a85bbf4
+[20:51:39] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:51:41] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:51:43] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[20:51:44] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:51:44] [DEBUG-hw1] down x=117 y=279
+[20:51:47] [DEBUG-hw1] up x=198 y=174 active=0
+[20:51:47] TINYDRAW_PAN_CONTENT zoom=100 origin=372,511 visible_ink=90570 visible_hash=f3777d4e expected_strokes=846 rejected_views=0 max_missing_pixels=0
+[20:51:47] TINYDRAW_PAN_PERF frames=86 bytes=23546112 average_us=26091 max_us=26167 settle_us=0 prepare_us=1632722 transfer_us=597921 pushes=1462
+[20:51:47] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:51:51] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:51:52] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[20:51:56] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[20:51:57] [DEBUG-hw1] down x=302 y=447
+[20:51:57] [DEBUG-hw1] up x=302 y=447 active=0
+[20:51:57] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[20:51:57] [DEBUG-hw1] down x=359 y=369
+[20:51:58] [DEBUG-hw1] up x=359 y=369 active=0
+[20:51:58] TINYDRAW_INTERACTIVE_PAN_DONE persisted=1
+[20:52:00] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[20:52:00] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
