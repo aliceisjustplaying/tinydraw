@@ -21,12 +21,15 @@ class PhysicalDisplay final : public DisplayBackend {
 
   PhysicalDisplay(const PhysicalDisplay&) = delete;
   PhysicalDisplay& operator=(const PhysicalDisplay&) = delete;
+  PhysicalDisplay(PhysicalDisplay&&) = delete;
+  PhysicalDisplay& operator=(PhysicalDisplay&&) = delete;
 
   [[nodiscard]] bool ready() const;
   void reset_timing();
   [[nodiscard]] std::int64_t prepare_us() const;
   [[nodiscard]] std::int64_t transfer_us() const;
   [[nodiscard]] std::uint32_t push_count() const;
+  [[nodiscard]] std::uint32_t rejected_push_count() const;
 
   void set_toolbar(const ToolbarState& toolbar);
   void push_rect(int x, int y, int width, int height, const std::uint16_t* pixels,

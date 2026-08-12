@@ -24,6 +24,11 @@ using production::ViewRequest;
 using production::ZoomLevel;
 
 constexpr int kStripRows = 22;
+constexpr std::uint32_t kExpectedPushesPerFrame = 21U;
+constexpr std::uint32_t kExpectedTotalPushes = 105U;
+constexpr std::uint32_t kExpectedOverviewHash = 0xD76C09B1U;
+constexpr std::uint32_t kExpectedFallbackHashes[]{0xD9E39425U, 0xA4CE26E5U, 0x1B5753A5U,
+                                                  0x91F8B705U};
 constexpr std::uint32_t kFnvOffset = 2'166'136'261U;
 constexpr std::uint32_t kFnvPrime = 16'777'619U;
 constexpr std::uint32_t kExternalCaps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
@@ -70,20 +75,22 @@ bool present_overview(PhysicalDisplay& display, const MaterializedCanvas& canvas
                       production::kOverviewWidth);
   }
   const std::uint32_t target = physical_display_submit_count(nullptr);
+  const std::uint32_t pushes = display.push_count() - pushes_before;
   const bool completed = wait_for_transfers(target, 2'000'000);
+  const bool passed = completed && pushes == kExpectedPushesPerFrame &&
+                      hash == kExpectedOverviewHash && display.rejected_push_count() == 0U;
   std::printf(
       "TINYDRAW_PRODUCTION_WALK_FRAME zoom=25 x=0 y=0 hash=%08lx pushes=%lu "
       "elapsed_us=%lld completed=%u submit=%lu complete=%lu\n",
-      static_cast<unsigned long>(hash),
-      static_cast<unsigned long>(display.push_count() - pushes_before),
+      static_cast<unsigned long>(hash), static_cast<unsigned long>(pushes),
       static_cast<long long>(esp_timer_get_time() - started), completed,
       static_cast<unsigned long>(target),
       static_cast<unsigned long>(physical_display_complete_count(nullptr)));
-  return completed;
+  return passed;
 }
 
 bool present_fallback(PhysicalDisplay& display, MaterializedCanvas& canvas, int world_x,
-                      int world_y, std::span<std::uint16_t> strip) {
+                      int world_y, std::uint32_t expected_hash, std::span<std::uint16_t> strip) {
   const std::int64_t started = esp_timer_get_time();
   const std::uint32_t pushes_before = display.push_count();
   std::int64_t compose_us = 0;
@@ -110,16 +117,18 @@ bool present_fallback(PhysicalDisplay& display, MaterializedCanvas& canvas, int 
                       production::kOverviewWidth);
   }
   const std::uint32_t target = physical_display_submit_count(nullptr);
+  const std::uint32_t pushes = display.push_count() - pushes_before;
   const bool completed = wait_for_transfers(target, 2'000'000);
+  const bool passed = completed && pushes == kExpectedPushesPerFrame && hash == expected_hash &&
+                      display.rejected_push_count() == 0U;
   std::printf(
       "TINYDRAW_PRODUCTION_WALK_FRAME zoom=100 x=%d y=%d hash=%08lx pushes=%lu "
       "compose_us=%lld elapsed_us=%lld completed=%u submit=%lu complete=%lu\n",
-      world_x, world_y, static_cast<unsigned long>(hash),
-      static_cast<unsigned long>(display.push_count() - pushes_before),
+      world_x, world_y, static_cast<unsigned long>(hash), static_cast<unsigned long>(pushes),
       static_cast<long long>(compose_us), static_cast<long long>(esp_timer_get_time() - started),
       completed, static_cast<unsigned long>(target),
       static_cast<unsigned long>(physical_display_complete_count(nullptr)));
-  return completed;
+  return passed;
 }
 
 }  // namespace
@@ -151,7 +160,16 @@ void run_production_overview_walk() {
   MaterializedCanvas canvas(std::span(overview, production::kOverviewPixels), std::span(slot, 1),
                             std::span(tile_pixels, production::kTilePixels), DocumentRevision{0});
   PhysicalDisplay display(false);
-  if (!canvas.ready() || !canvas.publish_overview({0}, canvas.overview_pixels()) ||
+  std::unique_ptr<std::uint16_t[]> overview_source(new (std::nothrow)
+                                                       std::uint16_t[production::kOverviewPixels]);
+  if (overview_source == nullptr) {
+    std::printf("TINYDRAW_PRODUCTION_WALK_FAIL reason=overview_source\n");
+    return;
+  }
+  std::copy_n(overview, production::kOverviewPixels, overview_source.get());
+  if (!canvas.ready() ||
+      !canvas.publish_overview({0},
+                               std::span(overview_source.get(), production::kOverviewPixels)) ||
       !display.ready()) {
     std::printf("TINYDRAW_PRODUCTION_WALK_FAIL reason=bootstrap canvas=%u display=%u\n",
                 canvas.ready(), display.ready());
@@ -165,16 +183,25 @@ void run_production_overview_walk() {
                                static_cast<std::size_t>(production::kOverviewWidth * kStripRows));
   constexpr PixelRect kOrigins[]{
       {0, 0, 0, 0}, {184, 224, 0, 0}, {552, 672, 0, 0}, {1104, 1344, 0, 0}};
-  for (const PixelRect origin : kOrigins) {
-    pass = present_fallback(display, canvas, origin.x0, origin.y0, strip_pixels) && pass;
+  for (std::size_t index = 0; index < std::size(kOrigins); ++index) {
+    const PixelRect origin = kOrigins[index];
+    pass = present_fallback(display, canvas, origin.x0, origin.y0, kExpectedFallbackHashes[index],
+                            strip_pixels) &&
+           pass;
     vTaskDelay(pdMS_TO_TICKS(350));
   }
+  const std::uint32_t submits = physical_display_submit_count(nullptr);
+  const std::uint32_t completes = physical_display_complete_count(nullptr);
+  const std::uint32_t rejects = display.rejected_push_count();
+  pass = pass && display.push_count() == kExpectedTotalPushes && submits == kExpectedTotalPushes &&
+         completes == kExpectedTotalPushes && rejects == 0U;
   std::printf(
-      "TINYDRAW_PRODUCTION_WALK_DONE pass=%u panel_rejects=0 prepare_us=%lld transfer_us=%lld "
-      "pushes=%lu free_psram=%lu largest_psram=%lu\n",
-      pass, static_cast<long long>(display.prepare_us()),
+      "TINYDRAW_PRODUCTION_WALK_DONE pass=%u panel_rejects=%lu prepare_us=%lld transfer_us=%lld "
+      "pushes=%lu submit=%lu complete=%lu free_psram=%lu largest_psram=%lu\n",
+      pass, static_cast<unsigned long>(rejects), static_cast<long long>(display.prepare_us()),
       static_cast<long long>(display.transfer_us()),
-      static_cast<unsigned long>(display.push_count()),
+      static_cast<unsigned long>(display.push_count()), static_cast<unsigned long>(submits),
+      static_cast<unsigned long>(completes),
       static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)),
       static_cast<unsigned long>(heap_caps_get_largest_free_block(kExternalCaps)));
   std::fflush(stdout);

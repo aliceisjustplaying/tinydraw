@@ -242,6 +242,7 @@ class PhysicalDisplay::Impl {
   [[nodiscard]] std::int64_t prepare_us() const { return prepare_us_; }
   [[nodiscard]] std::int64_t transfer_us() const { return transfer_us_; }
   [[nodiscard]] std::uint32_t push_count() const { return push_count_; }
+  [[nodiscard]] std::uint32_t rejected_push_count() const { return rejected_push_count_; }
 
   void set_toolbar(const ToolbarState& toolbar) {
     if (!overlays_enabled_) {
@@ -312,12 +313,14 @@ class PhysicalDisplay::Impl {
 
   void push_rect(int x, int y, int width, int height, const std::uint16_t* pixels, int stride = 0) {
     if (!ready_ || pixels == nullptr || width <= 0 || height <= 0) {
+      ++rejected_push_count_;
       return;
     }
     const bool in_bounds = x >= 0 && y >= 0 && x < kCanvasWidth && y < kCanvasHeight &&
                            width <= kCanvasWidth - x && height <= kCanvasHeight - y;
     const bool valid_co5300_window = ((x | y | width | height) & 1) == 0;
     if (!in_bounds || !valid_co5300_window) {
+      ++rejected_push_count_;
       std::printf(
           "TINYDRAW_PANEL_WINDOW_REJECT x=%d y=%d width=%d height=%d bounds=%u even_window=%u\n", x,
           y, width, height, in_bounds, valid_co5300_window);
@@ -325,12 +328,14 @@ class PhysicalDisplay::Impl {
     }
     const int source_stride = stride == 0 ? width : stride;
     if (source_stride < width) {
+      ++rejected_push_count_;
       return;
     }
     if (width * height > kTransferPixels) {
       int rows_per_transfer = kTransferPixels / width;
       rows_per_transfer -= rows_per_transfer % 2;
       if (rows_per_transfer <= 0) {
+        ++rejected_push_count_;
         return;
       }
       for (int row = 0; row < height; row += rows_per_transfer) {
@@ -388,9 +393,9 @@ class PhysicalDisplay::Impl {
     }
     prepare_us_ += esp_timer_get_time() - prepare_started;
     const auto submit_started = esp_timer_get_time();
+    transfer_submits.fetch_add(1U, std::memory_order_release);
     ESP_ERROR_CHECK(
         esp_lcd_panel_draw_bitmap(panel_, x, y, x + width, y + height, transfer.data()));
-    transfer_submits.fetch_add(1U, std::memory_order_release);
     transfer_us_ += esp_timer_get_time() - submit_started;
     ++push_count_;
   }
@@ -492,6 +497,7 @@ class PhysicalDisplay::Impl {
   std::int64_t prepare_us_ = 0;
   std::int64_t transfer_us_ = 0;
   std::uint32_t push_count_ = 0;
+  std::uint32_t rejected_push_count_ = 0;
   std::size_t transfer_index_ = 0;
   bool ready_ = false;
   bool overlays_enabled_ = true;
@@ -506,6 +512,7 @@ void PhysicalDisplay::reset_timing() { impl_->reset_timing(); }
 std::int64_t PhysicalDisplay::prepare_us() const { return impl_->prepare_us(); }
 std::int64_t PhysicalDisplay::transfer_us() const { return impl_->transfer_us(); }
 std::uint32_t PhysicalDisplay::push_count() const { return impl_->push_count(); }
+std::uint32_t PhysicalDisplay::rejected_push_count() const { return impl_->rejected_push_count(); }
 void PhysicalDisplay::set_toolbar(const ToolbarState& toolbar) { impl_->set_toolbar(toolbar); }
 void PhysicalDisplay::push_rect(int x, int y, int width, int height, const std::uint16_t* pixels,
                                 int stride) {
