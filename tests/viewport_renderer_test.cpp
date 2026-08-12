@@ -19,6 +19,11 @@ constexpr std::uint16_t kBlue = 0x035FU;
 
 std::size_t pixel(int x, int y) { return static_cast<std::size_t>(y * tinydraw::kCanvasWidth + x); }
 
+bool cancel_after_checks(void* raw) {
+  auto& checks = *static_cast<int*>(raw);
+  return ++checks >= 8;
+}
+
 }  // namespace
 
 TEST_CASE("offline viewport replay matches the settled live raster") {
@@ -186,6 +191,116 @@ TEST_CASE("cached integer pan plus exposed strip render equals a full rebuild") 
 
   CHECK(stats.complete);
   CHECK(cached == expected);
+}
+
+TEST_CASE("a stroke larger than the primitive arena renders completely") {
+  constexpr std::size_t kSampleCount = 900U;
+  std::array<tinydraw::VectorStroke, 1> stroke_storage;
+  std::array<tinydraw::StrokeSample, kSampleCount> sample_storage;
+  tinydraw::VectorDocument document(stroke_storage, sample_storage);
+  REQUIRE(document.begin_stroke(kBlue, tinydraw::VectorTool::kPen,
+                                {.x = 30.0F, .y = 200.0F, .radius = 1.25F}));
+  for (std::size_t index = 1; index < kSampleCount; ++index) {
+    const float x = 30.0F + static_cast<float>(index % 300U);
+    const float y = index % 2U == 0U ? 200.0F : 204.0F;
+    REQUIRE(document.append({.x = x, .y = y, .radius = 1.25F}));
+  }
+  REQUIRE(document.finish_stroke());
+
+  std::vector<std::uint8_t> scratch(kPixels);
+  std::vector<std::uint16_t> rebuilt(kPixels);
+  tinydraw::ViewportRenderer renderer(scratch);
+  const auto stats = renderer.render(document, {}, rebuilt);
+
+  CHECK(stats.complete);
+  CHECK(stats.samples_processed == kSampleCount);
+  CHECK(stats.primitives_rasterized > renderer.primitive_capacity());
+  CHECK(rebuilt[pixel(328, 204)] != kWhite);
+}
+
+TEST_CASE("an over-capacity self-overlapping stroke is blended once") {
+  constexpr std::size_t kLongSamples = 900U;
+  std::array<tinydraw::VectorStroke, 1> long_stroke_storage;
+  std::array<tinydraw::StrokeSample, kLongSamples> long_sample_storage;
+  tinydraw::VectorDocument long_document(long_stroke_storage, long_sample_storage);
+  REQUIRE(long_document.begin_stroke(kBlue, tinydraw::VectorTool::kPen,
+                                     {.x = 100.25F, .y = 100.25F, .radius = 0.4F}));
+  for (std::size_t index = 1; index < kLongSamples; ++index) {
+    REQUIRE(long_document.append(
+        {.x = index % 2U == 0U ? 100.25F : 110.25F, .y = 100.25F, .radius = 0.4F}));
+  }
+  REQUIRE(long_document.finish_stroke());
+
+  std::array<tinydraw::VectorStroke, 1> short_stroke_storage;
+  std::array<tinydraw::StrokeSample, 4> short_sample_storage;
+  tinydraw::VectorDocument short_document(short_stroke_storage, short_sample_storage);
+  REQUIRE(short_document.begin_stroke(kBlue, tinydraw::VectorTool::kPen,
+                                      {.x = 100.25F, .y = 100.25F, .radius = 0.4F}));
+  REQUIRE(short_document.append({.x = 110.25F, .y = 100.25F, .radius = 0.4F}));
+  REQUIRE(short_document.append({.x = 100.25F, .y = 100.25F, .radius = 0.4F}));
+  REQUIRE(short_document.append({.x = 110.25F, .y = 100.25F, .radius = 0.4F}));
+  REQUIRE(short_document.finish_stroke());
+
+  std::vector<std::uint8_t> scratch(kPixels);
+  std::vector<std::uint16_t> long_result(kPixels);
+  std::vector<std::uint16_t> short_result(kPixels);
+  tinydraw::ViewportRenderer renderer(scratch);
+  const auto stats = renderer.render(long_document, {}, long_result);
+  static_cast<void>(renderer.render(short_document, {}, short_result));
+
+  REQUIRE(stats.complete);
+  CHECK(stats.primitives_rasterized > renderer.primitive_capacity());
+  CHECK(long_result == short_result);
+}
+
+TEST_CASE("geometry cancellation is observed before a long stroke completes") {
+  constexpr std::size_t kSampleCount = 900U;
+  std::array<tinydraw::VectorStroke, 1> stroke_storage;
+  std::array<tinydraw::StrokeSample, kSampleCount> sample_storage;
+  tinydraw::VectorDocument document(stroke_storage, sample_storage);
+  REQUIRE(document.begin_stroke(kBlue, tinydraw::VectorTool::kPen,
+                                {.x = 20.0F, .y = 80.0F, .radius = 2.0F}));
+  for (std::size_t index = 1; index < kSampleCount; ++index) {
+    REQUIRE(document.append({.x = 20.0F + static_cast<float>(index % 320U),
+                             .y = 80.0F + static_cast<float>(index % 5U),
+                             .radius = 2.0F}));
+  }
+  REQUIRE(document.finish_stroke());
+
+  std::vector<std::uint8_t> scratch(kPixels);
+  std::vector<std::uint16_t> rebuilt(kPixels, 0U);
+  tinydraw::ViewportRenderer renderer(scratch);
+  int cancellation_checks = 0;
+  const auto stats = renderer.render(
+      document, {}, rebuilt,
+      {.cancelled = cancel_after_checks, .cancellation_context = &cancellation_checks});
+
+  CHECK_FALSE(stats.complete);
+  CHECK(cancellation_checks == 8);
+  CHECK(stats.samples_processed == 0U);
+}
+
+TEST_CASE("low zoom culling keeps minimum-radius edge and corner coverage") {
+  std::array<tinydraw::VectorStroke, 2> stroke_storage;
+  std::array<tinydraw::StrokeSample, 2> sample_storage;
+  tinydraw::VectorDocument document(stroke_storage, sample_storage);
+  REQUIRE(document.begin_stroke(kBlue, tinydraw::VectorTool::kPen,
+                                {.x = -10.0F, .y = 200.0F, .radius = 0.1F}));
+  REQUIRE(document.finish_stroke());
+  REQUIRE(document.begin_stroke(kBlue, tinydraw::VectorTool::kPen,
+                                {.x = -5.0F, .y = -5.0F, .radius = 0.1F}));
+  REQUIRE(document.finish_stroke());
+
+  std::vector<std::uint8_t> scratch(kPixels);
+  std::vector<std::uint16_t> rebuilt(kPixels);
+  tinydraw::ViewportRenderer renderer(scratch);
+  const auto stats =
+      renderer.render(document, {.zoom = 0.1F}, rebuilt, {.minimum_screen_radius = 2.0F});
+
+  CHECK(stats.complete);
+  CHECK(stats.strokes_intersecting == 2U);
+  CHECK(rebuilt[pixel(0, 20)] != kWhite);
+  CHECK(rebuilt[pixel(0, 0)] != kWhite);
 }
 
 TEST_CASE("empty document clears a reused viewport") {

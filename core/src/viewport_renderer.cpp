@@ -36,6 +36,14 @@ PrimitiveBounds bounds_of(const RibbonPrimitive& primitive) {
 
 std::uint32_t tick(std::uint32_t (*now)()) { return now != nullptr ? now() : 0U; }
 
+bool cancelled(const ViewportRenderOptions& options) {
+  return options.cancelled != nullptr && options.cancelled(options.cancellation_context);
+}
+
+constexpr std::size_t kCancellationSampleInterval = 16U;
+constexpr float kCurveOverlapPixels = 0.75F;
+constexpr float kAntialiasPaddingPixels = 1.0F;
+
 constexpr std::size_t align_up(std::size_t value, std::size_t alignment) {
   return (value + alignment - 1U) / alignment * alignment;
 }
@@ -111,6 +119,10 @@ ViewportRenderStats ViewportRenderer::render_region(const VectorDocument& docume
   if (region.x0 == region.x1 || region.y0 == region.y1) {
     return stats;
   }
+  if (cancelled(options)) {
+    stats.complete = false;
+    return stats;
+  }
 
   const std::uint32_t clear_started = tick(options.now);
   for (int y = region.y0; y < region.y1; ++y) {
@@ -120,11 +132,18 @@ ViewportRenderStats ViewportRenderer::render_region(const VectorDocument& docume
   }
   stats.clear_ticks += static_cast<std::uint32_t>(tick(options.now) - clear_started);
   const double inverse_zoom = 1.0 / static_cast<double>(camera.zoom);
+  const double screen_halo = static_cast<double>(options.minimum_screen_radius) +
+                             static_cast<double>(kCurveOverlapPixels + kAntialiasPaddingPixels);
+  const double world_halo = screen_halo * inverse_zoom;
   const RectF viewport{
-      .x0 = static_cast<float>(camera.x + static_cast<double>(region.x0) * inverse_zoom),
-      .y0 = static_cast<float>(camera.y + static_cast<double>(region.y0) * inverse_zoom),
-      .x1 = static_cast<float>(camera.x + static_cast<double>(region.x1) * inverse_zoom),
-      .y1 = static_cast<float>(camera.y + static_cast<double>(region.y1) * inverse_zoom),
+      .x0 =
+          static_cast<float>(camera.x + static_cast<double>(region.x0) * inverse_zoom - world_halo),
+      .y0 =
+          static_cast<float>(camera.y + static_cast<double>(region.y0) * inverse_zoom - world_halo),
+      .x1 =
+          static_cast<float>(camera.x + static_cast<double>(region.x1) * inverse_zoom + world_halo),
+      .y1 =
+          static_cast<float>(camera.y + static_cast<double>(region.y1) * inverse_zoom + world_halo),
   };
 
   Batch batch;
@@ -144,31 +163,47 @@ ViewportRenderStats ViewportRenderer::render_region(const VectorDocument& docume
     }
 
     const Batch checkpoint = batch;
-    if (render_stroke_geometry(stroke, samples, camera, region, options, batch, stats)) {
+    const GeometryResult geometry =
+        render_stroke_geometry(stroke, samples, camera, region, options, batch, stats);
+    if (geometry == GeometryResult::kComplete) {
       ++stats.strokes_intersecting;
       stats.samples_processed += static_cast<std::uint32_t>(samples.size());
       ++stroke_index;
       continue;
     }
-
-    // The stroke did not fit. Flush every completed stroke and retry it with
-    // an empty arena; a stroke too large for the whole arena fails the render.
-    if (checkpoint.range_count == 0U) {
+    if (geometry == GeometryResult::kCancelled) {
       stats.complete = false;
       return stats;
     }
+
+    // Flush every completed stroke and retry with an empty arena. If the
+    // stroke alone exceeds the arena, stream it tile-by-tile so all of its
+    // primitives still union into one coverage mask before the single blend.
     batch = checkpoint;
-    composite_batch(destination, batch, region, options, stats);
-    batch = {};
+    if (checkpoint.range_count != 0U) {
+      composite_batch(destination, batch, region, options, stats);
+      batch = {};
+      continue;
+    }
+    if (!render_large_stroke(stroke, samples, camera, destination, region, options, stats)) {
+      stats.complete = false;
+      return stats;
+    }
+    ++stats.strokes_intersecting;
+    stats.samples_processed += static_cast<std::uint32_t>(samples.size());
+    ++stroke_index;
+  }
+  if (cancelled(options)) {
+    stats.complete = false;
+    return stats;
   }
   composite_batch(destination, batch, region, options, stats);
   return stats;
 }
 
-bool ViewportRenderer::render_stroke_geometry(const VectorStroke& stroke,
-                                              std::span<const StrokeSample> samples, Camera camera,
-                                              Rect region, const ViewportRenderOptions& options,
-                                              Batch& batch, ViewportRenderStats& stats) {
+ViewportRenderer::GeometryResult ViewportRenderer::render_stroke_geometry(
+    const VectorStroke& stroke, std::span<const StrokeSample> samples, Camera camera, Rect region,
+    const ViewportRenderOptions& options, Batch& batch, ViewportRenderStats& stats) {
   const std::uint32_t geometry_started = tick(options.now);
   auto arena = primitives();
   auto rects = tile_rects();
@@ -176,6 +211,10 @@ bool ViewportRenderer::render_stroke_geometry(const VectorStroke& stroke,
   const std::size_t first_primitive = batch.primitive_count;
 
   for (std::size_t index = 0; index < samples.size(); ++index) {
+    if (index % kCancellationSampleInterval == 0U && cancelled(options)) {
+      stats.geometry_ticks += static_cast<std::uint32_t>(tick(options.now) - geometry_started);
+      return GeometryResult::kCancelled;
+    }
     const StrokeSample sample = samples[index];
     const InkPoint point{
         .position = camera_project(camera, sample.x, sample.y),
@@ -189,7 +228,7 @@ bool ViewportRenderer::render_stroke_geometry(const VectorStroke& stroke,
     const RibbonUpdate update = final ? ribbon.finish(point) : ribbon.append(point, false);
     if (update.committed.size() > arena.size() - batch.primitive_count) {
       stats.geometry_ticks += static_cast<std::uint32_t>(tick(options.now) - geometry_started);
-      return false;
+      return GeometryResult::kCapacity;
     }
     for (const RibbonPrimitive& primitive : update.committed) {
       const std::size_t slot = batch.primitive_count;
@@ -220,7 +259,7 @@ bool ViewportRenderer::render_stroke_geometry(const VectorStroke& stroke,
           if (touched > kBatchEntryCapacity - batch.entry_count) {
             stats.geometry_ticks +=
                 static_cast<std::uint32_t>(tick(options.now) - geometry_started);
-            return false;
+            return GeometryResult::kCapacity;
           }
           batch.entry_count += touched;
         }
@@ -232,7 +271,7 @@ bool ViewportRenderer::render_stroke_geometry(const VectorStroke& stroke,
 
   if (batch.range_count >= ranges().size()) {
     stats.geometry_ticks += static_cast<std::uint32_t>(tick(options.now) - geometry_started);
-    return false;
+    return GeometryResult::kCapacity;
   }
   const std::uint16_t color =
       stroke.tool == VectorTool::kEraser ? options.background : stroke.color;
@@ -244,6 +283,125 @@ bool ViewportRenderer::render_stroke_geometry(const VectorStroke& stroke,
   stats.primitives_rasterized +=
       static_cast<std::uint32_t>(batch.primitive_count - first_primitive);
   stats.geometry_ticks += static_cast<std::uint32_t>(tick(options.now) - geometry_started);
+  return GeometryResult::kComplete;
+}
+
+bool ViewportRenderer::render_large_stroke(const VectorStroke& stroke,
+                                           std::span<const StrokeSample> samples, Camera camera,
+                                           std::span<std::uint16_t> destination, Rect region,
+                                           const ViewportRenderOptions& options,
+                                           ViewportRenderStats& stats) {
+  const std::uint32_t geometry_started = tick(options.now);
+  const std::uint16_t color =
+      stroke.tool == VectorTool::kEraser ? options.background : stroke.color;
+  LaneBuffers& lane = lanes_[0];
+  std::uint32_t primitive_count = 0U;
+
+  // Restrict the exceptional path to tiles the stroke can conservatively
+  // reach. Stored bounds already include world-space radii; the additional
+  // screen halo covers minimum-radius enlargement, curve overlap, and AA.
+  const float screen_halo =
+      options.minimum_screen_radius + kCurveOverlapPixels + kAntialiasPaddingPixels;
+  const float screen_x0 =
+      static_cast<float>((static_cast<double>(stroke.bounds.x0) - camera.x) * camera.zoom) -
+      screen_halo;
+  const float screen_y0 =
+      static_cast<float>((static_cast<double>(stroke.bounds.y0) - camera.y) * camera.zoom) -
+      screen_halo;
+  const float screen_x1 =
+      static_cast<float>((static_cast<double>(stroke.bounds.x1) - camera.x) * camera.zoom) +
+      screen_halo;
+  const float screen_y1 =
+      static_cast<float>((static_cast<double>(stroke.bounds.y1) - camera.y) * camera.zoom) +
+      screen_halo;
+  const int clipped_x0 = std::max(region.x0, static_cast<int>(std::floor(screen_x0)));
+  const int clipped_y0 = std::max(region.y0, static_cast<int>(std::floor(screen_y0)));
+  const int clipped_x1 = std::min(region.x1, static_cast<int>(std::ceil(screen_x1)));
+  const int clipped_y1 = std::min(region.y1, static_cast<int>(std::ceil(screen_y1)));
+  if (clipped_x0 >= clipped_x1 || clipped_y0 >= clipped_y1) {
+    stats.geometry_ticks += static_cast<std::uint32_t>(tick(options.now) - geometry_started);
+    return true;
+  }
+
+  const int first_tile_x = clipped_x0 / kTileSize;
+  const int first_tile_y = clipped_y0 / kTileSize;
+  const int last_tile_x = (clipped_x1 - 1) / kTileSize;
+  const int last_tile_y = (clipped_y1 - 1) / kTileSize;
+  for (int tile_y_index = first_tile_y; tile_y_index <= last_tile_y; ++tile_y_index) {
+    for (int tile_x_index = first_tile_x; tile_x_index <= last_tile_x; ++tile_x_index) {
+      const int grid_x = tile_x_index * kTileSize;
+      const int grid_y = tile_y_index * kTileSize;
+      const int tile_x = std::max(grid_x, region.x0);
+      const int tile_y = std::max(grid_y, region.y0);
+      const int tile_right = std::min({grid_x + kTileSize, kCanvasWidth, region.x1});
+      const int tile_bottom = std::min({grid_y + kTileSize, kCanvasHeight, region.y1});
+      const int width = tile_right - tile_x;
+      const int height = tile_bottom - tile_y;
+      lane.coverage.reset(tile_x, tile_y, width, height);
+
+      CurvedRibbonStream ribbon;
+      std::uint32_t tile_primitive_count = 0U;
+      for (std::size_t index = 0; index < samples.size(); ++index) {
+        if (index % kCancellationSampleInterval == 0U && cancelled(options)) {
+          stats.geometry_ticks += static_cast<std::uint32_t>(tick(options.now) - geometry_started);
+          return false;
+        }
+        const StrokeSample sample = samples[index];
+        const InkPoint point{
+            .position = camera_project(camera, sample.x, sample.y),
+            .pressure = 0.0F,
+            .radius = camera_project_radius(camera, sample.radius, options.minimum_screen_radius),
+            .distance = 0.0F,
+            .running_length = 0.0F,
+            .timestamp_us = 0U,
+        };
+        const bool final = index + 1U == samples.size();
+        const RibbonUpdate update = final ? ribbon.finish(point) : ribbon.append(point, false);
+        for (const RibbonPrimitive& primitive : update.committed) {
+          ++tile_primitive_count;
+          const PrimitiveBounds bounds = bounds_of(primitive);
+          if (std::isfinite(bounds.x0) && std::isfinite(bounds.y0) && std::isfinite(bounds.x1) &&
+              std::isfinite(bounds.y1) && bounds.x1 >= static_cast<float>(tile_x) &&
+              bounds.y1 >= static_cast<float>(tile_y) &&
+              bounds.x0 < static_cast<float>(tile_right) &&
+              bounds.y0 < static_cast<float>(tile_bottom)) {
+            if (primitive.kind == RibbonPrimitiveKind::kCircle) {
+              lane.coverage.rasterize_circle(primitive.center, primitive.radius);
+            } else {
+              lane.coverage.rasterize_convex(
+                  std::span(primitive.points.data(), primitive.point_count));
+            }
+            ++stats.primitive_tile_visits;
+          }
+        }
+      }
+      if (primitive_count == 0U) {
+        primitive_count = tile_primitive_count;
+      }
+      if (lane.coverage.dirty_right() < lane.coverage.dirty_left()) {
+        continue;
+      }
+
+      const std::uint32_t composite_started = tick(options.now);
+      for (int y = 0; y < height; ++y) {
+        const auto canvas_index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x);
+        std::copy_n(destination.begin() + static_cast<std::ptrdiff_t>(canvas_index), width,
+                    lane.working.begin() + static_cast<std::ptrdiff_t>(y * width));
+      }
+      composite_rgb565(lane.coverage, color,
+                       std::span(lane.working.data(), static_cast<std::size_t>(width * height)));
+      for (int y = 0; y < height; ++y) {
+        const auto canvas_index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x);
+        std::copy_n(lane.working.begin() + static_cast<std::ptrdiff_t>(y * width), width,
+                    destination.begin() + static_cast<std::ptrdiff_t>(canvas_index));
+      }
+      stats.composite_ticks += static_cast<std::uint32_t>(tick(options.now) - composite_started);
+      ++stats.tiles_composited;
+    }
+  }
+  stats.primitives_rasterized += primitive_count;
+  stats.geometry_ticks += static_cast<std::uint32_t>(tick(options.now) - geometry_started);
+  ++stats.batches;
   return true;
 }
 

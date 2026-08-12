@@ -286,6 +286,17 @@ void copy_job_to_cache(InteractivePanBenchmark& benchmark, int job) {
   }
 }
 
+struct RenderCancellation {
+  InteractivePanBenchmark* benchmark = nullptr;
+  std::uint32_t generation = 0U;
+};
+
+bool render_cancelled(void* raw) {
+  const auto& cancellation = *static_cast<RenderCancellation*>(raw);
+  return cancellation.benchmark->requested_generation.load() != cancellation.generation ||
+         cancellation.benchmark->paused.load();
+}
+
 void render_task_entry(void* raw) {
   auto& benchmark = *static_cast<InteractivePanBenchmark*>(raw);
   std::uint32_t handled_generation = 0U;
@@ -308,9 +319,12 @@ void render_task_entry(void* raw) {
       continue;
     }
 
+    RenderCancellation cancellation{.benchmark = &benchmark, .generation = generation};
     ViewportRenderOptions options;
     options.yield = benchmark_yield;
     options.yield_every_tiles = 8U;
+    options.cancelled = render_cancelled;
+    options.cancellation_context = &cancellation;
     while (benchmark.requested_generation.load() == generation && !benchmark.paused.load()) {
       const int job = choose_job(benchmark);
       if (job < 0) {
@@ -320,10 +334,11 @@ void render_task_entry(void* raw) {
         break;
       }
       const int local_y = (job % kBandsPerCell) * kBandRows;
-      static_cast<void>(benchmark.renderer->render_region(
+      const ViewportRenderStats render_stats = benchmark.renderer->render_region(
           benchmark.document, {.zoom = zoom_value}, benchmark.render_buffer,
-          {.x0 = 0, .y0 = local_y, .x1 = kCanvasWidth, .y1 = local_y + kBandRows}, options));
-      if (benchmark.requested_generation.load() != generation || benchmark.paused.load()) {
+          {.x0 = 0, .y0 = local_y, .x1 = kCanvasWidth, .y1 = local_y + kBandRows}, options);
+      if (!render_stats.complete || benchmark.requested_generation.load() != generation ||
+          benchmark.paused.load()) {
         break;
       }
       xSemaphoreTake(benchmark.cache_mutex, portMAX_DELAY);
@@ -491,10 +506,15 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
     return false;
   }
   benchmark.paused.store(false);
-  benchmark.requested_zoom_index.store(index);
-  benchmark.active_zoom_index.store(index);
   benchmark.center_ready_us[static_cast<std::size_t>(index)].store(0U);
   benchmark.full_ready_us[static_cast<std::size_t>(index)].store(0U);
+
+  // Cache publication uses this same mutex. Keeping the new generation,
+  // readiness reset, and replacement pixels in one critical section prevents
+  // an old renderer from marking freshly replaced checkerboard pixels ready.
+  xSemaphoreTake(benchmark.cache_mutex, portMAX_DELAY);
+  benchmark.requested_zoom_index.store(index);
+  benchmark.active_zoom_index.store(index);
   const std::uint32_t generation = benchmark.requested_generation.fetch_add(1U) + 1U;
   benchmark.generation_started_us.store(static_cast<std::uint32_t>(esp_timer_get_time()));
   for (auto& value : benchmark.ready) {
@@ -502,7 +522,6 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
   }
   benchmark.view_x.store(kCenterOriginX);
   benchmark.view_y.store(kCenterOriginY);
-  xSemaphoreTake(benchmark.cache_mutex, portMAX_DELAY);
   fill_miss_pattern(benchmark.world);
   static_cast<void>(benchmark.world.move_to({kCenterOriginX, kCenterOriginY}));
   xSemaphoreGive(benchmark.cache_mutex);

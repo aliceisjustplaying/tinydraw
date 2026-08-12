@@ -18,6 +18,11 @@ struct ViewportRenderOptions {
   void (*yield)(void*) = nullptr;
   void* yield_context = nullptr;
   std::uint32_t yield_every_tiles = 0;
+  // Optional cancellation callback. Geometry checks it at bounded sample
+  // intervals; a canceled render returns complete=false and its destination
+  // must not be published as a finished region.
+  bool (*cancelled)(void*) = nullptr;
+  void* cancellation_context = nullptr;
   // Optional monotonic tick source (e.g. CPU cycle counter). Wrap-safe deltas
   // accumulate into the phase tick counters below; nullptr disables timing.
   std::uint32_t (*now)() = nullptr;
@@ -104,6 +109,12 @@ class ViewportRenderer {
     std::array<std::uint16_t, kTileSize * kTileSize> working{};
   };
 
+  enum class GeometryResult {
+    kComplete,
+    kCapacity,
+    kCancelled,
+  };
+
   struct TileWork {
     ViewportRenderer* renderer = nullptr;
     const Batch* batch = nullptr;
@@ -114,10 +125,16 @@ class ViewportRenderer {
     std::array<ViewportRenderStats, kLanes> lane_stats{};
   };
 
-  [[nodiscard]] bool render_stroke_geometry(const VectorStroke& stroke,
-                                            std::span<const StrokeSample> samples, Camera camera,
-                                            Rect region, const ViewportRenderOptions& options,
-                                            Batch& batch, ViewportRenderStats& stats);
+  [[nodiscard]] GeometryResult render_stroke_geometry(const VectorStroke& stroke,
+                                                      std::span<const StrokeSample> samples,
+                                                      Camera camera, Rect region,
+                                                      const ViewportRenderOptions& options,
+                                                      Batch& batch, ViewportRenderStats& stats);
+  [[nodiscard]] bool render_large_stroke(const VectorStroke& stroke,
+                                         std::span<const StrokeSample> samples, Camera camera,
+                                         std::span<std::uint16_t> destination, Rect region,
+                                         const ViewportRenderOptions& options,
+                                         ViewportRenderStats& stats);
   void composite_batch(std::span<std::uint16_t> destination, const Batch& batch, Rect region,
                        const ViewportRenderOptions& options, ViewportRenderStats& stats);
   static void composite_lane(void* raw, int lane);
