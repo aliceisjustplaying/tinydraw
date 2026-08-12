@@ -8,6 +8,7 @@ graphics_build="$root/out/build/esp32-graphics"
 vector_build="$root/out/build/esp32-vector-benchmark"
 interactive_pan_build="$root/out/build/esp32-interactive-pan-benchmark"
 overview_walk_build="$root/out/build/esp32-production-overview-walk"
+memory_probe_build="$root/out/build/esp32-production-memory-probe"
 action="${1:-build}"
 
 if ! command -v eim >/dev/null 2>&1; then
@@ -73,6 +74,18 @@ case "$action" in
     assert_config "$overview_walk_build/sdkconfig" OCT
     eim run "idf.py -B '$overview_walk_build' -p '$port' flash"
     ;;
+  production-memory-probe)
+    port="${2:-}"
+    if [[ -z "$port" ]]; then
+      echo "usage: $0 production-memory-probe PORT" >&2
+      exit 2
+    fi
+    rm -rf "$memory_probe_build"
+    cd "$root/esp32"
+    eim run "idf.py -B '$memory_probe_build' -DTINYDRAW_QEMU=OFF -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_PRODUCTION_MEMORY_PROBE=ON -DTINYDRAW_PRODUCTION_OVERVIEW_WALK=OFF build"
+    assert_config "$memory_probe_build/sdkconfig" OCT
+    eim run "idf.py -B '$memory_probe_build' -p '$port' flash"
+    ;;
   qemu)
     enable_qemu
     cd "$root/esp32"
@@ -93,10 +106,10 @@ case "$action" in
     fi
     ;;
   clean)
-    rm -rf "$build" "$qemu_build" "$graphics_build" "$vector_build" "$interactive_pan_build" "$overview_walk_build"
+    rm -rf "$build" "$qemu_build" "$graphics_build" "$vector_build" "$interactive_pan_build" "$overview_walk_build" "$memory_probe_build"
     ;;
   *)
-    echo "usage: $0 {build|vector-benchmark PORT|interactive-pan-benchmark PORT|production-overview-walk PORT|qemu|graphics|graphics-test|clean}" >&2
+    echo "usage: $0 {build|vector-benchmark PORT|interactive-pan-benchmark PORT|production-overview-walk PORT|production-memory-probe PORT|qemu|graphics|graphics-test|clean}" >&2
     exit 2
     ;;
 esac

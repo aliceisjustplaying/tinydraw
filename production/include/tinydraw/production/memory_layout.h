@@ -8,6 +8,9 @@
 
 namespace tinydraw::production {
 
+// Revision publication renders the complete next overview outside the live
+// overview before committing it. This region is distinct from kOverviewBytes.
+inline constexpr std::size_t kOverviewPublicationBytes = kOverviewBytes;
 inline constexpr std::size_t kTileSlotCount = 128;
 inline constexpr std::size_t kOperationCapacity = 4'000;
 inline constexpr std::size_t kOperationSampleCapacity = 80'000;
@@ -73,8 +76,8 @@ inline constexpr std::size_t kRendererWorkspaceBytes =
     kRendererGeometryBytes;
 inline constexpr std::size_t kDisplayWorkspaceBytes = kOverlayBytes + kStagingBytes;
 inline constexpr std::size_t kExternalPlanBytes =
-    kOverviewBytes + kTilePoolBytes + kTileMetadataBytes + kOperationStorageBytes +
-    kLodStorageBytes + kRendererWorkspaceBytes + kDisplayWorkspaceBytes;
+    kOverviewBytes + kOverviewPublicationBytes + kTilePoolBytes + kTileMetadataBytes +
+    kOperationStorageBytes + kLodStorageBytes + kRendererWorkspaceBytes + kDisplayWorkspaceBytes;
 
 }  // namespace tinydraw::production
 
