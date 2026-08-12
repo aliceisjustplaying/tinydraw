@@ -38,6 +38,7 @@ constexpr std::size_t kTimingCapacity = 256U;
 constexpr std::size_t kReportBytes = 8'192U;
 constexpr std::array kZoomPercents{50, 100, 200};
 constexpr std::uint16_t kBackground = 0xFFFFU;
+constexpr float kCanonicalHaloPixels = 1.75F;
 constexpr std::uint8_t kDerivedReady = 1U;
 constexpr std::uint8_t kExactReady = 2U;
 constexpr std::uint32_t kExternalCaps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
@@ -147,10 +148,17 @@ bool build_valid_fallback(const VectorDocument& document, std::span<const std::u
       .y1 =
           static_cast<float>(destination_camera.y + WorldCanvas::kHeight / destination_camera.zoom),
   };
+  const float source_halo = kCanonicalHaloPixels / source_camera.zoom;
+  const RectF proven_source{
+      .x0 = source_world.x0 + source_halo,
+      .y0 = source_world.y0 + source_halo,
+      .x1 = source_world.x1 - source_halo,
+      .y1 = source_world.y1 - source_halo,
+  };
   for (const VectorStroke& stroke : document.strokes()) {
     if (rects_intersect(stroke.bounds, destination_world) &&
-        (stroke.bounds.x0 < source_world.x0 || stroke.bounds.y0 < source_world.y0 ||
-         stroke.bounds.x1 > source_world.x1 || stroke.bounds.y1 > source_world.y1)) {
+        (stroke.bounds.x0 < proven_source.x0 || stroke.bounds.y0 < proven_source.y0 ||
+         stroke.bounds.x1 > proven_source.x1 || stroke.bounds.y1 > proven_source.y1)) {
       return false;
     }
   }
@@ -449,11 +457,12 @@ void render_task_entry(void* raw) {
       const int local_y = (job % kBandsPerCell) * kBandRows;
       const Camera camera = job_camera(active_atlas, job);
       const double inverse_zoom = 1.0 / static_cast<double>(camera.zoom);
+      const float world_halo = kCanonicalHaloPixels / camera.zoom;
       options.candidate_strokes = benchmark.macrogrid.query(
-          {.x0 = static_cast<float>(camera.x),
-           .y0 = static_cast<float>(camera.y + local_y * inverse_zoom),
-           .x1 = static_cast<float>(camera.x + kCanvasWidth * inverse_zoom),
-           .y1 = static_cast<float>(camera.y + (local_y + kBandRows) * inverse_zoom)});
+          {.x0 = static_cast<float>(camera.x) - world_halo,
+           .y0 = static_cast<float>(camera.y + local_y * inverse_zoom) - world_halo,
+           .x1 = static_cast<float>(camera.x + kCanvasWidth * inverse_zoom) + world_halo,
+           .y1 = static_cast<float>(camera.y + (local_y + kBandRows) * inverse_zoom) + world_halo});
       const ViewportRenderStats render_stats = benchmark.renderer->render_region(
           benchmark.document, camera, benchmark.render_buffer,
           {.x0 = 0, .y0 = local_y, .x1 = kCanvasWidth, .y1 = local_y + kBandRows}, options);

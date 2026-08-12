@@ -31,6 +31,7 @@ bool StrokeMacrogrid::rebuild(const VectorDocument& document) {
   }
   std::fill_n(cell_words_.begin(), kCellCount * word_count_, 0U);
   indexed_strokes_ = 0U;
+  conservative_fallback_ = false;
   for (const VectorStroke& stroke : document.strokes()) {
     if (!append(indexed_strokes_, stroke.bounds)) {
       return false;
@@ -62,6 +63,8 @@ bool StrokeMacrogrid::append(std::size_t stroke_index, RectF bounds) {
         cell_words_[(static_cast<std::size_t>(y * kColumns + x) * word_count_) + word] |= bit;
       }
     }
+  } else {
+    conservative_fallback_ = true;
   }
   ++indexed_strokes_;
   return true;
@@ -72,7 +75,7 @@ std::span<const std::uint64_t> StrokeMacrogrid::query(RectF bounds) {
     return {};
   }
   std::fill_n(query_words_.begin(), word_count_, 0U);
-  if (!covers(bounds)) {
+  if (conservative_fallback_ || !covers(bounds)) {
     set_all_indexed();
     return query_words_.first(word_count_);
   }

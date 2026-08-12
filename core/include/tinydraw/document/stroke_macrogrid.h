@@ -40,6 +40,10 @@ class StrokeMacrogrid {
   std::size_t stroke_capacity_ = 0;
   std::size_t word_count_ = 0;
   std::size_t indexed_strokes_ = 0;
+  // Once any stroke is not wholly representable by the grid, queries fall
+  // back to all indexed strokes. This preserves correctness without a second
+  // overflow bitset in the prototype.
+  bool conservative_fallback_ = false;
   float world_x_ = 0.0F;
   float world_y_ = 0.0F;
 };

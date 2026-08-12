@@ -49,6 +49,17 @@ TEST_CASE("macrogrid falls back conservatively outside its indexed world") {
   CHECK(candidates[0] == 0b11U);
 }
 
+TEST_CASE("macrogrid falls back to all strokes after a boundary-crossing append") {
+  std::array<std::uint64_t, tinydraw::StrokeMacrogrid::kCellCount> cells{};
+  std::array<std::uint64_t, 1> query{};
+  tinydraw::StrokeMacrogrid index(cells, query, 4U);
+
+  REQUIRE(index.append(0U, {.x0 = 300.0F, .y0 = 300.0F, .x1 = 320.0F, .y1 = 320.0F}));
+  REQUIRE(index.append(1U, {.x0 = -2.0F, .y0 = 20.0F, .x1 = 4.0F, .y1 = 30.0F}));
+
+  CHECK(index.query({.x0 = 256.0F, .y0 = 256.0F, .x1 = 400.0F, .y1 = 400.0F})[0] == 0b11U);
+}
+
 TEST_CASE("macrogrid appends one committed stroke without rebuilding") {
   std::array<std::uint64_t, tinydraw::StrokeMacrogrid::kCellCount> cells{};
   std::array<std::uint64_t, 1> query{};
