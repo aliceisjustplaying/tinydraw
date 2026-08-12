@@ -97,6 +97,7 @@ struct SourceSelection {
   PixelRect destination_pixels{};
   std::optional<std::size_t> slot_index{};
   int source_stride = 0;
+  std::uint32_t pin_token = 0;
 };
 
 struct ViewRequest {
@@ -125,8 +126,30 @@ class MaterializedSlotStorage {
   SlotGeneration generation_{};
   MaterializationQuality quality_ = MaterializationQuality::kSettled;
   std::uint64_t last_use_ = 0;
-  std::uint32_t pin_count_ = 0;
+  std::uint32_t pin_token_ = 0;
   bool occupied_ = false;
+};
+
+class MaterializedCanvas;
+
+class PinnedSource {
+ public:
+  ~PinnedSource();
+  PinnedSource(const PinnedSource&) = delete;
+  PinnedSource& operator=(const PinnedSource&) = delete;
+  PinnedSource(PinnedSource&& other) noexcept;
+  PinnedSource& operator=(PinnedSource&& other) noexcept;
+
+  [[nodiscard]] const SourceSelection& source() const;
+  [[nodiscard]] bool valid() const;
+  void reset();
+
+ private:
+  friend class MaterializedCanvas;
+  PinnedSource(MaterializedCanvas& owner, const SourceSelection& source);
+
+  MaterializedCanvas* owner_ = nullptr;
+  SourceSelection source_{};
 };
 
 class MaterializedCanvas {
@@ -151,14 +174,16 @@ class MaterializedCanvas {
                                                         MaterializationQuality quality,
                                                         std::span<const std::uint16_t> pixels);
   [[nodiscard]] std::optional<SourceSelection> lookup(TileKey key) const;
-  [[nodiscard]] std::optional<SourceSelection> pin(TileKey key);
-  [[nodiscard]] bool validate(const SourceSelection& source) const;
-  [[nodiscard]] bool unpin(const SourceSelection& source);
+  [[nodiscard]] std::optional<PinnedSource> pin(TileKey key);
+  [[nodiscard]] bool validate(const PinnedSource& source) const;
   [[nodiscard]] bool mark_used(TileKey key);
   [[nodiscard]] std::optional<ViewCompositionStats> compose_view(
       const ViewRequest& request, std::span<std::uint16_t> destination);
 
  private:
+  friend class PinnedSource;
+  [[nodiscard]] bool validate_selection(const SourceSelection& source) const;
+  [[nodiscard]] bool release_pin(const SourceSelection& source);
   [[nodiscard]] std::optional<std::size_t> find_tile(TileKey key) const;
   [[nodiscard]] std::optional<std::size_t> choose_slot() const;
   [[nodiscard]] SourceSelection select_overview(TileKey requested) const;
@@ -185,7 +210,8 @@ class MaterializedCanvas {
   SlotGeneration overview_generation_{};
   std::uint32_t next_generation_ = 1;
   std::uint64_t use_clock_ = 0;
-  std::uint32_t overview_pin_count_ = 0;
+  std::uint32_t next_pin_token_ = 1;
+  std::uint32_t overview_pin_token_ = 0;
   bool overview_valid_ = false;
 };
 

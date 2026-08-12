@@ -106,8 +106,9 @@ TEST_CASE("lookup never selects a stale tile or stale overview") {
   CHECK(fallback->identity.revision == production::DocumentRevision{0});
   CHECK(fallback->identity.provenance == production::MaterializationProvenance::kCompleteOverview);
 
-  CHECK(canvas.publish_tile(key, {0}, production::MaterializationQuality::kSettled,
-                            std::span(tile_pixels).first(production::kTilePixels)));
+  std::array<std::uint16_t, production::kTilePixels> published_tile{};
+  CHECK(
+      canvas.publish_tile(key, {0}, production::MaterializationQuality::kSettled, published_tile));
   const auto tile = canvas.lookup(key);
   REQUIRE(tile.has_value());
   CHECK(tile->kind == production::SourceKind::kTileSlot);
@@ -115,8 +116,9 @@ TEST_CASE("lookup never selects a stale tile or stale overview") {
 
   std::array<std::uint16_t, production::kOverviewPixels> revised_overview{};
   CHECK(canvas.publish_overview({1}, revised_overview));
+  std::array<std::uint16_t, production::kTilePixels> revised_tile{};
   CHECK_FALSE(
-      canvas.publish_tile(key, {0}, production::MaterializationQuality::kExact, tile_pixels));
+      canvas.publish_tile(key, {0}, production::MaterializationQuality::kExact, revised_tile));
   const auto revised_fallback = canvas.lookup(key);
   REQUIRE(revised_fallback.has_value());
   CHECK(revised_fallback->kind == production::SourceKind::kOverview);
@@ -133,14 +135,15 @@ TEST_CASE("fixed-capacity slots replace the least recently used slot") {
   const production::TileKey third{production::ZoomLevel::k100Percent, 2, 0};
 
   REQUIRE(canvas.publish_overview({0}, overview));
+  std::array<std::uint16_t, production::kTilePixels> published_tile{};
   REQUIRE(canvas.publish_tile(first, {0}, production::MaterializationQuality::kSettled,
-                              std::span(tile_pixels).first(production::kTilePixels)));
+                              published_tile));
   REQUIRE(canvas.publish_tile(second, {0}, production::MaterializationQuality::kSettled,
-                              std::span(tile_pixels).first(production::kTilePixels)));
+                              published_tile));
   REQUIRE(canvas.lookup(first));
   REQUIRE(canvas.mark_used(first));
-  REQUIRE(canvas.publish_tile(third, {0}, production::MaterializationQuality::kExact,
-                              std::span(tile_pixels).first(production::kTilePixels)));
+  REQUIRE(
+      canvas.publish_tile(third, {0}, production::MaterializationQuality::kExact, published_tile));
 
   CHECK(canvas.lookup(first)->kind == production::SourceKind::kTileSlot);
   CHECK(canvas.lookup(second)->kind == production::SourceKind::kOverview);
@@ -151,18 +154,23 @@ TEST_CASE("publishing the same key advances generation and quality") {
   std::array<std::uint16_t, production::kOverviewPixels> overview{};
   std::array<production::MaterializedSlotStorage, 1> slots{};
   std::array<std::uint16_t, slots.size() * production::kTilePixels> tile_pixels{};
+  std::array<std::uint16_t, production::kTilePixels> published_tile{};
   production::MaterializedCanvas canvas(overview, slots, tile_pixels);
   const production::TileKey key{production::ZoomLevel::k200Percent, 4, 5};
 
-  REQUIRE(canvas.publish_tile(key, {0}, production::MaterializationQuality::kSettled, tile_pixels));
+  REQUIRE(
+      canvas.publish_tile(key, {0}, production::MaterializationQuality::kSettled, published_tile));
   const auto settled = canvas.lookup(key);
   REQUIRE(settled.has_value());
-  REQUIRE(canvas.publish_tile(key, {0}, production::MaterializationQuality::kExact, tile_pixels));
+  REQUIRE(
+      canvas.publish_tile(key, {0}, production::MaterializationQuality::kExact, published_tile));
   const auto exact = canvas.lookup(key);
   REQUIRE(exact.has_value());
   CHECK(exact->slot_index == settled->slot_index);
   CHECK(exact->identity.generation.value > settled->identity.generation.value);
   CHECK(exact->identity.quality == production::MaterializationQuality::kExact);
+  CHECK_FALSE(
+      canvas.publish_tile(key, {0}, production::MaterializationQuality::kSettled, published_tile));
 }
 
 TEST_CASE("view composition uses current tiles and overview for every miss") {
@@ -316,24 +324,30 @@ TEST_CASE("pinned sources cannot be replaced and validate only while pinned") {
   const production::TileKey key{production::ZoomLevel::k100Percent, 0, 0};
   REQUIRE(canvas.publish_tile(key, {0}, production::MaterializationQuality::kExact, tile));
 
-  const auto pinned_tile = canvas.pin(key);
+  const auto unpinned_lookup = canvas.lookup(key);
+  REQUIRE(unpinned_lookup.has_value());
+  auto pinned_tile = canvas.pin(key);
   REQUIRE(pinned_tile.has_value());
   CHECK(canvas.validate(*pinned_tile));
+  CHECK(unpinned_lookup->pin_token == 0U);
   CHECK_FALSE(canvas.publish_tile(key, {0}, production::MaterializationQuality::kSettled, tile));
   CHECK_FALSE(canvas.publish_overview({1}, revised_overview));
-  CHECK(canvas.unpin(*pinned_tile));
-  CHECK_FALSE(canvas.validate(*pinned_tile));
+  pinned_tile->reset();
+  CHECK_FALSE(pinned_tile->valid());
   REQUIRE(canvas.publish_overview({1}, revised_overview));
   CHECK_FALSE(canvas.validate(*pinned_tile));
 
   const production::TileKey missing{production::ZoomLevel::k100Percent, 1, 0};
-  const auto pinned_overview = canvas.pin(missing);
+  const auto unpinned_overview = canvas.lookup(missing);
+  REQUIRE(unpinned_overview.has_value());
+  auto pinned_overview = canvas.pin(missing);
   REQUIRE(pinned_overview.has_value());
-  CHECK(pinned_overview->kind == production::SourceKind::kOverview);
+  CHECK(pinned_overview->source().kind == production::SourceKind::kOverview);
   CHECK(canvas.validate(*pinned_overview));
+  CHECK(unpinned_overview->pin_token == 0U);
   CHECK_FALSE(canvas.publish_overview({2}, overview));
-  CHECK(canvas.unpin(*pinned_overview));
-  CHECK_FALSE(canvas.validate(*pinned_overview));
+  pinned_overview->reset();
+  CHECK_FALSE(pinned_overview->valid());
 }
 
 TEST_CASE("all pinned slots prevent eviction until one is released") {
@@ -345,10 +359,11 @@ TEST_CASE("all pinned slots prevent eviction until one is released") {
   const production::TileKey first{production::ZoomLevel::k100Percent, 0, 0};
   const production::TileKey second{production::ZoomLevel::k100Percent, 1, 0};
   REQUIRE(canvas.publish_tile(first, {0}, production::MaterializationQuality::kExact, tile));
-  const auto pinned = canvas.pin(first);
+  auto pinned = canvas.pin(first);
   REQUIRE(pinned.has_value());
   CHECK_FALSE(canvas.publish_tile(second, {0}, production::MaterializationQuality::kExact, tile));
-  CHECK(canvas.unpin(*pinned));
+  pinned->reset();
+  CHECK_FALSE(pinned->valid());
   REQUIRE(canvas.publish_tile(second, {0}, production::MaterializationQuality::kExact, tile));
   CHECK_FALSE(canvas.validate(*pinned));
 }
