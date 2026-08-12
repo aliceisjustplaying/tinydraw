@@ -74,6 +74,13 @@ LocalRect rasterize_capsule(ScreenSample from, ScreenSample to, Rect region, int
   const float delta_x = to.x - from.x;
   const float delta_y = to.y - from.y;
   const float length_squared = delta_x * delta_x + delta_y * delta_y;
+  if (length_squared <= 0.0F) {
+    // A zero-length variable-radius segment is the union of two concentric
+    // disks. Use the larger endpoint; otherwise an increasing pressure sample
+    // at the end of a stationary stroke disappears from settled output.
+    from.radius = maximum_radius;
+    to.radius = maximum_radius;
+  }
   const float inverse_length_squared = length_squared > 0.0F ? 1.0F / length_squared : 0.0F;
   const float delta_radius = to.radius - from.radius;
   const float t_step = delta_x * inverse_length_squared;
@@ -217,27 +224,9 @@ SettledRenderStats settled_render_region(const VectorDocument& document, Camera 
     return stats;
   }
   const bool lod_maps_absent = options.lod_first_sample.empty() && options.lod_sample_count.empty();
-  bool lod_maps_valid = lod_maps_absent || (options.lod_first_sample.size() >= strokes.size() &&
-                                            options.lod_sample_count.size() >= strokes.size());
-  if (lod_maps_valid && !lod_maps_absent) {
-    for (std::size_t stroke_index = 0; stroke_index < strokes.size(); ++stroke_index) {
-      const std::size_t first = options.lod_first_sample[stroke_index];
-      const std::size_t count = options.lod_sample_count[stroke_index];
-      if (count == 0U || first > options.lod_samples.size() ||
-          count > options.lod_samples.size() - first) {
-        lod_maps_valid = false;
-        break;
-      }
-      const auto samples = options.lod_samples.subspan(first, count);
-      if (std::any_of(samples.begin(), samples.end(), [](const StrokeSample& sample) {
-            return !std::isfinite(sample.x) || !std::isfinite(sample.y) ||
-                   !std::isfinite(sample.radius) || sample.radius < 0.0F;
-          })) {
-        lod_maps_valid = false;
-        break;
-      }
-    }
-  }
+  const bool lod_maps_shaped =
+      lod_maps_absent || (options.lod_first_sample.size() >= strokes.size() &&
+                          options.lod_sample_count.size() >= strokes.size());
   for (std::size_t stroke_index = 0; stroke_index < strokes.size(); ++stroke_index) {
     if (!options.candidate_strokes.empty()) {
       const std::size_t word = stroke_index / 64U;
@@ -257,11 +246,19 @@ SettledRenderStats settled_render_region(const VectorDocument& document, Camera 
       continue;
     }
     std::span<const StrokeSample> samples = document.samples(stroke);
-    if (lod_maps_valid && !lod_maps_absent) {
+    if (lod_maps_shaped && !lod_maps_absent) {
       const std::size_t first = options.lod_first_sample[stroke_index];
       const std::size_t count = options.lod_sample_count[stroke_index];
-      if (first <= options.lod_samples.size() && count <= options.lod_samples.size() - first) {
-        samples = options.lod_samples.subspan(first, count);
+      if (count != 0U && first <= options.lod_samples.size() &&
+          count <= options.lod_samples.size() - first) {
+        const auto lod = options.lod_samples.subspan(first, count);
+        const bool valid = std::all_of(lod.begin(), lod.end(), [](const StrokeSample& sample) {
+          return std::isfinite(sample.x) && std::isfinite(sample.y) &&
+                 std::isfinite(sample.radius) && sample.radius >= 0.0F;
+        });
+        if (valid) {
+          samples = lod;
+        }
       }
     }
     if (samples.empty()) {

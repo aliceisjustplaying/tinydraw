@@ -40,6 +40,17 @@ struct RecordingDisplay final : tinydraw::DisplayBackend {
   }
 };
 
+tinydraw::InkPoint ink_point(float x, float y, float radius) {
+  return {
+      .position = {x, y},
+      .pressure = 0.0F,
+      .radius = radius,
+      .distance = 0.0F,
+      .running_length = 0.0F,
+      .timestamp_us = 0U,
+  };
+}
+
 std::size_t changed_pixels(const std::vector<std::uint16_t>& pixels) {
   return static_cast<std::size_t>(std::count_if(
       pixels.begin(), pixels.end(), [](std::uint16_t pixel) { return pixel != kBackground; }));
@@ -58,8 +69,8 @@ void append_geometry(std::vector<tinydraw::RibbonPrimitive>& geometry, std::size
 TEST_CASE("provisional stroke pixels never enter the persistent canvas") {
   RasterFixture fixture;
   tinydraw::RibbonStream ribbon;
-  const tinydraw::InkPoint first{.position = {40.0F, 80.0F}, .radius = 8.0F};
-  const tinydraw::InkPoint second{.position = {80.0F, 90.0F}, .radius = 8.0F};
+  const tinydraw::InkPoint first = ink_point(40.0F, 80.0F, 8.0F);
+  const tinydraw::InkPoint second = ink_point(80.0F, 90.0F, 8.0F);
 
   const auto first_stats = fixture.raster.update(ribbon.append(first), kInk);
   const auto second_stats = fixture.raster.update(ribbon.append(second), kInk);
@@ -89,8 +100,8 @@ TEST_CASE("stroke finish captures dirty tiles from the committed read") {
   std::vector<std::uint16_t> undo_storage(tinydraw::TileUndoHistory::kRequiredPixels);
   tinydraw::TileUndoHistory history(undo_storage);
   tinydraw::RibbonStream ribbon;
-  const tinydraw::InkPoint first{.position = {40.0F, 80.0F}, .radius = 8.0F};
-  const tinydraw::InkPoint second{.position = {80.0F, 90.0F}, .radius = 8.0F};
+  const tinydraw::InkPoint first = ink_point(40.0F, 80.0F, 8.0F);
+  const tinydraw::InkPoint second = ink_point(80.0F, 90.0F, 8.0F);
 
   static_cast<void>(fixture.raster.update(ribbon.append(first), kInk));
   const auto stats = fixture.raster.finish(ribbon.finish(second), kInk, &history);
@@ -110,8 +121,8 @@ TEST_CASE("stroke raster presents one complete dirty region when a visible canva
   RecordingDisplay display;
   tinydraw::StrokeRaster raster{committed, visible, coverage, display};
   tinydraw::RibbonStream ribbon;
-  const tinydraw::InkPoint first{.position = {40.0F, 80.0F}, .radius = 8.0F};
-  const tinydraw::InkPoint second{.position = {80.0F, 90.0F}, .radius = 8.0F};
+  const tinydraw::InkPoint first = ink_point(40.0F, 80.0F, 8.0F);
+  const tinydraw::InkPoint second = ink_point(80.0F, 90.0F, 8.0F);
 
   static_cast<void>(raster.update(ribbon.append(first), kInk));
   CHECK(display.pushes == 1U);
@@ -128,8 +139,8 @@ TEST_CASE("incremental stroke raster can submit dirty tiles without a visible ca
   RecordingDisplay display;
   tinydraw::StrokeRaster raster{committed, coverage, display};
   tinydraw::RibbonStream ribbon;
-  const tinydraw::InkPoint first{.position = {40.0F, 80.0F}, .radius = 8.0F};
-  const tinydraw::InkPoint second{.position = {80.0F, 90.0F}, .radius = 8.0F};
+  const tinydraw::InkPoint first = ink_point(40.0F, 80.0F, 8.0F);
+  const tinydraw::InkPoint second = ink_point(80.0F, 90.0F, 8.0F);
 
   static_cast<void>(raster.update(ribbon.append(first), kInk));
   static_cast<void>(raster.update(ribbon.append(second), kInk));
@@ -149,8 +160,8 @@ TEST_CASE("firmware-style cancel restores provisional display tiles") {
   RecordingDisplay display;
   tinydraw::StrokeRaster raster{committed, coverage, display};
   tinydraw::RibbonStream ribbon;
-  const tinydraw::InkPoint first{.position = {40.0F, 80.0F}, .radius = 8.0F};
-  const tinydraw::InkPoint second{.position = {80.0F, 90.0F}, .radius = 8.0F};
+  const tinydraw::InkPoint first = ink_point(40.0F, 80.0F, 8.0F);
+  const tinydraw::InkPoint second = ink_point(80.0F, 90.0F, 8.0F);
 
   static_cast<void>(raster.update(ribbon.append(first), kInk));
   static_cast<void>(raster.update(ribbon.append(second), kInk));
@@ -171,10 +182,8 @@ TEST_CASE("incremental stroke raster matches one-pass coverage union") {
 
   for (int index = 0; index < 80; ++index) {
     const float step = static_cast<float>(index);
-    const tinydraw::InkPoint point{
-        .position = {.x = 30.0F + step * 3.0F, .y = 150.0F + 50.0F * std::sin(step * 0.18F)},
-        .radius = 7.0F,
-    };
+    const tinydraw::InkPoint point =
+        ink_point(30.0F + step * 3.0F, 150.0F + 50.0F * std::sin(step * 0.18F), 7.0F);
     const auto update = index + 1 == 80 ? ribbon.finish(point) : ribbon.append(point);
     append_geometry(geometry, committed_count, update);
     if (index + 1 == 80) {
