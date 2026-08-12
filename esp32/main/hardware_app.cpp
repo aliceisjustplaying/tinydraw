@@ -951,9 +951,15 @@ void run_hardware_app() {
                                                 pan_start_origin.y - delta_y};
 #ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
     tinydraw::esp32::interactive_pan_benchmark_lock_cache(*interactive_pan_benchmark);
+    const tinydraw::ViewOrigin previous_origin = canvas.world().origin();
+    if (!canvas.world().move_to(requested_origin)) {
+      tinydraw::esp32::interactive_pan_benchmark_unlock_cache(*interactive_pan_benchmark);
+      return;
+    }
+    const tinydraw::ViewOrigin actual_origin = canvas.world().origin();
     if (!tinydraw::esp32::interactive_pan_benchmark_view_changed(*interactive_pan_benchmark,
-                                                                 requested_origin) ||
-        !canvas.world().move_to(requested_origin)) {
+                                                                 actual_origin)) {
+      static_cast<void>(canvas.world().move_to(previous_origin));
       tinydraw::esp32::interactive_pan_benchmark_unlock_cache(*interactive_pan_benchmark);
       return;
     }

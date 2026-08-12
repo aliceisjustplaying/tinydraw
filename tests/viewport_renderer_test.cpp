@@ -159,6 +159,39 @@ TEST_CASE("region render matches a full render and preserves pixels outside the 
   }
 }
 
+TEST_CASE("region rendering does not spend primitive capacity on off-region geometry") {
+  constexpr std::size_t kSampleCount = 900U;
+  std::array<tinydraw::VectorStroke, 1> stroke_storage;
+  std::array<tinydraw::StrokeSample, kSampleCount> sample_storage;
+  tinydraw::VectorDocument document(stroke_storage, sample_storage);
+  REQUIRE(document.begin_stroke(kBlue, tinydraw::VectorTool::kPen,
+                                {.x = 20.0F, .y = 16.0F, .radius = 1.5F}));
+  REQUIRE(document.append({.x = 100.0F, .y = 16.0F, .radius = 1.5F}));
+  for (std::size_t index = 2; index < kSampleCount; ++index) {
+    REQUIRE(document.append({.x = 30.0F + static_cast<float>(index % 300U),
+                             .y = index % 2U == 0U ? 300.0F : 304.0F,
+                             .radius = 1.5F}));
+  }
+  REQUIRE(document.finish_stroke());
+
+  std::vector<std::uint8_t> scratch(kPixels);
+  std::vector<std::uint16_t> full(kPixels);
+  std::vector<std::uint16_t> partial(kPixels, 0x1234U);
+  tinydraw::ViewportRenderer renderer(scratch);
+  static_cast<void>(renderer.render(document, {}, full));
+  const tinydraw::Rect region{.x0 = 0, .y0 = 0, .x1 = tinydraw::kCanvasWidth, .y1 = 32};
+  const auto stats = renderer.render_region(document, {}, partial, region);
+
+  REQUIRE(stats.complete);
+  CHECK(stats.primitives_rasterized < renderer.primitive_capacity());
+  for (int y = 0; y < tinydraw::kCanvasHeight; ++y) {
+    for (int x = 0; x < tinydraw::kCanvasWidth; ++x) {
+      const bool inside = y < region.y1;
+      CHECK(partial[pixel(x, y)] == (inside ? full[pixel(x, y)] : 0x1234U));
+    }
+  }
+}
+
 TEST_CASE("cached integer pan plus exposed strip render equals a full rebuild") {
   std::array<tinydraw::VectorStroke, 3> stroke_storage;
   std::array<tinydraw::StrokeSample, 9> sample_storage;

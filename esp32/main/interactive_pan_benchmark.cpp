@@ -34,7 +34,7 @@ constexpr int kCellCount = kCellColumns * kCellRows;
 constexpr int kJobCount = kCellCount * kBandsPerCell;
 constexpr int kCenterOriginX = kCanvasWidth;
 constexpr int kCenterOriginY = kCanvasHeight;
-constexpr std::size_t kTimingCapacity = 256U;
+constexpr std::size_t kTimingCapacity = 1'024U;
 constexpr std::size_t kReportBytes = 8'192U;
 constexpr std::array kZoomPercents{50, 100, 200};
 constexpr std::uint16_t kBackground = 0xFFFFU;
@@ -296,6 +296,7 @@ class InteractivePanBenchmark {
   std::array<std::atomic<std::uint32_t>, kJobCount> job_revision{};
   std::array<ZoomMetrics, kZoomPercents.size()> metrics{};
   std::size_t draw_samples = 0U;
+  std::uint32_t draw_updates = 0U;
   std::uint64_t draw_total_us = 0U;
   std::uint32_t draw_max_us = 0U;
   std::array<std::atomic<std::uint32_t>, kZoomPercents.size()> center_ready_us{};
@@ -352,7 +353,9 @@ bool source_region_materialized(const InteractivePanBenchmark& benchmark, Camera
     return false;
   }
   const RectF world = camera_world_rect(destination_camera, destination_region);
-  const float sampling_halo = 1.0F / source_camera.zoom;
+  // Coordinates below are already in source pixels; bilinear filtering needs
+  // one complete source-pixel halo regardless of source zoom.
+  constexpr float sampling_halo = 1.0F;
   const int source_x0 = static_cast<int>(std::floor(
       (static_cast<double>(world.x0) - source_camera.x) * source_camera.zoom - sampling_halo));
   const int source_y0 = static_cast<int>(std::floor(
@@ -387,8 +390,11 @@ bool source_region_materialized(const InteractivePanBenchmark& benchmark, Camera
 bool center_ready(const InteractivePanBenchmark& benchmark) {
   constexpr int center_cell = 4;
   const int first = center_cell * kBandsPerCell;
+  const std::uint32_t revision = benchmark.document_revision.load();
   for (int band = 0; band < kBandsPerCell; ++band) {
-    if (benchmark.ready[static_cast<std::size_t>(first + band)].load() != kExactReady) {
+    const auto slot = static_cast<std::size_t>(first + band);
+    if (benchmark.ready[slot].load() != kExactReady ||
+        benchmark.job_revision[slot].load() != revision) {
       return false;
     }
   }
@@ -404,8 +410,11 @@ int choose_job(const InteractivePanBenchmark& benchmark) {
   };
   int best_job = -1;
   int best_score = 0;
+  const std::uint32_t revision = benchmark.document_revision.load();
   for (int job = 0; job < kJobCount; ++job) {
-    if (benchmark.ready[static_cast<std::size_t>(job)].load() == kExactReady) {
+    const auto slot = static_cast<std::size_t>(job);
+    if (benchmark.ready[slot].load() == kExactReady &&
+        benchmark.job_revision[slot].load() == revision) {
       continue;
     }
     const JobRect candidate = job_rect(job);
@@ -674,7 +683,7 @@ bool persist_report(InteractivePanBenchmark& benchmark) {
       "max_us=%lu\n",
       static_cast<unsigned long>(benchmark.draw_samples),
       static_cast<unsigned long long>(
-          benchmark.draw_samples == 0U ? 0U : benchmark.draw_total_us / benchmark.draw_samples),
+          benchmark.draw_updates == 0U ? 0U : benchmark.draw_total_us / benchmark.draw_updates),
       static_cast<unsigned long>(draw_median), static_cast<unsigned long>(draw_p95),
       static_cast<unsigned long>(draw_p99), static_cast<unsigned long>(benchmark.draw_max_us));
   append_report(report, size, "DONE\n");
@@ -755,6 +764,10 @@ InteractivePanBenchmark* start_interactive_pan_benchmark(
     return nullptr;
   }
   std::fill_n(world.pixels().begin(), WorldCanvas::kRequiredPixels, kBackground);
+  // materialization_state == 2 means the inactive arena is already white and
+  // safe to reuse. Establish that invariant once before the first zoom; later
+  // generations restore it in render_task_entry() before publishing state 2.
+  std::fill_n(materialization_storage.begin(), WorldCanvas::kRequiredPixels, kBackground);
   benchmark->cache_mutex = xSemaphoreCreateMutex();
   if (benchmark->cache_mutex == nullptr ||
       xTaskCreatePinnedToCore(render_task_entry, "interactive_pan_render", 16'384U, benchmark, 1U,
@@ -790,6 +803,7 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
   }
   auto& attempt_metrics = benchmark.metrics[static_cast<std::size_t>(index)];
   ++attempt_metrics.attempts;
+  const auto event_started = static_cast<std::uint32_t>(esp_timer_get_time());
   benchmark.zoom_presentation_pending.store(true);
   benchmark.paused.store(true);
   benchmark.requested_generation.fetch_add(1U);
@@ -817,7 +831,6 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
   benchmark.fallback_ready_us[static_cast<std::size_t>(index)].store(0U);
   benchmark.settled_us[static_cast<std::size_t>(index)].store(0U);
 
-  const auto event_started = static_cast<std::uint32_t>(esp_timer_get_time());
   xSemaphoreTake(benchmark.cache_mutex, portMAX_DELAY);
   const float new_zoom = static_cast<float>(zoom_percent) / 100.0F;
   const Camera old_camera = benchmark.active_atlas;
@@ -851,6 +864,7 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
   // current zoom active until its background runway can support the request.
   // This is intentionally conservative; invalid source bands proven blank by
   // the vector document do not block the transition.
+  std::array<bool, kJobCount> fallback_valid{};
   if (benchmark.has_complete_initial_atlas) {
     for (int job = 0; job < kJobCount; ++job) {
       const JobRect rect = job_rect(job);
@@ -858,9 +872,11 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
         continue;
       }
       const Rect pixels{rect.x0, rect.y0, rect.x1, rect.y1};
-      if (!source_region_materialized(
-              benchmark, old_camera, new_camera, pixels, benchmark.fallback_source_ready,
-              benchmark.fallback_source_job_revision, old_document_revision)) {
+      const bool valid = source_region_materialized(
+          benchmark, old_camera, new_camera, pixels, benchmark.fallback_source_ready,
+          benchmark.fallback_source_job_revision, old_document_revision);
+      fallback_valid[static_cast<std::size_t>(job)] = valid;
+      if (!valid) {
         xSemaphoreGive(benchmark.cache_mutex);
         ++attempt_metrics.failed_attempts;
         benchmark.zoom_presentation_pending.store(false);
@@ -874,7 +890,8 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
 
   // Only materialize what will be physically presented on this interaction.
   // The other eight atlas cells remain invalid and are filled/refined later.
-  std::fill_n(benchmark.materialization_storage.begin(), WorldCanvas::kRequiredPixels, kBackground);
+  // The inactive arena is already white because set_zoom waits for
+  // materialization_state == 2.
   if (new_zoom > old_camera.zoom) {
     resample_bilinear_rgb565_region(
         benchmark.world.pixels(), WorldCanvas::kWidth, WorldCanvas::kHeight, old_camera,
@@ -909,10 +926,7 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
     const Rect pixels{rect.x0, rect.y0, rect.x1, rect.y1};
     const bool visible_job = intersects(rect, {visible.x0, visible.y0, visible.x1, visible.y1});
     const bool valid = benchmark.has_complete_initial_atlas && visible_job &&
-                       source_region_materialized(benchmark, old_camera, new_camera, pixels,
-                                                  benchmark.fallback_source_ready,
-                                                  benchmark.fallback_source_job_revision,
-                                                  benchmark.fallback_source_document_revision);
+                       fallback_valid[job];
     benchmark.job_revision[job].store(benchmark.document_revision.load());
     benchmark.ready[job].store(valid ? (new_zoom > old_camera.zoom ? kSettledReady : kDerivedReady)
                                      : kInvalidReady);
@@ -960,6 +974,9 @@ bool interactive_pan_benchmark_begin_stroke(InteractivePanBenchmark& benchmark) 
   }
   if (benchmark.rendering.load()) {
     benchmark.stroke_mutation_active.store(false);
+    benchmark.paused.store(false);
+    benchmark.requested_generation.fetch_add(1U);
+    xTaskNotifyGive(benchmark.render_task);
     return false;
   }
   return true;
@@ -984,8 +1001,14 @@ void interactive_pan_benchmark_commit_stroke(InteractivePanBenchmark& benchmark)
   if (!benchmark.stroke_mutation_active.exchange(false)) {
     return;
   }
-  const std::size_t committed_index = benchmark.document.stroke_count() - 1U;
   const auto strokes = benchmark.document.strokes();
+  if (strokes.empty()) {
+    benchmark.paused.store(false);
+    benchmark.requested_generation.fetch_add(1U);
+    xTaskNotifyGive(benchmark.render_task);
+    return;
+  }
+  const std::size_t committed_index = strokes.size() - 1U;
   if (committed_index >= strokes.size() ||
       !benchmark.macrogrid.append(committed_index, strokes[committed_index].bounds)) {
     std::printf("TINYDRAW_INTERACTIVE_PAN_FAIL index_append=0 stroke=%lu\n",
@@ -1020,6 +1043,7 @@ void interactive_pan_benchmark_commit_stroke(InteractivePanBenchmark& benchmark)
       benchmark.job_revision[job].store(next_revision);
       benchmark.ready[job].store(kDerivedReady);
     } else {
+      benchmark.job_revision[job].store(next_revision);
       benchmark.ready[job].store(kInvalidReady);
     }
   }
@@ -1043,6 +1067,7 @@ void interactive_pan_benchmark_record_draw_update(InteractivePanBenchmark& bench
   if (benchmark.draw_samples < kTimingCapacity) {
     benchmark.timings.draw[benchmark.draw_samples++] = elapsed_us;
   }
+  ++benchmark.draw_updates;
   benchmark.draw_total_us += elapsed_us;
   benchmark.draw_max_us = std::max(benchmark.draw_max_us, elapsed_us);
 }

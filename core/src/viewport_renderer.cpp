@@ -235,49 +235,55 @@ ViewportRenderer::GeometryResult ViewportRenderer::render_stroke_geometry(
     };
     const bool final = index + 1U == samples.size();
     const RibbonUpdate update = final ? ribbon.finish(point) : ribbon.append(point, false);
-    if (update.committed.size() > arena.size() - batch.primitive_count) {
-      stats.geometry_ticks += static_cast<std::uint32_t>(tick(options.now) - geometry_started);
-      return GeometryResult::kCapacity;
-    }
     for (const RibbonPrimitive& primitive : update.committed) {
-      const std::size_t slot = batch.primitive_count;
-      arena[slot] = primitive;
-      TileRect rect;
       const PrimitiveBounds bounds = bounds_of(primitive);
-      if (std::isfinite(bounds.x0) && std::isfinite(bounds.y0) && std::isfinite(bounds.x1) &&
-          std::isfinite(bounds.y1) && bounds.x1 >= 0.0F && bounds.y1 >= 0.0F &&
-          bounds.x0 < static_cast<float>(kCanvasWidth) &&
-          bounds.y0 < static_cast<float>(kCanvasHeight)) {
-        const int first_x =
-            std::clamp(static_cast<int>(std::floor(bounds.x0)), 0, kCanvasWidth - 1);
-        const int first_y =
-            std::clamp(static_cast<int>(std::floor(bounds.y0)), 0, kCanvasHeight - 1);
-        const int last_x = std::clamp(static_cast<int>(std::ceil(bounds.x1)), 0, kCanvasWidth - 1);
-        const int last_y = std::clamp(static_cast<int>(std::ceil(bounds.y1)), 0, kCanvasHeight - 1);
-        const int first_tile_x = std::max(first_x / kTileSize, region.x0 / kTileSize);
-        const int first_tile_y = std::max(first_y / kTileSize, region.y0 / kTileSize);
-        const int last_tile_x = std::min(last_x / kTileSize, (region.x1 - 1) / kTileSize);
-        const int last_tile_y = std::min(last_y / kTileSize, (region.y1 - 1) / kTileSize);
-        if (first_tile_x <= last_tile_x && first_tile_y <= last_tile_y) {
-          rect.x0 = static_cast<std::uint8_t>(first_tile_x);
-          rect.y0 = static_cast<std::uint8_t>(first_tile_y);
-          rect.x1 = static_cast<std::uint8_t>(last_tile_x);
-          rect.y1 = static_cast<std::uint8_t>(last_tile_y);
-          const std::size_t touched = static_cast<std::size_t>(rect.x1 - rect.x0 + 1) *
-                                      static_cast<std::size_t>(rect.y1 - rect.y0 + 1);
-          if (touched > kBatchEntryCapacity - batch.entry_count) {
-            stats.geometry_ticks +=
-                static_cast<std::uint32_t>(tick(options.now) - geometry_started);
-            return GeometryResult::kCapacity;
-          }
-          batch.entry_count += touched;
-        }
+      if (!std::isfinite(bounds.x0) || !std::isfinite(bounds.y0) ||
+          !std::isfinite(bounds.x1) || !std::isfinite(bounds.y1) ||
+          bounds.x1 < static_cast<float>(region.x0) ||
+          bounds.y1 < static_cast<float>(region.y0) ||
+          bounds.x0 >= static_cast<float>(region.x1) ||
+          bounds.y0 >= static_cast<float>(region.y1)) {
+        continue;
       }
-      rects[slot] = rect;
-      ++batch.primitive_count;
+
+      const int first_x =
+          std::clamp(static_cast<int>(std::floor(bounds.x0)), 0, kCanvasWidth - 1);
+      const int first_y =
+          std::clamp(static_cast<int>(std::floor(bounds.y0)), 0, kCanvasHeight - 1);
+      const int last_x = std::clamp(static_cast<int>(std::ceil(bounds.x1)), 0, kCanvasWidth - 1);
+      const int last_y = std::clamp(static_cast<int>(std::ceil(bounds.y1)), 0, kCanvasHeight - 1);
+      const int first_tile_x = std::max(first_x / kTileSize, region.x0 / kTileSize);
+      const int first_tile_y = std::max(first_y / kTileSize, region.y0 / kTileSize);
+      const int last_tile_x = std::min(last_x / kTileSize, (region.x1 - 1) / kTileSize);
+      const int last_tile_y = std::min(last_y / kTileSize, (region.y1 - 1) / kTileSize);
+      if (first_tile_x > last_tile_x || first_tile_y > last_tile_y) {
+        continue;
+      }
+
+      const std::size_t touched = static_cast<std::size_t>(last_tile_x - first_tile_x + 1) *
+                                  static_cast<std::size_t>(last_tile_y - first_tile_y + 1);
+      if (batch.primitive_count >= arena.size() ||
+          touched > kBatchEntryCapacity - batch.entry_count) {
+        stats.geometry_ticks += static_cast<std::uint32_t>(tick(options.now) - geometry_started);
+        return GeometryResult::kCapacity;
+      }
+
+      const std::size_t slot = batch.primitive_count++;
+      arena[slot] = primitive;
+      rects[slot] = {
+          .x0 = static_cast<std::uint8_t>(first_tile_x),
+          .y0 = static_cast<std::uint8_t>(first_tile_y),
+          .x1 = static_cast<std::uint8_t>(last_tile_x),
+          .y1 = static_cast<std::uint8_t>(last_tile_y),
+      };
+      batch.entry_count += touched;
     }
   }
 
+  if (batch.primitive_count == first_primitive) {
+    stats.geometry_ticks += static_cast<std::uint32_t>(tick(options.now) - geometry_started);
+    return GeometryResult::kComplete;
+  }
   if (batch.range_count >= ranges().size()) {
     stats.geometry_ticks += static_cast<std::uint32_t>(tick(options.now) - geometry_started);
     return GeometryResult::kCapacity;
@@ -516,14 +522,19 @@ void ViewportRenderer::composite_lane(void* raw, int lane) {
     std::size_t range_index = 0;
     std::size_t entry = offset;
     const std::size_t entry_end = static_cast<std::size_t>(offset) + count;
+    coverage.reset(tile_x, tile_y, width, height);
+    bool first_range = true;
     while (entry < entry_end) {
+      if (!first_range) {
+        coverage.clear();
+      }
+      first_range = false;
       const std::uint16_t first_slot = entry_pool[entry];
       while (first_slot >= range_list[range_index].first + range_list[range_index].count) {
         ++range_index;
       }
       const StrokeRange range = range_list[range_index];
       const std::uint32_t raster_started = tick(options.now);
-      coverage.reset(tile_x, tile_y, width, height);
       while (entry < entry_end && entry_pool[entry] < range.first + range.count) {
         const RibbonPrimitive& primitive = arena[entry_pool[entry]];
         if (primitive.kind == RibbonPrimitiveKind::kCircle) {

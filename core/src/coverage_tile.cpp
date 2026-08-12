@@ -325,6 +325,10 @@ void composite_rgb565(const CoverageTile& coverage, std::uint16_t source,
         continue;
       }
       const std::size_t index = static_cast<std::size_t>(y * coverage.width() + x);
+      if (alpha == 255) {
+        destination[index] = source;
+        continue;
+      }
       const std::uint16_t current = destination[index];
       const int red = blend_channel((current >> 11U) & 0x1FU, source_red, alpha);
       const int green = blend_channel((current >> 5U) & 0x3FU, source_green, alpha);
