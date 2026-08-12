@@ -29,6 +29,8 @@ void interactive_pan_benchmark_record_zoom_present(InteractivePanBenchmark& benc
     const InteractivePanBenchmark& benchmark, Point screen_point, float screen_radius);
 void interactive_pan_benchmark_commit_stroke(InteractivePanBenchmark& benchmark);
 void interactive_pan_benchmark_cancel_stroke(InteractivePanBenchmark& benchmark);
+void interactive_pan_benchmark_record_draw_update(InteractivePanBenchmark& benchmark,
+                                                  std::uint32_t elapsed_us);
 
 void interactive_pan_benchmark_begin_pan(InteractivePanBenchmark& benchmark, ViewOrigin origin,
                                          std::uint32_t event_us);

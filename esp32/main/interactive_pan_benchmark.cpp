@@ -48,6 +48,7 @@ constexpr std::size_t kIndexWords = (1'100U + 63U) / 64U;
 struct TimingStorage {
   std::array<std::array<std::uint32_t, kTimingCapacity>, kZoomPercents.size()> direct{};
   std::array<std::array<std::uint32_t, kTimingCapacity>, kZoomPercents.size()> event{};
+  std::array<std::uint32_t, kTimingCapacity> draw{};
 };
 
 struct ZoomMetrics {
@@ -273,6 +274,9 @@ class InteractivePanBenchmark {
   std::array<std::atomic<std::uint8_t>, kJobCount> ready{};
   std::array<std::atomic<std::uint32_t>, kJobCount> job_revision{};
   std::array<ZoomMetrics, kZoomPercents.size()> metrics{};
+  std::size_t draw_samples = 0U;
+  std::uint64_t draw_total_us = 0U;
+  std::uint32_t draw_max_us = 0U;
   std::array<std::atomic<std::uint32_t>, kZoomPercents.size()> center_ready_us{};
   std::array<std::atomic<std::uint32_t>, kZoomPercents.size()> full_ready_us{};
   std::atomic<std::uint32_t> requested_generation{0U};
@@ -547,6 +551,18 @@ bool persist_report(InteractivePanBenchmark& benchmark) {
                   static_cast<unsigned long>(benchmark.center_ready_us[index].load()),
                   static_cast<unsigned long>(benchmark.full_ready_us[index].load()));
   }
+  const auto draw_median = quantile(benchmark.timings.draw, benchmark.draw_samples, 1U, 2U);
+  const auto draw_p95 = quantile(benchmark.timings.draw, benchmark.draw_samples, 95U, 100U);
+  const auto draw_p99 = quantile(benchmark.timings.draw, benchmark.draw_samples, 99U, 100U);
+  append_report(
+      report, size,
+      "DRAW samples=%lu average_us=%llu median_us=%lu p95_us=%lu p99_us=%lu "
+      "max_us=%lu\n",
+      static_cast<unsigned long>(benchmark.draw_samples),
+      static_cast<unsigned long long>(
+          benchmark.draw_samples == 0U ? 0U : benchmark.draw_total_us / benchmark.draw_samples),
+      static_cast<unsigned long>(draw_median), static_cast<unsigned long>(draw_p95),
+      static_cast<unsigned long>(draw_p99), static_cast<unsigned long>(benchmark.draw_max_us));
   append_report(report, size, "DONE\n");
   const std::size_t offset = partition->size - kReportBytes;
   const bool persisted = esp_partition_erase_range(partition, offset, kReportBytes) == ESP_OK &&
@@ -819,6 +835,15 @@ void interactive_pan_benchmark_cancel_stroke(InteractivePanBenchmark& benchmark)
   benchmark.paused.store(false);
   benchmark.requested_generation.fetch_add(1U);
   xTaskNotifyGive(benchmark.render_task);
+}
+
+void interactive_pan_benchmark_record_draw_update(InteractivePanBenchmark& benchmark,
+                                                  std::uint32_t elapsed_us) {
+  if (benchmark.draw_samples < kTimingCapacity) {
+    benchmark.timings.draw[benchmark.draw_samples++] = elapsed_us;
+  }
+  benchmark.draw_total_us += elapsed_us;
+  benchmark.draw_max_us = std::max(benchmark.draw_max_us, elapsed_us);
 }
 
 void interactive_pan_benchmark_begin_pan(InteractivePanBenchmark& benchmark, ViewOrigin origin,

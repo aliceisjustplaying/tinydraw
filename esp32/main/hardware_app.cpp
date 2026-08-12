@@ -1434,6 +1434,10 @@ void run_hardware_app() {
           static_cast<void>(canvas.raster().update(ribbon.append(last_ink), stroke_color));
         }
         const auto elapsed = esp_timer_get_time() - started;
+#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+        tinydraw::esp32::interactive_pan_benchmark_record_draw_update(
+            *interactive_pan_benchmark, static_cast<std::uint32_t>(elapsed));
+#endif
         stroke_render_us += elapsed;
         maximum_render_us = std::max(maximum_render_us, elapsed);
       }
@@ -1488,6 +1492,10 @@ void run_hardware_app() {
         static_cast<void>(canvas.raster().update(ribbon.append(last_ink), stroke_color));
       }
       const auto elapsed = esp_timer_get_time() - started;
+#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+      tinydraw::esp32::interactive_pan_benchmark_record_draw_update(
+          *interactive_pan_benchmark, static_cast<std::uint32_t>(elapsed));
+#endif
       stroke_render_us += elapsed;
       maximum_render_us = std::max(maximum_render_us, elapsed);
     } else if (!touching && pressed) {
