@@ -420,37 +420,43 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
   }
 
   void refresh_toolbar(std::span<const std::uint16_t> canvas) {
+    refresh_toolbar_source(canvas, tinydraw::kCanvasWidth, 0, 0);
+  }
+
+  void refresh_toolbar_world(std::span<const std::uint16_t> world, tinydraw::ViewOrigin origin) {
+    refresh_toolbar_source(world, tinydraw::WorldCanvas::kWidth, origin.x, origin.y);
+  }
+
+ private:
+  void refresh_toolbar_source(std::span<const std::uint16_t> source, int stride, int source_x,
+                              int source_y) {
+    const auto offset_at = [&](int x, int y) {
+      return static_cast<std::size_t>((source_y + y) * stride + source_x + x);
+    };
     if (battery_dirty_) {
-      const auto offset = static_cast<std::size_t>(battery_refresh_.y0 * tinydraw::kCanvasWidth +
-                                                   battery_refresh_.x0);
+      const auto offset = offset_at(battery_refresh_.x0, battery_refresh_.y0);
       push_rect(battery_refresh_.x0, battery_refresh_.y0, battery_refresh_.x1 - battery_refresh_.x0,
-                battery_refresh_.y1 - battery_refresh_.y0, canvas.data() + offset,
-                tinydraw::kCanvasWidth);
+                battery_refresh_.y1 - battery_refresh_.y0, source.data() + offset, stride);
     }
     if (toast_dirty_) {
-      const auto offset =
-          static_cast<std::size_t>(toast_refresh_.y0 * tinydraw::kCanvasWidth + toast_refresh_.x0);
+      const auto offset = offset_at(toast_refresh_.x0, toast_refresh_.y0);
       push_rect(toast_refresh_.x0, toast_refresh_.y0, toast_refresh_.x1 - toast_refresh_.x0,
-                toast_refresh_.y1 - toast_refresh_.y0, canvas.data() + offset,
-                tinydraw::kCanvasWidth);
+                toast_refresh_.y1 - toast_refresh_.y0, source.data() + offset, stride);
     }
     if (dialog_dirty_) {
-      const auto offset =
-          static_cast<std::size_t>(kDialogOverlayTop * tinydraw::kCanvasWidth + kDialogOverlayX);
+      const auto offset = offset_at(kDialogOverlayX, kDialogOverlayTop);
       push_rect(kDialogOverlayX, kDialogOverlayTop, kDialogOverlayWidth, kDialogOverlayHeight,
-                canvas.data() + offset, tinydraw::kCanvasWidth);
+                source.data() + offset, stride);
     }
     if (palette_dirty_) {
-      const auto offset = static_cast<std::size_t>(palette_refresh_top_ * tinydraw::kCanvasWidth);
+      const auto offset = offset_at(0, palette_refresh_top_);
       push_rect(0, palette_refresh_top_, tinydraw::kCanvasWidth,
-                kMainOverlayTop - palette_refresh_top_, canvas.data() + offset,
-                tinydraw::kCanvasWidth);
+                kMainOverlayTop - palette_refresh_top_, source.data() + offset, stride);
     }
     if (main_dirty_) {
-      const auto offset = static_cast<std::size_t>(kMainOverlayTop * tinydraw::kCanvasWidth);
+      const auto offset = offset_at(0, kMainOverlayTop);
       push_rect(0, kMainOverlayTop, tinydraw::kCanvasWidth,
-                tinydraw::kCanvasHeight - kMainOverlayTop, canvas.data() + offset,
-                tinydraw::kCanvasWidth);
+                tinydraw::kCanvasHeight - kMainOverlayTop, source.data() + offset, stride);
     }
     main_dirty_ = false;
     battery_dirty_ = false;
@@ -460,7 +466,6 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
     dialog_dirty_ = false;
   }
 
- private:
   void clear_overlay(int x, int y, int width, int height) {
     for (int row = 0; row < height; ++row) {
       auto* start = overlay_ + static_cast<std::ptrdiff_t>((y + row) * tinydraw::kCanvasWidth + x);
@@ -574,6 +579,7 @@ enum class AppEventKind : std::uint8_t {
   kDemoReplayStarted,
   kDemoReplayStopped,
   kPowerStatusChanged,
+  kRefinementPublished,
 };
 
 struct AppEvent {
@@ -581,6 +587,14 @@ struct AppEvent {
   tinydraw::esp32::PowerStatus power{};
   AppEventKind kind = AppEventKind::kTouch;
 };
+
+#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+void enqueue_refinement_published(void* raw) {
+  auto queue = static_cast<QueueHandle_t>(raw);
+  const AppEvent event{.kind = AppEventKind::kRefinementPublished};
+  static_cast<void>(xQueueSend(queue, &event, 0));
+}
+#endif
 
 struct TouchTaskContext {
   PhysicalTouch* touch = nullptr;
@@ -910,7 +924,17 @@ void run_hardware_app() {
   const auto update_toolbar = [&] {
     toolbar.can_undo = canvas.undo_history().can_undo();
     display.set_toolbar(toolbar);
+#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+    if (interactive_pan_benchmark != nullptr) {
+      tinydraw::esp32::interactive_pan_benchmark_lock_cache(*interactive_pan_benchmark);
+      display.refresh_toolbar_world(canvas.world().pixels(), canvas.world().origin());
+      tinydraw::esp32::interactive_pan_benchmark_unlock_cache(*interactive_pan_benchmark);
+    } else {
+      display.refresh_toolbar(canvas.committed());
+    }
+#else
     display.refresh_toolbar(canvas.committed());
+#endif
   };
   const auto select_size = [&](tinydraw::PenSize size) {
     toolbar.size = size;
@@ -1068,15 +1092,18 @@ void run_hardware_app() {
                      : action == tinydraw::ToolbarAction::kSelectMedium ? tinydraw::PenSize::kMedium
                                                                         : tinydraw::PenSize::kLarge;
       close_popups();
-      if (!tinydraw::esp32::interactive_pan_benchmark_set_zoom(*interactive_pan_benchmark,
-                                                               zoom_percent)) {
+      const bool zoom_changed = tinydraw::esp32::interactive_pan_benchmark_set_zoom(
+          *interactive_pan_benchmark, zoom_percent);
+      if (!zoom_changed) {
         std::printf("TINYDRAW_INTERACTIVE_PAN_FAIL zoom=%d\n", zoom_percent);
       }
       update_toolbar();
-      tinydraw::esp32::interactive_pan_benchmark_lock_cache(*interactive_pan_benchmark);
-      display.push_world(canvas.world().pixels(), canvas.world().origin(), kMainOverlayTop);
-      tinydraw::esp32::interactive_pan_benchmark_record_zoom_present(*interactive_pan_benchmark);
-      tinydraw::esp32::interactive_pan_benchmark_unlock_cache(*interactive_pan_benchmark);
+      if (zoom_changed) {
+        tinydraw::esp32::interactive_pan_benchmark_lock_cache(*interactive_pan_benchmark);
+        display.push_world(canvas.world().pixels(), canvas.world().origin(), kMainOverlayTop);
+        tinydraw::esp32::interactive_pan_benchmark_record_zoom_present(*interactive_pan_benchmark);
+        tinydraw::esp32::interactive_pan_benchmark_unlock_cache(*interactive_pan_benchmark);
+      }
       return;
     }
     if (action == tinydraw::ToolbarAction::kSelectExtraLarge) {
@@ -1095,6 +1122,8 @@ void run_hardware_app() {
         action != tinydraw::ToolbarAction::kSelectPen &&
         action != tinydraw::ToolbarAction::kSelectPan &&
         action != tinydraw::ToolbarAction::kSelectEraser &&
+        action != tinydraw::ToolbarAction::kToggleColors &&
+        action != tinydraw::ToolbarAction::kSelectColor &&
         action != tinydraw::ToolbarAction::kNone) {
       close_popups();
       update_toolbar();
@@ -1213,7 +1242,7 @@ void run_hardware_app() {
   display.refresh_toolbar(canvas.committed());
   interactive_pan_benchmark = tinydraw::esp32::start_interactive_pan_benchmark(
       vector_document, canvas.world(), canvas.prototype_materialization_storage(), canvas.visible(),
-      kMainOverlayTop);
+      kMainOverlayTop, display, enqueue_refinement_published, touch_queue);
   if (interactive_pan_benchmark == nullptr) {
     std::printf("TINYDRAW_HARDWARE_FAIL interactive_pan_benchmark=0\n");
     return;
@@ -1296,6 +1325,12 @@ void run_hardware_app() {
     }
     if (app_event.kind == AppEventKind::kResetForDemo) {
       reset_for_demo();
+      continue;
+    }
+    if (app_event.kind == AppEventKind::kRefinementPublished) {
+#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+      update_toolbar();
+#endif
       continue;
     }
     if (app_event.kind == AppEventKind::kPowerStatusChanged) {

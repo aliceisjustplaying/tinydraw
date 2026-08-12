@@ -5,6 +5,7 @@
 
 #include "tinydraw/document/vector_document.h"
 #include "tinydraw/graphics/world_canvas.h"
+#include "tinydraw/platform/display_backend.h"
 
 namespace tinydraw::esp32 {
 
@@ -15,7 +16,8 @@ class InteractivePanBenchmark;
 
 [[nodiscard]] InteractivePanBenchmark* start_interactive_pan_benchmark(
     VectorDocument& document, WorldCanvas& world, std::span<std::uint16_t> materialization_storage,
-    std::span<std::uint16_t> render_buffer, int presented_rows);
+    std::span<std::uint16_t> render_buffer, int presented_rows, DisplayBackend& display,
+    void (*refinement_published)(void*) = nullptr, void* refinement_published_context = nullptr);
 
 [[nodiscard]] bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark,
                                                       int zoom_percent);

@@ -31,6 +31,38 @@ TEST_CASE("valid raster fallback preserves known pixels and fills unknown world 
   CHECK(destination[3] == source[2]);
 }
 
+TEST_CASE("regional fallback changes only the requested destination rectangle") {
+  constexpr int kWidth = 4;
+  constexpr int kHeight = 4;
+  std::array<std::uint16_t, kWidth * kHeight> source{};
+  for (int index = 0; index < kWidth * kHeight; ++index) {
+    source[static_cast<std::size_t>(index)] = static_cast<std::uint16_t>(index + 1);
+  }
+  std::array<std::uint16_t, kWidth * kHeight> destination{};
+  destination.fill(0xABCDU);
+
+  tinydraw::resample_valid_raster_region(source, kWidth, kHeight, {.zoom = 1.0F}, destination,
+                                         kWidth, kHeight, kWidth, {.zoom = 1.0F},
+                                         {.x0 = 1, .y0 = 1, .x1 = 3, .y1 = 3});
+
+  CHECK(destination[0] == 0xABCDU);
+  CHECK(destination[5] == source[5]);
+  CHECK(destination[6] == source[6]);
+  CHECK(destination[15] == 0xABCDU);
+}
+
+TEST_CASE("bilinear zoom fallback blends RGB565 channels") {
+  constexpr std::array<std::uint16_t, 4> source{kBlack, 0xF800U, 0x07E0U, kWhite};
+  std::array<std::uint16_t, 16> destination{};
+
+  tinydraw::resample_bilinear_rgb565_region(source, 2, 2, {.zoom = 1.0F}, destination, 4, 4, 4,
+                                            {.zoom = 2.0F}, {.x0 = 0, .y0 = 0, .x1 = 4, .y1 = 4});
+
+  CHECK(destination[0] != destination[1]);
+  CHECK(destination[5] != kBlack);
+  CHECK(destination[5] != kWhite);
+}
+
 TEST_CASE("two by two RGB565 box downsample averages channels") {
   constexpr std::array<std::uint16_t, 4> source{0xF800U, 0x07E0U, 0x001FU, kWhite};
   std::array<std::uint16_t, 1> destination{};
