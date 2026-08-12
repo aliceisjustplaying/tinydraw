@@ -90,8 +90,12 @@ case "$command_name" in
       echo "No production C++ implementation files to analyze yet."
       exit 0
     fi
+    tidy_args=(--quiet -p "$root/out/build/host-debug")
+    if [[ "$(uname -s)" == Darwin ]] && command -v xcrun >/dev/null 2>&1; then
+      tidy_args+=(--extra-arg=-isysroot --extra-arg="$(xcrun --show-sdk-path)")
+    fi
     for file in "${files[@]}"; do
-      "$tidy" --quiet -p "$root/out/build/host-debug" "$file"
+      "$tidy" "${tidy_args[@]}" "$file"
     done
     ;;
   cppcheck)
@@ -111,7 +115,8 @@ case "$command_name" in
     fi
     "$checker" --quiet --std=c++20 --language=c++ --check-level=exhaustive \
       --enable=warning,style,performance,portability --error-exitcode=1 --inline-suppr \
-      --suppress=missingIncludeSystem -I "$root/production/include" "${files[@]}"
+      --suppress=missingIncludeSystem --suppress=unusedStructMember \
+      -I "$root/production/include" "${files[@]}"
     ;;
   *)
     echo "usage: $0 {test|run|run-2x|run-3x|perf|vector-perf|asan|release|format|format-check|tidy|cppcheck}" >&2

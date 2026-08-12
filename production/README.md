@@ -64,3 +64,17 @@ Task #52 may initially add only:
 - build wiring required by those host tests.
 
 It must not edit `hardware_app.cpp`, add an ESP32 adapter, allocate PSRAM, change `WorldCanvas`, or extend the retired coordinator.
+
+### Initial geometry and memory arithmetic
+
+The state seam uses 64×64 RGB565 world tiles. This is an initial publication
+identity, not a permanent renderer-work size:
+
+- complete 25% overview: `368 × 448 × 2 = 329,728` bytes;
+- one tile: `64 × 64 × 2 = 8,192` bytes;
+- a 128-tile pixel pool: `1,048,576` bytes plus slot metadata;
+- 100% world grid: `ceil(1472 / 64) × ceil(1792 / 64) = 23 × 28` keys.
+
+`MaterializedCanvas` owns no hidden allocation. The overview pixels and fixed
+slot metadata are caller-owned; pixel-pool allocation and its hardware receipt
+belong to Task #53.
