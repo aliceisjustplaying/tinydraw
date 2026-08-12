@@ -112,7 +112,7 @@ The 1.5–3× range is credible for the raster stage on suitable thick/dense str
 
 **MECHANISM VERIFIED; RANGE UNMEASURED.** Current canonical exact refinement invokes `render_region` separately for every 32-row job (`interactive_pan_benchmark.cpp:1044-1072`), reconstructing ribbon geometry and querying candidates repeatedly. A geometry supertask binned into multiple publication tiles removes that duplication. The settled renderer already groups visible bands within a cache cell, so this lever mainly targets canonical exact work and prevents a naive production tile renderer from repeating the mistake.
 
-The strongest historical receipt is better than the estimate: direct full-viewport dual-core canonical rendering measured **1.777 seconds for 1,000 handwriting strokes at 100%** (`V2_PHASE1_FINDINGS.md:18-35`), while the current coordinator's visible exact band sweep is roughly 4–5 seconds. Workload/code differences prevent a strict comparison, but they show that current band scheduling—not just pixel math—is a major part of the 4–5-second result.
+The strongest historical receipt is better than the estimate: direct full-viewport dual-core canonical rendering measured **1.777 seconds for 1,000 handwriting strokes at 100%** (`docs/archive/2026-08-raster-and-vector-prototypes/V2_PHASE1_FINDINGS.md:18-35`), while the current coordinator's visible exact band sweep is roughly 4–5 seconds. Workload/code differences prevent a strict comparison, but they show that current band scheduling—not just pixel math—is a major part of the 4–5-second result.
 
 ### 5. Internal-RAM band destination “about 1.2×”
 

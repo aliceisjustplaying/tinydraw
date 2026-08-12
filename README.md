@@ -11,6 +11,12 @@ RP2350 Touch AMOLED 1.8-inch boards. A macOS app and ESP-IDF/QEMU targets
 exercise the same C++20 drawing and UI core.
 
 ## Current state
+
+The runnable firmware remains the raster-authoritative 3×3 product described below. The active
+production branch is migrating to a vector-authoritative 4×4 canvas through an isolated,
+host-tested production island; it is not ready to ship. See [`PROJECT_STATE.md`](PROJECT_STATE.md)
+for current direction and [`production/README.md`](production/README.md) for migration guardrails.
+
 - Variable-width, Perfect Freehand-style ink with 4×4 edge smoothing
 - Solid self-overlaps, rounded sharp turns, twelve colors, and four sizes
 - ESP32: pan, ten Undos, 3×3 canvas, autosave, battery, and USB PNG export
@@ -64,8 +70,9 @@ power off; short-press it to start. There is no sleep mode yet.
 ```
 
 The RP2350 uses one SRAM framebuffer. Repeated arbitrary SH8601 rectangles were
-unreliable; full-width bands stay fast and physically stable. See
-[`FINDINGS.md`](FINDINGS.md) for measurements and development history.
+unreliable; full-width bands stay fast and physically stable. Historical
+measurements are archived in
+[`FINDINGS.md`](docs/archive/2026-08-raster-and-vector-prototypes/FINDINGS.md).
 
 ## License
 
