@@ -320,3 +320,47 @@ Not exercised by this automated run: manual pan (`TINYDRAW_PAN_CONTENT`
 expected-content records), live drawing/eraser latency, and the cooperative
 shutdown path (`finish_interactive_pan_benchmark`). These need an interactive
 session.
+
+### Interactive session with publication telemetry (`12b70da-manual-diag.log`)
+
+Manual pan/zoom/draw/eraser session on the same firmware, ending with a
+persisted report (`TINYDRAW_INTERACTIVE_PAN_DONE persisted=1`). Zero
+`TINYDRAW_PANEL_WINDOW_REJECT` events. The new telemetry converted every
+subjective observation into a measurement:
+
+- "Panning was choppy after eraser": one gesture recorded
+  `rejected_views=103 max_missing_pixels=23488` while post-eraser bands were
+  invalid (20:51:35). After `FALLBACK_REPAIRED revision=10`, the next pan ran
+  86 accepted frames at ~26 ms with zero rejections. First quantified
+  hardware receipt for the hard-refusal pan policy.
+- "Zoom fails after drawing": two `TINYDRAW_INTERACTIVE_PAN_FAIL` refusals
+  (20:50:37 zoom=50, 20:51:27 zoom=200), both while pinned-source repair was
+  pending. Repair latency: ~3 s (revision 3), ~4 s (revision 4), and ~12 s
+  cumulative for revisions 5-10 during a six-stroke burst, because each new
+  stroke re-targets the repair revision. This fails the review's <=2 s
+  repair gate and is the strongest hardware argument for the
+  overview-fallback production design over refusal.
+- "Rendered block by block over seconds": exact canonical refinement is
+  directly visible as a band sweep in the publication records (ids 205-214,
+  y0=74..362, ~0.4 s per 32-row band, top-down). Settled quality lands
+  first; the sweep is the canonical pass repainting settled bands.
+- Zoom-to-settled after panning off cell alignment renders two cells per
+  supertask: bands=20 (836 ms raster+composite) and bands=26 (983 ms)
+  versus 12 bands centered. Multi-cell views nearly double settled cost.
+- Tapping the current zoom level re-runs the entire transition (no no-op
+  guard in set_zoom), costing a full fallback + settled + exact cycle for a
+  redundant tap. The toolbar also starts showing M while the post-auto-run
+  zoom is 50%. Both are benchmark-wiring warts, listed for completeness,
+  not scheduled for fixing in the disposable coordinator.
+- Incremental LOD append worked across all nine mutations (7,537 -> 7,605
+  -> 10,185 high-quality samples; capacity 12,288 never exceeded; no raw
+  fallback events).
+- Live drawing stayed healthy under mutation load: 1.7-2.8 ms average
+  raster updates; stroke finish 36-60 ms including capture and LOD.
+
+Conclusion: fallback, panning on valid cache, drawing, and publication
+integrity all pass. Repair latency and refusal behavior under mutation
+bursts are confirmed architectural limits of the camera-aligned atlas, as
+predicted by all three reviews. These receipts close the prototype's
+evidence file; the remaining work belongs to the production
+overview-plus-tiles design.
