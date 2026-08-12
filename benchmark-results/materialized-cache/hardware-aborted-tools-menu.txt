@@ -1,0 +1,317 @@
+TINYDRAW_POWER battery=100 voltage_mv=4083 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4082 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4083 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4082 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4083 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4080 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4083 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4082 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4083 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4081 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4083 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4081 charging=0 vbus=1
+[DEBUG-hw1] down x=1 y=211
+[DEBUG-hw1] up x=311 y=215 active=0
+TINYDRAW_PAN_PERF frames=8 bytes=2190336 average_us=26122 max_us=26170 settle_us=0 prepare_us=152550 transfer_us=55620 pushes=136
+[DEBUG-hw1] down x=67 y=218
+[DEBUG-hw1] up x=284 y=242 active=0
+TINYDRAW_PAN_PERF frames=6 bytes=1642752 average_us=26098 max_us=26112 settle_us=0 prepare_us=114063 transfer_us=41959 pushes=102
+TINYDRAW_POWER battery=100 voltage_mv=4082 charging=0 vbus=1
+[DEBUG-hw1] down x=320 y=213
+[DEBUG-hw1] up x=63 y=205 active=0
+TINYDRAW_PAN_PERF frames=4 bytes=1095168 average_us=26118 max_us=26151 settle_us=0 prepare_us=76343 transfer_us=27734 pushes=68
+[DEBUG-hw1] down x=302 y=185
+[DEBUG-hw1] up x=47 y=221 active=0
+TINYDRAW_PAN_PERF frames=4 bytes=1095168 average_us=26117 max_us=26139 settle_us=0 prepare_us=76205 transfer_us=27866 pushes=68
+[DEBUG-hw1] down x=271 y=192
+[DEBUG-hw1] up x=63 y=177 active=0
+TINYDRAW_PAN_PERF frames=4 bytes=1095168 average_us=26124 max_us=26163 settle_us=0 prepare_us=76268 transfer_us=27852 pushes=68
+[DEBUG-hw1] down x=30 y=235
+[DEBUG-hw1] up x=306 y=207 active=0
+TINYDRAW_PAN_PERF frames=4 bytes=1095168 average_us=26132 max_us=26157 settle_us=0 prepare_us=76489 transfer_us=27654 pushes=68
+[DEBUG-hw1] down x=26 y=237
+[DEBUG-hw1] up x=315 y=242 active=0
+TINYDRAW_PAN_PERF frames=3 bytes=821376 average_us=26120 max_us=26149 settle_us=0 prepare_us=57332 transfer_us=20729 pushes=51
+[DEBUG-hw1] down x=76 y=137
+[DEBUG-hw1] up x=292 y=177 active=0
+TINYDRAW_PAN_PERF frames=3 bytes=821376 average_us=26131 max_us=26156 settle_us=0 prepare_us=57140 transfer_us=20966 pushes=51
+[DEBUG-hw1] down x=166 y=59
+[DEBUG-hw1] up x=129 y=394 active=0
+TINYDRAW_PAN_PERF frames=5 bytes=1368960 average_us=26130 max_us=26157 settle_us=0 prepare_us=95631 transfer_us=34513 pushes=85
+[DEBUG-hw1] down x=117 y=100
+[DEBUG-hw1] up x=118 y=367 active=0
+TINYDRAW_PAN_PERF frames=3 bytes=821376 average_us=26135 max_us=26198 settle_us=0 prepare_us=57320 transfer_us=20794 pushes=51
+[DEBUG-hw1] down x=185 y=295
+[DEBUG-hw1] up x=30 y=74 active=0
+TINYDRAW_PAN_PERF frames=4 bytes=1095168 average_us=26129 max_us=26146 settle_us=0 prepare_us=76437 transfer_us=27702 pushes=68
+[DEBUG-hw1] down x=323 y=222
+[DEBUG-hw1] up x=133 y=52 active=0
+TINYDRAW_PAN_PERF frames=55 bytes=15058560 average_us=26119 max_us=26172 settle_us=0 prepare_us=1050397 transfer_us=380840 pushes=935
+TINYDRAW_POWER battery=100 voltage_mv=4081 charging=0 vbus=1
+[DEBUG-hw1] down x=253 y=261
+[DEBUG-hw1] up x=89 y=16 active=0
+TINYDRAW_PAN_PERF frames=3 bytes=821376 average_us=26130 max_us=26150 settle_us=0 prepare_us=57291 transfer_us=20795 pushes=51
+[DEBUG-hw1] down x=185 y=184
+[DEBUG-hw1] up x=67 y=27 active=0
+TINYDRAW_PAN_PERF frames=3 bytes=821376 average_us=26141 max_us=26155 settle_us=0 prepare_us=57338 transfer_us=20786 pushes=51
+[DEBUG-hw1] down x=227 y=184
+[DEBUG-hw1] up x=72 y=26 active=0
+TINYDRAW_PAN_PERF frames=3 bytes=821376 average_us=26114 max_us=26118 settle_us=0 prepare_us=57169 transfer_us=20882 pushes=51
+TINYDRAW_POWER battery=100 voltage_mv=4082 charging=0 vbus=1
+[DEBUG-hw1] down x=89 y=97
+[DEBUG-hw1] up x=324 y=171 active=0
+TINYDRAW_PAN_PERF frames=4 bytes=1095168 average_us=26132 max_us=26158 settle_us=0 prepare_us=76425 transfer_us=27681 pushes=68
+[DEBUG-hw1] down x=18 y=97
+[DEBUG-hw1] up x=341 y=266 active=0
+TINYDRAW_PAN_PERF frames=7 bytes=1916544 average_us=26129 max_us=26164 settle_us=0 prepare_us=133872 transfer_us=48339 pushes=119
+[DEBUG-hw1] down x=29 y=47
+[DEBUG-hw1] up x=172 y=416 active=0
+TINYDRAW_PAN_PERF frames=6 bytes=1642752 average_us=26120 max_us=26151 settle_us=0 prepare_us=114699 transfer_us=41397 pushes=102
+[DEBUG-hw1] down x=260 y=308
+[DEBUG-hw1] up x=32 y=79 active=0
+TINYDRAW_PAN_PERF frames=29 bytes=7939968 average_us=26116 max_us=26162 settle_us=0 prepare_us=553697 transfer_us=200900 pushes=493
+TINYDRAW_POWER battery=100 voltage_mv=4083 charging=0 vbus=1
+[DEBUG-hw1] down x=11 y=135
+[DEBUG-hw1] up x=47 y=59 active=0
+TINYDRAW_PAN_PERF frames=15 bytes=4106880 average_us=26114 max_us=26154 settle_us=0 prepare_us=286506 transfer_us=103769 pushes=255
+[DEBUG-hw1] down x=11 y=148
+[DEBUG-hw1] up x=46 y=166 active=0
+TINYDRAW_PAN_PERF frames=1 bytes=273792 average_us=26096 max_us=26096 settle_us=0 prepare_us=18999 transfer_us=6993 pushes=17
+[DEBUG-hw1] down x=244 y=70
+[DEBUG-hw1] up x=286 y=236 active=0
+TINYDRAW_PAN_PERF frames=10 bytes=2737920 average_us=26123 max_us=26162 settle_us=0 prepare_us=191366 transfer_us=68873 pushes=170
+TINYDRAW_POWER battery=100 voltage_mv=4082 charging=0 vbus=1
+[DEBUG-hw1] down x=349 y=211
+[DEBUG-hw1] up x=302 y=152 active=0
+TINYDRAW_PAN_PERF frames=74 bytes=20260608 average_us=26118 max_us=26175 settle_us=0 prepare_us=1413386 transfer_us=512307 pushes=1258
+TINYDRAW_POWER battery=100 voltage_mv=4081 charging=0 vbus=1
+[DEBUG-hw1] down x=305 y=166
+[DEBUG-hw1] up x=28 y=94 active=0
+TINYDRAW_PAN_PERF frames=6 bytes=1642752 average_us=26115 max_us=26153 settle_us=0 prepare_us=114743 transfer_us=41368 pushes=102
+[DEBUG-hw1] down x=365 y=206
+[DEBUG-hw1] up x=33 y=102 active=0
+TINYDRAW_PAN_PERF frames=4 bytes=1095168 average_us=26121 max_us=26133 settle_us=0 prepare_us=76238 transfer_us=27845 pushes=68
+[DEBUG-hw1] down x=333 y=209
+[DEBUG-hw1] up x=78 y=110 active=0
+TINYDRAW_PAN_PERF frames=3 bytes=821376 average_us=26091 max_us=26122 settle_us=0 prepare_us=56899 transfer_us=21077 pushes=51
+[DEBUG-hw1] down x=63 y=147
+[DEBUG-hw1] up x=303 y=206 active=0
+TINYDRAW_PAN_PERF frames=3 bytes=821376 average_us=26117 max_us=26133 settle_us=0 prepare_us=57165 transfer_us=20898 pushes=51
+TINYDRAW_POWER battery=100 voltage_mv=4082 charging=0 vbus=1
+[DEBUG-hw1] down x=100 y=173
+[DEBUG-hw1] up x=314 y=269 active=0
+TINYDRAW_PAN_PERF frames=2 bytes=547584 average_us=26102 max_us=26103 settle_us=0 prepare_us=38263 transfer_us=13750 pushes=34
+[DEBUG-hw1] down x=62 y=99
+[DEBUG-hw1] up x=341 y=325 active=0
+TINYDRAW_PAN_PERF frames=3 bytes=821376 average_us=26124 max_us=26145 settle_us=0 prepare_us=57301 transfer_us=20790 pushes=51
+[DEBUG-hw1] down x=131 y=113
+[DEBUG-hw1] up x=202 y=412 active=0
+TINYDRAW_PAN_PERF frames=3 bytes=821376 average_us=26096 max_us=26111 settle_us=0 prepare_us=56887 transfer_us=21114 pushes=51
+[DEBUG-hw1] down x=334 y=259
+[DEBUG-hw1] up x=57 y=149 active=0
+TINYDRAW_PAN_PERF frames=4 bytes=1095168 average_us=26134 max_us=26188 settle_us=0 prepare_us=76411 transfer_us=27699 pushes=68
+[DEBUG-hw1] down x=200 y=172
+[DEBUG-hw1] up x=47 y=227 active=0
+TINYDRAW_PAN_PERF frames=4 bytes=1095168 average_us=26126 max_us=26162 settle_us=0 prepare_us=76429 transfer_us=27680 pushes=68
+[DEBUG-hw1] down x=148 y=258
+[DEBUG-hw1] up x=65 y=37 active=0
+TINYDRAW_PAN_PERF frames=8 bytes=2190336 average_us=26113 max_us=26150 settle_us=0 prepare_us=152527 transfer_us=55622 pushes=136
+[DEBUG-hw1] down x=80 y=212
+[DEBUG-hw1] up x=311 y=138 active=0
+TINYDRAW_PAN_PERF frames=8 bytes=2190336 average_us=26131 max_us=26202 settle_us=0 prepare_us=152978 transfer_us=55275 pushes=136
+TINYDRAW_POWER battery=100 voltage_mv=4084 charging=0 vbus=1
+[DEBUG-hw1] down x=211 y=207
+[DEBUG-hw1] up x=137 y=176 active=0
+TINYDRAW_PAN_PERF frames=25 bytes=6844800 average_us=26113 max_us=26145 settle_us=0 prepare_us=477688 transfer_us=172740 pushes=425
+TINYDRAW_POWER battery=100 voltage_mv=4082 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4083 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4081 charging=0 vbus=1
+[DEBUG-hw1] down x=205 y=447
+[DEBUG-hw1] up x=205 y=447 active=0
+TINYDRAW_POWER battery=100 voltage_mv=4083 charging=0 vbus=1
+[DEBUG-hw1] down x=238 y=438
+[DEBUG-hw1] up x=238 y=438 active=0
+[DEBUG-hw1] down x=203 y=447
+[DEBUG-hw1] up x=203 y=447 active=0
+TINYDRAW_POWER battery=100 voltage_mv=4084 charging=0 vbus=1
+[DEBUG-hw1] down x=240 y=441
+[DEBUG-hw1] up x=238 y=441 active=0
+[DEBUG-hw1] down x=197 y=447
+[DEBUG-hw1] up x=196 y=447 active=0
+TINYDRAW_POWER battery=100 voltage_mv=4083 charging=0 vbus=1
+[DEBUG-hw1] down x=62 y=430
+[DEBUG-hw1] up x=62 y=430 active=0
+[DEBUG-hw1] down x=62 y=447
+[DEBUG-hw1] up x=62 y=447 active=0
+[DEBUG-hw1] down x=85 y=441
+[DEBUG-hw1] up x=85 y=441 active=0
+[DEBUG-hw1] down x=196 y=236
+[DEBUG-hw1] up x=138 y=201 active=0
+TINYDRAW_PAN_PERF frames=22 bytes=6023424 average_us=26108 max_us=26154 settle_us=0 prepare_us=419788 transfer_us=152440 pushes=374
+TINYDRAW_POWER battery=100 voltage_mv=4082 charging=0 vbus=1
+[DEBUG-hw1] down x=98 y=184
+[DEBUG-hw1] up x=162 y=204 active=0
+TINYDRAW_PAN_PERF frames=15 bytes=4106880 average_us=26110 max_us=26144 settle_us=0 prepare_us=286386 transfer_us=103820 pushes=255
+[DEBUG-hw1] down x=71 y=440
+[DEBUG-hw1] up x=71 y=440 active=0
+[DEBUG-hw1] down x=76 y=445
+[DEBUG-hw1] up x=76 y=444 active=0
+[DEBUG-hw1] down x=73 y=437
+[DEBUG-hw1] up x=73 y=437 active=0
+[DEBUG-hw1] down x=80 y=443
+[DEBUG-hw1] up x=80 y=443 active=0
+[DEBUG-hw1] down x=148 y=440
+[DEBUG-hw1] up x=148 y=440 active=0
+[DEBUG-hw1] down x=178 y=441
+[DEBUG-hw1] up x=170 y=441 active=0
+[DEBUG-hw1] down x=86 y=447
+[DEBUG-hw1] up x=86 y=447 active=0
+TINYDRAW_POWER battery=100 voltage_mv=4081 charging=0 vbus=1
+[DEBUG-hw1] down x=80 y=441
+[DEBUG-hw1] up x=80 y=441 active=0
+TINYDRAW_POWER battery=100 voltage_mv=4082 charging=0 vbus=1
+[DEBUG-hw1] down x=93 y=433
+[DEBUG-hw1] up x=91 y=433 active=0
+[DEBUG-hw1] down x=100 y=447
+[DEBUG-hw1] up x=100 y=447 active=0
+[DEBUG-hw1] down x=87 y=446
+[DEBUG-hw1] up x=87 y=446 active=0
+[DEBUG-hw1] down x=129 y=222
+[DEBUG-hw1] up x=27 y=215 active=1
+TINYDRAW_VECTOR_STROKE strokes=1001 samples=12031
+[DEBUG-perf1] samples=30 updates_us=45082 average_us=1502 max_us=2131 finish_us=31109 display_prepare_us=823 display_transfer_us=6885 pushes=31 stroke_us=436000 touch_average_us=13999 touch_max_us=39017 max_input_lag_us=15691 max_queue=1
+TINYDRAW_POWER battery=100 voltage_mv=4083 charging=0 vbus=1
+[DEBUG-hw1] down x=84 y=443
+[DEBUG-hw1] up x=84 y=443 active=0
+TINYDRAW_POWER battery=100 voltage_mv=4084 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4083 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4082 charging=0 vbus=1
+[DEBUG-hw1] down x=76 y=443
+[DEBUG-hw1] up x=76 y=443 active=0
+TINYDRAW_POWER battery=100 voltage_mv=4081 charging=0 vbus=1
+[DEBUG-hw1] down x=84 y=437
+[DEBUG-hw1] up x=84 y=437 active=0
+[DEBUG-hw1] down x=85 y=438
+[DEBUG-hw1] up x=84 y=438 active=0
+TINYDRAW_POWER battery=100 voltage_mv=4097 charging=1 vbus=1
+[DEBUG-hw1] down x=217 y=437
+[DEBUG-hw1] up x=216 y=436 active=0
+TINYDRAW_POWER battery=100 voltage_mv=4216 charging=1 vbus=1
+[DEBUG-hw1] down x=205 y=441
+[DEBUG-hw1] up x=205 y=441 active=0
+[DEBUG-hw1] down x=211 y=438
+[DEBUG-hw1] up x=208 y=437 active=0
+TINYDRAW_POWER battery=100 voltage_mv=4217 charging=1 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4219 charging=1 vbus=1
+[DEBUG-hw1] down x=288 y=438
+[DEBUG-hw1] up x=288 y=438 active=0
+TINYDRAW_POWER battery=100 voltage_mv=4200 charging=1 vbus=1
+[DEBUG-hw1] down x=278 y=437
+[DEBUG-hw1] up x=278 y=437 active=0
+TINYDRAW_POWER battery=100 voltage_mv=4199 charging=1 vbus=1
+[DEBUG-hw1] down x=84 y=438
+[DEBUG-hw1] up x=84 y=438 active=0
+[DEBUG-hw1] down x=71 y=443
+[DEBUG-hw1] up x=71 y=443 active=0
+[DEBUG-hw1] down x=62 y=447
+[DEBUG-hw1] up x=62 y=447 active=0
+[DEBUG-hw1] down x=75 y=441
+[DEBUG-hw1] up x=75 y=441 active=0
+TINYDRAW_POWER battery=100 voltage_mv=4200 charging=1 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4199 charging=1 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4200 charging=1 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4199 charging=1 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4200 charging=1 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4199 charging=1 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4200 charging=1 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4109 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4106 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4107 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4105 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4103 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4104 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4101 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4102 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4100 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4099 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4096 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4098 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4096 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4097 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4096 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4095 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4094 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4096 charging=0 vbus=1
+TINYDRAW_POWER battery=99 voltage_mv=4095 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4095 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4094 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4094 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4088 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4088 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4088 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4088 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4088 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4087 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4088 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4086 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4087 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4087 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4086 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4087 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4088 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4087 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4088 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4087 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4088 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4087 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4086 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4088 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4086 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4088 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4087 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4086 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4088 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4087 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4086 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4087 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4088 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4087 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4085 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4087 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4088 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4086 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4087 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4088 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4086 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4087 charging=0 vbus=1
+TINYDRAW_POWER battery=100 voltage_mv=4086 charging=0 vbus=1

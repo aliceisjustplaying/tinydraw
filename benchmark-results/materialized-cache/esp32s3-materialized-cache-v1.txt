@@ -1,0 +1,7 @@
+TINYDRAW_INTERACTIVE_PAN_V1 workload=periodic_handwriting1000 cache=3x3 band_rows=32 presented_rows=372 timing_capacity=256
+ZOOM zoom=50 gestures=10 frames=215 samples=215 direct_avg_us=26878 direct_median_us=25976 direct_p95_us=30674 direct_max_us=33326 event_avg_us=33045 event_median_us=33587 event_p95_us=40228 event_max_us=43892 miss_frames=163 max_missing_pixels=71850 max_velocity_px_s=4231 first_valid_us=0 fallback_ready_us=0 settled_us=0 center_ready_us=0 full_ready_us=0
+ZOOM zoom=100 gestures=23 frames=333 samples=256 direct_avg_us=25963 direct_median_us=25958 direct_p95_us=26018 direct_max_us=26055 event_avg_us=34098 event_median_us=36129 event_p95_us=39142 event_max_us=51293 miss_frames=0 max_missing_pixels=0 max_velocity_px_s=7264 first_valid_us=0 fallback_ready_us=0 settled_us=0 center_ready_us=0 full_ready_us=0
+ZOOM zoom=200 gestures=12 frames=144 samples=144 direct_avg_us=25958 direct_median_us=25955 direct_p95_us=26013 direct_max_us=26042 event_avg_us=33386 event_median_us=33408 event_p95_us=39146 event_max_us=51321 miss_frames=0 max_missing_pixels=0 max_velocity_px_s=5497 first_valid_us=365291 fallback_ready_us=292647 settled_us=7376150 center_ready_us=7900896 full_ready_us=16360579
+DRAW samples=256 average_us=12131 median_us=1594 p95_us=3097 p99_us=4680 max_us=11773
+DONE
+
