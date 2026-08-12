@@ -91,3 +91,30 @@ full-visible time matters. Settled at 200% is intentionally unset pending the
 settled-renderer experiment. Visual correctness on the physical panel should be
 spot-checked by eye; the strips use the same validity-proven source and
 resampler as the previous full-region path.
+
+## Follow-up: pinned complete fallback and settled pass
+
+Adding visible settled work before runway originally caused cycles 3–11 to be
+refused: cancellation left the current atlas partial, and the next zoom treated
+that partial atlas as its only source. `settled-auto-zoom-diagnostic.log`
+reproduces the failure and shows source coverage was proven while raster band
+readiness failed.
+
+The no-third-buffer correction pins the initial complete 100% atlas in the
+inactive 2.97 MiB arena. Later transitions rewrite the active arena in place
+from that immutable source. Offscreen runway may still be canceled, but it can
+no longer corrupt or replace the source needed by the next zoom.
+`pinned-fallback-runway-auto-zoom.log` is the physical validation:
+
+- 12/12 transitions accepted; no failure/refusal lines;
+- first strip physically complete: **7.1–15.8 ms**;
+- complete visible region physically complete: **40.2–51.6 ms**;
+- visible capsule-settled: 50% **747–749 ms**, 100% **1.23–1.24 s**, 200%
+  **902–905 ms**.
+
+The fallback gates pass with wide margin. The settled pass is correct enough for
+mechanism testing but misses the under-500-ms target and is the next profiling
+and optimization target. A document mutation invalidates the pinned source;
+zoom must conservatively refuse until that source has been repaired or rebuilt
+for the new revision. Production will replace this temporary invariant with an
+incrementally maintained complete overview.

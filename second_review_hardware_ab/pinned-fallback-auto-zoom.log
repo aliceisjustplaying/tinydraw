@@ -1,0 +1,116 @@
+[15:36:17] ESP-ROM:esp32s3-20210327
+[15:36:17] Build:Mar 27 2021
+[15:36:17] rst:0x15 (USB_UART_CHIP_RESET),boot:0x2b (SPI_FAST_FLASH_BOOT)
+[15:36:17] Saved PC:0x420082c7
+[15:36:17] SPIWP:0xee
+[15:36:17] mode:DIO, clock div:1
+[15:36:17] load:0x3fce2820,len:0x1664
+[15:36:17] load:0x403c8700,len:0xf38
+[15:36:17] load:0x403cb700,len:0x31e8
+[15:36:17] entry 0x403c8930
+[15:36:17] I (24) boot: ESP-IDF v6.0.2 2nd stage bootloader
+[15:36:17] I (24) boot: compile time Aug 11 2026 22:53:49
+[15:36:17] I (25) boot: Multicore bootloader
+[15:36:17] I (25) boot: chip revision: v0.2
+[15:36:17] I (28) boot: efuse block revision: v1.3
+[15:36:17] I (31) qio_mode: Enabling default flash chip QIO
+[15:36:17] I (36) boot.esp32s3: Boot SPI Speed : 80MHz
+[15:36:17] I (39) boot.esp32s3: SPI Mode       : QIO
+[15:36:17] I (43) boot.esp32s3: SPI Flash Size : 16MB
+[15:36:17] I (47) boot: Enabling RNG early entropy source...
+[15:36:17] I (51) boot: Partition Table:
+[15:36:17] I (54) boot: ## Label            Usage          Type ST Offset   Length
+[15:36:17] I (60) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+[15:36:17] I (67) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+[15:36:17] I (73) boot:  2 factory          factory app      00 00 00010000 00100000
+[15:36:17] I (80) boot:  3 drawing          Unknown data     01 40 00110000 00300000
+[15:36:17] I (86) boot:  4 export           Unknown data     01 41 00410000 00500000
+[15:36:17] I (93) boot:  5 coredump         Unknown data     01 03 00910000 00010000
+[15:36:17] I (100) boot: End of partition table
+[15:36:17] I (103) esp_image: segment 0: paddr=00010020 vaddr=3c030020 size=0f200h ( 61952) map
+[15:36:17] I (120) esp_image: segment 1: paddr=0001f228 vaddr=3fc94600 size=00df0h (  3568) load
+[15:36:17] I (121) esp_image: segment 2: paddr=00020020 vaddr=42000020 size=2eef4h (192244) map
+[15:36:17] I (155) esp_image: segment 3: paddr=0004ef1c vaddr=3fc953f0 size=0e914h ( 59668) load
+[15:36:17] I (166) esp_image: segment 4: paddr=0005d838 vaddr=40374000 size=104fch ( 66812) load
+[15:36:17] I (180) esp_image: segment 5: paddr=0006dd3c vaddr=50000000 size=00024h (    36) load
+[15:36:17] I (190) boot: Loaded app from partition at offset 0x10000
+[15:36:17] I (190) boot: Disabling RNG early entropy source...
+[15:36:17] I (200) octal_psram: vendor id    : 0x0d (AP)
+[15:36:17] I (201) octal_psram: dev id       : 0x02 (generation 3)
+[15:36:17] I (201) octal_psram: density      : 0x03 (64 Mbit)
+[15:36:17] I (203) octal_psram: good-die     : 0x01 (Pass)
+[15:36:17] I (207) octal_psram: Latency      : 0x01 (Fixed)
+[15:36:17] I (211) octal_psram: VCC          : 0x01 (3V)
+[15:36:17] I (215) octal_psram: SRF          : 0x01 (Fast Refresh)
+[15:36:17] I (220) octal_psram: BurstType    : 0x01 (Hybrid Wrap)
+[15:36:17] I (225) octal_psram: BurstLen     : 0x01 (32 Byte)
+[15:36:17] I (230) octal_psram: Readlatency  : 0x02 (10 cycles@Fixed)
+[15:36:17] I (235) octal_psram: DriveStrength: 0x00 (1/1)
+[15:36:17] I (239) MSPI Timing: Enter psram timing tuning
+[15:36:17] I (244) esp_psram: Found 8MB PSRAM device
+[15:36:17] I (247) esp_psram: Speed: 80MHz
+[15:36:17] I (250) cpu_start: Multicore app
+[15:36:18] I (666) esp_psram: SPI SRAM memory test OK
+[15:36:18] I (674) cpu_start: GPIO 44 and 43 are used as console UART I/O pins
+[15:36:18] I (675) cpu_start: Pro cpu start user code
+[15:36:18] I (675) cpu_start: cpu freq: 240000000 Hz
+[15:36:18] I (676) app_init: Application information:
+[15:36:18] I (680) app_init: Project name:     tinydraw_esp32
+[15:36:18] I (685) app_init: App version:      18ee81a
+[15:36:18] I (689) app_init: Compile time:     Aug 12 2026 14:55:17
+[15:36:18] I (694) app_init: ELF file SHA256:  5c908189c...
+[15:36:18] I (698) app_init: ESP-IDF:          v6.0.2
+[15:36:18] I (702) efuse_init: Min chip rev:     v0.0
+[15:36:18] I (706) efuse_init: Max chip rev:     v0.99
+[15:36:18] I (710) efuse_init: Chip rev:         v0.2
+[15:36:18] I (714) heap_init: Initializing. RAM available for dynamic allocation:
+[15:36:18] I (720) heap_init: At 3FCA4A30 len 00044CE0 (275 KiB): RAM
+[15:36:18] I (725) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+[15:36:18] I (730) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
+[15:36:18] I (735) heap_init: At 600FE000 len 00001FE8 (7 KiB): RTCRAM
+[15:36:18] I (741) esp_psram: Adding pool of 8192K of PSRAM memory to heap allocator
+[15:36:18] I (748) spi_flash: detected chip: generic
+[15:36:18] I (751) spi_flash: flash io: qio
+[15:36:18] I (754) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+[15:36:18] I (760) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+[15:36:18] I (767) main_task: Started on CPU0
+[15:36:18] I (770) main_task: Calling app_main()
+[15:36:18] TINYDRAW_PANEL_HARD_RESET=1
+[15:36:18] I (954) co5300: version: 2.1.0
+[15:36:18] I (954) co5300_spi: LCD panel create success, version: 2.1.0
+[15:36:18] W (1034) co5300_spi: The 3Ah command has been used and will be overwritten by external initialization sequence
+[15:36:18] I (1134) CST816S: IC id: 183
+[15:36:18] [DEBUG-touch-rate] registers=1 id=0xb7 firmware=0x02 scan_period=0x00 irq=0x70
+[15:36:18] I (1137) PCF85063A: PCF85063A initialized successfully
+[15:36:18] TINYDRAW_RTC ready=1 retained=1 local=2026-08-12T15:36:11
+[15:36:18] TINYDRAW_VECTOR_READY strokes=1100 samples=24576 bytes=325712 free_psram=563060
+[15:36:19] TINYDRAW_AUTOSAVE_READY
+[15:36:19] TINYDRAW_PSRAM world_bytes=2967552 free=563060 largest=557056 minimum=563060
+[15:36:19] TINYDRAW_POWER_READY ready=1 button=1 valid=1 battery=100 voltage_mv=4094 charging=0 vbus=1
+[15:36:25] TINYDRAW_INTERACTIVE_PAN_READY zoom=100 controls=S:50 M:100 L:200 XL:finish
+[15:36:25] TINYDRAW_AUTO_INIT initial_atlas_us=6011686
+[15:36:27] TINYDRAW_AUTO_ZOOM cycle=0 zoom=50 changed=1 total_us=49021 cancel_us=17 first_ready_us=5728 first_submit_us=6348 first_complete_us=7151 last_submit_us=47291 last_complete_us=48097 fallback_us=47293 settled_us=0
+[15:36:28] TINYDRAW_AUTO_SETTLED cycle=0 zoom=50 settled_us=708143
+[15:36:28] TINYDRAW_AUTO_ZOOM cycle=1 zoom=100 changed=1 total_us=44007 cancel_us=988 first_ready_us=6607 first_submit_us=7164 first_complete_us=7967 last_submit_us=42503 last_complete_us=43308 fallback_us=42507 settled_us=0
+[15:36:29] TINYDRAW_AUTO_SETTLED cycle=1 zoom=100 settled_us=1159823
+[15:36:30] TINYDRAW_AUTO_ZOOM cycle=2 zoom=200 changed=1 total_us=59013 cancel_us=19986 first_ready_us=24934 first_submit_us=25472 first_complete_us=26273 last_submit_us=58047 last_complete_us=58854 fallback_us=58050 settled_us=0
+[15:36:31] TINYDRAW_AUTO_SETTLED cycle=2 zoom=200 settled_us=876816
+[15:36:31] TINYDRAW_AUTO_ZOOM cycle=3 zoom=100 changed=1 total_us=127007 cancel_us=83986 first_ready_us=89483 first_submit_us=90066 first_complete_us=90867 last_submit_us=125326 last_complete_us=126132 fallback_us=125329 settled_us=0
+[15:36:33] TINYDRAW_AUTO_SETTLED cycle=3 zoom=100 settled_us=1242902
+[15:36:33] TINYDRAW_AUTO_ZOOM cycle=4 zoom=50 changed=1 total_us=67016 cancel_us=17986 first_ready_us=23781 first_submit_us=24389 first_complete_us=25193 last_submit_us=65420 last_complete_us=66225 fallback_us=65422 settled_us=0
+[15:36:34] TINYDRAW_AUTO_SETTLED cycle=4 zoom=50 settled_us=727336
+[15:36:34] TINYDRAW_AUTO_ZOOM cycle=5 zoom=100 changed=1 total_us=44007 cancel_us=985 first_ready_us=6583 first_submit_us=7148 first_complete_us=7951 last_submit_us=42397 last_complete_us=43203 fallback_us=42400 settled_us=0
+[15:36:35] TINYDRAW_AUTO_SETTLED cycle=5 zoom=100 settled_us=1159881
+[15:36:36] TINYDRAW_AUTO_ZOOM cycle=6 zoom=200 changed=1 total_us=58013 cancel_us=18986 first_ready_us=23925 first_submit_us=24460 first_complete_us=25263 last_submit_us=57074 last_complete_us=57880 fallback_us=57077 settled_us=0
+[15:36:37] TINYDRAW_AUTO_SETTLED cycle=6 zoom=200 settled_us=875348
+[15:36:37] TINYDRAW_AUTO_ZOOM cycle=7 zoom=100 changed=1 total_us=127008 cancel_us=83988 first_ready_us=89477 first_submit_us=90059 first_complete_us=90861 last_submit_us=125296 last_complete_us=126102 fallback_us=125299 settled_us=0
+[15:36:39] TINYDRAW_AUTO_SETTLED cycle=7 zoom=100 settled_us=1243276
+[15:36:39] TINYDRAW_AUTO_ZOOM cycle=8 zoom=50 changed=1 total_us=69014 cancel_us=19985 first_ready_us=25783 first_submit_us=26392 first_complete_us=27195 last_submit_us=67439 last_complete_us=68245 fallback_us=67441 settled_us=0
+[15:36:40] TINYDRAW_AUTO_SETTLED cycle=8 zoom=50 settled_us=729130
+[15:36:40] TINYDRAW_AUTO_ZOOM cycle=9 zoom=100 changed=1 total_us=44007 cancel_us=985 first_ready_us=6595 first_submit_us=7157 first_complete_us=7960 last_submit_us=42457 last_complete_us=43262 fallback_us=42460 settled_us=0
+[15:36:41] TINYDRAW_AUTO_SETTLED cycle=9 zoom=100 settled_us=1159886
+[15:36:42] TINYDRAW_AUTO_ZOOM cycle=10 zoom=200 changed=1 total_us=58013 cancel_us=18986 first_ready_us=23932 first_submit_us=24467 first_complete_us=25270 last_submit_us=57115 last_complete_us=57923 fallback_us=57118 settled_us=0
+[15:36:43] TINYDRAW_AUTO_SETTLED cycle=10 zoom=200 settled_us=874745
+[15:36:43] TINYDRAW_AUTO_ZOOM cycle=11 zoom=100 changed=1 total_us=127008 cancel_us=83988 first_ready_us=89497 first_submit_us=90068 first_complete_us=90870 last_submit_us=125271 last_complete_us=126077 fallback_us=125274 settled_us=0
+[15:36:45] TINYDRAW_AUTO_SETTLED cycle=11 zoom=100 settled_us=1242932
+[15:36:45] TINYDRAW_AUTO_ZOOM_DONE

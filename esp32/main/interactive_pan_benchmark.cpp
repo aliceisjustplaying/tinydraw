@@ -311,14 +311,17 @@ class InteractivePanBenchmark {
   std::atomic<int> requested_zoom_index{1};
   std::atomic<int> active_zoom_index{1};
   Camera active_atlas = atlas_camera(1.0F);
+  // After the first post-initialization zoom, materialization_storage owns an
+  // immutable, complete atlas. Keeping that provenance root intact lets later
+  // transitions replace the active (other) arena in place even when settled or
+  // exact work on an intermediate zoom was canceled.
   Camera fallback_source_atlas = atlas_camera(1.0F);
   std::array<std::uint8_t, kJobCount> fallback_source_ready{};
   std::array<std::uint32_t, kJobCount> fallback_source_job_revision{};
   std::uint32_t fallback_source_document_revision = 0U;
+  bool fallback_source_pinned = false;
   std::atomic<int> view_x{kCenterOriginX};
   std::atomic<int> view_y{kCenterOriginY};
-  // 0 = dirty, 1 = being cleared, 2 = clean and ready as a destination.
-  std::atomic<std::uint8_t> materialization_state{2U};
   std::atomic<bool> rendering{false};
   std::atomic<bool> paused{false};
   std::atomic<bool> zoom_presentation_pending{false};
@@ -567,11 +570,11 @@ void render_task_entry(void* raw) {
       }
     }
 
-    // Fill valid neighboring bands from the previous atlas after first-visible
-    // presentation. This work is cancelable at band boundaries and makes pan
-    // runway available before slower canonical refinement reaches it.
-    std::uint8_t dirty = 0U;
-    if (benchmark.materialization_state.compare_exchange_strong(dirty, 1U)) {
+    // Fill active-atlas runway from the immutable complete fallback after the
+    // visible settled pass. Cancellation may leave this generation partial,
+    // but it cannot damage the source needed by the next transition.
+    if (benchmark.fallback_source_pinned &&
+        benchmark.fallback_source_document_revision == benchmark.document_revision.load()) {
       const Camera source_atlas = benchmark.fallback_source_atlas;
       for (int job = 0; job < kJobCount && benchmark.requested_generation.load() == generation;
            ++job) {
@@ -588,20 +591,12 @@ void render_task_entry(void* raw) {
           continue;
         }
         xSemaphoreTake(benchmark.cache_mutex, portMAX_DELAY);
-        if (benchmark.requested_generation.load() == generation) {
-          if (active_atlas.zoom > source_atlas.zoom) {
-            resample_bilinear_rgb565_region(
-                benchmark.materialization_storage, WorldCanvas::kWidth, WorldCanvas::kHeight,
-                source_atlas, benchmark.world.pixels(), WorldCanvas::kWidth, WorldCanvas::kHeight,
-                WorldCanvas::kWidth, active_atlas, pixels, kBackground);
-            benchmark.ready[slot].store(kSettledReady);
-          } else {
-            resample_valid_raster_region(
-                benchmark.materialization_storage, WorldCanvas::kWidth, WorldCanvas::kHeight,
-                source_atlas, benchmark.world.pixels(), WorldCanvas::kWidth, WorldCanvas::kHeight,
-                WorldCanvas::kWidth, active_atlas, pixels, kBackground);
-            benchmark.ready[slot].store(kDerivedReady);
-          }
+        if (benchmark.requested_generation.load() == generation && !benchmark.paused.load()) {
+          resample_valid_raster_region(benchmark.materialization_storage, WorldCanvas::kWidth,
+                                       WorldCanvas::kHeight, source_atlas, benchmark.world.pixels(),
+                                       WorldCanvas::kWidth, WorldCanvas::kHeight,
+                                       WorldCanvas::kWidth, active_atlas, pixels, kBackground);
+          benchmark.ready[slot].store(kDerivedReady);
           benchmark.job_revision[slot].store(benchmark.document_revision.load());
           present_job(benchmark, job);
         }
@@ -611,9 +606,6 @@ void render_task_entry(void* raw) {
           benchmark.refinement_published(benchmark.refinement_published_context);
         }
       }
-      std::fill_n(benchmark.materialization_storage.begin(), WorldCanvas::kRequiredPixels,
-                  kBackground);
-      benchmark.materialization_state.store(2U);
     }
 
     ViewportRenderOptions options;
@@ -858,9 +850,6 @@ InteractivePanBenchmark* start_interactive_pan_benchmark(
     return nullptr;
   }
   std::fill_n(world.pixels().begin(), WorldCanvas::kRequiredPixels, kBackground);
-  // materialization_state == 2 means the inactive arena is already white and
-  // safe to reuse. Establish that invariant once before the first zoom; later
-  // generations restore it in render_task_entry() before publishing state 2.
   std::fill_n(materialization_storage.begin(), WorldCanvas::kRequiredPixels, kBackground);
   benchmark->cache_mutex = xSemaphoreCreateMutex();
   if (benchmark->cache_mutex == nullptr ||
@@ -948,24 +937,33 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
            (static_cast<double>(kCenterOriginY) + benchmark.presented_rows / 2.0) / new_zoom,
       .zoom = new_zoom,
   };
-  while (benchmark.materialization_state.load() != 2U) {
-    vTaskDelay(pdMS_TO_TICKS(1));
-  }
   const Rect visible{.x0 = kCenterOriginX,
                      .y0 = kCenterOriginY,
                      .x1 = kCenterOriginX + kCanvasWidth,
                      .y1 = kCenterOriginY + benchmark.presented_rows};
   const std::uint32_t old_document_revision = benchmark.document_revision.load();
+  Camera source_camera = old_camera;
+  std::span<const std::uint16_t> source_pixels = benchmark.world.pixels();
+  std::array<std::uint8_t, kJobCount> source_ready{};
+  std::array<std::uint32_t, kJobCount> source_job_revision{};
   for (std::size_t job = 0; job < benchmark.ready.size(); ++job) {
-    benchmark.fallback_source_ready[job] = benchmark.ready[job].load();
-    benchmark.fallback_source_job_revision[job] = benchmark.job_revision[job].load();
+    source_ready[job] = benchmark.ready[job].load();
+    source_job_revision[job] = benchmark.job_revision[job].load();
   }
-  benchmark.fallback_source_document_revision = old_document_revision;
+  std::uint32_t source_document_revision = old_document_revision;
 
-  // Never publish a fallback assembled from missing raster content. Keep the
-  // current zoom active until its background runway can support the request.
-  // This is intentionally conservative; invalid source bands proven blank by
-  // the vector document do not block the transition.
+  if (benchmark.has_complete_initial_atlas && benchmark.fallback_source_pinned &&
+      benchmark.fallback_source_document_revision == old_document_revision) {
+    source_camera = benchmark.fallback_source_atlas;
+    source_pixels = benchmark.materialization_storage;
+    source_ready = benchmark.fallback_source_ready;
+    source_job_revision = benchmark.fallback_source_job_revision;
+    source_document_revision = benchmark.fallback_source_document_revision;
+  }
+
+  // Never publish a fallback assembled from missing raster content. A pinned
+  // complete source avoids making transition success depend on whether runway
+  // work for the current active atlas happened to finish before cancellation.
   std::array<bool, kJobCount> fallback_valid{};
   if (benchmark.has_complete_initial_atlas) {
     for (int job = 0; job < kJobCount; ++job) {
@@ -974,9 +972,9 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
         continue;
       }
       const Rect pixels{rect.x0, rect.y0, rect.x1, rect.y1};
-      const bool valid = source_region_materialized(
-          benchmark, old_camera, new_camera, pixels, benchmark.fallback_source_ready,
-          benchmark.fallback_source_job_revision, old_document_revision);
+      const bool valid =
+          source_region_materialized(benchmark, source_camera, new_camera, pixels, source_ready,
+                                     source_job_revision, source_document_revision);
       fallback_valid[static_cast<std::size_t>(job)] = valid;
       if (!valid) {
         xSemaphoreGive(benchmark.cache_mutex);
@@ -990,21 +988,27 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
     }
   }
 
-  // Exchange storage first: the inactive arena is already white because
-  // set_zoom waited for materialization_state == 2, so visible strips can be
-  // materialized into it and pushed as each becomes ready while the retired
-  // atlas stays readable as the resample source.
-  const auto old_storage = benchmark.world.exchange_storage(benchmark.materialization_storage);
-  if (old_storage.empty()) {
-    xSemaphoreGive(benchmark.cache_mutex);
-    ++attempt_metrics.failed_attempts;
-    benchmark.zoom_presentation_pending.store(false);
-    benchmark.paused.store(false);
-    xTaskNotifyGive(benchmark.render_task);
-    return false;
+  // The initial full atlas becomes the immutable fallback on the first
+  // interactive zoom. Thereafter the active arena is rewritten in place from
+  // that pinned source, so no third 2.97 MiB buffer is needed.
+  if (benchmark.has_complete_initial_atlas && !benchmark.fallback_source_pinned) {
+    const auto old_storage = benchmark.world.exchange_storage(benchmark.materialization_storage);
+    if (old_storage.empty()) {
+      xSemaphoreGive(benchmark.cache_mutex);
+      ++attempt_metrics.failed_attempts;
+      benchmark.zoom_presentation_pending.store(false);
+      benchmark.paused.store(false);
+      xTaskNotifyGive(benchmark.render_task);
+      return false;
+    }
+    benchmark.materialization_storage = old_storage;
+    benchmark.fallback_source_atlas = source_camera;
+    benchmark.fallback_source_ready = source_ready;
+    benchmark.fallback_source_job_revision = source_job_revision;
+    benchmark.fallback_source_document_revision = source_document_revision;
+    benchmark.fallback_source_pinned = true;
+    source_pixels = benchmark.materialization_storage;
   }
-  benchmark.materialization_storage = old_storage;
-  benchmark.fallback_source_atlas = old_camera;
   benchmark.requested_zoom_index.store(index);
   benchmark.active_zoom_index.store(index);
   benchmark.active_atlas = new_camera;
@@ -1038,10 +1042,10 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
     const int row0 = strip * kStripRows;
     const int row1 = std::min(row0 + kStripRows, benchmark.presented_rows);
     const Rect region{visible.x0, visible.y0 + row0, visible.x1, visible.y0 + row1};
-    resample_valid_raster_region(benchmark.materialization_storage, WorldCanvas::kWidth,
-                                 WorldCanvas::kHeight, old_camera, benchmark.world.pixels(),
-                                 WorldCanvas::kWidth, WorldCanvas::kHeight, WorldCanvas::kWidth,
-                                 new_camera, region, kBackground);
+    resample_valid_raster_region(source_pixels, WorldCanvas::kWidth, WorldCanvas::kHeight,
+                                 source_camera, benchmark.world.pixels(), WorldCanvas::kWidth,
+                                 WorldCanvas::kHeight, WorldCanvas::kWidth, new_camera, region,
+                                 kBackground);
     if (position == 0) {
       benchmark.first_strip_ready_us[slot].store(static_cast<std::uint32_t>(esp_timer_get_time()) -
                                                  event_started);
@@ -1069,7 +1073,6 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
   const std::uint32_t fallback_elapsed =
       static_cast<std::uint32_t>(esp_timer_get_time()) - event_started;
   benchmark.fallback_ready_us[slot].store(fallback_elapsed);
-  benchmark.materialization_state.store(0U);
   benchmark.zoom_presentation_pending.store(false);
   benchmark.paused.store(false);
   xSemaphoreGive(benchmark.cache_mutex);
@@ -1190,6 +1193,9 @@ void interactive_pan_benchmark_commit_stroke(InteractivePanBenchmark& benchmark)
                 static_cast<unsigned long>(committed_index));
   }
   const std::uint32_t next_revision = benchmark.document_revision.fetch_add(1U) + 1U;
+  // The pinned raster predates this mutation. It remains allocated but cannot
+  // prove any later transition until rebuilt for the new document revision.
+  benchmark.fallback_source_pinned = false;
   const int zoom = benchmark.active_zoom_index.load();
   benchmark.center_ready_us[static_cast<std::size_t>(zoom)].store(0U);
   benchmark.full_ready_us[static_cast<std::size_t>(zoom)].store(0U);
