@@ -329,11 +329,16 @@ TEST_CASE("pinned sources cannot be replaced and validate only while pinned") {
   auto pinned_tile = canvas.pin(key);
   REQUIRE(pinned_tile.has_value());
   CHECK(canvas.validate(*pinned_tile));
-  CHECK_FALSE(canvas.pin(key));
+  auto second_tile_pin = canvas.pin(key);
+  REQUIRE(second_tile_pin.has_value());
+  CHECK(canvas.pins_outstanding() == 2U);
+  second_tile_pin->reset();
+  CHECK(canvas.pins_outstanding() == 1U);
   CHECK(unpinned_lookup->pin_token == 0U);
   CHECK_FALSE(canvas.publish_tile(key, {0}, production::MaterializationQuality::kSettled, tile));
   CHECK_FALSE(canvas.publish_overview({1}, revised_overview));
   pinned_tile->reset();
+  CHECK(canvas.pins_outstanding() == 0U);
   CHECK_FALSE(pinned_tile->valid());
   REQUIRE(canvas.publish_overview({1}, revised_overview));
   CHECK_FALSE(canvas.validate(*pinned_tile));
@@ -345,10 +350,15 @@ TEST_CASE("pinned sources cannot be replaced and validate only while pinned") {
   REQUIRE(pinned_overview.has_value());
   CHECK(pinned_overview->source().kind == production::SourceKind::kOverview);
   CHECK(canvas.validate(*pinned_overview));
-  CHECK_FALSE(canvas.pin(missing));
+  auto second_overview_pin = canvas.pin(missing);
+  REQUIRE(second_overview_pin.has_value());
+  CHECK(canvas.pins_outstanding() == 2U);
+  second_overview_pin->reset();
+  CHECK(canvas.pins_outstanding() == 1U);
   CHECK(unpinned_overview->pin_token == 0U);
   CHECK_FALSE(canvas.publish_overview({2}, overview));
   pinned_overview->reset();
+  CHECK(canvas.pins_outstanding() == 0U);
   CHECK_FALSE(pinned_overview->valid());
 }
 
@@ -368,6 +378,21 @@ TEST_CASE("all pinned slots prevent eviction until one is released") {
   CHECK_FALSE(pinned->valid());
   REQUIRE(canvas.publish_tile(second, {0}, production::MaterializationQuality::kExact, tile));
   CHECK_FALSE(canvas.validate(*pinned));
+}
+
+TEST_CASE("compose view rejects destinations that alias owned source storage") {
+  std::array<std::uint16_t, production::kOverviewPixels> overview{};
+  std::array<production::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, production::kTilePixels> tile_storage{};
+  production::MaterializedCanvas canvas(overview, slots, tile_storage);
+  REQUIRE(canvas.publish_overview({0}, overview));
+
+  CHECK_FALSE(canvas.compose_view(
+      {.zoom = production::ZoomLevel::k25Percent, .level_pixels = {0, 0, 16, 8}},
+      std::span(overview).first(16U * 8U)));
+  CHECK_FALSE(canvas.compose_view(
+      {.zoom = production::ZoomLevel::k100Percent, .level_pixels = {0, 0, 64, 64}},
+      std::span(tile_storage)));
 }
 
 TEST_CASE("walk-shaped bottom strip composes from the complete overview") {

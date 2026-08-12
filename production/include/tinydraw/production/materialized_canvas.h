@@ -29,6 +29,8 @@ enum class ZoomLevel : std::uint8_t {
   k400Percent,
 };
 
+// Revisions are monotonic within a document. UINT32_MAX is terminal; callers
+// must start a new document identity rather than wrap it to zero.
 struct DocumentRevision {
   std::uint32_t value = 0;
   bool operator==(const DocumentRevision&) const = default;
@@ -126,7 +128,7 @@ class MaterializedSlotStorage {
   SlotGeneration generation_{};
   MaterializationQuality quality_ = MaterializationQuality::kSettled;
   std::uint64_t last_use_ = 0;
-  std::uint32_t pin_token_ = 0;
+  std::uint32_t pin_count_ = 0;
   bool occupied_ = false;
 };
 
@@ -177,6 +179,7 @@ class MaterializedCanvas {
   [[nodiscard]] std::optional<SourceSelection> lookup(TileKey key) const;
   [[nodiscard]] std::optional<PinnedSource> pin(TileKey key);
   [[nodiscard]] bool validate(const PinnedSource& source) const;
+  [[nodiscard]] std::size_t pins_outstanding() const;
   [[nodiscard]] bool mark_used(TileKey key);
   [[nodiscard]] std::optional<ViewCompositionStats> compose_view(
       const ViewRequest& request, std::span<std::uint16_t> destination);
@@ -201,6 +204,7 @@ class MaterializedCanvas {
   [[nodiscard]] std::optional<ViewCompositionStats> compose_overview_view(
       const ViewRequest& request, std::span<std::uint16_t> destination) const;
   void compose_tile(TileKey key, CompositionContext& context);
+  [[nodiscard]] SlotGeneration take_generation();
   void touch(MaterializedSlotStorage& slot);
 
   std::span<std::uint16_t> overview_pixels_;
@@ -212,7 +216,7 @@ class MaterializedCanvas {
   std::uint32_t next_generation_ = 1;
   std::uint64_t use_clock_ = 0;
   std::uint32_t next_pin_token_ = 1;
-  std::uint32_t overview_pin_token_ = 0;
+  std::uint32_t overview_pin_count_ = 0;
   bool overview_valid_ = false;
 };
 
