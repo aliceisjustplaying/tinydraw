@@ -11,6 +11,7 @@ add_executable(tinydraw_tests
   png_encoder_test.cpp
   raster_materializer_test.cpp
   realistic_workload_test.cpp
+  settled_renderer_test.cpp
   stroke_macrogrid_test.cpp
   ribbon_geometry_test.cpp
   ribbon_renderer_test.cpp
