@@ -1,6 +1,6 @@
 # Focused zoom-publication hardware result
 
-Firmware: `e00bea3` plus the final guarded-publication fixes in the working tree at test time.
+Firmware: `e00bea3`.
 Device: ESP32-S3, 8 MiB PSRAM, 368x448 RGB565 panel.
 Workload: coherent 1,000-stroke vector document plus live strokes.
 Raw report: `esp32s3-zoom-publication-v2.txt`.
