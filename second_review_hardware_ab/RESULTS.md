@@ -74,6 +74,14 @@ zoom input event, before cancellation.
 
 The worst case is the cycle whose cancellation had to wait ~49 ms for an
 in-flight 200% canonical band to stop; even it met the 100 ms first-valid gate.
+
+A fourth run (`realistic-auto-zoom.log`) repeated the cycle on the realistic
+handwriting document (1,000 strokes, 20,153 samples, deterministic seed 7):
+first strip physically complete 6.6–16.2 ms, last visible complete 39–57 ms,
+12/12 transitions, initial exact atlas 5.36 s versus 4.12 s for the old
+fixed-12-sample workload. Cancellation collisions were more frequent (1–9 ms)
+because canonical refinement of the heavier document overlaps more of each
+cycle, and every transition still passed the gates.
 Against the review's gates: input→first completed valid strip p95 ≤ 100 ms now
 passes by an order of magnitude (6–8 ms typical), and input→complete visible
 valid p95 ≤ 150–180 ms passes at 39–50 ms. The visible-region cost is now
