@@ -120,11 +120,21 @@ bool MaterializedCanvas::publish_overview(DocumentRevision revision,
                                           std::span<const std::uint16_t> pixels) {
   const bool revision_is_publishable = overview_valid_ ? revision.value > current_revision_.value
                                                        : revision.value >= current_revision_.value;
-  if (!ready() || !revision_is_publishable || pixels.size() != kOverviewPixels) {
+  const bool source_is_publishable = !overview_valid_ || pixels.data() != overview_pixels_.data();
+  const bool tile_is_pinned = std::any_of(slots_.begin(), slots_.end(),
+                                          [](const auto& slot) { return slot.pin_count_ != 0U; });
+  if (!ready() || !revision_is_publishable || !source_is_publishable || overview_pin_count_ != 0U ||
+      tile_is_pinned || pixels.size() != kOverviewPixels) {
     return false;
   }
   if (pixels.data() != overview_pixels_.data()) {
     std::copy(pixels.begin(), pixels.end(), overview_pixels_.begin());
+  }
+  for (auto& slot : slots_) {
+    if (slot.occupied_) {
+      slot.occupied_ = false;
+      slot.generation_ = {next_generation_++};
+    }
   }
   current_revision_ = revision;
   overview_revision_ = revision;
@@ -143,15 +153,23 @@ std::optional<std::size_t> MaterializedCanvas::find_tile(TileKey key) const {
   return static_cast<std::size_t>(found - slots_.begin());
 }
 
-std::size_t MaterializedCanvas::choose_slot() const {
-  const auto empty =
-      std::find_if(slots_.begin(), slots_.end(), [](const auto& slot) { return !slot.occupied_; });
-  if (empty != slots_.end()) {
-    return static_cast<std::size_t>(empty - slots_.begin());
+std::optional<std::size_t> MaterializedCanvas::choose_slot() const {
+  const auto available = std::find_if(slots_.begin(), slots_.end(), [](const auto& slot) {
+    return !slot.occupied_ && slot.pin_count_ == 0U;
+  });
+  if (available != slots_.end()) {
+    return static_cast<std::size_t>(available - slots_.begin());
   }
-  const auto oldest = std::min_element(
-      slots_.begin(), slots_.end(),
-      [](const auto& left, const auto& right) { return left.last_use_ < right.last_use_; });
+  const auto oldest =
+      std::min_element(slots_.begin(), slots_.end(), [](const auto& left, const auto& right) {
+        if (left.pin_count_ != right.pin_count_) {
+          return left.pin_count_ == 0U;
+        }
+        return left.last_use_ < right.last_use_;
+      });
+  if (oldest == slots_.end() || oldest->pin_count_ != 0U) {
+    return std::nullopt;
+  }
   return static_cast<std::size_t>(oldest - slots_.begin());
 }
 
@@ -169,7 +187,18 @@ std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, Documen
       quality == MaterializationQuality::kOverviewFallback || pixels.size() != expected_pixels) {
     return std::nullopt;
   }
-  const std::size_t index = find_tile(key).value_or(choose_slot());
+  const auto existing = find_tile(key);
+  if (existing.has_value() && slots_[*existing].pin_count_ != 0U) {
+    return std::nullopt;
+  }
+  const auto selected = existing.has_value() ? existing : choose_slot();
+  if (!selected.has_value()) {
+    return std::nullopt;
+  }
+  const std::size_t index = *selected;
+  MaterializedSlotStorage& slot = slots_[index];
+  slot.occupied_ = false;
+  slot.generation_ = {next_generation_++};
   auto destination = tile_pixels_.subspan(index * kTilePixels, kTilePixels);
   for (int row = 0; row < height; ++row) {
     const auto source_offset = static_cast<std::size_t>(row) * static_cast<std::size_t>(width);
@@ -178,10 +207,8 @@ std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, Documen
     std::copy_n(pixels.begin() + static_cast<std::ptrdiff_t>(source_offset), width,
                 destination.begin() + static_cast<std::ptrdiff_t>(destination_offset));
   }
-  MaterializedSlotStorage& slot = slots_[index];
   slot.key_ = key;
   slot.revision_ = revision;
-  slot.generation_ = {next_generation_++};
   slot.quality_ = quality;
   slot.occupied_ = true;
   touch(slot);
@@ -238,6 +265,64 @@ std::optional<SourceSelection> MaterializedCanvas::lookup(TileKey key) const {
     return select_overview(key);
   }
   return std::nullopt;
+}
+
+std::optional<SourceSelection> MaterializedCanvas::pin(TileKey key) {
+  auto source = lookup(key);
+  if (!source.has_value()) {
+    return std::nullopt;
+  }
+  if (source->kind == SourceKind::kOverview) {
+    ++overview_pin_count_;
+  } else {
+    if (!source->slot_index.has_value()) {
+      return std::nullopt;
+    }
+    MaterializedSlotStorage& slot = slots_[source->slot_index.value()];
+    ++slot.pin_count_;
+    touch(slot);
+  }
+  return source;
+}
+
+bool MaterializedCanvas::validate(const SourceSelection& source) const {
+  if (source.identity.revision != current_revision_) {
+    return false;
+  }
+  if (source.kind == SourceKind::kOverview) {
+    return !source.slot_index.has_value() && overview_valid_ && overview_pin_count_ != 0U &&
+           source.identity.revision == overview_revision_ &&
+           source.identity.generation == overview_generation_;
+  }
+  if (!source.slot_index.has_value() || *source.slot_index >= slots_.size()) {
+    return false;
+  }
+  const MaterializedSlotStorage& slot = slots_[*source.slot_index];
+  return slot.occupied_ && slot.pin_count_ != 0U && slot.key_ == source.requested_tile &&
+         slot.revision_ == source.identity.revision &&
+         slot.generation_ == source.identity.generation;
+}
+
+bool MaterializedCanvas::unpin(const SourceSelection& source) {
+  if (source.kind == SourceKind::kOverview) {
+    if (overview_pin_count_ == 0U || source.identity.revision != overview_revision_ ||
+        source.identity.generation != overview_generation_) {
+      return false;
+    }
+    --overview_pin_count_;
+    return true;
+  }
+  if (!source.slot_index.has_value() || *source.slot_index >= slots_.size()) {
+    return false;
+  }
+  MaterializedSlotStorage& slot = slots_[*source.slot_index];
+  if (slot.pin_count_ == 0U || slot.key_ != source.requested_tile ||
+      slot.revision_ != source.identity.revision ||
+      slot.generation_ != source.identity.generation) {
+    return false;
+  }
+  --slot.pin_count_;
+  return true;
 }
 
 bool MaterializedCanvas::mark_used(TileKey key) {

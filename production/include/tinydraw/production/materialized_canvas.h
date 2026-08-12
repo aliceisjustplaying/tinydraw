@@ -125,6 +125,7 @@ class MaterializedSlotStorage {
   SlotGeneration generation_{};
   MaterializationQuality quality_ = MaterializationQuality::kSettled;
   std::uint64_t last_use_ = 0;
+  std::uint32_t pin_count_ = 0;
   bool occupied_ = false;
 };
 
@@ -141,21 +142,25 @@ class MaterializedCanvas {
   [[nodiscard]] std::size_t slot_capacity() const;
   [[nodiscard]] std::span<const std::uint16_t> overview_pixels() const;
 
-  // Atomically commits a complete overview and its revision. Once an overview
-  // is valid, each subsequent publication must advance the revision.
+  // Logically commits a complete overview and its revision in one call. Once
+  // an overview is valid, each publication must advance the revision and use
+  // a distinct source buffer. Callers must serialize all canvas operations.
   [[nodiscard]] bool publish_overview(DocumentRevision revision,
                                       std::span<const std::uint16_t> pixels);
   [[nodiscard]] std::optional<std::size_t> publish_tile(TileKey key, DocumentRevision revision,
                                                         MaterializationQuality quality,
                                                         std::span<const std::uint16_t> pixels);
   [[nodiscard]] std::optional<SourceSelection> lookup(TileKey key) const;
+  [[nodiscard]] std::optional<SourceSelection> pin(TileKey key);
+  [[nodiscard]] bool validate(const SourceSelection& source) const;
+  [[nodiscard]] bool unpin(const SourceSelection& source);
   [[nodiscard]] bool mark_used(TileKey key);
   [[nodiscard]] std::optional<ViewCompositionStats> compose_view(
       const ViewRequest& request, std::span<std::uint16_t> destination);
 
  private:
   [[nodiscard]] std::optional<std::size_t> find_tile(TileKey key) const;
-  [[nodiscard]] std::size_t choose_slot() const;
+  [[nodiscard]] std::optional<std::size_t> choose_slot() const;
   [[nodiscard]] SourceSelection select_overview(TileKey requested) const;
   struct CompositionContext {
     ViewRequest request{};
@@ -180,6 +185,7 @@ class MaterializedCanvas {
   SlotGeneration overview_generation_{};
   std::uint32_t next_generation_ = 1;
   std::uint64_t use_clock_ = 0;
+  std::uint32_t overview_pin_count_ = 0;
   bool overview_valid_ = false;
 };
 
