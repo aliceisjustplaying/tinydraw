@@ -149,6 +149,80 @@ TEST_CASE("settled region rendering only writes inside the region") {
   }
 }
 
+TEST_CASE("settled renderer preserves LOD pressure, loops, painter order, and erasing") {
+  std::array<tinydraw::VectorStroke, 3> stroke_storage;
+  std::array<tinydraw::StrokeSample, 16> sample_storage;
+  tinydraw::VectorDocument document(stroke_storage, sample_storage);
+
+  REQUIRE(document.begin_stroke(kBlue, tinydraw::VectorTool::kPen,
+                                {.x = 40.0F, .y = 80.0F, .radius = 2.0F}));
+  REQUIRE(document.append({.x = 80.0F, .y = 40.0F, .radius = 8.0F}));
+  REQUIRE(document.append({.x = 120.0F, .y = 80.0F, .radius = 2.0F}));
+  REQUIRE(document.append({.x = 80.0F, .y = 120.0F, .radius = 2.0F}));
+  REQUIRE(document.append({.x = 40.0F, .y = 80.0F, .radius = 2.0F}));
+  REQUIRE(document.finish_stroke());
+  REQUIRE(document.begin_stroke(kRed, tinydraw::VectorTool::kPen,
+                                {.x = 74.0F, .y = 40.0F, .radius = 3.0F}));
+  REQUIRE(document.append({.x = 86.0F, .y = 40.0F, .radius = 3.0F}));
+  REQUIRE(document.finish_stroke());
+  REQUIRE(document.begin_stroke(0U, tinydraw::VectorTool::kEraser,
+                                {.x = 38.0F, .y = 80.0F, .radius = 3.0F}));
+  REQUIRE(document.append({.x = 46.0F, .y = 80.0F, .radius = 3.0F}));
+  REQUIRE(document.finish_stroke());
+
+  const std::array lod_samples{
+      tinydraw::StrokeSample{.x = 40.0F, .y = 80.0F, .radius = 2.0F},
+      tinydraw::StrokeSample{.x = 80.0F, .y = 40.0F, .radius = 8.0F},
+      tinydraw::StrokeSample{.x = 120.0F, .y = 80.0F, .radius = 2.0F},
+      tinydraw::StrokeSample{.x = 80.0F, .y = 120.0F, .radius = 2.0F},
+      tinydraw::StrokeSample{.x = 40.0F, .y = 80.0F, .radius = 2.0F},
+      tinydraw::StrokeSample{.x = 74.0F, .y = 40.0F, .radius = 3.0F},
+      tinydraw::StrokeSample{.x = 86.0F, .y = 40.0F, .radius = 3.0F},
+      tinydraw::StrokeSample{.x = 38.0F, .y = 80.0F, .radius = 3.0F},
+      tinydraw::StrokeSample{.x = 46.0F, .y = 80.0F, .radius = 3.0F},
+  };
+  const std::array<std::uint32_t, 3> first{0U, 5U, 7U};
+  const std::array<std::uint16_t, 3> count{5U, 2U, 2U};
+  tinydraw::SettledRenderOptions options;
+  options.lod_samples = lod_samples;
+  options.lod_first_sample = first;
+  options.lod_sample_count = count;
+
+  std::vector<std::uint16_t> settled(kPixels, 0U);
+  std::vector<std::uint8_t> scratch(kPixels);
+  const tinydraw::Rect full{0, 0, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight};
+  REQUIRE(settled_render_region(document, {}, settled, full, scratch, options).complete);
+  CHECK(settled[pixel(80, 40)] == kRed);
+  CHECK(inked(settled[pixel(80, 47)]));
+  CHECK(inked(settled[pixel(120, 80)]));
+  CHECK(inked(settled[pixel(80, 120)]));
+  CHECK(settled[pixel(42, 80)] == kWhite);
+}
+
+TEST_CASE("malformed settled LOD falls back to the complete raw document") {
+  std::array<tinydraw::VectorStroke, 2> stroke_storage;
+  std::array<tinydraw::StrokeSample, 32> sample_storage;
+  tinydraw::VectorDocument document(stroke_storage, sample_storage);
+  add_wavy_stroke(document, kBlue, 40.0F, 60.0F, 10U);
+  add_wavy_stroke(document, kRed, 40.0F, 160.0F, 10U);
+
+  const tinydraw::Rect full{0, 0, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight};
+  std::vector<std::uint8_t> scratch(kPixels);
+  std::vector<std::uint16_t> expected(kPixels, 0U);
+  REQUIRE(settled_render_region(document, {}, expected, full, scratch).complete);
+
+  const std::array<tinydraw::StrokeSample, 1> bad_samples{{}};
+  const std::array<std::uint32_t, 2> bad_first{0U, 99U};
+  const std::array<std::uint16_t, 2> bad_count{1U, 2U};
+  tinydraw::SettledRenderOptions options;
+  options.lod_samples = bad_samples;
+  options.lod_first_sample = bad_first;
+  options.lod_sample_count = bad_count;
+  std::vector<std::uint16_t> actual(kPixels, 0U);
+  REQUIRE(settled_render_region(document, {}, actual, full, scratch, options).complete);
+  CHECK(actual == expected);
+}
+
 TEST_CASE("settled renderer honors candidates, cancellation, and validation") {
   std::array<tinydraw::VectorStroke, 2> stroke_storage;
   std::array<tinydraw::StrokeSample, 64> sample_storage;

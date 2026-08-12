@@ -20,8 +20,9 @@ class InteractivePanBenchmark;
 struct DisplayTransferTelemetry {
   std::uint32_t (*submit_count)(void* context) = nullptr;
   std::uint32_t (*complete_count)(void* context) = nullptr;
-  // Returns the esp_timer completion time for `sequence`, or -1 when it has
-  // not completed or has been evicted from the completion history.
+  // Returns the low 32 bits of the esp_timer completion time for `sequence`,
+  // or -1 when it has not completed or has been evicted. Callers use modular
+  // subtraction for sub-second benchmark intervals.
   std::int64_t (*complete_time_us)(void* context, std::uint32_t sequence) = nullptr;
   void* context = nullptr;
 };
@@ -63,7 +64,10 @@ void interactive_pan_benchmark_record_zoom_present(InteractivePanBenchmark& benc
 [[nodiscard]] bool interactive_pan_benchmark_begin_stroke(InteractivePanBenchmark& benchmark);
 [[nodiscard]] StrokeSample interactive_pan_benchmark_map_sample(
     const InteractivePanBenchmark& benchmark, Point screen_point, float screen_radius);
-void interactive_pan_benchmark_commit_stroke(InteractivePanBenchmark& benchmark);
+// `visible_raster_current` is true only when the live raster path has already
+// merged the committed stroke into every pixel of the captured viewport.
+void interactive_pan_benchmark_commit_stroke(InteractivePanBenchmark& benchmark,
+                                             bool visible_raster_current);
 void interactive_pan_benchmark_cancel_stroke(InteractivePanBenchmark& benchmark);
 void interactive_pan_benchmark_record_draw_update(InteractivePanBenchmark& benchmark,
                                                   std::uint32_t elapsed_us);

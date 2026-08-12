@@ -45,7 +45,7 @@ TEST_CASE("export-enabled tool popup exposes pen pan and export") {
   CHECK(tinydraw::toolbar_action_at({306.0F, 331.0F}, state) == tinydraw::ToolbarAction::kExport);
 }
 
-TEST_CASE("tldraw color controls fill a three by four popup") {
+TEST_CASE("color controls fill a three by four popup") {
   tinydraw::ToolbarState state;
   CHECK(tinydraw::toolbar_action_at({52.0F, 207.0F}, state) == tinydraw::ToolbarAction::kNone);
   CHECK_FALSE(tinydraw::toolbar_contains({52.0F, 207.0F}, state));
@@ -77,7 +77,7 @@ TEST_CASE("tldraw color controls fill a three by four popup") {
   CHECK(tinydraw::toolbar_action_at({331.0F, 409.0F}, state) == tinydraw::ToolbarAction::kNone);
 }
 
-TEST_CASE("palette uses tldraw's twelve default colors") {
+TEST_CASE("palette uses the twelve configured colors") {
   constexpr std::array colors{
       tinydraw::InkColor::kBlack,       tinydraw::InkColor::kGrey,
       tinydraw::InkColor::kLightViolet, tinydraw::InkColor::kViolet,

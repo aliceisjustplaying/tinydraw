@@ -281,6 +281,7 @@ class InteractivePanBenchmark {
   std::span<std::uint8_t> scratch;
   TimingStorage& timings;
   StrokeMacrogrid macrogrid;
+  bool macrogrid_valid = true;
   ViewportRenderer* renderer = nullptr;
   void* renderer_storage_ = nullptr;
   std::uint64_t* index_storage_ = nullptr;
@@ -328,7 +329,9 @@ class InteractivePanBenchmark {
   Camera fallback_source_atlas = atlas_camera(1.0F);
   std::array<std::uint8_t, kJobCount> fallback_source_ready{};
   std::array<std::uint32_t, kJobCount> fallback_source_job_revision{};
+  std::array<bool, kJobCount> fallback_repair_pending{};
   std::uint32_t fallback_source_document_revision = 0U;
+  std::uint32_t fallback_repair_target_revision = 0U;
   bool fallback_source_pinned = false;
   std::atomic<int> view_x{kCenterOriginX};
   std::atomic<int> view_y{kCenterOriginY};
@@ -356,7 +359,7 @@ bool build_settled_lod(InteractivePanBenchmark& benchmark) {
       return false;
     }
     const auto available = benchmark.settled_lod_samples.subspan(output_count);
-    const auto simplified = simplify_stroke_samples(input, available, 9.0F, 2.0F);
+    const auto simplified = simplify_stroke_samples(input, available, 2.0F, 0.75F);
     if (simplified.empty() || simplified.size() > UINT16_MAX) {
       return false;
     }
@@ -546,17 +549,24 @@ void render_task_entry(void* raw) {
     std::uint64_t settled_publish_us = 0U;
     std::uint32_t settled_segments = 0U;
     std::uint32_t settled_bands = 0U;
+    bool settled_visible_complete = false;
+    int settled_view_x = 0;
+    int settled_view_y = 0;
+    std::uint32_t settled_revision = 0U;
 
-    // Settled pass: bring every visible band to settled quality with the cheap
-    // capsule renderer before offscreen runway or canonical exact work. The
-    // settled renderer draws from the vector document, so it needs no valid
-    // raster source and sharpens the nearest-resampled first preview.
-    while (benchmark.requested_generation.load() == generation && !benchmark.paused.load()) {
+    // Settled pass: render all visible bands from one cache cell as one
+    // geometry supertask. A centered viewport needs one traversal instead of
+    // repeating the same 1,000-stroke traversal for twelve 32-row bands.
+    while (benchmark.requested_generation.load() == generation && !benchmark.paused.load() &&
+           (!benchmark.fallback_source_pinned ||
+            benchmark.fallback_source_document_revision == benchmark.document_revision.load())) {
+      const int view_x = benchmark.view_x.load();
+      const int view_y = benchmark.view_y.load();
       const JobRect view{
-          .x0 = benchmark.view_x.load(),
-          .y0 = benchmark.view_y.load(),
-          .x1 = benchmark.view_x.load() + kCanvasWidth,
-          .y1 = benchmark.view_y.load() + benchmark.presented_rows,
+          .x0 = view_x,
+          .y0 = view_y,
+          .x1 = view_x + kCanvasWidth,
+          .y1 = view_y + benchmark.presented_rows,
       };
       const std::uint32_t revision = benchmark.document_revision.load();
       int settled_job = -1;
@@ -573,35 +583,52 @@ void render_task_entry(void* raw) {
         break;
       }
       if (settled_job < 0) {
-        const auto slot = static_cast<std::size_t>(zoom);
-        if (benchmark.settled_us[slot].load() == 0U) {
-          benchmark.settled_us[slot].store(static_cast<std::uint32_t>(esp_timer_get_time()) -
-                                           benchmark.generation_started_us.load());
-        }
+        settled_visible_complete = true;
+        settled_view_x = view_x;
+        settled_view_y = view_y;
+        settled_revision = revision;
         break;
       }
-      const int local_y = (settled_job % kBandsPerCell) * kBandRows;
-      const Camera camera = job_camera(active_atlas, settled_job);
+
+      const int cell = settled_job / kBandsPerCell;
+      int first_band = kBandsPerCell;
+      int last_band = -1;
+      for (int band = 0; band < kBandsPerCell; ++band) {
+        const int job = cell * kBandsPerCell + band;
+        if (intersects(job_rect(job), view)) {
+          first_band = std::min(first_band, band);
+          last_band = std::max(last_band, band);
+        }
+      }
+      if (last_band < first_band) {
+        break;
+      }
+
+      const int local_y0 = first_band * kBandRows;
+      const int local_y1 = (last_band + 1) * kBandRows;
+      const Camera camera = job_camera(active_atlas, cell * kBandsPerCell);
       const double inverse_zoom = 1.0 / static_cast<double>(camera.zoom);
       const float world_halo = kCanonicalHaloPixels / camera.zoom;
       SettledRenderOptions settled_options;
       settled_options.background = kBackground;
       settled_options.cancelled = render_cancelled;
+      settled_options.cancelled_frequently = render_cancelled;
       settled_options.cancellation_context = &cancellation;
       settled_options.clock_us = benchmark_clock_us;
       settled_options.lod_samples = benchmark.settled_lod_samples;
       settled_options.lod_first_sample = benchmark.settled_lod_first;
       settled_options.lod_sample_count = benchmark.settled_lod_count;
-      settled_options.minimum_screen_sample_spacing = 2.5F;
-      settled_options.candidate_strokes = benchmark.macrogrid.query(
-          {.x0 = static_cast<float>(camera.x) - world_halo,
-           .y0 = static_cast<float>(camera.y + local_y * inverse_zoom) - world_halo,
-           .x1 = static_cast<float>(camera.x + kCanvasWidth * inverse_zoom) + world_halo,
-           .y1 = static_cast<float>(camera.y + (local_y + kBandRows) * inverse_zoom) + world_halo});
-      const SettledRenderStats settled_stats = settled_render_region(
-          benchmark.document, camera, benchmark.render_buffer,
-          {.x0 = 0, .y0 = local_y, .x1 = kCanvasWidth, .y1 = local_y + kBandRows},
-          benchmark.settled_scratch, settled_options);
+      if (benchmark.macrogrid_valid) {
+        settled_options.candidate_strokes = benchmark.macrogrid.query(
+            {.x0 = static_cast<float>(camera.x) - world_halo,
+             .y0 = static_cast<float>(camera.y + local_y0 * inverse_zoom) - world_halo,
+             .x1 = static_cast<float>(camera.x + kCanvasWidth * inverse_zoom) + world_halo,
+             .y1 = static_cast<float>(camera.y + local_y1 * inverse_zoom) + world_halo});
+      }
+      const SettledRenderStats settled_stats =
+          settled_render_region(benchmark.document, camera, benchmark.render_buffer,
+                                {.x0 = 0, .y0 = local_y0, .x1 = kCanvasWidth, .y1 = local_y1},
+                                benchmark.settled_scratch, settled_options);
       if (!settled_stats.complete || benchmark.requested_generation.load() != generation ||
           benchmark.paused.load()) {
         break;
@@ -610,13 +637,23 @@ void render_task_entry(void* raw) {
       settled_raster_us += settled_stats.raster_us;
       settled_composite_us += settled_stats.composite_us;
       settled_segments += settled_stats.segments_rendered;
-      ++settled_bands;
       const std::uint64_t publish_started = benchmark_clock_us(nullptr);
       xSemaphoreTake(benchmark.cache_mutex, portMAX_DELAY);
-      if (benchmark.requested_generation.load() == generation && !benchmark.paused.load()) {
-        copy_job_to_cache(benchmark, settled_job);
-        benchmark.job_revision[static_cast<std::size_t>(settled_job)].store(revision);
-        benchmark.ready[static_cast<std::size_t>(settled_job)].store(kSettledReady);
+      if (benchmark.requested_generation.load() == generation && !benchmark.paused.load() &&
+          benchmark.document_revision.load() == revision && benchmark.view_x.load() == view_x &&
+          benchmark.view_y.load() == view_y) {
+        for (int band = first_band; band <= last_band; ++band) {
+          const int job = cell * kBandsPerCell + band;
+          const auto slot = static_cast<std::size_t>(job);
+          if (benchmark.ready[slot].load() == kExactReady &&
+              benchmark.job_revision[slot].load() == revision) {
+            continue;
+          }
+          copy_job_to_cache(benchmark, job);
+          benchmark.job_revision[slot].store(revision);
+          benchmark.ready[slot].store(kSettledReady);
+          ++settled_bands;
+        }
       }
       xSemaphoreGive(benchmark.cache_mutex);
       settled_publish_us += benchmark_clock_us(nullptr) - publish_started;
@@ -624,20 +661,56 @@ void render_task_entry(void* raw) {
 
     // Present the visible settled set once. Per-band publication paid twelve
     // transfer setup costs and made the screen sharpen as horizontal stripes.
-    if (settled_bands != 0U && benchmark.requested_generation.load() == generation &&
-        !benchmark.paused.load()) {
+    if (settled_visible_complete && settled_bands != 0U &&
+        benchmark.requested_generation.load() == generation && !benchmark.paused.load()) {
       const std::uint64_t publish_started = benchmark_clock_us(nullptr);
+      const std::uint32_t revision = settled_revision;
+      const int view_x = settled_view_x;
+      const int view_y = settled_view_y;
+      std::uint32_t last_sequence = 0U;
+      bool submitted = false;
       xSemaphoreTake(benchmark.cache_mutex, portMAX_DELAY);
-      benchmark.display.push_rect(
-          0, 0, kCanvasWidth, benchmark.presented_rows,
-          benchmark.world.pixels().data() +
-              static_cast<std::ptrdiff_t>(benchmark.view_y.load() * WorldCanvas::kWidth +
-                                          benchmark.view_x.load()),
-          WorldCanvas::kWidth);
+      if (benchmark.requested_generation.load() == generation && !benchmark.paused.load() &&
+          benchmark.document_revision.load() == revision && benchmark.view_x.load() == view_x &&
+          benchmark.view_y.load() == view_y) {
+        benchmark.display.push_rect(
+            0, 0, kCanvasWidth, benchmark.presented_rows,
+            benchmark.world.pixels().data() +
+                static_cast<std::ptrdiff_t>(view_y * WorldCanvas::kWidth + view_x),
+            WorldCanvas::kWidth);
+        submitted = true;
+        if (benchmark.transfer_telemetry.submit_count != nullptr) {
+          last_sequence =
+              benchmark.transfer_telemetry.submit_count(benchmark.transfer_telemetry.context);
+        }
+      }
       xSemaphoreGive(benchmark.cache_mutex);
       settled_publish_us += benchmark_clock_us(nullptr) - publish_started;
-      if (benchmark.refinement_published != nullptr) {
-        benchmark.refinement_published(benchmark.refinement_published_context);
+
+      std::uint32_t physical_elapsed =
+          static_cast<std::uint32_t>(esp_timer_get_time()) - benchmark.generation_started_us.load();
+      if (submitted && last_sequence != 0U &&
+          benchmark.transfer_telemetry.complete_count != nullptr &&
+          benchmark.transfer_telemetry.complete_time_us != nullptr) {
+        while (benchmark.transfer_telemetry.complete_count(benchmark.transfer_telemetry.context) <
+                   last_sequence &&
+               benchmark.requested_generation.load() == generation && !benchmark.paused.load()) {
+          vTaskDelay(pdMS_TO_TICKS(1));
+        }
+        const std::int64_t completed = benchmark.transfer_telemetry.complete_time_us(
+            benchmark.transfer_telemetry.context, last_sequence);
+        if (completed >= 0) {
+          physical_elapsed =
+              static_cast<std::uint32_t>(completed) - benchmark.generation_started_us.load();
+        }
+      }
+      if (submitted && benchmark.requested_generation.load() == generation &&
+          !benchmark.paused.load() && benchmark.document_revision.load() == revision &&
+          benchmark.view_x.load() == view_x && benchmark.view_y.load() == view_y) {
+        benchmark.settled_us[static_cast<std::size_t>(zoom)].store(physical_elapsed);
+        if (benchmark.refinement_published != nullptr) {
+          benchmark.refinement_published(benchmark.refinement_published_context);
+        }
       }
     }
 
@@ -652,6 +725,91 @@ void render_task_entry(void* raw) {
           static_cast<unsigned long long>(settled_composite_us),
           static_cast<unsigned long long>(settled_publish_us),
           benchmark.requested_generation.load() == generation && !benchmark.paused.load());
+    }
+
+    // Repair only pinned-source bands touched by appended vector mutations.
+    // Until every affected band reaches the same revision, set_zoom refuses to
+    // use this arena; partially repaired pixels can never become a source.
+    if (benchmark.fallback_source_pinned &&
+        benchmark.fallback_source_document_revision != benchmark.document_revision.load()) {
+      const std::uint32_t repair_revision = benchmark.fallback_repair_target_revision;
+      ViewportRenderOptions repair_options;
+      repair_options.yield = benchmark_yield;
+      repair_options.yield_every_tiles = 8U;
+      repair_options.cancelled = render_cancelled;
+      repair_options.cancellation_context = &cancellation;
+      bool repair_complete = repair_revision == benchmark.document_revision.load();
+      for (int job = 0;
+           job < kJobCount && repair_complete &&
+           benchmark.requested_generation.load() == generation && !benchmark.paused.load();
+           ++job) {
+        const auto slot = static_cast<std::size_t>(job);
+        if (!benchmark.fallback_repair_pending[slot]) {
+          continue;
+        }
+        const int local_y = (job % kBandsPerCell) * kBandRows;
+        const Camera camera = job_camera(benchmark.fallback_source_atlas, job);
+        const double inverse_zoom = 1.0 / static_cast<double>(camera.zoom);
+        const float world_halo = kCanonicalHaloPixels / camera.zoom;
+        if (benchmark.macrogrid_valid) {
+          repair_options.candidate_strokes = benchmark.macrogrid.query(
+              {.x0 = static_cast<float>(camera.x) - world_halo,
+               .y0 = static_cast<float>(camera.y + local_y * inverse_zoom) - world_halo,
+               .x1 = static_cast<float>(camera.x + kCanvasWidth * inverse_zoom) + world_halo,
+               .y1 = static_cast<float>(camera.y + (local_y + kBandRows) * inverse_zoom) +
+                     world_halo});
+        }
+        const ViewportRenderStats repair_stats = benchmark.renderer->render_region(
+            benchmark.document, camera, benchmark.render_buffer,
+            {.x0 = 0, .y0 = local_y, .x1 = kCanvasWidth, .y1 = local_y + kBandRows},
+            repair_options);
+        if (!repair_stats.complete || benchmark.requested_generation.load() != generation ||
+            benchmark.paused.load() || benchmark.document_revision.load() != repair_revision) {
+          repair_complete = false;
+          break;
+        }
+        xSemaphoreTake(benchmark.cache_mutex, portMAX_DELAY);
+        if (benchmark.requested_generation.load() == generation && !benchmark.paused.load() &&
+            benchmark.document_revision.load() == repair_revision) {
+          const JobRect rect = job_rect(job);
+          auto destination = benchmark.materialization_storage;
+          for (int row = 0; row < kBandRows; ++row) {
+            const auto* source = benchmark.render_buffer.data() +
+                                 static_cast<std::ptrdiff_t>((local_y + row) * kCanvasWidth);
+            auto* output =
+                destination.data() +
+                static_cast<std::ptrdiff_t>((rect.y0 + row) * WorldCanvas::kWidth + rect.x0);
+            std::copy_n(source, kCanvasWidth, output);
+          }
+          benchmark.fallback_source_ready[slot] = kExactReady;
+          benchmark.fallback_source_job_revision[slot] = repair_revision;
+          benchmark.fallback_repair_pending[slot] = false;
+        } else {
+          repair_complete = false;
+        }
+        xSemaphoreGive(benchmark.cache_mutex);
+      }
+      if (repair_complete && benchmark.requested_generation.load() == generation &&
+          !benchmark.paused.load()) {
+        xSemaphoreTake(benchmark.cache_mutex, portMAX_DELAY);
+        if (benchmark.document_revision.load() == repair_revision &&
+            benchmark.fallback_repair_target_revision == repair_revision &&
+            std::none_of(benchmark.fallback_repair_pending.begin(),
+                         benchmark.fallback_repair_pending.end(),
+                         [](bool pending) { return pending; })) {
+          std::fill(benchmark.fallback_source_job_revision.begin(),
+                    benchmark.fallback_source_job_revision.end(), repair_revision);
+          benchmark.fallback_source_document_revision = repair_revision;
+          std::printf("TINYDRAW_FALLBACK_REPAIRED revision=%lu\n",
+                      static_cast<unsigned long>(repair_revision));
+          // Start a fresh generation now that zoom provenance is restored. It
+          // will run the deferred visible settled pass; this generation exits
+          // without doing lower-priority runway or exact work.
+          benchmark.requested_generation.fetch_add(1U);
+          xTaskNotifyGive(benchmark.render_task);
+        }
+        xSemaphoreGive(benchmark.cache_mutex);
+      }
     }
 
     // Fill active-atlas runway from the immutable complete fallback after the
@@ -685,11 +843,11 @@ void render_task_entry(void* raw) {
           present_job(benchmark, job);
         }
         xSemaphoreGive(benchmark.cache_mutex);
-        if (benchmark.refinement_published != nullptr &&
-            benchmark.requested_generation.load() == generation) {
-          benchmark.refinement_published(benchmark.refinement_published_context);
-        }
       }
+    }
+    if (benchmark.refinement_published != nullptr &&
+        benchmark.requested_generation.load() == generation && !benchmark.paused.load()) {
+      benchmark.refinement_published(benchmark.refinement_published_context);
     }
 
     ViewportRenderOptions options;
@@ -709,11 +867,14 @@ void render_task_entry(void* raw) {
       const Camera camera = job_camera(active_atlas, job);
       const double inverse_zoom = 1.0 / static_cast<double>(camera.zoom);
       const float world_halo = kCanonicalHaloPixels / camera.zoom;
-      options.candidate_strokes = benchmark.macrogrid.query(
-          {.x0 = static_cast<float>(camera.x) - world_halo,
-           .y0 = static_cast<float>(camera.y + local_y * inverse_zoom) - world_halo,
-           .x1 = static_cast<float>(camera.x + kCanvasWidth * inverse_zoom) + world_halo,
-           .y1 = static_cast<float>(camera.y + (local_y + kBandRows) * inverse_zoom) + world_halo});
+      if (benchmark.macrogrid_valid) {
+        options.candidate_strokes = benchmark.macrogrid.query(
+            {.x0 = static_cast<float>(camera.x) - world_halo,
+             .y0 = static_cast<float>(camera.y + local_y * inverse_zoom) - world_halo,
+             .x1 = static_cast<float>(camera.x + kCanvasWidth * inverse_zoom) + world_halo,
+             .y1 =
+                 static_cast<float>(camera.y + (local_y + kBandRows) * inverse_zoom) + world_halo});
+      }
       const ViewportRenderStats render_stats = benchmark.renderer->render_region(
           benchmark.document, camera, benchmark.render_buffer,
           {.x0 = 0, .y0 = local_y, .x1 = kCanvasWidth, .y1 = local_y + kBandRows}, options);
@@ -730,16 +891,16 @@ void render_task_entry(void* raw) {
         present_job(benchmark, job);
       }
       xSemaphoreGive(benchmark.cache_mutex);
-      if (benchmark.refinement_published != nullptr &&
-          benchmark.requested_generation.load() == generation) {
-        benchmark.refinement_published(benchmark.refinement_published_context);
-      }
       if (benchmark.center_ready_us[static_cast<std::size_t>(zoom)].load() == 0U &&
           center_ready(benchmark)) {
         const std::uint32_t elapsed = static_cast<std::uint32_t>(esp_timer_get_time()) -
                                       benchmark.generation_started_us.load();
         benchmark.center_ready_us[static_cast<std::size_t>(zoom)].store(elapsed);
       }
+    }
+    if (benchmark.refinement_published != nullptr &&
+        benchmark.requested_generation.load() == generation && !benchmark.paused.load()) {
+      benchmark.refinement_published(benchmark.refinement_published_context);
     }
     benchmark.rendering.store(false);
   }
@@ -909,28 +1070,27 @@ InteractivePanBenchmark* start_interactive_pan_benchmark(
       static_cast<TimingStorage*>(heap_caps_calloc(1U, sizeof(TimingStorage), kExternalCaps));
   auto* index_storage = static_cast<std::uint64_t*>(heap_caps_calloc(
       (StrokeMacrogrid::kCellCount + 1U) * kIndexWords, sizeof(std::uint64_t), kExternalCaps));
-  constexpr std::size_t kSettledScratchBytes =
-      static_cast<std::size_t>(kCanvasWidth) * static_cast<std::size_t>(kBandRows);
-  auto* settled_scratch =
-      static_cast<std::uint8_t*>(heap_caps_calloc(kSettledScratchBytes, 1U, kExternalCaps));
+  // Settled and canonical rendering are serialized on the render task. Share
+  // the full-cell canonical coverage arena instead of spending another 161 KB
+  // of the device's remaining PSRAM.
+  constexpr std::size_t kSettledScratchBytes = ViewportRenderer::kScratchBytes;
   auto* settled_lod_samples = static_cast<StrokeSample*>(
       heap_caps_malloc(kSettledLodSampleCapacity * sizeof(StrokeSample), kExternalCaps));
   auto* settled_lod_first = static_cast<std::uint32_t*>(
-      heap_caps_malloc(kStrokeCount * sizeof(std::uint32_t), kExternalCaps));
+      heap_caps_calloc(document.stroke_capacity(), sizeof(std::uint32_t), kExternalCaps));
   auto* settled_lod_count = static_cast<std::uint16_t*>(
-      heap_caps_malloc(kStrokeCount * sizeof(std::uint16_t), kExternalCaps));
+      heap_caps_calloc(document.stroke_capacity(), sizeof(std::uint16_t), kExternalCaps));
   void* renderer_storage = heap_caps_malloc(sizeof(ViewportRenderer), kInternalCaps);
   void* benchmark_storage = heap_caps_malloc(sizeof(InteractivePanBenchmark), kInternalCaps);
   if (scratch == nullptr || timings == nullptr || index_storage == nullptr ||
-      settled_scratch == nullptr || settled_lod_samples == nullptr ||
-      settled_lod_first == nullptr || settled_lod_count == nullptr || renderer_storage == nullptr ||
-      benchmark_storage == nullptr) {
+      settled_lod_samples == nullptr || settled_lod_first == nullptr ||
+      settled_lod_count == nullptr || renderer_storage == nullptr || benchmark_storage == nullptr) {
     std::printf(
         "TINYDRAW_BENCH_ALLOC_FAIL scratch=%u timings=%u index=%u settled=%u lod=%u first=%u "
         "count=%u renderer=%u benchmark=%u free=%lu largest=%lu\n",
-        scratch != nullptr, timings != nullptr, index_storage != nullptr,
-        settled_scratch != nullptr, settled_lod_samples != nullptr, settled_lod_first != nullptr,
-        settled_lod_count != nullptr, renderer_storage != nullptr, benchmark_storage != nullptr,
+        scratch != nullptr, timings != nullptr, index_storage != nullptr, scratch != nullptr,
+        settled_lod_samples != nullptr, settled_lod_first != nullptr, settled_lod_count != nullptr,
+        renderer_storage != nullptr, benchmark_storage != nullptr,
         static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)),
         static_cast<unsigned long>(heap_caps_get_largest_free_block(kExternalCaps)));
     heap_caps_free(benchmark_storage);
@@ -938,7 +1098,6 @@ InteractivePanBenchmark* start_interactive_pan_benchmark(
     heap_caps_free(settled_lod_count);
     heap_caps_free(settled_lod_first);
     heap_caps_free(settled_lod_samples);
-    heap_caps_free(settled_scratch);
     heap_caps_free(index_storage);
     heap_caps_free(timings);
     heap_caps_free(scratch);
@@ -951,16 +1110,17 @@ InteractivePanBenchmark* start_interactive_pan_benchmark(
       std::span(index_storage + StrokeMacrogrid::kCellCount * kIndexWords, kIndexWords),
       renderer_storage, refinement_published, refinement_published_context, transfer_telemetry);
   benchmark->index_storage_ = index_storage;
-  benchmark->settled_scratch = std::span(settled_scratch, kSettledScratchBytes);
-  benchmark->settled_scratch_storage_ = settled_scratch;
+  benchmark->settled_scratch = std::span(scratch, kSettledScratchBytes);
+  benchmark->settled_scratch_storage_ = nullptr;
   benchmark->settled_lod_samples = std::span(settled_lod_samples, kSettledLodSampleCapacity);
-  benchmark->settled_lod_first = std::span(settled_lod_first, kStrokeCount);
-  benchmark->settled_lod_count = std::span(settled_lod_count, kStrokeCount);
+  benchmark->settled_lod_first = std::span(settled_lod_first, document.stroke_capacity());
+  benchmark->settled_lod_count = std::span(settled_lod_count, document.stroke_capacity());
   benchmark->settled_lod_samples_storage_ = settled_lod_samples;
   benchmark->settled_lod_first_storage_ = settled_lod_first;
   benchmark->settled_lod_count_storage_ = settled_lod_count;
   const bool populated = populate_benchmark_document(document, benchmark->workload_stats);
   const bool indexed = populated && benchmark->macrogrid.rebuild(document);
+  benchmark->macrogrid_valid = indexed;
   const bool lod_built = indexed && build_settled_lod(*benchmark);
   if (!lod_built) {
     std::printf("TINYDRAW_BENCH_SETUP_FAIL populated=%u indexed=%u lod=%u samples=%lu\n", populated,
@@ -995,6 +1155,14 @@ InteractivePanBenchmark* start_interactive_pan_benchmark(
     return nullptr;
   }
   benchmark->has_complete_initial_atlas = true;
+  std::printf(
+      "TINYDRAW_BENCH_MEMORY free=%lu largest=%lu minimum=%lu lod_capacity_bytes=%lu "
+      "lod_used_bytes=%lu\n",
+      static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)),
+      static_cast<unsigned long>(heap_caps_get_largest_free_block(kExternalCaps)),
+      static_cast<unsigned long>(heap_caps_get_minimum_free_size(kExternalCaps)),
+      static_cast<unsigned long>(kSettledLodSampleCapacity * sizeof(StrokeSample)),
+      static_cast<unsigned long>(benchmark->settled_lod_samples.size() * sizeof(StrokeSample)));
   return benchmark;
 }
 
@@ -1071,8 +1239,19 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
   }
   std::uint32_t source_document_revision = old_document_revision;
 
-  if (benchmark.has_complete_initial_atlas && benchmark.fallback_source_pinned &&
-      benchmark.fallback_source_document_revision == old_document_revision) {
+  if (benchmark.has_complete_initial_atlas && benchmark.fallback_source_pinned) {
+    // Ownership remains pinned across mutations. Until incremental repair has
+    // atomically advanced the whole source to this document revision, neither
+    // the stale pinned arena nor the partial active arena is a legal source.
+    if (benchmark.fallback_source_document_revision != old_document_revision) {
+      xSemaphoreGive(benchmark.cache_mutex);
+      ++attempt_metrics.failed_attempts;
+      benchmark.zoom_presentation_pending.store(false);
+      benchmark.paused.store(false);
+      benchmark.requested_generation.fetch_add(1U);
+      xTaskNotifyGive(benchmark.render_task);
+      return false;
+    }
     source_camera = benchmark.fallback_source_atlas;
     source_pixels = benchmark.materialization_storage;
     source_ready = benchmark.fallback_source_ready;
@@ -1111,6 +1290,9 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
   // interactive zoom. Thereafter the active arena is rewritten in place from
   // that pinned source, so no third 2.97 MiB buffer is needed.
   if (benchmark.has_complete_initial_atlas && !benchmark.fallback_source_pinned) {
+    // Only the initialization generation may establish the provenance root.
+    // After a document mutation the root remains pinned but stale, so this
+    // branch is unreachable and a partial active atlas can never be promoted.
     const auto old_storage = benchmark.world.exchange_storage(benchmark.materialization_storage);
     if (old_storage.empty()) {
       xSemaphoreGive(benchmark.cache_mutex);
@@ -1294,7 +1476,8 @@ StrokeSample interactive_pan_benchmark_map_sample(const InteractivePanBenchmark&
   };
 }
 
-void interactive_pan_benchmark_commit_stroke(InteractivePanBenchmark& benchmark) {
+void interactive_pan_benchmark_commit_stroke(InteractivePanBenchmark& benchmark,
+                                             bool visible_raster_current) {
   if (!benchmark.stroke_mutation_active.exchange(false)) {
     return;
   }
@@ -1306,18 +1489,22 @@ void interactive_pan_benchmark_commit_stroke(InteractivePanBenchmark& benchmark)
     return;
   }
   const std::size_t committed_index = strokes.size() - 1U;
-  if (committed_index >= strokes.size() ||
+  if (benchmark.macrogrid_valid &&
       !benchmark.macrogrid.append(committed_index, strokes[committed_index].bounds)) {
-    std::printf("TINYDRAW_INTERACTIVE_PAN_FAIL index_append=0 stroke=%lu\n",
+    // An incomplete candidate index can omit ink while a tile is certified.
+    // Disable candidate filtering for every renderer until a full rebuild.
+    benchmark.macrogrid_valid = false;
+    std::printf("TINYDRAW_INTERACTIVE_PAN_WARN index_disabled=1 stroke=%lu\n",
                 static_cast<unsigned long>(committed_index));
   }
   // Append one LOD segment without rebuilding the existing document geometry.
   const auto committed_samples = benchmark.document.samples(strokes[committed_index]);
+  benchmark.settled_lod_count[committed_index] = 0U;
   const std::size_t lod_used = benchmark.settled_lod_samples.size();
   auto lod_storage = std::span(benchmark.settled_lod_samples_storage_, kSettledLodSampleCapacity);
   if (lod_used <= lod_storage.size()) {
     const auto simplified =
-        simplify_stroke_samples(committed_samples, lod_storage.subspan(lod_used), 9.0F, 2.0F);
+        simplify_stroke_samples(committed_samples, lod_storage.subspan(lod_used), 2.0F, 0.75F);
     if (!simplified.empty() && committed_index < benchmark.settled_lod_first.size()) {
       benchmark.settled_lod_first[committed_index] = static_cast<std::uint32_t>(lod_used);
       benchmark.settled_lod_count[committed_index] = static_cast<std::uint16_t>(simplified.size());
@@ -1325,9 +1512,33 @@ void interactive_pan_benchmark_commit_stroke(InteractivePanBenchmark& benchmark)
     }
   }
   const std::uint32_t next_revision = benchmark.document_revision.fetch_add(1U) + 1U;
-  // The pinned raster predates this mutation. It remains allocated but cannot
-  // prove any later transition until rebuilt for the new document revision.
-  benchmark.fallback_source_pinned = false;
+  // Keep immutable fallback ownership fixed and repair only source bands whose
+  // world regions overlap the appended stroke. Pending work is cumulative, so
+  // cancellation or another mutation cannot accidentally certify an old band.
+  RectF fallback_changed_bounds = strokes[committed_index].bounds;
+  const float fallback_halo = kCanonicalHaloPixels / benchmark.fallback_source_atlas.zoom;
+  fallback_changed_bounds.x0 -= fallback_halo;
+  fallback_changed_bounds.y0 -= fallback_halo;
+  fallback_changed_bounds.x1 += fallback_halo;
+  fallback_changed_bounds.y1 += fallback_halo;
+  if (benchmark.fallback_source_pinned) {
+    benchmark.fallback_repair_target_revision = next_revision;
+    for (int job = 0; job < kJobCount; ++job) {
+      const JobRect rect = job_rect(job);
+      const RectF source_world =
+          camera_world_rect(benchmark.fallback_source_atlas, {rect.x0, rect.y0, rect.x1, rect.y1});
+      if (rects_intersect(fallback_changed_bounds, source_world)) {
+        benchmark.fallback_repair_pending[static_cast<std::size_t>(job)] = true;
+      }
+    }
+    if (std::none_of(benchmark.fallback_repair_pending.begin(),
+                     benchmark.fallback_repair_pending.end(),
+                     [](bool pending) { return pending; })) {
+      std::fill(benchmark.fallback_source_job_revision.begin(),
+                benchmark.fallback_source_job_revision.end(), next_revision);
+      benchmark.fallback_source_document_revision = next_revision;
+    }
+  }
   const int zoom = benchmark.active_zoom_index.load();
   benchmark.center_ready_us[static_cast<std::size_t>(zoom)].store(0U);
   benchmark.full_ready_us[static_cast<std::size_t>(zoom)].store(0U);
@@ -1352,9 +1563,13 @@ void interactive_pan_benchmark_commit_stroke(InteractivePanBenchmark& benchmark)
         camera_world_rect(benchmark.active_atlas, {rect.x0, rect.y0, rect.x1, rect.y1});
     if (!rects_intersect(changed_bounds, world_bounds)) {
       benchmark.job_revision[job].store(next_revision);
-    } else if (intersects(rect, visible)) {
+    } else if (visible_raster_current && rect.x0 >= visible.x0 && rect.y0 >= visible.y0 &&
+               rect.x1 <= visible.x1 && rect.y1 <= visible.y1) {
       benchmark.job_revision[job].store(next_revision);
-      benchmark.ready[job].store(kDerivedReady);
+      // Only a band fully captured from the live viewport is current. Edge
+      // bands with any off-viewport pixels stay invalid until vector redraw.
+      const std::uint8_t previous_quality = benchmark.ready[job].load();
+      benchmark.ready[job].store(previous_quality >= kSettledReady ? kSettledReady : kDerivedReady);
     } else {
       benchmark.job_revision[job].store(next_revision);
       benchmark.ready[job].store(kInvalidReady);

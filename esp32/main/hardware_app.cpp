@@ -97,7 +97,7 @@ SemaphoreHandle_t transfer_semaphore = nullptr;
 constexpr std::size_t kTransferHistory = 64U;
 std::atomic<std::uint32_t> transfer_submits{0U};
 std::atomic<std::uint32_t> transfer_completes{0U};
-std::array<std::atomic<std::int64_t>, kTransferHistory> transfer_complete_times{};
+std::array<std::atomic<std::uint32_t>, kTransferHistory> transfer_complete_times{};
 
 constexpr std::array<std::uint8_t, 1> init_fe{0x00};
 constexpr std::array<std::uint8_t, 1> init_c4{0x80};
@@ -125,8 +125,8 @@ const std::array<co5300_lcd_init_cmd_t, 11> panel_init{{
 
 bool on_transfer_done(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t*, void*) {
   const std::uint32_t sequence = transfer_completes.load(std::memory_order_relaxed);
-  transfer_complete_times[sequence % kTransferHistory].store(esp_timer_get_time(),
-                                                             std::memory_order_relaxed);
+  transfer_complete_times[sequence % kTransferHistory].store(
+      static_cast<std::uint32_t>(esp_timer_get_time()), std::memory_order_relaxed);
   transfer_completes.store(sequence + 1U, std::memory_order_release);
   BaseType_t woke = pdFALSE;
   xSemaphoreGiveFromISR(transfer_semaphore, &woke);
@@ -148,8 +148,8 @@ std::int64_t transfer_complete_time_us(void*, std::uint32_t sequence) {
   if (sequence == 0U || sequence > completed || completed - sequence >= kTransferHistory) {
     return -1;
   }
-  return transfer_complete_times[(sequence - 1U) % kTransferHistory].load(
-      std::memory_order_relaxed);
+  return static_cast<std::int64_t>(
+      transfer_complete_times[(sequence - 1U) % kTransferHistory].load(std::memory_order_relaxed));
 }
 
 constexpr std::uint16_t swap_bytes(std::uint16_t pixel) {
@@ -958,18 +958,48 @@ void run_hardware_app() {
   };
   const auto update_toolbar = [&] {
     toolbar.can_undo = canvas.undo_history().can_undo();
-    display.set_toolbar(toolbar);
 #ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
     if (interactive_pan_benchmark != nullptr) {
       tinydraw::esp32::interactive_pan_benchmark_lock_cache(*interactive_pan_benchmark);
+      display.set_toolbar(toolbar);
       display.refresh_toolbar_world(canvas.world().pixels(), canvas.world().origin());
       tinydraw::esp32::interactive_pan_benchmark_unlock_cache(*interactive_pan_benchmark);
     } else {
+      display.set_toolbar(toolbar);
       display.refresh_toolbar(canvas.committed());
     }
 #else
+    display.set_toolbar(toolbar);
     display.refresh_toolbar(canvas.committed());
 #endif
+  };
+  struct DisplayTimingSnapshot {
+    std::int64_t prepare_us = 0;
+    std::int64_t transfer_us = 0;
+    std::uint32_t pushes = 0;
+  };
+  const auto reset_display_timing = [&] {
+#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+    if (interactive_pan_benchmark != nullptr) {
+      tinydraw::esp32::interactive_pan_benchmark_lock_cache(*interactive_pan_benchmark);
+      display.reset_timing();
+      tinydraw::esp32::interactive_pan_benchmark_unlock_cache(*interactive_pan_benchmark);
+      return;
+    }
+#endif
+    display.reset_timing();
+  };
+  const auto display_timing = [&] {
+#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+    if (interactive_pan_benchmark != nullptr) {
+      tinydraw::esp32::interactive_pan_benchmark_lock_cache(*interactive_pan_benchmark);
+      const DisplayTimingSnapshot snapshot{display.prepare_us(), display.transfer_us(),
+                                           display.push_count()};
+      tinydraw::esp32::interactive_pan_benchmark_unlock_cache(*interactive_pan_benchmark);
+      return snapshot;
+    }
+#endif
+    return DisplayTimingSnapshot{display.prepare_us(), display.transfer_us(), display.push_count()};
   };
   const auto select_size = [&](tinydraw::PenSize size) {
     toolbar.size = size;
@@ -1062,7 +1092,7 @@ void run_hardware_app() {
       return;
     }
     reset_stroke();
-    display.reset_timing();
+    reset_display_timing();
     const auto started = esp_timer_get_time();
     static_cast<void>(canvas.world().capture(canvas.committed()));
     const auto undo_origin = canvas.undo_history().next_undo_origin();
@@ -1090,14 +1120,15 @@ void run_hardware_app() {
       }
       persistence_resync_needed = false;
     }
+    const DisplayTimingSnapshot timing = display_timing();
     std::printf(
         "[DEBUG-undo1] tiles=%lu bytes=%lu view_changed=%u elapsed_us=%lld prepare_us=%lld "
         "transfer_us=%lld pushes=%lu\n",
         static_cast<unsigned long>(stats.tiles_restored),
         static_cast<unsigned long>(stats.display_bytes), view_changed,
         static_cast<long long>(esp_timer_get_time() - started),
-        static_cast<long long>(display.prepare_us()), static_cast<long long>(display.transfer_us()),
-        static_cast<unsigned long>(display.push_count()));
+        static_cast<long long>(timing.prepare_us), static_cast<long long>(timing.transfer_us),
+        static_cast<unsigned long>(timing.pushes));
   };
   const auto export_image = [&] {
     reset_stroke();
@@ -1358,6 +1389,36 @@ void run_hardware_app() {
       }
       vTaskDelay(pdMS_TO_TICKS(500));
     }
+    // Exercise the post-mutation provenance path without requiring touch:
+    // zoom must refuse while the pinned source is stale, then recover after
+    // incremental exact repair of the affected source bands.
+    const bool mutation_started =
+        tinydraw::esp32::interactive_pan_benchmark_begin_stroke(*interactive_pan_benchmark);
+    const auto mutation_start = tinydraw::esp32::interactive_pan_benchmark_map_sample(
+        *interactive_pan_benchmark, {.x = 80.0F, .y = 180.0F}, 3.0F);
+    const auto mutation_end = tinydraw::esp32::interactive_pan_benchmark_map_sample(
+        *interactive_pan_benchmark, {.x = 288.0F, .y = 190.0F}, 3.0F);
+    const bool mutation_committed =
+        mutation_started &&
+        vector_document.begin_stroke(0x07E0U, tinydraw::VectorTool::kPen, mutation_start) &&
+        vector_document.append(mutation_end) && vector_document.finish_stroke();
+    if (mutation_committed) {
+      tinydraw::esp32::interactive_pan_benchmark_commit_stroke(*interactive_pan_benchmark, false);
+    } else {
+      vector_document.cancel_stroke();
+      tinydraw::esp32::interactive_pan_benchmark_cancel_stroke(*interactive_pan_benchmark);
+    }
+    const bool accepted_while_stale =
+        mutation_committed &&
+        tinydraw::esp32::interactive_pan_benchmark_set_zoom(*interactive_pan_benchmark, 50);
+    vTaskDelay(pdMS_TO_TICKS(3'000));
+    const bool accepted_after_repair =
+        mutation_committed &&
+        tinydraw::esp32::interactive_pan_benchmark_set_zoom(*interactive_pan_benchmark, 50);
+    std::printf(
+        "TINYDRAW_AUTO_MUTATION started=%u committed=%u stale_zoom_accepted=%u "
+        "repaired_zoom_accepted=%u\n",
+        mutation_started, mutation_committed, accepted_while_stale, accepted_after_repair);
     std::printf("TINYDRAW_AUTO_ZOOM_DONE\n");
     std::fflush(stdout);
   }
@@ -1508,7 +1569,7 @@ void run_hardware_app() {
           pan_frames = 0;
           pan_render_us = 0;
           maximum_pan_render_us = 0;
-          display.reset_timing();
+          reset_display_timing();
 #ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
           tinydraw::esp32::interactive_pan_benchmark_begin_pan(
               *interactive_pan_benchmark, pan_start_origin, event.timestamp_us);
@@ -1572,7 +1633,7 @@ void run_hardware_app() {
         maximum_queue_depth = queue_depth;
         stroke_render_us = 0;
         maximum_render_us = 0;
-        display.reset_timing();
+        reset_display_timing();
         const auto started = esp_timer_get_time();
         if (!vector_stroke_refused) {
           static_cast<void>(canvas.raster().update(ribbon.append(last_ink), stroke_color));
@@ -1673,15 +1734,15 @@ void run_hardware_app() {
 #endif
         const auto bytes = static_cast<std::uint64_t>(pan_frames) * tinydraw::kCanvasWidth *
                            kMainOverlayTop * sizeof(std::uint16_t);
+        const DisplayTimingSnapshot timing = display_timing();
         std::printf(
             "TINYDRAW_PAN_PERF frames=%lu bytes=%llu average_us=%lld max_us=%lld "
             "settle_us=%lld prepare_us=%lld transfer_us=%lld pushes=%lu\n",
             static_cast<unsigned long>(pan_frames), static_cast<unsigned long long>(bytes),
             static_cast<long long>(pan_frames == 0 ? 0 : pan_render_us / pan_frames),
             static_cast<long long>(maximum_pan_render_us), static_cast<long long>(settle_us),
-            static_cast<long long>(display.prepare_us()),
-            static_cast<long long>(display.transfer_us()),
-            static_cast<unsigned long>(display.push_count()));
+            static_cast<long long>(timing.prepare_us), static_cast<long long>(timing.transfer_us),
+            static_cast<unsigned long>(timing.pushes));
         continue;
       }
       if (ink.active()) {
@@ -1724,13 +1785,15 @@ void run_hardware_app() {
           tinydraw::esp32::interactive_pan_benchmark_lock_cache(*interactive_pan_benchmark);
           static_cast<void>(canvas.world().capture(canvas.committed()));
           tinydraw::esp32::interactive_pan_benchmark_unlock_cache(*interactive_pan_benchmark);
-          tinydraw::esp32::interactive_pan_benchmark_commit_stroke(*interactive_pan_benchmark);
+          tinydraw::esp32::interactive_pan_benchmark_commit_stroke(*interactive_pan_benchmark,
+                                                                   true);
         }
 #else
         static_cast<void>(canvas.raster().finish(ribbon.finish(last_ink), stroke_color,
                                                  &canvas.undo_history(), canvas.world().origin()));
 #endif
         const auto finish_us = esp_timer_get_time() - started;
+        const DisplayTimingSnapshot timing = display_timing();
         toolbar.export_ready = false;
 #ifndef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
         if (!demo_replaying) {
@@ -1751,9 +1814,8 @@ void run_hardware_app() {
             static_cast<unsigned long>(stroke_samples), static_cast<long long>(stroke_render_us),
             static_cast<long long>(stroke_samples == 0 ? 0 : stroke_render_us / stroke_samples),
             static_cast<long long>(maximum_render_us), static_cast<long long>(finish_us),
-            static_cast<long long>(display.prepare_us()),
-            static_cast<long long>(display.transfer_us()),
-            static_cast<unsigned long>(display.push_count()),
+            static_cast<long long>(timing.prepare_us), static_cast<long long>(timing.transfer_us),
+            static_cast<unsigned long>(timing.pushes),
             static_cast<unsigned long>(event.timestamp_us - stroke_started_us),
             static_cast<unsigned long long>(
                 stroke_samples <= 1 ? 0 : touch_intervals_us / (stroke_samples - 1U)),
