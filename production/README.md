@@ -94,3 +94,15 @@ The opt-in `TINYDRAW_PRODUCTION_MEMORY_PROBE` firmware allocates every region
 simultaneously, then attempts a separate 1.5 MiB allocation. This is an
 allocation receipt, not proof that the eventual encoders and renderers fit the
 reserved capacities or meet interaction gates.
+
+The exact-commit ESP32-S3 receipt is
+[`hardware-receipts/1f91ed0-memory-layout.log`](hardware-receipts/1f91ed0-memory-layout.log):
+
+- all 3,038,304 planned bytes allocated simultaneously;
+- largest contiguous block after the plan: 5,242,880 bytes;
+- a separate 1,572,864-byte reserve allocation succeeded;
+- free/largest after holding both plan and reserve: 3,748,420 / 3,735,552 bytes.
+
+This closes the allocation gate for the stated capacities. Captured workload
+distributions and actual renderer implementation must still validate that the
+capacities are sufficient rather than merely allocatable.
