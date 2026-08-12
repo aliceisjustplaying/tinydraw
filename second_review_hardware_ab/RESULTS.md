@@ -276,3 +276,47 @@ Its metrics reproduce the preceding dynamic-LOD run: 12/12 accepted zooms,
 assertion passing, and post-mutation refusal/repair/retry passing. This closes
 the earlier evidence-chain caveat where logs named `caed9b5-dirty` rather than
 the commit under review.
+
+### Diagnostic hardening and publication telemetry run (`12b70da`)
+
+`12b70da-diag-auto-hardware.log` is the first hardware run of the reviewed
+diagnostic patches (CO5300 window validation, cooperative shutdown, pan-time
+work suppression, coherent view snapshots) plus correlated publication
+telemetry. Firmware identity: `App version: 12b70da`.
+
+Results:
+
+- 12/12 zoom transitions accepted; `down12_ready=1` and `right1_ready=1` on
+  every cycle.
+- Zero `TINYDRAW_PANEL_WINDOW_REJECT` events across the entire run.
+- First physical strip 7.0–9.8 ms; complete physical fallback 40.2–51.0 ms.
+- Physical settled 490–491 ms at 50%, 792–828 ms at 100%, 737–740 ms at 200%,
+  within the prior run-to-run range; no regression from telemetry.
+- `TINYDRAW_SETTLED_LOD output=7537`, identical to the pre-patch baseline, so
+  the plateau-boundary LOD change does not alter the realistic workload.
+- New internal-heap receipt: `internal_free=95240 internal_largest=54272`.
+  The planned internal-RAM settled-scratch experiment fits: an 11.8 KB
+  368x32 coverage band allocates trivially; a full 35 KB band workspace fits
+  the largest block with limited margin, so borrowing `active_coverage_`
+  remains the safer option.
+- Publication determinism: every repeated same-zoom, same-revision
+  publication hashed identically across all cycles (100% fallback
+  `17300f6a`, settled `49a8e974`; 50% `964586fc`/`a167c6e9`; 200%
+  `b3eb028d`/`bce1c492`).
+- Cross-validation: `TINYDRAW_AUTO_FINAL_PIXELS` (`ink=32554
+  hash=6c663cc6`) exactly matches publication id=50 computed by the
+  independent benchmark-side record.
+- Post-mutation: refusal, repair (`FALLBACK_REPAIRED revision=2`), and retry
+  all passed; revision 2 flows through subsequent publication records.
+- Known benign record: publication id=1 (initialization `set_zoom(100)`)
+  hashes a just-cleared white atlas (`ink=0`) and submits nothing to the
+  panel; it is the init generation, not a blank publication defect.
+- Disclosed cost: settled `publish_us` grew from ~52 ms to ~64–67 ms; the
+  difference is the 368x372 visible-region hash now inside the settled
+  publication block. Physical settled endpoints are completion-based and
+  stayed in range.
+
+Not exercised by this automated run: manual pan (`TINYDRAW_PAN_CONTENT`
+expected-content records), live drawing/eraser latency, and the cooperative
+shutdown path (`finish_interactive_pan_benchmark`). These need an interactive
+session.
