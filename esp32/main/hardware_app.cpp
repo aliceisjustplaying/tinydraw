@@ -1091,6 +1091,7 @@ void run_hardware_app() {
     // mutated and exercised. Other production actions stay outside this
     // throwaway prototype.
     if (action != tinydraw::ToolbarAction::kToggleSizes &&
+        action != tinydraw::ToolbarAction::kToggleTools &&
         action != tinydraw::ToolbarAction::kSelectPen &&
         action != tinydraw::ToolbarAction::kSelectPan &&
         action != tinydraw::ToolbarAction::kSelectEraser &&
