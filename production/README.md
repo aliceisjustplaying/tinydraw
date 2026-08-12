@@ -121,10 +121,10 @@ overview pixels as current. The only rejected requests are malformed/out-of-worl
 rectangles or a bootstrap state where no current source covers every pixel.
 
 The minimal hardware seam is recorded in
-[`hardware-receipts/b107e5f-production-overview-walk.log`](hardware-receipts/b107e5f-production-overview-walk.log).
+[`hardware-receipts/3b69d59-production-overview-walk.log`](hardware-receipts/3b69d59-production-overview-walk.log).
 An exclusive ESP32 image transferred the 25% overview directly, then composed
 four complete 100% views in bounded 368×22 strips. Those views completed in
-25–26 ms with distinct hashes, 105/105 physical transfers complete, and no
+27 ms with fail-closed expected hashes, 105/105 physical transfers complete, and no
 CO5300 window rejection. This proves the bounded fallback path on glass, but
 not the interactive ≤35 ms gate under concurrent product workloads.
 
