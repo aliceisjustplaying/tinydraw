@@ -63,6 +63,17 @@ TEST_CASE("stroke LOD preserves pressure and eraser radius pulses") {
   const auto subtle = tinydraw::simplify_stroke_samples(subtle_pulse, subtle_output, 2.0F, 0.75F);
   REQUIRE(subtle.size() == subtle_pulse.size());
   CHECK(subtle[1].radius == 2.5F);
+
+  const std::array plateau{
+      tinydraw::StrokeSample{.x = 0.0F, .y = 0.0F, .radius = 2.0F},
+      tinydraw::StrokeSample{.x = 1.0F, .y = 0.0F, .radius = 2.5F},
+      tinydraw::StrokeSample{.x = 2.0F, .y = 0.0F, .radius = 2.5F},
+      tinydraw::StrokeSample{.x = 3.0F, .y = 0.0F, .radius = 2.0F},
+  };
+  std::array<tinydraw::StrokeSample, plateau.size()> plateau_output;
+  const auto plateau_lod = tinydraw::simplify_stroke_samples(plateau, plateau_output, 2.0F, 0.75F);
+  REQUIRE(plateau_lod.size() >= 3U);
+  CHECK(plateau_lod[1].radius == 2.5F);
 }
 
 TEST_CASE("stroke LOD validates output and options") {

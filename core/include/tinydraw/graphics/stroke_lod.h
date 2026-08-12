@@ -8,8 +8,8 @@
 namespace tinydraw {
 
 // Allocation-free, error-bounded sample simplification used by the settled
-// renderer. The first and last samples, direction reversals, and radius extrema
-// are retained. Every removed center stays within `maximum_center_error` of the
+// renderer. The first and last samples and local radius-extremum plateaus are
+// retained. Every removed center stays within `maximum_center_error` of the
 // replacement chord, and its radius stays within `maximum_radius_error` of the
 // chord-interpolated radius. The result is visual LOD, not canonical geometry.
 //

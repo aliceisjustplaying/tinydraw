@@ -76,6 +76,8 @@ void interactive_pan_benchmark_begin_pan(InteractivePanBenchmark& benchmark, Vie
                                          std::uint32_t event_us);
 // Called while holding the cache lock. Rejects views containing invalid bands
 // rather than publishing checkerboard or unproven raster pixels.
+[[nodiscard]] bool interactive_pan_benchmark_view_ready(const InteractivePanBenchmark& benchmark,
+                                                        ViewOrigin origin);
 [[nodiscard]] bool interactive_pan_benchmark_view_changed(InteractivePanBenchmark& benchmark,
                                                           ViewOrigin origin);
 void interactive_pan_benchmark_record_frame(InteractivePanBenchmark& benchmark, ViewOrigin origin,

@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "tinydraw/document/vector_document.h"
@@ -221,6 +222,20 @@ TEST_CASE("malformed settled LOD falls back to the complete raw document") {
   std::vector<std::uint16_t> actual(kPixels, 0U);
   REQUIRE(settled_render_region(document, {}, actual, full, scratch, options).complete);
   CHECK(actual == expected);
+
+  const std::array nonfinite_samples{
+      tinydraw::StrokeSample{.x = 40.0F, .y = 60.0F, .radius = 2.5F},
+      tinydraw::StrokeSample{
+          .x = std::numeric_limits<float>::infinity(), .y = 60.0F, .radius = 2.5F},
+  };
+  const std::array<std::uint32_t, 2> nonfinite_first{0U, 0U};
+  const std::array<std::uint16_t, 2> nonfinite_count{2U, 2U};
+  options.lod_samples = nonfinite_samples;
+  options.lod_first_sample = nonfinite_first;
+  options.lod_sample_count = nonfinite_count;
+  std::fill(actual.begin(), actual.end(), 0U);
+  REQUIRE(settled_render_region(document, {}, actual, full, scratch, options).complete);
+  CHECK(actual == expected);
 }
 
 TEST_CASE("settled renderer honors candidates, cancellation, and validation") {
@@ -244,6 +259,22 @@ TEST_CASE("settled renderer honors candidates, cancellation, and validation") {
   CHECK(stats.strokes_rendered == 1U);
   CHECK(settled[pixel(41, 160)] == kRed);
   CHECK(settled[pixel(41, 60)] == kWhite);
+
+  // A candidate bitset that cannot represent every document stroke must fail
+  // rather than silently dropping tail strokes.
+  std::array<tinydraw::VectorStroke, 65> many_strokes;
+  std::array<tinydraw::StrokeSample, 65> many_samples;
+  tinydraw::VectorDocument many_document(many_strokes, many_samples);
+  for (std::size_t index = 0U; index < many_strokes.size(); ++index) {
+    REQUIRE(
+        many_document.begin_stroke(kBlue, tinydraw::VectorTool::kPen,
+                                   {.x = static_cast<float>(index), .y = 20.0F, .radius = 1.0F}));
+    REQUIRE(many_document.finish_stroke());
+  }
+  tinydraw::SettledRenderOptions short_candidate_options;
+  short_candidate_options.candidate_strokes = candidates;
+  stats = settled_render_region(many_document, {}, settled, full, scratch, short_candidate_options);
+  CHECK_FALSE(stats.complete);
 
   // Immediate cancellation reports an incomplete render.
   tinydraw::SettledRenderOptions cancel_options;

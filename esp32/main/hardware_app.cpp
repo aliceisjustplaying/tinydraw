@@ -1372,6 +1372,25 @@ void run_hardware_app() {
                     static_cast<long long>(auto_zoom_returned - auto_zoom_started));
       }
       std::fflush(stdout);
+      if (changed) {
+        const tinydraw::ViewOrigin zoom_origin{tinydraw::kCanvasWidth, tinydraw::kCanvasHeight};
+        const bool down_ready = tinydraw::esp32::interactive_pan_benchmark_view_ready(
+            *interactive_pan_benchmark, {zoom_origin.x, zoom_origin.y + 12});
+        const std::int64_t runway_started = esp_timer_get_time();
+        bool right_ready = tinydraw::esp32::interactive_pan_benchmark_view_ready(
+            *interactive_pan_benchmark, {zoom_origin.x + 1, zoom_origin.y});
+        while (!right_ready && esp_timer_get_time() - runway_started < 1'000'000) {
+          vTaskDelay(pdMS_TO_TICKS(1));
+          right_ready = tinydraw::esp32::interactive_pan_benchmark_view_ready(
+              *interactive_pan_benchmark, {zoom_origin.x + 1, zoom_origin.y});
+        }
+        std::printf(
+            "TINYDRAW_AUTO_RUNWAY cycle=%u zoom=%d down12_ready=%u right1_ready=%u "
+            "right1_ready_us=%lld\n",
+            static_cast<unsigned>(cycle), percent, down_ready, right_ready,
+            static_cast<long long>(esp_timer_get_time() - runway_started));
+        std::fflush(stdout);
+      }
       // Poll for the background visible-settled pass within the settling gap.
       if (changed) {
         const std::int64_t settle_deadline = esp_timer_get_time() + 4'500'000;

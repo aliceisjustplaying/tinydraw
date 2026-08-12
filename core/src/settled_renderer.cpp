@@ -101,14 +101,14 @@ LocalRect rasterize_capsule(ScreenSample from, ScreenSample to, Rect region, int
       const float outer = radius + half_edge;
       const float outer_squared = outer * outer;
       if (distance_squared < outer_squared) {
-        const float inner = radius - half_edge;
+        const float inner = std::max(radius - half_edge, 0.0F);
         std::uint8_t alpha = 255U;
         const float inner_squared = inner * inner;
-        if (inner <= 0.0F || distance_squared > inner_squared) {
+        if (inner == 0.0F || distance_squared > inner_squared) {
           // The exact linear-distance ramp requires a software-emulated sqrt
           // on ESP32-S3. Squared-distance interpolation preserves the same
           // fully covered and empty boundaries with a slightly different edge.
-          const float denominator = outer_squared - std::max(inner_squared, 0.0F);
+          const float denominator = outer_squared - inner_squared;
           const float coverage =
               std::clamp((outer_squared - distance_squared) / denominator, 0.0F, 1.0F);
           alpha = static_cast<std::uint8_t>(coverage * 255.0F + 0.5F);
@@ -210,6 +210,12 @@ SettledRenderStats settled_render_region(const VectorDocument& document, Camera 
   };
 
   const auto strokes = document.strokes();
+  const std::size_t required_candidate_words = (strokes.size() + 63U) / 64U;
+  if (!options.candidate_strokes.empty() &&
+      options.candidate_strokes.size() < required_candidate_words) {
+    stats.complete = false;
+    return stats;
+  }
   const bool lod_maps_absent = options.lod_first_sample.empty() && options.lod_sample_count.empty();
   bool lod_maps_valid = lod_maps_absent || (options.lod_first_sample.size() >= strokes.size() &&
                                             options.lod_sample_count.size() >= strokes.size());
@@ -219,6 +225,14 @@ SettledRenderStats settled_render_region(const VectorDocument& document, Camera 
       const std::size_t count = options.lod_sample_count[stroke_index];
       if (count == 0U || first > options.lod_samples.size() ||
           count > options.lod_samples.size() - first) {
+        lod_maps_valid = false;
+        break;
+      }
+      const auto samples = options.lod_samples.subspan(first, count);
+      if (std::any_of(samples.begin(), samples.end(), [](const StrokeSample& sample) {
+            return !std::isfinite(sample.x) || !std::isfinite(sample.y) ||
+                   !std::isfinite(sample.radius) || sample.radius < 0.0F;
+          })) {
         lod_maps_valid = false;
         break;
       }
@@ -272,6 +286,10 @@ SettledRenderStats settled_render_region(const VectorDocument& document, Camera 
     if (samples.size() == 1U) {
       stroke_dirty.include(
           rasterize_capsule(previous, previous, region, region_width, scratch, options, aborted));
+      if (aborted) {
+        stats.complete = false;
+        return stats;
+      }
       ++stats.segments_rendered;
     }
     for (std::size_t index = 1U; index < samples.size(); ++index) {
