@@ -34,6 +34,7 @@ if(NOT TINYDRAW_QEMU)
       "${TINYDRAW_CORE}/src/stroke_lod.cpp"
       "${TINYDRAW_CORE}/src/stroke_macrogrid.cpp"
       "${TINYDRAW_CORE}/src/vector_benchmark.cpp"
+      "${TINYDRAW_CORE}/src/vector_document.cpp"
       "${TINYDRAW_CORE}/src/viewport_renderer.cpp"
     )
   endif()
@@ -67,7 +68,6 @@ idf_component_register(
     "${TINYDRAW_CORE}/src/stroke_raster.cpp"
     "${TINYDRAW_CORE}/src/tile_undo_history.cpp"
     "${TINYDRAW_CORE}/src/toolbar.cpp"
-    "${TINYDRAW_CORE}/src/vector_document.cpp"
     "${TINYDRAW_CORE}/src/world_canvas.cpp"
   INCLUDE_DIRS "." "${TINYDRAW_CORE}/include"
   PRIV_INCLUDE_DIRS "${TINYDRAW_PNGENC}"
