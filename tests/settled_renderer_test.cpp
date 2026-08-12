@@ -3,6 +3,7 @@
 #include <doctest.h>
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <vector>
@@ -214,7 +215,7 @@ TEST_CASE("malformed settled LOD falls back to the complete raw document") {
 
   const std::array<tinydraw::StrokeSample, 1> bad_samples{{}};
   const std::array<std::uint32_t, 2> bad_first{0U, 99U};
-  const std::array<std::uint16_t, 2> bad_count{1U, 2U};
+  const std::array<std::uint16_t, 2> bad_count{0U, 2U};
   tinydraw::SettledRenderOptions options;
   options.lod_samples = bad_samples;
   options.lod_first_sample = bad_first;
@@ -236,6 +237,54 @@ TEST_CASE("malformed settled LOD falls back to the complete raw document") {
   std::fill(actual.begin(), actual.end(), 0U);
   REQUIRE(settled_render_region(document, {}, actual, full, scratch, options).complete);
   CHECK(actual == expected);
+}
+
+TEST_CASE("settled renderer uses raw geometry only for a stroke with invalid LOD") {
+  std::array<tinydraw::VectorStroke, 2> stroke_storage;
+  std::array<tinydraw::StrokeSample, 4> sample_storage;
+  tinydraw::VectorDocument document(stroke_storage, sample_storage);
+  REQUIRE(document.begin_stroke(kBlue, tinydraw::VectorTool::kPen,
+                                {.x = 20.0F, .y = 40.0F, .radius = 2.0F}));
+  REQUIRE(document.append({.x = 60.0F, .y = 40.0F, .radius = 2.0F}));
+  REQUIRE(document.finish_stroke());
+  REQUIRE(document.begin_stroke(kRed, tinydraw::VectorTool::kPen,
+                                {.x = 20.0F, .y = 100.0F, .radius = 2.0F}));
+  REQUIRE(document.append({.x = 60.0F, .y = 100.0F, .radius = 2.0F}));
+  REQUIRE(document.finish_stroke());
+
+  const std::array lod_samples{
+      tinydraw::StrokeSample{.x = 200.0F, .y = 40.0F, .radius = 3.0F},
+  };
+  const std::array<std::uint32_t, 2> first{0U, 99U};
+  const std::array<std::uint16_t, 2> count{1U, 1U};
+  tinydraw::SettledRenderOptions options;
+  options.lod_samples = lod_samples;
+  options.lod_first_sample = first;
+  options.lod_sample_count = count;
+
+  std::vector<std::uint16_t> settled(kPixels, 0U);
+  std::vector<std::uint8_t> scratch(kPixels);
+  const tinydraw::Rect full{0, 0, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight};
+  REQUIRE(settled_render_region(document, {}, settled, full, scratch, options).complete);
+  CHECK(settled[pixel(200, 40)] == kBlue);
+  CHECK(settled[pixel(40, 40)] == kWhite);
+  CHECK(settled[pixel(40, 100)] == kRed);
+}
+
+TEST_CASE("settled renderer preserves a stationary pressure increase") {
+  std::array<tinydraw::VectorStroke, 1> stroke_storage;
+  std::array<tinydraw::StrokeSample, 2> sample_storage;
+  tinydraw::VectorDocument document(stroke_storage, sample_storage);
+  REQUIRE(document.begin_stroke(kBlue, tinydraw::VectorTool::kPen,
+                                {.x = 100.0F, .y = 100.0F, .radius = 2.0F}));
+  REQUIRE(document.append({.x = 100.0F, .y = 100.0F, .radius = 8.0F}));
+  REQUIRE(document.finish_stroke());
+
+  std::vector<std::uint16_t> settled(kPixels, 0U);
+  std::vector<std::uint8_t> scratch(kPixels);
+  const tinydraw::Rect full{0, 0, tinydraw::kCanvasWidth, tinydraw::kCanvasHeight};
+  REQUIRE(settled_render_region(document, {}, settled, full, scratch).complete);
+  CHECK(inked(settled[pixel(106, 100)]));
 }
 
 TEST_CASE("settled renderer honors candidates, cancellation, and validation") {

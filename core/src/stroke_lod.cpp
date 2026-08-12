@@ -30,21 +30,18 @@ bool radius_extremum(std::span<const StrokeSample> input, std::size_t index) {
   if (index == 0U || index + 1U >= input.size()) {
     return false;
   }
+  const float before = input[index - 1U].radius;
   const float radius = input[index].radius;
-  std::size_t plateau_start = index;
-  while (plateau_start > 0U && input[plateau_start - 1U].radius == radius) {
-    --plateau_start;
-  }
-  std::size_t plateau_end = index;
-  while (plateau_end + 1U < input.size() && input[plateau_end + 1U].radius == radius) {
-    ++plateau_end;
-  }
-  if (plateau_start == 0U || plateau_end + 1U >= input.size()) {
-    return false;
-  }
-  const float before = input[plateau_start - 1U].radius;
-  const float after = input[plateau_end + 1U].radius;
-  return (radius > before && radius > after) || (radius < before && radius < after);
+  const float after = input[index + 1U].radius;
+
+  // Preserve both boundaries of a local pressure plateau, but not every sample
+  // inside it. The previous implementation rescanned the whole plateau for
+  // every candidate sample, turning a constant-radius stroke into cubic work.
+  const bool maximum_boundary =
+      (radius > before && radius >= after) || (radius >= before && radius > after);
+  const bool minimum_boundary =
+      (radius < before && radius <= after) || (radius <= before && radius < after);
+  return maximum_boundary || minimum_boundary;
 }
 
 }  // namespace

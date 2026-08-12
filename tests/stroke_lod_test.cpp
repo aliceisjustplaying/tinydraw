@@ -76,6 +76,22 @@ TEST_CASE("stroke LOD preserves pressure and eraser radius pulses") {
   CHECK(plateau_lod[1].radius == 2.5F);
 }
 
+TEST_CASE("stroke LOD keeps pressure plateau edges without retaining its interior") {
+  std::array<tinydraw::StrokeSample, 66> input{};
+  for (std::size_t index = 0U; index < input.size(); ++index) {
+    input[index] = {.x = static_cast<float>(index),
+                    .y = 0.0F,
+                    .radius = index == 0U || index + 1U == input.size() ? 2.0F : 4.0F};
+  }
+  std::array<tinydraw::StrokeSample, input.size()> output{};
+  const auto simplified = tinydraw::simplify_stroke_samples(input, output, 2.0F, 2.0F);
+  REQUIRE(simplified.size() == 4U);
+  CHECK(simplified[0].x == 0.0F);
+  CHECK(simplified[1].x == 1.0F);
+  CHECK(simplified[2].x == 64.0F);
+  CHECK(simplified[3].x == 65.0F);
+}
+
 TEST_CASE("stroke LOD validates output and options") {
   const std::array input{tinydraw::StrokeSample{.x = 1.0F, .y = 2.0F, .radius = 3.0F}};
   std::array<tinydraw::StrokeSample, 1> output;
