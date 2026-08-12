@@ -12,17 +12,31 @@ namespace tinydraw {
 struct SettledRenderOptions {
   std::uint16_t background = 0xFFFFU;
   float minimum_screen_radius = 0.0F;
+  // Optional append-time or caller-owned settled geometry. When supplied, the
+  // per-stroke offsets/counts correspond to VectorDocument::strokes().
+  std::span<const StrokeSample> lod_samples{};
+  std::span<const std::uint32_t> lod_first_sample{};
+  std::span<const std::uint16_t> lod_sample_count{};
+  // Screen-space centerline spacing used when no precomputed LOD is supplied.
+  // Zero preserves every source sample.
+  float minimum_screen_sample_spacing = 0.0F;
   // Optional conservative candidate bitset in document order, one bit per
   // stroke index, identical to ViewportRenderOptions::candidate_strokes.
   std::span<const std::uint64_t> candidate_strokes{};
   bool (*cancelled)(void* context) = nullptr;
   void* cancellation_context = nullptr;
+  // Optional microsecond clock used only for profiling counters in the result.
+  std::uint64_t (*clock_us)(void* context) = nullptr;
+  void* clock_context = nullptr;
 };
 
 struct SettledRenderStats {
   std::uint32_t strokes_tested = 0;
   std::uint32_t strokes_rendered = 0;
   std::uint32_t segments_rendered = 0;
+  std::uint64_t clear_us = 0;
+  std::uint64_t raster_us = 0;
+  std::uint64_t composite_us = 0;
   bool complete = true;
 };
 

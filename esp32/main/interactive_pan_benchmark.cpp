@@ -20,6 +20,7 @@
 #include "tinydraw/geometry.h"
 #include "tinydraw/graphics/raster_materializer.h"
 #include "tinydraw/graphics/settled_renderer.h"
+#include "tinydraw/graphics/stroke_lod.h"
 #include "tinydraw/graphics/viewport_renderer.h"
 
 namespace tinydraw::esp32 {
@@ -27,6 +28,7 @@ namespace {
 
 constexpr std::size_t kStrokeCount = 1'000U;
 constexpr std::size_t kRequiredSampleCapacity = 24'576U;
+constexpr std::size_t kSettledLodSampleCapacity = 8'192U;
 constexpr std::uint32_t kWorkloadSeed = 7U;
 constexpr int kCellColumns = 3;
 constexpr int kCellRows = 3;
@@ -119,6 +121,8 @@ int interval_distance(int left0, int left1, int right0, int right1) {
 }
 
 void benchmark_yield(void*) { vTaskDelay(pdMS_TO_TICKS(1)); }
+
+std::uint64_t benchmark_clock_us(void*) { return static_cast<std::uint64_t>(esp_timer_get_time()); }
 
 // Maps presentation position 0..strip_count-1 onto strip indices center-out:
 // center, center+1, center-1, center+2, ... Exactly one overflow can occur at
@@ -282,6 +286,12 @@ class InteractivePanBenchmark {
   std::uint64_t* index_storage_ = nullptr;
   std::span<std::uint8_t> settled_scratch{};
   std::uint8_t* settled_scratch_storage_ = nullptr;
+  std::span<StrokeSample> settled_lod_samples{};
+  std::span<std::uint32_t> settled_lod_first{};
+  std::span<std::uint16_t> settled_lod_count{};
+  StrokeSample* settled_lod_samples_storage_ = nullptr;
+  std::uint32_t* settled_lod_first_storage_ = nullptr;
+  std::uint16_t* settled_lod_count_storage_ = nullptr;
   void (*refinement_published)(void*) = nullptr;
   void* refinement_published_context = nullptr;
   DisplayTransferTelemetry transfer_telemetry{};
@@ -332,6 +342,35 @@ class InteractivePanBenchmark {
 };
 
 namespace {
+
+bool build_settled_lod(InteractivePanBenchmark& benchmark) {
+  std::size_t output_count = 0U;
+  const auto strokes = benchmark.document.strokes();
+  if (strokes.size() > benchmark.settled_lod_first.size() ||
+      strokes.size() > benchmark.settled_lod_count.size()) {
+    return false;
+  }
+  for (std::size_t stroke_index = 0; stroke_index < strokes.size(); ++stroke_index) {
+    const auto input = benchmark.document.samples(strokes[stroke_index]);
+    if (output_count > benchmark.settled_lod_samples.size()) {
+      return false;
+    }
+    const auto available = benchmark.settled_lod_samples.subspan(output_count);
+    const auto simplified = simplify_stroke_samples(input, available, 9.0F, 2.0F);
+    if (simplified.empty() || simplified.size() > UINT16_MAX) {
+      return false;
+    }
+    benchmark.settled_lod_first[stroke_index] = static_cast<std::uint32_t>(output_count);
+    benchmark.settled_lod_count[stroke_index] = static_cast<std::uint16_t>(simplified.size());
+    output_count += simplified.size();
+  }
+  std::printf("TINYDRAW_SETTLED_LOD input=%lu output=%lu bytes=%lu\n",
+              static_cast<unsigned long>(benchmark.document.sample_count()),
+              static_cast<unsigned long>(output_count),
+              static_cast<unsigned long>(output_count * sizeof(StrokeSample)));
+  benchmark.settled_lod_samples = benchmark.settled_lod_samples.first(output_count);
+  return true;
+}
 
 bool region_contains_ink(const VectorDocument& document, Camera camera, JobRect pixels) {
   const float halo = kCanonicalHaloPixels / camera.zoom;
@@ -501,6 +540,12 @@ void render_task_entry(void* raw) {
     }
 
     RenderCancellation cancellation{.benchmark = &benchmark, .generation = generation};
+    std::uint64_t settled_clear_us = 0U;
+    std::uint64_t settled_raster_us = 0U;
+    std::uint64_t settled_composite_us = 0U;
+    std::uint64_t settled_publish_us = 0U;
+    std::uint32_t settled_segments = 0U;
+    std::uint32_t settled_bands = 0U;
 
     // Settled pass: bring every visible band to settled quality with the cheap
     // capsule renderer before offscreen runway or canonical exact work. The
@@ -543,6 +588,11 @@ void render_task_entry(void* raw) {
       settled_options.background = kBackground;
       settled_options.cancelled = render_cancelled;
       settled_options.cancellation_context = &cancellation;
+      settled_options.clock_us = benchmark_clock_us;
+      settled_options.lod_samples = benchmark.settled_lod_samples;
+      settled_options.lod_first_sample = benchmark.settled_lod_first;
+      settled_options.lod_sample_count = benchmark.settled_lod_count;
+      settled_options.minimum_screen_sample_spacing = 2.5F;
       settled_options.candidate_strokes = benchmark.macrogrid.query(
           {.x0 = static_cast<float>(camera.x) - world_halo,
            .y0 = static_cast<float>(camera.y + local_y * inverse_zoom) - world_halo,
@@ -556,18 +606,52 @@ void render_task_entry(void* raw) {
           benchmark.paused.load()) {
         break;
       }
+      settled_clear_us += settled_stats.clear_us;
+      settled_raster_us += settled_stats.raster_us;
+      settled_composite_us += settled_stats.composite_us;
+      settled_segments += settled_stats.segments_rendered;
+      ++settled_bands;
+      const std::uint64_t publish_started = benchmark_clock_us(nullptr);
       xSemaphoreTake(benchmark.cache_mutex, portMAX_DELAY);
       if (benchmark.requested_generation.load() == generation && !benchmark.paused.load()) {
         copy_job_to_cache(benchmark, settled_job);
         benchmark.job_revision[static_cast<std::size_t>(settled_job)].store(revision);
         benchmark.ready[static_cast<std::size_t>(settled_job)].store(kSettledReady);
-        present_job(benchmark, settled_job);
       }
       xSemaphoreGive(benchmark.cache_mutex);
-      if (benchmark.refinement_published != nullptr &&
-          benchmark.requested_generation.load() == generation) {
+      settled_publish_us += benchmark_clock_us(nullptr) - publish_started;
+    }
+
+    // Present the visible settled set once. Per-band publication paid twelve
+    // transfer setup costs and made the screen sharpen as horizontal stripes.
+    if (settled_bands != 0U && benchmark.requested_generation.load() == generation &&
+        !benchmark.paused.load()) {
+      const std::uint64_t publish_started = benchmark_clock_us(nullptr);
+      xSemaphoreTake(benchmark.cache_mutex, portMAX_DELAY);
+      benchmark.display.push_rect(
+          0, 0, kCanvasWidth, benchmark.presented_rows,
+          benchmark.world.pixels().data() +
+              static_cast<std::ptrdiff_t>(benchmark.view_y.load() * WorldCanvas::kWidth +
+                                          benchmark.view_x.load()),
+          WorldCanvas::kWidth);
+      xSemaphoreGive(benchmark.cache_mutex);
+      settled_publish_us += benchmark_clock_us(nullptr) - publish_started;
+      if (benchmark.refinement_published != nullptr) {
         benchmark.refinement_published(benchmark.refinement_published_context);
       }
+    }
+
+    if (settled_bands != 0U) {
+      std::printf(
+          "TINYDRAW_SETTLED_PROFILE zoom=%d generation=%lu bands=%lu segments=%lu "
+          "clear_us=%llu raster_us=%llu composite_us=%llu publish_us=%llu complete=%u\n",
+          kZoomPercents[static_cast<std::size_t>(zoom)], static_cast<unsigned long>(generation),
+          static_cast<unsigned long>(settled_bands), static_cast<unsigned long>(settled_segments),
+          static_cast<unsigned long long>(settled_clear_us),
+          static_cast<unsigned long long>(settled_raster_us),
+          static_cast<unsigned long long>(settled_composite_us),
+          static_cast<unsigned long long>(settled_publish_us),
+          benchmark.requested_generation.load() == generation && !benchmark.paused.load());
     }
 
     // Fill active-atlas runway from the immutable complete fallback after the
@@ -789,9 +873,15 @@ void destroy_benchmark(InteractivePanBenchmark& benchmark) {
   void* renderer_storage = benchmark.renderer_storage_;
   auto* index_storage = benchmark.index_storage_;
   auto* settled_scratch = benchmark.settled_scratch_storage_;
+  auto* settled_lod_samples = benchmark.settled_lod_samples_storage_;
+  auto* settled_lod_first = benchmark.settled_lod_first_storage_;
+  auto* settled_lod_count = benchmark.settled_lod_count_storage_;
   renderer->~ViewportRenderer();
   benchmark.~InteractivePanBenchmark();
   heap_caps_free(renderer_storage);
+  heap_caps_free(settled_lod_count);
+  heap_caps_free(settled_lod_first);
+  heap_caps_free(settled_lod_samples);
   heap_caps_free(settled_scratch);
   heap_caps_free(index_storage);
   heap_caps_free(timings);
@@ -823,12 +913,31 @@ InteractivePanBenchmark* start_interactive_pan_benchmark(
       static_cast<std::size_t>(kCanvasWidth) * static_cast<std::size_t>(kBandRows);
   auto* settled_scratch =
       static_cast<std::uint8_t*>(heap_caps_calloc(kSettledScratchBytes, 1U, kExternalCaps));
+  auto* settled_lod_samples = static_cast<StrokeSample*>(
+      heap_caps_malloc(kSettledLodSampleCapacity * sizeof(StrokeSample), kExternalCaps));
+  auto* settled_lod_first = static_cast<std::uint32_t*>(
+      heap_caps_malloc(kStrokeCount * sizeof(std::uint32_t), kExternalCaps));
+  auto* settled_lod_count = static_cast<std::uint16_t*>(
+      heap_caps_malloc(kStrokeCount * sizeof(std::uint16_t), kExternalCaps));
   void* renderer_storage = heap_caps_malloc(sizeof(ViewportRenderer), kInternalCaps);
   void* benchmark_storage = heap_caps_malloc(sizeof(InteractivePanBenchmark), kInternalCaps);
   if (scratch == nullptr || timings == nullptr || index_storage == nullptr ||
-      settled_scratch == nullptr || renderer_storage == nullptr || benchmark_storage == nullptr) {
+      settled_scratch == nullptr || settled_lod_samples == nullptr ||
+      settled_lod_first == nullptr || settled_lod_count == nullptr || renderer_storage == nullptr ||
+      benchmark_storage == nullptr) {
+    std::printf(
+        "TINYDRAW_BENCH_ALLOC_FAIL scratch=%u timings=%u index=%u settled=%u lod=%u first=%u "
+        "count=%u renderer=%u benchmark=%u free=%lu largest=%lu\n",
+        scratch != nullptr, timings != nullptr, index_storage != nullptr,
+        settled_scratch != nullptr, settled_lod_samples != nullptr, settled_lod_first != nullptr,
+        settled_lod_count != nullptr, renderer_storage != nullptr, benchmark_storage != nullptr,
+        static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)),
+        static_cast<unsigned long>(heap_caps_get_largest_free_block(kExternalCaps)));
     heap_caps_free(benchmark_storage);
     heap_caps_free(renderer_storage);
+    heap_caps_free(settled_lod_count);
+    heap_caps_free(settled_lod_first);
+    heap_caps_free(settled_lod_samples);
     heap_caps_free(settled_scratch);
     heap_caps_free(index_storage);
     heap_caps_free(timings);
@@ -844,8 +953,18 @@ InteractivePanBenchmark* start_interactive_pan_benchmark(
   benchmark->index_storage_ = index_storage;
   benchmark->settled_scratch = std::span(settled_scratch, kSettledScratchBytes);
   benchmark->settled_scratch_storage_ = settled_scratch;
-  if (!populate_benchmark_document(document, benchmark->workload_stats) ||
-      !benchmark->macrogrid.rebuild(document)) {
+  benchmark->settled_lod_samples = std::span(settled_lod_samples, kSettledLodSampleCapacity);
+  benchmark->settled_lod_first = std::span(settled_lod_first, kStrokeCount);
+  benchmark->settled_lod_count = std::span(settled_lod_count, kStrokeCount);
+  benchmark->settled_lod_samples_storage_ = settled_lod_samples;
+  benchmark->settled_lod_first_storage_ = settled_lod_first;
+  benchmark->settled_lod_count_storage_ = settled_lod_count;
+  const bool populated = populate_benchmark_document(document, benchmark->workload_stats);
+  const bool indexed = populated && benchmark->macrogrid.rebuild(document);
+  const bool lod_built = indexed && build_settled_lod(*benchmark);
+  if (!lod_built) {
+    std::printf("TINYDRAW_BENCH_SETUP_FAIL populated=%u indexed=%u lod=%u samples=%lu\n", populated,
+                indexed, lod_built, static_cast<unsigned long>(document.sample_count()));
     destroy_benchmark(*benchmark);
     return nullptr;
   }
@@ -1191,6 +1310,19 @@ void interactive_pan_benchmark_commit_stroke(InteractivePanBenchmark& benchmark)
       !benchmark.macrogrid.append(committed_index, strokes[committed_index].bounds)) {
     std::printf("TINYDRAW_INTERACTIVE_PAN_FAIL index_append=0 stroke=%lu\n",
                 static_cast<unsigned long>(committed_index));
+  }
+  // Append one LOD segment without rebuilding the existing document geometry.
+  const auto committed_samples = benchmark.document.samples(strokes[committed_index]);
+  const std::size_t lod_used = benchmark.settled_lod_samples.size();
+  auto lod_storage = std::span(benchmark.settled_lod_samples_storage_, kSettledLodSampleCapacity);
+  if (lod_used <= lod_storage.size()) {
+    const auto simplified =
+        simplify_stroke_samples(committed_samples, lod_storage.subspan(lod_used), 9.0F, 2.0F);
+    if (!simplified.empty() && committed_index < benchmark.settled_lod_first.size()) {
+      benchmark.settled_lod_first[committed_index] = static_cast<std::uint32_t>(lod_used);
+      benchmark.settled_lod_count[committed_index] = static_cast<std::uint16_t>(simplified.size());
+      benchmark.settled_lod_samples = lod_storage.first(lod_used + simplified.size());
+    }
   }
   const std::uint32_t next_revision = benchmark.document_revision.fetch_add(1U) + 1U;
   // The pinned raster predates this mutation. It remains allocated but cannot

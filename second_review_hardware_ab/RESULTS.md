@@ -112,9 +112,31 @@ no longer corrupt or replace the source needed by the next zoom.
 - visible capsule-settled: 50% **747–749 ms**, 100% **1.23–1.24 s**, 200%
   **902–905 ms**.
 
-The fallback gates pass with wide margin. The settled pass is correct enough for
-mechanism testing but misses the under-500-ms target and is the next profiling
-and optimization target. A document mutation invalidates the pinned source;
-zoom must conservatively refuse until that source has been repaired or rebuilt
-for the new revision. Production will replace this temporary invariant with an
-incrementally maintained complete overview.
+The fallback gates pass with wide margin. A document mutation invalidates the
+pinned source; zoom must conservatively refuse until that source has been
+repaired or rebuilt for the new revision. Production will replace this temporary
+invariant with an incrementally maintained complete overview.
+
+## Follow-up: profiled settled LOD
+
+`settled-lod-auto-zoom.log` records the first measured settled optimization.
+The settled renderer now consumes an independently generated centerline LOD,
+uses incremental capsule scanline math and a squared-distance edge ramp instead
+of software `sqrt`, and presents the complete visible settled viewport once
+instead of twelve band pushes.
+
+The 19,844 source samples become 6,453 settled samples (77,436 bytes). Physical
+results over 12 accepted transitions:
+
+| Zoom | Before | LOD settled range | Result |
+|---:|---:|---:|---|
+| 50% | 747–749 ms | **337–338 ms** | passes <500 ms |
+| 100% | 1.23–1.24 s | **587–605 ms** | 17–21% over target |
+| 200% | 902–905 ms | **464 ms** | passes <500 ms |
+
+First physical strip remained 7–37 ms and complete visible fallback 40–72 ms,
+except cancellation-inclusive 50% transitions remained below 50 ms. All 12
+transitions succeeded. Profiling shows 100% remains dominated by about 399 ms
+capsule rasterization plus 85 ms compositing and 52 ms publication; reaching a
+reliable sub-500-ms 100% pass likely needs geometry reuse across the twelve
+bands or a two-core settled rasterizer rather than more scalar micro-tuning.
