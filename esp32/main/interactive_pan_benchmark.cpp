@@ -343,6 +343,7 @@ class InteractivePanBenchmark {
   std::atomic<bool> zoom_presentation_pending{false};
   std::atomic<bool> stroke_mutation_active{false};
   std::atomic<bool> pan_active{false};
+  std::atomic<std::uint32_t> publication_sequence{0U};
   std::uint32_t pan_rejected_views = 0U;
   std::uint32_t pan_maximum_missing_pixels = 0U;
   bool has_complete_initial_atlas = false;
@@ -492,6 +493,63 @@ int choose_job(const InteractivePanBenchmark& benchmark) {
   return best_job;
 }
 
+struct RegionContent {
+  std::uint32_t hash = 2166136261U;
+  std::size_t ink = 0U;
+};
+
+// FNV-1a over one world-atlas region, counting non-background pixels. This is
+// the software side of every publication record: if this hash carries ink and
+// the panel shows none, the defect is at or after the display boundary; if it
+// is already blank, the defect is in cache/coordinator state or the camera is
+// legitimately outside the ink.
+RegionContent hash_world_region(std::span<const std::uint16_t> pixels, int x, int y, int width,
+                                int rows) {
+  RegionContent content;
+  for (int row = 0; row < rows; ++row) {
+    const auto offset = static_cast<std::size_t>((y + row) * WorldCanvas::kWidth + x);
+    for (int column = 0; column < width; ++column) {
+      const std::uint16_t pixel = pixels[offset + static_cast<std::size_t>(column)];
+      content.ink += pixel != kBackground;
+      content.hash = (content.hash ^ pixel) * 16777619U;
+    }
+  }
+  return content;
+}
+
+// Expected visible content derived from vector authority alone, independent of
+// any raster cache state.
+std::size_t count_expected_visible_strokes(const InteractivePanBenchmark& benchmark,
+                                           ViewOrigin origin) {
+  const Camera atlas = benchmark.active_atlas;
+  RectF world = camera_world_rect(
+      atlas, {origin.x, origin.y, origin.x + kCanvasWidth, origin.y + benchmark.presented_rows});
+  const float halo = kCanonicalHaloPixels / atlas.zoom;
+  world.x0 -= halo;
+  world.y0 -= halo;
+  world.x1 += halo;
+  world.y1 += halo;
+  std::size_t expected = 0U;
+  for (const VectorStroke& stroke : benchmark.document.strokes()) {
+    expected += rects_intersect(stroke.bounds, world);
+  }
+  return expected;
+}
+
+void log_publication(InteractivePanBenchmark& benchmark, const char* kind, int zoom_percent,
+                     std::uint32_t generation, std::uint32_t revision, int view_x, int view_y,
+                     int screen_y0, int rows, std::uint32_t submit_first, std::uint32_t submit_last,
+                     RegionContent content) {
+  const std::uint32_t id = benchmark.publication_sequence.fetch_add(1U) + 1U;
+  std::printf(
+      "TINYDRAW_PUBLICATION id=%lu kind=%s zoom=%d generation=%lu revision=%lu origin=%d,%d "
+      "y0=%d rows=%d submit_first=%lu submit_last=%lu ink=%lu hash=%08lx\n",
+      static_cast<unsigned long>(id), kind, zoom_percent, static_cast<unsigned long>(generation),
+      static_cast<unsigned long>(revision), view_x, view_y, screen_y0, rows,
+      static_cast<unsigned long>(submit_first), static_cast<unsigned long>(submit_last),
+      static_cast<unsigned long>(content.ink), static_cast<unsigned long>(content.hash));
+}
+
 void present_job(InteractivePanBenchmark& benchmark, int job) {
   if (!benchmark.has_complete_initial_atlas || benchmark.pan_active.load()) {
     return;
@@ -531,8 +589,21 @@ void present_job(InteractivePanBenchmark& benchmark, int job) {
     }
   }
   const auto offset = static_cast<std::size_t>((view_y + screen_y0) * WorldCanvas::kWidth + view_x);
+  const DisplayTransferTelemetry& telemetry = benchmark.transfer_telemetry;
+  const std::uint32_t submit_before =
+      telemetry.submit_count != nullptr ? telemetry.submit_count(telemetry.context) : 0U;
   benchmark.display.push_rect(0, screen_y0, kCanvasWidth, screen_y1 - screen_y0,
                               benchmark.world.pixels().data() + offset, WorldCanvas::kWidth);
+  const std::uint32_t submit_after =
+      telemetry.submit_count != nullptr ? telemetry.submit_count(telemetry.context) : 0U;
+  // Hash after submission so staging is not delayed; the pixels cannot change
+  // while this caller holds cache_mutex.
+  const RegionContent content = hash_world_region(
+      benchmark.world.pixels(), view_x, view_y + screen_y0, kCanvasWidth, screen_y1 - screen_y0);
+  log_publication(benchmark, "band",
+                  kZoomPercents[static_cast<std::size_t>(benchmark.active_zoom_index.load())],
+                  benchmark.requested_generation.load(), revision, view_x, view_y, screen_y0,
+                  screen_y1 - screen_y0, submit_before + 1U, submit_after, content);
 }
 
 void copy_job_to_cache(InteractivePanBenchmark& benchmark, int job) {
@@ -779,6 +850,10 @@ void render_task_entry(void* raw) {
       if (benchmark.requested_generation.load() == generation && !benchmark.paused.load() &&
           benchmark.document_revision.load() == revision && benchmark.view_x.load() == view_x &&
           benchmark.view_y.load() == view_y) {
+        const std::uint32_t first_sequence =
+            benchmark.transfer_telemetry.submit_count != nullptr
+                ? benchmark.transfer_telemetry.submit_count(benchmark.transfer_telemetry.context)
+                : 0U;
         benchmark.display.push_rect(
             0, 0, kCanvasWidth, benchmark.presented_rows,
             benchmark.world.pixels().data() +
@@ -789,6 +864,14 @@ void render_task_entry(void* raw) {
           last_sequence =
               benchmark.transfer_telemetry.submit_count(benchmark.transfer_telemetry.context);
         }
+        // Adds one visible-region hash (a few ms) to settled publish_us; the
+        // physical settled endpoint below is unaffected because it is derived
+        // from the transfer-completion timestamp, not from this task's clock.
+        const RegionContent content = hash_world_region(benchmark.world.pixels(), view_x, view_y,
+                                                        kCanvasWidth, benchmark.presented_rows);
+        log_publication(benchmark, "settled", kZoomPercents[static_cast<std::size_t>(zoom)],
+                        generation, revision, view_x, view_y, 0, benchmark.presented_rows,
+                        first_sequence + 1U, last_sequence, content);
       }
       xSemaphoreGive(benchmark.cache_mutex);
       settled_publish_us += benchmark_clock_us(nullptr) - publish_started;
@@ -1509,6 +1592,16 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
   const std::uint32_t fallback_elapsed =
       static_cast<std::uint32_t>(esp_timer_get_time()) - event_started;
   benchmark.fallback_ready_us[slot].store(fallback_elapsed);
+  // Record the complete visible fallback publication after every interaction
+  // endpoint above is stored, so the hash cost cannot pollute those metrics.
+  // Only the settled endpoint, which starts at event time, absorbs it.
+  const RegionContent fallback_content =
+      hash_world_region(benchmark.world.pixels(), kCenterOriginX, kCenterOriginY, kCanvasWidth,
+                        benchmark.presented_rows);
+  log_publication(benchmark, "zoom_fallback", zoom_percent, benchmark.requested_generation.load(),
+                  benchmark.document_revision.load(), kCenterOriginX, kCenterOriginY, 0,
+                  benchmark.presented_rows, first_submit_sequence, last_submit_sequence,
+                  fallback_content);
   benchmark.zoom_presentation_pending.store(false);
   benchmark.paused.store(false);
   xSemaphoreGive(benchmark.cache_mutex);
@@ -1812,23 +1905,20 @@ void interactive_pan_benchmark_end_pan(InteractivePanBenchmark& benchmark) {
   benchmark.generation_started_us.store(static_cast<std::uint32_t>(esp_timer_get_time()));
   benchmark.requested_generation.fetch_add(1U);
   const ViewOrigin origin{benchmark.view_x.load(), benchmark.view_y.load()};
-  std::size_t visible_ink = 0U;
-  std::uint32_t visible_hash = 2166136261U;
   xSemaphoreTake(benchmark.cache_mutex, portMAX_DELAY);
-  for (int y = 0; y < benchmark.presented_rows; ++y) {
-    const auto row = static_cast<std::size_t>((origin.y + y) * WorldCanvas::kWidth + origin.x);
-    for (int x = 0; x < kCanvasWidth; ++x) {
-      const std::uint16_t pixel = benchmark.world.pixels()[row + static_cast<std::size_t>(x)];
-      visible_ink += pixel != kBackground;
-      visible_hash = (visible_hash ^ pixel) * 16777619U;
-    }
-  }
+  const RegionContent content = hash_world_region(benchmark.world.pixels(), origin.x, origin.y,
+                                                  kCanvasWidth, benchmark.presented_rows);
   xSemaphoreGive(benchmark.cache_mutex);
+  // Expected content comes from vector stroke bounds alone. expected_strokes>0
+  // with visible_ink=0 indicates a cache or publication defect; expected=0
+  // means the camera is legitimately over blank canvas.
+  const std::size_t expected_strokes = count_expected_visible_strokes(benchmark, origin);
   std::printf(
       "TINYDRAW_PAN_CONTENT zoom=%d origin=%d,%d visible_ink=%lu visible_hash=%08lx "
-      "rejected_views=%lu max_missing_pixels=%lu\n",
+      "expected_strokes=%lu rejected_views=%lu max_missing_pixels=%lu\n",
       kZoomPercents[static_cast<std::size_t>(benchmark.active_zoom_index.load())], origin.x,
-      origin.y, static_cast<unsigned long>(visible_ink), static_cast<unsigned long>(visible_hash),
+      origin.y, static_cast<unsigned long>(content.ink), static_cast<unsigned long>(content.hash),
+      static_cast<unsigned long>(expected_strokes),
       static_cast<unsigned long>(benchmark.pan_rejected_views),
       static_cast<unsigned long>(benchmark.pan_maximum_missing_pixels));
   benchmark.pan_active.store(false);
