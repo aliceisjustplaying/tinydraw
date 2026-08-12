@@ -99,7 +99,9 @@ MaterializedCanvas::MaterializedCanvas(std::span<std::uint16_t> overview_pixels,
     : overview_pixels_(overview_pixels),
       slots_(slots),
       tile_pixels_(tile_pixels),
-      current_revision_(initial_revision) {}
+      current_revision_(initial_revision) {
+  std::fill(slots_.begin(), slots_.end(), MaterializedSlotStorage{});
+}
 
 bool MaterializedCanvas::ready() const {
   return overview_pixels_.size() == kOverviewPixels &&
@@ -114,20 +116,15 @@ std::span<const std::uint16_t> MaterializedCanvas::overview_pixels() const {
   return overview_pixels_;
 }
 
-bool MaterializedCanvas::advance_revision(DocumentRevision revision) {
-  if (!ready() || revision.value <= current_revision_.value) {
-    return false;
-  }
-  current_revision_ = revision;
-  return true;
-}
-
 bool MaterializedCanvas::publish_overview(DocumentRevision revision,
                                           std::span<const std::uint16_t> pixels) {
-  if (!ready() || revision != current_revision_ || pixels.size() != kOverviewPixels) {
+  if (!ready() || revision.value < current_revision_.value || pixels.size() != kOverviewPixels) {
     return false;
   }
-  std::copy(pixels.begin(), pixels.end(), overview_pixels_.begin());
+  if (pixels.data() != overview_pixels_.data()) {
+    std::copy(pixels.begin(), pixels.end(), overview_pixels_.begin());
+  }
+  current_revision_ = revision;
   overview_revision_ = revision;
   overview_generation_ = {next_generation_++};
   overview_valid_ = true;
@@ -202,7 +199,8 @@ SourceSelection MaterializedCanvas::select_overview(TileKey requested) const {
       .requested_tile = requested,
       .source_pixels = overview_source_bounds(requested),
       .destination_pixels = tile_pixel_bounds(requested),
-      .slot_index = 0,
+      .slot_index = std::nullopt,
+      .source_stride = kOverviewWidth,
   };
 }
 
@@ -222,22 +220,31 @@ SourceSelection MaterializedCanvas::select_tile(TileKey requested, std::size_t s
       .source_pixels = {0, 0, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0},
       .destination_pixels = bounds,
       .slot_index = slot_index,
+      .source_stride = kTileWidth,
   };
 }
 
-std::optional<SourceSelection> MaterializedCanvas::lookup(TileKey key) {
+std::optional<SourceSelection> MaterializedCanvas::lookup(TileKey key) const {
   if (!ready() || !valid_tile_key(key)) {
     return std::nullopt;
   }
   const std::optional<std::size_t> tile_index = find_tile(key);
   if (tile_index.has_value() && slots_[*tile_index].revision_ == current_revision_) {
-    touch(slots_[*tile_index]);
     return select_tile(key, *tile_index);
   }
   if (overview_valid_ && overview_revision_ == current_revision_) {
     return select_overview(key);
   }
   return std::nullopt;
+}
+
+bool MaterializedCanvas::mark_used(TileKey key) {
+  const auto index = find_tile(key);
+  if (!index.has_value() || slots_[*index].revision_ != current_revision_) {
+    return false;
+  }
+  touch(slots_[*index]);
+  return true;
 }
 
 bool MaterializedCanvas::valid_view(const ViewRequest& request,
@@ -257,10 +264,14 @@ bool MaterializedCanvas::has_complete_source(const ViewRequest& request) const {
     return true;
   }
   const PixelRect rect = request.level_pixels;
-  for (int y = rect.y0; y < rect.y1; y += kTileHeight) {
-    for (int x = rect.x0; x < rect.x1; x += kTileWidth) {
-      const TileKey key{request.zoom, static_cast<std::uint16_t>(x / kTileWidth),
-                        static_cast<std::uint16_t>(y / kTileHeight)};
+  const int first_column = rect.x0 / kTileWidth;
+  const int last_column = (rect.x1 - 1) / kTileWidth;
+  const int first_row = rect.y0 / kTileHeight;
+  const int last_row = (rect.y1 - 1) / kTileHeight;
+  for (int row = first_row; row <= last_row; ++row) {
+    for (int column = first_column; column <= last_column; ++column) {
+      const TileKey key{request.zoom, static_cast<std::uint16_t>(column),
+                        static_cast<std::uint16_t>(row)};
       const auto index = find_tile(key);
       if (!index.has_value() || slots_[*index].revision_ != current_revision_) {
         return false;
@@ -302,6 +313,10 @@ void MaterializedCanvas::compose_tile(TileKey key, CompositionContext& context) 
   const auto tile_index = find_tile(key);
   const bool tile_current =
       tile_index.has_value() && slots_[*tile_index].revision_ == current_revision_;
+  const bool overview_current = overview_valid_ && overview_revision_ == current_revision_;
+  if (!tile_current && !overview_current) {
+    return;
+  }
   if (tile_current) {
     touch(slots_[*tile_index]);
     context.stats.exact_tiles +=
