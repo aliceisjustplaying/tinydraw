@@ -190,7 +190,10 @@ ViewportRenderStats ViewportRenderer::render_region(const VectorDocument& docume
     // primitives still union into one coverage mask before the single blend.
     batch = checkpoint;
     if (checkpoint.range_count != 0U) {
-      composite_batch(destination, batch, region, options, stats);
+      if (!composite_batch(destination, batch, region, options, stats)) {
+        stats.complete = false;
+        return stats;
+      }
       batch = {};
       continue;
     }
@@ -206,7 +209,9 @@ ViewportRenderStats ViewportRenderer::render_region(const VectorDocument& docume
     stats.complete = false;
     return stats;
   }
-  composite_batch(destination, batch, region, options, stats);
+  if (!composite_batch(destination, batch, region, options, stats)) {
+    stats.complete = false;
+  }
   return stats;
 }
 
@@ -416,11 +421,11 @@ bool ViewportRenderer::render_large_stroke(const VectorStroke& stroke,
   return true;
 }
 
-void ViewportRenderer::composite_batch(std::span<std::uint16_t> destination, const Batch& batch,
+bool ViewportRenderer::composite_batch(std::span<std::uint16_t> destination, const Batch& batch,
                                        Rect region, const ViewportRenderOptions& options,
                                        ViewportRenderStats& stats) {
   if (batch.range_count == 0U) {
-    return;
+    return true;
   }
   ++stats.batches;
   auto rects = tile_rects();
@@ -473,6 +478,8 @@ void ViewportRenderer::composite_batch(std::span<std::uint16_t> destination, con
     stats.raster_ticks += lane.raster_ticks;
     stats.composite_ticks += lane.composite_ticks;
   }
+  return std::all_of(work.lane_complete.begin(), work.lane_complete.begin() + work.lane_count,
+                     [](bool complete) { return complete; });
 }
 
 void ViewportRenderer::composite_lane(void* raw, int lane) {
@@ -491,6 +498,10 @@ void ViewportRenderer::composite_lane(void* raw, int lane) {
 
   std::uint32_t tiles_since_yield = 0U;
   for (int tile = lane; tile < kTileCount; tile += work->lane_count) {
+    if (cancelled(options)) {
+      work->lane_complete[static_cast<std::size_t>(lane)] = false;
+      return;
+    }
     const std::uint16_t count = renderer.tile_counts_[static_cast<std::size_t>(tile)];
     if (count == 0U) {
       continue;

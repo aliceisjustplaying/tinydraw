@@ -127,6 +127,7 @@ class ViewportRenderer {
     Rect region{};
     int lane_count = 1;
     std::array<ViewportRenderStats, kLanes> lane_stats{};
+    std::array<bool, kLanes> lane_complete{true, true};
   };
 
   [[nodiscard]] GeometryResult render_stroke_geometry(const VectorStroke& stroke,
@@ -139,8 +140,9 @@ class ViewportRenderer {
                                          std::span<std::uint16_t> destination, Rect region,
                                          const ViewportRenderOptions& options,
                                          ViewportRenderStats& stats);
-  void composite_batch(std::span<std::uint16_t> destination, const Batch& batch, Rect region,
-                       const ViewportRenderOptions& options, ViewportRenderStats& stats);
+  [[nodiscard]] bool composite_batch(std::span<std::uint16_t> destination, const Batch& batch,
+                                     Rect region, const ViewportRenderOptions& options,
+                                     ViewportRenderStats& stats);
   static void composite_lane(void* raw, int lane);
 
   [[nodiscard]] std::span<RibbonPrimitive> primitives();

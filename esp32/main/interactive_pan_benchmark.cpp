@@ -28,7 +28,7 @@ namespace {
 
 constexpr std::size_t kStrokeCount = 1'000U;
 constexpr std::size_t kRequiredSampleCapacity = 24'576U;
-constexpr std::size_t kSettledLodSampleCapacity = 8'192U;
+constexpr std::size_t kSettledLodSampleCapacity = 12'288U;
 constexpr std::uint32_t kWorkloadSeed = 7U;
 constexpr int kCellColumns = 3;
 constexpr int kCellRows = 3;
@@ -282,6 +282,7 @@ class InteractivePanBenchmark {
   TimingStorage& timings;
   StrokeMacrogrid macrogrid;
   bool macrogrid_valid = true;
+  bool settled_lod_high_quality = false;
   ViewportRenderer* renderer = nullptr;
   void* renderer_storage_ = nullptr;
   std::uint64_t* index_storage_ = nullptr;
@@ -346,7 +347,10 @@ class InteractivePanBenchmark {
 
 namespace {
 
-bool build_settled_lod(InteractivePanBenchmark& benchmark) {
+bool build_settled_lod(InteractivePanBenchmark& benchmark, bool high_quality) {
+  const float center_error = high_quality ? 1.0F : 2.0F;
+  const float radius_error = high_quality ? 0.375F : 0.75F;
+  auto storage = std::span(benchmark.settled_lod_samples_storage_, kSettledLodSampleCapacity);
   std::size_t output_count = 0U;
   const auto strokes = benchmark.document.strokes();
   if (strokes.size() > benchmark.settled_lod_first.size() ||
@@ -355,11 +359,11 @@ bool build_settled_lod(InteractivePanBenchmark& benchmark) {
   }
   for (std::size_t stroke_index = 0; stroke_index < strokes.size(); ++stroke_index) {
     const auto input = benchmark.document.samples(strokes[stroke_index]);
-    if (output_count > benchmark.settled_lod_samples.size()) {
+    if (output_count > storage.size()) {
       return false;
     }
-    const auto available = benchmark.settled_lod_samples.subspan(output_count);
-    const auto simplified = simplify_stroke_samples(input, available, 2.0F, 0.75F);
+    const auto available = storage.subspan(output_count);
+    const auto simplified = simplify_stroke_samples(input, available, center_error, radius_error);
     if (simplified.empty() || simplified.size() > UINT16_MAX) {
       return false;
     }
@@ -367,11 +371,16 @@ bool build_settled_lod(InteractivePanBenchmark& benchmark) {
     benchmark.settled_lod_count[stroke_index] = static_cast<std::uint16_t>(simplified.size());
     output_count += simplified.size();
   }
-  std::printf("TINYDRAW_SETTLED_LOD input=%lu output=%lu bytes=%lu\n",
-              static_cast<unsigned long>(benchmark.document.sample_count()),
-              static_cast<unsigned long>(output_count),
-              static_cast<unsigned long>(output_count * sizeof(StrokeSample)));
-  benchmark.settled_lod_samples = benchmark.settled_lod_samples.first(output_count);
+  std::printf(
+      "TINYDRAW_SETTLED_LOD quality=%s center_error_milli=%lu radius_error_milli=%lu "
+      "input=%lu output=%lu bytes=%lu\n",
+      high_quality ? "high" : "normal", static_cast<unsigned long>(center_error * 1'000.0F),
+      static_cast<unsigned long>(radius_error * 1'000.0F),
+      static_cast<unsigned long>(benchmark.document.sample_count()),
+      static_cast<unsigned long>(output_count),
+      static_cast<unsigned long>(output_count * sizeof(StrokeSample)));
+  benchmark.settled_lod_samples = storage.first(output_count);
+  benchmark.settled_lod_high_quality = high_quality;
   return true;
 }
 
@@ -543,6 +552,57 @@ void render_task_entry(void* raw) {
     }
 
     RenderCancellation cancellation{.benchmark = &benchmark, .generation = generation};
+    // Materialize a one-band pan runway before expensive settled work. This
+    // keeps immediate small drags from depending on a 400–700 ms refinement.
+    // Jobs are certified only after their complete 368×32 region is resampled.
+    if (benchmark.fallback_source_pinned &&
+        benchmark.fallback_source_document_revision == benchmark.document_revision.load()) {
+      constexpr int kPanRunwayPixels = kBandRows;
+      const JobRect runway_view{
+          .x0 = std::max(benchmark.view_x.load() - kPanRunwayPixels, 0),
+          .y0 = std::max(benchmark.view_y.load() - kPanRunwayPixels, 0),
+          .x1 = std::min(benchmark.view_x.load() + kCanvasWidth + kPanRunwayPixels,
+                         WorldCanvas::kWidth),
+          .y1 = std::min(benchmark.view_y.load() + benchmark.presented_rows + kPanRunwayPixels,
+                         WorldCanvas::kHeight),
+      };
+      for (int job = 0; job < kJobCount && benchmark.requested_generation.load() == generation &&
+                        !benchmark.paused.load();
+           ++job) {
+        const auto slot = static_cast<std::size_t>(job);
+        const JobRect rect = job_rect(job);
+        if (!intersects(rect, runway_view) || benchmark.ready[slot].load() != kInvalidReady) {
+          continue;
+        }
+        const Rect pixels{rect.x0, rect.y0, rect.x1, rect.y1};
+        if (!source_region_materialized(benchmark, benchmark.fallback_source_atlas, active_atlas,
+                                        pixels, benchmark.fallback_source_ready,
+                                        benchmark.fallback_source_job_revision,
+                                        benchmark.fallback_source_document_revision)) {
+          continue;
+        }
+        xSemaphoreTake(benchmark.cache_mutex, portMAX_DELAY);
+        if (benchmark.requested_generation.load() == generation && !benchmark.paused.load()) {
+          resample_valid_raster_region(
+              benchmark.materialization_storage, WorldCanvas::kWidth, WorldCanvas::kHeight,
+              benchmark.fallback_source_atlas, benchmark.world.pixels(), WorldCanvas::kWidth,
+              WorldCanvas::kHeight, WorldCanvas::kWidth, active_atlas, pixels, kBackground);
+          benchmark.job_revision[slot].store(benchmark.document_revision.load());
+          benchmark.ready[slot].store(kDerivedReady);
+        }
+        xSemaphoreGive(benchmark.cache_mutex);
+      }
+    }
+
+    const bool high_quality_lod = active_atlas.zoom > 1.0F;
+    if (benchmark.settled_lod_high_quality != high_quality_lod &&
+        !build_settled_lod(benchmark, high_quality_lod)) {
+      std::printf("TINYDRAW_INTERACTIVE_PAN_FAIL lod_rebuild=0 zoom=%d\n",
+                  kZoomPercents[static_cast<std::size_t>(zoom)]);
+      benchmark.rendering.store(false);
+      continue;
+    }
+
     std::uint64_t settled_clear_us = 0U;
     std::uint64_t settled_raster_us = 0U;
     std::uint64_t settled_composite_us = 0U;
@@ -615,6 +675,9 @@ void render_task_entry(void* raw) {
       settled_options.cancelled_frequently = render_cancelled;
       settled_options.cancellation_context = &cancellation;
       settled_options.clock_us = benchmark_clock_us;
+      // This temporary world-space LOD is bounded to 2 screen pixels at the
+      // prototype's 200% maximum. Production 400/800% support needs tighter
+      // zoom-bucketed geometry rather than reusing this map.
       settled_options.lod_samples = benchmark.settled_lod_samples;
       settled_options.lod_first_sample = benchmark.settled_lod_first;
       settled_options.lod_sample_count = benchmark.settled_lod_count;
@@ -687,8 +750,8 @@ void render_task_entry(void* raw) {
       xSemaphoreGive(benchmark.cache_mutex);
       settled_publish_us += benchmark_clock_us(nullptr) - publish_started;
 
-      std::uint32_t physical_elapsed =
-          static_cast<std::uint32_t>(esp_timer_get_time()) - benchmark.generation_started_us.load();
+      std::uint32_t physical_elapsed = 0U;
+      bool physically_completed = false;
       if (submitted && last_sequence != 0U &&
           benchmark.transfer_telemetry.complete_count != nullptr &&
           benchmark.transfer_telemetry.complete_time_us != nullptr) {
@@ -702,11 +765,13 @@ void render_task_entry(void* raw) {
         if (completed >= 0) {
           physical_elapsed =
               static_cast<std::uint32_t>(completed) - benchmark.generation_started_us.load();
+          physically_completed = true;
         }
       }
-      if (submitted && benchmark.requested_generation.load() == generation &&
-          !benchmark.paused.load() && benchmark.document_revision.load() == revision &&
-          benchmark.view_x.load() == view_x && benchmark.view_y.load() == view_y) {
+      if (submitted && physically_completed &&
+          benchmark.requested_generation.load() == generation && !benchmark.paused.load() &&
+          benchmark.document_revision.load() == revision && benchmark.view_x.load() == view_x &&
+          benchmark.view_y.load() == view_y) {
         benchmark.settled_us[static_cast<std::size_t>(zoom)].store(physical_elapsed);
         if (benchmark.refinement_published != nullptr) {
           benchmark.refinement_published(benchmark.refinement_published_context);
@@ -1121,7 +1186,7 @@ InteractivePanBenchmark* start_interactive_pan_benchmark(
   const bool populated = populate_benchmark_document(document, benchmark->workload_stats);
   const bool indexed = populated && benchmark->macrogrid.rebuild(document);
   benchmark->macrogrid_valid = indexed;
-  const bool lod_built = indexed && build_settled_lod(*benchmark);
+  const bool lod_built = indexed && build_settled_lod(*benchmark, false);
   if (!lod_built) {
     std::printf("TINYDRAW_BENCH_SETUP_FAIL populated=%u indexed=%u lod=%u samples=%lu\n", populated,
                 indexed, lod_built, static_cast<unsigned long>(document.sample_count()));
@@ -1316,13 +1381,8 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
   benchmark.requested_generation.fetch_add(1U);
   benchmark.generation_started_us.store(event_started);
   for (std::size_t job = 0; job < benchmark.ready.size(); ++job) {
-    const JobRect rect = job_rect(static_cast<int>(job));
-    const bool visible_job = intersects(rect, {visible.x0, visible.y0, visible.x1, visible.y1});
-    const bool valid = benchmark.has_complete_initial_atlas && visible_job && fallback_valid[job];
     benchmark.job_revision[job].store(benchmark.document_revision.load());
-    // Nearest-resampled first previews are derived quality in both zoom
-    // directions; settled output now requires a settled or exact pass.
-    benchmark.ready[job].store(valid ? kDerivedReady : kInvalidReady);
+    benchmark.ready[job].store(kInvalidReady);
   }
   benchmark.view_x.store(kCenterOriginX);
   benchmark.view_y.store(kCenterOriginY);
@@ -1370,6 +1430,26 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
       benchmark.first_strip_submit_us[slot].store(submitted);
     }
     benchmark.last_visible_submit_us[slot].store(submitted);
+  }
+  // The visible height is not band-aligned. Finish any intersecting edge band
+  // before certifying it derived, so a small pan cannot expose rows left from
+  // the previous camera. Only the visible rows are submitted to the panel.
+  for (int job = 0; job < kJobCount; ++job) {
+    const auto job_slot = static_cast<std::size_t>(job);
+    const JobRect rect = job_rect(job);
+    if (!intersects(rect, {visible.x0, visible.y0, visible.x1, visible.y1}) ||
+        !fallback_valid[job_slot]) {
+      continue;
+    }
+    const bool fully_materialized = rect.x0 >= visible.x0 && rect.y0 >= visible.y0 &&
+                                    rect.x1 <= visible.x1 && rect.y1 <= visible.y1;
+    if (!fully_materialized) {
+      resample_valid_raster_region(source_pixels, WorldCanvas::kWidth, WorldCanvas::kHeight,
+                                   source_camera, benchmark.world.pixels(), WorldCanvas::kWidth,
+                                   WorldCanvas::kHeight, WorldCanvas::kWidth, new_camera,
+                                   {rect.x0, rect.y0, rect.x1, rect.y1}, kBackground);
+    }
+    benchmark.ready[job_slot].store(kDerivedReady);
   }
   const std::uint32_t fallback_elapsed =
       static_cast<std::uint32_t>(esp_timer_get_time()) - event_started;
@@ -1503,8 +1583,10 @@ void interactive_pan_benchmark_commit_stroke(InteractivePanBenchmark& benchmark,
   const std::size_t lod_used = benchmark.settled_lod_samples.size();
   auto lod_storage = std::span(benchmark.settled_lod_samples_storage_, kSettledLodSampleCapacity);
   if (lod_used <= lod_storage.size()) {
-    const auto simplified =
-        simplify_stroke_samples(committed_samples, lod_storage.subspan(lod_used), 2.0F, 0.75F);
+    const float center_error = benchmark.settled_lod_high_quality ? 1.0F : 2.0F;
+    const float radius_error = benchmark.settled_lod_high_quality ? 0.375F : 0.75F;
+    const auto simplified = simplify_stroke_samples(
+        committed_samples, lod_storage.subspan(lod_used), center_error, radius_error);
     if (!simplified.empty() && committed_index < benchmark.settled_lod_first.size()) {
       benchmark.settled_lod_first[committed_index] = static_cast<std::uint32_t>(lod_used);
       benchmark.settled_lod_count[committed_index] = static_cast<std::uint16_t>(simplified.size());
@@ -1609,8 +1691,13 @@ void interactive_pan_benchmark_begin_pan(InteractivePanBenchmark& benchmark, Vie
   metrics.previous_event_us = event_us;
 }
 
+bool interactive_pan_benchmark_view_ready(const InteractivePanBenchmark& benchmark,
+                                          ViewOrigin origin) {
+  return missing_pixels(benchmark, origin) == 0U;
+}
+
 bool interactive_pan_benchmark_view_changed(InteractivePanBenchmark& benchmark, ViewOrigin origin) {
-  if (missing_pixels(benchmark, origin) != 0U) {
+  if (!interactive_pan_benchmark_view_ready(benchmark, origin)) {
     return false;
   }
   benchmark.view_x.store(origin.x);

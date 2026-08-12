@@ -224,3 +224,40 @@ Current automated zoom coverage remains 50/100/200%. Desired production zoom
 coverage includes at least 25%, 400%, and ideally 800%; those levels require
 separate provenance, quality, memory, drawing, pan, and visual validation and
 are not implied by this checkpoint.
+
+## Grok 4.6 x-high review and follow-up
+
+`GROK_4_6_XHIGH_REVIEW.md` is the independent review of `ba6c392`. The reviewer found a wrong-camera publication path in the partially written bottom zoom band, starvation of adjacent pan runway behind settled rendering, fixed-world LOD error growth at high zoom, and canonical cancellation latency.
+
+The follow-up made these changes:
+
+- complete every intersecting edge band before marking it derived;
+- materialize a 32-pixel pan runway before settled rendering;
+- check cancellation between canonical composite tiles;
+- preserve radius-extremum plateaus and validate finite LOD samples;
+- reject candidate bitsets too short to represent the document;
+- require a real transfer completion before publishing `settled_us`;
+- switch one LOD arena between normal 50/100% and tighter 200% maps.
+
+Hardware evidence:
+
+| Run | Purpose | Result |
+|---|---|---|
+| `grok-fixes-auto-hardware.log` | Edge-band/runway fix before canonical cancellation | Pan assertions passed; cancellation reached ~95 ms |
+| `grok-fixes-cancel-auto-hardware.log` | Canonical composite cancellation | Worst cancellation ~14 ms; first feedback 7–21 ms |
+| `grok-fixes-final-auto-hardware.log` | One static tight LOD | Better 200% geometry bound, but all zooms paid the larger map |
+| `grok-span-auto-hardware.log` | Per-row conservative scanline bounds | Regressed raster time; reverted |
+| `grok-dynamic-lod-auto-hardware.log` | One dynamically rebuilt LOD arena | Selected checkpoint before exact-commit validation |
+
+In the dynamic-LOD run:
+
+- all twelve zoom transitions were accepted;
+- `down12_ready=1` and `right1_ready=1` for every transition;
+- one-pixel lateral runway became valid in 58–66 ms;
+- first physical feedback was 7–20 ms;
+- complete physical fallback was 40–55 ms;
+- physical settled was 489–491 ms at 50%, 799–851 ms at 100%, and 747–748 ms at 200%;
+- stale post-mutation zoom was refused, repair completed, and retry succeeded;
+- post-allocation PSRAM was 76,056 bytes with a 147,456-byte LOD allocation.
+
+The interaction fallback and small-pan runway pass. Settled 100/200 remains over target. Drawing latency and visual behavior still require an interactive hardware pass; the automated mutation path is vector-only and does not substitute for live pen/eraser testing.

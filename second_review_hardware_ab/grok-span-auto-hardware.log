@@ -1,0 +1,146 @@
+[17:45:42] I (233) octal_psram: Readlatency  : 0x02 (10 cycles@FixedESP-ROM:esp32s3-20210327
+[17:45:42] Build:Mar 27 2021
+[17:45:42] rst:0x15 (USB_UART_CHIP_RESET),boot:0x2b (SPI_FAST_FLASH_BOOT)
+[17:45:42] Saved PC:0x40048839
+[17:45:42] SPIWP:0xee
+[17:45:42] mode:DIO, clock div:1
+[17:45:42] load:0x3fce2820,len:0x1664
+[17:45:42] load:0x403c8700,len:0xf38
+[17:45:42] load:0x403cb700,len:0x31e8
+[17:45:42] entry 0x403c8930
+[17:45:42] I (24) boot: ESP-IDF v6.0.2 2nd stage bootloader
+[17:45:42] I (24) boot: compile time Aug 11 2026 22:53:49
+[17:45:42] I (25) boot: Multicore bootloader
+[17:45:42] I (25) boot: chip revision: v0.2
+[17:45:42] I (28) boot: efuse block revision: v1.3
+[17:45:42] I (31) qio_mode: Enabling default flash chip QIO
+[17:45:42] I (36) boot.esp32s3: Boot SPI Speed : 80MHz
+[17:45:42] I (39) boot.esp32s3: SPI Mode       : QIO
+[17:45:42] I (43) boot.esp32s3: SPI Flash Size : 16MB
+[17:45:42] I (47) boot: Enabling RNG early entropy source...
+[17:45:42] I (51) boot: Partition Table:
+[17:45:42] I (54) boot: ## Label            Usage          Type ST Offset   Length
+[17:45:42] I (60) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+[17:45:42] I (67) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+[17:45:42] I (73) boot:  2 factory          factory app      00 00 00010000 00100000
+[17:45:42] I (80) boot:  3 drawing          Unknown data     01 40 00110000 00300000
+[17:45:42] I (86) boot:  4 export           Unknown data     01 41 00410000 00500000
+[17:45:42] I (93) boot:  5 coredump         Unknown data     01 03 00910000 00010000
+[17:45:42] I (100) boot: End of partition table
+[17:45:42] I (103) esp_image: segment 0: paddr=00010020 vaddr=3c040020 size=0f4f0h ( 62704) map
+[17:45:42] I (120) esp_image: segment 1: paddr=0001f518 vaddr=3fc94500 size=00b00h (  2816) load
+[17:45:42] I (121) esp_image: segment 2: paddr=00020020 vaddr=42000020 size=31224h (201252) map
+[17:45:42] I (156) esp_image: segment 3: paddr=0005124c vaddr=3fc95000 size=0ec04h ( 60420) load
+[17:45:42] I (168) esp_image: segment 4: paddr=0005fe58 vaddr=40374000 size=104b4h ( 66740) load
+[17:45:42] I (182) esp_image: segment 5: paddr=00070314 vaddr=50000000 size=00024h (    36) load
+[17:45:42] I (192) boot: Loaded app from partition at offset 0x10000
+[17:45:42] I (192) boot: Disabling RNG early entropy source...
+[17:45:42] I (202) octal_psram: vendor id    : 0x0d (AP)
+[17:45:42] I (202) octal_psram: dev id       : 0x02 (generation 3)
+[17:45:42] I (202) octal_psram: density      : 0x03 (64 Mbit)
+[17:45:42] I (204) octal_psram: good-die     : 0x01 (Pass)
+[17:45:42] I (208) octal_psram: Latency      : 0x01 (Fixed)
+[17:45:42] I (213) octal_psram: VCC          : 0x01 (3V)
+[17:45:42] I (217) octal_psram: SRF          : 0x01 (Fast Refresh)
+[17:45:42] I (222) octal_psram: BurstType    : 0x01 (Hybrid Wrap)
+[17:45:42] I (227) octal_psram: BurstLen     : 0x01 (32 Byte)
+[17:45:42] I (231) octal_psram: Readlatency  : 0x02 (10 cycles@Fixed)
+[17:45:42] I (236) octal_psram: DriveStrength: 0x00 (1/1)
+[17:45:42] I (240) MSPI Timing: Enter psram timing tuning
+[17:45:42] I (245) esp_psram: Found 8MB PSRAM device
+[17:45:42] I (248) esp_psram: Speed: 80MHz
+[17:45:42] I (251) cpu_start: Multicore app
+[17:45:42] I (667) esp_psram: SPI SRAM memory test OK
+[17:45:42] I (675) cpu_start: GPIO 44 and 43 are used as console UART I/O pins
+[17:45:42] I (676) cpu_start: Pro cpu start user code
+[17:45:42] I (676) cpu_start: cpu freq: 240000000 Hz
+[17:45:42] I (678) app_init: Application information:
+[17:45:42] I (682) app_init: Project name:     tinydraw_esp32
+[17:45:42] I (686) app_init: App version:      ba6c392-dirty
+[17:45:42] I (691) app_init: Compile time:     Aug 12 2026 17:37:58
+[17:45:42] I (696) app_init: ELF file SHA256:  609f35e6d...
+[17:45:42] I (700) app_init: ESP-IDF:          v6.0.2
+[17:45:42] I (704) efuse_init: Min chip rev:     v0.0
+[17:45:42] I (708) efuse_init: Max chip rev:     v0.99
+[17:45:42] I (712) efuse_init: Chip rev:         v0.2
+[17:45:42] I (715) heap_init: Initializing. RAM available for dynamic allocation:
+[17:45:42] I (722) heap_init: At 3FCA4830 len 00044EE0 (275 KiB): RAM
+[17:45:42] I (727) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+[17:45:42] I (732) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
+[17:45:42] I (737) heap_init: At 600FE000 len 00001FE8 (7 KiB): RTCRAM
+[17:45:42] I (743) esp_psram: Adding pool of 8192K of PSRAM memory to heap allocator
+[17:45:42] I (749) spi_flash: detected chip: generic
+[17:45:42] I (753) spi_flash: flash io: qio
+[17:45:42] I (756) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+[17:45:42] I (762) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+[17:45:42] I (769) main_task: Started on CPU0
+[17:45:42] I (772) main_task: Calling app_main()
+[17:45:42] TINYDRAW_PANEL_HARD_RESET=1
+[17:45:43] I (956) co5300: version: 2.1.0
+[17:45:43] I (956) co5300_spi: LCD panel create success, version: 2.1.0
+[17:45:43] W (1036) co5300_spi: The 3Ah command has been used and will be overwritten by external initialization sequence
+[17:45:43] I (1136) CST816S: IC id: 0
+[17:45:43] [DEBUG-touch-rate] registers=1 id=0xb7 firmware=0x02 scan_period=0x00 irq=0x70
+[17:45:43] I (1139) PCF85063A: PCF85063A initialized successfully
+[17:45:43] TINYDRAW_RTC ready=1 retained=1 local=2026-08-12T17:45:35
+[17:45:43] TINYDRAW_VECTOR_READY strokes=1100 samples=24576 bytes=325712 free_psram=563060
+[17:45:43] TINYDRAW_AUTOSAVE_READY
+[17:45:43] TINYDRAW_PSRAM world_bytes=2967552 free=563060 largest=557056 minimum=563060
+[17:45:43] TINYDRAW_POWER_READY ready=1 button=1 valid=1 battery=100 voltage_mv=4091 charging=0 vbus=1
+[17:45:43] TINYDRAW_SETTLED_LOD input=19844 output=10087 bytes=121044
+[17:45:45] TINYDRAW_SETTLED_PROFILE zoom=100 generation=2 bands=12 segments=8578 clear_us=13423 raster_us=777704 composite_us=105138 publish_us=50789 complete=1
+[17:45:49] TINYDRAW_BENCH_MEMORY free=100632 largest=100352 minimum=100632 lod_capacity_bytes=122880 lod_used_bytes=121044
+[17:45:49] TINYDRAW_INTERACTIVE_PAN_READY zoom=100 controls=S:50 M:100 L:200 XL:finish
+[17:45:49] TINYDRAW_AUTO_INIT initial_atlas_us=5871409
+[17:45:51] TINYDRAW_AUTO_ZOOM cycle=0 zoom=50 changed=1 total_us=49497 cancel_us=19 first_ready_us=5581 first_submit_us=6199 first_complete_us=7000 last_submit_us=47418 last_complete_us=48221 fallback_us=49451 settled_us=0
+[17:45:51] TINYDRAW_AUTO_RUNWAY cycle=0 zoom=50 down12_ready=1 right1_ready=1 right1_ready_us=55667
+[17:45:52] TINYDRAW_SETTLED_PROFILE zoom=50 generation=4 bands=12 segments=9087 clear_us=13239 raster_us=478087 composite_us=42087 publish_us=52670 complete=1
+[17:45:52] TINYDRAW_AUTO_SETTLED cycle=0 zoom=50 settled_us=708266
+[17:45:53] TINYDRAW_AUTO_ZOOM cycle=1 zoom=100 changed=1 total_us=49139 cancel_us=5988 first_ready_us=11338 first_submit_us=11905 first_complete_us=12705 last_submit_us=47474 last_complete_us=48278 fallback_us=49087 settled_us=0
+[17:45:53] TINYDRAW_AUTO_RUNWAY cycle=1 zoom=100 down12_ready=1 right1_ready=1 right1_ready_us=62482
+[17:45:54] TINYDRAW_SETTLED_PROFILE zoom=100 generation=6 bands=12 segments=8578 clear_us=13279 raster_us=790253 composite_us=106556 publish_us=52594 complete=1
+[17:45:54] TINYDRAW_AUTO_SETTLED cycle=1 zoom=100 settled_us=1092278
+[17:45:54] TINYDRAW_AUTO_ZOOM cycle=2 zoom=200 changed=1 total_us=40823 cancel_us=990 first_ready_us=5925 first_submit_us=6463 first_complete_us=7265 last_submit_us=39420 last_complete_us=40223 fallback_us=40771 settled_us=0
+[17:45:54] TINYDRAW_AUTO_RUNWAY cycle=2 zoom=200 down12_ready=1 right1_ready=1 right1_ready_us=57091
+[17:45:55] TINYDRAW_SETTLED_PROFILE zoom=200 generation=8 bands=12 segments=3252 clear_us=13366 raster_us=533366 composite_us=100192 publish_us=52124 complete=1
+[17:45:55] TINYDRAW_AUTO_SETTLED cycle=2 zoom=200 settled_us=813216
+[17:45:55] TINYDRAW_AUTO_ZOOM cycle=3 zoom=100 changed=1 total_us=52220 cancel_us=8987 first_ready_us=14437 first_submit_us=15019 first_complete_us=15822 last_submit_us=50574 last_complete_us=51377 fallback_us=52172 settled_us=0
+[17:45:56] TINYDRAW_AUTO_RUNWAY cycle=3 zoom=100 down12_ready=1 right1_ready=1 right1_ready_us=62410
+[17:45:56] TINYDRAW_SETTLED_PROFILE zoom=100 generation=10 bands=12 segments=8578 clear_us=13219 raster_us=792186 composite_us=106512 publish_us=52497 complete=1
+[17:45:56] TINYDRAW_AUTO_SETTLED cycle=3 zoom=100 settled_us=1097219
+[17:45:57] TINYDRAW_AUTO_ZOOM cycle=4 zoom=50 changed=1 total_us=50762 cancel_us=985 first_ready_us=6799 first_submit_us=7419 first_complete_us=8219 last_submit_us=48668 last_complete_us=49472 fallback_us=50695 settled_us=0
+[17:45:57] TINYDRAW_AUTO_RUNWAY cycle=4 zoom=50 down12_ready=1 right1_ready=1 right1_ready_us=55266
+[17:45:58] TINYDRAW_SETTLED_PROFILE zoom=50 generation=12 bands=12 segments=9087 clear_us=13329 raster_us=480082 composite_us=42017 publish_us=52033 complete=1
+[17:45:58] TINYDRAW_AUTO_SETTLED cycle=4 zoom=50 settled_us=711258
+[17:45:58] TINYDRAW_AUTO_ZOOM cycle=5 zoom=100 changed=1 total_us=48018 cancel_us=4986 first_ready_us=10336 first_submit_us=10904 first_complete_us=11704 last_submit_us=46352 last_complete_us=47156 fallback_us=47960 settled_us=0
+[17:45:58] TINYDRAW_AUTO_RUNWAY cycle=5 zoom=100 down12_ready=1 right1_ready=1 right1_ready_us=62607
+[17:45:59] TINYDRAW_SETTLED_PROFILE zoom=100 generation=14 bands=12 segments=8578 clear_us=13275 raster_us=791595 composite_us=107438 publish_us=52180 complete=1
+[17:45:59] TINYDRAW_AUTO_SETTLED cycle=5 zoom=100 settled_us=1093211
+[17:46:00] TINYDRAW_AUTO_ZOOM cycle=6 zoom=200 changed=1 total_us=40878 cancel_us=984 first_ready_us=5917 first_submit_us=6455 first_complete_us=7257 last_submit_us=39464 last_complete_us=40267 fallback_us=40823 settled_us=0
+[17:46:00] TINYDRAW_AUTO_RUNWAY cycle=6 zoom=200 down12_ready=1 right1_ready=1 right1_ready_us=56954
+[17:46:01] TINYDRAW_SETTLED_PROFILE zoom=200 generation=16 bands=12 segments=3252 clear_us=13381 raster_us=533684 composite_us=101386 publish_us=52458 complete=1
+[17:46:01] TINYDRAW_AUTO_SETTLED cycle=6 zoom=200 settled_us=815205
+[17:46:01] TINYDRAW_AUTO_ZOOM cycle=7 zoom=100 changed=1 total_us=51317 cancel_us=7988 first_ready_us=13408 first_submit_us=13995 first_complete_us=14789 last_submit_us=49658 last_complete_us=50463 fallback_us=51268 settled_us=0
+[17:46:01] TINYDRAW_AUTO_RUNWAY cycle=7 zoom=100 down12_ready=1 right1_ready=1 right1_ready_us=62318
+[17:46:02] TINYDRAW_SETTLED_PROFILE zoom=100 generation=18 bands=12 segments=8578 clear_us=13298 raster_us=790351 composite_us=107911 publish_us=52625 complete=1
+[17:46:02] TINYDRAW_AUTO_SETTLED cycle=7 zoom=100 settled_us=1096255
+[17:46:03] TINYDRAW_AUTO_ZOOM cycle=8 zoom=50 changed=1 total_us=50667 cancel_us=985 first_ready_us=6745 first_submit_us=7371 first_complete_us=8171 last_submit_us=48600 last_complete_us=49404 fallback_us=50611 settled_us=0
+[17:46:03] TINYDRAW_AUTO_RUNWAY cycle=8 zoom=50 down12_ready=1 right1_ready=1 right1_ready_us=55346
+[17:46:03] TINYDRAW_SETTLED_PROFILE zoom=50 generation=20 bands=12 segments=9087 clear_us=13315 raster_us=481540 composite_us=40230 publish_us=52424 complete=1
+[17:46:03] TINYDRAW_AUTO_SETTLED cycle=8 zoom=50 settled_us=711256
+[17:46:04] TINYDRAW_AUTO_ZOOM cycle=9 zoom=100 changed=1 total_us=48139 cancel_us=4988 first_ready_us=10341 first_submit_us=10911 first_complete_us=11712 last_submit_us=46500 last_complete_us=47303 fallback_us=48089 settled_us=0
+[17:46:04] TINYDRAW_AUTO_RUNWAY cycle=9 zoom=100 down12_ready=1 right1_ready=1 right1_ready_us=62478
+[17:46:05] TINYDRAW_SETTLED_PROFILE zoom=100 generation=22 bands=12 segments=8578 clear_us=13269 raster_us=792431 composite_us=106634 publish_us=52039 complete=1
+[17:46:05] TINYDRAW_AUTO_SETTLED cycle=9 zoom=100 settled_us=1093199
+[17:46:06] TINYDRAW_AUTO_ZOOM cycle=10 zoom=200 changed=1 total_us=40850 cancel_us=983 first_ready_us=5947 first_submit_us=6492 first_complete_us=7290 last_submit_us=39450 last_complete_us=40253 fallback_us=40795 settled_us=0
+[17:46:06] TINYDRAW_AUTO_RUNWAY cycle=10 zoom=200 down12_ready=1 right1_ready=1 right1_ready_us=56973
+[17:46:06] TINYDRAW_SETTLED_PROFILE zoom=200 generation=24 bands=12 segments=3252 clear_us=13397 raster_us=533540 composite_us=101494 publish_us=52469 complete=1
+[17:46:06] TINYDRAW_AUTO_SETTLED cycle=10 zoom=200 settled_us=815184
+[17:46:07] TINYDRAW_AUTO_ZOOM cycle=11 zoom=100 changed=1 total_us=51224 cancel_us=7988 first_ready_us=13415 first_submit_us=13998 first_complete_us=14792 last_submit_us=49561 last_complete_us=50365 fallback_us=51174 settled_us=0
+[17:46:07] TINYDRAW_AUTO_RUNWAY cycle=11 zoom=100 down12_ready=1 right1_ready=1 right1_ready_us=62327
+[17:46:08] TINYDRAW_SETTLED_PROFILE zoom=100 generation=26 bands=12 segments=8578 clear_us=13302 raster_us=792771 composite_us=106310 publish_us=52092 complete=1
+[17:46:08] TINYDRAW_AUTO_SETTLED cycle=11 zoom=100 settled_us=1096249
+[17:46:09] TINYDRAW_FALLBACK_REPAIRED revision=2
+[17:46:10] TINYDRAW_SETTLED_PROFILE zoom=100 generation=31 bands=11 segments=8579 clear_us=13200 raster_us=790707 composite_us=108209 publish_us=50043 complete=1
+[17:46:12] TINYDRAW_AUTO_MUTATION started=1 committed=1 stale_zoom_accepted=0 repaired_zoom_accepted=1
+[17:46:12] TINYDRAW_AUTO_ZOOM_DONE
