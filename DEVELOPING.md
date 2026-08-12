@@ -27,6 +27,8 @@ machine was bootstrapped with Apple Clang 21 and SDL 2.32 through `sdl2-compat`.
 ./scripts/dev release       # optimized build + tests
 ./scripts/dev format-check
 ./scripts/dev format
+./scripts/dev tidy          # clang-tidy, production island only
+./scripts/dev cppcheck      # Cppcheck, production island only
 ```
 
 The wrapper is intentionally thin. Raw commands also work:

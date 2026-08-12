@@ -60,10 +60,10 @@ case "$command_name" in
     mapfile_supported=false
     if builtin help mapfile >/dev/null 2>&1; then mapfile_supported=true; fi
     if [[ "$mapfile_supported" == true ]]; then
-      mapfile -t files < <(find core host tests esp32/main rp2350/src -type f \( -name '*.cpp' -o -name '*.h' \) | sort)
+      mapfile -t files < <(find core production host tests esp32/main rp2350/src -type f \( -name '*.cpp' -o -name '*.h' \) | sort)
     else
       files=()
-      while IFS= read -r file; do files+=("$file"); done < <(find core host tests esp32/main rp2350/src -type f \( -name '*.cpp' -o -name '*.h' \) | sort)
+      while IFS= read -r file; do files+=("$file"); done < <(find core production host tests esp32/main rp2350/src -type f \( -name '*.cpp' -o -name '*.h' \) | sort)
     fi
     if [[ "$command_name" == format ]]; then
       "$formatter" -i "${files[@]}"
@@ -71,8 +71,50 @@ case "$command_name" in
       "$formatter" --dry-run --Werror "${files[@]}"
     fi
     ;;
+  tidy)
+    tidy="${CLANG_TIDY:-}"
+    if [[ -z "$tidy" ]]; then
+      tidy="$(command -v clang-tidy || true)"
+    fi
+    if [[ -z "$tidy" && -x /opt/homebrew/opt/llvm/bin/clang-tidy ]]; then
+      tidy=/opt/homebrew/opt/llvm/bin/clang-tidy
+    fi
+    if [[ -z "$tidy" ]]; then
+      echo "clang-tidy not found; run ./scripts/bootstrap-macos" >&2
+      exit 1
+    fi
+    cmake --preset host-debug
+    files=()
+    while IFS= read -r file; do files+=("$file"); done < <(find production -type f -name '*.cpp' | sort)
+    if [[ ${#files[@]} -eq 0 ]]; then
+      echo "No production C++ implementation files to analyze yet."
+      exit 0
+    fi
+    for file in "${files[@]}"; do
+      "$tidy" --quiet -p "$root/out/build/host-debug" "$file"
+    done
+    ;;
+  cppcheck)
+    checker="${CPPCHECK:-}"
+    if [[ -z "$checker" ]]; then
+      checker="$(command -v cppcheck || true)"
+    fi
+    if [[ -z "$checker" ]]; then
+      echo "cppcheck not found; run ./scripts/bootstrap-macos" >&2
+      exit 1
+    fi
+    files=()
+    while IFS= read -r file; do files+=("$file"); done < <(find production -type f \( -name '*.cpp' -o -name '*.h' \) | sort)
+    if [[ ${#files[@]} -eq 0 ]]; then
+      echo "No production C++ files to analyze yet."
+      exit 0
+    fi
+    "$checker" --quiet --std=c++20 --language=c++ --check-level=exhaustive \
+      --enable=warning,style,performance,portability --error-exitcode=1 --inline-suppr \
+      --suppress=missingIncludeSystem -I "$root/production/include" "${files[@]}"
+    ;;
   *)
-    echo "usage: $0 {test|run|run-2x|run-3x|perf|vector-perf|asan|release|format|format-check}" >&2
+    echo "usage: $0 {test|run|run-2x|run-3x|perf|vector-perf|asan|release|format|format-check|tidy|cppcheck}" >&2
     exit 2
     ;;
 esac

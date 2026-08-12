@@ -34,6 +34,7 @@ if(TINYDRAW_ENABLE_SANITIZERS)
 endif()
 
 add_subdirectory(core)
+add_subdirectory(production)
 
 if(TINYDRAW_BUILD_HOST)
   add_subdirectory(host)

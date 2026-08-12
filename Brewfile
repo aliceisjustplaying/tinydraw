@@ -1,6 +1,7 @@
 brew "cmake"
 brew "ninja"
 brew "ccache"
+brew "cppcheck"
 brew "llvm"
 brew "pkgconf"
 brew "sdl2-compat"
