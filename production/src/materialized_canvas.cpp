@@ -94,10 +94,17 @@ PixelRect overview_source_bounds(TileKey key) {
 
 MaterializedCanvas::MaterializedCanvas(std::span<std::uint16_t> overview_pixels,
                                        std::span<MaterializedSlotStorage> slots,
+                                       std::span<std::uint16_t> tile_pixels,
                                        DocumentRevision initial_revision)
-    : overview_pixels_(overview_pixels), slots_(slots), current_revision_(initial_revision) {}
+    : overview_pixels_(overview_pixels),
+      slots_(slots),
+      tile_pixels_(tile_pixels),
+      current_revision_(initial_revision) {}
 
-bool MaterializedCanvas::ready() const { return overview_pixels_.size() == kOverviewPixels; }
+bool MaterializedCanvas::ready() const {
+  return overview_pixels_.size() == kOverviewPixels &&
+         tile_pixels_.size() == slots_.size() * kTilePixels;
+}
 
 DocumentRevision MaterializedCanvas::current_revision() const { return current_revision_; }
 
@@ -115,10 +122,12 @@ bool MaterializedCanvas::advance_revision(DocumentRevision revision) {
   return true;
 }
 
-bool MaterializedCanvas::publish_overview(DocumentRevision revision) {
-  if (!ready() || revision != current_revision_) {
+bool MaterializedCanvas::publish_overview(DocumentRevision revision,
+                                          std::span<const std::uint16_t> pixels) {
+  if (!ready() || revision != current_revision_ || pixels.size() != kOverviewPixels) {
     return false;
   }
+  std::copy(pixels.begin(), pixels.end(), overview_pixels_.begin());
   overview_revision_ = revision;
   overview_generation_ = {next_generation_++};
   overview_valid_ = true;
@@ -150,12 +159,26 @@ std::size_t MaterializedCanvas::choose_slot() const {
 void MaterializedCanvas::touch(MaterializedSlotStorage& slot) { slot.last_use_ = ++use_clock_; }
 
 std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, DocumentRevision revision,
-                                                            MaterializationQuality quality) {
+                                                            MaterializationQuality quality,
+                                                            std::span<const std::uint16_t> pixels) {
+  const PixelRect bounds = tile_pixel_bounds(key);
+  const int width = bounds.x1 - bounds.x0;
+  const int height = bounds.y1 - bounds.y0;
+  const std::size_t expected_pixels =
+      static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
   if (!ready() || slots_.empty() || !valid_tile_key(key) || revision != current_revision_ ||
-      quality == MaterializationQuality::kOverviewFallback) {
+      quality == MaterializationQuality::kOverviewFallback || pixels.size() != expected_pixels) {
     return std::nullopt;
   }
   const std::size_t index = find_tile(key).value_or(choose_slot());
+  auto destination = tile_pixels_.subspan(index * kTilePixels, kTilePixels);
+  for (int row = 0; row < height; ++row) {
+    const auto source_offset = static_cast<std::size_t>(row) * static_cast<std::size_t>(width);
+    const auto destination_offset =
+        static_cast<std::size_t>(row) * static_cast<std::size_t>(kTileWidth);
+    std::copy_n(pixels.begin() + static_cast<std::ptrdiff_t>(source_offset), width,
+                destination.begin() + static_cast<std::ptrdiff_t>(destination_offset));
+  }
   MaterializedSlotStorage& slot = slots_[index];
   slot.key_ = key;
   slot.revision_ = revision;
@@ -215,6 +238,131 @@ std::optional<SourceSelection> MaterializedCanvas::lookup(TileKey key) {
     return select_overview(key);
   }
   return std::nullopt;
+}
+
+bool MaterializedCanvas::valid_view(const ViewRequest& request,
+                                    std::size_t destination_size) const {
+  const PixelRect rect = request.level_pixels;
+  const int width = rect.x1 - rect.x0;
+  const int height = rect.y1 - rect.y0;
+  const std::size_t expected_size =
+      static_cast<std::size_t>(std::max(width, 0)) * static_cast<std::size_t>(std::max(height, 0));
+  return ready() && width > 0 && height > 0 && rect.x0 >= 0 && rect.y0 >= 0 &&
+         rect.x1 <= scaled_extent(kWorldWidth, request.zoom) &&
+         rect.y1 <= scaled_extent(kWorldHeight, request.zoom) && destination_size == expected_size;
+}
+
+bool MaterializedCanvas::has_complete_source(const ViewRequest& request) const {
+  if (overview_valid_ && overview_revision_ == current_revision_) {
+    return true;
+  }
+  const PixelRect rect = request.level_pixels;
+  for (int y = rect.y0; y < rect.y1; y += kTileHeight) {
+    for (int x = rect.x0; x < rect.x1; x += kTileWidth) {
+      const TileKey key{request.zoom, static_cast<std::uint16_t>(x / kTileWidth),
+                        static_cast<std::uint16_t>(y / kTileHeight)};
+      const auto index = find_tile(key);
+      if (!index.has_value() || slots_[*index].revision_ != current_revision_) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+std::optional<ViewCompositionStats> MaterializedCanvas::compose_overview_view(
+    const ViewRequest& request, std::span<std::uint16_t> destination) const {
+  if (!overview_valid_ || overview_revision_ != current_revision_) {
+    return std::nullopt;
+  }
+  const PixelRect rect = request.level_pixels;
+  const int width = rect.x1 - rect.x0;
+  for (int y = rect.y0; y < rect.y1; ++y) {
+    const auto source_offset =
+        static_cast<std::size_t>(y) * kOverviewWidth + static_cast<std::size_t>(rect.x0);
+    const auto destination_offset =
+        static_cast<std::size_t>(y - rect.y0) * static_cast<std::size_t>(width);
+    std::copy_n(overview_pixels_.begin() + static_cast<std::ptrdiff_t>(source_offset), width,
+                destination.begin() + static_cast<std::ptrdiff_t>(destination_offset));
+  }
+  return ViewCompositionStats{
+      .revision = current_revision_,
+      .fallback_pixels = destination.size(),
+      .fallback_tiles = 1,
+  };
+}
+
+void MaterializedCanvas::compose_tile(TileKey key, CompositionContext& context) {
+  const PixelRect tile_bounds = tile_pixel_bounds(key);
+  const PixelRect view = context.request.level_pixels;
+  const int x0 = std::max(view.x0, tile_bounds.x0);
+  const int x1 = std::min(view.x1, tile_bounds.x1);
+  const int y0 = std::max(view.y0, tile_bounds.y0);
+  const int y1 = std::min(view.y1, tile_bounds.y1);
+  const auto tile_index = find_tile(key);
+  const bool tile_current =
+      tile_index.has_value() && slots_[*tile_index].revision_ == current_revision_;
+  if (tile_current) {
+    touch(slots_[*tile_index]);
+    context.stats.exact_tiles +=
+        slots_[*tile_index].quality_ == MaterializationQuality::kExact ? 1U : 0U;
+    context.stats.settled_tiles +=
+        slots_[*tile_index].quality_ == MaterializationQuality::kSettled ? 1U : 0U;
+  } else {
+    ++context.stats.fallback_tiles;
+  }
+
+  const int percent = zoom_percent(context.request.zoom);
+  for (int y = y0; y < y1; ++y) {
+    for (int x = x0; x < x1; ++x) {
+      std::uint16_t pixel = 0;
+      if (tile_current) {
+        const std::size_t offset = *tile_index * kTilePixels +
+                                   static_cast<std::size_t>(y % kTileHeight) * kTileWidth +
+                                   static_cast<std::size_t>(x % kTileWidth);
+        pixel = tile_pixels_[offset];
+        ++context.stats.tile_pixels;
+      } else {
+        const std::size_t offset = static_cast<std::size_t>(y * 25 / percent) * kOverviewWidth +
+                                   static_cast<std::size_t>(x * 25 / percent);
+        pixel = overview_pixels_[offset];
+        ++context.stats.fallback_pixels;
+      }
+      const std::size_t destination_offset =
+          static_cast<std::size_t>(y - view.y0) * static_cast<std::size_t>(context.view_width) +
+          static_cast<std::size_t>(x - view.x0);
+      context.destination[destination_offset] = pixel;
+    }
+  }
+}
+
+std::optional<ViewCompositionStats> MaterializedCanvas::compose_view(
+    const ViewRequest& request, std::span<std::uint16_t> destination) {
+  if (!valid_view(request, destination.size()) || !has_complete_source(request)) {
+    return std::nullopt;
+  }
+  if (request.zoom == ZoomLevel::k25Percent) {
+    return compose_overview_view(request, destination);
+  }
+  CompositionContext context{
+      .request = request,
+      .destination = destination,
+      .stats = {.revision = current_revision_},
+      .view_width = request.level_pixels.x1 - request.level_pixels.x0,
+  };
+  const PixelRect rect = request.level_pixels;
+  const int first_column = rect.x0 / kTileWidth;
+  const int last_column = (rect.x1 - 1) / kTileWidth;
+  const int first_row = rect.y0 / kTileHeight;
+  const int last_row = (rect.y1 - 1) / kTileHeight;
+  for (int row = first_row; row <= last_row; ++row) {
+    for (int column = first_column; column <= last_column; ++column) {
+      compose_tile(
+          {request.zoom, static_cast<std::uint16_t>(column), static_cast<std::uint16_t>(row)},
+          context);
+    }
+  }
+  return context.stats;
 }
 
 }  // namespace tinydraw::production

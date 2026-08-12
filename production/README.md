@@ -106,3 +106,16 @@ The exact-commit ESP32-S3 receipt is
 This closes the allocation gate for the stated capacities. Captured workload
 distributions and actual renderer implementation must still validate that the
 capacities are sufficient rather than merely allocatable.
+
+## Task #54 host fallback seam
+
+`MaterializedCanvas::compose_view` produces a complete requested rectangle from
+current-revision world tiles and fills every cache miss from the complete
+current-revision overview. It never labels stale tile or overview pixels as
+current. The only rejected requests are malformed/out-of-world rectangles or a
+state where neither current tiles nor the current overview cover every pixel.
+That bootstrap/revision state is not an ordinary pan refusal.
+
+This is host validation of the no-checkerboard composition policy. Panel timing,
+DMA completion, and the ≤35 ms valid-cache pan gate require the later display
+adapter and scheduler; no claim about those hardware gates is made here.

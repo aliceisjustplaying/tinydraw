@@ -98,6 +98,20 @@ struct SourceSelection {
   std::size_t slot_index = 0;
 };
 
+struct ViewRequest {
+  ZoomLevel zoom = ZoomLevel::k25Percent;
+  PixelRect level_pixels{};
+};
+
+struct ViewCompositionStats {
+  DocumentRevision revision{};
+  std::size_t tile_pixels = 0;
+  std::size_t fallback_pixels = 0;
+  std::size_t settled_tiles = 0;
+  std::size_t exact_tiles = 0;
+  std::size_t fallback_tiles = 0;
+};
+
 class MaterializedSlotStorage {
  public:
   MaterializedSlotStorage() = default;
@@ -116,7 +130,7 @@ class MaterializedSlotStorage {
 class MaterializedCanvas {
  public:
   MaterializedCanvas(std::span<std::uint16_t> overview_pixels,
-                     std::span<MaterializedSlotStorage> slots,
+                     std::span<MaterializedSlotStorage> slots, std::span<std::uint16_t> tile_pixels,
                      DocumentRevision initial_revision = {});
 
   [[nodiscard]] bool ready() const;
@@ -125,20 +139,37 @@ class MaterializedCanvas {
   [[nodiscard]] std::span<const std::uint16_t> overview_pixels() const;
 
   [[nodiscard]] bool advance_revision(DocumentRevision revision);
-  [[nodiscard]] bool publish_overview(DocumentRevision revision);
+  [[nodiscard]] bool publish_overview(DocumentRevision revision,
+                                      std::span<const std::uint16_t> pixels);
   [[nodiscard]] std::optional<std::size_t> publish_tile(TileKey key, DocumentRevision revision,
-                                                        MaterializationQuality quality);
+                                                        MaterializationQuality quality,
+                                                        std::span<const std::uint16_t> pixels);
   [[nodiscard]] std::optional<SourceSelection> lookup(TileKey key);
+  [[nodiscard]] std::optional<ViewCompositionStats> compose_view(
+      const ViewRequest& request, std::span<std::uint16_t> destination);
 
  private:
   [[nodiscard]] std::optional<std::size_t> find_tile(TileKey key) const;
   [[nodiscard]] std::size_t choose_slot() const;
   [[nodiscard]] SourceSelection select_overview(TileKey requested) const;
+  struct CompositionContext {
+    ViewRequest request{};
+    std::span<std::uint16_t> destination{};
+    ViewCompositionStats stats{};
+    int view_width = 0;
+  };
+
   [[nodiscard]] SourceSelection select_tile(TileKey requested, std::size_t slot_index) const;
+  [[nodiscard]] bool valid_view(const ViewRequest& request, std::size_t destination_size) const;
+  [[nodiscard]] bool has_complete_source(const ViewRequest& request) const;
+  [[nodiscard]] std::optional<ViewCompositionStats> compose_overview_view(
+      const ViewRequest& request, std::span<std::uint16_t> destination) const;
+  void compose_tile(TileKey key, CompositionContext& context);
   void touch(MaterializedSlotStorage& slot);
 
   std::span<std::uint16_t> overview_pixels_;
   std::span<MaterializedSlotStorage> slots_;
+  std::span<std::uint16_t> tile_pixels_;
   DocumentRevision current_revision_{};
   DocumentRevision overview_revision_{};
   SlotGeneration overview_generation_{};
