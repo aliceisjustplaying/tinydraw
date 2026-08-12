@@ -1,251 +1,108 @@
 # TinyDraw project state
 
-Last updated: 2026-08-11
-
-Read this file for the current engineering handoff. `FINDINGS.md` records the
-performance history, and `INITIAL_RESEARCH.md` contains the original product spec.
+Last updated: 2026-08-12
 
 ## Resume point
 
-The ESP32 now has a 1104×1344 world, ten Undos, autosave, battery status, PMU
-off/on, and read-only USB PNG export. macOS Finder has opened and copied the full
-canvas from the synthesized `TINYDRAW` drive; iPhone Files validation is pending.
-The RP2350 remains at its documented reduced scope.
+Branch: `feat/vector-canvas-production`
 
-Start with:
+The camera-aligned vector/materialized-cache prototype is complete and rejected as a product architecture. The next feature task remains **#52: build the first host-tested `MaterializedCanvas` state module**. Production implementation has not started and the branch is not ready to ship.
 
-```sh
-git status --short
-./scripts/dev test
-./scripts/dev asan
-./scripts/esp32 build
-```
+The default firmware still runs the existing raster-authoritative product:
 
-Keep commits small and push them often. Do not flash by an ambiguous serial port
-when both boards are connected.
+- a hard-coded 3×3 `WorldCanvas` (1104×1344);
+- live `StrokeRaster` rendering and tile-based raster Undo;
+- raster-tile persistence and PNG export;
+- a transitional `VectorDocument` recording path that is not yet authoritative.
 
-## Product status
+Do not mistake the current default firmware or retired benchmark coordinator for the target architecture.
 
-All targets use a 368×448 RGB565 viewport and a tldraw-inspired toolbar:
+## Current sources of truth
+
+Read these in order:
+
+1. [`PRODUCTION_CONTINUATION_HANDOFF_2026_08_12_NIGHT.md`](PRODUCTION_CONTINUATION_HANDOFF_2026_08_12_NIGHT.md) — decisions, roadmap, gates, and task order.
+2. [`PROTOTYPE_EXIT.md`](PROTOTYPE_EXIT.md) — final prototype verdict and rejected mechanisms.
+3. [`CONTINUATION_HANDOFF_2026_08_12_EVENING_FACT_CHECK.md`](CONTINUATION_HANDOFF_2026_08_12_EVENING_FACT_CHECK.md) — correction of measured claims versus forecasts.
+4. [`SECOND_REVIEW_ARCHITECTURE_ASSESSMENT.md`](SECOND_REVIEW_ARCHITECTURE_ASSESSMENT.md) — production architecture rationale.
+5. [`VECTOR_CANVAS_OPTIMIZATION_CHRONICLE.md`](VECTOR_CANVAS_OPTIMIZATION_CHRONICLE.md) — experiment and performance history.
+
+Superseded briefs, plans, findings, demo notes, and interim handoffs are indexed under [`docs/archive/2026-08-raster-and-vector-prototypes/`](docs/archive/2026-08-raster-and-vector-prototypes/README.md). They are evidence, not current direction.
+
+## Production decision
+
+Use a **production island inside this repository**, documented in [`production/README.md`](production/README.md).
+
+This is a strangler migration, not a blank rewrite:
+
+- new platform-independent production modules live behind independent interfaces;
+- stable core mechanisms are reused by dependency, never copied;
+- the raster app stays runnable while one responsibility at a time is replaced;
+- hardware adapters arrive only after the relevant host state and memory contracts pass;
+- each superseded legacy path is removed once production owns that responsibility.
+
+This keeps the existing build, tests, hardware integration, UI, persistence, and benchmark receipts while preventing new production state from growing inside `hardware_app.cpp` or the rejected 3×3 types.
+
+## Nonnegotiable guardrails
+
+- Do not develop the camera-aligned 3×3 atlas further.
+- Do not start task #52 in `hardware_app.cpp`.
+- Do not extend `WorldCanvas`, `ViewOrigin`, or `FirmwareCanvas` to model production tiles.
+- Do not use prototype coordinator state as the production interface.
+- Do not copy renderer, input-loop, toolbar, or display logic into the production island.
+- Do not perform broad cosmetic splits of the legacy app before a real replacement seam exists.
+- Do not optimize the settled or canonical renderers as cleanup work.
+- Do not introduce hidden allocation into production state modules.
+- Keep the first production module host-only and test it through the same small interface callers will use.
+
+## Target architecture
 
 ```text
-[undo] [pen/tools] [eraser] [color] [size] [new]
+Vector operation log (authoritative)
+        │
+        ├── complete 368×448 RGB565 overview at 25%
+        └── sparse world-aligned RGB565 tiles at 50–400%
+                    │
+             MaterializedCanvas
+                    │ immutable publication descriptions / pinned revisions
+             DisplayScheduler
+                    │ staging, overlays, queueing, completion
+                  AMOLED
 ```
 
-The color popup has twelve tldraw colors. The size popup has S, M, L, and XL.
-New requires confirmation. Drawing uses variable width, simulated pressure,
-rounded joins, and 4×4 edge smoothing.
+Committed product geometry:
 
-ESP32 drawings autosave to flash. Its passive top-right badge reports battery
-percentage and charging without blocking drawing beneath it. Export encodes the
-full world as PNG and exposes it over USB. RP2350 drawings are not persistent.
+- world: 1472×1792 units (4×4 screens);
+- zoom levels: 25%, 50%, 100%, 200%, and 400%;
+- 800% is optional and may be dropped independently;
+- overview: 368×448 RGB565, exactly 329,728 bytes.
 
-### ESP32-S3 V2
+Correctness requirements are stroke presence, painter order, eraser behavior, and document revision. Interaction and memory gates are defined in the production handoff.
 
-Hardware:
+## Next task
 
-- ESP32-S3, two 240 MHz cores
-- CO5300 AMOLED over 60 MHz QSPI
-- CST820 touch at 400 kHz
-- AXP2101 battery/charger PMU at I²C address `0x34`
-- PCF85063 real-time clock, not yet initialized by TinyDraw
-- 8 MiB octal PSRAM and 16 MiB flash
+Task #52 should contain only:
 
-Features:
+1. strongly typed production world, zoom, tile, revision, quality, and provenance identities;
+2. a pure fixed-capacity `MaterializedCanvas` state module under `production/`;
+3. overview-derived fallback and slot replacement/revision behavior;
+4. focused host tests;
+5. only the build wiring required for those tests.
 
-- 1104×1344 world, nine screen areas
-- single-finger pan selected from the pen/tools popup
-- ten dirty-tile Undos
-- debounced, tile-granular flash autosave and boot restore
-- touch recording/replay for hands-free demos
-- battery percentage and charging status from the AXP2101 PMU
-- full-canvas PNG export as a read-only USB mass-storage volume
-- verified four-second battery shutdown and short-press power-on
-- pen, eraser, colors, sizes, and confirmed New
-- touch sampling on the second core
+No ESP32 integration, PSRAM allocation, display scheduling, renderer optimization, persistence migration, or legacy cleanup belongs in that first feature commit.
 
-The display bus was reduced from 80 MHz to 60 MHz after occasional colored lines
-appeared. Recent long strokes average 2.5–3.4 ms per update. Panning was measured
-at 9.8–10.1 ms at 80 MHz; current 60 MHz panning needs a fresh capture. With a
-battery installed, firmware startup explicitly resets the still-powered CO5300
-through the board's I/O expander, preventing black or stale screens after MCU reset.
-
-Autosave reads changed 32×32 tiles directly from the world into one 4 KiB staging
-buffer after 500 ms without touch input. This removed the former full-world PSRAM
-shadow. Rapid strokes coalesce. New schedules the whole world; Undo schedules its
-viewport; pan updates the saved origin. A 3 MiB `drawing` partition survives normal
-app flashes. The 3×3 format intentionally invalidated the old 2×2 save once. One
-physical 18-sector save took 2.266878 seconds in the background task before this
-refactor; battery power-cycle validation of the new format is pending.
-
-Export uses PNGenc with a row buffer and writes directly to a dedicated 5 MiB
-flash partition. A fixed 8 MiB FAT16 volume is synthesized sector by sector, so
-no disk image or second world copy exists in RAM. The volume contains one file,
-`DRAWING.PNG`, and is read-only. A physical full-world export took about 5.4
-seconds and left 791,108 bytes of PSRAM free. The `SAVING` toast changes to
-`SAVED` for three seconds. macOS Finder reads the 1104×1344 PNG; iPhone Files is
-not yet checked. The RTC exists, but its unset time leaves the FAT date unset.
-
-Short BOOT presses start and stop touch recording; a red toolbar dot shows the
-recording state. Holding BOOT replays the latest RAM tape from a blank canvas.
-Demo replay does not write flash. Holding the lower PMU button for four seconds
-powers the battery-backed board off; a short press starts it again. TinyDraw does
-not yet use light or deep sleep. Wi-Fi export remains removed and is documented
-as an experiment in `FINDINGS.md`.
-
-### RP2350
-
-Hardware:
-
-- RP2350 with 520 KiB SRAM
-- SH8601 AMOLED over PIO-driven QSPI
-- FT3168 touch at 400 kHz
-- Raspberry Pi USB serial `E2EC86EFBB9592DB`
-
-Features:
-
-- screen-sized drawing canvas
-- shared `InkStream` and toolbar state/rendering
-- pen, eraser, colors, sizes, and confirmed New
-- touch polling on core 1 through a bounded queue
-- one framebuffer stored in panel byte order
-
-The RP2350 does not have pan, Undo, Wi-Fi, or persistence. The framebuffer alone
-uses 329,728 bytes. Static data totals 479,776 bytes, so large histories or a
-second framebuffer do not fit safely.
-
-The SH8601 transfers a full screen in about 8.84 ms. Repeated arbitrary partial
-rectangles corrupt the physical display. Full-width horizontal bands remained
-clean through 1,012 observed updates and reduced average drawing time from
-9.44 ms to 1.17 ms. A second run averaged 1.39 ms and peaked at 3.23 ms.
-
-The FT3168 normally reports changed coordinates every 14.8–16.3 ms. Fast curves
-can therefore have 20–30 pixel gaps between raw points. Quadratic midpoint curves
-fill the path between reports. Touch polling now stops when the active-low GPIO 4
-signal rises at lift. Reading only on the rise was jittery and was reverted. A
-100 Hz register experiment and a five-byte touch burst also made input worse.
-
-RP2350 now uses the same 0.35 streamline setting as ESP32, making velocity-based
-width changes more visible. It delays the first raster until the second point can
-supply a measured starting width; taps still render on release.
-
-The remaining visible lift issue comes from the midpoint curve: live drawing stops
-halfway through the latest sample interval, then draws the withheld half on lift.
-Moving that join to 90% did not remove the effect and made circles more angular, so
-that experiment was reverted. ESP32 looks better because its tiled ribbon renderer
-can replace a provisional tail; RP2350 permanently stamps quadratic circles into
-one framebuffer.
-
-`./scripts/rp2350 capture` currently produces an image that can disagree with the
-physical panel after banded updates. Timing and touch traces remain useful. Treat
-physical inspection as the display correctness check until capture is repaired.
-
-The enclosed RP2350 unit has a battery but its side PWR button has no shutdown
-handler in TinyDraw. Unplugging USB does not turn off battery power. A future
-handler should blank the panel and enter a tested dormant mode.
-
-## Safe flashing
-
-Both devices may be connected at once. The RP2350 has Raspberry Pi VID `0x2e8a`;
-the ESP32 has Espressif VID `0x303a`.
-
-Build and flash the RP2350 by exact serial:
-
-```sh
-./scripts/rp2350 build
-serial=E2EC86EFBB9592DB
-picotool reboot -u -f --vid 0x2e8a --pid 0x0009 --ser "$serial"
-picotool load -v -x out/build/rp2350/tinydraw_rp2350.uf2 \
-  -t uf2 --ser "$serial"
-```
-
-The RP2350 application usually appears as `/dev/cu.usbmodem1101`, but the path can
-change. The serial number is the flash identity.
-
-Build the ESP32 without flashing:
-
-```sh
-./scripts/esp32 build
-./scripts/esp32 graphics-test
-```
-
-Use an explicit ESP32 port when flashing physical firmware. Export switches the
-S3's shared USB PHY from Serial/JTAG to mass storage. On battery, unplugging USB
-does not reset it. Eject `TINYDRAW`, power off with a four-second lower-button
-hold, then hold BOOT while short-pressing power to recover the ROM serial port.
-
-## Development loop
-
-Host and shared-core commands:
-
-```sh
-./scripts/bootstrap-macos   # once
-./scripts/dev run
-./scripts/dev run-2x
-./scripts/dev run-3x
-./scripts/dev test
-./scripts/dev release
-./scripts/dev asan
-./scripts/dev perf
-./scripts/dev format-check
-```
-
-RP2350 commands:
-
-```sh
-./scripts/rp2350 bootstrap  # once
-./scripts/rp2350 build
-./scripts/rp2350 capture PORT /tmp/tinydraw-rp2350.png
-./scripts/rp2350 metrics PORT
-./scripts/rp2350 trace PORT
-```
-
-ESP-IDF v6.0.2 stays isolated behind `scripts/esp32`. Do not add PlatformIO or
-source ESP-IDF globally.
-
-## Code map
-
-- `core/`: platform-independent ink, geometry, raster, toolbar, Undo, and world canvas
-- `host/`: interactive SDL macOS adapter and replay entry points
-- `esp32/`: ESP-IDF physical and QEMU adapters
-- `rp2350/`: Pico SDK app plus the Waveshare SH8601/FT3168 board drivers
-- `tests/`: shared-core tests, replay checks, snapshots, and performance characterization
-- `testdata/`: recorded strokes, snapshots, and Perfect Freehand reference output
-- `scripts/`: reproducible host, ESP32, and RP2350 commands
-- `tools/`: QEMU replay, Perfect Freehand oracle, and RP2350 capture tools
-
-The RP2350 directly links the existing `core/src/toolbar.cpp` and
-`core/src/ink_stream.cpp`. Its simpler raster stays platform-specific for now.
-The ESP32 and host share the full tiled ribbon raster and Undo implementation.
+After #52, prove the actual production memory allocation and largest contiguous PSRAM reserve before integrating no-refusal pan or incremental tile updates.
 
 ## Validation baseline
 
-At this handoff:
+For core or production-state changes:
 
-- all 22 native CTest entries pass, including FAT16 generation and `fsck_msdos`;
-- ASan and UBSan pass all four sanitizer entries;
-- the ESP32 USB build passes with 63% of its app partition free;
-- the QEMU graphics replay and RP2350 Release build pass;
-- the 3×3 physical firmware boots with 889,416 bytes PSRAM free and an 884,736-byte
-  largest free block;
-- battery percentage, charging state, deterministic panel reset, PMU off/on, and
-  the earlier 2×2 autosave restore, USB mounting, and PNG copying have been checked
-  on the ESP32-S3 V2 board and macOS.
+```sh
+./scripts/dev test
+./scripts/dev release
+./scripts/dev asan
+./scripts/dev format-check
+git diff --check
+```
 
-The RP2350 physical test covered fast medium and XL curves, 1,012 banded display
-updates, toolbar use, and repeated drawing without visible corruption.
-
-## Next work
-
-Resume on the ESP32 build:
-
-1. Verify the `TINYDRAW` volume and `DRAWING.PNG` in modern iPhone Files.
-2. Pan to all 3×3 edges and corners; check fast strokes and ten Undos across views.
-3. Verify new-format autosave with rapid strokes, New, Undo, and a battery power cycle.
-4. Capture fresh 60 MHz pan timing and watch PSRAM telemetry for regressions.
-5. Initialize the PCF85063 RTC only when there is a clear time-setting UX.
-6. Consider event-driven AXP2101 status refresh and a tested sleep mode separately.
-
-Deferred RP2350 work includes a replaceable provisional tail, bounded vector
-Undo/panning, accurate USB framebuffer capture, and PWR-button dormant mode.
-Keep both firmware builds and shared-core tests green.
+For later ESP32 integration, also build both default and interactive benchmark configurations using the commands in the production handoff. Physical hardware remains the authority for latency, PSRAM behavior, DMA behavior, and panel correctness.
