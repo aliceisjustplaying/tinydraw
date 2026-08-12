@@ -56,3 +56,30 @@ Caveats: driver-side totals end when the last chunk is queued (queue depth 3),
 not at transfer completion — the same endpoint criticism the review makes of
 `first_valid_us` applies here, equally to both runs. Settled/exact refinement
 and pan behavior were not exercised by this driver; drawing was not exercised.
+
+## Follow-up: center-out strip presentation with completion endpoints
+
+A third run (`strips-auto-zoom.log`) measured the next iteration: zoom
+transitions present as center-out 22-row nearest-resampled strips (one strip =
+one panel transaction), with ISR-recorded transfer-completion sequence
+numbers providing honest physical endpoints. All times are elapsed from the
+zoom input event, before cancellation.
+
+| Metric (12 transitions) | Typical | Worst |
+|---|---:|---:|
+| Cancellation done | 16–989 µs | 49.0 ms |
+| First strip ready (resampled) | 5.0–6.7 ms | 54.7 ms |
+| First strip physically complete | **6.3–8.1 ms** | 56.2 ms |
+| Last visible strip physically complete | 38.9–49.5 ms | 97.4 ms |
+
+The worst case is the cycle whose cancellation had to wait ~49 ms for an
+in-flight 200% canonical band to stop; even it met the 100 ms first-valid gate.
+Against the review's gates: input→first completed valid strip p95 ≤ 100 ms now
+passes by an order of magnitude (6–8 ms typical), and input→complete visible
+valid p95 ≤ 150–180 ms passes at 39–50 ms. The visible-region cost is now
+dominated by 17 × ~2.4 ms generic nearest resampling — the specialized
+power-of-two resample kernels from the review's P2 list are the next lever if
+full-visible time matters. Settled at 200% is intentionally unset pending the
+settled-renderer experiment. Visual correctness on the physical panel should be
+spot-checked by eye; the strips use the same validity-proven source and
+resampler as the previous full-region path.
