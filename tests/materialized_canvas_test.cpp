@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <span>
 
 #include "tinydraw/production/memory_layout.h"
@@ -86,7 +87,7 @@ TEST_CASE("canvas rejects invalid storage and non-monotonic overview publication
   CHECK(canvas.current_revision() == production::DocumentRevision{0});
   CHECK(canvas.publish_overview({1}, overview));
   CHECK(canvas.current_revision() == production::DocumentRevision{1});
-  CHECK(canvas.publish_overview({1}, overview));
+  CHECK_FALSE(canvas.publish_overview({1}, overview));
   CHECK_FALSE(canvas.publish_overview({0}, overview));
 }
 
@@ -250,6 +251,25 @@ TEST_CASE("unaligned view requires every grid tile when no overview is current")
       {.zoom = production::ZoomLevel::k100Percent, .level_pixels = {63, 0, 65, 2}}, destination));
 }
 
+TEST_CASE("overview publication commits each revision only once") {
+  std::array<std::uint16_t, production::kOverviewPixels> overview{};
+  std::array<production::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, production::kTilePixels> tile_storage{};
+  std::array<std::uint16_t, production::kTilePixels> tile{};
+  tile.fill(0x2222U);
+  production::MaterializedCanvas canvas(overview, slots, tile_storage);
+  REQUIRE(canvas.publish_overview({0}, overview));
+  const production::TileKey key{production::ZoomLevel::k100Percent, 0, 0};
+  REQUIRE(canvas.publish_tile(key, {0}, production::MaterializationQuality::kExact, tile));
+
+  overview.fill(0x3333U);
+  CHECK_FALSE(canvas.publish_overview({0}, overview));
+  const auto source = canvas.lookup(key);
+  REQUIRE(source.has_value());
+  CHECK(source->kind == production::SourceKind::kTileSlot);
+  CHECK(source->identity.revision == production::DocumentRevision{0});
+}
+
 TEST_CASE("transactional overview publication prevents stale fallback labeling") {
   std::array<std::uint16_t, production::kOverviewPixels> overview{};
   overview.fill(0x1111U);
@@ -277,6 +297,25 @@ TEST_CASE("transactional overview publication prevents stale fallback labeling")
   CHECK(destination[32] == 0x3333U);
 }
 
+TEST_CASE("walk-shaped bottom strip composes from the complete overview") {
+  std::array<std::uint16_t, production::kOverviewPixels> overview{};
+  for (std::size_t index = 0; index < overview.size(); ++index) {
+    overview[index] = static_cast<std::uint16_t>(index);
+  }
+  std::array<production::MaterializedSlotStorage, 0> slots{};
+  std::array<std::uint16_t, 0> tile_storage{};
+  production::MaterializedCanvas canvas(overview, slots, tile_storage);
+  REQUIRE(canvas.publish_overview({0}, overview));
+
+  std::array<std::uint16_t, 368U * 22U> strip{};
+  const auto stats = canvas.compose_view(
+      {.zoom = production::ZoomLevel::k100Percent, .level_pixels = {0, 350, 368, 372}}, strip);
+  REQUIRE(stats.has_value());
+  CHECK(stats->fallback_pixels == strip.size());
+  CHECK(strip.front() == overview[87 * production::kOverviewWidth]);
+  CHECK(strip.back() == overview[92 * production::kOverviewWidth + 91]);
+}
+
 TEST_CASE("clipped 50 percent tile advertises its padded slot stride") {
   std::array<std::uint16_t, production::kOverviewPixels> overview{};
   std::array<production::MaterializedSlotStorage, 1> slots{};
@@ -287,6 +326,8 @@ TEST_CASE("clipped 50 percent tile advertises its padded slot stride") {
   }
   production::MaterializedCanvas canvas(overview, slots, tile_storage);
   const production::TileKey edge{production::ZoomLevel::k50Percent, 11, 13};
+  CHECK_FALSE(canvas.publish_tile(edge, {0}, production::MaterializationQuality::kSettled,
+                                  std::span(tile_storage)));
   REQUIRE(
       canvas.publish_tile(edge, {0}, production::MaterializationQuality::kSettled, edge_pixels));
   const auto source = canvas.lookup(edge);
@@ -302,4 +343,21 @@ TEST_CASE("clipped 50 percent tile advertises its padded slot stride") {
       {.zoom = production::ZoomLevel::k50Percent, .level_pixels = {704, 832, 736, 896}}, composed);
   REQUIRE(stats.has_value());
   CHECK(composed == edge_pixels);
+}
+
+TEST_CASE("canvas accepts caller-owned dynamically constructed slot storage") {
+  std::array<std::uint16_t, production::kOverviewPixels> overview{};
+  auto slots = std::make_unique<production::MaterializedSlotStorage[]>(2);
+  auto tile_storage = std::make_unique<std::uint16_t[]>(2 * production::kTilePixels);
+  production::MaterializedCanvas canvas(overview, std::span(slots.get(), 2),
+                                        std::span(tile_storage.get(), 2 * production::kTilePixels));
+  const production::TileKey key{production::ZoomLevel::k100Percent, 0, 0};
+  std::array<std::uint16_t, production::kTilePixels> tile{};
+  tile.fill(0xABCDU);
+
+  REQUIRE(canvas.ready());
+  REQUIRE(canvas.publish_tile(key, {0}, production::MaterializationQuality::kExact, tile));
+  const auto source = canvas.lookup(key);
+  REQUIRE(source.has_value());
+  CHECK(source->kind == production::SourceKind::kTileSlot);
 }

@@ -130,6 +130,8 @@ class MaterializedSlotStorage {
 
 class MaterializedCanvas {
  public:
+  // All spans are caller-owned and must outlive this object. Slot elements must
+  // be constructed before the span is passed; the constructor resets their state.
   MaterializedCanvas(std::span<std::uint16_t> overview_pixels,
                      std::span<MaterializedSlotStorage> slots, std::span<std::uint16_t> tile_pixels,
                      DocumentRevision initial_revision = {});
@@ -139,6 +141,8 @@ class MaterializedCanvas {
   [[nodiscard]] std::size_t slot_capacity() const;
   [[nodiscard]] std::span<const std::uint16_t> overview_pixels() const;
 
+  // Atomically commits a complete overview and its revision. Once an overview
+  // is valid, each subsequent publication must advance the revision.
   [[nodiscard]] bool publish_overview(DocumentRevision revision,
                                       std::span<const std::uint16_t> pixels);
   [[nodiscard]] std::optional<std::size_t> publish_tile(TileKey key, DocumentRevision revision,

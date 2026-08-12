@@ -118,7 +118,9 @@ std::span<const std::uint16_t> MaterializedCanvas::overview_pixels() const {
 
 bool MaterializedCanvas::publish_overview(DocumentRevision revision,
                                           std::span<const std::uint16_t> pixels) {
-  if (!ready() || revision.value < current_revision_.value || pixels.size() != kOverviewPixels) {
+  const bool revision_is_publishable = overview_valid_ ? revision.value > current_revision_.value
+                                                       : revision.value >= current_revision_.value;
+  if (!ready() || !revision_is_publishable || pixels.size() != kOverviewPixels) {
     return false;
   }
   if (pixels.data() != overview_pixels_.data()) {

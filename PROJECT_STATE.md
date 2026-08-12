@@ -53,7 +53,7 @@ This keeps the existing build, tests, hardware integration, UI, persistence, and
 - Do not perform broad cosmetic splits of the legacy app before a real replacement seam exists.
 - Do not optimize the settled or canonical renderers as cleanup work.
 - Do not introduce hidden allocation into production state modules.
-- Keep the first production module host-only and test it through the same small interface callers will use.
+- Prove production state on the host before adding it to an exclusive, opt-in hardware mode.
 
 ## Target architecture
 
