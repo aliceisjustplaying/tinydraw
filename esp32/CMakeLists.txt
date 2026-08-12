@@ -7,12 +7,14 @@ option(TINYDRAW_VECTOR_BENCHMARK "Run vector viewport benchmarks after startup" 
 option(TINYDRAW_PHASE2_PROTOTYPE "Run cached-pan/progressive-zoom prototype after startup" OFF)
 option(TINYDRAW_RASTER_PAN_BENCHMARK "Measure the production raster pan path after startup" OFF)
 option(TINYDRAW_INTERACTIVE_PAN_BENCHMARK "Run the interactive vector-cache pan prototype" OFF)
+option(TINYDRAW_PRODUCTION_MEMORY_PROBE "Run the production allocation receipt probe" OFF)
 set(TINYDRAW_BENCHMARK_MODE_COUNT 0)
 foreach(TINYDRAW_BENCHMARK_MODE
     TINYDRAW_VECTOR_BENCHMARK
     TINYDRAW_PHASE2_PROTOTYPE
     TINYDRAW_RASTER_PAN_BENCHMARK
-    TINYDRAW_INTERACTIVE_PAN_BENCHMARK)
+    TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+    TINYDRAW_PRODUCTION_MEMORY_PROBE)
   if(${TINYDRAW_BENCHMARK_MODE})
     math(EXPR TINYDRAW_BENCHMARK_MODE_COUNT "${TINYDRAW_BENCHMARK_MODE_COUNT} + 1")
   endif()

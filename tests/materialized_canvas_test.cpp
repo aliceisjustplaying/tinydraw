@@ -5,6 +5,8 @@
 #include <array>
 #include <cstdint>
 
+#include "tinydraw/production/memory_layout.h"
+
 namespace production = tinydraw::production;
 
 TEST_CASE("production geometry has fixed world overview and committed zoom identities") {
@@ -19,6 +21,19 @@ TEST_CASE("production geometry has fixed world overview and committed zoom ident
   CHECK(production::zoom_percent(production::ZoomLevel::k100Percent) == 100);
   CHECK(production::zoom_percent(production::ZoomLevel::k200Percent) == 200);
   CHECK(production::zoom_percent(production::ZoomLevel::k400Percent) == 400);
+}
+
+TEST_CASE("production memory plan records every fixed-capacity region") {
+  CHECK(sizeof(production::CompactOperationSample) == 8U);
+  CHECK(production::kTilePoolBytes == 1'048'576U);
+  CHECK(production::kTileMetadataBytes ==
+        production::kTileSlotCount * sizeof(production::MaterializedSlotStorage));
+  CHECK(production::kOperationStorageBytes == 720'000U);
+  CHECK(production::kLodStorageBytes == 668'000U);
+  CHECK(production::kRendererWorkspaceBytes == 163'840U);
+  CHECK(production::kDisplayWorkspaceBytes == 103'040U);
+  CHECK(production::kExternalPlanBytes == 3'038'304U);
+  CHECK(production::kTargetContiguousReserveBytes == 1'572'864U);
 }
 
 TEST_CASE("world points map to bounded world-aligned tiles") {

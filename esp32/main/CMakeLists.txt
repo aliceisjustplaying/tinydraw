@@ -50,6 +50,9 @@ if(NOT TINYDRAW_QEMU)
   if(TINYDRAW_INTERACTIVE_PAN_BENCHMARK)
     list(APPEND TINYDRAW_PLATFORM_SRCS "interactive_pan_benchmark.cpp")
   endif()
+  if(TINYDRAW_PRODUCTION_MEMORY_PROBE)
+    list(APPEND TINYDRAW_PLATFORM_SRCS "production_memory_probe.cpp")
+  endif()
 endif()
 
 idf_component_register(
@@ -69,7 +72,7 @@ idf_component_register(
     "${TINYDRAW_CORE}/src/tile_undo_history.cpp"
     "${TINYDRAW_CORE}/src/toolbar.cpp"
     "${TINYDRAW_CORE}/src/world_canvas.cpp"
-  INCLUDE_DIRS "." "${TINYDRAW_CORE}/include"
+  INCLUDE_DIRS "." "${TINYDRAW_CORE}/include" "${CMAKE_CURRENT_LIST_DIR}/../../production/include"
   PRIV_INCLUDE_DIRS "${TINYDRAW_PNGENC}"
   PRIV_REQUIRES ${TINYDRAW_PLATFORM_REQUIRES} esp_partition esp_psram esp_timer espcoredump
 )
@@ -94,6 +97,9 @@ if(TINYDRAW_RASTER_PAN_BENCHMARK)
 endif()
 if(TINYDRAW_INTERACTIVE_PAN_BENCHMARK)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_INTERACTIVE_PAN_BENCHMARK=1)
+endif()
+if(TINYDRAW_PRODUCTION_MEMORY_PROBE)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_PRODUCTION_MEMORY_PROBE=1)
 endif()
 if(TINYDRAW_QEMU)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_QEMU=1)
