@@ -1,0 +1,568 @@
+PERSISTENT_CAPTURE_STARTED
+[18:09:56] ESP-ROM:esp32s3-20210327
+[18:09:56] Build:Mar 27 2021
+[18:09:56] rst:0x15 (USB_UART_CHIP_RESET),boot:0x2b (SPI_FAST_FLASH_BOOT)
+[18:09:56] Saved PC:0x4037b802
+[18:09:56] SPIWP:0xee
+[18:09:56] mode:DIO, clock div:1
+[18:09:56] load:0x3fce2820,len:0x1664
+[18:09:56] load:0x403c8700,len:0xf38
+[18:09:56] load:0x403cb700,len:0x31e8
+[18:09:56] entry 0x403c8930
+[18:09:56] I (24) boot: ESP-IDF v6.0.2 2nd stage bootloader
+[18:09:56] I (24) boot: compile time Aug 11 2026 22:53:49
+[18:09:56] I (25) boot: Multicore bootloader
+[18:09:56] I (25) boot: chip revision: v0.2
+[18:09:56] I (28) boot: efuse block revision: v1.3
+[18:09:56] I (31) qio_mode: Enabling default flash chip QIO
+[18:09:56] I (36) boot.esp32s3: Boot SPI Speed : 80MHz
+[18:09:56] I (39) boot.esp32s3: SPI Mode       : QIO
+[18:09:56] I (43) boot.esp32s3: SPI Flash Size : 16MB
+[18:09:56] I (47) boot: Enabling RNG early entropy source...
+[18:09:56] I (51) boot: Partition Table:
+[18:09:56] I (54) boot: ## Label            Usage          Type ST Offset   Length
+[18:09:56] I (60) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+[18:09:56] I (67) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+[18:09:56] I (73) boot:  2 factory          factory app      00 00 00010000 00100000
+[18:09:56] I (80) boot:  3 drawing          Unknown data     01 40 00110000 00300000
+[18:09:56] I (86) boot:  4 export           Unknown data     01 41 00410000 00500000
+[18:09:56] I (93) boot:  5 coredump         Unknown data     01 03 00910000 00010000
+[18:09:56] I (100) boot: End of partition table
+[18:09:56] I (103) esp_image: segment 0: paddr=00010020 vaddr=3c040020 size=0f5d0h ( 62928) map
+[18:09:56] I (120) esp_image: segment 1: paddr=0001f5f8 vaddr=3fc94500 size=00a20h (  2592) load
+[18:09:56] I (121) esp_image: segment 2: paddr=00020020 vaddr=42000020 size=311f4h (201204) map
+[18:09:56] I (156) esp_image: segment 3: paddr=0005121c vaddr=3fc94f20 size=0ece4h ( 60644) load
+[18:09:56] I (168) esp_image: segment 4: paddr=0005ff08 vaddr=40374000 size=104b4h ( 66740) load
+[18:09:56] I (182) esp_image: segment 5: paddr=000703c4 vaddr=50000000 size=00024h (    36) load
+[18:09:56] I (192) boot: Loaded app from partition at offset 0x10000
+[18:09:56] I (192) boot: Disabling RNG early entropy source...
+[18:09:56] I (202) octal_psram: vendor id    : 0x0d (AP)
+[18:09:56] I (202) octal_psram: dev id       : 0x02 (generation 3)
+[18:09:56] I (202) octal_psram: density      : 0x03 (64 Mbit)
+[18:09:56] I (204) octal_psram: good-die     : 0x01 (Pass)
+[18:09:56] I (208) octal_psram: Latency      : 0x01 (Fixed)
+[18:09:56] I (213) octal_psram: VCC          : 0x01 (3V)
+[18:09:56] I (217) octal_psram: SRF          : 0x01 (Fast Refresh)
+[18:09:56] I (222) octal_psram: BurstType    : 0x01 (Hybrid Wrap)
+[18:09:56] I (227) octal_psram: BurstLen     : 0x01 (32 Byte)
+[18:09:56] I (231) octal_psram: Readlatency  : 0x02 (10 cycles@Fixed)
+[18:09:56] I (236) octal_psram: DriveStrength: 0x00 (1/1)
+[18:09:56] I (240) MSPI Timing: Enter psram timing tuning
+[18:09:56] I (245) esp_psram: Found 8MB PSRAM device
+[18:09:56] I (248) esp_psram: Speed: 80MHz
+[18:09:56] I (251) cpu_start: Multicore app
+[18:09:57] I (667) esp_psram: SPI SRAM memory test OK
+[18:09:57] I (676) cpu_start: GPIO 44 and 43 are used as console UART I/O pins
+[18:09:57] I (676) cpu_start: Pro cpu start user code
+[18:09:57] I (676) cpu_start: cpu freq: 240000000 Hz
+[18:09:57] I (678) app_init: Application information:
+[18:09:57] I (682) app_init: Project name:     tinydraw_esp32
+[18:09:57] I (686) app_init: App version:      ffdbd9b-dirty
+[18:09:57] I (691) app_init: Compile time:     Aug 12 2026 18:07:44
+[18:09:57] I (696) app_init: ELF file SHA256:  2926008a4...
+[18:09:57] I (700) app_init: ESP-IDF:          v6.0.2
+[18:09:57] I (704) efuse_init: Min chip rev:     v0.0
+[18:09:57] I (708) efuse_init: Max chip rev:     v0.99 
+[18:09:57] I (712) efuse_init: Chip rev:         v0.2
+[18:09:57] I (715) heap_init: Initializing. RAM available for dynamic allocation:
+[18:09:57] I (722) heap_init: At 3FCA4830 len 00044EE0 (275 KiB): RAM
+[18:09:57] I (727) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+[18:09:57] I (732) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
+[18:09:57] I (737) heap_init: At 600FE000 len 00001FE8 (7 KiB): RTCRAM
+[18:09:57] I (743) esp_psram: Adding pool of 8192K of PSRAM memory to heap allocator
+[18:09:57] I (749) spi_flash: detected chip: generic
+[18:09:57] I (753) spi_flash: flash io: qio
+[18:09:57] I (756) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+[18:09:57] I (762) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+[18:09:57] I (769) main_task: Started on CPU0
+[18:09:57] I (772) main_task: Calling app_main()
+[18:09:57] TINYDRAW_PANEL_HARD_RESET=1
+[18:09:57] I (956) co5300: version: 2.1.0
+[18:09:57] I (956) co5300_spi: LCD panel create success, version: 2.1.0
+[18:09:57] W (1036) co5300_spi: The 3Ah command has been used and will be overwritten by external initialization sequence
+[18:09:57] I (1136) CST816S: IC id: 183
+[18:09:57] [DEBUG-touch-rate] registers=1 id=0xb7 firmware=0x02 scan_period=0x00 irq=0x70
+[18:09:57] I (1139) PCF85063A: PCF85063A initialized successfully
+[18:09:57] TINYDRAW_RTC ready=1 retained=1 local=2026-08-12T18:09:50
+[18:09:57] TINYDRAW_VECTOR_READY strokes=1100 samples=24576 bytes=325712 free_psram=563060
+[18:09:58] TINYDRAW_AUTOSAVE_READY
+[18:09:58] TINYDRAW_PSRAM world_bytes=2967552 free=563060 largest=557056 minimum=563060
+[18:09:58] TINYDRAW_POWER_READY ready=1 button=1 valid=1 battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:09:58] TINYDRAW_SETTLED_LOD quality=normal center_error_milli=2000 radius_error_milli=750 input=19844 output=7537 bytes=90444
+[18:09:59] TINYDRAW_SETTLED_PROFILE zoom=100 generation=2 bands=12 segments=6192 clear_us=13394 raster_us=469278 composite_us=107601 publish_us=50632 complete=1
+[18:10:04] TINYDRAW_BENCH_MEMORY free=76056 largest=75776 minimum=76056 lod_capacity_bytes=147456 lod_used_bytes=90444
+[18:10:04] TINYDRAW_INTERACTIVE_PAN_READY zoom=100 controls=S:50 M:100 L:200 XL:finish
+[18:10:04] TINYDRAW_AUTO_INIT initial_atlas_us=5595318
+[18:10:06] TINYDRAW_AUTO_ZOOM cycle=0 zoom=50 changed=1 total_us=48925 cancel_us=17 first_ready_us=5597 first_submit_us=6210 first_complete_us=7013 last_submit_us=46870 last_complete_us=47675 fallback_us=48873 settled_us=0
+[18:10:06] TINYDRAW_AUTO_RUNWAY cycle=0 zoom=50 down12_ready=1 right1_ready=1 right1_ready_us=55211
+[18:10:06] TINYDRAW_SETTLED_PROFILE zoom=50 generation=4 bands=12 segments=6537 clear_us=13234 raster_us=242674 composite_us=41035 publish_us=52066 complete=1
+[18:10:06] TINYDRAW_AUTO_SETTLED cycle=0 zoom=50 settled_us=469282
+[18:10:07] TINYDRAW_AUTO_ZOOM cycle=1 zoom=100 changed=1 total_us=48612 cancel_us=5987 first_ready_us=11349 first_submit_us=11919 first_complete_us=12722 last_submit_us=46970 last_complete_us=47774 fallback_us=48555 settled_us=0
+[18:10:07] TINYDRAW_AUTO_RUNWAY cycle=1 zoom=100 down12_ready=1 right1_ready=1 right1_ready_us=61988
+[18:10:07] TINYDRAW_SETTLED_PROFILE zoom=100 generation=6 bands=12 segments=6192 clear_us=13234 raster_us=470622 composite_us=108366 publish_us=52416 complete=1
+[18:10:07] TINYDRAW_AUTO_SETTLED cycle=1 zoom=100 settled_us=772211
+[18:10:08] TINYDRAW_AUTO_ZOOM cycle=2 zoom=200 changed=1 total_us=40222 cancel_us=988 first_ready_us=5972 first_submit_us=6517 first_complete_us=7317 last_submit_us=38864 last_complete_us=39669 fallback_us=40173 settled_us=0
+[18:10:08] TINYDRAW_AUTO_RUNWAY cycle=2 zoom=200 down12_ready=1 right1_ready=1 right1_ready_us=56735
+[18:10:08] TINYDRAW_SETTLED_LOD quality=high center_error_milli=1000 radius_error_milli=375 input=19844 output=10087 bytes=121044
+[18:10:09] TINYDRAW_SETTLED_PROFILE zoom=200 generation=8 bands=12 segments=3252 clear_us=13178 raster_us=407590 composite_us=102747 publish_us=51869 complete=1
+[18:10:09] TINYDRAW_AUTO_SETTLED cycle=2 zoom=200 settled_us=720218
+[18:10:09] TINYDRAW_AUTO_ZOOM cycle=3 zoom=100 changed=1 total_us=52615 cancel_us=9989 first_ready_us=15432 first_submit_us=16005 first_complete_us=16805 last_submit_us=50989 last_complete_us=51797 fallback_us=52562 settled_us=0
+[18:10:09] TINYDRAW_AUTO_RUNWAY cycle=3 zoom=100 down12_ready=1 right1_ready=1 right1_ready_us=61995
+[18:10:09] TINYDRAW_SETTLED_LOD quality=normal center_error_milli=2000 radius_error_milli=750 input=19844 output=7537 bytes=90444
+[18:10:10] TINYDRAW_SETTLED_PROFILE zoom=100 generation=10 bands=12 segments=6192 clear_us=13146 raster_us=470551 composite_us=108043 publish_us=52680 complete=1
+[18:10:10] TINYDRAW_AUTO_SETTLED cycle=3 zoom=100 settled_us=813280
+[18:10:10] TINYDRAW_AUTO_ZOOM cycle=4 zoom=50 changed=1 total_us=50121 cancel_us=986 first_ready_us=6777 first_submit_us=7395 first_complete_us=8199 last_submit_us=48062 last_complete_us=48867 fallback_us=50072 settled_us=0
+[18:10:10] TINYDRAW_AUTO_RUNWAY cycle=4 zoom=50 down12_ready=1 right1_ready=1 right1_ready_us=54925
+[18:10:11] TINYDRAW_SETTLED_PROFILE zoom=50 generation=12 bands=12 segments=6537 clear_us=13225 raster_us=242720 composite_us=41135 publish_us=52200 complete=1
+[18:10:11] TINYDRAW_AUTO_SETTLED cycle=4 zoom=50 settled_us=470283
+[18:10:11] TINYDRAW_AUTO_ZOOM cycle=5 zoom=100 changed=1 total_us=48566 cancel_us=5989 first_ready_us=11321 first_submit_us=11883 first_complete_us=12685 last_submit_us=46967 last_complete_us=47779 fallback_us=48518 settled_us=0
+[18:10:11] TINYDRAW_AUTO_RUNWAY cycle=5 zoom=100 down12_ready=1 right1_ready=1 right1_ready_us=62021
+[18:10:12] TINYDRAW_SETTLED_PROFILE zoom=100 generation=14 bands=12 segments=6192 clear_us=13318 raster_us=471293 composite_us=107822 publish_us=52503 complete=1
+[18:10:12] TINYDRAW_AUTO_SETTLED cycle=5 zoom=100 settled_us=772244
+[18:10:13] TINYDRAW_AUTO_ZOOM cycle=6 zoom=200 changed=1 total_us=40268 cancel_us=984 first_ready_us=5968 first_submit_us=6517 first_complete_us=7313 last_submit_us=38900 last_complete_us=39706 fallback_us=40216 settled_us=0
+[18:10:13] TINYDRAW_AUTO_RUNWAY cycle=6 zoom=200 down12_ready=1 right1_ready=1 right1_ready_us=57689
+[18:10:13] TINYDRAW_SETTLED_LOD quality=high center_error_milli=1000 radius_error_milli=375 input=19844 output=10087 bytes=121044
+[18:10:13] TINYDRAW_SETTLED_PROFILE zoom=200 generation=16 bands=12 segments=3252 clear_us=13118 raster_us=407645 composite_us=102907 publish_us=52178 complete=1
+[18:10:13] TINYDRAW_AUTO_SETTLED cycle=6 zoom=200 settled_us=720264
+[18:10:14] TINYDRAW_AUTO_ZOOM cycle=7 zoom=100 changed=1 total_us=51714 cancel_us=8989 first_ready_us=14403 first_submit_us=14985 first_complete_us=15782 last_submit_us=50089 last_complete_us=50895 fallback_us=51665 settled_us=0
+[18:10:14] TINYDRAW_AUTO_RUNWAY cycle=7 zoom=100 down12_ready=1 right1_ready=1 right1_ready_us=62887
+[18:10:14] TINYDRAW_SETTLED_LOD quality=normal center_error_milli=2000 radius_error_milli=750 input=19844 output=7537 bytes=90444
+[18:10:15] TINYDRAW_SETTLED_PROFILE zoom=100 generation=18 bands=12 segments=6192 clear_us=13114 raster_us=470256 composite_us=108363 publish_us=52466 complete=1
+[18:10:15] TINYDRAW_AUTO_SETTLED cycle=7 zoom=100 settled_us=812244
+[18:10:15] TINYDRAW_AUTO_ZOOM cycle=8 zoom=50 changed=1 total_us=50094 cancel_us=988 first_ready_us=6783 first_submit_us=7404 first_complete_us=8207 last_submit_us=48043 last_complete_us=48848 fallback_us=50047 settled_us=0
+[18:10:15] TINYDRAW_AUTO_RUNWAY cycle=8 zoom=50 down12_ready=1 right1_ready=1 right1_ready_us=54940
+[18:10:16] TINYDRAW_SETTLED_PROFILE zoom=50 generation=20 bands=12 segments=6537 clear_us=13236 raster_us=242610 composite_us=41130 publish_us=52288 complete=1
+[18:10:16] TINYDRAW_AUTO_SETTLED cycle=8 zoom=50 settled_us=470276
+[18:10:16] TINYDRAW_AUTO_ZOOM cycle=9 zoom=100 changed=1 total_us=48493 cancel_us=5989 first_ready_us=11336 first_submit_us=11898 first_complete_us=12702 last_submit_us=46889 last_complete_us=47694 fallback_us=48445 settled_us=0
+[18:10:16] TINYDRAW_AUTO_RUNWAY cycle=9 zoom=100 down12_ready=1 right1_ready=1 right1_ready_us=62127
+[18:10:17] TINYDRAW_SETTLED_PROFILE zoom=100 generation=22 bands=12 segments=6192 clear_us=13230 raster_us=471111 composite_us=107562 publish_us=52617 complete=1
+[18:10:17] TINYDRAW_AUTO_SETTLED cycle=9 zoom=100 settled_us=772106
+[18:10:17] TINYDRAW_AUTO_ZOOM cycle=10 zoom=200 changed=1 total_us=40351 cancel_us=983 first_ready_us=5962 first_submit_us=6509 first_complete_us=7307 last_submit_us=38988 last_complete_us=39796 fallback_us=40296 settled_us=0
+[18:10:18] TINYDRAW_AUTO_RUNWAY cycle=10 zoom=200 down12_ready=1 right1_ready=1 right1_ready_us=57542
+[18:10:18] TINYDRAW_SETTLED_LOD quality=high center_error_milli=1000 radius_error_milli=375 input=19844 output=10087 bytes=121044
+[18:10:18] TINYDRAW_SETTLED_PROFILE zoom=200 generation=24 bands=12 segments=3252 clear_us=13145 raster_us=408306 composite_us=102451 publish_us=52032 complete=1
+[18:10:18] TINYDRAW_AUTO_SETTLED cycle=10 zoom=200 settled_us=720260
+[18:10:19] TINYDRAW_AUTO_ZOOM cycle=11 zoom=100 changed=1 total_us=51594 cancel_us=8989 first_ready_us=14416 first_submit_us=14994 first_complete_us=15796 last_submit_us=49957 last_complete_us=50762 fallback_us=51537 settled_us=0
+[18:10:19] TINYDRAW_AUTO_RUNWAY cycle=11 zoom=100 down12_ready=1 right1_ready=1 right1_ready_us=61920
+[18:10:19] TINYDRAW_SETTLED_LOD quality=normal center_error_milli=2000 radius_error_milli=750 input=19844 output=7537 bytes=90444
+[18:10:19] TINYDRAW_SETTLED_PROFILE zoom=100 generation=26 bands=12 segments=6192 clear_us=13145 raster_us=470781 composite_us=107852 publish_us=52642 complete=1
+[18:10:19] TINYDRAW_AUTO_SETTLED cycle=11 zoom=100 settled_us=812280
+[18:10:21] TINYDRAW_FALLBACK_REPAIRED revision=2
+[18:10:21] TINYDRAW_SETTLED_PROFILE zoom=100 generation=31 bands=11 segments=6193 clear_us=13265 raster_us=472088 composite_us=106810 publish_us=49835 complete=1
+[18:10:23] TINYDRAW_AUTO_MUTATION started=1 committed=1 stale_zoom_accepted=0 repaired_zoom_accepted=1
+[18:10:23] TINYDRAW_AUTO_FINAL_PIXELS origin=368,448 atlas_ink=45071 visible_ink=32554 visible_hash=6c663cc6
+[18:10:23] TINYDRAW_AUTO_ZOOM_DONE
+[18:10:23] TINYDRAW_HARDWARE_OK display=CO5300 touch=CST820 demo_capacity=8192
+[18:10:23] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:10:23] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:10:23] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:10:23] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:10:23] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:10:23] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:10:23] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:10:23] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:10:23] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:10:23] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:10:23] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:10:24] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:10:24] TINYDRAW_SETTLED_PROFILE zoom=50 generation=33 bands=12 segments=6538 clear_us=13229 raster_us=241368 composite_us=41931 publish_us=52499 complete=1
+[18:10:24] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:10:25] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:10:26] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:10:27] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:10:28] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:10:29] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:10:30] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:10:31] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:10:32] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:10:33] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:10:34] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:10:35] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:10:36] TINYDRAW_POWER battery=100 voltage_mv=4094 charging=0 vbus=1
+[18:10:37] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:10:38] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:10:40] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:10:41] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:10:42] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:10:47] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:10:48] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:10:49] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:10:50] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:10:51] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:10:52] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:10:53] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:10:54] TINYDRAW_POWER battery=100 voltage_mv=4095 charging=0 vbus=1
+[18:10:55] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:10:56] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:10:57] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:10:58] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:10:59] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:11:00] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:11:02] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:11:03] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:11:04] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:11:06] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:11:07] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:11:08] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:11:09] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:11:10] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:11:11] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:11:13] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:11:14] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:11:15] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:11:17] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:11:18] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:11:20] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:11:22] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:11:23] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:11:24] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:11:25] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:11:27] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:11:28] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:11:29] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:11:31] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:11:32] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:11:33] TINYDRAW_POWER battery=99 voltage_mv=4091 charging=0 vbus=1
+[18:11:34] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:11:35] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:11:37] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:11:38] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:11:40] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:11:41] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:11:42] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:11:43] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:11:44] TINYDRAW_POWER battery=100 voltage_mv=4094 charging=0 vbus=1
+[18:11:45] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:11:47] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:11:48] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:11:49] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:11:50] [DEBUG-hw1] down x=301 y=81
+[18:11:51] [DEBUG-hw1] up x=292 y=182 active=0
+[18:11:51] TINYDRAW_PAN_PERF frames=38 bytes=10404096 average_us=25993 max_us=26037 settle_us=0 prepare_us=716342 transfer_us=267432 pushes=646
+[18:11:51] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:11:51] [DEBUG-hw1] down x=75 y=153
+[18:11:52] [DEBUG-hw1] up x=75 y=63 active=0
+[18:11:52] TINYDRAW_PAN_PERF frames=57 bytes=15606144 average_us=25993 max_us=26043 settle_us=0 prepare_us=1074721 transfer_us=401136 pushes=969
+[18:11:52] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:11:52] [DEBUG-hw1] down x=258 y=416
+[18:11:53] [DEBUG-hw1] up x=295 y=129 active=0
+[18:11:53] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:11:53] [DEBUG-hw1] down x=80 y=274
+[18:11:54] [DEBUG-hw1] up x=317 y=37 active=0
+[18:11:54] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:11:55] [DEBUG-hw1] down x=235 y=224
+[18:11:57] [DEBUG-hw1] up x=211 y=297 active=1
+[18:11:57] TINYDRAW_VECTOR_STROKE strokes=1002 samples=20044
+[18:11:57] [DEBUG-perf1] samples=197 updates_us=392577 average_us=1992 max_us=4658 finish_us=46921 display_prepare_us=10991 display_transfer_us=44824 pushes=198 stroke_us=2720996 touch_average_us=13729 touch_max_us=53000 max_input_lag_us=39061 max_queue=2
+[18:11:57] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:11:58] [DEBUG-hw1] down x=100 y=447
+[18:11:58] [DEBUG-hw1] up x=102 y=447 active=0
+[18:11:58] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:11:59] [DEBUG-hw1] down x=205 y=351
+[18:11:59] [DEBUG-hw1] up x=205 y=353 active=0
+[18:11:59] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:12:00] [DEBUG-hw1] down x=283 y=119
+[18:12:00] [DEBUG-hw1] up x=244 y=257 active=0
+[18:12:00] TINYDRAW_PAN_PERF frames=0 bytes=0 average_us=0 max_us=0 settle_us=0 prepare_us=0 transfer_us=0 pushes=0
+[18:12:00] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:12:01] [DEBUG-hw1] down x=154 y=97
+[18:12:01] [DEBUG-hw1] up x=325 y=170 active=0
+[18:12:01] TINYDRAW_PAN_PERF frames=0 bytes=0 average_us=0 max_us=0 settle_us=0 prepare_us=0 transfer_us=0 pushes=0
+[18:12:01] [DEBUG-hw1] down x=154 y=181
+[18:12:01] [DEBUG-hw1] up x=263 y=347 active=0
+[18:12:01] TINYDRAW_PAN_PERF frames=0 bytes=0 average_us=0 max_us=0 settle_us=0 prepare_us=0 transfer_us=0 pushes=0
+[18:12:01] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:12:02] [DEBUG-hw1] down x=216 y=127
+[18:12:02] [DEBUG-hw1] up x=243 y=389 active=0
+[18:12:02] TINYDRAW_PAN_PERF frames=0 bytes=0 average_us=0 max_us=0 settle_us=0 prepare_us=0 transfer_us=0 pushes=0
+[18:12:02] [DEBUG-hw1] down x=252 y=74
+[18:12:02] TINYDRAW_FALLBACK_REPAIRED revision=3
+[18:12:02] [DEBUG-hw1] up x=333 y=273 active=0
+[18:12:02] TINYDRAW_PAN_PERF frames=1 bytes=273792 average_us=26980 max_us=26980 settle_us=0 prepare_us=19190 transfer_us=7112 pushes=17
+[18:12:02] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:12:03] [DEBUG-hw1] down x=257 y=316
+[18:12:10] [DEBUG-hw1] up x=143 y=134 active=0
+[18:12:10] TINYDRAW_PAN_PERF frames=241 bytes=65983872 average_us=29982 max_us=30768 settle_us=0 prepare_us=5570221 transfer_us=1605482 pushes=4097
+[18:12:10] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:12:10] TINYDRAW_SETTLED_PROFILE zoom=50 generation=36 bands=10 segments=108754 clear_us=214628 raster_us=5679701 composite_us=1102977 publish_us=686251 complete=1
+[18:12:11] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:12:11] [DEBUG-hw1] down x=302 y=447
+[18:12:11] [DEBUG-hw1] up x=302 y=447 active=0
+[18:12:15] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:12:16] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:12:17] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:12:18] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:12:19] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:12:19] [DEBUG-hw1] down x=257 y=351
+[18:12:20] [DEBUG-hw1] up x=257 y=351 active=0
+[18:12:20] TINYDRAW_SETTLED_LOD quality=high center_error_milli=1000 radius_error_milli=375 input=20044 output=10235 bytes=122820
+[18:12:20] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:12:20] TINYDRAW_SETTLED_PROFILE zoom=200 generation=38 bands=12 segments=3163 clear_us=13140 raster_us=445187 composite_us=110894 publish_us=52556 complete=1
+[18:12:21] [DEBUG-hw1] down x=122 y=277
+[18:12:22] [DEBUG-hw1] up x=344 y=227 active=0
+[18:12:22] TINYDRAW_PAN_PERF frames=50 bytes=13689600 average_us=30140 max_us=34605 settle_us=0 prepare_us=1158792 transfer_us=331528 pushes=852
+[18:12:22] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:12:23] [DEBUG-hw1] down x=98 y=188
+[18:12:23] [DEBUG-hw1] up x=303 y=303 active=0
+[18:12:23] TINYDRAW_PAN_PERF frames=4 bytes=1095168 average_us=32164 max_us=38972 settle_us=0 prepare_us=97845 transfer_us=27892 pushes=70
+[18:12:23] [DEBUG-hw1] down x=185 y=162
+[18:12:25] [DEBUG-hw1] up x=64 y=16 active=0
+[18:12:25] TINYDRAW_PAN_PERF frames=75 bytes=20534400 average_us=30223 max_us=38389 settle_us=0 prepare_us=1711817 transfer_us=514395 pushes=1292
+[18:12:25] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:12:25] [DEBUG-hw1] down x=266 y=219
+[18:12:26] [DEBUG-hw1] up x=142 y=151 active=0
+[18:12:26] TINYDRAW_PAN_PERF frames=21 bytes=5749632 average_us=30049 max_us=35302 settle_us=0 prepare_us=478811 transfer_us=143722 pushes=359
+[18:12:26] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:12:27] [DEBUG-hw1] down x=306 y=447
+[18:12:27] [DEBUG-hw1] up x=306 y=447 active=0
+[18:12:27] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:12:28] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:12:31] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:12:32] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:12:33] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:12:34] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:12:35] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:12:36] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:12:39] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:12:41] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:12:42] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:12:43] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:12:44] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:12:45] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:12:46] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:12:47] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:12:48] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:12:51] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:12:52] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:12:53] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:12:54] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:12:56] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:12:58] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:12:59] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:13:00] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:13:01] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:13:02] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:13:03] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:13:04] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:13:05] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:13:09] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:13:10] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:13:11] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:13:12] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:13:14] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:13:16] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:13:17] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:13:18] TINYDRAW_POWER battery=100 voltage_mv=4088 charging=0 vbus=1
+[18:13:19] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:13:20] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:13:21] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:13:24] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:13:25] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:13:26] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:13:28] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:13:30] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:13:31] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:13:32] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:13:34] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:13:36] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:13:37] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:13:38] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:13:39] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:13:40] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:13:41] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:13:42] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:13:44] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:13:45] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:13:46] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:13:47] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:13:48] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:13:51] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:13:52] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:13:53] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:13:54] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:13:55] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:13:57] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:13:59] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:14:00] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:14:01] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:14:02] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:14:03] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:14:04] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:14:05] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:14:06] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:14:07] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:14:08] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:14:11] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:14:12] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:14:13] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:14:14] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:14:16] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:14:17] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:14:18] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:14:20] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:14:21] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:14:22] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:14:23] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:14:24] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:14:25] TINYDRAW_POWER battery=99 voltage_mv=4091 charging=0 vbus=1
+[18:14:26] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:14:27] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:14:29] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:14:31] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:14:32] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:14:33] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:14:34] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:14:35] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:14:36] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:14:37] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:14:40] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:14:41] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:14:42] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:14:43] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:14:44] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:14:45] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:14:46] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:14:47] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:14:51] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:14:54] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:14:55] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:14:56] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:14:58] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:14:59] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:15:00] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:15:01] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:15:02] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:15:04] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:15:05] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:15:09] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:15:10] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:15:12] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:15:14] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:15:17] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:15:18] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:15:20] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:15:21] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:15:24] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:15:25] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:15:26] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:15:27] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:15:28] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:15:29] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:15:30] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:15:31] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:15:32] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:15:34] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:15:35] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:15:36] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:15:38] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:15:40] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:15:41] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:15:42] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:15:43] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:15:44] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:15:45] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:15:46] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:15:47] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:15:48] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:15:49] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:15:50] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:15:52] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:15:54] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:15:55] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:15:57] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:15:58] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:15:59] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:16:01] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:16:02] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:16:04] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:16:06] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:16:07] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:16:08] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:16:09] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:16:11] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:16:12] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:16:13] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:16:14] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:16:15] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:16:16] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:16:17] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:16:19] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:16:20] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:16:21] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:16:22] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:16:23] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:16:25] TINYDRAW_POWER battery=100 voltage_mv=4088 charging=0 vbus=1
+[18:16:26] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:16:27] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:16:28] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:16:29] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:16:30] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:16:33] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:16:34] TINYDRAW_POWER battery=100 voltage_mv=4094 charging=0 vbus=1
+[18:16:35] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:16:37] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:16:38] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:16:42] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:16:43] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:16:44] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:16:47] TINYDRAW_POWER battery=100 voltage_mv=4094 charging=0 vbus=1
+[18:16:48] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:16:49] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:16:51] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:16:53] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:16:54] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:16:55] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:16:56] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:16:57] TINYDRAW_POWER battery=100 voltage_mv=4088 charging=0 vbus=1
+[18:16:58] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:17:00] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:17:02] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:17:04] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:17:06] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:17:07] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:17:08] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:17:09] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:17:11] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:17:13] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:17:15] TINYDRAW_POWER battery=99 voltage_mv=4092 charging=0 vbus=1
+[18:17:16] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:17:18] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:17:19] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:17:21] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:17:22] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:17:24] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:17:25] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:17:26] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:17:27] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:17:28] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:17:30] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:17:31] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:17:32] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:17:34] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:17:35] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:17:37] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:17:38] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:17:39] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:17:41] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:17:42] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:17:43] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:17:45] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:17:46] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:17:47] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:17:48] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:17:49] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:17:50] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:17:51] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:17:52] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:17:53] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:17:55] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:17:56] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:17:57] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:17:58] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:18:00] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:18:01] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:18:02] ESP-ROM:esp32s3-20210327
+[18:18:02] Build:Mar 27 2021
+[18:18:02] rst:0x15 (USB_UART_CHIP_RESET),boot:0x23 (DOWNLOAD(USB/UART0))
+[18:18:02] Saved PC:0x4037b802
+[18:18:02] waiting for download

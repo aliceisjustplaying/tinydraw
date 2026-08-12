@@ -24,7 +24,7 @@ Session commits, oldest first:
 | Commit | Content |
 |---|---|
 | `87ff28f` | Reviewed core fixes: LOD plateau cliff removal, per-stroke LOD fallback, zero-length capsule radius, Clang/Linux portability. Host-validated: 22/22 test, 22/22 release, 4/4 asan, format clean. |
-| `6b1c406` | pan_active gate + even-band `present_job` + final-pixels diagnostics (the user's uncommitted work, hardware-proven by `manual-fixed-live-serial.log`). |
+| `6b1c406` | pan_active gate + even-band `present_job` + final-pixels diagnostics (the user's uncommitted work, hardware-proven by [`manual-fixed-live-serial.log`](../../../second_review_hardware_ab/archive/superseded-diagnostics/manual-fixed-live-serial.log)). |
 | `02fc7d3` | Reviewed esp32 diagnostic hardening: CO5300 window validation (reject+log), cooperative render-task shutdown, pan-time work suppression + 1-job runway budget, coherent view snapshots, end_pan ordering, internal-heap telemetry. First compile of this patch happened here; both ESP-IDF targets build. |
 | `12b70da` | `TINYDRAW_PUBLICATION` correlated records (id, kind, generation, revision, origin, submit-sequence range, ink count, FNV-1a pixel hash) on band/settled/zoom_fallback publications; `expected_strokes` (vector-derived) in `TINYDRAW_PAN_CONTENT`. |
 | `4f3e226` | Hardware log + RESULTS.md: automated 12-cycle run at `12b70da`. |
