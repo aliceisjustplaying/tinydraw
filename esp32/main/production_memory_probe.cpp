@@ -35,6 +35,7 @@ void run_production_memory_probe() {
 
   std::array allocations{
       Allocation{"overview", kOverviewBytes},
+      Allocation{"overview_publication", kOverviewPublicationBytes},
       Allocation{"tile_pool", kTilePoolBytes},
       Allocation{"tile_metadata", kTileMetadataBytes},
       Allocation{"operation_records", kOperationRecordBytes},
