@@ -6,14 +6,16 @@ Last updated: 2026-08-12
 
 Branch: `feat/vector-canvas-production`
 
-The camera-aligned vector/materialized-cache prototype is complete and rejected as a product architecture. Tasks #52 and the host-only #54a fallback oracle now exist under `production/`; an empty-heap #53 allocation receipt is recorded but does not yet close the coexistence gate. The branch is not ready to ship. The next implementation step is the smallest exclusive hardware overview walk needed to validate fallback on glass before #55.
+The camera-aligned vector/materialized-cache prototype is complete and rejected as a product architecture. Tasks #52 and host-only #54a now exist under `production/`. The complete-overview fallback has passed an exclusive fail-closed hardware walk, and the empty-heap #53 plan now includes both live and next-revision overview buffers. These receipts do not close the coexistence, concurrency, or interactive-pan gates. The branch is not ready to ship. The next implementation work is the #55 transactional incremental-revision seam, with the minimum #58 panel transport seam pulled forward for early hardware proof.
 
 The default firmware still runs the existing raster-authoritative product:
 
 - a hard-coded 3×3 `WorldCanvas` (1104×1344);
 - live `StrokeRaster` rendering and tile-based raster Undo;
 - raster-tile persistence and PNG export;
-- a transitional `VectorDocument` recording path that is not yet authoritative.
+- no vector-authoritative production document.
+
+Prototype-only builds may still record a `VectorDocument`; default firmware no longer dual-writes an unused vector log.
 
 Do not mistake the current default firmware or retired benchmark coordinator for the target architecture.
 
@@ -81,16 +83,15 @@ Correctness requirements are stroke presence, painter order, eraser behavior, an
 
 ## Next task
 
-Build an exclusive, opt-in hardware overview walk outside `hardware_app.cpp`:
+Implement #55 without growing `hardware_app.cpp`:
 
-1. compile and construct the real production module on ESP32;
-2. reuse one extracted physical panel adapter rather than copying CO5300 setup;
-3. present 25% overview strips, then 100% overview-derived fallback strips;
-4. capture exact-commit serial timing, hashes, and panel-window validation;
-5. keep the default raster firmware runnable and unchanged.
+1. add a transactional revision interface that carries unaffected resident tiles forward and changes only affected tiles;
+2. keep rendering outside `MaterializedCanvas`, using caller-owned next-overview and bounded tile scratch already present in the memory plan;
+3. preserve the old revision and identities on every rejected commit;
+4. host-test painter-order targeting, carry-forward, fallback, pin refusal, and partial-failure behavior;
+5. pull forward only the #58 transport/compositor split needed to run an exclusive incremental-operation walk on the connected panel.
 
-This is not full #58 scheduling and does not close #54's ≤35 ms pan gate. It is
-the smallest hardware seam needed before #55 incremental updates.
+The old full-overview `publish_overview` path remains useful for bootstrap and complete replacement, not ordinary append. The first hardware proof must exercise a real incremental operation and physical transfer before broader renderer work.
 
 ## Validation baseline
 

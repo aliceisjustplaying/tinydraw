@@ -88,20 +88,25 @@ first complete allocation plan. Its capacity assumptions are explicit:
 - four materialized zoom LOD span tables and 90,000 compact 6-byte LOD samples;
 - 128 tile slots;
 - two 128×128 renderer workspaces plus 64 KiB shared geometry storage;
-- a 368×76 overlay and two 368×32 staging strips.
+- a 368×76 overlay and two 368×32 staging strips;
+- a second 368×448 overview buffer for transactional revision publication.
 
 The opt-in `TINYDRAW_PRODUCTION_MEMORY_PROBE` firmware allocates every region
 simultaneously, then attempts a separate 1.5 MiB allocation. This is an
 allocation receipt, not proof that the eventual encoders and renderers fit the
 reserved capacities or meet interaction gates.
 
-The initial empty-heap ESP32-S3 allocation receipt is
-[`hardware-receipts/1f91ed0-memory-layout.log`](hardware-receipts/1f91ed0-memory-layout.log):
+The current empty-heap ESP32-S3 allocation receipt is
+[`hardware-receipts/756e080-memory-layout.log`](hardware-receipts/756e080-memory-layout.log):
 
-- all 3,038,304 planned bytes allocated simultaneously;
-- largest contiguous block after the plan: 5,242,880 bytes;
+- both the live and next-revision overviews are explicitly budgeted;
+- all 3,368,032 planned bytes allocated simultaneously;
+- largest contiguous block after the plan: 4,980,736 bytes;
 - a separate 1,572,864-byte reserve allocation succeeded;
-- free/largest after holding both plan and reserve: 3,748,420 / 3,735,552 bytes.
+- free/largest after holding both plan and reserve: 3,412,544 / 3,407,872 bytes.
+
+The earlier pre-publication-buffer receipt remains archived as
+[`hardware-receipts/1f91ed0-memory-layout.log`](hardware-receipts/1f91ed0-memory-layout.log).
 
 This proves only that the provisional external-memory slabs and reserve are
 simultaneously allocatable on an otherwise empty 8 MiB PSRAM heap. It does not
@@ -131,3 +136,27 @@ not the interactive ≤35 ms gate under concurrent product workloads.
 Host tests remain the oracle for the no-checkerboard composition policy. Final
 scheduler behavior, incremental publication, and the ≤35 ms pan gate require the later display
 adapter and scheduler; no claim about those hardware gates is made here.
+
+## Task #55 revision seam
+
+Incremental append must not use `publish_overview`, which deliberately replaces
+a whole revision and invalidates all tiles. The next state change will add one
+transactional revision operation with this behavior:
+
+1. The renderer applies operation N to the caller-owned next-overview buffer and
+   to scratch copies of only the affected resident tiles.
+2. The canvas validates the next revision, complete overview, affected tile
+   keys, replacement pixels, and that no source is pinned before changing state.
+3. One commit copies the complete overview, carries unaffected resident tiles
+   forward to revision N, and publishes or invalidates affected tiles. Failure
+   leaves the prior revision and every source identity unchanged.
+4. Missing affected tile pixels remain valid overview fallback and may be
+   republished from incremental scratch later; operations 1…N−1 are never
+   replayed.
+
+The interface should express a revision plus bounded affected-tile publications,
+not expose mutable pool storage or renderer callbacks. Tile size and slot count
+remain provisional and may change after captured workloads. Shared read pins
+protect source storage only while a display adapter copies it into DMA staging;
+`pins_outstanding()` is the fail-closed diagnostic. Renderer work never holds a
+pin while waiting for panel capacity.
