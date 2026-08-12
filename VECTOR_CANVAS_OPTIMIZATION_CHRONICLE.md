@@ -192,3 +192,32 @@ The tighter map improves 200% over raw geometry but does not reach 500 ms. Lates
 The clean-commit rerun is `second_review_hardware_ab/4fc345e-auto-hardware.log`.
 Its firmware reports `App version: 4fc345e` and reproduces the dynamic-LOD
 results, so the evidence now identifies the exact committed source.
+
+## 16. Internal-RAM coverage was not the missing settled speedup
+
+A fresh review proposed that settled capsule rasterization was dominated by its
+PSRAM coverage scratch. We pre-registered a ≥40% reduction in `raster_us` at
+100% if 32-row coverage moved to internal RAM.
+
+The final controlled hardware experiment compared three variants on the same
+1,000-stroke document, 100% camera, and 368×384 output region:
+
+| Variant | Segments | Clear | Raster | Composite | Wall |
+|---|---:|---:|---:|---:|---:|
+| grouped region, PSRAM scratch | 6,192 | 12.380 ms | 437.398 ms | 98.073 ms | 553.283 ms |
+| 12 bands, PSRAM scratch | 10,949 | 10.693 ms | 470.262 ms | 91.215 ms | 588.240 ms |
+| 12 bands, internal scratch | 10,949 | 6.994 ms | 468.570 ms | 87.000 ms | 578.317 ms |
+
+Every output was identical: `ink=117220 hash=c2c4938d`. Comparing the two
+identical banded workloads, internal scratch improved raster only 0.36% and
+wall time 1.69%. The hypothesis failed. Scratch placement helps clearing and
+compositing somewhat, but capsule distance/radius work dominates raster time.
+
+Banding also increased segment work 76.8% because strokes spanning multiple
+bands were revisited. This confirms the production renderer should generate
+geometry for a larger supertask once, then bin ordered spans or microtiles into
+smaller publication tiles. It should not replay the document per publication
+band.
+
+Raw receipt: `second_review_hardware_ab/8817a88-step0-scratch-ab.log`.
+Prototype conclusion and production gates: `PROTOTYPE_EXIT.md`.

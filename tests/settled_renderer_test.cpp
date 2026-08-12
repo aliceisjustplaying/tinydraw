@@ -151,6 +151,29 @@ TEST_CASE("settled region rendering only writes inside the region") {
   }
 }
 
+TEST_CASE("settled bands reproduce one grouped settled region") {
+  std::array<tinydraw::VectorStroke, 4> stroke_storage;
+  std::array<tinydraw::StrokeSample, 128> sample_storage;
+  tinydraw::VectorDocument document(stroke_storage, sample_storage);
+  add_wavy_stroke(document, kBlue, 20.0F, 25.0F, 60U);
+  add_wavy_stroke(document, kRed, 80.0F, 210.0F, 40U);
+
+  constexpr int kRows = 12 * 32;
+  const tinydraw::Rect grouped_region{0, 0, tinydraw::kCanvasWidth, kRows};
+  std::vector<std::uint16_t> grouped(kPixels, 0x1234U);
+  std::vector<std::uint8_t> grouped_scratch(
+      static_cast<std::size_t>(tinydraw::kCanvasWidth * kRows));
+  REQUIRE(settled_render_region(document, {}, grouped, grouped_region, grouped_scratch).complete);
+
+  std::vector<std::uint16_t> banded(kPixels, 0x1234U);
+  std::vector<std::uint8_t> band_scratch(static_cast<std::size_t>(tinydraw::kCanvasWidth * 32));
+  for (int y = 0; y < kRows; y += 32) {
+    const tinydraw::Rect band{0, y, tinydraw::kCanvasWidth, y + 32};
+    REQUIRE(settled_render_region(document, {}, banded, band, band_scratch).complete);
+  }
+  CHECK(banded == grouped);
+}
+
 TEST_CASE("settled renderer preserves LOD pressure, loops, painter order, and erasing") {
   std::array<tinydraw::VectorStroke, 3> stroke_storage;
   std::array<tinydraw::StrokeSample, 16> sample_storage;

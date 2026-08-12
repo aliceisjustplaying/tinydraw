@@ -498,6 +498,19 @@ struct RegionContent {
   std::size_t ink = 0U;
 };
 
+RegionContent hash_canvas_region(std::span<const std::uint16_t> pixels, Rect region) {
+  RegionContent content;
+  for (int y = region.y0; y < region.y1; ++y) {
+    const auto offset = static_cast<std::size_t>(y * kCanvasWidth + region.x0);
+    for (int x = region.x0; x < region.x1; ++x) {
+      const std::uint16_t pixel = pixels[offset + static_cast<std::size_t>(x - region.x0)];
+      content.ink += pixel != kBackground;
+      content.hash = (content.hash ^ pixel) * 16777619U;
+    }
+  }
+  return content;
+}
+
 // FNV-1a over one world-atlas region, counting non-background pixels. This is
 // the software side of every publication record: if this hash carries ink and
 // the panel shows none, the defect is at or after the display boundary; if it
@@ -628,6 +641,79 @@ bool render_cancelled(void* raw) {
   const auto& cancellation = *static_cast<RenderCancellation*>(raw);
   return cancellation.benchmark->requested_generation.load() != cancellation.generation ||
          cancellation.benchmark->paused.load();
+}
+
+struct SettledScratchExperimentResult {
+  SettledRenderStats stats{};
+  RegionContent content{};
+  std::uint64_t wall_us = 0U;
+};
+
+SettledScratchExperimentResult run_settled_scratch_experiment(InteractivePanBenchmark& benchmark,
+                                                              std::span<std::uint8_t> scratch,
+                                                              bool banded) {
+  constexpr int kExperimentBands = 12;
+  constexpr Rect kExperimentRegion{0, 0, kCanvasWidth, kExperimentBands * kBandRows};
+  const Camera camera = job_camera(atlas_camera(1.0F), 4 * kBandsPerCell);
+  SettledScratchExperimentResult result;
+  const std::uint64_t started = benchmark_clock_us(nullptr);
+  const int passes = banded ? kExperimentBands : 1;
+  for (int pass = 0; pass < passes; ++pass) {
+    const Rect region = banded ? Rect{0, pass * kBandRows, kCanvasWidth, (pass + 1) * kBandRows}
+                               : kExperimentRegion;
+    const double inverse_zoom = 1.0 / static_cast<double>(camera.zoom);
+    const float world_halo = kCanonicalHaloPixels / camera.zoom;
+    SettledRenderOptions options;
+    options.background = kBackground;
+    options.clock_us = benchmark_clock_us;
+    options.lod_samples = benchmark.settled_lod_samples;
+    options.lod_first_sample = benchmark.settled_lod_first;
+    options.lod_sample_count = benchmark.settled_lod_count;
+    if (benchmark.macrogrid_valid) {
+      options.candidate_strokes = benchmark.macrogrid.query(
+          {.x0 = static_cast<float>(camera.x) - world_halo,
+           .y0 = static_cast<float>(camera.y + region.y0 * inverse_zoom) - world_halo,
+           .x1 = static_cast<float>(camera.x + kCanvasWidth * inverse_zoom) + world_halo,
+           .y1 = static_cast<float>(camera.y + region.y1 * inverse_zoom) + world_halo});
+    }
+    const SettledRenderStats stats = settled_render_region(
+        benchmark.document, camera, benchmark.render_buffer, region, scratch, options);
+    result.stats.strokes_tested += stats.strokes_tested;
+    result.stats.strokes_rendered += stats.strokes_rendered;
+    result.stats.segments_rendered += stats.segments_rendered;
+    result.stats.clear_us += stats.clear_us;
+    result.stats.raster_us += stats.raster_us;
+    result.stats.composite_us += stats.composite_us;
+    result.stats.complete = result.stats.complete && stats.complete;
+    if (!stats.complete) {
+      break;
+    }
+  }
+  result.wall_us = benchmark_clock_us(nullptr) - started;
+  result.content = hash_canvas_region(benchmark.render_buffer, kExperimentRegion);
+  return result;
+}
+
+void log_settled_scratch_experiment(const char* variant,
+                                    const SettledScratchExperimentResult& result,
+                                    std::uint32_t expected_hash) {
+  std::printf(
+      "TINYDRAW_SETTLED_SCRATCH_AB variant=%s complete=%u strokes_tested=%lu "
+      "strokes_rendered=%lu segments=%lu clear_us=%llu raster_us=%llu composite_us=%llu "
+      "wall_us=%llu ink=%lu hash=%08lx matches_grouped=%u internal_free=%lu "
+      "internal_largest=%lu\n",
+      variant, result.stats.complete, static_cast<unsigned long>(result.stats.strokes_tested),
+      static_cast<unsigned long>(result.stats.strokes_rendered),
+      static_cast<unsigned long>(result.stats.segments_rendered),
+      static_cast<unsigned long long>(result.stats.clear_us),
+      static_cast<unsigned long long>(result.stats.raster_us),
+      static_cast<unsigned long long>(result.stats.composite_us),
+      static_cast<unsigned long long>(result.wall_us),
+      static_cast<unsigned long>(result.content.ink),
+      static_cast<unsigned long>(result.content.hash),
+      expected_hash == 0U || result.content.hash == expected_hash,
+      static_cast<unsigned long>(heap_caps_get_free_size(kInternalCaps)),
+      static_cast<unsigned long>(heap_caps_get_largest_free_block(kInternalCaps)));
 }
 
 void render_task_entry(void* raw) {
@@ -1324,6 +1410,35 @@ InteractivePanBenchmark* start_interactive_pan_benchmark(
     destroy_benchmark(*benchmark);
     return nullptr;
   }
+
+  // Final bounded experiment on the disposable atlas: compare the current
+  // grouped PSRAM scratch path against banded PSRAM (banding overhead) and
+  // banded internal RAM (the isolated placement effect). All variants render
+  // the same 368x384 pixels and must hash identically.
+  constexpr std::size_t kExperimentScratchBytes =
+      static_cast<std::size_t>(kCanvasWidth * kBandRows);
+  auto* internal_scratch =
+      static_cast<std::uint8_t*>(heap_caps_malloc(kExperimentScratchBytes, kInternalCaps));
+  const auto grouped_psram =
+      run_settled_scratch_experiment(*benchmark, benchmark->settled_scratch, false);
+  log_settled_scratch_experiment("grouped_psram", grouped_psram, 0U);
+  const auto banded_psram =
+      run_settled_scratch_experiment(*benchmark, benchmark->settled_scratch, true);
+  log_settled_scratch_experiment("banded_psram", banded_psram, grouped_psram.content.hash);
+  if (internal_scratch != nullptr) {
+    const auto banded_internal = run_settled_scratch_experiment(
+        *benchmark, std::span(internal_scratch, kExperimentScratchBytes), true);
+    log_settled_scratch_experiment("banded_internal", banded_internal, grouped_psram.content.hash);
+  } else {
+    std::printf(
+        "TINYDRAW_SETTLED_SCRATCH_AB variant=banded_internal complete=0 alloc_failed=1 "
+        "bytes=%lu internal_free=%lu internal_largest=%lu\n",
+        static_cast<unsigned long>(kExperimentScratchBytes),
+        static_cast<unsigned long>(heap_caps_get_free_size(kInternalCaps)),
+        static_cast<unsigned long>(heap_caps_get_largest_free_block(kInternalCaps)));
+  }
+  heap_caps_free(internal_scratch);
+
   std::fill_n(world.pixels().begin(), WorldCanvas::kRequiredPixels, kBackground);
   std::fill_n(materialization_storage.begin(), WorldCanvas::kRequiredPixels, kBackground);
   benchmark->cache_mutex = xSemaphoreCreateMutex();
