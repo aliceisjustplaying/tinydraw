@@ -7,6 +7,7 @@ add_executable(tinydraw_tests
   fat16_disk_test.cpp
   host_input_test.cpp
   ink_stream_test.cpp
+  materialized_canvas_test.cpp
   perfect_freehand_test.cpp
   png_encoder_test.cpp
   raster_materializer_test.cpp
