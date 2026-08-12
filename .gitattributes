@@ -1,3 +1,4 @@
 * text=auto eol=lf
 *.png binary
 *.ppm binary
+second_review_hardware_ab/archive/superseded-diagnostics/*.log binary

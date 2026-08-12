@@ -37,17 +37,12 @@ The parent prototype branch and commit are pushed:
 origin/prototype/vector-materialized-cache = e311a46
 ```
 
-At handoff time there are no tracked modifications on the production branch. The following pre-existing items are untracked and should not be added or deleted casually:
-
-```text
-.pi/
-second_review_hardware_ab/4fc345e-manual-hardware.log
-second_review_hardware_ab/blank-canvas-instrumented-benchmark.log
-second_review_hardware_ab/blank-canvas-instrumented.log
-second_review_hardware_ab/blank-canvas-repro.log
-second_review_hardware_ab/manual-fixed-live-serial.log
-second_review_hardware_ab/manual-live-serial.log
-```
+At handoff time there were no tracked modifications on the production branch.
+Six pre-existing, untracked hardware captures were subsequently reviewed and
+preserved under
+[`second_review_hardware_ab/archive/superseded-diagnostics/`](second_review_hardware_ab/archive/superseded-diagnostics/README.md).
+They are historical prototype diagnostics, not current load-bearing receipts.
+The local `.pi/` directory remains untracked and must not be committed.
 
 ## User decisions and constraints
 

@@ -364,3 +364,10 @@ bursts are confirmed architectural limits of the camera-aligned atlas, as
 predicted by all three reviews. These receipts close the prototype's
 evidence file; the remaining work belongs to the production
 overview-plus-tiles design.
+
+## Superseded diagnostic captures
+
+Six earlier, formerly untracked captures are preserved in
+[`archive/superseded-diagnostics/`](archive/superseded-diagnostics/README.md).
+They remain available for historical traceability but are not load-bearing
+prototype or production receipts.

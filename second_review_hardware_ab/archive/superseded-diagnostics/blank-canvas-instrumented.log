@@ -1,0 +1,174 @@
+[18:05:56] ESP-ROM:esp32s3-20210327
+[18:05:56] Build:Mar 27 2021
+[18:05:56] rst:0x15 (USB_UART_CHIP_RESET),boot:0x2b (SPI_FAST_FLASH_BOOT)
+[18:05:56] Saved PC:0x4037d9fa
+[18:05:56] SPIWP:0xee
+[18:05:56] mode:DIO, clock div:1
+[18:05:56] load:0x3fce2820,len:0x1664
+[18:05:56] load:0x403c8700,len:0xf38
+[18:05:56] load:0x403cb700,len:0x31e8
+[18:05:56] entry 0x403c8930
+[18:05:56] I (24) boot: ESP-IDF v6.0.2 2nd stage bootloader
+[18:05:56] I (24) boot: compile time Aug 11 2026 14:04:28
+[18:05:56] I (25) boot: Multicore bootloader
+[18:05:56] I (25) boot: chip revision: v0.2
+[18:05:56] I (28) boot: efuse block revision: v1.3
+[18:05:56] I (31) qio_mode: Enabling default flash chip QIO
+[18:05:56] I (36) boot.esp32s3: Boot SPI Speed : 80MHz
+[18:05:56] I (39) boot.esp32s3: SPI Mode       : QIO
+[18:05:56] I (43) boot.esp32s3: SPI Flash Size : 16MB
+[18:05:56] I (47) boot: Enabling RNG early entropy source...
+[18:05:56] I (51) boot: Partition Table:
+[18:05:56] I (54) boot: ## Label            Usage          Type ST Offset   Length
+[18:05:56] I (60) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+[18:05:56] I (67) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+[18:05:56] I (73) boot:  2 factory          factory app      00 00 00010000 00100000
+[18:05:56] I (80) boot:  3 drawing          Unknown data     01 40 00110000 00300000
+[18:05:56] I (86) boot:  4 export           Unknown data     01 41 00410000 00500000
+[18:05:56] I (93) boot:  5 coredump         Unknown data     01 03 00910000 00010000
+[18:05:56] I (100) boot: End of partition table
+[18:05:56] I (103) esp_image: segment 0: paddr=00010020 vaddr=3c0b0020 size=22b24h (142116) map
+[18:05:56] I (132) esp_image: segment 1: paddr=00032b4c vaddr=3fc9b000 size=0d4cch ( 54476) load
+[18:05:56] I (143) esp_image: segment 2: paddr=00040020 vaddr=42000020 size=a6070h (680048) map
+[18:05:56] I (248) esp_image: segment 3: paddr=000e6098 vaddr=3fca84cc size=0418ch ( 16780) load
+[18:05:56] I (252) esp_image: segment 4: paddr=000ea22c vaddr=40374000 size=16fd8h ( 94168) load
+[18:05:56] I (271) esp_image: segment 5: paddr=0010120c vaddr=50000000 size=00024h (    36) load
+[18:05:56] I (284) boot: Loaded app from partition at offset 0x10000
+[18:05:56] I (284) boot: Disabling RNG early entropy source...
+[18:05:56] I (294) octal_psram: vendor id    : 0x0d (AP)
+[18:05:56] I (294) octal_psram: dev id       : 0x02 (generation 3)
+[18:05:56] I (295) octal_psram: density      : 0x03 (64 Mbit)
+[18:05:56] I (296) octal_psram: good-die     : 0x01 (Pass)
+[18:05:56] I (301) octal_psram: Latency      : 0x01 (Fixed)
+[18:05:56] I (305) octal_psram: VCC          : 0x01 (3V)
+[18:05:56] I (309) octal_psram: SRF          : 0x01 (Fast Refresh)
+[18:05:56] I (314) octal_psram: BurstType    : 0x01 (Hybrid Wrap)
+[18:05:56] I (319) octal_psram: BurstLen     : 0x01 (32 Byte)
+[18:05:56] I (323) octal_psram: Readlatency  : 0x02 (10 cycles@Fixed)
+[18:05:56] I (329) octal_psram: DriveStrength: 0x00 (1/1)
+[18:05:56] I (333) MSPI Timing: Enter psram timing tuning
+[18:05:56] I (338) esp_psram: Found 8MB PSRAM device
+[18:05:56] I (341) esp_psram: Speed: 80MHz
+[18:05:56] I (344) cpu_start: Multicore app
+[18:05:57] I (760) esp_psram: SPI SRAM memory test OK
+[18:05:57] I (768) cpu_start: GPIO 44 and 43 are used as console UART I/O pins
+[18:05:57] I (768) cpu_start: Pro cpu start user code
+[18:05:57] I (768) cpu_start: cpu freq: 240000000 Hz
+[18:05:57] I (770) app_init: Application information:
+[18:05:57] I (774) app_init: Project name:     tinydraw_esp32
+[18:05:57] I (778) app_init: App version:      ffdbd9b-dirty
+[18:05:57] I (783) app_init: Compile time:     Aug 12 2026 18:05:28
+[18:05:57] I (788) app_init: ELF file SHA256:  07f0fdf40...
+[18:05:57] I (792) app_init: ESP-IDF:          v6.0.2
+[18:05:57] I (796) efuse_init: Min chip rev:     v0.0
+[18:05:57] I (800) efuse_init: Max chip rev:     v0.99
+[18:05:57] I (804) efuse_init: Chip rev:         v0.2
+[18:05:57] I (808) heap_init: Initializing. RAM available for dynamic allocation:
+[18:05:57] I (814) heap_init: At 3FCB16A0 len 00038070 (224 KiB): RAM
+[18:05:57] I (819) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+[18:05:57] I (824) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
+[18:05:57] I (830) heap_init: At 600FE000 len 00001FE8 (7 KiB): RTCRAM
+[18:05:57] I (835) esp_psram: Adding pool of 8192K of PSRAM memory to heap allocator
+[18:05:57] I (842) spi_flash: detected chip: generic
+[18:05:57] I (845) spi_flash: flash io: qio
+[18:05:57] I (848) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+[18:05:57] I (854) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+[18:05:57] I (861) main_task: Started on CPU0
+[18:05:57] I (864) main_task: Calling app_main()
+[18:05:57] TINYDRAW_PANEL_HARD_RESET=1
+[18:05:57] I (1048) co5300: version: 2.1.0
+[18:05:57] I (1048) co5300_spi: LCD panel create success, version: 2.1.0
+[18:05:57] W (1128) co5300_spi: The 3Ah command has been used and will be overwritten by external initialization sequence
+[18:05:57] I (1228) CST816S: IC id: 183
+[18:05:57] [DEBUG-touch-rate] registers=1 id=0xb7 firmware=0x02 scan_period=0x00 irq=0x70
+[18:05:57] I (1231) PCF85063A: PCF85063A initialized successfully
+[18:05:57] TINYDRAW_RTC ready=1 retained=1 local=2026-08-12T18:05:50
+[18:05:57] TINYDRAW_VECTOR_READY strokes=512 samples=8192 bytes=112640 free_psram=776564
+[18:05:58] TINYDRAW_AUTOSAVE_READY
+[18:05:58] TINYDRAW_PSRAM world_bytes=2967552 free=776564 largest=770048 minimum=776564
+[18:05:58] TINYDRAW_POWER_READY ready=1 button=1 valid=1 battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:05:58] TINYDRAW_HARDWARE_OK display=CO5300 touch=CST820 demo_capacity=8192
+[18:05:58] I (1904) pp: pp rom version: e7ae62f
+[18:05:58] I (1904) net80211: net80211 rom version: e7ae62f
+[18:05:58] I (1906) wifi:wifi driver task: 3fce8e5c, prio:23, stack:6656, core=0
+[18:05:58] I (1913) wifi:wifi firmware version: 00ad238
+[18:05:58] I (1913) wifi:wifi certification version: v7.0
+[18:05:58] I (1915) wifi:config NVS flash: enabled
+[18:05:58] I (1918) wifi:config nano formatting: disabled
+[18:05:58] I (1923) wifi:Init data frame dynamic rx buffer num: 32
+[18:05:58] I (1928) wifi:Init static rx mgmt buffer num: 5
+[18:05:58] I (1932) wifi:Init management short buffer num: 32
+[18:05:58] I (1936) wifi:Init dynamic tx buffer num: 32
+[18:05:58] I (1940) wifi:Init static tx FG buffer num: 2
+[18:05:58] I (1944) wifi:Init static rx buffer size: 1600
+[18:05:58] I (1949) wifi:Init static rx buffer num: 10
+[18:05:58] I (1952) wifi:Init dynamic rx buffer num: 32
+[18:05:58] I (1957) wifi_init: rx ba win: 6
+[18:05:58] I (1959) wifi_init: accept mbox: 6
+[18:05:58] I (1962) wifi_init: tcpip mbox: 32
+[18:05:58] I (1965) wifi_init: udp mbox: 6
+[18:05:58] I (1968) wifi_init: tcp mbox: 6
+[18:05:58] I (1971) wifi_init: tcp tx win: 5760
+[18:05:58] I (1975) wifi_init: tcp rx win: 5760
+[18:05:58] I (1978) wifi_init: tcp mss: 1440
+[18:05:58] I (1981) wifi_init: WiFi IRAM OP enabled
+[18:05:58] I (1984) wifi_init: WiFi RX IRAM OP enabled
+[18:05:58] I (1989) phy_init: phy_version 712,87e8c20e,Apr 13 2026,18:51:10
+[18:05:58] I (2028) wifi:mode : sta (1c:db:d4:7b:85:c8)
+[18:05:58] I (2029) wifi:enable tsf
+[18:05:59] TINYDRAW_POWER battery=100 voltage_mv=4094 charging=0 vbus=1
+[18:06:00] E (4030) wifi:sta is connecting, return error
+[18:06:01] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:06:02] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:06:03] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:06:04] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:06:04] E (8032) wifi:sta is connecting, return error
+[18:06:05] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:06:06] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:06:07] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:06:08] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:06:08] I (12036) wifi:flush txq
+[18:06:08] I (12037) wifi:stop sw txq
+[18:06:08] I (12037) wifi:lmac stop hw txq
+[18:06:08] I (12039) wifi:Deinit lldesc rx mblock:10
+[18:06:08] TINYDRAW_NTP_DONE success=0 wifi_stopped=1
+[18:06:09] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:06:10] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:06:11] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:06:14] TINYDRAW_POWER battery=100 voltage_mv=4094 charging=0 vbus=1
+[18:06:15] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:06:16] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:06:17] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:06:19] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:06:20] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:06:21] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:06:22] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:06:23] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:06:25] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:06:26] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:06:27] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:06:28] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:06:29] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:06:32] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:06:33] TINYDRAW_POWER battery=100 voltage_mv=4094 charging=0 vbus=1
+[18:06:34] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:06:37] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:06:38] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:06:39] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:06:40] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:06:41] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:06:42] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:06:43] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:06:44] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:06:45] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:06:46] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:06:47] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:06:48] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:06:49] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
+[18:06:50] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:06:51] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:06:52] TINYDRAW_POWER battery=100 voltage_mv=4092 charging=0 vbus=1
+[18:06:53] TINYDRAW_POWER battery=100 voltage_mv=4091 charging=0 vbus=1
+[18:06:54] TINYDRAW_POWER battery=100 voltage_mv=4089 charging=0 vbus=1
+[18:06:56] TINYDRAW_POWER battery=100 voltage_mv=4090 charging=0 vbus=1
+[18:06:57] TINYDRAW_POWER battery=100 voltage_mv=4093 charging=0 vbus=1
