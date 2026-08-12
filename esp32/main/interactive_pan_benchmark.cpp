@@ -154,7 +154,12 @@ bool region_proven_by_source(const VectorDocument& document, Camera source_camer
       .x1 = static_cast<float>(source_camera.x + WorldCanvas::kWidth / source_camera.zoom),
       .y1 = static_cast<float>(source_camera.y + WorldCanvas::kHeight / source_camera.zoom),
   };
-  const RectF destination_world = camera_world_rect(destination_camera, region);
+  RectF destination_world = camera_world_rect(destination_camera, region);
+  const float destination_halo = kCanonicalHaloPixels / destination_camera.zoom;
+  destination_world.x0 -= destination_halo;
+  destination_world.y0 -= destination_halo;
+  destination_world.x1 += destination_halo;
+  destination_world.y1 += destination_halo;
   const float source_halo = kCanonicalHaloPixels / source_camera.zoom;
   const RectF proven_source{
       .x0 = source_world.x0 + source_halo,
@@ -313,6 +318,7 @@ class InteractivePanBenchmark {
   std::atomic<std::uint8_t> materialization_state{2U};
   std::atomic<bool> rendering{false};
   std::atomic<bool> paused{false};
+  std::atomic<bool> zoom_presentation_pending{false};
   std::atomic<bool> stroke_mutation_active{false};
   bool has_complete_initial_atlas = false;
   std::atomic<std::uint32_t> document_revision{1U};
@@ -415,6 +421,9 @@ int choose_job(const InteractivePanBenchmark& benchmark) {
 }
 
 void present_job(InteractivePanBenchmark& benchmark, int job) {
+  if (!benchmark.has_complete_initial_atlas) {
+    return;
+  }
   const JobRect rect = job_rect(job);
   const int view_x = benchmark.view_x.load();
   const int view_y = benchmark.view_y.load();
@@ -460,7 +469,8 @@ void render_task_entry(void* raw) {
   while (true) {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     const std::uint32_t generation = benchmark.requested_generation.load();
-    if (benchmark.paused.load() || generation == handled_generation) {
+    if (benchmark.paused.load() || benchmark.zoom_presentation_pending.load() ||
+        generation == handled_generation) {
       benchmark.rendering.store(false);
       continue;
     }
@@ -756,6 +766,8 @@ InteractivePanBenchmark* start_interactive_pan_benchmark(
     destroy_benchmark(*benchmark);
     return nullptr;
   }
+  benchmark->zoom_presentation_pending.store(false);
+  xTaskNotifyGive(benchmark->render_task);
   // Initial setup is not an interaction measurement. Do not expose any
   // synthetic-document band until the entire first atlas belongs to it.
   const std::uint32_t initial_wait_started = static_cast<std::uint32_t>(esp_timer_get_time());
@@ -778,6 +790,7 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
   }
   auto& attempt_metrics = benchmark.metrics[static_cast<std::size_t>(index)];
   ++attempt_metrics.attempts;
+  benchmark.zoom_presentation_pending.store(true);
   benchmark.paused.store(true);
   benchmark.requested_generation.fetch_add(1U);
   xTaskNotifyGive(benchmark.render_task);
@@ -792,6 +805,9 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
       std::max(attempt_metrics.maximum_cancellation_us, cancellation_us);
   if (benchmark.rendering.load()) {
     ++attempt_metrics.failed_attempts;
+    benchmark.zoom_presentation_pending.store(false);
+    benchmark.paused.store(false);
+    xTaskNotifyGive(benchmark.render_task);
     return false;
   }
 
@@ -847,6 +863,7 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
               benchmark.fallback_source_job_revision, old_document_revision)) {
         xSemaphoreGive(benchmark.cache_mutex);
         ++attempt_metrics.failed_attempts;
+        benchmark.zoom_presentation_pending.store(false);
         benchmark.paused.store(false);
         benchmark.requested_generation.fetch_add(1U);
         xTaskNotifyGive(benchmark.render_task);
@@ -873,6 +890,9 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
   if (old_storage.empty()) {
     xSemaphoreGive(benchmark.cache_mutex);
     ++attempt_metrics.failed_attempts;
+    benchmark.zoom_presentation_pending.store(false);
+    benchmark.paused.store(false);
+    xTaskNotifyGive(benchmark.render_task);
     return false;
   }
   benchmark.materialization_storage = old_storage;
@@ -907,7 +927,6 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
     benchmark.settled_us[static_cast<std::size_t>(index)].store(fallback_elapsed);
   }
   xSemaphoreGive(benchmark.cache_mutex);
-  xTaskNotifyGive(benchmark.render_task);
   return true;
 }
 
@@ -919,6 +938,8 @@ void interactive_pan_benchmark_record_zoom_present(InteractivePanBenchmark& benc
   static_cast<void>(
       benchmark.first_valid_us[static_cast<std::size_t>(index)].compare_exchange_strong(expected,
                                                                                         elapsed));
+  benchmark.zoom_presentation_pending.store(false);
+  xTaskNotifyGive(benchmark.render_task);
   if (benchmark.settled_us[static_cast<std::size_t>(index)].load() == 0U &&
       kZoomPercents[static_cast<std::size_t>(index)] <= 100) {
     benchmark.settled_us[static_cast<std::size_t>(index)].store(elapsed);
@@ -983,7 +1004,12 @@ void interactive_pan_benchmark_commit_stroke(InteractivePanBenchmark& benchmark)
       .x1 = benchmark.view_x.load() + kCanvasWidth,
       .y1 = benchmark.view_y.load() + benchmark.presented_rows,
   };
-  const RectF changed_bounds = strokes[committed_index].bounds;
+  RectF changed_bounds = strokes[committed_index].bounds;
+  const float world_halo = kCanonicalHaloPixels / benchmark.active_atlas.zoom;
+  changed_bounds.x0 -= world_halo;
+  changed_bounds.y0 -= world_halo;
+  changed_bounds.x1 += world_halo;
+  changed_bounds.y1 += world_halo;
   for (std::size_t job = 0; job < benchmark.ready.size(); ++job) {
     const JobRect rect = job_rect(static_cast<int>(job));
     const RectF world_bounds =
@@ -1028,12 +1054,15 @@ void interactive_pan_benchmark_begin_pan(InteractivePanBenchmark& benchmark, Vie
   ++metrics.gestures;
   metrics.previous_origin = origin;
   metrics.previous_event_us = event_us;
-  interactive_pan_benchmark_view_changed(benchmark, origin);
 }
 
-void interactive_pan_benchmark_view_changed(InteractivePanBenchmark& benchmark, ViewOrigin origin) {
+bool interactive_pan_benchmark_view_changed(InteractivePanBenchmark& benchmark, ViewOrigin origin) {
+  if (missing_pixels(benchmark, origin) != 0U) {
+    return false;
+  }
   benchmark.view_x.store(origin.x);
   benchmark.view_y.store(origin.y);
+  return true;
 }
 
 void interactive_pan_benchmark_record_frame(InteractivePanBenchmark& benchmark, ViewOrigin origin,

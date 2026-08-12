@@ -947,13 +947,20 @@ void run_hardware_app() {
     const int delta_x = static_cast<int>(std::lround(point.x - pan_start_touch.x));
     const int delta_y = static_cast<int>(std::lround(point.y - pan_start_touch.y));
     const auto started = esp_timer_get_time();
-    if (!canvas.world().move_to({pan_start_origin.x - delta_x, pan_start_origin.y - delta_y})) {
+    const tinydraw::ViewOrigin requested_origin{pan_start_origin.x - delta_x,
+                                                pan_start_origin.y - delta_y};
+#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+    tinydraw::esp32::interactive_pan_benchmark_lock_cache(*interactive_pan_benchmark);
+    if (!tinydraw::esp32::interactive_pan_benchmark_view_changed(*interactive_pan_benchmark,
+                                                                 requested_origin) ||
+        !canvas.world().move_to(requested_origin)) {
+      tinydraw::esp32::interactive_pan_benchmark_unlock_cache(*interactive_pan_benchmark);
       return;
     }
-#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
-    tinydraw::esp32::interactive_pan_benchmark_view_changed(*interactive_pan_benchmark,
-                                                            canvas.world().origin());
-    tinydraw::esp32::interactive_pan_benchmark_lock_cache(*interactive_pan_benchmark);
+#else
+    if (!canvas.world().move_to(requested_origin)) {
+      return;
+    }
 #endif
     display.push_world(canvas.world().pixels(), canvas.world().origin(), kMainOverlayTop);
     const auto finished = esp_timer_get_time();
