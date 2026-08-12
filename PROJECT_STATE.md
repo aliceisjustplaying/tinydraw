@@ -102,6 +102,8 @@ For core or production-state changes:
 ./scripts/dev release
 ./scripts/dev asan
 ./scripts/dev format-check
+./scripts/dev tidy
+./scripts/dev cppcheck
 git diff --check
 ```
 

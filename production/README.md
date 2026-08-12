@@ -29,6 +29,18 @@ Adapters outside this directory may eventually connect production modules to the
 - Do not hold state locks while waiting for display capacity or transfer completion.
 - Do not add speculative seams. Add an adapter only when a real second implementation or test substitute exists.
 
+## Automated guards
+
+Production code is compiled through the independent `tinydraw::production` CMake target with the project's warnings-as-errors policy. It is also covered by the repository formatter and two production-scoped analyzers:
+
+```sh
+./scripts/dev format-check
+./scripts/dev tidy
+./scripts/dev cppcheck
+```
+
+`clang-tidy` treats its curated analyzer, bug-prone, performance, portability, function-size, and cognitive-complexity findings as errors. Cppcheck supplies an independent C++20 analysis pass. Neither analyzer scans the frozen legacy or prototype tree.
+
 ## Migration rule
 
 Every production milestone must replace or prepare to replace an identified legacy responsibility. Do not create an indefinite third path.

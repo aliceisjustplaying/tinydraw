@@ -1,0 +1,30 @@
+Checks: >
+  -*,
+  clang-analyzer-*,
+  bugprone-*,
+  performance-*,
+  portability-*,
+  readability-function-cognitive-complexity,
+  readability-function-size,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-exception-escape,
+  -bugprone-switch-missing-default-case
+WarningsAsErrors: '*'
+HeaderFileExtensions:
+  - h
+  - hpp
+ImplementationFileExtensions:
+  - c
+  - cc
+  - cpp
+HeaderFilterRegex: '(^|.*/)production/(include|src)/'
+SystemHeaders: false
+FormatStyle: file
+CheckOptions:
+  readability-function-cognitive-complexity.Threshold: 20
+  readability-function-size.LineThreshold: 100
+  readability-function-size.StatementThreshold: 80
+  readability-function-size.BranchThreshold: 15
+  readability-function-size.ParameterThreshold: 6
+  readability-function-size.NestingThreshold: 4
+  readability-function-size.VariableThreshold: 20
