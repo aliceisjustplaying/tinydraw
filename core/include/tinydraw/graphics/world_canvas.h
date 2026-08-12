@@ -31,6 +31,11 @@ class WorldCanvas {
   [[nodiscard]] std::span<std::uint16_t> pixels();
   [[nodiscard]] std::span<const std::uint16_t> pixels() const;
 
+  // Prototype seam for double-buffered materialization. Exchanges the backing
+  // 3x3 raster without copying and returns the previous storage. The caller
+  // owns both arenas and must keep them alive.
+  [[nodiscard]] std::span<std::uint16_t> exchange_storage(std::span<std::uint16_t> replacement);
+
   [[nodiscard]] bool capture(std::span<const std::uint16_t> viewport);
   [[nodiscard]] bool capture_rect(std::span<const std::uint16_t> viewport, Rect rect);
   [[nodiscard]] bool replace(std::span<const std::uint16_t> pixels, ViewOrigin origin,

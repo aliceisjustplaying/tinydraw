@@ -67,8 +67,8 @@ constexpr std::uint32_t kDemoLongPressUs = 800'000U;
 constexpr std::uint32_t kPowerRefreshUs = 1'000'000U;
 constexpr std::size_t kDemoCapacity = 8192U;
 #ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
-constexpr std::size_t kVectorStrokeCapacity = 1'000U;
-constexpr std::size_t kVectorSampleCapacity = 12'000U;
+constexpr std::size_t kVectorStrokeCapacity = 1'100U;
+constexpr std::size_t kVectorSampleCapacity = 16'384U;
 #else
 constexpr std::size_t kVectorStrokeCapacity = 512U;
 constexpr std::size_t kVectorSampleCapacity = 8192U;
@@ -871,6 +871,8 @@ void run_hardware_app() {
   tinydraw::ViewOrigin pan_start_origin{};
   tinydraw::ViewOrigin vector_stroke_origin{};
   bool vector_stroke_recording = false;
+  bool vector_stroke_committed = false;
+  bool vector_stroke_refused = false;
   bool toolbar_pressed = false;
   tinydraw::Point toolbar_sum{};
   std::uint32_t toolbar_samples = 0;
@@ -902,6 +904,8 @@ void run_hardware_app() {
     canvas.raster().cancel();
     vector_document.cancel_stroke();
     vector_stroke_recording = false;
+    vector_stroke_committed = false;
+    vector_stroke_refused = false;
   };
   const auto update_toolbar = [&] {
     toolbar.can_undo = canvas.undo_history().can_undo();
@@ -1071,6 +1075,7 @@ void run_hardware_app() {
       update_toolbar();
       tinydraw::esp32::interactive_pan_benchmark_lock_cache(*interactive_pan_benchmark);
       display.push_world(canvas.world().pixels(), canvas.world().origin(), kMainOverlayTop);
+      tinydraw::esp32::interactive_pan_benchmark_record_zoom_present(*interactive_pan_benchmark);
       tinydraw::esp32::interactive_pan_benchmark_unlock_cache(*interactive_pan_benchmark);
       return;
     }
@@ -1082,7 +1087,13 @@ void run_hardware_app() {
       update_toolbar();
       return;
     }
+    // Pen and pan remain available so the same materialized document can be
+    // mutated and exercised. Other production actions stay outside this
+    // throwaway prototype.
     if (action != tinydraw::ToolbarAction::kToggleSizes &&
+        action != tinydraw::ToolbarAction::kSelectPen &&
+        action != tinydraw::ToolbarAction::kSelectPan &&
+        action != tinydraw::ToolbarAction::kSelectEraser &&
         action != tinydraw::ToolbarAction::kNone) {
       close_popups();
       update_toolbar();
@@ -1200,7 +1211,8 @@ void run_hardware_app() {
   display.set_toolbar(toolbar);
   display.refresh_toolbar(canvas.committed());
   interactive_pan_benchmark = tinydraw::esp32::start_interactive_pan_benchmark(
-      vector_document, canvas.world(), canvas.visible(), kMainOverlayTop);
+      vector_document, canvas.world(), canvas.prototype_materialization_storage(), canvas.visible(),
+      kMainOverlayTop);
   if (interactive_pan_benchmark == nullptr) {
     std::printf("TINYDRAW_HARDWARE_FAIL interactive_pan_benchmark=0\n");
     return;
@@ -1208,6 +1220,7 @@ void run_hardware_app() {
   xQueueReset(touch_queue);
   tinydraw::esp32::interactive_pan_benchmark_lock_cache(*interactive_pan_benchmark);
   display.push_world(canvas.world().pixels(), canvas.world().origin(), kMainOverlayTop);
+  tinydraw::esp32::interactive_pan_benchmark_record_zoom_present(*interactive_pan_benchmark);
   tinydraw::esp32::interactive_pan_benchmark_unlock_cache(*interactive_pan_benchmark);
   std::printf("TINYDRAW_INTERACTIVE_PAN_READY zoom=100 controls=S:50 M:100 L:200 XL:finish\n");
 #endif
@@ -1369,15 +1382,43 @@ void run_hardware_app() {
         }
         last_ink = ink.begin({.x = point.x, .y = point.y, .timestamp_us = event.timestamp_us});
         vector_stroke_origin = canvas.world().origin();
+#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+        const bool mutation_ready =
+            tinydraw::esp32::interactive_pan_benchmark_begin_stroke(*interactive_pan_benchmark);
+        const auto first_vector_sample = tinydraw::esp32::interactive_pan_benchmark_map_sample(
+            *interactive_pan_benchmark, last_ink.position, last_ink.radius);
+#else
+        const bool mutation_ready = true;
+        const tinydraw::StrokeSample first_vector_sample{
+            .x = last_ink.position.x + static_cast<float>(vector_stroke_origin.x),
+            .y = last_ink.position.y + static_cast<float>(vector_stroke_origin.y),
+            .radius = last_ink.radius,
+        };
+#endif
         vector_stroke_recording =
-            !demo_replaying &&
-            vector_document.begin_stroke(
-                stroke_color,
-                toolbar.tool == tinydraw::DrawingTool::kEraser ? tinydraw::VectorTool::kEraser
-                                                               : tinydraw::VectorTool::kPen,
-                {.x = last_ink.position.x + static_cast<float>(vector_stroke_origin.x),
-                 .y = last_ink.position.y + static_cast<float>(vector_stroke_origin.y),
-                 .radius = last_ink.radius});
+            !demo_replaying && mutation_ready &&
+            vector_document.begin_stroke(stroke_color,
+                                         toolbar.tool == tinydraw::DrawingTool::kEraser
+                                             ? tinydraw::VectorTool::kEraser
+                                             : tinydraw::VectorTool::kPen,
+                                         first_vector_sample);
+#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+        if (mutation_ready && !vector_stroke_recording) {
+          tinydraw::esp32::interactive_pan_benchmark_cancel_stroke(*interactive_pan_benchmark);
+        }
+#endif
+        vector_stroke_committed = false;
+#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+        vector_stroke_refused = !vector_stroke_recording;
+        if (vector_stroke_recording) {
+          tinydraw::esp32::interactive_pan_benchmark_lock_cache(*interactive_pan_benchmark);
+          static_cast<void>(
+              canvas.world().show(canvas.world().origin(), canvas.committed(), canvas.visible()));
+          tinydraw::esp32::interactive_pan_benchmark_unlock_cache(*interactive_pan_benchmark);
+        }
+#else
+        vector_stroke_refused = false;
+#endif
         stroke_samples = 1;
         stroke_started_us = event.timestamp_us;
         previous_touch_us = event.timestamp_us;
@@ -1389,7 +1430,9 @@ void run_hardware_app() {
         maximum_render_us = 0;
         display.reset_timing();
         const auto started = esp_timer_get_time();
-        static_cast<void>(canvas.raster().update(ribbon.append(last_ink), stroke_color));
+        if (!vector_stroke_refused) {
+          static_cast<void>(canvas.raster().update(ribbon.append(last_ink), stroke_color));
+        }
         const auto elapsed = esp_timer_get_time() - started;
         stroke_render_us += elapsed;
         maximum_render_us = std::max(maximum_render_us, elapsed);
@@ -1415,13 +1458,20 @@ void run_hardware_app() {
       }
       previous_saved_touch = point;
       last_ink = ink.update({.x = point.x, .y = point.y, .timestamp_us = event.timestamp_us});
-      if (vector_stroke_recording &&
-          !vector_document.append(
-              {.x = last_ink.position.x + static_cast<float>(vector_stroke_origin.x),
-               .y = last_ink.position.y + static_cast<float>(vector_stroke_origin.y),
-               .radius = last_ink.radius})) {
+#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+      const auto vector_sample = tinydraw::esp32::interactive_pan_benchmark_map_sample(
+          *interactive_pan_benchmark, last_ink.position, last_ink.radius);
+#else
+      const tinydraw::StrokeSample vector_sample{
+          .x = last_ink.position.x + static_cast<float>(vector_stroke_origin.x),
+          .y = last_ink.position.y + static_cast<float>(vector_stroke_origin.y),
+          .radius = last_ink.radius,
+      };
+#endif
+      if (vector_stroke_recording && !vector_document.append(vector_sample)) {
         vector_document.cancel_stroke();
         vector_stroke_recording = false;
+        vector_stroke_refused = true;
         std::printf("TINYDRAW_VECTOR_FULL strokes=%lu samples=%lu\n",
                     static_cast<unsigned long>(vector_document.stroke_count()),
                     static_cast<unsigned long>(vector_document.sample_count()));
@@ -1434,7 +1484,9 @@ void run_hardware_app() {
       maximum_input_lag_us = std::max(maximum_input_lag_us, input_lag_us);
       maximum_queue_depth = std::max(maximum_queue_depth, queue_depth);
       const auto started = esp_timer_get_time();
-      static_cast<void>(canvas.raster().update(ribbon.append(last_ink), stroke_color));
+      if (!vector_stroke_refused) {
+        static_cast<void>(canvas.raster().update(ribbon.append(last_ink), stroke_color));
+      }
       const auto elapsed = esp_timer_get_time() - started;
       stroke_render_us += elapsed;
       maximum_render_us = std::max(maximum_render_us, elapsed);
@@ -1484,11 +1536,18 @@ void run_hardware_app() {
         last_ink =
             ink.finish({.x = last_touch.x, .y = last_touch.y, .timestamp_us = event.timestamp_us});
         if (vector_stroke_recording) {
-          if (vector_document.append(
-                  {.x = last_ink.position.x + static_cast<float>(vector_stroke_origin.x),
-                   .y = last_ink.position.y + static_cast<float>(vector_stroke_origin.y),
-                   .radius = last_ink.radius}) &&
-              vector_document.finish_stroke()) {
+#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+          const auto final_vector_sample = tinydraw::esp32::interactive_pan_benchmark_map_sample(
+              *interactive_pan_benchmark, last_ink.position, last_ink.radius);
+#else
+          const tinydraw::StrokeSample final_vector_sample{
+              .x = last_ink.position.x + static_cast<float>(vector_stroke_origin.x),
+              .y = last_ink.position.y + static_cast<float>(vector_stroke_origin.y),
+              .radius = last_ink.radius,
+          };
+#endif
+          if (vector_document.append(final_vector_sample) && vector_document.finish_stroke()) {
+            vector_stroke_committed = true;
             std::printf("TINYDRAW_VECTOR_STROKE strokes=%lu samples=%lu\n",
                         static_cast<unsigned long>(vector_document.stroke_count()),
                         static_cast<unsigned long>(vector_document.sample_count()));
@@ -1501,10 +1560,27 @@ void run_hardware_app() {
           vector_stroke_recording = false;
         }
         const auto started = esp_timer_get_time();
+#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
+        if (vector_stroke_refused || !vector_stroke_committed) {
+          canvas.raster().cancel();
+          tinydraw::esp32::interactive_pan_benchmark_cancel_stroke(*interactive_pan_benchmark);
+        } else {
+          // Raster Undo owns the prototype's inactive atlas arena, so it must
+          // not participate in this deliberately history-free benchmark.
+          static_cast<void>(canvas.raster().finish(ribbon.finish(last_ink), stroke_color, nullptr,
+                                                   canvas.world().origin()));
+          tinydraw::esp32::interactive_pan_benchmark_lock_cache(*interactive_pan_benchmark);
+          static_cast<void>(canvas.world().capture(canvas.committed()));
+          tinydraw::esp32::interactive_pan_benchmark_unlock_cache(*interactive_pan_benchmark);
+          tinydraw::esp32::interactive_pan_benchmark_commit_stroke(*interactive_pan_benchmark);
+        }
+#else
         static_cast<void>(canvas.raster().finish(ribbon.finish(last_ink), stroke_color,
                                                  &canvas.undo_history(), canvas.world().origin()));
+#endif
         const auto finish_us = esp_timer_get_time() - started;
         toolbar.export_ready = false;
+#ifndef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
         if (!demo_replaying) {
           if (persistence_resync_needed) {
             static_cast<void>(canvas.world().capture(canvas.committed()));
@@ -1514,6 +1590,7 @@ void run_hardware_app() {
           }
           persistence_resync_needed = false;
         }
+#endif
         std::printf(
             "[DEBUG-perf1] samples=%lu updates_us=%lld average_us=%lld max_us=%lld "
             "finish_us=%lld display_prepare_us=%lld display_transfer_us=%lld pushes=%lu "

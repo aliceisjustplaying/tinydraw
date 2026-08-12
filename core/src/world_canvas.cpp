@@ -34,6 +34,15 @@ std::span<const std::uint16_t> WorldCanvas::pixels() const {
                 : std::span<const std::uint16_t>{};
 }
 
+std::span<std::uint16_t> WorldCanvas::exchange_storage(std::span<std::uint16_t> replacement) {
+  if (!valid_ || replacement.size() < kRequiredPixels) {
+    return {};
+  }
+  const auto previous = storage_;
+  storage_ = replacement.first(kRequiredPixels);
+  return previous;
+}
+
 bool WorldCanvas::capture(std::span<const std::uint16_t> viewport) {
   return capture_rect(viewport, {0, 0, kCanvasWidth, kCanvasHeight});
 }

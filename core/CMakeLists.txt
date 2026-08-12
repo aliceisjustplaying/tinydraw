@@ -30,6 +30,8 @@ add_library(tinydraw_core STATIC
   src/ink_stream.cpp
   src/perfect_freehand.cpp
   src/png_encoder.cpp
+  src/raster_materializer.cpp
+  src/stroke_macrogrid.cpp
   src/ribbon_geometry.cpp
   src/ribbon_renderer.cpp
   src/stroke_raster.cpp

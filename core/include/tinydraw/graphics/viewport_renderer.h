@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <span>
 
+#include "tinydraw/document/stroke_macrogrid.h"
 #include "tinydraw/document/vector_document.h"
 #include "tinydraw/graphics/camera.h"
 #include "tinydraw/graphics/coverage_tile.h"
@@ -23,6 +24,9 @@ struct ViewportRenderOptions {
   // must not be published as a finished region.
   bool (*cancelled)(void*) = nullptr;
   void* cancellation_context = nullptr;
+  // Optional document-order candidate bitset from StrokeMacrogrid. A clear bit
+  // skips the corresponding stroke before bounds testing.
+  std::span<const std::uint64_t> candidate_strokes{};
   // Optional monotonic tick source (e.g. CPU cycle counter). Wrap-safe deltas
   // accumulate into the phase tick counters below; nullptr disables timing.
   std::uint32_t (*now)() = nullptr;

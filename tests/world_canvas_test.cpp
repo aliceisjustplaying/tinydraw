@@ -65,6 +65,19 @@ TEST_CASE("moving the world origin does not copy a viewport") {
   CHECK_FALSE(world.move_to(world.origin()));
 }
 
+TEST_CASE("world storage can be exchanged without copying") {
+  std::vector<std::uint16_t> first(tinydraw::WorldCanvas::kRequiredPixels);
+  std::vector<std::uint16_t> second(tinydraw::WorldCanvas::kRequiredPixels, kInk);
+  tinydraw::WorldCanvas world(first);
+
+  const auto previous = world.exchange_storage(second);
+
+  REQUIRE(previous.data() == first.data());
+  REQUIRE(world.pixels().data() == second.data());
+  CHECK(world.pixels().front() == kInk);
+  CHECK(world.origin() == tinydraw::ViewOrigin{tinydraw::kCanvasWidth, tinydraw::kCanvasHeight});
+}
+
 TEST_CASE("a persisted world replaces pixels and restores its viewport") {
   std::vector<std::uint16_t> storage(tinydraw::WorldCanvas::kRequiredPixels);
   tinydraw::WorldCanvas world(storage);

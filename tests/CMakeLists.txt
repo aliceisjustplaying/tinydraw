@@ -9,6 +9,8 @@ add_executable(tinydraw_tests
   ink_stream_test.cpp
   perfect_freehand_test.cpp
   png_encoder_test.cpp
+  raster_materializer_test.cpp
+  stroke_macrogrid_test.cpp
   ribbon_geometry_test.cpp
   ribbon_renderer_test.cpp
   stroke_raster_test.cpp

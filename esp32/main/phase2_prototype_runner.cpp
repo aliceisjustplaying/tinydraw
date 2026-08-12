@@ -18,6 +18,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "tinydraw/document/vector_benchmark.h"
+#include "tinydraw/graphics/raster_materializer.h"
 #include "tinydraw/graphics/viewport_renderer.h"
 
 namespace tinydraw::esp32 {
@@ -136,39 +137,6 @@ Camera camera_zoomed_about_center(Camera camera, float zoom) {
   };
 }
 
-void build_zoom_preview(std::span<const std::uint16_t> source, Camera source_camera,
-                        std::span<std::uint16_t> destination, Camera destination_camera) {
-  // The mapping is affine. Avoid software double division and rounding per
-  // pixel by calculating one 16.16 start and step per axis.
-  constexpr std::int64_t kFixedOne = 1LL << 16;
-  constexpr std::int64_t kFixedHalf = kFixedOne / 2;
-  const double source_step =
-      static_cast<double>(source_camera.zoom) / static_cast<double>(destination_camera.zoom);
-  const double source_start_x =
-      (destination_camera.x - source_camera.x) * source_camera.zoom + source_step * 0.5 - 0.5;
-  const double source_start_y =
-      (destination_camera.y - source_camera.y) * source_camera.zoom + source_step * 0.5 - 0.5;
-  const auto step = static_cast<std::int64_t>(std::llround(source_step * kFixedOne));
-  const auto start_x = static_cast<std::int64_t>(std::llround(source_start_x * kFixedOne));
-  std::int64_t source_y_fixed = static_cast<std::int64_t>(std::llround(source_start_y * kFixedOne));
-  for (int y = 0; y < kCanvasHeight; ++y) {
-    const int source_y = static_cast<int>((source_y_fixed + kFixedHalf) >> 16);
-    std::int64_t source_x_fixed = start_x;
-    for (int x = 0; x < kCanvasWidth; ++x) {
-      const int source_x = static_cast<int>((source_x_fixed + kFixedHalf) >> 16);
-      const auto destination_index = static_cast<std::size_t>(y * kCanvasWidth + x);
-      if (source_x >= 0 && source_x < kCanvasWidth && source_y >= 0 && source_y < kCanvasHeight) {
-        destination[destination_index] =
-            source[static_cast<std::size_t>(source_y * kCanvasWidth + source_x)];
-      } else {
-        destination[destination_index] = kBackground;
-      }
-      source_x_fixed += step;
-    }
-    source_y_fixed += step;
-  }
-}
-
 std::size_t pixel_differences(std::span<const std::uint16_t> left,
                               std::span<const std::uint16_t> right) {
   std::size_t differences = 0;
@@ -262,8 +230,10 @@ void run_zoom_case(const PrototypeCase& prototype, float zoom, const VectorDocum
   static_cast<void>(renderer.render(document, old_camera, cache, options));
 
   std::int64_t preview_us = 0;
-  const auto preview_touch = measured_render(
-      touch_probe, preview_us, [&] { build_zoom_preview(cache, old_camera, preview, new_camera); });
+  const auto preview_touch = measured_render(touch_probe, preview_us, [&] {
+    resample_valid_raster(cache, kCanvasWidth, kCanvasHeight, old_camera, preview, kCanvasWidth,
+                          kCanvasHeight, new_camera, kBackground);
+  });
   const auto preview_present_started = esp_timer_get_time();
   display.push_rect(0, 0, kCanvasWidth, kCanvasHeight, preview.data(), kCanvasWidth);
   const auto preview_present_us = esp_timer_get_time() - preview_present_started;

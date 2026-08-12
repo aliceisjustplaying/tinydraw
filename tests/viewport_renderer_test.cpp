@@ -303,6 +303,29 @@ TEST_CASE("low zoom culling keeps minimum-radius edge and corner coverage") {
   CHECK(rebuilt[pixel(0, 0)] != kWhite);
 }
 
+TEST_CASE("candidate bitset skips noncandidate strokes while preserving output order") {
+  std::array<tinydraw::VectorStroke, 2> stroke_storage;
+  std::array<tinydraw::StrokeSample, 2> sample_storage;
+  tinydraw::VectorDocument document(stroke_storage, sample_storage);
+  REQUIRE(document.begin_stroke(kBlue, tinydraw::VectorTool::kPen,
+                                {.x = 20.0F, .y = 20.0F, .radius = 4.0F}));
+  REQUIRE(document.finish_stroke());
+  REQUIRE(document.begin_stroke(0xF800U, tinydraw::VectorTool::kPen,
+                                {.x = 100.0F, .y = 100.0F, .radius = 4.0F}));
+  REQUIRE(document.finish_stroke());
+
+  std::vector<std::uint8_t> scratch(kPixels);
+  std::vector<std::uint16_t> rebuilt(kPixels);
+  tinydraw::ViewportRenderer renderer(scratch);
+  constexpr std::array<std::uint64_t, 1> candidates{0b10U};
+  const auto stats = renderer.render(document, {}, rebuilt, {.candidate_strokes = candidates});
+
+  CHECK(stats.complete);
+  CHECK(stats.strokes_tested == 1U);
+  CHECK(rebuilt[pixel(20, 20)] == kWhite);
+  CHECK(rebuilt[pixel(100, 100)] != kWhite);
+}
+
 TEST_CASE("empty document clears a reused viewport") {
   std::array<tinydraw::VectorStroke, 1> stroke_storage;
   std::array<tinydraw::StrokeSample, 1> sample_storage;

@@ -14,11 +14,22 @@ namespace tinydraw::esp32 {
 class InteractivePanBenchmark;
 
 [[nodiscard]] InteractivePanBenchmark* start_interactive_pan_benchmark(
-    VectorDocument& document, WorldCanvas& world, std::span<std::uint16_t> render_buffer,
-    int presented_rows);
+    VectorDocument& document, WorldCanvas& world, std::span<std::uint16_t> materialization_storage,
+    std::span<std::uint16_t> render_buffer, int presented_rows);
 
 [[nodiscard]] bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark,
                                                       int zoom_percent);
+// Records the first physical display presentation after a zoom request.
+void interactive_pan_benchmark_record_zoom_present(InteractivePanBenchmark& benchmark);
+
+// Pauses and joins refinement before the document is mutated. Returns false
+// rather than allowing live raster ink to diverge from vector authority.
+[[nodiscard]] bool interactive_pan_benchmark_begin_stroke(InteractivePanBenchmark& benchmark);
+[[nodiscard]] StrokeSample interactive_pan_benchmark_map_sample(
+    const InteractivePanBenchmark& benchmark, Point screen_point, float screen_radius);
+void interactive_pan_benchmark_commit_stroke(InteractivePanBenchmark& benchmark);
+void interactive_pan_benchmark_cancel_stroke(InteractivePanBenchmark& benchmark);
+
 void interactive_pan_benchmark_begin_pan(InteractivePanBenchmark& benchmark, ViewOrigin origin,
                                          std::uint32_t event_us);
 void interactive_pan_benchmark_view_changed(InteractivePanBenchmark& benchmark, ViewOrigin origin);

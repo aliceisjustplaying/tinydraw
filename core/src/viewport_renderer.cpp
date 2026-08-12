@@ -150,6 +150,15 @@ ViewportRenderStats ViewportRenderer::render_region(const VectorDocument& docume
   const auto strokes = document.strokes();
   std::size_t stroke_index = 0;
   while (stroke_index < strokes.size()) {
+    if (!options.candidate_strokes.empty()) {
+      const std::size_t word = stroke_index / 64U;
+      const std::uint64_t bit = std::uint64_t{1} << (stroke_index % 64U);
+      if (word >= options.candidate_strokes.size() ||
+          (options.candidate_strokes[word] & bit) == 0U) {
+        ++stroke_index;
+        continue;
+      }
+    }
     const VectorStroke& stroke = strokes[stroke_index];
     ++stats.strokes_tested;
     if (!rects_intersect(stroke.bounds, viewport)) {
