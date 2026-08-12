@@ -15,6 +15,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "tinydraw/document/realistic_workload.h"
 #include "tinydraw/document/stroke_macrogrid.h"
 #include "tinydraw/geometry.h"
 #include "tinydraw/graphics/raster_materializer.h"
@@ -24,8 +25,8 @@ namespace tinydraw::esp32 {
 namespace {
 
 constexpr std::size_t kStrokeCount = 1'000U;
-constexpr std::size_t kSamplesPerStroke = 12U;
-constexpr std::size_t kSampleCount = kStrokeCount * kSamplesPerStroke;
+constexpr std::size_t kRequiredSampleCapacity = 24'576U;
+constexpr std::uint32_t kWorkloadSeed = 7U;
 constexpr int kCellColumns = 3;
 constexpr int kCellRows = 3;
 constexpr int kBandRows = 32;
@@ -194,43 +195,14 @@ bool region_proven_by_source(const VectorDocument& document, Camera source_camer
   return true;
 }
 
-bool populate_coherent_handwriting(VectorDocument& document) {
-  document.clear();
-  for (std::size_t stroke = 0; stroke < kStrokeCount; ++stroke) {
-    const float stroke_number = static_cast<float>(stroke);
-    const float base_x =
-        5.0F + static_cast<float>((stroke * 37U) % static_cast<std::size_t>(kCanvasWidth - 40));
-    const float base_y =
-        20.0F + static_cast<float>((stroke * 53U) % static_cast<std::size_t>(kCanvasHeight - 40));
-    auto sample_at = [&](std::size_t sample) {
-      const float sample_number = static_cast<float>(sample);
-      return StrokeSample{
-          .x = static_cast<float>(kCenterOriginX) + base_x + sample_number * 3.0F,
-          .y = static_cast<float>(kCenterOriginY) + base_y +
-               std::sin(sample_number * 0.8F + stroke_number * 0.13F) * 12.0F,
-          .radius = 2.0F + 1.5F * std::sin(sample_number * 0.31F + 1.0F),
-      };
-    };
-    StrokeSample last = sample_at(0U);
-    if (!document.begin_stroke(static_cast<std::uint16_t>(0x001FU + stroke % 12U), VectorTool::kPen,
-                               last)) {
-      return false;
-    }
-    for (std::size_t sample = 1U; sample < kSamplesPerStroke - 1U; ++sample) {
-      last = sample_at(sample);
-      if (!document.append(last)) {
-        document.cancel_stroke();
-        return false;
-      }
-    }
-    // Match the existing handwriting benchmark: the final stored sample
-    // duplicates the last unique point to model the release-time endpoint.
-    if (!document.append(last) || !document.finish_stroke()) {
-      document.cancel_stroke();
-      return false;
-    }
-  }
-  return document.stroke_count() == kStrokeCount && document.sample_count() == kSampleCount;
+bool populate_benchmark_document(VectorDocument& document, RealisticWorkloadStats& stats) {
+  const RectF area{
+      .x0 = static_cast<float>(kCenterOriginX),
+      .y0 = static_cast<float>(kCenterOriginY),
+      .x1 = static_cast<float>(kCenterOriginX + kCanvasWidth),
+      .y1 = static_cast<float>(kCenterOriginY + kCanvasHeight),
+  };
+  return populate_realistic_handwriting(document, kWorkloadSeed, kStrokeCount, area, &stats);
 }
 
 void append_report(char* report, std::size_t& size, const char* format, ...) {
@@ -310,6 +282,7 @@ class InteractivePanBenchmark {
   void (*refinement_published)(void*) = nullptr;
   void* refinement_published_context = nullptr;
   DisplayTransferTelemetry transfer_telemetry{};
+  RealisticWorkloadStats workload_stats{};
   SemaphoreHandle_t cache_mutex = nullptr;
   TaskHandle_t render_task = nullptr;
   std::array<std::atomic<std::uint8_t>, kJobCount> ready{};
@@ -659,9 +632,13 @@ bool persist_report(InteractivePanBenchmark& benchmark) {
   }
   std::size_t size = 0U;
   append_report(report, size,
-                "TINYDRAW_INTERACTIVE_PAN_V1 workload=periodic_handwriting1000 "
-                "cache=3x3 band_rows=%d presented_rows=%d timing_capacity=%lu\n",
-                kBandRows, benchmark.presented_rows, static_cast<unsigned long>(kTimingCapacity));
+                "TINYDRAW_INTERACTIVE_PAN_V1 workload=realistic_handwriting1000 "
+                "cache=3x3 band_rows=%d presented_rows=%d timing_capacity=%lu "
+                "strokes=%lu samples=%lu max_stroke_samples=%lu\n",
+                kBandRows, benchmark.presented_rows, static_cast<unsigned long>(kTimingCapacity),
+                static_cast<unsigned long>(benchmark.workload_stats.strokes),
+                static_cast<unsigned long>(benchmark.workload_stats.samples),
+                static_cast<unsigned long>(benchmark.workload_stats.maximum_stroke_samples));
   for (std::size_t index = 0; index < kZoomPercents.size(); ++index) {
     auto& metrics = benchmark.metrics[index];
     const std::size_t samples = metrics.timing_samples;
@@ -766,8 +743,9 @@ InteractivePanBenchmark* start_interactive_pan_benchmark(
     DisplayTransferTelemetry transfer_telemetry) {
   if (!world.valid() || materialization_storage.size() < WorldCanvas::kRequiredPixels ||
       render_buffer.size() < ViewportRenderer::kPixelCount ||
-      document.stroke_capacity() < kStrokeCount || document.sample_capacity() < kSampleCount ||
-      presented_rows <= 0 || presented_rows > kCanvasHeight) {
+      document.stroke_capacity() < kStrokeCount ||
+      document.sample_capacity() < kRequiredSampleCapacity || presented_rows <= 0 ||
+      presented_rows > kCanvasHeight) {
     return nullptr;
   }
   auto* scratch =
@@ -794,7 +772,8 @@ InteractivePanBenchmark* start_interactive_pan_benchmark(
       std::span(index_storage + StrokeMacrogrid::kCellCount * kIndexWords, kIndexWords),
       renderer_storage, refinement_published, refinement_published_context, transfer_telemetry);
   benchmark->index_storage_ = index_storage;
-  if (!populate_coherent_handwriting(document) || !benchmark->macrogrid.rebuild(document)) {
+  if (!populate_benchmark_document(document, benchmark->workload_stats) ||
+      !benchmark->macrogrid.rebuild(document)) {
     destroy_benchmark(*benchmark);
     return nullptr;
   }

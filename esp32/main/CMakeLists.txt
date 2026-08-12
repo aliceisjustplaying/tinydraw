@@ -29,6 +29,7 @@ if(NOT TINYDRAW_QEMU)
     list(APPEND TINYDRAW_PLATFORM_SRCS
       "${TINYDRAW_CORE}/src/camera.cpp"
       "${TINYDRAW_CORE}/src/raster_materializer.cpp"
+      "${TINYDRAW_CORE}/src/realistic_workload.cpp"
       "${TINYDRAW_CORE}/src/stroke_macrogrid.cpp"
       "${TINYDRAW_CORE}/src/vector_benchmark.cpp"
       "${TINYDRAW_CORE}/src/viewport_renderer.cpp"

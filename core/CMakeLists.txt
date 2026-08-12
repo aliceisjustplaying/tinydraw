@@ -31,6 +31,7 @@ add_library(tinydraw_core STATIC
   src/perfect_freehand.cpp
   src/png_encoder.cpp
   src/raster_materializer.cpp
+  src/realistic_workload.cpp
   src/stroke_macrogrid.cpp
   src/ribbon_geometry.cpp
   src/ribbon_renderer.cpp

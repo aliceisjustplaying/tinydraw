@@ -237,19 +237,15 @@ ViewportRenderer::GeometryResult ViewportRenderer::render_stroke_geometry(
     const RibbonUpdate update = final ? ribbon.finish(point) : ribbon.append(point, false);
     for (const RibbonPrimitive& primitive : update.committed) {
       const PrimitiveBounds bounds = bounds_of(primitive);
-      if (!std::isfinite(bounds.x0) || !std::isfinite(bounds.y0) ||
-          !std::isfinite(bounds.x1) || !std::isfinite(bounds.y1) ||
-          bounds.x1 < static_cast<float>(region.x0) ||
-          bounds.y1 < static_cast<float>(region.y0) ||
-          bounds.x0 >= static_cast<float>(region.x1) ||
+      if (!std::isfinite(bounds.x0) || !std::isfinite(bounds.y0) || !std::isfinite(bounds.x1) ||
+          !std::isfinite(bounds.y1) || bounds.x1 < static_cast<float>(region.x0) ||
+          bounds.y1 < static_cast<float>(region.y0) || bounds.x0 >= static_cast<float>(region.x1) ||
           bounds.y0 >= static_cast<float>(region.y1)) {
         continue;
       }
 
-      const int first_x =
-          std::clamp(static_cast<int>(std::floor(bounds.x0)), 0, kCanvasWidth - 1);
-      const int first_y =
-          std::clamp(static_cast<int>(std::floor(bounds.y0)), 0, kCanvasHeight - 1);
+      const int first_x = std::clamp(static_cast<int>(std::floor(bounds.x0)), 0, kCanvasWidth - 1);
+      const int first_y = std::clamp(static_cast<int>(std::floor(bounds.y0)), 0, kCanvasHeight - 1);
       const int last_x = std::clamp(static_cast<int>(std::ceil(bounds.x1)), 0, kCanvasWidth - 1);
       const int last_y = std::clamp(static_cast<int>(std::ceil(bounds.y1)), 0, kCanvasHeight - 1);
       const int first_tile_x = std::max(first_x / kTileSize, region.x0 / kTileSize);

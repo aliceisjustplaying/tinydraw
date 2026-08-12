@@ -68,7 +68,10 @@ constexpr std::uint32_t kPowerRefreshUs = 1'000'000U;
 constexpr std::size_t kDemoCapacity = 8192U;
 #ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
 constexpr std::size_t kVectorStrokeCapacity = 1'100U;
-constexpr std::size_t kVectorSampleCapacity = 16'384U;
+// The realistic workload averages about 20 samples per stroke, so 1,000
+// strokes plus live-draw headroom needs a deeper sample arena than the old
+// fixed 12-sample workload.
+constexpr std::size_t kVectorSampleCapacity = 24'576U;
 #else
 constexpr std::size_t kVectorStrokeCapacity = 512U;
 constexpr std::size_t kVectorSampleCapacity = 8192U;
@@ -1312,8 +1315,8 @@ void run_hardware_app() {
     for (std::size_t cycle = 0; cycle < kAutoZoomSequence.size(); ++cycle) {
       const int percent = kAutoZoomSequence[cycle];
       const std::int64_t auto_zoom_started = esp_timer_get_time();
-      const bool changed = tinydraw::esp32::interactive_pan_benchmark_set_zoom(
-          *interactive_pan_benchmark, percent);
+      const bool changed =
+          tinydraw::esp32::interactive_pan_benchmark_set_zoom(*interactive_pan_benchmark, percent);
       const std::int64_t auto_zoom_returned = esp_timer_get_time();
       tinydraw::esp32::ZoomTransitionTiming timing;
       if (changed && tinydraw::esp32::interactive_pan_benchmark_last_zoom_timing(
