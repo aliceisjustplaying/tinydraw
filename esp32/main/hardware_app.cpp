@@ -1438,6 +1438,40 @@ void run_hardware_app() {
         "TINYDRAW_AUTO_MUTATION started=%u committed=%u stale_zoom_accepted=%u "
         "repaired_zoom_accepted=%u\n",
         mutation_started, mutation_committed, accepted_while_stale, accepted_after_repair);
+
+    // Keep the automated hardware run honest: completion metrics alone cannot
+    // distinguish rendered ink from a successfully published white buffer.
+    // Record both atlas and visible content, then republish the final viewport
+    // so a later panel overwrite is visually distinguishable from bad raster data.
+    tinydraw::esp32::interactive_pan_benchmark_lock_cache(*interactive_pan_benchmark);
+    const auto final_world = canvas.world().pixels();
+    const auto final_origin = canvas.world().origin();
+    std::size_t atlas_ink_pixels = 0U;
+    std::size_t visible_ink_pixels = 0U;
+    std::uint32_t visible_hash = 2166136261U;
+    for (int y = 0; y < tinydraw::WorldCanvas::kHeight; ++y) {
+      for (int x = 0; x < tinydraw::WorldCanvas::kWidth; ++x) {
+        atlas_ink_pixels +=
+            final_world[static_cast<std::size_t>(y * tinydraw::WorldCanvas::kWidth + x)] !=
+            kBackground;
+      }
+    }
+    for (int y = 0; y < kMainOverlayTop; ++y) {
+      const auto row = static_cast<std::size_t>(
+          (final_origin.y + y) * tinydraw::WorldCanvas::kWidth + final_origin.x);
+      for (int x = 0; x < tinydraw::kCanvasWidth; ++x) {
+        const std::uint16_t pixel = final_world[row + static_cast<std::size_t>(x)];
+        visible_ink_pixels += pixel != kBackground;
+        visible_hash = (visible_hash ^ pixel) * 16777619U;
+      }
+    }
+    std::printf(
+        "TINYDRAW_AUTO_FINAL_PIXELS origin=%d,%d atlas_ink=%lu visible_ink=%lu "
+        "visible_hash=%08lx\n",
+        final_origin.x, final_origin.y, static_cast<unsigned long>(atlas_ink_pixels),
+        static_cast<unsigned long>(visible_ink_pixels), static_cast<unsigned long>(visible_hash));
+    display.push_world(final_world, final_origin, kMainOverlayTop);
+    tinydraw::esp32::interactive_pan_benchmark_unlock_cache(*interactive_pan_benchmark);
     std::printf("TINYDRAW_AUTO_ZOOM_DONE\n");
     std::fflush(stdout);
   }
