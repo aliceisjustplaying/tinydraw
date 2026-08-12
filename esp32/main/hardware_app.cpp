@@ -352,6 +352,16 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
     if (!ready_ || pixels == nullptr || width <= 0 || height <= 0) {
       return;
     }
+    const bool in_bounds = x >= 0 && y >= 0 && x < tinydraw::kCanvasWidth &&
+                           y < tinydraw::kCanvasHeight && width <= tinydraw::kCanvasWidth - x &&
+                           height <= tinydraw::kCanvasHeight - y;
+    const bool valid_co5300_window = ((x | y | width | height) & 1) == 0;
+    if (!in_bounds || !valid_co5300_window) {
+      std::printf(
+          "TINYDRAW_PANEL_WINDOW_REJECT x=%d y=%d width=%d height=%d bounds=%u even_window=%u\n", x,
+          y, width, height, in_bounds, valid_co5300_window);
+      return;
+    }
     const int source_stride = stride == 0 ? width : stride;
     if (source_stride < width) {
       return;
@@ -426,7 +436,7 @@ class PhysicalDisplay final : public tinydraw::DisplayBackend {
 
   void push_canvas(std::span<const std::uint16_t> canvas, int top = 0,
                    int bottom = tinydraw::kCanvasHeight) {
-    // The CO5300 requires even transfer-window boundaries.
+    // The CO5300 requires even starts and even column/row counts.
     constexpr int rows_per_transfer = (kTransferPixels / tinydraw::kCanvasWidth) & ~1;
     for (int y = top; y < bottom; y += rows_per_transfer) {
       const int height = std::min(rows_per_transfer, bottom - y);
