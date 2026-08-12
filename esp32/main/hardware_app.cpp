@@ -1341,7 +1341,22 @@ void run_hardware_app() {
                     static_cast<long long>(auto_zoom_returned - auto_zoom_started));
       }
       std::fflush(stdout);
-      vTaskDelay(pdMS_TO_TICKS(5'000));
+      // Poll for the background visible-settled pass within the settling gap.
+      if (changed) {
+        const std::int64_t settle_deadline = esp_timer_get_time() + 4'500'000;
+        while (timing.settled_us == 0U && esp_timer_get_time() < settle_deadline) {
+          vTaskDelay(pdMS_TO_TICKS(5));
+          if (!tinydraw::esp32::interactive_pan_benchmark_last_zoom_timing(
+                  *interactive_pan_benchmark, percent, timing)) {
+            break;
+          }
+        }
+        std::printf("TINYDRAW_AUTO_SETTLED cycle=%u zoom=%d settled_us=%lu\n",
+                    static_cast<unsigned>(cycle), percent,
+                    static_cast<unsigned long>(timing.settled_us));
+        std::fflush(stdout);
+      }
+      vTaskDelay(pdMS_TO_TICKS(500));
     }
     std::printf("TINYDRAW_AUTO_ZOOM_DONE\n");
     std::fflush(stdout);

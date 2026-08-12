@@ -19,6 +19,7 @@
 #include "tinydraw/document/stroke_macrogrid.h"
 #include "tinydraw/geometry.h"
 #include "tinydraw/graphics/raster_materializer.h"
+#include "tinydraw/graphics/settled_renderer.h"
 #include "tinydraw/graphics/viewport_renderer.h"
 
 namespace tinydraw::esp32 {
@@ -279,6 +280,8 @@ class InteractivePanBenchmark {
   ViewportRenderer* renderer = nullptr;
   void* renderer_storage_ = nullptr;
   std::uint64_t* index_storage_ = nullptr;
+  std::span<std::uint8_t> settled_scratch{};
+  std::uint8_t* settled_scratch_storage_ = nullptr;
   void (*refinement_published)(void*) = nullptr;
   void* refinement_published_context = nullptr;
   DisplayTransferTelemetry transfer_telemetry{};
@@ -495,6 +498,74 @@ void render_task_entry(void* raw) {
     }
 
     RenderCancellation cancellation{.benchmark = &benchmark, .generation = generation};
+
+    // Settled pass: bring every visible band to settled quality with the cheap
+    // capsule renderer before offscreen runway or canonical exact work. The
+    // settled renderer draws from the vector document, so it needs no valid
+    // raster source and sharpens the nearest-resampled first preview.
+    while (benchmark.requested_generation.load() == generation && !benchmark.paused.load()) {
+      const JobRect view{
+          .x0 = benchmark.view_x.load(),
+          .y0 = benchmark.view_y.load(),
+          .x1 = benchmark.view_x.load() + kCanvasWidth,
+          .y1 = benchmark.view_y.load() + benchmark.presented_rows,
+      };
+      const std::uint32_t revision = benchmark.document_revision.load();
+      int settled_job = -1;
+      for (int job = 0; job < kJobCount; ++job) {
+        const auto slot = static_cast<std::size_t>(job);
+        if (!intersects(job_rect(job), view)) {
+          continue;
+        }
+        if (benchmark.ready[slot].load() >= kSettledReady &&
+            benchmark.job_revision[slot].load() == revision) {
+          continue;
+        }
+        settled_job = job;
+        break;
+      }
+      if (settled_job < 0) {
+        const auto slot = static_cast<std::size_t>(zoom);
+        if (benchmark.settled_us[slot].load() == 0U) {
+          benchmark.settled_us[slot].store(static_cast<std::uint32_t>(esp_timer_get_time()) -
+                                           benchmark.generation_started_us.load());
+        }
+        break;
+      }
+      const int local_y = (settled_job % kBandsPerCell) * kBandRows;
+      const Camera camera = job_camera(active_atlas, settled_job);
+      const double inverse_zoom = 1.0 / static_cast<double>(camera.zoom);
+      const float world_halo = kCanonicalHaloPixels / camera.zoom;
+      SettledRenderOptions settled_options;
+      settled_options.background = kBackground;
+      settled_options.cancelled = render_cancelled;
+      settled_options.cancellation_context = &cancellation;
+      settled_options.candidate_strokes = benchmark.macrogrid.query(
+          {.x0 = static_cast<float>(camera.x) - world_halo,
+           .y0 = static_cast<float>(camera.y + local_y * inverse_zoom) - world_halo,
+           .x1 = static_cast<float>(camera.x + kCanvasWidth * inverse_zoom) + world_halo,
+           .y1 = static_cast<float>(camera.y + (local_y + kBandRows) * inverse_zoom) + world_halo});
+      const SettledRenderStats settled_stats = settled_render_region(
+          benchmark.document, camera, benchmark.render_buffer,
+          {.x0 = 0, .y0 = local_y, .x1 = kCanvasWidth, .y1 = local_y + kBandRows},
+          benchmark.settled_scratch, settled_options);
+      if (!settled_stats.complete || benchmark.requested_generation.load() != generation ||
+          benchmark.paused.load()) {
+        break;
+      }
+      xSemaphoreTake(benchmark.cache_mutex, portMAX_DELAY);
+      if (benchmark.requested_generation.load() == generation && !benchmark.paused.load()) {
+        copy_job_to_cache(benchmark, settled_job);
+        benchmark.job_revision[static_cast<std::size_t>(settled_job)].store(revision);
+        benchmark.ready[static_cast<std::size_t>(settled_job)].store(kSettledReady);
+        present_job(benchmark, settled_job);
+      }
+      xSemaphoreGive(benchmark.cache_mutex);
+      if (benchmark.refinement_published != nullptr &&
+          benchmark.requested_generation.load() == generation) {
+        benchmark.refinement_published(benchmark.refinement_published_context);
+      }
+    }
 
     // Fill valid neighboring bands from the previous atlas after first-visible
     // presentation. This work is cancelable at band boundaries and makes pan
@@ -725,9 +796,11 @@ void destroy_benchmark(InteractivePanBenchmark& benchmark) {
   auto* renderer = benchmark.renderer;
   void* renderer_storage = benchmark.renderer_storage_;
   auto* index_storage = benchmark.index_storage_;
+  auto* settled_scratch = benchmark.settled_scratch_storage_;
   renderer->~ViewportRenderer();
   benchmark.~InteractivePanBenchmark();
   heap_caps_free(renderer_storage);
+  heap_caps_free(settled_scratch);
   heap_caps_free(index_storage);
   heap_caps_free(timings);
   heap_caps_free(scratch);
@@ -754,12 +827,17 @@ InteractivePanBenchmark* start_interactive_pan_benchmark(
       static_cast<TimingStorage*>(heap_caps_calloc(1U, sizeof(TimingStorage), kExternalCaps));
   auto* index_storage = static_cast<std::uint64_t*>(heap_caps_calloc(
       (StrokeMacrogrid::kCellCount + 1U) * kIndexWords, sizeof(std::uint64_t), kExternalCaps));
+  constexpr std::size_t kSettledScratchBytes =
+      static_cast<std::size_t>(kCanvasWidth) * static_cast<std::size_t>(kBandRows);
+  auto* settled_scratch =
+      static_cast<std::uint8_t*>(heap_caps_calloc(kSettledScratchBytes, 1U, kExternalCaps));
   void* renderer_storage = heap_caps_malloc(sizeof(ViewportRenderer), kInternalCaps);
   void* benchmark_storage = heap_caps_malloc(sizeof(InteractivePanBenchmark), kInternalCaps);
   if (scratch == nullptr || timings == nullptr || index_storage == nullptr ||
-      renderer_storage == nullptr || benchmark_storage == nullptr) {
+      settled_scratch == nullptr || renderer_storage == nullptr || benchmark_storage == nullptr) {
     heap_caps_free(benchmark_storage);
     heap_caps_free(renderer_storage);
+    heap_caps_free(settled_scratch);
     heap_caps_free(index_storage);
     heap_caps_free(timings);
     heap_caps_free(scratch);
@@ -772,6 +850,8 @@ InteractivePanBenchmark* start_interactive_pan_benchmark(
       std::span(index_storage + StrokeMacrogrid::kCellCount * kIndexWords, kIndexWords),
       renderer_storage, refinement_published, refinement_published_context, transfer_telemetry);
   benchmark->index_storage_ = index_storage;
+  benchmark->settled_scratch = std::span(settled_scratch, kSettledScratchBytes);
+  benchmark->settled_scratch_storage_ = settled_scratch;
   if (!populate_benchmark_document(document, benchmark->workload_stats) ||
       !benchmark->macrogrid.rebuild(document)) {
     destroy_benchmark(*benchmark);
@@ -1013,19 +1093,15 @@ bool interactive_pan_benchmark_set_zoom(InteractivePanBenchmark& benchmark, int 
       benchmark.first_valid_us[slot].store(elapsed);
     }
     if (last_completed >= 0) {
-      const std::uint32_t elapsed = static_cast<std::uint32_t>(last_completed) - event_started;
-      benchmark.last_visible_complete_us[slot].store(elapsed);
-      if (zoom_percent <= 100) {
-        benchmark.settled_us[slot].store(elapsed);
-      }
+      benchmark.last_visible_complete_us[slot].store(static_cast<std::uint32_t>(last_completed) -
+                                                     event_started);
     }
   } else if (benchmark.has_complete_initial_atlas) {
     // Without completion telemetry, fall back to submit-time endpoints.
     benchmark.first_valid_us[slot].store(benchmark.first_strip_submit_us[slot].load());
-    if (zoom_percent <= 100) {
-      benchmark.settled_us[slot].store(benchmark.last_visible_submit_us[slot].load());
-    }
   }
+  // settled_us is recorded by the background settled pass once every visible
+  // band has actual-resolution settled-renderer output.
   return true;
 }
 
@@ -1057,10 +1133,6 @@ void interactive_pan_benchmark_record_zoom_present(InteractivePanBenchmark& benc
                                                                                         elapsed));
   benchmark.zoom_presentation_pending.store(false);
   xTaskNotifyGive(benchmark.render_task);
-  if (benchmark.settled_us[static_cast<std::size_t>(index)].load() == 0U &&
-      kZoomPercents[static_cast<std::size_t>(index)] <= 100) {
-    benchmark.settled_us[static_cast<std::size_t>(index)].store(elapsed);
-  }
 }
 
 bool interactive_pan_benchmark_begin_stroke(InteractivePanBenchmark& benchmark) {
