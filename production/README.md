@@ -95,7 +95,7 @@ simultaneously, then attempts a separate 1.5 MiB allocation. This is an
 allocation receipt, not proof that the eventual encoders and renderers fit the
 reserved capacities or meet interaction gates.
 
-The exact-commit ESP32-S3 receipt is
+The initial empty-heap ESP32-S3 allocation receipt is
 [`hardware-receipts/1f91ed0-memory-layout.log`](hardware-receipts/1f91ed0-memory-layout.log):
 
 - all 3,038,304 planned bytes allocated simultaneously;
@@ -103,18 +103,22 @@ The exact-commit ESP32-S3 receipt is
 - a separate 1,572,864-byte reserve allocation succeeded;
 - free/largest after holding both plan and reserve: 3,748,420 / 3,735,552 bytes.
 
-This closes the allocation gate for the stated capacities. Captured workload
-distributions and actual renderer implementation must still validate that the
+This proves only that the provisional external-memory slabs and reserve are
+simultaneously allocatable on an otherwise empty 8 MiB PSRAM heap. It does not
+close Task #53's product or strangler-coexistence gate: the legacy raster arenas,
+internal DMA heap, export workspace, Wi-Fi, USB, and eventual renderer behavior
+were not live. Captured workload distributions must also validate that the
 capacities are sufficient rather than merely allocatable.
 
-## Task #54 host fallback seam
+## Task #54a host fallback oracle
 
-`MaterializedCanvas::compose_view` produces a complete requested rectangle from
-current-revision world tiles and fills every cache miss from the complete
-current-revision overview. It never labels stale tile or overview pixels as
-current. The only rejected requests are malformed/out-of-world rectangles or a
-state where neither current tiles nor the current overview cover every pixel.
-That bootstrap/revision state is not an ordinary pan refusal.
+`MaterializedCanvas::compose_view` is a host oracle that produces a complete
+requested rectangle from current-revision world tiles and fills every cache miss
+from the complete current-revision overview. Overview publication commits the
+new document revision transactionally, so ordinary mutation does not expose a
+new revision before its fallback source exists. It never labels stale tile or
+overview pixels as current. The only rejected requests are malformed/out-of-world
+rectangles or a bootstrap state where no current source covers every pixel.
 
 This is host validation of the no-checkerboard composition policy. Panel timing,
 DMA completion, and the ≤35 ms valid-cache pan gate require the later display

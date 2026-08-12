@@ -95,7 +95,8 @@ struct SourceSelection {
   TileKey requested_tile{};
   PixelRect source_pixels{};
   PixelRect destination_pixels{};
-  std::size_t slot_index = 0;
+  std::optional<std::size_t> slot_index{};
+  int source_stride = 0;
 };
 
 struct ViewRequest {
@@ -138,13 +139,13 @@ class MaterializedCanvas {
   [[nodiscard]] std::size_t slot_capacity() const;
   [[nodiscard]] std::span<const std::uint16_t> overview_pixels() const;
 
-  [[nodiscard]] bool advance_revision(DocumentRevision revision);
   [[nodiscard]] bool publish_overview(DocumentRevision revision,
                                       std::span<const std::uint16_t> pixels);
   [[nodiscard]] std::optional<std::size_t> publish_tile(TileKey key, DocumentRevision revision,
                                                         MaterializationQuality quality,
                                                         std::span<const std::uint16_t> pixels);
-  [[nodiscard]] std::optional<SourceSelection> lookup(TileKey key);
+  [[nodiscard]] std::optional<SourceSelection> lookup(TileKey key) const;
+  [[nodiscard]] bool mark_used(TileKey key);
   [[nodiscard]] std::optional<ViewCompositionStats> compose_view(
       const ViewRequest& request, std::span<std::uint16_t> destination);
 

@@ -6,7 +6,7 @@ Last updated: 2026-08-12
 
 Branch: `feat/vector-canvas-production`
 
-The camera-aligned vector/materialized-cache prototype is complete and rejected as a product architecture. The next feature task remains **#52: build the first host-tested `MaterializedCanvas` state module**. Production implementation has not started and the branch is not ready to ship.
+The camera-aligned vector/materialized-cache prototype is complete and rejected as a product architecture. Tasks #52 and the host-only #54a fallback oracle now exist under `production/`; an empty-heap #53 allocation receipt is recorded but does not yet close the coexistence gate. The branch is not ready to ship. The next implementation step is the smallest exclusive hardware overview walk needed to validate fallback on glass before #55.
 
 The default firmware still runs the existing raster-authoritative product:
 
@@ -81,17 +81,16 @@ Correctness requirements are stroke presence, painter order, eraser behavior, an
 
 ## Next task
 
-Task #52 should contain only:
+Build an exclusive, opt-in hardware overview walk outside `hardware_app.cpp`:
 
-1. strongly typed production world, zoom, tile, revision, quality, and provenance identities;
-2. a pure fixed-capacity `MaterializedCanvas` state module under `production/`;
-3. overview-derived fallback and slot replacement/revision behavior;
-4. focused host tests;
-5. only the build wiring required for those tests.
+1. compile and construct the real production module on ESP32;
+2. reuse one extracted physical panel adapter rather than copying CO5300 setup;
+3. present 25% overview strips, then 100% overview-derived fallback strips;
+4. capture exact-commit serial timing, hashes, and panel-window validation;
+5. keep the default raster firmware runnable and unchanged.
 
-No ESP32 integration, PSRAM allocation, display scheduling, renderer optimization, persistence migration, or legacy cleanup belongs in that first feature commit.
-
-After #52, prove the actual production memory allocation and largest contiguous PSRAM reserve before integrating no-refusal pan or incremental tile updates.
+This is not full #58 scheduling and does not close #54's ≤35 ms pan gate. It is
+the smallest hardware seam needed before #55 incremental updates.
 
 ## Validation baseline
 
