@@ -113,7 +113,8 @@ TEST_CASE("lookup never selects a stale tile or stale overview") {
   CHECK(tile->kind == production::SourceKind::kTileSlot);
   CHECK(tile->identity.quality == production::MaterializationQuality::kSettled);
 
-  CHECK(canvas.publish_overview({1}, overview));
+  std::array<std::uint16_t, production::kOverviewPixels> revised_overview{};
+  CHECK(canvas.publish_overview({1}, revised_overview));
   CHECK_FALSE(
       canvas.publish_tile(key, {0}, production::MaterializationQuality::kExact, tile_pixels));
   const auto revised_fallback = canvas.lookup(key);
@@ -213,7 +214,8 @@ TEST_CASE("compose view refuses only when no current source exists") {
   CHECK(tile_only->exact_tiles == 1U);
   CHECK(tile_only->fallback_tiles == 0U);
 
-  REQUIRE(canvas.publish_overview({1}, overview));
+  std::array<std::uint16_t, production::kOverviewPixels> revised_overview{};
+  REQUIRE(canvas.publish_overview({1}, revised_overview));
   const auto fallback = canvas.compose_view(request, destination);
   REQUIRE(fallback.has_value());
   CHECK(fallback->fallback_tiles == 1U);
@@ -262,8 +264,13 @@ TEST_CASE("overview publication commits each revision only once") {
   const production::TileKey key{production::ZoomLevel::k100Percent, 0, 0};
   REQUIRE(canvas.publish_tile(key, {0}, production::MaterializationQuality::kExact, tile));
 
-  overview.fill(0x3333U);
-  CHECK_FALSE(canvas.publish_overview({0}, overview));
+  std::array<std::uint16_t, production::kOverviewPixels> replacement{};
+  replacement.fill(0x3333U);
+  CHECK_FALSE(canvas.publish_overview({0}, replacement));
+  std::array<std::uint16_t, 1> composed{};
+  REQUIRE(canvas.compose_view(
+      {.zoom = production::ZoomLevel::k100Percent, .level_pixels = {64, 0, 65, 1}}, composed));
+  CHECK(composed.front() == 0U);
   const auto source = canvas.lookup(key);
   REQUIRE(source.has_value());
   CHECK(source->kind == production::SourceKind::kTileSlot);
@@ -283,8 +290,9 @@ TEST_CASE("transactional overview publication prevents stale fallback labeling")
                               production::MaterializationQuality::kExact,
                               std::span(tile).first(production::kTilePixels)));
 
-  overview.fill(0x3333U);
-  REQUIRE(canvas.publish_overview({1}, overview));
+  std::array<std::uint16_t, production::kOverviewPixels> revised_overview{};
+  revised_overview.fill(0x3333U);
+  REQUIRE(canvas.publish_overview({1}, revised_overview));
   REQUIRE(canvas.publish_tile({production::ZoomLevel::k50Percent, 10, 0}, {1},
                               production::MaterializationQuality::kExact,
                               std::span(tile).first(production::kTilePixels)));
@@ -295,6 +303,54 @@ TEST_CASE("transactional overview publication prevents stale fallback labeling")
   CHECK(stats->revision == production::DocumentRevision{1});
   CHECK(destination[31] == 0x2222U);
   CHECK(destination[32] == 0x3333U);
+}
+
+TEST_CASE("pinned sources cannot be replaced and validate only while pinned") {
+  std::array<std::uint16_t, production::kOverviewPixels> overview{};
+  std::array<std::uint16_t, production::kOverviewPixels> revised_overview{};
+  std::array<production::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, production::kTilePixels> tile_storage{};
+  std::array<std::uint16_t, production::kTilePixels> tile{};
+  production::MaterializedCanvas canvas(overview, slots, tile_storage);
+  REQUIRE(canvas.publish_overview({0}, overview));
+  const production::TileKey key{production::ZoomLevel::k100Percent, 0, 0};
+  REQUIRE(canvas.publish_tile(key, {0}, production::MaterializationQuality::kExact, tile));
+
+  const auto pinned_tile = canvas.pin(key);
+  REQUIRE(pinned_tile.has_value());
+  CHECK(canvas.validate(*pinned_tile));
+  CHECK_FALSE(canvas.publish_tile(key, {0}, production::MaterializationQuality::kSettled, tile));
+  CHECK_FALSE(canvas.publish_overview({1}, revised_overview));
+  CHECK(canvas.unpin(*pinned_tile));
+  CHECK_FALSE(canvas.validate(*pinned_tile));
+  REQUIRE(canvas.publish_overview({1}, revised_overview));
+  CHECK_FALSE(canvas.validate(*pinned_tile));
+
+  const production::TileKey missing{production::ZoomLevel::k100Percent, 1, 0};
+  const auto pinned_overview = canvas.pin(missing);
+  REQUIRE(pinned_overview.has_value());
+  CHECK(pinned_overview->kind == production::SourceKind::kOverview);
+  CHECK(canvas.validate(*pinned_overview));
+  CHECK_FALSE(canvas.publish_overview({2}, overview));
+  CHECK(canvas.unpin(*pinned_overview));
+  CHECK_FALSE(canvas.validate(*pinned_overview));
+}
+
+TEST_CASE("all pinned slots prevent eviction until one is released") {
+  std::array<std::uint16_t, production::kOverviewPixels> overview{};
+  std::array<production::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, production::kTilePixels> tile_storage{};
+  std::array<std::uint16_t, production::kTilePixels> tile{};
+  production::MaterializedCanvas canvas(overview, slots, tile_storage);
+  const production::TileKey first{production::ZoomLevel::k100Percent, 0, 0};
+  const production::TileKey second{production::ZoomLevel::k100Percent, 1, 0};
+  REQUIRE(canvas.publish_tile(first, {0}, production::MaterializationQuality::kExact, tile));
+  const auto pinned = canvas.pin(first);
+  REQUIRE(pinned.has_value());
+  CHECK_FALSE(canvas.publish_tile(second, {0}, production::MaterializationQuality::kExact, tile));
+  CHECK(canvas.unpin(*pinned));
+  REQUIRE(canvas.publish_tile(second, {0}, production::MaterializationQuality::kExact, tile));
+  CHECK_FALSE(canvas.validate(*pinned));
 }
 
 TEST_CASE("walk-shaped bottom strip composes from the complete overview") {
