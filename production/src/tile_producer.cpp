@@ -241,6 +241,7 @@ bool TileProducer::start_group(const ViewRequest& view, TileKey group_origin) {
                    .first_operation = replay->first_operation,
                    .operation_count = replay->operation_count,
                    .next_operation = 0,
+                   .next_sample = 1,
                    .active = true};
   return true;
 }
@@ -252,24 +253,40 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
     active_group_ = {};
     return std::nullopt;
   }
-  const std::size_t batch_end = std::min(
-      active_group_.operation_count, active_group_.next_operation + kTileProducerOperationBatch);
-  TileProductionStep result{.level_bounds = active_group_.bounds,
-                            .operations_scanned = batch_end - active_group_.next_operation};
+  TileProductionStep result{.level_bounds = active_group_.bounds};
   auto surface = workspace_.supertask_pixels.first(kTileProducerPixels);
-  for (; active_group_.next_operation < batch_end; ++active_group_.next_operation) {
+  std::size_t operations_consumed = 0;
+  std::size_t samples_consumed = 0;
+  while (active_group_.next_operation < active_group_.operation_count &&
+         operations_consumed < kTileProducerOperationBatch &&
+         samples_consumed < kTileProducerSampleBatch) {
     const auto stored =
         log_.operation(active_group_.first_operation + active_group_.next_operation);
     if (!stored.has_value()) {
       active_group_ = {};
       return std::nullopt;
     }
-    if (!intersects(operation_level_bounds(stored->world_bounds, active_group_.view.zoom),
-                    active_group_.bounds)) {
+    const bool visible =
+        intersects(operation_level_bounds(stored->world_bounds, active_group_.view.zoom),
+                   active_group_.bounds);
+    const std::size_t segment_count = std::max<std::size_t>(1U, stored->samples.size() - 1U);
+    if (!visible) {
+      ++active_group_.next_operation;
+      active_group_.next_sample = 1U;
+      ++operations_consumed;
+      ++result.operations_scanned;
       continue;
     }
+    const std::size_t available_segments = segment_count - (active_group_.next_sample - 1U);
+    const std::size_t segment_batch =
+        std::min(available_segments, kTileProducerSampleBatch - samples_consumed);
+    const std::size_t first_sample =
+        stored->samples.size() == 1U ? 0U : active_group_.next_sample - 1U;
+    const std::size_t sample_count = stored->samples.size() == 1U ? 1U : segment_batch + 1U;
     if (!apply_incremental_operation(
-            {.tool = stored->tool, .color = stored->color, .samples = stored->samples},
+            {.tool = stored->tool,
+             .color = stored->color,
+             .samples = stored->samples.subspan(first_sample, sample_count)},
             {.zoom = active_group_.view.zoom,
              .level_bounds = active_group_.bounds,
              .pixels = surface,
@@ -277,7 +294,16 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
       active_group_ = {};
       return std::nullopt;
     }
+    samples_consumed += segment_batch;
     ++result.operations_rendered;
+    if (segment_batch == available_segments) {
+      ++active_group_.next_operation;
+      active_group_.next_sample = 1U;
+      ++operations_consumed;
+      ++result.operations_scanned;
+    } else {
+      active_group_.next_sample += segment_batch;
+    }
   }
   if (active_group_.next_operation < active_group_.operation_count) {
     result.visible_tiles_remaining =
