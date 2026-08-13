@@ -38,12 +38,14 @@ using production::ZoomLevel;
 
 constexpr int kStripRows = 22;
 constexpr std::uint32_t kExpectedPushesPerFrame = 21U;
-constexpr std::uint32_t kExpectedTotalPushes = 147U;
+constexpr std::uint32_t kExpectedTotalPushes = 168U;
+constexpr std::uint32_t kBurstOperationCount = 30U;
 constexpr std::uint32_t kExpectedOverviewHash = 0xD76C09B1U;
 constexpr std::uint32_t kExpectedFallbackHashes[]{0xD9E39425U, 0xA4CE26E5U, 0x1B5753A5U,
                                                   0x91F8B705U};
 constexpr std::uint32_t kExpectedPenHash = 0xE93CC976U;
 constexpr std::uint32_t kExpectedEraserHash = 0x9C622475U;
+constexpr std::uint32_t kExpectedBurstHash = 0xD4E162C4U;
 constexpr std::uint32_t kFnvOffset = 2'166'136'261U;
 constexpr std::uint32_t kFnvPrime = 16'777'619U;
 constexpr std::uint32_t kExternalCaps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
@@ -251,9 +253,9 @@ void run_production_overview_walk() {
   auto* tile_scratch =
       static_cast<std::uint16_t*>(heap_caps_malloc(production::kTileBytes, kExternalCaps));
   auto* operation_records =
-      static_cast<OperationRecord*>(heap_caps_malloc(2U * sizeof(OperationRecord), kExternalCaps));
+      static_cast<OperationRecord*>(heap_caps_malloc(32U * sizeof(OperationRecord), kExternalCaps));
   auto* operation_samples = static_cast<CompactOperationSample*>(
-      heap_caps_malloc(4U * sizeof(CompactOperationSample), kExternalCaps));
+      heap_caps_malloc(64U * sizeof(CompactOperationSample), kExternalCaps));
   auto* strip = static_cast<std::uint16_t*>(heap_caps_malloc(
       static_cast<std::size_t>(production::kOverviewWidth * kStripRows) * sizeof(std::uint16_t),
       kExternalCaps));
@@ -276,7 +278,7 @@ void run_production_overview_walk() {
     }
   }
 
-  OperationLog operation_log(std::span(operation_records, 2), std::span(operation_samples, 4));
+  OperationLog operation_log(std::span(operation_records, 32), std::span(operation_samples, 64));
   MaterializedCanvas canvas(std::span(overview, production::kOverviewPixels), std::span(slots, 2),
                             std::span(tile_pixels, 2U * production::kTilePixels),
                             DocumentRevision{0});
@@ -351,6 +353,41 @@ void run_production_overview_walk() {
              std::span(overview_source, production::kOverviewPixels),
              std::span(tile_scratch, production::kTilePixels)) &&
          present_incremental(display, canvas, strip_pixels, {2}, "eraser", kExpectedEraserHash) &&
+         pass;
+  std::int64_t burst_us = 0;
+  for (std::uint32_t index = 0; index < kBurstOperationCount; ++index) {
+    const std::uint16_t x = static_cast<std::uint16_t>(32U + (index % 6U) * 32U);
+    const std::uint16_t y = static_cast<std::uint16_t>(32U + (index / 6U) * 32U);
+    const std::array burst_samples{
+        CompactOperationSample{.x_quarter = x, .y_quarter = y, .radius_256 = 512},
+        CompactOperationSample{.x_quarter = static_cast<std::uint16_t>(x + 24U),
+                               .y_quarter = static_cast<std::uint16_t>(y + 16U),
+                               .radius_256 = 512},
+    };
+    const std::int64_t append_started = esp_timer_get_time();
+    pass = append_and_commit_probe(
+               operation_log, canvas,
+               {.tool = index % 5U == 4U ? OperationTool::kEraser : OperationTool::kPen,
+                .color = static_cast<std::uint16_t>(0x0200U + index),
+                .samples = burst_samples},
+               std::span(overview_source, production::kOverviewPixels),
+               std::span(tile_scratch, production::kTilePixels)) &&
+           pass;
+    burst_us += esp_timer_get_time() - append_started;
+  }
+  std::printf(
+      "TINYDRAW_PRODUCTION_WALK_BURST operations=%lu revision=%lu total_us=%lld average_us=%lld "
+      "log_operations=%lu log_samples=%lu\n",
+      static_cast<unsigned long>(kBurstOperationCount),
+      static_cast<unsigned long>(canvas.current_revision().value), static_cast<long long>(burst_us),
+      static_cast<long long>(burst_us / kBurstOperationCount),
+      static_cast<unsigned long>(operation_log.operation_count()),
+      static_cast<unsigned long>(operation_log.sample_count()));
+  pass = operation_log.current_revision() == canvas.current_revision() &&
+         canvas.current_revision() == DocumentRevision{kBurstOperationCount + 2U} &&
+         operation_log.operation_count() == kBurstOperationCount + 2U && pass;
+  pass = present_incremental(display, canvas, strip_pixels, {kBurstOperationCount + 2U}, "burst",
+                             kExpectedBurstHash) &&
          pass;
   const std::uint32_t submits = display.submit_count();
   const std::uint32_t completes = display.complete_count();
