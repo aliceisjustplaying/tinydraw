@@ -6,7 +6,7 @@ Last updated: 2026-08-13
 
 Branch: `feat/vector-canvas-production`
 
-The camera-aligned vector/materialized-cache prototype is complete and rejected as a product architecture. Tasks #52, #53, #54a, and the first bounded part of #55 now exist under `production/`. `MaterializedCanvas` has a transactional incremental-revision seam; the CO5300 transport is separated from the legacy toolbar compositor; and real compact pen and eraser operations now update the complete overview and affected resident tile without replaying prior operations. The exact-commit hardware walk passed both operations through the panel at revisions 1 and 2. These receipts do not close operation-log capacity, settled rendering, concurrency, coexistence, or interactive-pan gates. The branch is not ready to ship.
+The camera-aligned vector/materialized-cache prototype is complete and rejected as a product architecture. Tasks #52, #53, #54a, and the bounded immediate path of #55 now exist under `production/`. A fixed-capacity ordered `OperationLog` is the first production document authority; `MaterializedCanvas` commits conservative world-bounds invalidation across every zoom; and compact pen and eraser operations update the complete overview plus affected resident tiles without replaying prior operations. The exact-commit hardware walk appended both operations through the log and passed them through the panel at revisions 1 and 2. These receipts do not close representative capacity, settled rendering, concurrency, coexistence, or interactive-pan gates. The branch is not ready to ship.
 
 The default firmware still runs the existing raster-authoritative product:
 
@@ -85,13 +85,13 @@ Correctness requirements are stroke presence, painter order, eraser behavior, an
 
 Continue #55 without growing `hardware_app.cpp`:
 
-1. add the caller-owned, fixed-capacity operation log and make one append produce exactly one next revision;
-2. have the append coordinator target only resident affected tiles while allowing absent tiles to remain overview fallback;
-3. preserve the proven incremental rasterizer as the immediate renderer; anti-aliased settled quality belongs to the later settled-render path rather than this commit seam;
-4. test atomic capacity failure, operation/sample ordering, revision progression, and multi-tile targeting on the host;
-5. extend the exclusive hardware walk with a longer multi-operation sequence before any default-loop integration.
+1. define the narrow coordinator that reserves append storage, renders the next revision, and publishes only after every fallible preparation succeeds;
+2. prevent a document append from becoming authoritative if materialization commit cannot complete, or explicitly model the pending revision state;
+3. preserve the proven immediate rasterizer; anti-aliased settled quality belongs to the later settled-render path rather than this commit seam;
+4. exercise a representative multi-operation sequence and capacity boundaries before default-loop integration;
+5. keep pulling the minimum display scheduler seam forward so live hardware can prove interaction without moving production policy into `hardware_app.cpp`.
 
-The exact-commit receipt is [`production/hardware-receipts/963567b-incremental-operation-walk.log`](production/hardware-receipts/963567b-incremental-operation-walk.log). It proves opaque pen and eraser painter order at revisions 1 and 2, deterministic panel hashes, transfer completion, zero panel rejection, and measured PSRAM headroom. It does not prove a full operation log, live touch integration, settled anti-aliasing, or interactive pan.
+The current exact-commit receipt is [`production/hardware-receipts/07c44bf-operation-authority-walk.log`](production/hardware-receipts/07c44bf-operation-authority-walk.log). It proves ordered log append, opaque pen/eraser painter order at revisions 1 and 2, conservative state publication, deterministic panel hashes, transfer completion, zero panel rejection, and measured PSRAM headroom. It does not prove atomic coordination under rendering/commit failure, representative operation-log capacity, live touch integration, settled anti-aliasing, or interactive pan.
 
 ## Validation baseline
 
