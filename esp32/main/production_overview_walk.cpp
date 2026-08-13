@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -10,16 +11,21 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "tinydraw/production/incremental_rasterizer.h"
 #include "tinydraw/production/materialized_canvas.h"
 
 namespace tinydraw::esp32 {
 namespace {
 
+using production::CompactOperationSample;
 using production::DocumentRevision;
+using production::IncrementalOperation;
 using production::MaterializationQuality;
 using production::MaterializedCanvas;
 using production::MaterializedSlotStorage;
+using production::OperationTool;
 using production::PixelRect;
+using production::RasterSurface;
 using production::TileKey;
 using production::TileRevisionPublication;
 using production::ViewRequest;
@@ -27,11 +33,12 @@ using production::ZoomLevel;
 
 constexpr int kStripRows = 22;
 constexpr std::uint32_t kExpectedPushesPerFrame = 21U;
-constexpr std::uint32_t kExpectedTotalPushes = 126U;
+constexpr std::uint32_t kExpectedTotalPushes = 147U;
 constexpr std::uint32_t kExpectedOverviewHash = 0xD76C09B1U;
 constexpr std::uint32_t kExpectedFallbackHashes[]{0xD9E39425U, 0xA4CE26E5U, 0x1B5753A5U,
                                                   0x91F8B705U};
-constexpr std::uint32_t kExpectedIncrementalHash = 0xEAB6F725U;
+constexpr std::uint32_t kExpectedPenHash = 0xE93CC976U;
+constexpr std::uint32_t kExpectedEraserHash = 0x9C622475U;
 constexpr std::uint32_t kFnvOffset = 2'166'136'261U;
 constexpr std::uint32_t kFnvPrime = 16'777'619U;
 constexpr std::uint32_t kExternalCaps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
@@ -135,7 +142,8 @@ bool present_fallback(Co5300PanelTransport& display, MaterializedCanvas& canvas,
 }
 
 bool present_incremental(Co5300PanelTransport& display, MaterializedCanvas& canvas,
-                         std::span<std::uint16_t> strip) {
+                         std::span<std::uint16_t> strip, DocumentRevision revision,
+                         const char* phase, std::uint32_t expected_hash) {
   const std::int64_t started = esp_timer_get_time();
   const std::uint32_t pushes_before = display.push_count();
   std::uint32_t hash = kFnvOffset;
@@ -149,8 +157,9 @@ bool present_incremental(Co5300PanelTransport& display, MaterializedCanvas& canv
         {.zoom = ZoomLevel::k100Percent,
          .level_pixels = {0, panel_y, production::kOverviewWidth, panel_y + rows}},
         destination);
-    if (!stats.has_value() || stats->revision != DocumentRevision{1}) {
-      std::printf("TINYDRAW_PRODUCTION_WALK_FAIL reason=incremental_compose panel_y=%d\n", panel_y);
+    if (!stats.has_value() || stats->revision != revision) {
+      std::printf("TINYDRAW_PRODUCTION_WALK_FAIL reason=incremental_compose phase=%s panel_y=%d\n",
+                  phase, panel_y);
       return false;
     }
     tile_pixels += stats->tile_pixels;
@@ -163,15 +172,16 @@ bool present_incremental(Co5300PanelTransport& display, MaterializedCanvas& canv
   const std::uint32_t pushes = display.push_count() - pushes_before;
   const bool completed = wait_for_transfers(display, target, 2'000'000);
   const bool passed =
-      completed && pushes == kExpectedPushesPerFrame && hash == kExpectedIncrementalHash &&
+      completed && pushes == kExpectedPushesPerFrame && hash == expected_hash &&
       tile_pixels == 2U * production::kTilePixels &&
       tile_pixels + fallback_pixels == static_cast<std::size_t>(production::kOverviewPixels) &&
       display.rejected_push_count() == 0U;
   std::printf(
-      "TINYDRAW_PRODUCTION_WALK_INCREMENTAL revision=1 hash=%08lx pushes=%lu "
+      "TINYDRAW_PRODUCTION_WALK_INCREMENTAL phase=%s revision=%lu hash=%08lx pushes=%lu "
       "tile_pixels=%lu fallback_pixels=%lu elapsed_us=%lld completed=%u submit=%lu complete=%lu\n",
-      static_cast<unsigned long>(hash), static_cast<unsigned long>(pushes),
-      static_cast<unsigned long>(tile_pixels), static_cast<unsigned long>(fallback_pixels),
+      phase, static_cast<unsigned long>(revision.value), static_cast<unsigned long>(hash),
+      static_cast<unsigned long>(pushes), static_cast<unsigned long>(tile_pixels),
+      static_cast<unsigned long>(fallback_pixels),
       static_cast<long long>(esp_timer_get_time() - started), completed,
       static_cast<unsigned long>(target), static_cast<unsigned long>(display.complete_count()));
   return passed;
@@ -192,49 +202,83 @@ void fill_tile_from_overview(std::span<std::uint16_t> tile, std::span<const std:
   }
 }
 
-bool commit_incremental_probe(MaterializedCanvas& canvas, std::span<std::uint16_t> next_overview,
-                              std::span<std::uint16_t> tile_scratch) {
+bool commit_operation_probe(MaterializedCanvas& canvas, const IncrementalOperation& operation,
+                            DocumentRevision revision, std::span<std::uint16_t> next_overview,
+                            std::span<std::uint16_t> tile_scratch) {
   constexpr TileKey kAffected{ZoomLevel::k100Percent, 0, 0};
   constexpr TileKey kCarried{ZoomLevel::k100Percent, 1, 0};
-  fill_tile_from_overview(tile_scratch, canvas.overview_pixels(), kAffected);
-  if (!canvas.publish_tile(kAffected, {0}, MaterializationQuality::kSettled, tile_scratch)) {
-    return false;
-  }
-  fill_tile_from_overview(tile_scratch, canvas.overview_pixels(), kCarried);
-  if (!canvas.publish_tile(kCarried, {0}, MaterializationQuality::kExact, tile_scratch)) {
-    return false;
+  if (revision == DocumentRevision{1}) {
+    fill_tile_from_overview(tile_scratch, canvas.overview_pixels(), kAffected);
+    if (!canvas.publish_tile(kAffected, {0}, MaterializationQuality::kSettled, tile_scratch)) {
+      return false;
+    }
+    fill_tile_from_overview(tile_scratch, canvas.overview_pixels(), kCarried);
+    if (!canvas.publish_tile(kCarried, {0}, MaterializationQuality::kExact, tile_scratch)) {
+      return false;
+    }
   }
   const auto carried_before = canvas.lookup(kCarried);
   if (!carried_before.has_value()) {
     return false;
   }
 
+  std::array<TileKey, 4> operation_tiles{};
+  const auto affected_count =
+      production::affected_tiles(operation, ZoomLevel::k100Percent, operation_tiles);
+  if (!affected_count.has_value() || *affected_count != 1U || operation_tiles[0] != kAffected) {
+    return false;
+  }
+  const auto prior_tile = canvas.compose_view(
+      {.zoom = ZoomLevel::k100Percent, .level_pixels = production::tile_pixel_bounds(kAffected)},
+      tile_scratch);
+  if (!prior_tile.has_value() || prior_tile->tile_pixels != production::kTilePixels) {
+    return false;
+  }
   std::copy(canvas.overview_pixels().begin(), canvas.overview_pixels().end(),
             next_overview.begin());
-  for (int y = 4; y < 12; ++y) {
-    std::fill(next_overview.begin() + y * production::kOverviewWidth + 4,
-              next_overview.begin() + y * production::kOverviewWidth + 12, 0xF800U);
+
+  const std::int64_t render_started = esp_timer_get_time();
+  const bool overview_rendered = production::apply_incremental_operation(
+      operation,
+      RasterSurface{.zoom = ZoomLevel::k25Percent,
+                    .level_bounds = {0, 0, production::kOverviewWidth, production::kOverviewHeight},
+                    .pixels = next_overview,
+                    .stride = production::kOverviewWidth});
+  const std::int64_t overview_us = esp_timer_get_time() - render_started;
+  const std::int64_t tile_started = esp_timer_get_time();
+  const bool tile_rendered = production::apply_incremental_operation(
+      operation, RasterSurface{.zoom = ZoomLevel::k100Percent,
+                               .level_bounds = production::tile_pixel_bounds(kAffected),
+                               .pixels = tile_scratch,
+                               .stride = production::kTileWidth});
+  const std::int64_t tile_us = esp_timer_get_time() - tile_started;
+  if (!overview_rendered || !tile_rendered) {
+    return false;
   }
-  fill_tile_from_overview(tile_scratch, canvas.overview_pixels(), kAffected);
-  for (int y = 16; y < 48; ++y) {
-    std::fill(tile_scratch.begin() + y * production::kTileWidth + 16,
-              tile_scratch.begin() + y * production::kTileWidth + 48, 0xF800U);
-  }
-  const std::array affected{kAffected};
+
   const std::array publications{TileRevisionPublication{
       .key = kAffected,
       .quality = MaterializationQuality::kExact,
       .pixels = tile_scratch,
   }};
-  if (!canvas.commit_incremental_revision({1}, next_overview, affected, publications)) {
+  const std::int64_t commit_started = esp_timer_get_time();
+  const bool committed = canvas.commit_incremental_revision(
+      revision, next_overview, std::span(operation_tiles).first(*affected_count), publications);
+  const std::int64_t commit_us = esp_timer_get_time() - commit_started;
+  std::printf(
+      "TINYDRAW_PRODUCTION_WALK_OPERATION revision=%lu overview_us=%lld tile_us=%lld "
+      "commit_us=%lld "
+      "committed=%u\n",
+      static_cast<unsigned long>(revision.value), static_cast<long long>(overview_us),
+      static_cast<long long>(tile_us), static_cast<long long>(commit_us), committed);
+  if (!committed) {
     return false;
   }
   const auto updated = canvas.lookup(kAffected);
   const auto carried = canvas.lookup(kCarried);
-  return updated.has_value() && carried.has_value() &&
-         updated->identity.revision == DocumentRevision{1} &&
+  return updated.has_value() && carried.has_value() && updated->identity.revision == revision &&
          updated->identity.quality == MaterializationQuality::kExact &&
-         carried->identity.revision == DocumentRevision{1} &&
+         carried->identity.revision == revision &&
          carried->identity.generation == carried_before->identity.generation;
 }
 
@@ -303,9 +347,28 @@ void run_production_overview_walk() {
            pass;
     vTaskDelay(pdMS_TO_TICKS(350));
   }
-  pass = commit_incremental_probe(canvas, std::span(overview_source, production::kOverviewPixels),
-                                  std::span(tile_scratch, production::kTilePixels)) &&
-         present_incremental(display, canvas, strip_pixels) && pass;
+  const std::array pen_samples{
+      CompactOperationSample{.x_quarter = 32, .y_quarter = 48, .radius_256 = 1280},
+      CompactOperationSample{.x_quarter = 208, .y_quarter = 192, .radius_256 = 1280},
+  };
+  const IncrementalOperation pen{
+      .tool = OperationTool::kPen, .color = 0x001FU, .samples = pen_samples};
+  pass = commit_operation_probe(canvas, pen, {1},
+                                std::span(overview_source, production::kOverviewPixels),
+                                std::span(tile_scratch, production::kTilePixels)) &&
+         present_incremental(display, canvas, strip_pixels, {1}, "pen", kExpectedPenHash) && pass;
+  vTaskDelay(pdMS_TO_TICKS(350));
+
+  const std::array eraser_samples{
+      CompactOperationSample{.x_quarter = 120, .y_quarter = 32, .radius_256 = 768},
+      CompactOperationSample{.x_quarter = 120, .y_quarter = 220, .radius_256 = 768},
+  };
+  const IncrementalOperation eraser{.tool = OperationTool::kEraser, .samples = eraser_samples};
+  pass = commit_operation_probe(canvas, eraser, {2},
+                                std::span(overview_source, production::kOverviewPixels),
+                                std::span(tile_scratch, production::kTilePixels)) &&
+         present_incremental(display, canvas, strip_pixels, {2}, "eraser", kExpectedEraserHash) &&
+         pass;
   const std::uint32_t submits = display.submit_count();
   const std::uint32_t completes = display.complete_count();
   const std::uint32_t rejects = display.rejected_push_count();
