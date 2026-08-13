@@ -20,15 +20,18 @@ using production::MaterializationQuality;
 using production::MaterializedCanvas;
 using production::MaterializedSlotStorage;
 using production::PixelRect;
+using production::TileKey;
+using production::TileRevisionPublication;
 using production::ViewRequest;
 using production::ZoomLevel;
 
 constexpr int kStripRows = 22;
 constexpr std::uint32_t kExpectedPushesPerFrame = 21U;
-constexpr std::uint32_t kExpectedTotalPushes = 105U;
+constexpr std::uint32_t kExpectedTotalPushes = 126U;
 constexpr std::uint32_t kExpectedOverviewHash = 0xD76C09B1U;
 constexpr std::uint32_t kExpectedFallbackHashes[]{0xD9E39425U, 0xA4CE26E5U, 0x1B5753A5U,
                                                   0x91F8B705U};
+constexpr std::uint32_t kExpectedIncrementalHash = 0xEAB6F725U;
 constexpr std::uint32_t kFnvOffset = 2'166'136'261U;
 constexpr std::uint32_t kFnvPrime = 16'777'619U;
 constexpr std::uint32_t kExternalCaps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
@@ -131,25 +134,135 @@ bool present_fallback(Co5300PanelTransport& display, MaterializedCanvas& canvas,
   return passed;
 }
 
+bool present_incremental(Co5300PanelTransport& display, MaterializedCanvas& canvas,
+                         std::span<std::uint16_t> strip) {
+  const std::int64_t started = esp_timer_get_time();
+  const std::uint32_t pushes_before = display.push_count();
+  std::uint32_t hash = kFnvOffset;
+  std::size_t tile_pixels = 0;
+  std::size_t fallback_pixels = 0;
+  for (int panel_y = 0; panel_y < production::kOverviewHeight; panel_y += kStripRows) {
+    const int rows = std::min(kStripRows, production::kOverviewHeight - panel_y);
+    const auto destination =
+        strip.first(static_cast<std::size_t>(rows * production::kOverviewWidth));
+    const auto stats = canvas.compose_view(
+        {.zoom = ZoomLevel::k100Percent,
+         .level_pixels = {0, panel_y, production::kOverviewWidth, panel_y + rows}},
+        destination);
+    if (!stats.has_value() || stats->revision != DocumentRevision{1}) {
+      std::printf("TINYDRAW_PRODUCTION_WALK_FAIL reason=incremental_compose panel_y=%d\n", panel_y);
+      return false;
+    }
+    tile_pixels += stats->tile_pixels;
+    fallback_pixels += stats->fallback_pixels;
+    hash = hash_pixels(hash, destination);
+    display.push_rect(0, panel_y, production::kOverviewWidth, rows, destination.data(),
+                      production::kOverviewWidth);
+  }
+  const std::uint32_t target = display.submit_count();
+  const std::uint32_t pushes = display.push_count() - pushes_before;
+  const bool completed = wait_for_transfers(display, target, 2'000'000);
+  const bool passed =
+      completed && pushes == kExpectedPushesPerFrame && hash == kExpectedIncrementalHash &&
+      tile_pixels == 2U * production::kTilePixels &&
+      tile_pixels + fallback_pixels == static_cast<std::size_t>(production::kOverviewPixels) &&
+      display.rejected_push_count() == 0U;
+  std::printf(
+      "TINYDRAW_PRODUCTION_WALK_INCREMENTAL revision=1 hash=%08lx pushes=%lu "
+      "tile_pixels=%lu fallback_pixels=%lu elapsed_us=%lld completed=%u submit=%lu complete=%lu\n",
+      static_cast<unsigned long>(hash), static_cast<unsigned long>(pushes),
+      static_cast<unsigned long>(tile_pixels), static_cast<unsigned long>(fallback_pixels),
+      static_cast<long long>(esp_timer_get_time() - started), completed,
+      static_cast<unsigned long>(target), static_cast<unsigned long>(display.complete_count()));
+  return passed;
+}
+
+void fill_tile_from_overview(std::span<std::uint16_t> tile, std::span<const std::uint16_t> overview,
+                             TileKey key) {
+  const PixelRect bounds = production::tile_pixel_bounds(key);
+  for (int y = bounds.y0; y < bounds.y1; ++y) {
+    for (int x = bounds.x0; x < bounds.x1; ++x) {
+      const std::size_t destination =
+          static_cast<std::size_t>(y - bounds.y0) * production::kTileWidth +
+          static_cast<std::size_t>(x - bounds.x0);
+      const std::size_t source = static_cast<std::size_t>(y / 4) * production::kOverviewWidth +
+                                 static_cast<std::size_t>(x / 4);
+      tile[destination] = overview[source];
+    }
+  }
+}
+
+bool commit_incremental_probe(MaterializedCanvas& canvas, std::span<std::uint16_t> next_overview,
+                              std::span<std::uint16_t> tile_scratch) {
+  constexpr TileKey kAffected{ZoomLevel::k100Percent, 0, 0};
+  constexpr TileKey kCarried{ZoomLevel::k100Percent, 1, 0};
+  fill_tile_from_overview(tile_scratch, canvas.overview_pixels(), kAffected);
+  if (!canvas.publish_tile(kAffected, {0}, MaterializationQuality::kSettled, tile_scratch)) {
+    return false;
+  }
+  fill_tile_from_overview(tile_scratch, canvas.overview_pixels(), kCarried);
+  if (!canvas.publish_tile(kCarried, {0}, MaterializationQuality::kExact, tile_scratch)) {
+    return false;
+  }
+  const auto carried_before = canvas.lookup(kCarried);
+  if (!carried_before.has_value()) {
+    return false;
+  }
+
+  std::copy(canvas.overview_pixels().begin(), canvas.overview_pixels().end(),
+            next_overview.begin());
+  for (int y = 4; y < 12; ++y) {
+    std::fill(next_overview.begin() + y * production::kOverviewWidth + 4,
+              next_overview.begin() + y * production::kOverviewWidth + 12, 0xF800U);
+  }
+  fill_tile_from_overview(tile_scratch, canvas.overview_pixels(), kAffected);
+  for (int y = 16; y < 48; ++y) {
+    std::fill(tile_scratch.begin() + y * production::kTileWidth + 16,
+              tile_scratch.begin() + y * production::kTileWidth + 48, 0xF800U);
+  }
+  const std::array affected{kAffected};
+  const std::array publications{TileRevisionPublication{
+      .key = kAffected,
+      .quality = MaterializationQuality::kExact,
+      .pixels = tile_scratch,
+  }};
+  if (!canvas.commit_incremental_revision({1}, next_overview, affected, publications)) {
+    return false;
+  }
+  const auto updated = canvas.lookup(kAffected);
+  const auto carried = canvas.lookup(kCarried);
+  return updated.has_value() && carried.has_value() &&
+         updated->identity.revision == DocumentRevision{1} &&
+         updated->identity.quality == MaterializationQuality::kExact &&
+         carried->identity.revision == DocumentRevision{1} &&
+         carried->identity.generation == carried_before->identity.generation;
+}
+
 }  // namespace
 
 void run_production_overview_walk() {
   auto* overview =
       static_cast<std::uint16_t*>(heap_caps_malloc(production::kOverviewBytes, kExternalCaps));
-  auto* raw_slot = static_cast<MaterializedSlotStorage*>(
-      heap_caps_malloc(sizeof(MaterializedSlotStorage), kExternalCaps));
+  auto* raw_slots = static_cast<MaterializedSlotStorage*>(
+      heap_caps_malloc(2U * sizeof(MaterializedSlotStorage), kExternalCaps));
   auto* tile_pixels =
+      static_cast<std::uint16_t*>(heap_caps_malloc(2U * production::kTileBytes, kExternalCaps));
+  auto* tile_scratch =
       static_cast<std::uint16_t*>(heap_caps_malloc(production::kTileBytes, kExternalCaps));
   auto* strip = static_cast<std::uint16_t*>(heap_caps_malloc(
       static_cast<std::size_t>(production::kOverviewWidth * kStripRows) * sizeof(std::uint16_t),
       kExternalCaps));
-  if (overview == nullptr || raw_slot == nullptr || tile_pixels == nullptr || strip == nullptr) {
+  if (overview == nullptr || raw_slots == nullptr || tile_pixels == nullptr ||
+      tile_scratch == nullptr || strip == nullptr) {
     std::printf(
-        "TINYDRAW_PRODUCTION_WALK_FAIL reason=allocation overview=%u slot=%u tile=%u strip=%u\n",
-        overview != nullptr, raw_slot != nullptr, tile_pixels != nullptr, strip != nullptr);
+        "TINYDRAW_PRODUCTION_WALK_FAIL reason=allocation overview=%u slots=%u tile=%u "
+        "tile_scratch=%u strip=%u\n",
+        overview != nullptr, raw_slots != nullptr, tile_pixels != nullptr, tile_scratch != nullptr,
+        strip != nullptr);
     return;
   }
-  MaterializedSlotStorage* slot = std::construct_at(raw_slot);
+  MaterializedSlotStorage* slots = std::construct_at(raw_slots);
+  std::construct_at(raw_slots + 1);
   for (int y = 0; y < production::kOverviewHeight; ++y) {
     for (int x = 0; x < production::kOverviewWidth; ++x) {
       overview[static_cast<std::size_t>(y * production::kOverviewWidth + x)] =
@@ -157,8 +270,9 @@ void run_production_overview_walk() {
     }
   }
 
-  MaterializedCanvas canvas(std::span(overview, production::kOverviewPixels), std::span(slot, 1),
-                            std::span(tile_pixels, production::kTilePixels), DocumentRevision{0});
+  MaterializedCanvas canvas(std::span(overview, production::kOverviewPixels), std::span(slots, 2),
+                            std::span(tile_pixels, 2U * production::kTilePixels),
+                            DocumentRevision{0});
   Co5300PanelTransport display;
   auto* overview_source =
       static_cast<std::uint16_t*>(heap_caps_malloc(production::kOverviewBytes, kExternalCaps));
@@ -189,6 +303,9 @@ void run_production_overview_walk() {
            pass;
     vTaskDelay(pdMS_TO_TICKS(350));
   }
+  pass = commit_incremental_probe(canvas, std::span(overview_source, production::kOverviewPixels),
+                                  std::span(tile_scratch, production::kTilePixels)) &&
+         present_incremental(display, canvas, strip_pixels) && pass;
   const std::uint32_t submits = display.submit_count();
   const std::uint32_t completes = display.complete_count();
   const std::uint32_t rejects = display.rejected_push_count();
