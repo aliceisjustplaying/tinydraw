@@ -9,6 +9,7 @@ vector_build="$root/out/build/esp32-vector-benchmark"
 interactive_pan_build="$root/out/build/esp32-interactive-pan-benchmark"
 overview_walk_build="$root/out/build/esp32-production-overview-walk"
 memory_probe_build="$root/out/build/esp32-production-memory-probe"
+live_app_build="$root/out/build/esp32-production-live-app"
 action="${1:-build}"
 
 if ! command -v eim >/dev/null 2>&1; then
@@ -37,7 +38,7 @@ enable_qemu() {
 case "$action" in
   build)
     cd "$root/esp32"
-    eim run "idf.py -B '$build' -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_PRODUCTION_MEMORY_PROBE=OFF -DTINYDRAW_PRODUCTION_OVERVIEW_WALK=OFF build"
+    eim run "idf.py -B '$build' -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_PRODUCTION_MEMORY_PROBE=OFF -DTINYDRAW_PRODUCTION_OVERVIEW_WALK=OFF -DTINYDRAW_PRODUCTION_LIVE_APP=OFF build"
     assert_config "$build/sdkconfig" OCT
     ;;
   vector-benchmark)
@@ -82,9 +83,21 @@ case "$action" in
     fi
     rm -rf "$memory_probe_build"
     cd "$root/esp32"
-    eim run "idf.py -B '$memory_probe_build' -DTINYDRAW_QEMU=OFF -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_PRODUCTION_MEMORY_PROBE=ON -DTINYDRAW_PRODUCTION_OVERVIEW_WALK=OFF build"
+    eim run "idf.py -B '$memory_probe_build' -DTINYDRAW_QEMU=OFF -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_PRODUCTION_MEMORY_PROBE=ON -DTINYDRAW_PRODUCTION_OVERVIEW_WALK=OFF -DTINYDRAW_PRODUCTION_LIVE_APP=OFF build"
     assert_config "$memory_probe_build/sdkconfig" OCT
     eim run "idf.py -B '$memory_probe_build' -p '$port' flash"
+    ;;
+  production-live-app)
+    port="${2:-}"
+    if [[ -z "$port" ]]; then
+      echo "usage: $0 production-live-app PORT" >&2
+      exit 2
+    fi
+    rm -rf "$live_app_build"
+    cd "$root/esp32"
+    eim run "idf.py -B '$live_app_build' -DTINYDRAW_QEMU=OFF -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_PRODUCTION_MEMORY_PROBE=OFF -DTINYDRAW_PRODUCTION_OVERVIEW_WALK=OFF -DTINYDRAW_PRODUCTION_LIVE_APP=ON build"
+    assert_config "$live_app_build/sdkconfig" OCT
+    eim run "idf.py -B '$live_app_build' -p '$port' flash"
     ;;
   qemu)
     enable_qemu
@@ -106,10 +119,10 @@ case "$action" in
     fi
     ;;
   clean)
-    rm -rf "$build" "$qemu_build" "$graphics_build" "$vector_build" "$interactive_pan_build" "$overview_walk_build" "$memory_probe_build"
+    rm -rf "$build" "$qemu_build" "$graphics_build" "$vector_build" "$interactive_pan_build" "$overview_walk_build" "$memory_probe_build" "$live_app_build"
     ;;
   *)
-    echo "usage: $0 {build|vector-benchmark PORT|interactive-pan-benchmark PORT|production-overview-walk PORT|production-memory-probe PORT|qemu|graphics|graphics-test|clean}" >&2
+    echo "usage: $0 {build|vector-benchmark PORT|interactive-pan-benchmark PORT|production-overview-walk PORT|production-memory-probe PORT|production-live-app PORT|qemu|graphics|graphics-test|clean}" >&2
     exit 2
     ;;
 esac

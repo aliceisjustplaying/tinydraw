@@ -9,6 +9,7 @@ option(TINYDRAW_RASTER_PAN_BENCHMARK "Measure the production raster pan path aft
 option(TINYDRAW_INTERACTIVE_PAN_BENCHMARK "Run the interactive vector-cache pan prototype" OFF)
 option(TINYDRAW_PRODUCTION_MEMORY_PROBE "Run the production allocation receipt probe" OFF)
 option(TINYDRAW_PRODUCTION_OVERVIEW_WALK "Run the exclusive production overview display walk" OFF)
+option(TINYDRAW_PRODUCTION_LIVE_APP "Run the interactive production vector integration slice" OFF)
 set(TINYDRAW_BENCHMARK_MODE_COUNT 0)
 foreach(TINYDRAW_BENCHMARK_MODE
     TINYDRAW_VECTOR_BENCHMARK
@@ -16,7 +17,8 @@ foreach(TINYDRAW_BENCHMARK_MODE
     TINYDRAW_RASTER_PAN_BENCHMARK
     TINYDRAW_INTERACTIVE_PAN_BENCHMARK
     TINYDRAW_PRODUCTION_MEMORY_PROBE
-    TINYDRAW_PRODUCTION_OVERVIEW_WALK)
+    TINYDRAW_PRODUCTION_OVERVIEW_WALK
+    TINYDRAW_PRODUCTION_LIVE_APP)
   if(${TINYDRAW_BENCHMARK_MODE})
     math(EXPR TINYDRAW_BENCHMARK_MODE_COUNT "${TINYDRAW_BENCHMARK_MODE_COUNT} + 1")
   endif()
@@ -24,8 +26,8 @@ endforeach()
 if(TINYDRAW_BENCHMARK_MODE_COUNT GREATER 1)
   message(FATAL_ERROR "Enable only one TinyDraw benchmark mode per build")
 endif()
-if(TINYDRAW_QEMU AND TINYDRAW_PRODUCTION_OVERVIEW_WALK)
-  message(FATAL_ERROR "The production overview walk requires physical hardware")
+if(TINYDRAW_QEMU AND (TINYDRAW_PRODUCTION_OVERVIEW_WALK OR TINYDRAW_PRODUCTION_LIVE_APP))
+  message(FATAL_ERROR "Production hardware modes require physical hardware")
 endif()
 set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig")
 if(TINYDRAW_QEMU)
