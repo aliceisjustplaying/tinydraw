@@ -2,7 +2,7 @@
 
 These documents record the path from the original raster application through the rejected camera-aligned vector-cache prototype. They are retained as historical evidence, not as current implementation direction.
 
-For current work, start with [`PROJECT_STATE.md`](../../../PROJECT_STATE.md) and the production handoff it links. In particular, [`PROTOTYPE_EXIT.md`](../../../PROTOTYPE_EXIT.md) supersedes the plans and interim handoffs in this directory.
+For current work, start with [`PROJECT_STATE.md`](../../../PROJECT_STATE.md). `PROTOTYPE_EXIT.md` in this directory supersedes the older plans and interim handoffs archived beside it.
 
 ## Contents
 

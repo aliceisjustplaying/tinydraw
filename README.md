@@ -12,10 +12,11 @@ exercise the same C++20 drawing and UI core.
 
 ## Current state
 
-The runnable firmware remains the raster-authoritative 3×3 product described below. The active
-production branch is migrating to a vector-authoritative 4×4 canvas through an isolated,
-host-tested production island; it is not ready to ship. See [`PROJECT_STATE.md`](PROJECT_STATE.md)
-for current direction and [`vector_v2/README.md`](vector_v2/README.md) for migration guardrails.
+The default firmware is **Raster V1**, the raster-authoritative 3×3 application described below.
+**Vector V2** is the accepted vector-authoritative 4×4 successor under construction; its validated
+foundation is isolated in `vector_v2/`, but it is not yet feature complete or the default. See
+[`PROJECT_STATE.md`](PROJECT_STATE.md) for current direction and
+[`vector_v2/README.md`](vector_v2/README.md) for V2 guardrails.
 
 - Variable-width, Perfect Freehand-style ink with 4×4 edge smoothing
 - Solid self-overlaps, rounded sharp turns, twelve colors, and four sizes
@@ -51,12 +52,13 @@ Draw with the mouse, use `Cmd-Z` to undo, `C` for New, and `Esc` to quit.
 ## Build ESP32 firmware
 ```sh
 ./scripts/bootstrap-idf     # once; isolated ESP-IDF v6.0.2
-./scripts/esp32 build
+./scripts/esp32 raster-v1
+./scripts/esp32 vector-v2 PORT
 ./scripts/esp32 graphics-test
 ```
 
-Flash with `eim run "idf.py -B ../out/build/esp32 -p PORT flash monitor"` from
-`esp32/`; use an explicit port. Export replaces USB serial with a read-only drive.
+`./scripts/esp32 build` remains an alias for `raster-v1`. Both named commands build in separate
+directories; `vector-v2 PORT` also flashes the V2 app. Use an explicit serial port. Export replaces USB serial with a read-only drive.
 To flash again on battery, power off, hold BOOT, and short-press power for a cold
 boot. Short BOOT records/replays demos. Hold the lower button four seconds to
 power off; short-press it to start. There is no sleep mode yet.

@@ -143,26 +143,27 @@ next implementation batch. The milestone has now exposed and hardware-proven the
 real seams. This is a bounded cleanup for a reviewable merge to main, not a
 rewrite and not feature-parity promotion.
 
-- [ ] Rename the interactive `production-live-app` concept to the V2 application
-      once its test-only startup workload is removed.
-- [ ] Put V2 ESP adapters/coordinator/UI under a clear V2-specific directory or
+- [x] Rename the interactive `production-live-app` concept to the V2 application
+      and remove its test-only startup workload.
+- [x] Put V2 ESP adapters/coordinator/UI under a clear V2-specific directory or
       source group; do not mix them into legacy `hardware_app.cpp`.
-- [ ] Keep `vector_v2/` platform-independent and host-tested.
-- [ ] Keep truly shared mechanisms in `core/`; share by dependency, never copy.
-- [ ] Leave the raster coordinator behaviorally unchanged.
-- [ ] Add explicit build commands for both `raster-v1` and `vector-v2`.
+- [x] Keep `vector_v2/` platform-independent and host-tested.
+- [x] Keep truly shared mechanisms in `core/`; share by dependency, never copy.
+- [x] Leave the raster coordinator behaviorally unchanged.
+- [x] Add explicit build commands for both `raster-v1` and `vector-v2`.
 - [ ] Make CI/validation build both firmware variants.
-- [ ] Remove test-only workload generation and automated gate orchestration from
-      the V2 product coordinator; retain them in an exclusive hardware-test app.
+- [x] Remove test-only workload generation and automated gate orchestration from
+      the V2 product coordinator; retain it in the exclusive
+      `vector-v2-gate-harness` target.
 - [ ] Audit and remove rejected or unused production experiments only after
       confirming no current module depends on them.
 - [ ] Quarantine prototype-only renderer sources from normal host/product targets.
-- [ ] Archive superseded root handoffs and interim Gate 1 plans.
-- [ ] Keep only `README.md`, `PROJECT_STATE.md`, this roadmap, and genuinely
+- [x] Archive superseded root handoffs and interim Gate 1 plans.
+- [x] Keep only `README.md`, `PROJECT_STATE.md`, this roadmap, and genuinely
       current design documents prominent at repository root.
-- [ ] Add an index for hardware receipts; archive intermediate captures without
+- [x] Add an index for hardware receipts; retain intermediate captures without
       deleting load-bearing final receipts.
-- [ ] Re-run both full build/test matrices after every structural move.
+- [x] Re-run both full build/test matrices after every structural move.
 
 ### Coexistence rules
 
@@ -369,7 +370,7 @@ complete overview. It still needs careful tap targeting and viewport math.
 - No V2 state inside `WorldCanvas`, `FirmwareCanvas`, or `hardware_app.cpp`.
 - No four separately stored simplified stroke copies.
 - No camera-aligned cache identities.
-- No hidden dynamic allocation in production state modules.
+- No hidden dynamic allocation in Vector V2 state modules.
 - No speculative second-core concurrency.
 - No broad V1 refactor merely to make files look symmetrical with V2.
 - No deleting V1 before V2 feature parity and promotion.
