@@ -177,11 +177,16 @@ void print_presentation(const char* kind, const ProductionLivePresenter& present
                         const LivePresentationTiming& timing) {
   std::printf(
       "TINYDRAW_LIVE_PRESENT kind=%s zoom=%s x=%d y=%d compose_us=%lld "
-      "read_submit_us=%lld read_complete_us=%lld transfer_wait_us=%lld pushes=%lu pass=%u\n",
+      "read_submit_us=%lld read_complete_us=%lld transfer_wait_us=%lld tile_pixels=%lu "
+      "fallback_pixels=%lu resident_tiles=%lu fallback_tiles=%lu pushes=%lu pass=%u\n",
       kind, zoom_name(presenter.zoom()), presenter.level_x(), presenter.level_y(),
       static_cast<long long>(timing.compose_us), static_cast<long long>(timing.first_submit_us),
       static_cast<long long>(timing.first_complete_us), static_cast<long long>(timing.complete_us),
-      static_cast<unsigned long>(timing.pushes), timing.passed);
+      static_cast<unsigned long>(timing.tile_pixels),
+      static_cast<unsigned long>(timing.fallback_pixels),
+      static_cast<unsigned long>(timing.resident_tiles),
+      static_cast<unsigned long>(timing.fallback_tiles), static_cast<unsigned long>(timing.pushes),
+      timing.passed);
 }
 
 void print_stroke(const OperationLog& log, const MaterializedCanvas& canvas,
@@ -515,6 +520,98 @@ bool verify_pan_adapter(ProductionLivePresenter& presenter, const ToolbarState& 
   return setup.passed && pan.passed && moved;
 }
 
+bool run_cache_retention_gate(ProductionLivePresenter& presenter,
+                              production::TileProducer& producer, const MaterializedCanvas& canvas,
+                              const ToolbarState& toolbar) {
+  constexpr std::array zooms{
+      ZoomLevel::k50Percent,
+      ZoomLevel::k100Percent,
+      ZoomLevel::k200Percent,
+      ZoomLevel::k400Percent,
+  };
+  const auto fill = [&](ZoomLevel zoom, int x, int y) {
+    const auto fallback = presenter.set_view(zoom, x, y, toolbar, now_us());
+    if (!fallback.passed) {
+      return false;
+    }
+    const production::ViewRequest view{
+        .zoom = zoom,
+        .level_pixels = {presenter.level_x(), presenter.level_y(),
+                         presenter.level_x() + production::kOverviewWidth,
+                         presenter.level_y() + production::kOverviewHeight},
+    };
+    const std::int64_t started = esp_timer_get_time();
+    std::size_t published = 0;
+    while (true) {
+      const auto step = producer.produce_next(view);
+      if (!step.has_value()) {
+        return false;
+      }
+      if (step->tiles_published != 0U) {
+        published += step->tiles_published;
+        if (!presenter.refresh_region(step->level_bounds).passed) {
+          return false;
+        }
+      }
+      if (step->complete) {
+        break;
+      }
+    }
+    const std::int64_t elapsed_us = esp_timer_get_time() - started;
+    std::printf(
+        "TINYDRAW_GATE1_CACHE_FILL zoom=%s x=%d y=%d published=%lu total_us=%lld "
+        "within_cold_gate=%u complete=1\n",
+        zoom_name(zoom), presenter.level_x(), presenter.level_y(),
+        static_cast<unsigned long>(published), static_cast<long long>(elapsed_us),
+        elapsed_us < 500'000);
+    return true;
+  };
+
+  bool passed = true;
+  for (const ZoomLevel zoom : zooms) {
+    passed = fill(zoom, 0, 0) && passed;
+  }
+  for (const ZoomLevel zoom : zooms) {
+    const production::ViewRequest view{
+        .zoom = zoom,
+        .level_pixels = {0, 0, production::kOverviewWidth, production::kOverviewHeight},
+    };
+    const auto remaining = producer.visible_tiles_remaining(view);
+    const auto revisit = presenter.set_view(zoom, 0, 0, toolbar, now_us());
+    const bool hit = remaining == 0U && revisit.passed && revisit.fallback_pixels == 0U;
+    std::printf(
+        "TINYDRAW_GATE1_CACHE_REVISIT zoom=%s remaining=%lu tile_pixels=%lu fallback_pixels=%lu "
+        "compose_us=%lld complete_us=%lld hit=%u\n",
+        zoom_name(zoom), static_cast<unsigned long>(remaining.value_or(999U)),
+        static_cast<unsigned long>(revisit.tile_pixels),
+        static_cast<unsigned long>(revisit.fallback_pixels),
+        static_cast<long long>(revisit.compose_us), static_cast<long long>(revisit.complete_us),
+        hit);
+    passed = hit && passed;
+  }
+
+  passed = fill(ZoomLevel::k400Percent, 512, 512) && passed;
+  const production::ViewRequest origin{
+      .zoom = ZoomLevel::k400Percent,
+      .level_pixels = {0, 0, production::kOverviewWidth, production::kOverviewHeight},
+  };
+  const auto origin_remaining = producer.visible_tiles_remaining(origin);
+  const auto round_trip = presenter.set_view(ZoomLevel::k400Percent, 0, 0, toolbar, now_us());
+  const bool round_trip_hit =
+      origin_remaining == 0U && round_trip.passed && round_trip.fallback_pixels == 0U;
+  std::printf(
+      "TINYDRAW_GATE1_CACHE_ROUND_TRIP zoom=400 from_x=0 from_y=0 via_x=512 via_y=512 "
+      "remaining=%lu tile_pixels=%lu fallback_pixels=%lu compose_us=%lld complete_us=%lld hit=%u "
+      "pass=%u slots=%lu revision=%lu\n",
+      static_cast<unsigned long>(origin_remaining.value_or(999U)),
+      static_cast<unsigned long>(round_trip.tile_pixels),
+      static_cast<unsigned long>(round_trip.fallback_pixels),
+      static_cast<long long>(round_trip.compose_us), static_cast<long long>(round_trip.complete_us),
+      round_trip_hit, passed && round_trip_hit, static_cast<unsigned long>(canvas.slot_capacity()),
+      static_cast<unsigned long>(canvas.current_revision().value));
+  return passed && round_trip_hit;
+}
+
 bool append_stress_document(OperationLog& log, MaterializedCanvas& canvas,
                             const IncrementalDocumentWorkspace& workspace) {
   std::array<CompactOperationSample, kStressSamplesPerOperation> samples{};
@@ -654,13 +751,15 @@ void run_production_live_app() {
   const bool draw_fill =
       pan_400 && run_draw_while_fill_gate(presenter, producer, log, canvas, toolbar, workspace,
                                           std::span(storage.input_samples, kInputSampleCapacity));
-  const auto return_overview = presenter.set_zoom(ZoomLevel::k25Percent, toolbar, now_us());
+  const bool cache_retention =
+      draw_fill && run_cache_retention_gate(presenter, producer, canvas, toolbar);
+  const auto return_overview = presenter.set_view(ZoomLevel::k25Percent, 0, 0, toolbar, now_us());
   std::printf(
       "TINYDRAW_GATE1_AUTOMATED_DONE stress=%u stress_100=%u stress_400=%u workload=%u "
-      "hard_100=%u hard_400=%u pan_100=%u pan_400=%u draw_fill=%u return=%u "
+      "hard_100=%u hard_400=%u pan_100=%u pan_400=%u draw_fill=%u cache=%u return=%u "
       "ssaa_receipt=yellow\n",
       stress_ready, stress_100, stress_400, workload_ready, gate_100, gate_400, pan_100, pan_400,
-      draw_fill, return_overview.passed);
+      draw_fill, cache_retention, return_overview.passed);
   std::printf(
       "TINYDRAW_LIVE_READY zoom=25 controls=toolbar button=cycle_25_100_400 "
       "long_button=load_1000 operations_capacity=%lu samples_capacity=%lu live_storage_bytes=%lu "
