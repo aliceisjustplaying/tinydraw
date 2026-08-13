@@ -1,0 +1,44 @@
+I (663) app_init: App version:      6b5f6b0
+TINYDRAW_PRODUCTION_WALK_FRAME zoom=25 x=0 y=0 hash=d76c09b1 pushes=21 elapsed_us=20159 completed=1 submit=21 complete=21
+TINYDRAW_PRODUCTION_WALK_FRAME zoom=100 x=0 y=0 hash=d9e39425 pushes=21 compose_us=9522 elapsed_us=26996 completed=1 submit=42 complete=42
+TINYDRAW_PRODUCTION_WALK_FRAME zoom=100 x=184 y=224 hash=a4ce26e5 pushes=21 compose_us=9418 elapsed_us=26998 completed=1 submit=63 complete=63
+TINYDRAW_PRODUCTION_WALK_FRAME zoom=100 x=552 y=672 hash=1b5753a5 pushes=21 compose_us=9566 elapsed_us=26999 completed=1 submit=84 complete=84
+TINYDRAW_PRODUCTION_WALK_FRAME zoom=100 x=1104 y=1344 hash=91f8b705 pushes=21 compose_us=10335 elapsed_us=27999 completed=1 submit=105 complete=105
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=1 append_us=51332 committed=1
+TINYDRAW_PRODUCTION_WALK_INCREMENTAL phase=pen revision=1 hash=e93cc976 pushes=21 tile_pixels=8192 fallback_pixels=156672 elapsed_us=24901 completed=1 submit=126 complete=126
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=2 append_us=50337 committed=1
+TINYDRAW_PRODUCTION_WALK_INCREMENTAL phase=eraser revision=2 hash=9c622475 pushes=21 tile_pixels=8192 fallback_pixels=156672 elapsed_us=24358 completed=1 submit=147 complete=147
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=3 append_us=50176 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=4 append_us=50062 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=5 append_us=50063 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=6 append_us=50059 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=7 append_us=50064 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=8 append_us=50058 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=9 append_us=50061 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=10 append_us=50064 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=11 append_us=50060 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=12 append_us=50058 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=13 append_us=50058 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=14 append_us=50060 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=15 append_us=50062 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=16 append_us=50057 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=17 append_us=50060 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=18 append_us=50061 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=19 append_us=50059 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=20 append_us=50059 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=21 append_us=50065 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=22 append_us=50060 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=23 append_us=50065 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=24 append_us=50060 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=25 append_us=50063 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=26 append_us=50062 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=27 append_us=50064 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=28 append_us=50061 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=29 append_us=50064 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=30 append_us=50060 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=31 append_us=50064 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=32 append_us=50066 committed=1
+TINYDRAW_PRODUCTION_WALK_BURST operations=30 revision=32 total_us=1509612 average_us=50320 log_operations=32 log_samples=64
+TINYDRAW_PRODUCTION_WALK_INCREMENTAL phase=burst revision=32 hash=d4e162c4 pushes=21 tile_pixels=8192 fallback_pixels=156672 elapsed_us=24408 completed=1 submit=168 complete=168
+TINYDRAW_PRODUCTION_TOUCH_PROBE ready=1 points=0 changes=0 errors=0 last_x=0 last_y=0 elapsed_us=5000412
+TINYDRAW_PRODUCTION_WALK_DONE pass=1 panel_rejects=0 scheduler_accepted=168 scheduler_completed=168 scheduler_rejected=0 scheduler_stale=0 scheduler_queued=0 prepare_us=39697 transfer_us=26669 pushes=168 submit=168 complete=168 free_psram=7671048 largest_psram=7602176
