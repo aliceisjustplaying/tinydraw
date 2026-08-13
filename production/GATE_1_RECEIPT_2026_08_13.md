@@ -19,8 +19,9 @@ This is not a ship-quality rendering pass. Hard-edged tiles are provisional
 ## Hardware measurements
 
 Evidence logs: [`hardware-receipts/gate1-tile-producer.log`](hardware-receipts/gate1-tile-producer.log),
-[`hardware-receipts/gate1-p95-20-runs.log`](hardware-receipts/gate1-p95-20-runs.log), and
-[`hardware-receipts/gate1-pan-p95-20-runs.log`](hardware-receipts/gate1-pan-p95-20-runs.log).
+[`hardware-receipts/gate1-p95-20-runs.log`](hardware-receipts/gate1-p95-20-runs.log),
+[`hardware-receipts/gate1-pan-p95-20-runs.log`](hardware-receipts/gate1-pan-p95-20-runs.log), and
+[`hardware-receipts/gate1-fable-fix.log`](hardware-receipts/gate1-fable-fix.log).
 
 ### Deterministic synthetic regression workload
 
@@ -43,9 +44,12 @@ Workload identity: `populate_realistic_handwriting`, seed 7, 1,000 operations,
 | 400% | 376.894 ms | 28.102 ms | 90 sliced applications | PASS |
 
 The first 400% capture exposed a 35.684 ms replay slice caused by a 198-sample
-stroke. The final producer bounds work by both operation count and sample
-segments; its recapture is above. Splitting can count one source operation in
-multiple slices, hence “sliced applications” rather than distinct operations.
+stroke. The final producer bounds work by operation count, sample segments, and
+a conservative projected raster-area budget. Splitting can count one source
+operation in multiple slices, hence “sliced applications” rather than distinct
+operations. After review fixes, viewport-only publication (42 rather than 48
+tiles) still measured 444.738 ms at 100% and 438.758 ms at 400% in the single
+hardware recapture; the earlier table remains the pre-fix 20-run p95 receipt.
 
 ### Four-sample SSAA probe
 
@@ -73,6 +77,33 @@ and completed presentation at both 100% and 400%. Twenty cold-start runs measure
 
 This closes the ≤35 ms fallback pan path and basic adapter defect. The final
 human test still checks physical toolbar mode selection and touch behavior.
+
+### Draw while filling and adversarial XL input
+
+The post-review hardware run started a live preview while 400% fill was active,
+then committed an eight-sample fast zig-zag at the actual XL world radius for
+400%. The commit invalidated active producer work; stale work was rejected and
+restarted.
+
+- pre-preview producer poll gap: **2.010 ms**
+- event-to-first-submit: **4.092 ms**
+- event-to-first-transfer-complete: **4.268 ms**
+- maximum replay-compute slice: **29.311 ms**
+- maximum producer/display unit: **29.311 ms**
+- complete restarted fill: **473.983 ms**
+- stale publication accepted: **no**
+- result: **PASS**
+
+Progressive composition now updates the presenter's live frame, preventing live
+stroke rectangles from restoring stale fallback pixels. Snapshot reset also
+rebases the producer's uniform baseline.
+
+### Live memory receipt
+
+The complete live image reports **3,628,512 bytes** of explicitly allocated
+caller-owned storage, then **4,714,428 bytes free PSRAM** with a **4,587,520-byte
+largest block** after loading the seed-7 document and completing all automated
+probes. This is the live Gate 1 image, not the earlier empty-heap plan receipt.
 
 ## Correctness and architecture evidence
 
@@ -113,9 +144,9 @@ must confirm:
 4. draw one XL stroke at 400%, then return to 25%; it remains present;
 5. no corruption, missing chunks, or obvious input lag.
 
-This human observation is the only missing part of Gate 1. It cannot reverse the
-YELLOW AA verdict; it can only reveal an interaction/correctness failure that
-would turn the gate RED.
+This human observation is the remaining physical-input check. It cannot reverse
+the YELLOW AA verdict; it can only reveal an interaction/correctness failure
+that would turn the gate RED.
 
 ## Next funded work
 
