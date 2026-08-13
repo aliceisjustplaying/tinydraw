@@ -225,9 +225,10 @@ class MaterializedCanvas {
   // a distinct source buffer. Callers must serialize all canvas operations.
   [[nodiscard]] bool publish_overview(DocumentRevision revision,
                                       std::span<const std::uint16_t> pixels);
-  // Replaces materialization from a snapshot at any revision and invalidates
-  // every tile. This is not an ordinary revision publication. Fails while a
-  // source is pinned or when pixels alias owned canvas storage.
+  // Replaces materialization from a complete 25% snapshot at any revision,
+  // rebuilds conservative paper occupancy, and invalidates every tile. This is
+  // not an ordinary revision publication. Fails while a source is pinned or
+  // when pixels alias owned canvas storage.
   [[nodiscard]] bool restore_snapshot(DocumentRevision revision,
                                       std::span<const std::uint16_t> pixels);
   // Commits exactly the next document revision. The overview publication is a
@@ -256,8 +257,11 @@ class MaterializedCanvas {
   [[nodiscard]] bool discard_tiles();
   [[nodiscard]] std::optional<ViewCompositionStats> compose_view(
       const ViewRequest& request, std::span<std::uint16_t> destination);
-  // Returns intersecting current-revision resident keys. Fails rather than
-  // returning a partial list when output is too small or bounds are invalid.
+  // Returns intersecting current-revision raw-slot keys. Learned uniform tiles
+  // are intentionally excluded: incremental append invalidates them and uses
+  // the updated overview until the producer relearns them, avoiding raw-slot
+  // churn for paper. Fails rather than returning a partial list when output is
+  // too small or bounds are invalid.
   [[nodiscard]] std::optional<std::size_t> resident_tiles_intersecting(
       PixelRect world_bounds, std::span<TileKey> output) const;
   // Copies one current resident tile without exposing mutable pool storage.
@@ -302,6 +306,7 @@ class MaterializedCanvas {
   [[nodiscard]] static bool uniform_intersects(std::size_t index, PixelRect world_bounds);
   void invalidate_uniforms(PixelRect world_bounds);
   void mark_occupied(PixelRect world_bounds);
+  void rebuild_occupancy_from_overview();
   void clear_uniforms();
   void bump_composition_epoch();
   [[nodiscard]] SlotGeneration take_generation();

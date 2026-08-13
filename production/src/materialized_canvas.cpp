@@ -48,6 +48,18 @@ bool valid_overview_bounds(PixelRect bounds) {
          bounds.x1 <= kOverviewWidth && bounds.y1 <= kOverviewHeight;
 }
 
+bool overview_region_is_paper(std::span<const std::uint16_t> pixels, PixelRect bounds) {
+  for (int y = bounds.y0; y < bounds.y1; ++y) {
+    const auto row = pixels.subspan(
+        static_cast<std::size_t>(y) * kOverviewWidth + static_cast<std::size_t>(bounds.x0),
+        static_cast<std::size_t>(bounds.x1 - bounds.x0));
+    if (std::any_of(row.begin(), row.end(), [](std::uint16_t pixel) { return pixel != 0xFFFFU; })) {
+      return false;
+    }
+  }
+  return true;
+}
+
 }  // namespace
 
 int zoom_percent(ZoomLevel zoom) {
@@ -290,6 +302,26 @@ void MaterializedCanvas::invalidate_uniforms(PixelRect world_bounds) {
   }
 }
 
+void MaterializedCanvas::rebuild_occupancy_from_overview() {
+  if (occupancy_bits_.size() != kOccupancyBytes) {
+    return;
+  }
+  std::fill(occupancy_bits_.begin(), occupancy_bits_.end(), 0U);
+  for (int row = 0; row < kOccupancyRows; ++row) {
+    for (int column = 0; column < kOccupancyColumns; ++column) {
+      const int x0 = column * kOccupancyCellWorldSize / 4;
+      const int y0 = row * kOccupancyCellWorldSize / 4;
+      const int x1 = std::min(kOverviewWidth, (column + 1) * kOccupancyCellWorldSize / 4);
+      const int y1 = std::min(kOverviewHeight, (row + 1) * kOccupancyCellWorldSize / 4);
+      if (!overview_region_is_paper(overview_pixels_, {x0, y0, x1, y1})) {
+        const std::size_t bit =
+            static_cast<std::size_t>(row) * kOccupancyColumns + static_cast<std::size_t>(column);
+        occupancy_bits_[bit / 8U] |= static_cast<std::uint8_t>(1U << (bit % 8U));
+      }
+    }
+  }
+}
+
 void MaterializedCanvas::mark_occupied(PixelRect world_bounds) {
   if (occupancy_bits_.size() != kOccupancyBytes) {
     return;
@@ -358,7 +390,7 @@ bool MaterializedCanvas::restore_snapshot(DocumentRevision revision,
     }
   }
   clear_uniforms();
-  std::fill(occupancy_bits_.begin(), occupancy_bits_.end(), 0U);
+  rebuild_occupancy_from_overview();
   current_revision_ = revision;
   overview_revision_ = revision;
   overview_generation_ = take_generation();

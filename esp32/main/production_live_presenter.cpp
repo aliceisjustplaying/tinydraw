@@ -163,6 +163,7 @@ LivePresentationTiming ProductionLivePresenter::compose_and_present(
 
 LivePresentationTiming ProductionLivePresenter::show_start(InkPoint point, std::uint16_t color,
                                                            std::uint32_t event_us) {
+  frame_reusable_ = false;
   const RibbonPrimitive cap{
       .kind = RibbonPrimitiveKind::kCircle, .center = point.position, .radius = point.radius};
   const std::array primitives{cap};
@@ -174,6 +175,7 @@ LivePresentationTiming ProductionLivePresenter::show_start(InkPoint point, std::
 LivePresentationTiming ProductionLivePresenter::show_update(const RibbonUpdate& update,
                                                             std::uint16_t color,
                                                             std::uint32_t event_us) {
+  frame_reusable_ = false;
   if (update.committed.empty()) {
     return {.passed = true};
   }
