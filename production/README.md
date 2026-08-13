@@ -2,7 +2,7 @@
 
 This directory is the migration island for TinyDraw's vector-authoritative production architecture. It is **not** a second application or a clean-room rewrite. The existing raster app remains runnable while production modules replace it one behavior at a time.
 
-Current architecture and task order live in [`PROJECT_STATE.md`](../PROJECT_STATE.md). Historical prototype plans belong in [`docs/archive/`](../docs/archive/).
+Current state lives in [`PROJECT_STATE.md`](../PROJECT_STATE.md), and the complete forward worklist lives in [`V2_ROADMAP.md`](../V2_ROADMAP.md). Historical prototype plans belong in [`docs/archive/`](../docs/archive/).
 
 ## Dependency rule
 
@@ -52,6 +52,10 @@ Every production milestone must replace or prepare to replace an identified lega
 5. Remove the superseded legacy path when the production path owns that responsibility.
 
 The retired prototype remains evidence and benchmark machinery. It is frozen except for evidence-preservation fixes.
+
+## Validated V2 foundation
+
+The initial production milestones and Gate 1 cache/interaction feasibility are complete. The vector-authoritative architecture is accepted for V2. See [`GATE_1_RECEIPT_2026_08_13.md`](GATE_1_RECEIPT_2026_08_13.md) and [`GATE_1_CACHE_CLOSURE_2026_08_13.md`](GATE_1_CACHE_CLOSURE_2026_08_13.md). Remaining work is tracked only in the V2 roadmap; the numbered sections below preserve architectural history and contracts rather than current task order.
 
 ## First milestone: `MaterializedCanvas`
 

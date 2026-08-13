@@ -6,56 +6,92 @@ Last updated: 2026-08-13
 
 Branch: `feat/vector-canvas-production`
 
-The camera-aligned vector/materialized-cache prototype is complete and rejected as a product architecture. Tasks #52, #53, #54a, the bounded immediate path of #55, and the minimal #58 display-ordering seam now exist under `production/`. A fixed-capacity ordered `OperationLog` is the first production document authority; `MaterializedCanvas` commits conservative world-bounds invalidation across every zoom; and the host-tested `append_incrementally` coordinator prepares storage, renders the complete overview and all affected resident tiles, commits materialization, then publishes document authority. Compact pen and eraser operations do not replay prior operations. `OperationLog` now exposes epoch-bound contiguous replay ranges, and `OperationLodStore` owns caller-generated append-time centerline LODs for the four tiled zooms. A host rehearsal proves split replay, restore invalidation, and rebasing without choosing a settled renderer. The exclusive hardware walk routes every bounded display strip through `DisplayScheduler` before transport. These receipts do not close representative capacity, settled rendering, concurrency, coexistence, live-input, or interactive-pan gates. The branch is not ready to ship.
+**The production vector foundation is validated.** TinyDraw V2 is now the
+accepted application architecture under construction, not another prototype.
+The full remaining worklist and feature-complete definition live in
+[`V2_ROADMAP.md`](V2_ROADMAP.md).
 
-The default firmware still runs the existing raster-authoritative product:
+The raster application remains the default firmware and must remain runnable
+until V2 reaches feature parity and passes migration acceptance. V2 currently
+runs as the exclusive `production-live-app` hardware target; it is not yet the
+default or feature complete.
 
-- a hard-coded 3×3 `WorldCanvas` (1104×1344);
-- live `StrokeRaster` rendering and tile-based raster Undo;
-- raster-tile persistence and PNG export;
-- no vector-authoritative production document.
+## What is proven
 
-Prototype-only builds may still record a `VectorDocument`; default firmware no longer dual-writes an unused vector log.
+On the physical ESP32-S3 with the deterministic seed-7 1,000-stroke document:
 
-Do not mistake the current default firmware or retired benchmark coordinator for the target architecture.
+- vector operations are authoritative;
+- pen and eraser operations, painter order, and revisions remain correct;
+- live drawing is responsive at 400%;
+- 25%, 50%, 100%, 200%, and 400% identities exist;
+- the complete 25% overview and sparse world-aligned detail path work;
+- cache misses use current overview fallback rather than checkerboards;
+- paper-aware materialization lets the complete 100% world fit as 266 raw tiles
+  plus 378 compact uniform identities, with zero fallback;
+- the raw pool remains 320 slots;
+- ordinary cached pan reuses framebuffer overlap and reaches first physical
+  completion in about 30.6–30.7 ms;
+- drawing while refinement is active works without stale publication;
+- a separate contiguous 1.5 MiB export reserve allocates alongside the live
+  document, cache, and workspaces;
+- the final aggressive glass test committed 45 strokes with zero touch errors,
+  presentation failures, authority mismatch, or visible corruption;
+- independent Fable high and Grok 4.6 high reviews found no remaining blocker
+  after their findings were fixed.
 
-## Current sources of truth
+Evidence:
 
-Read these in order:
+1. [`production/GATE_1_RECEIPT_2026_08_13.md`](production/GATE_1_RECEIPT_2026_08_13.md)
+2. [`production/GATE_1_CACHE_CLOSURE_2026_08_13.md`](production/GATE_1_CACHE_CLOSURE_2026_08_13.md)
+3. [`production/hardware-receipts/gate1-paper-cache-scroller.log`](production/hardware-receipts/gate1-paper-cache-scroller.log)
+4. [`production/hardware-receipts/gate1-final-glass.log`](production/hardware-receipts/gate1-final-glass.log)
 
-1. [`PRODUCTION_CONTINUATION_HANDOFF_2026_08_12_NIGHT.md`](PRODUCTION_CONTINUATION_HANDOFF_2026_08_12_NIGHT.md) — decisions, roadmap, gates, and task order.
-2. [`PROTOTYPE_EXIT.md`](PROTOTYPE_EXIT.md) — final prototype verdict and rejected mechanisms.
-3. [`CONTINUATION_HANDOFF_2026_08_12_EVENING_FACT_CHECK.md`](CONTINUATION_HANDOFF_2026_08_12_EVENING_FACT_CHECK.md) — correction of measured claims versus forecasts.
-4. [`SECOND_REVIEW_ARCHITECTURE_ASSESSMENT.md`](SECOND_REVIEW_ARCHITECTURE_ASSESSMENT.md) — production architecture rationale.
-5. [`VECTOR_CANVAS_OPTIMIZATION_CHRONICLE.md`](VECTOR_CANVAS_OPTIMIZATION_CHRONICLE.md) — experiment and performance history.
+The overall rendering-quality verdict remains **YELLOW** because settled
+anti-aliasing is still open. The four-sample SSAA probe took about 808 ms and is
+not the funded product path.
 
-Superseded briefs, plans, findings, demo notes, and interim handoffs are indexed under [`docs/archive/2026-08-raster-and-vector-prototypes/`](docs/archive/2026-08-raster-and-vector-prototypes/README.md). They are evidence, not current direction.
+## Current measured debt
 
-## Production decision
+The architecture works, but the product still needs substantial integration and
+performance work:
 
-Use a **production island inside this repository**, documented in [`production/README.md`](production/README.md).
+- ordinary pan currently occupies roughly 46–50 ms end-to-end, around 20 FPS;
+- stroke completion blocked touch polling for about 127 ms median, 175 ms p95,
+  and 195 ms maximum during the aggressive glass test;
+- long 400% tours evict useful raw views from other zooms under global LRU;
+- the test UI opens zooms at `(0,0)` rather than preserving the user's focus;
+- 400% cold refinement remains visible;
+- anti-aliasing, persistence, Undo/Redo, real export, autosave, device lifecycle,
+  and final UI are incomplete.
 
-This is a strangler migration, not a blank rewrite:
+These are product and optimization tasks, not evidence for another rewrite.
 
-- new platform-independent production modules live behind independent interfaces;
-- stable core mechanisms are reused by dependency, never copied;
-- the raster app stays runnable while one responsibility at a time is replaced;
-- hardware adapters arrive only after the relevant host state and memory contracts pass;
-- each superseded legacy path is removed once production owns that responsibility.
+## Immediate next sequence
 
-This keeps the existing build, tests, hardware integration, UI, persistence, and benchmark receipts while preventing new production state from growing inside `hardware_app.cpp` or the rejected 3×3 types.
+1. Write the zoom/navigation behavior document.
+2. Implement and hardware-test input-first scheduling, camera preservation, and
+   protected recent per-zoom cache footprints.
+3. Run the bounded V2 cleanup/repository-shaping round in `V2_ROADMAP.md`.
+4. Run the timeboxed analytic anti-aliasing gate.
+5. Continue through production UI and vector feature parity.
 
-## Nonnegotiable guardrails
+## Repository and coexistence decision
 
-- Do not develop the camera-aligned 3×3 atlas further.
-- Do not start task #52 in `hardware_app.cpp`.
-- Do not extend `WorldCanvas`, `ViewOrigin`, or `FirmwareCanvas` to model production tiles.
-- Do not use prototype coordinator state as the production interface.
-- Do not copy renderer, input-loop, toolbar, or display logic into the production island.
-- Do not perform broad cosmetic splits of the legacy app before a real replacement seam exists.
-- Do not optimize the settled or canonical renderers as cleanup work.
-- Do not introduce hidden allocation into production state modules.
-- Prove production state on the host before adding it to an exclusive, opt-in hardware mode.
+Use a production island in this repository—a strangler migration, not a blank
+rewrite:
+
+- platform-independent V2 modules live in `production/`;
+- V2 ESP adapters and coordination stay separate from legacy `hardware_app.cpp`;
+- stable platform-neutral mechanisms are reused from `core/` by dependency and
+  are never copied;
+- V1 receives only regression/hardware-preservation work while new product
+  behavior lands in V2;
+- both firmware variants must build and remain testable until promotion;
+- the default switches only after V2 feature parity and final comparison;
+- retain an explicit legacy raster build after promotion.
+
+Do not mix V2 tile/document state into `WorldCanvas`, `FirmwareCanvas`, or the
+3×3 raster coordinator. Do not add V2 `#ifdef` paths to the V1 interaction loop.
 
 ## Target architecture
 
@@ -63,39 +99,40 @@ This keeps the existing build, tests, hardware integration, UI, persistence, and
 Vector operation log (authoritative)
         │
         ├── complete 368×448 RGB565 overview at 25%
-        └── sparse world-aligned RGB565 tiles at 50–400%
+        └── sparse world-aligned materialization at 50–400%
+              ├── compact uniform/paper catalog
+              └── 320 raw 64×64 RGB565 slots
                     │
              MaterializedCanvas
-                    │ immutable publication descriptions / pinned revisions
-             DisplayScheduler
-                    │ staging, overlays, queueing, completion
+                    │
+             DisplayScheduler + framebuffer reuse
+                    │
                   AMOLED
 ```
 
-Committed product geometry:
+Committed geometry:
 
-- world: 1472×1792 units (4×4 screens);
+- world: 1472×1792 units;
 - zoom levels: 25%, 50%, 100%, 200%, and 400%;
-- 800% is optional and may be dropped independently;
-- overview: 368×448 RGB565, exactly 329,728 bytes.
+- 800% is a stretch goal only;
+- overview: 368×448 RGB565, 329,728 bytes.
 
-Correctness requirements are stroke presence, painter order, eraser behavior, and document revision. Interaction and memory gates are defined in the production handoff.
+## Nonnegotiable guardrails
 
-## Next task
-
-Continue #56 and hardware validation without growing `hardware_app.cpp`:
-
-1. replace the four-independent-LOD-copy assumption before approving a simplifier: the private 70-stroke capture projects to about 67,942 source points but 225,600–254,057 LOD points at 4,000 strokes, so the 90,000-point model is not credible;
-2. retain bounded dirty-region overview publication unless representative captures contradict the hardware result; exact hashes held while the deterministic burst fell from 50.295 ms to 6.404 ms average, with warm coordinated appends around 0.97–0.99 ms;
-3. connect the host-tested `OperationBuilder` to real samples from extracted `PhysicalTouch` in an exclusive mode when a person can exercise the panel, and measure event-to-submit plus touch-to-photon behavior;
-4. compare shared/nested, on-demand, and fewer-stored-level LOD layouts, then judge synthetic or explicitly approved rendered fixtures at 50–400%; the current `OperationLodStore` is an ownership experiment, not an approved final layout;
-5. then implement the smallest ordered settled renderer slice from an explicit epoch/revision checkpoint and revalidated replay range. Do not blend over hard-edged immediate pixels and do not copy the rejected prototype renderer.
-
-The latest behavior receipt is [`production/hardware-receipts/16dc9b2-bounded-overview-publication.log`](production/hardware-receipts/16dc9b2-bounded-overview-publication.log). It repeated every prior deterministic hash and the 168/168 zero-rejection scheduler and transport result after replacing two full-overview copies with validated bounded publication. The 30-operation burst fell from the earlier 50.295 ms average to 6.404 ms average under the same outer probe; warm individual coordinated appends were about 0.97–0.99 ms. The measurement tradeoff is archived in [`OVERVIEW_PUBLICATION_MEASUREMENT_2026_08_13.md`](docs/archive/2026-08-raster-and-vector-prototypes/OVERVIEW_PUBLICATION_MEASUREMENT_2026_08_13.md). This is an exclusive-image append cost, not a first-feedback measurement; the live event-to-submit and touch-to-photon gates remain open. The CST820 transport is separated from the legacy app and the exclusive production image initializes it successfully. Its bounded idle probe reported zero I2C/read errors, but no finger was present, so this remains readiness evidence—not live-input evidence. These results do not prove representative operation-log capacity, settled anti-aliasing, concurrent mutation and display, or interactive pan.
+- No clean-room rewrite.
+- No camera-aligned 3×3 atlas development.
+- No V2 state in `hardware_app.cpp`, `WorldCanvas`, or `FirmwareCanvas`.
+- No four separately stored simplified stroke versions.
+- No hidden allocation in production state modules.
+- No speculative second-core concurrency without a measured independent need.
+- No broad cosmetic V1 refactor before a real replacement seam exists.
+- No deleting V1 before V2 feature parity and promotion.
+- No new overlapping handoff/source-of-truth documents: update this file and
+  `V2_ROADMAP.md`.
 
 ## Validation baseline
 
-For core or production-state changes:
+For production changes:
 
 ```sh
 ./scripts/dev test
@@ -107,4 +144,18 @@ For core or production-state changes:
 git diff --check
 ```
 
-For later ESP32 integration, also build both default and interactive benchmark configurations using the commands in the production handoff. Physical hardware remains the authority for latency, PSRAM behavior, DMA behavior, and panel correctness.
+ESP integration must also build both raster V1 and vector V2 targets. Physical
+hardware remains authoritative for touch latency, PSRAM/fragmentation, DMA,
+panel behavior, power, and USB export.
+
+## Historical evidence
+
+Prototype decisions and rejected mechanisms remain in:
+
+- [`PROTOTYPE_EXIT.md`](PROTOTYPE_EXIT.md)
+- [`SECOND_REVIEW_ARCHITECTURE_ASSESSMENT.md`](SECOND_REVIEW_ARCHITECTURE_ASSESSMENT.md)
+- [`VECTOR_CANVAS_OPTIMIZATION_CHRONICLE.md`](VECTOR_CANVAS_OPTIMIZATION_CHRONICLE.md)
+- [`docs/archive/2026-08-raster-and-vector-prototypes/`](docs/archive/2026-08-raster-and-vector-prototypes/)
+
+The prototype-era production handoff and Gate 1 plans are historical inputs.
+They no longer override the V2 roadmap.
