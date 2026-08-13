@@ -12,6 +12,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "physical_touch.h"
+#include "tinydraw/production/display_scheduler.h"
 #include "tinydraw/production/incremental_document.h"
 #include "tinydraw/production/incremental_rasterizer.h"
 #include "tinydraw/production/materialized_canvas.h"
@@ -21,6 +22,8 @@ namespace tinydraw::esp32 {
 namespace {
 
 using production::CompactOperationSample;
+using production::DisplayScheduler;
+using production::DisplayStrip;
 using production::DocumentRevision;
 using production::IncrementalDocumentWorkspace;
 using production::IncrementalOperation;
@@ -79,19 +82,45 @@ bool wait_for_transfers(Co5300PanelTransport& display, std::uint32_t target,
   return true;
 }
 
-bool present_overview(Co5300PanelTransport& display, const MaterializedCanvas& canvas) {
+bool submit_strip(DisplayScheduler& scheduler, Co5300PanelTransport& display,
+                  const DisplayStrip& strip) {
+  const auto sequence = scheduler.schedule(strip);
+  if (!sequence.has_value()) {
+    return false;
+  }
+  const auto scheduled = scheduler.front();
+  if (!scheduled.has_value() || scheduled->sequence != *sequence) {
+    return false;
+  }
+  const std::uint32_t pushes_before = display.push_count();
+  const PixelRect bounds = scheduled->strip.panel_bounds;
+  display.push_rect(bounds.x0, bounds.y0, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0,
+                    scheduled->strip.pixels.data(), scheduled->strip.stride);
+  const bool staged = display.push_count() == pushes_before + 1U;
+  const bool completed = scheduler.complete(*sequence);
+  return staged && completed;
+}
+
+bool present_overview(Co5300PanelTransport& display, DisplayScheduler& scheduler,
+                      const MaterializedCanvas& canvas) {
   const auto source = canvas.overview_pixels();
   const std::int64_t started = esp_timer_get_time();
   const std::uint32_t pushes_before = display.push_count();
   std::uint32_t hash = kFnvOffset;
+  scheduler.require_revision(canvas.current_revision());
   for (int y = 0; y < production::kOverviewHeight; y += kStripRows) {
     const int rows = std::min(kStripRows, production::kOverviewHeight - y);
     const auto offset = static_cast<std::size_t>(y * production::kOverviewWidth);
     const auto pixels =
         source.subspan(offset, static_cast<std::size_t>(rows * production::kOverviewWidth));
     hash = hash_pixels(hash, pixels);
-    display.push_rect(0, y, production::kOverviewWidth, rows, pixels.data(),
-                      production::kOverviewWidth);
+    if (!submit_strip(scheduler, display,
+                      {.revision = canvas.current_revision(),
+                       .panel_bounds = {0, y, production::kOverviewWidth, y + rows},
+                       .pixels = pixels,
+                       .stride = production::kOverviewWidth})) {
+      return false;
+    }
   }
   const std::uint32_t target = display.submit_count();
   const std::uint32_t pushes = display.push_count() - pushes_before;
@@ -107,12 +136,14 @@ bool present_overview(Co5300PanelTransport& display, const MaterializedCanvas& c
   return passed;
 }
 
-bool present_fallback(Co5300PanelTransport& display, MaterializedCanvas& canvas, int world_x,
-                      int world_y, std::uint32_t expected_hash, std::span<std::uint16_t> strip) {
+bool present_fallback(Co5300PanelTransport& display, DisplayScheduler& scheduler,
+                      MaterializedCanvas& canvas, int world_x, int world_y,
+                      std::uint32_t expected_hash, std::span<std::uint16_t> strip) {
   const std::int64_t started = esp_timer_get_time();
   const std::uint32_t pushes_before = display.push_count();
   std::int64_t compose_us = 0;
   std::uint32_t hash = kFnvOffset;
+  scheduler.require_revision(canvas.current_revision());
   for (int panel_y = 0; panel_y < production::kOverviewHeight; panel_y += kStripRows) {
     const int rows = std::min(kStripRows, production::kOverviewHeight - panel_y);
     const auto destination =
@@ -131,8 +162,13 @@ bool present_fallback(Co5300PanelTransport& display, MaterializedCanvas& canvas,
       return false;
     }
     hash = hash_pixels(hash, destination);
-    display.push_rect(0, panel_y, production::kOverviewWidth, rows, destination.data(),
-                      production::kOverviewWidth);
+    if (!submit_strip(scheduler, display,
+                      {.revision = canvas.current_revision(),
+                       .panel_bounds = {0, panel_y, production::kOverviewWidth, panel_y + rows},
+                       .pixels = destination,
+                       .stride = production::kOverviewWidth})) {
+      return false;
+    }
   }
   const std::uint32_t target = display.submit_count();
   const std::uint32_t pushes = display.push_count() - pushes_before;
@@ -149,14 +185,16 @@ bool present_fallback(Co5300PanelTransport& display, MaterializedCanvas& canvas,
   return passed;
 }
 
-bool present_incremental(Co5300PanelTransport& display, MaterializedCanvas& canvas,
-                         std::span<std::uint16_t> strip, DocumentRevision revision,
-                         const char* phase, std::uint32_t expected_hash) {
+bool present_incremental(Co5300PanelTransport& display, DisplayScheduler& scheduler,
+                         MaterializedCanvas& canvas, std::span<std::uint16_t> strip,
+                         DocumentRevision revision, const char* phase,
+                         std::uint32_t expected_hash) {
   const std::int64_t started = esp_timer_get_time();
   const std::uint32_t pushes_before = display.push_count();
   std::uint32_t hash = kFnvOffset;
   std::size_t tile_pixels = 0;
   std::size_t fallback_pixels = 0;
+  scheduler.require_revision(revision);
   for (int panel_y = 0; panel_y < production::kOverviewHeight; panel_y += kStripRows) {
     const int rows = std::min(kStripRows, production::kOverviewHeight - panel_y);
     const auto destination =
@@ -173,8 +211,13 @@ bool present_incremental(Co5300PanelTransport& display, MaterializedCanvas& canv
     tile_pixels += stats->tile_pixels;
     fallback_pixels += stats->fallback_pixels;
     hash = hash_pixels(hash, destination);
-    display.push_rect(0, panel_y, production::kOverviewWidth, rows, destination.data(),
-                      production::kOverviewWidth);
+    if (!submit_strip(scheduler, display,
+                      {.revision = revision,
+                       .panel_bounds = {0, panel_y, production::kOverviewWidth, panel_y + rows},
+                       .pixels = destination,
+                       .stride = production::kOverviewWidth})) {
+      return false;
+    }
   }
   const std::uint32_t target = display.submit_count();
   const std::uint32_t pushes = display.push_count() - pushes_before;
@@ -280,6 +323,8 @@ void run_production_overview_walk() {
   }
 
   OperationLog operation_log(std::span(operation_records, 32), std::span(operation_samples, 64));
+  std::array<DisplayStrip, 3> display_queue{};
+  DisplayScheduler scheduler(display_queue);
   MaterializedCanvas canvas(std::span(overview, production::kOverviewPixels), std::span(slots, 2),
                             std::span(tile_pixels, 2U * production::kTilePixels),
                             DocumentRevision{0});
@@ -294,14 +339,16 @@ void run_production_overview_walk() {
   std::copy_n(overview, production::kOverviewPixels, overview_source);
   if (!canvas.ready() ||
       !canvas.publish_overview({0}, std::span(overview_source, production::kOverviewPixels)) ||
-      !display.ready() || !touch.ready()) {
-    std::printf("TINYDRAW_PRODUCTION_WALK_FAIL reason=bootstrap canvas=%u display=%u touch=%u\n",
-                canvas.ready(), display.ready(), touch.ready());
+      !scheduler.ready() || !display.ready() || !touch.ready()) {
+    std::printf(
+        "TINYDRAW_PRODUCTION_WALK_FAIL reason=bootstrap canvas=%u scheduler=%u display=%u "
+        "touch=%u\n",
+        canvas.ready(), scheduler.ready(), display.ready(), touch.ready());
     return;
   }
 
   display.reset_timing();
-  bool pass = present_overview(display, canvas);
+  bool pass = present_overview(display, scheduler, canvas);
   vTaskDelay(pdMS_TO_TICKS(500));
   const std::span strip_pixels(strip,
                                static_cast<std::size_t>(production::kOverviewWidth * kStripRows));
@@ -309,8 +356,8 @@ void run_production_overview_walk() {
       {0, 0, 0, 0}, {184, 224, 0, 0}, {552, 672, 0, 0}, {1104, 1344, 0, 0}};
   for (std::size_t index = 0; index < std::size(kOrigins); ++index) {
     const PixelRect origin = kOrigins[index];
-    pass = present_fallback(display, canvas, origin.x0, origin.y0, kExpectedFallbackHashes[index],
-                            strip_pixels) &&
+    pass = present_fallback(display, scheduler, canvas, origin.x0, origin.y0,
+                            kExpectedFallbackHashes[index], strip_pixels) &&
            pass;
     vTaskDelay(pdMS_TO_TICKS(350));
   }
@@ -337,11 +384,13 @@ void run_production_overview_walk() {
   };
   const IncrementalOperation pen{
       .tool = OperationTool::kPen, .color = 0x001FU, .samples = pen_samples};
-  pass = append_and_commit_probe(operation_log, canvas,
-                                 {.tool = pen.tool, .color = pen.color, .samples = pen.samples},
-                                 std::span(overview_source, production::kOverviewPixels),
-                                 std::span(tile_scratch, production::kTilePixels)) &&
-         present_incremental(display, canvas, strip_pixels, {1}, "pen", kExpectedPenHash) && pass;
+  pass =
+      append_and_commit_probe(operation_log, canvas,
+                              {.tool = pen.tool, .color = pen.color, .samples = pen.samples},
+                              std::span(overview_source, production::kOverviewPixels),
+                              std::span(tile_scratch, production::kTilePixels)) &&
+      present_incremental(display, scheduler, canvas, strip_pixels, {1}, "pen", kExpectedPenHash) &&
+      pass;
   vTaskDelay(pdMS_TO_TICKS(350));
 
   const std::array eraser_samples{
@@ -354,7 +403,8 @@ void run_production_overview_walk() {
              {.tool = eraser.tool, .color = eraser.color, .samples = eraser.samples},
              std::span(overview_source, production::kOverviewPixels),
              std::span(tile_scratch, production::kTilePixels)) &&
-         present_incremental(display, canvas, strip_pixels, {2}, "eraser", kExpectedEraserHash) &&
+         present_incremental(display, scheduler, canvas, strip_pixels, {2}, "eraser",
+                             kExpectedEraserHash) &&
          pass;
   std::int64_t burst_us = 0;
   for (std::uint32_t index = 0; index < kBurstOperationCount; ++index) {
@@ -388,8 +438,8 @@ void run_production_overview_walk() {
   pass = operation_log.current_revision() == canvas.current_revision() &&
          canvas.current_revision() == DocumentRevision{kBurstOperationCount + 2U} &&
          operation_log.operation_count() == kBurstOperationCount + 2U && pass;
-  pass = present_incremental(display, canvas, strip_pixels, {kBurstOperationCount + 2U}, "burst",
-                             kExpectedBurstHash) &&
+  pass = present_incremental(display, scheduler, canvas, strip_pixels, {kBurstOperationCount + 2U},
+                             "burst", kExpectedBurstHash) &&
          pass;
   const std::int64_t touch_probe_started = esp_timer_get_time();
   std::uint32_t touch_points = 0;
@@ -423,13 +473,24 @@ void run_production_overview_walk() {
   const std::uint32_t submits = display.submit_count();
   const std::uint32_t completes = display.complete_count();
   const std::uint32_t rejects = display.rejected_push_count();
+  const production::DisplaySchedulerStats scheduler_stats = scheduler.stats();
   pass = pass && display.push_count() == kExpectedTotalPushes && submits == kExpectedTotalPushes &&
-         completes == kExpectedTotalPushes && rejects == 0U;
+         completes == kExpectedTotalPushes && rejects == 0U &&
+         scheduler_stats.accepted == kExpectedTotalPushes &&
+         scheduler_stats.completed == kExpectedTotalPushes && scheduler_stats.rejected == 0U &&
+         scheduler_stats.stale_rejected == 0U && scheduler_stats.queued == 0U;
   std::printf(
-      "TINYDRAW_PRODUCTION_WALK_DONE pass=%u panel_rejects=%lu prepare_us=%lld transfer_us=%lld "
-      "pushes=%lu submit=%lu complete=%lu free_psram=%lu largest_psram=%lu\n",
-      pass, static_cast<unsigned long>(rejects), static_cast<long long>(display.prepare_us()),
-      static_cast<long long>(display.transfer_us()),
+      "TINYDRAW_PRODUCTION_WALK_DONE pass=%u panel_rejects=%lu scheduler_accepted=%lu "
+      "scheduler_completed=%lu scheduler_rejected=%lu scheduler_stale=%lu scheduler_queued=%lu "
+      "prepare_us=%lld transfer_us=%lld pushes=%lu submit=%lu complete=%lu free_psram=%lu "
+      "largest_psram=%lu\n",
+      pass, static_cast<unsigned long>(rejects),
+      static_cast<unsigned long>(scheduler_stats.accepted),
+      static_cast<unsigned long>(scheduler_stats.completed),
+      static_cast<unsigned long>(scheduler_stats.rejected),
+      static_cast<unsigned long>(scheduler_stats.stale_rejected),
+      static_cast<unsigned long>(scheduler_stats.queued),
+      static_cast<long long>(display.prepare_us()), static_cast<long long>(display.transfer_us()),
       static_cast<unsigned long>(display.push_count()), static_cast<unsigned long>(submits),
       static_cast<unsigned long>(completes),
       static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)),
