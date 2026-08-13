@@ -20,6 +20,26 @@ constexpr int clamp_end(int start, int extent, int limit) {
   return std::min(start + extent, limit);
 }
 
+bool rectangles_intersect(PixelRect left, PixelRect right) {
+  return left.x0 < right.x1 && right.x0 < left.x1 && left.y0 < right.y1 && right.y0 < left.y1;
+}
+
+PixelRect tile_world_bounds(TileKey key) {
+  const PixelRect level = tile_pixel_bounds(key);
+  const int percent = zoom_percent(key.zoom);
+  return {
+      .x0 = level.x0 * 100 / percent,
+      .y0 = level.y0 * 100 / percent,
+      .x1 = ceil_div(level.x1 * 100, percent),
+      .y1 = ceil_div(level.y1 * 100, percent),
+  };
+}
+
+bool valid_world_bounds(PixelRect bounds) {
+  return bounds.x0 >= 0 && bounds.y0 >= 0 && bounds.x0 < bounds.x1 && bounds.y0 < bounds.y1 &&
+         bounds.x1 <= kWorldWidth && bounds.y1 <= kWorldHeight;
+}
+
 template <typename Left, typename Right>
 bool spans_overlap(std::span<Left> left, std::span<Right> right) {
   const auto* left_begin = reinterpret_cast<const std::byte*>(left.data());
@@ -194,7 +214,7 @@ bool MaterializedCanvas::publish_overview(DocumentRevision revision,
 
 bool MaterializedCanvas::valid_incremental_revision(
     DocumentRevision revision, std::span<const std::uint16_t> next_overview_pixels,
-    std::span<const TileKey> affected_tiles,
+    PixelRect affected_world_bounds,
     std::span<const TileRevisionPublication> tile_publications) const {
   const bool revision_advances_once =
       current_revision_.value != std::numeric_limits<std::uint32_t>::max() &&
@@ -205,26 +225,18 @@ bool MaterializedCanvas::valid_incremental_revision(
   const bool any_tile_pinned = std::any_of(slots_.begin(), slots_.end(),
                                            [](const auto& slot) { return slot.pin_count_ != 0U; });
   if (!ready() || !overview_valid_ || !revision_advances_once || !source_is_external ||
-      next_overview_pixels.size() != kOverviewPixels || overview_pin_count_ != 0U ||
-      any_tile_pinned) {
+      next_overview_pixels.size() != kOverviewPixels ||
+      !valid_world_bounds(affected_world_bounds) || overview_pin_count_ != 0U || any_tile_pinned) {
     return false;
   }
 
-  for (std::size_t index = 0; index < affected_tiles.size(); ++index) {
-    if (!valid_tile_key(affected_tiles[index]) ||
-        std::find(
-            affected_tiles.begin(), affected_tiles.begin() + static_cast<std::ptrdiff_t>(index),
-            affected_tiles[index]) != affected_tiles.begin() + static_cast<std::ptrdiff_t>(index)) {
-      return false;
-    }
-  }
   for (std::size_t index = 0; index < tile_publications.size(); ++index) {
     const TileRevisionPublication& publication = tile_publications[index];
     const PixelRect bounds = tile_pixel_bounds(publication.key);
     const std::size_t expected_pixels = static_cast<std::size_t>(bounds.x1 - bounds.x0) *
                                         static_cast<std::size_t>(bounds.y1 - bounds.y0);
-    const bool key_is_affected = std::find(affected_tiles.begin(), affected_tiles.end(),
-                                           publication.key) != affected_tiles.end();
+    const bool key_is_affected =
+        rectangles_intersect(tile_world_bounds(publication.key), affected_world_bounds);
     const bool publication_is_unique =
         std::find_if(tile_publications.begin(),
                      tile_publications.begin() + static_cast<std::ptrdiff_t>(index),
@@ -266,9 +278,8 @@ void MaterializedCanvas::write_tile(std::size_t slot_index,
 
 bool MaterializedCanvas::commit_incremental_revision(
     DocumentRevision revision, std::span<const std::uint16_t> next_overview_pixels,
-    std::span<const TileKey> affected_tiles,
-    std::span<const TileRevisionPublication> tile_publications) {
-  if (!valid_incremental_revision(revision, next_overview_pixels, affected_tiles,
+    PixelRect affected_world_bounds, std::span<const TileRevisionPublication> tile_publications) {
+  if (!valid_incremental_revision(revision, next_overview_pixels, affected_world_bounds,
                                   tile_publications)) {
     return false;
   }
@@ -282,8 +293,7 @@ bool MaterializedCanvas::commit_incremental_revision(
     const auto publication = std::find_if(
         tile_publications.begin(), tile_publications.end(),
         [&slot](const TileRevisionPublication& candidate) { return candidate.key == slot.key_; });
-    const bool affected =
-        std::find(affected_tiles.begin(), affected_tiles.end(), slot.key_) != affected_tiles.end();
+    const bool affected = rectangles_intersect(tile_world_bounds(slot.key_), affected_world_bounds);
     if (publication != tile_publications.end()) {
       write_tile(slot_index, *publication, revision);
     } else if (affected) {

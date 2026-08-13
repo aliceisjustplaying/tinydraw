@@ -105,29 +105,16 @@ void paint_segment(const Sample& first, const Sample& second, std::uint16_t colo
 }
 
 PixelRect operation_bounds(const IncrementalOperation& operation, ZoomLevel zoom) {
-  if (operation.samples.empty()) {
+  const auto world = operation_world_bounds(operation.samples);
+  if (!world.has_value()) {
     return {};
   }
-  float minimum_x =
-      static_cast<float>(kWorldWidth) * static_cast<float>(zoom_percent(zoom)) / 100.0F;
-  float minimum_y =
-      static_cast<float>(kWorldHeight) * static_cast<float>(zoom_percent(zoom)) / 100.0F;
-  float maximum_x = 0;
-  float maximum_y = 0;
-  for (const auto sample : operation.samples) {
-    const Sample scaled = scaled_sample(sample, zoom);
-    minimum_x = std::min(minimum_x, scaled.x - scaled.radius);
-    minimum_y = std::min(minimum_y, scaled.y - scaled.radius);
-    maximum_x = std::max(maximum_x, scaled.x + scaled.radius);
-    maximum_y = std::max(maximum_y, scaled.y + scaled.radius);
-  }
+  const int percent = zoom_percent(zoom);
   return {
-      .x0 = std::max(0, static_cast<int>(std::floor(minimum_x))),
-      .y0 = std::max(0, static_cast<int>(std::floor(minimum_y))),
-      .x1 =
-          std::min(kWorldWidth * zoom_percent(zoom) / 100, static_cast<int>(std::ceil(maximum_x))),
-      .y1 =
-          std::min(kWorldHeight * zoom_percent(zoom) / 100, static_cast<int>(std::ceil(maximum_y))),
+      .x0 = world->x0 * percent / 100,
+      .y0 = world->y0 * percent / 100,
+      .x1 = std::min(kWorldWidth * percent / 100, (world->x1 * percent + 99) / 100),
+      .y1 = std::min(kWorldHeight * percent / 100, (world->y1 * percent + 99) / 100),
   };
 }
 

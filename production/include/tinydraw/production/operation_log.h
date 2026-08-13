@@ -26,6 +26,7 @@ struct StoredOperation {
 
 // Fixed-capacity, ordered document authority. Storage is caller-owned and must
 // outlive the log. Append validates all input and capacity before mutation.
+// Callers must serialize reads, appends, and clear operations.
 class OperationLog {
  public:
   OperationLog(std::span<OperationRecord> records, std::span<CompactOperationSample> samples);

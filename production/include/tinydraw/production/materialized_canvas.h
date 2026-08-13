@@ -179,13 +179,13 @@ class MaterializedCanvas {
   // a distinct source buffer. Callers must serialize all canvas operations.
   [[nodiscard]] bool publish_overview(DocumentRevision revision,
                                       std::span<const std::uint16_t> pixels);
-  // Commits exactly the next document revision. Unaffected resident tiles are
-  // carried forward; affected tiles without a publication become overview
-  // fallback. Every input is validated before owned pixels or identities change.
+  // Commits exactly the next document revision. Tiles intersecting the
+  // conservative world bounds are affected at every zoom; affected resident
+  // tiles without a publication become overview fallback. Every input is
+  // validated before owned pixels or identities change.
   [[nodiscard]] bool commit_incremental_revision(
       DocumentRevision revision, std::span<const std::uint16_t> next_overview_pixels,
-      std::span<const TileKey> affected_tiles,
-      std::span<const TileRevisionPublication> tile_publications);
+      PixelRect affected_world_bounds, std::span<const TileRevisionPublication> tile_publications);
   [[nodiscard]] std::optional<std::size_t> publish_tile(TileKey key, DocumentRevision revision,
                                                         MaterializationQuality quality,
                                                         std::span<const std::uint16_t> pixels);
@@ -206,7 +206,7 @@ class MaterializedCanvas {
   [[nodiscard]] SourceSelection select_overview(TileKey requested) const;
   [[nodiscard]] bool valid_incremental_revision(
       DocumentRevision revision, std::span<const std::uint16_t> next_overview_pixels,
-      std::span<const TileKey> affected_tiles,
+      PixelRect affected_world_bounds,
       std::span<const TileRevisionPublication> tile_publications) const;
   void write_tile(std::size_t slot_index, const TileRevisionPublication& publication,
                   DocumentRevision revision);

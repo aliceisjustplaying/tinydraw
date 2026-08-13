@@ -14,26 +14,6 @@ bool valid_sample(CompactOperationSample sample) {
          sample.radius_256 > 0;
 }
 
-PixelRect operation_bounds(std::span<const CompactOperationSample> samples) {
-  int minimum_x = kWorldWidth * 4;
-  int minimum_y = kWorldHeight * 4;
-  int maximum_x = 0;
-  int maximum_y = 0;
-  for (const CompactOperationSample sample : samples) {
-    const int radius_quarter = (static_cast<int>(sample.radius_256) + 63) / 64;
-    minimum_x = std::min(minimum_x, static_cast<int>(sample.x_quarter) - radius_quarter);
-    minimum_y = std::min(minimum_y, static_cast<int>(sample.y_quarter) - radius_quarter);
-    maximum_x = std::max(maximum_x, static_cast<int>(sample.x_quarter) + radius_quarter);
-    maximum_y = std::max(maximum_y, static_cast<int>(sample.y_quarter) + radius_quarter);
-  }
-  return {
-      .x0 = std::max(0, minimum_x) / 4,
-      .y0 = std::max(0, minimum_y) / 4,
-      .x1 = std::min(kWorldWidth, (maximum_x + 3) / 4),
-      .y1 = std::min(kWorldHeight, (maximum_y + 3) / 4),
-  };
-}
-
 bool valid_samples(std::span<const CompactOperationSample> samples) {
   if (!std::all_of(samples.begin(), samples.end(), valid_sample)) {
     return false;
@@ -70,7 +50,11 @@ std::optional<OperationIdentity> OperationLog::append(const OperationAppend& app
   }
   const std::size_t operation_index = operation_count_;
   const std::size_t first_sample = sample_count_;
-  const PixelRect bounds = operation_bounds(append_request.samples);
+  const auto calculated_bounds = operation_world_bounds(append_request.samples);
+  if (!calculated_bounds.has_value()) {
+    return std::nullopt;
+  }
+  const PixelRect bounds = *calculated_bounds;
   std::copy(append_request.samples.begin(), append_request.samples.end(),
             samples_.subspan(sample_count_).begin());
   sample_count_ += append_request.samples.size();

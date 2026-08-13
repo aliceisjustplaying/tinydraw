@@ -33,6 +33,7 @@ if(TINYDRAW_PRODUCTION_OVERVIEW_WALK)
     "production_overview_walk.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../../production/src/incremental_rasterizer.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../../production/src/materialized_canvas.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/../../production/src/operation.cpp"
   )
   set(TINYDRAW_PLATFORM_SRCS "")
   set(TINYDRAW_PLATFORM_REQUIRES esp_lcd_co5300)
