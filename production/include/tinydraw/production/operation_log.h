@@ -24,15 +24,27 @@ struct StoredOperation {
   std::span<const CompactOperationSample> samples{};
 };
 
+class OperationLog;
+
+// Move-only preparation owned by one OperationLog. Destruction cancels an
+// unpublished preparation. publish() is infallible for a live preparation.
 class PreparedAppend {
  public:
-  [[nodiscard]] const StoredOperation& operation() const { return operation_; }
+  ~PreparedAppend();
+  PreparedAppend(const PreparedAppend&) = delete;
+  PreparedAppend& operator=(const PreparedAppend&) = delete;
+  PreparedAppend(PreparedAppend&& other) noexcept;
+  PreparedAppend& operator=(PreparedAppend&& other) noexcept;
+
+  [[nodiscard]] const StoredOperation& operation() const;
+  void publish();
+  void cancel();
 
  private:
   friend class OperationLog;
-  PreparedAppend(StoredOperation operation, std::uint32_t token)
-      : operation_(operation), token_(token) {}
+  PreparedAppend(OperationLog& owner, StoredOperation operation, std::uint32_t token);
 
+  OperationLog* owner_ = nullptr;
   StoredOperation operation_{};
   std::uint32_t token_ = 0;
 };
@@ -55,14 +67,16 @@ class OperationLog {
   // authority. Exactly one append may be prepared. Publish is valid only for
   // that preparation; cancel leaves operation/sample counts and revision intact.
   [[nodiscard]] std::optional<PreparedAppend> prepare(const OperationAppend& append_request);
-  [[nodiscard]] bool publish(const PreparedAppend& prepared);
-  [[nodiscard]] bool cancel(const PreparedAppend& prepared);
   [[nodiscard]] std::optional<OperationIdentity> append(const OperationAppend& append_request);
   [[nodiscard]] std::optional<StoredOperation> operation(std::size_t index) const;
+  // No-op while a PreparedAppend owns the pending slot.
   void clear();
 
  private:
+  friend class PreparedAppend;
   [[nodiscard]] bool valid_append(const OperationAppend& append_request) const;
+  void publish_prepared(const PreparedAppend& prepared);
+  void cancel_prepared(const PreparedAppend& prepared);
 
   std::span<OperationRecord> records_;
   std::span<CompactOperationSample> samples_;
