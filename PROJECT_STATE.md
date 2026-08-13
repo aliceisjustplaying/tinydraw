@@ -86,12 +86,12 @@ Correctness requirements are stroke presence, painter order, eraser behavior, an
 Continue #55 without growing `hardware_app.cpp`:
 
 1. complete the pending fresh Fable follow-up review after the CLI session limit resets; the first review found and prompted the now-fixed cross-zoom stale-tile defect;
-2. exercise a representative multi-operation sequence and capacity boundaries rather than only two operations;
-3. preserve the proven immediate rasterizer; anti-aliased settled quality belongs to Task #56 rather than this commit seam;
-4. pull the minimum display scheduler seam forward and build an exclusive live-touch adapter around `append_incrementally` without moving production policy into `hardware_app.cpp`;
-5. measure first feedback and mutation bursts on device before integrating the default product loop.
+2. preserve the proven immediate rasterizer; anti-aliased settled quality belongs to Task #56 rather than this commit seam;
+3. pull the minimum display scheduler seam forward and build an exclusive live-touch adapter around `append_incrementally` without moving production policy into `hardware_app.cpp`;
+4. measure first feedback from real touch samples and concurrent mutation/display behavior before integrating the default product loop;
+5. validate provisional capacities against a captured representative document rather than extrapolating the bounded probe.
 
-The current exact-commit receipt is [`production/hardware-receipts/29c4d1d-transactional-operation-walk.log`](production/hardware-receipts/29c4d1d-transactional-operation-walk.log). The extracted coordinator itself passed at commit `119247d` with unchanged hashes and 47.8–48.8 ms append time; that is below the <100 ms first-feedback product gate, although the full live path remains unmeasured. The 48 ms cost is dominated by copying the 329,728-byte overview into publication storage and committing it back, not tile composition. The device was restored to default firmware at `c17e33c` and emitted `TINYDRAW_HARDWARE_OK`. These results do not prove representative operation-log capacity, live touch integration, settled anti-aliasing, or interactive pan.
+The current mutation receipt is [`production/hardware-receipts/acaa8a6-mutation-burst-walk.log`](production/hardware-receipts/acaa8a6-mutation-burst-walk.log). Thirty additional ordered pen/eraser appends advanced log and canvas together to revision 32 in 1.435 seconds total (47.840 ms average), then produced the expected `d4e162c4` panel hash with 168/168 transfers and zero rejects. That is below the <100 ms first-feedback product gate, although the full live path remains unmeasured. The 48 ms cost is dominated by copying the 329,728-byte overview into publication storage and committing it back, not tile composition. These results do not prove representative operation-log capacity, live touch integration, settled anti-aliasing, concurrent scheduling, or interactive pan.
 
 ## Validation baseline
 
