@@ -474,7 +474,9 @@ TEST_CASE("incremental revision updates affected tiles and carries unaffected ti
       .quality = production::MaterializationQuality::kExact,
       .pixels = updated_tile,
   }};
-  REQUIRE(canvas.commit_incremental_revision({1}, next_overview, {0, 0, 128, 64}, publications));
+  REQUIRE(canvas.commit_incremental_revision(
+      {1}, {.bounds = {0, 0, 32, 16}, .pixels = std::span(next_overview).first(32U * 16U)},
+      {0, 0, 128, 64}, publications));
   CHECK(canvas.current_revision() == production::DocumentRevision{1});
   CHECK(canvas.overview_pixels().front() == 0x2222U);
 
@@ -546,7 +548,9 @@ TEST_CASE("incremental revision invalidates intersecting resident tiles at every
   REQUIRE(canvas.publish_tile(at_200, {0}, production::MaterializationQuality::kExact, tile));
   REQUIRE(canvas.publish_tile(outside, {0}, production::MaterializationQuality::kExact, tile));
 
-  REQUIRE(canvas.commit_incremental_revision({1}, next_overview, {32, 32, 64, 64}, {}));
+  REQUIRE(canvas.commit_incremental_revision(
+      {1}, {.bounds = {8, 8, 16, 16}, .pixels = std::span(next_overview).first(8U * 8U)},
+      {32, 32, 64, 64}, {}));
   CHECK(canvas.lookup(at_100)->kind == production::SourceKind::kOverview);
   CHECK(canvas.lookup(at_200)->kind == production::SourceKind::kOverview);
   CHECK(canvas.lookup(outside)->kind == production::SourceKind::kTileSlot);
@@ -569,7 +573,9 @@ TEST_CASE("incremental revision rejection leaves pixels and identities unchanged
   const auto before = canvas.lookup(key);
   REQUIRE(before.has_value());
 
-  CHECK_FALSE(canvas.commit_incremental_revision({1}, next_overview, {0, 0, 0, 64}, {}));
+  const production::OverviewRevisionPublication publication{
+      .bounds = {0, 0, 16, 16}, .pixels = std::span(next_overview).first(16U * 16U)};
+  CHECK_FALSE(canvas.commit_incremental_revision({1}, publication, {0, 0, 0, 64}, {}));
   CHECK(canvas.current_revision() == production::DocumentRevision{0});
   CHECK(canvas.overview_pixels().front() == 0x1111U);
   CHECK(canvas.lookup(key)->identity == before->identity);
@@ -577,7 +583,29 @@ TEST_CASE("incremental revision rejection leaves pixels and identities unchanged
 
   auto pin = canvas.pin(key);
   REQUIRE(pin.has_value());
-  CHECK_FALSE(canvas.commit_incremental_revision({1}, next_overview, {0, 0, 64, 64}, {}));
+  CHECK_FALSE(canvas.commit_incremental_revision({1}, publication, {0, 0, 64, 64}, {}));
+  CHECK(canvas.current_revision() == production::DocumentRevision{0});
+  CHECK(canvas.overview_pixels().front() == 0x1111U);
+}
+
+TEST_CASE("incremental revision rejects incomplete or aliased overview publications") {
+  std::array<std::uint16_t, production::kOverviewPixels> overview{};
+  overview.fill(0x1111U);
+  std::array<std::uint16_t, 16U * 16U> compact{};
+  compact.fill(0x2222U);
+  std::array<production::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, production::kTilePixels> tile_storage{};
+  production::MaterializedCanvas canvas(overview, slots, tile_storage);
+  REQUIRE(canvas.publish_overview({0}, overview));
+
+  CHECK_FALSE(canvas.commit_incremental_revision({1}, {.bounds = {0, 0, 15, 16}, .pixels = compact},
+                                                 {0, 0, 64, 64}, {}));
+  CHECK_FALSE(canvas.commit_incremental_revision(
+      {1}, {.bounds = {0, 0, 16, 16}, .pixels = std::span(compact).first(compact.size() - 1U)},
+      {0, 0, 64, 64}, {}));
+  CHECK_FALSE(canvas.commit_incremental_revision(
+      {1}, {.bounds = {0, 0, 16, 16}, .pixels = std::span(overview).first(compact.size())},
+      {0, 0, 64, 64}, {}));
   CHECK(canvas.current_revision() == production::DocumentRevision{0});
   CHECK(canvas.overview_pixels().front() == 0x1111U);
 }
@@ -597,8 +625,11 @@ TEST_CASE("incremental revision requires next revision and resident affected pub
       .pixels = tile,
   }};
 
-  CHECK_FALSE(canvas.commit_incremental_revision({6}, next_overview, {0, 0, 64, 64}, {}));
-  CHECK_FALSE(canvas.commit_incremental_revision({5}, next_overview, {0, 0, 64, 64}, publication));
+  const production::OverviewRevisionPublication overview_publication{
+      .bounds = {0, 0, 16, 16}, .pixels = std::span(next_overview).first(16U * 16U)};
+  CHECK_FALSE(canvas.commit_incremental_revision({6}, overview_publication, {0, 0, 64, 64}, {}));
+  CHECK_FALSE(
+      canvas.commit_incremental_revision({5}, overview_publication, {0, 0, 64, 64}, publication));
   CHECK(canvas.current_revision() == production::DocumentRevision{4});
 }
 

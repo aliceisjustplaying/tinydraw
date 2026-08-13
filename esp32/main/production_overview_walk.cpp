@@ -271,12 +271,12 @@ bool append_and_commit_probe(OperationLog& log, MaterializedCanvas& canvas,
   std::array<TileRevisionPublication, 1> publications{};
   std::array<TileKey, 1> affected{};
   const std::int64_t started = esp_timer_get_time();
-  const auto result =
-      production::append_incrementally(log, canvas, append_request,
-                                       IncrementalDocumentWorkspace{.next_overview = next_overview,
-                                                                    .tile_scratch = tile_scratch,
-                                                                    .publications = publications,
-                                                                    .affected_keys = affected});
+  const auto result = production::append_incrementally(
+      log, canvas, append_request,
+      IncrementalDocumentWorkspace{.overview_scratch = next_overview,
+                                   .tile_scratch = tile_scratch,
+                                   .publications = publications,
+                                   .affected_keys = affected});
   const std::int64_t elapsed_us = esp_timer_get_time() - started;
   std::printf("TINYDRAW_PRODUCTION_WALK_OPERATION revision=%lu append_us=%lld committed=%u\n",
               static_cast<unsigned long>(canvas.current_revision().value),

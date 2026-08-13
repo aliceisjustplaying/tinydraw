@@ -8,6 +8,45 @@
 namespace tinydraw::production {
 namespace {
 
+PixelRect overview_bounds_for_world(PixelRect world_bounds) {
+  return {
+      .x0 = world_bounds.x0 / 4,
+      .y0 = world_bounds.y0 / 4,
+      .x1 = (world_bounds.x1 + 3) / 4,
+      .y1 = (world_bounds.y1 + 3) / 4,
+  };
+}
+
+bool prepare_overview(const MaterializedCanvas& canvas, const OperationAppend& operation,
+                      PixelRect world_bounds, std::span<std::uint16_t> scratch,
+                      OverviewRevisionPublication& publication) {
+  const PixelRect bounds = overview_bounds_for_world(world_bounds);
+  const int width = bounds.x1 - bounds.x0;
+  const int height = bounds.y1 - bounds.y0;
+  const std::size_t pixel_count =
+      static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+  if (scratch.size() < pixel_count) {
+    return false;
+  }
+  const auto pixels = scratch.first(pixel_count);
+  for (int row = 0; row < height; ++row) {
+    const auto source_offset = static_cast<std::ptrdiff_t>(bounds.y0 + row) * kOverviewWidth +
+                               static_cast<std::ptrdiff_t>(bounds.x0);
+    const auto destination_offset =
+        static_cast<std::ptrdiff_t>(row) * static_cast<std::ptrdiff_t>(width);
+    const auto source = canvas.overview_pixels().begin() + source_offset;
+    std::copy_n(source, width, pixels.begin() + destination_offset);
+  }
+  if (!apply_incremental_operation(operation, {.zoom = ZoomLevel::k25Percent,
+                                               .level_bounds = bounds,
+                                               .pixels = pixels,
+                                               .stride = width})) {
+    return false;
+  }
+  publication = {.bounds = bounds, .pixels = pixels};
+  return true;
+}
+
 bool prepare_tile(const MaterializedCanvas& canvas, const OperationAppend& operation, TileKey key,
                   std::span<std::uint16_t> scratch, TileRevisionPublication& publication) {
   const PixelRect bounds = tile_pixel_bounds(key);
@@ -35,7 +74,7 @@ std::optional<IncrementalAppendResult> append_incrementally(
     OperationLog& log, MaterializedCanvas& canvas, const OperationAppend& append_request,
     const IncrementalDocumentWorkspace& workspace) {
   const std::array<std::span<const std::byte>, 4> workspaces{
-      std::as_bytes(workspace.next_overview), std::as_bytes(workspace.tile_scratch),
+      std::as_bytes(workspace.overview_scratch), std::as_bytes(workspace.tile_scratch),
       std::as_bytes(workspace.publications), std::as_bytes(workspace.affected_keys)};
   bool workspaces_overlap = false;
   for (std::size_t left = 0; left < workspaces.size(); ++left) {
@@ -50,8 +89,8 @@ std::optional<IncrementalAppendResult> append_incrementally(
                log.workspace_overlaps_storage(workspace_bytes);
       });
   if (!canvas.ready() || !log.ready() || canvas.overview_pixels().size() != kOverviewPixels ||
-      workspace.next_overview.size() != kOverviewPixels || workspaces_overlap ||
-      workspace_aliases_owned_storage || log.current_revision() != canvas.current_revision()) {
+      workspaces_overlap || workspace_aliases_owned_storage ||
+      log.current_revision() != canvas.current_revision()) {
     return std::nullopt;
   }
   auto prepared = log.prepare(append_request);
@@ -62,12 +101,9 @@ std::optional<IncrementalAppendResult> append_incrementally(
   const OperationIdentity identity = stored.identity;
   const OperationAppend operation{
       .tool = stored.tool, .color = stored.color, .samples = stored.samples};
-  std::copy_n(canvas.overview_pixels().begin(), kOverviewPixels, workspace.next_overview.begin());
-  const bool overview_ready = apply_incremental_operation(
-      operation, {.zoom = ZoomLevel::k25Percent,
-                  .level_bounds = {0, 0, kOverviewWidth, kOverviewHeight},
-                  .pixels = workspace.next_overview,
-                  .stride = kOverviewWidth});
+  OverviewRevisionPublication overview_publication{};
+  const bool overview_ready = prepare_overview(canvas, operation, stored.world_bounds,
+                                               workspace.overview_scratch, overview_publication);
   const auto resident_count =
       canvas.resident_tiles_intersecting(stored.world_bounds, workspace.affected_keys);
   if (!overview_ready || !resident_count.has_value()) {
@@ -85,7 +121,7 @@ std::optional<IncrementalAppendResult> append_incrementally(
       return std::nullopt;
     }
   }
-  if (!canvas.commit_incremental_revision(stored.identity.revision, workspace.next_overview,
+  if (!canvas.commit_incremental_revision(stored.identity.revision, overview_publication,
                                           stored.world_bounds,
                                           workspace.publications.first(publication_count))) {
     prepared->cancel();

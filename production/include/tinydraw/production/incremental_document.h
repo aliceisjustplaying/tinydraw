@@ -11,7 +11,10 @@
 namespace tinydraw::production {
 
 struct IncrementalDocumentWorkspace {
-  std::span<std::uint16_t> next_overview{};
+  // Compact row-major scratch for the conservative affected overview region.
+  // Full overview capacity handles the worst case, but ordinary appends use
+  // only their bounded prefix.
+  std::span<std::uint16_t> overview_scratch{};
   std::span<std::uint16_t> tile_scratch{};
   std::span<TileRevisionPublication> publications{};
   std::span<TileKey> affected_keys{};

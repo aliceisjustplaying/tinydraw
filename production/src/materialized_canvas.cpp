@@ -42,6 +42,20 @@ bool valid_world_bounds(PixelRect bounds) {
          bounds.x1 <= kWorldWidth && bounds.y1 <= kWorldHeight;
 }
 
+bool valid_overview_bounds(PixelRect bounds) {
+  return bounds.x0 >= 0 && bounds.y0 >= 0 && bounds.x0 < bounds.x1 && bounds.y0 < bounds.y1 &&
+         bounds.x1 <= kOverviewWidth && bounds.y1 <= kOverviewHeight;
+}
+
+PixelRect overview_bounds_for_world(PixelRect world_bounds) {
+  return {
+      .x0 = world_bounds.x0 / 4,
+      .y0 = world_bounds.y0 / 4,
+      .x1 = ceil_div(world_bounds.x1, 4),
+      .y1 = ceil_div(world_bounds.y1, 4),
+  };
+}
+
 }  // namespace
 
 int zoom_percent(ZoomLevel zoom) {
@@ -233,23 +247,32 @@ bool MaterializedCanvas::restore_snapshot(DocumentRevision revision,
 }
 
 bool MaterializedCanvas::valid_incremental_revision(
-    DocumentRevision revision, std::span<const std::uint16_t> next_overview_pixels,
+    DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
     PixelRect affected_world_bounds,
     std::span<const TileRevisionPublication> tile_publications) const {
   const bool revision_advances_once =
       current_revision_.value != std::numeric_limits<std::uint32_t>::max() &&
       revision.value == current_revision_.value + 1U;
-  const bool source_is_external =
-      !storage_overlaps(std::as_bytes(next_overview_pixels),
-                        std::as_bytes(std::span(overview_pixels_))) &&
-      !storage_overlaps(std::as_bytes(next_overview_pixels),
-                        std::as_bytes(std::span(tile_pixels_))) &&
-      !storage_overlaps(std::as_bytes(next_overview_pixels), std::as_bytes(std::span(slots_)));
+  const PixelRect required_overview_bounds = overview_bounds_for_world(affected_world_bounds);
+  const int overview_width = overview_publication.bounds.x1 - overview_publication.bounds.x0;
+  const int overview_height = overview_publication.bounds.y1 - overview_publication.bounds.y0;
+  const std::size_t expected_overview_pixels =
+      valid_overview_bounds(overview_publication.bounds)
+          ? static_cast<std::size_t>(overview_width) * static_cast<std::size_t>(overview_height)
+          : 0U;
+  const bool source_is_external = !storage_overlaps(std::as_bytes(overview_publication.pixels),
+                                                    std::as_bytes(std::span(overview_pixels_))) &&
+                                  !storage_overlaps(std::as_bytes(overview_publication.pixels),
+                                                    std::as_bytes(std::span(tile_pixels_))) &&
+                                  !storage_overlaps(std::as_bytes(overview_publication.pixels),
+                                                    std::as_bytes(std::span(slots_)));
   const bool any_tile_pinned = std::any_of(slots_.begin(), slots_.end(),
                                            [](const auto& slot) { return slot.pin_count_ != 0U; });
-  if (!ready() || !overview_valid_ || !revision_advances_once || !source_is_external ||
-      next_overview_pixels.size() != kOverviewPixels ||
-      !valid_world_bounds(affected_world_bounds) || overview_pin_count_ != 0U || any_tile_pinned) {
+  if (!ready() || !overview_valid_ || !revision_advances_once ||
+      !valid_world_bounds(affected_world_bounds) ||
+      overview_publication.bounds != required_overview_bounds || expected_overview_pixels == 0U ||
+      overview_publication.pixels.size() != expected_overview_pixels || !source_is_external ||
+      overview_pin_count_ != 0U || any_tile_pinned) {
     return false;
   }
 
@@ -303,14 +326,25 @@ void MaterializedCanvas::write_tile(std::size_t slot_index,
 }
 
 bool MaterializedCanvas::commit_incremental_revision(
-    DocumentRevision revision, std::span<const std::uint16_t> next_overview_pixels,
+    DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
     PixelRect affected_world_bounds, std::span<const TileRevisionPublication> tile_publications) {
-  if (!valid_incremental_revision(revision, next_overview_pixels, affected_world_bounds,
+  if (!valid_incremental_revision(revision, overview_publication, affected_world_bounds,
                                   tile_publications)) {
     return false;
   }
 
-  std::copy(next_overview_pixels.begin(), next_overview_pixels.end(), overview_pixels_.begin());
+  const int overview_width = overview_publication.bounds.x1 - overview_publication.bounds.x0;
+  const int overview_height = overview_publication.bounds.y1 - overview_publication.bounds.y0;
+  for (int row = 0; row < overview_height; ++row) {
+    const auto source_offset =
+        static_cast<std::ptrdiff_t>(row) * static_cast<std::ptrdiff_t>(overview_width);
+    const auto destination_offset =
+        static_cast<std::ptrdiff_t>(overview_publication.bounds.y0 + row) * kOverviewWidth +
+        static_cast<std::ptrdiff_t>(overview_publication.bounds.x0);
+    const auto source = overview_publication.pixels.begin() + source_offset;
+    auto destination = overview_pixels_.begin() + destination_offset;
+    std::copy_n(source, overview_width, destination);
+  }
   for (std::size_t slot_index = 0; slot_index < slots_.size(); ++slot_index) {
     MaterializedSlotStorage& slot = slots_[slot_index];
     if (!slot.occupied_) {
