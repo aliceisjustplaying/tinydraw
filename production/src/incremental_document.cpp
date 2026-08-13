@@ -38,6 +38,36 @@ bool prepare_overview(const MaterializedCanvas& canvas, const OperationAppend& o
   return true;
 }
 
+bool intersects(PixelRect left, PixelRect right) {
+  return left.x0 < right.x1 && right.x0 < left.x1 && left.y0 < right.y1 && right.y0 < left.y1;
+}
+
+bool valid_priority_view(const std::optional<ViewRequest>& view) {
+  if (!view.has_value()) {
+    return true;
+  }
+  const PixelRect bounds = view->level_pixels;
+  return view->zoom != ZoomLevel::k25Percent && bounds.x0 >= 0 && bounds.y0 >= 0 &&
+         bounds.x0 < bounds.x1 && bounds.y0 < bounds.y1 &&
+         bounds.x1 <= kWorldWidth * zoom_percent(view->zoom) / 100 &&
+         bounds.y1 <= kWorldHeight * zoom_percent(view->zoom) / 100;
+}
+
+bool in_priority_view(TileKey key, const std::optional<ViewRequest>& view) {
+  return view.has_value() && key.zoom == view->zoom &&
+         intersects(tile_pixel_bounds(key), view->level_pixels);
+}
+
+void prioritize_view(std::span<TileKey> keys, const std::optional<ViewRequest>& view) {
+  std::size_t destination = 0;
+  for (std::size_t candidate = 0; candidate < keys.size(); ++candidate) {
+    if (in_priority_view(keys[candidate], view)) {
+      std::swap(keys[destination], keys[candidate]);
+      ++destination;
+    }
+  }
+}
+
 bool prepare_tile(const MaterializedCanvas& canvas, const OperationAppend& operation, TileKey key,
                   std::span<std::uint16_t> scratch, TileRevisionPublication& publication) {
   const PixelRect bounds = tile_pixel_bounds(key);
@@ -63,7 +93,7 @@ bool prepare_tile(const MaterializedCanvas& canvas, const OperationAppend& opera
 
 std::optional<IncrementalAppendResult> append_incrementally(
     OperationLog& log, MaterializedCanvas& canvas, const OperationAppend& append_request,
-    const IncrementalDocumentWorkspace& workspace) {
+    const IncrementalDocumentWorkspace& workspace, IncrementalAppendOptions options) {
   const std::array<std::span<const std::byte>, 4> workspaces{
       std::as_bytes(workspace.overview_scratch), std::as_bytes(workspace.tile_scratch),
       std::as_bytes(workspace.publications), std::as_bytes(workspace.affected_keys)};
@@ -81,7 +111,8 @@ std::optional<IncrementalAppendResult> append_incrementally(
       });
   if (!canvas.ready() || !log.ready() || canvas.overview_pixels().size() != kOverviewPixels ||
       workspaces_overlap || workspace_aliases_owned_storage ||
-      log.current_revision() != canvas.current_revision()) {
+      log.current_revision() != canvas.current_revision() ||
+      !valid_priority_view(options.priority_view)) {
     return std::nullopt;
   }
   auto prepared = log.prepare(append_request);
@@ -104,6 +135,9 @@ std::optional<IncrementalAppendResult> append_incrementally(
   const std::size_t publication_capacity =
       std::min(workspace.publications.size(), workspace.tile_scratch.size() / kTilePixels);
   const std::size_t publication_count = std::min(*resident_count, publication_capacity);
+  if (options.priority_view.has_value() && publication_count < *resident_count) {
+    prioritize_view(workspace.affected_keys.first(*resident_count), options.priority_view);
+  }
   for (std::size_t index = 0; index < publication_count; ++index) {
     auto scratch = workspace.tile_scratch.subspan(index * kTilePixels, kTilePixels);
     if (!prepare_tile(canvas, operation, workspace.affected_keys[index], scratch,

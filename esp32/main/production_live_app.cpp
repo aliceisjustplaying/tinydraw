@@ -178,11 +178,13 @@ void print_presentation(const char* kind, const ProductionLivePresenter& present
   std::printf(
       "TINYDRAW_LIVE_PRESENT kind=%s zoom=%s x=%d y=%d compose_us=%lld "
       "read_submit_us=%lld read_complete_us=%lld transfer_wait_us=%lld tile_pixels=%lu "
-      "fallback_pixels=%lu resident_tiles=%lu fallback_tiles=%lu pushes=%lu pass=%u\n",
+      "overview_pixels=%lu fallback_pixels=%lu resident_tiles=%lu fallback_tiles=%lu pushes=%lu "
+      "pass=%u\n",
       kind, zoom_name(presenter.zoom()), presenter.level_x(), presenter.level_y(),
       static_cast<long long>(timing.compose_us), static_cast<long long>(timing.first_submit_us),
       static_cast<long long>(timing.first_complete_us), static_cast<long long>(timing.complete_us),
       static_cast<unsigned long>(timing.tile_pixels),
+      static_cast<unsigned long>(timing.overview_pixels),
       static_cast<unsigned long>(timing.fallback_pixels),
       static_cast<unsigned long>(timing.resident_tiles),
       static_cast<unsigned long>(timing.fallback_tiles), static_cast<unsigned long>(timing.pushes),
@@ -454,7 +456,8 @@ bool run_draw_while_fill_gate(ProductionLivePresenter& presenter,
   }
   const std::int64_t append_started = esp_timer_get_time();
   const auto append = production::append_incrementally(
-      log, canvas, {.tool = OperationTool::kPen, .color = 0x001FU, .samples = fast_xl}, workspace);
+      log, canvas, {.tool = OperationTool::kPen, .color = 0x001FU, .samples = fast_xl}, workspace,
+      {.priority_view = view});
   const std::int64_t append_us = esp_timer_get_time() - append_started;
   const bool stale_rejected = !producer.produce_next(view).has_value();
 
@@ -610,10 +613,11 @@ bool run_cache_retention_gate(ProductionLivePresenter& presenter,
     const bool hit =
         origin_remaining == 0U && round_trip.passed && round_trip.fallback_pixels == 0U;
     std::printf(
-        "TINYDRAW_GATE1_CACHE_ROUND_TRIP zoom=%s from_x=63 from_y=63 via_x=575 via_y=575 "
+        "TINYDRAW_GATE1_CACHE_ROUND_TRIP zoom=%s from_x=%d from_y=%d via_x=%d via_y=%d "
         "remaining=%lu tile_pixels=%lu fallback_pixels=%lu compose_us=%lld complete_us=%lld "
         "hit=%u\n",
-        zoom_name(zoom), static_cast<unsigned long>(origin_remaining.value_or(999U)),
+        zoom_name(zoom), kUnalignedOrigin, kUnalignedOrigin, kDisjointOrigin, kDisjointOrigin,
+        static_cast<unsigned long>(origin_remaining.value_or(999U)),
         static_cast<unsigned long>(round_trip.tile_pixels),
         static_cast<unsigned long>(round_trip.fallback_pixels),
         static_cast<long long>(round_trip.compose_us),
@@ -939,7 +943,18 @@ void run_production_live_app() {
         bool committed = false;
         if (append.has_value()) {
           const std::int64_t append_started = esp_timer_get_time();
-          committed = production::append_incrementally(log, canvas, *append, workspace).has_value();
+          const production::ViewRequest priority_view{
+              .zoom = presenter.zoom(),
+              .level_pixels = {presenter.level_x(), presenter.level_y(),
+                               presenter.level_x() + production::kOverviewWidth,
+                               presenter.level_y() + production::kOverviewHeight},
+          };
+          committed = production::append_incrementally(
+                          log, canvas, *append, workspace,
+                          {.priority_view = presenter.zoom() == ZoomLevel::k25Percent
+                                                ? std::optional<production::ViewRequest>{}
+                                                : std::optional{priority_view}})
+                          .has_value();
           append_us = esp_timer_get_time() - append_started;
         }
         builder.cancel();

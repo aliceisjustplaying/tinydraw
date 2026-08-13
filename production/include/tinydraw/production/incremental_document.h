@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 
 #include "tinydraw/production/incremental_rasterizer.h"
@@ -27,12 +28,19 @@ struct IncrementalAppendResult {
   std::size_t fallback_tiles = 0;
 };
 
+struct IncrementalAppendOptions {
+  // When bounded scratch cannot update every affected resident tile, preserve
+  // this visible tiled view first. Other affected tiles remain correct through
+  // overview fallback and can be replayed later.
+  std::optional<ViewRequest> priority_view{};
+};
+
 // Coordinates document authority and materialization as one append. All
 // workspace is caller-owned. Failure leaves both log and canvas at their prior
 // revisions; callers must serialize access to the log, canvas, and workspace.
 [[nodiscard]] std::optional<IncrementalAppendResult> append_incrementally(
     OperationLog& log, MaterializedCanvas& canvas, const OperationAppend& append_request,
-    const IncrementalDocumentWorkspace& workspace);
+    const IncrementalDocumentWorkspace& workspace, IncrementalAppendOptions options = {});
 
 // Coordinates an authoritative snapshot restore. The caller-owned pixels must
 // not alias log or canvas storage. Validation is completed before either state

@@ -715,8 +715,7 @@ std::optional<ViewCompositionStats> MaterializedCanvas::compose_overview_view(
   }
   return ViewCompositionStats{
       .revision = current_revision_,
-      .fallback_pixels = destination.size(),
-      .fallback_tiles = 1,
+      .overview_pixels = destination.size(),
   };
 }
 
