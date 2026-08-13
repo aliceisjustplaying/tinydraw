@@ -151,7 +151,8 @@ rewrite and not feature-parity promotion.
 - [x] Keep truly shared mechanisms in `core/`; share by dependency, never copy.
 - [x] Leave the raster coordinator behaviorally unchanged.
 - [x] Add explicit build commands for both `raster-v1` and `vector-v2`.
-- [ ] Make CI/validation build both firmware variants.
+- [x] Make the named validation commands build both firmware variants. Add
+      hosted CI for ESP-IDF only when a CI workflow is introduced.
 - [x] Remove test-only workload generation and automated gate orchestration from
       the V2 product coordinator; retain it in the exclusive
       `vector-v2-gate-harness` target.
