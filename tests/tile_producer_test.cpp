@@ -68,6 +68,20 @@ TEST_CASE("tile producer ignores overview fallback when finding missing resident
   CHECK(source->identity.quality == production::MaterializationQuality::kImmediate);
 }
 
+TEST_CASE("tile producer publishes one completed supertask as a group") {
+  Fixture fixture;
+  const production::ViewRequest view{
+      .zoom = production::ZoomLevel::k100Percent,
+      .level_pixels = {63, 63, 63 + production::kOverviewWidth, 63 + production::kOverviewHeight},
+  };
+
+  const auto step = fixture.producer.produce_next(view);
+  REQUIRE(step.has_value());
+  CHECK(step->tiles_published == 4U);
+  CHECK(step->level_bounds.x1 - step->level_bounds.x0 == production::kTileProducerWidth);
+  CHECK(step->level_bounds.y1 - step->level_bounds.y0 == production::kTileProducerHeight);
+}
+
 TEST_CASE("tile producer output equals direct painter-ordered viewport replay") {
   Fixture fixture;
   const std::array first{

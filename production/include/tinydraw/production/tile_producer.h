@@ -63,7 +63,6 @@ class TileProducer {
   struct GroupPublication {
     PixelRect level_bounds{};
     std::size_t tiles_published = 0;
-    bool complete = false;
   };
 
   struct SegmentBatch {
@@ -101,10 +100,10 @@ class TileProducer {
                                              std::size_t& samples_consumed,
                                              std::size_t& raster_work_consumed);
   [[nodiscard]] std::optional<TileProductionStep> render_active_batch();
-  [[nodiscard]] std::optional<GroupPublication> publish_next_group_tile(PixelRect rendered_bounds,
-                                                                        PixelRect visible_bounds,
-                                                                        ZoomLevel zoom,
-                                                                        DocumentRevision revision);
+  [[nodiscard]] std::optional<GroupPublication> publish_group(PixelRect rendered_bounds,
+                                                              PixelRect visible_bounds,
+                                                              ZoomLevel zoom,
+                                                              DocumentRevision revision);
   OperationLog& log_;
   MaterializedCanvas& canvas_;
   TileProducerWorkspace workspace_;

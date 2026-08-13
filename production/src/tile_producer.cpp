@@ -327,19 +327,14 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
     // Avoid rescanning PSRAM slot metadata on every resumable batch.
     return result;
   }
-  const auto published =
-      publish_next_group_tile(active_group_.bounds, active_group_.view.level_pixels,
-                              active_group_.view.zoom, active_group_.revision);
-  if (!published.has_value()) {
+  const auto published = publish_group(active_group_.bounds, active_group_.view.level_pixels,
+                                       active_group_.view.zoom, active_group_.revision);
+  if (!published.has_value() || published->tiles_published == 0U) {
     active_group_ = {};
     return std::nullopt;
   }
   result.level_bounds = published->level_bounds;
   result.tiles_published = published->tiles_published;
-  if (!published->complete) {
-    result.visible_tiles_remaining = visible_tiles_remaining(active_group_.view).value_or(0U);
-    return result;
-  }
   const ViewRequest view = active_group_.view;
   active_group_ = {};
   const auto remaining = visible_tiles_remaining(view);
@@ -351,7 +346,7 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
   return result;
 }
 
-std::optional<TileProducer::GroupPublication> TileProducer::publish_next_group_tile(
+std::optional<TileProducer::GroupPublication> TileProducer::publish_group(
     PixelRect rendered_bounds, PixelRect visible_bounds, ZoomLevel zoom,
     DocumentRevision revision) {
   const int first_column = std::max(rendered_bounds.x0, visible_bounds.x0) / kTileWidth;
@@ -386,12 +381,17 @@ std::optional<TileProducer::GroupPublication> TileProducer::publish_next_group_t
                .has_value()) {
         return std::nullopt;
       }
-      publication.level_bounds = tile_bounds;
-      publication.tiles_published = 1U;
-      return publication;
+      if (publication.tiles_published == 0U) {
+        publication.level_bounds = tile_bounds;
+      } else {
+        publication.level_bounds.x0 = std::min(publication.level_bounds.x0, tile_bounds.x0);
+        publication.level_bounds.y0 = std::min(publication.level_bounds.y0, tile_bounds.y0);
+        publication.level_bounds.x1 = std::max(publication.level_bounds.x1, tile_bounds.x1);
+        publication.level_bounds.y1 = std::max(publication.level_bounds.y1, tile_bounds.y1);
+      }
+      ++publication.tiles_published;
     }
   }
-  publication.complete = true;
   return publication;
 }
 
