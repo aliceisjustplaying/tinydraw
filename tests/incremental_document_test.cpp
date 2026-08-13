@@ -202,6 +202,75 @@ TEST_CASE("append keeps unaffected cached zoom tiles and invalidates bounded aff
   }
 }
 
+TEST_CASE("bounded append scratch prioritizes every affected tile in the visible zoom") {
+  constexpr std::size_t kCachedTileCount = 4U * production::kMaximumVisibleTiles;
+  constexpr std::size_t kVisibleTileCount = production::kMaximumVisibleTiles;
+  auto records = std::make_unique<std::array<production::OperationRecord, 1>>();
+  auto samples = std::make_unique<std::array<production::CompactOperationSample, 2>>();
+  auto overview = std::make_unique<std::array<std::uint16_t, production::kOverviewPixels>>();
+  auto overview_scratch =
+      std::make_unique<std::array<std::uint16_t, production::kOverviewPixels>>();
+  auto slots =
+      std::make_unique<std::array<production::MaterializedSlotStorage, kCachedTileCount>>();
+  auto tile_pool =
+      std::make_unique<std::array<std::uint16_t, kCachedTileCount * production::kTilePixels>>();
+  auto tile_scratch =
+      std::make_unique<std::array<std::uint16_t, kVisibleTileCount * production::kTilePixels>>();
+  auto publications =
+      std::make_unique<std::array<production::TileRevisionPublication, kVisibleTileCount>>();
+  auto affected = std::make_unique<std::array<production::TileKey, kCachedTileCount>>();
+  production::OperationLog log(*records, *samples);
+  production::MaterializedCanvas canvas(*overview, *slots, *tile_pool);
+  overview->fill(0xFFFFU);
+  REQUIRE(canvas.publish_overview({0}, *overview));
+  std::array<std::uint16_t, production::kTilePixels> blank_tile{};
+  blank_tile.fill(0xFFFFU);
+  constexpr std::array zooms{
+      production::ZoomLevel::k50Percent,
+      production::ZoomLevel::k100Percent,
+      production::ZoomLevel::k200Percent,
+      production::ZoomLevel::k400Percent,
+  };
+  for (const auto zoom : zooms) {
+    for (std::uint16_t row = 0; row < 8; ++row) {
+      for (std::uint16_t column = 0; column < 7; ++column) {
+        REQUIRE(canvas.publish_tile({zoom, column, row}, {0},
+                                    production::MaterializationQuality::kImmediate, blank_tile));
+      }
+    }
+  }
+  const std::array world_spanning_stroke{
+      production::CompactOperationSample{.x_quarter = 0, .y_quarter = 0, .radius_256 = 1'280},
+      production::CompactOperationSample{.x_quarter = production::kWorldWidth * 4,
+                                         .y_quarter = production::kWorldHeight * 4,
+                                         .radius_256 = 1'280},
+  };
+  const production::ViewRequest visible{
+      .zoom = production::ZoomLevel::k400Percent,
+      .level_pixels = {63, 63, 63 + production::kOverviewWidth, 63 + production::kOverviewHeight},
+  };
+
+  const auto result = production::append_incrementally(
+      log, canvas, {.color = 0x001FU, .samples = world_spanning_stroke},
+      {.overview_scratch = *overview_scratch,
+       .tile_scratch = *tile_scratch,
+       .publications = *publications,
+       .affected_keys = *affected},
+      {.priority_view = visible});
+  REQUIRE(result.has_value());
+  CHECK(result->affected_resident_tiles == kCachedTileCount);
+  CHECK(result->published_tiles == kVisibleTileCount);
+  CHECK(result->fallback_tiles == kCachedTileCount - kVisibleTileCount);
+  for (std::uint16_t row = 0; row < 8; ++row) {
+    for (std::uint16_t column = 0; column < 7; ++column) {
+      const auto source = canvas.lookup({production::ZoomLevel::k400Percent, column, row});
+      REQUIRE(source.has_value());
+      CHECK(source->kind == production::SourceKind::kTileSlot);
+      CHECK(source->identity.revision == production::DocumentRevision{1});
+    }
+  }
+}
+
 TEST_CASE("bounded overview publication matches full rendering at worst thin-stroke alignment") {
   Fixture fixture;
   fixture.overview.fill(0xFFFFU);

@@ -31,6 +31,7 @@ struct LivePresentationTiming {
   std::int64_t first_complete_us = 0;
   std::int64_t complete_us = 0;
   std::size_t tile_pixels = 0;
+  std::size_t overview_pixels = 0;
   std::size_t fallback_pixels = 0;
   std::size_t resident_tiles = 0;
   std::size_t fallback_tiles = 0;

@@ -208,23 +208,51 @@ TEST_CASE("cache retains every zoom viewport across a disjoint pan fill") {
     }
   }
 
-  // Consume the remaining 40 slots, then prove the next publication evicts
+  // Consume the remaining slots, then prove the next publication evicts
   // exactly the least-recently-used entry rather than an arbitrary viewport.
   // The disjoint destination predates the mark_used calls above, so its first
   // tile is now the oldest resident entry.
-  for (std::uint16_t column = 0; column < 40; ++column) {
+  constexpr std::size_t kRetainedFootprints = 5U;
+  constexpr std::size_t kAdditionalSlots =
+      production::kTileSlotCount - kRetainedFootprints * production::kMaximumVisibleTiles;
+  for (std::uint16_t column = 0; column < kAdditionalSlots; ++column) {
     REQUIRE(canvas.publish_tile({production::ZoomLevel::k400Percent, column, 16}, {0},
                                 production::MaterializationQuality::kImmediate, tile));
   }
   const production::TileKey oldest{production::ZoomLevel::k400Percent, 8, 8};
   CHECK(canvas.lookup(oldest)->kind == production::SourceKind::kTileSlot);
-  REQUIRE(canvas.publish_tile({production::ZoomLevel::k400Percent, 40, 16}, {0},
-                              production::MaterializationQuality::kImmediate, tile));
+  REQUIRE(canvas.publish_tile(
+      {production::ZoomLevel::k400Percent, static_cast<std::uint16_t>(kAdditionalSlots), 16}, {0},
+      production::MaterializationQuality::kImmediate, tile));
   CHECK(canvas.lookup(oldest)->kind == production::SourceKind::kOverview);
   CHECK(canvas.lookup({production::ZoomLevel::k50Percent, 0, 0})->kind ==
         production::SourceKind::kTileSlot);
-  CHECK(canvas.lookup({production::ZoomLevel::k400Percent, 40, 16})->kind ==
-        production::SourceKind::kTileSlot);
+  CHECK(canvas
+            .lookup({production::ZoomLevel::k400Percent,
+                     static_cast<std::uint16_t>(kAdditionalSlots), 16})
+            ->kind == production::SourceKind::kTileSlot);
+}
+
+TEST_CASE("composing a tile refreshes its LRU recency") {
+  std::array<std::uint16_t, production::kOverviewPixels> overview{};
+  std::array<production::MaterializedSlotStorage, 2> slots{};
+  std::array<std::uint16_t, slots.size() * production::kTilePixels> tile_storage{};
+  std::array<std::uint16_t, production::kTilePixels> tile{};
+  production::MaterializedCanvas canvas(overview, slots, tile_storage);
+  REQUIRE(canvas.publish_overview({0}, overview));
+  const production::TileKey first{production::ZoomLevel::k100Percent, 0, 0};
+  const production::TileKey second{production::ZoomLevel::k100Percent, 1, 0};
+  const production::TileKey third{production::ZoomLevel::k100Percent, 2, 0};
+  REQUIRE(canvas.publish_tile(first, {0}, production::MaterializationQuality::kImmediate, tile));
+  REQUIRE(canvas.publish_tile(second, {0}, production::MaterializationQuality::kImmediate, tile));
+  std::array<std::uint16_t, production::kTilePixels> composed{};
+  REQUIRE(canvas.compose_view(
+      {.zoom = production::ZoomLevel::k100Percent, .level_pixels = {0, 0, 64, 64}}, composed));
+
+  REQUIRE(canvas.publish_tile(third, {0}, production::MaterializationQuality::kImmediate, tile));
+  CHECK(canvas.lookup(first)->kind == production::SourceKind::kTileSlot);
+  CHECK(canvas.lookup(second)->kind == production::SourceKind::kOverview);
+  CHECK(canvas.lookup(third)->kind == production::SourceKind::kTileSlot);
 }
 
 TEST_CASE("same-revision publication cannot downgrade immediate settled or exact quality") {
@@ -328,7 +356,9 @@ TEST_CASE("25 percent view copies the complete overview directly") {
   const auto stats = canvas.compose_view(
       {.zoom = production::ZoomLevel::k25Percent, .level_pixels = {20, 10, 36, 18}}, destination);
   REQUIRE(stats.has_value());
-  CHECK(stats->fallback_pixels == destination.size());
+  CHECK(stats->overview_pixels == destination.size());
+  CHECK(stats->fallback_pixels == 0U);
+  CHECK(stats->fallback_tiles == 0U);
   CHECK(destination.front() == 0x4567U);
 }
 

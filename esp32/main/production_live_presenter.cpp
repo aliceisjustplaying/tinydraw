@@ -80,6 +80,7 @@ LivePresentationTiming ProductionLivePresenter::refresh(const ToolbarState& tool
   auto timing = present({0, 0, production::kOverviewWidth, production::kOverviewHeight}, event_us,
                         esp_timer_get_time() - compose_started);
   timing.tile_pixels = stats->tile_pixels;
+  timing.overview_pixels = stats->overview_pixels;
   timing.fallback_pixels = stats->fallback_pixels;
   timing.resident_tiles = stats->immediate_tiles + stats->settled_tiles + stats->exact_tiles;
   timing.fallback_tiles = stats->fallback_tiles;
@@ -146,6 +147,7 @@ LivePresentationTiming ProductionLivePresenter::compose_and_present(
   auto timing = present_pixels(panel_bounds, destination, width, event_us,
                                esp_timer_get_time() - compose_started);
   timing.tile_pixels = stats->tile_pixels;
+  timing.overview_pixels = stats->overview_pixels;
   timing.fallback_pixels = stats->fallback_pixels;
   timing.resident_tiles = stats->immediate_tiles + stats->settled_tiles + stats->exact_tiles;
   timing.fallback_tiles = stats->fallback_tiles;

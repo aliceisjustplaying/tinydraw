@@ -128,6 +128,7 @@ struct ViewRequest {
 struct ViewCompositionStats {
   DocumentRevision revision{};
   std::size_t tile_pixels = 0;
+  std::size_t overview_pixels = 0;
   std::size_t fallback_pixels = 0;
   std::size_t immediate_tiles = 0;
   std::size_t settled_tiles = 0;

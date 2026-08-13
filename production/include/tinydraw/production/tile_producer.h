@@ -35,6 +35,8 @@ struct TileProductionStep {
   std::size_t operations_scanned = 0;
   std::size_t operations_rendered = 0;
   std::size_t tiles_published = 0;
+  // Valid only after publication (`tiles_published != 0`) or on a complete
+  // result. Resumable replay-only slices leave this at zero.
   std::size_t visible_tiles_remaining = 0;
   bool complete = false;
 };
