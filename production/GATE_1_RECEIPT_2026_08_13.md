@@ -20,8 +20,9 @@ This is not a ship-quality rendering pass. Hard-edged tiles are provisional
 
 Evidence logs: [`hardware-receipts/gate1-tile-producer.log`](hardware-receipts/gate1-tile-producer.log),
 [`hardware-receipts/gate1-p95-20-runs.log`](hardware-receipts/gate1-p95-20-runs.log),
-[`hardware-receipts/gate1-pan-p95-20-runs.log`](hardware-receipts/gate1-pan-p95-20-runs.log), and
-[`hardware-receipts/gate1-fable-fix.log`](hardware-receipts/gate1-fable-fix.log).
+[`hardware-receipts/gate1-pan-p95-20-runs.log`](hardware-receipts/gate1-pan-p95-20-runs.log),
+[`hardware-receipts/gate1-fable-fix.log`](hardware-receipts/gate1-fable-fix.log), and
+[`hardware-receipts/gate1-clean-head-p95-20-runs.log`](hardware-receipts/gate1-clean-head-p95-20-runs.log).
 
 ### Deterministic synthetic regression workload
 
@@ -47,10 +48,15 @@ The first 400% capture exposed a 35.684 ms replay slice caused by a 198-sample
 stroke. The final producer bounds work by operation count, sample segments, and
 a conservative projected raster-area budget. Splitting can count one source
 operation in multiple slices, hence “sliced applications” rather than distinct
-operations. After review fixes, viewport-only publication (42 rather than 48 tiles) measured
-437.934 ms/478.385 ms at 100% for the synthetic/realistic workloads and
-438.758 ms at 400% for the realistic workload in the first single hardware
-recapture. A clean-HEAD p95 recapture supersedes these numbers below.
+operations. The clean-HEAD post-review 20-run recapture with viewport-only publication (42
+rather than 48 tiles) measured:
+
+| Workload | Zoom | Cold complete visible fill p95 | Maximum producer unit | Result |
+|---|---:|---:|---:|---|
+| synthetic | 100% | 441.424 ms | 6.003 ms | PASS |
+| synthetic | 400% | 348.615 ms | 28.335 ms | PASS |
+| seed-7 realistic | 100% | 480.864 ms | 4.695 ms | PASS |
+| seed-7 realistic | 400% | 437.742 ms | 29.312 ms | PASS |
 
 ### Four-sample SSAA probe
 
@@ -86,12 +92,14 @@ then committed an eight-sample fast zig-zag at the actual XL world radius for
 400%. The commit invalidated active producer work; stale work was rejected and
 restarted.
 
-- pre-preview producer poll gap: **2.010 ms**
-- event-to-first-submit: **4.092 ms**
-- event-to-first-transfer-complete: **4.268 ms**
-- maximum replay-compute slice: **29.311 ms**
-- maximum producer/display unit: **29.311 ms**
-- complete restarted fill: **473.983 ms**
+Twenty clean-HEAD runs measured:
+
+- producer poll-gap p95: **0.667 ms**
+- event-to-first-submit p95: **2.758 ms**
+- event-to-first-transfer-complete p95: **2.935 ms**
+- maximum replay-compute unit: **29.312 ms**
+- maximum producer/display unit: **29.312 ms**
+- complete restarted fill p95: **472.984 ms**
 - stale publication accepted: **no**
 - result: **PASS**
 
