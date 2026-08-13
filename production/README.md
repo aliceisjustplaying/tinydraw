@@ -99,18 +99,17 @@ allocation receipt, not proof that the eventual encoders and renderers fit the
 reserved capacities or meet interaction gates.
 
 The current empty-heap ESP32-S3 allocation receipt is
-[`hardware-receipts/756e080-memory-layout.log`](hardware-receipts/756e080-memory-layout.log):
+[`hardware-receipts/636b9c7-memory-layout-320.log`](hardware-receipts/636b9c7-memory-layout-320.log):
 
 - both the live and next-revision overviews are explicitly budgeted;
-- the original `756e080` receipt below measured the earlier 128-slot plan;
-  the current 320-slot plan is **4,948,576 bytes** and requires a fresh memory
-  receipt before Task #53 can be considered re-closed;
-- largest contiguous block after the plan: 4,980,736 bytes;
+- the 320-slot plan allocated all **4,948,576 bytes**;
+- largest contiguous block after the plan: 3,342,336 bytes;
 - a separate 1,572,864-byte reserve allocation succeeded;
-- free/largest after holding both plan and reserve: 3,412,544 / 3,407,872 bytes.
+- free/largest after holding both plan and reserve: 1,832,000 / 1,802,240 bytes.
 
-The earlier pre-publication-buffer receipt remains archived as
-[`hardware-receipts/1f91ed0-memory-layout.log`](hardware-receipts/1f91ed0-memory-layout.log).
+The earlier 128-slot and pre-publication-buffer receipts remain archived as
+[`hardware-receipts/756e080-memory-layout.log`](hardware-receipts/756e080-memory-layout.log)
+and [`hardware-receipts/1f91ed0-memory-layout.log`](hardware-receipts/1f91ed0-memory-layout.log).
 
 This proves only that the provisional external-memory slabs and reserve are
 simultaneously allocatable on an otherwise empty 8 MiB PSRAM heap. It does not
