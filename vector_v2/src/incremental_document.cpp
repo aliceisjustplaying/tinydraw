@@ -127,7 +127,8 @@ std::optional<IncrementalAppendResult> append_incrementally(
   const bool overview_ready = prepare_overview(canvas, operation, stored.world_bounds,
                                                workspace.overview_scratch, overview_publication);
   const auto resident_count = canvas.materialized_tiles_intersecting(
-      stored.world_bounds, workspace.affected_keys, options.priority_view);
+      stored.world_bounds, workspace.affected_keys, options.priority_view,
+      options.publication_scope == IncrementalPublicationScope::kPriorityView);
   if (!overview_ready || !resident_count.has_value()) {
     prepared->cancel();
     return std::nullopt;
@@ -154,6 +155,7 @@ std::optional<IncrementalAppendResult> append_incrementally(
   }
   prepared->publish();
   return IncrementalAppendResult{.identity = identity,
+                                 .affected_world_bounds = stored.world_bounds,
                                  .affected_resident_tiles = *resident_count,
                                  .published_tiles = publication_count,
                                  .fallback_tiles = *resident_count - publication_count};

@@ -264,7 +264,8 @@ class MaterializedCanvas {
   // a partial list when output is too small or either bounds set is invalid.
   [[nodiscard]] std::optional<std::size_t> materialized_tiles_intersecting(
       PixelRect world_bounds, std::span<TileKey> output,
-      std::optional<ViewRequest> priority_view = std::nullopt) const;
+      std::optional<ViewRequest> priority_view = std::nullopt,
+      bool priority_view_only = false) const;
   // Copies one current resident tile without exposing mutable pool storage.
   [[nodiscard]] bool copy_resident_tile(TileKey key, std::span<std::uint16_t> destination) const;
   // Workspace used to prepare a next revision must not alias live canvas pixels.

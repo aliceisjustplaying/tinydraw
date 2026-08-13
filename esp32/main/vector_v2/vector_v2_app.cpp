@@ -58,6 +58,7 @@ struct LiftBaselineTiming {
   std::int64_t builder_finish_us = 0;
   std::int64_t append_us = 0;
   std::int64_t refresh_wall_us = 0;
+  vector_v2::PixelRect refresh_level_bounds{};
   std::int64_t stroke_logging_us = 0;
   std::int64_t post_lift_fill_block_us = 0;
   LivePresentationTiming refresh{};
@@ -235,15 +236,17 @@ void print_lift_baseline(const LiftBaselineTiming& timing, std::int64_t poll_sta
   const std::int64_t detected_to_poll_us = poll_started_us - timing.detected_us;
   std::printf(
       "TINYDRAW_LIFT_BASELINE id=%lu finish_preview_us=%lld builder_finish_us=%lld "
-      "append_us=%lld refresh_wall_us=%lld refresh_compose_us=%lld "
+      "append_us=%lld refresh_wall_us=%lld refresh_x0=%d refresh_y0=%d "
+      "refresh_x1=%d refresh_y1=%d refresh_compose_us=%lld "
       "refresh_first_submit_us=%lld refresh_first_complete_us=%lld "
       "refresh_transfer_wait_us=%lld stroke_logging_us=%lld post_lift_fill_block_us=%lld "
       "detected_to_poll_start_us=%lld detected_to_poll_complete_us=%lld poll_read_us=%lld "
       "unattributed_tail_us=%lld reports_dropped=%lu committed=%u refresh=%u overflow=%u\n",
       static_cast<unsigned long>(timing.id), static_cast<long long>(timing.finish_preview_us),
       static_cast<long long>(timing.builder_finish_us), static_cast<long long>(timing.append_us),
-      static_cast<long long>(timing.refresh_wall_us),
-      static_cast<long long>(timing.refresh.compose_us),
+      static_cast<long long>(timing.refresh_wall_us), timing.refresh_level_bounds.x0,
+      timing.refresh_level_bounds.y0, timing.refresh_level_bounds.x1,
+      timing.refresh_level_bounds.y1, static_cast<long long>(timing.refresh.compose_us),
       static_cast<long long>(timing.refresh.first_submit_us),
       static_cast<long long>(timing.refresh.first_complete_us),
       static_cast<long long>(timing.refresh.complete_us),
@@ -626,20 +629,29 @@ void run_vector_v2_app() {
                                presenter.level_x() + vector_v2::kOverviewWidth,
                                presenter.level_y() + vector_v2::kOverviewHeight},
           };
-          measured_lift.committed =
-              vector_v2::append_incrementally(
-                  log, canvas, *append, workspace,
-                  {.priority_view = presenter.zoom() == ZoomLevel::k25Percent
-                                        ? std::optional<vector_v2::ViewRequest>{}
-                                        : std::optional{priority_view}})
-                  .has_value();
+          const auto committed = vector_v2::append_incrementally(
+              log, canvas, *append, workspace,
+              {.priority_view = presenter.zoom() == ZoomLevel::k25Percent
+                                    ? std::optional<vector_v2::ViewRequest>{}
+                                    : std::optional{priority_view},
+               .publication_scope = presenter.zoom() == ZoomLevel::k25Percent
+                                        ? vector_v2::IncrementalPublicationScope::kAllMaterialized
+                                        : vector_v2::IncrementalPublicationScope::kPriorityView});
+          measured_lift.committed = committed.has_value();
+          if (committed.has_value()) {
+            measured_lift.refresh_level_bounds = vector_v2::operation_level_bounds(
+                committed->affected_world_bounds, presenter.zoom());
+          }
           measured_lift.append_us = esp_timer_get_time() - append_started;
         }
         measured_lift.overflowed = builder.overflowed();
         builder.cancel();
         ribbon.reset();
         const std::int64_t refresh_started = esp_timer_get_time();
-        measured_lift.refresh = presenter.refresh(toolbar, finished_us);
+        measured_lift.refresh =
+            measured_lift.committed
+                ? presenter.refresh_region(measured_lift.refresh_level_bounds, finished_us)
+                : LivePresentationTiming{};
         measured_lift.refresh_wall_us = esp_timer_get_time() - refresh_started;
         const std::int64_t logging_started = esp_timer_get_time();
         print_stroke(log, canvas, live_metrics, measured_lift.append_us, measured_lift.refresh,
@@ -660,7 +672,9 @@ void run_vector_v2_app() {
     const bool fill_view_available = presenter.zoom() != ZoomLevel::k25Percent &&
                                      !toolbar.tools_open && !toolbar.colors_open &&
                                      !toolbar.sizes_open && !toolbar.confirm_new;
-    const bool fill_allowed = !pressed && fill_view_available;
+    // The commit tick already performed bounded immediate publication and its
+    // display update. Defer cold replay until input has had another poll.
+    const bool fill_allowed = !pressed && fill_view_available && !lift_timing.pending;
     if (!fill_view_available && fill_measurement_active) {
       print_fill_baseline("paused", fill_zoom, fill_x, fill_y, fill_revision, fill_timing);
       fill_timing.reset();

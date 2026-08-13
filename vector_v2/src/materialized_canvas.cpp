@@ -623,15 +623,20 @@ std::optional<std::size_t> MaterializedCanvas::append_visible_uniform_keys(
 }
 
 std::optional<std::size_t> MaterializedCanvas::materialized_tiles_intersecting(
-    PixelRect world_bounds, std::span<TileKey> output,
-    std::optional<ViewRequest> priority_view) const {
+    PixelRect world_bounds, std::span<TileKey> output, std::optional<ViewRequest> priority_view,
+    bool priority_view_only) const {
   if (!ready() || !valid_world_bounds(world_bounds) ||
-      !accepts_external_workspace(std::as_bytes(output))) {
+      !accepts_external_workspace(std::as_bytes(output)) ||
+      (priority_view_only && !priority_view.has_value())) {
     return std::nullopt;
   }
   std::size_t written = 0;
   for (const MaterializedSlotStorage& slot : slots_) {
-    if (!slot.occupied_ || !rectangles_intersect(tile_world_bounds(slot.key_), world_bounds)) {
+    const bool in_priority =
+        priority_view.has_value() && slot.key_.zoom == priority_view->zoom &&
+        rectangles_intersect(tile_pixel_bounds(slot.key_), priority_view->level_pixels);
+    if (!slot.occupied_ || !rectangles_intersect(tile_world_bounds(slot.key_), world_bounds) ||
+        (priority_view_only && !in_priority)) {
       continue;
     }
     if (written == output.size()) {

@@ -323,6 +323,66 @@ TEST_CASE("bounded append scratch prioritizes every affected tile in the visible
   }
 }
 
+TEST_CASE("priority-view append bounds immediate publication to the active zoom") {
+  constexpr std::size_t kCachedTileCount = 4U * vector_v2::kMaximumVisibleTiles;
+  constexpr std::size_t kVisibleTileCount = vector_v2::kMaximumVisibleTiles;
+  auto records = std::make_unique<std::array<vector_v2::OperationRecord, 1>>();
+  auto samples = std::make_unique<std::array<vector_v2::CompactOperationSample, 2>>();
+  auto overview = std::make_unique<std::array<std::uint16_t, vector_v2::kOverviewPixels>>();
+  auto overview_scratch = std::make_unique<std::array<std::uint16_t, vector_v2::kOverviewPixels>>();
+  auto slots = std::make_unique<std::array<vector_v2::MaterializedSlotStorage, kCachedTileCount>>();
+  auto tile_pool =
+      std::make_unique<std::array<std::uint16_t, kCachedTileCount * vector_v2::kTilePixels>>();
+  auto tile_scratch =
+      std::make_unique<std::array<std::uint16_t, kVisibleTileCount * vector_v2::kTilePixels>>();
+  auto publications =
+      std::make_unique<std::array<vector_v2::TileRevisionPublication, kVisibleTileCount>>();
+  auto affected = std::make_unique<std::array<vector_v2::TileKey, kCachedTileCount>>();
+  vector_v2::OperationLog log(*records, *samples);
+  vector_v2::MaterializedCanvas canvas(*overview, *slots, *tile_pool);
+  overview->fill(0xFFFFU);
+  REQUIRE(canvas.publish_overview({0}, *overview));
+  std::array<std::uint16_t, vector_v2::kTilePixels> blank_tile{};
+  blank_tile.fill(0xFFFFU);
+  constexpr std::array zooms{
+      vector_v2::ZoomLevel::k50Percent,
+      vector_v2::ZoomLevel::k100Percent,
+      vector_v2::ZoomLevel::k200Percent,
+      vector_v2::ZoomLevel::k400Percent,
+  };
+  for (const auto zoom : zooms) {
+    REQUIRE(canvas.publish_tile({zoom, 0, 0}, {0}, vector_v2::MaterializationQuality::kImmediate,
+                                blank_tile));
+  }
+  const std::array stroke{
+      vector_v2::CompactOperationSample{.x_quarter = 20, .y_quarter = 20, .radius_256 = 1'280},
+      vector_v2::CompactOperationSample{.x_quarter = 80, .y_quarter = 80, .radius_256 = 1'280},
+  };
+  const vector_v2::ViewRequest visible{
+      .zoom = vector_v2::ZoomLevel::k400Percent,
+      .level_pixels = {0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
+  };
+
+  const auto result = vector_v2::append_incrementally(
+      log, canvas, {.color = 0x001FU, .samples = stroke},
+      {.overview_scratch = *overview_scratch,
+       .tile_scratch = *tile_scratch,
+       .publications = *publications,
+       .affected_keys = *affected},
+      {.priority_view = visible,
+       .publication_scope = vector_v2::IncrementalPublicationScope::kPriorityView});
+
+  REQUIRE(result.has_value());
+  CHECK(result->affected_resident_tiles == 1U);
+  CHECK(result->published_tiles == 1U);
+  CHECK(result->fallback_tiles == 0U);
+  CHECK(canvas.lookup({vector_v2::ZoomLevel::k400Percent, 0, 0})->kind ==
+        vector_v2::SourceKind::kTileSlot);
+  for (const auto zoom : std::span(zooms).first(3)) {
+    CHECK(canvas.lookup({zoom, 0, 0})->kind == vector_v2::SourceKind::kOverview);
+  }
+}
+
 TEST_CASE("bounded overview publication matches full rendering at worst thin-stroke alignment") {
   Fixture fixture;
   fixture.overview.fill(0xFFFFU);
