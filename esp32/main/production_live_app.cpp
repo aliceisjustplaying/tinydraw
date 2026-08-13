@@ -596,28 +596,35 @@ bool run_cache_retention_gate(ProductionLivePresenter& presenter,
   }
 
   passed = fill(ZoomLevel::k400Percent, kDisjointOrigin, kDisjointOrigin) && passed;
-  const production::ViewRequest origin{
-      .zoom = ZoomLevel::k400Percent,
-      .level_pixels = {kUnalignedOrigin, kUnalignedOrigin,
-                       kUnalignedOrigin + production::kOverviewWidth,
-                       kUnalignedOrigin + production::kOverviewHeight},
-  };
-  const auto origin_remaining = producer.visible_tiles_remaining(origin);
-  const auto round_trip = presenter.set_view(ZoomLevel::k400Percent, kUnalignedOrigin,
-                                             kUnalignedOrigin, toolbar, now_us());
-  const bool round_trip_hit =
-      origin_remaining == 0U && round_trip.passed && round_trip.fallback_pixels == 0U;
-  std::printf(
-      "TINYDRAW_GATE1_CACHE_ROUND_TRIP zoom=400 from_x=63 from_y=63 via_x=575 via_y=575 "
-      "remaining=%lu tile_pixels=%lu fallback_pixels=%lu compose_us=%lld complete_us=%lld hit=%u "
-      "pass=%u slots=%lu revision=%lu\n",
-      static_cast<unsigned long>(origin_remaining.value_or(999U)),
-      static_cast<unsigned long>(round_trip.tile_pixels),
-      static_cast<unsigned long>(round_trip.fallback_pixels),
-      static_cast<long long>(round_trip.compose_us), static_cast<long long>(round_trip.complete_us),
-      round_trip_hit, passed && round_trip_hit, static_cast<unsigned long>(canvas.slot_capacity()),
-      static_cast<unsigned long>(canvas.current_revision().value));
-  return passed && round_trip_hit;
+  bool every_round_trip_hit = true;
+  for (const ZoomLevel zoom : zooms) {
+    const production::ViewRequest origin{
+        .zoom = zoom,
+        .level_pixels = {kUnalignedOrigin, kUnalignedOrigin,
+                         kUnalignedOrigin + production::kOverviewWidth,
+                         kUnalignedOrigin + production::kOverviewHeight},
+    };
+    const auto origin_remaining = producer.visible_tiles_remaining(origin);
+    const auto round_trip =
+        presenter.set_view(zoom, kUnalignedOrigin, kUnalignedOrigin, toolbar, now_us());
+    const bool hit =
+        origin_remaining == 0U && round_trip.passed && round_trip.fallback_pixels == 0U;
+    std::printf(
+        "TINYDRAW_GATE1_CACHE_ROUND_TRIP zoom=%s from_x=63 from_y=63 via_x=575 via_y=575 "
+        "remaining=%lu tile_pixels=%lu fallback_pixels=%lu compose_us=%lld complete_us=%lld "
+        "hit=%u\n",
+        zoom_name(zoom), static_cast<unsigned long>(origin_remaining.value_or(999U)),
+        static_cast<unsigned long>(round_trip.tile_pixels),
+        static_cast<unsigned long>(round_trip.fallback_pixels),
+        static_cast<long long>(round_trip.compose_us),
+        static_cast<long long>(round_trip.complete_us), hit);
+    every_round_trip_hit = hit && every_round_trip_hit;
+  }
+  passed = every_round_trip_hit && passed;
+  std::printf("TINYDRAW_GATE1_CACHE_RETENTION pass=%u slots=%lu revision=%lu\n", passed,
+              static_cast<unsigned long>(canvas.slot_capacity()),
+              static_cast<unsigned long>(canvas.current_revision().value));
+  return passed;
 }
 
 bool append_stress_document(OperationLog& log, MaterializedCanvas& canvas,
