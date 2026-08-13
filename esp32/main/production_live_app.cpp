@@ -48,7 +48,7 @@ constexpr std::uint32_t kExternalCaps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
 constexpr gpio_num_t kModeButton = GPIO_NUM_0;
 constexpr int kLiftReads = 2;
 constexpr std::size_t kInputSampleCapacity = 1'024;
-constexpr std::size_t kWorkspaceTileCapacity = 16;
+constexpr std::size_t kWorkspaceTileCapacity = production::kMaximumVisibleTiles;
 constexpr std::uint32_t kStressOperations = 1'000;
 constexpr std::uint32_t kStressSamplesPerOperation = 20;
 constexpr std::size_t kRealisticStrokeCapacity = 1'000;
@@ -101,6 +101,8 @@ struct AppStorage {
   OperationRecord* records = nullptr;
   CompactOperationSample* samples = nullptr;
   CompactOperationSample* input_samples = nullptr;
+  TileRevisionPublication* publications = nullptr;
+  TileKey* affected_keys = nullptr;
 
   [[nodiscard]] bool allocate() {
     overview = allocate_array<std::uint16_t>(production::kOverviewPixels);
@@ -119,11 +121,14 @@ struct AppStorage {
     records = allocate_array<OperationRecord>(production::kOperationCapacity);
     samples = allocate_array<CompactOperationSample>(production::kOperationSampleCapacity);
     input_samples = allocate_array<CompactOperationSample>(kInputSampleCapacity);
+    publications = allocate_array<TileRevisionPublication>(kWorkspaceTileCapacity);
+    affected_keys = allocate_array<TileKey>(production::kTileSlotCount);
     if (overview == nullptr || snapshot == nullptr || frame == nullptr || tile_pixels == nullptr ||
         overview_scratch == nullptr || tile_scratch == nullptr || region_scratch == nullptr ||
         producer_supertask == nullptr || producer_packed == nullptr || slots == nullptr ||
         realistic_strokes == nullptr || realistic_samples == nullptr || records == nullptr ||
-        samples == nullptr || input_samples == nullptr) {
+        samples == nullptr || input_samples == nullptr || publications == nullptr ||
+        affected_keys == nullptr) {
       return false;
     }
     for (std::size_t index = 0; index < production::kTileSlotCount; ++index) {
@@ -589,14 +594,12 @@ void run_production_live_app() {
       log, canvas,
       {.supertask_pixels = std::span(storage.producer_supertask, production::kTileProducerPixels),
        .packed_tile_pixels = std::span(storage.producer_packed, production::kTilePixels)});
-  std::array<TileRevisionPublication, kWorkspaceTileCapacity> publications{};
-  std::array<TileKey, production::kTileSlotCount> affected_keys{};
   const IncrementalDocumentWorkspace workspace{
       .overview_scratch = std::span(storage.overview_scratch, production::kOverviewPixels),
       .tile_scratch =
           std::span(storage.tile_scratch, kWorkspaceTileCapacity * production::kTilePixels),
-      .publications = publications,
-      .affected_keys = affected_keys,
+      .publications = std::span(storage.publications, kWorkspaceTileCapacity),
+      .affected_keys = std::span(storage.affected_keys, production::kTileSlotCount),
   };
   if (!canvas.publish_overview({0}, std::span(storage.snapshot, production::kOverviewPixels)) ||
       !log.ready() || !presenter.ready() || !touch.ready() || !builder.ready() ||
@@ -675,7 +678,9 @@ void run_production_live_app() {
           kRealisticSampleCapacity * sizeof(StrokeSample) +
           production::kOperationCapacity * sizeof(OperationRecord) +
           production::kOperationSampleCapacity * sizeof(CompactOperationSample) +
-          kInputSampleCapacity * sizeof(CompactOperationSample)),
+          kInputSampleCapacity * sizeof(CompactOperationSample) +
+          kWorkspaceTileCapacity * sizeof(TileRevisionPublication) +
+          production::kTileSlotCount * sizeof(TileKey)),
       static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)),
       static_cast<unsigned long>(heap_caps_get_largest_free_block(kExternalCaps)));
   std::fflush(stdout);
@@ -726,7 +731,7 @@ void run_production_live_app() {
       button_down = false;
       if (!button_long_handled) {
         const ZoomLevel zoom = next_test_zoom(presenter.zoom());
-        const auto timing = presenter.set_zoom(zoom, toolbar, loop_us);
+        const auto timing = presenter.set_view(zoom, 0, 0, toolbar, loop_us);
         print_presentation("zoom", presenter, timing);
       }
     }

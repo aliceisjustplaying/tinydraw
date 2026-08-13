@@ -20,6 +20,9 @@ inline constexpr std::size_t kOverviewBytes = kOverviewPixels * sizeof(std::uint
 inline constexpr std::size_t kTilePixels =
     static_cast<std::size_t>(kTileWidth) * static_cast<std::size_t>(kTileHeight);
 inline constexpr std::size_t kTileBytes = kTilePixels * sizeof(std::uint16_t);
+// A display-sized viewport can cross seven tile columns and eight tile rows
+// when its origin is not tile-aligned.
+inline constexpr std::size_t kMaximumVisibleTiles = 56;
 
 enum class ZoomLevel : std::uint8_t {
   k25Percent,
