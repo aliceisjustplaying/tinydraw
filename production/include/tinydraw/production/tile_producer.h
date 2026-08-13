@@ -89,9 +89,9 @@ class TileProducer {
 
   [[nodiscard]] static bool valid_view(const ViewRequest& view);
   [[nodiscard]] bool tile_satisfies(TileKey key, MaterializationQuality quality) const;
-  [[nodiscard]] std::optional<TileKey> choose_certain_paper(const ViewRequest& view) const;
-  [[nodiscard]] std::optional<TileProductionStep> publish_certain_paper(const ViewRequest& view,
-                                                                        TileKey key);
+  [[nodiscard]] std::optional<TileKey> choose_certain_paper_group(const ViewRequest& view) const;
+  [[nodiscard]] std::optional<TileProductionStep> publish_certain_paper_group(
+      const ViewRequest& view, TileKey origin);
   [[nodiscard]] std::optional<std::size_t> visible_tiles_remaining(
       const ViewRequest& view, MaterializationQuality quality) const;
   [[nodiscard]] std::optional<TileKey> choose_missing_group(const ViewRequest& view) const;
