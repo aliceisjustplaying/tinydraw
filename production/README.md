@@ -181,13 +181,26 @@ raster steps, and tile enumeration reports required versus written capacity.
 Anti-aliased settled convergence remains Task #56.
 
 The latest exclusive hardware proof is
-[`hardware-receipts/6b5f6b0-display-scheduler-walk.log`](hardware-receipts/6b5f6b0-display-scheduler-walk.log).
-It advanced document authority and materialization together through 32 compact
-pen/eraser operations, then composed the expected deterministic `d4e162c4`
-result. Every one of the walk's 168 bounded strips passed through
+[`hardware-receipts/fa39abe-operation-builder-walk.log`](hardware-receipts/fa39abe-operation-builder-walk.log).
+It quantized deterministic input-shaped pen and eraser points through the
+fixed-capacity `OperationBuilder`, advanced document authority and materialization
+together through 32 compact operations, then composed the expected deterministic
+`d4e162c4` result. Every one of the walk's 168 bounded strips passed through
 `DisplayScheduler`; all 168 were accepted and completed in order with zero
 stale or other scheduler rejects, and transport completed 168/168 with zero
-CO5300 window rejects. The 30-operation burst averaged 50.320 ms per coordinated
-append. This proves ordered staging on glass, not concurrent mutation and
-transport, live touch-to-feedback latency, representative capacity, settled
-anti-aliasing, or the final interaction gates.
+CO5300 window rejects. The 30-operation burst averaged 50.284 ms per coordinated
+append. This proves bounded input collection and ordered staging on glass, not
+real touch input, concurrent mutation and transport, representative capacity,
+settled anti-aliasing, or the final interaction gates.
+
+## Task #56 settlement prerequisite
+
+A settled renderer cannot safely anti-alias in place over the hard-edged immediate
+materialization: partial edge coverage blended over already-painted edge pixels
+cannot remove the immediate renderer's wider binary silhouette. Settlement must
+start from an explicit pre-operation source or checkpoint and replay a contiguous
+painter-ordered operation range. Its interface must therefore identify the
+baseline revision, destination revision, and operation range together; append-time
+zoom-specific LOD storage must also have an explicit owner and capacity receipt.
+Do not hide these requirements behind a `settle(current_pixels)` helper or copy
+the rejected prototype renderer into the production island.
