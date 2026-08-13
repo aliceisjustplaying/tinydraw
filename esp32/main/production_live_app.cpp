@@ -576,22 +576,36 @@ void run_production_live_app() {
   CurvedRibbonStream ribbon;
   const auto initial = presenter.refresh(toolbar);
   print_presentation("startup", presenter, initial);
-  const bool workload_ready = load_realistic_document(
-      log, canvas, workspace, std::span(storage.realistic_strokes, kRealisticStrokeCapacity),
-      std::span(storage.realistic_samples, kRealisticSampleCapacity),
-      std::span(storage.input_samples, kInputSampleCapacity));
+  const bool stress_ready = append_stress_document(log, canvas, workspace);
+  const bool stress_100 = stress_ready && run_tile_gate(presenter, producer, log, canvas, toolbar,
+                                                        ZoomLevel::k100Percent);
+  const bool stress_400 = stress_100 && run_tile_gate(presenter, producer, log, canvas, toolbar,
+                                                      ZoomLevel::k400Percent);
+  const DocumentRevision realistic_baseline{canvas.current_revision().value + 1U};
+  const bool reset_for_realistic = stress_400 &&
+                                   production::restore_document_snapshot(
+                                       log, canvas, realistic_baseline,
+                                       std::span(storage.snapshot, production::kOverviewPixels)) &&
+                                   producer.reset_uniform_baseline(realistic_baseline);
+  const bool workload_ready =
+      reset_for_realistic &&
+      load_realistic_document(log, canvas, workspace,
+                              std::span(storage.realistic_strokes, kRealisticStrokeCapacity),
+                              std::span(storage.realistic_samples, kRealisticSampleCapacity),
+                              std::span(storage.input_samples, kInputSampleCapacity));
   const bool gate_100 = workload_ready && run_tile_gate(presenter, producer, log, canvas, toolbar,
                                                         ZoomLevel::k100Percent);
   const bool gate_400 =
       gate_100 && run_tile_gate(presenter, producer, log, canvas, toolbar, ZoomLevel::k400Percent);
   const bool ssaa_100 = gate_400 && run_ssaa_gate(presenter, producer, log, canvas, toolbar);
-  const bool pan_100 = ssaa_100 && verify_pan_adapter(presenter, toolbar, ZoomLevel::k100Percent);
+  const bool pan_100 = gate_400 && verify_pan_adapter(presenter, toolbar, ZoomLevel::k100Percent);
   const bool pan_400 = pan_100 && verify_pan_adapter(presenter, toolbar, ZoomLevel::k400Percent);
   const auto return_overview = presenter.set_zoom(ZoomLevel::k25Percent, toolbar, now_us());
   std::printf(
-      "TINYDRAW_GATE1_AUTOMATED_DONE workload=%u hard_100=%u hard_400=%u ssaa_100=%u "
-      "pan_100=%u pan_400=%u return=%u\n",
-      workload_ready, gate_100, gate_400, ssaa_100, pan_100, pan_400, return_overview.passed);
+      "TINYDRAW_GATE1_AUTOMATED_DONE stress=%u stress_100=%u stress_400=%u workload=%u "
+      "hard_100=%u hard_400=%u ssaa_100=%u pan_100=%u pan_400=%u return=%u\n",
+      stress_ready, stress_100, stress_400, workload_ready, gate_100, gate_400, ssaa_100, pan_100,
+      pan_400, return_overview.passed);
   std::printf(
       "TINYDRAW_LIVE_READY zoom=25 controls=toolbar button=cycle_25_100_400 "
       "long_button=load_1000 operations_capacity=%lu samples_capacity=%lu free_psram=%lu "
