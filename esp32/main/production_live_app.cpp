@@ -519,12 +519,29 @@ bool run_draw_while_fill_gate(ProductionLivePresenter& presenter,
   return passed;
 }
 
-bool verify_pan_adapter(ProductionLivePresenter& presenter, const ToolbarState& toolbar,
-                        ZoomLevel zoom) {
+bool verify_pan_adapter(ProductionLivePresenter& presenter, production::TileProducer& producer,
+                        const ToolbarState& toolbar, ZoomLevel zoom) {
+  constexpr int kPanDelta = 24;
+  const production::ViewRequest destination{
+      .zoom = zoom,
+      .level_pixels = {kPanDelta, kPanDelta, kPanDelta + production::kOverviewWidth,
+                       kPanDelta + production::kOverviewHeight},
+  };
+  while (true) {
+    const auto remaining = producer.visible_tiles_remaining(destination);
+    if (!remaining.has_value()) {
+      return false;
+    }
+    if (*remaining == 0U) {
+      break;
+    }
+    if (!producer.produce_next(destination).has_value()) {
+      return false;
+    }
+  }
   const auto setup = presenter.set_view(zoom, 0, 0, toolbar, now_us());
   const int before_x = presenter.level_x();
   const int before_y = presenter.level_y();
-  constexpr float kPanDelta = 24.0F;
   const auto pan = presenter.pan_from(before_x, before_y, {240.0F, 240.0F},
                                       {240.0F - kPanDelta, 240.0F - kPanDelta}, toolbar, now_us());
   const bool moved = presenter.level_x() > before_x && presenter.level_y() > before_y;
@@ -645,6 +662,80 @@ bool run_cache_retention_gate(ProductionLivePresenter& presenter,
   std::printf("TINYDRAW_GATE1_CACHE_RETENTION pass=%u slots=%lu revision=%lu\n", passed,
               static_cast<unsigned long>(canvas.slot_capacity()),
               static_cast<unsigned long>(canvas.current_revision().value));
+  return passed;
+}
+
+bool run_full_world_cache_gate(production::TileProducer& producer, MaterializedCanvas& canvas) {
+  if (!canvas.discard_tiles()) {
+    return false;
+  }
+  constexpr ZoomLevel kZoom = ZoomLevel::k100Percent;
+  constexpr int kGroupPixels = production::kTileProducerWidth;
+  const std::int64_t started = esp_timer_get_time();
+  for (int y = 0; y < production::kWorldHeight; y += kGroupPixels) {
+    for (int x = 0; x < production::kWorldWidth; x += kGroupPixels) {
+      const production::ViewRequest view{
+          .zoom = kZoom,
+          .level_pixels = {x, y, std::min(x + kGroupPixels, production::kWorldWidth),
+                           std::min(y + kGroupPixels, production::kWorldHeight)},
+      };
+      while (true) {
+        const auto step = producer.produce_next(view);
+        if (!step.has_value()) {
+          return false;
+        }
+        if (step->complete) {
+          break;
+        }
+      }
+    }
+  }
+
+  const production::TileGrid grid = production::tile_grid(kZoom);
+  std::size_t raw = 0;
+  std::size_t uniform = 0;
+  std::size_t fallback = 0;
+  for (int row = 0; row < grid.rows; ++row) {
+    for (int column = 0; column < grid.columns; ++column) {
+      const auto source = canvas.lookup(
+          {kZoom, static_cast<std::uint16_t>(column), static_cast<std::uint16_t>(row)});
+      if (!source.has_value() || source->kind == production::SourceKind::kOverview) {
+        ++fallback;
+      } else if (source->kind == production::SourceKind::kUniform) {
+        ++uniform;
+      } else {
+        ++raw;
+      }
+    }
+  }
+  const std::size_t identities =
+      static_cast<std::size_t>(grid.columns) * static_cast<std::size_t>(grid.rows);
+  const bool passed =
+      fallback == 0U && raw <= canvas.slot_capacity() && raw + uniform == identities;
+  std::printf(
+      "TINYDRAW_PAPER_SWEEP zoom=100 identities=%lu raw=%lu uniform=%lu fallback=%lu "
+      "slots=%lu total_us=%lld pass=%u\n",
+      static_cast<unsigned long>(identities), static_cast<unsigned long>(raw),
+      static_cast<unsigned long>(uniform), static_cast<unsigned long>(fallback),
+      static_cast<unsigned long>(canvas.slot_capacity()),
+      static_cast<long long>(esp_timer_get_time() - started), passed);
+  return passed;
+}
+
+bool verify_export_reserve() {
+  const std::size_t free_before = heap_caps_get_free_size(kExternalCaps);
+  const std::size_t largest_before = heap_caps_get_largest_free_block(kExternalCaps);
+  void* reserve = heap_caps_malloc(production::kTargetContiguousReserveBytes, kExternalCaps);
+  const std::size_t free_held = heap_caps_get_free_size(kExternalCaps);
+  const std::size_t largest_held = heap_caps_get_largest_free_block(kExternalCaps);
+  const bool passed = reserve != nullptr;
+  heap_caps_free(reserve);
+  std::printf(
+      "TINYDRAW_EXPORT_RESERVE requested=%lu free_before=%lu largest_before=%lu free_held=%lu "
+      "largest_held=%lu pass=%u\n",
+      static_cast<unsigned long>(production::kTargetContiguousReserveBytes),
+      static_cast<unsigned long>(free_before), static_cast<unsigned long>(largest_before),
+      static_cast<unsigned long>(free_held), static_cast<unsigned long>(largest_held), passed);
   return passed;
 }
 
@@ -792,43 +883,58 @@ void run_production_live_app() {
 #endif
   const bool gate_100 = workload_ready && run_tile_gate(presenter, producer, log, canvas, toolbar,
                                                         ZoomLevel::k100Percent);
-  const bool pan_100 = gate_100 && verify_pan_adapter(presenter, toolbar, ZoomLevel::k100Percent);
+  const bool pan_100 =
+      gate_100 && verify_pan_adapter(presenter, producer, toolbar, ZoomLevel::k100Percent);
   const bool gate_400 =
       pan_100 && run_tile_gate(presenter, producer, log, canvas, toolbar, ZoomLevel::k400Percent);
-  const bool pan_400 = gate_400 && verify_pan_adapter(presenter, toolbar, ZoomLevel::k400Percent);
+  const bool pan_400 =
+      gate_400 && verify_pan_adapter(presenter, producer, toolbar, ZoomLevel::k400Percent);
   const bool draw_fill =
       pan_400 && run_draw_while_fill_gate(presenter, producer, log, canvas, toolbar, workspace,
                                           std::span(storage.input_samples, kInputSampleCapacity));
   const bool cache_retention =
       draw_fill && run_cache_retention_gate(presenter, producer, canvas, toolbar);
+  const bool full_world_cache = cache_retention && run_full_world_cache_gate(producer, canvas);
+  const bool export_reserve = full_world_cache && verify_export_reserve();
   const auto return_overview = presenter.set_view(ZoomLevel::k25Percent, 0, 0, toolbar, now_us());
+  const std::size_t overview_bytes = production::kOverviewPixels * 4U * sizeof(std::uint16_t);
+  const std::size_t raw_tile_bytes =
+      production::kTileSlotCount * production::kTilePixels * sizeof(std::uint16_t);
+  const std::size_t tile_metadata_bytes =
+      production::kTileSlotCount * sizeof(MaterializedSlotStorage) +
+      production::kMaterializedTileIdentityCount * sizeof(MaterializedUniformStorage) +
+      production::kOccupancyBytes;
+  const std::size_t operation_bytes =
+      production::kOperationCapacity * sizeof(OperationRecord) +
+      production::kOperationSampleCapacity * sizeof(CompactOperationSample);
+  const std::size_t live_scratch_bytes =
+      kWorkspaceTileCapacity * production::kTilePixels * sizeof(std::uint16_t) +
+      (production::kTileProducerPixels + kLiveRegionScratchPixels) * sizeof(std::uint16_t) +
+      production::kTilePixels * sizeof(std::uint16_t) +
+      kInputSampleCapacity * sizeof(CompactOperationSample) +
+      kWorkspaceTileCapacity * sizeof(TileRevisionPublication) +
+      production::kTileSlotCount * sizeof(TileKey);
+  const std::size_t corpus_bytes = kRealisticStrokeCapacity * sizeof(VectorStroke) +
+                                   kRealisticSampleCapacity * sizeof(StrokeSample);
+  const std::size_t live_storage_bytes = overview_bytes + raw_tile_bytes + tile_metadata_bytes +
+                                         operation_bytes + live_scratch_bytes + corpus_bytes;
   std::printf(
       "TINYDRAW_GATE1_AUTOMATED_DONE stress=%u stress_100=%u stress_400=%u workload=%u "
-      "hard_100=%u hard_400=%u pan_100=%u pan_400=%u draw_fill=%u cache=%u return=%u "
-      "ssaa_receipt=yellow\n",
+      "hard_100=%u hard_400=%u pan_100=%u pan_400=%u draw_fill=%u cache=%u "
+      "full_world_cache=%u export_reserve=%u return=%u ssaa_receipt=yellow\n",
       stress_ready, stress_100, stress_400, workload_ready, gate_100, gate_400, pan_100, pan_400,
-      draw_fill, cache_retention, return_overview.passed);
+      draw_fill, cache_retention, full_world_cache, export_reserve, return_overview.passed);
   std::printf(
       "TINYDRAW_LIVE_READY zoom=25 controls=toolbar button=cycle_25_100_400 "
       "long_button=load_1000 operations_capacity=%lu samples_capacity=%lu live_storage_bytes=%lu "
-      "free_psram=%lu largest_psram=%lu\n",
+      "overview_bytes=%lu raw_tile_bytes=%lu tile_metadata_bytes=%lu operation_bytes=%lu "
+      "live_scratch_bytes=%lu corpus_bytes=%lu free_psram=%lu largest_psram=%lu\n",
       static_cast<unsigned long>(log.operation_capacity()),
       static_cast<unsigned long>(log.sample_capacity()),
-      static_cast<unsigned long>(
-          production::kOverviewPixels * 4U * sizeof(std::uint16_t) +
-          production::kTileSlotCount * production::kTilePixels * sizeof(std::uint16_t) +
-          kWorkspaceTileCapacity * production::kTilePixels * sizeof(std::uint16_t) +
-          (production::kTileProducerPixels + kLiveRegionScratchPixels) * sizeof(std::uint16_t) +
-          production::kTilePixels * sizeof(std::uint16_t) +
-          production::kTileSlotCount * sizeof(MaterializedSlotStorage) +
-          production::kMaterializedTileIdentityCount * sizeof(MaterializedUniformStorage) +
-          production::kOccupancyBytes + kRealisticStrokeCapacity * sizeof(VectorStroke) +
-          kRealisticSampleCapacity * sizeof(StrokeSample) +
-          production::kOperationCapacity * sizeof(OperationRecord) +
-          production::kOperationSampleCapacity * sizeof(CompactOperationSample) +
-          kInputSampleCapacity * sizeof(CompactOperationSample) +
-          kWorkspaceTileCapacity * sizeof(TileRevisionPublication) +
-          production::kTileSlotCount * sizeof(TileKey)),
+      static_cast<unsigned long>(live_storage_bytes), static_cast<unsigned long>(overview_bytes),
+      static_cast<unsigned long>(raw_tile_bytes), static_cast<unsigned long>(tile_metadata_bytes),
+      static_cast<unsigned long>(operation_bytes), static_cast<unsigned long>(live_scratch_bytes),
+      static_cast<unsigned long>(corpus_bytes),
       static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)),
       static_cast<unsigned long>(heap_caps_get_largest_free_block(kExternalCaps)));
   std::fflush(stdout);
