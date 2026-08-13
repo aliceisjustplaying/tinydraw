@@ -16,6 +16,7 @@
 #include "tinydraw/production/incremental_document.h"
 #include "tinydraw/production/incremental_rasterizer.h"
 #include "tinydraw/production/materialized_canvas.h"
+#include "tinydraw/production/operation_builder.h"
 #include "tinydraw/production/operation_log.h"
 
 namespace tinydraw::esp32 {
@@ -26,11 +27,12 @@ using production::DisplayScheduler;
 using production::DisplayStrip;
 using production::DocumentRevision;
 using production::IncrementalDocumentWorkspace;
-using production::IncrementalOperation;
 using production::MaterializationQuality;
 using production::MaterializedCanvas;
 using production::MaterializedSlotStorage;
+using production::OperationBuilder;
 using production::OperationLog;
+using production::OperationPoint;
 using production::OperationRecord;
 using production::OperationTool;
 using production::PixelRect;
@@ -378,31 +380,35 @@ void run_production_overview_walk() {
              .has_value() &&
          pass;
 
-  const std::array pen_samples{
-      CompactOperationSample{.x_quarter = 32, .y_quarter = 48, .radius_256 = 1280},
-      CompactOperationSample{.x_quarter = 208, .y_quarter = 192, .radius_256 = 1280},
-  };
-  const IncrementalOperation pen{
-      .tool = OperationTool::kPen, .color = 0x001FU, .samples = pen_samples};
+  std::array<CompactOperationSample, 2> input_samples{};
+  OperationBuilder input_operation(input_samples);
+  pass = input_operation.begin(
+             OperationTool::kPen, 0x001FU,
+             OperationPoint{
+                 .world_x = 8.0F, .world_y = 12.0F, .radius = 5.0F, .timestamp_us = 1'000U}) &&
+         pass;
+  const auto pen = input_operation.finish(
+      OperationPoint{.world_x = 52.0F, .world_y = 48.0F, .radius = 5.0F, .timestamp_us = 5'000U});
   pass =
-      append_and_commit_probe(operation_log, canvas,
-                              {.tool = pen.tool, .color = pen.color, .samples = pen.samples},
+      pen.has_value() &&
+      append_and_commit_probe(operation_log, canvas, *pen,
                               std::span(overview_source, production::kOverviewPixels),
                               std::span(tile_scratch, production::kTilePixels)) &&
       present_incremental(display, scheduler, canvas, strip_pixels, {1}, "pen", kExpectedPenHash) &&
       pass;
   vTaskDelay(pdMS_TO_TICKS(350));
 
-  const std::array eraser_samples{
-      CompactOperationSample{.x_quarter = 120, .y_quarter = 32, .radius_256 = 768},
-      CompactOperationSample{.x_quarter = 120, .y_quarter = 220, .radius_256 = 768},
-  };
-  const IncrementalOperation eraser{.tool = OperationTool::kEraser, .samples = eraser_samples};
-  pass = append_and_commit_probe(
-             operation_log, canvas,
-             {.tool = eraser.tool, .color = eraser.color, .samples = eraser.samples},
-             std::span(overview_source, production::kOverviewPixels),
-             std::span(tile_scratch, production::kTilePixels)) &&
+  pass = input_operation.begin(
+             OperationTool::kEraser, 0,
+             OperationPoint{
+                 .world_x = 30.0F, .world_y = 8.0F, .radius = 3.0F, .timestamp_us = 10'000U}) &&
+         pass;
+  const auto eraser = input_operation.finish(
+      OperationPoint{.world_x = 30.0F, .world_y = 55.0F, .radius = 3.0F, .timestamp_us = 14'000U});
+  pass = eraser.has_value() &&
+         append_and_commit_probe(operation_log, canvas, *eraser,
+                                 std::span(overview_source, production::kOverviewPixels),
+                                 std::span(tile_scratch, production::kTilePixels)) &&
          present_incremental(display, scheduler, canvas, strip_pixels, {2}, "eraser",
                              kExpectedEraserHash) &&
          pass;

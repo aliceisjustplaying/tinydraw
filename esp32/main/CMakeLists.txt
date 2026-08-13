@@ -37,6 +37,7 @@ if(TINYDRAW_PRODUCTION_OVERVIEW_WALK)
     "${CMAKE_CURRENT_LIST_DIR}/../../production/src/incremental_rasterizer.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../../production/src/materialized_canvas.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../../production/src/operation.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/../../production/src/operation_builder.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../../production/src/operation_log.cpp"
   )
   set(TINYDRAW_PLATFORM_SRCS "")
