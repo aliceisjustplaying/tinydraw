@@ -85,7 +85,7 @@ case "$command_name" in
     fi
     cmake --preset host-debug
     files=()
-    while IFS= read -r file; do files+=("$file"); done < <(find vector_v2 -type f -name '*.cpp' | sort)
+    while IFS= read -r file; do files+=("$file"); done < <(find vector_v2/src -type f -name '*.cpp' | sort)
     if [[ ${#files[@]} -eq 0 ]]; then
       echo "No Vector V2 C++ implementation files to analyze yet."
       exit 0
@@ -108,7 +108,7 @@ case "$command_name" in
       exit 1
     fi
     files=()
-    while IFS= read -r file; do files+=("$file"); done < <(find vector_v2 -type f \( -name '*.cpp' -o -name '*.h' \) | sort)
+    while IFS= read -r file; do files+=("$file"); done < <(find vector_v2/src vector_v2/include -type f \( -name '*.cpp' -o -name '*.h' \) | sort)
     if [[ ${#files[@]} -eq 0 ]]; then
       echo "No Vector V2 C++ files to analyze yet."
       exit 0
