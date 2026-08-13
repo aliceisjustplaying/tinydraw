@@ -9,6 +9,7 @@ add_executable(tinydraw_tests
   incremental_rasterizer_test.cpp
   ink_stream_test.cpp
   materialized_canvas_test.cpp
+  operation_log_test.cpp
   perfect_freehand_test.cpp
   png_encoder_test.cpp
   raster_materializer_test.cpp

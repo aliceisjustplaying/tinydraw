@@ -11,11 +11,6 @@
 
 namespace tinydraw::production {
 
-enum class OperationTool : std::uint8_t {
-  kPen,
-  kEraser,
-};
-
 struct IncrementalOperation {
   OperationTool tool = OperationTool::kPen;
   std::uint16_t color = 0;
