@@ -5,14 +5,14 @@ option(TINYDRAW_QEMU "Build against QEMU's quad-PSRAM model" OFF)
 option(TINYDRAW_QEMU_GRAPHICS "Enable the QEMU-only virtual display" OFF)
 option(TINYDRAW_VECTOR_BENCHMARK "Run vector viewport benchmarks after startup" OFF)
 option(TINYDRAW_PHASE2_PROTOTYPE "Run cached-pan/progressive-zoom prototype after startup" OFF)
-option(TINYDRAW_RASTER_PAN_BENCHMARK "Measure the production raster pan path after startup" OFF)
+option(TINYDRAW_RASTER_PAN_BENCHMARK "Measure the Raster V1 pan path after startup" OFF)
 option(TINYDRAW_INTERACTIVE_PAN_BENCHMARK "Run the interactive vector-cache pan prototype" OFF)
-option(TINYDRAW_PRODUCTION_MEMORY_PROBE "Run the production allocation receipt probe" OFF)
-option(TINYDRAW_PRODUCTION_OVERVIEW_WALK "Run the exclusive production overview display walk" OFF)
-option(TINYDRAW_PRODUCTION_LIVE_APP "Run the interactive production vector integration slice" OFF)
-option(TINYDRAW_PRODUCTION_TILE_CENSUS "Measure produced tile payload classes in the live app" OFF)
-if(TINYDRAW_PRODUCTION_TILE_CENSUS AND NOT TINYDRAW_PRODUCTION_LIVE_APP)
-  message(FATAL_ERROR "TINYDRAW_PRODUCTION_TILE_CENSUS requires TINYDRAW_PRODUCTION_LIVE_APP")
+option(TINYDRAW_VECTOR_V2_MEMORY_PROBE "Run the Vector V2 allocation receipt probe" OFF)
+option(TINYDRAW_VECTOR_V2_OVERVIEW_WALK "Run the exclusive Vector V2 overview display walk" OFF)
+option(TINYDRAW_VECTOR_V2_APP "Run the interactive Vector V2 application" OFF)
+option(TINYDRAW_VECTOR_V2_TILE_CENSUS "Measure Vector V2 tile payload classes" OFF)
+if(TINYDRAW_VECTOR_V2_TILE_CENSUS AND NOT TINYDRAW_VECTOR_V2_APP)
+  message(FATAL_ERROR "TINYDRAW_VECTOR_V2_TILE_CENSUS requires TINYDRAW_VECTOR_V2_APP")
 endif()
 set(TINYDRAW_BENCHMARK_MODE_COUNT 0)
 foreach(TINYDRAW_BENCHMARK_MODE
@@ -20,9 +20,9 @@ foreach(TINYDRAW_BENCHMARK_MODE
     TINYDRAW_PHASE2_PROTOTYPE
     TINYDRAW_RASTER_PAN_BENCHMARK
     TINYDRAW_INTERACTIVE_PAN_BENCHMARK
-    TINYDRAW_PRODUCTION_MEMORY_PROBE
-    TINYDRAW_PRODUCTION_OVERVIEW_WALK
-    TINYDRAW_PRODUCTION_LIVE_APP)
+    TINYDRAW_VECTOR_V2_MEMORY_PROBE
+    TINYDRAW_VECTOR_V2_OVERVIEW_WALK
+    TINYDRAW_VECTOR_V2_APP)
   if(${TINYDRAW_BENCHMARK_MODE})
     math(EXPR TINYDRAW_BENCHMARK_MODE_COUNT "${TINYDRAW_BENCHMARK_MODE_COUNT} + 1")
   endif()
@@ -30,8 +30,8 @@ endforeach()
 if(TINYDRAW_BENCHMARK_MODE_COUNT GREATER 1)
   message(FATAL_ERROR "Enable only one TinyDraw benchmark mode per build")
 endif()
-if(TINYDRAW_QEMU AND (TINYDRAW_PRODUCTION_OVERVIEW_WALK OR TINYDRAW_PRODUCTION_LIVE_APP))
-  message(FATAL_ERROR "Production hardware modes require physical hardware")
+if(TINYDRAW_QEMU AND (TINYDRAW_VECTOR_V2_OVERVIEW_WALK OR TINYDRAW_VECTOR_V2_APP))
+  message(FATAL_ERROR "Vector V2 hardware modes require physical hardware")
 endif()
 set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig")
 if(TINYDRAW_QEMU)

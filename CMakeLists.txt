@@ -33,14 +33,17 @@ if(TINYDRAW_ENABLE_SANITIZERS)
     -fsanitize=address,undefined -fno-omit-frame-pointer)
 endif()
 
+if(TINYDRAW_BUILD_TESTS)
+  include(CTest)
+endif()
+
 add_subdirectory(core)
-add_subdirectory(production)
+add_subdirectory(vector_v2)
 
 if(TINYDRAW_BUILD_HOST)
   add_subdirectory(host)
 endif()
 
 if(TINYDRAW_BUILD_TESTS)
-  include(CTest)
   add_subdirectory(tests)
 endif()
