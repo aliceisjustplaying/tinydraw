@@ -60,7 +60,7 @@ TEST_CASE("stored operation feeds the incremental renderer without translation")
        .stride = 16}));
   CHECK(pixels[1U * 16U + 1U] == 0xF800U);
   CHECK(pixels[1U * 16U + 10U] == 0xF800U);
-  CHECK(stored->world_bounds == production::PixelRect{0, 0, 11, 2});
+  CHECK(stored->world_bounds == production::PixelRect{0, 0, 12, 3});
 }
 
 TEST_CASE("operation log preserves painter order across tools") {
@@ -110,7 +110,7 @@ TEST_CASE("prepared append advances authority only when published") {
   CHECK(log.sample_count() == 0U);
   CHECK(log.current_revision() == production::DocumentRevision{0});
   CHECK_FALSE(log.prepare({.samples = samples}));
-  log.clear();
+  CHECK_FALSE(log.clear());
   CHECK(log.current_revision() == production::DocumentRevision{0});
 
   prepared->publish();
@@ -188,7 +188,7 @@ TEST_CASE("operation log reset adopts snapshot revision and retains caller stora
   const std::array sample{
       production::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256}};
   REQUIRE(log.append({.samples = sample}));
-  log.reset({8});
+  REQUIRE(log.reset({8}));
   CHECK(log.ready());
   CHECK(log.operation_count() == 0U);
   CHECK(log.sample_count() == 0U);
@@ -197,6 +197,6 @@ TEST_CASE("operation log reset adopts snapshot revision and retains caller stora
   CHECK(log.append({.samples = sample}) == production::OperationIdentity{{9}, 0});
   REQUIRE(log.operation(0).has_value());
   CHECK(log.operation(0)->identity == production::OperationIdentity{{9}, 0});
-  log.clear();
+  REQUIRE(log.clear());
   CHECK(log.current_revision() == production::DocumentRevision{0});
 }

@@ -131,7 +131,7 @@ void paint_bounded_segment(const Sample& first, const Sample& second, std::uint1
   }
 }
 
-PixelRect operation_bounds(const IncrementalOperation& operation, ZoomLevel zoom) {
+PixelRect operation_bounds(const OperationAppend& operation, ZoomLevel zoom) {
   const auto world = operation_world_bounds(operation.samples);
   if (!world.has_value()) {
     return {};
@@ -147,8 +147,7 @@ PixelRect operation_bounds(const IncrementalOperation& operation, ZoomLevel zoom
 
 }  // namespace
 
-bool apply_incremental_operation(const IncrementalOperation& operation,
-                                 const RasterSurface& surface) {
+bool apply_incremental_operation(const OperationAppend& operation, const RasterSurface& surface) {
   if (!valid_surface(surface) || operation.samples.empty()) {
     return false;
   }
@@ -166,8 +165,8 @@ bool apply_incremental_operation(const IncrementalOperation& operation,
   return true;
 }
 
-std::optional<AffectedTileResult> affected_tiles(const IncrementalOperation& operation,
-                                                 ZoomLevel zoom, std::span<TileKey> output) {
+std::optional<AffectedTileResult> affected_tiles(const OperationAppend& operation, ZoomLevel zoom,
+                                                 std::span<TileKey> output) {
   if (zoom == ZoomLevel::k25Percent || operation.samples.empty()) {
     return std::nullopt;
   }

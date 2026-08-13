@@ -15,7 +15,7 @@ TEST_CASE("incremental operation paints one stroke without clearing prior pixels
       production::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 512},
       production::CompactOperationSample{.x_quarter = 80, .y_quarter = 40, .radius_256 = 512},
   };
-  const production::IncrementalOperation operation{
+  const production::OperationAppend operation{
       .tool = production::OperationTool::kPen,
       .color = 0xF800U,
       .samples = samples,
@@ -37,7 +37,7 @@ TEST_CASE("eraser applies after pen in painter order") {
       production::CompactOperationSample{.x_quarter = 16, .y_quarter = 40, .radius_256 = 768},
       production::CompactOperationSample{.x_quarter = 80, .y_quarter = 40, .radius_256 = 768},
   };
-  const production::IncrementalOperation pen{
+  const production::OperationAppend pen{
       .tool = production::OperationTool::kPen, .color = 0x001FU, .samples = pen_samples};
   REQUIRE(production::apply_incremental_operation(pen, {.zoom = production::ZoomLevel::k100Percent,
                                                         .level_bounds = {0, 0, 24, 24},
@@ -49,8 +49,8 @@ TEST_CASE("eraser applies after pen in painter order") {
       production::CompactOperationSample{.x_quarter = 40, .y_quarter = 16, .radius_256 = 512},
       production::CompactOperationSample{.x_quarter = 40, .y_quarter = 64, .radius_256 = 512},
   };
-  const production::IncrementalOperation eraser{.tool = production::OperationTool::kEraser,
-                                                .samples = eraser_samples};
+  const production::OperationAppend eraser{.tool = production::OperationTool::kEraser,
+                                           .samples = eraser_samples};
   REQUIRE(
       production::apply_incremental_operation(eraser, {.zoom = production::ZoomLevel::k100Percent,
                                                        .level_bounds = {0, 0, 24, 24},
@@ -68,7 +68,7 @@ TEST_CASE("overview and tile surfaces map the same world operation") {
   const std::array samples{
       production::CompactOperationSample{.x_quarter = 272, .y_quarter = 16, .radius_256 = 1024},
   };
-  const production::IncrementalOperation operation{.color = 0x07E0U, .samples = samples};
+  const production::OperationAppend operation{.color = 0x07E0U, .samples = samples};
   REQUIRE(production::apply_incremental_operation(
       operation, {.zoom = production::ZoomLevel::k25Percent,
                   .level_bounds = {0, 0, production::kOverviewWidth, production::kOverviewHeight},
@@ -100,7 +100,7 @@ TEST_CASE("affected tile enumeration clips to the bounded world") {
       production::CompactOperationSample{.x_quarter = 0, .y_quarter = 0, .radius_256 = 2048},
       production::CompactOperationSample{.x_quarter = 272, .y_quarter = 272, .radius_256 = 2048},
   };
-  const production::IncrementalOperation operation{.samples = samples};
+  const production::OperationAppend operation{.samples = samples};
   std::array<production::TileKey, 4> keys{};
   const auto count =
       production::affected_tiles(operation, production::ZoomLevel::k100Percent, keys);
@@ -121,12 +121,28 @@ TEST_CASE("affected tile enumeration clips to the bounded world") {
   CHECK_FALSE(production::affected_tiles(operation, production::ZoomLevel::k25Percent, keys));
 }
 
+TEST_CASE("thin stroke bounds include the coarsest tiled paint halo") {
+  const std::array samples{
+      production::CompactOperationSample{.x_quarter = 255, .y_quarter = 256, .radius_256 = 1},
+  };
+  CHECK(production::operation_world_bounds(samples) == production::PixelRect{62, 62, 66, 66});
+  const production::OperationAppend operation{.samples = samples};
+  std::array<production::TileKey, 4> keys{};
+  const auto at_100 =
+      production::affected_tiles(operation, production::ZoomLevel::k100Percent, keys);
+  REQUIRE(at_100.has_value());
+  REQUIRE(at_100->complete());
+  CHECK(at_100->written == 4U);
+  CHECK(keys[0] == production::TileKey{production::ZoomLevel::k100Percent, 0, 0});
+  CHECK(keys[1] == production::TileKey{production::ZoomLevel::k100Percent, 1, 0});
+}
+
 TEST_CASE("affected tiles cover partial edge grids and high zooms") {
   const std::array edge_sample{
       production::CompactOperationSample{.x_quarter = production::kWorldWidth * 4,
                                          .y_quarter = production::kWorldHeight * 4,
                                          .radius_256 = 256}};
-  const production::IncrementalOperation operation{.samples = edge_sample};
+  const production::OperationAppend operation{.samples = edge_sample};
   std::array<production::TileKey, 4> keys{};
   const auto at_50 = production::affected_tiles(operation, production::ZoomLevel::k50Percent, keys);
   REQUIRE(at_50.has_value());
@@ -149,7 +165,7 @@ TEST_CASE("all committed zooms paint the same world center and enumerate its til
   const std::array samples{
       production::CompactOperationSample{.x_quarter = 400, .y_quarter = 480, .radius_256 = 256},
   };
-  const production::IncrementalOperation operation{.color = 0xF800U, .samples = samples};
+  const production::OperationAppend operation{.color = 0xF800U, .samples = samples};
   for (const production::ZoomLevel zoom : zooms) {
     std::array<std::uint16_t, production::kTilePixels> tile{};
     tile.fill(0xFFFFU);
