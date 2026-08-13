@@ -1,0 +1,6 @@
+I (662) app_init: App version:      acaa8a6
+TINYDRAW_PRODUCTION_WALK_INCREMENTAL phase=pen revision=1 hash=e93cc976 pushes=21 tile_pixels=8192 fallback_pixels=156672 elapsed_us=24382 completed=1 submit=126 complete=126
+TINYDRAW_PRODUCTION_WALK_INCREMENTAL phase=eraser revision=2 hash=9c622475 pushes=21 tile_pixels=8192 fallback_pixels=156672 elapsed_us=23828 completed=1 submit=147 complete=147
+TINYDRAW_PRODUCTION_WALK_BURST operations=30 revision=32 total_us=1435203 average_us=47840 log_operations=32 log_samples=64
+TINYDRAW_PRODUCTION_WALK_INCREMENTAL phase=burst revision=32 hash=d4e162c4 pushes=21 tile_pixels=8192 fallback_pixels=156672 elapsed_us=23849 completed=1 submit=168 complete=168
+TINYDRAW_PRODUCTION_WALK_DONE pass=1 panel_rejects=0 prepare_us=40024 transfer_us=25950 pushes=168 submit=168 complete=168 free_psram=7672188 largest_psram=7602176
