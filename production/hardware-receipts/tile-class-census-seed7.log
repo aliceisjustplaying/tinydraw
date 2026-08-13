@@ -1,0 +1,96 @@
+[18:13:18] ESP-ROM:esp32s3-20210327
+[18:13:18] Build:Mar 27 2021
+[18:13:18] rst:0x15 (USB_UART_CHIP_RESET),boot:0x2b (SPI_FAST_FLASH_BOOT)
+[18:13:18] Saved PC:0x4037b7d6
+[18:13:18] SPIWP:0xee
+[18:13:18] mode:DIO, clock div:1
+[18:13:18] load:0x3fce2820,len:0x1664
+[18:13:18] load:0x403c8700,len:0xf38
+[18:13:18] load:0x403cb700,len:0x31e8
+[18:13:18] entry 0x403c8930
+[18:13:18] I (24) boot: ESP-IDF v6.0.2 2nd stage bootloader
+[18:13:18] I (24) boot: compile time Aug 13 2026 18:13:04
+[18:13:18] I (25) boot: Multicore bootloader
+[18:13:18] I (25) boot: chip revision: v0.2
+[18:13:18] I (28) boot: efuse block revision: v1.3
+[18:13:18] I (31) qio_mode: Enabling default flash chip QIO
+[18:13:18] I (36) boot.esp32s3: Boot SPI Speed : 80MHz
+[18:13:18] I (39) boot.esp32s3: SPI Mode       : QIO
+[18:13:18] I (43) boot.esp32s3: SPI Flash Size : 16MB
+[18:13:18] I (47) boot: Enabling RNG early entropy source...
+[18:13:18] I (51) boot: Partition Table:
+[18:13:18] I (54) boot: ## Label            Usage          Type ST Offset   Length
+[18:13:18] I (60) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+[18:13:18] I (67) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+[18:13:18] I (73) boot:  2 factory          factory app      00 00 00010000 00100000
+[18:13:18] I (80) boot:  3 drawing          Unknown data     01 40 00110000 00300000
+[18:13:18] I (86) boot:  4 export           Unknown data     01 41 00410000 00500000
+[18:13:18] I (93) boot:  5 coredump         Unknown data     01 03 00910000 00010000
+[18:13:18] I (100) boot: End of partition table
+[18:13:18] I (103) esp_image: segment 0: paddr=00010020 vaddr=3c030020 size=0e1d0h ( 57808) map
+[18:13:18] I (119) esp_image: segment 1: paddr=0001e1f8 vaddr=3fc93d00 size=01e20h (  7712) load
+[18:13:18] I (121) esp_image: segment 2: paddr=00020020 vaddr=42000020 size=23c74h (146548) map
+[18:13:18] I (148) esp_image: segment 3: paddr=00043c9c vaddr=3fc95b20 size=01804h (  6148) load
+[18:13:18] I (150) esp_image: segment 4: paddr=000454a8 vaddr=40374000 size=0fcbch ( 64700) load
+[18:13:18] I (165) esp_image: segment 5: paddr=0005516c vaddr=50000000 size=00024h (    36) load
+[18:13:18] I (172) boot: Loaded app from partition at offset 0x10000
+[18:13:18] I (172) boot: Disabling RNG early entropy source...
+[18:13:18] I (183) octal_psram: vendor id    : 0x0d (AP)
+[18:13:18] I (183) octal_psram: dev id       : 0x02 (generation 3)
+[18:13:18] I (183) octal_psram: density      : 0x03 (64 Mbit)
+[18:13:18] I (185) octal_psram: good-die     : 0x01 (Pass)
+[18:13:18] I (189) octal_psram: Latency      : 0x01 (Fixed)
+[18:13:18] I (193) octal_psram: VCC          : 0x01 (3V)
+[18:13:18] I (198) octal_psram: SRF          : 0x01 (Fast Refresh)
+[18:13:18] I (202) octal_psram: BurstType    : 0x01 (Hybrid Wrap)
+[18:13:18] I (207) octal_psram: BurstLen     : 0x01 (32 Byte)
+[18:13:18] I (212) octal_psram: Readlatency  : 0x02 (10 cycles@Fixed)
+[18:13:18] I (217) octal_psram: DriveStrength: 0x00 (1/1)
+[18:13:18] I (221) MSPI Timing: Enter psram timing tuning
+[18:13:18] I (226) esp_psram: Found 8MB PSRAM device
+[18:13:18] I (229) esp_psram: Speed: 80MHz
+[18:13:18] I (232) cpu_start: Multicore app
+[18:13:18] I (648) esp_psram: SPI SRAM memory test OK
+[18:13:18] I (656) cpu_start: GPIO 44 and 43 are used as console UART I/O pins
+[18:13:18] I (657) cpu_start: Pro cpu start user code
+[18:13:18] I (657) cpu_start: cpu freq: 240000000 Hz
+[18:13:18] I (659) app_init: Application information:
+[18:13:18] I (662) app_init: Project name:     tinydraw_esp32
+[18:13:18] I (667) app_init: App version:      512f424-dirty
+[18:13:18] I (671) app_init: Compile time:     Aug 13 2026 18:12:58
+[18:13:18] I (676) app_init: ELF file SHA256:  b0c86b3d3...
+[18:13:18] I (681) app_init: ESP-IDF:          v6.0.2
+[18:13:18] I (685) efuse_init: Min chip rev:     v0.0
+[18:13:18] I (688) efuse_init: Max chip rev:     v0.99 
+[18:13:18] I (692) efuse_init: Chip rev:         v0.2
+[18:13:18] I (696) heap_init: Initializing. RAM available for dynamic allocation:
+[18:13:18] I (702) heap_init: At 3FC97DC0 len 00051950 (326 KiB): RAM
+[18:13:19] I (708) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+[18:13:19] I (713) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
+[18:13:19] I (718) heap_init: At 600FE000 len 00001FE8 (7 KiB): RTCRAM
+[18:13:19] I (723) esp_psram: Adding pool of 8192K of PSRAM memory to heap allocator
+[18:13:19] I (730) spi_flash: detected chip: generic
+[18:13:19] I (733) spi_flash: flash io: qio
+[18:13:19] I (737) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+[18:13:19] I (743) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+[18:13:19] I (750) main_task: Started on CPU0
+[18:13:19] I (753) main_task: Calling app_main()
+[18:13:19] TINYDRAW_PANEL_HARD_RESET=1
+[18:13:19] I (946) co5300: version: 2.1.0
+[18:13:19] I (947) co5300_spi: LCD panel create success, version: 2.1.0
+[18:13:19] W (1027) co5300_spi: The 3Ah command has been used and will be overwritten by external initialization sequence
+[18:13:19] I (1127) CST816S: IC id: 183
+[18:13:19] TINYDRAW_LIVE_PRESENT kind=startup zoom=25 x=0 y=0 compose_us=34607 read_submit_us=0 read_complete_us=0 transfer_wait_us=19289 tile_pixels=0 overview_pixels=164864 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=21 pass=1
+[18:13:19] TINYDRAW_LIVE_STRESS operations=1000 samples=20000 total_us=404263 average_us=404 maximum_us=687 free_psram=2801332 largest_psram=2752512
+[18:13:19] TINYDRAW_LIVE_PRESENT kind=gate_fallback zoom=100 x=0 y=0 compose_us=24348 read_submit_us=25130 read_complete_us=25927 transfer_wait_us=19980 tile_pixels=0 overview_pixels=0 fallback_pixels=164864 resident_tiles=0 fallback_tiles=42 pushes=21 pass=1
+[18:13:20] TINYDRAW_GATE1_HARD zoom=100 cold=1 operations=1000 samples=20000 steps=192 tiles=42 scanned=12000 rendered=125 max_supertask_us=7566 presentation_us=60032 total_us=402277 pass=1
+[18:13:20] TINYDRAW_LIVE_PRESENT kind=gate_fallback zoom=400 x=0 y=0 compose_us=23746 read_submit_us=24503 read_complete_us=25307 transfer_wait_us=19346 tile_pixels=0 overview_pixels=0 fallback_pixels=164864 resident_tiles=0 fallback_tiles=42 pushes=21 pass=1
+[18:13:20] TINYDRAW_GATE1_HARD zoom=400 cold=1 operations=1000 samples=20000 steps=196 tiles=42 scanned=12000 rendered=28 max_supertask_us=12003 presentation_us=61712 total_us=317793 pass=1
+[18:13:21] TINYDRAW_GATE1_WORKLOAD kind=realistic seed=7 operations=1000 samples=19844 maximum_stroke=198 load_us=273418 raw_source=1 lod_copies=0
+[18:13:22] TINYDRAW_TILE_CENSUS zoom=50 tiles=168 paper=98 uniform_color=0 uniform_total=98 raw=70 uniform_permille=583 raw_slot_bytes=573440 raw_payload_bytes=1318912 row_rle_smaller=70 row_rle_bytes=111030 bounded_payload_bytes=111226 operations_scanned=42000 production_us=741759 classification_us=34132 maximum_classification_us=228 pass=1
+[18:13:27] TINYDRAW_TILE_CENSUS zoom=100 tiles=644 paper=378 uniform_color=0 uniform_total=378 raw=266 uniform_permille=586 raw_slot_bytes=2179072 raw_payload_bytes=5275648 row_rle_smaller=266 row_rle_bytes=264789 bounded_payload_bytes=265545 operations_scanned=168000 production_us=2418073 classification_us=138025 maximum_classification_us=240 pass=1
+[18:13:47] TINYDRAW_TILE_CENSUS zoom=200 tiles=2576 paper=1604 uniform_color=0 uniform_total=1604 raw=972 uniform_permille=622 raw_slot_bytes=7962624 raw_payload_bytes=21102592 row_rle_smaller=972 row_rle_bytes=630558 bounded_payload_bytes=633766 operations_scanned=644000 production_us=8928776 classification_us=552934 maximum_classification_us=238 pass=1
+[18:15:03] TINYDRAW_TILE_CENSUS zoom=400 tiles=10304 paper=6886 uniform_color=0 uniform_total=6886 raw=3418 uniform_permille=668 raw_slot_bytes=28000256 raw_payload_bytes=84410368 row_rle_smaller=3418 row_rle_bytes=1558458 bounded_payload_bytes=1572230 operations_scanned=2576000 production_us=34881639 classification_us=2211448 maximum_classification_us=239 pass=1
+[18:15:03] TINYDRAW_TILE_CENSUS_DONE tiles=13692 paper=8966 uniform_color=0 uniform_total=8966 raw=4726 uniform_permille=654 current_all_raw_slot_bytes=112164864 nonuniform_slot_bytes=38715392 row_rle_smaller=4726 row_rle_bytes=2564835 bounded_payload_bytes=2582767 operations_scanned=3430000 production_us=46970247 classification_us=2936539 maximum_classification_us=240 complete=1 pass=1
+[18:15:03] TINYDRAW_TILE_CENSUS_APP_DONE workload=1 census=1 revision=2001
+[18:15:03] I (104645) main_task: Returned from app_main()
