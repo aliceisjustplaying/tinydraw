@@ -470,18 +470,23 @@ void run_vector_v2_app() {
       vector_v2::kTileSlotCount * sizeof(TileKey);
   const std::size_t live_storage_bytes =
       overview_bytes + raw_tile_bytes + tile_metadata_bytes + operation_bytes + live_scratch_bytes;
+  const auto tear_signal = display.tear_signal_timing();
   std::printf(
       "TINYDRAW_VECTOR_V2_READY zoom=25 controls=toolbar button=cycle_all_zooms "
       "operations_capacity=%lu samples_capacity=%lu live_storage_bytes=%lu "
       "overview_bytes=%lu raw_tile_bytes=%lu tile_metadata_bytes=%lu operation_bytes=%lu "
-      "live_scratch_bytes=%lu free_psram=%lu largest_psram=%lu\n",
+      "live_scratch_bytes=%lu free_psram=%lu largest_psram=%lu "
+      "te_edges=%lu te_period_us=%lld te_high_us=%lld te_level=%u\n",
       static_cast<unsigned long>(log.operation_capacity()),
       static_cast<unsigned long>(log.sample_capacity()),
       static_cast<unsigned long>(live_storage_bytes), static_cast<unsigned long>(overview_bytes),
       static_cast<unsigned long>(raw_tile_bytes), static_cast<unsigned long>(tile_metadata_bytes),
       static_cast<unsigned long>(operation_bytes), static_cast<unsigned long>(live_scratch_bytes),
       static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)),
-      static_cast<unsigned long>(heap_caps_get_largest_free_block(kExternalCaps)));
+      static_cast<unsigned long>(heap_caps_get_largest_free_block(kExternalCaps)),
+      static_cast<unsigned long>(tear_signal.rising_edges),
+      static_cast<long long>(tear_signal.period_us), static_cast<long long>(tear_signal.high_us),
+      tear_signal.level);
   std::fflush(stdout);
 
   bool pressed = false;

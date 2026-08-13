@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstdio>
 
+#include "driver/gpio.h"
 #include "driver/i2c_master.h"
 #include "driver/spi_master.h"
 #include "esp_check.h"
@@ -24,6 +25,7 @@ namespace tinydraw::esp32 {
 namespace {
 
 constexpr int kPanelGapX = 0x10;
+constexpr gpio_num_t kTearPin = GPIO_NUM_13;
 constexpr int kTransferPixels = 8192;
 constexpr int kTransferQueueDepth = 3;
 constexpr std::size_t kTransferHistory = 64U;
@@ -168,12 +170,26 @@ class Co5300PanelTransport::Impl {
         esp_lcd_panel_disp_on_off(panel_, true) != ESP_OK) {
       return;
     }
+    gpio_config_t tear_config{};
+    tear_config.pin_bit_mask = 1ULL << static_cast<unsigned>(kTearPin);
+    tear_config.mode = GPIO_MODE_INPUT;
+    tear_config.pull_up_en = GPIO_PULLUP_DISABLE;
+    tear_config.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    tear_config.intr_type = GPIO_INTR_ANYEDGE;
+    if (gpio_config(&tear_config) != ESP_OK || gpio_install_isr_service(0) != ESP_OK ||
+        gpio_isr_handler_add(kTearPin, on_tear_edge, this) != ESP_OK) {
+      return;
+    }
+    tear_isr_installed_ = true;
     ready_ = true;
   }
 
   ~Impl() {
     static_cast<void>(wait_for_all(2'000'000));
     ready_ = false;
+    if (tear_isr_installed_) {
+      static_cast<void>(gpio_isr_handler_remove(kTearPin));
+    }
     if (panel_ != nullptr) {
       static_cast<void>(esp_lcd_panel_del(panel_));
     }
@@ -202,6 +218,16 @@ class Co5300PanelTransport::Impl {
   }
   [[nodiscard]] std::uint32_t complete_count() const {
     return transfer_completes_.load(std::memory_order_acquire);
+  }
+
+  [[nodiscard]] TearSignalTiming tear_signal_timing() const {
+    const std::uint32_t rising = tear_rising_edges_.load(std::memory_order_acquire);
+    const std::uint32_t period = tear_period_us_.load(std::memory_order_relaxed);
+    const std::uint32_t high = tear_high_us_.load(std::memory_order_relaxed);
+    return {.rising_edges = rising,
+            .period_us = rising < 2U ? -1 : static_cast<std::int64_t>(period),
+            .high_us = high == 0U ? -1 : static_cast<std::int64_t>(high),
+            .level = gpio_get_level(kTearPin) != 0};
   }
 
   [[nodiscard]] std::int64_t complete_time_us(std::uint32_t sequence) const {
@@ -288,6 +314,23 @@ class Co5300PanelTransport::Impl {
   }
 
  private:
+  static void on_tear_edge(void* context) {
+    auto& self = *static_cast<Impl*>(context);
+    const std::uint32_t now = static_cast<std::uint32_t>(esp_timer_get_time());
+    if (gpio_get_level(kTearPin) != 0) {
+      const std::uint32_t prior = self.tear_last_rise_us_.exchange(now, std::memory_order_relaxed);
+      if (prior != 0U) {
+        self.tear_period_us_.store(now - prior, std::memory_order_relaxed);
+      }
+      self.tear_rising_edges_.fetch_add(1U, std::memory_order_release);
+      return;
+    }
+    const std::uint32_t rise = self.tear_last_rise_us_.load(std::memory_order_relaxed);
+    if (rise != 0U) {
+      self.tear_high_us_.store(now - rise, std::memory_order_relaxed);
+    }
+  }
+
   static bool on_transfer_done(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t*,
                                void* context) {
     auto& self = *static_cast<Impl*>(context);
@@ -308,12 +351,17 @@ class Co5300PanelTransport::Impl {
   std::array<std::atomic<std::uint32_t>, kTransferHistory> transfer_complete_times_{};
   std::atomic<std::uint32_t> transfer_submits_{0U};
   std::atomic<std::uint32_t> transfer_completes_{0U};
+  std::atomic<std::uint32_t> tear_rising_edges_{0U};
+  std::atomic<std::uint32_t> tear_last_rise_us_{0U};
+  std::atomic<std::uint32_t> tear_period_us_{0U};
+  std::atomic<std::uint32_t> tear_high_us_{0U};
   std::int64_t prepare_us_ = 0;
   std::int64_t transfer_us_ = 0;
   std::uint32_t push_count_ = 0;
   std::uint32_t rejected_push_count_ = 0;
   std::size_t transfer_index_ = 0;
   bool bus_initialized_ = false;
+  bool tear_isr_installed_ = false;
   bool ready_ = false;
 };
 
@@ -331,6 +379,9 @@ std::uint32_t Co5300PanelTransport::submit_count() const { return impl_->submit_
 std::uint32_t Co5300PanelTransport::complete_count() const { return impl_->complete_count(); }
 std::int64_t Co5300PanelTransport::complete_time_us(std::uint32_t sequence) const {
   return impl_->complete_time_us(sequence);
+}
+TearSignalTiming Co5300PanelTransport::tear_signal_timing() const {
+  return impl_->tear_signal_timing();
 }
 bool Co5300PanelTransport::wait_for_all(std::int64_t timeout_us) {
   return impl_->wait_for_all(timeout_us);

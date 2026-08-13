@@ -7,6 +7,13 @@
 
 namespace tinydraw::esp32 {
 
+struct TearSignalTiming {
+  std::uint32_t rising_edges = 0;
+  std::int64_t period_us = -1;
+  std::int64_t high_us = -1;
+  bool level = false;
+};
+
 // Owns one CO5300 panel, its DMA staging, queue capacity, and completion
 // telemetry. Input pixels are RGB565 in host byte order. The panel requires
 // in-bounds even-aligned windows; invalid submissions fail closed. Callers must
@@ -30,6 +37,7 @@ class Co5300PanelTransport final : public DisplayBackend {
   [[nodiscard]] std::uint32_t submit_count() const;
   [[nodiscard]] std::uint32_t complete_count() const;
   [[nodiscard]] std::int64_t complete_time_us(std::uint32_t sequence) const;
+  [[nodiscard]] TearSignalTiming tear_signal_timing() const;
   [[nodiscard]] bool wait_for_all(std::int64_t timeout_us);
 
   void push_rect(int x, int y, int width, int height, const std::uint16_t* pixels,
