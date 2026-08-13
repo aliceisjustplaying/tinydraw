@@ -309,6 +309,27 @@ bool MaterializedCanvas::commit_incremental_revision(
   return true;
 }
 
+std::optional<std::size_t> MaterializedCanvas::resident_tiles_intersecting(
+    PixelRect world_bounds, std::span<TileKey> output) const {
+  if (!ready() || !valid_world_bounds(world_bounds)) {
+    return std::nullopt;
+  }
+  const std::size_t required = static_cast<std::size_t>(std::count_if(
+      slots_.begin(), slots_.end(), [world_bounds](const MaterializedSlotStorage& slot) {
+        return slot.occupied_ && rectangles_intersect(tile_world_bounds(slot.key_), world_bounds);
+      }));
+  if (output.size() < required) {
+    return std::nullopt;
+  }
+  std::size_t written = 0;
+  for (const MaterializedSlotStorage& slot : slots_) {
+    if (slot.occupied_ && rectangles_intersect(tile_world_bounds(slot.key_), world_bounds)) {
+      output[written++] = slot.key_;
+    }
+  }
+  return written;
+}
+
 std::optional<std::size_t> MaterializedCanvas::find_tile(TileKey key) const {
   const auto found = std::find_if(slots_.begin(), slots_.end(), [key](const auto& slot) {
     return slot.occupied_ && slot.key_ == key;
