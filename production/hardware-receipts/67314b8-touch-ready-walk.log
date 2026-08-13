@@ -1,0 +1,3 @@
+I (663) app_init: App version:      67314b8
+TINYDRAW_PRODUCTION_TOUCH_PROBE ready=1 points=0 changes=0 errors=0 last_x=0 last_y=0 elapsed_us=5000439
+TINYDRAW_PRODUCTION_WALK_DONE pass=1 panel_rejects=0 prepare_us=40022 transfer_us=25932 pushes=168 submit=168 complete=168 free_psram=7671048 largest_psram=7602176
