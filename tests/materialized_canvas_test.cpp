@@ -201,10 +201,30 @@ TEST_CASE("cache retains every zoom viewport across a disjoint pan fill") {
   for (const auto zoom : zooms) {
     for (std::uint16_t row = 0; row < 8; ++row) {
       for (std::uint16_t column = 0; column < 7; ++column) {
-        CHECK(canvas.lookup({zoom, column, row})->kind == production::SourceKind::kTileSlot);
+        const production::TileKey key{zoom, column, row};
+        CHECK(canvas.lookup(key)->kind == production::SourceKind::kTileSlot);
+        REQUIRE(canvas.mark_used(key));
       }
     }
   }
+
+  // Consume the remaining 40 slots, then prove the next publication evicts
+  // exactly the least-recently-used entry rather than an arbitrary viewport.
+  // The disjoint destination predates the mark_used calls above, so its first
+  // tile is now the oldest resident entry.
+  for (std::uint16_t column = 0; column < 40; ++column) {
+    REQUIRE(canvas.publish_tile({production::ZoomLevel::k400Percent, column, 16}, {0},
+                                production::MaterializationQuality::kImmediate, tile));
+  }
+  const production::TileKey oldest{production::ZoomLevel::k400Percent, 8, 8};
+  CHECK(canvas.lookup(oldest)->kind == production::SourceKind::kTileSlot);
+  REQUIRE(canvas.publish_tile({production::ZoomLevel::k400Percent, 40, 16}, {0},
+                              production::MaterializationQuality::kImmediate, tile));
+  CHECK(canvas.lookup(oldest)->kind == production::SourceKind::kOverview);
+  CHECK(canvas.lookup({production::ZoomLevel::k50Percent, 0, 0})->kind ==
+        production::SourceKind::kTileSlot);
+  CHECK(canvas.lookup({production::ZoomLevel::k400Percent, 40, 16})->kind ==
+        production::SourceKind::kTileSlot);
 }
 
 TEST_CASE("same-revision publication cannot downgrade immediate settled or exact quality") {

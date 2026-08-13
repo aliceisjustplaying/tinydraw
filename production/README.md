@@ -72,9 +72,9 @@ identity, not a permanent renderer-work size:
 
 - complete 25% overview: `368 × 448 × 2 = 329,728` bytes;
 - one tile: `64 × 64 × 2 = 8,192` bytes;
-- a 320-tile pixel pool: `2,621,440` bytes plus slot metadata; enough to
-  retain one arbitrary-alignment viewport at all four tiled zooms plus one
-  disjoint pan destination, with 40 slots of movement margin;
+- a 320-tile pixel pool: `2,621,440` bytes plus slot metadata; enough for
+  five worst-case arbitrary-alignment viewport footprints (`5 × 56 = 280`
+  tiles), leaving 40 additional LRU slots;
 - 100% world grid: `ceil(1472 / 64) × ceil(1792 / 64) = 23 × 28` keys.
 
 `MaterializedCanvas` owns no hidden allocation. The overview pixels and fixed

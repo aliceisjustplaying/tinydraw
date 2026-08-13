@@ -355,6 +355,13 @@ std::optional<TileProducer::GroupPublication> TileProducer::publish_group(
   const int last_row = (std::min(rendered_bounds.y1, visible_bounds.y1) - 1) / kTileHeight;
   const auto surface = workspace_.supertask_pixels.first(kTileProducerPixels);
   GroupPublication publication{};
+  // Group publication is serialized and allocation-free. All keys, revisions,
+  // and source spans below have already been validated. If the canvas has no
+  // unpinned slot, the first publish fails; once one publish succeeds, that
+  // newly unpinned slot remains available for later tiles (and may itself be
+  // selected by LRU). Under this contract a group cannot be left partially
+  // published. Revisit this and stage transactionally if publish_tile gains a
+  // new runtime failure mode or publication becomes concurrent.
   for (int row = first_row; row <= last_row; ++row) {
     for (int column = first_column; column <= last_column; ++column) {
       const TileKey key{zoom, static_cast<std::uint16_t>(column), static_cast<std::uint16_t>(row)};
