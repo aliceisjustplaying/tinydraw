@@ -298,8 +298,6 @@ class MaterializedCanvas {
                                      CompositionContext& context);
   void compose_fallback_pixels(PixelRect bounds, CompositionContext& context);
   static void include_quality(MaterializationQuality quality, ViewCompositionStats& stats);
-  [[nodiscard]] std::size_t uniform_tiles_intersecting(PixelRect world_bounds,
-                                                       std::span<TileKey> output) const;
   [[nodiscard]] static TileKey key_for_identity(std::size_t index);
   [[nodiscard]] static bool uniform_intersects(std::size_t index, PixelRect world_bounds);
   void invalidate_uniforms(PixelRect world_bounds);

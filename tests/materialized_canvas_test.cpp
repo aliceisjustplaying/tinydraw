@@ -294,6 +294,59 @@ TEST_CASE("paper catalog consumes no raw slots and composes direct fills") {
   CHECK(canvas.lookup(key)->kind == production::SourceKind::kTileSlot);
 }
 
+TEST_CASE("incremental mutation reclassifies raw tiles without replaying learned paper") {
+  std::array<std::uint16_t, production::kOverviewPixels> overview{};
+  auto uniforms = std::make_unique<std::array<production::MaterializedUniformStorage,
+                                              production::kMaterializedTileIdentityCount>>();
+  std::array<std::uint8_t, production::kOccupancyBytes> occupancy{};
+  std::array<production::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, production::kTilePixels> tile_storage{};
+  std::array<std::uint16_t, production::kTilePixels> raw{};
+  raw.front() = 0x1234U;
+  std::array<std::uint16_t, production::kTilePixels> uniform{};
+  uniform.fill(0xFFFFU);
+  std::array<std::uint16_t, 16U * 16U> next_overview{};
+  production::MaterializedCanvas canvas(overview, *uniforms, occupancy, slots, tile_storage);
+  const production::TileKey changed{production::ZoomLevel::k100Percent, 0, 0};
+  const production::TileKey learned_paper{production::ZoomLevel::k100Percent, 1, 0};
+  const production::TileKey replacement{production::ZoomLevel::k100Percent, 2, 0};
+  REQUIRE(canvas.publish_overview({0}, overview));
+  REQUIRE(canvas.publish_tile(changed, {0}, production::MaterializationQuality::kImmediate, raw));
+  REQUIRE(
+      canvas.publish_uniform(learned_paper, {0}, production::MaterializationQuality::kImmediate));
+
+  std::array<production::TileKey, 1> affected{};
+  REQUIRE(canvas.resident_tiles_intersecting({0, 0, 128, 64}, affected) == 1U);
+  CHECK(affected.front() == changed);
+  const std::array publication{production::TileRevisionPublication{
+      .key = changed,
+      .quality = production::MaterializationQuality::kImmediate,
+      .pixels = uniform,
+  }};
+  REQUIRE(canvas.commit_incremental_revision(
+      {1}, {.bounds = {0, 0, 16, 16}, .pixels = next_overview}, {0, 0, 64, 64}, publication));
+  CHECK(canvas.lookup(changed)->kind == production::SourceKind::kUniform);
+  CHECK(canvas.lookup(learned_paper)->kind == production::SourceKind::kUniform);
+
+  REQUIRE(
+      canvas.publish_tile(replacement, {1}, production::MaterializationQuality::kImmediate, raw));
+  CHECK(canvas.lookup(replacement)->kind == production::SourceKind::kTileSlot);
+  CHECK(canvas.lookup(changed)->kind == production::SourceKind::kUniform);
+}
+
+TEST_CASE("catalog and occupancy storage are never accepted as external workspace") {
+  std::array<std::uint16_t, production::kOverviewPixels> overview{};
+  auto uniforms = std::make_unique<std::array<production::MaterializedUniformStorage,
+                                              production::kMaterializedTileIdentityCount>>();
+  std::array<std::uint8_t, production::kOccupancyBytes> occupancy{};
+  std::array<production::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, production::kTilePixels> tile_storage{};
+  production::MaterializedCanvas canvas(overview, *uniforms, occupancy, slots, tile_storage);
+
+  CHECK_FALSE(canvas.accepts_external_workspace(std::as_bytes(std::span(*uniforms))));
+  CHECK_FALSE(canvas.accepts_external_workspace(std::as_bytes(std::span(occupancy))));
+}
+
 TEST_CASE("occupancy is conservative across every zoom and mutation invalidates learned paper") {
   std::array<std::uint16_t, production::kOverviewPixels> overview{};
   std::array<std::uint16_t, production::kOverviewPixels> snapshot{};

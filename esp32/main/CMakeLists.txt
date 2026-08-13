@@ -39,7 +39,6 @@ if(TINYDRAW_PRODUCTION_OVERVIEW_WALK OR TINYDRAW_PRODUCTION_LIVE_APP)
     if(TINYDRAW_PRODUCTION_TILE_CENSUS)
       list(APPEND TINYDRAW_PRODUCTION_HARDWARE_SRCS
         "production_tile_census.cpp"
-        "${CMAKE_CURRENT_LIST_DIR}/../../production/src/tile_payload_analysis.cpp"
       )
     endif()
     set(TINYDRAW_PRODUCTION_CORE_SRCS
