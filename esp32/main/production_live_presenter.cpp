@@ -40,7 +40,7 @@ ProductionLivePresenter::ProductionLivePresenter(production::MaterializedCanvas&
 bool ProductionLivePresenter::ready() const {
   return canvas_.ready() && scheduler_.ready() && display_.ready() &&
          frame_.size() == production::kOverviewPixels &&
-         region_.size() >= kMaximumProgressiveRegionPixels && renderer_ != nullptr;
+         region_.size() >= kLiveRegionScratchPixels && renderer_ != nullptr;
 }
 
 production::ZoomLevel ProductionLivePresenter::zoom() const { return zoom_; }
@@ -266,8 +266,8 @@ LivePresentationTiming ProductionLivePresenter::refresh_pan(int old_x, int old_y
   const int delta_y = level_y_ - old_y;
   const bool reusable = frame_reusable_ && frame_zoom_ == zoom_ && frame_level_x_ == old_x &&
                         frame_level_y_ == old_y && frame_epoch_ == canvas_.composition_epoch() &&
-                        std::abs(delta_x) < production::kOverviewWidth &&
-                        std::abs(delta_y) < kMainToolbarOverlayTop;
+                        std::abs(delta_x) <= kMaximumCachedPanDelta &&
+                        std::abs(delta_y) <= kMaximumCachedPanDelta;
   if (!reusable) {
     return refresh(toolbar, event_us);
   }
@@ -275,12 +275,15 @@ LivePresentationTiming ProductionLivePresenter::refresh_pan(int old_x, int old_y
   const auto scroll = production::scroll_frame(
       frame_, production::kOverviewWidth,
       {0, 0, production::kOverviewWidth, kMainToolbarOverlayTop}, delta_x, delta_y);
-  if (!scroll.has_value() ||
-      !std::all_of(scroll->exposed.begin(),
-                   scroll->exposed.begin() + static_cast<std::ptrdiff_t>(scroll->exposed_count),
-                   [this](production::PixelRect exposed) { return compose_into_frame(exposed); })) {
-    frame_reusable_ = false;
+  if (!scroll.has_value()) {
     return refresh(toolbar, event_us);
+  }
+  for (std::size_t index = 0; index < scroll->exposed_count; ++index) {
+    if (!compose_into_frame(scroll->exposed[index])) {
+      // scroll_frame already moved overlap in place. A full refresh is the
+      // only safe recovery and establishes a new reusable frame.
+      return refresh(toolbar, event_us);
+    }
   }
   draw_toolbar(frame_, production::kOverviewWidth, production::kOverviewHeight, toolbar);
   auto timing = present({0, 0, production::kOverviewWidth, production::kOverviewHeight}, event_us,
