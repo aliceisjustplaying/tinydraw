@@ -31,6 +31,7 @@ if(TINYDRAW_PRODUCTION_OVERVIEW_WALK)
   set(TINYDRAW_APP_SRCS
     "co5300_panel_transport.cpp"
     "production_overview_walk.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/../../production/src/incremental_document.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../../production/src/incremental_rasterizer.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../../production/src/materialized_canvas.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../../production/src/operation.cpp"

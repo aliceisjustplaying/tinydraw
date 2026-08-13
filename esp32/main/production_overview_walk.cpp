@@ -11,6 +11,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "tinydraw/production/incremental_document.h"
 #include "tinydraw/production/incremental_rasterizer.h"
 #include "tinydraw/production/materialized_canvas.h"
 #include "tinydraw/production/operation_log.h"
@@ -20,6 +21,7 @@ namespace {
 
 using production::CompactOperationSample;
 using production::DocumentRevision;
+using production::IncrementalDocumentWorkspace;
 using production::IncrementalOperation;
 using production::MaterializationQuality;
 using production::MaterializedCanvas;
@@ -205,111 +207,39 @@ void fill_tile_from_overview(std::span<std::uint16_t> tile, std::span<const std:
   }
 }
 
-bool commit_operation_probe(MaterializedCanvas& canvas, const IncrementalOperation& operation,
-                            DocumentRevision revision, std::span<std::uint16_t> next_overview,
-                            std::span<std::uint16_t> tile_scratch) {
-  constexpr TileKey kAffected{ZoomLevel::k100Percent, 0, 0};
-  constexpr TileKey kCarried{ZoomLevel::k100Percent, 1, 0};
-  if (revision == DocumentRevision{1}) {
-    fill_tile_from_overview(tile_scratch, canvas.overview_pixels(), kAffected);
-    if (!canvas.publish_tile(kAffected, {0}, MaterializationQuality::kSettled, tile_scratch)) {
-      return false;
-    }
-    fill_tile_from_overview(tile_scratch, canvas.overview_pixels(), kCarried);
-    if (!canvas.publish_tile(kCarried, {0}, MaterializationQuality::kExact, tile_scratch)) {
-      return false;
-    }
-  }
-  const auto carried_before = canvas.lookup(kCarried);
-  if (!carried_before.has_value()) {
-    return false;
-  }
-
-  std::array<TileKey, 4> operation_tiles{};
-  const auto affected_count =
-      production::affected_tiles(operation, ZoomLevel::k100Percent, operation_tiles);
-  if (!affected_count.has_value() || !affected_count->complete() || affected_count->written != 1U ||
-      operation_tiles[0] != kAffected) {
-    return false;
-  }
-  const auto prior_tile = canvas.compose_view(
-      {.zoom = ZoomLevel::k100Percent, .level_pixels = production::tile_pixel_bounds(kAffected)},
-      tile_scratch);
-  if (!prior_tile.has_value() || prior_tile->tile_pixels != production::kTilePixels) {
-    return false;
-  }
-  std::copy(canvas.overview_pixels().begin(), canvas.overview_pixels().end(),
-            next_overview.begin());
-
-  const std::int64_t render_started = esp_timer_get_time();
-  const bool overview_rendered = production::apply_incremental_operation(
-      operation,
-      RasterSurface{.zoom = ZoomLevel::k25Percent,
-                    .level_bounds = {0, 0, production::kOverviewWidth, production::kOverviewHeight},
-                    .pixels = next_overview,
-                    .stride = production::kOverviewWidth});
-  const std::int64_t overview_us = esp_timer_get_time() - render_started;
-  const std::int64_t tile_started = esp_timer_get_time();
-  const bool tile_rendered = production::apply_incremental_operation(
-      operation, RasterSurface{.zoom = ZoomLevel::k100Percent,
-                               .level_bounds = production::tile_pixel_bounds(kAffected),
-                               .pixels = tile_scratch,
-                               .stride = production::kTileWidth});
-  const std::int64_t tile_us = esp_timer_get_time() - tile_started;
-  if (!overview_rendered || !tile_rendered) {
-    return false;
-  }
-
-  const std::array publications{TileRevisionPublication{
-      .key = kAffected,
-      .quality = MaterializationQuality::kSettled,
-      .pixels = tile_scratch,
-  }};
-  const std::int64_t commit_started = esp_timer_get_time();
-  const auto world_bounds = production::operation_world_bounds(operation.samples);
-  if (!world_bounds.has_value()) {
-    return false;
-  }
-  const bool committed =
-      canvas.commit_incremental_revision(revision, next_overview, *world_bounds, publications);
-  const std::int64_t commit_us = esp_timer_get_time() - commit_started;
-  std::printf(
-      "TINYDRAW_PRODUCTION_WALK_OPERATION revision=%lu overview_us=%lld tile_us=%lld "
-      "commit_us=%lld "
-      "committed=%u\n",
-      static_cast<unsigned long>(revision.value), static_cast<long long>(overview_us),
-      static_cast<long long>(tile_us), static_cast<long long>(commit_us), committed);
-  if (!committed) {
-    return false;
-  }
-  const auto updated = canvas.lookup(kAffected);
-  const auto carried = canvas.lookup(kCarried);
-  return updated.has_value() && carried.has_value() && updated->identity.revision == revision &&
-         updated->identity.quality == MaterializationQuality::kSettled &&
-         carried->identity.revision == revision &&
-         carried->identity.generation == carried_before->identity.generation;
-}
-
-}  // namespace
-
 bool append_and_commit_probe(OperationLog& log, MaterializedCanvas& canvas,
                              const production::OperationAppend& append_request,
                              std::span<std::uint16_t> next_overview,
                              std::span<std::uint16_t> tile_scratch) {
-  const auto prepared = log.prepare(append_request);
-  if (!prepared.has_value()) {
+  constexpr TileKey kAffected{ZoomLevel::k100Percent, 0, 0};
+  constexpr TileKey kCarried{ZoomLevel::k100Percent, 1, 0};
+  const auto carried_before = canvas.lookup(kCarried);
+  if (!carried_before.has_value()) {
     return false;
   }
-  const auto& stored = prepared->operation();
-  const IncrementalOperation operation{
-      .tool = stored.tool, .color = stored.color, .samples = stored.samples};
-  if (!commit_operation_probe(canvas, operation, stored.identity.revision, next_overview,
-                              tile_scratch)) {
-    static_cast<void>(log.cancel(*prepared));
-    return false;
-  }
-  return log.publish(*prepared);
+  std::array<TileRevisionPublication, 1> publications{};
+  std::array<TileKey, 1> affected{};
+  const std::int64_t started = esp_timer_get_time();
+  const auto result =
+      production::append_incrementally(log, canvas, append_request,
+                                       IncrementalDocumentWorkspace{.next_overview = next_overview,
+                                                                    .tile_scratch = tile_scratch,
+                                                                    .publications = publications,
+                                                                    .affected_keys = affected});
+  const std::int64_t elapsed_us = esp_timer_get_time() - started;
+  std::printf("TINYDRAW_PRODUCTION_WALK_OPERATION revision=%lu append_us=%lld committed=%u\n",
+              static_cast<unsigned long>(canvas.current_revision().value),
+              static_cast<long long>(elapsed_us), result.has_value());
+  const auto updated = canvas.lookup(kAffected);
+  const auto carried = canvas.lookup(kCarried);
+  return result.has_value() && result->affected_resident_tiles == 1U && updated.has_value() &&
+         carried.has_value() && updated->identity.revision == result->identity.revision &&
+         updated->identity.quality == MaterializationQuality::kSettled &&
+         carried->identity.revision == result->identity.revision &&
+         carried->identity.generation == carried_before->identity.generation;
 }
+
+}  // namespace
 
 void run_production_overview_walk() {
   auto* overview =
@@ -380,6 +310,23 @@ void run_production_overview_walk() {
            pass;
     vTaskDelay(pdMS_TO_TICKS(350));
   }
+  constexpr TileKey kAffected{ZoomLevel::k100Percent, 0, 0};
+  constexpr TileKey kCarried{ZoomLevel::k100Percent, 1, 0};
+  fill_tile_from_overview(std::span(tile_scratch, production::kTilePixels),
+                          canvas.overview_pixels(), kAffected);
+  pass = canvas
+             .publish_tile(kAffected, {0}, MaterializationQuality::kSettled,
+                           std::span(tile_scratch, production::kTilePixels))
+             .has_value() &&
+         pass;
+  fill_tile_from_overview(std::span(tile_scratch, production::kTilePixels),
+                          canvas.overview_pixels(), kCarried);
+  pass = canvas
+             .publish_tile(kCarried, {0}, MaterializationQuality::kExact,
+                           std::span(tile_scratch, production::kTilePixels))
+             .has_value() &&
+         pass;
+
   const std::array pen_samples{
       CompactOperationSample{.x_quarter = 32, .y_quarter = 48, .radius_256 = 1280},
       CompactOperationSample{.x_quarter = 208, .y_quarter = 192, .radius_256 = 1280},
