@@ -12,9 +12,9 @@ namespace tinydraw::production {
 // Revision publication renders the complete next overview outside the live
 // overview before committing it. This region is distinct from kOverviewBytes.
 inline constexpr std::size_t kOverviewPublicationBytes = kOverviewBytes;
-// Retain one arbitrary-alignment viewport at each tiled zoom (4 x 56),
-// with a small margin for adjacent pan tiles.
-inline constexpr std::size_t kTileSlotCount = 256;
+// Retain one arbitrary-alignment viewport at each tiled zoom, plus one
+// disjoint pan destination (5 x 56), with 40 slots of movement margin.
+inline constexpr std::size_t kTileSlotCount = 320;
 inline constexpr std::size_t kOperationCapacity = 4'000;
 inline constexpr std::size_t kOperationSampleCapacity = 80'000;
 inline constexpr std::size_t kMaterializedZoomCount = kLodZoomCount;

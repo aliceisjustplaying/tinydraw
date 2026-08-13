@@ -29,16 +29,16 @@ TEST_CASE("production geometry has fixed world overview and committed zoom ident
 TEST_CASE("production memory plan records every fixed-capacity region") {
   CHECK(sizeof(production::CompactOperationSample) == 8U);
   CHECK(production::kOverviewPublicationBytes == 329'728U);
-  CHECK(production::kTileSlotCount == 256U);
-  CHECK(production::kTileSlotCount >= 4U * production::kMaximumVisibleTiles);
-  CHECK(production::kTilePoolBytes == 2'097'152U);
+  CHECK(production::kTileSlotCount == 320U);
+  CHECK(production::kTileSlotCount >= 5U * production::kMaximumVisibleTiles);
+  CHECK(production::kTilePoolBytes == 2'621'440U);
   CHECK(production::kTileMetadataBytes ==
         production::kTileSlotCount * sizeof(production::MaterializedSlotStorage));
   CHECK(production::kOperationStorageBytes == 720'000U);
   CHECK(production::kLodStorageBytes == 668'000U);
   CHECK(production::kRendererWorkspaceBytes == 163'840U);
   CHECK(production::kDisplayWorkspaceBytes == 103'040U);
-  CHECK(production::kExternalPlanBytes == 4'421'728U);
+  CHECK(production::kExternalPlanBytes == 4'948'576U);
   CHECK(production::kTargetContiguousReserveBytes == 1'572'864U);
 }
 
@@ -165,7 +165,7 @@ TEST_CASE("fixed-capacity slots replace the least recently used slot") {
   CHECK(canvas.lookup(third)->kind == production::SourceKind::kTileSlot);
 }
 
-TEST_CASE("cache retains one worst-case viewport at every tiled zoom") {
+TEST_CASE("cache retains every zoom viewport across a disjoint pan fill") {
   constexpr std::array zooms{
       production::ZoomLevel::k50Percent,
       production::ZoomLevel::k100Percent,
@@ -190,6 +190,14 @@ TEST_CASE("cache retains one worst-case viewport at every tiled zoom") {
     }
   }
 
+  // Fill a second disjoint 400% viewport after the four zoom views. The first
+  // viewport at every zoom must still survive.
+  for (std::uint16_t row = 8; row < 16; ++row) {
+    for (std::uint16_t column = 8; column < 15; ++column) {
+      REQUIRE(canvas.publish_tile({production::ZoomLevel::k400Percent, column, row}, {0},
+                                  production::MaterializationQuality::kImmediate, tile));
+    }
+  }
   for (const auto zoom : zooms) {
     for (std::uint16_t row = 0; row < 8; ++row) {
       for (std::uint16_t column = 0; column < 7; ++column) {
