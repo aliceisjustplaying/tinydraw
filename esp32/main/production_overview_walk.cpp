@@ -296,17 +296,19 @@ bool append_and_commit_probe(OperationLog& log, MaterializedCanvas& canvas,
                              const production::OperationAppend& append_request,
                              std::span<std::uint16_t> next_overview,
                              std::span<std::uint16_t> tile_scratch) {
-  const auto identity = log.append(append_request);
-  if (!identity.has_value()) {
+  const auto prepared = log.prepare(append_request);
+  if (!prepared.has_value()) {
     return false;
   }
-  const auto stored = log.operation(identity->operation_index);
-  if (!stored.has_value() || stored->identity != *identity) {
-    return false;
-  }
+  const auto& stored = prepared->operation();
   const IncrementalOperation operation{
-      .tool = stored->tool, .color = stored->color, .samples = stored->samples};
-  return commit_operation_probe(canvas, operation, identity->revision, next_overview, tile_scratch);
+      .tool = stored.tool, .color = stored.color, .samples = stored.samples};
+  if (!commit_operation_probe(canvas, operation, stored.identity.revision, next_overview,
+                              tile_scratch)) {
+    static_cast<void>(log.cancel(*prepared));
+    return false;
+  }
+  return log.publish(*prepared);
 }
 
 void run_production_overview_walk() {

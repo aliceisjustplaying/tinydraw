@@ -95,6 +95,45 @@ TEST_CASE("operation log append may exactly fill sample capacity") {
   CHECK(log.sample_count() == log.sample_capacity());
 }
 
+TEST_CASE("prepared append advances authority only when published") {
+  std::array<production::OperationRecord, 1> records{};
+  std::array<production::CompactOperationSample, 2> storage{};
+  production::OperationLog log(records, storage);
+  const std::array samples{
+      production::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256},
+      production::CompactOperationSample{.x_quarter = 8, .y_quarter = 8, .radius_256 = 256},
+  };
+  const auto prepared = log.prepare({.color = 0xF800U, .samples = samples});
+  REQUIRE(prepared.has_value());
+  CHECK(prepared->operation().identity == production::OperationIdentity{{1}, 0});
+  CHECK(log.operation_count() == 0U);
+  CHECK(log.sample_count() == 0U);
+  CHECK(log.current_revision() == production::DocumentRevision{0});
+  CHECK_FALSE(log.prepare({.samples = samples}));
+
+  REQUIRE(log.publish(*prepared));
+  CHECK_FALSE(log.publish(*prepared));
+  CHECK(log.operation_count() == 1U);
+  CHECK(log.sample_count() == 2U);
+  CHECK(log.current_revision() == production::DocumentRevision{1});
+}
+
+TEST_CASE("canceling a prepared append leaves authority unchanged") {
+  std::array<production::OperationRecord, 1> records{};
+  std::array<production::CompactOperationSample, 1> storage{};
+  production::OperationLog log(records, storage);
+  const std::array samples{
+      production::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256}};
+  const auto prepared = log.prepare({.samples = samples});
+  REQUIRE(prepared.has_value());
+  REQUIRE(log.cancel(*prepared));
+  CHECK_FALSE(log.cancel(*prepared));
+  CHECK(log.operation_count() == 0U);
+  CHECK(log.sample_count() == 0U);
+  CHECK(log.current_revision() == production::DocumentRevision{0});
+  CHECK(log.append({.samples = samples}) == production::OperationIdentity{{1}, 0});
+}
+
 TEST_CASE("operation log capacity failure is atomic") {
   std::array<production::OperationRecord, 2> records{};
   std::array<production::CompactOperationSample, 2> storage{};
