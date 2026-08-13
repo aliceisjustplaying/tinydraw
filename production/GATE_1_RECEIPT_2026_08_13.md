@@ -7,11 +7,14 @@ Plan: [`../PRODUCTION_GATE_PLAN_2026_08_13.md`](../PRODUCTION_GATE_PLAN_2026_08_
 
 ## Verdict: YELLOW
 
-The hard-edged production tile path passes the 500 ms viewport gate at 100% and
-400% for both required 1,000-operation workloads. The measured 4-sample SSAA
-path does not: one complete visible 100% viewport took **807.961 ms**. Per the
-precommitted verdict table, the cheap supersampling route is not funded as the
-product renderer. The analytic AA gate moves ahead of Gate 2.
+The hard-edged production tile path passes the 500 ms viewport gate at the
+aligned 100% and 400% verdict views for both required 1,000-operation workloads.
+A later worst-case unaligned cache-retention probe measured **0.645–0.721 s**
+for a cold viewport; on 2026-08-13 the user accepted that latency as visible
+optimization debt so work can proceed, while requiring retained views not to
+replay. The measured 4-sample SSAA path still does not pass: one complete
+visible 100% viewport took **807.961 ms**. The cheap supersampling route is not
+funded as the product renderer. The analytic AA gate moves ahead of Gate 2.
 
 This is not a ship-quality rendering pass. Hard-edged tiles are provisional
 `kImmediate`; `kSettled` remains reserved for anti-aliased output.
@@ -23,7 +26,9 @@ Evidence logs: [`hardware-receipts/gate1-tile-producer.log`](hardware-receipts/g
 [`hardware-receipts/gate1-pan-p95-20-runs.log`](hardware-receipts/gate1-pan-p95-20-runs.log),
 [`hardware-receipts/gate1-fable-fix.log`](hardware-receipts/gate1-fable-fix.log),
 [`hardware-receipts/gate1-clean-head-p95-20-runs.log`](hardware-receipts/gate1-clean-head-p95-20-runs.log),
-and [`hardware-receipts/gate1-grok-fixes-p95-20-runs.log`](hardware-receipts/gate1-grok-fixes-p95-20-runs.log).
+[`hardware-receipts/gate1-grok-fixes-p95-20-runs.log`](hardware-receipts/gate1-grok-fixes-p95-20-runs.log),
+[`hardware-receipts/gate1-cache-retention-final.log`](hardware-receipts/gate1-cache-retention-final.log),
+and [`hardware-receipts/636b9c7-memory-layout-320.log`](hardware-receipts/636b9c7-memory-layout-320.log).
 
 ### Deterministic synthetic regression workload
 
@@ -92,6 +97,26 @@ and completed presentation at both 100% and 400%. Twenty cold-start runs measure
 This closes the ≤35 ms fallback pan path and basic adapter defect. The final
 human test still checks physical toolbar mode selection and touch behavior.
 
+### Cache retention and cold-pan characterization
+
+A 320-slot LRU pool retains five worst-case arbitrary-alignment viewport
+footprints (`5 × 56 = 280` tiles) with 40 additional slots. The final hardware
+probe filled an unaligned viewport at every tiled zoom, filled a disjoint 400%
+destination, then returned to the original viewport at every zoom.
+
+| View | Cold fill | Cached return compose + transfer | Remaining tiles | Fallback pixels |
+|---|---:|---:|---:|---:|
+| 50% origin | 687.995 ms | 48.605 ms | 0 | 0 |
+| 100% origin | 687.997 ms | 48.942 ms | 0 | 0 |
+| 200% origin | 644.997 ms | 49.691 ms | 0 | 0 |
+| 400% origin | 669.997 ms | 50.524 ms | 0 | 0 |
+| disjoint 400% | 720.998 ms | — | 0 after fill | 0 after fill |
+
+All four post-disjoint round trips were cache hits. The automated receipt ended
+with `cache=1` and `return=1`. The cold 0.64–0.72 s range is not relabeled as a
+sub-500-ms pass; it is an explicitly accepted optimization target. Revisited
+views must continue to avoid replay.
+
 ### Draw while filling and adversarial XL input
 
 The post-review hardware run started a live preview while 400% fill was active,
@@ -116,13 +141,17 @@ rebases the producer's uniform baseline.
 
 ### Live memory receipt
 
-The complete live image reports **3,957,856 bytes** of explicitly allocated
-caller-owned storage, then **4,385,076 bytes free PSRAM** with a **4,325,376-byte
+The complete live image reports **5,540,584 bytes** of explicitly allocated
+caller-owned storage, then **2,801,332 bytes free PSRAM** with a **2,752,512-byte
 largest block** after loading the seed-7 document and completing all automated
-probes. Incremental tile scratch now covers the 56-tile arbitrary-alignment
-visible worst case; its publication metadata and affected-key list are also in
-this declared PSRAM storage rather than the 6 KiB main-task stack. This is the
-live Gate 1 image, not the earlier empty-heap plan receipt.
+probes. Incremental tile scratch covers the 56-tile arbitrary-alignment visible
+worst case; its publication metadata and affected-key list are also in this
+declared PSRAM storage rather than the 6 KiB main-task stack.
+
+A separate fresh empty-heap probe allocated the complete **4,948,576-byte**
+320-slot plan and then a distinct **1,572,864-byte** contiguous reserve. This
+replaces the stale 128-slot allocation receipt; the live numbers above remain
+the more representative coexistence evidence.
 
 ## Correctness and architecture evidence
 
@@ -135,6 +164,10 @@ live Gate 1 image, not the earlier empty-heap plan receipt.
 - Revision/epoch changes abort active work rather than publish stale pixels.
 - A worst-case 7×8 refined viewport survives an intersecting XL append without
   any tile falling back to the overview.
+- Five 7×8 viewport footprints fit simultaneously; the 321st distinct
+  publication evicts the host-proven least-recently-used tile.
+- Every tiled zoom survives a disjoint 400% fill and returns with zero fallback
+  pixels on hardware.
 - Progressive presentation composes bounded regions through DisplayScheduler.
 - Source geometry is the single raw operation sample log. **No per-zoom LOD
   copies and no simplifier are used.**
