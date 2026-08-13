@@ -21,7 +21,7 @@ inline constexpr std::size_t kTileProducerOperationBatch = 64;
 inline constexpr std::size_t kTileProducerSampleBatch = 96;
 // Conservative projected bounding-box work budget. It complements the sample
 // cap because raster cost also grows with segment length and radius.
-inline constexpr std::size_t kTileProducerRasterWorkBatch = 20'000;
+inline constexpr std::size_t kTileProducerRasterWorkBatch = 16'000;
 
 struct TileProducerWorkspace {
   // Row-major 128x128 supertask surface.

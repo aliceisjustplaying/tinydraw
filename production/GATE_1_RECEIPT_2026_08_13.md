@@ -47,9 +47,10 @@ The first 400% capture exposed a 35.684 ms replay slice caused by a 198-sample
 stroke. The final producer bounds work by operation count, sample segments, and
 a conservative projected raster-area budget. Splitting can count one source
 operation in multiple slices, hence “sliced applications” rather than distinct
-operations. After review fixes, viewport-only publication (42 rather than 48
-tiles) still measured 444.738 ms at 100% and 438.758 ms at 400% in the single
-hardware recapture; the earlier table remains the pre-fix 20-run p95 receipt.
+operations. After review fixes, viewport-only publication (42 rather than 48 tiles) measured
+437.934 ms/478.385 ms at 100% for the synthetic/realistic workloads and
+438.758 ms at 400% for the realistic workload in the first single hardware
+recapture. A clean-HEAD p95 recapture supersedes these numbers below.
 
 ### Four-sample SSAA probe
 
