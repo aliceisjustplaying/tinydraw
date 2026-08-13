@@ -1,0 +1,46 @@
+I (664) app_init: App version:      16dc9b2
+TINYDRAW_PRODUCTION_WALK_FRAME zoom=25 x=0 y=0 hash=d76c09b1 pushes=21 elapsed_us=20148 completed=1 submit=21 complete=21
+TINYDRAW_PRODUCTION_WALK_FRAME zoom=100 x=0 y=0 hash=d9e39425 pushes=21 compose_us=9304 elapsed_us=25996 completed=1 submit=42 complete=42
+TINYDRAW_PRODUCTION_WALK_FRAME zoom=100 x=184 y=224 hash=a4ce26e5 pushes=21 compose_us=9182 elapsed_us=25998 completed=1 submit=63 complete=63
+TINYDRAW_PRODUCTION_WALK_FRAME zoom=100 x=552 y=672 hash=1b5753a5 pushes=21 compose_us=9307 elapsed_us=25999 completed=1 submit=84 complete=84
+TINYDRAW_PRODUCTION_WALK_FRAME zoom=100 x=1104 y=1344 hash=91f8b705 pushes=21 compose_us=10091 elapsed_us=26999 completed=1 submit=105 complete=105
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=1 append_us=2228 committed=1
+TINYDRAW_PRODUCTION_WALK_INCREMENTAL phase=pen revision=1 hash=e93cc976 pushes=21 tile_pixels=8192 fallback_pixels=156672 elapsed_us=23932 completed=1 submit=126 complete=126
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=2 append_us=1560 committed=1
+TINYDRAW_PRODUCTION_WALK_INCREMENTAL phase=eraser revision=2 hash=9c622475 pushes=21 tile_pixels=8192 fallback_pixels=156672 elapsed_us=24067 completed=1 submit=147 complete=147
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=3 append_us=1355 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=4 append_us=979 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=5 append_us=985 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=6 append_us=971 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=7 append_us=986 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=8 append_us=974 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=9 append_us=982 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=10 append_us=976 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=11 append_us=986 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=12 append_us=976 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=13 append_us=985 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=14 append_us=976 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=15 append_us=986 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=16 append_us=976 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=17 append_us=985 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=18 append_us=977 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=19 append_us=976 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=20 append_us=980 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=21 append_us=982 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=22 append_us=981 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=23 append_us=986 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=24 append_us=975 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=25 append_us=984 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=26 append_us=970 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=27 append_us=986 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=28 append_us=976 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=29 append_us=985 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=30 append_us=980 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=31 append_us=980 committed=1
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=32 append_us=981 committed=1
+TINYDRAW_PRODUCTION_WALK_BURST operations=30 revision=32 total_us=192134 average_us=6404 log_operations=32 log_samples=64
+TINYDRAW_PRODUCTION_WALK_INCREMENTAL phase=burst revision=32 hash=d4e162c4 pushes=21 tile_pixels=8192 fallback_pixels=156672 elapsed_us=24440 completed=1 submit=168 complete=168
+TINYDRAW_PRODUCTION_TOUCH_PROBE ready=1 points=0 changes=0 errors=0 last_x=0 last_y=0 elapsed_us=5000412
+TINYDRAW_PRODUCTION_WALK_DONE pass=1 panel_rejects=0 scheduler_accepted=168 scheduler_completed=168 scheduler_rejected=0 scheduler_stale=0 scheduler_queued=0 prepare_us=39715 transfer_us=25053 pushes=168 submit=168 complete=168 free_psram=7671048 largest_psram=7602176
+
+Hardware result: bounded overview publication preserved every expected hash and reduced the 30-operation coordinated append burst from the prior 50.295 ms average to 6.404 ms average as measured by the existing outer probe; individual append_incrementally calls after warmup were about 0.97-0.99 ms. The outer burst timer includes printf/serial overhead. This deterministic workload is not representative touch input.
