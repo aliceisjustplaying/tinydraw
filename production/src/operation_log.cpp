@@ -82,6 +82,8 @@ bool OperationLog::ready() const { return !records_.empty() && !samples_.empty()
 
 DocumentRevision OperationLog::current_revision() const { return revision_; }
 
+OperationLogEpoch OperationLog::epoch() const { return epoch_; }
+
 std::size_t OperationLog::operation_count() const { return operation_count_; }
 
 std::size_t OperationLog::sample_count() const { return sample_count_; }
@@ -194,8 +196,10 @@ std::optional<StoredOperation> OperationLog::operation(std::size_t index) const 
 }
 
 std::optional<OperationReplayRange> OperationLog::replay_range(
-    DocumentRevision baseline_revision, DocumentRevision destination_revision) const {
-  if (append_pending_ || baseline_revision.value < base_revision_.value ||
+    OperationLogEpoch baseline_epoch, DocumentRevision baseline_revision,
+    DocumentRevision destination_revision) const {
+  if (append_pending_ || baseline_epoch != epoch_ ||
+      baseline_revision.value < base_revision_.value ||
       destination_revision.value < baseline_revision.value ||
       destination_revision.value > revision_.value) {
     return std::nullopt;
@@ -206,6 +210,7 @@ std::optional<OperationReplayRange> OperationLog::replay_range(
     return std::nullopt;
   }
   return OperationReplayRange{
+      .epoch = epoch_,
       .baseline_revision = baseline_revision,
       .destination_revision = destination_revision,
       .first_operation = first_operation,
@@ -221,6 +226,10 @@ bool OperationLog::reset(DocumentRevision revision) {
   sample_count_ = 0;
   base_revision_ = revision;
   revision_ = revision;
+  ++epoch_.value;
+  if (epoch_.value == 0U) {
+    ++epoch_.value;
+  }
   pending_sample_count_ = 0;
   pending_token_ = 0;
   return true;

@@ -188,16 +188,27 @@ TEST_CASE("operation log exposes only represented contiguous replay ranges") {
   const std::array sample{
       production::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256}};
   REQUIRE(log.reset({8}));
+  const production::OperationLogEpoch epoch = log.epoch();
   REQUIRE(log.append({.color = 0x001FU, .samples = sample}));
   REQUIRE(log.append({.tool = production::OperationTool::kEraser, .samples = sample}));
   REQUIRE(log.append({.color = 0xF800U, .samples = sample}));
 
-  CHECK(log.replay_range({8}, {11}) == production::OperationReplayRange{{8}, {11}, 0, 3});
-  CHECK(log.replay_range({9}, {11}) == production::OperationReplayRange{{9}, {11}, 1, 2});
-  CHECK(log.replay_range({10}, {10}) == production::OperationReplayRange{{10}, {10}, 2, 0});
-  CHECK_FALSE(log.replay_range({7}, {9}));
-  CHECK_FALSE(log.replay_range({9}, {8}));
-  CHECK_FALSE(log.replay_range({8}, {12}));
+  CHECK(log.replay_range(epoch, {8}, {11}) ==
+        production::OperationReplayRange{epoch, {8}, {11}, 0, 3});
+  CHECK(log.replay_range(epoch, {9}, {11}) ==
+        production::OperationReplayRange{epoch, {9}, {11}, 1, 2});
+  CHECK(log.replay_range(epoch, {10}, {10}) ==
+        production::OperationReplayRange{epoch, {10}, {10}, 2, 0});
+  CHECK(log.operation(1)->identity.revision == production::DocumentRevision{10});
+  CHECK_FALSE(log.replay_range(epoch, {7}, {9}));
+  CHECK_FALSE(log.replay_range(epoch, {9}, {8}));
+  CHECK_FALSE(log.replay_range(epoch, {8}, {12}));
+
+  REQUIRE(log.reset({8}));
+  CHECK(log.epoch() != epoch);
+  CHECK_FALSE(log.replay_range(epoch, {8}, {8}));
+  CHECK(log.replay_range(log.epoch(), {8}, {8}) ==
+        production::OperationReplayRange{log.epoch(), {8}, {8}, 0, 0});
 }
 
 TEST_CASE("operation log withholds replay ranges while an append is prepared") {
@@ -206,12 +217,14 @@ TEST_CASE("operation log withholds replay ranges while an append is prepared") {
   production::OperationLog log(records, storage);
   const std::array sample{
       production::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256}};
+  const production::OperationLogEpoch epoch = log.epoch();
   auto prepared = log.prepare({.samples = sample});
   REQUIRE(prepared.has_value());
 
-  CHECK_FALSE(log.replay_range({0}, {0}));
+  CHECK_FALSE(log.replay_range(epoch, {0}, {0}));
   prepared->cancel();
-  CHECK(log.replay_range({0}, {0}) == production::OperationReplayRange{{0}, {0}, 0, 0});
+  CHECK(log.replay_range(epoch, {0}, {0}) ==
+        production::OperationReplayRange{epoch, {0}, {0}, 0, 0});
 }
 
 TEST_CASE("operation log reset adopts snapshot revision and retains caller storage") {
