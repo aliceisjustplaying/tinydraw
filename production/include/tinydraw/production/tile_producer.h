@@ -17,6 +17,7 @@ inline constexpr int kTileProducerWidth = kTileProducerColumns * kTileWidth;
 inline constexpr int kTileProducerHeight = kTileProducerRows * kTileHeight;
 inline constexpr std::size_t kTileProducerPixels =
     static_cast<std::size_t>(kTileProducerWidth) * kTileProducerHeight;
+inline constexpr std::size_t kTileProducerOperationBatch = 128;
 
 struct TileProducerWorkspace {
   // Row-major 128x128 supertask surface.
@@ -58,6 +59,18 @@ class TileProducer {
                                             std::uint16_t color = 0xFFFFU);
 
  private:
+  struct ActiveGroup {
+    ViewRequest view{};
+    TileKey origin{};
+    PixelRect bounds{};
+    OperationLogEpoch epoch{};
+    DocumentRevision revision{};
+    std::size_t first_operation = 0;
+    std::size_t operation_count = 0;
+    std::size_t next_operation = 0;
+    bool active = false;
+  };
+
   struct ReplayRender {
     OperationLogEpoch epoch{};
     DocumentRevision revision{};
@@ -72,13 +85,13 @@ class TileProducer {
   [[nodiscard]] std::optional<TileKey> choose_missing_group(const ViewRequest& view) const;
   [[nodiscard]] std::optional<TileKey> choose_missing_tile(const ViewRequest& view,
                                                            MaterializationQuality quality) const;
+  [[nodiscard]] bool start_group(const ViewRequest& view, TileKey group_origin);
+  [[nodiscard]] std::optional<TileProductionStep> render_active_batch();
   [[nodiscard]] std::optional<ReplayRender> render_replay(ZoomLevel zoom, PixelRect bounds,
                                                           std::span<std::uint16_t> surface,
                                                           int stride);
   [[nodiscard]] std::optional<std::size_t> publish_group(PixelRect bounds, TileKey group_origin,
                                                          TileGrid grid, DocumentRevision revision);
-  [[nodiscard]] std::optional<TileProductionStep> render_group(const ViewRequest& view,
-                                                               TileKey group_origin);
   [[nodiscard]] std::optional<TileProductionStep> render_2x_aa_tile(const ViewRequest& view,
                                                                     TileKey key);
 
@@ -87,6 +100,7 @@ class TileProducer {
   TileProducerWorkspace workspace_;
   DocumentRevision baseline_revision_{};
   std::uint16_t baseline_color_ = 0xFFFFU;
+  ActiveGroup active_group_{};
 };
 
 }  // namespace tinydraw::production
