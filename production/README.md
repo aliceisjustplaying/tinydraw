@@ -199,8 +199,12 @@ together through 32 compact operations, then composed the expected deterministic
 `DisplayScheduler`; all 168 were accepted and completed in order with zero
 stale or other scheduler rejects, and transport completed 168/168 with zero
 CO5300 window rejects. The 30-operation burst averaged 50.284 ms per coordinated
-append. This proves bounded input collection and ordered staging on glass, not
-real touch input, concurrent mutation and transport, representative capacity,
+append. The same deterministic hashes and zero-rejection scheduler/transport
+result passed again after the replay-range seam in
+[`hardware-receipts/20dbab7-production-regression-walk.log`](hardware-receipts/20dbab7-production-regression-walk.log).
+That regression walk does not exercise the host-only range query itself. These
+receipts prove bounded input collection and ordered staging on glass, not real
+touch input, concurrent mutation and transport, representative capacity,
 settled anti-aliasing, or the final interaction gates.
 
 ## Task #56 settlement prerequisite
