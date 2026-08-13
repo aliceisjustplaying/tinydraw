@@ -1,10 +1,8 @@
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <limits>
 #include <memory>
 #include <span>
 
@@ -14,10 +12,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "physical_touch.h"
-#ifdef TINYDRAW_VECTOR_V2_TILE_CENSUS
-#include "vector_v2_tile_census.h"
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
+#include "vector_v2_gate_harness.h"
 #endif
-#include "tinydraw/document/realistic_workload.h"
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
 #include "tinydraw/ui/toolbar.h"
@@ -41,7 +38,6 @@ using vector_v2::MaterializedSlotStorage;
 using vector_v2::MaterializedUniformStorage;
 using vector_v2::OperationBuilder;
 using vector_v2::OperationLog;
-using vector_v2::OperationPoint;
 using vector_v2::OperationRecord;
 using vector_v2::OperationTool;
 using vector_v2::TileKey;
@@ -53,11 +49,6 @@ constexpr gpio_num_t kModeButton = GPIO_NUM_0;
 constexpr int kLiftReads = 2;
 constexpr std::size_t kInputSampleCapacity = 1'024;
 constexpr std::size_t kWorkspaceTileCapacity = vector_v2::kMaximumVisibleTiles;
-constexpr std::uint32_t kStressOperations = 1'000;
-constexpr std::uint32_t kStressSamplesPerOperation = 20;
-constexpr std::size_t kRealisticStrokeCapacity = 1'000;
-constexpr std::size_t kRealisticSampleCapacity = 24'576;
-constexpr std::uint32_t kButtonLongPressUs = 1'200'000U;
 
 struct LiveMetrics {
   std::uint64_t submit_total_us = 0;
@@ -102,8 +93,6 @@ struct AppStorage {
   MaterializedUniformStorage* uniforms = nullptr;
   std::uint8_t* occupancy = nullptr;
   MaterializedSlotStorage* slots = nullptr;
-  VectorStroke* realistic_strokes = nullptr;
-  StrokeSample* realistic_samples = nullptr;
   OperationRecord* records = nullptr;
   CompactOperationSample* samples = nullptr;
   CompactOperationSample* input_samples = nullptr;
@@ -124,8 +113,6 @@ struct AppStorage {
         allocate_array<MaterializedUniformStorage>(vector_v2::kMaterializedTileIdentityCount);
     occupancy = allocate_array<std::uint8_t>(vector_v2::kOccupancyBytes);
     slots = allocate_array<MaterializedSlotStorage>(vector_v2::kTileSlotCount);
-    realistic_strokes = allocate_array<VectorStroke>(kRealisticStrokeCapacity);
-    realistic_samples = allocate_array<StrokeSample>(kRealisticSampleCapacity);
     records = allocate_array<OperationRecord>(vector_v2::kOperationCapacity);
     samples = allocate_array<CompactOperationSample>(vector_v2::kOperationSampleCapacity);
     input_samples = allocate_array<CompactOperationSample>(kInputSampleCapacity);
@@ -134,8 +121,7 @@ struct AppStorage {
     if (overview == nullptr || snapshot == nullptr || frame == nullptr || tile_pixels == nullptr ||
         overview_scratch == nullptr || tile_scratch == nullptr || region_scratch == nullptr ||
         producer_supertask == nullptr || producer_packed == nullptr || uniforms == nullptr ||
-        occupancy == nullptr || slots == nullptr || realistic_strokes == nullptr ||
-        realistic_samples == nullptr || records == nullptr || samples == nullptr ||
+        occupancy == nullptr || slots == nullptr || records == nullptr || samples == nullptr ||
         input_samples == nullptr || publications == nullptr || affected_keys == nullptr) {
       return false;
     }
@@ -310,481 +296,6 @@ bool apply_toolbar_action(ToolbarAction action, Point point, ToolbarState& toolb
   return timing.passed;
 }
 
-bool load_realistic_document(OperationLog& log, MaterializedCanvas& canvas,
-                             const IncrementalDocumentWorkspace& workspace,
-                             std::span<VectorStroke> stroke_storage,
-                             std::span<StrokeSample> sample_storage,
-                             std::span<CompactOperationSample> conversion_storage) {
-  VectorDocument source(stroke_storage, sample_storage);
-  RealisticWorkloadStats stats{};
-  const RectF area{.x0 = 0.0F,
-                   .y0 = 0.0F,
-                   .x1 = static_cast<float>(vector_v2::kWorldWidth),
-                   .y1 = static_cast<float>(vector_v2::kWorldHeight)};
-  if (!populate_realistic_handwriting(source, 7U, kRealisticStrokeCapacity, area, &stats)) {
-    return false;
-  }
-  const std::int64_t started = esp_timer_get_time();
-  for (const VectorStroke& stroke : source.strokes()) {
-    const auto input = source.samples(stroke);
-    if (input.empty() || input.size() > conversion_storage.size()) {
-      return false;
-    }
-    for (std::size_t index = 0; index < input.size(); ++index) {
-      conversion_storage[index] = {
-          .x_quarter = static_cast<std::uint16_t>(std::lround(input[index].x * 4.0F)),
-          .y_quarter = static_cast<std::uint16_t>(std::lround(input[index].y * 4.0F)),
-          .radius_256 = static_cast<std::uint16_t>(std::lround(input[index].radius * 256.0F)),
-          .elapsed_ms = static_cast<std::uint16_t>(index * 15U),
-      };
-    }
-    const auto result = vector_v2::append_incrementally(
-        log, canvas,
-        {.tool = stroke.tool == VectorTool::kEraser ? OperationTool::kEraser : OperationTool::kPen,
-         .color = stroke.color,
-         .samples = conversion_storage.first(input.size())},
-        workspace);
-    if (!result.has_value()) {
-      return false;
-    }
-  }
-  std::printf(
-      "TINYDRAW_GATE1_WORKLOAD kind=realistic seed=7 operations=%lu samples=%lu "
-      "maximum_stroke=%lu load_us=%lld raw_source=1 lod_copies=0\n",
-      static_cast<unsigned long>(stats.strokes), static_cast<unsigned long>(stats.samples),
-      static_cast<unsigned long>(stats.maximum_stroke_samples),
-      static_cast<long long>(esp_timer_get_time() - started));
-  return true;
-}
-
-bool run_tile_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
-                   OperationLog& log, MaterializedCanvas& canvas, const ToolbarState& toolbar,
-                   ZoomLevel zoom) {
-  // The seed-7 corpus fills lines from the upper left. Fixing the origin makes
-  // both zooms measure real ink rather than a potentially blank center crop.
-  const auto fallback = presenter.set_view(zoom, 0, 0, toolbar, now_us());
-  print_presentation("gate_fallback", presenter, fallback);
-  if (!fallback.passed || !canvas.discard_tiles()) {
-    return false;
-  }
-  const vector_v2::ViewRequest view{
-      .zoom = zoom,
-      .level_pixels = {presenter.level_x(), presenter.level_y(),
-                       presenter.level_x() + vector_v2::kOverviewWidth,
-                       presenter.level_y() + vector_v2::kOverviewHeight},
-  };
-  const std::int64_t started = esp_timer_get_time();
-  std::int64_t maximum_supertask_us = 0;
-  std::int64_t presentation_us = 0;
-  std::size_t steps = 0;
-  std::size_t operations_scanned = 0;
-  std::size_t operations_rendered = 0;
-  std::size_t tiles_published = 0;
-  while (true) {
-    const std::int64_t step_started = esp_timer_get_time();
-    const auto step = producer.produce_next(view);
-    const std::int64_t step_us = esp_timer_get_time() - step_started;
-    maximum_supertask_us = std::max(maximum_supertask_us, step_us);
-    if (!step.has_value()) {
-      return false;
-    }
-    if (step->tiles_published != 0U) {
-      const auto present_started = esp_timer_get_time();
-      const auto timing = presenter.refresh_region(step->level_bounds);
-      presentation_us += esp_timer_get_time() - present_started;
-      if (!timing.passed) {
-        return false;
-      }
-    }
-    ++steps;
-    operations_scanned += step->operations_scanned;
-    operations_rendered += step->operations_rendered;
-    tiles_published += step->tiles_published;
-    if (step->complete) {
-      break;
-    }
-  }
-  const std::int64_t total_us = esp_timer_get_time() - started;
-  // The current hard-edged cold path is explicitly accepted up to 0.75 s;
-  // cache hits and interaction slices retain their tighter gates.
-  const bool passed = total_us < 750'000 && maximum_supertask_us < 30'000;
-  std::printf(
-      "TINYDRAW_GATE1_HARD zoom=%s cold=1 operations=%lu samples=%lu steps=%lu tiles=%lu "
-      "scanned=%lu rendered=%lu max_supertask_us=%lld presentation_us=%lld total_us=%lld "
-      "pass=%u\n",
-      zoom_name(zoom), static_cast<unsigned long>(log.operation_count()),
-      static_cast<unsigned long>(log.sample_count()), static_cast<unsigned long>(steps),
-      static_cast<unsigned long>(tiles_published), static_cast<unsigned long>(operations_scanned),
-      static_cast<unsigned long>(operations_rendered), static_cast<long long>(maximum_supertask_us),
-      static_cast<long long>(presentation_us), static_cast<long long>(total_us), passed);
-  return passed;
-}
-
-bool run_draw_while_fill_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
-                              OperationLog& log, MaterializedCanvas& canvas,
-                              const ToolbarState& toolbar,
-                              const IncrementalDocumentWorkspace& workspace,
-                              std::span<CompactOperationSample> interaction_samples) {
-  const auto fallback = presenter.set_view(ZoomLevel::k400Percent, 0, 0, toolbar, now_us());
-  if (!fallback.passed || !canvas.discard_tiles()) {
-    return false;
-  }
-  const vector_v2::ViewRequest view{
-      .zoom = ZoomLevel::k400Percent,
-      .level_pixels = {presenter.level_x(), presenter.level_y(),
-                       presenter.level_x() + vector_v2::kOverviewWidth,
-                       presenter.level_y() + vector_v2::kOverviewHeight},
-  };
-  const auto initial = producer.produce_next(view);
-  if (!initial.has_value() || initial->complete || initial->tiles_published != 0U) {
-    return false;
-  }
-
-  const std::uint32_t event_us = now_us();
-  const std::int64_t blocked_started = esp_timer_get_time();
-  const auto blocked_step = producer.produce_next(view);
-  const std::int64_t poll_gap_us = esp_timer_get_time() - blocked_started;
-  if (!blocked_step.has_value()) {
-    return false;
-  }
-  const InkPoint preview{.position = {20.0F, 200.0F},
-                         .pressure = 1.0F,
-                         .radius = 20.0F,
-                         .distance = 0.0F,
-                         .running_length = 0.0F,
-                         .timestamp_us = event_us};
-  const auto live = presenter.show_start(preview, 0x001FU, event_us);
-
-  if (interaction_samples.size() < 8U) {
-    return false;
-  }
-  auto fast_xl = interaction_samples.first(8U);
-  for (std::size_t index = 0; index < fast_xl.size(); ++index) {
-    fast_xl[index] = {
-        .x_quarter = static_cast<std::uint16_t>(20U + index * 48U),
-        .y_quarter = static_cast<std::uint16_t>(index % 2U == 0U ? 180U : 240U),
-        // XL is 20 screen pixels; at 400% that is 5 world units.
-        .radius_256 = 1'280U,
-        .elapsed_ms = static_cast<std::uint16_t>(index * 8U),
-    };
-  }
-  const std::int64_t append_started = esp_timer_get_time();
-  const auto append = vector_v2::append_incrementally(
-      log, canvas, {.tool = OperationTool::kPen, .color = 0x001FU, .samples = fast_xl}, workspace,
-      {.priority_view = view});
-  const std::int64_t append_us = esp_timer_get_time() - append_started;
-  const bool stale_rejected = !producer.produce_next(view).has_value();
-
-  std::int64_t maximum_slice_us = poll_gap_us;
-  std::int64_t maximum_compute_slice_us = poll_gap_us;
-  std::int64_t fill_started = esp_timer_get_time();
-  bool fill_complete = false;
-  while (!fill_complete) {
-    const std::int64_t step_started = esp_timer_get_time();
-    const auto step = producer.produce_next(view);
-    const std::int64_t compute_slice_us = esp_timer_get_time() - step_started;
-    maximum_slice_us = std::max(maximum_slice_us, compute_slice_us);
-    if (!step.has_value()) {
-      return false;
-    }
-    // Publication copies four packed tiles from PSRAM. It is bounded but not
-    // replay compute; track replay-only slices separately from total blocking.
-    if (step->tiles_published == 0U) {
-      maximum_compute_slice_us = std::max(maximum_compute_slice_us, compute_slice_us);
-    }
-    if (step->tiles_published != 0U) {
-      const std::int64_t present_started = esp_timer_get_time();
-      if (!presenter.refresh_region(step->level_bounds).passed) {
-        return false;
-      }
-      maximum_slice_us = std::max(maximum_slice_us, esp_timer_get_time() - present_started);
-    }
-    fill_complete = step->complete;
-  }
-  const std::int64_t fill_us = esp_timer_get_time() - fill_started;
-  const bool passed = append.has_value() && stale_rejected && live.passed &&
-                      live.first_submit_us < 100'000 && poll_gap_us < 35'000 &&
-                      maximum_compute_slice_us < 30'000 && maximum_slice_us < 75'000;
-  std::printf(
-      "TINYDRAW_GATE1_DRAW_FILL zoom=400 revision=%lu append_us=%lld poll_gap_us=%lld "
-      "event_submit_us=%lld event_complete_us=%lld max_compute_slice_us=%lld "
-      "max_display_slice_us=%lld fill_us=%lld "
-      "stale_rejected=%u pass=%u\n",
-      static_cast<unsigned long>(canvas.current_revision().value),
-      static_cast<long long>(append_us), static_cast<long long>(poll_gap_us),
-      static_cast<long long>(live.first_submit_us), static_cast<long long>(live.first_complete_us),
-      static_cast<long long>(maximum_compute_slice_us), static_cast<long long>(maximum_slice_us),
-      static_cast<long long>(fill_us), stale_rejected, passed);
-  return passed;
-}
-
-bool verify_pan_adapter(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
-                        const ToolbarState& toolbar, ZoomLevel zoom) {
-  constexpr int kPanDelta = 24;
-  const vector_v2::ViewRequest destination{
-      .zoom = zoom,
-      .level_pixels = {kPanDelta, kPanDelta, kPanDelta + vector_v2::kOverviewWidth,
-                       kPanDelta + vector_v2::kOverviewHeight},
-  };
-  while (true) {
-    const auto remaining = producer.visible_tiles_remaining(destination);
-    if (!remaining.has_value()) {
-      return false;
-    }
-    if (*remaining == 0U) {
-      break;
-    }
-    if (!producer.produce_next(destination).has_value()) {
-      return false;
-    }
-  }
-  const auto setup = presenter.set_view(zoom, 0, 0, toolbar, now_us());
-  const int before_x = presenter.level_x();
-  const int before_y = presenter.level_y();
-  const auto pan = presenter.pan_from(before_x, before_y, {240.0F, 240.0F},
-                                      {240.0F - kPanDelta, 240.0F - kPanDelta}, toolbar, now_us());
-  const bool moved = presenter.level_x() > before_x && presenter.level_y() > before_y;
-  std::printf(
-      "TINYDRAW_GATE1_PAN zoom=%s from_x=%d from_y=%d to_x=%d to_y=%d compose_us=%lld "
-      "event_submit_us=%lld event_complete_us=%lld transfer_us=%lld setup=%u present=%u moved=%u "
-      "frame_reused=%u pass=%u\n",
-      zoom_name(zoom), before_x, before_y, presenter.level_x(), presenter.level_y(),
-      static_cast<long long>(pan.compose_us), static_cast<long long>(pan.first_submit_us),
-      static_cast<long long>(pan.first_complete_us), static_cast<long long>(pan.complete_us),
-      setup.passed, pan.passed, moved, pan.frame_reused,
-      setup.passed && pan.passed && moved && pan.frame_reused && pan.first_complete_us < 35'000);
-  return setup.passed && pan.passed && moved && pan.frame_reused && pan.first_complete_us < 35'000;
-}
-
-bool run_cache_retention_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
-                              MaterializedCanvas& canvas, const ToolbarState& toolbar) {
-  constexpr std::array zooms{
-      ZoomLevel::k50Percent,
-      ZoomLevel::k100Percent,
-      ZoomLevel::k200Percent,
-      ZoomLevel::k400Percent,
-  };
-  constexpr int kUnalignedOrigin = vector_v2::kTileWidth - 1;
-  constexpr int kDisjointOrigin = 9 * vector_v2::kTileWidth - 1;
-  const auto fill = [&](ZoomLevel zoom, int x, int y) {
-    const auto fallback = presenter.set_view(zoom, x, y, toolbar, now_us());
-    if (!fallback.passed) {
-      return false;
-    }
-    const vector_v2::ViewRequest view{
-        .zoom = zoom,
-        .level_pixels = {presenter.level_x(), presenter.level_y(),
-                         presenter.level_x() + vector_v2::kOverviewWidth,
-                         presenter.level_y() + vector_v2::kOverviewHeight},
-    };
-    const std::int64_t started = esp_timer_get_time();
-    std::size_t published = 0;
-    while (true) {
-      const auto step = producer.produce_next(view);
-      if (!step.has_value()) {
-        return false;
-      }
-      if (step->tiles_published != 0U) {
-        published += step->tiles_published;
-        if (!presenter.refresh_region(step->level_bounds).passed) {
-          return false;
-        }
-      }
-      if (step->complete) {
-        break;
-      }
-    }
-    const std::int64_t elapsed_us = esp_timer_get_time() - started;
-    std::printf(
-        "TINYDRAW_GATE1_CACHE_FILL zoom=%s x=%d y=%d published=%lu total_us=%lld "
-        "within_cold_gate=%u complete=1\n",
-        zoom_name(zoom), presenter.level_x(), presenter.level_y(),
-        static_cast<unsigned long>(published), static_cast<long long>(elapsed_us),
-        elapsed_us < 500'000);
-    return true;
-  };
-
-  bool passed = canvas.discard_tiles();
-  for (const ZoomLevel zoom : zooms) {
-    passed = fill(zoom, kUnalignedOrigin, kUnalignedOrigin) && passed;
-  }
-  for (const ZoomLevel zoom : zooms) {
-    const vector_v2::ViewRequest view{
-        .zoom = zoom,
-        .level_pixels = {kUnalignedOrigin, kUnalignedOrigin,
-                         kUnalignedOrigin + vector_v2::kOverviewWidth,
-                         kUnalignedOrigin + vector_v2::kOverviewHeight},
-    };
-    const auto remaining = producer.visible_tiles_remaining(view);
-    const auto revisit =
-        presenter.set_view(zoom, kUnalignedOrigin, kUnalignedOrigin, toolbar, now_us());
-    const bool hit = remaining == 0U && revisit.passed && revisit.fallback_pixels == 0U;
-    std::printf(
-        "TINYDRAW_GATE1_CACHE_REVISIT zoom=%s remaining=%lu tile_pixels=%lu fallback_pixels=%lu "
-        "compose_us=%lld complete_us=%lld hit=%u\n",
-        zoom_name(zoom), static_cast<unsigned long>(remaining.value_or(999U)),
-        static_cast<unsigned long>(revisit.tile_pixels),
-        static_cast<unsigned long>(revisit.fallback_pixels),
-        static_cast<long long>(revisit.compose_us), static_cast<long long>(revisit.complete_us),
-        hit);
-    passed = hit && passed;
-  }
-
-  passed = fill(ZoomLevel::k400Percent, kDisjointOrigin, kDisjointOrigin) && passed;
-  bool every_round_trip_hit = true;
-  for (const ZoomLevel zoom : zooms) {
-    const vector_v2::ViewRequest origin{
-        .zoom = zoom,
-        .level_pixels = {kUnalignedOrigin, kUnalignedOrigin,
-                         kUnalignedOrigin + vector_v2::kOverviewWidth,
-                         kUnalignedOrigin + vector_v2::kOverviewHeight},
-    };
-    const auto origin_remaining = producer.visible_tiles_remaining(origin);
-    const auto round_trip =
-        presenter.set_view(zoom, kUnalignedOrigin, kUnalignedOrigin, toolbar, now_us());
-    const bool hit =
-        origin_remaining == 0U && round_trip.passed && round_trip.fallback_pixels == 0U;
-    std::printf(
-        "TINYDRAW_GATE1_CACHE_ROUND_TRIP zoom=%s from_x=%d from_y=%d via_x=%d via_y=%d "
-        "remaining=%lu tile_pixels=%lu fallback_pixels=%lu compose_us=%lld complete_us=%lld "
-        "hit=%u\n",
-        zoom_name(zoom), kUnalignedOrigin, kUnalignedOrigin, kDisjointOrigin, kDisjointOrigin,
-        static_cast<unsigned long>(origin_remaining.value_or(999U)),
-        static_cast<unsigned long>(round_trip.tile_pixels),
-        static_cast<unsigned long>(round_trip.fallback_pixels),
-        static_cast<long long>(round_trip.compose_us),
-        static_cast<long long>(round_trip.complete_us), hit);
-    every_round_trip_hit = hit && every_round_trip_hit;
-  }
-  passed = every_round_trip_hit && passed;
-  std::printf("TINYDRAW_GATE1_CACHE_RETENTION pass=%u slots=%lu revision=%lu\n", passed,
-              static_cast<unsigned long>(canvas.slot_capacity()),
-              static_cast<unsigned long>(canvas.current_revision().value));
-  return passed;
-}
-
-bool run_full_world_cache_gate(vector_v2::TileProducer& producer, MaterializedCanvas& canvas) {
-  if (!canvas.discard_tiles()) {
-    return false;
-  }
-  constexpr ZoomLevel kZoom = ZoomLevel::k100Percent;
-  constexpr int kGroupPixels = vector_v2::kTileProducerWidth;
-  const std::int64_t started = esp_timer_get_time();
-  for (int y = 0; y < vector_v2::kWorldHeight; y += kGroupPixels) {
-    for (int x = 0; x < vector_v2::kWorldWidth; x += kGroupPixels) {
-      const vector_v2::ViewRequest view{
-          .zoom = kZoom,
-          .level_pixels = {x, y, std::min(x + kGroupPixels, vector_v2::kWorldWidth),
-                           std::min(y + kGroupPixels, vector_v2::kWorldHeight)},
-      };
-      while (true) {
-        const auto step = producer.produce_next(view);
-        if (!step.has_value()) {
-          return false;
-        }
-        if (step->complete) {
-          break;
-        }
-      }
-    }
-  }
-
-  const vector_v2::TileGrid grid = vector_v2::tile_grid(kZoom);
-  std::size_t raw = 0;
-  std::size_t uniform = 0;
-  std::size_t fallback = 0;
-  for (int row = 0; row < grid.rows; ++row) {
-    for (int column = 0; column < grid.columns; ++column) {
-      const auto source = canvas.lookup(
-          {kZoom, static_cast<std::uint16_t>(column), static_cast<std::uint16_t>(row)});
-      if (!source.has_value() || source->kind == vector_v2::SourceKind::kOverview) {
-        ++fallback;
-      } else if (source->kind == vector_v2::SourceKind::kUniform) {
-        ++uniform;
-      } else {
-        ++raw;
-      }
-    }
-  }
-  const std::size_t identities =
-      static_cast<std::size_t>(grid.columns) * static_cast<std::size_t>(grid.rows);
-  const bool passed =
-      fallback == 0U && raw <= canvas.slot_capacity() && raw + uniform == identities;
-  std::printf(
-      "TINYDRAW_PAPER_SWEEP zoom=100 identities=%lu raw=%lu uniform=%lu fallback=%lu "
-      "slots=%lu total_us=%lld pass=%u\n",
-      static_cast<unsigned long>(identities), static_cast<unsigned long>(raw),
-      static_cast<unsigned long>(uniform), static_cast<unsigned long>(fallback),
-      static_cast<unsigned long>(canvas.slot_capacity()),
-      static_cast<long long>(esp_timer_get_time() - started), passed);
-  return passed;
-}
-
-bool verify_export_reserve() {
-  const std::size_t free_before = heap_caps_get_free_size(kExternalCaps);
-  const std::size_t largest_before = heap_caps_get_largest_free_block(kExternalCaps);
-  void* reserve = heap_caps_malloc(vector_v2::kTargetContiguousReserveBytes, kExternalCaps);
-  const std::size_t free_held = heap_caps_get_free_size(kExternalCaps);
-  const std::size_t largest_held = heap_caps_get_largest_free_block(kExternalCaps);
-  const bool passed = reserve != nullptr;
-  heap_caps_free(reserve);
-  std::printf(
-      "TINYDRAW_EXPORT_RESERVE requested=%lu free_before=%lu largest_before=%lu free_held=%lu "
-      "largest_held=%lu pass=%u\n",
-      static_cast<unsigned long>(vector_v2::kTargetContiguousReserveBytes),
-      static_cast<unsigned long>(free_before), static_cast<unsigned long>(largest_before),
-      static_cast<unsigned long>(free_held), static_cast<unsigned long>(largest_held), passed);
-  return passed;
-}
-
-bool append_stress_document(OperationLog& log, MaterializedCanvas& canvas,
-                            const IncrementalDocumentWorkspace& workspace) {
-  std::array<CompactOperationSample, kStressSamplesPerOperation> samples{};
-  const std::int64_t started = esp_timer_get_time();
-  std::int64_t maximum_us = 0;
-  for (std::uint32_t operation = 0; operation < kStressOperations; ++operation) {
-    const float base_x = 24.0F + static_cast<float>((operation * 47U) % 1'360U);
-    const float base_y = 24.0F + static_cast<float>((operation * 73U) % 1'680U);
-    for (std::uint32_t index = 0; index < kStressSamplesPerOperation; ++index) {
-      const float x = std::clamp(base_x + static_cast<float>(index) * 2.25F, 0.0F,
-                                 static_cast<float>(vector_v2::kWorldWidth));
-      const int wave = static_cast<int>((operation + index) % 9U) - 4;
-      const float y = std::clamp(base_y + static_cast<float>(wave * 3), 0.0F,
-                                 static_cast<float>(vector_v2::kWorldHeight));
-      samples[index] = {
-          .x_quarter = static_cast<std::uint16_t>(x * 4.0F),
-          .y_quarter = static_cast<std::uint16_t>(y * 4.0F),
-          .radius_256 = static_cast<std::uint16_t>((3U + operation % 6U) * 256U),
-          .elapsed_ms = static_cast<std::uint16_t>(index * 8U),
-      };
-    }
-    const std::int64_t append_started = esp_timer_get_time();
-    const auto result = vector_v2::append_incrementally(
-        log, canvas,
-        {.tool = operation % 11U == 10U ? OperationTool::kEraser : OperationTool::kPen,
-         .color = static_cast<std::uint16_t>(0x1800U + (operation * 97U) % 0xCFFFU),
-         .samples = samples},
-        workspace);
-    maximum_us = std::max(maximum_us, esp_timer_get_time() - append_started);
-    if (!result.has_value()) {
-      std::printf("TINYDRAW_LIVE_STRESS_FAIL operation=%lu revision=%lu\n",
-                  static_cast<unsigned long>(operation),
-                  static_cast<unsigned long>(canvas.current_revision().value));
-      return false;
-    }
-  }
-  const std::int64_t elapsed = esp_timer_get_time() - started;
-  std::printf(
-      "TINYDRAW_LIVE_STRESS operations=%lu samples=%lu total_us=%lld average_us=%lld "
-      "maximum_us=%lld free_psram=%lu largest_psram=%lu\n",
-      static_cast<unsigned long>(log.operation_count()),
-      static_cast<unsigned long>(log.sample_count()), static_cast<long long>(elapsed),
-      static_cast<long long>(elapsed / kStressOperations), static_cast<long long>(maximum_us),
-      static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)),
-      static_cast<unsigned long>(heap_caps_get_largest_free_block(kExternalCaps)));
-  return true;
-}
-
 }  // namespace
 
 void run_vector_v2_app() {
@@ -852,49 +363,16 @@ void run_vector_v2_app() {
   CurvedRibbonStream ribbon;
   const auto initial = presenter.refresh(toolbar);
   print_presentation("startup", presenter, initial);
-  const bool stress_ready = append_stress_document(log, canvas, workspace);
-  const bool stress_100 = stress_ready && run_tile_gate(presenter, producer, log, canvas, toolbar,
-                                                        ZoomLevel::k100Percent);
-  const bool stress_400 = stress_100 && run_tile_gate(presenter, producer, log, canvas, toolbar,
-                                                      ZoomLevel::k400Percent);
-  const DocumentRevision realistic_baseline{canvas.current_revision().value + 1U};
-  const bool reset_for_realistic = stress_400 &&
-                                   vector_v2::restore_document_snapshot(
-                                       log, canvas, realistic_baseline,
-                                       std::span(storage.snapshot, vector_v2::kOverviewPixels)) &&
-                                   producer.reset_uniform_baseline(realistic_baseline);
-  const bool workload_ready =
-      reset_for_realistic &&
-      load_realistic_document(log, canvas, workspace,
-                              std::span(storage.realistic_strokes, kRealisticStrokeCapacity),
-                              std::span(storage.realistic_samples, kRealisticSampleCapacity),
-                              std::span(storage.input_samples, kInputSampleCapacity));
-#ifdef TINYDRAW_VECTOR_V2_TILE_CENSUS
-  const bool census =
-      workload_ready &&
-      run_vector_v2_tile_census(producer, canvas,
-                                std::span(storage.producer_packed, vector_v2::kTilePixels));
-  std::printf("TINYDRAW_TILE_CENSUS_APP_DONE workload=%u census=%u revision=%lu\n", workload_ready,
-              census, static_cast<unsigned long>(canvas.current_revision().value));
-  std::fflush(stdout);
-  return;
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
+  if (!run_vector_v2_gate_harness(presenter, producer, log, canvas, toolbar, workspace,
+                                  std::span(storage.snapshot, vector_v2::kOverviewPixels),
+                                  std::span(storage.input_samples, kInputSampleCapacity),
+                                  std::span(storage.producer_packed, vector_v2::kTilePixels))) {
+    std::printf("TINYDRAW_VECTOR_V2_GATE_HARNESS_DONE pass=0\n");
+    return;
+  }
+  std::printf("TINYDRAW_VECTOR_V2_GATE_HARNESS_DONE pass=1\n");
 #endif
-  const bool gate_100 = workload_ready && run_tile_gate(presenter, producer, log, canvas, toolbar,
-                                                        ZoomLevel::k100Percent);
-  const bool pan_100 =
-      gate_100 && verify_pan_adapter(presenter, producer, toolbar, ZoomLevel::k100Percent);
-  const bool gate_400 =
-      pan_100 && run_tile_gate(presenter, producer, log, canvas, toolbar, ZoomLevel::k400Percent);
-  const bool pan_400 =
-      gate_400 && verify_pan_adapter(presenter, producer, toolbar, ZoomLevel::k400Percent);
-  const bool draw_fill =
-      pan_400 && run_draw_while_fill_gate(presenter, producer, log, canvas, toolbar, workspace,
-                                          std::span(storage.input_samples, kInputSampleCapacity));
-  const bool cache_retention =
-      draw_fill && run_cache_retention_gate(presenter, producer, canvas, toolbar);
-  const bool full_world_cache = cache_retention && run_full_world_cache_gate(producer, canvas);
-  const bool export_reserve = full_world_cache && verify_export_reserve();
-  const auto return_overview = presenter.set_view(ZoomLevel::k25Percent, 0, 0, toolbar, now_us());
   const std::size_t overview_bytes = vector_v2::kOverviewPixels * 4U * sizeof(std::uint16_t);
   const std::size_t raw_tile_bytes =
       vector_v2::kTileSlotCount * vector_v2::kTilePixels * sizeof(std::uint16_t);
@@ -912,27 +390,18 @@ void run_vector_v2_app() {
       kInputSampleCapacity * sizeof(CompactOperationSample) +
       kWorkspaceTileCapacity * sizeof(TileRevisionPublication) +
       vector_v2::kTileSlotCount * sizeof(TileKey);
-  const std::size_t corpus_bytes = kRealisticStrokeCapacity * sizeof(VectorStroke) +
-                                   kRealisticSampleCapacity * sizeof(StrokeSample);
-  const std::size_t live_storage_bytes = overview_bytes + raw_tile_bytes + tile_metadata_bytes +
-                                         operation_bytes + live_scratch_bytes + corpus_bytes;
+  const std::size_t live_storage_bytes =
+      overview_bytes + raw_tile_bytes + tile_metadata_bytes + operation_bytes + live_scratch_bytes;
   std::printf(
-      "TINYDRAW_GATE1_AUTOMATED_DONE stress=%u stress_100=%u stress_400=%u workload=%u "
-      "hard_100=%u hard_400=%u pan_100=%u pan_400=%u draw_fill=%u cache=%u "
-      "full_world_cache=%u export_reserve=%u return=%u ssaa_receipt=yellow\n",
-      stress_ready, stress_100, stress_400, workload_ready, gate_100, gate_400, pan_100, pan_400,
-      draw_fill, cache_retention, full_world_cache, export_reserve, return_overview.passed);
-  std::printf(
-      "TINYDRAW_LIVE_READY zoom=25 controls=toolbar button=cycle_25_100_400 "
-      "long_button=load_1000 operations_capacity=%lu samples_capacity=%lu live_storage_bytes=%lu "
+      "TINYDRAW_VECTOR_V2_READY zoom=25 controls=toolbar button=cycle_25_100_400 "
+      "operations_capacity=%lu samples_capacity=%lu live_storage_bytes=%lu "
       "overview_bytes=%lu raw_tile_bytes=%lu tile_metadata_bytes=%lu operation_bytes=%lu "
-      "live_scratch_bytes=%lu corpus_bytes=%lu free_psram=%lu largest_psram=%lu\n",
+      "live_scratch_bytes=%lu free_psram=%lu largest_psram=%lu\n",
       static_cast<unsigned long>(log.operation_capacity()),
       static_cast<unsigned long>(log.sample_capacity()),
       static_cast<unsigned long>(live_storage_bytes), static_cast<unsigned long>(overview_bytes),
       static_cast<unsigned long>(raw_tile_bytes), static_cast<unsigned long>(tile_metadata_bytes),
       static_cast<unsigned long>(operation_bytes), static_cast<unsigned long>(live_scratch_bytes),
-      static_cast<unsigned long>(corpus_bytes),
       static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)),
       static_cast<unsigned long>(heap_caps_get_largest_free_block(kExternalCaps)));
   std::fflush(stdout);
@@ -953,8 +422,6 @@ void run_vector_v2_app() {
   std::uint32_t poll_max_us = 0;
   std::uint32_t touch_errors = 0;
   bool button_down = false;
-  bool button_long_handled = false;
-  std::uint32_t button_down_us = 0;
   ZoomLevel fill_zoom = ZoomLevel::k25Percent;
   int fill_x = 0;
   int fill_y = 0;
@@ -969,23 +436,11 @@ void run_vector_v2_app() {
     const bool next_button_down = gpio_get_level(kModeButton) == 0;
     if (next_button_down && !button_down) {
       button_down = true;
-      button_long_handled = false;
-      button_down_us = loop_us;
-    } else if (button_down && next_button_down && !button_long_handled &&
-               loop_us - button_down_us >= kButtonLongPressUs) {
-      button_long_handled = true;
-      const bool loaded = append_stress_document(log, canvas, workspace);
-      const auto timing = presenter.refresh(toolbar, loop_us);
-      print_presentation("stress", presenter, timing);
-      std::printf("TINYDRAW_LIVE_STRESS_DONE pass=%u authority_match=%u\n", loaded && timing.passed,
-                  log.current_revision() == canvas.current_revision());
     } else if (!next_button_down && button_down) {
       button_down = false;
-      if (!button_long_handled) {
-        const ZoomLevel zoom = next_test_zoom(presenter.zoom());
-        const auto timing = presenter.set_view(zoom, 0, 0, toolbar, loop_us);
-        print_presentation("zoom", presenter, timing);
-      }
+      const ZoomLevel zoom = next_test_zoom(presenter.zoom());
+      const auto timing = presenter.set_view(zoom, 0, 0, toolbar, loop_us);
+      print_presentation("zoom", presenter, timing);
     }
 
     Point point{};

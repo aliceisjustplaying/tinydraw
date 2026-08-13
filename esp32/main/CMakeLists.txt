@@ -36,6 +36,11 @@ if(TINYDRAW_VECTOR_V2_OVERVIEW_WALK OR TINYDRAW_VECTOR_V2_APP)
       "vector_v2/vector_v2_app.cpp"
       "vector_v2/vector_v2_presenter.cpp"
     )
+    if(TINYDRAW_VECTOR_V2_GATE_HARNESS)
+      list(APPEND TINYDRAW_VECTOR_V2_HARDWARE_SRCS
+        "vector_v2/vector_v2_gate_harness.cpp"
+      )
+    endif()
     if(TINYDRAW_VECTOR_V2_TILE_CENSUS)
       list(APPEND TINYDRAW_VECTOR_V2_HARDWARE_SRCS
         "vector_v2/vector_v2_tile_census.cpp"
@@ -145,6 +150,9 @@ if(TINYDRAW_VECTOR_V2_OVERVIEW_WALK)
 endif()
 if(TINYDRAW_VECTOR_V2_APP)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_V2_APP=1)
+endif()
+if(TINYDRAW_VECTOR_V2_GATE_HARNESS)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_V2_GATE_HARNESS=1)
 endif()
 if(TINYDRAW_VECTOR_V2_TILE_CENSUS)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_V2_TILE_CENSUS=1)
