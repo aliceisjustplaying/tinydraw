@@ -1,0 +1,11 @@
+I (662) app_init: App version:      07c44bf
+TINYDRAW_PRODUCTION_WALK_FRAME zoom=25 x=0 y=0 hash=d76c09b1 pushes=21 elapsed_us=20704 completed=1 submit=21 complete=21
+TINYDRAW_PRODUCTION_WALK_FRAME zoom=100 x=0 y=0 hash=d9e39425 pushes=21 compose_us=9317 elapsed_us=23994 completed=1 submit=42 complete=42
+TINYDRAW_PRODUCTION_WALK_FRAME zoom=100 x=184 y=224 hash=a4ce26e5 pushes=21 compose_us=9194 elapsed_us=23998 completed=1 submit=63 complete=63
+TINYDRAW_PRODUCTION_WALK_FRAME zoom=100 x=552 y=672 hash=1b5753a5 pushes=21 compose_us=9298 elapsed_us=23999 completed=1 submit=84 complete=84
+TINYDRAW_PRODUCTION_WALK_FRAME zoom=100 x=1104 y=1344 hash=91f8b705 pushes=21 compose_us=10129 elapsed_us=24998 completed=1 submit=105 complete=105
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=1 overview_us=177 tile_us=997 commit_us=24193 committed=1
+TINYDRAW_PRODUCTION_WALK_INCREMENTAL phase=pen revision=1 hash=e93cc976 pushes=21 tile_pixels=8192 fallback_pixels=156672 elapsed_us=23816 completed=1 submit=126 complete=126
+TINYDRAW_PRODUCTION_WALK_OPERATION revision=2 overview_us=72 tile_us=225 commit_us=24155 committed=1
+TINYDRAW_PRODUCTION_WALK_INCREMENTAL phase=eraser revision=2 hash=9c622475 pushes=21 tile_pixels=8192 fallback_pixels=156672 elapsed_us=23989 completed=1 submit=147 complete=147
+TINYDRAW_PRODUCTION_WALK_DONE pass=1 panel_rejects=0 prepare_us=35301 transfer_us=24092 pushes=147 submit=147 complete=147 free_psram=7673268 largest_psram=7602176
