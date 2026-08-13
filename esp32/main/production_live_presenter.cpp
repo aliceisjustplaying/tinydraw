@@ -172,7 +172,6 @@ LivePresentationTiming ProductionLivePresenter::present(production::PixelRect bo
     }
     if (first_submitted == 0) {
       first_submitted = esp_timer_get_time();
-      timing.first_submit_us = event_us == 0U ? 0 : first_submitted - event_us;
     }
     if (!scheduler_.complete(*sequence)) {
       return timing;
@@ -182,8 +181,13 @@ LivePresentationTiming ProductionLivePresenter::present(production::PixelRect bo
   const bool completed = display_.wait_for_all(2'000'000);
   const std::int64_t finished = esp_timer_get_time();
   const std::int64_t physical_complete = display_.complete_time_us(submits_before + 1U);
+  const auto first_submitted_us = static_cast<std::uint32_t>(first_submitted);
+  const auto physical_complete_us =
+      static_cast<std::uint32_t>(physical_complete >= 0 ? physical_complete : finished);
+  timing.first_submit_us =
+      event_us == 0U ? 0 : static_cast<std::uint32_t>(first_submitted_us - event_us);
   timing.first_complete_us =
-      event_us == 0U ? 0 : (physical_complete >= 0 ? physical_complete : finished) - event_us;
+      event_us == 0U ? 0 : static_cast<std::uint32_t>(physical_complete_us - event_us);
   timing.complete_us = first_submitted == 0 ? 0 : finished - first_submitted;
   timing.passed = completed;
   return timing;
