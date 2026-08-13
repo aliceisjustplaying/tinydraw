@@ -334,7 +334,9 @@ bool load_realistic_document(OperationLog& log, MaterializedCanvas& canvas,
 bool run_tile_gate(ProductionLivePresenter& presenter, production::TileProducer& producer,
                    OperationLog& log, MaterializedCanvas& canvas, const ToolbarState& toolbar,
                    ZoomLevel zoom) {
-  const auto fallback = presenter.set_zoom(zoom, toolbar, now_us());
+  // The seed-7 corpus fills lines from the upper left. Fixing the origin makes
+  // both zooms measure real ink rather than a potentially blank center crop.
+  const auto fallback = presenter.set_view(zoom, 0, 0, toolbar, now_us());
   print_presentation("gate_fallback", presenter, fallback);
   if (!fallback.passed || !canvas.discard_tiles()) {
     return false;
@@ -388,6 +390,75 @@ bool run_tile_gate(ProductionLivePresenter& presenter, production::TileProducer&
       static_cast<long long>(presentation_us), static_cast<long long>(total_us),
       total_us < 500'000 && maximum_supertask_us < 30'000);
   return true;
+}
+
+bool run_ssaa_gate(ProductionLivePresenter& presenter, production::TileProducer& producer,
+                   OperationLog& log, MaterializedCanvas& canvas, const ToolbarState& toolbar) {
+  const auto fallback = presenter.set_view(ZoomLevel::k100Percent, 0, 0, toolbar, now_us());
+  if (!fallback.passed || !canvas.discard_tiles()) {
+    return false;
+  }
+  const production::ViewRequest view{
+      .zoom = ZoomLevel::k100Percent,
+      .level_pixels = {presenter.level_x(), presenter.level_y(),
+                       presenter.level_x() + production::kOverviewWidth,
+                       presenter.level_y() + production::kOverviewHeight},
+  };
+  const std::int64_t started = esp_timer_get_time();
+  std::int64_t maximum_tile_us = 0;
+  std::int64_t presentation_us = 0;
+  std::size_t steps = 0;
+  std::size_t operations_scanned = 0;
+  std::size_t operations_rendered = 0;
+  while (true) {
+    const std::int64_t step_started = esp_timer_get_time();
+    const auto step = producer.produce_next_2x_aa_100(view);
+    maximum_tile_us = std::max(maximum_tile_us, esp_timer_get_time() - step_started);
+    if (!step.has_value()) {
+      return false;
+    }
+    if (step->tiles_published != 0U) {
+      const auto present_started = esp_timer_get_time();
+      if (!presenter.refresh_region(step->level_bounds).passed) {
+        return false;
+      }
+      presentation_us += esp_timer_get_time() - present_started;
+    }
+    ++steps;
+    operations_scanned += step->operations_scanned;
+    operations_rendered += step->operations_rendered;
+    if (step->complete) {
+      break;
+    }
+  }
+  const std::int64_t total_us = esp_timer_get_time() - started;
+  const bool passed = total_us < 500'000;
+  std::printf(
+      "TINYDRAW_GATE1_SSAA zoom=100 samples_per_pixel=4 cold=1 operations=%lu samples=%lu "
+      "steps=%lu scanned=%lu rendered=%lu max_tile_us=%lld presentation_us=%lld total_us=%lld "
+      "pass=%u\n",
+      static_cast<unsigned long>(log.operation_count()),
+      static_cast<unsigned long>(log.sample_count()), static_cast<unsigned long>(steps),
+      static_cast<unsigned long>(operations_scanned),
+      static_cast<unsigned long>(operations_rendered), static_cast<long long>(maximum_tile_us),
+      static_cast<long long>(presentation_us), static_cast<long long>(total_us), passed);
+  return passed;
+}
+
+bool verify_pan_adapter(ProductionLivePresenter& presenter, const ToolbarState& toolbar,
+                        ZoomLevel zoom) {
+  const auto setup = presenter.set_view(zoom, 0, 0, toolbar, now_us());
+  const int before_x = presenter.level_x();
+  const int before_y = presenter.level_y();
+  const auto pan =
+      presenter.pan_from(before_x, before_y, {240.0F, 240.0F}, {120.0F, 120.0F}, toolbar, now_us());
+  const bool moved = presenter.level_x() > before_x && presenter.level_y() > before_y;
+  std::printf(
+      "TINYDRAW_GATE1_PAN zoom=%s from_x=%d from_y=%d to_x=%d to_y=%d setup=%u present=%u "
+      "moved=%u pass=%u\n",
+      zoom_name(zoom), before_x, before_y, presenter.level_x(), presenter.level_y(), setup.passed,
+      pan.passed, moved, setup.passed && pan.passed && moved);
+  return setup.passed && pan.passed && moved;
 }
 
 bool append_stress_document(OperationLog& log, MaterializedCanvas& canvas,
@@ -513,9 +584,14 @@ void run_production_live_app() {
                                                         ZoomLevel::k100Percent);
   const bool gate_400 =
       gate_100 && run_tile_gate(presenter, producer, log, canvas, toolbar, ZoomLevel::k400Percent);
+  const bool ssaa_100 = gate_400 && run_ssaa_gate(presenter, producer, log, canvas, toolbar);
+  const bool pan_100 = ssaa_100 && verify_pan_adapter(presenter, toolbar, ZoomLevel::k100Percent);
+  const bool pan_400 = pan_100 && verify_pan_adapter(presenter, toolbar, ZoomLevel::k400Percent);
   const auto return_overview = presenter.set_zoom(ZoomLevel::k25Percent, toolbar, now_us());
-  std::printf("TINYDRAW_GATE1_AUTOMATED_DONE workload=%u hard_100=%u hard_400=%u return=%u\n",
-              workload_ready, gate_100, gate_400, return_overview.passed);
+  std::printf(
+      "TINYDRAW_GATE1_AUTOMATED_DONE workload=%u hard_100=%u hard_400=%u ssaa_100=%u "
+      "pan_100=%u pan_400=%u return=%u\n",
+      workload_ready, gate_100, gate_400, ssaa_100, pan_100, pan_400, return_overview.passed);
   std::printf(
       "TINYDRAW_LIVE_READY zoom=25 controls=toolbar button=cycle_25_100_400 "
       "long_button=load_1000 operations_capacity=%lu samples_capacity=%lu free_psram=%lu "
