@@ -25,7 +25,7 @@ struct Fixture {
   production::MaterializedCanvas canvas{overview, slots, tile_pool};
 
   production::IncrementalDocumentWorkspace workspace() {
-    return {.next_overview = next_overview,
+    return {.overview_scratch = next_overview,
             .tile_scratch = tile_scratch,
             .publications = publications,
             .affected_keys = affected};
@@ -84,7 +84,7 @@ TEST_CASE("incremental document advances log and canvas together") {
   CHECK(fixture.canvas.lookup(at_100)->kind == production::SourceKind::kTileSlot);
   CHECK(fixture.canvas.lookup(at_200)->kind == production::SourceKind::kTileSlot);
   CHECK(fixture.canvas.lookup(at_400)->kind == production::SourceKind::kTileSlot);
-  CHECK(fixture.next_overview[3U * production::kOverviewWidth + 3U] == 0xF800U);
+  CHECK(fixture.canvas.overview_pixels()[3U * production::kOverviewWidth + 3U] == 0xF800U);
 }
 
 TEST_CASE("incremental document falls back excess affected residents when scratch is bounded") {
@@ -168,13 +168,31 @@ TEST_CASE("incremental document rejects non-exact canvas overview storage before
 
   CHECK_FALSE(production::append_incrementally(
       log, canvas, {.samples = samples},
-      {.next_overview = std::span(guarded).subspan(1, production::kOverviewPixels),
+      {.overview_scratch = std::span(guarded).subspan(1, production::kOverviewPixels),
        .publications = publications,
        .affected_keys = affected}));
   CHECK(guarded.front() == 0xBEEFU);
   CHECK(guarded.back() == 0xBEEFU);
   CHECK(log.current_revision() == production::DocumentRevision{0});
   CHECK(canvas.current_revision() == production::DocumentRevision{0});
+}
+
+TEST_CASE("incremental document fails atomically when overview scratch is too small") {
+  Fixture fixture;
+  fixture.overview.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
+  const std::array samples{
+      production::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 512},
+      production::CompactOperationSample{.x_quarter = 160, .y_quarter = 160, .radius_256 = 512},
+  };
+  auto workspace = fixture.workspace();
+  workspace.overview_scratch = std::span(fixture.next_overview).first(1);
+
+  CHECK_FALSE(production::append_incrementally(fixture.log, fixture.canvas,
+                                               {.color = 0xF800U, .samples = samples}, workspace));
+  CHECK(fixture.log.current_revision() == production::DocumentRevision{0});
+  CHECK(fixture.canvas.current_revision() == production::DocumentRevision{0});
+  CHECK(fixture.canvas.overview_pixels().front() == 0xFFFFU);
 }
 
 TEST_CASE("incremental document rejects workspace aliasing live canvas pixels") {
@@ -184,7 +202,7 @@ TEST_CASE("incremental document rejects workspace aliasing live canvas pixels") 
   const std::array samples{
       production::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 256}};
   auto workspace = fixture.workspace();
-  workspace.next_overview = fixture.overview;
+  workspace.overview_scratch = fixture.overview;
 
   CHECK_FALSE(production::append_incrementally(fixture.log, fixture.canvas,
                                                {.color = 0xF800U, .samples = samples}, workspace));
@@ -200,7 +218,7 @@ TEST_CASE("incremental document rejects overlapping publication workspaces") {
   const std::array samples{
       production::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 256}};
   auto workspace = fixture.workspace();
-  workspace.tile_scratch = workspace.next_overview.first(production::kTilePixels);
+  workspace.tile_scratch = workspace.overview_scratch.first(production::kTilePixels);
 
   CHECK_FALSE(production::append_incrementally(fixture.log, fixture.canvas,
                                                {.color = 0xF800U, .samples = samples}, workspace));
@@ -345,7 +363,7 @@ TEST_CASE("settlement rehearsal replays validated slices and rebases after resto
   std::copy(canvas.overview_pixels().begin(), canvas.overview_pixels().end(), replay->begin());
   const production::OperationLogEpoch original_epoch = log.epoch();
   const auto workspace = production::IncrementalDocumentWorkspace{
-      .next_overview = *next_overview,
+      .overview_scratch = *next_overview,
       .tile_scratch = tile_scratch,
       .publications = publications,
       .affected_keys = affected,
