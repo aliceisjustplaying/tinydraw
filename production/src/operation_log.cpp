@@ -37,6 +37,7 @@ PreparedAppend::~PreparedAppend() { cancel(); }
 PreparedAppend::PreparedAppend(PreparedAppend&& other) noexcept
     : owner_(other.owner_), operation_(other.operation_), token_(other.token_) {
   other.owner_ = nullptr;
+  other.operation_ = {};
   other.token_ = 0;
 }
 
@@ -47,6 +48,7 @@ PreparedAppend& PreparedAppend::operator=(PreparedAppend&& other) noexcept {
     operation_ = other.operation_;
     token_ = other.token_;
     other.owner_ = nullptr;
+    other.operation_ = {};
     other.token_ = 0;
   }
   return *this;
@@ -177,7 +179,7 @@ std::optional<StoredOperation> OperationLog::operation(std::size_t index) const 
   }
   const OperationRecord& record = records_[index];
   return StoredOperation{
-      .identity = {.revision = {static_cast<std::uint32_t>(index + 1U)},
+      .identity = {.revision = {base_revision_.value + static_cast<std::uint32_t>(index) + 1U},
                    .operation_index = static_cast<std::uint32_t>(index)},
       .tool = record.tool,
       .color = record.color,
@@ -195,6 +197,7 @@ void OperationLog::reset(DocumentRevision revision) {
   }
   operation_count_ = 0;
   sample_count_ = 0;
+  base_revision_ = revision;
   revision_ = revision;
   append_pending_ = false;
   pending_sample_count_ = 0;
