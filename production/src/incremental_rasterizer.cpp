@@ -7,6 +7,10 @@ namespace tinydraw::production {
 namespace {
 
 constexpr std::uint16_t kBackground = 0xFFFFU;
+// A center on a pixel-grid intersection is sqrt(0.5) pixels from the nearest
+// pixel center. Keep thin projected operations above that distance so stroke
+// presence survives every committed zoom.
+constexpr float kMinimumScreenRadius = 0.75F;
 constexpr float kMaximumRasterStep = 32.0F;
 
 struct Sample {
@@ -39,7 +43,8 @@ Sample scaled_sample(CompactOperationSample sample, ZoomLevel zoom) {
   return {
       .x = static_cast<float>(sample.x_quarter) * 0.25F * scale,
       .y = static_cast<float>(sample.y_quarter) * 0.25F * scale,
-      .radius = std::max(static_cast<float>(sample.radius_256) / 256.0F * scale, 0.5F),
+      .radius =
+          std::max(static_cast<float>(sample.radius_256) / 256.0F * scale, kMinimumScreenRadius),
   };
 }
 
