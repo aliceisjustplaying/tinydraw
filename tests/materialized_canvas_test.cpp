@@ -444,6 +444,112 @@ TEST_CASE("clipped 50 percent tile advertises its padded slot stride") {
   CHECK(composed == edge_pixels);
 }
 
+TEST_CASE("incremental revision updates affected tiles and carries unaffected tiles") {
+  std::array<std::uint16_t, production::kOverviewPixels> overview{};
+  overview.fill(0x1111U);
+  std::array<std::uint16_t, production::kOverviewPixels> next_overview{};
+  next_overview.fill(0x2222U);
+  std::array<production::MaterializedSlotStorage, 3> slots{};
+  std::array<std::uint16_t, slots.size() * production::kTilePixels> tile_storage{};
+  std::array<std::uint16_t, production::kTilePixels> original_tile{};
+  original_tile.fill(0x3333U);
+  std::array<std::uint16_t, production::kTilePixels> updated_tile{};
+  updated_tile.fill(0x4444U);
+  production::MaterializedCanvas canvas(overview, slots, tile_storage);
+  const production::TileKey updated{production::ZoomLevel::k100Percent, 0, 0};
+  const production::TileKey invalidated{production::ZoomLevel::k100Percent, 1, 0};
+  const production::TileKey carried{production::ZoomLevel::k100Percent, 2, 0};
+  REQUIRE(canvas.publish_overview({0}, overview));
+  REQUIRE(canvas.publish_tile(updated, {0}, production::MaterializationQuality::kSettled,
+                              original_tile));
+  REQUIRE(canvas.publish_tile(invalidated, {0}, production::MaterializationQuality::kExact,
+                              original_tile));
+  REQUIRE(
+      canvas.publish_tile(carried, {0}, production::MaterializationQuality::kExact, original_tile));
+  const auto carried_before = canvas.lookup(carried);
+  REQUIRE(carried_before.has_value());
+
+  const std::array affected{updated, invalidated};
+  const std::array publications{production::TileRevisionPublication{
+      .key = updated,
+      .quality = production::MaterializationQuality::kExact,
+      .pixels = updated_tile,
+  }};
+  REQUIRE(canvas.commit_incremental_revision({1}, next_overview, affected, publications));
+  CHECK(canvas.current_revision() == production::DocumentRevision{1});
+  CHECK(canvas.overview_pixels().front() == 0x2222U);
+
+  const auto updated_after = canvas.lookup(updated);
+  REQUIRE(updated_after.has_value());
+  CHECK(updated_after->kind == production::SourceKind::kTileSlot);
+  CHECK(updated_after->identity.quality == production::MaterializationQuality::kExact);
+  REQUIRE(updated_after->slot_index.has_value());
+  CHECK(tile_storage[*updated_after->slot_index * production::kTilePixels] == 0x4444U);
+
+  const auto invalidated_after = canvas.lookup(invalidated);
+  REQUIRE(invalidated_after.has_value());
+  CHECK(invalidated_after->kind == production::SourceKind::kOverview);
+
+  const auto carried_after = canvas.lookup(carried);
+  REQUIRE(carried_after.has_value());
+  CHECK(carried_after->kind == production::SourceKind::kTileSlot);
+  CHECK(carried_after->slot_index == carried_before->slot_index);
+  CHECK(carried_after->identity.generation == carried_before->identity.generation);
+  CHECK(carried_after->identity.revision == production::DocumentRevision{1});
+}
+
+TEST_CASE("incremental revision rejection leaves pixels and identities unchanged") {
+  std::array<std::uint16_t, production::kOverviewPixels> overview{};
+  overview.fill(0x1111U);
+  std::array<std::uint16_t, production::kOverviewPixels> next_overview{};
+  next_overview.fill(0x2222U);
+  std::array<production::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, production::kTilePixels> tile_storage{};
+  std::array<std::uint16_t, production::kTilePixels> tile{};
+  tile.fill(0x3333U);
+  production::MaterializedCanvas canvas(overview, slots, tile_storage);
+  const production::TileKey key{production::ZoomLevel::k100Percent, 0, 0};
+  REQUIRE(canvas.publish_overview({0}, overview));
+  REQUIRE(canvas.publish_tile(key, {0}, production::MaterializationQuality::kExact, tile));
+  const auto before = canvas.lookup(key);
+  REQUIRE(before.has_value());
+
+  const std::array duplicate_affected{key, key};
+  CHECK_FALSE(canvas.commit_incremental_revision({1}, next_overview, duplicate_affected, {}));
+  CHECK(canvas.current_revision() == production::DocumentRevision{0});
+  CHECK(canvas.overview_pixels().front() == 0x1111U);
+  CHECK(canvas.lookup(key)->identity == before->identity);
+  CHECK(tile_storage.front() == 0x3333U);
+
+  auto pin = canvas.pin(key);
+  REQUIRE(pin.has_value());
+  const std::array affected{key};
+  CHECK_FALSE(canvas.commit_incremental_revision({1}, next_overview, affected, {}));
+  CHECK(canvas.current_revision() == production::DocumentRevision{0});
+  CHECK(canvas.overview_pixels().front() == 0x1111U);
+}
+
+TEST_CASE("incremental revision requires next revision and resident affected publications") {
+  std::array<std::uint16_t, production::kOverviewPixels> overview{};
+  std::array<std::uint16_t, production::kOverviewPixels> next_overview{};
+  std::array<production::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, production::kTilePixels> tile_storage{};
+  std::array<std::uint16_t, production::kTilePixels> tile{};
+  production::MaterializedCanvas canvas(overview, slots, tile_storage);
+  REQUIRE(canvas.publish_overview({4}, overview));
+  const production::TileKey missing{production::ZoomLevel::k100Percent, 0, 0};
+  const std::array affected{missing};
+  const std::array publication{production::TileRevisionPublication{
+      .key = missing,
+      .quality = production::MaterializationQuality::kExact,
+      .pixels = tile,
+  }};
+
+  CHECK_FALSE(canvas.commit_incremental_revision({6}, next_overview, affected, {}));
+  CHECK_FALSE(canvas.commit_incremental_revision({5}, next_overview, affected, publication));
+  CHECK(canvas.current_revision() == production::DocumentRevision{4});
+}
+
 TEST_CASE("canvas accepts caller-owned dynamically constructed slot storage") {
   std::array<std::uint16_t, production::kOverviewPixels> overview{};
   auto slots = std::make_unique<production::MaterializedSlotStorage[]>(2);
