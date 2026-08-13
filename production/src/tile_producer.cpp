@@ -322,12 +322,9 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
     }
   }
   if (active_group_.next_operation < active_group_.operation_count) {
-    const auto remaining = visible_tiles_remaining(active_group_.view);
-    if (!remaining.has_value()) {
-      active_group_ = {};
-      return std::nullopt;
-    }
-    result.visible_tiles_remaining = *remaining;
+    // No tile can be published until this painter-ordered group replay is
+    // complete, so the visible missing count cannot change during a slice.
+    // Avoid rescanning PSRAM slot metadata on every resumable batch.
     return result;
   }
   const auto published =
