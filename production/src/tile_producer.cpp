@@ -54,7 +54,7 @@ bool TileProducer::ready() const {
          !log_.workspace_overlaps_storage(packed_bytes);
 }
 
-bool TileProducer::valid_view(const ViewRequest& view) const {
+bool TileProducer::valid_view(const ViewRequest& view) {
   if (view.zoom == ZoomLevel::k25Percent) {
     return false;
   }
@@ -66,15 +66,19 @@ bool TileProducer::valid_view(const ViewRequest& view) const {
          view.level_pixels.y1 <= level_height;
 }
 
-bool TileProducer::tile_satisfies(TileKey key) const {
+bool TileProducer::tile_satisfies(TileKey key, MaterializationQuality quality) const {
   const auto source = canvas_.lookup(key);
   return source.has_value() && source->kind == SourceKind::kTileSlot &&
          source->identity.revision == canvas_.current_revision() &&
-         static_cast<int>(source->identity.quality) >=
-             static_cast<int>(MaterializationQuality::kImmediate);
+         static_cast<int>(source->identity.quality) >= static_cast<int>(quality);
 }
 
 std::optional<std::size_t> TileProducer::visible_tiles_remaining(const ViewRequest& view) const {
+  return visible_tiles_remaining(view, MaterializationQuality::kImmediate);
+}
+
+std::optional<std::size_t> TileProducer::visible_tiles_remaining(
+    const ViewRequest& view, MaterializationQuality quality) const {
   if (!ready() || !valid_view(view)) {
     return std::nullopt;
   }
@@ -87,7 +91,8 @@ std::optional<std::size_t> TileProducer::visible_tiles_remaining(const ViewReque
   for (int row = first_row; row <= last_row; ++row) {
     for (int column = first_column; column <= last_column; ++column) {
       remaining += !tile_satisfies(
-          {view.zoom, static_cast<std::uint16_t>(column), static_cast<std::uint16_t>(row)});
+          {view.zoom, static_cast<std::uint16_t>(column), static_cast<std::uint16_t>(row)},
+          quality);
     }
   }
   return remaining;
@@ -107,7 +112,7 @@ std::optional<TileKey> TileProducer::choose_missing_group(const ViewRequest& vie
     for (int column = first_column; column <= last_column; ++column) {
       const TileKey key{view.zoom, static_cast<std::uint16_t>(column),
                         static_cast<std::uint16_t>(row)};
-      if (tile_satisfies(key)) {
+      if (tile_satisfies(key, MaterializationQuality::kImmediate)) {
         continue;
       }
       const int group_column = column & ~1;
@@ -118,6 +123,36 @@ std::optional<TileKey> TileProducer::choose_missing_group(const ViewRequest& vie
       if (!selected.has_value() || candidate_distance < best_distance) {
         selected = {view.zoom, static_cast<std::uint16_t>(group_column),
                     static_cast<std::uint16_t>(group_row)};
+        best_distance = candidate_distance;
+      }
+    }
+  }
+  return selected;
+}
+
+std::optional<TileKey> TileProducer::choose_missing_tile(const ViewRequest& view,
+                                                         MaterializationQuality quality) const {
+  const PixelRect rect = view.level_pixels;
+  const int first_column = rect.x0 / kTileWidth;
+  const int last_column = (rect.x1 - 1) / kTileWidth;
+  const int first_row = rect.y0 / kTileHeight;
+  const int last_row = (rect.y1 - 1) / kTileHeight;
+  const int center_x = (rect.x0 + rect.x1) / 2;
+  const int center_y = (rect.y0 + rect.y1) / 2;
+  std::optional<TileKey> selected;
+  std::size_t best_distance = std::numeric_limits<std::size_t>::max();
+  for (int row = first_row; row <= last_row; ++row) {
+    for (int column = first_column; column <= last_column; ++column) {
+      const TileKey key{view.zoom, static_cast<std::uint16_t>(column),
+                        static_cast<std::uint16_t>(row)};
+      if (tile_satisfies(key, quality)) {
+        continue;
+      }
+      const std::size_t candidate_distance =
+          distance_squared(column * kTileWidth + kTileWidth / 2,
+                           row * kTileHeight + kTileHeight / 2, center_x, center_y);
+      if (!selected.has_value() || candidate_distance < best_distance) {
+        selected = key;
         best_distance = candidate_distance;
       }
     }
@@ -140,6 +175,110 @@ std::optional<TileProductionStep> TileProducer::produce_next(const ViewRequest& 
   return render_group(view, *group);
 }
 
+std::optional<TileProductionStep> TileProducer::produce_next_2x_aa_100(const ViewRequest& view) {
+  if (view.zoom != ZoomLevel::k100Percent) {
+    return std::nullopt;
+  }
+  const auto remaining = visible_tiles_remaining(view, MaterializationQuality::kSettled);
+  if (!remaining.has_value()) {
+    return std::nullopt;
+  }
+  if (*remaining == 0U) {
+    return TileProductionStep{.complete = true};
+  }
+  const auto tile = choose_missing_tile(view, MaterializationQuality::kSettled);
+  if (!tile.has_value()) {
+    return std::nullopt;
+  }
+  return render_2x_aa_tile(view, *tile);
+}
+
+bool TileProducer::reset_uniform_baseline(DocumentRevision revision, std::uint16_t color) {
+  if (log_.operation_count() != 0U || log_.current_revision() != revision ||
+      canvas_.current_revision() != revision) {
+    return false;
+  }
+  baseline_revision_ = revision;
+  baseline_color_ = color;
+  return true;
+}
+
+std::optional<TileProducer::ReplayRender> TileProducer::render_replay(
+    ZoomLevel zoom, PixelRect bounds, std::span<std::uint16_t> surface, int stride) {
+  if (log_.current_revision() != canvas_.current_revision()) {
+    return std::nullopt;
+  }
+  const OperationLogEpoch epoch = log_.epoch();
+  const DocumentRevision revision = log_.current_revision();
+  const auto replay = log_.replay_range(epoch, baseline_revision_, revision);
+  if (!replay.has_value()) {
+    return std::nullopt;
+  }
+  std::fill(surface.begin(), surface.end(), baseline_color_);
+  ReplayRender result{
+      .epoch = epoch, .revision = revision, .operations_scanned = replay->operation_count};
+  for (std::size_t offset = 0; offset < replay->operation_count; ++offset) {
+    const auto stored = log_.operation(replay->first_operation + offset);
+    if (!stored.has_value()) {
+      return std::nullopt;
+    }
+    if (!intersects(operation_level_bounds(stored->world_bounds, zoom), bounds)) {
+      continue;
+    }
+    if (!apply_incremental_operation(
+            {.tool = stored->tool, .color = stored->color, .samples = stored->samples},
+            {.zoom = zoom, .level_bounds = bounds, .pixels = surface, .stride = stride})) {
+      return std::nullopt;
+    }
+    ++result.operations_rendered;
+  }
+  if (log_.epoch() != epoch || log_.current_revision() != revision ||
+      canvas_.current_revision() != revision) {
+    return std::nullopt;
+  }
+  return result;
+}
+
+std::optional<std::size_t> TileProducer::publish_group(PixelRect bounds, TileKey group_origin,
+                                                       TileGrid grid, DocumentRevision revision) {
+  const int first_column = group_origin.column;
+  const int first_row = group_origin.row;
+  const int last_column = std::min(grid.columns, first_column + kTileProducerColumns);
+  const int last_row = std::min(grid.rows, first_row + kTileProducerRows);
+  const auto surface = workspace_.supertask_pixels.first(kTileProducerPixels);
+  std::size_t published = 0;
+  for (int row = first_row; row < last_row; ++row) {
+    for (int column = first_column; column < last_column; ++column) {
+      const TileKey key{group_origin.zoom, static_cast<std::uint16_t>(column),
+                        static_cast<std::uint16_t>(row)};
+      if (tile_satisfies(key, MaterializationQuality::kImmediate)) {
+        continue;
+      }
+      const PixelRect tile_bounds = tile_pixel_bounds(key);
+      const int tile_width = tile_bounds.x1 - tile_bounds.x0;
+      const int tile_height = tile_bounds.y1 - tile_bounds.y0;
+      const std::size_t packed_count =
+          static_cast<std::size_t>(tile_width) * static_cast<std::size_t>(tile_height);
+      auto packed = workspace_.packed_tile_pixels.first(packed_count);
+      for (int tile_row = 0; tile_row < tile_height; ++tile_row) {
+        const auto source_offset =
+            static_cast<std::size_t>(tile_bounds.y0 - bounds.y0 + tile_row) * kTileProducerWidth +
+            static_cast<std::size_t>(tile_bounds.x0 - bounds.x0);
+        const auto destination_offset =
+            static_cast<std::size_t>(tile_row) * static_cast<std::size_t>(tile_width);
+        std::copy_n(surface.begin() + static_cast<std::ptrdiff_t>(source_offset), tile_width,
+                    packed.begin() + static_cast<std::ptrdiff_t>(destination_offset));
+      }
+      if (!canvas_.publish_tile(key, revision, MaterializationQuality::kImmediate, packed)
+               .has_value()) {
+        return std::nullopt;
+      }
+      ++published;
+    }
+  }
+  return published;
+}
+
 std::optional<TileProductionStep> TileProducer::render_group(const ViewRequest& view,
                                                              TileKey group_origin) {
   const TileGrid grid = tile_grid(view.zoom);
@@ -155,73 +294,82 @@ std::optional<TileProductionStep> TileProducer::render_group(const ViewRequest& 
       .x1 = std::min(level_width, last_column * kTileWidth),
       .y1 = std::min(level_height, last_row * kTileHeight),
   };
-  const int width = bounds.x1 - bounds.x0;
-  const int height = bounds.y1 - bounds.y0;
-  if (width <= 0 || height <= 0 || log_.current_revision() != canvas_.current_revision()) {
+  if (bounds.x1 <= bounds.x0 || bounds.y1 <= bounds.y0) {
     return std::nullopt;
   }
-  const OperationLogEpoch epoch = log_.epoch();
-  const DocumentRevision revision = log_.current_revision();
-  const auto replay = log_.replay_range(epoch, baseline_revision_, revision);
+  auto surface = workspace_.supertask_pixels.first(kTileProducerPixels);
+  const auto replay = render_replay(view.zoom, bounds, surface, kTileProducerWidth);
   if (!replay.has_value()) {
     return std::nullopt;
   }
-
-  auto surface = workspace_.supertask_pixels.first(kTileProducerPixels);
-  std::fill(surface.begin(), surface.end(), baseline_color_);
-  TileProductionStep result{.level_bounds = bounds, .operations_scanned = replay->operation_count};
-  for (std::size_t offset = 0; offset < replay->operation_count; ++offset) {
-    const auto stored = log_.operation(replay->first_operation + offset);
-    if (!stored.has_value()) {
-      return std::nullopt;
-    }
-    if (!intersects(operation_level_bounds(stored->world_bounds, view.zoom), bounds)) {
-      continue;
-    }
-    if (!apply_incremental_operation(
-            {.tool = stored->tool, .color = stored->color, .samples = stored->samples},
-            {.zoom = view.zoom,
-             .level_bounds = bounds,
-             .pixels = surface,
-             .stride = kTileProducerWidth})) {
-      return std::nullopt;
-    }
-    ++result.operations_rendered;
-  }
-  if (log_.epoch() != epoch || log_.current_revision() != revision ||
-      canvas_.current_revision() != revision) {
+  const auto published = publish_group(bounds, group_origin, grid, replay->revision);
+  if (!published.has_value()) {
     return std::nullopt;
   }
+  TileProductionStep result{.level_bounds = bounds,
+                            .operations_scanned = replay->operations_scanned,
+                            .operations_rendered = replay->operations_rendered,
+                            .tiles_published = *published};
+  const auto remaining = visible_tiles_remaining(view);
+  if (!remaining.has_value()) {
+    return std::nullopt;
+  }
+  result.visible_tiles_remaining = *remaining;
+  result.complete = *remaining == 0U;
+  return result;
+}
 
-  for (int row = first_row; row < last_row; ++row) {
-    for (int column = first_column; column < last_column; ++column) {
-      const TileKey key{view.zoom, static_cast<std::uint16_t>(column),
-                        static_cast<std::uint16_t>(row)};
-      if (tile_satisfies(key)) {
-        continue;
+std::optional<TileProductionStep> TileProducer::render_2x_aa_tile(const ViewRequest& view,
+                                                                  TileKey key) {
+  const PixelRect output_bounds = tile_pixel_bounds(key);
+  const int output_width = output_bounds.x1 - output_bounds.x0;
+  const int output_height = output_bounds.y1 - output_bounds.y0;
+  if (output_width != kTileWidth || output_height != kTileHeight ||
+      log_.current_revision() != canvas_.current_revision()) {
+    return std::nullopt;
+  }
+  const PixelRect sample_bounds{
+      .x0 = output_bounds.x0 * 2,
+      .y0 = output_bounds.y0 * 2,
+      .x1 = output_bounds.x1 * 2,
+      .y1 = output_bounds.y1 * 2,
+  };
+  auto surface = workspace_.supertask_pixels.first(kTileProducerPixels);
+  const auto replay =
+      render_replay(ZoomLevel::k200Percent, sample_bounds, surface, kTileProducerWidth);
+  if (!replay.has_value()) {
+    return std::nullopt;
+  }
+  TileProductionStep result{.level_bounds = output_bounds,
+                            .operations_scanned = replay->operations_scanned,
+                            .operations_rendered = replay->operations_rendered};
+  auto packed = workspace_.packed_tile_pixels.first(kTilePixels);
+  for (int y = 0; y < kTileHeight; ++y) {
+    for (int x = 0; x < kTileWidth; ++x) {
+      const std::size_t top_left =
+          static_cast<std::size_t>(y * 2) * kTileProducerWidth + static_cast<std::size_t>(x * 2);
+      const std::array<std::uint16_t, 4> samples{surface[top_left], surface[top_left + 1U],
+                                                 surface[top_left + kTileProducerWidth],
+                                                 surface[top_left + kTileProducerWidth + 1U]};
+      unsigned red = 0;
+      unsigned green = 0;
+      unsigned blue = 0;
+      for (const std::uint16_t sample : samples) {
+        red += (sample >> 11U) & 0x1FU;
+        green += (sample >> 5U) & 0x3FU;
+        blue += sample & 0x1FU;
       }
-      const PixelRect tile_bounds = tile_pixel_bounds(key);
-      const int tile_width = tile_bounds.x1 - tile_bounds.x0;
-      const int tile_height = tile_bounds.y1 - tile_bounds.y0;
-      const std::size_t packed_count =
-          static_cast<std::size_t>(tile_width) * static_cast<std::size_t>(tile_height);
-      auto packed = workspace_.packed_tile_pixels.first(packed_count);
-      for (int tile_row = 0; tile_row < tile_height; ++tile_row) {
-        const auto source_offset =
-            static_cast<std::size_t>(tile_bounds.y0 - bounds.y0 + tile_row) * kTileProducerWidth +
-            static_cast<std::size_t>(tile_bounds.x0 - bounds.x0);
-        const auto destination_offset = static_cast<std::size_t>(tile_row * tile_width);
-        std::copy_n(surface.begin() + static_cast<std::ptrdiff_t>(source_offset), tile_width,
-                    packed.begin() + static_cast<std::ptrdiff_t>(destination_offset));
-      }
-      if (!canvas_.publish_tile(key, revision, MaterializationQuality::kImmediate, packed)
-               .has_value()) {
-        return std::nullopt;
-      }
-      ++result.tiles_published;
+      packed[static_cast<std::size_t>(y) * kTileWidth + static_cast<std::size_t>(x)] =
+          static_cast<std::uint16_t>((((red + 2U) / 4U) << 11U) | (((green + 2U) / 4U) << 5U) |
+                                     ((blue + 2U) / 4U));
     }
   }
-  const auto remaining = visible_tiles_remaining(view);
+  if (!canvas_.publish_tile(key, replay->revision, MaterializationQuality::kSettled, packed)
+           .has_value()) {
+    return std::nullopt;
+  }
+  result.tiles_published = 1U;
+  const auto remaining = visible_tiles_remaining(view, MaterializationQuality::kSettled);
   if (!remaining.has_value()) {
     return std::nullopt;
   }

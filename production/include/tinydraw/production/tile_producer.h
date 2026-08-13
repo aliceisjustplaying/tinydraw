@@ -48,14 +48,39 @@ class TileProducer {
   // Produces the closest missing 2x2 supertask for a tiled viewport. A complete
   // result means every visible key has a current tile at kImmediate or better.
   [[nodiscard]] std::optional<TileProductionStep> produce_next(const ViewRequest& view);
+  // Gate 1's 4-sample-equivalent probe. Produces one 100% tile through the
+  // 200% raster path, box-downsamples it, and publishes it at kSettled.
+  [[nodiscard]] std::optional<TileProductionStep> produce_next_2x_aa_100(const ViewRequest& view);
   [[nodiscard]] std::optional<std::size_t> visible_tiles_remaining(const ViewRequest& view) const;
+  // Changes the authoritative uniform snapshot after a coordinated log/canvas
+  // reset. Rejected unless both authorities are empty and at this revision.
+  [[nodiscard]] bool reset_uniform_baseline(DocumentRevision revision,
+                                            std::uint16_t color = 0xFFFFU);
 
  private:
-  [[nodiscard]] bool valid_view(const ViewRequest& view) const;
-  [[nodiscard]] bool tile_satisfies(TileKey key) const;
+  struct ReplayRender {
+    OperationLogEpoch epoch{};
+    DocumentRevision revision{};
+    std::size_t operations_scanned = 0;
+    std::size_t operations_rendered = 0;
+  };
+
+  [[nodiscard]] static bool valid_view(const ViewRequest& view);
+  [[nodiscard]] bool tile_satisfies(TileKey key, MaterializationQuality quality) const;
+  [[nodiscard]] std::optional<std::size_t> visible_tiles_remaining(
+      const ViewRequest& view, MaterializationQuality quality) const;
   [[nodiscard]] std::optional<TileKey> choose_missing_group(const ViewRequest& view) const;
+  [[nodiscard]] std::optional<TileKey> choose_missing_tile(const ViewRequest& view,
+                                                           MaterializationQuality quality) const;
+  [[nodiscard]] std::optional<ReplayRender> render_replay(ZoomLevel zoom, PixelRect bounds,
+                                                          std::span<std::uint16_t> surface,
+                                                          int stride);
+  [[nodiscard]] std::optional<std::size_t> publish_group(PixelRect bounds, TileKey group_origin,
+                                                         TileGrid grid, DocumentRevision revision);
   [[nodiscard]] std::optional<TileProductionStep> render_group(const ViewRequest& view,
                                                                TileKey group_origin);
+  [[nodiscard]] std::optional<TileProductionStep> render_2x_aa_tile(const ViewRequest& view,
+                                                                    TileKey key);
 
   OperationLog& log_;
   MaterializedCanvas& canvas_;
