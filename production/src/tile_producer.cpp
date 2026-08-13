@@ -2,8 +2,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cmath>
-#include <cstdlib>
 #include <limits>
 
 #include "tinydraw/production/storage_overlap.h"
@@ -19,6 +17,38 @@ std::size_t distance_squared(int x, int y, int center_x, int center_y) {
   const auto delta_x = static_cast<std::int64_t>(x) - center_x;
   const auto delta_y = static_cast<std::int64_t>(y) - center_y;
   return static_cast<std::size_t>(delta_x * delta_x + delta_y * delta_y);
+}
+
+constexpr std::int64_t floor_div(std::int64_t numerator, std::int64_t denominator) {
+  return numerator >= 0 ? numerator / denominator : (numerator - denominator + 1) / denominator;
+}
+
+constexpr std::int64_t ceil_div(std::int64_t numerator, std::int64_t denominator) {
+  return numerator >= 0 ? (numerator + denominator - 1) / denominator : numerator / denominator;
+}
+
+std::size_t projected_segment_work(CompactOperationSample first, CompactOperationSample second,
+                                   ZoomLevel zoom, PixelRect clip) {
+  constexpr std::int64_t kProjectionDenominator = 25'600;
+  constexpr std::int64_t kMinimumRadiusNumerator = 19'200;
+  const std::int64_t scale = zoom_percent(zoom);
+  const std::int64_t first_x = static_cast<std::int64_t>(first.x_quarter) * scale * 64;
+  const std::int64_t first_y = static_cast<std::int64_t>(first.y_quarter) * scale * 64;
+  const std::int64_t second_x = static_cast<std::int64_t>(second.x_quarter) * scale * 64;
+  const std::int64_t second_y = static_cast<std::int64_t>(second.y_quarter) * scale * 64;
+  const std::int64_t radius = std::max<std::int64_t>(
+      static_cast<std::int64_t>(std::max(first.radius_256, second.radius_256)) * scale,
+      kMinimumRadiusNumerator);
+  const int x0 = std::max(clip.x0, static_cast<int>(floor_div(std::min(first_x, second_x) - radius,
+                                                              kProjectionDenominator)));
+  const int y0 = std::max(clip.y0, static_cast<int>(floor_div(std::min(first_y, second_y) - radius,
+                                                              kProjectionDenominator)));
+  const int x1 = std::min(clip.x1, static_cast<int>(ceil_div(std::max(first_x, second_x) + radius,
+                                                             kProjectionDenominator)));
+  const int y1 = std::min(clip.y1, static_cast<int>(ceil_div(std::max(first_y, second_y) + radius,
+                                                             kProjectionDenominator)));
+  return static_cast<std::size_t>(std::max(0, x1 - x0)) *
+         static_cast<std::size_t>(std::max(0, y1 - y0));
 }
 
 }  // namespace
@@ -200,18 +230,8 @@ TileProducer::SegmentBatch TileProducer::choose_segment_batch(
        endpoint < operation.samples.size() && batch.segments < sample_budget; ++endpoint) {
     const auto first = operation.samples[endpoint - 1U];
     const auto second = operation.samples[endpoint];
-    const std::size_t scale = static_cast<std::size_t>(zoom_percent(active_group_.view.zoom));
-    const std::size_t delta_x =
-        static_cast<std::size_t>(std::abs(static_cast<int>(second.x_quarter) - first.x_quarter));
-    const std::size_t delta_y =
-        static_cast<std::size_t>(std::abs(static_cast<int>(second.y_quarter) - first.y_quarter));
-    const std::size_t radius =
-        static_cast<std::size_t>(std::max(first.radius_256, second.radius_256));
-    const std::size_t width =
-        (delta_x * scale + 399U) / 400U + (radius * scale + 12'799U) / 12'800U * 2U + 2U;
-    const std::size_t height =
-        (delta_y * scale + 399U) / 400U + (radius * scale + 12'799U) / 12'800U * 2U + 2U;
-    const std::size_t work = width * height;
+    const std::size_t work =
+        projected_segment_work(first, second, active_group_.view.zoom, active_group_.bounds);
     if (batch.segments != 0U && (batch.raster_work >= raster_work_budget ||
                                  work > raster_work_budget - batch.raster_work)) {
       break;

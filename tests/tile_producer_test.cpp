@@ -192,9 +192,9 @@ TEST_CASE("tile producer sliced long strokes equal direct painter replay") {
 TEST_CASE("tile producer isolates an oversized first segment from later raster work") {
   Fixture fixture;
   const std::array oversized_segments{
-      production::CompactOperationSample{.x_quarter = 20, .y_quarter = 20, .radius_256 = 1'280},
-      production::CompactOperationSample{.x_quarter = 68, .y_quarter = 80, .radius_256 = 1'280},
-      production::CompactOperationSample{.x_quarter = 116, .y_quarter = 20, .radius_256 = 1'280},
+      production::CompactOperationSample{.x_quarter = 20, .y_quarter = 20, .radius_256 = 5'120},
+      production::CompactOperationSample{.x_quarter = 100, .y_quarter = 100, .radius_256 = 5'120},
+      production::CompactOperationSample{.x_quarter = 20, .y_quarter = 100, .radius_256 = 5'120},
   };
   REQUIRE(fixture.log.append(append(oversized_segments, 0x001FU)));
   std::array<std::uint16_t, production::kOverviewPixels> revised_overview{};
