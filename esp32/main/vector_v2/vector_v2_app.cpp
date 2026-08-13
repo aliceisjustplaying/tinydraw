@@ -67,6 +67,15 @@ struct LiftBaselineTiming {
   bool pending = false;
 };
 
+struct PendingFillPresentation {
+  vector_v2::PixelRect level_bounds{};
+  ZoomLevel zoom = ZoomLevel::k25Percent;
+  int x = 0;
+  int y = 0;
+  DocumentRevision revision{};
+  bool pending = false;
+};
+
 struct FillBaselineTiming {
   std::uint32_t steps = 0;
   std::int64_t compute_total_us = 0;
@@ -502,6 +511,7 @@ void run_vector_v2_app() {
   bool fill_complete = true;
   FillBaselineTiming fill_timing{};
   bool fill_measurement_active = false;
+  PendingFillPresentation pending_fill{};
   LiftBaselineTiming lift_timing{};
   std::uint32_t next_lift_id = 1U;
   std::uint32_t lift_reports_dropped = 0U;
@@ -679,6 +689,7 @@ void run_vector_v2_app() {
       print_fill_baseline("paused", fill_zoom, fill_x, fill_y, fill_revision, fill_timing);
       fill_timing.reset();
       fill_measurement_active = false;
+      pending_fill = {};
     }
     if (fill_allowed) {
       const std::int64_t fill_block_started = esp_timer_get_time();
@@ -688,8 +699,10 @@ void run_vector_v2_app() {
                            presenter.level_x() + vector_v2::kOverviewWidth,
                            presenter.level_y() + vector_v2::kOverviewHeight},
       };
-      if (fill_zoom != fill_view.zoom || fill_x != fill_view.level_pixels.x0 ||
-          fill_y != fill_view.level_pixels.y0 || fill_revision != canvas.current_revision()) {
+      const bool fill_view_changed =
+          fill_zoom != fill_view.zoom || fill_x != fill_view.level_pixels.x0 ||
+          fill_y != fill_view.level_pixels.y0 || fill_revision != canvas.current_revision();
+      if (fill_view_changed) {
         if (fill_measurement_active) {
           print_fill_baseline("superseded", fill_zoom, fill_x, fill_y, fill_revision, fill_timing);
         }
@@ -700,8 +713,23 @@ void run_vector_v2_app() {
         fill_complete = false;
         fill_timing.reset();
         fill_measurement_active = true;
+        pending_fill = {};
       }
-      if (!fill_complete) {
+      if (pending_fill.pending) {
+        const bool still_current = pending_fill.zoom == fill_view.zoom &&
+                                   pending_fill.x == fill_view.level_pixels.x0 &&
+                                   pending_fill.y == fill_view.level_pixels.y0 &&
+                                   pending_fill.revision == canvas.current_revision();
+        if (still_current) {
+          const std::int64_t present_started = esp_timer_get_time();
+          const auto presentation = presenter.refresh_region(pending_fill.level_bounds);
+          const std::int64_t present_us = esp_timer_get_time() - present_started;
+          fill_timing.present_total_us += present_us;
+          fill_timing.present_max_us = std::max(fill_timing.present_max_us, present_us);
+          fill_timing.presentation_failures += !presentation.passed;
+        }
+        pending_fill = {};
+      } else if (!fill_complete) {
         if (!fill_measurement_active) {
           fill_timing.reset();
           fill_measurement_active = true;
@@ -715,12 +743,12 @@ void run_vector_v2_app() {
         fill_timing.compute_max_us = std::max(fill_timing.compute_max_us, compute_us);
         if (step.has_value()) {
           if (step->tiles_published != 0U) {
-            const std::int64_t present_started = esp_timer_get_time();
-            const auto presentation = presenter.refresh_region(step->level_bounds);
-            const std::int64_t present_us = esp_timer_get_time() - present_started;
-            fill_timing.present_total_us += present_us;
-            fill_timing.present_max_us = std::max(fill_timing.present_max_us, present_us);
-            fill_timing.presentation_failures += !presentation.passed;
+            pending_fill = {.level_bounds = step->level_bounds,
+                            .zoom = fill_view.zoom,
+                            .x = fill_view.level_pixels.x0,
+                            .y = fill_view.level_pixels.y0,
+                            .revision = canvas.current_revision(),
+                            .pending = true};
           }
           fill_complete = step->complete;
         } else {
@@ -728,13 +756,19 @@ void run_vector_v2_app() {
         }
         fill_timing.tick_max_us =
             std::max(fill_timing.tick_max_us, esp_timer_get_time() - fill_tick_started);
-        if (step.has_value() && fill_complete) {
+        if (step.has_value() && fill_complete && !pending_fill.pending) {
           print_fill_baseline("complete", fill_zoom, fill_x, fill_y, fill_revision, fill_timing);
           std::printf("TINYDRAW_LIVE_FILL_DONE zoom=%s x=%d y=%d revision=%lu\n",
                       zoom_name(fill_zoom), fill_x, fill_y,
                       static_cast<unsigned long>(fill_revision.value));
           fill_measurement_active = false;
         }
+      } else if (!pending_fill.pending && fill_measurement_active) {
+        print_fill_baseline("complete", fill_zoom, fill_x, fill_y, fill_revision, fill_timing);
+        std::printf("TINYDRAW_LIVE_FILL_DONE zoom=%s x=%d y=%d revision=%lu\n",
+                    zoom_name(fill_zoom), fill_x, fill_y,
+                    static_cast<unsigned long>(fill_revision.value));
+        fill_measurement_active = false;
       }
       if (lift_timing.pending) {
         lift_timing.post_lift_fill_block_us += esp_timer_get_time() - fill_block_started;
