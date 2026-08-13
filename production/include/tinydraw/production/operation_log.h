@@ -21,7 +21,13 @@ struct StoredOperation {
 // A contiguous painter-ordered range available after an authoritative
 // snapshot. first_operation is an index into this log, not a document-global
 // operation identity.
+struct OperationLogEpoch {
+  std::uint64_t value = 0;
+  bool operator==(const OperationLogEpoch&) const = default;
+};
+
 struct OperationReplayRange {
+  OperationLogEpoch epoch{};
   DocumentRevision baseline_revision{};
   DocumentRevision destination_revision{};
   std::size_t first_operation = 0;
@@ -64,6 +70,7 @@ class OperationLog {
 
   [[nodiscard]] bool ready() const;
   [[nodiscard]] DocumentRevision current_revision() const;
+  [[nodiscard]] OperationLogEpoch epoch() const;
   [[nodiscard]] std::size_t operation_count() const;
   [[nodiscard]] std::size_t sample_count() const;
   [[nodiscard]] std::size_t operation_capacity() const;
@@ -80,7 +87,8 @@ class OperationLog {
   // Returns the exact contiguous operations needed to advance a caller-owned
   // baseline snapshot. Both revisions must still be represented by this log.
   [[nodiscard]] std::optional<OperationReplayRange> replay_range(
-      DocumentRevision baseline_revision, DocumentRevision destination_revision) const;
+      OperationLogEpoch baseline_epoch, DocumentRevision baseline_revision,
+      DocumentRevision destination_revision) const;
   // Resets empty authority to a snapshot revision. Fails while a
   // PreparedAppend owns the pending slot. Existing operations are discarded.
   [[nodiscard]] bool reset(DocumentRevision revision = {});
@@ -98,6 +106,7 @@ class OperationLog {
   std::size_t sample_count_ = 0;
   DocumentRevision base_revision_{};
   DocumentRevision revision_{};
+  OperationLogEpoch epoch_{};
   std::uint32_t next_prepare_token_ = 1;
   std::uint32_t pending_token_ = 0;
   std::size_t pending_sample_count_ = 0;
