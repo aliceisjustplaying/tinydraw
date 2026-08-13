@@ -2,20 +2,11 @@
 
 #include <algorithm>
 #include <array>
-#include <functional>
+
+#include "tinydraw/production/storage_overlap.h"
 
 namespace tinydraw::production {
 namespace {
-
-template <typename Left, typename Right>
-bool spans_overlap(std::span<Left> left, std::span<Right> right) {
-  const auto* left_begin = reinterpret_cast<const std::byte*>(left.data());
-  const auto* left_end = left_begin + left.size_bytes();
-  const auto* right_begin = reinterpret_cast<const std::byte*>(right.data());
-  const auto* right_end = right_begin + right.size_bytes();
-  const std::less<const std::byte*> less;
-  return less(left_begin, right_end) && less(right_begin, left_end);
-}
 
 bool prepare_tile(const MaterializedCanvas& canvas, const OperationAppend& operation, TileKey key,
                   std::span<std::uint16_t> scratch, TileRevisionPublication& publication) {
@@ -49,7 +40,8 @@ std::optional<IncrementalAppendResult> append_incrementally(
   bool workspaces_overlap = false;
   for (std::size_t left = 0; left < workspaces.size(); ++left) {
     for (std::size_t right = left + 1U; right < workspaces.size(); ++right) {
-      workspaces_overlap = workspaces_overlap || spans_overlap(workspaces[left], workspaces[right]);
+      workspaces_overlap =
+          workspaces_overlap || storage_overlaps(workspaces[left], workspaces[right]);
     }
   }
   const bool workspace_aliases_owned_storage =
