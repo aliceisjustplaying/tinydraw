@@ -23,16 +23,23 @@ struct IncrementalDocumentWorkspace {
 
 struct IncrementalAppendResult {
   OperationIdentity identity{};
+  PixelRect affected_world_bounds{};
   std::size_t affected_resident_tiles = 0;
   std::size_t published_tiles = 0;
   std::size_t fallback_tiles = 0;
 };
 
+enum class IncrementalPublicationScope : std::uint8_t {
+  kAllMaterialized,
+  kPriorityView,
+};
+
 struct IncrementalAppendOptions {
-  // When bounded scratch cannot update every affected resident tile, preserve
-  // this visible tiled view first. Other affected tiles remain correct through
-  // overview fallback and can be replayed later.
+  // Priority-view scope updates only affected materialization intersecting the
+  // active tiled view. Other affected identities become correct overview
+  // fallback and are replayed cooperatively after input returns.
   std::optional<ViewRequest> priority_view{};
+  IncrementalPublicationScope publication_scope = IncrementalPublicationScope::kAllMaterialized;
 };
 
 // Coordinates document authority and materialization as one append. All
