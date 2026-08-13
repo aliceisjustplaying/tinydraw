@@ -115,6 +115,15 @@ internal DMA heap, export workspace, Wi-Fi, USB, and eventual renderer behavior
 were not live. Captured workload distributions must also validate that the
 capacities are sufficient rather than merely allocatable.
 
+No representative captured operation document is currently checked into this
+repository. The only 1,000-stroke corpus is the deterministic synthetic
+handwriting generator; seed 7 produces 20,153 samples (20.153 samples/stroke,
+200 maximum), which fits the provisional 4,000-operation/80,000-sample ratio by
+a narrow extrapolation only. Small `.stroke` files under `testdata/` are UI and
+raster correctness fixtures, not capacity evidence. Do not promote either set
+to a representative capacity receipt. A real captured document remains a
+required input to the capacity and Task #59 gates.
+
 ## Task #54a host fallback oracle
 
 `MaterializedCanvas::compose_view` is a host oracle that produces a complete
