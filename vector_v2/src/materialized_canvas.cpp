@@ -677,8 +677,11 @@ std::optional<std::size_t> MaterializedCanvas::find_uniform(TileKey key) const {
 }
 
 std::uint8_t MaterializedCanvas::protection_rank(TileKey key) const {
+  if (key.zoom == ZoomLevel::k25Percent) {
+    return 0U;
+  }
   const auto index = static_cast<std::size_t>(key.zoom) - 1U;
-  if (key.zoom == ZoomLevel::k25Percent || index >= recent_views_.size()) {
+  if (index >= recent_views_.size()) {
     return 0U;
   }
   const ViewFootprint& footprint = recent_views_[index];
