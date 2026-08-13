@@ -73,6 +73,29 @@ TEST_CASE("LOD store capacity failure and cancellation leave authority unchanged
   CHECK(store.sample_count() == 0U);
 }
 
+TEST_CASE("LOD store keeps published operations visible while the next is prepared") {
+  std::array<production::LodSpan, 8> spans{};
+  std::array<production::CompactLodSample, 8> storage{};
+  production::OperationLodStore store(spans, storage);
+  const production::OperationLogEpoch epoch{1};
+  const std::array first_sample{production::CompactLodSample{4, 4, 256}};
+  const std::array second_sample{production::CompactLodSample{8, 8, 256}};
+  REQUIRE(store.reset(epoch, {0}));
+  auto first = store.prepare(
+      {.epoch = epoch, .identity = {{1}, 0}, .zoom_samples = all_zooms(first_sample)});
+  REQUIRE(first.has_value());
+  first->publish();
+  auto second = store.prepare(
+      {.epoch = epoch, .identity = {{2}, 1}, .zoom_samples = all_zooms(second_sample)});
+  REQUIRE(second.has_value());
+
+  const auto published = store.lod(epoch, {{1}, 0}, production::ZoomLevel::k100Percent);
+  REQUIRE(published.has_value());
+  CHECK(published->samples.front() == first_sample.front());
+  CHECK_FALSE(store.lod(epoch, {{2}, 1}, production::ZoomLevel::k100Percent));
+  second->cancel();
+}
+
 TEST_CASE("LOD store rejects mismatched identity and malformed zoom input") {
   std::array<production::LodSpan, 8> spans{};
   std::array<production::CompactLodSample, 12> storage{};
@@ -101,6 +124,7 @@ TEST_CASE("LOD reset invalidates prior epoch and adopts a snapshot base") {
   const production::OperationLogEpoch old_epoch{1};
   const std::array sample{production::CompactLodSample{4, 4, 256}};
   REQUIRE(store.reset(old_epoch, {0}));
+  CHECK_FALSE(store.reset(old_epoch, {8}));
   auto prepared =
       store.prepare({.epoch = old_epoch, .identity = {{1}, 0}, .zoom_samples = all_zooms(sample)});
   REQUIRE(prepared.has_value());

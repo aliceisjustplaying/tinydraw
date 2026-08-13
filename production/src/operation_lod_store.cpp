@@ -135,7 +135,7 @@ std::optional<StoredOperationLod> OperationLodStore::lod(OperationLogEpoch reque
                                                          OperationIdentity identity,
                                                          ZoomLevel zoom) const {
   const auto zoom_slot = zoom_index(zoom);
-  if (!ready() || append_pending_ || requested_epoch != epoch_ || !zoom_slot.has_value() ||
+  if (!ready() || requested_epoch != epoch_ || !zoom_slot.has_value() ||
       identity.operation_index >= operation_count_ ||
       identity.revision.value != base_revision_.value + identity.operation_index + 1U) {
     return std::nullopt;
@@ -151,7 +151,7 @@ std::optional<StoredOperationLod> OperationLodStore::lod(OperationLogEpoch reque
 }
 
 bool OperationLodStore::reset(OperationLogEpoch new_epoch, DocumentRevision revision) {
-  if (append_pending_) {
+  if (append_pending_ || new_epoch == epoch_) {
     return false;
   }
   operation_count_ = 0;
