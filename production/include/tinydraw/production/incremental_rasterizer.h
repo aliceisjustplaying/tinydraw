@@ -11,12 +11,6 @@
 
 namespace tinydraw::production {
 
-struct IncrementalOperation {
-  OperationTool tool = OperationTool::kPen;
-  std::uint16_t color = 0;
-  std::span<const CompactOperationSample> samples{};
-};
-
 struct RasterSurface {
   ZoomLevel zoom = ZoomLevel::k25Percent;
   PixelRect level_bounds{};
@@ -27,7 +21,7 @@ struct RasterSurface {
 // Applies one operation to an existing RGB565 materialization. Samples are in
 // quarter-world-unit coordinates with radius_256 in 1/256 world units.
 // Erasers paint opaque white, preserving the current production semantics.
-[[nodiscard]] bool apply_incremental_operation(const IncrementalOperation& operation,
+[[nodiscard]] bool apply_incremental_operation(const OperationAppend& operation,
                                                const RasterSurface& surface);
 
 struct AffectedTileResult {
@@ -39,8 +33,9 @@ struct AffectedTileResult {
 // Enumerates world-aligned tiles touched at zoom. Returns nullopt for an empty
 // operation or the overview level. If output is short, its prefix is filled and
 // required reports the capacity needed for a complete list.
-[[nodiscard]] std::optional<AffectedTileResult> affected_tiles(
-    const IncrementalOperation& operation, ZoomLevel zoom, std::span<TileKey> output);
+[[nodiscard]] std::optional<AffectedTileResult> affected_tiles(const OperationAppend& operation,
+                                                               ZoomLevel zoom,
+                                                               std::span<TileKey> output);
 
 }  // namespace tinydraw::production
 

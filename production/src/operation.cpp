@@ -3,6 +3,15 @@
 #include <algorithm>
 
 namespace tinydraw::production {
+namespace {
+
+// Immediate rendering keeps a 0.75 screen-pixel minimum radius. At the
+// coarsest tiled level (50%), that halo is 1.5 world units, or 6 quarter units.
+// World bounds must include it so intersecting resident tiles cannot be carried
+// forward stale when a very thin operation crosses a tile cut.
+constexpr int kMinimumTiledRadiusQuarter = 6;
+
+}  // namespace
 
 std::optional<PixelRect> operation_world_bounds(std::span<const CompactOperationSample> samples) {
   if (samples.empty()) {
@@ -17,7 +26,8 @@ std::optional<PixelRect> operation_world_bounds(std::span<const CompactOperation
         sample.radius_256 == 0U) {
       return std::nullopt;
     }
-    const int radius_quarter = (static_cast<int>(sample.radius_256) + 63) / 64;
+    const int radius_quarter =
+        std::max((static_cast<int>(sample.radius_256) + 63) / 64, kMinimumTiledRadiusQuarter);
     minimum_x = std::min(minimum_x, static_cast<int>(sample.x_quarter) - radius_quarter);
     minimum_y = std::min(minimum_y, static_cast<int>(sample.y_quarter) - radius_quarter);
     maximum_x = std::max(maximum_x, static_cast<int>(sample.x_quarter) + radius_quarter);
