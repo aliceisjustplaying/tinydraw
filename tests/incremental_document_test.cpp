@@ -2,8 +2,10 @@
 
 #include <doctest.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
+#include <memory>
 
 namespace production = tinydraw::production;
 
@@ -29,6 +31,20 @@ struct Fixture {
             .affected_keys = affected};
   }
 };
+
+void replay_operations(production::OperationLog& log, const production::OperationReplayRange& range,
+                       std::span<std::uint16_t> pixels) {
+  for (std::size_t offset = 0; offset < range.operation_count; ++offset) {
+    const auto stored = log.operation(range.first_operation + offset);
+    REQUIRE(stored.has_value());
+    REQUIRE(production::apply_incremental_operation(
+        {.tool = stored->tool, .color = stored->color, .samples = stored->samples},
+        {.zoom = production::ZoomLevel::k25Percent,
+         .level_bounds = {0, 0, production::kOverviewWidth, production::kOverviewHeight},
+         .pixels = pixels,
+         .stride = production::kOverviewWidth}));
+  }
+}
 
 }  // namespace
 
@@ -308,6 +324,66 @@ TEST_CASE("document snapshot restore fails atomically while an append is prepare
   CHECK(fixture.canvas.current_revision() == production::DocumentRevision{0});
   CHECK(fixture.canvas.overview_pixels().front() == 0xFFFFU);
   prepared->cancel();
+}
+
+TEST_CASE("settlement rehearsal replays validated slices and rebases after restore") {
+  constexpr std::size_t kOperationCount = 8;
+  std::array<production::OperationRecord, kOperationCount + 2U> records{};
+  std::array<production::CompactOperationSample, kOperationCount + 2U> log_samples{};
+  auto overview = std::make_unique<std::array<std::uint16_t, production::kOverviewPixels>>();
+  auto next_overview = std::make_unique<std::array<std::uint16_t, production::kOverviewPixels>>();
+  auto replay = std::make_unique<std::array<std::uint16_t, production::kOverviewPixels>>();
+  std::array<production::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, production::kTilePixels> tile_pool{};
+  std::array<std::uint16_t, production::kTilePixels> tile_scratch{};
+  std::array<production::TileRevisionPublication, 1> publications{};
+  std::array<production::TileKey, 1> affected{};
+  production::OperationLog log(records, log_samples);
+  production::MaterializedCanvas canvas(*overview, slots, tile_pool);
+  overview->fill(0xFFFFU);
+  REQUIRE(canvas.publish_overview({0}, *overview));
+  std::copy(canvas.overview_pixels().begin(), canvas.overview_pixels().end(), replay->begin());
+  const production::OperationLogEpoch original_epoch = log.epoch();
+  const auto workspace = production::IncrementalDocumentWorkspace{
+      .next_overview = *next_overview,
+      .tile_scratch = tile_scratch,
+      .publications = publications,
+      .affected_keys = affected,
+  };
+
+  for (std::size_t index = 0; index < kOperationCount; ++index) {
+    const std::array sample{production::CompactOperationSample{
+        .x_quarter = static_cast<std::uint16_t>(40U + index * 32U),
+        .y_quarter = static_cast<std::uint16_t>(80U + index * 24U),
+        .radius_256 = 256}};
+    REQUIRE(production::append_incrementally(
+        log, canvas,
+        {.color = static_cast<std::uint16_t>(0x001FU + static_cast<std::uint16_t>(index)),
+         .samples = sample},
+        workspace));
+  }
+
+  const auto first_slice = log.replay_range(original_epoch, {0}, {4});
+  REQUIRE(first_slice.has_value());
+  replay_operations(log, *first_slice, *replay);
+  const auto second_slice = log.replay_range(original_epoch, {4}, {8});
+  REQUIRE(second_slice.has_value());
+  replay_operations(log, *second_slice, *replay);
+  CHECK(std::equal(replay->begin(), replay->end(), canvas.overview_pixels().begin()));
+
+  next_overview->fill(0xFFFFU);
+  REQUIRE(production::restore_document_snapshot(log, canvas, {3}, *next_overview));
+  CHECK_FALSE(log.replay_range(original_epoch, {0}, {8}));
+  const production::OperationLogEpoch restored_epoch = log.epoch();
+  std::copy(canvas.overview_pixels().begin(), canvas.overview_pixels().end(), replay->begin());
+  const std::array restored_sample{
+      production::CompactOperationSample{.x_quarter = 400, .y_quarter = 400, .radius_256 = 512}};
+  REQUIRE(production::append_incrementally(
+      log, canvas, {.color = 0xF800U, .samples = restored_sample}, workspace));
+  const auto restored_range = log.replay_range(restored_epoch, {3}, {4});
+  REQUIRE(restored_range.has_value());
+  replay_operations(log, *restored_range, *replay);
+  CHECK(std::equal(replay->begin(), replay->end(), canvas.overview_pixels().begin()));
 }
 
 TEST_CASE("incremental document can commit with no affected resident tiles") {

@@ -226,3 +226,10 @@ Every reset advances the epoch, so revision values reused after restore cannot
 validate a checkpoint from the old document history. It exposes no range while
 an append is prepared. The settled renderer must consume this range in painter
 order; it must not infer history from the current hard-edged pixels.
+
+A host-only settlement rehearsal snapshots the overview at an epoch/revision,
+revalidates and consumes an eight-operation range in two slices through the
+existing immediate rasterizer, and proves byte equality with live materialization.
+It then restores an older snapshot, rejects the held epoch, rebases, and repeats.
+This validates ordering and reset ownership only; it is not settled-renderer
+quality or performance evidence.
