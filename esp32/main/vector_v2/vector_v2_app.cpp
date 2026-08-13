@@ -50,6 +50,30 @@ constexpr int kLiftReads = 2;
 constexpr std::size_t kInputSampleCapacity = 1'024;
 constexpr std::size_t kWorkspaceTileCapacity = vector_v2::kMaximumVisibleTiles;
 
+struct LiftBaselineTiming {
+  std::uint32_t id = 0;
+  std::int64_t detected_us = 0;
+  std::int64_t finish_preview_us = 0;
+  std::int64_t builder_finish_us = 0;
+  std::int64_t append_us = 0;
+  std::int64_t refresh_wall_us = 0;
+  LivePresentationTiming refresh{};
+  bool committed = false;
+  bool overflowed = false;
+  bool pending = false;
+};
+
+struct FillBaselineTiming {
+  std::uint32_t steps = 0;
+  std::int64_t compute_total_us = 0;
+  std::int64_t compute_max_us = 0;
+  std::int64_t present_total_us = 0;
+  std::int64_t present_max_us = 0;
+  std::int64_t tick_max_us = 0;
+
+  void reset() { *this = {}; }
+};
+
 struct LiveMetrics {
   std::uint64_t submit_total_us = 0;
   std::uint64_t complete_total_us = 0;
@@ -187,6 +211,48 @@ void print_presentation(const char* kind, const VectorV2Presenter& presenter,
       static_cast<unsigned long>(timing.resident_tiles),
       static_cast<unsigned long>(timing.fallback_tiles), static_cast<unsigned long>(timing.pushes),
       timing.frame_reused, timing.passed);
+}
+
+void print_fill_baseline(const char* result, ZoomLevel zoom, int x, int y,
+                         DocumentRevision revision, const FillBaselineTiming& timing) {
+  if (timing.steps == 0U) {
+    return;
+  }
+  std::printf(
+      "TINYDRAW_FILL_BASELINE result=%s zoom=%s x=%d y=%d revision=%lu steps=%lu "
+      "compute_total_us=%lld compute_max_us=%lld present_total_us=%lld "
+      "present_max_us=%lld tick_max_us=%lld\n",
+      result, zoom_name(zoom), x, y, static_cast<unsigned long>(revision.value),
+      static_cast<unsigned long>(timing.steps), static_cast<long long>(timing.compute_total_us),
+      static_cast<long long>(timing.compute_max_us),
+      static_cast<long long>(timing.present_total_us),
+      static_cast<long long>(timing.present_max_us), static_cast<long long>(timing.tick_max_us));
+}
+
+void print_lift_baseline(const LiftBaselineTiming& timing, std::int64_t poll_started_us,
+                         std::int64_t poll_completed_us) {
+  const std::int64_t measured_phase_us = timing.finish_preview_us + timing.builder_finish_us +
+                                         timing.append_us + timing.refresh_wall_us;
+  const std::int64_t detected_to_poll_us = poll_started_us - timing.detected_us;
+  std::printf(
+      "TINYDRAW_LIFT_BASELINE id=%lu finish_preview_us=%lld builder_finish_us=%lld "
+      "append_us=%lld refresh_wall_us=%lld refresh_compose_us=%lld "
+      "refresh_first_submit_us=%lld refresh_first_complete_us=%lld "
+      "refresh_transfer_wait_us=%lld detected_to_poll_start_us=%lld "
+      "detected_to_poll_complete_us=%lld poll_read_us=%lld loop_tail_us=%lld "
+      "committed=%u refresh=%u overflow=%u\n",
+      static_cast<unsigned long>(timing.id), static_cast<long long>(timing.finish_preview_us),
+      static_cast<long long>(timing.builder_finish_us), static_cast<long long>(timing.append_us),
+      static_cast<long long>(timing.refresh_wall_us),
+      static_cast<long long>(timing.refresh.compose_us),
+      static_cast<long long>(timing.refresh.first_submit_us),
+      static_cast<long long>(timing.refresh.first_complete_us),
+      static_cast<long long>(timing.refresh.complete_us),
+      static_cast<long long>(detected_to_poll_us),
+      static_cast<long long>(poll_completed_us - timing.detected_us),
+      static_cast<long long>(poll_completed_us - poll_started_us),
+      static_cast<long long>(std::max<std::int64_t>(0, detected_to_poll_us - measured_phase_us)),
+      timing.committed, timing.refresh.passed, timing.overflowed);
 }
 
 void print_stroke(const OperationLog& log, const MaterializedCanvas& canvas,
@@ -427,6 +493,9 @@ void run_vector_v2_app() {
   int fill_y = 0;
   DocumentRevision fill_revision = canvas.current_revision();
   bool fill_complete = true;
+  FillBaselineTiming fill_timing{};
+  LiftBaselineTiming lift_timing{};
+  std::uint32_t next_lift_id = 1U;
 
   for (;;) {
     const std::uint32_t loop_us = now_us();
@@ -444,7 +513,11 @@ void run_vector_v2_app() {
     }
 
     Point point{};
+    const std::int64_t poll_started_us = esp_timer_get_time();
     const TouchRead read = touch.read(point);
+    const std::int64_t poll_completed_us = esp_timer_get_time();
+    const bool lift_report_ready = lift_timing.pending;
+    lift_timing.pending = false;
     if (read == TouchRead::kError) {
       ++touch_errors;
     }
@@ -521,14 +594,21 @@ void run_vector_v2_app() {
       } else if (panning) {
         panning = false;
       } else if (ink.active()) {
+        LiftBaselineTiming measured_lift{
+            .id = next_lift_id++,
+            .detected_us = esp_timer_get_time(),
+        };
         const std::uint32_t finished_us = now_us();
+        const std::int64_t finish_preview_started = esp_timer_get_time();
         last_ink = ink.finish({.x = last_touch.x, .y = last_touch.y, .timestamp_us = finished_us});
         const std::uint16_t color =
             toolbar.tool == DrawingTool::kEraser ? 0xFFFFU : rgb565(toolbar.color);
         live_metrics.include(presenter.show_update(ribbon.finish(last_ink), color, finished_us));
+        measured_lift.finish_preview_us = esp_timer_get_time() - finish_preview_started;
+
+        const std::int64_t builder_finish_started = esp_timer_get_time();
         const auto append = builder.finish(presenter.operation_point(last_ink));
-        std::int64_t append_us = 0;
-        bool committed = false;
+        measured_lift.builder_finish_us = esp_timer_get_time() - builder_finish_started;
         if (append.has_value()) {
           const std::int64_t append_started = esp_timer_get_time();
           const vector_v2::ViewRequest priority_view{
@@ -537,20 +617,28 @@ void run_vector_v2_app() {
                                presenter.level_x() + vector_v2::kOverviewWidth,
                                presenter.level_y() + vector_v2::kOverviewHeight},
           };
-          committed = vector_v2::append_incrementally(
-                          log, canvas, *append, workspace,
-                          {.priority_view = presenter.zoom() == ZoomLevel::k25Percent
-                                                ? std::optional<vector_v2::ViewRequest>{}
-                                                : std::optional{priority_view}})
-                          .has_value();
-          append_us = esp_timer_get_time() - append_started;
+          measured_lift.committed =
+              vector_v2::append_incrementally(
+                  log, canvas, *append, workspace,
+                  {.priority_view = presenter.zoom() == ZoomLevel::k25Percent
+                                        ? std::optional<vector_v2::ViewRequest>{}
+                                        : std::optional{priority_view}})
+                  .has_value();
+          measured_lift.append_us = esp_timer_get_time() - append_started;
         }
+        measured_lift.overflowed = builder.overflowed();
         builder.cancel();
         ribbon.reset();
-        const auto refresh = presenter.refresh(toolbar, finished_us);
-        print_stroke(log, canvas, live_metrics, append_us, refresh, poll_max_us, touch_errors);
-        std::printf("TINYDRAW_LIVE_STROKE_DONE committed=%u refresh=%u overflow=%u\n", committed,
-                    refresh.passed, builder.overflowed());
+        const std::int64_t refresh_started = esp_timer_get_time();
+        measured_lift.refresh = presenter.refresh(toolbar, finished_us);
+        measured_lift.refresh_wall_us = esp_timer_get_time() - refresh_started;
+        measured_lift.pending = true;
+        lift_timing = measured_lift;
+        print_stroke(log, canvas, live_metrics, measured_lift.append_us, measured_lift.refresh,
+                     poll_max_us, touch_errors);
+        std::printf("TINYDRAW_LIVE_STROKE_DONE committed=%u refresh=%u overflow=%u\n",
+                    measured_lift.committed, measured_lift.refresh.passed,
+                    measured_lift.overflowed);
         live_metrics = {};
         poll_max_us = 0;
         touch_errors = 0;
@@ -568,26 +656,47 @@ void run_vector_v2_app() {
       };
       if (fill_zoom != fill_view.zoom || fill_x != fill_view.level_pixels.x0 ||
           fill_y != fill_view.level_pixels.y0 || fill_revision != canvas.current_revision()) {
+        if (!fill_complete) {
+          print_fill_baseline("superseded", fill_zoom, fill_x, fill_y, fill_revision, fill_timing);
+        }
         fill_zoom = fill_view.zoom;
         fill_x = fill_view.level_pixels.x0;
         fill_y = fill_view.level_pixels.y0;
         fill_revision = canvas.current_revision();
         fill_complete = false;
+        fill_timing.reset();
       }
       if (!fill_complete) {
+        const std::int64_t fill_tick_started = esp_timer_get_time();
+        const std::int64_t compute_started = esp_timer_get_time();
         const auto step = producer.produce_next(fill_view);
+        const std::int64_t compute_us = esp_timer_get_time() - compute_started;
+        ++fill_timing.steps;
+        fill_timing.compute_total_us += compute_us;
+        fill_timing.compute_max_us = std::max(fill_timing.compute_max_us, compute_us);
         if (step.has_value()) {
           if (step->tiles_published != 0U) {
+            const std::int64_t present_started = esp_timer_get_time();
             static_cast<void>(presenter.refresh_region(step->level_bounds));
+            const std::int64_t present_us = esp_timer_get_time() - present_started;
+            fill_timing.present_total_us += present_us;
+            fill_timing.present_max_us = std::max(fill_timing.present_max_us, present_us);
           }
           fill_complete = step->complete;
-          if (fill_complete) {
-            std::printf("TINYDRAW_LIVE_FILL_DONE zoom=%s x=%d y=%d revision=%lu\n",
-                        zoom_name(fill_zoom), fill_x, fill_y,
-                        static_cast<unsigned long>(fill_revision.value));
-          }
+        }
+        fill_timing.tick_max_us =
+            std::max(fill_timing.tick_max_us, esp_timer_get_time() - fill_tick_started);
+        if (step.has_value() && fill_complete) {
+          print_fill_baseline("complete", fill_zoom, fill_x, fill_y, fill_revision, fill_timing);
+          std::printf("TINYDRAW_LIVE_FILL_DONE zoom=%s x=%d y=%d revision=%lu\n",
+                      zoom_name(fill_zoom), fill_x, fill_y,
+                      static_cast<unsigned long>(fill_revision.value));
         }
       }
+    }
+    if (lift_report_ready) {
+      print_lift_baseline(lift_timing, poll_started_us, poll_completed_us);
+      std::fflush(stdout);
     }
     vTaskDelay(pdMS_TO_TICKS(2));
   }
