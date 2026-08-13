@@ -76,7 +76,7 @@ class OperationLog {
   [[nodiscard]] std::size_t operation_capacity() const;
   [[nodiscard]] std::size_t sample_capacity() const;
   [[nodiscard]] bool can_reset() const;
-  [[nodiscard]] bool workspace_overlaps_storage(std::span<const std::uint16_t> pixels) const;
+  [[nodiscard]] bool workspace_overlaps_storage(std::span<const std::byte> workspace) const;
 
   // Preparation copies into unused caller storage but does not advance document
   // authority. Exactly one append may be prepared. Publish is valid only for

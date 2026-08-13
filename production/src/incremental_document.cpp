@@ -1,6 +1,7 @@
 #include "tinydraw/production/incremental_document.h"
 
 #include <algorithm>
+#include <array>
 #include <functional>
 
 namespace tinydraw::production {
@@ -42,14 +43,23 @@ bool prepare_tile(const MaterializedCanvas& canvas, const OperationAppend& opera
 std::optional<IncrementalAppendResult> append_incrementally(
     OperationLog& log, MaterializedCanvas& canvas, const OperationAppend& append_request,
     const IncrementalDocumentWorkspace& workspace) {
+  const std::array<std::span<const std::byte>, 4> workspaces{
+      std::as_bytes(workspace.next_overview), std::as_bytes(workspace.tile_scratch),
+      std::as_bytes(workspace.publications), std::as_bytes(workspace.affected_keys)};
+  bool workspaces_overlap = false;
+  for (std::size_t left = 0; left < workspaces.size(); ++left) {
+    for (std::size_t right = left + 1U; right < workspaces.size(); ++right) {
+      workspaces_overlap = workspaces_overlap || spans_overlap(workspaces[left], workspaces[right]);
+    }
+  }
+  const bool workspace_aliases_owned_storage =
+      std::any_of(workspaces.begin(), workspaces.end(), [&](const auto workspace_bytes) {
+        return !canvas.accepts_external_workspace(workspace_bytes) ||
+               log.workspace_overlaps_storage(workspace_bytes);
+      });
   if (!canvas.ready() || !log.ready() || canvas.overview_pixels().size() != kOverviewPixels ||
-      workspace.next_overview.size() != kOverviewPixels ||
-      !canvas.accepts_external_workspace(workspace.next_overview) ||
-      !canvas.accepts_external_workspace(workspace.tile_scratch) ||
-      log.workspace_overlaps_storage(workspace.next_overview) ||
-      log.workspace_overlaps_storage(workspace.tile_scratch) ||
-      spans_overlap(workspace.next_overview, workspace.tile_scratch) ||
-      log.current_revision() != canvas.current_revision()) {
+      workspace.next_overview.size() != kOverviewPixels || workspaces_overlap ||
+      workspace_aliases_owned_storage || log.current_revision() != canvas.current_revision()) {
     return std::nullopt;
   }
   auto prepared = log.prepare(append_request);
@@ -101,8 +111,8 @@ bool restore_document_snapshot(OperationLog& log, MaterializedCanvas& canvas,
                                std::span<const std::uint16_t> overview_pixels) {
   if (!log.ready() || !canvas.ready() || !log.can_reset() ||
       overview_pixels.size() != kOverviewPixels ||
-      !canvas.accepts_external_workspace(overview_pixels) ||
-      log.workspace_overlaps_storage(overview_pixels)) {
+      !canvas.accepts_external_workspace(std::as_bytes(overview_pixels)) ||
+      log.workspace_overlaps_storage(std::as_bytes(overview_pixels))) {
     return false;
   }
   // restore_snapshot cannot fail after the checks above under the serialized

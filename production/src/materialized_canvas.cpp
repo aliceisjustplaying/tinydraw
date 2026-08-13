@@ -335,9 +335,9 @@ bool MaterializedCanvas::commit_incremental_revision(
   return true;
 }
 
-bool MaterializedCanvas::accepts_external_workspace(std::span<const std::uint16_t> pixels) const {
-  return !spans_overlap(pixels, std::span<const std::uint16_t>(overview_pixels_)) &&
-         !spans_overlap(pixels, std::span<const std::uint16_t>(tile_pixels_));
+bool MaterializedCanvas::accepts_external_workspace(std::span<const std::byte> workspace) const {
+  return !spans_overlap(workspace, std::as_bytes(std::span(overview_pixels_))) &&
+         !spans_overlap(workspace, std::as_bytes(std::span(tile_pixels_)));
 }
 
 bool MaterializedCanvas::copy_resident_tile(TileKey key,

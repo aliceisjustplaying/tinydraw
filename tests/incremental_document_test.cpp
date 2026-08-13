@@ -193,6 +193,39 @@ TEST_CASE("incremental document rejects overlapping publication workspaces") {
   CHECK(fixture.canvas.overview_pixels().front() == 0xFFFFU);
 }
 
+TEST_CASE("incremental document rejects metadata that aliases tile scratch") {
+  Fixture fixture;
+  fixture.overview.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
+  const std::array samples{
+      production::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 256}};
+  auto workspace = fixture.workspace();
+  workspace.tile_scratch =
+      std::span(reinterpret_cast<std::uint16_t*>(fixture.publications.data()),
+                sizeof(production::TileRevisionPublication) / sizeof(std::uint16_t));
+
+  CHECK_FALSE(production::append_incrementally(fixture.log, fixture.canvas,
+                                               {.color = 0xF800U, .samples = samples}, workspace));
+  CHECK(fixture.log.current_revision() == production::DocumentRevision{0});
+  CHECK(fixture.canvas.current_revision() == production::DocumentRevision{0});
+}
+
+TEST_CASE("incremental document rejects keys that alias operation storage") {
+  Fixture fixture;
+  fixture.overview.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
+  const std::array samples{
+      production::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 256}};
+  auto workspace = fixture.workspace();
+  workspace.affected_keys =
+      std::span(reinterpret_cast<production::TileKey*>(fixture.records.data()), 1U);
+
+  CHECK_FALSE(production::append_incrementally(fixture.log, fixture.canvas,
+                                               {.color = 0xF800U, .samples = samples}, workspace));
+  CHECK(fixture.log.current_revision() == production::DocumentRevision{0});
+  CHECK(fixture.canvas.current_revision() == production::DocumentRevision{0});
+}
+
 TEST_CASE("document snapshot restore changes both authorities to an older revision") {
   Fixture fixture;
   fixture.overview.fill(0xFFFFU);
