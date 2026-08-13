@@ -100,6 +100,22 @@ TEST_CASE("incremental document rejects workspace aliasing live canvas pixels") 
   CHECK(fixture.canvas.overview_pixels().front() == 0xFFFFU);
 }
 
+TEST_CASE("incremental document rejects overlapping publication workspaces") {
+  Fixture fixture;
+  fixture.overview.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
+  const std::array samples{
+      production::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 256}};
+  auto workspace = fixture.workspace();
+  workspace.tile_scratch = workspace.next_overview.first(production::kTilePixels);
+
+  CHECK_FALSE(production::append_incrementally(fixture.log, fixture.canvas,
+                                               {.color = 0xF800U, .samples = samples}, workspace));
+  CHECK(fixture.log.current_revision() == production::DocumentRevision{0});
+  CHECK(fixture.canvas.current_revision() == production::DocumentRevision{0});
+  CHECK(fixture.canvas.overview_pixels().front() == 0xFFFFU);
+}
+
 TEST_CASE("incremental document can commit with no affected resident tiles") {
   Fixture fixture;
   fixture.overview.fill(0xFFFFU);
