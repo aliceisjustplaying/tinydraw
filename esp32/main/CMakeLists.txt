@@ -32,6 +32,7 @@ if(TINYDRAW_PRODUCTION_OVERVIEW_WALK)
     "co5300_panel_transport.cpp"
     "physical_touch.cpp"
     "production_overview_walk.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/../../production/src/display_scheduler.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../../production/src/incremental_document.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../../production/src/incremental_rasterizer.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../../production/src/materialized_canvas.cpp"
