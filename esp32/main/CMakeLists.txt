@@ -29,15 +29,15 @@ set(TINYDRAW_APP_SRCS
 )
 if(TINYDRAW_PRODUCTION_OVERVIEW_WALK)
   set(TINYDRAW_APP_SRCS
-    "physical_display.cpp"
+    "co5300_panel_transport.cpp"
     "production_overview_walk.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../../production/src/materialized_canvas.cpp"
-    "${TINYDRAW_CORE}/src/toolbar.cpp"
   )
   set(TINYDRAW_PLATFORM_SRCS "")
   set(TINYDRAW_PLATFORM_REQUIRES esp_lcd_co5300)
 elseif(NOT TINYDRAW_QEMU)
   list(APPEND TINYDRAW_PLATFORM_SRCS
+    "co5300_panel_transport.cpp"
     "drawing_store.cpp"
     "hardware_app.cpp"
     "image_export_store.cpp"
