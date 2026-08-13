@@ -1,4 +1,5 @@
 add_library(tinydraw_production
+  src/incremental_rasterizer.cpp
   src/materialized_canvas.cpp
 )
 add_library(tinydraw::production ALIAS tinydraw_production)
