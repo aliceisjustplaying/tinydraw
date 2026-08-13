@@ -24,6 +24,19 @@ struct StoredOperation {
   std::span<const CompactOperationSample> samples{};
 };
 
+class PreparedAppend {
+ public:
+  [[nodiscard]] const StoredOperation& operation() const { return operation_; }
+
+ private:
+  friend class OperationLog;
+  PreparedAppend(StoredOperation operation, std::uint32_t token)
+      : operation_(operation), token_(token) {}
+
+  StoredOperation operation_{};
+  std::uint32_t token_ = 0;
+};
+
 // Fixed-capacity, ordered document authority. Storage is caller-owned and must
 // outlive the log. Append validates all input and capacity before mutation.
 // Callers must serialize reads, appends, and clear operations.
@@ -38,6 +51,12 @@ class OperationLog {
   [[nodiscard]] std::size_t operation_capacity() const;
   [[nodiscard]] std::size_t sample_capacity() const;
 
+  // Preparation copies into unused caller storage but does not advance document
+  // authority. Exactly one append may be prepared. Publish is valid only for
+  // that preparation; cancel leaves operation/sample counts and revision intact.
+  [[nodiscard]] std::optional<PreparedAppend> prepare(const OperationAppend& append_request);
+  [[nodiscard]] bool publish(const PreparedAppend& prepared);
+  [[nodiscard]] bool cancel(const PreparedAppend& prepared);
   [[nodiscard]] std::optional<OperationIdentity> append(const OperationAppend& append_request);
   [[nodiscard]] std::optional<StoredOperation> operation(std::size_t index) const;
   void clear();
@@ -50,6 +69,10 @@ class OperationLog {
   std::size_t operation_count_ = 0;
   std::size_t sample_count_ = 0;
   DocumentRevision revision_{};
+  std::uint32_t next_prepare_token_ = 1;
+  std::uint32_t pending_token_ = 0;
+  std::size_t pending_sample_count_ = 0;
+  bool append_pending_ = false;
 };
 
 }  // namespace tinydraw::production
