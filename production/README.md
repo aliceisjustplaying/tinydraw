@@ -156,13 +156,15 @@ Incremental append does not use `publish_overview`, which deliberately replaces
 a whole revision and invalidates all tiles. `commit_incremental_revision` now
 provides this transactional behavior:
 
-1. The renderer applies operation N to the caller-owned next-overview buffer and
-   to scratch copies of only the affected resident tiles.
-2. The canvas validates the next revision, complete overview, affected tile
-   keys, replacement pixels, and that no source is pinned before changing state.
-3. One commit copies the complete overview, carries unaffected resident tiles
-   forward to revision N, and publishes or invalidates affected tiles. Failure
-   leaves the prior revision and every source identity unchanged.
+1. The renderer copies only the conservative affected overview rectangle into
+   caller-owned compact scratch, applies operation N there, and prepares scratch
+   copies of affected resident tiles.
+2. The canvas validates the next revision, exact overview bounds and pixel
+   count, affected tile keys, replacement pixels, and that no source is pinned
+   before changing state.
+3. One commit copies the bounded overview rows, carries unaffected resident
+   tiles forward to revision N, and publishes or invalidates affected tiles.
+   Failure leaves the prior revision and every source identity unchanged.
 4. Missing affected tile pixels remain valid overview fallback and may be
    republished from incremental scratch later; operations 1…N−1 are never
    replayed.
@@ -202,10 +204,19 @@ CO5300 window rejects. The 30-operation burst averaged 50.284 ms per coordinated
 append. The same deterministic hashes and zero-rejection scheduler/transport
 result passed again after the replay-range seam in
 [`hardware-receipts/20dbab7-production-regression-walk.log`](hardware-receipts/20dbab7-production-regression-walk.log).
-That regression walk does not exercise the host-only range query itself. These
-receipts prove bounded input collection and ordered staging on glass, not real
-touch input, concurrent mutation and transport, representative capacity,
-settled anti-aliasing, or the final interaction gates.
+That regression walk does not exercise the host-only range query itself.
+
+A separate PSRAM measurement compared full copy, swappable double buffers, and
+bounded dirty-region publication; its method and limits are archived in
+[`OVERVIEW_PUBLICATION_MEASUREMENT_2026_08_13.md`](../docs/archive/2026-08-raster-and-vector-prototypes/OVERVIEW_PUBLICATION_MEASUREMENT_2026_08_13.md).
+After adopting the bounded path, the exact-commit hardware receipt
+[`hardware-receipts/16dc9b2-bounded-overview-publication.log`](hardware-receipts/16dc9b2-bounded-overview-publication.log)
+preserved every expected hash and all 168 ordered transfers with zero rejects.
+The deterministic 30-operation burst fell from 50.295 ms to 6.404 ms average
+under the existing outer probe; warm individual coordinated appends were about
+0.97–0.99 ms. These receipts prove bounded input collection and ordered staging
+on glass, not real touch input, concurrent mutation and transport,
+representative capacity, settled anti-aliasing, or the final interaction gates.
 
 ## Task #56 settlement prerequisite
 
