@@ -1,6 +1,9 @@
 include(sources.cmake)
 
-add_library(tinydraw_production ${TINYDRAW_PRODUCTION_SRCS})
+add_library(tinydraw_production
+  ${TINYDRAW_PRODUCTION_SRCS}
+  src/tile_payload_analysis.cpp
+)
 add_library(tinydraw::production ALIAS tinydraw_production)
 
 target_compile_features(tinydraw_production PUBLIC cxx_std_20)
