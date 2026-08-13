@@ -3,6 +3,7 @@ add_executable(tinydraw_tests
   coordinate_transform_test.cpp
   coverage_tile_test.cpp
   demo_tape_test.cpp
+  display_scheduler_test.cpp
   drawing_snapshot_test.cpp
   fat16_disk_test.cpp
   host_input_test.cpp
