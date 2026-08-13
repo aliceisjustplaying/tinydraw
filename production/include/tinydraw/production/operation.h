@@ -22,6 +22,7 @@ struct CompactOperationSample {
   std::uint16_t y_quarter = 0;
   std::uint16_t radius_256 = 0;
   std::uint16_t elapsed_ms = 0;
+  bool operator==(const CompactOperationSample&) const = default;
 };
 
 struct OperationRecord {
@@ -41,6 +42,12 @@ struct OperationIdentity {
   DocumentRevision revision{};
   std::uint32_t operation_index = 0;
   bool operator==(const OperationIdentity&) const = default;
+};
+
+struct OperationAppend {
+  OperationTool tool = OperationTool::kPen;
+  std::uint16_t color = 0;
+  std::span<const CompactOperationSample> samples{};
 };
 
 static_assert(sizeof(CompactOperationSample) == 8);
