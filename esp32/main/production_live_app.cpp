@@ -381,7 +381,7 @@ bool run_tile_gate(ProductionLivePresenter& presenter, production::TileProducer&
     }
   }
   const std::int64_t total_us = esp_timer_get_time() - started;
-  const bool passed = total_us < 500'000 && maximum_supertask_us < 75'000;
+  const bool passed = total_us < 500'000 && maximum_supertask_us < 30'000;
   std::printf(
       "TINYDRAW_GATE1_HARD zoom=%s cold=1 operations=%lu samples=%lu steps=%lu tiles=%lu "
       "scanned=%lu rendered=%lu max_supertask_us=%lld presentation_us=%lld total_us=%lld "
@@ -835,7 +835,8 @@ void run_production_live_app() {
       }
     }
 
-    if (!pressed && presenter.zoom() != ZoomLevel::k25Percent) {
+    if (!pressed && presenter.zoom() != ZoomLevel::k25Percent && !toolbar.tools_open &&
+        !toolbar.colors_open && !toolbar.sizes_open && !toolbar.confirm_new) {
       const production::ViewRequest fill_view{
           .zoom = presenter.zoom(),
           .level_pixels = {presenter.level_x(), presenter.level_y(),
