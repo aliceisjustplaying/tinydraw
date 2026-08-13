@@ -225,7 +225,8 @@ bool commit_operation_probe(MaterializedCanvas& canvas, const IncrementalOperati
   std::array<TileKey, 4> operation_tiles{};
   const auto affected_count =
       production::affected_tiles(operation, ZoomLevel::k100Percent, operation_tiles);
-  if (!affected_count.has_value() || *affected_count != 1U || operation_tiles[0] != kAffected) {
+  if (!affected_count.has_value() || !affected_count->complete() || affected_count->written != 1U ||
+      operation_tiles[0] != kAffected) {
     return false;
   }
   const auto prior_tile = canvas.compose_view(
@@ -258,7 +259,7 @@ bool commit_operation_probe(MaterializedCanvas& canvas, const IncrementalOperati
 
   const std::array publications{TileRevisionPublication{
       .key = kAffected,
-      .quality = MaterializationQuality::kExact,
+      .quality = MaterializationQuality::kSettled,
       .pixels = tile_scratch,
   }};
   const std::int64_t commit_started = esp_timer_get_time();
@@ -281,7 +282,7 @@ bool commit_operation_probe(MaterializedCanvas& canvas, const IncrementalOperati
   const auto updated = canvas.lookup(kAffected);
   const auto carried = canvas.lookup(kCarried);
   return updated.has_value() && carried.has_value() && updated->identity.revision == revision &&
-         updated->identity.quality == MaterializationQuality::kExact &&
+         updated->identity.quality == MaterializationQuality::kSettled &&
          carried->identity.revision == revision &&
          carried->identity.generation == carried_before->identity.generation;
 }

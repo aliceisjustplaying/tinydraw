@@ -105,13 +105,39 @@ TEST_CASE("affected tile enumeration clips to the bounded world") {
   const auto count =
       production::affected_tiles(operation, production::ZoomLevel::k100Percent, keys);
   REQUIRE(count.has_value());
-  CHECK(*count == 4U);
+  CHECK(count->required == 4U);
+  CHECK(count->written == 4U);
+  CHECK(count->complete());
   CHECK(keys[0] == production::TileKey{production::ZoomLevel::k100Percent, 0, 0});
   CHECK(keys[3] == production::TileKey{production::ZoomLevel::k100Percent, 1, 1});
 
   std::array<production::TileKey, 3> too_small{};
-  CHECK_FALSE(production::affected_tiles(operation, production::ZoomLevel::k100Percent, too_small));
+  const auto partial =
+      production::affected_tiles(operation, production::ZoomLevel::k100Percent, too_small);
+  REQUIRE(partial.has_value());
+  CHECK(partial->required == 4U);
+  CHECK(partial->written == 3U);
+  CHECK_FALSE(partial->complete());
   CHECK_FALSE(production::affected_tiles(operation, production::ZoomLevel::k25Percent, keys));
+}
+
+TEST_CASE("affected tiles cover partial edge grids and high zooms") {
+  const std::array edge_sample{
+      production::CompactOperationSample{.x_quarter = production::kWorldWidth * 4,
+                                         .y_quarter = production::kWorldHeight * 4,
+                                         .radius_256 = 256}};
+  const production::IncrementalOperation operation{.samples = edge_sample};
+  std::array<production::TileKey, 4> keys{};
+  const auto at_50 = production::affected_tiles(operation, production::ZoomLevel::k50Percent, keys);
+  REQUIRE(at_50.has_value());
+  REQUIRE(at_50->complete());
+  CHECK(keys[0] == production::TileKey{production::ZoomLevel::k50Percent, 11, 13});
+
+  const auto at_400 =
+      production::affected_tiles(operation, production::ZoomLevel::k400Percent, keys);
+  REQUIRE(at_400.has_value());
+  REQUIRE(at_400->complete());
+  CHECK(keys[0] == production::TileKey{production::ZoomLevel::k400Percent, 91, 111});
 }
 
 TEST_CASE("raster surface honors a stride larger than its visible width") {

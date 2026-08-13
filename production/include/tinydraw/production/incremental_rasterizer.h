@@ -30,10 +30,17 @@ struct RasterSurface {
 [[nodiscard]] bool apply_incremental_operation(const IncrementalOperation& operation,
                                                const RasterSurface& surface);
 
-// Returns every world-aligned tile touched at zoom, or nullopt when output is
-// too small. No partial key list is reported on failure.
-[[nodiscard]] std::optional<std::size_t> affected_tiles(const IncrementalOperation& operation,
-                                                        ZoomLevel zoom, std::span<TileKey> output);
+struct AffectedTileResult {
+  std::size_t required = 0;
+  std::size_t written = 0;
+  [[nodiscard]] bool complete() const { return required == written; }
+};
+
+// Enumerates world-aligned tiles touched at zoom. Returns nullopt for an empty
+// operation or the overview level. If output is short, its prefix is filled and
+// required reports the capacity needed for a complete list.
+[[nodiscard]] std::optional<AffectedTileResult> affected_tiles(
+    const IncrementalOperation& operation, ZoomLevel zoom, std::span<TileKey> output);
 
 }  // namespace tinydraw::production
 

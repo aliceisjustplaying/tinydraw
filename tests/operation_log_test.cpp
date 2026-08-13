@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <span>
 
+#include "tinydraw/production/incremental_rasterizer.h"
+
 namespace production = tinydraw::production;
 
 TEST_CASE("operation log appends ordered samples and advances one revision") {
@@ -37,6 +39,30 @@ TEST_CASE("operation log appends ordered samples and advances one revision") {
   CHECK(stored->world_bounds == production::PixelRect{8, 18, 33, 43});
 }
 
+TEST_CASE("stored operation feeds the incremental renderer without translation") {
+  std::array<production::OperationRecord, 1> records{};
+  std::array<production::CompactOperationSample, 2> storage{};
+  production::OperationLog log(records, storage);
+  const std::array samples{
+      production::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256},
+      production::CompactOperationSample{.x_quarter = 40, .y_quarter = 4, .radius_256 = 256},
+  };
+  REQUIRE(log.append({.color = 0xF800U, .samples = samples}));
+  const auto stored = log.operation(0);
+  REQUIRE(stored.has_value());
+  std::array<std::uint16_t, 16U * 4U> pixels{};
+  pixels.fill(0xFFFFU);
+  REQUIRE(production::apply_incremental_operation(
+      {.tool = stored->tool, .color = stored->color, .samples = stored->samples},
+      {.zoom = production::ZoomLevel::k100Percent,
+       .level_bounds = {0, 0, 16, 4},
+       .pixels = pixels,
+       .stride = 16}));
+  CHECK(pixels[1U * 16U + 1U] == 0xF800U);
+  CHECK(pixels[1U * 16U + 10U] == 0xF800U);
+  CHECK(stored->world_bounds == production::PixelRect{0, 0, 11, 2});
+}
+
 TEST_CASE("operation log preserves painter order across tools") {
   std::array<production::OperationRecord, 2> records{};
   std::array<production::CompactOperationSample, 2> storage{};
@@ -55,6 +81,18 @@ TEST_CASE("operation log preserves painter order across tools") {
   REQUIRE(log.operation(1).has_value());
   CHECK(log.operation(0)->tool == production::OperationTool::kPen);
   CHECK(log.operation(1)->tool == production::OperationTool::kEraser);
+}
+
+TEST_CASE("operation log append may exactly fill sample capacity") {
+  std::array<production::OperationRecord, 1> records{};
+  std::array<production::CompactOperationSample, 2> storage{};
+  production::OperationLog log(records, storage);
+  const std::array samples{
+      production::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256},
+      production::CompactOperationSample{.x_quarter = 8, .y_quarter = 8, .radius_256 = 256},
+  };
+  CHECK(log.append({.samples = samples}));
+  CHECK(log.sample_count() == log.sample_capacity());
 }
 
 TEST_CASE("operation log capacity failure is atomic") {
