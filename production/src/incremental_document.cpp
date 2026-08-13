@@ -50,7 +50,7 @@ std::optional<IncrementalAppendResult> append_incrementally(
       log.current_revision() != canvas.current_revision()) {
     return std::nullopt;
   }
-  const auto prepared = log.prepare(append_request);
+  auto prepared = log.prepare(append_request);
   if (!prepared.has_value()) {
     return std::nullopt;
   }
@@ -68,26 +68,24 @@ std::optional<IncrementalAppendResult> append_incrementally(
       canvas.resident_tiles_intersecting(stored.world_bounds, workspace.affected_keys);
   if (!overview_ready || !resident_count.has_value() ||
       *resident_count > workspace.publications.size()) {
-    static_cast<void>(log.cancel(*prepared));
+    prepared->cancel();
     return std::nullopt;
   }
   for (std::size_t index = 0; index < *resident_count; ++index) {
     auto scratch = workspace.tile_scratch.subspan(index * kTilePixels, kTilePixels);
     if (!prepare_tile(canvas, operation, workspace.affected_keys[index], scratch,
                       workspace.publications[index])) {
-      static_cast<void>(log.cancel(*prepared));
+      prepared->cancel();
       return std::nullopt;
     }
   }
   if (!canvas.commit_incremental_revision(stored.identity.revision, workspace.next_overview,
                                           stored.world_bounds,
                                           workspace.publications.first(*resident_count))) {
-    static_cast<void>(log.cancel(*prepared));
+    prepared->cancel();
     return std::nullopt;
   }
-  if (!log.publish(*prepared)) {
-    return std::nullopt;
-  }
+  prepared->publish();
   return IncrementalAppendResult{.identity = stored.identity,
                                  .affected_resident_tiles = *resident_count,
                                  .published_tiles = *resident_count};

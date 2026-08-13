@@ -28,6 +28,47 @@ bool valid_samples(std::span<const CompactOperationSample> samples) {
 
 }  // namespace
 
+PreparedAppend::PreparedAppend(OperationLog& owner, StoredOperation operation, std::uint32_t token)
+    : owner_(&owner), operation_(operation), token_(token) {}
+
+PreparedAppend::~PreparedAppend() { cancel(); }
+
+PreparedAppend::PreparedAppend(PreparedAppend&& other) noexcept
+    : owner_(other.owner_), operation_(other.operation_), token_(other.token_) {
+  other.owner_ = nullptr;
+  other.token_ = 0;
+}
+
+PreparedAppend& PreparedAppend::operator=(PreparedAppend&& other) noexcept {
+  if (this != &other) {
+    cancel();
+    owner_ = other.owner_;
+    operation_ = other.operation_;
+    token_ = other.token_;
+    other.owner_ = nullptr;
+    other.token_ = 0;
+  }
+  return *this;
+}
+
+const StoredOperation& PreparedAppend::operation() const { return operation_; }
+
+void PreparedAppend::publish() {
+  if (owner_ != nullptr) {
+    owner_->publish_prepared(*this);
+    owner_ = nullptr;
+    token_ = 0;
+  }
+}
+
+void PreparedAppend::cancel() {
+  if (owner_ != nullptr) {
+    owner_->cancel_prepared(*this);
+    owner_ = nullptr;
+    token_ = 0;
+  }
+}
+
 OperationLog::OperationLog(std::span<OperationRecord> records,
                            std::span<CompactOperationSample> samples)
     : records_(records), samples_(samples) {}
@@ -61,6 +102,7 @@ std::optional<PreparedAppend> OperationLog::prepare(const OperationAppend& appen
   }
   append_pending_ = true;
   return PreparedAppend(
+      *this,
       StoredOperation{
           .identity = {.revision = {revision_.value + 1U},
                        .operation_index = static_cast<std::uint32_t>(operation_count_)},
@@ -72,14 +114,7 @@ std::optional<PreparedAppend> OperationLog::prepare(const OperationAppend& appen
       pending_token_);
 }
 
-bool OperationLog::publish(const PreparedAppend& prepared) {
-  if (!append_pending_ || prepared.token_ != pending_token_ ||
-      prepared.operation_.identity.revision.value != revision_.value + 1U ||
-      prepared.operation_.identity.operation_index != operation_count_ ||
-      prepared.operation_.samples.data() != samples_.subspan(sample_count_).data() ||
-      prepared.operation_.samples.size() != pending_sample_count_) {
-    return false;
-  }
+void OperationLog::publish_prepared(const PreparedAppend& prepared) {
   const PixelRect bounds = prepared.operation_.world_bounds;
   records_[operation_count_] = {
       .first_sample = static_cast<std::uint32_t>(sample_count_),
@@ -97,25 +132,22 @@ bool OperationLog::publish(const PreparedAppend& prepared) {
   append_pending_ = false;
   pending_sample_count_ = 0;
   pending_token_ = 0;
-  return true;
 }
 
-bool OperationLog::cancel(const PreparedAppend& prepared) {
-  if (!append_pending_ || prepared.token_ != pending_token_) {
-    return false;
-  }
+void OperationLog::cancel_prepared(const PreparedAppend&) {
   append_pending_ = false;
   pending_sample_count_ = 0;
   pending_token_ = 0;
-  return true;
 }
 
 std::optional<OperationIdentity> OperationLog::append(const OperationAppend& append_request) {
-  const auto prepared = prepare(append_request);
-  if (!prepared.has_value() || !publish(*prepared)) {
+  auto prepared = prepare(append_request);
+  if (!prepared.has_value()) {
     return std::nullopt;
   }
-  return prepared->operation().identity;
+  const OperationIdentity identity = prepared->operation().identity;
+  prepared->publish();
+  return identity;
 }
 
 std::optional<StoredOperation> OperationLog::operation(std::size_t index) const {
@@ -137,6 +169,9 @@ std::optional<StoredOperation> OperationLog::operation(std::size_t index) const 
 }
 
 void OperationLog::clear() {
+  if (append_pending_) {
+    return;
+  }
   operation_count_ = 0;
   sample_count_ = 0;
   revision_ = {};
