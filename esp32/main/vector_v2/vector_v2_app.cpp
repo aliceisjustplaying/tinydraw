@@ -145,7 +145,8 @@ struct AppStorage {
     samples = allocate_array<CompactOperationSample>(vector_v2::kOperationSampleCapacity);
     input_samples = allocate_array<CompactOperationSample>(kInputSampleCapacity);
     publications = allocate_array<TileRevisionPublication>(kWorkspaceTileCapacity);
-    affected_keys = allocate_array<TileKey>(vector_v2::kTileSlotCount);
+    affected_keys =
+        allocate_array<TileKey>(vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles);
     if (overview == nullptr || snapshot == nullptr || frame == nullptr || tile_pixels == nullptr ||
         overview_scratch == nullptr || tile_scratch == nullptr || region_scratch == nullptr ||
         producer_supertask == nullptr || producer_packed == nullptr || uniforms == nullptr ||
@@ -411,7 +412,8 @@ void run_vector_v2_app() {
       .tile_scratch =
           std::span(storage.tile_scratch, kWorkspaceTileCapacity * vector_v2::kTilePixels),
       .publications = std::span(storage.publications, kWorkspaceTileCapacity),
-      .affected_keys = std::span(storage.affected_keys, vector_v2::kTileSlotCount),
+      .affected_keys = std::span(storage.affected_keys,
+                                 vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles),
   };
   if (!canvas.publish_overview({0}, std::span(storage.snapshot, vector_v2::kOverviewPixels)) ||
       !log.ready() || !presenter.ready() || !touch.ready() || !builder.ready() ||

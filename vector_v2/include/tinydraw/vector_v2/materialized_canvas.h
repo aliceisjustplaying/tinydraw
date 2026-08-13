@@ -257,13 +257,14 @@ class MaterializedCanvas {
   [[nodiscard]] bool discard_tiles();
   [[nodiscard]] std::optional<ViewCompositionStats> compose_view(
       const ViewRequest& request, std::span<std::uint16_t> destination);
-  // Returns intersecting current-revision raw-slot keys. Learned uniform tiles
-  // are intentionally excluded: incremental append invalidates them and uses
-  // the updated overview until the producer relearns them, avoiding raw-slot
-  // churn for paper. Fails rather than returning a partial list when output is
-  // too small or bounds are invalid.
-  [[nodiscard]] std::optional<std::size_t> resident_tiles_intersecting(
-      PixelRect world_bounds, std::span<TileKey> output) const;
+  // Returns intersecting current-revision raw-slot keys plus uniform keys in
+  // priority_view. The visible uniform keys must be materialized before an
+  // append invalidates their paper entries, or the committed frame would
+  // briefly fall back to the pixelated overview. Fails rather than returning
+  // a partial list when output is too small or either bounds set is invalid.
+  [[nodiscard]] std::optional<std::size_t> materialized_tiles_intersecting(
+      PixelRect world_bounds, std::span<TileKey> output,
+      std::optional<ViewRequest> priority_view = std::nullopt) const;
   // Copies one current resident tile without exposing mutable pool storage.
   [[nodiscard]] bool copy_resident_tile(TileKey key, std::span<std::uint16_t> destination) const;
   // Workspace used to prepare a next revision must not alias live canvas pixels.
@@ -282,6 +283,10 @@ class MaterializedCanvas {
       DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
       PixelRect affected_world_bounds,
       std::span<const TileRevisionPublication> tile_publications) const;
+  [[nodiscard]] std::optional<std::size_t> append_visible_uniform_keys(PixelRect world_bounds,
+                                                                       ViewRequest view,
+                                                                       std::span<TileKey> output,
+                                                                       std::size_t written) const;
   void write_tile(std::size_t slot_index, const TileRevisionPublication& publication,
                   DocumentRevision revision);
   struct CompositionContext {
