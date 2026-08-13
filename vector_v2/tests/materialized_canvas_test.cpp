@@ -312,7 +312,7 @@ TEST_CASE("incremental mutation reclassifies raw tiles without replaying learned
       canvas.publish_uniform(learned_paper, {0}, vector_v2::MaterializationQuality::kImmediate));
 
   std::array<vector_v2::TileKey, 1> affected{};
-  REQUIRE(canvas.resident_tiles_intersecting({0, 0, 128, 64}, affected) == 1U);
+  REQUIRE(canvas.materialized_tiles_intersecting({0, 0, 128, 64}, affected) == 1U);
   CHECK(affected.front() == changed);
   const std::array publication{vector_v2::TileRevisionPublication{
       .key = changed,
@@ -877,7 +877,7 @@ TEST_CASE("resident enumeration rejects output that aliases slot metadata") {
   REQUIRE(canvas.publish_tile(key, {0}, vector_v2::MaterializationQuality::kSettled, tile));
   auto aliased_output = std::span(reinterpret_cast<vector_v2::TileKey*>(slots.data()), 1U);
 
-  CHECK_FALSE(canvas.resident_tiles_intersecting({0, 0, 64, 64}, aliased_output));
+  CHECK_FALSE(canvas.materialized_tiles_intersecting({0, 0, 64, 64}, aliased_output));
   CHECK(canvas.lookup(key)->kind == vector_v2::SourceKind::kTileSlot);
 }
 

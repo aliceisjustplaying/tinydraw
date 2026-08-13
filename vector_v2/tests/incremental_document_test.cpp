@@ -145,6 +145,63 @@ TEST_CASE("XL append preserves every refined tile in a worst-case visible viewpo
   }
 }
 
+TEST_CASE("append preserves a visible refined paper tile without overview fallback") {
+  auto records = std::make_unique<std::array<vector_v2::OperationRecord, 1>>();
+  auto samples = std::make_unique<std::array<vector_v2::CompactOperationSample, 2>>();
+  auto overview = std::make_unique<std::array<std::uint16_t, vector_v2::kOverviewPixels>>();
+  auto overview_scratch = std::make_unique<std::array<std::uint16_t, vector_v2::kOverviewPixels>>();
+  auto uniforms = std::make_unique<std::array<vector_v2::MaterializedUniformStorage,
+                                              vector_v2::kMaterializedTileIdentityCount>>();
+  auto occupancy = std::make_unique<std::array<std::uint8_t, vector_v2::kOccupancyBytes>>();
+  auto slots = std::make_unique<
+      std::array<vector_v2::MaterializedSlotStorage, vector_v2::kMaximumVisibleTiles>>();
+  auto tile_pool = std::make_unique<
+      std::array<std::uint16_t, vector_v2::kMaximumVisibleTiles * vector_v2::kTilePixels>>();
+  auto tile_scratch = std::make_unique<
+      std::array<std::uint16_t, vector_v2::kMaximumVisibleTiles * vector_v2::kTilePixels>>();
+  auto frame = std::make_unique<std::array<std::uint16_t, vector_v2::kOverviewPixels>>();
+  std::array<vector_v2::TileRevisionPublication, vector_v2::kMaximumVisibleTiles> publications{};
+  std::array<vector_v2::TileKey, vector_v2::kMaximumVisibleTiles> affected{};
+  vector_v2::OperationLog log(*records, *samples);
+  vector_v2::MaterializedCanvas canvas(*overview, *uniforms, *occupancy, *slots, *tile_pool);
+  overview->fill(0xFFFFU);
+  REQUIRE(canvas.publish_overview({0}, *overview));
+  const vector_v2::TileKey visible_paper{vector_v2::ZoomLevel::k400Percent, 0, 0};
+  for (std::uint16_t row = 0; row < 7; ++row) {
+    for (std::uint16_t column = 0; column < 6; ++column) {
+      REQUIRE(canvas.publish_uniform({vector_v2::ZoomLevel::k400Percent, column, row}, {0},
+                                     vector_v2::MaterializationQuality::kImmediate));
+    }
+  }
+  const std::array stroke{
+      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 1'280},
+      vector_v2::CompactOperationSample{.x_quarter = 80, .y_quarter = 80, .radius_256 = 1'280},
+  };
+  const vector_v2::ViewRequest visible{
+      .zoom = vector_v2::ZoomLevel::k400Percent,
+      .level_pixels = {0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
+  };
+
+  const auto result =
+      vector_v2::append_incrementally(log, canvas, {.color = 0x001FU, .samples = stroke},
+                                      {.overview_scratch = *overview_scratch,
+                                       .tile_scratch = *tile_scratch,
+                                       .publications = publications,
+                                       .affected_keys = affected},
+                                      {.priority_view = visible});
+
+  REQUIRE(result.has_value());
+  CHECK(result->fallback_tiles == 0U);
+  const auto source = canvas.lookup(visible_paper);
+  REQUIRE(source.has_value());
+  CHECK(source->kind == vector_v2::SourceKind::kTileSlot);
+  CHECK(source->identity.revision == vector_v2::DocumentRevision{1});
+  const auto composed = canvas.compose_view(visible, *frame);
+  REQUIRE(composed.has_value());
+  CHECK(composed->fallback_pixels == 0U);
+  CHECK(composed->fallback_tiles == 0U);
+}
+
 TEST_CASE("append keeps unaffected cached zoom tiles and invalidates bounded affected tiles") {
   constexpr std::size_t kCachedTileCount = 4U * vector_v2::kMaximumVisibleTiles;
   auto records = std::make_unique<std::array<vector_v2::OperationRecord, 1>>();

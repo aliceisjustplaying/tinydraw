@@ -126,8 +126,8 @@ std::optional<IncrementalAppendResult> append_incrementally(
   OverviewRevisionPublication overview_publication{};
   const bool overview_ready = prepare_overview(canvas, operation, stored.world_bounds,
                                                workspace.overview_scratch, overview_publication);
-  const auto resident_count =
-      canvas.resident_tiles_intersecting(stored.world_bounds, workspace.affected_keys);
+  const auto resident_count = canvas.materialized_tiles_intersecting(
+      stored.world_bounds, workspace.affected_keys, options.priority_view);
   if (!overview_ready || !resident_count.has_value()) {
     prepared->cancel();
     return std::nullopt;
