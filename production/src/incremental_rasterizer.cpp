@@ -131,21 +131,17 @@ void paint_bounded_segment(const Sample& first, const Sample& second, std::uint1
   }
 }
 
-PixelRect operation_bounds(const OperationAppend& operation, ZoomLevel zoom) {
-  const auto world = operation_world_bounds(operation.samples);
-  if (!world.has_value()) {
-    return {};
-  }
+}  // namespace
+
+PixelRect operation_level_bounds(PixelRect world_bounds, ZoomLevel zoom) {
   const int percent = zoom_percent(zoom);
   return {
-      .x0 = world->x0 * percent / 100,
-      .y0 = world->y0 * percent / 100,
-      .x1 = std::min(kWorldWidth * percent / 100, (world->x1 * percent + 99) / 100),
-      .y1 = std::min(kWorldHeight * percent / 100, (world->y1 * percent + 99) / 100),
+      .x0 = world_bounds.x0 * percent / 100,
+      .y0 = world_bounds.y0 * percent / 100,
+      .x1 = std::min(kWorldWidth * percent / 100, (world_bounds.x1 * percent + 99) / 100),
+      .y1 = std::min(kWorldHeight * percent / 100, (world_bounds.y1 * percent + 99) / 100),
   };
 }
-
-}  // namespace
 
 bool apply_incremental_operation(const OperationAppend& operation, const RasterSurface& surface) {
   if (!valid_surface(surface) || operation.samples.empty()) {
@@ -170,7 +166,11 @@ std::optional<AffectedTileResult> affected_tiles(const OperationAppend& operatio
   if (zoom == ZoomLevel::k25Percent || operation.samples.empty()) {
     return std::nullopt;
   }
-  const PixelRect bounds = operation_bounds(operation, zoom);
+  const auto world_bounds = operation_world_bounds(operation.samples);
+  if (!world_bounds.has_value()) {
+    return std::nullopt;
+  }
+  const PixelRect bounds = operation_level_bounds(*world_bounds, zoom);
   if (bounds.x1 <= bounds.x0 || bounds.y1 <= bounds.y0) {
     return AffectedTileResult{};
   }
