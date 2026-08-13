@@ -27,6 +27,8 @@ class OperationBuilder {
 
   [[nodiscard]] bool ready() const;
   [[nodiscard]] bool active() const;
+  // True when an input point exceeded fixed capacity. finish may still return
+  // the already-collected operation when only its final lift point overflowed.
   [[nodiscard]] bool overflowed() const;
   [[nodiscard]] std::size_t sample_count() const;
 

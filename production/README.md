@@ -174,8 +174,9 @@ ordering behind one host-tested interface: prepared samples are not authoritativ
 until the overview and bounded affected resident tiles have been rendered and the
 canvas revision commits; excess affected residents become current overview
 fallback. Its overview, tile scratch, publication, and key spans are caller-owned
-and alias-checked. Snapshot restore must publish the canvas overview and call
-`OperationLog::reset` with the same revision before coordinated appends resume.
+and alias-checked. Snapshot restore must go through
+`restore_document_snapshot`, which validates both modules before replacing the
+canvas overview and resetting operation authority to the same revision.
 
 The interface expresses a revision plus bounded affected-tile publications; it
 does not expose mutable pool storage or renderer callbacks. Tile size and slot
