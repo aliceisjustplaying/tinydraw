@@ -18,6 +18,10 @@ struct RasterSurface {
   int stride = 0;
 };
 
+// Converts conservative world bounds to the corresponding level-space bounds.
+// This is shared by raster clipping and cold-producer culling.
+[[nodiscard]] PixelRect operation_level_bounds(PixelRect world_bounds, ZoomLevel zoom);
+
 // Applies one operation to an existing RGB565 materialization. Samples are in
 // quarter-world-unit coordinates with radius_256 in 1/256 world units.
 // Erasers paint opaque white, preserving the current production semantics.
