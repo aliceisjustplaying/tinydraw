@@ -24,6 +24,7 @@ add_executable(tinydraw_tests
   ribbon_geometry_test.cpp
   ribbon_renderer_test.cpp
   stroke_raster_test.cpp
+  tile_payload_analysis_test.cpp
   tile_producer_test.cpp
   tile_undo_history_test.cpp
   toolbar_test.cpp

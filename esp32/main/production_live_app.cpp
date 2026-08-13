@@ -14,6 +14,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "physical_touch.h"
+#ifdef TINYDRAW_PRODUCTION_TILE_CENSUS
+#include "production_tile_census.h"
+#endif
 #include "production_live_presenter.h"
 #include "tinydraw/document/realistic_workload.h"
 #include "tinydraw/ink/ink_stream.h"
@@ -761,6 +764,16 @@ void run_production_live_app() {
                               std::span(storage.realistic_strokes, kRealisticStrokeCapacity),
                               std::span(storage.realistic_samples, kRealisticSampleCapacity),
                               std::span(storage.input_samples, kInputSampleCapacity));
+#ifdef TINYDRAW_PRODUCTION_TILE_CENSUS
+  const bool census =
+      workload_ready &&
+      run_production_tile_census(producer, canvas,
+                                 std::span(storage.producer_packed, production::kTilePixels));
+  std::printf("TINYDRAW_TILE_CENSUS_APP_DONE workload=%u census=%u revision=%lu\n", workload_ready,
+              census, static_cast<unsigned long>(canvas.current_revision().value));
+  std::fflush(stdout);
+  return;
+#endif
   const bool gate_100 = workload_ready && run_tile_gate(presenter, producer, log, canvas, toolbar,
                                                         ZoomLevel::k100Percent);
   const bool pan_100 = gate_100 && verify_pan_adapter(presenter, toolbar, ZoomLevel::k100Percent);

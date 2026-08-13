@@ -10,6 +10,10 @@ option(TINYDRAW_INTERACTIVE_PAN_BENCHMARK "Run the interactive vector-cache pan 
 option(TINYDRAW_PRODUCTION_MEMORY_PROBE "Run the production allocation receipt probe" OFF)
 option(TINYDRAW_PRODUCTION_OVERVIEW_WALK "Run the exclusive production overview display walk" OFF)
 option(TINYDRAW_PRODUCTION_LIVE_APP "Run the interactive production vector integration slice" OFF)
+option(TINYDRAW_PRODUCTION_TILE_CENSUS "Measure produced tile payload classes in the live app" OFF)
+if(TINYDRAW_PRODUCTION_TILE_CENSUS AND NOT TINYDRAW_PRODUCTION_LIVE_APP)
+  message(FATAL_ERROR "TINYDRAW_PRODUCTION_TILE_CENSUS requires TINYDRAW_PRODUCTION_LIVE_APP")
+endif()
 set(TINYDRAW_BENCHMARK_MODE_COUNT 0)
 foreach(TINYDRAW_BENCHMARK_MODE
     TINYDRAW_VECTOR_BENCHMARK

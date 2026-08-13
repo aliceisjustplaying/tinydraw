@@ -36,6 +36,12 @@ if(TINYDRAW_PRODUCTION_OVERVIEW_WALK OR TINYDRAW_PRODUCTION_LIVE_APP)
       "production_live_app.cpp"
       "production_live_presenter.cpp"
     )
+    if(TINYDRAW_PRODUCTION_TILE_CENSUS)
+      list(APPEND TINYDRAW_PRODUCTION_HARDWARE_SRCS
+        "production_tile_census.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/../../production/src/tile_payload_analysis.cpp"
+      )
+    endif()
     set(TINYDRAW_PRODUCTION_CORE_SRCS
       "${TINYDRAW_CORE}/src/coverage_tile.cpp"
       "${TINYDRAW_CORE}/src/ink_stream.cpp"
@@ -140,6 +146,9 @@ if(TINYDRAW_PRODUCTION_OVERVIEW_WALK)
 endif()
 if(TINYDRAW_PRODUCTION_LIVE_APP)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_PRODUCTION_LIVE_APP=1)
+endif()
+if(TINYDRAW_PRODUCTION_TILE_CENSUS)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_PRODUCTION_TILE_CENSUS=1)
 endif()
 if(TINYDRAW_QEMU)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_QEMU=1)
