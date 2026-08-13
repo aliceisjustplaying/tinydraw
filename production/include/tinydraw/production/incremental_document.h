@@ -21,6 +21,7 @@ struct IncrementalAppendResult {
   OperationIdentity identity{};
   std::size_t affected_resident_tiles = 0;
   std::size_t published_tiles = 0;
+  std::size_t fallback_tiles = 0;
 };
 
 // Coordinates document authority and materialization as one append. All
