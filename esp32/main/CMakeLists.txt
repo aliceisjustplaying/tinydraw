@@ -30,6 +30,7 @@ set(TINYDRAW_APP_SRCS
 if(TINYDRAW_PRODUCTION_OVERVIEW_WALK)
   set(TINYDRAW_APP_SRCS
     "co5300_panel_transport.cpp"
+    "physical_touch.cpp"
     "production_overview_walk.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../../production/src/incremental_document.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../../production/src/incremental_rasterizer.cpp"
@@ -38,7 +39,7 @@ if(TINYDRAW_PRODUCTION_OVERVIEW_WALK)
     "${CMAKE_CURRENT_LIST_DIR}/../../production/src/operation_log.cpp"
   )
   set(TINYDRAW_PLATFORM_SRCS "")
-  set(TINYDRAW_PLATFORM_REQUIRES esp_lcd_co5300)
+  set(TINYDRAW_PLATFORM_REQUIRES esp_lcd_co5300 esp_lcd_touch_cst816s)
 elseif(NOT TINYDRAW_QEMU)
   list(APPEND TINYDRAW_PLATFORM_SRCS
     "co5300_panel_transport.cpp"
