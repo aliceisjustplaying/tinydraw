@@ -102,6 +102,12 @@ struct SourceSelection {
   std::uint32_t pin_token = 0;
 };
 
+struct TileRevisionPublication {
+  TileKey key{};
+  MaterializationQuality quality = MaterializationQuality::kSettled;
+  std::span<const std::uint16_t> pixels{};
+};
+
 struct ViewRequest {
   ZoomLevel zoom = ZoomLevel::k25Percent;
   PixelRect level_pixels{};
@@ -173,6 +179,13 @@ class MaterializedCanvas {
   // a distinct source buffer. Callers must serialize all canvas operations.
   [[nodiscard]] bool publish_overview(DocumentRevision revision,
                                       std::span<const std::uint16_t> pixels);
+  // Commits exactly the next document revision. Unaffected resident tiles are
+  // carried forward; affected tiles without a publication become overview
+  // fallback. Every input is validated before owned pixels or identities change.
+  [[nodiscard]] bool commit_incremental_revision(
+      DocumentRevision revision, std::span<const std::uint16_t> next_overview_pixels,
+      std::span<const TileKey> affected_tiles,
+      std::span<const TileRevisionPublication> tile_publications);
   [[nodiscard]] std::optional<std::size_t> publish_tile(TileKey key, DocumentRevision revision,
                                                         MaterializationQuality quality,
                                                         std::span<const std::uint16_t> pixels);
@@ -191,6 +204,12 @@ class MaterializedCanvas {
   [[nodiscard]] std::optional<std::size_t> find_tile(TileKey key) const;
   [[nodiscard]] std::optional<std::size_t> choose_slot() const;
   [[nodiscard]] SourceSelection select_overview(TileKey requested) const;
+  [[nodiscard]] bool valid_incremental_revision(
+      DocumentRevision revision, std::span<const std::uint16_t> next_overview_pixels,
+      std::span<const TileKey> affected_tiles,
+      std::span<const TileRevisionPublication> tile_publications) const;
+  void write_tile(std::size_t slot_index, const TileRevisionPublication& publication,
+                  DocumentRevision revision);
   struct CompositionContext {
     ViewRequest request{};
     std::span<std::uint16_t> destination{};

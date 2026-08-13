@@ -192,6 +192,113 @@ bool MaterializedCanvas::publish_overview(DocumentRevision revision,
   return true;
 }
 
+bool MaterializedCanvas::valid_incremental_revision(
+    DocumentRevision revision, std::span<const std::uint16_t> next_overview_pixels,
+    std::span<const TileKey> affected_tiles,
+    std::span<const TileRevisionPublication> tile_publications) const {
+  const bool revision_advances_once =
+      current_revision_.value != std::numeric_limits<std::uint32_t>::max() &&
+      revision.value == current_revision_.value + 1U;
+  const bool source_is_external =
+      !spans_overlap(next_overview_pixels, std::span(overview_pixels_)) &&
+      !spans_overlap(next_overview_pixels, std::span(tile_pixels_));
+  const bool any_tile_pinned = std::any_of(slots_.begin(), slots_.end(),
+                                           [](const auto& slot) { return slot.pin_count_ != 0U; });
+  if (!ready() || !overview_valid_ || !revision_advances_once || !source_is_external ||
+      next_overview_pixels.size() != kOverviewPixels || overview_pin_count_ != 0U ||
+      any_tile_pinned) {
+    return false;
+  }
+
+  for (std::size_t index = 0; index < affected_tiles.size(); ++index) {
+    if (!valid_tile_key(affected_tiles[index]) ||
+        std::find(
+            affected_tiles.begin(), affected_tiles.begin() + static_cast<std::ptrdiff_t>(index),
+            affected_tiles[index]) != affected_tiles.begin() + static_cast<std::ptrdiff_t>(index)) {
+      return false;
+    }
+  }
+  for (std::size_t index = 0; index < tile_publications.size(); ++index) {
+    const TileRevisionPublication& publication = tile_publications[index];
+    const PixelRect bounds = tile_pixel_bounds(publication.key);
+    const std::size_t expected_pixels = static_cast<std::size_t>(bounds.x1 - bounds.x0) *
+                                        static_cast<std::size_t>(bounds.y1 - bounds.y0);
+    const bool key_is_affected = std::find(affected_tiles.begin(), affected_tiles.end(),
+                                           publication.key) != affected_tiles.end();
+    const bool publication_is_unique =
+        std::find_if(tile_publications.begin(),
+                     tile_publications.begin() + static_cast<std::ptrdiff_t>(index),
+                     [&publication](const auto& prior) { return prior.key == publication.key; }) ==
+        tile_publications.begin() + static_cast<std::ptrdiff_t>(index);
+    if (!key_is_affected || !publication_is_unique || !find_tile(publication.key).has_value() ||
+        publication.quality == MaterializationQuality::kOverviewFallback ||
+        publication.pixels.size() != expected_pixels ||
+        spans_overlap(publication.pixels, std::span(overview_pixels_)) ||
+        spans_overlap(publication.pixels, std::span(tile_pixels_))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void MaterializedCanvas::write_tile(std::size_t slot_index,
+                                    const TileRevisionPublication& publication,
+                                    DocumentRevision revision) {
+  const PixelRect bounds = tile_pixel_bounds(publication.key);
+  const int width = bounds.x1 - bounds.x0;
+  const int height = bounds.y1 - bounds.y0;
+  auto destination = tile_pixels_.subspan(slot_index * kTilePixels, kTilePixels);
+  for (int row = 0; row < height; ++row) {
+    const auto source_offset = static_cast<std::size_t>(row) * static_cast<std::size_t>(width);
+    const auto destination_offset =
+        static_cast<std::size_t>(row) * static_cast<std::size_t>(kTileWidth);
+    std::copy_n(publication.pixels.begin() + static_cast<std::ptrdiff_t>(source_offset), width,
+                destination.begin() + static_cast<std::ptrdiff_t>(destination_offset));
+  }
+  MaterializedSlotStorage& slot = slots_[slot_index];
+  slot.key_ = publication.key;
+  slot.revision_ = revision;
+  slot.generation_ = take_generation();
+  slot.quality_ = publication.quality;
+  slot.occupied_ = true;
+  touch(slot);
+}
+
+bool MaterializedCanvas::commit_incremental_revision(
+    DocumentRevision revision, std::span<const std::uint16_t> next_overview_pixels,
+    std::span<const TileKey> affected_tiles,
+    std::span<const TileRevisionPublication> tile_publications) {
+  if (!valid_incremental_revision(revision, next_overview_pixels, affected_tiles,
+                                  tile_publications)) {
+    return false;
+  }
+
+  std::copy(next_overview_pixels.begin(), next_overview_pixels.end(), overview_pixels_.begin());
+  for (std::size_t slot_index = 0; slot_index < slots_.size(); ++slot_index) {
+    MaterializedSlotStorage& slot = slots_[slot_index];
+    if (!slot.occupied_) {
+      continue;
+    }
+    const auto publication = std::find_if(
+        tile_publications.begin(), tile_publications.end(),
+        [&slot](const TileRevisionPublication& candidate) { return candidate.key == slot.key_; });
+    const bool affected =
+        std::find(affected_tiles.begin(), affected_tiles.end(), slot.key_) != affected_tiles.end();
+    if (publication != tile_publications.end()) {
+      write_tile(slot_index, *publication, revision);
+    } else if (affected) {
+      slot.occupied_ = false;
+      slot.generation_ = take_generation();
+    } else {
+      slot.revision_ = revision;
+    }
+  }
+  current_revision_ = revision;
+  overview_revision_ = revision;
+  overview_generation_ = take_generation();
+  return true;
+}
+
 std::optional<std::size_t> MaterializedCanvas::find_tile(TileKey key) const {
   const auto found = std::find_if(slots_.begin(), slots_.end(), [key](const auto& slot) {
     return slot.occupied_ && slot.key_ == key;
