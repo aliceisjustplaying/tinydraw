@@ -6,7 +6,7 @@ Last updated: 2026-08-13
 
 Branch: `feat/vector-canvas-production`
 
-The camera-aligned vector/materialized-cache prototype is complete and rejected as a product architecture. Tasks #52, #53, and host-only #54a now exist under `production/`. `MaterializedCanvas` has a transactional incremental-revision seam; the CO5300 transport is separated from the legacy toolbar compositor; and both overview fallback and a deterministic incremental revision passed exact-commit hardware walks. These receipts do not close the coexistence, real-stroke rendering, concurrency, or interactive-pan gates. The branch is not ready to ship. The next implementation work is the renderer that applies one real operation to the overview and affected resident tiles, followed immediately by another exclusive hardware proof.
+The camera-aligned vector/materialized-cache prototype is complete and rejected as a product architecture. Tasks #52, #53, #54a, and the first bounded part of #55 now exist under `production/`. `MaterializedCanvas` has a transactional incremental-revision seam; the CO5300 transport is separated from the legacy toolbar compositor; and real compact pen and eraser operations now update the complete overview and affected resident tile without replaying prior operations. The exact-commit hardware walk passed both operations through the panel at revisions 1 and 2. These receipts do not close operation-log capacity, settled rendering, concurrency, coexistence, or interactive-pan gates. The branch is not ready to ship.
 
 The default firmware still runs the existing raster-authoritative product:
 
@@ -85,13 +85,13 @@ Correctness requirements are stroke presence, painter order, eraser behavior, an
 
 Continue #55 without growing `hardware_app.cpp`:
 
-1. define the compact production operation/sample interface needed for one append;
-2. apply one opaque pen or eraser operation in painter order to the caller-owned next overview and only affected resident-tile scratch;
-3. commit through the existing transactional seam, never replaying operations 1…N−1;
-4. host-test bounds targeting, clipping, painter order, eraser semantics, carry-forward, and capacity failure;
-5. run the same operation through the exclusive panel image and record timing, hashes, transfer completion, and memory.
+1. add the caller-owned, fixed-capacity operation log and make one append produce exactly one next revision;
+2. have the append coordinator target only resident affected tiles while allowing absent tiles to remain overview fallback;
+3. preserve the proven incremental rasterizer as the immediate renderer; anti-aliased settled quality belongs to the later settled-render path rather than this commit seam;
+4. test atomic capacity failure, operation/sample ordering, revision progression, and multi-tile targeting on the host;
+5. extend the exclusive hardware walk with a longer multi-operation sequence before any default-loop integration.
 
-The current incremental receipt uses a deterministic pixel mutation to prove state and transport, not a real stroke renderer. Do not claim #55 complete until real pen and eraser operations pass on host and hardware. Do not integrate with the default product loop until that module is correct and measured.
+The exact-commit receipt is [`production/hardware-receipts/963567b-incremental-operation-walk.log`](production/hardware-receipts/963567b-incremental-operation-walk.log). It proves opaque pen and eraser painter order at revisions 1 and 2, deterministic panel hashes, transfer completion, zero panel rejection, and measured PSRAM headroom. It does not prove a full operation log, live touch integration, settled anti-aliasing, or interactive pan.
 
 ## Validation baseline
 
