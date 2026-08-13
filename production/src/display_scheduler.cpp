@@ -49,11 +49,16 @@ bool DisplayScheduler::complete(std::uint32_t sequence) {
   if (front_sequence_ == 0U && count_ != 0U) {
     front_sequence_ = 1U;
   }
+  drop_stale_front();
   return true;
 }
 
 void DisplayScheduler::require_revision(DocumentRevision revision) {
   required_revision_ = revision;
+  drop_stale_front();
+}
+
+void DisplayScheduler::drop_stale_front() {
   while (count_ != 0U && in_flight_sequence_ == 0U &&
          queue_[head_].revision != required_revision_) {
     head_ = (head_ + 1U) % queue_.size();

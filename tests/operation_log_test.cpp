@@ -195,6 +195,8 @@ TEST_CASE("operation log reset adopts snapshot revision and retains caller stora
   CHECK(log.current_revision() == production::DocumentRevision{8});
   CHECK_FALSE(log.operation(0));
   CHECK(log.append({.samples = sample}) == production::OperationIdentity{{9}, 0});
+  REQUIRE(log.operation(0).has_value());
+  CHECK(log.operation(0)->identity == production::OperationIdentity{{9}, 0});
   log.clear();
   CHECK(log.current_revision() == production::DocumentRevision{0});
 }

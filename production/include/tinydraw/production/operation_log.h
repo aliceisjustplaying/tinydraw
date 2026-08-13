@@ -86,6 +86,7 @@ class OperationLog {
   std::span<CompactOperationSample> samples_;
   std::size_t operation_count_ = 0;
   std::size_t sample_count_ = 0;
+  DocumentRevision base_revision_{};
   DocumentRevision revision_{};
   std::uint32_t next_prepare_token_ = 1;
   std::uint32_t pending_token_ = 0;

@@ -82,7 +82,6 @@ TEST_CASE("display scheduler lets an in-flight old revision complete before drop
   REQUIRE(scheduler.front().has_value());
   CHECK(scheduler.front()->sequence == *first);
   REQUIRE(scheduler.complete(*first));
-  scheduler.require_revision({2});
   CHECK_FALSE(scheduler.front());
   CHECK(scheduler.stats().stale_rejected == 1U);
 }

@@ -47,6 +47,7 @@ class DisplayScheduler {
   [[nodiscard]] DisplaySchedulerStats stats() const;
 
  private:
+  void drop_stale_front();
   [[nodiscard]] bool valid_strip(const DisplayStrip& strip) const;
 
   std::span<DisplayStrip> queue_;
