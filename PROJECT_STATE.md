@@ -1,12 +1,12 @@
 # TinyDraw project state
 
-Last updated: 2026-08-12
+Last updated: 2026-08-13
 
 ## Resume point
 
 Branch: `feat/vector-canvas-production`
 
-The camera-aligned vector/materialized-cache prototype is complete and rejected as a product architecture. Tasks #52 and host-only #54a now exist under `production/`. The complete-overview fallback has passed an exclusive fail-closed hardware walk, and the empty-heap #53 plan now includes both live and next-revision overview buffers. These receipts do not close the coexistence, concurrency, or interactive-pan gates. The branch is not ready to ship. The next implementation work is the #55 transactional incremental-revision seam, with the minimum #58 panel transport seam pulled forward for early hardware proof.
+The camera-aligned vector/materialized-cache prototype is complete and rejected as a product architecture. Tasks #52, #53, and host-only #54a now exist under `production/`. `MaterializedCanvas` has a transactional incremental-revision seam; the CO5300 transport is separated from the legacy toolbar compositor; and both overview fallback and a deterministic incremental revision passed exact-commit hardware walks. These receipts do not close the coexistence, real-stroke rendering, concurrency, or interactive-pan gates. The branch is not ready to ship. The next implementation work is the renderer that applies one real operation to the overview and affected resident tiles, followed immediately by another exclusive hardware proof.
 
 The default firmware still runs the existing raster-authoritative product:
 
@@ -83,15 +83,15 @@ Correctness requirements are stroke presence, painter order, eraser behavior, an
 
 ## Next task
 
-Implement #55 without growing `hardware_app.cpp`:
+Continue #55 without growing `hardware_app.cpp`:
 
-1. add a transactional revision interface that carries unaffected resident tiles forward and changes only affected tiles;
-2. keep rendering outside `MaterializedCanvas`, using caller-owned next-overview and bounded tile scratch already present in the memory plan;
-3. preserve the old revision and identities on every rejected commit;
-4. host-test painter-order targeting, carry-forward, fallback, pin refusal, and partial-failure behavior;
-5. pull forward only the #58 transport/compositor split needed to run an exclusive incremental-operation walk on the connected panel.
+1. define the compact production operation/sample interface needed for one append;
+2. apply one opaque pen or eraser operation in painter order to the caller-owned next overview and only affected resident-tile scratch;
+3. commit through the existing transactional seam, never replaying operations 1…N−1;
+4. host-test bounds targeting, clipping, painter order, eraser semantics, carry-forward, and capacity failure;
+5. run the same operation through the exclusive panel image and record timing, hashes, transfer completion, and memory.
 
-The old full-overview `publish_overview` path remains useful for bootstrap and complete replacement, not ordinary append. The first hardware proof must exercise a real incremental operation and physical transfer before broader renderer work.
+The current incremental receipt uses a deterministic pixel mutation to prove state and transport, not a real stroke renderer. Do not claim #55 complete until real pen and eraser operations pass on host and hardware. Do not integrate with the default product loop until that module is correct and measured.
 
 ## Validation baseline
 
