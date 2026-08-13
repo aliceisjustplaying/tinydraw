@@ -7,8 +7,12 @@ Plan: [`../PRODUCTION_GATE_PLAN_2026_08_13.md`](../PRODUCTION_GATE_PLAN_2026_08_
 
 ## Verdict: YELLOW
 
-The hard-edged production tile path passes the 500 ms viewport gate at the
+The hard-edged production tile path passes the original 500 ms viewport gate at
 aligned 100% and 400% verdict views for both required 1,000-operation workloads.
+Cache feasibility and valid-cache pan are now separately closed by
+[`GATE_1_CACHE_CLOSURE_2026_08_13.md`](GATE_1_CACHE_CLOSURE_2026_08_13.md): the
+complete 100% world fits as 266 raw tiles plus 378 compact uniform identities,
+and cached pan reaches first physical completion in 30.6–30.7 ms.
 A later worst-case unaligned cache-retention probe measured **0.645–0.721 s**
 for a cold viewport; on 2026-08-13 the user accepted that latency as visible
 optimization debt so work can proceed, while requiring retained views not to
@@ -28,7 +32,8 @@ Evidence logs: [`hardware-receipts/gate1-tile-producer.log`](hardware-receipts/g
 [`hardware-receipts/gate1-clean-head-p95-20-runs.log`](hardware-receipts/gate1-clean-head-p95-20-runs.log),
 [`hardware-receipts/gate1-grok-fixes-p95-20-runs.log`](hardware-receipts/gate1-grok-fixes-p95-20-runs.log),
 [`hardware-receipts/gate1-cache-retention-final.log`](hardware-receipts/gate1-cache-retention-final.log),
-and [`hardware-receipts/636b9c7-memory-layout-320.log`](hardware-receipts/636b9c7-memory-layout-320.log).
+[`hardware-receipts/636b9c7-memory-layout-320.log`](hardware-receipts/636b9c7-memory-layout-320.log),
+and [`hardware-receipts/gate1-paper-cache-scroller.log`](hardware-receipts/gate1-paper-cache-scroller.log).
 
 ### Deterministic synthetic regression workload
 
@@ -187,6 +192,15 @@ ESP-IDF production live app build and flash passed
 
 Known build warning: ESP-IDF's `esp_lcd_touch_get_coordinates` dependency API is
 deprecated upstream. It is unrelated to Gate 1.
+
+## Cache closure addendum
+
+The final paper-aware hardware run retains the 320-slot raw pool and adds a
+compact complete identity catalog. At 100%, every world tile was simultaneously
+materialized with `raw=266`, `uniform=378`, and `fallback=0`. A distinct
+1,572,864-byte export reserve also allocated successfully alongside the live
+working set. See the cache closure receipt for the full breakdown and the
+one-core decision.
 
 ## One remaining consolidated glass test
 
