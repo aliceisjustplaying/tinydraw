@@ -351,8 +351,7 @@ bool MaterializedCanvas::copy_resident_tile(TileKey key,
   const int width = bounds.x1 - bounds.x0;
   const int height = bounds.y1 - bounds.y0;
   const std::size_t expected = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
-  if (destination.size() != expected ||
-      storage_overlaps(std::as_bytes(destination), std::as_bytes(std::span(tile_pixels_)))) {
+  if (destination.size() != expected || !accepts_external_workspace(std::as_bytes(destination))) {
     return false;
   }
   const auto source = tile_pixels_.subspan(*slot_index * kTilePixels, kTilePixels);
@@ -367,7 +366,8 @@ bool MaterializedCanvas::copy_resident_tile(TileKey key,
 
 std::optional<std::size_t> MaterializedCanvas::resident_tiles_intersecting(
     PixelRect world_bounds, std::span<TileKey> output) const {
-  if (!ready() || !valid_world_bounds(world_bounds)) {
+  if (!ready() || !valid_world_bounds(world_bounds) ||
+      !accepts_external_workspace(std::as_bytes(output))) {
     return std::nullopt;
   }
   const std::size_t required = static_cast<std::size_t>(std::count_if(
