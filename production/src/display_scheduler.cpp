@@ -30,7 +30,7 @@ std::optional<std::uint32_t> DisplayScheduler::schedule(const DisplayStrip& stri
 }
 
 std::optional<ScheduledStrip> DisplayScheduler::front() {
-  if (count_ == 0U) {
+  if (count_ == 0U || in_flight_sequence_ != 0U) {
     return std::nullopt;
   }
   in_flight_sequence_ = front_sequence_;
