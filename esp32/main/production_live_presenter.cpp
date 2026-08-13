@@ -77,8 +77,13 @@ LivePresentationTiming ProductionLivePresenter::refresh(const ToolbarState& tool
     return {};
   }
   draw_toolbar(frame_, production::kOverviewWidth, production::kOverviewHeight, toolbar);
-  return present({0, 0, production::kOverviewWidth, production::kOverviewHeight}, event_us,
-                 esp_timer_get_time() - compose_started);
+  auto timing = present({0, 0, production::kOverviewWidth, production::kOverviewHeight}, event_us,
+                        esp_timer_get_time() - compose_started);
+  timing.tile_pixels = stats->tile_pixels;
+  timing.fallback_pixels = stats->fallback_pixels;
+  timing.resident_tiles = stats->immediate_tiles + stats->settled_tiles + stats->exact_tiles;
+  timing.fallback_tiles = stats->fallback_tiles;
+  return timing;
 }
 
 LivePresentationTiming ProductionLivePresenter::refresh_region(production::PixelRect level_bounds,
@@ -138,8 +143,13 @@ LivePresentationTiming ProductionLivePresenter::compose_and_present(
         static_cast<std::size_t>(width));
     std::copy(source.begin(), source.end(), target.begin());
   }
-  return present_pixels(panel_bounds, destination, width, event_us,
-                        esp_timer_get_time() - compose_started);
+  auto timing = present_pixels(panel_bounds, destination, width, event_us,
+                               esp_timer_get_time() - compose_started);
+  timing.tile_pixels = stats->tile_pixels;
+  timing.fallback_pixels = stats->fallback_pixels;
+  timing.resident_tiles = stats->immediate_tiles + stats->settled_tiles + stats->exact_tiles;
+  timing.fallback_tiles = stats->fallback_tiles;
+  return timing;
 }
 
 LivePresentationTiming ProductionLivePresenter::show_start(InkPoint point, std::uint16_t color,
