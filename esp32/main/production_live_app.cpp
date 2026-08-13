@@ -634,6 +634,11 @@ void run_production_live_app() {
   bool button_down = false;
   bool button_long_handled = false;
   std::uint32_t button_down_us = 0;
+  ZoomLevel fill_zoom = ZoomLevel::k25Percent;
+  int fill_x = 0;
+  int fill_y = 0;
+  DocumentRevision fill_revision = canvas.current_revision();
+  bool fill_complete = true;
 
   for (;;) {
     const std::uint32_t loop_us = now_us();
@@ -763,6 +768,37 @@ void run_production_live_app() {
         poll_max_us = 0;
         touch_errors = 0;
         std::fflush(stdout);
+      }
+    }
+
+    if (!pressed && presenter.zoom() != ZoomLevel::k25Percent) {
+      const production::ViewRequest fill_view{
+          .zoom = presenter.zoom(),
+          .level_pixels = {presenter.level_x(), presenter.level_y(),
+                           presenter.level_x() + production::kOverviewWidth,
+                           presenter.level_y() + production::kOverviewHeight},
+      };
+      if (fill_zoom != fill_view.zoom || fill_x != fill_view.level_pixels.x0 ||
+          fill_y != fill_view.level_pixels.y0 || fill_revision != canvas.current_revision()) {
+        fill_zoom = fill_view.zoom;
+        fill_x = fill_view.level_pixels.x0;
+        fill_y = fill_view.level_pixels.y0;
+        fill_revision = canvas.current_revision();
+        fill_complete = false;
+      }
+      if (!fill_complete) {
+        const auto step = producer.produce_next(fill_view);
+        if (step.has_value()) {
+          if (step->tiles_published != 0U) {
+            static_cast<void>(presenter.refresh_region(step->level_bounds));
+          }
+          fill_complete = step->complete;
+          if (fill_complete) {
+            std::printf("TINYDRAW_LIVE_FILL_DONE zoom=%s x=%d y=%d revision=%lu\n",
+                        zoom_name(fill_zoom), fill_x, fill_y,
+                        static_cast<unsigned long>(fill_revision.value));
+          }
+        }
       }
     }
     vTaskDelay(pdMS_TO_TICKS(2));
