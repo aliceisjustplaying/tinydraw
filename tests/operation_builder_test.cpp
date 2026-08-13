@@ -59,6 +59,20 @@ TEST_CASE("operation builder rejects malformed points and invalid time") {
   CHECK_FALSE(builder.finish({.world_x = 2.0F, .world_y = 2.0F, .radius = 1.0F}));
 }
 
+TEST_CASE("operation builder publishes an exactly full stroke without its lift point") {
+  std::array<production::CompactOperationSample, 1> storage{};
+  production::OperationBuilder builder(storage);
+  REQUIRE(builder.begin(production::OperationTool::kPen, 0x001FU,
+                        {.world_x = 1.0F, .world_y = 1.0F, .radius = 1.0F}));
+  const auto append =
+      builder.finish({.world_x = 2.0F, .world_y = 2.0F, .radius = 1.0F, .timestamp_us = 1'000U});
+  REQUIRE(append.has_value());
+  CHECK(append->samples.size() == 1U);
+  CHECK(append->samples.front().x_quarter == 4U);
+  CHECK(builder.overflowed());
+  CHECK_FALSE(builder.active());
+}
+
 TEST_CASE("operation builder reports capacity exhaustion until cancellation") {
   std::array<production::CompactOperationSample, 1> storage{};
   production::OperationBuilder builder(storage);
