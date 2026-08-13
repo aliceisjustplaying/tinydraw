@@ -11,7 +11,7 @@
 
 namespace tinydraw::esp32 {
 
-inline constexpr int kPhysicalMainOverlayTop = 372;
+inline constexpr int kPhysicalMainOverlayTop = kMainToolbarOverlayTop;
 
 // Owns the CO5300 panel transport and the legacy toolbar compositor. The
 // overlay allocation can be disabled for isolated production display probes.

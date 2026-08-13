@@ -212,6 +212,7 @@ void print_stroke(const OperationLog& log, const MaterializedCanvas& canvas,
 
 bool apply_toolbar_action(ToolbarAction action, Point point, ToolbarState& toolbar,
                           OperationLog& log, MaterializedCanvas& canvas,
+                          production::TileProducer& producer,
                           std::span<const std::uint16_t> blank_snapshot,
                           ProductionLivePresenter& presenter) {
   const auto close = [&]() {
@@ -266,7 +267,8 @@ bool apply_toolbar_action(ToolbarAction action, Point point, ToolbarState& toolb
       break;
     case ToolbarAction::kNewDrawing: {
       const DocumentRevision revision{canvas.current_revision().value + 1U};
-      if (!production::restore_document_snapshot(log, canvas, revision, blank_snapshot)) {
+      if (!production::restore_document_snapshot(log, canvas, revision, blank_snapshot) ||
+          !producer.reset_uniform_baseline(revision)) {
         return false;
       }
       close();
@@ -379,6 +381,7 @@ bool run_tile_gate(ProductionLivePresenter& presenter, production::TileProducer&
     }
   }
   const std::int64_t total_us = esp_timer_get_time() - started;
+  const bool passed = total_us < 500'000 && maximum_supertask_us < 75'000;
   std::printf(
       "TINYDRAW_GATE1_HARD zoom=%s cold=1 operations=%lu samples=%lu steps=%lu tiles=%lu "
       "scanned=%lu rendered=%lu max_supertask_us=%lld presentation_us=%lld total_us=%lld "
@@ -387,61 +390,104 @@ bool run_tile_gate(ProductionLivePresenter& presenter, production::TileProducer&
       static_cast<unsigned long>(log.sample_count()), static_cast<unsigned long>(steps),
       static_cast<unsigned long>(tiles_published), static_cast<unsigned long>(operations_scanned),
       static_cast<unsigned long>(operations_rendered), static_cast<long long>(maximum_supertask_us),
-      static_cast<long long>(presentation_us), static_cast<long long>(total_us),
-      total_us < 500'000 && maximum_supertask_us < 30'000);
-  return true;
+      static_cast<long long>(presentation_us), static_cast<long long>(total_us), passed);
+  return passed;
 }
 
-bool run_ssaa_gate(ProductionLivePresenter& presenter, production::TileProducer& producer,
-                   OperationLog& log, MaterializedCanvas& canvas, const ToolbarState& toolbar) {
-  const auto fallback = presenter.set_view(ZoomLevel::k100Percent, 0, 0, toolbar, now_us());
+bool run_draw_while_fill_gate(ProductionLivePresenter& presenter,
+                              production::TileProducer& producer, OperationLog& log,
+                              MaterializedCanvas& canvas, const ToolbarState& toolbar,
+                              const IncrementalDocumentWorkspace& workspace,
+                              std::span<CompactOperationSample> interaction_samples) {
+  const auto fallback = presenter.set_view(ZoomLevel::k400Percent, 0, 0, toolbar, now_us());
   if (!fallback.passed || !canvas.discard_tiles()) {
     return false;
   }
   const production::ViewRequest view{
-      .zoom = ZoomLevel::k100Percent,
+      .zoom = ZoomLevel::k400Percent,
       .level_pixels = {presenter.level_x(), presenter.level_y(),
                        presenter.level_x() + production::kOverviewWidth,
                        presenter.level_y() + production::kOverviewHeight},
   };
-  const std::int64_t started = esp_timer_get_time();
-  std::int64_t maximum_tile_us = 0;
-  std::int64_t presentation_us = 0;
-  std::size_t steps = 0;
-  std::size_t operations_scanned = 0;
-  std::size_t operations_rendered = 0;
-  while (true) {
+  const auto initial = producer.produce_next(view);
+  if (!initial.has_value() || initial->complete || initial->tiles_published != 0U) {
+    return false;
+  }
+
+  const std::uint32_t event_us = now_us();
+  const std::int64_t blocked_started = esp_timer_get_time();
+  const auto blocked_step = producer.produce_next(view);
+  const std::int64_t poll_gap_us = esp_timer_get_time() - blocked_started;
+  if (!blocked_step.has_value()) {
+    return false;
+  }
+  const InkPoint preview{.position = {20.0F, 200.0F},
+                         .pressure = 1.0F,
+                         .radius = 20.0F,
+                         .distance = 0.0F,
+                         .running_length = 0.0F,
+                         .timestamp_us = event_us};
+  const auto live = presenter.show_start(preview, 0x001FU, event_us);
+
+  if (interaction_samples.size() < 8U) {
+    return false;
+  }
+  auto fast_xl = interaction_samples.first(8U);
+  for (std::size_t index = 0; index < fast_xl.size(); ++index) {
+    fast_xl[index] = {
+        .x_quarter = static_cast<std::uint16_t>(20U + index * 48U),
+        .y_quarter = static_cast<std::uint16_t>(index % 2U == 0U ? 180U : 240U),
+        // XL is 20 screen pixels; at 400% that is 5 world units.
+        .radius_256 = 1'280U,
+        .elapsed_ms = static_cast<std::uint16_t>(index * 8U),
+    };
+  }
+  const std::int64_t append_started = esp_timer_get_time();
+  const auto append = production::append_incrementally(
+      log, canvas, {.tool = OperationTool::kPen, .color = 0x001FU, .samples = fast_xl}, workspace);
+  const std::int64_t append_us = esp_timer_get_time() - append_started;
+  const bool stale_rejected = !producer.produce_next(view).has_value();
+
+  std::int64_t maximum_slice_us = poll_gap_us;
+  std::int64_t maximum_compute_slice_us = poll_gap_us;
+  std::int64_t fill_started = esp_timer_get_time();
+  bool fill_complete = false;
+  while (!fill_complete) {
     const std::int64_t step_started = esp_timer_get_time();
-    const auto step = producer.produce_next_2x_aa_100(view);
-    maximum_tile_us = std::max(maximum_tile_us, esp_timer_get_time() - step_started);
+    const auto step = producer.produce_next(view);
+    const std::int64_t compute_slice_us = esp_timer_get_time() - step_started;
+    maximum_slice_us = std::max(maximum_slice_us, compute_slice_us);
     if (!step.has_value()) {
       return false;
     }
+    // Publication copies four packed tiles from PSRAM. It is bounded but not
+    // replay compute; track replay-only slices separately from total blocking.
+    if (step->tiles_published == 0U) {
+      maximum_compute_slice_us = std::max(maximum_compute_slice_us, compute_slice_us);
+    }
     if (step->tiles_published != 0U) {
-      const auto present_started = esp_timer_get_time();
+      const std::int64_t present_started = esp_timer_get_time();
       if (!presenter.refresh_region(step->level_bounds).passed) {
         return false;
       }
-      presentation_us += esp_timer_get_time() - present_started;
+      maximum_slice_us = std::max(maximum_slice_us, esp_timer_get_time() - present_started);
     }
-    ++steps;
-    operations_scanned += step->operations_scanned;
-    operations_rendered += step->operations_rendered;
-    if (step->complete) {
-      break;
-    }
+    fill_complete = step->complete;
   }
-  const std::int64_t total_us = esp_timer_get_time() - started;
-  const bool passed = total_us < 500'000;
+  const std::int64_t fill_us = esp_timer_get_time() - fill_started;
+  const bool passed = append.has_value() && stale_rejected && live.passed &&
+                      live.first_submit_us < 100'000 && poll_gap_us < 35'000 &&
+                      maximum_compute_slice_us < 30'000 && maximum_slice_us < 75'000;
   std::printf(
-      "TINYDRAW_GATE1_SSAA zoom=100 samples_per_pixel=4 cold=1 operations=%lu samples=%lu "
-      "steps=%lu scanned=%lu rendered=%lu max_tile_us=%lld presentation_us=%lld total_us=%lld "
-      "pass=%u\n",
-      static_cast<unsigned long>(log.operation_count()),
-      static_cast<unsigned long>(log.sample_count()), static_cast<unsigned long>(steps),
-      static_cast<unsigned long>(operations_scanned),
-      static_cast<unsigned long>(operations_rendered), static_cast<long long>(maximum_tile_us),
-      static_cast<long long>(presentation_us), static_cast<long long>(total_us), passed);
+      "TINYDRAW_GATE1_DRAW_FILL zoom=400 revision=%lu append_us=%lld poll_gap_us=%lld "
+      "event_submit_us=%lld event_complete_us=%lld max_compute_slice_us=%lld "
+      "max_display_slice_us=%lld fill_us=%lld "
+      "stale_rejected=%u pass=%u\n",
+      static_cast<unsigned long>(canvas.current_revision().value),
+      static_cast<long long>(append_us), static_cast<long long>(poll_gap_us),
+      static_cast<long long>(live.first_submit_us), static_cast<long long>(live.first_complete_us),
+      static_cast<long long>(maximum_compute_slice_us), static_cast<long long>(maximum_slice_us),
+      static_cast<long long>(fill_us), stale_rejected, passed);
   return passed;
 }
 
@@ -602,19 +648,34 @@ void run_production_live_app() {
   const bool gate_400 =
       pan_100 && run_tile_gate(presenter, producer, log, canvas, toolbar, ZoomLevel::k400Percent);
   const bool pan_400 = gate_400 && verify_pan_adapter(presenter, toolbar, ZoomLevel::k400Percent);
-  const bool ssaa_100 = pan_400 && run_ssaa_gate(presenter, producer, log, canvas, toolbar);
+  const bool draw_fill =
+      pan_400 && run_draw_while_fill_gate(presenter, producer, log, canvas, toolbar, workspace,
+                                          std::span(storage.input_samples, kInputSampleCapacity));
   const auto return_overview = presenter.set_zoom(ZoomLevel::k25Percent, toolbar, now_us());
   std::printf(
       "TINYDRAW_GATE1_AUTOMATED_DONE stress=%u stress_100=%u stress_400=%u workload=%u "
-      "hard_100=%u hard_400=%u ssaa_100=%u pan_100=%u pan_400=%u return=%u\n",
-      stress_ready, stress_100, stress_400, workload_ready, gate_100, gate_400, ssaa_100, pan_100,
-      pan_400, return_overview.passed);
+      "hard_100=%u hard_400=%u pan_100=%u pan_400=%u draw_fill=%u return=%u "
+      "ssaa_receipt=yellow\n",
+      stress_ready, stress_100, stress_400, workload_ready, gate_100, gate_400, pan_100, pan_400,
+      draw_fill, return_overview.passed);
   std::printf(
       "TINYDRAW_LIVE_READY zoom=25 controls=toolbar button=cycle_25_100_400 "
-      "long_button=load_1000 operations_capacity=%lu samples_capacity=%lu free_psram=%lu "
-      "largest_psram=%lu\n",
+      "long_button=load_1000 operations_capacity=%lu samples_capacity=%lu live_storage_bytes=%lu "
+      "free_psram=%lu largest_psram=%lu\n",
       static_cast<unsigned long>(log.operation_capacity()),
       static_cast<unsigned long>(log.sample_capacity()),
+      static_cast<unsigned long>(
+          production::kOverviewPixels * 4U * sizeof(std::uint16_t) +
+          production::kTileSlotCount * production::kTilePixels * sizeof(std::uint16_t) +
+          kWorkspaceTileCapacity * production::kTilePixels * sizeof(std::uint16_t) +
+          production::kTileProducerPixels * 2U * sizeof(std::uint16_t) +
+          production::kTilePixels * sizeof(std::uint16_t) +
+          production::kTileSlotCount * sizeof(MaterializedSlotStorage) +
+          kRealisticStrokeCapacity * sizeof(VectorStroke) +
+          kRealisticSampleCapacity * sizeof(StrokeSample) +
+          production::kOperationCapacity * sizeof(OperationRecord) +
+          production::kOperationSampleCapacity * sizeof(CompactOperationSample) +
+          kInputSampleCapacity * sizeof(CompactOperationSample)),
       static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)),
       static_cast<unsigned long>(heap_caps_get_largest_free_block(kExternalCaps)));
   std::fflush(stdout);
@@ -742,7 +803,7 @@ void run_production_live_app() {
         toolbar_samples = 0;
         if (toolbar_contains(tap, toolbar)) {
           static_cast<void>(apply_toolbar_action(
-              toolbar_action_at(tap, toolbar), tap, toolbar, log, canvas,
+              toolbar_action_at(tap, toolbar), tap, toolbar, log, canvas, producer,
               std::span(storage.snapshot, production::kOverviewPixels), presenter));
         }
       } else if (panning) {
