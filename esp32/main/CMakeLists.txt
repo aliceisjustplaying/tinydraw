@@ -1,4 +1,5 @@
 set(TINYDRAW_CORE "${CMAKE_CURRENT_LIST_DIR}/../../core")
+include("${CMAKE_CURRENT_LIST_DIR}/../../production/sources.cmake")
 set(TINYDRAW_PNGENC "${CMAKE_CURRENT_LIST_DIR}/../../third_party/pngenc/src")
 set(TINYDRAW_PNGENC_SRCS
   "${TINYDRAW_PNGENC}/PNGenc.cpp"
@@ -32,13 +33,7 @@ if(TINYDRAW_PRODUCTION_OVERVIEW_WALK)
     "co5300_panel_transport.cpp"
     "physical_touch.cpp"
     "production_overview_walk.cpp"
-    "${CMAKE_CURRENT_LIST_DIR}/../../production/src/display_scheduler.cpp"
-    "${CMAKE_CURRENT_LIST_DIR}/../../production/src/incremental_document.cpp"
-    "${CMAKE_CURRENT_LIST_DIR}/../../production/src/incremental_rasterizer.cpp"
-    "${CMAKE_CURRENT_LIST_DIR}/../../production/src/materialized_canvas.cpp"
-    "${CMAKE_CURRENT_LIST_DIR}/../../production/src/operation.cpp"
-    "${CMAKE_CURRENT_LIST_DIR}/../../production/src/operation_builder.cpp"
-    "${CMAKE_CURRENT_LIST_DIR}/../../production/src/operation_log.cpp"
+    ${TINYDRAW_PRODUCTION_SRCS}
   )
   set(TINYDRAW_PLATFORM_SRCS "")
   set(TINYDRAW_PLATFORM_REQUIRES esp_lcd_co5300 esp_lcd_touch_cst816s)

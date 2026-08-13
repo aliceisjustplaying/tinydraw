@@ -1,12 +1,6 @@
-add_library(tinydraw_production
-  src/display_scheduler.cpp
-  src/incremental_document.cpp
-  src/incremental_rasterizer.cpp
-  src/materialized_canvas.cpp
-  src/operation.cpp
-  src/operation_builder.cpp
-  src/operation_log.cpp
-)
+include(sources.cmake)
+
+add_library(tinydraw_production ${TINYDRAW_PRODUCTION_SRCS})
 add_library(tinydraw::production ALIAS tinydraw_production)
 
 target_compile_features(tinydraw_production PUBLIC cxx_std_20)
