@@ -28,11 +28,27 @@ set(TINYDRAW_APP_SRCS
   "${TINYDRAW_CORE}/src/toolbar.cpp"
   "${TINYDRAW_CORE}/src/world_canvas.cpp"
 )
-if(TINYDRAW_PRODUCTION_OVERVIEW_WALK)
+if(TINYDRAW_PRODUCTION_OVERVIEW_WALK OR TINYDRAW_PRODUCTION_LIVE_APP)
+  set(TINYDRAW_PRODUCTION_HARDWARE_SRCS "production_overview_walk.cpp")
+  set(TINYDRAW_PRODUCTION_CORE_SRCS "")
+  if(TINYDRAW_PRODUCTION_LIVE_APP)
+    set(TINYDRAW_PRODUCTION_HARDWARE_SRCS
+      "production_live_app.cpp"
+      "production_live_presenter.cpp"
+    )
+    set(TINYDRAW_PRODUCTION_CORE_SRCS
+      "${TINYDRAW_CORE}/src/coverage_tile.cpp"
+      "${TINYDRAW_CORE}/src/ink_stream.cpp"
+      "${TINYDRAW_CORE}/src/ribbon_geometry.cpp"
+      "${TINYDRAW_CORE}/src/ribbon_renderer.cpp"
+      "${TINYDRAW_CORE}/src/toolbar.cpp"
+    )
+  endif()
   set(TINYDRAW_APP_SRCS
     "co5300_panel_transport.cpp"
     "physical_touch.cpp"
-    "production_overview_walk.cpp"
+    ${TINYDRAW_PRODUCTION_HARDWARE_SRCS}
+    ${TINYDRAW_PRODUCTION_CORE_SRCS}
     ${TINYDRAW_PRODUCTION_SRCS}
   )
   set(TINYDRAW_PLATFORM_SRCS "")
@@ -119,6 +135,9 @@ if(TINYDRAW_PRODUCTION_MEMORY_PROBE)
 endif()
 if(TINYDRAW_PRODUCTION_OVERVIEW_WALK)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_PRODUCTION_OVERVIEW_WALK=1)
+endif()
+if(TINYDRAW_PRODUCTION_LIVE_APP)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_PRODUCTION_LIVE_APP=1)
 endif()
 if(TINYDRAW_QEMU)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_QEMU=1)
