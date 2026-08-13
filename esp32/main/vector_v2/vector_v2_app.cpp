@@ -20,6 +20,7 @@
 #include "tinydraw/ui/toolbar.h"
 #include "tinydraw/vector_v2/incremental_document.h"
 #include "tinydraw/vector_v2/memory_layout.h"
+#include "tinydraw/vector_v2/navigation_state.h"
 #include "tinydraw/vector_v2/operation_builder.h"
 #include "tinydraw/vector_v2/operation_log.h"
 #include "tinydraw/vector_v2/tile_producer.h"
@@ -186,17 +187,6 @@ const char* zoom_name(ZoomLevel zoom) {
       return "400";
   }
   return "unknown";
-}
-
-ZoomLevel next_test_zoom(ZoomLevel zoom) {
-  switch (zoom) {
-    case ZoomLevel::k25Percent:
-      return ZoomLevel::k100Percent;
-    case ZoomLevel::k100Percent:
-      return ZoomLevel::k400Percent;
-    default:
-      return ZoomLevel::k25Percent;
-  }
 }
 
 void print_presentation(const char* kind, const VectorV2Presenter& presenter,
@@ -399,7 +389,8 @@ void run_vector_v2_app() {
   DisplayScheduler scheduler(queue);
   Co5300PanelTransport display;
   PhysicalTouch touch;
-  VectorV2Presenter presenter(canvas, scheduler, display,
+  vector_v2::NavigationState navigation;
+  VectorV2Presenter presenter(canvas, navigation, scheduler, display,
                               std::span(storage.frame, vector_v2::kOverviewPixels),
                               std::span(storage.region_scratch, kLiveRegionScratchPixels));
   OperationBuilder builder(std::span(storage.input_samples, kInputSampleCapacity));
@@ -472,7 +463,7 @@ void run_vector_v2_app() {
   const std::size_t live_storage_bytes =
       overview_bytes + raw_tile_bytes + tile_metadata_bytes + operation_bytes + live_scratch_bytes;
   std::printf(
-      "TINYDRAW_VECTOR_V2_READY zoom=25 controls=toolbar button=cycle_25_100_400 "
+      "TINYDRAW_VECTOR_V2_READY zoom=25 controls=toolbar button=cycle_all_zooms "
       "operations_capacity=%lu samples_capacity=%lu live_storage_bytes=%lu "
       "overview_bytes=%lu raw_tile_bytes=%lu tile_metadata_bytes=%lu operation_bytes=%lu "
       "live_scratch_bytes=%lu free_psram=%lu largest_psram=%lu\n",
@@ -522,8 +513,9 @@ void run_vector_v2_app() {
       button_down = true;
     } else if (!next_button_down && button_down) {
       button_down = false;
-      const ZoomLevel zoom = next_test_zoom(presenter.zoom());
-      const auto timing = presenter.set_view(zoom, 0, 0, toolbar, loop_us);
+      const ZoomLevel zoom = vector_v2::next_zoom(presenter.zoom());
+      const ZoomLevel target = zoom == presenter.zoom() ? ZoomLevel::k25Percent : zoom;
+      const auto timing = presenter.set_zoom(target, toolbar, loop_us);
       print_presentation("zoom", presenter, timing);
     }
 

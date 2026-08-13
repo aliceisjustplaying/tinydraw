@@ -14,6 +14,7 @@
 #include "tinydraw/vector_v2/display_scheduler.h"
 #include "tinydraw/vector_v2/frame_scroller.h"
 #include "tinydraw/vector_v2/materialized_canvas.h"
+#include "tinydraw/vector_v2/navigation_state.h"
 #include "tinydraw/vector_v2/operation_builder.h"
 #include "tinydraw/vector_v2/tile_producer.h"
 
@@ -51,9 +52,9 @@ struct LivePresentationTiming {
 
 class VectorV2Presenter {
  public:
-  VectorV2Presenter(vector_v2::MaterializedCanvas& canvas, vector_v2::DisplayScheduler& scheduler,
-                    Co5300PanelTransport& display, std::span<std::uint16_t> frame_pixels,
-                    std::span<std::uint16_t> region_pixels);
+  VectorV2Presenter(vector_v2::MaterializedCanvas& canvas, vector_v2::NavigationState& navigation,
+                    vector_v2::DisplayScheduler& scheduler, Co5300PanelTransport& display,
+                    std::span<std::uint16_t> frame_pixels, std::span<std::uint16_t> region_pixels);
 
   [[nodiscard]] bool ready() const;
   [[nodiscard]] vector_v2::ZoomLevel zoom() const;
@@ -93,7 +94,6 @@ class VectorV2Presenter {
                                                       std::int64_t compose_us);
   [[nodiscard]] vector_v2::PixelRect primitive_bounds(
       std::span<const RibbonPrimitive> primitives) const;
-  [[nodiscard]] vector_v2::PixelRect clamp_view_origin(int x, int y) const;
   [[nodiscard]] LivePresentationTiming compose_and_present(vector_v2::PixelRect level_bounds,
                                                            vector_v2::PixelRect panel_bounds,
                                                            std::uint32_t event_us);
@@ -103,14 +103,12 @@ class VectorV2Presenter {
                                                    std::uint32_t event_us);
 
   vector_v2::MaterializedCanvas& canvas_;
+  vector_v2::NavigationState& navigation_;
   vector_v2::DisplayScheduler& scheduler_;
   Co5300PanelTransport& display_;
   std::span<std::uint16_t> frame_;
   std::span<std::uint16_t> region_;
   std::unique_ptr<RibbonRenderer> renderer_;
-  vector_v2::ZoomLevel zoom_ = vector_v2::ZoomLevel::k25Percent;
-  int level_x_ = 0;
-  int level_y_ = 0;
   vector_v2::ZoomLevel frame_zoom_ = vector_v2::ZoomLevel::k25Percent;
   int frame_level_x_ = 0;
   int frame_level_y_ = 0;
