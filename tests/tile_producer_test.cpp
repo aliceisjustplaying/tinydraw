@@ -13,6 +13,31 @@ namespace production = tinydraw::production;
 
 namespace {
 
+struct PaperFixture {
+  std::array<production::OperationRecord, 4> records{};
+  std::array<production::CompactOperationSample, 16> samples{};
+  std::array<std::uint16_t, production::kOverviewPixels> overview{};
+  std::array<std::uint16_t, production::kOverviewPixels> snapshot{};
+  std::unique_ptr<std::array<production::MaterializedUniformStorage,
+                             production::kMaterializedTileIdentityCount>>
+      uniforms = std::make_unique<std::array<production::MaterializedUniformStorage,
+                                             production::kMaterializedTileIdentityCount>>();
+  std::array<std::uint8_t, production::kOccupancyBytes> occupancy{};
+  std::array<production::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, production::kTilePixels> tile_pool{};
+  std::array<std::uint16_t, production::kTileProducerPixels> supertask{};
+  std::array<std::uint16_t, production::kTilePixels> packed{};
+  production::OperationLog log{records, samples};
+  production::MaterializedCanvas canvas{overview, *uniforms, occupancy, slots, tile_pool};
+  production::TileProducer producer{
+      log, canvas, {.supertask_pixels = supertask, .packed_tile_pixels = packed}};
+
+  PaperFixture() {
+    snapshot.fill(0xFFFFU);
+    REQUIRE(canvas.restore_snapshot({0}, snapshot));
+  }
+};
+
 struct Fixture {
   std::array<production::OperationRecord, 96> records{};
   std::array<production::CompactOperationSample, 2'048> samples{};
@@ -39,6 +64,26 @@ production::OperationAppend append(
 }
 
 }  // namespace
+
+TEST_CASE("tile producer publishes certainly-paper tiles in natural supertask groups") {
+  PaperFixture fixture;
+  const production::ViewRequest view{
+      .zoom = production::ZoomLevel::k100Percent,
+      .level_pixels = {0, 0, 128, 128},
+  };
+
+  const auto step = fixture.producer.produce_next(view);
+  REQUIRE(step.has_value());
+  CHECK(step->tiles_published == 4U);
+  CHECK(step->complete);
+  CHECK(step->level_bounds == production::PixelRect{0, 0, 128, 128});
+  for (std::uint16_t row = 0; row < 2; ++row) {
+    for (std::uint16_t column = 0; column < 2; ++column) {
+      CHECK(fixture.canvas.lookup({production::ZoomLevel::k100Percent, column, row})->kind ==
+            production::SourceKind::kUniform);
+    }
+  }
+}
 
 TEST_CASE("tile producer ignores overview fallback when finding missing resident tiles") {
   Fixture fixture;

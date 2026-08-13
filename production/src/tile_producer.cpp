@@ -152,7 +152,7 @@ std::optional<TileKey> TileProducer::choose_missing_group(const ViewRequest& vie
   return selected;
 }
 
-std::optional<TileKey> TileProducer::choose_certain_paper(const ViewRequest& view) const {
+std::optional<TileKey> TileProducer::choose_certain_paper_group(const ViewRequest& view) const {
   if (!ready() || !valid_view(view)) {
     return std::nullopt;
   }
@@ -163,33 +163,50 @@ std::optional<TileKey> TileProducer::choose_certain_paper(const ViewRequest& vie
                         static_cast<std::uint16_t>(row)};
       if (!tile_satisfies(key, MaterializationQuality::kImmediate) &&
           canvas_.certainly_paper(key)) {
-        return key;
+        return TileKey{view.zoom, static_cast<std::uint16_t>(column & ~1),
+                       static_cast<std::uint16_t>(row & ~1)};
       }
     }
   }
   return std::nullopt;
 }
 
-std::optional<TileProductionStep> TileProducer::publish_certain_paper(const ViewRequest& view,
-                                                                      TileKey key) {
-  if (!canvas_.publish_uniform(key, canvas_.current_revision(), MaterializationQuality::kImmediate,
-                               baseline_color_)) {
-    return std::nullopt;
+std::optional<TileProductionStep> TileProducer::publish_certain_paper_group(const ViewRequest& view,
+                                                                            TileKey origin) {
+  const TileGrid grid = tile_grid(view.zoom);
+  GroupPublication publication{};
+  for (int row = origin.row; row < std::min(grid.rows, static_cast<int>(origin.row) + 2); ++row) {
+    for (int column = origin.column;
+         column < std::min(grid.columns, static_cast<int>(origin.column) + 2); ++column) {
+      const TileKey key{view.zoom, static_cast<std::uint16_t>(column),
+                        static_cast<std::uint16_t>(row)};
+      const PixelRect bounds = tile_pixel_bounds(key);
+      if (!intersects(bounds, view.level_pixels) ||
+          tile_satisfies(key, MaterializationQuality::kImmediate) ||
+          !canvas_.certainly_paper(key)) {
+        continue;
+      }
+      if (!canvas_.publish_uniform(key, canvas_.current_revision(),
+                                   MaterializationQuality::kImmediate, baseline_color_)) {
+        return std::nullopt;
+      }
+      include_bounds(bounds, publication);
+    }
   }
   const auto remaining = visible_tiles_remaining(view);
-  if (!remaining.has_value()) {
+  if (publication.tiles_published == 0U || !remaining.has_value()) {
     return std::nullopt;
   }
-  return TileProductionStep{.level_bounds = tile_pixel_bounds(key),
-                            .tiles_published = 1,
+  return TileProductionStep{.level_bounds = publication.level_bounds,
+                            .tiles_published = publication.tiles_published,
                             .visible_tiles_remaining = *remaining,
                             .complete = *remaining == 0U};
 }
 
 std::optional<TileProductionStep> TileProducer::produce_next(const ViewRequest& view) {
-  if (const auto paper = choose_certain_paper(view); paper.has_value()) {
+  if (const auto paper = choose_certain_paper_group(view); paper.has_value()) {
     active_group_ = {};
-    return publish_certain_paper(view, *paper);
+    return publish_certain_paper_group(view, *paper);
   }
   const auto remaining = visible_tiles_remaining(view);
   if (!remaining.has_value()) {
