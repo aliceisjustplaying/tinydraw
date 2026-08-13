@@ -218,8 +218,11 @@ This human observation is the remaining physical-input check. It cannot reverse
 the YELLOW AA verdict; it can only reveal an interaction/correctness failure
 that would turn the gate RED.
 
-## Next funded work
+## Next funded work at receipt time
 
-Run the timeboxed analytic AA gate immediately, before Gate 2. Do not optimize or
-productionize the failed per-tile supersample probe unless new evidence changes
-the cost model.
+This receipt originally recommended running the timeboxed analytic AA gate next.
+The later aggressive glass test exposed input starvation, lost camera position,
+and cross-zoom cache churn, so `PROJECT_STATE.md` and `V2_ROADMAP.md` now fund
+that bounded interaction batch first. The warning still stands: do not optimize
+or productionize the failed per-tile supersample probe unless new evidence
+changes the cost model.
