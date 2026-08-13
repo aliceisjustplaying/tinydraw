@@ -140,6 +140,47 @@ TEST_CASE("affected tiles cover partial edge grids and high zooms") {
   CHECK(keys[0] == production::TileKey{production::ZoomLevel::k400Percent, 91, 111});
 }
 
+TEST_CASE("all committed zooms paint the same world center and enumerate its tile") {
+  constexpr std::array zooms{
+      production::ZoomLevel::k25Percent,  production::ZoomLevel::k50Percent,
+      production::ZoomLevel::k100Percent, production::ZoomLevel::k200Percent,
+      production::ZoomLevel::k400Percent,
+  };
+  const std::array samples{
+      production::CompactOperationSample{.x_quarter = 400, .y_quarter = 480, .radius_256 = 256},
+  };
+  const production::IncrementalOperation operation{.color = 0xF800U, .samples = samples};
+  for (const production::ZoomLevel zoom : zooms) {
+    std::array<std::uint16_t, production::kTilePixels> tile{};
+    tile.fill(0xFFFFU);
+    const int percent = production::zoom_percent(zoom);
+    const int center_x = 100 * percent / 100;
+    const int center_y = 120 * percent / 100;
+    const int tile_x = center_x / production::kTileWidth * production::kTileWidth;
+    const int tile_y = center_y / production::kTileHeight * production::kTileHeight;
+    REQUIRE(production::apply_incremental_operation(
+        operation, {.zoom = zoom,
+                    .level_bounds = {tile_x, tile_y, tile_x + production::kTileWidth,
+                                     tile_y + production::kTileHeight},
+                    .pixels = tile,
+                    .stride = production::kTileWidth}));
+    const std::size_t local_x = static_cast<std::size_t>(center_x - tile_x);
+    const std::size_t local_y = static_cast<std::size_t>(center_y - tile_y);
+    CHECK(tile[local_y * production::kTileWidth + local_x] == 0xF800U);
+
+    std::array<production::TileKey, 4> affected{};
+    const auto result = production::affected_tiles(operation, zoom, affected);
+    if (zoom == production::ZoomLevel::k25Percent) {
+      CHECK_FALSE(result.has_value());
+    } else {
+      REQUIRE(result.has_value());
+      CHECK(result->complete());
+      CHECK(affected[0].column == static_cast<std::uint16_t>(tile_x / production::kTileWidth));
+      CHECK(affected[0].row == static_cast<std::uint16_t>(tile_y / production::kTileHeight));
+    }
+  }
+}
+
 TEST_CASE("raster surface honors a stride larger than its visible width") {
   std::array<std::uint16_t, 4U * 3U> pixels{};
   pixels.fill(0x1111U);
