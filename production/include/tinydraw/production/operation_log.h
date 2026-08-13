@@ -10,12 +10,6 @@
 
 namespace tinydraw::production {
 
-struct OperationAppend {
-  OperationTool tool = OperationTool::kPen;
-  std::uint16_t color = 0;
-  std::span<const CompactOperationSample> samples{};
-};
-
 struct StoredOperation {
   OperationIdentity identity{};
   OperationTool tool = OperationTool::kPen;
