@@ -101,7 +101,6 @@ bool OperationBuilder::append_point(OperationPoint point, bool retain_duplicate)
       storage_[sample_count_ - 1U].x_quarter == sample.x_quarter &&
       storage_[sample_count_ - 1U].y_quarter == sample.y_quarter &&
       storage_[sample_count_ - 1U].radius_256 == sample.radius_256) {
-    storage_[sample_count_ - 1U].elapsed_ms = sample.elapsed_ms;
     return true;
   }
   if (sample_count_ == storage_.size()) {
