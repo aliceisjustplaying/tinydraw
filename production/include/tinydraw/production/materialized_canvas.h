@@ -67,8 +67,12 @@ struct TileKey {
   bool operator==(const TileKey&) const = default;
 };
 
+// Ordered from lowest to highest fidelity. Quality downgrade checks apply
+// within one document revision; a revision-advancing immediate mutation may
+// replace an affected settled tile because the new revision is not settled.
 enum class MaterializationQuality : std::uint8_t {
   kOverviewFallback,
+  kImmediate,
   kSettled,
   kExact,
 };
@@ -109,7 +113,7 @@ struct OverviewRevisionPublication {
 
 struct TileRevisionPublication {
   TileKey key{};
-  MaterializationQuality quality = MaterializationQuality::kSettled;
+  MaterializationQuality quality = MaterializationQuality::kImmediate;
   std::span<const std::uint16_t> pixels{};
 };
 
@@ -122,6 +126,7 @@ struct ViewCompositionStats {
   DocumentRevision revision{};
   std::size_t tile_pixels = 0;
   std::size_t fallback_pixels = 0;
+  std::size_t immediate_tiles = 0;
   std::size_t settled_tiles = 0;
   std::size_t exact_tiles = 0;
   std::size_t fallback_tiles = 0;
@@ -137,7 +142,7 @@ class MaterializedSlotStorage {
   TileKey key_{};
   DocumentRevision revision_{};
   SlotGeneration generation_{};
-  MaterializationQuality quality_ = MaterializationQuality::kSettled;
+  MaterializationQuality quality_ = MaterializationQuality::kImmediate;
   std::uint64_t last_use_ = 0;
   std::uint32_t pin_count_ = 0;
   bool occupied_ = false;
@@ -206,6 +211,10 @@ class MaterializedCanvas {
   [[nodiscard]] bool validate(const PinnedSource& source) const;
   [[nodiscard]] std::size_t pins_outstanding() const;
   [[nodiscard]] bool mark_used(TileKey key);
+  // Discards every raster tile while retaining document revision and complete
+  // overview authority. Used for cold-cache transitions and snapshot policy;
+  // fails while any source is pinned.
+  [[nodiscard]] bool discard_tiles();
   [[nodiscard]] std::optional<ViewCompositionStats> compose_view(
       const ViewRequest& request, std::span<std::uint16_t> destination);
   // Returns intersecting current-revision resident keys. Fails rather than

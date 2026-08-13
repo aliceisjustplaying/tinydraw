@@ -53,7 +53,7 @@ bool prepare_tile(const MaterializedCanvas& canvas, const OperationAppend& opera
   }
   publication = {
       .key = key,
-      .quality = MaterializationQuality::kSettled,
+      .quality = MaterializationQuality::kImmediate,
       .pixels = pixels,
   };
   return true;

@@ -648,6 +648,22 @@ bool MaterializedCanvas::mark_used(TileKey key) {
   return true;
 }
 
+bool MaterializedCanvas::discard_tiles() {
+  if (!ready() || overview_pin_count_ != 0U ||
+      std::any_of(slots_.begin(), slots_.end(),
+                  [](const auto& slot) { return slot.pin_count_ != 0U; })) {
+    return false;
+  }
+  for (MaterializedSlotStorage& slot : slots_) {
+    if (!slot.occupied_) {
+      continue;
+    }
+    slot.occupied_ = false;
+    slot.generation_ = take_generation();
+  }
+  return true;
+}
+
 bool MaterializedCanvas::valid_view(const ViewRequest& request,
                                     std::size_t destination_size) const {
   const PixelRect rect = request.level_pixels;
@@ -722,6 +738,8 @@ void MaterializedCanvas::compose_tile(TileKey key, CompositionContext& context) 
     touch(slots_[*tile_index]);
     context.stats.exact_tiles +=
         slots_[*tile_index].quality_ == MaterializationQuality::kExact ? 1U : 0U;
+    context.stats.immediate_tiles +=
+        slots_[*tile_index].quality_ == MaterializationQuality::kImmediate ? 1U : 0U;
     context.stats.settled_tiles +=
         slots_[*tile_index].quality_ == MaterializationQuality::kSettled ? 1U : 0U;
   } else {

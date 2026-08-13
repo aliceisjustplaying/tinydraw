@@ -84,6 +84,14 @@ TEST_CASE("incremental document advances log and canvas together") {
   CHECK(fixture.canvas.lookup(at_100)->kind == production::SourceKind::kTileSlot);
   CHECK(fixture.canvas.lookup(at_200)->kind == production::SourceKind::kTileSlot);
   CHECK(fixture.canvas.lookup(at_400)->kind == production::SourceKind::kTileSlot);
+  CHECK(fixture.canvas.lookup(at_50)->identity.quality ==
+        production::MaterializationQuality::kImmediate);
+  CHECK(fixture.canvas.lookup(at_100)->identity.quality ==
+        production::MaterializationQuality::kImmediate);
+  CHECK(fixture.canvas.lookup(at_200)->identity.quality ==
+        production::MaterializationQuality::kImmediate);
+  CHECK(fixture.canvas.lookup(at_400)->identity.quality ==
+        production::MaterializationQuality::kImmediate);
   CHECK(fixture.canvas.overview_pixels()[3U * production::kOverviewWidth + 3U] == 0xF800U);
 }
 

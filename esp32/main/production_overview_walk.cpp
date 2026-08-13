@@ -285,7 +285,7 @@ bool append_and_commit_probe(OperationLog& log, MaterializedCanvas& canvas,
   const auto carried = canvas.lookup(kCarried);
   return result.has_value() && result->affected_resident_tiles == 1U && updated.has_value() &&
          carried.has_value() && updated->identity.revision == result->identity.revision &&
-         updated->identity.quality == MaterializationQuality::kSettled &&
+         updated->identity.quality == MaterializationQuality::kImmediate &&
          carried->identity.revision == result->identity.revision &&
          carried->identity.generation == carried_before->identity.generation;
 }
