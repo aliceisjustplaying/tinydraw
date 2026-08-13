@@ -84,6 +84,33 @@ TEST_CASE("incremental document workspace failure leaves both authorities unchan
   CHECK(fixture.canvas.overview_pixels().front() == 0xFFFFU);
 }
 
+TEST_CASE("incremental document rejects non-exact canvas overview storage before copying") {
+  std::array<production::OperationRecord, 1> records{};
+  std::array<production::CompactOperationSample, 1> log_samples{};
+  production::OperationLog log(records, log_samples);
+  std::array<std::uint16_t, production::kOverviewPixels + 1U> oversized{};
+  oversized.fill(0xAAAAU);
+  std::array<production::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, production::kTilePixels> tile_pool{};
+  production::MaterializedCanvas canvas(oversized, slots, tile_pool);
+  std::array<std::uint16_t, production::kOverviewPixels + 2U> guarded{};
+  guarded.fill(0xBEEFU);
+  std::array<production::TileRevisionPublication, 1> publications{};
+  std::array<production::TileKey, 1> affected{};
+  const std::array samples{
+      production::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 256}};
+
+  CHECK_FALSE(production::append_incrementally(
+      log, canvas, {.samples = samples},
+      {.next_overview = std::span(guarded).subspan(1, production::kOverviewPixels),
+       .publications = publications,
+       .affected_keys = affected}));
+  CHECK(guarded.front() == 0xBEEFU);
+  CHECK(guarded.back() == 0xBEEFU);
+  CHECK(log.current_revision() == production::DocumentRevision{0});
+  CHECK(canvas.current_revision() == production::DocumentRevision{0});
+}
+
 TEST_CASE("incremental document rejects workspace aliasing live canvas pixels") {
   Fixture fixture;
   fixture.overview.fill(0xFFFFU);

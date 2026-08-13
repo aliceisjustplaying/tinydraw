@@ -41,7 +41,8 @@ bool prepare_tile(const MaterializedCanvas& canvas, const IncrementalOperation& 
 std::optional<IncrementalAppendResult> append_incrementally(
     OperationLog& log, MaterializedCanvas& canvas, const OperationAppend& append_request,
     const IncrementalDocumentWorkspace& workspace) {
-  if (workspace.next_overview.size() != kOverviewPixels ||
+  if (!canvas.ready() || !log.ready() || canvas.overview_pixels().size() != kOverviewPixels ||
+      workspace.next_overview.size() != kOverviewPixels ||
       !canvas.accepts_external_workspace(workspace.next_overview) ||
       !canvas.accepts_external_workspace(workspace.tile_scratch) ||
       spans_overlap(workspace.next_overview, workspace.tile_scratch) ||
@@ -57,8 +58,7 @@ std::optional<IncrementalAppendResult> append_incrementally(
   const StoredOperation& stored = prepared->operation();
   const IncrementalOperation operation{
       .tool = stored.tool, .color = stored.color, .samples = stored.samples};
-  std::copy(canvas.overview_pixels().begin(), canvas.overview_pixels().end(),
-            workspace.next_overview.begin());
+  std::copy_n(canvas.overview_pixels().begin(), kOverviewPixels, workspace.next_overview.begin());
   const bool overview_ready = apply_incremental_operation(
       operation, {.zoom = ZoomLevel::k25Percent,
                   .level_bounds = {0, 0, kOverviewWidth, kOverviewHeight},
