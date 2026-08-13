@@ -162,9 +162,11 @@ Affected identity is now expressed as conservative world bounds, so an
 operation cannot accidentally carry stale intersecting residents at other zooms
 forward as current. `append_incrementally` owns the prepare/render/commit/publish
 ordering behind one host-tested interface: prepared samples are not authoritative
-until the overview and every affected resident tile have been rendered and the
-canvas revision commits. Its overview, tile scratch, publication, and key spans
-are caller-owned and alias-checked.
+until the overview and bounded affected resident tiles have been rendered and the
+canvas revision commits; excess affected residents become current overview
+fallback. Its overview, tile scratch, publication, and key spans are caller-owned
+and alias-checked. Snapshot restore must publish the canvas overview and call
+`OperationLog::reset` with the same revision before coordinated appends resume.
 
 The interface expresses a revision plus bounded affected-tile publications; it
 does not expose mutable pool storage or renderer callbacks. Tile size and slot

@@ -189,17 +189,19 @@ std::optional<StoredOperation> OperationLog::operation(std::size_t index) const 
   };
 }
 
-void OperationLog::clear() {
+void OperationLog::reset(DocumentRevision revision) {
   if (append_pending_) {
     return;
   }
   operation_count_ = 0;
   sample_count_ = 0;
-  revision_ = {};
+  revision_ = revision;
   append_pending_ = false;
   pending_sample_count_ = 0;
   pending_token_ = 0;
 }
+
+void OperationLog::clear() { reset(); }
 
 bool OperationLog::valid_append(const OperationAppend& append_request) const {
   if (!ready() || append_pending_ || append_request.samples.empty() ||

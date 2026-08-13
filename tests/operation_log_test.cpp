@@ -181,18 +181,20 @@ TEST_CASE("operation log rejects malformed samples without mutation") {
   CHECK(log.current_revision() == production::DocumentRevision{0});
 }
 
-TEST_CASE("operation log clear resets identity and retains caller storage") {
+TEST_CASE("operation log reset adopts snapshot revision and retains caller storage") {
   std::array<production::OperationRecord, 1> records{};
   std::array<production::CompactOperationSample, 1> storage{};
   production::OperationLog log(records, storage);
   const std::array sample{
       production::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256}};
   REQUIRE(log.append({.samples = sample}));
-  log.clear();
+  log.reset({8});
   CHECK(log.ready());
   CHECK(log.operation_count() == 0U);
   CHECK(log.sample_count() == 0U);
-  CHECK(log.current_revision() == production::DocumentRevision{0});
+  CHECK(log.current_revision() == production::DocumentRevision{8});
   CHECK_FALSE(log.operation(0));
-  CHECK(log.append({.samples = sample}) == production::OperationIdentity{{1}, 0});
+  CHECK(log.append({.samples = sample}) == production::OperationIdentity{{9}, 0});
+  log.clear();
+  CHECK(log.current_revision() == production::DocumentRevision{0});
 }

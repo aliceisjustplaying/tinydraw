@@ -71,7 +71,9 @@ class OperationLog {
   [[nodiscard]] std::optional<PreparedAppend> prepare(const OperationAppend& append_request);
   [[nodiscard]] std::optional<OperationIdentity> append(const OperationAppend& append_request);
   [[nodiscard]] std::optional<StoredOperation> operation(std::size_t index) const;
-  // No-op while a PreparedAppend owns the pending slot.
+  // Resets empty authority to a snapshot revision. No-op while a
+  // PreparedAppend owns the pending slot. Existing operations are discarded.
+  void reset(DocumentRevision revision = {});
   void clear();
 
  private:
