@@ -6,4 +6,5 @@ set(TINYDRAW_PRODUCTION_SRCS
   "${CMAKE_CURRENT_LIST_DIR}/src/operation.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/operation_builder.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/operation_log.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/src/operation_lod_store.cpp"
 )
