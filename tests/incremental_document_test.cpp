@@ -55,6 +55,7 @@ TEST_CASE("incremental document advances log and canvas together") {
   CHECK(result->identity == production::OperationIdentity{{1}, 0});
   CHECK(result->affected_resident_tiles == 2U);
   CHECK(result->published_tiles == 2U);
+  CHECK(result->fallback_tiles == 0U);
   CHECK(fixture.log.current_revision() == production::DocumentRevision{1});
   CHECK(fixture.canvas.current_revision() == production::DocumentRevision{1});
   CHECK(fixture.canvas.lookup(at_100)->kind == production::SourceKind::kTileSlot);
@@ -62,26 +63,39 @@ TEST_CASE("incremental document advances log and canvas together") {
   CHECK(fixture.next_overview[3U * production::kOverviewWidth + 3U] == 0xF800U);
 }
 
-TEST_CASE("incremental document workspace failure leaves both authorities unchanged") {
+TEST_CASE("incremental document falls back excess affected residents when scratch is bounded") {
   Fixture fixture;
   fixture.overview.fill(0xFFFFU);
   REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
   std::array<std::uint16_t, production::kTilePixels> tile{};
   tile.fill(0xFFFFU);
-  REQUIRE(fixture.canvas.publish_tile({production::ZoomLevel::k100Percent, 0, 0}, {0},
-                                      production::MaterializationQuality::kSettled, tile));
+  const production::TileKey first{production::ZoomLevel::k100Percent, 0, 0};
+  const production::TileKey second{production::ZoomLevel::k200Percent, 1, 1};
+  REQUIRE(
+      fixture.canvas.publish_tile(first, {0}, production::MaterializationQuality::kSettled, tile));
+  REQUIRE(
+      fixture.canvas.publish_tile(second, {0}, production::MaterializationQuality::kSettled, tile));
   const std::array samples{
-      production::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 512}};
+      production::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 512},
+      production::CompactOperationSample{.x_quarter = 160, .y_quarter = 160, .radius_256 = 512},
+  };
   auto workspace = fixture.workspace();
-  workspace.publications = {};
-  workspace.affected_keys = {};
+  workspace.tile_scratch = std::span(fixture.tile_scratch).first(production::kTilePixels);
+  workspace.publications = std::span(fixture.publications).first(1);
 
-  CHECK_FALSE(production::append_incrementally(fixture.log, fixture.canvas,
-                                               {.color = 0xF800U, .samples = samples}, workspace));
-  CHECK(fixture.log.current_revision() == production::DocumentRevision{0});
-  CHECK(fixture.log.operation_count() == 0U);
-  CHECK(fixture.canvas.current_revision() == production::DocumentRevision{0});
-  CHECK(fixture.canvas.overview_pixels().front() == 0xFFFFU);
+  const auto result = production::append_incrementally(
+      fixture.log, fixture.canvas, {.color = 0xF800U, .samples = samples}, workspace);
+  REQUIRE(result.has_value());
+  CHECK(result->affected_resident_tiles == 2U);
+  CHECK(result->published_tiles == 1U);
+  CHECK(result->fallback_tiles == 1U);
+  const bool first_is_fallback =
+      fixture.canvas.lookup(first)->kind == production::SourceKind::kOverview;
+  const bool second_is_fallback =
+      fixture.canvas.lookup(second)->kind == production::SourceKind::kOverview;
+  CHECK(first_is_fallback != second_is_fallback);
+  CHECK(fixture.log.current_revision() == production::DocumentRevision{1});
+  CHECK(fixture.canvas.current_revision() == production::DocumentRevision{1});
 }
 
 TEST_CASE("incremental document rejects non-exact canvas overview storage before copying") {

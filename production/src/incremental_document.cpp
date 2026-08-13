@@ -71,12 +71,12 @@ std::optional<IncrementalAppendResult> append_incrementally(
                   .stride = kOverviewWidth});
   const auto resident_count =
       canvas.resident_tiles_intersecting(stored.world_bounds, workspace.affected_keys);
-  if (!overview_ready || !resident_count.has_value() ||
-      *resident_count > workspace.publications.size()) {
+  if (!overview_ready || !resident_count.has_value()) {
     prepared->cancel();
     return std::nullopt;
   }
-  for (std::size_t index = 0; index < *resident_count; ++index) {
+  const std::size_t publication_count = std::min(*resident_count, workspace.publications.size());
+  for (std::size_t index = 0; index < publication_count; ++index) {
     auto scratch = workspace.tile_scratch.subspan(index * kTilePixels, kTilePixels);
     if (!prepare_tile(canvas, operation, workspace.affected_keys[index], scratch,
                       workspace.publications[index])) {
@@ -86,14 +86,15 @@ std::optional<IncrementalAppendResult> append_incrementally(
   }
   if (!canvas.commit_incremental_revision(stored.identity.revision, workspace.next_overview,
                                           stored.world_bounds,
-                                          workspace.publications.first(*resident_count))) {
+                                          workspace.publications.first(publication_count))) {
     prepared->cancel();
     return std::nullopt;
   }
   prepared->publish();
   return IncrementalAppendResult{.identity = identity,
                                  .affected_resident_tiles = *resident_count,
-                                 .published_tiles = *resident_count};
+                                 .published_tiles = publication_count,
+                                 .fallback_tiles = *resident_count - publication_count};
 }
 
 }  // namespace tinydraw::production
