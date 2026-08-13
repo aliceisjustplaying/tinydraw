@@ -29,7 +29,11 @@ for this synthetic 1,000-stroke document, but there is no representative
 captured document in the repository. It also does not compare visual output,
 painter-order edge quality, or ESP32 append cost.
 
-The next justified input is a captured real document. Once available, run the
-same bounded policies and compare rendered settled output at every committed
-zoom. Until then, `OperationLodStore` remains the owner seam and accepts
-caller-generated samples; no default simplification policy is implied.
+A later private real-touch capture was run through these policies; its aggregate
+results are in [`REAL_TOUCH_CHARACTERIZATION.md`](REAL_TOUCH_CHARACTERIZATION.md).
+Unlike this synthetic corpus, it projects far beyond the 90,000-point slab when
+all four zooms store independent copies. That result rejects the current
+capacity/model combination, but it does not select a policy: shared/nested or
+on-demand detail must be characterized before rendered output is compared.
+`OperationLodStore` remains an ownership experiment, not an approved final
+storage layout or simplifier.
