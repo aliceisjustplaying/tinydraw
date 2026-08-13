@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "tinydraw/production/materialized_canvas.h"
+#include "tinydraw/production/operation.h"
 
 namespace tinydraw::production {
 
@@ -23,13 +24,6 @@ inline constexpr std::size_t kRendererGeometryBytes = 64U * 1024U;
 inline constexpr std::size_t kOverlayBytes = 368U * 76U * sizeof(std::uint16_t);
 inline constexpr std::size_t kStagingBytes = 2U * 368U * 32U * sizeof(std::uint16_t);
 inline constexpr std::size_t kTargetContiguousReserveBytes = 1536U * 1024U;
-
-struct CompactOperationSample {
-  std::uint16_t x_quarter = 0;
-  std::uint16_t y_quarter = 0;
-  std::uint16_t radius_256 = 0;
-  std::uint16_t elapsed_ms = 0;
-};
 
 struct OperationRecord {
   std::uint32_t first_sample = 0;
@@ -56,7 +50,6 @@ struct LodSpan {
   std::uint16_t flags = 0;
 };
 
-static_assert(sizeof(CompactOperationSample) == 8);
 static_assert(sizeof(OperationRecord) == 20);
 static_assert(sizeof(CompactLodSample) == 6);
 static_assert(sizeof(LodSpan) == 8);
