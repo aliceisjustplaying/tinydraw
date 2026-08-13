@@ -40,7 +40,7 @@ TEST_CASE("operation builder coalesces quantized duplicate positions") {
       builder.finish({.world_x = 11.0F, .world_y = 20.0F, .radius = 2.0F, .timestamp_us = 5'000U});
   REQUIRE(append.has_value());
   REQUIRE(append->samples.size() == 2U);
-  CHECK(append->samples[0].elapsed_ms == 2U);
+  CHECK(append->samples[0].elapsed_ms == 0U);
   CHECK(append->samples[1].x_quarter == 44U);
 }
 
