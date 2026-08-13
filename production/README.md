@@ -180,11 +180,14 @@ labeled `kSettled`, not `kExact`. Long sparse segments are subdivided into bound
 raster steps, and tile enumeration reports required versus written capacity.
 Anti-aliased settled convergence remains Task #56.
 
-The exclusive first hardware proof is
-[`hardware-receipts/b73f91e-incremental-revision-walk.log`](hardware-receipts/b73f91e-incremental-revision-walk.log).
-It committed revision 1 with one exact affected tile, carried a second resident
-tile forward, composed 8,192 tile pixels plus 156,672 overview fallback pixels,
-and transferred the deterministic result in 21 strips. The hash was
-`eab6f725`; all 126/126 transfers completed with zero panel rejects. This proves
-the state/transport seam on glass, not a real stroke renderer, concurrent
-publication, or the final interaction latency gates.
+The latest exclusive hardware proof is
+[`hardware-receipts/6b5f6b0-display-scheduler-walk.log`](hardware-receipts/6b5f6b0-display-scheduler-walk.log).
+It advanced document authority and materialization together through 32 compact
+pen/eraser operations, then composed the expected deterministic `d4e162c4`
+result. Every one of the walk's 168 bounded strips passed through
+`DisplayScheduler`; all 168 were accepted and completed in order with zero
+stale or other scheduler rejects, and transport completed 168/168 with zero
+CO5300 window rejects. The 30-operation burst averaged 50.320 ms per coordinated
+append. This proves ordered staging on glass, not concurrent mutation and
+transport, live touch-to-feedback latency, representative capacity, settled
+anti-aliasing, or the final interaction gates.
