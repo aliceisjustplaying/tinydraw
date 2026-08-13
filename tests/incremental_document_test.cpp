@@ -210,6 +210,22 @@ TEST_CASE("incremental document rejects metadata that aliases tile scratch") {
   CHECK(fixture.canvas.current_revision() == production::DocumentRevision{0});
 }
 
+TEST_CASE("incremental document rejects keys that alias canvas slot metadata") {
+  Fixture fixture;
+  fixture.overview.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
+  const std::array samples{
+      production::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 256}};
+  auto workspace = fixture.workspace();
+  workspace.affected_keys =
+      std::span(reinterpret_cast<production::TileKey*>(fixture.slots.data()), 1U);
+
+  CHECK_FALSE(production::append_incrementally(fixture.log, fixture.canvas,
+                                               {.color = 0xF800U, .samples = samples}, workspace));
+  CHECK(fixture.log.current_revision() == production::DocumentRevision{0});
+  CHECK(fixture.canvas.current_revision() == production::DocumentRevision{0});
+}
+
 TEST_CASE("incremental document rejects keys that alias operation storage") {
   Fixture fixture;
   fixture.overview.fill(0xFFFFU);
@@ -233,12 +249,16 @@ TEST_CASE("document snapshot restore changes both authorities to an older revisi
   REQUIRE(fixture.log.reset({8}));
   fixture.next_overview.fill(0x1234U);
 
+  const production::OperationLogEpoch old_epoch = fixture.log.epoch();
+  REQUIRE(fixture.log.replay_range(old_epoch, {8}, {8}));
   REQUIRE(production::restore_document_snapshot(fixture.log, fixture.canvas, {3},
                                                 fixture.next_overview));
   CHECK(fixture.log.current_revision() == production::DocumentRevision{3});
   CHECK(fixture.canvas.current_revision() == production::DocumentRevision{3});
   CHECK(fixture.log.operation_count() == 0U);
   CHECK(fixture.canvas.overview_pixels().front() == 0x1234U);
+  CHECK(fixture.log.epoch() != old_epoch);
+  CHECK_FALSE(fixture.log.replay_range(old_epoch, {3}, {3}));
 }
 
 TEST_CASE("document snapshot restore accepts revision zero at the current revision") {

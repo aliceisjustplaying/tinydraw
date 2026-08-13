@@ -1,10 +1,11 @@
 #include "tinydraw/production/materialized_canvas.h"
 
 #include <algorithm>
-#include <functional>
 #include <limits>
 #include <numeric>
 #include <tuple>
+
+#include "tinydraw/production/storage_overlap.h"
 
 namespace tinydraw::production {
 namespace {
@@ -39,16 +40,6 @@ PixelRect tile_world_bounds(TileKey key) {
 bool valid_world_bounds(PixelRect bounds) {
   return bounds.x0 >= 0 && bounds.y0 >= 0 && bounds.x0 < bounds.x1 && bounds.y0 < bounds.y1 &&
          bounds.x1 <= kWorldWidth && bounds.y1 <= kWorldHeight;
-}
-
-template <typename Left, typename Right>
-bool spans_overlap(std::span<Left> left, std::span<Right> right) {
-  const auto* left_begin = reinterpret_cast<const std::byte*>(left.data());
-  const auto* left_end = left_begin + left.size_bytes();
-  const auto* right_begin = reinterpret_cast<const std::byte*>(right.data());
-  const auto* right_end = right_begin + right.size_bytes();
-  const std::less<const std::byte*> less;
-  return less(left_begin, right_end) && less(right_begin, left_end);
 }
 
 }  // namespace
@@ -191,7 +182,8 @@ bool MaterializedCanvas::publish_overview(DocumentRevision revision,
                                       pixels.data() == overview_pixels_.data() &&
                                       pixels.size() == overview_pixels_.size();
   const bool source_is_publishable =
-      exact_bootstrap_source || !spans_overlap(pixels, std::span(overview_pixels_));
+      exact_bootstrap_source ||
+      !storage_overlaps(std::as_bytes(pixels), std::as_bytes(std::span(overview_pixels_)));
   const bool tile_is_pinned = std::any_of(slots_.begin(), slots_.end(),
                                           [](const auto& slot) { return slot.pin_count_ != 0U; });
   if (!ready() || !revision_is_publishable || !source_is_publishable || overview_pin_count_ != 0U ||
@@ -216,8 +208,10 @@ bool MaterializedCanvas::publish_overview(DocumentRevision revision,
 
 bool MaterializedCanvas::restore_snapshot(DocumentRevision revision,
                                           std::span<const std::uint16_t> pixels) {
-  const bool source_is_external = !spans_overlap(pixels, std::span(overview_pixels_)) &&
-                                  !spans_overlap(pixels, std::span(tile_pixels_));
+  const bool source_is_external =
+      !storage_overlaps(std::as_bytes(pixels), std::as_bytes(std::span(overview_pixels_))) &&
+      !storage_overlaps(std::as_bytes(pixels), std::as_bytes(std::span(tile_pixels_))) &&
+      !storage_overlaps(std::as_bytes(pixels), std::as_bytes(std::span(slots_)));
   const bool any_tile_pinned = std::any_of(slots_.begin(), slots_.end(),
                                            [](const auto& slot) { return slot.pin_count_ != 0U; });
   if (!ready() || pixels.size() != kOverviewPixels || !source_is_external ||
@@ -246,8 +240,11 @@ bool MaterializedCanvas::valid_incremental_revision(
       current_revision_.value != std::numeric_limits<std::uint32_t>::max() &&
       revision.value == current_revision_.value + 1U;
   const bool source_is_external =
-      !spans_overlap(next_overview_pixels, std::span(overview_pixels_)) &&
-      !spans_overlap(next_overview_pixels, std::span(tile_pixels_));
+      !storage_overlaps(std::as_bytes(next_overview_pixels),
+                        std::as_bytes(std::span(overview_pixels_))) &&
+      !storage_overlaps(std::as_bytes(next_overview_pixels),
+                        std::as_bytes(std::span(tile_pixels_))) &&
+      !storage_overlaps(std::as_bytes(next_overview_pixels), std::as_bytes(std::span(slots_)));
   const bool any_tile_pinned = std::any_of(slots_.begin(), slots_.end(),
                                            [](const auto& slot) { return slot.pin_count_ != 0U; });
   if (!ready() || !overview_valid_ || !revision_advances_once || !source_is_external ||
@@ -271,8 +268,11 @@ bool MaterializedCanvas::valid_incremental_revision(
     if (!key_is_affected || !publication_is_unique || !find_tile(publication.key).has_value() ||
         publication.quality == MaterializationQuality::kOverviewFallback ||
         publication.pixels.size() != expected_pixels ||
-        spans_overlap(publication.pixels, std::span(overview_pixels_)) ||
-        spans_overlap(publication.pixels, std::span(tile_pixels_))) {
+        storage_overlaps(std::as_bytes(publication.pixels),
+                         std::as_bytes(std::span(overview_pixels_))) ||
+        storage_overlaps(std::as_bytes(publication.pixels),
+                         std::as_bytes(std::span(tile_pixels_))) ||
+        storage_overlaps(std::as_bytes(publication.pixels), std::as_bytes(std::span(slots_)))) {
       return false;
     }
   }
@@ -336,8 +336,9 @@ bool MaterializedCanvas::commit_incremental_revision(
 }
 
 bool MaterializedCanvas::accepts_external_workspace(std::span<const std::byte> workspace) const {
-  return !spans_overlap(workspace, std::as_bytes(std::span(overview_pixels_))) &&
-         !spans_overlap(workspace, std::as_bytes(std::span(tile_pixels_)));
+  return !storage_overlaps(workspace, std::as_bytes(std::span(overview_pixels_))) &&
+         !storage_overlaps(workspace, std::as_bytes(std::span(tile_pixels_))) &&
+         !storage_overlaps(workspace, std::as_bytes(std::span(slots_)));
 }
 
 bool MaterializedCanvas::copy_resident_tile(TileKey key,
@@ -351,7 +352,7 @@ bool MaterializedCanvas::copy_resident_tile(TileKey key,
   const int height = bounds.y1 - bounds.y0;
   const std::size_t expected = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
   if (destination.size() != expected ||
-      spans_overlap(destination, std::span<const std::uint16_t>(tile_pixels_))) {
+      storage_overlaps(std::as_bytes(destination), std::as_bytes(std::span(tile_pixels_)))) {
     return false;
   }
   const auto source = tile_pixels_.subspan(*slot_index * kTilePixels, kTilePixels);
@@ -431,7 +432,9 @@ std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, Documen
   const int height = bounds.y1 - bounds.y0;
   const std::size_t expected_pixels =
       static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
-  const bool source_overlaps_pool = spans_overlap(pixels, std::span(tile_pixels_));
+  const bool source_overlaps_pool =
+      storage_overlaps(std::as_bytes(pixels), std::as_bytes(std::span(tile_pixels_))) ||
+      storage_overlaps(std::as_bytes(pixels), std::as_bytes(std::span(slots_)));
   if (!ready() || slots_.empty() || !valid_tile_key(key) || revision != current_revision_ ||
       quality == MaterializationQuality::kOverviewFallback || source_overlaps_pool ||
       pixels.size() != expected_pixels) {
@@ -714,8 +717,10 @@ void MaterializedCanvas::compose_tile(TileKey key, CompositionContext& context) 
 
 std::optional<ViewCompositionStats> MaterializedCanvas::compose_view(
     const ViewRequest& request, std::span<std::uint16_t> destination) {
-  const bool destination_aliases_source = spans_overlap(destination, std::span(overview_pixels_)) ||
-                                          spans_overlap(destination, std::span(tile_pixels_));
+  const bool destination_aliases_source =
+      storage_overlaps(std::as_bytes(destination), std::as_bytes(std::span(overview_pixels_))) ||
+      storage_overlaps(std::as_bytes(destination), std::as_bytes(std::span(tile_pixels_))) ||
+      storage_overlaps(std::as_bytes(destination), std::as_bytes(std::span(slots_)));
   if (!valid_view(request, destination.size()) || destination_aliases_source ||
       !has_complete_source(request)) {
     return std::nullopt;
