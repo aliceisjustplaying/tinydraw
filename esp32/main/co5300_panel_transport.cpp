@@ -209,8 +209,9 @@ class Co5300PanelTransport::Impl {
     if (sequence == 0U || sequence > completed || completed - sequence >= kTransferHistory) {
       return -1;
     }
-    return transfer_complete_times_[(sequence - 1U) % kTransferHistory].load(
-        std::memory_order_relaxed);
+    return static_cast<std::int64_t>(
+        transfer_complete_times_[(sequence - 1U) % kTransferHistory].load(
+            std::memory_order_relaxed));
   }
 
   [[nodiscard]] bool wait_for_all(std::int64_t timeout_us) {
@@ -291,8 +292,8 @@ class Co5300PanelTransport::Impl {
                                void* context) {
     auto& self = *static_cast<Impl*>(context);
     const std::uint32_t sequence = self.transfer_completes_.load(std::memory_order_relaxed);
-    self.transfer_complete_times_[sequence % kTransferHistory].store(esp_timer_get_time(),
-                                                                     std::memory_order_relaxed);
+    self.transfer_complete_times_[sequence % kTransferHistory].store(
+        static_cast<std::uint32_t>(esp_timer_get_time()), std::memory_order_relaxed);
     self.transfer_completes_.store(sequence + 1U, std::memory_order_release);
     BaseType_t woke = pdFALSE;
     xSemaphoreGiveFromISR(self.transfer_semaphore_, &woke);
@@ -304,7 +305,7 @@ class Co5300PanelTransport::Impl {
   SemaphoreHandle_t transfer_semaphore_ = nullptr;
   esp_lcd_panel_io_handle_t io_ = nullptr;
   esp_lcd_panel_handle_t panel_ = nullptr;
-  std::array<std::atomic<std::int64_t>, kTransferHistory> transfer_complete_times_{};
+  std::array<std::atomic<std::uint32_t>, kTransferHistory> transfer_complete_times_{};
   std::atomic<std::uint32_t> transfer_submits_{0U};
   std::atomic<std::uint32_t> transfer_completes_{0U};
   std::int64_t prepare_us_ = 0;

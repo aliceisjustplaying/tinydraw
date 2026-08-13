@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
 
 namespace tinydraw::esp32 {
 namespace {
@@ -49,8 +50,13 @@ class PhysicalDisplay::Impl {
     return transport_.ready() &&
            (!overlays_enabled_ || (overlay_ != nullptr && composition_ != nullptr));
   }
-  void reset_timing() { transport_.reset_timing(); }
-  [[nodiscard]] std::int64_t prepare_us() const { return transport_.prepare_us(); }
+  void reset_timing() {
+    transport_.reset_timing();
+    overlay_prepare_us_ = 0;
+  }
+  [[nodiscard]] std::int64_t prepare_us() const {
+    return transport_.prepare_us() + overlay_prepare_us_;
+  }
   [[nodiscard]] std::int64_t transfer_us() const { return transport_.transfer_us(); }
   [[nodiscard]] std::uint32_t push_count() const { return transport_.push_count(); }
   [[nodiscard]] std::uint32_t rejected_push_count() const {
@@ -131,8 +137,11 @@ class PhysicalDisplay::Impl {
 
   void push_rect(int x, int y, int width, int height, const std::uint16_t* pixels, int stride) {
     const int source_stride = stride == 0 ? width : stride;
-    if (!overlays_enabled_ || pixels == nullptr || width <= 0 || height <= 0 ||
-        source_stride < width) {
+    const bool in_bounds = x >= 0 && y >= 0 && x < kCanvasWidth && y < kCanvasHeight && width > 0 &&
+                           height > 0 && width <= kCanvasWidth - x && height <= kCanvasHeight - y;
+    const bool valid_window = ((x | y | width | height) & 1) == 0;
+    if (!ready() || pixels == nullptr || !in_bounds || !valid_window || source_stride < width ||
+        !overlays_enabled_) {
       transport_.push_rect(x, y, width, height, pixels, stride);
       return;
     }
@@ -156,6 +165,7 @@ class PhysicalDisplay::Impl {
     }
     for (int row0 = 0; row0 < height; row0 += rows_per_transfer) {
       const int rows = std::min(rows_per_transfer, height - row0);
+      const std::int64_t composition_started = esp_timer_get_time();
       for (int row = 0; row < rows; ++row) {
         for (int column = 0; column < width; ++column) {
           const int panel_x = x + column;
@@ -169,6 +179,7 @@ class PhysicalDisplay::Impl {
               toolbar_overlay_contains(point, toolbar_) ? overlay_[canvas] : pixels[source];
         }
       }
+      overlay_prepare_us_ += esp_timer_get_time() - composition_started;
       transport_.push_rect(x, y + row0, width, rows, composition_, width);
     }
   }
@@ -246,6 +257,7 @@ class PhysicalDisplay::Impl {
   }
 
   Co5300PanelTransport transport_;
+  std::int64_t overlay_prepare_us_ = 0;
   std::uint16_t* overlay_ = nullptr;
   std::uint16_t* composition_ = nullptr;
   ToolbarState toolbar_{};
