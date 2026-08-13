@@ -85,13 +85,13 @@ Correctness requirements are stroke presence, painter order, eraser behavior, an
 
 Continue #55 without growing `hardware_app.cpp`:
 
-1. define the narrow coordinator that reserves append storage, renders the next revision, and publishes only after every fallible preparation succeeds;
-2. prevent a document append from becoming authoritative if materialization commit cannot complete, or explicitly model the pending revision state;
+1. extract the narrow append/materialization coordinator from the hardware walk into a host-tested production module;
+2. make the coordinator render every affected resident tile available to it, while missing resident publications safely invalidate to overview fallback;
 3. preserve the proven immediate rasterizer; anti-aliased settled quality belongs to the later settled-render path rather than this commit seam;
 4. exercise a representative multi-operation sequence and capacity boundaries before default-loop integration;
 5. keep pulling the minimum display scheduler seam forward so live hardware can prove interaction without moving production policy into `hardware_app.cpp`.
 
-The current exact-commit receipt is [`production/hardware-receipts/07c44bf-operation-authority-walk.log`](production/hardware-receipts/07c44bf-operation-authority-walk.log). It proves ordered log append, opaque pen/eraser painter order at revisions 1 and 2, conservative state publication, deterministic panel hashes, transfer completion, zero panel rejection, and measured PSRAM headroom. It does not prove atomic coordination under rendering/commit failure, representative operation-log capacity, live touch integration, settled anti-aliasing, or interactive pan.
+The current exact-commit receipt is [`production/hardware-receipts/29c4d1d-transactional-operation-walk.log`](production/hardware-receipts/29c4d1d-transactional-operation-walk.log). It proves prepared operation storage remains non-authoritative until materialization commits, then log publication advances the same revision; it also proves opaque pen/eraser painter order, conservative state publication, deterministic panel hashes, transfer completion, zero panel rejection, and measured PSRAM headroom. It does not prove representative operation-log capacity, live touch integration, settled anti-aliasing, or interactive pan.
 
 ## Validation baseline
 
