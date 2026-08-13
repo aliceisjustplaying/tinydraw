@@ -37,7 +37,7 @@ if(TINYDRAW_BUILD_TESTS)
 
   add_executable(tinydraw_vector_v2_lod_characterization tests/lod_characterization.cpp)
   target_link_libraries(tinydraw_vector_v2_lod_characterization PRIVATE
-    tinydraw::core
+    tinydraw::vector_prototype
     tinydraw::vector_v2
     tinydraw_project_options
   )

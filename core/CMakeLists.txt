@@ -21,7 +21,6 @@ if(TINYDRAW_ENABLE_SANITIZERS)
 endif()
 
 add_library(tinydraw_core STATIC
-  src/camera.cpp
   src/coordinate_transform.cpp
   src/coverage_tile.cpp
   src/demo_tape.cpp
@@ -30,19 +29,13 @@ add_library(tinydraw_core STATIC
   src/ink_stream.cpp
   src/perfect_freehand.cpp
   src/png_encoder.cpp
-  src/raster_materializer.cpp
   src/realistic_workload.cpp
-  src/settled_renderer.cpp
-  src/stroke_lod.cpp
-  src/stroke_macrogrid.cpp
   src/ribbon_geometry.cpp
   src/ribbon_renderer.cpp
   src/stroke_raster.cpp
   src/tile_undo_history.cpp
   src/toolbar.cpp
-  src/vector_benchmark.cpp
   src/vector_document.cpp
-  src/viewport_renderer.cpp
   src/world_canvas.cpp
 )
 
@@ -50,3 +43,24 @@ add_library(tinydraw::core ALIAS tinydraw_core)
 
 target_include_directories(tinydraw_core PUBLIC include)
 target_link_libraries(tinydraw_core PRIVATE tinydraw_project_options tinydraw_pngenc)
+
+# Retired vector-atlas prototype machinery remains available to its historical
+# tests and benchmarks, but normal Raster V1, host, and Vector V2 targets do not
+# compile or link it.
+if(TINYDRAW_BUILD_TESTS)
+  add_library(tinydraw_vector_prototype STATIC
+    src/camera.cpp
+    src/raster_materializer.cpp
+    src/settled_renderer.cpp
+    src/stroke_lod.cpp
+    src/stroke_macrogrid.cpp
+    src/vector_benchmark.cpp
+    src/viewport_renderer.cpp
+  )
+  add_library(tinydraw::vector_prototype ALIAS tinydraw_vector_prototype)
+  target_include_directories(tinydraw_vector_prototype PUBLIC include)
+  target_link_libraries(tinydraw_vector_prototype PUBLIC
+    tinydraw::core
+    tinydraw_project_options
+  )
+endif()

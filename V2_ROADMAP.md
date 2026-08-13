@@ -158,7 +158,9 @@ rewrite and not feature-parity promotion.
       `vector-v2-gate-harness` target.
 - [ ] Audit and remove rejected or unused production experiments only after
       confirming no current module depends on them.
-- [ ] Quarantine prototype-only renderer sources from normal host/product targets.
+- [x] Quarantine prototype-only renderer sources in the explicit
+      `tinydraw::vector_prototype` test/benchmark target; normal host and product
+      targets do not compile or link them.
 - [x] Archive superseded root handoffs and interim Gate 1 plans.
 - [x] Keep only `README.md`, `PROJECT_STATE.md`, this roadmap, and genuinely
       current design documents prominent at repository root.

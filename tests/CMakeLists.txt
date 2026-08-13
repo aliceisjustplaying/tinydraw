@@ -25,7 +25,7 @@ add_executable(tinydraw_tests
   world_canvas_test.cpp
 )
 target_link_libraries(tinydraw_tests PRIVATE
-  tinydraw::core
+  tinydraw::vector_prototype
   tinydraw_project_options
 )
 target_compile_definitions(tinydraw_tests PRIVATE
@@ -54,7 +54,10 @@ target_link_libraries(tinydraw_perf_characterization PRIVATE tinydraw::core tiny
 add_test(NAME tinydraw_perf_characterization COMMAND tinydraw_perf_characterization)
 
 add_executable(tinydraw_vector_rebuild_benchmark vector_rebuild_benchmark.cpp)
-target_link_libraries(tinydraw_vector_rebuild_benchmark PRIVATE tinydraw::core tinydraw_project_options)
+target_link_libraries(tinydraw_vector_rebuild_benchmark PRIVATE
+  tinydraw::vector_prototype
+  tinydraw_project_options
+)
 
 if(TARGET tinydraw_host)
   set(REPLAY_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/replay")
