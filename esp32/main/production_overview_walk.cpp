@@ -11,6 +11,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "physical_touch.h"
 #include "tinydraw/production/incremental_document.h"
 #include "tinydraw/production/incremental_rasterizer.h"
 #include "tinydraw/production/materialized_canvas.h"
@@ -283,6 +284,7 @@ void run_production_overview_walk() {
                             std::span(tile_pixels, 2U * production::kTilePixels),
                             DocumentRevision{0});
   Co5300PanelTransport display;
+  PhysicalTouch touch;
   auto* overview_source =
       static_cast<std::uint16_t*>(heap_caps_malloc(production::kOverviewBytes, kExternalCaps));
   if (overview_source == nullptr) {
@@ -292,9 +294,9 @@ void run_production_overview_walk() {
   std::copy_n(overview, production::kOverviewPixels, overview_source);
   if (!canvas.ready() ||
       !canvas.publish_overview({0}, std::span(overview_source, production::kOverviewPixels)) ||
-      !display.ready()) {
-    std::printf("TINYDRAW_PRODUCTION_WALK_FAIL reason=bootstrap canvas=%u display=%u\n",
-                canvas.ready(), display.ready());
+      !display.ready() || !touch.ready()) {
+    std::printf("TINYDRAW_PRODUCTION_WALK_FAIL reason=bootstrap canvas=%u display=%u touch=%u\n",
+                canvas.ready(), display.ready(), touch.ready());
     return;
   }
 
@@ -389,6 +391,35 @@ void run_production_overview_walk() {
   pass = present_incremental(display, canvas, strip_pixels, {kBurstOperationCount + 2U}, "burst",
                              kExpectedBurstHash) &&
          pass;
+  const std::int64_t touch_probe_started = esp_timer_get_time();
+  std::uint32_t touch_points = 0;
+  std::uint32_t touch_errors = 0;
+  std::uint32_t touch_changes = 0;
+  Point last_touch{};
+  bool have_touch = false;
+  while (esp_timer_get_time() - touch_probe_started < 5'000'000) {
+    Point point{};
+    const TouchRead read = touch.read(point);
+    if (read == TouchRead::kPoint) {
+      ++touch_points;
+      if (!have_touch || point.x != last_touch.x || point.y != last_touch.y) {
+        ++touch_changes;
+        last_touch = point;
+      }
+      have_touch = true;
+    } else if (read == TouchRead::kError) {
+      ++touch_errors;
+    }
+    vTaskDelay(pdMS_TO_TICKS(2));
+  }
+  std::printf(
+      "TINYDRAW_PRODUCTION_TOUCH_PROBE ready=%u points=%lu changes=%lu errors=%lu last_x=%.0f "
+      "last_y=%.0f elapsed_us=%lld\n",
+      touch.ready(), static_cast<unsigned long>(touch_points),
+      static_cast<unsigned long>(touch_changes), static_cast<unsigned long>(touch_errors),
+      static_cast<double>(last_touch.x), static_cast<double>(last_touch.y),
+      static_cast<long long>(esp_timer_get_time() - touch_probe_started));
+  pass = touch_errors == 0U && pass;
   const std::uint32_t submits = display.submit_count();
   const std::uint32_t completes = display.complete_count();
   const std::uint32_t rejects = display.rejected_push_count();
