@@ -54,6 +54,11 @@ class ProductionLivePresenter {
   [[nodiscard]] LivePresentationTiming set_zoom(production::ZoomLevel zoom,
                                                 const ToolbarState& toolbar,
                                                 std::uint32_t event_us);
+  // Test/adapter seam for deterministic hardware views. Coordinates are
+  // clamped to the selected level before the full fallback view is presented.
+  [[nodiscard]] LivePresentationTiming set_view(production::ZoomLevel zoom, int level_x,
+                                                int level_y, const ToolbarState& toolbar,
+                                                std::uint32_t event_us);
   [[nodiscard]] LivePresentationTiming pan_from(int start_x, int start_y, Point start_touch,
                                                 Point current_touch, const ToolbarState& toolbar,
                                                 std::uint32_t event_us);

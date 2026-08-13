@@ -178,6 +178,16 @@ LivePresentationTiming ProductionLivePresenter::set_zoom(production::ZoomLevel z
   return refresh(toolbar, event_us);
 }
 
+LivePresentationTiming ProductionLivePresenter::set_view(production::ZoomLevel zoom, int level_x,
+                                                         int level_y, const ToolbarState& toolbar,
+                                                         std::uint32_t event_us) {
+  zoom_ = zoom;
+  const auto origin = clamp_view_origin(level_x, level_y);
+  level_x_ = origin.x0;
+  level_y_ = origin.y0;
+  return refresh(toolbar, event_us);
+}
+
 LivePresentationTiming ProductionLivePresenter::pan_from(int start_x, int start_y,
                                                          Point start_touch, Point current_touch,
                                                          const ToolbarState& toolbar,
