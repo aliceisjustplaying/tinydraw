@@ -14,11 +14,11 @@ struct Fixture {
   std::array<production::CompactOperationSample, 8> samples{};
   std::array<std::uint16_t, production::kOverviewPixels> overview{};
   std::array<std::uint16_t, production::kOverviewPixels> next_overview{};
-  std::array<production::MaterializedSlotStorage, 2> slots{};
-  std::array<std::uint16_t, 2U * production::kTilePixels> tile_pool{};
-  std::array<std::uint16_t, 2U * production::kTilePixels> tile_scratch{};
-  std::array<production::TileRevisionPublication, 2> publications{};
-  std::array<production::TileKey, 2> affected{};
+  std::array<production::MaterializedSlotStorage, 4> slots{};
+  std::array<std::uint16_t, 4U * production::kTilePixels> tile_pool{};
+  std::array<std::uint16_t, 4U * production::kTilePixels> tile_scratch{};
+  std::array<production::TileRevisionPublication, 4> publications{};
+  std::array<production::TileKey, 4> affected{};
   production::OperationLog log{records, samples};
   production::MaterializedCanvas canvas{overview, slots, tile_pool};
 
@@ -38,12 +38,18 @@ TEST_CASE("incremental document advances log and canvas together") {
   REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
   std::array<std::uint16_t, production::kTilePixels> tile{};
   tile.fill(0xFFFFU);
+  const production::TileKey at_50{production::ZoomLevel::k50Percent, 0, 0};
   const production::TileKey at_100{production::ZoomLevel::k100Percent, 0, 0};
   const production::TileKey at_200{production::ZoomLevel::k200Percent, 1, 1};
+  const production::TileKey at_400{production::ZoomLevel::k400Percent, 2, 2};
+  REQUIRE(
+      fixture.canvas.publish_tile(at_50, {0}, production::MaterializationQuality::kSettled, tile));
   REQUIRE(
       fixture.canvas.publish_tile(at_100, {0}, production::MaterializationQuality::kSettled, tile));
   REQUIRE(
       fixture.canvas.publish_tile(at_200, {0}, production::MaterializationQuality::kSettled, tile));
+  REQUIRE(
+      fixture.canvas.publish_tile(at_400, {0}, production::MaterializationQuality::kSettled, tile));
   const std::array samples{
       production::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 512},
       production::CompactOperationSample{.x_quarter = 160, .y_quarter = 160, .radius_256 = 512},
@@ -53,13 +59,15 @@ TEST_CASE("incremental document advances log and canvas together") {
       fixture.log, fixture.canvas, {.color = 0xF800U, .samples = samples}, fixture.workspace());
   REQUIRE(result.has_value());
   CHECK(result->identity == production::OperationIdentity{{1}, 0});
-  CHECK(result->affected_resident_tiles == 2U);
-  CHECK(result->published_tiles == 2U);
+  CHECK(result->affected_resident_tiles == 4U);
+  CHECK(result->published_tiles == 4U);
   CHECK(result->fallback_tiles == 0U);
   CHECK(fixture.log.current_revision() == production::DocumentRevision{1});
   CHECK(fixture.canvas.current_revision() == production::DocumentRevision{1});
+  CHECK(fixture.canvas.lookup(at_50)->kind == production::SourceKind::kTileSlot);
   CHECK(fixture.canvas.lookup(at_100)->kind == production::SourceKind::kTileSlot);
   CHECK(fixture.canvas.lookup(at_200)->kind == production::SourceKind::kTileSlot);
+  CHECK(fixture.canvas.lookup(at_400)->kind == production::SourceKind::kTileSlot);
   CHECK(fixture.next_overview[3U * production::kOverviewWidth + 3U] == 0xF800U);
 }
 
