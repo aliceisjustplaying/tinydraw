@@ -39,9 +39,11 @@ if(TINYDRAW_PRODUCTION_OVERVIEW_WALK OR TINYDRAW_PRODUCTION_LIVE_APP)
     set(TINYDRAW_PRODUCTION_CORE_SRCS
       "${TINYDRAW_CORE}/src/coverage_tile.cpp"
       "${TINYDRAW_CORE}/src/ink_stream.cpp"
+      "${TINYDRAW_CORE}/src/realistic_workload.cpp"
       "${TINYDRAW_CORE}/src/ribbon_geometry.cpp"
       "${TINYDRAW_CORE}/src/ribbon_renderer.cpp"
       "${TINYDRAW_CORE}/src/toolbar.cpp"
+      "${TINYDRAW_CORE}/src/vector_document.cpp"
     )
   endif()
   set(TINYDRAW_APP_SRCS

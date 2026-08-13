@@ -10,6 +10,7 @@ namespace tinydraw::esp32 {
 namespace {
 
 constexpr std::uint16_t kBackground = 0xFFFFU;
+constexpr int kToolbarTop = 372;
 
 production::PixelRect align_bounds(production::PixelRect bounds) {
   bounds.x0 &= ~1;
@@ -28,16 +29,19 @@ production::PixelRect align_bounds(production::PixelRect bounds) {
 ProductionLivePresenter::ProductionLivePresenter(production::MaterializedCanvas& canvas,
                                                  production::DisplayScheduler& scheduler,
                                                  Co5300PanelTransport& display,
-                                                 std::span<std::uint16_t> frame_pixels)
+                                                 std::span<std::uint16_t> frame_pixels,
+                                                 std::span<std::uint16_t> region_pixels)
     : canvas_(canvas),
       scheduler_(scheduler),
       display_(display),
       frame_(frame_pixels),
+      region_(region_pixels),
       renderer_(std::make_unique<RibbonRenderer>()) {}
 
 bool ProductionLivePresenter::ready() const {
   return canvas_.ready() && scheduler_.ready() && display_.ready() &&
-         frame_.size() == production::kOverviewPixels && renderer_ != nullptr;
+         frame_.size() == production::kOverviewPixels &&
+         region_.size() >= production::kTileProducerPixels && renderer_ != nullptr;
 }
 
 production::ZoomLevel ProductionLivePresenter::zoom() const { return zoom_; }
@@ -76,6 +80,59 @@ LivePresentationTiming ProductionLivePresenter::refresh(const ToolbarState& tool
   draw_toolbar(frame_, production::kOverviewWidth, production::kOverviewHeight, toolbar);
   return present({0, 0, production::kOverviewWidth, production::kOverviewHeight}, event_us,
                  esp_timer_get_time() - compose_started);
+}
+
+LivePresentationTiming ProductionLivePresenter::refresh_region(production::PixelRect level_bounds,
+                                                               std::uint32_t event_us) {
+  const production::PixelRect view{level_x_, level_y_, level_x_ + production::kOverviewWidth,
+                                   level_y_ + kToolbarTop};
+  const production::PixelRect intersection{
+      .x0 = std::max(view.x0, level_bounds.x0),
+      .y0 = std::max(view.y0, level_bounds.y0),
+      .x1 = std::min(view.x1, level_bounds.x1),
+      .y1 = std::min(view.y1, level_bounds.y1),
+  };
+  if (intersection.x1 <= intersection.x0 || intersection.y1 <= intersection.y0) {
+    return {.passed = true};
+  }
+  production::PixelRect panel{
+      .x0 = intersection.x0 - level_x_,
+      .y0 = intersection.y0 - level_y_,
+      .x1 = intersection.x1 - level_x_,
+      .y1 = intersection.y1 - level_y_,
+  };
+  panel = align_bounds(panel);
+  panel.y1 = std::min(panel.y1, kToolbarTop);
+  const production::PixelRect aligned_level{
+      .x0 = level_x_ + panel.x0,
+      .y0 = level_y_ + panel.y0,
+      .x1 = level_x_ + panel.x1,
+      .y1 = level_y_ + panel.y1,
+  };
+  return compose_and_present(aligned_level, panel, event_us);
+}
+
+LivePresentationTiming ProductionLivePresenter::compose_and_present(
+    production::PixelRect level_bounds, production::PixelRect panel_bounds,
+    std::uint32_t event_us) {
+  const int width = panel_bounds.x1 - panel_bounds.x0;
+  const int height = panel_bounds.y1 - panel_bounds.y0;
+  if (width <= 0 || height <= 0) {
+    return {.passed = true};
+  }
+  const std::size_t pixel_count = static_cast<std::size_t>(width) * height;
+  if (region_.size() < pixel_count) {
+    return {};
+  }
+  const std::int64_t compose_started = esp_timer_get_time();
+  const auto destination = region_.first(pixel_count);
+  const auto stats =
+      canvas_.compose_view({.zoom = zoom_, .level_pixels = level_bounds}, destination);
+  if (!stats.has_value()) {
+    return {};
+  }
+  return present_pixels(panel_bounds, destination, width, event_us,
+                        esp_timer_get_time() - compose_started);
 }
 
 LivePresentationTiming ProductionLivePresenter::show_start(InkPoint point, std::uint16_t color,
@@ -139,13 +196,27 @@ LivePresentationTiming ProductionLivePresenter::pan_from(int start_x, int start_
 LivePresentationTiming ProductionLivePresenter::present(production::PixelRect bounds,
                                                         std::uint32_t event_us,
                                                         std::int64_t compose_us) {
-  LivePresentationTiming timing{.compose_us = compose_us};
   bounds = align_bounds(bounds);
   if (bounds.x1 <= bounds.x0 || bounds.y1 <= bounds.y0) {
+    return {.compose_us = compose_us};
+  }
+  const auto pixels =
+      frame_.subspan(static_cast<std::size_t>(bounds.y0 * production::kOverviewWidth + bounds.x0));
+  return present_pixels(bounds, pixels, production::kOverviewWidth, event_us, compose_us);
+}
+
+LivePresentationTiming ProductionLivePresenter::present_pixels(
+    production::PixelRect bounds, std::span<const std::uint16_t> pixels, int stride,
+    std::uint32_t event_us, std::int64_t compose_us) {
+  LivePresentationTiming timing{.compose_us = compose_us};
+  const int width = bounds.x1 - bounds.x0;
+  const int height = bounds.y1 - bounds.y0;
+  const std::size_t required =
+      static_cast<std::size_t>(height - 1) * static_cast<std::size_t>(stride) + width;
+  if (width <= 0 || height <= 0 || stride < width || pixels.size() < required) {
     return timing;
   }
   scheduler_.require_revision(canvas_.current_revision());
-  const int width = bounds.x1 - bounds.x0;
   int rows_per_strip = std::max(2, 8'192 / width);
   rows_per_strip &= ~1;
   const std::uint32_t submits_before = display_.submit_count();
@@ -153,12 +224,11 @@ LivePresentationTiming ProductionLivePresenter::present(production::PixelRect bo
   for (int y = bounds.y0; y < bounds.y1; y += rows_per_strip) {
     const int rows = std::min(rows_per_strip, bounds.y1 - y);
     const production::PixelRect strip_bounds{bounds.x0, y, bounds.x1, y + rows};
-    const auto pixels =
-        frame_.subspan(static_cast<std::size_t>(y * production::kOverviewWidth + bounds.x0));
+    const auto strip_pixels = pixels.subspan(static_cast<std::size_t>(y - bounds.y0) * stride);
     const auto sequence = scheduler_.schedule({.revision = canvas_.current_revision(),
                                                .panel_bounds = strip_bounds,
-                                               .pixels = pixels,
-                                               .stride = production::kOverviewWidth});
+                                               .pixels = strip_pixels,
+                                               .stride = stride});
     const auto scheduled = scheduler_.front();
     if (!sequence.has_value() || !scheduled.has_value() || scheduled->sequence != *sequence) {
       return timing;
