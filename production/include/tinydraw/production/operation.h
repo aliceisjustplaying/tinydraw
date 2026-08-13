@@ -14,8 +14,9 @@ enum class OperationTool : std::uint8_t {
   kEraser,
 };
 
-// Append-time sample encoding. Coordinates are quarter world units; radius is
-// 1/256 world units; elapsed time is relative to the operation start.
+// Append-time sample encoding. Coordinates are quarter world units; centers
+// may lie on the clipped right/bottom world edge. Radius is 1/256 world units
+// across the full uint16 range; elapsed time is relative to operation start.
 struct CompactOperationSample {
   std::uint16_t x_quarter = 0;
   std::uint16_t y_quarter = 0;

@@ -7,6 +7,7 @@ namespace tinydraw::production {
 namespace {
 
 constexpr std::uint16_t kBackground = 0xFFFFU;
+constexpr float kMaximumRasterStep = 32.0F;
 
 struct Sample {
   float x = 0;
@@ -104,6 +105,27 @@ void paint_segment(const Sample& first, const Sample& second, std::uint16_t colo
   }
 }
 
+Sample interpolate(const Sample& first, const Sample& second, float amount) {
+  return {
+      .x = first.x + amount * (second.x - first.x),
+      .y = first.y + amount * (second.y - first.y),
+      .radius = first.radius + amount * (second.radius - first.radius),
+  };
+}
+
+void paint_bounded_segment(const Sample& first, const Sample& second, std::uint16_t color,
+                           const RasterSurface& surface) {
+  const float span = std::max(std::abs(second.x - first.x), std::abs(second.y - first.y));
+  const int steps = std::max(1, static_cast<int>(std::ceil(span / kMaximumRasterStep)));
+  Sample prior = first;
+  for (int step = 1; step <= steps; ++step) {
+    const Sample next =
+        interpolate(first, second, static_cast<float>(step) / static_cast<float>(steps));
+    paint_segment(prior, next, color, surface);
+    prior = next;
+  }
+}
+
 PixelRect operation_bounds(const IncrementalOperation& operation, ZoomLevel zoom) {
   const auto world = operation_world_bounds(operation.samples);
   if (!world.has_value()) {
@@ -129,24 +151,24 @@ bool apply_incremental_operation(const IncrementalOperation& operation,
       operation.tool == OperationTool::kEraser ? kBackground : operation.color;
   if (operation.samples.size() == 1U) {
     const Sample sample = scaled_sample(operation.samples.front(), surface.zoom);
-    paint_segment(sample, sample, color, surface);
+    paint_bounded_segment(sample, sample, color, surface);
     return true;
   }
   for (std::size_t index = 1; index < operation.samples.size(); ++index) {
-    paint_segment(scaled_sample(operation.samples[index - 1U], surface.zoom),
-                  scaled_sample(operation.samples[index], surface.zoom), color, surface);
+    paint_bounded_segment(scaled_sample(operation.samples[index - 1U], surface.zoom),
+                          scaled_sample(operation.samples[index], surface.zoom), color, surface);
   }
   return true;
 }
 
-std::optional<std::size_t> affected_tiles(const IncrementalOperation& operation, ZoomLevel zoom,
-                                          std::span<TileKey> output) {
+std::optional<AffectedTileResult> affected_tiles(const IncrementalOperation& operation,
+                                                 ZoomLevel zoom, std::span<TileKey> output) {
   if (zoom == ZoomLevel::k25Percent || operation.samples.empty()) {
     return std::nullopt;
   }
   const PixelRect bounds = operation_bounds(operation, zoom);
   if (bounds.x1 <= bounds.x0 || bounds.y1 <= bounds.y0) {
-    return std::size_t{0};
+    return AffectedTileResult{};
   }
   const int first_column = bounds.x0 / kTileWidth;
   const int last_column = (bounds.x1 - 1) / kTileWidth;
@@ -154,16 +176,14 @@ std::optional<std::size_t> affected_tiles(const IncrementalOperation& operation,
   const int last_row = (bounds.y1 - 1) / kTileHeight;
   const std::size_t required = static_cast<std::size_t>(last_column - first_column + 1) *
                                static_cast<std::size_t>(last_row - first_row + 1);
-  if (output.size() < required) {
-    return std::nullopt;
-  }
-  std::size_t count = 0;
-  for (int row = first_row; row <= last_row; ++row) {
-    for (int column = first_column; column <= last_column; ++column) {
-      output[count++] = {zoom, static_cast<std::uint16_t>(column), static_cast<std::uint16_t>(row)};
+  std::size_t written = 0;
+  for (int row = first_row; row <= last_row && written < output.size(); ++row) {
+    for (int column = first_column; column <= last_column && written < output.size(); ++column) {
+      output[written++] = {zoom, static_cast<std::uint16_t>(column),
+                           static_cast<std::uint16_t>(row)};
     }
   }
-  return count;
+  return AffectedTileResult{.required = required, .written = written};
 }
 
 }  // namespace tinydraw::production
