@@ -1,6 +1,7 @@
 #ifndef TINYDRAW_VECTOR_V2_MATERIALIZED_CANVAS_H
 #define TINYDRAW_VECTOR_V2_MATERIALIZED_CANVAS_H
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -30,6 +31,7 @@ inline constexpr std::size_t kOccupancyCellCount =
     static_cast<std::size_t>(kOccupancyColumns) * kOccupancyRows;
 inline constexpr std::size_t kOccupancyBytes = (kOccupancyCellCount + 7U) / 8U;
 inline constexpr std::size_t kMaterializedTileIdentityCount = 168U + 644U + 2'576U + 10'304U;
+inline constexpr std::size_t kTiledZoomCount = 4;
 
 enum class ZoomLevel : std::uint8_t {
   k25Percent,
@@ -132,6 +134,12 @@ struct TileRevisionPublication {
 struct ViewRequest {
   ZoomLevel zoom = ZoomLevel::k25Percent;
   PixelRect level_pixels{};
+};
+
+struct ViewFootprint {
+  ZoomLevel zoom = ZoomLevel::k25Percent;
+  PixelRect level_pixels{};
+  bool valid = false;
 };
 
 struct ViewCompositionStats {
@@ -251,6 +259,10 @@ class MaterializedCanvas {
   [[nodiscard]] bool validate(const PinnedSource& source) const;
   [[nodiscard]] std::size_t pins_outstanding() const;
   [[nodiscard]] bool mark_used(TileKey key);
+  // Softly protects one recent viewport at each tiled zoom. Protection only
+  // changes eviction order: an unpinned protected tile can still be replaced
+  // when every raw slot belongs to remembered footprints.
+  [[nodiscard]] bool remember_view(const ViewRequest& view);
   // Discards every raster tile while retaining document revision and complete
   // overview authority. Used for cold-cache transitions and snapshot policy;
   // fails while any source is pinned.
@@ -278,6 +290,7 @@ class MaterializedCanvas {
   [[nodiscard]] std::optional<std::size_t> find_tile(TileKey key) const;
   [[nodiscard]] std::optional<std::size_t> find_uniform(TileKey key) const;
   [[nodiscard]] std::optional<std::size_t> choose_slot() const;
+  [[nodiscard]] std::uint8_t protection_rank(TileKey key) const;
   [[nodiscard]] SourceSelection select_overview(TileKey requested) const;
   [[nodiscard]] SourceSelection select_uniform(TileKey requested, std::size_t index) const;
   [[nodiscard]] bool valid_incremental_revision(
@@ -332,6 +345,8 @@ class MaterializedCanvas {
   std::uint32_t overview_pin_count_ = 0;
   std::uint32_t uniform_pin_count_ = 0;
   std::uint64_t composition_epoch_ = 1;
+  std::array<ViewFootprint, kTiledZoomCount> recent_views_{};
+  ZoomLevel active_view_zoom_ = ZoomLevel::k25Percent;
   bool overview_valid_ = false;
 };
 

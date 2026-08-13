@@ -232,6 +232,45 @@ TEST_CASE("cache retains every zoom viewport across a disjoint pan fill") {
             ->kind == vector_v2::SourceKind::kTileSlot);
 }
 
+TEST_CASE("recent view footprints softly outrank global LRU eviction") {
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
+  std::array<vector_v2::MaterializedSlotStorage, 3> slots{};
+  std::array<std::uint16_t, slots.size() * vector_v2::kTilePixels> tile_storage{};
+  std::array<std::uint16_t, vector_v2::kTilePixels> tile{};
+  vector_v2::MaterializedCanvas canvas(overview, slots, tile_storage);
+  REQUIRE(canvas.publish_overview({0}, overview));
+  const vector_v2::TileKey protected_inactive{vector_v2::ZoomLevel::k100Percent, 0, 0};
+  const vector_v2::TileKey protected_active{vector_v2::ZoomLevel::k400Percent, 0, 0};
+  const vector_v2::TileKey unprotected{vector_v2::ZoomLevel::k400Percent, 8, 8};
+  REQUIRE(canvas.publish_tile(protected_inactive, {0},
+                              vector_v2::MaterializationQuality::kImmediate, tile));
+  REQUIRE(canvas.publish_tile(protected_active, {0}, vector_v2::MaterializationQuality::kImmediate,
+                              tile));
+  REQUIRE(
+      canvas.publish_tile(unprotected, {0}, vector_v2::MaterializationQuality::kImmediate, tile));
+  REQUIRE(canvas.remember_view(
+      {.zoom = vector_v2::ZoomLevel::k100Percent, .level_pixels = {0, 0, 64, 64}}));
+  REQUIRE(canvas.remember_view(
+      {.zoom = vector_v2::ZoomLevel::k400Percent, .level_pixels = {0, 0, 64, 64}}));
+
+  REQUIRE(canvas.publish_tile({vector_v2::ZoomLevel::k400Percent, 9, 8}, {0},
+                              vector_v2::MaterializationQuality::kImmediate, tile));
+  CHECK(canvas.lookup(unprotected)->kind == vector_v2::SourceKind::kOverview);
+  CHECK(canvas.lookup(protected_inactive)->kind == vector_v2::SourceKind::kTileSlot);
+  CHECK(canvas.lookup(protected_active)->kind == vector_v2::SourceKind::kTileSlot);
+
+  // Protection is soft: once all entries belong to remembered footprints,
+  // the inactive zoom yields before the active viewport rather than refusing.
+  REQUIRE(canvas.publish_tile({vector_v2::ZoomLevel::k400Percent, 1, 0}, {0},
+                              vector_v2::MaterializationQuality::kImmediate, tile));
+  REQUIRE(canvas.remember_view(
+      {.zoom = vector_v2::ZoomLevel::k400Percent, .level_pixels = {0, 0, 128, 64}}));
+  REQUIRE(canvas.publish_tile({vector_v2::ZoomLevel::k400Percent, 2, 0}, {0},
+                              vector_v2::MaterializationQuality::kImmediate, tile));
+  CHECK(canvas.lookup(protected_inactive)->kind == vector_v2::SourceKind::kOverview);
+  CHECK(canvas.lookup(protected_active)->kind == vector_v2::SourceKind::kTileSlot);
+}
+
 TEST_CASE("composing a tile refreshes its LRU recency") {
   std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
   std::array<vector_v2::MaterializedSlotStorage, 2> slots{};

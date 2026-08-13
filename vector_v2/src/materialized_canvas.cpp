@@ -676,6 +676,18 @@ std::optional<std::size_t> MaterializedCanvas::find_uniform(TileKey key) const {
   return index;
 }
 
+std::uint8_t MaterializedCanvas::protection_rank(TileKey key) const {
+  const auto index = static_cast<std::size_t>(key.zoom) - 1U;
+  if (key.zoom == ZoomLevel::k25Percent || index >= recent_views_.size()) {
+    return 0U;
+  }
+  const ViewFootprint& footprint = recent_views_[index];
+  if (!footprint.valid || !rectangles_intersect(tile_pixel_bounds(key), footprint.level_pixels)) {
+    return 0U;
+  }
+  return key.zoom == active_view_zoom_ ? 2U : 1U;
+}
+
 std::optional<std::size_t> MaterializedCanvas::choose_slot() const {
   const auto available = std::find_if(slots_.begin(), slots_.end(), [](const auto& slot) {
     return !slot.occupied_ && slot.pin_count_ == 0U;
@@ -684,9 +696,9 @@ std::optional<std::size_t> MaterializedCanvas::choose_slot() const {
     return static_cast<std::size_t>(available - slots_.begin());
   }
   const auto oldest =
-      std::min_element(slots_.begin(), slots_.end(), [](const auto& left, const auto& right) {
-        return std::tuple(left.pin_count_ != 0U, left.last_use_) <
-               std::tuple(right.pin_count_ != 0U, right.last_use_);
+      std::min_element(slots_.begin(), slots_.end(), [this](const auto& left, const auto& right) {
+        return std::tuple(left.pin_count_ != 0U, protection_rank(left.key_), left.last_use_) <
+               std::tuple(right.pin_count_ != 0U, protection_rank(right.key_), right.last_use_);
       });
   if (oldest == slots_.end() || oldest->pin_count_ != 0U) {
     return std::nullopt;
@@ -960,6 +972,23 @@ bool MaterializedCanvas::mark_used(TileKey key) {
     return true;
   }
   return find_uniform(key).has_value();
+}
+
+bool MaterializedCanvas::remember_view(const ViewRequest& view) {
+  const int width = view.level_pixels.x1 - view.level_pixels.x0;
+  const int height = view.level_pixels.y1 - view.level_pixels.y0;
+  const std::size_t pixel_count =
+      static_cast<std::size_t>(std::max(width, 0)) * static_cast<std::size_t>(std::max(height, 0));
+  if (!ready() || view.zoom == ZoomLevel::k25Percent || !valid_view(view, pixel_count)) {
+    return false;
+  }
+  const auto index = static_cast<std::size_t>(view.zoom) - 1U;
+  if (index >= recent_views_.size()) {
+    return false;
+  }
+  recent_views_[index] = {.zoom = view.zoom, .level_pixels = view.level_pixels, .valid = true};
+  active_view_zoom_ = view.zoom;
+  return true;
 }
 
 bool MaterializedCanvas::discard_tiles() {

@@ -88,6 +88,9 @@ LivePresentationTiming VectorV2Presenter::refresh(const ToolbarState& toolbar,
   frame_level_y_ = level_y();
   frame_epoch_ = canvas_.composition_epoch();
   frame_reusable_ = timing.passed && stats->fallback_pixels == 0U;
+  if (zoom() != vector_v2::ZoomLevel::k25Percent) {
+    static_cast<void>(canvas_.remember_view(navigation_.view()));
+  }
   return timing;
 }
 
@@ -284,6 +287,7 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   auto timing = present({0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight}, event_us,
                         esp_timer_get_time() - started);
   timing.frame_reused = true;
+  static_cast<void>(canvas_.remember_view(navigation_.view()));
   frame_level_x_ = level_x();
   frame_level_y_ = level_y();
   frame_epoch_ = canvas_.composition_epoch();
