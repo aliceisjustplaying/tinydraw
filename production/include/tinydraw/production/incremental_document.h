@@ -31,6 +31,13 @@ struct IncrementalAppendResult {
     OperationLog& log, MaterializedCanvas& canvas, const OperationAppend& append_request,
     const IncrementalDocumentWorkspace& workspace);
 
+// Coordinates an authoritative snapshot restore. The caller-owned pixels must
+// not alias log or canvas storage. Validation is completed before either state
+// module changes. Callers must serialize access.
+[[nodiscard]] bool restore_document_snapshot(OperationLog& log, MaterializedCanvas& canvas,
+                                             DocumentRevision revision,
+                                             std::span<const std::uint16_t> overview_pixels);
+
 }  // namespace tinydraw::production
 
 #endif  // TINYDRAW_PRODUCTION_INCREMENTAL_DOCUMENT_H

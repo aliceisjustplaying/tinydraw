@@ -99,8 +99,11 @@ bool submit_strip(DisplayScheduler& scheduler, Co5300PanelTransport& display,
   display.push_rect(bounds.x0, bounds.y0, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0,
                     scheduled->strip.pixels.data(), scheduled->strip.stride);
   const bool staged = display.push_count() == pushes_before + 1U;
-  const bool completed = scheduler.complete(*sequence);
-  return staged && completed;
+  if (!staged) {
+    static_cast<void>(scheduler.abort(*sequence));
+    return false;
+  }
+  return scheduler.complete(*sequence);
 }
 
 bool present_overview(Co5300PanelTransport& display, DisplayScheduler& scheduler,

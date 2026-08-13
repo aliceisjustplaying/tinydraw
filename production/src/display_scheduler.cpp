@@ -53,6 +53,22 @@ bool DisplayScheduler::complete(std::uint32_t sequence) {
   return true;
 }
 
+bool DisplayScheduler::abort(std::uint32_t sequence) {
+  if (count_ == 0U || sequence != front_sequence_ || sequence != in_flight_sequence_) {
+    return false;
+  }
+  head_ = (head_ + 1U) % queue_.size();
+  --count_;
+  ++rejected_;
+  in_flight_sequence_ = 0U;
+  front_sequence_ = count_ == 0U ? 0U : sequence + 1U;
+  if (front_sequence_ == 0U && count_ != 0U) {
+    front_sequence_ = 1U;
+  }
+  drop_stale_front();
+  return true;
+}
+
 void DisplayScheduler::require_revision(DocumentRevision revision) {
   required_revision_ = revision;
   drop_stale_front();

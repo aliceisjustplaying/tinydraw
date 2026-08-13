@@ -179,6 +179,11 @@ class MaterializedCanvas {
   // a distinct source buffer. Callers must serialize all canvas operations.
   [[nodiscard]] bool publish_overview(DocumentRevision revision,
                                       std::span<const std::uint16_t> pixels);
+  // Replaces materialization from a snapshot at any revision and invalidates
+  // every tile. This is not an ordinary revision publication. Fails while a
+  // source is pinned or when pixels alias owned canvas storage.
+  [[nodiscard]] bool restore_snapshot(DocumentRevision revision,
+                                      std::span<const std::uint16_t> pixels);
   // Commits exactly the next document revision. Tiles intersecting the
   // conservative world bounds are affected at every zoom; affected resident
   // tiles without a publication become overview fallback. Every input is

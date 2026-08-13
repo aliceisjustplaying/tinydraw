@@ -43,6 +43,8 @@ class DisplayScheduler {
   // front marks the returned strip in flight until complete succeeds.
   [[nodiscard]] std::optional<ScheduledStrip> front();
   [[nodiscard]] bool complete(std::uint32_t sequence);
+  // Retires an in-flight strip that transport could not stage.
+  [[nodiscard]] bool abort(std::uint32_t sequence);
   void require_revision(DocumentRevision revision);
   [[nodiscard]] DisplaySchedulerStats stats() const;
 

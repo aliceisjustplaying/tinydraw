@@ -90,6 +90,8 @@ std::size_t OperationLog::operation_capacity() const { return records_.size(); }
 
 std::size_t OperationLog::sample_capacity() const { return samples_.size(); }
 
+bool OperationLog::can_reset() const { return !append_pending_; }
+
 bool OperationLog::workspace_overlaps_storage(std::span<const std::uint16_t> pixels) const {
   const auto overlaps = [pixels](const auto& storage) {
     const auto* pixels_begin = reinterpret_cast<const std::byte*>(pixels.data());
@@ -191,20 +193,20 @@ std::optional<StoredOperation> OperationLog::operation(std::size_t index) const 
   };
 }
 
-void OperationLog::reset(DocumentRevision revision) {
+bool OperationLog::reset(DocumentRevision revision) {
   if (append_pending_) {
-    return;
+    return false;
   }
   operation_count_ = 0;
   sample_count_ = 0;
   base_revision_ = revision;
   revision_ = revision;
-  append_pending_ = false;
   pending_sample_count_ = 0;
   pending_token_ = 0;
+  return true;
 }
 
-void OperationLog::clear() { reset(); }
+bool OperationLog::clear() { return reset(); }
 
 bool OperationLog::valid_append(const OperationAppend& append_request) const {
   if (!ready() || append_pending_ || append_request.samples.empty() ||
