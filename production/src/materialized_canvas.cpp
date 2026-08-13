@@ -1,6 +1,7 @@
 #include "tinydraw/production/materialized_canvas.h"
 
 #include <algorithm>
+#include <functional>
 #include <limits>
 #include <numeric>
 #include <tuple>
@@ -46,7 +47,8 @@ bool spans_overlap(std::span<Left> left, std::span<Right> right) {
   const auto* left_end = left_begin + left.size_bytes();
   const auto* right_begin = reinterpret_cast<const std::byte*>(right.data());
   const auto* right_end = right_begin + right.size_bytes();
-  return left_begin < right_end && right_begin < left_end;
+  const std::less<const std::byte*> less;
+  return less(left_begin, right_end) && less(right_begin, left_end);
 }
 
 }  // namespace

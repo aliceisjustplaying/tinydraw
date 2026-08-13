@@ -1,6 +1,7 @@
 #include "tinydraw/production/incremental_document.h"
 
 #include <algorithm>
+#include <functional>
 
 namespace tinydraw::production {
 namespace {
@@ -11,7 +12,8 @@ bool spans_overlap(std::span<Left> left, std::span<Right> right) {
   const auto* left_end = left_begin + left.size_bytes();
   const auto* right_begin = reinterpret_cast<const std::byte*>(right.data());
   const auto* right_end = right_begin + right.size_bytes();
-  return left_begin < right_end && right_begin < left_end;
+  const std::less<const std::byte*> less;
+  return less(left_begin, right_end) && less(right_begin, left_end);
 }
 
 bool prepare_tile(const MaterializedCanvas& canvas, const IncrementalOperation& operation,
@@ -45,6 +47,8 @@ std::optional<IncrementalAppendResult> append_incrementally(
       workspace.next_overview.size() != kOverviewPixels ||
       !canvas.accepts_external_workspace(workspace.next_overview) ||
       !canvas.accepts_external_workspace(workspace.tile_scratch) ||
+      log.workspace_overlaps_storage(workspace.next_overview) ||
+      log.workspace_overlaps_storage(workspace.tile_scratch) ||
       spans_overlap(workspace.next_overview, workspace.tile_scratch) ||
       workspace.publications.size() > workspace.tile_scratch.size() / kTilePixels ||
       workspace.affected_keys.size() < workspace.publications.size() ||
@@ -56,6 +60,7 @@ std::optional<IncrementalAppendResult> append_incrementally(
     return std::nullopt;
   }
   const StoredOperation& stored = prepared->operation();
+  const OperationIdentity identity = stored.identity;
   const IncrementalOperation operation{
       .tool = stored.tool, .color = stored.color, .samples = stored.samples};
   std::copy_n(canvas.overview_pixels().begin(), kOverviewPixels, workspace.next_overview.begin());
@@ -86,7 +91,7 @@ std::optional<IncrementalAppendResult> append_incrementally(
     return std::nullopt;
   }
   prepared->publish();
-  return IncrementalAppendResult{.identity = stored.identity,
+  return IncrementalAppendResult{.identity = identity,
                                  .affected_resident_tiles = *resident_count,
                                  .published_tiles = *resident_count};
 }

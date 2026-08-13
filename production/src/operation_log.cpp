@@ -1,6 +1,7 @@
 #include "tinydraw/production/operation_log.h"
 
 #include <algorithm>
+#include <functional>
 #include <limits>
 
 namespace tinydraw::production {
@@ -57,6 +58,7 @@ void PreparedAppend::publish() {
   if (owner_ != nullptr) {
     owner_->publish_prepared(*this);
     owner_ = nullptr;
+    operation_ = {};
     token_ = 0;
   }
 }
@@ -65,6 +67,7 @@ void PreparedAppend::cancel() {
   if (owner_ != nullptr) {
     owner_->cancel_prepared(*this);
     owner_ = nullptr;
+    operation_ = {};
     token_ = 0;
   }
 }
@@ -84,6 +87,18 @@ std::size_t OperationLog::sample_count() const { return sample_count_; }
 std::size_t OperationLog::operation_capacity() const { return records_.size(); }
 
 std::size_t OperationLog::sample_capacity() const { return samples_.size(); }
+
+bool OperationLog::workspace_overlaps_storage(std::span<const std::uint16_t> pixels) const {
+  const auto overlaps = [pixels](const auto& storage) {
+    const auto* pixels_begin = reinterpret_cast<const std::byte*>(pixels.data());
+    const auto* pixels_end = pixels_begin + pixels.size_bytes();
+    const auto* storage_begin = reinterpret_cast<const std::byte*>(storage.data());
+    const auto* storage_end = storage_begin + storage.size_bytes();
+    const std::less<const std::byte*> less;
+    return less(pixels_begin, storage_end) && less(storage_begin, pixels_end);
+  };
+  return overlaps(records_) || overlaps(samples_);
+}
 
 std::optional<PreparedAppend> OperationLog::prepare(const OperationAppend& append_request) {
   if (!valid_append(append_request)) {
@@ -115,6 +130,9 @@ std::optional<PreparedAppend> OperationLog::prepare(const OperationAppend& appen
 }
 
 void OperationLog::publish_prepared(const PreparedAppend& prepared) {
+  if (!append_pending_ || prepared.token_ != pending_token_) {
+    return;
+  }
   const PixelRect bounds = prepared.operation_.world_bounds;
   records_[operation_count_] = {
       .first_sample = static_cast<std::uint32_t>(sample_count_),
@@ -134,7 +152,10 @@ void OperationLog::publish_prepared(const PreparedAppend& prepared) {
   pending_token_ = 0;
 }
 
-void OperationLog::cancel_prepared(const PreparedAppend&) {
+void OperationLog::cancel_prepared(const PreparedAppend& prepared) {
+  if (!append_pending_ || prepared.token_ != pending_token_) {
+    return;
+  }
   append_pending_ = false;
   pending_sample_count_ = 0;
   pending_token_ = 0;

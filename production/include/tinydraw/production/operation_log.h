@@ -26,8 +26,9 @@ struct StoredOperation {
 
 class OperationLog;
 
-// Move-only preparation owned by one OperationLog. Destruction cancels an
-// unpublished preparation. publish() is infallible for a live preparation.
+// Move-only preparation owned by one OperationLog. It must not outlive that
+// log. Destruction cancels an unpublished preparation. publish() is infallible
+// for a live preparation.
 class PreparedAppend {
  public:
   ~PreparedAppend();
@@ -62,6 +63,7 @@ class OperationLog {
   [[nodiscard]] std::size_t sample_count() const;
   [[nodiscard]] std::size_t operation_capacity() const;
   [[nodiscard]] std::size_t sample_capacity() const;
+  [[nodiscard]] bool workspace_overlaps_storage(std::span<const std::uint16_t> pixels) const;
 
   // Preparation copies into unused caller storage but does not advance document
   // authority. Exactly one append may be prepared. Publish is valid only for

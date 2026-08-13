@@ -4,7 +4,7 @@
 
 #include "driver/gpio.h"
 #include "esp_lcd_touch_cst816s.h"
-#include "tinydraw/graphics/world_canvas.h"
+#include "tinydraw/geometry.h"
 
 namespace tinydraw::esp32 {
 
