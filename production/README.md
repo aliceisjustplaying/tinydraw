@@ -158,12 +158,25 @@ provides this transactional behavior:
    republished from incremental scratch later; operations 1…N−1 are never
    replayed.
 
+Affected identity is now expressed as conservative world bounds, so an
+operation cannot accidentally carry stale intersecting residents at other zooms
+forward as current. `append_incrementally` owns the prepare/render/commit/publish
+ordering behind one host-tested interface: prepared samples are not authoritative
+until the overview and every affected resident tile have been rendered and the
+canvas revision commits. Its overview, tile scratch, publication, and key spans
+are caller-owned and alias-checked.
+
 The interface expresses a revision plus bounded affected-tile publications; it
 does not expose mutable pool storage or renderer callbacks. Tile size and slot
 count remain provisional and may change after captured workloads. Shared read
 pins protect source storage only while a display adapter copies it into DMA
 staging; `pins_outstanding()` is the fail-closed diagnostic. Renderer work never
 holds a pin while waiting for panel capacity.
+
+The immediate renderer is intentionally opaque and hard-edged; publications are
+labeled `kSettled`, not `kExact`. Long sparse segments are subdivided into bounded
+raster steps, and tile enumeration reports required versus written capacity.
+Anti-aliased settled convergence remains Task #56.
 
 The exclusive first hardware proof is
 [`hardware-receipts/b73f91e-incremental-revision-walk.log`](hardware-receipts/b73f91e-incremental-revision-walk.log).

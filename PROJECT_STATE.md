@@ -6,7 +6,7 @@ Last updated: 2026-08-13
 
 Branch: `feat/vector-canvas-production`
 
-The camera-aligned vector/materialized-cache prototype is complete and rejected as a product architecture. Tasks #52, #53, #54a, and the bounded immediate path of #55 now exist under `production/`. A fixed-capacity ordered `OperationLog` is the first production document authority; `MaterializedCanvas` commits conservative world-bounds invalidation across every zoom; and compact pen and eraser operations update the complete overview plus affected resident tiles without replaying prior operations. The exact-commit hardware walk appended both operations through the log and passed them through the panel at revisions 1 and 2. These receipts do not close representative capacity, settled rendering, concurrency, coexistence, or interactive-pan gates. The branch is not ready to ship.
+The camera-aligned vector/materialized-cache prototype is complete and rejected as a product architecture. Tasks #52, #53, #54a, and the bounded immediate path of #55 now exist under `production/`. A fixed-capacity ordered `OperationLog` is the first production document authority; `MaterializedCanvas` commits conservative world-bounds invalidation across every zoom; and the host-tested `append_incrementally` coordinator prepares storage, renders the complete overview and all affected resident tiles, commits materialization, then publishes document authority. Compact pen and eraser operations do not replay prior operations. The coordinator passed on hardware at revisions 1 and 2 with deterministic panel output; a later alias guard is host-proven but does not change the non-aliased hardware path. These receipts do not close representative capacity, settled rendering, concurrency, coexistence, or interactive-pan gates. The branch is not ready to ship.
 
 The default firmware still runs the existing raster-authoritative product:
 
@@ -85,13 +85,13 @@ Correctness requirements are stroke presence, painter order, eraser behavior, an
 
 Continue #55 without growing `hardware_app.cpp`:
 
-1. extract the narrow append/materialization coordinator from the hardware walk into a host-tested production module;
-2. make the coordinator render every affected resident tile available to it, while missing resident publications safely invalidate to overview fallback;
-3. preserve the proven immediate rasterizer; anti-aliased settled quality belongs to the later settled-render path rather than this commit seam;
-4. exercise a representative multi-operation sequence and capacity boundaries before default-loop integration;
-5. keep pulling the minimum display scheduler seam forward so live hardware can prove interaction without moving production policy into `hardware_app.cpp`.
+1. complete the pending fresh Fable follow-up review after the CLI session limit resets; the first review found and prompted the now-fixed cross-zoom stale-tile defect;
+2. exercise a representative multi-operation sequence and capacity boundaries rather than only two operations;
+3. preserve the proven immediate rasterizer; anti-aliased settled quality belongs to Task #56 rather than this commit seam;
+4. pull the minimum display scheduler seam forward and build an exclusive live-touch adapter around `append_incrementally` without moving production policy into `hardware_app.cpp`;
+5. measure first feedback and mutation bursts on device before integrating the default product loop.
 
-The current exact-commit receipt is [`production/hardware-receipts/29c4d1d-transactional-operation-walk.log`](production/hardware-receipts/29c4d1d-transactional-operation-walk.log). It proves prepared operation storage remains non-authoritative until materialization commits, then log publication advances the same revision; it also proves opaque pen/eraser painter order, conservative state publication, deterministic panel hashes, transfer completion, zero panel rejection, and measured PSRAM headroom. It does not prove representative operation-log capacity, live touch integration, settled anti-aliasing, or interactive pan.
+The current exact-commit receipt is [`production/hardware-receipts/29c4d1d-transactional-operation-walk.log`](production/hardware-receipts/29c4d1d-transactional-operation-walk.log). The extracted coordinator itself passed at commit `119247d` with unchanged hashes and 47.8–48.8 ms append time; that is below the <100 ms first-feedback product gate, although the full live path remains unmeasured. The 48 ms cost is dominated by copying the 329,728-byte overview into publication storage and committing it back, not tile composition. The device was restored to default firmware at `c17e33c` and emitted `TINYDRAW_HARDWARE_OK`. These results do not prove representative operation-log capacity, live touch integration, settled anti-aliasing, or interactive pan.
 
 ## Validation baseline
 
