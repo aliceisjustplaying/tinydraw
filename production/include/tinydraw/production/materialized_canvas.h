@@ -260,6 +260,10 @@ class MaterializedCanvas {
 };
 
 [[nodiscard]] int zoom_percent(ZoomLevel zoom);
+// Maps valid world bounds to the complete set of overview pixels that can be
+// affected by the immediate rasterizer. The operation-bounds halo and
+// center-sampled minimum raster radius must preserve this contract.
+[[nodiscard]] PixelRect overview_bounds_for_world(PixelRect world_bounds);
 [[nodiscard]] TileGrid tile_grid(ZoomLevel zoom);
 [[nodiscard]] bool valid_tile_key(TileKey key);
 [[nodiscard]] std::optional<TileKey> tile_key_for_world(ZoomLevel zoom, WorldPoint point);

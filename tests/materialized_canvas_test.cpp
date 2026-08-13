@@ -60,6 +60,17 @@ TEST_CASE("world points map to bounded world-aligned tiles") {
                                              {production::kWorldWidth, 0}));
 }
 
+TEST_CASE("world bounds map to complete bounded overview regions") {
+  CHECK(production::overview_bounds_for_world({0, 0, 64, 64}) ==
+        production::PixelRect{0, 0, 16, 16});
+  CHECK(production::overview_bounds_for_world({1, 1, 63, 63}) ==
+        production::PixelRect{0, 0, 16, 16});
+  CHECK(production::overview_bounds_for_world(
+            {0, 0, production::kWorldWidth, production::kWorldHeight}) ==
+        production::PixelRect{0, 0, production::kOverviewWidth, production::kOverviewHeight});
+  CHECK(production::overview_bounds_for_world({0, 0, 0, 1}) == production::PixelRect{});
+}
+
 TEST_CASE("edge tiles clip to each zoom extent") {
   const production::TileGrid grid = production::tile_grid(production::ZoomLevel::k50Percent);
   CHECK(grid == production::TileGrid{12, 14});

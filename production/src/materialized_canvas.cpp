@@ -47,15 +47,6 @@ bool valid_overview_bounds(PixelRect bounds) {
          bounds.x1 <= kOverviewWidth && bounds.y1 <= kOverviewHeight;
 }
 
-PixelRect overview_bounds_for_world(PixelRect world_bounds) {
-  return {
-      .x0 = world_bounds.x0 / 4,
-      .y0 = world_bounds.y0 / 4,
-      .x1 = ceil_div(world_bounds.x1, 4),
-      .y1 = ceil_div(world_bounds.y1, 4),
-  };
-}
-
 }  // namespace
 
 int zoom_percent(ZoomLevel zoom) {
@@ -72,6 +63,18 @@ int zoom_percent(ZoomLevel zoom) {
       return 400;
   }
   return 0;
+}
+
+PixelRect overview_bounds_for_world(PixelRect world_bounds) {
+  if (!valid_world_bounds(world_bounds)) {
+    return {};
+  }
+  return {
+      .x0 = world_bounds.x0 / 4,
+      .y0 = world_bounds.y0 / 4,
+      .x1 = ceil_div(world_bounds.x1, 4),
+      .y1 = ceil_div(world_bounds.y1, 4),
+  };
 }
 
 TileGrid tile_grid(ZoomLevel zoom) {

@@ -5,10 +5,12 @@
 namespace tinydraw::production {
 namespace {
 
-// Immediate rendering keeps a 0.75 screen-pixel minimum radius. At the
-// coarsest tiled level (50%), that halo is 1.5 world units, or 6 quarter units.
-// World bounds must include it so intersecting resident tiles cannot be carried
-// forward stale when a very thin operation crosses a tile cut.
+// Immediate rendering keeps a center-sampled 0.75 screen-pixel minimum radius.
+// At the coarsest tiled level (50%), that halo is 1.5 world units, or 6 quarter
+// units. The same halo leaves 0.375 overview pixels around a thin centerline;
+// center sampling can paint only 0.25 pixels past that centerline at 25%, so
+// overview_bounds_for_world remains a complete clipping region. If raster
+// coverage or its minimum radius changes, preserve both contracts.
 constexpr int kMinimumTiledRadiusQuarter = 6;
 
 }  // namespace
