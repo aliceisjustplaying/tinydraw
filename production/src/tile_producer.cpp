@@ -212,7 +212,8 @@ TileProducer::SegmentBatch TileProducer::choose_segment_batch(
     const std::size_t height =
         (delta_y * scale + 399U) / 400U + (radius * scale + 12'799U) / 12'800U * 2U + 2U;
     const std::size_t work = width * height;
-    if (batch.segments != 0U && work > raster_work_budget - batch.raster_work) {
+    if (batch.segments != 0U && (batch.raster_work >= raster_work_budget ||
+                                 work > raster_work_budget - batch.raster_work)) {
       break;
     }
     ++batch.segments;
