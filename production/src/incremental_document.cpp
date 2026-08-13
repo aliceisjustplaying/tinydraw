@@ -5,6 +5,15 @@
 namespace tinydraw::production {
 namespace {
 
+template <typename Left, typename Right>
+bool spans_overlap(std::span<Left> left, std::span<Right> right) {
+  const auto* left_begin = reinterpret_cast<const std::byte*>(left.data());
+  const auto* left_end = left_begin + left.size_bytes();
+  const auto* right_begin = reinterpret_cast<const std::byte*>(right.data());
+  const auto* right_end = right_begin + right.size_bytes();
+  return left_begin < right_end && right_begin < left_end;
+}
+
 bool prepare_tile(const MaterializedCanvas& canvas, const IncrementalOperation& operation,
                   TileKey key, std::span<std::uint16_t> scratch,
                   TileRevisionPublication& publication) {
@@ -35,7 +44,8 @@ std::optional<IncrementalAppendResult> append_incrementally(
   if (workspace.next_overview.size() != kOverviewPixels ||
       !canvas.accepts_external_workspace(workspace.next_overview) ||
       !canvas.accepts_external_workspace(workspace.tile_scratch) ||
-      workspace.tile_scratch.size() < workspace.publications.size() * kTilePixels ||
+      spans_overlap(workspace.next_overview, workspace.tile_scratch) ||
+      workspace.publications.size() > workspace.tile_scratch.size() / kTilePixels ||
       workspace.affected_keys.size() < workspace.publications.size() ||
       log.current_revision() != canvas.current_revision()) {
     return std::nullopt;
