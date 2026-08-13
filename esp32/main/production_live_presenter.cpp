@@ -40,7 +40,7 @@ ProductionLivePresenter::ProductionLivePresenter(production::MaterializedCanvas&
 bool ProductionLivePresenter::ready() const {
   return canvas_.ready() && scheduler_.ready() && display_.ready() &&
          frame_.size() == production::kOverviewPixels &&
-         region_.size() >= production::kTileProducerPixels && renderer_ != nullptr;
+         region_.size() >= kMaximumProgressiveRegionPixels && renderer_ != nullptr;
 }
 
 production::ZoomLevel ProductionLivePresenter::zoom() const { return zoom_; }

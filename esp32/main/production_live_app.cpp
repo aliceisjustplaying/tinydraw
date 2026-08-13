@@ -112,7 +112,7 @@ struct AppStorage {
         allocate_array<std::uint16_t>(production::kTileSlotCount * production::kTilePixels);
     overview_scratch = allocate_array<std::uint16_t>(production::kOverviewPixels);
     tile_scratch = allocate_array<std::uint16_t>(kWorkspaceTileCapacity * production::kTilePixels);
-    region_scratch = allocate_array<std::uint16_t>(production::kTileProducerPixels);
+    region_scratch = allocate_array<std::uint16_t>(kMaximumProgressiveRegionPixels);
     producer_supertask = allocate_array<std::uint16_t>(production::kTileProducerPixels);
     producer_packed = allocate_array<std::uint16_t>(production::kTilePixels);
     slots = allocate_array<MaterializedSlotStorage>(production::kTileSlotCount);
@@ -521,7 +521,7 @@ bool verify_pan_adapter(ProductionLivePresenter& presenter, const ToolbarState& 
 }
 
 bool run_cache_retention_gate(ProductionLivePresenter& presenter,
-                              production::TileProducer& producer, const MaterializedCanvas& canvas,
+                              production::TileProducer& producer, MaterializedCanvas& canvas,
                               const ToolbarState& toolbar) {
   constexpr std::array zooms{
       ZoomLevel::k50Percent,
@@ -529,6 +529,8 @@ bool run_cache_retention_gate(ProductionLivePresenter& presenter,
       ZoomLevel::k200Percent,
       ZoomLevel::k400Percent,
   };
+  constexpr int kUnalignedOrigin = production::kTileWidth - 1;
+  constexpr int kDisjointOrigin = 9 * production::kTileWidth - 1;
   const auto fill = [&](ZoomLevel zoom, int x, int y) {
     const auto fallback = presenter.set_view(zoom, x, y, toolbar, now_us());
     if (!fallback.passed) {
@@ -567,17 +569,20 @@ bool run_cache_retention_gate(ProductionLivePresenter& presenter,
     return true;
   };
 
-  bool passed = true;
+  bool passed = canvas.discard_tiles();
   for (const ZoomLevel zoom : zooms) {
-    passed = fill(zoom, 0, 0) && passed;
+    passed = fill(zoom, kUnalignedOrigin, kUnalignedOrigin) && passed;
   }
   for (const ZoomLevel zoom : zooms) {
     const production::ViewRequest view{
         .zoom = zoom,
-        .level_pixels = {0, 0, production::kOverviewWidth, production::kOverviewHeight},
+        .level_pixels = {kUnalignedOrigin, kUnalignedOrigin,
+                         kUnalignedOrigin + production::kOverviewWidth,
+                         kUnalignedOrigin + production::kOverviewHeight},
     };
     const auto remaining = producer.visible_tiles_remaining(view);
-    const auto revisit = presenter.set_view(zoom, 0, 0, toolbar, now_us());
+    const auto revisit =
+        presenter.set_view(zoom, kUnalignedOrigin, kUnalignedOrigin, toolbar, now_us());
     const bool hit = remaining == 0U && revisit.passed && revisit.fallback_pixels == 0U;
     std::printf(
         "TINYDRAW_GATE1_CACHE_REVISIT zoom=%s remaining=%lu tile_pixels=%lu fallback_pixels=%lu "
@@ -590,17 +595,20 @@ bool run_cache_retention_gate(ProductionLivePresenter& presenter,
     passed = hit && passed;
   }
 
-  passed = fill(ZoomLevel::k400Percent, 512, 512) && passed;
+  passed = fill(ZoomLevel::k400Percent, kDisjointOrigin, kDisjointOrigin) && passed;
   const production::ViewRequest origin{
       .zoom = ZoomLevel::k400Percent,
-      .level_pixels = {0, 0, production::kOverviewWidth, production::kOverviewHeight},
+      .level_pixels = {kUnalignedOrigin, kUnalignedOrigin,
+                       kUnalignedOrigin + production::kOverviewWidth,
+                       kUnalignedOrigin + production::kOverviewHeight},
   };
   const auto origin_remaining = producer.visible_tiles_remaining(origin);
-  const auto round_trip = presenter.set_view(ZoomLevel::k400Percent, 0, 0, toolbar, now_us());
+  const auto round_trip = presenter.set_view(ZoomLevel::k400Percent, kUnalignedOrigin,
+                                             kUnalignedOrigin, toolbar, now_us());
   const bool round_trip_hit =
       origin_remaining == 0U && round_trip.passed && round_trip.fallback_pixels == 0U;
   std::printf(
-      "TINYDRAW_GATE1_CACHE_ROUND_TRIP zoom=400 from_x=0 from_y=0 via_x=512 via_y=512 "
+      "TINYDRAW_GATE1_CACHE_ROUND_TRIP zoom=400 from_x=63 from_y=63 via_x=575 via_y=575 "
       "remaining=%lu tile_pixels=%lu fallback_pixels=%lu compose_us=%lld complete_us=%lld hit=%u "
       "pass=%u slots=%lu revision=%lu\n",
       static_cast<unsigned long>(origin_remaining.value_or(999U)),
@@ -685,7 +693,7 @@ void run_production_live_app() {
   PhysicalTouch touch;
   ProductionLivePresenter presenter(
       canvas, scheduler, display, std::span(storage.frame, production::kOverviewPixels),
-      std::span(storage.region_scratch, production::kTileProducerPixels));
+      std::span(storage.region_scratch, kMaximumProgressiveRegionPixels));
   OperationBuilder builder(std::span(storage.input_samples, kInputSampleCapacity));
   production::TileProducer producer(
       log, canvas,
@@ -770,7 +778,8 @@ void run_production_live_app() {
           production::kOverviewPixels * 4U * sizeof(std::uint16_t) +
           production::kTileSlotCount * production::kTilePixels * sizeof(std::uint16_t) +
           kWorkspaceTileCapacity * production::kTilePixels * sizeof(std::uint16_t) +
-          production::kTileProducerPixels * 2U * sizeof(std::uint16_t) +
+          (production::kTileProducerPixels + kMaximumProgressiveRegionPixels) *
+              sizeof(std::uint16_t) +
           production::kTilePixels * sizeof(std::uint16_t) +
           production::kTileSlotCount * sizeof(MaterializedSlotStorage) +
           kRealisticStrokeCapacity * sizeof(VectorStroke) +

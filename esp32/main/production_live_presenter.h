@@ -18,6 +18,13 @@
 
 namespace tinydraw::esp32 {
 
+// Even-window panel alignment can expand an unaligned 128x128 supertask by
+// one pixel on each side.
+inline constexpr int kMaximumProgressiveRegionWidth = production::kTileProducerWidth + 2;
+inline constexpr int kMaximumProgressiveRegionHeight = production::kTileProducerHeight + 2;
+inline constexpr std::size_t kMaximumProgressiveRegionPixels =
+    static_cast<std::size_t>(kMaximumProgressiveRegionWidth) * kMaximumProgressiveRegionHeight;
+
 struct LivePresentationTiming {
   std::int64_t compose_us = 0;
   std::int64_t first_submit_us = 0;
