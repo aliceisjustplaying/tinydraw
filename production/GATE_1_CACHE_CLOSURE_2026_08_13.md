@@ -26,7 +26,7 @@ paper and only 266 require raw slots.
 The app cold-produced every 100% identity, then enumerated every source:
 
 ```text
-identities=644 raw=266 uniform=378 fallback=0 slots=320 total_us=1713701 pass=1
+identities=644 raw=266 uniform=378 fallback=0 slots=320 total_us=1716111 pass=1
 ```
 
 Therefore the entire 100% world remains materialized simultaneously with zero
@@ -40,8 +40,8 @@ framebuffer and composed only two non-overlapping exposed strips.
 
 | Zoom | Compose | Event to first physical completion | Frame reused | Result |
 |---|---:|---:|---:|---|
-| 100% | 29.113 ms | 30.601 ms | yes | PASS |
-| 400% | 29.253 ms | 30.747 ms | yes | PASS |
+| 100% | 29.118 ms | 30.600 ms | yes | PASS |
+| 400% | 29.250 ms | 30.730 ms | yes | PASS |
 
 Both remain below the 35 ms valid-cache pan gate. A pan beyond the bounded
 32-pixel strip workspace safely falls back to full composition; ordinary touch
@@ -88,10 +88,10 @@ beside the compact operation authority.
 
 The realistic 1,000-operation document measured:
 
-- maximum producer compute slice: 13.388 ms during draw-while-fill;
-- producer poll gap: 1.970 ms;
-- live event to first completion: 4.222 ms;
-- cached pan first completion: 30.601–30.747 ms.
+- maximum producer compute slice: 13.389 ms during draw-while-fill;
+- producer poll gap: 1.987 ms;
+- live event to first completion: 4.234 ms;
+- cached pan first completion: 30.600–30.730 ms.
 
 These pass the current interaction limits on one application core. A second-core
 producer would add synchronization and publication complexity without solving a
