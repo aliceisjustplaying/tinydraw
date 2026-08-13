@@ -1,5 +1,6 @@
 set(TINYDRAW_PRODUCTION_SRCS
   "${CMAKE_CURRENT_LIST_DIR}/src/display_scheduler.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/src/frame_scroller.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/incremental_document.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/incremental_rasterizer.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/materialized_canvas.cpp"

@@ -190,17 +190,18 @@ void print_presentation(const char* kind, const ProductionLivePresenter& present
   std::printf(
       "TINYDRAW_LIVE_PRESENT kind=%s zoom=%s x=%d y=%d compose_us=%lld "
       "read_submit_us=%lld read_complete_us=%lld transfer_wait_us=%lld tile_pixels=%lu "
-      "overview_pixels=%lu fallback_pixels=%lu resident_tiles=%lu fallback_tiles=%lu pushes=%lu "
-      "pass=%u\n",
+      "uniform_pixels=%lu overview_pixels=%lu fallback_pixels=%lu resident_tiles=%lu "
+      "fallback_tiles=%lu pushes=%lu frame_reused=%u pass=%u\n",
       kind, zoom_name(presenter.zoom()), presenter.level_x(), presenter.level_y(),
       static_cast<long long>(timing.compose_us), static_cast<long long>(timing.first_submit_us),
       static_cast<long long>(timing.first_complete_us), static_cast<long long>(timing.complete_us),
       static_cast<unsigned long>(timing.tile_pixels),
+      static_cast<unsigned long>(timing.uniform_pixels),
       static_cast<unsigned long>(timing.overview_pixels),
       static_cast<unsigned long>(timing.fallback_pixels),
       static_cast<unsigned long>(timing.resident_tiles),
       static_cast<unsigned long>(timing.fallback_tiles), static_cast<unsigned long>(timing.pushes),
-      timing.passed);
+      timing.frame_reused, timing.passed);
 }
 
 void print_stroke(const OperationLog& log, const MaterializedCanvas& canvas,
