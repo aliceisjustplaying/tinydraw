@@ -94,14 +94,14 @@ std::size_t OperationLog::sample_capacity() const { return samples_.size(); }
 
 bool OperationLog::can_reset() const { return !append_pending_; }
 
-bool OperationLog::workspace_overlaps_storage(std::span<const std::uint16_t> pixels) const {
-  const auto overlaps = [pixels](const auto& storage) {
-    const auto* pixels_begin = reinterpret_cast<const std::byte*>(pixels.data());
-    const auto* pixels_end = pixels_begin + pixels.size_bytes();
+bool OperationLog::workspace_overlaps_storage(std::span<const std::byte> workspace) const {
+  const auto overlaps = [workspace](const auto& storage) {
+    const auto* workspace_begin = workspace.data();
+    const auto* workspace_end = workspace_begin + workspace.size_bytes();
     const auto* storage_begin = reinterpret_cast<const std::byte*>(storage.data());
     const auto* storage_end = storage_begin + storage.size_bytes();
     const std::less<const std::byte*> less;
-    return less(pixels_begin, storage_end) && less(storage_begin, pixels_end);
+    return less(workspace_begin, storage_end) && less(storage_begin, workspace_end);
   };
   return overlaps(records_) || overlaps(samples_);
 }
