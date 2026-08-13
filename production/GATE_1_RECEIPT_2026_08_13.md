@@ -18,16 +18,17 @@ This is not a ship-quality rendering pass. Hard-edged tiles are provisional
 
 ## Hardware measurements
 
-Evidence log: [`hardware-receipts/gate1-tile-producer.log`](hardware-receipts/gate1-tile-producer.log)
+Evidence logs: [`hardware-receipts/gate1-tile-producer.log`](hardware-receipts/gate1-tile-producer.log)
+and [`hardware-receipts/gate1-p95-20-runs.log`](hardware-receipts/gate1-p95-20-runs.log).
 
 ### Deterministic synthetic regression workload
 
 Workload: 1,000 operations × 20 samples, generated on device.
 
-| Zoom | Cold complete visible fill | Maximum replay slice | Result |
+| Zoom | Cold complete visible fill p95 (20 runs) | Maximum replay slice | Result |
 |---|---:|---:|---|
-| 100% | 380.125 ms | 7.504 ms | PASS |
-| 400% | 297.112 ms | 28.392 ms | PASS |
+| 100% | 380.148 ms | 7.506 ms | PASS |
+| 400% | 297.135 ms | 28.392 ms | PASS |
 
 ### Seed-7 realistic handwriting verdict workload
 
@@ -35,10 +36,10 @@ Workload identity: `populate_realistic_handwriting`, seed 7, 1,000 operations,
 19,844 raw source samples, maximum stroke 198 samples. Conversion/load took
 240.535 ms.
 
-| Zoom | Cold complete visible fill | Maximum replay slice | Visible operations rendered | Result |
+| Zoom | Cold complete visible fill p95 (20 runs) | Maximum replay slice | Visible operations rendered | Result |
 |---|---:|---:|---:|---|
-| 100% | 422.652 ms | 5.348 ms | 475 sliced applications | PASS |
-| 400% | 376.863 ms | 28.101 ms | 90 sliced applications | PASS |
+| 100% | 424.673 ms | 5.346 ms | 475 sliced applications | PASS |
+| 400% | 376.894 ms | 28.102 ms | 90 sliced applications | PASS |
 
 The first 400% capture exposed a 35.684 ms replay slice caused by a 198-sample
 stroke. The final producer bounds work by both operation count and sample
@@ -51,9 +52,9 @@ The probe rendered each visible 100% tile through the existing 200% raster path
 into a 128×128 workspace, then box-downsampled to 64×64 and progressively
 presented the result.
 
-- complete visible viewport: **807.980 ms**
+- complete visible viewport p95 (20 runs): **807.990 ms**
 - tile steps: 42
-- maximum tile compute: 29.638 ms
+- maximum tile compute: 29.658 ms
 - display presentation portion: 57.313 ms
 - verdict: **FAIL** against 500 ms
 
