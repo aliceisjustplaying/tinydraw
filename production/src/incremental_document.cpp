@@ -5,14 +5,14 @@
 namespace tinydraw::production {
 namespace {
 
-bool prepare_tile(MaterializedCanvas& canvas, const IncrementalOperation& operation, TileKey key,
-                  std::span<std::uint16_t> scratch, TileRevisionPublication& publication) {
+bool prepare_tile(const MaterializedCanvas& canvas, const IncrementalOperation& operation,
+                  TileKey key, std::span<std::uint16_t> scratch,
+                  TileRevisionPublication& publication) {
   const PixelRect bounds = tile_pixel_bounds(key);
   const std::size_t pixel_count = static_cast<std::size_t>(bounds.x1 - bounds.x0) *
                                   static_cast<std::size_t>(bounds.y1 - bounds.y0);
   const auto pixels = scratch.first(pixel_count);
-  const auto prior = canvas.compose_view({.zoom = key.zoom, .level_pixels = bounds}, pixels);
-  if (!prior.has_value() ||
+  if (!canvas.copy_resident_tile(key, pixels) ||
       !apply_incremental_operation(operation, {.zoom = key.zoom,
                                                .level_bounds = bounds,
                                                .pixels = pixels,

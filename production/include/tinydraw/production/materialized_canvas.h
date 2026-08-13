@@ -200,6 +200,8 @@ class MaterializedCanvas {
   // returning a partial list when output is too small or bounds are invalid.
   [[nodiscard]] std::optional<std::size_t> resident_tiles_intersecting(
       PixelRect world_bounds, std::span<TileKey> output) const;
+  // Copies one current resident tile without exposing mutable pool storage.
+  [[nodiscard]] bool copy_resident_tile(TileKey key, std::span<std::uint16_t> destination) const;
 
  private:
   friend class PinnedSource;

@@ -497,6 +497,24 @@ TEST_CASE("incremental revision updates affected tiles and carries unaffected ti
   CHECK(carried_after->identity.revision == production::DocumentRevision{1});
 }
 
+TEST_CASE("resident tile copies preserve pixels without exposing pool storage") {
+  std::array<std::uint16_t, production::kOverviewPixels> overview{};
+  std::array<production::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, production::kTilePixels> tile_storage{};
+  std::array<std::uint16_t, production::kTilePixels> tile{};
+  tile.fill(0x1234U);
+  std::array<std::uint16_t, production::kTilePixels> copy{};
+  production::MaterializedCanvas canvas(overview, slots, tile_storage);
+  const production::TileKey key{production::ZoomLevel::k100Percent, 0, 0};
+  REQUIRE(canvas.publish_tile(key, {0}, production::MaterializationQuality::kSettled, tile));
+  REQUIRE(canvas.copy_resident_tile(key, copy));
+  CHECK(copy == tile);
+  copy.front() = 0xFFFFU;
+  CHECK(tile_storage.front() == 0x1234U);
+  CHECK_FALSE(canvas.copy_resident_tile({production::ZoomLevel::k100Percent, 1, 0}, copy));
+  CHECK_FALSE(canvas.copy_resident_tile(key, std::span(copy).first(copy.size() - 1U)));
+}
+
 TEST_CASE("incremental revision invalidates intersecting resident tiles at every zoom") {
   std::array<std::uint16_t, production::kOverviewPixels> overview{};
   std::array<std::uint16_t, production::kOverviewPixels> next_overview{};
