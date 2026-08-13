@@ -6,8 +6,9 @@ Last updated: 2026-08-13
 
 Branch: `feat/vector-canvas-production`
 
-**The production vector foundation is validated.** TinyDraw V2 is now the
-accepted application architecture under construction, not another prototype.
+**The Vector V2 foundation is validated.** Vector V2 is now the accepted
+application architecture under construction, not another prototype and not yet
+the shipping/default firmware. The existing shipping code is **Raster V1**.
 The full remaining worklist and feature-complete definition live in
 [`V2_ROADMAP.md`](V2_ROADMAP.md).
 
@@ -68,10 +69,12 @@ These are product and optimization tasks, not evidence for another rewrite.
 
 ## Immediate next sequence
 
-1. Write the zoom/navigation behavior document.
-2. Implement and hardware-test input-first scheduling, camera preservation, and
+1. Follow the accepted behavior in
+   [`VECTOR_V2_ZOOM_NAVIGATION.md`](VECTOR_V2_ZOOM_NAVIGATION.md).
+2. Run the bounded V2 cleanup/repository-shaping round and prepare this validated
+   milestone for merge to main.
+3. Implement and hardware-test input-first scheduling, camera preservation, and
    protected recent per-zoom cache footprints.
-3. Run the bounded V2 cleanup/repository-shaping round in `V2_ROADMAP.md`.
 4. Run the timeboxed analytic anti-aliasing gate.
 5. Continue through production UI and vector feature parity.
 
