@@ -45,6 +45,7 @@ elseif(NOT TINYDRAW_QEMU)
     "drawing_store.cpp"
     "hardware_app.cpp"
     "image_export_store.cpp"
+    "physical_touch.cpp"
     "physical_display.cpp"
     "power_manager.cpp"
     "rtc_clock.cpp"
