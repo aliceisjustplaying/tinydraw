@@ -233,3 +233,11 @@ existing immediate rasterizer, and proves byte equality with live materializatio
 It then restores an older snapshot, rejects the held epoch, rebases, and repeats.
 This validates ordering and reset ownership only; it is not settled-renderer
 quality or performance evidence.
+
+`OperationLodStore` gives append-time zoom-specific centerline samples a separate
+fixed-capacity owner. It prepares all four tiled zoom spans together, publishes
+them under the exact next operation identity and log epoch, and invalidates them
+on snapshot reset. Its source, span, and sample storage are caller-owned and
+alias-checked. The first implementation deliberately stores caller-generated
+samples without choosing a simplification algorithm; capacity remains
+provisional until representative captured input exists.

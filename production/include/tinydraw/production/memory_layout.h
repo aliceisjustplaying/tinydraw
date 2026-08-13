@@ -5,7 +5,7 @@
 #include <cstdint>
 
 #include "tinydraw/production/materialized_canvas.h"
-#include "tinydraw/production/operation.h"
+#include "tinydraw/production/operation_lod_store.h"
 
 namespace tinydraw::production {
 
@@ -15,7 +15,7 @@ inline constexpr std::size_t kOverviewPublicationBytes = kOverviewBytes;
 inline constexpr std::size_t kTileSlotCount = 128;
 inline constexpr std::size_t kOperationCapacity = 4'000;
 inline constexpr std::size_t kOperationSampleCapacity = 80'000;
-inline constexpr std::size_t kMaterializedZoomCount = 4;
+inline constexpr std::size_t kMaterializedZoomCount = kLodZoomCount;
 inline constexpr std::size_t kLodSampleCapacity = 90'000;
 inline constexpr std::size_t kRendererTaskCount = 2;
 inline constexpr std::size_t kRendererCoverageBytes = 128U * 128U;
@@ -24,21 +24,6 @@ inline constexpr std::size_t kRendererGeometryBytes = 64U * 1024U;
 inline constexpr std::size_t kOverlayBytes = 368U * 76U * sizeof(std::uint16_t);
 inline constexpr std::size_t kStagingBytes = 2U * 368U * 32U * sizeof(std::uint16_t);
 inline constexpr std::size_t kTargetContiguousReserveBytes = 1536U * 1024U;
-
-struct CompactLodSample {
-  std::uint16_t x_quarter = 0;
-  std::uint16_t y_quarter = 0;
-  std::uint16_t radius_256 = 0;
-};
-
-struct LodSpan {
-  std::uint32_t first_sample = 0;
-  std::uint16_t sample_count = 0;
-  std::uint16_t flags = 0;
-};
-
-static_assert(sizeof(CompactLodSample) == 6);
-static_assert(sizeof(LodSpan) == 8);
 
 inline constexpr std::size_t kTilePoolBytes = kTileSlotCount * kTileBytes;
 inline constexpr std::size_t kTileMetadataBytes = kTileSlotCount * sizeof(MaterializedSlotStorage);
