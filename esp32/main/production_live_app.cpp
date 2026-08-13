@@ -454,10 +454,13 @@ bool verify_pan_adapter(ProductionLivePresenter& presenter, const ToolbarState& 
       presenter.pan_from(before_x, before_y, {240.0F, 240.0F}, {120.0F, 120.0F}, toolbar, now_us());
   const bool moved = presenter.level_x() > before_x && presenter.level_y() > before_y;
   std::printf(
-      "TINYDRAW_GATE1_PAN zoom=%s from_x=%d from_y=%d to_x=%d to_y=%d setup=%u present=%u "
-      "moved=%u pass=%u\n",
-      zoom_name(zoom), before_x, before_y, presenter.level_x(), presenter.level_y(), setup.passed,
-      pan.passed, moved, setup.passed && pan.passed && moved);
+      "TINYDRAW_GATE1_PAN zoom=%s from_x=%d from_y=%d to_x=%d to_y=%d compose_us=%lld "
+      "event_submit_us=%lld event_complete_us=%lld transfer_us=%lld setup=%u present=%u moved=%u "
+      "pass=%u\n",
+      zoom_name(zoom), before_x, before_y, presenter.level_x(), presenter.level_y(),
+      static_cast<long long>(pan.compose_us), static_cast<long long>(pan.first_submit_us),
+      static_cast<long long>(pan.first_complete_us), static_cast<long long>(pan.complete_us),
+      setup.passed, pan.passed, moved, setup.passed && pan.passed && moved);
   return setup.passed && pan.passed && moved;
 }
 
@@ -595,11 +598,11 @@ void run_production_live_app() {
                               std::span(storage.input_samples, kInputSampleCapacity));
   const bool gate_100 = workload_ready && run_tile_gate(presenter, producer, log, canvas, toolbar,
                                                         ZoomLevel::k100Percent);
+  const bool pan_100 = gate_100 && verify_pan_adapter(presenter, toolbar, ZoomLevel::k100Percent);
   const bool gate_400 =
-      gate_100 && run_tile_gate(presenter, producer, log, canvas, toolbar, ZoomLevel::k400Percent);
-  const bool ssaa_100 = gate_400 && run_ssaa_gate(presenter, producer, log, canvas, toolbar);
-  const bool pan_100 = gate_400 && verify_pan_adapter(presenter, toolbar, ZoomLevel::k100Percent);
-  const bool pan_400 = pan_100 && verify_pan_adapter(presenter, toolbar, ZoomLevel::k400Percent);
+      pan_100 && run_tile_gate(presenter, producer, log, canvas, toolbar, ZoomLevel::k400Percent);
+  const bool pan_400 = gate_400 && verify_pan_adapter(presenter, toolbar, ZoomLevel::k400Percent);
+  const bool ssaa_100 = pan_400 && run_ssaa_gate(presenter, producer, log, canvas, toolbar);
   const auto return_overview = presenter.set_zoom(ZoomLevel::k25Percent, toolbar, now_us());
   std::printf(
       "TINYDRAW_GATE1_AUTOMATED_DONE stress=%u stress_100=%u stress_400=%u workload=%u "
