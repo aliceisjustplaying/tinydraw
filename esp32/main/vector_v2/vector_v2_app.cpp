@@ -60,7 +60,6 @@ struct LiftBaselineTiming {
   std::int64_t refresh_wall_us = 0;
   vector_v2::PixelRect refresh_level_bounds{};
   std::int64_t stroke_logging_us = 0;
-  std::int64_t post_lift_fill_block_us = 0;
   LivePresentationTiming refresh{};
   bool committed = false;
   bool overflowed = false;
@@ -72,7 +71,6 @@ struct PendingFillPresentation {
   ZoomLevel zoom = ZoomLevel::k25Percent;
   int x = 0;
   int y = 0;
-  DocumentRevision revision{};
   bool pending = false;
 };
 
@@ -241,14 +239,14 @@ void print_lift_baseline(const LiftBaselineTiming& timing, std::int64_t poll_sta
                          std::int64_t poll_completed_us, std::uint32_t reports_dropped) {
   const std::int64_t measured_phase_us = timing.finish_preview_us + timing.builder_finish_us +
                                          timing.append_us + timing.refresh_wall_us +
-                                         timing.stroke_logging_us + timing.post_lift_fill_block_us;
+                                         timing.stroke_logging_us;
   const std::int64_t detected_to_poll_us = poll_started_us - timing.detected_us;
   std::printf(
       "TINYDRAW_LIFT_BASELINE id=%lu finish_preview_us=%lld builder_finish_us=%lld "
       "append_us=%lld refresh_wall_us=%lld refresh_x0=%d refresh_y0=%d "
       "refresh_x1=%d refresh_y1=%d refresh_compose_us=%lld "
       "refresh_first_submit_us=%lld refresh_first_complete_us=%lld "
-      "refresh_transfer_wait_us=%lld stroke_logging_us=%lld post_lift_fill_block_us=%lld "
+      "refresh_transfer_wait_us=%lld stroke_logging_us=%lld "
       "detected_to_poll_start_us=%lld detected_to_poll_complete_us=%lld poll_read_us=%lld "
       "unattributed_tail_us=%lld reports_dropped=%lu committed=%u refresh=%u overflow=%u\n",
       static_cast<unsigned long>(timing.id), static_cast<long long>(timing.finish_preview_us),
@@ -259,9 +257,7 @@ void print_lift_baseline(const LiftBaselineTiming& timing, std::int64_t poll_sta
       static_cast<long long>(timing.refresh.first_submit_us),
       static_cast<long long>(timing.refresh.first_complete_us),
       static_cast<long long>(timing.refresh.complete_us),
-      static_cast<long long>(timing.stroke_logging_us),
-      static_cast<long long>(timing.post_lift_fill_block_us),
-      static_cast<long long>(detected_to_poll_us),
+      static_cast<long long>(timing.stroke_logging_us), static_cast<long long>(detected_to_poll_us),
       static_cast<long long>(poll_completed_us - timing.detected_us),
       static_cast<long long>(poll_completed_us - poll_started_us),
       static_cast<long long>(detected_to_poll_us - measured_phase_us),
@@ -689,10 +685,8 @@ void run_vector_v2_app() {
       print_fill_baseline("paused", fill_zoom, fill_x, fill_y, fill_revision, fill_timing);
       fill_timing.reset();
       fill_measurement_active = false;
-      pending_fill = {};
     }
     if (fill_allowed) {
-      const std::int64_t fill_block_started = esp_timer_get_time();
       const vector_v2::ViewRequest fill_view{
           .zoom = presenter.zoom(),
           .level_pixels = {presenter.level_x(), presenter.level_y(),
@@ -718,17 +712,20 @@ void run_vector_v2_app() {
       if (pending_fill.pending) {
         const bool still_current = pending_fill.zoom == fill_view.zoom &&
                                    pending_fill.x == fill_view.level_pixels.x0 &&
-                                   pending_fill.y == fill_view.level_pixels.y0 &&
-                                   pending_fill.revision == canvas.current_revision();
-        if (still_current) {
+                                   pending_fill.y == fill_view.level_pixels.y0;
+        if (!still_current) {
+          pending_fill = {};
+        } else {
           const std::int64_t present_started = esp_timer_get_time();
           const auto presentation = presenter.refresh_region(pending_fill.level_bounds);
           const std::int64_t present_us = esp_timer_get_time() - present_started;
           fill_timing.present_total_us += present_us;
           fill_timing.present_max_us = std::max(fill_timing.present_max_us, present_us);
           fill_timing.presentation_failures += !presentation.passed;
+          if (presentation.passed) {
+            pending_fill = {};
+          }
         }
-        pending_fill = {};
       } else if (!fill_complete) {
         if (!fill_measurement_active) {
           fill_timing.reset();
@@ -747,7 +744,6 @@ void run_vector_v2_app() {
                             .zoom = fill_view.zoom,
                             .x = fill_view.level_pixels.x0,
                             .y = fill_view.level_pixels.y0,
-                            .revision = canvas.current_revision(),
                             .pending = true};
           }
           fill_complete = step->complete;
@@ -769,9 +765,6 @@ void run_vector_v2_app() {
                     zoom_name(fill_zoom), fill_x, fill_y,
                     static_cast<unsigned long>(fill_revision.value));
         fill_measurement_active = false;
-      }
-      if (lift_timing.pending) {
-        lift_timing.post_lift_fill_block_us += esp_timer_get_time() - fill_block_started;
       }
     }
     if (lift_report_ready) {

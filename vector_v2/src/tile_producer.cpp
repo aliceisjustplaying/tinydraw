@@ -185,8 +185,12 @@ std::optional<TileProductionStep> TileProducer::produce_next(const ViewRequest& 
     active_group_ = {};
     return TileProductionStep{.complete = true};
   }
-  if (!active_group_.active || !(active_group_.view.zoom == view.zoom &&
-                                 active_group_.view.level_pixels == view.level_pixels)) {
+  const bool active_group_is_current = active_group_.active &&
+                                       active_group_.epoch == log_.epoch() &&
+                                       active_group_.revision == log_.current_revision() &&
+                                       active_group_.revision == canvas_.current_revision();
+  if (!active_group_is_current || !(active_group_.view.zoom == view.zoom &&
+                                    active_group_.view.level_pixels == view.level_pixels)) {
     const auto group = choose_missing_group(view);
     if (!group.has_value() || !start_group(view, *group)) {
       active_group_ = {};

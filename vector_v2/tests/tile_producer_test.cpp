@@ -324,8 +324,11 @@ TEST_CASE("tile producer restarts after revision changes during sliced replay") 
   std::array<std::uint16_t, vector_v2::kOverviewPixels> overview_two{};
   overview_two.fill(0xFFFFU);
   REQUIRE(fixture.canvas.publish_overview({2}, overview_two));
-  CHECK_FALSE(fixture.producer.produce_next(view));
-  while (true) {
+  const auto restarted = fixture.producer.produce_next(view);
+  REQUIRE(restarted.has_value());
+  const bool made_progress = restarted->raster_steps != 0U || restarted->tiles_published != 0U;
+  CHECK(made_progress);
+  while (!restarted->complete) {
     const auto step = fixture.producer.produce_next(view);
     REQUIRE(step.has_value());
     if (step->complete) {
