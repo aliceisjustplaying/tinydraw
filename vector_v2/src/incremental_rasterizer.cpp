@@ -118,17 +118,30 @@ Sample interpolate(const Sample& first, const Sample& second, float amount) {
   };
 }
 
-void paint_bounded_segment(const Sample& first, const Sample& second, std::uint16_t color,
-                           const RasterSurface& surface) {
+std::size_t segment_step_count(const Sample& first, const Sample& second) {
   const float span = std::max(std::abs(second.x - first.x), std::abs(second.y - first.y));
-  const int steps = std::max(1, static_cast<int>(std::ceil(span / kMaximumRasterStep)));
-  Sample prior = first;
-  for (int step = 1; step <= steps; ++step) {
+  return static_cast<std::size_t>(
+      std::max(1, static_cast<int>(std::ceil(span / kMaximumRasterStep))));
+}
+
+void paint_segment_steps(const Sample& first, const Sample& second, std::uint16_t color,
+                         const RasterSurface& surface, std::size_t first_step,
+                         std::size_t step_count) {
+  const std::size_t steps = segment_step_count(first, second);
+  Sample prior =
+      interpolate(first, second, static_cast<float>(first_step) / static_cast<float>(steps));
+  for (std::size_t offset = 0; offset < step_count; ++offset) {
+    const std::size_t step = first_step + offset + 1U;
     const Sample next =
         interpolate(first, second, static_cast<float>(step) / static_cast<float>(steps));
     paint_segment(prior, next, color, surface);
     prior = next;
   }
+}
+
+void paint_bounded_segment(const Sample& first, const Sample& second, std::uint16_t color,
+                           const RasterSurface& surface) {
+  paint_segment_steps(first, second, color, surface, 0U, segment_step_count(first, second));
 }
 
 }  // namespace
@@ -141,6 +154,48 @@ PixelRect operation_level_bounds(PixelRect world_bounds, ZoomLevel zoom) {
       .x1 = std::min(kWorldWidth * percent / 100, (world_bounds.x1 * percent + 99) / 100),
       .y1 = std::min(kWorldHeight * percent / 100, (world_bounds.y1 * percent + 99) / 100),
   };
+}
+
+std::size_t incremental_segment_step_count(CompactOperationSample first,
+                                           CompactOperationSample second, ZoomLevel zoom) {
+  return segment_step_count(scaled_sample(first, zoom), scaled_sample(second, zoom));
+}
+
+std::size_t incremental_segment_step_work(CompactOperationSample first,
+                                          CompactOperationSample second, ZoomLevel zoom,
+                                          PixelRect clip, std::size_t step) {
+  const Sample scaled_first = scaled_sample(first, zoom);
+  const Sample scaled_second = scaled_sample(second, zoom);
+  const std::size_t steps = segment_step_count(scaled_first, scaled_second);
+  if (step >= steps) {
+    return 0U;
+  }
+  const Sample step_first = interpolate(scaled_first, scaled_second,
+                                        static_cast<float>(step) / static_cast<float>(steps));
+  const Sample step_second = interpolate(scaled_first, scaled_second,
+                                         static_cast<float>(step + 1U) / static_cast<float>(steps));
+  const PixelRect bounds =
+      segment_bounds(make_segment(step_first, step_second), {.zoom = zoom, .level_bounds = clip});
+  return static_cast<std::size_t>(std::max(0, bounds.x1 - bounds.x0)) *
+         static_cast<std::size_t>(std::max(0, bounds.y1 - bounds.y0));
+}
+
+bool apply_incremental_segment_steps(const IncrementalSegment& segment,
+                                     const RasterSurface& surface, std::size_t first_step,
+                                     std::size_t step_count) {
+  if (!valid_surface(surface)) {
+    return false;
+  }
+  const Sample scaled_first = scaled_sample(segment.first, surface.zoom);
+  const Sample scaled_second = scaled_sample(segment.second, surface.zoom);
+  const std::size_t steps = segment_step_count(scaled_first, scaled_second);
+  if (step_count == 0U || first_step >= steps || step_count > steps - first_step) {
+    return false;
+  }
+  paint_segment_steps(scaled_first, scaled_second,
+                      segment.tool == OperationTool::kEraser ? kBackground : segment.color, surface,
+                      first_step, step_count);
+  return true;
 }
 
 bool apply_incremental_operation(const OperationAppend& operation, const RasterSurface& surface) {
