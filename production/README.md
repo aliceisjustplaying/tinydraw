@@ -195,9 +195,10 @@ staging; `pins_outstanding()` is the fail-closed diagnostic. Renderer work never
 holds a pin while waiting for panel capacity.
 
 The immediate renderer is intentionally opaque and hard-edged; publications are
-labeled `kSettled`, not `kExact`. Long sparse segments are subdivided into bounded
-raster steps, and tile enumeration reports required versus written capacity.
-Anti-aliased settled convergence remains Task #56.
+labeled `kImmediate`, below `kSettled`. `kSettled` is reserved for anti-aliased
+output, so provisional pixels cannot masquerade as accepted quality. Long sparse
+segments are subdivided into bounded raster steps, and tile enumeration reports
+required versus written capacity. Anti-aliased settled convergence remains open.
 
 The latest exclusive hardware proof is
 [`hardware-receipts/fa39abe-operation-builder-walk.log`](hardware-receipts/fa39abe-operation-builder-walk.log).
