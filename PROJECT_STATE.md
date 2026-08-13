@@ -4,7 +4,7 @@ Last updated: 2026-08-13
 
 ## Resume point
 
-Branch: `feat/vector-canvas-production`
+Branch: `feat/v2-navigation-interaction`
 
 **The Vector V2 foundation is validated.** Vector V2 is now the accepted
 application architecture under construction, not another prototype and not yet
@@ -69,13 +69,14 @@ These are product and optimization tasks, not evidence for another rewrite.
 
 ## Immediate next sequence
 
-1. Follow the accepted behavior in
+1. Capture an unchanged-behavior hardware baseline with same-event input,
+   append, compose, and transfer telemetry.
+2. Follow the accepted behavior in
    [`VECTOR_V2_ZOOM_NAVIGATION.md`](VECTOR_V2_ZOOM_NAVIGATION.md).
-2. Merge the validated, cleanup-complete V2 foundation milestone to main.
 3. Implement and hardware-test input-first scheduling, camera preservation, and
    protected recent per-zoom cache footprints.
 4. Run the timeboxed analytic anti-aliasing gate.
-5. Continue through production UI and vector feature parity.
+5. Continue through product UI and vector feature parity.
 
 ## Repository and coexistence decision
 

@@ -1,8 +1,9 @@
 # TinyDraw V2 roadmap
 
 Last updated: 2026-08-13  
-Current branch: `feat/vector-canvas-production`  
-Status: **production vector foundation validated; product integration remains**
+Current branch: `feat/v2-navigation-interaction`
+
+Status: **Vector V2 foundation validated; interaction integration in progress**
 
 This is the current worklist and source of truth for TinyDraw V2. It replaces the
 prototype-era task order as the forward plan. Historical plans and receipts are
@@ -110,7 +111,7 @@ Current debt from the manual trace:
 
 ### Camera and zoom behavior
 
-- [ ] Write the zoom/navigation behavior document before implementation.
+- [x] Write and accept the zoom/navigation behavior document before implementation.
 - [ ] Preserve world-space focus when zooming in or out.
 - [ ] Remember the last useful camera position per zoom.
 - [ ] Define how per-zoom memory and center-preserving zoom interact.
@@ -129,8 +130,8 @@ Current debt from the manual trace:
 - [ ] Measure 320 versus 384 raw slots only after policy improvements.
 - [ ] Do not adopt 448 slots under the current memory plan: it would consume an
       additional 1 MiB and leave too little margin beside the export reserve.
-- [ ] Remove the test-only seed corpus storage from the product allocation plan;
-      it currently costs about 323 KiB in the live test image.
+- [x] Remove the test-only seed corpus storage from the product app allocation;
+      it remains available only to the exclusive Gate 1 harness.
 
 More raw slots can still help long 400% excursions, but policy comes first.
 Each additional raw slot costs 8 KiB. A 384-slot experiment costs 512 KiB and
@@ -138,10 +139,9 @@ may be viable; it must re-prove the live export reserve and long-session margin.
 
 ## Phase 2 — V2 cleanup and repository shape
 
-Run this cleanup round immediately after the zoom/navigation document, before the
-next implementation batch. The milestone has now exposed and hardware-proven the
-real seams. This is a bounded cleanup for a reviewable merge to main, not a
-rewrite and not feature-parity promotion.
+This bounded cleanup completed before the interaction batch. The milestone
+exposed and hardware-proven the real seams and was fast-forwarded to `main`; it
+was not a rewrite or feature-parity promotion.
 
 - [x] Rename the interactive `production-live-app` concept to the V2 application
       and remove its test-only startup workload.
@@ -156,8 +156,8 @@ rewrite and not feature-parity promotion.
 - [x] Remove test-only workload generation and automated gate orchestration from
       the V2 product coordinator; retain it in the exclusive
       `vector-v2-gate-harness` target.
-- [ ] Audit and remove rejected or unused production experiments only after
-      confirming no current module depends on them.
+- [ ] Audit remaining rejected or unused experiments only when a current seam
+      makes their removal relevant; this is not an interaction-batch blocker.
 - [x] Quarantine prototype-only renderer sources in the explicit
       `tinydraw::vector_prototype` test/benchmark target; normal host and product
       targets do not compile or link them.
@@ -381,13 +381,15 @@ complete overview. It still needs careful tap targeting and viewport math.
 
 # Next concrete sequence
 
-1. Write the zoom/navigation behavior document.
-2. Run the bounded V2 repository cleanup described in Phase 2 and prepare this
-   validated milestone for merge to main.
-3. Implement input-first scheduling, camera preservation, and protected per-zoom
-   cache footprints as one hardware-tested interaction batch.
-4. Run the timeboxed analytic anti-aliasing gate.
-5. Build the production UI shell and all five zoom controls.
-6. Implement vector persistence, Undo/Redo, New, and real export.
-7. Integrate device lifecycle behavior and run the performance campaign alongside
+1. Capture an unchanged-behavior hardware latency baseline with corrected
+   same-event telemetry.
+2. Implement the accepted navigation behavior and expose all five zooms without
+   coupling camera authority to presentation or cache state.
+3. Close input latency on hardware with bounded lift and refinement scheduling.
+4. Protect one recent footprint per tiled zoom with soft eviction preference,
+   then add minimal zoom controls and close the combined glass test.
+5. Run the timeboxed analytic anti-aliasing gate.
+6. Build the remaining product UI shell.
+7. Implement vector persistence, Undo/Redo, New, and real export.
+8. Integrate device lifecycle behavior and run the performance campaign alongside
    feature work, always from measured traces.
