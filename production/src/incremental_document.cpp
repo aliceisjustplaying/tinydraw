@@ -8,15 +8,6 @@
 namespace tinydraw::production {
 namespace {
 
-PixelRect overview_bounds_for_world(PixelRect world_bounds) {
-  return {
-      .x0 = world_bounds.x0 / 4,
-      .y0 = world_bounds.y0 / 4,
-      .x1 = (world_bounds.x1 + 3) / 4,
-      .y1 = (world_bounds.y1 + 3) / 4,
-  };
-}
-
 bool prepare_overview(const MaterializedCanvas& canvas, const OperationAppend& operation,
                       PixelRect world_bounds, std::span<std::uint16_t> scratch,
                       OverviewRevisionPublication& publication) {

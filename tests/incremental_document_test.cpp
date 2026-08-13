@@ -87,6 +87,29 @@ TEST_CASE("incremental document advances log and canvas together") {
   CHECK(fixture.canvas.overview_pixels()[3U * production::kOverviewWidth + 3U] == 0xF800U);
 }
 
+TEST_CASE("bounded overview publication matches full rendering at worst thin-stroke alignment") {
+  Fixture fixture;
+  fixture.overview.fill(0xFFFFU);
+  auto full_render = std::make_unique<std::array<std::uint16_t, production::kOverviewPixels>>();
+  full_render->fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
+  const std::array samples{
+      production::CompactOperationSample{.x_quarter = 6, .y_quarter = 6, .radius_256 = 1},
+      production::CompactOperationSample{.x_quarter = 70, .y_quarter = 70, .radius_256 = 1},
+  };
+  REQUIRE(production::apply_incremental_operation(
+      {.color = 0xF800U, .samples = samples},
+      {.zoom = production::ZoomLevel::k25Percent,
+       .level_bounds = {0, 0, production::kOverviewWidth, production::kOverviewHeight},
+       .pixels = *full_render,
+       .stride = production::kOverviewWidth}));
+
+  REQUIRE(production::append_incrementally(
+      fixture.log, fixture.canvas, {.color = 0xF800U, .samples = samples}, fixture.workspace()));
+  CHECK(std::equal(full_render->begin(), full_render->end(),
+                   fixture.canvas.overview_pixels().begin()));
+}
+
 TEST_CASE("incremental document falls back excess affected residents when scratch is bounded") {
   Fixture fixture;
   fixture.overview.fill(0xFFFFU);
