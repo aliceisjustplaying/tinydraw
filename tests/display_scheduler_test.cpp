@@ -66,6 +66,27 @@ TEST_CASE("display scheduler drops queued stale revisions before transport") {
   CHECK(scheduler.front()->strip.revision == production::DocumentRevision{2});
 }
 
+TEST_CASE("display scheduler lets an in-flight old revision complete before dropping stale queue") {
+  std::array<production::DisplayStrip, 2> storage{};
+  production::DisplayScheduler scheduler(storage);
+  std::array<std::uint16_t, 368U * 2U> pixels{};
+  scheduler.require_revision({1});
+  const auto first = scheduler.schedule(
+      {.revision = {1}, .panel_bounds = {0, 0, 368, 2}, .pixels = pixels, .stride = 368});
+  REQUIRE(first.has_value());
+  REQUIRE(scheduler.schedule(
+      {.revision = {1}, .panel_bounds = {0, 2, 368, 4}, .pixels = pixels, .stride = 368}));
+  REQUIRE(scheduler.front().has_value());
+
+  scheduler.require_revision({2});
+  REQUIRE(scheduler.front().has_value());
+  CHECK(scheduler.front()->sequence == *first);
+  REQUIRE(scheduler.complete(*first));
+  scheduler.require_revision({2});
+  CHECK_FALSE(scheduler.front());
+  CHECK(scheduler.stats().stale_rejected == 1U);
+}
+
 TEST_CASE("display scheduler validates stride-backed input") {
   std::array<production::DisplayStrip, 1> storage{};
   production::DisplayScheduler scheduler(storage);

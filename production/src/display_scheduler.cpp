@@ -3,13 +3,6 @@
 #include <limits>
 
 namespace tinydraw::production {
-namespace {
-
-constexpr int kPanelWidth = 368;
-constexpr int kPanelHeight = 448;
-
-}  // namespace
-
 DisplayScheduler::DisplayScheduler(std::span<DisplayStrip> queue_storage) : queue_(queue_storage) {}
 
 bool DisplayScheduler::ready() const { return !queue_.empty(); }
@@ -36,20 +29,22 @@ std::optional<std::uint32_t> DisplayScheduler::schedule(const DisplayStrip& stri
   return sequence;
 }
 
-std::optional<ScheduledStrip> DisplayScheduler::front() const {
+std::optional<ScheduledStrip> DisplayScheduler::front() {
   if (count_ == 0U) {
     return std::nullopt;
   }
+  in_flight_sequence_ = front_sequence_;
   return ScheduledStrip{.sequence = front_sequence_, .strip = queue_[head_]};
 }
 
 bool DisplayScheduler::complete(std::uint32_t sequence) {
-  if (count_ == 0U || sequence != front_sequence_) {
+  if (count_ == 0U || sequence != front_sequence_ || sequence != in_flight_sequence_) {
     return false;
   }
   head_ = (head_ + 1U) % queue_.size();
   --count_;
   ++completed_;
+  in_flight_sequence_ = 0U;
   front_sequence_ = count_ == 0U ? 0U : sequence + 1U;
   if (front_sequence_ == 0U && count_ != 0U) {
     front_sequence_ = 1U;
@@ -59,7 +54,8 @@ bool DisplayScheduler::complete(std::uint32_t sequence) {
 
 void DisplayScheduler::require_revision(DocumentRevision revision) {
   required_revision_ = revision;
-  while (count_ != 0U && queue_[head_].revision != required_revision_) {
+  while (count_ != 0U && in_flight_sequence_ == 0U &&
+         queue_[head_].revision != required_revision_) {
     head_ = (head_ + 1U) % queue_.size();
     --count_;
     ++rejected_;
@@ -89,7 +85,7 @@ bool DisplayScheduler::valid_strip(const DisplayStrip& strip) const {
           : 0U;
   return ready() && strip.revision == required_revision_ && width > 0 && height > 0 &&
          strip.panel_bounds.x0 >= 0 && strip.panel_bounds.y0 >= 0 &&
-         strip.panel_bounds.x1 <= kPanelWidth && strip.panel_bounds.y1 <= kPanelHeight &&
+         strip.panel_bounds.x1 <= kOverviewWidth && strip.panel_bounds.y1 <= kOverviewHeight &&
          ((strip.panel_bounds.x0 | strip.panel_bounds.y0 | width | height) & 1) == 0 &&
          strip.stride >= width && strip.pixels.size() >= required;
 }
