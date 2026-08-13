@@ -1,6 +1,7 @@
 #include "tinydraw/production/frame_scroller.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 

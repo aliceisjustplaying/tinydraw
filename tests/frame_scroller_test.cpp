@@ -41,7 +41,7 @@ TEST_CASE("frame scroll moves overlap with memmove semantics") {
   CHECK(frame.front() == before.front());
 }
 
-TEST_CASE("frame scroll handles reverse and single-axis motion") {
+TEST_CASE("frame scroll handles reverse motion") {
   auto frame = numbered_frame();
   const auto before = frame;
   const production::PixelRect area{0, 0, kWidth, kHeight};
@@ -55,6 +55,21 @@ TEST_CASE("frame scroll handles reverse and single-axis motion") {
     for (int x = 1; x < kWidth; ++x) {
       CHECK(frame[static_cast<std::size_t>(y * kWidth + x)] ==
             before[static_cast<std::size_t>((y - 2) * kWidth + x - 1)]);
+    }
+  }
+}
+
+TEST_CASE("frame scroll returns one exposed rectangle for single-axis motion") {
+  auto frame = numbered_frame();
+  const auto before = frame;
+  const auto result = production::scroll_frame(frame, kWidth, {0, 0, kWidth, kHeight}, 2, 0);
+  REQUIRE(result.has_value());
+  REQUIRE(result->exposed_count == 1U);
+  CHECK(result->exposed[0] == production::PixelRect{kWidth - 2, 0, kWidth, kHeight});
+  for (int y = 0; y < kHeight; ++y) {
+    for (int x = 0; x < kWidth - 2; ++x) {
+      CHECK(frame[static_cast<std::size_t>(y * kWidth + x)] ==
+            before[static_cast<std::size_t>(y * kWidth + x + 2)]);
     }
   }
 }

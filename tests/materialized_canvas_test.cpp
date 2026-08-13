@@ -347,9 +347,55 @@ TEST_CASE("catalog and occupancy storage are never accepted as external workspac
   CHECK_FALSE(canvas.accepts_external_workspace(std::as_bytes(std::span(occupancy))));
 }
 
+TEST_CASE("snapshot restore derives conservative occupancy from non-paper pixels") {
+  std::array<std::uint16_t, production::kOverviewPixels> overview{};
+  std::array<std::uint16_t, production::kOverviewPixels> snapshot{};
+  snapshot.fill(0xFFFFU);
+  snapshot[3U * production::kOverviewWidth + 2U] = 0x001FU;
+  auto uniforms = std::make_unique<std::array<production::MaterializedUniformStorage,
+                                              production::kMaterializedTileIdentityCount>>();
+  std::array<std::uint8_t, production::kOccupancyBytes> occupancy{};
+  std::array<production::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, production::kTilePixels> tile_storage{};
+  production::MaterializedCanvas canvas(overview, *uniforms, occupancy, slots, tile_storage);
+
+  REQUIRE(canvas.restore_snapshot({4}, snapshot));
+  CHECK_FALSE(canvas.certainly_paper({production::ZoomLevel::k100Percent, 0, 0}));
+  CHECK(canvas.certainly_paper({production::ZoomLevel::k100Percent, 1, 0}));
+  CHECK(canvas.overview_pixels()[3U * production::kOverviewWidth + 2U] == 0x001FU);
+}
+
+TEST_CASE("invalidated learned paper composes updated overview until relearned") {
+  std::array<std::uint16_t, production::kOverviewPixels> overview{};
+  overview.fill(0xFFFFU);
+  auto uniforms = std::make_unique<std::array<production::MaterializedUniformStorage,
+                                              production::kMaterializedTileIdentityCount>>();
+  std::array<std::uint8_t, production::kOccupancyBytes> occupancy{};
+  std::array<production::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, production::kTilePixels> tile_storage{};
+  std::array<std::uint16_t, 16U * 16U> next_overview{};
+  next_overview.fill(0x1234U);
+  production::MaterializedCanvas canvas(overview, *uniforms, occupancy, slots, tile_storage);
+  const production::TileKey paper{production::ZoomLevel::k100Percent, 0, 0};
+  REQUIRE(canvas.publish_overview({0}, overview));
+  REQUIRE(canvas.publish_uniform(paper, {0}, production::MaterializationQuality::kImmediate));
+
+  REQUIRE(canvas.commit_incremental_revision(
+      {1}, {.bounds = {0, 0, 16, 16}, .pixels = next_overview}, {0, 0, 64, 64}, {}));
+  CHECK(canvas.lookup(paper)->kind == production::SourceKind::kOverview);
+  std::array<std::uint16_t, production::kTilePixels> composed{};
+  const auto stats = canvas.compose_view(
+      {.zoom = production::ZoomLevel::k100Percent, .level_pixels = {0, 0, 64, 64}}, composed);
+  REQUIRE(stats.has_value());
+  CHECK(stats->fallback_pixels == composed.size());
+  CHECK(std::all_of(composed.begin(), composed.end(),
+                    [](std::uint16_t pixel) { return pixel == 0x1234U; }));
+}
+
 TEST_CASE("occupancy is conservative across every zoom and mutation invalidates learned paper") {
   std::array<std::uint16_t, production::kOverviewPixels> overview{};
   std::array<std::uint16_t, production::kOverviewPixels> snapshot{};
+  snapshot.fill(0xFFFFU);
   auto uniforms = std::make_unique<std::array<production::MaterializedUniformStorage,
                                               production::kMaterializedTileIdentityCount>>();
   std::array<std::uint8_t, production::kOccupancyBytes> occupancy{};

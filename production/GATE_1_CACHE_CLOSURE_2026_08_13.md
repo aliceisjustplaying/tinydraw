@@ -103,7 +103,14 @@ Worst-case unaligned cold fills took 0.857–0.988 seconds in this instrumentati
 run because each publication was also progressively transferred to the panel.
 This does not affect the cache correctness result, and revisits do not replay.
 The previously accepted 0.64–0.72 second cold-compute target remains optimization
-debt; these display-inclusive probes are not relabeled as meeting it.
+debt; these display-inclusive probes are not relabeled as meeting it. The
+`within_cold_gate` telemetry is intentionally diagnostic rather than part of
+this cache-correctness verdict; cold-time regression gating remains future work.
+
+An append crossing learned paper invalidates that uniform identity without
+promoting it to a raw slot. Until idle refill relearns it, composition uses the
+newly updated overview, not stale paper. This is a deliberate short-lived
+quality tradeoff that avoids raw-slot churn and is host-tested for freshness.
 
 ## Validation
 

@@ -27,7 +27,7 @@ inline constexpr std::size_t kMaximumProgressiveRegionPixels =
     static_cast<std::size_t>(kMaximumProgressiveRegionWidth) * kMaximumProgressiveRegionHeight;
 inline constexpr int kMaximumCachedPanDelta = 32;
 inline constexpr std::size_t kMaximumCachedPanRegionPixels =
-    static_cast<std::size_t>(production::kOverviewWidth) * kMaximumCachedPanDelta;
+    static_cast<std::size_t>(production::kOverviewHeight) * kMaximumCachedPanDelta;
 inline constexpr std::size_t kLiveRegionScratchPixels =
     kMaximumProgressiveRegionPixels > kMaximumCachedPanRegionPixels
         ? kMaximumProgressiveRegionPixels
