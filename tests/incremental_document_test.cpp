@@ -106,6 +106,34 @@ TEST_CASE("incremental document falls back excess affected residents when scratc
   CHECK(fixture.canvas.current_revision() == production::DocumentRevision{1});
 }
 
+TEST_CASE("coarsest tiled append republishes both sides of a tile boundary") {
+  Fixture fixture;
+  fixture.overview.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
+  std::array<std::uint16_t, production::kTilePixels> tile{};
+  tile.fill(0xFFFFU);
+  const production::TileKey left{production::ZoomLevel::k50Percent, 0, 0};
+  const production::TileKey right{production::ZoomLevel::k50Percent, 1, 0};
+  REQUIRE(
+      fixture.canvas.publish_tile(left, {0}, production::MaterializationQuality::kSettled, tile));
+  REQUIRE(
+      fixture.canvas.publish_tile(right, {0}, production::MaterializationQuality::kSettled, tile));
+  const std::array samples{
+      production::CompactOperationSample{.x_quarter = 512, .y_quarter = 256, .radius_256 = 1},
+  };
+
+  const auto result = production::append_incrementally(
+      fixture.log, fixture.canvas, {.color = 0xF800U, .samples = samples}, fixture.workspace());
+  REQUIRE(result.has_value());
+  CHECK(result->affected_resident_tiles == 2U);
+  CHECK(result->published_tiles == 2U);
+  CHECK(result->fallback_tiles == 0U);
+  CHECK(fixture.canvas.lookup(left)->kind == production::SourceKind::kTileSlot);
+  CHECK(fixture.canvas.lookup(right)->kind == production::SourceKind::kTileSlot);
+  CHECK(fixture.canvas.lookup(left)->identity.revision == production::DocumentRevision{1});
+  CHECK(fixture.canvas.lookup(right)->identity.revision == production::DocumentRevision{1});
+}
+
 TEST_CASE("incremental document rejects non-exact canvas overview storage before copying") {
   std::array<production::OperationRecord, 1> records{};
   std::array<production::CompactOperationSample, 1> log_samples{};
@@ -178,6 +206,37 @@ TEST_CASE("document snapshot restore changes both authorities to an older revisi
   CHECK(fixture.canvas.current_revision() == production::DocumentRevision{3});
   CHECK(fixture.log.operation_count() == 0U);
   CHECK(fixture.canvas.overview_pixels().front() == 0x1234U);
+}
+
+TEST_CASE("document snapshot restore accepts revision zero at the current revision") {
+  Fixture fixture;
+  fixture.overview.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
+  REQUIRE(fixture.log.reset({0}));
+  fixture.next_overview.fill(0x1234U);
+
+  REQUIRE(production::restore_document_snapshot(fixture.log, fixture.canvas, {0},
+                                                fixture.next_overview));
+  CHECK(fixture.log.current_revision() == production::DocumentRevision{0});
+  CHECK(fixture.canvas.current_revision() == production::DocumentRevision{0});
+  CHECK(fixture.canvas.overview_pixels().front() == 0x1234U);
+}
+
+TEST_CASE("document snapshot restore fails atomically while a source is pinned") {
+  Fixture fixture;
+  fixture.overview.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({2}, fixture.overview));
+  REQUIRE(fixture.log.reset({2}));
+  const production::TileKey missing{production::ZoomLevel::k100Percent, 0, 0};
+  auto pin = fixture.canvas.pin(missing);
+  REQUIRE(pin.has_value());
+  fixture.next_overview.fill(0x1234U);
+
+  CHECK_FALSE(production::restore_document_snapshot(fixture.log, fixture.canvas, {1},
+                                                    fixture.next_overview));
+  CHECK(fixture.log.current_revision() == production::DocumentRevision{2});
+  CHECK(fixture.canvas.current_revision() == production::DocumentRevision{2});
+  CHECK(fixture.canvas.overview_pixels().front() == 0xFFFFU);
 }
 
 TEST_CASE("document snapshot restore fails atomically while an append is prepared") {
