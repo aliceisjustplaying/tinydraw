@@ -8,6 +8,10 @@
 
 namespace tinydraw {
 
+// Main toolbar's even-aligned transport boundary. Drawing pixels end before
+// this row; the toolbar itself starts at row 373.
+inline constexpr int kMainToolbarOverlayTop = 372;
+
 enum class DrawingTool { kPen, kPan, kEraser };
 enum class InkColor {
   kBlack,

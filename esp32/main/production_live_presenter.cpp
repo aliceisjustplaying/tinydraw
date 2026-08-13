@@ -10,7 +10,6 @@ namespace tinydraw::esp32 {
 namespace {
 
 constexpr std::uint16_t kBackground = 0xFFFFU;
-constexpr int kToolbarTop = 372;
 
 production::PixelRect align_bounds(production::PixelRect bounds) {
   bounds.x0 &= ~1;
@@ -85,7 +84,7 @@ LivePresentationTiming ProductionLivePresenter::refresh(const ToolbarState& tool
 LivePresentationTiming ProductionLivePresenter::refresh_region(production::PixelRect level_bounds,
                                                                std::uint32_t event_us) {
   const production::PixelRect view{level_x_, level_y_, level_x_ + production::kOverviewWidth,
-                                   level_y_ + kToolbarTop};
+                                   level_y_ + kMainToolbarOverlayTop};
   const production::PixelRect intersection{
       .x0 = std::max(view.x0, level_bounds.x0),
       .y0 = std::max(view.y0, level_bounds.y0),
@@ -102,7 +101,7 @@ LivePresentationTiming ProductionLivePresenter::refresh_region(production::Pixel
       .y1 = intersection.y1 - level_y_,
   };
   panel = align_bounds(panel);
-  panel.y1 = std::min(panel.y1, kToolbarTop);
+  panel.y1 = std::min(panel.y1, kMainToolbarOverlayTop);
   const production::PixelRect aligned_level{
       .x0 = level_x_ + panel.x0,
       .y0 = level_y_ + panel.y0,
@@ -130,6 +129,14 @@ LivePresentationTiming ProductionLivePresenter::compose_and_present(
       canvas_.compose_view({.zoom = zoom_, .level_pixels = level_bounds}, destination);
   if (!stats.has_value()) {
     return {};
+  }
+  for (int row = 0; row < height; ++row) {
+    const auto source = destination.subspan(static_cast<std::size_t>(row) * width, width);
+    auto target = frame_.subspan(
+        static_cast<std::size_t>(panel_bounds.y0 + row) * production::kOverviewWidth +
+            static_cast<std::size_t>(panel_bounds.x0),
+        static_cast<std::size_t>(width));
+    std::copy(source.begin(), source.end(), target.begin());
   }
   return present_pixels(panel_bounds, destination, width, event_us,
                         esp_timer_get_time() - compose_started);
