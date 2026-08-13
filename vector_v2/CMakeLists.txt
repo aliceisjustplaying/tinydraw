@@ -19,6 +19,7 @@ if(TINYDRAW_BUILD_TESTS)
     tests/incremental_document_test.cpp
     tests/incremental_rasterizer_test.cpp
     tests/materialized_canvas_test.cpp
+    tests/navigation_state_test.cpp
     tests/operation_builder_test.cpp
     tests/operation_lod_store_test.cpp
     tests/operation_log_test.cpp

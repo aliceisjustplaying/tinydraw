@@ -4,6 +4,7 @@ set(TINYDRAW_VECTOR_V2_SRCS
   "${CMAKE_CURRENT_LIST_DIR}/src/incremental_document.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/incremental_rasterizer.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/materialized_canvas.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/src/navigation_state.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/operation.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/operation_builder.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/operation_log.cpp"
