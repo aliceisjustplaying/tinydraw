@@ -1,0 +1,342 @@
+#include "co5300_panel_transport.h"
+
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+
+#include "driver/i2c_master.h"
+#include "driver/spi_master.h"
+#include "esp_check.h"
+#include "esp_heap_caps.h"
+#include "esp_lcd_co5300.h"
+#include "esp_lcd_panel_io.h"
+#include "esp_lcd_panel_ops.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
+#include "tinydraw/graphics/world_canvas.h"
+
+namespace tinydraw::esp32 {
+namespace {
+
+constexpr int kPanelGapX = 0x10;
+constexpr int kTransferPixels = 8192;
+constexpr int kTransferQueueDepth = 3;
+constexpr std::size_t kTransferHistory = 64U;
+constexpr std::uint16_t kIoExpanderAddress = 0x20;
+constexpr std::uint8_t kIoExpanderOutputRegister = 0x01;
+constexpr std::uint8_t kIoExpanderConfigRegister = 0x03;
+constexpr std::uint8_t kIoExpanderLcdReset = 1U << 0U;
+constexpr std::uint8_t kIoExpanderDisplayPower = 1U << 1U;
+constexpr std::uint8_t kIoExpanderTouchReset = 1U << 2U;
+constexpr std::uint8_t kIoExpanderSdChipSelect = 1U << 7U;
+constexpr std::uint8_t kIoExpanderOutputs =
+    kIoExpanderLcdReset | kIoExpanderDisplayPower | kIoExpanderTouchReset | kIoExpanderSdChipSelect;
+constexpr std::uint32_t kDmaCaps = MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL;
+
+constexpr std::array<std::uint8_t, 1> init_fe{0x00};
+constexpr std::array<std::uint8_t, 1> init_c4{0x80};
+constexpr std::array<std::uint8_t, 1> init_3a{0x55};
+constexpr std::array<std::uint8_t, 1> init_35{0x00};
+constexpr std::array<std::uint8_t, 1> init_53{0x20};
+constexpr std::array<std::uint8_t, 1> init_51{0xFF};
+constexpr std::array<std::uint8_t, 1> init_63{0xFF};
+constexpr std::array<std::uint8_t, 4> init_2a{0x00, 0x00, 0x01, 0x6F};
+constexpr std::array<std::uint8_t, 4> init_2b{0x00, 0x00, 0x01, 0xBF};
+
+const std::array<co5300_lcd_init_cmd_t, 11> panel_init{{
+    {0xFE, init_fe.data(), init_fe.size(), 0},
+    {0xC4, init_c4.data(), init_c4.size(), 0},
+    {0x3A, init_3a.data(), init_3a.size(), 0},
+    {0x35, init_35.data(), init_35.size(), 0},
+    {0x53, init_53.data(), init_53.size(), 0},
+    {0x51, init_51.data(), init_51.size(), 0},
+    {0x63, init_63.data(), init_63.size(), 0},
+    {0x2A, init_2a.data(), init_2a.size(), 0},
+    {0x2B, init_2b.data(), init_2b.size(), 0},
+    {0x11, nullptr, 0, 100},
+    {0x29, nullptr, 0, 0},
+}};
+
+constexpr std::uint32_t swap_pixel_pair(std::uint16_t first, std::uint16_t second) {
+  const std::uint32_t pixels =
+      static_cast<std::uint32_t>(first) | (static_cast<std::uint32_t>(second) << 16U);
+  return ((pixels >> 8U) & 0x00FF00FFU) | ((pixels << 8U) & 0xFF00FF00U);
+}
+
+static_assert(swap_pixel_pair(0x1234U, 0xABCDU) == 0xCDAB3412U);
+
+bool reset_panel_power() {
+  i2c_master_bus_config_t bus_config{};
+  bus_config.i2c_port = I2C_NUM_0;
+  bus_config.sda_io_num = GPIO_NUM_15;
+  bus_config.scl_io_num = GPIO_NUM_14;
+  bus_config.clk_source = I2C_CLK_SRC_DEFAULT;
+  bus_config.glitch_ignore_cnt = 7;
+  bus_config.flags.enable_internal_pullup = true;
+  i2c_master_bus_handle_t bus = nullptr;
+  if (i2c_new_master_bus(&bus_config, &bus) != ESP_OK) {
+    return false;
+  }
+
+  i2c_device_config_t device_config{};
+  device_config.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+  device_config.device_address = kIoExpanderAddress;
+  device_config.scl_speed_hz = 400000;
+  i2c_master_dev_handle_t device = nullptr;
+  if (i2c_master_bus_add_device(bus, &device_config, &device) != ESP_OK) {
+    static_cast<void>(i2c_del_master_bus(bus));
+    return false;
+  }
+
+  const auto write = [&](std::uint8_t address, std::uint8_t value) {
+    const std::array payload{address, value};
+    return i2c_master_transmit(device, payload.data(), payload.size(), 100) == ESP_OK;
+  };
+  const bool configured =
+      write(kIoExpanderConfigRegister, static_cast<std::uint8_t>(~kIoExpanderOutputs));
+  const bool powered_down = configured && write(kIoExpanderOutputRegister, kIoExpanderSdChipSelect);
+  vTaskDelay(pdMS_TO_TICKS(20));
+  const bool powered_up = powered_down && write(kIoExpanderOutputRegister, kIoExpanderOutputs);
+  vTaskDelay(pdMS_TO_TICKS(150));
+
+  const bool removed = i2c_master_bus_rm_device(device) == ESP_OK;
+  const bool deleted = i2c_del_master_bus(bus) == ESP_OK;
+  return powered_up && removed && deleted;
+}
+
+}  // namespace
+
+class Co5300PanelTransport::Impl {
+ public:
+  Impl() {
+    transfer_pixels_ = static_cast<std::uint16_t*>(heap_caps_malloc(
+        static_cast<std::size_t>(kTransferQueueDepth * kTransferPixels) * sizeof(std::uint16_t),
+        kDmaCaps));
+    transfer_semaphore_ = xSemaphoreCreateCountingStatic(kTransferQueueDepth, kTransferQueueDepth,
+                                                         &transfer_semaphore_storage_);
+    if (transfer_pixels_ == nullptr || transfer_semaphore_ == nullptr) {
+      return;
+    }
+    std::printf("TINYDRAW_PANEL_HARD_RESET=%u\n", reset_panel_power());
+
+    spi_bus_config_t bus_config{};
+    bus_config.sclk_io_num = GPIO_NUM_11;
+    bus_config.data0_io_num = GPIO_NUM_4;
+    bus_config.data1_io_num = GPIO_NUM_5;
+    bus_config.data2_io_num = GPIO_NUM_6;
+    bus_config.data3_io_num = GPIO_NUM_7;
+    bus_config.max_transfer_sz = kTransferPixels * sizeof(std::uint16_t);
+    if (spi_bus_initialize(SPI2_HOST, &bus_config, SPI_DMA_CH_AUTO) != ESP_OK) {
+      return;
+    }
+    bus_initialized_ = true;
+
+    esp_lcd_panel_io_spi_config_t io_config{};
+    io_config.cs_gpio_num = GPIO_NUM_12;
+    io_config.dc_gpio_num = GPIO_NUM_NC;
+    io_config.spi_mode = 0;
+    io_config.pclk_hz = 60 * 1000 * 1000;
+    io_config.trans_queue_depth = kTransferQueueDepth;
+    io_config.on_color_trans_done = on_transfer_done;
+    io_config.user_ctx = this;
+    io_config.lcd_cmd_bits = 32;
+    io_config.lcd_param_bits = 8;
+    io_config.flags.quad_mode = true;
+    if (esp_lcd_new_panel_io_spi(static_cast<esp_lcd_spi_bus_handle_t>(SPI2_HOST), &io_config,
+                                 &io_) != ESP_OK) {
+      return;
+    }
+
+    co5300_vendor_config_t vendor_config{};
+    vendor_config.init_cmds = panel_init.data();
+    vendor_config.init_cmds_size = static_cast<std::uint16_t>(panel_init.size());
+    vendor_config.flags.use_qspi_interface = 1;
+    esp_lcd_panel_dev_config_t panel_config{};
+    panel_config.reset_gpio_num = GPIO_NUM_NC;
+    panel_config.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB;
+    panel_config.data_endian = LCD_RGB_DATA_ENDIAN_BIG;
+    panel_config.bits_per_pixel = 16;
+    panel_config.vendor_config = &vendor_config;
+    if (esp_lcd_new_panel_co5300(io_, &panel_config, &panel_) != ESP_OK ||
+        esp_lcd_panel_reset(panel_) != ESP_OK || esp_lcd_panel_init(panel_) != ESP_OK ||
+        esp_lcd_panel_set_gap(panel_, kPanelGapX, 0) != ESP_OK ||
+        esp_lcd_panel_disp_on_off(panel_, true) != ESP_OK) {
+      return;
+    }
+    ready_ = true;
+  }
+
+  ~Impl() {
+    static_cast<void>(wait_for_all(2'000'000));
+    ready_ = false;
+    if (panel_ != nullptr) {
+      static_cast<void>(esp_lcd_panel_del(panel_));
+    }
+    if (io_ != nullptr) {
+      static_cast<void>(esp_lcd_panel_io_del(io_));
+    }
+    if (bus_initialized_) {
+      static_cast<void>(spi_bus_free(SPI2_HOST));
+    }
+    heap_caps_free(transfer_pixels_);
+  }
+
+  [[nodiscard]] bool ready() const { return ready_; }
+  void reset_timing() {
+    prepare_us_ = 0;
+    transfer_us_ = 0;
+    push_count_ = 0;
+    rejected_push_count_ = 0;
+  }
+  [[nodiscard]] std::int64_t prepare_us() const { return prepare_us_; }
+  [[nodiscard]] std::int64_t transfer_us() const { return transfer_us_; }
+  [[nodiscard]] std::uint32_t push_count() const { return push_count_; }
+  [[nodiscard]] std::uint32_t rejected_push_count() const { return rejected_push_count_; }
+  [[nodiscard]] std::uint32_t submit_count() const {
+    return transfer_submits_.load(std::memory_order_acquire);
+  }
+  [[nodiscard]] std::uint32_t complete_count() const {
+    return transfer_completes_.load(std::memory_order_acquire);
+  }
+
+  [[nodiscard]] std::int64_t complete_time_us(std::uint32_t sequence) const {
+    const std::uint32_t completed = complete_count();
+    if (sequence == 0U || sequence > completed || completed - sequence >= kTransferHistory) {
+      return -1;
+    }
+    return transfer_complete_times_[(sequence - 1U) % kTransferHistory].load(
+        std::memory_order_relaxed);
+  }
+
+  [[nodiscard]] bool wait_for_all(std::int64_t timeout_us) {
+    const std::uint32_t target = submit_count();
+    const std::int64_t started = esp_timer_get_time();
+    while (complete_count() < target) {
+      if (esp_timer_get_time() - started >= timeout_us) {
+        return false;
+      }
+      vTaskDelay(pdMS_TO_TICKS(1));
+    }
+    return true;
+  }
+
+  void push_rect(int x, int y, int width, int height, const std::uint16_t* pixels, int stride) {
+    if (!ready_ || pixels == nullptr || width <= 0 || height <= 0) {
+      ++rejected_push_count_;
+      return;
+    }
+    const bool in_bounds = x >= 0 && y >= 0 && x < kCanvasWidth && y < kCanvasHeight &&
+                           width <= kCanvasWidth - x && height <= kCanvasHeight - y;
+    const bool valid_window = ((x | y | width | height) & 1) == 0;
+    if (!in_bounds || !valid_window) {
+      ++rejected_push_count_;
+      std::printf(
+          "TINYDRAW_PANEL_WINDOW_REJECT x=%d y=%d width=%d height=%d bounds=%u even_window=%u\n", x,
+          y, width, height, in_bounds, valid_window);
+      return;
+    }
+    const int source_stride = stride == 0 ? width : stride;
+    if (source_stride < width) {
+      ++rejected_push_count_;
+      return;
+    }
+    if (width * height > kTransferPixels) {
+      int rows_per_transfer = kTransferPixels / width;
+      rows_per_transfer -= rows_per_transfer % 2;
+      if (rows_per_transfer <= 0) {
+        ++rejected_push_count_;
+        return;
+      }
+      for (int row = 0; row < height; row += rows_per_transfer) {
+        const int rows = std::min(rows_per_transfer, height - row);
+        push_rect(x, y + row, width, rows,
+                  pixels + static_cast<std::ptrdiff_t>(row * source_stride), source_stride);
+      }
+      return;
+    }
+
+    const std::int64_t transfer_started = esp_timer_get_time();
+    ESP_ERROR_CHECK(xSemaphoreTake(transfer_semaphore_, portMAX_DELAY) == pdTRUE ? ESP_OK
+                                                                                 : ESP_FAIL);
+    auto* transfer =
+        transfer_pixels_ + static_cast<std::ptrdiff_t>(transfer_index_ * kTransferPixels);
+    transfer_index_ = (transfer_index_ + 1U) % kTransferQueueDepth;
+    transfer_us_ += esp_timer_get_time() - transfer_started;
+
+    const std::int64_t prepare_started = esp_timer_get_time();
+    for (int row = 0; row < height; ++row) {
+      const auto* source = pixels + static_cast<std::ptrdiff_t>(row * source_stride);
+      auto* destination =
+          reinterpret_cast<std::uint32_t*>(transfer + static_cast<std::ptrdiff_t>(row * width));
+      for (int column = 0; column < width; column += 2) {
+        destination[column / 2] = swap_pixel_pair(source[column], source[column + 1]);
+      }
+    }
+    prepare_us_ += esp_timer_get_time() - prepare_started;
+
+    const std::int64_t submit_started = esp_timer_get_time();
+    transfer_submits_.fetch_add(1U, std::memory_order_release);
+    ESP_ERROR_CHECK(esp_lcd_panel_draw_bitmap(panel_, x, y, x + width, y + height, transfer));
+    transfer_us_ += esp_timer_get_time() - submit_started;
+    ++push_count_;
+  }
+
+ private:
+  static bool on_transfer_done(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t*,
+                               void* context) {
+    auto& self = *static_cast<Impl*>(context);
+    const std::uint32_t sequence = self.transfer_completes_.load(std::memory_order_relaxed);
+    self.transfer_complete_times_[sequence % kTransferHistory].store(esp_timer_get_time(),
+                                                                     std::memory_order_relaxed);
+    self.transfer_completes_.store(sequence + 1U, std::memory_order_release);
+    BaseType_t woke = pdFALSE;
+    xSemaphoreGiveFromISR(self.transfer_semaphore_, &woke);
+    return woke == pdTRUE;
+  }
+
+  std::uint16_t* transfer_pixels_ = nullptr;
+  StaticSemaphore_t transfer_semaphore_storage_{};
+  SemaphoreHandle_t transfer_semaphore_ = nullptr;
+  esp_lcd_panel_io_handle_t io_ = nullptr;
+  esp_lcd_panel_handle_t panel_ = nullptr;
+  std::array<std::atomic<std::int64_t>, kTransferHistory> transfer_complete_times_{};
+  std::atomic<std::uint32_t> transfer_submits_{0U};
+  std::atomic<std::uint32_t> transfer_completes_{0U};
+  std::int64_t prepare_us_ = 0;
+  std::int64_t transfer_us_ = 0;
+  std::uint32_t push_count_ = 0;
+  std::uint32_t rejected_push_count_ = 0;
+  std::size_t transfer_index_ = 0;
+  bool bus_initialized_ = false;
+  bool ready_ = false;
+};
+
+Co5300PanelTransport::Co5300PanelTransport() : impl_(std::make_unique<Impl>()) {}
+Co5300PanelTransport::~Co5300PanelTransport() = default;
+bool Co5300PanelTransport::ready() const { return impl_->ready(); }
+void Co5300PanelTransport::reset_timing() { impl_->reset_timing(); }
+std::int64_t Co5300PanelTransport::prepare_us() const { return impl_->prepare_us(); }
+std::int64_t Co5300PanelTransport::transfer_us() const { return impl_->transfer_us(); }
+std::uint32_t Co5300PanelTransport::push_count() const { return impl_->push_count(); }
+std::uint32_t Co5300PanelTransport::rejected_push_count() const {
+  return impl_->rejected_push_count();
+}
+std::uint32_t Co5300PanelTransport::submit_count() const { return impl_->submit_count(); }
+std::uint32_t Co5300PanelTransport::complete_count() const { return impl_->complete_count(); }
+std::int64_t Co5300PanelTransport::complete_time_us(std::uint32_t sequence) const {
+  return impl_->complete_time_us(sequence);
+}
+bool Co5300PanelTransport::wait_for_all(std::int64_t timeout_us) {
+  return impl_->wait_for_all(timeout_us);
+}
+void Co5300PanelTransport::push_rect(int x, int y, int width, int height,
+                                     const std::uint16_t* pixels, int stride) {
+  impl_->push_rect(x, y, width, height, pixels, stride);
+}
+
+}  // namespace tinydraw::esp32

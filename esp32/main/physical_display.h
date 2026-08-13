@@ -4,6 +4,7 @@
 #include <memory>
 #include <span>
 
+#include "co5300_panel_transport.h"
 #include "tinydraw/graphics/world_canvas.h"
 #include "tinydraw/platform/display_backend.h"
 #include "tinydraw/ui/toolbar.h"
@@ -30,6 +31,9 @@ class PhysicalDisplay final : public DisplayBackend {
   [[nodiscard]] std::int64_t transfer_us() const;
   [[nodiscard]] std::uint32_t push_count() const;
   [[nodiscard]] std::uint32_t rejected_push_count() const;
+  [[nodiscard]] std::uint32_t submit_count() const;
+  [[nodiscard]] std::uint32_t complete_count() const;
+  [[nodiscard]] std::int64_t complete_time_us(std::uint32_t sequence) const;
 
   void set_toolbar(const ToolbarState& toolbar);
   void push_rect(int x, int y, int width, int height, const std::uint16_t* pixels,

@@ -862,7 +862,7 @@ void run_hardware_app() {
       {.submit_count = tinydraw::esp32::physical_display_submit_count,
        .complete_count = tinydraw::esp32::physical_display_complete_count,
        .complete_time_us = tinydraw::esp32::physical_display_complete_time_us,
-       .context = nullptr});
+       .context = &display});
   if (interactive_pan_benchmark == nullptr) {
     std::printf("TINYDRAW_HARDWARE_FAIL interactive_pan_benchmark=0\n");
     return;

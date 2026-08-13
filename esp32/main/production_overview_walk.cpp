@@ -5,11 +5,11 @@
 #include <memory>
 #include <span>
 
+#include "co5300_panel_transport.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "physical_display.h"
 #include "tinydraw/production/materialized_canvas.h"
 
 namespace tinydraw::esp32 {
@@ -49,9 +49,10 @@ std::uint16_t overview_pattern(int x, int y) {
   return marker ? 0xFFFFU : static_cast<std::uint16_t>((red << 11U) | (green << 5U) | blue);
 }
 
-bool wait_for_transfers(std::uint32_t target, std::int64_t timeout_us) {
+bool wait_for_transfers(Co5300PanelTransport& display, std::uint32_t target,
+                        std::int64_t timeout_us) {
   const std::int64_t started = esp_timer_get_time();
-  while (physical_display_complete_count(nullptr) < target) {
+  while (display.complete_count() < target) {
     if (esp_timer_get_time() - started >= timeout_us) {
       return false;
     }
@@ -60,7 +61,7 @@ bool wait_for_transfers(std::uint32_t target, std::int64_t timeout_us) {
   return true;
 }
 
-bool present_overview(PhysicalDisplay& display, const MaterializedCanvas& canvas) {
+bool present_overview(Co5300PanelTransport& display, const MaterializedCanvas& canvas) {
   const auto source = canvas.overview_pixels();
   const std::int64_t started = esp_timer_get_time();
   const std::uint32_t pushes_before = display.push_count();
@@ -74,9 +75,9 @@ bool present_overview(PhysicalDisplay& display, const MaterializedCanvas& canvas
     display.push_rect(0, y, production::kOverviewWidth, rows, pixels.data(),
                       production::kOverviewWidth);
   }
-  const std::uint32_t target = physical_display_submit_count(nullptr);
+  const std::uint32_t target = display.submit_count();
   const std::uint32_t pushes = display.push_count() - pushes_before;
-  const bool completed = wait_for_transfers(target, 2'000'000);
+  const bool completed = wait_for_transfers(display, target, 2'000'000);
   const bool passed = completed && pushes == kExpectedPushesPerFrame &&
                       hash == kExpectedOverviewHash && display.rejected_push_count() == 0U;
   std::printf(
@@ -84,12 +85,11 @@ bool present_overview(PhysicalDisplay& display, const MaterializedCanvas& canvas
       "elapsed_us=%lld completed=%u submit=%lu complete=%lu\n",
       static_cast<unsigned long>(hash), static_cast<unsigned long>(pushes),
       static_cast<long long>(esp_timer_get_time() - started), completed,
-      static_cast<unsigned long>(target),
-      static_cast<unsigned long>(physical_display_complete_count(nullptr)));
+      static_cast<unsigned long>(target), static_cast<unsigned long>(display.complete_count()));
   return passed;
 }
 
-bool present_fallback(PhysicalDisplay& display, MaterializedCanvas& canvas, int world_x,
+bool present_fallback(Co5300PanelTransport& display, MaterializedCanvas& canvas, int world_x,
                       int world_y, std::uint32_t expected_hash, std::span<std::uint16_t> strip) {
   const std::int64_t started = esp_timer_get_time();
   const std::uint32_t pushes_before = display.push_count();
@@ -116,9 +116,9 @@ bool present_fallback(PhysicalDisplay& display, MaterializedCanvas& canvas, int 
     display.push_rect(0, panel_y, production::kOverviewWidth, rows, destination.data(),
                       production::kOverviewWidth);
   }
-  const std::uint32_t target = physical_display_submit_count(nullptr);
+  const std::uint32_t target = display.submit_count();
   const std::uint32_t pushes = display.push_count() - pushes_before;
-  const bool completed = wait_for_transfers(target, 2'000'000);
+  const bool completed = wait_for_transfers(display, target, 2'000'000);
   const bool passed = completed && pushes == kExpectedPushesPerFrame && hash == expected_hash &&
                       display.rejected_push_count() == 0U;
   std::printf(
@@ -127,7 +127,7 @@ bool present_fallback(PhysicalDisplay& display, MaterializedCanvas& canvas, int 
       world_x, world_y, static_cast<unsigned long>(hash), static_cast<unsigned long>(pushes),
       static_cast<long long>(compose_us), static_cast<long long>(esp_timer_get_time() - started),
       completed, static_cast<unsigned long>(target),
-      static_cast<unsigned long>(physical_display_complete_count(nullptr)));
+      static_cast<unsigned long>(display.complete_count()));
   return passed;
 }
 
@@ -159,7 +159,7 @@ void run_production_overview_walk() {
 
   MaterializedCanvas canvas(std::span(overview, production::kOverviewPixels), std::span(slot, 1),
                             std::span(tile_pixels, production::kTilePixels), DocumentRevision{0});
-  PhysicalDisplay display(false);
+  Co5300PanelTransport display;
   auto* overview_source =
       static_cast<std::uint16_t*>(heap_caps_malloc(production::kOverviewBytes, kExternalCaps));
   if (overview_source == nullptr) {
@@ -189,8 +189,8 @@ void run_production_overview_walk() {
            pass;
     vTaskDelay(pdMS_TO_TICKS(350));
   }
-  const std::uint32_t submits = physical_display_submit_count(nullptr);
-  const std::uint32_t completes = physical_display_complete_count(nullptr);
+  const std::uint32_t submits = display.submit_count();
+  const std::uint32_t completes = display.complete_count();
   const std::uint32_t rejects = display.rejected_push_count();
   pass = pass && display.push_count() == kExpectedTotalPushes && submits == kExpectedTotalPushes &&
          completes == kExpectedTotalPushes && rejects == 0U;
