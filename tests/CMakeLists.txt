@@ -64,6 +64,13 @@ add_test(NAME tinydraw_perf_characterization COMMAND tinydraw_perf_characterizat
 add_executable(tinydraw_vector_rebuild_benchmark vector_rebuild_benchmark.cpp)
 target_link_libraries(tinydraw_vector_rebuild_benchmark PRIVATE tinydraw::core tinydraw_project_options)
 
+add_executable(tinydraw_production_lod_characterization production_lod_characterization.cpp)
+target_link_libraries(tinydraw_production_lod_characterization PRIVATE
+  tinydraw::core
+  tinydraw::production
+  tinydraw_project_options
+)
+
 if(TARGET tinydraw_host)
   set(REPLAY_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/replay")
   file(MAKE_DIRECTORY "${REPLAY_OUTPUT_DIR}")
