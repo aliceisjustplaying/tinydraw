@@ -18,8 +18,9 @@ This is not a ship-quality rendering pass. Hard-edged tiles are provisional
 
 ## Hardware measurements
 
-Evidence logs: [`hardware-receipts/gate1-tile-producer.log`](hardware-receipts/gate1-tile-producer.log)
-and [`hardware-receipts/gate1-p95-20-runs.log`](hardware-receipts/gate1-p95-20-runs.log).
+Evidence logs: [`hardware-receipts/gate1-tile-producer.log`](hardware-receipts/gate1-tile-producer.log),
+[`hardware-receipts/gate1-p95-20-runs.log`](hardware-receipts/gate1-p95-20-runs.log), and
+[`hardware-receipts/gate1-pan-p95-20-runs.log`](hardware-receipts/gate1-pan-p95-20-runs.log).
 
 ### Deterministic synthetic regression workload
 
@@ -63,9 +64,15 @@ This is a measured complete viewport, not an extrapolation from hard-edged cost.
 ### Pan adapter
 
 Automated fallback composition moved the view origin from `(0,0)` to `(120,120)`
-and completed presentation at both 100% and 400%. Both passed. This closes the
-basic adapter defect; the final human test still checks physical toolbar mode
-selection and touch behavior.
+and completed presentation at both 100% and 400%. Twenty cold-start runs measured:
+
+| Zoom | Compose p95 | Event-to-submit p95 | Event-to-first-complete p95 | Result |
+|---|---:|---:|---:|---|
+| 100% | 26.142 ms | 26.800 ms | 27.606 ms | PASS |
+| 400% | 25.943 ms | 26.603 ms | 27.409 ms | PASS |
+
+This closes the ≤35 ms fallback pan path and basic adapter defect. The final
+human test still checks physical toolbar mode selection and touch behavior.
 
 ## Correctness and architecture evidence
 
