@@ -1,0 +1,98 @@
+I (103) esp_image: segment 0: paddr=00010020 vaddr=3c030020 sizeESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x15 (USB_UART_CHIP_RESET),boot:0x2b (SPI_FAST_FLASH_BOOT)
+Saved PC:0x420080cf
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce2820,len:0x1664
+load:0x403c8700,len:0xf38
+load:0x403cb700,len:0x31e8
+entry 0x403c8930
+I (24) boot: ESP-IDF v6.0.2 2nd stage bootloader
+I (24) boot: compile time Aug 13 2026 12:29:28
+I (25) boot: Multicore bootloader
+I (25) boot: chip revision: v0.2
+I (28) boot: efuse block revision: v1.3
+I (31) qio_mode: Enabling default flash chip QIO
+I (36) boot.esp32s3: Boot SPI Speed : 80MHz
+I (39) boot.esp32s3: SPI Mode       : QIO
+I (43) boot.esp32s3: SPI Flash Size : 16MB
+I (47) boot: Enabling RNG early entropy source...
+I (51) boot: Partition Table:
+I (54) boot: ## Label            Usage          Type ST Offset   Length
+I (60) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (67) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (73) boot:  2 factory          factory app      00 00 00010000 00100000
+I (80) boot:  3 drawing          Unknown data     01 40 00110000 00300000
+I (86) boot:  4 export           Unknown data     01 41 00410000 00500000
+I (93) boot:  5 coredump         Unknown data     01 03 00910000 00010000
+I (100) boot: End of partition table
+I (103) esp_image: segment 0: paddr=00010020 vaddr=3c030020 size=0ea64h ( 60004) map
+I (120) esp_image: segment 1: paddr=0001ea8c vaddr=3fc93d00 size=0158ch (  5516) load
+I (121) esp_image: segment 2: paddr=00020020 vaddr=42000020 size=29554h (169300) map
+I (152) esp_image: segment 3: paddr=0004957c vaddr=3fc9528c size=02098h (  8344) load
+I (154) esp_image: segment 4: paddr=0004b61c vaddr=40374000 size=0fcbch ( 64700) load
+I (168) esp_image: segment 5: paddr=0005b2e0 vaddr=50000000 size=00024h (    36) load
+I (175) boot: Loaded app from partition at offset 0x10000
+I (176) boot: Disabling RNG early entropy source...
+I (186) octal_psram: vendor id    : 0x0d (AP)
+I (186) octal_psram: dev id       : 0x02 (generation 3)
+I (186) octal_psram: density      : 0x03 (64 Mbit)
+I (188) octal_psram: good-die     : 0x01 (Pass)
+I (193) octal_psram: Latency      : 0x01 (Fixed)
+I (197) octal_psram: VCC          : 0x01 (3V)
+I (201) octal_psram: SRF          : 0x01 (Fast Refresh)
+I (206) octal_psram: BurstType    : 0x01 (Hybrid Wrap)
+I (211) octal_psram: BurstLen     : 0x01 (32 Byte)
+I (215) octal_psram: Readlatency  : 0x02 (10 cycles@Fixed)
+I (221) octal_psram: DriveStrength: 0x00 (1/1)
+I (225) MSPI Timing: Enter psram timing tuning
+I (230) esp_psram: Found 8MB PSRAM device
+I (233) esp_psram: Speed: 80MHz
+I (236) cpu_start: Multicore app
+I (652) esp_psram: SPI SRAM memory test OK
+I (660) cpu_start: GPIO 44 and 43 are used as console UART I/O pins
+I (660) cpu_start: Pro cpu start user code
+I (660) cpu_start: cpu freq: 240000000 Hz
+I (662) app_init: Application information:
+I (666) app_init: Project name:     tinydraw_esp32
+I (670) app_init: App version:      f35bef5-dirty
+I (675) app_init: Compile time:     Aug 13 2026 12:29:23
+I (680) app_init: ELF file SHA256:  838feddad...
+I (684) app_init: ESP-IDF:          v6.0.2
+I (688) efuse_init: Min chip rev:     v0.0
+I (692) efuse_init: Max chip rev:     v0.99 
+I (696) efuse_init: Chip rev:         v0.2
+I (700) heap_init: Initializing. RAM available for dynamic allocation:
+I (706) heap_init: At 3FC97DF0 len 00051920 (326 KiB): RAM
+I (711) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+I (716) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
+I (721) heap_init: At 600FE000 len 00001FE8 (7 KiB): RTCRAM
+I (727) esp_psram: Adding pool of 8192K of PSRAM memory to heap allocator
+I (734) spi_flash: detected chip: generic
+I (737) spi_flash: flash io: qio
+I (740) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+I (746) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+I (753) main_task: Started on CPU0
+I (756) main_task: Calling app_main()
+TINYDRAW_PANEL_HARD_RESET=0
+I (949) co5300: version: 2.1.0
+I (950) co5300_spi: LCD panel create success, version: 2.1.0
+W (1030) co5300_spi: The 3Ah command has been used and will be overwritten by external initialization sequence
+I (1130) CST816S: IC id: 183
+TINYDRAW_LIVE_PRESENT kind=startup zoom=25 x=0 y=0 compose_us=34601 read_submit_us=0 read_complete_us=0 transfer_wait_us=19418 pushes=21 pass=1
+TINYDRAW_LIVE_STRESS operations=1000 samples=20000 total_us=369798 average_us=369 maximum_us=534 free_psram=4714428 largest_psram=4587520
+TINYDRAW_LIVE_PRESENT kind=gate_fallback zoom=100 x=0 y=0 compose_us=22493 read_submit_us=23264 read_complete_us=24066 transfer_wait_us=19172 pushes=21 pass=1
+TINYDRAW_GATE1_HARD zoom=100 cold=1 operations=1000 samples=20000 steps=192 tiles=48 scanned=12000 rendered=125 max_supertask_us=7504 presentation_us=41754 total_us=380125 pass=1
+TINYDRAW_LIVE_PRESENT kind=gate_fallback zoom=400 x=0 y=0 compose_us=21925 read_submit_us=22682 read_complete_us=23484 transfer_wait_us=19396 pushes=21 pass=1
+TINYDRAW_GATE1_HARD zoom=400 cold=1 operations=1000 samples=20000 steps=192 tiles=48 scanned=12000 rendered=18 max_supertask_us=28392 presentation_us=41370 total_us=297112 pass=1
+TINYDRAW_GATE1_WORKLOAD kind=realistic seed=7 operations=1000 samples=19844 maximum_stroke=198 load_us=240535 raw_source=1 lod_copies=0
+TINYDRAW_LIVE_PRESENT kind=gate_fallback zoom=100 x=0 y=0 compose_us=22468 read_submit_us=23248 read_complete_us=24049 transfer_wait_us=19861 pushes=21 pass=1
+TINYDRAW_GATE1_HARD zoom=100 cold=1 operations=1000 samples=19844 steps=275 tiles=48 scanned=12000 rendered=475 max_supertask_us=5348 presentation_us=40911 total_us=422652 pass=1
+TINYDRAW_LIVE_PRESENT kind=gate_fallback zoom=400 x=0 y=0 compose_us=21931 read_submit_us=22695 read_complete_us=23497 transfer_wait_us=19869 pushes=21 pass=1
+TINYDRAW_GATE1_HARD zoom=400 cold=1 operations=1000 samples=19844 steps=208 tiles=48 scanned=12000 rendered=90 max_supertask_us=28101 presentation_us=41641 total_us=376863 pass=1
+TINYDRAW_GATE1_SSAA zoom=100 samples_per_pixel=4 cold=1 operations=1000 samples=19844 steps=42 scanned=42000 rendered=430 max_tile_us=29638 presentation_us=57313 total_us=807980 pass=0
+TINYDRAW_GATE1_PAN zoom=100 from_x=0 from_y=0 to_x=120 to_y=120 setup=1 present=1 moved=1 pass=1
+TINYDRAW_GATE1_PAN zoom=400 from_x=0 from_y=0 to_x=120 to_y=120 setup=1 present=1 moved=1 pass=1
+TINYDRAW_GATE1_AUTOMATED_DONE stress=1 stress_100=1 stress_400=1 workload=1 hard_100=1 hard_400=1 ssaa_100=0 pan_100=1 pan_400=1 return=1
+TINYDRAW_LIVE_READY zoom=25 controls=toolbar button=cycle_25_100_400 long_button=load_1000 operations_capacity=4000 samples_capacity=80000 free_psram=4714428 largest_psram=4587520
