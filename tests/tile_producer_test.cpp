@@ -134,6 +134,46 @@ TEST_CASE("tile producer scans painter order once per supertask and skips distan
   CHECK(step->tiles_published == 4U);
 }
 
+TEST_CASE("tile producer 2x AA probe publishes settled output with blended edge pixels") {
+  Fixture fixture;
+  const std::array diagonal{
+      production::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 192},
+      production::CompactOperationSample{.x_quarter = 240, .y_quarter = 240, .radius_256 = 192},
+  };
+  REQUIRE(fixture.log.append(append(diagonal, 0x0000U)));
+  std::array<std::uint16_t, production::kOverviewPixels> revised_overview{};
+  revised_overview.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({1}, revised_overview));
+  const production::ViewRequest view{
+      .zoom = production::ZoomLevel::k100Percent,
+      .level_pixels = {0, 0, production::kTileWidth, production::kTileHeight},
+  };
+
+  const auto step = fixture.producer.produce_next_2x_aa_100(view);
+  REQUIRE(step.has_value());
+  CHECK(step->tiles_published == 1U);
+  CHECK(step->complete);
+  const auto source = fixture.canvas.lookup({production::ZoomLevel::k100Percent, 0, 0});
+  REQUIRE(source.has_value());
+  CHECK(source->identity.quality == production::MaterializationQuality::kSettled);
+
+  std::array<std::uint16_t, production::kTilePixels> composed{};
+  REQUIRE(fixture.canvas.compose_view(view, composed));
+  CHECK(std::ranges::any_of(
+      composed, [](std::uint16_t pixel) { return pixel != 0x0000U && pixel != 0xFFFFU; }));
+}
+
+TEST_CASE("tile producer rejects invalid AA probe and invalid baseline reset") {
+  Fixture fixture;
+  CHECK_FALSE(fixture.producer.produce_next_2x_aa_100(
+      {.zoom = production::ZoomLevel::k400Percent, .level_pixels = {0, 0, 64, 64}}));
+  CHECK(fixture.producer.reset_uniform_baseline({0}));
+  const std::array point{
+      production::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256}};
+  REQUIRE(fixture.log.append(append(point)));
+  CHECK_FALSE(fixture.producer.reset_uniform_baseline({1}));
+}
+
 TEST_CASE("tile producer rejects 25 percent and aliased or short workspace") {
   Fixture fixture;
   CHECK_FALSE(fixture.producer.produce_next(
