@@ -25,6 +25,13 @@ inline constexpr int kMaximumProgressiveRegionWidth = production::kTileProducerW
 inline constexpr int kMaximumProgressiveRegionHeight = production::kTileProducerHeight + 2;
 inline constexpr std::size_t kMaximumProgressiveRegionPixels =
     static_cast<std::size_t>(kMaximumProgressiveRegionWidth) * kMaximumProgressiveRegionHeight;
+inline constexpr int kMaximumCachedPanDelta = 32;
+inline constexpr std::size_t kMaximumCachedPanRegionPixels =
+    static_cast<std::size_t>(production::kOverviewWidth) * kMaximumCachedPanDelta;
+inline constexpr std::size_t kLiveRegionScratchPixels =
+    kMaximumProgressiveRegionPixels > kMaximumCachedPanRegionPixels
+        ? kMaximumProgressiveRegionPixels
+        : kMaximumCachedPanRegionPixels;
 
 struct LivePresentationTiming {
   std::int64_t compose_us = 0;

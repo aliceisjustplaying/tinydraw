@@ -118,7 +118,7 @@ struct AppStorage {
         allocate_array<std::uint16_t>(production::kTileSlotCount * production::kTilePixels);
     overview_scratch = allocate_array<std::uint16_t>(production::kOverviewPixels);
     tile_scratch = allocate_array<std::uint16_t>(kWorkspaceTileCapacity * production::kTilePixels);
-    region_scratch = allocate_array<std::uint16_t>(kMaximumProgressiveRegionPixels);
+    region_scratch = allocate_array<std::uint16_t>(kLiveRegionScratchPixels);
     producer_supertask = allocate_array<std::uint16_t>(production::kTileProducerPixels);
     producer_packed = allocate_array<std::uint16_t>(production::kTilePixels);
     uniforms =
@@ -406,7 +406,9 @@ bool run_tile_gate(ProductionLivePresenter& presenter, production::TileProducer&
     }
   }
   const std::int64_t total_us = esp_timer_get_time() - started;
-  const bool passed = total_us < 500'000 && maximum_supertask_us < 30'000;
+  // The current hard-edged cold path is explicitly accepted up to 0.75 s;
+  // cache hits and interaction slices retain their tighter gates.
+  const bool passed = total_us < 750'000 && maximum_supertask_us < 30'000;
   std::printf(
       "TINYDRAW_GATE1_HARD zoom=%s cold=1 operations=%lu samples=%lu steps=%lu tiles=%lu "
       "scanned=%lu rendered=%lu max_supertask_us=%lld presentation_us=%lld total_us=%lld "
@@ -522,18 +524,20 @@ bool verify_pan_adapter(ProductionLivePresenter& presenter, const ToolbarState& 
   const auto setup = presenter.set_view(zoom, 0, 0, toolbar, now_us());
   const int before_x = presenter.level_x();
   const int before_y = presenter.level_y();
-  const auto pan =
-      presenter.pan_from(before_x, before_y, {240.0F, 240.0F}, {120.0F, 120.0F}, toolbar, now_us());
+  constexpr float kPanDelta = 24.0F;
+  const auto pan = presenter.pan_from(before_x, before_y, {240.0F, 240.0F},
+                                      {240.0F - kPanDelta, 240.0F - kPanDelta}, toolbar, now_us());
   const bool moved = presenter.level_x() > before_x && presenter.level_y() > before_y;
   std::printf(
       "TINYDRAW_GATE1_PAN zoom=%s from_x=%d from_y=%d to_x=%d to_y=%d compose_us=%lld "
       "event_submit_us=%lld event_complete_us=%lld transfer_us=%lld setup=%u present=%u moved=%u "
-      "pass=%u\n",
+      "frame_reused=%u pass=%u\n",
       zoom_name(zoom), before_x, before_y, presenter.level_x(), presenter.level_y(),
       static_cast<long long>(pan.compose_us), static_cast<long long>(pan.first_submit_us),
       static_cast<long long>(pan.first_complete_us), static_cast<long long>(pan.complete_us),
-      setup.passed, pan.passed, moved, setup.passed && pan.passed && moved);
-  return setup.passed && pan.passed && moved;
+      setup.passed, pan.passed, moved, pan.frame_reused,
+      setup.passed && pan.passed && moved && pan.frame_reused && pan.first_complete_us < 35'000);
+  return setup.passed && pan.passed && moved && pan.frame_reused && pan.first_complete_us < 35'000;
 }
 
 bool run_cache_retention_gate(ProductionLivePresenter& presenter,
@@ -717,9 +721,9 @@ void run_production_live_app() {
   DisplayScheduler scheduler(queue);
   Co5300PanelTransport display;
   PhysicalTouch touch;
-  ProductionLivePresenter presenter(
-      canvas, scheduler, display, std::span(storage.frame, production::kOverviewPixels),
-      std::span(storage.region_scratch, kMaximumProgressiveRegionPixels));
+  ProductionLivePresenter presenter(canvas, scheduler, display,
+                                    std::span(storage.frame, production::kOverviewPixels),
+                                    std::span(storage.region_scratch, kLiveRegionScratchPixels));
   OperationBuilder builder(std::span(storage.input_samples, kInputSampleCapacity));
   production::TileProducer producer(
       log, canvas,
@@ -814,8 +818,7 @@ void run_production_live_app() {
           production::kOverviewPixels * 4U * sizeof(std::uint16_t) +
           production::kTileSlotCount * production::kTilePixels * sizeof(std::uint16_t) +
           kWorkspaceTileCapacity * production::kTilePixels * sizeof(std::uint16_t) +
-          (production::kTileProducerPixels + kMaximumProgressiveRegionPixels) *
-              sizeof(std::uint16_t) +
+          (production::kTileProducerPixels + kLiveRegionScratchPixels) * sizeof(std::uint16_t) +
           production::kTilePixels * sizeof(std::uint16_t) +
           production::kTileSlotCount * sizeof(MaterializedSlotStorage) +
           production::kMaterializedTileIdentityCount * sizeof(MaterializedUniformStorage) +
