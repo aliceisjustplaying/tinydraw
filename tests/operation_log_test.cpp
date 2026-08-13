@@ -114,6 +114,7 @@ TEST_CASE("prepared append advances authority only when published") {
   CHECK(log.current_revision() == production::DocumentRevision{0});
 
   prepared->publish();
+  CHECK(prepared->operation().samples.empty());
   prepared->publish();
   CHECK(log.operation_count() == 1U);
   CHECK(log.sample_count() == 2U);
@@ -129,6 +130,7 @@ TEST_CASE("canceling a prepared append leaves authority unchanged") {
   auto prepared = log.prepare({.samples = samples});
   REQUIRE(prepared.has_value());
   prepared->cancel();
+  CHECK(prepared->operation().samples.empty());
   prepared->cancel();
   CHECK(log.operation_count() == 0U);
   CHECK(log.sample_count() == 0U);
