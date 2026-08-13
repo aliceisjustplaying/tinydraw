@@ -13,6 +13,7 @@
 #include "freertos/task.h"
 #include "tinydraw/production/incremental_rasterizer.h"
 #include "tinydraw/production/materialized_canvas.h"
+#include "tinydraw/production/operation_log.h"
 
 namespace tinydraw::esp32 {
 namespace {
@@ -23,6 +24,8 @@ using production::IncrementalOperation;
 using production::MaterializationQuality;
 using production::MaterializedCanvas;
 using production::MaterializedSlotStorage;
+using production::OperationLog;
+using production::OperationRecord;
 using production::OperationTool;
 using production::PixelRect;
 using production::RasterSurface;
@@ -289,6 +292,23 @@ bool commit_operation_probe(MaterializedCanvas& canvas, const IncrementalOperati
 
 }  // namespace
 
+bool append_and_commit_probe(OperationLog& log, MaterializedCanvas& canvas,
+                             const production::OperationAppend& append_request,
+                             std::span<std::uint16_t> next_overview,
+                             std::span<std::uint16_t> tile_scratch) {
+  const auto identity = log.append(append_request);
+  if (!identity.has_value()) {
+    return false;
+  }
+  const auto stored = log.operation(identity->operation_index);
+  if (!stored.has_value() || stored->identity != *identity) {
+    return false;
+  }
+  const IncrementalOperation operation{
+      .tool = stored->tool, .color = stored->color, .samples = stored->samples};
+  return commit_operation_probe(canvas, operation, identity->revision, next_overview, tile_scratch);
+}
+
 void run_production_overview_walk() {
   auto* overview =
       static_cast<std::uint16_t*>(heap_caps_malloc(production::kOverviewBytes, kExternalCaps));
@@ -298,16 +318,21 @@ void run_production_overview_walk() {
       static_cast<std::uint16_t*>(heap_caps_malloc(2U * production::kTileBytes, kExternalCaps));
   auto* tile_scratch =
       static_cast<std::uint16_t*>(heap_caps_malloc(production::kTileBytes, kExternalCaps));
+  auto* operation_records =
+      static_cast<OperationRecord*>(heap_caps_malloc(2U * sizeof(OperationRecord), kExternalCaps));
+  auto* operation_samples = static_cast<CompactOperationSample*>(
+      heap_caps_malloc(4U * sizeof(CompactOperationSample), kExternalCaps));
   auto* strip = static_cast<std::uint16_t*>(heap_caps_malloc(
       static_cast<std::size_t>(production::kOverviewWidth * kStripRows) * sizeof(std::uint16_t),
       kExternalCaps));
   if (overview == nullptr || raw_slots == nullptr || tile_pixels == nullptr ||
-      tile_scratch == nullptr || strip == nullptr) {
+      tile_scratch == nullptr || operation_records == nullptr || operation_samples == nullptr ||
+      strip == nullptr) {
     std::printf(
         "TINYDRAW_PRODUCTION_WALK_FAIL reason=allocation overview=%u slots=%u tile=%u "
-        "tile_scratch=%u strip=%u\n",
+        "tile_scratch=%u records=%u samples=%u strip=%u\n",
         overview != nullptr, raw_slots != nullptr, tile_pixels != nullptr, tile_scratch != nullptr,
-        strip != nullptr);
+        operation_records != nullptr, operation_samples != nullptr, strip != nullptr);
     return;
   }
   MaterializedSlotStorage* slots = std::construct_at(raw_slots);
@@ -319,6 +344,7 @@ void run_production_overview_walk() {
     }
   }
 
+  OperationLog operation_log(std::span(operation_records, 2), std::span(operation_samples, 4));
   MaterializedCanvas canvas(std::span(overview, production::kOverviewPixels), std::span(slots, 2),
                             std::span(tile_pixels, 2U * production::kTilePixels),
                             DocumentRevision{0});
@@ -358,9 +384,10 @@ void run_production_overview_walk() {
   };
   const IncrementalOperation pen{
       .tool = OperationTool::kPen, .color = 0x001FU, .samples = pen_samples};
-  pass = commit_operation_probe(canvas, pen, {1},
-                                std::span(overview_source, production::kOverviewPixels),
-                                std::span(tile_scratch, production::kTilePixels)) &&
+  pass = append_and_commit_probe(operation_log, canvas,
+                                 {.tool = pen.tool, .color = pen.color, .samples = pen.samples},
+                                 std::span(overview_source, production::kOverviewPixels),
+                                 std::span(tile_scratch, production::kTilePixels)) &&
          present_incremental(display, canvas, strip_pixels, {1}, "pen", kExpectedPenHash) && pass;
   vTaskDelay(pdMS_TO_TICKS(350));
 
@@ -369,9 +396,11 @@ void run_production_overview_walk() {
       CompactOperationSample{.x_quarter = 120, .y_quarter = 220, .radius_256 = 768},
   };
   const IncrementalOperation eraser{.tool = OperationTool::kEraser, .samples = eraser_samples};
-  pass = commit_operation_probe(canvas, eraser, {2},
-                                std::span(overview_source, production::kOverviewPixels),
-                                std::span(tile_scratch, production::kTilePixels)) &&
+  pass = append_and_commit_probe(
+             operation_log, canvas,
+             {.tool = eraser.tool, .color = eraser.color, .samples = eraser.samples},
+             std::span(overview_source, production::kOverviewPixels),
+             std::span(tile_scratch, production::kTilePixels)) &&
          present_incremental(display, canvas, strip_pixels, {2}, "eraser", kExpectedEraserHash) &&
          pass;
   const std::uint32_t submits = display.submit_count();
