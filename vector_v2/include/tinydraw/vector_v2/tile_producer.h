@@ -34,6 +34,8 @@ struct TileProductionStep {
   PixelRect level_bounds{};
   std::size_t operations_scanned = 0;
   std::size_t operations_rendered = 0;
+  std::size_t raster_steps = 0;
+  std::size_t raster_work = 0;
   std::size_t tiles_published = 0;
   // Valid only after publication (`tiles_published != 0`) or on a complete
   // result. Resumable replay-only slices leave this at zero.
@@ -67,8 +69,8 @@ class TileProducer {
     std::size_t tiles_published = 0;
   };
 
-  struct SegmentBatch {
-    std::size_t segments = 0;
+  struct RasterStepBatch {
+    std::size_t steps = 0;
     std::size_t raster_work = 0;
   };
 
@@ -84,6 +86,8 @@ class TileProducer {
     // Next segment endpoint within the active operation; one means the first
     // segment. Single-sample operations are handled as one bounded unit.
     std::size_t next_sample = 1;
+    // Long projected segments resume at their exact raster subdivision.
+    std::size_t next_segment_step = 0;
     bool active = false;
   };
 
@@ -96,13 +100,13 @@ class TileProducer {
       const ViewRequest& view, MaterializationQuality quality) const;
   [[nodiscard]] std::optional<TileKey> choose_missing_group(const ViewRequest& view) const;
   [[nodiscard]] bool start_group(const ViewRequest& view, TileKey group_origin);
-  [[nodiscard]] SegmentBatch choose_segment_batch(const StoredOperation& operation,
-                                                  std::size_t sample_budget,
-                                                  std::size_t raster_work_budget) const;
+  [[nodiscard]] RasterStepBatch choose_raster_step_batch(const IncrementalSegment& segment,
+                                                         std::size_t step_budget,
+                                                         std::size_t raster_work_budget) const;
   [[nodiscard]] bool render_active_operation(const StoredOperation& operation,
                                              TileProductionStep& result,
                                              std::size_t& operations_consumed,
-                                             std::size_t& samples_consumed,
+                                             std::size_t& raster_steps_consumed,
                                              std::size_t& raster_work_consumed);
   [[nodiscard]] std::optional<TileProductionStep> render_active_batch();
   [[nodiscard]] std::optional<GroupPublication> publish_group(PixelRect rendered_bounds,

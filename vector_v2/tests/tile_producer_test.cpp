@@ -260,12 +260,40 @@ TEST_CASE("tile producer isolates an oversized first segment from later raster w
   revised_overview.fill(0xFFFFU);
   REQUIRE(fixture.canvas.publish_overview({1}, revised_overview));
 
-  const auto first = fixture.producer.produce_next(
-      {.zoom = vector_v2::ZoomLevel::k400Percent, .level_pixels = {0, 0, 128, 128}});
+  const vector_v2::ViewRequest view{
+      .zoom = vector_v2::ZoomLevel::k400Percent,
+      .level_pixels = {0, 0, 128, 128},
+  };
+  const auto first = fixture.producer.produce_next(view);
   REQUIRE(first.has_value());
   CHECK_FALSE(first->complete);
   CHECK(first->operations_rendered == 1U);
+  CHECK(first->raster_steps >= 1U);
+  CHECK(first->raster_work <=
+        vector_v2::kTileProducerRasterWorkBatch + vector_v2::kTileProducerPixels);
   CHECK(first->tiles_published == 0U);
+
+  std::size_t ticks = 1U;
+  while (true) {
+    const auto step = fixture.producer.produce_next(view);
+    REQUIRE(step.has_value());
+    ++ticks;
+    REQUIRE(ticks < 64U);
+    if (step->complete) {
+      break;
+    }
+    CHECK(step->raster_steps >= 1U);
+    CHECK(step->raster_work <=
+          vector_v2::kTileProducerRasterWorkBatch + vector_v2::kTileProducerPixels);
+  }
+
+  std::vector<std::uint16_t> composed(128U * 128U);
+  REQUIRE(fixture.canvas.compose_view(view, composed));
+  std::vector<std::uint16_t> direct(composed.size(), 0xFFFFU);
+  REQUIRE(vector_v2::apply_incremental_operation(
+      append(oversized_segments, 0x001FU),
+      {.zoom = view.zoom, .level_bounds = view.level_pixels, .pixels = direct, .stride = 128}));
+  CHECK(composed == direct);
 }
 
 TEST_CASE("tile producer restarts after revision changes during sliced replay") {

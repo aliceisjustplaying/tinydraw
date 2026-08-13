@@ -20,38 +20,6 @@ std::size_t distance_squared(int x, int y, int center_x, int center_y) {
   return static_cast<std::size_t>(delta_x * delta_x + delta_y * delta_y);
 }
 
-constexpr std::int64_t floor_div(std::int64_t numerator, std::int64_t denominator) {
-  return numerator >= 0 ? numerator / denominator : (numerator - denominator + 1) / denominator;
-}
-
-constexpr std::int64_t ceil_div(std::int64_t numerator, std::int64_t denominator) {
-  return numerator >= 0 ? (numerator + denominator - 1) / denominator : numerator / denominator;
-}
-
-std::size_t projected_segment_work(CompactOperationSample first, CompactOperationSample second,
-                                   ZoomLevel zoom, PixelRect clip) {
-  constexpr std::int64_t kProjectionDenominator = 25'600;
-  constexpr std::int64_t kMinimumRadiusNumerator = 19'200;
-  const std::int64_t scale = zoom_percent(zoom);
-  const std::int64_t first_x = static_cast<std::int64_t>(first.x_quarter) * scale * 64;
-  const std::int64_t first_y = static_cast<std::int64_t>(first.y_quarter) * scale * 64;
-  const std::int64_t second_x = static_cast<std::int64_t>(second.x_quarter) * scale * 64;
-  const std::int64_t second_y = static_cast<std::int64_t>(second.y_quarter) * scale * 64;
-  const std::int64_t radius = std::max<std::int64_t>(
-      static_cast<std::int64_t>(std::max(first.radius_256, second.radius_256)) * scale,
-      kMinimumRadiusNumerator);
-  const int x0 = std::max(clip.x0, static_cast<int>(floor_div(std::min(first_x, second_x) - radius,
-                                                              kProjectionDenominator)));
-  const int y0 = std::max(clip.y0, static_cast<int>(floor_div(std::min(first_y, second_y) - radius,
-                                                              kProjectionDenominator)));
-  const int x1 = std::min(clip.x1, static_cast<int>(ceil_div(std::max(first_x, second_x) + radius,
-                                                             kProjectionDenominator)));
-  const int y1 = std::min(clip.y1, static_cast<int>(ceil_div(std::max(first_y, second_y) + radius,
-                                                             kProjectionDenominator)));
-  return static_cast<std::size_t>(std::max(0, x1 - x0)) *
-         static_cast<std::size_t>(std::max(0, y1 - y0));
-}
-
 }  // namespace
 
 TileProducer::TileProducer(OperationLog& log, MaterializedCanvas& canvas,
@@ -271,28 +239,26 @@ bool TileProducer::start_group(const ViewRequest& view, TileKey group_origin) {
                    .operation_count = replay->operation_count,
                    .next_operation = 0,
                    .next_sample = 1,
+                   .next_segment_step = 0,
                    .active = true};
   return true;
 }
 
-TileProducer::SegmentBatch TileProducer::choose_segment_batch(
-    const StoredOperation& operation, std::size_t sample_budget,
+TileProducer::RasterStepBatch TileProducer::choose_raster_step_batch(
+    const IncrementalSegment& segment, std::size_t step_budget,
     std::size_t raster_work_budget) const {
-  if (operation.samples.size() == 1U) {
-    return {.segments = 1U, .raster_work = 1U};
-  }
-  SegmentBatch batch{};
-  for (std::size_t endpoint = active_group_.next_sample;
-       endpoint < operation.samples.size() && batch.segments < sample_budget; ++endpoint) {
-    const auto first = operation.samples[endpoint - 1U];
-    const auto second = operation.samples[endpoint];
-    const std::size_t work =
-        projected_segment_work(first, second, active_group_.view.zoom, active_group_.bounds);
-    if (batch.segments != 0U && (batch.raster_work >= raster_work_budget ||
-                                 work > raster_work_budget - batch.raster_work)) {
+  const std::size_t total_steps =
+      incremental_segment_step_count(segment.first, segment.second, active_group_.view.zoom);
+  RasterStepBatch batch{};
+  while (active_group_.next_segment_step + batch.steps < total_steps && batch.steps < step_budget) {
+    const std::size_t step = active_group_.next_segment_step + batch.steps;
+    const std::size_t work = incremental_segment_step_work(
+        segment.first, segment.second, active_group_.view.zoom, active_group_.bounds, step);
+    if (batch.steps != 0U && (batch.raster_work >= raster_work_budget ||
+                              work > raster_work_budget - batch.raster_work)) {
       break;
     }
-    ++batch.segments;
+    ++batch.steps;
     batch.raster_work += work;
   }
   return batch;
@@ -301,7 +267,7 @@ TileProducer::SegmentBatch TileProducer::choose_segment_batch(
 bool TileProducer::render_active_operation(const StoredOperation& operation,
                                            TileProductionStep& result,
                                            std::size_t& operations_consumed,
-                                           std::size_t& samples_consumed,
+                                           std::size_t& raster_steps_consumed,
                                            std::size_t& raster_work_consumed) {
   const bool visible =
       intersects(operation_level_bounds(operation.world_bounds, active_group_.view.zoom),
@@ -309,43 +275,56 @@ bool TileProducer::render_active_operation(const StoredOperation& operation,
   if (!visible) {
     ++active_group_.next_operation;
     active_group_.next_sample = 1U;
+    active_group_.next_segment_step = 0U;
     ++operations_consumed;
     ++result.operations_scanned;
     return true;
   }
-  const std::size_t segment_count = std::max<std::size_t>(1U, operation.samples.size() - 1U);
-  const std::size_t available_segments = segment_count - (active_group_.next_sample - 1U);
-  const SegmentBatch batch =
-      choose_segment_batch(operation, kTileProducerSampleBatch - samples_consumed,
-                           kTileProducerRasterWorkBatch - raster_work_consumed);
-  const std::size_t segment_batch = std::min(available_segments, batch.segments);
-  if (segment_batch == 0U) {
+
+  const std::size_t endpoint = operation.samples.size() == 1U ? 0U : active_group_.next_sample;
+  const IncrementalSegment segment{
+      .tool = operation.tool,
+      .color = operation.color,
+      .first = operation.samples[operation.samples.size() == 1U ? 0U : endpoint - 1U],
+      .second = operation.samples[endpoint],
+  };
+  const std::size_t total_steps =
+      incremental_segment_step_count(segment.first, segment.second, active_group_.view.zoom);
+  const RasterStepBatch batch =
+      choose_raster_step_batch(segment, kTileProducerSampleBatch - raster_steps_consumed,
+                               kTileProducerRasterWorkBatch - raster_work_consumed);
+  if (batch.steps == 0U) {
     return false;
   }
-  const std::size_t first_sample =
-      operation.samples.size() == 1U ? 0U : active_group_.next_sample - 1U;
-  const std::size_t sample_count = operation.samples.size() == 1U ? 1U : segment_batch + 1U;
   const auto surface = workspace_.supertask_pixels.first(kTileProducerPixels);
-  if (!apply_incremental_operation(
-          {.tool = operation.tool,
-           .color = operation.color,
-           .samples = operation.samples.subspan(first_sample, sample_count)},
-          {.zoom = active_group_.view.zoom,
-           .level_bounds = active_group_.bounds,
-           .pixels = surface,
-           .stride = kTileProducerWidth})) {
+  if (!apply_incremental_segment_steps(segment,
+                                       {.zoom = active_group_.view.zoom,
+                                        .level_bounds = active_group_.bounds,
+                                        .pixels = surface,
+                                        .stride = kTileProducerWidth},
+                                       active_group_.next_segment_step, batch.steps)) {
     return false;
   }
-  samples_consumed += segment_batch;
+  active_group_.next_segment_step += batch.steps;
+  raster_steps_consumed += batch.steps;
   raster_work_consumed += batch.raster_work;
+  result.raster_steps += batch.steps;
+  result.raster_work += batch.raster_work;
   ++result.operations_rendered;
-  if (segment_batch == available_segments) {
+
+  if (active_group_.next_segment_step < total_steps) {
+    return true;
+  }
+  active_group_.next_segment_step = 0U;
+  const bool operation_complete =
+      operation.samples.size() == 1U || active_group_.next_sample + 1U >= operation.samples.size();
+  if (operation_complete) {
     ++active_group_.next_operation;
     active_group_.next_sample = 1U;
     ++operations_consumed;
     ++result.operations_scanned;
   } else {
-    active_group_.next_sample += segment_batch;
+    ++active_group_.next_sample;
   }
   return true;
 }
@@ -359,11 +338,11 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
   }
   TileProductionStep result{.level_bounds = active_group_.bounds};
   std::size_t operations_consumed = 0;
-  std::size_t samples_consumed = 0;
+  std::size_t raster_steps_consumed = 0;
   std::size_t raster_work_consumed = 0;
   while (active_group_.next_operation < active_group_.operation_count &&
          operations_consumed < kTileProducerOperationBatch &&
-         samples_consumed < kTileProducerSampleBatch &&
+         raster_steps_consumed < kTileProducerSampleBatch &&
          raster_work_consumed < kTileProducerRasterWorkBatch) {
     const auto stored =
         log_.operation(active_group_.first_operation + active_group_.next_operation);
@@ -371,7 +350,7 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
       active_group_ = {};
       return std::nullopt;
     }
-    if (!render_active_operation(*stored, result, operations_consumed, samples_consumed,
+    if (!render_active_operation(*stored, result, operations_consumed, raster_steps_consumed,
                                  raster_work_consumed)) {
       active_group_ = {};
       return std::nullopt;
