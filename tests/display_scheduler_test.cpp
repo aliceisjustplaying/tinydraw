@@ -19,9 +19,11 @@ TEST_CASE("display scheduler preserves strip order and completion identity") {
       {.revision = {3}, .panel_bounds = {0, 2, 368, 4}, .pixels = second_pixels, .stride = 368});
   REQUIRE(first.has_value());
   REQUIRE(second.has_value());
-  REQUIRE(scheduler.front().has_value());
-  CHECK(scheduler.front()->sequence == *first);
-  CHECK(scheduler.front()->strip.pixels.data() == first_pixels.data());
+  const auto scheduled_first = scheduler.front();
+  REQUIRE(scheduled_first.has_value());
+  CHECK(scheduled_first->sequence == *first);
+  CHECK(scheduled_first->strip.pixels.data() == first_pixels.data());
+  CHECK_FALSE(scheduler.front());
   CHECK_FALSE(scheduler.complete(*second));
   REQUIRE(scheduler.complete(*first));
   CHECK(scheduler.front()->sequence == *second);
@@ -76,11 +78,12 @@ TEST_CASE("display scheduler lets an in-flight old revision complete before drop
   REQUIRE(first.has_value());
   REQUIRE(scheduler.schedule(
       {.revision = {1}, .panel_bounds = {0, 2, 368, 4}, .pixels = pixels, .stride = 368}));
-  REQUIRE(scheduler.front().has_value());
+  const auto in_flight = scheduler.front();
+  REQUIRE(in_flight.has_value());
+  CHECK(in_flight->sequence == *first);
 
   scheduler.require_revision({2});
-  REQUIRE(scheduler.front().has_value());
-  CHECK(scheduler.front()->sequence == *first);
+  CHECK_FALSE(scheduler.front());
   REQUIRE(scheduler.complete(*first));
   CHECK_FALSE(scheduler.front());
   CHECK(scheduler.stats().stale_rejected == 1U);

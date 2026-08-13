@@ -40,7 +40,8 @@ class DisplayScheduler {
 
   [[nodiscard]] bool ready() const;
   [[nodiscard]] std::optional<std::uint32_t> schedule(const DisplayStrip& strip);
-  // front marks the returned strip in flight until complete or abort succeeds.
+  // front marks the returned strip in flight until complete or abort succeeds;
+  // it never re-serves an in-flight strip.
   [[nodiscard]] std::optional<ScheduledStrip> front();
   [[nodiscard]] bool complete(std::uint32_t sequence);
   // Retires an in-flight strip that transport could not stage.
