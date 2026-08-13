@@ -115,14 +115,21 @@ internal DMA heap, export workspace, Wi-Fi, USB, and eventual renderer behavior
 were not live. Captured workload distributions must also validate that the
 capacities are sufficient rather than merely allocatable.
 
-No representative captured operation document is currently checked into this
-repository. The only 1,000-stroke corpus is the deterministic synthetic
-handwriting generator; seed 7 produces 20,153 samples (20.153 samples/stroke,
-200 maximum), which fits the provisional 4,000-operation/80,000-sample ratio by
-a narrow extrapolation only. Small `.stroke` files under `testdata/` are UI and
-raster correctness fixtures, not capacity evidence. Do not promote either set
-to a representative capacity receipt. A real captured document remains a
-required input to the capacity and Task #59 gates.
+No representative captured operation document is checked into this repository.
+The only 1,000-stroke corpus is the deterministic synthetic handwriting
+generator; seed 7 produces 20,153 samples (20.153 samples/stroke, 200 maximum),
+which fits the provisional 4,000-operation/80,000-sample ratio by a narrow
+extrapolation only. Small `.stroke` files under `testdata/` are UI and raster
+correctness fixtures, not capacity evidence.
+
+A two-minute private real-touch capture now supplies aggregate sizing evidence
+without committing the user's coordinates. Its 70 strokes and 1,189 points
+project to 67,942 source points at 4,000 strokes, but four independent LOD copies
+project to 225,600–254,057 points across the tested policies. See
+[`REAL_TOUCH_CHARACTERIZATION.md`](REAL_TOUCH_CHARACTERIZATION.md). This rejects
+the current 90,000-point capacity/model combination and requires a shared,
+nested, or on-demand LOD experiment before approving a simplifier. It is not a
+representative full-document capacity receipt.
 
 ## Task #54a host fallback oracle
 
