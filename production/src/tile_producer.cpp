@@ -5,6 +5,7 @@
 #include <limits>
 
 #include "tinydraw/production/storage_overlap.h"
+#include "tinydraw/production/tile_payload_analysis.h"
 
 namespace tinydraw::production {
 namespace {
@@ -89,7 +90,7 @@ bool TileProducer::valid_view(const ViewRequest& view) {
 
 bool TileProducer::tile_satisfies(TileKey key, MaterializationQuality quality) const {
   const auto source = canvas_.lookup(key);
-  return source.has_value() && source->kind == SourceKind::kTileSlot &&
+  return source.has_value() && source->kind != SourceKind::kOverview &&
          source->identity.revision == canvas_.current_revision() &&
          static_cast<int>(source->identity.quality) >= static_cast<int>(quality);
 }
@@ -151,7 +152,45 @@ std::optional<TileKey> TileProducer::choose_missing_group(const ViewRequest& vie
   return selected;
 }
 
+std::optional<TileKey> TileProducer::choose_certain_paper(const ViewRequest& view) const {
+  if (!ready() || !valid_view(view)) {
+    return std::nullopt;
+  }
+  const PixelRect rect = view.level_pixels;
+  for (int row = rect.y0 / kTileHeight; row <= (rect.y1 - 1) / kTileHeight; ++row) {
+    for (int column = rect.x0 / kTileWidth; column <= (rect.x1 - 1) / kTileWidth; ++column) {
+      const TileKey key{view.zoom, static_cast<std::uint16_t>(column),
+                        static_cast<std::uint16_t>(row)};
+      if (!tile_satisfies(key, MaterializationQuality::kImmediate) &&
+          canvas_.certainly_paper(key)) {
+        return key;
+      }
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<TileProductionStep> TileProducer::publish_certain_paper(const ViewRequest& view,
+                                                                      TileKey key) {
+  if (!canvas_.publish_uniform(key, canvas_.current_revision(), MaterializationQuality::kImmediate,
+                               baseline_color_)) {
+    return std::nullopt;
+  }
+  const auto remaining = visible_tiles_remaining(view);
+  if (!remaining.has_value()) {
+    return std::nullopt;
+  }
+  return TileProductionStep{.level_bounds = tile_pixel_bounds(key),
+                            .tiles_published = 1,
+                            .visible_tiles_remaining = *remaining,
+                            .complete = *remaining == 0U};
+}
+
 std::optional<TileProductionStep> TileProducer::produce_next(const ViewRequest& view) {
+  if (const auto paper = choose_certain_paper(view); paper.has_value()) {
+    active_group_ = {};
+    return publish_certain_paper(view, *paper);
+  }
   const auto remaining = visible_tiles_remaining(view);
   if (!remaining.has_value()) {
     active_group_ = {};
@@ -348,6 +387,47 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
   return result;
 }
 
+void TileProducer::include_bounds(PixelRect bounds, GroupPublication& publication) {
+  if (publication.tiles_published == 0U) {
+    publication.level_bounds = bounds;
+  } else {
+    publication.level_bounds.x0 = std::min(publication.level_bounds.x0, bounds.x0);
+    publication.level_bounds.y0 = std::min(publication.level_bounds.y0, bounds.y0);
+    publication.level_bounds.x1 = std::max(publication.level_bounds.x1, bounds.x1);
+    publication.level_bounds.y1 = std::max(publication.level_bounds.y1, bounds.y1);
+  }
+  ++publication.tiles_published;
+}
+
+bool TileProducer::publish_surface_tile(TileKey key, PixelRect rendered_bounds,
+                                        DocumentRevision revision) {
+  const PixelRect bounds = tile_pixel_bounds(key);
+  const int width = bounds.x1 - bounds.x0;
+  const int height = bounds.y1 - bounds.y0;
+  const std::size_t count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+  const auto surface = workspace_.supertask_pixels.first(kTileProducerPixels);
+  auto packed = workspace_.packed_tile_pixels.first(count);
+  for (int row = 0; row < height; ++row) {
+    const auto source =
+        static_cast<std::size_t>(bounds.y0 - rendered_bounds.y0 + row) * kTileProducerWidth +
+        static_cast<std::size_t>(bounds.x0 - rendered_bounds.x0);
+    const auto destination = static_cast<std::size_t>(row) * static_cast<std::size_t>(width);
+    std::copy_n(surface.begin() + static_cast<std::ptrdiff_t>(source), width,
+                packed.begin() + static_cast<std::ptrdiff_t>(destination));
+  }
+  const auto analysis = analyze_tile_payload(packed, width, height);
+  if (!analysis.has_value()) {
+    return false;
+  }
+  if (analysis->uniform && canvas_.uniform_capacity() != 0U) {
+    return canvas_
+        .publish_uniform(key, revision, MaterializationQuality::kImmediate, analysis->uniform_color)
+        .has_value();
+  }
+  return canvas_.publish_tile(key, revision, MaterializationQuality::kImmediate, packed)
+      .has_value();
+}
+
 std::optional<TileProducer::GroupPublication> TileProducer::publish_group(
     PixelRect rendered_bounds, PixelRect visible_bounds, ZoomLevel zoom,
     DocumentRevision revision) {
@@ -355,14 +435,7 @@ std::optional<TileProducer::GroupPublication> TileProducer::publish_group(
   const int first_row = std::max(rendered_bounds.y0, visible_bounds.y0) / kTileHeight;
   const int last_column = (std::min(rendered_bounds.x1, visible_bounds.x1) - 1) / kTileWidth;
   const int last_row = (std::min(rendered_bounds.y1, visible_bounds.y1) - 1) / kTileHeight;
-  const auto surface = workspace_.supertask_pixels.first(kTileProducerPixels);
   GroupPublication publication{};
-  // The producer's serialized ownership contract forbids pins across producer
-  // calls. Without pins, every validated publish below has an available slot;
-  // therefore the group cannot be left partially published. Revisit this and
-  // stage transactionally if producer calls are ever allowed while pins are
-  // held, publish_tile gains another runtime failure mode, or publication
-  // becomes concurrent.
   if (canvas_.pins_outstanding() != 0U) {
     return std::nullopt;
   }
@@ -372,35 +445,11 @@ std::optional<TileProducer::GroupPublication> TileProducer::publish_group(
       if (tile_satisfies(key, MaterializationQuality::kImmediate)) {
         continue;
       }
-      const PixelRect tile_bounds = tile_pixel_bounds(key);
-      const int tile_width = tile_bounds.x1 - tile_bounds.x0;
-      const int tile_height = tile_bounds.y1 - tile_bounds.y0;
-      const std::size_t packed_count =
-          static_cast<std::size_t>(tile_width) * static_cast<std::size_t>(tile_height);
-      auto packed = workspace_.packed_tile_pixels.first(packed_count);
-      for (int tile_row = 0; tile_row < tile_height; ++tile_row) {
-        const auto source_offset =
-            static_cast<std::size_t>(tile_bounds.y0 - rendered_bounds.y0 + tile_row) *
-                kTileProducerWidth +
-            static_cast<std::size_t>(tile_bounds.x0 - rendered_bounds.x0);
-        const auto destination_offset =
-            static_cast<std::size_t>(tile_row) * static_cast<std::size_t>(tile_width);
-        std::copy_n(surface.begin() + static_cast<std::ptrdiff_t>(source_offset), tile_width,
-                    packed.begin() + static_cast<std::ptrdiff_t>(destination_offset));
-      }
-      if (!canvas_.publish_tile(key, revision, MaterializationQuality::kImmediate, packed)
-               .has_value()) {
+      const PixelRect bounds = tile_pixel_bounds(key);
+      if (!publish_surface_tile(key, rendered_bounds, revision)) {
         return std::nullopt;
       }
-      if (publication.tiles_published == 0U) {
-        publication.level_bounds = tile_bounds;
-      } else {
-        publication.level_bounds.x0 = std::min(publication.level_bounds.x0, tile_bounds.x0);
-        publication.level_bounds.y0 = std::min(publication.level_bounds.y0, tile_bounds.y0);
-        publication.level_bounds.x1 = std::max(publication.level_bounds.x1, tile_bounds.x1);
-        publication.level_bounds.y1 = std::max(publication.level_bounds.y1, tile_bounds.y1);
-      }
-      ++publication.tiles_published;
+      include_bounds(bounds, publication);
     }
   }
   return publication;

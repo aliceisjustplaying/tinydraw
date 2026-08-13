@@ -33,12 +33,15 @@ TEST_CASE("production memory plan records every fixed-capacity region") {
   CHECK(production::kTileSlotCount >= 5U * production::kMaximumVisibleTiles);
   CHECK(production::kTilePoolBytes == 2'621'440U);
   CHECK(production::kTileMetadataBytes ==
-        production::kTileSlotCount * sizeof(production::MaterializedSlotStorage));
+        production::kTileSlotCount * sizeof(production::MaterializedSlotStorage) +
+            production::kMaterializedTileIdentityCount *
+                sizeof(production::MaterializedUniformStorage) +
+            production::kOccupancyBytes);
   CHECK(production::kOperationStorageBytes == 720'000U);
   CHECK(production::kLodStorageBytes == 668'000U);
   CHECK(production::kRendererWorkspaceBytes == 163'840U);
   CHECK(production::kDisplayWorkspaceBytes == 103'040U);
-  CHECK(production::kExternalPlanBytes == 4'948'576U);
+  CHECK(production::kExternalPlanBytes == 5'004'632U);
   CHECK(production::kTargetContiguousReserveBytes == 1'572'864U);
 }
 
@@ -253,6 +256,95 @@ TEST_CASE("composing a tile refreshes its LRU recency") {
   CHECK(canvas.lookup(first)->kind == production::SourceKind::kTileSlot);
   CHECK(canvas.lookup(second)->kind == production::SourceKind::kOverview);
   CHECK(canvas.lookup(third)->kind == production::SourceKind::kTileSlot);
+}
+
+TEST_CASE("paper catalog consumes no raw slots and composes direct fills") {
+  std::array<std::uint16_t, production::kOverviewPixels> overview{};
+  auto uniforms = std::make_unique<std::array<production::MaterializedUniformStorage,
+                                              production::kMaterializedTileIdentityCount>>();
+  std::array<std::uint8_t, production::kOccupancyBytes> occupancy{};
+  std::array<production::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, production::kTilePixels> tile_storage{};
+  production::MaterializedCanvas canvas(overview, *uniforms, occupancy, slots, tile_storage);
+  const production::TileKey key{production::ZoomLevel::k100Percent, 2, 3};
+
+  REQUIRE(canvas.publish_overview({0}, overview));
+  REQUIRE(canvas.publish_uniform(key, {0}, production::MaterializationQuality::kImmediate));
+  CHECK(canvas.uniform_capacity() == production::kMaterializedTileIdentityCount);
+  const auto source = canvas.lookup(key);
+  REQUIRE(source.has_value());
+  CHECK(source->kind == production::SourceKind::kUniform);
+  CHECK_FALSE(source->slot_index.has_value());
+  CHECK(source->uniform_color == 0xFFFFU);
+
+  std::array<std::uint16_t, production::kTilePixels> composed{};
+  const auto stats = canvas.compose_view({.zoom = production::ZoomLevel::k100Percent,
+                                          .level_pixels = production::tile_pixel_bounds(key)},
+                                         composed);
+  REQUIRE(stats.has_value());
+  CHECK(stats->uniform_pixels == composed.size());
+  CHECK(stats->fallback_pixels == 0U);
+  CHECK(stats->immediate_tiles == 1U);
+  CHECK(std::all_of(composed.begin(), composed.end(),
+                    [](std::uint16_t pixel) { return pixel == 0xFFFFU; }));
+
+  std::array<std::uint16_t, production::kTilePixels> raw{};
+  raw.fill(0x1234U);
+  REQUIRE(canvas.publish_tile(key, {0}, production::MaterializationQuality::kSettled, raw));
+  CHECK(canvas.lookup(key)->kind == production::SourceKind::kTileSlot);
+}
+
+TEST_CASE("occupancy is conservative across every zoom and mutation invalidates learned paper") {
+  std::array<std::uint16_t, production::kOverviewPixels> overview{};
+  std::array<std::uint16_t, production::kOverviewPixels> snapshot{};
+  auto uniforms = std::make_unique<std::array<production::MaterializedUniformStorage,
+                                              production::kMaterializedTileIdentityCount>>();
+  std::array<std::uint8_t, production::kOccupancyBytes> occupancy{};
+  std::array<production::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, production::kTilePixels> tile_storage{};
+  production::MaterializedCanvas canvas(overview, *uniforms, occupancy, slots, tile_storage);
+  REQUIRE(canvas.restore_snapshot({0}, snapshot));
+  const production::TileKey at_50{production::ZoomLevel::k50Percent, 0, 0};
+  const production::TileKey at_100{production::ZoomLevel::k100Percent, 0, 0};
+  const production::TileKey at_200{production::ZoomLevel::k200Percent, 1, 1};
+  const production::TileKey at_400{production::ZoomLevel::k400Percent, 3, 3};
+  CHECK(canvas.certainly_paper(at_50));
+  CHECK(canvas.certainly_paper(at_100));
+  CHECK(canvas.certainly_paper(at_200));
+  CHECK(canvas.certainly_paper(at_400));
+  REQUIRE(canvas.publish_uniform(at_100, {0}, production::MaterializationQuality::kImmediate));
+
+  std::array<std::uint16_t, 4U * 4U> next_overview{};
+  REQUIRE(canvas.commit_incremental_revision(
+      {1}, {.bounds = {12, 12, 16, 16}, .pixels = next_overview}, {48, 48, 64, 64}, {}));
+  CHECK_FALSE(canvas.certainly_paper(at_50));
+  CHECK_FALSE(canvas.certainly_paper(at_100));
+  CHECK_FALSE(canvas.certainly_paper(at_200));
+  CHECK_FALSE(canvas.certainly_paper(at_400));
+  CHECK(canvas.lookup(at_100)->kind == production::SourceKind::kOverview);
+  CHECK(canvas.certainly_paper({production::ZoomLevel::k100Percent, 2, 0}));
+}
+
+TEST_CASE("tile identity catalog densely covers every tiled zoom") {
+  std::array<bool, production::kMaterializedTileIdentityCount> seen{};
+  std::size_t count = 0;
+  for (const auto zoom : {production::ZoomLevel::k50Percent, production::ZoomLevel::k100Percent,
+                          production::ZoomLevel::k200Percent, production::ZoomLevel::k400Percent}) {
+    const production::TileGrid grid = production::tile_grid(zoom);
+    for (int row = 0; row < grid.rows; ++row) {
+      for (int column = 0; column < grid.columns; ++column) {
+        const auto index = production::tile_identity_index(
+            {zoom, static_cast<std::uint16_t>(column), static_cast<std::uint16_t>(row)});
+        REQUIRE(index.has_value());
+        REQUIRE(*index < seen.size());
+        CHECK_FALSE(seen[*index]);
+        seen[*index] = true;
+        ++count;
+      }
+    }
+  }
+  CHECK(count == production::kMaterializedTileIdentityCount);
+  CHECK(std::all_of(seen.begin(), seen.end(), [](bool value) { return value; }));
 }
 
 TEST_CASE("same-revision publication cannot downgrade immediate settled or exact quality") {

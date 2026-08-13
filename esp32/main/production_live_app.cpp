@@ -38,6 +38,7 @@ using production::DocumentRevision;
 using production::IncrementalDocumentWorkspace;
 using production::MaterializedCanvas;
 using production::MaterializedSlotStorage;
+using production::MaterializedUniformStorage;
 using production::OperationBuilder;
 using production::OperationLog;
 using production::OperationPoint;
@@ -98,6 +99,8 @@ struct AppStorage {
   std::uint16_t* region_scratch = nullptr;
   std::uint16_t* producer_supertask = nullptr;
   std::uint16_t* producer_packed = nullptr;
+  MaterializedUniformStorage* uniforms = nullptr;
+  std::uint8_t* occupancy = nullptr;
   MaterializedSlotStorage* slots = nullptr;
   VectorStroke* realistic_strokes = nullptr;
   StrokeSample* realistic_samples = nullptr;
@@ -118,6 +121,9 @@ struct AppStorage {
     region_scratch = allocate_array<std::uint16_t>(kMaximumProgressiveRegionPixels);
     producer_supertask = allocate_array<std::uint16_t>(production::kTileProducerPixels);
     producer_packed = allocate_array<std::uint16_t>(production::kTilePixels);
+    uniforms =
+        allocate_array<MaterializedUniformStorage>(production::kMaterializedTileIdentityCount);
+    occupancy = allocate_array<std::uint8_t>(production::kOccupancyBytes);
     slots = allocate_array<MaterializedSlotStorage>(production::kTileSlotCount);
     realistic_strokes = allocate_array<VectorStroke>(kRealisticStrokeCapacity);
     realistic_samples = allocate_array<StrokeSample>(kRealisticSampleCapacity);
@@ -128,11 +134,14 @@ struct AppStorage {
     affected_keys = allocate_array<TileKey>(production::kTileSlotCount);
     if (overview == nullptr || snapshot == nullptr || frame == nullptr || tile_pixels == nullptr ||
         overview_scratch == nullptr || tile_scratch == nullptr || region_scratch == nullptr ||
-        producer_supertask == nullptr || producer_packed == nullptr || slots == nullptr ||
-        realistic_strokes == nullptr || realistic_samples == nullptr || records == nullptr ||
-        samples == nullptr || input_samples == nullptr || publications == nullptr ||
-        affected_keys == nullptr) {
+        producer_supertask == nullptr || producer_packed == nullptr || uniforms == nullptr ||
+        occupancy == nullptr || slots == nullptr || realistic_strokes == nullptr ||
+        realistic_samples == nullptr || records == nullptr || samples == nullptr ||
+        input_samples == nullptr || publications == nullptr || affected_keys == nullptr) {
       return false;
+    }
+    for (std::size_t index = 0; index < production::kMaterializedTileIdentityCount; ++index) {
+      std::construct_at(uniforms + index);
     }
     for (std::size_t index = 0; index < production::kTileSlotCount; ++index) {
       std::construct_at(slots + index);
@@ -697,6 +706,8 @@ void run_production_live_app() {
 
   MaterializedCanvas canvas(
       std::span(storage.overview, production::kOverviewPixels),
+      std::span(storage.uniforms, production::kMaterializedTileIdentityCount),
+      std::span(storage.occupancy, production::kOccupancyBytes),
       std::span(storage.slots, production::kTileSlotCount),
       std::span(storage.tile_pixels, production::kTileSlotCount * production::kTilePixels));
   OperationLog log(std::span(storage.records, production::kOperationCapacity),
@@ -806,7 +817,8 @@ void run_production_live_app() {
               sizeof(std::uint16_t) +
           production::kTilePixels * sizeof(std::uint16_t) +
           production::kTileSlotCount * sizeof(MaterializedSlotStorage) +
-          kRealisticStrokeCapacity * sizeof(VectorStroke) +
+          production::kMaterializedTileIdentityCount * sizeof(MaterializedUniformStorage) +
+          production::kOccupancyBytes + kRealisticStrokeCapacity * sizeof(VectorStroke) +
           kRealisticSampleCapacity * sizeof(StrokeSample) +
           production::kOperationCapacity * sizeof(OperationRecord) +
           production::kOperationSampleCapacity * sizeof(CompactOperationSample) +

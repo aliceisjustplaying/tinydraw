@@ -84,6 +84,18 @@ TileGrid tile_grid(ZoomLevel zoom) {
   };
 }
 
+std::optional<std::size_t> tile_identity_index(TileKey key) {
+  if (!valid_tile_key(key)) {
+    return std::nullopt;
+  }
+  constexpr std::array offsets{std::size_t{0}, std::size_t{168}, std::size_t{812},
+                               std::size_t{3'388}};
+  const std::size_t zoom_index = static_cast<std::size_t>(key.zoom) - 1U;
+  const TileGrid grid = tile_grid(key.zoom);
+  return offsets[zoom_index] +
+         static_cast<std::size_t>(key.row) * static_cast<std::size_t>(grid.columns) + key.column;
+}
+
 bool valid_tile_key(TileKey key) {
   if (key.zoom == ZoomLevel::k25Percent) {
     return false;
@@ -178,8 +190,28 @@ MaterializedCanvas::MaterializedCanvas(std::span<std::uint16_t> overview_pixels,
   std::fill(slots_.begin(), slots_.end(), MaterializedSlotStorage{});
 }
 
+MaterializedCanvas::MaterializedCanvas(std::span<std::uint16_t> overview_pixels,
+                                       std::span<MaterializedUniformStorage> uniform_catalog,
+                                       std::span<std::uint8_t> occupancy_bits,
+                                       std::span<MaterializedSlotStorage> slots,
+                                       std::span<std::uint16_t> tile_pixels,
+                                       DocumentRevision initial_revision)
+    : overview_pixels_(overview_pixels),
+      uniform_catalog_(uniform_catalog),
+      occupancy_bits_(occupancy_bits),
+      slots_(slots),
+      tile_pixels_(tile_pixels),
+      current_revision_(initial_revision) {
+  std::fill(uniform_catalog_.begin(), uniform_catalog_.end(), MaterializedUniformStorage{});
+  std::fill(occupancy_bits_.begin(), occupancy_bits_.end(), 0U);
+  std::fill(slots_.begin(), slots_.end(), MaterializedSlotStorage{});
+}
+
 bool MaterializedCanvas::ready() const {
-  return overview_pixels_.size() == kOverviewPixels &&
+  const bool optional_catalog_ready = (uniform_catalog_.empty() && occupancy_bits_.empty()) ||
+                                      (uniform_catalog_.size() == kMaterializedTileIdentityCount &&
+                                       occupancy_bits_.size() == kOccupancyBytes);
+  return overview_pixels_.size() == kOverviewPixels && optional_catalog_ready &&
          tile_pixels_.size() == slots_.size() * kTilePixels;
 }
 
@@ -187,8 +219,91 @@ DocumentRevision MaterializedCanvas::current_revision() const { return current_r
 
 std::size_t MaterializedCanvas::slot_capacity() const { return slots_.size(); }
 
+std::size_t MaterializedCanvas::uniform_capacity() const { return uniform_catalog_.size(); }
+
+std::uint64_t MaterializedCanvas::composition_epoch() const { return composition_epoch_; }
+
 std::span<const std::uint16_t> MaterializedCanvas::overview_pixels() const {
   return overview_pixels_;
+}
+
+bool MaterializedCanvas::certainly_paper(TileKey key) const {
+  if (occupancy_bits_.size() != kOccupancyBytes || !valid_tile_key(key)) {
+    return false;
+  }
+  const PixelRect world = tile_world_bounds(key);
+  const int first_column = world.x0 / kOccupancyCellWorldSize;
+  const int last_column = (world.x1 - 1) / kOccupancyCellWorldSize;
+  const int first_row = world.y0 / kOccupancyCellWorldSize;
+  const int last_row = (world.y1 - 1) / kOccupancyCellWorldSize;
+  for (int row = first_row; row <= last_row; ++row) {
+    for (int column = first_column; column <= last_column; ++column) {
+      const std::size_t bit =
+          static_cast<std::size_t>(row) * kOccupancyColumns + static_cast<std::size_t>(column);
+      if ((occupancy_bits_[bit / 8U] & static_cast<std::uint8_t>(1U << (bit % 8U))) != 0U) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+void MaterializedCanvas::bump_composition_epoch() {
+  ++composition_epoch_;
+  if (composition_epoch_ == 0U) {
+    composition_epoch_ = 1U;
+  }
+}
+
+void MaterializedCanvas::clear_uniforms() {
+  std::fill(uniform_catalog_.begin(), uniform_catalog_.end(), MaterializedUniformStorage{});
+}
+
+TileKey MaterializedCanvas::key_for_identity(std::size_t index) {
+  constexpr std::array zooms{ZoomLevel::k50Percent, ZoomLevel::k100Percent, ZoomLevel::k200Percent,
+                             ZoomLevel::k400Percent};
+  constexpr std::array offsets{std::size_t{0}, std::size_t{168}, std::size_t{812},
+                               std::size_t{3'388}};
+  for (std::size_t zoom_index = zooms.size(); zoom_index-- > 0U;) {
+    if (index < offsets[zoom_index]) {
+      continue;
+    }
+    const TileGrid grid = tile_grid(zooms[zoom_index]);
+    const std::size_t local = index - offsets[zoom_index];
+    return {zooms[zoom_index],
+            static_cast<std::uint16_t>(local % static_cast<std::size_t>(grid.columns)),
+            static_cast<std::uint16_t>(local / static_cast<std::size_t>(grid.columns))};
+  }
+  return {};
+}
+
+bool MaterializedCanvas::uniform_intersects(std::size_t index, PixelRect world_bounds) {
+  return index < kMaterializedTileIdentityCount &&
+         rectangles_intersect(tile_world_bounds(key_for_identity(index)), world_bounds);
+}
+
+void MaterializedCanvas::invalidate_uniforms(PixelRect world_bounds) {
+  for (std::size_t index = 0; index < uniform_catalog_.size(); ++index) {
+    uniform_catalog_[index].occupied_ =
+        uniform_catalog_[index].occupied_ && !uniform_intersects(index, world_bounds);
+  }
+}
+
+void MaterializedCanvas::mark_occupied(PixelRect world_bounds) {
+  if (occupancy_bits_.size() != kOccupancyBytes) {
+    return;
+  }
+  const int first_column = world_bounds.x0 / kOccupancyCellWorldSize;
+  const int last_column = (world_bounds.x1 - 1) / kOccupancyCellWorldSize;
+  const int first_row = world_bounds.y0 / kOccupancyCellWorldSize;
+  const int last_row = (world_bounds.y1 - 1) / kOccupancyCellWorldSize;
+  for (int row = first_row; row <= last_row; ++row) {
+    for (int column = first_column; column <= last_column; ++column) {
+      const std::size_t bit =
+          static_cast<std::size_t>(row) * kOccupancyColumns + static_cast<std::size_t>(column);
+      occupancy_bits_[bit / 8U] |= static_cast<std::uint8_t>(1U << (bit % 8U));
+    }
+  }
 }
 
 bool MaterializedCanvas::publish_overview(DocumentRevision revision,
@@ -204,7 +319,7 @@ bool MaterializedCanvas::publish_overview(DocumentRevision revision,
   const bool tile_is_pinned = std::any_of(slots_.begin(), slots_.end(),
                                           [](const auto& slot) { return slot.pin_count_ != 0U; });
   if (!ready() || !revision_is_publishable || !source_is_publishable || overview_pin_count_ != 0U ||
-      tile_is_pinned || pixels.size() != kOverviewPixels) {
+      uniform_pin_count_ != 0U || tile_is_pinned || pixels.size() != kOverviewPixels) {
     return false;
   }
   if (!exact_bootstrap_source) {
@@ -216,10 +331,13 @@ bool MaterializedCanvas::publish_overview(DocumentRevision revision,
       slot.generation_ = take_generation();
     }
   }
+  clear_uniforms();
+  std::fill(occupancy_bits_.begin(), occupancy_bits_.end(), 0xFFU);
   current_revision_ = revision;
   overview_revision_ = revision;
   overview_generation_ = take_generation();
   overview_valid_ = true;
+  bump_composition_epoch();
   return true;
 }
 
@@ -232,7 +350,7 @@ bool MaterializedCanvas::restore_snapshot(DocumentRevision revision,
   const bool any_tile_pinned = std::any_of(slots_.begin(), slots_.end(),
                                            [](const auto& slot) { return slot.pin_count_ != 0U; });
   if (!ready() || pixels.size() != kOverviewPixels || !source_is_external ||
-      overview_pin_count_ != 0U || any_tile_pinned) {
+      overview_pin_count_ != 0U || uniform_pin_count_ != 0U || any_tile_pinned) {
     return false;
   }
   std::copy(pixels.begin(), pixels.end(), overview_pixels_.begin());
@@ -242,10 +360,13 @@ bool MaterializedCanvas::restore_snapshot(DocumentRevision revision,
       slot.generation_ = take_generation();
     }
   }
+  clear_uniforms();
+  std::fill(occupancy_bits_.begin(), occupancy_bits_.end(), 0U);
   current_revision_ = revision;
   overview_revision_ = revision;
   overview_generation_ = take_generation();
   overview_valid_ = true;
+  bump_composition_epoch();
   return true;
 }
 
@@ -275,7 +396,7 @@ bool MaterializedCanvas::valid_incremental_revision(
       !valid_world_bounds(affected_world_bounds) ||
       overview_publication.bounds != required_overview_bounds || expected_overview_pixels == 0U ||
       overview_publication.pixels.size() != expected_overview_pixels || !source_is_external ||
-      overview_pin_count_ != 0U || any_tile_pinned) {
+      overview_pin_count_ != 0U || uniform_pin_count_ != 0U || any_tile_pinned) {
     return false;
   }
 
@@ -291,7 +412,9 @@ bool MaterializedCanvas::valid_incremental_revision(
                      tile_publications.begin() + static_cast<std::ptrdiff_t>(index),
                      [&publication](const auto& prior) { return prior.key == publication.key; }) ==
         tile_publications.begin() + static_cast<std::ptrdiff_t>(index);
-    if (!key_is_affected || !publication_is_unique || !find_tile(publication.key).has_value() ||
+    const bool resident =
+        find_tile(publication.key).has_value() || find_uniform(publication.key).has_value();
+    if (!key_is_affected || !publication_is_unique || !resident ||
         publication.quality == MaterializationQuality::kOverviewFallback ||
         publication.pixels.size() != expected_pixels ||
         storage_overlaps(std::as_bytes(publication.pixels),
@@ -366,9 +489,12 @@ bool MaterializedCanvas::commit_incremental_revision(
       slot.revision_ = revision;
     }
   }
+  invalidate_uniforms(affected_world_bounds);
+  mark_occupied(affected_world_bounds);
   current_revision_ = revision;
   overview_revision_ = revision;
   overview_generation_ = take_generation();
+  bump_composition_epoch();
   return true;
 }
 
@@ -381,7 +507,8 @@ bool MaterializedCanvas::accepts_external_workspace(std::span<const std::byte> w
 bool MaterializedCanvas::copy_resident_tile(TileKey key,
                                             std::span<std::uint16_t> destination) const {
   const auto slot_index = find_tile(key);
-  if (!slot_index.has_value()) {
+  const auto uniform_index = find_uniform(key);
+  if (!slot_index.has_value() && !uniform_index.has_value()) {
     return false;
   }
   const PixelRect bounds = tile_pixel_bounds(key);
@@ -390,6 +517,10 @@ bool MaterializedCanvas::copy_resident_tile(TileKey key,
   const std::size_t expected = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
   if (destination.size() != expected || !accepts_external_workspace(std::as_bytes(destination))) {
     return false;
+  }
+  if (uniform_index.has_value()) {
+    std::fill(destination.begin(), destination.end(), uniform_catalog_[*uniform_index].color_);
+    return true;
   }
   const auto source = tile_pixels_.subspan(*slot_index * kTilePixels, kTilePixels);
   for (int row = 0; row < height; ++row) {
@@ -401,17 +532,33 @@ bool MaterializedCanvas::copy_resident_tile(TileKey key,
   return true;
 }
 
+std::size_t MaterializedCanvas::uniform_tiles_intersecting(PixelRect world_bounds,
+                                                           std::span<TileKey> output) const {
+  std::size_t count = 0;
+  for (std::size_t index = 0; index < uniform_catalog_.size(); ++index) {
+    if (!uniform_catalog_[index].occupied_ || !uniform_intersects(index, world_bounds)) {
+      continue;
+    }
+    if (count < output.size()) {
+      output[count] = key_for_identity(index);
+    }
+    ++count;
+  }
+  return count;
+}
+
 std::optional<std::size_t> MaterializedCanvas::resident_tiles_intersecting(
     PixelRect world_bounds, std::span<TileKey> output) const {
   if (!ready() || !valid_world_bounds(world_bounds) ||
       !accepts_external_workspace(std::as_bytes(output))) {
     return std::nullopt;
   }
-  const std::size_t required = static_cast<std::size_t>(std::count_if(
+  const std::size_t raw_required = static_cast<std::size_t>(std::count_if(
       slots_.begin(), slots_.end(), [world_bounds](const MaterializedSlotStorage& slot) {
         return slot.occupied_ && rectangles_intersect(tile_world_bounds(slot.key_), world_bounds);
       }));
-  if (output.size() < required) {
+  const std::size_t uniform_required = uniform_tiles_intersecting(world_bounds, {});
+  if (output.size() < raw_required + uniform_required) {
     return std::nullopt;
   }
   std::size_t written = 0;
@@ -420,6 +567,7 @@ std::optional<std::size_t> MaterializedCanvas::resident_tiles_intersecting(
       output[written++] = slot.key_;
     }
   }
+  written += uniform_tiles_intersecting(world_bounds, output.subspan(written));
   return written;
 }
 
@@ -431,6 +579,15 @@ std::optional<std::size_t> MaterializedCanvas::find_tile(TileKey key) const {
     return std::nullopt;
   }
   return static_cast<std::size_t>(found - slots_.begin());
+}
+
+std::optional<std::size_t> MaterializedCanvas::find_uniform(TileKey key) const {
+  const auto index = tile_identity_index(key);
+  if (!index.has_value() || *index >= uniform_catalog_.size() ||
+      !uniform_catalog_[*index].occupied_) {
+    return std::nullopt;
+  }
+  return index;
 }
 
 std::optional<std::size_t> MaterializedCanvas::choose_slot() const {
@@ -503,7 +660,41 @@ std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, Documen
   slot.revision_ = revision;
   slot.quality_ = quality;
   slot.occupied_ = true;
+  if (const auto uniform = tile_identity_index(key);
+      uniform.has_value() && *uniform < uniform_catalog_.size()) {
+    uniform_catalog_[*uniform].occupied_ = false;
+  }
   touch(slot);
+  bump_composition_epoch();
+  return index;
+}
+
+std::optional<std::size_t> MaterializedCanvas::publish_uniform(TileKey key,
+                                                               DocumentRevision revision,
+                                                               MaterializationQuality quality,
+                                                               std::uint16_t color) {
+  const auto index = tile_identity_index(key);
+  if (!ready() || !index.has_value() || *index >= uniform_catalog_.size() ||
+      revision != current_revision_ || quality == MaterializationQuality::kOverviewFallback ||
+      uniform_pin_count_ != 0U) {
+    return std::nullopt;
+  }
+  if (const auto raw = find_tile(key); raw.has_value()) {
+    MaterializedSlotStorage& slot = slots_[*raw];
+    if (slot.pin_count_ != 0U || static_cast<int>(quality) < static_cast<int>(slot.quality_)) {
+      return std::nullopt;
+    }
+    slot.occupied_ = false;
+    slot.generation_ = take_generation();
+  }
+  MaterializedUniformStorage& uniform = uniform_catalog_[*index];
+  if (uniform.occupied_ && static_cast<int>(quality) < static_cast<int>(uniform.quality_)) {
+    return std::nullopt;
+  }
+  uniform.color_ = color;
+  uniform.quality_ = quality;
+  uniform.occupied_ = true;
+  bump_composition_epoch();
   return index;
 }
 
@@ -522,6 +713,26 @@ SourceSelection MaterializedCanvas::select_overview(TileKey requested) const {
       .destination_pixels = tile_pixel_bounds(requested),
       .slot_index = std::nullopt,
       .source_stride = kOverviewWidth,
+  };
+}
+
+SourceSelection MaterializedCanvas::select_uniform(TileKey requested, std::size_t index) const {
+  const MaterializedUniformStorage& uniform = uniform_catalog_[index];
+  return {
+      .kind = SourceKind::kUniform,
+      .identity =
+          {
+              .revision = current_revision_,
+              .generation = {},
+              .quality = uniform.quality_,
+              .provenance = MaterializationProvenance::kWorldTile,
+          },
+      .requested_tile = requested,
+      .source_pixels = tile_pixel_bounds(requested),
+      .destination_pixels = tile_pixel_bounds(requested),
+      .slot_index = std::nullopt,
+      .source_stride = 0,
+      .uniform_color = uniform.color_,
   };
 }
 
@@ -553,6 +764,9 @@ std::optional<SourceSelection> MaterializedCanvas::lookup(TileKey key) const {
   if (tile_index.has_value() && slots_[*tile_index].revision_ == current_revision_) {
     return select_tile(key, *tile_index);
   }
+  if (const auto uniform = find_uniform(key); uniform.has_value()) {
+    return select_uniform(key, *uniform);
+  }
   if (overview_valid_ && overview_revision_ == current_revision_) {
     return select_overview(key);
   }
@@ -567,6 +781,8 @@ std::optional<PinnedSource> MaterializedCanvas::pin(TileKey key) {
   std::uint32_t* pin_count = nullptr;
   if (source->kind == SourceKind::kOverview) {
     pin_count = &overview_pin_count_;
+  } else if (source->kind == SourceKind::kUniform) {
+    pin_count = &uniform_pin_count_;
   } else {
     if (!source->slot_index.has_value()) {
       return std::nullopt;
@@ -599,6 +815,13 @@ bool MaterializedCanvas::validate_selection(const SourceSelection& source) const
            overview_valid_ && source.identity.revision == overview_revision_ &&
            source.identity.generation == overview_generation_;
   }
+  if (source.kind == SourceKind::kUniform) {
+    const auto index = find_uniform(source.requested_tile);
+    return source.pin_token != 0U && uniform_pin_count_ != 0U && index.has_value() &&
+           !source.slot_index.has_value() &&
+           uniform_catalog_[*index].quality_ == source.identity.quality &&
+           uniform_catalog_[*index].color_ == source.uniform_color;
+  }
   if (!source.slot_index.has_value() || *source.slot_index >= slots_.size()) {
     return false;
   }
@@ -618,6 +841,13 @@ bool MaterializedCanvas::release_pin(const SourceSelection& source) {
     --overview_pin_count_;
     return true;
   }
+  if (source.kind == SourceKind::kUniform) {
+    if (source.pin_token == 0U || uniform_pin_count_ == 0U || !validate_selection(source)) {
+      return false;
+    }
+    --uniform_pin_count_;
+    return true;
+  }
   if (!source.slot_index.has_value() || *source.slot_index >= slots_.size()) {
     return false;
   }
@@ -633,7 +863,7 @@ bool MaterializedCanvas::release_pin(const SourceSelection& source) {
 
 std::size_t MaterializedCanvas::pins_outstanding() const {
   return std::accumulate(slots_.begin(), slots_.end(),
-                         static_cast<std::size_t>(overview_pin_count_),
+                         static_cast<std::size_t>(overview_pin_count_) + uniform_pin_count_,
                          [](std::size_t count, const MaterializedSlotStorage& slot) {
                            return count + slot.pin_count_;
                          });
@@ -641,15 +871,15 @@ std::size_t MaterializedCanvas::pins_outstanding() const {
 
 bool MaterializedCanvas::mark_used(TileKey key) {
   const auto index = find_tile(key);
-  if (!index.has_value() || slots_[*index].revision_ != current_revision_) {
-    return false;
+  if (index.has_value() && slots_[*index].revision_ == current_revision_) {
+    touch(slots_[*index]);
+    return true;
   }
-  touch(slots_[*index]);
-  return true;
+  return find_uniform(key).has_value();
 }
 
 bool MaterializedCanvas::discard_tiles() {
-  if (!ready() || overview_pin_count_ != 0U ||
+  if (!ready() || overview_pin_count_ != 0U || uniform_pin_count_ != 0U ||
       std::any_of(slots_.begin(), slots_.end(),
                   [](const auto& slot) { return slot.pin_count_ != 0U; })) {
     return false;
@@ -661,6 +891,8 @@ bool MaterializedCanvas::discard_tiles() {
     slot.occupied_ = false;
     slot.generation_ = take_generation();
   }
+  clear_uniforms();
+  bump_composition_epoch();
   return true;
 }
 
@@ -690,7 +922,8 @@ bool MaterializedCanvas::has_complete_source(const ViewRequest& request) const {
       const TileKey key{request.zoom, static_cast<std::uint16_t>(column),
                         static_cast<std::uint16_t>(row)};
       const auto index = find_tile(key);
-      if (!index.has_value() || slots_[*index].revision_ != current_revision_) {
+      const bool raw_current = index.has_value() && slots_[*index].revision_ == current_revision_;
+      if (!raw_current && !find_uniform(key).has_value()) {
         return false;
       }
     }
@@ -719,54 +952,83 @@ std::optional<ViewCompositionStats> MaterializedCanvas::compose_overview_view(
   };
 }
 
-void MaterializedCanvas::compose_tile(TileKey key, CompositionContext& context) {
-  const PixelRect tile_bounds = tile_pixel_bounds(key);
-  const PixelRect view = context.request.level_pixels;
-  const int x0 = std::max(view.x0, tile_bounds.x0);
-  const int x1 = std::min(view.x1, tile_bounds.x1);
-  const int y0 = std::max(view.y0, tile_bounds.y0);
-  const int y1 = std::min(view.y1, tile_bounds.y1);
-  const auto tile_index = find_tile(key);
-  const bool tile_current =
-      tile_index.has_value() && slots_[*tile_index].revision_ == current_revision_;
-  const bool overview_current = overview_valid_ && overview_revision_ == current_revision_;
-  if (!tile_current && !overview_current) {
-    return;
-  }
-  if (tile_current) {
-    touch(slots_[*tile_index]);
-    context.stats.exact_tiles +=
-        slots_[*tile_index].quality_ == MaterializationQuality::kExact ? 1U : 0U;
-    context.stats.immediate_tiles +=
-        slots_[*tile_index].quality_ == MaterializationQuality::kImmediate ? 1U : 0U;
-    context.stats.settled_tiles +=
-        slots_[*tile_index].quality_ == MaterializationQuality::kSettled ? 1U : 0U;
-  } else {
-    ++context.stats.fallback_tiles;
-  }
+void MaterializedCanvas::include_quality(MaterializationQuality quality,
+                                         ViewCompositionStats& stats) {
+  stats.exact_tiles += quality == MaterializationQuality::kExact;
+  stats.immediate_tiles += quality == MaterializationQuality::kImmediate;
+  stats.settled_tiles += quality == MaterializationQuality::kSettled;
+}
 
-  const int percent = zoom_percent(context.request.zoom);
-  for (int y = y0; y < y1; ++y) {
-    for (int x = x0; x < x1; ++x) {
-      std::uint16_t pixel = 0;
-      if (tile_current) {
-        const std::size_t offset = *tile_index * kTilePixels +
-                                   static_cast<std::size_t>(y % kTileHeight) * kTileWidth +
-                                   static_cast<std::size_t>(x % kTileWidth);
-        pixel = tile_pixels_[offset];
-        ++context.stats.tile_pixels;
-      } else {
-        const std::size_t offset = static_cast<std::size_t>(y * 25 / percent) * kOverviewWidth +
-                                   static_cast<std::size_t>(x * 25 / percent);
-        pixel = overview_pixels_[offset];
-        ++context.stats.fallback_pixels;
-      }
-      const std::size_t destination_offset =
+void MaterializedCanvas::compose_raw_pixels(std::size_t slot_index, PixelRect bounds,
+                                            CompositionContext& context) {
+  const PixelRect view = context.request.level_pixels;
+  for (int y = bounds.y0; y < bounds.y1; ++y) {
+    for (int x = bounds.x0; x < bounds.x1; ++x) {
+      const std::size_t source = slot_index * kTilePixels +
+                                 static_cast<std::size_t>(y % kTileHeight) * kTileWidth +
+                                 static_cast<std::size_t>(x % kTileWidth);
+      const std::size_t destination =
           static_cast<std::size_t>(y - view.y0) * static_cast<std::size_t>(context.view_width) +
           static_cast<std::size_t>(x - view.x0);
-      context.destination[destination_offset] = pixel;
+      context.destination[destination] = tile_pixels_[source];
+      ++context.stats.tile_pixels;
     }
   }
+}
+
+void MaterializedCanvas::compose_uniform_pixels(std::uint16_t color, PixelRect bounds,
+                                                CompositionContext& context) {
+  const PixelRect view = context.request.level_pixels;
+  for (int y = bounds.y0; y < bounds.y1; ++y) {
+    const auto offset =
+        static_cast<std::size_t>(y - view.y0) * static_cast<std::size_t>(context.view_width) +
+        static_cast<std::size_t>(bounds.x0 - view.x0);
+    std::fill_n(context.destination.begin() + static_cast<std::ptrdiff_t>(offset),
+                bounds.x1 - bounds.x0, color);
+  }
+  context.stats.uniform_pixels += static_cast<std::size_t>(bounds.x1 - bounds.x0) *
+                                  static_cast<std::size_t>(bounds.y1 - bounds.y0);
+}
+
+void MaterializedCanvas::compose_fallback_pixels(PixelRect bounds, CompositionContext& context) {
+  const PixelRect view = context.request.level_pixels;
+  const int percent = zoom_percent(context.request.zoom);
+  for (int y = bounds.y0; y < bounds.y1; ++y) {
+    for (int x = bounds.x0; x < bounds.x1; ++x) {
+      const std::size_t source = static_cast<std::size_t>(y * 25 / percent) * kOverviewWidth +
+                                 static_cast<std::size_t>(x * 25 / percent);
+      const std::size_t destination =
+          static_cast<std::size_t>(y - view.y0) * static_cast<std::size_t>(context.view_width) +
+          static_cast<std::size_t>(x - view.x0);
+      context.destination[destination] = overview_pixels_[source];
+      ++context.stats.fallback_pixels;
+    }
+  }
+}
+
+void MaterializedCanvas::compose_tile(TileKey key, CompositionContext& context) {
+  const PixelRect tile = tile_pixel_bounds(key);
+  const PixelRect view = context.request.level_pixels;
+  const PixelRect bounds{.x0 = std::max(view.x0, tile.x0),
+                         .y0 = std::max(view.y0, tile.y0),
+                         .x1 = std::min(view.x1, tile.x1),
+                         .y1 = std::min(view.y1, tile.y1)};
+  const auto raw = find_tile(key);
+  const bool raw_current = raw.has_value() && slots_[*raw].revision_ == current_revision_;
+  if (raw_current) {
+    touch(slots_[*raw]);
+    include_quality(slots_[*raw].quality_, context.stats);
+    compose_raw_pixels(*raw, bounds, context);
+    return;
+  }
+  const auto uniform = find_uniform(key);
+  if (uniform.has_value()) {
+    include_quality(uniform_catalog_[*uniform].quality_, context.stats);
+    compose_uniform_pixels(uniform_catalog_[*uniform].color_, bounds, context);
+    return;
+  }
+  ++context.stats.fallback_tiles;
+  compose_fallback_pixels(bounds, context);
 }
 
 std::optional<ViewCompositionStats> MaterializedCanvas::compose_view(
