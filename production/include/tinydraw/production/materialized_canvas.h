@@ -23,6 +23,13 @@ inline constexpr std::size_t kTileBytes = kTilePixels * sizeof(std::uint16_t);
 // A display-sized viewport can cross seven tile columns and eight tile rows
 // when its origin is not tile-aligned.
 inline constexpr std::size_t kMaximumVisibleTiles = 56;
+inline constexpr int kOccupancyCellWorldSize = 16;
+inline constexpr int kOccupancyColumns = 92;
+inline constexpr int kOccupancyRows = 112;
+inline constexpr std::size_t kOccupancyCellCount =
+    static_cast<std::size_t>(kOccupancyColumns) * kOccupancyRows;
+inline constexpr std::size_t kOccupancyBytes = (kOccupancyCellCount + 7U) / 8U;
+inline constexpr std::size_t kMaterializedTileIdentityCount = 168U + 644U + 2'576U + 10'304U;
 
 enum class ZoomLevel : std::uint8_t {
   k25Percent,
@@ -95,6 +102,7 @@ struct MaterializationIdentity {
 
 enum class SourceKind : std::uint8_t {
   kOverview,
+  kUniform,
   kTileSlot,
 };
 
@@ -106,6 +114,7 @@ struct SourceSelection {
   PixelRect destination_pixels{};
   std::optional<std::size_t> slot_index{};
   int source_stride = 0;
+  std::uint16_t uniform_color = 0xFFFFU;
   std::uint32_t pin_token = 0;
 };
 
@@ -130,11 +139,26 @@ struct ViewCompositionStats {
   std::size_t tile_pixels = 0;
   std::size_t overview_pixels = 0;
   std::size_t fallback_pixels = 0;
+  std::size_t uniform_pixels = 0;
   std::size_t immediate_tiles = 0;
   std::size_t settled_tiles = 0;
   std::size_t exact_tiles = 0;
   std::size_t fallback_tiles = 0;
 };
+
+class MaterializedUniformStorage {
+ public:
+  MaterializedUniformStorage() = default;
+
+ private:
+  friend class MaterializedCanvas;
+
+  std::uint16_t color_ = 0xFFFFU;
+  MaterializationQuality quality_ = MaterializationQuality::kImmediate;
+  bool occupied_ = false;
+};
+
+static_assert(sizeof(MaterializedUniformStorage) == 4U);
 
 class MaterializedSlotStorage {
  public:
@@ -182,11 +206,19 @@ class MaterializedCanvas {
   MaterializedCanvas(std::span<std::uint16_t> overview_pixels,
                      std::span<MaterializedSlotStorage> slots, std::span<std::uint16_t> tile_pixels,
                      DocumentRevision initial_revision = {});
+  MaterializedCanvas(std::span<std::uint16_t> overview_pixels,
+                     std::span<MaterializedUniformStorage> uniform_catalog,
+                     std::span<std::uint8_t> occupancy_bits,
+                     std::span<MaterializedSlotStorage> slots, std::span<std::uint16_t> tile_pixels,
+                     DocumentRevision initial_revision = {});
 
   [[nodiscard]] bool ready() const;
   [[nodiscard]] DocumentRevision current_revision() const;
   [[nodiscard]] std::size_t slot_capacity() const;
+  [[nodiscard]] std::size_t uniform_capacity() const;
+  [[nodiscard]] std::uint64_t composition_epoch() const;
   [[nodiscard]] std::span<const std::uint16_t> overview_pixels() const;
+  [[nodiscard]] bool certainly_paper(TileKey key) const;
 
   // Logically commits a complete overview and its revision in one call. Once
   // an overview is valid, each publication must advance the revision and use
@@ -210,6 +242,9 @@ class MaterializedCanvas {
   [[nodiscard]] std::optional<std::size_t> publish_tile(TileKey key, DocumentRevision revision,
                                                         MaterializationQuality quality,
                                                         std::span<const std::uint16_t> pixels);
+  [[nodiscard]] std::optional<std::size_t> publish_uniform(TileKey key, DocumentRevision revision,
+                                                           MaterializationQuality quality,
+                                                           std::uint16_t color = 0xFFFFU);
   [[nodiscard]] std::optional<SourceSelection> lookup(TileKey key) const;
   [[nodiscard]] std::optional<PinnedSource> pin(TileKey key);
   [[nodiscard]] bool validate(const PinnedSource& source) const;
@@ -235,8 +270,10 @@ class MaterializedCanvas {
   [[nodiscard]] bool validate_selection(const SourceSelection& source) const;
   [[nodiscard]] bool release_pin(const SourceSelection& source);
   [[nodiscard]] std::optional<std::size_t> find_tile(TileKey key) const;
+  [[nodiscard]] std::optional<std::size_t> find_uniform(TileKey key) const;
   [[nodiscard]] std::optional<std::size_t> choose_slot() const;
   [[nodiscard]] SourceSelection select_overview(TileKey requested) const;
+  [[nodiscard]] SourceSelection select_uniform(TileKey requested, std::size_t index) const;
   [[nodiscard]] bool valid_incremental_revision(
       DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
       PixelRect affected_world_bounds,
@@ -256,10 +293,25 @@ class MaterializedCanvas {
   [[nodiscard]] std::optional<ViewCompositionStats> compose_overview_view(
       const ViewRequest& request, std::span<std::uint16_t> destination) const;
   void compose_tile(TileKey key, CompositionContext& context);
+  void compose_raw_pixels(std::size_t slot_index, PixelRect bounds, CompositionContext& context);
+  static void compose_uniform_pixels(std::uint16_t color, PixelRect bounds,
+                                     CompositionContext& context);
+  void compose_fallback_pixels(PixelRect bounds, CompositionContext& context);
+  static void include_quality(MaterializationQuality quality, ViewCompositionStats& stats);
+  [[nodiscard]] std::size_t uniform_tiles_intersecting(PixelRect world_bounds,
+                                                       std::span<TileKey> output) const;
+  [[nodiscard]] static TileKey key_for_identity(std::size_t index);
+  [[nodiscard]] static bool uniform_intersects(std::size_t index, PixelRect world_bounds);
+  void invalidate_uniforms(PixelRect world_bounds);
+  void mark_occupied(PixelRect world_bounds);
+  void clear_uniforms();
+  void bump_composition_epoch();
   [[nodiscard]] SlotGeneration take_generation();
   void touch(MaterializedSlotStorage& slot);
 
   std::span<std::uint16_t> overview_pixels_;
+  std::span<MaterializedUniformStorage> uniform_catalog_;
+  std::span<std::uint8_t> occupancy_bits_;
   std::span<MaterializedSlotStorage> slots_;
   std::span<std::uint16_t> tile_pixels_;
   DocumentRevision current_revision_{};
@@ -269,6 +321,8 @@ class MaterializedCanvas {
   std::uint64_t use_clock_ = 0;
   std::uint32_t next_pin_token_ = 1;
   std::uint32_t overview_pin_count_ = 0;
+  std::uint32_t uniform_pin_count_ = 0;
+  std::uint64_t composition_epoch_ = 1;
   bool overview_valid_ = false;
 };
 
@@ -278,6 +332,7 @@ class MaterializedCanvas {
 // center-sampled minimum raster radius must preserve this contract.
 [[nodiscard]] PixelRect overview_bounds_for_world(PixelRect world_bounds);
 [[nodiscard]] TileGrid tile_grid(ZoomLevel zoom);
+[[nodiscard]] std::optional<std::size_t> tile_identity_index(TileKey key);
 [[nodiscard]] bool valid_tile_key(TileKey key);
 [[nodiscard]] std::optional<TileKey> tile_key_for_world(ZoomLevel zoom, WorldPoint point);
 [[nodiscard]] PixelRect tile_pixel_bounds(TileKey key);

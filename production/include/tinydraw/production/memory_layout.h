@@ -29,7 +29,9 @@ inline constexpr std::size_t kStagingBytes = 2U * 368U * 32U * sizeof(std::uint1
 inline constexpr std::size_t kTargetContiguousReserveBytes = 1536U * 1024U;
 
 inline constexpr std::size_t kTilePoolBytes = kTileSlotCount * kTileBytes;
-inline constexpr std::size_t kTileMetadataBytes = kTileSlotCount * sizeof(MaterializedSlotStorage);
+inline constexpr std::size_t kTileMetadataBytes =
+    kTileSlotCount * sizeof(MaterializedSlotStorage) +
+    kMaterializedTileIdentityCount * sizeof(MaterializedUniformStorage) + kOccupancyBytes;
 inline constexpr std::size_t kOperationRecordBytes = kOperationCapacity * sizeof(OperationRecord);
 inline constexpr std::size_t kOperationSampleBytes =
     kOperationSampleCapacity * sizeof(CompactOperationSample);
