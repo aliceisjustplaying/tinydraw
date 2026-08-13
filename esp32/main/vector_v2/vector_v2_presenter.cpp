@@ -26,11 +26,13 @@ vector_v2::PixelRect align_bounds(vector_v2::PixelRect bounds) {
 }  // namespace
 
 VectorV2Presenter::VectorV2Presenter(vector_v2::MaterializedCanvas& canvas,
+                                     vector_v2::NavigationState& navigation,
                                      vector_v2::DisplayScheduler& scheduler,
                                      Co5300PanelTransport& display,
                                      std::span<std::uint16_t> frame_pixels,
                                      std::span<std::uint16_t> region_pixels)
     : canvas_(canvas),
+      navigation_(navigation),
       scheduler_(scheduler),
       display_(display),
       frame_(frame_pixels),
@@ -43,23 +45,23 @@ bool VectorV2Presenter::ready() const {
          region_.size() >= kLiveRegionScratchPixels && renderer_ != nullptr;
 }
 
-vector_v2::ZoomLevel VectorV2Presenter::zoom() const { return zoom_; }
+vector_v2::ZoomLevel VectorV2Presenter::zoom() const { return navigation_.zoom(); }
 
-int VectorV2Presenter::level_x() const { return level_x_; }
+int VectorV2Presenter::level_x() const { return navigation_.origin().x; }
 
-int VectorV2Presenter::level_y() const { return level_y_; }
+int VectorV2Presenter::level_y() const { return navigation_.origin().y; }
 
 float VectorV2Presenter::scale() const {
-  return static_cast<float>(vector_v2::zoom_percent(zoom_)) / 100.0F;
+  return static_cast<float>(vector_v2::zoom_percent(zoom())) / 100.0F;
 }
 
 vector_v2::OperationPoint VectorV2Presenter::operation_point(InkPoint point) const {
   const float inverse_scale = 1.0F / scale();
   return {
-      .world_x = std::clamp((static_cast<float>(level_x_) + point.position.x) * inverse_scale, 0.0F,
-                            static_cast<float>(vector_v2::kWorldWidth)),
-      .world_y = std::clamp((static_cast<float>(level_y_) + point.position.y) * inverse_scale, 0.0F,
-                            static_cast<float>(vector_v2::kWorldHeight)),
+      .world_x = std::clamp((static_cast<float>(level_x()) + point.position.x) * inverse_scale,
+                            0.0F, static_cast<float>(vector_v2::kWorldWidth)),
+      .world_y = std::clamp((static_cast<float>(level_y()) + point.position.y) * inverse_scale,
+                            0.0F, static_cast<float>(vector_v2::kWorldHeight)),
       .radius = point.radius * inverse_scale,
       .timestamp_us = point.timestamp_us,
   };
@@ -68,11 +70,7 @@ vector_v2::OperationPoint VectorV2Presenter::operation_point(InkPoint point) con
 LivePresentationTiming VectorV2Presenter::refresh(const ToolbarState& toolbar,
                                                   std::uint32_t event_us) {
   const std::int64_t compose_started = esp_timer_get_time();
-  const auto stats = canvas_.compose_view(
-      {.zoom = zoom_,
-       .level_pixels = {level_x_, level_y_, level_x_ + vector_v2::kOverviewWidth,
-                        level_y_ + vector_v2::kOverviewHeight}},
-      frame_);
+  const auto stats = canvas_.compose_view(navigation_.view(), frame_);
   if (!stats.has_value()) {
     return {};
   }
@@ -85,9 +83,9 @@ LivePresentationTiming VectorV2Presenter::refresh(const ToolbarState& toolbar,
   timing.fallback_pixels = stats->fallback_pixels;
   timing.resident_tiles = stats->immediate_tiles + stats->settled_tiles + stats->exact_tiles;
   timing.fallback_tiles = stats->fallback_tiles;
-  frame_zoom_ = zoom_;
-  frame_level_x_ = level_x_;
-  frame_level_y_ = level_y_;
+  frame_zoom_ = zoom();
+  frame_level_x_ = level_x();
+  frame_level_y_ = level_y();
   frame_epoch_ = canvas_.composition_epoch();
   frame_reusable_ = timing.passed && stats->fallback_pixels == 0U;
   return timing;
@@ -95,8 +93,8 @@ LivePresentationTiming VectorV2Presenter::refresh(const ToolbarState& toolbar,
 
 LivePresentationTiming VectorV2Presenter::refresh_region(vector_v2::PixelRect level_bounds,
                                                          std::uint32_t event_us) {
-  const vector_v2::PixelRect view{level_x_, level_y_, level_x_ + vector_v2::kOverviewWidth,
-                                  level_y_ + kMainToolbarOverlayTop};
+  const vector_v2::PixelRect view{level_x(), level_y(), level_x() + vector_v2::kOverviewWidth,
+                                  level_y() + kMainToolbarOverlayTop};
   const vector_v2::PixelRect intersection{
       .x0 = std::max(view.x0, level_bounds.x0),
       .y0 = std::max(view.y0, level_bounds.y0),
@@ -107,18 +105,18 @@ LivePresentationTiming VectorV2Presenter::refresh_region(vector_v2::PixelRect le
     return {.passed = true};
   }
   vector_v2::PixelRect panel{
-      .x0 = intersection.x0 - level_x_,
-      .y0 = intersection.y0 - level_y_,
-      .x1 = intersection.x1 - level_x_,
-      .y1 = intersection.y1 - level_y_,
+      .x0 = intersection.x0 - level_x(),
+      .y0 = intersection.y0 - level_y(),
+      .x1 = intersection.x1 - level_x(),
+      .y1 = intersection.y1 - level_y(),
   };
   panel = align_bounds(panel);
   panel.y1 = std::min(panel.y1, kMainToolbarOverlayTop);
   const vector_v2::PixelRect aligned_level{
-      .x0 = level_x_ + panel.x0,
-      .y0 = level_y_ + panel.y0,
-      .x1 = level_x_ + panel.x1,
-      .y1 = level_y_ + panel.y1,
+      .x0 = level_x() + panel.x0,
+      .y0 = level_y() + panel.y0,
+      .x1 = level_x() + panel.x1,
+      .y1 = level_y() + panel.y1,
   };
   return compose_and_present(aligned_level, panel, event_us);
 }
@@ -138,7 +136,7 @@ LivePresentationTiming VectorV2Presenter::compose_and_present(vector_v2::PixelRe
   const std::int64_t compose_started = esp_timer_get_time();
   const auto destination = region_.first(pixel_count);
   const auto stats =
-      canvas_.compose_view({.zoom = zoom_, .level_pixels = level_bounds}, destination);
+      canvas_.compose_view({.zoom = zoom(), .level_pixels = level_bounds}, destination);
   if (!stats.has_value()) {
     return {};
   }
@@ -185,49 +183,46 @@ LivePresentationTiming VectorV2Presenter::show_update(const RibbonUpdate& update
                  event_us);
 }
 
-LivePresentationTiming VectorV2Presenter::set_zoom(vector_v2::ZoomLevel zoom,
+LivePresentationTiming VectorV2Presenter::set_zoom(vector_v2::ZoomLevel target_zoom,
                                                    const ToolbarState& toolbar,
                                                    std::uint32_t event_us) {
-  if (zoom == zoom_) {
-    return refresh(toolbar, event_us);
+  constexpr vector_v2::NavigationPoint kDefaultFocus{vector_v2::kOverviewWidth / 2,
+                                                     kMainToolbarOverlayTop / 2};
+  if (!navigation_.set_zoom(target_zoom, kDefaultFocus)) {
+    return {};
   }
-  const float old_scale = scale();
-  const float focus_world_x =
-      (static_cast<float>(level_x_) + vector_v2::kOverviewWidth * 0.5F) / old_scale;
-  const float focus_world_y =
-      (static_cast<float>(level_y_) + vector_v2::kOverviewHeight * 0.5F) / old_scale;
-  zoom_ = zoom;
-  const auto origin = clamp_view_origin(
-      static_cast<int>(std::lround(focus_world_x * scale() - vector_v2::kOverviewWidth * 0.5F)),
-      static_cast<int>(std::lround(focus_world_y * scale() - vector_v2::kOverviewHeight * 0.5F)));
-  level_x_ = origin.x0;
-  level_y_ = origin.y0;
   return refresh(toolbar, event_us);
 }
 
-LivePresentationTiming VectorV2Presenter::set_view(vector_v2::ZoomLevel zoom, int level_x,
+LivePresentationTiming VectorV2Presenter::set_view(vector_v2::ZoomLevel target_zoom, int level_x,
                                                    int level_y, const ToolbarState& toolbar,
                                                    std::uint32_t event_us) {
-  zoom_ = zoom;
-  const auto origin = clamp_view_origin(level_x, level_y);
-  level_x_ = origin.x0;
-  level_y_ = origin.y0;
+  constexpr vector_v2::NavigationPoint kDefaultFocus{vector_v2::kOverviewWidth / 2,
+                                                     kMainToolbarOverlayTop / 2};
+  if (!navigation_.set_zoom(target_zoom, kDefaultFocus) ||
+      !navigation_.set_origin(level_x, level_y, kDefaultFocus)) {
+    return {};
+  }
   return refresh(toolbar, event_us);
 }
 
 LivePresentationTiming VectorV2Presenter::pan_from(int start_x, int start_y, Point start_touch,
                                                    Point current_touch, const ToolbarState& toolbar,
                                                    std::uint32_t event_us) {
-  const auto origin =
-      clamp_view_origin(start_x + static_cast<int>(std::lround(start_touch.x - current_touch.x)),
-                        start_y + static_cast<int>(std::lround(start_touch.y - current_touch.y)));
-  if (origin.x0 == level_x_ && origin.y0 == level_y_) {
+  const int old_x = level_x();
+  const int old_y = level_y();
+  const int requested_x = start_x + static_cast<int>(std::lround(start_touch.x - current_touch.x));
+  const int requested_y = start_y + static_cast<int>(std::lround(start_touch.y - current_touch.y));
+  const vector_v2::NavigationPoint panel_focus{
+      .x = std::clamp(static_cast<int>(std::lround(current_touch.x)), 0,
+                      vector_v2::kOverviewWidth - 1),
+      .y = std::clamp(static_cast<int>(std::lround(current_touch.y)), 0,
+                      vector_v2::kOverviewHeight - 1),
+  };
+  if (!navigation_.set_origin(requested_x, requested_y, panel_focus) ||
+      (level_x() == old_x && level_y() == old_y)) {
     return {};
   }
-  const int old_x = level_x_;
-  const int old_y = level_y_;
-  level_x_ = origin.x0;
-  level_y_ = origin.y0;
   return refresh_pan(old_x, old_y, toolbar, event_us);
 }
 
@@ -235,8 +230,8 @@ bool VectorV2Presenter::compose_into_frame(vector_v2::PixelRect panel_bounds) {
   if (panel_bounds.x1 <= panel_bounds.x0 || panel_bounds.y1 <= panel_bounds.y0) {
     return true;
   }
-  const vector_v2::PixelRect level{level_x_ + panel_bounds.x0, level_y_ + panel_bounds.y0,
-                                   level_x_ + panel_bounds.x1, level_y_ + panel_bounds.y1};
+  const vector_v2::PixelRect level{level_x() + panel_bounds.x0, level_y() + panel_bounds.y0,
+                                   level_x() + panel_bounds.x1, level_y() + panel_bounds.y1};
   const int width = panel_bounds.x1 - panel_bounds.x0;
   const int height = panel_bounds.y1 - panel_bounds.y0;
   const std::size_t count = static_cast<std::size_t>(width) * height;
@@ -244,7 +239,7 @@ bool VectorV2Presenter::compose_into_frame(vector_v2::PixelRect panel_bounds) {
     return false;
   }
   const auto pixels = region_.first(count);
-  const auto stats = canvas_.compose_view({.zoom = zoom_, .level_pixels = level}, pixels);
+  const auto stats = canvas_.compose_view({.zoom = zoom(), .level_pixels = level}, pixels);
   if (!stats.has_value() || stats->fallback_pixels != 0U) {
     return false;
   }
@@ -262,9 +257,9 @@ bool VectorV2Presenter::compose_into_frame(vector_v2::PixelRect panel_bounds) {
 LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
                                                       const ToolbarState& toolbar,
                                                       std::uint32_t event_us) {
-  const int delta_x = level_x_ - old_x;
-  const int delta_y = level_y_ - old_y;
-  const bool reusable = frame_reusable_ && frame_zoom_ == zoom_ && frame_level_x_ == old_x &&
+  const int delta_x = level_x() - old_x;
+  const int delta_y = level_y() - old_y;
+  const bool reusable = frame_reusable_ && frame_zoom_ == zoom() && frame_level_x_ == old_x &&
                         frame_level_y_ == old_y && frame_epoch_ == canvas_.composition_epoch() &&
                         std::abs(delta_x) <= kMaximumCachedPanDelta &&
                         std::abs(delta_y) <= kMaximumCachedPanDelta;
@@ -289,8 +284,8 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   auto timing = present({0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight}, event_us,
                         esp_timer_get_time() - started);
   timing.frame_reused = true;
-  frame_level_x_ = level_x_;
-  frame_level_y_ = level_y_;
+  frame_level_x_ = level_x();
+  frame_level_y_ = level_y();
   frame_epoch_ = canvas_.composition_epoch();
   frame_reusable_ = timing.passed;
   return timing;
@@ -389,15 +384,6 @@ vector_v2::PixelRect VectorV2Presenter::primitive_bounds(
   }
   return align_bounds({static_cast<int>(std::floor(x0)), static_cast<int>(std::floor(y0)),
                        static_cast<int>(std::ceil(x1)), static_cast<int>(std::ceil(y1))});
-}
-
-vector_v2::PixelRect VectorV2Presenter::clamp_view_origin(int x, int y) const {
-  const int level_width = vector_v2::kWorldWidth * vector_v2::zoom_percent(zoom_) / 100;
-  const int level_height = vector_v2::kWorldHeight * vector_v2::zoom_percent(zoom_) / 100;
-  return {
-      .x0 = std::clamp(x, 0, std::max(0, level_width - vector_v2::kOverviewWidth)),
-      .y0 = std::clamp(y, 0, std::max(0, level_height - vector_v2::kOverviewHeight)),
-  };
 }
 
 }  // namespace tinydraw::esp32
