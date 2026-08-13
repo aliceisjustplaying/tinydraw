@@ -9,7 +9,8 @@ namespace tinydraw::esp32 {
 
 // Owns one CO5300 panel, its DMA staging, queue capacity, and completion
 // telemetry. Input pixels are RGB565 in host byte order. The panel requires
-// in-bounds even-aligned windows; invalid submissions fail closed.
+// in-bounds even-aligned windows; invalid submissions fail closed. Callers must
+// serialize submissions and telemetry access.
 class Co5300PanelTransport final : public DisplayBackend {
  public:
   Co5300PanelTransport();
