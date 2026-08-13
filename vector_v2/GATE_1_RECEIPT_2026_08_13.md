@@ -3,7 +3,7 @@
 Date: 2026-08-13  
 Branch: `feat/vector-canvas-production`  
 Hardware: ESP32-S3, 8 MiB PSRAM, 240 MHz, CO5300 368×448 panel  
-Plan: [`../PRODUCTION_GATE_PLAN_2026_08_13.md`](../PRODUCTION_GATE_PLAN_2026_08_13.md)
+Historical plan: [`../docs/archive/2026-08-vector-v2-foundation/PRODUCTION_GATE_PLAN_2026_08_13.md`](../docs/archive/2026-08-vector-v2-foundation/PRODUCTION_GATE_PLAN_2026_08_13.md)
 
 ## Verdict: YELLOW
 

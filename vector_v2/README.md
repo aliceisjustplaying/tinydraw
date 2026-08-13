@@ -1,14 +1,14 @@
-# Production island
+# Vector V2 foundation
 
-This directory is the migration island for TinyDraw's vector-authoritative production architecture. It is **not** a second application or a clean-room rewrite. The existing raster app remains runnable while production modules replace it one behavior at a time.
+This directory contains TinyDraw's platform-independent, vector-authoritative V2 architecture. It is **not** a clean-room rewrite. Raster V1 remains runnable while V2 modules replace it one behavior at a time.
 
 Current state lives in [`PROJECT_STATE.md`](../PROJECT_STATE.md), and the complete forward worklist lives in [`V2_ROADMAP.md`](../V2_ROADMAP.md). Historical prototype plans belong in [`docs/archive/`](../docs/archive/).
 
 ## Dependency rule
 
-Production code may reuse stable, platform-independent core mechanisms by dependency. It must not copy them.
+Vector V2 may reuse stable, platform-independent core mechanisms by dependency. It must not copy them.
 
-The production island must not depend on:
+The Vector V2 module must not depend on:
 
 - `WorldCanvas`, `ViewOrigin`, or the 3×3 raster geometry;
 - `FirmwareCanvas` or ESP-IDF allocation;
@@ -16,7 +16,7 @@ The production island must not depend on:
 - hardware display, toolbar, persistence, or task-loop policy;
 - camera-aligned atlas identities or arbitrary zoom values.
 
-Adapters outside this directory may eventually connect production modules to the existing app and hardware. Those adapters must not move platform details into the production interfaces.
+Adapters outside this directory connect V2 modules to the app and hardware. They must not move platform details into V2 interfaces.
 
 ## Module rules
 
@@ -31,7 +31,7 @@ Adapters outside this directory may eventually connect production modules to the
 
 ## Automated guards
 
-Production code is compiled through the independent `tinydraw::vector_v2` CMake target with the project's warnings-as-errors policy. It is also covered by the repository formatter and two production-scoped analyzers:
+Vector V2 is compiled through the independent `tinydraw::vector_v2` CMake target with the project's warnings-as-errors policy. It is also covered by the repository formatter and two V2-scoped analyzers:
 
 ```sh
 ./scripts/dev format-check
@@ -43,11 +43,11 @@ Production code is compiled through the independent `tinydraw::vector_v2` CMake 
 
 ## Migration rule
 
-Every production milestone must replace or prepare to replace an identified legacy responsibility. Do not create an indefinite third path.
+Every V2 milestone must replace or prepare to replace an identified Raster V1 responsibility. Do not create an indefinite third path.
 
-1. Build and review the production module through host tests.
+1. Build and review the V2 module through host tests.
 2. Prove its memory layout where required.
-3. Add one narrow adapter to the running application.
+3. Add one narrow adapter to the V2 application.
 4. Validate behavior and hardware gates.
 5. Remove the superseded legacy path when the production path owns that responsibility.
 
@@ -243,7 +243,7 @@ painter-ordered operation range. Its interface must therefore identify the
 baseline revision, destination revision, and operation range together; append-time
 zoom-specific LOD storage must also have an explicit owner and capacity receipt.
 Do not hide these requirements behind a `settle(current_pixels)` helper or copy
-the rejected prototype renderer into the production island.
+the rejected prototype renderer into Vector V2.
 
 `OperationLog::replay_range()` is the first bounded ownership seam: it accepts an
 explicit log epoch, baseline revision, and destination revision and returns only

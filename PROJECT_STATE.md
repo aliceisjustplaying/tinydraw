@@ -13,9 +13,9 @@ The full remaining worklist and feature-complete definition live in
 [`V2_ROADMAP.md`](V2_ROADMAP.md).
 
 The raster application remains the default firmware and must remain runnable
-until V2 reaches feature parity and passes migration acceptance. V2 currently
-runs as the exclusive `production-live-app` hardware target; it is not yet the
-default or feature complete.
+until V2 reaches feature parity and passes migration acceptance. V2 now has an
+explicit `vector-v2` hardware target; the historical Gate 1 workload runs only
+under `vector-v2-gate-harness`. V2 is not yet the default or feature complete.
 
 ## What is proven
 
@@ -71,8 +71,7 @@ These are product and optimization tasks, not evidence for another rewrite.
 
 1. Follow the accepted behavior in
    [`VECTOR_V2_ZOOM_NAVIGATION.md`](VECTOR_V2_ZOOM_NAVIGATION.md).
-2. Run the bounded V2 cleanup/repository-shaping round and prepare this validated
-   milestone for merge to main.
+2. Merge the validated, cleanup-complete V2 foundation milestone to main.
 3. Implement and hardware-test input-first scheduling, camera preservation, and
    protected recent per-zoom cache footprints.
 4. Run the timeboxed analytic anti-aliasing gate.
@@ -80,7 +79,7 @@ These are product and optimization tasks, not evidence for another rewrite.
 
 ## Repository and coexistence decision
 
-Use a production island in this repository—a strangler migration, not a blank
+Use a Vector V2 island in this repository—a strangler migration, not a blank
 rewrite:
 
 - platform-independent V2 modules live in `vector_v2/`;
@@ -126,7 +125,7 @@ Committed geometry:
 - No camera-aligned 3×3 atlas development.
 - No V2 state in `hardware_app.cpp`, `WorldCanvas`, or `FirmwareCanvas`.
 - No four separately stored simplified stroke versions.
-- No hidden allocation in production state modules.
+- No hidden allocation in Vector V2 state modules.
 - No speculative second-core concurrency without a measured independent need.
 - No broad cosmetic V1 refactor before a real replacement seam exists.
 - No deleting V1 before V2 feature parity and promotion.
@@ -155,10 +154,10 @@ panel behavior, power, and USB export.
 
 Prototype decisions and rejected mechanisms remain in:
 
-- [`PROTOTYPE_EXIT.md`](PROTOTYPE_EXIT.md)
-- [`SECOND_REVIEW_ARCHITECTURE_ASSESSMENT.md`](SECOND_REVIEW_ARCHITECTURE_ASSESSMENT.md)
-- [`VECTOR_CANVAS_OPTIMIZATION_CHRONICLE.md`](VECTOR_CANVAS_OPTIMIZATION_CHRONICLE.md)
-- [`docs/archive/2026-08-raster-and-vector-prototypes/`](docs/archive/2026-08-raster-and-vector-prototypes/)
+- [`docs/archive/2026-08-raster-and-vector-prototypes/PROTOTYPE_EXIT.md`](docs/archive/2026-08-raster-and-vector-prototypes/PROTOTYPE_EXIT.md)
+- [`docs/archive/2026-08-raster-and-vector-prototypes/SECOND_REVIEW_ARCHITECTURE_ASSESSMENT.md`](docs/archive/2026-08-raster-and-vector-prototypes/SECOND_REVIEW_ARCHITECTURE_ASSESSMENT.md)
+- [`docs/archive/2026-08-raster-and-vector-prototypes/VECTOR_CANVAS_OPTIMIZATION_CHRONICLE.md`](docs/archive/2026-08-raster-and-vector-prototypes/VECTOR_CANVAS_OPTIMIZATION_CHRONICLE.md)
+- [`docs/archive/2026-08-vector-v2-foundation/`](docs/archive/2026-08-vector-v2-foundation/)
 
-The prototype-era production handoff and Gate 1 plans are historical inputs.
-They no longer override the V2 roadmap.
+Prototype-era handoffs and Gate 1 plans are historical inputs. They no longer
+override the V2 roadmap.

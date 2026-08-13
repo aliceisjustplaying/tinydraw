@@ -27,8 +27,8 @@ machine was bootstrapped with Apple Clang 21 and SDL 2.32 through `sdl2-compat`.
 ./scripts/dev release       # optimized build + tests
 ./scripts/dev format-check
 ./scripts/dev format
-./scripts/dev tidy          # clang-tidy, production island only
-./scripts/dev cppcheck      # Cppcheck, production island only
+./scripts/dev tidy          # clang-tidy, Vector V2 module only
+./scripts/dev cppcheck      # Cppcheck, Vector V2 module only
 ```
 
 The wrapper is intentionally thin. Raw commands also work:
@@ -109,12 +109,18 @@ is in `.idf-version`. One-time setup installs v6.0.2 and the Xtensa QEMU tool:
 Daily firmware commands:
 
 ```sh
-./scripts/esp32 build          # compile the shared core for ESP32-S3
-./scripts/esp32 qemu           # headless boot + asserted replay marker
+./scripts/esp32 raster-v1      # build the shipping/default Raster V1 app
+./scripts/esp32 vector-v2 PORT # build and flash the Vector V2 app
+./scripts/esp32 qemu           # headless Raster V1 boot + asserted replay marker
 ./scripts/esp32 graphics-test  # short automated virtual-framebuffer check
 ./scripts/esp32 graphics       # visible stroke + shared toolbar; Ctrl-A then X to close
 ./scripts/esp32 clean
 ```
+
+`./scripts/esp32 build` remains a compatibility alias for `raster-v1`. The exclusive
+`vector-v2-gate-harness`, `vector-v2-overview-walk`, `vector-v2-memory-probe`, and
+`vector-v2-tile-census` commands preserve hardware evidence machinery without compiling it into
+the normal V2 app.
 
 The firmware embeds the same seven points as `zigzag.stroke` and feeds them incrementally through
 `InkStream`, `RibbonStream`, `StrokeRaster`, 4×4 coverage, RGB565 composition, and optionally
