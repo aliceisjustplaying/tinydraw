@@ -1,5 +1,5 @@
 set(TINYDRAW_CORE "${CMAKE_CURRENT_LIST_DIR}/../../core")
-include("${CMAKE_CURRENT_LIST_DIR}/../../production/sources.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../../vector_v2/sources.cmake")
 set(TINYDRAW_PNGENC "${CMAKE_CURRENT_LIST_DIR}/../../third_party/pngenc/src")
 set(TINYDRAW_PNGENC_SRCS
   "${TINYDRAW_PNGENC}/PNGenc.cpp"
@@ -28,20 +28,20 @@ set(TINYDRAW_APP_SRCS
   "${TINYDRAW_CORE}/src/toolbar.cpp"
   "${TINYDRAW_CORE}/src/world_canvas.cpp"
 )
-if(TINYDRAW_PRODUCTION_OVERVIEW_WALK OR TINYDRAW_PRODUCTION_LIVE_APP)
-  set(TINYDRAW_PRODUCTION_HARDWARE_SRCS "production_overview_walk.cpp")
-  set(TINYDRAW_PRODUCTION_CORE_SRCS "")
-  if(TINYDRAW_PRODUCTION_LIVE_APP)
-    set(TINYDRAW_PRODUCTION_HARDWARE_SRCS
-      "production_live_app.cpp"
-      "production_live_presenter.cpp"
+if(TINYDRAW_VECTOR_V2_OVERVIEW_WALK OR TINYDRAW_VECTOR_V2_APP)
+  set(TINYDRAW_VECTOR_V2_HARDWARE_SRCS "vector_v2/vector_v2_overview_walk.cpp")
+  set(TINYDRAW_VECTOR_V2_CORE_SRCS "")
+  if(TINYDRAW_VECTOR_V2_APP)
+    set(TINYDRAW_VECTOR_V2_HARDWARE_SRCS
+      "vector_v2/vector_v2_app.cpp"
+      "vector_v2/vector_v2_presenter.cpp"
     )
-    if(TINYDRAW_PRODUCTION_TILE_CENSUS)
-      list(APPEND TINYDRAW_PRODUCTION_HARDWARE_SRCS
-        "production_tile_census.cpp"
+    if(TINYDRAW_VECTOR_V2_TILE_CENSUS)
+      list(APPEND TINYDRAW_VECTOR_V2_HARDWARE_SRCS
+        "vector_v2/vector_v2_tile_census.cpp"
       )
     endif()
-    set(TINYDRAW_PRODUCTION_CORE_SRCS
+    set(TINYDRAW_VECTOR_V2_CORE_SRCS
       "${TINYDRAW_CORE}/src/coverage_tile.cpp"
       "${TINYDRAW_CORE}/src/ink_stream.cpp"
       "${TINYDRAW_CORE}/src/realistic_workload.cpp"
@@ -54,9 +54,9 @@ if(TINYDRAW_PRODUCTION_OVERVIEW_WALK OR TINYDRAW_PRODUCTION_LIVE_APP)
   set(TINYDRAW_APP_SRCS
     "co5300_panel_transport.cpp"
     "physical_touch.cpp"
-    ${TINYDRAW_PRODUCTION_HARDWARE_SRCS}
-    ${TINYDRAW_PRODUCTION_CORE_SRCS}
-    ${TINYDRAW_PRODUCTION_SRCS}
+    ${TINYDRAW_VECTOR_V2_HARDWARE_SRCS}
+    ${TINYDRAW_VECTOR_V2_CORE_SRCS}
+    ${TINYDRAW_VECTOR_V2_SRCS}
   )
   set(TINYDRAW_PLATFORM_SRCS "")
   set(TINYDRAW_PLATFORM_REQUIRES esp_lcd_co5300 esp_lcd_touch_cst816s)
@@ -102,8 +102,8 @@ elseif(NOT TINYDRAW_QEMU)
   if(TINYDRAW_INTERACTIVE_PAN_BENCHMARK)
     list(APPEND TINYDRAW_PLATFORM_SRCS "interactive_pan_benchmark.cpp")
   endif()
-  if(TINYDRAW_PRODUCTION_MEMORY_PROBE)
-    list(APPEND TINYDRAW_PLATFORM_SRCS "production_memory_probe.cpp")
+  if(TINYDRAW_VECTOR_V2_MEMORY_PROBE)
+    list(APPEND TINYDRAW_PLATFORM_SRCS "vector_v2/vector_v2_memory_probe.cpp")
   endif()
 endif()
 
@@ -111,7 +111,7 @@ idf_component_register(
   SRCS
     ${TINYDRAW_APP_SRCS}
     ${TINYDRAW_PLATFORM_SRCS}
-  INCLUDE_DIRS "." "${TINYDRAW_CORE}/include" "${CMAKE_CURRENT_LIST_DIR}/../../production/include"
+  INCLUDE_DIRS "." "vector_v2" "${TINYDRAW_CORE}/include" "${CMAKE_CURRENT_LIST_DIR}/../../vector_v2/include"
   PRIV_INCLUDE_DIRS "${TINYDRAW_PNGENC}"
   PRIV_REQUIRES ${TINYDRAW_PLATFORM_REQUIRES} esp_partition esp_psram esp_timer espcoredump
 )
@@ -137,17 +137,17 @@ endif()
 if(TINYDRAW_INTERACTIVE_PAN_BENCHMARK)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_INTERACTIVE_PAN_BENCHMARK=1)
 endif()
-if(TINYDRAW_PRODUCTION_MEMORY_PROBE)
-  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_PRODUCTION_MEMORY_PROBE=1)
+if(TINYDRAW_VECTOR_V2_MEMORY_PROBE)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_V2_MEMORY_PROBE=1)
 endif()
-if(TINYDRAW_PRODUCTION_OVERVIEW_WALK)
-  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_PRODUCTION_OVERVIEW_WALK=1)
+if(TINYDRAW_VECTOR_V2_OVERVIEW_WALK)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_V2_OVERVIEW_WALK=1)
 endif()
-if(TINYDRAW_PRODUCTION_LIVE_APP)
-  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_PRODUCTION_LIVE_APP=1)
+if(TINYDRAW_VECTOR_V2_APP)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_V2_APP=1)
 endif()
-if(TINYDRAW_PRODUCTION_TILE_CENSUS)
-  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_PRODUCTION_TILE_CENSUS=1)
+if(TINYDRAW_VECTOR_V2_TILE_CENSUS)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_V2_TILE_CENSUS=1)
 endif()
 if(TINYDRAW_QEMU)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_QEMU=1)

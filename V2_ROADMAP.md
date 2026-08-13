@@ -50,10 +50,10 @@ seed-7 1,000-stroke workload and an aggressive manual glass test:
 
 Load-bearing evidence:
 
-- `production/GATE_1_RECEIPT_2026_08_13.md`
-- `production/GATE_1_CACHE_CLOSURE_2026_08_13.md`
-- `production/hardware-receipts/gate1-paper-cache-scroller.log`
-- `production/hardware-receipts/gate1-final-glass.log`
+- `vector_v2/GATE_1_RECEIPT_2026_08_13.md`
+- `vector_v2/GATE_1_CACHE_CLOSURE_2026_08_13.md`
+- `vector_v2/hardware-receipts/gate1-paper-cache-scroller.log`
+- `vector_v2/hardware-receipts/gate1-final-glass.log`
 
 The overall rendering-quality verdict remains **YELLOW** only because settled
 anti-aliasing is not implemented. The architecture itself is no longer under
@@ -147,7 +147,7 @@ rewrite and not feature-parity promotion.
       once its test-only startup workload is removed.
 - [ ] Put V2 ESP adapters/coordinator/UI under a clear V2-specific directory or
       source group; do not mix them into legacy `hardware_app.cpp`.
-- [ ] Keep `production/` platform-independent and host-tested.
+- [ ] Keep `vector_v2/` platform-independent and host-tested.
 - [ ] Keep truly shared mechanisms in `core/`; share by dependency, never copy.
 - [ ] Leave the raster coordinator behaviorally unchanged.
 - [ ] Add explicit build commands for both `raster-v1` and `vector-v2`.

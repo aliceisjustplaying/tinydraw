@@ -1,0 +1,54 @@
+#ifndef TINYDRAW_VECTOR_V2_INCREMENTAL_DOCUMENT_H
+#define TINYDRAW_VECTOR_V2_INCREMENTAL_DOCUMENT_H
+
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <span>
+
+#include "tinydraw/vector_v2/incremental_rasterizer.h"
+#include "tinydraw/vector_v2/operation_log.h"
+
+namespace tinydraw::vector_v2 {
+
+struct IncrementalDocumentWorkspace {
+  // Compact row-major scratch for the conservative affected overview region.
+  // Full overview capacity handles the worst case, but ordinary appends use
+  // only their bounded prefix.
+  std::span<std::uint16_t> overview_scratch{};
+  std::span<std::uint16_t> tile_scratch{};
+  std::span<TileRevisionPublication> publications{};
+  std::span<TileKey> affected_keys{};
+};
+
+struct IncrementalAppendResult {
+  OperationIdentity identity{};
+  std::size_t affected_resident_tiles = 0;
+  std::size_t published_tiles = 0;
+  std::size_t fallback_tiles = 0;
+};
+
+struct IncrementalAppendOptions {
+  // When bounded scratch cannot update every affected resident tile, preserve
+  // this visible tiled view first. Other affected tiles remain correct through
+  // overview fallback and can be replayed later.
+  std::optional<ViewRequest> priority_view{};
+};
+
+// Coordinates document authority and materialization as one append. All
+// workspace is caller-owned. Failure leaves both log and canvas at their prior
+// revisions; callers must serialize access to the log, canvas, and workspace.
+[[nodiscard]] std::optional<IncrementalAppendResult> append_incrementally(
+    OperationLog& log, MaterializedCanvas& canvas, const OperationAppend& append_request,
+    const IncrementalDocumentWorkspace& workspace, IncrementalAppendOptions options = {});
+
+// Coordinates an authoritative snapshot restore. The caller-owned pixels must
+// not alias log or canvas storage. Validation is completed before either state
+// module changes. Callers must serialize access.
+[[nodiscard]] bool restore_document_snapshot(OperationLog& log, MaterializedCanvas& canvas,
+                                             DocumentRevision revision,
+                                             std::span<const std::uint16_t> overview_pixels);
+
+}  // namespace tinydraw::vector_v2
+
+#endif  // TINYDRAW_VECTOR_V2_INCREMENTAL_DOCUMENT_H

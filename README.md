@@ -15,7 +15,7 @@ exercise the same C++20 drawing and UI core.
 The runnable firmware remains the raster-authoritative 3×3 product described below. The active
 production branch is migrating to a vector-authoritative 4×4 canvas through an isolated,
 host-tested production island; it is not ready to ship. See [`PROJECT_STATE.md`](PROJECT_STATE.md)
-for current direction and [`production/README.md`](production/README.md) for migration guardrails.
+for current direction and [`vector_v2/README.md`](vector_v2/README.md) for migration guardrails.
 
 - Variable-width, Perfect Freehand-style ink with 4×4 edge smoothing
 - Solid self-overlaps, rounded sharp turns, twelve colors, and four sizes

@@ -3,18 +3,10 @@ add_executable(tinydraw_tests
   coordinate_transform_test.cpp
   coverage_tile_test.cpp
   demo_tape_test.cpp
-  display_scheduler_test.cpp
-  frame_scroller_test.cpp
   drawing_snapshot_test.cpp
   fat16_disk_test.cpp
   host_input_test.cpp
-  incremental_document_test.cpp
-  incremental_rasterizer_test.cpp
   ink_stream_test.cpp
-  materialized_canvas_test.cpp
-  operation_builder_test.cpp
-  operation_log_test.cpp
-  operation_lod_store_test.cpp
   perfect_freehand_test.cpp
   png_encoder_test.cpp
   raster_materializer_test.cpp
@@ -25,8 +17,6 @@ add_executable(tinydraw_tests
   ribbon_geometry_test.cpp
   ribbon_renderer_test.cpp
   stroke_raster_test.cpp
-  tile_payload_analysis_test.cpp
-  tile_producer_test.cpp
   tile_undo_history_test.cpp
   toolbar_test.cpp
   vector_benchmark_test.cpp
@@ -36,7 +26,6 @@ add_executable(tinydraw_tests
 )
 target_link_libraries(tinydraw_tests PRIVATE
   tinydraw::core
-  tinydraw::production
   tinydraw_project_options
 )
 target_compile_definitions(tinydraw_tests PRIVATE
@@ -66,13 +55,6 @@ add_test(NAME tinydraw_perf_characterization COMMAND tinydraw_perf_characterizat
 
 add_executable(tinydraw_vector_rebuild_benchmark vector_rebuild_benchmark.cpp)
 target_link_libraries(tinydraw_vector_rebuild_benchmark PRIVATE tinydraw::core tinydraw_project_options)
-
-add_executable(tinydraw_production_lod_characterization production_lod_characterization.cpp)
-target_link_libraries(tinydraw_production_lod_characterization PRIVATE
-  tinydraw::core
-  tinydraw::production
-  tinydraw_project_options
-)
 
 if(TARGET tinydraw_host)
   set(REPLAY_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/replay")

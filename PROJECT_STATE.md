@@ -42,10 +42,10 @@ On the physical ESP32-S3 with the deterministic seed-7 1,000-stroke document:
 
 Evidence:
 
-1. [`production/GATE_1_RECEIPT_2026_08_13.md`](production/GATE_1_RECEIPT_2026_08_13.md)
-2. [`production/GATE_1_CACHE_CLOSURE_2026_08_13.md`](production/GATE_1_CACHE_CLOSURE_2026_08_13.md)
-3. [`production/hardware-receipts/gate1-paper-cache-scroller.log`](production/hardware-receipts/gate1-paper-cache-scroller.log)
-4. [`production/hardware-receipts/gate1-final-glass.log`](production/hardware-receipts/gate1-final-glass.log)
+1. [`vector_v2/GATE_1_RECEIPT_2026_08_13.md`](vector_v2/GATE_1_RECEIPT_2026_08_13.md)
+2. [`vector_v2/GATE_1_CACHE_CLOSURE_2026_08_13.md`](vector_v2/GATE_1_CACHE_CLOSURE_2026_08_13.md)
+3. [`vector_v2/hardware-receipts/gate1-paper-cache-scroller.log`](vector_v2/hardware-receipts/gate1-paper-cache-scroller.log)
+4. [`vector_v2/hardware-receipts/gate1-final-glass.log`](vector_v2/hardware-receipts/gate1-final-glass.log)
 
 The overall rendering-quality verdict remains **YELLOW** because settled
 anti-aliasing is still open. The four-sample SSAA probe took about 808 ms and is
@@ -83,7 +83,7 @@ These are product and optimization tasks, not evidence for another rewrite.
 Use a production island in this repository—a strangler migration, not a blank
 rewrite:
 
-- platform-independent V2 modules live in `production/`;
+- platform-independent V2 modules live in `vector_v2/`;
 - V2 ESP adapters and coordination stay separate from legacy `hardware_app.cpp`;
 - stable platform-neutral mechanisms are reused from `core/` by dependency and
   are never copied;
