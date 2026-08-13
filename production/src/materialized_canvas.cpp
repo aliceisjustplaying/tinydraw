@@ -309,6 +309,11 @@ bool MaterializedCanvas::commit_incremental_revision(
   return true;
 }
 
+bool MaterializedCanvas::accepts_external_workspace(std::span<const std::uint16_t> pixels) const {
+  return !spans_overlap(pixels, std::span<const std::uint16_t>(overview_pixels_)) &&
+         !spans_overlap(pixels, std::span<const std::uint16_t>(tile_pixels_));
+}
+
 bool MaterializedCanvas::copy_resident_tile(TileKey key,
                                             std::span<std::uint16_t> destination) const {
   const auto slot_index = find_tile(key);

@@ -33,6 +33,8 @@ std::optional<IncrementalAppendResult> append_incrementally(
     OperationLog& log, MaterializedCanvas& canvas, const OperationAppend& append_request,
     const IncrementalDocumentWorkspace& workspace) {
   if (workspace.next_overview.size() != kOverviewPixels ||
+      !canvas.accepts_external_workspace(workspace.next_overview) ||
+      !canvas.accepts_external_workspace(workspace.tile_scratch) ||
       workspace.tile_scratch.size() < workspace.publications.size() * kTilePixels ||
       workspace.affected_keys.size() < workspace.publications.size() ||
       log.current_revision() != canvas.current_revision()) {
