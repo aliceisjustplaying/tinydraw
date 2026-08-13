@@ -143,9 +143,9 @@ gates is made here.
 
 ## Task #55 revision seam
 
-Incremental append must not use `publish_overview`, which deliberately replaces
-a whole revision and invalidates all tiles. The next state change will add one
-transactional revision operation with this behavior:
+Incremental append does not use `publish_overview`, which deliberately replaces
+a whole revision and invalidates all tiles. `commit_incremental_revision` now
+provides this transactional behavior:
 
 1. The renderer applies operation N to the caller-owned next-overview buffer and
    to scratch copies of only the affected resident tiles.
@@ -158,9 +158,18 @@ transactional revision operation with this behavior:
    republished from incremental scratch later; operations 1…N−1 are never
    replayed.
 
-The interface should express a revision plus bounded affected-tile publications,
-not expose mutable pool storage or renderer callbacks. Tile size and slot count
-remain provisional and may change after captured workloads. Shared read pins
-protect source storage only while a display adapter copies it into DMA staging;
-`pins_outstanding()` is the fail-closed diagnostic. Renderer work never holds a
-pin while waiting for panel capacity.
+The interface expresses a revision plus bounded affected-tile publications; it
+does not expose mutable pool storage or renderer callbacks. Tile size and slot
+count remain provisional and may change after captured workloads. Shared read
+pins protect source storage only while a display adapter copies it into DMA
+staging; `pins_outstanding()` is the fail-closed diagnostic. Renderer work never
+holds a pin while waiting for panel capacity.
+
+The exclusive first hardware proof is
+[`hardware-receipts/b73f91e-incremental-revision-walk.log`](hardware-receipts/b73f91e-incremental-revision-walk.log).
+It committed revision 1 with one exact affected tile, carried a second resident
+tile forward, composed 8,192 tile pixels plus 156,672 overview fallback pixels,
+and transferred the deterministic result in 21 strips. The hash was
+`eab6f725`; all 126/126 transfers completed with zero panel rejects. This proves
+the state/transport seam on glass, not a real stroke renderer, concurrent
+publication, or the final interaction latency gates.
