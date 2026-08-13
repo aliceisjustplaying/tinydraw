@@ -513,6 +513,22 @@ TEST_CASE("resident tile copies preserve pixels without exposing pool storage") 
   CHECK(tile_storage.front() == 0x1234U);
   CHECK_FALSE(canvas.copy_resident_tile({production::ZoomLevel::k100Percent, 1, 0}, copy));
   CHECK_FALSE(canvas.copy_resident_tile(key, std::span(copy).first(copy.size() - 1U)));
+  CHECK_FALSE(canvas.copy_resident_tile(key, std::span(overview).first(production::kTilePixels)));
+  CHECK(overview.front() == 0U);
+}
+
+TEST_CASE("resident enumeration rejects output that aliases slot metadata") {
+  std::array<std::uint16_t, production::kOverviewPixels> overview{};
+  std::array<production::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, production::kTilePixels> tile_storage{};
+  std::array<std::uint16_t, production::kTilePixels> tile{};
+  production::MaterializedCanvas canvas(overview, slots, tile_storage);
+  const production::TileKey key{production::ZoomLevel::k100Percent, 0, 0};
+  REQUIRE(canvas.publish_tile(key, {0}, production::MaterializationQuality::kSettled, tile));
+  auto aliased_output = std::span(reinterpret_cast<production::TileKey*>(slots.data()), 1U);
+
+  CHECK_FALSE(canvas.resident_tiles_intersecting({0, 0, 64, 64}, aliased_output));
+  CHECK(canvas.lookup(key)->kind == production::SourceKind::kTileSlot);
 }
 
 TEST_CASE("incremental revision invalidates intersecting resident tiles at every zoom") {
