@@ -17,7 +17,8 @@ inline constexpr int kTileProducerWidth = kTileProducerColumns * kTileWidth;
 inline constexpr int kTileProducerHeight = kTileProducerRows * kTileHeight;
 inline constexpr std::size_t kTileProducerPixels =
     static_cast<std::size_t>(kTileProducerWidth) * kTileProducerHeight;
-inline constexpr std::size_t kTileProducerOperationBatch = 128;
+inline constexpr std::size_t kTileProducerOperationBatch = 64;
+inline constexpr std::size_t kTileProducerSampleBatch = 96;
 
 struct TileProducerWorkspace {
   // Row-major 128x128 supertask surface.
@@ -68,6 +69,9 @@ class TileProducer {
     std::size_t first_operation = 0;
     std::size_t operation_count = 0;
     std::size_t next_operation = 0;
+    // Next segment endpoint within the active operation; one means the first
+    // segment. Single-sample operations are handled as one bounded unit.
+    std::size_t next_sample = 1;
     bool active = false;
   };
 
