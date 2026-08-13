@@ -3,7 +3,14 @@
 
 #include <cstdint>
 
+#include "tinydraw/production/materialized_canvas.h"
+
 namespace tinydraw::production {
+
+enum class OperationTool : std::uint8_t {
+  kPen,
+  kEraser,
+};
 
 // Append-time sample encoding. Coordinates are quarter world units; radius is
 // 1/256 world units; elapsed time is relative to the operation start.
@@ -14,7 +21,27 @@ struct CompactOperationSample {
   std::uint16_t elapsed_ms = 0;
 };
 
+struct OperationRecord {
+  std::uint32_t first_sample = 0;
+  std::uint16_t sample_count = 0;
+  std::uint16_t color = 0;
+  std::uint16_t bounds_x0 = 0;
+  std::uint16_t bounds_y0 = 0;
+  std::uint16_t bounds_x1 = 0;
+  std::uint16_t bounds_y1 = 0;
+  OperationTool tool = OperationTool::kPen;
+  std::uint8_t flags = 0;
+  std::uint16_t reserved = 0;
+};
+
+struct OperationIdentity {
+  DocumentRevision revision{};
+  std::uint32_t operation_index = 0;
+  bool operator==(const OperationIdentity&) const = default;
+};
+
 static_assert(sizeof(CompactOperationSample) == 8);
+static_assert(sizeof(OperationRecord) == 20);
 
 }  // namespace tinydraw::production
 

@@ -25,19 +25,6 @@ inline constexpr std::size_t kOverlayBytes = 368U * 76U * sizeof(std::uint16_t);
 inline constexpr std::size_t kStagingBytes = 2U * 368U * 32U * sizeof(std::uint16_t);
 inline constexpr std::size_t kTargetContiguousReserveBytes = 1536U * 1024U;
 
-struct OperationRecord {
-  std::uint32_t first_sample = 0;
-  std::uint16_t sample_count = 0;
-  std::uint16_t color = 0;
-  std::uint16_t bounds_x0 = 0;
-  std::uint16_t bounds_y0 = 0;
-  std::uint16_t bounds_x1 = 0;
-  std::uint16_t bounds_y1 = 0;
-  std::uint8_t tool = 0;
-  std::uint8_t flags = 0;
-  std::uint16_t reserved = 0;
-};
-
 struct CompactLodSample {
   std::uint16_t x_quarter = 0;
   std::uint16_t y_quarter = 0;
@@ -50,7 +37,6 @@ struct LodSpan {
   std::uint16_t flags = 0;
 };
 
-static_assert(sizeof(OperationRecord) == 20);
 static_assert(sizeof(CompactLodSample) == 6);
 static_assert(sizeof(LodSpan) == 8);
 
