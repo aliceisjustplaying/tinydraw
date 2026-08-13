@@ -10,8 +10,9 @@ evidence, not an instruction to reopen settled architecture questions.
 
 ## Product decision
 
-The vector-authoritative production architecture is accepted. This is the app
-now—not another prototype and not a reason to start a clean rewrite.
+The Vector V2 architecture is accepted. This is the app now—not another
+prototype, not yet the shipping/default firmware, and not a reason to start a
+clean rewrite. The existing shipping code is **Raster V1**.
 
 V2 stays in this repository beside the working raster app until it reaches
 feature parity. Stable mechanisms may be shared through explicit dependencies,
@@ -137,9 +138,10 @@ may be viable; it must re-prove the live export reserve and long-session margin.
 
 ## Phase 2 — V2 cleanup and repository shape
 
-Run this cleanup round after the zoom/navigation document and first navigation
-implementation, when the real seams are visible. This is a bounded cleanup, not
-a rewrite.
+Run this cleanup round immediately after the zoom/navigation document, before the
+next implementation batch. The milestone has now exposed and hardware-proven the
+real seams. This is a bounded cleanup for a reviewable merge to main, not a
+rewrite and not feature-parity promotion.
 
 - [ ] Rename the interactive `production-live-app` concept to the V2 application
       once its test-only startup workload is removed.
@@ -376,9 +378,10 @@ complete overview. It still needs careful tap targeting and viewport math.
 # Next concrete sequence
 
 1. Write the zoom/navigation behavior document.
-2. Implement input-first scheduling, camera preservation, and protected per-zoom
+2. Run the bounded V2 repository cleanup described in Phase 2 and prepare this
+   validated milestone for merge to main.
+3. Implement input-first scheduling, camera preservation, and protected per-zoom
    cache footprints as one hardware-tested interaction batch.
-3. Run the bounded V2 repository cleanup described in Phase 2.
 4. Run the timeboxed analytic anti-aliasing gate.
 5. Build the production UI shell and all five zoom controls.
 6. Implement vector persistence, Undo/Redo, New, and real export.
