@@ -67,7 +67,7 @@ std::optional<OperationAppend> OperationBuilder::finish(OperationPoint point) {
   if (!active_ || overflowed_) {
     return std::nullopt;
   }
-  if (!append_point(point, false)) {
+  if (!append_point(point, false) && !overflowed_) {
     active_ = false;
     return std::nullopt;
   }
