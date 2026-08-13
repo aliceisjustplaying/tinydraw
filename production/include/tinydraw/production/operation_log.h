@@ -57,6 +57,7 @@ class OperationLog {
   [[nodiscard]] std::size_t sample_count() const;
   [[nodiscard]] std::size_t operation_capacity() const;
   [[nodiscard]] std::size_t sample_capacity() const;
+  [[nodiscard]] bool can_reset() const;
   [[nodiscard]] bool workspace_overlaps_storage(std::span<const std::uint16_t> pixels) const;
 
   // Preparation copies into unused caller storage but does not advance document
@@ -65,10 +66,10 @@ class OperationLog {
   [[nodiscard]] std::optional<PreparedAppend> prepare(const OperationAppend& append_request);
   [[nodiscard]] std::optional<OperationIdentity> append(const OperationAppend& append_request);
   [[nodiscard]] std::optional<StoredOperation> operation(std::size_t index) const;
-  // Resets empty authority to a snapshot revision. No-op while a
+  // Resets empty authority to a snapshot revision. Fails while a
   // PreparedAppend owns the pending slot. Existing operations are discarded.
-  void reset(DocumentRevision revision = {});
-  void clear();
+  [[nodiscard]] bool reset(DocumentRevision revision = {});
+  [[nodiscard]] bool clear();
 
  private:
   friend class PreparedAppend;

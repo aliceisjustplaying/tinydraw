@@ -214,6 +214,30 @@ bool MaterializedCanvas::publish_overview(DocumentRevision revision,
   return true;
 }
 
+bool MaterializedCanvas::restore_snapshot(DocumentRevision revision,
+                                          std::span<const std::uint16_t> pixels) {
+  const bool source_is_external = !spans_overlap(pixels, std::span(overview_pixels_)) &&
+                                  !spans_overlap(pixels, std::span(tile_pixels_));
+  const bool any_tile_pinned = std::any_of(slots_.begin(), slots_.end(),
+                                           [](const auto& slot) { return slot.pin_count_ != 0U; });
+  if (!ready() || pixels.size() != kOverviewPixels || !source_is_external ||
+      overview_pin_count_ != 0U || any_tile_pinned) {
+    return false;
+  }
+  std::copy(pixels.begin(), pixels.end(), overview_pixels_.begin());
+  for (auto& slot : slots_) {
+    if (slot.occupied_) {
+      slot.occupied_ = false;
+      slot.generation_ = take_generation();
+    }
+  }
+  current_revision_ = revision;
+  overview_revision_ = revision;
+  overview_generation_ = take_generation();
+  overview_valid_ = true;
+  return true;
+}
+
 bool MaterializedCanvas::valid_incremental_revision(
     DocumentRevision revision, std::span<const std::uint16_t> next_overview_pixels,
     PixelRect affected_world_bounds,

@@ -157,6 +157,39 @@ TEST_CASE("incremental document rejects overlapping publication workspaces") {
   CHECK(fixture.canvas.overview_pixels().front() == 0xFFFFU);
 }
 
+TEST_CASE("document snapshot restore changes both authorities to an older revision") {
+  Fixture fixture;
+  fixture.overview.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({8}, fixture.overview));
+  REQUIRE(fixture.log.reset({8}));
+  fixture.next_overview.fill(0x1234U);
+
+  REQUIRE(production::restore_document_snapshot(fixture.log, fixture.canvas, {3},
+                                                fixture.next_overview));
+  CHECK(fixture.log.current_revision() == production::DocumentRevision{3});
+  CHECK(fixture.canvas.current_revision() == production::DocumentRevision{3});
+  CHECK(fixture.log.operation_count() == 0U);
+  CHECK(fixture.canvas.overview_pixels().front() == 0x1234U);
+}
+
+TEST_CASE("document snapshot restore fails atomically while an append is prepared") {
+  Fixture fixture;
+  fixture.overview.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
+  const std::array samples{
+      production::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256}};
+  auto prepared = fixture.log.prepare({.samples = samples});
+  REQUIRE(prepared.has_value());
+  fixture.next_overview.fill(0x1234U);
+
+  CHECK_FALSE(production::restore_document_snapshot(fixture.log, fixture.canvas, {4},
+                                                    fixture.next_overview));
+  CHECK(fixture.log.current_revision() == production::DocumentRevision{0});
+  CHECK(fixture.canvas.current_revision() == production::DocumentRevision{0});
+  CHECK(fixture.canvas.overview_pixels().front() == 0xFFFFU);
+  prepared->cancel();
+}
+
 TEST_CASE("incremental document can commit with no affected resident tiles") {
   Fixture fixture;
   fixture.overview.fill(0xFFFFU);
@@ -164,8 +197,6 @@ TEST_CASE("incremental document can commit with no affected resident tiles") {
   const std::array samples{
       production::CompactOperationSample{.x_quarter = 400, .y_quarter = 400, .radius_256 = 256}};
   auto workspace = fixture.workspace();
-  workspace.publications = {};
-  workspace.affected_keys = {};
   workspace.tile_scratch = {};
 
   const auto result = production::append_incrementally(

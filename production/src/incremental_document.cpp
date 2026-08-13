@@ -16,9 +16,8 @@ bool spans_overlap(std::span<Left> left, std::span<Right> right) {
   return less(left_begin, right_end) && less(right_begin, left_end);
 }
 
-bool prepare_tile(const MaterializedCanvas& canvas, const IncrementalOperation& operation,
-                  TileKey key, std::span<std::uint16_t> scratch,
-                  TileRevisionPublication& publication) {
+bool prepare_tile(const MaterializedCanvas& canvas, const OperationAppend& operation, TileKey key,
+                  std::span<std::uint16_t> scratch, TileRevisionPublication& publication) {
   const PixelRect bounds = tile_pixel_bounds(key);
   const std::size_t pixel_count = static_cast<std::size_t>(bounds.x1 - bounds.x0) *
                                   static_cast<std::size_t>(bounds.y1 - bounds.y0);
@@ -50,8 +49,6 @@ std::optional<IncrementalAppendResult> append_incrementally(
       log.workspace_overlaps_storage(workspace.next_overview) ||
       log.workspace_overlaps_storage(workspace.tile_scratch) ||
       spans_overlap(workspace.next_overview, workspace.tile_scratch) ||
-      workspace.publications.size() > workspace.tile_scratch.size() / kTilePixels ||
-      workspace.affected_keys.size() < workspace.publications.size() ||
       log.current_revision() != canvas.current_revision()) {
     return std::nullopt;
   }
@@ -61,7 +58,7 @@ std::optional<IncrementalAppendResult> append_incrementally(
   }
   const StoredOperation& stored = prepared->operation();
   const OperationIdentity identity = stored.identity;
-  const IncrementalOperation operation{
+  const OperationAppend operation{
       .tool = stored.tool, .color = stored.color, .samples = stored.samples};
   std::copy_n(canvas.overview_pixels().begin(), kOverviewPixels, workspace.next_overview.begin());
   const bool overview_ready = apply_incremental_operation(
@@ -75,7 +72,9 @@ std::optional<IncrementalAppendResult> append_incrementally(
     prepared->cancel();
     return std::nullopt;
   }
-  const std::size_t publication_count = std::min(*resident_count, workspace.publications.size());
+  const std::size_t publication_capacity =
+      std::min(workspace.publications.size(), workspace.tile_scratch.size() / kTilePixels);
+  const std::size_t publication_count = std::min(*resident_count, publication_capacity);
   for (std::size_t index = 0; index < publication_count; ++index) {
     auto scratch = workspace.tile_scratch.subspan(index * kTilePixels, kTilePixels);
     if (!prepare_tile(canvas, operation, workspace.affected_keys[index], scratch,
@@ -95,6 +94,24 @@ std::optional<IncrementalAppendResult> append_incrementally(
                                  .affected_resident_tiles = *resident_count,
                                  .published_tiles = publication_count,
                                  .fallback_tiles = *resident_count - publication_count};
+}
+
+bool restore_document_snapshot(OperationLog& log, MaterializedCanvas& canvas,
+                               DocumentRevision revision,
+                               std::span<const std::uint16_t> overview_pixels) {
+  if (!log.ready() || !canvas.ready() || !log.can_reset() ||
+      overview_pixels.size() != kOverviewPixels ||
+      !canvas.accepts_external_workspace(overview_pixels) ||
+      log.workspace_overlaps_storage(overview_pixels)) {
+    return false;
+  }
+  // restore_snapshot cannot fail after the checks above under the serialized
+  // ownership contract. Reset is called second so a failed canvas validation
+  // cannot discard document authority.
+  if (!canvas.restore_snapshot(revision, overview_pixels)) {
+    return false;
+  }
+  return log.reset(revision);
 }
 
 }  // namespace tinydraw::production

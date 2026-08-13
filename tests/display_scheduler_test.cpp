@@ -86,6 +86,22 @@ TEST_CASE("display scheduler lets an in-flight old revision complete before drop
   CHECK(scheduler.stats().stale_rejected == 1U);
 }
 
+TEST_CASE("display scheduler aborts a strip that transport cannot stage") {
+  std::array<production::DisplayStrip, 1> storage{};
+  production::DisplayScheduler scheduler(storage);
+  scheduler.require_revision({1});
+  std::array<std::uint16_t, 368U * 2U> pixels{};
+  const auto sequence = scheduler.schedule(
+      {.revision = {1}, .panel_bounds = {0, 0, 368, 2}, .pixels = pixels, .stride = 368});
+  REQUIRE(sequence.has_value());
+  REQUIRE(scheduler.front().has_value());
+  REQUIRE(scheduler.abort(*sequence));
+  CHECK_FALSE(scheduler.front());
+  CHECK(scheduler.stats().completed == 0U);
+  CHECK(scheduler.stats().rejected == 1U);
+  CHECK(scheduler.stats().queued == 0U);
+}
+
 TEST_CASE("display scheduler validates stride-backed input") {
   std::array<production::DisplayStrip, 1> storage{};
   production::DisplayScheduler scheduler(storage);
