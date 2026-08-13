@@ -80,10 +80,16 @@ LivePresentationTiming ProductionLivePresenter::refresh(const ToolbarState& tool
   auto timing = present({0, 0, production::kOverviewWidth, production::kOverviewHeight}, event_us,
                         esp_timer_get_time() - compose_started);
   timing.tile_pixels = stats->tile_pixels;
+  timing.uniform_pixels = stats->uniform_pixels;
   timing.overview_pixels = stats->overview_pixels;
   timing.fallback_pixels = stats->fallback_pixels;
   timing.resident_tiles = stats->immediate_tiles + stats->settled_tiles + stats->exact_tiles;
   timing.fallback_tiles = stats->fallback_tiles;
+  frame_zoom_ = zoom_;
+  frame_level_x_ = level_x_;
+  frame_level_y_ = level_y_;
+  frame_epoch_ = canvas_.composition_epoch();
+  frame_reusable_ = timing.passed && stats->fallback_pixels == 0U;
   return timing;
 }
 
@@ -147,6 +153,7 @@ LivePresentationTiming ProductionLivePresenter::compose_and_present(
   auto timing = present_pixels(panel_bounds, destination, width, event_us,
                                esp_timer_get_time() - compose_started);
   timing.tile_pixels = stats->tile_pixels;
+  timing.uniform_pixels = stats->uniform_pixels;
   timing.overview_pixels = stats->overview_pixels;
   timing.fallback_pixels = stats->fallback_pixels;
   timing.resident_tiles = stats->immediate_tiles + stats->settled_tiles + stats->exact_tiles;
@@ -217,9 +224,73 @@ LivePresentationTiming ProductionLivePresenter::pan_from(int start_x, int start_
   if (origin.x0 == level_x_ && origin.y0 == level_y_) {
     return {};
   }
+  const int old_x = level_x_;
+  const int old_y = level_y_;
   level_x_ = origin.x0;
   level_y_ = origin.y0;
-  return refresh(toolbar, event_us);
+  return refresh_pan(old_x, old_y, toolbar, event_us);
+}
+
+bool ProductionLivePresenter::compose_into_frame(production::PixelRect panel_bounds) {
+  if (panel_bounds.x1 <= panel_bounds.x0 || panel_bounds.y1 <= panel_bounds.y0) {
+    return true;
+  }
+  const production::PixelRect level{level_x_ + panel_bounds.x0, level_y_ + panel_bounds.y0,
+                                    level_x_ + panel_bounds.x1, level_y_ + panel_bounds.y1};
+  const int width = panel_bounds.x1 - panel_bounds.x0;
+  const int height = panel_bounds.y1 - panel_bounds.y0;
+  const std::size_t count = static_cast<std::size_t>(width) * height;
+  if (region_.size() < count) {
+    return false;
+  }
+  const auto pixels = region_.first(count);
+  const auto stats = canvas_.compose_view({.zoom = zoom_, .level_pixels = level}, pixels);
+  if (!stats.has_value() || stats->fallback_pixels != 0U) {
+    return false;
+  }
+  for (int row = 0; row < height; ++row) {
+    const auto source = pixels.subspan(static_cast<std::size_t>(row) * width, width);
+    auto destination = frame_.subspan(
+        static_cast<std::size_t>(panel_bounds.y0 + row) * production::kOverviewWidth +
+            panel_bounds.x0,
+        static_cast<std::size_t>(width));
+    std::copy(source.begin(), source.end(), destination.begin());
+  }
+  return true;
+}
+
+LivePresentationTiming ProductionLivePresenter::refresh_pan(int old_x, int old_y,
+                                                            const ToolbarState& toolbar,
+                                                            std::uint32_t event_us) {
+  const int delta_x = level_x_ - old_x;
+  const int delta_y = level_y_ - old_y;
+  const bool reusable = frame_reusable_ && frame_zoom_ == zoom_ && frame_level_x_ == old_x &&
+                        frame_level_y_ == old_y && frame_epoch_ == canvas_.composition_epoch() &&
+                        std::abs(delta_x) < production::kOverviewWidth &&
+                        std::abs(delta_y) < kMainToolbarOverlayTop;
+  if (!reusable) {
+    return refresh(toolbar, event_us);
+  }
+  const std::int64_t started = esp_timer_get_time();
+  const auto scroll = production::scroll_frame(
+      frame_, production::kOverviewWidth,
+      {0, 0, production::kOverviewWidth, kMainToolbarOverlayTop}, delta_x, delta_y);
+  if (!scroll.has_value() ||
+      !std::all_of(scroll->exposed.begin(),
+                   scroll->exposed.begin() + static_cast<std::ptrdiff_t>(scroll->exposed_count),
+                   [this](production::PixelRect exposed) { return compose_into_frame(exposed); })) {
+    frame_reusable_ = false;
+    return refresh(toolbar, event_us);
+  }
+  draw_toolbar(frame_, production::kOverviewWidth, production::kOverviewHeight, toolbar);
+  auto timing = present({0, 0, production::kOverviewWidth, production::kOverviewHeight}, event_us,
+                        esp_timer_get_time() - started);
+  timing.frame_reused = true;
+  frame_level_x_ = level_x_;
+  frame_level_y_ = level_y_;
+  frame_epoch_ = canvas_.composition_epoch();
+  frame_reusable_ = timing.passed;
+  return timing;
 }
 
 LivePresentationTiming ProductionLivePresenter::present(production::PixelRect bounds,

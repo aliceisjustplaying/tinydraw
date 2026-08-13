@@ -11,6 +11,7 @@
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
 #include "tinydraw/production/display_scheduler.h"
+#include "tinydraw/production/frame_scroller.h"
 #include "tinydraw/production/materialized_canvas.h"
 #include "tinydraw/production/operation_builder.h"
 #include "tinydraw/production/tile_producer.h"
@@ -31,11 +32,13 @@ struct LivePresentationTiming {
   std::int64_t first_complete_us = 0;
   std::int64_t complete_us = 0;
   std::size_t tile_pixels = 0;
+  std::size_t uniform_pixels = 0;
   std::size_t overview_pixels = 0;
   std::size_t fallback_pixels = 0;
   std::size_t resident_tiles = 0;
   std::size_t fallback_tiles = 0;
   std::uint32_t pushes = 0;
+  bool frame_reused = false;
   bool passed = false;
 };
 
@@ -88,6 +91,10 @@ class ProductionLivePresenter {
   [[nodiscard]] LivePresentationTiming compose_and_present(production::PixelRect level_bounds,
                                                            production::PixelRect panel_bounds,
                                                            std::uint32_t event_us);
+  [[nodiscard]] bool compose_into_frame(production::PixelRect panel_bounds);
+  [[nodiscard]] LivePresentationTiming refresh_pan(int old_x, int old_y,
+                                                   const ToolbarState& toolbar,
+                                                   std::uint32_t event_us);
 
   production::MaterializedCanvas& canvas_;
   production::DisplayScheduler& scheduler_;
@@ -98,6 +105,11 @@ class ProductionLivePresenter {
   production::ZoomLevel zoom_ = production::ZoomLevel::k25Percent;
   int level_x_ = 0;
   int level_y_ = 0;
+  production::ZoomLevel frame_zoom_ = production::ZoomLevel::k25Percent;
+  int frame_level_x_ = 0;
+  int frame_level_y_ = 0;
+  std::uint64_t frame_epoch_ = 0;
+  bool frame_reusable_ = false;
 };
 
 }  // namespace tinydraw::esp32
