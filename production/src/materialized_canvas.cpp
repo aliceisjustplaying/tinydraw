@@ -6,6 +6,7 @@
 #include <tuple>
 
 #include "tinydraw/production/storage_overlap.h"
+#include "tinydraw/production/tile_payload_analysis.h"
 
 namespace tinydraw::production {
 namespace {
@@ -314,8 +315,7 @@ bool MaterializedCanvas::publish_overview(DocumentRevision revision,
                                       pixels.data() == overview_pixels_.data() &&
                                       pixels.size() == overview_pixels_.size();
   const bool source_is_publishable =
-      exact_bootstrap_source ||
-      !storage_overlaps(std::as_bytes(pixels), std::as_bytes(std::span(overview_pixels_)));
+      exact_bootstrap_source || accepts_external_workspace(std::as_bytes(pixels));
   const bool tile_is_pinned = std::any_of(slots_.begin(), slots_.end(),
                                           [](const auto& slot) { return slot.pin_count_ != 0U; });
   if (!ready() || !revision_is_publishable || !source_is_publishable || overview_pin_count_ != 0U ||
@@ -343,10 +343,7 @@ bool MaterializedCanvas::publish_overview(DocumentRevision revision,
 
 bool MaterializedCanvas::restore_snapshot(DocumentRevision revision,
                                           std::span<const std::uint16_t> pixels) {
-  const bool source_is_external =
-      !storage_overlaps(std::as_bytes(pixels), std::as_bytes(std::span(overview_pixels_))) &&
-      !storage_overlaps(std::as_bytes(pixels), std::as_bytes(std::span(tile_pixels_))) &&
-      !storage_overlaps(std::as_bytes(pixels), std::as_bytes(std::span(slots_)));
+  const bool source_is_external = accepts_external_workspace(std::as_bytes(pixels));
   const bool any_tile_pinned = std::any_of(slots_.begin(), slots_.end(),
                                            [](const auto& slot) { return slot.pin_count_ != 0U; });
   if (!ready() || pixels.size() != kOverviewPixels || !source_is_external ||
@@ -384,12 +381,8 @@ bool MaterializedCanvas::valid_incremental_revision(
       valid_overview_bounds(overview_publication.bounds)
           ? static_cast<std::size_t>(overview_width) * static_cast<std::size_t>(overview_height)
           : 0U;
-  const bool source_is_external = !storage_overlaps(std::as_bytes(overview_publication.pixels),
-                                                    std::as_bytes(std::span(overview_pixels_))) &&
-                                  !storage_overlaps(std::as_bytes(overview_publication.pixels),
-                                                    std::as_bytes(std::span(tile_pixels_))) &&
-                                  !storage_overlaps(std::as_bytes(overview_publication.pixels),
-                                                    std::as_bytes(std::span(slots_)));
+  const bool source_is_external =
+      accepts_external_workspace(std::as_bytes(overview_publication.pixels));
   const bool any_tile_pinned = std::any_of(slots_.begin(), slots_.end(),
                                            [](const auto& slot) { return slot.pin_count_ != 0U; });
   if (!ready() || !overview_valid_ || !revision_advances_once ||
@@ -412,16 +405,11 @@ bool MaterializedCanvas::valid_incremental_revision(
                      tile_publications.begin() + static_cast<std::ptrdiff_t>(index),
                      [&publication](const auto& prior) { return prior.key == publication.key; }) ==
         tile_publications.begin() + static_cast<std::ptrdiff_t>(index);
-    const bool resident =
-        find_tile(publication.key).has_value() || find_uniform(publication.key).has_value();
+    const bool resident = find_tile(publication.key).has_value();
     if (!key_is_affected || !publication_is_unique || !resident ||
         publication.quality == MaterializationQuality::kOverviewFallback ||
         publication.pixels.size() != expected_pixels ||
-        storage_overlaps(std::as_bytes(publication.pixels),
-                         std::as_bytes(std::span(overview_pixels_))) ||
-        storage_overlaps(std::as_bytes(publication.pixels),
-                         std::as_bytes(std::span(tile_pixels_))) ||
-        storage_overlaps(std::as_bytes(publication.pixels), std::as_bytes(std::span(slots_)))) {
+        !accepts_external_workspace(std::as_bytes(publication.pixels))) {
       return false;
     }
   }
@@ -471,6 +459,7 @@ bool MaterializedCanvas::commit_incremental_revision(
     auto destination = overview_pixels_.begin() + destination_offset;
     std::copy_n(source, overview_width, destination);
   }
+  invalidate_uniforms(affected_world_bounds);
   for (std::size_t slot_index = 0; slot_index < slots_.size(); ++slot_index) {
     MaterializedSlotStorage& slot = slots_[slot_index];
     if (!slot.occupied_) {
@@ -481,7 +470,21 @@ bool MaterializedCanvas::commit_incremental_revision(
         [&slot](const TileRevisionPublication& candidate) { return candidate.key == slot.key_; });
     const bool affected = rectangles_intersect(tile_world_bounds(slot.key_), affected_world_bounds);
     if (publication != tile_publications.end()) {
-      write_tile(slot_index, *publication, revision);
+      const PixelRect bounds = tile_pixel_bounds(publication->key);
+      const auto analysis =
+          analyze_tile_payload(publication->pixels, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0);
+      const auto uniform_index = tile_identity_index(publication->key);
+      if (!uniform_catalog_.empty() && analysis.has_value() && analysis->uniform &&
+          uniform_index.has_value()) {
+        slot.occupied_ = false;
+        slot.generation_ = take_generation();
+        MaterializedUniformStorage& uniform = uniform_catalog_[*uniform_index];
+        uniform.color_ = analysis->uniform_color;
+        uniform.quality_ = publication->quality;
+        uniform.occupied_ = true;
+      } else {
+        write_tile(slot_index, *publication, revision);
+      }
     } else if (affected) {
       slot.occupied_ = false;
       slot.generation_ = take_generation();
@@ -489,7 +492,6 @@ bool MaterializedCanvas::commit_incremental_revision(
       slot.revision_ = revision;
     }
   }
-  invalidate_uniforms(affected_world_bounds);
   mark_occupied(affected_world_bounds);
   current_revision_ = revision;
   overview_revision_ = revision;
@@ -500,6 +502,8 @@ bool MaterializedCanvas::commit_incremental_revision(
 
 bool MaterializedCanvas::accepts_external_workspace(std::span<const std::byte> workspace) const {
   return !storage_overlaps(workspace, std::as_bytes(std::span(overview_pixels_))) &&
+         !storage_overlaps(workspace, std::as_bytes(std::span(uniform_catalog_))) &&
+         !storage_overlaps(workspace, std::as_bytes(std::span(occupancy_bits_))) &&
          !storage_overlaps(workspace, std::as_bytes(std::span(tile_pixels_))) &&
          !storage_overlaps(workspace, std::as_bytes(std::span(slots_)));
 }
@@ -532,33 +536,17 @@ bool MaterializedCanvas::copy_resident_tile(TileKey key,
   return true;
 }
 
-std::size_t MaterializedCanvas::uniform_tiles_intersecting(PixelRect world_bounds,
-                                                           std::span<TileKey> output) const {
-  std::size_t count = 0;
-  for (std::size_t index = 0; index < uniform_catalog_.size(); ++index) {
-    if (!uniform_catalog_[index].occupied_ || !uniform_intersects(index, world_bounds)) {
-      continue;
-    }
-    if (count < output.size()) {
-      output[count] = key_for_identity(index);
-    }
-    ++count;
-  }
-  return count;
-}
-
 std::optional<std::size_t> MaterializedCanvas::resident_tiles_intersecting(
     PixelRect world_bounds, std::span<TileKey> output) const {
   if (!ready() || !valid_world_bounds(world_bounds) ||
       !accepts_external_workspace(std::as_bytes(output))) {
     return std::nullopt;
   }
-  const std::size_t raw_required = static_cast<std::size_t>(std::count_if(
+  const std::size_t required = static_cast<std::size_t>(std::count_if(
       slots_.begin(), slots_.end(), [world_bounds](const MaterializedSlotStorage& slot) {
         return slot.occupied_ && rectangles_intersect(tile_world_bounds(slot.key_), world_bounds);
       }));
-  const std::size_t uniform_required = uniform_tiles_intersecting(world_bounds, {});
-  if (output.size() < raw_required + uniform_required) {
+  if (output.size() < required) {
     return std::nullopt;
   }
   std::size_t written = 0;
@@ -567,7 +555,6 @@ std::optional<std::size_t> MaterializedCanvas::resident_tiles_intersecting(
       output[written++] = slot.key_;
     }
   }
-  written += uniform_tiles_intersecting(world_bounds, output.subspan(written));
   return written;
 }
 
@@ -626,9 +613,7 @@ std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, Documen
   const int height = bounds.y1 - bounds.y0;
   const std::size_t expected_pixels =
       static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
-  const bool source_overlaps_pool =
-      storage_overlaps(std::as_bytes(pixels), std::as_bytes(std::span(tile_pixels_))) ||
-      storage_overlaps(std::as_bytes(pixels), std::as_bytes(std::span(slots_)));
+  const bool source_overlaps_pool = !accepts_external_workspace(std::as_bytes(pixels));
   if (!ready() || slots_.empty() || !valid_tile_key(key) || revision != current_revision_ ||
       quality == MaterializationQuality::kOverviewFallback || source_overlaps_pool ||
       pixels.size() != expected_pixels) {
