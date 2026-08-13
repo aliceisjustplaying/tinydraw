@@ -21,8 +21,9 @@ This is not a ship-quality rendering pass. Hard-edged tiles are provisional
 Evidence logs: [`hardware-receipts/gate1-tile-producer.log`](hardware-receipts/gate1-tile-producer.log),
 [`hardware-receipts/gate1-p95-20-runs.log`](hardware-receipts/gate1-p95-20-runs.log),
 [`hardware-receipts/gate1-pan-p95-20-runs.log`](hardware-receipts/gate1-pan-p95-20-runs.log),
-[`hardware-receipts/gate1-fable-fix.log`](hardware-receipts/gate1-fable-fix.log), and
-[`hardware-receipts/gate1-clean-head-p95-20-runs.log`](hardware-receipts/gate1-clean-head-p95-20-runs.log).
+[`hardware-receipts/gate1-fable-fix.log`](hardware-receipts/gate1-fable-fix.log),
+[`hardware-receipts/gate1-clean-head-p95-20-runs.log`](hardware-receipts/gate1-clean-head-p95-20-runs.log),
+and [`hardware-receipts/gate1-grok-fixes-p95-20-runs.log`](hardware-receipts/gate1-grok-fixes-p95-20-runs.log).
 
 ### Deterministic synthetic regression workload
 
@@ -48,15 +49,21 @@ The first 400% capture exposed a 35.684 ms replay slice caused by a 198-sample
 stroke. The final producer bounds work by operation count, sample segments, and
 a conservative projected raster-area budget. Splitting can count one source
 operation in multiple slices, hence “sliced applications” rather than distinct
-operations. The clean-HEAD post-review 20-run recapture with viewport-only publication (42
-rather than 48 tiles) measured:
+operations. The final post-review 20-run recapture at clean commit `765104b` measured:
 
 | Workload | Zoom | Cold complete visible fill p95 | Maximum producer unit | Result |
 |---|---:|---:|---:|---|
-| synthetic | 100% | 441.424 ms | 6.003 ms | PASS |
-| synthetic | 400% | 348.615 ms | 28.335 ms | PASS |
-| seed-7 realistic | 100% | 480.864 ms | 4.695 ms | PASS |
-| seed-7 realistic | 400% | 437.742 ms | 29.312 ms | PASS |
+| synthetic | 100% | 429.683 ms | 7.582 ms | PASS |
+| synthetic | 400% | 347.599 ms | 12.064 ms | PASS |
+| seed-7 realistic | 100% | 488.678 ms | 5.158 ms | PASS |
+| seed-7 realistic | 400% | 430.955 ms | 10.832 ms | PASS |
+
+An external review found unsigned subtraction could wrap after admitting one
+segment larger than the raster-work budget. The producer now isolates that
+first unsplittable segment and clips subsequent work estimates to the active
+128×128 supertask. A first hardware attempt without clipping kept units small
+but took 608.104 ms for the realistic 400% fill; it was rejected rather than
+accepted as a responsiveness tradeoff.
 
 ### Four-sample SSAA probe
 
@@ -92,14 +99,14 @@ then committed an eight-sample fast zig-zag at the actual XL world radius for
 400%. The commit invalidated active producer work; stale work was rejected and
 restarted.
 
-Twenty clean-HEAD runs measured:
+Twenty final clean-HEAD runs measured:
 
-- producer poll-gap p95: **0.667 ms**
-- event-to-first-submit p95: **2.758 ms**
-- event-to-first-transfer-complete p95: **2.935 ms**
-- maximum replay-compute unit: **29.312 ms**
-- maximum producer/display unit: **29.312 ms**
-- complete restarted fill p95: **472.984 ms**
+- producer poll-gap p95: **1.135 ms**
+- event-to-first-submit p95: **3.217 ms**
+- event-to-first-transfer-complete p95: **3.390 ms**
+- maximum replay-compute unit: **12.883 ms**
+- maximum producer/display unit: **12.883 ms**
+- complete restarted fill p95: **466.211 ms**
 - stale publication accepted: **no**
 - result: **PASS**
 
@@ -109,10 +116,13 @@ rebases the producer's uniform baseline.
 
 ### Live memory receipt
 
-The complete live image reports **3,628,512 bytes** of explicitly allocated
-caller-owned storage, then **4,714,428 bytes free PSRAM** with a **4,587,520-byte
+The complete live image reports **3,957,856 bytes** of explicitly allocated
+caller-owned storage, then **4,385,076 bytes free PSRAM** with a **4,325,376-byte
 largest block** after loading the seed-7 document and completing all automated
-probes. This is the live Gate 1 image, not the earlier empty-heap plan receipt.
+probes. Incremental tile scratch now covers the 56-tile arbitrary-alignment
+visible worst case; its publication metadata and affected-key list are also in
+this declared PSRAM storage rather than the 6 KiB main-task stack. This is the
+live Gate 1 image, not the earlier empty-heap plan receipt.
 
 ## Correctness and architecture evidence
 
@@ -123,6 +133,8 @@ probes. This is the live Gate 1 image, not the earlier empty-heap plan receipt.
   output one-directionally.
 - Tile fill is resumable in bounded operation batches, without threads.
 - Revision/epoch changes abort active work rather than publish stale pixels.
+- A worst-case 7×8 refined viewport survives an intersecting XL append without
+  any tile falling back to the overview.
 - Progressive presentation composes bounded regions through DisplayScheduler.
 - Source geometry is the single raw operation sample log. **No per-zoom LOD
   copies and no simplifier are used.**
@@ -136,6 +148,7 @@ Passed before flashing:
 ./scripts/dev format-check  passed
 ./scripts/dev cppcheck      passed
 ./scripts/dev tidy          passed
+./scripts/dev asan          4/4 sanitizer CTest entries passed
 ESP-IDF production live app build and flash passed
 ```
 
@@ -148,7 +161,8 @@ The flashed app ends at 25% with the seed-7 document loaded. One short human pas
 must confirm:
 
 1. handwriting is present at 25%, including very thin marks;
-2. cycle to 100% and 400%; image detail is crisp rather than overview pixels;
+2. cycle to 100% and 400%; the Gate 1 button now opens the inked upper-left
+   origin, where image detail must become crisp rather than overview pixels;
 3. select Pan in the toolbar and drag at 100% and 400%; the canvas follows;
 4. draw one XL stroke at 400%, then return to 25%; it remains present;
 5. no corruption, missing chunks, or obvious input lag.
