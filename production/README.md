@@ -133,9 +133,13 @@ four complete 100% views in bounded 368×22 strips. Those views completed in
 CO5300 window rejection. This proves the bounded fallback path on glass, but
 not the interactive ≤35 ms gate under concurrent product workloads.
 
-Host tests remain the oracle for the no-checkerboard composition policy. Final
-scheduler behavior, incremental publication, and the ≤35 ms pan gate require the later display
-adapter and scheduler; no claim about those hardware gates is made here.
+Host tests remain the oracle for the no-checkerboard composition policy. The
+same walk passed after the instance-owned CO5300 transport extraction at
+[`hardware-receipts/1b0710a-panel-transport-walk.log`](hardware-receipts/1b0710a-panel-transport-walk.log).
+The exclusive walk now depends directly on transport, not the legacy toolbar
+compositor. Final scheduler behavior, incremental publication, and the ≤35 ms
+pan gate require the later display scheduler; no claim about those hardware
+gates is made here.
 
 ## Task #55 revision seam
 
