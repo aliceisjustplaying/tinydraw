@@ -6,6 +6,7 @@ add_executable(tinydraw_tests
   drawing_snapshot_test.cpp
   fat16_disk_test.cpp
   host_input_test.cpp
+  incremental_document_test.cpp
   incremental_rasterizer_test.cpp
   ink_stream_test.cpp
   materialized_canvas_test.cpp

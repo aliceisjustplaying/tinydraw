@@ -1,4 +1,5 @@
 add_library(tinydraw_production
+  src/incremental_document.cpp
   src/incremental_rasterizer.cpp
   src/materialized_canvas.cpp
   src/operation.cpp

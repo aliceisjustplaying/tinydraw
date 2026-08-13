@@ -196,6 +196,10 @@ class MaterializedCanvas {
   [[nodiscard]] bool mark_used(TileKey key);
   [[nodiscard]] std::optional<ViewCompositionStats> compose_view(
       const ViewRequest& request, std::span<std::uint16_t> destination);
+  // Returns intersecting current-revision resident keys. Fails rather than
+  // returning a partial list when output is too small or bounds are invalid.
+  [[nodiscard]] std::optional<std::size_t> resident_tiles_intersecting(
+      PixelRect world_bounds, std::span<TileKey> output) const;
 
  private:
   friend class PinnedSource;

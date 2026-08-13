@@ -1,0 +1,104 @@
+#include "tinydraw/production/incremental_document.h"
+
+#include <doctest.h>
+
+#include <array>
+#include <cstdint>
+
+namespace production = tinydraw::production;
+
+namespace {
+
+struct Fixture {
+  std::array<production::OperationRecord, 4> records{};
+  std::array<production::CompactOperationSample, 8> samples{};
+  std::array<std::uint16_t, production::kOverviewPixels> overview{};
+  std::array<std::uint16_t, production::kOverviewPixels> next_overview{};
+  std::array<production::MaterializedSlotStorage, 2> slots{};
+  std::array<std::uint16_t, 2U * production::kTilePixels> tile_pool{};
+  std::array<std::uint16_t, 2U * production::kTilePixels> tile_scratch{};
+  std::array<production::TileRevisionPublication, 2> publications{};
+  std::array<production::TileKey, 2> affected{};
+  production::OperationLog log{records, samples};
+  production::MaterializedCanvas canvas{overview, slots, tile_pool};
+
+  production::IncrementalDocumentWorkspace workspace() {
+    return {.next_overview = next_overview,
+            .tile_scratch = tile_scratch,
+            .publications = publications,
+            .affected_keys = affected};
+  }
+};
+
+}  // namespace
+
+TEST_CASE("incremental document advances log and canvas together") {
+  Fixture fixture;
+  fixture.overview.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
+  std::array<std::uint16_t, production::kTilePixels> tile{};
+  tile.fill(0xFFFFU);
+  const production::TileKey at_100{production::ZoomLevel::k100Percent, 0, 0};
+  const production::TileKey at_200{production::ZoomLevel::k200Percent, 1, 1};
+  REQUIRE(
+      fixture.canvas.publish_tile(at_100, {0}, production::MaterializationQuality::kSettled, tile));
+  REQUIRE(
+      fixture.canvas.publish_tile(at_200, {0}, production::MaterializationQuality::kSettled, tile));
+  const std::array samples{
+      production::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 512},
+      production::CompactOperationSample{.x_quarter = 160, .y_quarter = 160, .radius_256 = 512},
+  };
+
+  const auto result = production::append_incrementally(
+      fixture.log, fixture.canvas, {.color = 0xF800U, .samples = samples}, fixture.workspace());
+  REQUIRE(result.has_value());
+  CHECK(result->identity == production::OperationIdentity{{1}, 0});
+  CHECK(result->affected_resident_tiles == 2U);
+  CHECK(result->published_tiles == 2U);
+  CHECK(fixture.log.current_revision() == production::DocumentRevision{1});
+  CHECK(fixture.canvas.current_revision() == production::DocumentRevision{1});
+  CHECK(fixture.canvas.lookup(at_100)->kind == production::SourceKind::kTileSlot);
+  CHECK(fixture.canvas.lookup(at_200)->kind == production::SourceKind::kTileSlot);
+  CHECK(fixture.next_overview[3U * production::kOverviewWidth + 3U] == 0xF800U);
+}
+
+TEST_CASE("incremental document workspace failure leaves both authorities unchanged") {
+  Fixture fixture;
+  fixture.overview.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
+  std::array<std::uint16_t, production::kTilePixels> tile{};
+  tile.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_tile({production::ZoomLevel::k100Percent, 0, 0}, {0},
+                                      production::MaterializationQuality::kSettled, tile));
+  const std::array samples{
+      production::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 512}};
+  auto workspace = fixture.workspace();
+  workspace.publications = {};
+  workspace.affected_keys = {};
+
+  CHECK_FALSE(production::append_incrementally(fixture.log, fixture.canvas,
+                                               {.color = 0xF800U, .samples = samples}, workspace));
+  CHECK(fixture.log.current_revision() == production::DocumentRevision{0});
+  CHECK(fixture.log.operation_count() == 0U);
+  CHECK(fixture.canvas.current_revision() == production::DocumentRevision{0});
+  CHECK(fixture.canvas.overview_pixels().front() == 0xFFFFU);
+}
+
+TEST_CASE("incremental document can commit with no affected resident tiles") {
+  Fixture fixture;
+  fixture.overview.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
+  const std::array samples{
+      production::CompactOperationSample{.x_quarter = 400, .y_quarter = 400, .radius_256 = 256}};
+  auto workspace = fixture.workspace();
+  workspace.publications = {};
+  workspace.affected_keys = {};
+  workspace.tile_scratch = {};
+
+  const auto result = production::append_incrementally(
+      fixture.log, fixture.canvas, {.color = 0x001FU, .samples = samples}, workspace);
+  REQUIRE(result.has_value());
+  CHECK(result->affected_resident_tiles == 0U);
+  CHECK(fixture.log.current_revision() == production::DocumentRevision{1});
+  CHECK(fixture.canvas.current_revision() == production::DocumentRevision{1});
+}
