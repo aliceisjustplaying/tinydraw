@@ -95,6 +95,57 @@ TEST_CASE("incremental document advances log and canvas together") {
   CHECK(fixture.canvas.overview_pixels()[3U * production::kOverviewWidth + 3U] == 0xF800U);
 }
 
+TEST_CASE("XL append preserves every refined tile in a worst-case visible viewport") {
+  constexpr std::size_t kVisibleTileCount = production::kMaximumVisibleTiles;
+  auto records = std::make_unique<std::array<production::OperationRecord, 1>>();
+  auto samples = std::make_unique<std::array<production::CompactOperationSample, 2>>();
+  auto overview = std::make_unique<std::array<std::uint16_t, production::kOverviewPixels>>();
+  auto overview_scratch =
+      std::make_unique<std::array<std::uint16_t, production::kOverviewPixels>>();
+  auto slots =
+      std::make_unique<std::array<production::MaterializedSlotStorage, kVisibleTileCount>>();
+  auto tile_pool =
+      std::make_unique<std::array<std::uint16_t, kVisibleTileCount * production::kTilePixels>>();
+  auto tile_scratch =
+      std::make_unique<std::array<std::uint16_t, kVisibleTileCount * production::kTilePixels>>();
+  auto publications =
+      std::make_unique<std::array<production::TileRevisionPublication, kVisibleTileCount>>();
+  auto affected = std::make_unique<std::array<production::TileKey, kVisibleTileCount>>();
+  production::OperationLog log(*records, *samples);
+  production::MaterializedCanvas canvas(*overview, *slots, *tile_pool);
+  overview->fill(0xFFFFU);
+  REQUIRE(canvas.publish_overview({0}, *overview));
+  std::array<std::uint16_t, production::kTilePixels> blank_tile{};
+  blank_tile.fill(0xFFFFU);
+  for (std::uint16_t row = 0; row < 8; ++row) {
+    for (std::uint16_t column = 0; column < 7; ++column) {
+      REQUIRE(canvas.publish_tile({production::ZoomLevel::k400Percent, column, row}, {0},
+                                  production::MaterializationQuality::kImmediate, blank_tile));
+    }
+  }
+  const std::array stroke{
+      production::CompactOperationSample{.x_quarter = 20, .y_quarter = 20, .radius_256 = 1'280},
+      production::CompactOperationSample{.x_quarter = 440, .y_quarter = 504, .radius_256 = 1'280},
+  };
+
+  const auto result =
+      production::append_incrementally(log, canvas, {.color = 0x001FU, .samples = stroke},
+                                       {.overview_scratch = *overview_scratch,
+                                        .tile_scratch = *tile_scratch,
+                                        .publications = *publications,
+                                        .affected_keys = *affected});
+  REQUIRE(result.has_value());
+  CHECK(result->affected_resident_tiles == kVisibleTileCount);
+  CHECK(result->published_tiles == kVisibleTileCount);
+  CHECK(result->fallback_tiles == 0U);
+  for (std::uint16_t row = 0; row < 8; ++row) {
+    for (std::uint16_t column = 0; column < 7; ++column) {
+      CHECK(canvas.lookup({production::ZoomLevel::k400Percent, column, row})->kind ==
+            production::SourceKind::kTileSlot);
+    }
+  }
+}
+
 TEST_CASE("bounded overview publication matches full rendering at worst thin-stroke alignment") {
   Fixture fixture;
   fixture.overview.fill(0xFFFFU);
