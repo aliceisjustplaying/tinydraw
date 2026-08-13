@@ -17,6 +17,7 @@ TEST_CASE("production geometry has fixed world overview and committed zoom ident
   CHECK(production::kOverviewWidth == 368);
   CHECK(production::kOverviewHeight == 448);
   CHECK(production::kOverviewBytes == 329'728U);
+  CHECK(production::kMaximumVisibleTiles == 56U);
 
   CHECK(production::zoom_percent(production::ZoomLevel::k25Percent) == 25);
   CHECK(production::zoom_percent(production::ZoomLevel::k50Percent) == 50);
@@ -28,14 +29,16 @@ TEST_CASE("production geometry has fixed world overview and committed zoom ident
 TEST_CASE("production memory plan records every fixed-capacity region") {
   CHECK(sizeof(production::CompactOperationSample) == 8U);
   CHECK(production::kOverviewPublicationBytes == 329'728U);
-  CHECK(production::kTilePoolBytes == 1'048'576U);
+  CHECK(production::kTileSlotCount == 256U);
+  CHECK(production::kTileSlotCount >= 4U * production::kMaximumVisibleTiles);
+  CHECK(production::kTilePoolBytes == 2'097'152U);
   CHECK(production::kTileMetadataBytes ==
         production::kTileSlotCount * sizeof(production::MaterializedSlotStorage));
   CHECK(production::kOperationStorageBytes == 720'000U);
   CHECK(production::kLodStorageBytes == 668'000U);
   CHECK(production::kRendererWorkspaceBytes == 163'840U);
   CHECK(production::kDisplayWorkspaceBytes == 103'040U);
-  CHECK(production::kExternalPlanBytes == 3'368'032U);
+  CHECK(production::kExternalPlanBytes == 4'421'728U);
   CHECK(production::kTargetContiguousReserveBytes == 1'572'864U);
 }
 
@@ -160,6 +163,40 @@ TEST_CASE("fixed-capacity slots replace the least recently used slot") {
   CHECK(canvas.lookup(first)->kind == production::SourceKind::kTileSlot);
   CHECK(canvas.lookup(second)->kind == production::SourceKind::kOverview);
   CHECK(canvas.lookup(third)->kind == production::SourceKind::kTileSlot);
+}
+
+TEST_CASE("cache retains one worst-case viewport at every tiled zoom") {
+  constexpr std::array zooms{
+      production::ZoomLevel::k50Percent,
+      production::ZoomLevel::k100Percent,
+      production::ZoomLevel::k200Percent,
+      production::ZoomLevel::k400Percent,
+  };
+  auto overview = std::make_unique<std::array<std::uint16_t, production::kOverviewPixels>>();
+  auto slots = std::make_unique<
+      std::array<production::MaterializedSlotStorage, production::kTileSlotCount>>();
+  auto tile_storage = std::make_unique<
+      std::array<std::uint16_t, production::kTileSlotCount * production::kTilePixels>>();
+  production::MaterializedCanvas canvas(*overview, *slots, *tile_storage);
+  REQUIRE(canvas.publish_overview({0}, *overview));
+  std::array<std::uint16_t, production::kTilePixels> tile{};
+
+  for (const auto zoom : zooms) {
+    for (std::uint16_t row = 0; row < 8; ++row) {
+      for (std::uint16_t column = 0; column < 7; ++column) {
+        REQUIRE(canvas.publish_tile({zoom, column, row}, {0},
+                                    production::MaterializationQuality::kImmediate, tile));
+      }
+    }
+  }
+
+  for (const auto zoom : zooms) {
+    for (std::uint16_t row = 0; row < 8; ++row) {
+      for (std::uint16_t column = 0; column < 7; ++column) {
+        CHECK(canvas.lookup({zoom, column, row})->kind == production::SourceKind::kTileSlot);
+      }
+    }
+  }
 }
 
 TEST_CASE("same-revision publication cannot downgrade immediate settled or exact quality") {

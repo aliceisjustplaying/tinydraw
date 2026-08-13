@@ -72,7 +72,9 @@ identity, not a permanent renderer-work size:
 
 - complete 25% overview: `368 × 448 × 2 = 329,728` bytes;
 - one tile: `64 × 64 × 2 = 8,192` bytes;
-- a 128-tile pixel pool: `1,048,576` bytes plus slot metadata;
+- a 256-tile pixel pool: `2,097,152` bytes plus slot metadata; enough to
+  retain one arbitrary-alignment viewport at all four tiled zooms, with 32
+  slots of adjacent-pan margin;
 - 100% world grid: `ceil(1472 / 64) × ceil(1792 / 64) = 23 × 28` keys.
 
 `MaterializedCanvas` owns no hidden allocation. The overview pixels and fixed
@@ -86,7 +88,7 @@ first complete allocation plan. Its capacity assumptions are explicit:
 
 - 4,000 operations and 80,000 compact 8-byte samples;
 - four materialized zoom LOD span tables and 90,000 compact 6-byte LOD samples;
-- 128 tile slots;
+- 256 tile slots;
 - two 128×128 renderer workspaces plus 64 KiB shared geometry storage;
 - a 368×76 overlay and two 368×32 staging strips;
 - a second 368×448 overview buffer for transactional revision publication.
@@ -100,7 +102,7 @@ The current empty-heap ESP32-S3 allocation receipt is
 [`hardware-receipts/756e080-memory-layout.log`](hardware-receipts/756e080-memory-layout.log):
 
 - both the live and next-revision overviews are explicitly budgeted;
-- all 3,368,032 planned bytes allocated simultaneously;
+- all 4,421,728 planned bytes allocated simultaneously;
 - largest contiguous block after the plan: 4,980,736 bytes;
 - a separate 1,572,864-byte reserve allocation succeeded;
 - free/largest after holding both plan and reserve: 3,412,544 / 3,407,872 bytes.
