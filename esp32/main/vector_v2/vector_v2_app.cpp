@@ -57,6 +57,8 @@ struct LiftBaselineTiming {
   std::int64_t builder_finish_us = 0;
   std::int64_t append_us = 0;
   std::int64_t refresh_wall_us = 0;
+  std::int64_t stroke_logging_us = 0;
+  std::int64_t post_lift_fill_block_us = 0;
   LivePresentationTiming refresh{};
   bool committed = false;
   bool overflowed = false;
@@ -70,6 +72,8 @@ struct FillBaselineTiming {
   std::int64_t present_total_us = 0;
   std::int64_t present_max_us = 0;
   std::int64_t tick_max_us = 0;
+  std::uint32_t producer_failures = 0;
+  std::uint32_t presentation_failures = 0;
 
   void reset() { *this = {}; }
 };
@@ -221,26 +225,30 @@ void print_fill_baseline(const char* result, ZoomLevel zoom, int x, int y,
   std::printf(
       "TINYDRAW_FILL_BASELINE result=%s zoom=%s x=%d y=%d revision=%lu steps=%lu "
       "compute_total_us=%lld compute_max_us=%lld present_total_us=%lld "
-      "present_max_us=%lld tick_max_us=%lld\n",
+      "present_max_us=%lld tick_max_us=%lld producer_failures=%lu "
+      "presentation_failures=%lu\n",
       result, zoom_name(zoom), x, y, static_cast<unsigned long>(revision.value),
       static_cast<unsigned long>(timing.steps), static_cast<long long>(timing.compute_total_us),
       static_cast<long long>(timing.compute_max_us),
       static_cast<long long>(timing.present_total_us),
-      static_cast<long long>(timing.present_max_us), static_cast<long long>(timing.tick_max_us));
+      static_cast<long long>(timing.present_max_us), static_cast<long long>(timing.tick_max_us),
+      static_cast<unsigned long>(timing.producer_failures),
+      static_cast<unsigned long>(timing.presentation_failures));
 }
 
 void print_lift_baseline(const LiftBaselineTiming& timing, std::int64_t poll_started_us,
-                         std::int64_t poll_completed_us) {
+                         std::int64_t poll_completed_us, std::uint32_t reports_dropped) {
   const std::int64_t measured_phase_us = timing.finish_preview_us + timing.builder_finish_us +
-                                         timing.append_us + timing.refresh_wall_us;
+                                         timing.append_us + timing.refresh_wall_us +
+                                         timing.stroke_logging_us + timing.post_lift_fill_block_us;
   const std::int64_t detected_to_poll_us = poll_started_us - timing.detected_us;
   std::printf(
       "TINYDRAW_LIFT_BASELINE id=%lu finish_preview_us=%lld builder_finish_us=%lld "
       "append_us=%lld refresh_wall_us=%lld refresh_compose_us=%lld "
       "refresh_first_submit_us=%lld refresh_first_complete_us=%lld "
-      "refresh_transfer_wait_us=%lld detected_to_poll_start_us=%lld "
-      "detected_to_poll_complete_us=%lld poll_read_us=%lld loop_tail_us=%lld "
-      "committed=%u refresh=%u overflow=%u\n",
+      "refresh_transfer_wait_us=%lld stroke_logging_us=%lld post_lift_fill_block_us=%lld "
+      "detected_to_poll_start_us=%lld detected_to_poll_complete_us=%lld poll_read_us=%lld "
+      "unattributed_tail_us=%lld reports_dropped=%lu committed=%u refresh=%u overflow=%u\n",
       static_cast<unsigned long>(timing.id), static_cast<long long>(timing.finish_preview_us),
       static_cast<long long>(timing.builder_finish_us), static_cast<long long>(timing.append_us),
       static_cast<long long>(timing.refresh_wall_us),
@@ -248,11 +256,14 @@ void print_lift_baseline(const LiftBaselineTiming& timing, std::int64_t poll_sta
       static_cast<long long>(timing.refresh.first_submit_us),
       static_cast<long long>(timing.refresh.first_complete_us),
       static_cast<long long>(timing.refresh.complete_us),
+      static_cast<long long>(timing.stroke_logging_us),
+      static_cast<long long>(timing.post_lift_fill_block_us),
       static_cast<long long>(detected_to_poll_us),
       static_cast<long long>(poll_completed_us - timing.detected_us),
       static_cast<long long>(poll_completed_us - poll_started_us),
-      static_cast<long long>(std::max<std::int64_t>(0, detected_to_poll_us - measured_phase_us)),
-      timing.committed, timing.refresh.passed, timing.overflowed);
+      static_cast<long long>(detected_to_poll_us - measured_phase_us),
+      static_cast<unsigned long>(reports_dropped), timing.committed, timing.refresh.passed,
+      timing.overflowed);
 }
 
 void print_stroke(const OperationLog& log, const MaterializedCanvas& canvas,
@@ -494,8 +505,10 @@ void run_vector_v2_app() {
   DocumentRevision fill_revision = canvas.current_revision();
   bool fill_complete = true;
   FillBaselineTiming fill_timing{};
+  bool fill_measurement_active = false;
   LiftBaselineTiming lift_timing{};
   std::uint32_t next_lift_id = 1U;
+  std::uint32_t lift_reports_dropped = 0U;
 
   for (;;) {
     const std::uint32_t loop_us = now_us();
@@ -513,10 +526,12 @@ void run_vector_v2_app() {
     }
 
     Point point{};
+    const bool idle_before_poll = !pressed;
     const std::int64_t poll_started_us = esp_timer_get_time();
     const TouchRead read = touch.read(point);
     const std::int64_t poll_completed_us = esp_timer_get_time();
     const bool lift_report_ready = lift_timing.pending;
+    const LiftBaselineTiming lift_report = lift_timing;
     lift_timing.pending = false;
     if (read == TouchRead::kError) {
       ++touch_errors;
@@ -632,22 +647,33 @@ void run_vector_v2_app() {
         const std::int64_t refresh_started = esp_timer_get_time();
         measured_lift.refresh = presenter.refresh(toolbar, finished_us);
         measured_lift.refresh_wall_us = esp_timer_get_time() - refresh_started;
-        measured_lift.pending = true;
-        lift_timing = measured_lift;
+        const std::int64_t logging_started = esp_timer_get_time();
         print_stroke(log, canvas, live_metrics, measured_lift.append_us, measured_lift.refresh,
                      poll_max_us, touch_errors);
         std::printf("TINYDRAW_LIVE_STROKE_DONE committed=%u refresh=%u overflow=%u\n",
                     measured_lift.committed, measured_lift.refresh.passed,
                     measured_lift.overflowed);
+        std::fflush(stdout);
+        measured_lift.stroke_logging_us = esp_timer_get_time() - logging_started;
+        measured_lift.pending = true;
+        lift_timing = measured_lift;
         live_metrics = {};
         poll_max_us = 0;
         touch_errors = 0;
-        std::fflush(stdout);
       }
     }
 
-    if (!pressed && presenter.zoom() != ZoomLevel::k25Percent && !toolbar.tools_open &&
-        !toolbar.colors_open && !toolbar.sizes_open && !toolbar.confirm_new) {
+    const bool fill_view_available = presenter.zoom() != ZoomLevel::k25Percent &&
+                                     !toolbar.tools_open && !toolbar.colors_open &&
+                                     !toolbar.sizes_open && !toolbar.confirm_new;
+    const bool fill_allowed = !pressed && fill_view_available;
+    if (!fill_view_available && fill_measurement_active) {
+      print_fill_baseline("paused", fill_zoom, fill_x, fill_y, fill_revision, fill_timing);
+      fill_timing.reset();
+      fill_measurement_active = false;
+    }
+    if (fill_allowed) {
+      const std::int64_t fill_block_started = esp_timer_get_time();
       const vector_v2::ViewRequest fill_view{
           .zoom = presenter.zoom(),
           .level_pixels = {presenter.level_x(), presenter.level_y(),
@@ -656,7 +682,7 @@ void run_vector_v2_app() {
       };
       if (fill_zoom != fill_view.zoom || fill_x != fill_view.level_pixels.x0 ||
           fill_y != fill_view.level_pixels.y0 || fill_revision != canvas.current_revision()) {
-        if (!fill_complete) {
+        if (fill_measurement_active) {
           print_fill_baseline("superseded", fill_zoom, fill_x, fill_y, fill_revision, fill_timing);
         }
         fill_zoom = fill_view.zoom;
@@ -665,8 +691,13 @@ void run_vector_v2_app() {
         fill_revision = canvas.current_revision();
         fill_complete = false;
         fill_timing.reset();
+        fill_measurement_active = true;
       }
       if (!fill_complete) {
+        if (!fill_measurement_active) {
+          fill_timing.reset();
+          fill_measurement_active = true;
+        }
         const std::int64_t fill_tick_started = esp_timer_get_time();
         const std::int64_t compute_started = esp_timer_get_time();
         const auto step = producer.produce_next(fill_view);
@@ -677,12 +708,15 @@ void run_vector_v2_app() {
         if (step.has_value()) {
           if (step->tiles_published != 0U) {
             const std::int64_t present_started = esp_timer_get_time();
-            static_cast<void>(presenter.refresh_region(step->level_bounds));
+            const auto presentation = presenter.refresh_region(step->level_bounds);
             const std::int64_t present_us = esp_timer_get_time() - present_started;
             fill_timing.present_total_us += present_us;
             fill_timing.present_max_us = std::max(fill_timing.present_max_us, present_us);
+            fill_timing.presentation_failures += !presentation.passed;
           }
           fill_complete = step->complete;
+        } else {
+          ++fill_timing.producer_failures;
         }
         fill_timing.tick_max_us =
             std::max(fill_timing.tick_max_us, esp_timer_get_time() - fill_tick_started);
@@ -691,12 +725,25 @@ void run_vector_v2_app() {
           std::printf("TINYDRAW_LIVE_FILL_DONE zoom=%s x=%d y=%d revision=%lu\n",
                       zoom_name(fill_zoom), fill_x, fill_y,
                       static_cast<unsigned long>(fill_revision.value));
+          fill_measurement_active = false;
         }
+      }
+      if (lift_timing.pending) {
+        lift_timing.post_lift_fill_block_us += esp_timer_get_time() - fill_block_started;
       }
     }
     if (lift_report_ready) {
-      print_lift_baseline(lift_timing, poll_started_us, poll_completed_us);
-      std::fflush(stdout);
+      if (idle_before_poll && !touching) {
+        print_lift_baseline(lift_report, poll_started_us, poll_completed_us, lift_reports_dropped);
+        std::fflush(stdout);
+        lift_reports_dropped = 0U;
+        // Exclude this diagnostic write from the pre-existing stroke poll-gap
+        // metric. The physical input may still observe the write, so the lift
+        // record reports stroke_logging_us explicitly.
+        poll_previous_us = now_us();
+      } else {
+        ++lift_reports_dropped;
+      }
     }
     vTaskDelay(pdMS_TO_TICKS(2));
   }
