@@ -47,9 +47,10 @@ struct StoredOperationLod {
 
 class OperationLodStore;
 
-// Move-only preparation for one operation's four committed zoom LODs. Samples
-// are copied into unused caller storage during prepare, while publish is an
-// infallible authority change. Destruction cancels an unpublished preparation.
+// Move-only preparation for one operation's four committed zoom LODs. It must
+// not outlive its owning store. Samples are copied into unused caller storage
+// during prepare, while publish is an infallible authority change. Destruction
+// cancels an unpublished preparation.
 class PreparedLodAppend {
  public:
   ~PreparedLodAppend();
@@ -95,7 +96,9 @@ class OperationLodStore {
   [[nodiscard]] std::optional<StoredOperationLod> lod(OperationLogEpoch requested_epoch,
                                                       OperationIdentity identity,
                                                       ZoomLevel zoom) const;
-  // Discards all LODs and adopts the matching log snapshot identity.
+  // Discards all LODs and adopts a new matching log snapshot identity. The
+  // epoch must differ from the current epoch so stale query identities cannot
+  // become valid for replacement content.
   [[nodiscard]] bool reset(OperationLogEpoch new_epoch, DocumentRevision revision);
 
  private:

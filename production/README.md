@@ -240,4 +240,7 @@ them under the exact next operation identity and log epoch, and invalidates them
 on snapshot reset. Its source, span, and sample storage are caller-owned and
 alias-checked. The first implementation deliberately stores caller-generated
 samples without choosing a simplification algorithm; capacity remains
-provisional until representative captured input exists.
+provisional until representative captured input exists. Published LODs remain
+readable while the next operation is prepared. Eventual integration must prepare
+both log and LOD state before publishing either, so a skipped LOD append cannot
+wedge their exact-next identities.
