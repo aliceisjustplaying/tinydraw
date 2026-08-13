@@ -214,3 +214,9 @@ baseline revision, destination revision, and operation range together; append-ti
 zoom-specific LOD storage must also have an explicit owner and capacity receipt.
 Do not hide these requirements behind a `settle(current_pixels)` helper or copy
 the rejected prototype renderer into the production island.
+
+`OperationLog::replay_range()` is the first bounded ownership seam: it accepts an
+explicit baseline and destination revision and returns only a contiguous range
+that is still represented after the current snapshot base. It exposes no range
+while an append is prepared. The settled renderer must consume this range in
+painter order; it must not infer history from the current hard-edged pixels.

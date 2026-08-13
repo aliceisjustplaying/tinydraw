@@ -193,6 +193,26 @@ std::optional<StoredOperation> OperationLog::operation(std::size_t index) const 
   };
 }
 
+std::optional<OperationReplayRange> OperationLog::replay_range(
+    DocumentRevision baseline_revision, DocumentRevision destination_revision) const {
+  if (append_pending_ || baseline_revision.value < base_revision_.value ||
+      destination_revision.value < baseline_revision.value ||
+      destination_revision.value > revision_.value) {
+    return std::nullopt;
+  }
+  const std::size_t first_operation = baseline_revision.value - base_revision_.value;
+  const std::size_t replay_count = destination_revision.value - baseline_revision.value;
+  if (first_operation > operation_count_ || replay_count > operation_count_ - first_operation) {
+    return std::nullopt;
+  }
+  return OperationReplayRange{
+      .baseline_revision = baseline_revision,
+      .destination_revision = destination_revision,
+      .first_operation = first_operation,
+      .operation_count = replay_count,
+  };
+}
+
 bool OperationLog::reset(DocumentRevision revision) {
   if (append_pending_) {
     return false;

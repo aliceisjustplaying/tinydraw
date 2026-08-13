@@ -181,6 +181,39 @@ TEST_CASE("operation log rejects malformed samples without mutation") {
   CHECK(log.current_revision() == production::DocumentRevision{0});
 }
 
+TEST_CASE("operation log exposes only represented contiguous replay ranges") {
+  std::array<production::OperationRecord, 3> records{};
+  std::array<production::CompactOperationSample, 3> storage{};
+  production::OperationLog log(records, storage);
+  const std::array sample{
+      production::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256}};
+  REQUIRE(log.reset({8}));
+  REQUIRE(log.append({.color = 0x001FU, .samples = sample}));
+  REQUIRE(log.append({.tool = production::OperationTool::kEraser, .samples = sample}));
+  REQUIRE(log.append({.color = 0xF800U, .samples = sample}));
+
+  CHECK(log.replay_range({8}, {11}) == production::OperationReplayRange{{8}, {11}, 0, 3});
+  CHECK(log.replay_range({9}, {11}) == production::OperationReplayRange{{9}, {11}, 1, 2});
+  CHECK(log.replay_range({10}, {10}) == production::OperationReplayRange{{10}, {10}, 2, 0});
+  CHECK_FALSE(log.replay_range({7}, {9}));
+  CHECK_FALSE(log.replay_range({9}, {8}));
+  CHECK_FALSE(log.replay_range({8}, {12}));
+}
+
+TEST_CASE("operation log withholds replay ranges while an append is prepared") {
+  std::array<production::OperationRecord, 1> records{};
+  std::array<production::CompactOperationSample, 1> storage{};
+  production::OperationLog log(records, storage);
+  const std::array sample{
+      production::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256}};
+  auto prepared = log.prepare({.samples = sample});
+  REQUIRE(prepared.has_value());
+
+  CHECK_FALSE(log.replay_range({0}, {0}));
+  prepared->cancel();
+  CHECK(log.replay_range({0}, {0}) == production::OperationReplayRange{{0}, {0}, 0, 0});
+}
+
 TEST_CASE("operation log reset adopts snapshot revision and retains caller storage") {
   std::array<production::OperationRecord, 1> records{};
   std::array<production::CompactOperationSample, 1> storage{};

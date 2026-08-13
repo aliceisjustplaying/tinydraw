@@ -18,6 +18,17 @@ struct StoredOperation {
   std::span<const CompactOperationSample> samples{};
 };
 
+// A contiguous painter-ordered range available after an authoritative
+// snapshot. first_operation is an index into this log, not a document-global
+// operation identity.
+struct OperationReplayRange {
+  DocumentRevision baseline_revision{};
+  DocumentRevision destination_revision{};
+  std::size_t first_operation = 0;
+  std::size_t operation_count = 0;
+  bool operator==(const OperationReplayRange&) const = default;
+};
+
 class OperationLog;
 
 // Move-only preparation owned by one OperationLog. It must not outlive that
@@ -66,6 +77,10 @@ class OperationLog {
   [[nodiscard]] std::optional<PreparedAppend> prepare(const OperationAppend& append_request);
   [[nodiscard]] std::optional<OperationIdentity> append(const OperationAppend& append_request);
   [[nodiscard]] std::optional<StoredOperation> operation(std::size_t index) const;
+  // Returns the exact contiguous operations needed to advance a caller-owned
+  // baseline snapshot. Both revisions must still be represented by this log.
+  [[nodiscard]] std::optional<OperationReplayRange> replay_range(
+      DocumentRevision baseline_revision, DocumentRevision destination_revision) const;
   // Resets empty authority to a snapshot revision. Fails while a
   // PreparedAppend owns the pending slot. Existing operations are discarded.
   [[nodiscard]] bool reset(DocumentRevision revision = {});
