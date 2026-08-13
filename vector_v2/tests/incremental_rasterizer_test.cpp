@@ -94,6 +94,40 @@ TEST_CASE("shared operation bounds conservatively include radius and clip to the
   CHECK_FALSE(vector_v2::operation_world_bounds({}));
 }
 
+TEST_CASE("resumable segment steps equal complete long-segment rasterization") {
+  constexpr vector_v2::PixelRect bounds{0, 0, 128, 128};
+  constexpr auto first =
+      vector_v2::CompactOperationSample{.x_quarter = 20, .y_quarter = 20, .radius_256 = 5'120};
+  constexpr auto second =
+      vector_v2::CompactOperationSample{.x_quarter = 420, .y_quarter = 360, .radius_256 = 3'328};
+  std::array<std::uint16_t, 128U * 128U> complete{};
+  std::array<std::uint16_t, 128U * 128U> sliced{};
+  complete.fill(0xFFFFU);
+  sliced.fill(0xFFFFU);
+  REQUIRE(vector_v2::apply_incremental_operation(
+      {.color = 0x001FU, .samples = std::array{first, second}},
+      {.zoom = vector_v2::ZoomLevel::k400Percent,
+       .level_bounds = bounds,
+       .pixels = complete,
+       .stride = 128}));
+
+  const std::size_t steps =
+      vector_v2::incremental_segment_step_count(first, second, vector_v2::ZoomLevel::k400Percent);
+  REQUIRE(steps > 1U);
+  for (std::size_t step = 0; step < steps; ++step) {
+    CHECK(vector_v2::incremental_segment_step_work(first, second, vector_v2::ZoomLevel::k400Percent,
+                                                   bounds, step) <= 128U * 128U);
+    REQUIRE(vector_v2::apply_incremental_segment_steps(
+        {.color = 0x001FU, .first = first, .second = second},
+        {.zoom = vector_v2::ZoomLevel::k400Percent,
+         .level_bounds = bounds,
+         .pixels = sliced,
+         .stride = 128},
+        step, 1U));
+  }
+  CHECK(sliced == complete);
+}
+
 TEST_CASE("affected tile enumeration clips to the bounded world") {
   const std::array samples{
       vector_v2::CompactOperationSample{.x_quarter = 0, .y_quarter = 0, .radius_256 = 2048},

@@ -28,6 +28,28 @@ struct RasterSurface {
 [[nodiscard]] bool apply_incremental_operation(const OperationAppend& operation,
                                                const RasterSurface& surface);
 
+// The operation rasterizer internally subdivides long projected segments into
+// exact straight/radius-interpolated steps. These seams let the cold producer
+// resume between those same steps without changing final pixels or painter
+// order. first_step is zero-based and step_count must remain within the segment.
+struct IncrementalSegment {
+  OperationTool tool = OperationTool::kPen;
+  std::uint16_t color = 0;
+  CompactOperationSample first{};
+  CompactOperationSample second{};
+};
+
+[[nodiscard]] std::size_t incremental_segment_step_count(CompactOperationSample first,
+                                                         CompactOperationSample second,
+                                                         ZoomLevel zoom);
+[[nodiscard]] std::size_t incremental_segment_step_work(CompactOperationSample first,
+                                                        CompactOperationSample second,
+                                                        ZoomLevel zoom, PixelRect clip,
+                                                        std::size_t step);
+[[nodiscard]] bool apply_incremental_segment_steps(const IncrementalSegment& segment,
+                                                   const RasterSurface& surface,
+                                                   std::size_t first_step, std::size_t step_count);
+
 struct AffectedTileResult {
   std::size_t required = 0;
   std::size_t written = 0;
