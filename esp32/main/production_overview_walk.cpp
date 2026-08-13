@@ -262,8 +262,12 @@ bool commit_operation_probe(MaterializedCanvas& canvas, const IncrementalOperati
       .pixels = tile_scratch,
   }};
   const std::int64_t commit_started = esp_timer_get_time();
-  const bool committed = canvas.commit_incremental_revision(
-      revision, next_overview, std::span(operation_tiles).first(*affected_count), publications);
+  const auto world_bounds = production::operation_world_bounds(operation.samples);
+  if (!world_bounds.has_value()) {
+    return false;
+  }
+  const bool committed =
+      canvas.commit_incremental_revision(revision, next_overview, *world_bounds, publications);
   const std::int64_t commit_us = esp_timer_get_time() - commit_started;
   std::printf(
       "TINYDRAW_PRODUCTION_WALK_OPERATION revision=%lu overview_us=%lld tile_us=%lld "

@@ -83,6 +83,18 @@ TEST_CASE("overview and tile surfaces map the same world operation") {
   CHECK(tile[4U * production::kTileWidth + 4U] == 0x07E0U);
 }
 
+TEST_CASE("shared operation bounds conservatively include radius and clip to the world") {
+  const std::array samples{
+      production::CompactOperationSample{.x_quarter = 0, .y_quarter = 0, .radius_256 = 512},
+      production::CompactOperationSample{.x_quarter = production::kWorldWidth * 4,
+                                         .y_quarter = production::kWorldHeight * 4,
+                                         .radius_256 = 512},
+  };
+  CHECK(production::operation_world_bounds(samples) ==
+        production::PixelRect{0, 0, production::kWorldWidth, production::kWorldHeight});
+  CHECK_FALSE(production::operation_world_bounds({}));
+}
+
 TEST_CASE("affected tile enumeration clips to the bounded world") {
   const std::array samples{
       production::CompactOperationSample{.x_quarter = 0, .y_quarter = 0, .radius_256 = 2048},
@@ -100,6 +112,21 @@ TEST_CASE("affected tile enumeration clips to the bounded world") {
   std::array<production::TileKey, 3> too_small{};
   CHECK_FALSE(production::affected_tiles(operation, production::ZoomLevel::k100Percent, too_small));
   CHECK_FALSE(production::affected_tiles(operation, production::ZoomLevel::k25Percent, keys));
+}
+
+TEST_CASE("raster surface honors a stride larger than its visible width") {
+  std::array<std::uint16_t, 4U * 3U> pixels{};
+  pixels.fill(0x1111U);
+  const std::array samples{
+      production::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256}};
+  REQUIRE(production::apply_incremental_operation({.color = 0xF800U, .samples = samples},
+                                                  {.zoom = production::ZoomLevel::k100Percent,
+                                                   .level_bounds = {0, 0, 2, 3},
+                                                   .pixels = pixels,
+                                                   .stride = 4}));
+  CHECK(pixels[1U * 4U + 1U] == 0xF800U);
+  CHECK(pixels[2] == 0x1111U);
+  CHECK(pixels[3] == 0x1111U);
 }
 
 TEST_CASE("invalid surface and empty operation fail without changing pixels") {

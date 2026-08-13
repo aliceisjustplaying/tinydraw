@@ -2,6 +2,8 @@
 #define TINYDRAW_PRODUCTION_OPERATION_H
 
 #include <cstdint>
+#include <optional>
+#include <span>
 
 #include "tinydraw/production/materialized_canvas.h"
 
@@ -42,6 +44,11 @@ struct OperationIdentity {
 
 static_assert(sizeof(CompactOperationSample) == 8);
 static_assert(sizeof(OperationRecord) == 20);
+
+// Conservative world-pixel bounds including sample radii, clipped to the
+// bounded world. Empty or malformed sample sequences return nullopt.
+[[nodiscard]] std::optional<PixelRect> operation_world_bounds(
+    std::span<const CompactOperationSample> samples);
 
 }  // namespace tinydraw::production
 
