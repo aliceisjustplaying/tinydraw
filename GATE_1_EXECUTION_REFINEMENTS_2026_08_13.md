@@ -50,13 +50,13 @@ Do not refresh the complete 368×448 display after every supertask. Quadrants in
 
 ## 5. Worklist lookup distinguishes tiles from fallback
 
-`MaterializedCanvas::lookup()` succeeds for both resident tiles and overview fallback. A key is resident only when:
+`MaterializedCanvas::lookup()` succeeds for raw tiles, compact learned-uniform tiles, and overview fallback. A key has materialized pixels when:
 
 ```text
-lookup(key).kind == SourceKind::kTileSlot
+lookup(key).kind != SourceKind::kOverview
 ```
 
-Gate 1's hard-edged worklist accepts `kImmediate` or better. A later settled worklist must require `kSettled` or better.
+Gate 1's hard-edged worklist accepts `kImmediate` or better. A later settled worklist must require `kSettled` or better. Incremental append's `resident_tiles_intersecting()` is deliberately narrower: it enumerates raw slots only, while learned uniforms are invalidated and temporarily use the updated overview until refill.
 
 ## Timebox interpretation
 
