@@ -162,7 +162,7 @@ TEST_CASE("fixed-capacity slots replace the least recently used slot") {
   CHECK(canvas.lookup(third)->kind == production::SourceKind::kTileSlot);
 }
 
-TEST_CASE("publishing the same key advances generation and quality") {
+TEST_CASE("same-revision publication cannot downgrade immediate settled or exact quality") {
   std::array<std::uint16_t, production::kOverviewPixels> overview{};
   std::array<production::MaterializedSlotStorage, 1> slots{};
   std::array<std::uint16_t, slots.size() * production::kTilePixels> tile_pixels{};
@@ -170,10 +170,17 @@ TEST_CASE("publishing the same key advances generation and quality") {
   production::MaterializedCanvas canvas(overview, slots, tile_pixels);
   const production::TileKey key{production::ZoomLevel::k200Percent, 4, 5};
 
+  REQUIRE(canvas.publish_tile(key, {0}, production::MaterializationQuality::kImmediate,
+                              published_tile));
+  const auto immediate = canvas.lookup(key);
+  REQUIRE(immediate.has_value());
   REQUIRE(
       canvas.publish_tile(key, {0}, production::MaterializationQuality::kSettled, published_tile));
   const auto settled = canvas.lookup(key);
   REQUIRE(settled.has_value());
+  CHECK(settled->identity.generation.value > immediate->identity.generation.value);
+  CHECK_FALSE(canvas.publish_tile(key, {0}, production::MaterializationQuality::kImmediate,
+                                  published_tile));
   REQUIRE(
       canvas.publish_tile(key, {0}, production::MaterializationQuality::kExact, published_tile));
   const auto exact = canvas.lookup(key);
@@ -183,6 +190,8 @@ TEST_CASE("publishing the same key advances generation and quality") {
   CHECK(exact->identity.quality == production::MaterializationQuality::kExact);
   CHECK_FALSE(
       canvas.publish_tile(key, {0}, production::MaterializationQuality::kSettled, published_tile));
+  CHECK_FALSE(canvas.publish_tile(key, {0}, production::MaterializationQuality::kImmediate,
+                                  published_tile));
 }
 
 TEST_CASE("view composition uses current tiles and overview for every miss") {
@@ -392,6 +401,28 @@ TEST_CASE("all pinned slots prevent eviction until one is released") {
   CHECK_FALSE(canvas.validate(*pinned));
 }
 
+TEST_CASE("discarding tiles preserves current overview and fails while pinned") {
+  std::array<std::uint16_t, production::kOverviewPixels> overview{};
+  std::array<production::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, production::kTilePixels> tile_storage{};
+  std::array<std::uint16_t, production::kTilePixels> tile{};
+  production::MaterializedCanvas canvas(overview, slots, tile_storage);
+  const production::TileKey key{production::ZoomLevel::k100Percent, 0, 0};
+  REQUIRE(canvas.publish_overview({2}, overview));
+  REQUIRE(canvas.publish_tile(key, {2}, production::MaterializationQuality::kImmediate, tile));
+  auto pinned = canvas.pin(key);
+  REQUIRE(pinned.has_value());
+  CHECK_FALSE(canvas.discard_tiles());
+  CHECK(canvas.lookup(key)->kind == production::SourceKind::kTileSlot);
+  pinned->reset();
+
+  REQUIRE(canvas.discard_tiles());
+  const auto fallback = canvas.lookup(key);
+  REQUIRE(fallback.has_value());
+  CHECK(fallback->kind == production::SourceKind::kOverview);
+  CHECK(fallback->identity.revision == production::DocumentRevision{2});
+}
+
 TEST_CASE("compose view rejects destinations that alias owned source storage") {
   std::array<std::uint16_t, production::kOverviewPixels> overview{};
   std::array<production::MaterializedSlotStorage, 1> slots{};
@@ -508,6 +539,33 @@ TEST_CASE("incremental revision updates affected tiles and carries unaffected ti
   CHECK(carried_after->slot_index == carried_before->slot_index);
   CHECK(carried_after->identity.generation == carried_before->identity.generation);
   CHECK(carried_after->identity.revision == production::DocumentRevision{1});
+}
+
+TEST_CASE("revision-advancing mutation may downgrade an affected settled tile") {
+  std::array<std::uint16_t, production::kOverviewPixels> overview{};
+  std::array<std::uint16_t, 16U * 16U> next_overview{};
+  std::array<production::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, production::kTilePixels> tile_storage{};
+  std::array<std::uint16_t, production::kTilePixels> settled_tile{};
+  std::array<std::uint16_t, production::kTilePixels> immediate_tile{};
+  production::MaterializedCanvas canvas(overview, slots, tile_storage);
+  const production::TileKey key{production::ZoomLevel::k100Percent, 0, 0};
+  REQUIRE(canvas.publish_overview({0}, overview));
+  REQUIRE(
+      canvas.publish_tile(key, {0}, production::MaterializationQuality::kSettled, settled_tile));
+  const std::array publication{production::TileRevisionPublication{
+      .key = key,
+      .quality = production::MaterializationQuality::kImmediate,
+      .pixels = immediate_tile,
+  }};
+
+  REQUIRE(canvas.commit_incremental_revision(
+      {1}, {.bounds = {0, 0, 16, 16}, .pixels = next_overview}, {0, 0, 64, 64}, publication));
+  const auto source = canvas.lookup(key);
+  REQUIRE(source.has_value());
+  CHECK(source->kind == production::SourceKind::kTileSlot);
+  CHECK(source->identity.revision == production::DocumentRevision{1});
+  CHECK(source->identity.quality == production::MaterializationQuality::kImmediate);
 }
 
 TEST_CASE("resident tile copies preserve pixels without exposing pool storage") {
