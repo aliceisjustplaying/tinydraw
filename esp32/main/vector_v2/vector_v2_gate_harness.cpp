@@ -128,20 +128,20 @@ bool load_realistic_document(OperationLog& log, MaterializedCanvas& canvas,
 }
 
 #ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
-bool run_tearing_probe(VectorV2Presenter& presenter, const ToolbarState& toolbar) {
+bool run_tearing_probe(VectorV2Presenter& presenter, const vector_v2::ChromeState& chrome) {
   constexpr std::array positions{
       vector_v2::NavigationPoint{0, 0},
       vector_v2::NavigationPoint{240, 0},
       vector_v2::NavigationPoint{240, 240},
       vector_v2::NavigationPoint{0, 240},
   };
-  if (!presenter.set_view(ZoomLevel::k100Percent, 0, 0, toolbar, now_us()).passed) {
+  if (!presenter.set_view(ZoomLevel::k100Percent, 0, 0, chrome, now_us()).passed) {
     return false;
   }
   for (std::size_t cycle = 0; cycle < 20U; ++cycle) {
     for (const auto position : positions) {
       const auto timing =
-          presenter.set_view(ZoomLevel::k100Percent, position.x, position.y, toolbar, now_us());
+          presenter.set_view(ZoomLevel::k100Percent, position.x, position.y, chrome, now_us());
       if (!timing.passed) {
         return false;
       }
@@ -155,11 +155,11 @@ bool run_tearing_probe(VectorV2Presenter& presenter, const ToolbarState& toolbar
 #endif
 
 bool run_tile_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
-                   OperationLog& log, MaterializedCanvas& canvas, const ToolbarState& toolbar,
-                   ZoomLevel zoom) {
+                   OperationLog& log, MaterializedCanvas& canvas,
+                   const vector_v2::ChromeState& chrome, ZoomLevel zoom) {
   // The seed-7 corpus fills lines from the upper left. Fixing the origin makes
   // both zooms measure real ink rather than a potentially blank center crop.
-  const auto fallback = presenter.set_view(zoom, 0, 0, toolbar, now_us());
+  const auto fallback = presenter.set_view(zoom, 0, 0, chrome, now_us());
   print_presentation("gate_fallback", presenter, fallback);
   if (!fallback.passed || !canvas.discard_tiles()) {
     return false;
@@ -219,10 +219,10 @@ bool run_tile_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& produc
 
 bool run_draw_while_fill_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
                               OperationLog& log, MaterializedCanvas& canvas,
-                              const ToolbarState& toolbar,
+                              const vector_v2::ChromeState& chrome,
                               const IncrementalDocumentWorkspace& workspace,
                               std::span<CompactOperationSample> interaction_samples) {
-  const auto fallback = presenter.set_view(ZoomLevel::k400Percent, 0, 0, toolbar, now_us());
+  const auto fallback = presenter.set_view(ZoomLevel::k400Percent, 0, 0, chrome, now_us());
   if (!fallback.passed || !canvas.discard_tiles()) {
     return false;
   }
@@ -316,7 +316,7 @@ bool run_draw_while_fill_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
 }
 
 bool verify_pan_adapter(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
-                        const ToolbarState& toolbar, ZoomLevel zoom) {
+                        const vector_v2::ChromeState& chrome, ZoomLevel zoom) {
   constexpr int kPanDelta = 24;
   const vector_v2::ViewRequest destination{
       .zoom = zoom,
@@ -335,11 +335,11 @@ bool verify_pan_adapter(VectorV2Presenter& presenter, vector_v2::TileProducer& p
       return false;
     }
   }
-  const auto setup = presenter.set_view(zoom, 0, 0, toolbar, now_us());
+  const auto setup = presenter.set_view(zoom, 0, 0, chrome, now_us());
   const int before_x = presenter.level_x();
   const int before_y = presenter.level_y();
   const auto pan = presenter.pan_from(before_x, before_y, {240.0F, 240.0F},
-                                      {240.0F - kPanDelta, 240.0F - kPanDelta}, toolbar, now_us());
+                                      {240.0F - kPanDelta, 240.0F - kPanDelta}, chrome, now_us());
   const bool moved = presenter.level_x() > before_x && presenter.level_y() > before_y;
   std::printf(
       "TINYDRAW_GATE1_PAN zoom=%s from_x=%d from_y=%d to_x=%d to_y=%d compose_us=%lld "
@@ -354,7 +354,7 @@ bool verify_pan_adapter(VectorV2Presenter& presenter, vector_v2::TileProducer& p
 }
 
 bool run_cache_retention_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
-                              MaterializedCanvas& canvas, const ToolbarState& toolbar) {
+                              MaterializedCanvas& canvas, const vector_v2::ChromeState& chrome) {
   constexpr std::array zooms{
       ZoomLevel::k50Percent,
       ZoomLevel::k100Percent,
@@ -364,7 +364,7 @@ bool run_cache_retention_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
   constexpr int kUnalignedOrigin = vector_v2::kTileWidth - 1;
   constexpr int kDisjointOrigin = 9 * vector_v2::kTileWidth - 1;
   const auto fill = [&](ZoomLevel zoom, int x, int y) {
-    const auto fallback = presenter.set_view(zoom, x, y, toolbar, now_us());
+    const auto fallback = presenter.set_view(zoom, x, y, chrome, now_us());
     if (!fallback.passed) {
       return false;
     }
@@ -414,7 +414,7 @@ bool run_cache_retention_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
     };
     const auto remaining = producer.visible_tiles_remaining(view);
     const auto revisit =
-        presenter.set_view(zoom, kUnalignedOrigin, kUnalignedOrigin, toolbar, now_us());
+        presenter.set_view(zoom, kUnalignedOrigin, kUnalignedOrigin, chrome, now_us());
     const bool hit = remaining == 0U && revisit.passed && revisit.fallback_pixels == 0U;
     std::printf(
         "TINYDRAW_GATE1_CACHE_REVISIT zoom=%s remaining=%lu tile_pixels=%lu fallback_pixels=%lu "
@@ -438,7 +438,7 @@ bool run_cache_retention_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
     };
     const auto origin_remaining = producer.visible_tiles_remaining(origin);
     const auto round_trip =
-        presenter.set_view(zoom, kUnalignedOrigin, kUnalignedOrigin, toolbar, now_us());
+        presenter.set_view(zoom, kUnalignedOrigin, kUnalignedOrigin, chrome, now_us());
     const bool hit =
         origin_remaining == 0U && round_trip.passed && round_trip.fallback_pixels == 0U;
     std::printf(
@@ -586,16 +586,16 @@ bool append_stress_document(OperationLog& log, MaterializedCanvas& canvas,
 
 bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
                                 OperationLog& log, MaterializedCanvas& canvas,
-                                const ToolbarState& toolbar,
+                                const vector_v2::ChromeState& chrome,
                                 const IncrementalDocumentWorkspace& workspace,
                                 std::span<const std::uint16_t> blank_snapshot,
                                 std::span<CompactOperationSample> conversion_storage,
                                 std::span<std::uint16_t> packed_tile_pixels) {
   const bool stress_ready = append_stress_document(log, canvas, workspace);
-  const bool stress_100 = stress_ready && run_tile_gate(presenter, producer, log, canvas, toolbar,
+  const bool stress_100 = stress_ready && run_tile_gate(presenter, producer, log, canvas, chrome,
                                                         ZoomLevel::k100Percent);
-  const bool stress_400 = stress_100 && run_tile_gate(presenter, producer, log, canvas, toolbar,
-                                                      ZoomLevel::k400Percent);
+  const bool stress_400 =
+      stress_100 && run_tile_gate(presenter, producer, log, canvas, chrome, ZoomLevel::k400Percent);
   const DocumentRevision realistic_baseline{canvas.current_revision().value + 1U};
   const bool reset_for_realistic =
       stress_400 &&
@@ -622,24 +622,23 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   std::fflush(stdout);
   return census;
 #elif defined(TINYDRAW_VECTOR_V2_TEARING_PROBE)
-  return workload_ready && run_tearing_probe(presenter, toolbar);
+  return workload_ready && run_tearing_probe(presenter, chrome);
 #else
-  const bool gate_100 = workload_ready && run_tile_gate(presenter, producer, log, canvas, toolbar,
+  const bool gate_100 = workload_ready && run_tile_gate(presenter, producer, log, canvas, chrome,
                                                         ZoomLevel::k100Percent);
   const bool pan_100 =
-      gate_100 && verify_pan_adapter(presenter, producer, toolbar, ZoomLevel::k100Percent);
+      gate_100 && verify_pan_adapter(presenter, producer, chrome, ZoomLevel::k100Percent);
   const bool gate_400 =
-      pan_100 && run_tile_gate(presenter, producer, log, canvas, toolbar, ZoomLevel::k400Percent);
+      pan_100 && run_tile_gate(presenter, producer, log, canvas, chrome, ZoomLevel::k400Percent);
   const bool pan_400 =
-      gate_400 && verify_pan_adapter(presenter, producer, toolbar, ZoomLevel::k400Percent);
-  const bool draw_fill =
-      pan_400 && run_draw_while_fill_gate(presenter, producer, log, canvas, toolbar, workspace,
-                                          conversion_storage);
+      gate_400 && verify_pan_adapter(presenter, producer, chrome, ZoomLevel::k400Percent);
+  const bool draw_fill = pan_400 && run_draw_while_fill_gate(presenter, producer, log, canvas,
+                                                             chrome, workspace, conversion_storage);
   const bool cache_retention =
-      draw_fill && run_cache_retention_gate(presenter, producer, canvas, toolbar);
+      draw_fill && run_cache_retention_gate(presenter, producer, canvas, chrome);
   const bool full_world_cache = cache_retention && run_full_world_cache_gate(producer, canvas);
   const bool export_reserve = full_world_cache && verify_export_reserve();
-  const auto return_overview = presenter.set_view(ZoomLevel::k25Percent, 0, 0, toolbar, now_us());
+  const auto return_overview = presenter.set_view(ZoomLevel::k25Percent, 0, 0, chrome, now_us());
   std::printf(
       "TINYDRAW_GATE1_AUTOMATED_DONE stress=%u stress_100=%u stress_400=%u workload=%u "
       "hard_100=%u hard_400=%u pan_100=%u pan_400=%u draw_fill=%u cache=%u "

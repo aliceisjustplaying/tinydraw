@@ -18,7 +18,7 @@
 #endif
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
-#include "tinydraw/ui/toolbar.h"
+#include "tinydraw/vector_v2/chrome.h"
 #include "tinydraw/vector_v2/incremental_document.h"
 #include "tinydraw/vector_v2/memory_layout.h"
 #include "tinydraw/vector_v2/navigation_state.h"
@@ -215,7 +215,7 @@ struct AppStorage {
 std::uint32_t now_us() { return static_cast<std::uint32_t>(esp_timer_get_time()); }
 
 std::optional<Point> clip_ink_point(Point previous, Point current) {
-  constexpr float kCanvasBottom = static_cast<float>(kMainToolbarOverlayTop - 1);
+  constexpr float kCanvasBottom = static_cast<float>(vector_v2::kChromeCanvasBottom - 1);
   if (current.y <= kCanvasBottom) {
     return current;
   }
@@ -365,79 +365,81 @@ void print_stroke(const OperationLog& log, const MaterializedCanvas& canvas,
       log.current_revision() == canvas.current_revision());
 }
 
-bool apply_toolbar_action(ToolbarAction action, Point point, ToolbarState& toolbar,
-                          OperationLog& log, MaterializedCanvas& canvas,
-                          vector_v2::TileProducer& producer,
-                          std::span<const std::uint16_t> blank_snapshot,
-                          VectorV2Presenter& presenter) {
-  const auto close = [&]() {
-    toolbar.tools_open = false;
-    toolbar.colors_open = false;
-    toolbar.sizes_open = false;
+bool apply_chrome_action(vector_v2::ChromeAction action, Point point,
+                         vector_v2::ChromeState& chrome, OperationLog& log,
+                         MaterializedCanvas& canvas, vector_v2::TileProducer& producer,
+                         std::span<const std::uint16_t> blank_snapshot,
+                         VectorV2Presenter& presenter) {
+  const auto toggle = [&](vector_v2::ChromePopup popup) {
+    chrome.popup = chrome.popup == popup ? vector_v2::ChromePopup::kNone : popup;
   };
   switch (action) {
-    case ToolbarAction::kSelectPen:
-      toolbar.tool = DrawingTool::kPen;
-      close();
+    case vector_v2::ChromeAction::kSelectDraw:
+      chrome.tool = vector_v2::ChromeTool::kDraw;
+      chrome.popup = vector_v2::ChromePopup::kNone;
       break;
-    case ToolbarAction::kSelectPan:
-      toolbar.tool = DrawingTool::kPan;
-      close();
+    case vector_v2::ChromeAction::kSelectErase:
+      chrome.tool = vector_v2::ChromeTool::kErase;
+      chrome.popup = vector_v2::ChromePopup::kNone;
       break;
-    case ToolbarAction::kSelectEraser:
-      toolbar.tool = DrawingTool::kEraser;
-      close();
+    case vector_v2::ChromeAction::kSelectPan:
+      chrome.tool = vector_v2::ChromeTool::kPan;
+      chrome.popup = vector_v2::ChromePopup::kNone;
       break;
-    case ToolbarAction::kSelectColor:
-      if (const auto color = toolbar_color_at(point, toolbar); color.has_value()) {
-        toolbar.color = *color;
-        toolbar.tool = DrawingTool::kPen;
+    case vector_v2::ChromeAction::kSelectColor:
+      if (const auto color = vector_v2::chrome_color_at({point.x, point.y}, chrome);
+          color.has_value()) {
+        chrome.color_index = *color;
+        chrome.tool = vector_v2::ChromeTool::kDraw;
+        chrome.popup = vector_v2::ChromePopup::kNone;
       }
-      close();
       break;
-    case ToolbarAction::kToggleTools:
-      toolbar.tools_open = !toolbar.tools_open;
-      toolbar.colors_open = false;
-      toolbar.sizes_open = false;
+    case vector_v2::ChromeAction::kToggleTools:
+      toggle(vector_v2::ChromePopup::kTools);
       break;
-    case ToolbarAction::kToggleColors:
-      toolbar.colors_open = !toolbar.colors_open;
-      toolbar.tools_open = false;
-      toolbar.sizes_open = false;
+    case vector_v2::ChromeAction::kToggleColors:
+      toggle(vector_v2::ChromePopup::kColors);
       break;
-    case ToolbarAction::kToggleSizes:
-      toolbar.sizes_open = !toolbar.sizes_open;
-      toolbar.tools_open = false;
-      toolbar.colors_open = false;
+    case vector_v2::ChromeAction::kToggleSizes:
+      toggle(vector_v2::ChromePopup::kSizes);
       break;
-    case ToolbarAction::kSelectSmall:
-    case ToolbarAction::kSelectMedium:
-    case ToolbarAction::kSelectLarge:
-    case ToolbarAction::kSelectExtraLarge:
-      toolbar.size = action == ToolbarAction::kSelectSmall    ? PenSize::kSmall
-                     : action == ToolbarAction::kSelectMedium ? PenSize::kMedium
-                     : action == ToolbarAction::kSelectLarge  ? PenSize::kLarge
-                                                              : PenSize::kExtraLarge;
-      close();
+    case vector_v2::ChromeAction::kToggleDocument:
+      toggle(vector_v2::ChromePopup::kDocument);
       break;
-    case ToolbarAction::kNewDrawing: {
+    case vector_v2::ChromeAction::kSelectSmall:
+    case vector_v2::ChromeAction::kSelectMedium:
+    case vector_v2::ChromeAction::kSelectLarge:
+    case vector_v2::ChromeAction::kSelectExtraLarge:
+      chrome.size =
+          action == vector_v2::ChromeAction::kSelectSmall    ? vector_v2::ChromeSize::kSmall
+          : action == vector_v2::ChromeAction::kSelectMedium ? vector_v2::ChromeSize::kMedium
+          : action == vector_v2::ChromeAction::kSelectLarge  ? vector_v2::ChromeSize::kLarge
+                                                             : vector_v2::ChromeSize::kExtraLarge;
+      chrome.popup = vector_v2::ChromePopup::kNone;
+      break;
+    case vector_v2::ChromeAction::kPreviousPalette:
+      chrome.palette_page = 0;
+      break;
+    case vector_v2::ChromeAction::kNextPalette:
+      chrome.palette_page = 1;
+      break;
+    case vector_v2::ChromeAction::kNewDrawing: {
       const DocumentRevision revision{canvas.current_revision().value + 1U};
       if (!vector_v2::restore_document_snapshot(log, canvas, revision, blank_snapshot) ||
           !producer.reset_uniform_baseline(revision)) {
         return false;
       }
-      close();
+      chrome.popup = vector_v2::ChromePopup::kNone;
       break;
     }
-    case ToolbarAction::kNone:
-    case ToolbarAction::kUndo:
-    case ToolbarAction::kExport:
-    case ToolbarAction::kCancelNewDrawing:
-    case ToolbarAction::kConfirmNewDrawing:
+    case vector_v2::ChromeAction::kNone:
+    case vector_v2::ChromeAction::kUndo:
+    case vector_v2::ChromeAction::kRedo:
+    case vector_v2::ChromeAction::kExport:
       break;
   }
-  const auto timing = presenter.refresh(toolbar, now_us());
-  print_presentation("toolbar", presenter, timing);
+  const auto timing = presenter.refresh(chrome, now_us());
+  print_presentation("chrome", presenter, timing);
   return timing.passed;
 }
 
@@ -500,18 +502,17 @@ void run_vector_v2_app() {
   button_config.pull_up_en = GPIO_PULLUP_ENABLE;
   static_cast<void>(gpio_config(&button_config));
 
-  ToolbarState toolbar;
-  toolbar.tool = DrawingTool::kPen;
-  toolbar.color = InkColor::kBlue;
-  toolbar.size = PenSize::kLarge;
+  vector_v2::ChromeState chrome;
+  chrome.tool = vector_v2::ChromeTool::kDraw;
+  chrome.size = vector_v2::ChromeSize::kLarge;
   InkConfig ink_config;
-  ink_config.size = brush_size(toolbar.size);
+  ink_config.size = vector_v2::brush_size(chrome.size);
   InkStream ink(ink_config);
   CurvedRibbonStream ribbon;
-  const auto initial = presenter.refresh(toolbar);
+  const auto initial = presenter.refresh(chrome);
   print_presentation("startup", presenter, initial);
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-  if (!run_vector_v2_gate_harness(presenter, producer, log, canvas, toolbar, workspace,
+  if (!run_vector_v2_gate_harness(presenter, producer, log, canvas, chrome, workspace,
                                   std::span(storage.snapshot, vector_v2::kOverviewPixels),
                                   std::span(storage.input_samples, kInputSampleCapacity),
                                   std::span(storage.producer_packed, vector_v2::kTilePixels))) {
@@ -599,7 +600,7 @@ void run_vector_v2_app() {
       button_down = false;
       const ZoomLevel zoom = vector_v2::next_zoom(presenter.zoom());
       const ZoomLevel target = zoom == presenter.zoom() ? ZoomLevel::k25Percent : zoom;
-      const auto timing = presenter.set_zoom(target, toolbar, loop_us);
+      const auto timing = presenter.set_zoom(target, chrome, loop_us);
       print_presentation("zoom", presenter, timing);
     }
 
@@ -620,24 +621,25 @@ void run_vector_v2_app() {
       if (!pressed) {
         pressed = true;
         last_touch = point;
-        if (toolbar_contains(point, toolbar)) {
+        if (vector_v2::chrome_contains({point.x, point.y}, chrome)) {
           toolbar_pressed = true;
           toolbar_sum = point;
           toolbar_samples = 1;
-        } else if (toolbar.tool == DrawingTool::kPan) {
+        } else if (chrome.tool == vector_v2::ChromeTool::kPan) {
           panning = true;
           pan_metrics.reset();
           pan_start = point;
           pan_start_x = presenter.level_x();
           pan_start_y = presenter.level_y();
         } else {
-          ink_config.size = brush_size(toolbar.size);
+          ink_config.size = vector_v2::brush_size(chrome.size);
           ink.set_config(ink_config);
           last_ink = ink.begin({.x = point.x, .y = point.y, .timestamp_us = loop_us});
-          const OperationTool tool =
-              toolbar.tool == DrawingTool::kEraser ? OperationTool::kEraser : OperationTool::kPen;
+          const OperationTool tool = chrome.tool == vector_v2::ChromeTool::kErase
+                                         ? OperationTool::kEraser
+                                         : OperationTool::kPen;
           const std::uint16_t color =
-              tool == OperationTool::kEraser ? 0xFFFFU : rgb565(toolbar.color);
+              tool == OperationTool::kEraser ? 0xFFFFU : vector_v2::selected_color(chrome);
           if (!builder.begin(tool, color, presenter.operation_point(last_ink))) {
             ink.end();
           } else {
@@ -654,7 +656,7 @@ void run_vector_v2_app() {
       } else if (panning && (point.x != last_touch.x || point.y != last_touch.y)) {
         last_touch = point;
         const auto timing =
-            presenter.pan_from(pan_start_x, pan_start_y, pan_start, point, toolbar, loop_us);
+            presenter.pan_from(pan_start_x, pan_start_y, pan_start, point, chrome, loop_us);
         pan_metrics.include(timing);
       } else if (ink.active() && (point.x != last_touch.x || point.y != last_touch.y)) {
         const auto canvas_point = clip_ink_point(last_touch, point);
@@ -667,8 +669,9 @@ void run_vector_v2_app() {
             ribbon.reset();
             ink.end();
           } else {
-            const std::uint16_t color =
-                toolbar.tool == DrawingTool::kEraser ? 0xFFFFU : rgb565(toolbar.color);
+            const std::uint16_t color = chrome.tool == vector_v2::ChromeTool::kErase
+                                            ? 0xFFFFU
+                                            : vector_v2::selected_color(chrome);
             live_metrics.include(
                 presenter.show_update(ribbon.append(last_ink, false), color, loop_us));
           }
@@ -682,10 +685,10 @@ void run_vector_v2_app() {
         const float divisor = static_cast<float>(std::max<std::uint32_t>(1U, toolbar_samples));
         const Point tap{toolbar_sum.x / divisor, toolbar_sum.y / divisor};
         toolbar_samples = 0;
-        if (toolbar_contains(tap, toolbar)) {
-          static_cast<void>(apply_toolbar_action(
-              toolbar_action_at(tap, toolbar), tap, toolbar, log, canvas, producer,
-              std::span(storage.snapshot, vector_v2::kOverviewPixels), presenter));
+        if (vector_v2::chrome_contains({tap.x, tap.y}, chrome)) {
+          static_cast<void>(apply_chrome_action(
+              vector_v2::chrome_action_at({tap.x, tap.y}, chrome), tap, chrome, log, canvas,
+              producer, std::span(storage.snapshot, vector_v2::kOverviewPixels), presenter));
         }
       } else if (panning) {
         panning = false;
@@ -700,8 +703,9 @@ void run_vector_v2_app() {
         const std::int64_t finish_preview_started = esp_timer_get_time();
         last_ink = ink.finish(
             {.x = last_ink.position.x, .y = last_ink.position.y, .timestamp_us = finished_us});
-        const std::uint16_t color =
-            toolbar.tool == DrawingTool::kEraser ? 0xFFFFU : rgb565(toolbar.color);
+        const std::uint16_t color = chrome.tool == vector_v2::ChromeTool::kErase
+                                        ? 0xFFFFU
+                                        : vector_v2::selected_color(chrome);
         live_metrics.include(presenter.show_update(ribbon.finish(last_ink), color, finished_us));
         measured_lift.finish_preview_us = esp_timer_get_time() - finish_preview_started;
 
@@ -756,9 +760,8 @@ void run_vector_v2_app() {
       }
     }
 
-    const bool fill_view_available = presenter.zoom() != ZoomLevel::k25Percent &&
-                                     !toolbar.tools_open && !toolbar.colors_open &&
-                                     !toolbar.sizes_open && !toolbar.confirm_new;
+    const bool fill_view_available =
+        presenter.zoom() != ZoomLevel::k25Percent && chrome.popup == vector_v2::ChromePopup::kNone;
     // The commit tick already performed bounded immediate publication and its
     // display update. Defer cold replay until input has had another poll.
     const bool fill_allowed = !pressed && fill_view_available && !lift_timing.pending;

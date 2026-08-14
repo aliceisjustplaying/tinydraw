@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <span>
 
-#include "tinydraw/ui/toolbar.h"
+#include "tinydraw/vector_v2/chrome.h"
 #include "tinydraw/vector_v2/incremental_document.h"
 #include "tinydraw/vector_v2/materialized_canvas.h"
 #include "tinydraw/vector_v2/operation_log.h"
@@ -17,7 +17,7 @@ namespace tinydraw::esp32 {
 // Vector V2 application image.
 [[nodiscard]] bool run_vector_v2_gate_harness(
     VectorV2Presenter& presenter, vector_v2::TileProducer& producer, vector_v2::OperationLog& log,
-    vector_v2::MaterializedCanvas& canvas, const ToolbarState& toolbar,
+    vector_v2::MaterializedCanvas& canvas, const vector_v2::ChromeState& chrome,
     const vector_v2::IncrementalDocumentWorkspace& workspace,
     std::span<const std::uint16_t> blank_snapshot,
     std::span<vector_v2::CompactOperationSample> conversion_storage,

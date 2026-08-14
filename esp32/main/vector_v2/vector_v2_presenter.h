@@ -10,7 +10,7 @@
 #include "tinydraw/graphics/ribbon_renderer.h"
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
-#include "tinydraw/ui/toolbar.h"
+#include "tinydraw/vector_v2/chrome.h"
 #include "tinydraw/vector_v2/display_scheduler.h"
 #include "tinydraw/vector_v2/frame_scroller.h"
 #include "tinydraw/vector_v2/materialized_canvas.h"
@@ -65,7 +65,7 @@ class VectorV2Presenter {
   [[nodiscard]] float scale() const;
   [[nodiscard]] vector_v2::OperationPoint operation_point(InkPoint point) const;
 
-  [[nodiscard]] LivePresentationTiming refresh(const ToolbarState& toolbar,
+  [[nodiscard]] LivePresentationTiming refresh(const vector_v2::ChromeState& chrome,
                                                std::uint32_t event_us = 0);
   // Re-composes and presents only the intersection between changed level-space
   // pixels and the visible canvas above the toolbar.
@@ -76,15 +76,16 @@ class VectorV2Presenter {
   [[nodiscard]] LivePresentationTiming show_update(const RibbonUpdate& update, std::uint16_t color,
                                                    std::uint32_t event_us);
   [[nodiscard]] LivePresentationTiming set_zoom(vector_v2::ZoomLevel zoom,
-                                                const ToolbarState& toolbar,
+                                                const vector_v2::ChromeState& chrome,
                                                 std::uint32_t event_us);
   // Test/adapter seam for deterministic hardware views. Coordinates are
   // clamped to the selected level before the full fallback view is presented.
   [[nodiscard]] LivePresentationTiming set_view(vector_v2::ZoomLevel zoom, int level_x, int level_y,
-                                                const ToolbarState& toolbar,
+                                                const vector_v2::ChromeState& chrome,
                                                 std::uint32_t event_us);
   [[nodiscard]] LivePresentationTiming pan_from(int start_x, int start_y, Point start_touch,
-                                                Point current_touch, const ToolbarState& toolbar,
+                                                Point current_touch,
+                                                const vector_v2::ChromeState& chrome,
                                                 std::uint32_t event_us);
 
  private:
@@ -101,7 +102,7 @@ class VectorV2Presenter {
                                                            std::uint32_t event_us);
   [[nodiscard]] bool compose_into_frame(vector_v2::PixelRect panel_bounds);
   [[nodiscard]] LivePresentationTiming refresh_pan(int old_x, int old_y,
-                                                   const ToolbarState& toolbar,
+                                                   const vector_v2::ChromeState& chrome,
                                                    std::uint32_t event_us);
 
   vector_v2::MaterializedCanvas& canvas_;
