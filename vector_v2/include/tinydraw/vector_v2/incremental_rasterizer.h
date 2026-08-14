@@ -54,13 +54,47 @@ struct IncrementalSegment {
 [[nodiscard]] bool apply_incremental_segment_steps(const IncrementalSegment& segment,
                                                    const RasterSurface& surface,
                                                    std::size_t first_step, std::size_t step_count);
+// Exact per-row saturation summary for a masked raster surface. A row is
+// saturated when every pixel in the surface's clipped width is finalized;
+// saturated row ranges answer in O(words), letting callers skip rows, whole
+// segments, whole operations, and eventually the whole surface without
+// touching mask bytes. The summary never approximates: a skipped unit could
+// only have written pixels whose finalized bits are already set, so results
+// remain bit-identical to unsummarized masked replay. Storage is caller-owned
+// and must cover the surface height.
+class MaskedRowSummary {
+ public:
+  MaskedRowSummary() = default;
+  MaskedRowSummary(std::span<std::uint16_t> unset_counts, std::span<std::uint32_t> saturated_words);
+
+  [[nodiscard]] bool ready(std::size_t rows) const;
+  // Rearms the summary for a surface of rows x width unfinalized pixels.
+  void reset(int rows, int width);
+  [[nodiscard]] bool row_saturated(int row) const;
+  // Inclusive row range; rows outside [0, rows) are rejected as unsaturated.
+  [[nodiscard]] bool rows_saturated(int first_row, int last_row) const;
+  [[nodiscard]] bool all_saturated() const;
+  // Records newly_finalized first-time mask bits on one row.
+  void note_finalized(int row, int newly_finalized);
+
+ private:
+  std::span<std::uint16_t> unset_counts_{};
+  std::span<std::uint32_t> saturated_words_{};
+  int rows_ = 0;
+  int unsaturated_rows_ = 0;
+};
+
 // Exact newest-first painter seam. A set bit means the corresponding surface
 // pixel already has its final color and must not be touched by older segments.
 // Covered pixels are written and finalized atomically from the caller's point
-// of view; uncovered baseline pixels remain unmarked.
+// of view; uncovered baseline pixels remain unmarked. When a summary is
+// supplied it must have been reset for this surface and fed every prior
+// masked paint on it; the painter keeps it exact and uses it to skip
+// saturated rows.
 [[nodiscard]] bool apply_masked_incremental_segment(const IncrementalSegment& segment,
                                                     const RasterSurface& surface,
-                                                    std::span<std::uint8_t> finalized_pixels);
+                                                    std::span<std::uint8_t> finalized_pixels,
+                                                    MaskedRowSummary* summary = nullptr);
 
 struct AffectedTileResult {
   std::size_t required = 0;

@@ -51,6 +51,8 @@ struct Rig {
   std::vector<std::uint16_t> supertask;
   std::vector<std::uint16_t> packed;
   std::vector<std::uint8_t> mask;
+  std::vector<std::uint16_t> summary_rows;
+  std::vector<std::uint32_t> summary_words;
   // append_incrementally workspace (mirrors the app).
   std::vector<std::uint16_t> overview_scratch;
   std::vector<std::uint16_t> tile_scratch;
@@ -74,6 +76,8 @@ struct Rig {
         supertask(v2::kTileProducerPixels),
         packed(v2::kTilePixels),
         mask(v2::kTileProducerMaskBytes),
+        summary_rows(v2::kTileProducerSummaryRows),
+        summary_words(v2::kTileProducerSummaryWords),
         overview_scratch(v2::kOverviewPixels),
         tile_scratch(kWorkspaceTileCapacity * v2::kTilePixels),
         publications(kWorkspaceTileCapacity),
@@ -83,7 +87,9 @@ struct Rig {
         producer(log, canvas,
                  {.supertask_pixels = supertask,
                   .packed_tile_pixels = packed,
-                  .finalized_pixels = mask}) {}
+                  .finalized_pixels = mask,
+                  .summary_row_unset = summary_rows,
+                  .summary_saturated_words = summary_words}) {}
 
   [[nodiscard]] v2::IncrementalDocumentWorkspace workspace() {
     return {
@@ -169,15 +175,18 @@ bool compose_equals_forward(Rig& rig, const v2::ViewRequest& view,
 #if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
 void print_census(const char* label) {
   const auto& c = v2::g_raster_census;
-  std::printf("  %s ops_rejected=%" PRIu64 " segs_painted=%" PRIu64 " segs_rejected=%" PRIu64
-              "\n    rows_scanned=%" PRIu64 " rows_prefinal=%" PRIu64 " rows_empty=%" PRIu64
-              " span_px=%" PRIu64 "\n    mask_skips=%" PRIu64 " covers_calls=%" PRIu64
-              " covers_hits=%" PRIu64 " const_span_px=%" PRIu64 " const_mask_skips=%" PRIu64
-              "\n    remaining_scans=%" PRIu64 " remaining_scan_ms=%.2f\n",
-              label, c.operations_bbox_rejected, c.segments_painted, c.segments_bbox_rejected,
-              c.rows_scanned, c.rows_prefinalized, c.rows_empty_span, c.span_pixels, c.mask_skips,
-              c.covers_calls, c.covers_hits, c.const_span_pixels, c.const_mask_skips,
-              c.remaining_scans, static_cast<double>(c.remaining_scan_ns) / 1e6);
+  std::printf(
+      "  %s ops_rejected=%" PRIu64 " segs_painted=%" PRIu64 " segs_rejected=%" PRIu64
+      "\n    ops_saturation_skipped=%" PRIu64 " segs_saturation_skipped=%" PRIu64
+      " groups_saturated_early=%" PRIu64 "\n    rows_scanned=%" PRIu64 " rows_prefinal=%" PRIu64
+      " rows_empty=%" PRIu64 " span_px=%" PRIu64 "\n    mask_skips=%" PRIu64
+      " covers_calls=%" PRIu64 " covers_hits=%" PRIu64 " const_span_px=%" PRIu64
+      " const_mask_skips=%" PRIu64 "\n    remaining_scans=%" PRIu64 " remaining_scan_ms=%.2f\n",
+      label, c.operations_bbox_rejected, c.segments_painted, c.segments_bbox_rejected,
+      c.operations_saturation_skipped, c.segments_saturation_skipped, c.groups_saturated_early,
+      c.rows_scanned, c.rows_prefinalized, c.rows_empty_span, c.span_pixels, c.mask_skips,
+      c.covers_calls, c.covers_hits, c.const_span_pixels, c.const_mask_skips, c.remaining_scans,
+      static_cast<double>(c.remaining_scan_ns) / 1e6);
 }
 #else
 void print_census(const char*) {}
@@ -248,6 +257,8 @@ struct FuzzRig {
   std::vector<std::uint16_t> supertask;
   std::vector<std::uint16_t> packed;
   std::vector<std::uint8_t> mask;
+  std::vector<std::uint16_t> summary_rows;
+  std::vector<std::uint32_t> summary_words;
   v2::OperationLog log;
   v2::MaterializedCanvas canvas;
   v2::TileProducer producer;
@@ -261,12 +272,16 @@ struct FuzzRig {
         supertask(v2::kTileProducerPixels),
         packed(v2::kTilePixels),
         mask(v2::kTileProducerMaskBytes),
+        summary_rows(v2::kTileProducerSummaryRows),
+        summary_words(v2::kTileProducerSummaryWords),
         log(records, samples),
         canvas(overview, slots, tile_pool),
         producer(log, canvas,
                  {.supertask_pixels = supertask,
                   .packed_tile_pixels = packed,
-                  .finalized_pixels = mask}) {}
+                  .finalized_pixels = mask,
+                  .summary_row_unset = summary_rows,
+                  .summary_saturated_words = summary_words}) {}
 };
 
 bool replay_and_compare(FuzzRig& rig, const v2::ViewRequest& view, std::uint32_t case_index,

@@ -188,6 +188,8 @@ struct AppStorage {
   std::uint16_t* producer_supertask = nullptr;
   std::uint16_t* producer_packed = nullptr;
   std::uint8_t* producer_mask = nullptr;
+  std::uint16_t* producer_summary_rows = nullptr;
+  std::uint32_t* producer_summary_words = nullptr;
   MaterializedUniformStorage* uniforms = nullptr;
   std::uint8_t* occupancy = nullptr;
   MaterializedSlotStorage* slots = nullptr;
@@ -209,6 +211,8 @@ struct AppStorage {
     producer_supertask = allocate_array<std::uint16_t>(vector_v2::kTileProducerPixels);
     producer_packed = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
     producer_mask = allocate_internal<std::uint8_t>(vector_v2::kTileProducerMaskBytes);
+    producer_summary_rows = allocate_internal<std::uint16_t>(vector_v2::kTileProducerSummaryRows);
+    producer_summary_words = allocate_internal<std::uint32_t>(vector_v2::kTileProducerSummaryWords);
     uniforms =
         allocate_array<MaterializedUniformStorage>(vector_v2::kMaterializedTileIdentityCount);
     occupancy = allocate_array<std::uint8_t>(vector_v2::kOccupancyBytes);
@@ -223,6 +227,7 @@ struct AppStorage {
     if (overview == nullptr || snapshot == nullptr || frame == nullptr || tile_pixels == nullptr ||
         overview_scratch == nullptr || tile_scratch == nullptr || region_scratch == nullptr ||
         producer_supertask == nullptr || producer_packed == nullptr || producer_mask == nullptr ||
+        producer_summary_rows == nullptr || producer_summary_words == nullptr ||
         uniforms == nullptr || occupancy == nullptr || slots == nullptr || records == nullptr ||
         samples == nullptr || input_samples == nullptr || touch_events == nullptr ||
         publications == nullptr || affected_keys == nullptr) {
@@ -600,7 +605,11 @@ void run_vector_v2_app() {
       log, canvas,
       {.supertask_pixels = std::span(storage.producer_supertask, vector_v2::kTileProducerPixels),
        .packed_tile_pixels = std::span(storage.producer_packed, vector_v2::kTilePixels),
-       .finalized_pixels = std::span(storage.producer_mask, vector_v2::kTileProducerMaskBytes)});
+       .finalized_pixels = std::span(storage.producer_mask, vector_v2::kTileProducerMaskBytes),
+       .summary_row_unset =
+           std::span(storage.producer_summary_rows, vector_v2::kTileProducerSummaryRows),
+       .summary_saturated_words =
+           std::span(storage.producer_summary_words, vector_v2::kTileProducerSummaryWords)});
   const IncrementalDocumentWorkspace workspace{
       .overview_scratch = std::span(storage.overview_scratch, vector_v2::kOverviewPixels),
       .tile_scratch =
