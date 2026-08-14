@@ -544,6 +544,15 @@ ChromeAction chrome_action_at(ChromePoint point, const ChromeState& state) {
   return actions[index];
 }
 
+std::optional<ChromeRect> chrome_minimap_region(const ChromeState& state) {
+  return canvas_overlays_visible(state) ? std::optional{kMinimapRect} : std::nullopt;
+}
+
+bool chrome_minimap_refresh_required(const ChromeState& state, bool overview_changed,
+                                     bool allow_minimap_refresh) {
+  return canvas_overlays_visible(state) && overview_changed && allow_minimap_refresh;
+}
+
 ChromeOverlayRegions chrome_overlay_regions(const ChromeState& state) {
   ChromeOverlayRegions result;
   if (!canvas_overlays_visible(state)) {

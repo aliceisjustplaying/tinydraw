@@ -78,8 +78,9 @@ LivePresentationTiming VectorV2Presenter::refresh(const vector_v2::ChromeState& 
     return {};
   }
   vector_v2::draw_chrome(frame_, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight, chrome);
-  auto timing = present_with_overlays({0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
-                                      chrome, event_us, esp_timer_get_time() - compose_started);
+  auto timing =
+      present_with_overlays({0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight}, chrome,
+                            event_us, esp_timer_get_time() - compose_started, true);
   timing.tile_pixels = stats->tile_pixels;
   timing.uniform_pixels = stats->uniform_pixels;
   timing.overview_pixels = stats->overview_pixels;
@@ -196,8 +197,8 @@ LivePresentationTiming VectorV2Presenter::compose_and_present(vector_v2::PixelRe
                        static_cast<std::size_t>(width));
     std::copy(source.begin(), source.end(), target.begin());
   }
-  auto timing =
-      present_with_overlays(panel_bounds, chrome, event_us, esp_timer_get_time() - compose_started);
+  auto timing = present_with_overlays(panel_bounds, chrome, event_us,
+                                      esp_timer_get_time() - compose_started, true);
   timing.tile_pixels = stats->tile_pixels;
   timing.uniform_pixels = stats->uniform_pixels;
   timing.overview_pixels = stats->overview_pixels;
@@ -370,7 +371,7 @@ bool VectorV2Presenter::restore_canvas_overlays(const vector_v2::ChromeState& ch
 
 LivePresentationTiming VectorV2Presenter::present_with_overlays(
     vector_v2::PixelRect bounds, const vector_v2::ChromeState& chrome, std::uint32_t event_us,
-    std::int64_t compose_us) {
+    std::int64_t compose_us, bool allow_minimap_refresh) {
   const auto overlays = vector_v2::chrome_overlay_regions(chrome);
   bool intersects = false;
   for (std::size_t index = 0; index < overlays.count; ++index) {
@@ -378,7 +379,11 @@ LivePresentationTiming VectorV2Presenter::present_with_overlays(
     intersects = intersects || (bounds.x0 < overlay.x1 && bounds.x1 > overlay.x0 &&
                                 bounds.y0 < overlay.y1 && bounds.y1 > overlay.y0);
   }
-  if (!intersects) {
+  const bool overview_changed =
+      !minimap_presented_ || presented_minimap_revision_ != canvas_.current_revision();
+  const bool refresh_minimap =
+      vector_v2::chrome_minimap_refresh_required(chrome, overview_changed, allow_minimap_refresh);
+  if (!intersects && !refresh_minimap) {
     return present(bounds, event_us, compose_us);
   }
 
@@ -388,6 +393,27 @@ LivePresentationTiming VectorV2Presenter::present_with_overlays(
   const std::int64_t chrome_completed = esp_timer_get_time();
   auto timing = present(bounds, event_us, compose_us + chrome_completed - chrome_started);
   timing.chrome_us = chrome_completed - chrome_started;
+
+  bool minimap_refreshed = false;
+  const auto minimap = vector_v2::chrome_minimap_region(chrome);
+  if (refresh_minimap && minimap.has_value() && timing.passed) {
+    const bool requested_contains_minimap = bounds.x0 <= minimap->x0 && bounds.y0 <= minimap->y0 &&
+                                            bounds.x1 >= minimap->x1 && bounds.y1 >= minimap->y1;
+    if (requested_contains_minimap) {
+      minimap_refreshed = true;
+    } else {
+      const vector_v2::PixelRect minimap_bounds{minimap->x0, minimap->y0, minimap->x1, minimap->y1};
+      const auto minimap_timing = present(minimap_bounds, 0);
+      timing.complete_us += minimap_timing.complete_us;
+      timing.pushes += minimap_timing.pushes;
+      timing.passed = minimap_timing.passed;
+      minimap_refreshed = minimap_timing.passed;
+    }
+  }
+  if (minimap_refreshed) {
+    presented_minimap_revision_ = canvas_.current_revision();
+    minimap_presented_ = true;
+  }
   if (!restore_canvas_overlays(chrome)) {
     timing.passed = false;
   }
@@ -429,7 +455,7 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   // scroll_frame excludes the chrome-owned rows, so their existing pixels are
   // already correct. Do not spend a full dock redraw on every pan sample.
   auto timing = present_with_overlays({0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
-                                      chrome, event_us, exposed_completed - started);
+                                      chrome, event_us, exposed_completed - started, true);
   timing.scroll_us = scroll_completed - started;
   timing.exposed_compose_us = exposed_completed - scroll_completed;
   timing.frame_reused = true;

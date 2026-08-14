@@ -85,6 +85,15 @@ TEST_CASE("right zoom rail exposes plus and minus without stealing its label") {
   CHECK(tinydraw::vector_v2::chrome_action_at({332.0F, 98.0F}, popup) == ChromeAction::kNone);
 }
 
+TEST_CASE("overview mutations schedule a minimap refresh outside its panel bounds") {
+  const ChromeState state;
+  CHECK(tinydraw::vector_v2::chrome_minimap_refresh_required(state, true, true));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_minimap_refresh_required(state, false, true));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_minimap_refresh_required(state, true, false));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_minimap_refresh_required({.popup = ChromePopup::kTools},
+                                                                   true, true));
+}
+
 TEST_CASE("canvas overlay regions disappear for modal and popup chrome") {
   CHECK(tinydraw::vector_v2::chrome_overlay_regions({}).count == 2U);
   CHECK(tinydraw::vector_v2::chrome_overlay_regions({.battery_percentage = 50}).count == 3U);

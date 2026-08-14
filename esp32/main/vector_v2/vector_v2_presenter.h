@@ -124,7 +124,8 @@ class VectorV2Presenter {
   [[nodiscard]] LivePresentationTiming present_with_overlays(vector_v2::PixelRect bounds,
                                                              const vector_v2::ChromeState& chrome,
                                                              std::uint32_t event_us,
-                                                             std::int64_t compose_us = 0);
+                                                             std::int64_t compose_us = 0,
+                                                             bool allow_minimap_refresh = false);
   [[nodiscard]] LivePresentationTiming refresh_pan(int old_x, int old_y,
                                                    const vector_v2::ChromeState& chrome,
                                                    std::uint32_t event_us);
@@ -141,6 +142,8 @@ class VectorV2Presenter {
   int frame_level_y_ = 0;
   std::uint64_t frame_epoch_ = 0;
   vector_v2::ChromeState frame_chrome_{};
+  vector_v2::DocumentRevision presented_minimap_revision_{};
+  bool minimap_presented_ = false;
   bool frame_reusable_ = false;
 };
 
