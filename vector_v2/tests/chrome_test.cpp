@@ -103,6 +103,46 @@ TEST_CASE("canvas overlay regions disappear for modal and popup chrome") {
             .count == 0U);
 }
 
+TEST_CASE("canvas overlay regions own every pixel their painters mutate") {
+  constexpr int width = 368;
+  constexpr int height = 448;
+  constexpr std::uint16_t untouched = 0x1234U;
+  const std::size_t pixel_count = static_cast<std::size_t>(width * height);
+  std::vector<std::uint16_t> pixels(pixel_count, untouched);
+  std::vector<std::uint16_t> overview(pixel_count, 0x4567U);
+  const ChromeState state{.battery_percentage = 50};
+  const tinydraw::vector_v2::ChromeNavigation navigation{
+      .zoom_percent = 100,
+      .level_x = 200,
+      .level_y = 300,
+      .level_width = 1472,
+      .level_height = 1792,
+      .can_pan_top = true,
+      .can_pan_left = true,
+      .can_pan_right = true,
+      .can_pan_bottom = true,
+      .overview_pixels = overview,
+  };
+
+  tinydraw::vector_v2::draw_chrome_canvas_overlays(pixels, width, height, state, navigation);
+  const auto regions = tinydraw::vector_v2::chrome_overlay_regions(state);
+  std::size_t mutated_outside_owned_regions = 0;
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      if (pixels[static_cast<std::size_t>(y * width + x)] == untouched) {
+        continue;
+      }
+      bool owned = false;
+      for (std::size_t index = 0; index < regions.count; ++index) {
+        const auto region = regions.regions[index];
+        owned = owned || (x >= region.x0 && x < region.x1 && y >= region.y0 && y < region.y1);
+      }
+      mutated_outside_owned_regions += owned ? 0U : 1U;
+    }
+  }
+  CHECK(mutated_outside_owned_regions == 0U);
+}
+
 TEST_CASE("navigation overlays render overview viewport zoom and battery") {
   constexpr int width = 368;
   constexpr int height = 448;
