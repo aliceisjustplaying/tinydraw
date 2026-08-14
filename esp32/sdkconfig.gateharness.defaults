@@ -1,0 +1,3 @@
+# Gate-harness builds run the entire diagnostic battery on the main task;
+# its frame is deliberately allowed to be larger than the product app's.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
