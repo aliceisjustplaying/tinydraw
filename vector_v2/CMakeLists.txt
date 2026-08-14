@@ -34,6 +34,9 @@ if(TINYDRAW_BUILD_TESTS)
     tinydraw::vector_v2
     tinydraw_project_options
   )
+  target_include_directories(tinydraw_vector_v2_tests PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/test_support/include
+  )
   target_include_directories(tinydraw_vector_v2_tests SYSTEM PRIVATE
     ${PROJECT_SOURCE_DIR}/third_party/doctest
   )
