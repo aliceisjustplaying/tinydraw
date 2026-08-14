@@ -314,51 +314,38 @@ void draw_zoom_rail(Painter& painter, const ChromeNavigation& navigation) {
   painter.text(text_x, 142, std::string_view(label.data(), length), kInk);
 }
 
-// Draws the minimap into a surface whose (0, 0) sits at panel coordinate
-// (origin_x, origin_y). The full-frame path passes origin (0, 0) with the
-// panel-sized surface; the pan path passes a small scratch surface covering
-// just the minimap overlay region.
-void draw_minimap(std::span<std::uint16_t> pixels, int surface_width, int surface_height,
-                  int origin_x, int origin_y, const ChromeNavigation& navigation) {
-  Painter painter(pixels, surface_width, surface_height);
-  const int left = kMinimapRect.x0 - origin_x;
-  const int top = kMinimapRect.y0 - origin_y;
-  const int right_edge = kMinimapRect.x1 - origin_x;
-  const int bottom_edge = kMinimapRect.y1 - origin_y;
-  painter.rounded({left + 2, top + 3, right_edge + 2, bottom_edge + 3}, 9, kShadow);
-  painter.rounded({left - 1, top - 1, right_edge + 1, bottom_edge + 1}, 9, kBorder);
-  painter.rounded({left, top, right_edge, bottom_edge}, 8, kWhite);
-  const int map_left = kMinimapLeft - origin_x;
-  const int map_top = kMinimapTop - origin_y;
-  if (navigation.overview_pixels.size() >=
-          static_cast<std::size_t>(kWidth) * static_cast<std::size_t>(kHeight) &&
-      map_left >= 0 && map_top >= 0 && map_left + kMinimapWidth <= surface_width &&
-      map_top + kMinimapHeight <= surface_height) {
-    // Row-wise resample through a source-column table. The interior is fully
-    // inside the surface, so rows write directly without per-pixel clipping;
-    // this runs on every pan frame and must stay cheap.
-    std::array<std::uint16_t, kMinimapWidth> source_columns{};
-    for (int x = 0; x < kMinimapWidth; ++x) {
-      source_columns[static_cast<std::size_t>(x)] =
-          static_cast<std::uint16_t>(x * kWidth / kMinimapWidth);
-    }
-    for (int y = 0; y < kMinimapHeight; ++y) {
-      const int source_y = y * kHeight / kMinimapHeight;
-      const auto source =
-          navigation.overview_pixels.subspan(static_cast<std::size_t>(source_y) * kWidth, kWidth);
-      const auto destination = pixels.subspan(
-          static_cast<std::size_t>(map_top + y) * static_cast<std::size_t>(surface_width) +
-              static_cast<std::size_t>(map_left),
-          kMinimapWidth);
-      for (int x = 0; x < kMinimapWidth; ++x) {
-        destination[static_cast<std::size_t>(x)] =
-            source[source_columns[static_cast<std::size_t>(x)]];
-      }
-    }
-  } else {
-    painter.rect({map_left, map_top, map_left + kMinimapWidth, map_top + kMinimapHeight}, kWhite);
+// Fills the minimap interior with the resampled overview. The interior is
+// fully inside the surface, so rows write directly without per-pixel
+// clipping; this runs on every pan frame and must stay cheap.
+void draw_minimap_content(const MinimapSurface& surface, const ChromeNavigation& navigation) {
+  const int map_left = kMinimapLeft - surface.origin_x;
+  const int map_top = kMinimapTop - surface.origin_y;
+  // Row-wise resample through a source-column table.
+  std::array<std::uint16_t, kMinimapWidth> source_columns{};
+  for (int x = 0; x < kMinimapWidth; ++x) {
+    source_columns[static_cast<std::size_t>(x)] =
+        static_cast<std::uint16_t>(x * kWidth / kMinimapWidth);
   }
+  for (int y = 0; y < kMinimapHeight; ++y) {
+    const int source_y = y * kHeight / kMinimapHeight;
+    const auto source =
+        navigation.overview_pixels.subspan(static_cast<std::size_t>(source_y) * kWidth, kWidth);
+    const auto destination = surface.pixels.subspan(
+        static_cast<std::size_t>(map_top + y) * static_cast<std::size_t>(surface.width) +
+            static_cast<std::size_t>(map_left),
+        kMinimapWidth);
+    for (int x = 0; x < kMinimapWidth; ++x) {
+      destination[static_cast<std::size_t>(x)] =
+          source[source_columns[static_cast<std::size_t>(x)]];
+    }
+  }
+}
 
+// Draws the viewport rectangle over the minimap interior.
+void draw_minimap_viewport(Painter& painter, const MinimapSurface& surface,
+                           const ChromeNavigation& navigation) {
+  const int map_left = kMinimapLeft - surface.origin_x;
+  const int map_top = kMinimapTop - surface.origin_y;
   const int level_width = std::max(navigation.level_width, 1);
   const int level_height = std::max(navigation.level_height, 1);
   const int x0 = map_left + navigation.level_x * kMinimapWidth / level_width;
@@ -372,6 +359,31 @@ void draw_minimap(std::span<std::uint16_t> pixels, int surface_width, int surfac
   painter.line({right, y0, right, bottom}, kSelected, 1);
   painter.line({right, bottom, x0, bottom}, kSelected, 1);
   painter.line({x0, bottom, x0, y0}, kSelected, 1);
+}
+
+// Draws the minimap into a surface. The full-frame path passes origin (0, 0)
+// with the panel-sized surface; the pan path passes a small scratch surface
+// covering just the minimap overlay region.
+void draw_minimap(const MinimapSurface& surface, const ChromeNavigation& navigation) {
+  Painter painter(surface.pixels, surface.width, surface.height);
+  const int left = kMinimapRect.x0 - surface.origin_x;
+  const int top = kMinimapRect.y0 - surface.origin_y;
+  const int right_edge = kMinimapRect.x1 - surface.origin_x;
+  const int bottom_edge = kMinimapRect.y1 - surface.origin_y;
+  painter.rounded({left + 2, top + 3, right_edge + 2, bottom_edge + 3}, 9, kShadow);
+  painter.rounded({left - 1, top - 1, right_edge + 1, bottom_edge + 1}, 9, kBorder);
+  painter.rounded({left, top, right_edge, bottom_edge}, 8, kWhite);
+  const int map_left = kMinimapLeft - surface.origin_x;
+  const int map_top = kMinimapTop - surface.origin_y;
+  if (navigation.overview_pixels.size() >=
+          static_cast<std::size_t>(kWidth) * static_cast<std::size_t>(kHeight) &&
+      map_left >= 0 && map_top >= 0 && map_left + kMinimapWidth <= surface.width &&
+      map_top + kMinimapHeight <= surface.height) {
+    draw_minimap_content(surface, navigation);
+  } else {
+    painter.rect({map_left, map_top, map_left + kMinimapWidth, map_top + kMinimapHeight}, kWhite);
+  }
+  draw_minimap_viewport(painter, surface, navigation);
 }
 
 void draw_export_toast(Painter& painter, const ChromeState& state) {
@@ -689,7 +701,7 @@ void draw_chrome_canvas_overlays(std::span<std::uint16_t> pixels, int width, int
   }
   Painter painter(pixels, width, height);
   draw_zoom_rail(painter, navigation);
-  draw_minimap(pixels, width, height, 0, 0, navigation);
+  draw_minimap({pixels, width, height, 0, 0}, navigation);
   draw_battery(painter, state);
 }
 
@@ -700,20 +712,19 @@ bool draw_chrome_minimap_overlay(std::span<std::uint16_t> pixels, int width, int
       !canvas_overlays_visible(state)) {
     return false;
   }
-  draw_minimap(pixels, width, height, 0, 0, navigation);
+  draw_minimap({pixels, width, height, 0, 0}, navigation);
   return true;
 }
 
-bool draw_chrome_minimap_surface(std::span<std::uint16_t> pixels, int surface_width,
-                                 int surface_height, int origin_x, int origin_y,
-                                 const ChromeState& state, const ChromeNavigation& navigation) {
-  if (surface_width <= 0 || surface_height <= 0 ||
-      pixels.size() <
-          static_cast<std::size_t>(surface_width) * static_cast<std::size_t>(surface_height) ||
+bool draw_chrome_minimap_surface(const MinimapSurface& surface, const ChromeState& state,
+                                 const ChromeNavigation& navigation) {
+  if (surface.width <= 0 || surface.height <= 0 ||
+      surface.pixels.size() <
+          static_cast<std::size_t>(surface.width) * static_cast<std::size_t>(surface.height) ||
       !canvas_overlays_visible(state)) {
     return false;
   }
-  draw_minimap(pixels, surface_width, surface_height, origin_x, origin_y, navigation);
+  draw_minimap(surface, navigation);
   return true;
 }
 

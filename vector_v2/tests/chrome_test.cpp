@@ -419,7 +419,7 @@ TEST_CASE("minimap surface draw matches the full overlay draw") {
   REQUIRE(
       tinydraw::vector_v2::draw_chrome_minimap_overlay(frame, width, height, state, navigation));
   REQUIRE(tinydraw::vector_v2::draw_chrome_minimap_surface(
-      surface, region_width, region_height, region->x0, region->y0, state, navigation));
+      {surface, region_width, region_height, region->x0, region->y0}, state, navigation));
   for (int y = 0; y < region_height; ++y) {
     for (int x = 0; x < region_width; ++x) {
       CHECK(surface[static_cast<std::size_t>(y) * static_cast<std::size_t>(region_width) +
