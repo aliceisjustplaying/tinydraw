@@ -370,7 +370,8 @@ void draw_export_toast(Painter& painter, const ChromeState& state) {
     return;
   }
   const bool saved = state.export_status == ChromeExportStatus::kSaved;
-  painter.text(saved ? 139 : 130, 90, saved ? "SAVED" : "ERROR", saved ? kInk : 0xE186U, 3);
+  painter.text(saved ? 139 : 130, saved ? 91 : 90, saved ? "SAVED" : "ERROR",
+               saved ? kInk : 0xE186U, 3);
 }
 
 }  // namespace
