@@ -9,7 +9,10 @@ target_compile_features(tinydraw_vector_v2 PUBLIC cxx_std_20)
 target_include_directories(tinydraw_vector_v2 PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>"
 )
-target_link_libraries(tinydraw_vector_v2 PUBLIC tinydraw_project_options)
+target_link_libraries(tinydraw_vector_v2
+  PRIVATE tinydraw::core
+  PUBLIC tinydraw_project_options
+)
 
 if(TINYDRAW_BUILD_TESTS)
   add_executable(tinydraw_vector_v2_tests
@@ -28,7 +31,6 @@ if(TINYDRAW_BUILD_TESTS)
     tests/tile_producer_test.cpp
   )
   target_link_libraries(tinydraw_vector_v2_tests PRIVATE
-    tinydraw::core
     tinydraw::vector_v2
     tinydraw_project_options
   )
