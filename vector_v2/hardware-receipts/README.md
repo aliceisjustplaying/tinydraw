@@ -4,6 +4,7 @@ These logs are immutable evidence captured from the physical ESP32-S3. Historica
 
 ## Current milestone evidence
 
+- [`cache-tour-384.log`](cache-tour-384.log) / [`cache-tour-320.log`](cache-tour-320.log) — the 384-versus-320 slot A/B on the new 16-stop 400% tour gate: return-trip refill 0 tiles / 40 ms at 384 versus 63 tiles / 409 ms at 320; the protected home footprint returns sharp at both.
 - [`6abfa0f-cold-p95-20-runs.log`](6abfa0f-cold-p95-20-runs.log) — final slice distribution: adversarial 400% p95 646,305 us (−55.5% vs 26a05f5) with deadline slicing and the 384-slot pool; all ticks under 12.7 ms.
 - [`6abfa0f-full-gate.log`](6abfa0f-full-gate.log) — full harness pass at 384 slots including cache retention, export encode, and the live export-reserve allocation.
 - [`6abfa0f-product-boot.log`](6abfa0f-product-boot.log) — product boot at 384 slots: largest free PSRAM block 2,949,120 bytes.
