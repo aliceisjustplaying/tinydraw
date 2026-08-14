@@ -148,11 +148,77 @@ void paint_constant_radius_segment(const Segment& segment, PixelRect bounds, std
   }
 }
 
+struct ParameterInterval {
+  float first = 0.0F;
+  float last = 1.0F;
+
+  [[nodiscard]] bool empty() const { return last < first; }
+};
+
+bool constrain_at_most(float origin, float delta, float limit, ParameterInterval& interval) {
+  if (delta == 0.0F) {
+    return origin <= limit;
+  }
+  const float crossing = (limit - origin) / delta;
+  if (delta > 0.0F) {
+    interval.last = std::min(interval.last, crossing);
+  } else {
+    interval.first = std::max(interval.first, crossing);
+  }
+  return !interval.empty();
+}
+
+bool constrain_at_least(float origin, float delta, float limit, ParameterInterval& interval) {
+  return constrain_at_most(-origin, -delta, -limit, interval);
+}
+
+ScanSpan conservative_tapered_row_span(const Segment& segment, PixelRect bounds, float pixel_y) {
+  // A covered pixel's projected center must be no farther than its interpolated
+  // radius from this row. Both y-radius and y+radius are linear in the segment
+  // parameter, so intersecting those two half-planes cheaply rejects most of
+  // the old bounding-box scan without approximating the final predicate.
+  constexpr float kRoundingMargin = 0.01F;
+  const float radius_delta = segment.second.radius - segment.first.radius;
+  ParameterInterval interval{};
+  if (!constrain_at_most(segment.first.y - segment.first.radius, segment.delta_y - radius_delta,
+                         pixel_y + kRoundingMargin, interval) ||
+      !constrain_at_least(segment.first.y + segment.first.radius, segment.delta_y + radius_delta,
+                          pixel_y - kRoundingMargin, interval)) {
+    return {.first = bounds.x0, .last = bounds.x0 - 1};
+  }
+  interval.first = std::clamp(interval.first, 0.0F, 1.0F);
+  interval.last = std::clamp(interval.last, 0.0F, 1.0F);
+  if (interval.empty()) {
+    return {.first = bounds.x0, .last = bounds.x0 - 1};
+  }
+
+  const float left_origin = segment.first.x - segment.first.radius;
+  const float left_delta = segment.delta_x - radius_delta;
+  const float right_origin = segment.first.x + segment.first.radius;
+  const float right_delta = segment.delta_x + radius_delta;
+  const float minimum_x =
+      std::min(left_origin + interval.first * left_delta, left_origin + interval.last * left_delta);
+  const float maximum_x = std::max(right_origin + interval.first * right_delta,
+                                   right_origin + interval.last * right_delta);
+  // Keep a whole-pixel guard around float edge arithmetic. covers_pixel remains
+  // the sole authority inside this conservative interval.
+  const int first =
+      std::max(bounds.x0, static_cast<int>(std::floor(minimum_x - kRoundingMargin)) - 1);
+  const int last =
+      std::min(bounds.x1 - 1, static_cast<int>(std::ceil(maximum_x + kRoundingMargin)));
+  return {.first = first, .last = last};
+}
+
 void paint_tapered_segment(const Segment& segment, PixelRect bounds, std::uint16_t color,
                            const RasterSurface& surface) {
   for (int y = bounds.y0; y < bounds.y1; ++y) {
-    for (int x = bounds.x0; x < bounds.x1; ++x) {
-      if (!covers_pixel(segment, static_cast<float>(x) + 0.5F, static_cast<float>(y) + 0.5F)) {
+    const float pixel_y = static_cast<float>(y) + 0.5F;
+    const ScanSpan row_span = conservative_tapered_row_span(segment, bounds, pixel_y);
+    if (row_span.empty()) {
+      continue;
+    }
+    for (int x = row_span.first; x <= row_span.last; ++x) {
+      if (!covers_pixel(segment, static_cast<float>(x) + 0.5F, pixel_y)) {
         continue;
       }
       const std::size_t row = static_cast<std::size_t>(y - surface.level_bounds.y0) *
