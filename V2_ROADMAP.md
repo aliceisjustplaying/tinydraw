@@ -293,13 +293,30 @@ Palette references:
 
 ### PNG and USB-C export
 
-- [ ] Reuse the stable PNG encoder, FAT16 disk, USB transport, and export-store
-      mechanisms through narrow adapters where their contracts fit.
-- [ ] Render/export the complete bounded V2 world with correct painter order.
-- [ ] Keep export scratch within the proven 1.5 MiB reserve.
-- [ ] Decide whether export uses settled AA or explicitly reports immediate quality.
-- [ ] Test export while the cache is full and after long drawing sessions.
-- [ ] Verify generated media on host and physical USB-C.
+- [x] Reuse the stable PNG encoder, FAT16 disk, USB transport, and export-store
+      mechanisms through narrow adapters where their contracts fit. Landed at
+      `7302963`; en route, `88123ee` fixed a latent pngenc corruption path
+      that also affected Raster V1 exports of dense/wide content and added a
+      full decode round-trip host gate.
+- [x] Render/export the complete bounded V2 world with correct painter order
+      (`WorldBandRenderer`: banded forward authority replay, host-proven
+      equal to one-shot replay).
+- [x] Keep export scratch within the proven 1.5 MiB reserve. Measured:
+      51 KiB internal (deflate state; internal placement is what makes the
+      encode take 5.7 s instead of minutes) plus ~390 KiB PSRAM, all
+      transient; zero permanent live-storage growth.
+- [x] Decide whether export uses settled AA or explicitly reports immediate
+      quality: export replays exact hard-edged authority (identical to
+      immediate rendering); revisit only after the settled-AA gate exists.
+- [x] Test export while the cache is full: the harness export gate runs after
+      the cache/full-world gates and the export-reserve gate re-verifies
+      afterward. Long-session soak remains part of Phase 7.
+- [ ] Verify generated media on host and physical USB-C. Host verification is
+      complete (strict zlib/CRC/defilter decode of the device-encoded PNG
+      pulled from flash, receipt `7302963-exported-world.png`). Remaining
+      human step: tap Export on glass, mount the "TinyDraw Export" drive on a
+      computer, open DRAWING.PNG. Note: activating USB ends the serial
+      console until reset, exactly like V1.
 
 ### Device lifecycle parity
 
