@@ -134,9 +134,12 @@ std::optional<IncrementalAppendResult> append_incrementally(
     return std::nullopt;
   }
   const std::size_t publication_capacity =
-      std::min(workspace.publications.size(), workspace.tile_scratch.size() / kTilePixels);
+      options.publication_scope == IncrementalPublicationScope::kOverviewOnly
+          ? 0U
+          : std::min(workspace.publications.size(), workspace.tile_scratch.size() / kTilePixels);
   const std::size_t publication_count = std::min(*resident_count, publication_capacity);
-  if (options.priority_view.has_value() && publication_count < *resident_count) {
+  if (publication_count != 0U && options.priority_view.has_value() &&
+      publication_count < *resident_count) {
     prioritize_view(workspace.affected_keys.first(*resident_count), options.priority_view);
   }
   for (std::size_t index = 0; index < publication_count; ++index) {
