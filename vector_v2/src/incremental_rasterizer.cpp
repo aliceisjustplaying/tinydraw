@@ -61,7 +61,7 @@ bool valid_surface(const RasterSurface& surface) {
          surface.stride >= width && surface.pixels.size() >= required;
 }
 
-PixelRect segment_bounds(const Segment& segment, const RasterSurface& surface) {
+PixelRect segment_bounds(const Segment& segment, PixelRect clip) {
   const float minimum_x =
       std::min(segment.first.x - segment.first.radius, segment.second.x - segment.second.radius);
   const float minimum_y =
@@ -71,10 +71,10 @@ PixelRect segment_bounds(const Segment& segment, const RasterSurface& surface) {
   const float maximum_y =
       std::max(segment.first.y + segment.first.radius, segment.second.y + segment.second.radius);
   return {
-      .x0 = std::max(surface.level_bounds.x0, static_cast<int>(std::floor(minimum_x))),
-      .y0 = std::max(surface.level_bounds.y0, static_cast<int>(std::floor(minimum_y))),
-      .x1 = std::min(surface.level_bounds.x1, static_cast<int>(std::ceil(maximum_x))),
-      .y1 = std::min(surface.level_bounds.y1, static_cast<int>(std::ceil(maximum_y))),
+      .x0 = std::max(clip.x0, static_cast<int>(std::floor(minimum_x))),
+      .y0 = std::max(clip.y0, static_cast<int>(std::floor(minimum_y))),
+      .x1 = std::min(clip.x1, static_cast<int>(std::ceil(maximum_x))),
+      .y1 = std::min(clip.y1, static_cast<int>(std::ceil(maximum_y))),
   };
 }
 
@@ -97,7 +97,7 @@ bool covers_pixel(const Segment& segment, float pixel_x, float pixel_y) {
 void paint_segment(const Sample& first, const Sample& second, std::uint16_t color,
                    const RasterSurface& surface) {
   const Segment segment = make_segment(first, second);
-  const PixelRect bounds = segment_bounds(segment, surface);
+  const PixelRect bounds = segment_bounds(segment, surface.level_bounds);
   for (int y = bounds.y0; y < bounds.y1; ++y) {
     for (int x = bounds.x0; x < bounds.x1; ++x) {
       if (covers_pixel(segment, static_cast<float>(x) + 0.5F, static_cast<float>(y) + 0.5F)) {
@@ -156,6 +156,14 @@ PixelRect operation_level_bounds(PixelRect world_bounds, ZoomLevel zoom) {
   };
 }
 
+PixelRect incremental_segment_level_bounds(CompactOperationSample first,
+                                           CompactOperationSample second, ZoomLevel zoom) {
+  const int level_width = kWorldWidth * zoom_percent(zoom) / 100;
+  const int level_height = kWorldHeight * zoom_percent(zoom) / 100;
+  return segment_bounds(make_segment(scaled_sample(first, zoom), scaled_sample(second, zoom)),
+                        {0, 0, level_width, level_height});
+}
+
 std::size_t incremental_segment_step_count(CompactOperationSample first,
                                            CompactOperationSample second, ZoomLevel zoom) {
   return segment_step_count(scaled_sample(first, zoom), scaled_sample(second, zoom));
@@ -174,8 +182,7 @@ std::size_t incremental_segment_step_work(CompactOperationSample first,
                                         static_cast<float>(step) / static_cast<float>(steps));
   const Sample step_second = interpolate(scaled_first, scaled_second,
                                          static_cast<float>(step + 1U) / static_cast<float>(steps));
-  const PixelRect bounds =
-      segment_bounds(make_segment(step_first, step_second), {.zoom = zoom, .level_bounds = clip});
+  const PixelRect bounds = segment_bounds(make_segment(step_first, step_second), clip);
   return static_cast<std::size_t>(std::max(0, bounds.x1 - bounds.x0)) *
          static_cast<std::size_t>(std::max(0, bounds.y1 - bounds.y0));
 }

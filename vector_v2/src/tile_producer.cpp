@@ -268,6 +268,22 @@ TileProducer::RasterStepBatch TileProducer::choose_raster_step_batch(
   return batch;
 }
 
+void TileProducer::finish_active_segment(const StoredOperation& operation,
+                                         TileProductionStep& result,
+                                         std::size_t& operations_consumed) {
+  active_group_.next_segment_step = 0U;
+  const bool operation_complete =
+      operation.samples.size() == 1U || active_group_.next_sample + 1U >= operation.samples.size();
+  if (operation_complete) {
+    ++active_group_.next_operation;
+    active_group_.next_sample = 1U;
+    ++operations_consumed;
+    ++result.operations_scanned;
+  } else {
+    ++active_group_.next_sample;
+  }
+}
+
 bool TileProducer::render_active_operation(const StoredOperation& operation,
                                            TileProductionStep& result,
                                            std::size_t& operations_consumed,
@@ -292,6 +308,16 @@ bool TileProducer::render_active_operation(const StoredOperation& operation,
       .first = operation.samples[operation.samples.size() == 1U ? 0U : endpoint - 1U],
       .second = operation.samples[endpoint],
   };
+  if (!intersects(
+          incremental_segment_level_bounds(segment.first, segment.second, active_group_.view.zoom),
+          active_group_.bounds)) {
+    // Count a rejected segment against the per-call cursor budget so a single
+    // giant operation cannot monopolize input polling even when it is distant.
+    ++raster_steps_consumed;
+    finish_active_segment(operation, result, operations_consumed);
+    return true;
+  }
+
   const std::size_t total_steps =
       incremental_segment_step_count(segment.first, segment.second, active_group_.view.zoom);
   const RasterStepBatch batch =
@@ -319,17 +345,7 @@ bool TileProducer::render_active_operation(const StoredOperation& operation,
   if (active_group_.next_segment_step < total_steps) {
     return true;
   }
-  active_group_.next_segment_step = 0U;
-  const bool operation_complete =
-      operation.samples.size() == 1U || active_group_.next_sample + 1U >= operation.samples.size();
-  if (operation_complete) {
-    ++active_group_.next_operation;
-    active_group_.next_sample = 1U;
-    ++operations_consumed;
-    ++result.operations_scanned;
-  } else {
-    ++active_group_.next_sample;
-  }
+  finish_active_segment(operation, result, operations_consumed);
   return true;
 }
 
