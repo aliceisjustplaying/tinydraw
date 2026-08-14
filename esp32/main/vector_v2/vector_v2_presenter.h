@@ -116,8 +116,15 @@ class VectorV2Presenter {
                                                       int canvas_bottom) const;
   [[nodiscard]] LivePresentationTiming compose_and_present(vector_v2::PixelRect level_bounds,
                                                            vector_v2::PixelRect panel_bounds,
+                                                           const vector_v2::ChromeState& chrome,
                                                            std::uint32_t event_us);
   [[nodiscard]] bool compose_into_frame(vector_v2::PixelRect panel_bounds);
+  [[nodiscard]] vector_v2::ChromeNavigation chrome_navigation() const;
+  [[nodiscard]] bool restore_canvas_overlays(const vector_v2::ChromeState& chrome);
+  [[nodiscard]] LivePresentationTiming present_with_overlays(vector_v2::PixelRect bounds,
+                                                             const vector_v2::ChromeState& chrome,
+                                                             std::uint32_t event_us,
+                                                             std::int64_t compose_us = 0);
   [[nodiscard]] LivePresentationTiming refresh_pan(int old_x, int old_y,
                                                    const vector_v2::ChromeState& chrome,
                                                    std::uint32_t event_us);

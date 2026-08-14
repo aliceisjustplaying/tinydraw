@@ -38,6 +38,7 @@ if(TINYDRAW_VECTOR_V2_OVERVIEW_WALK OR TINYDRAW_VECTOR_V2_APP)
       "vector_v2/vector_v2_presenter.cpp"
       "vector_v2/vector_v2_touch_sampler.cpp"
       "image_export_store.cpp"
+      "power_manager.cpp"
       "usb_export.cpp"
     )
     if(TINYDRAW_VECTOR_V2_GATE_HARNESS)

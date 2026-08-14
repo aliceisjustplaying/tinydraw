@@ -13,6 +13,13 @@ struct ChromePoint {
   float y = 0.0F;
 };
 
+struct ChromeRect {
+  int x0 = 0;
+  int y0 = 0;
+  int x1 = 0;
+  int y1 = 0;
+};
+
 inline constexpr int kChromeCanvasBottom = 372;
 inline constexpr int kChromePopupInputBottom = 288;
 inline constexpr int kChromePopupCanvasBottom = 294;
@@ -44,6 +51,8 @@ enum class ChromeAction {
   kCancelNewDrawing,
   kConfirmNewDrawing,
   kExport,
+  kZoomIn,
+  kZoomOut,
 };
 
 struct ChromeState {
@@ -58,7 +67,27 @@ struct ChromeState {
   bool confirm_new = false;
   ChromeExportStatus export_status = ChromeExportStatus::kIdle;
   std::uint8_t export_progress = 0;
+  int battery_percentage = -1;
+  bool battery_charging = false;
   bool operator==(const ChromeState&) const = default;
+};
+
+struct ChromeNavigation {
+  int zoom_percent = 25;
+  int level_x = 0;
+  int level_y = 0;
+  int level_width = 368;
+  int level_height = 448;
+  bool can_pan_top = false;
+  bool can_pan_left = false;
+  bool can_pan_right = false;
+  bool can_pan_bottom = false;
+  std::span<const std::uint16_t> overview_pixels{};
+};
+
+struct ChromeOverlayRegions {
+  std::array<ChromeRect, 3> regions{};
+  std::size_t count = 0;
 };
 
 [[nodiscard]] constexpr std::uint16_t rgb565(std::uint32_t rgb888) {
@@ -88,6 +117,9 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
 [[nodiscard]] ChromeAction chrome_action_at(ChromePoint point, const ChromeState& state);
 [[nodiscard]] std::optional<std::uint8_t> chrome_color_at(ChromePoint point,
                                                           const ChromeState& state);
+[[nodiscard]] ChromeOverlayRegions chrome_overlay_regions(const ChromeState& state);
 void draw_chrome(std::span<std::uint16_t> pixels, int width, int height, const ChromeState& state);
+void draw_chrome_canvas_overlays(std::span<std::uint16_t> pixels, int width, int height,
+                                 const ChromeState& state, const ChromeNavigation& navigation);
 
 }  // namespace tinydraw::vector_v2

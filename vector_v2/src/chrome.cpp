@@ -29,6 +29,16 @@ constexpr int kToastLeft = 104;
 constexpr int kToastTop = 70;
 constexpr int kToastRight = 264;
 constexpr int kToastBottom = 132;
+constexpr int kBatteryLeft = 222;
+constexpr int kBatteryTop = 18;
+constexpr int kBatteryRight = 340;
+constexpr int kBatteryBottom = 54;
+constexpr ChromeRect kZoomRailRect{304, 72, 360, 226};
+constexpr ChromeRect kMinimapRect{266, 252, 358, 366};
+constexpr int kMinimapLeft = 272;
+constexpr int kMinimapTop = 258;
+constexpr int kMinimapWidth = 80;
+constexpr int kMinimapHeight = 98;
 constexpr int kHitSlop = 8;
 constexpr int kMainHitTop = kMainTop - kHitSlop;
 constexpr std::array kMainCenters{34, 94, 154, 214, 274, 334};
@@ -43,6 +53,11 @@ using Painter = PixelPainter;
 
 bool inside(ChromePoint point, float x0, float y0, float x1, float y1) {
   return point.x >= x0 && point.x < x1 && point.y >= y0 && point.y < y1;
+}
+
+bool canvas_overlays_visible(const ChromeState& state) {
+  return state.popup == ChromePopup::kNone && !state.confirm_new &&
+         state.export_status == ChromeExportStatus::kIdle;
 }
 
 void draw_dock(Painter& painter, int top, int bottom) {
@@ -210,6 +225,123 @@ void draw_new_dialog(Painter& painter) {
   painter.text(240, 228, "YES", kWhite);
 }
 
+void draw_battery(Painter& painter, const ChromeState& state) {
+  if (state.battery_percentage < 0) {
+    return;
+  }
+  const int percentage = std::clamp(state.battery_percentage, 0, 100);
+  painter.rounded({kBatteryLeft + 2, kBatteryTop + 3, kBatteryRight + 2, kBatteryBottom + 3}, 9,
+                  kShadow);
+  painter.rounded({kBatteryLeft - 1, kBatteryTop - 1, kBatteryRight + 1, kBatteryBottom + 1}, 9,
+                  kBorder);
+  painter.rounded({kBatteryLeft, kBatteryTop, kBatteryRight, kBatteryBottom}, 8, kWhite);
+
+  constexpr int icon_left = kBatteryLeft + 8;
+  constexpr int icon_top = 28;
+  constexpr int icon_right = icon_left + 30;
+  constexpr int icon_bottom = 45;
+  const std::uint16_t outline = state.battery_charging ? kSelected : kInk;
+  painter.rect({icon_left, icon_top, icon_right, icon_top + 2}, outline);
+  painter.rect({icon_left, icon_bottom - 2, icon_right, icon_bottom}, outline);
+  painter.rect({icon_left, icon_top, icon_left + 2, icon_bottom}, outline);
+  painter.rect({icon_right - 2, icon_top, icon_right, icon_bottom}, outline);
+  painter.rect({icon_right, icon_top + 6, icon_right + 4, icon_bottom - 6}, outline);
+  const int level_width = percentage * (icon_right - icon_left - 8) / 100;
+  painter.rect({icon_left + 4, icon_top + 4, icon_left + 4 + level_width, icon_bottom - 4},
+               outline);
+  if (state.battery_charging) {
+    painter.line({icon_left + 19, icon_top + 1, icon_left + 11, icon_top + 9}, 0xF569U);
+    painter.line({icon_left + 11, icon_top + 9, icon_left + 18, icon_top + 9}, 0xF569U);
+    painter.line({icon_left + 18, icon_top + 9, icon_left + 10, icon_bottom - 3}, 0xF569U);
+  }
+
+  std::array<char, 4> label{};
+  std::size_t length = 0;
+  if (percentage == 100) {
+    label[length++] = '1';
+  }
+  if (percentage >= 10) {
+    label[length++] = static_cast<char>('0' + (percentage / 10) % 10);
+  }
+  label[length++] = static_cast<char>('0' + percentage % 10);
+  label[length++] = '%';
+  constexpr int text_advance = 6 * 5 / 2;
+  const int text_x = kBatteryRight - 8 - static_cast<int>(length) * text_advance;
+  painter.text(text_x, 28, std::string_view(label.data(), length), kInk, 5, 2);
+}
+
+void draw_zoom_rail(Painter& painter, const ChromeNavigation& navigation) {
+  painter.rounded(
+      {kZoomRailRect.x0 + 2, kZoomRailRect.y0 + 3, kZoomRailRect.x1 + 2, kZoomRailRect.y1 + 3}, 11,
+      kShadow);
+  painter.rounded(
+      {kZoomRailRect.x0 - 1, kZoomRailRect.y0 - 1, kZoomRailRect.x1 + 1, kZoomRailRect.y1 + 1}, 11,
+      kBorder);
+  painter.rounded({kZoomRailRect.x0, kZoomRailRect.y0, kZoomRailRect.x1, kZoomRailRect.y1}, 10,
+                  kWhite);
+  painter.rect({kZoomRailRect.x0, 123, kZoomRailRect.x1, 125}, kBorder);
+  painter.rect({kZoomRailRect.x0, 173, kZoomRailRect.x1, 175}, kBorder);
+  const std::uint16_t plus = navigation.zoom_percent < 400 ? kInk : kMuted;
+  const std::uint16_t minus = navigation.zoom_percent > 25 ? kInk : kMuted;
+  painter.line({320, 98, 344, 98}, plus, 2);
+  painter.line({332, 86, 332, 110}, plus, 2);
+  painter.line({320, 200, 344, 200}, minus, 2);
+
+  std::array<char, 4> label{};
+  std::size_t length = 0;
+  int value = std::clamp(navigation.zoom_percent, 0, 999);
+  if (value >= 100) {
+    label[length++] = static_cast<char>('0' + value / 100);
+  }
+  if (value >= 10) {
+    label[length++] = static_cast<char>('0' + (value / 10) % 10);
+  }
+  label[length++] = static_cast<char>('0' + value % 10);
+  label[length++] = '%';
+  const int text_x = 332 - static_cast<int>(length) * 6;
+  painter.text(text_x, 142, std::string_view(label.data(), length), kInk);
+}
+
+void draw_minimap(Painter& painter, const ChromeNavigation& navigation) {
+  painter.rounded(
+      {kMinimapRect.x0 + 2, kMinimapRect.y0 + 3, kMinimapRect.x1 + 2, kMinimapRect.y1 + 3}, 9,
+      kShadow);
+  painter.rounded(
+      {kMinimapRect.x0 - 1, kMinimapRect.y0 - 1, kMinimapRect.x1 + 1, kMinimapRect.y1 + 1}, 9,
+      kBorder);
+  painter.rounded({kMinimapRect.x0, kMinimapRect.y0, kMinimapRect.x1, kMinimapRect.y1}, 8, kWhite);
+  if (navigation.overview_pixels.size() >=
+      static_cast<std::size_t>(kWidth) * static_cast<std::size_t>(kHeight)) {
+    for (int y = 0; y < kMinimapHeight; ++y) {
+      const int source_y = y * kHeight / kMinimapHeight;
+      for (int x = 0; x < kMinimapWidth; ++x) {
+        const int source_x = x * kWidth / kMinimapWidth;
+        painter.pixel(kMinimapLeft + x, kMinimapTop + y,
+                      navigation.overview_pixels[static_cast<std::size_t>(source_y) * kWidth +
+                                                 static_cast<std::size_t>(source_x)]);
+      }
+    }
+  } else {
+    painter.rect(
+        {kMinimapLeft, kMinimapTop, kMinimapLeft + kMinimapWidth, kMinimapTop + kMinimapHeight},
+        kWhite);
+  }
+
+  const int level_width = std::max(navigation.level_width, 1);
+  const int level_height = std::max(navigation.level_height, 1);
+  const int x0 = kMinimapLeft + navigation.level_x * kMinimapWidth / level_width;
+  const int y0 = kMinimapTop + navigation.level_y * kMinimapHeight / level_height;
+  const int x1 = kMinimapLeft + (navigation.level_x + kWidth) * kMinimapWidth / level_width;
+  const int y1 =
+      kMinimapTop + (navigation.level_y + kChromeCanvasBottom) * kMinimapHeight / level_height;
+  const int right = std::clamp(x1, x0 + 2, kMinimapLeft + kMinimapWidth);
+  const int bottom = std::clamp(y1, y0 + 2, kMinimapTop + kMinimapHeight);
+  painter.line({x0, y0, right, y0}, kSelected, 1);
+  painter.line({right, y0, right, bottom}, kSelected, 1);
+  painter.line({right, bottom, x0, bottom}, kSelected, 1);
+  painter.line({x0, bottom, x0, y0}, kSelected, 1);
+}
+
 void draw_export_toast(Painter& painter, const ChromeState& state) {
   if (state.export_status == ChromeExportStatus::kIdle) {
     return;
@@ -299,7 +431,12 @@ bool chrome_contains(ChromePoint point, const ChromeState& state) {
   const bool popup = state.popup != ChromePopup::kNone &&
                      inside(point, 0.0F, static_cast<float>(kPopupTop - kHitSlop),
                             static_cast<float>(kWidth), static_cast<float>(kMainTop));
-  return main || popup;
+  const bool zoom_rail =
+      canvas_overlays_visible(state) &&
+      inside(point, static_cast<float>(kZoomRailRect.x0 - kHitSlop),
+             static_cast<float>(kZoomRailRect.y0 - kHitSlop), static_cast<float>(kWidth),
+             static_cast<float>(kZoomRailRect.y1 + kHitSlop));
+  return main || popup || zoom_rail;
 }
 
 std::optional<std::uint8_t> chrome_color_at(ChromePoint point, const ChromeState& state) {
@@ -358,6 +495,18 @@ ChromeAction chrome_action_at(ChromePoint point, const ChromeState& state) {
       return point.x < kWidth / 2.0F ? ChromeAction::kNewDrawing : ChromeAction::kExport;
     }
   }
+  if (canvas_overlays_visible(state) &&
+      inside(point, static_cast<float>(kZoomRailRect.x0 - kHitSlop),
+             static_cast<float>(kZoomRailRect.y0 - kHitSlop), static_cast<float>(kWidth),
+             static_cast<float>(kZoomRailRect.y1 + kHitSlop))) {
+    if (point.y < 125.0F) {
+      return ChromeAction::kZoomIn;
+    }
+    if (point.y >= 175.0F) {
+      return ChromeAction::kZoomOut;
+    }
+    return ChromeAction::kNone;
+  }
   if (!inside(point, 0.0F, static_cast<float>(kMainHitTop), static_cast<float>(kWidth),
               static_cast<float>(kHeight))) {
     return ChromeAction::kNone;
@@ -368,6 +517,20 @@ ChromeAction chrome_action_at(ChromePoint point, const ChromeState& state) {
   const std::size_t index =
       std::min(static_cast<std::size_t>(point.x * 6.0F / kWidth), std::size_t{5});
   return actions[index];
+}
+
+ChromeOverlayRegions chrome_overlay_regions(const ChromeState& state) {
+  ChromeOverlayRegions result;
+  if (!canvas_overlays_visible(state)) {
+    return result;
+  }
+  result.regions[result.count++] = kZoomRailRect;
+  result.regions[result.count++] = kMinimapRect;
+  if (state.battery_percentage >= 0) {
+    result.regions[result.count++] = {kBatteryLeft - 2, kBatteryTop - 2, kBatteryRight + 4,
+                                      kBatteryBottom + 6};
+  }
+  return result;
 }
 
 void draw_chrome(std::span<std::uint16_t> pixels, int width, int height, const ChromeState& state) {
@@ -407,6 +570,19 @@ void draw_chrome(std::span<std::uint16_t> pixels, int width, int height, const C
     draw_new_dialog(painter);
   }
   draw_export_toast(painter, state);
+}
+
+void draw_chrome_canvas_overlays(std::span<std::uint16_t> pixels, int width, int height,
+                                 const ChromeState& state, const ChromeNavigation& navigation) {
+  if (width != kWidth || height != kHeight ||
+      pixels.size() < static_cast<std::size_t>(width) * static_cast<std::size_t>(height) ||
+      !canvas_overlays_visible(state)) {
+    return;
+  }
+  Painter painter(pixels, width, height);
+  draw_zoom_rail(painter, navigation);
+  draw_minimap(painter, navigation);
+  draw_battery(painter, state);
 }
 
 }  // namespace tinydraw::vector_v2
