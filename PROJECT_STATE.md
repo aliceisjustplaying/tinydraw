@@ -65,51 +65,50 @@ not the funded product path.
 
 ## Current measured debt
 
-The architecture works, but the product still needs substantial integration and
-performance work:
+Phase 0 of the second performance round (`205fefe`,
+[`vector_v2/hardware-receipts/PERF_ROUND_2_BASELINES_2026_08_14.md`](vector_v2/hardware-receipts/PERF_ROUND_2_BASELINES_2026_08_14.md))
+replaced the manual regression reports with deterministic receipts:
 
-- ordinary pan currently occupies roughly 46–50 ms end-to-end, around 20 FPS;
-- the final glass test measured only 18.3% framebuffer reuse across 814 frames
-  at 400%, and 2.9% across 244 frames at 200%;
-- drawing with a warm multi-zoom cache is not bounded at lower zooms: the
-  manual session reached 120.1 ms per chunk at 25% and 131.8 ms at 100%;
-- the 384-slot cache improves mutation-free revisits but still needs a mixed
-  draw/pan A/B against 320 before it becomes a settled product choice;
-- fixed overlays no longer tax live ink, but the current 100% pan-overlay gate
-  remains red at about 40 ms first-submit, including about 7.8 ms of changing
-  minimap chrome;
-- export now yields at rendered-band progress boundaries, but a clean hardware
-  receipt must confirm that the former five-second task-watchdog warning is
-  gone;
-- the preserved `feat/v2-warm-pan` worktree contains an attribution-gate commit
-  and an uncommitted adjustment, but no completed hardware A/B result;
-- anti-aliasing, persistence, Undo/Redo, autosave, low-power lifecycle parity,
-  interactive minimap behavior, and final tap-target polish remain incomplete;
-- SVG export is plausible from vector authority but needs an explicit eraser
-  mask/compositing design and a bounded implementation investigation.
-
-At `264b60e` (2026-08-14), intermediate long-stroke chunk commits moved in
-place and the deterministic 400% gate fell from about 70 ms to 11.1 ms. The
-manual 400% long gesture later measured 13.3 ms worst-case and looked smooth,
-but lower-zoom cached drawing exposed the unbounded cross-zoom mutation work
-listed above. The cold campaign remains a large measured win: final adversarial
-400% p95 is 646 ms, down from 1.452 s, with every producer tick under 12.7 ms.
-See
-[`vector_v2/hardware-receipts/PERFORMANCE_SLICE_GLASS_VERDICT_2026_08_14.md`](vector_v2/hardware-receipts/PERFORMANCE_SLICE_GLASS_VERDICT_2026_08_14.md).
+- drawing with a warm multi-zoom cache breaches the 15 ms chunk alarm at
+  every zoom: `TINYDRAW_GATE1_MIXED_DRAW` measures 130 ms worst at 25%,
+  58 ms at 100%, and 20.5 ms even at 400%, with 700–960 resident tiles
+  painted per stroke and zero fallback — the in-place policy paints every
+  intersecting resident raw tile at every zoom;
+- the 320-versus-384 mixed draw/pan A/B is settled: identical drawing
+  latency at both counts, and 384 keeps its 63-tile/411 ms return-trip
+  retention win, so the drawing fix is a mutation-policy change and the
+  384-slot pool stays;
+- warm pan is now about 67 ms per frame (≈15 FPS) with attribution
+  15.1 ms scroll memmove + 7.3 ms exposed compose + 8.5 ms tear wait +
+  19.7 ms present, plus the UI round's per-frame minimap chrome; the
+  single-frame pan gates remain red at about 40.4 ms first-submit with
+  7.8 ms chrome;
+- the fresh cold 20-run distribution matches the accepted receipt
+  (adversarial 400% p95 638 ms); the round target is −50% at every gated
+  corpus and zoom;
+- the export PNG task-watchdog warning reproduced in both full-gate
+  captures and remains open reliability debt;
+- anti-aliasing, persistence, Undo/Redo, autosave, low-power lifecycle
+  parity, interactive minimap behavior, and final tap-target polish remain
+  incomplete;
+- SVG export still needs an eraser mask/compositing design; the encoder must
+  budget inside the existing contiguous 1.5 MiB export reserve.
 
 These are product and optimization tasks, not evidence for another rewrite.
 
 ## Immediate next sequence
 
-1. Resume performance work with the accepted priority: drawing and erasing
-   latency, cold refinement (p95 below 800 ms), pan responsiveness, then export
-   speed.
-2. Add the deterministic mixed-zoom drawing gate before changing cache mutation
-   policy; target 10–12 ms chunks and alarm above 15 ms.
-3. Reconcile the preserved `feat/v2-warm-pan` attribution gate with current
-   `main`, then optimize measured pan terms without weakening live ink.
-4. Capture a clean hardware export receipt proving that progress-boundary yields
-   prevent watchdog starvation; reliability matters more than export speed.
+1. Fix drawing latency by changing the in-place mutation policy so chunk
+   commits never pay cross-zoom resident-tile fanout; acceptance is
+   `TINYDRAW_GATE1_MIXED_DRAW` green (10–12 ms chunks, alarm 15 ms) at every
+   zoom and both slot counts, with the gate's revisit lines pricing the
+   retention cost. The gate then joins the battery's final verdict.
+2. Raise warm pan to a 30 FPS floor: ring/offset frame addressing (−15 ms
+   memmove), tear-wait/compose overlap, and chrome off the per-frame path;
+   acceptance is `TINYDRAW_GATE1_PANSEQ` at or below 33.3 ms per frame.
+3. Run the cold −50% campaign from the fresh distribution.
+4. Capture a clean hardware export receipt proving watchdog-safe encoding;
+   reliability matters more than export speed.
 5. Investigate SVG eraser semantics, then continue through anti-aliasing,
    persistence, Undo/Redo, lifecycle parity, and remaining UI polish.
 

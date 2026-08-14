@@ -472,13 +472,21 @@ complete overview. It still needs careful tap targeting and viewport math.
 
 # Next concrete sequence
 
-1. Resume performance work in this order: drawing and erasing latency, cold
-   refinement with p95 below 800 ms, pan responsiveness, then export speed.
-2. Add a scripted touch-shaped drawing/erasing gate at every zoom against a warm
-   multi-zoom cache; target 10–12 ms chunks and alarm above 15 ms.
-3. Preserve and reconcile the incomplete `feat/v2-warm-pan` attribution gate;
-   it has no accepted hardware A/B result yet.
-4. Re-run the 320-versus-384 cache comparison with intervening mutations and let
-   drawing latency win if retention conflicts with input responsiveness.
-5. Capture clean export-watchdog and pan receipts, investigate SVG eraser/mask
-   semantics, and retain the startup TE synchronization flake for diagnosis.
+Phase 0 of the second performance round is complete at `205fefe`: the
+mixed-zoom drawing gate, the reconciled warm-pan attribution gate, a fresh
+cold 20-run distribution, and the settled 320-versus-384 A/B all live in
+[`vector_v2/hardware-receipts/PERF_ROUND_2_BASELINES_2026_08_14.md`](vector_v2/hardware-receipts/PERF_ROUND_2_BASELINES_2026_08_14.md).
+
+1. Fix drawing latency: change the in-place mutation policy so chunk commits
+   never pay cross-zoom resident-tile fanout; `TINYDRAW_GATE1_MIXED_DRAW`
+   green at 10–12 ms chunks (alarm 15 ms) at every zoom and both slot counts,
+   then it joins the battery's final verdict.
+2. Raise warm pan to a 30 FPS floor (frame ≤ 33.3 ms): ring/offset frame
+   addressing removes the 15 ms scroll memmove, tear wait overlaps compose,
+   changing minimap chrome leaves the per-frame path;
+   `TINYDRAW_GATE1_PANSEQ` is the acceptance gate.
+3. Cold −50% campaign from the fresh distribution (adversarial 400% p95
+   638 ms → 319 ms target).
+4. Capture a clean export-watchdog receipt; investigate SVG eraser/mask
+   semantics with the SVG encoder budgeted inside the existing 1.5 MiB export
+   reserve; retain the startup TE synchronization flake for diagnosis.
