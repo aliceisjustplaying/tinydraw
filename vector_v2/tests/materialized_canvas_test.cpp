@@ -29,9 +29,9 @@ TEST_CASE("production geometry has fixed world overview and committed zoom ident
 TEST_CASE("production memory plan records every fixed-capacity region") {
   CHECK(sizeof(vector_v2::CompactOperationSample) == 8U);
   CHECK(vector_v2::kOverviewPublicationBytes == 329'728U);
-  CHECK(vector_v2::kTileSlotCount == 320U);
+  CHECK(vector_v2::kTileSlotCount == 384U);
   CHECK(vector_v2::kTileSlotCount >= 5U * vector_v2::kMaximumVisibleTiles);
-  CHECK(vector_v2::kTilePoolBytes == 2'621'440U);
+  CHECK(vector_v2::kTilePoolBytes == 3'145'728U);
   CHECK(vector_v2::kTileMetadataBytes ==
         vector_v2::kTileSlotCount * sizeof(vector_v2::MaterializedSlotStorage) +
             vector_v2::kMaterializedTileIdentityCount *
@@ -41,7 +41,7 @@ TEST_CASE("production memory plan records every fixed-capacity region") {
   CHECK(vector_v2::kLodStorageBytes == 668'000U);
   CHECK(vector_v2::kRendererWorkspaceBytes == 163'840U);
   CHECK(vector_v2::kDisplayWorkspaceBytes == 103'040U);
-  CHECK(vector_v2::kExternalPlanBytes == 5'004'632U);
+  CHECK(vector_v2::kExternalPlanBytes == 5'531'480U);
   CHECK(vector_v2::kTargetContiguousReserveBytes == 1'572'864U);
 }
 
@@ -214,22 +214,27 @@ TEST_CASE("cache retains every zoom viewport across a disjoint pan fill") {
   constexpr std::size_t kRetainedFootprints = 5U;
   constexpr std::size_t kAdditionalSlots =
       vector_v2::kTileSlotCount - kRetainedFootprints * vector_v2::kMaximumVisibleTiles;
-  for (std::uint16_t column = 0; column < kAdditionalSlots; ++column) {
-    REQUIRE(canvas.publish_tile({vector_v2::ZoomLevel::k400Percent, column, 16}, {0},
+  // Spread the filler keys across rows: the 400% grid has 92 columns, fewer
+  // than the spare-slot count at the current pool size.
+  constexpr std::uint16_t kFillerColumns = 64U;
+  const auto filler_key = [](std::size_t index) {
+    return vector_v2::TileKey{vector_v2::ZoomLevel::k400Percent,
+                              static_cast<std::uint16_t>(index % kFillerColumns),
+                              static_cast<std::uint16_t>(16U + index / kFillerColumns)};
+  };
+  for (std::size_t index = 0; index < kAdditionalSlots; ++index) {
+    REQUIRE(canvas.publish_tile(filler_key(index), {0},
                                 vector_v2::MaterializationQuality::kImmediate, tile));
   }
   const vector_v2::TileKey oldest{vector_v2::ZoomLevel::k400Percent, 8, 8};
   CHECK(canvas.lookup(oldest)->kind == vector_v2::SourceKind::kTileSlot);
-  REQUIRE(canvas.publish_tile(
-      {vector_v2::ZoomLevel::k400Percent, static_cast<std::uint16_t>(kAdditionalSlots), 16}, {0},
-      vector_v2::MaterializationQuality::kImmediate, tile));
+  const vector_v2::TileKey overflow_key{vector_v2::ZoomLevel::k400Percent, 0, 40};
+  REQUIRE(
+      canvas.publish_tile(overflow_key, {0}, vector_v2::MaterializationQuality::kImmediate, tile));
   CHECK(canvas.lookup(oldest)->kind == vector_v2::SourceKind::kOverview);
   CHECK(canvas.lookup({vector_v2::ZoomLevel::k50Percent, 0, 0})->kind ==
         vector_v2::SourceKind::kTileSlot);
-  CHECK(canvas
-            .lookup({vector_v2::ZoomLevel::k400Percent,
-                     static_cast<std::uint16_t>(kAdditionalSlots), 16})
-            ->kind == vector_v2::SourceKind::kTileSlot);
+  CHECK(canvas.lookup(overflow_key)->kind == vector_v2::SourceKind::kTileSlot);
 }
 
 TEST_CASE("recent view footprints softly outrank global LRU eviction") {
