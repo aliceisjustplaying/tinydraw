@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <memory>
+#include <optional>
 #include <span>
 
 #include "driver/gpio.h"
@@ -212,6 +213,22 @@ struct AppStorage {
 };
 
 std::uint32_t now_us() { return static_cast<std::uint32_t>(esp_timer_get_time()); }
+
+std::optional<Point> clip_ink_point(Point previous, Point current) {
+  constexpr float kCanvasBottom = static_cast<float>(kMainToolbarOverlayTop - 1);
+  if (current.y <= kCanvasBottom) {
+    return current;
+  }
+  if (previous.y > kCanvasBottom) {
+    return std::nullopt;
+  }
+  const float vertical_distance = current.y - previous.y;
+  if (vertical_distance <= 0.0F) {
+    return Point{current.x, kCanvasBottom};
+  }
+  const float progress = (kCanvasBottom - previous.y) / vertical_distance;
+  return Point{previous.x + (current.x - previous.x) * progress, kCanvasBottom};
+}
 
 const char* zoom_name(ZoomLevel zoom) {
   switch (zoom) {
@@ -640,17 +657,21 @@ void run_vector_v2_app() {
             presenter.pan_from(pan_start_x, pan_start_y, pan_start, point, toolbar, loop_us);
         pan_metrics.include(timing);
       } else if (ink.active() && (point.x != last_touch.x || point.y != last_touch.y)) {
+        const auto canvas_point = clip_ink_point(last_touch, point);
         last_touch = point;
-        last_ink = ink.update({.x = point.x, .y = point.y, .timestamp_us = loop_us});
-        if (!builder.add(presenter.operation_point(last_ink))) {
-          builder.cancel();
-          ribbon.reset();
-          ink.end();
-        } else {
-          const std::uint16_t color =
-              toolbar.tool == DrawingTool::kEraser ? 0xFFFFU : rgb565(toolbar.color);
-          live_metrics.include(
-              presenter.show_update(ribbon.append(last_ink, false), color, loop_us));
+        if (canvas_point.has_value()) {
+          last_ink =
+              ink.update({.x = canvas_point->x, .y = canvas_point->y, .timestamp_us = loop_us});
+          if (!builder.add(presenter.operation_point(last_ink))) {
+            builder.cancel();
+            ribbon.reset();
+            ink.end();
+          } else {
+            const std::uint16_t color =
+                toolbar.tool == DrawingTool::kEraser ? 0xFFFFU : rgb565(toolbar.color);
+            live_metrics.include(
+                presenter.show_update(ribbon.append(last_ink, false), color, loop_us));
+          }
         }
       }
     } else if (pressed && ++lift_reads >= kLiftReads) {
@@ -677,7 +698,8 @@ void run_vector_v2_app() {
         };
         const std::uint32_t finished_us = now_us();
         const std::int64_t finish_preview_started = esp_timer_get_time();
-        last_ink = ink.finish({.x = last_touch.x, .y = last_touch.y, .timestamp_us = finished_us});
+        last_ink = ink.finish(
+            {.x = last_ink.position.x, .y = last_ink.position.y, .timestamp_us = finished_us});
         const std::uint16_t color =
             toolbar.tool == DrawingTool::kEraser ? 0xFFFFU : rgb565(toolbar.color);
         live_metrics.include(presenter.show_update(ribbon.finish(last_ink), color, finished_us));
