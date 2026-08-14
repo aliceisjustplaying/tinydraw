@@ -36,8 +36,18 @@ On the physical ESP32-S3 with the deterministic seed-7 1,000-stroke document:
 - drawing while refinement is active works without stale publication;
 - a separate contiguous 1.5 MiB export reserve allocates alongside the live
   document, cache, and workspaces;
-- the final aggressive glass test committed 45 strokes with zero touch errors,
-  presentation failures, authority mismatch, or visible corruption;
+- the final aggressive performance glass test committed 45 strokes with zero
+  touch errors, presentation failures, authority mismatch, or corruption;
+- the production toolbar now reflects the active V1-derived tool icon and uses
+  compact tool, size, document, and round-swatch color popups;
+- New requires confirmation, and Export shows band-by-band progress plus a
+  visible saved state before USB takes over;
+- battery status, the 25–400% zoom rail, and a live noninteractive minimap with
+  a viewport rectangle render as fixed canvas overlays;
+- physical UI checks confirmed reliable minimap updates and no remaining
+  cached-pan ghosts around the zoom rail or minimap;
+- the deterministic live-overlay circle gate measures 2.940 ms clear versus
+  2.928 ms over the overlays, with zero chrome redraw work or failures;
 - independent Fable high and Grok 4.6 high reviews found no remaining blocker
   after their findings were fixed.
 
@@ -65,11 +75,18 @@ performance work:
   manual session reached 120.1 ms per chunk at 25% and 131.8 ms at 100%;
 - the 384-slot cache improves mutation-free revisits but still needs a mixed
   draw/pan A/B against 320 before it becomes a settled product choice;
-- complete PNG/USB export works, but the blocking encoder starves CPU 0 long
-  enough to trigger the five-second task watchdog;
-- popup outside taps do not dismiss the popup and may pan behind it;
-- anti-aliasing, persistence, Undo/Redo, autosave, device lifecycle, and final
-  UI are incomplete.
+- fixed overlays no longer tax live ink, but the current 100% pan-overlay gate
+  remains red at about 40 ms first-submit, including about 7.8 ms of changing
+  minimap chrome;
+- export now yields at rendered-band progress boundaries, but a clean hardware
+  receipt must confirm that the former five-second task-watchdog warning is
+  gone;
+- the preserved `feat/v2-warm-pan` worktree contains an attribution-gate commit
+  and an uncommitted adjustment, but no completed hardware A/B result;
+- anti-aliasing, persistence, Undo/Redo, autosave, low-power lifecycle parity,
+  interactive minimap behavior, and final tap-target polish remain incomplete;
+- SVG export is plausible from vector authority but needs an explicit eraser
+  mask/compositing design and a bounded implementation investigation.
 
 At `264b60e` (2026-08-14), intermediate long-stroke chunk commits moved in
 place and the deterministic 400% gate fell from about 70 ms to 11.1 ms. The
@@ -84,15 +101,17 @@ These are product and optimization tasks, not evidence for another rewrite.
 
 ## Immediate next sequence
 
-1. Run the bounded UI refinement round: popup dismissal and hit behavior,
-   color-picker changes, the zoom rail, battery status, export progress, and a
-   minimap skeleton.
-2. Follow the accepted camera behavior in
-   [`VECTOR_V2_ZOOM_NAVIGATION.md`](VECTOR_V2_ZOOM_NAVIGATION.md).
-3. Resume performance work with the documented priority: drawing latency,
-   cold refinement (p95 below 800 ms), pan responsiveness, then export speed.
-4. Fix export watchdog starvation before treating export as release-ready.
-5. Continue through anti-aliasing, persistence, Undo/Redo, and lifecycle parity.
+1. Resume performance work with the accepted priority: drawing and erasing
+   latency, cold refinement (p95 below 800 ms), pan responsiveness, then export
+   speed.
+2. Add the deterministic mixed-zoom drawing gate before changing cache mutation
+   policy; target 10–12 ms chunks and alarm above 15 ms.
+3. Reconcile the preserved `feat/v2-warm-pan` attribution gate with current
+   `main`, then optimize measured pan terms without weakening live ink.
+4. Capture a clean hardware export receipt proving that progress-boundary yields
+   prevent watchdog starvation; reliability matters more than export speed.
+5. Investigate SVG eraser semantics, then continue through anti-aliasing,
+   persistence, Undo/Redo, lifecycle parity, and remaining UI polish.
 
 ## Repository and coexistence decision
 
@@ -120,7 +139,7 @@ Vector operation log (authoritative)
         ├── complete 368×448 RGB565 overview at 25%
         └── sparse world-aligned materialization at 50–400%
               ├── compact uniform/paper catalog
-              └── 320 raw 64×64 RGB565 slots
+              └── 384 raw 64×64 RGB565 slots
                     │
              MaterializedCanvas
                     │
