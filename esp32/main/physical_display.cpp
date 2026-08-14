@@ -27,7 +27,8 @@ int palette_overlay_top(ToolbarState state) {
 
 class PhysicalDisplay::Impl {
  public:
-  explicit Impl(bool enable_overlays) : overlays_enabled_(enable_overlays) {
+  Impl(BoardHardware& hardware, bool enable_overlays)
+      : transport_(hardware), overlays_enabled_(enable_overlays) {
     if (!overlays_enabled_) {
       return;
     }
@@ -256,7 +257,7 @@ class PhysicalDisplay::Impl {
     }
   }
 
-  Co5300PanelTransport transport_;
+  PanelTransport transport_;
   std::int64_t overlay_prepare_us_ = 0;
   std::uint16_t* overlay_ = nullptr;
   std::uint16_t* composition_ = nullptr;
@@ -273,8 +274,8 @@ class PhysicalDisplay::Impl {
   bool overlays_enabled_ = true;
 };
 
-PhysicalDisplay::PhysicalDisplay(bool enable_overlays)
-    : impl_(std::make_unique<Impl>(enable_overlays)) {}
+PhysicalDisplay::PhysicalDisplay(BoardHardware& hardware, bool enable_overlays)
+    : impl_(std::make_unique<Impl>(hardware, enable_overlays)) {}
 PhysicalDisplay::~PhysicalDisplay() = default;
 bool PhysicalDisplay::ready() const { return impl_->ready(); }
 void PhysicalDisplay::reset_timing() { impl_->reset_timing(); }

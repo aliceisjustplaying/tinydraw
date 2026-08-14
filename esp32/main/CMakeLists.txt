@@ -57,17 +57,19 @@ if(TINYDRAW_VECTOR_V2_OVERVIEW_WALK OR TINYDRAW_VECTOR_V2_APP)
     )
   endif()
   set(TINYDRAW_APP_SRCS
-    "co5300_panel_transport.cpp"
+    "board_hardware.cpp"
+    "panel_transport.cpp"
     "physical_touch.cpp"
     ${TINYDRAW_VECTOR_V2_HARDWARE_SRCS}
     ${TINYDRAW_VECTOR_V2_CORE_SRCS}
     ${TINYDRAW_VECTOR_V2_SRCS}
   )
   set(TINYDRAW_PLATFORM_SRCS "")
-  set(TINYDRAW_PLATFORM_REQUIRES esp_lcd_co5300 esp_lcd_touch_cst816s)
+  set(TINYDRAW_PLATFORM_REQUIRES esp_lcd_co5300 esp_lcd_sh8601 esp_lcd_touch_cst816s esp_lcd_touch_ft5x06)
 elseif(NOT TINYDRAW_QEMU)
   list(APPEND TINYDRAW_PLATFORM_SRCS
-    "co5300_panel_transport.cpp"
+    "board_hardware.cpp"
+    "panel_transport.cpp"
     "drawing_store.cpp"
     "hardware_app.cpp"
     "image_export_store.cpp"
@@ -81,7 +83,7 @@ elseif(NOT TINYDRAW_QEMU)
     "${TINYDRAW_CORE}/src/png_encoder.cpp"
     ${TINYDRAW_PNGENC_SRCS}
   )
-  list(APPEND TINYDRAW_PLATFORM_REQUIRES esp_event esp_lcd_co5300 esp_lcd_touch_cst816s esp_netif esp_wifi nvs_flash pcf85063a tinyusb esp_hw_support)
+  list(APPEND TINYDRAW_PLATFORM_REQUIRES esp_event esp_lcd_co5300 esp_lcd_sh8601 esp_lcd_touch_cst816s esp_lcd_touch_ft5x06 esp_netif esp_wifi nvs_flash pcf85063a tinyusb esp_hw_support)
   if(TINYDRAW_VECTOR_BENCHMARK OR TINYDRAW_PHASE2_PROTOTYPE OR TINYDRAW_INTERACTIVE_PAN_BENCHMARK)
     list(APPEND TINYDRAW_PLATFORM_SRCS
       "${TINYDRAW_CORE}/src/camera.cpp"

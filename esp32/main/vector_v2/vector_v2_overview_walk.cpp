@@ -6,11 +6,11 @@
 #include <memory>
 #include <span>
 
-#include "co5300_panel_transport.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "panel_transport.h"
 #include "physical_touch.h"
 #include "tinydraw/vector_v2/display_scheduler.h"
 #include "tinydraw/vector_v2/incremental_document.h"
@@ -72,8 +72,7 @@ std::uint16_t overview_pattern(int x, int y) {
   return marker ? 0xFFFFU : static_cast<std::uint16_t>((red << 11U) | (green << 5U) | blue);
 }
 
-bool wait_for_transfers(Co5300PanelTransport& display, std::uint32_t target,
-                        std::int64_t timeout_us) {
+bool wait_for_transfers(PanelTransport& display, std::uint32_t target, std::int64_t timeout_us) {
   const std::int64_t started = esp_timer_get_time();
   while (display.complete_count() < target) {
     if (esp_timer_get_time() - started >= timeout_us) {
@@ -84,8 +83,7 @@ bool wait_for_transfers(Co5300PanelTransport& display, std::uint32_t target,
   return true;
 }
 
-bool submit_strip(DisplayScheduler& scheduler, Co5300PanelTransport& display,
-                  const DisplayStrip& strip) {
+bool submit_strip(DisplayScheduler& scheduler, PanelTransport& display, const DisplayStrip& strip) {
   const auto sequence = scheduler.schedule(strip);
   if (!sequence.has_value()) {
     return false;
@@ -106,7 +104,7 @@ bool submit_strip(DisplayScheduler& scheduler, Co5300PanelTransport& display,
   return scheduler.complete(*sequence);
 }
 
-bool present_overview(Co5300PanelTransport& display, DisplayScheduler& scheduler,
+bool present_overview(PanelTransport& display, DisplayScheduler& scheduler,
                       const MaterializedCanvas& canvas) {
   const auto source = canvas.overview_pixels();
   const std::int64_t started = esp_timer_get_time();
@@ -141,7 +139,7 @@ bool present_overview(Co5300PanelTransport& display, DisplayScheduler& scheduler
   return passed;
 }
 
-bool present_fallback(Co5300PanelTransport& display, DisplayScheduler& scheduler,
+bool present_fallback(PanelTransport& display, DisplayScheduler& scheduler,
                       MaterializedCanvas& canvas, int world_x, int world_y,
                       std::uint32_t expected_hash, std::span<std::uint16_t> strip) {
   const std::int64_t started = esp_timer_get_time();
@@ -190,7 +188,7 @@ bool present_fallback(Co5300PanelTransport& display, DisplayScheduler& scheduler
   return passed;
 }
 
-bool present_incremental(Co5300PanelTransport& display, DisplayScheduler& scheduler,
+bool present_incremental(PanelTransport& display, DisplayScheduler& scheduler,
                          MaterializedCanvas& canvas, std::span<std::uint16_t> strip,
                          DocumentRevision revision, const char* phase,
                          std::uint32_t expected_hash) {
@@ -333,8 +331,9 @@ void run_vector_v2_overview_walk() {
   MaterializedCanvas canvas(std::span(overview, vector_v2::kOverviewPixels), std::span(slots, 2),
                             std::span(tile_pixels, 2U * vector_v2::kTilePixels),
                             DocumentRevision{0});
-  Co5300PanelTransport display;
-  PhysicalTouch touch;
+  BoardHardware hardware;
+  PanelTransport display(hardware);
+  PhysicalTouch touch(hardware);
   auto* overview_source =
       static_cast<std::uint16_t*>(heap_caps_malloc(vector_v2::kOverviewBytes, kExternalCaps));
   if (overview_source == nullptr) {

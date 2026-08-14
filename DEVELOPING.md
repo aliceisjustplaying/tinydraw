@@ -151,8 +151,22 @@ physical boards are connected. Physical builds use performance optimization,
 with the same optimization/CPU settings and its required 8 MB quad-PSRAM model. `scripts/esp32`
 asserts those effective settings after each build. This proves our explicit capability-allocation
 path against the emulator. It does not prove the physical board's PSRAM capacity, bandwidth, DMA
-behavior, or timing; those remain hardware checks. The active target is the V2 board with a CO5300
-display, CST820 touch controller, 8 MiB octal PSRAM, 16 MiB flash, and AXP2101 power manager.
+behavior, or timing; those remain hardware checks.
+
+Physical ESP32 builds link code paths for both released controller pairs into one binary.
+`BoardHardware` owns the
+shared I2C bus and one display/touch power reset, probes touch addresses 0x38 and 0x15, and resolves
+an immutable board profile before any controller-specific QSPI command. V1 selects SH8601 plus the
+FT3168-compatible FT5x06 driver with no X gap and a conservative 40 MHz panel clock. V2 selects
+CO5300 plus the CST820-compatible CST816S driver with X gap 0x10 and the measured 60 MHz clock.
+Auto mode requires exactly one probe response and fails closed on no match or ambiguity. A typed
+V1/V2 override is available for diagnostics and logs whether its probe evidence mismatches. V1 TE
+safe-frame timing is not hardware-validated, so that synchronization operation reports unsupported
+and presentation fails open. The V1 path builds but still needs cold-boot, full/partial refresh,
+touch orientation, sustained-transfer, and TE validation on a V1 board before production use. V3
+remains unsupported until Waveshare publishes its controller and discriminator details. Both
+released boards use 8 MiB octal PSRAM, 16 MiB flash, and AXP2101 power management according to
+Waveshare's current documentation.
 
 The physical build autosaves changed 32×32 world tiles after 500 ms idle. It samples the PMU every
 second only while touch is idle. Short BOOT presses toggle demo recording and a long press

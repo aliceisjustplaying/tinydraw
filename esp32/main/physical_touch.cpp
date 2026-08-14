@@ -4,28 +4,23 @@
 
 #include "driver/gpio.h"
 #include "esp_lcd_touch_cst816s.h"
-#include "tinydraw/geometry.h"
+#include "esp_lcd_touch_ft5x06.h"
 
 namespace tinydraw::esp32 {
 
-PhysicalTouch::PhysicalTouch() {
-  i2c_master_bus_config_t bus_config{};
-  bus_config.i2c_port = I2C_NUM_0;
-  bus_config.sda_io_num = GPIO_NUM_15;
-  bus_config.scl_io_num = GPIO_NUM_14;
-  bus_config.clk_source = I2C_CLK_SRC_DEFAULT;
-  bus_config.glitch_ignore_cnt = 7;
-  bus_config.flags.enable_internal_pullup = true;
-  if (i2c_new_master_bus(&bus_config, &bus_) != ESP_OK) {
+PhysicalTouch::PhysicalTouch(BoardHardware& hardware) {
+  if (!hardware.ready()) {
     return;
   }
   esp_lcd_panel_io_i2c_config_t io_config{};
-  io_config.dev_addr = ESP_LCD_TOUCH_IO_I2C_CST816S_ADDRESS;
+  io_config.dev_addr = hardware.profile().revision == BoardRevision::kV1
+                           ? ESP_LCD_TOUCH_IO_I2C_FT5x06_ADDRESS
+                           : ESP_LCD_TOUCH_IO_I2C_CST816S_ADDRESS;
   io_config.scl_speed_hz = 400000;
   io_config.control_phase_bytes = 1;
   io_config.lcd_cmd_bits = 8;
   io_config.flags.disable_control_phase = true;
-  if (esp_lcd_new_panel_io_i2c(bus_, &io_config, &io_) != ESP_OK) {
+  if (esp_lcd_new_panel_io_i2c(hardware.bus(), &io_config, &io_) != ESP_OK) {
     return;
   }
   esp_lcd_touch_config_t touch_config{};
@@ -35,25 +30,36 @@ PhysicalTouch::PhysicalTouch() {
   touch_config.int_gpio_num = GPIO_NUM_21;
   touch_config.levels.reset = 0;
   touch_config.levels.interrupt = 0;
-  ready_ = esp_lcd_touch_new_i2c_cst816s(io_, &touch_config, &touch_) == ESP_OK;
+  const esp_err_t created = hardware.profile().revision == BoardRevision::kV1
+                                ? esp_lcd_touch_new_i2c_ft5x06(io_, &touch_config, &touch_)
+                                : esp_lcd_touch_new_i2c_cst816s(io_, &touch_config, &touch_);
+  ready_ = created == ESP_OK;
+}
+
+PhysicalTouch::~PhysicalTouch() {
+  if (touch_ != nullptr) {
+    static_cast<void>(esp_lcd_touch_del(touch_));
+  }
+  if (io_ != nullptr) {
+    static_cast<void>(esp_lcd_panel_io_del(io_));
+  }
 }
 
 bool PhysicalTouch::ready() const { return ready_; }
-
-i2c_master_bus_handle_t PhysicalTouch::bus() const { return bus_; }
 
 TouchRead PhysicalTouch::read(Point& point) {
   if (!ready_ || esp_lcd_touch_read_data(touch_) != ESP_OK) {
     return TouchRead::kError;
   }
-  std::uint16_t x = 0;
-  std::uint16_t y = 0;
-  std::uint16_t strength = 0;
+  esp_lcd_touch_point_data_t data{};
   std::uint8_t count = 0;
-  if (!esp_lcd_touch_get_coordinates(touch_, &x, &y, &strength, &count, 1) || count == 0U) {
+  if (esp_lcd_touch_get_data(touch_, &data, &count, 1) != ESP_OK) {
+    return TouchRead::kError;
+  }
+  if (count == 0U) {
     return TouchRead::kNoTouch;
   }
-  point = {.x = static_cast<float>(x), .y = static_cast<float>(y)};
+  point = {.x = static_cast<float>(data.x), .y = static_cast<float>(data.y)};
   return TouchRead::kPoint;
 }
 

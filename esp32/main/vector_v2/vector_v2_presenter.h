@@ -5,7 +5,7 @@
 #include <memory>
 #include <span>
 
-#include "co5300_panel_transport.h"
+#include "panel_transport.h"
 #include "tinydraw/geometry.h"
 #include "tinydraw/graphics/ribbon_renderer.h"
 #include "tinydraw/ink/ink_stream.h"
@@ -55,7 +55,7 @@ struct LivePresentationTiming {
 class VectorV2Presenter {
  public:
   VectorV2Presenter(vector_v2::MaterializedCanvas& canvas, vector_v2::NavigationState& navigation,
-                    vector_v2::DisplayScheduler& scheduler, Co5300PanelTransport& display,
+                    vector_v2::DisplayScheduler& scheduler, PanelTransport& display,
                     std::span<std::uint16_t> frame_pixels, std::span<std::uint16_t> region_pixels);
 
   [[nodiscard]] bool ready() const;
@@ -111,7 +111,7 @@ class VectorV2Presenter {
   vector_v2::MaterializedCanvas& canvas_;
   vector_v2::NavigationState& navigation_;
   vector_v2::DisplayScheduler& scheduler_;
-  Co5300PanelTransport& display_;
+  PanelTransport& display_;
   std::span<std::uint16_t> frame_;
   std::span<std::uint16_t> region_;
   std::unique_ptr<RibbonRenderer> renderer_;

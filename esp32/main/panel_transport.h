@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 
+#include "board_hardware.h"
 #include "tinydraw/platform/display_backend.h"
 
 namespace tinydraw::esp32 {
@@ -14,19 +15,19 @@ struct TearSignalTiming {
   bool level = false;
 };
 
-// Owns one CO5300 panel, its DMA staging, queue capacity, and completion
-// telemetry. Input pixels are RGB565 in host byte order. The panel requires
-// in-bounds even-aligned windows; invalid submissions fail closed. Callers must
-// serialize submissions and telemetry access.
-class Co5300PanelTransport final : public DisplayBackend {
+// Owns the selected board profile's panel, DMA staging, queue capacity, and
+// completion telemetry. Input pixels are RGB565 in host byte order. Both
+// profiles use the common in-bounds even-window contract; invalid submissions
+// fail closed. Callers must serialize submissions and telemetry access.
+class PanelTransport final : public DisplayBackend {
  public:
-  Co5300PanelTransport();
-  ~Co5300PanelTransport() override;
+  explicit PanelTransport(BoardHardware& hardware);
+  ~PanelTransport() override;
 
-  Co5300PanelTransport(const Co5300PanelTransport&) = delete;
-  Co5300PanelTransport& operator=(const Co5300PanelTransport&) = delete;
-  Co5300PanelTransport(Co5300PanelTransport&&) = delete;
-  Co5300PanelTransport& operator=(Co5300PanelTransport&&) = delete;
+  PanelTransport(const PanelTransport&) = delete;
+  PanelTransport& operator=(const PanelTransport&) = delete;
+  PanelTransport(PanelTransport&&) = delete;
+  PanelTransport& operator=(PanelTransport&&) = delete;
 
   [[nodiscard]] bool ready() const;
   void reset_timing();
@@ -38,9 +39,8 @@ class Co5300PanelTransport final : public DisplayBackend {
   [[nodiscard]] std::uint32_t complete_count() const;
   [[nodiscard]] std::int64_t complete_time_us(std::uint32_t sequence) const;
   [[nodiscard]] TearSignalTiming tear_signal_timing() const;
-  // Waits for the end of the CO5300 vertical TE pulse. At the measured panel
-  // timing this places a top-to-bottom full-frame write safely behind scanout.
-  // Returns false on timeout; callers should fail open and still present.
+  // Waits for the measured V2 CO5300 safe frame-start edge. V1 SH8601 timing
+  // is not validated and returns false. Callers must fail open and present.
   [[nodiscard]] bool wait_for_safe_frame_start(std::int64_t timeout_us);
   [[nodiscard]] bool wait_for_all(std::int64_t timeout_us);
 

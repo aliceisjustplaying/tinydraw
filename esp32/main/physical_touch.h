@@ -1,7 +1,6 @@
-#ifndef TINYDRAW_ESP32_PHYSICAL_TOUCH_H
-#define TINYDRAW_ESP32_PHYSICAL_TOUCH_H
+#pragma once
 
-#include "driver/i2c_master.h"
+#include "board_hardware.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_touch.h"
 #include "tinydraw/geometry.h"
@@ -14,23 +13,25 @@ enum class TouchRead {
   kError,
 };
 
-// Instance-owned CST820/CST816S transport. The I2C bus is exposed only for the
-// board's power and RTC adapters, which share this physical bus.
+// Revision-selected FT3168/FT5x06-family or CST820/CST816S-family transport.
+// The shared I2C bus is owned by BoardHardware and must outlive this object.
 class PhysicalTouch {
  public:
-  PhysicalTouch();
+  explicit PhysicalTouch(BoardHardware& hardware);
+  ~PhysicalTouch();
+
+  PhysicalTouch(const PhysicalTouch&) = delete;
+  PhysicalTouch& operator=(const PhysicalTouch&) = delete;
+  PhysicalTouch(PhysicalTouch&&) = delete;
+  PhysicalTouch& operator=(PhysicalTouch&&) = delete;
 
   [[nodiscard]] bool ready() const;
-  [[nodiscard]] i2c_master_bus_handle_t bus() const;
   [[nodiscard]] TouchRead read(Point& point);
 
  private:
-  i2c_master_bus_handle_t bus_ = nullptr;
   esp_lcd_panel_io_handle_t io_ = nullptr;
   esp_lcd_touch_handle_t touch_ = nullptr;
   bool ready_ = false;
 };
 
 }  // namespace tinydraw::esp32
-
-#endif  // TINYDRAW_ESP32_PHYSICAL_TOUCH_H

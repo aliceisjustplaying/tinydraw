@@ -57,6 +57,20 @@ dependencies:
       registry_url: https://components.espressif.com/
       type: service
     version: 1.1.1~2
+  espressif/esp_lcd_touch_ft5x06:
+    component_hash: d49f3dec3ae89617c31d96ac6f31bbc3212a0f049354eabd55c9457e454c56ae
+    dependencies:
+    - name: espressif/esp_lcd_touch
+      registry_url: https://components.espressif.com
+      require: public
+      version: ^1.2.0
+    - name: idf
+      require: private
+      version: '>=5.2'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.1.1
   espressif/tinyusb:
     component_hash: a72b7d67472914ab76309340fd50d578b31e310963d45ad0f81144bde3314752
     dependencies:
@@ -77,6 +91,20 @@ dependencies:
     source:
       type: idf
     version: 6.0.2
+  waveshare/esp_lcd_sh8601:
+    component_hash: af135de8ee4a036bcff17bde98e6a96e02202d388fecf6004363e3d3e047943a
+    dependencies:
+    - name: espressif/cmake_utilities
+      registry_url: https://components.espressif.com
+      require: private
+      version: 0.*
+    - name: idf
+      require: private
+      version: '>=5.3'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 2.0.0
   waveshare/pcf85063a:
     component_hash: 13696b7d953566b8eaf50b904754d002ef602a352fc3dc9e22d2137e8dd40ca2
     dependencies:
@@ -91,8 +119,10 @@ direct_dependencies:
 - espressif/esp_lcd_co5300
 - espressif/esp_lcd_qemu_rgb
 - espressif/esp_lcd_touch_cst816s
+- espressif/esp_lcd_touch_ft5x06
 - espressif/tinyusb
+- waveshare/esp_lcd_sh8601
 - waveshare/pcf85063a
-manifest_hash: 6561b347869ab64d4bf90d8f2cdbe1a8c1e2935f4e5578bce035be5c21c65be8
+manifest_hash: 2de91683c34d5030a37b0482d03ae221a9a931eab3d33abc8f8a3f7e7354da50
 target: esp32s3
 version: 3.0.0

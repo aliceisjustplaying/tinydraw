@@ -4,7 +4,7 @@
 #include <memory>
 #include <span>
 
-#include "co5300_panel_transport.h"
+#include "panel_transport.h"
 #include "tinydraw/graphics/world_canvas.h"
 #include "tinydraw/platform/display_backend.h"
 #include "tinydraw/ui/toolbar.h"
@@ -13,11 +13,11 @@ namespace tinydraw::esp32 {
 
 inline constexpr int kPhysicalMainOverlayTop = kMainToolbarOverlayTop;
 
-// Owns the CO5300 panel transport and the legacy toolbar compositor. The
-// overlay allocation can be disabled for isolated production display probes.
+// Owns the revision-selected panel transport and legacy toolbar compositor.
+// Overlay allocation can be disabled for isolated production display probes.
 class PhysicalDisplay final : public DisplayBackend {
  public:
-  explicit PhysicalDisplay(bool enable_overlays = true);
+  explicit PhysicalDisplay(BoardHardware& hardware, bool enable_overlays = true);
   ~PhysicalDisplay() override;
 
   PhysicalDisplay(const PhysicalDisplay&) = delete;

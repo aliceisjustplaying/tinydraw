@@ -58,8 +58,24 @@ Draw with the mouse, use `Cmd-Z` to undo, `C` for New, and `Esc` to quit.
 ```
 
 `./scripts/esp32 build` remains an alias for `raster-v1`. Both named commands build in separate
-directories; `vector-v2 PORT` also flashes the V2 app. Use an explicit serial port. Export replaces USB serial with a read-only drive.
-To flash again on battery, power off, hold BOOT, and short-press power for a cold
+directories; `vector-v2 PORT` also flashes the Vector V2 app. Use an explicit serial port. The same
+firmware binary includes driver paths for both released ESP32-S3 board revisions:
+
+| Board label | AMOLED | Touch | Panel X gap | Validation |
+| --- | --- | --- | ---: | --- |
+| V1 | SH8601 | FT3168 through the FT5x06-family driver | 0 | Builds; physical validation pending |
+| V2 | CO5300 | CST820 through the CST816S-family driver | 0x10 | Physically exercised |
+
+At boot, TinyDraw resets the shared display/touch rails and requires exactly one known touch address
+to respond before it initializes the paired panel. Address 0x38 selects V1 and 0x15 selects V2;
+neither or both fail closed. Diagnostic firmware can explicitly construct `BoardHardware` with
+`BoardSelection::kV1` or `BoardSelection::kV2`; the override and probe mismatch are logged. Waveshare
+has not published V3 controller details, so V3 is not guessed or claimed as supported. V1 needs a
+real-board receipt for cold boot, partial refresh, touch orientation, and TE timing before it should
+be treated as production-validated.
+
+Export replaces USB serial with a read-only drive. To flash again on battery, power off, hold BOOT,
+and short-press power for a cold
 boot. Short BOOT records/replays demos. Hold the lower button four seconds to
 power off; short-press it to start. There is no sleep mode yet.
 

@@ -591,8 +591,9 @@ void run_vector_v2_app() {
                    std::span(storage.samples, vector_v2::kOperationSampleCapacity));
   std::array<DisplayStrip, 3> queue{};
   DisplayScheduler scheduler(queue);
-  Co5300PanelTransport display;
-  PhysicalTouch touch;
+  BoardHardware hardware;
+  PanelTransport display(hardware);
+  PhysicalTouch touch(hardware);
   VectorV2TouchSampler touch_sampler(touch,
                                      std::span(storage.touch_events, kVectorV2TouchEventCapacity));
   vector_v2::NavigationState navigation;

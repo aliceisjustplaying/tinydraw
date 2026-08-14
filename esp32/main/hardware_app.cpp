@@ -254,14 +254,16 @@ void touch_task(void* argument) {
 }  // namespace
 
 void run_hardware_app() {
-  tinydraw::esp32::PhysicalDisplay display;
-  PhysicalTouch touch;
-  tinydraw::esp32::PowerManager power(touch.bus());
-  tinydraw::esp32::RtcClock clock(touch.bus());
-  if (!display.ready() || !touch.ready()) {
-    std::printf("TINYDRAW_HARDWARE_FAIL display=%u touch=%u\n", display.ready(), touch.ready());
+  tinydraw::esp32::BoardHardware hardware;
+  tinydraw::esp32::PhysicalDisplay display(hardware);
+  PhysicalTouch touch(hardware);
+  if (!hardware.ready() || !display.ready() || !touch.ready()) {
+    std::printf("TINYDRAW_HARDWARE_FAIL board=%u display=%u touch=%u\n", hardware.ready(),
+                display.ready(), touch.ready());
     return;
   }
+  tinydraw::esp32::PowerManager power(hardware.bus());
+  tinydraw::esp32::RtcClock clock(hardware.bus());
 
   tinydraw::esp32::FirmwareCanvas canvas(display);
   if (!canvas.ready() || !canvas.capabilities_valid()) {
@@ -990,8 +992,14 @@ void run_hardware_app() {
   static_cast<void>(tinydraw::esp32::start_time_sync(clock));
 #endif
 
-  std::printf("TINYDRAW_HARDWARE_OK display=CO5300 touch=CST820 demo_capacity=%lu\n",
-              static_cast<unsigned long>(kDemoCapacity));
+  const auto driver = tinydraw::esp32::board_driver_profile(hardware.profile().revision);
+  const char* revision =
+      hardware.profile().revision == tinydraw::esp32::BoardRevision::kV1 ? "V1" : "V2";
+  std::printf(
+      "TINYDRAW_HARDWARE_OK revision=%s display=%s touch=%s selected_by_override=%u "
+      "demo_capacity=%lu\n",
+      revision, driver.panel_name, driver.touch_name, hardware.profile().selected_by_override,
+      static_cast<unsigned long>(kDemoCapacity));
   while (true) {
     if (toolbar.export_toast &&
         static_cast<std::int32_t>(timestamp_us() - export_toast_until_us) >= 0) {

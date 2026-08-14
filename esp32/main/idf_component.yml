@@ -2,5 +2,7 @@ dependencies:
   espressif/tinyusb: "0.21.0~1"
   waveshare/pcf85063a: "^2.0.0"
   espressif/esp_lcd_co5300: "^2.1.0"
+  waveshare/esp_lcd_sh8601: "^2.0.0"
   espressif/esp_lcd_qemu_rgb: "^1.0.2"
   espressif/esp_lcd_touch_cst816s: "^1.1.1~2"
+  espressif/esp_lcd_touch_ft5x06: "^1.1.1"

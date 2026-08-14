@@ -1,4 +1,5 @@
 add_executable(tinydraw_tests
+  board_profile_test.cpp
   camera_test.cpp
   coordinate_transform_test.cpp
   coverage_tile_test.cpp

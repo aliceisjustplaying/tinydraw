@@ -28,8 +28,7 @@ vector_v2::PixelRect align_bounds(vector_v2::PixelRect bounds) {
 VectorV2Presenter::VectorV2Presenter(vector_v2::MaterializedCanvas& canvas,
                                      vector_v2::NavigationState& navigation,
                                      vector_v2::DisplayScheduler& scheduler,
-                                     Co5300PanelTransport& display,
-                                     std::span<std::uint16_t> frame_pixels,
+                                     PanelTransport& display, std::span<std::uint16_t> frame_pixels,
                                      std::span<std::uint16_t> region_pixels)
     : canvas_(canvas),
       navigation_(navigation),
