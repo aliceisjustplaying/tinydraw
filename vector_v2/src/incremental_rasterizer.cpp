@@ -97,19 +97,40 @@ void paint_segment(const Sample& first, const Sample& second, std::uint16_t colo
                    const RasterSurface& surface) {
   const Segment segment = make_segment(first, second);
   const PixelRect bounds = segment_bounds(segment, surface.level_bounds);
+  if (bounds.x1 <= bounds.x0 || bounds.y1 <= bounds.y0) {
+    return;
+  }
+  int prior_first = bounds.x0;
+  int prior_last = bounds.x0 - 1;
   for (int y = bounds.y0; y < bounds.y1; ++y) {
     const float pixel_y = static_cast<float>(y) + 0.5F;
-    int first = bounds.x0;
-    int last = bounds.x1 - 1;
-    while (first <= last && !covers_pixel(segment, static_cast<float>(first) + 0.5F, pixel_y)) {
+    const auto covered = [&](int x) {
+      return covers_pixel(segment, static_cast<float>(x) + 0.5F, pixel_y);
+    };
+    int first =
+        prior_last >= prior_first ? std::clamp(prior_first, bounds.x0, bounds.x1 - 1) : bounds.x0;
+    while (first > bounds.x0 && covered(first - 1)) {
+      --first;
+    }
+    while (first < bounds.x1 && !covered(first)) {
       ++first;
     }
-    while (last > first && !covers_pixel(segment, static_cast<float>(last) + 0.5F, pixel_y)) {
-      --last;
-    }
-    if (first > last) {
+    if (first == bounds.x1) {
+      prior_last = prior_first - 1;
       continue;
     }
+
+    int last =
+        prior_last >= prior_first ? std::clamp(prior_last, first, bounds.x1 - 1) : bounds.x1 - 1;
+    while (last + 1 < bounds.x1 && covered(last + 1)) {
+      ++last;
+    }
+    while (last > first && !covered(last)) {
+      --last;
+    }
+    prior_first = first;
+    prior_last = last;
+
     const std::size_t row = static_cast<std::size_t>(y - surface.level_bounds.y0) *
                             static_cast<std::size_t>(surface.stride);
     const std::size_t column = static_cast<std::size_t>(first - surface.level_bounds.x0);
