@@ -114,12 +114,16 @@ manual test.
 Current measured debt:
 
 - ordinary warm-pan frames remain roughly 45–50 ms end-to-end;
-- an intermediate long-stroke commit blocks the coordinator for roughly
-  0.61–0.73 seconds, although the second-core sampler preserves all edges;
 - one repeated-reset harness run lost TE synchronization at startup; the next
   clean harness and the aggressive glass test showed no tearing;
 - the glass run consumed 323 balanced Down/Up pairs with zero queue overflows,
   while more than 99.5% of semantic events were under 8 ms old.
+
+Closed at `264b60e`: intermediate long-stroke commits now run in place with a
+measured 11.1 ms worst case (48-sample chunks) against the deterministic
+worst-case XL gesture gate, replacing the earlier 0.61–0.73 s (large chunks)
+and ≈70 ms (64-sample staged chunks) stalls. See
+`vector_v2/hardware-receipts/LONGSTROKE_COLDRENDER_INVESTIGATION_2026_08_14.md`.
 
 ### Camera and zoom behavior
 
@@ -332,11 +336,12 @@ slices. The earlier tapered seed-7 400% case has 0.683 second p95 wall time. See
 The subsequent four-times-adversarial campaign reduced its 400% cold replay from
 9.703 seconds at clean commit `a3ac4fc` to a 1.452-second p95 across 20 clean,
 reset-separated runs at `26a05f5`; overlap and seed-7 400% p95 measured 0.416 and
-0.343 seconds. This is the first full green result from the expanded adversarial
-harness, not the first green result from every historical harness. Maximum
-producer ticks remained below 10 ms and touch intervals below the 15 ms alarm.
-See `vector_v2/hardware-receipts/26a05f5-cold-p95-20-runs.log` and
-`vector_v2/hardware-receipts/CORRECTNESS_CLOSURE_2026_08_14.md`.
+0.343 seconds. Saturation-gated replay at `092f2a3`/`264b60e` then cut the
+adversarial 400% p95 to 0.675 seconds (target: below one second) and the
+overlap corpus by 14–30%, with maximum ticks under 11 ms; seed-7 regressed
+6.4% to 0.365 seconds (attributed to producer restructure/code layout, receipt
+retained). See `vector_v2/hardware-receipts/264b60e-cold-p95-20-runs.log` and
+`vector_v2/hardware-receipts/LONGSTROKE_COLDRENDER_INVESTIGATION_2026_08_14.md`.
 
 The permanent validation comprises one exact census sweep and three CTest fuzz
 invocations backed by two distinct fuzzer implementations. Exact painter results
@@ -416,10 +421,12 @@ complete overview. It still needs careful tap targeting and viewport math.
 
 # Next concrete sequence
 
-1. Profile and remove the measured 0.61–0.73 second intermediate long-stroke
-   commit stall without weakening operation or input-edge preservation.
-2. Continue one-bottleneck-at-a-time cold refinement work against the clean
-   20-run baseline; exact pixels and the two-second alarm remain hard gates.
+1. Run the short human glass checklist for the closed long-stroke stall
+   (multi-minute XL strokes at 400%/100%: continuously flowing ink, no visible
+   re-render or pixelation of the active line, erase over them).
+2. Decide the canvas-exit/re-entry gesture policy (bridge, split, or end);
+   the phantom's mechanism is recorded in the 2026-08-14 investigation
+   receipt.
 3. Improve warm-pan throughput without regressing chrome seams, TE behavior,
    camera responsiveness, or the 1.5 MiB export reserve.
 4. Continue navigation/UI, the timeboxed analytic anti-aliasing gate, vector

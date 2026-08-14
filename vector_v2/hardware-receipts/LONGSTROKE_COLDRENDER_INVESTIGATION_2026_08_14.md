@@ -269,6 +269,65 @@ primitive contract tests. Full battery green: host tests, release, ASan/UBSan,
 clang-tidy, cppcheck, format; census sweep `exact=1`; both fuzzers; complete
 device harness `pass=1` including the cold gates and export reserve.
 
+## Final clean 20-reset distribution (264b60e)
+
+Source: [`264b60e-cold-p95-20-runs.log`](264b60e-cold-p95-20-runs.log),
+captured reset-separated on the committed firmware, `pass=1` on all 180 gate
+lines.
+
+| Corpus | Zoom | 26a05f5 p95 | 264b60e p95 | delta |
+|---|---:|---:|---:|---:|
+| 4× adversarial tapered | 50% | 164,971 us | 157,977 us | −4.2% |
+| 4× adversarial tapered | 100% | 243,956 us | 237,958 us | −2.5% |
+| 4× adversarial tapered | 200% | 602,969 us | 597,977 us | −0.8% |
+| **4× adversarial tapered** | **400%** | **1,451,905 us** | **674,901 us** | **−53.5%** |
+| Overlapping XL | 50% | 541,331 us | 466,937 us | −13.7% |
+| Overlapping XL | 100% | 405,954 us | 314,978 us | −22.4% |
+| Overlapping XL | 200% | 415,975 us | 311,957 us | −25.0% |
+| Overlapping XL | 400% | 415,966 us | 289,979 us | −30.3% |
+| Seed-7 realistic | 400% | 342,970 us | 364,978 us | +6.4% |
+
+The 400% adversarial maximum across the 20 runs was 675,889 us; the maximum
+producer tick anywhere was 10,756 us (seed-7), well under the 15 ms alarm.
+The product target — 4× adversarial 400% p95 below one second with bounded
+ticks — is met with a 32.5% margin. The two-second alarm remains in place.
+
+The seed-7 +6.4% regression is characterized above (producer restructure /
+code layout, not summary bookkeeping; the same restructure buys −22 ms at
+adversarial 200%). It remains 3× under its own historical alarm and is the
+only negative delta in the matrix.
+
+## Residual risks and open items
+
+1. The long-stroke fix is proven by the deterministic worst-case gate and
+   host equivalence, not yet by a human glass test. The remaining human
+   checklist is short: draw several multi-minute XL strokes at 400% and
+   100%, confirm continuously flowing ink with no visible re-render, freeze,
+   or pixelation of the active line, then erase over them.
+2. Between accepting a sample mid-gesture and the next chunk boundary,
+   resident tiles briefly contain painted-but-uncommitted chunk pixels. No
+   composition path observes them in the product loop (fill and chrome are
+   gated off while pressed; lift refresh happens after the boundary commit),
+   and a boundary failure invalidates the footprint. A future concurrent
+   consumer of the canvas would need to respect the in-place protocol notes
+   in `materialized_canvas.h`.
+3. Harness-build main-task stack margin dropped from 2,472 to 2,104 bytes
+   (the new gate adds one nesting level); the product build measures 4,232
+   bytes free. Worth rechecking if more harness gates are added.
+4. Canvas-exit/re-entry phantom: code review of `clip_canvas_segment` and
+   the coordinator identified a concrete mechanism, recorded here without a
+   behavior change. When a live stroke dips into the chrome region, samples
+   are dropped (exit segment clipped to the canvas bottom, fully-outside
+   segments discarded, and the re-entry crossing segment also discarded
+   because its `previous` point lies in chrome). The ink stream and builder
+   stay active throughout, so the first fully-inside sample after re-entry
+   connects by one straight segment from the clamped exit point — a
+   "phantom" line hugging the toolbar across the horizontal distance the
+   finger traveled while over chrome. This is deterministic, not a
+   corruption; whether a gesture should bridge, split, or end at canvas exit
+   is a product decision. The clipping math itself is correct (the
+   `vertical_distance <= 0` branch is unreachable given the guards).
+
 ## Work log
 
 - [x] Read roadmap, receipts, all listed sources.
@@ -277,5 +336,5 @@ device harness `pass=1` including the cold gates and export reserve.
       paced gate before/after.
 - [x] Phase B: in-place chunk commit + uniform range invalidation; host
       equivalence tests; device long-stroke measurement.
-- [ ] Full validation battery on final tree; 20-reset distribution; roadmap
+- [x] Full validation battery on final tree; 20-reset distribution; roadmap
       update.
