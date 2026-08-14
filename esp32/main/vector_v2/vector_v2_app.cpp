@@ -49,7 +49,6 @@ using vector_v2::ZoomLevel;
 
 constexpr std::uint32_t kExternalCaps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
 constexpr gpio_num_t kModeButton = GPIO_NUM_0;
-constexpr int kLiftReads = 2;
 constexpr std::size_t kInputSampleCapacity = 1'024;
 constexpr std::size_t kWorkspaceTileCapacity = vector_v2::kMaximumVisibleTiles;
 
@@ -160,7 +159,7 @@ struct PendingStrokeReport {
   LivePresentationTiming refresh{};
   LiveMetrics metrics{};
   std::uint32_t poll_max_us = 0;
-  std::uint32_t touch_errors = 0;
+  TouchSamplerMetrics touch{};
   std::size_t free_psram = 0;
   std::size_t largest_psram = 0;
   bool authority_match = false;
@@ -186,6 +185,7 @@ struct AppStorage {
   OperationRecord* records = nullptr;
   CompactOperationSample* samples = nullptr;
   CompactOperationSample* input_samples = nullptr;
+  vector_v2::TouchEvent* touch_events = nullptr;
   TileRevisionPublication* publications = nullptr;
   TileKey* affected_keys = nullptr;
 
@@ -207,6 +207,7 @@ struct AppStorage {
     records = allocate_array<OperationRecord>(vector_v2::kOperationCapacity);
     samples = allocate_array<CompactOperationSample>(vector_v2::kOperationSampleCapacity);
     input_samples = allocate_array<CompactOperationSample>(kInputSampleCapacity);
+    touch_events = allocate_internal<vector_v2::TouchEvent>(kVectorV2TouchEventCapacity);
     publications = allocate_array<TileRevisionPublication>(kWorkspaceTileCapacity);
     affected_keys =
         allocate_array<TileKey>(vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles);
@@ -214,8 +215,8 @@ struct AppStorage {
         overview_scratch == nullptr || tile_scratch == nullptr || region_scratch == nullptr ||
         producer_supertask == nullptr || producer_packed == nullptr || producer_mask == nullptr ||
         uniforms == nullptr || occupancy == nullptr || slots == nullptr || records == nullptr ||
-        samples == nullptr || input_samples == nullptr || publications == nullptr ||
-        affected_keys == nullptr) {
+        samples == nullptr || input_samples == nullptr || touch_events == nullptr ||
+        publications == nullptr || affected_keys == nullptr) {
       return false;
     }
     for (std::size_t index = 0; index < vector_v2::kMaterializedTileIdentityCount; ++index) {
@@ -386,7 +387,8 @@ void print_stroke(const PendingStrokeReport& report) {
       "refresh_compose_us=%lld refresh_complete_us=%lld ink_samples=%lu "
       "read_submit_avg_us=%llu read_submit_max_us=%lu read_complete_avg_us=%llu "
       "read_complete_max_us=%lu submit_over_16ms=%lu complete_over_33ms=%lu "
-      "presentation_failures=%lu poll_max_us=%lu touch_errors=%lu free_psram=%lu "
+      "presentation_failures=%lu poll_max_us=%lu touch_errors=%lu touch_overflows=%lu "
+      "touch_moves_coalesced=%lu touch_event_age_max_us=%lu free_psram=%lu "
       "largest_psram=%lu authority_match=%u\n",
       static_cast<unsigned long>(report.revision.value),
       static_cast<unsigned long>(report.operation_count),
@@ -406,7 +408,10 @@ void print_stroke(const PendingStrokeReport& report) {
       static_cast<unsigned long>(report.metrics.complete_over_33ms),
       static_cast<unsigned long>(report.metrics.failures),
       static_cast<unsigned long>(report.poll_max_us),
-      static_cast<unsigned long>(report.touch_errors),
+      static_cast<unsigned long>(report.touch.errors),
+      static_cast<unsigned long>(report.touch.queue_overflows),
+      static_cast<unsigned long>(report.touch.moves_coalesced),
+      static_cast<unsigned long>(report.touch.maximum_event_age_us),
       static_cast<unsigned long>(report.free_psram),
       static_cast<unsigned long>(report.largest_psram), report.authority_match);
 }
@@ -514,7 +519,8 @@ void run_vector_v2_app() {
   DisplayScheduler scheduler(queue);
   Co5300PanelTransport display;
   PhysicalTouch touch;
-  VectorV2TouchSampler touch_sampler(touch);
+  VectorV2TouchSampler touch_sampler(touch,
+                                     std::span(storage.touch_events, kVectorV2TouchEventCapacity));
   vector_v2::NavigationState navigation;
   VectorV2Presenter presenter(canvas, navigation, scheduler, display,
                               std::span(storage.frame, vector_v2::kOverviewPixels),
@@ -585,6 +591,7 @@ void run_vector_v2_app() {
       (vector_v2::kTileProducerPixels + kLiveRegionScratchPixels) * sizeof(std::uint16_t) +
       vector_v2::kTilePixels * sizeof(std::uint16_t) + vector_v2::kTileProducerMaskBytes +
       kInputSampleCapacity * sizeof(CompactOperationSample) +
+      kVectorV2TouchEventCapacity * sizeof(vector_v2::TouchEvent) +
       kWorkspaceTileCapacity * sizeof(TileRevisionPublication) +
       vector_v2::kTileSlotCount * sizeof(TileKey);
   const std::size_t live_storage_bytes =
@@ -611,7 +618,6 @@ void run_vector_v2_app() {
   bool pressed = false;
   bool toolbar_pressed = false;
   bool panning = false;
-  int lift_reads = 0;
   Point last_touch{};
   Point toolbar_sum{};
   std::uint32_t toolbar_samples = 0;
@@ -623,7 +629,6 @@ void run_vector_v2_app() {
   PanMetrics pan_metrics{};
   std::uint32_t poll_previous_us = now_us();
   std::uint32_t poll_max_us = 0;
-  std::uint32_t touch_errors = 0;
   bool button_down = false;
   ZoomLevel fill_zoom = ZoomLevel::k25Percent;
   int fill_x = 0;
@@ -658,21 +663,17 @@ void run_vector_v2_app() {
     Point point{};
     const bool idle_before_poll = !pressed;
     const std::int64_t poll_started_us = esp_timer_get_time();
-    const auto sampled_touch = touch_sampler.read_latest();
+    const auto sampled_touch = touch_sampler.read_next();
     const std::int64_t poll_completed_us = esp_timer_get_time();
     const bool sample_ready = sampled_touch.has_value();
-    const TouchRead read = sample_ready ? sampled_touch->read : TouchRead::kNoTouch;
     if (sample_ready) {
       point = sampled_touch->point;
     }
-    if (sample_ready && read == TouchRead::kError) {
-      ++touch_errors;
-    }
-    const bool touching = sample_ready && read == TouchRead::kPoint;
+    const bool lift_event = sample_ready && sampled_touch->kind == vector_v2::TouchEventKind::kUp;
+    const bool point_event = sample_ready && (!lift_event || pressed);
     const std::uint32_t event_us = sample_ready ? sampled_touch->timestamp_us : loop_us;
-    if (touching) {
-      lift_reads = 0;
-      if (!pressed) {
+    if (point_event) {
+      if (!pressed && sampled_touch->kind == vector_v2::TouchEventKind::kDown) {
         pressed = true;
         last_touch = point;
         if (vector_v2::chrome_contains({point.x, point.y}, chrome)) {
@@ -738,9 +739,9 @@ void run_vector_v2_app() {
           }
         }
       }
-    } else if (sample_ready && pressed && ++lift_reads >= kLiftReads) {
+    }
+    if (lift_event && pressed) {
       pressed = false;
-      lift_reads = 0;
       if (toolbar_pressed) {
         toolbar_pressed = false;
         const float divisor = static_cast<float>(std::max<std::uint32_t>(1U, toolbar_samples));
@@ -809,6 +810,7 @@ void run_vector_v2_app() {
         if (stroke_report.pending || lift_timing.pending) {
           ++lift_reports_dropped;
         }
+        const TouchSamplerMetrics touch_metrics = touch_sampler.take_metrics();
         stroke_report = {
             .revision = canvas.current_revision(),
             .operation_count = log.operation_count(),
@@ -817,7 +819,7 @@ void run_vector_v2_app() {
             .refresh = measured_lift.refresh,
             .metrics = live_metrics,
             .poll_max_us = poll_max_us,
-            .touch_errors = touch_errors,
+            .touch = touch_metrics,
             .free_psram = heap_caps_get_free_size(kExternalCaps),
             .largest_psram = heap_caps_get_largest_free_block(kExternalCaps),
             .authority_match = log.current_revision() == canvas.current_revision(),
@@ -829,7 +831,6 @@ void run_vector_v2_app() {
         lift_timing = measured_lift;
         live_metrics = {};
         poll_max_us = 0;
-        touch_errors = 0;
       }
     }
 
@@ -926,7 +927,7 @@ void run_vector_v2_app() {
         fill_measurement_active = false;
       }
     }
-    if (lift_timing.pending && stroke_report.pending && idle_before_poll && !touching) {
+    if (lift_timing.pending && stroke_report.pending && idle_before_poll && !pressed) {
       print_stroke(stroke_report);
       std::printf("TINYDRAW_LIVE_STROKE_DONE committed=%u refresh=%u overflow=%u\n",
                   stroke_report.committed, stroke_report.refresh.passed, stroke_report.overflowed);
