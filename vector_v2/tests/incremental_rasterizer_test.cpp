@@ -263,6 +263,128 @@ TEST_CASE("constructed two-span taper stays on the exact raster path") {
   CHECK(rendered == reference);
 }
 
+TEST_CASE("masked segment never repaints finalized pixels and finalizes covered ones") {
+  constexpr int width = 32;
+  constexpr int height = 32;
+  constexpr auto first =
+      vector_v2::CompactOperationSample{.x_quarter = 12, .y_quarter = 16, .radius_256 = 1'024};
+  constexpr auto second =
+      vector_v2::CompactOperationSample{.x_quarter = 100, .y_quarter = 96, .radius_256 = 2'048};
+  const vector_v2::IncrementalSegment segment{.color = 0x001FU, .first = first, .second = second};
+  const vector_v2::RasterSurface make_surface = {.zoom = vector_v2::ZoomLevel::k100Percent,
+                                                 .level_bounds = {0, 0, width, height},
+                                                 .pixels = {},
+                                                 .stride = width};
+
+  std::vector<std::uint16_t> reference(static_cast<std::size_t>(width * height), 0xFFFFU);
+  std::vector<std::uint8_t> reference_mask((reference.size() + 7U) / 8U, 0U);
+  auto reference_surface = make_surface;
+  reference_surface.pixels = reference;
+  REQUIRE(vector_v2::apply_masked_incremental_segment(segment, reference_surface, reference_mask));
+
+  // Pre-finalize a band; those pixels must keep their sentinel color while
+  // every unfinalized pixel matches the empty-mask reference.
+  constexpr std::uint16_t kSentinel = 0x1234U;
+  std::vector<std::uint16_t> pixels(reference.size(), 0xFFFFU);
+  std::vector<std::uint8_t> mask(reference_mask.size(), 0U);
+  for (int y = 8; y < 14; ++y) {
+    for (int x = 0; x < width; ++x) {
+      const std::size_t pixel = static_cast<std::size_t>(y * width + x);
+      pixels[pixel] = kSentinel;
+      mask[pixel >> 3U] = static_cast<std::uint8_t>(mask[pixel >> 3U] | (1U << (pixel & 7U)));
+    }
+  }
+  auto surface = make_surface;
+  surface.pixels = pixels;
+  REQUIRE(vector_v2::apply_masked_incremental_segment(segment, surface, mask));
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      const std::size_t pixel = static_cast<std::size_t>(y * width + x);
+      if (y >= 8 && y < 14) {
+        CHECK(pixels[pixel] == kSentinel);
+      } else {
+        CHECK(pixels[pixel] == reference[pixel]);
+        const bool finalized = (mask[pixel >> 3U] & (1U << (pixel & 7U))) != 0U;
+        CHECK(finalized == (reference[pixel] == segment.color));
+      }
+    }
+  }
+}
+
+TEST_CASE("masked painter honors edge bounds narrower than its stride") {
+  constexpr int width = 48;
+  constexpr int height = 32;
+  constexpr int stride = 128;
+  constexpr auto first =
+      vector_v2::CompactOperationSample{.x_quarter = 150, .y_quarter = 30, .radius_256 = 2'560};
+  constexpr auto second =
+      vector_v2::CompactOperationSample{.x_quarter = 210, .y_quarter = 110, .radius_256 = 1'024};
+  const vector_v2::IncrementalSegment segment{.color = 0x07E0U, .first = first, .second = second};
+
+  constexpr std::uint16_t kPad = 0xDEADU;
+  const auto at = [](int y, int x) {
+    return static_cast<std::size_t>(y) * static_cast<std::size_t>(stride) +
+           static_cast<std::size_t>(x);
+  };
+  const std::size_t footprint = at(height - 1, width);
+  std::vector<std::uint16_t> masked(
+      static_cast<std::size_t>(height) * static_cast<std::size_t>(stride), kPad);
+  std::vector<std::uint16_t> direct(masked.size(), kPad);
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      masked[at(y, x)] = 0xFFFFU;
+      direct[at(y, x)] = 0xFFFFU;
+    }
+  }
+  std::vector<std::uint8_t> mask((masked.size() + 7U) / 8U, 0U);
+  REQUIRE(vector_v2::apply_masked_incremental_segment(segment,
+                                                      {.zoom = vector_v2::ZoomLevel::k100Percent,
+                                                       .level_bounds = {0, 0, width, height},
+                                                       .pixels = std::span(masked).first(footprint),
+                                                       .stride = stride},
+                                                      mask));
+  REQUIRE(vector_v2::apply_incremental_operation(
+      {.color = segment.color, .samples = std::array{first, second}},
+      {.zoom = vector_v2::ZoomLevel::k100Percent,
+       .level_bounds = {0, 0, width, height},
+       .pixels = std::span(direct).first(footprint),
+       .stride = stride}));
+  CHECK(masked == direct);
+  for (int y = 0; y < height; ++y) {
+    for (int x = width; x < stride; ++x) {
+      if (at(y, x) < footprint) {
+        CHECK(masked[at(y, x)] == kPad);
+      }
+    }
+  }
+}
+
+TEST_CASE("constructed two-span taper is identical through the masked path") {
+  constexpr int width = 128;
+  constexpr int height = 128;
+  constexpr auto first =
+      vector_v2::CompactOperationSample{.x_quarter = 48, .y_quarter = 48, .radius_256 = 4'096};
+  constexpr auto second =
+      vector_v2::CompactOperationSample{.x_quarter = 50, .y_quarter = 50, .radius_256 = 1'472};
+  std::vector<std::uint16_t> masked(static_cast<std::size_t>(width * height), 0xFFFFU);
+  std::vector<std::uint16_t> direct(masked.size(), 0xFFFFU);
+  std::vector<std::uint8_t> mask((masked.size() + 7U) / 8U, 0U);
+  REQUIRE(vector_v2::apply_masked_incremental_segment(
+      {.color = 0x001FU, .first = first, .second = second},
+      {.zoom = vector_v2::ZoomLevel::k400Percent,
+       .level_bounds = {0, 0, width, height},
+       .pixels = masked,
+       .stride = width},
+      mask));
+  REQUIRE(vector_v2::apply_incremental_operation(
+      {.color = 0x001FU, .samples = std::array{first, second}},
+      {.zoom = vector_v2::ZoomLevel::k400Percent,
+       .level_bounds = {0, 0, width, height},
+       .pixels = direct,
+       .stride = width}));
+  CHECK(masked == direct);
+}
+
 TEST_CASE("affected tile enumeration clips to the bounded world") {
   const std::array samples{
       vector_v2::CompactOperationSample{.x_quarter = 0, .y_quarter = 0, .radius_256 = 2048},
