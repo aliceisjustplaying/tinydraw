@@ -10,6 +10,7 @@ These logs are immutable evidence captured from the physical ESP32-S3. Historica
 - [`gate1-clean-head-p95-20-runs.log`](gate1-clean-head-p95-20-runs.log) — clean-head cold-render distribution.
 - [`gate1-grok-fixes-p95-20-runs.log`](gate1-grok-fixes-p95-20-runs.log) — post-review timing distribution.
 - [`tile-class-census-seed7.log`](tile-class-census-seed7.log) — complete tile-class census for the deterministic seed-7 workload.
+- [`f950e27-overlap-cold-gate.log`](f950e27-overlap-cold-gate.log) — representative overlapping-XL cold replay under one second at every tiled zoom, with bounded touch polling.
 - [`636b9c7-memory-layout-320.log`](636b9c7-memory-layout-320.log) — 320-slot memory plan and contiguous-reserve allocation.
 
 Interpret these through:
