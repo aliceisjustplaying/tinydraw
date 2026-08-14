@@ -98,14 +98,23 @@ void paint_segment(const Sample& first, const Sample& second, std::uint16_t colo
   const Segment segment = make_segment(first, second);
   const PixelRect bounds = segment_bounds(segment, surface.level_bounds);
   for (int y = bounds.y0; y < bounds.y1; ++y) {
-    for (int x = bounds.x0; x < bounds.x1; ++x) {
-      if (covers_pixel(segment, static_cast<float>(x) + 0.5F, static_cast<float>(y) + 0.5F)) {
-        const std::size_t offset = static_cast<std::size_t>(y - surface.level_bounds.y0) *
-                                       static_cast<std::size_t>(surface.stride) +
-                                   static_cast<std::size_t>(x - surface.level_bounds.x0);
-        surface.pixels[offset] = color;
-      }
+    const float pixel_y = static_cast<float>(y) + 0.5F;
+    int first = bounds.x0;
+    int last = bounds.x1 - 1;
+    while (first <= last && !covers_pixel(segment, static_cast<float>(first) + 0.5F, pixel_y)) {
+      ++first;
     }
+    while (last > first && !covers_pixel(segment, static_cast<float>(last) + 0.5F, pixel_y)) {
+      --last;
+    }
+    if (first > last) {
+      continue;
+    }
+    const std::size_t row = static_cast<std::size_t>(y - surface.level_bounds.y0) *
+                            static_cast<std::size_t>(surface.stride);
+    const std::size_t column = static_cast<std::size_t>(first - surface.level_bounds.x0);
+    const auto begin = surface.pixels.begin() + static_cast<std::ptrdiff_t>(row + column);
+    std::fill_n(begin, static_cast<std::size_t>(last - first + 1), color);
   }
 }
 
