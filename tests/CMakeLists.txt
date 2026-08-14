@@ -10,6 +10,7 @@ add_executable(tinydraw_tests
   ink_stream_test.cpp
   perfect_freehand_test.cpp
   png_encoder_test.cpp
+  raster_core_test.cpp
   raster_materializer_test.cpp
   realistic_workload_test.cpp
   settled_renderer_test.cpp
