@@ -295,10 +295,44 @@ bool MaterializedCanvas::uniform_intersects(std::size_t index, PixelRect world_b
          rectangles_intersect(tile_world_bounds(key_for_identity(index)), world_bounds);
 }
 
-void MaterializedCanvas::invalidate_uniforms(PixelRect world_bounds) {
-  for (std::size_t index = 0; index < uniform_catalog_.size(); ++index) {
-    uniform_catalog_[index].occupied_ =
-        uniform_catalog_[index].occupied_ && !uniform_intersects(index, world_bounds);
+void MaterializedCanvas::invalidate_zoom_uniforms(ZoomLevel zoom, PixelRect world_bounds,
+                                                  std::span<const TileKey> retained_keys) {
+  const int percent = zoom_percent(zoom);
+  const TileGrid grid = tile_grid(zoom);
+  const int first_column =
+      std::clamp(world_bounds.x0 * percent / 100 / kTileWidth - 1, 0, grid.columns - 1);
+  const int last_column = std::clamp(
+      (ceil_div(world_bounds.x1 * percent, 100) - 1) / kTileWidth + 1, 0, grid.columns - 1);
+  const int first_row =
+      std::clamp(world_bounds.y0 * percent / 100 / kTileHeight - 1, 0, grid.rows - 1);
+  const int last_row = std::clamp((ceil_div(world_bounds.y1 * percent, 100) - 1) / kTileHeight + 1,
+                                  0, grid.rows - 1);
+  for (int row = first_row; row <= last_row; ++row) {
+    for (int column = first_column; column <= last_column; ++column) {
+      const TileKey key{zoom, static_cast<std::uint16_t>(column), static_cast<std::uint16_t>(row)};
+      const auto index = tile_identity_index(key);
+      if (!index.has_value() || *index >= uniform_catalog_.size() ||
+          !uniform_catalog_[*index].occupied_ || !uniform_intersects(*index, world_bounds)) {
+        continue;
+      }
+      const bool retained =
+          std::find(retained_keys.begin(), retained_keys.end(), key) != retained_keys.end();
+      uniform_catalog_[*index].occupied_ = retained;
+    }
+  }
+}
+
+void MaterializedCanvas::invalidate_uniforms(PixelRect world_bounds,
+                                             std::span<const TileKey> retained_keys) {
+  if (uniform_catalog_.empty() || !valid_world_bounds(world_bounds)) {
+    return;
+  }
+  // Walk only a conservative tile-index window per zoom instead of all 13,692
+  // identities; uniform_intersects stays the exact authority inside it.
+  constexpr std::array zooms{ZoomLevel::k50Percent, ZoomLevel::k100Percent, ZoomLevel::k200Percent,
+                             ZoomLevel::k400Percent};
+  for (const ZoomLevel zoom : zooms) {
+    invalidate_zoom_uniforms(zoom, world_bounds, retained_keys);
   }
 }
 
@@ -477,14 +511,8 @@ void MaterializedCanvas::write_tile(std::size_t slot_index,
   touch(slot);
 }
 
-bool MaterializedCanvas::commit_incremental_revision(
-    DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
-    PixelRect affected_world_bounds, std::span<const TileRevisionPublication> tile_publications) {
-  if (!valid_incremental_revision(revision, overview_publication, affected_world_bounds,
-                                  tile_publications)) {
-    return false;
-  }
-
+void MaterializedCanvas::apply_overview_publication(
+    const OverviewRevisionPublication& overview_publication) {
   const int overview_width = overview_publication.bounds.x1 - overview_publication.bounds.x0;
   const int overview_height = overview_publication.bounds.y1 - overview_publication.bounds.y0;
   for (int row = 0; row < overview_height; ++row) {
@@ -497,6 +525,26 @@ bool MaterializedCanvas::commit_incremental_revision(
     auto destination = overview_pixels_.begin() + destination_offset;
     std::copy_n(source, overview_width, destination);
   }
+}
+
+void MaterializedCanvas::finish_revision(DocumentRevision revision,
+                                         PixelRect affected_world_bounds) {
+  mark_occupied(affected_world_bounds);
+  current_revision_ = revision;
+  overview_revision_ = revision;
+  overview_generation_ = take_generation();
+  bump_composition_epoch();
+}
+
+bool MaterializedCanvas::commit_incremental_revision(
+    DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
+    PixelRect affected_world_bounds, std::span<const TileRevisionPublication> tile_publications) {
+  if (!valid_incremental_revision(revision, overview_publication, affected_world_bounds,
+                                  tile_publications)) {
+    return false;
+  }
+
+  apply_overview_publication(overview_publication);
   invalidate_uniforms(affected_world_bounds);
   for (MaterializedSlotStorage& slot : slots_) {
     if (!slot.occupied_) {
@@ -537,12 +585,108 @@ bool MaterializedCanvas::commit_incremental_revision(
     }
     write_tile(*selected, publication, revision);
   }
-  mark_occupied(affected_world_bounds);
-  current_revision_ = revision;
-  overview_revision_ = revision;
-  overview_generation_ = take_generation();
-  bump_composition_epoch();
+  finish_revision(revision, affected_world_bounds);
   return true;
+}
+
+bool MaterializedCanvas::can_edit_in_place_revision(
+    DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
+    PixelRect affected_world_bounds) const {
+  return valid_incremental_revision(revision, overview_publication, affected_world_bounds, {});
+}
+
+std::optional<InPlaceTileEdit> MaterializedCanvas::edit_resident_tile(TileKey key) {
+  const auto slot_index = find_tile(key);
+  if (!slot_index.has_value()) {
+    return std::nullopt;
+  }
+  MaterializedSlotStorage& slot = slots_[*slot_index];
+  if (slot.revision_ != current_revision_ || slot.pin_count_ != 0U) {
+    return std::nullopt;
+  }
+  // Content diverges from the old generation immediately; identity-based
+  // consumers must revalidate. Touch keeps the edited slot off the LRU floor
+  // so a same-commit uniform conversion cannot evict it.
+  slot.generation_ = take_generation();
+  touch(slot);
+  return InPlaceTileEdit{
+      .key = key,
+      .bounds = tile_pixel_bounds(key),
+      .pixels = tile_pixels_.subspan(*slot_index * kTilePixels, kTilePixels),
+  };
+}
+
+std::optional<InPlaceTileEdit> MaterializedCanvas::materialize_uniform_as_raw(TileKey key) {
+  const auto uniform_index = find_uniform(key);
+  if (!uniform_index.has_value() || uniform_pin_count_ != 0U) {
+    return std::nullopt;
+  }
+  const auto selected = choose_slot();
+  if (!selected.has_value()) {
+    return std::nullopt;
+  }
+  MaterializedUniformStorage& uniform = uniform_catalog_[*uniform_index];
+  MaterializedSlotStorage& slot = slots_[*selected];
+  slot.occupied_ = false;
+  slot.generation_ = take_generation();
+  auto pixels = tile_pixels_.subspan(*selected * kTilePixels, kTilePixels);
+  std::fill(pixels.begin(), pixels.end(), uniform.color_);
+  slot.key_ = key;
+  slot.revision_ = current_revision_;
+  slot.quality_ = uniform.quality_;
+  slot.occupied_ = true;
+  touch(slot);
+  uniform.occupied_ = false;
+  return InPlaceTileEdit{
+      .key = key,
+      .bounds = tile_pixel_bounds(key),
+      .pixels = pixels,
+  };
+}
+
+std::optional<std::uint16_t> MaterializedCanvas::uniform_color(TileKey key) const {
+  const auto index = find_uniform(key);
+  if (!index.has_value()) {
+    return std::nullopt;
+  }
+  return uniform_catalog_[*index].color_;
+}
+
+bool MaterializedCanvas::commit_in_place_revision(
+    DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
+    PixelRect affected_world_bounds, std::span<const TileKey> retained_keys) {
+  if (!valid_incremental_revision(revision, overview_publication, affected_world_bounds, {})) {
+    return false;
+  }
+  apply_overview_publication(overview_publication);
+  invalidate_uniforms(affected_world_bounds, retained_keys);
+  for (MaterializedSlotStorage& slot : slots_) {
+    if (!slot.occupied_) {
+      continue;
+    }
+    const bool affected = rectangles_intersect(tile_world_bounds(slot.key_), affected_world_bounds);
+    const bool retained = !affected || std::find(retained_keys.begin(), retained_keys.end(),
+                                                 slot.key_) != retained_keys.end();
+    if (retained) {
+      slot.revision_ = revision;
+    } else {
+      slot.occupied_ = false;
+      slot.generation_ = take_generation();
+    }
+  }
+  finish_revision(revision, affected_world_bounds);
+  return true;
+}
+
+void MaterializedCanvas::invalidate_identity(TileKey key) {
+  if (const auto slot_index = find_tile(key); slot_index.has_value()) {
+    slots_[*slot_index].occupied_ = false;
+    slots_[*slot_index].generation_ = take_generation();
+  }
+  if (const auto uniform_index = find_uniform(key); uniform_index.has_value()) {
+    uniform_catalog_[*uniform_index].occupied_ = false;
+  }
+  bump_composition_epoch();
 }
 
 bool MaterializedCanvas::accepts_external_workspace(std::span<const std::byte> workspace) const {

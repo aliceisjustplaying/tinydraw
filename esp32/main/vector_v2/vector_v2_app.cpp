@@ -52,9 +52,6 @@ using vector_v2::ZoomLevel;
 constexpr std::uint32_t kExternalCaps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
 constexpr gpio_num_t kModeButton = GPIO_NUM_0;
 constexpr std::size_t kInputSampleCapacity = 4'096;
-// Keep interactive raster commits beneath a frame-sized work pulse. The 80k
-// sample document budget still leaves ample operation-record headroom.
-constexpr std::size_t kInteractiveChunkSampleLimit = 64;
 constexpr std::size_t kWorkspaceTileCapacity = vector_v2::kMaximumVisibleTiles;
 
 struct LiftBaselineTiming {
@@ -183,13 +180,19 @@ struct AppStorage {
   std::uint16_t* frame = nullptr;
   std::uint16_t* tile_pixels = nullptr;
   std::uint16_t* overview_scratch = nullptr;
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
+  // The transactional reference append used by harness corpus construction
+  // still stages whole tiles; the product interactive path commits in place
+  // and no longer funds this scratch.
   std::uint16_t* tile_scratch = nullptr;
+#endif
   std::uint16_t* region_scratch = nullptr;
   std::uint16_t* producer_supertask = nullptr;
   std::uint16_t* producer_packed = nullptr;
   std::uint8_t* producer_mask = nullptr;
   std::uint16_t* producer_summary_rows = nullptr;
   std::uint32_t* producer_summary_words = nullptr;
+  std::uint8_t* chunk_mask = nullptr;
   MaterializedUniformStorage* uniforms = nullptr;
   std::uint8_t* occupancy = nullptr;
   MaterializedSlotStorage* slots = nullptr;
@@ -197,7 +200,9 @@ struct AppStorage {
   CompactOperationSample* samples = nullptr;
   CompactOperationSample* input_samples = nullptr;
   vector_v2::TouchEvent* touch_events = nullptr;
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
   TileRevisionPublication* publications = nullptr;
+#endif
   TileKey* affected_keys = nullptr;
 
   [[nodiscard]] bool allocate() {
@@ -206,13 +211,16 @@ struct AppStorage {
     frame = allocate_array<std::uint16_t>(vector_v2::kOverviewPixels);
     tile_pixels = allocate_array<std::uint16_t>(vector_v2::kTileSlotCount * vector_v2::kTilePixels);
     overview_scratch = allocate_array<std::uint16_t>(vector_v2::kOverviewPixels);
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
     tile_scratch = allocate_array<std::uint16_t>(kWorkspaceTileCapacity * vector_v2::kTilePixels);
+#endif
     region_scratch = allocate_array<std::uint16_t>(kLiveRegionScratchPixels);
     producer_supertask = allocate_array<std::uint16_t>(vector_v2::kTileProducerPixels);
     producer_packed = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
     producer_mask = allocate_internal<std::uint8_t>(vector_v2::kTileProducerMaskBytes);
     producer_summary_rows = allocate_internal<std::uint16_t>(vector_v2::kTileProducerSummaryRows);
     producer_summary_words = allocate_internal<std::uint32_t>(vector_v2::kTileProducerSummaryWords);
+    chunk_mask = allocate_internal<std::uint8_t>(vector_v2::kInPlaceTileMaskBytes);
     uniforms =
         allocate_array<MaterializedUniformStorage>(vector_v2::kMaterializedTileIdentityCount);
     occupancy = allocate_array<std::uint8_t>(vector_v2::kOccupancyBytes);
@@ -221,16 +229,21 @@ struct AppStorage {
     samples = allocate_array<CompactOperationSample>(vector_v2::kOperationSampleCapacity);
     input_samples = allocate_array<CompactOperationSample>(kInputSampleCapacity);
     touch_events = allocate_internal<vector_v2::TouchEvent>(kVectorV2TouchEventCapacity);
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
     publications = allocate_array<TileRevisionPublication>(kWorkspaceTileCapacity);
+    const bool harness_workspace_ready = tile_scratch != nullptr && publications != nullptr;
+#else
+    const bool harness_workspace_ready = true;
+#endif
     affected_keys =
         allocate_array<TileKey>(vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles);
     if (overview == nullptr || snapshot == nullptr || frame == nullptr || tile_pixels == nullptr ||
-        overview_scratch == nullptr || tile_scratch == nullptr || region_scratch == nullptr ||
+        overview_scratch == nullptr || !harness_workspace_ready || region_scratch == nullptr ||
         producer_supertask == nullptr || producer_packed == nullptr || producer_mask == nullptr ||
         producer_summary_rows == nullptr || producer_summary_words == nullptr ||
-        uniforms == nullptr || occupancy == nullptr || slots == nullptr || records == nullptr ||
-        samples == nullptr || input_samples == nullptr || touch_events == nullptr ||
-        publications == nullptr || affected_keys == nullptr) {
+        chunk_mask == nullptr || uniforms == nullptr || occupancy == nullptr || slots == nullptr ||
+        records == nullptr || samples == nullptr || input_samples == nullptr ||
+        touch_events == nullptr || affected_keys == nullptr) {
       return false;
     }
     for (std::size_t index = 0; index < vector_v2::kMaterializedTileIdentityCount; ++index) {
@@ -299,7 +312,7 @@ void include_bounds(std::optional<vector_v2::PixelRect>& accumulated, vector_v2:
 
 std::optional<vector_v2::IncrementalAppendResult> commit_pending_chunk(
     ChainedOperationBuilder& builder, OperationLog& log, MaterializedCanvas& canvas,
-    const IncrementalDocumentWorkspace& workspace, const VectorV2Presenter& presenter) {
+    const vector_v2::InPlaceAppendWorkspace& workspace, const VectorV2Presenter& presenter) {
   const auto append = builder.pending_append();
   if (!append.has_value()) {
     return std::nullopt;
@@ -310,19 +323,15 @@ std::optional<vector_v2::IncrementalAppendResult> commit_pending_chunk(
                        presenter.level_x() + vector_v2::kOverviewWidth,
                        presenter.level_y() + vector_v2::kOverviewHeight},
   };
-  return vector_v2::append_incrementally(
-      log, canvas, *append, workspace,
-      {.priority_view = presenter.zoom() == ZoomLevel::k25Percent
-                            ? std::optional<vector_v2::ViewRequest>{}
-                            : std::optional{priority_view},
-       .publication_scope = presenter.zoom() == ZoomLevel::k25Percent
-                                ? vector_v2::IncrementalPublicationScope::kAllMaterialized
-                                : vector_v2::IncrementalPublicationScope::kPriorityView});
+  return vector_v2::append_incrementally_in_place(log, canvas, *append, workspace,
+                                                  presenter.zoom() == ZoomLevel::k25Percent
+                                                      ? std::optional<vector_v2::ViewRequest>{}
+                                                      : std::optional{priority_view});
 }
 
 std::optional<ChainedOperationStatus> commit_ready_chunk(
     ChainedOperationBuilder& builder, OperationLog& log, MaterializedCanvas& canvas,
-    const IncrementalDocumentWorkspace& workspace, const VectorV2Presenter& presenter,
+    const vector_v2::InPlaceAppendWorkspace& workspace, const VectorV2Presenter& presenter,
     std::optional<vector_v2::PixelRect>& accumulated_bounds, std::uint32_t& chunks,
     std::int64_t& append_us, std::int64_t& append_max_us) {
   const std::int64_t started_us = esp_timer_get_time();
@@ -610,7 +619,14 @@ void run_vector_v2_app() {
            std::span(storage.producer_summary_rows, vector_v2::kTileProducerSummaryRows),
        .summary_saturated_words =
            std::span(storage.producer_summary_words, vector_v2::kTileProducerSummaryWords)});
-  const IncrementalDocumentWorkspace workspace{
+  const vector_v2::InPlaceAppendWorkspace workspace{
+      .overview_scratch = std::span(storage.overview_scratch, vector_v2::kOverviewPixels),
+      .affected_keys = std::span(storage.affected_keys,
+                                 vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles),
+      .tile_mask = std::span(storage.chunk_mask, vector_v2::kInPlaceTileMaskBytes),
+  };
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
+  const IncrementalDocumentWorkspace harness_workspace{
       .overview_scratch = std::span(storage.overview_scratch, vector_v2::kOverviewPixels),
       .tile_scratch =
           std::span(storage.tile_scratch, kWorkspaceTileCapacity * vector_v2::kTilePixels),
@@ -618,6 +634,7 @@ void run_vector_v2_app() {
       .affected_keys = std::span(storage.affected_keys,
                                  vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles),
   };
+#endif
   if (!canvas.publish_overview({0}, std::span(storage.snapshot, vector_v2::kOverviewPixels)) ||
       !log.ready() || !presenter.ready() || !touch.ready() || !touch_sampler.start() ||
       !builder.ready() || !producer.ready()) {
@@ -646,7 +663,7 @@ void run_vector_v2_app() {
   print_presentation("startup", presenter, initial);
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
   if (!run_vector_v2_gate_harness(presenter, producer, log, canvas, touch_sampler, chrome,
-                                  workspace,
+                                  harness_workspace, workspace,
                                   std::span(storage.snapshot, vector_v2::kOverviewPixels),
                                   std::span(storage.input_samples, kInputSampleCapacity),
                                   std::span(storage.producer_packed, vector_v2::kTilePixels))) {
@@ -666,13 +683,17 @@ void run_vector_v2_app() {
       vector_v2::kOperationCapacity * sizeof(OperationRecord) +
       vector_v2::kOperationSampleCapacity * sizeof(CompactOperationSample);
   const std::size_t live_scratch_bytes =
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
       kWorkspaceTileCapacity * vector_v2::kTilePixels * sizeof(std::uint16_t) +
+      kWorkspaceTileCapacity * sizeof(TileRevisionPublication) +
+#endif
       (vector_v2::kTileProducerPixels + kLiveRegionScratchPixels) * sizeof(std::uint16_t) +
       vector_v2::kTilePixels * sizeof(std::uint16_t) + vector_v2::kTileProducerMaskBytes +
-      kInputSampleCapacity * sizeof(CompactOperationSample) +
+      vector_v2::kTileProducerSummaryRows * sizeof(std::uint16_t) +
+      vector_v2::kTileProducerSummaryWords * sizeof(std::uint32_t) +
+      vector_v2::kInPlaceTileMaskBytes + kInputSampleCapacity * sizeof(CompactOperationSample) +
       kVectorV2TouchEventCapacity * sizeof(vector_v2::TouchEvent) +
-      kWorkspaceTileCapacity * sizeof(TileRevisionPublication) +
-      vector_v2::kTileSlotCount * sizeof(TileKey);
+      (vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles) * sizeof(TileKey);
   const std::size_t live_storage_bytes =
       overview_bytes + raw_tile_bytes + tile_metadata_bytes + operation_bytes + live_scratch_bytes;
   const auto tear_signal = display.tear_signal_timing();

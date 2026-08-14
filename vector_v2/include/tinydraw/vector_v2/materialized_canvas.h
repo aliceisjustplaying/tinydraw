@@ -125,6 +125,14 @@ struct OverviewRevisionPublication {
   std::span<const std::uint16_t> pixels{};
 };
 
+// Mutable window over one resident raw tile for an in-place revision commit.
+// bounds are level-space pixels; pixels rows use kTileWidth stride.
+struct InPlaceTileEdit {
+  TileKey key{};
+  PixelRect bounds{};
+  std::span<std::uint16_t> pixels{};
+};
+
 struct TileRevisionPublication {
   TileKey key{};
   MaterializationQuality quality = MaterializationQuality::kImmediate;
@@ -248,6 +256,30 @@ class MaterializedCanvas {
   [[nodiscard]] bool commit_incremental_revision(
       DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
       PixelRect affected_world_bounds, std::span<const TileRevisionPublication> tile_publications);
+  // In-place revision protocol. A caller that has serialized access first
+  // validates the whole commit with can_edit_in_place_revision, then mutates
+  // resident current-revision raw tiles through edit_resident_tile /
+  // materialize_uniform_as_raw (which cannot fail in ways that corrupt
+  // authority: a failed or abandoned edit is recovered by simply not
+  // retaining the key, which invalidates it to correct overview fallback),
+  // and finally publishes with commit_in_place_revision listing every key
+  // whose pixels are exact for the new revision. No composition may observe
+  // the canvas between edits and commit.
+  [[nodiscard]] bool can_edit_in_place_revision(
+      DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
+      PixelRect affected_world_bounds) const;
+  [[nodiscard]] std::optional<InPlaceTileEdit> edit_resident_tile(TileKey key);
+  // Converts one resident uniform into a raw slot filled with its color and
+  // returns the slot for editing. May evict an unpinned LRU slot. Returns
+  // nullopt when no slot is available; the caller falls back to invalidation.
+  [[nodiscard]] std::optional<InPlaceTileEdit> materialize_uniform_as_raw(TileKey key);
+  [[nodiscard]] std::optional<std::uint16_t> uniform_color(TileKey key) const;
+  [[nodiscard]] bool commit_in_place_revision(
+      DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
+      PixelRect affected_world_bounds, std::span<const TileKey> retained_keys);
+  // Defensive recovery: drops any raw slot and uniform entry for key so the
+  // identity falls back to the authoritative overview.
+  void invalidate_identity(TileKey key);
   [[nodiscard]] std::optional<std::size_t> publish_tile(TileKey key, DocumentRevision revision,
                                                         MaterializationQuality quality,
                                                         std::span<const std::uint16_t> pixels);
@@ -323,7 +355,11 @@ class MaterializedCanvas {
   static void include_quality(MaterializationQuality quality, ViewCompositionStats& stats);
   [[nodiscard]] static TileKey key_for_identity(std::size_t index);
   [[nodiscard]] static bool uniform_intersects(std::size_t index, PixelRect world_bounds);
-  void invalidate_uniforms(PixelRect world_bounds);
+  void invalidate_zoom_uniforms(ZoomLevel zoom, PixelRect world_bounds,
+                                std::span<const TileKey> retained_keys);
+  void invalidate_uniforms(PixelRect world_bounds, std::span<const TileKey> retained_keys = {});
+  void apply_overview_publication(const OverviewRevisionPublication& overview_publication);
+  void finish_revision(DocumentRevision revision, PixelRect affected_world_bounds);
   void mark_occupied(PixelRect world_bounds);
   void rebuild_occupancy_from_overview();
   void clear_uniforms();

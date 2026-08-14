@@ -49,6 +49,39 @@ struct IncrementalAppendOptions {
     OperationLog& log, MaterializedCanvas& canvas, const OperationAppend& append_request,
     const IncrementalDocumentWorkspace& workspace, IncrementalAppendOptions options = {});
 
+struct InPlaceAppendWorkspace {
+  // Compact row-major scratch for the conservative affected overview region.
+  std::span<std::uint16_t> overview_scratch{};
+  // Affected resident identity enumeration; must hold every raw slot plus one
+  // viewport of uniform keys.
+  std::span<TileKey> affected_keys{};
+  // One finalized bit per tile pixel. A chunk is a single tool and color, so
+  // painting its segments newest-first through this mask writes every covered
+  // pixel exactly once while producing the identical pixel union as forward
+  // replay; overlapping fat-capsule segments would otherwise rewrite each
+  // covered pixel several times per commit.
+  std::span<std::uint8_t> tile_mask{};
+};
+
+inline constexpr std::size_t kInPlaceTileMaskBytes = (kTilePixels + 7U) / 8U;
+
+// Interactive-path sibling of append_incrementally that paints the new
+// operation directly into resident raw tiles instead of copying each affected
+// tile out and back. Every fallible step (log preparation, overview scratch,
+// canvas validation, enumeration) runs before any owned pixel changes, so
+// failure still leaves both authorities at their prior revisions. Affected
+// resident raw tiles at every zoom are updated in place; resident uniforms
+// whose color equals the painted color are retained untouched; uniforms
+// inside priority_view are converted to raw and painted; every other affected
+// identity is invalidated to correct overview fallback, exactly like the
+// reference path. Composed pixels equal the reference path wherever both are
+// resident, and the priority view never falls back. Callers must serialize
+// access and must not compose between internal edits (single-threaded use).
+[[nodiscard]] std::optional<IncrementalAppendResult> append_incrementally_in_place(
+    OperationLog& log, MaterializedCanvas& canvas, const OperationAppend& append_request,
+    const InPlaceAppendWorkspace& workspace,
+    std::optional<ViewRequest> priority_view = std::nullopt);
+
 // Coordinates an authoritative snapshot restore. The caller-owned pixels must
 // not alias log or canvas storage. Validation is completed before either state
 // module changes. Callers must serialize access.
