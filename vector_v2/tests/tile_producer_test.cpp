@@ -29,10 +29,13 @@ struct PaperFixture {
   std::array<std::uint16_t, vector_v2::kTilePixels> tile_pool{};
   std::array<std::uint16_t, vector_v2::kTileProducerPixels> supertask{};
   std::array<std::uint16_t, vector_v2::kTilePixels> packed{};
+  std::array<std::uint8_t, vector_v2::kTileProducerMaskBytes> mask{};
   vector_v2::OperationLog log{records, samples};
   vector_v2::MaterializedCanvas canvas{overview, *uniforms, occupancy, slots, tile_pool};
   vector_v2::TileProducer producer{
-      log, canvas, {.supertask_pixels = supertask, .packed_tile_pixels = packed}};
+      log,
+      canvas,
+      {.supertask_pixels = supertask, .packed_tile_pixels = packed, .finalized_pixels = mask}};
 
   PaperFixture() {
     snapshot.fill(0xFFFFU);
@@ -54,10 +57,13 @@ struct AdversarialFixture {
       std::vector<std::uint16_t>(slots.size() * vector_v2::kTilePixels);
   std::array<std::uint16_t, vector_v2::kTileProducerPixels> supertask{};
   std::array<std::uint16_t, vector_v2::kTilePixels> packed{};
+  std::array<std::uint8_t, vector_v2::kTileProducerMaskBytes> mask{};
   vector_v2::OperationLog log{records, samples};
   vector_v2::MaterializedCanvas canvas{overview, slots, tile_pool};
   vector_v2::TileProducer producer{
-      log, canvas, {.supertask_pixels = supertask, .packed_tile_pixels = packed}};
+      log,
+      canvas,
+      {.supertask_pixels = supertask, .packed_tile_pixels = packed, .finalized_pixels = mask}};
 
   AdversarialFixture() {
     overview.assign(overview.size(), 0xFFFFU);
@@ -73,10 +79,13 @@ struct Fixture {
   std::array<std::uint16_t, 64U * vector_v2::kTilePixels> tile_pool{};
   std::array<std::uint16_t, vector_v2::kTileProducerPixels> supertask{};
   std::array<std::uint16_t, vector_v2::kTilePixels> packed{};
+  std::array<std::uint8_t, vector_v2::kTileProducerMaskBytes> mask{};
   vector_v2::OperationLog log{records, samples};
   vector_v2::MaterializedCanvas canvas{overview, slots, tile_pool};
   vector_v2::TileProducer producer{
-      log, canvas, {.supertask_pixels = supertask, .packed_tile_pixels = packed}};
+      log,
+      canvas,
+      {.supertask_pixels = supertask, .packed_tile_pixels = packed, .finalized_pixels = mask}};
 
   Fixture() {
     overview.fill(0xFFFFU);
@@ -373,12 +382,12 @@ TEST_CASE("tile producer sliced long strokes equal direct painter replay") {
   CHECK(composed == direct);
 }
 
-TEST_CASE("tile producer isolates an oversized first segment from later raster work") {
+TEST_CASE("tile producer isolates an oversized newest segment from older raster work") {
   Fixture fixture;
   const std::array oversized_segments{
-      vector_v2::CompactOperationSample{.x_quarter = 20, .y_quarter = 20, .radius_256 = 5'120},
-      vector_v2::CompactOperationSample{.x_quarter = 100, .y_quarter = 100, .radius_256 = 5'120},
-      vector_v2::CompactOperationSample{.x_quarter = 20, .y_quarter = 100, .radius_256 = 5'120},
+      vector_v2::CompactOperationSample{.x_quarter = 20, .y_quarter = 20, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 200, .y_quarter = 200, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 48, .y_quarter = 48, .radius_256 = 5'120},
   };
   REQUIRE(fixture.log.append(append(oversized_segments, 0x001FU)));
   std::array<std::uint16_t, vector_v2::kOverviewPixels> revised_overview{};
@@ -487,14 +496,16 @@ TEST_CASE("tile producer rejects 25 percent and aliased or short workspace") {
       fixture.log,
       fixture.canvas,
       {.supertask_pixels = std::span(fixture.supertask).first(1),
-       .packed_tile_pixels = fixture.packed},
+       .packed_tile_pixels = fixture.packed,
+       .finalized_pixels = fixture.mask},
   };
   CHECK_FALSE(short_workspace.ready());
   vector_v2::TileProducer aliased_workspace{
       fixture.log,
       fixture.canvas,
       {.supertask_pixels = fixture.supertask,
-       .packed_tile_pixels = std::span(fixture.supertask).first(vector_v2::kTilePixels)},
+       .packed_tile_pixels = std::span(fixture.supertask).first(vector_v2::kTilePixels),
+       .finalized_pixels = fixture.mask},
   };
   CHECK_FALSE(aliased_workspace.ready());
 }

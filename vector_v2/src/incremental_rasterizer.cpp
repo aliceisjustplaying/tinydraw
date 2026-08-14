@@ -229,6 +229,78 @@ void paint_tapered_segment(const Segment& segment, PixelRect bounds, std::uint16
   }
 }
 
+bool pixel_finalized(std::span<const std::uint8_t> finalized, std::size_t pixel) {
+  const std::uint8_t bit = static_cast<std::uint8_t>(1U << (pixel & 7U));
+  return (finalized[pixel >> 3U] & bit) != 0U;
+}
+
+void finalize_pixel(std::span<std::uint8_t> finalized, std::size_t pixel) {
+  const std::uint8_t bit = static_cast<std::uint8_t>(1U << (pixel & 7U));
+  finalized[pixel >> 3U] = static_cast<std::uint8_t>(finalized[pixel >> 3U] | bit);
+}
+
+void paint_masked_constant_radius_segment(const Segment& segment, PixelRect bounds,
+                                          std::uint16_t color, const RasterSurface& surface,
+                                          std::span<std::uint8_t> finalized) {
+  ScanSpan prior{.first = bounds.x0, .last = bounds.x0 - 1};
+  for (int y = bounds.y0; y < bounds.y1; ++y) {
+    const float pixel_y = static_cast<float>(y) + 0.5F;
+    const int first_covered = find_first_covered(segment, bounds, pixel_y, prior);
+    if (first_covered == bounds.x1) {
+      prior.last = prior.first - 1;
+      continue;
+    }
+    const int last_covered = find_last_covered(segment, bounds, pixel_y, prior, first_covered);
+    prior = {.first = first_covered, .last = last_covered};
+    const std::size_t row = static_cast<std::size_t>(y - surface.level_bounds.y0) *
+                            static_cast<std::size_t>(surface.stride);
+    for (int x = first_covered; x <= last_covered; ++x) {
+      const std::size_t pixel = row + static_cast<std::size_t>(x - surface.level_bounds.x0);
+      if (pixel_finalized(finalized, pixel)) {
+        continue;
+      }
+      surface.pixels[pixel] = color;
+      finalize_pixel(finalized, pixel);
+    }
+  }
+}
+
+void paint_masked_tapered_segment(const Segment& segment, PixelRect bounds, std::uint16_t color,
+                                  const RasterSurface& surface, std::span<std::uint8_t> finalized) {
+  for (int y = bounds.y0; y < bounds.y1; ++y) {
+    const float pixel_y = static_cast<float>(y) + 0.5F;
+    const ScanSpan row_span = conservative_tapered_row_span(segment, bounds, pixel_y);
+    if (row_span.empty()) {
+      continue;
+    }
+    const std::size_t row = static_cast<std::size_t>(y - surface.level_bounds.y0) *
+                            static_cast<std::size_t>(surface.stride);
+    for (int x = row_span.first; x <= row_span.last; ++x) {
+      const std::size_t pixel = row + static_cast<std::size_t>(x - surface.level_bounds.x0);
+      if (pixel_finalized(finalized, pixel) ||
+          !covers_pixel(segment, static_cast<float>(x) + 0.5F, pixel_y)) {
+        continue;
+      }
+      surface.pixels[pixel] = color;
+      finalize_pixel(finalized, pixel);
+    }
+  }
+}
+
+void paint_masked_segment(const Sample& start, const Sample& end, std::uint16_t color,
+                          const RasterSurface& surface, std::span<std::uint8_t> finalized) {
+  const Segment segment = make_segment(start, end);
+  const PixelRect bounds = segment_bounds(segment, surface.level_bounds);
+  if (bounds.x1 <= bounds.x0 || bounds.y1 <= bounds.y0) {
+    return;
+  }
+  if (start.radius == end.radius) {
+    paint_masked_constant_radius_segment(segment, bounds, color, surface, finalized);
+  } else {
+    paint_masked_tapered_segment(segment, bounds, color, surface, finalized);
+  }
+}
+
 void paint_segment(const Sample& start, const Sample& end, std::uint16_t color,
                    const RasterSurface& surface) {
   const Segment segment = make_segment(start, end);
@@ -297,6 +369,20 @@ bool apply_incremental_segment_steps(const IncrementalSegment& segment,
   paint_bounded_segment(
       scaled_sample(segment.first, surface.zoom), scaled_sample(segment.second, surface.zoom),
       segment.tool == OperationTool::kEraser ? kBackground : segment.color, surface);
+  return true;
+}
+
+bool apply_masked_incremental_segment(const IncrementalSegment& segment,
+                                      const RasterSurface& surface,
+                                      std::span<std::uint8_t> finalized_pixels) {
+  const std::size_t required_mask_bytes = (surface.pixels.size() + 7U) / 8U;
+  if (!valid_surface(surface) || finalized_pixels.size() < required_mask_bytes) {
+    return false;
+  }
+  paint_masked_segment(scaled_sample(segment.first, surface.zoom),
+                       scaled_sample(segment.second, surface.zoom),
+                       segment.tool == OperationTool::kEraser ? kBackground : segment.color,
+                       surface, finalized_pixels);
   return true;
 }
 
