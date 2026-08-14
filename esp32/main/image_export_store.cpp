@@ -25,8 +25,8 @@ constexpr std::size_t kPngOffset = kPageBytes;
 struct ExportMetadata {
   std::uint32_t magic = kMetadataMagic;
   std::uint32_t version = kMetadataVersion;
-  std::uint32_t width = WorldCanvas::kWidth;
-  std::uint32_t height = WorldCanvas::kHeight;
+  std::uint32_t width = 0;
+  std::uint32_t height = 0;
   std::uint32_t image_size = 0;
   std::uint32_t generation = 0;
   std::uint32_t checksum = 0;
@@ -37,11 +37,12 @@ std::uint32_t metadata_checksum(const ExportMetadata& metadata) {
          metadata.image_size ^ metadata.generation ^ 0x91E1'0DA5U;
 }
 
-bool valid_metadata(const ExportMetadata& metadata, std::size_t partition_size) {
+bool valid_metadata(const ExportMetadata& metadata, std::size_t partition_size, int width,
+                    int height) {
   return metadata.magic == kMetadataMagic && metadata.version == kMetadataVersion &&
-         metadata.width == static_cast<std::uint32_t>(WorldCanvas::kWidth) &&
-         metadata.height == static_cast<std::uint32_t>(WorldCanvas::kHeight) &&
-         metadata.image_size > 0U && metadata.image_size <= partition_size - kPngOffset &&
+         metadata.width == static_cast<std::uint32_t>(width) &&
+         metadata.height == static_cast<std::uint32_t>(height) && metadata.image_size > 0U &&
+         metadata.image_size <= partition_size - kPngOffset &&
          metadata.checksum == metadata_checksum(metadata);
 }
 
@@ -114,16 +115,19 @@ class PartitionOutput final : public PngOutput {
 
 }  // namespace
 
-ImageExportStore::ImageExportStore() {
+ImageExportStore::ImageExportStore()
+    : ImageExportStore(WorldCanvas::kWidth, WorldCanvas::kHeight) {}
+
+ImageExportStore::ImageExportStore(int width, int height) : width_(width), height_(height) {
   const auto* partition =
       esp_partition_find_first(ESP_PARTITION_TYPE_DATA, kPartitionSubtype, kPartitionLabel);
-  if (partition == nullptr || partition->size <= kPngOffset) {
+  if (partition == nullptr || partition->size <= kPngOffset || width_ <= 0 || height_ <= 0) {
     return;
   }
   partition_ = partition;
   ExportMetadata metadata;
   if (esp_partition_read(partition, 0, &metadata, sizeof(metadata)) == ESP_OK &&
-      valid_metadata(metadata, partition->size)) {
+      valid_metadata(metadata, partition->size, width_, height_)) {
     image_size_ = metadata.image_size;
     generation_ = metadata.generation;
   }
@@ -146,20 +150,44 @@ bool ImageExportStore::read(std::size_t offset, std::span<std::uint8_t> output) 
 }
 
 ImageExportStats ImageExportStore::encode(std::span<const std::uint16_t> world) {
+  return encode_with(world, nullptr);
+}
+
+ImageExportStats ImageExportStore::encode_rows(PngRowSource& source) {
+  return encode_with({}, &source);
+}
+
+ImageExportStats ImageExportStore::encode_with(std::span<const std::uint16_t> world,
+                                               PngRowSource* source) {
   ImageExportStats stats;
-  if (!ready() || world.size() < WorldCanvas::kRequiredPixels) {
+  const std::size_t required_pixels =
+      static_cast<std::size_t>(width_) * static_cast<std::size_t>(height_);
+  if (!ready() || (source == nullptr && world.size() < required_pixels)) {
     return stats;
   }
   const auto started = esp_timer_get_time();
+  // The deflate state inside the encoder workspace is hammered with random
+  // hash-chain accesses per input byte; internal RAM keeps that off the PSRAM
+  // cache. Fall back to PSRAM when internal memory is unavailable.
   auto* workspace =
-      heap_caps_malloc(png_encoder_workspace_bytes(), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-  auto* row = static_cast<std::uint8_t*>(heap_caps_malloc(
-      png_encoder_row_bytes(WorldCanvas::kWidth), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+      heap_caps_malloc(png_encoder_workspace_bytes(), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  if (workspace == nullptr) {
+    workspace =
+        heap_caps_malloc(png_encoder_workspace_bytes(), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  }
+  auto* row = static_cast<std::uint8_t*>(
+      heap_caps_malloc(png_encoder_row_bytes(width_), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  auto* row_pixels = static_cast<std::uint16_t*>(
+      source == nullptr ? nullptr
+                        : heap_caps_malloc(static_cast<std::size_t>(width_) * sizeof(std::uint16_t),
+                                           MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   auto* first_page =
       static_cast<std::uint8_t*>(heap_caps_malloc(kPageBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   const auto* partition = as_partition(partition_);
-  if (workspace == nullptr || row == nullptr || first_page == nullptr) {
+  if (workspace == nullptr || row == nullptr || first_page == nullptr ||
+      (source != nullptr && row_pixels == nullptr)) {
     heap_caps_free(first_page);
+    heap_caps_free(row_pixels);
     heap_caps_free(row);
     heap_caps_free(workspace);
     return stats;
@@ -170,16 +198,23 @@ ImageExportStats ImageExportStore::encode(std::span<const std::uint16_t> world) 
   const bool erased = esp_partition_erase_range(partition, 0, kPngOffset + kPageBytes) == ESP_OK;
   PartitionOutput output(partition, std::span(first_page, kPageBytes));
   PngEncodeResult result;
-  if (erased) {
-    result = encode_png_rgb565(world, WorldCanvas::kWidth, WorldCanvas::kHeight, output, workspace,
-                               png_encoder_workspace_bytes(),
-                               std::span(row, png_encoder_row_bytes(WorldCanvas::kWidth)));
+  if (erased && source != nullptr) {
+    result = encode_png_rgb565_rows(*source, width_, height_, output, workspace,
+                                    png_encoder_workspace_bytes(),
+                                    std::span(row, png_encoder_row_bytes(width_)),
+                                    std::span(row_pixels, static_cast<std::size_t>(width_)));
+  } else if (erased) {
+    result =
+        encode_png_rgb565(world, width_, height_, output, workspace, png_encoder_workspace_bytes(),
+                          std::span(row, png_encoder_row_bytes(width_)));
   }
   bool committed = result.success() &&
                    esp_partition_write(partition, kPngOffset, first_page, kPageBytes) == ESP_OK;
   if (committed) {
     std::fill_n(first_page, kPageBytes, 0xFFU);
     ExportMetadata metadata;
+    metadata.width = static_cast<std::uint32_t>(width_);
+    metadata.height = static_cast<std::uint32_t>(height_);
     metadata.image_size = static_cast<std::uint32_t>(result.bytes_written);
     metadata.generation = generation_ + 1U;
     metadata.checksum = metadata_checksum(metadata);
@@ -192,6 +227,7 @@ ImageExportStats ImageExportStore::encode(std::span<const std::uint16_t> world) 
   }
 
   heap_caps_free(first_page);
+  heap_caps_free(row_pixels);
   heap_caps_free(row);
   heap_caps_free(workspace);
   stats.bytes = image_size_;

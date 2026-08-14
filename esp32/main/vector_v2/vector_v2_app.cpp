@@ -26,6 +26,7 @@
 #include "tinydraw/vector_v2/operation_builder.h"
 #include "tinydraw/vector_v2/operation_log.h"
 #include "tinydraw/vector_v2/tile_producer.h"
+#include "vector_v2_export.h"
 #include "vector_v2_presenter.h"
 #include "vector_v2_touch_sampler.h"
 
@@ -499,11 +500,26 @@ void print_stroke(const PendingStrokeReport& report) {
       static_cast<unsigned long>(report.largest_psram), report.authority_match);
 }
 
+void run_export(VectorV2Export& exporter, const OperationLog& log) {
+  exporter.prepare_reencode();
+  const VectorV2ExportStats stats = exporter.encode(log);
+  const bool usb_ready = stats.encoded && exporter.present_usb();
+  std::printf(
+      "TINYDRAW_V2_EXPORT encoded=%u usb=%u bytes=%lu elapsed_us=%lld workspace_bytes=%lu "
+      "band_bytes=%lu free_psram=%lu free_internal=%lu\n",
+      stats.encoded, usb_ready, static_cast<unsigned long>(stats.bytes),
+      static_cast<long long>(stats.elapsed_us), static_cast<unsigned long>(stats.workspace_bytes),
+      static_cast<unsigned long>(stats.band_bytes),
+      static_cast<unsigned long>(stats.free_psram_after),
+      static_cast<unsigned long>(stats.free_internal_after));
+  std::fflush(stdout);
+}
+
 bool apply_chrome_action(vector_v2::ChromeAction action, Point point,
                          vector_v2::ChromeState& chrome, OperationLog& log,
                          MaterializedCanvas& canvas, vector_v2::TileProducer& producer,
                          std::span<const std::uint16_t> blank_snapshot,
-                         VectorV2Presenter& presenter) {
+                         VectorV2Presenter& presenter, VectorV2Export& exporter) {
   const auto toggle = [&](vector_v2::ChromePopup popup) {
     chrome.popup = chrome.popup == popup ? vector_v2::ChromePopup::kNone : popup;
   };
@@ -566,10 +582,16 @@ bool apply_chrome_action(vector_v2::ChromeAction action, Point point,
       chrome.popup = vector_v2::ChromePopup::kNone;
       break;
     }
+    case vector_v2::ChromeAction::kExport:
+      // Blocking by design for now, exactly like Raster V1: render, encode,
+      // then present the USB disk. Activating USB ends any serial console
+      // session until the next reset.
+      run_export(exporter, log);
+      chrome.popup = vector_v2::ChromePopup::kNone;
+      break;
     case vector_v2::ChromeAction::kNone:
     case vector_v2::ChromeAction::kUndo:
     case vector_v2::ChromeAction::kRedo:
-    case vector_v2::ChromeAction::kExport:
       break;
   }
   const auto timing = presenter.refresh(chrome, now_us());
@@ -605,6 +627,7 @@ void run_vector_v2_app() {
   VectorV2TouchSampler touch_sampler(touch,
                                      std::span(storage.touch_events, kVectorV2TouchEventCapacity));
   vector_v2::NavigationState navigation;
+  VectorV2Export exporter;
   VectorV2Presenter presenter(canvas, navigation, scheduler, display,
                               std::span(storage.frame, vector_v2::kOverviewPixels),
                               std::span(storage.region_scratch, kLiveRegionScratchPixels));
@@ -663,7 +686,7 @@ void run_vector_v2_app() {
   print_presentation("startup", presenter, initial);
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
   if (!run_vector_v2_gate_harness(presenter, producer, log, canvas, touch_sampler, chrome,
-                                  harness_workspace, workspace,
+                                  harness_workspace, workspace, exporter,
                                   std::span(storage.snapshot, vector_v2::kOverviewPixels),
                                   std::span(storage.input_samples, kInputSampleCapacity),
                                   std::span(storage.producer_packed, vector_v2::kTilePixels))) {
@@ -883,7 +906,8 @@ void run_vector_v2_app() {
         if (vector_v2::chrome_contains({tap.x, tap.y}, chrome)) {
           static_cast<void>(apply_chrome_action(
               vector_v2::chrome_action_at({tap.x, tap.y}, chrome), tap, chrome, log, canvas,
-              producer, std::span(storage.snapshot, vector_v2::kOverviewPixels), presenter));
+              producer, std::span(storage.snapshot, vector_v2::kOverviewPixels), presenter,
+              exporter));
         }
       } else if (panning) {
         panning = false;

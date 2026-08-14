@@ -34,8 +34,11 @@ if(TINYDRAW_VECTOR_V2_OVERVIEW_WALK OR TINYDRAW_VECTOR_V2_APP)
   if(TINYDRAW_VECTOR_V2_APP)
     set(TINYDRAW_VECTOR_V2_HARDWARE_SRCS
       "vector_v2/vector_v2_app.cpp"
+      "vector_v2/vector_v2_export.cpp"
       "vector_v2/vector_v2_presenter.cpp"
       "vector_v2/vector_v2_touch_sampler.cpp"
+      "image_export_store.cpp"
+      "usb_export.cpp"
     )
     if(TINYDRAW_VECTOR_V2_GATE_HARNESS)
       list(APPEND TINYDRAW_VECTOR_V2_HARDWARE_SRCS
@@ -49,11 +52,14 @@ if(TINYDRAW_VECTOR_V2_OVERVIEW_WALK OR TINYDRAW_VECTOR_V2_APP)
     endif()
     set(TINYDRAW_VECTOR_V2_CORE_SRCS
       "${TINYDRAW_CORE}/src/coverage_tile.cpp"
+      "${TINYDRAW_CORE}/src/fat16_disk.cpp"
       "${TINYDRAW_CORE}/src/ink_stream.cpp"
+      "${TINYDRAW_CORE}/src/png_encoder.cpp"
       "${TINYDRAW_CORE}/src/realistic_workload.cpp"
       "${TINYDRAW_CORE}/src/ribbon_geometry.cpp"
       "${TINYDRAW_CORE}/src/ribbon_renderer.cpp"
       "${TINYDRAW_CORE}/src/vector_document.cpp"
+      ${TINYDRAW_PNGENC_SRCS}
     )
   endif()
   set(TINYDRAW_APP_SRCS
@@ -127,7 +133,9 @@ target_include_directories(${TINYUSB_LIB} PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
 if(NOT TINYDRAW_QEMU)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE
     MEM_SHRINK=3
-    PNG_MAX_BUFFERED_PIXELS=3313
+    # Widest exported scanline: Vector V2 world (1472 * 3 + 1). Raster V1
+    # needs 3313; png_encoder.cpp rejects anything wider than this buffer.
+    PNG_MAX_BUFFERED_PIXELS=4417
   )
 endif()
 if(TINYDRAW_VECTOR_BENCHMARK)
