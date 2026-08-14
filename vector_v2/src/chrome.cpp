@@ -34,7 +34,13 @@ constexpr int kBatteryTop = 18;
 constexpr int kBatteryRight = 340;
 constexpr int kBatteryBottom = 54;
 constexpr ChromeRect kZoomRailRect{304, 72, 360, 226};
+constexpr ChromeRect kZoomRailOverlayRect{kZoomRailRect.x0 - 1, kZoomRailRect.y0 - 1,
+                                          kZoomRailRect.x1 + 2, kZoomRailRect.y1 + 3};
 constexpr ChromeRect kMinimapRect{266, 252, 358, 366};
+constexpr ChromeRect kMinimapOverlayRect{kMinimapRect.x0 - 1, kMinimapRect.y0 - 1,
+                                         kMinimapRect.x1 + 2, kMinimapRect.y1 + 3};
+constexpr ChromeRect kBatteryOverlayRect{kBatteryLeft - 2, kBatteryTop - 2, kBatteryRight + 4,
+                                         kBatteryBottom + 6};
 constexpr int kMinimapLeft = 272;
 constexpr int kMinimapTop = 258;
 constexpr int kMinimapWidth = 80;
@@ -545,7 +551,7 @@ ChromeAction chrome_action_at(ChromePoint point, const ChromeState& state) {
 }
 
 std::optional<ChromeRect> chrome_minimap_region(const ChromeState& state) {
-  return canvas_overlays_visible(state) ? std::optional{kMinimapRect} : std::nullopt;
+  return canvas_overlays_visible(state) ? std::optional{kMinimapOverlayRect} : std::nullopt;
 }
 
 bool chrome_minimap_refresh_required(const ChromeState& state, bool overview_changed,
@@ -558,11 +564,10 @@ ChromeOverlayRegions chrome_overlay_regions(const ChromeState& state) {
   if (!canvas_overlays_visible(state)) {
     return result;
   }
-  result.regions[result.count++] = kZoomRailRect;
-  result.regions[result.count++] = kMinimapRect;
+  result.regions[result.count++] = kZoomRailOverlayRect;
+  result.regions[result.count++] = kMinimapOverlayRect;
   if (state.battery_percentage >= 0) {
-    result.regions[result.count++] = {kBatteryLeft - 2, kBatteryTop - 2, kBatteryRight + 4,
-                                      kBatteryBottom + 6};
+    result.regions[result.count++] = kBatteryOverlayRect;
   }
   return result;
 }
