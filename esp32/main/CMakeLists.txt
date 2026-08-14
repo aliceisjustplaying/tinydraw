@@ -52,7 +52,6 @@ if(TINYDRAW_VECTOR_V2_OVERVIEW_WALK OR TINYDRAW_VECTOR_V2_APP)
       "${TINYDRAW_CORE}/src/realistic_workload.cpp"
       "${TINYDRAW_CORE}/src/ribbon_geometry.cpp"
       "${TINYDRAW_CORE}/src/ribbon_renderer.cpp"
-      "${TINYDRAW_CORE}/src/toolbar.cpp"
       "${TINYDRAW_CORE}/src/vector_document.cpp"
     )
   endif()

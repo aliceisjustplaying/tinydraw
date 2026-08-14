@@ -257,6 +257,27 @@ float brush_size(ChromeSize size) {
   return 8.0F;
 }
 
+int chrome_canvas_bottom(const ChromeState& state) {
+  return state.popup == ChromePopup::kNone ? kChromeCanvasBottom : kChromePopupCanvasBottom;
+}
+
+std::optional<ChromePoint> clip_canvas_segment(ChromePoint previous, ChromePoint current,
+                                               const ChromeState& state) {
+  const float bottom = static_cast<float>(chrome_canvas_bottom(state) - 1);
+  if (current.y <= bottom) {
+    return current;
+  }
+  if (previous.y > bottom) {
+    return std::nullopt;
+  }
+  const float vertical_distance = current.y - previous.y;
+  if (vertical_distance <= 0.0F) {
+    return ChromePoint{current.x, bottom};
+  }
+  const float progress = (bottom - previous.y) / vertical_distance;
+  return ChromePoint{previous.x + (current.x - previous.x) * progress, bottom};
+}
+
 bool chrome_contains(ChromePoint point, const ChromeState& state) {
   if (state.popup == ChromePopup::kColors) {
     return inside(point, 0.0F, 0.0F, static_cast<float>(kWidth), static_cast<float>(kHeight));
@@ -273,15 +294,20 @@ std::optional<std::uint8_t> chrome_color_at(ChromePoint point, const ChromeState
   if (state.popup != ChromePopup::kColors || point.y < 42.0F || point.y >= 418.0F) {
     return std::nullopt;
   }
-  constexpr float gap = 6.0F;
-  constexpr float cell_width = (static_cast<float>(kWidth) - gap * 5.0F) / 4.0F;
-  constexpr float cell_height = 88.0F;
-  const int column = static_cast<int>((point.x - gap) / (cell_width + gap));
-  const int row = static_cast<int>((point.y - 42.0F) / (cell_height + gap));
-  if (column < 0 || column >= 4 || row < 0 || row >= 4) {
-    return std::nullopt;
+  constexpr int gap = 6;
+  constexpr int cell_width = (kWidth - gap * 5) / 4;
+  constexpr int cell_height = 88;
+  for (int row = 0; row < 4; ++row) {
+    for (int column = 0; column < 4; ++column) {
+      const int x0 = gap + column * (cell_width + gap);
+      const int y0 = 42 + row * (cell_height + gap);
+      if (inside(point, static_cast<float>(x0), static_cast<float>(y0),
+                 static_cast<float>(x0 + cell_width), static_cast<float>(y0 + cell_height))) {
+        return static_cast<std::uint8_t>(row * 4 + column);
+      }
+    }
   }
-  return static_cast<std::uint8_t>(row * 4 + column);
+  return std::nullopt;
 }
 
 ChromeAction chrome_action_at(ChromePoint point, const ChromeState& state) {

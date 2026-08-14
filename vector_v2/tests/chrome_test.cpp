@@ -72,6 +72,31 @@ TEST_CASE("full screen palette maps all sixteen swatches and both page actions")
   CHECK(tinydraw::vector_v2::chrome_contains({180.0F, 200.0F}, state));
 }
 
+TEST_CASE("chrome canvas clipping follows the visible overlay") {
+  ChromeState state;
+  CHECK(tinydraw::vector_v2::chrome_canvas_bottom(state) == 372);
+  auto clipped =
+      tinydraw::vector_v2::clip_canvas_segment({100.0F, 280.0F}, {120.0F, 400.0F}, state);
+  REQUIRE(clipped.has_value());
+  CHECK(clipped->y == doctest::Approx(371.0F));
+
+  state.popup = ChromePopup::kTools;
+  CHECK(tinydraw::vector_v2::chrome_canvas_bottom(state) == 288);
+  clipped = tinydraw::vector_v2::clip_canvas_segment({100.0F, 280.0F}, {120.0F, 331.0F}, state);
+  REQUIRE(clipped.has_value());
+  CHECK(clipped->y == doctest::Approx(287.0F));
+  CHECK_FALSE(tinydraw::vector_v2::clip_canvas_segment({120.0F, 331.0F}, {140.0F, 340.0F}, state)
+                  .has_value());
+}
+
+TEST_CASE("palette hit testing matches rendered integer cell boundaries") {
+  const ChromeState state{.popup = ChromePopup::kColors};
+  CHECK(tinydraw::vector_v2::chrome_color_at({89.0F, 82.0F}, state) == 0U);
+  CHECK_FALSE(tinydraw::vector_v2::chrome_color_at({90.0F, 82.0F}, state).has_value());
+  CHECK(tinydraw::vector_v2::chrome_color_at({96.0F, 82.0F}, state) == 1U);
+  CHECK(tinydraw::vector_v2::chrome_color_at({276.0F, 82.0F}, state) == 3U);
+}
+
 TEST_CASE("chrome rendering stays within the framebuffer") {
   constexpr int width = 368;
   constexpr int height = 448;
