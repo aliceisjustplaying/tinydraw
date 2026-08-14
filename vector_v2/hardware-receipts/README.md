@@ -4,6 +4,7 @@ These logs are immutable evidence captured from the physical ESP32-S3. Historica
 
 ## Current milestone evidence
 
+- [`live-ink-overlay-clipping-2026-08-14.md`](live-ink-overlay-clipping-2026-08-14.md) — fingerless hardware circle gate proving fixed overlays no longer starve live ink: clear/overlay worst updates 2.940/2.928 ms, overlay submit 2.335 ms, and zero overlay redraw work. Also records the related cold-fill recovery and explicitly retains the separate red pan-overlay gate.
 - [`PERFORMANCE_SLICE_GLASS_VERDICT_2026_08_14.md`](PERFORMANCE_SLICE_GLASS_VERDICT_2026_08_14.md) / [`00d054a-manual-glass.log`](00d054a-manual-glass.log) — final product glass verdict: smooth 3,751-sample 400% gesture at 13.3 ms worst append and successful physical PNG/USB export, alongside newly measured 120–132 ms lower-zoom cached commits, roughly 20 FPS pan with low framebuffer reuse, popup dismissal debt, and an export task-watchdog warning.
 - [`cache-tour-384.log`](cache-tour-384.log) / [`cache-tour-320.log`](cache-tour-320.log) — the 384-versus-320 slot A/B on the new 16-stop 400% tour gate: return-trip refill 0 tiles / 40 ms at 384 versus 63 tiles / 409 ms at 320; the protected home footprint returns sharp at both.
 - [`6abfa0f-cold-p95-20-runs.log`](6abfa0f-cold-p95-20-runs.log) — final slice distribution: adversarial 400% p95 646,305 us (−55.5% vs 26a05f5) with deadline slicing and the 384-slot pool; all ticks under 12.7 ms.

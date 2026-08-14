@@ -584,6 +584,45 @@ ChromeOverlayRegions chrome_overlay_regions(const ChromeState& state) {
   return result;
 }
 
+ChromePresentationRegions chrome_unobscured_regions(ChromeRect bounds, const ChromeState& state) {
+  const auto align_to_panel = [](ChromeRect region) {
+    region.x0 = std::clamp(region.x0 & ~1, 0, kWidth);
+    region.y0 = std::clamp(region.y0 & ~1, 0, kHeight);
+    region.x1 = std::clamp((region.x1 + 1) & ~1, region.x0, kWidth);
+    region.y1 = std::clamp((region.y1 + 1) & ~1, region.y0, kHeight);
+    return region;
+  };
+  const auto append = [](ChromePresentationRegions& regions, ChromeRect region) {
+    if (region.x1 > region.x0 && region.y1 > region.y0 && regions.count < regions.regions.size()) {
+      regions.regions[regions.count++] = region;
+    }
+  };
+
+  ChromePresentationRegions visible;
+  append(visible, align_to_panel(bounds));
+  const auto overlays = chrome_overlay_regions(state);
+  for (std::size_t overlay_index = 0; overlay_index < overlays.count; ++overlay_index) {
+    const ChromeRect overlay = align_to_panel(overlays.regions[overlay_index]);
+    ChromePresentationRegions next;
+    for (std::size_t region_index = 0; region_index < visible.count; ++region_index) {
+      const ChromeRect region = visible.regions[region_index];
+      const ChromeRect intersection{
+          std::max(region.x0, overlay.x0), std::max(region.y0, overlay.y0),
+          std::min(region.x1, overlay.x1), std::min(region.y1, overlay.y1)};
+      if (intersection.x1 <= intersection.x0 || intersection.y1 <= intersection.y0) {
+        append(next, region);
+        continue;
+      }
+      append(next, {region.x0, region.y0, region.x1, intersection.y0});
+      append(next, {region.x0, intersection.y1, region.x1, region.y1});
+      append(next, {region.x0, intersection.y0, intersection.x0, intersection.y1});
+      append(next, {intersection.x1, intersection.y0, region.x1, intersection.y1});
+    }
+    visible = next;
+  }
+  return visible;
+}
+
 void draw_chrome(std::span<std::uint16_t> pixels, int width, int height, const ChromeState& state) {
   if (width != kWidth || height != kHeight ||
       pixels.size() < static_cast<std::size_t>(width) * static_cast<std::size_t>(height)) {

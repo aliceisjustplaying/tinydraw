@@ -135,6 +135,39 @@ TEST_CASE("canvas overlay regions disappear for modal and popup chrome") {
             .count == 0U);
 }
 
+TEST_CASE("live ink presentation regions exclude every fixed canvas overlay") {
+  const ChromeState state{.battery_percentage = 50};
+  const auto regions = tinydraw::vector_v2::chrome_unobscured_regions({0, 0, 368, 372}, state);
+  const auto contains = [&](int x, int y) {
+    for (std::size_t index = 0; index < regions.count; ++index) {
+      const auto region = regions.regions[index];
+      if (x >= region.x0 && x < region.x1 && y >= region.y0 && y < region.y1) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  CHECK(contains(100, 100));
+  CHECK(contains(100, 300));
+  CHECK_FALSE(contains(332, 98));
+  CHECK_FALSE(contains(300, 300));
+  CHECK_FALSE(contains(230, 28));
+  for (std::size_t index = 0; index < regions.count; ++index) {
+    const auto region = regions.regions[index];
+    CHECK((region.x0 & 1) == 0);
+    CHECK((region.y0 & 1) == 0);
+    CHECK((region.x1 & 1) == 0);
+    CHECK((region.y1 & 1) == 0);
+  }
+
+  const ChromeState popup{.popup = ChromePopup::kTools};
+  const auto popup_regions =
+      tinydraw::vector_v2::chrome_unobscured_regions({20, 40, 120, 160}, popup);
+  REQUIRE(popup_regions.count == 1U);
+  CHECK(popup_regions.regions[0] == tinydraw::vector_v2::ChromeRect{20, 40, 120, 160});
+}
+
 TEST_CASE("canvas overlay regions own every pixel their painters mutate") {
   constexpr int width = 368;
   constexpr int height = 448;

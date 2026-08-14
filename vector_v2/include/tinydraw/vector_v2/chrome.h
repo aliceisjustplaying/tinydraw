@@ -18,6 +18,7 @@ struct ChromeRect {
   int y0 = 0;
   int x1 = 0;
   int y1 = 0;
+  bool operator==(const ChromeRect&) const = default;
 };
 
 inline constexpr int kChromeCanvasBottom = 372;
@@ -90,6 +91,11 @@ struct ChromeOverlayRegions {
   std::size_t count = 0;
 };
 
+struct ChromePresentationRegions {
+  std::array<ChromeRect, 16> regions{};
+  std::size_t count = 0;
+};
+
 [[nodiscard]] constexpr std::uint16_t rgb565(std::uint32_t rgb888) {
   return static_cast<std::uint16_t>(((rgb888 >> 19U) & 0x1FU) << 11U |
                                     ((rgb888 >> 10U) & 0x3FU) << 5U | ((rgb888 >> 3U) & 0x1FU));
@@ -118,6 +124,10 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
 [[nodiscard]] std::optional<std::uint8_t> chrome_color_at(ChromePoint point,
                                                           const ChromeState& state);
 [[nodiscard]] ChromeOverlayRegions chrome_overlay_regions(const ChromeState& state);
+// Splits panel bounds around fixed canvas overlays so latency-critical live
+// ink can be presented without redrawing or damaging those overlays.
+[[nodiscard]] ChromePresentationRegions chrome_unobscured_regions(ChromeRect bounds,
+                                                                  const ChromeState& state);
 [[nodiscard]] std::optional<ChromeRect> chrome_minimap_region(const ChromeState& state);
 [[nodiscard]] bool chrome_minimap_refresh_required(const ChromeState& state, bool overview_changed,
                                                    bool allow_minimap_refresh);
