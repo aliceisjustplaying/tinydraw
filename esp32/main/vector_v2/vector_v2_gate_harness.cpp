@@ -268,19 +268,25 @@ bool run_paced_cold_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& 
       present_us += esp_timer_get_time() - present_started;
       presentation_pending = false;
     } else {
-      const std::int64_t compute_started = esp_timer_get_time();
-      const auto step = producer.produce_next(view);
-      compute_us += esp_timer_get_time() - compute_started;
-      if (!step.has_value()) {
-        return false;
-      }
-      ++steps;
-      tiles += step->tiles_published;
-      complete = step->complete;
-      if (step->tiles_published != 0U) {
-        pending_bounds = step->level_bounds;
-        presentation_pending = true;
-      }
+      // Mirror the product loop: fill the slice to the shared deadline
+      // instead of taking one producer step per tick.
+      const std::int64_t slice_started = esp_timer_get_time();
+      do {
+        const std::int64_t compute_started = esp_timer_get_time();
+        const auto step = producer.produce_next(view);
+        compute_us += esp_timer_get_time() - compute_started;
+        if (!step.has_value()) {
+          return false;
+        }
+        ++steps;
+        tiles += step->tiles_published;
+        complete = step->complete;
+        if (step->tiles_published != 0U) {
+          pending_bounds = step->level_bounds;
+          presentation_pending = true;
+        }
+      } while (!complete && !presentation_pending &&
+               esp_timer_get_time() - slice_started < kColdFillSliceDeadlineUs);
     }
     maximum_tick_us = std::max(maximum_tick_us, esp_timer_get_time() - tick_started);
     // Mirror the interactive loop: producer work already yields at bounded

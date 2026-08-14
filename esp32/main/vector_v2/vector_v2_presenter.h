@@ -37,6 +37,13 @@ inline constexpr std::size_t kLiveRegionScratchPixels = kMaximumProgressiveRegio
 // samples cost 42% more total work). The deterministic long-gesture harness
 // gate re-proves the bound with this exact constant.
 inline constexpr std::size_t kInteractiveChunkSampleLimit = 48;
+// Cold-fill producer slices run to this deadline before yielding to input.
+// The worst observed single resumable produce_next step is ~11.2 ms (a seed-7
+// publication step; bounded by the producer's internal budgets), so the
+// deadline must leave that much headroom under the 15 ms input-poll alarm:
+// 2.5 ms measured a 13.2 ms worst tick while still batching several steps per
+// slice (6 ms measured 15.2 ms and tripped the alarm).
+inline constexpr std::int64_t kColdFillSliceDeadlineUs = 2'500;
 
 struct LivePresentationTiming {
   std::int64_t compose_us = 0;

@@ -1056,13 +1056,23 @@ void run_vector_v2_app() {
           fill_measurement_active = true;
         }
         const std::int64_t fill_tick_started = esp_timer_get_time();
-        const std::int64_t compute_started = esp_timer_get_time();
-        const auto step = producer.produce_next(fill_view);
-        const std::int64_t compute_us = esp_timer_get_time() - compute_started;
-        ++fill_timing.steps;
-        fill_timing.compute_total_us += compute_us;
-        fill_timing.compute_max_us = std::max(fill_timing.compute_max_us, compute_us);
-        if (step.has_value()) {
+        // Fill the slice up to a deadline instead of taking one bounded
+        // producer step per tick: the per-step work budget under-predicts
+        // masked-replay cost by an order of magnitude, so single-step ticks
+        // waste most of the slice on fixed loop overhead and idle pacing.
+        // Resumable produce_next keeps each inner step bounded, so the worst
+        // tick stays under the 15 ms input-poll alarm.
+        do {
+          const std::int64_t compute_started = esp_timer_get_time();
+          const auto step = producer.produce_next(fill_view);
+          const std::int64_t compute_us = esp_timer_get_time() - compute_started;
+          ++fill_timing.steps;
+          fill_timing.compute_total_us += compute_us;
+          fill_timing.compute_max_us = std::max(fill_timing.compute_max_us, compute_us);
+          if (!step.has_value()) {
+            ++fill_timing.producer_failures;
+            break;
+          }
           if (step->tiles_published != 0U) {
             pending_fill = {.level_bounds = step->level_bounds,
                             .zoom = fill_view.zoom,
@@ -1071,12 +1081,12 @@ void run_vector_v2_app() {
                             .pending = true};
           }
           fill_complete = step->complete;
-        } else {
-          ++fill_timing.producer_failures;
-        }
+        } while (!fill_complete && !pending_fill.pending &&
+                 esp_timer_get_time() - fill_tick_started < kColdFillSliceDeadlineUs);
         fill_timing.tick_max_us =
             std::max(fill_timing.tick_max_us, esp_timer_get_time() - fill_tick_started);
-        if (step.has_value() && fill_complete && !pending_fill.pending) {
+        // fill_complete only becomes true through a successful producer step.
+        if (fill_complete && !pending_fill.pending) {
           print_fill_baseline("complete", fill_zoom, fill_x, fill_y, fill_revision, fill_timing);
           std::printf("TINYDRAW_LIVE_FILL_DONE zoom=%s x=%d y=%d revision=%lu\n",
                       zoom_name(fill_zoom), fill_x, fill_y,
