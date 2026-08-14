@@ -5,4 +5,5 @@ Vendored from <https://github.com/bitbank2/PNGenc> at commit
 
 PNGenc is Apache-2.0 licensed. TinyDraw's local header patch recognizes ESP-IDF
 without Arduino and allows the fixed compression window to be selected at build
-time. The maximum scanline width is also configured at build time.
+time. The maximum scanline width is also configured at build time. Preserve the
+`__wasi__` platform clause in `src/PNGenc.h` when re-vendoring.

@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [[ "$(uname -s)" != Darwin ]]; then
+  cat >&2 <<'EOF'
+Install wasi-sdk 33 from https://github.com/WebAssembly/wasi-sdk/releases and set
+WASI_CXX to its bin/clang++. TinyDraw's checked toolchain versions are recorded
+in .wasi-versions.
+EOF
+  exit 1
+fi
+if ! command -v brew >/dev/null 2>&1; then
+  echo "Homebrew is required: https://brew.sh" >&2
+  exit 1
+fi
+
+brew install llvm wasi-libc wasi-runtimes cmake ninja
+
+failed=0
+while IFS='=' read -r formula expected; do
+  actual="$(brew list --versions "$formula" 2>/dev/null | awk '{print $2}')"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "$formula version mismatch: expected $expected, found ${actual:-missing}" >&2
+    failed=1
+  fi
+done < "$root/.wasi-versions"
+if [[ "$failed" == 1 ]]; then
+  echo "Update .wasi-versions only with a reviewed import/export and regression run." >&2
+  exit 1
+fi
+
+echo "WASI C++20 toolchain ready. Run ./scripts/puck [PUCK_REPO]."

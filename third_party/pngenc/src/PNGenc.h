@@ -21,7 +21,7 @@
 //
 #ifndef __PNGENC__
 #define __PNGENC__
-#if defined( __MACH__ ) || defined( __linux__ ) || defined( __linux ) || defined( __LINUX__ ) || defined( __MCUXPRESSO ) || defined( ESP_PLATFORM )
+#if defined( __MACH__ ) || defined( __linux__ ) || defined( __linux ) || defined( __LINUX__ ) || defined( __MCUXPRESSO ) || defined( ESP_PLATFORM ) || defined( __wasi__ )
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>

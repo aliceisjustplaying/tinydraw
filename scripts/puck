@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ $# -gt 1 ]]; then
+  echo "usage: $0 [PUCK_REPO]" >&2
+  exit 2
+fi
+
+build="$root/out/build/puck"
+cxx="${WASI_CXX:-}"
+if [[ -z "$cxx" && -x /opt/homebrew/opt/llvm/bin/clang++ ]]; then
+  cxx=/opt/homebrew/opt/llvm/bin/clang++
+fi
+if [[ -z "$cxx" || ! -x "$cxx" ]]; then
+  echo "WASI clang++ not found; run ./scripts/bootstrap-wasm or set WASI_CXX" >&2
+  exit 1
+fi
+
+cmake -S "$root" -B "$build" -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_SYSTEM_NAME=Generic \
+  -DCMAKE_CXX_COMPILER="$cxx" \
+  -DCMAKE_CXX_COMPILER_TARGET=wasm32-wasip1 \
+  -DTINYDRAW_BUILD_HOST=OFF \
+  -DTINYDRAW_BUILD_TESTS=OFF \
+  -DTINYDRAW_BUILD_PUCK=ON \
+  -DTINYDRAW_WARNINGS_AS_ERRORS=ON
+cmake --build "$build" --target tinydraw_puck
+node "$root/puck/verify.mjs" "$build/puck/emu.wasm"
+
+if [[ $# == 1 ]]; then
+  destination="$1/wasm/dist/emu.wasm"
+  if [[ ! -d "$1/wasm" ]]; then
+    echo "not a Puck checkout: $1 (missing wasm/)" >&2
+    exit 1
+  fi
+  (
+    cd "$1"
+    bun run audit "$build/puck/emu.wasm" \
+      --width 368 --height 448 --format rgb565 \
+      --initial-memory 16777216 --max-memory 67108864
+  )
+  mkdir -p "$(dirname "$destination")"
+  cp "$build/puck/emu.wasm" "$destination"
+  echo "installed $destination"
+else
+  echo "Puck ABI audit skipped (no Puck checkout path supplied)."
+  echo "built $build/puck/emu.wasm"
+fi

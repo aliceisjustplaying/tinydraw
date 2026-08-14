@@ -1,0 +1,3 @@
+llvm=22.1.8
+wasi-libc=33
+wasi-runtimes=22.1.8
