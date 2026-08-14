@@ -203,7 +203,7 @@ void print_presentation(const char* kind, const VectorV2Presenter& presenter,
       "TINYDRAW_LIVE_PRESENT kind=%s zoom=%s x=%d y=%d compose_us=%lld "
       "read_submit_us=%lld read_complete_us=%lld transfer_wait_us=%lld tile_pixels=%lu "
       "uniform_pixels=%lu overview_pixels=%lu fallback_pixels=%lu resident_tiles=%lu "
-      "fallback_tiles=%lu pushes=%lu frame_reused=%u pass=%u\n",
+      "fallback_tiles=%lu pushes=%lu tear_wait_us=%lld tear_sync=%u frame_reused=%u pass=%u\n",
       kind, zoom_name(presenter.zoom()), presenter.level_x(), presenter.level_y(),
       static_cast<long long>(timing.compose_us), static_cast<long long>(timing.first_submit_us),
       static_cast<long long>(timing.first_complete_us), static_cast<long long>(timing.complete_us),
@@ -213,7 +213,8 @@ void print_presentation(const char* kind, const VectorV2Presenter& presenter,
       static_cast<unsigned long>(timing.fallback_pixels),
       static_cast<unsigned long>(timing.resident_tiles),
       static_cast<unsigned long>(timing.fallback_tiles), static_cast<unsigned long>(timing.pushes),
-      timing.frame_reused, timing.passed);
+      static_cast<long long>(timing.tear_wait_us), timing.tear_synchronized, timing.frame_reused,
+      timing.passed);
 }
 
 void print_fill_baseline(const char* result, ZoomLevel zoom, int x, int y,

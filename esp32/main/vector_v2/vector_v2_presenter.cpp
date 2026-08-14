@@ -319,6 +319,14 @@ LivePresentationTiming VectorV2Presenter::present_pixels(vector_v2::PixelRect bo
     return timing;
   }
   scheduler_.require_revision(canvas_.current_revision());
+  const bool full_frame = bounds.x0 == 0 && bounds.y0 == 0 &&
+                          bounds.x1 == vector_v2::kOverviewWidth &&
+                          bounds.y1 == vector_v2::kOverviewHeight;
+  if (full_frame) {
+    const std::int64_t tear_wait_started = esp_timer_get_time();
+    timing.tear_synchronized = display_.wait_for_safe_frame_start(40'000);
+    timing.tear_wait_us = esp_timer_get_time() - tear_wait_started;
+  }
   int rows_per_strip = std::max(2, 8'192 / width);
   rows_per_strip &= ~1;
   const std::uint32_t submits_before = display_.submit_count();

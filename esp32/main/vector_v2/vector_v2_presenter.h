@@ -46,6 +46,8 @@ struct LivePresentationTiming {
   std::size_t resident_tiles = 0;
   std::size_t fallback_tiles = 0;
   std::uint32_t pushes = 0;
+  std::int64_t tear_wait_us = 0;
+  bool tear_synchronized = false;
   bool frame_reused = false;
   bool passed = false;
 };
