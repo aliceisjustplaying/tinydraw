@@ -1035,8 +1035,7 @@ bool run_mixed_zoom_stroke(VectorV2Presenter& presenter, OperationLog& log,
   const auto view = mixed_draw_view(zoom);
   // Mirror the product coordinator exactly: no priority view at 25%.
   const std::optional<vector_v2::ViewRequest> priority_view =
-      zoom == ZoomLevel::k25Percent ? std::optional<vector_v2::ViewRequest>{}
-                                    : std::optional{view};
+      zoom == ZoomLevel::k25Percent ? std::optional<vector_v2::ViewRequest>{} : std::optional{view};
   const float scale = 100.0F / static_cast<float>(vector_v2::zoom_percent(zoom));
   // XL brush: 20 screen pixels at every zoom, like the product tool.
   const float radius = 20.0F * scale;
@@ -1101,8 +1100,9 @@ bool run_mixed_zoom_stroke(VectorV2Presenter& presenter, OperationLog& log,
   float y = y_min;
   float direction = 1.0F;
   std::uint32_t timestamp_us = now_us();
-  if (!builder.begin(tool, color, gesture_id,
-                     {.world_x = x, .world_y = y, .radius = radius, .timestamp_us = timestamp_us})) {
+  if (!builder.begin(
+          tool, color, gesture_id,
+          {.world_x = x, .world_y = y, .radius = radius, .timestamp_us = timestamp_us})) {
     return false;
   }
   for (std::size_t index = 1; index < kStrokeSamples; ++index) {
@@ -1173,10 +1173,9 @@ bool run_mixed_zoom_draw_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
   for (const ZoomLevel zoom : kDrawZooms) {
     for (const OperationTool tool : {OperationTool::kPen, OperationTool::kEraser}) {
       MixedDrawStrokeStats stats{};
-      const bool run_ok =
-          run_mixed_zoom_stroke(presenter, log, canvas, chrome, workspace, builder_storage, zoom,
-                                tool, tool == OperationTool::kPen ? 0x001FU : 0x0000U,
-                                gesture_id++, stats);
+      const bool run_ok = run_mixed_zoom_stroke(
+          presenter, log, canvas, chrome, workspace, builder_storage, zoom, tool,
+          tool == OperationTool::kPen ? 0x001FU : 0x0000U, gesture_id++, stats);
       const bool correct = run_ok && stats.committed && stats.authority && stats.refresh_passed &&
                            stats.chunks >= 24U;
       const bool stroke_pass = correct && stats.append_max_us < 15'000;
@@ -1186,10 +1185,9 @@ bool run_mixed_zoom_draw_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
           "fallback=%lu committed=%u authority=%u refresh=%u run_ok=%u pass=%u\n",
           zoom_name(zoom), tool_name(tool), static_cast<unsigned long>(stats.chunks),
           static_cast<long long>(stats.append_max_us),
-          static_cast<long long>(stats.chunks == 0U
-                                     ? 0
-                                     : stats.append_total_us /
-                                           static_cast<std::int64_t>(stats.chunks)),
+          static_cast<long long>(stats.chunks == 0U ? 0
+                                                    : stats.append_total_us /
+                                                          static_cast<std::int64_t>(stats.chunks)),
           static_cast<long long>(stats.append_total_us),
           static_cast<unsigned long>(stats.affected_tiles),
           static_cast<unsigned long>(stats.published_tiles),
@@ -1221,18 +1219,19 @@ bool run_mixed_zoom_draw_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
     if (!fill_view_to_completion(producer, view, tiles, wall_us)) {
       return false;
     }
-    std::printf("TINYDRAW_GATE1_MIXED_DRAW_REVISIT zoom=%s missing=%lu refill_tiles=%lu "
-                "refill_us=%lld\n",
-                zoom_name(zoom), static_cast<unsigned long>(*missing),
-                static_cast<unsigned long>(tiles), static_cast<long long>(wall_us));
+    std::printf(
+        "TINYDRAW_GATE1_MIXED_DRAW_REVISIT zoom=%s missing=%lu refill_tiles=%lu "
+        "refill_us=%lld\n",
+        zoom_name(zoom), static_cast<unsigned long>(*missing), static_cast<unsigned long>(tiles),
+        static_cast<long long>(wall_us));
   }
 
   const bool passed = strokes_correct && timing_pass;
-  std::printf("TINYDRAW_GATE1_MIXED_DRAW_SUMMARY slots=%lu strokes=%lu worst_append_us=%lld "
-              "pass=%u\n",
-              static_cast<unsigned long>(canvas.slot_capacity()),
-              static_cast<unsigned long>(strokes), static_cast<long long>(worst_append_us),
-              passed);
+  std::printf(
+      "TINYDRAW_GATE1_MIXED_DRAW_SUMMARY slots=%lu strokes=%lu worst_append_us=%lld "
+      "pass=%u\n",
+      static_cast<unsigned long>(canvas.slot_capacity()), static_cast<unsigned long>(strokes),
+      static_cast<long long>(worst_append_us), passed);
   std::fflush(stdout);
   return passed;
 }
