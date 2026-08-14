@@ -3,13 +3,13 @@
 #include <cstdint>
 #include <span>
 
-#include "physical_touch.h"
 #include "tinydraw/vector_v2/chrome.h"
 #include "tinydraw/vector_v2/incremental_document.h"
 #include "tinydraw/vector_v2/materialized_canvas.h"
 #include "tinydraw/vector_v2/operation_log.h"
 #include "tinydraw/vector_v2/tile_producer.h"
 #include "vector_v2_presenter.h"
+#include "vector_v2_touch_sampler.h"
 
 namespace tinydraw::esp32 {
 
@@ -18,7 +18,7 @@ namespace tinydraw::esp32 {
 // Vector V2 application image.
 [[nodiscard]] bool run_vector_v2_gate_harness(
     VectorV2Presenter& presenter, vector_v2::TileProducer& producer, vector_v2::OperationLog& log,
-    vector_v2::MaterializedCanvas& canvas, PhysicalTouch& touch,
+    vector_v2::MaterializedCanvas& canvas, VectorV2TouchSampler& touch,
     const vector_v2::ChromeState& chrome, const vector_v2::IncrementalDocumentWorkspace& workspace,
     std::span<const std::uint16_t> blank_snapshot,
     std::span<vector_v2::CompactOperationSample> conversion_storage,

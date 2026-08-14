@@ -35,6 +35,7 @@ if(TINYDRAW_VECTOR_V2_OVERVIEW_WALK OR TINYDRAW_VECTOR_V2_APP)
     set(TINYDRAW_VECTOR_V2_HARDWARE_SRCS
       "vector_v2/vector_v2_app.cpp"
       "vector_v2/vector_v2_presenter.cpp"
+      "vector_v2/vector_v2_touch_sampler.cpp"
     )
     if(TINYDRAW_VECTOR_V2_GATE_HARNESS)
       list(APPEND TINYDRAW_VECTOR_V2_HARDWARE_SRCS

@@ -222,7 +222,7 @@ bool run_tile_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& produc
 }
 
 bool run_paced_cold_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
-                         MaterializedCanvas& canvas, PhysicalTouch& touch,
+                         MaterializedCanvas& canvas, VectorV2TouchSampler& touch,
                          const vector_v2::ChromeState& chrome, ZoomLevel zoom, int level_x,
                          int level_y, const char* corpus, std::int64_t maximum_wall_us) {
   if (!canvas.discard_tiles()) {
@@ -253,9 +253,9 @@ bool run_paced_cold_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& 
   const std::int64_t started = esp_timer_get_time();
   while (!complete || presentation_pending) {
     const std::int64_t tick_started = esp_timer_get_time();
-    Point ignored{};
     const std::int64_t touch_started = esp_timer_get_time();
-    touch_errors += touch.read(ignored) == TouchRead::kError;
+    const auto sampled_touch = touch.read_latest();
+    touch_errors += sampled_touch.has_value() && sampled_touch->read == TouchRead::kError;
     touch_us += esp_timer_get_time() - touch_started;
 
     if (presentation_pending) {
@@ -289,20 +289,27 @@ bool run_paced_cold_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& 
     }
   }
   constexpr std::int64_t kMaximumTickUs = 15'000;
+  constexpr std::uint32_t kMaximumTouchIntervalUs = 15'000;
   const std::int64_t wall_us = esp_timer_get_time() - started;
   const std::int64_t pacing_us = wall_us - compute_us - present_us - touch_us;
-  const bool passed =
-      wall_us < maximum_wall_us && maximum_tick_us < kMaximumTickUs && touch_errors == 0U;
+  const TouchSamplerMetrics sampler = touch.take_metrics();
+  touch_errors = std::max<std::size_t>(touch_errors, sampler.errors);
+  const bool passed = wall_us < maximum_wall_us && maximum_tick_us < kMaximumTickUs &&
+                      sampler.maximum_interval_us < kMaximumTouchIntervalUs && touch_errors == 0U;
   std::printf(
       "TINYDRAW_GATE1_PACED_COLD corpus=%s zoom=%s x=%d y=%d steps=%lu tiles=%lu "
       "compute_us=%lld present_us=%lld touch_us=%lld pacing_us=%lld wall_us=%lld "
-      "max_tick_us=%lld touch_errors=%lu pass=%u\n",
+      "max_tick_us=%lld touch_samples=%lu touch_interval_max_us=%lu touch_read_max_us=%lu "
+      "touch_errors=%lu pass=%u\n",
       corpus, zoom_name(zoom), presenter.level_x(), presenter.level_y(),
       static_cast<unsigned long>(steps), static_cast<unsigned long>(tiles),
       static_cast<long long>(compute_us), static_cast<long long>(present_us),
       static_cast<long long>(touch_us), static_cast<long long>(pacing_us),
       static_cast<long long>(wall_us), static_cast<long long>(maximum_tick_us),
-      static_cast<unsigned long>(touch_errors), passed);
+      static_cast<unsigned long>(sampler.samples),
+      static_cast<unsigned long>(sampler.maximum_interval_us),
+      static_cast<unsigned long>(sampler.maximum_read_us), static_cast<unsigned long>(touch_errors),
+      passed);
   return passed;
 }
 
@@ -361,7 +368,7 @@ bool append_adversarial_tapered_document(OperationLog& log, MaterializedCanvas& 
 }
 
 bool run_overlap_cold_gates(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
-                            MaterializedCanvas& canvas, PhysicalTouch& touch,
+                            MaterializedCanvas& canvas, VectorV2TouchSampler& touch,
                             const vector_v2::ChromeState& chrome) {
   constexpr std::array zooms{ZoomLevel::k50Percent, ZoomLevel::k100Percent, ZoomLevel::k200Percent,
                              ZoomLevel::k400Percent};
@@ -383,7 +390,7 @@ bool run_overlap_cold_gates(VectorV2Presenter& presenter, vector_v2::TileProduce
 
 bool run_adversarial_tapered_cold_gates(VectorV2Presenter& presenter,
                                         vector_v2::TileProducer& producer,
-                                        MaterializedCanvas& canvas, PhysicalTouch& touch,
+                                        MaterializedCanvas& canvas, VectorV2TouchSampler& touch,
                                         const vector_v2::ChromeState& chrome) {
   struct Gate {
     ZoomLevel zoom;
@@ -775,8 +782,8 @@ bool append_stress_document(OperationLog& log, MaterializedCanvas& canvas,
 }  // namespace
 
 bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
-                                OperationLog& log, MaterializedCanvas& canvas, PhysicalTouch& touch,
-                                const vector_v2::ChromeState& chrome,
+                                OperationLog& log, MaterializedCanvas& canvas,
+                                VectorV2TouchSampler& touch, const vector_v2::ChromeState& chrome,
                                 const IncrementalDocumentWorkspace& workspace,
                                 std::span<const std::uint16_t> blank_snapshot,
                                 std::span<CompactOperationSample> conversion_storage,

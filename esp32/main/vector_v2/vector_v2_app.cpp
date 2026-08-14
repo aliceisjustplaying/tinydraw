@@ -26,6 +26,7 @@
 #include "tinydraw/vector_v2/operation_log.h"
 #include "tinydraw/vector_v2/tile_producer.h"
 #include "vector_v2_presenter.h"
+#include "vector_v2_touch_sampler.h"
 
 namespace tinydraw::esp32 {
 namespace {
@@ -472,6 +473,7 @@ void run_vector_v2_app() {
   DisplayScheduler scheduler(queue);
   Co5300PanelTransport display;
   PhysicalTouch touch;
+  VectorV2TouchSampler touch_sampler(touch);
   vector_v2::NavigationState navigation;
   VectorV2Presenter presenter(canvas, navigation, scheduler, display,
                               std::span(storage.frame, vector_v2::kOverviewPixels),
@@ -490,8 +492,8 @@ void run_vector_v2_app() {
                                  vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles),
   };
   if (!canvas.publish_overview({0}, std::span(storage.snapshot, vector_v2::kOverviewPixels)) ||
-      !log.ready() || !presenter.ready() || !touch.ready() || !builder.ready() ||
-      !producer.ready()) {
+      !log.ready() || !presenter.ready() || !touch.ready() || !touch_sampler.start() ||
+      !builder.ready() || !producer.ready()) {
     std::printf(
         "TINYDRAW_LIVE_FAIL reason=bootstrap canvas=%u log=%u presenter=%u touch=%u builder=%u "
         "producer=%u\n",
@@ -516,7 +518,8 @@ void run_vector_v2_app() {
   const auto initial = presenter.refresh(chrome);
   print_presentation("startup", presenter, initial);
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-  if (!run_vector_v2_gate_harness(presenter, producer, log, canvas, touch, chrome, workspace,
+  if (!run_vector_v2_gate_harness(presenter, producer, log, canvas, touch_sampler, chrome,
+                                  workspace,
                                   std::span(storage.snapshot, vector_v2::kOverviewPixels),
                                   std::span(storage.input_samples, kInputSampleCapacity),
                                   std::span(storage.producer_packed, vector_v2::kTilePixels))) {
@@ -613,12 +616,18 @@ void run_vector_v2_app() {
     Point point{};
     const bool idle_before_poll = !pressed;
     const std::int64_t poll_started_us = esp_timer_get_time();
-    const TouchRead read = touch.read(point);
+    const auto sampled_touch = touch_sampler.read_latest();
     const std::int64_t poll_completed_us = esp_timer_get_time();
-    if (read == TouchRead::kError) {
+    const bool sample_ready = sampled_touch.has_value();
+    const TouchRead read = sample_ready ? sampled_touch->read : TouchRead::kNoTouch;
+    if (sample_ready) {
+      point = sampled_touch->point;
+    }
+    if (sample_ready && read == TouchRead::kError) {
       ++touch_errors;
     }
-    const bool touching = read == TouchRead::kPoint;
+    const bool touching = sample_ready && read == TouchRead::kPoint;
+    const std::uint32_t event_us = sample_ready ? sampled_touch->timestamp_us : loop_us;
     if (touching) {
       lift_reads = 0;
       if (!pressed) {
@@ -637,7 +646,7 @@ void run_vector_v2_app() {
         } else {
           ink_config.size = vector_v2::brush_size(chrome.size);
           ink.set_config(ink_config);
-          last_ink = ink.begin({.x = point.x, .y = point.y, .timestamp_us = loop_us});
+          last_ink = ink.begin({.x = point.x, .y = point.y, .timestamp_us = event_us});
           const OperationTool tool = chrome.tool == vector_v2::ChromeTool::kErase
                                          ? OperationTool::kEraser
                                          : OperationTool::kPen;
@@ -669,7 +678,7 @@ void run_vector_v2_app() {
         last_touch = point;
         if (canvas_point.has_value()) {
           last_ink =
-              ink.update({.x = canvas_point->x, .y = canvas_point->y, .timestamp_us = loop_us});
+              ink.update({.x = canvas_point->x, .y = canvas_point->y, .timestamp_us = event_us});
           if (!builder.add(presenter.operation_point(last_ink))) {
             builder.cancel();
             ribbon.reset();
@@ -683,7 +692,7 @@ void run_vector_v2_app() {
           }
         }
       }
-    } else if (pressed && ++lift_reads >= kLiftReads) {
+    } else if (sample_ready && pressed && ++lift_reads >= kLiftReads) {
       pressed = false;
       lift_reads = 0;
       if (toolbar_pressed) {
