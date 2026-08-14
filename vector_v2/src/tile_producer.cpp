@@ -3,7 +3,11 @@
 #include <algorithm>
 #include <array>
 #include <limits>
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+#include <chrono>
+#endif
 
+#include "tinydraw/vector_v2/raster_census.h"
 #include "tinydraw/vector_v2/storage_overlap.h"
 #include "tinydraw/vector_v2/tile_payload_analysis.h"
 
@@ -18,31 +22,6 @@ std::size_t distance_squared(int x, int y, int center_x, int center_y) {
   const auto delta_x = static_cast<std::int64_t>(x) - center_x;
   const auto delta_y = static_cast<std::int64_t>(y) - center_y;
   return static_cast<std::size_t>(delta_x * delta_x + delta_y * delta_y);
-}
-
-std::size_t collinear_run_start(std::span<const CompactOperationSample> samples,
-                                std::size_t endpoint) {
-  if (samples.size() < 3U || endpoint < 2U) {
-    return endpoint - 1U;
-  }
-  std::size_t start = endpoint - 1U;
-  while (start > 0U) {
-    const auto& first = samples[start - 1U];
-    const auto& middle = samples[start];
-    const auto& last = samples[start + 1U];
-    if (first.radius_256 != middle.radius_256 || middle.radius_256 != last.radius_256) {
-      break;
-    }
-    const auto first_x = static_cast<std::int64_t>(middle.x_quarter) - first.x_quarter;
-    const auto first_y = static_cast<std::int64_t>(middle.y_quarter) - first.y_quarter;
-    const auto second_x = static_cast<std::int64_t>(last.x_quarter) - middle.x_quarter;
-    const auto second_y = static_cast<std::int64_t>(last.y_quarter) - middle.y_quarter;
-    if (first_x * second_y != first_y * second_x || first_x * second_x + first_y * second_y <= 0) {
-      break;
-    }
-    --start;
-  }
-  return start;
 }
 
 }  // namespace
@@ -203,13 +182,35 @@ std::optional<TileProductionStep> TileProducer::publish_certain_paper_group(cons
 }
 
 std::optional<TileProductionStep> TileProducer::produce_next(const ViewRequest& view) {
+  if (active_group_.active && active_group_.epoch == log_.epoch() &&
+      active_group_.revision == log_.current_revision() &&
+      active_group_.revision == canvas_.current_revision() &&
+      active_group_.view.zoom == view.zoom &&
+      active_group_.view.level_pixels == view.level_pixels) {
+    // The active group is current for this exact view. No tile can be
+    // published until its newest-first replay completes, so the visible
+    // missing count cannot change; skip the per-slice remaining scan that
+    // walks every visible tile through the PSRAM slot directory.
+    return render_active_batch();
+  }
   if (!active_group_.active) {
     if (const auto paper = choose_certain_paper_group(view); paper.has_value()) {
       active_group_ = {};
       return publish_certain_paper_group(view, *paper);
     }
   }
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+  const auto remaining_scan_started = std::chrono::steady_clock::now();
+#endif
   const auto remaining = visible_tiles_remaining(view);
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+  TINYDRAW_V2_CENSUS_ADD(remaining_scans, 1);
+  TINYDRAW_V2_CENSUS_ADD(
+      remaining_scan_ns,
+      static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                     std::chrono::steady_clock::now() - remaining_scan_started)
+                                     .count()));
+#endif
   if (!remaining.has_value()) {
     active_group_ = {};
     return std::nullopt;
@@ -326,6 +327,7 @@ bool TileProducer::render_active_operation(const StoredOperation& operation,
       intersects(operation_level_bounds(operation.world_bounds, active_group_.view.zoom),
                  active_group_.bounds);
   if (!visible) {
+    TINYDRAW_V2_CENSUS_ADD(operations_bbox_rejected, 1);
     --active_group_.next_operation;
     active_group_.next_sample = 0U;
     active_group_.next_segment_step = 0U;
@@ -338,8 +340,12 @@ bool TileProducer::render_active_operation(const StoredOperation& operation,
     active_group_.next_sample = operation.samples.size() - 1U;
   }
   const std::size_t endpoint = active_group_.next_sample;
-  const std::size_t startpoint =
-      operation.samples.size() == 1U ? 0U : collinear_run_start(operation.samples, endpoint);
+  // Replay one source segment per unit, exactly like forward painting. A
+  // coalesced collinear capsule is equal to the per-segment union only in
+  // real arithmetic; covers_pixel float rounding can flip boundary pixels
+  // (caught by the collinear fuzz gate), so reverse replay must use the same
+  // segment decomposition as the forward authority.
+  const std::size_t startpoint = operation.samples.size() == 1U ? 0U : endpoint - 1U;
   const IncrementalSegment segment{
       .tool = operation.tool,
       .color = operation.color,
@@ -351,6 +357,7 @@ bool TileProducer::render_active_operation(const StoredOperation& operation,
           active_group_.bounds)) {
     // Count a rejected segment against the per-call cursor budget so a single
     // giant operation cannot monopolize input polling even when it is distant.
+    TINYDRAW_V2_CENSUS_ADD(segments_bbox_rejected, 1);
     ++raster_steps_consumed;
     finish_active_segment(operation, startpoint, result, operations_consumed);
     return true;
@@ -374,6 +381,7 @@ bool TileProducer::render_active_operation(const StoredOperation& operation,
           workspace_.finalized_pixels.first(kTileProducerMaskBytes))) {
     return false;
   }
+  TINYDRAW_V2_CENSUS_ADD(segments_painted, 1);
   active_group_.next_segment_step += batch.steps;
   raster_steps_consumed += batch.steps;
   raster_work_consumed += batch.raster_work;
