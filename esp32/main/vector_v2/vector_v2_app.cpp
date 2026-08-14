@@ -87,6 +87,38 @@ struct FillBaselineTiming {
   void reset() { *this = {}; }
 };
 
+struct PanMetrics {
+  std::uint64_t compose_total_us = 0;
+  std::uint64_t present_total_us = 0;
+  std::uint64_t tear_wait_total_us = 0;
+  std::uint32_t frames = 0;
+  std::uint32_t reused_frames = 0;
+  std::uint32_t compose_max_us = 0;
+  std::uint32_t present_max_us = 0;
+  std::uint32_t tear_wait_max_us = 0;
+  std::uint32_t failures = 0;
+
+  void include(const LivePresentationTiming& timing) {
+    if (!timing.passed) {
+      ++failures;
+      return;
+    }
+    const auto compose = static_cast<std::uint32_t>(timing.compose_us);
+    const auto present = static_cast<std::uint32_t>(timing.complete_us);
+    const auto tear_wait = static_cast<std::uint32_t>(timing.tear_wait_us);
+    compose_total_us += compose;
+    present_total_us += present;
+    tear_wait_total_us += tear_wait;
+    ++frames;
+    reused_frames += timing.frame_reused;
+    compose_max_us = std::max(compose_max_us, compose);
+    present_max_us = std::max(present_max_us, present);
+    tear_wait_max_us = std::max(tear_wait_max_us, tear_wait);
+  }
+
+  void reset() { *this = {}; }
+};
+
 struct LiveMetrics {
   std::uint64_t submit_total_us = 0;
   std::uint64_t complete_total_us = 0;
@@ -215,6 +247,25 @@ void print_presentation(const char* kind, const VectorV2Presenter& presenter,
       static_cast<unsigned long>(timing.fallback_tiles), static_cast<unsigned long>(timing.pushes),
       static_cast<long long>(timing.tear_wait_us), timing.tear_synchronized, timing.frame_reused,
       timing.passed);
+}
+
+void print_pan_baseline(const VectorV2Presenter& presenter, const PanMetrics& metrics) {
+  std::printf(
+      "TINYDRAW_PAN_BASELINE zoom=%s x=%d y=%d frames=%lu reused=%lu "
+      "compose_avg_us=%llu compose_max_us=%lu present_avg_us=%llu present_max_us=%lu "
+      "tear_wait_avg_us=%llu tear_wait_max_us=%lu failures=%lu\n",
+      zoom_name(presenter.zoom()), presenter.level_x(), presenter.level_y(),
+      static_cast<unsigned long>(metrics.frames), static_cast<unsigned long>(metrics.reused_frames),
+      static_cast<unsigned long long>(
+          metrics.frames == 0U ? 0U : metrics.compose_total_us / metrics.frames),
+      static_cast<unsigned long>(metrics.compose_max_us),
+      static_cast<unsigned long long>(
+          metrics.frames == 0U ? 0U : metrics.present_total_us / metrics.frames),
+      static_cast<unsigned long>(metrics.present_max_us),
+      static_cast<unsigned long long>(
+          metrics.frames == 0U ? 0U : metrics.tear_wait_total_us / metrics.frames),
+      static_cast<unsigned long>(metrics.tear_wait_max_us),
+      static_cast<unsigned long>(metrics.failures));
 }
 
 void print_fill_baseline(const char* result, ZoomLevel zoom, int x, int y,
@@ -477,7 +528,7 @@ void run_vector_v2_app() {
       "operations_capacity=%lu samples_capacity=%lu live_storage_bytes=%lu "
       "overview_bytes=%lu raw_tile_bytes=%lu tile_metadata_bytes=%lu operation_bytes=%lu "
       "live_scratch_bytes=%lu free_psram=%lu largest_psram=%lu "
-      "te_edges=%lu te_period_us=%lld te_high_us=%lld te_level=%u\n",
+      "te_edges=%lu te_period_us=%lld te_high_us=%lld te_level=%u main_stack_free=%lu\n",
       static_cast<unsigned long>(log.operation_capacity()),
       static_cast<unsigned long>(log.sample_capacity()),
       static_cast<unsigned long>(live_storage_bytes), static_cast<unsigned long>(overview_bytes),
@@ -487,7 +538,7 @@ void run_vector_v2_app() {
       static_cast<unsigned long>(heap_caps_get_largest_free_block(kExternalCaps)),
       static_cast<unsigned long>(tear_signal.rising_edges),
       static_cast<long long>(tear_signal.period_us), static_cast<long long>(tear_signal.high_us),
-      tear_signal.level);
+      tear_signal.level, static_cast<unsigned long>(uxTaskGetStackHighWaterMark(nullptr)));
   std::fflush(stdout);
 
   bool pressed = false;
@@ -502,6 +553,7 @@ void run_vector_v2_app() {
   int pan_start_y = 0;
   InkPoint last_ink{};
   LiveMetrics live_metrics{};
+  PanMetrics pan_metrics{};
   std::uint32_t poll_previous_us = now_us();
   std::uint32_t poll_max_us = 0;
   std::uint32_t touch_errors = 0;
@@ -557,6 +609,7 @@ void run_vector_v2_app() {
           toolbar_samples = 1;
         } else if (toolbar.tool == DrawingTool::kPan) {
           panning = true;
+          pan_metrics.reset();
           pan_start = point;
           pan_start_x = presenter.level_x();
           pan_start_y = presenter.level_y();
@@ -585,9 +638,7 @@ void run_vector_v2_app() {
         last_touch = point;
         const auto timing =
             presenter.pan_from(pan_start_x, pan_start_y, pan_start, point, toolbar, loop_us);
-        if (timing.passed) {
-          print_presentation("pan", presenter, timing);
-        }
+        pan_metrics.include(timing);
       } else if (ink.active() && (point.x != last_touch.x || point.y != last_touch.y)) {
         last_touch = point;
         last_ink = ink.update({.x = point.x, .y = point.y, .timestamp_us = loop_us});
@@ -617,6 +668,8 @@ void run_vector_v2_app() {
         }
       } else if (panning) {
         panning = false;
+        print_pan_baseline(presenter, pan_metrics);
+        std::fflush(stdout);
       } else if (ink.active()) {
         LiftBaselineTiming measured_lift{
             .id = next_lift_id++,
