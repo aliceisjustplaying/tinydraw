@@ -36,12 +36,18 @@ bool OperationBuilder::active() const { return active_; }
 
 bool OperationBuilder::overflowed() const { return overflowed_; }
 
+OperationBuilderReject OperationBuilder::last_reject() const { return last_reject_; }
+
 std::size_t OperationBuilder::sample_count() const { return sample_count_; }
 
 bool OperationBuilder::begin(OperationTool tool, std::uint16_t color, OperationPoint point) {
   cancel();
-  if (!ready() || (tool != OperationTool::kPen && tool != OperationTool::kEraser) ||
-      !valid_point(point)) {
+  if (!ready() || (tool != OperationTool::kPen && tool != OperationTool::kEraser)) {
+    last_reject_ = OperationBuilderReject::kNotActive;
+    return false;
+  }
+  if (!valid_point(point)) {
+    last_reject_ = OperationBuilderReject::kInvalidPoint;
     return false;
   }
   tool_ = tool;
@@ -54,6 +60,8 @@ bool OperationBuilder::begin(OperationTool tool, std::uint16_t color, OperationP
 
 bool OperationBuilder::add(OperationPoint point) {
   if (!active_ || overflowed_) {
+    last_reject_ = overflowed_ ? OperationBuilderReject::kCapacityOverflow
+                               : OperationBuilderReject::kNotActive;
     return false;
   }
   if (!append_point(point, false)) {
@@ -79,15 +87,22 @@ void OperationBuilder::cancel() {
   sample_count_ = 0;
   active_ = false;
   overflowed_ = false;
+  last_reject_ = OperationBuilderReject::kNone;
 }
 
 bool OperationBuilder::append_point(OperationPoint point, bool retain_duplicate) {
   if (!valid_point(point)) {
+    last_reject_ = OperationBuilderReject::kInvalidPoint;
     return false;
   }
   const std::uint32_t since_previous = point.timestamp_us - previous_us_;
   const std::uint32_t elapsed_us = point.timestamp_us - started_us_;
-  if (since_previous > 0x7FFF'FFFFU || elapsed_us > kMaximumElapsedUs) {
+  if (since_previous > 0x7FFF'FFFFU) {
+    last_reject_ = OperationBuilderReject::kTimestampRegression;
+    return false;
+  }
+  if (elapsed_us > kMaximumElapsedUs) {
+    last_reject_ = OperationBuilderReject::kElapsedOverflow;
     return false;
   }
   const CompactOperationSample sample{
@@ -105,6 +120,7 @@ bool OperationBuilder::append_point(OperationPoint point, bool retain_duplicate)
   }
   if (sample_count_ == storage_.size()) {
     overflowed_ = true;
+    last_reject_ = OperationBuilderReject::kCapacityOverflow;
     return false;
   }
   storage_[sample_count_++] = sample;

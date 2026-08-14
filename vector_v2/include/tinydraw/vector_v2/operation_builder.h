@@ -17,6 +17,18 @@ struct OperationPoint {
   std::uint32_t timestamp_us = 0;
 };
 
+// Why the most recent begin/add/finish call refused a point. A drawing
+// surface may reject input, but it must never do so silently; callers are
+// expected to surface this in telemetry.
+enum class OperationBuilderReject : std::uint8_t {
+  kNone,
+  kNotActive,
+  kInvalidPoint,
+  kTimestampRegression,
+  kElapsedOverflow,
+  kCapacityOverflow,
+};
+
 // Fixed-capacity collector for one input operation. It quantizes world-space
 // points into the persistent append encoding and owns stroke lifecycle. Input
 // timestamps may wrap normally but may not move backward. The returned append
@@ -31,6 +43,7 @@ class OperationBuilder {
   // the already-collected operation when only its final lift point overflowed.
   [[nodiscard]] bool overflowed() const;
   [[nodiscard]] std::size_t sample_count() const;
+  [[nodiscard]] OperationBuilderReject last_reject() const;
 
   [[nodiscard]] bool begin(OperationTool tool, std::uint16_t color, OperationPoint point);
   [[nodiscard]] bool add(OperationPoint point);
@@ -48,6 +61,7 @@ class OperationBuilder {
   std::size_t sample_count_ = 0;
   bool active_ = false;
   bool overflowed_ = false;
+  OperationBuilderReject last_reject_ = OperationBuilderReject::kNone;
 };
 
 }  // namespace tinydraw::vector_v2
