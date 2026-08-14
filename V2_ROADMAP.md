@@ -3,7 +3,7 @@
 Last updated: 2026-08-14
 Current branch: `feat/v2-navigation-interaction`
 
-Status: **Vector V2 foundation validated; interaction correctness hardening in progress**
+Status: **Vector V2 foundation and interaction correctness validated; measured performance work next**
 
 This is the current worklist and source of truth for TinyDraw V2. It replaces the
 prototype-era task order as the forward plan. Historical plans and receipts are
@@ -48,11 +48,16 @@ seed-7 1,000-stroke workload and an aggressive manual glass test:
       presentation failures, stale authorities, or corruption.
 - [x] Fable high and Grok 4.6 high found no remaining blocker after fixes.
 - [x] Host tests, ASan/UBSan, formatting, clang-tidy, and cppcheck pass.
+- [x] Long strokes split into one logical gesture without losing boundary samples.
+- [x] A transition-preserving touch FIFO retains Down/Up/final points across render stalls.
+- [x] A nearly three-minute physical stroke test committed all 8,003 live samples;
+      two intentional boundary overlaps yielded 8,005 stored samples.
 
 Load-bearing evidence:
 
 - `vector_v2/GATE_1_RECEIPT_2026_08_13.md`
 - `vector_v2/GATE_1_CACHE_CLOSURE_2026_08_13.md`
+- `vector_v2/hardware-receipts/CORRECTNESS_CLOSURE_2026_08_14.md`
 - `vector_v2/hardware-receipts/gate1-paper-cache-scroller.log`
 - `vector_v2/hardware-receipts/gate1-final-glass.log`
 
@@ -95,23 +100,26 @@ manual test.
 - [x] Build a deterministic hardware repro for touch starvation during cold fill
       and stroke commit.
 - [x] Make producer and display work yield to pending input at bounded intervals.
-- [ ] Prevent a pan gesture from being lost when refinement is in progress.
+- [x] Prevent a pan gesture from being lost when refinement is in progress.
 - [x] Add a tiny independent touch-sampling task; the renderer remains on its
       measured cooperative path rather than moving wholesale to the second core.
-- [ ] Give the touch sampler explicit ownership and shutdown, preserve transition
+- [x] Give the touch sampler explicit ownership and shutdown, preserve transition
       edges and final points in a bounded FIFO, and treat transient read errors as
       hold rather than lift.
 - [x] Separate input latency from append, compose, and transfer telemetry.
 - [x] Gate maximum touch-poll gaps during deterministic cold replay; retain p95
       gesture sampling for the final interaction glass test.
-- [ ] Repeat the aggressive draw-while-pan glass test.
+- [x] Repeat the aggressive draw-while-pan glass test.
 
-Current debt from the manual trace:
+Current measured debt:
 
-- ordinary pan updates occupy roughly 46–50 ms end-to-end;
-- stroke completion blocked touch polling for about 127 ms median, 175 ms p95,
-  and 195 ms maximum;
-- live ink itself remained fast at roughly 2–3 ms typical and 5.35 ms maximum.
+- ordinary warm-pan frames remain roughly 45–50 ms end-to-end;
+- an intermediate long-stroke commit blocks the coordinator for roughly
+  0.61–0.73 seconds, although the second-core sampler preserves all edges;
+- one repeated-reset harness run lost TE synchronization at startup; the next
+  clean harness and the aggressive glass test showed no tearing;
+- the glass run consumed 323 balanced Down/Up pairs with zero queue overflows,
+  while more than 99.5% of semantic events were under 8 ms old.
 
 ### Camera and zoom behavior
 
@@ -322,14 +330,13 @@ slices. The earlier tapered seed-7 400% case has 0.683 second p95 wall time. See
 `vector_v2/hardware-receipts/0560525-overlap-cold-baseline.log`.
 
 The subsequent four-times-adversarial campaign reduced its 400% cold replay from
-9.703 seconds at clean commit `a3ac4fc` to 1.442 seconds in the checked-in winning
-capture, while overlap and seed-7 400% measured 0.409 and 0.343 seconds. This is
-the first full green result from the expanded adversarial harness, not the first
-green result from every historical harness. The winning raw capture reports
-`a3ac4fc-dirty`, so it is strong performance evidence but not the final clean-HEAD
-provenance receipt. Its largest observed producer tick was about 9.74 ms and its
-largest observed touch interval about 1.48 ms, both below the 15 ms alarms. See
-`vector_v2/hardware-receipts/adversarial-tapered-4x-word-skip.log`.
+9.703 seconds at clean commit `a3ac4fc` to a 1.452-second p95 across 20 clean,
+reset-separated runs at `26a05f5`; overlap and seed-7 400% p95 measured 0.416 and
+0.343 seconds. This is the first full green result from the expanded adversarial
+harness, not the first green result from every historical harness. Maximum
+producer ticks remained below 10 ms and touch intervals below the 15 ms alarm.
+See `vector_v2/hardware-receipts/26a05f5-cold-p95-20-runs.log` and
+`vector_v2/hardware-receipts/CORRECTNESS_CLOSURE_2026_08_14.md`.
 
 The permanent validation comprises one exact census sweep and three CTest fuzz
 invocations backed by two distinct fuzzer implementations. Exact painter results
@@ -344,8 +351,9 @@ remain the authority; raw timing receipts are retained without editorial cleanup
 - [x] Remove redundant segment subdivision, reject distant segments, hoist
       software division, skip finalized mask runs, and replay eligible collinear
       runs per source segment without weakening exactness or interaction gates.
-- [ ] Capture a clean-HEAD 20-run distribution before tightening the current
-      two-second four-times-adversarial alarm around a single 1.442-second run.
+- [x] Capture a clean-HEAD 20-run distribution before tightening the current
+      two-second four-times-adversarial alarm. Keep the alarm until the intended
+      product workload margin is explicitly chosen.
 
 ### Memory and CPU mechanical sympathy
 
@@ -408,20 +416,13 @@ complete overview. It still needs careful tap targeting and viewport math.
 
 # Next concrete sequence
 
-1. Close small correctness debt: reject aliased masked-raster buffers and keep
-   validation tools self-contained.
-2. Fix touch-sampler ownership and shutdown; replace newest-state overwrite with
-   bounded transition preservation, retain final points, and treat transient
-   hardware errors as hold.
-3. Raise the live input capacity from 1,024 to 4,096 samples and implement bounded
-   long-stroke chaining. Adjacent chunks overlap one boundary sample, share one
-   logical gesture identity for Undo, accumulate dirty bounds, and split on both
-   capacity and compact elapsed-time limits.
-4. Make chrome own the canvas/dock seam, and make frame reuse chrome-aware,
-   invalidate-before-mutate, and failure-transactional.
-5. Run host validation, a clean firmware build, a three-minute physical stroke,
-   the transition/lift interaction gate, and clean 20-run performance receipts.
-6. Resume measured cold-render and warm-pan optimization only after these
-   correctness gates are green.
-7. Continue navigation/UI, the timeboxed analytic anti-aliasing gate, vector
+1. Profile and remove the measured 0.61–0.73 second intermediate long-stroke
+   commit stall without weakening operation or input-edge preservation.
+2. Continue one-bottleneck-at-a-time cold refinement work against the clean
+   20-run baseline; exact pixels and the two-second alarm remain hard gates.
+3. Improve warm-pan throughput without regressing chrome seams, TE behavior,
+   camera responsiveness, or the 1.5 MiB export reserve.
+4. Continue navigation/UI, the timeboxed analytic anti-aliasing gate, vector
    persistence, Undo/Redo, New, export, and lifecycle parity.
+5. Diagnose the retained startup TE synchronization flake before release; do not
+   confuse it with the now-closed stale-row tearing defect.
