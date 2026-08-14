@@ -295,6 +295,9 @@ class MaterializedCanvas {
   // changes eviction order: an unpinned protected tile can still be replaced
   // when every raw slot belongs to remembered footprints.
   [[nodiscard]] bool remember_view(const ViewRequest& view);
+  // The most recent valid view per tiled zoom, as recorded by remember_view.
+  // Idle repair uses these so zoom returns land on materialized tiles.
+  [[nodiscard]] std::span<const ViewFootprint> recent_views() const { return recent_views_; }
   // Discards every raster tile while retaining document revision and complete
   // overview authority. Used for cold-cache transitions and snapshot policy;
   // fails while any source is pinned.

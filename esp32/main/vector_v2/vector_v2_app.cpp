@@ -21,6 +21,7 @@
 #include "tinydraw/ink/ribbon_geometry.h"
 #include "tinydraw/vector_v2/chained_operation_builder.h"
 #include "tinydraw/vector_v2/chrome.h"
+#include "tinydraw/vector_v2/idle_repair.h"
 #include "tinydraw/vector_v2/incremental_document.h"
 #include "tinydraw/vector_v2/memory_layout.h"
 #include "tinydraw/vector_v2/navigation_state.h"
@@ -842,6 +843,10 @@ void run_vector_v2_app() {
   FillBaselineTiming fill_timing{};
   bool fill_measurement_active = false;
   PendingFillPresentation pending_fill{};
+  vector_v2::IdleRepairPlan repair_plan{};
+  std::size_t repair_cursor = 0;
+  std::size_t repair_steps = 0;
+  bool repair_planned = false;
   LiftBaselineTiming lift_timing{};
   std::uint32_t next_lift_id = 1U;
   std::uint16_t next_gesture_id = 1U;
@@ -1138,6 +1143,7 @@ void run_vector_v2_app() {
         fill_timing.started_us = esp_timer_get_time();
         fill_measurement_active = true;
         pending_fill = {};
+        repair_planned = false;
       }
       if (pending_fill.pending) {
         const bool still_current = pending_fill.zoom == fill_view.zoom &&
@@ -1206,6 +1212,37 @@ void run_vector_v2_app() {
                     zoom_name(fill_zoom), fill_x, fill_y,
                     static_cast<unsigned long>(fill_revision.value));
         fill_measurement_active = false;
+      } else if (!repair_planned || repair_cursor < repair_plan.count) {
+        // Idle cache repair: the visible fill is complete and input is
+        // quiet, so pre-produce the views a pan or zoom return will hit
+        // next. Publications never present from here; they only make future
+        // composition sharp. Bounded by the same slice deadline as fill.
+        if (!repair_planned) {
+          repair_plan = vector_v2::plan_idle_repair(fill_view, canvas.recent_views());
+          repair_cursor = 0;
+          repair_steps = 0;
+          repair_planned = true;
+        }
+        const std::int64_t repair_tick_started = esp_timer_get_time();
+        while (repair_cursor < repair_plan.count &&
+               esp_timer_get_time() - repair_tick_started < kColdFillSliceDeadlineUs) {
+          const auto step = producer.produce_next(repair_plan.views[repair_cursor]);
+          if (!step.has_value()) {
+            // Producer failure: abandon this plan; the next view or
+            // revision change replans.
+            repair_cursor = repair_plan.count;
+            break;
+          }
+          ++repair_steps;
+          if (step->complete) {
+            ++repair_cursor;
+          }
+        }
+        if (repair_planned && repair_cursor >= repair_plan.count && repair_plan.count != 0U) {
+          std::printf("TINYDRAW_LIVE_REPAIR views=%u steps=%u\n",
+                      static_cast<unsigned>(repair_plan.count),
+                      static_cast<unsigned>(repair_steps));
+        }
       }
     }
     if (lift_timing.pending && stroke_report.pending && idle_before_poll && !pressed) {

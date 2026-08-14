@@ -19,6 +19,7 @@
 #include "tinydraw/document/realistic_workload.h"
 #include "tinydraw/vector_v2/adversarial_tapered_corpus.h"
 #include "tinydraw/vector_v2/chained_operation_builder.h"
+#include "tinydraw/vector_v2/idle_repair.h"
 #include "tinydraw/vector_v2/memory_layout.h"
 
 namespace tinydraw::esp32 {
@@ -1657,6 +1658,98 @@ bool run_full_world_cache_gate(vector_v2::TileProducer& producer, MaterializedCa
   return passed;
 }
 
+std::size_t count_zoom_fallback(MaterializedCanvas& canvas, ZoomLevel zoom) {
+  const vector_v2::TileGrid grid = vector_v2::tile_grid(zoom);
+  std::size_t fallback = 0;
+  for (int row = 0; row < grid.rows; ++row) {
+    for (int column = 0; column < grid.columns; ++column) {
+      const auto source = canvas.lookup(
+          {zoom, static_cast<std::uint16_t>(column), static_cast<std::uint16_t>(row)});
+      if (!source.has_value() || source->kind == vector_v2::SourceKind::kOverview) {
+        ++fallback;
+      }
+    }
+  }
+  return fallback;
+}
+
+// Encodes the idle-repair product promise: drawing at 25% drops cross-zoom
+// tiles by design (the in-place commit budget), so after one quiet moment
+// the 100% level must be fully repaired and edge panning meets zero cold
+// fallback. Every producer slice stays under the 15 ms input-poll alarm.
+bool run_idle_repair_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
+                          OperationLog& log, MaterializedCanvas& canvas,
+                          const vector_v2::ChromeState& chrome,
+                          const vector_v2::InPlaceAppendWorkspace& workspace,
+                          std::span<CompactOperationSample> builder_storage) {
+  if (!canvas.discard_tiles()) {
+    return false;
+  }
+  const int origin = mixed_draw_level_origin(ZoomLevel::k100Percent);
+  if (!presenter.set_view(ZoomLevel::k100Percent, origin, origin, chrome, now_us()).passed) {
+    return false;
+  }
+  std::size_t warm_tiles = 0;
+  std::int64_t warm_us = 0;
+  if (!fill_view_to_completion(producer, mixed_draw_view(ZoomLevel::k100Percent), warm_tiles,
+                               warm_us)) {
+    return false;
+  }
+  // The Alice scenario: an XL 25% stroke sweeps the world and drops warm
+  // tiles at every other zoom.
+  MixedDrawStrokeStats stroke_stats{};
+  if (!run_mixed_zoom_stroke(presenter, log, canvas, chrome, workspace, builder_storage,
+                             ZoomLevel::k25Percent, OperationTool::kPen, 0x001FU, 5'000,
+                             stroke_stats) ||
+      !stroke_stats.committed) {
+    return false;
+  }
+  // Back at 100% with the visible fill complete: exactly the state the
+  // product loop reaches before its idle-repair branch runs.
+  if (!presenter.set_view(ZoomLevel::k100Percent, origin, origin, chrome, now_us()).passed) {
+    return false;
+  }
+  const auto active_view = mixed_draw_view(ZoomLevel::k100Percent);
+  std::size_t refill_tiles = 0;
+  std::int64_t refill_us = 0;
+  if (!fill_view_to_completion(producer, active_view, refill_tiles, refill_us)) {
+    return false;
+  }
+  const std::size_t damaged = count_zoom_fallback(canvas, ZoomLevel::k100Percent);
+  const auto plan = vector_v2::plan_idle_repair(active_view, canvas.recent_views());
+  const std::int64_t repair_started = esp_timer_get_time();
+  std::size_t repair_steps = 0;
+  std::int64_t worst_step_us = 0;
+  for (std::size_t index = 0; index < plan.count; ++index) {
+    for (std::size_t guard = 0; guard < 100'000U; ++guard) {
+      const std::int64_t step_started = esp_timer_get_time();
+      const auto step = producer.produce_next(plan.views[index]);
+      const std::int64_t step_us = esp_timer_get_time() - step_started;
+      worst_step_us = std::max(worst_step_us, step_us);
+      if (!step.has_value()) {
+        return false;
+      }
+      ++repair_steps;
+      if (step->complete) {
+        break;
+      }
+    }
+  }
+  const std::int64_t repair_us = esp_timer_get_time() - repair_started;
+  const std::size_t remaining = count_zoom_fallback(canvas, ZoomLevel::k100Percent);
+  // Zero fallback identities across the whole 100% level means any pan
+  // destination composes without cold work: the border tour is implied.
+  const bool passed = damaged != 0U && remaining == 0U && worst_step_us < 15'000;
+  std::printf(
+      "TINYDRAW_GATE1_IDLE_REPAIR damaged=%lu remaining=%lu plan_views=%lu steps=%lu "
+      "repair_us=%lld worst_step_us=%lld warm_tiles=%lu pass=%u\n",
+      static_cast<unsigned long>(damaged), static_cast<unsigned long>(remaining),
+      static_cast<unsigned long>(plan.count), static_cast<unsigned long>(repair_steps),
+      static_cast<long long>(repair_us), static_cast<long long>(worst_step_us),
+      static_cast<unsigned long>(warm_tiles), passed);
+  return passed;
+}
+
 bool verify_export_reserve() {
   const std::size_t free_before = heap_caps_get_free_size(kExternalCaps);
   const std::size_t largest_before = heap_caps_get_largest_free_block(kExternalCaps);
@@ -1829,6 +1922,11 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   const bool mixed_draw =
       cache_tour && run_mixed_zoom_draw_gate(presenter, producer, log, canvas, chrome,
                                              in_place_workspace, conversion_storage);
+  // Idle repair rides the same rich document; it discards and rebuilds its
+  // own cache state, so mixed-draw's drops cannot skew it.
+  const bool idle_repair =
+      cache_tour && run_idle_repair_gate(presenter, producer, log, canvas, chrome,
+                                         in_place_workspace, conversion_storage);
   const bool long_gesture =
       cache_tour &&
       run_long_gesture_commit_gate(presenter, producer, log, canvas, chrome, workspace,
@@ -1841,13 +1939,14 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
       "overlap_cold=%u adversarial_ready=%u adversarial_cold=%u workload=%u paced_cold=%u "
       "hard_100=%u hard_400=%u pan_100=%u "
       "pan_400=%u pan_seq=%u live_overlay=%u draw_fill=%u cache=%u full_world_cache=%u "
-      "cache_tour=%u mixed_draw=%u long_gesture=%u "
+      "cache_tour=%u mixed_draw=%u idle_repair=%u long_gesture=%u "
       "export_encode=%u export_reserve=%u return=%u ssaa_receipt=yellow\n",
       stress_ready, stress_100, stress_400, overlap_ready, overlap_cold, adversarial_ready,
       adversarial_cold, workload_ready, paced_cold, gate_100, gate_400, pan_100, pan_400,
       pan_sequence, live_overlay, draw_fill, cache_retention, full_world_cache, cache_tour,
-      mixed_draw, long_gesture, export_encode, export_reserve, return_overview.passed);
-  return return_overview.passed && export_reserve && overlap_cold && adversarial_cold && mixed_draw;
+      mixed_draw, idle_repair, long_gesture, export_encode, export_reserve, return_overview.passed);
+  return return_overview.passed && export_reserve && overlap_cold && adversarial_cold &&
+         mixed_draw && idle_repair;
 #endif
 }
 

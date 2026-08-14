@@ -38,6 +38,9 @@ class NavigationState {
   // Moves the active camera and updates its world focus. This is also the seam
   // used by deterministic hardware views and future minimap navigation.
   [[nodiscard]] bool set_origin(int x, int y, NavigationPoint panel_focus);
+  // Pure level-bounds clamping for a viewport origin at a zoom. Public so
+  // idle-repair planning shares the single clamping truth.
+  [[nodiscard]] static NavigationPoint clamp_origin(ZoomLevel zoom, int x, int y);
 
  private:
   struct RememberedOrigin {
@@ -47,7 +50,6 @@ class NavigationState {
 
   [[nodiscard]] static std::size_t tiled_index(ZoomLevel zoom);
   [[nodiscard]] static bool valid_panel_focus(NavigationPoint point);
-  [[nodiscard]] static NavigationPoint clamp_origin(ZoomLevel zoom, int x, int y);
   [[nodiscard]] static NavigationPoint focus_for_view(ZoomLevel zoom, NavigationPoint origin,
                                                       NavigationPoint panel_focus);
   [[nodiscard]] static bool contains_focus(ZoomLevel zoom, NavigationPoint origin,
