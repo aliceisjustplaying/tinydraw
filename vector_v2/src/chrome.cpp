@@ -4,6 +4,8 @@
 #include <array>
 #include <cstdlib>
 
+#include "tinydraw/ui/pixel_painter.h"
+
 namespace tinydraw::vector_v2 {
 namespace {
 
@@ -25,85 +27,7 @@ constexpr std::array kMainCenters{34, 94, 154, 214, 274, 334};
 constexpr std::array kPopupCenters{62, 184, 306};
 constexpr std::array kSizeCenters{52, 140, 228, 316};
 
-struct PixelRect {
-  int x0 = 0;
-  int y0 = 0;
-  int x1 = 0;
-  int y1 = 0;
-};
-
-class Painter {
- public:
-  Painter(std::span<std::uint16_t> pixels, int width, int height)
-      : pixels_(pixels), width_(width), height_(height) {}
-
-  void pixel(int x, int y, std::uint16_t color) {
-    if (x >= 0 && x < width_ && y >= 0 && y < height_) {
-      pixels_[static_cast<std::size_t>(y) * static_cast<std::size_t>(width_) +
-              static_cast<std::size_t>(x)] = color;
-    }
-  }
-
-  void rect(PixelRect bounds, std::uint16_t color) {
-    const int x0 = std::clamp(bounds.x0, 0, width_);
-    const int x1 = std::clamp(bounds.x1, x0, width_);
-    for (int y = std::clamp(bounds.y0, 0, height_); y < std::clamp(bounds.y1, 0, height_); ++y) {
-      const auto start = pixels_.begin() + static_cast<std::ptrdiff_t>(y) * width_ + x0;
-      std::fill(start, start + (x1 - x0), color);
-    }
-  }
-
-  void circle(int cx, int cy, int radius, std::uint16_t color) {
-    for (int y = cy - radius; y <= cy + radius; ++y) {
-      for (int x = cx - radius; x <= cx + radius; ++x) {
-        const int dx = x - cx;
-        const int dy = y - cy;
-        if (dx * dx + dy * dy <= radius * radius) {
-          pixel(x, y, color);
-        }
-      }
-    }
-  }
-
-  void rounded(PixelRect bounds, int radius, std::uint16_t color) {
-    rect({bounds.x0 + radius, bounds.y0, bounds.x1 - radius, bounds.y1}, color);
-    rect({bounds.x0, bounds.y0 + radius, bounds.x1, bounds.y1 - radius}, color);
-    circle(bounds.x0 + radius, bounds.y0 + radius, radius, color);
-    circle(bounds.x1 - radius - 1, bounds.y0 + radius, radius, color);
-    circle(bounds.x0 + radius, bounds.y1 - radius - 1, radius, color);
-    circle(bounds.x1 - radius - 1, bounds.y1 - radius - 1, radius, color);
-  }
-
-  void line(PixelRect ends, std::uint16_t color, int thickness = 1) {
-    int x = ends.x0;
-    int y = ends.y0;
-    const int dx = std::abs(ends.x1 - x);
-    const int step_x = x < ends.x1 ? 1 : -1;
-    const int dy = -std::abs(ends.y1 - y);
-    const int step_y = y < ends.y1 ? 1 : -1;
-    int error = dx + dy;
-    while (true) {
-      circle(x, y, thickness, color);
-      if (x == ends.x1 && y == ends.y1) {
-        return;
-      }
-      const int twice = 2 * error;
-      if (twice >= dy) {
-        error += dy;
-        x += step_x;
-      }
-      if (twice <= dx) {
-        error += dx;
-        y += step_y;
-      }
-    }
-  }
-
- private:
-  std::span<std::uint16_t> pixels_;
-  int width_;
-  int height_;
-};
+using Painter = PixelPainter;
 
 bool inside(ChromePoint point, float x0, float y0, float x1, float y1) {
   return point.x >= x0 && point.x < x1 && point.y >= y0 && point.y < y1;

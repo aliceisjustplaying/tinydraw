@@ -5,6 +5,8 @@
 #include <cstdlib>
 #include <string_view>
 
+#include "tinydraw/ui/pixel_painter.h"
+
 namespace tinydraw {
 namespace {
 
@@ -45,69 +47,24 @@ constexpr std::array kColors{
 constexpr std::array kPaletteCentersX{52, 140, 228, 316};
 constexpr std::array kColorCentersY{207, 273, 339};
 
-void set_pixel(std::span<std::uint16_t> canvas, int width, int height, int x, int y,
-               std::uint16_t color) {
-  if (x < 0 || x >= width || y < 0 || y >= height) {
-    return;
-  }
-  canvas[static_cast<std::size_t>(y * width + x)] = color;
-}
-
 void fill_rect(std::span<std::uint16_t> canvas, int width, int height, int x0, int y0, int x1,
                int y1, std::uint16_t color) {
-  for (int y = std::max(0, y0); y < std::min(height, y1); ++y) {
-    for (int x = std::max(0, x0); x < std::min(width, x1); ++x) {
-      set_pixel(canvas, width, height, x, y, color);
-    }
-  }
+  PixelPainter(canvas, width, height).rect({x0, y0, x1, y1}, color);
 }
 
 void fill_circle(std::span<std::uint16_t> canvas, int width, int height, int center_x, int center_y,
                  int radius, std::uint16_t color) {
-  const int radius_squared = radius * radius;
-  for (int y = center_y - radius; y <= center_y + radius; ++y) {
-    for (int x = center_x - radius; x <= center_x + radius; ++x) {
-      const int dx = x - center_x;
-      const int dy = y - center_y;
-      if (dx * dx + dy * dy <= radius_squared) {
-        set_pixel(canvas, width, height, x, y, color);
-      }
-    }
-  }
+  PixelPainter(canvas, width, height).circle(center_x, center_y, radius, color);
 }
 
 void rounded_rect(std::span<std::uint16_t> canvas, int width, int height, int x0, int y0, int x1,
                   int y1, int radius, std::uint16_t color) {
-  fill_rect(canvas, width, height, x0 + radius, y0, x1 - radius, y1, color);
-  fill_rect(canvas, width, height, x0, y0 + radius, x1, y1 - radius, color);
-  fill_circle(canvas, width, height, x0 + radius, y0 + radius, radius, color);
-  fill_circle(canvas, width, height, x1 - radius - 1, y0 + radius, radius, color);
-  fill_circle(canvas, width, height, x0 + radius, y1 - radius - 1, radius, color);
-  fill_circle(canvas, width, height, x1 - radius - 1, y1 - radius - 1, radius, color);
+  PixelPainter(canvas, width, height).rounded({x0, y0, x1, y1}, radius, color);
 }
 
 void line(std::span<std::uint16_t> canvas, int width, int height, int x0, int y0, int x1, int y1,
           std::uint16_t color, int thickness = 2) {
-  const int dx = std::abs(x1 - x0);
-  const int step_x = x0 < x1 ? 1 : -1;
-  const int dy = -std::abs(y1 - y0);
-  const int step_y = y0 < y1 ? 1 : -1;
-  int error = dx + dy;
-  while (true) {
-    fill_circle(canvas, width, height, x0, y0, thickness, color);
-    if (x0 == x1 && y0 == y1) {
-      return;
-    }
-    const int twice_error = 2 * error;
-    if (twice_error >= dy) {
-      error += dy;
-      x0 += step_x;
-    }
-    if (twice_error <= dx) {
-      error += dx;
-      y0 += step_y;
-    }
-  }
+  PixelPainter(canvas, width, height).line({x0, y0, x1, y1}, color, thickness);
 }
 
 bool inside(Point point, float x0, float y0, float x1, float y1) {
