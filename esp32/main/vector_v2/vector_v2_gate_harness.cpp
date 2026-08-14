@@ -1757,18 +1757,25 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   const bool gate_100 =
       paced_cold && run_tile_gate(presenter, producer, log, canvas, chrome, ZoomLevel::k100Percent);
   const bool live_overlay = gate_100 && run_live_ink_overlay_gate(presenter, chrome);
+  // The single-frame pan gates are known red on the current head (pan
+  // intentionally redraws minimap chrome each frame since the UI round).
+  // They are timing receipts, not state producers, so downstream gates key
+  // on the last state-producing gate instead of on pan pass flags; a red pan
+  // number must not stop the rest of the battery from reporting.
   const bool pan_100 =
       live_overlay && verify_pan_adapter(presenter, producer, chrome, ZoomLevel::k100Percent);
-  const bool gate_400 =
-      pan_100 && run_tile_gate(presenter, producer, log, canvas, chrome, ZoomLevel::k400Percent);
+  const bool gate_400 = live_overlay && run_tile_gate(presenter, producer, log, canvas, chrome,
+                                                      ZoomLevel::k400Percent);
   const bool pan_400 =
       gate_400 && verify_pan_adapter(presenter, producer, chrome, ZoomLevel::k400Percent);
-  const bool pan_sequence =
-      pan_400 && run_pan_sequence_gate(presenter, producer, chrome, ZoomLevel::k100Percent) &&
-      run_pan_sequence_gate(presenter, producer, chrome, ZoomLevel::k400Percent);
+  const bool pan_sequence_100 =
+      gate_400 && run_pan_sequence_gate(presenter, producer, chrome, ZoomLevel::k100Percent);
+  const bool pan_sequence_400 =
+      gate_400 && run_pan_sequence_gate(presenter, producer, chrome, ZoomLevel::k400Percent);
+  const bool pan_sequence = pan_sequence_100 && pan_sequence_400;
   const bool draw_fill =
-      pan_sequence && run_draw_while_fill_gate(presenter, producer, log, canvas, chrome, workspace,
-                                               conversion_storage);
+      gate_400 && run_draw_while_fill_gate(presenter, producer, log, canvas, chrome, workspace,
+                                           conversion_storage);
   // Cache gates run against the rich seed-7 document; the long-gesture gate
   // resets the document and therefore runs after them.
   const bool cache_retention =
