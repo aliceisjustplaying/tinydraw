@@ -12,24 +12,53 @@ exercise the same C++20 drawing and UI core.
 
 ## Current state
 
-The default firmware is **Raster V1**, the raster-authoritative 3×3 application described below.
-**Vector V2** is the accepted vector-authoritative 4×4 successor under construction; its validated
-foundation is isolated in `vector_v2/`, but it is not yet feature complete or the default. See
-[`PROJECT_STATE.md`](PROJECT_STATE.md) for current direction and
-[`vector_v2/README.md`](vector_v2/README.md) for V2 guardrails.
+`main` contains two independent ESP32 applications. **Raster V1** remains the
+default firmware while **Vector V2** moves toward feature parity. V2 is the
+accepted architecture, but it is not yet feature complete or ready to replace
+V1. Current status lives in [`PROJECT_STATE.md`](PROJECT_STATE.md); the remaining
+work is tracked in [`V2_ROADMAP.md`](V2_ROADMAP.md), and
+[`vector_v2/README.md`](vector_v2/README.md) defines the module boundaries.
+
+### Raster V1
 
 - Variable-width, Perfect Freehand-style ink with 4×4 edge smoothing
 - Solid self-overlaps, rounded sharp turns, twelve colors, and four sizes
-- ESP32: pan, ten Undos, 3×3 canvas, autosave, battery, and USB PNG export
-- ESP32: onboard clock, one-shot NTP correction, demos, and battery-powered off/on
-- RP2350: screen-sized ink, eraser, colors, sizes, and confirmed New
-- Native replays, exact snapshots, ASan/UBSan, QEMU, and device telemetry
+- Pan, ten Undos, a 3×3 canvas, autosave, battery status, and USB PNG export
+- Onboard clock, one-shot NTP correction, demos, and battery-powered off/on
 
-ESP32 long strokes average 2.5–3.4 ms per update. Autosave, charging, and PMU
-power-off/on are verified. Export mounts the full 1104×1344 drawing as
-`TINYDRAW/DRAWING.PNG` with the RTC-backed local time; macOS Finder is verified.
-Wi-Fi shuts down after correcting the clock. The RP2350 averages 1.2–1.4 ms
-but has no pan, Undo, or persistence. [`PROJECT_STATE.md`](PROJECT_STATE.md) has details.
+Raster V1 long strokes average 2.5–3.4 ms per update. Export mounts the full
+1104×1344 drawing as `TINYDRAW/DRAWING.PNG` with the RTC-backed local time.
+Autosave, charging, power-off/on, and macOS Finder mounting are verified.
+
+### Vector V2
+
+- Vector operations are authoritative for pen and eraser strokes.
+- The bounded 1472×1792 world supports 25%, 50%, 100%, 200%, and 400% zoom.
+- A complete overview provides fallback while a 384-slot world-aligned tile
+  cache refines visible detail.
+- Touch sampling remains independent of cooperative rendering work.
+- The first-pass toolbar includes tools, two 16-color PICO-8 palette pages,
+  four sizes, New, and Export.
+- Full-world 1472×1792 PNG export has been decoded on the host and opened from
+  the physical read-only USB drive.
+
+V2's immediate renderer is intentionally hard-edged until the settled
+anti-aliasing gate lands. The latest performance slice cut adversarial 400% cold
+refinement p95 from 1.45 seconds to 646 ms and made a 3,751-sample 400% stroke
+flow smoothly. It also exposed deferred debt: lower-zoom drawing against a warm
+multi-zoom cache reached 120–132 ms per commit chunk, real pan remains around
+20 FPS, and PNG encoding triggers the five-second task watchdog before the USB
+drive appears. These findings and raw evidence are recorded in
+[`PERFORMANCE_SLICE_GLASS_VERDICT_2026_08_14.md`](vector_v2/hardware-receipts/PERFORMANCE_SLICE_GLASS_VERDICT_2026_08_14.md).
+
+The next milestone is a bounded UI refinement round: popup behavior, color
+picker changes, visible zoom controls, battery status, export progress, and a
+minimap skeleton. Performance work resumes afterward with drawing latency as
+the first priority and an 800 ms cold-render p95 ceiling.
+
+The RP2350 build currently provides screen-sized ink, erasing, colors, sizes,
+and New. It has no pan, Undo, or persistence. Native replays, exact snapshots,
+ASan/UBSan, QEMU, and device telemetry cover the shared core.
 
 ## Run the macOS app
 ```sh
