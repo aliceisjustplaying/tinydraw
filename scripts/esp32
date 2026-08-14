@@ -104,13 +104,14 @@ case "$action" in
     ;;
   vector-v2-gate-harness)
     port="${2:-}"
+    slots="${3:-384}"
     if [[ -z "$port" ]]; then
-      echo "usage: $0 vector-v2-gate-harness PORT" >&2
+      echo "usage: $0 vector-v2-gate-harness PORT [TILE_SLOTS]" >&2
       exit 2
     fi
     rm -rf "$gate_harness_build"
     cd "$root/esp32"
-    eim run "idf.py -B '$gate_harness_build' -DTINYDRAW_QEMU=OFF -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_VECTOR_V2_MEMORY_PROBE=OFF -DTINYDRAW_VECTOR_V2_OVERVIEW_WALK=OFF -DTINYDRAW_VECTOR_V2_APP=ON -DTINYDRAW_VECTOR_V2_GATE_HARNESS=ON -DTINYDRAW_VECTOR_V2_TILE_CENSUS=OFF build"
+    eim run "idf.py -B '$gate_harness_build' -DTINYDRAW_QEMU=OFF -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_VECTOR_V2_MEMORY_PROBE=OFF -DTINYDRAW_VECTOR_V2_OVERVIEW_WALK=OFF -DTINYDRAW_VECTOR_V2_APP=ON -DTINYDRAW_VECTOR_V2_GATE_HARNESS=ON -DTINYDRAW_VECTOR_V2_TILE_CENSUS=OFF -DTINYDRAW_VECTOR_V2_TILE_SLOTS=$slots build"
     assert_config "$gate_harness_build/sdkconfig" OCT
     eim run "idf.py -B '$gate_harness_build' -p '$port' flash"
     ;;
