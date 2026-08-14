@@ -234,6 +234,15 @@ class Co5300PanelTransport::Impl {
             .level = gpio_get_level(kTearPin) != 0};
   }
 
+  [[nodiscard]] std::int64_t tear_age_us() const {
+    const std::uint32_t fall = tear_last_fall_us_.load(std::memory_order_acquire);
+    if (fall == 0U) {
+      return -1;
+    }
+    return static_cast<std::int64_t>(
+        static_cast<std::uint32_t>(static_cast<std::uint32_t>(esp_timer_get_time()) - fall));
+  }
+
   [[nodiscard]] bool wait_for_safe_frame_start(std::int64_t timeout_us) {
     if (!ready_ || timeout_us <= 0) {
       return false;
@@ -346,6 +355,7 @@ class Co5300PanelTransport::Impl {
     if (rise != 0U) {
       self.tear_high_us_.store(now - rise, std::memory_order_relaxed);
     }
+    self.tear_last_fall_us_.store(now == 0U ? 1U : now, std::memory_order_release);
     self.tear_falling_edges_.fetch_add(1U, std::memory_order_release);
     BaseType_t woke = pdFALSE;
     xSemaphoreGiveFromISR(self.tear_semaphore_, &woke);
@@ -379,6 +389,7 @@ class Co5300PanelTransport::Impl {
   std::atomic<std::uint32_t> tear_rising_edges_{0U};
   std::atomic<std::uint32_t> tear_falling_edges_{0U};
   std::atomic<std::uint32_t> tear_last_rise_us_{0U};
+  std::atomic<std::uint32_t> tear_last_fall_us_{0U};
   std::atomic<std::uint32_t> tear_period_us_{0U};
   std::atomic<std::uint32_t> tear_high_us_{0U};
   std::int64_t prepare_us_ = 0;
@@ -412,6 +423,7 @@ TearSignalTiming Co5300PanelTransport::tear_signal_timing() const {
 bool Co5300PanelTransport::wait_for_safe_frame_start(std::int64_t timeout_us) {
   return impl_->wait_for_safe_frame_start(timeout_us);
 }
+std::int64_t Co5300PanelTransport::tear_age_us() const { return impl_->tear_age_us(); }
 bool Co5300PanelTransport::wait_for_all(std::int64_t timeout_us) {
   return impl_->wait_for_all(timeout_us);
 }

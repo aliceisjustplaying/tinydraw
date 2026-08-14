@@ -441,8 +441,12 @@ LivePresentationTiming VectorV2Presenter::present_unobscured(vector_v2::PixelRec
                                                              const vector_v2::ChromeState& chrome,
                                                              std::uint32_t event_us,
                                                              std::int64_t compose_us) {
-  const auto visible =
+  auto visible =
       vector_v2::chrome_unobscured_regions({bounds.x0, bounds.y0, bounds.x1, bounds.y1}, chrome);
+  // Push top-down so a tear-synchronized writer stays behind the beam even
+  // when overlay subtraction split the bounds out of row order.
+  std::sort(visible.regions.begin(), visible.regions.begin() + visible.count,
+            [](const auto& left, const auto& right) { return left.y0 < right.y0; });
   LivePresentationTiming total{.compose_us = compose_us, .passed = true};
   for (std::size_t index = 0; index < visible.count; ++index) {
     const auto region = visible.regions[index];
@@ -493,10 +497,45 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
     }
   }
   const std::int64_t exposed_completed = esp_timer_get_time();
-  // scroll_frame excludes the chrome-owned rows, so their existing pixels are
-  // already correct. Do not spend a full dock redraw on every pan sample.
-  auto timing = present_with_overlays({0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
-                                      chrome, event_us, exposed_completed - started, true);
+  // Pan frames present canvas only: fixed overlays are opaque and unchanged,
+  // dock rows do not move, and the frame holds pure canvas throughout the
+  // gesture, so there is no per-frame chrome redraw or overlay restore. The
+  // changing minimap viewport refreshes on a bounded cadence below.
+  const std::int64_t tear_started = esp_timer_get_time();
+  bool tear_synchronized = true;
+  const std::int64_t tear_age = display_.tear_age_us();
+  if (tear_age < 0 || tear_age > kPanTearElisionWindowUs) {
+    tear_synchronized = display_.wait_for_safe_frame_start(40'000);
+  }
+  const std::int64_t tear_completed = esp_timer_get_time();
+  auto timing =
+      present_unobscured({0, 0, vector_v2::kOverviewWidth, vector_v2::chrome_canvas_bottom(chrome)},
+                         chrome, event_us, exposed_completed - started);
+  timing.tear_wait_us = tear_completed - tear_started;
+  timing.tear_synchronized = tear_synchronized;
+  if (timing.passed) {
+    const std::int64_t now = esp_timer_get_time();
+    if (now - last_pan_minimap_us_ >= kPanMinimapRefreshIntervalUs) {
+      if (const auto minimap = vector_v2::chrome_minimap_region(chrome); minimap.has_value()) {
+        const std::int64_t chrome_started = esp_timer_get_time();
+        vector_v2::draw_chrome_canvas_overlays(frame_, vector_v2::kOverviewWidth,
+                                               vector_v2::kOverviewHeight, chrome,
+                                               chrome_navigation());
+        const auto minimap_timing =
+            present({minimap->x0, minimap->y0, minimap->x1, minimap->y1}, 0);
+        const bool restored = restore_canvas_overlays(chrome);
+        timing.chrome_us = esp_timer_get_time() - chrome_started;
+        timing.complete_us += minimap_timing.complete_us;
+        timing.pushes += minimap_timing.pushes;
+        timing.passed = minimap_timing.passed && restored;
+        if (minimap_timing.passed) {
+          presented_minimap_revision_ = canvas_.current_revision();
+          minimap_presented_ = true;
+          last_pan_minimap_us_ = now;
+        }
+      }
+    }
+  }
   timing.scroll_us = scroll_completed - started;
   timing.exposed_compose_us = exposed_completed - scroll_completed;
   timing.frame_reused = true;

@@ -42,6 +42,10 @@ class Co5300PanelTransport final : public DisplayBackend {
   // timing this places a top-to-bottom full-frame write safely behind scanout.
   // Returns false on timeout; callers should fail open and still present.
   [[nodiscard]] bool wait_for_safe_frame_start(std::int64_t timeout_us);
+  // Microseconds since the last tear falling edge, or -1 before the first
+  // edge. A frame writer that starts within a bounded age of the edge stays
+  // ahead of the wrapped beam without waiting for the next edge.
+  [[nodiscard]] std::int64_t tear_age_us() const;
   [[nodiscard]] bool wait_for_all(std::int64_t timeout_us);
 
   void push_rect(int x, int y, int width, int height, const std::uint16_t* pixels,
