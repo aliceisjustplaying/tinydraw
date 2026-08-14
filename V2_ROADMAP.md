@@ -363,11 +363,16 @@ at a time and retain before/after receipts.
 
 ### Warm pan
 
-- [ ] Raise warm-pan frame rate above the current roughly 20 FPS behavior.
-- [ ] Avoid transmitting the complete panel when controller/window semantics let
-      us retain and update only newly exposed strips.
-- [ ] Increase framebuffer-reuse coverage for large touch deltas without unbounded
-      scratch.
+- [x] Raise warm-pan frame rate above the current roughly 20 FPS behavior
+      (30 FPS floor with margin at `4022917`: 28.1 ms avg, p50 26.95 ms).
+- [x] Avoid moving the complete frame per pan step: the toroidal ring makes
+      scroll pointer math and composes only exposed strips; the full-panel
+      transmit remains (the panel shows the whole moved viewport) but is
+      beam-raced and DMA-bound.
+- [x] Increase framebuffer-reuse coverage in the wild: fallback pixels and
+      composition-epoch drift no longer break the cached-pan identity, and
+      refinement region presents preserve reusability (the 2026-08-14 manual
+      session measured reused=0 on all 386 real pan frames before this).
 - [ ] Coalesce touch samples/view updates when the panel is already busy.
 - [ ] Separate camera responsiveness from refinement presentation.
 - [ ] Measure p50/p95/max event-to-first-complete and dropped/coalesced updates.
@@ -483,12 +488,20 @@ cold 20-run distribution, and the settled 320-versus-384 A/B all live in
    [`vector_v2/hardware-receipts/DRAWING_LATENCY_CLOSURE_2026_08_14.md`](vector_v2/hardware-receipts/DRAWING_LATENCY_CLOSURE_2026_08_14.md).
    Residual: the ~13.7 ms uninterruptible 25% overview band replay is the
    commit ceiling; round-end glass must confirm transient-fallback feel.
-2. Raise warm pan to a 30 FPS floor (frame ≤ 33.3 ms): ring/offset frame
-   addressing removes the 15 ms scroll memmove, tear wait overlaps compose,
-   changing minimap chrome leaves the per-frame path;
-   `TINYDRAW_GATE1_PANSEQ` is the acceptance gate.
+2. ~~Raise warm pan to a 30 FPS floor (frame ≤ 33.3 ms)~~ **Done at
+   `4022917`**: toroidal frame ring (scroll 15 ms → 10 µs), beam-raced
+   push sweep (tear wait 4.2 ms → ~0.1 ms, frame time unlocked from the
+   tear-period quantum), exposed compose fused into the sweep's DMA idle,
+   and wild-reuse fixes so product pans actually take the cached path.
+   `TINYDRAW_GATE1_PANSEQ`: 28.1 ms avg, p50 26.95 ms, p95 32.95 ms, both
+   slot counts. See
+   [`vector_v2/hardware-receipts/PAN_FLOOR_CLOSURE_2026_08_15.md`](vector_v2/hardware-receipts/PAN_FLOOR_CLOSURE_2026_08_15.md).
+   Residual: worst single frame 33.95 ms (2% over floor, accepted); beam
+   racing awaits a glass tearing re-check.
 3. Cold −50% campaign from the fresh distribution (adversarial 400% p95
    638 ms → 319 ms target).
 4. Capture a clean export-watchdog receipt; investigate SVG eraser/mask
    semantics with the SVG encoder budgeted inside the existing 1.5 MiB export
-   reserve; retain the startup TE synchronization flake for diagnosis.
+   reserve. The startup TE flake is fixed at the root (`4022917`: TEON
+   re-issued after display-on, plus a rate-limited runtime self-heal that
+   logs `TINYDRAW_PANEL_TE_HEAL`).
