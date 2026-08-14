@@ -37,8 +37,12 @@ Autosave, charging, power-off/on, and macOS Finder mounting are verified.
 - A complete overview provides fallback while a 384-slot world-aligned tile
   cache refines visible detail.
 - Touch sampling remains independent of cooperative rendering work.
-- The first-pass toolbar includes tools, two 16-color PICO-8 palette pages,
-  four sizes, New, and Export.
+- The refined toolbar uses the V1 tool icons, reflects the active tool, and
+  opens compact tool, size, document, and two-page round-swatch color popups.
+- New has a confirmation dialog; Export has visible band-by-band progress and
+  a saved state before the physical read-only USB drive takes over.
+- Battery status, a five-level zoom rail, and a live noninteractive minimap with
+  a viewport rectangle are visible over the canvas.
 - Full-world 1472×1792 PNG export has been decoded on the host and opened from
   the physical read-only USB drive.
 
@@ -51,10 +55,14 @@ multi-zoom cache reached 120–132 ms per commit chunk, real pan remains around
 drive appears. These findings and raw evidence are recorded in
 [`PERFORMANCE_SLICE_GLASS_VERDICT_2026_08_14.md`](vector_v2/hardware-receipts/PERFORMANCE_SLICE_GLASS_VERDICT_2026_08_14.md).
 
-The next milestone is a bounded UI refinement round: popup behavior, color
-picker changes, visible zoom controls, battery status, export progress, and a
-minimap skeleton. Performance work resumes afterward with drawing latency as
-the first priority and an 800 ms cold-render p95 ceiling.
+The bounded UI refinement round is complete and was exercised repeatedly on
+physical glass. It also fixed stale minimap updates, cached-pan ghosts around
+fixed overlays, and angular live ink beneath the minimap and zoom rail. A
+fingerless hardware gate measures matching clear/overlay circle updates below
+3 ms. The next milestone returns to performance: warm-cache drawing latency is
+first priority, cold-render p95 must remain below 800 ms, warm pan follows, and
+export watchdog verification remains open. The preserved but incomplete
+`feat/v2-warm-pan` experiment has no accepted before/after result yet.
 
 The RP2350 build currently provides screen-sized ink, erasing, colors, sizes,
 and New. It has no pan, Undo, or persistence. Native replays, exact snapshots,

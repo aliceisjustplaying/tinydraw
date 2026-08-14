@@ -3,7 +3,7 @@
 Last updated: 2026-08-14
 Current branch: `main`
 
-Status: **Vector V2 foundation accepted; bounded UI refinement next, measured performance debt retained**
+Status: **Vector V2 foundation and bounded UI refinement accepted; measured performance round next**
 
 This is the current worklist and source of truth for TinyDraw V2. It replaces the
 prototype-era task order as the forward plan. Historical plans and receipts are
@@ -62,6 +62,7 @@ Load-bearing evidence:
 - `vector_v2/hardware-receipts/gate1-paper-cache-scroller.log`
 - `vector_v2/hardware-receipts/gate1-final-glass.log`
 - `vector_v2/hardware-receipts/PERFORMANCE_SLICE_GLASS_VERDICT_2026_08_14.md`
+- `vector_v2/hardware-receipts/live-ink-overlay-clipping-2026-08-14.md`
 
 The overall rendering-quality verdict remains **YELLOW** only because settled
 anti-aliasing is not implemented. The architecture itself is no longer under
@@ -132,13 +133,13 @@ That gate did not cover lower-zoom drawing against a warm multi-zoom cache. See
 ### Camera and zoom behavior
 
 - [x] Write and accept the zoom/navigation behavior document before implementation.
-- [ ] Preserve world-space focus when zooming in or out.
-- [ ] Remember the last useful camera position per zoom.
-- [ ] Define how per-zoom memory and center-preserving zoom interact.
-- [ ] Expose 50% and 200% in the production UI.
-- [ ] Remove the test-app behavior that always opens a zoom at `(0,0)`.
-- [ ] Add host tests for clamping at all world edges and zoom round trips.
-- [ ] Add a hardware glass test that zooms out and returns to the same drawing.
+- [x] Preserve world-space focus when zooming in or out.
+- [x] Remember the last useful camera position per zoom.
+- [x] Define how per-zoom memory and center-preserving zoom interact.
+- [x] Expose 50% and 200% in the production UI.
+- [x] Remove the test-app behavior that always opens a zoom at `(0,0)`.
+- [x] Add host tests for clamping at all world edges and zoom round trips.
+- [x] Exercise repeated zoom-out/return cycles on physical glass.
 
 ### Cache policy
 
@@ -236,17 +237,22 @@ the funded product path.
 ### Toolbar
 
 - [x] Bottom toolbar: **Undo | Redo | Tools | Colors | Sizes | Document**.
-- [x] Tools pop-up: **Draw | Erase | Pan**.
+- [x] Make the toolbar a full-width rectangle with a subtle upper shadow so
+      canvas pixels cannot creep through the curved lower screen corners.
+- [x] Tools pop-up: **Draw | Erase | Pan**, using the V1 icons and reflecting the
+      selected tool in the toolbar.
 - [x] Document pop-up: **New | Export**.
+- [x] Consume an outside tap while dismissing compact popups.
 - [x] Disable Undo/Redo visibly when unavailable.
 - [ ] Keep visual controls compact but later enlarge invisible hit regions and
-      spacing; physical tap targets are currently too easy to miss.
+      spacing; physical tap targets remain a final glass-polish item.
 
 ### Color palette
 
 - [x] Replace current TinyDraw colors with the 16 standard PICO-8 colors.
 - [x] Add the 16-color PICO-8 secret palette as a second page.
-- [x] Use a full-screen 4×4 swatch grid with a small page header/navigation row.
+- [x] Use a white second-level 4×4 round-swatch popup above the toolbar, with a
+      tall page-navigation row and a shadow.
 - [x] Keep all 16 colors on each page; do not sacrifice a swatch for navigation.
 - [x] Keep PICO-8 warm white as a drawable color; Erase remains a separate tool.
 - [x] Convert and lock all 32 colors to deterministic RGB565 values in tests.
@@ -259,13 +265,21 @@ Palette references:
 
 ### Zoom and navigation overlays
 
-- [ ] Add a right-side vertical zoom rail: plus, percentage, minus.
-- [ ] Levels: 25 → 50 → 100 → 200 → 400.
-- [ ] Disable controls at minimum/maximum zoom.
+- [x] Add a right-side vertical zoom rail: plus, percentage, minus.
+- [x] Levels: 25 → 50 → 100 → 200 → 400.
+- [x] Disable controls at minimum/maximum zoom.
 - [ ] Add small top/left/right/bottom canvas-extent indicators.
 - [ ] Hide extent indicators at 25%.
-- [ ] Keep indicators and controls as display overlays, never document pixels.
-- [ ] Reserve the top area for battery and transient toast/status messaging.
+- [x] Keep navigation controls, battery, and minimap as display overlays, never
+      document pixels.
+- [x] Show battery state and transient export progress/status above the canvas.
+- [x] Refresh minimap authority after every completed stroke, including strokes
+      whose final overview update has empty canvas presentation bounds.
+- [x] Exclude fixed overlays from cached-pan reuse and live-ink partial updates;
+      the hardware circle gate stays below 3 ms both on clear canvas and over
+      the overlays.
+- [ ] Reduce changing-minimap cost during pan; the current 100% pan-overlay gate
+      remains red at about 40 ms first-submit.
 
 ### Tap-target polish — later
 
@@ -289,7 +303,7 @@ Palette references:
 
 - [ ] Make New/Clear reset operation authority, overview, cache catalog, occupancy,
       camera state, undo/redo, and autosave state together.
-- [ ] Preserve confirmation/cancel behavior from V1 where desired.
+- [x] Restore the V1-style modal confirmation/cancel behavior.
 - [ ] Test failure atomicity.
 
 ### Persistence and recovery
@@ -328,15 +342,16 @@ Palette references:
       passes strict zlib/CRC/defilter decoding, and the final glass test mounted
       the "TinyDraw Export" drive and opened the correct 1472×1792 DRAWING.PNG.
       Activating USB ends the serial console until reset, exactly like V1.
-- [ ] Yield during encoding so CPU 0's idle task runs. Every retained V2 export
-      hardware receipt currently contains a five-second task-watchdog warning;
-      `CONFIG_ESP_TASK_WDT_PANIC` being disabled does not make that acceptable.
-- [ ] Show bounded export progress in the UI before USB takes over the port.
+- [x] Yield at each rendered-band progress boundary so CPU 0's idle task can run.
+- [ ] Capture a clean hardware export receipt proving the former five-second
+      task-watchdog warning is gone; implementation alone is not closure.
+- [x] Show bounded export progress and a saved/error state before USB takes over
+      the port.
 
 ### Device lifecycle parity
 
-- [ ] Integrate battery display and low-power behavior.
-- [ ] Integrate sleep/wake and RTC/time behavior where V1 supports it.
+- [x] Integrate the live battery percentage/charging display.
+- [ ] Integrate low-power, sleep/wake, and RTC/time behavior where V1 supports it.
 - [ ] Preserve autosave before risky power transitions.
 - [ ] Define visible errors for save, export, capacity, and hardware failures.
 - [ ] Reuse stable V1 hardware services through adapters; do not copy their logic.
@@ -428,9 +443,9 @@ remain the authority; raw timing receipts are retained without editorial cleanup
 
 These are intentionally outside feature completeness unless promoted later.
 
-- [ ] **Minimap:** compact overview in the bottom-right canvas corner, directly
-      above the toolbar and below the zoom rail.
-- [ ] Show the current viewport rectangle on the minimap.
+- [x] **Minimap skeleton:** compact live overview in the bottom-right canvas
+      corner, directly above the toolbar and below the zoom rail.
+- [x] Show the current viewport rectangle on the minimap.
 - [ ] Hide or simplify the minimap at 25%.
 - [ ] Tap the minimap to jump.
 - [ ] Drag the minimap viewport to navigate continuously.
@@ -457,14 +472,13 @@ complete overview. It still needs careful tap targeting and viewport math.
 
 # Next concrete sequence
 
-1. Run the bounded UI round: popup dismissal and hit behavior, color-picker
-   changes, the zoom rail and camera behavior, battery status, export progress,
-   and a noninteractive minimap skeleton.
-2. Keep the final glass verdict visible while doing UI work; do not describe the
-   current branch as complete performance closure.
-3. Resume performance work in this order: drawing and erasing latency, cold
+1. Resume performance work in this order: drawing and erasing latency, cold
    refinement with p95 below 800 ms, pan responsiveness, then export speed.
-4. The next drawing gate must use scripted touch-shaped gestures at every zoom
-   against a warm multi-zoom cache and target 10–12 ms deterministic chunks.
-5. Fix export watchdog starvation and diagnose the retained startup TE
-   synchronization flake before release.
+2. Add a scripted touch-shaped drawing/erasing gate at every zoom against a warm
+   multi-zoom cache; target 10–12 ms chunks and alarm above 15 ms.
+3. Preserve and reconcile the incomplete `feat/v2-warm-pan` attribution gate;
+   it has no accepted hardware A/B result yet.
+4. Re-run the 320-versus-384 cache comparison with intervening mutations and let
+   drawing latency win if retention conflicts with input responsiveness.
+5. Capture clean export-watchdog and pan receipts, investigate SVG eraser/mask
+   semantics, and retain the startup TE synchronization flake for diagnosis.
