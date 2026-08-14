@@ -206,22 +206,22 @@ the funded product path.
 
 ### Toolbar
 
-- [ ] Bottom toolbar: **Undo | Redo | Tools | Colors | Sizes | Document**.
-- [ ] Tools pop-up: **Draw | Erase | Pan**.
-- [ ] Document pop-up: **New | Export**.
-- [ ] Disable Undo/Redo visibly when unavailable.
+- [x] Bottom toolbar: **Undo | Redo | Tools | Colors | Sizes | Document**.
+- [x] Tools pop-up: **Draw | Erase | Pan**.
+- [x] Document pop-up: **New | Export**.
+- [x] Disable Undo/Redo visibly when unavailable.
 - [ ] Keep visual controls compact but later enlarge invisible hit regions and
       spacing; physical tap targets are currently too easy to miss.
 
 ### Color palette
 
-- [ ] Replace current TinyDraw colors with the 16 standard PICO-8 colors.
-- [ ] Add the 16-color PICO-8 secret palette as a second page.
-- [ ] Use a full-screen 4×4 swatch grid with a small page header/navigation row.
-- [ ] Keep all 16 colors on each page; do not sacrifice a swatch for navigation.
-- [ ] Keep PICO-8 warm white as a drawable color; Erase remains a separate tool.
-- [ ] Convert and lock all 32 colors to deterministic RGB565 values in tests.
-- [ ] Show the current palette page and selected color clearly.
+- [x] Replace current TinyDraw colors with the 16 standard PICO-8 colors.
+- [x] Add the 16-color PICO-8 secret palette as a second page.
+- [x] Use a full-screen 4×4 swatch grid with a small page header/navigation row.
+- [x] Keep all 16 colors on each page; do not sacrifice a swatch for navigation.
+- [x] Keep PICO-8 warm white as a drawable color; Erase remains a separate tool.
+- [x] Convert and lock all 32 colors to deterministic RGB565 values in tests.
+- [x] Show the current palette page and selected color clearly.
 
 Palette references:
 
