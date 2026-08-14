@@ -302,6 +302,10 @@ void draw_chrome(std::span<std::uint16_t> pixels, int width, int height, const C
     draw_palette(painter, state);
     return;
   }
+  // Every row below the canvas boundary belongs to chrome, including the
+  // narrow gutters above rounded docks. Repainting ownership here prevents
+  // stationary seam pixels when cached canvas rows are scrolled in place.
+  painter.rect({0, chrome_canvas_bottom(state), kWidth, kMainTop}, kWhite);
   draw_bottom(painter, state);
   if (state.popup == ChromePopup::kNone) {
     return;

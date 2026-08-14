@@ -119,6 +119,7 @@ class VectorV2Presenter {
   int frame_level_x_ = 0;
   int frame_level_y_ = 0;
   std::uint64_t frame_epoch_ = 0;
+  vector_v2::ChromeState frame_chrome_{};
   bool frame_reusable_ = false;
 };
 

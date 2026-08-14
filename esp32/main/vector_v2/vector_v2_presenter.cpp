@@ -69,6 +69,9 @@ vector_v2::OperationPoint VectorV2Presenter::operation_point(InkPoint point) con
 
 LivePresentationTiming VectorV2Presenter::refresh(const vector_v2::ChromeState& chrome,
                                                   std::uint32_t event_us) {
+  // Composition mutates the cached frame. It cannot remain reusable unless the
+  // entire compose-and-present transaction succeeds below.
+  frame_reusable_ = false;
   const std::int64_t compose_started = esp_timer_get_time();
   const auto stats = canvas_.compose_view(navigation_.view(), frame_);
   if (!stats.has_value()) {
@@ -87,6 +90,7 @@ LivePresentationTiming VectorV2Presenter::refresh(const vector_v2::ChromeState& 
   frame_level_x_ = level_x();
   frame_level_y_ = level_y();
   frame_epoch_ = canvas_.composition_epoch();
+  frame_chrome_ = chrome;
   frame_reusable_ = timing.passed && stats->fallback_pixels == 0U;
   if (zoom() != vector_v2::ZoomLevel::k25Percent) {
     static_cast<void>(canvas_.remember_view(navigation_.view()));
@@ -109,6 +113,7 @@ LivePresentationTiming VectorV2Presenter::refresh_region(vector_v2::PixelRect le
   if (intersection.x1 <= intersection.x0 || intersection.y1 <= intersection.y0) {
     return {.passed = true};
   }
+  frame_reusable_ = false;
   vector_v2::PixelRect panel{
       .x0 = intersection.x0 - level_x(),
       .y0 = intersection.y0 - level_y(),
@@ -321,11 +326,15 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   const int delta_y = level_y() - old_y;
   const bool reusable = frame_reusable_ && frame_zoom_ == zoom() && frame_level_x_ == old_x &&
                         frame_level_y_ == old_y && frame_epoch_ == canvas_.composition_epoch() &&
-                        std::abs(delta_x) <= kMaximumCachedPanDelta &&
+                        frame_chrome_ == chrome && std::abs(delta_x) <= kMaximumCachedPanDelta &&
                         std::abs(delta_y) <= kMaximumCachedPanDelta;
   if (!reusable) {
     return refresh(chrome, event_us);
   }
+  // scroll_frame mutates overlap before exposed composition can fail. Invalidate
+  // first so every recovery path either establishes a fresh identity or stays
+  // safely non-reusable.
+  frame_reusable_ = false;
   const std::int64_t started = esp_timer_get_time();
   const auto scroll = vector_v2::scroll_frame(
       frame_, vector_v2::kOverviewWidth,
@@ -353,6 +362,7 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   frame_level_x_ = level_x();
   frame_level_y_ = level_y();
   frame_epoch_ = canvas_.composition_epoch();
+  frame_chrome_ = chrome;
   frame_reusable_ = timing.passed;
   return timing;
 }
@@ -375,9 +385,13 @@ LivePresentationTiming VectorV2Presenter::present_pixels(vector_v2::PixelRect bo
   LivePresentationTiming timing{.compose_us = compose_us};
   const int width = bounds.x1 - bounds.x0;
   const int height = bounds.y1 - bounds.y0;
+  if (width <= 0 || height <= 0 || stride < width) {
+    return timing;
+  }
   const std::size_t required =
-      static_cast<std::size_t>(height - 1) * static_cast<std::size_t>(stride) + width;
-  if (width <= 0 || height <= 0 || stride < width || pixels.size() < required) {
+      static_cast<std::size_t>(height - 1) * static_cast<std::size_t>(stride) +
+      static_cast<std::size_t>(width);
+  if (pixels.size() < required) {
     return timing;
   }
   scheduler_.require_revision(canvas_.current_revision());

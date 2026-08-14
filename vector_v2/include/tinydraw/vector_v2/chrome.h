@@ -52,6 +52,7 @@ struct ChromeState {
   bool can_undo = false;
   bool can_redo = false;
   bool can_export = false;
+  bool operator==(const ChromeState&) const = default;
 };
 
 [[nodiscard]] constexpr std::uint16_t rgb565(std::uint32_t rgb888) {
