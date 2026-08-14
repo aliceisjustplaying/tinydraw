@@ -39,10 +39,12 @@ inline constexpr std::size_t kLiveRegionScratchPixels = kMaximumProgressiveRegio
 inline constexpr std::size_t kInteractiveChunkSampleLimit = 48;
 // Wall-clock bound for one in-place chunk commit (overview replay plus
 // visible-tile painting). Tiles that do not fit are dropped to correct
-// overview fallback and re-produced lazily, so the interactive poll gap
-// stays under the 15 ms alarm by construction with headroom for the
-// harness-measured ~13 ms full-width 25% overview replay.
-inline constexpr std::int64_t kInPlaceCommitBudgetUs = 12'000;
+// overview fallback and re-produced lazily. The deadline is checked between
+// tiles, so the worst commit is budget + one uniform-conversion paint
+// (~2 ms) + the commit tail (~1.5 ms); 10 ms keeps that under the 15 ms
+// alarm. The uninterruptible full-width 25% overview band replay (~13.7 ms
+// worst) is the other measured ceiling and the next optimization target.
+inline constexpr std::int64_t kInPlaceCommitBudgetUs = 10'000;
 // Cold-fill producer slices run to this deadline before yielding to input.
 // The worst observed single resumable produce_next step is ~11.2 ms (a seed-7
 // publication step; bounded by the producer's internal budgets), so the
