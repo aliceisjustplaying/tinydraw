@@ -4,6 +4,9 @@ These logs are immutable evidence captured from the physical ESP32-S3. Historica
 
 ## Current milestone evidence
 
+- [`6abfa0f-cold-p95-20-runs.log`](6abfa0f-cold-p95-20-runs.log) — final slice distribution: adversarial 400% p95 646,305 us (−55.5% vs 26a05f5) with deadline slicing and the 384-slot pool; all ticks under 12.7 ms.
+- [`6abfa0f-full-gate.log`](6abfa0f-full-gate.log) — full harness pass at 384 slots including cache retention, export encode, and the live export-reserve allocation.
+- [`6abfa0f-product-boot.log`](6abfa0f-product-boot.log) — product boot at 384 slots: largest free PSRAM block 2,949,120 bytes.
 - [`LONGSTROKE_COLDRENDER_INVESTIGATION_2026_08_14.md`](LONGSTROKE_COLDRENDER_INVESTIGATION_2026_08_14.md) — measured root causes and closure for the 70 ms long-stroke commit stalls and the 1.45 s adversarial 400% cold replay; saturation-gated cold replay plus in-place interactive commits.
 - [`264b60e-cold-p95-20-runs.log`](264b60e-cold-p95-20-runs.log) — clean 20-reset distribution after both fixes: adversarial 400% p95 674,901 us (from 1,451,905), overlap −14..30%, every tick under 11 ms.
 - [`264b60e-full-gate.log`](264b60e-full-gate.log) — complete clean harness pass including the new deterministic long-gesture A/B gate (reference 33.2 ms vs in-place 11.1 ms worst chunk commit).

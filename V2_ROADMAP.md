@@ -143,7 +143,10 @@ and ≈70 ms (64-sample staged chunks) stalls. See
 - [ ] Prefer evicting distant/unprotected raw tiles.
 - [ ] Preserve zero-fallback returns for protected views across a long 400% tour.
 - [ ] Keep learned uniform identities cheap and revision-safe.
-- [ ] Measure 320 versus 384 raw slots only after policy improvements.
+- [x] Measure 320 versus 384 raw slots only after policy improvements: 384
+      adopted at `6abfa0f`, funded by the 449 KiB freed at `264b60e`.
+      Retention and export-reserve gates green; largest free PSRAM block
+      2,490,368 bytes (harness) / 2,949,120 bytes (product).
 - [ ] Do not adopt 448 slots under the current memory plan: it would consume an
       additional 1 MiB and leave too little margin beside the export reserve.
 - [x] Remove the test-only seed corpus storage from the product app allocation;
@@ -357,7 +360,10 @@ reset-separated runs at `26a05f5`; overlap and seed-7 400% p95 measured 0.416 an
 adversarial 400% p95 to 0.675 seconds (target: below one second) and the
 overlap corpus by 14–30%, with maximum ticks under 11 ms; seed-7 regressed
 6.4% to 0.365 seconds (attributed to producer restructure/code layout, receipt
-retained). See `vector_v2/hardware-receipts/264b60e-cold-p95-20-runs.log` and
+retained). Deadline-sliced cold fill (`f20c201`) and the 384-slot pool
+(`6abfa0f`) then settled the final distribution at 0.646 seconds for
+adversarial 400% (−55.5% overall) with every producer tick under 12.7 ms. See
+`vector_v2/hardware-receipts/6abfa0f-cold-p95-20-runs.log` and
 `vector_v2/hardware-receipts/LONGSTROKE_COLDRENDER_INVESTIGATION_2026_08_14.md`.
 
 The permanent validation comprises one exact census sweep and three CTest fuzz

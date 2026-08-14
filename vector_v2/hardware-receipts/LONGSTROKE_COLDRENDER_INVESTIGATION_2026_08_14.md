@@ -297,13 +297,62 @@ code layout, not summary bookkeeping; the same restructure buys −22 ms at
 adversarial 200%). It remains 3× under its own historical alarm and is the
 only negative delta in the matrix.
 
+## Follow-up slice: export, deadline slicing, and the 384-slot pool
+
+Three further changes landed the same day after the closure above; final
+numbers below supersede the 264b60e table as the current distribution.
+
+1. **PNG/USB export** (`88123ee`, `7302963`): while lifting the V1 export
+   mechanisms, decode-validating the output caught a vendored pngenc path
+   that silently corrupts streams (scanline-buffer overrun for worlds wider
+   than 1104 plus a duplicated deflate loop that drops data); both affected
+   Raster V1 exports of dense content too. Fixed with a decode round-trip
+   host gate. The deflate workspace must live in internal RAM: in PSRAM the
+   sound encoder path ran minutes-slow; internal, the full 1472x1792 world
+   encodes in 5.7 s within 51 KiB internal + ~390 KiB PSRAM, all transient.
+2. **Cold-fill deadline slicing** (`f20c201`): producer slices now run to a
+   shared 2.5 ms deadline instead of one bounded step per tick, in the
+   product loop and the paced gate. The worst single resumable step measures
+   ~11.2 ms (seed-7 publication), so 2.5 ms holds the worst tick at 12.6 ms
+   under the 15 ms alarm; a 6 ms deadline measured 15.2 ms and was rejected.
+3. **384 raw slots** (`6abfa0f`): the 449 KiB freed by in-place commits funds
+   64 more slots (104 spare beyond the five protected footprints). Cache
+   retention passes at 384; the 1.5 MiB export reserve still allocates after
+   an export encode; largest free PSRAM block 2,490,368 bytes in the harness
+   build and 2,949,120 in the product build.
+
+### Final clean 20-reset distribution (6abfa0f)
+
+Source: [`6abfa0f-cold-p95-20-runs.log`](6abfa0f-cold-p95-20-runs.log); all
+180 gate lines pass, maximum tick anywhere 12,640 us.
+
+| Corpus | Zoom | 26a05f5 p95 | 6abfa0f p95 | delta |
+|---|---:|---:|---:|---:|
+| 4× adversarial tapered | 50% | 164,971 us | 160,973 us | −2.4% |
+| 4× adversarial tapered | 100% | 243,956 us | 229,972 us | −5.7% |
+| 4× adversarial tapered | 200% | 602,969 us | 538,972 us | −10.6% |
+| **4× adversarial tapered** | **400%** | **1,451,905 us** | **646,305 us** | **−55.5%** |
+| Overlapping XL | 50% | 541,331 us | 468,051 us | −13.5% |
+| Overlapping XL | 100% | 405,954 us | 315,976 us | −22.2% |
+| Overlapping XL | 200% | 415,975 us | 314,973 us | −24.3% |
+| Overlapping XL | 400% | 415,966 us | 299,973 us | −27.9% |
+| Seed-7 realistic | 400% | 342,970 us | 361,974 us | +5.5% |
+
+The 400% target (p95 under one second) is met with a 35% margin. The overlap
+corpus gave back 0.2–3.4% relative to the pre-384 measurement (larger slot
+directory scans); it remains 13–28% below the closure baseline. Seed-7's
++5.5% is the Phase A producer-restructure/code-layout residue measured
+earlier, unchanged by the later work.
+
 ## Residual risks and open items
 
 1. The long-stroke fix is proven by the deterministic worst-case gate and
    host equivalence, not yet by a human glass test. The remaining human
    checklist is short: draw several multi-minute XL strokes at 400% and
    100%, confirm continuously flowing ink with no visible re-render, freeze,
-   or pixelation of the active line, then erase over them.
+   or pixelation of the active line, then erase over them. Additionally for
+   export: tap Export, mount the "TinyDraw Export" USB drive, open
+   DRAWING.PNG (activating USB ends the serial console until reset).
 2. Between accepting a sample mid-gesture and the next chunk boundary,
    resident tiles briefly contain painted-but-uncommitted chunk pixels. No
    composition path observes them in the product loop (fill and chrome are
