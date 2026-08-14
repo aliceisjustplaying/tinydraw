@@ -1,6 +1,7 @@
 #ifndef TINYDRAW_VECTOR_V2_CHAINED_OPERATION_BUILDER_H
 #define TINYDRAW_VECTOR_V2_CHAINED_OPERATION_BUILDER_H
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -25,6 +26,8 @@ enum class ChainedOperationStatus : std::uint8_t {
 class ChainedOperationBuilder {
  public:
   explicit ChainedOperationBuilder(std::span<CompactOperationSample> storage);
+  ChainedOperationBuilder(std::span<CompactOperationSample> storage,
+                          std::size_t maximum_chunk_samples);
 
   [[nodiscard]] bool ready() const;
   [[nodiscard]] bool active() const;
@@ -53,6 +56,7 @@ class ChainedOperationBuilder {
   [[nodiscard]] ChainedOperationStatus capture_final(OperationPoint point);
 
   OperationBuilder builder_;
+  std::size_t maximum_chunk_samples_ = 0;
   bool ready_ = false;
   OperationTool tool_ = OperationTool::kPen;
   std::uint16_t color_ = 0;

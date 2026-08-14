@@ -52,6 +52,9 @@ using vector_v2::ZoomLevel;
 constexpr std::uint32_t kExternalCaps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
 constexpr gpio_num_t kModeButton = GPIO_NUM_0;
 constexpr std::size_t kInputSampleCapacity = 4'096;
+// Keep interactive raster commits beneath a frame-sized work pulse. The 80k
+// sample document budget still leaves ample operation-record headroom.
+constexpr std::size_t kInteractiveChunkSampleLimit = 64;
 constexpr std::size_t kWorkspaceTileCapacity = vector_v2::kMaximumVisibleTiles;
 
 struct LiftBaselineTiming {
@@ -60,6 +63,7 @@ struct LiftBaselineTiming {
   std::int64_t finish_preview_us = 0;
   std::int64_t builder_finish_us = 0;
   std::int64_t append_us = 0;
+  std::int64_t append_max_us = 0;
   std::int64_t refresh_wall_us = 0;
   vector_v2::PixelRect refresh_level_bounds{};
   std::int64_t stroke_logging_us = 0;
@@ -159,6 +163,7 @@ struct PendingStrokeReport {
   std::size_t operation_count = 0;
   std::size_t sample_count = 0;
   std::int64_t append_us = 0;
+  std::int64_t append_max_us = 0;
   LivePresentationTiming refresh{};
   LiveMetrics metrics{};
   std::uint32_t poll_max_us = 0;
@@ -289,8 +294,7 @@ void include_bounds(std::optional<vector_v2::PixelRect>& accumulated, vector_v2:
 
 std::optional<vector_v2::IncrementalAppendResult> commit_pending_chunk(
     ChainedOperationBuilder& builder, OperationLog& log, MaterializedCanvas& canvas,
-    const IncrementalDocumentWorkspace& workspace, const VectorV2Presenter& presenter,
-    vector_v2::IncrementalPublicationScope publication_scope) {
+    const IncrementalDocumentWorkspace& workspace, const VectorV2Presenter& presenter) {
   const auto append = builder.pending_append();
   if (!append.has_value()) {
     return std::nullopt;
@@ -301,28 +305,26 @@ std::optional<vector_v2::IncrementalAppendResult> commit_pending_chunk(
                        presenter.level_x() + vector_v2::kOverviewWidth,
                        presenter.level_y() + vector_v2::kOverviewHeight},
   };
-  if (presenter.zoom() == ZoomLevel::k25Percent &&
-      publication_scope != vector_v2::IncrementalPublicationScope::kOverviewOnly) {
-    publication_scope = vector_v2::IncrementalPublicationScope::kAllMaterialized;
-  }
   return vector_v2::append_incrementally(
       log, canvas, *append, workspace,
       {.priority_view = presenter.zoom() == ZoomLevel::k25Percent
                             ? std::optional<vector_v2::ViewRequest>{}
                             : std::optional{priority_view},
-       .publication_scope = publication_scope});
+       .publication_scope = presenter.zoom() == ZoomLevel::k25Percent
+                                ? vector_v2::IncrementalPublicationScope::kAllMaterialized
+                                : vector_v2::IncrementalPublicationScope::kPriorityView});
 }
 
 std::optional<ChainedOperationStatus> commit_ready_chunk(
     ChainedOperationBuilder& builder, OperationLog& log, MaterializedCanvas& canvas,
     const IncrementalDocumentWorkspace& workspace, const VectorV2Presenter& presenter,
-    vector_v2::IncrementalPublicationScope publication_scope,
     std::optional<vector_v2::PixelRect>& accumulated_bounds, std::uint32_t& chunks,
-    std::int64_t& append_us) {
+    std::int64_t& append_us, std::int64_t& append_max_us) {
   const std::int64_t started_us = esp_timer_get_time();
-  const auto committed =
-      commit_pending_chunk(builder, log, canvas, workspace, presenter, publication_scope);
-  append_us += esp_timer_get_time() - started_us;
+  const auto committed = commit_pending_chunk(builder, log, canvas, workspace, presenter);
+  const std::int64_t elapsed_us = esp_timer_get_time() - started_us;
+  append_us += elapsed_us;
+  append_max_us = std::max(append_max_us, elapsed_us);
   if (!committed.has_value()) {
     return std::nullopt;
   }
@@ -418,7 +420,7 @@ void print_lift_baseline(const LiftBaselineTiming& timing, std::int64_t poll_sta
   const std::int64_t detected_to_poll_us = poll_started_us - timing.detected_us;
   std::printf(
       "TINYDRAW_LIFT_BASELINE id=%lu finish_preview_us=%lld builder_finish_us=%lld "
-      "append_us=%lld refresh_wall_us=%lld refresh_x0=%d refresh_y0=%d "
+      "append_us=%lld append_max_us=%lld refresh_wall_us=%lld refresh_x0=%d refresh_y0=%d "
       "refresh_x1=%d refresh_y1=%d refresh_compose_us=%lld "
       "refresh_first_submit_us=%lld refresh_first_complete_us=%lld "
       "refresh_transfer_wait_us=%lld stroke_logging_us=%lld "
@@ -427,9 +429,10 @@ void print_lift_baseline(const LiftBaselineTiming& timing, std::int64_t poll_sta
       "commit_failed=%u\n",
       static_cast<unsigned long>(timing.id), static_cast<long long>(timing.finish_preview_us),
       static_cast<long long>(timing.builder_finish_us), static_cast<long long>(timing.append_us),
-      static_cast<long long>(timing.refresh_wall_us), timing.refresh_level_bounds.x0,
-      timing.refresh_level_bounds.y0, timing.refresh_level_bounds.x1,
-      timing.refresh_level_bounds.y1, static_cast<long long>(timing.refresh.compose_us),
+      static_cast<long long>(timing.append_max_us), static_cast<long long>(timing.refresh_wall_us),
+      timing.refresh_level_bounds.x0, timing.refresh_level_bounds.y0,
+      timing.refresh_level_bounds.x1, timing.refresh_level_bounds.y1,
+      static_cast<long long>(timing.refresh.compose_us),
       static_cast<long long>(timing.refresh.first_submit_us),
       static_cast<long long>(timing.refresh.first_complete_us),
       static_cast<long long>(timing.refresh.complete_us),
@@ -444,7 +447,7 @@ void print_lift_baseline(const LiftBaselineTiming& timing, std::int64_t poll_sta
 void print_stroke(const PendingStrokeReport& report) {
   std::printf(
       "TINYDRAW_LIVE_STROKE revision=%lu operations=%lu samples=%lu append_us=%lld "
-      "refresh_compose_us=%lld refresh_complete_us=%lld ink_samples=%lu "
+      "append_max_us=%lld refresh_compose_us=%lld refresh_complete_us=%lld ink_samples=%lu "
       "read_submit_avg_us=%llu read_submit_max_us=%lu read_complete_avg_us=%llu "
       "read_complete_max_us=%lu submit_over_16ms=%lu complete_over_33ms=%lu "
       "presentation_failures=%lu poll_max_us=%lu touch_errors=%lu touch_overflows=%lu "
@@ -454,6 +457,7 @@ void print_stroke(const PendingStrokeReport& report) {
       static_cast<unsigned long>(report.revision.value),
       static_cast<unsigned long>(report.operation_count),
       static_cast<unsigned long>(report.sample_count), static_cast<long long>(report.append_us),
+      static_cast<long long>(report.append_max_us),
       static_cast<long long>(report.refresh.compose_us),
       static_cast<long long>(report.refresh.complete_us),
       static_cast<unsigned long>(report.metrics.samples),
@@ -590,7 +594,8 @@ void run_vector_v2_app() {
   VectorV2Presenter presenter(canvas, navigation, scheduler, display,
                               std::span(storage.frame, vector_v2::kOverviewPixels),
                               std::span(storage.region_scratch, kLiveRegionScratchPixels));
-  ChainedOperationBuilder builder(std::span(storage.input_samples, kInputSampleCapacity));
+  ChainedOperationBuilder builder(std::span(storage.input_samples, kInputSampleCapacity),
+                                  kInteractiveChunkSampleLimit);
   vector_v2::TileProducer producer(
       log, canvas,
       {.supertask_pixels = std::span(storage.producer_supertask, vector_v2::kTileProducerPixels),
@@ -709,6 +714,7 @@ void run_vector_v2_app() {
   std::optional<vector_v2::PixelRect> stroke_world_bounds;
   std::uint32_t stroke_chunks = 0U;
   std::int64_t stroke_append_us = 0;
+  std::int64_t stroke_append_max_us = 0;
   bool stroke_commit_failed = false;
   std::uint32_t lift_reports_dropped = 0U;
   PendingStrokeReport stroke_report{};
@@ -773,6 +779,7 @@ void run_vector_v2_app() {
           stroke_world_bounds.reset();
           stroke_chunks = 0U;
           stroke_append_us = 0;
+          stroke_append_max_us = 0;
           stroke_commit_failed = false;
           if (!builder.begin(tool, color, gesture_id, begin_point)) {
             print_stroke_rejected("begin", builder, begin_point);
@@ -806,9 +813,8 @@ void run_vector_v2_app() {
           ChainedOperationStatus add_status = builder.add(add_point);
           if (add_status == ChainedOperationStatus::kChunkReady) {
             const auto continued =
-                commit_ready_chunk(builder, log, canvas, workspace, presenter,
-                                   vector_v2::IncrementalPublicationScope::kOverviewOnly,
-                                   stroke_world_bounds, stroke_chunks, stroke_append_us);
+                commit_ready_chunk(builder, log, canvas, workspace, presenter, stroke_world_bounds,
+                                   stroke_chunks, stroke_append_us, stroke_append_max_us);
             add_status = continued.value_or(ChainedOperationStatus::kRejected);
             stroke_commit_failed = !continued.has_value();
           }
@@ -872,16 +878,11 @@ void run_vector_v2_app() {
         const std::int64_t builder_finish_started = esp_timer_get_time();
         ChainedOperationStatus finish_status = builder.finish(presenter.operation_point(last_ink));
         measured_lift.builder_finish_us = esp_timer_get_time() - builder_finish_started;
-        const bool chained_stroke =
-            stroke_chunks != 0U || finish_status == ChainedOperationStatus::kChunkReady;
-        const auto finish_publication_scope =
-            chained_stroke ? vector_v2::IncrementalPublicationScope::kOverviewOnly
-                           : vector_v2::IncrementalPublicationScope::kPriorityView;
         while (finish_status == ChainedOperationStatus::kChunkReady ||
                finish_status == ChainedOperationStatus::kFinalChunkReady) {
-          const auto continued = commit_ready_chunk(builder, log, canvas, workspace, presenter,
-                                                    finish_publication_scope, stroke_world_bounds,
-                                                    stroke_chunks, stroke_append_us);
+          const auto continued =
+              commit_ready_chunk(builder, log, canvas, workspace, presenter, stroke_world_bounds,
+                                 stroke_chunks, stroke_append_us, stroke_append_max_us);
           if (!continued.has_value()) {
             stroke_commit_failed = true;
             finish_status = ChainedOperationStatus::kRejected;
@@ -893,6 +894,7 @@ void run_vector_v2_app() {
         measured_lift.commit_failed = stroke_commit_failed;
         measured_lift.chunks = stroke_chunks;
         measured_lift.append_us = stroke_append_us;
+        measured_lift.append_max_us = stroke_append_max_us;
         if (stroke_world_bounds.has_value()) {
           measured_lift.refresh_level_bounds =
               vector_v2::operation_level_bounds(*stroke_world_bounds, presenter.zoom());
@@ -908,15 +910,10 @@ void run_vector_v2_app() {
         builder.cancel();
         ribbon.reset();
         const std::int64_t refresh_started = esp_timer_get_time();
-        // Chained strokes already painted exact live pixels into the retained
-        // framebuffer. Keep those pixels visible while invalidated detail refills
-        // cooperatively instead of flashing the overview fallback on lift.
         measured_lift.refresh =
-            stroke_world_bounds.has_value() && !chained_stroke
+            stroke_world_bounds.has_value()
                 ? presenter.refresh_region(measured_lift.refresh_level_bounds, chrome, finished_us)
-                : LivePresentationTiming{
-                      .frame_reused = chained_stroke,
-                      .passed = chained_stroke || !stroke_world_bounds.has_value()};
+                : LivePresentationTiming{};
         measured_lift.refresh_wall_us = esp_timer_get_time() - refresh_started;
         if (stroke_report.pending || lift_timing.pending) {
           ++lift_reports_dropped;
@@ -927,6 +924,7 @@ void run_vector_v2_app() {
             .operation_count = log.operation_count(),
             .sample_count = log.sample_count(),
             .append_us = measured_lift.append_us,
+            .append_max_us = measured_lift.append_max_us,
             .refresh = measured_lift.refresh,
             .metrics = live_metrics,
             .poll_max_us = poll_max_us,
