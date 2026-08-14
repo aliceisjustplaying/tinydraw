@@ -1,6 +1,6 @@
 # TinyDraw project state
 
-Last updated: 2026-08-13
+Last updated: 2026-08-14
 
 ## Resume point
 
@@ -57,13 +57,17 @@ The architecture works, but the product still needs substantial integration and
 performance work:
 
 - ordinary pan currently occupies roughly 46–50 ms end-to-end, around 20 FPS;
-- stroke completion blocked touch polling for about 127 ms median, 175 ms p95,
-  and 195 ms maximum during the aggressive glass test;
 - long 400% tours evict useful raw views from other zooms under global LRU;
 - the test UI opens zooms at `(0,0)` rather than preserving the user's focus;
-- 400% cold refinement remains visible;
 - anti-aliasing, persistence, Undo/Redo, real export, autosave, device lifecycle,
   and final UI are incomplete.
+
+Closed at `264b60e` (2026-08-14): intermediate long-stroke chunk commits now
+run in place at a measured 11.1 ms worst case against the deterministic
+worst-case gesture gate (previously 0.61–0.73 s, then ≈70 ms), and the 4×
+adversarial 400% cold-replay p95 dropped from 1.452 s to 0.675 s with every
+producer tick under 11 ms. See
+[`vector_v2/hardware-receipts/LONGSTROKE_COLDRENDER_INVESTIGATION_2026_08_14.md`](vector_v2/hardware-receipts/LONGSTROKE_COLDRENDER_INVESTIGATION_2026_08_14.md).
 
 These are product and optimization tasks, not evidence for another rewrite.
 

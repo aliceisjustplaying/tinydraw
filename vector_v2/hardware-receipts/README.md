@@ -4,6 +4,12 @@ These logs are immutable evidence captured from the physical ESP32-S3. Historica
 
 ## Current milestone evidence
 
+- [`LONGSTROKE_COLDRENDER_INVESTIGATION_2026_08_14.md`](LONGSTROKE_COLDRENDER_INVESTIGATION_2026_08_14.md) — measured root causes and closure for the 70 ms long-stroke commit stalls and the 1.45 s adversarial 400% cold replay; saturation-gated cold replay plus in-place interactive commits.
+- [`264b60e-cold-p95-20-runs.log`](264b60e-cold-p95-20-runs.log) — clean 20-reset distribution after both fixes: adversarial 400% p95 674,901 us (from 1,451,905), overlap −14..30%, every tick under 11 ms.
+- [`264b60e-full-gate.log`](264b60e-full-gate.log) — complete clean harness pass including the new deterministic long-gesture A/B gate (reference 33.2 ms vs in-place 11.1 ms worst chunk commit).
+- [`264b60e-inplace-phase-profile.log`](264b60e-inplace-phase-profile.log) — temporary phase instrumentation attributing the in-place commit cost (painting ~10 ms; everything else ~1.4 ms).
+- [`264b60e-chunk-sweep-experiment.log`](264b60e-chunk-sweep-experiment.log) — temporary chunk-size sweep (64/48/32 → 14.9/11.5/9.1 ms worst commit) behind the 48-sample choice.
+- [`264b60e-product-boot.log`](264b60e-product-boot.log) — product (non-harness) boot after dropping the staging workspace: live storage 4,842,144 bytes, largest free PSRAM block 3,473,408.
 - [`CORRECTNESS_CLOSURE_2026_08_14.md`](CORRECTNESS_CLOSURE_2026_08_14.md) — clean automated and physical closure for touch transitions, long-stroke chaining, pan seams, cache identity, memory reserve, and current measured latency debt.
 - [`26a05f5-correctness-closure-gate.log`](26a05f5-correctness-closure-gate.log) — complete clean harness pass, including export reserve and stack margin.
 - [`26a05f5-cold-p95-20-runs.log`](26a05f5-cold-p95-20-runs.log) — clean 20-reset adversarial, overlap, and seed-7 distribution.
