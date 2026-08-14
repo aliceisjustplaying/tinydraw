@@ -44,8 +44,10 @@ class OperationBuilder {
   [[nodiscard]] bool overflowed() const;
   [[nodiscard]] std::size_t sample_count() const;
   [[nodiscard]] OperationBuilderReject last_reject() const;
+  [[nodiscard]] std::optional<OperationAppend> collected() const;
 
-  [[nodiscard]] bool begin(OperationTool tool, std::uint16_t color, OperationPoint point);
+  [[nodiscard]] bool begin(OperationTool tool, std::uint16_t color, OperationPoint point,
+                           std::uint16_t gesture_id = 0);
   [[nodiscard]] bool add(OperationPoint point);
   [[nodiscard]] std::optional<OperationAppend> finish(OperationPoint point);
   void cancel();
@@ -56,6 +58,7 @@ class OperationBuilder {
   std::span<CompactOperationSample> storage_;
   OperationTool tool_ = OperationTool::kPen;
   std::uint16_t color_ = 0;
+  std::uint16_t gesture_id_ = 0;
   std::uint32_t started_us_ = 0;
   std::uint32_t previous_us_ = 0;
   std::size_t sample_count_ = 0;

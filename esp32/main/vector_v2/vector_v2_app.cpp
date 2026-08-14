@@ -18,6 +18,7 @@
 #endif
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
+#include "tinydraw/vector_v2/chained_operation_builder.h"
 #include "tinydraw/vector_v2/chrome.h"
 #include "tinydraw/vector_v2/incremental_document.h"
 #include "tinydraw/vector_v2/memory_layout.h"
@@ -31,6 +32,8 @@
 namespace tinydraw::esp32 {
 namespace {
 
+using vector_v2::ChainedOperationBuilder;
+using vector_v2::ChainedOperationStatus;
 using vector_v2::CompactOperationSample;
 using vector_v2::DisplayScheduler;
 using vector_v2::DisplayStrip;
@@ -39,7 +42,6 @@ using vector_v2::IncrementalDocumentWorkspace;
 using vector_v2::MaterializedCanvas;
 using vector_v2::MaterializedSlotStorage;
 using vector_v2::MaterializedUniformStorage;
-using vector_v2::OperationBuilder;
 using vector_v2::OperationLog;
 using vector_v2::OperationRecord;
 using vector_v2::OperationTool;
@@ -49,7 +51,7 @@ using vector_v2::ZoomLevel;
 
 constexpr std::uint32_t kExternalCaps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
 constexpr gpio_num_t kModeButton = GPIO_NUM_0;
-constexpr std::size_t kInputSampleCapacity = 1'024;
+constexpr std::size_t kInputSampleCapacity = 4'096;
 constexpr std::size_t kWorkspaceTileCapacity = vector_v2::kMaximumVisibleTiles;
 
 struct LiftBaselineTiming {
@@ -62,8 +64,9 @@ struct LiftBaselineTiming {
   vector_v2::PixelRect refresh_level_bounds{};
   std::int64_t stroke_logging_us = 0;
   LivePresentationTiming refresh{};
+  std::uint32_t chunks = 0;
   bool committed = false;
-  bool overflowed = false;
+  bool commit_failed = false;
   bool pending = false;
 };
 
@@ -160,11 +163,12 @@ struct PendingStrokeReport {
   LiveMetrics metrics{};
   std::uint32_t poll_max_us = 0;
   TouchSamplerMetrics touch{};
+  std::uint32_t chunks = 0;
   std::size_t free_psram = 0;
   std::size_t largest_psram = 0;
   bool authority_match = false;
   bool committed = false;
-  bool overflowed = false;
+  bool commit_failed = false;
   bool pending = false;
 };
 
@@ -261,7 +265,7 @@ const char* reject_name(vector_v2::OperationBuilderReject reject) {
   return "unknown";
 }
 
-void print_stroke_rejected(const char* site, const OperationBuilder& builder,
+void print_stroke_rejected(const char* site, const ChainedOperationBuilder& builder,
                            vector_v2::OperationPoint point) {
   std::printf(
       "TINYDRAW_STROKE_REJECTED site=%s reason=%s samples=%lu x=%.3f y=%.3f radius=%.5f "
@@ -270,6 +274,56 @@ void print_stroke_rejected(const char* site, const OperationBuilder& builder,
       static_cast<double>(point.world_x), static_cast<double>(point.world_y),
       static_cast<double>(point.radius), static_cast<unsigned long>(point.timestamp_us));
   std::fflush(stdout);
+}
+
+void include_bounds(std::optional<vector_v2::PixelRect>& accumulated, vector_v2::PixelRect bounds) {
+  if (!accumulated.has_value()) {
+    accumulated = bounds;
+    return;
+  }
+  accumulated->x0 = std::min(accumulated->x0, bounds.x0);
+  accumulated->y0 = std::min(accumulated->y0, bounds.y0);
+  accumulated->x1 = std::max(accumulated->x1, bounds.x1);
+  accumulated->y1 = std::max(accumulated->y1, bounds.y1);
+}
+
+std::optional<vector_v2::IncrementalAppendResult> commit_pending_chunk(
+    ChainedOperationBuilder& builder, OperationLog& log, MaterializedCanvas& canvas,
+    const IncrementalDocumentWorkspace& workspace, const VectorV2Presenter& presenter) {
+  const auto append = builder.pending_append();
+  if (!append.has_value()) {
+    return std::nullopt;
+  }
+  const vector_v2::ViewRequest priority_view{
+      .zoom = presenter.zoom(),
+      .level_pixels = {presenter.level_x(), presenter.level_y(),
+                       presenter.level_x() + vector_v2::kOverviewWidth,
+                       presenter.level_y() + vector_v2::kOverviewHeight},
+  };
+  return vector_v2::append_incrementally(
+      log, canvas, *append, workspace,
+      {.priority_view = presenter.zoom() == ZoomLevel::k25Percent
+                            ? std::optional<vector_v2::ViewRequest>{}
+                            : std::optional{priority_view},
+       .publication_scope = presenter.zoom() == ZoomLevel::k25Percent
+                                ? vector_v2::IncrementalPublicationScope::kAllMaterialized
+                                : vector_v2::IncrementalPublicationScope::kPriorityView});
+}
+
+std::optional<ChainedOperationStatus> commit_ready_chunk(
+    ChainedOperationBuilder& builder, OperationLog& log, MaterializedCanvas& canvas,
+    const IncrementalDocumentWorkspace& workspace, const VectorV2Presenter& presenter,
+    std::optional<vector_v2::PixelRect>& accumulated_bounds, std::uint32_t& chunks,
+    std::int64_t& append_us) {
+  const std::int64_t started_us = esp_timer_get_time();
+  const auto committed = commit_pending_chunk(builder, log, canvas, workspace, presenter);
+  append_us += esp_timer_get_time() - started_us;
+  if (!committed.has_value()) {
+    return std::nullopt;
+  }
+  include_bounds(accumulated_bounds, committed->affected_world_bounds);
+  ++chunks;
+  return builder.acknowledge_commit();
 }
 
 const char* zoom_name(ZoomLevel zoom) {
@@ -364,7 +418,8 @@ void print_lift_baseline(const LiftBaselineTiming& timing, std::int64_t poll_sta
       "refresh_first_submit_us=%lld refresh_first_complete_us=%lld "
       "refresh_transfer_wait_us=%lld stroke_logging_us=%lld "
       "detected_to_poll_start_us=%lld detected_to_poll_complete_us=%lld poll_read_us=%lld "
-      "unattributed_tail_us=%lld reports_dropped=%lu committed=%u refresh=%u overflow=%u\n",
+      "unattributed_tail_us=%lld reports_dropped=%lu chunks=%lu committed=%u refresh=%u "
+      "commit_failed=%u\n",
       static_cast<unsigned long>(timing.id), static_cast<long long>(timing.finish_preview_us),
       static_cast<long long>(timing.builder_finish_us), static_cast<long long>(timing.append_us),
       static_cast<long long>(timing.refresh_wall_us), timing.refresh_level_bounds.x0,
@@ -377,8 +432,8 @@ void print_lift_baseline(const LiftBaselineTiming& timing, std::int64_t poll_sta
       static_cast<long long>(poll_completed_us - timing.detected_us),
       static_cast<long long>(poll_completed_us - poll_started_us),
       static_cast<long long>(detected_to_poll_us - measured_phase_us),
-      static_cast<unsigned long>(reports_dropped), timing.committed, timing.refresh.passed,
-      timing.overflowed);
+      static_cast<unsigned long>(reports_dropped), static_cast<unsigned long>(timing.chunks),
+      timing.committed, timing.refresh.passed, timing.commit_failed);
 }
 
 void print_stroke(const PendingStrokeReport& report) {
@@ -388,7 +443,7 @@ void print_stroke(const PendingStrokeReport& report) {
       "read_submit_avg_us=%llu read_submit_max_us=%lu read_complete_avg_us=%llu "
       "read_complete_max_us=%lu submit_over_16ms=%lu complete_over_33ms=%lu "
       "presentation_failures=%lu poll_max_us=%lu touch_errors=%lu touch_overflows=%lu "
-      "touch_moves_coalesced=%lu touch_event_age_max_us=%lu free_psram=%lu "
+      "touch_moves_coalesced=%lu touch_event_age_max_us=%lu chunks=%lu free_psram=%lu "
       "largest_psram=%lu authority_match=%u\n",
       static_cast<unsigned long>(report.revision.value),
       static_cast<unsigned long>(report.operation_count),
@@ -412,7 +467,7 @@ void print_stroke(const PendingStrokeReport& report) {
       static_cast<unsigned long>(report.touch.queue_overflows),
       static_cast<unsigned long>(report.touch.moves_coalesced),
       static_cast<unsigned long>(report.touch.maximum_event_age_us),
-      static_cast<unsigned long>(report.free_psram),
+      static_cast<unsigned long>(report.chunks), static_cast<unsigned long>(report.free_psram),
       static_cast<unsigned long>(report.largest_psram), report.authority_match);
 }
 
@@ -525,7 +580,7 @@ void run_vector_v2_app() {
   VectorV2Presenter presenter(canvas, navigation, scheduler, display,
                               std::span(storage.frame, vector_v2::kOverviewPixels),
                               std::span(storage.region_scratch, kLiveRegionScratchPixels));
-  OperationBuilder builder(std::span(storage.input_samples, kInputSampleCapacity));
+  ChainedOperationBuilder builder(std::span(storage.input_samples, kInputSampleCapacity));
   vector_v2::TileProducer producer(
       log, canvas,
       {.supertask_pixels = std::span(storage.producer_supertask, vector_v2::kTileProducerPixels),
@@ -640,6 +695,11 @@ void run_vector_v2_app() {
   PendingFillPresentation pending_fill{};
   LiftBaselineTiming lift_timing{};
   std::uint32_t next_lift_id = 1U;
+  std::uint16_t next_gesture_id = 1U;
+  std::optional<vector_v2::PixelRect> stroke_world_bounds;
+  std::uint32_t stroke_chunks = 0U;
+  std::int64_t stroke_append_us = 0;
+  bool stroke_commit_failed = false;
   std::uint32_t lift_reports_dropped = 0U;
   PendingStrokeReport stroke_report{};
   std::uint8_t background_ticks = 0U;
@@ -696,7 +756,15 @@ void run_vector_v2_app() {
           const std::uint16_t color =
               tool == OperationTool::kEraser ? 0xFFFFU : vector_v2::selected_color(chrome);
           const vector_v2::OperationPoint begin_point = presenter.operation_point(last_ink);
-          if (!builder.begin(tool, color, begin_point)) {
+          const std::uint16_t gesture_id = next_gesture_id++;
+          if (next_gesture_id == 0U) {
+            next_gesture_id = 1U;
+          }
+          stroke_world_bounds.reset();
+          stroke_chunks = 0U;
+          stroke_append_us = 0;
+          stroke_commit_failed = false;
+          if (!builder.begin(tool, color, gesture_id, begin_point)) {
             print_stroke_rejected("begin", builder, begin_point);
             ink.end();
           } else {
@@ -725,11 +793,29 @@ void run_vector_v2_app() {
           last_ink =
               ink.update({.x = canvas_point->x, .y = canvas_point->y, .timestamp_us = event_us});
           const vector_v2::OperationPoint add_point = presenter.operation_point(last_ink);
-          if (!builder.add(add_point)) {
-            print_stroke_rejected("add", builder, add_point);
+          ChainedOperationStatus add_status = builder.add(add_point);
+          if (add_status == ChainedOperationStatus::kChunkReady) {
+            const auto continued =
+                commit_ready_chunk(builder, log, canvas, workspace, presenter, stroke_world_bounds,
+                                   stroke_chunks, stroke_append_us);
+            add_status = continued.value_or(ChainedOperationStatus::kRejected);
+            stroke_commit_failed = !continued.has_value();
+          }
+          if (add_status != ChainedOperationStatus::kAccepted) {
+            if (stroke_commit_failed) {
+              std::printf("TINYDRAW_STROKE_REJECTED site=commit reason=document_capacity\n");
+              std::fflush(stdout);
+            } else {
+              print_stroke_rejected("add", builder, add_point);
+            }
             builder.cancel();
             ribbon.reset();
             ink.end();
+            if (stroke_world_bounds.has_value()) {
+              static_cast<void>(presenter.refresh_region(
+                  vector_v2::operation_level_bounds(*stroke_world_bounds, presenter.zoom()), chrome,
+                  loop_us));
+            }
           } else {
             const std::uint16_t color = chrome.tool == vector_v2::ChromeTool::kErase
                                             ? 0xFFFFU
@@ -773,37 +859,41 @@ void run_vector_v2_app() {
         measured_lift.finish_preview_us = esp_timer_get_time() - finish_preview_started;
 
         const std::int64_t builder_finish_started = esp_timer_get_time();
-        const auto append = builder.finish(presenter.operation_point(last_ink));
+        ChainedOperationStatus finish_status = builder.finish(presenter.operation_point(last_ink));
         measured_lift.builder_finish_us = esp_timer_get_time() - builder_finish_started;
-        if (append.has_value()) {
-          const std::int64_t append_started = esp_timer_get_time();
-          const vector_v2::ViewRequest priority_view{
-              .zoom = presenter.zoom(),
-              .level_pixels = {presenter.level_x(), presenter.level_y(),
-                               presenter.level_x() + vector_v2::kOverviewWidth,
-                               presenter.level_y() + vector_v2::kOverviewHeight},
-          };
-          const auto committed = vector_v2::append_incrementally(
-              log, canvas, *append, workspace,
-              {.priority_view = presenter.zoom() == ZoomLevel::k25Percent
-                                    ? std::optional<vector_v2::ViewRequest>{}
-                                    : std::optional{priority_view},
-               .publication_scope = presenter.zoom() == ZoomLevel::k25Percent
-                                        ? vector_v2::IncrementalPublicationScope::kAllMaterialized
-                                        : vector_v2::IncrementalPublicationScope::kPriorityView});
-          measured_lift.committed = committed.has_value();
-          if (committed.has_value()) {
-            measured_lift.refresh_level_bounds = vector_v2::operation_level_bounds(
-                committed->affected_world_bounds, presenter.zoom());
+        while (finish_status == ChainedOperationStatus::kChunkReady ||
+               finish_status == ChainedOperationStatus::kFinalChunkReady) {
+          const auto continued =
+              commit_ready_chunk(builder, log, canvas, workspace, presenter, stroke_world_bounds,
+                                 stroke_chunks, stroke_append_us);
+          if (!continued.has_value()) {
+            stroke_commit_failed = true;
+            finish_status = ChainedOperationStatus::kRejected;
+            break;
           }
-          measured_lift.append_us = esp_timer_get_time() - append_started;
+          finish_status = *continued;
         }
-        measured_lift.overflowed = builder.overflowed();
+        measured_lift.committed = finish_status == ChainedOperationStatus::kComplete;
+        measured_lift.commit_failed = stroke_commit_failed;
+        measured_lift.chunks = stroke_chunks;
+        measured_lift.append_us = stroke_append_us;
+        if (stroke_world_bounds.has_value()) {
+          measured_lift.refresh_level_bounds =
+              vector_v2::operation_level_bounds(*stroke_world_bounds, presenter.zoom());
+        }
+        if (finish_status == ChainedOperationStatus::kRejected) {
+          if (stroke_commit_failed) {
+            std::printf("TINYDRAW_STROKE_REJECTED site=commit reason=document_capacity\n");
+            std::fflush(stdout);
+          } else {
+            print_stroke_rejected("finish", builder, presenter.operation_point(last_ink));
+          }
+        }
         builder.cancel();
         ribbon.reset();
         const std::int64_t refresh_started = esp_timer_get_time();
         measured_lift.refresh =
-            measured_lift.committed
+            stroke_world_bounds.has_value()
                 ? presenter.refresh_region(measured_lift.refresh_level_bounds, chrome, finished_us)
                 : LivePresentationTiming{};
         measured_lift.refresh_wall_us = esp_timer_get_time() - refresh_started;
@@ -820,11 +910,12 @@ void run_vector_v2_app() {
             .metrics = live_metrics,
             .poll_max_us = poll_max_us,
             .touch = touch_metrics,
+            .chunks = measured_lift.chunks,
             .free_psram = heap_caps_get_free_size(kExternalCaps),
             .largest_psram = heap_caps_get_largest_free_block(kExternalCaps),
             .authority_match = log.current_revision() == canvas.current_revision(),
             .committed = measured_lift.committed,
-            .overflowed = measured_lift.overflowed,
+            .commit_failed = measured_lift.commit_failed,
             .pending = true,
         };
         measured_lift.pending = true;
@@ -929,8 +1020,9 @@ void run_vector_v2_app() {
     }
     if (lift_timing.pending && stroke_report.pending && idle_before_poll && !pressed) {
       print_stroke(stroke_report);
-      std::printf("TINYDRAW_LIVE_STROKE_DONE committed=%u refresh=%u overflow=%u\n",
-                  stroke_report.committed, stroke_report.refresh.passed, stroke_report.overflowed);
+      std::printf("TINYDRAW_LIVE_STROKE_DONE committed=%u refresh=%u commit_failed=%u\n",
+                  stroke_report.committed, stroke_report.refresh.passed,
+                  stroke_report.commit_failed);
       print_lift_baseline(lift_timing, poll_started_us, poll_completed_us, lift_reports_dropped);
       std::fflush(stdout);
       lift_reports_dropped = 0U;

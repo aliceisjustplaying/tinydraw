@@ -35,7 +35,7 @@ struct OperationRecord {
   std::uint16_t bounds_y1 = 0;
   OperationTool tool = OperationTool::kPen;
   std::uint8_t flags = 0;
-  std::uint16_t reserved = 0;
+  std::uint16_t gesture_id = 0;
 };
 
 struct OperationIdentity {
@@ -47,6 +47,7 @@ struct OperationIdentity {
 struct OperationAppend {
   OperationTool tool = OperationTool::kPen;
   std::uint16_t color = 0;
+  std::uint16_t gesture_id = 0;
   std::span<const CompactOperationSample> samples{};
 };
 

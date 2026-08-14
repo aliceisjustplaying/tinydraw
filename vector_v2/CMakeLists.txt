@@ -22,6 +22,7 @@ endif()
 if(TINYDRAW_BUILD_TESTS)
   add_executable(tinydraw_vector_v2_tests
     tests/test_main.cpp
+    tests/chained_operation_builder_test.cpp
     tests/chrome_test.cpp
     tests/display_scheduler_test.cpp
     tests/frame_scroller_test.cpp

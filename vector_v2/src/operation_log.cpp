@@ -123,6 +123,7 @@ std::optional<PreparedAppend> OperationLog::prepare(const OperationAppend& appen
                        .operation_index = static_cast<std::uint32_t>(operation_count_)},
           .tool = append_request.tool,
           .color = append_request.color,
+          .gesture_id = append_request.gesture_id,
           .world_bounds = *calculated_bounds,
           .samples = samples_.subspan(sample_count_, pending_sample_count_),
       },
@@ -143,6 +144,7 @@ void OperationLog::publish_prepared(const PreparedAppend& prepared) {
       .bounds_x1 = static_cast<std::uint16_t>(bounds.x1),
       .bounds_y1 = static_cast<std::uint16_t>(bounds.y1),
       .tool = prepared.operation_.tool,
+      .gesture_id = prepared.operation_.gesture_id,
   };
   sample_count_ += pending_sample_count_;
   ++operation_count_;
@@ -181,6 +183,7 @@ std::optional<StoredOperation> OperationLog::operation(std::size_t index) const 
                    .operation_index = static_cast<std::uint32_t>(index)},
       .tool = record.tool,
       .color = record.color,
+      .gesture_id = record.gesture_id,
       .world_bounds = {.x0 = record.bounds_x0,
                        .y0 = record.bounds_y0,
                        .x1 = record.bounds_x1,
