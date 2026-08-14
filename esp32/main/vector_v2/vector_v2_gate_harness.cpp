@@ -222,18 +222,17 @@ bool run_tile_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& produc
 
 bool run_paced_cold_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
                          MaterializedCanvas& canvas, PhysicalTouch& touch,
-                         const vector_v2::ChromeState& chrome) {
-  constexpr int kUnalignedOrigin = vector_v2::kTileWidth - 1;
+                         const vector_v2::ChromeState& chrome, ZoomLevel zoom, int level_x,
+                         int level_y, const char* corpus, std::int64_t maximum_wall_us) {
   if (!canvas.discard_tiles()) {
     return false;
   }
-  const auto fallback = presenter.set_view(ZoomLevel::k400Percent, kUnalignedOrigin,
-                                           kUnalignedOrigin, chrome, now_us());
+  const auto fallback = presenter.set_view(zoom, level_x, level_y, chrome, now_us());
   if (!fallback.passed) {
     return false;
   }
   const vector_v2::ViewRequest view{
-      .zoom = ZoomLevel::k400Percent,
+      .zoom = zoom,
       .level_pixels = {presenter.level_x(), presenter.level_y(),
                        presenter.level_x() + vector_v2::kOverviewWidth,
                        presenter.level_y() + vector_v2::kOverviewHeight},
@@ -284,16 +283,74 @@ bool run_paced_cold_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& 
   }
   const std::int64_t wall_us = esp_timer_get_time() - started;
   const std::int64_t pacing_us = wall_us - compute_us - present_us - touch_us;
-  const bool passed = wall_us < 2'000'000 && touch_errors == 0U;
+  const bool passed = wall_us < maximum_wall_us && touch_errors == 0U;
   std::printf(
-      "TINYDRAW_GATE1_PACED_COLD zoom=400 x=%d y=%d steps=%lu tiles=%lu compute_us=%lld "
-      "present_us=%lld touch_us=%lld pacing_us=%lld wall_us=%lld max_tick_us=%lld "
-      "touch_errors=%lu pass=%u\n",
-      presenter.level_x(), presenter.level_y(), static_cast<unsigned long>(steps),
-      static_cast<unsigned long>(tiles), static_cast<long long>(compute_us),
-      static_cast<long long>(present_us), static_cast<long long>(touch_us),
-      static_cast<long long>(pacing_us), static_cast<long long>(wall_us),
-      static_cast<long long>(maximum_tick_us), static_cast<unsigned long>(touch_errors), passed);
+      "TINYDRAW_GATE1_PACED_COLD corpus=%s zoom=%s x=%d y=%d steps=%lu tiles=%lu "
+      "compute_us=%lld present_us=%lld touch_us=%lld pacing_us=%lld wall_us=%lld "
+      "max_tick_us=%lld touch_errors=%lu pass=%u\n",
+      corpus, zoom_name(zoom), presenter.level_x(), presenter.level_y(),
+      static_cast<unsigned long>(steps), static_cast<unsigned long>(tiles),
+      static_cast<long long>(compute_us), static_cast<long long>(present_us),
+      static_cast<long long>(touch_us), static_cast<long long>(pacing_us),
+      static_cast<long long>(wall_us), static_cast<long long>(maximum_tick_us),
+      static_cast<unsigned long>(touch_errors), passed);
+  return passed;
+}
+
+bool append_overlapping_scribble(OperationLog& log, MaterializedCanvas& canvas,
+                                 const IncrementalDocumentWorkspace& workspace) {
+  constexpr std::size_t kStrokeCount = 8;
+  constexpr std::size_t kSamplesPerStroke = 150;
+  constexpr std::uint16_t kRadius256 = 80U * 256U;
+  std::array<CompactOperationSample, kSamplesPerStroke> samples{};
+  for (std::size_t stroke = 0; stroke < kStrokeCount; ++stroke) {
+    for (std::size_t index = 0; index < kSamplesPerStroke; ++index) {
+      const std::size_t phase = (index + stroke * 7U) % 64U;
+      const std::size_t triangle = phase <= 32U ? phase : 64U - phase;
+      const std::size_t x = 64U + index * static_cast<std::size_t>(vector_v2::kWorldWidth - 128) /
+                                      (kSamplesPerStroke - 1U);
+      const std::size_t y = 320U + triangle * 32U + stroke * 3U;
+      samples[index] = {
+          .x_quarter = static_cast<std::uint16_t>(x * 4U),
+          .y_quarter = static_cast<std::uint16_t>(y * 4U),
+          .radius_256 = kRadius256,
+          .elapsed_ms = static_cast<std::uint16_t>(index * 8U),
+      };
+    }
+    if (!vector_v2::append_incrementally(
+             log, canvas,
+             {.tool = OperationTool::kPen,
+              .color = static_cast<std::uint16_t>(0x001FU + stroke * 0x111U),
+              .samples = samples},
+             workspace)
+             .has_value()) {
+      return false;
+    }
+  }
+  std::printf("TINYDRAW_OVERLAP_WORKLOAD operations=%lu samples=%lu radius_world=80\n",
+              static_cast<unsigned long>(log.operation_count()),
+              static_cast<unsigned long>(log.sample_count()));
+  return true;
+}
+
+bool run_overlap_cold_gates(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
+                            MaterializedCanvas& canvas, PhysicalTouch& touch,
+                            const vector_v2::ChromeState& chrome) {
+  constexpr std::array zooms{ZoomLevel::k50Percent, ZoomLevel::k100Percent, ZoomLevel::k200Percent,
+                             ZoomLevel::k400Percent};
+  bool passed = true;
+  for (const ZoomLevel zoom : zooms) {
+    const int percent = vector_v2::zoom_percent(zoom);
+    const int level_width = vector_v2::kWorldWidth * percent / 100;
+    const int level_height = vector_v2::kWorldHeight * percent / 100;
+    const int x = std::clamp(level_width / 2 - vector_v2::kOverviewWidth / 2 + 31, 0,
+                             level_width - vector_v2::kOverviewWidth);
+    const int y = std::clamp(level_height / 2 - vector_v2::kOverviewHeight / 2 + 31, 0,
+                             level_height - vector_v2::kOverviewHeight);
+    passed = run_paced_cold_gate(presenter, producer, canvas, touch, chrome, zoom, x, y, "overlap",
+                                 1'000'000) &&
+             passed;
+  }
   return passed;
 }
 
@@ -679,9 +736,19 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
                                                         ZoomLevel::k100Percent);
   const bool stress_400 =
       stress_100 && run_tile_gate(presenter, producer, log, canvas, chrome, ZoomLevel::k400Percent);
+  const DocumentRevision overlap_baseline{canvas.current_revision().value + 1U};
+  const bool reset_for_overlap =
+      stress_400 &&
+      vector_v2::restore_document_snapshot(log, canvas, overlap_baseline, blank_snapshot) &&
+      producer.reset_uniform_baseline(overlap_baseline);
+  const bool overlap_ready =
+      reset_for_overlap && append_overlapping_scribble(log, canvas, workspace);
+  const bool overlap_cold =
+      overlap_ready && run_overlap_cold_gates(presenter, producer, canvas, touch, chrome);
+
   const DocumentRevision realistic_baseline{canvas.current_revision().value + 1U};
   const bool reset_for_realistic =
-      stress_400 &&
+      overlap_ready &&
       vector_v2::restore_document_snapshot(log, canvas, realistic_baseline, blank_snapshot) &&
       producer.reset_uniform_baseline(realistic_baseline);
 
@@ -707,8 +774,11 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
 #elif defined(TINYDRAW_VECTOR_V2_TEARING_PROBE)
   return workload_ready && run_tearing_probe(presenter, chrome);
 #else
+  constexpr int kUnalignedOrigin = vector_v2::kTileWidth - 1;
   const bool paced_cold =
-      workload_ready && run_paced_cold_gate(presenter, producer, canvas, touch, chrome);
+      workload_ready &&
+      run_paced_cold_gate(presenter, producer, canvas, touch, chrome, ZoomLevel::k400Percent,
+                          kUnalignedOrigin, kUnalignedOrigin, "seed7", 2'000'000);
   const bool gate_100 =
       paced_cold && run_tile_gate(presenter, producer, log, canvas, chrome, ZoomLevel::k100Percent);
   const bool pan_100 =
@@ -725,13 +795,14 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   const bool export_reserve = full_world_cache && verify_export_reserve();
   const auto return_overview = presenter.set_view(ZoomLevel::k25Percent, 0, 0, chrome, now_us());
   std::printf(
-      "TINYDRAW_GATE1_AUTOMATED_DONE stress=%u stress_100=%u stress_400=%u workload=%u "
-      "paced_cold=%u hard_100=%u hard_400=%u pan_100=%u pan_400=%u draw_fill=%u cache=%u "
-      "full_world_cache=%u export_reserve=%u return=%u ssaa_receipt=yellow\n",
-      stress_ready, stress_100, stress_400, workload_ready, paced_cold, gate_100, gate_400, pan_100,
-      pan_400, draw_fill, cache_retention, full_world_cache, export_reserve,
-      return_overview.passed);
-  return return_overview.passed && export_reserve;
+      "TINYDRAW_GATE1_AUTOMATED_DONE stress=%u stress_100=%u stress_400=%u overlap_ready=%u "
+      "overlap_cold=%u workload=%u paced_cold=%u hard_100=%u hard_400=%u pan_100=%u "
+      "pan_400=%u draw_fill=%u cache=%u full_world_cache=%u export_reserve=%u return=%u "
+      "ssaa_receipt=yellow\n",
+      stress_ready, stress_100, stress_400, overlap_ready, overlap_cold, workload_ready, paced_cold,
+      gate_100, gate_400, pan_100, pan_400, draw_fill, cache_retention, full_world_cache,
+      export_reserve, return_overview.passed);
+  return return_overview.passed && export_reserve && overlap_cold;
 #endif
 }
 
