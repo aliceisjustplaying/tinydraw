@@ -73,6 +73,9 @@ class VectorV2Presenter {
                     std::span<std::uint16_t> frame_pixels, std::span<std::uint16_t> region_pixels);
 
   [[nodiscard]] bool ready() const;
+  // Read-only transport telemetry (prepare/staging counters) for gates that
+  // attribute presentation cost without owning the panel reference.
+  [[nodiscard]] const Co5300PanelTransport& display() const { return display_; }
   [[nodiscard]] vector_v2::ZoomLevel zoom() const;
   [[nodiscard]] int level_x() const;
   [[nodiscard]] int level_y() const;

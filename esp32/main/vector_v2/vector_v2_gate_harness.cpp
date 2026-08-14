@@ -1279,6 +1279,181 @@ bool verify_pan_adapter(VectorV2Presenter& presenter, vector_v2::TileProducer& p
          pan.first_complete_us < 60'000;
 }
 
+// Scripted warm-pan drag attribution. Every microsecond of a cached pan frame
+// is accounted: PSRAM scroll, exposed-strip compose, tear wait, byte-swap
+// staging (prepare), staging-slot waits, and physical completion. The pass
+// bound is correctness (reuse + presentation success); timing bounds live in
+// the single-frame pan gate until the optimized distribution is measured.
+struct PanSequenceFrame {
+  std::int64_t scroll_us = 0;
+  std::int64_t exposed_us = 0;
+  std::int64_t tear_wait_us = 0;
+  std::int64_t present_us = 0;
+  std::int64_t prepare_us = 0;
+  std::int64_t staging_us = 0;
+  std::int64_t first_submit_us = 0;
+  std::int64_t first_complete_us = 0;
+  std::int64_t frame_us = 0;
+  int delta_x = 0;
+  int delta_y = 0;
+  bool reused = false;
+  bool tear_synchronized = false;
+  bool passed = false;
+};
+
+constexpr std::size_t kPanSequenceTypicalFrames = 16U;
+constexpr std::size_t kPanSequenceFastFrames = 8U;
+constexpr std::size_t kPanSequenceFrames = kPanSequenceTypicalFrames + kPanSequenceFastFrames;
+
+std::int64_t pan_sequence_percentile(std::span<const std::int64_t> sorted, int percent) {
+  if (sorted.empty()) {
+    return 0;
+  }
+  const std::size_t rank = (sorted.size() * static_cast<std::size_t>(percent) + 99U) / 100U;
+  return sorted[std::min(sorted.size() - 1U, rank == 0U ? 0U : rank - 1U)];
+}
+
+bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
+                           const vector_v2::ChromeState& chrome, ZoomLevel zoom) {
+  // 16 typical forward steps, then 4 fast forward and 4 fast backward steps.
+  // The out-and-back fast leg keeps the swept footprint at roughly 17x15
+  // tile identities so the 320-slot pool never evicts the sequence's own
+  // tiles (a one-way fast leg at 400% needs ~21x19 mostly-raw identities and
+  // loses reuse on the earliest origins), and it exercises exposed-strip
+  // composition on both leading edges.
+  const auto step_delta = [](std::size_t step) {
+    if (step < kPanSequenceTypicalFrames) {
+      return vector_v2::NavigationPoint{24, 18};
+    }
+    return step < kPanSequenceTypicalFrames + kPanSequenceFastFrames / 2U
+               ? vector_v2::NavigationPoint{72, 54}
+               : vector_v2::NavigationPoint{-72, -54};
+  };
+  const auto prewarm = [&](int x, int y) {
+    const vector_v2::ViewRequest view{
+        .zoom = zoom,
+        .level_pixels = {x, y, x + vector_v2::kOverviewWidth, y + vector_v2::kOverviewHeight},
+    };
+    while (true) {
+      const auto remaining = producer.visible_tiles_remaining(view);
+      if (!remaining.has_value()) {
+        return false;
+      }
+      if (*remaining == 0U) {
+        return true;
+      }
+      if (!producer.produce_next(view).has_value()) {
+        return false;
+      }
+    }
+  };
+  int warm_x = 0;
+  int warm_y = 0;
+  if (!prewarm(warm_x, warm_y)) {
+    return false;
+  }
+  for (std::size_t step = 0; step < kPanSequenceFrames; ++step) {
+    warm_x += step_delta(step).x;
+    warm_y += step_delta(step).y;
+    if (!prewarm(warm_x, warm_y)) {
+      return false;
+    }
+  }
+  auto frames = allocate_external<PanSequenceFrame>(kPanSequenceFrames);
+  if (frames == nullptr) {
+    return false;
+  }
+  const auto setup = presenter.set_view(zoom, 0, 0, chrome, now_us());
+  if (!setup.passed) {
+    return false;
+  }
+  bool all_passed = true;
+  bool all_reused = true;
+  for (std::size_t step = 0; step < kPanSequenceFrames; ++step) {
+    const vector_v2::NavigationPoint delta = step_delta(step);
+    const int from_x = presenter.level_x();
+    const int from_y = presenter.level_y();
+    const std::int64_t prepare_before = presenter.display().prepare_us();
+    const std::int64_t staging_before = presenter.display().transfer_us();
+    const std::int64_t frame_started = esp_timer_get_time();
+    const auto timing = presenter.pan_from(
+        from_x, from_y, {300.0F, 300.0F},
+        {300.0F - static_cast<float>(delta.x), 300.0F - static_cast<float>(delta.y)}, chrome,
+        now_us());
+    const std::int64_t frame_us = esp_timer_get_time() - frame_started;
+    frames.get()[step] = {
+        .scroll_us = timing.scroll_us,
+        .exposed_us = timing.exposed_compose_us,
+        .tear_wait_us = timing.tear_wait_us,
+        .present_us = timing.complete_us,
+        .prepare_us = presenter.display().prepare_us() - prepare_before,
+        .staging_us = presenter.display().transfer_us() - staging_before,
+        .first_submit_us = timing.first_submit_us,
+        .first_complete_us = timing.first_complete_us,
+        .frame_us = frame_us,
+        .delta_x = delta.x,
+        .delta_y = delta.y,
+        .reused = timing.frame_reused,
+        .tear_synchronized = timing.tear_synchronized,
+        .passed = timing.passed,
+    };
+    all_passed = all_passed && timing.passed;
+    all_reused = all_reused && timing.frame_reused;
+  }
+  std::array<std::int64_t, kPanSequenceFrames> sorted_frame{};
+  std::array<std::int64_t, kPanSequenceFrames> sorted_complete{};
+  PanSequenceFrame totals{};
+  for (std::size_t step = 0; step < kPanSequenceFrames; ++step) {
+    const PanSequenceFrame& frame = frames.get()[step];
+    std::printf(
+        "TINYDRAW_PANSEQ_FRAME zoom=%s step=%u dx=%d dy=%d scroll_us=%lld "
+        "exposed_compose_us=%lld tear_wait_us=%lld present_us=%lld prepare_us=%lld "
+        "staging_us=%lld event_submit_us=%lld event_complete_us=%lld frame_us=%lld "
+        "tear_sync=%u frame_reused=%u pass=%u\n",
+        zoom_name(zoom), static_cast<unsigned>(step), frame.delta_x, frame.delta_y,
+        static_cast<long long>(frame.scroll_us), static_cast<long long>(frame.exposed_us),
+        static_cast<long long>(frame.tear_wait_us), static_cast<long long>(frame.present_us),
+        static_cast<long long>(frame.prepare_us), static_cast<long long>(frame.staging_us),
+        static_cast<long long>(frame.first_submit_us),
+        static_cast<long long>(frame.first_complete_us), static_cast<long long>(frame.frame_us),
+        frame.tear_synchronized, frame.reused, frame.passed);
+    sorted_frame[step] = frame.frame_us;
+    sorted_complete[step] = frame.first_complete_us;
+    totals.scroll_us += frame.scroll_us;
+    totals.exposed_us += frame.exposed_us;
+    totals.tear_wait_us += frame.tear_wait_us;
+    totals.present_us += frame.present_us;
+    totals.prepare_us += frame.prepare_us;
+    totals.staging_us += frame.staging_us;
+    totals.frame_us += frame.frame_us;
+  }
+  std::sort(sorted_frame.begin(), sorted_frame.end());
+  std::sort(sorted_complete.begin(), sorted_complete.end());
+  constexpr auto kFrames = static_cast<std::int64_t>(kPanSequenceFrames);
+  const bool pass = all_passed && all_reused;
+  std::printf(
+      "TINYDRAW_GATE1_PANSEQ zoom=%s frames=%u scroll_avg_us=%lld exposed_avg_us=%lld "
+      "tear_wait_avg_us=%lld present_avg_us=%lld prepare_avg_us=%lld staging_avg_us=%lld "
+      "frame_avg_us=%lld frame_p50_us=%lld frame_p95_us=%lld frame_max_us=%lld "
+      "complete_p50_us=%lld complete_p95_us=%lld complete_max_us=%lld all_reused=%u pass=%u\n",
+      zoom_name(zoom), static_cast<unsigned>(kPanSequenceFrames),
+      static_cast<long long>(totals.scroll_us / kFrames),
+      static_cast<long long>(totals.exposed_us / kFrames),
+      static_cast<long long>(totals.tear_wait_us / kFrames),
+      static_cast<long long>(totals.present_us / kFrames),
+      static_cast<long long>(totals.prepare_us / kFrames),
+      static_cast<long long>(totals.staging_us / kFrames),
+      static_cast<long long>(totals.frame_us / kFrames),
+      static_cast<long long>(pan_sequence_percentile(sorted_frame, 50)),
+      static_cast<long long>(pan_sequence_percentile(sorted_frame, 95)),
+      static_cast<long long>(sorted_frame.back()),
+      static_cast<long long>(pan_sequence_percentile(sorted_complete, 50)),
+      static_cast<long long>(pan_sequence_percentile(sorted_complete, 95)),
+      static_cast<long long>(sorted_complete.back()), all_reused, pass);
+  std::fflush(stdout);
+  return pass;
+}
+
 bool run_cache_retention_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
                               MaterializedCanvas& canvas, const vector_v2::ChromeState& chrome) {
   constexpr std::array zooms{
@@ -1589,8 +1764,12 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
       pan_100 && run_tile_gate(presenter, producer, log, canvas, chrome, ZoomLevel::k400Percent);
   const bool pan_400 =
       gate_400 && verify_pan_adapter(presenter, producer, chrome, ZoomLevel::k400Percent);
-  const bool draw_fill = pan_400 && run_draw_while_fill_gate(presenter, producer, log, canvas,
-                                                             chrome, workspace, conversion_storage);
+  const bool pan_sequence =
+      pan_400 && run_pan_sequence_gate(presenter, producer, chrome, ZoomLevel::k100Percent) &&
+      run_pan_sequence_gate(presenter, producer, chrome, ZoomLevel::k400Percent);
+  const bool draw_fill =
+      pan_sequence && run_draw_while_fill_gate(presenter, producer, log, canvas, chrome, workspace,
+                                               conversion_storage);
   // Cache gates run against the rich seed-7 document; the long-gesture gate
   // resets the document and therefore runs after them.
   const bool cache_retention =
@@ -1616,13 +1795,13 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
       "TINYDRAW_GATE1_AUTOMATED_DONE stress=%u stress_100=%u stress_400=%u overlap_ready=%u "
       "overlap_cold=%u adversarial_ready=%u adversarial_cold=%u workload=%u paced_cold=%u "
       "hard_100=%u hard_400=%u pan_100=%u "
-      "pan_400=%u live_overlay=%u draw_fill=%u cache=%u full_world_cache=%u cache_tour=%u "
-      "mixed_draw=%u long_gesture=%u "
+      "pan_400=%u pan_seq=%u live_overlay=%u draw_fill=%u cache=%u full_world_cache=%u "
+      "cache_tour=%u mixed_draw=%u long_gesture=%u "
       "export_encode=%u export_reserve=%u return=%u ssaa_receipt=yellow\n",
       stress_ready, stress_100, stress_400, overlap_ready, overlap_cold, adversarial_ready,
       adversarial_cold, workload_ready, paced_cold, gate_100, gate_400, pan_100, pan_400,
-      live_overlay, draw_fill, cache_retention, full_world_cache, cache_tour, mixed_draw,
-      long_gesture, export_encode, export_reserve, return_overview.passed);
+      pan_sequence, live_overlay, draw_fill, cache_retention, full_world_cache, cache_tour,
+      mixed_draw, long_gesture, export_encode, export_reserve, return_overview.passed);
   return return_overview.passed && export_reserve && overlap_cold && adversarial_cold;
 #endif
 }
