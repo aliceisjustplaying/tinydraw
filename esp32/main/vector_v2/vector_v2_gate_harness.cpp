@@ -934,6 +934,309 @@ bool run_cache_tour_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& 
   return passed;
 }
 
+// ---- Mixed-zoom drawing gate ----
+//
+// Deterministic reproduction of the manual-session drawing regression: a
+// helpfully warm multi-zoom cache makes every committed chunk eagerly mutate
+// resident raw tiles at every zoom, so interactive drawing gets slower the
+// better the cache is doing its job. The gate warms four tiled-zoom viewports
+// over the same dense seed-7 world corner, then draws and erases a
+// boustrophedon XL gesture at every zoom through the product chunk policy and
+// the product in-place commit call. Each 48-sample chunk spans a full
+// viewport-width band, maximizing per-chunk cross-zoom tile fanout. The
+// product alarm is 15 ms per chunk; the target is 10-12 ms.
+
+struct MixedDrawStrokeStats {
+  std::size_t chunks = 0;
+  std::int64_t append_total_us = 0;
+  std::int64_t append_max_us = 0;
+  std::size_t affected_tiles = 0;
+  std::size_t published_tiles = 0;
+  std::size_t fallback_tiles = 0;
+  bool committed = false;
+  bool authority = false;
+  bool refresh_passed = false;
+};
+
+const char* tool_name(OperationTool tool) {
+  return tool == OperationTool::kEraser ? "eraser" : "pen";
+}
+
+// Every mixed-draw viewport is anchored at world (48, 48) so each zoom's
+// resident footprint overlaps every stroke's world bounds. 25% is the
+// complete overview and keeps its native origin.
+int mixed_draw_level_origin(ZoomLevel zoom) {
+  return zoom == ZoomLevel::k25Percent ? 0 : 48 * vector_v2::zoom_percent(zoom) / 100;
+}
+
+vector_v2::ViewRequest mixed_draw_view(ZoomLevel zoom) {
+  const int origin = mixed_draw_level_origin(zoom);
+  return {
+      .zoom = zoom,
+      .level_pixels = {origin, origin, origin + vector_v2::kOverviewWidth,
+                       origin + vector_v2::kOverviewHeight},
+  };
+}
+
+bool fill_view_to_completion(vector_v2::TileProducer& producer, const vector_v2::ViewRequest& view,
+                             std::size_t& tiles, std::int64_t& wall_us) {
+  const std::int64_t started = esp_timer_get_time();
+  for (std::size_t step_index = 0; step_index < 100'000U; ++step_index) {
+    const auto step = producer.produce_next(view);
+    if (!step.has_value()) {
+      return false;
+    }
+    tiles += step->tiles_published;
+    if (step->complete) {
+      wall_us += esp_timer_get_time() - started;
+      return true;
+    }
+  }
+  return false;
+}
+
+struct MixedDrawCensus {
+  std::size_t raw = 0;
+  std::size_t uniform = 0;
+};
+
+// lookup is const and does not touch recency, so the census cannot perturb
+// eviction order.
+MixedDrawCensus census_zoom_tiles(const MaterializedCanvas& canvas, ZoomLevel zoom) {
+  MixedDrawCensus census;
+  const vector_v2::TileGrid grid = vector_v2::tile_grid(zoom);
+  for (int row = 0; row < grid.rows; ++row) {
+    for (int column = 0; column < grid.columns; ++column) {
+      const auto source = canvas.lookup(
+          {zoom, static_cast<std::uint16_t>(column), static_cast<std::uint16_t>(row)});
+      if (!source.has_value()) {
+        continue;
+      }
+      if (source->kind == vector_v2::SourceKind::kTileSlot) {
+        ++census.raw;
+      } else if (source->kind == vector_v2::SourceKind::kUniform) {
+        ++census.uniform;
+      }
+    }
+  }
+  return census;
+}
+
+bool run_mixed_zoom_stroke(VectorV2Presenter& presenter, OperationLog& log,
+                           MaterializedCanvas& canvas, const vector_v2::ChromeState& chrome,
+                           const vector_v2::InPlaceAppendWorkspace& workspace,
+                           std::span<CompactOperationSample> builder_storage, ZoomLevel zoom,
+                           OperationTool tool, std::uint16_t color, std::uint16_t gesture_id,
+                           MixedDrawStrokeStats& stats) {
+  const int origin = mixed_draw_level_origin(zoom);
+  if (!presenter.set_view(zoom, origin, origin, chrome, now_us()).passed) {
+    return false;
+  }
+  const auto view = mixed_draw_view(zoom);
+  // Mirror the product coordinator exactly: no priority view at 25%.
+  const std::optional<vector_v2::ViewRequest> priority_view =
+      zoom == ZoomLevel::k25Percent ? std::optional<vector_v2::ViewRequest>{}
+                                    : std::optional{view};
+  const float scale = 100.0F / static_cast<float>(vector_v2::zoom_percent(zoom));
+  // XL brush: 20 screen pixels at every zoom, like the product tool.
+  const float radius = 20.0F * scale;
+  // The eraser pass shifts down half a brush so it crosses the pen bands
+  // instead of retracing identical pixels.
+  const float start_offset = tool == OperationTool::kEraser ? radius * 0.5F : 0.0F;
+  const float margin = radius + 2.0F;
+  const float wx0 = static_cast<float>(origin) * scale;
+  const float wy0 = wx0;
+  const float x_min = wx0 + margin;
+  const float x_max = wx0 + static_cast<float>(vector_v2::kOverviewWidth) * scale - margin;
+  const float y_min = wy0 + margin + start_offset;
+  const float y_max = wy0 + static_cast<float>(vector_v2::kOverviewHeight) * scale - margin;
+  constexpr std::size_t kStrokeSamples = 1'536;
+  constexpr std::size_t kSweeps = 32;
+  // 48 samples per horizontal sweep: one interactive chunk spans one full
+  // viewport-width band.
+  const float dx = (x_max - x_min) / 47.0F;
+  const float dy = (y_max - y_min) / static_cast<float>(kSweeps);
+
+  vector_v2::ChainedOperationBuilder builder(builder_storage, kInteractiveChunkSampleLimit);
+  std::optional<vector_v2::PixelRect> world_bounds;
+  const auto commit_ready = [&](vector_v2::ChainedOperationStatus status)
+      -> std::optional<vector_v2::ChainedOperationStatus> {
+    while (status == vector_v2::ChainedOperationStatus::kChunkReady ||
+           status == vector_v2::ChainedOperationStatus::kFinalChunkReady) {
+      const auto pending = builder.pending_append();
+      if (!pending.has_value()) {
+        return std::nullopt;
+      }
+      const std::int64_t started_us = esp_timer_get_time();
+      const auto committed =
+          vector_v2::append_incrementally_in_place(log, canvas, *pending, workspace, priority_view);
+      const std::int64_t elapsed_us = esp_timer_get_time() - started_us;
+      if (!committed.has_value()) {
+        return std::nullopt;
+      }
+      stats.append_total_us += elapsed_us;
+      stats.append_max_us = std::max(stats.append_max_us, elapsed_us);
+      ++stats.chunks;
+      stats.affected_tiles += committed->affected_resident_tiles;
+      stats.published_tiles += committed->published_tiles;
+      stats.fallback_tiles += committed->fallback_tiles;
+      if (!world_bounds.has_value()) {
+        world_bounds = committed->affected_world_bounds;
+      } else {
+        world_bounds->x0 = std::min(world_bounds->x0, committed->affected_world_bounds.x0);
+        world_bounds->y0 = std::min(world_bounds->y0, committed->affected_world_bounds.y0);
+        world_bounds->x1 = std::max(world_bounds->x1, committed->affected_world_bounds.x1);
+        world_bounds->y1 = std::max(world_bounds->y1, committed->affected_world_bounds.y1);
+      }
+      status = builder.acknowledge_commit();
+    }
+    if (status != vector_v2::ChainedOperationStatus::kAccepted &&
+        status != vector_v2::ChainedOperationStatus::kComplete) {
+      return std::nullopt;
+    }
+    return status;
+  };
+
+  float x = x_min;
+  float y = y_min;
+  float direction = 1.0F;
+  std::uint32_t timestamp_us = now_us();
+  if (!builder.begin(tool, color, gesture_id,
+                     {.world_x = x, .world_y = y, .radius = radius, .timestamp_us = timestamp_us})) {
+    return false;
+  }
+  for (std::size_t index = 1; index < kStrokeSamples; ++index) {
+    x += dx * direction;
+    if (x > x_max || x < x_min) {
+      direction = -direction;
+      x = std::clamp(x, x_min, x_max);
+      y = std::min(y + dy, y_max);
+    }
+    timestamp_us += 8'000U;
+    const vector_v2::OperationPoint point{
+        .world_x = x, .world_y = y, .radius = radius, .timestamp_us = timestamp_us};
+    const bool final_sample = index + 1U == kStrokeSamples;
+    if (!commit_ready(final_sample ? builder.finish(point) : builder.add(point)).has_value()) {
+      return false;
+    }
+  }
+  stats.committed = !builder.active();
+  stats.authority = log.current_revision() == canvas.current_revision();
+  if (world_bounds.has_value()) {
+    stats.refresh_passed =
+        presenter
+            .refresh_region(vector_v2::operation_level_bounds(*world_bounds, zoom), chrome,
+                            now_us())
+            .passed;
+  }
+  return true;
+}
+
+bool run_mixed_zoom_draw_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
+                              OperationLog& log, MaterializedCanvas& canvas,
+                              const vector_v2::ChromeState& chrome,
+                              const vector_v2::InPlaceAppendWorkspace& workspace,
+                              std::span<CompactOperationSample> builder_storage) {
+  constexpr std::array kWarmZooms{ZoomLevel::k50Percent, ZoomLevel::k100Percent,
+                                  ZoomLevel::k200Percent, ZoomLevel::k400Percent};
+  constexpr std::array kDrawZooms{ZoomLevel::k25Percent, ZoomLevel::k50Percent,
+                                  ZoomLevel::k100Percent, ZoomLevel::k200Percent,
+                                  ZoomLevel::k400Percent};
+  // Self-contained cache state: discard, then warm deterministically so the
+  // measurement does not depend on whichever gate ran before this one.
+  if (!canvas.discard_tiles()) {
+    return false;
+  }
+  for (const ZoomLevel zoom : kWarmZooms) {
+    const int origin = mixed_draw_level_origin(zoom);
+    if (!presenter.set_view(zoom, origin, origin, chrome, now_us()).passed) {
+      return false;
+    }
+    std::size_t tiles = 0;
+    std::int64_t wall_us = 0;
+    if (!fill_view_to_completion(producer, mixed_draw_view(zoom), tiles, wall_us)) {
+      return false;
+    }
+    const MixedDrawCensus census = census_zoom_tiles(canvas, zoom);
+    std::printf(
+        "TINYDRAW_GATE1_MIXED_DRAW_WARM zoom=%s fill_tiles=%lu fill_us=%lld raw=%lu "
+        "uniform=%lu\n",
+        zoom_name(zoom), static_cast<unsigned long>(tiles), static_cast<long long>(wall_us),
+        static_cast<unsigned long>(census.raw), static_cast<unsigned long>(census.uniform));
+  }
+
+  bool strokes_correct = true;
+  bool timing_pass = true;
+  std::int64_t worst_append_us = 0;
+  std::size_t strokes = 0;
+  std::uint16_t gesture_id = 1;
+  for (const ZoomLevel zoom : kDrawZooms) {
+    for (const OperationTool tool : {OperationTool::kPen, OperationTool::kEraser}) {
+      MixedDrawStrokeStats stats{};
+      const bool run_ok =
+          run_mixed_zoom_stroke(presenter, log, canvas, chrome, workspace, builder_storage, zoom,
+                                tool, tool == OperationTool::kPen ? 0x001FU : 0x0000U,
+                                gesture_id++, stats);
+      const bool correct = run_ok && stats.committed && stats.authority && stats.refresh_passed &&
+                           stats.chunks >= 24U;
+      const bool stroke_pass = correct && stats.append_max_us < 15'000;
+      std::printf(
+          "TINYDRAW_GATE1_MIXED_DRAW zoom=%s tool=%s chunks=%lu append_max_us=%lld "
+          "append_avg_us=%lld append_total_us=%lld affected_tiles=%lu published=%lu "
+          "fallback=%lu committed=%u authority=%u refresh=%u run_ok=%u pass=%u\n",
+          zoom_name(zoom), tool_name(tool), static_cast<unsigned long>(stats.chunks),
+          static_cast<long long>(stats.append_max_us),
+          static_cast<long long>(stats.chunks == 0U
+                                     ? 0
+                                     : stats.append_total_us /
+                                           static_cast<std::int64_t>(stats.chunks)),
+          static_cast<long long>(stats.append_total_us),
+          static_cast<unsigned long>(stats.affected_tiles),
+          static_cast<unsigned long>(stats.published_tiles),
+          static_cast<unsigned long>(stats.fallback_tiles), stats.committed, stats.authority,
+          stats.refresh_passed, run_ok, stroke_pass);
+      std::fflush(stdout);
+      worst_append_us = std::max(worst_append_us, stats.append_max_us);
+      ++strokes;
+      strokes_correct = strokes_correct && correct;
+      timing_pass = timing_pass && stroke_pass;
+      if (!run_ok) {
+        return false;
+      }
+    }
+  }
+
+  // What did drawing cost the warm cache? A future mutation policy that
+  // invalidates instead of painting must pay here, visibly.
+  for (const ZoomLevel zoom : kWarmZooms) {
+    const auto view = mixed_draw_view(zoom);
+    const auto missing = producer.visible_tiles_remaining(view);
+    const int origin = mixed_draw_level_origin(zoom);
+    if (!missing.has_value() ||
+        !presenter.set_view(zoom, origin, origin, chrome, now_us()).passed) {
+      return false;
+    }
+    std::size_t tiles = 0;
+    std::int64_t wall_us = 0;
+    if (!fill_view_to_completion(producer, view, tiles, wall_us)) {
+      return false;
+    }
+    std::printf("TINYDRAW_GATE1_MIXED_DRAW_REVISIT zoom=%s missing=%lu refill_tiles=%lu "
+                "refill_us=%lld\n",
+                zoom_name(zoom), static_cast<unsigned long>(*missing),
+                static_cast<unsigned long>(tiles), static_cast<long long>(wall_us));
+  }
+
+  const bool passed = strokes_correct && timing_pass;
+  std::printf("TINYDRAW_GATE1_MIXED_DRAW_SUMMARY slots=%lu strokes=%lu worst_append_us=%lld "
+              "pass=%u\n",
+              static_cast<unsigned long>(canvas.slot_capacity()),
+              static_cast<unsigned long>(strokes), static_cast<long long>(worst_append_us),
+              passed);
+  std::fflush(stdout);
+  return passed;
+}
+
 bool verify_pan_adapter(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
                         const vector_v2::ChromeState& chrome, ZoomLevel zoom) {
   constexpr int kPanDelta = 88;
@@ -1295,6 +1598,13 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   const bool full_world_cache = cache_retention && run_full_world_cache_gate(producer, canvas);
   const bool cache_tour =
       full_world_cache && run_cache_tour_gate(presenter, producer, canvas, chrome);
+  // The mixed-zoom drawing gate documents the known lower-zoom drawing
+  // regression; like the adversarial cold gate it must not stop later
+  // receipts while red. It joins the final verdict conjunction once the
+  // mutation-policy fix lands.
+  const bool mixed_draw =
+      cache_tour && run_mixed_zoom_draw_gate(presenter, producer, log, canvas, chrome,
+                                             in_place_workspace, conversion_storage);
   const bool long_gesture =
       cache_tour &&
       run_long_gesture_commit_gate(presenter, producer, log, canvas, chrome, workspace,
@@ -1307,12 +1617,12 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
       "overlap_cold=%u adversarial_ready=%u adversarial_cold=%u workload=%u paced_cold=%u "
       "hard_100=%u hard_400=%u pan_100=%u "
       "pan_400=%u live_overlay=%u draw_fill=%u cache=%u full_world_cache=%u cache_tour=%u "
-      "long_gesture=%u "
+      "mixed_draw=%u long_gesture=%u "
       "export_encode=%u export_reserve=%u return=%u ssaa_receipt=yellow\n",
       stress_ready, stress_100, stress_400, overlap_ready, overlap_cold, adversarial_ready,
       adversarial_cold, workload_ready, paced_cold, gate_100, gate_400, pan_100, pan_400,
-      live_overlay, draw_fill, cache_retention, full_world_cache, cache_tour, long_gesture,
-      export_encode, export_reserve, return_overview.passed);
+      live_overlay, draw_fill, cache_retention, full_world_cache, cache_tour, mixed_draw,
+      long_gesture, export_encode, export_reserve, return_overview.passed);
   return return_overview.passed && export_reserve && overlap_cold && adversarial_cold;
 #endif
 }

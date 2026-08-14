@@ -18,7 +18,16 @@ inline constexpr std::size_t kOverviewPublicationBytes = kOverviewBytes;
 // funding its 56-tile staging workspace (449 KiB freed at 264b60e); the
 // additional 64 slots cost 512 KiB and the live export reserve, stack, and
 // fragmentation margins were re-proven on hardware with the new count.
-inline constexpr std::size_t kTileSlotCount = 384;
+// TINYDRAW_VECTOR_V2_TILE_SLOTS exists for measured cache-size A/B builds
+// (e.g. 320 versus 384); the product default remains 384.
+#ifndef TINYDRAW_VECTOR_V2_TILE_SLOTS
+#define TINYDRAW_VECTOR_V2_TILE_SLOTS 384
+#endif
+inline constexpr std::size_t kTileSlotCount = TINYDRAW_VECTOR_V2_TILE_SLOTS;
+// Five worst-case arbitrary-alignment viewport footprints (5 x 56 = 280) is
+// the minimum retained working set; below that the producer can evict the
+// active viewport's own tiles mid-fill.
+static_assert(kTileSlotCount >= 280);
 inline constexpr std::size_t kOperationCapacity = 4'000;
 inline constexpr std::size_t kOperationSampleCapacity = 80'000;
 inline constexpr std::size_t kMaterializedZoomCount = kLodZoomCount;
