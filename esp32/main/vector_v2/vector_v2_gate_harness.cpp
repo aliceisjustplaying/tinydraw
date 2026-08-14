@@ -248,6 +248,7 @@ bool run_paced_cold_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& 
   std::int64_t touch_us = 0;
   std::int64_t maximum_tick_us = 0;
   std::size_t touch_errors = 0;
+  std::uint8_t background_ticks = 0;
   const std::int64_t started = esp_timer_get_time();
   while (!complete || presentation_pending) {
     const std::int64_t tick_started = esp_timer_get_time();
@@ -279,7 +280,12 @@ bool run_paced_cold_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& 
       }
     }
     maximum_tick_us = std::max(maximum_tick_us, esp_timer_get_time() - tick_started);
-    vTaskDelay(pdMS_TO_TICKS(2));
+    // Mirror the interactive loop: producer work already yields at bounded
+    // input-poll boundaries; one real delay per eight ticks feeds idle tasks.
+    if (++background_ticks == 8U) {
+      background_ticks = 0U;
+      vTaskDelay(pdMS_TO_TICKS(1));
+    }
   }
   const std::int64_t wall_us = esp_timer_get_time() - started;
   const std::int64_t pacing_us = wall_us - compute_us - present_us - touch_us;

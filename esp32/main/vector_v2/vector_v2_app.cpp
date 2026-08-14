@@ -574,6 +574,7 @@ void run_vector_v2_app() {
   LiftBaselineTiming lift_timing{};
   std::uint32_t next_lift_id = 1U;
   std::uint32_t lift_reports_dropped = 0U;
+  std::uint8_t background_ticks = 0U;
 
   for (;;) {
     const std::uint32_t loop_us = now_us();
@@ -857,7 +858,18 @@ void run_vector_v2_app() {
         ++lift_reports_dropped;
       }
     }
-    vTaskDelay(pdMS_TO_TICKS(2));
+    const bool background_busy = fill_allowed && (!fill_complete || pending_fill.pending);
+    if (background_busy) {
+      // Producer calls are bounded input-poll slices. Avoid paying a fixed
+      // two-millisecond tax after every slice, but periodically unblock idle.
+      if (++background_ticks == 8U) {
+        background_ticks = 0U;
+        vTaskDelay(pdMS_TO_TICKS(1));
+      }
+    } else {
+      background_ticks = 0U;
+      vTaskDelay(pdMS_TO_TICKS(2));
+    }
   }
 }
 
