@@ -149,7 +149,9 @@ Rules:
 
 ## Cache-protection behavior
 
-The raw materialized-tile pool remains 320 slots initially.
+The raw materialized-tile pool started at 320 slots and currently uses 384.
+The larger pool passed memory and mutation-free tour gates; a mixed drawing and
+revisit A/B remains open.
 
 Each tiled zoom may protect the raw identities intersecting its most recently
 committed viewport footprint. Protection means eviction preference, not an
@@ -172,11 +174,14 @@ and correctness purpose.
 
 A worst-case arbitrary-alignment viewport intersects at most 56 tiles. Four
 tiled zoom footprints require at most 224 raw identities before accounting for
-uniform tiles, leaving 96 of the 320 raw slots for the active route and churn.
-Actual paper-aware demand is lower in sparse documents.
+uniform tiles, leaving 160 of the current 384 raw slots for the active route and
+churn. Actual paper-aware demand is lower in sparse documents.
 
-After this policy is measured, a 384-slot experiment may be considered. A
-448-slot default is not approved under the current export-reserve margin.
+A mutation-free 16-stop 400% tour measured 63 return-trip refills at 320 slots
+and none at 384. Drawing against a warm multi-zoom cache later exposed
+120–132 ms commits at lower zooms, so the next performance round must measure
+both capacities under mutation before treating 384 as final. A 448-slot default
+is not approved under the current export-reserve margin.
 
 ## Zoom and cache acceptance tests
 
