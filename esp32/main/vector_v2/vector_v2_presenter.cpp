@@ -279,29 +279,37 @@ LivePresentationTiming VectorV2Presenter::pan_from(int start_x, int start_y, Poi
 }
 
 bool VectorV2Presenter::compose_into_frame(vector_v2::PixelRect panel_bounds) {
-  if (panel_bounds.x1 <= panel_bounds.x0 || panel_bounds.y1 <= panel_bounds.y0) {
-    return true;
-  }
-  const vector_v2::PixelRect level{level_x() + panel_bounds.x0, level_y() + panel_bounds.y0,
-                                   level_x() + panel_bounds.x1, level_y() + panel_bounds.y1};
   const int width = panel_bounds.x1 - panel_bounds.x0;
   const int height = panel_bounds.y1 - panel_bounds.y0;
-  const std::size_t count = static_cast<std::size_t>(width) * height;
-  if (region_.size() < count) {
+  if (width <= 0 || height <= 0) {
+    return true;
+  }
+  const int rows_per_strip = static_cast<int>(region_.size() / static_cast<std::size_t>(width));
+  if (rows_per_strip <= 0) {
     return false;
   }
-  const auto pixels = region_.first(count);
-  const auto stats = canvas_.compose_view({.zoom = zoom(), .level_pixels = level}, pixels);
-  if (!stats.has_value() || stats->fallback_pixels != 0U) {
-    return false;
-  }
-  for (int row = 0; row < height; ++row) {
-    const auto source = pixels.subspan(static_cast<std::size_t>(row) * width, width);
-    auto destination =
-        frame_.subspan(static_cast<std::size_t>(panel_bounds.y0 + row) * vector_v2::kOverviewWidth +
-                           panel_bounds.x0,
-                       static_cast<std::size_t>(width));
-    std::copy(source.begin(), source.end(), destination.begin());
+  for (int y = panel_bounds.y0; y < panel_bounds.y1; y += rows_per_strip) {
+    const int rows = std::min(rows_per_strip, panel_bounds.y1 - y);
+    const vector_v2::PixelRect strip_panel{panel_bounds.x0, y, panel_bounds.x1, y + rows};
+    const vector_v2::PixelRect strip_level{
+        level_x() + strip_panel.x0,
+        level_y() + strip_panel.y0,
+        level_x() + strip_panel.x1,
+        level_y() + strip_panel.y1,
+    };
+    const std::size_t count = static_cast<std::size_t>(width) * rows;
+    const auto pixels = region_.first(count);
+    const auto stats = canvas_.compose_view({.zoom = zoom(), .level_pixels = strip_level}, pixels);
+    if (!stats.has_value() || stats->fallback_pixels != 0U) {
+      return false;
+    }
+    for (int row = 0; row < rows; ++row) {
+      const auto source = pixels.subspan(static_cast<std::size_t>(row) * width, width);
+      auto destination = frame_.subspan(
+          static_cast<std::size_t>(y + row) * vector_v2::kOverviewWidth + panel_bounds.x0,
+          static_cast<std::size_t>(width));
+      std::copy(source.begin(), source.end(), destination.begin());
+    }
   }
   return true;
 }
@@ -322,6 +330,7 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   const auto scroll = vector_v2::scroll_frame(
       frame_, vector_v2::kOverviewWidth,
       {0, 0, vector_v2::kOverviewWidth, vector_v2::chrome_canvas_bottom(chrome)}, delta_x, delta_y);
+  const std::int64_t scroll_completed = esp_timer_get_time();
   if (!scroll.has_value()) {
     return refresh(chrome, event_us);
   }
@@ -332,9 +341,13 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
       return refresh(chrome, event_us);
     }
   }
-  vector_v2::draw_chrome(frame_, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight, chrome);
+  const std::int64_t exposed_completed = esp_timer_get_time();
+  // scroll_frame excludes the chrome-owned rows, so their existing pixels are
+  // already correct. Do not spend a full dock redraw on every pan sample.
   auto timing = present({0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight}, event_us,
-                        esp_timer_get_time() - started);
+                        exposed_completed - started);
+  timing.scroll_us = scroll_completed - started;
+  timing.exposed_compose_us = exposed_completed - scroll_completed;
   timing.frame_reused = true;
   static_cast<void>(canvas_.remember_view(navigation_.view()));
   frame_level_x_ = level_x();
