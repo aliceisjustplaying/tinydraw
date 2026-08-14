@@ -103,3 +103,76 @@ TEST_CASE("PNG encoder handles the complete 3x3 world within a small workspace")
   CHECK(big_endian_u32(output.bytes, 16U) == width);
   CHECK(big_endian_u32(output.bytes, 20U) == height);
 }
+
+namespace {
+
+class SpanRowSource final : public tinydraw::PngRowSource {
+ public:
+  SpanRowSource(std::span<const std::uint16_t> pixels, int width, int fail_at_row = -1)
+      : pixels_(pixels), width_(width), fail_at_row_(fail_at_row) {}
+
+  bool row(int y, std::span<std::uint16_t> destination) override {
+    if (y == fail_at_row_) {
+      return false;
+    }
+    const auto source =
+        pixels_.subspan(static_cast<std::size_t>(y) * static_cast<std::size_t>(width_),
+                        static_cast<std::size_t>(width_));
+    std::copy(source.begin(), source.end(), destination.begin());
+    return true;
+  }
+
+ private:
+  std::span<const std::uint16_t> pixels_;
+  int width_;
+  int fail_at_row_;
+};
+
+}  // namespace
+
+TEST_CASE("row-source encoding is byte-identical to span encoding") {
+  constexpr int width = 61;
+  constexpr int height = 23;
+  std::vector<std::uint16_t> pixels(static_cast<std::size_t>(width) * height);
+  for (std::size_t index = 0; index < pixels.size(); ++index) {
+    pixels[index] = static_cast<std::uint16_t>(index * 2'654'435'761U >> 13U);
+  }
+  Workspace workspace(tinydraw::png_encoder_workspace_bytes());
+  std::vector<std::uint8_t> row_storage(tinydraw::png_encoder_row_bytes(width));
+
+  MemoryOutput span_output;
+  const auto span_result = tinydraw::encode_png_rgb565(
+      pixels, width, height, span_output, workspace.data(), workspace.bytes(), row_storage);
+  REQUIRE(span_result.success());
+
+  MemoryOutput rows_output;
+  SpanRowSource source(pixels, width);
+  std::vector<std::uint16_t> row_pixels(width);
+  const auto rows_result =
+      tinydraw::encode_png_rgb565_rows(source, width, height, rows_output, workspace.data(),
+                                       workspace.bytes(), row_storage, row_pixels);
+  REQUIRE(rows_result.success());
+  CHECK(rows_result.bytes_written == span_result.bytes_written);
+  CHECK(rows_output.bytes == span_output.bytes);
+}
+
+TEST_CASE("row-source encoding fails cleanly on source failure and short row buffer") {
+  constexpr int width = 16;
+  constexpr int height = 8;
+  std::vector<std::uint16_t> pixels(static_cast<std::size_t>(width) * height, 0x1234U);
+  Workspace workspace(tinydraw::png_encoder_workspace_bytes());
+  std::vector<std::uint8_t> row_storage(tinydraw::png_encoder_row_bytes(width));
+  std::vector<std::uint16_t> row_pixels(width);
+
+  MemoryOutput output;
+  SpanRowSource failing(pixels, width, 3);
+  const auto failed = tinydraw::encode_png_rgb565_rows(
+      failing, width, height, output, workspace.data(), workspace.bytes(), row_storage, row_pixels);
+  CHECK_FALSE(failed.success());
+
+  SpanRowSource source(pixels, width);
+  const auto short_row = tinydraw::encode_png_rgb565_rows(
+      source, width, height, output, workspace.data(), workspace.bytes(), row_storage,
+      std::span(row_pixels).first(width - 1));
+  CHECK_FALSE(short_row.success());
+}

@@ -32,4 +32,22 @@ struct PngEncodeResult {
                                                 std::span<std::uint8_t> row_storage,
                                                 std::uint8_t compression_level = 3U);
 
+// Streams RGB565 scanlines from a caller-owned source, for worlds that exist
+// only as tiles or vector authority rather than one flat buffer. Rows are
+// requested exactly once each, top to bottom.
+class PngRowSource {
+ public:
+  virtual ~PngRowSource() = default;
+  [[nodiscard]] virtual bool row(int y, std::span<std::uint16_t> destination) = 0;
+};
+
+// Row-source sibling of encode_png_rgb565 producing byte-identical output for
+// identical pixels. row_pixels must hold one RGB565 scanline of width pixels.
+[[nodiscard]] PngEncodeResult encode_png_rgb565_rows(PngRowSource& source, int width, int height,
+                                                     PngOutput& output, void* workspace,
+                                                     std::size_t workspace_bytes,
+                                                     std::span<std::uint8_t> row_storage,
+                                                     std::span<std::uint16_t> row_pixels,
+                                                     std::uint8_t compression_level = 3U);
+
 }  // namespace tinydraw
