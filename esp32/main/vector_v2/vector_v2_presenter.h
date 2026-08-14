@@ -126,6 +126,10 @@ class VectorV2Presenter {
                                                              std::uint32_t event_us,
                                                              std::int64_t compose_us = 0,
                                                              bool allow_minimap_refresh = false);
+  [[nodiscard]] LivePresentationTiming present_unobscured(vector_v2::PixelRect bounds,
+                                                          const vector_v2::ChromeState& chrome,
+                                                          std::uint32_t event_us,
+                                                          std::int64_t compose_us = 0);
   [[nodiscard]] LivePresentationTiming refresh_pan(int old_x, int old_y,
                                                    const vector_v2::ChromeState& chrome,
                                                    std::uint32_t event_us);

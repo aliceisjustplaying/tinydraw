@@ -232,7 +232,7 @@ LivePresentationTiming VectorV2Presenter::show_start(InkPoint point, std::uint16
   const std::array primitives{cap};
   static_cast<void>(
       renderer_->render(primitives, frame_, vector_v2::kOverviewWidth, canvas_bottom, color));
-  return present_with_overlays(primitive_bounds(primitives, canvas_bottom), chrome, event_us);
+  return present_unobscured(primitive_bounds(primitives, canvas_bottom), chrome, event_us);
 }
 
 LivePresentationTiming VectorV2Presenter::show_update(const RibbonUpdate& update,
@@ -246,7 +246,7 @@ LivePresentationTiming VectorV2Presenter::show_update(const RibbonUpdate& update
   }
   static_cast<void>(renderer_->render(std::span(update.committed.begin(), update.committed.size()),
                                       frame_, vector_v2::kOverviewWidth, canvas_bottom, color));
-  return present_with_overlays(
+  return present_unobscured(
       primitive_bounds(std::span(update.committed.begin(), update.committed.size()), canvas_bottom),
       chrome, event_us);
 }
@@ -397,6 +397,12 @@ LivePresentationTiming VectorV2Presenter::present_with_overlays(
   if (!intersects && !refresh_minimap) {
     return present(bounds, event_us, compose_us);
   }
+  const bool full_frame = bounds.x0 == 0 && bounds.y0 == 0 &&
+                          bounds.x1 == vector_v2::kOverviewWidth &&
+                          bounds.y1 == vector_v2::kOverviewHeight;
+  if (intersects && !refresh_minimap && !full_frame) {
+    return present_unobscured(bounds, chrome, event_us, compose_us);
+  }
 
   const std::int64_t chrome_started = esp_timer_get_time();
   vector_v2::draw_chrome_canvas_overlays(frame_, vector_v2::kOverviewWidth,
@@ -429,6 +435,30 @@ LivePresentationTiming VectorV2Presenter::present_with_overlays(
     timing.passed = false;
   }
   return timing;
+}
+
+LivePresentationTiming VectorV2Presenter::present_unobscured(vector_v2::PixelRect bounds,
+                                                             const vector_v2::ChromeState& chrome,
+                                                             std::uint32_t event_us,
+                                                             std::int64_t compose_us) {
+  const auto visible =
+      vector_v2::chrome_unobscured_regions({bounds.x0, bounds.y0, bounds.x1, bounds.y1}, chrome);
+  LivePresentationTiming total{.compose_us = compose_us, .passed = true};
+  for (std::size_t index = 0; index < visible.count; ++index) {
+    const auto region = visible.regions[index];
+    const auto part = present({region.x0, region.y0, region.x1, region.y1}, event_us);
+    if (!part.passed) {
+      total.passed = false;
+      return total;
+    }
+    if (total.pushes == 0U && part.pushes > 0U) {
+      total.first_submit_us = part.first_submit_us;
+      total.first_complete_us = part.first_complete_us;
+    }
+    total.complete_us += part.complete_us;
+    total.pushes += part.pushes;
+  }
+  return total;
 }
 
 LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,

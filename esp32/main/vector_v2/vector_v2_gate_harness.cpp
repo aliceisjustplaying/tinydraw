@@ -426,6 +426,98 @@ bool run_adversarial_tapered_cold_gates(VectorV2Presenter& presenter,
   return passed;
 }
 
+struct LiveInkPathMeasurement {
+  std::int64_t maximum_wall_us = 0;
+  std::int64_t maximum_submit_us = 0;
+  std::int64_t maximum_complete_us = 0;
+  std::int64_t maximum_chrome_us = 0;
+  std::size_t presented_updates = 0;
+  std::size_t failures = 0;
+};
+
+LiveInkPathMeasurement measure_live_ink_circle(VectorV2Presenter& presenter,
+                                               const vector_v2::ChromeState& chrome, Point center,
+                                               float path_radius) {
+  constexpr std::size_t kPointCount = 48;
+  constexpr float kTau = 6.28318530718F;
+  CurvedRibbonStream ribbon;
+  LiveInkPathMeasurement measurement;
+  float running_length = 0.0F;
+  Point previous{};
+  std::uint32_t timestamp_us = now_us();
+  for (std::size_t index = 0; index < kPointCount; ++index) {
+    const float angle = kTau * static_cast<float>(index) / static_cast<float>(kPointCount - 1U);
+    const Point position{center.x + std::cos(angle) * path_radius,
+                         center.y + std::sin(angle) * path_radius};
+    const float distance =
+        index == 0U ? 0.0F : std::hypot(position.x - previous.x, position.y - previous.y);
+    running_length += distance;
+    timestamp_us += 8'333U;
+    const InkPoint point{.position = position,
+                         .pressure = 1.0F,
+                         .radius = 8.0F,
+                         .distance = distance,
+                         .running_length = running_length,
+                         .timestamp_us = timestamp_us};
+    const std::uint32_t event_us = now_us();
+    const std::int64_t started_us = esp_timer_get_time();
+    LivePresentationTiming timing;
+    if (index == 0U) {
+      static_cast<void>(ribbon.append(point, false));
+      timing = presenter.show_start(point, 0x001FU, chrome, event_us);
+    } else {
+      timing = presenter.show_update(ribbon.append(point, false), 0x001FU, chrome, event_us);
+    }
+    const std::int64_t wall_us = esp_timer_get_time() - started_us;
+    if (!timing.passed) {
+      ++measurement.failures;
+    }
+    if (timing.pushes != 0U) {
+      ++measurement.presented_updates;
+      measurement.maximum_wall_us = std::max(measurement.maximum_wall_us, wall_us);
+      measurement.maximum_submit_us =
+          std::max(measurement.maximum_submit_us, timing.first_submit_us);
+      measurement.maximum_complete_us =
+          std::max(measurement.maximum_complete_us, timing.first_complete_us);
+      measurement.maximum_chrome_us = std::max(measurement.maximum_chrome_us, timing.chrome_us);
+    }
+    previous = position;
+  }
+  return measurement;
+}
+
+bool run_live_ink_overlay_gate(VectorV2Presenter& presenter, const vector_v2::ChromeState& chrome) {
+  if (!presenter.set_view(ZoomLevel::k100Percent, 0, 0, chrome, now_us()).passed) {
+    return false;
+  }
+  const auto clear = measure_live_ink_circle(presenter, chrome, {150.0F, 180.0F}, 44.0F);
+  if (!presenter.set_view(ZoomLevel::k100Percent, 0, 0, chrome, now_us()).passed) {
+    return false;
+  }
+  const auto overlay = measure_live_ink_circle(presenter, chrome, {276.0F, 304.0F}, 48.0F);
+  const bool passed = clear.failures == 0U && overlay.failures == 0U &&
+                      clear.presented_updates > 0U && overlay.presented_updates > 0U &&
+                      overlay.maximum_chrome_us == 0 && overlay.maximum_submit_us < 16'667 &&
+                      overlay.maximum_complete_us < 33'333;
+  std::printf(
+      "TINYDRAW_GATE1_LIVE_OVERLAY clear_updates=%lu clear_wall_max_us=%lld "
+      "clear_submit_max_us=%lld clear_complete_max_us=%lld overlay_updates=%lu "
+      "overlay_wall_max_us=%lld overlay_submit_max_us=%lld overlay_complete_max_us=%lld "
+      "overlay_chrome_max_us=%lld clear_failures=%lu overlay_failures=%lu pass=%u\n",
+      static_cast<unsigned long>(clear.presented_updates),
+      static_cast<long long>(clear.maximum_wall_us),
+      static_cast<long long>(clear.maximum_submit_us),
+      static_cast<long long>(clear.maximum_complete_us),
+      static_cast<unsigned long>(overlay.presented_updates),
+      static_cast<long long>(overlay.maximum_wall_us),
+      static_cast<long long>(overlay.maximum_submit_us),
+      static_cast<long long>(overlay.maximum_complete_us),
+      static_cast<long long>(overlay.maximum_chrome_us), static_cast<unsigned long>(clear.failures),
+      static_cast<unsigned long>(overlay.failures), passed);
+  std::fflush(stdout);
+  return passed;
+}
+
 bool run_draw_while_fill_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
                               OperationLog& log, MaterializedCanvas& canvas,
                               const vector_v2::ChromeState& chrome,
@@ -1187,8 +1279,9 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
                           kUnalignedOrigin, kUnalignedOrigin, "seed7", 2'000'000);
   const bool gate_100 =
       paced_cold && run_tile_gate(presenter, producer, log, canvas, chrome, ZoomLevel::k100Percent);
+  const bool live_overlay = gate_100 && run_live_ink_overlay_gate(presenter, chrome);
   const bool pan_100 =
-      gate_100 && verify_pan_adapter(presenter, producer, chrome, ZoomLevel::k100Percent);
+      live_overlay && verify_pan_adapter(presenter, producer, chrome, ZoomLevel::k100Percent);
   const bool gate_400 =
       pan_100 && run_tile_gate(presenter, producer, log, canvas, chrome, ZoomLevel::k400Percent);
   const bool pan_400 =
@@ -1213,12 +1306,13 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
       "TINYDRAW_GATE1_AUTOMATED_DONE stress=%u stress_100=%u stress_400=%u overlap_ready=%u "
       "overlap_cold=%u adversarial_ready=%u adversarial_cold=%u workload=%u paced_cold=%u "
       "hard_100=%u hard_400=%u pan_100=%u "
-      "pan_400=%u draw_fill=%u cache=%u full_world_cache=%u cache_tour=%u long_gesture=%u "
+      "pan_400=%u live_overlay=%u draw_fill=%u cache=%u full_world_cache=%u cache_tour=%u "
+      "long_gesture=%u "
       "export_encode=%u export_reserve=%u return=%u ssaa_receipt=yellow\n",
       stress_ready, stress_100, stress_400, overlap_ready, overlap_cold, adversarial_ready,
-      adversarial_cold, workload_ready, paced_cold, gate_100, gate_400, pan_100, pan_400, draw_fill,
-      cache_retention, full_world_cache, cache_tour, long_gesture, export_encode, export_reserve,
-      return_overview.passed);
+      adversarial_cold, workload_ready, paced_cold, gate_100, gate_400, pan_100, pan_400,
+      live_overlay, draw_fill, cache_retention, full_world_cache, cache_tour, long_gesture,
+      export_encode, export_reserve, return_overview.passed);
   return return_overview.passed && export_reserve && overlap_cold && adversarial_cold;
 #endif
 }
