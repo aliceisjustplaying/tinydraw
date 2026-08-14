@@ -12,7 +12,10 @@ add_library(tinydraw_pngenc STATIC ${TINYDRAW_PNGENC_SOURCES})
 target_include_directories(tinydraw_pngenc PUBLIC "${TINYDRAW_PNGENC}")
 target_compile_definitions(tinydraw_pngenc PUBLIC
   MEM_SHRINK=3
-  PNG_MAX_BUFFERED_PIXELS=3313
+  # One filtered scanline (width * 3 RGB bytes + 1 filter byte) for the widest
+  # exported world: Vector V2 at 1472 (4417); Raster V1 needs 3313. pngenc has
+  # no internal bounds check, so png_encoder.cpp rejects wider requests.
+  PNG_MAX_BUFFERED_PIXELS=4417
 )
 target_compile_features(tinydraw_pngenc PUBLIC cxx_std_20)
 if(TINYDRAW_ENABLE_SANITIZERS)

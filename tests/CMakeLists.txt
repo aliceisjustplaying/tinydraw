@@ -238,3 +238,15 @@ if(TARGET tinydraw_host)
     TIMEOUT 5
   )
 endif()
+
+# Full decode round trip through the system zlib inflate: catches stream
+# corruption (for example scanline-buffer overruns) that structural chunk
+# checks cannot see. Compiled only where a system zlib exists.
+find_package(ZLIB QUIET)
+if(ZLIB_FOUND)
+  add_executable(tinydraw_png_roundtrip png_roundtrip.cpp)
+  target_link_libraries(tinydraw_png_roundtrip PRIVATE
+    tinydraw::core tinydraw_project_options ZLIB::ZLIB
+  )
+  add_test(NAME tinydraw_png_roundtrip COMMAND tinydraw_png_roundtrip)
+endif()
