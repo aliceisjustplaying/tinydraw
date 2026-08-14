@@ -1171,6 +1171,23 @@ bool run_mixed_zoom_draw_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
   std::size_t strokes = 0;
   std::uint16_t gesture_id = 1;
   for (const ZoomLevel zoom : kDrawZooms) {
+    // Re-warm every tiled viewport before each zoom's stroke pair. Strokes
+    // drop affected resident tiles (that is the accepted policy), so without
+    // re-warming the later zooms would measure an empty cache instead of the
+    // product nightmare: drawing at the active zoom with a fully warm
+    // multi-zoom cache underneath.
+    for (const ZoomLevel warm_zoom : kWarmZooms) {
+      const int warm_origin = mixed_draw_level_origin(warm_zoom);
+      if (!presenter.set_view(warm_zoom, warm_origin, warm_origin, chrome, now_us()).passed) {
+        return false;
+      }
+      std::size_t warm_tiles = 0;
+      std::int64_t warm_wall_us = 0;
+      if (!fill_view_to_completion(producer, mixed_draw_view(warm_zoom), warm_tiles,
+                                   warm_wall_us)) {
+        return false;
+      }
+    }
     for (const OperationTool tool : {OperationTool::kPen, OperationTool::kEraser}) {
       MixedDrawStrokeStats stats{};
       const bool run_ok = run_mixed_zoom_stroke(
@@ -1783,10 +1800,9 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   const bool full_world_cache = cache_retention && run_full_world_cache_gate(producer, canvas);
   const bool cache_tour =
       full_world_cache && run_cache_tour_gate(presenter, producer, canvas, chrome);
-  // The mixed-zoom drawing gate documents the known lower-zoom drawing
-  // regression; like the adversarial cold gate it must not stop later
-  // receipts while red. It joins the final verdict conjunction once the
-  // mutation-policy fix lands.
+  // The mixed-zoom drawing gate is part of the final verdict: warm-cache
+  // interactive chunk commits must stay under the 15 ms alarm at every zoom.
+  // It still must not stop later receipts when red.
   const bool mixed_draw =
       cache_tour && run_mixed_zoom_draw_gate(presenter, producer, log, canvas, chrome,
                                              in_place_workspace, conversion_storage);
@@ -1808,7 +1824,7 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
       adversarial_cold, workload_ready, paced_cold, gate_100, gate_400, pan_100, pan_400,
       pan_sequence, live_overlay, draw_fill, cache_retention, full_world_cache, cache_tour,
       mixed_draw, long_gesture, export_encode, export_reserve, return_overview.passed);
-  return return_overview.passed && export_reserve && overlap_cold && adversarial_cold;
+  return return_overview.passed && export_reserve && overlap_cold && adversarial_cold && mixed_draw;
 #endif
 }
 
