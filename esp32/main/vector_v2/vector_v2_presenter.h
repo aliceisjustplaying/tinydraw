@@ -27,11 +27,6 @@ inline constexpr int kMaximumProgressiveRegionHeight = vector_v2::kTileProducerH
 inline constexpr std::size_t kMaximumProgressiveRegionPixels =
     static_cast<std::size_t>(kMaximumProgressiveRegionWidth) * kMaximumProgressiveRegionHeight;
 inline constexpr int kMaximumCachedPanDelta = 96;
-// During a cached pan the fixed overlays are opaque and unchanged and the
-// dock rows do not move, so pan frames present only unobscured canvas; the
-// changing minimap viewport refreshes at this bounded cadence instead of
-// paying ~8 ms of chrome redraw on every frame.
-inline constexpr std::int64_t kPanMinimapRefreshIntervalUs = 100'000;
 // A pan present may start without waiting for the next tear edge when one
 // passed recently. The writer covers the panel in ~20 ms at ~23 rows/ms
 // while the beam scans at ~26.6 rows/ms and 16.8 ms per sweep; the wrapped
@@ -143,6 +138,7 @@ class VectorV2Presenter {
                                                            std::uint32_t event_us);
   [[nodiscard]] bool compose_into_frame(vector_v2::PixelRect panel_bounds);
   [[nodiscard]] vector_v2::ChromeNavigation chrome_navigation() const;
+  [[nodiscard]] bool restore_canvas_region(vector_v2::PixelRect bounds);
   [[nodiscard]] bool restore_canvas_overlays(const vector_v2::ChromeState& chrome);
   [[nodiscard]] LivePresentationTiming present_with_overlays(vector_v2::PixelRect bounds,
                                                              const vector_v2::ChromeState& chrome,
@@ -170,7 +166,6 @@ class VectorV2Presenter {
   std::uint64_t frame_epoch_ = 0;
   vector_v2::ChromeState frame_chrome_{};
   vector_v2::DocumentRevision presented_minimap_revision_{};
-  std::int64_t last_pan_minimap_us_ = 0;
   bool minimap_presented_ = false;
   bool frame_reusable_ = false;
 };

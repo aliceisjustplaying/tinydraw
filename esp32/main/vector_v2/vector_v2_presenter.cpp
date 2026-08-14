@@ -349,32 +349,39 @@ vector_v2::ChromeNavigation VectorV2Presenter::chrome_navigation() const {
   };
 }
 
+bool VectorV2Presenter::restore_canvas_region(vector_v2::PixelRect bounds) {
+  const int width = bounds.x1 - bounds.x0;
+  const int height = bounds.y1 - bounds.y0;
+  const std::size_t count = static_cast<std::size_t>(width) * height;
+  if (width <= 0 || height <= 0 || count > region_.size()) {
+    return false;
+  }
+  const vector_v2::PixelRect level_bounds{
+      level_x() + bounds.x0,
+      level_y() + bounds.y0,
+      level_x() + bounds.x1,
+      level_y() + bounds.y1,
+  };
+  const auto pixels = region_.first(count);
+  if (!canvas_.compose_view({.zoom = zoom(), .level_pixels = level_bounds}, pixels).has_value()) {
+    return false;
+  }
+  for (int row = 0; row < height; ++row) {
+    const auto source = pixels.subspan(static_cast<std::size_t>(row) * width, width);
+    auto destination = frame_.subspan(
+        static_cast<std::size_t>(bounds.y0 + row) * vector_v2::kOverviewWidth + bounds.x0,
+        static_cast<std::size_t>(width));
+    std::copy(source.begin(), source.end(), destination.begin());
+  }
+  return true;
+}
+
 bool VectorV2Presenter::restore_canvas_overlays(const vector_v2::ChromeState& chrome) {
   const auto overlays = vector_v2::chrome_overlay_regions(chrome);
   for (std::size_t index = 0; index < overlays.count; ++index) {
     const auto bounds = overlays.regions[index];
-    const int width = bounds.x1 - bounds.x0;
-    const int height = bounds.y1 - bounds.y0;
-    const std::size_t count = static_cast<std::size_t>(width) * height;
-    if (width <= 0 || height <= 0 || count > region_.size()) {
+    if (!restore_canvas_region({bounds.x0, bounds.y0, bounds.x1, bounds.y1})) {
       return false;
-    }
-    const vector_v2::PixelRect level_bounds{
-        level_x() + bounds.x0,
-        level_y() + bounds.y0,
-        level_x() + bounds.x1,
-        level_y() + bounds.y1,
-    };
-    const auto pixels = region_.first(count);
-    if (!canvas_.compose_view({.zoom = zoom(), .level_pixels = level_bounds}, pixels).has_value()) {
-      return false;
-    }
-    for (int row = 0; row < height; ++row) {
-      const auto source = pixels.subspan(static_cast<std::size_t>(row) * width, width);
-      auto destination = frame_.subspan(
-          static_cast<std::size_t>(bounds.y0 + row) * vector_v2::kOverviewWidth + bounds.x0,
-          static_cast<std::size_t>(width));
-      std::copy(source.begin(), source.end(), destination.begin());
     }
   }
   return true;
@@ -514,25 +521,24 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   timing.tear_wait_us = tear_completed - tear_started;
   timing.tear_synchronized = tear_synchronized;
   if (timing.passed) {
-    const std::int64_t now = esp_timer_get_time();
-    if (now - last_pan_minimap_us_ >= kPanMinimapRefreshIntervalUs) {
-      if (const auto minimap = vector_v2::chrome_minimap_region(chrome); minimap.has_value()) {
-        const std::int64_t chrome_started = esp_timer_get_time();
-        vector_v2::draw_chrome_canvas_overlays(frame_, vector_v2::kOverviewWidth,
-                                               vector_v2::kOverviewHeight, chrome,
-                                               chrome_navigation());
-        const auto minimap_timing =
-            present({minimap->x0, minimap->y0, minimap->x1, minimap->y1}, 0);
-        const bool restored = restore_canvas_overlays(chrome);
-        timing.chrome_us = esp_timer_get_time() - chrome_started;
-        timing.complete_us += minimap_timing.complete_us;
-        timing.pushes += minimap_timing.pushes;
-        timing.passed = minimap_timing.passed && restored;
-        if (minimap_timing.passed) {
-          presented_minimap_revision_ = canvas_.current_revision();
-          minimap_presented_ = true;
-          last_pan_minimap_us_ = now;
-        }
+    // The minimap viewport rectangle tracks every pan frame. The minimap-only
+    // draw with the row-wise resample costs ~2 ms per frame including the
+    // region present and canvas restore.
+    if (const auto minimap = vector_v2::chrome_minimap_region(chrome); minimap.has_value()) {
+      const std::int64_t chrome_started = esp_timer_get_time();
+      const bool drawn = vector_v2::draw_chrome_minimap_overlay(frame_, vector_v2::kOverviewWidth,
+                                                                vector_v2::kOverviewHeight, chrome,
+                                                                chrome_navigation());
+      const auto minimap_timing = present({minimap->x0, minimap->y0, minimap->x1, minimap->y1}, 0);
+      const bool restored =
+          restore_canvas_region({minimap->x0, minimap->y0, minimap->x1, minimap->y1});
+      timing.chrome_us = esp_timer_get_time() - chrome_started;
+      timing.complete_us += minimap_timing.complete_us;
+      timing.pushes += minimap_timing.pushes;
+      timing.passed = drawn && minimap_timing.passed && restored;
+      if (minimap_timing.passed) {
+        presented_minimap_revision_ = canvas_.current_revision();
+        minimap_presented_ = true;
       }
     }
   }
