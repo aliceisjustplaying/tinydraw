@@ -211,6 +211,10 @@ class Co5300PanelTransport::Impl {
         esp_lcd_panel_disp_on_off(panel_, true) != ESP_OK) {
       return;
     }
+    // TEON sits in the init list before sleep-out and is ignored there on
+    // marginal boots (observed as whole sessions without a single TE edge).
+    // Re-issue it now that the panel is awake and displaying.
+    static_cast<void>(esp_lcd_panel_io_tx_param(io_, 0x35, init_35.data(), init_35.size()));
     gpio_config_t tear_config{};
     tear_config.pin_bit_mask = 1ULL << static_cast<unsigned>(kTearPin);
     tear_config.mode = GPIO_MODE_INPUT;
@@ -292,7 +296,33 @@ class Co5300PanelTransport::Impl {
       return true;
     }
     const TickType_t timeout_ticks = pdMS_TO_TICKS((timeout_us + 999) / 1'000);
-    return xSemaphoreTake(tear_semaphore_, timeout_ticks) == pdTRUE;
+    if (xSemaphoreTake(tear_semaphore_, timeout_ticks) == pdTRUE) {
+      return true;
+    }
+    // Not one TE edge for the whole wait: the panel stopped emitting (or a
+    // marginal boot never started it). Heal and give the signal one more
+    // frame period to appear.
+    if (heal_tear_signal()) {
+      return xSemaphoreTake(tear_semaphore_, pdMS_TO_TICKS(34)) == pdTRUE;
+    }
+    return false;
+  }
+
+  // Re-issues TEON, rate-limited, after draining in-flight color transfers
+  // so the command cannot interleave with pixel data. Called from the single
+  // presenting task.
+  bool heal_tear_signal() {
+    const auto now = static_cast<std::uint32_t>(esp_timer_get_time());
+    if (last_te_heal_us_ != 0U && now - last_te_heal_us_ < 1'000'000U) {
+      return false;
+    }
+    last_te_heal_us_ = now;
+    static_cast<void>(wait_for_all(100'000));
+    const bool sent =
+        esp_lcd_panel_io_tx_param(io_, 0x35, init_35.data(), init_35.size()) == ESP_OK;
+    std::printf("TINYDRAW_PANEL_TE_HEAL sent=%u falling_edges=%lu\n", sent,
+                static_cast<unsigned long>(tear_falling_edges_.load(std::memory_order_acquire)));
+    return sent;
   }
 
   [[nodiscard]] std::int64_t complete_time_us(std::uint32_t sequence) const {
@@ -497,6 +527,7 @@ class Co5300PanelTransport::Impl {
   std::uint16_t* transfer_pixels_ = nullptr;
   StaticSemaphore_t transfer_semaphore_storage_{};
   SemaphoreHandle_t transfer_semaphore_ = nullptr;
+  std::uint32_t last_te_heal_us_ = 0;
   StaticSemaphore_t tear_semaphore_storage_{};
   SemaphoreHandle_t tear_semaphore_ = nullptr;
   esp_lcd_panel_io_handle_t io_ = nullptr;
