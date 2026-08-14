@@ -287,9 +287,11 @@ bool run_paced_cold_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& 
       vTaskDelay(pdMS_TO_TICKS(1));
     }
   }
+  constexpr std::int64_t kMaximumTickUs = 15'000;
   const std::int64_t wall_us = esp_timer_get_time() - started;
   const std::int64_t pacing_us = wall_us - compute_us - present_us - touch_us;
-  const bool passed = wall_us < maximum_wall_us && touch_errors == 0U;
+  const bool passed =
+      wall_us < maximum_wall_us && maximum_tick_us < kMaximumTickUs && touch_errors == 0U;
   std::printf(
       "TINYDRAW_GATE1_PACED_COLD corpus=%s zoom=%s x=%d y=%d steps=%lu tiles=%lu "
       "compute_us=%lld present_us=%lld touch_us=%lld pacing_us=%lld wall_us=%lld "
