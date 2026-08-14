@@ -700,6 +700,40 @@ bool run_long_gesture_commit_gate(VectorV2Presenter& presenter, vector_v2::TileP
          in_place.append_max_us < 15'000;
 }
 
+// Encodes the currently loaded document (the seed-7 realistic workload) to
+// the export partition through the streamed authority renderer and verifies
+// the stored PNG signature and header dimensions. USB stays untouched so the
+// automated serial console survives; presenting the disk is the manual step.
+bool run_export_encode_gate(VectorV2Export& exporter, OperationLog& log) {
+  const VectorV2ExportStats stats = exporter.encode(log);
+  std::array<std::uint8_t, 24> header{};
+  const bool header_read = stats.encoded && exporter.read_image(0, header);
+  constexpr std::array<std::uint8_t, 8> kPngSignature{0x89U, 0x50U, 0x4EU, 0x47U,
+                                                      0x0DU, 0x0AU, 0x1AU, 0x0AU};
+  const bool signature_ok =
+      header_read && std::equal(kPngSignature.begin(), kPngSignature.end(), header.begin());
+  const auto big_endian = [&header](std::size_t offset) {
+    return static_cast<std::uint32_t>(header[offset]) << 24U |
+           static_cast<std::uint32_t>(header[offset + 1U]) << 16U |
+           static_cast<std::uint32_t>(header[offset + 2U]) << 8U |
+           static_cast<std::uint32_t>(header[offset + 3U]);
+  };
+  const bool dimensions_ok =
+      signature_ok && big_endian(16U) == static_cast<std::uint32_t>(vector_v2::kWorldWidth) &&
+      big_endian(20U) == static_cast<std::uint32_t>(vector_v2::kWorldHeight);
+  const bool passed = stats.encoded && stats.bytes > 64U && signature_ok && dimensions_ok;
+  std::printf(
+      "TINYDRAW_GATE1_EXPORT encoded=%u bytes=%lu elapsed_us=%lld workspace_bytes=%lu "
+      "band_bytes=%lu free_psram=%lu free_internal=%lu signature=%u dimensions=%u pass=%u\n",
+      stats.encoded, static_cast<unsigned long>(stats.bytes),
+      static_cast<long long>(stats.elapsed_us), static_cast<unsigned long>(stats.workspace_bytes),
+      static_cast<unsigned long>(stats.band_bytes),
+      static_cast<unsigned long>(stats.free_psram_after),
+      static_cast<unsigned long>(stats.free_internal_after), signature_ok, dimensions_ok, passed);
+  std::fflush(stdout);
+  return passed;
+}
+
 bool verify_pan_adapter(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
                         const vector_v2::ChromeState& chrome, ZoomLevel zoom) {
   constexpr int kPanDelta = 88;
@@ -978,6 +1012,7 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
                                 VectorV2TouchSampler& touch, const vector_v2::ChromeState& chrome,
                                 const IncrementalDocumentWorkspace& workspace,
                                 const vector_v2::InPlaceAppendWorkspace& in_place_workspace,
+                                VectorV2Export& exporter,
                                 std::span<const std::uint16_t> blank_snapshot,
                                 std::span<CompactOperationSample> conversion_storage,
                                 std::span<std::uint16_t> packed_tile_pixels) {
@@ -1059,17 +1094,19 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   const bool cache_retention =
       long_gesture && run_cache_retention_gate(presenter, producer, canvas, chrome);
   const bool full_world_cache = cache_retention && run_full_world_cache_gate(producer, canvas);
-  const bool export_reserve = full_world_cache && verify_export_reserve();
+  const bool export_encode = full_world_cache && run_export_encode_gate(exporter, log);
+  const bool export_reserve = export_encode && verify_export_reserve();
   const auto return_overview = presenter.set_view(ZoomLevel::k25Percent, 0, 0, chrome, now_us());
   std::printf(
       "TINYDRAW_GATE1_AUTOMATED_DONE stress=%u stress_100=%u stress_400=%u overlap_ready=%u "
       "overlap_cold=%u adversarial_ready=%u adversarial_cold=%u workload=%u paced_cold=%u "
       "hard_100=%u hard_400=%u pan_100=%u "
-      "pan_400=%u draw_fill=%u long_gesture=%u cache=%u full_world_cache=%u export_reserve=%u "
-      "return=%u ssaa_receipt=yellow\n",
+      "pan_400=%u draw_fill=%u long_gesture=%u cache=%u full_world_cache=%u export_encode=%u "
+      "export_reserve=%u return=%u ssaa_receipt=yellow\n",
       stress_ready, stress_100, stress_400, overlap_ready, overlap_cold, adversarial_ready,
       adversarial_cold, workload_ready, paced_cold, gate_100, gate_400, pan_100, pan_400, draw_fill,
-      long_gesture, cache_retention, full_world_cache, export_reserve, return_overview.passed);
+      long_gesture, cache_retention, full_world_cache, export_encode, export_reserve,
+      return_overview.passed);
   return return_overview.passed && export_reserve && overlap_cold && adversarial_cold;
 #endif
 }
