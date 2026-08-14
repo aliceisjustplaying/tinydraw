@@ -120,14 +120,17 @@ std::optional<IncrementalAppendResult> append_incrementally(
     return std::nullopt;
   }
   const StoredOperation& stored = prepared->operation();
+  // publish() clears the prepared view; copy everything the result needs
+  // before the commit succeeds.
   const OperationIdentity identity = stored.identity;
+  const PixelRect world_bounds = stored.world_bounds;
   const OperationAppend operation{
       .tool = stored.tool, .color = stored.color, .samples = stored.samples};
   OverviewRevisionPublication overview_publication{};
-  const bool overview_ready = prepare_overview(canvas, operation, stored.world_bounds,
+  const bool overview_ready = prepare_overview(canvas, operation, world_bounds,
                                                workspace.overview_scratch, overview_publication);
   const auto resident_count = canvas.materialized_tiles_intersecting(
-      stored.world_bounds, workspace.affected_keys, options.priority_view,
+      world_bounds, workspace.affected_keys, options.priority_view,
       options.publication_scope == IncrementalPublicationScope::kPriorityView);
   if (!overview_ready || !resident_count.has_value()) {
     prepared->cancel();
@@ -147,15 +150,14 @@ std::optional<IncrementalAppendResult> append_incrementally(
       return std::nullopt;
     }
   }
-  if (!canvas.commit_incremental_revision(stored.identity.revision, overview_publication,
-                                          stored.world_bounds,
+  if (!canvas.commit_incremental_revision(identity.revision, overview_publication, world_bounds,
                                           workspace.publications.first(publication_count))) {
     prepared->cancel();
     return std::nullopt;
   }
   prepared->publish();
   return IncrementalAppendResult{.identity = identity,
-                                 .affected_world_bounds = stored.world_bounds,
+                                 .affected_world_bounds = world_bounds,
                                  .affected_resident_tiles = *resident_count,
                                  .published_tiles = publication_count,
                                  .fallback_tiles = *resident_count - publication_count};
@@ -285,17 +287,19 @@ std::optional<IncrementalAppendResult> append_incrementally_in_place(
     return std::nullopt;
   }
   const StoredOperation& stored = prepared->operation();
+  // publish() clears the prepared view; copy everything the result needs
+  // before the commit succeeds.
   const OperationIdentity identity = stored.identity;
+  const PixelRect world_bounds = stored.world_bounds;
   const OperationAppend operation{
       .tool = stored.tool, .color = stored.color, .samples = stored.samples};
   OverviewRevisionPublication overview_publication{};
-  const bool overview_ready = prepare_overview(canvas, operation, stored.world_bounds,
+  const bool overview_ready = prepare_overview(canvas, operation, world_bounds,
                                                workspace.overview_scratch, overview_publication);
   const auto resident_count = canvas.materialized_tiles_intersecting(
-      stored.world_bounds, workspace.affected_keys, priority_view, false);
+      world_bounds, workspace.affected_keys, priority_view, false);
   if (!overview_ready || !resident_count.has_value() ||
-      !canvas.can_edit_in_place_revision(identity.revision, overview_publication,
-                                         stored.world_bounds)) {
+      !canvas.can_edit_in_place_revision(identity.revision, overview_publication, world_bounds)) {
     prepared->cancel();
     return std::nullopt;
   }
@@ -305,7 +309,7 @@ std::optional<IncrementalAppendResult> append_incrementally_in_place(
       stored.tool == OperationTool::kEraser ? 0xFFFFU : stored.color;
   const std::size_t retained = retain_affected_tiles(canvas, operation, painted_color,
                                                      priority_view, affected, workspace.tile_mask);
-  if (!canvas.commit_in_place_revision(identity.revision, overview_publication, stored.world_bounds,
+  if (!canvas.commit_in_place_revision(identity.revision, overview_publication, world_bounds,
                                        affected.first(retained))) {
     for (const TileKey key : affected.first(retained)) {
       canvas.invalidate_identity(key);
@@ -315,7 +319,7 @@ std::optional<IncrementalAppendResult> append_incrementally_in_place(
   }
   prepared->publish();
   return IncrementalAppendResult{.identity = identity,
-                                 .affected_world_bounds = stored.world_bounds,
+                                 .affected_world_bounds = world_bounds,
                                  .affected_resident_tiles = *resident_count,
                                  .published_tiles = retained,
                                  .fallback_tiles = *resident_count - retained};
