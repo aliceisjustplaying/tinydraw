@@ -23,17 +23,19 @@ struct Segment {
   Sample second{};
   float delta_x = 0;
   float delta_y = 0;
-  float length_squared = 0;
+  float inverse_length_squared = 0;
 };
 
 Segment make_segment(const Sample& first, const Sample& second) {
+  const float delta_x = second.x - first.x;
+  const float delta_y = second.y - first.y;
+  const float length_squared = delta_x * delta_x + delta_y * delta_y;
   return {
       .first = first,
       .second = second,
-      .delta_x = second.x - first.x,
-      .delta_y = second.y - first.y,
-      .length_squared =
-          (second.x - first.x) * (second.x - first.x) + (second.y - first.y) * (second.y - first.y),
+      .delta_x = delta_x,
+      .delta_y = delta_y,
+      .inverse_length_squared = length_squared > 0.0F ? 1.0F / length_squared : 0.0F,
   };
 }
 
@@ -78,11 +80,9 @@ PixelRect segment_bounds(const Segment& segment, PixelRect clip) {
 }
 
 bool covers_pixel(const Segment& segment, float pixel_x, float pixel_y) {
-  const float projection = segment.length_squared > 0.0F
-                               ? ((pixel_x - segment.first.x) * segment.delta_x +
-                                  (pixel_y - segment.first.y) * segment.delta_y) /
-                                     segment.length_squared
-                               : 0.0F;
+  const float projection = ((pixel_x - segment.first.x) * segment.delta_x +
+                            (pixel_y - segment.first.y) * segment.delta_y) *
+                           segment.inverse_length_squared;
   const float amount = std::clamp(projection, 0.0F, 1.0F);
   const float center_x = segment.first.x + amount * segment.delta_x;
   const float center_y = segment.first.y + amount * segment.delta_y;
