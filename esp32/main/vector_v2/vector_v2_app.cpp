@@ -242,6 +242,35 @@ struct AppStorage {
 
 std::uint32_t now_us() { return static_cast<std::uint32_t>(esp_timer_get_time()); }
 
+const char* reject_name(vector_v2::OperationBuilderReject reject) {
+  switch (reject) {
+    case vector_v2::OperationBuilderReject::kNone:
+      return "none";
+    case vector_v2::OperationBuilderReject::kNotActive:
+      return "not_active";
+    case vector_v2::OperationBuilderReject::kInvalidPoint:
+      return "invalid_point";
+    case vector_v2::OperationBuilderReject::kTimestampRegression:
+      return "timestamp_regression";
+    case vector_v2::OperationBuilderReject::kElapsedOverflow:
+      return "elapsed_overflow";
+    case vector_v2::OperationBuilderReject::kCapacityOverflow:
+      return "capacity_overflow";
+  }
+  return "unknown";
+}
+
+void print_stroke_rejected(const char* site, const OperationBuilder& builder,
+                           vector_v2::OperationPoint point) {
+  std::printf(
+      "TINYDRAW_STROKE_REJECTED site=%s reason=%s samples=%lu x=%.3f y=%.3f radius=%.5f "
+      "timestamp_us=%lu\n",
+      site, reject_name(builder.last_reject()), static_cast<unsigned long>(builder.sample_count()),
+      static_cast<double>(point.world_x), static_cast<double>(point.world_y),
+      static_cast<double>(point.radius), static_cast<unsigned long>(point.timestamp_us));
+  std::fflush(stdout);
+}
+
 const char* zoom_name(ZoomLevel zoom) {
   switch (zoom) {
     case ZoomLevel::k25Percent:
@@ -665,7 +694,9 @@ void run_vector_v2_app() {
                                          : OperationTool::kPen;
           const std::uint16_t color =
               tool == OperationTool::kEraser ? 0xFFFFU : vector_v2::selected_color(chrome);
-          if (!builder.begin(tool, color, presenter.operation_point(last_ink))) {
+          const vector_v2::OperationPoint begin_point = presenter.operation_point(last_ink);
+          if (!builder.begin(tool, color, begin_point)) {
+            print_stroke_rejected("begin", builder, begin_point);
             ink.end();
           } else {
             ribbon.reset();
@@ -692,7 +723,9 @@ void run_vector_v2_app() {
         if (canvas_point.has_value()) {
           last_ink =
               ink.update({.x = canvas_point->x, .y = canvas_point->y, .timestamp_us = event_us});
-          if (!builder.add(presenter.operation_point(last_ink))) {
+          const vector_v2::OperationPoint add_point = presenter.operation_point(last_ink);
+          if (!builder.add(add_point)) {
+            print_stroke_rejected("add", builder, add_point);
             builder.cancel();
             ribbon.reset();
             ink.end();
