@@ -86,7 +86,8 @@ class TileProducer {
     // Next segment endpoint within the active operation; one means the first
     // segment. Single-sample operations are handled as one bounded unit.
     std::size_t next_sample = 1;
-    // Long projected segments resume at their exact raster subdivision.
+    // Source segments are bounded raster units; retained as a cursor so the
+    // rasterizer contract remains explicit if row-level resume is added later.
     std::size_t next_segment_step = 0;
     bool active = false;
   };
