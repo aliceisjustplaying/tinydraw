@@ -532,3 +532,97 @@ TEST_CASE("invalid surface and empty operation fail without changing pixels") {
        .stride = 2}));
   CHECK(pixels == std::array<std::uint16_t, 4>{0x1234U, 0x1234U, 0x1234U, 0x1234U});
 }
+
+TEST_CASE("masked row summary tracks exact per-row saturation") {
+  std::array<std::uint16_t, 8> counts{};
+  std::array<std::uint32_t, 1> words{};
+  vector_v2::MaskedRowSummary summary(counts, words);
+  CHECK_FALSE(summary.ready(1));
+  summary.reset(6, 4);
+  CHECK(summary.ready(6));
+  CHECK_FALSE(summary.ready(7));
+  CHECK_FALSE(summary.all_saturated());
+  CHECK_FALSE(summary.row_saturated(0));
+  CHECK_FALSE(summary.rows_saturated(0, 5));
+
+  summary.note_finalized(2, 3);
+  CHECK_FALSE(summary.row_saturated(2));
+  summary.note_finalized(2, 1);
+  CHECK(summary.row_saturated(2));
+  CHECK(summary.rows_saturated(2, 2));
+  CHECK_FALSE(summary.rows_saturated(1, 2));
+  CHECK_FALSE(summary.rows_saturated(2, 3));
+
+  for (int row = 0; row < 6; ++row) {
+    summary.note_finalized(row, 4);
+  }
+  CHECK(summary.all_saturated());
+  CHECK(summary.rows_saturated(0, 5));
+  // Out-of-range queries never report saturation.
+  CHECK_FALSE(summary.rows_saturated(0, 6));
+  CHECK_FALSE(summary.rows_saturated(-1, 2));
+
+  // Reset rearms every row.
+  summary.reset(6, 4);
+  CHECK_FALSE(summary.rows_saturated(0, 0));
+  CHECK_FALSE(summary.all_saturated());
+}
+
+TEST_CASE("masked row summary spans word boundaries exactly") {
+  std::array<std::uint16_t, 70> counts{};
+  std::array<std::uint32_t, 3> words{};
+  vector_v2::MaskedRowSummary summary(counts, words);
+  summary.reset(70, 1);
+  for (int row = 10; row <= 40; ++row) {
+    summary.note_finalized(row, 1);
+  }
+  CHECK(summary.rows_saturated(10, 40));
+  CHECK(summary.rows_saturated(31, 33));
+  CHECK_FALSE(summary.rows_saturated(9, 40));
+  CHECK_FALSE(summary.rows_saturated(10, 41));
+  CHECK_FALSE(summary.all_saturated());
+  for (int row = 0; row < 70; ++row) {
+    summary.note_finalized(row, 1);
+  }
+  CHECK(summary.all_saturated());
+  CHECK(summary.rows_saturated(0, 69));
+}
+
+TEST_CASE("masked painter keeps a supplied row summary exact") {
+  constexpr int kSize = 32;
+  std::array<std::uint16_t, kSize * kSize> pixels{};
+  pixels.fill(0xFFFFU);
+  std::array<std::uint8_t, (kSize * kSize + 7) / 8> mask{};
+  std::array<std::uint16_t, kSize> counts{};
+  std::array<std::uint32_t, 1> words{};
+  vector_v2::MaskedRowSummary summary(counts, words);
+  summary.reset(kSize, kSize);
+  const vector_v2::RasterSurface surface{.zoom = vector_v2::ZoomLevel::k100Percent,
+                                         .level_bounds = {0, 0, kSize, kSize},
+                                         .pixels = pixels,
+                                         .stride = kSize};
+  // A fat constant-radius segment across the middle saturates interior rows.
+  REQUIRE(vector_v2::apply_masked_incremental_segment(
+      {.color = 0x001FU,
+       .first = {.x_quarter = 0, .y_quarter = 64, .radius_256 = 8 * 256},
+       .second = {.x_quarter = 128, .y_quarter = 64, .radius_256 = 8 * 256}},
+      surface, mask, &summary));
+  // Verify the summary against the mask bit-for-bit.
+  for (int row = 0; row < kSize; ++row) {
+    bool full = true;
+    for (int column = 0; column < kSize; ++column) {
+      const std::size_t pixel =
+          static_cast<std::size_t>(row) * kSize + static_cast<std::size_t>(column);
+      full = full && ((mask[pixel >> 3U] >> (pixel & 7U)) & 1U) != 0U;
+    }
+    CHECK(summary.row_saturated(row) == full);
+  }
+  CHECK_FALSE(summary.all_saturated());
+  // An eraser finalizes background pixels the same way; cover everything.
+  REQUIRE(vector_v2::apply_masked_incremental_segment(
+      {.tool = vector_v2::OperationTool::kEraser,
+       .first = {.x_quarter = 64, .y_quarter = 64, .radius_256 = 64 * 256},
+       .second = {.x_quarter = 64, .y_quarter = 64, .radius_256 = 64 * 256}},
+      surface, mask, &summary));
+  CHECK(summary.all_saturated());
+}

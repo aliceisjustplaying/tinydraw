@@ -30,12 +30,17 @@ struct PaperFixture {
   std::array<std::uint16_t, vector_v2::kTileProducerPixels> supertask{};
   std::array<std::uint16_t, vector_v2::kTilePixels> packed{};
   std::array<std::uint8_t, vector_v2::kTileProducerMaskBytes> mask{};
+  std::array<std::uint16_t, vector_v2::kTileProducerSummaryRows> summary_rows{};
+  std::array<std::uint32_t, vector_v2::kTileProducerSummaryWords> summary_words{};
   vector_v2::OperationLog log{records, samples};
   vector_v2::MaterializedCanvas canvas{overview, *uniforms, occupancy, slots, tile_pool};
-  vector_v2::TileProducer producer{
-      log,
-      canvas,
-      {.supertask_pixels = supertask, .packed_tile_pixels = packed, .finalized_pixels = mask}};
+  vector_v2::TileProducer producer{log,
+                                   canvas,
+                                   {.supertask_pixels = supertask,
+                                    .packed_tile_pixels = packed,
+                                    .finalized_pixels = mask,
+                                    .summary_row_unset = summary_rows,
+                                    .summary_saturated_words = summary_words}};
 
   PaperFixture() {
     snapshot.fill(0xFFFFU);
@@ -58,12 +63,17 @@ struct AdversarialFixture {
   std::array<std::uint16_t, vector_v2::kTileProducerPixels> supertask{};
   std::array<std::uint16_t, vector_v2::kTilePixels> packed{};
   std::array<std::uint8_t, vector_v2::kTileProducerMaskBytes> mask{};
+  std::array<std::uint16_t, vector_v2::kTileProducerSummaryRows> summary_rows{};
+  std::array<std::uint32_t, vector_v2::kTileProducerSummaryWords> summary_words{};
   vector_v2::OperationLog log{records, samples};
   vector_v2::MaterializedCanvas canvas{overview, slots, tile_pool};
-  vector_v2::TileProducer producer{
-      log,
-      canvas,
-      {.supertask_pixels = supertask, .packed_tile_pixels = packed, .finalized_pixels = mask}};
+  vector_v2::TileProducer producer{log,
+                                   canvas,
+                                   {.supertask_pixels = supertask,
+                                    .packed_tile_pixels = packed,
+                                    .finalized_pixels = mask,
+                                    .summary_row_unset = summary_rows,
+                                    .summary_saturated_words = summary_words}};
 
   AdversarialFixture() {
     overview.assign(overview.size(), 0xFFFFU);
@@ -80,12 +90,17 @@ struct Fixture {
   std::array<std::uint16_t, vector_v2::kTileProducerPixels> supertask{};
   std::array<std::uint16_t, vector_v2::kTilePixels> packed{};
   std::array<std::uint8_t, vector_v2::kTileProducerMaskBytes> mask{};
+  std::array<std::uint16_t, vector_v2::kTileProducerSummaryRows> summary_rows{};
+  std::array<std::uint32_t, vector_v2::kTileProducerSummaryWords> summary_words{};
   vector_v2::OperationLog log{records, samples};
   vector_v2::MaterializedCanvas canvas{overview, slots, tile_pool};
-  vector_v2::TileProducer producer{
-      log,
-      canvas,
-      {.supertask_pixels = supertask, .packed_tile_pixels = packed, .finalized_pixels = mask}};
+  vector_v2::TileProducer producer{log,
+                                   canvas,
+                                   {.supertask_pixels = supertask,
+                                    .packed_tile_pixels = packed,
+                                    .finalized_pixels = mask,
+                                    .summary_row_unset = summary_rows,
+                                    .summary_saturated_words = summary_words}};
 
   Fixture() {
     overview.fill(0xFFFFU);
@@ -507,7 +522,9 @@ TEST_CASE("tile producer rejects 25 percent and aliased or short workspace") {
       fixture.canvas,
       {.supertask_pixels = std::span(fixture.supertask).first(1),
        .packed_tile_pixels = fixture.packed,
-       .finalized_pixels = fixture.mask},
+       .finalized_pixels = fixture.mask,
+       .summary_row_unset = fixture.summary_rows,
+       .summary_saturated_words = fixture.summary_words},
   };
   CHECK_FALSE(short_workspace.ready());
   vector_v2::TileProducer aliased_workspace{
@@ -515,7 +532,76 @@ TEST_CASE("tile producer rejects 25 percent and aliased or short workspace") {
       fixture.canvas,
       {.supertask_pixels = fixture.supertask,
        .packed_tile_pixels = std::span(fixture.supertask).first(vector_v2::kTilePixels),
-       .finalized_pixels = fixture.mask},
+       .finalized_pixels = fixture.mask,
+       .summary_row_unset = fixture.summary_rows,
+       .summary_saturated_words = fixture.summary_words},
   };
   CHECK_FALSE(aliased_workspace.ready());
+}
+
+TEST_CASE("saturated groups complete without replaying buried older work") {
+  // Many older multi-sample operations sit entirely under one newest opaque
+  // cover. Saturation gating must complete the group in a handful of slices
+  // instead of rasterizing every buried segment, and stay bit-exact.
+  Fixture fixture;
+  std::array<vector_v2::CompactOperationSample, 24> zigzag{};
+  for (std::size_t operation = 0; operation < 80U; ++operation) {
+    for (std::size_t index = 0; index < zigzag.size(); ++index) {
+      const int x = 40 + static_cast<int>((operation * 29U + index * 37U) % 400U);
+      const int y = 40 + static_cast<int>((operation * 41U + index * 23U) % 400U);
+      zigzag[index] = {.x_quarter = static_cast<std::uint16_t>(x),
+                       .y_quarter = static_cast<std::uint16_t>(y),
+                       .radius_256 = static_cast<std::uint16_t>(512U + (index % 5U) * 96U),
+                       .elapsed_ms = static_cast<std::uint16_t>(index)};
+    }
+    REQUIRE(
+        fixture.log.append(append(zigzag, static_cast<std::uint16_t>(0x0800U + operation * 13U))));
+  }
+  const bool eraser_cover = false;
+  const std::array cover{
+      vector_v2::CompactOperationSample{.x_quarter = 60, .y_quarter = 256, .radius_256 = 80 * 256},
+      vector_v2::CompactOperationSample{.x_quarter = 460, .y_quarter = 256, .radius_256 = 80 * 256},
+  };
+  REQUIRE(fixture.log.append(
+      append(cover, 0x07E0U,
+             eraser_cover ? vector_v2::OperationTool::kEraser : vector_v2::OperationTool::kPen)));
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> revised_overview{};
+  revised_overview.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({fixture.log.current_revision()}, revised_overview));
+
+  const vector_v2::ViewRequest view{
+      .zoom = vector_v2::ZoomLevel::k100Percent,
+      .level_pixels = {0, 32, 128, 96},
+  };
+  std::size_t steps = 0;
+  while (true) {
+    const auto step = fixture.producer.produce_next(view);
+    REQUIRE(step.has_value());
+    ++steps;
+    REQUIRE(steps < 4'000U);
+    if (step->complete) {
+      break;
+    }
+  }
+  // The cover saturates the group after its own segment; the 80 buried
+  // operations must be consumed through the operation batch (64/slice), not
+  // through per-segment raster budgets.
+  CHECK(steps <= 6U);
+
+  std::vector<std::uint16_t> composed(128U * 64U);
+  const auto stats = fixture.canvas.compose_view(view, composed);
+  REQUIRE(stats.has_value());
+  CHECK(stats->fallback_pixels == 0U);
+  std::vector<std::uint16_t> direct(composed.size(), 0xFFFFU);
+  for (std::size_t index = 0; index < fixture.log.operation_count(); ++index) {
+    const auto stored = fixture.log.operation(index);
+    REQUIRE(stored.has_value());
+    REQUIRE(
+        vector_v2::apply_incremental_operation(append(stored->samples, stored->color, stored->tool),
+                                               {.zoom = vector_v2::ZoomLevel::k100Percent,
+                                                .level_bounds = view.level_pixels,
+                                                .pixels = direct,
+                                                .stride = 128}));
+  }
+  CHECK(composed == direct);
 }

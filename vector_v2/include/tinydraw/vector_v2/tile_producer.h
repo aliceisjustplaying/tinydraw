@@ -18,6 +18,9 @@ inline constexpr int kTileProducerHeight = kTileProducerRows * kTileHeight;
 inline constexpr std::size_t kTileProducerPixels =
     static_cast<std::size_t>(kTileProducerWidth) * kTileProducerHeight;
 inline constexpr std::size_t kTileProducerMaskBytes = (kTileProducerPixels + 7U) / 8U;
+inline constexpr std::size_t kTileProducerSummaryRows =
+    static_cast<std::size_t>(kTileProducerHeight);
+inline constexpr std::size_t kTileProducerSummaryWords = (kTileProducerSummaryRows + 31U) / 32U;
 inline constexpr std::size_t kTileProducerOperationBatch = 64;
 inline constexpr std::size_t kTileProducerSampleBatch = 96;
 // Conservative projected bounding-box work budget. It complements the sample
@@ -31,6 +34,12 @@ struct TileProducerWorkspace {
   std::span<std::uint16_t> packed_tile_pixels{};
   // One finalized bit per supertask pixel for exact newest-first replay.
   std::span<std::uint8_t> finalized_pixels{};
+  // Exact row-saturation summary over the supertask mask: per-row unfinalized
+  // counts plus a saturated-row bitmap. Lets replay skip saturated rows,
+  // segments, operations, and complete groups in O(1) with bit-identical
+  // output.
+  std::span<std::uint16_t> summary_row_unset{};
+  std::span<std::uint32_t> summary_saturated_words{};
 };
 
 struct TileProductionStep {
@@ -74,9 +83,10 @@ class TileProducer {
     std::size_t tiles_published = 0;
   };
 
-  struct RasterStepBatch {
-    std::size_t steps = 0;
-    std::size_t raster_work = 0;
+  enum class OperationGate : std::uint8_t {
+    kFailed,
+    kConsumed,
+    kReady,
   };
 
   struct ActiveGroup {
@@ -93,11 +103,17 @@ class TileProducer {
     // Current reverse segment endpoint. Zero initializes a newly selected
     // operation; single-sample operations are handled as one bounded unit.
     std::size_t next_sample = 0;
-    // Source segments are bounded raster units; retained as a cursor so the
-    // rasterizer contract remains explicit if row-level resume is added later.
-    std::size_t next_segment_step = 0;
+    // Operation-level visibility and saturation gates run once per operation;
+    // the passing fetch is cached here so per-segment replay touches neither
+    // the log nor the operation-level rectangle math again. The cached spans
+    // stay valid because render_active_batch revalidates epoch and revision
+    // before every batch.
+    std::size_t cached_operation_index = kNoCachedOperation;
+    StoredOperation cached_operation{};
     bool active = false;
   };
+
+  static constexpr std::size_t kNoCachedOperation = static_cast<std::size_t>(-1);
 
   [[nodiscard]] static bool valid_view(const ViewRequest& view);
   [[nodiscard]] bool tile_satisfies(TileKey key, MaterializationQuality quality) const;
@@ -108,16 +124,15 @@ class TileProducer {
       const ViewRequest& view, MaterializationQuality quality) const;
   [[nodiscard]] std::optional<TileKey> choose_missing_group(const ViewRequest& view) const;
   [[nodiscard]] bool start_group(const ViewRequest& view, TileKey group_origin);
-  [[nodiscard]] RasterStepBatch choose_raster_step_batch(const IncrementalSegment& segment,
-                                                         std::size_t step_budget,
-                                                         std::size_t raster_work_budget) const;
-  void finish_active_segment(const StoredOperation& operation, std::size_t endpoint,
-                             TileProductionStep& result, std::size_t& operations_consumed);
-  [[nodiscard]] bool render_active_operation(const StoredOperation& operation,
-                                             TileProductionStep& result,
-                                             std::size_t& operations_consumed,
-                                             std::size_t& raster_steps_consumed,
-                                             std::size_t& raster_work_consumed);
+  void consume_active_operation(TileProductionStep& result, std::size_t& operations_consumed);
+  [[nodiscard]] OperationGate gate_active_operation(TileProductionStep& result,
+                                                    std::size_t& operations_consumed);
+  void finish_active_segment(std::size_t startpoint, TileProductionStep& result,
+                             std::size_t& operations_consumed);
+  [[nodiscard]] bool render_active_segment(TileProductionStep& result,
+                                           std::size_t& operations_consumed,
+                                           std::size_t& raster_steps_consumed,
+                                           std::size_t& raster_work_consumed);
   [[nodiscard]] std::optional<TileProductionStep> render_active_batch();
   [[nodiscard]] std::optional<GroupPublication> publish_group(PixelRect rendered_bounds,
                                                               PixelRect visible_bounds,
@@ -129,6 +144,7 @@ class TileProducer {
   OperationLog& log_;
   MaterializedCanvas& canvas_;
   TileProducerWorkspace workspace_;
+  MaskedRowSummary summary_;
   DocumentRevision baseline_revision_{};
   std::uint16_t baseline_color_ = 0xFFFFU;
   ActiveGroup active_group_{};

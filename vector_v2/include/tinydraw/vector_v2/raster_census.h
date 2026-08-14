@@ -16,9 +16,12 @@ struct RasterCensus {
   std::uint64_t operations_bbox_rejected = 0;
   std::uint64_t segments_painted = 0;
   std::uint64_t segments_bbox_rejected = 0;
+  std::uint64_t segments_saturation_skipped = 0;    // O(1) saturated-row-range skips
+  std::uint64_t operations_saturation_skipped = 0;  // whole ops skipped via saturation
+  std::uint64_t groups_saturated_early = 0;         // groups completed before oldest op
   // Masked tapered path.
   std::uint64_t rows_scanned = 0;       // rows entering span computation
-  std::uint64_t rows_prefinalized = 0;  // rows skipped before span math (experiment)
+  std::uint64_t rows_prefinalized = 0;  // rows skipped by mask byte scan
   std::uint64_t rows_empty_span = 0;    // conservative span rejected the row
   std::uint64_t span_pixels = 0;        // sum of conservative span widths (visits)
   std::uint64_t mask_skips = 0;         // finalized pixels skipped before the predicate

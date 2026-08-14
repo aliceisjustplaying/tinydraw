@@ -1,6 +1,7 @@
 #include "tinydraw/vector_v2/incremental_rasterizer.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 
 #include "tinydraw/vector_v2/raster_census.h"
@@ -263,9 +264,11 @@ bool mask_range_all_set(std::span<const std::uint8_t> finalized, std::size_t fir
 }
 
 // Per-bit fallback for a chunk that mixes finalized and free pixels. Every
-// pixel here is covered by construction, so no predicate runs.
-void paint_covered_chunk_bits(std::size_t pixel, int count, std::uint16_t color,
-                              const RasterSurface& surface, std::span<std::uint8_t> finalized) {
+// pixel here is covered by construction, so no predicate runs. Returns the
+// count of newly finalized pixels.
+int paint_covered_chunk_bits(std::size_t pixel, int count, std::uint16_t color,
+                             const RasterSurface& surface, std::span<std::uint8_t> finalized) {
+  int newly_finalized = 0;
   for (int offset = 0; offset < count; ++offset) {
     const std::size_t candidate = pixel + static_cast<std::size_t>(offset);
     const std::uint8_t bit = static_cast<std::uint8_t>(1U << (candidate & 7U));
@@ -275,16 +278,19 @@ void paint_covered_chunk_bits(std::size_t pixel, int count, std::uint16_t color,
     }
     surface.pixels[candidate] = color;
     finalize_pixel(finalized, candidate);
+    ++newly_finalized;
   }
+  return newly_finalized;
 }
 
 // Writes one exactly-covered span in mask-byte chunks: fully-finalized
 // chunks are skipped, fully-free chunks are filled whole, and mixed chunks
 // fall back to per-bit writes. Every span pixel is covered by construction,
-// so no predicate runs here.
-void paint_masked_exact_span(int first_covered, int last_covered, std::size_t row,
-                             std::uint16_t color, const RasterSurface& surface,
-                             std::span<std::uint8_t> finalized) {
+// so no predicate runs here. Returns the count of newly finalized pixels.
+int paint_masked_exact_span(int first_covered, int last_covered, std::size_t row,
+                            std::uint16_t color, const RasterSurface& surface,
+                            std::span<std::uint8_t> finalized) {
+  int newly_finalized = 0;
   int x = first_covered;
   std::size_t pixel = row + static_cast<std::size_t>(x - surface.level_bounds.x0);
   while (x <= last_covered) {
@@ -300,21 +306,29 @@ void paint_masked_exact_span(int first_covered, int last_covered, std::size_t ro
       std::fill_n(surface.pixels.begin() + static_cast<std::ptrdiff_t>(pixel),
                   static_cast<std::size_t>(in_byte), color);
       finalized[byte] = static_cast<std::uint8_t>(have | chunk_mask);
+      newly_finalized += in_byte;
     } else {
-      paint_covered_chunk_bits(pixel, in_byte, color, surface, finalized);
+      newly_finalized += paint_covered_chunk_bits(pixel, in_byte, color, surface, finalized);
     }
     x += in_byte;
     pixel += static_cast<std::size_t>(in_byte);
   }
+  return newly_finalized;
 }
 
 void paint_masked_constant_radius_segment(const Segment& segment, PixelRect bounds,
                                           std::uint16_t color, const RasterSurface& surface,
-                                          std::span<std::uint8_t> finalized) {
+                                          std::span<std::uint8_t> finalized,
+                                          MaskedRowSummary* summary) {
+  // Row-level saturation is left to the existing mask byte scan: a per-row
+  // bitmap probe measurably taxed corpora with partial saturation (seed-7
+  // +8% compute) for no exactness benefit. The summary pays off at the
+  // segment, operation, and group levels instead.
   ScanSpan prior{.first = bounds.x0, .last = bounds.x0 - 1};
   for (int y = bounds.y0; y < bounds.y1; ++y) {
-    const std::size_t row = static_cast<std::size_t>(y - surface.level_bounds.y0) *
-                            static_cast<std::size_t>(surface.stride);
+    const int surface_row = y - surface.level_bounds.y0;
+    const std::size_t row =
+        static_cast<std::size_t>(surface_row) * static_cast<std::size_t>(surface.stride);
     const std::size_t row_first =
         row + static_cast<std::size_t>(bounds.x0 - surface.level_bounds.x0);
     const std::size_t row_last =
@@ -336,19 +350,24 @@ void paint_masked_constant_radius_segment(const Segment& segment, PixelRect boun
     prior = {.first = first_covered, .last = last_covered};
     TINYDRAW_V2_CENSUS_ADD(const_span_pixels,
                            static_cast<std::uint64_t>(last_covered - first_covered + 1));
-    paint_masked_exact_span(first_covered, last_covered, row, color, surface, finalized);
+    const int newly_finalized =
+        paint_masked_exact_span(first_covered, last_covered, row, color, surface, finalized);
+    if (newly_finalized != 0 && summary != nullptr) {
+      summary->note_finalized(surface_row, newly_finalized);
+    }
   }
 }
 
 // Walks one conservative row span in mask-byte chunks. Fully-finalized
 // chunks are skipped without touching the predicate; each unfinalized pixel
 // still goes through covers_pixel, so per-pixel decisions are identical to
-// probing every span pixel individually.
-void paint_masked_tapered_row(const Segment& segment, int y, ScanSpan row_span, std::uint16_t color,
-                              const RasterSurface& surface, std::span<std::uint8_t> finalized) {
+// probing every span pixel individually. Returns newly finalized pixels.
+int paint_masked_tapered_row(const Segment& segment, int y, ScanSpan row_span, std::uint16_t color,
+                             const RasterSurface& surface, std::span<std::uint8_t> finalized) {
   const float pixel_y = static_cast<float>(y) + 0.5F;
   const std::size_t row = static_cast<std::size_t>(y - surface.level_bounds.y0) *
                           static_cast<std::size_t>(surface.stride);
+  int newly_finalized = 0;
   int x = row_span.first;
   std::size_t pixel = row + static_cast<std::size_t>(x - surface.level_bounds.x0);
   while (x <= row_span.last) {
@@ -376,10 +395,12 @@ void paint_masked_tapered_row(const Segment& segment, int y, ScanSpan row_span, 
       TINYDRAW_V2_CENSUS_ADD(covers_hits, 1);
       surface.pixels[pixel + static_cast<std::size_t>(offset)] = color;
       finalize_pixel(finalized, pixel + static_cast<std::size_t>(offset));
+      ++newly_finalized;
     }
     x += in_byte;
     pixel += static_cast<std::size_t>(in_byte);
   }
+  return newly_finalized;
 }
 
 // Newest-first masked tapered painter. Skips fully-finalized rows before the
@@ -388,10 +409,14 @@ void paint_masked_tapered_row(const Segment& segment, int y, ScanSpan row_span, 
 // identical to probing every span pixel. covers_pixel remains the sole
 // geometry authority for every unfinalized pixel.
 void paint_masked_tapered_segment(const Segment& segment, PixelRect bounds, std::uint16_t color,
-                                  const RasterSurface& surface, std::span<std::uint8_t> finalized) {
+                                  const RasterSurface& surface, std::span<std::uint8_t> finalized,
+                                  MaskedRowSummary* summary) {
+  // See paint_masked_constant_radius_segment: row-level saturation stays on
+  // the mask byte scan; the summary is consulted at coarser levels only.
   for (int y = bounds.y0; y < bounds.y1; ++y) {
-    const std::size_t row = static_cast<std::size_t>(y - surface.level_bounds.y0) *
-                            static_cast<std::size_t>(surface.stride);
+    const int surface_row = y - surface.level_bounds.y0;
+    const std::size_t row =
+        static_cast<std::size_t>(surface_row) * static_cast<std::size_t>(surface.stride);
     const std::size_t row_first =
         row + static_cast<std::size_t>(bounds.x0 - surface.level_bounds.x0);
     const std::size_t row_last =
@@ -409,21 +434,26 @@ void paint_masked_tapered_segment(const Segment& segment, PixelRect bounds, std:
     }
     TINYDRAW_V2_CENSUS_ADD(span_pixels,
                            static_cast<std::uint64_t>(row_span.last - row_span.first + 1));
-    paint_masked_tapered_row(segment, y, row_span, color, surface, finalized);
+    const int newly_finalized =
+        paint_masked_tapered_row(segment, y, row_span, color, surface, finalized);
+    if (newly_finalized != 0 && summary != nullptr) {
+      summary->note_finalized(surface_row, newly_finalized);
+    }
   }
 }
 
 void paint_masked_segment(const Sample& start, const Sample& end, std::uint16_t color,
-                          const RasterSurface& surface, std::span<std::uint8_t> finalized) {
+                          const RasterSurface& surface, std::span<std::uint8_t> finalized,
+                          MaskedRowSummary* summary) {
   const Segment segment = make_segment(start, end);
   const PixelRect bounds = segment_bounds(segment, surface.level_bounds);
   if (bounds.x1 <= bounds.x0 || bounds.y1 <= bounds.y0) {
     return;
   }
   if (start.radius == end.radius) {
-    paint_masked_constant_radius_segment(segment, bounds, color, surface, finalized);
+    paint_masked_constant_radius_segment(segment, bounds, color, surface, finalized, summary);
   } else {
-    paint_masked_tapered_segment(segment, bounds, color, surface, finalized);
+    paint_masked_tapered_segment(segment, bounds, color, surface, finalized, summary);
   }
 }
 
@@ -447,6 +477,75 @@ void paint_bounded_segment(const Sample& first, const Sample& second, std::uint1
 }
 
 }  // namespace
+
+MaskedRowSummary::MaskedRowSummary(std::span<std::uint16_t> unset_counts,
+                                   std::span<std::uint32_t> saturated_words)
+    : unset_counts_(unset_counts), saturated_words_(saturated_words) {}
+
+bool MaskedRowSummary::ready(std::size_t rows) const {
+  return rows != 0U && static_cast<std::size_t>(rows_) >= rows && unset_counts_.size() >= rows &&
+         saturated_words_.size() >= (rows + 31U) / 32U;
+}
+
+void MaskedRowSummary::reset(int rows, int width) {
+  if (rows <= 0 || width <= 0 || static_cast<std::size_t>(rows) > unset_counts_.size() ||
+      (static_cast<std::size_t>(rows) + 31U) / 32U > saturated_words_.size()) {
+    rows_ = 0;
+    unsaturated_rows_ = 0;
+    return;
+  }
+  rows_ = rows;
+  unsaturated_rows_ = rows;
+  std::fill_n(unset_counts_.begin(), static_cast<std::size_t>(rows),
+              static_cast<std::uint16_t>(width));
+  std::fill_n(saturated_words_.begin(), (static_cast<std::size_t>(rows) + 31U) / 32U, 0U);
+}
+
+bool MaskedRowSummary::row_saturated(int row) const {
+  return row >= 0 && row < rows_ &&
+         (saturated_words_[static_cast<std::size_t>(row) >> 5U] &
+          (1U << (static_cast<unsigned>(row) & 31U))) != 0U;
+}
+
+bool MaskedRowSummary::rows_saturated(int first_row, int last_row) const {
+  if (first_row < 0 || last_row >= rows_ || first_row > last_row) {
+    return false;
+  }
+  const std::size_t first_word = static_cast<std::size_t>(first_row) >> 5U;
+  const std::size_t last_word = static_cast<std::size_t>(last_row) >> 5U;
+  const std::uint32_t first_mask = ~0U << (static_cast<unsigned>(first_row) & 31U);
+  const std::uint32_t last_mask = ~0U >> (31U - (static_cast<unsigned>(last_row) & 31U));
+  if (first_word == last_word) {
+    const std::uint32_t need = first_mask & last_mask;
+    return (saturated_words_[first_word] & need) == need;
+  }
+  if ((saturated_words_[first_word] & first_mask) != first_mask ||
+      (saturated_words_[last_word] & last_mask) != last_mask) {
+    return false;
+  }
+  return std::all_of(saturated_words_.begin() + static_cast<std::ptrdiff_t>(first_word + 1U),
+                     saturated_words_.begin() + static_cast<std::ptrdiff_t>(last_word),
+                     [](std::uint32_t word) { return word == ~0U; });
+}
+
+bool MaskedRowSummary::all_saturated() const { return rows_ != 0 && unsaturated_rows_ == 0; }
+
+void MaskedRowSummary::note_finalized(int row, int newly_finalized) {
+  if (newly_finalized <= 0 || row < 0 || row >= rows_) {
+    return;
+  }
+  std::uint16_t& unset = unset_counts_.data()[row];
+  unset =
+      static_cast<std::uint16_t>(unset - std::min<int>(newly_finalized, static_cast<int>(unset)));
+  if (unset == 0U) {
+    std::uint32_t& word = saturated_words_.data()[row >> 5];
+    const std::uint32_t bit = 1U << (static_cast<unsigned>(row) & 31U);
+    if ((word & bit) == 0U) {
+      word |= bit;
+      --unsaturated_rows_;
+    }
+  }
+}
 
 PixelRect operation_level_bounds(PixelRect world_bounds, ZoomLevel zoom) {
   const int percent = zoom_percent(zoom);
@@ -500,20 +599,23 @@ bool apply_incremental_segment_steps(const IncrementalSegment& segment,
 
 bool apply_masked_incremental_segment(const IncrementalSegment& segment,
                                       const RasterSurface& surface,
-                                      std::span<std::uint8_t> finalized_pixels) {
+                                      std::span<std::uint8_t> finalized_pixels,
+                                      MaskedRowSummary* summary) {
   const std::size_t required_mask_bytes = (surface.pixels.size() + 7U) / 8U;
   const bool mask_aliases_pixels = storage_overlaps(
       std::as_bytes(std::span(surface.pixels)),
       std::as_bytes(std::span(finalized_pixels)
                         .first(std::min(finalized_pixels.size(), required_mask_bytes))));
+  const int surface_rows = surface.level_bounds.y1 - surface.level_bounds.y0;
   if (!valid_surface(surface) || finalized_pixels.size() < required_mask_bytes ||
-      mask_aliases_pixels) {
+      mask_aliases_pixels ||
+      (summary != nullptr && !summary->ready(static_cast<std::size_t>(surface_rows)))) {
     return false;
   }
   paint_masked_segment(scaled_sample(segment.first, surface.zoom),
                        scaled_sample(segment.second, surface.zoom),
                        segment.tool == OperationTool::kEraser ? kBackground : segment.color,
-                       surface, finalized_pixels);
+                       surface, finalized_pixels, summary);
   return true;
 }
 

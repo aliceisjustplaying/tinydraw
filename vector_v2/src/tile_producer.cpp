@@ -32,26 +32,31 @@ TileProducer::TileProducer(OperationLog& log, MaterializedCanvas& canvas,
     : log_(log),
       canvas_(canvas),
       workspace_(workspace),
+      summary_(workspace.summary_row_unset, workspace.summary_saturated_words),
       baseline_revision_(uniform_baseline_revision),
       baseline_color_(baseline_color) {}
 
 bool TileProducer::ready() const {
-  const auto supertask_bytes = std::as_bytes(workspace_.supertask_pixels);
-  const auto packed_bytes = std::as_bytes(workspace_.packed_tile_pixels);
-  const auto mask_bytes = std::as_bytes(workspace_.finalized_pixels);
-  return log_.ready() && canvas_.ready() &&
+  const std::array<std::span<const std::byte>, 5> workspaces{
+      std::as_bytes(workspace_.supertask_pixels), std::as_bytes(workspace_.packed_tile_pixels),
+      std::as_bytes(workspace_.finalized_pixels), std::as_bytes(workspace_.summary_row_unset),
+      std::as_bytes(workspace_.summary_saturated_words)};
+  bool workspace_invalid = false;
+  for (std::size_t left = 0; left < workspaces.size(); ++left) {
+    workspace_invalid = workspace_invalid ||
+                        !canvas_.accepts_external_workspace(workspaces[left]) ||
+                        log_.workspace_overlaps_storage(workspaces[left]);
+    for (std::size_t right = left + 1U; right < workspaces.size(); ++right) {
+      workspace_invalid =
+          workspace_invalid || storage_overlaps(workspaces[left], workspaces[right]);
+    }
+  }
+  return !workspace_invalid && log_.ready() && canvas_.ready() &&
          workspace_.supertask_pixels.size() >= kTileProducerPixels &&
          workspace_.packed_tile_pixels.size() >= kTilePixels &&
          workspace_.finalized_pixels.size() >= kTileProducerMaskBytes &&
-         !storage_overlaps(supertask_bytes, packed_bytes) &&
-         !storage_overlaps(supertask_bytes, mask_bytes) &&
-         !storage_overlaps(packed_bytes, mask_bytes) &&
-         canvas_.accepts_external_workspace(supertask_bytes) &&
-         canvas_.accepts_external_workspace(packed_bytes) &&
-         canvas_.accepts_external_workspace(mask_bytes) &&
-         !log_.workspace_overlaps_storage(supertask_bytes) &&
-         !log_.workspace_overlaps_storage(packed_bytes) &&
-         !log_.workspace_overlaps_storage(mask_bytes);
+         workspace_.summary_row_unset.size() >= kTileProducerSummaryRows &&
+         workspace_.summary_saturated_words.size() >= kTileProducerSummaryWords;
 }
 
 bool TileProducer::valid_view(const ViewRequest& view) {
@@ -269,6 +274,7 @@ bool TileProducer::start_group(const ViewRequest& view, TileKey group_origin) {
   auto surface = workspace_.supertask_pixels.first(kTileProducerPixels);
   std::fill(surface.begin(), surface.end(), baseline_color_);
   std::fill_n(workspace_.finalized_pixels.begin(), kTileProducerMaskBytes, std::uint8_t{0});
+  summary_.reset(bounds.y1 - bounds.y0, bounds.x1 - bounds.x0);
   active_group_ = {.view = view,
                    .origin = group_origin,
                    .bounds = bounds,
@@ -278,64 +284,70 @@ bool TileProducer::start_group(const ViewRequest& view, TileKey group_origin) {
                    .operation_count = replay->operation_count,
                    .next_operation = replay->operation_count,
                    .next_sample = 0,
-                   .next_segment_step = 0,
                    .active = true};
   return true;
 }
 
-TileProducer::RasterStepBatch TileProducer::choose_raster_step_batch(
-    const IncrementalSegment& segment, std::size_t step_budget,
-    std::size_t raster_work_budget) const {
-  const std::size_t total_steps =
-      incremental_segment_step_count(segment.first, segment.second, active_group_.view.zoom);
-  RasterStepBatch batch{};
-  while (active_group_.next_segment_step + batch.steps < total_steps && batch.steps < step_budget) {
-    const std::size_t step = active_group_.next_segment_step + batch.steps;
-    const std::size_t work = incremental_segment_step_work(
-        segment.first, segment.second, active_group_.view.zoom, active_group_.bounds, step);
-    if (batch.steps != 0U && (batch.raster_work >= raster_work_budget ||
-                              work > raster_work_budget - batch.raster_work)) {
-      break;
-    }
-    ++batch.steps;
-    batch.raster_work += work;
-  }
-  return batch;
+void TileProducer::consume_active_operation(TileProductionStep& result,
+                                            std::size_t& operations_consumed) {
+  --active_group_.next_operation;
+  active_group_.next_sample = 0U;
+  active_group_.cached_operation_index = kNoCachedOperation;
+  ++operations_consumed;
+  ++result.operations_scanned;
 }
 
-void TileProducer::finish_active_segment(const StoredOperation& operation, std::size_t startpoint,
-                                         TileProductionStep& result,
+// Runs the operation-level visibility and saturation gates exactly once per
+// operation and caches the passing fetch, so per-segment replay pays neither
+// the log lookup nor the operation-rectangle math again.
+TileProducer::OperationGate TileProducer::gate_active_operation(TileProductionStep& result,
+                                                                std::size_t& operations_consumed) {
+  const std::size_t operation_index =
+      active_group_.first_operation + active_group_.next_operation - 1U;
+  if (active_group_.cached_operation_index == operation_index) {
+    return OperationGate::kReady;
+  }
+  const auto stored = log_.operation(operation_index);
+  if (!stored.has_value()) {
+    return OperationGate::kFailed;
+  }
+  const PixelRect operation_bounds =
+      operation_level_bounds(stored->world_bounds, active_group_.view.zoom);
+  if (!intersects(operation_bounds, active_group_.bounds)) {
+    TINYDRAW_V2_CENSUS_ADD(operations_bbox_rejected, 1);
+    consume_active_operation(result, operations_consumed);
+    return OperationGate::kConsumed;
+  }
+  if (summary_.rows_saturated(
+          std::max(operation_bounds.y0, active_group_.bounds.y0) - active_group_.bounds.y0,
+          std::min(operation_bounds.y1, active_group_.bounds.y1) - 1 - active_group_.bounds.y0)) {
+    // Every pixel this operation could touch inside the group is already
+    // finalized by newer paint, so replaying it is a provable no-op.
+    TINYDRAW_V2_CENSUS_ADD(operations_saturation_skipped, 1);
+    consume_active_operation(result, operations_consumed);
+    return OperationGate::kConsumed;
+  }
+  active_group_.cached_operation_index = operation_index;
+  active_group_.cached_operation = *stored;
+  return OperationGate::kReady;
+}
+
+void TileProducer::finish_active_segment(std::size_t startpoint, TileProductionStep& result,
                                          std::size_t& operations_consumed) {
-  active_group_.next_segment_step = 0U;
+  const StoredOperation& operation = active_group_.cached_operation;
   const bool operation_complete = operation.samples.size() == 1U || startpoint == 0U;
   if (operation_complete) {
-    --active_group_.next_operation;
-    active_group_.next_sample = 0U;
-    ++operations_consumed;
-    ++result.operations_scanned;
+    consume_active_operation(result, operations_consumed);
   } else {
     active_group_.next_sample = startpoint;
   }
 }
 
-bool TileProducer::render_active_operation(const StoredOperation& operation,
-                                           TileProductionStep& result,
-                                           std::size_t& operations_consumed,
-                                           std::size_t& raster_steps_consumed,
-                                           std::size_t& raster_work_consumed) {
-  const bool visible =
-      intersects(operation_level_bounds(operation.world_bounds, active_group_.view.zoom),
-                 active_group_.bounds);
-  if (!visible) {
-    TINYDRAW_V2_CENSUS_ADD(operations_bbox_rejected, 1);
-    --active_group_.next_operation;
-    active_group_.next_sample = 0U;
-    active_group_.next_segment_step = 0U;
-    ++operations_consumed;
-    ++result.operations_scanned;
-    return true;
-  }
-
+bool TileProducer::render_active_segment(TileProductionStep& result,
+                                         std::size_t& operations_consumed,
+                                         std::size_t& raster_steps_consumed,
+                                         std::size_t& raster_work_consumed) {
+  const StoredOperation& operation = active_group_.cached_operation;
   if (operation.samples.size() > 1U && active_group_.next_sample == 0U) {
     active_group_.next_sample = operation.samples.size() - 1U;
   }
@@ -352,47 +364,51 @@ bool TileProducer::render_active_operation(const StoredOperation& operation,
       .first = operation.samples[startpoint],
       .second = operation.samples[endpoint],
   };
-  if (!intersects(
-          incremental_segment_level_bounds(segment.first, segment.second, active_group_.view.zoom),
-          active_group_.bounds)) {
+  const PixelRect segment_bounds =
+      incremental_segment_level_bounds(segment.first, segment.second, active_group_.view.zoom);
+  const PixelRect clipped{
+      .x0 = std::max(segment_bounds.x0, active_group_.bounds.x0),
+      .y0 = std::max(segment_bounds.y0, active_group_.bounds.y0),
+      .x1 = std::min(segment_bounds.x1, active_group_.bounds.x1),
+      .y1 = std::min(segment_bounds.y1, active_group_.bounds.y1),
+  };
+  if (clipped.x0 >= clipped.x1 || clipped.y0 >= clipped.y1) {
     // Count a rejected segment against the per-call cursor budget so a single
     // giant operation cannot monopolize input polling even when it is distant.
     TINYDRAW_V2_CENSUS_ADD(segments_bbox_rejected, 1);
     ++raster_steps_consumed;
-    finish_active_segment(operation, startpoint, result, operations_consumed);
+    finish_active_segment(startpoint, result, operations_consumed);
+    return true;
+  }
+  if (summary_.rows_saturated(clipped.y0 - active_group_.bounds.y0,
+                              clipped.y1 - 1 - active_group_.bounds.y0)) {
+    // The segment's clipped footprint lies entirely in saturated rows; masked
+    // replay would skip every pixel individually. Skip it in O(1).
+    TINYDRAW_V2_CENSUS_ADD(segments_saturation_skipped, 1);
+    ++raster_steps_consumed;
+    finish_active_segment(startpoint, result, operations_consumed);
     return true;
   }
 
-  const std::size_t total_steps =
-      incremental_segment_step_count(segment.first, segment.second, active_group_.view.zoom);
-  const RasterStepBatch batch =
-      choose_raster_step_batch(segment, kTileProducerSampleBatch - raster_steps_consumed,
-                               kTileProducerRasterWorkBatch - raster_work_consumed);
-  if (batch.steps == 0U) {
-    return false;
-  }
   const auto surface = workspace_.supertask_pixels.first(kTileProducerPixels);
-  if (!apply_masked_incremental_segment(
-          segment,
-          {.zoom = active_group_.view.zoom,
-           .level_bounds = active_group_.bounds,
-           .pixels = surface,
-           .stride = kTileProducerWidth},
-          workspace_.finalized_pixels.first(kTileProducerMaskBytes))) {
+  if (!apply_masked_incremental_segment(segment,
+                                        {.zoom = active_group_.view.zoom,
+                                         .level_bounds = active_group_.bounds,
+                                         .pixels = surface,
+                                         .stride = kTileProducerWidth},
+                                        workspace_.finalized_pixels.first(kTileProducerMaskBytes),
+                                        &summary_)) {
     return false;
   }
   TINYDRAW_V2_CENSUS_ADD(segments_painted, 1);
-  active_group_.next_segment_step += batch.steps;
-  raster_steps_consumed += batch.steps;
-  raster_work_consumed += batch.raster_work;
-  result.raster_steps += batch.steps;
-  result.raster_work += batch.raster_work;
+  const std::size_t raster_work = static_cast<std::size_t>(clipped.x1 - clipped.x0) *
+                                  static_cast<std::size_t>(clipped.y1 - clipped.y0);
+  ++raster_steps_consumed;
+  raster_work_consumed += raster_work;
+  ++result.raster_steps;
+  result.raster_work += raster_work;
   ++result.operations_rendered;
-
-  if (active_group_.next_segment_step < total_steps) {
-    return true;
-  }
-  finish_active_segment(operation, startpoint, result, operations_consumed);
+  finish_active_segment(startpoint, result, operations_consumed);
   return true;
 }
 
@@ -410,14 +426,26 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
   while (active_group_.next_operation != 0U && operations_consumed < kTileProducerOperationBatch &&
          raster_steps_consumed < kTileProducerSampleBatch &&
          raster_work_consumed < kTileProducerRasterWorkBatch) {
-    const auto stored =
-        log_.operation(active_group_.first_operation + active_group_.next_operation - 1U);
-    if (!stored.has_value()) {
+    if (summary_.all_saturated()) {
+      // Every pixel of the group surface is finalized; the remaining older
+      // operations cannot change any pixel. Complete the replay immediately.
+      TINYDRAW_V2_CENSUS_ADD(groups_saturated_early, 1);
+      result.operations_scanned += active_group_.next_operation;
+      active_group_.next_operation = 0U;
+      active_group_.next_sample = 0U;
+      active_group_.cached_operation_index = kNoCachedOperation;
+      break;
+    }
+    const OperationGate gate = gate_active_operation(result, operations_consumed);
+    if (gate == OperationGate::kFailed) {
       active_group_ = {};
       return std::nullopt;
     }
-    if (!render_active_operation(*stored, result, operations_consumed, raster_steps_consumed,
-                                 raster_work_consumed)) {
+    if (gate == OperationGate::kConsumed) {
+      continue;
+    }
+    if (!render_active_segment(result, operations_consumed, raster_steps_consumed,
+                               raster_work_consumed)) {
       active_group_ = {};
       return std::nullopt;
     }
