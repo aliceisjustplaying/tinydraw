@@ -38,9 +38,20 @@ bool OperationBuilder::overflowed() const { return overflowed_; }
 
 OperationBuilderReject OperationBuilder::last_reject() const { return last_reject_; }
 
+std::optional<OperationAppend> OperationBuilder::collected() const {
+  if (sample_count_ == 0U) {
+    return std::nullopt;
+  }
+  return OperationAppend{.tool = tool_,
+                         .color = color_,
+                         .gesture_id = gesture_id_,
+                         .samples = storage_.first(sample_count_)};
+}
+
 std::size_t OperationBuilder::sample_count() const { return sample_count_; }
 
-bool OperationBuilder::begin(OperationTool tool, std::uint16_t color, OperationPoint point) {
+bool OperationBuilder::begin(OperationTool tool, std::uint16_t color, OperationPoint point,
+                             std::uint16_t gesture_id) {
   cancel();
   if (!ready() || (tool != OperationTool::kPen && tool != OperationTool::kEraser)) {
     last_reject_ = OperationBuilderReject::kNotActive;
@@ -52,6 +63,7 @@ bool OperationBuilder::begin(OperationTool tool, std::uint16_t color, OperationP
   }
   tool_ = tool;
   color_ = color;
+  gesture_id_ = gesture_id;
   started_us_ = point.timestamp_us;
   previous_us_ = point.timestamp_us;
   active_ = true;
@@ -80,13 +92,14 @@ std::optional<OperationAppend> OperationBuilder::finish(OperationPoint point) {
     return std::nullopt;
   }
   active_ = false;
-  return OperationAppend{.tool = tool_, .color = color_, .samples = storage_.first(sample_count_)};
+  return collected();
 }
 
 void OperationBuilder::cancel() {
   sample_count_ = 0;
   active_ = false;
   overflowed_ = false;
+  gesture_id_ = 0;
   last_reject_ = OperationBuilderReject::kNone;
 }
 

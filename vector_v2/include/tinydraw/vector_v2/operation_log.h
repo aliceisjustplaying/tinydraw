@@ -14,6 +14,7 @@ struct StoredOperation {
   OperationIdentity identity{};
   OperationTool tool = OperationTool::kPen;
   std::uint16_t color = 0;
+  std::uint16_t gesture_id = 0;
   PixelRect world_bounds{};
   std::span<const CompactOperationSample> samples{};
 };
