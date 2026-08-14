@@ -14,6 +14,7 @@ target_link_libraries(tinydraw_vector_v2 PUBLIC tinydraw_project_options)
 if(TINYDRAW_BUILD_TESTS)
   add_executable(tinydraw_vector_v2_tests
     tests/test_main.cpp
+    tests/chrome_test.cpp
     tests/display_scheduler_test.cpp
     tests/frame_scroller_test.cpp
     tests/incremental_document_test.cpp
