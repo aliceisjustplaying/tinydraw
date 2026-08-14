@@ -184,7 +184,9 @@ TEST_CASE("tapered segments match a per-pixel oracle across clip boundaries") {
         .y_quarter = static_cast<std::uint16_t>(8U + next() % 112U),
         .radius_256 = static_cast<std::uint16_t>(64U + next() % 4'096U),
     };
-    if (first.radius_256 == second.radius_256) {
+    if (case_index % 2 == 0) {
+      second.radius_256 = first.radius_256;
+    } else if (first.radius_256 == second.radius_256) {
       ++second.radius_256;
     }
     const std::array samples{first, second};
@@ -217,6 +219,8 @@ TEST_CASE("tapered segments match a per-pixel oracle across clip boundaries") {
         }
       }
     }
+    // Bit-exact equality is intentional under the pinned toolchain: it locks
+    // both the constant-radius span path and tapered fallback to one predicate.
     CHECK(rendered == reference);
     CHECK(split == reference);
   }
