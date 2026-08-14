@@ -69,14 +69,16 @@ inline constexpr std::size_t kInPlaceTileMaskBytes = (kTilePixels + 7U) / 8U;
 // operation directly into resident raw tiles instead of copying each affected
 // tile out and back. Every fallible step (log preparation, overview scratch,
 // canvas validation, enumeration) runs before any owned pixel changes, so
-// failure still leaves both authorities at their prior revisions. Affected
-// resident raw tiles at every zoom are updated in place; resident uniforms
-// whose color equals the painted color are retained untouched; uniforms
-// inside priority_view are converted to raw and painted; every other affected
-// identity is invalidated to correct overview fallback, exactly like the
-// reference path. Composed pixels equal the reference path wherever both are
-// resident, and the priority view never falls back. Callers must serialize
-// access and must not compose between internal edits (single-threaded use).
+// failure still leaves both authorities at their prior revisions. Mutation is
+// bounded to the active zoom: affected resident raw tiles at priority_view's
+// zoom are updated in place; resident uniforms whose color equals the painted
+// color are retained untouched at every zoom; uniforms inside priority_view
+// are converted to raw and painted; every other affected identity - including
+// every raw tile at another zoom - is invalidated to correct overview
+// fallback and re-produced lazily on its next visit. Composed pixels equal
+// ground-truth replay wherever both are resident, and the priority view never
+// falls back. Callers must serialize access and must not compose between
+// internal edits (single-threaded use).
 [[nodiscard]] std::optional<IncrementalAppendResult> append_incrementally_in_place(
     OperationLog& log, MaterializedCanvas& canvas, const OperationAppend& append_request,
     const InPlaceAppendWorkspace& workspace,

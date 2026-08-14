@@ -936,9 +936,11 @@ TEST_CASE("in-place append equals the reference transactional append") {
   }
   CHECK(chunk_count >= 16U);
 
-  // In-place keeps affected non-view raw tiles current instead of
-  // invalidating them (out-of-view mismatched uniforms still fall back, like
-  // the reference path). Every tile still resident must equal ground truth.
+  // In-place bounds mutation to the active zoom: affected raw tiles at
+  // other zooms are dropped by the commit and re-produced lazily, exactly
+  // like the reference path's priority-view publication scope. Whatever
+  // remains resident must equal ground truth — a resident tile may be
+  // dropped, but it must never be stale.
   std::vector<std::uint16_t> coarse_direct(256U * 256U);
   forward_replay(in_place.log, coarse_view, coarse_direct);
   std::size_t resident_coarse_tiles = 0;
@@ -969,7 +971,102 @@ TEST_CASE("in-place append equals the reference transactional append") {
       CHECK(equal);
     }
   }
-  CHECK(resident_coarse_tiles > 0U);
+  // Under the active-zoom mutation policy the strokes may have dropped any
+  // number of coarse tiles; the count is informational, not a bound.
+  static_cast<void>(resident_coarse_tiles);
+}
+
+TEST_CASE("in-place append bounds mutation to the active zoom") {
+  EquivalenceRig rig;
+  const vector_v2::ViewRequest fine_view{
+      .zoom = vector_v2::ZoomLevel::k400Percent,
+      .level_pixels = {0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
+  };
+  const vector_v2::ViewRequest coarse_view{
+      .zoom = vector_v2::ZoomLevel::k100Percent,
+      .level_pixels = {0, 0, 256, 256},
+  };
+  // Ink the region first so the cold fills below materialize real raw tiles
+  // at both zooms; a blank canvas would give only paper uniforms and the
+  // cross-zoom assertions would be vacuous.
+  {
+    std::array<vector_v2::CompactOperationSample, 12> ink{};
+    for (std::size_t index = 0; index < ink.size(); ++index) {
+      ink[index] = {.x_quarter = static_cast<std::uint16_t>(20U + index * 40U),
+                    .y_quarter = static_cast<std::uint16_t>(460U - index * 36U),
+                    .radius_256 = 2'048U,
+                    .elapsed_ms = static_cast<std::uint16_t>(index * 8U)};
+    }
+    REQUIRE(vector_v2::append_incrementally_in_place(rig.log, rig.canvas,
+                                                     {.color = 0x07E0U, .samples = ink},
+                                                     rig.in_place_workspace(), std::nullopt)
+                .has_value());
+  }
+  rig.cold_fill(fine_view);
+  rig.cold_fill(coarse_view);
+  // The ink diagonal must be resident as raw pixels at both zooms.
+  REQUIRE(rig.canvas.lookup({vector_v2::ZoomLevel::k100Percent, 0, 1}).has_value());
+  REQUIRE(rig.canvas.lookup({vector_v2::ZoomLevel::k100Percent, 0, 1})->kind ==
+          vector_v2::SourceKind::kTileSlot);
+
+  // A pen stroke inside the 400% viewport whose world bounds also cross
+  // resident 100% tiles.
+  std::array<vector_v2::CompactOperationSample, 8> samples{};
+  for (std::size_t index = 0; index < samples.size(); ++index) {
+    samples[index] = {.x_quarter = static_cast<std::uint16_t>(40U + index * 36U),
+                      .y_quarter = static_cast<std::uint16_t>(48U + index * 40U),
+                      .radius_256 = 1'024U,
+                      .elapsed_ms = static_cast<std::uint16_t>(index * 8U)};
+  }
+  const auto result = vector_v2::append_incrementally_in_place(
+      rig.log, rig.canvas, {.color = 0x001FU, .samples = samples}, rig.in_place_workspace(),
+      fine_view);
+  REQUIRE(result.has_value());
+  // Cross-zoom resident tiles under the stroke were dropped, not painted.
+  CHECK(result->fallback_tiles > 0U);
+  const auto affected_bounds = result->affected_world_bounds;
+  // Regression pin: the result must carry the operation's real world bounds
+  // (publish() clears the prepared view; the bounds were once read after).
+  REQUIRE(affected_bounds.x1 > affected_bounds.x0);
+  REQUIRE(affected_bounds.y1 > affected_bounds.y0);
+  for (std::uint16_t row = 0; row < 4U; ++row) {
+    for (std::uint16_t column = 0; column < 4U; ++column) {
+      const vector_v2::TileKey key{vector_v2::ZoomLevel::k100Percent, column, row};
+      const auto bounds = vector_v2::tile_pixel_bounds(key);
+      // 100% level pixels equal world units.
+      const bool affected = bounds.x0 < affected_bounds.x1 && affected_bounds.x0 < bounds.x1 &&
+                            bounds.y0 < affected_bounds.y1 && affected_bounds.y0 < bounds.y1;
+      const auto source = rig.canvas.lookup(key);
+      REQUIRE(source.has_value());
+      if (affected) {
+        CHECK(source->kind == vector_v2::SourceKind::kOverview);
+      }
+    }
+  }
+  // The active 400% view stays fully resident and pixel-exact.
+  std::vector<std::uint16_t> composed(vector_v2::kOverviewPixels);
+  const auto stats = rig.canvas.compose_view(fine_view, composed);
+  REQUIRE(stats.has_value());
+  CHECK(stats->fallback_pixels == 0U);
+  std::vector<std::uint16_t> direct(vector_v2::kOverviewPixels);
+  forward_replay(rig.log, fine_view, direct);
+  CHECK(composed == direct);
+
+  // Without a priority view (the 25% product case) every affected raw tile
+  // is dropped and only the overview is painted.
+  std::array<vector_v2::CompactOperationSample, 4> second{};
+  for (std::size_t index = 0; index < second.size(); ++index) {
+    second[index] = {.x_quarter = static_cast<std::uint16_t>(60U + index * 48U),
+                     .y_quarter = static_cast<std::uint16_t>(120U + index * 32U),
+                     .radius_256 = 1'024U,
+                     .elapsed_ms = static_cast<std::uint16_t>(index * 8U)};
+  }
+  const auto overview_result = vector_v2::append_incrementally_in_place(
+      rig.log, rig.canvas, {.color = 0xF800U, .samples = second}, rig.in_place_workspace(),
+      std::nullopt);
+  REQUIRE(overview_result.has_value());
+  CHECK(overview_result->published_tiles == 0U);
+  CHECK(overview_result->fallback_tiles == overview_result->affected_resident_tiles);
 }
 
 TEST_CASE("in-place append retains matching uniforms under an eraser") {
