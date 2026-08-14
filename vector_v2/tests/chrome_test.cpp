@@ -55,7 +55,7 @@ TEST_CASE("full screen palette maps all sixteen swatches and both page actions")
   std::array<bool, 16> seen{};
   for (int row = 0; row < 4; ++row) {
     for (int column = 0; column < 4; ++column) {
-      const tinydraw::vector_v2::ChromePoint point{48.0F + column * 92.0F, 82.0F + row * 94.0F};
+      const tinydraw::vector_v2::ChromePoint point{46.0F + column * 92.0F, 108.0F + row * 90.0F};
       const auto color = tinydraw::vector_v2::chrome_color_at(point, state);
       REQUIRE(color.has_value());
       seen[*color] = true;
@@ -65,9 +65,9 @@ TEST_CASE("full screen palette maps all sixteen swatches and both page actions")
   for (const bool present : seen) {
     CHECK(present);
   }
-  CHECK(tinydraw::vector_v2::chrome_action_at({30.0F, 20.0F}, state) ==
+  CHECK(tinydraw::vector_v2::chrome_action_at({30.0F, 55.0F}, state) ==
         ChromeAction::kPreviousPalette);
-  CHECK(tinydraw::vector_v2::chrome_action_at({340.0F, 20.0F}, state) ==
+  CHECK(tinydraw::vector_v2::chrome_action_at({340.0F, 55.0F}, state) ==
         ChromeAction::kNextPalette);
   CHECK(tinydraw::vector_v2::chrome_contains({180.0F, 200.0F}, state));
 }
@@ -95,12 +95,13 @@ TEST_CASE("chrome canvas clipping follows the visible overlay") {
                   .has_value());
 }
 
-TEST_CASE("palette hit testing matches rendered integer cell boundaries") {
+TEST_CASE("palette hit testing gives large cells to the circular swatches") {
   const ChromeState state{.popup = ChromePopup::kColors};
-  CHECK(tinydraw::vector_v2::chrome_color_at({89.0F, 82.0F}, state) == 0U);
-  CHECK_FALSE(tinydraw::vector_v2::chrome_color_at({90.0F, 82.0F}, state).has_value());
-  CHECK(tinydraw::vector_v2::chrome_color_at({96.0F, 82.0F}, state) == 1U);
-  CHECK(tinydraw::vector_v2::chrome_color_at({276.0F, 82.0F}, state) == 3U);
+  CHECK_FALSE(tinydraw::vector_v2::chrome_color_at({46.0F, 63.0F}, state).has_value());
+  CHECK(tinydraw::vector_v2::chrome_color_at({91.0F, 108.0F}, state) == 0U);
+  CHECK(tinydraw::vector_v2::chrome_color_at({92.0F, 108.0F}, state) == 1U);
+  CHECK(tinydraw::vector_v2::chrome_color_at({322.0F, 153.0F}, state) == 3U);
+  CHECK(tinydraw::vector_v2::chrome_color_at({46.0F, 154.0F}, state) == 4U);
 }
 
 TEST_CASE("chrome rendering stays within the framebuffer") {
@@ -131,7 +132,27 @@ TEST_CASE("chrome rendering stays within the framebuffer") {
 
   const ChromeState palette{.popup = ChromePopup::kColors};
   tinydraw::vector_v2::draw_chrome(pixels, width, height, palette);
-  CHECK(pixels[82U * width + 48U] == tinydraw::vector_v2::kPico8Palettes[0][0]);
+  CHECK(pixels[108U * width + 46U] == tinydraw::vector_v2::kPico8Palettes[0][0]);
+  CHECK(pixels[32U * width + 184U] == 0xFFFFU);
+}
+
+TEST_CASE("main tool button renders the selected Raster V1 glyph") {
+  constexpr int width = 368;
+  constexpr int height = 448;
+  const std::size_t pixel_count = static_cast<std::size_t>(width * height);
+  std::vector<std::uint16_t> pen(pixel_count, 0xFFFFU);
+  std::vector<std::uint16_t> eraser = pen;
+  std::vector<std::uint16_t> hand = pen;
+
+  tinydraw::vector_v2::draw_chrome(pen, width, height, {.tool = ChromeTool::kDraw});
+  tinydraw::vector_v2::draw_chrome(eraser, width, height, {.tool = ChromeTool::kErase});
+  tinydraw::vector_v2::draw_chrome(hand, width, height, {.tool = ChromeTool::kPan});
+
+  CHECK(pen != eraser);
+  CHECK(pen != hand);
+  CHECK(eraser != hand);
+  CHECK(pen[428U * width + 140U] == 0x2104U);
+  CHECK(hand[407U * width + 135U] == 0x2104U);
 }
 
 }  // namespace

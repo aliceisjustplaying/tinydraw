@@ -740,6 +740,7 @@ void run_vector_v2_app() {
 
   bool pressed = false;
   bool toolbar_pressed = false;
+  bool popup_dismissed_press = false;
   bool panning = false;
   Point last_touch{};
   Point toolbar_sum{};
@@ -809,6 +810,13 @@ void run_vector_v2_app() {
           toolbar_pressed = true;
           toolbar_sum = point;
           toolbar_samples = 1;
+        } else if (chrome.popup != vector_v2::ChromePopup::kNone) {
+          // A tap outside a compact popup dismisses it and consumes the
+          // complete gesture. It must never leak through as a stroke or pan.
+          chrome.popup = vector_v2::ChromePopup::kNone;
+          popup_dismissed_press = true;
+          const auto timing = presenter.refresh(chrome, loop_us);
+          print_presentation("chrome-dismiss", presenter, timing);
         } else if (chrome.tool == vector_v2::ChromeTool::kPan) {
           panning = true;
           pan_metrics.reset();
@@ -898,7 +906,9 @@ void run_vector_v2_app() {
     }
     if (lift_event && pressed) {
       pressed = false;
-      if (toolbar_pressed) {
+      if (popup_dismissed_press) {
+        popup_dismissed_press = false;
+      } else if (toolbar_pressed) {
         toolbar_pressed = false;
         const float divisor = static_cast<float>(std::max<std::uint32_t>(1U, toolbar_samples));
         const Point tap{toolbar_sum.x / divisor, toolbar_sum.y / divisor};
