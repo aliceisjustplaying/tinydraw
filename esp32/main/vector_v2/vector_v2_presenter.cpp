@@ -78,8 +78,8 @@ LivePresentationTiming VectorV2Presenter::refresh(const vector_v2::ChromeState& 
     return {};
   }
   vector_v2::draw_chrome(frame_, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight, chrome);
-  auto timing = present({0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight}, event_us,
-                        esp_timer_get_time() - compose_started);
+  auto timing = present_with_overlays({0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
+                                      chrome, event_us, esp_timer_get_time() - compose_started);
   timing.tile_pixels = stats->tile_pixels;
   timing.uniform_pixels = stats->uniform_pixels;
   timing.overview_pixels = stats->overview_pixels;
@@ -132,7 +132,7 @@ LivePresentationTiming VectorV2Presenter::refresh_region(vector_v2::PixelRect le
       .y1 = level_y() + panel.y1,
   };
   if (pixel_count <= region_.size()) {
-    return compose_and_present(aligned_level, panel, event_us);
+    return compose_and_present(aligned_level, panel, chrome, event_us);
   }
 
   int rows_per_strip = static_cast<int>(region_.size() / static_cast<std::size_t>(width));
@@ -146,7 +146,7 @@ LivePresentationTiming VectorV2Presenter::refresh_region(vector_v2::PixelRect le
     const vector_v2::PixelRect strip_panel{panel.x0, y, panel.x1, y + rows};
     const vector_v2::PixelRect strip_level{level_x() + strip_panel.x0, level_y() + strip_panel.y0,
                                            level_x() + strip_panel.x1, level_y() + strip_panel.y1};
-    const auto part = compose_and_present(strip_level, strip_panel, event_us);
+    const auto part = compose_and_present(strip_level, strip_panel, chrome, event_us);
     if (!part.passed) {
       total.passed = false;
       return total;
@@ -170,6 +170,7 @@ LivePresentationTiming VectorV2Presenter::refresh_region(vector_v2::PixelRect le
 
 LivePresentationTiming VectorV2Presenter::compose_and_present(vector_v2::PixelRect level_bounds,
                                                               vector_v2::PixelRect panel_bounds,
+                                                              const vector_v2::ChromeState& chrome,
                                                               std::uint32_t event_us) {
   const int width = panel_bounds.x1 - panel_bounds.x0;
   const int height = panel_bounds.y1 - panel_bounds.y0;
@@ -195,8 +196,8 @@ LivePresentationTiming VectorV2Presenter::compose_and_present(vector_v2::PixelRe
                        static_cast<std::size_t>(width));
     std::copy(source.begin(), source.end(), target.begin());
   }
-  auto timing = present_pixels(panel_bounds, destination, width, event_us,
-                               esp_timer_get_time() - compose_started);
+  auto timing =
+      present_with_overlays(panel_bounds, chrome, event_us, esp_timer_get_time() - compose_started);
   timing.tile_pixels = stats->tile_pixels;
   timing.uniform_pixels = stats->uniform_pixels;
   timing.overview_pixels = stats->overview_pixels;
@@ -219,7 +220,7 @@ LivePresentationTiming VectorV2Presenter::show_start(InkPoint point, std::uint16
   const std::array primitives{cap};
   static_cast<void>(
       renderer_->render(primitives, frame_, vector_v2::kOverviewWidth, canvas_bottom, color));
-  return present(primitive_bounds(primitives, canvas_bottom), event_us);
+  return present_with_overlays(primitive_bounds(primitives, canvas_bottom), chrome, event_us);
 }
 
 LivePresentationTiming VectorV2Presenter::show_update(const RibbonUpdate& update,
@@ -233,9 +234,9 @@ LivePresentationTiming VectorV2Presenter::show_update(const RibbonUpdate& update
   }
   static_cast<void>(renderer_->render(std::span(update.committed.begin(), update.committed.size()),
                                       frame_, vector_v2::kOverviewWidth, canvas_bottom, color));
-  return present(
+  return present_with_overlays(
       primitive_bounds(std::span(update.committed.begin(), update.committed.size()), canvas_bottom),
-      event_us);
+      chrome, event_us);
 }
 
 LivePresentationTiming VectorV2Presenter::set_zoom(vector_v2::ZoomLevel target_zoom,
@@ -319,6 +320,80 @@ bool VectorV2Presenter::compose_into_frame(vector_v2::PixelRect panel_bounds) {
   return true;
 }
 
+vector_v2::ChromeNavigation VectorV2Presenter::chrome_navigation() const {
+  const int percent = vector_v2::zoom_percent(zoom());
+  const auto extent = navigation_.extent();
+  return {
+      .zoom_percent = percent,
+      .level_x = level_x(),
+      .level_y = level_y(),
+      .level_width = vector_v2::kWorldWidth * percent / 100,
+      .level_height = vector_v2::kWorldHeight * percent / 100,
+      .can_pan_top = extent.top,
+      .can_pan_left = extent.left,
+      .can_pan_right = extent.right,
+      .can_pan_bottom = extent.bottom,
+      .overview_pixels = canvas_.overview_pixels(),
+  };
+}
+
+bool VectorV2Presenter::restore_canvas_overlays(const vector_v2::ChromeState& chrome) {
+  const auto overlays = vector_v2::chrome_overlay_regions(chrome);
+  for (std::size_t index = 0; index < overlays.count; ++index) {
+    const auto bounds = overlays.regions[index];
+    const int width = bounds.x1 - bounds.x0;
+    const int height = bounds.y1 - bounds.y0;
+    const std::size_t count = static_cast<std::size_t>(width) * height;
+    if (width <= 0 || height <= 0 || count > region_.size()) {
+      return false;
+    }
+    const vector_v2::PixelRect level_bounds{
+        level_x() + bounds.x0,
+        level_y() + bounds.y0,
+        level_x() + bounds.x1,
+        level_y() + bounds.y1,
+    };
+    const auto pixels = region_.first(count);
+    if (!canvas_.compose_view({.zoom = zoom(), .level_pixels = level_bounds}, pixels).has_value()) {
+      return false;
+    }
+    for (int row = 0; row < height; ++row) {
+      const auto source = pixels.subspan(static_cast<std::size_t>(row) * width, width);
+      auto destination = frame_.subspan(
+          static_cast<std::size_t>(bounds.y0 + row) * vector_v2::kOverviewWidth + bounds.x0,
+          static_cast<std::size_t>(width));
+      std::copy(source.begin(), source.end(), destination.begin());
+    }
+  }
+  return true;
+}
+
+LivePresentationTiming VectorV2Presenter::present_with_overlays(
+    vector_v2::PixelRect bounds, const vector_v2::ChromeState& chrome, std::uint32_t event_us,
+    std::int64_t compose_us) {
+  const auto overlays = vector_v2::chrome_overlay_regions(chrome);
+  bool intersects = false;
+  for (std::size_t index = 0; index < overlays.count; ++index) {
+    const auto overlay = overlays.regions[index];
+    intersects = intersects || (bounds.x0 < overlay.x1 && bounds.x1 > overlay.x0 &&
+                                bounds.y0 < overlay.y1 && bounds.y1 > overlay.y0);
+  }
+  if (!intersects) {
+    return present(bounds, event_us, compose_us);
+  }
+
+  const std::int64_t chrome_started = esp_timer_get_time();
+  vector_v2::draw_chrome_canvas_overlays(frame_, vector_v2::kOverviewWidth,
+                                         vector_v2::kOverviewHeight, chrome, chrome_navigation());
+  const std::int64_t chrome_completed = esp_timer_get_time();
+  auto timing = present(bounds, event_us, compose_us + chrome_completed - chrome_started);
+  timing.chrome_us = chrome_completed - chrome_started;
+  if (!restore_canvas_overlays(chrome)) {
+    timing.passed = false;
+  }
+  return timing;
+}
+
 LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
                                                       const vector_v2::ChromeState& chrome,
                                                       std::uint32_t event_us) {
@@ -353,8 +428,8 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   const std::int64_t exposed_completed = esp_timer_get_time();
   // scroll_frame excludes the chrome-owned rows, so their existing pixels are
   // already correct. Do not spend a full dock redraw on every pan sample.
-  auto timing = present({0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight}, event_us,
-                        exposed_completed - started);
+  auto timing = present_with_overlays({0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
+                                      chrome, event_us, exposed_completed - started);
   timing.scroll_us = scroll_completed - started;
   timing.exposed_compose_us = exposed_completed - scroll_completed;
   timing.frame_reused = true;

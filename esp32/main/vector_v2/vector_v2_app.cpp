@@ -13,6 +13,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "physical_touch.h"
+#include "power_manager.h"
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
 #include "vector_v2_gate_harness.h"
 #endif
@@ -52,6 +53,7 @@ using vector_v2::ZoomLevel;
 
 constexpr std::uint32_t kExternalCaps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
 constexpr gpio_num_t kModeButton = GPIO_NUM_0;
+constexpr std::uint32_t kPowerRefreshUs = 30'000'000U;
 constexpr std::size_t kInputSampleCapacity = 4'096;
 constexpr std::size_t kWorkspaceTileCapacity = vector_v2::kMaximumVisibleTiles;
 
@@ -641,6 +643,24 @@ bool apply_chrome_action(vector_v2::ChromeAction action, Point point,
       // Blocking by design, like Raster V1. Progress updates yield once per
       // rendered band; activating USB then ends serial until the next reset.
       return chrome.can_export && run_export(exporter, log, chrome, presenter);
+    case vector_v2::ChromeAction::kZoomIn: {
+      const ZoomLevel target = vector_v2::next_zoom(presenter.zoom());
+      if (target == presenter.zoom()) {
+        return true;
+      }
+      const auto timing = presenter.set_zoom(target, chrome, now_us());
+      print_presentation("zoom-ui", presenter, timing);
+      return timing.passed;
+    }
+    case vector_v2::ChromeAction::kZoomOut: {
+      const ZoomLevel target = vector_v2::previous_zoom(presenter.zoom());
+      if (target == presenter.zoom()) {
+        return true;
+      }
+      const auto timing = presenter.set_zoom(target, chrome, now_us());
+      print_presentation("zoom-ui", presenter, timing);
+      return timing.passed;
+    }
     case vector_v2::ChromeAction::kNone:
     case vector_v2::ChromeAction::kUndo:
     case vector_v2::ChromeAction::kRedo:
@@ -676,6 +696,7 @@ void run_vector_v2_app() {
   DisplayScheduler scheduler(queue);
   Co5300PanelTransport display;
   PhysicalTouch touch;
+  PowerManager power(touch.bus());
   VectorV2TouchSampler touch_sampler(touch,
                                      std::span(storage.touch_events, kVectorV2TouchEventCapacity));
   vector_v2::NavigationState navigation;
@@ -727,10 +748,14 @@ void run_vector_v2_app() {
   button_config.pull_up_en = GPIO_PULLUP_ENABLE;
   static_cast<void>(gpio_config(&button_config));
 
+  const PowerStatus initial_power = power.read();
+  PowerStatus current_power = initial_power;
   vector_v2::ChromeState chrome;
   chrome.tool = vector_v2::ChromeTool::kDraw;
   chrome.size = vector_v2::ChromeSize::kLarge;
   chrome.can_export = exporter.ready();
+  chrome.battery_percentage = initial_power.percentage;
+  chrome.battery_charging = initial_power.charging;
   InkConfig ink_config;
   ink_config.size = vector_v2::brush_size(chrome.size);
   InkStream ink(ink_config);
@@ -806,6 +831,7 @@ void run_vector_v2_app() {
   PanMetrics pan_metrics{};
   std::uint32_t poll_previous_us = now_us();
   std::uint32_t poll_max_us = 0;
+  std::uint32_t power_sampled_us = now_us();
   bool button_down = false;
   ZoomLevel fill_zoom = ZoomLevel::k25Percent;
   int fill_x = 0;
@@ -831,6 +857,18 @@ void run_vector_v2_app() {
     const std::uint32_t loop_us = now_us();
     poll_max_us = std::max(poll_max_us, loop_us - poll_previous_us);
     poll_previous_us = loop_us;
+
+    if (!pressed && power.ready() && loop_us - power_sampled_us >= kPowerRefreshUs) {
+      const PowerStatus next_power = power.read();
+      power_sampled_us = loop_us;
+      if (next_power.valid && next_power != current_power) {
+        current_power = next_power;
+        chrome.battery_percentage = current_power.percentage;
+        chrome.battery_charging = current_power.charging;
+        const auto timing = presenter.refresh(chrome, loop_us);
+        print_presentation("power", presenter, timing);
+      }
+    }
 
     const bool next_button_down = gpio_get_level(kModeButton) == 0;
     if (next_button_down && !button_down) {

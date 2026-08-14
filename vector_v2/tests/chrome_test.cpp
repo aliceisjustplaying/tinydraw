@@ -73,6 +73,56 @@ TEST_CASE("full screen palette maps all sixteen swatches and both page actions")
   CHECK(tinydraw::vector_v2::chrome_contains({180.0F, 200.0F}, state));
 }
 
+TEST_CASE("right zoom rail exposes plus and minus without stealing its label") {
+  const ChromeState state;
+  CHECK(tinydraw::vector_v2::chrome_contains({332.0F, 98.0F}, state));
+  CHECK(tinydraw::vector_v2::chrome_action_at({332.0F, 98.0F}, state) == ChromeAction::kZoomIn);
+  CHECK(tinydraw::vector_v2::chrome_action_at({332.0F, 150.0F}, state) == ChromeAction::kNone);
+  CHECK(tinydraw::vector_v2::chrome_action_at({332.0F, 200.0F}, state) == ChromeAction::kZoomOut);
+
+  const ChromeState popup{.popup = ChromePopup::kTools};
+  CHECK_FALSE(tinydraw::vector_v2::chrome_contains({332.0F, 98.0F}, popup));
+  CHECK(tinydraw::vector_v2::chrome_action_at({332.0F, 98.0F}, popup) == ChromeAction::kNone);
+}
+
+TEST_CASE("canvas overlay regions disappear for modal and popup chrome") {
+  CHECK(tinydraw::vector_v2::chrome_overlay_regions({}).count == 2U);
+  CHECK(tinydraw::vector_v2::chrome_overlay_regions({.battery_percentage = 50}).count == 3U);
+  CHECK(tinydraw::vector_v2::chrome_overlay_regions({.popup = ChromePopup::kTools}).count == 0U);
+  CHECK(tinydraw::vector_v2::chrome_overlay_regions({.confirm_new = true}).count == 0U);
+  CHECK(tinydraw::vector_v2::chrome_overlay_regions({.export_status = ChromeExportStatus::kSaving})
+            .count == 0U);
+}
+
+TEST_CASE("navigation overlays render overview viewport zoom and battery") {
+  constexpr int width = 368;
+  constexpr int height = 448;
+  const std::size_t pixel_count = static_cast<std::size_t>(width * height);
+  std::vector<std::uint16_t> pixels(pixel_count, 0x1234U);
+  std::vector<std::uint16_t> overview(pixel_count, 0x4567U);
+  const ChromeState state{.battery_percentage = 50};
+  const tinydraw::vector_v2::ChromeNavigation navigation{
+      .zoom_percent = 100,
+      .level_x = 200,
+      .level_y = 300,
+      .level_width = 1472,
+      .level_height = 1792,
+      .can_pan_top = true,
+      .can_pan_left = true,
+      .can_pan_right = true,
+      .can_pan_bottom = true,
+      .overview_pixels = overview,
+  };
+
+  tinydraw::vector_v2::draw_chrome_canvas_overlays(pixels, width, height, state, navigation);
+
+  CHECK(pixels[98U * width + 332U] == 0x2104U);
+  CHECK(pixels[150U * width + 332U] != 0x1234U);
+  CHECK(pixels[300U * width + 300U] == 0x4567U);
+  CHECK(pixels[28U * width + 230U] == 0x2104U);
+  CHECK(pixels[100U * width + 100U] == 0x1234U);
+}
+
 TEST_CASE("chrome canvas clipping follows the visible overlay") {
   ChromeState state;
   CHECK(tinydraw::vector_v2::chrome_canvas_bottom(state) == 372);
