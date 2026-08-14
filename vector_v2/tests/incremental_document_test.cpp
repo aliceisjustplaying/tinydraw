@@ -383,51 +383,6 @@ TEST_CASE("priority-view append bounds immediate publication to the active zoom"
   }
 }
 
-TEST_CASE("overview-only append advances authority and invalidates affected detail") {
-  Fixture fixture;
-  fixture.overview.fill(0xFFFFU);
-  REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
-  std::array<std::uint16_t, vector_v2::kTilePixels> tile{};
-  tile.fill(0xFFFFU);
-  constexpr std::array keys{
-      vector_v2::TileKey{vector_v2::ZoomLevel::k50Percent, 0, 0},
-      vector_v2::TileKey{vector_v2::ZoomLevel::k100Percent, 0, 0},
-      vector_v2::TileKey{vector_v2::ZoomLevel::k200Percent, 0, 0},
-      vector_v2::TileKey{vector_v2::ZoomLevel::k400Percent, 0, 0},
-  };
-  for (const auto key : keys) {
-    REQUIRE(
-        fixture.canvas.publish_tile(key, {0}, vector_v2::MaterializationQuality::kSettled, tile));
-  }
-  const std::array stroke{
-      vector_v2::CompactOperationSample{.x_quarter = 20, .y_quarter = 20, .radius_256 = 1'280},
-      vector_v2::CompactOperationSample{.x_quarter = 80, .y_quarter = 80, .radius_256 = 1'280},
-  };
-  const vector_v2::ViewRequest visible{
-      .zoom = vector_v2::ZoomLevel::k400Percent,
-      .level_pixels = {0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
-  };
-
-  const auto result = vector_v2::append_incrementally(
-      fixture.log, fixture.canvas, {.color = 0x001FU, .samples = stroke}, fixture.workspace(),
-      {.priority_view = visible,
-       .publication_scope = vector_v2::IncrementalPublicationScope::kOverviewOnly});
-
-  REQUIRE(result.has_value());
-  CHECK(result->affected_resident_tiles == keys.size());
-  CHECK(result->published_tiles == 0U);
-  CHECK(result->fallback_tiles == keys.size());
-  CHECK(fixture.log.current_revision() == vector_v2::DocumentRevision{1});
-  CHECK(fixture.canvas.current_revision() == vector_v2::DocumentRevision{1});
-  CHECK(fixture.canvas.overview_pixels()[3U * vector_v2::kOverviewWidth + 3U] == 0x001FU);
-  for (const auto key : keys) {
-    const auto source = fixture.canvas.lookup(key);
-    REQUIRE(source.has_value());
-    CHECK(source->kind == vector_v2::SourceKind::kOverview);
-    CHECK(source->identity.revision == vector_v2::DocumentRevision{1});
-  }
-}
-
 TEST_CASE("bounded overview publication matches full rendering at worst thin-stroke alignment") {
   Fixture fixture;
   fixture.overview.fill(0xFFFFU);

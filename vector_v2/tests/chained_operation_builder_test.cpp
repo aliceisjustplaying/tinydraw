@@ -71,6 +71,38 @@ TEST_CASE("chained builder overlaps capacity chunks and preserves exact pixels")
   CHECK(chained_pixels == reference_pixels);
 }
 
+TEST_CASE("chained builder proactively bounds an interactive chunk below storage capacity") {
+  std::array<vector_v2::CompactOperationSample, 8> storage{};
+  vector_v2::ChainedOperationBuilder chained(storage, 3U);
+  REQUIRE(chained.ready());
+  REQUIRE(chained.begin(vector_v2::OperationTool::kPen, 0x001FU, 19U, point(10.0F, 0U)));
+  CHECK(chained.add(point(20.0F, 1'000U)) == vector_v2::ChainedOperationStatus::kAccepted);
+  CHECK(chained.add(point(30.0F, 2'000U)) == vector_v2::ChainedOperationStatus::kAccepted);
+  CHECK(chained.add(point(40.0F, 3'000U)) == vector_v2::ChainedOperationStatus::kChunkReady);
+  const auto first = chained.pending_append();
+  REQUIRE(first.has_value());
+  REQUIRE(first->samples.size() == 3U);
+  const std::uint16_t boundary_x = first->samples.back().x_quarter;
+  CHECK(boundary_x == 120U);
+
+  CHECK(chained.acknowledge_commit() == vector_v2::ChainedOperationStatus::kAccepted);
+  CHECK(chained.sample_count() == 2U);
+  CHECK(chained.finish(point(50.0F, 4'000U)) ==
+        vector_v2::ChainedOperationStatus::kFinalChunkReady);
+  const auto second = chained.pending_append();
+  REQUIRE(second.has_value());
+  CHECK(second->samples.front().x_quarter == boundary_x);
+  CHECK(second->samples[1].x_quarter == 160U);
+}
+
+TEST_CASE("chained builder rejects an unusable proactive chunk limit") {
+  std::array<vector_v2::CompactOperationSample, 8> storage{};
+  vector_v2::ChainedOperationBuilder too_small(storage, 1U);
+  vector_v2::ChainedOperationBuilder too_large(storage, storage.size() + 1U);
+  CHECK_FALSE(too_small.ready());
+  CHECK_FALSE(too_large.ready());
+}
+
 TEST_CASE("chained builder splits elapsed time and completes a three minute gesture") {
   std::array<vector_v2::CompactOperationSample, 16> storage{};
   vector_v2::ChainedOperationBuilder chained(storage);

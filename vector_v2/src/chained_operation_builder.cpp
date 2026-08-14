@@ -3,7 +3,13 @@
 namespace tinydraw::vector_v2 {
 
 ChainedOperationBuilder::ChainedOperationBuilder(std::span<CompactOperationSample> storage)
-    : builder_(storage), ready_(storage.size() >= 2U) {}
+    : ChainedOperationBuilder(storage, storage.size()) {}
+
+ChainedOperationBuilder::ChainedOperationBuilder(std::span<CompactOperationSample> storage,
+                                                 std::size_t maximum_chunk_samples)
+    : builder_(storage),
+      maximum_chunk_samples_(maximum_chunk_samples),
+      ready_(maximum_chunk_samples >= 2U && maximum_chunk_samples <= storage.size()) {}
 
 bool ChainedOperationBuilder::ready() const { return ready_; }
 
@@ -44,6 +50,9 @@ ChainedOperationStatus ChainedOperationBuilder::add(OperationPoint point) {
   if (state_ != State::kCollecting) {
     return ChainedOperationStatus::kRejected;
   }
+  if (builder_.sample_count() >= maximum_chunk_samples_) {
+    return capture_boundary(point, false);
+  }
   if (builder_.add(point)) {
     last_accepted_ = point;
     return ChainedOperationStatus::kAccepted;
@@ -60,6 +69,9 @@ ChainedOperationStatus ChainedOperationBuilder::add(OperationPoint point) {
 ChainedOperationStatus ChainedOperationBuilder::finish(OperationPoint point) {
   if (state_ != State::kCollecting) {
     return ChainedOperationStatus::kRejected;
+  }
+  if (builder_.sample_count() >= maximum_chunk_samples_) {
+    return capture_boundary(point, true);
   }
   if (!builder_.add(point)) {
     const OperationBuilderReject reject = builder_.last_reject();
