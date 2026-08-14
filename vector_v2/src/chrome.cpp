@@ -450,62 +450,87 @@ std::optional<std::uint8_t> chrome_color_at(ChromePoint point, const ChromeState
   return static_cast<std::uint8_t>(row * 4 + column);
 }
 
-ChromeAction chrome_action_at(ChromePoint point, const ChromeState& state) {
-  if (state.confirm_new) {
-    if (inside(point, 36.0F, 194.0F, 184.0F, 276.0F)) {
-      return ChromeAction::kCancelNewDrawing;
-    }
-    if (inside(point, 184.0F, 194.0F, 332.0F, 276.0F)) {
-      return ChromeAction::kConfirmNewDrawing;
-    }
-    return ChromeAction::kNone;
+namespace {
+
+ChromeAction confirmation_action_at(ChromePoint point) {
+  if (inside(point, 36.0F, 194.0F, 184.0F, 276.0F)) {
+    return ChromeAction::kCancelNewDrawing;
   }
-  if (state.export_status == ChromeExportStatus::kSaving) {
-    return ChromeAction::kNone;
+  if (inside(point, 184.0F, 194.0F, 332.0F, 276.0F)) {
+    return ChromeAction::kConfirmNewDrawing;
   }
-  if (state.popup == ChromePopup::kColors) {
-    if (inside(point, 0.0F, 0.0F, 96.0F, static_cast<float>(kPaletteControlsBottom))) {
-      return ChromeAction::kPreviousPalette;
-    }
-    if (inside(point, static_cast<float>(kWidth - 96), 0.0F, static_cast<float>(kWidth),
-               static_cast<float>(kPaletteControlsBottom))) {
-      return ChromeAction::kNextPalette;
-    }
-    return chrome_color_at(point, state).has_value() ? ChromeAction::kSelectColor
-                                                     : ChromeAction::kNone;
+  return ChromeAction::kNone;
+}
+
+ChromeAction palette_action_at(ChromePoint point, const ChromeState& state) {
+  if (inside(point, 0.0F, 0.0F, 96.0F, static_cast<float>(kPaletteControlsBottom))) {
+    return ChromeAction::kPreviousPalette;
   }
-  if (inside(point, 0.0F, static_cast<float>(kPopupTop - kHitSlop), static_cast<float>(kWidth),
-             static_cast<float>(kMainTop)) &&
-      state.popup != ChromePopup::kNone) {
-    const std::size_t third =
-        std::min(static_cast<std::size_t>(point.x * 3.0F / kWidth), std::size_t{2});
-    if (state.popup == ChromePopup::kTools) {
+  if (inside(point, static_cast<float>(kWidth - 96), 0.0F, static_cast<float>(kWidth),
+             static_cast<float>(kPaletteControlsBottom))) {
+    return ChromeAction::kNextPalette;
+  }
+  return chrome_color_at(point, state).has_value() ? ChromeAction::kSelectColor
+                                                   : ChromeAction::kNone;
+}
+
+ChromeAction popup_action_at(ChromePoint point, ChromePopup popup) {
+  const std::size_t third =
+      std::min(static_cast<std::size_t>(point.x * 3.0F / kWidth), std::size_t{2});
+  switch (popup) {
+    case ChromePopup::kTools: {
       constexpr std::array actions{ChromeAction::kSelectDraw, ChromeAction::kSelectErase,
                                    ChromeAction::kSelectPan};
       return actions[third];
     }
-    if (state.popup == ChromePopup::kSizes) {
+    case ChromePopup::kSizes: {
       const std::size_t quarter =
           std::min(static_cast<std::size_t>(point.x * 4.0F / kWidth), std::size_t{3});
       constexpr std::array actions{ChromeAction::kSelectSmall, ChromeAction::kSelectMedium,
                                    ChromeAction::kSelectLarge, ChromeAction::kSelectExtraLarge};
       return actions[quarter];
     }
-    if (state.popup == ChromePopup::kDocument) {
+    case ChromePopup::kDocument:
       return point.x < kWidth / 2.0F ? ChromeAction::kNewDrawing : ChromeAction::kExport;
-    }
+    case ChromePopup::kNone:
+    case ChromePopup::kColors:
+      return ChromeAction::kNone;
   }
-  if (canvas_overlays_visible(state) &&
+  return ChromeAction::kNone;
+}
+
+ChromeAction zoom_action_at(ChromePoint point) {
+  if (point.y < 125.0F) {
+    return ChromeAction::kZoomIn;
+  }
+  return point.y >= 175.0F ? ChromeAction::kZoomOut : ChromeAction::kNone;
+}
+
+}  // namespace
+
+ChromeAction chrome_action_at(ChromePoint point, const ChromeState& state) {
+  if (state.confirm_new) {
+    return confirmation_action_at(point);
+  }
+  if (state.export_status == ChromeExportStatus::kSaving) {
+    return ChromeAction::kNone;
+  }
+  if (state.popup == ChromePopup::kColors) {
+    return palette_action_at(point, state);
+  }
+  const bool in_popup = state.popup != ChromePopup::kNone &&
+                        inside(point, 0.0F, static_cast<float>(kPopupTop - kHitSlop),
+                               static_cast<float>(kWidth), static_cast<float>(kMainTop));
+  if (in_popup) {
+    return popup_action_at(point, state.popup);
+  }
+  const bool in_zoom =
+      canvas_overlays_visible(state) &&
       inside(point, static_cast<float>(kZoomRailRect.x0 - kHitSlop),
              static_cast<float>(kZoomRailRect.y0 - kHitSlop), static_cast<float>(kWidth),
-             static_cast<float>(kZoomRailRect.y1 + kHitSlop))) {
-    if (point.y < 125.0F) {
-      return ChromeAction::kZoomIn;
-    }
-    if (point.y >= 175.0F) {
-      return ChromeAction::kZoomOut;
-    }
-    return ChromeAction::kNone;
+             static_cast<float>(kZoomRailRect.y1 + kHitSlop));
+  if (in_zoom) {
+    return zoom_action_at(point);
   }
   if (!inside(point, 0.0F, static_cast<float>(kMainHitTop), static_cast<float>(kWidth),
               static_cast<float>(kHeight))) {
