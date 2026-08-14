@@ -228,6 +228,15 @@ bool valid_in_place_workspace(const OperationLog& log, const MaterializedCanvas&
 // the enumeration so no key is lost or visited twice; uniform conversions run
 // first so their slot eviction can never pick a raw tile edited earlier in
 // this same commit. Returns the retained-prefix length.
+//
+// Mutation is bounded to the active zoom. Painting every intersecting
+// resident raw tile at every zoom made warm-cache interactive chunk commits
+// reach 130 ms at 25% (700-960 tiles per stroke); only tiles at the priority
+// view's zoom are painted in place, and affected tiles at other zooms are
+// dropped by the commit and re-produced lazily on their next visit. Matching
+// same-color uniforms are still retained at every zoom because retention is
+// free. Without a priority view (drawing over the 25% overview) no raw tile
+// is painted at all.
 std::size_t retain_affected_tiles(MaterializedCanvas& canvas, const OperationAppend& operation,
                                   std::uint16_t painted_color,
                                   const std::optional<ViewRequest>& priority_view,
@@ -258,6 +267,9 @@ std::size_t retain_affected_tiles(MaterializedCanvas& canvas, const OperationApp
   }
   for (std::size_t index = retained; index < affected.size(); ++index) {
     const TileKey key = affected[index];
+    if (!priority_view.has_value() || key.zoom != priority_view->zoom) {
+      continue;
+    }
     const auto edit = canvas.edit_resident_tile(key);
     if (!edit.has_value()) {
       continue;
