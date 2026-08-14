@@ -199,6 +199,29 @@ TEST_CASE("tile producer scans painter order once per supertask and skips distan
   CHECK(step->tiles_published == 1U);
 }
 
+TEST_CASE("tile producer rejects distant segments inside an overlapping operation bound") {
+  Fixture fixture;
+  const std::array around_view{
+      vector_v2::CompactOperationSample{.x_quarter = 0, .y_quarter = 1'200, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 1'200, .y_quarter = 1'200, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 1'200, .y_quarter = 0, .radius_256 = 256},
+  };
+  REQUIRE(fixture.log.append(append(around_view, 0x001FU)));
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> revised_overview{};
+  revised_overview.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({1}, revised_overview));
+
+  const auto step = fixture.producer.produce_next(
+      {.zoom = vector_v2::ZoomLevel::k100Percent, .level_pixels = {0, 0, 128, 128}});
+  REQUIRE(step.has_value());
+  CHECK(step->complete);
+  CHECK(step->operations_scanned == 1U);
+  CHECK(step->operations_rendered == 0U);
+  CHECK(step->raster_steps == 0U);
+  CHECK(step->raster_work == 0U);
+  CHECK(step->tiles_published == 4U);
+}
+
 TEST_CASE("tile producer validates uniform baseline reset") {
   Fixture fixture;
   CHECK(fixture.producer.reset_uniform_baseline({0}));

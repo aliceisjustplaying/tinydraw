@@ -39,6 +39,11 @@ struct IncrementalSegment {
   CompactOperationSample second{};
 };
 
+// Conservative level-space bounds for one segment, including projected radii.
+// This lets callers reject irrelevant segments before subdivision or raster work.
+[[nodiscard]] PixelRect incremental_segment_level_bounds(CompactOperationSample first,
+                                                         CompactOperationSample second,
+                                                         ZoomLevel zoom);
 [[nodiscard]] std::size_t incremental_segment_step_count(CompactOperationSample first,
                                                          CompactOperationSample second,
                                                          ZoomLevel zoom);
