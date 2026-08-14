@@ -94,7 +94,7 @@ TEST_CASE("shared operation bounds conservatively include radius and clip to the
   CHECK_FALSE(vector_v2::operation_world_bounds({}));
 }
 
-TEST_CASE("resumable segment steps equal complete long-segment rasterization") {
+TEST_CASE("a clipped source segment is one bounded raster unit") {
   constexpr vector_v2::PixelRect bounds{0, 0, 128, 128};
   constexpr auto first =
       vector_v2::CompactOperationSample{.x_quarter = 20, .y_quarter = 20, .radius_256 = 5'120};
@@ -113,7 +113,7 @@ TEST_CASE("resumable segment steps equal complete long-segment rasterization") {
 
   const std::size_t steps =
       vector_v2::incremental_segment_step_count(first, second, vector_v2::ZoomLevel::k400Percent);
-  REQUIRE(steps > 1U);
+  REQUIRE(steps == 1U);
   for (std::size_t step = 0; step < steps; ++step) {
     CHECK(vector_v2::incremental_segment_step_work(first, second, vector_v2::ZoomLevel::k400Percent,
                                                    bounds, step) <= 128U * 128U);
