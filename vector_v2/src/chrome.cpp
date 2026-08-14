@@ -18,9 +18,10 @@ constexpr std::uint16_t kSelected = 0x349FU;
 constexpr int kWidth = 368;
 constexpr int kHeight = 448;
 constexpr int kMainTop = 374;
-constexpr int kMainBottom = 444;
 constexpr int kPopupTop = 296;
 constexpr int kPopupBottom = 366;
+constexpr int kColorPopupTop = 4;
+constexpr int kColorPopupBottom = 366;
 constexpr int kDialogLeft = 28;
 constexpr int kDialogTop = 126;
 constexpr int kDialogRight = 340;
@@ -51,9 +52,9 @@ constexpr std::array kMainCenters{34, 94, 154, 214, 274, 334};
 constexpr std::array kPopupCenters{62, 184, 306};
 constexpr std::array kSizeCenters{52, 140, 228, 316};
 constexpr std::array kPaletteCentersX{46, 138, 230, 322};
-constexpr std::array kPaletteCentersY{108, 198, 288, 378};
+constexpr std::array kPaletteCentersY{103, 178, 253, 328};
 constexpr int kPaletteControlsBottom = 64;
-constexpr int kPaletteRowHeight = 90;
+constexpr int kPaletteRowHeight = 75;
 
 using Painter = PixelPainter;
 
@@ -139,19 +140,19 @@ int size_radius(ChromeSize size) {
 }
 
 void draw_palette(Painter& painter, const ChromeState& state) {
-  painter.rect({0, 0, kWidth, kHeight}, kWhite);
+  draw_dock(painter, kColorPopupTop, kColorPopupBottom);
   for (std::size_t index = 0; index < kPaletteColorCount; ++index) {
     const std::size_t column = index % kPaletteCentersX.size();
     const std::size_t row = index / kPaletteCentersX.size();
     const int cx = kPaletteCentersX[column];
     const int cy = kPaletteCentersY[row];
     if (index == state.color_index) {
-      painter.circle(cx, cy, 38, kSelected);
-      painter.circle(cx, cy, 34, kWhite);
+      painter.circle(cx, cy, 35, kSelected);
+      painter.circle(cx, cy, 32, kWhite);
     } else {
-      painter.circle(cx, cy, 34, kBorder);
+      painter.circle(cx, cy, 32, kBorder);
     }
-    painter.circle(cx, cy, 30, kPico8Palettes[state.palette_page][index]);
+    painter.circle(cx, cy, 28, kPico8Palettes[state.palette_page][index]);
   }
   painter.rounded({8, 6, 88, 58}, 10, state.palette_page == 0 ? kMuted : kSelected);
   painter.rounded({kWidth - 88, 6, kWidth - 8, 58}, 10,
@@ -161,7 +162,12 @@ void draw_palette(Painter& painter, const ChromeState& state) {
 }
 
 void draw_bottom(Painter& painter, const ChromeState& state) {
-  draw_dock(painter, kMainTop, kMainBottom);
+  // The physical panel already rounds the lower corners. A full-width white
+  // slab prevents canvas pixels from peeking around an independently rounded
+  // dock; two owned rows fake a subtle elevation shadow at its top edge.
+  painter.rect({0, kChromeCanvasBottom, kWidth, kMainTop}, kShadow);
+  painter.rect({0, kChromeCanvasBottom + 1, kWidth, kMainTop}, kBorder);
+  painter.rect({0, kMainTop, kWidth, kHeight}, kWhite);
   draw_arrow(painter, kMainCenters[0], 410, false, state.can_undo ? kInk : kMuted);
   draw_arrow(painter, kMainCenters[1], 410, true, state.can_redo ? kInk : kMuted);
   switch (state.tool) {
@@ -522,6 +528,12 @@ ChromeAction chrome_action_at(ChromePoint point, const ChromeState& state) {
     return ChromeAction::kNone;
   }
   if (state.popup == ChromePopup::kColors) {
+    if (inside(point, 0.0F, static_cast<float>(kMainHitTop), static_cast<float>(kWidth),
+               static_cast<float>(kHeight))) {
+      const std::size_t index =
+          std::min(static_cast<std::size_t>(point.x * 6.0F / kWidth), std::size_t{5});
+      return index == 3U ? ChromeAction::kToggleColors : ChromeAction::kNone;
+    }
     return palette_action_at(point, state);
   }
   const bool in_popup = state.popup != ChromePopup::kNone &&
@@ -578,17 +590,14 @@ void draw_chrome(std::span<std::uint16_t> pixels, int width, int height, const C
     return;
   }
   Painter painter(pixels, width, height);
+  draw_bottom(painter, state);
   if (state.popup == ChromePopup::kColors && !state.confirm_new &&
       state.export_status == ChromeExportStatus::kIdle) {
     draw_palette(painter, state);
     return;
   }
-  // Every row below the canvas boundary belongs to chrome, including the
-  // narrow gutters above rounded docks. Repainting ownership here prevents
-  // stationary seam pixels when cached canvas rows are scrolled in place.
-  painter.rect({0, chrome_canvas_bottom(state), kWidth, kMainTop}, kWhite);
-  draw_bottom(painter, state);
   if (state.popup != ChromePopup::kNone) {
+    painter.rect({0, chrome_canvas_bottom(state), kWidth, kPopupTop}, kWhite);
     draw_dock(painter, kPopupTop, kPopupBottom);
     switch (state.popup) {
       case ChromePopup::kTools:
