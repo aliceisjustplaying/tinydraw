@@ -51,12 +51,44 @@ TEST_CASE("tools popup contains draw erase and pan") {
   CHECK(tinydraw::vector_v2::chrome_contains({184.0F, 331.0F}, state));
 }
 
-TEST_CASE("full screen palette maps all sixteen swatches and both page actions") {
+TEST_CASE("rectangular bottom toolbar owns the curved lower display corners") {
+  constexpr int width = 368;
+  constexpr int height = 448;
+  constexpr std::uint16_t untouched = 0x1234U;
+  std::vector<std::uint16_t> pixels(static_cast<std::size_t>(width * height), untouched);
+
+  tinydraw::vector_v2::draw_chrome(pixels, width, height, {});
+
+  CHECK(pixels[372U * width] == 0xBDF7U);
+  CHECK(pixels[373U * width] == 0xDEDBU);
+  CHECK(pixels[447U * width] == 0xFFFFU);
+  CHECK(pixels[447U * width + 367U] == 0xFFFFU);
+  CHECK(pixels[371U * width] == untouched);
+}
+
+TEST_CASE("color palette is a second-level popup above the persistent toolbar") {
+  constexpr int width = 368;
+  constexpr int height = 448;
+  constexpr std::uint16_t untouched = 0x1234U;
+  std::vector<std::uint16_t> pixels(static_cast<std::size_t>(width * height), untouched);
+  const ChromeState state{.popup = ChromePopup::kColors};
+
+  tinydraw::vector_v2::draw_chrome(pixels, width, height, state);
+
+  CHECK(pixels[0] == untouched);
+  CHECK(pixels[365U * width + 46U] == 0xFFFFU);
+  CHECK(pixels[410U * width + 214U] == tinydraw::vector_v2::selected_color(state));
+  CHECK(tinydraw::vector_v2::chrome_action_at({210.0F, 410.0F}, state) ==
+        ChromeAction::kToggleColors);
+  CHECK(tinydraw::vector_v2::chrome_action_at({30.0F, 410.0F}, state) == ChromeAction::kNone);
+}
+
+TEST_CASE("color popup maps all sixteen swatches and both page actions") {
   const ChromeState state{.popup = ChromePopup::kColors};
   std::array<bool, 16> seen{};
   for (int row = 0; row < 4; ++row) {
     for (int column = 0; column < 4; ++column) {
-      const tinydraw::vector_v2::ChromePoint point{46.0F + column * 92.0F, 108.0F + row * 90.0F};
+      const tinydraw::vector_v2::ChromePoint point{46.0F + column * 92.0F, 103.0F + row * 75.0F};
       const auto color = tinydraw::vector_v2::chrome_color_at(point, state);
       REQUIRE(color.has_value());
       seen[*color] = true;
@@ -231,10 +263,10 @@ TEST_CASE("saving toast is modal and renders determinate progress") {
 TEST_CASE("palette hit testing gives large cells to the circular swatches") {
   const ChromeState state{.popup = ChromePopup::kColors};
   CHECK_FALSE(tinydraw::vector_v2::chrome_color_at({46.0F, 63.0F}, state).has_value());
-  CHECK(tinydraw::vector_v2::chrome_color_at({91.0F, 108.0F}, state) == 0U);
-  CHECK(tinydraw::vector_v2::chrome_color_at({92.0F, 108.0F}, state) == 1U);
-  CHECK(tinydraw::vector_v2::chrome_color_at({322.0F, 153.0F}, state) == 3U);
-  CHECK(tinydraw::vector_v2::chrome_color_at({46.0F, 154.0F}, state) == 4U);
+  CHECK(tinydraw::vector_v2::chrome_color_at({91.0F, 103.0F}, state) == 0U);
+  CHECK(tinydraw::vector_v2::chrome_color_at({92.0F, 103.0F}, state) == 1U);
+  CHECK(tinydraw::vector_v2::chrome_color_at({322.0F, 138.0F}, state) == 3U);
+  CHECK(tinydraw::vector_v2::chrome_color_at({46.0F, 139.0F}, state) == 4U);
 }
 
 TEST_CASE("chrome rendering stays within the framebuffer") {
