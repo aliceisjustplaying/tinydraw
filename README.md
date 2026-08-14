@@ -40,6 +40,23 @@ but has no pan, Undo, or persistence. [`PROJECT_STATE.md`](PROJECT_STATE.md) has
 The window opens near the panel's physical size on a 14-inch 2021 MacBook Pro.
 Draw with the mouse, use `Cmd-Z` to undo, `C` for New, and `Esc` to quit.
 
+## Run the Raster interactive core in Puck
+```sh
+./scripts/bootstrap-wasm             # once: LLVM 22 + WASI libc/libc++
+./scripts/puck /path/to/puck         # builds, audits, tests, and installs emu.wasm
+# in the Puck checkout: bun run dev
+```
+
+This target compiles the platform-neutral C++20 Raster reducer with libc++ as a raw WASI reactor.
+It exposes Puck's framebuffer, touch, deterministic clock, and reported refresh rectangles,
+including conservative full-frame UI and state refreshes. The browser
+module includes pen/eraser, colors, sizes, pan, Undo, and New. It exposes the board's BOOT and power
+buttons in the device diagram, but deliberately leaves their demo-recording and power services as
+no-ops and does not claim to simulate persistence, USB export, RTC/NTP, battery state, the physical
+touch-controller registers, or Vector V2. The production ESP32 shell has not yet been migrated to
+the new shared reducer, so this is an interactive-core integration rather than a byte-for-byte
+simulation of every hardware-app service.
+
 ## Test and profile
 ```sh
 ./scripts/dev test          # native tests and end-to-end replays

@@ -97,6 +97,48 @@ sanitized; full host replay runs in both debug and release presets.
 The TypeScript `perfect-freehand` reference and pinned commit are documented in
 `reference/PERFECT_FREEHAND.md`. It is cloned locally but is not a build dependency or submodule.
 
+## Puck WebAssembly
+
+Raster's platform-neutral interactive reducer can be compiled as a C++20 WASI reactor and installed
+into a Puck checkout:
+
+```sh
+./scripts/bootstrap-wasm
+./scripts/puck /path/to/puck
+```
+
+The checked versions live in `.wasi-versions`. `scripts/puck` builds Release with exceptions and
+RTTI off and 16 MiB initial/64 MiB maximum linear memory. It always runs TinyDraw's pinned-trace
+`puck/verify.mjs`; when given a Puck checkout, it also runs Puck's generic ABI auditor with the exact
+memory limits before installing the module. A standalone build explicitly notes that the generic
+audit was skipped. The module's runtime imports are only `wasi_snapshot_preview1.fd_close`,
+`fd_seek`, and `fd_write`, and `verify.mjs` pins those three imports plus the exact export surface.
+The generic Puck auditor intentionally accepts a wider legal import/export set. Puck provides the
+minimal browser adapters and calls the reactor's `_initialize` before `emu_init`.
+
+Native debug builds retain the `StrokeRaster` and `TileUndoHistory` validity asserts. The Release
+wasm target defines `NDEBUG`, so they have no runtime cost there. A future debug wasm assert may add
+a `proc_exit` import; `verify.mjs` will reject that unexpected surface before instantiation, which is
+a loud and honest failure. The local `__wasi__` platform clause in
+`third_party/pngenc/src/PNGenc.h` must be carried forward whenever PNGenc is upgraded.
+
+The wasm adapter declares host-order `rgb565`, latches touch until `emu_tick`, and records up to 256
+refresh rectangles per tick; overflow or an invalid rectangle degrades to one full-panel refresh.
+Stroke motion retains partial windows; toolbar changes, stroke completion, Undo, New, and pan
+settling conservatively report full-frame refreshes. Its shared reducer covers pen/eraser, toolbar
+color/size, pan, Undo, and New. The descriptor honestly exposes the physical GPIO0 BOOT and lower
+PMU power buttons, but their exact V1 edge is not hardware-verified; the current stacked right-edge
+layout follows the sibling-board convention. Their V1 services (demo recording and power control)
+are explicit no-ops because hardware-only persistence, export, RTC/network, power, demos,
+controller registers, and Vector V2 stay outside this target. The current ESP32 application reducer
+remains in `hardware_app.cpp`; migrating that shell to `RasterCore` is required before claiming full
+production-app source identity.
+
+Deferred Puck follow-ups remain explicit: host and ESP32 shells still need migration onto
+`RasterCore`; the push-log overflow branch remains unforced until a reusable native-test seam is
+justified; and any future public Undo/New entry points must add their own readiness guards rather
+than calling the currently private helpers directly.
+
 ## ESP-IDF / QEMU
 
 ESP-IDF remains isolated from the host CMake project and global shell startup. The pinned version
