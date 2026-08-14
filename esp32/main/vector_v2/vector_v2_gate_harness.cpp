@@ -625,6 +625,7 @@ struct LongGestureMeasurement {
   std::int64_t append_total_us = 0;
   std::int64_t append_max_us = 0;
   std::size_t fallback_pixels = 0;
+  std::size_t settled_fallback_pixels = 0;
   bool committed = false;
   bool authority_match = false;
   bool refresh_passed = false;
@@ -734,10 +735,25 @@ bool run_long_gesture_pass(VectorV2Presenter& presenter, vector_v2::TileProducer
   measurement.committed = !builder.active();
   measurement.authority_match = log.current_revision() == canvas.current_revision();
   if (world_bounds.has_value()) {
+    // A budgeted commit may drop visible tiles; the pen-up refresh may
+    // therefore show bounded transient fallback. After the producer settles
+    // the view, a second refresh must show none.
     const auto refresh = presenter.refresh_region(
         vector_v2::operation_level_bounds(*world_bounds, ZoomLevel::k400Percent), chrome, now_us());
-    measurement.refresh_passed = refresh.passed;
     measurement.fallback_pixels = refresh.fallback_pixels;
+    for (std::size_t step = 0; step < 100'000U; ++step) {
+      const auto produced = producer.produce_next(view);
+      if (!produced.has_value()) {
+        return false;
+      }
+      if (produced->complete) {
+        break;
+      }
+    }
+    const auto settled = presenter.refresh_region(
+        vector_v2::operation_level_bounds(*world_bounds, ZoomLevel::k400Percent), chrome, now_us());
+    measurement.refresh_passed = refresh.passed && settled.passed;
+    measurement.settled_fallback_pixels = settled.fallback_pixels;
   }
   return true;
 }
@@ -773,7 +789,8 @@ bool run_long_gesture_commit_gate(VectorV2Presenter& presenter, vector_v2::TileP
                              bool run_ok) {
     std::printf(
         "TINYDRAW_GATE1_LONG_GESTURE path=%s samples=%lu chunks=%lu append_total_us=%lld "
-        "append_max_us=%lld append_avg_us=%lld refresh_fallback_pixels=%lu committed=%u "
+        "append_max_us=%lld append_avg_us=%lld refresh_fallback_pixels=%lu "
+        "settled_fallback_pixels=%lu committed=%u "
         "authority=%u refresh=%u run_ok=%u\n",
         path, static_cast<unsigned long>(measurement.samples),
         static_cast<unsigned long>(measurement.chunks),
@@ -783,15 +800,18 @@ bool run_long_gesture_commit_gate(VectorV2Presenter& presenter, vector_v2::TileP
                                    ? 0
                                    : measurement.append_total_us /
                                          static_cast<std::int64_t>(measurement.chunks)),
-        static_cast<unsigned long>(measurement.fallback_pixels), measurement.committed,
+        static_cast<unsigned long>(measurement.fallback_pixels),
+        static_cast<unsigned long>(measurement.settled_fallback_pixels), measurement.committed,
         measurement.authority_match, measurement.refresh_passed, run_ok);
   };
   print_pass("reference", reference, reference_ok);
   print_pass("in_place", in_place, in_place_ok);
   std::fflush(stdout);
+  // Budgeted commits may leave bounded transient fallback at pen-up; the
+  // settled refresh after producer completion must show none.
   const auto correct = [](const LongGestureMeasurement& measurement) {
     return measurement.committed && measurement.authority_match && measurement.refresh_passed &&
-           measurement.fallback_pixels == 0U && measurement.chunks >= 24U;
+           measurement.settled_fallback_pixels == 0U && measurement.chunks >= 24U;
   };
   // The interactive path must fit intermediate commits inside a 15 ms
   // input-poll slice; the reference pass is a measured comparison only.
