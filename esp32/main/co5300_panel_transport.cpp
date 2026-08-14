@@ -281,6 +281,90 @@ class Co5300PanelTransport::Impl {
     return true;
   }
 
+  void push_rect_ring(int x, int y, int width, int height, const std::uint16_t* area_pixels,
+                      int stride, int shift_x, int shift_y, int area_width, int area_height) {
+    if (!ready_ || area_pixels == nullptr || width <= 0 || height <= 0 || stride < area_width ||
+        shift_x < 0 || shift_x >= area_width || shift_y < 0 || shift_y >= area_height ||
+        x + width > area_width || y + height > area_height) {
+      ++rejected_push_count_;
+      return;
+    }
+    const bool in_bounds = x >= 0 && y >= 0 && x < kCanvasWidth && y < kCanvasHeight &&
+                           width <= kCanvasWidth - x && height <= kCanvasHeight - y;
+    const bool valid_window = ((x | y | width | height) & 1) == 0;
+    if (!in_bounds || !valid_window) {
+      ++rejected_push_count_;
+      std::printf(
+          "TINYDRAW_PANEL_WINDOW_REJECT x=%d y=%d width=%d height=%d bounds=%u even_window=%u\n", x,
+          y, width, height, in_bounds, valid_window);
+      return;
+    }
+    if (width * height > kTransferPixels) {
+      int rows_per_transfer = kTransferPixels / width;
+      rows_per_transfer -= rows_per_transfer % 2;
+      if (rows_per_transfer <= 0) {
+        ++rejected_push_count_;
+        return;
+      }
+      for (int row = 0; row < height; row += rows_per_transfer) {
+        const int rows = std::min(rows_per_transfer, height - row);
+        push_rect_ring(x, y + row, width, rows, area_pixels, stride, shift_x, shift_y, area_width,
+                       area_height);
+      }
+      return;
+    }
+
+    const std::int64_t transfer_started = esp_timer_get_time();
+    ESP_ERROR_CHECK(xSemaphoreTake(transfer_semaphore_, portMAX_DELAY) == pdTRUE ? ESP_OK
+                                                                                 : ESP_FAIL);
+    auto* transfer =
+        transfer_pixels_ + static_cast<std::ptrdiff_t>(transfer_index_ * kTransferPixels);
+    transfer_index_ = (transfer_index_ + 1U) % kTransferQueueDepth;
+    transfer_us_ += esp_timer_get_time() - transfer_started;
+
+    const std::int64_t prepare_started = esp_timer_get_time();
+    for (int row = 0; row < height; ++row) {
+      int source_row = y + row + shift_y;
+      if (source_row >= area_height) {
+        source_row -= area_height;
+      }
+      const auto* source = area_pixels + static_cast<std::ptrdiff_t>(source_row) * stride;
+      auto* destination =
+          reinterpret_cast<std::uint32_t*>(transfer + static_cast<std::ptrdiff_t>(row * width));
+      int source_column = x + shift_x;
+      if (source_column >= area_width) {
+        source_column -= area_width;
+      }
+      int written = 0;
+      while (written < width) {
+        const int chunk = std::min(width - written, area_width - source_column);
+        const int even_chunk = chunk & ~1;
+        for (int column = 0; column < even_chunk; column += 2) {
+          destination[(written + column) / 2] =
+              swap_pixel_pair(source[source_column + column], source[source_column + column + 1]);
+        }
+        written += even_chunk;
+        source_column += even_chunk;
+        if (source_column >= area_width) {
+          source_column = 0;
+        }
+        if (chunk != even_chunk && written < width) {
+          // The remaining pair straddles the ring wrap.
+          destination[written / 2] = swap_pixel_pair(source[area_width - 1], source[0]);
+          written += 2;
+          source_column = 1;
+        }
+      }
+    }
+    prepare_us_ += esp_timer_get_time() - prepare_started;
+
+    const std::int64_t submit_started = esp_timer_get_time();
+    transfer_submits_.fetch_add(1U, std::memory_order_release);
+    ESP_ERROR_CHECK(esp_lcd_panel_draw_bitmap(panel_, x, y, x + width, y + height, transfer));
+    transfer_us_ += esp_timer_get_time() - submit_started;
+    ++push_count_;
+  }
+
   void push_rect(int x, int y, int width, int height, const std::uint16_t* pixels, int stride) {
     if (!ready_ || pixels == nullptr || width <= 0 || height <= 0) {
       ++rejected_push_count_;
@@ -433,6 +517,12 @@ bool Co5300PanelTransport::wait_for_all(std::int64_t timeout_us) {
 void Co5300PanelTransport::push_rect(int x, int y, int width, int height,
                                      const std::uint16_t* pixels, int stride) {
   impl_->push_rect(x, y, width, height, pixels, stride);
+}
+void Co5300PanelTransport::push_rect_ring(int x, int y, int width, int height,
+                                          const std::uint16_t* area_pixels, int stride, int shift_x,
+                                          int shift_y, int area_width, int area_height) {
+  impl_->push_rect_ring(x, y, width, height, area_pixels, stride, shift_x, shift_y, area_width,
+                        area_height);
 }
 
 }  // namespace tinydraw::esp32

@@ -99,16 +99,31 @@ DisplaySchedulerStats DisplayScheduler::stats() const {
 bool DisplayScheduler::valid_strip(const DisplayStrip& strip) const {
   const int width = strip.panel_bounds.x1 - strip.panel_bounds.x0;
   const int height = strip.panel_bounds.y1 - strip.panel_bounds.y0;
-  const std::size_t required =
-      height > 0 && strip.stride > 0
-          ? static_cast<std::size_t>(height - 1) * static_cast<std::size_t>(strip.stride) +
-                static_cast<std::size_t>(width)
-          : 0U;
-  return ready() && strip.revision == required_revision_ && width > 0 && height > 0 &&
-         strip.panel_bounds.x0 >= 0 && strip.panel_bounds.y0 >= 0 &&
-         strip.panel_bounds.x1 <= kOverviewWidth && strip.panel_bounds.y1 <= kOverviewHeight &&
-         ((strip.panel_bounds.x0 | strip.panel_bounds.y0 | width | height) & 1) == 0 &&
-         strip.stride >= width && strip.pixels.size() >= required;
+  const bool shared = ready() && strip.revision == required_revision_ && width > 0 && height > 0 &&
+                      strip.panel_bounds.x0 >= 0 && strip.panel_bounds.y0 >= 0 &&
+                      strip.panel_bounds.x1 <= kOverviewWidth &&
+                      strip.panel_bounds.y1 <= kOverviewHeight &&
+                      ((strip.panel_bounds.x0 | strip.panel_bounds.y0 | width | height) & 1) == 0 &&
+                      strip.stride >= width;
+  if (strip.source_area_width == 0) {
+    const std::size_t required =
+        height > 0 && strip.stride > 0
+            ? static_cast<std::size_t>(height - 1) * static_cast<std::size_t>(strip.stride) +
+                  static_cast<std::size_t>(width)
+            : 0U;
+    return shared && strip.source_shift_x == 0 && strip.source_shift_y == 0 &&
+           strip.source_area_height == 0 && strip.pixels.size() >= required;
+  }
+  const std::size_t ring_required = strip.source_area_height > 0 && strip.stride > 0
+                                        ? static_cast<std::size_t>(strip.source_area_height - 1) *
+                                                  static_cast<std::size_t>(strip.stride) +
+                                              static_cast<std::size_t>(strip.source_area_width)
+                                        : 0U;
+  return shared && strip.source_area_width >= strip.panel_bounds.x1 &&
+         strip.source_area_height >= strip.panel_bounds.y1 && strip.source_shift_x >= 0 &&
+         strip.source_shift_x < strip.source_area_width && strip.source_shift_y >= 0 &&
+         strip.source_shift_y < strip.source_area_height &&
+         strip.stride >= strip.source_area_width && strip.pixels.size() >= ring_required;
 }
 
 }  // namespace tinydraw::vector_v2

@@ -138,6 +138,14 @@ void draw_chrome(std::span<std::uint16_t> pixels, int width, int height, const C
 [[nodiscard]] bool draw_chrome_minimap_overlay(std::span<std::uint16_t> pixels, int width,
                                                int height, const ChromeState& state,
                                                const ChromeNavigation& navigation);
+// Draws the minimap into a caller-owned surface whose (0, 0) sits at panel
+// coordinate (origin_x, origin_y); the pan path composes the overlay into a
+// small scratch surface instead of writing into the (possibly ring-rotated)
+// frame.
+[[nodiscard]] bool draw_chrome_minimap_surface(std::span<std::uint16_t> pixels, int surface_width,
+                                               int surface_height, int origin_x, int origin_y,
+                                               const ChromeState& state,
+                                               const ChromeNavigation& navigation);
 void draw_chrome_canvas_overlays(std::span<std::uint16_t> pixels, int width, int height,
                                  const ChromeState& state, const ChromeNavigation& navigation);
 
