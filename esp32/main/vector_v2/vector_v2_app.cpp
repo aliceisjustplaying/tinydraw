@@ -443,7 +443,8 @@ void print_stroke(const PendingStrokeReport& report) {
       "read_submit_avg_us=%llu read_submit_max_us=%lu read_complete_avg_us=%llu "
       "read_complete_max_us=%lu submit_over_16ms=%lu complete_over_33ms=%lu "
       "presentation_failures=%lu poll_max_us=%lu touch_errors=%lu touch_overflows=%lu "
-      "touch_moves_coalesced=%lu touch_event_age_max_us=%lu chunks=%lu free_psram=%lu "
+      "touch_moves_coalesced=%lu touch_events=%lu touch_down=%lu touch_up=%lu "
+      "touch_events_ge_8ms=%lu touch_event_age_max_us=%lu chunks=%lu free_psram=%lu "
       "largest_psram=%lu authority_match=%u\n",
       static_cast<unsigned long>(report.revision.value),
       static_cast<unsigned long>(report.operation_count),
@@ -466,6 +467,10 @@ void print_stroke(const PendingStrokeReport& report) {
       static_cast<unsigned long>(report.touch.errors),
       static_cast<unsigned long>(report.touch.queue_overflows),
       static_cast<unsigned long>(report.touch.moves_coalesced),
+      static_cast<unsigned long>(report.touch.events_consumed),
+      static_cast<unsigned long>(report.touch.down_events),
+      static_cast<unsigned long>(report.touch.up_events),
+      static_cast<unsigned long>(report.touch.events_at_least_8ms_old),
       static_cast<unsigned long>(report.touch.maximum_event_age_us),
       static_cast<unsigned long>(report.chunks), static_cast<unsigned long>(report.free_psram),
       static_cast<unsigned long>(report.largest_psram), report.authority_match);

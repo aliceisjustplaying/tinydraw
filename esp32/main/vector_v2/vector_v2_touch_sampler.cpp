@@ -1,6 +1,7 @@
 #include "vector_v2_touch_sampler.h"
 
 #include <algorithm>
+#include <utility>
 
 #include "esp_timer.h"
 
@@ -64,8 +65,13 @@ std::optional<SampledTouch> VectorV2TouchSampler::read_next() {
   if (!event.has_value()) {
     return std::nullopt;
   }
-  include_max(maximum_event_age_us_,
-              static_cast<std::uint32_t>(esp_timer_get_time()) - event->timestamp_us);
+  const std::uint32_t event_age_us =
+      static_cast<std::uint32_t>(esp_timer_get_time()) - event->timestamp_us;
+  include_max(maximum_event_age_us_, event_age_us);
+  ++events_consumed_;
+  down_events_ += event->kind == vector_v2::TouchEventKind::kDown;
+  up_events_ += event->kind == vector_v2::TouchEventKind::kUp;
+  events_at_least_8ms_old_ += event_age_us >= 8'000U;
   return SampledTouch{
       .point = {.x = event->point.x, .y = event->point.y},
       .timestamp_us = event->timestamp_us,
@@ -82,6 +88,10 @@ TouchSamplerMetrics VectorV2TouchSampler::take_metrics() {
       .moves_coalesced = moves_coalesced_.exchange(0U, std::memory_order_relaxed),
       .maximum_interval_us = maximum_interval_us_.exchange(0U, std::memory_order_relaxed),
       .maximum_read_us = maximum_read_us_.exchange(0U, std::memory_order_relaxed),
+      .events_consumed = std::exchange(events_consumed_, 0U),
+      .down_events = std::exchange(down_events_, 0U),
+      .up_events = std::exchange(up_events_, 0U),
+      .events_at_least_8ms_old = std::exchange(events_at_least_8ms_old_, 0U),
       .maximum_event_age_us = maximum_event_age_us_.exchange(0U, std::memory_order_relaxed),
   };
 }
