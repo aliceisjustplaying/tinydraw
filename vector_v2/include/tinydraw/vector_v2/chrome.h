@@ -132,6 +132,12 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
 [[nodiscard]] bool chrome_minimap_refresh_required(const ChromeState& state, bool overview_changed,
                                                    bool allow_minimap_refresh);
 void draw_chrome(std::span<std::uint16_t> pixels, int width, int height, const ChromeState& state);
+// Draws only the minimap overlay (frame plus overview resample plus viewport
+// rectangle). Cheap enough to run on every pan frame; returns false when the
+// canvas overlays are hidden or the surface does not match the panel.
+[[nodiscard]] bool draw_chrome_minimap_overlay(std::span<std::uint16_t> pixels, int width,
+                                               int height, const ChromeState& state,
+                                               const ChromeNavigation& navigation);
 void draw_chrome_canvas_overlays(std::span<std::uint16_t> pixels, int width, int height,
                                  const ChromeState& state, const ChromeNavigation& navigation);
 

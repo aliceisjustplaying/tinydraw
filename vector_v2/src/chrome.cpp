@@ -314,7 +314,8 @@ void draw_zoom_rail(Painter& painter, const ChromeNavigation& navigation) {
   painter.text(text_x, 142, std::string_view(label.data(), length), kInk);
 }
 
-void draw_minimap(Painter& painter, const ChromeNavigation& navigation) {
+void draw_minimap(Painter& painter, std::span<std::uint16_t> pixels,
+                  const ChromeNavigation& navigation) {
   painter.rounded(
       {kMinimapRect.x0 + 2, kMinimapRect.y0 + 3, kMinimapRect.x1 + 2, kMinimapRect.y1 + 3}, 9,
       kShadow);
@@ -324,13 +325,23 @@ void draw_minimap(Painter& painter, const ChromeNavigation& navigation) {
   painter.rounded({kMinimapRect.x0, kMinimapRect.y0, kMinimapRect.x1, kMinimapRect.y1}, 8, kWhite);
   if (navigation.overview_pixels.size() >=
       static_cast<std::size_t>(kWidth) * static_cast<std::size_t>(kHeight)) {
+    // Row-wise resample through a source-column table. The interior is fully
+    // inside the panel, so rows write directly without per-pixel clipping;
+    // this runs on every pan frame and must stay cheap.
+    std::array<std::uint16_t, kMinimapWidth> source_columns{};
+    for (int x = 0; x < kMinimapWidth; ++x) {
+      source_columns[static_cast<std::size_t>(x)] =
+          static_cast<std::uint16_t>(x * kWidth / kMinimapWidth);
+    }
     for (int y = 0; y < kMinimapHeight; ++y) {
       const int source_y = y * kHeight / kMinimapHeight;
+      const auto source =
+          navigation.overview_pixels.subspan(static_cast<std::size_t>(source_y) * kWidth, kWidth);
+      const auto destination = pixels.subspan(
+          static_cast<std::size_t>(kMinimapTop + y) * kWidth + kMinimapLeft, kMinimapWidth);
       for (int x = 0; x < kMinimapWidth; ++x) {
-        const int source_x = x * kWidth / kMinimapWidth;
-        painter.pixel(kMinimapLeft + x, kMinimapTop + y,
-                      navigation.overview_pixels[static_cast<std::size_t>(source_y) * kWidth +
-                                                 static_cast<std::size_t>(source_x)]);
+        destination[static_cast<std::size_t>(x)] =
+            source[source_columns[static_cast<std::size_t>(x)]];
       }
     }
   } else {
@@ -669,8 +680,20 @@ void draw_chrome_canvas_overlays(std::span<std::uint16_t> pixels, int width, int
   }
   Painter painter(pixels, width, height);
   draw_zoom_rail(painter, navigation);
-  draw_minimap(painter, navigation);
+  draw_minimap(painter, pixels, navigation);
   draw_battery(painter, state);
+}
+
+bool draw_chrome_minimap_overlay(std::span<std::uint16_t> pixels, int width, int height,
+                                 const ChromeState& state, const ChromeNavigation& navigation) {
+  if (width != kWidth || height != kHeight ||
+      pixels.size() < static_cast<std::size_t>(width) * static_cast<std::size_t>(height) ||
+      !canvas_overlays_visible(state)) {
+    return false;
+  }
+  Painter painter(pixels, width, height);
+  draw_minimap(painter, pixels, navigation);
+  return true;
 }
 
 }  // namespace tinydraw::vector_v2
