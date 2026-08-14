@@ -68,12 +68,15 @@ class VectorV2Presenter {
   [[nodiscard]] LivePresentationTiming refresh(const vector_v2::ChromeState& chrome,
                                                std::uint32_t event_us = 0);
   // Re-composes and presents only the intersection between changed level-space
-  // pixels and the visible canvas above the toolbar.
+  // pixels and the visible canvas above the chrome.
   [[nodiscard]] LivePresentationTiming refresh_region(vector_v2::PixelRect level_bounds,
+                                                      const vector_v2::ChromeState& chrome,
                                                       std::uint32_t event_us = 0);
   [[nodiscard]] LivePresentationTiming show_start(InkPoint point, std::uint16_t color,
+                                                  const vector_v2::ChromeState& chrome,
                                                   std::uint32_t event_us);
   [[nodiscard]] LivePresentationTiming show_update(const RibbonUpdate& update, std::uint16_t color,
+                                                   const vector_v2::ChromeState& chrome,
                                                    std::uint32_t event_us);
   [[nodiscard]] LivePresentationTiming set_zoom(vector_v2::ZoomLevel zoom,
                                                 const vector_v2::ChromeState& chrome,
@@ -95,8 +98,8 @@ class VectorV2Presenter {
                                                       std::span<const std::uint16_t> pixels,
                                                       int stride, std::uint32_t event_us,
                                                       std::int64_t compose_us);
-  [[nodiscard]] vector_v2::PixelRect primitive_bounds(
-      std::span<const RibbonPrimitive> primitives) const;
+  [[nodiscard]] vector_v2::PixelRect primitive_bounds(std::span<const RibbonPrimitive> primitives,
+                                                      int canvas_bottom) const;
   [[nodiscard]] LivePresentationTiming compose_and_present(vector_v2::PixelRect level_bounds,
                                                            vector_v2::PixelRect panel_bounds,
                                                            std::uint32_t event_us);

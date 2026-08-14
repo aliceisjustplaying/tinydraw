@@ -135,14 +135,15 @@ bool run_tearing_probe(VectorV2Presenter& presenter, const vector_v2::ChromeStat
       vector_v2::NavigationPoint{240, 240},
       vector_v2::NavigationPoint{0, 240},
   };
-  if (!presenter.set_view(ZoomLevel::k100Percent, 0, 0, chrome, now_us()).passed) {
+  const auto initial = presenter.set_view(ZoomLevel::k100Percent, 0, 0, chrome, now_us());
+  if (!initial.passed || !initial.tear_synchronized) {
     return false;
   }
   for (std::size_t cycle = 0; cycle < 20U; ++cycle) {
     for (const auto position : positions) {
       const auto timing =
           presenter.set_view(ZoomLevel::k100Percent, position.x, position.y, chrome, now_us());
-      if (!timing.passed) {
+      if (!timing.passed || !timing.tear_synchronized) {
         return false;
       }
     }
@@ -187,7 +188,7 @@ bool run_tile_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& produc
     }
     if (step->tiles_published != 0U) {
       const auto present_started = esp_timer_get_time();
-      const auto timing = presenter.refresh_region(step->level_bounds);
+      const auto timing = presenter.refresh_region(step->level_bounds, chrome);
       presentation_us += esp_timer_get_time() - present_started;
       if (!timing.passed) {
         return false;
@@ -250,7 +251,7 @@ bool run_draw_while_fill_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
                          .distance = 0.0F,
                          .running_length = 0.0F,
                          .timestamp_us = event_us};
-  const auto live = presenter.show_start(preview, 0x001FU, event_us);
+  const auto live = presenter.show_start(preview, 0x001FU, chrome, event_us);
 
   if (interaction_samples.size() < 8U) {
     return false;
@@ -291,7 +292,7 @@ bool run_draw_while_fill_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
     }
     if (step->tiles_published != 0U) {
       const std::int64_t present_started = esp_timer_get_time();
-      if (!presenter.refresh_region(step->level_bounds).passed) {
+      if (!presenter.refresh_region(step->level_bounds, chrome).passed) {
         return false;
       }
       maximum_slice_us = std::max(maximum_slice_us, esp_timer_get_time() - present_started);
@@ -383,7 +384,7 @@ bool run_cache_retention_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
       }
       if (step->tiles_published != 0U) {
         published += step->tiles_published;
-        if (!presenter.refresh_region(step->level_bounds).passed) {
+        if (!presenter.refresh_region(step->level_bounds, chrome).passed) {
           return false;
         }
       }

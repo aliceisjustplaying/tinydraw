@@ -238,11 +238,13 @@ class Co5300PanelTransport::Impl {
     if (!ready_ || timeout_us <= 0) {
       return false;
     }
-    static_cast<void>(xSemaphoreTake(tear_semaphore_, 0));
     const std::uint32_t start = tear_falling_edges_.load(std::memory_order_acquire);
+    static_cast<void>(xSemaphoreTake(tear_semaphore_, 0));
+    if (tear_falling_edges_.load(std::memory_order_acquire) != start) {
+      return true;
+    }
     const TickType_t timeout_ticks = pdMS_TO_TICKS((timeout_us + 999) / 1'000);
-    const bool signaled = xSemaphoreTake(tear_semaphore_, timeout_ticks) == pdTRUE;
-    return signaled && tear_falling_edges_.load(std::memory_order_acquire) != start;
+    return xSemaphoreTake(tear_semaphore_, timeout_ticks) == pdTRUE;
   }
 
   [[nodiscard]] std::int64_t complete_time_us(std::uint32_t sequence) const {

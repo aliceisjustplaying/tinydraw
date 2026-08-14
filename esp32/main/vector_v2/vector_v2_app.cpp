@@ -214,22 +214,6 @@ struct AppStorage {
 
 std::uint32_t now_us() { return static_cast<std::uint32_t>(esp_timer_get_time()); }
 
-std::optional<Point> clip_ink_point(Point previous, Point current) {
-  constexpr float kCanvasBottom = static_cast<float>(vector_v2::kChromeCanvasBottom - 1);
-  if (current.y <= kCanvasBottom) {
-    return current;
-  }
-  if (previous.y > kCanvasBottom) {
-    return std::nullopt;
-  }
-  const float vertical_distance = current.y - previous.y;
-  if (vertical_distance <= 0.0F) {
-    return Point{current.x, kCanvasBottom};
-  }
-  const float progress = (kCanvasBottom - previous.y) / vertical_distance;
-  return Point{previous.x + (current.x - previous.x) * progress, kCanvasBottom};
-}
-
 const char* zoom_name(ZoomLevel zoom) {
   switch (zoom) {
     case ZoomLevel::k25Percent:
@@ -542,7 +526,7 @@ void run_vector_v2_app() {
       overview_bytes + raw_tile_bytes + tile_metadata_bytes + operation_bytes + live_scratch_bytes;
   const auto tear_signal = display.tear_signal_timing();
   std::printf(
-      "TINYDRAW_VECTOR_V2_READY zoom=25 controls=toolbar button=cycle_all_zooms "
+      "TINYDRAW_VECTOR_V2_READY zoom=25 controls=chrome button=cycle_all_zooms "
       "operations_capacity=%lu samples_capacity=%lu live_storage_bytes=%lu "
       "overview_bytes=%lu raw_tile_bytes=%lu tile_metadata_bytes=%lu operation_bytes=%lu "
       "live_scratch_bytes=%lu free_psram=%lu largest_psram=%lu "
@@ -645,7 +629,7 @@ void run_vector_v2_app() {
           } else {
             ribbon.reset();
             static_cast<void>(ribbon.append(last_ink, false));
-            live_metrics.include(presenter.show_start(last_ink, color, loop_us));
+            live_metrics.include(presenter.show_start(last_ink, color, chrome, loop_us));
           }
         }
       } else if (toolbar_pressed && (point.x != last_touch.x || point.y != last_touch.y)) {
@@ -659,7 +643,10 @@ void run_vector_v2_app() {
             presenter.pan_from(pan_start_x, pan_start_y, pan_start, point, chrome, loop_us);
         pan_metrics.include(timing);
       } else if (ink.active() && (point.x != last_touch.x || point.y != last_touch.y)) {
-        const auto canvas_point = clip_ink_point(last_touch, point);
+        const auto clipped = vector_v2::clip_canvas_segment({last_touch.x, last_touch.y},
+                                                            {point.x, point.y}, chrome);
+        const auto canvas_point = clipped.has_value() ? std::optional{Point{clipped->x, clipped->y}}
+                                                      : std::optional<Point>{};
         last_touch = point;
         if (canvas_point.has_value()) {
           last_ink =
@@ -673,7 +660,7 @@ void run_vector_v2_app() {
                                             ? 0xFFFFU
                                             : vector_v2::selected_color(chrome);
             live_metrics.include(
-                presenter.show_update(ribbon.append(last_ink, false), color, loop_us));
+                presenter.show_update(ribbon.append(last_ink, false), color, chrome, loop_us));
           }
         }
       }
@@ -706,7 +693,8 @@ void run_vector_v2_app() {
         const std::uint16_t color = chrome.tool == vector_v2::ChromeTool::kErase
                                         ? 0xFFFFU
                                         : vector_v2::selected_color(chrome);
-        live_metrics.include(presenter.show_update(ribbon.finish(last_ink), color, finished_us));
+        live_metrics.include(
+            presenter.show_update(ribbon.finish(last_ink), color, chrome, finished_us));
         measured_lift.finish_preview_us = esp_timer_get_time() - finish_preview_started;
 
         const std::int64_t builder_finish_started = esp_timer_get_time();
@@ -741,7 +729,7 @@ void run_vector_v2_app() {
         const std::int64_t refresh_started = esp_timer_get_time();
         measured_lift.refresh =
             measured_lift.committed
-                ? presenter.refresh_region(measured_lift.refresh_level_bounds, finished_us)
+                ? presenter.refresh_region(measured_lift.refresh_level_bounds, chrome, finished_us)
                 : LivePresentationTiming{};
         measured_lift.refresh_wall_us = esp_timer_get_time() - refresh_started;
         const std::int64_t logging_started = esp_timer_get_time();
@@ -801,7 +789,7 @@ void run_vector_v2_app() {
           pending_fill = {};
         } else {
           const std::int64_t present_started = esp_timer_get_time();
-          const auto presentation = presenter.refresh_region(pending_fill.level_bounds);
+          const auto presentation = presenter.refresh_region(pending_fill.level_bounds, chrome);
           const std::int64_t present_us = esp_timer_get_time() - present_started;
           fill_timing.present_total_us += present_us;
           fill_timing.present_max_us = std::max(fill_timing.present_max_us, present_us);

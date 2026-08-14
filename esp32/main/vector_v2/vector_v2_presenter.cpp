@@ -95,9 +95,11 @@ LivePresentationTiming VectorV2Presenter::refresh(const vector_v2::ChromeState& 
 }
 
 LivePresentationTiming VectorV2Presenter::refresh_region(vector_v2::PixelRect level_bounds,
+                                                         const vector_v2::ChromeState& chrome,
                                                          std::uint32_t event_us) {
+  const int canvas_bottom = vector_v2::chrome_canvas_bottom(chrome);
   const vector_v2::PixelRect view{level_x(), level_y(), level_x() + vector_v2::kOverviewWidth,
-                                  level_y() + vector_v2::kChromeCanvasBottom};
+                                  level_y() + canvas_bottom};
   const vector_v2::PixelRect intersection{
       .x0 = std::max(view.x0, level_bounds.x0),
       .y0 = std::max(view.y0, level_bounds.y0),
@@ -114,7 +116,7 @@ LivePresentationTiming VectorV2Presenter::refresh_region(vector_v2::PixelRect le
       .y1 = intersection.y1 - level_y(),
   };
   panel = align_bounds(panel);
-  panel.y1 = std::min(panel.y1, vector_v2::kChromeCanvasBottom);
+  panel.y1 = std::min(panel.y1, canvas_bottom);
   const vector_v2::PixelRect aligned_level{
       .x0 = level_x() + panel.x0,
       .y0 = level_y() + panel.y0,
@@ -163,27 +165,32 @@ LivePresentationTiming VectorV2Presenter::compose_and_present(vector_v2::PixelRe
 }
 
 LivePresentationTiming VectorV2Presenter::show_start(InkPoint point, std::uint16_t color,
+                                                     const vector_v2::ChromeState& chrome,
                                                      std::uint32_t event_us) {
   frame_reusable_ = false;
+  const int canvas_bottom = vector_v2::chrome_canvas_bottom(chrome);
   const RibbonPrimitive cap{
       .kind = RibbonPrimitiveKind::kCircle, .center = point.position, .radius = point.radius};
   const std::array primitives{cap};
-  static_cast<void>(renderer_->render(primitives, frame_, vector_v2::kOverviewWidth,
-                                      vector_v2::kChromeCanvasBottom, color));
-  return present(primitive_bounds(primitives), event_us);
+  static_cast<void>(
+      renderer_->render(primitives, frame_, vector_v2::kOverviewWidth, canvas_bottom, color));
+  return present(primitive_bounds(primitives, canvas_bottom), event_us);
 }
 
 LivePresentationTiming VectorV2Presenter::show_update(const RibbonUpdate& update,
-                                                      std::uint16_t color, std::uint32_t event_us) {
+                                                      std::uint16_t color,
+                                                      const vector_v2::ChromeState& chrome,
+                                                      std::uint32_t event_us) {
   frame_reusable_ = false;
+  const int canvas_bottom = vector_v2::chrome_canvas_bottom(chrome);
   if (update.committed.empty()) {
     return {.passed = true};
   }
   static_cast<void>(renderer_->render(std::span(update.committed.begin(), update.committed.size()),
-                                      frame_, vector_v2::kOverviewWidth,
-                                      vector_v2::kChromeCanvasBottom, color));
-  return present(primitive_bounds(std::span(update.committed.begin(), update.committed.size())),
-                 event_us);
+                                      frame_, vector_v2::kOverviewWidth, canvas_bottom, color));
+  return present(
+      primitive_bounds(std::span(update.committed.begin(), update.committed.size()), canvas_bottom),
+      event_us);
 }
 
 LivePresentationTiming VectorV2Presenter::set_zoom(vector_v2::ZoomLevel target_zoom,
@@ -274,7 +281,7 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   const std::int64_t started = esp_timer_get_time();
   const auto scroll = vector_v2::scroll_frame(
       frame_, vector_v2::kOverviewWidth,
-      {0, 0, vector_v2::kOverviewWidth, vector_v2::kChromeCanvasBottom}, delta_x, delta_y);
+      {0, 0, vector_v2::kOverviewWidth, vector_v2::chrome_canvas_bottom(chrome)}, delta_x, delta_y);
   if (!scroll.has_value()) {
     return refresh(chrome, event_us);
   }
@@ -376,7 +383,7 @@ LivePresentationTiming VectorV2Presenter::present_pixels(vector_v2::PixelRect bo
 }
 
 vector_v2::PixelRect VectorV2Presenter::primitive_bounds(
-    std::span<const RibbonPrimitive> primitives) const {
+    std::span<const RibbonPrimitive> primitives, int canvas_bottom) const {
   float x0 = static_cast<float>(vector_v2::kOverviewWidth);
   float y0 = static_cast<float>(vector_v2::kOverviewHeight);
   float x1 = 0.0F;
@@ -398,7 +405,7 @@ vector_v2::PixelRect VectorV2Presenter::primitive_bounds(
   }
   auto bounds = align_bounds({static_cast<int>(std::floor(x0)), static_cast<int>(std::floor(y0)),
                               static_cast<int>(std::ceil(x1)), static_cast<int>(std::ceil(y1))});
-  bounds.y1 = std::min(bounds.y1, vector_v2::kChromeCanvasBottom);
+  bounds.y1 = std::min(bounds.y1, canvas_bottom);
   return bounds;
 }
 
