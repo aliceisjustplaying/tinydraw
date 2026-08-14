@@ -13,9 +13,12 @@ namespace tinydraw::vector_v2 {
 // overview before committing it. This region is distinct from kOverviewBytes.
 inline constexpr std::size_t kOverviewPublicationBytes = kOverviewBytes;
 // Retain five worst-case arbitrary-alignment viewport footprints: one at
-// each tiled zoom plus one disjoint destination (5 x 56 = 280), leaving 40
-// additional LRU slots.
-inline constexpr std::size_t kTileSlotCount = 320;
+// each tiled zoom plus one disjoint destination (5 x 56 = 280), leaving 104
+// additional LRU slots. Raised from 320 after the interactive path stopped
+// funding its 56-tile staging workspace (449 KiB freed at 264b60e); the
+// additional 64 slots cost 512 KiB and the live export reserve, stack, and
+// fragmentation margins were re-proven on hardware with the new count.
+inline constexpr std::size_t kTileSlotCount = 384;
 inline constexpr std::size_t kOperationCapacity = 4'000;
 inline constexpr std::size_t kOperationSampleCapacity = 80'000;
 inline constexpr std::size_t kMaterializedZoomCount = kLodZoomCount;
