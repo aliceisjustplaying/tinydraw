@@ -20,15 +20,16 @@ std::size_t distance_squared(int x, int y, int center_x, int center_y) {
   return static_cast<std::size_t>(delta_x * delta_x + delta_y * delta_y);
 }
 
-std::size_t collinear_run_endpoint(std::span<const CompactOperationSample> samples,
-                                   std::size_t endpoint) {
-  if (samples.size() < 3U || endpoint == 0U) {
-    return endpoint;
+std::size_t collinear_run_start(std::span<const CompactOperationSample> samples,
+                                std::size_t endpoint) {
+  if (samples.size() < 3U || endpoint < 2U) {
+    return endpoint - 1U;
   }
-  while (endpoint + 1U < samples.size()) {
-    const auto& first = samples[endpoint - 1U];
-    const auto& middle = samples[endpoint];
-    const auto& last = samples[endpoint + 1U];
+  std::size_t start = endpoint - 1U;
+  while (start > 0U) {
+    const auto& first = samples[start - 1U];
+    const auto& middle = samples[start];
+    const auto& last = samples[start + 1U];
     if (first.radius_256 != middle.radius_256 || middle.radius_256 != last.radius_256) {
       break;
     }
@@ -39,9 +40,9 @@ std::size_t collinear_run_endpoint(std::span<const CompactOperationSample> sampl
     if (first_x * second_y != first_y * second_x || first_x * second_x + first_y * second_y <= 0) {
       break;
     }
-    ++endpoint;
+    --start;
   }
-  return endpoint;
+  return start;
 }
 
 }  // namespace
@@ -58,14 +59,20 @@ TileProducer::TileProducer(OperationLog& log, MaterializedCanvas& canvas,
 bool TileProducer::ready() const {
   const auto supertask_bytes = std::as_bytes(workspace_.supertask_pixels);
   const auto packed_bytes = std::as_bytes(workspace_.packed_tile_pixels);
+  const auto mask_bytes = std::as_bytes(workspace_.finalized_pixels);
   return log_.ready() && canvas_.ready() &&
          workspace_.supertask_pixels.size() >= kTileProducerPixels &&
          workspace_.packed_tile_pixels.size() >= kTilePixels &&
+         workspace_.finalized_pixels.size() >= kTileProducerMaskBytes &&
          !storage_overlaps(supertask_bytes, packed_bytes) &&
+         !storage_overlaps(supertask_bytes, mask_bytes) &&
+         !storage_overlaps(packed_bytes, mask_bytes) &&
          canvas_.accepts_external_workspace(supertask_bytes) &&
          canvas_.accepts_external_workspace(packed_bytes) &&
+         canvas_.accepts_external_workspace(mask_bytes) &&
          !log_.workspace_overlaps_storage(supertask_bytes) &&
-         !log_.workspace_overlaps_storage(packed_bytes);
+         !log_.workspace_overlaps_storage(packed_bytes) &&
+         !log_.workspace_overlaps_storage(mask_bytes);
 }
 
 bool TileProducer::valid_view(const ViewRequest& view) {
@@ -196,9 +203,11 @@ std::optional<TileProductionStep> TileProducer::publish_certain_paper_group(cons
 }
 
 std::optional<TileProductionStep> TileProducer::produce_next(const ViewRequest& view) {
-  if (const auto paper = choose_certain_paper_group(view); paper.has_value()) {
-    active_group_ = {};
-    return publish_certain_paper_group(view, *paper);
+  if (!active_group_.active) {
+    if (const auto paper = choose_certain_paper_group(view); paper.has_value()) {
+      active_group_ = {};
+      return publish_certain_paper_group(view, *paper);
+    }
   }
   const auto remaining = visible_tiles_remaining(view);
   if (!remaining.has_value()) {
@@ -258,6 +267,7 @@ bool TileProducer::start_group(const ViewRequest& view, TileKey group_origin) {
   }
   auto surface = workspace_.supertask_pixels.first(kTileProducerPixels);
   std::fill(surface.begin(), surface.end(), baseline_color_);
+  std::fill_n(workspace_.finalized_pixels.begin(), kTileProducerMaskBytes, std::uint8_t{0});
   active_group_ = {.view = view,
                    .origin = group_origin,
                    .bounds = bounds,
@@ -265,8 +275,8 @@ bool TileProducer::start_group(const ViewRequest& view, TileKey group_origin) {
                    .revision = revision,
                    .first_operation = replay->first_operation,
                    .operation_count = replay->operation_count,
-                   .next_operation = 0,
-                   .next_sample = 1,
+                   .next_operation = replay->operation_count,
+                   .next_sample = 0,
                    .next_segment_step = 0,
                    .active = true};
   return true;
@@ -292,19 +302,18 @@ TileProducer::RasterStepBatch TileProducer::choose_raster_step_batch(
   return batch;
 }
 
-void TileProducer::finish_active_segment(const StoredOperation& operation, std::size_t endpoint,
+void TileProducer::finish_active_segment(const StoredOperation& operation, std::size_t startpoint,
                                          TileProductionStep& result,
                                          std::size_t& operations_consumed) {
   active_group_.next_segment_step = 0U;
-  const bool operation_complete =
-      operation.samples.size() == 1U || endpoint + 1U >= operation.samples.size();
+  const bool operation_complete = operation.samples.size() == 1U || startpoint == 0U;
   if (operation_complete) {
-    ++active_group_.next_operation;
-    active_group_.next_sample = 1U;
+    --active_group_.next_operation;
+    active_group_.next_sample = 0U;
     ++operations_consumed;
     ++result.operations_scanned;
   } else {
-    active_group_.next_sample = endpoint + 1U;
+    active_group_.next_sample = startpoint;
   }
 }
 
@@ -317,23 +326,24 @@ bool TileProducer::render_active_operation(const StoredOperation& operation,
       intersects(operation_level_bounds(operation.world_bounds, active_group_.view.zoom),
                  active_group_.bounds);
   if (!visible) {
-    ++active_group_.next_operation;
-    active_group_.next_sample = 1U;
+    --active_group_.next_operation;
+    active_group_.next_sample = 0U;
     active_group_.next_segment_step = 0U;
     ++operations_consumed;
     ++result.operations_scanned;
     return true;
   }
 
-  const std::size_t endpoint =
-      operation.samples.size() == 1U
-          ? 0U
-          : collinear_run_endpoint(operation.samples, active_group_.next_sample);
+  if (operation.samples.size() > 1U && active_group_.next_sample == 0U) {
+    active_group_.next_sample = operation.samples.size() - 1U;
+  }
+  const std::size_t endpoint = active_group_.next_sample;
+  const std::size_t startpoint =
+      operation.samples.size() == 1U ? 0U : collinear_run_start(operation.samples, endpoint);
   const IncrementalSegment segment{
       .tool = operation.tool,
       .color = operation.color,
-      .first =
-          operation.samples[operation.samples.size() == 1U ? 0U : active_group_.next_sample - 1U],
+      .first = operation.samples[startpoint],
       .second = operation.samples[endpoint],
   };
   if (!intersects(
@@ -342,7 +352,7 @@ bool TileProducer::render_active_operation(const StoredOperation& operation,
     // Count a rejected segment against the per-call cursor budget so a single
     // giant operation cannot monopolize input polling even when it is distant.
     ++raster_steps_consumed;
-    finish_active_segment(operation, endpoint, result, operations_consumed);
+    finish_active_segment(operation, startpoint, result, operations_consumed);
     return true;
   }
 
@@ -355,12 +365,13 @@ bool TileProducer::render_active_operation(const StoredOperation& operation,
     return false;
   }
   const auto surface = workspace_.supertask_pixels.first(kTileProducerPixels);
-  if (!apply_incremental_segment_steps(segment,
-                                       {.zoom = active_group_.view.zoom,
-                                        .level_bounds = active_group_.bounds,
-                                        .pixels = surface,
-                                        .stride = kTileProducerWidth},
-                                       active_group_.next_segment_step, batch.steps)) {
+  if (!apply_masked_incremental_segment(
+          segment,
+          {.zoom = active_group_.view.zoom,
+           .level_bounds = active_group_.bounds,
+           .pixels = surface,
+           .stride = kTileProducerWidth},
+          workspace_.finalized_pixels.first(kTileProducerMaskBytes))) {
     return false;
   }
   active_group_.next_segment_step += batch.steps;
@@ -373,7 +384,7 @@ bool TileProducer::render_active_operation(const StoredOperation& operation,
   if (active_group_.next_segment_step < total_steps) {
     return true;
   }
-  finish_active_segment(operation, endpoint, result, operations_consumed);
+  finish_active_segment(operation, startpoint, result, operations_consumed);
   return true;
 }
 
@@ -388,12 +399,11 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
   std::size_t operations_consumed = 0;
   std::size_t raster_steps_consumed = 0;
   std::size_t raster_work_consumed = 0;
-  while (active_group_.next_operation < active_group_.operation_count &&
-         operations_consumed < kTileProducerOperationBatch &&
+  while (active_group_.next_operation != 0U && operations_consumed < kTileProducerOperationBatch &&
          raster_steps_consumed < kTileProducerSampleBatch &&
          raster_work_consumed < kTileProducerRasterWorkBatch) {
     const auto stored =
-        log_.operation(active_group_.first_operation + active_group_.next_operation);
+        log_.operation(active_group_.first_operation + active_group_.next_operation - 1U);
     if (!stored.has_value()) {
       active_group_ = {};
       return std::nullopt;
@@ -404,8 +414,8 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
       return std::nullopt;
     }
   }
-  if (active_group_.next_operation < active_group_.operation_count) {
-    // No tile can be published until this painter-ordered group replay is
+  if (active_group_.next_operation != 0U) {
+    // No tile can be published until this exact newest-first group replay is
     // complete, so the visible missing count cannot change during a slice.
     // Avoid rescanning PSRAM slot metadata on every resumable batch.
     return result;

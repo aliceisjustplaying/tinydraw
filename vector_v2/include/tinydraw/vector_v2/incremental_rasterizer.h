@@ -54,6 +54,13 @@ struct IncrementalSegment {
 [[nodiscard]] bool apply_incremental_segment_steps(const IncrementalSegment& segment,
                                                    const RasterSurface& surface,
                                                    std::size_t first_step, std::size_t step_count);
+// Exact newest-first painter seam. A set bit means the corresponding surface
+// pixel already has its final color and must not be touched by older segments.
+// Covered pixels are written and finalized atomically from the caller's point
+// of view; uncovered baseline pixels remain unmarked.
+[[nodiscard]] bool apply_masked_incremental_segment(const IncrementalSegment& segment,
+                                                    const RasterSurface& surface,
+                                                    std::span<std::uint8_t> finalized_pixels);
 
 struct AffectedTileResult {
   std::size_t required = 0;

@@ -179,6 +179,7 @@ struct AppStorage {
   std::uint16_t* region_scratch = nullptr;
   std::uint16_t* producer_supertask = nullptr;
   std::uint16_t* producer_packed = nullptr;
+  std::uint8_t* producer_mask = nullptr;
   MaterializedUniformStorage* uniforms = nullptr;
   std::uint8_t* occupancy = nullptr;
   MaterializedSlotStorage* slots = nullptr;
@@ -198,6 +199,7 @@ struct AppStorage {
     region_scratch = allocate_array<std::uint16_t>(kLiveRegionScratchPixels);
     producer_supertask = allocate_array<std::uint16_t>(vector_v2::kTileProducerPixels);
     producer_packed = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
+    producer_mask = allocate_internal<std::uint8_t>(vector_v2::kTileProducerMaskBytes);
     uniforms =
         allocate_array<MaterializedUniformStorage>(vector_v2::kMaterializedTileIdentityCount);
     occupancy = allocate_array<std::uint8_t>(vector_v2::kOccupancyBytes);
@@ -210,9 +212,10 @@ struct AppStorage {
         allocate_array<TileKey>(vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles);
     if (overview == nullptr || snapshot == nullptr || frame == nullptr || tile_pixels == nullptr ||
         overview_scratch == nullptr || tile_scratch == nullptr || region_scratch == nullptr ||
-        producer_supertask == nullptr || producer_packed == nullptr || uniforms == nullptr ||
-        occupancy == nullptr || slots == nullptr || records == nullptr || samples == nullptr ||
-        input_samples == nullptr || publications == nullptr || affected_keys == nullptr) {
+        producer_supertask == nullptr || producer_packed == nullptr || producer_mask == nullptr ||
+        uniforms == nullptr || occupancy == nullptr || slots == nullptr || records == nullptr ||
+        samples == nullptr || input_samples == nullptr || publications == nullptr ||
+        affected_keys == nullptr) {
       return false;
     }
     for (std::size_t index = 0; index < vector_v2::kMaterializedTileIdentityCount; ++index) {
@@ -228,6 +231,12 @@ struct AppStorage {
   template <typename Type>
   [[nodiscard]] static Type* allocate_array(std::size_t count) {
     return static_cast<Type*>(heap_caps_malloc(count * sizeof(Type), kExternalCaps));
+  }
+
+  template <typename Type>
+  [[nodiscard]] static Type* allocate_internal(std::size_t count) {
+    return static_cast<Type*>(
+        heap_caps_malloc(count * sizeof(Type), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
   }
 };
 
@@ -485,7 +494,8 @@ void run_vector_v2_app() {
   vector_v2::TileProducer producer(
       log, canvas,
       {.supertask_pixels = std::span(storage.producer_supertask, vector_v2::kTileProducerPixels),
-       .packed_tile_pixels = std::span(storage.producer_packed, vector_v2::kTilePixels)});
+       .packed_tile_pixels = std::span(storage.producer_packed, vector_v2::kTilePixels),
+       .finalized_pixels = std::span(storage.producer_mask, vector_v2::kTileProducerMaskBytes)});
   const IncrementalDocumentWorkspace workspace{
       .overview_scratch = std::span(storage.overview_scratch, vector_v2::kOverviewPixels),
       .tile_scratch =
@@ -544,7 +554,7 @@ void run_vector_v2_app() {
   const std::size_t live_scratch_bytes =
       kWorkspaceTileCapacity * vector_v2::kTilePixels * sizeof(std::uint16_t) +
       (vector_v2::kTileProducerPixels + kLiveRegionScratchPixels) * sizeof(std::uint16_t) +
-      vector_v2::kTilePixels * sizeof(std::uint16_t) +
+      vector_v2::kTilePixels * sizeof(std::uint16_t) + vector_v2::kTileProducerMaskBytes +
       kInputSampleCapacity * sizeof(CompactOperationSample) +
       kWorkspaceTileCapacity * sizeof(TileRevisionPublication) +
       vector_v2::kTileSlotCount * sizeof(TileKey);

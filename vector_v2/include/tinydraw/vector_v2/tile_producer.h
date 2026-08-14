@@ -17,6 +17,7 @@ inline constexpr int kTileProducerWidth = kTileProducerColumns * kTileWidth;
 inline constexpr int kTileProducerHeight = kTileProducerRows * kTileHeight;
 inline constexpr std::size_t kTileProducerPixels =
     static_cast<std::size_t>(kTileProducerWidth) * kTileProducerHeight;
+inline constexpr std::size_t kTileProducerMaskBytes = (kTileProducerPixels + 7U) / 8U;
 inline constexpr std::size_t kTileProducerOperationBatch = 64;
 inline constexpr std::size_t kTileProducerSampleBatch = 96;
 // Conservative projected bounding-box work budget. It complements the sample
@@ -28,6 +29,8 @@ struct TileProducerWorkspace {
   std::span<std::uint16_t> supertask_pixels{};
   // Tightly packed publication scratch for one 64x64-or-smaller edge tile.
   std::span<std::uint16_t> packed_tile_pixels{};
+  // One finalized bit per supertask pixel for exact newest-first replay.
+  std::span<std::uint8_t> finalized_pixels{};
 };
 
 struct TileProductionStep {
@@ -44,7 +47,9 @@ struct TileProductionStep {
 };
 
 // Cold-produces provisional world-aligned tiles from a uniform baseline and a
-// painter-ordered replay range. This is the Gate 1 raw-source producer, not a
+// exact newest-first replay range. A finalized-pixel mask makes first writer
+// win, which is equivalent to forward painter order for opaque pen/eraser ops.
+// This is the Gate 1 raw-source producer, not a
 // settled renderer: output is always kImmediate. All storage is caller-owned.
 // Callers serialize the log, canvas, producer, and workspace.
 class TileProducer {
@@ -82,10 +87,12 @@ class TileProducer {
     DocumentRevision revision{};
     std::size_t first_operation = 0;
     std::size_t operation_count = 0;
+    // Count of replay operations not yet consumed. The current operation is
+    // next_operation - 1 because cold replay walks newest to oldest.
     std::size_t next_operation = 0;
-    // Next segment endpoint within the active operation; one means the first
-    // segment. Single-sample operations are handled as one bounded unit.
-    std::size_t next_sample = 1;
+    // Current reverse segment endpoint. Zero initializes a newly selected
+    // operation; single-sample operations are handled as one bounded unit.
+    std::size_t next_sample = 0;
     // Source segments are bounded raster units; retained as a cursor so the
     // rasterizer contract remains explicit if row-level resume is added later.
     std::size_t next_segment_step = 0;
