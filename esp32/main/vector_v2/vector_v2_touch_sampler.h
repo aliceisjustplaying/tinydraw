@@ -4,40 +4,49 @@
 #include <atomic>
 #include <cstdint>
 #include <optional>
+#include <span>
 
 #include "freertos/FreeRTOS.h"
-#include "freertos/queue.h"
 #include "freertos/task.h"
 #include "physical_touch.h"
+#include "tinydraw/vector_v2/touch_event_buffer.h"
 
 namespace tinydraw::esp32 {
+
+inline constexpr std::size_t kVectorV2TouchEventCapacity = 16U;
 
 struct SampledTouch {
   Point point{};
   std::uint32_t timestamp_us = 0;
   std::uint32_t sequence = 0;
-  TouchRead read = TouchRead::kNoTouch;
+  vector_v2::TouchEventKind kind = vector_v2::TouchEventKind::kUp;
 };
 
 struct TouchSamplerMetrics {
   std::uint32_t samples = 0;
   std::uint32_t errors = 0;
+  std::uint32_t queue_overflows = 0;
+  std::uint32_t moves_coalesced = 0;
   std::uint32_t maximum_interval_us = 0;
   std::uint32_t maximum_read_us = 0;
+  std::uint32_t maximum_event_age_us = 0;
 };
 
-// Sole owner of physical touch I/O after start(). Core 1 continuously replaces
-// one mailbox entry; core 0 consumes only the newest state and never waits for
-// I2C. Rendering remains single-threaded.
+// Sole owner of physical touch I/O after start(). Core 1 samples I2C and feeds
+// an ordered, caller-owned semantic event buffer; core 0 never waits for I2C.
+// Destruction synchronously stops the task before either dependency can die.
 class VectorV2TouchSampler {
  public:
-  explicit VectorV2TouchSampler(PhysicalTouch& touch) : touch_(touch) {}
+  VectorV2TouchSampler(PhysicalTouch& touch, std::span<vector_v2::TouchEvent> event_storage)
+      : touch_(touch), events_(event_storage) {}
+  ~VectorV2TouchSampler();
 
   VectorV2TouchSampler(const VectorV2TouchSampler&) = delete;
   VectorV2TouchSampler& operator=(const VectorV2TouchSampler&) = delete;
 
   [[nodiscard]] bool start();
-  [[nodiscard]] std::optional<SampledTouch> read_latest();
+  void stop();
+  [[nodiscard]] std::optional<SampledTouch> read_next();
   [[nodiscard]] TouchSamplerMetrics take_metrics();
 
  private:
@@ -45,12 +54,18 @@ class VectorV2TouchSampler {
   void run();
 
   PhysicalTouch& touch_;
-  QueueHandle_t mailbox_ = nullptr;
+  vector_v2::TouchEventBuffer events_;
   TaskHandle_t task_ = nullptr;
+  TaskHandle_t stop_waiter_ = nullptr;
+  portMUX_TYPE event_lock_ = portMUX_INITIALIZER_UNLOCKED;
+  std::atomic<bool> stop_requested_{false};
   std::atomic<std::uint32_t> samples_{0};
   std::atomic<std::uint32_t> errors_{0};
+  std::atomic<std::uint32_t> queue_overflows_{0};
+  std::atomic<std::uint32_t> moves_coalesced_{0};
   std::atomic<std::uint32_t> maximum_interval_us_{0};
   std::atomic<std::uint32_t> maximum_read_us_{0};
+  std::atomic<std::uint32_t> maximum_event_age_us_{0};
 };
 
 }  // namespace tinydraw::esp32

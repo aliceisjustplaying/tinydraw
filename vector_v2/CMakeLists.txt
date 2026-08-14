@@ -34,6 +34,7 @@ if(TINYDRAW_BUILD_TESTS)
     tests/operation_log_test.cpp
     tests/tile_payload_analysis_test.cpp
     tests/tile_producer_test.cpp
+    tests/touch_event_buffer_test.cpp
   )
   target_link_libraries(tinydraw_vector_v2_tests PRIVATE
     tinydraw::vector_v2

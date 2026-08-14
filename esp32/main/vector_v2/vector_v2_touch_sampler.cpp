@@ -13,52 +13,87 @@ void include_max(std::atomic<std::uint32_t>& maximum, std::uint32_t value) {
   }
 }
 
+vector_v2::TouchContactRead contact_read(TouchRead read) {
+  switch (read) {
+    case TouchRead::kPoint:
+      return vector_v2::TouchContactRead::kPoint;
+    case TouchRead::kNoTouch:
+      return vector_v2::TouchContactRead::kNoTouch;
+    case TouchRead::kError:
+      return vector_v2::TouchContactRead::kError;
+  }
+  return vector_v2::TouchContactRead::kError;
+}
+
 }  // namespace
+
+VectorV2TouchSampler::~VectorV2TouchSampler() { stop(); }
 
 bool VectorV2TouchSampler::start() {
   if (task_ != nullptr) {
     return true;
   }
-  if (!touch_.ready()) {
+  if (!touch_.ready() || !events_.ready()) {
     return false;
   }
-  if (mailbox_ == nullptr) {
-    mailbox_ = xQueueCreate(1U, sizeof(SampledTouch));
-  }
-  if (mailbox_ == nullptr) {
+  stop_waiter_ = nullptr;
+  stop_requested_.store(false, std::memory_order_release);
+  if (xTaskCreatePinnedToCore(task_entry, "v2_touch", 3'072U, this, 5U, &task_, 1) != pdPASS) {
+    task_ = nullptr;
     return false;
   }
-  return xTaskCreatePinnedToCore(task_entry, "v2_touch", 3'072U, this, 5U, &task_, 1) == pdPASS;
+  return true;
 }
 
-std::optional<SampledTouch> VectorV2TouchSampler::read_latest() {
-  if (mailbox_ == nullptr) {
+void VectorV2TouchSampler::stop() {
+  if (task_ == nullptr) {
+    return;
+  }
+  stop_waiter_ = xTaskGetCurrentTaskHandle();
+  stop_requested_.store(true, std::memory_order_release);
+  static_cast<void>(ulTaskNotifyTake(pdTRUE, portMAX_DELAY));
+  vTaskDelete(task_);
+  task_ = nullptr;
+  stop_waiter_ = nullptr;
+}
+
+std::optional<SampledTouch> VectorV2TouchSampler::read_next() {
+  portENTER_CRITICAL(&event_lock_);
+  const auto event = events_.pop();
+  portEXIT_CRITICAL(&event_lock_);
+  if (!event.has_value()) {
     return std::nullopt;
   }
-  SampledTouch sample{};
-  if (xQueueReceive(mailbox_, &sample, 0) != pdTRUE) {
-    return std::nullopt;
-  }
-  return sample;
+  include_max(maximum_event_age_us_,
+              static_cast<std::uint32_t>(esp_timer_get_time()) - event->timestamp_us);
+  return SampledTouch{
+      .point = {.x = event->point.x, .y = event->point.y},
+      .timestamp_us = event->timestamp_us,
+      .sequence = event->sequence,
+      .kind = event->kind,
+  };
 }
 
 TouchSamplerMetrics VectorV2TouchSampler::take_metrics() {
   return {
       .samples = samples_.exchange(0U, std::memory_order_relaxed),
       .errors = errors_.exchange(0U, std::memory_order_relaxed),
+      .queue_overflows = queue_overflows_.exchange(0U, std::memory_order_relaxed),
+      .moves_coalesced = moves_coalesced_.exchange(0U, std::memory_order_relaxed),
       .maximum_interval_us = maximum_interval_us_.exchange(0U, std::memory_order_relaxed),
       .maximum_read_us = maximum_read_us_.exchange(0U, std::memory_order_relaxed),
+      .maximum_event_age_us = maximum_event_age_us_.exchange(0U, std::memory_order_relaxed),
   };
 }
 
 void VectorV2TouchSampler::task_entry(void* argument) {
   static_cast<VectorV2TouchSampler*>(argument)->run();
+  vTaskSuspend(nullptr);
 }
 
 void VectorV2TouchSampler::run() {
-  std::uint32_t sequence = 0;
   std::uint32_t previous_us = 0;
-  while (true) {
+  while (!stop_requested_.load(std::memory_order_acquire)) {
     Point point{};
     const std::int64_t started_us = esp_timer_get_time();
     const TouchRead read = touch_.read(point);
@@ -71,14 +106,20 @@ void VectorV2TouchSampler::run() {
     include_max(maximum_read_us_, read_us);
     samples_.fetch_add(1U, std::memory_order_relaxed);
     errors_.fetch_add(read == TouchRead::kError, std::memory_order_relaxed);
-    const SampledTouch sample{
-        .point = point,
-        .timestamp_us = completed_us,
-        .sequence = ++sequence,
-        .read = read,
-    };
-    static_cast<void>(xQueueOverwrite(mailbox_, &sample));
+
+    portENTER_CRITICAL(&event_lock_);
+    const vector_v2::TouchOfferResult offered =
+        events_.offer(contact_read(read), {.x = point.x, .y = point.y}, completed_us);
+    portEXIT_CRITICAL(&event_lock_);
+    queue_overflows_.fetch_add(offered == vector_v2::TouchOfferResult::kOverflow,
+                               std::memory_order_relaxed);
+    moves_coalesced_.fetch_add(offered == vector_v2::TouchOfferResult::kMoveCoalesced,
+                               std::memory_order_relaxed);
     vTaskDelay(pdMS_TO_TICKS(1));
+  }
+  const TaskHandle_t waiter = stop_waiter_;
+  if (waiter != nullptr) {
+    xTaskNotifyGive(waiter);
   }
 }
 
