@@ -112,6 +112,17 @@ LivePresentationTiming VectorV2Presenter::refresh_region(vector_v2::PixelRect le
       .y1 = std::min(view.y1, level_bounds.y1),
   };
   if (intersection.x1 <= intersection.x0 || intersection.y1 <= intersection.y0) {
+    // At 25% the live commit writes overview authority directly, so there may
+    // be no canvas region left to refresh on lift. The minimap is a separate
+    // physical overlay and still needs one revision-driven presentation.
+    const bool overview_changed =
+        !minimap_presented_ || presented_minimap_revision_ != canvas_.current_revision();
+    if (vector_v2::chrome_minimap_refresh_required(chrome, overview_changed, true)) {
+      if (const auto minimap = vector_v2::chrome_minimap_region(chrome); minimap.has_value()) {
+        return present_with_overlays({minimap->x0, minimap->y0, minimap->x1, minimap->y1}, chrome,
+                                     event_us, 0, true);
+      }
+    }
     return {.passed = true};
   }
   frame_reusable_ = false;
