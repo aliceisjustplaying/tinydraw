@@ -14,7 +14,8 @@ struct ChromePoint {
 };
 
 inline constexpr int kChromeCanvasBottom = 372;
-inline constexpr int kChromePopupCanvasBottom = 288;
+inline constexpr int kChromePopupInputBottom = 288;
+inline constexpr int kChromePopupCanvasBottom = 294;
 inline constexpr std::size_t kPaletteColorCount = 16;
 
 enum class ChromeTool { kDraw, kErase, kPan };
@@ -72,6 +73,7 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
 [[nodiscard]] std::uint16_t selected_color(const ChromeState& state);
 [[nodiscard]] float brush_size(ChromeSize size);
 [[nodiscard]] int chrome_canvas_bottom(const ChromeState& state);
+[[nodiscard]] int chrome_input_bottom(const ChromeState& state);
 [[nodiscard]] std::optional<ChromePoint> clip_canvas_segment(ChromePoint previous,
                                                              ChromePoint current,
                                                              const ChromeState& state);

@@ -81,11 +81,17 @@ TEST_CASE("chrome canvas clipping follows the visible overlay") {
   CHECK(clipped->y == doctest::Approx(371.0F));
 
   state.popup = ChromePopup::kTools;
-  CHECK(tinydraw::vector_v2::chrome_canvas_bottom(state) == 288);
+  CHECK(tinydraw::vector_v2::chrome_canvas_bottom(state) == 294);
+  CHECK(tinydraw::vector_v2::chrome_input_bottom(state) == 288);
   clipped = tinydraw::vector_v2::clip_canvas_segment({100.0F, 280.0F}, {120.0F, 331.0F}, state);
   REQUIRE(clipped.has_value());
   CHECK(clipped->y == doctest::Approx(287.0F));
   CHECK_FALSE(tinydraw::vector_v2::clip_canvas_segment({120.0F, 331.0F}, {140.0F, 340.0F}, state)
+                  .has_value());
+
+  state.popup = ChromePopup::kColors;
+  CHECK(tinydraw::vector_v2::chrome_canvas_bottom(state) == 0);
+  CHECK_FALSE(tinydraw::vector_v2::clip_canvas_segment({100.0F, 100.0F}, {120.0F, 120.0F}, state)
                   .has_value());
 }
 
