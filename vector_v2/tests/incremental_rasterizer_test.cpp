@@ -311,6 +311,24 @@ TEST_CASE("masked segment never repaints finalized pixels and finalizes covered 
   }
 }
 
+TEST_CASE("masked painter rejects a mask that aliases its pixel surface") {
+  std::array<std::uint16_t, 16U> pixels{};
+  const vector_v2::RasterSurface surface{
+      .zoom = vector_v2::ZoomLevel::k100Percent,
+      .level_bounds = {0, 0, 4, 4},
+      .pixels = pixels,
+      .stride = 4,
+  };
+  auto* bytes = reinterpret_cast<std::uint8_t*>(pixels.data());
+  const std::span<std::uint8_t> aliased_mask(bytes, (pixels.size() + 7U) / 8U);
+
+  CHECK_FALSE(vector_v2::apply_masked_incremental_segment(
+      {.color = 0x001FU,
+       .first = {.x_quarter = 0, .y_quarter = 0, .radius_256 = 256},
+       .second = {.x_quarter = 12, .y_quarter = 12, .radius_256 = 256}},
+      surface, aliased_mask));
+}
+
 TEST_CASE("masked painter honors edge bounds narrower than its stride") {
   constexpr int width = 48;
   constexpr int height = 32;

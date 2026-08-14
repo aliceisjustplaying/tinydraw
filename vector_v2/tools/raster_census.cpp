@@ -4,7 +4,7 @@
 //   (default)            adversarial-corpus census sweep across zooms with a
 //                        bit-exact check against direct forward painter replay
 //   --fuzz-collinear N   randomized collinear constant-radius runs: producer
-//                        (which coalesces) vs direct forward replay
+//                        per-segment replay vs direct forward replay
 //   --fuzz-docs N        randomized mixed documents (tapered/constant/collinear,
 //                        erasers): producer vs direct forward replay
 //
@@ -12,10 +12,12 @@
 
 #include "tinydraw/vector_v2/raster_census.h"
 
+#include <array>
 #include <chrono>
 #include <cinttypes>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <optional>
