@@ -141,12 +141,17 @@ and ≈70 ms (64-sample staged chunks) stalls. See
 - [ ] Protect the recent viewport footprint at each zoom from ordinary global-LRU
       churn.
 - [ ] Prefer evicting distant/unprotected raw tiles.
-- [ ] Preserve zero-fallback returns for protected views across a long 400% tour.
+- [x] Preserve zero-fallback returns for protected views across a long 400%
+      tour: permanent `TINYDRAW_GATE1_CACHE_TOUR` gate (protected 100% home
+      returns sharp after a 16-viewport 400% tour at both 320 and 384 slots).
 - [ ] Keep learned uniform identities cheap and revision-safe.
 - [x] Measure 320 versus 384 raw slots only after policy improvements: 384
       adopted at `6abfa0f`, funded by the 449 KiB freed at `264b60e`.
       Retention and export-reserve gates green; largest free PSRAM block
-      2,490,368 bytes (harness) / 2,949,120 bytes (product).
+      2,490,368 bytes (harness) / 2,949,120 bytes (product). The cache-tour
+      A/B then proved the benefit directly: returning through a 16-viewport
+      400% tour refills 63 tiles in 409 ms at 320 slots versus 0 tiles in
+      40 ms at 384 (`cache-tour-320.log` / `cache-tour-384.log`).
 - [ ] Do not adopt 448 slots under the current memory plan: it would consume an
       additional 1 MiB and leave too little margin beside the export reserve.
 - [x] Remove the test-only seed corpus storage from the product app allocation;

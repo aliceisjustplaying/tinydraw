@@ -1,0 +1,147 @@
+[18:10:00] I (103) esp_image: segment 0: paddr=00010020 vaddr=3c040020 sizeESP-ROM:esp32s3-20210327
+[18:10:00] Build:Mar 27 2021
+[18:10:00] rst:0x15 (USB_UART_CHIP_RESET),boot:0x2b (SPI_FAST_FLASH_BOOT)
+[18:10:00] Saved PC:0x4200892b
+[18:10:00] SPIWP:0xee
+[18:10:00] mode:DIO, clock div:1
+[18:10:00] load:0x3fce2820,len:0x1664
+[18:10:00] load:0x403c8700,len:0xf38
+[18:10:00] load:0x403cb700,len:0x31e8
+[18:10:00] entry 0x403c8930
+[18:10:00] I (24) boot: ESP-IDF v6.0.2 2nd stage bootloader
+[18:10:00] I (24) boot: compile time Aug 14 2026 18:09:45
+[18:10:00] I (25) boot: Multicore bootloader
+[18:10:00] I (25) boot: chip revision: v0.2
+[18:10:00] I (28) boot: efuse block revision: v1.3
+[18:10:00] I (31) qio_mode: Enabling default flash chip QIO
+[18:10:00] I (36) boot.esp32s3: Boot SPI Speed : 80MHz
+[18:10:00] I (39) boot.esp32s3: SPI Mode       : QIO
+[18:10:00] I (43) boot.esp32s3: SPI Flash Size : 16MB
+[18:10:00] I (47) boot: Enabling RNG early entropy source...
+[18:10:00] I (51) boot: Partition Table:
+[18:10:00] I (54) boot: ## Label            Usage          Type ST Offset   Length
+[18:10:00] I (60) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+[18:10:00] I (67) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+[18:10:00] I (73) boot:  2 factory          factory app      00 00 00010000 00100000
+[18:10:00] I (80) boot:  3 drawing          Unknown data     01 40 00110000 00300000
+[18:10:00] I (86) boot:  4 export           Unknown data     01 41 00410000 00500000
+[18:10:00] I (93) boot:  5 coredump         Unknown data     01 03 00910000 00010000
+[18:10:00] I (100) boot: End of partition table
+[18:10:00] I (103) esp_image: segment 0: paddr=00010020 vaddr=3c040020 size=1350ch ( 79116) map
+[18:10:00] I (123) esp_image: segment 1: paddr=00023534 vaddr=3fc94500 size=03764h ( 14180) load
+[18:10:00] I (126) esp_image: segment 2: paddr=00026ca0 vaddr=40374000 size=09378h ( 37752) load
+[18:10:00] I (134) esp_image: segment 3: paddr=00030020 vaddr=42000020 size=3ca04h (248324) map
+[18:10:00] I (173) esp_image: segment 4: paddr=0006ca2c vaddr=4037d378 size=070e4h ( 28900) load
+[18:10:00] I (179) esp_image: segment 5: paddr=00073b18 vaddr=50000000 size=00024h (    36) load
+[18:10:00] I (187) boot: Loaded app from partition at offset 0x10000
+[18:10:00] I (187) boot: Disabling RNG early entropy source...
+[18:10:00] I (198) octal_psram: vendor id    : 0x0d (AP)
+[18:10:00] I (198) octal_psram: dev id       : 0x02 (generation 3)
+[18:10:00] I (199) octal_psram: density      : 0x03 (64 Mbit)
+[18:10:00] I (201) octal_psram: good-die     : 0x01 (Pass)
+[18:10:00] I (205) octal_psram: Latency      : 0x01 (Fixed)
+[18:10:00] I (209) octal_psram: VCC          : 0x01 (3V)
+[18:10:00] I (213) octal_psram: SRF          : 0x01 (Fast Refresh)
+[18:10:00] I (218) octal_psram: BurstType    : 0x01 (Hybrid Wrap)
+[18:10:00] I (223) octal_psram: BurstLen     : 0x01 (32 Byte)
+[18:10:00] I (228) octal_psram: Readlatency  : 0x02 (10 cycles@Fixed)
+[18:10:00] I (233) octal_psram: DriveStrength: 0x00 (1/1)
+[18:10:00] I (237) MSPI Timing: Enter psram timing tuning
+[18:10:00] I (242) esp_psram: Found 8MB PSRAM device
+[18:10:00] I (245) esp_psram: Speed: 80MHz
+[18:10:00] I (248) cpu_start: Multicore app
+[18:10:00] I (664) esp_psram: SPI SRAM memory test OK
+[18:10:00] I (672) cpu_start: GPIO 44 and 43 are used as console UART I/O pins
+[18:10:00] I (673) cpu_start: Pro cpu start user code
+[18:10:00] I (673) cpu_start: cpu freq: 240000000 Hz
+[18:10:00] I (674) app_init: Application information:
+[18:10:00] I (678) app_init: Project name:     tinydraw_esp32
+[18:10:00] I (683) app_init: App version:      c3c5d0b-dirty
+[18:10:00] I (687) app_init: Compile time:     Aug 14 2026 18:09:39
+[18:10:00] I (692) app_init: ELF file SHA256:  a3f36f56c...
+[18:10:00] I (696) app_init: ESP-IDF:          v6.0.2
+[18:10:00] I (700) efuse_init: Min chip rev:     v0.0
+[18:10:00] I (704) efuse_init: Max chip rev:     v0.99 
+[18:10:00] I (708) efuse_init: Chip rev:         v0.2
+[18:10:00] I (712) heap_init: Initializing. RAM available for dynamic allocation:
+[18:10:00] I (718) heap_init: At 3FC99090 len 00050680 (321 KiB): RAM
+[18:10:00] I (723) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+[18:10:00] I (728) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
+[18:10:00] I (734) heap_init: At 600FE000 len 00001FE8 (7 KiB): RTCRAM
+[18:10:00] I (739) esp_psram: Adding pool of 8192K of PSRAM memory to heap allocator
+[18:10:00] I (746) spi_flash: detected chip: generic
+[18:10:00] I (749) spi_flash: flash io: qio
+[18:10:00] I (752) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+[18:10:00] I (758) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+[18:10:00] I (765) main_task: Started on CPU0
+[18:10:00] I (768) main_task: Calling app_main()
+[18:10:00] TINYDRAW_PANEL_HARD_RESET=1
+[18:10:00] I (965) co5300: version: 2.1.0
+[18:10:00] I (966) co5300_spi: LCD panel create success, version: 2.1.0
+[18:10:00] W (1046) co5300_spi: The 3Ah command has been used and will be overwritten by external initialization sequence
+[18:10:00] I (1147) CST816S: IC id: 183
+[18:10:01] TINYDRAW_LIVE_PRESENT kind=startup zoom=25 x=0 y=0 compose_us=35150 scroll_us=0 exposed_compose_us=0 chrome_us=0 read_submit_us=0 read_complete_us=0 transfer_wait_us=19704 tile_pixels=0 uniform_pixels=0 overview_pixels=164864 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=21 tear_wait_us=9707 tear_sync=1 frame_reused=0 pass=1
+[18:10:01] TINYDRAW_LIVE_STRESS operations=1000 samples=20000 total_us=417982 average_us=417 maximum_us=761 free_psram=3042440 largest_psram=3014656
+[18:10:01] TINYDRAW_LIVE_PRESENT kind=gate_fallback zoom=100 x=0 y=0 compose_us=23346 scroll_us=0 exposed_compose_us=0 chrome_us=0 read_submit_us=30154 read_complete_us=30955 transfer_wait_us=19821 tile_pixels=0 uniform_pixels=0 overview_pixels=0 fallback_pixels=164864 resident_tiles=0 fallback_tiles=42 pushes=21 tear_wait_us=5929 tear_sync=1 frame_reused=0 pass=1
+[18:10:01] TINYDRAW_GATE1_HARD zoom=100 cold=1 operations=1000 samples=20000 steps=192 tiles=42 scanned=12000 rendered=1659 max_supertask_us=8886 presentation_us=63160 total_us=260168 pass=1
+[18:10:01] TINYDRAW_LIVE_PRESENT kind=gate_fallback zoom=400 x=0 y=0 compose_us=22816 scroll_us=0 exposed_compose_us=0 chrome_us=0 read_submit_us=29589 read_complete_us=30390 transfer_wait_us=19651 tile_pixels=0 uniform_pixels=0 overview_pixels=0 fallback_pixels=164864 resident_tiles=0 fallback_tiles=42 pushes=21 tear_wait_us=5928 tear_sync=1 frame_reused=0 pass=1
+[18:10:02] TINYDRAW_GATE1_HARD zoom=400 cold=1 operations=1000 samples=20000 steps=196 tiles=42 scanned=12000 rendered=120 max_supertask_us=8225 presentation_us=60975 total_us=192529 pass=1
+[18:10:02] TINYDRAW_OVERLAP_WORKLOAD operations=8 samples=1200 radius_world=80
+[18:10:03] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=50 x=215 y=255 steps=334 tiles=56 compute_us=364989 present_us=75471 touch_us=611 pacing_us=9032 wall_us=450103 max_tick_us=9629 touch_samples=2095 touch_interval_max_us=1730 touch_read_max_us=633 touch_events=0 touch_down=0 touch_up=0 touch_events_ge_8ms=0 touch_event_age_max_us=0 touch_errors=0 touch_overflows=0 pass=1
+[18:10:03] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=100 x=583 y=703 steps=172 tiles=48 compute_us=223841 present_us=73126 touch_us=413 pacing_us=6590 wall_us=303970 max_tick_us=9100 touch_samples=375 touch_interval_max_us=1135 touch_read_max_us=440 touch_events=0 touch_down=0 touch_up=0 touch_events_ge_8ms=0 touch_event_age_max_us=0 touch_errors=0 touch_overflows=0 pass=1
+[18:10:03] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=200 x=1319 y=1599 steps=128 tiles=56 compute_us=223866 present_us=74067 touch_us=367 pacing_us=4668 wall_us=302968 max_tick_us=9306 touch_samples=386 touch_interval_max_us=1136 touch_read_max_us=435 touch_events=0 touch_down=0 touch_up=0 touch_events_ge_8ms=0 touch_event_age_max_us=0 touch_errors=0 touch_overflows=0 pass=1
+[18:10:04] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=400 x=2791 y=3391 steps=94 tiles=56 compute_us=207869 present_us=72946 touch_us=347 pacing_us=5791 wall_us=286953 max_tick_us=9341 touch_samples=371 touch_interval_max_us=1130 touch_read_max_us=407 touch_events=0 touch_down=0 touch_up=0 touch_events_ge_8ms=0 touch_event_age_max_us=0 touch_errors=0 touch_overflows=0 pass=1
+[18:10:04] TINYDRAW_ADVERSARIAL_TAPERED_WORKLOAD operations=128 samples=4096 erasers=12 load_us=217871 appended=1
+[18:10:04] TINYDRAW_GATE1_PACED_COLD corpus=adversarial_tapered_4x zoom=50 x=0 y=0 steps=104 tiles=42 compute_us=94551 present_us=53927 touch_us=219 pacing_us=4275 wall_us=152972 max_tick_us=6935 touch_samples=488 touch_interval_max_us=1109 touch_read_max_us=386 touch_events=0 touch_down=0 touch_up=0 touch_events_ge_8ms=0 touch_event_age_max_us=0 touch_errors=0 touch_overflows=0 pass=1
+[18:10:04] TINYDRAW_GATE1_PACED_COLD corpus=adversarial_tapered_4x zoom=100 x=0 y=0 steps=348 tiles=42 compute_us=159216 present_us=51379 touch_us=309 pacing_us=6068 wall_us=216972 max_tick_us=7076 touch_samples=299 touch_interval_max_us=1141 touch_read_max_us=426 touch_events=0 touch_down=0 touch_up=0 touch_events_ge_8ms=0 touch_event_age_max_us=0 touch_errors=0 touch_overflows=0 pass=1
+[18:10:05] TINYDRAW_GATE1_PACED_COLD corpus=adversarial_tapered_4x zoom=200 x=0 y=0 steps=1214 tiles=42 compute_us=448192 present_us=58328 touch_us=716 pacing_us=14737 wall_us=521973 max_tick_us=8574 touch_samples=591 touch_interval_max_us=1127 touch_read_max_us=413 touch_events=0 touch_down=0 touch_up=0 touch_events_ge_8ms=0 touch_event_age_max_us=0 touch_errors=0 touch_overflows=0 pass=1
+[18:10:06] TINYDRAW_GATE1_PACED_COLD corpus=adversarial_tapered_4x zoom=400 x=0 y=0 steps=904 tiles=42 compute_us=549628 present_us=61704 touch_us=825 pacing_us=12332 wall_us=624489 max_tick_us=8881 touch_samples=707 touch_interval_max_us=1145 touch_read_max_us=418 touch_events=0 touch_down=0 touch_up=0 touch_events_ge_8ms=0 touch_event_age_max_us=0 touch_errors=0 touch_overflows=0 pass=1
+[18:10:06] TINYDRAW_GATE1_WORKLOAD kind=realistic seed=7 operations=1000 samples=19844 maximum_stroke=198 load_us=356727 raw_source=1 lod_copies=0
+[18:10:07] TINYDRAW_GATE1_PACED_COLD corpus=seed7 zoom=400 x=63 y=63 steps=281 tiles=56 compute_us=263369 present_us=75535 touch_us=395 pacing_us=7672 wall_us=346971 max_tick_us=12356 touch_samples=900 touch_interval_max_us=1931 touch_read_max_us=477 touch_events=0 touch_down=0 touch_up=0 touch_events_ge_8ms=0 touch_event_age_max_us=0 touch_errors=0 touch_overflows=0 pass=1
+[18:10:07] TINYDRAW_LIVE_PRESENT kind=gate_fallback zoom=100 x=0 y=0 compose_us=23605 scroll_us=0 exposed_compose_us=0 chrome_us=0 read_submit_us=32274 read_complete_us=33075 transfer_wait_us=19593 tile_pixels=0 uniform_pixels=0 overview_pixels=0 fallback_pixels=164864 resident_tiles=0 fallback_tiles=42 pushes=21 tear_wait_us=7835 tear_sync=1 frame_reused=0 pass=1
+[18:10:07] TINYDRAW_GATE1_HARD zoom=100 cold=1 operations=1000 samples=19844 steps=275 tiles=42 scanned=12000 rendered=5232 max_supertask_us=9092 presentation_us=60517 total_us=365592 pass=1
+[18:10:07] TINYDRAW_GATE1_PAN zoom=100 from_x=0 from_y=0 to_x=88 to_y=88 compose_us=27119 scroll_us=11385 exposed_compose_us=15734 chrome_us=0 event_submit_us=30271 event_complete_us=31076 transfer_us=19685 setup=1 present=1 moved=1 frame_reused=1 pass=1
+[18:10:08] TINYDRAW_LIVE_PRESENT kind=gate_fallback zoom=400 x=0 y=0 compose_us=22891 scroll_us=0 exposed_compose_us=0 chrome_us=0 read_submit_us=37125 read_complete_us=37925 transfer_wait_us=19336 tile_pixels=0 uniform_pixels=0 overview_pixels=0 fallback_pixels=164864 resident_tiles=0 fallback_tiles=42 pushes=21 tear_wait_us=13366 tear_sync=1 frame_reused=0 pass=1
+[18:10:08] TINYDRAW_GATE1_HARD zoom=400 cold=1 operations=1000 samples=19844 steps=211 tiles=42 scanned=12000 rendered=591 max_supertask_us=10706 presentation_us=61536 total_us=253058 pass=1
+[18:10:08] TINYDRAW_GATE1_PAN zoom=400 from_x=0 from_y=0 to_x=88 to_y=88 compose_us=27068 scroll_us=11381 exposed_compose_us=15687 chrome_us=0 event_submit_us=30954 event_complete_us=31750 transfer_us=20000 setup=1 present=1 moved=1 frame_reused=1 pass=1
+[18:10:08] TINYDRAW_GATE1_DRAW_FILL zoom=400 revision=2140 append_us=1100 poll_gap_us=101 event_submit_us=2264 event_complete_us=2439 max_compute_slice_us=4897 max_display_slice_us=10665 fill_us=249578 revision_restarted=1 pass=1
+[18:10:09] TINYDRAW_GATE1_CACHE_FILL zoom=50 x=63 y=63 published=56 total_us=535968 within_cold_gate=0 complete=1
+[18:10:10] TINYDRAW_GATE1_CACHE_FILL zoom=100 x=63 y=63 published=56 total_us=498968 within_cold_gate=1 complete=1
+[18:10:10] TINYDRAW_GATE1_CACHE_FILL zoom=200 x=63 y=63 published=56 total_us=399967 within_cold_gate=1 complete=1
+[18:10:10] TINYDRAW_GATE1_CACHE_FILL zoom=400 x=63 y=63 published=56 total_us=357967 within_cold_gate=1 complete=1
+[18:10:11] TINYDRAW_GATE1_CACHE_REVISIT zoom=50 remaining=0 tile_pixels=118128 fallback_pixels=0 compose_us=25936 complete_us=20116 hit=1
+[18:10:11] TINYDRAW_GATE1_CACHE_REVISIT zoom=100 remaining=0 tile_pixels=164864 fallback_pixels=0 compose_us=28162 complete_us=19644 hit=1
+[18:10:11] TINYDRAW_GATE1_CACHE_REVISIT zoom=200 remaining=0 tile_pixels=164864 fallback_pixels=0 compose_us=28923 complete_us=19429 hit=1
+[18:10:11] TINYDRAW_GATE1_CACHE_REVISIT zoom=400 remaining=0 tile_pixels=164607 fallback_pixels=0 compose_us=29639 complete_us=20087 hit=1
+[18:10:11] TINYDRAW_GATE1_CACHE_FILL zoom=400 x=575 y=575 published=56 total_us=387968 within_cold_gate=1 complete=1
+[18:10:11] TINYDRAW_GATE1_CACHE_ROUND_TRIP zoom=50 from_x=63 from_y=63 via_x=575 via_y=575 remaining=0 tile_pixels=118128 fallback_pixels=0 compose_us=25950 complete_us=19405 hit=1
+[18:10:11] TINYDRAW_GATE1_CACHE_ROUND_TRIP zoom=100 from_x=63 from_y=63 via_x=575 via_y=575 remaining=0 tile_pixels=164864 fallback_pixels=0 compose_us=28182 complete_us=20057 hit=1
+[18:10:11] TINYDRAW_GATE1_CACHE_ROUND_TRIP zoom=200 from_x=63 from_y=63 via_x=575 via_y=575 remaining=0 tile_pixels=164864 fallback_pixels=0 compose_us=28895 complete_us=19744 hit=1
+[18:10:11] TINYDRAW_GATE1_CACHE_ROUND_TRIP zoom=400 from_x=63 from_y=63 via_x=575 via_y=575 remaining=0 tile_pixels=164607 fallback_pixels=0 compose_us=29684 complete_us=19509 hit=1
+[18:10:11] TINYDRAW_GATE1_CACHE_RETENTION pass=1 slots=320 revision=2140
+[18:10:13] TINYDRAW_PAPER_SWEEP zoom=100 identities=644 raw=266 uniform=378 fallback=0 slots=320 total_us=1449036 pass=1
+[18:10:18] TINYDRAW_GATE1_CACHE_TOUR slots=320 stops=16 forward_steps=2306 forward_tiles=832 forward_wall_us=2217972 return_missing_tiles=63 return_steps=415 return_tiles=63 return_wall_us=408979 home_missing=0 home_fallback_pixels=0 pass=1
+[18:10:19] TINYDRAW_GATE1_LONG_GESTURE path=reference samples=1600 chunks=26 append_total_us=682222 append_max_us=33013 append_avg_us=26239 refresh_fallback_pixels=0 committed=1 authority=1 refresh=1 run_ok=1
+[18:10:19] TINYDRAW_GATE1_LONG_GESTURE path=in_place samples=1600 chunks=35 append_total_us=330187 append_max_us=11316 append_avg_us=9433 refresh_fallback_pixels=0 committed=1 authority=1 refresh=1 run_ok=1
+[18:10:19] TINYDRAW_V2_EXPORT_PROGRESS row=0 of=1792
+[18:10:20] TINYDRAW_V2_EXPORT_PROGRESS row=256 of=1792
+[18:10:21] TINYDRAW_V2_EXPORT_PROGRESS row=512 of=1792
+[18:10:22] TINYDRAW_V2_EXPORT_PROGRESS row=768 of=1792
+[18:10:22] TINYDRAW_V2_EXPORT_PROGRESS row=1024 of=1792
+[18:10:23] TINYDRAW_V2_EXPORT_PROGRESS row=1280 of=1792
+[18:10:24] E (24500) task_wdt: Task watchdog got triggered. The following tasks/users did not reset the watchdog in time:
+[18:10:24] E (24500) task_wdt:  - IDLE0 (CPU 0)
+[18:10:24] E (24500) task_wdt: Tasks currently running:
+[18:10:24] E (24500) task_wdt: CPU 0: main
+[18:10:24] E (24500) task_wdt: CPU 1: IDLE1
+[18:10:24] E (24500) task_wdt: Print CPU 0 (current core) backtrace
+[18:10:24] 
+[18:10:24] 
+[18:10:24] Backtrace: 0x4202EDB1:0x3FC95A10 0x403787AD:0x3FC95A50 0x42034613:0x3FC9BA00 0x42018F5B:0x3FC9BA60 0x4201928E:0x3FC9BAA0 0x42015EC5:0x3FC9BAC0 0x4201169D:0x3FC9BB20 0x420118B9:0x3FC9BBD0 0x4200FB14:0x3FC9BC00 0x420147BE:0x3FC9BC70 0x4200C6D1:0x3FC9C070 0x4200FA23:0x3FC9D300 0x42007D12:0x3FC9D320
+[18:10:24] 
+[18:10:24] TINYDRAW_V2_EXPORT_PROGRESS row=1536 of=1792
+[18:10:25] TINYDRAW_GATE1_EXPORT encoded=1 bytes=40045 elapsed_us=5757936 workspace_bytes=50652 band_bytes=376832 free_psram=3042440 free_internal=297916 signature=1 dimensions=1 pass=1
+[18:10:25] TINYDRAW_EXPORT_RESERVE requested=1572864 free_before=3042440 largest_before=3014656 free_held=1469572 largest_held=1441792 pass=1
+[18:10:25] TINYDRAW_GATE1_AUTOMATED_DONE stress=1 stress_100=1 stress_400=1 overlap_ready=1 overlap_cold=1 adversarial_ready=1 adversarial_cold=1 workload=1 paced_cold=1 hard_100=1 hard_400=1 pan_100=1 pan_400=1 draw_fill=1 cache=1 full_world_cache=1 cache_tour=1 long_gesture=1 export_encode=1 export_reserve=1 return=1 ssaa_receipt=yellow
+[18:10:25] TINYDRAW_VECTOR_V2_GATE_HARNESS_DONE pass=1
+[18:10:25] TINYDRAW_VECTOR_V2_READY zoom=25 controls=chrome button=cycle_all_zooms operations_capacity=4000 samples_capacity=80000 live_storage_bytes=5301792 overview_bytes=1318912 raw_tile_bytes=2621440 tile_metadata_bytes=68856 operation_bytes=720000 live_scratch_bytes=572584 free_psram=3042440 largest_psram=3014656 te_edges=1447 te_period_us=16799 te_high_us=576 te_level=0 main_stack_free=2104

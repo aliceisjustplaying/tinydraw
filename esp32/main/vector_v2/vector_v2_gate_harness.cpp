@@ -740,6 +740,108 @@ bool run_export_encode_gate(VectorV2Export& exporter, OperationLog& log) {
   return passed;
 }
 
+// Measures cache-retention value under eviction pressure: cold-fill a home
+// view, tour distinct 400% viewports across the inked world, then tour back
+// and count what must be re-produced. The return-trip refill work is the
+// user-visible "cold render after panning back" cost; the protected home
+// footprint must additionally return with zero missing tiles and zero
+// fallback pixels. Runs against the loaded seed-7 document.
+bool run_cache_tour_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
+                         MaterializedCanvas& canvas, const vector_v2::ChromeState& chrome) {
+  struct TourTotals {
+    std::size_t steps = 0;
+    std::size_t tiles_published = 0;
+    std::int64_t wall_us = 0;
+  };
+  const auto fill_view = [&](const vector_v2::ViewRequest& view, TourTotals& totals) -> bool {
+    const std::int64_t started = esp_timer_get_time();
+    for (std::size_t step_index = 0; step_index < 100'000U; ++step_index) {
+      const auto step = producer.produce_next(view);
+      if (!step.has_value()) {
+        return false;
+      }
+      ++totals.steps;
+      totals.tiles_published += step->tiles_published;
+      if (step->complete) {
+        totals.wall_us += esp_timer_get_time() - started;
+        return true;
+      }
+    }
+    return false;
+  };
+  const auto view_at = [](ZoomLevel zoom, int x, int y) {
+    return vector_v2::ViewRequest{
+        .zoom = zoom,
+        .level_pixels = {x, y, x + vector_v2::kOverviewWidth, y + vector_v2::kOverviewHeight},
+    };
+  };
+
+  // Home view at 100% over inked content; presenter.set_view also registers
+  // the protected footprint exactly like real navigation.
+  if (!canvas.discard_tiles() ||
+      !presenter.set_view(ZoomLevel::k100Percent, 63, 63, chrome, now_us()).passed) {
+    return false;
+  }
+  TourTotals home_fill{};
+  if (!fill_view(view_at(ZoomLevel::k100Percent, 63, 63), home_fill)) {
+    return false;
+  }
+
+  constexpr std::array<int, 4> kTourX{200, 1'900, 3'600, 5'300};
+  constexpr std::array<int, 4> kTourY{300, 2'400, 4'500, 6'600};
+  TourTotals forward{};
+  for (const int y : kTourY) {
+    for (const int x : kTourX) {
+      if (!presenter.set_view(ZoomLevel::k400Percent, x, y, chrome, now_us()).passed ||
+          !fill_view(view_at(ZoomLevel::k400Percent, x, y), forward)) {
+        return false;
+      }
+    }
+  }
+
+  // Return trip in reverse order: count what was evicted before refilling.
+  TourTotals return_trip{};
+  std::size_t return_missing_tiles = 0;
+  for (std::size_t stop = kTourX.size() * kTourY.size(); stop-- > 0U;) {
+    const int x = kTourX[stop % kTourX.size()];
+    const int y = kTourY[stop / kTourX.size()];
+    const auto view = view_at(ZoomLevel::k400Percent, x, y);
+    const auto missing = producer.visible_tiles_remaining(view);
+    if (!missing.has_value() ||
+        !presenter.set_view(ZoomLevel::k400Percent, x, y, chrome, now_us()).passed) {
+      return false;
+    }
+    return_missing_tiles += *missing;
+    if (!fill_view(view, return_trip)) {
+      return false;
+    }
+  }
+
+  // Protected home footprint must return sharp with no producer work.
+  const auto home_view = view_at(ZoomLevel::k100Percent, 63, 63);
+  const auto home_missing = producer.visible_tiles_remaining(home_view);
+  const auto home_return = presenter.set_view(ZoomLevel::k100Percent, 63, 63, chrome, now_us());
+  const bool home_sharp = home_missing.has_value() && *home_missing == 0U && home_return.passed &&
+                          home_return.fallback_pixels == 0U;
+  const bool passed = home_sharp;
+  std::printf(
+      "TINYDRAW_GATE1_CACHE_TOUR slots=%lu stops=%lu forward_steps=%lu forward_tiles=%lu "
+      "forward_wall_us=%lld return_missing_tiles=%lu return_steps=%lu return_tiles=%lu "
+      "return_wall_us=%lld home_missing=%lu home_fallback_pixels=%lu pass=%u\n",
+      static_cast<unsigned long>(canvas.slot_capacity()),
+      static_cast<unsigned long>(kTourX.size() * kTourY.size()),
+      static_cast<unsigned long>(forward.steps),
+      static_cast<unsigned long>(forward.tiles_published),
+      static_cast<long long>(forward.wall_us), static_cast<unsigned long>(return_missing_tiles),
+      static_cast<unsigned long>(return_trip.steps),
+      static_cast<unsigned long>(return_trip.tiles_published),
+      static_cast<long long>(return_trip.wall_us),
+      static_cast<unsigned long>(home_missing.value_or(999U)),
+      static_cast<unsigned long>(home_return.fallback_pixels), passed);
+  std::fflush(stdout);
+  return passed;
+}
+
 bool verify_pan_adapter(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
                         const vector_v2::ChromeState& chrome, ZoomLevel zoom) {
   constexpr int kPanDelta = 88;
@@ -1093,25 +1195,29 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
       gate_400 && verify_pan_adapter(presenter, producer, chrome, ZoomLevel::k400Percent);
   const bool draw_fill = pan_400 && run_draw_while_fill_gate(presenter, producer, log, canvas,
                                                              chrome, workspace, conversion_storage);
+  // Cache gates run against the rich seed-7 document; the long-gesture gate
+  // resets the document and therefore runs after them.
+  const bool cache_retention =
+      draw_fill && run_cache_retention_gate(presenter, producer, canvas, chrome);
+  const bool full_world_cache = cache_retention && run_full_world_cache_gate(producer, canvas);
+  const bool cache_tour =
+      full_world_cache && run_cache_tour_gate(presenter, producer, canvas, chrome);
   const bool long_gesture =
-      draw_fill &&
+      cache_tour &&
       run_long_gesture_commit_gate(presenter, producer, log, canvas, chrome, workspace,
                                    in_place_workspace, blank_snapshot, conversion_storage);
-  const bool cache_retention =
-      long_gesture && run_cache_retention_gate(presenter, producer, canvas, chrome);
-  const bool full_world_cache = cache_retention && run_full_world_cache_gate(producer, canvas);
-  const bool export_encode = full_world_cache && run_export_encode_gate(exporter, log);
+  const bool export_encode = long_gesture && run_export_encode_gate(exporter, log);
   const bool export_reserve = export_encode && verify_export_reserve();
   const auto return_overview = presenter.set_view(ZoomLevel::k25Percent, 0, 0, chrome, now_us());
   std::printf(
       "TINYDRAW_GATE1_AUTOMATED_DONE stress=%u stress_100=%u stress_400=%u overlap_ready=%u "
       "overlap_cold=%u adversarial_ready=%u adversarial_cold=%u workload=%u paced_cold=%u "
       "hard_100=%u hard_400=%u pan_100=%u "
-      "pan_400=%u draw_fill=%u long_gesture=%u cache=%u full_world_cache=%u export_encode=%u "
-      "export_reserve=%u return=%u ssaa_receipt=yellow\n",
+      "pan_400=%u draw_fill=%u cache=%u full_world_cache=%u cache_tour=%u long_gesture=%u "
+      "export_encode=%u export_reserve=%u return=%u ssaa_receipt=yellow\n",
       stress_ready, stress_100, stress_400, overlap_ready, overlap_cold, adversarial_ready,
       adversarial_cold, workload_ready, paced_cold, gate_100, gate_400, pan_100, pan_400, draw_fill,
-      long_gesture, cache_retention, full_world_cache, export_encode, export_reserve,
+      cache_retention, full_world_cache, cache_tour, long_gesture, export_encode, export_reserve,
       return_overview.passed);
   return return_overview.passed && export_reserve && overlap_cold && adversarial_cold;
 #endif
