@@ -76,6 +76,7 @@ struct PendingFillPresentation {
 };
 
 struct FillBaselineTiming {
+  std::int64_t started_us = 0;
   std::uint32_t steps = 0;
   std::int64_t compute_total_us = 0;
   std::int64_t compute_max_us = 0;
@@ -276,11 +277,13 @@ void print_fill_baseline(const char* result, ZoomLevel zoom, int x, int y,
   }
   std::printf(
       "TINYDRAW_FILL_BASELINE result=%s zoom=%s x=%d y=%d revision=%lu steps=%lu "
-      "compute_total_us=%lld compute_max_us=%lld present_total_us=%lld "
+      "wall_us=%lld compute_total_us=%lld compute_max_us=%lld present_total_us=%lld "
       "present_max_us=%lld tick_max_us=%lld producer_failures=%lu "
       "presentation_failures=%lu\n",
       result, zoom_name(zoom), x, y, static_cast<unsigned long>(revision.value),
-      static_cast<unsigned long>(timing.steps), static_cast<long long>(timing.compute_total_us),
+      static_cast<unsigned long>(timing.steps),
+      static_cast<long long>(timing.started_us == 0 ? 0 : esp_timer_get_time() - timing.started_us),
+      static_cast<long long>(timing.compute_total_us),
       static_cast<long long>(timing.compute_max_us),
       static_cast<long long>(timing.present_total_us),
       static_cast<long long>(timing.present_max_us), static_cast<long long>(timing.tick_max_us),
@@ -496,7 +499,7 @@ void run_vector_v2_app() {
   const auto initial = presenter.refresh(chrome);
   print_presentation("startup", presenter, initial);
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-  if (!run_vector_v2_gate_harness(presenter, producer, log, canvas, chrome, workspace,
+  if (!run_vector_v2_gate_harness(presenter, producer, log, canvas, touch, chrome, workspace,
                                   std::span(storage.snapshot, vector_v2::kOverviewPixels),
                                   std::span(storage.input_samples, kInputSampleCapacity),
                                   std::span(storage.producer_packed, vector_v2::kTilePixels))) {
@@ -778,6 +781,7 @@ void run_vector_v2_app() {
         fill_revision = canvas.current_revision();
         fill_complete = false;
         fill_timing.reset();
+        fill_timing.started_us = esp_timer_get_time();
         fill_measurement_active = true;
         pending_fill = {};
       }
@@ -801,6 +805,7 @@ void run_vector_v2_app() {
       } else if (!fill_complete) {
         if (!fill_measurement_active) {
           fill_timing.reset();
+          fill_timing.started_us = esp_timer_get_time();
           fill_measurement_active = true;
         }
         const std::int64_t fill_tick_started = esp_timer_get_time();
