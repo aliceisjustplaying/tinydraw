@@ -20,6 +20,30 @@ std::size_t distance_squared(int x, int y, int center_x, int center_y) {
   return static_cast<std::size_t>(delta_x * delta_x + delta_y * delta_y);
 }
 
+std::size_t collinear_run_endpoint(std::span<const CompactOperationSample> samples,
+                                   std::size_t endpoint) {
+  if (samples.size() < 3U || endpoint == 0U) {
+    return endpoint;
+  }
+  while (endpoint + 1U < samples.size()) {
+    const auto& first = samples[endpoint - 1U];
+    const auto& middle = samples[endpoint];
+    const auto& last = samples[endpoint + 1U];
+    if (first.radius_256 != middle.radius_256 || middle.radius_256 != last.radius_256) {
+      break;
+    }
+    const auto first_x = static_cast<std::int64_t>(middle.x_quarter) - first.x_quarter;
+    const auto first_y = static_cast<std::int64_t>(middle.y_quarter) - first.y_quarter;
+    const auto second_x = static_cast<std::int64_t>(last.x_quarter) - middle.x_quarter;
+    const auto second_y = static_cast<std::int64_t>(last.y_quarter) - middle.y_quarter;
+    if (first_x * second_y != first_y * second_x || first_x * second_x + first_y * second_y <= 0) {
+      break;
+    }
+    ++endpoint;
+  }
+  return endpoint;
+}
+
 }  // namespace
 
 TileProducer::TileProducer(OperationLog& log, MaterializedCanvas& canvas,
@@ -268,19 +292,19 @@ TileProducer::RasterStepBatch TileProducer::choose_raster_step_batch(
   return batch;
 }
 
-void TileProducer::finish_active_segment(const StoredOperation& operation,
+void TileProducer::finish_active_segment(const StoredOperation& operation, std::size_t endpoint,
                                          TileProductionStep& result,
                                          std::size_t& operations_consumed) {
   active_group_.next_segment_step = 0U;
   const bool operation_complete =
-      operation.samples.size() == 1U || active_group_.next_sample + 1U >= operation.samples.size();
+      operation.samples.size() == 1U || endpoint + 1U >= operation.samples.size();
   if (operation_complete) {
     ++active_group_.next_operation;
     active_group_.next_sample = 1U;
     ++operations_consumed;
     ++result.operations_scanned;
   } else {
-    ++active_group_.next_sample;
+    active_group_.next_sample = endpoint + 1U;
   }
 }
 
@@ -301,11 +325,15 @@ bool TileProducer::render_active_operation(const StoredOperation& operation,
     return true;
   }
 
-  const std::size_t endpoint = operation.samples.size() == 1U ? 0U : active_group_.next_sample;
+  const std::size_t endpoint =
+      operation.samples.size() == 1U
+          ? 0U
+          : collinear_run_endpoint(operation.samples, active_group_.next_sample);
   const IncrementalSegment segment{
       .tool = operation.tool,
       .color = operation.color,
-      .first = operation.samples[operation.samples.size() == 1U ? 0U : endpoint - 1U],
+      .first =
+          operation.samples[operation.samples.size() == 1U ? 0U : active_group_.next_sample - 1U],
       .second = operation.samples[endpoint],
   };
   if (!intersects(
@@ -314,7 +342,7 @@ bool TileProducer::render_active_operation(const StoredOperation& operation,
     // Count a rejected segment against the per-call cursor budget so a single
     // giant operation cannot monopolize input polling even when it is distant.
     ++raster_steps_consumed;
-    finish_active_segment(operation, result, operations_consumed);
+    finish_active_segment(operation, endpoint, result, operations_consumed);
     return true;
   }
 
@@ -345,7 +373,7 @@ bool TileProducer::render_active_operation(const StoredOperation& operation,
   if (active_group_.next_segment_step < total_steps) {
     return true;
   }
-  finish_active_segment(operation, result, operations_consumed);
+  finish_active_segment(operation, endpoint, result, operations_consumed);
   return true;
 }
 

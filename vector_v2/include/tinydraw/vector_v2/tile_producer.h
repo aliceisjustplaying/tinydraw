@@ -104,8 +104,8 @@ class TileProducer {
   [[nodiscard]] RasterStepBatch choose_raster_step_batch(const IncrementalSegment& segment,
                                                          std::size_t step_budget,
                                                          std::size_t raster_work_budget) const;
-  void finish_active_segment(const StoredOperation& operation, TileProductionStep& result,
-                             std::size_t& operations_consumed);
+  void finish_active_segment(const StoredOperation& operation, std::size_t endpoint,
+                             TileProductionStep& result, std::size_t& operations_consumed);
   [[nodiscard]] bool render_active_operation(const StoredOperation& operation,
                                              TileProductionStep& result,
                                              std::size_t& operations_consumed,

@@ -222,6 +222,39 @@ TEST_CASE("tile producer rejects distant segments inside an overlapping operatio
   CHECK(step->tiles_published == 4U);
 }
 
+TEST_CASE("tile producer coalesces exact constant-radius line runs") {
+  Fixture fixture;
+  std::array<vector_v2::CompactOperationSample, 100> line{};
+  for (std::size_t index = 0; index < line.size(); ++index) {
+    line[index] = {.x_quarter = static_cast<std::uint16_t>(40U + index * 4U),
+                   .y_quarter = static_cast<std::uint16_t>(40U + index * 8U),
+                   .radius_256 = 256};
+  }
+  REQUIRE(fixture.log.append(append(line, 0x001FU)));
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> revised_overview{};
+  revised_overview.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({1}, revised_overview));
+
+  const vector_v2::ViewRequest view{
+      .zoom = vector_v2::ZoomLevel::k100Percent,
+      .level_pixels = {0, 0, 128, 128},
+  };
+  const auto step = fixture.producer.produce_next(view);
+  REQUIRE(step.has_value());
+  CHECK(step->complete);
+  CHECK(step->operations_scanned == 1U);
+  CHECK(step->operations_rendered == 1U);
+  CHECK(step->raster_steps == 1U);
+
+  std::vector<std::uint16_t> composed(128U * 128U);
+  REQUIRE(fixture.canvas.compose_view(view, composed));
+  std::vector<std::uint16_t> direct(composed.size(), 0xFFFFU);
+  REQUIRE(vector_v2::apply_incremental_operation(
+      append(line, 0x001FU),
+      {.zoom = view.zoom, .level_bounds = view.level_pixels, .pixels = direct, .stride = 128}));
+  CHECK(composed == direct);
+}
+
 TEST_CASE("tile producer validates uniform baseline reset") {
   Fixture fixture;
   CHECK(fixture.producer.reset_uniform_baseline({0}));
