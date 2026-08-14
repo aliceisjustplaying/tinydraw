@@ -169,7 +169,7 @@ LivePresentationTiming VectorV2Presenter::show_start(InkPoint point, std::uint16
       .kind = RibbonPrimitiveKind::kCircle, .center = point.position, .radius = point.radius};
   const std::array primitives{cap};
   static_cast<void>(renderer_->render(primitives, frame_, vector_v2::kOverviewWidth,
-                                      vector_v2::kOverviewHeight, color));
+                                      kMainToolbarOverlayTop, color));
   return present(primitive_bounds(primitives), event_us);
 }
 
@@ -180,7 +180,7 @@ LivePresentationTiming VectorV2Presenter::show_update(const RibbonUpdate& update
     return {.passed = true};
   }
   static_cast<void>(renderer_->render(std::span(update.committed.begin(), update.committed.size()),
-                                      frame_, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight,
+                                      frame_, vector_v2::kOverviewWidth, kMainToolbarOverlayTop,
                                       color));
   return present(primitive_bounds(std::span(update.committed.begin(), update.committed.size())),
                  event_us);
@@ -394,8 +394,10 @@ vector_v2::PixelRect VectorV2Presenter::primitive_bounds(
       y1 = std::max(y1, primitive.points[index].y + 2.0F);
     }
   }
-  return align_bounds({static_cast<int>(std::floor(x0)), static_cast<int>(std::floor(y0)),
-                       static_cast<int>(std::ceil(x1)), static_cast<int>(std::ceil(y1))});
+  auto bounds = align_bounds({static_cast<int>(std::floor(x0)), static_cast<int>(std::floor(y0)),
+                              static_cast<int>(std::ceil(x1)), static_cast<int>(std::ceil(y1))});
+  bounds.y1 = std::min(bounds.y1, kMainToolbarOverlayTop);
+  return bounds;
 }
 
 }  // namespace tinydraw::esp32
