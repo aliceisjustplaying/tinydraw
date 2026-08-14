@@ -118,6 +118,9 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
 [[nodiscard]] std::optional<std::uint8_t> chrome_color_at(ChromePoint point,
                                                           const ChromeState& state);
 [[nodiscard]] ChromeOverlayRegions chrome_overlay_regions(const ChromeState& state);
+[[nodiscard]] std::optional<ChromeRect> chrome_minimap_region(const ChromeState& state);
+[[nodiscard]] bool chrome_minimap_refresh_required(const ChromeState& state, bool overview_changed,
+                                                   bool allow_minimap_refresh);
 void draw_chrome(std::span<std::uint16_t> pixels, int width, int height, const ChromeState& state);
 void draw_chrome_canvas_overlays(std::span<std::uint16_t> pixels, int width, int height,
                                  const ChromeState& state, const ChromeNavigation& navigation);
