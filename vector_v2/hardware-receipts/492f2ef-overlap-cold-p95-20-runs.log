@@ -1,0 +1,147 @@
+# commit=492f2ef corpus=overlap runs=20 reset_between_runs=1 p95_index=19_of_20_nearest_rank
+# run-01
+[09:39:50] TINYDRAW_OVERLAP_WORKLOAD operations=8 samples=1200 radius_world=80
+[09:39:51] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=50 x=215 y=255 steps=178 tiles=56 compute_us=610422 present_us=74417 touch_us=71056 pacing_us=13906 wall_us=769801 max_tick_us=10055 touch_errors=0 pass=1
+[09:39:51] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=100 x=583 y=703 steps=169 tiles=48 compute_us=631318 present_us=69857 touch_us=66253 pacing_us=14550 wall_us=781978 max_tick_us=10969 touch_errors=0 pass=1
+[09:39:52] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=200 x=1319 y=1599 steps=170 tiles=56 compute_us=719611 present_us=70830 touch_us=66299 pacing_us=16238 wall_us=872978 max_tick_us=9754 touch_errors=0 pass=1
+[09:39:53] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=400 x=2791 y=3391 steps=188 tiles=56 compute_us=817209 present_us=67539 touch_us=72171 pacing_us=14058 wall_us=970977 max_tick_us=8867 touch_errors=0 pass=1
+[09:39:56] TINYDRAW_GATE1_PACED_COLD corpus=seed7 zoom=400 x=63 y=63 steps=281 tiles=56 compute_us=496521 present_us=73085 touch_us=89577 pacing_us=23797 wall_us=682980 max_tick_us=9013 touch_errors=0 pass=1
+# run-02
+[09:40:03] TINYDRAW_OVERLAP_WORKLOAD operations=8 samples=1200 radius_world=80
+[09:40:04] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=50 x=215 y=255 steps=178 tiles=56 compute_us=610601 present_us=74400 touch_us=71087 pacing_us=14713 wall_us=770801 max_tick_us=10055 touch_errors=0 pass=1
+[09:40:05] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=100 x=583 y=703 steps=169 tiles=48 compute_us=631257 present_us=69869 touch_us=66220 pacing_us=14632 wall_us=781978 max_tick_us=10965 touch_errors=0 pass=1
+[09:40:06] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=200 x=1319 y=1599 steps=170 tiles=56 compute_us=719568 present_us=70843 touch_us=66262 pacing_us=16305 wall_us=872978 max_tick_us=9754 touch_errors=0 pass=1
+[09:40:07] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=400 x=2791 y=3391 steps=188 tiles=56 compute_us=817183 present_us=67475 touch_us=72178 pacing_us=13141 wall_us=969977 max_tick_us=8879 touch_errors=0 pass=1
+[09:40:10] TINYDRAW_GATE1_PACED_COLD corpus=seed7 zoom=400 x=63 y=63 steps=281 tiles=56 compute_us=496479 present_us=73085 touch_us=89538 pacing_us=23878 wall_us=682980 max_tick_us=9013 touch_errors=0 pass=1
+# run-03
+[09:40:17] TINYDRAW_OVERLAP_WORKLOAD operations=8 samples=1200 radius_world=80
+[09:40:18] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=50 x=215 y=255 steps=178 tiles=56 compute_us=610578 present_us=74373 touch_us=71088 pacing_us=13766 wall_us=769805 max_tick_us=10056 touch_errors=0 pass=1
+[09:40:18] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=100 x=583 y=703 steps=169 tiles=48 compute_us=631256 present_us=69883 touch_us=66198 pacing_us=14641 wall_us=781978 max_tick_us=10976 touch_errors=0 pass=1
+[09:40:19] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=200 x=1319 y=1599 steps=170 tiles=56 compute_us=719614 present_us=70858 touch_us=66274 pacing_us=16232 wall_us=872978 max_tick_us=9754 touch_errors=0 pass=1
+[09:40:20] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=400 x=2791 y=3391 steps=188 tiles=56 compute_us=817280 present_us=67467 touch_us=72189 pacing_us=13041 wall_us=969977 max_tick_us=8877 touch_errors=0 pass=1
+[09:40:23] TINYDRAW_GATE1_PACED_COLD corpus=seed7 zoom=400 x=63 y=63 steps=281 tiles=56 compute_us=496551 present_us=73092 touch_us=89558 pacing_us=23779 wall_us=682980 max_tick_us=9013 touch_errors=0 pass=1
+# run-04
+[09:40:30] TINYDRAW_OVERLAP_WORKLOAD operations=8 samples=1200 radius_world=80
+[09:40:31] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=50 x=215 y=255 steps=178 tiles=56 compute_us=610524 present_us=74375 touch_us=71136 pacing_us=13764 wall_us=769799 max_tick_us=10043 touch_errors=0 pass=1
+[09:40:32] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=100 x=583 y=703 steps=169 tiles=48 compute_us=631220 present_us=69928 touch_us=66167 pacing_us=13663 wall_us=780978 max_tick_us=10964 touch_errors=0 pass=1
+[09:40:33] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=200 x=1319 y=1599 steps=170 tiles=56 compute_us=719526 present_us=70896 touch_us=66252 pacing_us=16300 wall_us=872974 max_tick_us=9750 touch_errors=0 pass=1
+[09:40:34] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=400 x=2791 y=3391 steps=188 tiles=56 compute_us=817183 present_us=67484 touch_us=72165 pacing_us=13145 wall_us=969977 max_tick_us=8877 touch_errors=0 pass=1
+[09:40:37] TINYDRAW_GATE1_PACED_COLD corpus=seed7 zoom=400 x=63 y=63 steps=281 tiles=56 compute_us=496489 present_us=73097 touch_us=89574 pacing_us=23820 wall_us=682980 max_tick_us=9013 touch_errors=0 pass=1
+# run-05
+[09:40:44] TINYDRAW_OVERLAP_WORKLOAD operations=8 samples=1200 radius_world=80
+[09:40:45] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=50 x=215 y=255 steps=178 tiles=56 compute_us=610517 present_us=74400 touch_us=71064 pacing_us=13810 wall_us=769791 max_tick_us=10054 touch_errors=0 pass=1
+[09:40:45] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=100 x=583 y=703 steps=169 tiles=48 compute_us=631326 present_us=69869 touch_us=66216 pacing_us=13567 wall_us=780978 max_tick_us=10967 touch_errors=0 pass=1
+[09:40:46] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=200 x=1319 y=1599 steps=170 tiles=56 compute_us=719632 present_us=70831 touch_us=66275 pacing_us=16240 wall_us=872978 max_tick_us=9754 touch_errors=0 pass=1
+[09:40:47] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=400 x=2791 y=3391 steps=188 tiles=56 compute_us=817184 present_us=67488 touch_us=72226 pacing_us=13079 wall_us=969977 max_tick_us=8878 touch_errors=0 pass=1
+[09:40:50] TINYDRAW_GATE1_PACED_COLD corpus=seed7 zoom=400 x=63 y=63 steps=281 tiles=56 compute_us=496519 present_us=73084 touch_us=89587 pacing_us=23790 wall_us=682980 max_tick_us=9013 touch_errors=0 pass=1
+# run-06
+[09:40:57] TINYDRAW_OVERLAP_WORKLOAD operations=8 samples=1200 radius_world=80
+[09:40:58] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=50 x=215 y=255 steps=178 tiles=56 compute_us=610557 present_us=74380 touch_us=71088 pacing_us=13779 wall_us=769804 max_tick_us=10051 touch_errors=0 pass=1
+[09:40:59] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=100 x=583 y=703 steps=169 tiles=48 compute_us=631308 present_us=69848 touch_us=66274 pacing_us=13548 wall_us=780978 max_tick_us=10965 touch_errors=0 pass=1
+[09:41:00] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=200 x=1319 y=1599 steps=170 tiles=56 compute_us=719577 present_us=70863 touch_us=66286 pacing_us=16252 wall_us=872978 max_tick_us=9753 touch_errors=0 pass=1
+[09:41:01] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=400 x=2791 y=3391 steps=188 tiles=56 compute_us=817214 present_us=67462 touch_us=72195 pacing_us=13106 wall_us=969977 max_tick_us=8875 touch_errors=0 pass=1
+[09:41:04] TINYDRAW_GATE1_PACED_COLD corpus=seed7 zoom=400 x=63 y=63 steps=281 tiles=56 compute_us=496532 present_us=73079 touch_us=89537 pacing_us=23831 wall_us=682979 max_tick_us=9013 touch_errors=0 pass=1
+# run-07
+[09:41:11] TINYDRAW_OVERLAP_WORKLOAD operations=8 samples=1200 radius_world=80
+[09:41:12] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=50 x=215 y=255 steps=178 tiles=56 compute_us=610602 present_us=74388 touch_us=71083 pacing_us=14727 wall_us=770800 max_tick_us=10051 touch_errors=0 pass=1
+[09:41:12] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=100 x=583 y=703 steps=169 tiles=48 compute_us=631335 present_us=69861 touch_us=66299 pacing_us=14483 wall_us=781978 max_tick_us=10973 touch_errors=0 pass=1
+[09:41:13] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=200 x=1319 y=1599 steps=170 tiles=56 compute_us=719610 present_us=70848 touch_us=66293 pacing_us=16227 wall_us=872978 max_tick_us=9752 touch_errors=0 pass=1
+[09:41:14] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=400 x=2791 y=3391 steps=188 tiles=56 compute_us=817165 present_us=67511 touch_us=72142 pacing_us=13159 wall_us=969977 max_tick_us=8876 touch_errors=0 pass=1
+[09:41:17] TINYDRAW_GATE1_PACED_COLD corpus=seed7 zoom=400 x=63 y=63 steps=281 tiles=56 compute_us=496489 present_us=73103 touch_us=89537 pacing_us=23851 wall_us=682980 max_tick_us=9013 touch_errors=0 pass=1
+# run-08
+[09:41:24] TINYDRAW_OVERLAP_WORKLOAD operations=8 samples=1200 radius_world=80
+[09:41:25] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=50 x=215 y=255 steps=178 tiles=56 compute_us=610545 present_us=74402 touch_us=71044 pacing_us=14809 wall_us=770800 max_tick_us=10055 touch_errors=0 pass=1
+[09:41:26] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=100 x=583 y=703 steps=169 tiles=48 compute_us=631332 present_us=69868 touch_us=66216 pacing_us=14562 wall_us=781978 max_tick_us=10971 touch_errors=0 pass=1
+[09:41:27] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=200 x=1319 y=1599 steps=170 tiles=56 compute_us=719637 present_us=70864 touch_us=66341 pacing_us=16136 wall_us=872978 max_tick_us=9754 touch_errors=0 pass=1
+[09:41:28] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=400 x=2791 y=3391 steps=188 tiles=56 compute_us=817199 present_us=67477 touch_us=72192 pacing_us=14109 wall_us=970977 max_tick_us=8863 touch_errors=0 pass=1
+[09:41:31] TINYDRAW_GATE1_PACED_COLD corpus=seed7 zoom=400 x=63 y=63 steps=281 tiles=56 compute_us=496472 present_us=73105 touch_us=89552 pacing_us=23849 wall_us=682978 max_tick_us=9013 touch_errors=0 pass=1
+# run-09
+[09:41:38] TINYDRAW_OVERLAP_WORKLOAD operations=8 samples=1200 radius_world=80
+[09:41:39] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=50 x=215 y=255 steps=178 tiles=56 compute_us=610482 present_us=74400 touch_us=71117 pacing_us=13800 wall_us=769799 max_tick_us=10044 touch_errors=0 pass=1
+[09:41:39] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=100 x=583 y=703 steps=169 tiles=48 compute_us=631317 present_us=69803 touch_us=66320 pacing_us=14538 wall_us=781978 max_tick_us=10967 touch_errors=0 pass=1
+[09:41:40] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=200 x=1319 y=1599 steps=170 tiles=56 compute_us=719590 present_us=70861 touch_us=66294 pacing_us=16232 wall_us=872977 max_tick_us=9761 touch_errors=0 pass=1
+[09:41:41] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=400 x=2791 y=3391 steps=188 tiles=56 compute_us=817202 present_us=67472 touch_us=72182 pacing_us=14121 wall_us=970977 max_tick_us=8868 touch_errors=0 pass=1
+[09:41:44] TINYDRAW_GATE1_PACED_COLD corpus=seed7 zoom=400 x=63 y=63 steps=281 tiles=56 compute_us=496523 present_us=73059 touch_us=89580 pacing_us=23817 wall_us=682979 max_tick_us=9013 touch_errors=0 pass=1
+# run-10
+[09:41:51] TINYDRAW_OVERLAP_WORKLOAD operations=8 samples=1200 radius_world=80
+[09:41:52] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=50 x=215 y=255 steps=178 tiles=56 compute_us=610487 present_us=74426 touch_us=71089 pacing_us=14801 wall_us=770803 max_tick_us=10051 touch_errors=0 pass=1
+[09:41:53] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=100 x=583 y=703 steps=169 tiles=48 compute_us=631325 present_us=69849 touch_us=66253 pacing_us=14551 wall_us=781978 max_tick_us=10968 touch_errors=0 pass=1
+[09:41:54] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=200 x=1319 y=1599 steps=170 tiles=56 compute_us=719616 present_us=70815 touch_us=66272 pacing_us=16275 wall_us=872978 max_tick_us=9754 touch_errors=0 pass=1
+[09:41:55] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=400 x=2791 y=3391 steps=188 tiles=56 compute_us=817185 present_us=67517 touch_us=72153 pacing_us=14122 wall_us=970977 max_tick_us=8862 touch_errors=0 pass=1
+[09:41:58] TINYDRAW_GATE1_PACED_COLD corpus=seed7 zoom=400 x=63 y=63 steps=281 tiles=56 compute_us=496553 present_us=73075 touch_us=89545 pacing_us=23806 wall_us=682979 max_tick_us=9013 touch_errors=0 pass=1
+# run-11
+[09:42:05] TINYDRAW_OVERLAP_WORKLOAD operations=8 samples=1200 radius_world=80
+[09:42:06] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=50 x=215 y=255 steps=178 tiles=56 compute_us=610529 present_us=74393 touch_us=71100 pacing_us=13774 wall_us=769796 max_tick_us=10055 touch_errors=0 pass=1
+[09:42:06] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=100 x=583 y=703 steps=169 tiles=48 compute_us=631315 present_us=69841 touch_us=66273 pacing_us=14549 wall_us=781978 max_tick_us=10967 touch_errors=0 pass=1
+[09:42:07] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=200 x=1319 y=1599 steps=170 tiles=56 compute_us=719562 present_us=70849 touch_us=66282 pacing_us=16284 wall_us=872977 max_tick_us=9754 touch_errors=0 pass=1
+[09:42:08] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=400 x=2791 y=3391 steps=188 tiles=56 compute_us=817171 present_us=67500 touch_us=72180 pacing_us=14126 wall_us=970977 max_tick_us=8863 touch_errors=0 pass=1
+[09:42:11] TINYDRAW_GATE1_PACED_COLD corpus=seed7 zoom=400 x=63 y=63 steps=281 tiles=56 compute_us=496526 present_us=73070 touch_us=89560 pacing_us=23822 wall_us=682978 max_tick_us=9013 touch_errors=0 pass=1
+# run-12
+[09:42:18] TINYDRAW_OVERLAP_WORKLOAD operations=8 samples=1200 radius_world=80
+[09:42:19] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=50 x=215 y=255 steps=178 tiles=56 compute_us=610460 present_us=74410 touch_us=71050 pacing_us=14884 wall_us=770804 max_tick_us=10054 touch_errors=0 pass=1
+[09:42:20] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=100 x=583 y=703 steps=169 tiles=48 compute_us=631373 present_us=69822 touch_us=66291 pacing_us=14492 wall_us=781978 max_tick_us=10973 touch_errors=0 pass=1
+[09:42:21] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=200 x=1319 y=1599 steps=170 tiles=56 compute_us=719541 present_us=70897 touch_us=66278 pacing_us=16261 wall_us=872977 max_tick_us=9752 touch_errors=0 pass=1
+[09:42:22] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=400 x=2791 y=3391 steps=188 tiles=56 compute_us=817188 present_us=67517 touch_us=72146 pacing_us=14126 wall_us=970977 max_tick_us=8866 touch_errors=0 pass=1
+[09:42:25] TINYDRAW_GATE1_PACED_COLD corpus=seed7 zoom=400 x=63 y=63 steps=281 tiles=56 compute_us=496511 present_us=73071 touch_us=89580 pacing_us=23817 wall_us=682979 max_tick_us=9012 touch_errors=0 pass=1
+# run-13
+[09:42:32] TINYDRAW_OVERLAP_WORKLOAD operations=8 samples=1200 radius_world=80
+[09:42:33] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=50 x=215 y=255 steps=178 tiles=56 compute_us=610464 present_us=74448 touch_us=71064 pacing_us=14825 wall_us=770801 max_tick_us=10046 touch_errors=0 pass=1
+[09:42:33] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=100 x=583 y=703 steps=169 tiles=48 compute_us=631289 present_us=69880 touch_us=66241 pacing_us=14568 wall_us=781978 max_tick_us=10967 touch_errors=0 pass=1
+[09:42:34] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=200 x=1319 y=1599 steps=170 tiles=56 compute_us=719608 present_us=70859 touch_us=66297 pacing_us=16214 wall_us=872978 max_tick_us=9754 touch_errors=0 pass=1
+[09:42:35] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=400 x=2791 y=3391 steps=188 tiles=56 compute_us=817197 present_us=67496 touch_us=72163 pacing_us=14121 wall_us=970977 max_tick_us=8863 touch_errors=0 pass=1
+[09:42:38] TINYDRAW_GATE1_PACED_COLD corpus=seed7 zoom=400 x=63 y=63 steps=281 tiles=56 compute_us=496484 present_us=73089 touch_us=89524 pacing_us=23883 wall_us=682980 max_tick_us=9013 touch_errors=0 pass=1
+# run-14
+[09:42:45] TINYDRAW_OVERLAP_WORKLOAD operations=8 samples=1200 radius_world=80
+[09:42:46] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=50 x=215 y=255 steps=178 tiles=56 compute_us=610540 present_us=74385 touch_us=71102 pacing_us=13773 wall_us=769800 max_tick_us=10053 touch_errors=0 pass=1
+[09:42:47] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=100 x=583 y=703 steps=169 tiles=48 compute_us=631157 present_us=69921 touch_us=66211 pacing_us=13689 wall_us=780978 max_tick_us=10967 touch_errors=0 pass=1
+[09:42:48] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=200 x=1319 y=1599 steps=170 tiles=56 compute_us=719642 present_us=70846 touch_us=66319 pacing_us=16170 wall_us=872977 max_tick_us=9760 touch_errors=0 pass=1
+[09:42:49] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=400 x=2791 y=3391 steps=188 tiles=56 compute_us=817128 present_us=67501 touch_us=72183 pacing_us=14165 wall_us=970977 max_tick_us=8863 touch_errors=0 pass=1
+[09:42:52] TINYDRAW_GATE1_PACED_COLD corpus=seed7 zoom=400 x=63 y=63 steps=281 tiles=56 compute_us=496508 present_us=73084 touch_us=89536 pacing_us=23851 wall_us=682979 max_tick_us=9013 touch_errors=0 pass=1
+# run-15
+[09:42:59] TINYDRAW_OVERLAP_WORKLOAD operations=8 samples=1200 radius_world=80
+[09:42:59] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=50 x=215 y=255 steps=178 tiles=56 compute_us=610521 present_us=74440 touch_us=71115 pacing_us=14726 wall_us=770802 max_tick_us=10054 touch_errors=0 pass=1
+[09:43:00] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=100 x=583 y=703 steps=169 tiles=48 compute_us=631231 present_us=69890 touch_us=66261 pacing_us=13596 wall_us=780978 max_tick_us=10963 touch_errors=0 pass=1
+[09:43:01] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=200 x=1319 y=1599 steps=170 tiles=56 compute_us=719613 present_us=70873 touch_us=66312 pacing_us=16180 wall_us=872978 max_tick_us=9753 touch_errors=0 pass=1
+[09:43:02] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=400 x=2791 y=3391 steps=188 tiles=56 compute_us=817262 present_us=67461 touch_us=72204 pacing_us=13050 wall_us=969977 max_tick_us=8875 touch_errors=0 pass=1
+[09:43:05] TINYDRAW_GATE1_PACED_COLD corpus=seed7 zoom=400 x=63 y=63 steps=281 tiles=56 compute_us=496561 present_us=73092 touch_us=89546 pacing_us=23781 wall_us=682980 max_tick_us=9013 touch_errors=0 pass=1
+# run-16
+[09:43:12] TINYDRAW_OVERLAP_WORKLOAD operations=8 samples=1200 radius_world=80
+[09:43:13] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=50 x=215 y=255 steps=178 tiles=56 compute_us=610565 present_us=74405 touch_us=71085 pacing_us=14750 wall_us=770805 max_tick_us=10055 touch_errors=0 pass=1
+[09:43:14] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=100 x=583 y=703 steps=169 tiles=48 compute_us=631326 present_us=69861 touch_us=66246 pacing_us=14545 wall_us=781978 max_tick_us=10970 touch_errors=0 pass=1
+[09:43:15] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=200 x=1319 y=1599 steps=170 tiles=56 compute_us=719597 present_us=70791 touch_us=66334 pacing_us=16256 wall_us=872978 max_tick_us=9751 touch_errors=0 pass=1
+[09:43:16] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=400 x=2791 y=3391 steps=188 tiles=56 compute_us=817203 present_us=67488 touch_us=72173 pacing_us=14113 wall_us=970977 max_tick_us=8865 touch_errors=0 pass=1
+[09:43:19] TINYDRAW_GATE1_PACED_COLD corpus=seed7 zoom=400 x=63 y=63 steps=281 tiles=56 compute_us=496482 present_us=73066 touch_us=89552 pacing_us=23879 wall_us=682979 max_tick_us=9013 touch_errors=0 pass=1
+# run-17
+[09:43:26] TINYDRAW_OVERLAP_WORKLOAD operations=8 samples=1200 radius_world=80
+[09:43:26] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=50 x=215 y=255 steps=178 tiles=56 compute_us=610505 present_us=74404 touch_us=71075 pacing_us=14811 wall_us=770795 max_tick_us=10051 touch_errors=0 pass=1
+[09:43:27] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=100 x=583 y=703 steps=169 tiles=48 compute_us=631247 present_us=69865 touch_us=66297 pacing_us=14569 wall_us=781978 max_tick_us=10968 touch_errors=0 pass=1
+[09:43:28] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=200 x=1319 y=1599 steps=170 tiles=56 compute_us=719581 present_us=70798 touch_us=66311 pacing_us=16288 wall_us=872978 max_tick_us=9751 touch_errors=0 pass=1
+[09:43:29] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=400 x=2791 y=3391 steps=188 tiles=56 compute_us=817241 present_us=67504 touch_us=72167 pacing_us=14065 wall_us=970977 max_tick_us=8875 touch_errors=0 pass=1
+[09:43:32] TINYDRAW_GATE1_PACED_COLD corpus=seed7 zoom=400 x=63 y=63 steps=281 tiles=56 compute_us=496530 present_us=73080 touch_us=89503 pacing_us=23865 wall_us=682978 max_tick_us=9014 touch_errors=0 pass=1
+# run-18
+[09:43:39] TINYDRAW_OVERLAP_WORKLOAD operations=8 samples=1200 radius_world=80
+[09:43:40] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=50 x=215 y=255 steps=178 tiles=56 compute_us=610504 present_us=74444 touch_us=71063 pacing_us=14789 wall_us=770800 max_tick_us=10046 touch_errors=0 pass=1
+[09:43:41] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=100 x=583 y=703 steps=169 tiles=48 compute_us=631311 present_us=69842 touch_us=66303 pacing_us=14522 wall_us=781978 max_tick_us=10976 touch_errors=0 pass=1
+[09:43:42] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=200 x=1319 y=1599 steps=170 tiles=56 compute_us=719604 present_us=70842 touch_us=66313 pacing_us=16219 wall_us=872978 max_tick_us=9754 touch_errors=0 pass=1
+[09:43:43] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=400 x=2791 y=3391 steps=188 tiles=56 compute_us=817172 present_us=67506 touch_us=72163 pacing_us=14136 wall_us=970977 max_tick_us=8861 touch_errors=0 pass=1
+[09:43:45] TINYDRAW_GATE1_PACED_COLD corpus=seed7 zoom=400 x=63 y=63 steps=281 tiles=56 compute_us=496522 present_us=73062 touch_us=89532 pacing_us=23864 wall_us=682980 max_tick_us=9013 touch_errors=0 pass=1
+# run-19
+[09:43:52] TINYDRAW_OVERLAP_WORKLOAD operations=8 samples=1200 radius_world=80
+[09:43:53] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=50 x=215 y=255 steps=178 tiles=56 compute_us=610433 present_us=74411 touch_us=71110 pacing_us=14848 wall_us=770802 max_tick_us=10054 touch_errors=0 pass=1
+[09:43:54] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=100 x=583 y=703 steps=169 tiles=48 compute_us=631293 present_us=69830 touch_us=66295 pacing_us=14560 wall_us=781978 max_tick_us=10973 touch_errors=0 pass=1
+[09:43:55] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=200 x=1319 y=1599 steps=170 tiles=56 compute_us=719592 present_us=70845 touch_us=66283 pacing_us=16257 wall_us=872977 max_tick_us=9761 touch_errors=0 pass=1
+[09:43:56] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=400 x=2791 y=3391 steps=188 tiles=56 compute_us=817188 present_us=67497 touch_us=72121 pacing_us=14171 wall_us=970977 max_tick_us=8862 touch_errors=0 pass=1
+[09:43:59] TINYDRAW_GATE1_PACED_COLD corpus=seed7 zoom=400 x=63 y=63 steps=281 tiles=56 compute_us=496548 present_us=73077 touch_us=89544 pacing_us=23810 wall_us=682979 max_tick_us=9012 touch_errors=0 pass=1
+# run-20
+[09:44:06] TINYDRAW_OVERLAP_WORKLOAD operations=8 samples=1200 radius_world=80
+[09:44:07] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=50 x=215 y=255 steps=178 tiles=56 compute_us=610516 present_us=74438 touch_us=71064 pacing_us=14784 wall_us=770802 max_tick_us=10055 touch_errors=0 pass=1
+[09:44:07] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=100 x=583 y=703 steps=169 tiles=48 compute_us=631328 present_us=69848 touch_us=66280 pacing_us=14522 wall_us=781978 max_tick_us=10971 touch_errors=0 pass=1
+[09:44:08] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=200 x=1319 y=1599 steps=170 tiles=56 compute_us=719552 present_us=70868 touch_us=66262 pacing_us=16296 wall_us=872978 max_tick_us=9754 touch_errors=0 pass=1
+[09:44:09] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=400 x=2791 y=3391 steps=188 tiles=56 compute_us=817145 present_us=67485 touch_us=72131 pacing_us=13216 wall_us=969977 max_tick_us=8877 touch_errors=0 pass=1
+[09:44:12] TINYDRAW_GATE1_PACED_COLD corpus=seed7 zoom=400 x=63 y=63 steps=281 tiles=56 compute_us=496537 present_us=73071 touch_us=89577 pacing_us=23795 wall_us=682980 max_tick_us=9013 touch_errors=0 pass=1
+# summary
+zoom=50 n=20 min_us=769791 median_us=770800 p95_us=770804 max_us=770805 pass=1
+zoom=100 n=20 min_us=780978 median_us=781978 p95_us=781978 max_us=781978 pass=1
+zoom=200 n=20 min_us=872974 median_us=872978 p95_us=872978 max_us=872978 pass=1
+zoom=400 n=20 min_us=969977 median_us=970977 p95_us=970977 max_us=970977 pass=1
+corpus=seed7 zoom=400 n=20 min_us=682978 median_us=682980 p95_us=682980 max_us=682980 pass=1

@@ -312,11 +312,13 @@ at a time and retain before/after receipts.
 
 ### Cold refinement
 
-The overlapping-XL regression gate now finishes in 0.77–0.98 seconds wall time
-across 50–400%, with 9.0–11.1 ms maximum producer/input slices. The seed-7 400%
-case finishes in 0.63 seconds wall time. This replaced a measured 23.7-second
-worst case without more cache, lower quality, or second-core concurrency. See
-`vector_v2/hardware-receipts/f950e27-overlap-cold-gate.log`.
+Across 20 reset-separated runs, the overlapping-XL regression gate now has
+0.771–0.971 second p95 wall time across 50–400%, with bounded producer/input
+slices. The tapered seed-7 400% case has 0.683 second p95 wall time. This replaced
+a measured 23.66-second worst case without more cache, lower quality, or
+second-core concurrency. See
+`vector_v2/hardware-receipts/492f2ef-overlap-cold-p95-20-runs.log` and
+`vector_v2/hardware-receipts/0560525-overlap-cold-baseline.log`.
 
 - [x] Profile operation bounds filtering, replay, raster coverage, publication,
       composition, touch polling, loop pacing, and panel transfer independently.
