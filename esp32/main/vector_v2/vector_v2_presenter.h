@@ -26,16 +26,16 @@ inline constexpr int kMaximumProgressiveRegionWidth = vector_v2::kTileProducerWi
 inline constexpr int kMaximumProgressiveRegionHeight = vector_v2::kTileProducerHeight + 2;
 inline constexpr std::size_t kMaximumProgressiveRegionPixels =
     static_cast<std::size_t>(kMaximumProgressiveRegionWidth) * kMaximumProgressiveRegionHeight;
-inline constexpr int kMaximumCachedPanDelta = 32;
-inline constexpr std::size_t kMaximumCachedPanRegionPixels =
-    static_cast<std::size_t>(vector_v2::kOverviewHeight) * kMaximumCachedPanDelta;
-inline constexpr std::size_t kLiveRegionScratchPixels =
-    kMaximumProgressiveRegionPixels > kMaximumCachedPanRegionPixels
-        ? kMaximumProgressiveRegionPixels
-        : kMaximumCachedPanRegionPixels;
+inline constexpr int kMaximumCachedPanDelta = 96;
+// Cached pan composition is strip-looped through the same bounded scratch as
+// progressive tile presentation, so wider reuse costs no additional PSRAM.
+inline constexpr std::size_t kLiveRegionScratchPixels = kMaximumProgressiveRegionPixels;
 
 struct LivePresentationTiming {
   std::int64_t compose_us = 0;
+  std::int64_t scroll_us = 0;
+  std::int64_t exposed_compose_us = 0;
+  std::int64_t chrome_us = 0;
   std::int64_t first_submit_us = 0;
   std::int64_t first_complete_us = 0;
   std::int64_t complete_us = 0;

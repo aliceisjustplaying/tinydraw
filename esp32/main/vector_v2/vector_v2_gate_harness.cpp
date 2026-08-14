@@ -66,12 +66,15 @@ const char* zoom_name(ZoomLevel zoom) {
 void print_presentation(const char* kind, const VectorV2Presenter& presenter,
                         const LivePresentationTiming& timing) {
   std::printf(
-      "TINYDRAW_LIVE_PRESENT kind=%s zoom=%s x=%d y=%d compose_us=%lld "
-      "read_submit_us=%lld read_complete_us=%lld transfer_wait_us=%lld tile_pixels=%lu "
+      "TINYDRAW_LIVE_PRESENT kind=%s zoom=%s x=%d y=%d compose_us=%lld scroll_us=%lld "
+      "exposed_compose_us=%lld chrome_us=%lld read_submit_us=%lld read_complete_us=%lld "
+      "transfer_wait_us=%lld tile_pixels=%lu "
       "uniform_pixels=%lu overview_pixels=%lu fallback_pixels=%lu resident_tiles=%lu "
       "fallback_tiles=%lu pushes=%lu tear_wait_us=%lld tear_sync=%u frame_reused=%u pass=%u\n",
       kind, zoom_name(presenter.zoom()), presenter.level_x(), presenter.level_y(),
-      static_cast<long long>(timing.compose_us), static_cast<long long>(timing.first_submit_us),
+      static_cast<long long>(timing.compose_us), static_cast<long long>(timing.scroll_us),
+      static_cast<long long>(timing.exposed_compose_us), static_cast<long long>(timing.chrome_us),
+      static_cast<long long>(timing.first_submit_us),
       static_cast<long long>(timing.first_complete_us), static_cast<long long>(timing.complete_us),
       static_cast<unsigned long>(timing.tile_pixels),
       static_cast<unsigned long>(timing.uniform_pixels),
@@ -514,7 +517,7 @@ bool run_draw_while_fill_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
 
 bool verify_pan_adapter(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
                         const vector_v2::ChromeState& chrome, ZoomLevel zoom) {
-  constexpr int kPanDelta = 24;
+  constexpr int kPanDelta = 88;
   const vector_v2::ViewRequest destination{
       .zoom = zoom,
       .level_pixels = {kPanDelta, kPanDelta, kPanDelta + vector_v2::kOverviewWidth,
@@ -540,14 +543,18 @@ bool verify_pan_adapter(VectorV2Presenter& presenter, vector_v2::TileProducer& p
   const bool moved = presenter.level_x() > before_x && presenter.level_y() > before_y;
   std::printf(
       "TINYDRAW_GATE1_PAN zoom=%s from_x=%d from_y=%d to_x=%d to_y=%d compose_us=%lld "
-      "event_submit_us=%lld event_complete_us=%lld transfer_us=%lld setup=%u present=%u moved=%u "
+      "scroll_us=%lld exposed_compose_us=%lld chrome_us=%lld event_submit_us=%lld "
+      "event_complete_us=%lld transfer_us=%lld setup=%u present=%u moved=%u "
       "frame_reused=%u pass=%u\n",
       zoom_name(zoom), before_x, before_y, presenter.level_x(), presenter.level_y(),
-      static_cast<long long>(pan.compose_us), static_cast<long long>(pan.first_submit_us),
-      static_cast<long long>(pan.first_complete_us), static_cast<long long>(pan.complete_us),
-      setup.passed, pan.passed, moved, pan.frame_reused,
-      setup.passed && pan.passed && moved && pan.frame_reused && pan.first_complete_us < 35'000);
-  return setup.passed && pan.passed && moved && pan.frame_reused && pan.first_complete_us < 35'000;
+      static_cast<long long>(pan.compose_us), static_cast<long long>(pan.scroll_us),
+      static_cast<long long>(pan.exposed_compose_us), static_cast<long long>(pan.chrome_us),
+      static_cast<long long>(pan.first_submit_us), static_cast<long long>(pan.first_complete_us),
+      static_cast<long long>(pan.complete_us), setup.passed, pan.passed, moved, pan.frame_reused,
+      setup.passed && pan.passed && moved && pan.frame_reused && pan.compose_us < 30'000 &&
+          pan.first_complete_us < 60'000);
+  return setup.passed && pan.passed && moved && pan.frame_reused && pan.compose_us < 30'000 &&
+         pan.first_complete_us < 60'000;
 }
 
 bool run_cache_retention_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
@@ -815,8 +822,10 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
       run_adversarial_tapered_cold_gates(presenter, producer, canvas, touch, chrome);
 
   const DocumentRevision realistic_baseline{canvas.current_revision().value + 1U};
+  // Continue collecting independent receipts even when the adversarial timing
+  // gate is red; the final verdict still requires it.
   const bool reset_for_realistic =
-      adversarial_cold &&
+      adversarial_ready &&
       vector_v2::restore_document_snapshot(log, canvas, realistic_baseline, blank_snapshot) &&
       producer.reset_uniform_baseline(realistic_baseline);
 
@@ -871,7 +880,7 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
       stress_ready, stress_100, stress_400, overlap_ready, overlap_cold, adversarial_ready,
       adversarial_cold, workload_ready, paced_cold, gate_100, gate_400, pan_100, pan_400, draw_fill,
       cache_retention, full_world_cache, export_reserve, return_overview.passed);
-  return return_overview.passed && export_reserve && overlap_cold;
+  return return_overview.passed && export_reserve && overlap_cold && adversarial_cold;
 #endif
 }
 
