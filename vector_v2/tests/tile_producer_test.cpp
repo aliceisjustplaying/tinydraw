@@ -9,6 +9,8 @@
 #include <span>
 #include <vector>
 
+#include "tinydraw/vector_v2/adversarial_tapered_corpus.h"
+
 namespace vector_v2 = tinydraw::vector_v2;
 
 namespace {
@@ -38,6 +40,31 @@ struct PaperFixture {
   }
 };
 
+struct AdversarialFixture {
+  std::vector<vector_v2::OperationRecord> records = std::vector<vector_v2::OperationRecord>(
+      vector_v2::test_support::kAdversarialTaperedOperationCount);
+  std::vector<vector_v2::CompactOperationSample> samples =
+      std::vector<vector_v2::CompactOperationSample>(
+          vector_v2::test_support::kAdversarialTaperedSampleCount);
+  std::vector<std::uint16_t> overview = std::vector<std::uint16_t>(vector_v2::kOverviewPixels);
+  std::vector<std::uint16_t> snapshot =
+      std::vector<std::uint16_t>(vector_v2::kOverviewPixels, 0xFFFFU);
+  std::array<vector_v2::MaterializedSlotStorage, 4> slots{};
+  std::vector<std::uint16_t> tile_pool =
+      std::vector<std::uint16_t>(slots.size() * vector_v2::kTilePixels);
+  std::array<std::uint16_t, vector_v2::kTileProducerPixels> supertask{};
+  std::array<std::uint16_t, vector_v2::kTilePixels> packed{};
+  vector_v2::OperationLog log{records, samples};
+  vector_v2::MaterializedCanvas canvas{overview, slots, tile_pool};
+  vector_v2::TileProducer producer{
+      log, canvas, {.supertask_pixels = supertask, .packed_tile_pixels = packed}};
+
+  AdversarialFixture() {
+    overview.assign(overview.size(), 0xFFFFU);
+    REQUIRE(canvas.publish_overview({0}, overview));
+  }
+};
+
 struct Fixture {
   std::array<vector_v2::OperationRecord, 96> records{};
   std::array<vector_v2::CompactOperationSample, 2'048> samples{};
@@ -64,6 +91,48 @@ vector_v2::OperationAppend append(std::span<const vector_v2::CompactOperationSam
 }
 
 }  // namespace
+
+TEST_CASE("adversarial tapered corpus is four times the dense physical sample count") {
+  AdversarialFixture fixture;
+  vector_v2::test_support::AdversarialTaperedCorpusStats stats{};
+  REQUIRE(vector_v2::test_support::emit_adversarial_tapered_corpus(
+      [&](const vector_v2::OperationAppend& operation) {
+        return fixture.log.append(operation).has_value();
+      },
+      &stats));
+  CHECK(stats.operations == 128U);
+  CHECK(stats.samples == 4'096U);
+  CHECK(stats.erasers == 12U);
+  CHECK(fixture.log.current_revision() == vector_v2::DocumentRevision{128});
+  REQUIRE(fixture.canvas.restore_snapshot(fixture.log.current_revision(), fixture.snapshot));
+
+  const vector_v2::ViewRequest view{
+      .zoom = vector_v2::ZoomLevel::k400Percent,
+      .level_pixels = {64, 64, 192, 192},
+  };
+  std::size_t replay_slices = 0;
+  while (true) {
+    const auto step = fixture.producer.produce_next(view);
+    REQUIRE(step.has_value());
+    replay_slices += step->tiles_published == 0U;
+    if (step->complete) {
+      break;
+    }
+  }
+  CHECK(replay_slices > 1U);
+
+  std::vector<std::uint16_t> composed(128U * 128U);
+  REQUIRE(fixture.canvas.compose_view(view, composed));
+  std::vector<std::uint16_t> direct(composed.size(), 0xFFFFU);
+  for (std::size_t index = 0; index < fixture.log.operation_count(); ++index) {
+    const auto operation = fixture.log.operation(index);
+    REQUIRE(operation.has_value());
+    REQUIRE(vector_v2::apply_incremental_operation(
+        {.tool = operation->tool, .color = operation->color, .samples = operation->samples},
+        {.zoom = view.zoom, .level_bounds = view.level_pixels, .pixels = direct, .stride = 128}));
+  }
+  CHECK(composed == direct);
+}
 
 TEST_CASE("tile producer publishes certainly-paper tiles in natural supertask groups") {
   PaperFixture fixture;

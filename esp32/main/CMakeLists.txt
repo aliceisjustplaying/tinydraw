@@ -152,6 +152,9 @@ if(TINYDRAW_VECTOR_V2_APP)
 endif()
 if(TINYDRAW_VECTOR_V2_GATE_HARNESS)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_V2_GATE_HARNESS=1)
+  target_include_directories(${COMPONENT_LIB} PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/../../vector_v2/test_support/include"
+  )
 endif()
 if(TINYDRAW_VECTOR_V2_TILE_CENSUS)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_V2_TILE_CENSUS=1)

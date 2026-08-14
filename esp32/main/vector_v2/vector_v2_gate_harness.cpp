@@ -17,6 +17,7 @@
 #include "vector_v2_tile_census.h"
 #endif
 #include "tinydraw/document/realistic_workload.h"
+#include "tinydraw/vector_v2/adversarial_tapered_corpus.h"
 #include "tinydraw/vector_v2/memory_layout.h"
 
 namespace tinydraw::esp32 {
@@ -341,6 +342,24 @@ bool append_overlapping_scribble(OperationLog& log, MaterializedCanvas& canvas,
   return true;
 }
 
+bool append_adversarial_tapered_document(OperationLog& log, MaterializedCanvas& canvas,
+                                         const IncrementalDocumentWorkspace& workspace) {
+  vector_v2::test_support::AdversarialTaperedCorpusStats stats{};
+  const std::int64_t started = esp_timer_get_time();
+  const bool appended = vector_v2::test_support::emit_adversarial_tapered_corpus(
+      [&](const vector_v2::OperationAppend& operation) {
+        return vector_v2::append_incrementally(log, canvas, operation, workspace).has_value();
+      },
+      &stats);
+  std::printf(
+      "TINYDRAW_ADVERSARIAL_TAPERED_WORKLOAD operations=%lu samples=%lu erasers=%lu "
+      "load_us=%lld appended=%u\n",
+      static_cast<unsigned long>(stats.operations), static_cast<unsigned long>(stats.samples),
+      static_cast<unsigned long>(stats.erasers),
+      static_cast<long long>(esp_timer_get_time() - started), appended);
+  return appended;
+}
+
 bool run_overlap_cold_gates(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
                             MaterializedCanvas& canvas, PhysicalTouch& touch,
                             const vector_v2::ChromeState& chrome) {
@@ -357,6 +376,29 @@ bool run_overlap_cold_gates(VectorV2Presenter& presenter, vector_v2::TileProduce
                              level_height - vector_v2::kOverviewHeight);
     passed = run_paced_cold_gate(presenter, producer, canvas, touch, chrome, zoom, x, y, "overlap",
                                  1'000'000) &&
+             passed;
+  }
+  return passed;
+}
+
+bool run_adversarial_tapered_cold_gates(VectorV2Presenter& presenter,
+                                        vector_v2::TileProducer& producer,
+                                        MaterializedCanvas& canvas, PhysicalTouch& touch,
+                                        const vector_v2::ChromeState& chrome) {
+  struct Gate {
+    ZoomLevel zoom;
+    std::int64_t maximum_wall_us;
+  };
+  constexpr std::array gates{
+      Gate{ZoomLevel::k50Percent, 1'000'000},
+      Gate{ZoomLevel::k100Percent, 1'000'000},
+      Gate{ZoomLevel::k200Percent, 1'500'000},
+      Gate{ZoomLevel::k400Percent, 2'000'000},
+  };
+  bool passed = true;
+  for (const Gate gate : gates) {
+    passed = run_paced_cold_gate(presenter, producer, canvas, touch, chrome, gate.zoom, 0, 0,
+                                 "adversarial_tapered_4x", gate.maximum_wall_us) &&
              passed;
   }
   return passed;
@@ -754,9 +796,20 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   const bool overlap_cold =
       overlap_ready && run_overlap_cold_gates(presenter, producer, canvas, touch, chrome);
 
+  const DocumentRevision adversarial_baseline{canvas.current_revision().value + 1U};
+  const bool reset_for_adversarial =
+      overlap_cold &&
+      vector_v2::restore_document_snapshot(log, canvas, adversarial_baseline, blank_snapshot) &&
+      producer.reset_uniform_baseline(adversarial_baseline);
+  const bool adversarial_ready =
+      reset_for_adversarial && append_adversarial_tapered_document(log, canvas, workspace);
+  const bool adversarial_cold =
+      adversarial_ready &&
+      run_adversarial_tapered_cold_gates(presenter, producer, canvas, touch, chrome);
+
   const DocumentRevision realistic_baseline{canvas.current_revision().value + 1U};
   const bool reset_for_realistic =
-      overlap_ready &&
+      adversarial_cold &&
       vector_v2::restore_document_snapshot(log, canvas, realistic_baseline, blank_snapshot) &&
       producer.reset_uniform_baseline(realistic_baseline);
 
@@ -804,12 +857,13 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   const auto return_overview = presenter.set_view(ZoomLevel::k25Percent, 0, 0, chrome, now_us());
   std::printf(
       "TINYDRAW_GATE1_AUTOMATED_DONE stress=%u stress_100=%u stress_400=%u overlap_ready=%u "
-      "overlap_cold=%u workload=%u paced_cold=%u hard_100=%u hard_400=%u pan_100=%u "
+      "overlap_cold=%u adversarial_ready=%u adversarial_cold=%u workload=%u paced_cold=%u "
+      "hard_100=%u hard_400=%u pan_100=%u "
       "pan_400=%u draw_fill=%u cache=%u full_world_cache=%u export_reserve=%u return=%u "
       "ssaa_receipt=yellow\n",
-      stress_ready, stress_100, stress_400, overlap_ready, overlap_cold, workload_ready, paced_cold,
-      gate_100, gate_400, pan_100, pan_400, draw_fill, cache_retention, full_world_cache,
-      export_reserve, return_overview.passed);
+      stress_ready, stress_100, stress_400, overlap_ready, overlap_cold, adversarial_ready,
+      adversarial_cold, workload_ready, paced_cold, gate_100, gate_400, pan_100, pan_400, draw_fill,
+      cache_retention, full_world_cache, export_reserve, return_overview.passed);
   return return_overview.passed && export_reserve && overlap_cold;
 #endif
 }
