@@ -272,6 +272,18 @@ TEST_CASE("new drawing confirmation is modal and exposes large Raster V1 choices
   CHECK(tinydraw::vector_v2::chrome_action_at({180.0F, 160.0F}, state) == ChromeAction::kNone);
 }
 
+TEST_CASE("saved export label sits one pixel below the old baseline") {
+  constexpr int width = 368;
+  constexpr int height = 448;
+  std::vector<std::uint16_t> pixels(static_cast<std::size_t>(width * height), 0xFFFFU);
+  const ChromeState state{.export_status = ChromeExportStatus::kSaved};
+
+  tinydraw::vector_v2::draw_chrome(pixels, width, height, state);
+
+  CHECK(pixels[90U * width + 142U] == 0xFFFFU);
+  CHECK(pixels[91U * width + 142U] == 0x2104U);
+}
+
 TEST_CASE("saving toast is modal and renders determinate progress") {
   constexpr int width = 368;
   constexpr int height = 448;
