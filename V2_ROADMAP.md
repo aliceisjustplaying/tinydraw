@@ -1,6 +1,6 @@
 # TinyDraw V2 roadmap
 
-Last updated: 2026-08-13  
+Last updated: 2026-08-14
 Current branch: `feat/v2-navigation-interaction`
 
 Status: **Vector V2 foundation validated; interaction integration in progress**
@@ -92,14 +92,15 @@ manual test.
 
 ### Input-first scheduling
 
-- [ ] Build a deterministic hardware repro for touch starvation during cold fill
+- [x] Build a deterministic hardware repro for touch starvation during cold fill
       and stroke commit.
-- [ ] Make producer and display work yield to pending input at bounded intervals.
+- [x] Make producer and display work yield to pending input at bounded intervals.
 - [ ] Prevent a pan gesture from being lost when refinement is in progress.
 - [ ] Decide whether a tiny independent touch-sampling task is needed; do not move
       the whole renderer to the second core without measured need.
-- [ ] Separate input latency from append, compose, and transfer telemetry.
-- [ ] Gate maximum/p95 touch-poll gaps under stress.
+- [x] Separate input latency from append, compose, and transfer telemetry.
+- [x] Gate maximum touch-poll gaps during deterministic cold replay; retain p95
+      gesture sampling for the final interaction glass test.
 - [ ] Repeat the aggressive draw-while-pan glass test.
 
 Current debt from the manual trace:
@@ -311,14 +312,21 @@ at a time and retain before/after receipts.
 
 ### Cold refinement
 
-- [ ] Profile operation bounds filtering, replay, raster coverage, publication,
-      composition, and panel transfer independently.
+The overlapping-XL regression gate now finishes in 0.77–0.98 seconds wall time
+across 50–400%, with 9.0–11.1 ms maximum producer/input slices. The seed-7 400%
+case finishes in 0.63 seconds wall time. This replaced a measured 23.7-second
+worst case without more cache, lower quality, or second-core concurrency. See
+`vector_v2/hardware-receipts/f950e27-overlap-cold-gate.log`.
+
+- [x] Profile operation bounds filtering, replay, raster coverage, publication,
+      composition, touch polling, loop pacing, and panel transfer independently.
 - [ ] Batch paper/uniform publication and display updates where it reduces work.
 - [ ] Prioritize newly exposed regions and current motion direction.
 - [ ] Cancel obsolete views immediately when the camera moves.
 - [ ] Prevent progressive display work from delaying touch polling.
-- [ ] Improve the accepted 0.64–0.75 second cold-compute range without weakening
-      correctness or interaction gates.
+- [x] Remove redundant segment subdivision, reject distant segments, coalesce
+      exact straight runs, hoist software division, and span-fill scanline
+      interiors without weakening correctness or interaction gates.
 
 ### Memory and CPU mechanical sympathy
 
