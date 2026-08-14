@@ -237,14 +237,22 @@ bool valid_in_place_workspace(const OperationLog& log, const MaterializedCanvas&
 // same-color uniforms are still retained at every zoom because retention is
 // free. Without a priority view (drawing over the 25% overview) no raw tile
 // is painted at all.
-std::size_t retain_affected_tiles(MaterializedCanvas& canvas, const OperationAppend& operation,
-                                  std::uint16_t painted_color,
-                                  const std::optional<ViewRequest>& priority_view,
-                                  std::span<TileKey> affected, std::span<std::uint8_t> tile_mask,
-                                  const InPlaceCommitBudget& budget, std::int64_t deadline_us) {
-  const auto over_budget = [&] {
+struct InPlaceRetainScope {
+  const OperationAppend& operation;
+  std::uint16_t painted_color;
+  const std::optional<ViewRequest>& priority_view;
+  const InPlaceCommitBudget& budget;
+  std::int64_t deadline_us;
+  [[nodiscard]] bool over_budget() const {
     return budget.now_us != nullptr && budget.now_us() >= deadline_us;
-  };
+  }
+};
+
+// Uniform pass: same-color uniforms retain for free at every zoom; other
+// affected uniforms materialize as raw and paint only inside the priority
+// view and budget.
+std::size_t retain_uniform_tiles(MaterializedCanvas& canvas, const InPlaceRetainScope& scope,
+                                 std::span<TileKey> affected, std::span<std::uint8_t> tile_mask) {
   std::size_t retained = 0;
   for (std::size_t index = 0; index < affected.size(); ++index) {
     const TileKey key = affected[index];
@@ -253,12 +261,12 @@ std::size_t retain_affected_tiles(MaterializedCanvas& canvas, const OperationApp
       continue;
     }
     bool keep = false;
-    if (*color == painted_color) {
+    if (*color == scope.painted_color) {
       // Painting this color over an identical uniform is a no-op; retain it.
       keep = true;
-    } else if (in_priority_view(key, priority_view) && !over_budget()) {
+    } else if (in_priority_view(key, scope.priority_view) && !scope.over_budget()) {
       const auto edit = canvas.materialize_uniform_as_raw(key);
-      if (edit.has_value() && paint_operation_into_tile(operation, *edit, tile_mask)) {
+      if (edit.has_value() && paint_operation_into_tile(scope.operation, *edit, tile_mask)) {
         keep = true;
       } else if (edit.has_value()) {
         canvas.invalidate_identity(key);
@@ -269,16 +277,25 @@ std::size_t retain_affected_tiles(MaterializedCanvas& canvas, const OperationApp
       ++retained;
     }
   }
+  return retained;
+}
+
+// Raw pass: resident raw tiles paint in place only at the priority view's
+// zoom and within budget; a failed paint invalidates the identity.
+std::size_t retain_raw_tiles(MaterializedCanvas& canvas, const InPlaceRetainScope& scope,
+                             std::span<TileKey> affected, std::span<std::uint8_t> tile_mask,
+                             std::size_t retained) {
   for (std::size_t index = retained; index < affected.size(); ++index) {
     const TileKey key = affected[index];
-    if (!priority_view.has_value() || key.zoom != priority_view->zoom || over_budget()) {
+    if (!scope.priority_view.has_value() || key.zoom != scope.priority_view->zoom ||
+        scope.over_budget()) {
       continue;
     }
     const auto edit = canvas.edit_resident_tile(key);
     if (!edit.has_value()) {
       continue;
     }
-    if (paint_operation_into_tile(operation, *edit, tile_mask)) {
+    if (paint_operation_into_tile(scope.operation, *edit, tile_mask)) {
       std::swap(affected[index], affected[retained]);
       ++retained;
     } else {
@@ -286,6 +303,12 @@ std::size_t retain_affected_tiles(MaterializedCanvas& canvas, const OperationApp
     }
   }
   return retained;
+}
+
+std::size_t retain_affected_tiles(MaterializedCanvas& canvas, const InPlaceRetainScope& scope,
+                                  std::span<TileKey> affected, std::span<std::uint8_t> tile_mask) {
+  const std::size_t retained = retain_uniform_tiles(canvas, scope, affected, tile_mask);
+  return retain_raw_tiles(canvas, scope, affected, tile_mask, retained);
 }
 
 }  // namespace
@@ -328,9 +351,8 @@ std::optional<IncrementalAppendResult> append_incrementally_in_place(
   const auto affected = workspace.affected_keys.first(*resident_count);
   const std::uint16_t painted_color =
       stored.tool == OperationTool::kEraser ? 0xFFFFU : stored.color;
-  const std::size_t retained =
-      retain_affected_tiles(canvas, operation, painted_color, priority_view, affected,
-                            workspace.tile_mask, budget, deadline_us);
+  const InPlaceRetainScope scope{operation, painted_color, priority_view, budget, deadline_us};
+  const std::size_t retained = retain_affected_tiles(canvas, scope, affected, workspace.tile_mask);
   if (!canvas.commit_in_place_revision(identity.revision, overview_publication, world_bounds,
                                        affected.first(retained))) {
     for (const TileKey key : affected.first(retained)) {

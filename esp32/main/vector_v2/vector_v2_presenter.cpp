@@ -304,8 +304,14 @@ LivePresentationTiming VectorV2Presenter::pan_from(int start_x, int start_y, Poi
                                                    std::uint32_t event_us) {
   const int old_x = level_x();
   const int old_y = level_y();
-  const int requested_x = start_x + static_cast<int>(std::lround(start_touch.x - current_touch.x));
-  const int requested_y = start_y + static_cast<int>(std::lround(start_touch.y - current_touch.y));
+  // Gesture deltas quantize to even pixels: the panel window is even-aligned
+  // anyway, and an even ring shift keeps every staged pan row on the aligned
+  // word-fused byte-swap path in the transport. Half-pixel loss per event is
+  // invisible at pan speeds.
+  const int requested_x =
+      start_x + (static_cast<int>(std::lround(start_touch.x - current_touch.x)) & ~1);
+  const int requested_y =
+      start_y + (static_cast<int>(std::lround(start_touch.y - current_touch.y)) & ~1);
   const vector_v2::NavigationPoint panel_focus{
       .x = std::clamp(static_cast<int>(std::lround(current_touch.x)), 0,
                       vector_v2::kOverviewWidth - 1),
@@ -467,11 +473,10 @@ LivePresentationTiming VectorV2Presenter::present_with_overlays(
   return timing;
 }
 
-LivePresentationTiming VectorV2Presenter::present_unobscured(vector_v2::PixelRect bounds,
-                                                             const vector_v2::ChromeState& chrome,
-                                                             std::uint32_t event_us,
-                                                             std::int64_t compose_us,
-                                                             bool wait_for_completion, bool ring) {
+LivePresentationTiming VectorV2Presenter::present_unobscured(
+    vector_v2::PixelRect bounds, const vector_v2::ChromeState& chrome, std::uint32_t event_us,
+    std::int64_t compose_us, bool wait_for_completion, bool ring,
+    std::span<const vector_v2::PixelRect> exposed) {
   auto visible =
       vector_v2::chrome_unobscured_regions({bounds.x0, bounds.y0, bounds.x1, bounds.y1}, chrome);
   // Push top-down so a tear-synchronized writer stays behind the beam even
@@ -481,9 +486,10 @@ LivePresentationTiming VectorV2Presenter::present_unobscured(vector_v2::PixelRec
   LivePresentationTiming total{.compose_us = compose_us, .passed = true};
   for (std::size_t index = 0; index < visible.count; ++index) {
     const auto region = visible.regions[index];
-    const auto part = ring ? present_ring({region.x0, region.y0, region.x1, region.y1}, event_us)
-                           : present({region.x0, region.y0, region.x1, region.y1}, event_us, 0,
-                                     wait_for_completion);
+    const auto part =
+        ring ? present_ring({region.x0, region.y0, region.x1, region.y1}, event_us, exposed)
+             : present({region.x0, region.y0, region.x1, region.y1}, event_us, 0,
+                       wait_for_completion);
     if (!part.passed) {
       total.passed = false;
       return total;
@@ -530,13 +536,12 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
     return refresh(chrome, event_us);
   }
   frame_ring_bottom_ = canvas_bottom;
-  for (std::size_t index = 0; index < scroll->exposed_count; ++index) {
-    if (!compose_into_ring(scroll->exposed[index])) {
-      // The ring origin already moved. A full refresh is the only safe
-      // recovery and establishes a new reusable frame.
-      return refresh(chrome, event_us);
-    }
-  }
+  // Exposed strips compose just-in-time inside the push sweep, where they
+  // fill the transfer-semaphore idle of the DMA-bound sweep instead of
+  // serializing ahead of it. The slower writer still finishes well before
+  // the wrapped beam can lap it.
+  const std::span<const vector_v2::PixelRect> exposed{scroll->exposed.data(),
+                                                      scroll->exposed_count};
   const std::int64_t exposed_completed = esp_timer_get_time();
   // Pan frames present canvas only: fixed overlays are opaque and unchanged,
   // dock rows do not move, and the frame holds pure canvas throughout the
@@ -544,8 +549,17 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   // changing minimap viewport refreshes on a bounded cadence below.
   const std::int64_t tear_started = esp_timer_get_time();
   bool tear_synchronized = true;
+  int start_row = 0;
   const std::int64_t tear_age = display_.tear_age_us();
-  if (tear_age < 0 || tear_age > kPanTearElisionWindowUs) {
+  const std::int64_t beam_row = tear_age < 0 ? -1 : tear_age * kPanelSweepRows / kTePeriodUs;
+  if (beam_row >= 0 && beam_row < canvas_bottom) {
+    // Race the beam: start the sweep at the row the beam has just passed and
+    // wrap. The margin keeps an estimation error on the behind-the-beam side.
+    start_row = std::max(0, (static_cast<int>(beam_row) - kBeamStartMarginRows)) & ~1;
+  } else {
+    // The beam is in the dock band, the porch, or the TE age is stale. A
+    // canvas push starting now would outrun the wrapped beam, so take the
+    // short bounded wait to the next frame start.
     tear_synchronized = display_.wait_for_safe_frame_start(40'000);
   }
   const std::int64_t tear_completed = esp_timer_get_time();
@@ -553,8 +567,19 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   // drains the panel exactly once at the end instead of sleeping a scheduler
   // tick per region.
   const std::uint32_t first_sequence = display_.submit_count() + 1U;
-  auto timing = present_unobscured({0, 0, vector_v2::kOverviewWidth, canvas_bottom}, chrome,
-                                   event_us, exposed_completed - started, false, true);
+  auto timing = present_unobscured({0, start_row, vector_v2::kOverviewWidth, canvas_bottom}, chrome,
+                                   event_us, exposed_completed - started, false, true, exposed);
+  if (timing.passed && start_row > 0) {
+    const auto wrapped = present_unobscured({0, 0, vector_v2::kOverviewWidth, start_row}, chrome,
+                                            event_us, 0, false, true, exposed);
+    timing.pushes += wrapped.pushes;
+    timing.passed = wrapped.passed;
+  }
+  if (!timing.passed) {
+    // Pushes already started when a fused compose or push failed, so parts
+    // of the panel may hold mixed content. Repaint everything.
+    return refresh(chrome, event_us);
+  }
   timing.tear_wait_us = tear_completed - tear_started;
   timing.tear_synchronized = tear_synchronized;
   if (timing.passed) {
@@ -569,10 +594,21 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
       const std::size_t minimap_pixels =
           static_cast<std::size_t>(minimap_width) * static_cast<std::size_t>(minimap_height);
       bool minimap_ok = aligned.y1 <= canvas_bottom && minimap_pixels <= region_.size();
+      // The unobscured sweep never composes the exposed area hidden behind
+      // the minimap; settle it in the ring before gathering the backdrop so
+      // the frame stays complete for future reuse.
+      for (const auto& rect : exposed) {
+        const vector_v2::PixelRect part{
+            std::max(rect.x0, aligned.x0), std::max(rect.y0, aligned.y0),
+            std::min(rect.x1, aligned.x1), std::min(rect.y1, aligned.y1)};
+        if (part.x0 < part.x1 && part.y0 < part.y1 && !compose_into_ring(part)) {
+          minimap_ok = false;
+        }
+      }
       if (minimap_ok) {
         copy_ring_region(aligned, region_.first(minimap_pixels));
         minimap_ok = vector_v2::draw_chrome_minimap_surface(
-            region_.first(minimap_pixels), minimap_width, minimap_height, aligned.x0, aligned.y0,
+            {region_.first(minimap_pixels), minimap_width, minimap_height, aligned.x0, aligned.y0},
             chrome, chrome_navigation());
         const auto minimap_timing =
             present_pixels(aligned, region_.first(minimap_pixels), minimap_width, 0, 0, false);
@@ -673,8 +709,9 @@ void VectorV2Presenter::copy_ring_region(vector_v2::PixelRect panel_bounds,
   }
 }
 
-LivePresentationTiming VectorV2Presenter::present_ring(vector_v2::PixelRect bounds,
-                                                       std::uint32_t event_us) {
+LivePresentationTiming VectorV2Presenter::present_ring(
+    vector_v2::PixelRect bounds, std::uint32_t event_us,
+    std::span<const vector_v2::PixelRect> exposed) {
   bounds = align_bounds(bounds);
   LivePresentationTiming timing{};
   const int width = bounds.x1 - bounds.x0;
@@ -692,6 +729,16 @@ LivePresentationTiming VectorV2Presenter::present_ring(vector_v2::PixelRect boun
   for (int y = bounds.y0; y < bounds.y1; y += rows_per_strip) {
     const int rows = std::min(rows_per_strip, bounds.y1 - y);
     const vector_v2::PixelRect strip_bounds{bounds.x0, y, bounds.x1, y + rows};
+    // Just-in-time exposed composition: the strip composes right before it
+    // stages, filling the transfer-semaphore idle of the DMA-bound sweep.
+    for (const auto& rect : exposed) {
+      const vector_v2::PixelRect part{
+          std::max(rect.x0, strip_bounds.x0), std::max(rect.y0, strip_bounds.y0),
+          std::min(rect.x1, strip_bounds.x1), std::min(rect.y1, strip_bounds.y1)};
+      if (part.x0 < part.x1 && part.y0 < part.y1 && !compose_into_ring(part)) {
+        return timing;
+      }
+    }
     const auto sequence = scheduler_.schedule({.revision = canvas_.current_revision(),
                                                .panel_bounds = strip_bounds,
                                                .pixels = frame_.first(area_pixels),

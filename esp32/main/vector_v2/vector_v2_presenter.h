@@ -33,7 +33,15 @@ inline constexpr int kMaximumCachedPanDelta = 96;
 // beam only catches a top-started writer when the edge is older than ~13 ms,
 // so an 8 ms window keeps physical margin. Physical glass must reconfirm
 // tearing behavior for this discipline.
-inline constexpr std::int64_t kPanTearElisionWindowUs = 8'000;
+// The panel beam sweeps all 448 panel rows in one ~16.8 ms tear period
+// (~26.6 rows/ms). Cached pan frames race the beam instead of waiting for
+// the top-of-frame pulse: the push starts at the row the beam has just
+// passed, minus a safety margin so an estimation error stays on the safe
+// (behind-the-beam) side. The writer (~16 rows/ms) never catches the beam,
+// and the wrapped beam only laps a ~23 ms sweep after ~44 ms.
+inline constexpr std::int64_t kTePeriodUs = 16'800;
+inline constexpr int kPanelSweepRows = 448;
+inline constexpr int kBeamStartMarginRows = 16;
 // Cached pan composition is strip-looped through the same bounded scratch as
 // progressive tile presentation, so wider reuse costs no additional PSRAM.
 inline constexpr std::size_t kLiveRegionScratchPixels = kMaximumProgressiveRegionPixels;
@@ -149,9 +157,11 @@ class VectorV2Presenter {
                                                              bool allow_minimap_refresh = false);
   [[nodiscard]] LivePresentationTiming present_unobscured(
       vector_v2::PixelRect bounds, const vector_v2::ChromeState& chrome, std::uint32_t event_us,
-      std::int64_t compose_us = 0, bool wait_for_completion = true, bool ring = false);
+      std::int64_t compose_us = 0, bool wait_for_completion = true, bool ring = false,
+      std::span<const vector_v2::PixelRect> exposed = {});
   [[nodiscard]] LivePresentationTiming present_ring(vector_v2::PixelRect bounds,
-                                                    std::uint32_t event_us);
+                                                    std::uint32_t event_us,
+                                                    std::span<const vector_v2::PixelRect> exposed);
   [[nodiscard]] bool compose_into_ring(vector_v2::PixelRect panel_bounds);
   void copy_ring_region(vector_v2::PixelRect panel_bounds, std::span<std::uint16_t> destination);
   [[nodiscard]] LivePresentationTiming refresh_pan(int old_x, int old_y,

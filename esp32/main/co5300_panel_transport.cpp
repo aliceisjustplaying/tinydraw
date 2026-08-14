@@ -75,6 +75,42 @@ constexpr std::uint32_t swap_pixel_pair(std::uint16_t first, std::uint16_t secon
 
 static_assert(swap_pixel_pair(0x1234U, 0xABCDU) == 0xCDAB3412U);
 
+constexpr std::uint32_t swap_pixel_word(std::uint32_t pair) {
+  return ((pair >> 8U) & 0x00FF00FFU) | ((pair << 8U) & 0xFF00FF00U);
+}
+
+static_assert(swap_pixel_word(0xABCD1234U) == swap_pixel_pair(0x1234U, 0xABCDU));
+
+// Stages one run of an even number of pixels into wire byte order. When the
+// source pair is 4-byte aligned, each pair moves with a single 32-bit PSRAM
+// load instead of two 16-bit loads; the PSRAM read transactions dominate
+// staging cost, so the word path roughly halves it.
+inline void stage_pixels_swapped(const std::uint16_t* source, std::uint32_t* destination,
+                                 int width) {
+  if ((reinterpret_cast<std::uintptr_t>(source) & 3U) == 0U) {
+    const auto* source_words = reinterpret_cast<const std::uint32_t*>(source);
+    const int pairs = width / 2;
+    int pair = 0;
+    for (; pair + 4 <= pairs; pair += 4) {
+      const std::uint32_t first = source_words[pair];
+      const std::uint32_t second = source_words[pair + 1];
+      const std::uint32_t third = source_words[pair + 2];
+      const std::uint32_t fourth = source_words[pair + 3];
+      destination[pair] = swap_pixel_word(first);
+      destination[pair + 1] = swap_pixel_word(second);
+      destination[pair + 2] = swap_pixel_word(third);
+      destination[pair + 3] = swap_pixel_word(fourth);
+    }
+    for (; pair < pairs; ++pair) {
+      destination[pair] = swap_pixel_word(source_words[pair]);
+    }
+    return;
+  }
+  for (int column = 0; column < width; column += 2) {
+    destination[column / 2] = swap_pixel_pair(source[column], source[column + 1]);
+  }
+}
+
 bool reset_panel_power() {
   i2c_master_bus_config_t bus_config{};
   bus_config.i2c_port = I2C_NUM_0;
@@ -339,10 +375,7 @@ class Co5300PanelTransport::Impl {
       while (written < width) {
         const int chunk = std::min(width - written, area_width - source_column);
         const int even_chunk = chunk & ~1;
-        for (int column = 0; column < even_chunk; column += 2) {
-          destination[(written + column) / 2] =
-              swap_pixel_pair(source[source_column + column], source[source_column + column + 1]);
-        }
+        stage_pixels_swapped(source + source_column, destination + written / 2, even_chunk);
         written += even_chunk;
         source_column += even_chunk;
         if (source_column >= area_width) {
@@ -413,9 +446,7 @@ class Co5300PanelTransport::Impl {
       const auto* source = pixels + static_cast<std::ptrdiff_t>(row * source_stride);
       auto* destination =
           reinterpret_cast<std::uint32_t*>(transfer + static_cast<std::ptrdiff_t>(row * width));
-      for (int column = 0; column < width; column += 2) {
-        destination[column / 2] = swap_pixel_pair(source[column], source[column + 1]);
-      }
+      stage_pixels_swapped(source, destination, width);
     }
     prepare_us_ += esp_timer_get_time() - prepare_started;
 
