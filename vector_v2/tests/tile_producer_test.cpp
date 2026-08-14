@@ -300,7 +300,11 @@ TEST_CASE("tile producer rejects distant segments inside an overlapping operatio
   CHECK(step->tiles_published == 4U);
 }
 
-TEST_CASE("tile producer coalesces exact constant-radius line runs") {
+TEST_CASE("constant-radius collinear line replay matches forward painting exactly") {
+  // Reverse replay must use the same per-sample segment decomposition as the
+  // forward authority. Coalescing a collinear run into one long capsule is
+  // equal only in real arithmetic; covers_pixel float rounding can flip
+  // boundary pixels, so no coalescing is permitted.
   Fixture fixture;
   std::array<vector_v2::CompactOperationSample, 100> line{};
   for (std::size_t index = 0; index < line.size(); ++index) {
@@ -317,12 +321,18 @@ TEST_CASE("tile producer coalesces exact constant-radius line runs") {
       .zoom = vector_v2::ZoomLevel::k100Percent,
       .level_pixels = {0, 0, 128, 128},
   };
-  const auto step = fixture.producer.produce_next(view);
-  REQUIRE(step.has_value());
-  CHECK(step->complete);
-  CHECK(step->operations_scanned == 1U);
-  CHECK(step->operations_rendered == 1U);
-  CHECK(step->raster_steps == 1U);
+  std::size_t raster_steps = 0;
+  while (true) {
+    const auto step = fixture.producer.produce_next(view);
+    REQUIRE(step.has_value());
+    raster_steps += step->raster_steps;
+    if (step->complete) {
+      break;
+    }
+  }
+  // Segments beyond the 128x128 view are bbox-rejected; the visible run must
+  // still paint one bounded unit per source segment, never one long capsule.
+  CHECK(raster_steps > 1U);
 
   std::vector<std::uint16_t> composed(128U * 128U);
   REQUIRE(fixture.canvas.compose_view(view, composed));
