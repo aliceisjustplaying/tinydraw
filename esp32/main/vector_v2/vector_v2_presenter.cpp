@@ -447,7 +447,8 @@ LivePresentationTiming VectorV2Presenter::present_with_overlays(
 LivePresentationTiming VectorV2Presenter::present_unobscured(vector_v2::PixelRect bounds,
                                                              const vector_v2::ChromeState& chrome,
                                                              std::uint32_t event_us,
-                                                             std::int64_t compose_us) {
+                                                             std::int64_t compose_us,
+                                                             bool wait_for_completion) {
   auto visible =
       vector_v2::chrome_unobscured_regions({bounds.x0, bounds.y0, bounds.x1, bounds.y1}, chrome);
   // Push top-down so a tear-synchronized writer stays behind the beam even
@@ -457,7 +458,8 @@ LivePresentationTiming VectorV2Presenter::present_unobscured(vector_v2::PixelRec
   LivePresentationTiming total{.compose_us = compose_us, .passed = true};
   for (std::size_t index = 0; index < visible.count; ++index) {
     const auto region = visible.regions[index];
-    const auto part = present({region.x0, region.y0, region.x1, region.y1}, event_us);
+    const auto part =
+        present({region.x0, region.y0, region.x1, region.y1}, event_us, 0, wait_for_completion);
     if (!part.passed) {
       total.passed = false;
       return total;
@@ -515,31 +517,45 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
     tear_synchronized = display_.wait_for_safe_frame_start(40'000);
   }
   const std::int64_t tear_completed = esp_timer_get_time();
+  // Every region push in this frame defers its completion wait; the frame
+  // drains the panel exactly once at the end instead of sleeping a scheduler
+  // tick per region.
+  const std::uint32_t first_sequence = display_.submit_count() + 1U;
   auto timing =
       present_unobscured({0, 0, vector_v2::kOverviewWidth, vector_v2::chrome_canvas_bottom(chrome)},
-                         chrome, event_us, exposed_completed - started);
+                         chrome, event_us, exposed_completed - started, false);
   timing.tear_wait_us = tear_completed - tear_started;
   timing.tear_synchronized = tear_synchronized;
   if (timing.passed) {
     // The minimap viewport rectangle tracks every pan frame. The minimap-only
-    // draw with the row-wise resample costs ~2 ms per frame including the
-    // region present and canvas restore.
+    // draw with the row-wise resample stays cheap enough to run per frame.
     if (const auto minimap = vector_v2::chrome_minimap_region(chrome); minimap.has_value()) {
       const std::int64_t chrome_started = esp_timer_get_time();
       const bool drawn = vector_v2::draw_chrome_minimap_overlay(frame_, vector_v2::kOverviewWidth,
                                                                 vector_v2::kOverviewHeight, chrome,
                                                                 chrome_navigation());
-      const auto minimap_timing = present({minimap->x0, minimap->y0, minimap->x1, minimap->y1}, 0);
+      const auto minimap_timing =
+          present({minimap->x0, minimap->y0, minimap->x1, minimap->y1}, 0, 0, false);
       const bool restored =
           restore_canvas_region({minimap->x0, minimap->y0, minimap->x1, minimap->y1});
       timing.chrome_us = esp_timer_get_time() - chrome_started;
-      timing.complete_us += minimap_timing.complete_us;
       timing.pushes += minimap_timing.pushes;
       timing.passed = drawn && minimap_timing.passed && restored;
       if (minimap_timing.passed) {
         presented_minimap_revision_ = canvas_.current_revision();
         minimap_presented_ = true;
       }
+    }
+  }
+  const bool frame_completed = display_.wait_for_all(2'000'000);
+  const std::int64_t frame_drained = esp_timer_get_time();
+  timing.passed = timing.passed && frame_completed;
+  timing.complete_us = frame_drained - tear_completed;
+  if (event_us != 0U) {
+    const std::int64_t physical = display_.complete_time_us(first_sequence);
+    if (physical >= 0) {
+      timing.first_complete_us =
+          static_cast<std::uint32_t>(static_cast<std::uint32_t>(physical) - event_us);
     }
   }
   timing.scroll_us = scroll_completed - started;
@@ -555,20 +571,23 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
 }
 
 LivePresentationTiming VectorV2Presenter::present(vector_v2::PixelRect bounds,
-                                                  std::uint32_t event_us, std::int64_t compose_us) {
+                                                  std::uint32_t event_us, std::int64_t compose_us,
+                                                  bool wait_for_completion) {
   bounds = align_bounds(bounds);
   if (bounds.x1 <= bounds.x0 || bounds.y1 <= bounds.y0) {
     return {.compose_us = compose_us};
   }
   const auto pixels =
       frame_.subspan(static_cast<std::size_t>(bounds.y0 * vector_v2::kOverviewWidth + bounds.x0));
-  return present_pixels(bounds, pixels, vector_v2::kOverviewWidth, event_us, compose_us);
+  return present_pixels(bounds, pixels, vector_v2::kOverviewWidth, event_us, compose_us,
+                        wait_for_completion);
 }
 
 LivePresentationTiming VectorV2Presenter::present_pixels(vector_v2::PixelRect bounds,
                                                          std::span<const std::uint16_t> pixels,
                                                          int stride, std::uint32_t event_us,
-                                                         std::int64_t compose_us) {
+                                                         std::int64_t compose_us,
+                                                         bool wait_for_completion) {
   LivePresentationTiming timing{.compose_us = compose_us};
   const int width = bounds.x1 - bounds.x0;
   const int height = bounds.y1 - bounds.y0;
@@ -590,7 +609,7 @@ LivePresentationTiming VectorV2Presenter::present_pixels(vector_v2::PixelRect bo
     timing.tear_synchronized = display_.wait_for_safe_frame_start(40'000);
     timing.tear_wait_us = esp_timer_get_time() - tear_wait_started;
   }
-  int rows_per_strip = std::max(2, 8'192 / width);
+  int rows_per_strip = std::max(2, 16'384 / width);
   rows_per_strip &= ~1;
   const std::uint32_t submits_before = display_.submit_count();
   std::int64_t first_submitted = 0;
@@ -621,7 +640,9 @@ LivePresentationTiming VectorV2Presenter::present_pixels(vector_v2::PixelRect bo
     }
     ++timing.pushes;
   }
-  const bool completed = display_.wait_for_all(2'000'000);
+  // A caller presenting several regions in one frame defers the completion
+  // wait to the end of the frame instead of sleeping once per region.
+  const bool completed = !wait_for_completion || display_.wait_for_all(2'000'000);
   const std::int64_t finished = esp_timer_get_time();
   const std::int64_t physical_complete = display_.complete_time_us(submits_before + 1U);
   const auto first_submitted_us = static_cast<std::uint32_t>(first_submitted);

@@ -125,11 +125,13 @@ class VectorV2Presenter {
 
  private:
   [[nodiscard]] LivePresentationTiming present(vector_v2::PixelRect bounds, std::uint32_t event_us,
-                                               std::int64_t compose_us = 0);
+                                               std::int64_t compose_us = 0,
+                                               bool wait_for_completion = true);
   [[nodiscard]] LivePresentationTiming present_pixels(vector_v2::PixelRect bounds,
                                                       std::span<const std::uint16_t> pixels,
                                                       int stride, std::uint32_t event_us,
-                                                      std::int64_t compose_us);
+                                                      std::int64_t compose_us,
+                                                      bool wait_for_completion = true);
   [[nodiscard]] vector_v2::PixelRect primitive_bounds(std::span<const RibbonPrimitive> primitives,
                                                       int canvas_bottom) const;
   [[nodiscard]] LivePresentationTiming compose_and_present(vector_v2::PixelRect level_bounds,
@@ -148,7 +150,8 @@ class VectorV2Presenter {
   [[nodiscard]] LivePresentationTiming present_unobscured(vector_v2::PixelRect bounds,
                                                           const vector_v2::ChromeState& chrome,
                                                           std::uint32_t event_us,
-                                                          std::int64_t compose_us = 0);
+                                                          std::int64_t compose_us = 0,
+                                                          bool wait_for_completion = true);
   [[nodiscard]] LivePresentationTiming refresh_pan(int old_x, int old_y,
                                                    const vector_v2::ChromeState& chrome,
                                                    std::uint32_t event_us);

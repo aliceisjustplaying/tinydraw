@@ -26,7 +26,10 @@ namespace {
 
 constexpr int kPanelGapX = 0x10;
 constexpr gpio_num_t kTearPin = GPIO_NUM_13;
-constexpr int kTransferPixels = 8192;
+// 32 KiB bounce buffers: per-transaction setup costs ~0.4 ms, so a full
+// panel at 8192-pixel strips paid ~8 ms of pure overhead across 21 pushes;
+// 16384-pixel strips halve that for 96 KiB of internal DMA memory.
+constexpr int kTransferPixels = 16384;
 constexpr int kTransferQueueDepth = 3;
 constexpr std::size_t kTransferHistory = 64U;
 constexpr std::uint16_t kIoExpanderAddress = 0x20;
