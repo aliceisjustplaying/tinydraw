@@ -151,6 +151,23 @@ struct LiveMetrics {
   }
 };
 
+struct PendingStrokeReport {
+  DocumentRevision revision{};
+  std::size_t operation_count = 0;
+  std::size_t sample_count = 0;
+  std::int64_t append_us = 0;
+  LivePresentationTiming refresh{};
+  LiveMetrics metrics{};
+  std::uint32_t poll_max_us = 0;
+  std::uint32_t touch_errors = 0;
+  std::size_t free_psram = 0;
+  std::size_t largest_psram = 0;
+  bool authority_match = false;
+  bool committed = false;
+  bool overflowed = false;
+  bool pending = false;
+};
+
 struct AppStorage {
   std::uint16_t* overview = nullptr;
   std::uint16_t* snapshot = nullptr;
@@ -321,10 +338,7 @@ void print_lift_baseline(const LiftBaselineTiming& timing, std::int64_t poll_sta
       timing.overflowed);
 }
 
-void print_stroke(const OperationLog& log, const MaterializedCanvas& canvas,
-                  const LiveMetrics& metrics, std::int64_t append_us,
-                  const LivePresentationTiming& refresh, std::uint32_t poll_max_us,
-                  std::uint32_t touch_errors) {
+void print_stroke(const PendingStrokeReport& report) {
   std::printf(
       "TINYDRAW_LIVE_STROKE revision=%lu operations=%lu samples=%lu append_us=%lld "
       "refresh_compose_us=%lld refresh_complete_us=%lld ink_samples=%lu "
@@ -332,24 +346,27 @@ void print_stroke(const OperationLog& log, const MaterializedCanvas& canvas,
       "read_complete_max_us=%lu submit_over_16ms=%lu complete_over_33ms=%lu "
       "presentation_failures=%lu poll_max_us=%lu touch_errors=%lu free_psram=%lu "
       "largest_psram=%lu authority_match=%u\n",
-      static_cast<unsigned long>(canvas.current_revision().value),
-      static_cast<unsigned long>(log.operation_count()),
-      static_cast<unsigned long>(log.sample_count()), static_cast<long long>(append_us),
-      static_cast<long long>(refresh.compose_us), static_cast<long long>(refresh.complete_us),
-      static_cast<unsigned long>(metrics.samples),
+      static_cast<unsigned long>(report.revision.value),
+      static_cast<unsigned long>(report.operation_count),
+      static_cast<unsigned long>(report.sample_count), static_cast<long long>(report.append_us),
+      static_cast<long long>(report.refresh.compose_us),
+      static_cast<long long>(report.refresh.complete_us),
+      static_cast<unsigned long>(report.metrics.samples),
       static_cast<unsigned long long>(
-          metrics.samples == 0U ? 0U : metrics.submit_total_us / metrics.samples),
-      static_cast<unsigned long>(metrics.submit_max_us),
+          report.metrics.samples == 0U ? 0U
+                                       : report.metrics.submit_total_us / report.metrics.samples),
+      static_cast<unsigned long>(report.metrics.submit_max_us),
       static_cast<unsigned long long>(
-          metrics.samples == 0U ? 0U : metrics.complete_total_us / metrics.samples),
-      static_cast<unsigned long>(metrics.complete_max_us),
-      static_cast<unsigned long>(metrics.submit_over_16ms),
-      static_cast<unsigned long>(metrics.complete_over_33ms),
-      static_cast<unsigned long>(metrics.failures), static_cast<unsigned long>(poll_max_us),
-      static_cast<unsigned long>(touch_errors),
-      static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)),
-      static_cast<unsigned long>(heap_caps_get_largest_free_block(kExternalCaps)),
-      log.current_revision() == canvas.current_revision());
+          report.metrics.samples == 0U ? 0U
+                                       : report.metrics.complete_total_us / report.metrics.samples),
+      static_cast<unsigned long>(report.metrics.complete_max_us),
+      static_cast<unsigned long>(report.metrics.submit_over_16ms),
+      static_cast<unsigned long>(report.metrics.complete_over_33ms),
+      static_cast<unsigned long>(report.metrics.failures),
+      static_cast<unsigned long>(report.poll_max_us),
+      static_cast<unsigned long>(report.touch_errors),
+      static_cast<unsigned long>(report.free_psram),
+      static_cast<unsigned long>(report.largest_psram), report.authority_match);
 }
 
 bool apply_chrome_action(vector_v2::ChromeAction action, Point point,
@@ -574,6 +591,7 @@ void run_vector_v2_app() {
   LiftBaselineTiming lift_timing{};
   std::uint32_t next_lift_id = 1U;
   std::uint32_t lift_reports_dropped = 0U;
+  PendingStrokeReport stroke_report{};
   std::uint8_t background_ticks = 0U;
 
   for (;;) {
@@ -597,9 +615,6 @@ void run_vector_v2_app() {
     const std::int64_t poll_started_us = esp_timer_get_time();
     const TouchRead read = touch.read(point);
     const std::int64_t poll_completed_us = esp_timer_get_time();
-    const bool lift_report_ready = lift_timing.pending;
-    const LiftBaselineTiming lift_report = lift_timing;
-    lift_timing.pending = false;
     if (read == TouchRead::kError) {
       ++touch_errors;
     }
@@ -736,14 +751,25 @@ void run_vector_v2_app() {
                 ? presenter.refresh_region(measured_lift.refresh_level_bounds, chrome, finished_us)
                 : LivePresentationTiming{};
         measured_lift.refresh_wall_us = esp_timer_get_time() - refresh_started;
-        const std::int64_t logging_started = esp_timer_get_time();
-        print_stroke(log, canvas, live_metrics, measured_lift.append_us, measured_lift.refresh,
-                     poll_max_us, touch_errors);
-        std::printf("TINYDRAW_LIVE_STROKE_DONE committed=%u refresh=%u overflow=%u\n",
-                    measured_lift.committed, measured_lift.refresh.passed,
-                    measured_lift.overflowed);
-        std::fflush(stdout);
-        measured_lift.stroke_logging_us = esp_timer_get_time() - logging_started;
+        if (stroke_report.pending || lift_timing.pending) {
+          ++lift_reports_dropped;
+        }
+        stroke_report = {
+            .revision = canvas.current_revision(),
+            .operation_count = log.operation_count(),
+            .sample_count = log.sample_count(),
+            .append_us = measured_lift.append_us,
+            .refresh = measured_lift.refresh,
+            .metrics = live_metrics,
+            .poll_max_us = poll_max_us,
+            .touch_errors = touch_errors,
+            .free_psram = heap_caps_get_free_size(kExternalCaps),
+            .largest_psram = heap_caps_get_largest_free_block(kExternalCaps),
+            .authority_match = log.current_revision() == canvas.current_revision(),
+            .committed = measured_lift.committed,
+            .overflowed = measured_lift.overflowed,
+            .pending = true,
+        };
         measured_lift.pending = true;
         lift_timing = measured_lift;
         live_metrics = {};
@@ -845,18 +871,18 @@ void run_vector_v2_app() {
         fill_measurement_active = false;
       }
     }
-    if (lift_report_ready) {
-      if (idle_before_poll && !touching) {
-        print_lift_baseline(lift_report, poll_started_us, poll_completed_us, lift_reports_dropped);
-        std::fflush(stdout);
-        lift_reports_dropped = 0U;
-        // Exclude this diagnostic write from the pre-existing stroke poll-gap
-        // metric. The physical input may still observe the write, so the lift
-        // record reports stroke_logging_us explicitly.
-        poll_previous_us = now_us();
-      } else {
-        ++lift_reports_dropped;
-      }
+    if (lift_timing.pending && stroke_report.pending && idle_before_poll && !touching) {
+      print_stroke(stroke_report);
+      std::printf("TINYDRAW_LIVE_STROKE_DONE committed=%u refresh=%u overflow=%u\n",
+                  stroke_report.committed, stroke_report.refresh.passed, stroke_report.overflowed);
+      print_lift_baseline(lift_timing, poll_started_us, poll_completed_us, lift_reports_dropped);
+      std::fflush(stdout);
+      lift_reports_dropped = 0U;
+      stroke_report.pending = false;
+      lift_timing.pending = false;
+      // This diagnostic write happens only after a completed input poll. Keep
+      // it out of the pre-existing stroke poll-gap metric.
+      poll_previous_us = now_us();
     }
     const bool background_busy = fill_allowed && (!fill_complete || pending_fill.pending);
     if (background_busy) {
