@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "tinydraw/vector_v2/raster_census.h"
+#include "tinydraw/vector_v2/storage_overlap.h"
 
 namespace tinydraw::vector_v2 {
 
@@ -501,7 +502,12 @@ bool apply_masked_incremental_segment(const IncrementalSegment& segment,
                                       const RasterSurface& surface,
                                       std::span<std::uint8_t> finalized_pixels) {
   const std::size_t required_mask_bytes = (surface.pixels.size() + 7U) / 8U;
-  if (!valid_surface(surface) || finalized_pixels.size() < required_mask_bytes) {
+  const bool mask_aliases_pixels = storage_overlaps(
+      std::as_bytes(std::span(surface.pixels)),
+      std::as_bytes(std::span(finalized_pixels)
+                        .first(std::min(finalized_pixels.size(), required_mask_bytes))));
+  if (!valid_surface(surface) || finalized_pixels.size() < required_mask_bytes ||
+      mask_aliases_pixels) {
     return false;
   }
   paint_masked_segment(scaled_sample(segment.first, surface.zoom),
