@@ -301,6 +301,7 @@ bool run_paced_cold_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& 
       "TINYDRAW_GATE1_PACED_COLD corpus=%s zoom=%s x=%d y=%d steps=%lu tiles=%lu "
       "compute_us=%lld present_us=%lld touch_us=%lld pacing_us=%lld wall_us=%lld "
       "max_tick_us=%lld touch_samples=%lu touch_interval_max_us=%lu touch_read_max_us=%lu "
+      "touch_events=%lu touch_down=%lu touch_up=%lu touch_events_ge_8ms=%lu "
       "touch_event_age_max_us=%lu touch_errors=%lu touch_overflows=%lu pass=%u\n",
       corpus, zoom_name(zoom), presenter.level_x(), presenter.level_y(),
       static_cast<unsigned long>(steps), static_cast<unsigned long>(tiles),
@@ -310,6 +311,10 @@ bool run_paced_cold_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& 
       static_cast<unsigned long>(sampler.samples),
       static_cast<unsigned long>(sampler.maximum_interval_us),
       static_cast<unsigned long>(sampler.maximum_read_us),
+      static_cast<unsigned long>(sampler.events_consumed),
+      static_cast<unsigned long>(sampler.down_events),
+      static_cast<unsigned long>(sampler.up_events),
+      static_cast<unsigned long>(sampler.events_at_least_8ms_old),
       static_cast<unsigned long>(sampler.maximum_event_age_us),
       static_cast<unsigned long>(sampler.errors),
       static_cast<unsigned long>(sampler.queue_overflows), passed);

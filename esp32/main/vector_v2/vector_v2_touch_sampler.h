@@ -29,6 +29,10 @@ struct TouchSamplerMetrics {
   std::uint32_t moves_coalesced = 0;
   std::uint32_t maximum_interval_us = 0;
   std::uint32_t maximum_read_us = 0;
+  std::uint32_t events_consumed = 0;
+  std::uint32_t down_events = 0;
+  std::uint32_t up_events = 0;
+  std::uint32_t events_at_least_8ms_old = 0;
   std::uint32_t maximum_event_age_us = 0;
 };
 
@@ -66,6 +70,11 @@ class VectorV2TouchSampler {
   std::atomic<std::uint32_t> maximum_interval_us_{0};
   std::atomic<std::uint32_t> maximum_read_us_{0};
   std::atomic<std::uint32_t> maximum_event_age_us_{0};
+  // Only the core-0 consumer reads or resets these acceptance counters.
+  std::uint32_t events_consumed_ = 0;
+  std::uint32_t down_events_ = 0;
+  std::uint32_t up_events_ = 0;
+  std::uint32_t events_at_least_8ms_old_ = 0;
 };
 
 }  // namespace tinydraw::esp32
