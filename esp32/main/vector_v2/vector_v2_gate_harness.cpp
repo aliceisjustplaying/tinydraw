@@ -764,8 +764,9 @@ bool run_long_gesture_commit_gate(VectorV2Presenter& presenter, vector_v2::TileP
       presenter, producer, log, canvas, chrome, blank_snapshot, builder_storage,
       kInteractiveChunkSampleLimit,
       [&](const vector_v2::OperationAppend& chunk, const vector_v2::ViewRequest& view) {
-        return vector_v2::append_incrementally_in_place(log, canvas, chunk, in_place_workspace,
-                                                        view);
+        return vector_v2::append_incrementally_in_place(
+            log, canvas, chunk, in_place_workspace, view,
+            {.now_us = &esp_timer_get_time, .budget_us = kInPlaceCommitBudgetUs});
       },
       in_place);
   const auto print_pass = [](const char* path, const LongGestureMeasurement& measurement,
@@ -1067,8 +1068,10 @@ bool run_mixed_zoom_stroke(VectorV2Presenter& presenter, OperationLog& log,
         return std::nullopt;
       }
       const std::int64_t started_us = esp_timer_get_time();
-      const auto committed =
-          vector_v2::append_incrementally_in_place(log, canvas, *pending, workspace, priority_view);
+      // Mirror the product coordinator's commit budget exactly.
+      const auto committed = vector_v2::append_incrementally_in_place(
+          log, canvas, *pending, workspace, priority_view,
+          {.now_us = &esp_timer_get_time, .budget_us = kInPlaceCommitBudgetUs});
       const std::int64_t elapsed_us = esp_timer_get_time() - started_us;
       if (!committed.has_value()) {
         return std::nullopt;

@@ -65,6 +65,16 @@ struct InPlaceAppendWorkspace {
 
 inline constexpr std::size_t kInPlaceTileMaskBytes = (kTilePixels + 7U) / 8U;
 
+// Optional wall-clock bound for one in-place commit. When a time source is
+// provided, tile painting stops at deadline and every unpainted affected tile
+// is dropped to correct overview fallback for lazy re-production; the
+// interactive poll gap is then bounded by construction instead of by
+// workload. A null time source keeps painting unbounded.
+struct InPlaceCommitBudget {
+  std::int64_t (*now_us)() = nullptr;
+  std::int64_t budget_us = 0;
+};
+
 // Interactive-path sibling of append_incrementally that paints the new
 // operation directly into resident raw tiles instead of copying each affected
 // tile out and back. Every fallible step (log preparation, overview scratch,
@@ -82,7 +92,7 @@ inline constexpr std::size_t kInPlaceTileMaskBytes = (kTilePixels + 7U) / 8U;
 [[nodiscard]] std::optional<IncrementalAppendResult> append_incrementally_in_place(
     OperationLog& log, MaterializedCanvas& canvas, const OperationAppend& append_request,
     const InPlaceAppendWorkspace& workspace,
-    std::optional<ViewRequest> priority_view = std::nullopt);
+    std::optional<ViewRequest> priority_view = std::nullopt, InPlaceCommitBudget budget = {});
 
 // Coordinates an authoritative snapshot restore. The caller-owned pixels must
 // not alias log or canvas storage. Validation is completed before either state

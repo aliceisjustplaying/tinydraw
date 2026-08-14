@@ -240,7 +240,11 @@ bool valid_in_place_workspace(const OperationLog& log, const MaterializedCanvas&
 std::size_t retain_affected_tiles(MaterializedCanvas& canvas, const OperationAppend& operation,
                                   std::uint16_t painted_color,
                                   const std::optional<ViewRequest>& priority_view,
-                                  std::span<TileKey> affected, std::span<std::uint8_t> tile_mask) {
+                                  std::span<TileKey> affected, std::span<std::uint8_t> tile_mask,
+                                  const InPlaceCommitBudget& budget, std::int64_t deadline_us) {
+  const auto over_budget = [&] {
+    return budget.now_us != nullptr && budget.now_us() >= deadline_us;
+  };
   std::size_t retained = 0;
   for (std::size_t index = 0; index < affected.size(); ++index) {
     const TileKey key = affected[index];
@@ -252,7 +256,7 @@ std::size_t retain_affected_tiles(MaterializedCanvas& canvas, const OperationApp
     if (*color == painted_color) {
       // Painting this color over an identical uniform is a no-op; retain it.
       keep = true;
-    } else if (in_priority_view(key, priority_view)) {
+    } else if (in_priority_view(key, priority_view) && !over_budget()) {
       const auto edit = canvas.materialize_uniform_as_raw(key);
       if (edit.has_value() && paint_operation_into_tile(operation, *edit, tile_mask)) {
         keep = true;
@@ -267,7 +271,7 @@ std::size_t retain_affected_tiles(MaterializedCanvas& canvas, const OperationApp
   }
   for (std::size_t index = retained; index < affected.size(); ++index) {
     const TileKey key = affected[index];
-    if (!priority_view.has_value() || key.zoom != priority_view->zoom) {
+    if (!priority_view.has_value() || key.zoom != priority_view->zoom || over_budget()) {
       continue;
     }
     const auto edit = canvas.edit_resident_tile(key);
@@ -288,7 +292,12 @@ std::size_t retain_affected_tiles(MaterializedCanvas& canvas, const OperationApp
 
 std::optional<IncrementalAppendResult> append_incrementally_in_place(
     OperationLog& log, MaterializedCanvas& canvas, const OperationAppend& append_request,
-    const InPlaceAppendWorkspace& workspace, std::optional<ViewRequest> priority_view) {
+    const InPlaceAppendWorkspace& workspace, std::optional<ViewRequest> priority_view,
+    InPlaceCommitBudget budget) {
+  // The deadline covers the complete commit, including overview replay, so
+  // the caller-visible poll gap is what the budget bounds.
+  const std::int64_t deadline_us =
+      budget.now_us != nullptr ? budget.now_us() + budget.budget_us : 0;
   if (!canvas.ready() || !log.ready() || !valid_in_place_workspace(log, canvas, workspace) ||
       canvas.overview_pixels().size() != kOverviewPixels ||
       log.current_revision() != canvas.current_revision() || !valid_priority_view(priority_view)) {
@@ -319,8 +328,9 @@ std::optional<IncrementalAppendResult> append_incrementally_in_place(
   const auto affected = workspace.affected_keys.first(*resident_count);
   const std::uint16_t painted_color =
       stored.tool == OperationTool::kEraser ? 0xFFFFU : stored.color;
-  const std::size_t retained = retain_affected_tiles(canvas, operation, painted_color,
-                                                     priority_view, affected, workspace.tile_mask);
+  const std::size_t retained =
+      retain_affected_tiles(canvas, operation, painted_color, priority_view, affected,
+                            workspace.tile_mask, budget, deadline_us);
   if (!canvas.commit_in_place_revision(identity.revision, overview_publication, world_bounds,
                                        affected.first(retained))) {
     for (const TileKey key : affected.first(retained)) {

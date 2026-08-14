@@ -37,6 +37,12 @@ inline constexpr std::size_t kLiveRegionScratchPixels = kMaximumProgressiveRegio
 // samples cost 42% more total work). The deterministic long-gesture harness
 // gate re-proves the bound with this exact constant.
 inline constexpr std::size_t kInteractiveChunkSampleLimit = 48;
+// Wall-clock bound for one in-place chunk commit (overview replay plus
+// visible-tile painting). Tiles that do not fit are dropped to correct
+// overview fallback and re-produced lazily, so the interactive poll gap
+// stays under the 15 ms alarm by construction with headroom for the
+// harness-measured ~13 ms full-width 25% overview replay.
+inline constexpr std::int64_t kInPlaceCommitBudgetUs = 12'000;
 // Cold-fill producer slices run to this deadline before yielding to input.
 // The worst observed single resumable produce_next step is ~11.2 ms (a seed-7
 // publication step; bounded by the producer's internal budgets), so the
