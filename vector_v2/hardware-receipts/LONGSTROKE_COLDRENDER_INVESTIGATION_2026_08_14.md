@@ -346,13 +346,14 @@ earlier, unchanged by the later work.
 
 ## Residual risks and open items
 
-1. The long-stroke fix is proven by the deterministic worst-case gate and
-   host equivalence, not yet by a human glass test. The remaining human
-   checklist is short: draw several multi-minute XL strokes at 400% and
-   100%, confirm continuously flowing ink with no visible re-render, freeze,
-   or pixelation of the active line, then erase over them. Additionally for
-   export: tap Export, mount the "TinyDraw Export" USB drive, open
-   DRAWING.PNG (activating USB ends the serial console until reset).
+1. The final human test is recorded in
+   `PERFORMANCE_SLICE_GLASS_VERDICT_2026_08_14.md`. A 3,751-sample XL 400%
+   gesture flowed continuously with a 13.3 ms worst append, confirming the
+   intended improvement. The same session exposed a missing gate: warm-cache
+   commits reached 120.1 ms at 25% and 131.8 ms at 100%. The deterministic
+   400% result is therefore not a product-wide latency bound. Physical PNG/USB
+   export also worked, but both the manual capture and existing export gates
+   contain a CPU-0 task-watchdog warning during encoding.
 2. Between accepting a sample mid-gesture and the next chunk boundary,
    resident tiles briefly contain painted-but-uncommitted chunk pixels. No
    composition path observes them in the product loop (fill and chrome are

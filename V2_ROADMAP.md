@@ -1,9 +1,9 @@
 # TinyDraw V2 roadmap
 
 Last updated: 2026-08-14
-Current branch: `feat/v2-navigation-interaction`
+Current branch: `main`
 
-Status: **Vector V2 foundation and interaction correctness validated; measured performance work next**
+Status: **Vector V2 foundation accepted; bounded UI refinement next, measured performance debt retained**
 
 This is the current worklist and source of truth for TinyDraw V2. It replaces the
 prototype-era task order as the forward plan. Historical plans and receipts are
@@ -40,7 +40,8 @@ seed-7 1,000-stroke workload and an aggressive manual glass test:
 - [x] Drawing while refinement is active works.
 - [x] Paper occupancy and compact uniform identities avoid wasting raw slots.
 - [x] The complete seed-7 100% world fits: 266 raw + 378 uniform, zero fallback.
-- [x] The raw pool remains 320 slots.
+- [x] The raw pool uses 384 slots; a mutation-free tour A/B measured zero
+      return-trip refills at 384 versus 63 tiles and 409 ms at 320.
 - [x] Framebuffer overlap is reused during ordinary warm pans.
 - [x] Cached pan reaches first physical completion in about 30.6–30.7 ms.
 - [x] A live, separate 1.5 MiB contiguous USB/export reserve still allocates.
@@ -60,6 +61,7 @@ Load-bearing evidence:
 - `vector_v2/hardware-receipts/CORRECTNESS_CLOSURE_2026_08_14.md`
 - `vector_v2/hardware-receipts/gate1-paper-cache-scroller.log`
 - `vector_v2/hardware-receipts/gate1-final-glass.log`
+- `vector_v2/hardware-receipts/PERFORMANCE_SLICE_GLASS_VERDICT_2026_08_14.md`
 
 The overall rendering-quality verdict remains **YELLOW** only because settled
 anti-aliasing is not implemented. The architecture itself is no longer under
@@ -113,17 +115,19 @@ manual test.
 
 Current measured debt:
 
-- ordinary warm-pan frames remain roughly 45–50 ms end-to-end;
-- one repeated-reset harness run lost TE synchronization at startup; the next
-  clean harness and the aggressive glass test showed no tearing;
-- the glass run consumed 323 balanced Down/Up pairs with zero queue overflows,
-  while more than 99.5% of semantic events were under 8 ms old.
+- ordinary warm-pan frames remain roughly 45–50 ms end-to-end; the final glass
+  test reused the framebuffer on 18.3% of 400% frames and 2.9% of 200% frames;
+- a warm multi-zoom cache makes lower-zoom commits unbounded: the final glass
+  test reached 120.1 ms per chunk at 25% and 131.8 ms at 100%;
+- one repeated-reset harness run lost TE synchronization at startup; later
+  clean runs showed no logged tearing, but physical glass remains authoritative;
+- complete PNG/USB export triggers the five-second CPU-0 task watchdog during
+  encoding even though the generated image and mounted media are correct.
 
-Closed at `264b60e`: intermediate long-stroke commits now run in place with a
-measured 11.1 ms worst case (48-sample chunks) against the deterministic
-worst-case XL gesture gate, replacing the earlier 0.61–0.73 s (large chunks)
-and ≈70 ms (64-sample staged chunks) stalls. See
-`vector_v2/hardware-receipts/LONGSTROKE_COLDRENDER_INVESTIGATION_2026_08_14.md`.
+At `264b60e`, the controlled 400% long-stroke gate fell from about 70 ms to
+11.1 ms. The final physical long gesture measured 13.3 ms and looked smooth.
+That gate did not cover lower-zoom drawing against a warm multi-zoom cache. See
+`vector_v2/hardware-receipts/PERFORMANCE_SLICE_GLASS_VERDICT_2026_08_14.md`.
 
 ### Camera and zoom behavior
 
@@ -157,9 +161,10 @@ and ≈70 ms (64-sample staged chunks) stalls. See
 - [x] Remove the test-only seed corpus storage from the product app allocation;
       it remains available only to the exclusive Gate 1 harness.
 
-More raw slots can still help long 400% excursions, but policy comes first.
-Each additional raw slot costs 8 KiB. A 384-slot experiment costs 512 KiB and
-may be viable; it must re-prove the live export reserve and long-session margin.
+The 384-slot pool remains adopted for the UI round because its mutation-free
+revisit benefit and memory margin are measured. The next performance round must
+repeat the 320-versus-384 comparison with drawing between visits. Drawing
+latency wins if the two goals conflict. Each raw slot costs 8 KiB.
 
 ## Phase 2 — V2 cleanup and repository shape
 
@@ -319,12 +324,14 @@ Palette references:
 - [x] Test export while the cache is full: the harness export gate runs after
       the cache/full-world gates and the export-reserve gate re-verifies
       afterward. Long-session soak remains part of Phase 7.
-- [ ] Verify generated media on host and physical USB-C. Host verification is
-      complete (strict zlib/CRC/defilter decode of the device-encoded PNG
-      pulled from flash, receipt `7302963-exported-world.png`). Remaining
-      human step: tap Export on glass, mount the "TinyDraw Export" drive on a
-      computer, open DRAWING.PNG. Note: activating USB ends the serial
-      console until reset, exactly like V1.
+- [x] Verify generated media on host and physical USB-C. The device artifact
+      passes strict zlib/CRC/defilter decoding, and the final glass test mounted
+      the "TinyDraw Export" drive and opened the correct 1472×1792 DRAWING.PNG.
+      Activating USB ends the serial console until reset, exactly like V1.
+- [ ] Yield during encoding so CPU 0's idle task runs. Every retained V2 export
+      hardware receipt currently contains a five-second task-watchdog warning;
+      `CONFIG_ESP_TASK_WDT_PANIC` being disabled does not make that acceptable.
+- [ ] Show bounded export progress in the UI before USB takes over the port.
 
 ### Device lifecycle parity
 
@@ -394,7 +401,8 @@ remain the authority; raw timing receipts are retained without editorial cleanup
 - [ ] Eliminate redundant full-frame and raw-tile reads.
 - [ ] Evaluate packed/fixed-point loops, IRAM placement, and wider pixel operations
       only in measured hot paths.
-- [ ] Re-evaluate 384 raw slots after cache policy and test-corpus removal.
+- [ ] Re-evaluate 320 versus 384 raw slots with a mixed warm-cache drawing and
+      revisit gate; the existing tour A/B contains no intervening mutation.
 - [ ] Keep the 1.5 MiB export reserve and a meaningful fragmentation margin.
 - [ ] Use the second core only for a measured independent workload with explicit
       ownership, cancellation, and revision publication; do not add locks around
@@ -449,15 +457,14 @@ complete overview. It still needs careful tap targeting and viewport math.
 
 # Next concrete sequence
 
-1. Run the short human glass checklist for the closed long-stroke stall
-   (multi-minute XL strokes at 400%/100%: continuously flowing ink, no visible
-   re-render or pixelation of the active line, erase over them).
-2. Decide the canvas-exit/re-entry gesture policy (bridge, split, or end);
-   the phantom's mechanism is recorded in the 2026-08-14 investigation
-   receipt.
-3. Improve warm-pan throughput without regressing chrome seams, TE behavior,
-   camera responsiveness, or the 1.5 MiB export reserve.
-4. Continue navigation/UI, the timeboxed analytic anti-aliasing gate, vector
-   persistence, Undo/Redo, New, export, and lifecycle parity.
-5. Diagnose the retained startup TE synchronization flake before release; do not
-   confuse it with the now-closed stale-row tearing defect.
+1. Run the bounded UI round: popup dismissal and hit behavior, color-picker
+   changes, the zoom rail and camera behavior, battery status, export progress,
+   and a noninteractive minimap skeleton.
+2. Keep the final glass verdict visible while doing UI work; do not describe the
+   current branch as complete performance closure.
+3. Resume performance work in this order: drawing and erasing latency, cold
+   refinement with p95 below 800 ms, pan responsiveness, then export speed.
+4. The next drawing gate must use scripted touch-shaped gestures at every zoom
+   against a warm multi-zoom cache and target 10–12 ms deterministic chunks.
+5. Fix export watchdog starvation and diagnose the retained startup TE
+   synchronization flake before release.

@@ -4,7 +4,7 @@ Last updated: 2026-08-14
 
 ## Resume point
 
-Branch: `feat/v2-navigation-interaction`
+Branch: `main`
 
 **The Vector V2 foundation is validated.** Vector V2 is now the accepted
 application architecture under construction, not another prototype and not yet
@@ -29,7 +29,8 @@ On the physical ESP32-S3 with the deterministic seed-7 1,000-stroke document:
 - cache misses use current overview fallback rather than checkerboards;
 - paper-aware materialization lets the complete 100% world fit as 266 raw tiles
   plus 378 compact uniform identities, with zero fallback;
-- the raw pool remains 320 slots;
+- the raw pool uses 384 slots; a 16-stop 400% tour A/B measured zero return-trip
+  refills at 384 versus 63 tiles and 409 ms of refill at 320;
 - ordinary cached pan reuses framebuffer overlap and reaches first physical
   completion in about 30.6–30.7 ms;
 - drawing while refinement is active works without stale publication;
@@ -46,6 +47,7 @@ Evidence:
 2. [`vector_v2/GATE_1_CACHE_CLOSURE_2026_08_13.md`](vector_v2/GATE_1_CACHE_CLOSURE_2026_08_13.md)
 3. [`vector_v2/hardware-receipts/gate1-paper-cache-scroller.log`](vector_v2/hardware-receipts/gate1-paper-cache-scroller.log)
 4. [`vector_v2/hardware-receipts/gate1-final-glass.log`](vector_v2/hardware-receipts/gate1-final-glass.log)
+5. [`vector_v2/hardware-receipts/PERFORMANCE_SLICE_GLASS_VERDICT_2026_08_14.md`](vector_v2/hardware-receipts/PERFORMANCE_SLICE_GLASS_VERDICT_2026_08_14.md)
 
 The overall rendering-quality verdict remains **YELLOW** because settled
 anti-aliasing is still open. The four-sample SSAA probe took about 808 ms and is
@@ -57,30 +59,40 @@ The architecture works, but the product still needs substantial integration and
 performance work:
 
 - ordinary pan currently occupies roughly 46–50 ms end-to-end, around 20 FPS;
-- long 400% tours evict useful raw views from other zooms under global LRU;
-- the test UI opens zooms at `(0,0)` rather than preserving the user's focus;
-- anti-aliasing, persistence, Undo/Redo, real export, autosave, device lifecycle,
-  and final UI are incomplete.
+- the final glass test measured only 18.3% framebuffer reuse across 814 frames
+  at 400%, and 2.9% across 244 frames at 200%;
+- drawing with a warm multi-zoom cache is not bounded at lower zooms: the
+  manual session reached 120.1 ms per chunk at 25% and 131.8 ms at 100%;
+- the 384-slot cache improves mutation-free revisits but still needs a mixed
+  draw/pan A/B against 320 before it becomes a settled product choice;
+- complete PNG/USB export works, but the blocking encoder starves CPU 0 long
+  enough to trigger the five-second task watchdog;
+- popup outside taps do not dismiss the popup and may pan behind it;
+- anti-aliasing, persistence, Undo/Redo, autosave, device lifecycle, and final
+  UI are incomplete.
 
-Closed at `264b60e` (2026-08-14): intermediate long-stroke chunk commits now
-run in place at a measured 11.1 ms worst case against the deterministic
-worst-case gesture gate (previously 0.61–0.73 s, then ≈70 ms), and the 4×
-adversarial 400% cold-replay p95 dropped from 1.452 s to 0.675 s with every
-producer tick under 11 ms. See
-[`vector_v2/hardware-receipts/LONGSTROKE_COLDRENDER_INVESTIGATION_2026_08_14.md`](vector_v2/hardware-receipts/LONGSTROKE_COLDRENDER_INVESTIGATION_2026_08_14.md).
+At `264b60e` (2026-08-14), intermediate long-stroke chunk commits moved in
+place and the deterministic 400% gate fell from about 70 ms to 11.1 ms. The
+manual 400% long gesture later measured 13.3 ms worst-case and looked smooth,
+but lower-zoom cached drawing exposed the unbounded cross-zoom mutation work
+listed above. The cold campaign remains a large measured win: final adversarial
+400% p95 is 646 ms, down from 1.452 s, with every producer tick under 12.7 ms.
+See
+[`vector_v2/hardware-receipts/PERFORMANCE_SLICE_GLASS_VERDICT_2026_08_14.md`](vector_v2/hardware-receipts/PERFORMANCE_SLICE_GLASS_VERDICT_2026_08_14.md).
 
 These are product and optimization tasks, not evidence for another rewrite.
 
 ## Immediate next sequence
 
-1. Capture an unchanged-behavior hardware baseline with same-event input,
-   append, compose, and transfer telemetry.
-2. Follow the accepted behavior in
+1. Run the bounded UI refinement round: popup dismissal and hit behavior,
+   color-picker changes, the zoom rail, battery status, export progress, and a
+   minimap skeleton.
+2. Follow the accepted camera behavior in
    [`VECTOR_V2_ZOOM_NAVIGATION.md`](VECTOR_V2_ZOOM_NAVIGATION.md).
-3. Implement and hardware-test input-first scheduling, camera preservation, and
-   protected recent per-zoom cache footprints.
-4. Run the timeboxed analytic anti-aliasing gate.
-5. Continue through product UI and vector feature parity.
+3. Resume performance work with the documented priority: drawing latency,
+   cold refinement (p95 below 800 ms), pan responsiveness, then export speed.
+4. Fix export watchdog starvation before treating export as release-ready.
+5. Continue through anti-aliasing, persistence, Undo/Redo, and lifecycle parity.
 
 ## Repository and coexistence decision
 
