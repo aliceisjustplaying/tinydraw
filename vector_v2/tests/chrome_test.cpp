@@ -112,6 +112,23 @@ TEST_CASE("chrome rendering stays within the framebuffer") {
   CHECK(pixels[100U * width + 100U] == untouched);
   CHECK(pixels[410U * width + 214U] != 0xFFFFU);
 
+  pixels.assign(pixels.size(), 0x1234U);
+  tinydraw::vector_v2::draw_chrome(pixels, width, height, {});
+  for (int y = tinydraw::vector_v2::kChromeCanvasBottom; y < 374; ++y) {
+    for (int x = 0; x < width; ++x) {
+      CHECK(pixels[static_cast<std::size_t>(y * width + x)] != 0x1234U);
+    }
+  }
+
+  ChromeState popup{.popup = ChromePopup::kTools};
+  pixels.assign(pixels.size(), 0x1234U);
+  tinydraw::vector_v2::draw_chrome(pixels, width, height, popup);
+  for (int y = tinydraw::vector_v2::kChromePopupCanvasBottom; y < 296; ++y) {
+    for (int x = 0; x < width; ++x) {
+      CHECK(pixels[static_cast<std::size_t>(y * width + x)] != 0x1234U);
+    }
+  }
+
   const ChromeState palette{.popup = ChromePopup::kColors};
   tinydraw::vector_v2::draw_chrome(pixels, width, height, palette);
   CHECK(pixels[82U * width + 48U] == tinydraw::vector_v2::kPico8Palettes[0][0]);
