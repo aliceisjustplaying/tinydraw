@@ -117,13 +117,50 @@ LivePresentationTiming VectorV2Presenter::refresh_region(vector_v2::PixelRect le
   };
   panel = align_bounds(panel);
   panel.y1 = std::min(panel.y1, canvas_bottom);
+  const int width = panel.x1 - panel.x0;
+  const int height = panel.y1 - panel.y0;
+  const std::size_t pixel_count = static_cast<std::size_t>(width) * height;
   const vector_v2::PixelRect aligned_level{
       .x0 = level_x() + panel.x0,
       .y0 = level_y() + panel.y0,
       .x1 = level_x() + panel.x1,
       .y1 = level_y() + panel.y1,
   };
-  return compose_and_present(aligned_level, panel, event_us);
+  if (pixel_count <= region_.size()) {
+    return compose_and_present(aligned_level, panel, event_us);
+  }
+
+  int rows_per_strip = static_cast<int>(region_.size() / static_cast<std::size_t>(width));
+  rows_per_strip &= ~1;
+  if (rows_per_strip <= 0) {
+    return {};
+  }
+  LivePresentationTiming total{.passed = true};
+  for (int y = panel.y0; y < panel.y1; y += rows_per_strip) {
+    const int rows = std::min(rows_per_strip, panel.y1 - y);
+    const vector_v2::PixelRect strip_panel{panel.x0, y, panel.x1, y + rows};
+    const vector_v2::PixelRect strip_level{level_x() + strip_panel.x0, level_y() + strip_panel.y0,
+                                           level_x() + strip_panel.x1, level_y() + strip_panel.y1};
+    const auto part = compose_and_present(strip_level, strip_panel, event_us);
+    if (!part.passed) {
+      total.passed = false;
+      return total;
+    }
+    if (total.pushes == 0U) {
+      total.first_submit_us = part.first_submit_us;
+      total.first_complete_us = part.first_complete_us;
+    }
+    total.compose_us += part.compose_us;
+    total.complete_us += part.complete_us;
+    total.tile_pixels += part.tile_pixels;
+    total.uniform_pixels += part.uniform_pixels;
+    total.overview_pixels += part.overview_pixels;
+    total.fallback_pixels += part.fallback_pixels;
+    total.resident_tiles += part.resident_tiles;
+    total.fallback_tiles += part.fallback_tiles;
+    total.pushes += part.pushes;
+  }
+  return total;
 }
 
 LivePresentationTiming VectorV2Presenter::compose_and_present(vector_v2::PixelRect level_bounds,
@@ -168,7 +205,10 @@ LivePresentationTiming VectorV2Presenter::show_start(InkPoint point, std::uint16
                                                      const vector_v2::ChromeState& chrome,
                                                      std::uint32_t event_us) {
   frame_reusable_ = false;
-  const int canvas_bottom = vector_v2::chrome_canvas_bottom(chrome);
+  const int canvas_bottom = vector_v2::chrome_input_bottom(chrome);
+  if (canvas_bottom == 0) {
+    return {.passed = true};
+  }
   const RibbonPrimitive cap{
       .kind = RibbonPrimitiveKind::kCircle, .center = point.position, .radius = point.radius};
   const std::array primitives{cap};
@@ -182,8 +222,8 @@ LivePresentationTiming VectorV2Presenter::show_update(const RibbonUpdate& update
                                                       const vector_v2::ChromeState& chrome,
                                                       std::uint32_t event_us) {
   frame_reusable_ = false;
-  const int canvas_bottom = vector_v2::chrome_canvas_bottom(chrome);
-  if (update.committed.empty()) {
+  const int canvas_bottom = vector_v2::chrome_input_bottom(chrome);
+  if (update.committed.empty() || canvas_bottom == 0) {
     return {.passed = true};
   }
   static_cast<void>(renderer_->render(std::span(update.committed.begin(), update.committed.size()),

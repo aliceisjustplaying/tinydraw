@@ -258,12 +258,26 @@ float brush_size(ChromeSize size) {
 }
 
 int chrome_canvas_bottom(const ChromeState& state) {
-  return state.popup == ChromePopup::kNone ? kChromeCanvasBottom : kChromePopupCanvasBottom;
+  if (state.popup == ChromePopup::kNone) {
+    return kChromeCanvasBottom;
+  }
+  return state.popup == ChromePopup::kColors ? 0 : kChromePopupCanvasBottom;
+}
+
+int chrome_input_bottom(const ChromeState& state) {
+  if (state.popup == ChromePopup::kNone) {
+    return kChromeCanvasBottom;
+  }
+  return state.popup == ChromePopup::kColors ? 0 : kChromePopupInputBottom;
 }
 
 std::optional<ChromePoint> clip_canvas_segment(ChromePoint previous, ChromePoint current,
                                                const ChromeState& state) {
-  const float bottom = static_cast<float>(chrome_canvas_bottom(state) - 1);
+  const int input_bottom = chrome_input_bottom(state);
+  if (input_bottom == 0) {
+    return std::nullopt;
+  }
+  const float bottom = static_cast<float>(input_bottom - 1);
   if (current.y <= bottom) {
     return current;
   }
