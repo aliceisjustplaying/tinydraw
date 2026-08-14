@@ -1104,6 +1104,71 @@ TEST_CASE("in-place append retains matching uniforms under an eraser") {
   CHECK(composed == direct);
 }
 
+namespace {
+std::int64_t fake_commit_clock_now = 0;
+std::int64_t fake_commit_clock() { return fake_commit_clock_now += 1'000; }
+}  // namespace
+
+TEST_CASE("in-place append drops unpainted tiles at the commit budget") {
+  EquivalenceRig rig;
+  const vector_v2::ViewRequest view{
+      .zoom = vector_v2::ZoomLevel::k400Percent,
+      .level_pixels = {0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
+  };
+  // Ink first so the fill materializes raw tiles at the active zoom.
+  {
+    std::array<vector_v2::CompactOperationSample, 12> ink{};
+    for (std::size_t index = 0; index < ink.size(); ++index) {
+      ink[index] = {.x_quarter = static_cast<std::uint16_t>(20U + index * 28U),
+                    .y_quarter = static_cast<std::uint16_t>(20U + index * 32U),
+                    .radius_256 = 2'048U,
+                    .elapsed_ms = static_cast<std::uint16_t>(index * 8U)};
+    }
+    REQUIRE(vector_v2::append_incrementally_in_place(rig.log, rig.canvas,
+                                                     {.color = 0x07E0U, .samples = ink},
+                                                     rig.in_place_workspace(), std::nullopt)
+                .has_value());
+  }
+  rig.cold_fill(view);
+
+  std::array<vector_v2::CompactOperationSample, 8> samples{};
+  for (std::size_t index = 0; index < samples.size(); ++index) {
+    samples[index] = {.x_quarter = static_cast<std::uint16_t>(30U + index * 30U),
+                      .y_quarter = static_cast<std::uint16_t>(30U + index * 34U),
+                      .radius_256 = 1'024U,
+                      .elapsed_ms = static_cast<std::uint16_t>(index * 8U)};
+  }
+  // An already-expired budget paints nothing: every affected raw tile is
+  // dropped to fallback, yet the commit itself succeeds and both authorities
+  // advance together.
+  fake_commit_clock_now = 0;
+  const auto starved = vector_v2::append_incrementally_in_place(
+      rig.log, rig.canvas, {.color = 0x001FU, .samples = samples}, rig.in_place_workspace(), view,
+      {.now_us = &fake_commit_clock, .budget_us = 0});
+  REQUIRE(starved.has_value());
+  CHECK(starved->affected_resident_tiles > 0U);
+  CHECK(starved->published_tiles == 0U);
+  CHECK(starved->fallback_tiles == starved->affected_resident_tiles);
+  CHECK(rig.log.current_revision() == rig.canvas.current_revision());
+
+  // A generous budget behaves like the unbounded default.
+  rig.cold_fill(view);
+  fake_commit_clock_now = 0;
+  const auto relaxed = vector_v2::append_incrementally_in_place(
+      rig.log, rig.canvas, {.color = 0xF800U, .samples = samples}, rig.in_place_workspace(), view,
+      {.now_us = &fake_commit_clock, .budget_us = 10'000'000});
+  REQUIRE(relaxed.has_value());
+  CHECK(relaxed->published_tiles > 0U);
+  CHECK(relaxed->fallback_tiles == 0U);
+  std::vector<std::uint16_t> composed(vector_v2::kOverviewPixels);
+  const auto stats = rig.canvas.compose_view(view, composed);
+  REQUIRE(stats.has_value());
+  CHECK(stats->fallback_pixels == 0U);
+  std::vector<std::uint16_t> direct(vector_v2::kOverviewPixels);
+  forward_replay(rig.log, view, direct);
+  CHECK(composed == direct);
+}
+
 TEST_CASE("in-place append fails atomically before mutation") {
   EquivalenceRig rig;
   const vector_v2::ViewRequest view{

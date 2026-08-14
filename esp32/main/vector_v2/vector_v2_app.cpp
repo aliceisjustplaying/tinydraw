@@ -326,10 +326,11 @@ std::optional<vector_v2::IncrementalAppendResult> commit_pending_chunk(
                        presenter.level_x() + vector_v2::kOverviewWidth,
                        presenter.level_y() + vector_v2::kOverviewHeight},
   };
-  return vector_v2::append_incrementally_in_place(log, canvas, *append, workspace,
-                                                  presenter.zoom() == ZoomLevel::k25Percent
-                                                      ? std::optional<vector_v2::ViewRequest>{}
-                                                      : std::optional{priority_view});
+  return vector_v2::append_incrementally_in_place(
+      log, canvas, *append, workspace,
+      presenter.zoom() == ZoomLevel::k25Percent ? std::optional<vector_v2::ViewRequest>{}
+                                                : std::optional{priority_view},
+      {.now_us = &esp_timer_get_time, .budget_us = kInPlaceCommitBudgetUs});
 }
 
 std::optional<ChainedOperationStatus> commit_ready_chunk(
