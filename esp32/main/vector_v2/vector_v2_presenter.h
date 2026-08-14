@@ -147,11 +147,13 @@ class VectorV2Presenter {
                                                              std::uint32_t event_us,
                                                              std::int64_t compose_us = 0,
                                                              bool allow_minimap_refresh = false);
-  [[nodiscard]] LivePresentationTiming present_unobscured(vector_v2::PixelRect bounds,
-                                                          const vector_v2::ChromeState& chrome,
-                                                          std::uint32_t event_us,
-                                                          std::int64_t compose_us = 0,
-                                                          bool wait_for_completion = true);
+  [[nodiscard]] LivePresentationTiming present_unobscured(
+      vector_v2::PixelRect bounds, const vector_v2::ChromeState& chrome, std::uint32_t event_us,
+      std::int64_t compose_us = 0, bool wait_for_completion = true, bool ring = false);
+  [[nodiscard]] LivePresentationTiming present_ring(vector_v2::PixelRect bounds,
+                                                    std::uint32_t event_us);
+  [[nodiscard]] bool compose_into_ring(vector_v2::PixelRect panel_bounds);
+  void copy_ring_region(vector_v2::PixelRect panel_bounds, std::span<std::uint16_t> destination);
   [[nodiscard]] LivePresentationTiming refresh_pan(int old_x, int old_y,
                                                    const vector_v2::ChromeState& chrome,
                                                    std::uint32_t event_us);
@@ -166,9 +168,14 @@ class VectorV2Presenter {
   vector_v2::ZoomLevel frame_zoom_ = vector_v2::ZoomLevel::k25Percent;
   int frame_level_x_ = 0;
   int frame_level_y_ = 0;
-  std::uint64_t frame_epoch_ = 0;
   vector_v2::ChromeState frame_chrome_{};
   vector_v2::DocumentRevision presented_minimap_revision_{};
+  // Toroidal pan addressing: while frame_ring_bottom_ is nonzero the canvas
+  // rows [0, frame_ring_bottom_) of frame_ are ring-rotated by frame_ring_
+  // and only the ring-aware pan present may read them; every other frame
+  // writer materializes first through a full refresh.
+  vector_v2::RingFrame frame_ring_{};
+  int frame_ring_bottom_ = 0;
   bool minimap_presented_ = false;
   bool frame_reusable_ = false;
 };

@@ -115,3 +115,37 @@ TEST_CASE("display scheduler validates stride-backed input") {
   REQUIRE(scheduler.schedule(
       {.revision = {0}, .panel_bounds = {0, 0, 4, 2}, .pixels = pixels, .stride = 4}));
 }
+
+TEST_CASE("scheduler validates ring-addressed strips") {
+  std::array<vector_v2::DisplayStrip, 4> storage{};
+  vector_v2::DisplayScheduler scheduler(storage);
+  scheduler.require_revision({1});
+  std::vector<std::uint16_t> area(static_cast<std::size_t>(vector_v2::kOverviewWidth) * 100U);
+  const vector_v2::DisplayStrip ring{
+      .revision = {1},
+      .panel_bounds = {0, 0, vector_v2::kOverviewWidth, 20},
+      .pixels = area,
+      .stride = vector_v2::kOverviewWidth,
+      .source_shift_x = 30,
+      .source_shift_y = 7,
+      .source_area_width = vector_v2::kOverviewWidth,
+      .source_area_height = 100,
+  };
+  CHECK(scheduler.schedule(ring).has_value());
+  // Shift outside the ring extent is rejected.
+  auto bad_shift = ring;
+  bad_shift.source_shift_x = vector_v2::kOverviewWidth;
+  CHECK_FALSE(scheduler.schedule(bad_shift).has_value());
+  // A ring smaller than the panel bounds is rejected.
+  auto small_area = ring;
+  small_area.source_area_height = 10;
+  CHECK_FALSE(scheduler.schedule(small_area).has_value());
+  // Linear strips must not carry ring fields.
+  auto stray = ring;
+  stray.source_area_width = 0;
+  CHECK_FALSE(scheduler.schedule(stray).has_value());
+  // An undersized ring span is rejected.
+  auto undersized = ring;
+  undersized.pixels = std::span(area).first(area.size() - vector_v2::kOverviewWidth);
+  CHECK_FALSE(scheduler.schedule(undersized).has_value());
+}

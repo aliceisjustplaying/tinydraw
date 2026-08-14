@@ -377,3 +377,55 @@ TEST_CASE("new drawing dialog preserves canvas outside its bounds") {
 }
 
 }  // namespace
+
+TEST_CASE("minimap surface draw matches the full overlay draw") {
+  constexpr int width = 368;
+  constexpr int height = 448;
+  const std::size_t pixel_count = static_cast<std::size_t>(width * height);
+  std::vector<std::uint16_t> frame(pixel_count);
+  std::vector<std::uint16_t> overview(pixel_count);
+  for (std::size_t index = 0; index < pixel_count; ++index) {
+    frame[index] = static_cast<std::uint16_t>(index * 7U);
+    overview[index] = static_cast<std::uint16_t>(index * 13U);
+  }
+  const ChromeState state{.battery_percentage = 50};
+  const tinydraw::vector_v2::ChromeNavigation navigation{
+      .zoom_percent = 200,
+      .level_x = 511,
+      .level_y = 833,
+      .level_width = 2944,
+      .level_height = 3584,
+      .can_pan_top = true,
+      .can_pan_left = true,
+      .can_pan_right = true,
+      .can_pan_bottom = true,
+      .overview_pixels = overview,
+  };
+  const auto region = tinydraw::vector_v2::chrome_minimap_region(state);
+  REQUIRE(region.has_value());
+  const int region_width = region->x1 - region->x0;
+  const int region_height = region->y1 - region->y0;
+  // The surface starts as a copy of the frame's backdrop under the overlay.
+  std::vector<std::uint16_t> surface(static_cast<std::size_t>(region_width) *
+                                     static_cast<std::size_t>(region_height));
+  for (int y = 0; y < region_height; ++y) {
+    for (int x = 0; x < region_width; ++x) {
+      surface[static_cast<std::size_t>(y) * static_cast<std::size_t>(region_width) +
+              static_cast<std::size_t>(x)] =
+          frame[static_cast<std::size_t>(region->y0 + y) * width +
+                static_cast<std::size_t>(region->x0 + x)];
+    }
+  }
+  REQUIRE(
+      tinydraw::vector_v2::draw_chrome_minimap_overlay(frame, width, height, state, navigation));
+  REQUIRE(tinydraw::vector_v2::draw_chrome_minimap_surface(
+      surface, region_width, region_height, region->x0, region->y0, state, navigation));
+  for (int y = 0; y < region_height; ++y) {
+    for (int x = 0; x < region_width; ++x) {
+      CHECK(surface[static_cast<std::size_t>(y) * static_cast<std::size_t>(region_width) +
+                    static_cast<std::size_t>(x)] ==
+            frame[static_cast<std::size_t>(region->y0 + y) * width +
+                  static_cast<std::size_t>(region->x0 + x)]);
+    }
+  }
+}

@@ -15,6 +15,16 @@ struct DisplayStrip {
   PixelRect panel_bounds{};
   std::span<const std::uint16_t> pixels{};
   int stride = 0;
+  // Ring-addressed source. When source_area_width is nonzero, pixels spans
+  // the complete ring area starting at panel (0, 0); panel row y reads
+  // buffer row (y + source_shift_y) % source_area_height and panel column x
+  // reads buffer column (x + source_shift_x) % source_area_width. Zero
+  // source_area_width keeps the plain linear contract where pixels begins at
+  // the strip origin.
+  int source_shift_x = 0;
+  int source_shift_y = 0;
+  int source_area_width = 0;
+  int source_area_height = 0;
 };
 
 struct ScheduledStrip {

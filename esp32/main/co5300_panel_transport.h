@@ -50,6 +50,13 @@ class Co5300PanelTransport final : public DisplayBackend {
 
   void push_rect(int x, int y, int width, int height, const std::uint16_t* pixels,
                  int stride = 0) override;
+  // Ring-addressed push: panel row y reads buffer row (y + shift_y) %
+  // area_height and panel column x reads buffer column (x + shift_x) %
+  // area_width of the area starting at area_pixels. De-rotation happens
+  // inside the byte-swap staging pass, which already touches every pixel, so
+  // a rotated source costs the same as a linear one.
+  void push_rect_ring(int x, int y, int width, int height, const std::uint16_t* area_pixels,
+                      int stride, int shift_x, int shift_y, int area_width, int area_height);
 
  private:
   class Impl;
