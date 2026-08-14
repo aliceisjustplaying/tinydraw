@@ -21,6 +21,14 @@ constexpr int kMainTop = 374;
 constexpr int kMainBottom = 444;
 constexpr int kPopupTop = 296;
 constexpr int kPopupBottom = 366;
+constexpr int kDialogLeft = 28;
+constexpr int kDialogTop = 126;
+constexpr int kDialogRight = 340;
+constexpr int kDialogBottom = 286;
+constexpr int kToastLeft = 104;
+constexpr int kToastTop = 70;
+constexpr int kToastRight = 264;
+constexpr int kToastBottom = 132;
 constexpr int kHitSlop = 8;
 constexpr int kMainHitTop = kMainTop - kHitSlop;
 constexpr std::array kMainCenters{34, 94, 154, 214, 274, 334};
@@ -185,6 +193,42 @@ void draw_document_popup(Painter& painter, const ChromeState& state) {
   draw_arrow(painter, 276, 331, true, state.can_export ? kInk : kMuted);
 }
 
+void draw_new_dialog(Painter& painter) {
+  painter.rounded({kDialogLeft + 3, kDialogTop + 4, kDialogRight + 3, kDialogBottom + 4}, 17,
+                  kShadow);
+  painter.rounded({kDialogLeft - 1, kDialogTop - 1, kDialogRight + 1, kDialogBottom + 1}, 17,
+                  kBorder);
+  painter.rounded({kDialogLeft, kDialogTop, kDialogRight, kDialogBottom}, 16, kWhite);
+  painter.text(113, 158, "NEW DRAWING?", kInk);
+
+  painter.rounded({44, 204, 178, 266}, 10, kBorder);
+  painter.rounded({46, 206, 176, 264}, 9, kWhite);
+  painter.text(100, 228, "NO", kInk);
+
+  painter.rounded({190, 204, 324, 266}, 10, kSelected);
+  painter.rounded({192, 206, 322, 264}, 9, kSelected);
+  painter.text(240, 228, "YES", kWhite);
+}
+
+void draw_export_toast(Painter& painter, const ChromeState& state) {
+  if (state.export_status == ChromeExportStatus::kIdle) {
+    return;
+  }
+  painter.rounded({kToastLeft + 2, kToastTop + 3, kToastRight + 2, kToastBottom + 3}, 12, kShadow);
+  painter.rounded({kToastLeft - 1, kToastTop - 1, kToastRight + 1, kToastBottom + 1}, 12, kBorder);
+  painter.rounded({kToastLeft, kToastTop, kToastRight, kToastBottom}, 11, kWhite);
+  if (state.export_status == ChromeExportStatus::kSaving) {
+    painter.text(130, 82, "SAVING", kInk, 3);
+    painter.rounded({120, 108, 248, 124}, 5, kBorder);
+    painter.rounded({123, 111, 245, 121}, 3, kWhite);
+    const int progress = std::clamp<int>(state.export_progress, 0, 100);
+    painter.rect({123, 111, 123 + progress * 122 / 100, 121}, kSelected);
+    return;
+  }
+  const bool saved = state.export_status == ChromeExportStatus::kSaved;
+  painter.text(saved ? 139 : 130, 90, saved ? "SAVED" : "ERROR", saved ? kInk : 0xE186U, 3);
+}
+
 }  // namespace
 
 std::uint16_t selected_color(const ChromeState& state) {
@@ -215,6 +259,9 @@ int chrome_canvas_bottom(const ChromeState& state) {
 }
 
 int chrome_input_bottom(const ChromeState& state) {
+  if (state.confirm_new || state.export_status == ChromeExportStatus::kSaving) {
+    return 0;
+  }
   if (state.popup == ChromePopup::kNone) {
     return kChromeCanvasBottom;
   }
@@ -243,7 +290,8 @@ std::optional<ChromePoint> clip_canvas_segment(ChromePoint previous, ChromePoint
 }
 
 bool chrome_contains(ChromePoint point, const ChromeState& state) {
-  if (state.popup == ChromePopup::kColors) {
+  if (state.confirm_new || state.export_status == ChromeExportStatus::kSaving ||
+      state.popup == ChromePopup::kColors) {
     return inside(point, 0.0F, 0.0F, static_cast<float>(kWidth), static_cast<float>(kHeight));
   }
   const bool main = inside(point, 0.0F, static_cast<float>(kMainHitTop), static_cast<float>(kWidth),
@@ -266,6 +314,18 @@ std::optional<std::uint8_t> chrome_color_at(ChromePoint point, const ChromeState
 }
 
 ChromeAction chrome_action_at(ChromePoint point, const ChromeState& state) {
+  if (state.confirm_new) {
+    if (inside(point, 36.0F, 194.0F, 184.0F, 276.0F)) {
+      return ChromeAction::kCancelNewDrawing;
+    }
+    if (inside(point, 184.0F, 194.0F, 332.0F, 276.0F)) {
+      return ChromeAction::kConfirmNewDrawing;
+    }
+    return ChromeAction::kNone;
+  }
+  if (state.export_status == ChromeExportStatus::kSaving) {
+    return ChromeAction::kNone;
+  }
   if (state.popup == ChromePopup::kColors) {
     if (inside(point, 0.0F, 0.0F, 96.0F, static_cast<float>(kPaletteControlsBottom))) {
       return ChromeAction::kPreviousPalette;
@@ -316,7 +376,8 @@ void draw_chrome(std::span<std::uint16_t> pixels, int width, int height, const C
     return;
   }
   Painter painter(pixels, width, height);
-  if (state.popup == ChromePopup::kColors) {
+  if (state.popup == ChromePopup::kColors && !state.confirm_new &&
+      state.export_status == ChromeExportStatus::kIdle) {
     draw_palette(painter, state);
     return;
   }
@@ -325,24 +386,27 @@ void draw_chrome(std::span<std::uint16_t> pixels, int width, int height, const C
   // stationary seam pixels when cached canvas rows are scrolled in place.
   painter.rect({0, chrome_canvas_bottom(state), kWidth, kMainTop}, kWhite);
   draw_bottom(painter, state);
-  if (state.popup == ChromePopup::kNone) {
-    return;
+  if (state.popup != ChromePopup::kNone) {
+    draw_dock(painter, kPopupTop, kPopupBottom);
+    switch (state.popup) {
+      case ChromePopup::kTools:
+        draw_tools_popup(painter, state);
+        break;
+      case ChromePopup::kSizes:
+        draw_sizes_popup(painter, state);
+        break;
+      case ChromePopup::kDocument:
+        draw_document_popup(painter, state);
+        break;
+      case ChromePopup::kNone:
+      case ChromePopup::kColors:
+        break;
+    }
   }
-  draw_dock(painter, kPopupTop, kPopupBottom);
-  switch (state.popup) {
-    case ChromePopup::kTools:
-      draw_tools_popup(painter, state);
-      break;
-    case ChromePopup::kSizes:
-      draw_sizes_popup(painter, state);
-      break;
-    case ChromePopup::kDocument:
-      draw_document_popup(painter, state);
-      break;
-    case ChromePopup::kNone:
-    case ChromePopup::kColors:
-      break;
+  if (state.confirm_new) {
+    draw_new_dialog(painter);
   }
+  draw_export_toast(painter, state);
 }
 
 }  // namespace tinydraw::vector_v2

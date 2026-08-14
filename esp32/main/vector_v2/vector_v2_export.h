@@ -10,6 +10,8 @@
 
 namespace tinydraw::esp32 {
 
+using VectorV2ExportProgress = void (*)(int completed_rows, int total_rows, void* context);
+
 struct VectorV2ExportStats {
   bool encoded = false;
   std::size_t bytes = 0;
@@ -36,7 +38,9 @@ class VectorV2Export {
   [[nodiscard]] bool read_image(std::size_t offset, std::span<std::uint8_t> output) const;
   // Renders authority in horizontal bands and writes the PNG. Never touches
   // USB, so automated runs keep their serial console.
-  [[nodiscard]] VectorV2ExportStats encode(const vector_v2::OperationLog& log);
+  [[nodiscard]] VectorV2ExportStats encode(const vector_v2::OperationLog& log,
+                                           VectorV2ExportProgress progress = nullptr,
+                                           void* progress_context = nullptr);
   // Starts or refreshes the USB mass-storage presentation. Activating USB
   // repurposes the shared USB port and ends any serial console session until
   // the next reset, matching Raster V1 export semantics.

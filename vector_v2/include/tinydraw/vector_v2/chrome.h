@@ -21,6 +21,7 @@ inline constexpr std::size_t kPaletteColorCount = 16;
 enum class ChromeTool { kDraw, kErase, kPan };
 enum class ChromeSize { kSmall, kMedium, kLarge, kExtraLarge };
 enum class ChromePopup { kNone, kTools, kColors, kSizes, kDocument };
+enum class ChromeExportStatus { kIdle, kSaving, kSaved, kError };
 enum class ChromeAction {
   kNone,
   kUndo,
@@ -40,6 +41,8 @@ enum class ChromeAction {
   kNextPalette,
   kSelectColor,
   kNewDrawing,
+  kCancelNewDrawing,
+  kConfirmNewDrawing,
   kExport,
 };
 
@@ -52,6 +55,9 @@ struct ChromeState {
   bool can_undo = false;
   bool can_redo = false;
   bool can_export = false;
+  bool confirm_new = false;
+  ChromeExportStatus export_status = ChromeExportStatus::kIdle;
+  std::uint8_t export_progress = 0;
   bool operator==(const ChromeState&) const = default;
 };
 

@@ -500,19 +500,66 @@ void print_stroke(const PendingStrokeReport& report) {
       static_cast<unsigned long>(report.largest_psram), report.authority_match);
 }
 
-void run_export(VectorV2Export& exporter, const OperationLog& log) {
+struct ExportProgressContext {
+  vector_v2::ChromeState* chrome = nullptr;
+  VectorV2Presenter* presenter = nullptr;
+  int last_percentage = 0;
+};
+
+void present_export_progress(int completed_rows, int total_rows, void* raw_context) {
+  auto& context = *static_cast<ExportProgressContext*>(raw_context);
+  if (context.chrome == nullptr || context.presenter == nullptr || total_rows <= 0) {
+    return;
+  }
+  const int percentage = std::clamp(completed_rows * 100 / total_rows, 0, 100);
+  if (percentage == context.last_percentage) {
+    return;
+  }
+  context.last_percentage = percentage;
+  context.chrome->export_progress = static_cast<std::uint8_t>(percentage);
+  const auto timing = context.presenter->refresh(*context.chrome, now_us());
+  print_presentation("export-progress", *context.presenter, timing);
+  // Encoding is intentionally blocking, but yielding at each rendered band
+  // keeps the idle task and task watchdog serviced while the progress UI moves.
+  vTaskDelay(pdMS_TO_TICKS(1));
+}
+
+bool run_export(VectorV2Export& exporter, const OperationLog& log, vector_v2::ChromeState& chrome,
+                VectorV2Presenter& presenter) {
+  chrome.popup = vector_v2::ChromePopup::kNone;
+  chrome.confirm_new = false;
+  chrome.export_status = vector_v2::ChromeExportStatus::kSaving;
+  chrome.export_progress = 0;
+  const auto started = presenter.refresh(chrome, now_us());
+  print_presentation("export-start", presenter, started);
+
   exporter.prepare_reencode();
-  const VectorV2ExportStats stats = exporter.encode(log);
-  const bool usb_ready = stats.encoded && exporter.present_usb();
+  ExportProgressContext progress{.chrome = &chrome, .presenter = &presenter};
+  const VectorV2ExportStats stats = exporter.encode(log, present_export_progress, &progress);
+  chrome.export_progress = stats.encoded ? 100 : chrome.export_progress;
+  chrome.export_status =
+      stats.encoded ? vector_v2::ChromeExportStatus::kSaved : vector_v2::ChromeExportStatus::kError;
+  const auto finished = presenter.refresh(chrome, now_us());
+  print_presentation("export-finish", presenter, finished);
   std::printf(
-      "TINYDRAW_V2_EXPORT encoded=%u usb=%u bytes=%lu elapsed_us=%lld workspace_bytes=%lu "
-      "band_bytes=%lu free_psram=%lu free_internal=%lu\n",
-      stats.encoded, usb_ready, static_cast<unsigned long>(stats.bytes),
+      "TINYDRAW_V2_EXPORT encoded=%u bytes=%lu elapsed_us=%lld workspace_bytes=%lu "
+      "band_bytes=%lu free_psram=%lu free_internal=%lu usb_attempt=%u\n",
+      stats.encoded, static_cast<unsigned long>(stats.bytes),
       static_cast<long long>(stats.elapsed_us), static_cast<unsigned long>(stats.workspace_bytes),
       static_cast<unsigned long>(stats.band_bytes),
       static_cast<unsigned long>(stats.free_psram_after),
-      static_cast<unsigned long>(stats.free_internal_after));
+      static_cast<unsigned long>(stats.free_internal_after), stats.encoded);
   std::fflush(stdout);
+  if (!stats.encoded) {
+    return false;
+  }
+  vTaskDelay(pdMS_TO_TICKS(150));
+  const bool usb_ready = exporter.present_usb();
+  if (!usb_ready) {
+    chrome.export_status = vector_v2::ChromeExportStatus::kError;
+    static_cast<void>(presenter.refresh(chrome, now_us()));
+  }
+  return usb_ready;
 }
 
 bool apply_chrome_action(vector_v2::ChromeAction action, Point point,
@@ -573,22 +620,27 @@ bool apply_chrome_action(vector_v2::ChromeAction action, Point point,
     case vector_v2::ChromeAction::kNextPalette:
       chrome.palette_page = 1;
       break;
-    case vector_v2::ChromeAction::kNewDrawing: {
+    case vector_v2::ChromeAction::kNewDrawing:
+      chrome.popup = vector_v2::ChromePopup::kNone;
+      chrome.confirm_new = true;
+      break;
+    case vector_v2::ChromeAction::kCancelNewDrawing:
+      chrome.confirm_new = false;
+      break;
+    case vector_v2::ChromeAction::kConfirmNewDrawing: {
       const DocumentRevision revision{canvas.current_revision().value + 1U};
       if (!vector_v2::restore_document_snapshot(log, canvas, revision, blank_snapshot) ||
           !producer.reset_uniform_baseline(revision)) {
         return false;
       }
+      chrome.confirm_new = false;
       chrome.popup = vector_v2::ChromePopup::kNone;
       break;
     }
     case vector_v2::ChromeAction::kExport:
-      // Blocking by design for now, exactly like Raster V1: render, encode,
-      // then present the USB disk. Activating USB ends any serial console
-      // session until the next reset.
-      run_export(exporter, log);
-      chrome.popup = vector_v2::ChromePopup::kNone;
-      break;
+      // Blocking by design, like Raster V1. Progress updates yield once per
+      // rendered band; activating USB then ends serial until the next reset.
+      return chrome.can_export && run_export(exporter, log, chrome, presenter);
     case vector_v2::ChromeAction::kNone:
     case vector_v2::ChromeAction::kUndo:
     case vector_v2::ChromeAction::kRedo:
@@ -678,6 +730,7 @@ void run_vector_v2_app() {
   vector_v2::ChromeState chrome;
   chrome.tool = vector_v2::ChromeTool::kDraw;
   chrome.size = vector_v2::ChromeSize::kLarge;
+  chrome.can_export = exporter.ready();
   InkConfig ink_config;
   ink_config.size = vector_v2::brush_size(chrome.size);
   InkStream ink(ink_config);
@@ -806,6 +859,11 @@ void run_vector_v2_app() {
       if (!pressed && sampled_touch->kind == vector_v2::TouchEventKind::kDown) {
         pressed = true;
         last_touch = point;
+        if (chrome.export_status == vector_v2::ChromeExportStatus::kSaved ||
+            chrome.export_status == vector_v2::ChromeExportStatus::kError) {
+          chrome.export_status = vector_v2::ChromeExportStatus::kIdle;
+          static_cast<void>(presenter.refresh(chrome, loop_us));
+        }
         if (vector_v2::chrome_contains({point.x, point.y}, chrome)) {
           toolbar_pressed = true;
           toolbar_sum = point;

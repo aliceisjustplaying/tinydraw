@@ -22,12 +22,16 @@ constexpr std::size_t kExportBandPixels =
 
 class BandRowSource final : public PngRowSource {
  public:
-  BandRowSource(const vector_v2::OperationLog& log, std::span<std::uint16_t> band)
-      : renderer_(log, band) {}
+  BandRowSource(const vector_v2::OperationLog& log, std::span<std::uint16_t> band,
+                VectorV2ExportProgress progress, void* progress_context)
+      : renderer_(log, band), progress_(progress), progress_context_(progress_context) {}
 
   [[nodiscard]] bool ready() const { return renderer_.ready(); }
 
   bool row(int y, std::span<std::uint16_t> destination) override {
+    if (y % kExportBandRows == 0 && progress_ != nullptr) {
+      progress_(y, vector_v2::kWorldHeight, progress_context_);
+    }
     if ((y & 0xFFU) == 0U) {
       // Progress marker roughly every 256 rows so long encodes remain
       // observable over serial and hangs are attributable to a row.
@@ -39,6 +43,8 @@ class BandRowSource final : public PngRowSource {
 
  private:
   vector_v2::WorldBandRenderer renderer_;
+  VectorV2ExportProgress progress_ = nullptr;
+  void* progress_context_ = nullptr;
 };
 
 }  // namespace
@@ -54,7 +60,9 @@ bool VectorV2Export::read_image(std::size_t offset, std::span<std::uint8_t> outp
   return store_.read(offset, output);
 }
 
-VectorV2ExportStats VectorV2Export::encode(const vector_v2::OperationLog& log) {
+VectorV2ExportStats VectorV2Export::encode(const vector_v2::OperationLog& log,
+                                           VectorV2ExportProgress progress,
+                                           void* progress_context) {
   VectorV2ExportStats stats{
       .workspace_bytes = png_encoder_workspace_bytes(),
       .band_bytes = kExportBandPixels * sizeof(std::uint16_t),
@@ -69,11 +77,14 @@ VectorV2ExportStats VectorV2Export::encode(const vector_v2::OperationLog& log) {
     return stats;
   }
   {
-    BandRowSource source(log, std::span(band, kExportBandPixels));
+    BandRowSource source(log, std::span(band, kExportBandPixels), progress, progress_context);
     if (source.ready()) {
       const ImageExportStats encoded = store_.encode_rows(source);
       stats.encoded = encoded.success;
       stats.bytes = encoded.bytes;
+      if (stats.encoded && progress != nullptr) {
+        progress(vector_v2::kWorldHeight, vector_v2::kWorldHeight, progress_context);
+      }
     }
   }
   heap_caps_free(band);
