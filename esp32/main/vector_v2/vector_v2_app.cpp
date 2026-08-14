@@ -289,7 +289,8 @@ void include_bounds(std::optional<vector_v2::PixelRect>& accumulated, vector_v2:
 
 std::optional<vector_v2::IncrementalAppendResult> commit_pending_chunk(
     ChainedOperationBuilder& builder, OperationLog& log, MaterializedCanvas& canvas,
-    const IncrementalDocumentWorkspace& workspace, const VectorV2Presenter& presenter) {
+    const IncrementalDocumentWorkspace& workspace, const VectorV2Presenter& presenter,
+    vector_v2::IncrementalPublicationScope publication_scope) {
   const auto append = builder.pending_append();
   if (!append.has_value()) {
     return std::nullopt;
@@ -300,23 +301,27 @@ std::optional<vector_v2::IncrementalAppendResult> commit_pending_chunk(
                        presenter.level_x() + vector_v2::kOverviewWidth,
                        presenter.level_y() + vector_v2::kOverviewHeight},
   };
+  if (presenter.zoom() == ZoomLevel::k25Percent &&
+      publication_scope != vector_v2::IncrementalPublicationScope::kOverviewOnly) {
+    publication_scope = vector_v2::IncrementalPublicationScope::kAllMaterialized;
+  }
   return vector_v2::append_incrementally(
       log, canvas, *append, workspace,
       {.priority_view = presenter.zoom() == ZoomLevel::k25Percent
                             ? std::optional<vector_v2::ViewRequest>{}
                             : std::optional{priority_view},
-       .publication_scope = presenter.zoom() == ZoomLevel::k25Percent
-                                ? vector_v2::IncrementalPublicationScope::kAllMaterialized
-                                : vector_v2::IncrementalPublicationScope::kPriorityView});
+       .publication_scope = publication_scope});
 }
 
 std::optional<ChainedOperationStatus> commit_ready_chunk(
     ChainedOperationBuilder& builder, OperationLog& log, MaterializedCanvas& canvas,
     const IncrementalDocumentWorkspace& workspace, const VectorV2Presenter& presenter,
+    vector_v2::IncrementalPublicationScope publication_scope,
     std::optional<vector_v2::PixelRect>& accumulated_bounds, std::uint32_t& chunks,
     std::int64_t& append_us) {
   const std::int64_t started_us = esp_timer_get_time();
-  const auto committed = commit_pending_chunk(builder, log, canvas, workspace, presenter);
+  const auto committed =
+      commit_pending_chunk(builder, log, canvas, workspace, presenter, publication_scope);
   append_us += esp_timer_get_time() - started_us;
   if (!committed.has_value()) {
     return std::nullopt;
@@ -801,8 +806,9 @@ void run_vector_v2_app() {
           ChainedOperationStatus add_status = builder.add(add_point);
           if (add_status == ChainedOperationStatus::kChunkReady) {
             const auto continued =
-                commit_ready_chunk(builder, log, canvas, workspace, presenter, stroke_world_bounds,
-                                   stroke_chunks, stroke_append_us);
+                commit_ready_chunk(builder, log, canvas, workspace, presenter,
+                                   vector_v2::IncrementalPublicationScope::kOverviewOnly,
+                                   stroke_world_bounds, stroke_chunks, stroke_append_us);
             add_status = continued.value_or(ChainedOperationStatus::kRejected);
             stroke_commit_failed = !continued.has_value();
           }
@@ -866,11 +872,16 @@ void run_vector_v2_app() {
         const std::int64_t builder_finish_started = esp_timer_get_time();
         ChainedOperationStatus finish_status = builder.finish(presenter.operation_point(last_ink));
         measured_lift.builder_finish_us = esp_timer_get_time() - builder_finish_started;
+        const bool chained_stroke =
+            stroke_chunks != 0U || finish_status == ChainedOperationStatus::kChunkReady;
+        const auto finish_publication_scope =
+            chained_stroke ? vector_v2::IncrementalPublicationScope::kOverviewOnly
+                           : vector_v2::IncrementalPublicationScope::kPriorityView;
         while (finish_status == ChainedOperationStatus::kChunkReady ||
                finish_status == ChainedOperationStatus::kFinalChunkReady) {
-          const auto continued =
-              commit_ready_chunk(builder, log, canvas, workspace, presenter, stroke_world_bounds,
-                                 stroke_chunks, stroke_append_us);
+          const auto continued = commit_ready_chunk(builder, log, canvas, workspace, presenter,
+                                                    finish_publication_scope, stroke_world_bounds,
+                                                    stroke_chunks, stroke_append_us);
           if (!continued.has_value()) {
             stroke_commit_failed = true;
             finish_status = ChainedOperationStatus::kRejected;
@@ -897,10 +908,15 @@ void run_vector_v2_app() {
         builder.cancel();
         ribbon.reset();
         const std::int64_t refresh_started = esp_timer_get_time();
+        // Chained strokes already painted exact live pixels into the retained
+        // framebuffer. Keep those pixels visible while invalidated detail refills
+        // cooperatively instead of flashing the overview fallback on lift.
         measured_lift.refresh =
-            stroke_world_bounds.has_value()
+            stroke_world_bounds.has_value() && !chained_stroke
                 ? presenter.refresh_region(measured_lift.refresh_level_bounds, chrome, finished_us)
-                : LivePresentationTiming{};
+                : LivePresentationTiming{
+                      .frame_reused = chained_stroke,
+                      .passed = chained_stroke || !stroke_world_bounds.has_value()};
         measured_lift.refresh_wall_us = esp_timer_get_time() - refresh_started;
         if (stroke_report.pending || lift_timing.pending) {
           ++lift_reports_dropped;

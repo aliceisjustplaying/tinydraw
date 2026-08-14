@@ -32,6 +32,9 @@ struct IncrementalAppendResult {
 enum class IncrementalPublicationScope : std::uint8_t {
   kAllMaterialized,
   kPriorityView,
+  // Publish exact overview authority and invalidate affected detail. The live
+  // framebuffer can remain visible while detail refills cooperatively.
+  kOverviewOnly,
 };
 
 struct IncrementalAppendOptions {
