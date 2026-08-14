@@ -20,6 +20,7 @@ namespace tinydraw::esp32 {
     VectorV2Presenter& presenter, vector_v2::TileProducer& producer, vector_v2::OperationLog& log,
     vector_v2::MaterializedCanvas& canvas, VectorV2TouchSampler& touch,
     const vector_v2::ChromeState& chrome, const vector_v2::IncrementalDocumentWorkspace& workspace,
+    const vector_v2::InPlaceAppendWorkspace& in_place_workspace,
     std::span<const std::uint16_t> blank_snapshot,
     std::span<vector_v2::CompactOperationSample> conversion_storage,
     std::span<std::uint16_t> packed_tile_pixels);

@@ -30,6 +30,13 @@ inline constexpr int kMaximumCachedPanDelta = 96;
 // Cached pan composition is strip-looped through the same bounded scratch as
 // progressive tile presentation, so wider reuse costs no additional PSRAM.
 inline constexpr std::size_t kLiveRegionScratchPixels = kMaximumProgressiveRegionPixels;
+// Interactive gestures commit in bounded chunks so intermediate authority
+// publication stays inside one input-poll slice. Forty-eight samples measured
+// 11.5 ms worst-case in-place commit for a maximum-speed XL 400% gesture
+// (64 samples measured 14.9 ms, too close to the 15 ms slice bound; 32
+// samples cost 42% more total work). The deterministic long-gesture harness
+// gate re-proves the bound with this exact constant.
+inline constexpr std::size_t kInteractiveChunkSampleLimit = 48;
 
 struct LivePresentationTiming {
   std::int64_t compose_us = 0;

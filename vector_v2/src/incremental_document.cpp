@@ -161,6 +161,166 @@ std::optional<IncrementalAppendResult> append_incrementally(
                                  .fallback_tiles = *resident_count - publication_count};
 }
 
+namespace {
+
+// Paints exactly the operation's covered pixels into one tile. The operation
+// is a single tool and color, so its segments can replay newest-first through
+// a finalized mask: every covered pixel is written exactly once and the
+// resulting pixel union is identical to forward per-segment painting.
+bool paint_operation_into_tile(const OperationAppend& operation, const InPlaceTileEdit& edit,
+                               std::span<std::uint8_t> tile_mask) {
+  const RasterSurface surface{
+      .zoom = edit.key.zoom,
+      .level_bounds = edit.bounds,
+      .pixels = edit.pixels.first(static_cast<std::size_t>(edit.bounds.y1 - edit.bounds.y0 - 1) *
+                                      kTileWidth +
+                                  static_cast<std::size_t>(edit.bounds.x1 - edit.bounds.x0)),
+      .stride = kTileWidth,
+  };
+  const std::size_t mask_bytes = (surface.pixels.size() + 7U) / 8U;
+  std::fill_n(tile_mask.begin(), mask_bytes, std::uint8_t{0});
+  if (operation.samples.size() == 1U) {
+    return apply_masked_incremental_segment({.tool = operation.tool,
+                                             .color = operation.color,
+                                             .first = operation.samples.front(),
+                                             .second = operation.samples.front()},
+                                            surface, tile_mask);
+  }
+  for (std::size_t index = operation.samples.size(); index-- > 1U;) {
+    const PixelRect segment_bounds = incremental_segment_level_bounds(
+        operation.samples[index - 1U], operation.samples[index], edit.key.zoom);
+    if (!intersects(segment_bounds, edit.bounds)) {
+      continue;
+    }
+    if (!apply_masked_incremental_segment({.tool = operation.tool,
+                                           .color = operation.color,
+                                           .first = operation.samples[index - 1U],
+                                           .second = operation.samples[index]},
+                                          surface, tile_mask)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool valid_in_place_workspace(const OperationLog& log, const MaterializedCanvas& canvas,
+                              const InPlaceAppendWorkspace& workspace) {
+  const std::array<std::span<const std::byte>, 3> workspaces{
+      std::as_bytes(workspace.overview_scratch), std::as_bytes(workspace.affected_keys),
+      std::as_bytes(workspace.tile_mask)};
+  bool workspace_invalid = workspace.tile_mask.size() < kInPlaceTileMaskBytes;
+  for (std::size_t left = 0; left < workspaces.size(); ++left) {
+    workspace_invalid = workspace_invalid || !canvas.accepts_external_workspace(workspaces[left]) ||
+                        log.workspace_overlaps_storage(workspaces[left]);
+    for (std::size_t right = left + 1U; right < workspaces.size(); ++right) {
+      workspace_invalid =
+          workspace_invalid || storage_overlaps(workspaces[left], workspaces[right]);
+    }
+  }
+  return !workspace_invalid;
+}
+
+// Mutation phase of the in-place append: no step may abandon the commit. A
+// tile that cannot be updated is simply not retained and becomes correct
+// overview fallback. Retained keys are swap-partitioned into the prefix of
+// the enumeration so no key is lost or visited twice; uniform conversions run
+// first so their slot eviction can never pick a raw tile edited earlier in
+// this same commit. Returns the retained-prefix length.
+std::size_t retain_affected_tiles(MaterializedCanvas& canvas, const OperationAppend& operation,
+                                  std::uint16_t painted_color,
+                                  const std::optional<ViewRequest>& priority_view,
+                                  std::span<TileKey> affected, std::span<std::uint8_t> tile_mask) {
+  std::size_t retained = 0;
+  for (std::size_t index = 0; index < affected.size(); ++index) {
+    const TileKey key = affected[index];
+    const auto color = canvas.uniform_color(key);
+    if (!color.has_value()) {
+      continue;
+    }
+    bool keep = false;
+    if (*color == painted_color) {
+      // Painting this color over an identical uniform is a no-op; retain it.
+      keep = true;
+    } else if (in_priority_view(key, priority_view)) {
+      const auto edit = canvas.materialize_uniform_as_raw(key);
+      if (edit.has_value() && paint_operation_into_tile(operation, *edit, tile_mask)) {
+        keep = true;
+      } else if (edit.has_value()) {
+        canvas.invalidate_identity(key);
+      }
+    }
+    if (keep) {
+      std::swap(affected[index], affected[retained]);
+      ++retained;
+    }
+  }
+  for (std::size_t index = retained; index < affected.size(); ++index) {
+    const TileKey key = affected[index];
+    const auto edit = canvas.edit_resident_tile(key);
+    if (!edit.has_value()) {
+      continue;
+    }
+    if (paint_operation_into_tile(operation, *edit, tile_mask)) {
+      std::swap(affected[index], affected[retained]);
+      ++retained;
+    } else {
+      canvas.invalidate_identity(key);
+    }
+  }
+  return retained;
+}
+
+}  // namespace
+
+std::optional<IncrementalAppendResult> append_incrementally_in_place(
+    OperationLog& log, MaterializedCanvas& canvas, const OperationAppend& append_request,
+    const InPlaceAppendWorkspace& workspace, std::optional<ViewRequest> priority_view) {
+  if (!canvas.ready() || !log.ready() || !valid_in_place_workspace(log, canvas, workspace) ||
+      canvas.overview_pixels().size() != kOverviewPixels ||
+      log.current_revision() != canvas.current_revision() || !valid_priority_view(priority_view)) {
+    return std::nullopt;
+  }
+  auto prepared = log.prepare(append_request);
+  if (!prepared.has_value()) {
+    return std::nullopt;
+  }
+  const StoredOperation& stored = prepared->operation();
+  const OperationIdentity identity = stored.identity;
+  const OperationAppend operation{
+      .tool = stored.tool, .color = stored.color, .samples = stored.samples};
+  OverviewRevisionPublication overview_publication{};
+  const bool overview_ready = prepare_overview(canvas, operation, stored.world_bounds,
+                                               workspace.overview_scratch, overview_publication);
+  const auto resident_count = canvas.materialized_tiles_intersecting(
+      stored.world_bounds, workspace.affected_keys, priority_view, false);
+  if (!overview_ready || !resident_count.has_value() ||
+      !canvas.can_edit_in_place_revision(identity.revision, overview_publication,
+                                         stored.world_bounds)) {
+    prepared->cancel();
+    return std::nullopt;
+  }
+
+  const auto affected = workspace.affected_keys.first(*resident_count);
+  const std::uint16_t painted_color =
+      stored.tool == OperationTool::kEraser ? 0xFFFFU : stored.color;
+  const std::size_t retained = retain_affected_tiles(canvas, operation, painted_color,
+                                                     priority_view, affected, workspace.tile_mask);
+  if (!canvas.commit_in_place_revision(identity.revision, overview_publication, stored.world_bounds,
+                                       affected.first(retained))) {
+    for (const TileKey key : affected.first(retained)) {
+      canvas.invalidate_identity(key);
+    }
+    prepared->cancel();
+    return std::nullopt;
+  }
+  prepared->publish();
+  return IncrementalAppendResult{.identity = identity,
+                                 .affected_world_bounds = stored.world_bounds,
+                                 .affected_resident_tiles = *resident_count,
+                                 .published_tiles = retained,
+                                 .fallback_tiles = *resident_count - retained};
+}
+
 bool restore_document_snapshot(OperationLog& log, MaterializedCanvas& canvas,
                                DocumentRevision revision,
                                std::span<const std::uint16_t> overview_pixels) {

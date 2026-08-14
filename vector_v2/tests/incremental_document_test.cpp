@@ -6,6 +6,11 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <span>
+#include <vector>
+
+#include "tinydraw/vector_v2/memory_layout.h"
+#include "tinydraw/vector_v2/tile_producer.h"
 
 namespace vector_v2 = tinydraw::vector_v2;
 
@@ -738,4 +743,308 @@ TEST_CASE("incremental document can commit with no affected resident tiles") {
   CHECK(result->affected_resident_tiles == 0U);
   CHECK(fixture.log.current_revision() == vector_v2::DocumentRevision{1});
   CHECK(fixture.canvas.current_revision() == vector_v2::DocumentRevision{1});
+}
+
+// ---------------------------------------------------------------------------
+// In-place append equivalence and primitives
+// ---------------------------------------------------------------------------
+
+namespace {
+
+struct EquivalenceRig {
+  std::vector<vector_v2::OperationRecord> records = std::vector<vector_v2::OperationRecord>(2'000);
+  std::vector<vector_v2::CompactOperationSample> samples =
+      std::vector<vector_v2::CompactOperationSample>(40'000);
+  std::vector<std::uint16_t> overview =
+      std::vector<std::uint16_t>(vector_v2::kOverviewPixels, 0xFFFFU);
+  std::vector<std::uint16_t> snapshot =
+      std::vector<std::uint16_t>(vector_v2::kOverviewPixels, 0xFFFFU);
+  std::unique_ptr<
+      std::array<vector_v2::MaterializedUniformStorage, vector_v2::kMaterializedTileIdentityCount>>
+      uniforms = std::make_unique<std::array<vector_v2::MaterializedUniformStorage,
+                                             vector_v2::kMaterializedTileIdentityCount>>();
+  std::vector<std::uint8_t> occupancy = std::vector<std::uint8_t>(vector_v2::kOccupancyBytes);
+  std::vector<vector_v2::MaterializedSlotStorage> slots =
+      std::vector<vector_v2::MaterializedSlotStorage>(vector_v2::kTileSlotCount);
+  std::vector<std::uint16_t> tile_pool =
+      std::vector<std::uint16_t>(slots.size() * vector_v2::kTilePixels);
+  std::vector<std::uint16_t> supertask = std::vector<std::uint16_t>(vector_v2::kTileProducerPixels);
+  std::vector<std::uint16_t> packed = std::vector<std::uint16_t>(vector_v2::kTilePixels);
+  std::vector<std::uint8_t> mask = std::vector<std::uint8_t>(vector_v2::kTileProducerMaskBytes);
+  std::vector<std::uint16_t> summary_rows =
+      std::vector<std::uint16_t>(vector_v2::kTileProducerSummaryRows);
+  std::vector<std::uint32_t> summary_words =
+      std::vector<std::uint32_t>(vector_v2::kTileProducerSummaryWords);
+  std::vector<std::uint16_t> overview_scratch =
+      std::vector<std::uint16_t>(vector_v2::kOverviewPixels);
+  std::vector<std::uint16_t> tile_scratch =
+      std::vector<std::uint16_t>(vector_v2::kMaximumVisibleTiles * vector_v2::kTilePixels);
+  std::vector<vector_v2::TileRevisionPublication> publications =
+      std::vector<vector_v2::TileRevisionPublication>(vector_v2::kMaximumVisibleTiles);
+  std::vector<vector_v2::TileKey> affected_keys =
+      std::vector<vector_v2::TileKey>(vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles);
+  std::vector<std::uint8_t> chunk_mask =
+      std::vector<std::uint8_t>(vector_v2::kInPlaceTileMaskBytes);
+  vector_v2::OperationLog log{records, samples};
+  vector_v2::MaterializedCanvas canvas{overview, *uniforms, occupancy, slots, tile_pool};
+  vector_v2::TileProducer producer{log,
+                                   canvas,
+                                   {.supertask_pixels = supertask,
+                                    .packed_tile_pixels = packed,
+                                    .finalized_pixels = mask,
+                                    .summary_row_unset = summary_rows,
+                                    .summary_saturated_words = summary_words}};
+
+  EquivalenceRig() {
+    REQUIRE(vector_v2::restore_document_snapshot(log, canvas, {1}, snapshot));
+    REQUIRE(producer.reset_uniform_baseline({1}));
+  }
+
+  [[nodiscard]] vector_v2::IncrementalDocumentWorkspace reference_workspace() {
+    return {.overview_scratch = overview_scratch,
+            .tile_scratch = tile_scratch,
+            .publications = publications,
+            .affected_keys = affected_keys};
+  }
+
+  [[nodiscard]] vector_v2::InPlaceAppendWorkspace in_place_workspace() {
+    return {.overview_scratch = overview_scratch,
+            .affected_keys = affected_keys,
+            .tile_mask = chunk_mask};
+  }
+
+  void cold_fill(const vector_v2::ViewRequest& view) {
+    for (std::size_t step = 0; step < 100'000U; ++step) {
+      const auto produced = producer.produce_next(view);
+      REQUIRE(produced.has_value());
+      if (produced->complete) {
+        return;
+      }
+    }
+    REQUIRE(false);
+  }
+};
+
+void forward_replay(vector_v2::OperationLog& log, const vector_v2::ViewRequest& view,
+                    std::span<std::uint16_t> pixels) {
+  std::fill(pixels.begin(), pixels.end(), 0xFFFFU);
+  for (std::size_t index = 0; index < log.operation_count(); ++index) {
+    const auto stored = log.operation(index);
+    REQUIRE(stored.has_value());
+    REQUIRE(vector_v2::apply_incremental_operation(
+        {.tool = stored->tool, .color = stored->color, .samples = stored->samples},
+        {.zoom = view.zoom,
+         .level_bounds = view.level_pixels,
+         .pixels = pixels,
+         .stride = view.level_pixels.x1 - view.level_pixels.x0}));
+  }
+}
+
+}  // namespace
+
+TEST_CASE("in-place append equals the reference transactional append") {
+  EquivalenceRig reference;
+  EquivalenceRig in_place;
+  const vector_v2::ViewRequest priority_view{
+      .zoom = vector_v2::ZoomLevel::k400Percent,
+      .level_pixels = {64, 64, 64 + vector_v2::kOverviewWidth, 64 + vector_v2::kOverviewHeight},
+  };
+  const vector_v2::ViewRequest coarse_view{
+      .zoom = vector_v2::ZoomLevel::k100Percent,
+      .level_pixels = {0, 0, 256, 256},
+  };
+  reference.cold_fill(priority_view);
+  reference.cold_fill(coarse_view);
+  in_place.cold_fill(priority_view);
+  in_place.cold_fill(coarse_view);
+
+  // Deterministic multi-gesture chunk stream: pen and eraser, tapered and
+  // constant radii, 64-sample chunks overlapping one boundary sample.
+  std::uint32_t state = 0x1234'5678U;
+  const auto next_random = [&state]() {
+    state = state * 1'664'525U + 1'013'904'223U;
+    return state >> 8U;
+  };
+  std::vector<vector_v2::CompactOperationSample> gesture;
+  std::size_t chunk_count = 0;
+  for (std::size_t gesture_index = 0; gesture_index < 8U; ++gesture_index) {
+    gesture.clear();
+    int x = 80 + static_cast<int>(next_random() % 400U);
+    int y = 80 + static_cast<int>(next_random() % 480U);
+    const bool eraser = gesture_index % 3U == 2U;
+    const bool constant_radius = gesture_index % 2U == 0U;
+    const std::uint16_t base_radius = static_cast<std::uint16_t>(192U + next_random() % 1'600U);
+    const std::size_t gesture_samples = 40U + next_random() % 160U;
+    for (std::size_t index = 0; index < gesture_samples; ++index) {
+      x = std::clamp(x + static_cast<int>(next_random() % 15U) - 7, 0, vector_v2::kWorldWidth * 4);
+      y = std::clamp(y + static_cast<int>(next_random() % 15U) - 7, 0, vector_v2::kWorldHeight * 4);
+      gesture.push_back({.x_quarter = static_cast<std::uint16_t>(x),
+                         .y_quarter = static_cast<std::uint16_t>(y),
+                         .radius_256 = constant_radius
+                                           ? base_radius
+                                           : static_cast<std::uint16_t>(
+                                                 128U + (base_radius + index * 173U) % 1'800U),
+                         .elapsed_ms = 0U});
+    }
+    // Chunk with one-sample overlap, exactly like ChainedOperationBuilder.
+    std::size_t start = 0;
+    while (start < gesture.size()) {
+      const std::size_t count = std::min<std::size_t>(64U, gesture.size() - start);
+      const auto chunk_samples = std::span(gesture).subspan(start, count);
+      for (std::size_t index = 0; index < chunk_samples.size(); ++index) {
+        chunk_samples[index].elapsed_ms = static_cast<std::uint16_t>(index * 8U);
+      }
+      const vector_v2::OperationAppend chunk{
+          .tool = eraser ? vector_v2::OperationTool::kEraser : vector_v2::OperationTool::kPen,
+          .color = static_cast<std::uint16_t>(next_random() & 0xFFFFU),
+          .samples = chunk_samples,
+      };
+      const auto reference_result = vector_v2::append_incrementally(
+          reference.log, reference.canvas, chunk, reference.reference_workspace(),
+          {.priority_view = priority_view,
+           .publication_scope = vector_v2::IncrementalPublicationScope::kPriorityView});
+      const auto in_place_result = vector_v2::append_incrementally_in_place(
+          in_place.log, in_place.canvas, chunk, in_place.in_place_workspace(), priority_view);
+      REQUIRE(reference_result.has_value());
+      REQUIRE(in_place_result.has_value());
+      CHECK(reference_result->identity == in_place_result->identity);
+      CHECK(reference.log.current_revision() == in_place.log.current_revision());
+      CHECK(reference.canvas.current_revision() == in_place.canvas.current_revision());
+      ++chunk_count;
+      start += count == 64U ? 63U : count;
+    }
+
+    // The priority view must stay fully resident and pixel-identical on both
+    // paths after every gesture.
+    std::vector<std::uint16_t> reference_view(vector_v2::kOverviewPixels);
+    std::vector<std::uint16_t> in_place_view(vector_v2::kOverviewPixels);
+    const auto reference_stats = reference.canvas.compose_view(priority_view, reference_view);
+    const auto in_place_stats = in_place.canvas.compose_view(priority_view, in_place_view);
+    REQUIRE(reference_stats.has_value());
+    REQUIRE(in_place_stats.has_value());
+    CHECK(reference_stats->fallback_pixels == 0U);
+    CHECK(in_place_stats->fallback_pixels == 0U);
+    CHECK(reference_view == in_place_view);
+    // The in-place priority view also equals ground-truth forward replay.
+    std::vector<std::uint16_t> direct(vector_v2::kOverviewPixels);
+    forward_replay(in_place.log, priority_view, direct);
+    CHECK(in_place_view == direct);
+    // Both overviews remain identical to each other.
+    CHECK(std::equal(reference.canvas.overview_pixels().begin(),
+                     reference.canvas.overview_pixels().end(),
+                     in_place.canvas.overview_pixels().begin()));
+  }
+  CHECK(chunk_count >= 16U);
+
+  // In-place keeps affected non-view raw tiles current instead of
+  // invalidating them (out-of-view mismatched uniforms still fall back, like
+  // the reference path). Every tile still resident must equal ground truth.
+  std::vector<std::uint16_t> coarse_direct(256U * 256U);
+  forward_replay(in_place.log, coarse_view, coarse_direct);
+  std::size_t resident_coarse_tiles = 0;
+  std::array<std::uint16_t, vector_v2::kTilePixels> resident_tile{};
+  for (std::uint16_t row = 0; row < 4U; ++row) {
+    for (std::uint16_t column = 0; column < 4U; ++column) {
+      const vector_v2::TileKey key{vector_v2::ZoomLevel::k100Percent, column, row};
+      const auto source = in_place.canvas.lookup(key);
+      if (!source.has_value() || source->kind == vector_v2::SourceKind::kOverview) {
+        continue;
+      }
+      ++resident_coarse_tiles;
+      const auto bounds = vector_v2::tile_pixel_bounds(key);
+      const std::size_t pixel_count = static_cast<std::size_t>(bounds.x1 - bounds.x0) *
+                                      static_cast<std::size_t>(bounds.y1 - bounds.y0);
+      REQUIRE(in_place.canvas.copy_resident_tile(key, std::span(resident_tile).first(pixel_count)));
+      bool equal = true;
+      for (int y = bounds.y0; y < bounds.y1; ++y) {
+        for (int x = bounds.x0; x < bounds.x1; ++x) {
+          equal =
+              equal &&
+              resident_tile[static_cast<std::size_t>(y - bounds.y0) *
+                                static_cast<std::size_t>(bounds.x1 - bounds.x0) +
+                            static_cast<std::size_t>(x - bounds.x0)] ==
+                  coarse_direct[static_cast<std::size_t>(y) * 256U + static_cast<std::size_t>(x)];
+        }
+      }
+      CHECK(equal);
+    }
+  }
+  CHECK(resident_coarse_tiles > 0U);
+}
+
+TEST_CASE("in-place append retains matching uniforms under an eraser") {
+  EquivalenceRig rig;
+  const vector_v2::ViewRequest view{
+      .zoom = vector_v2::ZoomLevel::k400Percent,
+      .level_pixels = {0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
+  };
+  rig.cold_fill(view);
+  const vector_v2::TileKey paper_key{vector_v2::ZoomLevel::k400Percent, 1, 1};
+  REQUIRE(rig.canvas.uniform_color(paper_key) == 0xFFFFU);
+
+  std::array<vector_v2::CompactOperationSample, 8> erase{};
+  for (std::size_t index = 0; index < erase.size(); ++index) {
+    erase[index] = {.x_quarter = static_cast<std::uint16_t>(60U + index * 40U),
+                    .y_quarter = static_cast<std::uint16_t>(60U + index * 40U),
+                    .radius_256 = 1'024U,
+                    .elapsed_ms = static_cast<std::uint16_t>(index * 8U)};
+  }
+  const auto result = vector_v2::append_incrementally_in_place(
+      rig.log, rig.canvas,
+      {.tool = vector_v2::OperationTool::kEraser, .color = 0xFFFFU, .samples = erase},
+      rig.in_place_workspace(), view);
+  REQUIRE(result.has_value());
+  // The paper uniform crossed by the eraser is retained untouched instead of
+  // being converted or invalidated.
+  CHECK(rig.canvas.uniform_color(paper_key) == 0xFFFFU);
+  CHECK(result->fallback_tiles == 0U);
+  std::vector<std::uint16_t> composed(vector_v2::kOverviewPixels);
+  const auto stats = rig.canvas.compose_view(view, composed);
+  REQUIRE(stats.has_value());
+  CHECK(stats->fallback_pixels == 0U);
+  std::vector<std::uint16_t> direct(vector_v2::kOverviewPixels);
+  forward_replay(rig.log, view, direct);
+  CHECK(composed == direct);
+}
+
+TEST_CASE("in-place append fails atomically before mutation") {
+  EquivalenceRig rig;
+  const vector_v2::ViewRequest view{
+      .zoom = vector_v2::ZoomLevel::k400Percent,
+      .level_pixels = {0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
+  };
+  rig.cold_fill(view);
+  const std::vector<std::uint16_t> overview_before(rig.canvas.overview_pixels().begin(),
+                                                   rig.canvas.overview_pixels().end());
+  const auto revision_before = rig.canvas.current_revision();
+
+  const std::array valid{
+      vector_v2::CompactOperationSample{.x_quarter = 100, .y_quarter = 100, .radius_256 = 512},
+      vector_v2::CompactOperationSample{
+          .x_quarter = 300, .y_quarter = 300, .radius_256 = 512, .elapsed_ms = 8},
+  };
+  // Invalid sample: zero radius is rejected by log preparation.
+  const std::array invalid{
+      vector_v2::CompactOperationSample{.x_quarter = 100, .y_quarter = 100, .radius_256 = 0}};
+  CHECK_FALSE(vector_v2::append_incrementally_in_place(rig.log, rig.canvas,
+                                                       {.color = 0x001FU, .samples = invalid},
+                                                       rig.in_place_workspace(), view)
+                  .has_value());
+  // A pinned source blocks the canvas validation stage.
+  auto pin = rig.canvas.pin({vector_v2::ZoomLevel::k400Percent, 0, 0});
+  REQUIRE(pin.has_value());
+  CHECK_FALSE(vector_v2::append_incrementally_in_place(rig.log, rig.canvas,
+                                                       {.color = 0x001FU, .samples = valid},
+                                                       rig.in_place_workspace(), view)
+                  .has_value());
+  pin->reset();
+  CHECK(rig.canvas.current_revision() == revision_before);
+  CHECK(rig.log.current_revision() == revision_before);
+  CHECK(std::equal(overview_before.begin(), overview_before.end(),
+                   rig.canvas.overview_pixels().begin()));
+  // The same request succeeds once the pin is released.
+  CHECK(vector_v2::append_incrementally_in_place(rig.log, rig.canvas,
+                                                 {.color = 0x001FU, .samples = valid},
+                                                 rig.in_place_workspace(), view)
+            .has_value());
 }

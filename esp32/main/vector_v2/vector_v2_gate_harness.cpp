@@ -18,6 +18,7 @@
 #endif
 #include "tinydraw/document/realistic_workload.h"
 #include "tinydraw/vector_v2/adversarial_tapered_corpus.h"
+#include "tinydraw/vector_v2/chained_operation_builder.h"
 #include "tinydraw/vector_v2/memory_layout.h"
 
 namespace tinydraw::esp32 {
@@ -520,6 +521,185 @@ bool run_draw_while_fill_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
   return passed;
 }
 
+struct LongGestureMeasurement {
+  std::size_t samples = 0;
+  std::size_t chunks = 0;
+  std::int64_t append_total_us = 0;
+  std::int64_t append_max_us = 0;
+  std::size_t fallback_pixels = 0;
+  bool committed = false;
+  bool authority_match = false;
+  bool refresh_passed = false;
+};
+
+// Streams one deterministic 400% XL gesture through the chained builder with
+// the interactive 64-sample chunk policy and the caller-selected commit
+// implementation, measuring every intermediate chunk commit.
+template <typename CommitChunk>
+bool run_long_gesture_pass(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
+                           OperationLog& log, MaterializedCanvas& canvas,
+                           const vector_v2::ChromeState& chrome,
+                           std::span<const std::uint16_t> blank_snapshot,
+                           std::span<CompactOperationSample> builder_storage,
+                           std::size_t chunk_sample_limit, CommitChunk&& commit_chunk,
+                           LongGestureMeasurement& measurement) {
+  const DocumentRevision baseline{canvas.current_revision().value + 1U};
+  if (!vector_v2::restore_document_snapshot(log, canvas, baseline, blank_snapshot) ||
+      !producer.reset_uniform_baseline(baseline)) {
+    return false;
+  }
+  if (!presenter.set_view(ZoomLevel::k400Percent, 0, 0, chrome, now_us()).passed) {
+    return false;
+  }
+  const vector_v2::ViewRequest view{
+      .zoom = ZoomLevel::k400Percent,
+      .level_pixels = {presenter.level_x(), presenter.level_y(),
+                       presenter.level_x() + vector_v2::kOverviewWidth,
+                       presenter.level_y() + vector_v2::kOverviewHeight},
+  };
+  for (std::size_t step = 0; step < 100'000U; ++step) {
+    const auto produced = producer.produce_next(view);
+    if (!produced.has_value()) {
+      return false;
+    }
+    if (produced->complete) {
+      break;
+    }
+  }
+
+  vector_v2::ChainedOperationBuilder builder(builder_storage, chunk_sample_limit);
+  constexpr std::size_t kGestureSamples = 1'600;
+  constexpr float kRadius = 5.0F;  // XL at 400%: 20 screen pixels.
+  std::uint32_t timestamp_us = now_us();
+  float x = 6.0F;
+  float y = 8.0F;
+  float direction = 1.0F;
+  std::optional<vector_v2::PixelRect> world_bounds;
+  const auto commit_ready = [&](vector_v2::ChainedOperationStatus status)
+      -> std::optional<vector_v2::ChainedOperationStatus> {
+    while (status == vector_v2::ChainedOperationStatus::kChunkReady ||
+           status == vector_v2::ChainedOperationStatus::kFinalChunkReady) {
+      const auto pending = builder.pending_append();
+      if (!pending.has_value()) {
+        return std::nullopt;
+      }
+      const std::int64_t started_us = esp_timer_get_time();
+      const auto committed = commit_chunk(*pending, view);
+      const std::int64_t elapsed_us = esp_timer_get_time() - started_us;
+      if (!committed.has_value()) {
+        return std::nullopt;
+      }
+      measurement.append_total_us += elapsed_us;
+      measurement.append_max_us = std::max(measurement.append_max_us, elapsed_us);
+      ++measurement.chunks;
+      if (!world_bounds.has_value()) {
+        world_bounds = committed->affected_world_bounds;
+      } else {
+        world_bounds->x0 = std::min(world_bounds->x0, committed->affected_world_bounds.x0);
+        world_bounds->y0 = std::min(world_bounds->y0, committed->affected_world_bounds.y0);
+        world_bounds->x1 = std::max(world_bounds->x1, committed->affected_world_bounds.x1);
+        world_bounds->y1 = std::max(world_bounds->y1, committed->affected_world_bounds.y1);
+      }
+      status = builder.acknowledge_commit();
+    }
+    if (status != vector_v2::ChainedOperationStatus::kAccepted &&
+        status != vector_v2::ChainedOperationStatus::kComplete) {
+      return std::nullopt;
+    }
+    return status;
+  };
+
+  if (!builder.begin(
+          OperationTool::kPen, 0x001FU, 1U,
+          {.world_x = x, .world_y = y, .radius = kRadius, .timestamp_us = timestamp_us})) {
+    return false;
+  }
+  ++measurement.samples;
+  for (std::size_t index = 1; index < kGestureSamples; ++index) {
+    x += 1.6F * direction;
+    if (x > 86.0F || x < 6.0F) {
+      direction = -direction;
+      x = std::clamp(x, 6.0F, 86.0F);
+      y += 2.5F;
+    }
+    timestamp_us += 8'000U;
+    const vector_v2::OperationPoint point{
+        .world_x = x, .world_y = y, .radius = kRadius, .timestamp_us = timestamp_us};
+    const bool final_sample = index + 1U == kGestureSamples;
+    const auto status = final_sample ? builder.finish(point) : builder.add(point);
+    const auto continued = commit_ready(status);
+    if (!continued.has_value()) {
+      return false;
+    }
+    ++measurement.samples;
+  }
+  measurement.committed = !builder.active();
+  measurement.authority_match = log.current_revision() == canvas.current_revision();
+  if (world_bounds.has_value()) {
+    const auto refresh = presenter.refresh_region(
+        vector_v2::operation_level_bounds(*world_bounds, ZoomLevel::k400Percent), chrome, now_us());
+    measurement.refresh_passed = refresh.passed;
+    measurement.fallback_pixels = refresh.fallback_pixels;
+  }
+  return true;
+}
+
+bool run_long_gesture_commit_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
+                                  OperationLog& log, MaterializedCanvas& canvas,
+                                  const vector_v2::ChromeState& chrome,
+                                  const IncrementalDocumentWorkspace& workspace,
+                                  const vector_v2::InPlaceAppendWorkspace& in_place_workspace,
+                                  std::span<const std::uint16_t> blank_snapshot,
+                                  std::span<CompactOperationSample> builder_storage) {
+  LongGestureMeasurement reference{};
+  const bool reference_ok = run_long_gesture_pass(
+      presenter, producer, log, canvas, chrome, blank_snapshot, builder_storage, 64U,
+      [&](const vector_v2::OperationAppend& chunk, const vector_v2::ViewRequest& view) {
+        return vector_v2::append_incrementally(
+            log, canvas, chunk, workspace,
+            {.priority_view = view,
+             .publication_scope = vector_v2::IncrementalPublicationScope::kPriorityView});
+      },
+      reference);
+  LongGestureMeasurement in_place{};
+  const bool in_place_ok = run_long_gesture_pass(
+      presenter, producer, log, canvas, chrome, blank_snapshot, builder_storage,
+      kInteractiveChunkSampleLimit,
+      [&](const vector_v2::OperationAppend& chunk, const vector_v2::ViewRequest& view) {
+        return vector_v2::append_incrementally_in_place(log, canvas, chunk, in_place_workspace,
+                                                        view);
+      },
+      in_place);
+  const auto print_pass = [](const char* path, const LongGestureMeasurement& measurement,
+                             bool run_ok) {
+    std::printf(
+        "TINYDRAW_GATE1_LONG_GESTURE path=%s samples=%lu chunks=%lu append_total_us=%lld "
+        "append_max_us=%lld append_avg_us=%lld refresh_fallback_pixels=%lu committed=%u "
+        "authority=%u refresh=%u run_ok=%u\n",
+        path, static_cast<unsigned long>(measurement.samples),
+        static_cast<unsigned long>(measurement.chunks),
+        static_cast<long long>(measurement.append_total_us),
+        static_cast<long long>(measurement.append_max_us),
+        static_cast<long long>(measurement.chunks == 0U
+                                   ? 0
+                                   : measurement.append_total_us /
+                                         static_cast<std::int64_t>(measurement.chunks)),
+        static_cast<unsigned long>(measurement.fallback_pixels), measurement.committed,
+        measurement.authority_match, measurement.refresh_passed, run_ok);
+  };
+  print_pass("reference", reference, reference_ok);
+  print_pass("in_place", in_place, in_place_ok);
+  std::fflush(stdout);
+  const auto correct = [](const LongGestureMeasurement& measurement) {
+    return measurement.committed && measurement.authority_match && measurement.refresh_passed &&
+           measurement.fallback_pixels == 0U && measurement.chunks >= 24U;
+  };
+  // The interactive path must fit intermediate commits inside a 15 ms
+  // input-poll slice; the reference pass is a measured comparison only.
+  return reference_ok && in_place_ok && correct(reference) && correct(in_place) &&
+         in_place.append_max_us < 15'000;
+}
+
 bool verify_pan_adapter(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
                         const vector_v2::ChromeState& chrome, ZoomLevel zoom) {
   constexpr int kPanDelta = 88;
@@ -797,6 +977,7 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
                                 OperationLog& log, MaterializedCanvas& canvas,
                                 VectorV2TouchSampler& touch, const vector_v2::ChromeState& chrome,
                                 const IncrementalDocumentWorkspace& workspace,
+                                const vector_v2::InPlaceAppendWorkspace& in_place_workspace,
                                 std::span<const std::uint16_t> blank_snapshot,
                                 std::span<CompactOperationSample> conversion_storage,
                                 std::span<std::uint16_t> packed_tile_pixels) {
@@ -871,8 +1052,12 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
       gate_400 && verify_pan_adapter(presenter, producer, chrome, ZoomLevel::k400Percent);
   const bool draw_fill = pan_400 && run_draw_while_fill_gate(presenter, producer, log, canvas,
                                                              chrome, workspace, conversion_storage);
+  const bool long_gesture =
+      draw_fill &&
+      run_long_gesture_commit_gate(presenter, producer, log, canvas, chrome, workspace,
+                                   in_place_workspace, blank_snapshot, conversion_storage);
   const bool cache_retention =
-      draw_fill && run_cache_retention_gate(presenter, producer, canvas, chrome);
+      long_gesture && run_cache_retention_gate(presenter, producer, canvas, chrome);
   const bool full_world_cache = cache_retention && run_full_world_cache_gate(producer, canvas);
   const bool export_reserve = full_world_cache && verify_export_reserve();
   const auto return_overview = presenter.set_view(ZoomLevel::k25Percent, 0, 0, chrome, now_us());
@@ -880,11 +1065,11 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
       "TINYDRAW_GATE1_AUTOMATED_DONE stress=%u stress_100=%u stress_400=%u overlap_ready=%u "
       "overlap_cold=%u adversarial_ready=%u adversarial_cold=%u workload=%u paced_cold=%u "
       "hard_100=%u hard_400=%u pan_100=%u "
-      "pan_400=%u draw_fill=%u cache=%u full_world_cache=%u export_reserve=%u return=%u "
-      "ssaa_receipt=yellow\n",
+      "pan_400=%u draw_fill=%u long_gesture=%u cache=%u full_world_cache=%u export_reserve=%u "
+      "return=%u ssaa_receipt=yellow\n",
       stress_ready, stress_100, stress_400, overlap_ready, overlap_cold, adversarial_ready,
       adversarial_cold, workload_ready, paced_cold, gate_100, gate_400, pan_100, pan_400, draw_fill,
-      cache_retention, full_world_cache, export_reserve, return_overview.passed);
+      long_gesture, cache_retention, full_world_cache, export_reserve, return_overview.passed);
   return return_overview.passed && export_reserve && overlap_cold && adversarial_cold;
 #endif
 }

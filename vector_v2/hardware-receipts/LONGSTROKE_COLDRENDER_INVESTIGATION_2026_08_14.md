@@ -198,12 +198,84 @@ rearm, painter-fed exactness vs the mask bit-for-bit) and a behavioral
 producer test that a newest opaque cover completes a group in ≤6 slices over
 80 buried multi-sample operations while staying bit-exact.
 
+## Phase B result: in-place interactive chunk commit
+
+Measured root cause confirmed by temporary phase instrumentation on the
+deterministic long-gesture gate (worst-case: maximum-speed XL zigzag at 400%,
+1,600 samples, 26 chunks of 64):
+
+```
+PROFILE_INPLACE valid=~50 prep=~100 overview=~570 enum=~150 canedit=~45
+                paint=9800..12900 commit=~430  (us, per 64-sample chunk)
+```
+
+Everything except painting totals ~1.4 ms; the reference path's additional
+~20 ms per chunk was pure copy-out/copy-back/analyze staging of affected
+tiles. Painting cost itself is dominated by per-(tile,segment) row span
+searches, which scale with samples per chunk — not by pixel writes (masking
+out the ~7× fat-capsule overdraw changed nothing measurable).
+
+Design landed:
+
+1. `MaterializedCanvas` in-place revision protocol:
+   `can_edit_in_place_revision` → `edit_resident_tile` /
+   `materialize_uniform_as_raw` → `commit_in_place_revision(retained_keys)`,
+   plus `invalidate_identity` as the universal per-tile recovery. Failure
+   after validation is impossible by construction; a tile that cannot be
+   updated is simply not retained and becomes correct overview fallback.
+2. `append_incrementally_in_place`: validate-first sibling of the reference
+   append. Affected resident raw tiles at every zoom are painted in place
+   (segments prefiltered per tile by exact painter bounds, replayed
+   newest-first through a 512-byte chunk mask — single tool+color makes that
+   bit-identical to forward order); resident uniforms whose color equals the
+   painted color (eraser over paper) are retained untouched; view uniforms
+   are converted to raw; everything else is invalidated exactly like the
+   reference path. Uniform conversions run before raw edits so slot eviction
+   cannot cannibalize a tile edited in the same commit.
+3. `invalidate_uniforms` walks a conservative per-zoom tile-index window
+   (typically tens of candidates) instead of all 13,692 identities, with the
+   exact intersection predicate unchanged inside the window.
+4. Interactive chunk limit 64 → 48 samples (`kInteractiveChunkSampleLimit`,
+   now shared between app and harness). Device sweep on the worst-case
+   gesture: 64 → 14.9 ms max, 48 → 11.5 ms max (+7% total work),
+   32 → 9.1 ms max (+42% total). 48 buys a 26% margin under the 15 ms slice
+   without meaningfully growing total work; worst-case-session record count
+   is 80,000/47 ≈ 1,702 of 4,000.
+5. The product app no longer allocates the 56-tile staging workspace: live
+   storage 5,301,792 → 4,842,144 bytes (−449 KiB); free PSRAM 3,502,096 with
+   a 3,473,408-byte largest block (1.5 MiB export reserve untouched);
+   product main-task stack margin 4,232 bytes. The reference path and its
+   workspace remain harness-only for corpus construction and A/B evidence.
+
+New permanent evidence: `TINYDRAW_GATE1_LONG_GESTURE` harness gate streams the
+deterministic gesture through both commit implementations every run:
+
+| Path | chunks | append total | append max | append avg | fallback px |
+|---|---:|---:|---:|---:|---:|
+| reference (64) | 26 | 687.9 ms | 33.2 ms | 26.5 ms | 0 |
+| in-place (48) | 35 | 325.0 ms | **11.1 ms** | 9.3 ms | 0 |
+
+Gate bound: every intermediate in-place commit under 15 ms, zero fallback
+pixels in the stroke-region refresh (the "detail stays current" property),
+balanced authority, all chunks committed. Compare the 4a1aada glass numbers:
+`append_max_us=70214/72144` and 43 submits over 16 ms.
+
+Host equivalence gates: dual-rig differential test (reference vs in-place,
+8 randomized multi-chunk gestures, pen+eraser, tapered+constant, view compose
+pixel-identical with zero fallback after every gesture, both equal to direct
+forward replay; in-place additionally keeps resident non-view tiles exact),
+eraser-over-paper uniform retention, atomic failure tests, and in-place
+primitive contract tests. Full battery green: host tests, release, ASan/UBSan,
+clang-tidy, cppcheck, format; census sweep `exact=1`; both fuzzers; complete
+device harness `pass=1` including the cold gates and export reserve.
+
 ## Work log
 
 - [x] Read roadmap, receipts, all listed sources.
 - [x] Host census baseline captured (above).
 - [x] Phase A: saturation summary + producer early-exit; host census + device
       paced gate before/after.
-- [ ] Phase B: in-place chunk commit + uniform range invalidation; host
+- [x] Phase B: in-place chunk commit + uniform range invalidation; host
       equivalence tests; device long-stroke measurement.
-- [ ] Full validation battery; 20-reset distribution; roadmap update.
+- [ ] Full validation battery on final tree; 20-reset distribution; roadmap
+      update.
