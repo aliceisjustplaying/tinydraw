@@ -11,6 +11,8 @@
 
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #ifdef TINYDRAW_VECTOR_V2_TILE_CENSUS
 #include "vector_v2_tile_census.h"
 #endif
@@ -218,6 +220,83 @@ bool run_tile_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& produc
   return passed;
 }
 
+bool run_paced_cold_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
+                         MaterializedCanvas& canvas, PhysicalTouch& touch,
+                         const vector_v2::ChromeState& chrome) {
+  constexpr int kUnalignedOrigin = vector_v2::kTileWidth - 1;
+  if (!canvas.discard_tiles()) {
+    return false;
+  }
+  const auto fallback = presenter.set_view(ZoomLevel::k400Percent, kUnalignedOrigin,
+                                           kUnalignedOrigin, chrome, now_us());
+  if (!fallback.passed) {
+    return false;
+  }
+  const vector_v2::ViewRequest view{
+      .zoom = ZoomLevel::k400Percent,
+      .level_pixels = {presenter.level_x(), presenter.level_y(),
+                       presenter.level_x() + vector_v2::kOverviewWidth,
+                       presenter.level_y() + vector_v2::kOverviewHeight},
+  };
+
+  bool complete = false;
+  bool presentation_pending = false;
+  vector_v2::PixelRect pending_bounds{};
+  std::size_t steps = 0;
+  std::size_t tiles = 0;
+  std::int64_t compute_us = 0;
+  std::int64_t present_us = 0;
+  std::int64_t touch_us = 0;
+  std::int64_t maximum_tick_us = 0;
+  std::size_t touch_errors = 0;
+  const std::int64_t started = esp_timer_get_time();
+  while (!complete || presentation_pending) {
+    const std::int64_t tick_started = esp_timer_get_time();
+    Point ignored{};
+    const std::int64_t touch_started = esp_timer_get_time();
+    touch_errors += touch.read(ignored) == TouchRead::kError;
+    touch_us += esp_timer_get_time() - touch_started;
+
+    if (presentation_pending) {
+      const std::int64_t present_started = esp_timer_get_time();
+      if (!presenter.refresh_region(pending_bounds, chrome).passed) {
+        return false;
+      }
+      present_us += esp_timer_get_time() - present_started;
+      presentation_pending = false;
+    } else {
+      const std::int64_t compute_started = esp_timer_get_time();
+      const auto step = producer.produce_next(view);
+      compute_us += esp_timer_get_time() - compute_started;
+      if (!step.has_value()) {
+        return false;
+      }
+      ++steps;
+      tiles += step->tiles_published;
+      complete = step->complete;
+      if (step->tiles_published != 0U) {
+        pending_bounds = step->level_bounds;
+        presentation_pending = true;
+      }
+    }
+    maximum_tick_us = std::max(maximum_tick_us, esp_timer_get_time() - tick_started);
+    vTaskDelay(pdMS_TO_TICKS(2));
+  }
+  const std::int64_t wall_us = esp_timer_get_time() - started;
+  const std::int64_t pacing_us = wall_us - compute_us - present_us - touch_us;
+  const bool passed = wall_us < 2'000'000 && touch_errors == 0U;
+  std::printf(
+      "TINYDRAW_GATE1_PACED_COLD zoom=400 x=%d y=%d steps=%lu tiles=%lu compute_us=%lld "
+      "present_us=%lld touch_us=%lld pacing_us=%lld wall_us=%lld max_tick_us=%lld "
+      "touch_errors=%lu pass=%u\n",
+      presenter.level_x(), presenter.level_y(), static_cast<unsigned long>(steps),
+      static_cast<unsigned long>(tiles), static_cast<long long>(compute_us),
+      static_cast<long long>(present_us), static_cast<long long>(touch_us),
+      static_cast<long long>(pacing_us), static_cast<long long>(wall_us),
+      static_cast<long long>(maximum_tick_us), static_cast<unsigned long>(touch_errors), passed);
+  return passed;
+}
+
 bool run_draw_while_fill_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
                               OperationLog& log, MaterializedCanvas& canvas,
                               const vector_v2::ChromeState& chrome,
@@ -271,7 +350,10 @@ bool run_draw_while_fill_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
       log, canvas, {.tool = OperationTool::kPen, .color = 0x001FU, .samples = fast_xl}, workspace,
       {.priority_view = view});
   const std::int64_t append_us = esp_timer_get_time() - append_started;
-  const bool stale_rejected = !producer.produce_next(view).has_value();
+  // A revision change now restarts stale producer state within produce_next;
+  // the old contract returned nullopt and required a caller retry.
+  const bool revision_restarted = producer.produce_next(view).has_value() &&
+                                  log.current_revision() == canvas.current_revision();
 
   std::int64_t maximum_slice_us = poll_gap_us;
   std::int64_t maximum_compute_slice_us = poll_gap_us;
@@ -300,19 +382,19 @@ bool run_draw_while_fill_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
     fill_complete = step->complete;
   }
   const std::int64_t fill_us = esp_timer_get_time() - fill_started;
-  const bool passed = append.has_value() && stale_rejected && live.passed &&
+  const bool passed = append.has_value() && revision_restarted && live.passed &&
                       live.first_submit_us < 100'000 && poll_gap_us < 35'000 &&
                       maximum_compute_slice_us < 30'000 && maximum_slice_us < 75'000;
   std::printf(
       "TINYDRAW_GATE1_DRAW_FILL zoom=400 revision=%lu append_us=%lld poll_gap_us=%lld "
       "event_submit_us=%lld event_complete_us=%lld max_compute_slice_us=%lld "
       "max_display_slice_us=%lld fill_us=%lld "
-      "stale_rejected=%u pass=%u\n",
+      "revision_restarted=%u pass=%u\n",
       static_cast<unsigned long>(canvas.current_revision().value),
       static_cast<long long>(append_us), static_cast<long long>(poll_gap_us),
       static_cast<long long>(live.first_submit_us), static_cast<long long>(live.first_complete_us),
       static_cast<long long>(maximum_compute_slice_us), static_cast<long long>(maximum_slice_us),
-      static_cast<long long>(fill_us), stale_rejected, passed);
+      static_cast<long long>(fill_us), revision_restarted, passed);
   return passed;
 }
 
@@ -586,7 +668,7 @@ bool append_stress_document(OperationLog& log, MaterializedCanvas& canvas,
 }  // namespace
 
 bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
-                                OperationLog& log, MaterializedCanvas& canvas,
+                                OperationLog& log, MaterializedCanvas& canvas, PhysicalTouch& touch,
                                 const vector_v2::ChromeState& chrome,
                                 const IncrementalDocumentWorkspace& workspace,
                                 std::span<const std::uint16_t> blank_snapshot,
@@ -625,8 +707,10 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
 #elif defined(TINYDRAW_VECTOR_V2_TEARING_PROBE)
   return workload_ready && run_tearing_probe(presenter, chrome);
 #else
-  const bool gate_100 = workload_ready && run_tile_gate(presenter, producer, log, canvas, chrome,
-                                                        ZoomLevel::k100Percent);
+  const bool paced_cold =
+      workload_ready && run_paced_cold_gate(presenter, producer, canvas, touch, chrome);
+  const bool gate_100 =
+      paced_cold && run_tile_gate(presenter, producer, log, canvas, chrome, ZoomLevel::k100Percent);
   const bool pan_100 =
       gate_100 && verify_pan_adapter(presenter, producer, chrome, ZoomLevel::k100Percent);
   const bool gate_400 =
@@ -642,10 +726,11 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   const auto return_overview = presenter.set_view(ZoomLevel::k25Percent, 0, 0, chrome, now_us());
   std::printf(
       "TINYDRAW_GATE1_AUTOMATED_DONE stress=%u stress_100=%u stress_400=%u workload=%u "
-      "hard_100=%u hard_400=%u pan_100=%u pan_400=%u draw_fill=%u cache=%u "
+      "paced_cold=%u hard_100=%u hard_400=%u pan_100=%u pan_400=%u draw_fill=%u cache=%u "
       "full_world_cache=%u export_reserve=%u return=%u ssaa_receipt=yellow\n",
-      stress_ready, stress_100, stress_400, workload_ready, gate_100, gate_400, pan_100, pan_400,
-      draw_fill, cache_retention, full_world_cache, export_reserve, return_overview.passed);
+      stress_ready, stress_100, stress_400, workload_ready, paced_cold, gate_100, gate_400, pan_100,
+      pan_400, draw_fill, cache_retention, full_world_cache, export_reserve,
+      return_overview.passed);
   return return_overview.passed && export_reserve;
 #endif
 }
