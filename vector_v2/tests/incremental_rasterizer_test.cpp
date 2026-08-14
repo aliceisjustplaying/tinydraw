@@ -163,7 +163,7 @@ TEST_CASE("a clipped source segment is one bounded raster unit") {
   CHECK(sliced == complete);
 }
 
-TEST_CASE("tapered segments match a per-pixel oracle across clip boundaries") {
+TEST_CASE("constant and tapered segments match a per-pixel oracle across clip boundaries") {
   constexpr int width = 128;
   constexpr int height = 128;
   constexpr std::size_t pixel_count = static_cast<std::size_t>(width * height);
@@ -224,6 +224,43 @@ TEST_CASE("tapered segments match a per-pixel oracle across clip boundaries") {
     CHECK(rendered == reference);
     CHECK(split == reference);
   }
+}
+
+TEST_CASE("constructed two-span taper stays on the exact raster path") {
+  constexpr int width = 128;
+  constexpr int height = 128;
+  constexpr std::size_t pixel_count = static_cast<std::size_t>(width * height);
+  constexpr auto first =
+      vector_v2::CompactOperationSample{.x_quarter = 48, .y_quarter = 48, .radius_256 = 4'096};
+  constexpr auto second =
+      vector_v2::CompactOperationSample{.x_quarter = 50, .y_quarter = 50, .radius_256 = 1'472};
+  const std::array samples{first, second};
+  const vector_v2::OperationAppend operation{.color = 0x001FU, .samples = samples};
+  std::vector<std::uint16_t> rendered(pixel_count, 0xFFFFU);
+  std::vector<std::uint16_t> reference(pixel_count, 0xFFFFU);
+
+  REQUIRE(
+      vector_v2::apply_incremental_operation(operation, {.zoom = vector_v2::ZoomLevel::k400Percent,
+                                                         .level_bounds = {0, 0, width, height},
+                                                         .pixels = rendered,
+                                                         .stride = width}));
+  std::size_t maximum_spans = 0;
+  for (int y = 0; y < height; ++y) {
+    std::size_t spans = 0;
+    bool prior_covered = false;
+    for (int x = 0; x < width; ++x) {
+      const bool covered = reference_covers(first, second, static_cast<float>(x) + 0.5F,
+                                            static_cast<float>(y) + 0.5F);
+      spans += covered && !prior_covered;
+      prior_covered = covered;
+      if (covered) {
+        reference[static_cast<std::size_t>(y * width + x)] = operation.color;
+      }
+    }
+    maximum_spans = std::max(maximum_spans, spans);
+  }
+  CHECK(maximum_spans >= 2U);
+  CHECK(rendered == reference);
 }
 
 TEST_CASE("affected tile enumeration clips to the bounded world") {
