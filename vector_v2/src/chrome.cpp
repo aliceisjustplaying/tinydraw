@@ -26,6 +26,10 @@ constexpr int kMainHitTop = kMainTop - kHitSlop;
 constexpr std::array kMainCenters{34, 94, 154, 214, 274, 334};
 constexpr std::array kPopupCenters{62, 184, 306};
 constexpr std::array kSizeCenters{52, 140, 228, 316};
+constexpr std::array kPaletteCentersX{46, 138, 230, 322};
+constexpr std::array kPaletteCentersY{108, 198, 288, 378};
+constexpr int kPaletteControlsBottom = 64;
+constexpr int kPaletteRowHeight = 90;
 
 using Painter = PixelPainter;
 
@@ -46,25 +50,40 @@ void draw_arrow(Painter& painter, int cx, int cy, bool redo, std::uint16_t color
   painter.line({cx + 10 * direction, cy, cx + 2 * direction, cy + 8}, color, 2);
 }
 
-void draw_tools(Painter& painter, int cx, int cy, std::uint16_t color) {
-  painter.line({cx - 11, cy + 10, cx + 8, cy - 12}, color, 2);
-  painter.line({cx - 3, cy + 14, cx + 13, cy - 5}, color, 2);
+// These are the proven Raster V1 tool glyphs, translated around a caller-
+// supplied center so the main button and popup use the same silhouettes.
+void draw_pen(Painter& painter, int cx, int cy, std::uint16_t color) {
+  painter.line({cx - 10, cy + 8, cx + 7, cy - 13}, color);
+  painter.line({cx - 4, cy + 14, cx + 13, cy - 7}, color);
+  painter.line({cx + 7, cy - 13, cx + 13, cy - 7}, color);
+  painter.line({cx - 10, cy + 8, cx - 14, cy + 18}, color);
+  painter.line({cx - 4, cy + 14, cx - 14, cy + 18}, color);
+  painter.line({cx - 10, cy + 8, cx - 4, cy + 14}, color);
 }
 
 void draw_hand(Painter& painter, int cx, int cy, std::uint16_t color) {
-  for (int x = -9; x <= 9; x += 6) {
-    painter.line({cx + x, cy - 1, cx + x, cy - 14}, color);
-  }
-  painter.line({cx - 9, cy, cx - 14, cy - 5}, color, 2);
-  painter.line({cx - 14, cy - 5, cx - 5, cy + 15}, color, 2);
-  painter.line({cx - 5, cy + 15, cx + 11, cy + 15}, color, 2);
+  painter.line({cx - 10, cy - 2, cx - 10, cy - 13}, color);
+  painter.line({cx - 4, cy - 4, cx - 4, cy - 17}, color);
+  painter.line({cx + 2, cy - 4, cx + 2, cy - 18}, color);
+  painter.line({cx + 8, cy - 2, cx + 8, cy - 14}, color);
+  painter.line({cx - 10, cy - 2, cx - 16, cy - 7}, color);
+  painter.line({cx - 16, cy - 7, cx - 19, cy - 3}, color);
+  painter.line({cx - 19, cy - 3, cx - 8, cy + 16}, color);
+  painter.line({cx - 8, cy + 16, cx + 8, cy + 16}, color);
+  painter.line({cx + 8, cy + 16, cx + 12, cy + 5}, color);
+  painter.line({cx + 12, cy + 5, cx + 8, cy - 2}, color);
 }
 
 void draw_eraser(Painter& painter, int cx, int cy, std::uint16_t color) {
-  painter.line({cx - 13, cy + 5, cx + 3, cy - 11}, color, 2);
-  painter.line({cx + 3, cy - 11, cx + 14, cy}, color, 2);
-  painter.line({cx + 14, cy, cx - 2, cy + 16}, color, 2);
-  painter.line({cx - 2, cy + 16, cx - 13, cy + 5}, color, 2);
+  painter.line({cx - 8, cy - 1, cx + 3, cy - 12}, color);
+  painter.line({cx + 3, cy - 12, cx + 13, cy - 2}, color);
+  painter.line({cx + 13, cy - 2, cx + 2, cy + 9}, color);
+  painter.line({cx - 8, cy - 1, cx + 2, cy + 9}, color);
+  painter.line({cx - 8, cy - 1, cx - 12, cy + 3}, color);
+  painter.line({cx - 12, cy + 3, cx - 12, cy + 6}, color);
+  painter.line({cx - 12, cy + 6, cx - 6, cy + 12}, color);
+  painter.line({cx - 6, cy + 12, cx - 2, cy + 13}, color);
+  painter.line({cx - 2, cy + 13, cx + 2, cy + 9}, color);
 }
 
 void draw_document(Painter& painter, int cx, int cy, std::uint16_t color) {
@@ -91,35 +110,42 @@ int size_radius(ChromeSize size) {
 }
 
 void draw_palette(Painter& painter, const ChromeState& state) {
-  painter.rect({0, 0, kWidth, kHeight}, 0x1082U);
-  constexpr int gap = 6;
-  constexpr int cell_width = (kWidth - gap * 5) / 4;
-  constexpr int cell_height = 88;
+  painter.rect({0, 0, kWidth, kHeight}, kWhite);
   for (std::size_t index = 0; index < kPaletteColorCount; ++index) {
-    const int column = static_cast<int>(index % 4U);
-    const int row = static_cast<int>(index / 4U);
-    const int x0 = gap + column * (cell_width + gap);
-    const int y0 = 42 + row * (cell_height + gap);
-    const bool selected = index == state.color_index;
-    const int outline = selected ? 3 : 0;
-    painter.rounded(
-        {x0 - outline, y0 - outline, x0 + cell_width + outline, y0 + cell_height + outline}, 9,
-        selected ? kSelected : kBorder);
-    painter.rounded({x0, y0, x0 + cell_width, y0 + cell_height}, 7,
-                    kPico8Palettes[state.palette_page][index]);
+    const std::size_t column = index % kPaletteCentersX.size();
+    const std::size_t row = index / kPaletteCentersX.size();
+    const int cx = kPaletteCentersX[column];
+    const int cy = kPaletteCentersY[row];
+    if (index == state.color_index) {
+      painter.circle(cx, cy, 38, kSelected);
+      painter.circle(cx, cy, 34, kWhite);
+    } else {
+      painter.circle(cx, cy, 34, kBorder);
+    }
+    painter.circle(cx, cy, 30, kPico8Palettes[state.palette_page][index]);
   }
-  painter.rounded({8, 6, 62, 36}, 8, state.palette_page == 0 ? kMuted : kSelected);
-  painter.rounded({kWidth - 62, 6, kWidth - 8, 36}, 8,
+  painter.rounded({8, 6, 88, 58}, 10, state.palette_page == 0 ? kMuted : kSelected);
+  painter.rounded({kWidth - 88, 6, kWidth - 8, 58}, 10,
                   state.palette_page == 1 ? kMuted : kSelected);
-  draw_arrow(painter, 34, 21, false, kWhite);
-  draw_arrow(painter, kWidth - 34, 21, true, kWhite);
+  draw_arrow(painter, 48, 32, false, kWhite);
+  draw_arrow(painter, kWidth - 48, 32, true, kWhite);
 }
 
 void draw_bottom(Painter& painter, const ChromeState& state) {
   draw_dock(painter, kMainTop, kMainBottom);
   draw_arrow(painter, kMainCenters[0], 410, false, state.can_undo ? kInk : kMuted);
   draw_arrow(painter, kMainCenters[1], 410, true, state.can_redo ? kInk : kMuted);
-  draw_tools(painter, kMainCenters[2], 410, kInk);
+  switch (state.tool) {
+    case ChromeTool::kDraw:
+      draw_pen(painter, kMainCenters[2], 410, kInk);
+      break;
+    case ChromeTool::kErase:
+      draw_eraser(painter, kMainCenters[2], 410, kInk);
+      break;
+    case ChromeTool::kPan:
+      draw_hand(painter, kMainCenters[2], 410, kInk);
+      break;
+  }
   painter.circle(kMainCenters[3], 410, 18, kSelected);
   painter.circle(kMainCenters[3], 410, 14, selected_color(state));
   const int radius = size_radius(state.size);
@@ -135,7 +161,7 @@ void draw_tools_popup(Painter& painter, const ChromeState& state) {
       painter.circle(kPopupCenters[index], 331, 27, kSelected);
     }
   }
-  draw_tools(painter, kPopupCenters[0], 331, state.tool == ChromeTool::kDraw ? kWhite : kInk);
+  draw_pen(painter, kPopupCenters[0], 331, state.tool == ChromeTool::kDraw ? kWhite : kInk);
   draw_eraser(painter, kPopupCenters[1], 331, state.tool == ChromeTool::kErase ? kWhite : kInk);
   draw_hand(painter, kPopupCenters[2], 331, state.tool == ChromeTool::kPan ? kWhite : kInk);
 }
@@ -229,31 +255,23 @@ bool chrome_contains(ChromePoint point, const ChromeState& state) {
 }
 
 std::optional<std::uint8_t> chrome_color_at(ChromePoint point, const ChromeState& state) {
-  if (state.popup != ChromePopup::kColors || point.y < 42.0F || point.y >= 418.0F) {
+  if (state.popup != ChromePopup::kColors || point.y < kPaletteControlsBottom ||
+      point.y >= kPaletteControlsBottom + kPaletteRowHeight * 4) {
     return std::nullopt;
   }
-  constexpr int gap = 6;
-  constexpr int cell_width = (kWidth - gap * 5) / 4;
-  constexpr int cell_height = 88;
-  for (int row = 0; row < 4; ++row) {
-    for (int column = 0; column < 4; ++column) {
-      const int x0 = gap + column * (cell_width + gap);
-      const int y0 = 42 + row * (cell_height + gap);
-      if (inside(point, static_cast<float>(x0), static_cast<float>(y0),
-                 static_cast<float>(x0 + cell_width), static_cast<float>(y0 + cell_height))) {
-        return static_cast<std::uint8_t>(row * 4 + column);
-      }
-    }
-  }
-  return std::nullopt;
+  const int column = std::clamp(static_cast<int>(point.x) * 4 / kWidth, 0, 3);
+  const int row =
+      std::clamp((static_cast<int>(point.y) - kPaletteControlsBottom) / kPaletteRowHeight, 0, 3);
+  return static_cast<std::uint8_t>(row * 4 + column);
 }
 
 ChromeAction chrome_action_at(ChromePoint point, const ChromeState& state) {
   if (state.popup == ChromePopup::kColors) {
-    if (inside(point, 0.0F, 0.0F, 80.0F, 42.0F)) {
+    if (inside(point, 0.0F, 0.0F, 96.0F, static_cast<float>(kPaletteControlsBottom))) {
       return ChromeAction::kPreviousPalette;
     }
-    if (inside(point, static_cast<float>(kWidth - 80), 0.0F, static_cast<float>(kWidth), 42.0F)) {
+    if (inside(point, static_cast<float>(kWidth - 96), 0.0F, static_cast<float>(kWidth),
+               static_cast<float>(kPaletteControlsBottom))) {
       return ChromeAction::kNextPalette;
     }
     return chrome_color_at(point, state).has_value() ? ChromeAction::kSelectColor
