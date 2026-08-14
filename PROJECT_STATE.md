@@ -114,6 +114,59 @@ Phase 0 baselines live in
 
 These are product and optimization tasks, not evidence for another rewrite.
 
+## Mid-round resume state (2026-08-15, pan phase in flight)
+
+Branch `feat/v2-performance-followup` at `2e07671`; tree clean; host tests
+(68,896 assertions), host battery through release, and the ESP harness build
+are green for HEAD, but `2e07671` has **not** run asan/tidy/cppcheck or been
+flashed yet.
+
+Pan-phase progress, all receipts in `vector_v2/hardware-receipts/`:
+
+- Baseline 67.3 ms/frame → **50.2 ms flat** on hardware at `b76b992`
+  (`b76b992-full-gate-384.log`): chrome and tear wait off pan frames
+  (`aba02bc`), per-frame fast minimap (`5293823`), one panel drain per frame
+  plus 16 K transfer strips (`b76b992`). Single-frame pan gates green again.
+  Frame attribution: 15.0 scroll + 7.2 exposed + 4.3 tear + 23.4 push/drain.
+- `2e07671` (unflashed) adds the toroidal ring (kills the 15 ms scroll
+  memmove; de-rotation folded into transport byte-swap) and keeps cached pan
+  engaged in the wild: Alice's manual session (`b76b992-manual-glass.log`)
+  measured **reused=0 on all 386 real pan frames** because fallback pixels
+  and composition-epoch drift disqualified the frame; both are quality-only
+  and no longer break reuse. Expected next PANSEQ ~35 ms; product pans
+  should finally take the cached path.
+- Tear-wait elision (8 ms window; writer catches wrapped beam only past
+  ~13 ms) is **glass-confirmed**: no tearing/ghosting under violent 100%/400%
+  scrubbing (Alice, 23:49–00:00 London).
+
+Next steps, in order:
+
+1. Flash `2e07671` harness @384, capture full battery, check
+   `TINYDRAW_GATE1_PANSEQ` (scroll_avg should collapse to ~0) and that all
+   other gates stay green; then asan/tidy/cppcheck/format plus raster-V1 and
+   product builds; commit receipts.
+2. Close the remaining gap to the 33.3 ms floor (candidates: strip-fused
+   exposed compose during the push sweep, minimap push inside the drain
+   window, raising kMaximumCachedPanDelta for fast swipes now that deltas
+   are cheap).
+3. **Idle cache repair** (Alice's strongest glass complaint — constant cold
+   redraws while panning): when input is idle, proactively re-produce
+   dropped/evicted tiles around the visited neighborhood at every zoom; the
+   full 100% world fits in 384 slots so edge-panning at 100% should never
+   cold-render after idle. Also consider a wild-pan gate (pan into cold
+   territory) since PANSEQ only covers the prewarmed case.
+4. Queued findings from glass: allow drawing under the bottom toolbar
+   (commit ink beneath chrome, render clipped); zoom button should anchor at
+   viewport center, not top-left; verify New-document reset on a product
+   build (the top-left blue artifact was the gate harness's own long-gesture
+   test stroke — explained, not a product bug).
+5. Morning glass list: ring-build pan feel + tearing re-check, budgeted-
+   commit blur verdict while scribbling XL at 100%, New on product build.
+
+Device state: flashed with the `b76b992` gate-harness build at 384 slots;
+Alice's drawing from the glass session is on it. The serial port is free
+(the manual capture was stopped and saved).
+
 ## Immediate next sequence
 
 1. Raise warm pan to a 30 FPS floor (33.3 ms frames, margin preferred):
