@@ -3,7 +3,7 @@
 Last updated: 2026-08-14
 Current branch: `feat/v2-navigation-interaction`
 
-Status: **Vector V2 foundation validated; interaction integration in progress**
+Status: **Vector V2 foundation validated; interaction correctness hardening in progress**
 
 This is the current worklist and source of truth for TinyDraw V2. It replaces the
 prototype-era task order as the forward plan. Historical plans and receipts are
@@ -96,8 +96,11 @@ manual test.
       and stroke commit.
 - [x] Make producer and display work yield to pending input at bounded intervals.
 - [ ] Prevent a pan gesture from being lost when refinement is in progress.
-- [ ] Decide whether a tiny independent touch-sampling task is needed; do not move
-      the whole renderer to the second core without measured need.
+- [x] Add a tiny independent touch-sampling task; the renderer remains on its
+      measured cooperative path rather than moving wholesale to the second core.
+- [ ] Give the touch sampler explicit ownership and shutdown, preserve transition
+      edges and final points in a bounded FIFO, and treat transient read errors as
+      hold rather than lift.
 - [x] Separate input latency from append, compose, and transfer telemetry.
 - [x] Gate maximum touch-poll gaps during deterministic cold replay; retain p95
       gesture sampling for the final interaction glass test.
@@ -312,13 +315,25 @@ at a time and retain before/after receipts.
 
 ### Cold refinement
 
-Across 20 reset-separated runs, the overlapping-XL regression gate now has
+Across 20 reset-separated runs, the earlier overlapping-XL regression gate has
 0.771–0.971 second p95 wall time across 50–400%, with bounded producer/input
-slices. The tapered seed-7 400% case has 0.683 second p95 wall time. This replaced
-a measured 23.66-second worst case without more cache, lower quality, or
-second-core concurrency. See
+slices. The earlier tapered seed-7 400% case has 0.683 second p95 wall time. See
 `vector_v2/hardware-receipts/492f2ef-overlap-cold-p95-20-runs.log` and
 `vector_v2/hardware-receipts/0560525-overlap-cold-baseline.log`.
+
+The subsequent four-times-adversarial campaign reduced its 400% cold replay from
+9.703 seconds at clean commit `a3ac4fc` to 1.442 seconds in the checked-in winning
+capture, while overlap and seed-7 400% measured 0.409 and 0.343 seconds. This is
+the first full green result from the expanded adversarial harness, not the first
+green result from every historical harness. The winning raw capture reports
+`a3ac4fc-dirty`, so it is strong performance evidence but not the final clean-HEAD
+provenance receipt. Its largest observed producer tick was about 9.74 ms and its
+largest observed touch interval about 1.48 ms, both below the 15 ms alarms. See
+`vector_v2/hardware-receipts/adversarial-tapered-4x-word-skip.log`.
+
+The permanent validation comprises one exact census sweep and three CTest fuzz
+invocations backed by two distinct fuzzer implementations. Exact painter results
+remain the authority; raw timing receipts are retained without editorial cleanup.
 
 - [x] Profile operation bounds filtering, replay, raster coverage, publication,
       composition, touch polling, loop pacing, and panel transfer independently.
@@ -326,9 +341,11 @@ second-core concurrency. See
 - [ ] Prioritize newly exposed regions and current motion direction.
 - [ ] Cancel obsolete views immediately when the camera moves.
 - [ ] Prevent progressive display work from delaying touch polling.
-- [x] Remove redundant segment subdivision, reject distant segments, coalesce
-      exact straight runs, hoist software division, and span-fill scanline
-      interiors without weakening correctness or interaction gates.
+- [x] Remove redundant segment subdivision, reject distant segments, hoist
+      software division, skip finalized mask runs, and replay eligible collinear
+      runs per source segment without weakening exactness or interaction gates.
+- [ ] Capture a clean-HEAD 20-run distribution before tightening the current
+      two-second four-times-adversarial alarm around a single 1.442-second run.
 
 ### Memory and CPU mechanical sympathy
 
@@ -391,15 +408,20 @@ complete overview. It still needs careful tap targeting and viewport math.
 
 # Next concrete sequence
 
-1. Capture an unchanged-behavior hardware latency baseline with corrected
-   same-event telemetry.
-2. Implement the accepted navigation behavior and expose all five zooms without
-   coupling camera authority to presentation or cache state.
-3. Close input latency on hardware with bounded lift and refinement scheduling.
-4. Protect one recent footprint per tiled zoom with soft eviction preference,
-   then add minimal zoom controls and close the combined glass test.
-5. Run the timeboxed analytic anti-aliasing gate.
-6. Build the remaining product UI shell.
-7. Implement vector persistence, Undo/Redo, New, and real export.
-8. Integrate device lifecycle behavior and run the performance campaign alongside
-   feature work, always from measured traces.
+1. Close small correctness debt: reject aliased masked-raster buffers and keep
+   validation tools self-contained.
+2. Fix touch-sampler ownership and shutdown; replace newest-state overwrite with
+   bounded transition preservation, retain final points, and treat transient
+   hardware errors as hold.
+3. Raise the live input capacity from 1,024 to 4,096 samples and implement bounded
+   long-stroke chaining. Adjacent chunks overlap one boundary sample, share one
+   logical gesture identity for Undo, accumulate dirty bounds, and split on both
+   capacity and compact elapsed-time limits.
+4. Make chrome own the canvas/dock seam, and make frame reuse chrome-aware,
+   invalidate-before-mutate, and failure-transactional.
+5. Run host validation, a clean firmware build, a three-minute physical stroke,
+   the transition/lift interaction gate, and clean 20-run performance receipts.
+6. Resume measured cold-render and warm-pan optimization only after these
+   correctness gates are green.
+7. Continue navigation/UI, the timeboxed analytic anti-aliasing gate, vector
+   persistence, Undo/Redo, New, export, and lifecycle parity.
