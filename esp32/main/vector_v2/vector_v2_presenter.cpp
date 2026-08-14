@@ -67,14 +67,14 @@ vector_v2::OperationPoint VectorV2Presenter::operation_point(InkPoint point) con
   };
 }
 
-LivePresentationTiming VectorV2Presenter::refresh(const ToolbarState& toolbar,
+LivePresentationTiming VectorV2Presenter::refresh(const vector_v2::ChromeState& chrome,
                                                   std::uint32_t event_us) {
   const std::int64_t compose_started = esp_timer_get_time();
   const auto stats = canvas_.compose_view(navigation_.view(), frame_);
   if (!stats.has_value()) {
     return {};
   }
-  draw_toolbar(frame_, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight, toolbar);
+  vector_v2::draw_chrome(frame_, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight, chrome);
   auto timing = present({0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight}, event_us,
                         esp_timer_get_time() - compose_started);
   timing.tile_pixels = stats->tile_pixels;
@@ -97,7 +97,7 @@ LivePresentationTiming VectorV2Presenter::refresh(const ToolbarState& toolbar,
 LivePresentationTiming VectorV2Presenter::refresh_region(vector_v2::PixelRect level_bounds,
                                                          std::uint32_t event_us) {
   const vector_v2::PixelRect view{level_x(), level_y(), level_x() + vector_v2::kOverviewWidth,
-                                  level_y() + kMainToolbarOverlayTop};
+                                  level_y() + vector_v2::kChromeCanvasBottom};
   const vector_v2::PixelRect intersection{
       .x0 = std::max(view.x0, level_bounds.x0),
       .y0 = std::max(view.y0, level_bounds.y0),
@@ -114,7 +114,7 @@ LivePresentationTiming VectorV2Presenter::refresh_region(vector_v2::PixelRect le
       .y1 = intersection.y1 - level_y(),
   };
   panel = align_bounds(panel);
-  panel.y1 = std::min(panel.y1, kMainToolbarOverlayTop);
+  panel.y1 = std::min(panel.y1, vector_v2::kChromeCanvasBottom);
   const vector_v2::PixelRect aligned_level{
       .x0 = level_x() + panel.x0,
       .y0 = level_y() + panel.y0,
@@ -169,7 +169,7 @@ LivePresentationTiming VectorV2Presenter::show_start(InkPoint point, std::uint16
       .kind = RibbonPrimitiveKind::kCircle, .center = point.position, .radius = point.radius};
   const std::array primitives{cap};
   static_cast<void>(renderer_->render(primitives, frame_, vector_v2::kOverviewWidth,
-                                      kMainToolbarOverlayTop, color));
+                                      vector_v2::kChromeCanvasBottom, color));
   return present(primitive_bounds(primitives), event_us);
 }
 
@@ -180,37 +180,39 @@ LivePresentationTiming VectorV2Presenter::show_update(const RibbonUpdate& update
     return {.passed = true};
   }
   static_cast<void>(renderer_->render(std::span(update.committed.begin(), update.committed.size()),
-                                      frame_, vector_v2::kOverviewWidth, kMainToolbarOverlayTop,
-                                      color));
+                                      frame_, vector_v2::kOverviewWidth,
+                                      vector_v2::kChromeCanvasBottom, color));
   return present(primitive_bounds(std::span(update.committed.begin(), update.committed.size())),
                  event_us);
 }
 
 LivePresentationTiming VectorV2Presenter::set_zoom(vector_v2::ZoomLevel target_zoom,
-                                                   const ToolbarState& toolbar,
+                                                   const vector_v2::ChromeState& chrome,
                                                    std::uint32_t event_us) {
   constexpr vector_v2::NavigationPoint kDefaultFocus{vector_v2::kOverviewWidth / 2,
-                                                     kMainToolbarOverlayTop / 2};
+                                                     vector_v2::kChromeCanvasBottom / 2};
   if (!navigation_.set_zoom(target_zoom, kDefaultFocus)) {
     return {};
   }
-  return refresh(toolbar, event_us);
+  return refresh(chrome, event_us);
 }
 
 LivePresentationTiming VectorV2Presenter::set_view(vector_v2::ZoomLevel target_zoom, int level_x,
-                                                   int level_y, const ToolbarState& toolbar,
+                                                   int level_y,
+                                                   const vector_v2::ChromeState& chrome,
                                                    std::uint32_t event_us) {
   constexpr vector_v2::NavigationPoint kDefaultFocus{vector_v2::kOverviewWidth / 2,
-                                                     kMainToolbarOverlayTop / 2};
+                                                     vector_v2::kChromeCanvasBottom / 2};
   if (!navigation_.set_zoom(target_zoom, kDefaultFocus) ||
       !navigation_.set_origin(level_x, level_y, kDefaultFocus)) {
     return {};
   }
-  return refresh(toolbar, event_us);
+  return refresh(chrome, event_us);
 }
 
 LivePresentationTiming VectorV2Presenter::pan_from(int start_x, int start_y, Point start_touch,
-                                                   Point current_touch, const ToolbarState& toolbar,
+                                                   Point current_touch,
+                                                   const vector_v2::ChromeState& chrome,
                                                    std::uint32_t event_us) {
   const int old_x = level_x();
   const int old_y = level_y();
@@ -226,7 +228,7 @@ LivePresentationTiming VectorV2Presenter::pan_from(int start_x, int start_y, Poi
       (level_x() == old_x && level_y() == old_y)) {
     return {};
   }
-  return refresh_pan(old_x, old_y, toolbar, event_us);
+  return refresh_pan(old_x, old_y, chrome, event_us);
 }
 
 bool VectorV2Presenter::compose_into_frame(vector_v2::PixelRect panel_bounds) {
@@ -258,7 +260,7 @@ bool VectorV2Presenter::compose_into_frame(vector_v2::PixelRect panel_bounds) {
 }
 
 LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
-                                                      const ToolbarState& toolbar,
+                                                      const vector_v2::ChromeState& chrome,
                                                       std::uint32_t event_us) {
   const int delta_x = level_x() - old_x;
   const int delta_y = level_y() - old_y;
@@ -267,23 +269,23 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
                         std::abs(delta_x) <= kMaximumCachedPanDelta &&
                         std::abs(delta_y) <= kMaximumCachedPanDelta;
   if (!reusable) {
-    return refresh(toolbar, event_us);
+    return refresh(chrome, event_us);
   }
   const std::int64_t started = esp_timer_get_time();
   const auto scroll = vector_v2::scroll_frame(
-      frame_, vector_v2::kOverviewWidth, {0, 0, vector_v2::kOverviewWidth, kMainToolbarOverlayTop},
-      delta_x, delta_y);
+      frame_, vector_v2::kOverviewWidth,
+      {0, 0, vector_v2::kOverviewWidth, vector_v2::kChromeCanvasBottom}, delta_x, delta_y);
   if (!scroll.has_value()) {
-    return refresh(toolbar, event_us);
+    return refresh(chrome, event_us);
   }
   for (std::size_t index = 0; index < scroll->exposed_count; ++index) {
     if (!compose_into_frame(scroll->exposed[index])) {
       // scroll_frame already moved overlap in place. A full refresh is the
       // only safe recovery and establishes a new reusable frame.
-      return refresh(toolbar, event_us);
+      return refresh(chrome, event_us);
     }
   }
-  draw_toolbar(frame_, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight, toolbar);
+  vector_v2::draw_chrome(frame_, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight, chrome);
   auto timing = present({0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight}, event_us,
                         esp_timer_get_time() - started);
   timing.frame_reused = true;
@@ -396,7 +398,7 @@ vector_v2::PixelRect VectorV2Presenter::primitive_bounds(
   }
   auto bounds = align_bounds({static_cast<int>(std::floor(x0)), static_cast<int>(std::floor(y0)),
                               static_cast<int>(std::ceil(x1)), static_cast<int>(std::ceil(y1))});
-  bounds.y1 = std::min(bounds.y1, kMainToolbarOverlayTop);
+  bounds.y1 = std::min(bounds.y1, vector_v2::kChromeCanvasBottom);
   return bounds;
 }
 
