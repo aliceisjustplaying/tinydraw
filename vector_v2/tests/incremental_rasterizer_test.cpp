@@ -2,11 +2,46 @@
 
 #include <doctest.h>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <span>
+#include <vector>
 
 namespace vector_v2 = tinydraw::vector_v2;
+
+namespace {
+
+bool reference_covers(vector_v2::CompactOperationSample first,
+                      vector_v2::CompactOperationSample second, float pixel_x, float pixel_y) {
+  constexpr float scale = 4.0F;
+  constexpr float minimum_radius = 0.75F;
+  const float first_x = static_cast<float>(first.x_quarter) * 0.25F * scale;
+  const float first_y = static_cast<float>(first.y_quarter) * 0.25F * scale;
+  const float second_x = static_cast<float>(second.x_quarter) * 0.25F * scale;
+  const float second_y = static_cast<float>(second.y_quarter) * 0.25F * scale;
+  const float first_radius =
+      std::max(static_cast<float>(first.radius_256) / 256.0F * scale, minimum_radius);
+  const float second_radius =
+      std::max(static_cast<float>(second.radius_256) / 256.0F * scale, minimum_radius);
+  const float delta_x = second_x - first_x;
+  const float delta_y = second_y - first_y;
+  const float length_squared = delta_x * delta_x + delta_y * delta_y;
+  const float projection =
+      length_squared > 0.0F
+          ? ((pixel_x - first_x) * delta_x + (pixel_y - first_y) * delta_y) / length_squared
+          : 0.0F;
+  const float amount = std::clamp(projection, 0.0F, 1.0F);
+  const float center_x = first_x + amount * delta_x;
+  const float center_y = first_y + amount * delta_y;
+  const float radius = first_radius + amount * (second_radius - first_radius);
+  const float distance_x = pixel_x - center_x;
+  const float distance_y = pixel_y - center_y;
+  return distance_x * distance_x + distance_y * distance_y <= radius * radius;
+}
+
+}  // namespace
 
 TEST_CASE("incremental operation paints one stroke without clearing prior pixels") {
   std::array<std::uint16_t, 32U * 32U> pixels{};
@@ -126,6 +161,65 @@ TEST_CASE("a clipped source segment is one bounded raster unit") {
         step, 1U));
   }
   CHECK(sliced == complete);
+}
+
+TEST_CASE("tapered segments match a per-pixel oracle across clip boundaries") {
+  constexpr int width = 128;
+  constexpr int height = 128;
+  constexpr std::size_t pixel_count = static_cast<std::size_t>(width * height);
+  std::uint32_t state = 0xC0FFEEU;
+  auto next = [&]() {
+    state = state * 1'664'525U + 1'013'904'223U;
+    return state;
+  };
+
+  for (int case_index = 0; case_index < 256; ++case_index) {
+    vector_v2::CompactOperationSample first{
+        .x_quarter = static_cast<std::uint16_t>(8U + next() % 112U),
+        .y_quarter = static_cast<std::uint16_t>(8U + next() % 112U),
+        .radius_256 = static_cast<std::uint16_t>(64U + next() % 4'096U),
+    };
+    vector_v2::CompactOperationSample second{
+        .x_quarter = static_cast<std::uint16_t>(8U + next() % 112U),
+        .y_quarter = static_cast<std::uint16_t>(8U + next() % 112U),
+        .radius_256 = static_cast<std::uint16_t>(64U + next() % 4'096U),
+    };
+    if (first.radius_256 == second.radius_256) {
+      ++second.radius_256;
+    }
+    const std::array samples{first, second};
+    const vector_v2::OperationAppend operation{.color = 0x001FU, .samples = samples};
+    std::vector<std::uint16_t> rendered(pixel_count, 0xFFFFU);
+    std::vector<std::uint16_t> split(pixel_count, 0xFFFFU);
+    std::vector<std::uint16_t> reference(pixel_count, 0xFFFFU);
+
+    REQUIRE(vector_v2::apply_incremental_operation(operation,
+                                                   {.zoom = vector_v2::ZoomLevel::k400Percent,
+                                                    .level_bounds = {0, 0, width, height},
+                                                    .pixels = rendered,
+                                                    .stride = width}));
+    REQUIRE(vector_v2::apply_incremental_operation(operation,
+                                                   {.zoom = vector_v2::ZoomLevel::k400Percent,
+                                                    .level_bounds = {0, 0, width / 2, height},
+                                                    .pixels = split,
+                                                    .stride = width}));
+    REQUIRE(vector_v2::apply_incremental_operation(operation,
+                                                   {.zoom = vector_v2::ZoomLevel::k400Percent,
+                                                    .level_bounds = {width / 2, 0, width, height},
+                                                    .pixels = std::span(split).subspan(width / 2),
+                                                    .stride = width}));
+
+    for (int y = 0; y < height; ++y) {
+      for (int x = 0; x < width; ++x) {
+        if (reference_covers(first, second, static_cast<float>(x) + 0.5F,
+                             static_cast<float>(y) + 0.5F)) {
+          reference[static_cast<std::size_t>(y * width + x)] = operation.color;
+        }
+      }
+    }
+    CHECK(rendered == reference);
+    CHECK(split == reference);
+  }
 }
 
 TEST_CASE("affected tile enumeration clips to the bounded world") {

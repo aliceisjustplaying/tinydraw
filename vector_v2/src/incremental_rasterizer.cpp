@@ -54,12 +54,15 @@ bool valid_surface(const RasterSurface& surface) {
   const int height = surface.level_bounds.y1 - surface.level_bounds.y0;
   const int level_width = kWorldWidth * zoom_percent(surface.zoom) / 100;
   const int level_height = kWorldHeight * zoom_percent(surface.zoom) / 100;
+  if (width <= 0 || height <= 0 || surface.level_bounds.x0 < 0 || surface.level_bounds.y0 < 0 ||
+      surface.level_bounds.x1 > level_width || surface.level_bounds.y1 > level_height ||
+      surface.stride < width) {
+    return false;
+  }
   const std::size_t required =
       static_cast<std::size_t>(height - 1) * static_cast<std::size_t>(surface.stride) +
       static_cast<std::size_t>(width);
-  return width > 0 && height > 0 && surface.level_bounds.x0 >= 0 && surface.level_bounds.y0 >= 0 &&
-         surface.level_bounds.x1 <= level_width && surface.level_bounds.y1 <= level_height &&
-         surface.stride >= width && surface.pixels.size() >= required;
+  return surface.pixels.size() >= required;
 }
 
 PixelRect segment_bounds(const Segment& segment, PixelRect clip) {
@@ -123,13 +126,8 @@ int find_last_covered(const Segment& segment, PixelRect bounds, float pixel_y, S
   return x;
 }
 
-void paint_segment(const Sample& start, const Sample& end, std::uint16_t color,
-                   const RasterSurface& surface) {
-  const Segment segment = make_segment(start, end);
-  const PixelRect bounds = segment_bounds(segment, surface.level_bounds);
-  if (bounds.x1 <= bounds.x0 || bounds.y1 <= bounds.y0) {
-    return;
-  }
+void paint_constant_radius_segment(const Segment& segment, PixelRect bounds, std::uint16_t color,
+                                   const RasterSurface& surface) {
   ScanSpan prior{.first = bounds.x0, .last = bounds.x0 - 1};
   for (int y = bounds.y0; y < bounds.y1; ++y) {
     const float pixel_y = static_cast<float>(y) + 0.5F;
@@ -147,6 +145,35 @@ void paint_segment(const Sample& start, const Sample& end, std::uint16_t color,
     const auto begin = surface.pixels.begin() + static_cast<std::ptrdiff_t>(row + column);
     const int span_width = last_covered - first_covered + 1;
     std::fill_n(begin, static_cast<std::size_t>(span_width), color);
+  }
+}
+
+void paint_tapered_segment(const Segment& segment, PixelRect bounds, std::uint16_t color,
+                           const RasterSurface& surface) {
+  for (int y = bounds.y0; y < bounds.y1; ++y) {
+    for (int x = bounds.x0; x < bounds.x1; ++x) {
+      if (!covers_pixel(segment, static_cast<float>(x) + 0.5F, static_cast<float>(y) + 0.5F)) {
+        continue;
+      }
+      const std::size_t row = static_cast<std::size_t>(y - surface.level_bounds.y0) *
+                              static_cast<std::size_t>(surface.stride);
+      const std::size_t column = static_cast<std::size_t>(x - surface.level_bounds.x0);
+      surface.pixels[row + column] = color;
+    }
+  }
+}
+
+void paint_segment(const Sample& start, const Sample& end, std::uint16_t color,
+                   const RasterSurface& surface) {
+  const Segment segment = make_segment(start, end);
+  const PixelRect bounds = segment_bounds(segment, surface.level_bounds);
+  if (bounds.x1 <= bounds.x0 || bounds.y1 <= bounds.y0) {
+    return;
+  }
+  if (start.radius == end.radius) {
+    paint_constant_radius_segment(segment, bounds, color, surface);
+  } else {
+    paint_tapered_segment(segment, bounds, color, surface);
   }
 }
 
