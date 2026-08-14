@@ -477,10 +477,12 @@ mixed-zoom drawing gate, the reconciled warm-pan attribution gate, a fresh
 cold 20-run distribution, and the settled 320-versus-384 A/B all live in
 [`vector_v2/hardware-receipts/PERF_ROUND_2_BASELINES_2026_08_14.md`](vector_v2/hardware-receipts/PERF_ROUND_2_BASELINES_2026_08_14.md).
 
-1. Fix drawing latency: change the in-place mutation policy so chunk commits
-   never pay cross-zoom resident-tile fanout; `TINYDRAW_GATE1_MIXED_DRAW`
-   green at 10–12 ms chunks (alarm 15 ms) at every zoom and both slot counts,
-   then it joins the battery's final verdict.
+1. ~~Fix drawing latency~~ **Done at `1848cc6`**: active-zoom mutation policy
+   plus a 10 ms commit budget; `TINYDRAW_GATE1_MIXED_DRAW` green at every
+   zoom and both slot counts and now part of the battery's final verdict. See
+   [`vector_v2/hardware-receipts/DRAWING_LATENCY_CLOSURE_2026_08_14.md`](vector_v2/hardware-receipts/DRAWING_LATENCY_CLOSURE_2026_08_14.md).
+   Residual: the ~13.7 ms uninterruptible 25% overview band replay is the
+   commit ceiling; round-end glass must confirm transient-fallback feel.
 2. Raise warm pan to a 30 FPS floor (frame ≤ 33.3 ms): ring/offset frame
    addressing removes the 15 ms scroll memmove, tear wait overlaps compose,
    changing minimap chrome leaves the per-frame path;

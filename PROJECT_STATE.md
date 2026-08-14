@@ -65,24 +65,42 @@ not the funded product path.
 
 ## Current measured debt
 
-Phase 0 of the second performance round (`205fefe`,
-[`vector_v2/hardware-receipts/PERF_ROUND_2_BASELINES_2026_08_14.md`](vector_v2/hardware-receipts/PERF_ROUND_2_BASELINES_2026_08_14.md))
-replaced the manual regression reports with deterministic receipts:
+Phase 0 baselines live in
+[`vector_v2/hardware-receipts/PERF_ROUND_2_BASELINES_2026_08_14.md`](vector_v2/hardware-receipts/PERF_ROUND_2_BASELINES_2026_08_14.md).
+**Phase 1 (drawing latency) is closed at `1848cc6`**
+([`vector_v2/hardware-receipts/DRAWING_LATENCY_CLOSURE_2026_08_14.md`](vector_v2/hardware-receipts/DRAWING_LATENCY_CLOSURE_2026_08_14.md)):
 
-- drawing with a warm multi-zoom cache breaches the 15 ms chunk alarm at
-  every zoom: `TINYDRAW_GATE1_MIXED_DRAW` measures 130 ms worst at 25%,
-  58 ms at 100%, and 20.5 ms even at 400%, with 700–960 resident tiles
-  painted per stroke and zero fallback — the in-place policy paints every
-  intersecting resident raw tile at every zoom;
+- warm-cache chunk commits fell from 130/88/58/34/21 ms worst
+  (25/50/100/200/400%) to 13.8/13.5/12.6/12.2/11.8 ms via the active-zoom
+  mutation policy plus a 10 ms wall-clock commit budget; the mixed-zoom gate
+  is green at both slot counts and now part of the battery's final verdict;
+- accepted trades: strokes drop affected cross-zoom tiles (0.14–0.26 s
+  revisit refills; a full-width 25% XL stroke costs a full view refill), and
+  budget spillage can leave a briefly blurry patch under heavy fresh ink
+  until refinement settles it — the round-end glass check must confirm both;
+- residual: the uninterruptible 25% overview band replay (~13.7 ms worst) is
+  the new commit ceiling, above the 10–12 ms target but under the alarm;
+- a latent bug was fixed along the way: `IncrementalAppendResult` carried
+  empty world bounds (read after `publish()` cleared them), so end-of-gesture
+  refreshes covered an empty region and the old zero-fallback checks were
+  partly vacuous;
 - the 320-versus-384 mixed draw/pan A/B is settled: identical drawing
   latency at both counts, and 384 keeps its 63-tile/411 ms return-trip
-  retention win, so the drawing fix is a mutation-policy change and the
-  384-slot pool stays;
+  retention win, so the 384-slot pool stays;
 - warm pan is now about 67 ms per frame (≈15 FPS) with attribution
   15.1 ms scroll memmove + 7.3 ms exposed compose + 8.5 ms tear wait +
   19.7 ms present, plus the UI round's per-frame minimap chrome; the
   single-frame pan gates remain red at about 40.4 ms first-submit with
   7.8 ms chrome;
+- memory ledger for later features: product boot at 384 slots leaves
+  2.97 MiB free PSRAM; the 1.5 MiB export reserve leaves ~1.4 MiB spare
+  (942 KiB proven free with the reserve held). SVG export budgets inside
+  the existing reserve (streamed text from the resident operation log is
+  cheaper than the PNG path's measured 51 KiB internal + 377 KiB PSRAM).
+  Undo/Redo comes after the performance round and should ride the
+  operation log (gesture ids are already stored per operation), paying in
+  recompute rather than new storage; keep part of the spare pool unspent
+  until its design is proven;
 - the fresh cold 20-run distribution matches the accepted receipt
   (adversarial 400% p95 638 ms); the round target is −50% at every gated
   corpus and zoom;
@@ -98,15 +116,16 @@ These are product and optimization tasks, not evidence for another rewrite.
 
 ## Immediate next sequence
 
-1. Fix drawing latency by changing the in-place mutation policy so chunk
-   commits never pay cross-zoom resident-tile fanout; acceptance is
-   `TINYDRAW_GATE1_MIXED_DRAW` green (10–12 ms chunks, alarm 15 ms) at every
-   zoom and both slot counts, with the gate's revisit lines pricing the
-   retention cost. The gate then joins the battery's final verdict.
-2. Raise warm pan to a 30 FPS floor: ring/offset frame addressing (−15 ms
-   memmove), tear-wait/compose overlap, and chrome off the per-frame path;
-   acceptance is `TINYDRAW_GATE1_PANSEQ` at or below 33.3 ms per frame.
-3. Run the cold −50% campaign from the fresh distribution.
+1. Raise warm pan to a 30 FPS floor (33.3 ms frames, margin preferred):
+   ring/offset frame addressing (−15 ms memmove), tear-wait/compose overlap,
+   and chrome off the per-frame path; acceptance is `TINYDRAW_GATE1_PANSEQ`
+   at or below 33.3 ms per frame and the single-frame pan gates green.
+2. Run the cold −50% campaign from the fresh distribution (adversarial 400%
+   p95 638 ms → 319 ms). Candidate levers: an operation spatial index over
+   the log (cold gates scan 12,000 operations to render 591) and a second
+   322 KiB staging frame for compose/DMA overlap.
+3. Confirm at the round-end glass check that budgeted-commit transient
+   fallback and cross-zoom revisit refills feel acceptable while drawing.
 4. Capture a clean hardware export receipt proving watchdog-safe encoding;
    reliability matters more than export speed.
 5. Investigate SVG eraser semantics, then continue through anti-aliasing,
