@@ -121,7 +121,9 @@ class Co5300PanelTransport::Impl {
         kDmaCaps));
     transfer_semaphore_ = xSemaphoreCreateCountingStatic(kTransferQueueDepth, kTransferQueueDepth,
                                                          &transfer_semaphore_storage_);
-    if (transfer_pixels_ == nullptr || transfer_semaphore_ == nullptr) {
+    tear_semaphore_ = xSemaphoreCreateBinaryStatic(&tear_semaphore_storage_);
+    if (transfer_pixels_ == nullptr || transfer_semaphore_ == nullptr ||
+        tear_semaphore_ == nullptr) {
       return;
     }
     std::printf("TINYDRAW_PANEL_HARD_RESET=%u\n", reset_panel_power());
@@ -176,7 +178,9 @@ class Co5300PanelTransport::Impl {
     tear_config.pull_up_en = GPIO_PULLUP_DISABLE;
     tear_config.pull_down_en = GPIO_PULLDOWN_DISABLE;
     tear_config.intr_type = GPIO_INTR_ANYEDGE;
-    if (gpio_config(&tear_config) != ESP_OK || gpio_install_isr_service(0) != ESP_OK ||
+    const esp_err_t isr_service = gpio_install_isr_service(0);
+    if (gpio_config(&tear_config) != ESP_OK ||
+        (isr_service != ESP_OK && isr_service != ESP_ERR_INVALID_STATE) ||
         gpio_isr_handler_add(kTearPin, on_tear_edge, this) != ESP_OK) {
       return;
     }
@@ -228,6 +232,17 @@ class Co5300PanelTransport::Impl {
             .period_us = rising < 2U ? -1 : static_cast<std::int64_t>(period),
             .high_us = high == 0U ? -1 : static_cast<std::int64_t>(high),
             .level = gpio_get_level(kTearPin) != 0};
+  }
+
+  [[nodiscard]] bool wait_for_safe_frame_start(std::int64_t timeout_us) {
+    if (!ready_ || timeout_us <= 0) {
+      return false;
+    }
+    static_cast<void>(xSemaphoreTake(tear_semaphore_, 0));
+    const std::uint32_t start = tear_falling_edges_.load(std::memory_order_acquire);
+    const TickType_t timeout_ticks = pdMS_TO_TICKS((timeout_us + 999) / 1'000);
+    const bool signaled = xSemaphoreTake(tear_semaphore_, timeout_ticks) == pdTRUE;
+    return signaled && tear_falling_edges_.load(std::memory_order_acquire) != start;
   }
 
   [[nodiscard]] std::int64_t complete_time_us(std::uint32_t sequence) const {
@@ -329,6 +344,12 @@ class Co5300PanelTransport::Impl {
     if (rise != 0U) {
       self.tear_high_us_.store(now - rise, std::memory_order_relaxed);
     }
+    self.tear_falling_edges_.fetch_add(1U, std::memory_order_release);
+    BaseType_t woke = pdFALSE;
+    xSemaphoreGiveFromISR(self.tear_semaphore_, &woke);
+    if (woke == pdTRUE) {
+      portYIELD_FROM_ISR();
+    }
   }
 
   static bool on_transfer_done(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t*,
@@ -346,12 +367,15 @@ class Co5300PanelTransport::Impl {
   std::uint16_t* transfer_pixels_ = nullptr;
   StaticSemaphore_t transfer_semaphore_storage_{};
   SemaphoreHandle_t transfer_semaphore_ = nullptr;
+  StaticSemaphore_t tear_semaphore_storage_{};
+  SemaphoreHandle_t tear_semaphore_ = nullptr;
   esp_lcd_panel_io_handle_t io_ = nullptr;
   esp_lcd_panel_handle_t panel_ = nullptr;
   std::array<std::atomic<std::uint32_t>, kTransferHistory> transfer_complete_times_{};
   std::atomic<std::uint32_t> transfer_submits_{0U};
   std::atomic<std::uint32_t> transfer_completes_{0U};
   std::atomic<std::uint32_t> tear_rising_edges_{0U};
+  std::atomic<std::uint32_t> tear_falling_edges_{0U};
   std::atomic<std::uint32_t> tear_last_rise_us_{0U};
   std::atomic<std::uint32_t> tear_period_us_{0U};
   std::atomic<std::uint32_t> tear_high_us_{0U};
@@ -382,6 +406,9 @@ std::int64_t Co5300PanelTransport::complete_time_us(std::uint32_t sequence) cons
 }
 TearSignalTiming Co5300PanelTransport::tear_signal_timing() const {
   return impl_->tear_signal_timing();
+}
+bool Co5300PanelTransport::wait_for_safe_frame_start(std::int64_t timeout_us) {
+  return impl_->wait_for_safe_frame_start(timeout_us);
 }
 bool Co5300PanelTransport::wait_for_all(std::int64_t timeout_us) {
   return impl_->wait_for_all(timeout_us);
