@@ -933,15 +933,9 @@ bool ChromeStagingCache::paint(const MinimapSurface& surface, const ChromeState&
   if (state.battery_percentage >= 0) {
     blend_cached_sprite(surface, kBatteryOverlayRect, battery);
   }
-  const bool viewport_intersects = kMinimapOverlayRect.x0 < surface.origin_x + surface.width &&
-                                   kMinimapOverlayRect.x1 > surface.origin_x &&
-                                   kMinimapOverlayRect.y0 < surface.origin_y + surface.height &&
-                                   kMinimapOverlayRect.y1 > surface.origin_y;
-  if (viewport_intersects) {
-    Painter painter(surface.pixels, surface.width, surface.height, surface.origin_x,
-                    surface.origin_y);
-    draw_minimap_viewport(painter, navigation);
-  }
+  Painter painter(surface.pixels, surface.width, surface.height, surface.origin_x,
+                  surface.origin_y);
+  draw_minimap_viewport(painter, navigation);
   return true;
 }
 
