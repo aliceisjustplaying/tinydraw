@@ -444,7 +444,10 @@ void blend_cached_sprite(const MinimapSurface& destination, ChromeRect rect,
                                    source.size());
     for (std::size_t column = 0; column < source.size(); ++column) {
       if (source[column] != kCacheTransparent) {
-        target[column] = source[column];
+        const std::uint16_t pixel = source[column];
+        target[column] = destination.byte_swapped
+                             ? static_cast<std::uint16_t>((pixel >> 8U) | (pixel << 8U))
+                             : pixel;
       }
     }
   }

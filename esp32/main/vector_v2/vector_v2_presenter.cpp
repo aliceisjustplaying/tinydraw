@@ -764,9 +764,11 @@ void VectorV2Presenter::paint_optical_row_pattern(const PanelStageSurface& surfa
   for (int row = 0; row < surface.height; ++row) {
     const int panel_y = surface.panel_y + row;
     for (int panel_x = first_x; panel_x < last_x; ++panel_x) {
+      const std::uint16_t pixel =
+          optical_pattern_pixel(optical_generation_, panel_y, panel_x - kOpticalPatternX);
       surface.pixels[static_cast<std::size_t>(row) * surface.stride +
                      static_cast<std::size_t>(panel_x - surface.panel_x)] =
-          optical_pattern_pixel(optical_generation_, panel_y, panel_x - kOpticalPatternX);
+          surface.byte_swapped ? static_cast<std::uint16_t>((pixel >> 8U) | (pixel << 8U)) : pixel;
     }
   }
 }
@@ -818,9 +820,9 @@ bool VectorV2Presenter::paint_stage_surface(StageContext& context,
   context.exposed_us += esp_timer_get_time() - exposed_started;
 
   const std::int64_t chrome_started = esp_timer_get_time();
-  if (!chrome_cache_.paint(
-          {surface.pixels, surface.width, surface.height, surface.panel_x, surface.panel_y},
-          *context.chrome, context.navigation, canvas_.current_revision().value)) {
+  if (!chrome_cache_.paint({surface.pixels, surface.width, surface.height, surface.panel_x,
+                            surface.panel_y, surface.byte_swapped},
+                           *context.chrome, context.navigation, canvas_.current_revision().value)) {
     return false;
   }
   context.chrome_us += esp_timer_get_time() - chrome_started;
@@ -872,7 +874,7 @@ LivePresentationTiming VectorV2Presenter::present_ring(
       band.x0, band.y0, band_width, band_height, scheduled->strip.pixels.data(),
       scheduled->strip.stride, scheduled->strip.source_shift_x, scheduled->strip.source_shift_y,
       scheduled->strip.source_area_width, scheduled->strip.source_area_height, rows_per_strip,
-      {.context = &context, .paint = &paint_stage_thunk});
+      {.context = &context, .paint = &paint_stage_thunk, .accepts_byte_swapped = true});
   if (!streamed) {
     static_cast<void>(scheduler_.abort(*sequence));
     return timing;

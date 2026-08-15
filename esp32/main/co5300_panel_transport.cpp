@@ -694,8 +694,12 @@ class Co5300PanelTransport::Impl {
           source_row -= area_height;
         }
         const auto* source = area_pixels + static_cast<std::ptrdiff_t>(source_row) * stride;
-        copy_ring_row(source, area_width, shift_x, x, width,
-                      transfer + static_cast<std::ptrdiff_t>(strip_row * width));
+        auto* destination = transfer + static_cast<std::ptrdiff_t>(strip_row * width);
+        if (patch.accepts_byte_swapped) {
+          stage_ring_row(source, area_width, shift_x, x, width, destination);
+        } else {
+          copy_ring_row(source, area_width, shift_x, x, width, destination);
+        }
       }
       const auto staged =
           std::span(transfer, static_cast<std::size_t>(rows) * static_cast<std::size_t>(width));
@@ -706,13 +710,16 @@ class Co5300PanelTransport::Impl {
                         .width = width,
                         .height = rows,
                         .stride = width,
-                        .pixels = staged})) {
+                        .pixels = staged,
+                        .byte_swapped = patch.accepts_byte_swapped})) {
         static_cast<void>(xSemaphoreGive(transfer_semaphore_));
         return false;
       }
       const std::int64_t patch_completed = esp_timer_get_time();
       patch_us_ += patch_completed - copy_completed;
-      swap_pixels_in_place(staged);
+      if (!patch.accepts_byte_swapped) {
+        swap_pixels_in_place(staged);
+      }
       const std::int64_t swap_completed = esp_timer_get_time();
       byte_swap_us_ += swap_completed - patch_completed;
       prepare_us_ += swap_completed - prepare_started;

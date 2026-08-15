@@ -156,6 +156,7 @@ struct MinimapSurface {
   int height = 0;
   int origin_x = 0;
   int origin_y = 0;
+  bool byte_swapped = false;
 };
 
 // Caller-funded PSRAM for prerendered fixed chrome sprites. The cache keeps

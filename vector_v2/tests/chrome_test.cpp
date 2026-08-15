@@ -542,6 +542,26 @@ TEST_CASE("staging strips reproduce all fixed chrome without mutating canvas sou
   }
   CHECK(cached == reference);
 
+  const auto byte_swap = [](std::uint16_t pixel) {
+    return static_cast<std::uint16_t>((pixel >> 8U) | (pixel << 8U));
+  };
+  std::vector<std::uint16_t> swapped_cached = canvas;
+  std::vector<std::uint16_t> swapped_reference = reference;
+  for (std::uint16_t& pixel : swapped_cached) {
+    pixel = byte_swap(pixel);
+  }
+  for (std::uint16_t& pixel : swapped_reference) {
+    pixel = byte_swap(pixel);
+  }
+  for (int y = 0; y < height; y += rows_per_strip) {
+    const int rows = std::min(rows_per_strip, height - y);
+    auto strip =
+        std::span(swapped_cached)
+            .subspan(static_cast<std::size_t>(y) * width, static_cast<std::size_t>(rows) * width);
+    REQUIRE(cache.paint({strip, width, rows, 0, y, true}, state, navigation, 7U));
+  }
+  CHECK(swapped_cached == swapped_reference);
+
   auto moved = navigation;
   moved.level_x += 137;
   moved.level_y += 211;
