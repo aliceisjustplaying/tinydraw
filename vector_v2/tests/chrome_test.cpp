@@ -438,3 +438,52 @@ TEST_CASE("minimap surface draw matches the full overlay draw") {
     }
   }
 }
+
+TEST_CASE("full-width strip overlay drawing matches the full overlay draw") {
+  constexpr int width = 368;
+  constexpr int height = 448;
+  constexpr int canvas_bottom = 372;
+  constexpr int rows_per_strip = 44;
+  const std::size_t pixel_count = static_cast<std::size_t>(width * height);
+  std::vector<std::uint16_t> canvas(pixel_count);
+  std::vector<std::uint16_t> overview(pixel_count);
+  for (std::size_t index = 0; index < pixel_count; ++index) {
+    canvas[index] = static_cast<std::uint16_t>(index * 7U);
+    overview[index] = static_cast<std::uint16_t>(index * 13U);
+  }
+  const ChromeState state{.battery_percentage = 50};
+  const tinydraw::vector_v2::ChromeNavigation navigation{
+      .zoom_percent = 200,
+      .level_x = 511,
+      .level_y = 833,
+      .level_width = 2944,
+      .level_height = 3584,
+      .can_pan_top = true,
+      .can_pan_left = true,
+      .can_pan_right = true,
+      .can_pan_bottom = true,
+      .overview_pixels = overview,
+  };
+  // Reference: overlays drawn over the canvas in one full-frame pass.
+  std::vector<std::uint16_t> reference = canvas;
+  tinydraw::vector_v2::draw_chrome_canvas_overlays(reference, width, height, state, navigation);
+  // The pan sweep path: each full-width strip starts as backdrop and draws
+  // just its intersecting overlay shares.
+  std::size_t mismatches = 0;
+  for (int y = 0; y < canvas_bottom; y += rows_per_strip) {
+    const int rows = std::min(rows_per_strip, canvas_bottom - y);
+    std::vector<std::uint16_t> strip(
+        canvas.begin() + static_cast<std::ptrdiff_t>(y) * width,
+        canvas.begin() + static_cast<std::ptrdiff_t>(y + rows) * width);
+    REQUIRE(tinydraw::vector_v2::draw_chrome_strip_overlays({strip, width, rows, 0, y}, state,
+                                                            navigation));
+    for (int row = 0; row < rows; ++row) {
+      for (int x = 0; x < width; ++x) {
+        mismatches +=
+            strip[static_cast<std::size_t>(row) * width + static_cast<std::size_t>(x)] !=
+            reference[static_cast<std::size_t>(y + row) * width + static_cast<std::size_t>(x)];
+      }
+    }
+  }
+  CHECK(mismatches == 0);
+}

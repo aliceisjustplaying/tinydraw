@@ -1,0 +1,453 @@
+[10:41:45] TINYDRAW_LIVE_PRESENT kind=power zoom=25 x=0 y=0 compose_us=36695 scroll_us=0 exposed_compose_us=0 chrome_us=8312 read_submit_us=45208 read_complete_us=46819 transfer_wait_us=18792 tile_pixels=0 uniform_pixels=0 overview_pixels=164864 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=11 tear_wait_us=6767 tear_sync=1 frame_reused=0 pass=1
+[10:42:15] TINYDRAW_LIVE_PRESENT kind=power zoom=25 x=0 y=0 compose_us=36769 scroll_us=0 exposed_compose_us=0 chrome_us=8390 read_submit_us=51146 read_complete_us=52759 transfer_wait_us=18854 tile_pixels=0 uniform_pixels=0 overview_pixels=164864 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=11 tear_wait_us=12646 tear_sync=1 frame_reused=0 pass=1
+[10:42:18] TINYDRAW_LIVE_PRESENT kind=chrome zoom=25 x=0 y=0 compose_us=37292 scroll_us=0 exposed_compose_us=0 chrome_us=0 read_submit_us=38807 read_complete_us=40416 transfer_wait_us=18149 tile_pixels=0 uniform_pixels=0 overview_pixels=164864 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=11 tear_wait_us=93 tear_sync=1 frame_reused=0 pass=1
+[10:42:19] TINYDRAW_LIVE_PRESENT kind=chrome zoom=25 x=0 y=0 compose_us=36758 scroll_us=0 exposed_compose_us=0 chrome_us=8459 read_submit_us=38143 read_complete_us=39753 transfer_wait_us=18813 tile_pixels=0 uniform_pixels=0 overview_pixels=164864 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=11 tear_wait_us=131 tear_sync=1 frame_reused=0 pass=1
+[10:42:19] TINYDRAW_LIVE_PRESENT kind=chrome zoom=25 x=0 y=0 compose_us=37255 scroll_us=0 exposed_compose_us=0 chrome_us=0 read_submit_us=46092 read_complete_us=47701 transfer_wait_us=18866 tile_pixels=0 uniform_pixels=0 overview_pixels=164864 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=11 tear_wait_us=7495 tear_sync=1 frame_reused=0 pass=1
+[10:42:20] TINYDRAW_LIVE_PRESENT kind=chrome zoom=25 x=0 y=0 compose_us=36817 scroll_us=0 exposed_compose_us=0 chrome_us=8465 read_submit_us=42145 read_complete_us=43754 transfer_wait_us=18809 tile_pixels=0 uniform_pixels=0 overview_pixels=164864 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=11 tear_wait_us=4150 tear_sync=1 frame_reused=0 pass=1
+[10:42:24] TINYDRAW_LIVE_STROKE revision=6 operations=6 samples=163 append_us=98662 append_max_us=23309 refresh_compose_us=38790 refresh_complete_us=15964 ink_samples=148 read_submit_avg_us=2592 read_submit_max_us=25330 read_complete_avg_us=2658 read_complete_max_us=25424 submit_over_16ms=4 complete_over_33ms=0 presentation_failures=0 poll_max_us=99002 touch_errors=0 touch_overflows=0 touch_moves_coalesced=1428 touch_events=1025 touch_down=5 touch_up=5 touch_events_ge_8ms=0 touch_event_age_max_us=6142 chunks=6 free_psram=2974812 largest_psram=2949120 authority_match=1
+[10:42:24] TINYDRAW_LIVE_STROKE_DONE committed=1 refresh=1 commit_failed=0
+[10:42:24] TINYDRAW_LIFT_BASELINE id=1 finish_preview_us=1324 builder_finish_us=57 append_us=98662 append_max_us=23309 refresh_wall_us=71149 refresh_x0=16 refresh_y0=48 refresh_x1=325 refresh_y1=407 refresh_compose_us=38790 refresh_first_submit_us=18660 refresh_first_complete_us=20262 refresh_transfer_wait_us=15964 stroke_logging_us=0 detected_to_poll_start_us=76968 detected_to_poll_complete_us=76979 poll_read_us=11 unattributed_tail_us=-94224 reports_dropped=0 chunks=6 committed=1 refresh=1 commit_failed=0
+[10:42:26] TINYDRAW_LIVE_PRESENT kind=chrome zoom=25 x=0 y=0 compose_us=37517 scroll_us=0 exposed_compose_us=0 chrome_us=0 read_submit_us=39089 read_complete_us=40699 transfer_wait_us=18866 tile_pixels=0 uniform_pixels=0 overview_pixels=164864 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=11 tear_wait_us=113 tear_sync=1 frame_reused=0 pass=1
+[10:42:27] TINYDRAW_LIVE_PRESENT kind=chrome zoom=25 x=0 y=0 compose_us=87060 scroll_us=0 exposed_compose_us=0 chrome_us=0 read_submit_us=92986 read_complete_us=94596 transfer_wait_us=18970 tile_pixels=0 uniform_pixels=0 overview_pixels=164864 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=11 tear_wait_us=4864 tear_sync=1 frame_reused=0 pass=1
+[10:42:27] TINYDRAW_LIVE_PRESENT kind=chrome zoom=25 x=0 y=0 compose_us=36795 scroll_us=0 exposed_compose_us=0 chrome_us=8432 read_submit_us=39737 read_complete_us=41347 transfer_wait_us=18213 tile_pixels=0 uniform_pixels=0 overview_pixels=164864 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=11 tear_wait_us=1770 tear_sync=1 frame_reused=0 pass=1
+[10:42:30] TINYDRAW_LIVE_STROKE revision=11 operations=11 samples=309 append_us=107503 append_max_us=34632 refresh_compose_us=36697 refresh_complete_us=16350 ink_samples=123 read_submit_avg_us=2560 read_submit_max_us=37162 read_complete_avg_us=2625 read_complete_max_us=37311 submit_over_16ms=3 complete_over_33ms=1 presentation_failures=0 poll_max_us=133005 touch_errors=0 touch_overflows=0 touch_moves_coalesced=1285 touch_events=917 touch_down=4 touch_up=4 touch_events_ge_8ms=0 touch_event_age_max_us=1250 chunks=5 free_psram=2974812 largest_psram=2949120 authority_match=1
+[10:42:30] TINYDRAW_LIVE_STROKE_DONE committed=1 refresh=1 commit_failed=0
+[10:42:30] TINYDRAW_LIFT_BASELINE id=2 finish_preview_us=1655 builder_finish_us=106 append_us=107503 append_max_us=34632 refresh_wall_us=68958 refresh_x0=35 refresh_y0=36 refresh_x1=321 refresh_y1=426 refresh_compose_us=36697 refresh_first_submit_us=28564 refresh_first_complete_us=30162 refresh_transfer_wait_us=16350 stroke_logging_us=0 detected_to_poll_start_us=85003 detected_to_poll_complete_us=85014 poll_read_us=11 unattributed_tail_us=-93219 reports_dropped=0 chunks=5 committed=1 refresh=1 commit_failed=0
+[10:42:31] TINYDRAW_LIVE_PRESENT kind=chrome zoom=25 x=0 y=0 compose_us=86959 scroll_us=0 exposed_compose_us=0 chrome_us=0 read_submit_us=90342 read_complete_us=91955 transfer_wait_us=18615 tile_pixels=0 uniform_pixels=0 overview_pixels=164864 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=11 tear_wait_us=2313 tear_sync=1 frame_reused=0 pass=1
+[10:42:32] TINYDRAW_LIVE_PRESENT kind=chrome zoom=25 x=0 y=0 compose_us=36819 scroll_us=0 exposed_compose_us=0 chrome_us=8467 read_submit_us=53078 read_complete_us=54687 transfer_wait_us=18872 tile_pixels=0 uniform_pixels=0 overview_pixels=164864 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=11 tear_wait_us=15058 tear_sync=1 frame_reused=0 pass=1
+[10:42:34] TINYDRAW_LIVE_STROKE revision=15 operations=15 samples=430 append_us=88689 append_max_us=31459 refresh_compose_us=38212 refresh_complete_us=14241 ink_samples=117 read_submit_avg_us=2469 read_submit_max_us=34307 read_complete_avg_us=2538 read_complete_max_us=34413 submit_over_16ms=3 complete_over_33ms=1 presentation_failures=0 poll_max_us=130005 touch_errors=0 touch_overflows=0 touch_moves_coalesced=1035 touch_events=714 touch_down=3 touch_up=3 touch_events_ge_8ms=0 touch_event_age_max_us=1248 chunks=4 free_psram=2974812 largest_psram=2949120 authority_match=1
+[10:42:34] TINYDRAW_LIVE_STROKE_DONE committed=1 refresh=1 commit_failed=0
+[10:42:34] TINYDRAW_LIFT_BASELINE id=3 finish_preview_us=1248 builder_finish_us=59 append_us=88689 append_max_us=31459 refresh_wall_us=68516 refresh_x0=33 refresh_y0=39 refresh_x1=330 refresh_y1=370 refresh_compose_us=38212 refresh_first_submit_us=33159 refresh_first_complete_us=34758 refresh_transfer_wait_us=14241 stroke_logging_us=0 detected_to_poll_start_us=89003 detected_to_poll_complete_us=89013 poll_read_us=10 unattributed_tail_us=-69509 reports_dropped=0 chunks=4 committed=1 refresh=1 commit_failed=0
+[10:42:35] TINYDRAW_LIVE_PRESENT kind=chrome zoom=25 x=0 y=0 compose_us=87066 scroll_us=0 exposed_compose_us=0 chrome_us=0 read_submit_us=95688 read_complete_us=97298 transfer_wait_us=18269 tile_pixels=0 uniform_pixels=0 overview_pixels=164864 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=11 tear_wait_us=7574 tear_sync=1 frame_reused=0 pass=1
+[10:42:36] TINYDRAW_LIVE_PRESENT kind=chrome zoom=25 x=0 y=0 compose_us=36840 scroll_us=0 exposed_compose_us=0 chrome_us=8484 read_submit_us=48030 read_complete_us=49639 transfer_wait_us=18920 tile_pixels=0 uniform_pixels=0 overview_pixels=164864 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=11 tear_wait_us=9997 tear_sync=1 frame_reused=0 pass=1
+[10:42:37] TINYDRAW_LIVE_PRESENT kind=chrome zoom=25 x=0 y=0 compose_us=37343 scroll_us=0 exposed_compose_us=0 chrome_us=0 read_submit_us=40331 read_complete_us=41940 transfer_wait_us=18627 tile_pixels=0 uniform_pixels=0 overview_pixels=164864 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=11 tear_wait_us=1657 tear_sync=1 frame_reused=0 pass=1
+[10:42:37] TINYDRAW_LIVE_PRESENT kind=chrome zoom=25 x=0 y=0 compose_us=36788 scroll_us=0 exposed_compose_us=0 chrome_us=8453 read_submit_us=48438 read_complete_us=50047 transfer_wait_us=18518 tile_pixels=0 uniform_pixels=0 overview_pixels=164864 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=11 tear_wait_us=10467 tear_sync=1 frame_reused=0 pass=1
+[10:42:38] TINYDRAW_LIVE_PRESENT kind=chrome zoom=25 x=0 y=0 compose_us=37377 scroll_us=0 exposed_compose_us=0 chrome_us=0 read_submit_us=52735 read_complete_us=54345 transfer_wait_us=18221 tile_pixels=0 uniform_pixels=0 overview_pixels=164864 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=11 tear_wait_us=14045 tear_sync=1 frame_reused=0 pass=1
+[10:42:39] TINYDRAW_LIVE_PRESENT kind=chrome zoom=25 x=0 y=0 compose_us=36675 scroll_us=0 exposed_compose_us=0 chrome_us=8445 read_submit_us=39417 read_complete_us=41029 transfer_wait_us=18537 tile_pixels=0 uniform_pixels=0 overview_pixels=164864 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=11 tear_wait_us=1562 tear_sync=1 frame_reused=0 pass=1
+[10:42:42] TINYDRAW_LIVE_STROKE revision=21 operations=21 samples=608 append_us=87735 append_max_us=22181 refresh_compose_us=40935 refresh_complete_us=15055 ink_samples=166 read_submit_avg_us=1975 read_submit_max_us=23517 read_complete_avg_us=2028 read_complete_max_us=23510 submit_over_16ms=2 complete_over_33ms=0 presentation_failures=0 poll_max_us=135005 touch_errors=0 touch_overflows=0 touch_moves_coalesced=1446 touch_events=1151 touch_down=7 touch_up=7 touch_events_ge_8ms=0 touch_event_age_max_us=1251 chunks=6 free_psram=2974812 largest_psram=2949120 authority_match=1
+[10:42:42] TINYDRAW_LIVE_STROKE_DONE committed=1 refresh=1 commit_failed=0
+[10:42:42] TINYDRAW_LIFT_BASELINE id=4 finish_preview_us=461 builder_finish_us=107 append_us=87735 append_max_us=22181 refresh_wall_us=72656 refresh_x0=19 refresh_y0=27 refresh_x1=329 refresh_y1=376 refresh_compose_us=40935 refresh_first_submit_us=23021 refresh_first_complete_us=24633 refresh_transfer_wait_us=15055 stroke_logging_us=0 detected_to_poll_start_us=82994 detected_to_poll_complete_us=83004 poll_read_us=10 unattributed_tail_us=-77965 reports_dropped=0 chunks=6 committed=1 refresh=1 commit_failed=0
+[10:42:47] TINYDRAW_LIVE_PRESENT kind=power zoom=25 x=0 y=0 compose_us=36608 scroll_us=0 exposed_compose_us=0 chrome_us=8356 read_submit_us=49354 read_complete_us=50963 transfer_wait_us=18642 tile_pixels=0 uniform_pixels=0 overview_pixels=164864 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=11 tear_wait_us=10982 tear_sync=1 frame_reused=0 pass=1
+[10:42:47] TINYDRAW_LIVE_STROKE revision=32 operations=32 samples=943 append_us=242970 append_max_us=33920 refresh_compose_us=43308 refresh_complete_us=16987 ink_samples=288 read_submit_avg_us=2510 read_submit_max_us=35415 read_complete_avg_us=2606 read_complete_max_us=35450 submit_over_16ms=7 complete_over_33ms=1 presentation_failures=0 poll_max_us=83004 touch_errors=0 touch_overflows=0 touch_moves_coalesced=2585 touch_events=1843 touch_down=1 touch_up=1 touch_events_ge_8ms=0 touch_event_age_max_us=1247 chunks=11 free_psram=2974812 largest_psram=2949120 authority_match=1
+[10:42:47] TINYDRAW_LIVE_STROKE_DONE committed=1 refresh=1 commit_failed=0
+[10:42:47] TINYDRAW_LIFT_BASELINE id=5 finish_preview_us=2013 builder_finish_us=63 append_us=242970 append_max_us=33920 refresh_wall_us=77529 refresh_x0=22 refresh_y0=9 refresh_x1=340 refresh_y1=399 refresh_compose_us=43308 refresh_first_submit_us=26083 refresh_first_complete_us=27662 refresh_transfer_wait_us=16987 stroke_logging_us=0 detected_to_poll_start_us=186760 detected_to_poll_complete_us=186773 poll_read_us=13 unattributed_tail_us=-135815 reports_dropped=0 chunks=11 committed=1 refresh=1 commit_failed=0
+[10:42:58] TINYDRAW_LIVE_PRESENT kind=zoom zoom=50 x=184 y=262 compose_us=29797 scroll_us=0 exposed_compose_us=0 chrome_us=8114 read_submit_us=46247 read_complete_us=47858 transfer_wait_us=18753 tile_pixels=0 uniform_pixels=0 overview_pixels=0 fallback_pixels=164864 resident_tiles=0 fallback_tiles=56 pushes=11 tear_wait_us=15262 tear_sync=1 frame_reused=0 pass=1
+[10:42:58] TINYDRAW_FILL_BASELINE result=complete zoom=50 x=184 y=262 revision=32 steps=137 wall_us=509212 compute_total_us=418220 compute_max_us=9528 present_total_us=73744 present_max_us=8702 tick_max_us=10856 producer_failures=0 presentation_failures=0
+[10:42:58] TINYDRAW_LIVE_FILL_DONE zoom=50 x=184 y=262 revision=32
+[10:42:59] TINYDRAW_LIVE_PRESENT kind=zoom zoom=100 x=552 y=710 compose_us=25913 scroll_us=0 exposed_compose_us=0 chrome_us=8018 read_submit_us=43597 read_complete_us=45204 transfer_wait_us=18402 tile_pixels=0 uniform_pixels=0 overview_pixels=0 fallback_pixels=164864 resident_tiles=0 fallback_tiles=56 pushes=11 tear_wait_us=16515 tear_sync=1 frame_reused=0 pass=1
+[10:42:59] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=552 y=710 revision=32 steps=200 wall_us=588748 compute_total_us=492309 compute_max_us=9072 present_total_us=76853 present_max_us=8518 tick_max_us=10593 producer_failures=0 presentation_failures=0
+[10:42:59] TINYDRAW_LIVE_FILL_DONE zoom=100 x=552 y=710 revision=32
+[10:43:04] TINYDRAW_LIVE_REPAIR views=22 steps=1113
+[10:43:08] TINYDRAW_LIVE_PRESENT kind=chrome zoom=100 x=552 y=710 compose_us=30718 scroll_us=0 exposed_compose_us=0 chrome_us=0 read_submit_us=38345 read_complete_us=39958 transfer_wait_us=18611 tile_pixels=164864 uniform_pixels=0 overview_pixels=0 fallback_pixels=0 resident_tiles=56 fallback_tiles=0 pushes=11 tear_wait_us=6279 tear_sync=1 frame_reused=0 pass=1
+[10:43:09] TINYDRAW_LIVE_PRESENT kind=chrome zoom=100 x=552 y=710 compose_us=29707 scroll_us=0 exposed_compose_us=0 chrome_us=8025 read_submit_us=37307 read_complete_us=38918 transfer_wait_us=18648 tile_pixels=164864 uniform_pixels=0 overview_pixels=0 fallback_pixels=0 resident_tiles=56 fallback_tiles=0 pushes=11 tear_wait_us=6452 tear_sync=1 frame_reused=0 pass=1
+[10:43:10] TINYDRAW_PAN_BASELINE zoom=100 x=756 y=980 frames=9 reused=9 compose_avg_us=16 compose_max_us=17 present_avg_us=28859 present_max_us=33301 tear_wait_avg_us=629 tear_wait_max_us=2545 failures=0
+[10:43:10] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=756 y=980 revision=32 steps=16 wall_us=111999 compute_total_us=41338 compute_max_us=5855 present_total_us=67545 present_max_us=66181 tick_max_us=5869 producer_failures=0 presentation_failures=0
+[10:43:10] TINYDRAW_LIVE_FILL_DONE zoom=100 x=756 y=980 revision=32
+[10:43:10] TINYDRAW_PAN_BASELINE zoom=100 x=744 y=1310 frames=8 reused=7 compose_avg_us=4067 compose_max_us=32431 present_avg_us=26526 present_max_us=31889 tear_wait_avg_us=363 tear_wait_max_us=1702 failures=0
+[10:43:11] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=744 y=1310 revision=32 steps=13 wall_us=133430 compute_total_us=59976 compute_max_us=7942 present_total_us=69578 present_max_us=61519 tick_max_us=7964 producer_failures=0 presentation_failures=0
+[10:43:11] TINYDRAW_LIVE_FILL_DONE zoom=100 x=744 y=1310 revision=32
+[10:43:11] TINYDRAW_PAN_BASELINE zoom=100 x=552 y=1344 frames=9 reused=9 compose_avg_us=16 compose_max_us=17 present_avg_us=28207 present_max_us=31885 tear_wait_avg_us=56 tear_wait_max_us=231 failures=0
+[10:43:11] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=552 y=1344 revision=32 steps=1 wall_us=1473 compute_total_us=1438 compute_max_us=1438 present_total_us=0 present_max_us=0 tick_max_us=1451 producer_failures=0 presentation_failures=0
+[10:43:11] TINYDRAW_LIVE_FILL_DONE zoom=100 x=552 y=1344 revision=32
+[10:43:12] TINYDRAW_PAN_BASELINE zoom=100 x=684 y=1344 frames=5 reused=5 compose_avg_us=16 compose_max_us=17 present_avg_us=28299 present_max_us=29887 tear_wait_avg_us=762 tear_wait_max_us=1183 failures=3
+[10:43:12] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=684 y=1344 revision=32 steps=1 wall_us=1467 compute_total_us=1432 compute_max_us=1432 present_total_us=0 present_max_us=0 tick_max_us=1445 producer_failures=0 presentation_failures=0
+[10:43:12] TINYDRAW_LIVE_FILL_DONE zoom=100 x=684 y=1344 revision=32
+[10:43:12] TINYDRAW_PAN_BASELINE zoom=100 x=860 y=1304 frames=5 reused=5 compose_avg_us=16 compose_max_us=17 present_avg_us=29377 present_max_us=33887 tear_wait_avg_us=482 tear_wait_max_us=1219 failures=0
+[10:43:12] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=860 y=1304 revision=32 steps=1 wall_us=1632 compute_total_us=1596 compute_max_us=1596 present_total_us=0 present_max_us=0 tick_max_us=1610 producer_failures=0 presentation_failures=0
+[10:43:12] TINYDRAW_LIVE_FILL_DONE zoom=100 x=860 y=1304 revision=32
+[10:43:12] TINYDRAW_PAN_BASELINE zoom=100 x=1014 y=1254 frames=6 reused=6 compose_avg_us=16 compose_max_us=16 present_avg_us=28561 present_max_us=34886 tear_wait_avg_us=805 tear_wait_max_us=1186 failures=0
+[10:43:12] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=1014 y=1254 revision=32 steps=1 wall_us=2889 compute_total_us=2854 compute_max_us=2854 present_total_us=0 present_max_us=0 tick_max_us=2868 producer_failures=0 presentation_failures=0
+[10:43:12] TINYDRAW_LIVE_FILL_DONE zoom=100 x=1014 y=1254 revision=32
+[10:43:13] TINYDRAW_PAN_BASELINE zoom=100 x=964 y=994 frames=5 reused=4 compose_avg_us=5973 compose_max_us=29801 present_avg_us=26900 present_max_us=32892 tear_wait_avg_us=638 tear_wait_max_us=2062 failures=0
+[10:43:13] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=964 y=994 revision=32 steps=1 wall_us=1238 compute_total_us=1197 compute_max_us=1197 present_total_us=0 present_max_us=0 tick_max_us=1211 producer_failures=0 presentation_failures=0
+[10:43:13] TINYDRAW_LIVE_FILL_DONE zoom=100 x=964 y=994 revision=32
+[10:43:13] TINYDRAW_PAN_BASELINE zoom=100 x=934 y=764 frames=5 reused=4 compose_avg_us=6363 compose_max_us=31758 present_avg_us=26561 present_max_us=33887 tear_wait_avg_us=1267 tear_wait_max_us=3806 failures=0
+[10:43:13] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=934 y=764 revision=32 steps=2 wall_us=81425 compute_total_us=9243 compute_max_us=5946 present_total_us=70535 present_max_us=70535 tick_max_us=5966 producer_failures=0 presentation_failures=0
+[10:43:13] TINYDRAW_LIVE_FILL_DONE zoom=100 x=934 y=764 revision=32
+[10:43:14] TINYDRAW_PAN_BASELINE zoom=100 x=922 y=478 frames=5 reused=4 compose_avg_us=6221 compose_max_us=31044 present_avg_us=27413 present_max_us=33887 tear_wait_avg_us=3125 tear_wait_max_us=13224 failures=0
+[10:43:14] TINYDRAW_PAN_BASELINE zoom=100 x=924 y=256 frames=4 reused=3 compose_avg_us=7965 compose_max_us=31812 present_avg_us=26599 present_max_us=32887 tear_wait_avg_us=4200 tear_wait_max_us=13268 failures=0
+[10:43:14] TINYDRAW_FILL_BASELINE result=superseded zoom=100 x=922 y=478 revision=32 steps=27 wall_us=373969 compute_total_us=101515 compute_max_us=9983 present_total_us=85366 present_max_us=74866 tick_max_us=9999 producer_failures=0 presentation_failures=0
+[10:43:14] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=924 y=256 revision=32 steps=8 wall_us=54831 compute_total_us=39289 compute_max_us=9833 present_total_us=12804 present_max_us=6656 tick_max_us=9853 producer_failures=0 presentation_failures=0
+[10:43:14] TINYDRAW_LIVE_FILL_DONE zoom=100 x=924 y=256 revision=32
+[10:43:15] TINYDRAW_PAN_BASELINE zoom=100 x=660 y=308 frames=5 reused=4 compose_avg_us=6370 compose_max_us=31789 present_avg_us=26628 present_max_us=31887 tear_wait_avg_us=1769 tear_wait_max_us=8406 failures=0
+[10:43:15] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=660 y=308 revision=32 steps=1 wall_us=1937 compute_total_us=1900 compute_max_us=1900 present_total_us=0 present_max_us=0 tick_max_us=1914 producer_failures=0 presentation_failures=0
+[10:43:15] TINYDRAW_LIVE_FILL_DONE zoom=100 x=660 y=308 revision=32
+[10:43:15] TINYDRAW_PAN_BASELINE zoom=100 x=638 y=544 frames=7 reused=7 compose_avg_us=16 compose_max_us=17 present_avg_us=28463 present_max_us=34886 tear_wait_avg_us=60 tear_wait_max_us=388 failures=0
+[10:43:15] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=638 y=544 revision=32 steps=35 wall_us=144182 compute_total_us=74516 compute_max_us=5408 present_total_us=65344 present_max_us=63025 tick_max_us=6375 producer_failures=0 presentation_failures=0
+[10:43:15] TINYDRAW_LIVE_FILL_DONE zoom=100 x=638 y=544 revision=32
+[10:43:16] TINYDRAW_PAN_BASELINE zoom=100 x=552 y=476 frames=4 reused=4 compose_avg_us=16 compose_max_us=17 present_avg_us=27572 present_max_us=30065 tear_wait_avg_us=828 tear_wait_max_us=1826 failures=0
+[10:43:16] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=552 y=476 revision=32 steps=8 wall_us=79954 compute_total_us=18739 compute_max_us=3697 present_total_us=58825 present_max_us=58825 tick_max_us=5447 producer_failures=0 presentation_failures=0
+[10:43:16] TINYDRAW_LIVE_FILL_DONE zoom=100 x=552 y=476 revision=32
+[10:43:16] TINYDRAW_PAN_BASELINE zoom=100 x=570 y=672 frames=6 reused=6 compose_avg_us=16 compose_max_us=16 present_avg_us=28823 present_max_us=31887 tear_wait_avg_us=194 tear_wait_max_us=652 failures=0
+[10:43:16] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=570 y=672 revision=32 steps=39 wall_us=184001 compute_total_us=103482 compute_max_us=10902 present_total_us=75826 present_max_us=68856 tick_max_us=12422 producer_failures=0 presentation_failures=0
+[10:43:16] TINYDRAW_LIVE_FILL_DONE zoom=100 x=570 y=672 revision=32
+[10:43:17] TINYDRAW_PAN_BASELINE zoom=100 x=438 y=506 frames=5 reused=5 compose_avg_us=16 compose_max_us=16 present_avg_us=31093 present_max_us=33887 tear_wait_avg_us=356 tear_wait_max_us=1033 failures=0
+[10:43:17] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=438 y=506 revision=32 steps=1 wall_us=1538 compute_total_us=1503 compute_max_us=1503 present_total_us=0 present_max_us=0 tick_max_us=1515 producer_failures=0 presentation_failures=0
+[10:43:17] TINYDRAW_LIVE_FILL_DONE zoom=100 x=438 y=506 revision=32
+[10:43:17] TINYDRAW_PAN_BASELINE zoom=100 x=542 y=708 frames=7 reused=7 compose_avg_us=16 compose_max_us=16 present_avg_us=28322 present_max_us=31886 tear_wait_avg_us=241 tear_wait_max_us=984 failures=0
+[10:43:17] TINYDRAW_LIVE_PRESENT kind=power zoom=100 x=542 y=708 compose_us=32503 scroll_us=0 exposed_compose_us=0 chrome_us=8003 read_submit_us=42232 read_complete_us=43841 transfer_wait_us=18355 tile_pixels=163960 uniform_pixels=0 overview_pixels=0 fallback_pixels=904 resident_tiles=52 fallback_tiles=4 pushes=11 tear_wait_us=7682 tear_sync=1 frame_reused=0 pass=1
+[10:43:17] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=542 y=708 revision=32 steps=18 wall_us=140000 compute_total_us=48660 compute_max_us=5826 present_total_us=44 present_max_us=22 tick_max_us=7324 producer_failures=0 presentation_failures=0
+[10:43:17] TINYDRAW_LIVE_FILL_DONE zoom=100 x=542 y=708 revision=32
+[10:43:18] TINYDRAW_PAN_BASELINE zoom=100 x=302 y=432 frames=7 reused=7 compose_avg_us=16 compose_max_us=16 present_avg_us=31227 present_max_us=38887 tear_wait_avg_us=729 tear_wait_max_us=1967 failures=0
+[10:43:18] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=302 y=432 revision=32 steps=6 wall_us=81914 compute_total_us=16790 compute_max_us=6812 present_total_us=63053 present_max_us=63053 tick_max_us=8864 producer_failures=0 presentation_failures=0
+[10:43:18] TINYDRAW_LIVE_FILL_DONE zoom=100 x=302 y=432 revision=32
+[10:43:18] TINYDRAW_PAN_BASELINE zoom=100 x=158 y=198 frames=6 reused=6 compose_avg_us=16 compose_max_us=17 present_avg_us=31058 present_max_us=36890 tear_wait_avg_us=523 tear_wait_max_us=2332 failures=0
+[10:43:18] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=158 y=198 revision=32 steps=4 wall_us=87895 compute_total_us=14681 compute_max_us=8327 present_total_us=70961 present_max_us=70961 tick_max_us=8341 producer_failures=0 presentation_failures=0
+[10:43:18] TINYDRAW_LIVE_FILL_DONE zoom=100 x=158 y=198 revision=32
+[10:43:19] TINYDRAW_PAN_BASELINE zoom=100 x=28 y=56 frames=6 reused=6 compose_avg_us=16 compose_max_us=16 present_avg_us=29558 present_max_us=32886 tear_wait_avg_us=183 tear_wait_max_us=554 failures=0
+[10:43:19] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=28 y=56 revision=32 steps=1 wall_us=1750 compute_total_us=1711 compute_max_us=1711 present_total_us=0 present_max_us=0 tick_max_us=1725 producer_failures=0 presentation_failures=0
+[10:43:19] TINYDRAW_LIVE_FILL_DONE zoom=100 x=28 y=56 revision=32
+[10:43:19] TINYDRAW_PAN_BASELINE zoom=100 x=214 y=78 frames=4 reused=3 compose_avg_us=8086 compose_max_us=32297 present_avg_us=25927 present_max_us=32886 tear_wait_avg_us=2214 tear_wait_max_us=7460 failures=0
+[10:43:19] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=214 y=78 revision=32 steps=1 wall_us=2707 compute_total_us=2669 compute_max_us=2669 present_total_us=0 present_max_us=0 tick_max_us=2684 producer_failures=0 presentation_failures=0
+[10:43:19] TINYDRAW_LIVE_FILL_DONE zoom=100 x=214 y=78 revision=32
+[10:43:20] TINYDRAW_PAN_BASELINE zoom=100 x=314 y=32 frames=6 reused=6 compose_avg_us=16 compose_max_us=16 present_avg_us=27748 present_max_us=32885 tear_wait_avg_us=1119 tear_wait_max_us=1898 failures=1
+[10:43:20] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=314 y=32 revision=32 steps=1 wall_us=2823 compute_total_us=2788 compute_max_us=2788 present_total_us=0 present_max_us=0 tick_max_us=2802 producer_failures=0 presentation_failures=0
+[10:43:20] TINYDRAW_LIVE_FILL_DONE zoom=100 x=314 y=32 revision=32
+[10:43:20] TINYDRAW_PAN_BASELINE zoom=100 x=380 y=0 frames=5 reused=5 compose_avg_us=16 compose_max_us=16 present_avg_us=27892 present_max_us=29886 tear_wait_avg_us=796 tear_wait_max_us=1384 failures=0
+[10:43:20] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=380 y=0 revision=32 steps=1 wall_us=2564 compute_total_us=2528 compute_max_us=2528 present_total_us=0 present_max_us=0 tick_max_us=2541 producer_failures=0 presentation_failures=0
+[10:43:20] TINYDRAW_LIVE_FILL_DONE zoom=100 x=380 y=0 revision=32
+[10:43:21] TINYDRAW_PAN_BASELINE zoom=100 x=380 y=0 frames=0 reused=0 compose_avg_us=0 compose_max_us=0 present_avg_us=0 present_max_us=0 tear_wait_avg_us=0 tear_wait_max_us=0 failures=1
+[10:43:21] TINYDRAW_PAN_BASELINE zoom=100 x=304 y=226 frames=7 reused=7 compose_avg_us=16 compose_max_us=17 present_avg_us=29697 present_max_us=35886 tear_wait_avg_us=405 tear_wait_max_us=1358 failures=0
+[10:43:21] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=304 y=226 revision=32 steps=1 wall_us=1489 compute_total_us=1447 compute_max_us=1447 present_total_us=0 present_max_us=0 tick_max_us=1464 producer_failures=0 presentation_failures=0
+[10:43:21] TINYDRAW_LIVE_FILL_DONE zoom=100 x=304 y=226 revision=32
+[10:43:21] TINYDRAW_PAN_BASELINE zoom=100 x=200 y=350 frames=5 reused=5 compose_avg_us=16 compose_max_us=16 present_avg_us=29093 present_max_us=32887 tear_wait_avg_us=116 tear_wait_max_us=556 failures=0
+[10:43:22] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=200 y=350 revision=32 steps=1 wall_us=1185 compute_total_us=1150 compute_max_us=1150 present_total_us=0 present_max_us=0 tick_max_us=1163 producer_failures=0 presentation_failures=0
+[10:43:22] TINYDRAW_LIVE_FILL_DONE zoom=100 x=200 y=350 revision=32
+[10:43:22] TINYDRAW_PAN_BASELINE zoom=100 x=88 y=448 frames=4 reused=4 compose_avg_us=16 compose_max_us=17 present_avg_us=30144 present_max_us=32886 tear_wait_avg_us=162 tear_wait_max_us=632 failures=0
+[10:43:22] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=88 y=448 revision=32 steps=1 wall_us=1842 compute_total_us=1807 compute_max_us=1807 present_total_us=0 present_max_us=0 tick_max_us=1821 producer_failures=0 presentation_failures=0
+[10:43:22] TINYDRAW_LIVE_FILL_DONE zoom=100 x=88 y=448 revision=32
+[10:43:22] TINYDRAW_PAN_BASELINE zoom=100 x=52 y=510 frames=3 reused=3 compose_avg_us=16 compose_max_us=16 present_avg_us=28254 present_max_us=29951 tear_wait_avg_us=317 tear_wait_max_us=941 failures=0
+[10:43:22] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=52 y=510 revision=32 steps=1 wall_us=1358 compute_total_us=1321 compute_max_us=1321 present_total_us=0 present_max_us=0 tick_max_us=1336 producer_failures=0 presentation_failures=0
+[10:43:22] TINYDRAW_LIVE_FILL_DONE zoom=100 x=52 y=510 revision=32
+[10:43:23] TINYDRAW_PAN_BASELINE zoom=100 x=0 y=662 frames=4 reused=4 compose_avg_us=16 compose_max_us=17 present_avg_us=29896 present_max_us=33889 tear_wait_avg_us=6 tear_wait_max_us=7 failures=0
+[10:43:23] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=0 y=662 revision=32 steps=1 wall_us=2194 compute_total_us=2157 compute_max_us=2157 present_total_us=0 present_max_us=0 tick_max_us=2171 producer_failures=0 presentation_failures=0
+[10:43:23] TINYDRAW_LIVE_FILL_DONE zoom=100 x=0 y=662 revision=32
+[10:43:23] TINYDRAW_PAN_BASELINE zoom=100 x=0 y=798 frames=5 reused=5 compose_avg_us=15 compose_max_us=16 present_avg_us=27077 present_max_us=29886 tear_wait_avg_us=390 tear_wait_max_us=1085 failures=0
+[10:43:23] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=0 y=798 revision=32 steps=1 wall_us=2150 compute_total_us=2113 compute_max_us=2113 present_total_us=0 present_max_us=0 tick_max_us=2127 producer_failures=0 presentation_failures=0
+[10:43:23] TINYDRAW_LIVE_FILL_DONE zoom=100 x=0 y=798 revision=32
+[10:43:23] TINYDRAW_PAN_BASELINE zoom=100 x=2 y=940 frames=4 reused=4 compose_avg_us=15 compose_max_us=16 present_avg_us=28395 present_max_us=30886 tear_wait_avg_us=168 tear_wait_max_us=657 failures=0
+[10:43:23] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=2 y=940 revision=32 steps=1 wall_us=2193 compute_total_us=2151 compute_max_us=2151 present_total_us=0 present_max_us=0 tick_max_us=2165 producer_failures=0 presentation_failures=0
+[10:43:23] TINYDRAW_LIVE_FILL_DONE zoom=100 x=2 y=940 revision=32
+[10:43:24] TINYDRAW_PAN_BASELINE zoom=100 x=32 y=1116 frames=4 reused=4 compose_avg_us=16 compose_max_us=16 present_avg_us=29482 present_max_us=34236 tear_wait_avg_us=782 tear_wait_max_us=2658 failures=0
+[10:43:24] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=32 y=1116 revision=32 steps=10 wall_us=105966 compute_total_us=31446 compute_max_us=5853 present_total_us=71129 present_max_us=69488 tick_max_us=6504 producer_failures=0 presentation_failures=0
+[10:43:24] TINYDRAW_LIVE_FILL_DONE zoom=100 x=32 y=1116 revision=32
+[10:43:24] TINYDRAW_PAN_BASELINE zoom=100 x=78 y=1256 frames=4 reused=4 compose_avg_us=16 compose_max_us=17 present_avg_us=28139 present_max_us=31886 tear_wait_avg_us=261 tear_wait_max_us=1027 failures=0
+[10:43:24] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=78 y=1256 revision=32 steps=1 wall_us=1995 compute_total_us=1959 compute_max_us=1959 present_total_us=0 present_max_us=0 tick_max_us=1973 producer_failures=0 presentation_failures=0
+[10:43:24] TINYDRAW_LIVE_FILL_DONE zoom=100 x=78 y=1256 revision=32
+[10:43:24] TINYDRAW_PAN_BASELINE zoom=100 x=50 y=1344 frames=6 reused=6 compose_avg_us=16 compose_max_us=17 present_avg_us=27384 present_max_us=30886 tear_wait_avg_us=237 tear_wait_max_us=863 failures=1
+[10:43:24] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=50 y=1344 revision=32 steps=1 wall_us=1349 compute_total_us=1313 compute_max_us=1313 present_total_us=0 present_max_us=0 tick_max_us=1326 producer_failures=0 presentation_failures=0
+[10:43:24] TINYDRAW_LIVE_FILL_DONE zoom=100 x=50 y=1344 revision=32
+[10:43:25] TINYDRAW_PAN_BASELINE zoom=100 x=126 y=1192 frames=10 reused=10 compose_avg_us=16 compose_max_us=17 present_avg_us=28817 present_max_us=38885 tear_wait_avg_us=457 tear_wait_max_us=1352 failures=0
+[10:43:25] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=126 y=1192 revision=32 steps=8 wall_us=95695 compute_total_us=23403 compute_max_us=7356 present_total_us=70644 present_max_us=70644 tick_max_us=9029 producer_failures=0 presentation_failures=0
+[10:43:25] TINYDRAW_LIVE_FILL_DONE zoom=100 x=126 y=1192 revision=32
+[10:43:25] TINYDRAW_PAN_BASELINE zoom=100 x=258 y=1264 frames=4 reused=4 compose_avg_us=16 compose_max_us=16 present_avg_us=29146 present_max_us=31889 tear_wait_avg_us=67 tear_wait_max_us=253 failures=0
+[10:43:26] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=258 y=1264 revision=32 steps=1 wall_us=1237 compute_total_us=1202 compute_max_us=1202 present_total_us=0 present_max_us=0 tick_max_us=1215 producer_failures=0 presentation_failures=0
+[10:43:26] TINYDRAW_LIVE_FILL_DONE zoom=100 x=258 y=1264 revision=32
+[10:43:26] TINYDRAW_PAN_BASELINE zoom=100 x=360 y=1198 frames=9 reused=9 compose_avg_us=15 compose_max_us=16 present_avg_us=27005 present_max_us=28887 tear_wait_avg_us=984 tear_wait_max_us=1989 failures=0
+[10:43:26] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=360 y=1198 revision=32 steps=1 wall_us=1296 compute_total_us=1261 compute_max_us=1261 present_total_us=0 present_max_us=0 tick_max_us=1273 producer_failures=0 presentation_failures=0
+[10:43:26] TINYDRAW_LIVE_FILL_DONE zoom=100 x=360 y=1198 revision=32
+[10:43:27] TINYDRAW_PAN_BASELINE zoom=100 x=550 y=1182 frames=4 reused=4 compose_avg_us=16 compose_max_us=17 present_avg_us=29701 present_max_us=32889 tear_wait_avg_us=571 tear_wait_max_us=1019 failures=0
+[10:43:27] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=550 y=1182 revision=32 steps=1 wall_us=1243 compute_total_us=1207 compute_max_us=1207 present_total_us=0 present_max_us=0 tick_max_us=1220 producer_failures=0 presentation_failures=0
+[10:43:27] TINYDRAW_LIVE_FILL_DONE zoom=100 x=550 y=1182 revision=32
+[10:43:28] TINYDRAW_PAN_BASELINE zoom=100 x=672 y=1344 frames=6 reused=6 compose_avg_us=16 compose_max_us=16 present_avg_us=29376 present_max_us=34886 tear_wait_avg_us=664 tear_wait_max_us=2096 failures=0
+[10:43:28] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=672 y=1344 revision=32 steps=1 wall_us=68873 compute_total_us=9436 compute_max_us=9436 present_total_us=58183 present_max_us=58183 tick_max_us=9454 producer_failures=0 presentation_failures=0
+[10:43:28] TINYDRAW_LIVE_FILL_DONE zoom=100 x=672 y=1344 revision=32
+[10:43:28] TINYDRAW_PAN_BASELINE zoom=100 x=784 y=1236 frames=5 reused=5 compose_avg_us=16 compose_max_us=16 present_avg_us=29495 present_max_us=32891 tear_wait_avg_us=568 tear_wait_max_us=1235 failures=0
+[10:43:28] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=784 y=1236 revision=32 steps=1 wall_us=1233 compute_total_us=1199 compute_max_us=1199 present_total_us=0 present_max_us=0 tick_max_us=1211 producer_failures=0 presentation_failures=0
+[10:43:28] TINYDRAW_LIVE_FILL_DONE zoom=100 x=784 y=1236 revision=32
+[10:43:28] TINYDRAW_PAN_BASELINE zoom=100 x=938 y=1334 frames=5 reused=5 compose_avg_us=16 compose_max_us=17 present_avg_us=28700 present_max_us=30887 tear_wait_avg_us=72 tear_wait_max_us=337 failures=1
+[10:43:28] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=938 y=1334 revision=32 steps=1 wall_us=1602 compute_total_us=1566 compute_max_us=1566 present_total_us=0 present_max_us=0 tick_max_us=1580 producer_failures=0 presentation_failures=0
+[10:43:29] TINYDRAW_LIVE_FILL_DONE zoom=100 x=938 y=1334 revision=32
+[10:43:29] TINYDRAW_PAN_BASELINE zoom=100 x=710 y=1238 frames=8 reused=7 compose_avg_us=3893 compose_max_us=31031 present_avg_us=28864 present_max_us=46886 tear_wait_avg_us=3901 tear_wait_max_us=16849 failures=0
+[10:43:29] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=710 y=1238 revision=32 steps=1 wall_us=1120 compute_total_us=1084 compute_max_us=1084 present_total_us=0 present_max_us=0 tick_max_us=1097 producer_failures=0 presentation_failures=0
+[10:43:29] TINYDRAW_LIVE_FILL_DONE zoom=100 x=710 y=1238 revision=32
+[10:43:30] TINYDRAW_PAN_BASELINE zoom=100 x=910 y=1232 frames=7 reused=7 compose_avg_us=16 compose_max_us=17 present_avg_us=28467 present_max_us=31886 tear_wait_avg_us=642 tear_wait_max_us=1289 failures=1
+[10:43:30] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=910 y=1232 revision=32 steps=1 wall_us=2230 compute_total_us=2194 compute_max_us=2194 present_total_us=0 present_max_us=0 tick_max_us=2207 producer_failures=0 presentation_failures=0
+[10:43:30] TINYDRAW_LIVE_FILL_DONE zoom=100 x=910 y=1232 revision=32
+[10:43:33] TINYDRAW_PAN_BASELINE zoom=100 x=826 y=1064 frames=120 reused=120 compose_avg_us=16 compose_max_us=19 present_avg_us=27849 present_max_us=34480 tear_wait_avg_us=609 tear_wait_max_us=2870 failures=2
+[10:43:33] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=826 y=1064 revision=32 steps=1 wall_us=2251 compute_total_us=2208 compute_max_us=2208 present_total_us=0 present_max_us=0 tick_max_us=2227 producer_failures=0 presentation_failures=0
+[10:43:33] TINYDRAW_LIVE_FILL_DONE zoom=100 x=826 y=1064 revision=32
+[10:43:34] TINYDRAW_PAN_BASELINE zoom=100 x=776 y=772 frames=5 reused=4 compose_avg_us=6507 compose_max_us=32475 present_avg_us=28567 present_max_us=33887 tear_wait_avg_us=1845 tear_wait_max_us=5547 failures=0
+[10:43:34] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=776 y=772 revision=32 steps=1 wall_us=1187 compute_total_us=1135 compute_max_us=1135 present_total_us=0 present_max_us=0 tick_max_us=1157 producer_failures=0 presentation_failures=0
+[10:43:34] TINYDRAW_LIVE_FILL_DONE zoom=100 x=776 y=772 revision=32
+[10:43:34] TINYDRAW_PAN_BASELINE zoom=100 x=724 y=470 frames=5 reused=4 compose_avg_us=6313 compose_max_us=31508 present_avg_us=28003 present_max_us=32889 tear_wait_avg_us=1866 tear_wait_max_us=7825 failures=0
+[10:43:35] TINYDRAW_PAN_BASELINE zoom=100 x=658 y=380 frames=30 reused=30 compose_avg_us=16 compose_max_us=17 present_avg_us=27128 present_max_us=35886 tear_wait_avg_us=673 tear_wait_max_us=2209 failures=0
+[10:43:35] TINYDRAW_FILL_BASELINE result=superseded zoom=100 x=724 y=470 revision=32 steps=15 wall_us=1026683 compute_total_us=39259 compute_max_us=7142 present_total_us=66022 present_max_us=66022 tick_max_us=7164 producer_failures=0 presentation_failures=0
+[10:43:36] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=658 y=380 revision=32 steps=83 wall_us=355237 compute_total_us=238982 compute_max_us=11956 present_total_us=107617 present_max_us=71023 tick_max_us=12381 producer_failures=0 presentation_failures=0
+[10:43:36] TINYDRAW_LIVE_FILL_DONE zoom=100 x=658 y=380 revision=32
+[10:43:36] TINYDRAW_PAN_BASELINE zoom=100 x=686 y=652 frames=10 reused=10 compose_avg_us=16 compose_max_us=17 present_avg_us=28149 present_max_us=31886 tear_wait_avg_us=187 tear_wait_max_us=631 failures=0
+[10:43:37] TINYDRAW_PAN_BASELINE zoom=100 x=776 y=920 frames=6 reused=6 compose_avg_us=16 compose_max_us=16 present_avg_us=30560 present_max_us=37891 tear_wait_avg_us=172 tear_wait_max_us=713 failures=0
+[10:43:37] TINYDRAW_FILL_BASELINE result=superseded zoom=100 x=686 y=652 revision=32 steps=19 wall_us=336871 compute_total_us=42455 compute_max_us=6161 present_total_us=68118 present_max_us=68118 tick_max_us=6182 producer_failures=0 presentation_failures=0
+[10:43:37] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=776 y=920 revision=32 steps=1 wall_us=1147 compute_total_us=1114 compute_max_us=1114 present_total_us=0 present_max_us=0 tick_max_us=1130 producer_failures=0 presentation_failures=0
+[10:43:37] TINYDRAW_LIVE_FILL_DONE zoom=100 x=776 y=920 revision=32
+[10:43:37] TINYDRAW_PAN_BASELINE zoom=100 x=844 y=1182 frames=6 reused=6 compose_avg_us=16 compose_max_us=16 present_avg_us=30227 present_max_us=33899 tear_wait_avg_us=96 tear_wait_max_us=549 failures=0
+[10:43:37] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=844 y=1182 revision=32 steps=1 wall_us=1178 compute_total_us=1144 compute_max_us=1144 present_total_us=0 present_max_us=0 tick_max_us=1157 producer_failures=0 presentation_failures=0
+[10:43:37] TINYDRAW_LIVE_FILL_DONE zoom=100 x=844 y=1182 revision=32
+[10:43:37] TINYDRAW_PAN_BASELINE zoom=100 x=854 y=1320 frames=6 reused=6 compose_avg_us=16 compose_max_us=17 present_avg_us=27235 present_max_us=28886 tear_wait_avg_us=162 tear_wait_max_us=943 failures=0
+[10:43:37] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=854 y=1320 revision=32 steps=1 wall_us=1551 compute_total_us=1514 compute_max_us=1514 present_total_us=0 present_max_us=0 tick_max_us=1528 producer_failures=0 presentation_failures=0
+[10:43:37] TINYDRAW_LIVE_FILL_DONE zoom=100 x=854 y=1320 revision=32
+[10:43:42] TINYDRAW_PAN_BASELINE zoom=100 x=666 y=1120 frames=92 reused=86 compose_avg_us=2066 compose_max_us=32756 present_avg_us=29956 present_max_us=41887 tear_wait_avg_us=1044 tear_wait_max_us=11078 failures=10
+[10:43:42] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=666 y=1120 revision=32 steps=23 wall_us=155957 compute_total_us=73836 compute_max_us=6810 present_total_us=77761 present_max_us=71804 tick_max_us=7949 producer_failures=0 presentation_failures=0
+[10:43:42] TINYDRAW_LIVE_FILL_DONE zoom=100 x=666 y=1120 revision=32
+[10:43:43] TINYDRAW_PAN_BASELINE zoom=100 x=504 y=852 frames=5 reused=4 compose_avg_us=6622 compose_max_us=33049 present_avg_us=28801 present_max_us=36887 tear_wait_avg_us=1600 tear_wait_max_us=6262 failures=0
+[10:43:43] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=504 y=852 revision=32 steps=36 wall_us=185432 compute_total_us=100291 compute_max_us=9986 present_total_us=79997 present_max_us=68462 tick_max_us=12093 producer_failures=0 presentation_failures=0
+[10:43:43] TINYDRAW_LIVE_FILL_DONE zoom=100 x=504 y=852 revision=32
+[10:43:44] TINYDRAW_PAN_BASELINE zoom=100 x=382 y=582 frames=9 reused=9 compose_avg_us=16 compose_max_us=16 present_avg_us=29759 present_max_us=34886 tear_wait_avg_us=895 tear_wait_max_us=2061 failures=0
+[10:43:44] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=382 y=582 revision=32 steps=60 wall_us=227952 compute_total_us=141815 compute_max_us=7692 present_total_us=79892 present_max_us=71398 tick_max_us=7841 producer_failures=0 presentation_failures=0
+[10:43:44] TINYDRAW_LIVE_FILL_DONE zoom=100 x=382 y=582 revision=32
+[10:43:45] TINYDRAW_PAN_BASELINE zoom=100 x=218 y=582 frames=11 reused=11 compose_avg_us=15 compose_max_us=16 present_avg_us=26822 present_max_us=28886 tear_wait_avg_us=503 tear_wait_max_us=1484 failures=0
+[10:43:45] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=218 y=582 revision=32 steps=1 wall_us=1242 compute_total_us=1200 compute_max_us=1200 present_total_us=0 present_max_us=0 tick_max_us=1215 producer_failures=0 presentation_failures=0
+[10:43:45] TINYDRAW_LIVE_FILL_DONE zoom=100 x=218 y=582 revision=32
+[10:43:46] TINYDRAW_PAN_BASELINE zoom=100 x=114 y=834 frames=11 reused=11 compose_avg_us=16 compose_max_us=16 present_avg_us=28483 present_max_us=35886 tear_wait_avg_us=214 tear_wait_max_us=997 failures=0
+[10:43:46] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=114 y=834 revision=32 steps=50 wall_us=268901 compute_total_us=163393 compute_max_us=10191 present_total_us=97875 present_max_us=73445 tick_max_us=10205 producer_failures=0 presentation_failures=0
+[10:43:46] TINYDRAW_LIVE_FILL_DONE zoom=100 x=114 y=834 revision=32
+[10:43:47] TINYDRAW_LIVE_PRESENT kind=power zoom=100 x=114 y=834 compose_us=32235 scroll_us=0 exposed_compose_us=0 chrome_us=7998 read_submit_us=39317 read_complete_us=40929 transfer_wait_us=18681 tile_pixels=164864 uniform_pixels=0 overview_pixels=0 fallback_pixels=0 resident_tiles=56 fallback_tiles=0 pushes=11 tear_wait_us=5359 tear_sync=1 frame_reused=0 pass=1
+[10:43:48] TINYDRAW_PAN_BASELINE zoom=100 x=50 y=1018 frames=13 reused=13 compose_avg_us=16 compose_max_us=17 present_avg_us=27484 present_max_us=28887 tear_wait_avg_us=289 tear_wait_max_us=2300 failures=1
+[10:43:48] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=50 y=1018 revision=32 steps=23 wall_us=148742 compute_total_us=73309 compute_max_us=6659 present_total_us=71404 present_max_us=69595 tick_max_us=7522 producer_failures=0 presentation_failures=0
+[10:43:48] TINYDRAW_LIVE_FILL_DONE zoom=100 x=50 y=1018 revision=32
+[10:43:51] TINYDRAW_LIVE_REPAIR views=22 steps=726
+[10:44:02] TINYDRAW_PAN_BASELINE zoom=100 x=54 y=1290 frames=11 reused=11 compose_avg_us=16 compose_max_us=17 present_avg_us=29033 present_max_us=44887 tear_wait_avg_us=1607 tear_wait_max_us=16838 failures=0
+[10:44:03] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=54 y=1290 revision=32 steps=16 wall_us=164604 compute_total_us=72307 compute_max_us=8901 present_total_us=88098 present_max_us=73259 tick_max_us=8916 producer_failures=0 presentation_failures=0
+[10:44:03] TINYDRAW_LIVE_FILL_DONE zoom=100 x=54 y=1290 revision=32
+[10:44:04] TINYDRAW_PAN_BASELINE zoom=100 x=10 y=1344 frames=11 reused=11 compose_avg_us=16 compose_max_us=17 present_avg_us=26444 present_max_us=27886 tear_wait_avg_us=354 tear_wait_max_us=1226 failures=20
+[10:44:04] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=10 y=1344 revision=32 steps=1 wall_us=1329 compute_total_us=1294 compute_max_us=1294 present_total_us=0 present_max_us=0 tick_max_us=1306 producer_failures=0 presentation_failures=0
+[10:44:04] TINYDRAW_LIVE_FILL_DONE zoom=100 x=10 y=1344 revision=32
+[10:44:06] TINYDRAW_PAN_BASELINE zoom=100 x=180 y=1280 frames=15 reused=15 compose_avg_us=16 compose_max_us=17 present_avg_us=27045 present_max_us=30885 tear_wait_avg_us=806 tear_wait_max_us=1490 failures=0
+[10:44:06] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=180 y=1280 revision=32 steps=13 wall_us=103619 compute_total_us=35344 compute_max_us=6023 present_total_us=65215 present_max_us=62737 tick_max_us=6814 producer_failures=0 presentation_failures=0
+[10:44:06] TINYDRAW_LIVE_FILL_DONE zoom=100 x=180 y=1280 revision=32
+[10:44:06] TINYDRAW_PAN_BASELINE zoom=100 x=168 y=1106 frames=9 reused=9 compose_avg_us=16 compose_max_us=17 present_avg_us=27669 present_max_us=31886 tear_wait_avg_us=767 tear_wait_max_us=2554 failures=1
+[10:44:07] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=168 y=1106 revision=32 steps=34 wall_us=170899 compute_total_us=96261 compute_max_us=7296 present_total_us=70013 present_max_us=63045 tick_max_us=8921 producer_failures=0 presentation_failures=0
+[10:44:07] TINYDRAW_LIVE_FILL_DONE zoom=100 x=168 y=1106 revision=32
+[10:44:07] TINYDRAW_PAN_BASELINE zoom=100 x=0 y=1048 frames=11 reused=11 compose_avg_us=16 compose_max_us=16 present_avg_us=27428 present_max_us=29885 tear_wait_avg_us=548 tear_wait_max_us=1953 failures=0
+[10:44:07] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=0 y=1048 revision=32 steps=1 wall_us=1170 compute_total_us=1135 compute_max_us=1135 present_total_us=0 present_max_us=0 tick_max_us=1148 producer_failures=0 presentation_failures=0
+[10:44:07] TINYDRAW_LIVE_FILL_DONE zoom=100 x=0 y=1048 revision=32
+[10:44:07] TINYDRAW_PAN_BASELINE zoom=100 x=32 y=802 frames=6 reused=6 compose_avg_us=16 compose_max_us=16 present_avg_us=30200 present_max_us=35886 tear_wait_avg_us=1175 tear_wait_max_us=1660 failures=0
+[10:44:08] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=32 y=802 revision=32 steps=11 wall_us=98948 compute_total_us=26513 compute_max_us=6253 present_total_us=70762 present_max_us=70762 tick_max_us=7000 producer_failures=0 presentation_failures=0
+[10:44:08] TINYDRAW_LIVE_FILL_DONE zoom=100 x=32 y=802 revision=32
+[10:44:08] TINYDRAW_PAN_BASELINE zoom=100 x=36 y=570 frames=6 reused=6 compose_avg_us=16 compose_max_us=16 present_avg_us=30655 present_max_us=35886 tear_wait_avg_us=786 tear_wait_max_us=1423 failures=0
+[10:44:08] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=36 y=570 revision=32 steps=1 wall_us=2239 compute_total_us=2202 compute_max_us=2202 present_total_us=0 present_max_us=0 tick_max_us=2217 producer_failures=0 presentation_failures=0
+[10:44:08] TINYDRAW_LIVE_FILL_DONE zoom=100 x=36 y=570 revision=32
+[10:44:08] TINYDRAW_PAN_BASELINE zoom=100 x=74 y=362 frames=8 reused=8 compose_avg_us=16 compose_max_us=17 present_avg_us=28716 present_max_us=33886 tear_wait_avg_us=1435 tear_wait_max_us=2396 failures=0
+[10:44:08] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=74 y=362 revision=32 steps=1 wall_us=1250 compute_total_us=1214 compute_max_us=1214 present_total_us=0 present_max_us=0 tick_max_us=1228 producer_failures=0 presentation_failures=0
+[10:44:08] TINYDRAW_LIVE_FILL_DONE zoom=100 x=74 y=362 revision=32
+[10:44:09] TINYDRAW_PAN_BASELINE zoom=100 x=182 y=360 frames=6 reused=6 compose_avg_us=15 compose_max_us=16 present_avg_us=27634 present_max_us=29886 tear_wait_avg_us=938 tear_wait_max_us=1187 failures=0
+[10:44:09] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=182 y=360 revision=32 steps=1 wall_us=1309 compute_total_us=1275 compute_max_us=1275 present_total_us=0 present_max_us=0 tick_max_us=1288 producer_failures=0 presentation_failures=0
+[10:44:09] TINYDRAW_LIVE_FILL_DONE zoom=100 x=182 y=360 revision=32
+[10:44:12] TINYDRAW_PAN_BASELINE zoom=100 x=268 y=202 frames=63 reused=48 compose_avg_us=8023 compose_max_us=35089 present_avg_us=27576 present_max_us=36890 tear_wait_avg_us=2057 tear_wait_max_us=16387 failures=1
+[10:44:12] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=268 y=202 revision=32 steps=1 wall_us=1990 compute_total_us=1953 compute_max_us=1953 present_total_us=0 present_max_us=0 tick_max_us=1968 producer_failures=0 presentation_failures=0
+[10:44:12] TINYDRAW_LIVE_FILL_DONE zoom=100 x=268 y=202 revision=32
+[10:44:12] TINYDRAW_PAN_BASELINE zoom=100 x=302 y=0 frames=4 reused=3 compose_avg_us=7941 compose_max_us=31720 present_avg_us=29674 present_max_us=48886 tear_wait_avg_us=7994 tear_wait_max_us=16837 failures=0
+[10:44:12] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=302 y=0 revision=32 steps=1 wall_us=2194 compute_total_us=2153 compute_max_us=2153 present_total_us=0 present_max_us=0 tick_max_us=2170 producer_failures=0 presentation_failures=0
+[10:44:12] TINYDRAW_LIVE_FILL_DONE zoom=100 x=302 y=0 revision=32
+[10:44:16] TINYDRAW_PAN_BASELINE zoom=100 x=276 y=44 frames=116 reused=104 compose_avg_us=3338 compose_max_us=34477 present_avg_us=27745 present_max_us=43886 tear_wait_avg_us=1537 tear_wait_max_us=16840 failures=9
+[10:44:16] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=276 y=44 revision=32 steps=1 wall_us=2405 compute_total_us=2369 compute_max_us=2369 present_total_us=0 present_max_us=0 tick_max_us=2383 producer_failures=0 presentation_failures=0
+[10:44:16] TINYDRAW_LIVE_FILL_DONE zoom=100 x=276 y=44 revision=32
+[10:44:20] TINYDRAW_PAN_BASELINE zoom=100 x=372 y=144 frames=107 reused=105 compose_avg_us=628 compose_max_us=33481 present_avg_us=28416 present_max_us=38888 tear_wait_avg_us=663 tear_wait_max_us=15855 failures=4
+[10:44:20] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=372 y=144 revision=32 steps=1 wall_us=2194 compute_total_us=2158 compute_max_us=2158 present_total_us=0 present_max_us=0 tick_max_us=2171 producer_failures=0 presentation_failures=0
+[10:44:20] TINYDRAW_LIVE_FILL_DONE zoom=100 x=372 y=144 revision=32
+[10:44:20] TINYDRAW_LIVE_PRESENT kind=power zoom=100 x=372 y=144 compose_us=33020 scroll_us=0 exposed_compose_us=0 chrome_us=8091 read_submit_us=44811 read_complete_us=46421 transfer_wait_us=18187 tile_pixels=164288 uniform_pixels=576 overview_pixels=0 fallback_pixels=0 resident_tiles=56 fallback_tiles=0 pushes=11 tear_wait_us=10059 tear_sync=1 frame_reused=0 pass=1
+[10:44:21] TINYDRAW_PAN_BASELINE zoom=100 x=516 y=178 frames=4 reused=4 compose_avg_us=16 compose_max_us=16 present_avg_us=30152 present_max_us=33886 tear_wait_avg_us=60 tear_wait_max_us=224 failures=1
+[10:44:21] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=516 y=178 revision=32 steps=9 wall_us=85182 compute_total_us=20862 compute_max_us=4394 present_total_us=62122 present_max_us=62122 tick_max_us=5048 producer_failures=0 presentation_failures=0
+[10:44:21] TINYDRAW_LIVE_FILL_DONE zoom=100 x=516 y=178 revision=32
+[10:44:21] TINYDRAW_PAN_BASELINE zoom=100 x=646 y=188 frames=3 reused=3 compose_avg_us=16 compose_max_us=16 present_avg_us=30897 present_max_us=34886 tear_wait_avg_us=688 tear_wait_max_us=1608 failures=0
+[10:44:21] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=646 y=188 revision=32 steps=1 wall_us=1878 compute_total_us=1843 compute_max_us=1843 present_total_us=0 present_max_us=0 tick_max_us=1856 producer_failures=0 presentation_failures=0
+[10:44:21] TINYDRAW_LIVE_FILL_DONE zoom=100 x=646 y=188 revision=32
+[10:44:21] TINYDRAW_PAN_BASELINE zoom=100 x=780 y=240 frames=3 reused=3 compose_avg_us=16 compose_max_us=16 present_avg_us=30907 present_max_us=34886 tear_wait_avg_us=165 tear_wait_max_us=274 failures=1
+[10:44:21] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=780 y=240 revision=32 steps=1 wall_us=1864 compute_total_us=1821 compute_max_us=1821 present_total_us=0 present_max_us=0 tick_max_us=1836 producer_failures=0 presentation_failures=0
+[10:44:21] TINYDRAW_LIVE_FILL_DONE zoom=100 x=780 y=240 revision=32
+[10:44:22] TINYDRAW_PAN_BASELINE zoom=100 x=894 y=292 frames=3 reused=3 compose_avg_us=16 compose_max_us=16 present_avg_us=30564 present_max_us=33886 tear_wait_avg_us=261 tear_wait_max_us=702 failures=0
+[10:44:22] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=894 y=292 revision=32 steps=1 wall_us=1321 compute_total_us=1284 compute_max_us=1284 present_total_us=0 present_max_us=0 tick_max_us=1298 producer_failures=0 presentation_failures=0
+[10:44:22] TINYDRAW_LIVE_FILL_DONE zoom=100 x=894 y=292 revision=32
+[10:44:22] TINYDRAW_PAN_BASELINE zoom=100 x=1018 y=364 frames=3 reused=3 compose_avg_us=16 compose_max_us=17 present_avg_us=30842 present_max_us=33891 tear_wait_avg_us=186 tear_wait_max_us=371 failures=0
+[10:44:22] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=1018 y=364 revision=32 steps=1 wall_us=2248 compute_total_us=2211 compute_max_us=2211 present_total_us=0 present_max_us=0 tick_max_us=2225 producer_failures=0 presentation_failures=0
+[10:44:22] TINYDRAW_LIVE_FILL_DONE zoom=100 x=1018 y=364 revision=32
+[10:44:34] TINYDRAW_PAN_BASELINE zoom=100 x=958 y=428 frames=350 reused=344 compose_avg_us=577 compose_max_us=33360 present_avg_us=28238 present_max_us=46887 tear_wait_avg_us=885 tear_wait_max_us=16863 failures=10
+[10:44:34] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=958 y=428 revision=32 steps=1 wall_us=2249 compute_total_us=2213 compute_max_us=2213 present_total_us=0 present_max_us=0 tick_max_us=2227 producer_failures=0 presentation_failures=0
+[10:44:34] TINYDRAW_LIVE_FILL_DONE zoom=100 x=958 y=428 revision=32
+[10:44:35] TINYDRAW_LIVE_REPAIR views=22 steps=260
+[10:44:51] TINYDRAW_PAN_BASELINE zoom=100 x=986 y=366 frames=62 reused=62 compose_avg_us=16 compose_max_us=17 present_avg_us=29671 present_max_us=37886 tear_wait_avg_us=485 tear_wait_max_us=2622 failures=0
+[10:44:51] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=986 y=366 revision=32 steps=1 wall_us=2292 compute_total_us=2253 compute_max_us=2253 present_total_us=0 present_max_us=0 tick_max_us=2269 producer_failures=0 presentation_failures=0
+[10:44:51] TINYDRAW_LIVE_FILL_DONE zoom=100 x=986 y=366 revision=32
+[10:44:51] TINYDRAW_LIVE_PRESENT kind=power zoom=100 x=986 y=366 compose_us=32535 scroll_us=0 exposed_compose_us=0 chrome_us=8044 read_submit_us=36891 read_complete_us=38499 transfer_wait_us=18107 tile_pixels=144768 uniform_pixels=20096 overview_pixels=0 fallback_pixels=0 resident_tiles=56 fallback_tiles=0 pushes=11 tear_wait_us=2640 tear_sync=1 frame_reused=0 pass=1
+[10:44:51] TINYDRAW_PAN_BASELINE zoom=100 x=986 y=366 frames=0 reused=0 compose_avg_us=0 compose_max_us=0 present_avg_us=0 present_max_us=0 tear_wait_avg_us=0 tear_wait_max_us=0 failures=0
+[10:44:55] TINYDRAW_PAN_BASELINE zoom=100 x=980 y=486 frames=124 reused=120 compose_avg_us=1096 compose_max_us=35046 present_avg_us=30804 present_max_us=38887 tear_wait_avg_us=899 tear_wait_max_us=16843 failures=1
+[10:44:55] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=980 y=486 revision=32 steps=1 wall_us=1348 compute_total_us=1311 compute_max_us=1311 present_total_us=0 present_max_us=0 tick_max_us=1325 producer_failures=0 presentation_failures=0
+[10:44:55] TINYDRAW_LIVE_FILL_DONE zoom=100 x=980 y=486 revision=32
+[10:44:56] TINYDRAW_PAN_BASELINE zoom=100 x=1104 y=376 frames=6 reused=6 compose_avg_us=16 compose_max_us=17 present_avg_us=28919 present_max_us=35885 tear_wait_avg_us=777 tear_wait_max_us=1138 failures=0
+[10:44:56] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=1104 y=376 revision=32 steps=1 wall_us=1364 compute_total_us=1324 compute_max_us=1324 present_total_us=0 present_max_us=0 tick_max_us=1339 producer_failures=0 presentation_failures=0
+[10:44:56] TINYDRAW_LIVE_FILL_DONE zoom=100 x=1104 y=376 revision=32
+[10:45:11] TINYDRAW_PAN_BASELINE zoom=100 x=1104 y=374 frames=451 reused=422 compose_avg_us=1937 compose_max_us=30121 present_avg_us=27470 present_max_us=35887 tear_wait_avg_us=1384 tear_wait_max_us=16614 failures=15
+[10:45:11] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=1104 y=374 revision=32 steps=1 wall_us=1371 compute_total_us=1335 compute_max_us=1335 present_total_us=0 present_max_us=0 tick_max_us=1348 producer_failures=0 presentation_failures=0
+[10:45:11] TINYDRAW_LIVE_FILL_DONE zoom=100 x=1104 y=374 revision=32
+[10:45:12] TINYDRAW_PAN_BASELINE zoom=100 x=884 y=598 frames=10 reused=10 compose_avg_us=16 compose_max_us=17 present_avg_us=28879 present_max_us=34830 tear_wait_avg_us=476 tear_wait_max_us=2205 failures=1
+[10:45:13] TINYDRAW_PAN_BASELINE zoom=100 x=730 y=736 frames=6 reused=6 compose_avg_us=16 compose_max_us=16 present_avg_us=30058 present_max_us=33886 tear_wait_avg_us=73 tear_wait_max_us=408 failures=0
+[10:45:13] TINYDRAW_FILL_BASELINE result=superseded zoom=100 x=884 y=598 revision=32 steps=34 wall_us=417575 compute_total_us=98002 compute_max_us=6166 present_total_us=77887 present_max_us=76157 tick_max_us=8668 producer_failures=0 presentation_failures=0
+[10:45:13] TINYDRAW_PAN_BASELINE zoom=100 x=650 y=900 frames=6 reused=6 compose_avg_us=15 compose_max_us=17 present_avg_us=29225 present_max_us=31883 tear_wait_avg_us=6 tear_wait_max_us=6 failures=0
+[10:45:13] TINYDRAW_FILL_BASELINE result=superseded zoom=100 x=730 y=736 revision=32 steps=19 wall_us=364229 compute_total_us=56093 compute_max_us=10316 present_total_us=74898 present_max_us=68525 tick_max_us=11282 producer_failures=0 presentation_failures=0
+[10:45:13] TINYDRAW_PAN_BASELINE zoom=100 x=550 y=1072 frames=5 reused=5 compose_avg_us=16 compose_max_us=17 present_avg_us=30795 present_max_us=37886 tear_wait_avg_us=141 tear_wait_max_us=493 failures=0
+[10:45:14] TINYDRAW_FILL_BASELINE result=superseded zoom=100 x=650 y=900 revision=32 steps=20 wall_us=323786 compute_total_us=64444 compute_max_us=11130 present_total_us=71190 present_max_us=63405 tick_max_us=12632 producer_failures=0 presentation_failures=0
+[10:45:14] TINYDRAW_PAN_BASELINE zoom=100 x=412 y=1204 frames=6 reused=6 compose_avg_us=16 compose_max_us=16 present_avg_us=29564 present_max_us=34886 tear_wait_avg_us=29 tear_wait_max_us=147 failures=1
+[10:45:14] TINYDRAW_FILL_BASELINE result=superseded zoom=100 x=550 y=1072 revision=32 steps=45 wall_us=458314 compute_total_us=137011 compute_max_us=10271 present_total_us=80691 present_max_us=66242 tick_max_us=11040 producer_failures=0 presentation_failures=0
+[10:45:14] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=412 y=1204 revision=32 steps=14 wall_us=130225 compute_total_us=49003 compute_max_us=11643 present_total_us=78152 present_max_us=73536 tick_max_us=13264 producer_failures=0 presentation_failures=0
+[10:45:14] TINYDRAW_LIVE_FILL_DONE zoom=100 x=412 y=1204 revision=32
+[10:45:15] TINYDRAW_PAN_BASELINE zoom=100 x=520 y=1344 frames=6 reused=6 compose_avg_us=16 compose_max_us=17 present_avg_us=27863 present_max_us=30762 tear_wait_avg_us=678 tear_wait_max_us=2356 failures=1
+[10:45:15] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=520 y=1344 revision=32 steps=1 wall_us=2080 compute_total_us=2045 compute_max_us=2045 present_total_us=0 present_max_us=0 tick_max_us=2058 producer_failures=0 presentation_failures=0
+[10:45:15] TINYDRAW_LIVE_FILL_DONE zoom=100 x=520 y=1344 revision=32
+[10:45:15] TINYDRAW_PAN_BASELINE zoom=100 x=640 y=1326 frames=5 reused=5 compose_avg_us=16 compose_max_us=17 present_avg_us=27841 present_max_us=31593 tear_wait_avg_us=899 tear_wait_max_us=2299 failures=1
+[10:45:15] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=640 y=1326 revision=32 steps=1 wall_us=1375 compute_total_us=1337 compute_max_us=1337 present_total_us=0 present_max_us=0 tick_max_us=1351 producer_failures=0 presentation_failures=0
+[10:45:15] TINYDRAW_LIVE_FILL_DONE zoom=100 x=640 y=1326 revision=32
+[10:45:15] TINYDRAW_PAN_BASELINE zoom=100 x=772 y=1212 frames=4 reused=4 compose_avg_us=16 compose_max_us=16 present_avg_us=31895 present_max_us=37886 tear_wait_avg_us=1072 tear_wait_max_us=1207 failures=0
+[10:45:16] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=772 y=1212 revision=32 steps=6 wall_us=101817 compute_total_us=26372 compute_max_us=10165 present_total_us=73797 present_max_us=73797 tick_max_us=10183 producer_failures=0 presentation_failures=0
+[10:45:16] TINYDRAW_LIVE_FILL_DONE zoom=100 x=772 y=1212 revision=32
+[10:45:16] TINYDRAW_PAN_BASELINE zoom=100 x=912 y=1264 frames=5 reused=5 compose_avg_us=16 compose_max_us=16 present_avg_us=27699 present_max_us=30886 tear_wait_avg_us=257 tear_wait_max_us=814 failures=1
+[10:45:16] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=912 y=1264 revision=32 steps=1 wall_us=2296 compute_total_us=2260 compute_max_us=2260 present_total_us=0 present_max_us=0 tick_max_us=2274 producer_failures=0 presentation_failures=0
+[10:45:16] TINYDRAW_LIVE_FILL_DONE zoom=100 x=912 y=1264 revision=32
+[10:45:16] TINYDRAW_PAN_BASELINE zoom=100 x=924 y=1344 frames=6 reused=6 compose_avg_us=16 compose_max_us=17 present_avg_us=26154 present_max_us=28886 tear_wait_avg_us=680 tear_wait_max_us=1462 failures=1
+[10:45:16] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=924 y=1344 revision=32 steps=1 wall_us=2498 compute_total_us=2463 compute_max_us=2463 present_total_us=0 present_max_us=0 tick_max_us=2477 producer_failures=0 presentation_failures=0
+[10:45:16] TINYDRAW_LIVE_FILL_DONE zoom=100 x=924 y=1344 revision=32
+[10:45:17] TINYDRAW_PAN_BASELINE zoom=100 x=804 y=1034 frames=5 reused=4 compose_avg_us=6559 compose_max_us=32735 present_avg_us=29082 present_max_us=34887 tear_wait_avg_us=1570 tear_wait_max_us=6206 failures=0
+[10:45:17] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=804 y=1034 revision=32 steps=1 wall_us=1292 compute_total_us=1256 compute_max_us=1256 present_total_us=0 present_max_us=0 tick_max_us=1269 producer_failures=0 presentation_failures=0
+[10:45:17] TINYDRAW_LIVE_FILL_DONE zoom=100 x=804 y=1034 revision=32
+[10:45:17] TINYDRAW_PAN_BASELINE zoom=100 x=644 y=894 frames=6 reused=6 compose_avg_us=16 compose_max_us=16 present_avg_us=30392 present_max_us=36887 tear_wait_avg_us=280 tear_wait_max_us=1095 failures=0
+[10:45:17] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=644 y=894 revision=32 steps=1 wall_us=1108 compute_total_us=1072 compute_max_us=1072 present_total_us=0 present_max_us=0 tick_max_us=1085 producer_failures=0 presentation_failures=0
+[10:45:17] TINYDRAW_LIVE_FILL_DONE zoom=100 x=644 y=894 revision=32
+[10:45:17] TINYDRAW_PAN_BASELINE zoom=100 x=476 y=1006 frames=6 reused=6 compose_avg_us=16 compose_max_us=17 present_avg_us=28627 present_max_us=33887 tear_wait_avg_us=630 tear_wait_max_us=1919 failures=0
+[10:45:17] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=476 y=1006 revision=32 steps=1 wall_us=1135 compute_total_us=1101 compute_max_us=1101 present_total_us=0 present_max_us=0 tick_max_us=1114 producer_failures=0 presentation_failures=0
+[10:45:17] TINYDRAW_LIVE_FILL_DONE zoom=100 x=476 y=1006 revision=32
+[10:45:18] TINYDRAW_PAN_BASELINE zoom=100 x=320 y=916 frames=5 reused=5 compose_avg_us=15 compose_max_us=16 present_avg_us=29695 present_max_us=32886 tear_wait_avg_us=118 tear_wait_max_us=568 failures=0
+[10:45:18] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=320 y=916 revision=32 steps=1 wall_us=1112 compute_total_us=1077 compute_max_us=1077 present_total_us=0 present_max_us=0 tick_max_us=1089 producer_failures=0 presentation_failures=0
+[10:45:18] TINYDRAW_LIVE_FILL_DONE zoom=100 x=320 y=916 revision=32
+[10:45:18] TINYDRAW_PAN_BASELINE zoom=100 x=202 y=944 frames=7 reused=7 compose_avg_us=16 compose_max_us=17 present_avg_us=27893 present_max_us=29897 tear_wait_avg_us=116 tear_wait_max_us=355 failures=0
+[10:45:18] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=202 y=944 revision=32 steps=33 wall_us=182043 compute_total_us=92422 compute_max_us=6672 present_total_us=84306 present_max_us=75877 tick_max_us=6703 producer_failures=0 presentation_failures=0
+[10:45:18] TINYDRAW_LIVE_FILL_DONE zoom=100 x=202 y=944 revision=32
+[10:45:19] TINYDRAW_PAN_BASELINE zoom=100 x=114 y=1004 frames=7 reused=7 compose_avg_us=16 compose_max_us=17 present_avg_us=27703 present_max_us=28886 tear_wait_avg_us=338 tear_wait_max_us=2330 failures=0
+[10:45:19] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=114 y=1004 revision=32 steps=1 wall_us=2168 compute_total_us=2133 compute_max_us=2133 present_total_us=0 present_max_us=0 tick_max_us=2146 producer_failures=0 presentation_failures=0
+[10:45:19] TINYDRAW_LIVE_FILL_DONE zoom=100 x=114 y=1004 revision=32
+[10:45:19] TINYDRAW_PAN_BASELINE zoom=100 x=46 y=1088 frames=5 reused=5 compose_avg_us=16 compose_max_us=17 present_avg_us=28514 present_max_us=30885 tear_wait_avg_us=205 tear_wait_max_us=897 failures=0
+[10:45:20] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=46 y=1088 revision=32 steps=4 wall_us=83073 compute_total_us=10905 compute_max_us=4094 present_total_us=69943 present_max_us=69943 tick_max_us=4114 producer_failures=0 presentation_failures=0
+[10:45:20] TINYDRAW_LIVE_FILL_DONE zoom=100 x=46 y=1088 revision=32
+[10:45:20] TINYDRAW_PAN_BASELINE zoom=100 x=34 y=1102 frames=5 reused=5 compose_avg_us=16 compose_max_us=16 present_avg_us=26572 present_max_us=27888 tear_wait_avg_us=850 tear_wait_max_us=2610 failures=0
+[10:45:20] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=34 y=1102 revision=32 steps=1 wall_us=2345 compute_total_us=2308 compute_max_us=2308 present_total_us=0 present_max_us=0 tick_max_us=2322 producer_failures=0 presentation_failures=0
+[10:45:20] TINYDRAW_LIVE_FILL_DONE zoom=100 x=34 y=1102 revision=32
+[10:45:20] TINYDRAW_PAN_BASELINE zoom=100 x=8 y=1264 frames=6 reused=6 compose_avg_us=16 compose_max_us=16 present_avg_us=29563 present_max_us=31886 tear_wait_avg_us=319 tear_wait_max_us=1018 failures=1
+[10:45:20] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=8 y=1264 revision=32 steps=1 wall_us=2178 compute_total_us=2141 compute_max_us=2141 present_total_us=0 present_max_us=0 tick_max_us=2155 producer_failures=0 presentation_failures=0
+[10:45:20] TINYDRAW_LIVE_FILL_DONE zoom=100 x=8 y=1264 revision=32
+[10:45:21] TINYDRAW_PAN_BASELINE zoom=100 x=16 y=1002 frames=5 reused=4 compose_avg_us=6387 compose_max_us=31875 present_avg_us=26961 present_max_us=33885 tear_wait_avg_us=1808 tear_wait_max_us=4339 failures=0
+[10:45:21] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=16 y=1002 revision=32 steps=1 wall_us=1290 compute_total_us=1254 compute_max_us=1254 present_total_us=0 present_max_us=0 tick_max_us=1268 producer_failures=0 presentation_failures=0
+[10:45:21] TINYDRAW_LIVE_FILL_DONE zoom=100 x=16 y=1002 revision=32
+[10:45:21] TINYDRAW_LIVE_PRESENT kind=power zoom=100 x=16 y=1002 compose_us=31600 scroll_us=0 exposed_compose_us=0 chrome_us=8055 read_submit_us=41005 read_complete_us=42607 transfer_wait_us=17993 tile_pixels=143360 uniform_pixels=21504 overview_pixels=0 fallback_pixels=0 resident_tiles=48 fallback_tiles=0 pushes=11 tear_wait_us=7700 tear_sync=1 frame_reused=0 pass=1
+[10:45:21] TINYDRAW_PAN_BASELINE zoom=100 x=12 y=790 frames=6 reused=6 compose_avg_us=15 compose_max_us=16 present_avg_us=30060 present_max_us=33888 tear_wait_avg_us=608 tear_wait_max_us=1589 failures=0
+[10:45:21] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=12 y=790 revision=32 steps=1 wall_us=2057 compute_total_us=2021 compute_max_us=2021 present_total_us=0 present_max_us=0 tick_max_us=2036 producer_failures=0 presentation_failures=0
+[10:45:21] TINYDRAW_LIVE_FILL_DONE zoom=100 x=12 y=790 revision=32
+[10:45:22] TINYDRAW_PAN_BASELINE zoom=100 x=50 y=582 frames=4 reused=3 compose_avg_us=8207 compose_max_us=32781 present_avg_us=27180 present_max_us=34886 tear_wait_avg_us=2793 tear_wait_max_us=8972 failures=0
+[10:45:22] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=50 y=582 revision=32 steps=1 wall_us=1355 compute_total_us=1314 compute_max_us=1314 present_total_us=0 present_max_us=0 tick_max_us=1329 producer_failures=0 presentation_failures=0
+[10:45:22] TINYDRAW_LIVE_FILL_DONE zoom=100 x=50 y=582 revision=32
+[10:45:22] TINYDRAW_PAN_BASELINE zoom=100 x=26 y=388 frames=6 reused=6 compose_avg_us=16 compose_max_us=17 present_avg_us=28870 present_max_us=32465 tear_wait_avg_us=529 tear_wait_max_us=1723 failures=0
+[10:45:22] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=26 y=388 revision=32 steps=8 wall_us=95982 compute_total_us=22075 compute_max_us=5907 present_total_us=72395 present_max_us=72395 tick_max_us=5951 producer_failures=0 presentation_failures=0
+[10:45:22] TINYDRAW_LIVE_FILL_DONE zoom=100 x=26 y=388 revision=32
+[10:45:22] TINYDRAW_PAN_BASELINE zoom=100 x=82 y=140 frames=7 reused=7 compose_avg_us=16 compose_max_us=16 present_avg_us=30749 present_max_us=36887 tear_wait_avg_us=497 tear_wait_max_us=1200 failures=0
+[10:45:23] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=82 y=140 revision=32 steps=8 wall_us=98961 compute_total_us=25650 compute_max_us=8197 present_total_us=71338 present_max_us=71338 tick_max_us=8213 producer_failures=0 presentation_failures=0
+[10:45:23] TINYDRAW_LIVE_FILL_DONE zoom=100 x=82 y=140 revision=32
+[10:45:23] TINYDRAW_PAN_BASELINE zoom=100 x=150 y=92 frames=4 reused=4 compose_avg_us=16 compose_max_us=17 present_avg_us=27896 present_max_us=32886 tear_wait_avg_us=819 tear_wait_max_us=1546 failures=0
+[10:45:23] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=150 y=92 revision=32 steps=14 wall_us=124047 compute_total_us=46800 compute_max_us=6413 present_total_us=74656 present_max_us=72108 tick_max_us=8197 producer_failures=0 presentation_failures=0
+[10:45:23] TINYDRAW_LIVE_FILL_DONE zoom=100 x=150 y=92 revision=32
+[10:45:23] TINYDRAW_PAN_BASELINE zoom=100 x=274 y=120 frames=4 reused=4 compose_avg_us=16 compose_max_us=16 present_avg_us=29645 present_max_us=31887 tear_wait_avg_us=688 tear_wait_max_us=1074 failures=0
+[10:45:23] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=274 y=120 revision=32 steps=4 wall_us=90930 compute_total_us=21392 compute_max_us=6371 present_total_us=67267 present_max_us=66732 tick_max_us=6399 producer_failures=0 presentation_failures=0
+[10:45:23] TINYDRAW_LIVE_FILL_DONE zoom=100 x=274 y=120 revision=32
+[10:45:24] TINYDRAW_PAN_BASELINE zoom=100 x=434 y=110 frames=4 reused=4 compose_avg_us=16 compose_max_us=17 present_avg_us=29698 present_max_us=34887 tear_wait_avg_us=1373 tear_wait_max_us=2821 failures=1
+[10:45:24] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=434 y=110 revision=32 steps=2 wall_us=75866 compute_total_us=9436 compute_max_us=5163 present_total_us=64985 present_max_us=64985 tick_max_us=5185 producer_failures=0 presentation_failures=0
+[10:45:24] TINYDRAW_LIVE_FILL_DONE zoom=100 x=434 y=110 revision=32
+[10:45:24] TINYDRAW_PAN_BASELINE zoom=100 x=578 y=80 frames=4 reused=4 compose_avg_us=16 compose_max_us=16 present_avg_us=29602 present_max_us=35886 tear_wait_avg_us=870 tear_wait_max_us=2205 failures=1
+[10:45:24] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=578 y=80 revision=32 steps=1 wall_us=1895 compute_total_us=1854 compute_max_us=1854 present_total_us=0 present_max_us=0 tick_max_us=1867 producer_failures=0 presentation_failures=0
+[10:45:24] TINYDRAW_LIVE_FILL_DONE zoom=100 x=578 y=80 revision=32
+[10:45:24] TINYDRAW_PAN_BASELINE zoom=100 x=704 y=92 frames=4 reused=4 compose_avg_us=16 compose_max_us=16 present_avg_us=28662 present_max_us=33885 tear_wait_avg_us=776 tear_wait_max_us=1130 failures=1
+[10:45:24] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=704 y=92 revision=32 steps=1 wall_us=1907 compute_total_us=1870 compute_max_us=1870 present_total_us=0 present_max_us=0 tick_max_us=1884 producer_failures=0 presentation_failures=0
+[10:45:24] TINYDRAW_LIVE_FILL_DONE zoom=100 x=704 y=92 revision=32
+[10:45:25] TINYDRAW_PAN_BASELINE zoom=100 x=732 y=298 frames=5 reused=4 compose_avg_us=6687 compose_max_us=33374 present_avg_us=26093 present_max_us=31890 tear_wait_avg_us=3213 tear_wait_max_us=15490 failures=0
+[10:45:25] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=732 y=298 revision=32 steps=14 wall_us=127350 compute_total_us=48414 compute_max_us=6335 present_total_us=75626 present_max_us=74709 tick_max_us=8024 producer_failures=0 presentation_failures=0
+[10:45:25] TINYDRAW_LIVE_FILL_DONE zoom=100 x=732 y=298 revision=32
+[10:45:25] TINYDRAW_PAN_BASELINE zoom=100 x=772 y=484 frames=7 reused=7 compose_avg_us=16 compose_max_us=16 present_avg_us=27009 present_max_us=28235 tear_wait_avg_us=416 tear_wait_max_us=1561 failures=1
+[10:45:26] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=772 y=484 revision=32 steps=24 wall_us=152963 compute_total_us=72616 compute_max_us=8689 present_total_us=75924 present_max_us=75884 tick_max_us=10546 producer_failures=0 presentation_failures=0
+[10:45:26] TINYDRAW_LIVE_FILL_DONE zoom=100 x=772 y=484 revision=32
+[10:45:26] TINYDRAW_PAN_BASELINE zoom=100 x=762 y=694 frames=8 reused=8 compose_avg_us=16 compose_max_us=17 present_avg_us=27076 present_max_us=30890 tear_wait_avg_us=469 tear_wait_max_us=1996 failures=1
+[10:45:26] TINYDRAW_PAN_BASELINE zoom=100 x=762 y=898 frames=5 reused=5 compose_avg_us=16 compose_max_us=17 present_avg_us=28694 present_max_us=31886 tear_wait_avg_us=56 tear_wait_max_us=259 failures=0
+[10:45:26] TINYDRAW_FILL_BASELINE result=superseded zoom=100 x=762 y=694 revision=32 steps=42 wall_us=442748 compute_total_us=128384 compute_max_us=11204 present_total_us=83302 present_max_us=73332 tick_max_us=12748 producer_failures=0 presentation_failures=0
+[10:45:27] TINYDRAW_PAN_BASELINE zoom=100 x=746 y=1132 frames=6 reused=6 compose_avg_us=16 compose_max_us=16 present_avg_us=30049 present_max_us=33887 tear_wait_avg_us=446 tear_wait_max_us=2067 failures=0
+[10:45:27] TINYDRAW_FILL_BASELINE result=superseded zoom=100 x=762 y=898 revision=32 steps=80 wall_us=582542 compute_total_us=260860 compute_max_us=10527 present_total_us=89374 present_max_us=65283 tick_max_us=12587 producer_failures=0 presentation_failures=0
+[10:45:27] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=746 y=1132 revision=32 steps=25 wall_us=197127 compute_total_us=112696 compute_max_us=11280 present_total_us=79220 present_max_us=68292 tick_max_us=11297 producer_failures=0 presentation_failures=0
+[10:45:27] TINYDRAW_LIVE_FILL_DONE zoom=100 x=746 y=1132 revision=32
+[10:45:27] TINYDRAW_PAN_BASELINE zoom=100 x=626 y=1148 frames=5 reused=5 compose_avg_us=16 compose_max_us=16 present_avg_us=28122 present_max_us=30886 tear_wait_avg_us=227 tear_wait_max_us=862 failures=0
+[10:45:28] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=626 y=1148 revision=32 steps=37 wall_us=182959 compute_total_us=100150 compute_max_us=7158 present_total_us=77216 present_max_us=71087 tick_max_us=7986 producer_failures=0 presentation_failures=0
+[10:45:28] TINYDRAW_LIVE_FILL_DONE zoom=100 x=626 y=1148 revision=32
+[10:45:28] TINYDRAW_PAN_BASELINE zoom=100 x=522 y=1142 frames=5 reused=5 compose_avg_us=16 compose_max_us=17 present_avg_us=27427 present_max_us=29886 tear_wait_avg_us=500 tear_wait_max_us=2335 failures=0
+[10:45:28] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=522 y=1142 revision=32 steps=10 wall_us=95874 compute_total_us=28550 compute_max_us=4098 present_total_us=64512 present_max_us=63166 tick_max_us=4120 producer_failures=0 presentation_failures=0
+[10:45:28] TINYDRAW_LIVE_FILL_DONE zoom=100 x=522 y=1142 revision=32
+[10:45:28] TINYDRAW_PAN_BASELINE zoom=100 x=398 y=1028 frames=5 reused=5 compose_avg_us=16 compose_max_us=17 present_avg_us=29524 present_max_us=35038 tear_wait_avg_us=902 tear_wait_max_us=2856 failures=0
+[10:45:28] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=398 y=1028 revision=32 steps=30 wall_us=154868 compute_total_us=74854 compute_max_us=9295 present_total_us=75258 present_max_us=66039 tick_max_us=9320 producer_failures=0 presentation_failures=0
+[10:45:28] TINYDRAW_LIVE_FILL_DONE zoom=100 x=398 y=1028 revision=32
+[10:45:29] TINYDRAW_PAN_BASELINE zoom=100 x=306 y=1114 frames=5 reused=5 compose_avg_us=16 compose_max_us=16 present_avg_us=29203 present_max_us=33886 tear_wait_avg_us=575 tear_wait_max_us=2456 failures=0
+[10:45:29] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=306 y=1114 revision=32 steps=25 wall_us=150846 compute_total_us=74566 compute_max_us=10111 present_total_us=72179 present_max_us=69969 tick_max_us=10856 producer_failures=0 presentation_failures=0
+[10:45:29] TINYDRAW_LIVE_FILL_DONE zoom=100 x=306 y=1114 revision=32
+[10:45:29] TINYDRAW_PAN_BASELINE zoom=100 x=234 y=1144 frames=5 reused=5 compose_avg_us=16 compose_max_us=16 present_avg_us=27548 present_max_us=28885 tear_wait_avg_us=474 tear_wait_max_us=1734 failures=0
+[10:45:29] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=234 y=1144 revision=32 steps=17 wall_us=132907 compute_total_us=59215 compute_max_us=7934 present_total_us=70507 present_max_us=69930 tick_max_us=8056 producer_failures=0 presentation_failures=0
+[10:45:29] TINYDRAW_LIVE_FILL_DONE zoom=100 x=234 y=1144 revision=32
+[10:45:29] TINYDRAW_PAN_BASELINE zoom=100 x=122 y=1088 frames=5 reused=5 compose_avg_us=16 compose_max_us=17 present_avg_us=28493 present_max_us=30886 tear_wait_avg_us=289 tear_wait_max_us=970 failures=0
+[10:45:30] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=122 y=1088 revision=32 steps=9 wall_us=108989 compute_total_us=26733 compute_max_us=5734 present_total_us=79672 present_max_us=78527 tick_max_us=5754 producer_failures=0 presentation_failures=0
+[10:45:30] TINYDRAW_LIVE_FILL_DONE zoom=100 x=122 y=1088 revision=32
+[10:45:30] TINYDRAW_PAN_BASELINE zoom=100 x=24 y=1054 frames=5 reused=5 compose_avg_us=16 compose_max_us=16 present_avg_us=27821 present_max_us=29886 tear_wait_avg_us=657 tear_wait_max_us=2365 failures=0
+[10:45:30] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=24 y=1054 revision=32 steps=21 wall_us=125995 compute_total_us=56362 compute_max_us=6139 present_total_us=65881 present_max_us=62569 tick_max_us=6158 producer_failures=0 presentation_failures=0
+[10:45:30] TINYDRAW_LIVE_FILL_DONE zoom=100 x=24 y=1054 revision=32
+[10:45:30] TINYDRAW_PAN_BASELINE zoom=100 x=0 y=1064 frames=5 reused=5 compose_avg_us=16 compose_max_us=17 present_avg_us=26293 present_max_us=27887 tear_wait_avg_us=421 tear_wait_max_us=736 failures=0
+[10:45:30] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=0 y=1064 revision=32 steps=1 wall_us=1230 compute_total_us=1193 compute_max_us=1193 present_total_us=0 present_max_us=0 tick_max_us=1207 producer_failures=0 presentation_failures=0
+[10:45:30] TINYDRAW_LIVE_FILL_DONE zoom=100 x=0 y=1064 revision=32
+[10:45:31] TINYDRAW_PAN_BASELINE zoom=100 x=156 y=1050 frames=4 reused=4 compose_avg_us=16 compose_max_us=16 present_avg_us=30247 present_max_us=34886 tear_wait_avg_us=1430 tear_wait_max_us=2596 failures=0
+[10:45:31] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=156 y=1050 revision=32 steps=1 wall_us=1281 compute_total_us=1243 compute_max_us=1243 present_total_us=0 present_max_us=0 tick_max_us=1257 producer_failures=0 presentation_failures=0
+[10:45:31] TINYDRAW_LIVE_FILL_DONE zoom=100 x=156 y=1050 revision=32
+[10:45:31] TINYDRAW_PAN_BASELINE zoom=100 x=340 y=928 frames=5 reused=4 compose_avg_us=6454 compose_max_us=32212 present_avg_us=27130 present_max_us=34887 tear_wait_avg_us=3122 tear_wait_max_us=12485 failures=0
+[10:45:31] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=340 y=928 revision=32 steps=19 wall_us=128349 compute_total_us=52526 compute_max_us=9962 present_total_us=72971 present_max_us=68386 tick_max_us=12099 producer_failures=0 presentation_failures=0
+[10:45:31] TINYDRAW_LIVE_FILL_DONE zoom=100 x=340 y=928 revision=32
+[10:45:31] TINYDRAW_PAN_BASELINE zoom=100 x=446 y=822 frames=5 reused=5 compose_avg_us=15 compose_max_us=16 present_avg_us=29093 present_max_us=33887 tear_wait_avg_us=660 tear_wait_max_us=1446 failures=0
+[10:45:32] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=446 y=822 revision=32 steps=24 wall_us=135958 compute_total_us=53902 compute_max_us=5838 present_total_us=78871 present_max_us=74280 tick_max_us=6779 producer_failures=0 presentation_failures=0
+[10:45:32] TINYDRAW_LIVE_FILL_DONE zoom=100 x=446 y=822 revision=32
+[10:45:32] TINYDRAW_PAN_BASELINE zoom=100 x=430 y=788 frames=14 reused=14 compose_avg_us=16 compose_max_us=17 present_avg_us=28009 present_max_us=32885 tear_wait_avg_us=517 tear_wait_max_us=1973 failures=0
+[10:45:32] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=430 y=788 revision=32 steps=1 wall_us=1255 compute_total_us=1209 compute_max_us=1209 present_total_us=0 present_max_us=0 tick_max_us=1228 producer_failures=0 presentation_failures=0
+[10:45:32] TINYDRAW_LIVE_FILL_DONE zoom=100 x=430 y=788 revision=32
+[10:45:32] TINYDRAW_PAN_BASELINE zoom=100 x=352 y=792 frames=5 reused=5 compose_avg_us=16 compose_max_us=17 present_avg_us=27242 present_max_us=28885 tear_wait_avg_us=208 tear_wait_max_us=760 failures=0
+[10:45:32] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=352 y=792 revision=32 steps=1 wall_us=1232 compute_total_us=1196 compute_max_us=1196 present_total_us=0 present_max_us=0 tick_max_us=1209 producer_failures=0 presentation_failures=0
+[10:45:32] TINYDRAW_LIVE_FILL_DONE zoom=100 x=352 y=792 revision=32
+[10:45:33] TINYDRAW_PAN_BASELINE zoom=100 x=236 y=926 frames=6 reused=6 compose_avg_us=16 compose_max_us=17 present_avg_us=29543 present_max_us=31889 tear_wait_avg_us=233 tear_wait_max_us=1266 failures=0
+[10:45:33] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=236 y=926 revision=32 steps=1 wall_us=2063 compute_total_us=2027 compute_max_us=2027 present_total_us=0 present_max_us=0 tick_max_us=2040 producer_failures=0 presentation_failures=0
+[10:45:33] TINYDRAW_LIVE_FILL_DONE zoom=100 x=236 y=926 revision=32
+[10:45:33] TINYDRAW_PAN_BASELINE zoom=100 x=220 y=1084 frames=4 reused=4 compose_avg_us=16 compose_max_us=16 present_avg_us=29901 present_max_us=32886 tear_wait_avg_us=225 tear_wait_max_us=884 failures=1
+[10:45:33] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=220 y=1084 revision=32 steps=1 wall_us=2107 compute_total_us=2072 compute_max_us=2072 present_total_us=0 present_max_us=0 tick_max_us=2085 producer_failures=0 presentation_failures=0
+[10:45:33] TINYDRAW_LIVE_FILL_DONE zoom=100 x=220 y=1084 revision=32
+[10:45:33] TINYDRAW_PAN_BASELINE zoom=100 x=214 y=1240 frames=4 reused=4 compose_avg_us=16 compose_max_us=17 present_avg_us=28904 present_max_us=30890 tear_wait_avg_us=102 tear_wait_max_us=391 failures=1
+[10:45:33] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=214 y=1240 revision=32 steps=1 wall_us=1445 compute_total_us=1399 compute_max_us=1399 present_total_us=0 present_max_us=0 tick_max_us=1414 producer_failures=0 presentation_failures=0
+[10:45:33] TINYDRAW_LIVE_FILL_DONE zoom=100 x=214 y=1240 revision=32
+[10:45:34] TINYDRAW_PAN_BASELINE zoom=100 x=256 y=1344 frames=5 reused=5 compose_avg_us=16 compose_max_us=17 present_avg_us=26758 present_max_us=27890 tear_wait_avg_us=492 tear_wait_max_us=1711 failures=1
+[10:45:34] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=256 y=1344 revision=32 steps=1 wall_us=1354 compute_total_us=1316 compute_max_us=1316 present_total_us=0 present_max_us=0 tick_max_us=1330 producer_failures=0 presentation_failures=0
+[10:45:34] TINYDRAW_LIVE_FILL_DONE zoom=100 x=256 y=1344 revision=32
+[10:45:36] TINYDRAW_LIVE_REPAIR views=20 steps=559
+[10:46:21] TINYDRAW_LIVE_PRESENT kind=power zoom=100 x=256 y=1344 compose_us=28090 scroll_us=0 exposed_compose_us=0 chrome_us=7973 read_submit_us=39974 read_complete_us=41583 transfer_wait_us=18026 tile_pixels=82944 uniform_pixels=81920 overview_pixels=0 fallback_pixels=0 resident_tiles=42 fallback_tiles=0 pushes=11 tear_wait_us=10223 tear_sync=1 frame_reused=0 pass=1
+[10:46:51] TINYDRAW_LIVE_PRESENT kind=power zoom=100 x=256 y=1344 compose_us=28342 scroll_us=0 exposed_compose_us=0 chrome_us=7980 read_submit_us=34486 read_complete_us=36095 transfer_wait_us=18514 tile_pixels=82944 uniform_pixels=81920 overview_pixels=0 fallback_pixels=0 resident_tiles=42 fallback_tiles=0 pushes=11 tear_wait_us=4448 tear_sync=1 frame_reused=0 pass=1
+[10:47:21] TINYDRAW_LIVE_PRESENT kind=power zoom=100 x=256 y=1344 compose_us=28390 scroll_us=0 exposed_compose_us=0 chrome_us=8027 read_submit_us=44910 read_complete_us=46519 transfer_wait_us=18090 tile_pixels=82944 uniform_pixels=81920 overview_pixels=0 fallback_pixels=0 resident_tiles=42 fallback_tiles=0 pushes=11 tear_wait_us=14823 tear_sync=1 frame_reused=0 pass=1
+[10:47:51] TINYDRAW_LIVE_PRESENT kind=power zoom=100 x=256 y=1344 compose_us=28343 scroll_us=0 exposed_compose_us=0 chrome_us=7968 read_submit_us=36704 read_complete_us=38314 transfer_wait_us=18296 tile_pixels=82944 uniform_pixels=81920 overview_pixels=0 fallback_pixels=0 resident_tiles=42 fallback_tiles=0 pushes=11 tear_wait_us=6704 tear_sync=1 frame_reused=0 pass=1
+[10:48:21] TINYDRAW_LIVE_PRESENT kind=power zoom=100 x=256 y=1344 compose_us=28368 scroll_us=0 exposed_compose_us=0 chrome_us=8016 read_submit_us=46685 read_complete_us=48295 transfer_wait_us=18315 tile_pixels=82944 uniform_pixels=81920 overview_pixels=0 fallback_pixels=0 resident_tiles=42 fallback_tiles=0 pushes=11 tear_wait_us=16668 tear_sync=1 frame_reused=0 pass=1
+[10:49:51] TINYDRAW_LIVE_PRESENT kind=power zoom=100 x=256 y=1344 compose_us=28272 scroll_us=0 exposed_compose_us=0 chrome_us=8038 read_submit_us=44913 read_complete_us=46522 transfer_wait_us=18087 tile_pixels=82944 uniform_pixels=81920 overview_pixels=0 fallback_pixels=0 resident_tiles=42 fallback_tiles=0 pushes=11 tear_wait_us=14963 tear_sync=1 frame_reused=0 pass=1
+[10:50:21] TINYDRAW_LIVE_PRESENT kind=power zoom=100 x=256 y=1344 compose_us=28340 scroll_us=0 exposed_compose_us=0 chrome_us=7977 read_submit_us=34431 read_complete_us=36040 transfer_wait_us=18569 tile_pixels=82944 uniform_pixels=81920 overview_pixels=0 fallback_pixels=0 resident_tiles=42 fallback_tiles=0 pushes=11 tear_wait_us=4389 tear_sync=1 frame_reused=0 pass=1
+[10:50:51] TINYDRAW_LIVE_PRESENT kind=power zoom=100 x=256 y=1344 compose_us=28356 scroll_us=0 exposed_compose_us=0 chrome_us=7979 read_submit_us=36500 read_complete_us=38108 transfer_wait_us=18500 tile_pixels=82944 uniform_pixels=81920 overview_pixels=0 fallback_pixels=0 resident_tiles=42 fallback_tiles=0 pushes=11 tear_wait_us=6449 tear_sync=1 frame_reused=0 pass=1
+[10:51:21] TINYDRAW_LIVE_PRESENT kind=power zoom=100 x=256 y=1344 compose_us=28389 scroll_us=0 exposed_compose_us=0 chrome_us=8022 read_submit_us=40822 read_complete_us=42434 transfer_wait_us=18178 tile_pixels=82944 uniform_pixels=81920 overview_pixels=0 fallback_pixels=0 resident_tiles=42 fallback_tiles=0 pushes=11 tear_wait_us=10759 tear_sync=1 frame_reused=0 pass=1
+[10:51:51] TINYDRAW_LIVE_PRESENT kind=power zoom=100 x=256 y=1344 compose_us=28369 scroll_us=0 exposed_compose_us=0 chrome_us=7996 read_submit_us=39235 read_complete_us=40844 transfer_wait_us=18765 tile_pixels=82944 uniform_pixels=81920 overview_pixels=0 fallback_pixels=0 resident_tiles=42 fallback_tiles=0 pushes=11 tear_wait_us=9174 tear_sync=1 frame_reused=0 pass=1
+[10:52:21] TINYDRAW_LIVE_PRESENT kind=power zoom=100 x=256 y=1344 compose_us=28371 scroll_us=0 exposed_compose_us=0 chrome_us=8012 read_submit_us=40096 read_complete_us=41705 transfer_wait_us=18904 tile_pixels=82944 uniform_pixels=81920 overview_pixels=0 fallback_pixels=0 resident_tiles=42 fallback_tiles=0 pushes=11 tear_wait_us=10030 tear_sync=1 frame_reused=0 pass=1
+[10:52:51] TINYDRAW_LIVE_PRESENT kind=power zoom=100 x=256 y=1344 compose_us=28371 scroll_us=0 exposed_compose_us=0 chrome_us=8009 read_submit_us=39908 read_complete_us=41517 transfer_wait_us=18092 tile_pixels=82944 uniform_pixels=81920 overview_pixels=0 fallback_pixels=0 resident_tiles=42 fallback_tiles=0 pushes=11 tear_wait_us=9833 tear_sync=1 frame_reused=0 pass=1
+[10:53:21] TINYDRAW_LIVE_PRESENT kind=power zoom=100 x=256 y=1344 compose_us=28381 scroll_us=0 exposed_compose_us=0 chrome_us=8012 read_submit_us=42399 read_complete_us=44009 transfer_wait_us=18601 tile_pixels=82944 uniform_pixels=81920 overview_pixels=0 fallback_pixels=0 resident_tiles=42 fallback_tiles=0 pushes=11 tear_wait_us=12323 tear_sync=1 frame_reused=0 pass=1
+[10:53:40] ESP-ROM:esp32s3-20210327
+[10:53:40] Build:Mar 27 2021
+[10:53:40] rst:0x15 (USB_UART_CHIP_RESET),boot:0x23 (DOWNLOAD(USB/UART0))
+[10:53:40] Saved PC:0x4037b802
+[10:53:40] waiting for download
+[10:53:41]       응      응      응      응      응      응      응      픂SP-ROM:esp32s3-20210327
+[10:53:41] Build:Mar 27 2021
+[10:53:41] rst:0x15 (USB_UART_CHIP_RESET),boot:0x23 (DOWNLOAD(USB/UART0))
+[10:53:41] Saved PC:0x400490d5
+[10:53:41] waiting for download

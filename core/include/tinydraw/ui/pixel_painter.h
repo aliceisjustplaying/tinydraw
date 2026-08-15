@@ -21,8 +21,16 @@ class PixelPainter {
  public:
   PixelPainter(std::span<std::uint16_t> pixels, int width, int height)
       : pixels_(pixels), width_(width), height_(height) {}
+  // A painter whose surface's (0, 0) sits at logical coordinate
+  // (origin_x, origin_y): callers keep drawing in absolute coordinates and
+  // every primitive translates and clips. This lets full-frame drawing code
+  // render into small offset scratch surfaces unchanged.
+  PixelPainter(std::span<std::uint16_t> pixels, int width, int height, int origin_x, int origin_y)
+      : pixels_(pixels), width_(width), height_(height), origin_x_(origin_x), origin_y_(origin_y) {}
 
   void pixel(int x, int y, std::uint16_t color) {
+    x -= origin_x_;
+    y -= origin_y_;
     if (x >= 0 && x < width_ && y >= 0 && y < height_) {
       pixels_[static_cast<std::size_t>(y) * static_cast<std::size_t>(width_) +
               static_cast<std::size_t>(x)] = color;
@@ -30,9 +38,10 @@ class PixelPainter {
   }
 
   void rect(UiPixelRect bounds, std::uint16_t color) {
-    const int x0 = std::clamp(bounds.x0, 0, width_);
-    const int x1 = std::clamp(bounds.x1, x0, width_);
-    for (int y = std::clamp(bounds.y0, 0, height_); y < std::clamp(bounds.y1, 0, height_); ++y) {
+    const int x0 = std::clamp(bounds.x0 - origin_x_, 0, width_);
+    const int x1 = std::clamp(bounds.x1 - origin_x_, x0, width_);
+    for (int y = std::clamp(bounds.y0 - origin_y_, 0, height_);
+         y < std::clamp(bounds.y1 - origin_y_, 0, height_); ++y) {
       const auto start = pixels_.begin() + static_cast<std::ptrdiff_t>(y) * width_ + x0;
       std::fill(start, start + (x1 - x0), color);
     }
@@ -164,6 +173,8 @@ class PixelPainter {
   std::span<std::uint16_t> pixels_;
   int width_;
   int height_;
+  int origin_x_ = 0;
+  int origin_y_ = 0;
 };
 
 }  // namespace tinydraw

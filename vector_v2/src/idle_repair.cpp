@@ -54,6 +54,7 @@ IdleRepairPlan plan_idle_repair(const ViewRequest& active_view,
       append_view(plan, footprint.zoom, footprint.level_pixels.x0, footprint.level_pixels.y0);
     }
   }
+  plan.grid_start = plan.count;
   if (active_view.zoom == ZoomLevel::k100Percent) {
     const int level_width = kOverviewWidth << level_shift(ZoomLevel::k100Percent);
     const int level_height = kOverviewHeight << level_shift(ZoomLevel::k100Percent);

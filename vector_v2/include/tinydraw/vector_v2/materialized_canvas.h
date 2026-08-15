@@ -231,6 +231,9 @@ class MaterializedCanvas {
   [[nodiscard]] bool ready() const;
   [[nodiscard]] DocumentRevision current_revision() const;
   [[nodiscard]] std::size_t slot_capacity() const;
+  // Occupied raw slots. Idle repair uses this to stop a level sweep once the
+  // pool saturates: past that point every publication evicts warmer tiles.
+  [[nodiscard]] std::size_t resident_raw_tiles() const;
   [[nodiscard]] std::size_t uniform_capacity() const;
   [[nodiscard]] std::uint64_t composition_epoch() const;
   [[nodiscard]] std::span<const std::uint16_t> overview_pixels() const;
