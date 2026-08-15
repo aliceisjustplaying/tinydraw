@@ -168,6 +168,11 @@ class ChromeStagingCache {
   explicit ChromeStagingCache(std::span<std::uint16_t> pixels) : pixels_(pixels) {}
 
   [[nodiscard]] bool ready() const { return pixels_.size() >= kChromeStagingCachePixels; }
+  // Regenerates caller-funded sprites only when chrome, viewport, zoom, or
+  // overview revision changes. Call before a row-zero sweep so paint() is a
+  // bounded transparent blit for every staged strip.
+  [[nodiscard]] bool prepare(const ChromeState& state, const ChromeNavigation& navigation,
+                             std::uint32_t overview_revision);
   [[nodiscard]] bool paint(const MinimapSurface& surface, const ChromeState& state,
                            const ChromeNavigation& navigation, std::uint32_t overview_revision);
 
@@ -175,6 +180,10 @@ class ChromeStagingCache {
   std::span<std::uint16_t> pixels_{};
   ChromeState state_{};
   int zoom_percent_ = 0;
+  int level_x_ = 0;
+  int level_y_ = 0;
+  int level_width_ = 0;
+  int level_height_ = 0;
   std::uint32_t overview_revision_ = 0;
   bool valid_ = false;
 };

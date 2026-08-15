@@ -529,6 +529,10 @@ TEST_CASE("staging strips reproduce all fixed chrome without mutating canvas sou
 
   std::vector<std::uint16_t> cache_pixels(tinydraw::vector_v2::kChromeStagingCachePixels);
   tinydraw::vector_v2::ChromeStagingCache cache(cache_pixels);
+  REQUIRE(cache.prepare(state, navigation, 7U));
+  const std::vector<std::uint16_t> prepared_cache = cache_pixels;
+  REQUIRE(cache.prepare(state, navigation, 7U));
+  CHECK(cache_pixels == prepared_cache);
   std::vector<std::uint16_t> cached = canvas;
   for (int y = 0; y < height; y += rows_per_strip) {
     const int rows = std::min(rows_per_strip, height - y);
@@ -544,6 +548,8 @@ TEST_CASE("staging strips reproduce all fixed chrome without mutating canvas sou
   std::vector<std::uint16_t> moved_reference = canvas;
   tinydraw::vector_v2::draw_chrome(moved_reference, width, height, state);
   tinydraw::vector_v2::draw_chrome_canvas_overlays(moved_reference, width, height, state, moved);
+  REQUIRE(cache.prepare(state, moved, 7U));
+  CHECK(cache_pixels != prepared_cache);
   std::vector<std::uint16_t> moved_cached = canvas;
   for (int y = 0; y < height; y += rows_per_strip) {
     const int rows = std::min(rows_per_strip, height - y);
