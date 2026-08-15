@@ -55,7 +55,32 @@ Run order: **4 first** (validate instrument), then 1, 5, 2, 3.
 - One clip per cell, ≥30 s of the 45 s run; a couple seconds of wobble is
   fine (the classifier re-registers every frame)
 
-## Per-cell run procedure
+## One-take procedure (preferred)
+
+Cell 6 cycles all optical cells in one flash — order 4, 1, 5, 2, 3 —
+30 s each with 2 s solid-blue interstitials (total ~2:40). Film the whole
+run as one continuous handheld clip; the classifier segments by the
+on-screen cell ID (debounced 3 frames) and emits one verdict per cell,
+with cell 4 gating instrument validity.
+
+```sh
+# flash the cycle; the sequence starts a few seconds after flashing
+./scripts/esp32 panel-probe /dev/cu.usbmodem101 40 6
+
+# serial receipt in parallel (optional but nice)
+./tools/esp32-capture.py /dev/cu.usbmodem101 \
+  benchmark-results/blockB-optical/cycle-serial.log 220 \
+  --end-marker TINYDRAW_PANEL_PROBE_DONE
+
+# classify the single clip
+./tools/classify-tearing.py path/to/cycle.mov \
+  --out benchmark-results/blockB-optical/cycle.classified
+```
+
+Handheld at f/4 is acceptable: registration is per-frame and the
+pattern elements are ≥20 panel px.
+
+## Per-cell run procedure (fallback)
 
 ```sh
 # 1. flash the cell (waits at boot ~2 s, then runs 45 s)

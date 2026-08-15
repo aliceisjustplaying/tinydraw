@@ -324,14 +324,15 @@ constexpr std::array<OpticalCellSpec, 6> kOpticalCells{{
 }};
 
 void run_optical_cell(Co5300PanelTransport& display, std::uint16_t* frame_a, std::uint16_t* frame_b,
-                      int cell) {
+                      int cell, std::int64_t duration_us) {
   const auto& spec = kOpticalCells[static_cast<std::size_t>(cell)];
   paint_cell_pattern(frame_a, 0xF800, cell);  // A = red
   paint_cell_pattern(frame_b, 0x07E0, cell);  // B = green
   const int region_rows = cell == 5 ? 368 : kPanelHeight;
-  constexpr std::int64_t kCellDurationUs = 45'000'000;
-  std::printf("TINYDRAW_PROBE_CELL_START cell=%d name=%s expected=%s rows=%d duration_s=45\n", cell,
-              spec.name, spec.expected, region_rows);
+  const std::int64_t kCellDurationUs = duration_us;
+  std::printf("TINYDRAW_PROBE_CELL_START cell=%d name=%s expected=%s rows=%d duration_s=%lld\n",
+              cell, spec.name, spec.expected, region_rows,
+              static_cast<long long>(duration_us / 1'000'000));
   std::fflush(stdout);
 
   std::vector<std::int64_t> intervals;
@@ -441,8 +442,25 @@ void run_panel_probe() {
   // Let the panel settle and the TE ISR accumulate edges before sampling.
   vTaskDelay(pdMS_TO_TICKS(200));
 
-#if TINYDRAW_PANEL_PROBE_CELL != 0
-  run_optical_cell(display, frame_a, frame_b, TINYDRAW_PANEL_PROBE_CELL);
+#if TINYDRAW_PANEL_PROBE_CELL == 6
+  // One-take cycle for a single continuous handheld video. Positive control
+  // first; blue interstitials mark segment boundaries for the classifier.
+  constexpr std::array kCycleOrder{4, 1, 5, 2, 3};
+  for (const int cell : kCycleOrder) {
+    std::fill_n(frame_a, kFramePixels, static_cast<std::uint16_t>(0x001F));
+    static_cast<void>(display.stream_rect(0, 0, kPanelWidth, kPanelHeight, frame_a, 0, 44));
+    static_cast<void>(display.wait_for_all(100'000));
+    vTaskDelay(pdMS_TO_TICKS(2'000));
+    run_optical_cell(display, frame_a, frame_b, cell, 30'000'000);
+  }
+  heap_caps_free(scratch);
+  heap_caps_free(frame_b);
+  heap_caps_free(frame_a);
+  std::printf("TINYDRAW_PANEL_PROBE_DONE pass=1\n");
+  std::fflush(stdout);
+  return;
+#elif TINYDRAW_PANEL_PROBE_CELL != 0
+  run_optical_cell(display, frame_a, frame_b, TINYDRAW_PANEL_PROBE_CELL, 45'000'000);
   heap_caps_free(scratch);
   heap_caps_free(frame_b);
   heap_caps_free(frame_a);
