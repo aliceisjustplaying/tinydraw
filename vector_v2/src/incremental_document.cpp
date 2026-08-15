@@ -250,7 +250,9 @@ struct InPlaceRetainScope {
 
 // Uniform pass: same-color uniforms retain for free at every zoom; other
 // affected uniforms materialize as raw and paint only inside the priority
-// view and budget.
+// view. Visible tiles are exempt from the budget: dropping one blurs pixels
+// the user is looking at (rejected on glass), and the viewport bounds the
+// work.
 std::size_t retain_uniform_tiles(MaterializedCanvas& canvas, const InPlaceRetainScope& scope,
                                  std::span<TileKey> affected, std::span<std::uint8_t> tile_mask) {
   std::size_t retained = 0;
@@ -264,7 +266,7 @@ std::size_t retain_uniform_tiles(MaterializedCanvas& canvas, const InPlaceRetain
     if (*color == scope.painted_color) {
       // Painting this color over an identical uniform is a no-op; retain it.
       keep = true;
-    } else if (in_priority_view(key, scope.priority_view) && !scope.over_budget()) {
+    } else if (in_priority_view(key, scope.priority_view)) {
       const auto edit = canvas.materialize_uniform_as_raw(key);
       if (edit.has_value() && paint_operation_into_tile(scope.operation, *edit, tile_mask)) {
         keep = true;
@@ -281,14 +283,20 @@ std::size_t retain_uniform_tiles(MaterializedCanvas& canvas, const InPlaceRetain
 }
 
 // Raw pass: resident raw tiles paint in place only at the priority view's
-// zoom and within budget; a failed paint invalidates the identity.
+// zoom. Tiles visible in the priority view always paint (the viewport
+// bounds them; dropping one is a visible blur, rejected on glass);
+// off-screen tiles at that zoom paint within the remaining budget and
+// otherwise drop for idle repair to rebuild. A failed paint invalidates the
+// identity.
 std::size_t retain_raw_tiles(MaterializedCanvas& canvas, const InPlaceRetainScope& scope,
                              std::span<TileKey> affected, std::span<std::uint8_t> tile_mask,
                              std::size_t retained) {
   for (std::size_t index = retained; index < affected.size(); ++index) {
     const TileKey key = affected[index];
-    if (!scope.priority_view.has_value() || key.zoom != scope.priority_view->zoom ||
-        scope.over_budget()) {
+    if (!scope.priority_view.has_value() || key.zoom != scope.priority_view->zoom) {
+      continue;
+    }
+    if (!in_priority_view(key, scope.priority_view) && scope.over_budget()) {
       continue;
     }
     const auto edit = canvas.edit_resident_tile(key);

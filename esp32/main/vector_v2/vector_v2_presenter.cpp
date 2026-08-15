@@ -569,19 +569,54 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   const std::uint32_t first_sequence = display_.submit_count() + 1U;
   auto timing = present_unobscured({0, start_row, vector_v2::kOverviewWidth, canvas_bottom}, chrome,
                                    event_us, exposed_completed - started, false, true, exposed);
+  std::int64_t band_wait_us = 0;
+  bool band_synchronized = true;
   if (timing.passed && start_row > 0) {
+    // The writer is slower than the beam, so the wrapped top band is only
+    // safe after the beam has passed row 0 again; pushing it immediately
+    // let the beam catch the writer inside the band and tear (observed on
+    // glass). If the bottom band finished before the beam wrapped, wait out
+    // the remainder of the sweep.
+    const std::int64_t band_started = esp_timer_get_time();
+    const std::int64_t age = display_.tear_age_us();
+    if (age < 0 || age >= band_started - tear_completed) {
+      band_synchronized = display_.wait_for_safe_frame_start(40'000);
+      band_wait_us = esp_timer_get_time() - band_started;
+    }
     const auto wrapped = present_unobscured({0, 0, vector_v2::kOverviewWidth, start_row}, chrome,
                                             event_us, 0, false, true, exposed);
     timing.pushes += wrapped.pushes;
     timing.passed = wrapped.passed;
+  }
+  if (timing.passed) {
+    // The unobscured sweep never composes exposed pixels hidden behind
+    // overlays (zoom rail, minimap, battery). Settle every overlay's share
+    // in the ring: the frame must stay complete for future reuse and for
+    // the minimap backdrop gather. Leaving them stale painted the overlay
+    // bands with old canvas on later frames.
+    const auto overlay_regions = vector_v2::chrome_overlay_regions(chrome);
+    for (std::size_t overlay = 0; overlay < overlay_regions.count && timing.passed; ++overlay) {
+      const auto rect =
+          align_bounds({overlay_regions.regions[overlay].x0, overlay_regions.regions[overlay].y0,
+                        overlay_regions.regions[overlay].x1, overlay_regions.regions[overlay].y1});
+      for (const auto& exposed_rect : exposed) {
+        const vector_v2::PixelRect part{
+            std::max(exposed_rect.x0, rect.x0), std::max(exposed_rect.y0, rect.y0),
+            std::min(exposed_rect.x1, rect.x1),
+            std::min(exposed_rect.y1, std::min(rect.y1, canvas_bottom))};
+        if (part.x0 < part.x1 && part.y0 < part.y1 && !compose_into_ring(part)) {
+          timing.passed = false;
+        }
+      }
+    }
   }
   if (!timing.passed) {
     // Pushes already started when a fused compose or push failed, so parts
     // of the panel may hold mixed content. Repaint everything.
     return refresh(chrome, event_us);
   }
-  timing.tear_wait_us = tear_completed - tear_started;
-  timing.tear_synchronized = tear_synchronized;
+  timing.tear_wait_us = (tear_completed - tear_started) + band_wait_us;
+  timing.tear_synchronized = tear_synchronized && band_synchronized;
   if (timing.passed) {
     // The minimap viewport rectangle tracks every pan frame. It composes
     // into a small linear scratch surface over a live ring backdrop and
@@ -594,17 +629,6 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
       const std::size_t minimap_pixels =
           static_cast<std::size_t>(minimap_width) * static_cast<std::size_t>(minimap_height);
       bool minimap_ok = aligned.y1 <= canvas_bottom && minimap_pixels <= region_.size();
-      // The unobscured sweep never composes the exposed area hidden behind
-      // the minimap; settle it in the ring before gathering the backdrop so
-      // the frame stays complete for future reuse.
-      for (const auto& rect : exposed) {
-        const vector_v2::PixelRect part{
-            std::max(rect.x0, aligned.x0), std::max(rect.y0, aligned.y0),
-            std::min(rect.x1, aligned.x1), std::min(rect.y1, aligned.y1)};
-        if (part.x0 < part.x1 && part.y0 < part.y1 && !compose_into_ring(part)) {
-          minimap_ok = false;
-        }
-      }
       if (minimap_ok) {
         copy_ring_region(aligned, region_.first(minimap_pixels));
         minimap_ok = vector_v2::draw_chrome_minimap_surface(

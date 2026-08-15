@@ -46,12 +46,15 @@ inline constexpr int kBeamStartMarginRows = 16;
 // progressive tile presentation, so wider reuse costs no additional PSRAM.
 inline constexpr std::size_t kLiveRegionScratchPixels = kMaximumProgressiveRegionPixels;
 // Interactive gestures commit in bounded chunks so intermediate authority
-// publication stays inside one input-poll slice. Forty-eight samples measured
-// 11.5 ms worst-case in-place commit for a maximum-speed XL 400% gesture
-// (64 samples measured 14.9 ms, too close to the 15 ms slice bound; 32
-// samples cost 42% more total work). The deterministic long-gesture harness
-// gate re-proves the bound with this exact constant.
-inline constexpr std::size_t kInteractiveChunkSampleLimit = 48;
+// publication stays inside one input-poll slice. With visible tiles exempt
+// from the commit budget (dropping them blurred on-screen ink, rejected on
+// glass), 48 samples measured 17.3 ms worst-case at 50% — over the 15 ms
+// slice bound. Thirty-two samples shrink the per-chunk visible band
+// proportionally (~12 ms worst) and tighten the commit cadence; the ~40%
+// extra total work is the accepted price of latency over throughput. The
+// mixed-draw and long-gesture harness gates re-prove the bound with this
+// exact constant.
+inline constexpr std::size_t kInteractiveChunkSampleLimit = 32;
 // Wall-clock bound for one in-place chunk commit (overview replay plus
 // visible-tile painting). Tiles that do not fit are dropped to correct
 // overview fallback and re-produced lazily. The deadline is checked between
