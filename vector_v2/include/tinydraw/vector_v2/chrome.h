@@ -157,6 +157,27 @@ struct MinimapSurface {
   int origin_x = 0;
   int origin_y = 0;
 };
+
+// Caller-funded PSRAM for prerendered fixed chrome sprites. The cache keeps
+// rasterization out of per-strip DMA staging while the canvas ring remains
+// presentation-pure. Popup/modal states use the uncached general renderer.
+inline constexpr std::size_t kChromeStagingCachePixels = 53'956U;
+
+class ChromeStagingCache {
+ public:
+  explicit ChromeStagingCache(std::span<std::uint16_t> pixels) : pixels_(pixels) {}
+
+  [[nodiscard]] bool ready() const { return pixels_.size() >= kChromeStagingCachePixels; }
+  [[nodiscard]] bool paint(const MinimapSurface& surface, const ChromeState& state,
+                           const ChromeNavigation& navigation, std::uint32_t overview_revision);
+
+ private:
+  std::span<std::uint16_t> pixels_{};
+  ChromeState state_{};
+  int zoom_percent_ = 0;
+  std::uint32_t overview_revision_ = 0;
+  bool valid_ = false;
+};
 // Draws the minimap into the surface; the pan path composes the overlay into
 // a small scratch surface instead of writing into the (possibly
 // ring-rotated) frame.
