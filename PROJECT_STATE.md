@@ -1,12 +1,25 @@
 # TinyDraw project state
 
-Last updated: 2026-08-15
+Last updated: 2026-08-15 (late-night hardware characterization round)
 
 ## Resume point
 
 Branch: `feat/v2-performance-followup`
+Current commit: `55f7449` (hardware characterization + optical validation round)
 Reviewed product commit: `c86f3ac` (`f66c808` added receipts only)
 Evidence-preservation commit: `2a62c36`
+
+**2026-08-15 evening: the panel physics were measured for the first time**
+(`HARDWARE_LIMITS.md`) and the boundary-synchronized pan sweep was validated
+tear-free on glass with a red-capable optical oracle. Key measured facts:
+
+- All historical "50/60 MHz" QSPI configs ran at **40 MHz actual** (divider
+  clamp); the writer moves at 27.2 rows/ms vs the 26.7 rows/ms beam.
+- TE is clean: 16.773 ms period, 578 µs high, 9 µs ISR→resume, zero timeouts.
+- Full-frame TE-synced streaming sustains 29.4 FPS; ≤368-row regions 58.8 FPS.
+- The free-running positive control tears on camera; the rising-edge row-zero
+  sweep is optically clean (probe cell 1 + manual glass on the product build).
+- QSPI register reads return zeros; there is no software beam oracle.
 
 **Raster V1 remains the default/shipping firmware and the operational fallback.**
 Vector V2 remains the accepted architecture under construction, but it is not
@@ -21,11 +34,20 @@ backed by [`vector_v2/hardware-receipts/c86f3ac-manual-glass.log`](vector_v2/har
 
 Current measured finish-line status:
 
-- **Pan correctness: RED.** `tear_synchronized` validates an uncalibrated timing
-  model, not visible pixels. A TE timeout can still seed a reusable frame.
-- **Pan pacing: RED at the required percentile gate.** PANSEQ measured
-  41.5/42.0 ms averages, but 47.5/48.6 ms p95. Required is p95 ≤41.7 ms
-  (at least 24 FPS); p95 ≤33.3 ms (30 FPS) is ideal; faster is bonus.
+- **Pan correctness: GREEN on glass for the boundary-top-sweep policy.**
+  Manual pan at 100%/400% shows no tearing; probe cell 1 (rising-edge
+  row-zero sweep) is optically clean while the free-running positive control
+  tears (`benchmark-results/blockB-optical/`). Fail-closed TE handling and
+  reuse-requires-observed-edge landed in `6057f9c`.
+- **Pan pacing: RED — 19.9 FPS measured** (`gate-boundary-pan.log`): frame
+  p95 52.8/53.2 ms vs the required ≤41.7 ms. Decomposition: 18.4 ms overlay
+  PSRAM round trips + 10.2 ms TE wait + 21.6 ms sweep = 3 TE periods.
+  Removing the overlay round trips (Wave 2 staging compositor) fits the
+  frame in 2 periods ≈ 29.8 FPS.
+- **Known bug:** ink drawn under the zoom rail is distorted — the overlay
+  backup/restore machinery stomps fresh strokes. Same root cause as the
+  pacing gap; the staging compositor removes the mechanism. Acceptance
+  test: draw under every overlay, zero distortion.
 - **Ink latency: RED.** Authority/materialization runs before preview, the
   existing provisional ribbon tail is intentionally omitted, and glass saw
   15.5–35.8 ms chunks with 92–143 ms loop gaps.
@@ -37,6 +59,20 @@ Current measured finish-line status:
   empty the operation log; operation-only Undo/SVG/autosave authority is not yet
   a valid assumption.
 - **Capacity:** current product code uses **448 raw tile slots**, not 384.
+
+Process learnings binding future rounds (earned 2026-08-15):
+
+1. Measure the substrate before optimizing on it (`HARDWARE_LIMITS.md`
+   falsified the 60 MHz clock, the 15 Mpx/s writer rate, and the ~0.4 ms
+   transaction folklore in one evening).
+2. A pass signal must be able to observe failure: every optical CLEAN is
+   valid only alongside a torn positive control (probe cell 4).
+3. Use the cheapest sufficient instrument first; automate for receipts and
+   rare events afterward.
+4. One variable per experiment, interpretation matrix pre-registered before
+   capture (`benchmark-results/blockB-optical/PROTOCOL.md`).
+5. Attribute before optimizing: "slow" is a mystery, "18.4+10.2+21.6 ms" is
+   a work order.
 
 ## Source-of-truth map
 

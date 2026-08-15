@@ -103,4 +103,33 @@ logs, `frames.csv`, `verdict.txt`, and evidence PNGs only.
 
 ## Results (append-only)
 
-_(empty — to be filled per cell after classification)_
+### 2026-08-15 — one-take cycle, DSCF0665.MOV (X-T5 1080/240, 1/1024, f/4)
+
+Instrument validation: **cell 4 (free-run control) TEARS** — every captured
+frame in the eyeball burst is a mixed red/green split with erratic boundary
+position. CLEAN verdicts below are therefore meaningful.
+
+| Cell | Verdict | Evidence |
+|---|---|---|
+| 4 freerun control | **TEAR (as required)** | 24-frame burst at ~9 s: all frames mixed, split wanders |
+| 1 boundary-rising-full | **CLEAN** | 24-frame burst at ~22 s: solid → monotonic downward scan-in over ~4 frames → solid; plus 1,495-frame classifier slice: 0 tears, 0 anomalies |
+| 5 boundary-rising-canvas368 | pending full classifier pass | footage captured |
+| 2 boundary-falling-full | pending full classifier pass; time-window evidence shows static splits (frames ~12,9xx–13,1xx ≈ pass-1 cell-2 region) consistent with the falling-edge tear hypothesis | evidence PNGs in cycle run |
+| 3 midframe-wrap | pending full classifier pass | footage captured |
+
+Product confirmation, same evening: `./scripts/esp32 vector-v2` build
+(boundary-top-sweep, rising, 40 MHz actual) — manual pan at 100%/400% shows
+no tearing on glass. PANSEQ receipts: tear-free but 19.9 FPS
+(`gate-boundary-pan.log`); pacing work moves to Wave 2.
+
+Process note: the eyeball burst method (24 consecutive extracted frames per
+cell) reached the go/no-go verdict in minutes; the automated classifier is
+retained for quantitative receipts and rare-event scanning, and its full-video
+segmented pass is still owed for cells 2/3/5.
+
+Known instrument caveats for the pending classifier pass: cv2 ignores the
+camera's 180° rotation metadata (self-calibrating orientation handles it);
+video is TV-range (all thresholds relative to per-frame p99 brightness);
+the rolling emission-off band splits the panel into bright slabs (bridged
+during detection); segmentation must come from blue interstitials + cycle
+order, not per-frame ID reads.
