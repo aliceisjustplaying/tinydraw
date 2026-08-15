@@ -27,6 +27,7 @@ if(TINYDRAW_BUILD_TESTS)
     tests/display_scheduler_test.cpp
     tests/frame_scroller_test.cpp
     tests/idle_repair_test.cpp
+    tests/ink_trace_test.cpp
     tests/incremental_document_test.cpp
     tests/incremental_rasterizer_test.cpp
     tests/materialized_canvas_test.cpp
@@ -51,6 +52,12 @@ if(TINYDRAW_BUILD_TESTS)
     ${PROJECT_SOURCE_DIR}/third_party/doctest
   )
   add_test(NAME tinydraw_vector_v2_tests COMMAND tinydraw_vector_v2_tests)
+  add_test(NAME tinydraw_ink_trace_check_synthetic
+           COMMAND "${PROJECT_SOURCE_DIR}/tools/ink-trace-check"
+                   "${PROJECT_SOURCE_DIR}/testdata/ink-traces/scribble-multistroke.csv")
+  set_tests_properties(tinydraw_ink_trace_check_synthetic PROPERTIES
+    PASS_REGULAR_EXPRESSION
+      "valid name=scribble-multistroke source=synthetic events=31 strokes=5")
 
   add_executable(tinydraw_vector_v2_raster_census tools/raster_census.cpp)
   target_link_libraries(tinydraw_vector_v2_raster_census PRIVATE

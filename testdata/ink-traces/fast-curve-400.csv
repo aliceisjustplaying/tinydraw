@@ -1,0 +1,18 @@
+magic,version,name,source,sample_rate_note
+TINYDRAW_INKTRACE,1,fast-curve-400,synthetic,SYNTHETIC placeholder 125Hz nominal replace with recorded owner finger input
+t_us,kind,x,y
+0,Down,42,332
+8000,Move,54,314
+16000,Move,70,292
+24000,Move,91,268
+32000,Move,116,245
+40000,Move,145,226
+48000,Move,177,214
+56000,Move,210,210
+64000,Move,242,216
+72000,Move,272,231
+80000,Move,297,253
+88000,Move,317,279
+96000,Move,331,307
+104000,Move,338,334
+112000,Up,340,350

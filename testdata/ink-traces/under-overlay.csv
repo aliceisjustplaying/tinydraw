@@ -1,0 +1,18 @@
+magic,version,name,source,sample_rate_note
+TINYDRAW_INKTRACE,1,under-overlay,synthetic,SYNTHETIC placeholder crossing toolbar minimap and zoom rail replace with recorded owner finger input
+t_us,kind,x,y
+0,Down,18,24
+8000,Move,48,34
+16000,Move,82,47
+24000,Move,118,62
+32000,Move,156,80
+40000,Move,196,102
+48000,Move,236,128
+56000,Move,274,158
+64000,Move,306,194
+72000,Move,330,234
+80000,Move,347,278
+88000,Move,355,324
+96000,Move,358,370
+104000,Move,352,414
+112000,Up,338,442
