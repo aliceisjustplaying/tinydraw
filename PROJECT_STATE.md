@@ -117,12 +117,22 @@ These are product and optimization tasks, not evidence for another rewrite.
 ## Mid-round resume state (2026-08-15, pan phase CLOSED at 4022917)
 
 Pan floor met with margin: 67.3 → 28.1 ms avg (p50 26.95, p95 32.95), both
-slot counts, all 24 gates green, TE boot flake root-fixed with runtime heal.
-See `vector_v2/hardware-receipts/PAN_FLOOR_CLOSURE_2026_08_15.md`. Next in
-order: idle cache repair (Alice's strongest glass complaint), then cold
-−50%. Morning glass list: beam-race tearing re-check, budgeted-commit blur
-verdict, New-document on a product build. The section below is the
-historical in-flight record.
+slot counts, TE boot flake root-fixed with runtime heal. See
+`vector_v2/hardware-receipts/PAN_FLOOR_CLOSURE_2026_08_15.md`.
+
+Idle cache repair CLOSED at `24a9fe9` (Alice's strongest glass complaint):
+quiet moments now rebuild dropped tiles — neighbors, remembered zooms, and
+the full 100% grid — in bounded idle slices; gate
+`TINYDRAW_GATE1_IDLE_REPAIR` (588 damaged → 0 remaining, worst slice
+7.5 ms) joined the battery verdict. See
+`vector_v2/hardware-receipts/IDLE_REPAIR_CLOSURE_2026_08_15.md`. All 25
+gates green.
+
+Next: cold −50% campaign (Phase 3). Queued product findings: draw under
+toolbar, center-anchored zoom, New-doc check on product build. Morning
+glass list: beam-race tearing re-check, pan-after-pause sharpness (idle
+repair), budgeted-commit blur verdict, New-document on a product build.
+The section below is the historical in-flight record.
 
 ## Superseded in-flight record (2026-08-15 early night)
 
