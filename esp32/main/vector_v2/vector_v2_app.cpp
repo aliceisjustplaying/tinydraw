@@ -192,6 +192,7 @@ struct AppStorage {
   std::uint16_t* tile_scratch = nullptr;
 #endif
   std::uint16_t* region_scratch = nullptr;
+  std::uint16_t* chrome_cache = nullptr;
   std::uint16_t* producer_supertask = nullptr;
   std::uint16_t* producer_packed = nullptr;
   std::uint8_t* producer_mask = nullptr;
@@ -220,6 +221,7 @@ struct AppStorage {
     tile_scratch = allocate_array<std::uint16_t>(kWorkspaceTileCapacity * vector_v2::kTilePixels);
 #endif
     region_scratch = allocate_array<std::uint16_t>(kLiveRegionScratchPixels);
+    chrome_cache = allocate_array<std::uint16_t>(vector_v2::kChromeStagingCachePixels);
     producer_supertask = allocate_array<std::uint16_t>(vector_v2::kTileProducerPixels);
     producer_packed = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
     producer_mask = allocate_internal<std::uint8_t>(vector_v2::kTileProducerMaskBytes);
@@ -244,11 +246,11 @@ struct AppStorage {
         allocate_array<TileKey>(vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles);
     if (overview == nullptr || snapshot == nullptr || frame == nullptr || tile_pixels == nullptr ||
         overview_scratch == nullptr || !harness_workspace_ready || region_scratch == nullptr ||
-        producer_supertask == nullptr || producer_packed == nullptr || producer_mask == nullptr ||
-        producer_summary_rows == nullptr || producer_summary_words == nullptr ||
-        chunk_mask == nullptr || uniforms == nullptr || occupancy == nullptr || slots == nullptr ||
-        records == nullptr || samples == nullptr || input_samples == nullptr ||
-        touch_events == nullptr || affected_keys == nullptr) {
+        chrome_cache == nullptr || producer_supertask == nullptr || producer_packed == nullptr ||
+        producer_mask == nullptr || producer_summary_rows == nullptr ||
+        producer_summary_words == nullptr || chunk_mask == nullptr || uniforms == nullptr ||
+        occupancy == nullptr || slots == nullptr || records == nullptr || samples == nullptr ||
+        input_samples == nullptr || touch_events == nullptr || affected_keys == nullptr) {
       return false;
     }
     for (std::size_t index = 0; index < vector_v2::kMaterializedTileIdentityCount; ++index) {
@@ -716,9 +718,10 @@ void run_vector_v2_app() {
                                      std::span(storage.touch_events, kVectorV2TouchEventCapacity));
   vector_v2::NavigationState navigation;
   VectorV2Export exporter;
-  VectorV2Presenter presenter(canvas, navigation, scheduler, display,
-                              std::span(storage.frame, vector_v2::kOverviewPixels),
-                              std::span(storage.region_scratch, kLiveRegionScratchPixels));
+  VectorV2Presenter presenter(
+      canvas, navigation, scheduler, display, std::span(storage.frame, vector_v2::kOverviewPixels),
+      std::span(storage.region_scratch, kLiveRegionScratchPixels),
+      std::span(storage.chrome_cache, vector_v2::kChromeStagingCachePixels));
   ChainedOperationBuilder builder(std::span(storage.input_samples, kInputSampleCapacity),
                                   kInteractiveChunkSampleLimit);
   vector_v2::TileProducer producer(

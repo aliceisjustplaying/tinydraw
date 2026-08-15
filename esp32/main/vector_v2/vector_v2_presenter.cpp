@@ -104,13 +104,15 @@ VectorV2Presenter::VectorV2Presenter(vector_v2::MaterializedCanvas& canvas,
                                      vector_v2::DisplayScheduler& scheduler,
                                      Co5300PanelTransport& display,
                                      std::span<std::uint16_t> frame_pixels,
-                                     std::span<std::uint16_t> region_pixels)
+                                     std::span<std::uint16_t> region_pixels,
+                                     std::span<std::uint16_t> chrome_cache_pixels)
     : canvas_(canvas),
       navigation_(navigation),
       scheduler_(scheduler),
       display_(display),
       frame_(frame_pixels),
       region_(region_pixels),
+      chrome_cache_(chrome_cache_pixels),
       renderer_(std::make_unique<RibbonRenderer>()) {
   std::printf(
       "TINYDRAW_VECTOR_V2_PRESENTATION experiment=%s te_edge=%s clock_mhz=%d "
@@ -121,7 +123,8 @@ VectorV2Presenter::VectorV2Presenter(vector_v2::MaterializedCanvas& canvas,
 bool VectorV2Presenter::ready() const {
   return canvas_.ready() && scheduler_.ready() && display_.ready() &&
          frame_.size() == vector_v2::kOverviewPixels &&
-         region_.size() >= kLiveRegionScratchPixels && renderer_ != nullptr;
+         region_.size() >= kLiveRegionScratchPixels && chrome_cache_.ready() &&
+         renderer_ != nullptr;
 }
 
 vector_v2::ZoomLevel VectorV2Presenter::zoom() const { return navigation_.zoom(); }
@@ -796,9 +799,9 @@ bool VectorV2Presenter::paint_stage_surface(StageContext& context,
   context.exposed_us += esp_timer_get_time() - exposed_started;
 
   const std::int64_t chrome_started = esp_timer_get_time();
-  if (!vector_v2::draw_chrome_staging_surface(
+  if (!chrome_cache_.paint(
           {surface.pixels, surface.width, surface.height, surface.panel_x, surface.panel_y},
-          *context.chrome, context.navigation)) {
+          *context.chrome, context.navigation, canvas_.current_revision().value)) {
     return false;
   }
   context.chrome_us += esp_timer_get_time() - chrome_started;

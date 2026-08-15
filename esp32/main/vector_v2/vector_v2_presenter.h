@@ -96,7 +96,8 @@ class VectorV2Presenter {
  public:
   VectorV2Presenter(vector_v2::MaterializedCanvas& canvas, vector_v2::NavigationState& navigation,
                     vector_v2::DisplayScheduler& scheduler, Co5300PanelTransport& display,
-                    std::span<std::uint16_t> frame_pixels, std::span<std::uint16_t> region_pixels);
+                    std::span<std::uint16_t> frame_pixels, std::span<std::uint16_t> region_pixels,
+                    std::span<std::uint16_t> chrome_cache_pixels);
 
   [[nodiscard]] bool ready() const;
   // Read-only transport telemetry (prepare/staging counters) for gates that
@@ -202,6 +203,7 @@ class VectorV2Presenter {
   Co5300PanelTransport& display_;
   std::span<std::uint16_t> frame_;
   std::span<std::uint16_t> region_;
+  vector_v2::ChromeStagingCache chrome_cache_;
   std::uint32_t te_last_count_ = 0;
   std::int64_t te_last_change_us_ = 0;
   std::unique_ptr<RibbonRenderer> renderer_;
