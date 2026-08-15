@@ -51,14 +51,6 @@ struct PanelStagePatch {
 
 inline constexpr std::size_t kMaximumPanelStreamStrips = 64U;
 
-struct PanelStreamGate {
-  void* context = nullptr;
-  bool (*wait)(void* context) = nullptr;
-  std::size_t prestage_strips = 0;
-
-  [[nodiscard]] bool apply() const { return wait == nullptr || wait(context); }
-};
-
 struct PanelStripStagingTiming {
   std::uint32_t samples = 0;
   std::int64_t total_us = 0;
@@ -124,11 +116,6 @@ class Co5300PanelTransport final : public DisplayBackend {
   // afterward is reported together with that attempt. No observed selected
   // edge is a failed result (observed=false), never an inferred success.
   [[nodiscard]] TearEdgeWaitResult wait_for_tear_edge(TearSignalEdge edge, std::int64_t timeout_us);
-  // Same edge discipline, with the baseline captured by the caller before
-  // useful staging work. An edge observed while staging satisfies the wait.
-  [[nodiscard]] TearEdgeWaitResult wait_for_tear_edge_after(TearSignalEdge edge,
-                                                            std::uint32_t edge_count,
-                                                            std::int64_t timeout_us);
   // Diagnostic age since the last selected ISR edge, or -1 before the first
   // such edge. The low-32-bit timestamp supports unsigned rollover subtraction;
   // this value is not a visible-row or panel-phase observation.
@@ -155,12 +142,12 @@ class Co5300PanelTransport final : public DisplayBackend {
   bool stream_rect(int x, int y, int width, int height, const std::uint16_t* pixels, int stride,
                    int strip_rows, PanelStagePatch patch = {});
   // Product frame-stream path. Programs one CASET/RASET window, de-rotates
-  // each source strip into internal DMA memory, applies its patch in the
-  // selected byte order, and submits RAMWR/RAMWRC continuations. It never drains;
+  // each source strip into host-order internal DMA memory, applies patch,
+  // byte-swaps, and submits RAMWR/RAMWRC continuations. It never drains;
   // one ordered presentation owner calls wait_for_all exactly once.
   bool stream_rect_ring(int x, int y, int width, int height, const std::uint16_t* area_pixels,
                         int stride, int shift_x, int shift_y, int area_width, int area_height,
-                        int strip_rows, PanelStagePatch patch = {}, PanelStreamGate gate = {});
+                        int strip_rows, PanelStagePatch patch = {});
   // Characterization-probe read of GETSCANLINE (0x45). Returns the raw
   // 10-bit scanline value, or -1 when the QSPI read fails. Unvalidated
   // controller behavior: treat values as diagnostic until calibrated.
