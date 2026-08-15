@@ -1109,7 +1109,7 @@ std::int64_t fake_commit_clock_now = 0;
 std::int64_t fake_commit_clock() { return fake_commit_clock_now += 1'000; }
 }  // namespace
 
-TEST_CASE("in-place append drops unpainted tiles at the commit budget") {
+TEST_CASE("in-place append keeps visible tiles sharp and drops off-screen at the budget") {
   EquivalenceRig rig;
   const vector_v2::ViewRequest view{
       .zoom = vector_v2::ZoomLevel::k400Percent,
@@ -1138,13 +1138,33 @@ TEST_CASE("in-place append drops unpainted tiles at the commit budget") {
                       .radius_256 = 1'024U,
                       .elapsed_ms = static_cast<std::uint16_t>(index * 8U)};
   }
-  // An already-expired budget paints nothing: every affected raw tile is
-  // dropped to fallback, yet the commit itself succeeds and both authorities
-  // advance together.
+  // An already-expired budget still paints every affected tile that is
+  // visible in the priority view: dropping one blurs pixels the user is
+  // looking at (rejected on glass), and the viewport bounds the work. The
+  // stroke here sits fully inside the view, so nothing falls back.
   fake_commit_clock_now = 0;
-  const auto starved = vector_v2::append_incrementally_in_place(
+  const auto visible = vector_v2::append_incrementally_in_place(
       rig.log, rig.canvas, {.color = 0x001FU, .samples = samples}, rig.in_place_workspace(), view,
       {.now_us = &fake_commit_clock, .budget_us = 0});
+  REQUIRE(visible.has_value());
+  CHECK(visible->affected_resident_tiles > 0U);
+  CHECK(visible->published_tiles > 0U);
+  CHECK(visible->fallback_tiles == 0U);
+  CHECK(rig.log.current_revision() == rig.canvas.current_revision());
+
+  // The same expired budget with the priority view elsewhere at the same
+  // zoom drops every affected tile: they are off-screen, so the fallback is
+  // invisible and idle repair rebuilds them later.
+  rig.cold_fill(view);
+  const vector_v2::ViewRequest elsewhere{
+      .zoom = vector_v2::ZoomLevel::k400Percent,
+      .level_pixels = {2'000, 2'000, 2'000 + vector_v2::kOverviewWidth,
+                       2'000 + vector_v2::kOverviewHeight},
+  };
+  fake_commit_clock_now = 0;
+  const auto starved = vector_v2::append_incrementally_in_place(
+      rig.log, rig.canvas, {.color = 0x8000U, .samples = samples}, rig.in_place_workspace(),
+      elsewhere, {.now_us = &fake_commit_clock, .budget_us = 0});
   REQUIRE(starved.has_value());
   CHECK(starved->affected_resident_tiles > 0U);
   CHECK(starved->published_tiles == 0U);

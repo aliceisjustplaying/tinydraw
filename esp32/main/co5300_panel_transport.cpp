@@ -309,8 +309,11 @@ class Co5300PanelTransport::Impl {
   }
 
   // Re-issues TEON, rate-limited, after draining in-flight color transfers
-  // so the command cannot interleave with pixel data. Called from the single
-  // presenting task.
+  // so the command cannot interleave with pixel data. Re-selects the user
+  // command page first (a controller stuck on a vendor page would apply
+  // 0x35 to the wrong register), samples the raw TE pin as a diagnostic,
+  // and re-installs the GPIO ISR when the pin toggles without any counted
+  // edge. Called from the single presenting task.
   bool heal_tear_signal() {
     const auto now = static_cast<std::uint32_t>(esp_timer_get_time());
     if (last_te_heal_us_ != 0U && now - last_te_heal_us_ < 1'000'000U) {
@@ -318,10 +321,31 @@ class Co5300PanelTransport::Impl {
     }
     last_te_heal_us_ = now;
     static_cast<void>(wait_for_all(100'000));
+    const bool paged =
+        esp_lcd_panel_io_tx_param(io_, 0xFE, init_fe.data(), init_fe.size()) == ESP_OK;
     const bool sent =
         esp_lcd_panel_io_tx_param(io_, 0x35, init_35.data(), init_35.size()) == ESP_OK;
-    std::printf("TINYDRAW_PANEL_TE_HEAL sent=%u falling_edges=%lu\n", sent,
-                static_cast<unsigned long>(tear_falling_edges_.load(std::memory_order_acquire)));
+    // Sample the pin across roughly two frame periods: a toggling level
+    // means the panel emits TE and the interrupt side lost it.
+    const std::uint32_t edges_before = tear_falling_edges_.load(std::memory_order_acquire);
+    int high_samples = 0;
+    constexpr int kProbes = 34;
+    for (int probe = 0; probe < kProbes; ++probe) {
+      high_samples += gpio_get_level(kTearPin) != 0;
+      vTaskDelay(pdMS_TO_TICKS(1));
+    }
+    const std::uint32_t edges_after = tear_falling_edges_.load(std::memory_order_acquire);
+    const bool pin_toggles = high_samples != 0 && high_samples != kProbes;
+    bool isr_reinstalled = false;
+    if (pin_toggles && edges_after == edges_before) {
+      static_cast<void>(gpio_isr_handler_remove(kTearPin));
+      isr_reinstalled = gpio_isr_handler_add(kTearPin, on_tear_edge, this) == ESP_OK;
+    }
+    std::printf(
+        "TINYDRAW_PANEL_TE_HEAL paged=%u sent=%u high=%d/%d edges_delta=%lu isr_reinstall=%u "
+        "falling_edges=%lu\n",
+        paged, sent, high_samples, kProbes, static_cast<unsigned long>(edges_after - edges_before),
+        isr_reinstalled, static_cast<unsigned long>(edges_after));
     return sent;
   }
 
