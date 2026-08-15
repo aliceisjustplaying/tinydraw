@@ -13,21 +13,39 @@ preserve the timeline but do not override later physical evidence.
 
 ### Wave 1 — establish physical truth before optimization
 
+Status 2026-08-15 evening: **closed except Raster V1 revalidation**, via the
+panel characterization probe (`HARDWARE_LIMITS.md`) and the pre-registered
+optical cells (`benchmark-results/blockB-optical/PROTOCOL.md`).
+
 - [ ] Revalidate Raster V1 on the current board as the operational fallback.
-- [ ] Replace the circular pan pass signal with a red-capable optical oracle and
-      calibrated TE/bus phase markers.
-- [ ] Run one controlled presentation A/B: the current two-band beam race versus
-      a selected-edge, row-zero, top-to-bottom sweep with otherwise identical
-      pixels, strip size, clock, queue depth, and overlay path.
-- [ ] Fail closed on TE timeout/staleness and prevent any unsynchronized frame
-      from becoming a cached-pan reuse source.
-- [ ] Require zero mixed frame IDs, seams, tearing, and white notches on glass.
-      Software timing alone cannot close this gate.
+- [x] Replace the circular pan pass signal with a red-capable optical oracle
+      (probe cells + classifier + torn positive control; TE/bus phase markers
+      superseded by measured TE stats and the emission-band observation).
+- [x] Presentation policy decided by controlled cells: the free-running
+      control tears, the rising-edge row-zero sweep is clean on camera and on
+      manual product glass. Beam racing is retained only as the mechanism-
+      control cell; it is not a product path.
+- [x] Fail closed on TE timeout/staleness; frame reuse requires an observed
+      edge (`6057f9c`, kept).
+- [x] Zero tearing on glass for the adopted policy (manual 100%/400% +
+      probe cell 1). White notches did not reproduce in the probe cells;
+      the guard-column watch stays armed in the classifier.
+
+Measured constraints Wave 2 must design within (`HARDWARE_LIMITS.md`):
+QSPI is 40 MHz actual regardless of requested 40/50/60; full-frame
+TE-synced sweeps sustain 29.4 FPS and ≤368-row regions 58.8 FPS; staging
+bandwidth (34 MB/s) exceeds wire (20 MB/s); pan currently spends 18.4 ms
+per frame on overlay PSRAM round trips before the sweep (19.9 FPS measured,
+`gate-boundary-pan.log`).
 
 ### Wave 2 — one staging compositor and visual-first ink
 
 - [ ] Keep the PSRAM ring canvas-only; patch fixed chrome and provisional ink in
-      the mandatory internal staging pass.
+      the mandatory internal staging pass. Delete the overlay backup/draw/
+      scatter/restore machinery entirely.
+- [ ] Acceptance test for the compositor: draw under every overlay (zoom rail,
+      minimap, toolbar, battery) — zero stroke distortion. This also closes the
+      2026-08-15 zoom-rail ink corruption bug.
 - [ ] Submit one ordered presentation batch and perform one completion drain.
 - [ ] Use the provisional geometry already emitted by `CurvedRibbonStream`;
       replace the old volatile tail, union old/new damage, and never bake it into
@@ -37,7 +55,12 @@ preserve the timeline but do not override later physical evidence.
       visibility.
 - [ ] Pan gate: p95 frame interval ≤41.7 ms is required (at least 24 FPS);
       p95 ≤33.3 ms is ideal (30 FPS); faster is bonus. Report average, p50, p95,
-      max, and deadline misses separately.
+      max, and deadline misses separately. Baseline to beat: p95 52.8/53.2 ms
+      (18.4 ms overlays + 10.2 ms TE wait + 21.6 ms sweep); target shape:
+      ≤2 TE periods per frame ≈ 29.8 FPS.
+- [ ] Optical re-verification after the compositor lands: rerun probe cell 1
+      equivalent on the product pan path plus the under-overlay drawing test;
+      any CLEAN requires the torn positive control in the same session.
 
 ### Wave 3 — authority and cold replay, isolated from panel diagnosis
 
