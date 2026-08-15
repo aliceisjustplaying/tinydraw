@@ -213,7 +213,33 @@ void probe_te_synced_stream(Co5300PanelTransport& display, TearSignalEdge edge,
                       std::move(frame_intervals));
 }
 
-// P6: GETSCANLINE (0x45) sweep. Values that advance monotonically with delay
+// P6a: read-path control. Registers with known nonzero values (brightness is
+// initialized to 0xFF, power mode reports display-on bits, ID should be
+// non-blank) separate "QSPI reads are broken" from "scanline reports zero".
+void probe_read_controls(Co5300PanelTransport& display) {
+  struct Control {
+    std::uint8_t command;
+    std::size_t length;
+    const char* name;
+  };
+  constexpr std::array<Control, 6> kControls{{
+      {0x04, 3, "rddid"},
+      {0x09, 4, "rddst"},
+      {0x0A, 1, "rddpm"},
+      {0x0B, 1, "rddmadctl"},
+      {0x0C, 1, "rddcolmod"},
+      {0x52, 1, "brightness"},
+  }};
+  for (const auto& control : kControls) {
+    std::array<std::uint8_t, 4> value{};
+    const bool read = display.read_register(control.command, value.data(), control.length);
+    std::printf("TINYDRAW_PROBE_READ register=%s command=0x%02X ok=%u value=%02X%02X%02X%02X\n",
+                control.name, control.command, read, value[0], value[1], value[2], value[3]);
+  }
+  std::fflush(stdout);
+}
+
+// P6b: GETSCANLINE (0x45) sweep. Values that advance monotonically with delay
 // after the edge would provide a software beam-position oracle; a failed or
 // constant read is reported as-is.
 void probe_scanline(Co5300PanelTransport& display, TearSignalEdge edge) {
@@ -237,6 +263,155 @@ void probe_scanline(Co5300PanelTransport& display, TearSignalEdge edge) {
     }
   }
   std::fflush(stdout);
+}
+
+#ifndef TINYDRAW_PANEL_PROBE_CELL
+#define TINYDRAW_PANEL_PROBE_CELL 0
+#endif
+
+// ---- Block B optical cells -------------------------------------------------
+//
+// Camera-facing patterns. The classifier registers each video frame via the
+// four corner fiducials, reads the cell identity strip, then classifies the
+// central field per row as frame color A or B. Normal scan-in appears as one
+// downward-moving A/B boundary; a tear is a static split, an upward-moving
+// boundary, or multiple simultaneous boundaries. Guard columns expose white
+// edge notches against solid blue.
+
+void fill_rect(std::uint16_t* frame, int x, int y, int width, int height, std::uint16_t color) {
+  for (int row = y; row < y + height; ++row) {
+    std::fill_n(frame + static_cast<std::ptrdiff_t>(row) * kPanelWidth + x, width, color);
+  }
+}
+
+void paint_cell_pattern(std::uint16_t* frame, std::uint16_t field_color, int cell) {
+  constexpr std::uint16_t kWhite = 0xFFFF;
+  constexpr std::uint16_t kBlack = 0x0000;
+  constexpr std::uint16_t kGuardBlue = 0x001F;
+  std::fill_n(frame, kFramePixels, field_color);
+  // Guard columns: white notches are unmistakable against saturated blue.
+  fill_rect(frame, 0, 0, 8, kPanelHeight, kGuardBlue);
+  fill_rect(frame, kPanelWidth - 8, 0, 8, kPanelHeight, kGuardBlue);
+  // Corner fiducials: 40x40 white with 24x24 black core, inset 12 px.
+  for (const auto& [corner_x, corner_y] :
+       {std::pair{12, 12}, std::pair{kPanelWidth - 52, 12}, std::pair{12, kPanelHeight - 52},
+        std::pair{kPanelWidth - 52, kPanelHeight - 52}}) {
+    fill_rect(frame, corner_x, corner_y, 40, 40, kWhite);
+    fill_rect(frame, corner_x + 8, corner_y + 8, 24, 24, kBlack);
+  }
+  // Cell identity strip: five 24 px blocks, MSB first, white=1 on black.
+  fill_rect(frame, 120, 8, 5 * 24 + 8, 32, kBlack);
+  for (int bit = 0; bit < 5; ++bit) {
+    if ((cell >> (4 - bit)) & 1) {
+      fill_rect(frame, 124 + bit * 24, 12, 20, 24, kWhite);
+    }
+  }
+}
+
+struct OpticalCellSpec {
+  int cell = 0;
+  const char* name = "";
+  const char* expected = "";
+};
+
+constexpr std::array<OpticalCellSpec, 6> kOpticalCells{{
+    {0, "software-suite", "n/a"},
+    {1, "boundary-rising-full", "unknown_under_test"},
+    {2, "boundary-falling-full", "unknown_under_test"},
+    {3, "midframe-wrap-rising", "tear_mechanism_control"},
+    {4, "freerun-unsynced", "must_tear_positive_control"},
+    {5, "boundary-rising-canvas368", "unknown_under_test"},
+}};
+
+void run_optical_cell(Co5300PanelTransport& display, std::uint16_t* frame_a, std::uint16_t* frame_b,
+                      int cell) {
+  const auto& spec = kOpticalCells[static_cast<std::size_t>(cell)];
+  paint_cell_pattern(frame_a, 0xF800, cell);  // A = red
+  paint_cell_pattern(frame_b, 0x07E0, cell);  // B = green
+  const int region_rows = cell == 5 ? 368 : kPanelHeight;
+  constexpr std::int64_t kCellDurationUs = 45'000'000;
+  std::printf("TINYDRAW_PROBE_CELL_START cell=%d name=%s expected=%s rows=%d duration_s=45\n", cell,
+              spec.name, spec.expected, region_rows);
+  std::fflush(stdout);
+
+  std::vector<std::int64_t> intervals;
+  intervals.reserve(4096);
+  int frames = 0;
+  int edge_failures = 0;
+  int stream_failures = 0;
+  std::int64_t previous_complete = 0;
+  const std::int64_t cell_started = esp_timer_get_time();
+  std::int64_t next_progress = cell_started + 5'000'000;
+  while (esp_timer_get_time() - cell_started < kCellDurationUs) {
+    const std::uint16_t* frame = (frames & 1) == 0 ? frame_a : frame_b;
+    bool streamed = false;
+    switch (cell) {
+      case 1:
+      case 5: {
+        const auto wait = display.wait_for_tear_edge(TearSignalEdge::kRising, 40'000);
+        if (!wait.observed) {
+          ++edge_failures;
+          continue;
+        }
+        streamed = display.stream_rect(0, 0, kPanelWidth, region_rows, frame, 0, 44);
+        break;
+      }
+      case 2: {
+        const auto wait = display.wait_for_tear_edge(TearSignalEdge::kFalling, 40'000);
+        if (!wait.observed) {
+          ++edge_failures;
+          continue;
+        }
+        streamed = display.stream_rect(0, 0, kPanelWidth, region_rows, frame, 0, 44);
+        break;
+      }
+      case 3: {
+        // Mechanism control: start mid-frame behind the modeled beam with a
+        // wrapped second band, at the real 40 MHz rates. Not a claim of exact
+        // V2 replication; it reproduces the mid-frame start + wrap shape.
+        const auto wait = display.wait_for_tear_edge(TearSignalEdge::kRising, 40'000);
+        if (!wait.observed) {
+          ++edge_failures;
+          continue;
+        }
+        esp_rom_delay_us(8'000);        // beam ~row 213 by the 26.7 rows/ms model
+        constexpr int kStartRow = 166;  // modeled beam minus 48-row margin
+        streamed = display.stream_rect(0, kStartRow, kPanelWidth, kPanelHeight - kStartRow,
+                                       frame + static_cast<std::ptrdiff_t>(kStartRow) * kPanelWidth,
+                                       0, 44) &&
+                   display.stream_rect(0, 0, kPanelWidth, kStartRow, frame, 0, 44);
+        break;
+      }
+      case 4:
+        // Positive control: free-running, deliberately unsynchronized.
+        streamed = display.stream_rect(0, 0, kPanelWidth, region_rows, frame, 0, 44);
+        break;
+      default:
+        return;
+    }
+    const bool completed = streamed && display.wait_for_all(100'000);
+    const std::int64_t complete_us = esp_timer_get_time();
+    if (!completed) {
+      ++stream_failures;
+      continue;
+    }
+    ++frames;
+    if (previous_complete != 0) {
+      intervals.push_back(complete_us - previous_complete);
+    }
+    previous_complete = complete_us;
+    if (complete_us >= next_progress) {
+      std::printf("TINYDRAW_PROBE_CELL_PROGRESS cell=%d frames=%d edge_failures=%d\n", cell, frames,
+                  edge_failures);
+      std::fflush(stdout);
+      next_progress += 5'000'000;
+    }
+  }
+  std::printf(
+      "TINYDRAW_PROBE_CELL_DONE cell=%d name=%s frames=%d edge_failures=%d "
+      "stream_failures=%d\n",
+      cell, spec.name, frames, edge_failures, stream_failures);
+  report_distribution("TINYDRAW_PROBE_CELL_INTERVAL", spec.name, std::move(intervals));
 }
 
 }  // namespace
@@ -266,6 +441,16 @@ void run_panel_probe() {
   // Let the panel settle and the TE ISR accumulate edges before sampling.
   vTaskDelay(pdMS_TO_TICKS(200));
 
+#if TINYDRAW_PANEL_PROBE_CELL != 0
+  run_optical_cell(display, frame_a, frame_b, TINYDRAW_PANEL_PROBE_CELL);
+  heap_caps_free(scratch);
+  heap_caps_free(frame_b);
+  heap_caps_free(frame_a);
+  std::printf("TINYDRAW_PANEL_PROBE_DONE pass=1\n");
+  std::fflush(stdout);
+  return;
+#endif
+
   probe_tear_signal(display, TearSignalEdge::kRising, 350);
   probe_tear_signal(display, TearSignalEdge::kFalling, 350);
   probe_staging_bandwidth(frame_a, scratch);
@@ -273,6 +458,7 @@ void run_panel_probe() {
   for (const int rows : {448, 424, 400, 368}) {
     probe_te_synced_stream(display, TearSignalEdge::kRising, frame_a, frame_b, rows);
   }
+  probe_read_controls(display);
   probe_scanline(display, TearSignalEdge::kRising);
 
   heap_caps_free(scratch);
