@@ -1,0 +1,218 @@
+[11:21:32] I (103) esp_image: segment 0: paddr=00010020 vaddr=3c050020 sizeESP-ROM:esp32s3-20210327
+[11:21:32] Build:Mar 27 2021
+[11:21:32] rst:0x15 (USB_UART_CHIP_RESET),boot:0x2b (SPI_FAST_FLASH_BOOT)
+[11:21:32] Saved PC:0x4200857f
+[11:21:32] SPIWP:0xee
+[11:21:32] mode:DIO, clock div:1
+[11:21:32] load:0x3fce2820,len:0x1664
+[11:21:32] load:0x403c8700,len:0xf38
+[11:21:32] load:0x403cb700,len:0x31e8
+[11:21:32] entry 0x403c8930
+[11:21:32] I (24) boot: ESP-IDF v6.0.2 2nd stage bootloader
+[11:21:32] I (24) boot: compile time Aug 15 2026 11:21:17
+[11:21:32] I (25) boot: Multicore bootloader
+[11:21:32] I (25) boot: chip revision: v0.2
+[11:21:32] I (28) boot: efuse block revision: v1.3
+[11:21:32] I (31) qio_mode: Enabling default flash chip QIO
+[11:21:32] I (36) boot.esp32s3: Boot SPI Speed : 80MHz
+[11:21:32] I (39) boot.esp32s3: SPI Mode       : QIO
+[11:21:32] I (43) boot.esp32s3: SPI Flash Size : 16MB
+[11:21:32] I (47) boot: Enabling RNG early entropy source...
+[11:21:32] I (51) boot: Partition Table:
+[11:21:32] I (54) boot: ## Label            Usage          Type ST Offset   Length
+[11:21:32] I (60) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+[11:21:32] I (67) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+[11:21:32] I (73) boot:  2 factory          factory app      00 00 00010000 00100000
+[11:21:32] I (80) boot:  3 drawing          Unknown data     01 40 00110000 00300000
+[11:21:32] I (86) boot:  4 export           Unknown data     01 41 00410000 00500000
+[11:21:32] I (93) boot:  5 coredump         Unknown data     01 03 00910000 00010000
+[11:21:32] I (100) boot: End of partition table
+[11:21:32] I (103) esp_image: segment 0: paddr=00010020 vaddr=3c050020 size=13each ( 81580) map
+[11:21:32] I (123) esp_image: segment 1: paddr=00023ed4 vaddr=3fc94500 size=03764h ( 14180) load
+[11:21:32] I (126) esp_image: segment 2: paddr=00027640 vaddr=40374000 size=089d8h ( 35288) load
+[11:21:32] I (134) esp_image: segment 3: paddr=00030020 vaddr=42000020 size=45a74h (285300) map
+[11:21:32] I (179) esp_image: segment 4: paddr=00075a9c vaddr=4037c9d8 size=07a84h ( 31364) load
+[11:21:32] I (185) esp_image: segment 5: paddr=0007d528 vaddr=50000000 size=00024h (    36) load
+[11:21:32] I (193) boot: Loaded app from partition at offset 0x10000
+[11:21:32] I (193) boot: Disabling RNG early entropy source...
+[11:21:32] I (204) octal_psram: vendor id    : 0x0d (AP)
+[11:21:32] I (204) octal_psram: dev id       : 0x02 (generation 3)
+[11:21:32] I (204) octal_psram: density      : 0x03 (64 Mbit)
+[11:21:32] I (206) octal_psram: good-die     : 0x01 (Pass)
+[11:21:32] I (210) octal_psram: Latency      : 0x01 (Fixed)
+[11:21:32] I (215) octal_psram: VCC          : 0x01 (3V)
+[11:21:32] I (219) octal_psram: SRF          : 0x01 (Fast Refresh)
+[11:21:32] I (224) octal_psram: BurstType    : 0x01 (Hybrid Wrap)
+[11:21:32] I (229) octal_psram: BurstLen     : 0x01 (32 Byte)
+[11:21:32] I (233) octal_psram: Readlatency  : 0x02 (10 cycles@Fixed)
+[11:21:32] I (238) octal_psram: DriveStrength: 0x00 (1/1)
+[11:21:32] I (242) MSPI Timing: Enter psram timing tuning
+[11:21:32] I (247) esp_psram: Found 8MB PSRAM device
+[11:21:32] I (250) esp_psram: Speed: 80MHz
+[11:21:32] I (253) cpu_start: Multicore app
+[11:21:32] I (669) esp_psram: SPI SRAM memory test OK
+[11:21:32] I (678) cpu_start: GPIO 44 and 43 are used as console UART I/O pins
+[11:21:32] I (678) cpu_start: Pro cpu start user code
+[11:21:32] I (678) cpu_start: cpu freq: 240000000 Hz
+[11:21:32] I (680) app_init: Application information:
+[11:21:32] I (684) app_init: Project name:     tinydraw_esp32
+[11:21:32] I (688) app_init: App version:      954482b-dirty
+[11:21:32] I (693) app_init: Compile time:     Aug 15 2026 11:21:11
+[11:21:32] I (698) app_init: ELF file SHA256:  010c8d0e7...
+[11:21:32] I (702) app_init: ESP-IDF:          v6.0.2
+[11:21:32] I (706) efuse_init: Min chip rev:     v0.0
+[11:21:32] I (710) efuse_init: Max chip rev:     v0.99 
+[11:21:32] I (714) efuse_init: Chip rev:         v0.2
+[11:21:32] I (717) heap_init: Initializing. RAM available for dynamic allocation:
+[11:21:32] I (724) heap_init: At 3FC99090 len 00050680 (321 KiB): RAM
+[11:21:32] I (729) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+[11:21:32] I (734) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
+[11:21:32] I (739) heap_init: At 600FE000 len 00001FE8 (7 KiB): RTCRAM
+[11:21:32] I (745) esp_psram: Adding pool of 8192K of PSRAM memory to heap allocator
+[11:21:32] I (751) spi_flash: detected chip: generic
+[11:21:32] I (755) spi_flash: flash io: qio
+[11:21:32] I (758) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+[11:21:32] I (764) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+[11:21:32] I (771) main_task: Started on CPU0
+[11:21:32] I (774) main_task: Calling app_main()
+[11:21:32] TINYDRAW_PANEL_HARD_RESET=1
+[11:21:32] I (971) co5300: version: 2.1.0
+[11:21:32] I (972) co5300_spi: LCD panel create success, version: 2.1.0
+[11:21:32] W (1052) co5300_spi: The 3Ah command has been used and will be overwritten by external initialization sequence
+[11:21:32] I (1153) CST816S: IC id: 183
+[11:21:33] TINYDRAW_LIVE_PRESENT kind=startup zoom=25 x=0 y=0 compose_us=36453 scroll_us=0 exposed_compose_us=0 chrome_us=7953 read_submit_us=0 read_complete_us=0 transfer_wait_us=18374 tile_pixels=0 uniform_pixels=0 overview_pixels=164864 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=11 tear_wait_us=6321 tear_sync=1 frame_reused=0 pass=1
+[11:21:33] TINYDRAW_LIVE_STRESS operations=1000 samples=20000 total_us=459599 average_us=459 maximum_us=1058 free_psram=2515156 largest_psram=2490368
+[11:21:33] TINYDRAW_LIVE_PRESENT kind=gate_fallback zoom=100 x=0 y=0 compose_us=25106 scroll_us=0 exposed_compose_us=0 chrome_us=7613 read_submit_us=31343 read_complete_us=32954 transfer_wait_us=18572 tile_pixels=0 uniform_pixels=0 overview_pixels=0 fallback_pixels=164864 resident_tiles=0 fallback_tiles=42 pushes=11 tear_wait_us=5071 tear_sync=1 frame_reused=0 pass=1
+[11:21:33] TINYDRAW_GATE1_HARD zoom=100 cold=1 operations=1000 samples=20000 steps=192 tiles=42 scanned=12000 rendered=1659 max_supertask_us=9080 presentation_us=68631 total_us=266178 pass=1
+[11:21:33] TINYDRAW_LIVE_PRESENT kind=gate_fallback zoom=400 x=0 y=0 compose_us=24465 scroll_us=0 exposed_compose_us=0 chrome_us=7595 read_submit_us=34253 read_complete_us=35867 transfer_wait_us=18611 tile_pixels=0 uniform_pixels=0 overview_pixels=0 fallback_pixels=164864 resident_tiles=0 fallback_tiles=42 pushes=11 tear_wait_us=8610 tear_sync=1 frame_reused=0 pass=1
+[11:21:34] TINYDRAW_GATE1_HARD zoom=400 cold=1 operations=1000 samples=20000 steps=196 tiles=42 scanned=12000 rendered=120 max_supertask_us=8379 presentation_us=67079 total_us=202907 pass=1
+[11:21:34] TINYDRAW_OVERLAP_WORKLOAD operations=8 samples=1200 radius_world=80
+[11:21:35] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=50 x=215 y=255 steps=334 tiles=56 compute_us=363436 present_us=84880 touch_us=725 pacing_us=9851 wall_us=458892 max_tick_us=9839 touch_samples=2193 touch_interval_max_us=1611 touch_read_max_us=596 touch_events=0 touch_down=0 touch_up=0 touch_events_ge_8ms=0 touch_event_age_max_us=0 touch_errors=0 touch_overflows=0 pass=1
+[11:21:35] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=100 x=583 y=703 steps=172 tiles=48 compute_us=226379 present_us=81131 touch_us=487 pacing_us=7165 wall_us=315162 max_tick_us=10020 touch_samples=391 touch_interval_max_us=1849 touch_read_max_us=542 touch_events=0 touch_down=0 touch_up=0 touch_events_ge_8ms=0 touch_event_age_max_us=0 touch_errors=0 touch_overflows=0 pass=1
+[11:21:35] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=200 x=1319 y=1599 steps=128 tiles=56 compute_us=227678 present_us=78596 touch_us=468 pacing_us=5179 wall_us=311921 max_tick_us=9393 touch_samples=399 touch_interval_max_us=1849 touch_read_max_us=527 touch_events=0 touch_down=0 touch_up=0 touch_events_ge_8ms=0 touch_event_age_max_us=0 touch_errors=0 touch_overflows=0 pass=1
+[11:21:36] TINYDRAW_GATE1_PACED_COLD corpus=overlap zoom=400 x=2791 y=3391 steps=94 tiles=56 compute_us=213728 present_us=81436 touch_us=427 pacing_us=5340 wall_us=300931 max_tick_us=9663 touch_samples=393 touch_interval_max_us=1175 touch_read_max_us=441 touch_events=0 touch_down=0 touch_up=0 touch_events_ge_8ms=0 touch_event_age_max_us=0 touch_errors=0 touch_overflows=0 pass=1
+[11:21:36] TINYDRAW_ADVERSARIAL_TAPERED_WORKLOAD operations=128 samples=4096 erasers=12 load_us=218287 appended=1
+[11:21:36] TINYDRAW_GATE1_PACED_COLD corpus=adversarial_tapered_4x zoom=50 x=0 y=0 steps=104 tiles=42 compute_us=92983 present_us=62701 touch_us=230 pacing_us=4542 wall_us=160456 max_tick_us=7814 touch_samples=498 touch_interval_max_us=1174 touch_read_max_us=448 touch_events=0 touch_down=0 touch_up=0 touch_events_ge_8ms=0 touch_event_age_max_us=0 touch_errors=0 touch_overflows=0 pass=1
+[11:21:37] TINYDRAW_GATE1_PACED_COLD corpus=adversarial_tapered_4x zoom=100 x=0 y=0 steps=348 tiles=42 compute_us=154567 present_us=60509 touch_us=300 pacing_us=5729 wall_us=221105 max_tick_us=8117 touch_samples=312 touch_interval_max_us=1128 touch_read_max_us=395 touch_events=0 touch_down=0 touch_up=0 touch_events_ge_8ms=0 touch_event_age_max_us=0 touch_errors=0 touch_overflows=0 pass=1
+[11:21:37] TINYDRAW_GATE1_PACED_COLD corpus=adversarial_tapered_4x zoom=200 x=0 y=0 steps=1214 tiles=42 compute_us=431919 present_us=64554 touch_us=641 pacing_us=15154 wall_us=512268 max_tick_us=8386 touch_samples=594 touch_interval_max_us=1175 touch_read_max_us=438 touch_events=0 touch_down=0 touch_up=0 touch_events_ge_8ms=0 touch_event_age_max_us=0 touch_errors=0 touch_overflows=0 pass=1
+[11:21:38] TINYDRAW_GATE1_PACED_COLD corpus=adversarial_tapered_4x zoom=400 x=0 y=0 steps=904 tiles=42 compute_us=536145 present_us=67771 touch_us=742 pacing_us=14580 wall_us=619238 max_tick_us=9935 touch_samples=695 touch_interval_max_us=1140 touch_read_max_us=417 touch_events=0 touch_down=0 touch_up=0 touch_events_ge_8ms=0 touch_event_age_max_us=0 touch_errors=0 touch_overflows=0 pass=1
+[11:21:38] TINYDRAW_GATE1_WORKLOAD kind=realistic seed=7 operations=1000 samples=19844 maximum_stroke=198 load_us=367485 raw_source=1 lod_copies=0
+[11:21:39] TINYDRAW_GATE1_PACED_COLD corpus=seed7 zoom=400 x=63 y=63 steps=281 tiles=56 compute_us=265004 present_us=81425 touch_us=447 pacing_us=7456 wall_us=354332 max_tick_us=12403 touch_samples=909 touch_interval_max_us=1913 touch_read_max_us=498 touch_events=0 touch_down=0 touch_up=0 touch_events_ge_8ms=0 touch_event_age_max_us=0 touch_errors=0 touch_overflows=0 pass=1
+[11:21:39] TINYDRAW_LIVE_PRESENT kind=gate_fallback zoom=100 x=0 y=0 compose_us=25362 scroll_us=0 exposed_compose_us=0 chrome_us=7685 read_submit_us=36726 read_complete_us=38334 transfer_wait_us=18127 tile_pixels=0 uniform_pixels=0 overview_pixels=0 fallback_pixels=164864 resident_tiles=0 fallback_tiles=42 pushes=11 tear_wait_us=10164 tear_sync=1 frame_reused=0 pass=1
+[11:21:39] TINYDRAW_GATE1_HARD zoom=100 cold=1 operations=1000 samples=19844 steps=275 tiles=42 scanned=12000 rendered=5232 max_supertask_us=9197 presentation_us=67567 total_us=368495 pass=1
+[11:21:40] TINYDRAW_GATE1_LIVE_OVERLAY clear_updates=47 clear_wall_max_us=2932 clear_submit_max_us=2209 clear_complete_max_us=2255 overlay_updates=26 overlay_wall_max_us=2916 overlay_submit_max_us=2401 overlay_complete_max_us=2438 overlay_chrome_max_us=0 clear_failures=0 overlay_failures=0 pass=1
+[11:21:40] TINYDRAW_GATE1_PAN zoom=100 from_x=0 from_y=0 to_x=88 to_y=88 compose_us=16 scroll_us=14 exposed_compose_us=2 chrome_us=6268 event_submit_us=856 event_complete_us=1089 transfer_us=36750 setup=1 present=1 moved=1 frame_reused=1 pass=1
+[11:21:40] TINYDRAW_LIVE_PRESENT kind=gate_fallback zoom=400 x=0 y=0 compose_us=24498 scroll_us=0 exposed_compose_us=0 chrome_us=7547 read_submit_us=28581 read_complete_us=30192 transfer_wait_us=18765 tile_pixels=0 uniform_pixels=0 overview_pixels=0 fallback_pixels=164864 resident_tiles=0 fallback_tiles=42 pushes=11 tear_wait_us=2925 tear_sync=1 frame_reused=0 pass=1
+[11:21:40] TINYDRAW_GATE1_HARD zoom=400 cold=1 operations=1000 samples=19844 steps=211 tiles=42 scanned=12000 rendered=591 max_supertask_us=10715 presentation_us=67476 total_us=260579 pass=1
+[11:21:41] TINYDRAW_GATE1_PAN zoom=400 from_x=0 from_y=0 to_x=88 to_y=88 compose_us=17 scroll_us=14 exposed_compose_us=3 chrome_us=6321 event_submit_us=787 event_complete_us=1018 transfer_us=36843 setup=1 present=1 moved=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=0 dx=24 dy=18 scroll_us=25 exposed_compose_us=5 tear_wait_us=10 present_us=26462 prepare_us=6550 staging_us=6526 event_submit_us=707 event_complete_us=1000 frame_us=26581 tear_sync=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=1 dx=24 dy=18 scroll_us=12 exposed_compose_us=2 tear_wait_us=6 present_us=26856 prepare_us=6432 staging_us=6496 event_submit_us=829 event_complete_us=1424 frame_us=26955 tear_sync=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=2 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=27856 prepare_us=6571 staging_us=7842 event_submit_us=2254 event_complete_us=3885 frame_us=27956 tear_sync=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=3 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=27856 prepare_us=6598 staging_us=6843 event_submit_us=1381 event_complete_us=3005 frame_us=27953 tear_sync=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=4 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=7 present_us=25857 prepare_us=6454 staging_us=6450 event_submit_us=1044 event_complete_us=1476 frame_us=25958 tear_sync=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=5 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=25855 prepare_us=6265 staging_us=6204 event_submit_us=669 event_complete_us=730 frame_us=25957 tear_sync=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=6 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=25854 prepare_us=6295 staging_us=6402 event_submit_us=577 event_complete_us=883 frame_us=25952 tear_sync=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=7 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=7 present_us=26856 prepare_us=6537 staging_us=6483 event_submit_us=1365 event_complete_us=2996 frame_us=26959 tear_sync=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=8 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=26853 prepare_us=6594 staging_us=7089 event_submit_us=1405 event_complete_us=3029 frame_us=26950 tear_sync=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=9 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=604 present_us=26261 prepare_us=6348 staging_us=5930 event_submit_us=1724 event_complete_us=2305 frame_us=26961 tear_sync=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=10 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=25854 prepare_us=6570 staging_us=6557 event_submit_us=889 event_complete_us=1547 frame_us=25952 tear_sync=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=11 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=26856 prepare_us=6336 staging_us=6011 event_submit_us=1077 event_complete_us=1512 frame_us=26955 tear_sync=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=12 dx=24 dy=18 scroll_us=13 exposed_compose_us=2 tear_wait_us=6 present_us=26856 prepare_us=6611 staging_us=6584 event_submit_us=1368 event_complete_us=3000 frame_us=26957 tear_sync=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=13 dx=24 dy=18 scroll_us=12 exposed_compose_us=2 tear_wait_us=7 present_us=26854 prepare_us=6522 staging_us=6283 event_submit_us=1388 event_complete_us=3011 frame_us=26951 tear_sync=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=14 dx=24 dy=18 scroll_us=12 exposed_compose_us=2 tear_wait_us=1130 present_us=25735 prepare_us=6503 staging_us=6076 event_submit_us=2223 event_complete_us=2806 frame_us=26961 tear_sync=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=15 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=26854 prepare_us=6521 staging_us=6628 event_submit_us=1121 event_complete_us=2264 frame_us=26949 tear_sync=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=16 dx=72 dy=54 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=33857 prepare_us=6467 staging_us=5390 event_submit_us=1075 event_complete_us=2037 frame_us=33958 tear_sync=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=17 dx=72 dy=54 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=34853 prepare_us=6392 staging_us=5781 event_submit_us=907 event_complete_us=1649 frame_us=34950 tear_sync=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=18 dx=72 dy=54 scroll_us=11 exposed_compose_us=3 tear_wait_us=7 present_us=32859 prepare_us=6391 staging_us=5429 event_submit_us=1084 event_complete_us=1369 frame_us=32960 tear_sync=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=19 dx=72 dy=54 scroll_us=12 exposed_compose_us=3 tear_wait_us=6 present_us=33852 prepare_us=6395 staging_us=5438 event_submit_us=570 event_complete_us=873 frame_us=33953 tear_sync=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=20 dx=-72 dy=-54 scroll_us=12 exposed_compose_us=3 tear_wait_us=6 present_us=32853 prepare_us=5611 staging_us=5733 event_submit_us=844 event_complete_us=924 frame_us=32957 tear_sync=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=21 dx=-72 dy=-54 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=32852 prepare_us=5587 staging_us=5657 event_submit_us=1818 event_complete_us=2293 frame_us=32950 tear_sync=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=22 dx=-72 dy=-54 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=31864 prepare_us=5494 staging_us=5964 event_submit_us=2847 event_complete_us=3678 frame_us=31965 tear_sync=1 frame_reused=1 pass=1
+[11:21:44] TINYDRAW_PANSEQ_FRAME zoom=100 step=23 dx=-72 dy=-54 scroll_us=11 exposed_compose_us=2 tear_wait_us=6 present_us=31848 prepare_us=5580 staging_us=5455 event_submit_us=2188 event_complete_us=2772 frame_us=31950 tear_sync=1 frame_reused=1 pass=1
+[11:21:45] TINYDRAW_GATE1_PANSEQ zoom=100 frames=24 scroll_avg_us=11 exposed_avg_us=2 tear_wait_avg_us=78 present_avg_us=28767 prepare_avg_us=6317 staging_avg_us=6218 frame_avg_us=28939 frame_p50_us=26959 frame_p95_us=33958 frame_max_us=34950 complete_p50_us=2037 complete_p95_us=3678 complete_max_us=3885 all_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=0 dx=24 dy=18 scroll_us=14 exposed_compose_us=3 tear_wait_us=7 present_us=26807 prepare_us=6684 staging_us=6478 event_submit_us=717 event_complete_us=1069 frame_us=26910 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=1 dx=24 dy=18 scroll_us=12 exposed_compose_us=2 tear_wait_us=6 present_us=25856 prepare_us=6089 staging_us=6434 event_submit_us=663 event_complete_us=1100 frame_us=25955 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=2 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=26856 prepare_us=6599 staging_us=7208 event_submit_us=1357 event_complete_us=2989 frame_us=26955 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=3 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=26858 prepare_us=6530 staging_us=7003 event_submit_us=1395 event_complete_us=3020 frame_us=26956 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=4 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=709 present_us=25156 prepare_us=6402 staging_us=6260 event_submit_us=1670 event_complete_us=2247 frame_us=25962 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=5 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=7 present_us=26850 prepare_us=6683 staging_us=6895 event_submit_us=1318 event_complete_us=2885 frame_us=26948 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=6 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=25858 prepare_us=6408 staging_us=6234 event_submit_us=1142 event_complete_us=1650 frame_us=25957 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=7 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=5 present_us=26857 prepare_us=6441 staging_us=6048 event_submit_us=843 event_complete_us=983 frame_us=26958 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=8 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=25853 prepare_us=6559 staging_us=5789 event_submit_us=1408 event_complete_us=3032 frame_us=25953 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=9 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=28857 prepare_us=6271 staging_us=7693 event_submit_us=2269 event_complete_us=3742 frame_us=28957 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=10 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=26854 prepare_us=6776 staging_us=6631 event_submit_us=1163 event_complete_us=2308 frame_us=26953 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=11 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=7 present_us=26856 prepare_us=6454 staging_us=5559 event_submit_us=1041 event_complete_us=2007 frame_us=26957 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=12 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=26854 prepare_us=6640 staging_us=6442 event_submit_us=1361 event_complete_us=2996 frame_us=26954 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=13 dx=24 dy=18 scroll_us=12 exposed_compose_us=3 tear_wait_us=6 present_us=27855 prepare_us=6538 staging_us=6649 event_submit_us=1356 event_complete_us=2982 frame_us=27954 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=14 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=25858 prepare_us=6377 staging_us=5974 event_submit_us=1212 event_complete_us=1794 frame_us=25959 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=15 dx=24 dy=18 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=26854 prepare_us=6351 staging_us=6176 event_submit_us=908 event_complete_us=1689 frame_us=26956 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=16 dx=72 dy=54 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=35852 prepare_us=6528 staging_us=5489 event_submit_us=891 event_complete_us=1590 frame_us=35950 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=17 dx=72 dy=54 scroll_us=11 exposed_compose_us=3 tear_wait_us=7 present_us=35855 prepare_us=6449 staging_us=5321 event_submit_us=1721 event_complete_us=3344 frame_us=35959 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=18 dx=72 dy=54 scroll_us=12 exposed_compose_us=2 tear_wait_us=6 present_us=35853 prepare_us=6333 staging_us=6179 event_submit_us=1802 event_complete_us=3427 frame_us=35953 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=19 dx=72 dy=54 scroll_us=12 exposed_compose_us=2 tear_wait_us=6 present_us=35855 prepare_us=6358 staging_us=5166 event_submit_us=1074 event_complete_us=1429 frame_us=35957 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=20 dx=-72 dy=-54 scroll_us=11 exposed_compose_us=3 tear_wait_us=7 present_us=33862 prepare_us=5560 staging_us=6168 event_submit_us=2747 event_complete_us=4376 frame_us=33961 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=21 dx=-72 dy=-54 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=33847 prepare_us=5424 staging_us=6547 event_submit_us=2631 event_complete_us=4262 frame_us=33947 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=22 dx=-72 dy=-54 scroll_us=11 exposed_compose_us=3 tear_wait_us=6 present_us=33855 prepare_us=5578 staging_us=6777 event_submit_us=2683 event_complete_us=4314 frame_us=33956 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_PANSEQ_FRAME zoom=400 step=23 dx=-72 dy=-54 scroll_us=11 exposed_compose_us=3 tear_wait_us=5 present_us=33856 prepare_us=5682 staging_us=7121 event_submit_us=2433 event_complete_us=3955 frame_us=33952 tear_sync=1 frame_reused=1 pass=1
+[11:21:47] TINYDRAW_GATE1_PANSEQ zoom=400 frames=24 scroll_avg_us=11 exposed_avg_us=2 tear_wait_avg_us=35 present_avg_us=29407 prepare_avg_us=6321 staging_avg_us=6343 frame_avg_us=29536 frame_p50_us=26956 frame_p95_us=35957 frame_max_us=35959 complete_p50_us=2885 complete_p95_us=4314 complete_max_us=4376 all_reused=1 pass=1
+[11:21:48] TINYDRAW_GATE1_DRAW_FILL zoom=400 revision=2140 append_us=1237 poll_gap_us=89 event_submit_us=2421 event_complete_us=2598 max_compute_slice_us=4709 max_display_slice_us=24603 fill_us=271840 revision_restarted=1 pass=1
+[11:21:48] TINYDRAW_GATE1_CACHE_FILL zoom=50 x=63 y=63 published=56 total_us=533433 within_cold_gate=0 complete=1
+[11:21:49] TINYDRAW_GATE1_CACHE_FILL zoom=100 x=63 y=63 published=56 total_us=499078 within_cold_gate=1 complete=1
+[11:21:49] TINYDRAW_GATE1_CACHE_FILL zoom=200 x=63 y=63 published=56 total_us=406236 within_cold_gate=1 complete=1
+[11:21:50] TINYDRAW_GATE1_CACHE_FILL zoom=400 x=63 y=63 published=56 total_us=367328 within_cold_gate=1 complete=1
+[11:21:50] TINYDRAW_GATE1_CACHE_REVISIT zoom=50 remaining=0 tile_pixels=118128 fallback_pixels=0 compose_us=27204 complete_us=17839 hit=1
+[11:21:50] TINYDRAW_GATE1_CACHE_REVISIT zoom=100 remaining=0 tile_pixels=164864 fallback_pixels=0 compose_us=29495 complete_us=18679 hit=1
+[11:21:50] TINYDRAW_GATE1_CACHE_REVISIT zoom=200 remaining=0 tile_pixels=164864 fallback_pixels=0 compose_us=30243 complete_us=18478 hit=1
+[11:21:50] TINYDRAW_GATE1_CACHE_REVISIT zoom=400 remaining=0 tile_pixels=164607 fallback_pixels=0 compose_us=30808 complete_us=18322 hit=1
+[11:21:50] TINYDRAW_GATE1_CACHE_FILL zoom=400 x=575 y=575 published=56 total_us=395235 within_cold_gate=1 complete=1
+[11:21:51] TINYDRAW_GATE1_CACHE_ROUND_TRIP zoom=50 from_x=63 from_y=63 via_x=575 via_y=575 remaining=0 tile_pixels=118128 fallback_pixels=0 compose_us=27201 complete_us=18643 hit=1
+[11:21:51] TINYDRAW_GATE1_CACHE_ROUND_TRIP zoom=100 from_x=63 from_y=63 via_x=575 via_y=575 remaining=0 tile_pixels=164864 fallback_pixels=0 compose_us=29511 complete_us=18470 hit=1
+[11:21:51] TINYDRAW_GATE1_CACHE_ROUND_TRIP zoom=200 from_x=63 from_y=63 via_x=575 via_y=575 remaining=0 tile_pixels=164864 fallback_pixels=0 compose_us=30242 complete_us=18216 hit=1
+[11:21:51] TINYDRAW_GATE1_CACHE_ROUND_TRIP zoom=400 from_x=63 from_y=63 via_x=575 via_y=575 remaining=0 tile_pixels=164607 fallback_pixels=0 compose_us=30863 complete_us=18019 hit=1
+[11:21:51] TINYDRAW_GATE1_CACHE_RETENTION pass=1 slots=384 revision=2140
+[11:21:52] TINYDRAW_PAPER_SWEEP zoom=100 identities=644 raw=266 uniform=378 fallback=0 slots=384 total_us=1424342 pass=1
+[11:21:57] TINYDRAW_GATE1_CACHE_TOUR slots=384 stops=16 forward_steps=2306 forward_tiles=832 forward_wall_us=2296922 return_missing_tiles=0 return_steps=16 return_tiles=0 return_wall_us=39370 home_missing=0 home_fallback_pixels=0 pass=1
+[11:21:57] TINYDRAW_GATE1_MIXED_DRAW_WARM zoom=50 fill_tiles=56 fill_us=445308 raw=42 uniform=14
+[11:21:58] TINYDRAW_GATE1_MIXED_DRAW_WARM zoom=100 fill_tiles=56 fill_us=409440 raw=56 uniform=0
+[11:21:58] TINYDRAW_GATE1_MIXED_DRAW_WARM zoom=200 fill_tiles=56 fill_us=373158 raw=56 uniform=0
+[11:21:59] TINYDRAW_GATE1_MIXED_DRAW_WARM zoom=400 fill_tiles=42 fill_us=252630 raw=42 uniform=0
+[11:22:00] TINYDRAW_GATE1_MIXED_DRAW zoom=25 tool=pen chunks=50 append_max_us=9330 append_avg_us=8181 append_total_us=409058 affected_tiles=196 published=0 fallback=196 committed=1 authority=1 refresh=1 run_ok=1 pass=1
+[11:22:00] TINYDRAW_GATE1_MIXED_DRAW zoom=25 tool=eraser chunks=50 append_max_us=9475 append_avg_us=8129 append_total_us=406492 affected_tiles=0 published=0 fallback=0 committed=1 authority=1 refresh=1 run_ok=1 pass=1
+[11:22:02] TINYDRAW_GATE1_MIXED_DRAW zoom=50 tool=pen chunks=50 append_max_us=11953 append_avg_us=9813 append_total_us=490693 affected_tiles=422 published=400 fallback=22 committed=1 authority=1 refresh=1 run_ok=1 pass=1
+[11:22:03] TINYDRAW_GATE1_MIXED_DRAW zoom=50 tool=eraser chunks=50 append_max_us=10522 append_avg_us=9562 append_total_us=478106 affected_tiles=405 published=405 fallback=0 committed=1 authority=1 refresh=1 run_ok=1 pass=1
+[11:22:05] TINYDRAW_GATE1_MIXED_DRAW zoom=100 tool=pen chunks=50 append_max_us=9838 append_avg_us=8153 append_total_us=407671 affected_tiles=450 published=398 fallback=52 committed=1 authority=1 refresh=1 run_ok=1 pass=1
+[11:22:05] TINYDRAW_GATE1_MIXED_DRAW zoom=100 tool=eraser chunks=50 append_max_us=8790 append_avg_us=7937 append_total_us=396874 affected_tiles=399 published=399 fallback=0 committed=1 authority=1 refresh=1 run_ok=1 pass=1
+[11:22:07] TINYDRAW_GATE1_MIXED_DRAW zoom=200 tool=pen chunks=50 append_max_us=9380 append_avg_us=7587 append_total_us=379351 affected_tiles=425 published=389 fallback=36 committed=1 authority=1 refresh=1 run_ok=1 pass=1
+[11:22:07] TINYDRAW_GATE1_MIXED_DRAW zoom=200 tool=eraser chunks=50 append_max_us=8423 append_avg_us=7329 append_total_us=366450 affected_tiles=388 published=388 fallback=0 committed=1 authority=1 refresh=1 run_ok=1 pass=1
+[11:22:09] TINYDRAW_GATE1_MIXED_DRAW zoom=400 tool=pen chunks=50 append_max_us=8742 append_avg_us=7032 append_total_us=351626 affected_tiles=358 published=334 fallback=24 committed=1 authority=1 refresh=1 run_ok=1 pass=1
+[11:22:09] TINYDRAW_GATE1_MIXED_DRAW zoom=400 tool=eraser chunks=50 append_max_us=7768 append_avg_us=6881 append_total_us=344070 affected_tiles=350 published=350 fallback=0 committed=1 authority=1 refresh=1 run_ok=1 pass=1
+[11:22:09] TINYDRAW_GATE1_MIXED_DRAW_REVISIT zoom=50 missing=4 refill_tiles=4 refill_us=138030
+[11:22:10] TINYDRAW_GATE1_MIXED_DRAW_REVISIT zoom=100 missing=9 refill_tiles=9 refill_us=235499
+[11:22:10] TINYDRAW_GATE1_MIXED_DRAW_REVISIT zoom=200 missing=16 refill_tiles=16 refill_us=241574
+[11:22:10] TINYDRAW_GATE1_MIXED_DRAW_REVISIT zoom=400 missing=0 refill_tiles=0 refill_us=857
+[11:22:10] TINYDRAW_GATE1_MIXED_DRAW_SUMMARY slots=384 strokes=10 worst_append_us=11953 pass=1
+[11:22:15] TINYDRAW_GATE1_IDLE_REPAIR damaged=588 remaining=0 plan_views=24 steps=4100 repair_us=3524424 worst_step_us=7514 warm_tiles=56 pass=1
+[11:22:17] TINYDRAW_GATE1_LONG_GESTURE path=reference samples=1600 chunks=26 append_total_us=688923 append_max_us=33123 append_avg_us=26497 refresh_fallback_pixels=0 settled_fallback_pixels=0 committed=1 authority=1 refresh=1 run_ok=1
+[11:22:17] TINYDRAW_GATE1_LONG_GESTURE path=in_place samples=1600 chunks=52 append_total_us=352410 append_max_us=8464 append_avg_us=6777 refresh_fallback_pixels=0 settled_fallback_pixels=0 committed=1 authority=1 refresh=1 run_ok=1
+[11:22:17] TINYDRAW_V2_EXPORT_PROGRESS row=0 of=1792
+[11:22:18] TINYDRAW_V2_EXPORT_PROGRESS row=256 of=1792
+[11:22:18] TINYDRAW_V2_EXPORT_PROGRESS row=512 of=1792
+[11:22:19] TINYDRAW_V2_EXPORT_PROGRESS row=768 of=1792
+[11:22:20] TINYDRAW_V2_EXPORT_PROGRESS row=1024 of=1792
+[11:22:21] TINYDRAW_V2_EXPORT_PROGRESS row=1280 of=1792
+[11:22:22] TINYDRAW_V2_EXPORT_PROGRESS row=1536 of=1792
+[11:22:22] E (50591) task_wdt: Task watchdog got triggered. The following tasks/users did not reset the watchdog in time:
+[11:22:22] E (50591) task_wdt:  - IDLE0 (CPU 0)
+[11:22:22] E (50591) task_wdt: Tasks currently running:
+[11:22:22] E (50591) task_wdt: CPU 0: main
+[11:22:22] E (50591) task_wdt: CPU 1: IDLE1
+[11:22:22] E (50591) task_wdt: Print CPU 0 (current core) backtrace
+[11:22:22] 
+[11:22:22] 
+[11:22:22] Backtrace: 0x42036991:0x3FC95A10 0x403787AD:0x3FC95A50 0x4203C27B:0x3FC9CCD0 0x4201E277:0x3FC9CD30 0x4201E5AA:0x3FC9CD70 0x4201B1E1:0x3FC9CD90 0x42013101:0x3FC9CDF0 0x4201331D:0x3FC9CEA0 0x4200FF03:0x3FC9CED0 0x42019709:0x3FC9CF40 0x4200C3E0:0x3FC9D420 0x4200FDEB:0x3FC9EB00 0x42007966:0x3FC9EB20
+[11:22:22] 
+[11:22:23] TINYDRAW_GATE1_EXPORT encoded=1 bytes=40045 elapsed_us=5770958 workspace_bytes=50652 band_bytes=376832 free_psram=2515156 free_internal=242524 signature=1 dimensions=1 pass=1
+[11:22:23] TINYDRAW_EXPORT_RESERVE requested=1572864 free_before=2515156 largest_before=2490368 free_held=942288 largest_held=933888 pass=1
+[11:22:23] TINYDRAW_GATE1_AUTOMATED_DONE stress=1 stress_100=1 stress_400=1 overlap_ready=1 overlap_cold=1 adversarial_ready=1 adversarial_cold=1 workload=1 paced_cold=1 hard_100=1 hard_400=1 pan_100=1 pan_400=1 pan_seq=1 live_overlay=1 draw_fill=1 cache=1 full_world_cache=1 cache_tour=1 mixed_draw=1 idle_repair=1 long_gesture=1 export_encode=1 export_reserve=1 return=1 ssaa_receipt=yellow
+[11:22:23] TINYDRAW_VECTOR_V2_GATE_HARNESS_DONE pass=1
+[11:22:23] TINYDRAW_VECTOR_V2_READY zoom=25 controls=chrome button=cycle_all_zooms operations_capacity=4000 samples_capacity=80000 live_storage_bytes=5829024 overview_bytes=1318912 raw_tile_bytes=3145728 tile_metadata_bytes=71416 operation_bytes=720000 live_scratch_bytes=572968 free_psram=2515156 largest_psram=2490368 te_edges=2983 te_period_us=16808 te_high_us=578 te_level=0 main_stack_free=5016
