@@ -505,7 +505,22 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   // each host-order internal staging strip during the ordered sweep.
   LivePresentationTiming timing{};
   timing.compose_us = scroll_completed - started;
-  const std::int64_t tear_started = esp_timer_get_time();
+  const std::int64_t exposed_started = esp_timer_get_time();
+  for (const auto& exposed_rect : exposed) {
+    if (!compose_into_ring(exposed_rect)) {
+      return timing;
+    }
+  }
+  const std::int64_t exposed_completed = esp_timer_get_time();
+  const auto navigation = chrome_navigation();
+  if (!chrome_cache_.prepare(chrome, navigation, canvas_.current_revision().value)) {
+    return timing;
+  }
+  const std::int64_t chrome_prepared = esp_timer_get_time();
+  const std::int64_t prestaged_exposed_us = exposed_completed - exposed_started;
+  const std::int64_t prestaged_chrome_us = chrome_prepared - exposed_completed;
+  const std::span<const vector_v2::PixelRect> no_exposed{};
+  const std::int64_t tear_started = chrome_prepared;
   std::int64_t tear_completed = tear_started;
   const std::uint32_t first_sequence = display_.submit_count() + 1U;
 
@@ -557,7 +572,7 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   tear_completed = esp_timer_get_time();
   const LivePresentationTiming edge_timing = timing;
   timing = present_ring({0, start_row, vector_v2::kOverviewWidth, canvas_bottom}, chrome, event_us,
-                        exposed);
+                        no_exposed);
   timing.compose_us = scroll_completed - started + timing.exposed_compose_us;
   timing.tear_edge_observed = true;
   timing.tear_edge_timed_out = edge_timing.tear_edge_timed_out;
@@ -593,7 +608,7 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
     band_wait_us = esp_timer_get_time() - band_started;
     if (band_ready) {
       const auto wrapped =
-          present_ring({0, 0, vector_v2::kOverviewWidth, start_row}, chrome, event_us, exposed);
+          present_ring({0, 0, vector_v2::kOverviewWidth, start_row}, chrome, event_us, no_exposed);
       timing.pushes += wrapped.pushes;
       timing.exposed_compose_us += wrapped.exposed_compose_us;
       timing.chrome_us += wrapped.chrome_us;
@@ -615,7 +630,7 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
     return timing;
   }
   const auto sweep =
-      present_ring({0, 0, vector_v2::kOverviewWidth, canvas_bottom}, chrome, event_us, exposed);
+      present_ring({0, 0, vector_v2::kOverviewWidth, canvas_bottom}, chrome, event_us, no_exposed);
   timing.pushes = sweep.pushes;
   timing.first_submit_us = sweep.first_submit_us;
   timing.exposed_compose_us = sweep.exposed_compose_us;
@@ -623,6 +638,10 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   timing.compose_us += sweep.exposed_compose_us;
   timing.passed = sweep.passed;
 #endif
+
+  timing.exposed_compose_us += prestaged_exposed_us;
+  timing.chrome_us += prestaged_chrome_us;
+  timing.compose_us += prestaged_exposed_us;
 
   // Every strip belongs to this ordered presentation. Drain once after the
   // final submission; failed staging or completion remains non-reusable.
