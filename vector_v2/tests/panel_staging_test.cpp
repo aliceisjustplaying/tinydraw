@@ -7,10 +7,12 @@
 
 namespace {
 
+using tinydraw::vector_v2::copy_ring_row;
 using tinydraw::vector_v2::stage_pixels_swapped;
 using tinydraw::vector_v2::stage_ring_row;
 using tinydraw::vector_v2::swap_pixel_pair;
 using tinydraw::vector_v2::swap_pixel_word;
+using tinydraw::vector_v2::swap_pixels_in_place;
 
 std::uint16_t byte_swapped(std::uint16_t pixel) {
   return static_cast<std::uint16_t>(((pixel >> 8U) & 0xFFU) | ((pixel & 0xFFU) << 8U));
@@ -54,6 +56,32 @@ TEST_CASE("staged runs equal the naive byte-swap model at aligned and odd source
         CHECK(staged[static_cast<std::size_t>(column)] ==
               byte_swapped(source[static_cast<std::size_t>(column + offset)]));
       }
+    }
+  }
+}
+
+TEST_CASE("host-order ring copy can be patched before one in-place byte swap") {
+  constexpr int kAreaWidth = 368;
+  const auto source_row = pattern(kAreaWidth, 0xCAFEU);
+  for (const int shift_x : {0, 3, 17, 367}) {
+    std::vector<std::uint16_t> staged(kAreaWidth, 0U);
+    copy_ring_row(source_row.data(), kAreaWidth, shift_x, 0, kAreaWidth, staged.data());
+    staged[0] = 0x1234U;
+    staged[183] = 0xABCDU;
+    staged[367] = 0x55AAU;
+    swap_pixels_in_place(staged);
+
+    CHECK(staged.front() == byte_swapped(0x1234U));
+    CHECK(staged[183] == byte_swapped(0xABCDU));
+    CHECK(staged.back() == byte_swapped(0x55AAU));
+    for (int column = 1; column < kAreaWidth - 1; ++column) {
+      if (column == 183) {
+        continue;
+      }
+      CAPTURE(shift_x);
+      CAPTURE(column);
+      CHECK(staged[static_cast<std::size_t>(column)] ==
+            byte_swapped(source_row[static_cast<std::size_t>((column + shift_x) % kAreaWidth)]));
     }
   }
 }

@@ -36,9 +36,9 @@ static_assert(kPanelClockMHz == 40 || kPanelClockMHz == 50 || kPanelClockMHz == 
 // Measured 2026-08-15 (benchmark-results/blockA-panel-limits): requests of 40,
 // 50, and 60 MHz produce identical transfer walls. The GPSPI divider from the
 // 80 MHz source clamps all three to 40 MHz actual; no overclock ever engaged.
-// 32 KiB bounce buffers: per-transaction setup costs ~0.4 ms, so a full
-// panel at 8192-pixel strips paid ~8 ms of pure overhead across 21 pushes;
-// 16384-pixel strips halve that for 96 KiB of internal DMA memory.
+// Three 32 KiB bounce buffers keep staging ahead of the measured 20 MB/s
+// wire. Marginal color-transaction setup is ~44 us and a window pair is
+// ~90 us; a one-window RAMWR/RAMWRC stream minimizes both.
 constexpr int kTransferPixels = 16384;
 constexpr int kTransferQueueDepth = 3;
 constexpr std::size_t kTransferHistory = 64U;
@@ -77,8 +77,10 @@ const std::array<co5300_lcd_init_cmd_t, 11> panel_init{{
     {0x29, nullptr, 0, 0},
 }};
 
+using vector_v2::copy_ring_row;
 using vector_v2::stage_pixels_swapped;
 using vector_v2::stage_ring_row;
+using vector_v2::swap_pixels_in_place;
 
 bool reset_panel_power() {
   i2c_master_bus_config_t bus_config{};
@@ -533,7 +535,7 @@ class Co5300PanelTransport::Impl {
   }
 
   bool stream_rect(int x, int y, int width, int height, const std::uint16_t* pixels, int stride,
-                   int strip_rows) {
+                   int strip_rows, PanelStagePatch patch) {
     if (!ready_ || pixels == nullptr || width <= 0 || height <= 0) {
       return false;
     }
@@ -578,11 +580,34 @@ class Co5300PanelTransport::Impl {
       transfer_us_ += esp_timer_get_time() - transfer_started;
 
       const std::int64_t prepare_started = esp_timer_get_time();
-      for (int strip_row = 0; strip_row < rows; ++strip_row) {
-        const auto* source =
-            pixels + static_cast<std::ptrdiff_t>((row + strip_row)) * source_stride;
-        stage_pixels_swapped(source, transfer + static_cast<std::ptrdiff_t>(strip_row * width),
-                             width);
+      if (patch.paint == nullptr) {
+        for (int strip_row = 0; strip_row < rows; ++strip_row) {
+          const auto* source =
+              pixels + static_cast<std::ptrdiff_t>((row + strip_row)) * source_stride;
+          stage_pixels_swapped(source, transfer + static_cast<std::ptrdiff_t>(strip_row * width),
+                               width);
+        }
+      } else {
+        for (int strip_row = 0; strip_row < rows; ++strip_row) {
+          const auto* source =
+              pixels + static_cast<std::ptrdiff_t>((row + strip_row)) * source_stride;
+          auto* destination = transfer + static_cast<std::ptrdiff_t>(strip_row * width);
+          for (int column = 0; column < width; ++column) {
+            destination[column] = source[column];
+          }
+        }
+        const auto staged =
+            std::span(transfer, static_cast<std::size_t>(rows) * static_cast<std::size_t>(width));
+        if (!patch.apply({.panel_x = x,
+                          .panel_y = y + row,
+                          .width = width,
+                          .height = rows,
+                          .stride = width,
+                          .pixels = staged})) {
+          static_cast<void>(xSemaphoreGive(transfer_semaphore_));
+          return false;
+        }
+        swap_pixels_in_place(staged);
       }
       prepare_us_ += esp_timer_get_time() - prepare_started;
 
@@ -596,6 +621,90 @@ class Co5300PanelTransport::Impl {
           ESP_OK) {
         // The submit counter already advanced; roll it back so wait_for_all
         // does not deadlock on a transfer that never entered the queue.
+        transfer_submits_.fetch_sub(1U, std::memory_order_release);
+        static_cast<void>(xSemaphoreGive(transfer_semaphore_));
+        return false;
+      }
+      transfer_us_ += esp_timer_get_time() - submit_started;
+      ++push_count_;
+    }
+    return true;
+  }
+
+  bool stream_rect_ring(int x, int y, int width, int height, const std::uint16_t* area_pixels,
+                        int stride, int shift_x, int shift_y, int area_width, int area_height,
+                        int strip_rows, PanelStagePatch patch) {
+    if (!ready_ || area_pixels == nullptr || width <= 0 || height <= 0 || stride < area_width ||
+        shift_x < 0 || shift_x >= area_width || shift_y < 0 || shift_y >= area_height || x < 0 ||
+        y < 0 || x + width > area_width || y + height > area_height || x + width > kCanvasWidth ||
+        y + height > kCanvasHeight) {
+      return false;
+    }
+    const int rows_per_transfer = std::min(strip_rows, kTransferPixels / width);
+    if (rows_per_transfer <= 0) {
+      return false;
+    }
+
+    const int x0 = x + kPanelGapX;
+    const int x1 = x + width - 1 + kPanelGapX;
+    const int y1 = y + height - 1;
+    const std::array<std::uint8_t, 4> caset{
+        static_cast<std::uint8_t>(x0 >> 8), static_cast<std::uint8_t>(x0 & 0xFF),
+        static_cast<std::uint8_t>(x1 >> 8), static_cast<std::uint8_t>(x1 & 0xFF)};
+    const std::array<std::uint8_t, 4> raset{
+        static_cast<std::uint8_t>(y >> 8), static_cast<std::uint8_t>(y & 0xFF),
+        static_cast<std::uint8_t>(y1 >> 8), static_cast<std::uint8_t>(y1 & 0xFF)};
+    if (esp_lcd_panel_io_tx_param(io_, kWriteCommandOpcode | (0x2AU << 8U), caset.data(),
+                                  caset.size()) != ESP_OK ||
+        esp_lcd_panel_io_tx_param(io_, kWriteCommandOpcode | (0x2BU << 8U), raset.data(),
+                                  raset.size()) != ESP_OK) {
+      return false;
+    }
+
+    bool first = true;
+    for (int row = 0; row < height; row += rows_per_transfer) {
+      const int rows = std::min(rows_per_transfer, height - row);
+      const std::int64_t transfer_started = esp_timer_get_time();
+      if (xSemaphoreTake(transfer_semaphore_, portMAX_DELAY) != pdTRUE) {
+        return false;
+      }
+      auto* transfer =
+          transfer_pixels_ + static_cast<std::ptrdiff_t>(transfer_index_ * kTransferPixels);
+      transfer_index_ = (transfer_index_ + 1U) % kTransferQueueDepth;
+      transfer_us_ += esp_timer_get_time() - transfer_started;
+
+      const std::int64_t prepare_started = esp_timer_get_time();
+      for (int strip_row = 0; strip_row < rows; ++strip_row) {
+        int source_row = y + row + strip_row + shift_y;
+        if (source_row >= area_height) {
+          source_row -= area_height;
+        }
+        const auto* source = area_pixels + static_cast<std::ptrdiff_t>(source_row) * stride;
+        copy_ring_row(source, area_width, shift_x, x, width,
+                      transfer + static_cast<std::ptrdiff_t>(strip_row * width));
+      }
+      const auto staged =
+          std::span(transfer, static_cast<std::size_t>(rows) * static_cast<std::size_t>(width));
+      if (!patch.apply({.panel_x = x,
+                        .panel_y = y + row,
+                        .width = width,
+                        .height = rows,
+                        .stride = width,
+                        .pixels = staged})) {
+        static_cast<void>(xSemaphoreGive(transfer_semaphore_));
+        return false;
+      }
+      swap_pixels_in_place(staged);
+      prepare_us_ += esp_timer_get_time() - prepare_started;
+
+      const std::uint32_t command = first ? 0x2CU : 0x3CU;
+      first = false;
+      const std::int64_t submit_started = esp_timer_get_time();
+      transfer_submits_.fetch_add(1U, std::memory_order_release);
+      if (esp_lcd_panel_io_tx_color(io_, kWriteColorOpcode | (command << 8U), transfer,
+                                    static_cast<std::size_t>(rows) *
+                                        static_cast<std::size_t>(width) * sizeof(std::uint16_t)) !=
+          ESP_OK) {
         transfer_submits_.fetch_sub(1U, std::memory_order_release);
         static_cast<void>(xSemaphoreGive(transfer_semaphore_));
         return false;
@@ -730,8 +839,17 @@ void Co5300PanelTransport::push_rect_ring(int x, int y, int width, int height,
                         area_height);
 }
 bool Co5300PanelTransport::stream_rect(int x, int y, int width, int height,
-                                       const std::uint16_t* pixels, int stride, int strip_rows) {
-  return impl_->stream_rect(x, y, width, height, pixels, stride, strip_rows);
+                                       const std::uint16_t* pixels, int stride, int strip_rows,
+                                       PanelStagePatch patch) {
+  return impl_->stream_rect(x, y, width, height, pixels, stride, strip_rows, patch);
+}
+bool Co5300PanelTransport::stream_rect_ring(int x, int y, int width, int height,
+                                            const std::uint16_t* area_pixels, int stride,
+                                            int shift_x, int shift_y, int area_width,
+                                            int area_height, int strip_rows,
+                                            PanelStagePatch patch) {
+  return impl_->stream_rect_ring(x, y, width, height, area_pixels, stride, shift_x, shift_y,
+                                 area_width, area_height, strip_rows, patch);
 }
 int Co5300PanelTransport::read_scanline() { return impl_->read_scanline(); }
 bool Co5300PanelTransport::read_register(std::uint8_t command, std::uint8_t* value,

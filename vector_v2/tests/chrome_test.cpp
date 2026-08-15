@@ -488,6 +488,47 @@ TEST_CASE("full-width strip overlay drawing matches the full overlay draw") {
   CHECK(mismatches == 0);
 }
 
+TEST_CASE("staging strips reproduce all fixed chrome without mutating canvas source") {
+  constexpr int width = 368;
+  constexpr int height = 448;
+  constexpr int rows_per_strip = 44;
+  const std::size_t pixel_count = static_cast<std::size_t>(width * height);
+  std::vector<std::uint16_t> canvas(pixel_count);
+  std::vector<std::uint16_t> overview(pixel_count);
+  for (std::size_t index = 0; index < pixel_count; ++index) {
+    canvas[index] = static_cast<std::uint16_t>(index * 11U);
+    overview[index] = static_cast<std::uint16_t>(index * 17U);
+  }
+  const std::vector<std::uint16_t> original = canvas;
+  const ChromeState state{.battery_percentage = 73, .battery_charging = true};
+  const tinydraw::vector_v2::ChromeNavigation navigation{
+      .zoom_percent = 200,
+      .level_x = 511,
+      .level_y = 833,
+      .level_width = 2944,
+      .level_height = 3584,
+      .can_pan_top = true,
+      .can_pan_left = true,
+      .can_pan_right = true,
+      .can_pan_bottom = true,
+      .overview_pixels = overview,
+  };
+
+  std::vector<std::uint16_t> reference = canvas;
+  tinydraw::vector_v2::draw_chrome(reference, width, height, state);
+  tinydraw::vector_v2::draw_chrome_canvas_overlays(reference, width, height, state, navigation);
+  std::vector<std::uint16_t> staged = canvas;
+  for (int y = 0; y < height; y += rows_per_strip) {
+    const int rows = std::min(rows_per_strip, height - y);
+    auto strip = std::span(staged).subspan(static_cast<std::size_t>(y) * width,
+                                           static_cast<std::size_t>(rows) * width);
+    REQUIRE(tinydraw::vector_v2::draw_chrome_staging_surface({strip, width, rows, 0, y}, state,
+                                                             navigation));
+  }
+  CHECK(staged == reference);
+  CHECK(canvas == original);
+}
+
 TEST_CASE("dock hit region starts at the dock face, not the last canvas rows") {
   const ChromeState state;
   // Rows 366-371 are visible canvas: strokes must be able to start there now

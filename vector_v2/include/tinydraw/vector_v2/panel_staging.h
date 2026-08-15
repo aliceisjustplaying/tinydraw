@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <span>
 
 namespace tinydraw::vector_v2 {
 
@@ -46,6 +47,30 @@ inline void stage_pixels_swapped(const std::uint16_t* source, std::uint16_t* des
 // contiguous chunks; a pair that straddles the ring wrap moves explicitly.
 // Preconditions (validated by the transport): 0 <= shift_x < area_width,
 // x + width <= area_width, width even.
+inline void copy_ring_row(const std::uint16_t* source_row, int area_width, int shift_x, int x,
+                          int width, std::uint16_t* destination) {
+  int source_column = x + shift_x;
+  if (source_column >= area_width) {
+    source_column -= area_width;
+  }
+  int written = 0;
+  while (written < width) {
+    const int chunk =
+        area_width - source_column < width - written ? area_width - source_column : width - written;
+    for (int column = 0; column < chunk; ++column) {
+      destination[written + column] = source_row[source_column + column];
+    }
+    written += chunk;
+    source_column = 0;
+  }
+}
+
+inline void swap_pixels_in_place(std::span<std::uint16_t> pixels) {
+  for (std::uint16_t& pixel : pixels) {
+    pixel = static_cast<std::uint16_t>((pixel >> 8U) | (pixel << 8U));
+  }
+}
+
 inline void stage_ring_row(const std::uint16_t* source_row, int area_width, int shift_x, int x,
                            int width, std::uint16_t* destination) {
   const auto swap16 = [](std::uint16_t value) {

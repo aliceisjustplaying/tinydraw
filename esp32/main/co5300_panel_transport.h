@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 
 #include "tinydraw/platform/display_backend.h"
 
@@ -23,6 +24,25 @@ enum class TearSignalEdge : std::uint8_t {
 // Diagnostic TE observation only. Neither edge is assumed to identify an
 // optically safe panel phase. Timestamps contain the low 32 bits of the ESP
 // timer and can be subtracted as unsigned values across timer rollover.
+struct PanelStageSurface {
+  int panel_x = 0;
+  int panel_y = 0;
+  int width = 0;
+  int height = 0;
+  int stride = 0;
+  // Host-order RGB565. The transport byte-swaps after the patch returns.
+  std::span<std::uint16_t> pixels{};
+};
+
+struct PanelStagePatch {
+  void* context = nullptr;
+  bool (*paint)(void* context, const PanelStageSurface& surface) = nullptr;
+
+  [[nodiscard]] bool apply(const PanelStageSurface& surface) const {
+    return paint == nullptr || paint(context, surface);
+  }
+};
+
 struct TearEdgeWaitResult {
   TearSignalEdge selected_edge = TearSignalEdge::kRising;
   bool observed = false;
@@ -88,7 +108,14 @@ class Co5300PanelTransport final : public DisplayBackend {
   // any command or submission fails. Completion is observable via
   // submit_count()/complete_count()/wait_for_all() exactly like push_rect.
   bool stream_rect(int x, int y, int width, int height, const std::uint16_t* pixels, int stride,
-                   int strip_rows);
+                   int strip_rows, PanelStagePatch patch = {});
+  // Product frame-stream path. Programs one CASET/RASET window, de-rotates
+  // each source strip into host-order internal DMA memory, applies patch,
+  // byte-swaps, and submits RAMWR/RAMWRC continuations. It never drains;
+  // one ordered presentation owner calls wait_for_all exactly once.
+  bool stream_rect_ring(int x, int y, int width, int height, const std::uint16_t* area_pixels,
+                        int stride, int shift_x, int shift_y, int area_width, int area_height,
+                        int strip_rows, PanelStagePatch patch = {});
   // Characterization-probe read of GETSCANLINE (0x45). Returns the raw
   // 10-bit scanline value, or -1 when the QSPI read fails. Unvalidated
   // controller behavior: treat values as diagnostic until calibrated.

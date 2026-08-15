@@ -35,11 +35,6 @@ inline constexpr int kBeamStartMarginRows = 48;
 // Cached pan composition is strip-looped through the same bounded scratch as
 // progressive tile presentation, so wider reuse costs no additional PSRAM.
 inline constexpr std::size_t kLiveRegionScratchPixels = kMaximumProgressiveRegionPixels;
-// Internal-RAM overlay scratch for pan frames: the largest single overlay
-// draw surface, and the canvas backup beneath every overlay (26,576 aligned
-// pixels measured, plus margin for chrome drift).
-inline constexpr std::size_t kPanStripScratchPixels = 16'384;
-inline constexpr std::size_t kPanOverlayBackupPixels = 28'672;
 // Interactive gestures commit in bounded chunks so intermediate authority
 // publication stays inside one input-poll slice. Visible tiles are exempt
 // from the commit budget, so the chunk size bounds the visible band a
@@ -101,9 +96,7 @@ class VectorV2Presenter {
  public:
   VectorV2Presenter(vector_v2::MaterializedCanvas& canvas, vector_v2::NavigationState& navigation,
                     vector_v2::DisplayScheduler& scheduler, Co5300PanelTransport& display,
-                    std::span<std::uint16_t> frame_pixels, std::span<std::uint16_t> region_pixels,
-                    std::span<std::uint16_t> strip_scratch_pixels,
-                    std::span<std::uint16_t> overlay_backup_pixels);
+                    std::span<std::uint16_t> frame_pixels, std::span<std::uint16_t> region_pixels);
 
   [[nodiscard]] bool ready() const;
   // Read-only transport telemetry (prepare/staging counters) for gates that
@@ -140,6 +133,11 @@ class VectorV2Presenter {
                                                 Point current_touch,
                                                 const vector_v2::ChromeState& chrome,
                                                 std::uint32_t event_us);
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
+  // Deterministic acceptance seam: re-presents the complete staged frame and
+  // proves transport/chrome composition did not mutate the pure canvas ring.
+  [[nodiscard]] bool verify_staging_preserves_canvas(const vector_v2::ChromeState& chrome);
+#endif
 #ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
   // Gate-only visual diagnostic. The presenter-owned frame/ring remains derived
   // state; this never writes the operation log or MaterializedCanvas authority.
@@ -147,14 +145,25 @@ class VectorV2Presenter {
 #endif
 
  private:
-  [[nodiscard]] LivePresentationTiming present(vector_v2::PixelRect bounds, std::uint32_t event_us,
-                                               std::int64_t compose_us = 0,
+  struct StageContext {
+    VectorV2Presenter* presenter = nullptr;
+    const vector_v2::ChromeState* chrome = nullptr;
+    vector_v2::ChromeNavigation navigation{};
+    std::span<const vector_v2::PixelRect> exposed{};
+    std::int64_t exposed_us = 0;
+    std::int64_t chrome_us = 0;
+  };
+
+  [[nodiscard]] static bool paint_stage_thunk(void* context, const PanelStageSurface& surface);
+  [[nodiscard]] bool paint_stage_surface(StageContext& context, const PanelStageSurface& surface);
+  [[nodiscard]] LivePresentationTiming present(vector_v2::PixelRect bounds,
+                                               const vector_v2::ChromeState& chrome,
+                                               std::uint32_t event_us, std::int64_t compose_us = 0,
                                                bool wait_for_completion = true);
-  [[nodiscard]] LivePresentationTiming present_pixels(vector_v2::PixelRect bounds,
-                                                      std::span<const std::uint16_t> pixels,
-                                                      int stride, std::uint32_t event_us,
-                                                      std::int64_t compose_us,
-                                                      bool wait_for_completion = true);
+  [[nodiscard]] LivePresentationTiming present_pixels(
+      vector_v2::PixelRect bounds, std::span<const std::uint16_t> pixels, int stride,
+      const vector_v2::ChromeState& chrome, std::uint32_t event_us, std::int64_t compose_us,
+      bool wait_for_completion = true);
   [[nodiscard]] vector_v2::PixelRect primitive_bounds(std::span<const RibbonPrimitive> primitives,
                                                       int canvas_bottom) const;
   [[nodiscard]] LivePresentationTiming compose_and_present(vector_v2::PixelRect level_bounds,
@@ -162,8 +171,6 @@ class VectorV2Presenter {
                                                            const vector_v2::ChromeState& chrome,
                                                            std::uint32_t event_us);
   [[nodiscard]] vector_v2::ChromeNavigation chrome_navigation() const;
-  [[nodiscard]] bool restore_canvas_region(vector_v2::PixelRect bounds);
-  [[nodiscard]] bool restore_canvas_overlays(const vector_v2::ChromeState& chrome);
   [[nodiscard]] LivePresentationTiming present_with_overlays(vector_v2::PixelRect bounds,
                                                              const vector_v2::ChromeState& chrome,
                                                              std::uint32_t event_us,
@@ -174,23 +181,19 @@ class VectorV2Presenter {
                                                           std::uint32_t event_us,
                                                           std::int64_t compose_us = 0,
                                                           bool wait_for_completion = true);
-  // Row-major full-width ring sweep of one pan band; overlay pixels already
-  // sit in the ring and exposed strips compose just-in-time with overlay
-  // rects subtracted.
+  // One-window row-major ring sweep. Exposed canvas and chrome are patched
+  // into each internal staging strip; neither is scattered into PSRAM.
   [[nodiscard]] LivePresentationTiming present_ring(vector_v2::PixelRect band,
                                                     const vector_v2::ChromeState& chrome,
                                                     std::uint32_t event_us,
                                                     std::span<const vector_v2::PixelRect> exposed);
   [[nodiscard]] bool compose_into_ring(vector_v2::PixelRect panel_bounds);
-  void copy_ring_region(vector_v2::PixelRect panel_bounds, std::span<std::uint16_t> destination);
-  void write_ring_region(vector_v2::PixelRect panel_bounds, std::span<const std::uint16_t> source);
+  void copy_ring_to_stage(vector_v2::PixelRect panel_bounds, const PanelStageSurface& surface);
   [[nodiscard]] LivePresentationTiming refresh_pan(int old_x, int old_y,
                                                    const vector_v2::ChromeState& chrome,
                                                    std::uint32_t event_us);
 #ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
-  void apply_optical_row_pattern_linear(int bottom, std::span<std::uint16_t> backup);
-  void apply_optical_row_pattern_ring(int bottom, std::span<std::uint16_t> backup);
-  void paint_optical_row_pattern_ring(int top, int bottom);
+  void paint_optical_row_pattern(const PanelStageSurface& surface);
 #endif
 
   vector_v2::MaterializedCanvas& canvas_;
@@ -199,8 +202,6 @@ class VectorV2Presenter {
   Co5300PanelTransport& display_;
   std::span<std::uint16_t> frame_;
   std::span<std::uint16_t> region_;
-  std::span<std::uint16_t> strip_scratch_;
-  std::span<std::uint16_t> overlay_backup_;
   std::uint32_t te_last_count_ = 0;
   std::int64_t te_last_change_us_ = 0;
   std::unique_ptr<RibbonRenderer> renderer_;
