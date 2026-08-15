@@ -114,7 +114,38 @@ Phase 0 baselines live in
 
 These are product and optimization tasks, not evidence for another rewrite.
 
-## Mid-round resume state (2026-08-15, pan phase CLOSED at 4022917)
+## Organized board (2026-08-15 11:30, settled at efb1586)
+
+Device: product build at `efb1586`, 512 slots. PANSEQ 28.9/29.5 ms avg,
+p50 26.96, all 25 gates green (`efb1586-full-gate-512.log`).
+
+Landed and verified today: draw-under-dock + center zoom (`ab43005`),
+tear fixes round 1 (band wrap wait, overlay stale-compose fix, visible
+commit blur removed, chunk cap 32) (`da99311`), 512-slot pool + repair
+saturation guard + 48-row beam margin + painter/chrome overlay groundwork
+(`efb1586`).
+
+Open, in priority order:
+1. GLASS RE-VERDICT on this build: vertical-pan tearing (margin 48 should
+   fix), overlay-edge artifacts (expected REDUCED but a rare seam tear at
+   overlay edges remains a known residual), blur-then-sharpen (should be
+   gone), cold re-renders at 100% on dense docs (should stop churning
+   after a pause; capacity still bounds dense-world warmth).
+2. Edge white notches every N rows in filled areas (todo #22) — readback
+   bisect: strip seams (44) vs tile boundaries (64).
+3. Evil hairline crosshatch gate (todo #21, Sarah's corpus request).
+4. Overlay-seam presentation redesign — PARKED, bench-first. Measured
+   designs: region-sequential (current) 28.9 ms with rare edge-seam
+   revisit tear; row-major x-splits 36.6 (transaction bloat ~1 ms/txn);
+   internal scratch strips 48.4 (3x strip traffic); draw-into-ring +
+   backup restore 42.0 (overlay prep serialized ~20 ms — likely fixable:
+   per-overlay draws currently redraw all three overlays and the minimap
+   resample runs per rect; prep should be ~2-3 ms → ~30 ms seamless).
+   Groundwork (painter origin, strip-overlay draw, host equivalence
+   tests) is landed and pixel-exact.
+5. Cold −50% campaign, then flash L3 spike (todo #20), SVG, Undo/Redo.
+
+## Historical: mid-round resume state (2026-08-15, pan phase CLOSED at 4022917)
 
 Pan floor met with margin: 67.3 → 28.1 ms avg (p50 26.95, p95 32.95), both
 slot counts, TE boot flake root-fixed with runtime heal. See
