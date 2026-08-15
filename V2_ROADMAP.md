@@ -498,9 +498,18 @@ cold 20-run distribution, and the settled 320-versus-384 A/B all live in
    [`vector_v2/hardware-receipts/PAN_FLOOR_CLOSURE_2026_08_15.md`](vector_v2/hardware-receipts/PAN_FLOOR_CLOSURE_2026_08_15.md).
    Residual: worst single frame 33.95 ms (2% over floor, accepted); beam
    racing awaits a glass tearing re-check.
-3. Cold −50% campaign from the fresh distribution (adversarial 400% p95
+3. ~~Idle cache repair~~ **Done at `24a9fe9`** (inserted from the 2026-08-14
+   glass session's strongest complaint): quiet moments rebuild dropped
+   tiles — cardinal neighbors, remembered zooms, the full 100% grid — in
+   bounded idle slices with no presentation; gate
+   `TINYDRAW_GATE1_IDLE_REPAIR` (588 damaged → 0 remaining, worst slice
+   7.5 ms) joined the battery verdict. See
+   [`vector_v2/hardware-receipts/IDLE_REPAIR_CLOSURE_2026_08_15.md`](vector_v2/hardware-receipts/IDLE_REPAIR_CLOSURE_2026_08_15.md).
+   Residual: 200%/400% stay neighborhood-only; fast continuous 400% panning
+   can outrun repair.
+4. Cold −50% campaign from the fresh distribution (adversarial 400% p95
    638 ms → 319 ms target).
-4. Capture a clean export-watchdog receipt; investigate SVG eraser/mask
+5. Capture a clean export-watchdog receipt; investigate SVG eraser/mask
    semantics with the SVG encoder budgeted inside the existing 1.5 MiB export
    reserve. The startup TE flake is fixed at the root (`4022917`: TEON
    re-issued after display-on, plus a rate-limited runtime self-heal that
