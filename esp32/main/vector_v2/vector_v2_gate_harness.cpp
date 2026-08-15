@@ -72,7 +72,11 @@ void print_presentation(const char* kind, const VectorV2Presenter& presenter,
       "exposed_compose_us=%lld chrome_us=%lld read_submit_us=%lld read_complete_us=%lld "
       "transfer_wait_us=%lld tile_pixels=%lu "
       "uniform_pixels=%lu overview_pixels=%lu fallback_pixels=%lu resident_tiles=%lu "
-      "fallback_tiles=%lu pushes=%lu tear_wait_us=%lld tear_sync=%u frame_reused=%u pass=%u\n",
+      "fallback_tiles=%lu pushes=%lu tear_wait_us=%lld tear_edge_isr_to_resume_us=%lu "
+      "tear_edge_observed=%u tear_edge_wait_resumed=%u tear_edge_timeout=%u "
+      "tear_heal_attempted=%u "
+      "tear_heal_command_sent=%u presentation_experiment=%s te_edge=%s clock_mhz=%d "
+      "frame_reused=%u pass=%u\n",
       kind, zoom_name(presenter.zoom()), presenter.level_x(), presenter.level_y(),
       static_cast<long long>(timing.compose_us), static_cast<long long>(timing.scroll_us),
       static_cast<long long>(timing.exposed_compose_us), static_cast<long long>(timing.chrome_us),
@@ -84,8 +88,11 @@ void print_presentation(const char* kind, const VectorV2Presenter& presenter,
       static_cast<unsigned long>(timing.fallback_pixels),
       static_cast<unsigned long>(timing.resident_tiles),
       static_cast<unsigned long>(timing.fallback_tiles), static_cast<unsigned long>(timing.pushes),
-      static_cast<long long>(timing.tear_wait_us), timing.tear_synchronized, timing.frame_reused,
-      timing.passed);
+      static_cast<long long>(timing.tear_wait_us),
+      static_cast<unsigned long>(timing.tear_edge_isr_to_resume_us), timing.tear_edge_observed,
+      timing.tear_edge_wait_resumed, timing.tear_edge_timed_out, timing.tear_heal_attempted,
+      timing.tear_heal_command_sent, presentation_experiment_name(), selected_tear_edge_name(),
+      panel_clock_mhz(), timing.frame_reused, timing.passed);
 }
 
 bool load_realistic_document(OperationLog& log, MaterializedCanvas& canvas,
@@ -136,15 +143,12 @@ bool load_realistic_document(OperationLog& log, MaterializedCanvas& canvas,
 }
 
 #ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
-// Drives the cached-pan path (ring addressing, beam racing, wrap bands,
-// overlay handling) on both axes. Wrap-band coverage is statistical: the
-// probe cannot steer the beam, so it asserts that a nonzero share of frames
-// paid a tear wait rather than that a specific frame wrapped.
+// Explicit software A/B diagnostic. The center stripe encodes alternating
+// 0x35/0xCA frame IDs plus the low eight row bits; camera/glass classification
+// is deliberately external and is never inferred from software counters.
 bool run_tearing_probe(VectorV2Presenter& presenter, const vector_v2::ChromeState& chrome) {
+  presenter.enable_optical_row_pattern();
   const auto initial = presenter.set_view(ZoomLevel::k100Percent, 200, 300, chrome, now_us());
-  if (!initial.passed || !initial.tear_synchronized) {
-    return false;
-  }
   constexpr std::array deltas{
       vector_v2::NavigationPoint{24, 0},  vector_v2::NavigationPoint{-24, 0},
       vector_v2::NavigationPoint{0, 18},  vector_v2::NavigationPoint{0, -18},
@@ -152,8 +156,16 @@ bool run_tearing_probe(VectorV2Presenter& presenter, const vector_v2::ChromeStat
       vector_v2::NavigationPoint{0, 54},  vector_v2::NavigationPoint{0, -54},
   };
   constexpr std::size_t kCycles = 5;
+  constexpr std::size_t kFrames = kCycles * deltas.size();
+  std::array<std::int64_t, kFrames> intervals{};
+  std::array<std::int64_t, kFrames> resume_latencies{};
   std::size_t frames = 0;
-  std::size_t tear_waited = 0;
+  std::size_t edge_failures = 0;
+  std::size_t resume_samples = 0;
+  std::size_t deadline_41_7_misses = 0;
+  std::size_t deadline_33_3_misses = 0;
+  bool software_pass = initial.passed && initial.tear_edge_observed;
+  std::int64_t previous_complete = esp_timer_get_time();
   for (std::size_t cycle = 0; cycle < kCycles; ++cycle) {
     for (const auto delta : deltas) {
       const int from_x = presenter.level_x();
@@ -162,20 +174,55 @@ bool run_tearing_probe(VectorV2Presenter& presenter, const vector_v2::ChromeStat
           from_x, from_y, {300.0F, 300.0F},
           {300.0F - static_cast<float>(delta.x), 300.0F - static_cast<float>(delta.y)}, chrome,
           now_us());
-      if (!timing.passed || !timing.frame_reused || !timing.tear_synchronized) {
-        std::printf("TINYDRAW_TEARING_PROBE_DONE frames=%lu pass=0\n",
-                    static_cast<unsigned long>(frames));
-        std::fflush(stdout);
-        return false;
+      const std::int64_t completed = esp_timer_get_time();
+      const std::int64_t interval = completed - previous_complete;
+      previous_complete = completed;
+      intervals[frames] = interval;
+      if (timing.tear_edge_wait_resumed) {
+        resume_latencies[resume_samples++] = timing.tear_edge_isr_to_resume_us;
       }
+      deadline_41_7_misses += interval > 41'700;
+      deadline_33_3_misses += interval > 33'300;
+      edge_failures += !timing.tear_edge_observed;
+      software_pass =
+          software_pass && timing.passed && timing.frame_reused && timing.tear_edge_observed;
       ++frames;
-      tear_waited += timing.tear_wait_us > 0;
     }
   }
-  std::printf("TINYDRAW_TEARING_PROBE_DONE frames=%lu tear_waited=%lu pass=1\n",
-              static_cast<unsigned long>(frames), static_cast<unsigned long>(tear_waited));
+  std::sort(intervals.begin(), intervals.end());
+  std::sort(resume_latencies.begin(), resume_latencies.begin() + resume_samples);
+  const auto percentile = [](const auto& sorted, std::size_t count, int percent) {
+    if (count == 0U) {
+      return std::int64_t{0};
+    }
+    const std::size_t rank = (count * static_cast<std::size_t>(percent) + 99U) / 100U;
+    return sorted[std::min(count - 1U, rank - 1U)];
+  };
+  std::printf(
+      "TINYDRAW_TEARING_AB policy=%s edge=%s clock_mhz=%d frames=%lu "
+      "initial_edge_observed=%u edge_failures=%lu edge_wait_resume_samples=%lu "
+      "edge_wait_isr_to_resume_p50_us=%lld "
+      "edge_wait_isr_to_resume_p95_us=%lld edge_wait_isr_to_resume_max_us=%lld "
+      "frame_interval_p50_us=%lld frame_interval_p95_us=%lld frame_interval_max_us=%lld "
+      "deadline_41_7_misses=%lu deadline_33_3_misses=%lu "
+      "optical_pattern=alternating_frame_id_row_barcode_v1 "
+      "optical_acceptance=external_manual software_pass=%u\n",
+      presentation_experiment_name(), selected_tear_edge_name(), panel_clock_mhz(),
+      static_cast<unsigned long>(frames), initial.tear_edge_observed,
+      static_cast<unsigned long>(edge_failures), static_cast<unsigned long>(resume_samples),
+      static_cast<long long>(percentile(resume_latencies, resume_samples, 50)),
+      static_cast<long long>(percentile(resume_latencies, resume_samples, 95)),
+      static_cast<long long>(percentile(resume_latencies, resume_samples, 100)),
+      static_cast<long long>(percentile(intervals, intervals.size(), 50)),
+      static_cast<long long>(percentile(intervals, intervals.size(), 95)),
+      static_cast<long long>(intervals.back()), static_cast<unsigned long>(deadline_41_7_misses),
+      static_cast<unsigned long>(deadline_33_3_misses), software_pass);
+  std::printf(
+      "TINYDRAW_TEARING_PROBE_DONE frames=%lu software_pass=%u "
+      "optical_acceptance=external_manual\n",
+      static_cast<unsigned long>(frames), software_pass);
   std::fflush(stdout);
-  return frames >= 24U;
+  return software_pass;
 }
 #endif
 
@@ -1511,9 +1558,9 @@ bool verify_pan_adapter(VectorV2Presenter& presenter, vector_v2::TileProducer& p
 }
 
 // Scripted warm-pan drag attribution. Every microsecond of a cached pan frame
-// is accounted: PSRAM scroll, exposed-strip compose, tear wait, byte-swap
-// staging (prepare), staging-slot waits, and physical completion. The pass
-// bound is correctness (reuse + presentation success); timing bounds live in
+// is accounted: PSRAM scroll, exposed-strip compose, TE wait, byte-swap
+// staging (prepare), staging-slot waits, and DMA completion. The pass bound is
+// transport discipline (reuse + edge observation + presentation success); timing bounds live in
 // the single-frame pan gate until the optimized distribution is measured.
 struct PanSequenceFrame {
   std::int64_t scroll_us = 0;
@@ -1528,7 +1575,7 @@ struct PanSequenceFrame {
   int delta_x = 0;
   int delta_y = 0;
   bool reused = false;
-  bool tear_synchronized = false;
+  bool tear_edge_observed = false;
   bool passed = false;
 };
 
@@ -1600,7 +1647,7 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
   }
   bool all_passed = true;
   bool all_reused = true;
-  std::size_t tear_sync_failures = 0;
+  std::size_t tear_edge_failures = 0;
   for (std::size_t step = 0; step < kPanSequenceFrames; ++step) {
     const vector_v2::NavigationPoint delta = step_delta(step);
     const int from_x = presenter.level_x();
@@ -1626,12 +1673,12 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
         .delta_x = delta.x,
         .delta_y = delta.y,
         .reused = timing.frame_reused,
-        .tear_synchronized = timing.tear_synchronized,
+        .tear_edge_observed = timing.tear_edge_observed,
         .passed = timing.passed,
     };
     all_passed = all_passed && timing.passed;
     all_reused = all_reused && timing.frame_reused;
-    tear_sync_failures += !timing.tear_synchronized;
+    tear_edge_failures += !timing.tear_edge_observed;
   }
   std::array<std::int64_t, kPanSequenceFrames> sorted_frame{};
   std::array<std::int64_t, kPanSequenceFrames> sorted_complete{};
@@ -1642,14 +1689,14 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
         "TINYDRAW_PANSEQ_FRAME zoom=%s step=%u dx=%d dy=%d scroll_us=%lld "
         "exposed_compose_us=%lld tear_wait_us=%lld present_us=%lld prepare_us=%lld "
         "staging_us=%lld event_submit_us=%lld event_complete_us=%lld frame_us=%lld "
-        "tear_sync=%u frame_reused=%u pass=%u\n",
+        "tear_edge_observed=%u frame_reused=%u pass=%u\n",
         zoom_name(zoom), static_cast<unsigned>(step), frame.delta_x, frame.delta_y,
         static_cast<long long>(frame.scroll_us), static_cast<long long>(frame.exposed_us),
         static_cast<long long>(frame.tear_wait_us), static_cast<long long>(frame.present_us),
         static_cast<long long>(frame.prepare_us), static_cast<long long>(frame.staging_us),
         static_cast<long long>(frame.first_submit_us),
         static_cast<long long>(frame.first_complete_us), static_cast<long long>(frame.frame_us),
-        frame.tear_synchronized, frame.reused, frame.passed);
+        frame.tear_edge_observed, frame.reused, frame.passed);
     sorted_frame[step] = frame.frame_us;
     sorted_complete[step] = frame.first_complete_us;
     totals.scroll_us += frame.scroll_us;
@@ -1663,15 +1710,15 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
   std::sort(sorted_frame.begin(), sorted_frame.end());
   std::sort(sorted_complete.begin(), sorted_complete.end());
   constexpr auto kFrames = static_cast<std::int64_t>(kPanSequenceFrames);
-  // Tear discipline is part of the pan contract: a frame that presented
-  // without beam safety is a glass regression even when reuse and timing
-  // stay green.
-  const bool pass = all_passed && all_reused && tear_sync_failures == 0U;
+  // Transport discipline requires a factual configured-edge observation. This
+  // remains software evidence only and makes no glass-correctness claim.
+  const bool pass = all_passed && all_reused && tear_edge_failures == 0U;
   std::printf(
       "TINYDRAW_GATE1_PANSEQ zoom=%s frames=%u scroll_avg_us=%lld exposed_avg_us=%lld "
       "tear_wait_avg_us=%lld present_avg_us=%lld prepare_avg_us=%lld staging_avg_us=%lld "
       "frame_avg_us=%lld frame_p50_us=%lld frame_p95_us=%lld frame_max_us=%lld "
-      "complete_p50_us=%lld complete_p95_us=%lld complete_max_us=%lld tear_sync_failures=%lu "
+      "complete_p50_us=%lld complete_p95_us=%lld complete_max_us=%lld "
+      "tear_edge_failures=%lu presentation_experiment=%s te_edge=%s clock_mhz=%d "
       "all_reused=%u pass=%u\n",
       zoom_name(zoom), static_cast<unsigned>(kPanSequenceFrames),
       static_cast<long long>(totals.scroll_us / kFrames),
@@ -1687,7 +1734,8 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
       static_cast<long long>(pan_sequence_percentile(sorted_complete, 50)),
       static_cast<long long>(pan_sequence_percentile(sorted_complete, 95)),
       static_cast<long long>(sorted_complete.back()),
-      static_cast<unsigned long>(tear_sync_failures), all_reused, pass);
+      static_cast<unsigned long>(tear_edge_failures), presentation_experiment_name(),
+      selected_tear_edge_name(), panel_clock_mhz(), all_reused, pass);
   std::fflush(stdout);
   return pass;
 }

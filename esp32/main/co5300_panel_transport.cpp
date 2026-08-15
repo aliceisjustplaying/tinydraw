@@ -27,6 +27,12 @@ namespace {
 
 constexpr int kPanelGapX = 0x10;
 constexpr gpio_num_t kTearPin = GPIO_NUM_13;
+#ifndef TINYDRAW_CO5300_CLOCK_MHZ
+#define TINYDRAW_CO5300_CLOCK_MHZ 50
+#endif
+constexpr int kPanelClockMHz = TINYDRAW_CO5300_CLOCK_MHZ;
+static_assert(kPanelClockMHz == 40 || kPanelClockMHz == 50 || kPanelClockMHz == 60,
+              "CO5300 clock must be one of the supported 40/50/60 MHz experiment points");
 // 32 KiB bounce buffers: per-transaction setup costs ~0.4 ms, so a full
 // panel at 8192-pixel strips paid ~8 ms of pure overhead across 21 pushes;
 // 16384-pixel strips halve that for 96 KiB of internal DMA memory.
@@ -126,6 +132,12 @@ class Co5300PanelTransport::Impl {
       return;
     }
     std::printf("TINYDRAW_PANEL_HARD_RESET=%u\n", reset_panel_power());
+    constexpr const char* kClockPolicy =
+        kPanelClockMHz == 50 ? "normal_published_max"
+                             : (kPanelClockMHz == 60 ? "diagnostic_outside_published_envelope"
+                                                     : "conservative_experiment");
+    std::printf("TINYDRAW_PANEL_TRANSPORT clock_mhz=%d clock_policy=%s\n", kPanelClockMHz,
+                kClockPolicy);
 
     spi_bus_config_t bus_config{};
     bus_config.sclk_io_num = GPIO_NUM_11;
@@ -143,7 +155,7 @@ class Co5300PanelTransport::Impl {
     io_config.cs_gpio_num = GPIO_NUM_12;
     io_config.dc_gpio_num = GPIO_NUM_NC;
     io_config.spi_mode = 0;
-    io_config.pclk_hz = 60 * 1000 * 1000;
+    io_config.pclk_hz = kPanelClockMHz * 1000 * 1000;
     io_config.trans_queue_depth = kTransferQueueDepth;
     io_config.on_color_trans_done = on_transfer_done;
     io_config.user_ctx = this;
@@ -239,39 +251,99 @@ class Co5300PanelTransport::Impl {
             .level = gpio_get_level(kTearPin) != 0};
   }
 
-  [[nodiscard]] std::uint32_t tear_falling_edge_count() const {
-    return tear_falling_edges_.load(std::memory_order_acquire);
-  }
-
-  [[nodiscard]] std::int64_t tear_age_us() const {
-    const std::uint32_t fall = tear_last_fall_us_.load(std::memory_order_acquire);
-    if (fall == 0U) {
+  [[nodiscard]] std::int64_t tear_age_us(TearSignalEdge edge) const {
+    const auto& count = edge == TearSignalEdge::kRising ? tear_rising_edges_ : tear_falling_edges_;
+    const auto& timestamp =
+        edge == TearSignalEdge::kRising ? tear_last_rise_us_ : tear_last_fall_us_;
+    std::uint32_t count_before = 0;
+    std::uint32_t count_after = 0;
+    std::uint32_t edge_us = 0;
+    do {
+      count_before = count.load(std::memory_order_acquire);
+      edge_us = timestamp.load(std::memory_order_relaxed);
+      count_after = count.load(std::memory_order_acquire);
+    } while (count_before != count_after);
+    if (count_after == 0U) {
       return -1;
     }
     return static_cast<std::int64_t>(
-        static_cast<std::uint32_t>(static_cast<std::uint32_t>(esp_timer_get_time()) - fall));
+        static_cast<std::uint32_t>(static_cast<std::uint32_t>(esp_timer_get_time()) - edge_us));
   }
 
-  [[nodiscard]] bool wait_for_safe_frame_start(std::int64_t timeout_us) {
+  [[nodiscard]] TearEdgeWaitResult wait_for_tear_edge(TearSignalEdge edge,
+                                                      std::int64_t timeout_us) {
+    TearEdgeWaitResult result{};
+    result.selected_edge = edge;
     if (!ready_ || timeout_us <= 0) {
-      return false;
+      return result;
     }
-    const std::uint32_t start = tear_falling_edges_.load(std::memory_order_acquire);
+
+    struct EdgeSnapshot {
+      std::uint32_t count;
+      std::uint32_t timestamp_us;
+    };
+    const auto snapshot = [&]() {
+      const auto& count =
+          edge == TearSignalEdge::kRising ? tear_rising_edges_ : tear_falling_edges_;
+      const auto& timestamp =
+          edge == TearSignalEdge::kRising ? tear_last_rise_us_ : tear_last_fall_us_;
+      EdgeSnapshot value{};
+      std::uint32_t count_after = 0;
+      do {
+        value.count = count.load(std::memory_order_acquire);
+        value.timestamp_us = timestamp.load(std::memory_order_relaxed);
+        count_after = count.load(std::memory_order_acquire);
+      } while (value.count != count_after);
+      return value;
+    };
+
+    const EdgeSnapshot start = snapshot();
+    // Discard an old semaphore token, then rely on the selected edge counter.
+    // If an ISR races this drain, the counter check preserves the observation.
     static_cast<void>(xSemaphoreTake(tear_semaphore_, 0));
-    if (tear_falling_edges_.load(std::memory_order_acquire) != start) {
-      return true;
+    const auto wait_phase = [&](std::int64_t phase_timeout_us) {
+      const std::int64_t deadline_us = esp_timer_get_time() + phase_timeout_us;
+      while (true) {
+        const EdgeSnapshot observed = snapshot();
+        // Signed modular distance is rollover-safe for this bounded wait.
+        if (static_cast<std::int32_t>(observed.count - start.count) > 0) {
+          result.observed = true;
+          result.edge_count = observed.count;
+          result.isr_timestamp_us = observed.timestamp_us;
+          result.task_resume_timestamp_us = static_cast<std::uint32_t>(esp_timer_get_time());
+          return true;
+        }
+        const std::int64_t remaining_us = deadline_us - esp_timer_get_time();
+        if (remaining_us <= 0) {
+          result.edge_count = observed.count;
+          result.isr_timestamp_us = observed.timestamp_us;
+          result.task_resume_timestamp_us = static_cast<std::uint32_t>(esp_timer_get_time());
+          return false;
+        }
+        const TickType_t ticks = std::max<TickType_t>(
+            1, pdMS_TO_TICKS(static_cast<std::uint64_t>(remaining_us + 999) / 1'000U));
+        // Either edge posts this semaphore. A wake from the unselected edge is
+        // ignored unless the selected counter also advanced.
+        static_cast<void>(xSemaphoreTake(tear_semaphore_, ticks));
+      }
+    };
+
+    if (wait_phase(timeout_us)) {
+      return result;
     }
-    const TickType_t timeout_ticks = pdMS_TO_TICKS((timeout_us + 999) / 1'000);
-    if (xSemaphoreTake(tear_semaphore_, timeout_ticks) == pdTRUE) {
-      return true;
+
+    // No selected edge for the requested interval. Attempt one rate-limited
+    // TEON heal, report the attempt, and require a real selected edge during
+    // the diagnostic recovery window rather than converting healing to success.
+    result.heal_attempted = true;
+    result.heal_command_sent = heal_tear_signal();
+    // A selected edge may have arrived while healing sampled the pin. Only
+    // wait an additional recovery window when TEON was actually transmitted.
+    if (wait_phase(result.heal_command_sent ? 34'000 : 0)) {
+      return result;
     }
-    // Not one TE edge for the whole wait: the panel stopped emitting (or a
-    // marginal boot never started it). Heal and give the signal one more
-    // frame period to appear.
-    if (heal_tear_signal()) {
-      return xSemaphoreTake(tear_semaphore_, pdMS_TO_TICKS(34)) == pdTRUE;
-    }
-    return false;
+    result.timed_out = true;
+    return result;
   }
 
   // Re-issues TEON, rate-limited, after draining in-flight color transfers
@@ -286,11 +358,11 @@ class Co5300PanelTransport::Impl {
       return false;
     }
     last_te_heal_us_ = now;
-    static_cast<void>(wait_for_all(100'000));
+    const bool drained = wait_for_all(100'000);
     const bool paged =
-        esp_lcd_panel_io_tx_param(io_, 0xFE, init_fe.data(), init_fe.size()) == ESP_OK;
+        drained && esp_lcd_panel_io_tx_param(io_, 0xFE, init_fe.data(), init_fe.size()) == ESP_OK;
     const bool sent =
-        esp_lcd_panel_io_tx_param(io_, 0x35, init_35.data(), init_35.size()) == ESP_OK;
+        paged && esp_lcd_panel_io_tx_param(io_, 0x35, init_35.data(), init_35.size()) == ESP_OK;
     // Sample the pin across roughly two frame periods: a toggling level
     // means the panel emits TE and the interrupt side lost it.
     const std::uint32_t edges_before = tear_falling_edges_.load(std::memory_order_acquire);
@@ -308,10 +380,11 @@ class Co5300PanelTransport::Impl {
       isr_reinstalled = gpio_isr_handler_add(kTearPin, on_tear_edge, this) == ESP_OK;
     }
     std::printf(
-        "TINYDRAW_PANEL_TE_HEAL paged=%u sent=%u high=%d/%d edges_delta=%lu isr_reinstall=%u "
-        "falling_edges=%lu\n",
-        paged, sent, high_samples, kProbes, static_cast<unsigned long>(edges_after - edges_before),
-        isr_reinstalled, static_cast<unsigned long>(edges_after));
+        "TINYDRAW_PANEL_TE_HEAL drained=%u paged=%u sent=%u high=%d/%d edges_delta=%lu "
+        "isr_reinstall=%u falling_edges=%lu\n",
+        drained, paged, sent, high_samples, kProbes,
+        static_cast<unsigned long>(edges_after - edges_before), isr_reinstalled,
+        static_cast<unsigned long>(edges_after));
     return sent;
   }
 
@@ -469,14 +542,14 @@ class Co5300PanelTransport::Impl {
         self.tear_period_us_.store(now - prior, std::memory_order_relaxed);
       }
       self.tear_rising_edges_.fetch_add(1U, std::memory_order_release);
-      return;
+    } else {
+      const std::uint32_t rise = self.tear_last_rise_us_.load(std::memory_order_relaxed);
+      if (rise != 0U) {
+        self.tear_high_us_.store(now - rise, std::memory_order_relaxed);
+      }
+      self.tear_last_fall_us_.store(now, std::memory_order_relaxed);
+      self.tear_falling_edges_.fetch_add(1U, std::memory_order_release);
     }
-    const std::uint32_t rise = self.tear_last_rise_us_.load(std::memory_order_relaxed);
-    if (rise != 0U) {
-      self.tear_high_us_.store(now - rise, std::memory_order_relaxed);
-    }
-    self.tear_last_fall_us_.store(now == 0U ? 1U : now, std::memory_order_release);
-    self.tear_falling_edges_.fetch_add(1U, std::memory_order_release);
     BaseType_t woke = pdFALSE;
     xSemaphoreGiveFromISR(self.tear_semaphore_, &woke);
     if (woke == pdTRUE) {
@@ -541,12 +614,12 @@ std::int64_t Co5300PanelTransport::complete_time_us(std::uint32_t sequence) cons
 TearSignalTiming Co5300PanelTransport::tear_signal_timing() const {
   return impl_->tear_signal_timing();
 }
-bool Co5300PanelTransport::wait_for_safe_frame_start(std::int64_t timeout_us) {
-  return impl_->wait_for_safe_frame_start(timeout_us);
+TearEdgeWaitResult Co5300PanelTransport::wait_for_tear_edge(TearSignalEdge edge,
+                                                            std::int64_t timeout_us) {
+  return impl_->wait_for_tear_edge(edge, timeout_us);
 }
-std::int64_t Co5300PanelTransport::tear_age_us() const { return impl_->tear_age_us(); }
-std::uint32_t Co5300PanelTransport::tear_falling_edges() const {
-  return impl_->tear_falling_edge_count();
+std::int64_t Co5300PanelTransport::tear_age_us(TearSignalEdge edge) const {
+  return impl_->tear_age_us(edge);
 }
 bool Co5300PanelTransport::wait_for_all(std::int64_t timeout_us) {
   return impl_->wait_for_all(timeout_us);

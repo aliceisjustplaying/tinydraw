@@ -129,6 +129,33 @@ idf_component_register(
 )
 
 target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_20)
+set(TINYDRAW_CO5300_CLOCK_MHZ "50" CACHE STRING
+    "CO5300 QSPI clock in MHz (40/50 experiments; 60 diagnostic overclock only)")
+set_property(CACHE TINYDRAW_CO5300_CLOCK_MHZ PROPERTY STRINGS 40 50 60)
+if(NOT TINYDRAW_CO5300_CLOCK_MHZ MATCHES "^(40|50|60)$")
+  message(FATAL_ERROR "TINYDRAW_CO5300_CLOCK_MHZ must be 40, 50, or 60")
+endif()
+if(TINYDRAW_CO5300_CLOCK_MHZ STREQUAL "60")
+  message(WARNING
+          "CO5300 60 MHz is a diagnostic overclock outside the published 50 MHz envelope")
+endif()
+message(STATUS
+        "TinyDraw panel experiment=${TINYDRAW_VECTOR_V2_PRESENTATION_EXPERIMENT}, TE edge=${TINYDRAW_VECTOR_V2_TE_EDGE}, clock=${TINYDRAW_CO5300_CLOCK_MHZ} MHz")
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+  TINYDRAW_CO5300_CLOCK_MHZ=${TINYDRAW_CO5300_CLOCK_MHZ}
+)
+if(TINYDRAW_VECTOR_V2_PRESENTATION_EXPERIMENT STREQUAL "boundary-top-sweep")
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    TINYDRAW_VECTOR_V2_PRESENTATION_BOUNDARY_TOP_SWEEP=1)
+else()
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    TINYDRAW_VECTOR_V2_PRESENTATION_BEAM_RACE_CONTROL=1)
+endif()
+if(TINYDRAW_VECTOR_V2_TE_EDGE STREQUAL "rising")
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_V2_TE_EDGE_RISING=1)
+else()
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_V2_TE_EDGE_FALLING=1)
+endif()
 idf_component_get_property(TINYUSB_LIB espressif__tinyusb COMPONENT_LIB)
 target_include_directories(${TINYUSB_LIB} PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
 if(NOT TINYDRAW_QEMU)

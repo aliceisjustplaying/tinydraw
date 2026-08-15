@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdio>
 
 #include "esp_rom_sys.h"
 #include "esp_timer.h"
@@ -12,7 +13,51 @@
 namespace tinydraw::esp32 {
 namespace {
 
+#if !defined(TINYDRAW_VECTOR_V2_PRESENTATION_BOUNDARY_TOP_SWEEP) && \
+    !defined(TINYDRAW_VECTOR_V2_PRESENTATION_BEAM_RACE_CONTROL)
+#define TINYDRAW_VECTOR_V2_PRESENTATION_BOUNDARY_TOP_SWEEP 1
+#endif
+#if defined(TINYDRAW_VECTOR_V2_PRESENTATION_BOUNDARY_TOP_SWEEP) && \
+    defined(TINYDRAW_VECTOR_V2_PRESENTATION_BEAM_RACE_CONTROL)
+#error "Select exactly one Vector V2 presentation experiment"
+#endif
+#if !defined(TINYDRAW_VECTOR_V2_TE_EDGE_RISING) && !defined(TINYDRAW_VECTOR_V2_TE_EDGE_FALLING)
+#define TINYDRAW_VECTOR_V2_TE_EDGE_RISING 1
+#endif
+#if defined(TINYDRAW_VECTOR_V2_TE_EDGE_RISING) && defined(TINYDRAW_VECTOR_V2_TE_EDGE_FALLING)
+#error "Select exactly one Vector V2 TE edge"
+#endif
+#ifndef TINYDRAW_CO5300_CLOCK_MHZ
+#define TINYDRAW_CO5300_CLOCK_MHZ 50
+#endif
+
 constexpr std::uint16_t kBackground = 0xFFFFU;
+constexpr std::int64_t kTearWaitTimeoutUs = 40'000;
+#ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
+constexpr int kOpticalPatternX = 176;
+constexpr int kOpticalPatternWidth = 16;
+
+std::uint16_t optical_pattern_pixel(std::uint8_t generation, int row, int column) {
+  constexpr std::array<std::uint8_t, 2> kFrameIds{0x35U, 0xCAU};
+  constexpr std::array<std::uint16_t, 2> kFrameBitColors{0xF800U, 0x07E0U};
+  constexpr std::array<std::uint16_t, 2> kRowBitColors{0xFFFFU, 0x001FU};
+  if (column < 8) {
+    return kFrameBitColors[(kFrameIds[generation & 1U] >> column) & 1U];
+  }
+  return kRowBitColors[(row >> (column - 8)) & 1];
+}
+#endif
+
+void record_tear_wait(LivePresentationTiming& timing, const TearEdgeWaitResult& wait) {
+  timing.tear_edge_observed = wait.observed;
+  timing.tear_edge_timed_out = timing.tear_edge_timed_out || wait.timed_out;
+  timing.tear_heal_attempted = timing.tear_heal_attempted || wait.heal_attempted;
+  timing.tear_heal_command_sent = timing.tear_heal_command_sent || wait.heal_command_sent;
+  timing.tear_edge_wait_resumed = timing.tear_edge_wait_resumed || wait.observed;
+  if (wait.observed) {
+    timing.tear_edge_isr_to_resume_us = wait.task_resume_timestamp_us - wait.isr_timestamp_us;
+  }
+}
 
 vector_v2::PixelRect align_bounds(vector_v2::PixelRect bounds) {
   bounds.x0 &= ~1;
@@ -28,6 +73,32 @@ vector_v2::PixelRect align_bounds(vector_v2::PixelRect bounds) {
 
 }  // namespace
 
+const char* presentation_experiment_name() {
+#ifdef TINYDRAW_VECTOR_V2_PRESENTATION_BEAM_RACE_CONTROL
+  return "beam-race-control";
+#else
+  return "boundary-top-sweep";
+#endif
+}
+
+const char* selected_tear_edge_name() {
+#ifdef TINYDRAW_VECTOR_V2_TE_EDGE_FALLING
+  return "falling";
+#else
+  return "rising";
+#endif
+}
+
+TearSignalEdge selected_tear_edge() {
+#ifdef TINYDRAW_VECTOR_V2_TE_EDGE_FALLING
+  return TearSignalEdge::kFalling;
+#else
+  return TearSignalEdge::kRising;
+#endif
+}
+
+int panel_clock_mhz() { return TINYDRAW_CO5300_CLOCK_MHZ; }
+
 VectorV2Presenter::VectorV2Presenter(
     vector_v2::MaterializedCanvas& canvas, vector_v2::NavigationState& navigation,
     vector_v2::DisplayScheduler& scheduler, Co5300PanelTransport& display,
@@ -41,12 +112,19 @@ VectorV2Presenter::VectorV2Presenter(
       region_(region_pixels),
       strip_scratch_(strip_scratch_pixels),
       overlay_backup_(overlay_backup_pixels),
-      renderer_(std::make_unique<RibbonRenderer>()) {}
+      renderer_(std::make_unique<RibbonRenderer>()) {
+  std::printf(
+      "TINYDRAW_VECTOR_V2_PRESENTATION experiment=%s te_edge=%s clock_mhz=%d "
+      "optical_acceptance=external_manual\n",
+      presentation_experiment_name(), selected_tear_edge_name(), panel_clock_mhz());
+}
 
 bool VectorV2Presenter::ready() const {
   return canvas_.ready() && scheduler_.ready() && display_.ready() &&
          frame_.size() == vector_v2::kOverviewPixels &&
-         region_.size() >= kLiveRegionScratchPixels && renderer_ != nullptr;
+         region_.size() >= kLiveRegionScratchPixels &&
+         strip_scratch_.size() >= kPanStripScratchPixels &&
+         overlay_backup_.size() >= kPanOverlayBackupPixels && renderer_ != nullptr;
 }
 
 vector_v2::ZoomLevel VectorV2Presenter::zoom() const { return navigation_.zoom(); }
@@ -86,9 +164,30 @@ LivePresentationTiming VectorV2Presenter::refresh(const vector_v2::ChromeState& 
     return {};
   }
   vector_v2::draw_chrome(frame_, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight, chrome);
+#ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
+  const int pattern_bottom = vector_v2::chrome_canvas_bottom(chrome);
+  const std::size_t pattern_pixels =
+      static_cast<std::size_t>(pattern_bottom) * kOpticalPatternWidth;
+  if (optical_row_pattern_enabled_) {
+    apply_optical_row_pattern_linear(pattern_bottom, overlay_backup_.first(pattern_pixels));
+  }
+#endif
   auto timing =
       present_with_overlays({0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight}, chrome,
                             event_us, esp_timer_get_time() - compose_started, true);
+#ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
+  if (optical_row_pattern_enabled_) {
+    for (int row = 0; row < pattern_bottom; ++row) {
+      std::copy_n(overlay_backup_.begin() + static_cast<std::ptrdiff_t>(row) * kOpticalPatternWidth,
+                  kOpticalPatternWidth,
+                  frame_.begin() + static_cast<std::ptrdiff_t>(row) * vector_v2::kOverviewWidth +
+                      kOpticalPatternX);
+    }
+    if (timing.pushes > 0U) {
+      optical_generation_ ^= 1U;
+    }
+  }
+#endif
   timing.tile_pixels = stats->tile_pixels;
   timing.uniform_pixels = stats->uniform_pixels;
   timing.overview_pixels = stats->overview_pixels;
@@ -99,10 +198,9 @@ LivePresentationTiming VectorV2Presenter::refresh(const vector_v2::ChromeState& 
   frame_level_x_ = level_x();
   frame_level_y_ = level_y();
   frame_chrome_ = chrome;
-  // Fallback pixels are quality-only staleness: the frame is correct for the
-  // current revision and stays pan-reusable; refinement sharpens the regions
-  // later through refresh_region, which preserves reusability.
-  frame_reusable_ = timing.passed;
+  // Fallback pixels are quality-only staleness. Reuse additionally requires
+  // that software observed the configured TE edge for this completed frame.
+  frame_reusable_ = timing.passed && timing.tear_edge_observed;
   if (zoom() != vector_v2::ZoomLevel::k25Percent) {
     static_cast<void>(canvas_.remember_view(navigation_.view()));
   }
@@ -132,7 +230,7 @@ LivePresentationTiming VectorV2Presenter::refresh_region(vector_v2::PixelRect le
   if (intersection.x1 <= intersection.x0 || intersection.y1 <= intersection.y0) {
     // At 25% the live commit writes overview authority directly, so there may
     // be no canvas region left to refresh on lift. The minimap is a separate
-    // physical overlay and still needs one revision-driven presentation.
+    // fixed canvas overlay and still needs one revision-driven presentation.
     const bool overview_changed =
         !minimap_presented_ || presented_minimap_revision_ != canvas_.current_revision();
     if (vector_v2::chrome_minimap_refresh_required(chrome, overview_changed, true)) {
@@ -459,8 +557,8 @@ LivePresentationTiming VectorV2Presenter::present_unobscured(vector_v2::PixelRec
     // the caller repaints instead.
     return {.compose_us = compose_us};
   }
-  // Push top-down so a tear-synchronized writer stays behind the beam even
-  // when overlay subtraction split the bounds out of row order.
+  // Preserve deterministic top-down transport order when overlay subtraction
+  // splits the bounds into several windows.
   std::sort(visible.regions.begin(), visible.regions.begin() + visible.count,
             [](const auto& left, const auto& right) { return left.y0 < right.y0; });
   LivePresentationTiming total{.compose_us = compose_us, .passed = true};
@@ -570,78 +668,111 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
     backup_used += count;
   }
   const std::int64_t exposed_completed = esp_timer_get_time();
-  // Tear discipline, fail-closed: the writer may start a band only with at
-  // least kBeamStartMarginRows of estimated beam lead (TE-to-scan-start
-  // uncertainty is ~15 rows, so a start inside the margin can sit ahead of
-  // the beam and tear at the start row). A dead or stale tear signal, or a
-  // failed frame-start wait, falls back to a full refresh: never race
-  // blind, never reuse an unsynchronized frame.
+#ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
+  const std::size_t pattern_count = static_cast<std::size_t>(canvas_bottom) * kOpticalPatternWidth;
+  if (optical_row_pattern_enabled_) {
+    if (pattern_count > strip_scratch_.size()) {
+      return refresh(chrome, event_us);
+    }
+    apply_optical_row_pattern_ring(canvas_bottom, strip_scratch_.first(pattern_count));
+  }
+#endif
+  const auto restore_prepared = [&]() {
+#ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
+    // The optical pattern is the last mutation and its backup includes any
+    // intersecting overlays. Restore in reverse mutation order, then restore
+    // the canvas beneath the overlays so the reusable ring stays pure.
+    if (optical_row_pattern_enabled_) {
+      const vector_v2::PixelRect pattern_rect{
+          kOpticalPatternX, 0, kOpticalPatternX + kOpticalPatternWidth, canvas_bottom};
+      write_ring_region(pattern_rect, strip_scratch_.first(pattern_count));
+    }
+#endif
+    for (std::size_t index = 0; index < prepared_count; ++index) {
+      write_ring_region(prepared[index].rect,
+                        overlay_backup_.subspan(prepared[index].offset, prepared[index].count));
+    }
+  };
+
+  LivePresentationTiming timing{};
+  timing.compose_us = exposed_completed - started;
+  const std::int64_t tear_started = esp_timer_get_time();
+  std::int64_t tear_completed = tear_started;
+  const std::uint32_t first_sequence = display_.submit_count() + 1U;
+
+#ifdef TINYDRAW_VECTOR_V2_PRESENTATION_BEAM_RACE_CONTROL
+  // Experimental control only: retain the two-band age model without claiming
+  // that estimated rows correspond to visible scanout.
   constexpr std::int64_t kBeamMarginUs =
       static_cast<std::int64_t>(kBeamStartMarginRows) * kTePeriodUs / kPanelSweepRows;
   const auto te = display_.tear_signal_timing();
+  const std::uint32_t selected_count =
+      selected_tear_edge() == TearSignalEdge::kRising ? te.rising_edges : te.falling_edges;
   const std::int64_t now_us_health = esp_timer_get_time();
-  if (te.rising_edges != te_last_count_) {
-    te_last_count_ = te.rising_edges;
+  if (selected_count != te_last_count_) {
+    te_last_count_ = selected_count;
     te_last_change_us_ = now_us_health;
   }
-  if (now_us_health - te_last_change_us_ > 100'000) {
-    // No tear edge for several frame periods: the signal is dead or the
-    // 32-bit age could alias as fresh after a timer wrap. Full refresh.
-    return refresh(chrome, event_us);
+  timing.tear_edge_observed = selected_count != 0U;
+  if (selected_count == 0U || now_us_health - te_last_change_us_ > 100'000) {
+    restore_prepared();
+    return timing;
   }
-  const std::int64_t tear_started = esp_timer_get_time();
+
   int start_row = 0;
-  bool tear_ready = false;
-  // Deadline-based discipline: a dock-band start may need one frame-start
-  // wait plus the margin lead, so the loop is bounded by wall clock (two
-  // frame periods), not by attempt count.
+  bool model_ready = false;
   const std::int64_t discipline_deadline = tear_started + 2 * kTePeriodUs;
-  while (!tear_ready && esp_timer_get_time() < discipline_deadline) {
-    const std::int64_t age = display_.tear_age_us();
+  while (!model_ready && esp_timer_get_time() < discipline_deadline) {
+    const std::int64_t age = display_.tear_age_us(selected_tear_edge());
     if (age < 0) {
       break;
     }
     if (age < kBeamMarginUs) {
-      // Just past a frame start: give the beam its margin lead (bounded
-      // busy wait, at most kBeamMarginUs).
       esp_rom_delay_us(100);
       continue;
     }
-    const std::int64_t beam_row = age * kPanelSweepRows / kTePeriodUs;
-    if (beam_row < canvas_bottom) {
-      start_row = std::max(0, (static_cast<int>(beam_row) - kBeamStartMarginRows)) & ~1;
-      tear_ready = true;
-    } else if (!display_.wait_for_safe_frame_start(40'000)) {
-      break;
+    const std::int64_t estimated_row = age * kPanelSweepRows / kTePeriodUs;
+    if (estimated_row < canvas_bottom) {
+      start_row = std::max(0, static_cast<int>(estimated_row) - kBeamStartMarginRows) & ~1;
+      model_ready = true;
+    } else {
+      const auto wait = display_.wait_for_tear_edge(selected_tear_edge(), kTearWaitTimeoutUs);
+      record_tear_wait(timing, wait);
+      if (!wait.observed) {
+        break;
+      }
     }
   }
-  if (!tear_ready) {
-    return refresh(chrome, event_us);
+  if (!model_ready) {
+    restore_prepared();
+    return timing;
   }
-  const std::int64_t tear_completed = esp_timer_get_time();
-  // Every strip push defers its completion wait; the frame drains the panel
-  // exactly once at the end.
-  const std::uint32_t first_sequence = display_.submit_count() + 1U;
-  auto timing = present_ring({0, start_row, vector_v2::kOverviewWidth, canvas_bottom}, chrome,
-                             event_us, exposed);
+  tear_completed = esp_timer_get_time();
+  const LivePresentationTiming edge_timing = timing;
+  timing = present_ring({0, start_row, vector_v2::kOverviewWidth, canvas_bottom}, chrome, event_us,
+                        exposed);
   timing.compose_us = exposed_completed - started;
+  timing.tear_edge_observed = true;
+  timing.tear_edge_timed_out = edge_timing.tear_edge_timed_out;
+  timing.tear_heal_attempted = edge_timing.tear_heal_attempted;
+  timing.tear_heal_command_sent = edge_timing.tear_heal_command_sent;
+  timing.tear_edge_isr_to_resume_us = edge_timing.tear_edge_isr_to_resume_us;
+  timing.tear_edge_wait_resumed = edge_timing.tear_edge_wait_resumed;
   std::int64_t band_wait_us = 0;
   if (timing.passed && start_row > 0) {
-    // The wrapped top band is a fresh scan start: the beam must have
-    // wrapped past row 0 AND advanced its margin lead, or the writer starts
-    // at row 0 with no margin and tears exactly like an unmargined first
-    // band (observed on glass at da99311).
     const std::int64_t band_started = esp_timer_get_time();
     bool band_ready = false;
     const std::int64_t band_deadline = band_started + 2 * kTePeriodUs;
     while (!band_ready && esp_timer_get_time() < band_deadline) {
-      const std::int64_t age = display_.tear_age_us();
+      const std::int64_t age = display_.tear_age_us(selected_tear_edge());
       if (age < 0) {
         break;
       }
       const bool wrapped_during_band = age < esp_timer_get_time() - tear_completed;
       if (!wrapped_during_band) {
-        if (!display_.wait_for_safe_frame_start(40'000)) {
+        const auto wait = display_.wait_for_tear_edge(selected_tear_edge(), kTearWaitTimeoutUs);
+        record_tear_wait(timing, wait);
+        if (!wait.observed) {
           break;
         }
         continue;
@@ -653,55 +784,66 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
       band_ready = true;
     }
     band_wait_us = esp_timer_get_time() - band_started;
-    if (!band_ready) {
-      return refresh(chrome, event_us);
+    if (band_ready) {
+      const auto wrapped =
+          present_ring({0, 0, vector_v2::kOverviewWidth, start_row}, chrome, event_us, exposed);
+      timing.pushes += wrapped.pushes;
+      timing.passed = wrapped.passed;
+    } else {
+      timing.passed = false;
     }
-    const auto wrapped =
-        present_ring({0, 0, vector_v2::kOverviewWidth, start_row}, chrome, event_us, exposed);
-    timing.pushes += wrapped.pushes;
-    timing.passed = wrapped.passed;
-  }
-  if (!timing.passed) {
-    // Pushes already started when a compose or push failed, so parts of the
-    // panel may hold mixed content. Repaint everything.
-    return refresh(chrome, event_us);
-  }
-  // Every strip staged synchronously, so the ring is free to mutate while
-  // the panel drains: restore the saved canvas beneath the overlays and the
-  // frame stays pure for the next cached pan.
-  for (std::size_t index = 0; index < prepared_count; ++index) {
-    write_ring_region(prepared[index].rect,
-                      overlay_backup_.subspan(prepared[index].offset, prepared[index].count));
   }
   timing.tear_wait_us = (tear_completed - tear_started) + band_wait_us;
-  // Cached pan frames are synchronized by construction: every degraded path
-  // above fell back to a full refresh instead of presenting.
-  timing.tear_synchronized = true;
-  // Overlays (zoom rail, minimap viewport, battery) rode the sweep strips
-  // inside the same pushes as their backdrops, so the minimap is current.
-  if (vector_v2::chrome_minimap_region(chrome).has_value()) {
-    presented_minimap_revision_ = canvas_.current_revision();
-    minimap_presented_ = true;
+#else
+  // Normal development path: require a newly observed configured TE edge,
+  // then submit one monotonically increasing row-zero sweep.
+  const auto wait = display_.wait_for_tear_edge(selected_tear_edge(), kTearWaitTimeoutUs);
+  tear_completed = esp_timer_get_time();
+  timing.tear_wait_us = tear_completed - tear_started;
+  record_tear_wait(timing, wait);
+  if (!wait.observed) {
+    restore_prepared();
+    return timing;
   }
+  const auto sweep =
+      present_ring({0, 0, vector_v2::kOverviewWidth, canvas_bottom}, chrome, event_us, exposed);
+  timing.pushes = sweep.pushes;
+  timing.first_submit_us = sweep.first_submit_us;
+  timing.passed = sweep.passed;
+#endif
+
+  // Staging is synchronous, so the ring can be restored before the one frame
+  // completion drain. A failed submit or drain remains non-reusable.
+  restore_prepared();
   const bool frame_completed = display_.wait_for_all(2'000'000);
   const std::int64_t frame_drained = esp_timer_get_time();
   timing.passed = timing.passed && frame_completed;
+#ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
+  if (optical_row_pattern_enabled_ && timing.pushes > 0U) {
+    optical_generation_ ^= 1U;
+  }
+#endif
+  // Overlays (zoom rail, minimap viewport, battery) rode the same sweep strips.
+  if (timing.passed && vector_v2::chrome_minimap_region(chrome).has_value()) {
+    presented_minimap_revision_ = canvas_.current_revision();
+    minimap_presented_ = true;
+  }
   timing.complete_us = frame_drained - tear_completed;
   if (event_us != 0U) {
-    const std::int64_t physical = display_.complete_time_us(first_sequence);
-    if (physical >= 0) {
+    const std::int64_t dma_complete = display_.complete_time_us(first_sequence);
+    if (dma_complete >= 0) {
       timing.first_complete_us =
-          static_cast<std::uint32_t>(static_cast<std::uint32_t>(physical) - event_us);
+          static_cast<std::uint32_t>(static_cast<std::uint32_t>(dma_complete) - event_us);
     }
   }
   timing.scroll_us = scroll_completed - started;
   timing.exposed_compose_us = exposed_completed - scroll_completed;
-  timing.frame_reused = true;
+  timing.frame_reused = timing.passed && timing.tear_edge_observed;
   static_cast<void>(canvas_.remember_view(navigation_.view()));
   frame_level_x_ = level_x();
   frame_level_y_ = level_y();
   frame_chrome_ = chrome;
-  frame_reusable_ = timing.passed;
+  frame_reusable_ = timing.passed && timing.tear_edge_observed;
   return timing;
 }
 
@@ -800,6 +942,49 @@ void VectorV2Presenter::copy_ring_region(vector_v2::PixelRect panel_bounds,
   }
 }
 
+#ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
+void VectorV2Presenter::enable_optical_row_pattern() {
+  optical_row_pattern_enabled_ = true;
+  optical_generation_ = 0;
+}
+
+void VectorV2Presenter::apply_optical_row_pattern_linear(int bottom,
+                                                         std::span<std::uint16_t> backup) {
+  for (int row = 0; row < bottom; ++row) {
+    const auto source =
+        frame_.subspan(static_cast<std::size_t>(row) * vector_v2::kOverviewWidth + kOpticalPatternX,
+                       kOpticalPatternWidth);
+    std::copy(source.begin(), source.end(),
+              backup.begin() + static_cast<std::ptrdiff_t>(row) * kOpticalPatternWidth);
+    for (int column = 0; column < kOpticalPatternWidth; ++column) {
+      frame_[static_cast<std::size_t>(row) * vector_v2::kOverviewWidth + kOpticalPatternX +
+             column] = optical_pattern_pixel(optical_generation_, row, column);
+    }
+  }
+}
+
+void VectorV2Presenter::apply_optical_row_pattern_ring(int bottom,
+                                                       std::span<std::uint16_t> backup) {
+  const vector_v2::PixelRect pattern_rect{kOpticalPatternX, 0,
+                                          kOpticalPatternX + kOpticalPatternWidth, bottom};
+  copy_ring_region(pattern_rect, backup);
+  paint_optical_row_pattern_ring(0, bottom);
+}
+
+void VectorV2Presenter::paint_optical_row_pattern_ring(int top, int bottom) {
+  const vector_v2::PixelRect ring_area{0, 0, vector_v2::kOverviewWidth, frame_ring_bottom_};
+  for (int row = top; row < bottom; ++row) {
+    const int ring_y = vector_v2::ring_row(frame_ring_, ring_area, row);
+    const int ring_x = vector_v2::ring_column(frame_ring_, ring_area, kOpticalPatternX);
+    for (int column = 0; column < kOpticalPatternWidth; ++column) {
+      const int destination_x = (ring_x + column) % vector_v2::kOverviewWidth;
+      frame_[static_cast<std::size_t>(ring_y) * vector_v2::kOverviewWidth + destination_x] =
+          optical_pattern_pixel(optical_generation_, row, column);
+    }
+  }
+}
+#endif
+
 LivePresentationTiming VectorV2Presenter::present_ring(
     vector_v2::PixelRect band, const vector_v2::ChromeState& chrome, std::uint32_t event_us,
     std::span<const vector_v2::PixelRect> exposed) {
@@ -848,6 +1033,15 @@ LivePresentationTiming VectorV2Presenter::present_ring(
         }
       }
     }
+#ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
+    // Exposed strips compose just-in-time and may cross the diagnostic stripe.
+    // Repaint this strip after composition so the glass probe always carries
+    // the intended frame/row code; the original pixels were backed up before
+    // the sweep and are still restored once staging completes.
+    if (optical_row_pattern_enabled_) {
+      paint_optical_row_pattern_ring(y, y + rows);
+    }
+#endif
     const auto sequence = scheduler_.schedule({.revision = canvas_.current_revision(),
                                                .panel_bounds = strip_bounds,
                                                .pixels = frame_.first(area_pixels),
@@ -923,8 +1117,9 @@ LivePresentationTiming VectorV2Presenter::present_pixels(vector_v2::PixelRect bo
                           bounds.y1 == vector_v2::kOverviewHeight;
   if (full_frame) {
     const std::int64_t tear_wait_started = esp_timer_get_time();
-    timing.tear_synchronized = display_.wait_for_safe_frame_start(40'000);
+    const auto wait = display_.wait_for_tear_edge(selected_tear_edge(), kTearWaitTimeoutUs);
     timing.tear_wait_us = esp_timer_get_time() - tear_wait_started;
+    record_tear_wait(timing, wait);
   }
   int rows_per_strip = std::max(2, 16'384 / width);
   rows_per_strip &= ~1;
@@ -961,14 +1156,14 @@ LivePresentationTiming VectorV2Presenter::present_pixels(vector_v2::PixelRect bo
   // wait to the end of the frame instead of sleeping once per region.
   const bool completed = !wait_for_completion || display_.wait_for_all(2'000'000);
   const std::int64_t finished = esp_timer_get_time();
-  const std::int64_t physical_complete = display_.complete_time_us(submits_before + 1U);
+  const std::int64_t dma_complete = display_.complete_time_us(submits_before + 1U);
   const auto first_submitted_us = static_cast<std::uint32_t>(first_submitted);
-  const auto physical_complete_us =
-      static_cast<std::uint32_t>(physical_complete >= 0 ? physical_complete : finished);
+  const auto dma_complete_us =
+      static_cast<std::uint32_t>(dma_complete >= 0 ? dma_complete : finished);
   timing.first_submit_us =
       event_us == 0U ? 0 : static_cast<std::uint32_t>(first_submitted_us - event_us);
   timing.first_complete_us =
-      event_us == 0U ? 0 : static_cast<std::uint32_t>(physical_complete_us - event_us);
+      event_us == 0U ? 0 : static_cast<std::uint32_t>(dma_complete_us - event_us);
   timing.complete_us = first_submitted == 0 ? 0 : finished - first_submitted;
   timing.passed = completed;
   return timing;
