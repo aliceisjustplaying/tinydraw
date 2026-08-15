@@ -28,11 +28,14 @@ std::size_t distance_squared(int x, int y, int center_x, int center_y) {
 
 TileProducer::TileProducer(OperationLog& log, MaterializedCanvas& canvas,
                            TileProducerWorkspace workspace,
-                           DocumentRevision uniform_baseline_revision, std::uint16_t baseline_color)
+                           DocumentRevision uniform_baseline_revision, std::uint16_t baseline_color,
+                           RenderAccounting* render_accounting)
     : log_(log),
       canvas_(canvas),
       workspace_(workspace),
       summary_(workspace.summary_row_unset, workspace.summary_saturated_words),
+      replay_index_(workspace.replay_index_words),
+      render_accounting_(render_accounting),
       baseline_revision_(uniform_baseline_revision),
       baseline_color_(baseline_color) {}
 
@@ -51,12 +54,31 @@ bool TileProducer::ready() const {
           workspace_invalid || storage_overlaps(workspaces[left], workspaces[right]);
     }
   }
+  if (!workspace_.replay_index_words.empty()) {
+    const auto replay_bytes = std::as_bytes(workspace_.replay_index_words);
+    workspace_invalid = workspace_invalid || !replay_index_.ready() ||
+                        !canvas_.accepts_external_workspace(replay_bytes) ||
+                        log_.workspace_overlaps_storage(replay_bytes);
+    for (const auto existing : workspaces) {
+      workspace_invalid = workspace_invalid || storage_overlaps(existing, replay_bytes);
+    }
+  }
   return !workspace_invalid && log_.ready() && canvas_.ready() &&
          workspace_.supertask_pixels.size() >= kTileProducerPixels &&
          workspace_.packed_tile_pixels.size() >= kTilePixels &&
          workspace_.finalized_pixels.size() >= kTileProducerMaskBytes &&
          workspace_.summary_row_unset.size() >= kTileProducerSummaryRows &&
          workspace_.summary_saturated_words.size() >= kTileProducerSummaryWords;
+}
+
+const CandidateDiscoveryCounters& TileProducer::candidate_counters() const {
+  return candidate_counters_;
+}
+
+void TileProducer::reset_candidate_counters() { candidate_counters_ = {}; }
+
+bool TileProducer::sync_replay_index() {
+  return !replay_index_.ready() || replay_index_.sync(log_);
 }
 
 bool TileProducer::valid_view(const ViewRequest& view) {
@@ -180,7 +202,9 @@ std::optional<TileProductionStep> TileProducer::publish_certain_paper_group(cons
   if (publication.tiles_published == 0U || !remaining.has_value()) {
     return std::nullopt;
   }
+  ++candidate_counters_.groups_published;
   return TileProductionStep{.level_bounds = publication.level_bounds,
+                            .groups_published = 1,
                             .tiles_published = publication.tiles_published,
                             .visible_tiles_remaining = *remaining,
                             .complete = *remaining == 0U};
@@ -217,11 +241,12 @@ std::optional<TileProductionStep> TileProducer::produce_next(const ViewRequest& 
                                      .count()));
 #endif
   if (!remaining.has_value()) {
-    active_group_ = {};
+    discard_active_group();
     return std::nullopt;
   }
   if (*remaining == 0U) {
-    active_group_ = {};
+    discard_active_group();
+    record_view_reuses(view);
     return TileProductionStep{.complete = true};
   }
   const bool active_group_is_current = active_group_.active &&
@@ -231,6 +256,7 @@ std::optional<TileProductionStep> TileProducer::produce_next(const ViewRequest& 
   if (!active_group_is_current || !(active_group_.view.zoom == view.zoom &&
                                     active_group_.view.level_pixels == view.level_pixels)) {
     const auto group = choose_missing_group(view);
+    discard_active_group();
     if (!group.has_value() || !start_group(view, *group)) {
       active_group_ = {};
       return std::nullopt;
@@ -246,7 +272,7 @@ bool TileProducer::reset_uniform_baseline(DocumentRevision revision, std::uint16
   }
   baseline_revision_ = revision;
   baseline_color_ = color;
-  active_group_ = {};
+  discard_active_group();
   return true;
 }
 
@@ -275,26 +301,72 @@ bool TileProducer::start_group(const ViewRequest& view, TileKey group_origin) {
   std::fill(surface.begin(), surface.end(), baseline_color_);
   std::fill_n(workspace_.finalized_pixels.begin(), kTileProducerMaskBytes, std::uint8_t{0});
   summary_.reset(bounds.y1 - bounds.y0, bounds.x1 - bounds.x0);
-  active_group_ = {.view = view,
-                   .origin = group_origin,
-                   .bounds = bounds,
-                   .epoch = epoch,
-                   .revision = revision,
-                   .first_operation = replay->first_operation,
-                   .operation_count = replay->operation_count,
-                   .next_operation = replay->operation_count,
-                   .next_sample = 0,
-                   .active = true};
+  const int percent = zoom_percent(view.zoom);
+  const PixelRect world_query{
+      .x0 = bounds.x0 * 100 / percent,
+      .y0 = bounds.y0 * 100 / percent,
+      .x1 = (bounds.x1 * 100 + percent - 1) / percent,
+      .y1 = (bounds.y1 * 100 + percent - 1) / percent,
+  };
+  const bool indexed = replay_index_.ready() && replay_index_.sync(log_);
+  const ReplayBlockIndex linear_fallback;
+  active_group_ = {
+      .view = view,
+      .origin = group_origin,
+      .bounds = bounds,
+      .epoch = epoch,
+      .revision = revision,
+      .candidates = (indexed ? replay_index_ : linear_fallback)
+                        .query(world_query, replay->first_operation, replay->operation_count),
+      .next_sample = 0,
+      .active = true};
+  if (render_accounting_ != nullptr) {
+    render_accounting_->record_attempt(active_group_key());
+  }
   return true;
 }
 
-void TileProducer::consume_active_operation(TileProductionStep& result,
-                                            std::size_t& operations_consumed) {
-  --active_group_.next_operation;
+bool TileProducer::active_group_has_work() const {
+  return active_group_.cached_operation_index != kNoCachedOperation ||
+         active_group_.candidates.next_operation > active_group_.candidates.first_operation;
+}
+
+RenderGroupKey TileProducer::active_group_key() const {
+  return {.revision = active_group_.revision,
+          .zoom = active_group_.view.zoom,
+          .group_column = active_group_.origin.column,
+          .group_row = active_group_.origin.row};
+}
+
+void TileProducer::discard_active_group() {
+  if (active_group_.active && render_accounting_ != nullptr) {
+    render_accounting_->record_discard(active_group_key());
+  }
+  active_group_ = {};
+}
+
+void TileProducer::record_view_reuses(const ViewRequest& view) {
+  if (render_accounting_ == nullptr) {
+    return;
+  }
+  const int first_column = (view.level_pixels.x0 / kTileWidth) & ~1;
+  const int last_column = ((view.level_pixels.x1 - 1) / kTileWidth) & ~1;
+  const int first_row = (view.level_pixels.y0 / kTileHeight) & ~1;
+  const int last_row = ((view.level_pixels.y1 - 1) / kTileHeight) & ~1;
+  for (int row = first_row; row <= last_row; row += kTileProducerRows) {
+    for (int column = first_column; column <= last_column; column += kTileProducerColumns) {
+      render_accounting_->record_reuse({.revision = canvas_.current_revision(),
+                                        .zoom = view.zoom,
+                                        .group_column = static_cast<std::uint16_t>(column),
+                                        .group_row = static_cast<std::uint16_t>(row)});
+    }
+  }
+}
+
+void TileProducer::consume_active_operation(TileProductionStep&, std::size_t& operations_consumed) {
   active_group_.next_sample = 0U;
   active_group_.cached_operation_index = kNoCachedOperation;
   ++operations_consumed;
-  ++result.operations_scanned;
 }
 
 // Runs the operation-level visibility and saturation gates exactly once per
@@ -302,15 +374,19 @@ void TileProducer::consume_active_operation(TileProductionStep& result,
 // the log lookup nor the operation-rectangle math again.
 TileProducer::OperationGate TileProducer::gate_active_operation(TileProductionStep& result,
                                                                 std::size_t& operations_consumed) {
-  const std::size_t operation_index =
-      active_group_.first_operation + active_group_.next_operation - 1U;
-  if (active_group_.cached_operation_index == operation_index) {
+  if (active_group_.cached_operation_index != kNoCachedOperation) {
     return OperationGate::kReady;
   }
-  const auto stored = log_.operation(operation_index);
+  const auto operation_index = ReplayBlockIndex::previous(active_group_.candidates);
+  if (!operation_index.has_value()) {
+    return OperationGate::kConsumed;
+  }
+  const auto stored = log_.operation(*operation_index);
   if (!stored.has_value()) {
     return OperationGate::kFailed;
   }
+  ++result.operations_scanned;
+  ++candidate_counters_.operations_scanned;
   const PixelRect operation_bounds =
       operation_level_bounds(stored->world_bounds, active_group_.view.zoom);
   if (!intersects(operation_bounds, active_group_.bounds)) {
@@ -318,6 +394,8 @@ TileProducer::OperationGate TileProducer::gate_active_operation(TileProductionSt
     consume_active_operation(result, operations_consumed);
     return OperationGate::kConsumed;
   }
+  ++result.operations_intersecting;
+  ++candidate_counters_.operations_intersecting;
   if (summary_.rows_saturated(
           std::max(operation_bounds.y0, active_group_.bounds.y0) - active_group_.bounds.y0,
           std::min(operation_bounds.y1, active_group_.bounds.y1) - 1 - active_group_.bounds.y0)) {
@@ -327,7 +405,7 @@ TileProducer::OperationGate TileProducer::gate_active_operation(TileProductionSt
     consume_active_operation(result, operations_consumed);
     return OperationGate::kConsumed;
   }
-  active_group_.cached_operation_index = operation_index;
+  active_group_.cached_operation_index = *operation_index;
   active_group_.cached_operation = *stored;
   return OperationGate::kReady;
 }
@@ -416,29 +494,28 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
   if (!active_group_.active || log_.epoch() != active_group_.epoch ||
       log_.current_revision() != active_group_.revision ||
       canvas_.current_revision() != active_group_.revision) {
-    active_group_ = {};
+    discard_active_group();
     return std::nullopt;
   }
   TileProductionStep result{.level_bounds = active_group_.bounds};
   std::size_t operations_consumed = 0;
   std::size_t raster_steps_consumed = 0;
   std::size_t raster_work_consumed = 0;
-  while (active_group_.next_operation != 0U && operations_consumed < kTileProducerOperationBatch &&
+  while (active_group_has_work() && operations_consumed < kTileProducerOperationBatch &&
          raster_steps_consumed < kTileProducerSampleBatch &&
          raster_work_consumed < kTileProducerRasterWorkBatch) {
     if (summary_.all_saturated()) {
       // Every pixel of the group surface is finalized; the remaining older
       // operations cannot change any pixel. Complete the replay immediately.
       TINYDRAW_V2_CENSUS_ADD(groups_saturated_early, 1);
-      result.operations_scanned += active_group_.next_operation;
-      active_group_.next_operation = 0U;
+      active_group_.candidates.next_operation = active_group_.candidates.first_operation;
       active_group_.next_sample = 0U;
       active_group_.cached_operation_index = kNoCachedOperation;
       break;
     }
     const OperationGate gate = gate_active_operation(result, operations_consumed);
     if (gate == OperationGate::kFailed) {
-      active_group_ = {};
+      discard_active_group();
       return std::nullopt;
     }
     if (gate == OperationGate::kConsumed) {
@@ -446,11 +523,11 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
     }
     if (!render_active_segment(result, operations_consumed, raster_steps_consumed,
                                raster_work_consumed)) {
-      active_group_ = {};
+      discard_active_group();
       return std::nullopt;
     }
   }
-  if (active_group_.next_operation != 0U) {
+  if (active_group_has_work()) {
     // No tile can be published until this exact newest-first group replay is
     // complete, so the visible missing count cannot change during a slice.
     // Avoid rescanning PSRAM slot metadata on every resumable batch.
@@ -459,12 +536,17 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
   const auto published = publish_group(active_group_.bounds, active_group_.view.level_pixels,
                                        active_group_.view.zoom, active_group_.revision);
   if (!published.has_value()) {
-    active_group_ = {};
+    discard_active_group();
     return std::nullopt;
   }
   if (published->tiles_published != 0U) {
     result.level_bounds = published->level_bounds;
     result.tiles_published = published->tiles_published;
+    result.groups_published = 1U;
+    ++candidate_counters_.groups_published;
+    if (render_accounting_ != nullptr) {
+      render_accounting_->record_completion(active_group_key());
+    }
   }
   const ViewRequest view = active_group_.view;
   active_group_ = {};
