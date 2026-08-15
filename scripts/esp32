@@ -145,8 +145,8 @@ case "$action" in
     clock_mhz="${3:-40}"
     cell="${4:-0}"
     if [[ -z "$port" ]]; then
-      echo "usage: $0 panel-probe PORT [40|50|60] [CELL 0-5]" >&2
-      echo "cells: 0=software suite, 1=boundary-rising-full, 2=boundary-falling-full, 3=midframe-wrap-rising, 4=freerun-unsynced (positive control), 5=boundary-rising-canvas368" >&2
+      echo "usage: $0 panel-probe PORT [40|50|60] [CELL 0-6]" >&2
+      echo "cells: 0=software suite, 1=boundary-rising-full, 2=boundary-falling-full, 3=midframe-wrap-rising, 4=freerun-unsynced (positive control), 5=boundary-rising-canvas368, 6=cycle 4,1,5,2,3 in one take" >&2
       exit 2
     fi
     cd "$root/esp32"

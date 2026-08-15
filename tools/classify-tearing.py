@@ -157,12 +157,17 @@ def main():
     quad = None
     frame_index = args.start_frame - 1
     history = []  # (frame_index, [boundary rows])
-    tear_events = []
-    anomaly_events = []
-    notch_events = []
-    cell_votes = {}
-    analyzed = 0
+    per_cell = {}  # cell id -> stats dict
+    current_cell = None
+    candidate_cell = None
+    candidate_run = 0
     evidence_saved = 0
+
+    def stats_for(cell):
+        return per_cell.setdefault(
+            cell,
+            {"analyzed": 0, "tears": [], "anomalies": [], "notches": []},
+        )
 
     while True:
         ok, frame = capture.read()
@@ -181,14 +186,26 @@ def main():
             continue
         warped = orient(warp_panel(frame, quad))
         cell_id = read_cell_id(warped)
-        if cell_id is not None:
-            cell_votes[cell_id] = cell_votes.get(cell_id, 0) + 1
+        # Debounced cell switching: a new ID must persist 3 frames. Frames
+        # with an unreadable strip inherit the current segment; boundary
+        # history resets on every switch (blue interstitials land here).
+        if cell_id is not None and cell_id != current_cell:
+            if cell_id == candidate_cell:
+                candidate_run += 1
+            else:
+                candidate_cell, candidate_run = cell_id, 1
+            if candidate_run >= 3:
+                current_cell = candidate_cell
+                history.clear()
+        if current_cell is None or current_cell == 0:
+            continue
 
         labels = classify_rows(warped)
         known = labels[labels != 0]
         if known.size == 0:
             continue
-        analyzed += 1
+        stats = stats_for(current_cell)
+        stats["analyzed"] += 1
         red_fraction = float((known == 1).sum()) / known.size
         dominant = "red" if red_fraction > 0.5 else "green"
         bounds = boundaries_of(labels)
@@ -197,10 +214,10 @@ def main():
         flag = ""
         if len(bounds) > 1:
             flag = "multi_boundary"
-            anomaly_events.append((frame_index, tuple(bounds)))
+            stats["anomalies"].append((frame_index, tuple(bounds)))
         if notches > 12:
             flag = (flag + "+notch").strip("+")
-            notch_events.append((frame_index, notches))
+            stats["notches"].append((frame_index, notches))
 
         # Static-split tear rule and upward-motion rule against history.
         if bounds and history:
@@ -218,17 +235,17 @@ def main():
                         break
                 if static_run >= STATIC_MIN_FRAMES:
                     flag = (flag + "+static_tear").strip("+")
-                    tear_events.append((frame_index, bounds[0], static_run))
+                    stats["tears"].append((frame_index, bounds[0], static_run))
                 elif delta < -STATIC_TOLERANCE_ROWS:
                     flag = (flag + "+upward_boundary").strip("+")
-                    anomaly_events.append((frame_index, tuple(bounds)))
+                    stats["anomalies"].append((frame_index, tuple(bounds)))
 
         history.append((frame_index, bounds))
         if len(history) > 16:
             history.pop(0)
 
         writer.writerow(
-            [frame_index, cell_id, dominant, ";".join(map(str, bounds)), notches, flag]
+            [frame_index, current_cell, dominant, ";".join(map(str, bounds)), notches, flag]
         )
         if flag and evidence_saved < 40:
             annotated = warped.copy()
@@ -240,31 +257,42 @@ def main():
     rows_csv.close()
     capture.release()
 
-    cell = max(cell_votes, key=cell_votes.get) if cell_votes else None
-    if analyzed == 0:
-        verdict = "INCONCLUSIVE"
-    elif tear_events:
-        verdict = "TEAR"
-    elif anomaly_events:
-        verdict = "ANOMALY"
-    else:
-        verdict = "CLEAN"
+    def cell_verdict(stats):
+        if stats["analyzed"] < 100:
+            return "INCONCLUSIVE"
+        if stats["tears"]:
+            return "TEAR"
+        if stats["anomalies"]:
+            return "ANOMALY"
+        return "CLEAN"
+
+    control = per_cell.get(4)
+    instrument_valid = control is not None and cell_verdict(control) == "TEAR"
 
     summary = out_dir / "verdict.txt"
     with open(summary, "w") as handle:
+        handle.write(f"video={video_path.name}\n")
         handle.write(
-            f"video={video_path.name}\n"
-            f"cell_id={cell}\n"
-            f"frames_analyzed={analyzed}\n"
-            f"tear_events={len(tear_events)}\n"
-            f"anomaly_events={len(anomaly_events)}\n"
-            f"notch_events={len(notch_events)}\n"
-            f"verdict={verdict}\n"
+            f"instrument_valid={instrument_valid} "
+            "(cell 4 positive control must be TEAR)\n\n"
         )
-        for event in tear_events[:20]:
-            handle.write(f"tear frame={event[0]} row={event[1]} persisted={event[2]}\n")
-        for event in anomaly_events[:20]:
-            handle.write(f"anomaly frame={event[0]} boundaries={event[1]}\n")
+        for cell in sorted(per_cell):
+            stats = per_cell[cell]
+            verdict = cell_verdict(stats)
+            qualified = verdict
+            if verdict == "CLEAN" and not instrument_valid:
+                qualified = "CLEAN_BUT_INSTRUMENT_INVALID"
+            handle.write(
+                f"cell={cell} analyzed={stats['analyzed']} "
+                f"tears={len(stats['tears'])} anomalies={len(stats['anomalies'])} "
+                f"notches={len(stats['notches'])} verdict={qualified}\n"
+            )
+            for event in stats["tears"][:10]:
+                handle.write(
+                    f"  tear frame={event[0]} row={event[1]} persisted={event[2]}\n"
+                )
+            for event in stats["anomalies"][:10]:
+                handle.write(f"  anomaly frame={event[0]} boundaries={event[1]}\n")
     print(summary.read_text())
 
 
