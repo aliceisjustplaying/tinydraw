@@ -32,7 +32,10 @@ FIELD_X0, FIELD_X1 = 96, 272
 FIELD_Y0, FIELD_Y1 = 48, 388
 ID_BLOCKS = [(124 + i * 24, 12, 20, 24) for i in range(5)]
 GUARD_COLUMNS = [(0, 8), (360, 368)]
-STATIC_TOLERANCE_ROWS = 8
+# Tolerance sized for 1/800 s exposure: the scan boundary smears ~33 rows
+# during 1.25 ms, giving ~+/-15 rows of localization jitter, still far below
+# the ~111 rows/frame normal sweep motion at 240 fps.
+STATIC_TOLERANCE_ROWS = 20
 STATIC_MIN_FRAMES = 3
 NORMAL_SWEEP_MIN, NORMAL_SWEEP_MAX = 40, 200  # rows/video-frame downward
 
