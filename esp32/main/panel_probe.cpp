@@ -454,8 +454,11 @@ void run_panel_probe() {
       std::fill_n(frame_a, kFramePixels, static_cast<std::uint16_t>(0x001F));
       static_cast<void>(display.stream_rect(0, 0, kPanelWidth, kPanelHeight, frame_a, 0, 44));
       static_cast<void>(display.wait_for_all(100'000));
-      vTaskDelay(pdMS_TO_TICKS(2'000));
-      run_optical_cell(display, frame_a, frame_b, cell, 30'000'000);
+      vTaskDelay(pdMS_TO_TICKS(1'000));
+      // 12 s ~= 350 panel updates and ~2,900 video frames per cell: enough
+      // for gross verdicts. Rare-tear sensitivity comes from a targeted soak
+      // of the winning cell, not from long cells in every pass.
+      run_optical_cell(display, frame_a, frame_b, cell, 12'000'000);
     }
   }
 #elif TINYDRAW_PANEL_PROBE_CELL != 0
