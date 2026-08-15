@@ -27,14 +27,10 @@ inline constexpr int kMaximumProgressiveRegionHeight = vector_v2::kTileProducerH
 inline constexpr std::size_t kMaximumProgressiveRegionPixels =
     static_cast<std::size_t>(kMaximumProgressiveRegionWidth) * kMaximumProgressiveRegionHeight;
 inline constexpr int kMaximumCachedPanDelta = 96;
-// The panel beam sweeps all 448 rows per ~16.8 ms tear period (~26.6
-// rows/ms); the writer sweeps slower, so it must start behind the beam and
-// can never catch it within one pass.
+// Legacy timing-model inputs retained only for the explicitly selected
+// beam-race control. They are not panel-phase or glass-correctness claims.
 inline constexpr std::int64_t kTePeriodUs = 16'800;
 inline constexpr int kPanelSweepRows = 448;
-// Every band start needs this much estimated beam lead: it must dominate
-// the unspecified TE-to-scan-start latency (the TE pulse alone is ~15 rows)
-// plus jitter, or the writer starts ahead of the beam and tears.
 inline constexpr int kBeamStartMarginRows = 48;
 // Cached pan composition is strip-looped through the same bounded scratch as
 // progressive tile presentation, so wider reuse costs no additional PSRAM.
@@ -86,10 +82,20 @@ struct LivePresentationTiming {
   std::size_t fallback_tiles = 0;
   std::uint32_t pushes = 0;
   std::int64_t tear_wait_us = 0;
-  bool tear_synchronized = false;
+  std::uint32_t tear_edge_isr_to_resume_us = 0;
+  bool tear_edge_observed = false;
+  bool tear_edge_wait_resumed = false;
+  bool tear_edge_timed_out = false;
+  bool tear_heal_attempted = false;
+  bool tear_heal_command_sent = false;
   bool frame_reused = false;
   bool passed = false;
 };
+
+[[nodiscard]] const char* presentation_experiment_name();
+[[nodiscard]] const char* selected_tear_edge_name();
+[[nodiscard]] TearSignalEdge selected_tear_edge();
+[[nodiscard]] int panel_clock_mhz();
 
 class VectorV2Presenter {
  public:
@@ -134,6 +140,11 @@ class VectorV2Presenter {
                                                 Point current_touch,
                                                 const vector_v2::ChromeState& chrome,
                                                 std::uint32_t event_us);
+#ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
+  // Gate-only visual diagnostic. The presenter-owned frame/ring remains derived
+  // state; this never writes the operation log or MaterializedCanvas authority.
+  void enable_optical_row_pattern();
+#endif
 
  private:
   [[nodiscard]] LivePresentationTiming present(vector_v2::PixelRect bounds, std::uint32_t event_us,
@@ -176,6 +187,11 @@ class VectorV2Presenter {
   [[nodiscard]] LivePresentationTiming refresh_pan(int old_x, int old_y,
                                                    const vector_v2::ChromeState& chrome,
                                                    std::uint32_t event_us);
+#ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
+  void apply_optical_row_pattern_linear(int bottom, std::span<std::uint16_t> backup);
+  void apply_optical_row_pattern_ring(int bottom, std::span<std::uint16_t> backup);
+  void paint_optical_row_pattern_ring(int top, int bottom);
+#endif
 
   vector_v2::MaterializedCanvas& canvas_;
   vector_v2::NavigationState& navigation_;
@@ -201,6 +217,10 @@ class VectorV2Presenter {
   int frame_ring_bottom_ = 0;
   bool minimap_presented_ = false;
   bool frame_reusable_ = false;
+#ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
+  bool optical_row_pattern_enabled_ = false;
+  std::uint8_t optical_generation_ = 0;
+#endif
 };
 
 }  // namespace tinydraw::esp32

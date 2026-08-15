@@ -15,6 +15,25 @@ struct TearSignalTiming {
   bool level = false;
 };
 
+enum class TearSignalEdge : std::uint8_t {
+  kRising,
+  kFalling,
+};
+
+// Diagnostic TE observation only. Neither edge is assumed to identify an
+// optically safe panel phase. Timestamps contain the low 32 bits of the ESP
+// timer and can be subtracted as unsigned values across timer rollover.
+struct TearEdgeWaitResult {
+  TearSignalEdge selected_edge = TearSignalEdge::kRising;
+  bool observed = false;
+  bool timed_out = false;
+  bool heal_attempted = false;
+  bool heal_command_sent = false;
+  std::uint32_t edge_count = 0;
+  std::uint32_t isr_timestamp_us = 0;
+  std::uint32_t task_resume_timestamp_us = 0;
+};
+
 // Owns one CO5300 panel, its DMA staging, queue capacity, and completion
 // telemetry. Input pixels are RGB565 in host byte order. The panel requires
 // in-bounds even-aligned windows; invalid submissions fail closed. Callers must
@@ -39,20 +58,16 @@ class Co5300PanelTransport final : public DisplayBackend {
   [[nodiscard]] std::uint32_t complete_count() const;
   [[nodiscard]] std::int64_t complete_time_us(std::uint32_t sequence) const;
   [[nodiscard]] TearSignalTiming tear_signal_timing() const;
-  // Waits for the end of the CO5300 vertical TE pulse. At the measured panel
-  // timing this places a top-to-bottom full-frame write safely behind scanout.
-  // Returns false on timeout; callers should fail open and still present.
-  [[nodiscard]] bool wait_for_safe_frame_start(std::int64_t timeout_us);
-  // Microseconds since the last tear falling edge, or -1 before the first
-  // edge. A frame writer that starts within a bounded age of the edge stays
-  // ahead of the wrapped beam without waiting for the next edge. The
-  // timestamp keeps only the low 32 timer bits, so after ~71 minutes with no
-  // edge a stale value can briefly read as fresh: beam-racing callers must
-  // additionally track tear_falling_edges() to detect a dead signal.
-  [[nodiscard]] std::int64_t tear_age_us() const;
-  // Monotonic (mod 2^32) count of tear falling edges; cheap enough to poll
-  // per frame for TE staleness tracking.
-  [[nodiscard]] std::uint32_t tear_falling_edges() const;
+  // Waits for the next selected TE edge. A selected-edge count change is
+  // required even when the shared ISR semaphore was posted by the other edge.
+  // On timeout, one rate-limited TEON heal may be attempted; an edge observed
+  // afterward is reported together with that attempt. No observed selected
+  // edge is a failed result (observed=false), never an inferred success.
+  [[nodiscard]] TearEdgeWaitResult wait_for_tear_edge(TearSignalEdge edge, std::int64_t timeout_us);
+  // Diagnostic age since the last selected ISR edge, or -1 before the first
+  // such edge. The low-32-bit timestamp supports unsigned rollover subtraction;
+  // this value is not a visible-row or panel-phase observation.
+  [[nodiscard]] std::int64_t tear_age_us(TearSignalEdge edge) const;
   [[nodiscard]] bool wait_for_all(std::int64_t timeout_us);
 
   void push_rect(int x, int y, int width, int height, const std::uint16_t* pixels,

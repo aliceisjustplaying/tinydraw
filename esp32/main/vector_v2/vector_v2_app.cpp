@@ -382,7 +382,11 @@ void print_presentation(const char* kind, const VectorV2Presenter& presenter,
       "exposed_compose_us=%lld chrome_us=%lld read_submit_us=%lld read_complete_us=%lld "
       "transfer_wait_us=%lld tile_pixels=%lu "
       "uniform_pixels=%lu overview_pixels=%lu fallback_pixels=%lu resident_tiles=%lu "
-      "fallback_tiles=%lu pushes=%lu tear_wait_us=%lld tear_sync=%u frame_reused=%u pass=%u\n",
+      "fallback_tiles=%lu pushes=%lu tear_wait_us=%lld tear_edge_isr_to_resume_us=%lu "
+      "tear_edge_observed=%u tear_edge_wait_resumed=%u tear_edge_timeout=%u "
+      "tear_heal_attempted=%u "
+      "tear_heal_command_sent=%u presentation_experiment=%s te_edge=%s clock_mhz=%d "
+      "frame_reused=%u pass=%u\n",
       kind, zoom_name(presenter.zoom()), presenter.level_x(), presenter.level_y(),
       static_cast<long long>(timing.compose_us), static_cast<long long>(timing.scroll_us),
       static_cast<long long>(timing.exposed_compose_us), static_cast<long long>(timing.chrome_us),
@@ -394,8 +398,11 @@ void print_presentation(const char* kind, const VectorV2Presenter& presenter,
       static_cast<unsigned long>(timing.fallback_pixels),
       static_cast<unsigned long>(timing.resident_tiles),
       static_cast<unsigned long>(timing.fallback_tiles), static_cast<unsigned long>(timing.pushes),
-      static_cast<long long>(timing.tear_wait_us), timing.tear_synchronized, timing.frame_reused,
-      timing.passed);
+      static_cast<long long>(timing.tear_wait_us),
+      static_cast<unsigned long>(timing.tear_edge_isr_to_resume_us), timing.tear_edge_observed,
+      timing.tear_edge_wait_resumed, timing.tear_edge_timed_out, timing.tear_heal_attempted,
+      timing.tear_heal_command_sent, presentation_experiment_name(), selected_tear_edge_name(),
+      panel_clock_mhz(), timing.frame_reused, timing.passed);
 }
 
 void print_pan_baseline(const VectorV2Presenter& presenter, const PanMetrics& metrics) {

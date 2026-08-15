@@ -13,6 +13,22 @@ option(TINYDRAW_VECTOR_V2_APP "Run the interactive Vector V2 application" OFF)
 option(TINYDRAW_VECTOR_V2_GATE_HARNESS "Run Gate 1 before the interactive Vector V2 app" OFF)
 option(TINYDRAW_VECTOR_V2_TILE_CENSUS "Measure Vector V2 tile payload classes" OFF)
 option(TINYDRAW_VECTOR_V2_TEARING_PROBE "Run a deterministic Vector V2 pan visual probe" OFF)
+set(TINYDRAW_VECTOR_V2_PRESENTATION_EXPERIMENT "boundary-top-sweep" CACHE STRING
+    "Vector V2 pan presentation experiment")
+set_property(CACHE TINYDRAW_VECTOR_V2_PRESENTATION_EXPERIMENT PROPERTY STRINGS
+             boundary-top-sweep beam-race-control)
+if(NOT TINYDRAW_VECTOR_V2_PRESENTATION_EXPERIMENT MATCHES
+   "^(boundary-top-sweep|beam-race-control)$")
+  message(FATAL_ERROR
+          "TINYDRAW_VECTOR_V2_PRESENTATION_EXPERIMENT must be boundary-top-sweep or beam-race-control")
+endif()
+set(TINYDRAW_VECTOR_V2_TE_EDGE "rising" CACHE STRING "Vector V2 selected TE edge")
+set_property(CACHE TINYDRAW_VECTOR_V2_TE_EDGE PROPERTY STRINGS rising falling)
+if(NOT TINYDRAW_VECTOR_V2_TE_EDGE MATCHES "^(rising|falling)$")
+  message(FATAL_ERROR "TINYDRAW_VECTOR_V2_TE_EDGE must be rising or falling")
+endif()
+message(STATUS
+        "Vector V2 presentation experiment=${TINYDRAW_VECTOR_V2_PRESENTATION_EXPERIMENT}, TE edge=${TINYDRAW_VECTOR_V2_TE_EDGE}")
 set(TINYDRAW_VECTOR_V2_TILE_SLOTS "448" CACHE STRING "Vector V2 raw tile cache slots (A/B builds only; product default 448)")
 if(TINYDRAW_VECTOR_V2_GATE_HARNESS AND NOT TINYDRAW_VECTOR_V2_APP)
   message(FATAL_ERROR "TINYDRAW_VECTOR_V2_GATE_HARNESS requires TINYDRAW_VECTOR_V2_APP")

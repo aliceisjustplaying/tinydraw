@@ -141,13 +141,16 @@ case "$action" in
     ;;
   vector-v2-tearing-probe)
     port="${2:-}"
+    presentation="${3:-boundary-top-sweep}"
+    edge="${4:-rising}"
+    clock_mhz="${5:-50}"
     if [[ -z "$port" ]]; then
-      echo "usage: $0 vector-v2-tearing-probe PORT" >&2
+      echo "usage: $0 vector-v2-tearing-probe PORT [boundary-top-sweep|beam-race-control] [rising|falling] [40|50|60]" >&2
       exit 2
     fi
     rm -rf "$tearing_probe_build"
     cd "$root/esp32"
-    eim run "idf.py -B '$tearing_probe_build' -DTINYDRAW_QEMU=OFF -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_VECTOR_V2_MEMORY_PROBE=OFF -DTINYDRAW_VECTOR_V2_OVERVIEW_WALK=OFF -DTINYDRAW_VECTOR_V2_APP=ON -DTINYDRAW_VECTOR_V2_GATE_HARNESS=ON -DTINYDRAW_VECTOR_V2_TILE_CENSUS=OFF -DTINYDRAW_VECTOR_V2_TEARING_PROBE=ON build"
+    eim run "idf.py -B '$tearing_probe_build' -DTINYDRAW_QEMU=OFF -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_VECTOR_V2_MEMORY_PROBE=OFF -DTINYDRAW_VECTOR_V2_OVERVIEW_WALK=OFF -DTINYDRAW_VECTOR_V2_APP=ON -DTINYDRAW_VECTOR_V2_GATE_HARNESS=ON -DTINYDRAW_VECTOR_V2_TILE_CENSUS=OFF -DTINYDRAW_VECTOR_V2_TEARING_PROBE=ON -DTINYDRAW_VECTOR_V2_PRESENTATION_EXPERIMENT='$presentation' -DTINYDRAW_VECTOR_V2_TE_EDGE='$edge' -DTINYDRAW_CO5300_CLOCK_MHZ='$clock_mhz' build"
     assert_config "$tearing_probe_build/sdkconfig" OCT
     eim run "idf.py -B '$tearing_probe_build' -p '$port' flash"
     ;;
@@ -186,7 +189,7 @@ case "$action" in
     rm -rf "$raster_v1_build" "$qemu_build" "$graphics_build" "$vector_build" "$interactive_pan_build" "$overview_walk_build" "$memory_probe_build" "$vector_v2_build" "$gate_harness_build" "$tile_census_build" "$tearing_probe_build"
     ;;
   *)
-    echo "usage: $0 {build|raster-v1|vector-v2 PORT|vector-benchmark PORT|interactive-pan-benchmark PORT|vector-v2-overview-walk PORT|vector-v2-memory-probe PORT|vector-v2-gate-harness PORT|vector-v2-tearing-probe PORT|vector-v2-tile-census PORT|qemu|graphics|graphics-test|clean}" >&2
+    echo "usage: $0 {build|raster-v1|vector-v2 PORT|vector-benchmark PORT|interactive-pan-benchmark PORT|vector-v2-overview-walk PORT|vector-v2-memory-probe PORT|vector-v2-gate-harness PORT|vector-v2-tearing-probe PORT [POLICY] [EDGE] [CLOCK_MHZ]|vector-v2-tile-census PORT|qemu|graphics|graphics-test|clean}" >&2
     exit 2
     ;;
 esac
