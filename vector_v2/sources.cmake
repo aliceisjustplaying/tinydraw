@@ -15,6 +15,7 @@ set(TINYDRAW_VECTOR_V2_SRCS
   "${CMAKE_CURRENT_LIST_DIR}/src/operation_lod_store.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/render_accounting.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/replay_block_index.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/src/svg_export.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/tile_payload_analysis.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/tile_producer.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/touch_event_buffer.cpp"
