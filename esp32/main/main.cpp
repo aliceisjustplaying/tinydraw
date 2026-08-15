@@ -14,6 +14,9 @@
 #ifdef TINYDRAW_VECTOR_V2_MEMORY_PROBE
 #include "vector_v2_memory_probe.h"
 #endif
+#ifdef TINYDRAW_PANEL_PROBE
+#include "panel_probe.h"
+#endif
 #include "tinydraw/geometry.h"
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
@@ -155,6 +158,10 @@ void run_hardware_app();
 extern "C" void app_main() {
 #ifdef TINYDRAW_VECTOR_V2_MEMORY_PROBE
   tinydraw::esp32::run_vector_v2_memory_probe();
+  return;
+#endif
+#ifdef TINYDRAW_PANEL_PROBE
+  tinydraw::esp32::run_panel_probe();
   return;
 #endif
 #ifndef TINYDRAW_QEMU

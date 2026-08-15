@@ -13,6 +13,7 @@ option(TINYDRAW_VECTOR_V2_APP "Run the interactive Vector V2 application" OFF)
 option(TINYDRAW_VECTOR_V2_GATE_HARNESS "Run Gate 1 before the interactive Vector V2 app" OFF)
 option(TINYDRAW_VECTOR_V2_TILE_CENSUS "Measure Vector V2 tile payload classes" OFF)
 option(TINYDRAW_VECTOR_V2_TEARING_PROBE "Run a deterministic Vector V2 pan visual probe" OFF)
+option(TINYDRAW_PANEL_PROBE "Run the CO5300 hardware characterization probe" OFF)
 set(TINYDRAW_VECTOR_V2_PRESENTATION_EXPERIMENT "boundary-top-sweep" CACHE STRING
     "Vector V2 pan presentation experiment")
 set_property(CACHE TINYDRAW_VECTOR_V2_PRESENTATION_EXPERIMENT PROPERTY STRINGS

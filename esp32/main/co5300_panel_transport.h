@@ -80,6 +80,20 @@ class Co5300PanelTransport final : public DisplayBackend {
   void push_rect_ring(int x, int y, int width, int height, const std::uint16_t* area_pixels,
                       int stride, int shift_x, int shift_y, int area_width, int area_height);
 
+  // Characterization-probe path, not product code: programs one CASET/RASET
+  // window, then streams the region as chunked RAMWR (0x2C) plus RAMWRC (0x3C)
+  // continuation color transfers, bypassing per-strip window setup. Pixels are
+  // RGB565 host order; staging byte-swaps into the shared DMA bounce buffers.
+  // strip_rows is clamped to the transfer-buffer capacity. Returns false when
+  // any command or submission fails. Completion is observable via
+  // submit_count()/complete_count()/wait_for_all() exactly like push_rect.
+  bool stream_rect(int x, int y, int width, int height, const std::uint16_t* pixels, int stride,
+                   int strip_rows);
+  // Characterization-probe read of GETSCANLINE (0x45). Returns the raw
+  // 10-bit scanline value, or -1 when the QSPI read fails. Unvalidated
+  // controller behavior: treat values as diagnostic until calibrated.
+  [[nodiscard]] int read_scanline();
+
  private:
   class Impl;
   std::unique_ptr<Impl> impl_;

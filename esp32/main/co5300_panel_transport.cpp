@@ -33,6 +33,9 @@ constexpr gpio_num_t kTearPin = GPIO_NUM_13;
 constexpr int kPanelClockMHz = TINYDRAW_CO5300_CLOCK_MHZ;
 static_assert(kPanelClockMHz == 40 || kPanelClockMHz == 50 || kPanelClockMHz == 60,
               "CO5300 clock must be one of the supported 40/50/60 MHz experiment points");
+// Measured 2026-08-15 (benchmark-results/blockA-panel-limits): requests of 40,
+// 50, and 60 MHz produce identical transfer walls. The GPSPI divider from the
+// 80 MHz source clamps all three to 40 MHz actual; no overclock ever engaged.
 // 32 KiB bounce buffers: per-transaction setup costs ~0.4 ms, so a full
 // panel at 8192-pixel strips paid ~8 ms of pure overhead across 21 pushes;
 // 16384-pixel strips halve that for 96 KiB of internal DMA memory.
@@ -132,12 +135,9 @@ class Co5300PanelTransport::Impl {
       return;
     }
     std::printf("TINYDRAW_PANEL_HARD_RESET=%u\n", reset_panel_power());
-    constexpr const char* kClockPolicy =
-        kPanelClockMHz == 50 ? "normal_published_max"
-                             : (kPanelClockMHz == 60 ? "diagnostic_outside_published_envelope"
-                                                     : "conservative_experiment");
-    std::printf("TINYDRAW_PANEL_TRANSPORT clock_mhz=%d clock_policy=%s\n", kPanelClockMHz,
-                kClockPolicy);
+    std::printf(
+        "TINYDRAW_PANEL_TRANSPORT requested_clock_mhz=%d actual_clock=divider_limited_40mhz\n",
+        kPanelClockMHz);
 
     spi_bus_config_t bus_config{};
     bus_config.sclk_io_num = GPIO_NUM_11;
@@ -532,7 +532,97 @@ class Co5300PanelTransport::Impl {
     ++push_count_;
   }
 
+  bool stream_rect(int x, int y, int width, int height, const std::uint16_t* pixels, int stride,
+                   int strip_rows) {
+    if (!ready_ || pixels == nullptr || width <= 0 || height <= 0) {
+      return false;
+    }
+    const int source_stride = stride == 0 ? width : stride;
+    if (source_stride < width || x < 0 || y < 0 || x + width > kCanvasWidth ||
+        y + height > kCanvasHeight) {
+      return false;
+    }
+    int rows_per_transfer = std::min(strip_rows, kTransferPixels / width);
+    if (rows_per_transfer <= 0) {
+      return false;
+    }
+
+    // One window for the whole stream. set_gap only applies inside
+    // esp_lcd_panel_draw_bitmap, so the x offset is applied here.
+    const int x0 = x + kPanelGapX;
+    const int x1 = x + width - 1 + kPanelGapX;
+    const int y1 = y + height - 1;
+    const std::array<std::uint8_t, 4> caset{
+        static_cast<std::uint8_t>(x0 >> 8), static_cast<std::uint8_t>(x0 & 0xFF),
+        static_cast<std::uint8_t>(x1 >> 8), static_cast<std::uint8_t>(x1 & 0xFF)};
+    const std::array<std::uint8_t, 4> raset{
+        static_cast<std::uint8_t>(y >> 8), static_cast<std::uint8_t>(y & 0xFF),
+        static_cast<std::uint8_t>(y1 >> 8), static_cast<std::uint8_t>(y1 & 0xFF)};
+    if (esp_lcd_panel_io_tx_param(io_, kWriteCommandOpcode | (0x2AU << 8U), caset.data(),
+                                  caset.size()) != ESP_OK ||
+        esp_lcd_panel_io_tx_param(io_, kWriteCommandOpcode | (0x2BU << 8U), raset.data(),
+                                  raset.size()) != ESP_OK) {
+      return false;
+    }
+
+    bool first = true;
+    for (int row = 0; row < height; row += rows_per_transfer) {
+      const int rows = std::min(rows_per_transfer, height - row);
+      const std::int64_t transfer_started = esp_timer_get_time();
+      if (xSemaphoreTake(transfer_semaphore_, portMAX_DELAY) != pdTRUE) {
+        return false;
+      }
+      auto* transfer =
+          transfer_pixels_ + static_cast<std::ptrdiff_t>(transfer_index_ * kTransferPixels);
+      transfer_index_ = (transfer_index_ + 1U) % kTransferQueueDepth;
+      transfer_us_ += esp_timer_get_time() - transfer_started;
+
+      const std::int64_t prepare_started = esp_timer_get_time();
+      for (int strip_row = 0; strip_row < rows; ++strip_row) {
+        const auto* source =
+            pixels + static_cast<std::ptrdiff_t>((row + strip_row)) * source_stride;
+        stage_pixels_swapped(source, transfer + static_cast<std::ptrdiff_t>(strip_row * width),
+                             width);
+      }
+      prepare_us_ += esp_timer_get_time() - prepare_started;
+
+      const std::uint32_t command = first ? 0x2CU : 0x3CU;
+      first = false;
+      const std::int64_t submit_started = esp_timer_get_time();
+      transfer_submits_.fetch_add(1U, std::memory_order_release);
+      if (esp_lcd_panel_io_tx_color(io_, kWriteColorOpcode | (command << 8U), transfer,
+                                    static_cast<std::size_t>(rows) *
+                                        static_cast<std::size_t>(width) * sizeof(std::uint16_t)) !=
+          ESP_OK) {
+        // The submit counter already advanced; roll it back so wait_for_all
+        // does not deadlock on a transfer that never entered the queue.
+        transfer_submits_.fetch_sub(1U, std::memory_order_release);
+        static_cast<void>(xSemaphoreGive(transfer_semaphore_));
+        return false;
+      }
+      transfer_us_ += esp_timer_get_time() - submit_started;
+      ++push_count_;
+    }
+    return true;
+  }
+
+  int read_scanline() {
+    if (!ready_) {
+      return -1;
+    }
+    std::array<std::uint8_t, 2> value{};
+    if (esp_lcd_panel_io_rx_param(io_, kReadCommandOpcode | (0x45U << 8U), value.data(),
+                                  value.size()) != ESP_OK) {
+      return -1;
+    }
+    return (static_cast<int>(value[0]) << 8) | static_cast<int>(value[1]);
+  }
+
  private:
+  static constexpr std::uint32_t kWriteCommandOpcode = 0x02UL << 24U;
+  static constexpr std::uint32_t kReadCommandOpcode = 0x03UL << 24U;
+  static constexpr std::uint32_t kWriteColorOpcode = 0x32UL << 24U;
+
   static void on_tear_edge(void* context) {
     auto& self = *static_cast<Impl*>(context);
     const std::uint32_t now = static_cast<std::uint32_t>(esp_timer_get_time());
@@ -634,5 +724,10 @@ void Co5300PanelTransport::push_rect_ring(int x, int y, int width, int height,
   impl_->push_rect_ring(x, y, width, height, area_pixels, stride, shift_x, shift_y, area_width,
                         area_height);
 }
+bool Co5300PanelTransport::stream_rect(int x, int y, int width, int height,
+                                       const std::uint16_t* pixels, int stride, int strip_rows) {
+  return impl_->stream_rect(x, y, width, height, pixels, stride, strip_rows);
+}
+int Co5300PanelTransport::read_scanline() { return impl_->read_scanline(); }
 
 }  // namespace tinydraw::esp32
