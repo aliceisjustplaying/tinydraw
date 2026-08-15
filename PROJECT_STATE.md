@@ -1,23 +1,75 @@
 # TinyDraw project state
 
-Last updated: 2026-08-14
+Last updated: 2026-08-15
 
 ## Resume point
 
-Branch: `main`
+Branch: `feat/v2-performance-followup`
+Reviewed product commit: `c86f3ac` (`f66c808` added receipts only)
+Evidence-preservation commit: `2a62c36`
 
-**The Vector V2 foundation is validated.** Vector V2 is now the accepted
-application architecture under construction, not another prototype and not yet
-the shipping/default firmware. The existing shipping code is **Raster V1**.
-The full remaining worklist and feature-complete definition live in
-[`V2_ROADMAP.md`](V2_ROADMAP.md).
+**Raster V1 remains the default/shipping firmware and the operational fallback.**
+Vector V2 remains the accepted architecture under construction, but it is not
+feature complete and the current presenter is not physically acceptable.
 
-The raster application remains the default firmware and must remain runnable
-until V2 reaches feature parity and passes migration acceptance. V2 now has an
-explicit `vector-v2` hardware target; the historical Gate 1 workload runs only
-under `vector-v2-gate-harness`. V2 is not yet the default or feature complete.
+The 2026-08-15 manual glass run observed severe tearing at 100% and 400% and
+visible drawing lag while the software battery reported success. That physical
+evidence falsifies the current beam-race tear oracle and the claim that the
+10 ms commit budget bounds interaction latency. The latest independent review
+is [`external_help/espdraw-offline-review-2026-08-15.md`](external_help/espdraw-offline-review-2026-08-15.md),
+backed by [`vector_v2/hardware-receipts/c86f3ac-manual-glass.log`](vector_v2/hardware-receipts/c86f3ac-manual-glass.log).
 
-## What is proven
+Current measured finish-line status:
+
+- **Pan correctness: RED.** `tear_synchronized` validates an uncalibrated timing
+  model, not visible pixels. A TE timeout can still seed a reusable frame.
+- **Pan pacing: RED at the required percentile gate.** PANSEQ measured
+  41.5/42.0 ms averages, but 47.5/48.6 ms p95. Required is p95 ≤41.7 ms
+  (at least 24 FPS); p95 ≤33.3 ms (30 FPS) is ideal; faster is bonus.
+- **Ink latency: RED.** Authority/materialization runs before preview, the
+  existing provisional ribbon tail is intentionally omitted, and glass saw
+  15.5–35.8 ms chunks with 92–143 ms loop gaps.
+- **Cold 400%: RED.** Adversarial p95 is 628 ms. The next accepted slice must
+  improve the isolated cold path by at least 25%, with product p95 ≤471 ms and
+  every accepted run below 500 ms.
+- **Authority/exactness: GREEN within its current contract.** Host exactness and
+  fuzz coverage pass, but snapshot restore can install a raster baseline and
+  empty the operation log; operation-only Undo/SVG/autosave authority is not yet
+  a valid assumption.
+- **Capacity:** current product code uses **448 raw tile slots**, not 384.
+
+## Source-of-truth map
+
+- This file is the concise current-state and resume document.
+- [`V2_ROADMAP.md`](V2_ROADMAP.md) is the only forward work queue.
+- [`README.md`](README.md) and [`vector_v2/README.md`](vector_v2/README.md) are
+  orientation and stable module contracts, not competing status documents.
+- `vector_v2/hardware-receipts/` and `external_help/` preserve evidence. Their
+  dated conclusions are historical and do not override later physical results.
+- The timeline below remains in place for provenance; headings marked
+  **Historical** are not current instructions.
+
+## Current finish-line sequence
+
+1. Establish a red-capable optical panel oracle and run a one-variable A/B:
+   current beam race versus a selected-TE-edge, row-zero, top-to-bottom sweep.
+   Fail closed on stale/missing TE and forbid unsynchronized frame reuse.
+2. Once a physically clean policy exists, keep the PSRAM ring canvas-only and
+   patch fixed chrome plus the existing provisional ribbon tail in the mandatory
+   internal staging pass. One ordered presentation gets one completion drain.
+3. Make ink visual-first: present the newest provisional tail before synchronous
+   chunk work, carry original touch timestamps, and measure optical tail latency.
+4. Only after panel and ink baselines are stable, prototype the exact replay
+   block index and repair-retention counters. Do not mix cache work into panel
+   diagnosis.
+5. Continue with Undo/Redo authority, SVG, autosave/persistence, settled AA,
+   lifecycle parity, and final UI polish in the roadmap order.
+
+## Historical accepted foundation
+
+The following records what earlier automated and hardware rounds established.
+Later 2026-08-15 glass evidence supersedes any claim here that pan was tear-free,
+that drawing was non-lagging, or that DMA completion was physical completion.
 
 On the physical ESP32-S3 with the deterministic seed-7 1,000-stroke document:
 
@@ -29,8 +81,8 @@ On the physical ESP32-S3 with the deterministic seed-7 1,000-stroke document:
 - cache misses use current overview fallback rather than checkerboards;
 - paper-aware materialization lets the complete 100% world fit as 266 raw tiles
   plus 378 compact uniform identities, with zero fallback;
-- the raw pool uses 384 slots; a 16-stop 400% tour A/B measured zero return-trip
-  refills at 384 versus 63 tiles and 409 ms of refill at 320;
+- the then-tested raw pool used 384 slots; a 16-stop 400% tour A/B measured zero
+  return-trip refills at 384 versus 63 tiles and 409 ms of refill at 320;
 - ordinary cached pan reuses framebuffer overlap and reaches first physical
   completion in about 30.6–30.7 ms;
 - drawing while refinement is active works without stale publication;
@@ -114,7 +166,11 @@ Phase 0 baselines live in
 
 These are product and optimization tasks, not evidence for another rewrite.
 
-## Organized board (2026-08-15 12:45, review round closed at c86f3ac)
+## Historical: review-round board (2026-08-15 12:45, closed at c86f3ac)
+
+> **Superseded by later glass evidence.** The software battery was green, but
+> severe physical tearing and drawing lag falsified its presentation and latency
+> closure claims. Preserve this section as the work timeline, not current truth.
 
 Two external code reviews (26 findings) landed across four lanes; see
 `vector_v2/hardware-receipts/REVIEW_ROUND_CLOSURE_2026_08_15.md`. All 27
@@ -259,7 +315,7 @@ Device state: flashed with the `b76b992` gate-harness build at 384 slots;
 Sarah's drawing from the glass session is on it. The serial port is free
 (the manual capture was stopped and saved).
 
-## Immediate next sequence
+## Historical: pre-regression next sequence
 
 1. Raise warm pan to a 30 FPS floor (33.3 ms frames, margin preferred):
    ring/offset frame addressing (−15 ms memmove), tear-wait/compose overlap,
@@ -302,7 +358,7 @@ Vector operation log (authoritative)
         ├── complete 368×448 RGB565 overview at 25%
         └── sparse world-aligned materialization at 50–400%
               ├── compact uniform/paper catalog
-              └── 384 raw 64×64 RGB565 slots
+              └── 448 raw 64×64 RGB565 slots
                     │
              MaterializedCanvas
                     │

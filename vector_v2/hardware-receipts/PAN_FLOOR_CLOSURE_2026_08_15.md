@@ -1,5 +1,13 @@
 # Pan floor closure — 2026-08-15
 
+> **Historical benchmark closure; physical correctness was falsified later on
+> 2026-08-15.** The beam-race model and software `tear_synchronized` signal did
+> not prevent severe glass tearing. At `c86f3ac`, p95 also regressed to
+> 47.5–48.6 ms, above the current required p95 ≤41.7 ms gate. See
+> [`c86f3ac-manual-glass.log`](c86f3ac-manual-glass.log) and
+> [`../../external_help/espdraw-offline-review-2026-08-15.md`](../../external_help/espdraw-offline-review-2026-08-15.md).
+> The body remains unchanged as a dated performance receipt.
+
 Perf round 2, priority 2: panning at a floor of 30 FPS (≤33.3 ms/frame)
 with margin. Closed at `4022917` on hardware (ESP32-S3, CO5300 panel,
 gate harness, both 384 and 320 tile slots).

@@ -2,7 +2,22 @@
 
 These logs are immutable evidence captured from the physical ESP32-S3. Historical log names and telemetry markers retain their original `production` wording so they remain traceable to the commits and commands that produced them.
 
-## Current milestone evidence
+## Current corrective evidence — 2026-08-15
+
+- [`c86f3ac-manual-glass.log`](c86f3ac-manual-glass.log) — raw serial capture
+  from the product glass session. The tester observed severe tearing at 100%
+  and 400% and visible ink lag while software reported zero synchronization
+  failures; telemetry does not overrule the visible result.
+- [`../../external_help/espdraw-offline-review-2026-08-15.md`](../../external_help/espdraw-offline-review-2026-08-15.md) — independent source/evidence trace showing that the beam-race oracle is circular, full-refresh reuse fails open, provisional ink is omitted, and the drawing budget is not a preemption bound.
+- [`../../PROJECT_STATE.md`](../../PROJECT_STATE.md) — current verdict and
+  acceptance thresholds. The forward queue is [`../../V2_ROADMAP.md`](../../V2_ROADMAP.md).
+
+The closure documents below preserve what their automation established at the
+time. Their claims of tear-free pan, bounded interaction latency, or physical
+completion are **superseded** by the later glass evidence unless a newer optical
+receipt re-establishes them.
+
+## Historical milestone evidence
 
 - [`IDLE_REPAIR_CLOSURE_2026_08_15.md`](IDLE_REPAIR_CLOSURE_2026_08_15.md) / [`24a9fe9-full-gate-384.log`](24a9fe9-full-gate-384.log) — idle cache repair closes the manual session's strongest complaint: after an XL 25% stroke drops 588 of 672 identities at 100%, a quiet moment repairs the whole level (remaining=0) in 3.65 s of bounded idle slices (worst 7.5 ms); new gate `TINYDRAW_GATE1_IDLE_REPAIR` joins the battery verdict.
 - [`PAN_FLOOR_CLOSURE_2026_08_15.md`](PAN_FLOOR_CLOSURE_2026_08_15.md) / [`1cd7f1b-full-gate-384.log`](1cd7f1b-full-gate-384.log) / [`1cd7f1b-full-gate-320.log`](1cd7f1b-full-gate-320.log) / [`4022917-full-gate-384.log`](4022917-full-gate-384.log) — Phase 2 closure: warm pan 67.3 ms → 28.1 ms avg (p50 26.95 ms, p95 32.95 ms) via the toroidal frame ring, beam-raced push sweep, fused exposed compose, and wild-reuse fixes; TE boot flake fixed at the root with a runtime heal. Slot count remains irrelevant to pan.
