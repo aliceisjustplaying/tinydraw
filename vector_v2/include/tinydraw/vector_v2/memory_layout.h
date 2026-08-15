@@ -14,17 +14,18 @@ namespace tinydraw::vector_v2 {
 inline constexpr std::size_t kOverviewPublicationBytes = kOverviewBytes;
 // Retain five worst-case arbitrary-alignment viewport footprints: one at
 // each tiled zoom plus one disjoint destination (5 x 56 = 280), leaving the
-// remainder as LRU slots. Raised 320 -> 384 at 264b60e, then 384 -> 512 for
+// remainder as LRU slots. Raised 320 -> 384 at 264b60e, then 384 -> 448 for
 // the 2026-08-15 idle-repair round: dense documents (hairlines defeat
-// uniform coverage) exceed any affordable pool at 100%, and the extra 128
-// slots (1.0 MiB) widen the warm neighborhood from ~9 to ~12 viewports
+// uniform coverage) exceed any affordable pool at 100%, and the extra 64
+// slots (512 KiB) widen the warm neighborhood from ~9 to ~10.6 viewports
 // while the repair saturation guard prevents churn past capacity. The
-// 1.5 MiB contiguous export reserve stays funded; remaining PSRAM slack
-// (~380 KiB) is the Undo/Redo insurance, which rides the operation log and
-// needs little. TINYDRAW_VECTOR_V2_TILE_SLOTS exists for measured
-// cache-size A/B builds; the product default is 512.
+// 1.5 MiB contiguous export reserve stays funded; remaining PSRAM slack is the Undo/Redo insurance,
+// which rides the operation log and needs little. TINYDRAW_VECTOR_V2_TILE_SLOTS exists for measured
+// cache-size A/B builds; the product default is 448. 512 was
+// tried first and rejected: the battery's export-reserve gate could no
+// longer hold the 1.5 MiB contiguous block at peak harness state.
 #ifndef TINYDRAW_VECTOR_V2_TILE_SLOTS
-#define TINYDRAW_VECTOR_V2_TILE_SLOTS 512
+#define TINYDRAW_VECTOR_V2_TILE_SLOTS 448
 #endif
 inline constexpr std::size_t kTileSlotCount = TINYDRAW_VECTOR_V2_TILE_SLOTS;
 // Five worst-case arbitrary-alignment viewport footprints (5 x 56 = 280) is
