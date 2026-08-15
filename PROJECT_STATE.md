@@ -128,10 +128,27 @@ the full 100% grid — in bounded idle slices; gate
 `vector_v2/hardware-receipts/IDLE_REPAIR_CLOSURE_2026_08_15.md`. All 25
 gates green.
 
-Next: cold −50% campaign (Phase 3). Queued product findings: draw under
-toolbar, center-anchored zoom, New-doc check on product build. Morning
-glass list: beam-race tearing re-check, pan-after-pause sharpness (idle
-repair), budgeted-commit blur verdict, New-document on a product build.
+Product findings from the glass session are also fixed at `ab43005`:
+the zoom button now always centers the focused point (remembered-origin
+reuse removed; regression-tested), and strokes continue under the bottom
+toolbar into the hidden world rows (new `chrome_ink_bottom`; preview
+rendering still clips at `chrome_input_bottom`). Battery re-run green
+(`ab43005-full-gate-384.log`, 90 pass=1 lines, zero pass=0).
+
+The DEVICE is flashed with the PRODUCT build at `ab43005` and boots a
+fresh document (TE healthy: te_period_us=16794). Morning glass list:
+1. Pan feel + tearing re-check (beam racing is new; math says safe).
+2. Pan after a one-second pause must always be sharp (idle repair);
+   `TINYDRAW_LIVE_REPAIR` lines should appear in telemetry.
+3. Scribble XL at 100% over ink: stutter and transient-blur verdict.
+4. New-document reset on this product build (harness artifact explained).
+5. Zoom button should now center; strokes should continue under the dock
+   (pan down after drawing across it).
+
+Next: cold −50% campaign (Phase 3). Levers from the baselines: an
+operation spatial index (~50–100 KiB; cold gates scan ~12,000 ops to
+render ~591) and staging-frame overlap. Then export-watchdog receipt,
+SVG export, Undo/Redo per the roadmap sequence.
 The section below is the historical in-flight record.
 
 ## Superseded in-flight record (2026-08-15 early night)
