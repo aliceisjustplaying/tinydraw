@@ -232,6 +232,11 @@ DocumentRevision MaterializedCanvas::current_revision() const { return current_r
 
 std::size_t MaterializedCanvas::slot_capacity() const { return slots_.size(); }
 
+std::size_t MaterializedCanvas::resident_raw_tiles() const {
+  return static_cast<std::size_t>(
+      std::count_if(slots_.begin(), slots_.end(), [](const auto& slot) { return slot.occupied_; }));
+}
+
 std::size_t MaterializedCanvas::uniform_capacity() const { return uniform_catalog_.size(); }
 
 std::uint64_t MaterializedCanvas::composition_epoch() const { return composition_epoch_; }

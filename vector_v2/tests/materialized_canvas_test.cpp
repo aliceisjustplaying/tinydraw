@@ -29,9 +29,9 @@ TEST_CASE("production geometry has fixed world overview and committed zoom ident
 TEST_CASE("production memory plan records every fixed-capacity region") {
   CHECK(sizeof(vector_v2::CompactOperationSample) == 8U);
   CHECK(vector_v2::kOverviewPublicationBytes == 329'728U);
-  CHECK(vector_v2::kTileSlotCount == 384U);
+  CHECK(vector_v2::kTileSlotCount == 512U);
   CHECK(vector_v2::kTileSlotCount >= 5U * vector_v2::kMaximumVisibleTiles);
-  CHECK(vector_v2::kTilePoolBytes == 3'145'728U);
+  CHECK(vector_v2::kTilePoolBytes == 4'194'304U);
   CHECK(vector_v2::kTileMetadataBytes ==
         vector_v2::kTileSlotCount * sizeof(vector_v2::MaterializedSlotStorage) +
             vector_v2::kMaterializedTileIdentityCount *
@@ -41,7 +41,7 @@ TEST_CASE("production memory plan records every fixed-capacity region") {
   CHECK(vector_v2::kLodStorageBytes == 668'000U);
   CHECK(vector_v2::kRendererWorkspaceBytes == 163'840U);
   CHECK(vector_v2::kDisplayWorkspaceBytes == 103'040U);
-  CHECK(vector_v2::kExternalPlanBytes == 5'531'480U);
+  CHECK(vector_v2::kExternalPlanBytes == 6'585'176U);
   CHECK(vector_v2::kTargetContiguousReserveBytes == 1'572'864U);
 }
 

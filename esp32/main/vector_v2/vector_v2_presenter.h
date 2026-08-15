@@ -41,7 +41,13 @@ inline constexpr int kMaximumCachedPanDelta = 96;
 // and the wrapped beam only laps a ~23 ms sweep after ~44 ms.
 inline constexpr std::int64_t kTePeriodUs = 16'800;
 inline constexpr int kPanelSweepRows = 448;
-inline constexpr int kBeamStartMarginRows = 16;
+// The TE fall-to-scan-start latency is unspecified for this panel (the TE
+// pulse itself is ~577 us ~ 15 rows), so the margin must dominate that
+// uncertainty plus jitter: a writer that starts ahead of the beam tears at
+// the start row. 16 rows measured as too thin on glass; 48 rows (~1.8 ms of
+// beam travel) starts safely behind and costs nothing, it only moves the
+// band split.
+inline constexpr int kBeamStartMarginRows = 48;
 // Cached pan composition is strip-looped through the same bounded scratch as
 // progressive tile presentation, so wider reuse costs no additional PSRAM.
 inline constexpr std::size_t kLiveRegionScratchPixels = kMaximumProgressiveRegionPixels;
@@ -70,6 +76,10 @@ inline constexpr std::int64_t kInPlaceCommitBudgetUs = 10'000;
 // 2.5 ms measured a 13.2 ms worst tick while still batching several steps per
 // slice (6 ms measured 15.2 ms and tripped the alarm).
 inline constexpr std::int64_t kColdFillSliceDeadlineUs = 2'500;
+// Idle repair's level sweep stops when occupied raw slots come within this
+// headroom of capacity: one more repaired view would only evict warmer
+// tiles. Sized to one viewport's worth of tiles.
+inline constexpr std::size_t kRepairSaturationHeadroomTiles = 48;
 
 struct LivePresentationTiming {
   std::int64_t compose_us = 0;

@@ -28,6 +28,12 @@ namespace tinydraw::vector_v2 {
 struct IdleRepairPlan {
   std::array<ViewRequest, 24> views{};
   std::size_t count = 0;
+  // Views from this index on belong to the optional full-level sweep. The
+  // runner must stop the sweep once the slot pool saturates: a document can
+  // exceed pool capacity at 100% (dense hairlines defeat uniform coverage),
+  // and sweeping past saturation evicts the warm neighborhood for tiles the
+  // user is not near.
+  std::size_t grid_start = 0;
 };
 
 [[nodiscard]] IdleRepairPlan plan_idle_repair(const ViewRequest& active_view,

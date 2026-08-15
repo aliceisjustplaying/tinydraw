@@ -160,6 +160,13 @@ struct MinimapSurface {
 [[nodiscard]] bool draw_chrome_minimap_surface(const MinimapSurface& surface,
                                                const ChromeState& state,
                                                const ChromeNavigation& navigation);
+// Draws every canvas overlay's share (zoom rail, minimap, battery) that
+// intersects the surface. The pan sweep uses this to land overlay pixels in
+// the same push as their backdrop strip, so overlays never flicker against
+// the canvas moving beneath them.
+[[nodiscard]] bool draw_chrome_strip_overlays(const MinimapSurface& surface,
+                                              const ChromeState& state,
+                                              const ChromeNavigation& navigation);
 void draw_chrome_canvas_overlays(std::span<std::uint16_t> pixels, int width, int height,
                                  const ChromeState& state, const ChromeNavigation& navigation);
 
