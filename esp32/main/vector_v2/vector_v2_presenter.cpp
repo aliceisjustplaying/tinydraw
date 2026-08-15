@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstddef>
 
+#include "esp_rom_sys.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -591,14 +592,19 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   const std::int64_t tear_started = esp_timer_get_time();
   int start_row = 0;
   bool tear_ready = false;
-  for (int attempt = 0; attempt < 4 && !tear_ready; ++attempt) {
+  // Deadline-based discipline: a dock-band start may need one frame-start
+  // wait plus the margin lead, so the loop is bounded by wall clock (two
+  // frame periods), not by attempt count.
+  const std::int64_t discipline_deadline = tear_started + 2 * kTePeriodUs;
+  while (!tear_ready && esp_timer_get_time() < discipline_deadline) {
     const std::int64_t age = display_.tear_age_us();
     if (age < 0) {
       break;
     }
     if (age < kBeamMarginUs) {
-      // Just past a frame start: give the beam its margin lead.
-      vTaskDelay(pdMS_TO_TICKS(1));
+      // Just past a frame start: give the beam its margin lead (bounded
+      // busy wait, at most kBeamMarginUs).
+      esp_rom_delay_us(100);
       continue;
     }
     const std::int64_t beam_row = age * kPanelSweepRows / kTePeriodUs;
@@ -608,8 +614,6 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
     } else if (!display_.wait_for_safe_frame_start(40'000)) {
       break;
     }
-    // After a frame-start wait the loop re-reads the age and applies the
-    // margin on the next attempt.
   }
   if (!tear_ready) {
     return refresh(chrome, event_us);
@@ -629,7 +633,8 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
     // band (observed on glass at da99311).
     const std::int64_t band_started = esp_timer_get_time();
     bool band_ready = false;
-    for (int attempt = 0; attempt < 4 && !band_ready; ++attempt) {
+    const std::int64_t band_deadline = band_started + 2 * kTePeriodUs;
+    while (!band_ready && esp_timer_get_time() < band_deadline) {
       const std::int64_t age = display_.tear_age_us();
       if (age < 0) {
         break;
@@ -642,7 +647,7 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
         continue;
       }
       if (age < kBeamMarginUs) {
-        vTaskDelay(pdMS_TO_TICKS(1));
+        esp_rom_delay_us(100);
         continue;
       }
       band_ready = true;
