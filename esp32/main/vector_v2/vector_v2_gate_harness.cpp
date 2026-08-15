@@ -1610,6 +1610,10 @@ struct PanSequenceFrame {
   std::int64_t tear_wait_us = 0;
   std::int64_t present_us = 0;
   std::int64_t prepare_us = 0;
+  std::int64_t acquire_wait_us = 0;
+  std::int64_t ring_copy_us = 0;
+  std::int64_t patch_us = 0;
+  std::int64_t byte_swap_us = 0;
   std::int64_t staging_us = 0;
   std::int64_t first_submit_us = 0;
   std::int64_t first_complete_us = 0;
@@ -1695,6 +1699,10 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
     const int from_x = presenter.level_x();
     const int from_y = presenter.level_y();
     const std::int64_t prepare_before = presenter.display().prepare_us();
+    const std::int64_t acquire_wait_before = presenter.display().acquire_wait_us();
+    const std::int64_t ring_copy_before = presenter.display().ring_copy_us();
+    const std::int64_t patch_before = presenter.display().patch_us();
+    const std::int64_t byte_swap_before = presenter.display().byte_swap_us();
     const std::int64_t staging_before = presenter.display().transfer_us();
     const std::int64_t frame_started = esp_timer_get_time();
     const auto timing = presenter.pan_from(
@@ -1708,6 +1716,10 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
         .tear_wait_us = timing.tear_wait_us,
         .present_us = timing.complete_us,
         .prepare_us = presenter.display().prepare_us() - prepare_before,
+        .acquire_wait_us = presenter.display().acquire_wait_us() - acquire_wait_before,
+        .ring_copy_us = presenter.display().ring_copy_us() - ring_copy_before,
+        .patch_us = presenter.display().patch_us() - patch_before,
+        .byte_swap_us = presenter.display().byte_swap_us() - byte_swap_before,
         .staging_us = presenter.display().transfer_us() - staging_before,
         .first_submit_us = timing.first_submit_us,
         .first_complete_us = timing.first_complete_us,
@@ -1730,12 +1742,15 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
     std::printf(
         "TINYDRAW_PANSEQ_FRAME zoom=%s step=%u dx=%d dy=%d scroll_us=%lld "
         "exposed_compose_us=%lld tear_wait_us=%lld present_us=%lld prepare_us=%lld "
+        "acquire_wait_us=%lld ring_copy_us=%lld patch_us=%lld byte_swap_us=%lld "
         "staging_us=%lld event_submit_us=%lld event_complete_us=%lld frame_us=%lld "
         "tear_edge_observed=%u frame_reused=%u pass=%u\n",
         zoom_name(zoom), static_cast<unsigned>(step), frame.delta_x, frame.delta_y,
         static_cast<long long>(frame.scroll_us), static_cast<long long>(frame.exposed_us),
         static_cast<long long>(frame.tear_wait_us), static_cast<long long>(frame.present_us),
-        static_cast<long long>(frame.prepare_us), static_cast<long long>(frame.staging_us),
+        static_cast<long long>(frame.prepare_us), static_cast<long long>(frame.acquire_wait_us),
+        static_cast<long long>(frame.ring_copy_us), static_cast<long long>(frame.patch_us),
+        static_cast<long long>(frame.byte_swap_us), static_cast<long long>(frame.staging_us),
         static_cast<long long>(frame.first_submit_us),
         static_cast<long long>(frame.first_complete_us), static_cast<long long>(frame.frame_us),
         frame.tear_edge_observed, frame.reused, frame.passed);
@@ -1746,6 +1761,10 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
     totals.tear_wait_us += frame.tear_wait_us;
     totals.present_us += frame.present_us;
     totals.prepare_us += frame.prepare_us;
+    totals.acquire_wait_us += frame.acquire_wait_us;
+    totals.ring_copy_us += frame.ring_copy_us;
+    totals.patch_us += frame.patch_us;
+    totals.byte_swap_us += frame.byte_swap_us;
     totals.staging_us += frame.staging_us;
     totals.frame_us += frame.frame_us;
   }
@@ -1757,8 +1776,10 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
   const bool pass = all_passed && all_reused && tear_edge_failures == 0U;
   std::printf(
       "TINYDRAW_GATE1_PANSEQ zoom=%s frames=%u scroll_avg_us=%lld exposed_avg_us=%lld "
-      "tear_wait_avg_us=%lld present_avg_us=%lld prepare_avg_us=%lld staging_avg_us=%lld "
-      "frame_avg_us=%lld frame_p50_us=%lld frame_p95_us=%lld frame_max_us=%lld "
+      "tear_wait_avg_us=%lld present_avg_us=%lld prepare_avg_us=%lld "
+      "acquire_wait_avg_us=%lld ring_copy_avg_us=%lld patch_avg_us=%lld "
+      "byte_swap_avg_us=%lld staging_avg_us=%lld frame_avg_us=%lld frame_p50_us=%lld "
+      "frame_p95_us=%lld frame_max_us=%lld "
       "complete_p50_us=%lld complete_p95_us=%lld complete_max_us=%lld "
       "tear_edge_failures=%lu presentation_experiment=%s te_edge=%s clock_mhz=%d "
       "all_reused=%u pass=%u\n",
@@ -1768,6 +1789,10 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
       static_cast<long long>(totals.tear_wait_us / kFrames),
       static_cast<long long>(totals.present_us / kFrames),
       static_cast<long long>(totals.prepare_us / kFrames),
+      static_cast<long long>(totals.acquire_wait_us / kFrames),
+      static_cast<long long>(totals.ring_copy_us / kFrames),
+      static_cast<long long>(totals.patch_us / kFrames),
+      static_cast<long long>(totals.byte_swap_us / kFrames),
       static_cast<long long>(totals.staging_us / kFrames),
       static_cast<long long>(totals.frame_us / kFrames),
       static_cast<long long>(pan_sequence_percentile(sorted_frame, 50)),

@@ -71,6 +71,10 @@ class Co5300PanelTransport final : public DisplayBackend {
   [[nodiscard]] bool ready() const;
   void reset_timing();
   [[nodiscard]] std::int64_t prepare_us() const;
+  [[nodiscard]] std::int64_t acquire_wait_us() const;
+  [[nodiscard]] std::int64_t ring_copy_us() const;
+  [[nodiscard]] std::int64_t patch_us() const;
+  [[nodiscard]] std::int64_t byte_swap_us() const;
   [[nodiscard]] std::int64_t transfer_us() const;
   [[nodiscard]] std::uint32_t push_count() const;
   [[nodiscard]] std::uint32_t rejected_push_count() const;

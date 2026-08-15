@@ -226,11 +226,19 @@ class Co5300PanelTransport::Impl {
   [[nodiscard]] bool ready() const { return ready_; }
   void reset_timing() {
     prepare_us_ = 0;
+    acquire_wait_us_ = 0;
+    ring_copy_us_ = 0;
+    patch_us_ = 0;
+    byte_swap_us_ = 0;
     transfer_us_ = 0;
     push_count_ = 0;
     rejected_push_count_ = 0;
   }
   [[nodiscard]] std::int64_t prepare_us() const { return prepare_us_; }
+  [[nodiscard]] std::int64_t acquire_wait_us() const { return acquire_wait_us_; }
+  [[nodiscard]] std::int64_t ring_copy_us() const { return ring_copy_us_; }
+  [[nodiscard]] std::int64_t patch_us() const { return patch_us_; }
+  [[nodiscard]] std::int64_t byte_swap_us() const { return byte_swap_us_; }
   [[nodiscard]] std::int64_t transfer_us() const { return transfer_us_; }
   [[nodiscard]] std::uint32_t push_count() const { return push_count_; }
   [[nodiscard]] std::uint32_t rejected_push_count() const { return rejected_push_count_; }
@@ -671,9 +679,12 @@ class Co5300PanelTransport::Impl {
       auto* transfer =
           transfer_pixels_ + static_cast<std::ptrdiff_t>(transfer_index_ * kTransferPixels);
       transfer_index_ = (transfer_index_ + 1U) % kTransferQueueDepth;
-      transfer_us_ += esp_timer_get_time() - transfer_started;
+      const std::int64_t acquired = esp_timer_get_time();
+      acquire_wait_us_ += acquired - transfer_started;
+      transfer_us_ += acquired - transfer_started;
 
-      const std::int64_t prepare_started = esp_timer_get_time();
+      const std::int64_t prepare_started = acquired;
+      const std::int64_t copy_started = acquired;
       for (int strip_row = 0; strip_row < rows; ++strip_row) {
         int source_row = y + row + strip_row + shift_y;
         if (source_row >= area_height) {
@@ -685,6 +696,8 @@ class Co5300PanelTransport::Impl {
       }
       const auto staged =
           std::span(transfer, static_cast<std::size_t>(rows) * static_cast<std::size_t>(width));
+      const std::int64_t copy_completed = esp_timer_get_time();
+      ring_copy_us_ += copy_completed - copy_started;
       if (!patch.apply({.panel_x = x,
                         .panel_y = y + row,
                         .width = width,
@@ -694,8 +707,12 @@ class Co5300PanelTransport::Impl {
         static_cast<void>(xSemaphoreGive(transfer_semaphore_));
         return false;
       }
+      const std::int64_t patch_completed = esp_timer_get_time();
+      patch_us_ += patch_completed - copy_completed;
       swap_pixels_in_place(staged);
-      prepare_us_ += esp_timer_get_time() - prepare_started;
+      const std::int64_t swap_completed = esp_timer_get_time();
+      byte_swap_us_ += swap_completed - patch_completed;
+      prepare_us_ += swap_completed - prepare_started;
 
       const std::uint32_t command = first ? 0x2CU : 0x3CU;
       first = false;
@@ -791,6 +808,10 @@ class Co5300PanelTransport::Impl {
   std::atomic<std::uint32_t> tear_period_us_{0U};
   std::atomic<std::uint32_t> tear_high_us_{0U};
   std::int64_t prepare_us_ = 0;
+  std::int64_t acquire_wait_us_ = 0;
+  std::int64_t ring_copy_us_ = 0;
+  std::int64_t patch_us_ = 0;
+  std::int64_t byte_swap_us_ = 0;
   std::int64_t transfer_us_ = 0;
   std::uint32_t push_count_ = 0;
   std::uint32_t rejected_push_count_ = 0;
@@ -805,6 +826,10 @@ Co5300PanelTransport::~Co5300PanelTransport() = default;
 bool Co5300PanelTransport::ready() const { return impl_->ready(); }
 void Co5300PanelTransport::reset_timing() { impl_->reset_timing(); }
 std::int64_t Co5300PanelTransport::prepare_us() const { return impl_->prepare_us(); }
+std::int64_t Co5300PanelTransport::acquire_wait_us() const { return impl_->acquire_wait_us(); }
+std::int64_t Co5300PanelTransport::ring_copy_us() const { return impl_->ring_copy_us(); }
+std::int64_t Co5300PanelTransport::patch_us() const { return impl_->patch_us(); }
+std::int64_t Co5300PanelTransport::byte_swap_us() const { return impl_->byte_swap_us(); }
 std::int64_t Co5300PanelTransport::transfer_us() const { return impl_->transfer_us(); }
 std::uint32_t Co5300PanelTransport::push_count() const { return impl_->push_count(); }
 std::uint32_t Co5300PanelTransport::rejected_push_count() const {
