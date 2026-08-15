@@ -1152,6 +1152,7 @@ struct MixedDrawStrokeStats {
   std::size_t affected_tiles = 0;
   std::size_t published_tiles = 0;
   std::size_t fallback_tiles = 0;
+  std::size_t visible_fallback_tiles = 0;
   bool committed = false;
   bool authority = false;
   bool refresh_passed = false;
@@ -1284,6 +1285,7 @@ bool run_mixed_zoom_stroke(VectorV2Presenter& presenter, OperationLog& log,
       stats.affected_tiles += committed->affected_resident_tiles;
       stats.published_tiles += committed->published_tiles;
       stats.fallback_tiles += committed->fallback_tiles;
+      stats.visible_fallback_tiles += committed->visible_fallback_tiles;
       if (!world_bounds.has_value()) {
         world_bounds = committed->affected_world_bounds;
       } else {
@@ -1400,15 +1402,18 @@ bool run_mixed_zoom_draw_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
           tool == OperationTool::kPen ? 0x001FU : 0x0000U, gesture_id++, stats);
       const bool correct = run_ok && stats.committed && stats.authority && stats.refresh_passed &&
                            stats.chunks >= 24U;
-      // These strokes sit fully inside the priority view, and visible tiles
-      // are budget-exempt: any dropped tile is an on-glass blur. 25% has no
-      // priority view (overview authority) and stays exempt.
-      const bool visible_sharp = zoom == ZoomLevel::k25Percent || stats.fallback_tiles == 0U;
+      // Visible tiles are budget-exempt: any dropped tile intersecting the
+      // priority view is an on-glass blur. Off-view drops at the active zoom
+      // are the accepted budget behavior (brush bleed past the viewport) and
+      // idle repair rebuilds them. 25% has no priority view and stays exempt.
+      const bool visible_sharp =
+          zoom == ZoomLevel::k25Percent || stats.visible_fallback_tiles == 0U;
       const bool stroke_pass = correct && visible_sharp && stats.append_max_us < 15'000;
       std::printf(
           "TINYDRAW_GATE1_MIXED_DRAW zoom=%s tool=%s chunks=%lu append_max_us=%lld "
           "append_avg_us=%lld append_total_us=%lld affected_tiles=%lu published=%lu "
-          "fallback=%lu committed=%u authority=%u refresh=%u run_ok=%u pass=%u\n",
+          "fallback=%lu visible_fallback=%lu committed=%u authority=%u refresh=%u run_ok=%u "
+          "pass=%u\n",
           zoom_name(zoom), tool_name(tool), static_cast<unsigned long>(stats.chunks),
           static_cast<long long>(stats.append_max_us),
           static_cast<long long>(stats.chunks == 0U ? 0
@@ -1417,8 +1422,9 @@ bool run_mixed_zoom_draw_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
           static_cast<long long>(stats.append_total_us),
           static_cast<unsigned long>(stats.affected_tiles),
           static_cast<unsigned long>(stats.published_tiles),
-          static_cast<unsigned long>(stats.fallback_tiles), stats.committed, stats.authority,
-          stats.refresh_passed, run_ok, stroke_pass);
+          static_cast<unsigned long>(stats.fallback_tiles),
+          static_cast<unsigned long>(stats.visible_fallback_tiles), stats.committed,
+          stats.authority, stats.refresh_passed, run_ok, stroke_pass);
       std::fflush(stdout);
       worst_append_us = std::max(worst_append_us, stats.append_max_us);
       ++strokes;

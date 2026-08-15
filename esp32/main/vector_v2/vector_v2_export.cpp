@@ -6,6 +6,8 @@
 
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "tinydraw/export/png_encoder.h"
 #include "tinydraw/vector_v2/materialized_canvas.h"
 #include "tinydraw/vector_v2/world_export.h"
@@ -37,6 +39,11 @@ class BandRowSource final : public PngRowSource {
       // observable over serial and hangs are attributable to a row.
       std::printf("TINYDRAW_V2_EXPORT_PROGRESS row=%d of=%d\n", y, vector_v2::kWorldHeight);
       std::fflush(stdout);
+    }
+    if ((y & 0x1FU) == 0U) {
+      // The encode is a long CPU-bound loop on the main task; yield every 32
+      // rows so the CPU0 idle task feeds the task watchdog.
+      vTaskDelay(1);
     }
     return renderer_.render_row(y, destination);
   }
