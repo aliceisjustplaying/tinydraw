@@ -36,13 +36,11 @@ static_assert(kPanelClockMHz == 40 || kPanelClockMHz == 50 || kPanelClockMHz == 
 // Measured 2026-08-15 (benchmark-results/blockA-panel-limits): requests of 40,
 // 50, and 60 MHz produce identical transfer walls. The GPSPI divider from the
 // 80 MHz source clamps all three to 40 MHz actual; no overclock ever engaged.
-// Six 32 KiB bounce buffers retain two free producer slots after four strips
-// are pre-staged across the TE wait. This preserves the measured per-strip
-// staging invariant after the prepared burst enters the DMA queue. Marginal
-// color-transaction setup is ~44 us and a window pair is ~90 us; a one-window
-// RAMWR/RAMWRC stream minimizes both.
+// Three 32 KiB bounce buffers keep staging ahead of the measured 20 MB/s
+// wire. Marginal color-transaction setup is ~44 us and a window pair is
+// ~90 us; a one-window RAMWR/RAMWRC stream minimizes both.
 constexpr int kTransferPixels = 16384;
-constexpr int kTransferQueueDepth = 6;
+constexpr int kTransferQueueDepth = 3;
 constexpr std::size_t kTransferHistory = 64U;
 constexpr std::uint16_t kIoExpanderAddress = 0x20;
 constexpr std::uint8_t kIoExpanderOutputRegister = 0x01;
@@ -286,13 +284,6 @@ class Co5300PanelTransport::Impl {
 
   [[nodiscard]] TearEdgeWaitResult wait_for_tear_edge(TearSignalEdge edge,
                                                       std::int64_t timeout_us) {
-    const auto& count = edge == TearSignalEdge::kRising ? tear_rising_edges_ : tear_falling_edges_;
-    return wait_for_tear_edge_after(edge, count.load(std::memory_order_acquire), timeout_us);
-  }
-
-  [[nodiscard]] TearEdgeWaitResult wait_for_tear_edge_after(TearSignalEdge edge,
-                                                            std::uint32_t edge_count,
-                                                            std::int64_t timeout_us) {
     TearEdgeWaitResult result{};
     result.selected_edge = edge;
     if (!ready_ || timeout_us <= 0) {
@@ -318,7 +309,7 @@ class Co5300PanelTransport::Impl {
       return value;
     };
 
-    const EdgeSnapshot start{.count = edge_count, .timestamp_us = 0};
+    const EdgeSnapshot start = snapshot();
     // Discard an old semaphore token, then rely on the selected edge counter.
     // If an ISR races this drain, the counter check preserves the observation.
     static_cast<void>(xSemaphoreTake(tear_semaphore_, 0));
@@ -652,7 +643,7 @@ class Co5300PanelTransport::Impl {
 
   bool stream_rect_ring(int x, int y, int width, int height, const std::uint16_t* area_pixels,
                         int stride, int shift_x, int shift_y, int area_width, int area_height,
-                        int strip_rows, PanelStagePatch patch, PanelStreamGate gate) {
+                        int strip_rows, PanelStagePatch patch) {
     if (!ready_ || area_pixels == nullptr || width <= 0 || height <= 0 || stride < area_width ||
         shift_x < 0 || shift_x >= area_width || shift_y < 0 || shift_y >= area_height || x < 0 ||
         y < 0 || x + width > area_width || y + height > area_height || x + width > kCanvasWidth ||
@@ -680,12 +671,9 @@ class Co5300PanelTransport::Impl {
       return false;
     }
 
-    struct PreparedStrip {
-      std::uint16_t* pixels = nullptr;
-      int row = 0;
-      int rows = 0;
-    };
-    const auto prepare_strip = [&](int row, std::size_t strip_index, PreparedStrip& prepared) {
+    bool first = true;
+    std::size_t strip_index = 0;
+    for (int row = 0; row < height; row += rows_per_transfer, ++strip_index) {
       const int rows = std::min(rows_per_transfer, height - row);
       const std::int64_t transfer_started = esp_timer_get_time();
       if (xSemaphoreTake(transfer_semaphore_, portMAX_DELAY) != pdTRUE) {
@@ -699,6 +687,7 @@ class Co5300PanelTransport::Impl {
       transfer_us_ += acquired - transfer_started;
 
       const std::int64_t prepare_started = acquired;
+      const std::int64_t copy_started = acquired;
       for (int strip_row = 0; strip_row < rows; ++strip_row) {
         int source_row = y + row + strip_row + shift_y;
         if (source_row >= area_height) {
@@ -715,7 +704,7 @@ class Co5300PanelTransport::Impl {
       const auto staged =
           std::span(transfer, static_cast<std::size_t>(rows) * static_cast<std::size_t>(width));
       const std::int64_t copy_completed = esp_timer_get_time();
-      ring_copy_us_ += copy_completed - prepare_started;
+      ring_copy_us_ += copy_completed - copy_started;
       if (!patch.apply({.panel_x = x,
                         .panel_y = y + row,
                         .width = width,
@@ -736,7 +725,8 @@ class Co5300PanelTransport::Impl {
       prepare_us_ += swap_completed - prepare_started;
 
       // The measured 40 MHz QSPI payload rate is 20 bytes/us. Include the
-      // staging-slot acquire in each strip's producer cost.
+      // staging-slot acquire in each strip's producer cost: queued DMA can
+      // hide this wait only while the writer remains wire-bound.
       const std::int64_t staging_us = swap_completed - transfer_started;
       const std::int64_t wire_budget_us =
           static_cast<std::int64_t>(rows) * static_cast<std::int64_t>(width) / 10;
@@ -766,68 +756,21 @@ class Co5300PanelTransport::Impl {
       ++staging_timing_.samples;
       staging_timing_.all_under_wire =
           staging_timing_.all_under_wire && staging_us < wire_budget_us;
-      prepared = {.pixels = transfer, .row = row, .rows = rows};
-      return true;
-    };
 
-    bool first = true;
-    const auto submit_strip = [&](const PreparedStrip& prepared) {
       const std::uint32_t command = first ? 0x2CU : 0x3CU;
+      first = false;
       const std::int64_t submit_started = esp_timer_get_time();
       transfer_submits_.fetch_add(1U, std::memory_order_release);
-      if (esp_lcd_panel_io_tx_color(io_, kWriteColorOpcode | (command << 8U), prepared.pixels,
-                                    static_cast<std::size_t>(prepared.rows) *
+      if (esp_lcd_panel_io_tx_color(io_, kWriteColorOpcode | (command << 8U), transfer,
+                                    static_cast<std::size_t>(rows) *
                                         static_cast<std::size_t>(width) * sizeof(std::uint16_t)) !=
           ESP_OK) {
         transfer_submits_.fetch_sub(1U, std::memory_order_release);
         static_cast<void>(xSemaphoreGive(transfer_semaphore_));
         return false;
       }
-      first = false;
       transfer_us_ += esp_timer_get_time() - submit_started;
       ++push_count_;
-      return true;
-    };
-
-    std::array<PreparedStrip, kTransferQueueDepth> prepared{};
-    const std::size_t prestage_limit = std::min(gate.prestage_strips, prepared.size());
-    std::size_t prepared_count = 0;
-    std::size_t strip_index = 0;
-    int next_row = 0;
-    if (gate.wait != nullptr) {
-      while (prepared_count < prestage_limit && next_row < height) {
-        if (!prepare_strip(next_row, strip_index, prepared[prepared_count])) {
-          for (std::size_t index = 0; index < prepared_count; ++index) {
-            static_cast<void>(xSemaphoreGive(transfer_semaphore_));
-          }
-          return false;
-        }
-        next_row += prepared[prepared_count].rows;
-        ++prepared_count;
-        ++strip_index;
-      }
-      if (!gate.apply()) {
-        for (std::size_t index = 0; index < prepared_count; ++index) {
-          static_cast<void>(xSemaphoreGive(transfer_semaphore_));
-        }
-        return false;
-      }
-      for (std::size_t index = 0; index < prepared_count; ++index) {
-        if (!submit_strip(prepared[index])) {
-          for (++index; index < prepared_count; ++index) {
-            static_cast<void>(xSemaphoreGive(transfer_semaphore_));
-          }
-          return false;
-        }
-      }
-    }
-    while (next_row < height) {
-      PreparedStrip strip;
-      if (!prepare_strip(next_row, strip_index, strip) || !submit_strip(strip)) {
-        return false;
-      }
-      next_row += strip.rows;
-      ++strip_index;
     }
     return true;
   }
@@ -951,11 +894,6 @@ TearEdgeWaitResult Co5300PanelTransport::wait_for_tear_edge(TearSignalEdge edge,
                                                             std::int64_t timeout_us) {
   return impl_->wait_for_tear_edge(edge, timeout_us);
 }
-TearEdgeWaitResult Co5300PanelTransport::wait_for_tear_edge_after(TearSignalEdge edge,
-                                                                  std::uint32_t edge_count,
-                                                                  std::int64_t timeout_us) {
-  return impl_->wait_for_tear_edge_after(edge, edge_count, timeout_us);
-}
 std::int64_t Co5300PanelTransport::tear_age_us(TearSignalEdge edge) const {
   return impl_->tear_age_us(edge);
 }
@@ -980,10 +918,10 @@ bool Co5300PanelTransport::stream_rect(int x, int y, int width, int height,
 bool Co5300PanelTransport::stream_rect_ring(int x, int y, int width, int height,
                                             const std::uint16_t* area_pixels, int stride,
                                             int shift_x, int shift_y, int area_width,
-                                            int area_height, int strip_rows, PanelStagePatch patch,
-                                            PanelStreamGate gate) {
+                                            int area_height, int strip_rows,
+                                            PanelStagePatch patch) {
   return impl_->stream_rect_ring(x, y, width, height, area_pixels, stride, shift_x, shift_y,
-                                 area_width, area_height, strip_rows, patch, gate);
+                                 area_width, area_height, strip_rows, patch);
 }
 int Co5300PanelTransport::read_scanline() { return impl_->read_scanline(); }
 bool Co5300PanelTransport::read_register(std::uint8_t command, std::uint8_t* value,
