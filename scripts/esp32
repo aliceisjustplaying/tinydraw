@@ -104,7 +104,7 @@ case "$action" in
     ;;
   vector-v2-gate-harness)
     port="${2:-}"
-    slots="${3:-384}"
+    slots="${3:-448}"
     if [[ -z "$port" ]]; then
       echo "usage: $0 vector-v2-gate-harness PORT [TILE_SLOTS]" >&2
       exit 2
