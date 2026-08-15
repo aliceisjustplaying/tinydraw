@@ -32,13 +32,17 @@ struct PanelStageSurface {
   int width = 0;
   int height = 0;
   int stride = 0;
-  // Host-order RGB565. The transport byte-swaps after the patch returns.
+  // RGB565 in host order unless byte_swapped is true.
   std::span<std::uint16_t> pixels{};
+  bool byte_swapped = false;
 };
 
 struct PanelStagePatch {
   void* context = nullptr;
   bool (*paint)(void* context, const PanelStageSurface& surface) = nullptr;
+  // Allows the ring stream to de-rotate and byte-swap in one pass. The patch
+  // must write panel-order RGB565 when surface.byte_swapped is true.
+  bool accepts_byte_swapped = false;
 
   [[nodiscard]] bool apply(const PanelStageSurface& surface) const {
     return paint == nullptr || paint(context, surface);
