@@ -277,9 +277,22 @@ class MaterializedCanvas {
   // nullopt when no slot is available; the caller falls back to invalidation.
   [[nodiscard]] std::optional<InPlaceTileEdit> materialize_uniform_as_raw(TileKey key);
   [[nodiscard]] std::optional<std::uint16_t> uniform_color(TileKey key) const;
+  // Optional scope for commit_in_place_revision. preserved_uniform_color
+  // exempts no-op uniform targets from invalidation at every zoom;
+  // cross_zoom_invalidated (when set) counts identities dropped at zooms
+  // other than priority_zoom.
+  // No default member initializers: the {} default argument below requires
+  // the aggregate to be complete inside the class definition, and value
+  // initialization already empties the optionals and nulls the pointer.
+  struct InPlaceCommitScope {
+    std::optional<std::uint16_t> preserved_uniform_color;
+    std::optional<ZoomLevel> priority_zoom;
+    std::size_t* cross_zoom_invalidated;
+  };
   [[nodiscard]] bool commit_in_place_revision(
       DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
-      PixelRect affected_world_bounds, std::span<const TileKey> retained_keys);
+      PixelRect affected_world_bounds, std::span<const TileKey> retained_keys,
+      const InPlaceCommitScope& scope = {});
   // Defensive recovery: drops any raw slot and uniform entry for key so the
   // identity falls back to the authoritative overview.
   void invalidate_identity(TileKey key);
@@ -362,8 +375,10 @@ class MaterializedCanvas {
   [[nodiscard]] static TileKey key_for_identity(std::size_t index);
   [[nodiscard]] static bool uniform_intersects(std::size_t index, PixelRect world_bounds);
   void invalidate_zoom_uniforms(ZoomLevel zoom, PixelRect world_bounds,
-                                std::span<const TileKey> retained_keys);
-  void invalidate_uniforms(PixelRect world_bounds, std::span<const TileKey> retained_keys = {});
+                                std::span<const TileKey> retained_keys,
+                                const InPlaceCommitScope& scope);
+  void invalidate_uniforms(PixelRect world_bounds, std::span<const TileKey> retained_keys = {},
+                           const InPlaceCommitScope& scope = {});
   void apply_overview_publication(const OverviewRevisionPublication& overview_publication);
   void finish_revision(DocumentRevision revision, PixelRect affected_world_bounds);
   void mark_occupied(PixelRect world_bounds);

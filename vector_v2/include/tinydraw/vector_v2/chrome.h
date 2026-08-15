@@ -94,6 +94,9 @@ struct ChromeOverlayRegions {
 struct ChromePresentationRegions {
   std::array<ChromeRect, 16> regions{};
   std::size_t count = 0;
+  // Set when a piece could not be stored; a caller must not treat the
+  // regions as full coverage of the requested bounds.
+  bool overflowed = false;
 };
 
 [[nodiscard]] constexpr std::uint16_t rgb565(std::uint32_t rgb888) {

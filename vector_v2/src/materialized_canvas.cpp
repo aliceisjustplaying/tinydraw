@@ -301,7 +301,8 @@ bool MaterializedCanvas::uniform_intersects(std::size_t index, PixelRect world_b
 }
 
 void MaterializedCanvas::invalidate_zoom_uniforms(ZoomLevel zoom, PixelRect world_bounds,
-                                                  std::span<const TileKey> retained_keys) {
+                                                  std::span<const TileKey> retained_keys,
+                                                  const InPlaceCommitScope& scope) {
   const int percent = zoom_percent(zoom);
   const TileGrid grid = tile_grid(zoom);
   const int first_column =
@@ -320,15 +321,23 @@ void MaterializedCanvas::invalidate_zoom_uniforms(ZoomLevel zoom, PixelRect worl
           !uniform_catalog_[*index].occupied_ || !uniform_intersects(*index, world_bounds)) {
         continue;
       }
+      // Painting a color over an identical uniform is a no-op at any zoom,
+      // so those uniforms survive without being enumerated.
       const bool retained =
+          (scope.preserved_uniform_color.has_value() &&
+           uniform_catalog_[*index].color_ == *scope.preserved_uniform_color) ||
           std::find(retained_keys.begin(), retained_keys.end(), key) != retained_keys.end();
+      if (!retained && scope.cross_zoom_invalidated != nullptr && zoom != scope.priority_zoom) {
+        ++*scope.cross_zoom_invalidated;
+      }
       uniform_catalog_[*index].occupied_ = retained;
     }
   }
 }
 
 void MaterializedCanvas::invalidate_uniforms(PixelRect world_bounds,
-                                             std::span<const TileKey> retained_keys) {
+                                             std::span<const TileKey> retained_keys,
+                                             const InPlaceCommitScope& scope) {
   if (uniform_catalog_.empty() || !valid_world_bounds(world_bounds)) {
     return;
   }
@@ -337,7 +346,7 @@ void MaterializedCanvas::invalidate_uniforms(PixelRect world_bounds,
   constexpr std::array zooms{ZoomLevel::k50Percent, ZoomLevel::k100Percent, ZoomLevel::k200Percent,
                              ZoomLevel::k400Percent};
   for (const ZoomLevel zoom : zooms) {
-    invalidate_zoom_uniforms(zoom, world_bounds, retained_keys);
+    invalidate_zoom_uniforms(zoom, world_bounds, retained_keys, scope);
   }
 }
 
@@ -659,12 +668,13 @@ std::optional<std::uint16_t> MaterializedCanvas::uniform_color(TileKey key) cons
 
 bool MaterializedCanvas::commit_in_place_revision(
     DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
-    PixelRect affected_world_bounds, std::span<const TileKey> retained_keys) {
+    PixelRect affected_world_bounds, std::span<const TileKey> retained_keys,
+    const InPlaceCommitScope& scope) {
   if (!valid_incremental_revision(revision, overview_publication, affected_world_bounds, {})) {
     return false;
   }
   apply_overview_publication(overview_publication);
-  invalidate_uniforms(affected_world_bounds, retained_keys);
+  invalidate_uniforms(affected_world_bounds, retained_keys, scope);
   for (MaterializedSlotStorage& slot : slots_) {
     if (!slot.occupied_) {
       continue;
@@ -675,6 +685,9 @@ bool MaterializedCanvas::commit_in_place_revision(
     if (retained) {
       slot.revision_ = revision;
     } else {
+      if (scope.cross_zoom_invalidated != nullptr && slot.key_.zoom != scope.priority_zoom) {
+        ++*scope.cross_zoom_invalidated;
+      }
       slot.occupied_ = false;
       slot.generation_ = take_generation();
     }
@@ -886,6 +899,13 @@ std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, Documen
   if (existing.has_value() &&
       (slots_[*existing].pin_count_ != 0U ||
        static_cast<int>(quality) < static_cast<int>(slots_[*existing].quality_))) {
+    return std::nullopt;
+  }
+  // Same-revision quality must not regress through the representation swap:
+  // a raw publication below an existing uniform's quality is a downgrade.
+  if (const auto uniform = find_uniform(key);
+      uniform.has_value() &&
+      static_cast<int>(quality) < static_cast<int>(uniform_catalog_[*uniform].quality_)) {
     return std::nullopt;
   }
   const auto selected = existing.has_value() ? existing : choose_slot();

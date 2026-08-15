@@ -487,3 +487,72 @@ TEST_CASE("full-width strip overlay drawing matches the full overlay draw") {
   }
   CHECK(mismatches == 0);
 }
+
+TEST_CASE("dock hit region starts at the dock face, not the last canvas rows") {
+  const ChromeState state;
+  // Rows 366-371 are visible canvas: strokes must be able to start there now
+  // that committed ink continues under the dock.
+  CHECK_FALSE(tinydraw::vector_v2::chrome_contains({100.0F, 368.0F}, state));
+  CHECK(tinydraw::vector_v2::chrome_action_at({100.0F, 368.0F}, state) ==
+        tinydraw::vector_v2::ChromeAction::kNone);
+  // The dock face (shadow band and buttons) still hit-tests as chrome.
+  CHECK(tinydraw::vector_v2::chrome_contains({100.0F, 373.0F}, state));
+  CHECK(tinydraw::vector_v2::chrome_contains({100.0F, 400.0F}, state));
+  CHECK(tinydraw::vector_v2::chrome_action_at({100.0F, 400.0F}, state) !=
+        tinydraw::vector_v2::ChromeAction::kNone);
+}
+
+TEST_CASE("unobscured regions cover the bounds exactly and never overflow") {
+  const ChromeState state{.battery_percentage = 50};
+  const auto overlays = tinydraw::vector_v2::chrome_overlay_regions(state);
+  REQUIRE(overlays.count == 3);
+  const auto aligned = [](tinydraw::vector_v2::ChromeRect rect) {
+    rect.x0 = std::clamp(rect.x0 & ~1, 0, 368);
+    rect.y0 = std::clamp(rect.y0 & ~1, 0, 448);
+    rect.x1 = std::clamp((rect.x1 + 1) & ~1, rect.x0, 368);
+    rect.y1 = std::clamp((rect.y1 + 1) & ~1, rect.y0, 448);
+    return rect;
+  };
+  const std::array bounds_cases{
+      tinydraw::vector_v2::ChromeRect{0, 0, 368, 372},
+      tinydraw::vector_v2::ChromeRect{0, 200, 368, 372},
+      tinydraw::vector_v2::ChromeRect{0, 0, 2, 372},
+  };
+  for (const auto& bounds : bounds_cases) {
+    const auto regions = tinydraw::vector_v2::chrome_unobscured_regions(bounds, state);
+    CHECK_FALSE(regions.overflowed);
+    // Every pixel of the aligned bounds is covered exactly once by a
+    // returned region or sits under an aligned overlay: no dropped strips,
+    // no even-aligned holes at x=0 or x=366, no double pushes.
+    const auto aligned_bounds = aligned(bounds);
+    std::vector<std::uint8_t> coverage(368U * 448U, 0U);
+    for (std::size_t index = 0; index < regions.count; ++index) {
+      const auto& region = regions.regions[index];
+      for (int y = region.y0; y < region.y1; ++y) {
+        for (int x = region.x0; x < region.x1; ++x) {
+          ++coverage[static_cast<std::size_t>(y) * 368U + static_cast<std::size_t>(x)];
+        }
+      }
+    }
+    for (std::size_t index = 0; index < overlays.count; ++index) {
+      const auto overlay = aligned(overlays.regions[index]);
+      for (int y = overlay.y0; y < overlay.y1; ++y) {
+        for (int x = overlay.x0; x < overlay.x1; ++x) {
+          ++coverage[static_cast<std::size_t>(y) * 368U + static_cast<std::size_t>(x)];
+        }
+      }
+    }
+    std::size_t holes = 0;
+    std::size_t doubles = 0;
+    for (int y = aligned_bounds.y0; y < aligned_bounds.y1; ++y) {
+      for (int x = aligned_bounds.x0; x < aligned_bounds.x1; ++x) {
+        const auto value =
+            coverage[static_cast<std::size_t>(y) * 368U + static_cast<std::size_t>(x)];
+        holes += value == 0U;
+        doubles += value > 1U && x >= aligned_bounds.x0 && x < aligned_bounds.x1;
+      }
+    }
+    CHECK(holes == 0U);
+    CHECK(doubles == 0U);
+  }
+}

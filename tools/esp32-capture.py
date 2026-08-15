@@ -7,6 +7,7 @@
 
 import argparse
 import datetime
+import re
 import time
 
 import serial
@@ -44,7 +45,14 @@ parser.add_argument(
     default=[],
     help="additional UTF-8 line marker that stops capture with exit status 2",
 )
+parser.add_argument(
+    "--failure-regex",
+    action="append",
+    default=[],
+    help="regex that marks the capture failed when any line matches",
+)
 args = parser.parse_args()
+failure_patterns = [re.compile(pattern.encode()) for pattern in args.failure_regex]
 end_markers = DEFAULT_END_MARKERS + [marker.encode() for marker in args.end_marker]
 fail_markers = DEFAULT_FAIL_MARKERS + [marker.encode() for marker in args.fail_marker]
 
@@ -74,6 +82,8 @@ with open(args.output, "wb") as f:
             if any(marker in line for marker in end_markers):
                 done = True
             if any(marker in line for marker in fail_markers):
+                failed = True
+            if any(pattern.search(line) for pattern in failure_patterns):
                 failed = True
     # Drain a short tail so records following the end or failure marker are retained.
     tail_deadline = time.time() + (0.25 if failed else 2.0)

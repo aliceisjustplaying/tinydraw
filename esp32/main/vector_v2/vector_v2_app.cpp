@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
@@ -191,6 +192,9 @@ struct AppStorage {
   std::uint16_t* tile_scratch = nullptr;
 #endif
   std::uint16_t* region_scratch = nullptr;
+  // Internal RAM: pan-frame overlay draw surface and canvas backup.
+  std::uint16_t* strip_scratch = nullptr;
+  std::uint16_t* overlay_backup = nullptr;
   std::uint16_t* producer_supertask = nullptr;
   std::uint16_t* producer_packed = nullptr;
   std::uint8_t* producer_mask = nullptr;
@@ -219,6 +223,8 @@ struct AppStorage {
     tile_scratch = allocate_array<std::uint16_t>(kWorkspaceTileCapacity * vector_v2::kTilePixels);
 #endif
     region_scratch = allocate_array<std::uint16_t>(kLiveRegionScratchPixels);
+    strip_scratch = allocate_internal<std::uint16_t>(kPanStripScratchPixels);
+    overlay_backup = allocate_internal<std::uint16_t>(kPanOverlayBackupPixels);
     producer_supertask = allocate_array<std::uint16_t>(vector_v2::kTileProducerPixels);
     producer_packed = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
     producer_mask = allocate_internal<std::uint8_t>(vector_v2::kTileProducerMaskBytes);
@@ -243,7 +249,8 @@ struct AppStorage {
         allocate_array<TileKey>(vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles);
     if (overview == nullptr || snapshot == nullptr || frame == nullptr || tile_pixels == nullptr ||
         overview_scratch == nullptr || !harness_workspace_ready || region_scratch == nullptr ||
-        producer_supertask == nullptr || producer_packed == nullptr || producer_mask == nullptr ||
+        strip_scratch == nullptr || overlay_backup == nullptr || producer_supertask == nullptr ||
+        producer_packed == nullptr || producer_mask == nullptr ||
         producer_summary_rows == nullptr || producer_summary_words == nullptr ||
         chunk_mask == nullptr || uniforms == nullptr || occupancy == nullptr || slots == nullptr ||
         records == nullptr || samples == nullptr || input_samples == nullptr ||
@@ -632,6 +639,11 @@ bool apply_chrome_action(vector_v2::ChromeAction action, Point point,
       chrome.confirm_new = false;
       break;
     case vector_v2::ChromeAction::kConfirmNewDrawing: {
+      // UINT32_MAX is the declared terminal revision; never wrap past it.
+      if (canvas.current_revision().value >= std::numeric_limits<std::uint32_t>::max() - 1U) {
+        chrome.confirm_new = false;
+        break;
+      }
       const DocumentRevision revision{canvas.current_revision().value + 1U};
       if (!vector_v2::restore_document_snapshot(log, canvas, revision, blank_snapshot) ||
           !producer.reset_uniform_baseline(revision)) {
@@ -705,7 +717,9 @@ void run_vector_v2_app() {
   VectorV2Export exporter;
   VectorV2Presenter presenter(canvas, navigation, scheduler, display,
                               std::span(storage.frame, vector_v2::kOverviewPixels),
-                              std::span(storage.region_scratch, kLiveRegionScratchPixels));
+                              std::span(storage.region_scratch, kLiveRegionScratchPixels),
+                              std::span(storage.strip_scratch, kPanStripScratchPixels),
+                              std::span(storage.overlay_backup, kPanOverlayBackupPixels));
   ChainedOperationBuilder builder(std::span(storage.input_samples, kInputSampleCapacity),
                                   kInteractiveChunkSampleLimit);
   vector_v2::TileProducer producer(
@@ -846,6 +860,7 @@ void run_vector_v2_app() {
   vector_v2::IdleRepairPlan repair_plan{};
   std::size_t repair_cursor = 0;
   std::size_t repair_steps = 0;
+  std::uint32_t repair_failures = 0;
   bool repair_planned = false;
   LiftBaselineTiming lift_timing{};
   std::uint32_t next_lift_id = 1U;
@@ -982,6 +997,9 @@ void run_vector_v2_app() {
             stroke_commit_failed = !continued.has_value();
           }
           if (add_status != ChainedOperationStatus::kAccepted) {
+            // Accepted streaming policy: chunks already committed stay in
+            // the document like physical ink; only the uncommitted tail of
+            // the gesture is discarded on capacity rejection.
             if (stroke_commit_failed) {
               std::printf("TINYDRAW_STROKE_REJECTED site=commit reason=document_capacity\n");
               std::fflush(stdout);
@@ -991,15 +1009,20 @@ void run_vector_v2_app() {
             builder.cancel();
             ribbon.reset();
             ink.end();
-            if (stroke_world_bounds.has_value()) {
-              static_cast<void>(presenter.refresh_region(
-                  vector_v2::operation_level_bounds(*stroke_world_bounds, presenter.zoom()), chrome,
-                  loop_us));
-            }
+            // The live preview mutated the frame beyond whatever committed:
+            // a bounds-limited refresh leaves the rejected tail as ghost
+            // ink. Repaint everything; rejection is rare.
+            static_cast<void>(presenter.refresh(chrome, loop_us));
           } else {
             const std::uint16_t color = chrome.tool == vector_v2::ChromeTool::kErase
                                             ? 0xFFFFU
                                             : vector_v2::selected_color(chrome);
+            // Committed-only ribbon geometry (append(..., false)): the live
+            // preview writes into the persistent frame, and provisional
+            // segments are replaced by the next sample, so rendering them
+            // would leave stale ink. The trade is a one-smoothing-window lag
+            // behind the finger; the start cap gives immediate contact
+            // feedback.
             live_metrics.include(
                 presenter.show_update(ribbon.append(last_ink, false), color, chrome, loop_us));
           }
@@ -1076,10 +1099,15 @@ void run_vector_v2_app() {
         builder.cancel();
         ribbon.reset();
         const std::int64_t refresh_started = esp_timer_get_time();
+        // A rejected finish leaves uncommitted preview ink beyond the
+        // committed bounds; only a full repaint clears it.
         measured_lift.refresh =
-            stroke_world_bounds.has_value()
-                ? presenter.refresh_region(measured_lift.refresh_level_bounds, chrome, finished_us)
-                : LivePresentationTiming{};
+            finish_status == ChainedOperationStatus::kRejected
+                ? presenter.refresh(chrome, finished_us)
+                : (stroke_world_bounds.has_value()
+                       ? presenter.refresh_region(measured_lift.refresh_level_bounds, chrome,
+                                                  finished_us)
+                       : LivePresentationTiming{});
         measured_lift.refresh_wall_us = esp_timer_get_time() - refresh_started;
         if (stroke_report.pending || lift_timing.pending) {
           ++lift_reports_dropped;
@@ -1144,6 +1172,7 @@ void run_vector_v2_app() {
         fill_measurement_active = true;
         pending_fill = {};
         repair_planned = false;
+        repair_failures = 0;
       }
       if (pending_fill.pending) {
         const bool still_current = pending_fill.zoom == fill_view.zoom &&
@@ -1237,9 +1266,19 @@ void run_vector_v2_app() {
           }
           const auto step = producer.produce_next(repair_plan.views[repair_cursor]);
           if (!step.has_value()) {
-            // Producer failure: abandon this plan; the next view or
-            // revision change replans.
-            repair_cursor = repair_plan.count;
+            // Producer failure: replan and retry on the next quiet slice
+            // (leaving the cursor exhausted silently disabled repair for
+            // this camera). Three failures for the same view/revision mean
+            // something structural; stop until the fingerprint changes.
+            ++repair_failures;
+            if (repair_failures < 3U) {
+              repair_planned = false;
+            } else {
+              repair_cursor = repair_plan.count;
+            }
+            std::printf("TINYDRAW_LIVE_REPAIR_ABANDON view=%u failures=%u\n",
+                        static_cast<unsigned>(repair_cursor),
+                        static_cast<unsigned>(repair_failures));
             break;
           }
           ++repair_steps;

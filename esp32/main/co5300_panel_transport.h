@@ -9,6 +9,7 @@ namespace tinydraw::esp32 {
 
 struct TearSignalTiming {
   std::uint32_t rising_edges = 0;
+  std::uint32_t falling_edges = 0;
   std::int64_t period_us = -1;
   std::int64_t high_us = -1;
   bool level = false;
@@ -44,8 +45,14 @@ class Co5300PanelTransport final : public DisplayBackend {
   [[nodiscard]] bool wait_for_safe_frame_start(std::int64_t timeout_us);
   // Microseconds since the last tear falling edge, or -1 before the first
   // edge. A frame writer that starts within a bounded age of the edge stays
-  // ahead of the wrapped beam without waiting for the next edge.
+  // ahead of the wrapped beam without waiting for the next edge. The
+  // timestamp keeps only the low 32 timer bits, so after ~71 minutes with no
+  // edge a stale value can briefly read as fresh: beam-racing callers must
+  // additionally track tear_falling_edges() to detect a dead signal.
   [[nodiscard]] std::int64_t tear_age_us() const;
+  // Monotonic (mod 2^32) count of tear falling edges; cheap enough to poll
+  // per frame for TE staleness tracking.
+  [[nodiscard]] std::uint32_t tear_falling_edges() const;
   [[nodiscard]] bool wait_for_all(std::int64_t timeout_us);
 
   void push_rect(int x, int y, int width, int height, const std::uint16_t* pixels,

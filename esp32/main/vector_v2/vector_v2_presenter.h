@@ -27,39 +27,28 @@ inline constexpr int kMaximumProgressiveRegionHeight = vector_v2::kTileProducerH
 inline constexpr std::size_t kMaximumProgressiveRegionPixels =
     static_cast<std::size_t>(kMaximumProgressiveRegionWidth) * kMaximumProgressiveRegionHeight;
 inline constexpr int kMaximumCachedPanDelta = 96;
-// A pan present may start without waiting for the next tear edge when one
-// passed recently. The writer covers the panel in ~20 ms at ~23 rows/ms
-// while the beam scans at ~26.6 rows/ms and 16.8 ms per sweep; the wrapped
-// beam only catches a top-started writer when the edge is older than ~13 ms,
-// so an 8 ms window keeps physical margin. Physical glass must reconfirm
-// tearing behavior for this discipline.
-// The panel beam sweeps all 448 panel rows in one ~16.8 ms tear period
-// (~26.6 rows/ms). Cached pan frames race the beam instead of waiting for
-// the top-of-frame pulse: the push starts at the row the beam has just
-// passed, minus a safety margin so an estimation error stays on the safe
-// (behind-the-beam) side. The writer (~16 rows/ms) never catches the beam,
-// and the wrapped beam only laps a ~23 ms sweep after ~44 ms.
+// The panel beam sweeps all 448 rows per ~16.8 ms tear period (~26.6
+// rows/ms); the writer sweeps slower, so it must start behind the beam and
+// can never catch it within one pass.
 inline constexpr std::int64_t kTePeriodUs = 16'800;
 inline constexpr int kPanelSweepRows = 448;
-// The TE fall-to-scan-start latency is unspecified for this panel (the TE
-// pulse itself is ~577 us ~ 15 rows), so the margin must dominate that
-// uncertainty plus jitter: a writer that starts ahead of the beam tears at
-// the start row. 16 rows measured as too thin on glass; 48 rows (~1.8 ms of
-// beam travel) starts safely behind and costs nothing, it only moves the
-// band split.
+// Every band start needs this much estimated beam lead: it must dominate
+// the unspecified TE-to-scan-start latency (the TE pulse alone is ~15 rows)
+// plus jitter, or the writer starts ahead of the beam and tears.
 inline constexpr int kBeamStartMarginRows = 48;
 // Cached pan composition is strip-looped through the same bounded scratch as
 // progressive tile presentation, so wider reuse costs no additional PSRAM.
 inline constexpr std::size_t kLiveRegionScratchPixels = kMaximumProgressiveRegionPixels;
+// Internal-RAM overlay scratch for pan frames: the largest single overlay
+// draw surface, and the canvas backup beneath every overlay (26,576 aligned
+// pixels measured, plus margin for chrome drift).
+inline constexpr std::size_t kPanStripScratchPixels = 16'384;
+inline constexpr std::size_t kPanOverlayBackupPixels = 28'672;
 // Interactive gestures commit in bounded chunks so intermediate authority
-// publication stays inside one input-poll slice. With visible tiles exempt
-// from the commit budget (dropping them blurred on-screen ink, rejected on
-// glass), 48 samples measured 17.3 ms worst-case at 50% — over the 15 ms
-// slice bound. Thirty-two samples shrink the per-chunk visible band
-// proportionally (~12 ms worst) and tighten the commit cadence; the ~40%
-// extra total work is the accepted price of latency over throughput. The
-// mixed-draw and long-gesture harness gates re-prove the bound with this
-// exact constant.
+// publication stays inside one input-poll slice. Visible tiles are exempt
+// from the commit budget, so the chunk size bounds the visible band a
+// commit must paint; the mixed-draw and long-gesture gates re-prove the
+// 15 ms slice bound with this exact constant.
 inline constexpr std::size_t kInteractiveChunkSampleLimit = 32;
 // Wall-clock bound for one in-place chunk commit (overview replay plus
 // visible-tile painting). Tiles that do not fit are dropped to correct
@@ -106,7 +95,9 @@ class VectorV2Presenter {
  public:
   VectorV2Presenter(vector_v2::MaterializedCanvas& canvas, vector_v2::NavigationState& navigation,
                     vector_v2::DisplayScheduler& scheduler, Co5300PanelTransport& display,
-                    std::span<std::uint16_t> frame_pixels, std::span<std::uint16_t> region_pixels);
+                    std::span<std::uint16_t> frame_pixels, std::span<std::uint16_t> region_pixels,
+                    std::span<std::uint16_t> strip_scratch_pixels,
+                    std::span<std::uint16_t> overlay_backup_pixels);
 
   [[nodiscard]] bool ready() const;
   // Read-only transport telemetry (prepare/staging counters) for gates that
@@ -159,7 +150,6 @@ class VectorV2Presenter {
                                                            vector_v2::PixelRect panel_bounds,
                                                            const vector_v2::ChromeState& chrome,
                                                            std::uint32_t event_us);
-  [[nodiscard]] bool compose_into_frame(vector_v2::PixelRect panel_bounds);
   [[nodiscard]] vector_v2::ChromeNavigation chrome_navigation() const;
   [[nodiscard]] bool restore_canvas_region(vector_v2::PixelRect bounds);
   [[nodiscard]] bool restore_canvas_overlays(const vector_v2::ChromeState& chrome);
@@ -168,15 +158,21 @@ class VectorV2Presenter {
                                                              std::uint32_t event_us,
                                                              std::int64_t compose_us = 0,
                                                              bool allow_minimap_refresh = false);
-  [[nodiscard]] LivePresentationTiming present_unobscured(
-      vector_v2::PixelRect bounds, const vector_v2::ChromeState& chrome, std::uint32_t event_us,
-      std::int64_t compose_us = 0, bool wait_for_completion = true, bool ring = false,
-      std::span<const vector_v2::PixelRect> exposed = {});
-  [[nodiscard]] LivePresentationTiming present_ring(vector_v2::PixelRect bounds,
+  [[nodiscard]] LivePresentationTiming present_unobscured(vector_v2::PixelRect bounds,
+                                                          const vector_v2::ChromeState& chrome,
+                                                          std::uint32_t event_us,
+                                                          std::int64_t compose_us = 0,
+                                                          bool wait_for_completion = true);
+  // Row-major full-width ring sweep of one pan band; overlay pixels already
+  // sit in the ring and exposed strips compose just-in-time with overlay
+  // rects subtracted.
+  [[nodiscard]] LivePresentationTiming present_ring(vector_v2::PixelRect band,
+                                                    const vector_v2::ChromeState& chrome,
                                                     std::uint32_t event_us,
                                                     std::span<const vector_v2::PixelRect> exposed);
   [[nodiscard]] bool compose_into_ring(vector_v2::PixelRect panel_bounds);
   void copy_ring_region(vector_v2::PixelRect panel_bounds, std::span<std::uint16_t> destination);
+  void write_ring_region(vector_v2::PixelRect panel_bounds, std::span<const std::uint16_t> source);
   [[nodiscard]] LivePresentationTiming refresh_pan(int old_x, int old_y,
                                                    const vector_v2::ChromeState& chrome,
                                                    std::uint32_t event_us);
@@ -187,6 +183,10 @@ class VectorV2Presenter {
   Co5300PanelTransport& display_;
   std::span<std::uint16_t> frame_;
   std::span<std::uint16_t> region_;
+  std::span<std::uint16_t> strip_scratch_;
+  std::span<std::uint16_t> overlay_backup_;
+  std::uint32_t te_last_count_ = 0;
+  std::int64_t te_last_change_us_ = 0;
   std::unique_ptr<RibbonRenderer> renderer_;
   vector_v2::ZoomLevel frame_zoom_ = vector_v2::ZoomLevel::k25Percent;
   int frame_level_x_ = 0;

@@ -9,6 +9,10 @@
 
 namespace tinydraw::vector_v2 {
 
+// This plan pins the canvas-side fixed regions so drift is a deliberate
+// edit, not an accident. It is NOT a full model of AppStorage (the app
+// allocates additional scratch and snapshot buffers); the battery's
+// export-reserve gate is the authority on real peak memory.
 // Revision publication renders the complete next overview outside the live
 // overview before committing it. This region is distinct from kOverviewBytes.
 inline constexpr std::size_t kOverviewPublicationBytes = kOverviewBytes;

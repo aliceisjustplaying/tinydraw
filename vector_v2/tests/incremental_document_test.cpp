@@ -1230,3 +1230,41 @@ TEST_CASE("in-place append fails atomically before mutation") {
                                                  rig.in_place_workspace(), view)
             .has_value());
 }
+
+TEST_CASE("in-place append preserves same-color uniforms at every zoom") {
+  EquivalenceRig rig;
+  // Two 100% uniforms under the stroke: one matches the painted color and
+  // must survive, the other differs and drops as cross-zoom damage.
+  const vector_v2::TileKey matching{vector_v2::ZoomLevel::k100Percent, 0, 0};
+  const vector_v2::TileKey differing{vector_v2::ZoomLevel::k100Percent, 1, 0};
+  REQUIRE(rig.canvas.publish_uniform(matching, rig.canvas.current_revision(),
+                                     vector_v2::MaterializationQuality::kExact, 0x001FU));
+  REQUIRE(rig.canvas.publish_uniform(differing, rig.canvas.current_revision(),
+                                     vector_v2::MaterializationQuality::kExact, 0xF800U));
+
+  const vector_v2::ViewRequest priority{
+      .zoom = vector_v2::ZoomLevel::k400Percent,
+      .level_pixels = {0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
+  };
+  std::array<vector_v2::CompactOperationSample, 4> samples{};
+  for (std::size_t index = 0; index < samples.size(); ++index) {
+    // World x 20..110 with radius 8: crosses both 64-px 100% tiles.
+    samples[index] = {.x_quarter = static_cast<std::uint16_t>((20U + index * 30U) * 4U),
+                      .y_quarter = static_cast<std::uint16_t>(20U * 4U),
+                      .radius_256 = 8U * 256U,
+                      .elapsed_ms = static_cast<std::uint16_t>(index * 8U)};
+  }
+  const auto result = vector_v2::append_incrementally_in_place(
+      rig.log, rig.canvas, {.color = 0x001FU, .samples = samples}, rig.in_place_workspace(),
+      priority);
+  REQUIRE(result.has_value());
+
+  const auto survivor = rig.canvas.lookup(matching);
+  REQUIRE(survivor.has_value());
+  CHECK(survivor->kind == vector_v2::SourceKind::kUniform);
+  CHECK(survivor->uniform_color == 0x001FU);
+  const auto dropped = rig.canvas.lookup(differing);
+  CHECK((!dropped.has_value() || dropped->kind == vector_v2::SourceKind::kOverview));
+  // The dropped 100% uniform is deferred cold work and must be reported.
+  CHECK(result->cross_zoom_invalidated > 0U);
+}

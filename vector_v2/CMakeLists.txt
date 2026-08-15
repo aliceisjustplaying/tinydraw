@@ -32,6 +32,7 @@ if(TINYDRAW_BUILD_TESTS)
     tests/materialized_canvas_test.cpp
     tests/navigation_state_test.cpp
     tests/operation_builder_test.cpp
+    tests/panel_staging_test.cpp
     tests/operation_lod_store_test.cpp
     tests/operation_log_test.cpp
     tests/tile_payload_analysis_test.cpp
