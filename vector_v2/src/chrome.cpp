@@ -405,11 +405,22 @@ bool draw_strip_overlays(const MinimapSurface& surface, const ChromeState& state
   if (!canvas_overlays_visible(state)) {
     return false;
   }
+  // Each overlay draws only when its rect can intersect the surface: the
+  // painters clip correctly but still walk their full geometry, which cost
+  // ~5 ms per pan frame across the per-overlay prep surfaces.
+  const auto intersects = [&surface](const ChromeRect& rect) {
+    return rect.x0 - 2 < surface.origin_x + surface.width && rect.x1 + 2 > surface.origin_x &&
+           rect.y0 - 3 < surface.origin_y + surface.height && rect.y1 + 3 > surface.origin_y;
+  };
   Painter painter(surface.pixels, surface.width, surface.height, surface.origin_x,
                   surface.origin_y);
-  draw_zoom_rail(painter, navigation);
-  draw_minimap(surface, navigation);
-  if (state.battery_percentage >= 0) {
+  if (intersects(kZoomRailOverlayRect)) {
+    draw_zoom_rail(painter, navigation);
+  }
+  if (intersects(kMinimapOverlayRect)) {
+    draw_minimap(surface, navigation);
+  }
+  if (state.battery_percentage >= 0 && intersects(kBatteryOverlayRect)) {
     draw_battery(painter, state);
   }
   return true;
