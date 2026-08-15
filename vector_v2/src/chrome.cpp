@@ -445,9 +445,22 @@ int chrome_input_bottom(const ChromeState& state) {
   return state.popup == ChromePopup::kColors ? 0 : kChromePopupInputBottom;
 }
 
+int chrome_ink_bottom(const ChromeState& state) {
+  if (state.confirm_new || state.export_status == ChromeExportStatus::kSaving) {
+    return 0;
+  }
+  if (state.popup == ChromePopup::kNone) {
+    // Committed ink continues under the dock: the rows behind it are real
+    // world content, chrome renders on top, and the stroke reappears when
+    // the view pans. This matches drawing under the minimap and zoom rail.
+    return kHeight;
+  }
+  return state.popup == ChromePopup::kColors ? 0 : kChromePopupInputBottom;
+}
+
 std::optional<ChromePoint> clip_canvas_segment(ChromePoint previous, ChromePoint current,
                                                const ChromeState& state) {
-  const int input_bottom = chrome_input_bottom(state);
+  const int input_bottom = chrome_ink_bottom(state);
   if (input_bottom == 0) {
     return std::nullopt;
   }

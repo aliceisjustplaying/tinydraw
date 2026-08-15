@@ -64,6 +64,26 @@ TEST_CASE("adjacent zoom transitions preserve an unclamped world focus") {
   }
 }
 
+TEST_CASE("zoom centers the focused point even against a stale same-zoom view") {
+  // Regression: visit 400% somewhere, pan elsewhere at 100% so the focused
+  // point sits near the stale 400% view's corner, and zoom back in. The
+  // focused point must land at the panel center, not in the stale view's
+  // corner (the removed remembered-origin reuse produced exactly that
+  // top-left drift on the physical zoom button).
+  vector_v2::NavigationState navigation;
+  REQUIRE(navigation.set_zoom(vector_v2::ZoomLevel::k400Percent, kDrawingCenter));
+  REQUIRE(navigation.set_origin(1000, 1200, kDrawingCenter));
+  REQUIRE(navigation.set_zoom(vector_v2::ZoomLevel::k100Percent, kDrawingCenter));
+  REQUIRE(navigation.set_origin(70, 120, kDrawingCenter));
+  const auto focus = navigation.focus_quarter_world();
+
+  REQUIRE(navigation.set_zoom(vector_v2::ZoomLevel::k400Percent, kDrawingCenter));
+  CHECK(navigation.focus_quarter_world() == focus);
+  const auto visible = panel_focus_world(navigation, kDrawingCenter);
+  CHECK(std::abs(visible.x - focus.x) <= 4);
+  CHECK(std::abs(visible.y - focus.y) <= 4);
+}
+
 TEST_CASE("overview round trip restores a compatible remembered tiled origin") {
   vector_v2::NavigationState navigation;
   REQUIRE(navigation.set_zoom(vector_v2::ZoomLevel::k400Percent, kDrawingCenter));

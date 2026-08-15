@@ -116,6 +116,13 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
 [[nodiscard]] float brush_size(ChromeSize size);
 [[nodiscard]] int chrome_canvas_bottom(const ChromeState& state);
 [[nodiscard]] int chrome_input_bottom(const ChromeState& state);
+// The bottom bound for committed ink. Deeper than the render/input bottoms:
+// with no popup open, strokes continue under the dock into the hidden world
+// rows; modal states still block ink entirely.
+[[nodiscard]] int chrome_ink_bottom(const ChromeState& state);
+// Clips a stroke segment against chrome_ink_bottom. Live preview rendering
+// is separately clipped by the presenter at chrome_input_bottom, so a
+// segment accepted here never paints over chrome.
 [[nodiscard]] std::optional<ChromePoint> clip_canvas_segment(ChromePoint previous,
                                                              ChromePoint current,
                                                              const ChromeState& state);
