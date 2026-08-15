@@ -1792,11 +1792,13 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
   const std::int64_t staging_mean_us =
       staging.samples == 0U ? 0 : staging.total_us / static_cast<std::int64_t>(staging.samples);
   const std::int64_t worst_headroom_us = worst.wire_budget_us - worst.maximum_us;
+  const std::int64_t frame_p95_us = pan_sequence_percentile(sorted_frame, 95);
+  const bool pacing_pass = frame_p95_us <= 41'700;
   // Transport discipline requires a factual configured-edge observation and
   // every strip producer staying strictly faster than its measured wire time.
-  // This remains software evidence only and makes no glass-correctness claim.
+  // Pacing is a separate ship-contract gate; neither is a glass claim.
   const bool pass = all_passed && all_reused && tear_edge_failures == 0U && staging.samples != 0U &&
-                    staging.all_under_wire;
+                    staging.all_under_wire && pacing_pass;
   std::printf(
       "TINYDRAW_GATE1_PANSEQ zoom=%s frames=%u scroll_avg_us=%lld exposed_avg_us=%lld "
       "tear_wait_avg_us=%lld present_avg_us=%lld prepare_avg_us=%lld "
@@ -1807,7 +1809,7 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
       "tear_edge_failures=%lu presentation_experiment=%s te_edge=%s clock_mhz=%d "
       "strip_samples=%lu staging_mean_us=%lld staging_max_us=%lld worst_strip=%u "
       "worst_strip_y=%d worst_wire_budget_us=%lld worst_headroom_us=%lld "
-      "staging_invariant=%u all_reused=%u pass=%u\n",
+      "staging_invariant=%u pacing_pass=%u all_reused=%u pass=%u\n",
       zoom_name(zoom), static_cast<unsigned>(kPanSequenceFrames),
       static_cast<long long>(totals.scroll_us / kFrames),
       static_cast<long long>(totals.exposed_us / kFrames),
@@ -1821,8 +1823,7 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
       static_cast<long long>(totals.staging_us / kFrames),
       static_cast<long long>(totals.frame_us / kFrames),
       static_cast<long long>(pan_sequence_percentile(sorted_frame, 50)),
-      static_cast<long long>(pan_sequence_percentile(sorted_frame, 95)),
-      static_cast<long long>(sorted_frame.back()),
+      static_cast<long long>(frame_p95_us), static_cast<long long>(sorted_frame.back()),
       static_cast<long long>(pan_sequence_percentile(sorted_complete, 50)),
       static_cast<long long>(pan_sequence_percentile(sorted_complete, 95)),
       static_cast<long long>(sorted_complete.back()),
@@ -1831,7 +1832,7 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
       static_cast<long long>(staging_mean_us), static_cast<long long>(staging.maximum_us),
       static_cast<unsigned>(staging.worst_strip_index), worst.panel_y,
       static_cast<long long>(worst.wire_budget_us), static_cast<long long>(worst_headroom_us),
-      staging.all_under_wire, all_reused, pass);
+      staging.all_under_wire, pacing_pass, all_reused, pass);
   std::fflush(stdout);
   return pass;
 }
