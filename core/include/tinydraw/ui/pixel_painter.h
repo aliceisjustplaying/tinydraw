@@ -48,8 +48,12 @@ class PixelPainter {
   }
 
   void circle(int center_x, int center_y, int radius, std::uint16_t color) {
-    for (int y = center_y - radius; y <= center_y + radius; ++y) {
-      for (int x = center_x - radius; x <= center_x + radius; ++x) {
+    const int first_y = std::max(center_y - radius, origin_y_);
+    const int last_y = std::min(center_y + radius, origin_y_ + height_ - 1);
+    const int first_x = std::max(center_x - radius, origin_x_);
+    const int last_x = std::min(center_x + radius, origin_x_ + width_ - 1);
+    for (int y = first_y; y <= last_y; ++y) {
+      for (int x = first_x; x <= last_x; ++x) {
         const int dx = x - center_x;
         const int dy = y - center_y;
         if (dx * dx + dy * dy <= radius * radius) {

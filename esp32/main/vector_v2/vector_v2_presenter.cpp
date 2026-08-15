@@ -605,23 +605,28 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   }
   timing.tear_wait_us = (tear_completed - tear_started) + band_wait_us;
 #else
-  // Normal development path: require a newly observed configured TE edge,
-  // then submit one monotonically increasing row-zero sweep.
-  const auto wait = display_.wait_for_tear_edge(selected_tear_edge(), kTearWaitTimeoutUs);
-  tear_completed = esp_timer_get_time();
-  timing.tear_wait_us = tear_completed - tear_started;
-  record_tear_wait(timing, wait);
-  if (!wait.observed) {
-    return timing;
-  }
-  const auto sweep =
-      present_ring({0, 0, vector_v2::kOverviewWidth, canvas_bottom}, chrome, event_us, exposed);
+  // Normal development path: fill the idle DMA buffers first, require a newly
+  // observed configured TE edge, then submit one monotonically increasing
+  // row-zero sweep immediately from those prepared strips.
+  const auto sweep = present_ring({0, 0, vector_v2::kOverviewWidth, canvas_bottom}, chrome,
+                                  event_us, exposed, true);
   timing.pushes = sweep.pushes;
   timing.first_submit_us = sweep.first_submit_us;
   timing.exposed_compose_us = sweep.exposed_compose_us;
   timing.chrome_us = sweep.chrome_us;
   timing.compose_us += sweep.exposed_compose_us;
+  timing.tear_wait_us = sweep.tear_wait_us;
+  timing.tear_edge_observed_at_us = sweep.tear_edge_observed_at_us;
+  timing.tear_edge_isr_to_resume_us = sweep.tear_edge_isr_to_resume_us;
+  timing.tear_edge_observed = sweep.tear_edge_observed;
+  timing.tear_edge_wait_resumed = sweep.tear_edge_wait_resumed;
+  timing.tear_edge_timed_out = sweep.tear_edge_timed_out;
+  timing.tear_heal_attempted = sweep.tear_heal_attempted;
+  timing.tear_heal_command_sent = sweep.tear_heal_command_sent;
   timing.passed = sweep.passed;
+  if (sweep.tear_edge_observed_at_us != 0) {
+    tear_completed = sweep.tear_edge_observed_at_us;
+  }
 #endif
 
   // Every strip belongs to this ordered presentation. Drain once after the
@@ -778,6 +783,22 @@ bool VectorV2Presenter::paint_stage_thunk(void* raw, const PanelStageSurface& su
   return context.presenter != nullptr && context.presenter->paint_stage_surface(context, surface);
 }
 
+bool VectorV2Presenter::wait_for_stream_edge_thunk(void* raw) {
+  auto& context = *static_cast<StageContext*>(raw);
+  if (context.presenter == nullptr || context.timing == nullptr) {
+    return false;
+  }
+  const std::int64_t started = esp_timer_get_time();
+  const auto wait = context.presenter->display_.wait_for_tear_edge_after(
+      selected_tear_edge(), context.tear_edge_count, kTearWaitTimeoutUs);
+  context.timing->tear_wait_us += esp_timer_get_time() - started;
+  record_tear_wait(*context.timing, wait);
+  if (wait.observed) {
+    context.timing->tear_edge_observed_at_us = esp_timer_get_time();
+  }
+  return wait.observed;
+}
+
 bool VectorV2Presenter::paint_stage_surface(StageContext& context,
                                             const PanelStageSurface& surface) {
   const std::int64_t exposed_started = esp_timer_get_time();
@@ -815,7 +836,7 @@ bool VectorV2Presenter::paint_stage_surface(StageContext& context,
 
 LivePresentationTiming VectorV2Presenter::present_ring(
     vector_v2::PixelRect band, const vector_v2::ChromeState& chrome, std::uint32_t event_us,
-    std::span<const vector_v2::PixelRect> exposed) {
+    std::span<const vector_v2::PixelRect> exposed, bool gate_on_tear_edge) {
   band = align_bounds(band);
   LivePresentationTiming timing{};
   const int band_width = band.x1 - band.x0;
@@ -845,15 +866,24 @@ LivePresentationTiming VectorV2Presenter::present_ring(
 
   int rows_per_strip = std::max(2, 16'384 / band_width);
   rows_per_strip &= ~1;
-  StageContext context{
-      .presenter = this, .chrome = &chrome, .navigation = chrome_navigation(), .exposed = exposed};
+  const auto tear = display_.tear_signal_timing();
+  const std::uint32_t tear_edge_count =
+      selected_tear_edge() == TearSignalEdge::kRising ? tear.rising_edges : tear.falling_edges;
+  StageContext context{.presenter = this,
+                       .chrome = &chrome,
+                       .navigation = chrome_navigation(),
+                       .exposed = exposed,
+                       .timing = &timing,
+                       .tear_edge_count = tear_edge_count};
   const std::uint32_t pushes_before = display_.push_count();
-  const std::int64_t first_submitted = esp_timer_get_time();
+  const std::int64_t stream_started = esp_timer_get_time();
   const bool streamed = display_.stream_rect_ring(
       band.x0, band.y0, band_width, band_height, scheduled->strip.pixels.data(),
       scheduled->strip.stride, scheduled->strip.source_shift_x, scheduled->strip.source_shift_y,
       scheduled->strip.source_area_width, scheduled->strip.source_area_height, rows_per_strip,
-      {.context = &context, .paint = &paint_stage_thunk});
+      {.context = &context, .paint = &paint_stage_thunk},
+      gate_on_tear_edge ? PanelStreamGate{.context = &context, .wait = &wait_for_stream_edge_thunk}
+                        : PanelStreamGate{});
   if (!streamed) {
     static_cast<void>(scheduler_.abort(*sequence));
     return timing;
@@ -862,6 +892,8 @@ LivePresentationTiming VectorV2Presenter::present_ring(
     return timing;
   }
   timing.pushes = display_.push_count() - pushes_before;
+  const std::int64_t first_submitted =
+      gate_on_tear_edge ? context.timing->tear_edge_observed_at_us : stream_started;
   timing.first_submit_us =
       event_us == 0U
           ? 0
