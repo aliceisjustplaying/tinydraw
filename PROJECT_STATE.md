@@ -34,26 +34,40 @@ backed by [`vector_v2/hardware-receipts/c86f3ac-manual-glass.log`](vector_v2/har
 
 Current measured finish-line status:
 
-- **Pan correctness: GREEN on glass for the boundary-top-sweep policy.**
-  Manual pan at 100%/400% shows no tearing; probe cell 1 (rising-edge
-  row-zero sweep) is optically clean while the free-running positive control
-  tears (`benchmark-results/blockB-optical/`). Fail-closed TE handling and
-  reuse-requires-observed-edge landed in `6057f9c`.
-- **Pan pacing: RED — 19.9 FPS measured** (`gate-boundary-pan.log`): frame
-  p95 52.8/53.2 ms vs the required ≤41.7 ms. Decomposition: 18.4 ms overlay
-  PSRAM round trips + 10.2 ms TE wait + 21.6 ms sweep = 3 TE periods.
-  Removing the overlay round trips (Wave 2 staging compositor) fits the
-  frame in 2 periods ≈ 29.8 FPS.
-- **Known bug:** ink drawn under the zoom rail is distorted — the overlay
-  backup/restore machinery stomps fresh strokes. Same root cause as the
-  pacing gap; the staging compositor removes the mechanism. Acceptance
-  test: draw under every overlay, zero distortion.
+- **Pan correctness: GREEN on glass, including the staging compositor**
+  (2026-08-16 ~01:50 owner check on `126ff68`). History that a reviewer
+  needs: the compositor initially reintroduced fixed-row tearing twice —
+  burst pre-staging (`b5bdd78`) tore near the zoom rail; reverting it moved
+  the tear to the minimap region — because per-strip chrome patching pushed
+  staging below wire speed. The fix is the enforced per-strip invariant
+  (staging < wire time for every strip; receipts in
+  `benchmark-results/wave2-compositor/STAGING_INVARIANT_RECEIPT.md` and
+  `GLASS_OBSERVATIONS.md`). A bounded burst retry kept the invariant but
+  bought no p95 and was rejected. Tear-free is a *rhythm property*: any
+  pacing change re-opens the optical gate.
+- **Pan pacing: RED — ~20 FPS** (p95 50.9 ms vs required ≤41.7). The 33.9/
+  39.9 ms burst build is falsified (torn). Forward path per
+  `HARDWARE_LIMITS.md` §5: canvas-region-only sweeps (≤~400 rows) fit one
+  TE period — toolbar rows do not change during pan.
+- **Zoom-rail ink distortion: FIXED** — ring is canvas-pure; regression gate
+  `TINYDRAW_GATE1_OVERLAY_CANVAS presentation_mutations=0 pass=1`.
 - **Ink latency: RED.** Authority/materialization runs before preview, the
   existing provisional ribbon tail is intentionally omitted, and glass saw
   15.5–35.8 ms chunks with 92–143 ms loop gaps.
-- **Cold 400%: RED.** Adversarial p95 is 628 ms. The next accepted slice must
-  improve the isolated cold path by at least 25%, with product p95 ≤471 ms and
-  every accepted run below 500 ms.
+- **Cold 400%: RED, and the planned lever is falsified.** Adversarial p95 is
+  628 ms on device. The block replay index (`dd6d8c9`, host prototype) cuts
+  ops scanned 90% on seed-7 but wall time only 10.9%, and prunes **0%** on
+  the adversarial corpus: all 1,038 candidates genuinely intersect. The
+  cost is real work, not wasted scanning — review P1-4's premise does not
+  hold there. Next: on-device measurement, then segment-level indexing or
+  per-group checkpointing. Index is exactness-preserving and undo-ready
+  (active-prefix queries); keep it.
+- **New since the review:** exact-fidelity SVG export core (`8209d28`, host,
+  13,431 assertions incl. renderer-raster fidelity proof); ink trace harness
+  foundation (`b2c57cf`, format/validation/stats, synthetic fixtures);
+  rerender-amplification counters (host 1.000; real déjà vu test needs
+  on-device camera-change scenarios). `SHIP_CONTRACT.md` is frozen and
+  governs all gates.
 - **Authority/exactness: GREEN within its current contract.** Host exactness and
   fuzz coverage pass, but snapshot restore can install a raster baseline and
   empty the operation log; operation-only Undo/SVG/autosave authority is not yet
