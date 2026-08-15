@@ -635,6 +635,48 @@ bool run_edge_ink_case(VectorV2Presenter& presenter, vector_v2::TileProducer& pr
   return edge_failures == 0U;
 }
 
+bool run_overlay_canvas_purity_gate(VectorV2Presenter& presenter, OperationLog& log,
+                                    MaterializedCanvas& canvas,
+                                    const vector_v2::ChromeState& chrome,
+                                    const IncrementalDocumentWorkspace& workspace) {
+  constexpr std::array<std::array<int, 2>, 4> kOverlayCenters{{
+      {280, 36},   // battery
+      {332, 150},  // zoom rail
+      {310, 310},  // minimap
+      {184, 410},  // toolbar
+  }};
+  const DocumentRevision before = canvas.current_revision();
+  std::uint16_t gesture_id = 6'000;
+  for (const auto& center : kOverlayCenters) {
+    const std::array<CompactOperationSample, 1> sample{{{
+        .x_quarter = static_cast<std::uint16_t>(center[0] * 4),
+        .y_quarter = static_cast<std::uint16_t>(center[1] * 4),
+        .radius_256 = 12U * 256U,
+        .elapsed_ms = 0,
+    }}};
+    if (!vector_v2::append_incrementally(log, canvas,
+                                         {.tool = OperationTool::kPen,
+                                          .color = 0xF800U,
+                                          .gesture_id = gesture_id++,
+                                          .samples = sample},
+                                         workspace)
+             .has_value()) {
+      return false;
+    }
+  }
+  const auto refresh = presenter.set_view(ZoomLevel::k100Percent, 0, 0, chrome, now_us());
+  const bool preserved = refresh.passed && presenter.verify_staging_preserves_canvas(chrome);
+  const bool authority = canvas.current_revision().value == before.value + kOverlayCenters.size() &&
+                         log.current_revision() == canvas.current_revision();
+  const bool passed = preserved && authority;
+  std::printf(
+      "TINYDRAW_GATE1_OVERLAY_CANVAS regions=zoom,minimap,toolbar,battery operations=%lu "
+      "presentation_mutations=%u authority=%u pass=%u\n",
+      static_cast<unsigned long>(kOverlayCenters.size()), !preserved, authority, passed);
+  std::fflush(stdout);
+  return passed;
+}
+
 bool run_live_ink_overlay_gate(VectorV2Presenter& presenter, const vector_v2::ChromeState& chrome) {
   if (!presenter.set_view(ZoomLevel::k100Percent, 0, 0, chrome, now_us()).passed) {
     return false;
@@ -646,7 +688,7 @@ bool run_live_ink_overlay_gate(VectorV2Presenter& presenter, const vector_v2::Ch
   const auto overlay = measure_live_ink_circle(presenter, chrome, {276.0F, 304.0F}, 48.0F);
   const bool passed = clear.failures == 0U && overlay.failures == 0U &&
                       clear.presented_updates > 0U && overlay.presented_updates > 0U &&
-                      overlay.maximum_chrome_us == 0 && overlay.maximum_submit_us < 16'667 &&
+                      overlay.maximum_chrome_us < 3'000 && overlay.maximum_submit_us < 16'667 &&
                       overlay.maximum_complete_us < 33'333;
   std::printf(
       "TINYDRAW_GATE1_LIVE_OVERLAY clear_updates=%lu clear_wall_max_us=%lld "
@@ -2472,7 +2514,8 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   const bool gate_100 =
       paced_cold && run_tile_gate(presenter, producer, log, canvas, chrome, ZoomLevel::k100Percent);
   const bool live_overlay =
-      gate_100 && run_live_ink_overlay_gate(presenter, chrome) &&
+      gate_100 && run_overlay_canvas_purity_gate(presenter, log, canvas, chrome, workspace) &&
+      run_live_ink_overlay_gate(presenter, chrome) &&
       run_edge_ink_case(presenter, producer, log, canvas, chrome, workspace, packed_tile_pixels);
   // Pan gates are part of the final verdict; downstream gates still key on
   // the last state-producing gate so a red pan number cannot stop later

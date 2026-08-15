@@ -99,19 +99,18 @@ TearSignalEdge selected_tear_edge() {
 
 int panel_clock_mhz() { return TINYDRAW_CO5300_CLOCK_MHZ; }
 
-VectorV2Presenter::VectorV2Presenter(
-    vector_v2::MaterializedCanvas& canvas, vector_v2::NavigationState& navigation,
-    vector_v2::DisplayScheduler& scheduler, Co5300PanelTransport& display,
-    std::span<std::uint16_t> frame_pixels, std::span<std::uint16_t> region_pixels,
-    std::span<std::uint16_t> strip_scratch_pixels, std::span<std::uint16_t> overlay_backup_pixels)
+VectorV2Presenter::VectorV2Presenter(vector_v2::MaterializedCanvas& canvas,
+                                     vector_v2::NavigationState& navigation,
+                                     vector_v2::DisplayScheduler& scheduler,
+                                     Co5300PanelTransport& display,
+                                     std::span<std::uint16_t> frame_pixels,
+                                     std::span<std::uint16_t> region_pixels)
     : canvas_(canvas),
       navigation_(navigation),
       scheduler_(scheduler),
       display_(display),
       frame_(frame_pixels),
       region_(region_pixels),
-      strip_scratch_(strip_scratch_pixels),
-      overlay_backup_(overlay_backup_pixels),
       renderer_(std::make_unique<RibbonRenderer>()) {
   std::printf(
       "TINYDRAW_VECTOR_V2_PRESENTATION experiment=%s te_edge=%s clock_mhz=%d "
@@ -122,9 +121,7 @@ VectorV2Presenter::VectorV2Presenter(
 bool VectorV2Presenter::ready() const {
   return canvas_.ready() && scheduler_.ready() && display_.ready() &&
          frame_.size() == vector_v2::kOverviewPixels &&
-         region_.size() >= kLiveRegionScratchPixels &&
-         strip_scratch_.size() >= kPanStripScratchPixels &&
-         overlay_backup_.size() >= kPanOverlayBackupPixels && renderer_ != nullptr;
+         region_.size() >= kLiveRegionScratchPixels && renderer_ != nullptr;
 }
 
 vector_v2::ZoomLevel VectorV2Presenter::zoom() const { return navigation_.zoom(); }
@@ -163,29 +160,12 @@ LivePresentationTiming VectorV2Presenter::refresh(const vector_v2::ChromeState& 
   if (!stats.has_value()) {
     return {};
   }
-  vector_v2::draw_chrome(frame_, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight, chrome);
-#ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
-  const int pattern_bottom = vector_v2::chrome_canvas_bottom(chrome);
-  const std::size_t pattern_pixels =
-      static_cast<std::size_t>(pattern_bottom) * kOpticalPatternWidth;
-  if (optical_row_pattern_enabled_) {
-    apply_optical_row_pattern_linear(pattern_bottom, overlay_backup_.first(pattern_pixels));
-  }
-#endif
   auto timing =
       present_with_overlays({0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight}, chrome,
                             event_us, esp_timer_get_time() - compose_started, true);
 #ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
-  if (optical_row_pattern_enabled_) {
-    for (int row = 0; row < pattern_bottom; ++row) {
-      std::copy_n(overlay_backup_.begin() + static_cast<std::ptrdiff_t>(row) * kOpticalPatternWidth,
-                  kOpticalPatternWidth,
-                  frame_.begin() + static_cast<std::ptrdiff_t>(row) * vector_v2::kOverviewWidth +
-                      kOpticalPatternX);
-    }
-    if (timing.pushes > 0U) {
-      optical_generation_ ^= 1U;
-    }
+  if (optical_row_pattern_enabled_ && timing.pushes > 0U) {
+    optical_generation_ ^= 1U;
   }
 #endif
   timing.tile_pixels = stats->tile_pixels;
@@ -450,97 +430,26 @@ vector_v2::ChromeNavigation VectorV2Presenter::chrome_navigation() const {
   };
 }
 
-bool VectorV2Presenter::restore_canvas_region(vector_v2::PixelRect bounds) {
-  const int width = bounds.x1 - bounds.x0;
-  const int height = bounds.y1 - bounds.y0;
-  const std::size_t count = static_cast<std::size_t>(width) * height;
-  if (width <= 0 || height <= 0 || count > region_.size()) {
-    return false;
-  }
-  const vector_v2::PixelRect level_bounds{
-      level_x() + bounds.x0,
-      level_y() + bounds.y0,
-      level_x() + bounds.x1,
-      level_y() + bounds.y1,
-  };
-  const auto pixels = region_.first(count);
-  if (!canvas_.compose_view({.zoom = zoom(), .level_pixels = level_bounds}, pixels).has_value()) {
-    return false;
-  }
-  for (int row = 0; row < height; ++row) {
-    const auto source = pixels.subspan(static_cast<std::size_t>(row) * width, width);
-    auto destination = frame_.subspan(
-        static_cast<std::size_t>(bounds.y0 + row) * vector_v2::kOverviewWidth + bounds.x0,
-        static_cast<std::size_t>(width));
-    std::copy(source.begin(), source.end(), destination.begin());
-  }
-  return true;
-}
-
-bool VectorV2Presenter::restore_canvas_overlays(const vector_v2::ChromeState& chrome) {
-  const auto overlays = vector_v2::chrome_overlay_regions(chrome);
-  for (std::size_t index = 0; index < overlays.count; ++index) {
-    const auto bounds = overlays.regions[index];
-    if (!restore_canvas_region({bounds.x0, bounds.y0, bounds.x1, bounds.y1})) {
-      return false;
-    }
-  }
-  return true;
-}
-
 LivePresentationTiming VectorV2Presenter::present_with_overlays(
     vector_v2::PixelRect bounds, const vector_v2::ChromeState& chrome, std::uint32_t event_us,
     std::int64_t compose_us, bool allow_minimap_refresh) {
-  const auto overlays = vector_v2::chrome_overlay_regions(chrome);
-  bool intersects = false;
-  for (std::size_t index = 0; index < overlays.count; ++index) {
-    const auto overlay = overlays.regions[index];
-    intersects = intersects || (bounds.x0 < overlay.x1 && bounds.x1 > overlay.x0 &&
-                                bounds.y0 < overlay.y1 && bounds.y1 > overlay.y0);
-  }
   const bool overview_changed =
       !minimap_presented_ || presented_minimap_revision_ != canvas_.current_revision();
   const bool refresh_minimap =
       vector_v2::chrome_minimap_refresh_required(chrome, overview_changed, allow_minimap_refresh);
-  if (!intersects && !refresh_minimap) {
-    return present(bounds, event_us, compose_us);
-  }
-  const bool full_frame = bounds.x0 == 0 && bounds.y0 == 0 &&
-                          bounds.x1 == vector_v2::kOverviewWidth &&
-                          bounds.y1 == vector_v2::kOverviewHeight;
-  if (intersects && !refresh_minimap && !full_frame) {
-    return present_unobscured(bounds, chrome, event_us, compose_us);
-  }
-
-  const std::int64_t chrome_started = esp_timer_get_time();
-  vector_v2::draw_chrome_canvas_overlays(frame_, vector_v2::kOverviewWidth,
-                                         vector_v2::kOverviewHeight, chrome, chrome_navigation());
-  const std::int64_t chrome_completed = esp_timer_get_time();
-  auto timing = present(bounds, event_us, compose_us + chrome_completed - chrome_started);
-  timing.chrome_us = chrome_completed - chrome_started;
-
-  bool minimap_refreshed = false;
-  const auto minimap = vector_v2::chrome_minimap_region(chrome);
-  if (refresh_minimap && minimap.has_value() && timing.passed) {
-    const bool requested_contains_minimap = bounds.x0 <= minimap->x0 && bounds.y0 <= minimap->y0 &&
-                                            bounds.x1 >= minimap->x1 && bounds.y1 >= minimap->y1;
-    if (requested_contains_minimap) {
-      minimap_refreshed = true;
-    } else {
-      const vector_v2::PixelRect minimap_bounds{minimap->x0, minimap->y0, minimap->x1, minimap->y1};
-      const auto minimap_timing = present(minimap_bounds, 0);
-      timing.complete_us += minimap_timing.complete_us;
-      timing.pushes += minimap_timing.pushes;
-      timing.passed = minimap_timing.passed;
-      minimap_refreshed = minimap_timing.passed;
+  if (refresh_minimap) {
+    if (const auto minimap = vector_v2::chrome_minimap_region(chrome); minimap.has_value()) {
+      bounds.x0 = std::min(bounds.x0, minimap->x0);
+      bounds.y0 = std::min(bounds.y0, minimap->y0);
+      bounds.x1 = std::max(bounds.x1, minimap->x1);
+      bounds.y1 = std::max(bounds.y1, minimap->y1);
+      bounds = align_bounds(bounds);
     }
   }
-  if (minimap_refreshed) {
+  auto timing = present(bounds, chrome, event_us, compose_us);
+  if (refresh_minimap && timing.passed) {
     presented_minimap_revision_ = canvas_.current_revision();
     minimap_presented_ = true;
-  }
-  if (!restore_canvas_overlays(chrome)) {
-    timing.passed = false;
   }
   return timing;
 }
@@ -550,34 +459,9 @@ LivePresentationTiming VectorV2Presenter::present_unobscured(vector_v2::PixelRec
                                                              std::uint32_t event_us,
                                                              std::int64_t compose_us,
                                                              bool wait_for_completion) {
-  auto visible =
-      vector_v2::chrome_unobscured_regions({bounds.x0, bounds.y0, bounds.x1, bounds.y1}, chrome);
-  if (visible.overflowed) {
-    // A dropped region would stay at stale panel contents; fail loudly so
-    // the caller repaints instead.
-    return {.compose_us = compose_us};
-  }
-  // Preserve deterministic top-down transport order when overlay subtraction
-  // splits the bounds into several windows.
-  std::sort(visible.regions.begin(), visible.regions.begin() + visible.count,
-            [](const auto& left, const auto& right) { return left.y0 < right.y0; });
-  LivePresentationTiming total{.compose_us = compose_us, .passed = true};
-  for (std::size_t index = 0; index < visible.count; ++index) {
-    const auto region = visible.regions[index];
-    const auto part =
-        present({region.x0, region.y0, region.x1, region.y1}, event_us, 0, wait_for_completion);
-    if (!part.passed) {
-      total.passed = false;
-      return total;
-    }
-    if (total.pushes == 0U && part.pushes > 0U) {
-      total.first_submit_us = part.first_submit_us;
-      total.first_complete_us = part.first_complete_us;
-    }
-    total.complete_us += part.complete_us;
-    total.pushes += part.pushes;
-  }
-  return total;
+  // Fixed chrome is restored inside the same staged window, so intersecting
+  // ink no longer splits into multiple panel submissions or completion drains.
+  return present(bounds, chrome, event_us, compose_us, wait_for_completion);
 }
 
 LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
@@ -614,88 +498,10 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   frame_ring_bottom_ = canvas_bottom;
   const std::span<const vector_v2::PixelRect> exposed{scroll->exposed.data(),
                                                       scroll->exposed_count};
-  // Overlays draw into the ring itself so their pixels ride the same
-  // wire-efficient full-width strip pushes as the canvas: no x-splits (each
-  // split transaction costs ~1 ms of synchronous window commands and the
-  // split slivers broke row-major order), and no moment where the panel
-  // shows canvas beneath an opaque overlay. The saved canvas restores after
-  // staging so the ring stays pure for reuse. The exposed share under each
-  // overlay settles first so overlays draw over current backdrop.
-  struct PreparedOverlay {
-    vector_v2::PixelRect rect;
-    std::size_t offset;
-    std::size_t count;
-  };
-  std::array<PreparedOverlay, 3> prepared{};
-  std::size_t prepared_count = 0;
-  std::size_t backup_used = 0;
-  const auto overlay_regions = vector_v2::chrome_overlay_regions(chrome);
-  for (std::size_t index = 0; index < overlay_regions.count; ++index) {
-    auto rect =
-        align_bounds({overlay_regions.regions[index].x0, overlay_regions.regions[index].y0,
-                      overlay_regions.regions[index].x1, overlay_regions.regions[index].y1});
-    rect.y1 = std::min(rect.y1, canvas_bottom);
-    const int rect_width = rect.x1 - rect.x0;
-    const int rect_height = rect.y1 - rect.y0;
-    if (rect_width <= 0 || rect_height <= 0) {
-      continue;
-    }
-    const std::size_t count = static_cast<std::size_t>(rect_width) * rect_height;
-    if (backup_used + count > overlay_backup_.size() || count > strip_scratch_.size()) {
-      return refresh(chrome, event_us);
-    }
-    for (const auto& exposed_rect : exposed) {
-      const vector_v2::PixelRect part{
-          std::max(exposed_rect.x0, rect.x0), std::max(exposed_rect.y0, rect.y0),
-          std::min(exposed_rect.x1, rect.x1), std::min(exposed_rect.y1, rect.y1)};
-      if (part.x0 < part.x1 && part.y0 < part.y1 && !compose_into_ring(part)) {
-        return refresh(chrome, event_us);
-      }
-    }
-    const auto backup = overlay_backup_.subspan(backup_used, count);
-    copy_ring_region(rect, backup);
-    std::copy(backup.begin(), backup.end(), strip_scratch_.begin());
-    // Per-overlay surface: only this overlay's content survives the draw
-    // clipping (the minimap interior fits only its own rect), so each rect
-    // costs one cheap draw instead of three full redraws.
-    if (!vector_v2::draw_chrome_strip_overlays(
-            {strip_scratch_.first(count), rect_width, rect_height, rect.x0, rect.y0}, chrome,
-            chrome_navigation())) {
-      return refresh(chrome, event_us);
-    }
-    write_ring_region(rect, strip_scratch_.first(count));
-    prepared[prepared_count++] = {rect, backup_used, count};
-    backup_used += count;
-  }
-  const std::int64_t exposed_completed = esp_timer_get_time();
-#ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
-  const std::size_t pattern_count = static_cast<std::size_t>(canvas_bottom) * kOpticalPatternWidth;
-  if (optical_row_pattern_enabled_) {
-    if (pattern_count > strip_scratch_.size()) {
-      return refresh(chrome, event_us);
-    }
-    apply_optical_row_pattern_ring(canvas_bottom, strip_scratch_.first(pattern_count));
-  }
-#endif
-  const auto restore_prepared = [&]() {
-#ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
-    // The optical pattern is the last mutation and its backup includes any
-    // intersecting overlays. Restore in reverse mutation order, then restore
-    // the canvas beneath the overlays so the reusable ring stays pure.
-    if (optical_row_pattern_enabled_) {
-      const vector_v2::PixelRect pattern_rect{
-          kOpticalPatternX, 0, kOpticalPatternX + kOpticalPatternWidth, canvas_bottom};
-      write_ring_region(pattern_rect, strip_scratch_.first(pattern_count));
-    }
-#endif
-    for (std::size_t index = 0; index < prepared_count; ++index) {
-      write_ring_region(prepared[index].rect,
-                        overlay_backup_.subspan(prepared[index].offset, prepared[index].count));
-    }
-  };
-
+  // The ring stays pure. Exposed canvas and fixed chrome are painted into
+  // each host-order internal staging strip during the ordered sweep.
   LivePresentationTiming timing{};
-  timing.compose_us = exposed_completed - started;
+  timing.compose_us = scroll_completed - started;
   const std::int64_t tear_started = esp_timer_get_time();
   std::int64_t tear_completed = tear_started;
   const std::uint32_t first_sequence = display_.submit_count() + 1U;
@@ -715,7 +521,6 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   }
   timing.tear_edge_observed = selected_count != 0U;
   if (selected_count == 0U || now_us_health - te_last_change_us_ > 100'000) {
-    restore_prepared();
     return timing;
   }
 
@@ -744,14 +549,13 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
     }
   }
   if (!model_ready) {
-    restore_prepared();
     return timing;
   }
   tear_completed = esp_timer_get_time();
   const LivePresentationTiming edge_timing = timing;
   timing = present_ring({0, start_row, vector_v2::kOverviewWidth, canvas_bottom}, chrome, event_us,
                         exposed);
-  timing.compose_us = exposed_completed - started;
+  timing.compose_us = scroll_completed - started + timing.exposed_compose_us;
   timing.tear_edge_observed = true;
   timing.tear_edge_timed_out = edge_timing.tear_edge_timed_out;
   timing.tear_heal_attempted = edge_timing.tear_heal_attempted;
@@ -788,6 +592,9 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
       const auto wrapped =
           present_ring({0, 0, vector_v2::kOverviewWidth, start_row}, chrome, event_us, exposed);
       timing.pushes += wrapped.pushes;
+      timing.exposed_compose_us += wrapped.exposed_compose_us;
+      timing.chrome_us += wrapped.chrome_us;
+      timing.compose_us += wrapped.exposed_compose_us;
       timing.passed = wrapped.passed;
     } else {
       timing.passed = false;
@@ -802,19 +609,20 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   timing.tear_wait_us = tear_completed - tear_started;
   record_tear_wait(timing, wait);
   if (!wait.observed) {
-    restore_prepared();
     return timing;
   }
   const auto sweep =
       present_ring({0, 0, vector_v2::kOverviewWidth, canvas_bottom}, chrome, event_us, exposed);
   timing.pushes = sweep.pushes;
   timing.first_submit_us = sweep.first_submit_us;
+  timing.exposed_compose_us = sweep.exposed_compose_us;
+  timing.chrome_us = sweep.chrome_us;
+  timing.compose_us += sweep.exposed_compose_us;
   timing.passed = sweep.passed;
 #endif
 
-  // Staging is synchronous, so the ring can be restored before the one frame
-  // completion drain. A failed submit or drain remains non-reusable.
-  restore_prepared();
+  // Every strip belongs to this ordered presentation. Drain once after the
+  // final submission; failed staging or completion remains non-reusable.
   const bool frame_completed = display_.wait_for_all(2'000'000);
   const std::int64_t frame_drained = esp_timer_get_time();
   timing.passed = timing.passed && frame_completed;
@@ -837,7 +645,6 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
     }
   }
   timing.scroll_us = scroll_completed - started;
-  timing.exposed_compose_us = exposed_completed - scroll_completed;
   timing.frame_reused = timing.passed && timing.tear_edge_observed;
   static_cast<void>(canvas_.remember_view(navigation_.view()));
   frame_level_x_ = level_x();
@@ -896,48 +703,25 @@ bool VectorV2Presenter::compose_into_ring(vector_v2::PixelRect panel_bounds) {
   return true;
 }
 
-void VectorV2Presenter::write_ring_region(vector_v2::PixelRect panel_bounds,
-                                          std::span<const std::uint16_t> source) {
+void VectorV2Presenter::copy_ring_to_stage(vector_v2::PixelRect panel_bounds,
+                                           const PanelStageSurface& surface) {
   const vector_v2::PixelRect ring_area{0, 0, vector_v2::kOverviewWidth, frame_ring_bottom_};
-  if (frame_ring_bottom_ <= 0 || panel_bounds.y1 > frame_ring_bottom_) {
-    return;
-  }
-  const int width = panel_bounds.x1 - panel_bounds.x0;
-  for (int y = panel_bounds.y0; y < panel_bounds.y1; ++y) {
-    const int ring_y = vector_v2::ring_row(frame_ring_, ring_area, y);
-    const int ring_x = vector_v2::ring_column(frame_ring_, ring_area, panel_bounds.x0);
-    auto destination_row =
-        frame_.subspan(static_cast<std::size_t>(ring_y) * vector_v2::kOverviewWidth);
-    const auto source_row = source.subspan(
-        static_cast<std::size_t>(y - panel_bounds.y0) * static_cast<std::size_t>(width),
-        static_cast<std::size_t>(width));
-    const int first = std::min(width, vector_v2::kOverviewWidth - ring_x);
-    std::copy(source_row.begin(), source_row.begin() + first, destination_row.begin() + ring_x);
-    if (first < width) {
-      std::copy(source_row.begin() + first, source_row.end(), destination_row.begin());
-    }
-  }
-}
-
-void VectorV2Presenter::copy_ring_region(vector_v2::PixelRect panel_bounds,
-                                         std::span<std::uint16_t> destination) {
-  const vector_v2::PixelRect ring_area{0, 0, vector_v2::kOverviewWidth, frame_ring_bottom_};
-  if (frame_ring_bottom_ <= 0 || panel_bounds.y1 > frame_ring_bottom_) {
-    return;
-  }
-  const int width = panel_bounds.x1 - panel_bounds.x0;
   for (int y = panel_bounds.y0; y < panel_bounds.y1; ++y) {
     const int ring_y = vector_v2::ring_row(frame_ring_, ring_area, y);
     const int ring_x = vector_v2::ring_column(frame_ring_, ring_area, panel_bounds.x0);
     const auto source_row =
         frame_.subspan(static_cast<std::size_t>(ring_y) * vector_v2::kOverviewWidth);
-    auto target = destination.subspan(
-        static_cast<std::size_t>(y - panel_bounds.y0) * static_cast<std::size_t>(width),
-        static_cast<std::size_t>(width));
+    auto destination = surface.pixels.subspan(
+        static_cast<std::size_t>(y - surface.panel_y) * static_cast<std::size_t>(surface.stride) +
+            static_cast<std::size_t>(panel_bounds.x0 - surface.panel_x),
+        static_cast<std::size_t>(panel_bounds.x1 - panel_bounds.x0));
+    const int width = panel_bounds.x1 - panel_bounds.x0;
     const int first = std::min(width, vector_v2::kOverviewWidth - ring_x);
-    std::copy(source_row.begin() + ring_x, source_row.begin() + ring_x + first, target.begin());
+    std::copy(source_row.begin() + ring_x, source_row.begin() + ring_x + first,
+              destination.begin());
     if (first < width) {
-      std::copy(source_row.begin(), source_row.begin() + (width - first), target.begin() + first);
+      std::copy(source_row.begin(), source_row.begin() + (width - first),
+                destination.begin() + first);
     }
   }
 }
@@ -948,42 +732,83 @@ void VectorV2Presenter::enable_optical_row_pattern() {
   optical_generation_ = 0;
 }
 
-void VectorV2Presenter::apply_optical_row_pattern_linear(int bottom,
-                                                         std::span<std::uint16_t> backup) {
-  for (int row = 0; row < bottom; ++row) {
-    const auto source =
-        frame_.subspan(static_cast<std::size_t>(row) * vector_v2::kOverviewWidth + kOpticalPatternX,
-                       kOpticalPatternWidth);
-    std::copy(source.begin(), source.end(),
-              backup.begin() + static_cast<std::ptrdiff_t>(row) * kOpticalPatternWidth);
-    for (int column = 0; column < kOpticalPatternWidth; ++column) {
-      frame_[static_cast<std::size_t>(row) * vector_v2::kOverviewWidth + kOpticalPatternX +
-             column] = optical_pattern_pixel(optical_generation_, row, column);
-    }
+void VectorV2Presenter::paint_optical_row_pattern(const PanelStageSurface& surface) {
+  const int first_x = std::max(surface.panel_x, kOpticalPatternX);
+  const int last_x =
+      std::min(surface.panel_x + surface.width, kOpticalPatternX + kOpticalPatternWidth);
+  if (first_x >= last_x) {
+    return;
   }
-}
-
-void VectorV2Presenter::apply_optical_row_pattern_ring(int bottom,
-                                                       std::span<std::uint16_t> backup) {
-  const vector_v2::PixelRect pattern_rect{kOpticalPatternX, 0,
-                                          kOpticalPatternX + kOpticalPatternWidth, bottom};
-  copy_ring_region(pattern_rect, backup);
-  paint_optical_row_pattern_ring(0, bottom);
-}
-
-void VectorV2Presenter::paint_optical_row_pattern_ring(int top, int bottom) {
-  const vector_v2::PixelRect ring_area{0, 0, vector_v2::kOverviewWidth, frame_ring_bottom_};
-  for (int row = top; row < bottom; ++row) {
-    const int ring_y = vector_v2::ring_row(frame_ring_, ring_area, row);
-    const int ring_x = vector_v2::ring_column(frame_ring_, ring_area, kOpticalPatternX);
-    for (int column = 0; column < kOpticalPatternWidth; ++column) {
-      const int destination_x = (ring_x + column) % vector_v2::kOverviewWidth;
-      frame_[static_cast<std::size_t>(ring_y) * vector_v2::kOverviewWidth + destination_x] =
-          optical_pattern_pixel(optical_generation_, row, column);
+  for (int row = 0; row < surface.height; ++row) {
+    const int panel_y = surface.panel_y + row;
+    for (int panel_x = first_x; panel_x < last_x; ++panel_x) {
+      surface.pixels[static_cast<std::size_t>(row) * surface.stride +
+                     static_cast<std::size_t>(panel_x - surface.panel_x)] =
+          optical_pattern_pixel(optical_generation_, panel_y, panel_x - kOpticalPatternX);
     }
   }
 }
 #endif
+
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
+bool VectorV2Presenter::verify_staging_preserves_canvas(const vector_v2::ChromeState& chrome) {
+  if (frame_ring_bottom_ != 0) {
+    return false;
+  }
+  const auto checksum = [this]() {
+    std::uint64_t hash = 14'695'981'039'346'656'037ULL;
+    for (const std::uint16_t pixel : frame_) {
+      hash ^= pixel;
+      hash *= 1'099'511'628'211ULL;
+    }
+    return hash;
+  };
+  const std::uint64_t before = checksum();
+  const auto timing = present_with_overlays(
+      {0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight}, chrome, 0, 0, false);
+  return timing.passed && checksum() == before;
+}
+#endif
+
+bool VectorV2Presenter::paint_stage_thunk(void* raw, const PanelStageSurface& surface) {
+  auto& context = *static_cast<StageContext*>(raw);
+  return context.presenter != nullptr && context.presenter->paint_stage_surface(context, surface);
+}
+
+bool VectorV2Presenter::paint_stage_surface(StageContext& context,
+                                            const PanelStageSurface& surface) {
+  const std::int64_t exposed_started = esp_timer_get_time();
+  const vector_v2::PixelRect staged{surface.panel_x, surface.panel_y,
+                                    surface.panel_x + surface.width,
+                                    surface.panel_y + surface.height};
+  for (const auto& exposed : context.exposed) {
+    const vector_v2::PixelRect part{
+        std::max(exposed.x0, staged.x0), std::max(exposed.y0, staged.y0),
+        std::min(exposed.x1, staged.x1), std::min(exposed.y1, staged.y1)};
+    if (part.x0 >= part.x1 || part.y0 >= part.y1) {
+      continue;
+    }
+    if (!compose_into_ring(part)) {
+      return false;
+    }
+    copy_ring_to_stage(part, surface);
+  }
+  context.exposed_us += esp_timer_get_time() - exposed_started;
+
+  const std::int64_t chrome_started = esp_timer_get_time();
+  if (!vector_v2::draw_chrome_staging_surface(
+          {surface.pixels, surface.width, surface.height, surface.panel_x, surface.panel_y},
+          *context.chrome, context.navigation)) {
+    return false;
+  }
+  context.chrome_us += esp_timer_get_time() - chrome_started;
+#ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
+  if (optical_row_pattern_enabled_) {
+    paint_optical_row_pattern(surface);
+  }
+#endif
+  return true;
+}
 
 LivePresentationTiming VectorV2Presenter::present_ring(
     vector_v2::PixelRect band, const vector_v2::ChromeState& chrome, std::uint32_t event_us,
@@ -1002,103 +827,66 @@ LivePresentationTiming VectorV2Presenter::present_ring(
   const std::size_t area_pixels =
       static_cast<std::size_t>(frame_ring_bottom_) * vector_v2::kOverviewWidth;
   scheduler_.require_revision(canvas_.current_revision());
+  const auto sequence = scheduler_.schedule({.revision = canvas_.current_revision(),
+                                             .panel_bounds = band,
+                                             .pixels = frame_.first(area_pixels),
+                                             .stride = vector_v2::kOverviewWidth,
+                                             .source_shift_x = frame_ring_.shift_x,
+                                             .source_shift_y = frame_ring_.shift_y,
+                                             .source_area_width = vector_v2::kOverviewWidth,
+                                             .source_area_height = frame_ring_bottom_});
+  const auto scheduled = scheduler_.front();
+  if (!sequence.has_value() || !scheduled.has_value() || scheduled->sequence != *sequence) {
+    return timing;
+  }
+
   int rows_per_strip = std::max(2, 16'384 / band_width);
   rows_per_strip &= ~1;
-  std::int64_t first_submitted = 0;
-  // Strict row-major full-width sweep: the minimum number of transactions,
-  // no row is ever revisited, and overlay pixels already sit in the ring, so
-  // a raced beam can never meet a seam or a bare backdrop.
-  for (int y = band.y0; y < band.y1; y += rows_per_strip) {
-    const int rows = std::min(rows_per_strip, band.y1 - y);
-    const vector_v2::PixelRect strip_bounds{band.x0, y, band.x1, y + rows};
-    // Just-in-time exposed composition fills the transfer-semaphore idle of
-    // the DMA-bound sweep. Overlay rects are subtracted: their exposed share
-    // settled before the overlays were drawn into the ring, and composing
-    // here would overwrite the overlay pixels mid-push.
-    for (const auto& rect : exposed) {
-      const vector_v2::PixelRect part{std::max(rect.x0, band.x0), std::max(rect.y0, y),
-                                      std::min(rect.x1, band.x1), std::min(rect.y1, y + rows)};
-      if (part.x0 >= part.x1 || part.y0 >= part.y1) {
-        continue;
-      }
-      const auto pieces =
-          vector_v2::chrome_unobscured_regions({part.x0, part.y0, part.x1, part.y1}, chrome);
-      if (pieces.overflowed) {
-        return timing;
-      }
-      for (std::size_t piece = 0; piece < pieces.count; ++piece) {
-        const auto& region = pieces.regions[piece];
-        if (!compose_into_ring({region.x0, region.y0, region.x1, region.y1})) {
-          return timing;
-        }
-      }
-    }
-#ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
-    // Exposed strips compose just-in-time and may cross the diagnostic stripe.
-    // Repaint this strip after composition so the glass probe always carries
-    // the intended frame/row code; the original pixels were backed up before
-    // the sweep and are still restored once staging completes.
-    if (optical_row_pattern_enabled_) {
-      paint_optical_row_pattern_ring(y, y + rows);
-    }
-#endif
-    const auto sequence = scheduler_.schedule({.revision = canvas_.current_revision(),
-                                               .panel_bounds = strip_bounds,
-                                               .pixels = frame_.first(area_pixels),
-                                               .stride = vector_v2::kOverviewWidth,
-                                               .source_shift_x = frame_ring_.shift_x,
-                                               .source_shift_y = frame_ring_.shift_y,
-                                               .source_area_width = vector_v2::kOverviewWidth,
-                                               .source_area_height = frame_ring_bottom_});
-    const auto scheduled = scheduler_.front();
-    if (!sequence.has_value() || !scheduled.has_value() || scheduled->sequence != *sequence) {
-      return timing;
-    }
-    const std::uint32_t pushes_before = display_.push_count();
-    display_.push_rect_ring(
-        strip_bounds.x0, strip_bounds.y0, band_width, rows, scheduled->strip.pixels.data(),
-        scheduled->strip.stride, scheduled->strip.source_shift_x, scheduled->strip.source_shift_y,
-        scheduled->strip.source_area_width, scheduled->strip.source_area_height);
-    if (display_.push_count() != pushes_before + 1U) {
-      static_cast<void>(scheduler_.abort(*sequence));
-      return timing;
-    }
-    if (first_submitted == 0) {
-      first_submitted = esp_timer_get_time();
-    }
-    if (!scheduler_.complete(*sequence)) {
-      return timing;
-    }
-    ++timing.pushes;
+  StageContext context{
+      .presenter = this, .chrome = &chrome, .navigation = chrome_navigation(), .exposed = exposed};
+  const std::uint32_t pushes_before = display_.push_count();
+  const std::int64_t first_submitted = esp_timer_get_time();
+  const bool streamed = display_.stream_rect_ring(
+      band.x0, band.y0, band_width, band_height, scheduled->strip.pixels.data(),
+      scheduled->strip.stride, scheduled->strip.source_shift_x, scheduled->strip.source_shift_y,
+      scheduled->strip.source_area_width, scheduled->strip.source_area_height, rows_per_strip,
+      {.context = &context, .paint = &paint_stage_thunk});
+  if (!streamed) {
+    static_cast<void>(scheduler_.abort(*sequence));
+    return timing;
   }
+  if (!scheduler_.complete(*sequence)) {
+    return timing;
+  }
+  timing.pushes = display_.push_count() - pushes_before;
   timing.first_submit_us =
-      event_us == 0U || first_submitted == 0
+      event_us == 0U
           ? 0
           : static_cast<std::uint32_t>(static_cast<std::uint32_t>(first_submitted) - event_us);
+  timing.exposed_compose_us = context.exposed_us;
+  timing.chrome_us = context.chrome_us;
   timing.passed = true;
   return timing;
 }
 
 LivePresentationTiming VectorV2Presenter::present(vector_v2::PixelRect bounds,
+                                                  const vector_v2::ChromeState& chrome,
                                                   std::uint32_t event_us, std::int64_t compose_us,
                                                   bool wait_for_completion) {
   bounds = align_bounds(bounds);
   if (bounds.x1 <= bounds.x0 || bounds.y1 <= bounds.y0) {
-    // Nothing to push is success, not failure: a caller presenting several
-    // regions must not abort the frame over a clip-collapsed rectangle.
     return {.compose_us = compose_us, .passed = true};
   }
   const auto pixels =
       frame_.subspan(static_cast<std::size_t>(bounds.y0 * vector_v2::kOverviewWidth + bounds.x0));
-  return present_pixels(bounds, pixels, vector_v2::kOverviewWidth, event_us, compose_us,
+  return present_pixels(bounds, pixels, vector_v2::kOverviewWidth, chrome, event_us, compose_us,
                         wait_for_completion);
 }
 
-LivePresentationTiming VectorV2Presenter::present_pixels(vector_v2::PixelRect bounds,
-                                                         std::span<const std::uint16_t> pixels,
-                                                         int stride, std::uint32_t event_us,
-                                                         std::int64_t compose_us,
-                                                         bool wait_for_completion) {
+LivePresentationTiming VectorV2Presenter::present_pixels(
+    vector_v2::PixelRect bounds, std::span<const std::uint16_t> pixels, int stride,
+    const vector_v2::ChromeState& chrome, std::uint32_t event_us, std::int64_t compose_us,
+    bool wait_for_completion) {
   LivePresentationTiming timing{.compose_us = compose_us};
   const int width = bounds.x1 - bounds.x0;
   const int height = bounds.y1 - bounds.y0;
@@ -1111,6 +899,7 @@ LivePresentationTiming VectorV2Presenter::present_pixels(vector_v2::PixelRect bo
   if (pixels.size() < required) {
     return timing;
   }
+
   scheduler_.require_revision(canvas_.current_revision());
   const bool full_frame = bounds.x0 == 0 && bounds.y0 == 0 &&
                           bounds.x1 == vector_v2::kOverviewWidth &&
@@ -1120,40 +909,36 @@ LivePresentationTiming VectorV2Presenter::present_pixels(vector_v2::PixelRect bo
     const auto wait = display_.wait_for_tear_edge(selected_tear_edge(), kTearWaitTimeoutUs);
     timing.tear_wait_us = esp_timer_get_time() - tear_wait_started;
     record_tear_wait(timing, wait);
+    if (!wait.observed) {
+      return timing;
+    }
+  }
+
+  const auto sequence = scheduler_.schedule({.revision = canvas_.current_revision(),
+                                             .panel_bounds = bounds,
+                                             .pixels = pixels,
+                                             .stride = stride});
+  const auto scheduled = scheduler_.front();
+  if (!sequence.has_value() || !scheduled.has_value() || scheduled->sequence != *sequence) {
+    return timing;
   }
   int rows_per_strip = std::max(2, 16'384 / width);
   rows_per_strip &= ~1;
+  StageContext context{.presenter = this, .chrome = &chrome, .navigation = chrome_navigation()};
   const std::uint32_t submits_before = display_.submit_count();
-  std::int64_t first_submitted = 0;
-  for (int y = bounds.y0; y < bounds.y1; y += rows_per_strip) {
-    const int rows = std::min(rows_per_strip, bounds.y1 - y);
-    const vector_v2::PixelRect strip_bounds{bounds.x0, y, bounds.x1, y + rows};
-    const auto strip_pixels = pixels.subspan(static_cast<std::size_t>(y - bounds.y0) * stride);
-    const auto sequence = scheduler_.schedule({.revision = canvas_.current_revision(),
-                                               .panel_bounds = strip_bounds,
-                                               .pixels = strip_pixels,
-                                               .stride = stride});
-    const auto scheduled = scheduler_.front();
-    if (!sequence.has_value() || !scheduled.has_value() || scheduled->sequence != *sequence) {
-      return timing;
-    }
-    const std::uint32_t pushes_before = display_.push_count();
-    display_.push_rect(bounds.x0, y, width, rows, scheduled->strip.pixels.data(),
-                       scheduled->strip.stride);
-    if (display_.push_count() != pushes_before + 1U) {
-      static_cast<void>(scheduler_.abort(*sequence));
-      return timing;
-    }
-    if (first_submitted == 0) {
-      first_submitted = esp_timer_get_time();
-    }
-    if (!scheduler_.complete(*sequence)) {
-      return timing;
-    }
-    ++timing.pushes;
+  const std::uint32_t pushes_before = display_.push_count();
+  const std::int64_t first_submitted = esp_timer_get_time();
+  const bool streamed = display_.stream_rect(
+      bounds.x0, bounds.y0, width, height, scheduled->strip.pixels.data(), scheduled->strip.stride,
+      rows_per_strip, {.context = &context, .paint = &paint_stage_thunk});
+  if (!streamed) {
+    static_cast<void>(scheduler_.abort(*sequence));
+    return timing;
   }
-  // A caller presenting several regions in one frame defers the completion
-  // wait to the end of the frame instead of sleeping once per region.
+  if (!scheduler_.complete(*sequence)) {
+    return timing;
+  }
+
   const bool completed = !wait_for_completion || display_.wait_for_all(2'000'000);
   const std::int64_t finished = esp_timer_get_time();
   const std::int64_t dma_complete = display_.complete_time_us(submits_before + 1U);
@@ -1164,7 +949,9 @@ LivePresentationTiming VectorV2Presenter::present_pixels(vector_v2::PixelRect bo
       event_us == 0U ? 0 : static_cast<std::uint32_t>(first_submitted_us - event_us);
   timing.first_complete_us =
       event_us == 0U ? 0 : static_cast<std::uint32_t>(dma_complete_us - event_us);
-  timing.complete_us = first_submitted == 0 ? 0 : finished - first_submitted;
+  timing.complete_us = finished - first_submitted;
+  timing.chrome_us = context.chrome_us;
+  timing.pushes = display_.push_count() - pushes_before;
   timing.passed = completed;
   return timing;
 }

@@ -426,6 +426,48 @@ bool draw_strip_overlays(const MinimapSurface& surface, const ChromeState& state
   return true;
 }
 
+void draw_fixed_chrome(const MinimapSurface& surface, const ChromeState& state) {
+  const int surface_top = surface.origin_y;
+  const int surface_bottom = surface.origin_y + surface.height;
+  const auto intersects_rows = [surface_top, surface_bottom](int top, int bottom) {
+    return top < surface_bottom && bottom > surface_top;
+  };
+  Painter painter(surface.pixels, surface.width, surface.height, surface.origin_x,
+                  surface.origin_y);
+  if (intersects_rows(kChromeCanvasBottom, kHeight)) {
+    draw_bottom(painter, state);
+  }
+  if (state.popup == ChromePopup::kColors && !state.confirm_new &&
+      state.export_status == ChromeExportStatus::kIdle) {
+    if (intersects_rows(kColorPopupTop, kColorPopupBottom)) {
+      draw_palette(painter, state);
+    }
+    return;
+  }
+  if (state.popup != ChromePopup::kNone &&
+      intersects_rows(chrome_canvas_bottom(state), kPopupBottom + 4)) {
+    painter.rect({0, chrome_canvas_bottom(state), kWidth, kPopupTop}, kWhite);
+    draw_dock(painter, kPopupTop, kPopupBottom);
+    switch (state.popup) {
+      case ChromePopup::kTools:
+        draw_tools_popup(painter, state);
+        break;
+      case ChromePopup::kSizes:
+        draw_sizes_popup(painter, state);
+        break;
+      case ChromePopup::kDocument:
+        draw_document_popup(painter, state);
+        break;
+      case ChromePopup::kNone:
+      case ChromePopup::kColors:
+        break;
+    }
+  }
+  if (state.confirm_new && intersects_rows(kDialogTop - 1, kDialogBottom + 5)) {
+    draw_new_dialog(painter);
+  }
+}
+
 void draw_export_toast(Painter& painter, const ChromeState& state) {
   if (state.export_status == ChromeExportStatus::kIdle) {
     return;
@@ -723,34 +765,9 @@ void draw_chrome(std::span<std::uint16_t> pixels, int width, int height, const C
       pixels.size() < static_cast<std::size_t>(width) * static_cast<std::size_t>(height)) {
     return;
   }
+  const MinimapSurface surface{pixels, width, height, 0, 0};
+  draw_fixed_chrome(surface, state);
   Painter painter(pixels, width, height);
-  draw_bottom(painter, state);
-  if (state.popup == ChromePopup::kColors && !state.confirm_new &&
-      state.export_status == ChromeExportStatus::kIdle) {
-    draw_palette(painter, state);
-    return;
-  }
-  if (state.popup != ChromePopup::kNone) {
-    painter.rect({0, chrome_canvas_bottom(state), kWidth, kPopupTop}, kWhite);
-    draw_dock(painter, kPopupTop, kPopupBottom);
-    switch (state.popup) {
-      case ChromePopup::kTools:
-        draw_tools_popup(painter, state);
-        break;
-      case ChromePopup::kSizes:
-        draw_sizes_popup(painter, state);
-        break;
-      case ChromePopup::kDocument:
-        draw_document_popup(painter, state);
-        break;
-      case ChromePopup::kNone:
-      case ChromePopup::kColors:
-        break;
-    }
-  }
-  if (state.confirm_new) {
-    draw_new_dialog(painter);
-  }
   draw_export_toast(painter, state);
 }
 
@@ -798,6 +815,21 @@ bool draw_chrome_strip_overlays(const MinimapSurface& surface, const ChromeState
     return false;
   }
   return draw_strip_overlays(surface, state, navigation);
+}
+
+bool draw_chrome_staging_surface(const MinimapSurface& surface, const ChromeState& state,
+                                 const ChromeNavigation& navigation) {
+  if (surface.width <= 0 || surface.height <= 0 ||
+      surface.pixels.size() <
+          static_cast<std::size_t>(surface.width) * static_cast<std::size_t>(surface.height)) {
+    return false;
+  }
+  draw_fixed_chrome(surface, state);
+  Painter painter(surface.pixels, surface.width, surface.height, surface.origin_x,
+                  surface.origin_y);
+  draw_export_toast(painter, state);
+  static_cast<void>(draw_strip_overlays(surface, state, navigation));
+  return true;
 }
 
 }  // namespace tinydraw::vector_v2
