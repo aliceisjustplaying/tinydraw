@@ -240,12 +240,21 @@ TEST_CASE("navigation overlays render overview viewport zoom and battery") {
 TEST_CASE("chrome canvas clipping follows the visible overlay") {
   ChromeState state;
   CHECK(tinydraw::vector_v2::chrome_canvas_bottom(state) == 372);
+  // With no popup open, committed ink continues under the dock: segments
+  // crossing the canvas bottom keep their true coordinates instead of
+  // clamping at the dock edge.
+  CHECK(tinydraw::vector_v2::chrome_ink_bottom(state) == 448);
   auto clipped =
       tinydraw::vector_v2::clip_canvas_segment({100.0F, 280.0F}, {120.0F, 400.0F}, state);
   REQUIRE(clipped.has_value());
-  CHECK(clipped->y == doctest::Approx(371.0F));
+  CHECK(clipped->y == doctest::Approx(400.0F));
+  clipped = tinydraw::vector_v2::clip_canvas_segment({120.0F, 400.0F}, {140.0F, 440.0F}, state);
+  REQUIRE(clipped.has_value());
+  CHECK(clipped->y == doctest::Approx(440.0F));
 
   state.popup = ChromePopup::kTools;
+  CHECK(tinydraw::vector_v2::chrome_ink_bottom(state) ==
+        tinydraw::vector_v2::chrome_input_bottom(state));
   CHECK(tinydraw::vector_v2::chrome_canvas_bottom(state) == 294);
   CHECK(tinydraw::vector_v2::chrome_input_bottom(state) == 288);
   clipped = tinydraw::vector_v2::clip_canvas_segment({100.0F, 280.0F}, {120.0F, 331.0F}, state);

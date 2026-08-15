@@ -32,8 +32,9 @@ class NavigationState {
   [[nodiscard]] ViewRequest view() const;
   [[nodiscard]] NavigationExtent extent() const;
 
-  // Changes zoom around panel_focus. Entering 25% retains the focus selected
-  // in the tiled view; leaving the initial 25% view uses the world center.
+  // Changes zoom around panel_focus, always centering the retained world
+  // focus there. Entering 25% retains the focus selected in the tiled view;
+  // leaving the initial 25% view uses the world center.
   [[nodiscard]] bool set_zoom(ZoomLevel target_zoom, NavigationPoint panel_focus);
   // Moves the active camera and updates its world focus. This is also the seam
   // used by deterministic hardware views and future minimap navigation.
@@ -43,22 +44,12 @@ class NavigationState {
   [[nodiscard]] static NavigationPoint clamp_origin(ZoomLevel zoom, int x, int y);
 
  private:
-  struct RememberedOrigin {
-    NavigationPoint origin{};
-    bool valid = false;
-  };
-
-  [[nodiscard]] static std::size_t tiled_index(ZoomLevel zoom);
   [[nodiscard]] static bool valid_panel_focus(NavigationPoint point);
   [[nodiscard]] static NavigationPoint focus_for_view(ZoomLevel zoom, NavigationPoint origin,
                                                       NavigationPoint panel_focus);
-  [[nodiscard]] static bool contains_focus(ZoomLevel zoom, NavigationPoint origin,
-                                           NavigationPoint focus_quarter_world);
   [[nodiscard]] NavigationPoint centered_origin(ZoomLevel target_zoom,
                                                 NavigationPoint panel_focus) const;
-  void remember_current();
 
-  std::array<RememberedOrigin, 4> remembered_{};
   ZoomLevel zoom_ = ZoomLevel::k25Percent;
   NavigationPoint origin_{};
   NavigationPoint focus_quarter_world_{kWorldWidth * 2, kWorldHeight * 2};
