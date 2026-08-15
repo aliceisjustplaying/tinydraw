@@ -12,9 +12,11 @@
 
 #include "tinydraw/vector_v2/raster_census.h"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cinttypes>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -25,6 +27,7 @@
 #include <span>
 #include <vector>
 
+#include "tinydraw/document/realistic_workload.h"
 #include "tinydraw/vector_v2/adversarial_tapered_corpus.h"
 #include "tinydraw/vector_v2/incremental_document.h"
 #include "tinydraw/vector_v2/incremental_rasterizer.h"
@@ -53,6 +56,8 @@ struct Rig {
   std::vector<std::uint8_t> mask;
   std::vector<std::uint16_t> summary_rows;
   std::vector<std::uint32_t> summary_words;
+  std::vector<std::uint32_t> replay_index_words;
+  std::vector<v2::RenderAccountingEntry> accounting_entries;
   // append_incrementally workspace (mirrors the app).
   std::vector<std::uint16_t> overview_scratch;
   std::vector<std::uint16_t> tile_scratch;
@@ -61,9 +66,10 @@ struct Rig {
 
   v2::OperationLog log;
   v2::MaterializedCanvas canvas;
+  v2::RenderAccounting accounting;
   v2::TileProducer producer;
 
-  Rig(std::size_t record_capacity, std::size_t sample_capacity)
+  Rig(std::size_t record_capacity, std::size_t sample_capacity, bool indexed = true)
       : records(record_capacity),
         samples(sample_capacity),
         overview(v2::kOverviewPixels, 0xFFFFU),
@@ -78,18 +84,23 @@ struct Rig {
         mask(v2::kTileProducerMaskBytes),
         summary_rows(v2::kTileProducerSummaryRows),
         summary_words(v2::kTileProducerSummaryWords),
+        replay_index_words(indexed ? v2::kReplayIndexWords : 0U),
+        accounting_entries(v2::kMaximumVisibleTiles),
         overview_scratch(v2::kOverviewPixels),
         tile_scratch(kWorkspaceTileCapacity * v2::kTilePixels),
         publications(kWorkspaceTileCapacity),
         affected_keys(v2::kTileSlotCount + v2::kMaximumVisibleTiles),
         log(records, samples),
         canvas(overview, *uniforms, occupancy, slots, tile_pool),
+        accounting(accounting_entries),
         producer(log, canvas,
                  {.supertask_pixels = supertask,
                   .packed_tile_pixels = packed,
                   .finalized_pixels = mask,
                   .summary_row_unset = summary_rows,
-                  .summary_saturated_words = summary_words}) {}
+                  .summary_saturated_words = summary_words,
+                  .replay_index_words = replay_index_words},
+                 {}, 0xFFFFU, &accounting) {}
 
   [[nodiscard]] v2::IncrementalDocumentWorkspace workspace() {
     return {
@@ -110,11 +121,15 @@ struct SweepResult {
   std::size_t steps = 0;
   std::size_t tiles = 0;
   double wall_ms = 0.0;
+  v2::CandidateDiscoveryCounters candidates{};
+  v2::RenderAccountingTotals accounting{};
   bool ok = false;
 };
 
 SweepResult run_cold_fill(Rig& rig, const v2::ViewRequest& view) {
   SweepResult result{};
+  rig.producer.reset_candidate_counters();
+  rig.accounting.reset();
   const auto started = std::chrono::steady_clock::now();
   while (true) {
     const auto step = rig.producer.produce_next(view);
@@ -130,6 +145,13 @@ SweepResult run_cold_fill(Rig& rig, const v2::ViewRequest& view) {
   }
   result.wall_ms =
       std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+  result.candidates = rig.producer.candidate_counters();
+  // One immediate revisit exercises reuse accounting without affecting cold
+  // wall time or candidate-discovery totals.
+  if (!rig.producer.produce_next(view).has_value()) {
+    return result;
+  }
+  result.accounting = rig.accounting.totals();
   result.ok = true;
   return result;
 }
@@ -172,6 +194,76 @@ bool compose_equals_forward(Rig& rig, const v2::ViewRequest& view,
   return true;
 }
 
+bool append_realistic_seed7(Rig& rig) {
+  constexpr std::size_t kStrokeCount = 1'000;
+  std::vector<tinydraw::VectorStroke> strokes(kStrokeCount);
+  std::vector<tinydraw::StrokeSample> source_samples(24'576);
+  tinydraw::VectorDocument document{strokes, source_samples};
+  if (!tinydraw::populate_realistic_handwriting(document, 7U, kStrokeCount,
+                                                {.x0 = 0.0F,
+                                                 .y0 = 0.0F,
+                                                 .x1 = static_cast<float>(v2::kWorldWidth),
+                                                 .y1 = static_cast<float>(v2::kWorldHeight)})) {
+    return false;
+  }
+  std::vector<v2::CompactOperationSample> converted(200);
+  const auto workspace = rig.workspace();
+  for (const auto& stroke : document.strokes()) {
+    const auto input = document.samples(stroke);
+    if (input.empty() || input.size() > converted.size()) {
+      return false;
+    }
+    for (std::size_t index = 0; index < input.size(); ++index) {
+      converted[index] = {
+          .x_quarter = static_cast<std::uint16_t>(std::lround(input[index].x * 4.0F)),
+          .y_quarter = static_cast<std::uint16_t>(std::lround(input[index].y * 4.0F)),
+          .radius_256 = static_cast<std::uint16_t>(std::lround(input[index].radius * 256.0F)),
+          .elapsed_ms = static_cast<std::uint16_t>(index * 15U),
+      };
+    }
+    if (!v2::append_incrementally(
+            rig.log, rig.canvas,
+            {.tool = stroke.tool == tinydraw::VectorTool::kEraser ? v2::OperationTool::kEraser
+                                                                  : v2::OperationTool::kPen,
+             .color = stroke.color,
+             .samples = std::span(converted).first(input.size())},
+            workspace)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool append_overlap_corpus(Rig& rig) {
+  constexpr std::size_t kStrokeCount = 8;
+  constexpr std::size_t kSamplesPerStroke = 150;
+  std::array<v2::CompactOperationSample, kSamplesPerStroke> samples{};
+  const auto workspace = rig.workspace();
+  for (std::size_t stroke = 0; stroke < kStrokeCount; ++stroke) {
+    for (std::size_t index = 0; index < samples.size(); ++index) {
+      const std::size_t phase = (index + stroke * 7U) % 64U;
+      const std::size_t triangle = phase <= 32U ? phase : 64U - phase;
+      const std::size_t x =
+          64U + index * static_cast<std::size_t>(v2::kWorldWidth - 128) / (kSamplesPerStroke - 1U);
+      const std::size_t y = 320U + triangle * 32U + stroke * 3U;
+      samples[index] = {
+          .x_quarter = static_cast<std::uint16_t>(x * 4U),
+          .y_quarter = static_cast<std::uint16_t>(y * 4U),
+          .radius_256 = static_cast<std::uint16_t>(80U * 256U),
+          .elapsed_ms = static_cast<std::uint16_t>(index * 8U),
+      };
+    }
+    if (!v2::append_incrementally(rig.log, rig.canvas,
+                                  {.tool = v2::OperationTool::kPen,
+                                   .color = static_cast<std::uint16_t>(0x001FU + stroke * 0x111U),
+                                   .samples = samples},
+                                  workspace)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 #if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
 void print_census(const char* label) {
   const auto& c = v2::g_raster_census;
@@ -192,9 +284,9 @@ void print_census(const char* label) {
 void print_census(const char*) {}
 #endif
 
-int run_adversarial_sweep() {
+int run_adversarial_sweep(bool indexed = true) {
   Rig rig(v2::test_support::kAdversarialTaperedOperationCount,
-          v2::test_support::kAdversarialTaperedSampleCount);
+          v2::test_support::kAdversarialTaperedSampleCount, indexed);
   if (!rig.log.ready() || !rig.canvas.ready() || !rig.producer.ready()) {
     std::fprintf(stderr, "rig not ready\n");
     return 1;
@@ -217,7 +309,7 @@ int run_adversarial_sweep() {
                              v2::ZoomLevel::k200Percent, v2::ZoomLevel::k400Percent};
   constexpr std::array zoom_names{"50", "100", "200", "400"};
 
-  std::printf("== adversarial cold sweep ==\n");
+  std::printf("== adversarial cold sweep mode=%s ==\n", indexed ? "indexed" : "linear");
   for (std::size_t zoom_index = 0; zoom_index < zooms.size(); ++zoom_index) {
     const v2::ViewRequest view{
         .zoom = zooms[zoom_index],
@@ -238,11 +330,131 @@ int run_adversarial_sweep() {
       std::fprintf(stderr, "zoom %s NOT EXACT vs forward replay\n", zoom_names[zoom_index]);
       return 1;
     }
-    std::printf("zoom=%s steps=%zu tiles=%zu wall_ms=%.1f exact=1\n", zoom_names[zoom_index],
-                sweep.steps, sweep.tiles, sweep.wall_ms);
+    const double operations_per_group =
+        sweep.candidates.groups_published == 0U
+            ? 0.0
+            : static_cast<double>(sweep.candidates.operations_scanned) /
+                  static_cast<double>(sweep.candidates.groups_published);
+    std::printf(
+        "zoom=%s steps=%zu tiles=%zu wall_ms=%.3f ops_scanned=%zu ops_intersecting=%zu "
+        "groups=%zu ops_per_group=%.2f attempts=%zu completions=%zu reuses=%zu discards=%zu "
+        "amplification=%.3f exact=1\n",
+        zoom_names[zoom_index], sweep.steps, sweep.tiles, sweep.wall_ms,
+        sweep.candidates.operations_scanned, sweep.candidates.operations_intersecting,
+        sweep.candidates.groups_published, operations_per_group, sweep.accounting.attempts,
+        sweep.accounting.completions, sweep.accounting.reuses, sweep.accounting.discards,
+        sweep.accounting.amplification());
     print_census("census");
   }
   std::printf("ADVERSARIAL_SWEEP_OK\n");
+  return 0;
+}
+
+enum class ScorecardCorpus { kSeed7, kAdversarial, kOverlap };
+
+struct ScorecardResult {
+  SweepResult sweep{};
+  bool exact = false;
+};
+
+std::optional<ScorecardResult> measure_scorecard_corpus(ScorecardCorpus corpus, bool indexed) {
+  const std::size_t operation_capacity =
+      corpus == ScorecardCorpus::kSeed7 ? 1'000U
+                                        : (corpus == ScorecardCorpus::kAdversarial
+                                               ? v2::test_support::kAdversarialTaperedOperationCount
+                                               : 8U);
+  const std::size_t sample_capacity = corpus == ScorecardCorpus::kSeed7
+                                          ? 24'576U
+                                          : (corpus == ScorecardCorpus::kAdversarial
+                                                 ? v2::test_support::kAdversarialTaperedSampleCount
+                                                 : 8U * 150U);
+  Rig rig(operation_capacity, sample_capacity, indexed);
+  if (!rig.reset_blank({1})) {
+    return std::nullopt;
+  }
+  bool appended = false;
+  if (corpus == ScorecardCorpus::kSeed7) {
+    appended = append_realistic_seed7(rig);
+  } else if (corpus == ScorecardCorpus::kAdversarial) {
+    const auto workspace = rig.workspace();
+    appended = v2::test_support::emit_adversarial_tapered_corpus(
+        [&](const v2::OperationAppend& operation) {
+          return v2::append_incrementally(rig.log, rig.canvas, operation, workspace).has_value();
+        });
+  } else {
+    appended = append_overlap_corpus(rig);
+  }
+  if (!appended || !rig.producer.sync_replay_index()) {
+    return std::nullopt;
+  }
+
+  const int level_width = v2::kWorldWidth * 4;
+  const int level_height = v2::kWorldHeight * 4;
+  int x = 0;
+  int y = 0;
+  if (corpus == ScorecardCorpus::kSeed7) {
+    x = 63;
+    y = 63;
+  } else if (corpus == ScorecardCorpus::kOverlap) {
+    x = std::clamp(level_width / 2 - v2::kOverviewWidth / 2 + 31, 0,
+                   level_width - v2::kOverviewWidth);
+    y = std::clamp(level_height / 2 - v2::kOverviewHeight / 2 + 31, 0,
+                   level_height - v2::kOverviewHeight);
+  }
+  const v2::ViewRequest view{
+      .zoom = v2::ZoomLevel::k400Percent,
+      .level_pixels = {x, y, x + v2::kOverviewWidth, y + v2::kOverviewHeight},
+  };
+
+  constexpr std::size_t kRuns = 9;
+  std::array<double, kRuns> wall_times{};
+  ScorecardResult result{};
+  for (std::size_t run = 0; run < kRuns; ++run) {
+    if (!rig.canvas.discard_tiles()) {
+      return std::nullopt;
+    }
+    result.sweep = run_cold_fill(rig, view);
+    if (!result.sweep.ok || !compose_equals_forward(rig, view, nullptr)) {
+      return std::nullopt;
+    }
+    wall_times[run] = result.sweep.wall_ms;
+  }
+  std::sort(wall_times.begin(), wall_times.end());
+  result.sweep.wall_ms = wall_times[kRuns / 2U];
+  result.exact = true;
+  return result;
+}
+
+int run_cold_scorecard() {
+  constexpr std::array corpora{ScorecardCorpus::kSeed7, ScorecardCorpus::kAdversarial,
+                               ScorecardCorpus::kOverlap};
+  constexpr std::array names{"seed7", "adversarial-tapered", "overlap"};
+  std::printf("== cold replay scorecard zoom=400 runs=9 statistic=median ==\n");
+  for (std::size_t corpus = 0; corpus < corpora.size(); ++corpus) {
+    for (const bool indexed : {false, true}) {
+      const auto result = measure_scorecard_corpus(corpora[corpus], indexed);
+      if (!result.has_value()) {
+        std::fprintf(stderr, "scorecard failed corpus=%s mode=%s\n", names[corpus],
+                     indexed ? "indexed" : "linear");
+        return 1;
+      }
+      const auto& candidates = result->sweep.candidates;
+      const double operations_per_group =
+          candidates.groups_published == 0U ? 0.0
+                                            : static_cast<double>(candidates.operations_scanned) /
+                                                  static_cast<double>(candidates.groups_published);
+      const auto& accounting = result->sweep.accounting;
+      std::printf(
+          "SCORE corpus=%s mode=%s ops_scanned=%zu ops_intersecting=%zu groups=%zu "
+          "ops_per_group=%.2f wall_ms=%.3f attempts=%zu completions=%zu reuses=%zu "
+          "discards=%zu amplification=%.3f exact=%u\n",
+          names[corpus], indexed ? "indexed" : "linear", candidates.operations_scanned,
+          candidates.operations_intersecting, candidates.groups_published, operations_per_group,
+          result->sweep.wall_ms, accounting.attempts, accounting.completions, accounting.reuses,
+          accounting.discards, accounting.amplification(), result->exact);
+    }
+  }
+  std::printf("COLD_SCORECARD_OK\n");
   return 0;
 }
 
@@ -259,6 +471,7 @@ struct FuzzRig {
   std::vector<std::uint8_t> mask;
   std::vector<std::uint16_t> summary_rows;
   std::vector<std::uint32_t> summary_words;
+  std::vector<std::uint32_t> replay_index_words;
   v2::OperationLog log;
   v2::MaterializedCanvas canvas;
   v2::TileProducer producer;
@@ -274,6 +487,7 @@ struct FuzzRig {
         mask(v2::kTileProducerMaskBytes),
         summary_rows(v2::kTileProducerSummaryRows),
         summary_words(v2::kTileProducerSummaryWords),
+        replay_index_words(v2::kReplayIndexWords),
         log(records, samples),
         canvas(overview, slots, tile_pool),
         producer(log, canvas,
@@ -281,7 +495,8 @@ struct FuzzRig {
                   .packed_tile_pixels = packed,
                   .finalized_pixels = mask,
                   .summary_row_unset = summary_rows,
-                  .summary_saturated_words = summary_words}) {}
+                  .summary_saturated_words = summary_words,
+                  .replay_index_words = replay_index_words}) {}
 };
 
 bool replay_and_compare(FuzzRig& rig, const v2::ViewRequest& view, std::uint32_t case_index,
@@ -498,6 +713,12 @@ int main(int argc, char** argv) {
     const auto cases = static_cast<std::uint32_t>(argc >= 3 ? std::atoi(argv[2]) : 400);
     const auto seed = static_cast<std::uint32_t>(argc >= 4 ? std::atoi(argv[3]) : 0xBEEF);
     return run_fuzz_docs(cases, seed);
+  }
+  if (argc >= 2 && std::strcmp(argv[1], "--linear") == 0) {
+    return run_adversarial_sweep(false);
+  }
+  if (argc >= 2 && std::strcmp(argv[1], "--cold-scorecard") == 0) {
+    return run_cold_scorecard();
   }
   return run_adversarial_sweep();
 }

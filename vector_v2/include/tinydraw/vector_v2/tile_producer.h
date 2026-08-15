@@ -8,6 +8,8 @@
 
 #include "tinydraw/vector_v2/incremental_rasterizer.h"
 #include "tinydraw/vector_v2/operation_log.h"
+#include "tinydraw/vector_v2/render_accounting.h"
+#include "tinydraw/vector_v2/replay_block_index.h"
 
 namespace tinydraw::vector_v2 {
 
@@ -40,12 +42,23 @@ struct TileProducerWorkspace {
   // output.
   std::span<std::uint16_t> summary_row_unset{};
   std::span<std::uint32_t> summary_saturated_words{};
+  // Optional host-prototype storage. Empty preserves the exact linear replay
+  // fallback; a full kReplayIndexWords span enables indexed discovery.
+  std::span<std::uint32_t> replay_index_words{};
+};
+
+struct CandidateDiscoveryCounters {
+  std::size_t operations_scanned = 0;
+  std::size_t operations_intersecting = 0;
+  std::size_t groups_published = 0;
 };
 
 struct TileProductionStep {
   PixelRect level_bounds{};
   std::size_t operations_scanned = 0;
+  std::size_t operations_intersecting = 0;
   std::size_t operations_rendered = 0;
+  std::size_t groups_published = 0;
   std::size_t raster_steps = 0;
   std::size_t raster_work = 0;
   std::size_t tiles_published = 0;
@@ -65,13 +78,19 @@ class TileProducer {
  public:
   TileProducer(OperationLog& log, MaterializedCanvas& canvas, TileProducerWorkspace workspace,
                DocumentRevision uniform_baseline_revision = {},
-               std::uint16_t baseline_color = 0xFFFFU);
+               std::uint16_t baseline_color = 0xFFFFU,
+               RenderAccounting* render_accounting = nullptr);
 
   [[nodiscard]] bool ready() const;
   // Produces the closest missing 2x2 supertask for a tiled viewport. A complete
   // result means every visible key has a current tile at kImmediate or better.
   [[nodiscard]] std::optional<TileProductionStep> produce_next(const ViewRequest& view);
   [[nodiscard]] std::optional<std::size_t> visible_tiles_remaining(const ViewRequest& view) const;
+  [[nodiscard]] const CandidateDiscoveryCounters& candidate_counters() const;
+  void reset_candidate_counters();
+  // Lets append owners keep cold-start timing free of index maintenance. Empty
+  // optional index storage is a successful no-op for existing device callers.
+  [[nodiscard]] bool sync_replay_index();
   // Changes the authoritative uniform snapshot after a coordinated log/canvas
   // reset. Rejected unless both authorities are empty and at this revision.
   [[nodiscard]] bool reset_uniform_baseline(DocumentRevision revision,
@@ -95,11 +114,7 @@ class TileProducer {
     PixelRect bounds{};
     OperationLogEpoch epoch{};
     DocumentRevision revision{};
-    std::size_t first_operation = 0;
-    std::size_t operation_count = 0;
-    // Count of replay operations not yet consumed. The current operation is
-    // next_operation - 1 because cold replay walks newest to oldest.
-    std::size_t next_operation = 0;
+    ReplayCandidateCursor candidates{};
     // Current reverse segment endpoint. Zero initializes a newly selected
     // operation; single-sample operations are handled as one bounded unit.
     std::size_t next_sample = 0;
@@ -124,6 +139,10 @@ class TileProducer {
       const ViewRequest& view, MaterializationQuality quality) const;
   [[nodiscard]] std::optional<TileKey> choose_missing_group(const ViewRequest& view) const;
   [[nodiscard]] bool start_group(const ViewRequest& view, TileKey group_origin);
+  [[nodiscard]] bool active_group_has_work() const;
+  [[nodiscard]] RenderGroupKey active_group_key() const;
+  void discard_active_group();
+  void record_view_reuses(const ViewRequest& view);
   void consume_active_operation(TileProductionStep& result, std::size_t& operations_consumed);
   [[nodiscard]] OperationGate gate_active_operation(TileProductionStep& result,
                                                     std::size_t& operations_consumed);
@@ -145,6 +164,9 @@ class TileProducer {
   MaterializedCanvas& canvas_;
   TileProducerWorkspace workspace_;
   MaskedRowSummary summary_;
+  ReplayBlockIndex replay_index_;
+  RenderAccounting* render_accounting_ = nullptr;
+  CandidateDiscoveryCounters candidate_counters_{};
   DocumentRevision baseline_revision_{};
   std::uint16_t baseline_color_ = 0xFFFFU;
   ActiveGroup active_group_{};
