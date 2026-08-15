@@ -445,20 +445,19 @@ void run_panel_probe() {
 #if TINYDRAW_PANEL_PROBE_CELL == 6
   // One-take cycle for a single continuous handheld video. Positive control
   // first; blue interstitials mark segment boundaries for the classifier.
+  // Loops forever so the camera operator can film any complete pass.
   constexpr std::array kCycleOrder{4, 1, 5, 2, 3};
-  for (const int cell : kCycleOrder) {
-    std::fill_n(frame_a, kFramePixels, static_cast<std::uint16_t>(0x001F));
-    static_cast<void>(display.stream_rect(0, 0, kPanelWidth, kPanelHeight, frame_a, 0, 44));
-    static_cast<void>(display.wait_for_all(100'000));
-    vTaskDelay(pdMS_TO_TICKS(2'000));
-    run_optical_cell(display, frame_a, frame_b, cell, 30'000'000);
+  for (int pass = 1;; ++pass) {
+    std::printf("TINYDRAW_PROBE_CYCLE_PASS pass=%d\n", pass);
+    std::fflush(stdout);
+    for (const int cell : kCycleOrder) {
+      std::fill_n(frame_a, kFramePixels, static_cast<std::uint16_t>(0x001F));
+      static_cast<void>(display.stream_rect(0, 0, kPanelWidth, kPanelHeight, frame_a, 0, 44));
+      static_cast<void>(display.wait_for_all(100'000));
+      vTaskDelay(pdMS_TO_TICKS(2'000));
+      run_optical_cell(display, frame_a, frame_b, cell, 30'000'000);
+    }
   }
-  heap_caps_free(scratch);
-  heap_caps_free(frame_b);
-  heap_caps_free(frame_a);
-  std::printf("TINYDRAW_PANEL_PROBE_DONE pass=1\n");
-  std::fflush(stdout);
-  return;
 #elif TINYDRAW_PANEL_PROBE_CELL != 0
   run_optical_cell(display, frame_a, frame_b, TINYDRAW_PANEL_PROBE_CELL, 45'000'000);
   heap_caps_free(scratch);
