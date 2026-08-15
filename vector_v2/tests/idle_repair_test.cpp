@@ -137,3 +137,24 @@ TEST_CASE("idle repair never exceeds plan capacity") {
 }
 
 }  // namespace
+
+TEST_CASE("plan exposes the saturation contract through grid_start") {
+  // The grid suffix is the optional full-level sweep a runner must stop at
+  // pool saturation; everything before grid_start is always safe to produce.
+  const std::array zooms{ZoomLevel::k50Percent, ZoomLevel::k200Percent, ZoomLevel::k400Percent};
+  for (const auto zoom : zooms) {
+    const auto plan = plan_idle_repair(view_at(zoom, 368, 448), {});
+    CHECK(plan.grid_start <= plan.count);
+    CHECK(plan.grid_start == plan.count);
+  }
+  const auto plan = plan_idle_repair(view_at(ZoomLevel::k100Percent, 500, 700), {});
+  CHECK(plan.grid_start <= plan.count);
+  CHECK(plan.grid_start < plan.count);
+  for (std::size_t index = plan.grid_start; index < plan.count; ++index) {
+    CHECK(plan.views[index].zoom == ZoomLevel::k100Percent);
+    // Grid views are viewport-aligned, distinguishing the sweep suffix from
+    // the unaligned active-neighborhood prefix.
+    CHECK(plan.views[index].level_pixels.x0 % kOverviewWidth == 0);
+    CHECK(plan.views[index].level_pixels.y0 % kOverviewHeight == 0);
+  }
+}

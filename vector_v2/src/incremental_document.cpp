@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <limits>
 
 #include "tinydraw/vector_v2/storage_overlap.h"
 
@@ -326,9 +327,15 @@ std::optional<IncrementalAppendResult> append_incrementally_in_place(
     const InPlaceAppendWorkspace& workspace, std::optional<ViewRequest> priority_view,
     InPlaceCommitBudget budget) {
   // The deadline covers the complete commit, including overview replay, so
-  // the caller-visible poll gap is what the budget bounds.
-  const std::int64_t deadline_us =
-      budget.now_us != nullptr ? budget.now_us() + budget.budget_us : 0;
+  // the caller-visible poll gap is what the budget bounds. Saturate instead
+  // of overflowing on adversarial clocks or budgets.
+  std::int64_t deadline_us = 0;
+  if (budget.now_us != nullptr) {
+    const std::int64_t now = budget.now_us();
+    deadline_us = budget.budget_us > std::numeric_limits<std::int64_t>::max() - now
+                      ? std::numeric_limits<std::int64_t>::max()
+                      : now + budget.budget_us;
+  }
   if (!canvas.ready() || !log.ready() || !valid_in_place_workspace(log, canvas, workspace) ||
       canvas.overview_pixels().size() != kOverviewPixels ||
       log.current_revision() != canvas.current_revision() || !valid_priority_view(priority_view)) {
@@ -361,8 +368,15 @@ std::optional<IncrementalAppendResult> append_incrementally_in_place(
       stored.tool == OperationTool::kEraser ? 0xFFFFU : stored.color;
   const InPlaceRetainScope scope{operation, painted_color, priority_view, budget, deadline_us};
   const std::size_t retained = retain_affected_tiles(canvas, scope, affected, workspace.tile_mask);
+  std::size_t cross_zoom_invalidated = 0;
+  const MaterializedCanvas::InPlaceCommitScope commit_scope{
+      .preserved_uniform_color = painted_color,
+      .priority_zoom =
+          priority_view.has_value() ? std::optional{priority_view->zoom} : std::nullopt,
+      .cross_zoom_invalidated = &cross_zoom_invalidated,
+  };
   if (!canvas.commit_in_place_revision(identity.revision, overview_publication, world_bounds,
-                                       affected.first(retained))) {
+                                       affected.first(retained), commit_scope)) {
     for (const TileKey key : affected.first(retained)) {
       canvas.invalidate_identity(key);
     }
@@ -374,7 +388,8 @@ std::optional<IncrementalAppendResult> append_incrementally_in_place(
                                  .affected_world_bounds = world_bounds,
                                  .affected_resident_tiles = *resident_count,
                                  .published_tiles = retained,
-                                 .fallback_tiles = *resident_count - retained};
+                                 .fallback_tiles = *resident_count - retained,
+                                 .cross_zoom_invalidated = cross_zoom_invalidated};
 }
 
 bool restore_document_snapshot(OperationLog& log, MaterializedCanvas& canvas,

@@ -513,8 +513,11 @@ bool chrome_contains(ChromePoint point, const ChromeState& state) {
       state.popup == ChromePopup::kColors) {
     return inside(point, 0.0F, 0.0F, static_cast<float>(kWidth), static_cast<float>(kHeight));
   }
-  const bool main = inside(point, 0.0F, static_cast<float>(kMainHitTop), static_cast<float>(kWidth),
-                           static_cast<float>(kHeight));
+  // The dock face starts at the canvas bottom; rows above it are visible
+  // canvas where strokes may start even though committed ink continues
+  // beneath the dock.
+  const bool main = inside(point, 0.0F, static_cast<float>(kChromeCanvasBottom),
+                           static_cast<float>(kWidth), static_cast<float>(kHeight));
   const bool popup = state.popup != ChromePopup::kNone &&
                      inside(point, 0.0F, static_cast<float>(kPopupTop - kHitSlop),
                             static_cast<float>(kWidth), static_cast<float>(kMainTop));
@@ -625,7 +628,7 @@ ChromeAction chrome_action_at(ChromePoint point, const ChromeState& state) {
   if (in_zoom) {
     return zoom_action_at(point);
   }
-  if (!inside(point, 0.0F, static_cast<float>(kMainHitTop), static_cast<float>(kWidth),
+  if (!inside(point, 0.0F, static_cast<float>(kChromeCanvasBottom), static_cast<float>(kWidth),
               static_cast<float>(kHeight))) {
     return ChromeAction::kNone;
   }
@@ -668,9 +671,14 @@ ChromePresentationRegions chrome_unobscured_regions(ChromeRect bounds, const Chr
     return region;
   };
   const auto append = [](ChromePresentationRegions& regions, ChromeRect region) {
-    if (region.x1 > region.x0 && region.y1 > region.y0 && regions.count < regions.regions.size()) {
-      regions.regions[regions.count++] = region;
+    if (region.x1 <= region.x0 || region.y1 <= region.y0) {
+      return;
     }
+    if (regions.count >= regions.regions.size()) {
+      regions.overflowed = true;
+      return;
+    }
+    regions.regions[regions.count++] = region;
   };
 
   ChromePresentationRegions visible;
@@ -679,6 +687,7 @@ ChromePresentationRegions chrome_unobscured_regions(ChromeRect bounds, const Chr
   for (std::size_t overlay_index = 0; overlay_index < overlays.count; ++overlay_index) {
     const ChromeRect overlay = align_to_panel(overlays.regions[overlay_index]);
     ChromePresentationRegions next;
+    next.overflowed = visible.overflowed;
     for (std::size_t region_index = 0; region_index < visible.count; ++region_index) {
       const ChromeRect region = visible.regions[region_index];
       const ChromeRect intersection{

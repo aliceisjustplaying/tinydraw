@@ -105,8 +105,9 @@ case "$action" in
   vector-v2-gate-harness)
     port="${2:-}"
     slots="${3:-448}"
+    verify="${4:-}"
     if [[ -z "$port" ]]; then
-      echo "usage: $0 vector-v2-gate-harness PORT [TILE_SLOTS]" >&2
+      echo "usage: $0 vector-v2-gate-harness PORT [TILE_SLOTS] [verify]" >&2
       exit 2
     fi
     rm -rf "$gate_harness_build"
@@ -114,6 +115,29 @@ case "$action" in
     eim run "idf.py -B '$gate_harness_build' -DTINYDRAW_QEMU=OFF -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_VECTOR_V2_MEMORY_PROBE=OFF -DTINYDRAW_VECTOR_V2_OVERVIEW_WALK=OFF -DTINYDRAW_VECTOR_V2_APP=ON -DTINYDRAW_VECTOR_V2_GATE_HARNESS=ON -DTINYDRAW_VECTOR_V2_TILE_CENSUS=OFF -DTINYDRAW_VECTOR_V2_TILE_SLOTS=$slots build"
     assert_config "$gate_harness_build/sdkconfig" OCT
     eim run "idf.py -B '$gate_harness_build' -p '$port' flash"
+    if [[ "$verify" == "verify" ]]; then
+      # Capture the battery and parse the verdict: flashing alone is not a
+      # gate result.
+      log=/tmp/gate-verify.log
+      cd "$root"
+      uv run --script tools/esp32-capture.py "$port" "$log" 480 \
+        --end-marker TINYDRAW_GATE1_AUTOMATED_DONE \
+        --failure-regex 'task_wdt|Guru Meditation'
+      done_line=$(grep TINYDRAW_GATE1_AUTOMATED_DONE "$log" | tail -1 || true)
+      if [[ -z "$done_line" ]]; then
+        echo "GATE VERIFY FAILED: no TINYDRAW_GATE1_AUTOMATED_DONE in $log" >&2
+        exit 1
+      fi
+      if grep -qE 'task_wdt|Guru Meditation' "$log"; then
+        echo "GATE VERIFY FAILED: watchdog or crash in $log" >&2
+        exit 1
+      fi
+      if echo "$done_line" | grep -q '=0'; then
+        echo "GATE VERIFY FAILED: red gate in verdict: $done_line" >&2
+        exit 1
+      fi
+      echo "GATE VERIFY PASSED: $done_line"
+    fi
     ;;
   vector-v2-tearing-probe)
     port="${2:-}"

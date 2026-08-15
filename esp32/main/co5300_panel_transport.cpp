@@ -20,6 +20,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "tinydraw/graphics/world_canvas.h"
+#include "tinydraw/vector_v2/panel_staging.h"
 
 namespace tinydraw::esp32 {
 namespace {
@@ -67,49 +68,8 @@ const std::array<co5300_lcd_init_cmd_t, 11> panel_init{{
     {0x29, nullptr, 0, 0},
 }};
 
-constexpr std::uint32_t swap_pixel_pair(std::uint16_t first, std::uint16_t second) {
-  const std::uint32_t pixels =
-      static_cast<std::uint32_t>(first) | (static_cast<std::uint32_t>(second) << 16U);
-  return ((pixels >> 8U) & 0x00FF00FFU) | ((pixels << 8U) & 0xFF00FF00U);
-}
-
-static_assert(swap_pixel_pair(0x1234U, 0xABCDU) == 0xCDAB3412U);
-
-constexpr std::uint32_t swap_pixel_word(std::uint32_t pair) {
-  return ((pair >> 8U) & 0x00FF00FFU) | ((pair << 8U) & 0xFF00FF00U);
-}
-
-static_assert(swap_pixel_word(0xABCD1234U) == swap_pixel_pair(0x1234U, 0xABCDU));
-
-// Stages one run of an even number of pixels into wire byte order. When the
-// source pair is 4-byte aligned, each pair moves with a single 32-bit PSRAM
-// load instead of two 16-bit loads; the PSRAM read transactions dominate
-// staging cost, so the word path roughly halves it.
-inline void stage_pixels_swapped(const std::uint16_t* source, std::uint32_t* destination,
-                                 int width) {
-  if ((reinterpret_cast<std::uintptr_t>(source) & 3U) == 0U) {
-    const auto* source_words = reinterpret_cast<const std::uint32_t*>(source);
-    const int pairs = width / 2;
-    int pair = 0;
-    for (; pair + 4 <= pairs; pair += 4) {
-      const std::uint32_t first = source_words[pair];
-      const std::uint32_t second = source_words[pair + 1];
-      const std::uint32_t third = source_words[pair + 2];
-      const std::uint32_t fourth = source_words[pair + 3];
-      destination[pair] = swap_pixel_word(first);
-      destination[pair + 1] = swap_pixel_word(second);
-      destination[pair + 2] = swap_pixel_word(third);
-      destination[pair + 3] = swap_pixel_word(fourth);
-    }
-    for (; pair < pairs; ++pair) {
-      destination[pair] = swap_pixel_word(source_words[pair]);
-    }
-    return;
-  }
-  for (int column = 0; column < width; column += 2) {
-    destination[column / 2] = swap_pixel_pair(source[column], source[column + 1]);
-  }
-}
+using vector_v2::stage_pixels_swapped;
+using vector_v2::stage_ring_row;
 
 bool reset_panel_power() {
   i2c_master_bus_config_t bus_config{};
@@ -269,12 +229,18 @@ class Co5300PanelTransport::Impl {
 
   [[nodiscard]] TearSignalTiming tear_signal_timing() const {
     const std::uint32_t rising = tear_rising_edges_.load(std::memory_order_acquire);
+    const std::uint32_t falling = tear_falling_edges_.load(std::memory_order_acquire);
     const std::uint32_t period = tear_period_us_.load(std::memory_order_relaxed);
     const std::uint32_t high = tear_high_us_.load(std::memory_order_relaxed);
     return {.rising_edges = rising,
+            .falling_edges = falling,
             .period_us = rising < 2U ? -1 : static_cast<std::int64_t>(period),
             .high_us = high == 0U ? -1 : static_cast<std::int64_t>(high),
             .level = gpio_get_level(kTearPin) != 0};
+  }
+
+  [[nodiscard]] std::uint32_t tear_falling_edge_count() const {
+    return tear_falling_edges_.load(std::memory_order_acquire);
   }
 
   [[nodiscard]] std::int64_t tear_age_us() const {
@@ -351,7 +317,10 @@ class Co5300PanelTransport::Impl {
 
   [[nodiscard]] std::int64_t complete_time_us(std::uint32_t sequence) const {
     const std::uint32_t completed = complete_count();
-    if (sequence == 0U || sequence > completed || completed - sequence >= kTransferHistory) {
+    // Wraparound-safe: signed distance stays correct across the 32-bit
+    // counter rollover.
+    const auto behind = static_cast<std::int32_t>(completed - sequence);
+    if (sequence == 0U || behind < 0 || behind >= static_cast<std::int32_t>(kTransferHistory)) {
       return -1;
     }
     return static_cast<std::int64_t>(
@@ -362,7 +331,9 @@ class Co5300PanelTransport::Impl {
   [[nodiscard]] bool wait_for_all(std::int64_t timeout_us) {
     const std::uint32_t target = submit_count();
     const std::int64_t started = esp_timer_get_time();
-    while (complete_count() < target) {
+    // Wraparound-safe: signed distance stays correct across the 32-bit
+    // counter rollover.
+    while (static_cast<std::int32_t>(complete_count() - target) < 0) {
       if (esp_timer_get_time() - started >= timeout_us) {
         return false;
       }
@@ -419,29 +390,8 @@ class Co5300PanelTransport::Impl {
         source_row -= area_height;
       }
       const auto* source = area_pixels + static_cast<std::ptrdiff_t>(source_row) * stride;
-      auto* destination =
-          reinterpret_cast<std::uint32_t*>(transfer + static_cast<std::ptrdiff_t>(row * width));
-      int source_column = x + shift_x;
-      if (source_column >= area_width) {
-        source_column -= area_width;
-      }
-      int written = 0;
-      while (written < width) {
-        const int chunk = std::min(width - written, area_width - source_column);
-        const int even_chunk = chunk & ~1;
-        stage_pixels_swapped(source + source_column, destination + written / 2, even_chunk);
-        written += even_chunk;
-        source_column += even_chunk;
-        if (source_column >= area_width) {
-          source_column = 0;
-        }
-        if (chunk != even_chunk && written < width) {
-          // The remaining pair straddles the ring wrap.
-          destination[written / 2] = swap_pixel_pair(source[area_width - 1], source[0]);
-          written += 2;
-          source_column = 1;
-        }
-      }
+      stage_ring_row(source, area_width, shift_x, x, width,
+                     transfer + static_cast<std::ptrdiff_t>(row * width));
     }
     prepare_us_ += esp_timer_get_time() - prepare_started;
 
@@ -498,9 +448,7 @@ class Co5300PanelTransport::Impl {
     const std::int64_t prepare_started = esp_timer_get_time();
     for (int row = 0; row < height; ++row) {
       const auto* source = pixels + static_cast<std::ptrdiff_t>(row * source_stride);
-      auto* destination =
-          reinterpret_cast<std::uint32_t*>(transfer + static_cast<std::ptrdiff_t>(row * width));
-      stage_pixels_swapped(source, destination, width);
+      stage_pixels_swapped(source, transfer + static_cast<std::ptrdiff_t>(row * width), width);
     }
     prepare_us_ += esp_timer_get_time() - prepare_started;
 
@@ -597,6 +545,9 @@ bool Co5300PanelTransport::wait_for_safe_frame_start(std::int64_t timeout_us) {
   return impl_->wait_for_safe_frame_start(timeout_us);
 }
 std::int64_t Co5300PanelTransport::tear_age_us() const { return impl_->tear_age_us(); }
+std::uint32_t Co5300PanelTransport::tear_falling_edges() const {
+  return impl_->tear_falling_edge_count();
+}
 bool Co5300PanelTransport::wait_for_all(std::int64_t timeout_us) {
   return impl_->wait_for_all(timeout_us);
 }

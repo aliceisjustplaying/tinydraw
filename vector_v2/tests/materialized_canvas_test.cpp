@@ -1147,3 +1147,32 @@ TEST_CASE("commit_in_place_revision retains listed keys and rejects invalid comm
                                      vector_v2::kOverviewWidth +
                                  static_cast<std::size_t>(overview_bounds.x0)] == 0x001FU);
 }
+
+TEST_CASE("raw publication cannot downgrade an exact uniform") {
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
+  auto uniforms = std::make_unique<std::array<vector_v2::MaterializedUniformStorage,
+                                              vector_v2::kMaterializedTileIdentityCount>>();
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> occupancy{};
+  std::array<vector_v2::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, vector_v2::kTilePixels> tile_storage{};
+  vector_v2::MaterializedCanvas canvas(overview, *uniforms, occupancy, slots, tile_storage);
+  const vector_v2::TileKey key{vector_v2::ZoomLevel::k100Percent, 2, 3};
+  REQUIRE(canvas.publish_overview({0}, overview));
+  REQUIRE(canvas.publish_uniform(key, {0}, vector_v2::MaterializationQuality::kExact));
+
+  // An immediate-quality raw publication is a same-revision downgrade of the
+  // exact uniform representation and must be rejected.
+  std::vector<std::uint16_t> pixels(vector_v2::kTilePixels, 0x1234U);
+  CHECK_FALSE(canvas.publish_tile(key, {0}, vector_v2::MaterializationQuality::kImmediate, pixels)
+                  .has_value());
+  auto source = canvas.lookup(key);
+  REQUIRE(source.has_value());
+  CHECK(source->kind == vector_v2::SourceKind::kUniform);
+
+  // Equal quality may replace the representation.
+  CHECK(
+      canvas.publish_tile(key, {0}, vector_v2::MaterializationQuality::kExact, pixels).has_value());
+  source = canvas.lookup(key);
+  REQUIRE(source.has_value());
+  CHECK(source->kind == vector_v2::SourceKind::kTileSlot);
+}
