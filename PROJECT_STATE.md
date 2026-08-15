@@ -114,7 +114,27 @@ Phase 0 baselines live in
 
 These are product and optimization tasks, not evidence for another rewrite.
 
-## Organized board (2026-08-15 11:30, settled at efb1586)
+## Organized board (2026-08-15 12:45, review round closed at c86f3ac)
+
+Two external code reviews (26 findings) landed across four lanes; see
+`vector_v2/hardware-receipts/REVIEW_ROUND_CLOSURE_2026_08_15.md`. All 27
+battery gates green under the new, much stricter rules (pan gates and
+tear discipline in the verdict, watchdogs fatal, PNG CRCs verified,
+`scripts/esp32 ... verify` parses results). Host 76,624 assertions.
+
+Known documented regression: PANSEQ 28.9 -> 41.5 ms avg (~24 FPS) from
+the tear-free-by-construction pan presentation; measured split and
+recovery plan in the board todo. Correctness first, by explicit call.
+
+Open, in priority order:
+1. Glass re-verdict on the new tear discipline (device carries the
+   c86f3ac product build at 448 slots).
+2. Pan prep cost recovery (bench-first; gates must stay green).
+3. Edge white notches (bisect tools now exist: staging host model,
+   edge-ink gate).
+4. Cold -50% campaign, then flash L3 spike, SVG, Undo/Redo.
+
+## Historical: organized board (2026-08-15 11:30, settled at efb1586)
 
 Device: product build at `8c222e8`, 448 slots. PANSEQ 29.5/29.7 ms avg,
 p50 27.95, all 26 gates green (`8c222e8-full-gate-448.log`). Note: the
