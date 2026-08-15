@@ -27,6 +27,10 @@ struct IncrementalAppendResult {
   std::size_t affected_resident_tiles = 0;
   std::size_t published_tiles = 0;
   std::size_t fallback_tiles = 0;
+  // Dropped tiles that intersect the priority view: each one is a visible
+  // blur. Visible tiles are budget-exempt, so this stays zero unless a
+  // paint itself failed; off-view drops appear only in fallback_tiles.
+  std::size_t visible_fallback_tiles = 0;
   // Identities invalidated at zooms other than the priority zoom by an
   // in-place commit; the cold work this stroke deferred to later visits.
   std::size_t cross_zoom_invalidated = 0;

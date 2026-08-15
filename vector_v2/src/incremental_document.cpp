@@ -368,6 +368,10 @@ std::optional<IncrementalAppendResult> append_incrementally_in_place(
       stored.tool == OperationTool::kEraser ? 0xFFFFU : stored.color;
   const InPlaceRetainScope scope{operation, painted_color, priority_view, budget, deadline_us};
   const std::size_t retained = retain_affected_tiles(canvas, scope, affected, workspace.tile_mask);
+  std::size_t visible_fallback = 0;
+  for (std::size_t index = retained; index < affected.size(); ++index) {
+    visible_fallback += in_priority_view(affected[index], priority_view) ? 1U : 0U;
+  }
   std::size_t cross_zoom_invalidated = 0;
   const MaterializedCanvas::InPlaceCommitScope commit_scope{
       .preserved_uniform_color = painted_color,
@@ -389,6 +393,7 @@ std::optional<IncrementalAppendResult> append_incrementally_in_place(
                                  .affected_resident_tiles = *resident_count,
                                  .published_tiles = retained,
                                  .fallback_tiles = *resident_count - retained,
+                                 .visible_fallback_tiles = visible_fallback,
                                  .cross_zoom_invalidated = cross_zoom_invalidated};
 }
 
