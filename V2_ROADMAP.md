@@ -1,13 +1,62 @@
 # TinyDraw V2 roadmap
 
-Last updated: 2026-08-14
-Current branch: `main`
+Last updated: 2026-08-15
+Current branch: `feat/v2-performance-followup`
 
-Status: **Vector V2 foundation and bounded UI refinement accepted; measured performance round next**
+Status: **Vector V2 architecture retained; current panel and ink paths physically rejected**
 
-This is the current worklist and source of truth for TinyDraw V2. It replaces the
-prototype-era task order as the forward plan. Historical plans and receipts are
-evidence, not an instruction to reopen settled architecture questions.
+This is the only forward work queue for TinyDraw V2. [`PROJECT_STATE.md`](PROJECT_STATE.md)
+contains the concise current snapshot. Dated plans, closure reports, and receipts
+preserve the timeline but do not override later physical evidence.
+
+## Current finish-line queue
+
+### Wave 1 — establish physical truth before optimization
+
+- [ ] Revalidate Raster V1 on the current board as the operational fallback.
+- [ ] Replace the circular pan pass signal with a red-capable optical oracle and
+      calibrated TE/bus phase markers.
+- [ ] Run one controlled presentation A/B: the current two-band beam race versus
+      a selected-edge, row-zero, top-to-bottom sweep with otherwise identical
+      pixels, strip size, clock, queue depth, and overlay path.
+- [ ] Fail closed on TE timeout/staleness and prevent any unsynchronized frame
+      from becoming a cached-pan reuse source.
+- [ ] Require zero mixed frame IDs, seams, tearing, and white notches on glass.
+      Software timing alone cannot close this gate.
+
+### Wave 2 — one staging compositor and visual-first ink
+
+- [ ] Keep the PSRAM ring canvas-only; patch fixed chrome and provisional ink in
+      the mandatory internal staging pass.
+- [ ] Submit one ordered presentation batch and perform one completion drain.
+- [ ] Use the provisional geometry already emitted by `CurvedRibbonStream`;
+      replace the old volatile tail, union old/new damage, and never bake it into
+      document authority or the reusable ring.
+- [ ] Present the newest consumed sample before chunk materialization, carry the
+      original sampled timestamp, and distinguish DMA completion from optical
+      visibility.
+- [ ] Pan gate: p95 frame interval ≤41.7 ms is required (at least 24 FPS);
+      p95 ≤33.3 ms is ideal (30 FPS); faster is bonus. Report average, p50, p95,
+      max, and deadline misses separately.
+
+### Wave 3 — authority and cold replay, isolated from panel diagnosis
+
+- [ ] Add a generation-checked read view over operation storage; do not call
+      aliased spans immutable.
+- [ ] Decide the authority baseline before Undo/SVG/autosave. Current snapshot
+      restore may install a raster overview and empty the operation log.
+- [ ] Prototype an exact, conservative replay block index while preserving
+      newest-first painter order, exact bounds checks, masks, and saturation.
+- [ ] Require ≥25% isolated cold-render improvement. Against the 628.2 ms
+      adversarial 400% baseline: product p95 ≤471.2 ms, every accepted run
+      <500 ms, and no exactness or interaction regression.
+- [ ] First retain the one active producer group across camera-priority changes;
+      add a repair queue only if restart/discard counters prove it necessary.
+
+Shared presenter files make the Wave 1/2 panel and ink implementation unsafe as
+parallel writers. Parallel work is still useful for independent host fixtures,
+optical tooling, and read-only review; one integration owner must land
+`vector_v2_presenter.*` and the staging contract.
 
 ## Product decision
 
@@ -21,9 +70,13 @@ but the V1 and V2 coordinators, state models, and build targets must remain
 separate. Do not grow V2 inside `hardware_app.cpp`, and do not retrofit V2 tile
 semantics into `WorldCanvas` or `FirmwareCanvas`.
 
-## Completed milestone: production vector foundation
+## Historical milestone: production vector foundation
 
-The following has been proven on the physical ESP32-S3 with the deterministic
+This section records the accepted foundation at the time. The 2026-08-15 glass
+run supersedes its pan-correctness and non-lagging interaction implications; see
+the current queue above and `external_help/espdraw-offline-review-2026-08-15.md`.
+
+The following was proven on the physical ESP32-S3 with the deterministic
 seed-7 1,000-stroke workload and an aggressive manual glass test:
 
 - [x] Vector operations are authoritative.
@@ -363,8 +416,9 @@ at a time and retain before/after receipts.
 
 ### Warm pan
 
-- [x] Raise warm-pan frame rate above the current roughly 20 FPS behavior
-      (30 FPS floor with margin at `4022917`: 28.1 ms avg, p50 26.95 ms).
+- [ ] Re-establish physically correct warm pan. The earlier `4022917` software
+      result (28.1 ms avg, p50 26.95 ms) used a beam model later falsified on
+      glass. At `c86f3ac`, p95 is 47.5–48.6 ms and severe tearing remains.
 - [x] Avoid moving the complete frame per pan step: the toroidal ring makes
       scroll pointer math and composes only exposed strips; the full-panel
       transmit remains (the panel shows the whole moved viewport) but is
@@ -477,40 +531,8 @@ complete overview. It still needs careful tap targeting and viewport math.
 
 # Next concrete sequence
 
-Phase 0 of the second performance round is complete at `205fefe`: the
-mixed-zoom drawing gate, the reconciled warm-pan attribution gate, a fresh
-cold 20-run distribution, and the settled 320-versus-384 A/B all live in
-[`vector_v2/hardware-receipts/PERF_ROUND_2_BASELINES_2026_08_14.md`](vector_v2/hardware-receipts/PERF_ROUND_2_BASELINES_2026_08_14.md).
-
-1. ~~Fix drawing latency~~ **Done at `1848cc6`**: active-zoom mutation policy
-   plus a 10 ms commit budget; `TINYDRAW_GATE1_MIXED_DRAW` green at every
-   zoom and both slot counts and now part of the battery's final verdict. See
-   [`vector_v2/hardware-receipts/DRAWING_LATENCY_CLOSURE_2026_08_14.md`](vector_v2/hardware-receipts/DRAWING_LATENCY_CLOSURE_2026_08_14.md).
-   Residual: the ~13.7 ms uninterruptible 25% overview band replay is the
-   commit ceiling; round-end glass must confirm transient-fallback feel.
-2. ~~Raise warm pan to a 30 FPS floor (frame ≤ 33.3 ms)~~ **Done at
-   `4022917`**: toroidal frame ring (scroll 15 ms → 10 µs), beam-raced
-   push sweep (tear wait 4.2 ms → ~0.1 ms, frame time unlocked from the
-   tear-period quantum), exposed compose fused into the sweep's DMA idle,
-   and wild-reuse fixes so product pans actually take the cached path.
-   `TINYDRAW_GATE1_PANSEQ`: 28.1 ms avg, p50 26.95 ms, p95 32.95 ms, both
-   slot counts. See
-   [`vector_v2/hardware-receipts/PAN_FLOOR_CLOSURE_2026_08_15.md`](vector_v2/hardware-receipts/PAN_FLOOR_CLOSURE_2026_08_15.md).
-   Residual: worst single frame 33.95 ms (2% over floor, accepted); beam
-   racing awaits a glass tearing re-check.
-3. ~~Idle cache repair~~ **Done at `24a9fe9`** (inserted from the 2026-08-14
-   glass session's strongest complaint): quiet moments rebuild dropped
-   tiles — cardinal neighbors, remembered zooms, the full 100% grid — in
-   bounded idle slices with no presentation; gate
-   `TINYDRAW_GATE1_IDLE_REPAIR` (588 damaged → 0 remaining, worst slice
-   7.5 ms) joined the battery verdict. See
-   [`vector_v2/hardware-receipts/IDLE_REPAIR_CLOSURE_2026_08_15.md`](vector_v2/hardware-receipts/IDLE_REPAIR_CLOSURE_2026_08_15.md).
-   Residual: 200%/400% stay neighborhood-only; fast continuous 400% panning
-   can outrun repair.
-4. Cold −50% campaign from the fresh distribution (adversarial 400% p95
-   638 ms → 319 ms target).
-5. Capture a clean export-watchdog receipt; investigate SVG eraser/mask
-   semantics with the SVG encoder budgeted inside the existing 1.5 MiB export
-   reserve. The startup TE flake is fixed at the root (`4022917`: TEON
-   re-issued after display-on, plus a rate-limited runtime self-heal that
-   logs `TINYDRAW_PANEL_TE_HEAL`).
+Use the **Current finish-line queue** at the top of this file. Do not begin the
+cold replay, Undo/SVG/autosave, settled-AA, or lifecycle slices until the panel
+A/B and visual-first ink path have stable cross-gate baselines. The detailed
+phase sections above remain the feature-completeness backlog, not permission to
+skip the current physical blockers.

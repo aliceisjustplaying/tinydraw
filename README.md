@@ -34,7 +34,7 @@ Autosave, charging, power-off/on, and macOS Finder mounting are verified.
 
 - Vector operations are authoritative for pen and eraser strokes.
 - The bounded 1472×1792 world supports 25%, 50%, 100%, 200%, and 400% zoom.
-- A complete overview provides fallback while a 384-slot world-aligned tile
+- A complete overview provides fallback while a 448-slot world-aligned tile
   cache refines visible detail.
 - Touch sampling remains independent of cooperative rendering work.
 - The refined toolbar uses the V1 tool icons, reflects the active tool, and
@@ -47,22 +47,19 @@ Autosave, charging, power-off/on, and macOS Finder mounting are verified.
   the physical read-only USB drive.
 
 V2's immediate renderer is intentionally hard-edged until the settled
-anti-aliasing gate lands. The latest performance slice cut adversarial 400% cold
-refinement p95 from 1.45 seconds to 646 ms and made a 3,751-sample 400% stroke
-flow smoothly. It also exposed deferred debt: lower-zoom drawing against a warm
-multi-zoom cache reached 120–132 ms per commit chunk, real pan remains around
-20 FPS, and PNG encoding triggers the five-second task watchdog before the USB
-drive appears. These findings and raw evidence are recorded in
-[`PERFORMANCE_SLICE_GLASS_VERDICT_2026_08_14.md`](vector_v2/hardware-receipts/PERFORMANCE_SLICE_GLASS_VERDICT_2026_08_14.md).
+anti-aliasing gate lands. The latest 2026-08-15 manual glass run rejected the
+current presenter despite a green software battery: panning tore severely at
+100% and 400%, the pan distribution missed the required p95 ≤41.7 ms pacing
+gate, and ink visibly lagged because materialization precedes preview while the
+existing provisional ribbon tail is omitted. Adversarial 400% cold refinement
+is also open at 628 ms p95.
 
-The bounded UI refinement round is complete and was exercised repeatedly on
-physical glass. It also fixed stale minimap updates, cached-pan ghosts around
-fixed overlays, and angular live ink beneath the minimap and zoom rail. A
-fingerless hardware gate measures matching clear/overlay circle updates below
-3 ms. The next milestone returns to performance: warm-cache drawing latency is
-first priority, cold-render p95 must remain below 800 ms, warm pan follows, and
-export watchdog verification remains open. The preserved but incomplete
-`feat/v2-warm-pan` experiment has no accepted before/after result yet.
+The correction and evidence are recorded in
+[`espdraw-offline-review-2026-08-15.md`](external_help/espdraw-offline-review-2026-08-15.md)
+and [`c86f3ac-manual-glass.log`](vector_v2/hardware-receipts/c86f3ac-manual-glass.log).
+Raster V1 remains the operational fallback. See [`PROJECT_STATE.md`](PROJECT_STATE.md)
+for the current verdict and [`V2_ROADMAP.md`](V2_ROADMAP.md) for the sole forward
+queue; dated closure reports preserve history but are not current acceptance.
 
 The RP2350 build currently provides screen-sized ink, erasing, colors, sizes,
 and New. It has no pan, Undo, or persistence. Native replays, exact snapshots,

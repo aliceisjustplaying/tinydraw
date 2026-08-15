@@ -1,5 +1,13 @@
 # Drawing latency closure — 2026-08-14
 
+> **Historical component-benchmark closure; product interaction remains open.**
+> The later product glass run showed visible lag, 15.5–35.8 ms chunks, and
+> 92–143 ms loop gaps. The 10 ms setting is not a structural preemption bound,
+> the product commits before preview, and the provisional ribbon tail is omitted.
+> See [`c86f3ac-manual-glass.log`](c86f3ac-manual-glass.log) and
+> [`../../external_help/espdraw-offline-review-2026-08-15.md`](../../external_help/espdraw-offline-review-2026-08-15.md).
+> The body remains unchanged as a dated component receipt.
+
 Phase 1 of the second performance round is closed at `1848cc6`. Warm-cache
 interactive drawing no longer breaches the 15 ms chunk alarm at any zoom, at
 either cache size, and `TINYDRAW_GATE1_MIXED_DRAW` is now part of the gate

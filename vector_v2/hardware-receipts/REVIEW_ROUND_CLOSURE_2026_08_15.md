@@ -1,5 +1,14 @@
 # External review round closure — 2026-08-15
 
+> **Historical software closure; physically falsified later on 2026-08-15.**
+> The subsequent manual glass run showed severe tearing at 100% and 400% and
+> visible drawing lag despite zero software synchronization failures. In
+> particular, “tear-free by construction,” “synchronized by construction,” and
+> the drawing-latency closure are no longer accepted. See
+> [`c86f3ac-manual-glass.log`](c86f3ac-manual-glass.log) and
+> [`../../external_help/espdraw-offline-review-2026-08-15.md`](../../external_help/espdraw-offline-review-2026-08-15.md).
+> The body remains unchanged as a timeline and automation receipt.
+
 Two independent external code reviews (26 distinct findings, from P1
 correctness to nits) were landed in four parallel lanes and re-baselined.
 Closed at `c86f3ac` with every gate green and one documented perf
