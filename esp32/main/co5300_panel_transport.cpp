@@ -231,6 +231,7 @@ class Co5300PanelTransport::Impl {
     patch_us_ = 0;
     byte_swap_us_ = 0;
     transfer_us_ = 0;
+    staging_timing_ = {};
     push_count_ = 0;
     rejected_push_count_ = 0;
   }
@@ -240,6 +241,7 @@ class Co5300PanelTransport::Impl {
   [[nodiscard]] std::int64_t patch_us() const { return patch_us_; }
   [[nodiscard]] std::int64_t byte_swap_us() const { return byte_swap_us_; }
   [[nodiscard]] std::int64_t transfer_us() const { return transfer_us_; }
+  [[nodiscard]] const PanelStagingTiming& staging_timing() const { return staging_timing_; }
   [[nodiscard]] std::uint32_t push_count() const { return push_count_; }
   [[nodiscard]] std::uint32_t rejected_push_count() const { return rejected_push_count_; }
   [[nodiscard]] std::uint32_t submit_count() const {
@@ -670,7 +672,8 @@ class Co5300PanelTransport::Impl {
     }
 
     bool first = true;
-    for (int row = 0; row < height; row += rows_per_transfer) {
+    std::size_t strip_index = 0;
+    for (int row = 0; row < height; row += rows_per_transfer, ++strip_index) {
       const int rows = std::min(rows_per_transfer, height - row);
       const std::int64_t transfer_started = esp_timer_get_time();
       if (xSemaphoreTake(transfer_semaphore_, portMAX_DELAY) != pdTRUE) {
@@ -713,6 +716,39 @@ class Co5300PanelTransport::Impl {
       const std::int64_t swap_completed = esp_timer_get_time();
       byte_swap_us_ += swap_completed - patch_completed;
       prepare_us_ += swap_completed - prepare_started;
+
+      // The measured 40 MHz QSPI payload rate is 20 bytes/us. Include the
+      // staging-slot acquire in each strip's producer cost: queued DMA can
+      // hide this wait only while the writer remains wire-bound.
+      const std::int64_t staging_us = swap_completed - transfer_started;
+      const std::int64_t wire_budget_us =
+          static_cast<std::int64_t>(rows) * static_cast<std::int64_t>(width) / 10;
+      if (strip_index < staging_timing_.strips.size()) {
+        auto& strip = staging_timing_.strips[strip_index];
+        const std::int64_t previous_worst_delta =
+            staging_timing_.samples == 0U
+                ? 0
+                : staging_timing_.strips[staging_timing_.worst_strip_index].maximum_us -
+                      staging_timing_.strips[staging_timing_.worst_strip_index].wire_budget_us;
+        strip.panel_y = y + row;
+        strip.rows = rows;
+        strip.wire_budget_us = wire_budget_us;
+        ++strip.samples;
+        strip.total_us += staging_us;
+        strip.maximum_us = std::max(strip.maximum_us, staging_us);
+        staging_timing_.strip_count = std::max(staging_timing_.strip_count, strip_index + 1U);
+        staging_timing_.total_us += staging_us;
+        staging_timing_.maximum_us = std::max(staging_timing_.maximum_us, staging_us);
+        const std::int64_t current_delta = strip.maximum_us - strip.wire_budget_us;
+        if (staging_timing_.samples == 0U || current_delta > previous_worst_delta) {
+          staging_timing_.worst_strip_index = strip_index;
+        }
+      } else {
+        staging_timing_.all_under_wire = false;
+      }
+      ++staging_timing_.samples;
+      staging_timing_.all_under_wire =
+          staging_timing_.all_under_wire && staging_us < wire_budget_us;
 
       const std::uint32_t command = first ? 0x2CU : 0x3CU;
       first = false;
@@ -813,6 +849,7 @@ class Co5300PanelTransport::Impl {
   std::int64_t patch_us_ = 0;
   std::int64_t byte_swap_us_ = 0;
   std::int64_t transfer_us_ = 0;
+  PanelStagingTiming staging_timing_{};
   std::uint32_t push_count_ = 0;
   std::uint32_t rejected_push_count_ = 0;
   std::size_t transfer_index_ = 0;
@@ -831,6 +868,9 @@ std::int64_t Co5300PanelTransport::ring_copy_us() const { return impl_->ring_cop
 std::int64_t Co5300PanelTransport::patch_us() const { return impl_->patch_us(); }
 std::int64_t Co5300PanelTransport::byte_swap_us() const { return impl_->byte_swap_us(); }
 std::int64_t Co5300PanelTransport::transfer_us() const { return impl_->transfer_us(); }
+const PanelStagingTiming& Co5300PanelTransport::staging_timing() const {
+  return impl_->staging_timing();
+}
 std::uint32_t Co5300PanelTransport::push_count() const { return impl_->push_count(); }
 std::uint32_t Co5300PanelTransport::rejected_push_count() const {
   return impl_->rejected_push_count();

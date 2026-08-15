@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -43,6 +45,27 @@ struct PanelStagePatch {
   }
 };
 
+inline constexpr std::size_t kMaximumPanelStreamStrips = 64U;
+
+struct PanelStripStagingTiming {
+  std::uint32_t samples = 0;
+  std::int64_t total_us = 0;
+  std::int64_t maximum_us = 0;
+  int panel_y = 0;
+  int rows = 0;
+  std::int64_t wire_budget_us = 0;
+};
+
+struct PanelStagingTiming {
+  std::array<PanelStripStagingTiming, kMaximumPanelStreamStrips> strips{};
+  std::size_t strip_count = 0;
+  std::uint32_t samples = 0;
+  std::int64_t total_us = 0;
+  std::int64_t maximum_us = 0;
+  std::size_t worst_strip_index = 0;
+  bool all_under_wire = true;
+};
+
 struct TearEdgeWaitResult {
   TearSignalEdge selected_edge = TearSignalEdge::kRising;
   bool observed = false;
@@ -76,6 +99,7 @@ class Co5300PanelTransport final : public DisplayBackend {
   [[nodiscard]] std::int64_t patch_us() const;
   [[nodiscard]] std::int64_t byte_swap_us() const;
   [[nodiscard]] std::int64_t transfer_us() const;
+  [[nodiscard]] const PanelStagingTiming& staging_timing() const;
   [[nodiscard]] std::uint32_t push_count() const;
   [[nodiscard]] std::uint32_t rejected_push_count() const;
   [[nodiscard]] std::uint32_t submit_count() const;

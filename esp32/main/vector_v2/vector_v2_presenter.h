@@ -102,6 +102,7 @@ class VectorV2Presenter {
   [[nodiscard]] bool ready() const;
   // Read-only transport telemetry (prepare/staging counters) for gates that
   // attribute presentation cost without owning the panel reference.
+  [[nodiscard]] Co5300PanelTransport& display() { return display_; }
   [[nodiscard]] const Co5300PanelTransport& display() const { return display_; }
   [[nodiscard]] vector_v2::ZoomLevel zoom() const;
   [[nodiscard]] int level_x() const;
