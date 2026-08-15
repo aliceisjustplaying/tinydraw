@@ -45,7 +45,9 @@ Run order: **4 first** (validate instrument), then 1, 5, 2, 3.
 ## Camera recipe (X-T5 + Sigma 56/1.4)
 
 - Movie high-speed mode **1080/240**, manual focus (magnify on panel pixels)
-- Shutter **1/1000** (fall back 1/500 if too dark; never slower than 1/500)
+- Shutter **1/800** (the X-T5 locks HS-mode shutter to 1/320–1/800; 1/800
+  smears the scan boundary ~33 rows, which the classifier tolerates; 1/320
+  would smear ~83 rows — do not use)
 - **f/2.8–f/4**, ISO to expose the pattern without clipping white fiducials
 - Fixed WB (daylight), room dimmed, no lamp reflections on the glass
 - Camera propped ~40 cm square-on; panel fills as much of frame as focus
