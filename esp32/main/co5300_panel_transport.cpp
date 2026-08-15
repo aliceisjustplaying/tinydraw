@@ -607,15 +607,20 @@ class Co5300PanelTransport::Impl {
   }
 
   int read_scanline() {
-    if (!ready_) {
-      return -1;
-    }
     std::array<std::uint8_t, 2> value{};
-    if (esp_lcd_panel_io_rx_param(io_, kReadCommandOpcode | (0x45U << 8U), value.data(),
-                                  value.size()) != ESP_OK) {
+    if (!read_register(0x45U, value.data(), value.size())) {
       return -1;
     }
     return (static_cast<int>(value[0]) << 8) | static_cast<int>(value[1]);
+  }
+
+  bool read_register(std::uint8_t command, std::uint8_t* value, std::size_t length) {
+    if (!ready_ || value == nullptr || length == 0U) {
+      return false;
+    }
+    return esp_lcd_panel_io_rx_param(
+               io_, kReadCommandOpcode | (static_cast<std::uint32_t>(command) << 8U), value,
+               length) == ESP_OK;
   }
 
  private:
@@ -729,5 +734,9 @@ bool Co5300PanelTransport::stream_rect(int x, int y, int width, int height,
   return impl_->stream_rect(x, y, width, height, pixels, stride, strip_rows);
 }
 int Co5300PanelTransport::read_scanline() { return impl_->read_scanline(); }
+bool Co5300PanelTransport::read_register(std::uint8_t command, std::uint8_t* value,
+                                         std::size_t length) {
+  return impl_->read_register(command, value, length);
+}
 
 }  // namespace tinydraw::esp32

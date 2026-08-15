@@ -93,6 +93,10 @@ class Co5300PanelTransport final : public DisplayBackend {
   // 10-bit scanline value, or -1 when the QSPI read fails. Unvalidated
   // controller behavior: treat values as diagnostic until calibrated.
   [[nodiscard]] int read_scanline();
+  // Characterization-probe register read (read opcode 0x03). Fills length
+  // bytes into value; returns false when the QSPI transaction fails. Used
+  // with known-nonzero registers as a control for the read path itself.
+  bool read_register(std::uint8_t command, std::uint8_t* value, std::size_t length);
 
  private:
   class Impl;

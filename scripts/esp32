@@ -142,13 +142,15 @@ case "$action" in
     ;;
   panel-probe)
     port="${2:-}"
-    clock_mhz="${3:-50}"
+    clock_mhz="${3:-40}"
+    cell="${4:-0}"
     if [[ -z "$port" ]]; then
-      echo "usage: $0 panel-probe PORT [40|50|60]" >&2
+      echo "usage: $0 panel-probe PORT [40|50|60] [CELL 0-5]" >&2
+      echo "cells: 0=software suite, 1=boundary-rising-full, 2=boundary-falling-full, 3=midframe-wrap-rising, 4=freerun-unsynced (positive control), 5=boundary-rising-canvas368" >&2
       exit 2
     fi
     cd "$root/esp32"
-    eim run "idf.py -B '$panel_probe_build' -DTINYDRAW_QEMU=OFF -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_VECTOR_V2_MEMORY_PROBE=OFF -DTINYDRAW_VECTOR_V2_OVERVIEW_WALK=OFF -DTINYDRAW_VECTOR_V2_APP=OFF -DTINYDRAW_PANEL_PROBE=ON -DTINYDRAW_CO5300_CLOCK_MHZ='$clock_mhz' build"
+    eim run "idf.py -B '$panel_probe_build' -DTINYDRAW_QEMU=OFF -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_VECTOR_V2_MEMORY_PROBE=OFF -DTINYDRAW_VECTOR_V2_OVERVIEW_WALK=OFF -DTINYDRAW_VECTOR_V2_APP=OFF -DTINYDRAW_PANEL_PROBE=ON -DTINYDRAW_CO5300_CLOCK_MHZ='$clock_mhz' -DTINYDRAW_PANEL_PROBE_CELL='$cell' build"
     assert_config "$panel_probe_build/sdkconfig" OCT
     eim run "idf.py -B '$panel_probe_build' -p '$port' flash"
     ;;

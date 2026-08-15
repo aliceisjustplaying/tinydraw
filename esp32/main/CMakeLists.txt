@@ -186,6 +186,13 @@ if(TINYDRAW_VECTOR_V2_MEMORY_PROBE)
 endif()
 if(TINYDRAW_PANEL_PROBE)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_PANEL_PROBE=1)
+  set(TINYDRAW_PANEL_PROBE_CELL "0" CACHE STRING
+      "Panel probe cell: 0=software suite, 1=boundary-rising-full, 2=boundary-falling-full, 3=midframe-wrap-rising, 4=freerun-unsynced, 5=boundary-rising-canvas368")
+  if(NOT TINYDRAW_PANEL_PROBE_CELL MATCHES "^[0-5]$")
+    message(FATAL_ERROR "TINYDRAW_PANEL_PROBE_CELL must be 0..5")
+  endif()
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    TINYDRAW_PANEL_PROBE_CELL=${TINYDRAW_PANEL_PROBE_CELL})
 endif()
 if(TINYDRAW_VECTOR_V2_OVERVIEW_WALK)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_V2_OVERVIEW_WALK=1)

@@ -97,13 +97,16 @@ completion wait, pre-staged first strips) could push the boundary toward
 ~420 rows but can never fit 448 rows in one period (payload alone is
 16.5 ms against a 16.77 ms period).
 
-### 6. GETSCANLINE (0x45)
+### 6. GETSCANLINE (0x45) — read path non-functional
 
 The QSPI read transaction completes (no error, ~36 µs) but always returns
-0 at every delay after the edge. The read path is unvalidated — a known
-nonzero register (e.g. device ID) must be read as a control before
-concluding the controller does not report scanline. No software beam
-oracle is available yet.
+0. Control reads settle the attribution: RDDID (0x04), RDDST (0x09),
+RDDPM (0x0A), RDDMADCTL (0x0B), RDDCOLMOD (0x0C), and brightness readback
+(0x52 — written 0xFF at init) **all read 0**
+(`probe-40mhz-readcontrol.log`). QSPI register reads are broken or
+unsupported as configured (likely missing dummy-cycle insertion in the
+`esp_lcd` SPI io path). **No software beam-position oracle exists; optical
+capture is the only tear instrument.**
 
 ## Falsified prior claims
 
