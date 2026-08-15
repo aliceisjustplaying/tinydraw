@@ -77,7 +77,6 @@ struct LivePresentationTiming {
   std::size_t fallback_tiles = 0;
   std::uint32_t pushes = 0;
   std::int64_t tear_wait_us = 0;
-  std::int64_t tear_edge_observed_at_us = 0;
   std::uint32_t tear_edge_isr_to_resume_us = 0;
   bool tear_edge_observed = false;
   bool tear_edge_wait_resumed = false;
@@ -152,14 +151,11 @@ class VectorV2Presenter {
     const vector_v2::ChromeState* chrome = nullptr;
     vector_v2::ChromeNavigation navigation{};
     std::span<const vector_v2::PixelRect> exposed{};
-    LivePresentationTiming* timing = nullptr;
-    std::uint32_t tear_edge_count = 0;
     std::int64_t exposed_us = 0;
     std::int64_t chrome_us = 0;
   };
 
   [[nodiscard]] static bool paint_stage_thunk(void* context, const PanelStageSurface& surface);
-  [[nodiscard]] static bool wait_for_stream_edge_thunk(void* context);
   [[nodiscard]] bool paint_stage_surface(StageContext& context, const PanelStageSurface& surface);
   [[nodiscard]] LivePresentationTiming present(vector_v2::PixelRect bounds,
                                                const vector_v2::ChromeState& chrome,
@@ -191,8 +187,7 @@ class VectorV2Presenter {
   [[nodiscard]] LivePresentationTiming present_ring(vector_v2::PixelRect band,
                                                     const vector_v2::ChromeState& chrome,
                                                     std::uint32_t event_us,
-                                                    std::span<const vector_v2::PixelRect> exposed,
-                                                    bool gate_on_tear_edge = false);
+                                                    std::span<const vector_v2::PixelRect> exposed);
   [[nodiscard]] bool compose_into_ring(vector_v2::PixelRect panel_bounds);
   void copy_ring_to_stage(vector_v2::PixelRect panel_bounds, const PanelStageSurface& surface);
   [[nodiscard]] LivePresentationTiming refresh_pan(int old_x, int old_y,
