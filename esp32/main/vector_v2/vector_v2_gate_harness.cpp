@@ -1691,6 +1691,7 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
   if (!setup.passed) {
     return false;
   }
+  presenter.display().reset_timing();
   bool all_passed = true;
   bool all_reused = true;
   std::size_t tear_edge_failures = 0;
@@ -1771,9 +1772,31 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
   std::sort(sorted_frame.begin(), sorted_frame.end());
   std::sort(sorted_complete.begin(), sorted_complete.end());
   constexpr auto kFrames = static_cast<std::int64_t>(kPanSequenceFrames);
-  // Transport discipline requires a factual configured-edge observation. This
-  // remains software evidence only and makes no glass-correctness claim.
-  const bool pass = all_passed && all_reused && tear_edge_failures == 0U;
+  const PanelStagingTiming& staging = presenter.display().staging_timing();
+  for (std::size_t index = 0; index < staging.strip_count; ++index) {
+    const PanelStripStagingTiming& strip = staging.strips[index];
+    const std::int64_t mean_us =
+        strip.samples == 0U ? 0 : strip.total_us / static_cast<std::int64_t>(strip.samples);
+    const std::int64_t over_budget_us =
+        std::max<std::int64_t>(0, strip.maximum_us - strip.wire_budget_us);
+    std::printf(
+        "TINYDRAW_PANSEQ_STRIP zoom=%s strip=%u panel_y=%d rows=%d samples=%lu "
+        "staging_mean_us=%lld staging_max_us=%lld wire_budget_us=%lld over_budget_us=%lld "
+        "pass=%u\n",
+        zoom_name(zoom), static_cast<unsigned>(index), strip.panel_y, strip.rows,
+        static_cast<unsigned long>(strip.samples), static_cast<long long>(mean_us),
+        static_cast<long long>(strip.maximum_us), static_cast<long long>(strip.wire_budget_us),
+        static_cast<long long>(over_budget_us), strip.maximum_us < strip.wire_budget_us);
+  }
+  const PanelStripStagingTiming& worst = staging.strips[staging.worst_strip_index];
+  const std::int64_t staging_mean_us =
+      staging.samples == 0U ? 0 : staging.total_us / static_cast<std::int64_t>(staging.samples);
+  const std::int64_t worst_headroom_us = worst.wire_budget_us - worst.maximum_us;
+  // Transport discipline requires a factual configured-edge observation and
+  // every strip producer staying strictly faster than its measured wire time.
+  // This remains software evidence only and makes no glass-correctness claim.
+  const bool pass = all_passed && all_reused && tear_edge_failures == 0U && staging.samples != 0U &&
+                    staging.all_under_wire;
   std::printf(
       "TINYDRAW_GATE1_PANSEQ zoom=%s frames=%u scroll_avg_us=%lld exposed_avg_us=%lld "
       "tear_wait_avg_us=%lld present_avg_us=%lld prepare_avg_us=%lld "
@@ -1782,7 +1805,9 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
       "frame_p95_us=%lld frame_max_us=%lld "
       "complete_p50_us=%lld complete_p95_us=%lld complete_max_us=%lld "
       "tear_edge_failures=%lu presentation_experiment=%s te_edge=%s clock_mhz=%d "
-      "all_reused=%u pass=%u\n",
+      "strip_samples=%lu staging_mean_us=%lld staging_max_us=%lld worst_strip=%u "
+      "worst_strip_y=%d worst_wire_budget_us=%lld worst_headroom_us=%lld "
+      "staging_invariant=%u all_reused=%u pass=%u\n",
       zoom_name(zoom), static_cast<unsigned>(kPanSequenceFrames),
       static_cast<long long>(totals.scroll_us / kFrames),
       static_cast<long long>(totals.exposed_us / kFrames),
@@ -1802,7 +1827,11 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
       static_cast<long long>(pan_sequence_percentile(sorted_complete, 95)),
       static_cast<long long>(sorted_complete.back()),
       static_cast<unsigned long>(tear_edge_failures), presentation_experiment_name(),
-      selected_tear_edge_name(), panel_clock_mhz(), all_reused, pass);
+      selected_tear_edge_name(), panel_clock_mhz(), static_cast<unsigned long>(staging.samples),
+      static_cast<long long>(staging_mean_us), static_cast<long long>(staging.maximum_us),
+      static_cast<unsigned>(staging.worst_strip_index), worst.panel_y,
+      static_cast<long long>(worst.wire_budget_us), static_cast<long long>(worst_headroom_us),
+      staging.all_under_wire, all_reused, pass);
   std::fflush(stdout);
   return pass;
 }
