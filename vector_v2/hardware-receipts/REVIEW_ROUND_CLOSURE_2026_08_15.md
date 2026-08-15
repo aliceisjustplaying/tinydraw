@@ -55,7 +55,10 @@ fixed). This is exactly the failure-mode coverage the reviews demanded.
   overlay prep ~15 ms + scalar staging +2.3 ms). Measured split and
   recovery plan in the board todo; the 30 FPS floor is temporarily
   broken (~24 FPS) in exchange for tear-free-by-construction pans.
-- Cold p95 20-run distribution: see `c86f3ac-cold-p95-20-runs.log`.
+- Cold p95 20-run distribution (`c86f3ac-cold-p95-20-runs.log`),
+  unchanged from the pre-review baselines (cold paths untouched):
+  adversarial 50/100/200/400%: 164 / 226 / 520 / 628 ms p95;
+  overlap 471 / 326 / 325 / 314 ms; seed7 400%: 369 ms.
 - Hairline gate: unchanged capacity truths (guard stops at saturation,
   no churn by identity signature).
 
