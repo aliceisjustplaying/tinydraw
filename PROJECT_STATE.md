@@ -116,8 +116,12 @@ These are product and optimization tasks, not evidence for another rewrite.
 
 ## Organized board (2026-08-15 11:30, settled at efb1586)
 
-Device: product build at `efb1586`, 512 slots. PANSEQ 28.9/29.5 ms avg,
-p50 26.96, all 25 gates green (`efb1586-full-gate-512.log`).
+Device: product build at `8c222e8`, 448 slots. PANSEQ 29.5/29.7 ms avg,
+p50 27.95, all 26 gates green (`8c222e8-full-gate-448.log`). Note: the
+`efb1586` battery log was captured at 384 slots (the harness script's own
+slot default silently overrode the CMake default; found and fixed at
+`8c222e8` when the first honest 512 run failed the export-reserve gate
+and the pool corrected to 448).
 
 Landed and verified today: draw-under-dock + center zoom (`ab43005`),
 tear fixes round 1 (band wrap wait, overlay stale-compose fix, visible
