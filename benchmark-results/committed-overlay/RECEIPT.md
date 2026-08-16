@@ -74,9 +74,15 @@ better", "it does look fast".
   worst absorption 30.4 ms, worst swap 79.5 ms (idle-time work).
 - **No correctness events:** all drop counters zero on every stroke,
   `complete_over_33ms=0` everywhere, zero commit failures.
-- **The 166–184 ms `poll_max` gaps are pre-existing** — the pre-overlay
-  glass session shows identical 173–183 ms values (standing
-  zoom/full-refresh cost, not an overlay regression).
+- **The 166–184 ms `poll_max` gaps, attributed:** they are one-shot
+  full-frame refreshes between strokes (zoom transitions on dense content,
+  pan fallback, power/chrome), and they overwhelmingly occurred while no
+  touch was waiting (`touch_event_age_max_us` ≈ 1.2 ms in those windows).
+  The felt variant — a Down landing mid-stall — measured event ages up to
+  66 ms (old session: 70 ms) with the worst stale-event window improving
+  113 → 24 events. Pre-existing class, at-or-better-than parity after the
+  overlay; the drain swap refresh (≤79 ms) is now the largest sliceable
+  contributor. Queued: band-sliced refreshes with polls between bands.
 - **Known consequences, owner-deprioritized:** minimap updates trail
   drawing by the drain latency (minimap base is keyed on the canvas
   revision, which now trails during bursts; owner suspects it was always
