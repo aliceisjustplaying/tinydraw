@@ -4,6 +4,8 @@ Date: 2026-08-16
 
 Raw device log: [`gate-chrome-lifetime-split.log`](gate-chrome-lifetime-split.log)
 
+Boundary corpus: [`gate-pan-boundary.log`](gate-pan-boundary.log)
+
 ## Change
 
 The existing 53,956-pixel caller-funded allocation now has independent toolbar,
@@ -30,3 +32,7 @@ The automated aggregate remains red only at the pre-existing adversarial cold
 gate (`adversarial_cold=0`). This receipt is software/device timing evidence;
 the changed cadence requires a fresh same-session glass pass and torn positive
 control before pan correctness closes.
+
+The follow-up boundary corpus passed at 100% and 400%: one-pixel samples
+accumulated into the expected even-coordinate motion, 94- and 96-pixel deltas
+reused the ring, and a 98-pixel delta took the full-refresh fallback.
