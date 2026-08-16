@@ -531,9 +531,14 @@ bool run_general_cold_gates(VectorV2Presenter& presenter, vector_v2::TileProduce
                              ZoomLevel::k400Percent};
   bool passed = true;
   for (const ZoomLevel zoom : gates) {
+    // 400% runs against the owner-accepted hold-the-line ceiling (ship
+    // contract owner decision #2, 2026-08-16); every other zoom keeps the
+    // <=500 ms product line.
+    const std::int64_t budget_us = zoom == ZoomLevel::k400Percent
+                                       ? contract::kColdViewport400HoldTheLineUs
+                                       : contract::kColdViewportRequiredUs;
     passed = run_paced_cold_gate(presenter, producer, canvas, touch, chrome, zoom, 0, 0,
-                                 "adversarial_tapered_4x+evil_hairlines",
-                                 contract::kColdViewportRequiredUs) &&
+                                 "adversarial_tapered_4x+evil_hairlines", budget_us) &&
              passed;
   }
   return passed;
