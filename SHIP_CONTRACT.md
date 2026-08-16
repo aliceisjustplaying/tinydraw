@@ -167,6 +167,14 @@ seam is not a valid V2 persistence or Undo mechanism.
    design (8-bit alpha over the newest-first masked replay, interiors keep
    exact span fills) proceeds to a host prototype with rendered
    before/afters. On-device go/no-go after owner review of the prototype.
+5. **Overlap-50 cold red is binding and sequenced (2026-08-16).** The
+   overlap-workload 50% cold gate (628 ms vs 500; red since wave-3,
+   surfaced from no-scorecard invisibility the same day) gets fixed — not
+   re-scoped — but strictly after: the ink lag fix (committed overlay),
+   the settled-AA prototype review, and the déjà-vu fix. Owner was
+   explicit that its invisibility through multiple paid cold-render
+   sessions is unacceptable; process rule 8 below is the anti-recurrence
+   guard.
 
 ### Post-ship (explicitly deferred, not cut)
 
@@ -190,3 +198,9 @@ déjà vu violations."
 6. Full scorecard before/after every meaningful change; a change that wins
    its target while pushing a closed metric out of guard band is rejected.
 7. Revert first, investigate second, when a closed metric regresses.
+8. Every red flag in the harness verdict vector must have a scorecard row
+   in `PROJECT_STATE.md` naming its number, its threshold, and its owner
+   decision (fix / hold-the-line / re-scope). "Pre-existing reds only" is
+   never an acceptable session summary on its own; an undocumented red is
+   a session-stopping finding. (Added 2026-08-16 after the overlap-50 cold
+   red rode invisibly through the entire cold campaign.)
