@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -22,14 +23,24 @@ class ReadOnlyFile {
   [[nodiscard]] virtual bool read(std::size_t offset, std::span<std::uint8_t> output) const = 0;
 };
 
-// A fixed, read-only FAT16 volume containing at most one DRAWING.PNG file.
+struct Fat83Name {
+  std::array<char, 11> bytes{};
+};
+
+inline constexpr Fat83Name kDrawingPngName{
+    .bytes = {'D', 'R', 'A', 'W', 'I', 'N', 'G', ' ', 'P', 'N', 'G'}};
+inline constexpr Fat83Name kDrawingSvgName{
+    .bytes = {'D', 'R', 'A', 'W', 'I', 'N', 'G', ' ', 'S', 'V', 'G'}};
+
+// A fixed, read-only FAT16 volume containing at most one caller-named file.
 // Sectors are synthesized on demand; no disk-sized RAM buffer is needed.
 class Fat16ExportDisk {
  public:
   static constexpr std::uint16_t kBlockSize = 512;
   static constexpr std::uint32_t kBlockCount = 16'384;
 
-  explicit Fat16ExportDisk(const ReadOnlyFile& file) : file_(file) {}
+  explicit Fat16ExportDisk(const ReadOnlyFile& file, Fat83Name name = kDrawingPngName)
+      : file_(file), name_(name) {}
 
   void set_modified_time(FatDateTime time) { modified_time_ = time; }
   [[nodiscard]] bool read(std::uint32_t lba, std::uint32_t offset,
@@ -37,6 +48,7 @@ class Fat16ExportDisk {
 
  private:
   const ReadOnlyFile& file_;
+  Fat83Name name_{};
   FatDateTime modified_time_{};
 };
 

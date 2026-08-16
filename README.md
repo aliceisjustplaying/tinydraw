@@ -39,12 +39,15 @@ Autosave, charging, power-off/on, and macOS Finder mounting are verified.
 - Touch sampling remains independent of cooperative rendering work.
 - The refined toolbar uses the V1 tool icons, reflects the active tool, and
   opens compact tool, size, document, and two-page round-swatch color popups.
-- New has a confirmation dialog; Export has visible band-by-band progress and
-  a saved state before the physical read-only USB drive takes over.
+- New has a confirmation dialog; Export streams the vector authority to flash
+  with visible progress before the physical read-only USB drive takes over.
 - Battery status, a five-level zoom rail, and a live noninteractive minimap with
   a viewport rectangle are visible over the canvas.
-- Full-world 1472×1792 PNG export has been decoded on the host and opened from
-  the physical read-only USB drive.
+- Detailed SVG export emits one painter-ordered filled path per variable-width
+  pen/eraser operation as `DRAWING.SVG`; the device gate verifies full flash
+  readback, XML structure, and CRC in about 1.02 s with a 4 KiB workspace.
+  Physical USB mounting of the SVG remains to be checked with an operator
+  present. Prior full-world PNG USB evidence remains archived.
 
 V2's immediate renderer is intentionally hard-edged until the settled
 anti-aliasing gate lands. The final invariant presenter looked tear-free in the

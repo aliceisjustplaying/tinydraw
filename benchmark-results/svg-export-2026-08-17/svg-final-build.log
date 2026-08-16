@@ -1,0 +1,45 @@
+Added environment variable ESP_IDF_VERSION = 6.0
+Added environment variable IDF_VERSION = 6.0.2
+Added environment variable IDF_TOOLS_PATH = $HOME/.espressif/tools
+Added environment variable IDF_COMPONENT_LOCAL_STORAGE_URL = file://$HOME/.espressif/tools
+Added environment variable IDF_PATH = $HOME/.espressif/v6.0.2/esp-idf
+Added environment variable ESP_ROM_ELF_DIR = $HOME/.espressif/tools/esp-rom-elfs/20241011/
+Added environment variable OPENOCD_SCRIPTS = $HOME/.espressif/tools/openocd-esp32/v0.12.0-esp32-20260424/openocd-esp32/share/openocd/scripts
+Added environment variable IDF_PYTHON_ENV_PATH = $HOME/.espressif/tools/python/v6.0.2/venv
+Added environment variable ESP_CLANG_LIBS_PATH = $HOME/.espressif/tools/esp-clang-libs/esp-20.1.1_20250829/esp-clang/lib
+Added proper directory to PATH
+Activated virtual environment at $HOME/.espressif/tools/python/v6.0.2/venv
+Environment setup complete for the current shell session.
+These changes will be lost when you close this terminal.
+You are now using IDF version 6.0.2.
+eim select v6.0.2
+Executing action: all (aliases: build)
+Running ninja in directory out/build/esp32-vector-v2-gate-harness
+Executing "ninja all"...
+[1/10] Performing build step for 'bootloader'
+[1/1] cd out/build/esp32-vector-v2-gate-harness/bootloader && $HOME/.espressif/tools/python/v6.0.2/venv/bin/python $HOME/.espressif/v6.0.2/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x0 out/build/esp32-vector-v2-gate-harness/bootloader/bootloader.bin
+Bootloader binary size 0x57e0 bytes. 0x2820 bytes (31%) free.
+[2/10] No install step for 'bootloader'
+[3/10] Completed 'bootloader'
+[4/10] Building CXX object esp-idf/main/CMakeFiles/__idf_main.dir/vector_v2/svg_export_store.cpp.obj
+[5/10] Building CXX object esp-idf/main/CMakeFiles/__idf_main.dir/vector_v2/vector_v2_gate_harness.cpp.obj
+[6/10] Linking C static library esp-idf/main/libmain.a
+[7/10] Generating esp-idf/esp_system/ld/sections.ld
+[8/10] Linking CXX executable tinydraw_esp32.elf
+[9/10] Generating binary image from built executable
+esptool v5.3.1
+Creating ESP32-S3 image...
+Merged 3 ELF sections.
+Successfully created ESP32-S3 image.
+Generated out/build/esp32-vector-v2-gate-harness/tinydraw_esp32.bin
+[10/10] cd out/build/esp32-vector-v2-gate-harness && $HOME/.espressif/tools/python/v6.0.2/venv/bin/python $HOME/.espressif/v6.0.2/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 partition --type app out/build/esp32-vector-v2-gate-harness/partition_table/partition-table.bin out/build/esp32-vector-v2-gate-harness/tinydraw_esp32.bin
+tinydraw_esp32.bin binary size 0x8d400 bytes. Smallest app partition is 0x100000 bytes. 0x72c00 bytes (45%) free.
+
+Project build complete. To flash, run:
+ idf.py flash
+or
+ idf.py -p PORT flash
+or
+ python -m esptool --chip esp32s3 -b 460800 --before default-reset --after hard-reset write-flash --flash-mode dio --flash-size 16MB --flash-freq 80m 0x0 ../out/build/esp32-vector-v2-gate-harness/bootloader/bootloader.bin 0x8000 ../out/build/esp32-vector-v2-gate-harness/partition_table/partition-table.bin 0x10000 ../out/build/esp32-vector-v2-gate-harness/tinydraw_esp32.bin
+or from the "out/build/esp32-vector-v2-gate-harness" directory
+ python -m esptool --chip esp32s3 -b 460800 --before default-reset --after hard-reset write-flash "@flash_args"

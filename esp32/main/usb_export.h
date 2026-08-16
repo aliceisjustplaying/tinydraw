@@ -4,15 +4,14 @@
 #include <cstdint>
 #include <span>
 
-#include "image_export_store.h"
 #include "tinydraw/export/fat16_disk.h"
 
 namespace tinydraw::esp32 {
 
-// Exposes ImageExportStore as a synthesized, read-only FAT16 USB drive.
+// Exposes one read-only file as a synthesized FAT16 USB drive.
 class UsbExport {
  public:
-  explicit UsbExport(const ImageExportStore& store);
+  explicit UsbExport(const ReadOnlyFile& file, Fat83Name name = kDrawingPngName);
 
   [[nodiscard]] bool active() const { return active_; }
   void set_modified_time(FatDateTime time) { disk_.set_modified_time(time); }
@@ -22,21 +21,8 @@ class UsbExport {
                           std::span<std::uint8_t> output) const;
 
  private:
-  class ExportFile final : public ReadOnlyFile {
-   public:
-    explicit ExportFile(const ImageExportStore& store) : store_(store) {}
-    [[nodiscard]] std::size_t size() const override { return store_.image_size(); }
-    [[nodiscard]] bool read(std::size_t offset, std::span<std::uint8_t> output) const override {
-      return store_.read(offset, output);
-    }
-
-   private:
-    const ImageExportStore& store_;
-  };
-
   [[nodiscard]] bool start();
 
-  ExportFile file_;
   Fat16ExportDisk disk_;
   bool active_ = false;
 };

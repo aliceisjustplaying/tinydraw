@@ -49,12 +49,25 @@ class CountingSink final : public vector_v2::SvgByteSink {
   bool append(std::string_view bytes) override {
     bytes_written += bytes.size();
     ++calls;
+    maximum_fragment = std::max(maximum_fragment, bytes.size());
     return true;
   }
 
   std::size_t bytes_written = 0;
   std::size_t calls = 0;
+  std::size_t maximum_fragment = 0;
 };
+
+struct ProgressTrace {
+  std::vector<std::size_t> completed;
+  std::vector<std::size_t> totals;
+};
+
+void record_progress(std::size_t completed, std::size_t total, void* context) {
+  auto& trace = *static_cast<ProgressTrace*>(context);
+  trace.completed.push_back(completed);
+  trace.totals.push_back(total);
+}
 
 template <std::size_t OperationCapacity, std::size_t SampleCapacity>
 struct LogFixture {
@@ -82,54 +95,71 @@ bool parse_float(std::string_view text, std::size_t& cursor, float& value) {
   return true;
 }
 
-bool parse_attribute(std::string_view line, std::string_view name, float& value) {
-  const std::string needle = std::string(name) + "=\"";
-  std::size_t cursor = line.find(needle);
-  if (cursor == std::string_view::npos) {
+bool consume(std::string_view text, std::size_t& cursor, std::string_view expected) {
+  if (text.substr(cursor, expected.size()) != expected) {
     return false;
   }
-  cursor += needle.size();
-  return parse_float(line, cursor, value) && cursor < line.size() && line[cursor] == '"';
+  cursor += expected.size();
+  return true;
 }
 
 bool parse_shapes(std::string_view svg, std::vector<ParsedShape>& shapes) {
-  std::size_t line_start = 0;
-  while (line_start < svg.size()) {
-    const std::size_t line_end = svg.find('\n', line_start);
-    const std::string_view line = svg.substr(
-        line_start, (line_end == std::string_view::npos ? svg.size() : line_end) - line_start);
-    if (line.starts_with("<circle ")) {
-      ParsedShape shape{.kind = tinydraw::RibbonPrimitiveKind::kCircle};
-      if (!parse_attribute(line, "cx", shape.center.x) ||
-          !parse_attribute(line, "cy", shape.center.y) ||
-          !parse_attribute(line, "r", shape.radius)) {
+  std::size_t path_start = 0;
+  while ((path_start = svg.find("<path fill=\"", path_start)) != std::string_view::npos) {
+    std::size_t cursor = svg.find(" d=\"", path_start);
+    const std::size_t path_end =
+        cursor == std::string_view::npos ? cursor : svg.find("\"/>", cursor);
+    if (cursor == std::string_view::npos || path_end == std::string_view::npos) {
+      return false;
+    }
+    cursor += std::string_view(" d=\"").size();
+    while (cursor < path_end) {
+      if (!consume(svg, cursor, "M")) {
         return false;
       }
-      shapes.push_back(shape);
-    } else if (line.starts_with("<path d=\"M")) {
-      ParsedShape shape;
-      std::size_t cursor = std::string_view("<path d=\"M").size();
-      while (cursor < line.size() && line[cursor] != 'Z') {
-        if (line[cursor] == 'L') {
-          ++cursor;
-        }
-        if (shape.point_count == shape.points.size() ||
-            !parse_float(line, cursor, shape.points[shape.point_count].x) ||
-            cursor >= line.size() || line[cursor++] != ' ' ||
-            !parse_float(line, cursor, shape.points[shape.point_count].y)) {
+      tinydraw::Point start{};
+      if (!parse_float(svg, cursor, start.x) || !consume(svg, cursor, " ") ||
+          !parse_float(svg, cursor, start.y)) {
+        return false;
+      }
+      if (cursor < path_end && svg[cursor] == 'A') {
+        ParsedShape shape{.kind = tinydraw::RibbonPrimitiveKind::kCircle};
+        float second_radius = 0.0F;
+        tinydraw::Point opposite{};
+        tinydraw::Point finish{};
+        if (!consume(svg, cursor, "A") || !parse_float(svg, cursor, shape.radius) ||
+            !consume(svg, cursor, " ") || !parse_float(svg, cursor, second_radius) ||
+            !consume(svg, cursor, " 0 1 1 ") || !parse_float(svg, cursor, opposite.x) ||
+            !consume(svg, cursor, " ") || !parse_float(svg, cursor, opposite.y) ||
+            !consume(svg, cursor, "A") || !parse_float(svg, cursor, second_radius) ||
+            !consume(svg, cursor, " ") || !parse_float(svg, cursor, second_radius) ||
+            !consume(svg, cursor, " 0 1 1 ") || !parse_float(svg, cursor, finish.x) ||
+            !consume(svg, cursor, " ") || !parse_float(svg, cursor, finish.y) ||
+            !consume(svg, cursor, "Z")) {
           return false;
         }
-        ++shape.point_count;
+        shape.center = {.x = (start.x + opposite.x) * 0.5F, .y = (start.y + opposite.y) * 0.5F};
+        shapes.push_back(shape);
+      } else {
+        ParsedShape shape;
+        shape.points[shape.point_count++] = start;
+        while (cursor < path_end && svg[cursor] == 'L') {
+          ++cursor;
+          if (shape.point_count == shape.points.size() ||
+              !parse_float(svg, cursor, shape.points[shape.point_count].x) ||
+              !consume(svg, cursor, " ") ||
+              !parse_float(svg, cursor, shape.points[shape.point_count].y)) {
+            return false;
+          }
+          ++shape.point_count;
+        }
+        if (shape.point_count < 3U || !consume(svg, cursor, "Z")) {
+          return false;
+        }
+        shapes.push_back(shape);
       }
-      if (shape.point_count < 3U || cursor >= line.size() || line.substr(cursor) != "Z\"/>") {
-        return false;
-      }
-      shapes.push_back(shape);
     }
-    if (line_end == std::string_view::npos) {
-      break;
-    }
-    line_start = line_end + 1U;
+    path_start = path_end + 3U;
   }
   return true;
 }
@@ -236,23 +266,27 @@ TEST_CASE("SVG export has stable exact output and painter-ordered eraser geometr
               .has_value());
 
   StringSink sink;
+  ProgressTrace progress;
   REQUIRE(vector_v2::export_svg(fixture.log, sink,
-                                {.world_bounds = {0, 0, 30, 20}, .background = 0xFFFFU}));
+                                {.world_bounds = {0, 0, 30, 20},
+                                 .background = 0xFFFFU,
+                                 .progress = record_progress,
+                                 .progress_context = &progress}));
   CHECK(sink.text ==
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"30\" height=\"20\" "
         "viewBox=\"0 0 30 20\">\n"
         "<rect x=\"0\" y=\"0\" width=\"30\" height=\"20\" fill=\"#FFFFFF\"/>\n"
-        "<g fill=\"#FF0000\">\n"
-        "<circle cx=\"10\" cy=\"10\" r=\"2\"/>\n"
-        "<path d=\"M10 8L20 6L20 14L10 12Z\"/>\n"
-        "<circle cx=\"20\" cy=\"10\" r=\"4\"/>\n"
-        "</g>\n"
-        "<g fill=\"#FFFFFF\">\n"
-        "<circle cx=\"15\" cy=\"10\" r=\"1\"/>\n"
-        "</g>\n"
+        "<path fill=\"#FF0000\" fill-rule=\"nonzero\" "
+        "d=\"M12 10A2 2 0 1 1 8 10A2 2 0 1 1 12 10Z"
+        "M10 8L20 6L20 14L10 12Z"
+        "M24 10A4 4 0 1 1 16 10A4 4 0 1 1 24 10Z\"/>\n"
+        "<path fill=\"#FFFFFF\" fill-rule=\"nonzero\" "
+        "d=\"M16 10A1 1 0 1 1 14 10A1 1 0 1 1 16 10Z\"/>\n"
         "</svg>\n");
-  CHECK(sink.maximum_fragment <= 64U);
+  CHECK(sink.maximum_fragment <= 1'024U);
+  CHECK(progress.completed == std::vector<std::size_t>{0U, 1U, 2U});
+  CHECK(progress.totals == std::vector<std::size_t>{2U, 2U, 2U});
 }
 
 TEST_CASE("exported primitive coverage exactly matches the ribbon renderer raster") {
@@ -321,14 +355,17 @@ TEST_CASE("SVG export handles empty and single-dot documents and sink failure") 
   StringSink empty;
   REQUIRE(vector_v2::export_svg(fixture.log, empty));
   CHECK(well_formed_export(empty.text));
-  CHECK(empty.text.find("<g ") == std::string::npos);
+  CHECK(empty.text.find("<path fill=") == std::string::npos);
 
   const std::array dot{
       vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 32, .radius_256 = 128}};
   REQUIRE(fixture.log.append({.color = 0x001FU, .samples = dot}).has_value());
   StringSink single;
   REQUIRE(vector_v2::export_svg(fixture.log, single));
-  CHECK(single.text.find("<circle cx=\"1\" cy=\"2\" r=\"0.5\"/>") != std::string::npos);
+  CHECK(single.text.find("<path fill=\"#0000FF\" fill-rule=\"nonzero\" d=\"M1.5 2A0.5 0.5") !=
+        std::string::npos);
+  CHECK(single.text.find("<circle") == std::string::npos);
+  CHECK(single.text.find("stroke-width") == std::string::npos);
   CHECK(well_formed_export(single.text));
 
   StringSink short_sink(80U);
@@ -372,7 +409,7 @@ TEST_CASE("hundreds of random authority documents export bounded well-formed XML
     CHECK(parse_shapes(sink.text, shapes));
     CHECK(sink.text.size() <=
           1'024U + fixture.log.operation_count() * 128U + expected_samples * 1'000U);
-    CHECK(sink.maximum_fragment <= 64U);
+    CHECK(sink.maximum_fragment <= 1'024U);
   }
 }
 
@@ -402,5 +439,6 @@ TEST_CASE("maximum-capacity authority streams without document-sized exporter st
   REQUIRE(vector_v2::export_svg(log, sink));
   CHECK(sink.bytes_written > 100'000U);
   CHECK(sink.bytes_written < 2'000'000U);
-  CHECK(sink.calls > log.operation_count());
+  CHECK(sink.maximum_fragment <= 1'024U);
+  CHECK(sink.calls <= (sink.bytes_written + 1'023U) / 1'024U + 8U);
 }

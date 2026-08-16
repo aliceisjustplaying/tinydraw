@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <memory>
 #include <span>
+#include <string_view>
 
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
@@ -1071,105 +1072,124 @@ bool run_long_gesture_commit_gate(VectorV2Presenter& presenter, vector_v2::TileP
          in_place.fallback_pixels == 0U && in_place.append_max_us < 15'000;
 }
 
-// Encodes the currently loaded document (the seed-7 realistic workload) to
-// the export partition through the streamed authority renderer and verifies
-// the stored PNG signature and header dimensions. USB stays untouched so the
-// automated serial console survives; presenting the disk is the manual step.
-std::uint32_t png_crc32(std::uint32_t crc, std::span<const std::uint8_t> bytes) {
+// Encodes the currently loaded seed-7 authority directly to SVG and verifies
+// the complete stored byte stream without presenting USB. This preserves the
+// automated serial console and never puts the device in mass-storage mode.
+constexpr std::array<std::uint32_t, 256> make_export_crc32_table() {
+  std::array<std::uint32_t, 256> table{};
+  for (std::uint32_t value = 0; value < table.size(); ++value) {
+    std::uint32_t entry = value;
+    for (int bit = 0; bit < 8; ++bit) {
+      entry = (entry >> 1U) ^ (0xEDB88320U & (0U - (entry & 1U)));
+    }
+    table[value] = entry;
+  }
+  return table;
+}
+
+constexpr auto kExportCrc32Table = make_export_crc32_table();
+
+std::uint32_t export_crc32(std::uint32_t crc, std::span<const std::uint8_t> bytes) {
   crc = ~crc;
   for (const std::uint8_t byte : bytes) {
-    crc ^= byte;
-    for (int bit = 0; bit < 8; ++bit) {
-      crc = (crc >> 1U) ^ (0xEDB88320U & (0U - (crc & 1U)));
-    }
+    crc = (crc >> 8U) ^ kExportCrc32Table[(crc ^ byte) & 0xFFU];
   }
   return ~crc;
 }
 
-// Walks every PNG chunk and verifies its CRC32 plus a terminating IEND: a
-// header-only check passed corrupt or truncated IDAT data.
-bool verify_png_chunks(VectorV2Export& exporter, std::size_t total_bytes, std::size_t& chunks) {
-  std::array<std::uint8_t, 4'096> buffer{};
-  std::size_t offset = 8;  // signature
-  bool saw_iend = false;
-  while (offset + 12U <= total_bytes && !saw_iend) {
-    std::array<std::uint8_t, 8> chunk_header{};
-    if (!exporter.read_image(offset, chunk_header)) {
-      return false;
-    }
-    const std::size_t length = static_cast<std::size_t>(chunk_header[0]) << 24U |
-                               static_cast<std::size_t>(chunk_header[1]) << 16U |
-                               static_cast<std::size_t>(chunk_header[2]) << 8U |
-                               static_cast<std::size_t>(chunk_header[3]);
-    if (offset + 12U + length > total_bytes) {
-      return false;
-    }
-    // CRC covers the type tag and the payload.
-    std::uint32_t crc = png_crc32(0U, std::span(chunk_header).subspan(4));
-    std::size_t remaining = length;
-    std::size_t payload_offset = offset + 8U;
-    while (remaining > 0U) {
-      const std::size_t take = std::min(remaining, buffer.size());
-      if (!exporter.read_image(payload_offset, std::span(buffer).first(take))) {
-        return false;
-      }
-      crc = png_crc32(crc, std::span<const std::uint8_t>(buffer).first(take));
-      payload_offset += take;
-      remaining -= take;
-      // Feed the idle task; a 500 KiB IDAT walk would otherwise trip the
-      // CPU0 watchdog.
-      vTaskDelay(1);
-    }
-    std::array<std::uint8_t, 4> stored_crc{};
-    if (!exporter.read_image(offset + 8U + length, stored_crc)) {
-      return false;
-    }
-    const std::uint32_t expected = static_cast<std::uint32_t>(stored_crc[0]) << 24U |
-                                   static_cast<std::uint32_t>(stored_crc[1]) << 16U |
-                                   static_cast<std::uint32_t>(stored_crc[2]) << 8U |
-                                   static_cast<std::uint32_t>(stored_crc[3]);
-    if (crc != expected) {
-      return false;
-    }
-    saw_iend = chunk_header[4] == 'I' && chunk_header[5] == 'E' && chunk_header[6] == 'N' &&
-               chunk_header[7] == 'D';
-    ++chunks;
-    offset += 12U + length;
+struct SvgVerification {
+  bool prolog = false;
+  bool dimensions = false;
+  bool terminator = false;
+  bool crc = false;
+  bool path_only = false;
+  std::size_t paths = 0;
+};
+
+SvgVerification verify_svg(VectorV2Export& exporter, std::size_t total_bytes,
+                           std::size_t expected_paths, std::uint32_t expected_crc) {
+  SvgVerification result;
+  if (total_bytes < 7U) {
+    return result;
   }
-  return saw_iend;
+
+  std::array<std::uint8_t, 512> header{};
+  const std::size_t header_bytes = std::min(header.size(), total_bytes);
+  if (!exporter.read_file(0, std::span(header).first(header_bytes))) {
+    return result;
+  }
+  const std::string_view header_text(reinterpret_cast<const char*>(header.data()), header_bytes);
+  result.prolog = header_text.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg ");
+  result.dimensions =
+      header_text.find("width=\"1472\" height=\"1792\" viewBox=\"0 0 1472 1792\"") !=
+      std::string_view::npos;
+
+  std::array<std::uint8_t, 7> tail{};
+  result.terminator =
+      exporter.read_file(total_bytes - tail.size(), tail) &&
+      std::string_view(reinterpret_cast<const char*>(tail.data()), tail.size()) == "</svg>\n";
+
+  constexpr std::size_t kCarryBytes = 32U;
+  // Keep the verifier below the product main-task stack headroom. The file is
+  // still checked in full; a smaller streaming window only adds read calls.
+  std::array<std::uint8_t, 512> buffer{};
+  std::array<char, 512 + kCarryBytes> searchable{};
+  std::array<char, kCarryBytes> carry{};
+  std::size_t carry_size = 0;
+  std::size_t offset = 0;
+  std::uint32_t crc = 0;
+  bool path_only = true;
+  while (offset < total_bytes) {
+    const std::size_t count = std::min(buffer.size(), total_bytes - offset);
+    if (!exporter.read_file(offset, std::span(buffer).first(count))) {
+      return result;
+    }
+    crc = export_crc32(crc, std::span<const std::uint8_t>(buffer).first(count));
+    std::copy_n(carry.begin(), carry_size, searchable.begin());
+    std::copy_n(reinterpret_cast<const char*>(buffer.data()), count,
+                searchable.begin() + static_cast<std::ptrdiff_t>(carry_size));
+    const std::string_view text(searchable.data(), carry_size + count);
+    constexpr std::string_view kPathMarker = "<path fill=\"";
+    for (std::size_t found = text.find(kPathMarker); found != std::string_view::npos;
+         found = text.find(kPathMarker, found + 1U)) {
+      if (found + kPathMarker.size() > carry_size) {
+        ++result.paths;
+      }
+    }
+    path_only = path_only && text.find("<circle") == std::string_view::npos &&
+                text.find("stroke-width") == std::string_view::npos;
+    carry_size = std::min(kCarryBytes, text.size());
+    std::copy_n(text.end() - static_cast<std::ptrdiff_t>(carry_size), carry_size, carry.begin());
+    offset += count;
+    vTaskDelay(1);
+  }
+  result.crc = crc == expected_crc;
+  result.path_only = path_only && result.paths == expected_paths;
+  return result;
 }
 
 bool run_export_encode_gate(VectorV2Export& exporter, OperationLog& log) {
   const VectorV2ExportStats stats = exporter.encode(log);
-  std::array<std::uint8_t, 24> header{};
-  const bool header_read = stats.encoded && exporter.read_image(0, header);
-  constexpr std::array<std::uint8_t, 8> kPngSignature{0x89U, 0x50U, 0x4EU, 0x47U,
-                                                      0x0DU, 0x0AU, 0x1AU, 0x0AU};
-  const bool signature_ok =
-      header_read && std::equal(kPngSignature.begin(), kPngSignature.end(), header.begin());
-  const auto big_endian = [&header](std::size_t offset) {
-    return static_cast<std::uint32_t>(header[offset]) << 24U |
-           static_cast<std::uint32_t>(header[offset + 1U]) << 16U |
-           static_cast<std::uint32_t>(header[offset + 2U]) << 8U |
-           static_cast<std::uint32_t>(header[offset + 3U]);
-  };
-  const bool dimensions_ok =
-      signature_ok && big_endian(16U) == static_cast<std::uint32_t>(vector_v2::kWorldWidth) &&
-      big_endian(20U) == static_cast<std::uint32_t>(vector_v2::kWorldHeight);
-  std::size_t chunks = 0;
-  const bool chunks_ok = dimensions_ok && verify_png_chunks(exporter, stats.bytes, chunks);
-  const bool passed =
-      stats.encoded && stats.bytes > 64U && signature_ok && dimensions_ok && chunks_ok;
+  const SvgVerification verified =
+      stats.encoded ? verify_svg(exporter, stats.bytes, log.operation_count(), stats.content_crc32)
+                    : SvgVerification{};
+  const bool passed = stats.encoded && stats.bytes > 64U && verified.prolog &&
+                      verified.dimensions && verified.terminator && verified.crc &&
+                      verified.path_only;
   std::printf(
-      "TINYDRAW_GATE1_EXPORT encoded=%u bytes=%lu elapsed_us=%lld workspace_bytes=%lu "
-      "band_bytes=%lu free_psram=%lu free_internal=%lu signature=%u dimensions=%u chunks=%lu "
-      "chunks_ok=%u pass=%u\n",
+      "TINYDRAW_GATE1_EXPORT format=svg encoded=%u bytes=%lu elapsed_us=%lld "
+      "workspace_bytes=%lu operations=%lu sink_calls=%lu flash_pages=%lu crc32=%08lx "
+      "free_psram=%lu free_internal=%lu prolog=%u dimensions=%u terminator=%u crc_ok=%u "
+      "paths=%lu path_only=%u pass=%u\n",
       stats.encoded, static_cast<unsigned long>(stats.bytes),
       static_cast<long long>(stats.elapsed_us), static_cast<unsigned long>(stats.workspace_bytes),
-      static_cast<unsigned long>(stats.band_bytes),
+      static_cast<unsigned long>(stats.operation_count),
+      static_cast<unsigned long>(stats.sink_calls), static_cast<unsigned long>(stats.flash_pages),
+      static_cast<unsigned long>(stats.content_crc32),
       static_cast<unsigned long>(stats.free_psram_after),
-      static_cast<unsigned long>(stats.free_internal_after), signature_ok, dimensions_ok,
-      static_cast<unsigned long>(chunks), chunks_ok, passed);
+      static_cast<unsigned long>(stats.free_internal_after), verified.prolog, verified.dimensions,
+      verified.terminator, verified.crc, static_cast<unsigned long>(verified.paths),
+      verified.path_only, passed);
   std::fflush(stdout);
   return passed;
 }

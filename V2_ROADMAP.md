@@ -234,12 +234,17 @@ Derived overview, tile, chrome, and settled caches are never persisted.
 
 ## Phase 6 — finish product parity
 
-- [ ] Wire the exact variable-width SVG core through a pinned authority snapshot
-      and transactional temporary sink; promote output only after generation is
-      rechecked. Preserve eraser fidelity. **Owner raised priority
-      2026-08-16 ("proper SVG export is much higher"); queue right after
-      the overlap-50 cold fix.** Also fix the export-mode USB wedge (MSC
-      re-exposes after eject; needs an on-device exit) before soaks.
+- [x] Wire the exact variable-width SVG core through a generation-checked
+      authority read and transactional sink; promote output only after the
+      generation is rechecked. **Landed 2026-08-17:** one painter-ordered filled
+      `<path>` per pen/eraser operation, direct 4 KiB flash streaming,
+      metadata-last commit, and read-only `DRAWING.SVG` FAT wiring. Physical
+      gate: 157,660 bytes in 1.024 s, 52/52 paths, full readback CRC/XML checks,
+      no watchdog; 5.69× faster than prior PNG. See
+      `benchmark-results/svg-export-2026-08-17/RECEIPT.md`. The unattended gate
+      intentionally did not enter MSC; physical host mount/eject remains open.
+- [ ] Fix the export-mode USB wedge (MSC re-exposes after eject; needs an
+      on-device exit) before soaks.
 - [x] Implement settled analytic-coverage AA in bounded idle work. **Landed
       2026-08-16** (`vector_v2/settled_tile.cpp` + app idle pass): settled
       tiles publish at the settled quality tier under the revision identity
@@ -257,14 +262,15 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       `VECTOR_V2_ZOOM_NAVIGATION.md` (owner glass report 2026-08-16; the
       cycle currently loses the 400% viewport). Mechanical fix in the
       button-cycle path against per-zoom navigation origins.
-- [ ] Add minimap tap-to-jump using pan fallback/delta telemetry. Minimap drag
-      remains post-ship.
+- [ ] Add minimap tap-to-jump and drag-to-pan using pan fallback/delta
+      telemetry. Owner elevated drag from post-ship on 2026-08-17.
 - [ ] Integrate V1 power off/on, battery transitions, RTC, one-shot NTP, and
       autosave-before-risky-transition through narrow adapters.
 - [ ] Add visible capacity, save, export, storage, and hardware failure states.
 - [ ] Enlarge invisible tap targets, add pressed feedback, resolve overlaps, and
       run the physical missed-tap check.
-- [ ] Capture a clean PNG/USB export receipt without watchdog failure.
+- [ ] Capture a physical host mount/eject receipt for `DRAWING.SVG` without a
+      watchdog or USB-mode wedge.
 - [ ] Revalidate Raster V1 on the current board as the fallback.
 
 ## Phase 7 — all-on release closure
@@ -310,8 +316,8 @@ No rewrite, camera-aligned atlas, four stored stroke LODs, hidden V2 allocation,
 V2 state in the Raster V1 loop, or speculative second-core scheduling. Cache
 growth requires a measured reuse contract and must preserve the export reserve.
 
-Post-ship: demo record/replay, minimap drag, semantic/editable SVG, optional
-minimap visibility controls, and 800% zoom.
+Post-ship: demo record/replay, semantic/editable SVG, optional minimap
+visibility controls, and 800% zoom.
 
 Completed foundation and historical measurements live in
 [`vector_v2/README.md`](vector_v2/README.md),

@@ -117,7 +117,8 @@ fine, need to see it in action" — 2026-08-15).
 
 - Power off/on flow: required (V1 parity).
 - Onboard clock + one-shot NTP: required (export timestamps).
-- Minimap: tap-to-jump required; viewport-drag out of contract.
+- Minimap: tap-to-jump and viewport-drag navigation required (owner elevated
+  drag from post-ship on 2026-08-17).
 - Zoom: 25/50/100/200/400%. 800% out of contract.
 
 ## Document authority policy
@@ -179,7 +180,6 @@ seam is not a valid V2 persistence or Undo mechanism.
 ### Post-ship (explicitly deferred, not cut)
 
 - Demo record/replay (owner: "rather nice — after shipping").
-- Minimap drag navigation.
 - Semantic/editable SVG stroke export as alternate format.
 - 800% zoom.
 
