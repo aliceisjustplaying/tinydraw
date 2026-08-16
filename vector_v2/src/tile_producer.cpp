@@ -365,6 +365,7 @@ void TileProducer::record_view_reuses(const ViewRequest& view) {
 
 void TileProducer::consume_active_operation(TileProductionStep&, std::size_t& operations_consumed) {
   active_group_.next_sample = 0U;
+  active_group_.next_curve_step = 0U;
   active_group_.cached_operation_index = kNoCachedOperation;
   ++operations_consumed;
 }
@@ -410,14 +411,15 @@ TileProducer::OperationGate TileProducer::gate_active_operation(TileProductionSt
   return OperationGate::kReady;
 }
 
-void TileProducer::finish_active_segment(std::size_t startpoint, TileProductionStep& result,
+void TileProducer::finish_active_segment(std::size_t endpoint, TileProductionStep& result,
                                          std::size_t& operations_consumed) {
   const StoredOperation& operation = active_group_.cached_operation;
-  const bool operation_complete = operation.samples.size() == 1U || startpoint == 0U;
+  const bool operation_complete = operation.samples.size() <= 2U || endpoint == 2U;
   if (operation_complete) {
     consume_active_operation(result, operations_consumed);
   } else {
-    active_group_.next_sample = startpoint;
+    active_group_.next_sample = endpoint - 1U;
+    active_group_.next_curve_step = 0U;
   }
 }
 
@@ -426,67 +428,71 @@ bool TileProducer::render_active_segment(TileProductionStep& result,
                                          std::size_t& raster_steps_consumed,
                                          std::size_t& raster_work_consumed) {
   const StoredOperation& operation = active_group_.cached_operation;
-  if (operation.samples.size() > 1U && active_group_.next_sample == 0U) {
+  if (active_group_.next_sample == 0U) {
     active_group_.next_sample = operation.samples.size() - 1U;
   }
   const std::size_t endpoint = active_group_.next_sample;
-  // Replay one source segment per unit, exactly like forward painting. A
-  // coalesced collinear capsule is equal to the per-segment union only in
-  // real arithmetic; covers_pixel float rounding can flip boundary pixels
-  // (caught by the collinear fuzz gate), so reverse replay must use the same
-  // segment decomposition as the forward authority.
-  const std::size_t startpoint = operation.samples.size() == 1U ? 0U : endpoint - 1U;
-  const IncrementalSegment segment{
-      .tool = operation.tool,
-      .color = operation.color,
-      .first = operation.samples[startpoint],
-      .second = operation.samples[endpoint],
+  if (active_group_.next_curve_step == 0U) {
+    active_group_.next_curve_step =
+        incremental_curve_unit_step_count(operation.samples, endpoint, active_group_.view.zoom);
+  }
+  if (active_group_.next_curve_step == 0U) {
+    return false;
+  }
+  const std::size_t step_index = active_group_.next_curve_step - 1U;
+  const auto unit_bounds = incremental_curve_step_level_bounds(operation.samples, endpoint,
+                                                               step_index, active_group_.view.zoom);
+  if (!unit_bounds.has_value()) {
+    return false;
+  }
+  const auto finish_curve_step = [&] {
+    --active_group_.next_curve_step;
+    if (active_group_.next_curve_step == 0U) {
+      finish_active_segment(endpoint, result, operations_consumed);
+    }
   };
-  const PixelRect segment_bounds =
-      incremental_segment_level_bounds(segment.first, segment.second, active_group_.view.zoom);
   const PixelRect clipped{
-      .x0 = std::max(segment_bounds.x0, active_group_.bounds.x0),
-      .y0 = std::max(segment_bounds.y0, active_group_.bounds.y0),
-      .x1 = std::min(segment_bounds.x1, active_group_.bounds.x1),
-      .y1 = std::min(segment_bounds.y1, active_group_.bounds.y1),
+      .x0 = std::max(unit_bounds->x0, active_group_.bounds.x0),
+      .y0 = std::max(unit_bounds->y0, active_group_.bounds.y0),
+      .x1 = std::min(unit_bounds->x1, active_group_.bounds.x1),
+      .y1 = std::min(unit_bounds->y1, active_group_.bounds.y1),
   };
-  if (clipped.x0 >= clipped.x1 || clipped.y0 >= clipped.y1) {
-    // Count a rejected segment against the per-call cursor budget so a single
-    // giant operation cannot monopolize input polling even when it is distant.
+  const std::size_t raster_work = static_cast<std::size_t>(std::max(0, clipped.x1 - clipped.x0)) *
+                                  static_cast<std::size_t>(std::max(0, clipped.y1 - clipped.y0));
+  if (raster_work == 0U) {
+    // Count a rejected operation against the per-call cursor budget.
     TINYDRAW_V2_CENSUS_ADD(segments_bbox_rejected, 1);
     ++raster_steps_consumed;
-    finish_active_segment(startpoint, result, operations_consumed);
+    finish_curve_step();
     return true;
   }
   if (summary_.rows_saturated(clipped.y0 - active_group_.bounds.y0,
                               clipped.y1 - 1 - active_group_.bounds.y0)) {
-    // The segment's clipped footprint lies entirely in saturated rows; masked
-    // replay would skip every pixel individually. Skip it in O(1).
+    // The operation's clipped footprint lies entirely in saturated rows.
     TINYDRAW_V2_CENSUS_ADD(segments_saturation_skipped, 1);
     ++raster_steps_consumed;
-    finish_active_segment(startpoint, result, operations_consumed);
+    finish_curve_step();
     return true;
   }
 
   const auto surface = workspace_.supertask_pixels.first(kTileProducerPixels);
-  if (!apply_masked_incremental_segment(segment,
-                                        {.zoom = active_group_.view.zoom,
-                                         .level_bounds = active_group_.bounds,
-                                         .pixels = surface,
-                                         .stride = kTileProducerWidth},
-                                        workspace_.finalized_pixels.first(kTileProducerMaskBytes),
-                                        &summary_)) {
+  if (!apply_masked_incremental_curve_step(
+          {.tool = operation.tool, .color = operation.color, .samples = operation.samples},
+          endpoint, step_index,
+          {.zoom = active_group_.view.zoom,
+           .level_bounds = active_group_.bounds,
+           .pixels = surface,
+           .stride = kTileProducerWidth},
+          workspace_.finalized_pixels.first(kTileProducerMaskBytes), &summary_)) {
     return false;
   }
   TINYDRAW_V2_CENSUS_ADD(segments_painted, 1);
-  const std::size_t raster_work = static_cast<std::size_t>(clipped.x1 - clipped.x0) *
-                                  static_cast<std::size_t>(clipped.y1 - clipped.y0);
   ++raster_steps_consumed;
   raster_work_consumed += raster_work;
   ++result.raster_steps;
   result.raster_work += raster_work;
   ++result.operations_rendered;
-  finish_active_segment(startpoint, result, operations_consumed);
+  finish_curve_step();
   return true;
 }
 
@@ -531,6 +537,11 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
     // No tile can be published until this exact newest-first group replay is
     // complete, so the visible missing count cannot change during a slice.
     // Avoid rescanning PSRAM slot metadata on every resumable batch.
+    return result;
+  }
+  if (raster_work_consumed >= kTileProducerRasterWorkBatch) {
+    // Preserve the interaction boundary after an oversized final unit. The
+    // completed group publishes on the next producer call.
     return result;
   }
   const auto published = publish_group(active_group_.bounds, active_group_.view.level_pixels,

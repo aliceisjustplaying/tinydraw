@@ -1,6 +1,7 @@
 #include "tinydraw/vector_v2/incremental_rasterizer.h"
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 
@@ -476,6 +477,50 @@ void paint_bounded_segment(const Sample& first, const Sample& second, std::uint1
   paint_segment(first, second, color, surface);
 }
 
+Sample midpoint(const Sample& first, const Sample& second) {
+  return {
+      .x = (first.x + second.x) * 0.5F,
+      .y = (first.y + second.y) * 0.5F,
+      .radius = (first.radius + second.radius) * 0.5F,
+  };
+}
+
+struct CurveUnit {
+  std::array<Segment, 3> segments{};
+  std::size_t count = 0U;
+};
+
+std::optional<CurveUnit> curved_unit(std::span<const CompactOperationSample> samples,
+                                     std::size_t endpoint, ZoomLevel zoom) {
+  if (samples.empty()) {
+    return std::nullopt;
+  }
+  if (samples.size() <= 2U) {
+    if (endpoint + 1U != samples.size()) {
+      return std::nullopt;
+    }
+    return CurveUnit{.segments = {make_segment(scaled_sample(samples.front(), zoom),
+                                               scaled_sample(samples.back(), zoom))},
+                     .count = 1U};
+  }
+  if (endpoint < 2U || endpoint >= samples.size()) {
+    return std::nullopt;
+  }
+  const Sample prior = scaled_sample(samples[endpoint - 2U], zoom);
+  const Sample control = scaled_sample(samples[endpoint - 1U], zoom);
+  const Sample current = scaled_sample(samples[endpoint], zoom);
+  const Sample start = endpoint == 2U ? prior : midpoint(prior, control);
+  const Sample end = midpoint(control, current);
+  const Sample curve_midpoint = midpoint(midpoint(start, control), midpoint(control, end));
+  CurveUnit unit;
+  unit.segments[unit.count++] = make_segment(start, curve_midpoint);
+  unit.segments[unit.count++] = make_segment(curve_midpoint, end);
+  if (endpoint + 1U == samples.size()) {
+    unit.segments[unit.count++] = make_segment(end, current);
+  }
+  return unit;
+}
+
 }  // namespace
 
 MaskedRowSummary::MaskedRowSummary(std::span<std::uint16_t> unset_counts,
@@ -625,15 +670,105 @@ bool apply_incremental_operation(const OperationAppend& operation, const RasterS
   }
   const std::uint16_t color =
       operation.tool == OperationTool::kEraser ? kBackground : operation.color;
-  if (operation.samples.size() == 1U) {
-    const Sample sample = scaled_sample(operation.samples.front(), surface.zoom);
-    paint_bounded_segment(sample, sample, color, surface);
+  if (operation.samples.size() <= 2U) {
+    paint_bounded_segment(scaled_sample(operation.samples.front(), surface.zoom),
+                          scaled_sample(operation.samples.back(), surface.zoom), color, surface);
     return true;
   }
-  for (std::size_t index = 1; index < operation.samples.size(); ++index) {
-    paint_bounded_segment(scaled_sample(operation.samples[index - 1U], surface.zoom),
-                          scaled_sample(operation.samples[index], surface.zoom), color, surface);
+  for (std::size_t endpoint = 2U; endpoint < operation.samples.size(); ++endpoint) {
+    const auto unit = curved_unit(operation.samples, endpoint, surface.zoom);
+    if (!unit.has_value()) {
+      return false;
+    }
+    for (std::size_t step = 0U; step < unit->count; ++step) {
+      paint_segment(unit->segments[step].first, unit->segments[step].second, color, surface);
+    }
   }
+  return true;
+}
+
+bool apply_masked_incremental_operation(const OperationAppend& operation,
+                                        const RasterSurface& surface,
+                                        std::span<std::uint8_t> finalized_pixels,
+                                        MaskedRowSummary* summary) {
+  const std::size_t required_mask_bytes = (surface.pixels.size() + 7U) / 8U;
+  const bool mask_aliases_pixels = storage_overlaps(
+      std::as_bytes(std::span(surface.pixels)),
+      std::as_bytes(std::span(finalized_pixels)
+                        .first(std::min(finalized_pixels.size(), required_mask_bytes))));
+  const int surface_rows = surface.level_bounds.y1 - surface.level_bounds.y0;
+  if (!valid_surface(surface) || operation.samples.empty() ||
+      finalized_pixels.size() < required_mask_bytes || mask_aliases_pixels ||
+      (summary != nullptr && !summary->ready(static_cast<std::size_t>(surface_rows)))) {
+    return false;
+  }
+  const std::uint16_t color =
+      operation.tool == OperationTool::kEraser ? kBackground : operation.color;
+  if (operation.samples.size() <= 2U) {
+    paint_masked_segment(scaled_sample(operation.samples.front(), surface.zoom),
+                         scaled_sample(operation.samples.back(), surface.zoom), color, surface,
+                         finalized_pixels, summary);
+    return true;
+  }
+  for (std::size_t endpoint = 2U; endpoint < operation.samples.size(); ++endpoint) {
+    const auto unit = curved_unit(operation.samples, endpoint, surface.zoom);
+    if (!unit.has_value()) {
+      return false;
+    }
+    for (std::size_t step = 0U; step < unit->count; ++step) {
+      paint_masked_segment(unit->segments[step].first, unit->segments[step].second, color, surface,
+                           finalized_pixels, summary);
+    }
+  }
+  return true;
+}
+
+std::size_t incremental_curve_unit_step_count(std::span<const CompactOperationSample> samples,
+                                              std::size_t endpoint, ZoomLevel zoom) {
+  const auto unit = curved_unit(samples, endpoint, zoom);
+  return unit.has_value() ? unit->count : 0U;
+}
+
+std::optional<PixelRect> incremental_curve_step_level_bounds(
+    std::span<const CompactOperationSample> samples, std::size_t endpoint, std::size_t step_index,
+    ZoomLevel zoom) {
+  const auto unit = curved_unit(samples, endpoint, zoom);
+  if (!unit.has_value() || step_index >= unit->count) {
+    return std::nullopt;
+  }
+  const PixelRect clip{0, 0, kWorldWidth * zoom_percent(zoom) / 100,
+                       kWorldHeight * zoom_percent(zoom) / 100};
+  const PixelRect bounds = segment_bounds(unit->segments[step_index], clip);
+  return bounds.x0 < bounds.x1 && bounds.y0 < bounds.y1 ? std::optional{bounds} : std::nullopt;
+}
+
+bool apply_masked_incremental_curve_step(const OperationAppend& operation, std::size_t endpoint,
+                                         std::size_t step_index, const RasterSurface& surface,
+                                         std::span<std::uint8_t> finalized_pixels,
+                                         MaskedRowSummary* summary) {
+  const std::size_t required_mask_bytes = (surface.pixels.size() + 7U) / 8U;
+  const bool mask_aliases_pixels = storage_overlaps(
+      std::as_bytes(std::span(surface.pixels)),
+      std::as_bytes(std::span(finalized_pixels)
+                        .first(std::min(finalized_pixels.size(), required_mask_bytes))));
+  const int surface_rows = surface.level_bounds.y1 - surface.level_bounds.y0;
+  const auto unit = curved_unit(operation.samples, endpoint, surface.zoom);
+  if (!valid_surface(surface) || !unit.has_value() || step_index >= unit->count ||
+      finalized_pixels.size() < required_mask_bytes || mask_aliases_pixels ||
+      (summary != nullptr && !summary->ready(static_cast<std::size_t>(surface_rows)))) {
+    return false;
+  }
+  if (operation.samples.size() <= 2U) {
+    return apply_masked_incremental_segment({.tool = operation.tool,
+                                             .color = operation.color,
+                                             .first = operation.samples.front(),
+                                             .second = operation.samples.back()},
+                                            surface, finalized_pixels, summary);
+  }
+  const std::uint16_t color =
+      operation.tool == OperationTool::kEraser ? kBackground : operation.color;
+  paint_masked_segment(unit->segments[step_index].first, unit->segments[step_index].second, color,
+                       surface, finalized_pixels, summary);
   return true;
 }
 

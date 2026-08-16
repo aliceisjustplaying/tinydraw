@@ -4,7 +4,7 @@ Last updated: 2026-08-16
 
 Branch: `feat/v2-performance-followup`
 
-State audited through: `live-ink-visual-first-owner.log`
+State audited through: [`CURVED_AUTHORITY_GLASS_RECEIPT.md`](benchmark-results/wave2-compositor/CURVED_AUTHORITY_GLASS_RECEIPT.md)
 
 Raster V1 remains the default firmware and operational fallback. Vector V2 is
 the accepted product architecture, but it is not feature complete or ready for
@@ -17,7 +17,7 @@ promotion. [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) owns acceptance thresholds;
 |---|---|---|
 | Pan correctness | **Green — owner accepted** | Product pan is tear-free on glass at 50%, 100%, 200%, and 400%, including dense hairline content. Formal positive-control evidence still needs archiving for the release packet. |
 | Pan pacing | **Provisional green** | PANSEQ p95 is 33.939 ms at 100% and 33.934 ms at 400% (~29.5 FPS), below the 38 ms guard. Camera motion caused zero persistent chrome redraws. |
-| Ink latency | **Provisional green — visual lane** | The provisional tail is transient, uses the sampler timestamp, and reaches DMA before authority work. Across 767 owner-drawn samples, event→DMA averaged 3.22 ms and peaked at 12.40 ms with zero presentation failures or authority mismatches. Formal traces, optical latency, and resumable lift authority remain open. |
+| Ink latency | **Provisional green — visual lane; smoothness yellow** | Curved authority no longer replaces the preview with overt straight-segment corners. The latest owner pass measured 1.47–1.82 ms event→submit and 2.12–2.76 ms event→DMA averages, with zero presentation failures, overflows, or authority mismatches. Remaining live-curve angularity is visible under scrutiny; a costlier four-span experiment was rejected. Formal traces, optical latency, and resumable lift authority remain open. |
 | Cold 400% | **Red / kill gate** | Frozen adversarial run is 663.829 ms: 577.667 compute, 69.371 present, 15.618 pacing, 1.173 touch. Requirement is ≤500 ms maximum across the defined 20-run closure. |
 | Revisit retention | **Architecture promising; oracle incomplete** | 448-slot tour returns with zero missing tiles, but revision-keyed accounting can hide spatially unnecessary rerenders and is not connected to the product producer. |
 | Exactness | **Green for implemented scope** | Host exactness and fuzz tests pass. V2 persistence/Undo authority is not implemented. |
@@ -31,6 +31,7 @@ Latest permanent receipts:
 - [`CHROME_LIFETIME_RECEIPT.md`](benchmark-results/wave2-compositor/CHROME_LIFETIME_RECEIPT.md)
 - [`VISUAL_FIRST_INK_RECEIPT.md`](benchmark-results/wave2-compositor/VISUAL_FIRST_INK_RECEIPT.md)
 - [`CHROME_PRESTAGE_RECEIPT.md`](benchmark-results/wave2-compositor/CHROME_PRESTAGE_RECEIPT.md)
+- [`CURVED_AUTHORITY_GLASS_RECEIPT.md`](benchmark-results/wave2-compositor/CURVED_AUTHORITY_GLASS_RECEIPT.md)
 - [`GLASS_OBSERVATIONS.md`](benchmark-results/wave2-compositor/GLASS_OBSERVATIONS.md)
 - [`gate-invariant-final.log`](benchmark-results/wave2-compositor/gate-invariant-final.log)
 

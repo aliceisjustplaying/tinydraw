@@ -96,6 +96,29 @@ class MaskedRowSummary {
                                                     std::span<std::uint8_t> finalized_pixels,
                                                     MaskedRowSummary* summary = nullptr);
 
+// Paints the live ink midpoint-curve centerline while respecting a newest-first
+// finalized mask. All segments in one operation share a color, so their union
+// may be processed forward without changing painter-order semantics.
+[[nodiscard]] bool apply_masked_incremental_operation(const OperationAppend& operation,
+                                                      const RasterSurface& surface,
+                                                      std::span<std::uint8_t> finalized_pixels,
+                                                      MaskedRowSummary* summary = nullptr);
+
+// Curved operations with three or more samples replay as endpoint-indexed
+// units [2, sample_count). One- and two-sample operations use their final
+// sample index as a single unit. This keeps cold replay resumable without
+// changing the geometry used by forward authority.
+[[nodiscard]] std::size_t incremental_curve_unit_step_count(
+    std::span<const CompactOperationSample> samples, std::size_t endpoint, ZoomLevel zoom);
+[[nodiscard]] std::optional<PixelRect> incremental_curve_step_level_bounds(
+    std::span<const CompactOperationSample> samples, std::size_t endpoint, std::size_t step_index,
+    ZoomLevel zoom);
+[[nodiscard]] bool apply_masked_incremental_curve_step(const OperationAppend& operation,
+                                                       std::size_t endpoint, std::size_t step_index,
+                                                       const RasterSurface& surface,
+                                                       std::span<std::uint8_t> finalized_pixels,
+                                                       MaskedRowSummary* summary = nullptr);
+
 struct AffectedTileResult {
   std::size_t required = 0;
   std::size_t written = 0;

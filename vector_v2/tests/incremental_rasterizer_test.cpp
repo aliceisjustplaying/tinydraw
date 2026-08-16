@@ -9,6 +9,9 @@
 #include <span>
 #include <vector>
 
+#include "tinydraw/graphics/coverage_tile.h"
+#include "tinydraw/ink/ribbon_geometry.h"
+
 namespace vector_v2 = tinydraw::vector_v2;
 
 namespace {
@@ -63,6 +66,53 @@ TEST_CASE("incremental operation paints one stroke without clearing prior pixels
   CHECK(pixels[10U * 32U + 10U] == 0xF800U);
   CHECK(pixels[10U * 32U + 20U] == 0xF800U);
   CHECK(pixels.front() == 0x1111U);
+}
+
+TEST_CASE("committed sparse ink follows the curved midpoint path") {
+  std::array<std::uint16_t, 64U * 48U> pixels{};
+  pixels.fill(0xFFFFU);
+  const std::array samples{
+      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 120, .radius_256 = 384},
+      vector_v2::CompactOperationSample{.x_quarter = 120, .y_quarter = 40, .radius_256 = 384},
+      vector_v2::CompactOperationSample{.x_quarter = 200, .y_quarter = 120, .radius_256 = 384},
+  };
+  const vector_v2::OperationAppend operation{
+      .tool = vector_v2::OperationTool::kPen,
+      .color = 0x001FU,
+      .samples = samples,
+  };
+
+  tinydraw::CoverageTile curved(0, 0);
+  tinydraw::CurvedRibbonStream ribbon;
+  for (std::size_t index = 0; index < samples.size(); ++index) {
+    const auto sample = samples[index];
+    const tinydraw::InkPoint point{
+        .position = {.x = static_cast<float>(sample.x_quarter) * 0.25F,
+                     .y = static_cast<float>(sample.y_quarter) * 0.25F},
+        .radius = static_cast<float>(sample.radius_256) / 256.0F,
+    };
+    const auto update =
+        index + 1U == samples.size() ? ribbon.finish(point) : ribbon.append(point, false);
+    for (const auto& primitive : update.committed) {
+      if (primitive.kind == tinydraw::RibbonPrimitiveKind::kCircle) {
+        curved.rasterize_circle(primitive.center, primitive.radius);
+      } else {
+        curved.rasterize_convex(std::span(primitive.points.data(), primitive.point_count));
+      }
+    }
+  }
+  REQUIRE(curved.coverage_at(27, 17) != 0U);
+
+  REQUIRE(
+      vector_v2::apply_incremental_operation(operation, {.zoom = vector_v2::ZoomLevel::k100Percent,
+                                                         .level_bounds = {0, 0, 64, 48},
+                                                         .pixels = pixels,
+                                                         .stride = 64}));
+
+  // The production CurvedRibbonStream midpoint quadratic passes through the
+  // centre of this pixel. Straight source-segment replay leaves it as paper,
+  // producing the visible polygonal corner on sparse circles.
+  CHECK(pixels[17U * 64U + 27U] == 0x001FU);
 }
 
 TEST_CASE("eraser applies after pen in painter order") {

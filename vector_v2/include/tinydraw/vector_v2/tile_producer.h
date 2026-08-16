@@ -118,6 +118,10 @@ class TileProducer {
     // Current reverse segment endpoint. Zero initializes a newly selected
     // operation; single-sample operations are handled as one bounded unit.
     std::size_t next_sample = 0;
+    // One curved endpoint emits two bounded centerline segments plus a final
+    // tail when needed. Zero initializes the endpoint; replay consumes the
+    // segments in reverse index order so every producer tick stays bounded.
+    std::size_t next_curve_step = 0;
     // Operation-level visibility and saturation gates run once per operation;
     // the passing fetch is cached here so per-segment replay touches neither
     // the log nor the operation-level rectangle math again. The cached spans
@@ -146,7 +150,7 @@ class TileProducer {
   void consume_active_operation(TileProductionStep& result, std::size_t& operations_consumed);
   [[nodiscard]] OperationGate gate_active_operation(TileProductionStep& result,
                                                     std::size_t& operations_consumed);
-  void finish_active_segment(std::size_t startpoint, TileProductionStep& result,
+  void finish_active_segment(std::size_t endpoint, TileProductionStep& result,
                              std::size_t& operations_consumed);
   [[nodiscard]] bool render_active_segment(TileProductionStep& result,
                                            std::size_t& operations_consumed,
