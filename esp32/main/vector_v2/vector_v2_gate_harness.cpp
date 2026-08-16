@@ -21,6 +21,7 @@
 #include "tinydraw/vector_v2/chained_operation_builder.h"
 #include "tinydraw/vector_v2/idle_repair.h"
 #include "tinydraw/vector_v2/memory_layout.h"
+#include "vector_v2_ship_contract.h"
 
 namespace tinydraw::esp32 {
 namespace {
@@ -32,6 +33,7 @@ using vector_v2::MaterializedCanvas;
 using vector_v2::OperationLog;
 using vector_v2::OperationTool;
 using vector_v2::ZoomLevel;
+namespace contract = vector_v2_ship_contract;
 
 constexpr std::uint32_t kExternalCaps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
 constexpr std::uint32_t kStressOperations = 1'000;
@@ -75,7 +77,8 @@ void print_presentation(const char* kind, const VectorV2Presenter& presenter,
       "fallback_tiles=%lu pushes=%lu tear_wait_us=%lld tear_edge_isr_to_resume_us=%lu "
       "tear_edge_observed=%u tear_edge_wait_resumed=%u tear_edge_timeout=%u "
       "tear_heal_attempted=%u "
-      "tear_heal_command_sent=%u presentation_experiment=%s te_edge=%s clock_mhz=%d "
+      "tear_heal_command_sent=%u presentation_experiment=%s te_edge=%s "
+      "requested_clock_mhz=%d effective_clock_mhz=%d "
       "frame_reused=%u pass=%u\n",
       kind, zoom_name(presenter.zoom()), presenter.level_x(), presenter.level_y(),
       static_cast<long long>(timing.compose_us), static_cast<long long>(timing.scroll_us),
@@ -92,7 +95,7 @@ void print_presentation(const char* kind, const VectorV2Presenter& presenter,
       static_cast<unsigned long>(timing.tear_edge_isr_to_resume_us), timing.tear_edge_observed,
       timing.tear_edge_wait_resumed, timing.tear_edge_timed_out, timing.tear_heal_attempted,
       timing.tear_heal_command_sent, presentation_experiment_name(), selected_tear_edge_name(),
-      panel_clock_mhz(), timing.frame_reused, timing.passed);
+      requested_panel_clock_mhz(), effective_panel_clock_mhz(), timing.frame_reused, timing.passed);
 }
 
 bool load_realistic_document(OperationLog& log, MaterializedCanvas& canvas,
@@ -162,8 +165,8 @@ bool run_tearing_probe(VectorV2Presenter& presenter, const vector_v2::ChromeStat
   std::size_t frames = 0;
   std::size_t edge_failures = 0;
   std::size_t resume_samples = 0;
-  std::size_t deadline_41_7_misses = 0;
-  std::size_t deadline_33_3_misses = 0;
+  std::size_t required_deadline_misses = 0;
+  std::size_t guard_deadline_misses = 0;
   bool software_pass = initial.passed && initial.tear_edge_observed;
   std::int64_t previous_complete = esp_timer_get_time();
   for (std::size_t cycle = 0; cycle < kCycles; ++cycle) {
@@ -181,8 +184,8 @@ bool run_tearing_probe(VectorV2Presenter& presenter, const vector_v2::ChromeStat
       if (timing.tear_edge_wait_resumed) {
         resume_latencies[resume_samples++] = timing.tear_edge_isr_to_resume_us;
       }
-      deadline_41_7_misses += interval > 41'700;
-      deadline_33_3_misses += interval > 33'300;
+      required_deadline_misses += interval > contract::kPanFrameP95RequiredUs;
+      guard_deadline_misses += interval > contract::kPanFrameP95GuardUs;
       edge_failures += !timing.tear_edge_observed;
       software_pass =
           software_pass && timing.passed && timing.frame_reused && timing.tear_edge_observed;
@@ -199,24 +202,26 @@ bool run_tearing_probe(VectorV2Presenter& presenter, const vector_v2::ChromeStat
     return sorted[std::min(count - 1U, rank - 1U)];
   };
   std::printf(
-      "TINYDRAW_TEARING_AB policy=%s edge=%s clock_mhz=%d frames=%lu "
+      "TINYDRAW_TEARING_AB policy=%s edge=%s requested_clock_mhz=%d "
+      "effective_clock_mhz=%d frames=%lu "
       "initial_edge_observed=%u edge_failures=%lu edge_wait_resume_samples=%lu "
       "edge_wait_isr_to_resume_p50_us=%lld "
       "edge_wait_isr_to_resume_p95_us=%lld edge_wait_isr_to_resume_max_us=%lld "
       "frame_interval_p50_us=%lld frame_interval_p95_us=%lld frame_interval_max_us=%lld "
-      "deadline_41_7_misses=%lu deadline_33_3_misses=%lu "
+      "required_deadline_misses=%lu guard_deadline_misses=%lu "
       "optical_pattern=alternating_frame_id_row_barcode_v1 "
       "optical_acceptance=external_manual software_pass=%u\n",
-      presentation_experiment_name(), selected_tear_edge_name(), panel_clock_mhz(),
-      static_cast<unsigned long>(frames), initial.tear_edge_observed,
+      presentation_experiment_name(), selected_tear_edge_name(), requested_panel_clock_mhz(),
+      effective_panel_clock_mhz(), static_cast<unsigned long>(frames), initial.tear_edge_observed,
       static_cast<unsigned long>(edge_failures), static_cast<unsigned long>(resume_samples),
       static_cast<long long>(percentile(resume_latencies, resume_samples, 50)),
       static_cast<long long>(percentile(resume_latencies, resume_samples, 95)),
       static_cast<long long>(percentile(resume_latencies, resume_samples, 100)),
       static_cast<long long>(percentile(intervals, intervals.size(), 50)),
       static_cast<long long>(percentile(intervals, intervals.size(), 95)),
-      static_cast<long long>(intervals.back()), static_cast<unsigned long>(deadline_41_7_misses),
-      static_cast<unsigned long>(deadline_33_3_misses), software_pass);
+      static_cast<long long>(intervals.back()),
+      static_cast<unsigned long>(required_deadline_misses),
+      static_cast<unsigned long>(guard_deadline_misses), software_pass);
   std::printf(
       "TINYDRAW_TEARING_PROBE_DONE frames=%lu software_pass=%u "
       "optical_acceptance=external_manual\n",
@@ -274,18 +279,18 @@ bool run_tile_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& produc
     }
   }
   const std::int64_t total_us = esp_timer_get_time() - started;
-  // The current hard-edged cold path is explicitly accepted up to 0.75 s;
-  // cache hits and interaction slices retain their tighter gates.
-  const bool passed = total_us < 750'000 && maximum_supertask_us < 30'000;
+  const bool passed =
+      total_us <= contract::kColdViewportRequiredUs && maximum_supertask_us < 30'000;
   std::printf(
       "TINYDRAW_GATE1_HARD zoom=%s cold=1 operations=%lu samples=%lu steps=%lu tiles=%lu "
       "scanned=%lu rendered=%lu max_supertask_us=%lld presentation_us=%lld total_us=%lld "
-      "pass=%u\n",
+      "maximum_wall_us=%lld pass=%u\n",
       zoom_name(zoom), static_cast<unsigned long>(log.operation_count()),
       static_cast<unsigned long>(log.sample_count()), static_cast<unsigned long>(steps),
       static_cast<unsigned long>(tiles_published), static_cast<unsigned long>(operations_scanned),
       static_cast<unsigned long>(operations_rendered), static_cast<long long>(maximum_supertask_us),
-      static_cast<long long>(presentation_us), static_cast<long long>(total_us), passed);
+      static_cast<long long>(presentation_us), static_cast<long long>(total_us),
+      static_cast<long long>(contract::kColdViewportRequiredUs), passed);
   return passed;
 }
 
@@ -365,12 +370,13 @@ bool run_paced_cold_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& 
   const std::int64_t wall_us = esp_timer_get_time() - started;
   const std::int64_t pacing_us = wall_us - compute_us - present_us - touch_us;
   const TouchSamplerMetrics sampler = touch.take_metrics();
-  const bool passed = wall_us < maximum_wall_us && maximum_tick_us < kMaximumTickUs &&
+  const bool passed = wall_us <= maximum_wall_us && maximum_tick_us < kMaximumTickUs &&
                       sampler.maximum_interval_us < kMaximumTouchIntervalUs &&
                       sampler.errors == 0U && sampler.queue_overflows == 0U;
   std::printf(
       "TINYDRAW_GATE1_PACED_COLD corpus=%s zoom=%s x=%d y=%d steps=%lu tiles=%lu "
       "compute_us=%lld present_us=%lld touch_us=%lld pacing_us=%lld wall_us=%lld "
+      "maximum_wall_us=%lld "
       "max_tick_us=%lld touch_samples=%lu touch_interval_max_us=%lu touch_read_max_us=%lu "
       "touch_events=%lu touch_down=%lu touch_up=%lu touch_events_ge_8ms=%lu "
       "touch_event_age_max_us=%lu touch_errors=%lu touch_overflows=%lu pass=%u\n",
@@ -378,8 +384,8 @@ bool run_paced_cold_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& 
       static_cast<unsigned long>(steps), static_cast<unsigned long>(tiles),
       static_cast<long long>(compute_us), static_cast<long long>(present_us),
       static_cast<long long>(touch_us), static_cast<long long>(pacing_us),
-      static_cast<long long>(wall_us), static_cast<long long>(maximum_tick_us),
-      static_cast<unsigned long>(sampler.samples),
+      static_cast<long long>(wall_us), static_cast<long long>(maximum_wall_us),
+      static_cast<long long>(maximum_tick_us), static_cast<unsigned long>(sampler.samples),
       static_cast<unsigned long>(sampler.maximum_interval_us),
       static_cast<unsigned long>(sampler.maximum_read_us),
       static_cast<unsigned long>(sampler.events_consumed),
@@ -461,7 +467,7 @@ bool run_overlap_cold_gates(VectorV2Presenter& presenter, vector_v2::TileProduce
     const int y = std::clamp(level_height / 2 - vector_v2::kOverviewHeight / 2 + 31, 0,
                              level_height - vector_v2::kOverviewHeight);
     passed = run_paced_cold_gate(presenter, producer, canvas, touch, chrome, zoom, x, y, "overlap",
-                                 1'000'000) &&
+                                 contract::kColdViewportRequiredUs) &&
              passed;
   }
   return passed;
@@ -471,20 +477,12 @@ bool run_adversarial_tapered_cold_gates(VectorV2Presenter& presenter,
                                         vector_v2::TileProducer& producer,
                                         MaterializedCanvas& canvas, VectorV2TouchSampler& touch,
                                         const vector_v2::ChromeState& chrome) {
-  struct Gate {
-    ZoomLevel zoom;
-    std::int64_t maximum_wall_us;
-  };
-  constexpr std::array gates{
-      Gate{ZoomLevel::k50Percent, 1'000'000},
-      Gate{ZoomLevel::k100Percent, 1'000'000},
-      Gate{ZoomLevel::k200Percent, 1'500'000},
-      Gate{ZoomLevel::k400Percent, 2'000'000},
-  };
+  constexpr std::array gates{ZoomLevel::k50Percent, ZoomLevel::k100Percent, ZoomLevel::k200Percent,
+                             ZoomLevel::k400Percent};
   bool passed = true;
-  for (const Gate gate : gates) {
-    passed = run_paced_cold_gate(presenter, producer, canvas, touch, chrome, gate.zoom, 0, 0,
-                                 "adversarial_tapered_4x", gate.maximum_wall_us) &&
+  for (const ZoomLevel zoom : gates) {
+    passed = run_paced_cold_gate(presenter, producer, canvas, touch, chrome, zoom, 0, 0,
+                                 "adversarial_tapered_4x", contract::kColdViewportRequiredUs) &&
              passed;
   }
   return passed;
@@ -1793,7 +1791,7 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
       staging.samples == 0U ? 0 : staging.total_us / static_cast<std::int64_t>(staging.samples);
   const std::int64_t worst_headroom_us = worst.wire_budget_us - worst.maximum_us;
   const std::int64_t frame_p95_us = pan_sequence_percentile(sorted_frame, 95);
-  const bool pacing_pass = frame_p95_us <= 41'700;
+  const bool pacing_pass = frame_p95_us <= contract::kPanFrameP95RequiredUs;
   // Transport discipline requires a factual configured-edge observation and
   // every strip producer staying strictly faster than its measured wire time.
   // Pacing is a separate ship-contract gate; neither is a glass claim.
@@ -1806,7 +1804,8 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
       "byte_swap_avg_us=%lld staging_avg_us=%lld frame_avg_us=%lld frame_p50_us=%lld "
       "frame_p95_us=%lld frame_max_us=%lld "
       "complete_p50_us=%lld complete_p95_us=%lld complete_max_us=%lld "
-      "tear_edge_failures=%lu presentation_experiment=%s te_edge=%s clock_mhz=%d "
+      "tear_edge_failures=%lu presentation_experiment=%s te_edge=%s "
+      "requested_clock_mhz=%d effective_clock_mhz=%d "
       "strip_samples=%lu staging_mean_us=%lld staging_max_us=%lld worst_strip=%u "
       "worst_strip_y=%d worst_wire_budget_us=%lld worst_headroom_us=%lld "
       "staging_invariant=%u pacing_pass=%u all_reused=%u pass=%u\n",
@@ -1828,11 +1827,12 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
       static_cast<long long>(pan_sequence_percentile(sorted_complete, 95)),
       static_cast<long long>(sorted_complete.back()),
       static_cast<unsigned long>(tear_edge_failures), presentation_experiment_name(),
-      selected_tear_edge_name(), panel_clock_mhz(), static_cast<unsigned long>(staging.samples),
-      static_cast<long long>(staging_mean_us), static_cast<long long>(staging.maximum_us),
-      static_cast<unsigned>(staging.worst_strip_index), worst.panel_y,
-      static_cast<long long>(worst.wire_budget_us), static_cast<long long>(worst_headroom_us),
-      staging.all_under_wire, pacing_pass, all_reused, pass);
+      selected_tear_edge_name(), requested_panel_clock_mhz(), effective_panel_clock_mhz(),
+      static_cast<unsigned long>(staging.samples), static_cast<long long>(staging_mean_us),
+      static_cast<long long>(staging.maximum_us), static_cast<unsigned>(staging.worst_strip_index),
+      worst.panel_y, static_cast<long long>(worst.wire_budget_us),
+      static_cast<long long>(worst_headroom_us), staging.all_under_wire, pacing_pass, all_reused,
+      pass);
   std::fflush(stdout);
   return pass;
 }
@@ -2565,7 +2565,8 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   const bool paced_cold =
       workload_ready &&
       run_paced_cold_gate(presenter, producer, canvas, touch, chrome, ZoomLevel::k400Percent,
-                          kUnalignedOrigin, kUnalignedOrigin, "seed7", 2'000'000);
+                          kUnalignedOrigin, kUnalignedOrigin, "seed7",
+                          contract::kColdViewportRequiredUs);
   const bool gate_100 =
       paced_cold && run_tile_gate(presenter, producer, log, canvas, chrome, ZoomLevel::k100Percent);
   const bool live_overlay =

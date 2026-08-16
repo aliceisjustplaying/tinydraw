@@ -35,8 +35,8 @@ session of the owner's real scribbling becomes the canonical corpus.
 
 ## 2. Replay mode
 
-A gate-harness mode injects trace events into the app at the **touch event
-buffer boundary** (not into the document engine), honoring original relative
+A gate-harness mode injects trace events through the touch buffer's production
+`offer()` path, upstream of coalescing and honoring original relative
 timestamps. Everything downstream — coalescing, sampler, coordinator ordering,
 ribbon, presenter, panel — is the production path.
 
@@ -49,7 +49,8 @@ For every consumed sample, one record with the original event timestamp
 carried end-to-end (never loop time — review P1-2):
 
 ```
-t_event → t_consumed → t_geometry_ready → t_first_submit → t_dma_complete
+t_event → t_consumed → t_geometry_ready → t_first_command → t_first_payload
+        → t_dma_complete → t_optically_visible
 ```
 
 Plus per-stroke counters:
@@ -64,10 +65,9 @@ each stage delta, plus a final summary line with the gate verdicts.
 
 ## 4. Gates (from SHIP_CONTRACT §2)
 
-- `t_event → t_dma_complete` p95 ≤35 ms guard band (software proxy for the
-  45 ms optical gate; DMA-complete precedes optical visibility by ≤1 panel
-  period, so software p95 ≤35 ms implies optical p95 ≤~52 ms worst-case —
-  the optical spot-check closes the remaining gap).
+- Until panel phase is calibrated, `t_event → t_dma_complete` p95 ≤28 ms is the
+  conservative software proxy for the 45 ms optical requirement. The software
+  number remains diagnostic; optical timing is authoritative.
 - Zero lost Down/Up across the corpus.
 - Coalescing ratio and max gaps reported; regression vs baseline fails.
 - Fidelity: replayed final paths exact vs authority fixtures.
@@ -91,7 +91,8 @@ validates the method once.
 
 1. Trace format + replay injection at the event-buffer boundary.
 2. Timestamp plumbing (t_event end-to-end) + per-stroke receipt line.
-3. Record canonical corpus from owner finger session (5 traces).
+3. Record canonical corpus from owner finger session (5 traces). Four synthetic
+   fixtures currently exist; `fast-curve-dense-25.csv` is still missing.
 4. Baseline receipts on current build (pre-visual-first) — this is the
    "before" scorecard.
 5. Visual-first reorder + provisional tail (the actual Wave 2 ink work).

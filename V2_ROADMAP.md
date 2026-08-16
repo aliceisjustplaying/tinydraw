@@ -1,561 +1,219 @@
 # TinyDraw V2 roadmap
 
-Last updated: 2026-08-15
-Current branch: `feat/v2-performance-followup`
+Last updated: 2026-08-16
 
-Status: **Vector V2 architecture retained; current panel and ink paths physically rejected**
+Branch: `feat/v2-performance-followup`
 
-This is the only forward work queue for TinyDraw V2. [`PROJECT_STATE.md`](PROJECT_STATE.md)
-contains the concise current snapshot. Dated plans, closure reports, and receipts
-preserve the timeline but do not override later physical evidence.
+V2 is the accepted architecture. Raster V1 remains the default and fallback
+until every required item in [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) closes.
+[`PROJECT_STATE.md`](PROJECT_STATE.md) contains current measurements; this file
+is the only forward queue.
 
-## Current finish-line queue
+## Execution rules
 
-### Wave 1 — establish physical truth before optimization
+- Land one measured hot-path hypothesis per revision with predicted savings,
+  removed work, unchanged guards, and a falsifying observation.
+- A result is provisional until measured with every normal product service that
+  currently exists. Final pan/ink/cold closure requires autosave enabled.
+- Glass-visible gates need optical evidence and a failing positive control.
+- Preserve the 1.5 MiB export reserve and report free/largest PSRAM.
+- Revert a change that pushes a closed metric outside its guard.
+- Keep accepted receipts; rejected experiments remain in Git and dated evidence
+  directories, not in this queue.
 
-Status 2026-08-15 evening: **closed except Raster V1 revalidation**, via the
-panel characterization probe (`HARDWARE_LIMITS.md`) and the pre-registered
-optical cells (`benchmark-results/blockB-optical/PROTOCOL.md`).
+## Phase 0 — one source of truth
 
-- [ ] Revalidate Raster V1 on the current board as the operational fallback.
-- [x] Replace the circular pan pass signal with a red-capable optical oracle
-      (probe cells + classifier + torn positive control; TE/bus phase markers
-      superseded by measured TE stats and the emission-band observation).
-- [x] Presentation policy decided by controlled cells: the free-running
-      control tears, the rising-edge row-zero sweep is clean on camera and on
-      manual product glass. Beam racing is retained only as the mechanism-
-      control cell; it is not a product path.
-- [x] Fail closed on TE timeout/staleness; frame reuse requires an observed
-      edge (`6057f9c`, kept).
-- [x] Zero tearing on glass for the adopted policy (manual 100%/400% +
-      probe cell 1). White notches did not reproduce in the probe cells;
-      the guard-column watch stays armed in the classifier.
+- [x] Restore [`PRODUCT_TENETS.md`](PRODUCT_TENETS.md) and make the ship
+      contract authoritative for numeric gates.
+- [x] Update the cold baseline to 663.829 ms and define closure as the maximum
+      of 20 reset-separated fixed-corpus device runs.
+- [x] Make firmware cold pass/fail use the ≤500 ms product threshold.
+- [x] Report requested and effective panel clocks separately.
+- [x] Record the authority decision: V2 is blank baseline plus ordered vector
+      operations; raster drawings remain explicitly Raster V1.
+- [x] Reconcile this queue with the implemented compositor and current receipts.
 
-Measured constraints Wave 2 must design within (`HARDWARE_LIMITS.md`):
-QSPI is 40 MHz actual regardless of requested 40/50/60; full-frame
-TE-synced sweeps sustain 29.4 FPS and ≤368-row regions 58.8 FPS; staging
-bandwidth (34 MB/s) exceeds wire (20 MB/s); pan currently spends 18.4 ms
-per frame on overlay PSRAM round trips before the sweep (19.9 FPS measured,
-`gate-boundary-pan.log`).
+## Phase 1 — close pan
 
-### Wave 2 — one staging compositor and visual-first ink
+Current result: canvas-only ring and staging invariant are green; owner glass
+check saw no tear. PANSEQ p95 is 50.934 ms at 400%, with ~10.7 ms average chrome
+preparation. Requirement is ≤41.7 ms; guard is ≤38 ms.
 
-- [ ] Keep the PSRAM ring canvas-only; patch fixed chrome and provisional ink in
-      the mandatory internal staging pass. Delete the overlay backup/draw/
-      scatter/restore machinery entirely.
-- [ ] Acceptance test for the compositor: draw under every overlay (zoom rail,
-      minimap, toolbar, battery) — zero stroke distortion. This also closes the
-      2026-08-15 zoom-rail ink corruption bug.
-- [ ] Submit one ordered presentation batch and perform one completion drain.
-- [ ] Use the provisional geometry already emitted by `CurvedRibbonStream`;
-      replace the old volatile tail, union old/new damage, and never bake it into
-      document authority or the reusable ring.
-- [ ] Present the newest consumed sample before chunk materialization, carry the
-      original sampled timestamp, and distinguish DMA completion from optical
-      visibility.
-- [ ] Pan gate: p95 frame interval ≤41.7 ms is required (at least 24 FPS);
-      p95 ≤33.3 ms is ideal (30 FPS); faster is bonus. Report average, p50, p95,
-      max, and deadline misses separately. Baseline to beat: p95 52.8/53.2 ms
-      (18.4 ms overlays + 10.2 ms TE wait + 21.6 ms sweep); target shape:
-      ≤2 TE periods per frame ≈ 29.8 FPS.
-- [ ] Optical re-verification after the compositor lands: rerun probe cell 1
-      equivalent on the product pan path plus the under-overlay drawing test;
-      any CLEAN requires the torn positive control in the same session.
+- [x] Use a toroidal canvas-only frame ring and compose only exposed canvas.
+- [x] Patch fixed chrome in internal staging; never mutate reusable canvas.
+- [x] Submit one row-zero ordered stream and drain once.
+- [x] Keep every strip's staging time below its measured wire time.
+- [x] Prove drawing beneath zoom/minimap/toolbar/battery does not corrupt
+      authority or canvas pixels.
+- [ ] Split the existing 53,956-pixel chrome allocation by lifetime:
+      toolbar state, battery state, zoom, minimap base/content, and dynamic
+      old/new viewport rectangle lines.
+- [ ] Run the one-variable cache-split A/B with p50/p95/max, TE-period
+      histogram, chrome prep, exposed compose, sweep, strip headroom, and
+      fallback counts.
+- [ ] If p95 remains above 38 ms, A/B a balanced nine-strip partition.
+- [ ] If still needed, compose exposed rows directly into the ring and remove
+      the intermediate copy; then consider completion notification latency.
+- [ ] Exercise slow one-pixel motion and cached-pan deltas just below, at, and
+      above the 96-pixel fallback boundary.
+- [ ] Close optically in one session with product pan, under-overlay drawing,
+      and the torn positive control. Tag the known-good revision.
 
-### Wave 3 — authority and cold replay, isolated from panel diagnosis
+Do not alter pacing and carry an old optical verdict forward. Pan tearing is a
+rhythm property; each cadence/staging change reopens the optical gate.
 
-- [ ] Add a generation-checked read view over operation storage; do not call
-      aliased spans immutable.
-- [ ] Decide the authority baseline before Undo/SVG/autosave. Current snapshot
-      restore may install a raster overview and empty the operation log.
-- [ ] Prototype an exact, conservative replay block index while preserving
-      newest-first painter order, exact bounds checks, masks, and saturation.
-- [ ] Require ≥25% isolated cold-render improvement. Against the 628.2 ms
-      adversarial 400% baseline: product p95 ≤471.2 ms, every accepted run
-      <500 ms, and no exactness or interaction regression.
-- [ ] First retain the one active producer group across camera-priority changes;
-      add a repair queue only if restart/discard counters prove it necessary.
+## Phase 2 — close visual-first ink
 
-Shared presenter files make the Wave 1/2 panel and ink implementation unsafe as
-parallel writers. Parallel work is still useful for independent host fixtures,
-optical tooling, and read-only review; one integration owner must land
-`vector_v2_presenter.*` and the staging contract.
+Current result: authority work can run before visibility, provisional geometry
+is omitted, lift drains authority synchronously, and timing often starts at loop
+dispatch. The small-region presenter itself is fast enough.
 
-## Product decision
+- [ ] Complete the five canonical traces. At least one must be recorded from the
+      owner's finger; inject through the production buffer `offer()` path.
+- [ ] Carry sampler timestamps through consume, geometry-ready, first command,
+      first payload, DMA-complete, and optical observation.
+- [ ] Keep a latest-point visual mailbox while preserving the ordered authority
+      FIFO and every Down/Up transition.
+- [ ] Stage a transient old/new provisional tail over authoritative canvas;
+      never bake it into the ring, document, or cache identity.
+- [ ] Submit the newest visible tail before chunk commit/materialization.
+- [ ] Convert authority commit, overview work, tile publication, and lift drain
+      into resumable bounded slices. Lift closes visually and returns to input.
+- [ ] Reconcile capacity rejection by erasing only the uncommitted transient
+      tail; keep already committed chunks as physical ink.
+- [ ] Report event→consume→geometry→payload→DMA distributions, optical p95/p99,
+      coalescing, max time/space gap, lost transitions, lift backlog, and final
+      authority equality.
+- [ ] Meet optical p95 ≤45 ms / p99 ≤60 ms and the Raster V1 feel check; tag the
+      known-good revision.
 
-The Vector V2 architecture is accepted. This is the app now—not another
-prototype, not yet the shipping/default firmware, and not a reason to start a
-clean rewrite. The existing shipping code is **Raster V1**.
+Live ink remains hard-edged. Settled AA does not enter this phase.
 
-V2 stays in this repository beside the working raster app until it reaches
-feature parity. Stable mechanisms may be shared through explicit dependencies,
-but the V1 and V2 coordinators, state models, and build targets must remain
-separate. Do not grow V2 inside `hardware_app.cpp`, and do not retrofit V2 tile
-semantics into `WorldCanvas` or `FirmwareCanvas`.
+## Phase 3 — cold viability and rerender truth
 
-## Historical milestone: production vector foundation
+Current frozen adversarial 400% result is 663.829 ms wall: 577.667 compute,
+69.371 present, 15.618 pacing, and 1.173 touch. The operation block index stays:
+it helps normal documents and active-prefix replay, though it rejects none of
+the 1,038 genuinely intersecting adversarial candidates.
 
-This section records the accepted foundation at the time. The 2026-08-15 glass
-run supersedes its pan-correctness and non-lagging interaction implications; see
-the current queue above and `external_help/espdraw-offline-review-2026-08-15.md`.
+Run these as independent experiments:
 
-The following was proven on the physical ESP32-S3 with the deterministic
-seed-7 1,000-stroke workload and an aggressive manual glass test:
+1. [ ] Add exact conservative bounds for fixed-size segment chunks; report
+       operation/chunk/segment counts, metadata bytes, pixel equality, and wall.
+2. [ ] Optimize tapered-raster scanlines with incremental row/x terms and exact
+       boundary fallback; retain exhaustive and fuzz equality oracles.
+3. [ ] Batch adjacent exact publications while reporting first-exact-visible,
+       viewport-exact, publication count, resent pixels, and total wall.
 
-- [x] Vector operations are authoritative.
-- [x] Pen and eraser operations preserve painter order and revision authority.
-- [x] Perfect-Freehand-style live ribbons remain responsive at 400%.
-- [x] The bounded world is 1472×1792 units.
-- [x] Committed zoom levels are 25%, 50%, 100%, 200%, and 400%.
-- [x] A complete 368×448 overview is always available at 25%.
-- [x] World-aligned 64×64 materialized tiles provide sparse detail at tiled zooms.
-- [x] Cache misses fall back to the current overview instead of checkerboards.
-- [x] Revisions invalidate stale materialization safely.
-- [x] Hard-edged immediate materialization never masquerades as settled AA.
-- [x] The tile producer is bounded and aborts stale work.
-- [x] Drawing while refinement is active works.
-- [x] Paper occupancy and compact uniform identities avoid wasting raw slots.
-- [x] The complete seed-7 100% world fits: 266 raw + 378 uniform, zero fallback.
-- [x] The raw pool uses 384 slots; a mutation-free tour A/B measured zero
-      return-trip refills at 384 versus 63 tiles and 409 ms at 320.
-- [x] Framebuffer overlap is reused during ordinary warm pans.
-- [x] Cached pan reaches first physical completion in about 30.6–30.7 ms.
-- [x] A live, separate 1.5 MiB contiguous USB/export reserve still allocates.
-- [x] Forty-five rapid manual strokes committed with zero touch errors,
-      presentation failures, stale authorities, or corruption.
-- [x] Fable high and Grok 4.6 high found no remaining blocker after fixes.
-- [x] Host tests, ASan/UBSan, formatting, clang-tidy, and cppcheck pass.
-- [x] Long strokes split into one logical gesture without losing boundary samples.
-- [x] A transition-preserving touch FIFO retains Down/Up/final points across render stalls.
-- [x] A nearly three-minute physical stroke test committed all 8,003 live samples;
-      two intentional boundary overlaps yielded 8,005 stored samples.
+After experiments 1–2, require a cumulative trajectory of at least ~15% on
+repeated device runs. After all three, every accepted run must be ≤500 ms and
+continue toward the 450 ms guard. If the fixed corpus remains above 500 ms,
+stop before generalized checkpoint caching and make an explicit owner decision
+about corpus, target, hardware, or selective cached representation.
 
-Load-bearing evidence:
+In the same phase, replace the current revision-only amplification metric:
 
-- `vector_v2/GATE_1_RECEIPT_2026_08_13.md`
-- `vector_v2/GATE_1_CACHE_CLOSURE_2026_08_13.md`
-- `vector_v2/hardware-receipts/CORRECTNESS_CLOSURE_2026_08_14.md`
-- `vector_v2/hardware-receipts/gate1-paper-cache-scroller.log`
-- `vector_v2/hardware-receipts/gate1-final-glass.log`
-- `vector_v2/hardware-receipts/PERFORMANCE_SLICE_GLASS_VERDICT_2026_08_14.md`
-- `vector_v2/hardware-receipts/live-ink-overlay-clipping-2026-08-14.md`
+- [ ] Exact-compute ledger keyed by generation/revision + zoom + group.
+- [ ] Spatial-revisit ledger keyed by zoom + group and expected damage set.
+- [ ] Cause every attempt: cold miss, expected damage, eviction, view abort,
+      stale revision, repair, settled refinement, or unknown.
+- [ ] Wire both ledgers into the product `TileProducer`; fail on dropped keys.
+- [ ] Gate A→B→mutate outside A→return A, local mutation, Undo/Redo, settled AA,
+      autosave, and another return.
 
-The overall rendering-quality verdict remains **YELLOW** only because settled
-anti-aliasing is not implemented. The architecture itself is no longer under
-referendum unless new contradictory hardware evidence appears.
+Broad group checkpoints are not funded: one 128×128 RGB565 checkpoint is
+32 KiB, while only ~306 KiB remains with the export reserve held.
 
-## Definition of V2 feature complete
+## Phase 4 — authority spine
 
-V2 is feature complete when it can replace the raster app for ordinary use:
+- [ ] Add a generation-pinned immutable read view over operation storage.
+- [ ] Separate append/storage epoch, active operation-prefix cursor, and
+      monotonic document generation.
+- [ ] Undo/Redo changes the active prefix and advances generation; a new gesture
+      after Undo truncates the redo branch or begins a new epoch.
+- [ ] Compute whole-gesture damage as the union of its chunks and invalidate only
+      intersecting overview cells and tile groups.
+- [ ] Make New/Clear reset operation authority, overview, cache catalog, camera,
+      history, and autosave state transactionally.
+- [ ] Remove raster-only snapshot restore from product V2 load/Undo flows.
 
-- [ ] Drawing, erasing, panning, and every committed zoom work through the
-      production document and materialization path.
-- [ ] Input remains responsive while rendering, committing, saving, or exporting.
-- [ ] Settled output has an accepted anti-aliasing path.
-- [ ] Undo and redo work on vector authority.
-- [ ] New/Clear is transactional and resets all derived state.
-- [ ] A document survives restart through vector persistence and autosave.
-- [ ] PNG/USB-C export works from the V2 document without violating memory gates.
-- [ ] Battery, power, sleep/wake, time, and failure-recovery behavior reach V1
-      parity where applicable.
-- [ ] Capacity exhaustion is reported safely rather than corrupting authority.
-- [ ] The production UI is usable on physical hardware.
+## Phase 5 — Undo, persistence, autosave
+
+- [ ] Implement whole-gesture Undo/Redo with ≥10 guaranteed depth and exact
+      mixed pen/eraser, branch-after-Undo, zoom, and localized-damage fixtures.
+- [ ] Define a versioned append-only authority journal: operation records,
+      gesture commit boundaries, active prefix, generation/epoch, and view/tool
+      state, with sequence numbers, CRCs, and commit markers/superblocks.
+- [ ] Save in bounded idle slices without entering the visual ink path.
+- [ ] Recover to the last complete committed state after interruption at every
+      record phase; lose at most the in-progress gesture plus the contract's
+      reviewed committed-work window.
+- [ ] Re-run pan, ink, cold, rerender, and memory gates with autosave enabled.
+
+Derived overview, tile, chrome, and settled caches are never persisted.
+
+## Phase 6 — finish product parity
+
+- [ ] Wire the exact variable-width SVG core through a pinned authority snapshot
+      and transactional temporary sink; promote output only after generation is
+      rechecked. Preserve eraser fidelity.
+- [ ] Implement settled analytic-coverage AA in bounded idle work. Publish a
+      final cached identity and prove revisit retention; retain immediate
+      hard-edged live ink. The rejected four-sample SSAA probe is not a path.
+- [ ] Add minimap tap-to-jump using pan fallback/delta telemetry. Minimap drag
+      remains post-ship.
+- [ ] Integrate V1 power off/on, battery transitions, RTC, one-shot NTP, and
+      autosave-before-risky-transition through narrow adapters.
+- [ ] Add visible capacity, save, export, storage, and hardware failure states.
+- [ ] Enlarge invisible tap targets, add pressed feedback, resolve overlaps, and
+      run the physical missed-tap check.
+- [ ] Capture a clean PNG/USB export receipt without watchdog failure.
+- [ ] Revalidate Raster V1 on the current board as the fallback.
+
+## Phase 7 — all-on release closure
+
+- [ ] Characterize representative long documents and capacity limits.
+- [ ] Exercise hairlines, XL strokes, dense overdraw, erasing, long gestures,
+      every world edge, all zooms, and cache pressure.
+- [ ] Soak repeated pan/draw/Undo/Redo/autosave/export/power cycles for hours.
+- [ ] Interrupt power at every persistence boundary and verify exact recovery.
+- [ ] Run host tests, sanitizers, formatting, static analysis, both firmware
+      builds, hardware gates, optical checks, and export verification.
+- [ ] Compare Raster V1 and Vector V2 feature parity explicitly.
+- [ ] Tag each requirement's known-good revision, promote V2 to default, and
+      retain a named legacy Raster V1 build.
+
+## Definition of feature complete
+
+- [ ] Every required pan, ink, cold, revisit, AA, Undo/Redo, SVG, autosave,
+      platform, capacity, and recovery gate in the ship contract is closed.
+- [ ] Normal services are enabled during final performance receipts.
+- [ ] Current visible output never regresses from exact/settled to unexplained
+      fallback on revisit within cache capacity.
+- [ ] Input remains responsive during rendering, saving, recovery, and export.
 - [ ] Long-session and restart tests show no corruption, leaks, or stale pixels.
-- [ ] V1 and V2 build independently before V2 becomes the default.
-
-Performance polish may continue after feature completeness, but input starvation,
-wrong pixels, missing operations, stale revisions, and failed persistence are not
-polish and must be closed first.
-
-# Forward worklist
-
-## Phase 1 — Interaction reliability and navigation
-
-This is the immediate next batch because it addresses failures felt in the final
-manual test.
-
-### Input-first scheduling
-
-- [x] Build a deterministic hardware repro for touch starvation during cold fill
-      and stroke commit.
-- [x] Make producer and display work yield to pending input at bounded intervals.
-- [x] Prevent a pan gesture from being lost when refinement is in progress.
-- [x] Add a tiny independent touch-sampling task; the renderer remains on its
-      measured cooperative path rather than moving wholesale to the second core.
-- [x] Give the touch sampler explicit ownership and shutdown, preserve transition
-      edges and final points in a bounded FIFO, and treat transient read errors as
-      hold rather than lift.
-- [x] Separate input latency from append, compose, and transfer telemetry.
-- [x] Gate maximum touch-poll gaps during deterministic cold replay; retain p95
-      gesture sampling for the final interaction glass test.
-- [x] Repeat the aggressive draw-while-pan glass test.
-
-Current measured debt:
-
-- ordinary warm-pan frames remain roughly 45–50 ms end-to-end; the final glass
-  test reused the framebuffer on 18.3% of 400% frames and 2.9% of 200% frames;
-- a warm multi-zoom cache makes lower-zoom commits unbounded: the final glass
-  test reached 120.1 ms per chunk at 25% and 131.8 ms at 100%;
-- one repeated-reset harness run lost TE synchronization at startup; later
-  clean runs showed no logged tearing, but physical glass remains authoritative;
-- complete PNG/USB export triggers the five-second CPU-0 task watchdog during
-  encoding even though the generated image and mounted media are correct.
-
-At `264b60e`, the controlled 400% long-stroke gate fell from about 70 ms to
-11.1 ms. The final physical long gesture measured 13.3 ms and looked smooth.
-That gate did not cover lower-zoom drawing against a warm multi-zoom cache. See
-`vector_v2/hardware-receipts/PERFORMANCE_SLICE_GLASS_VERDICT_2026_08_14.md`.
-
-### Camera and zoom behavior
-
-- [x] Write and accept the zoom/navigation behavior document before implementation.
-- [x] Preserve world-space focus when zooming in or out.
-- [x] Remember the last useful camera position per zoom.
-- [x] Define how per-zoom memory and center-preserving zoom interact.
-- [x] Expose 50% and 200% in the production UI.
-- [x] Remove the test-app behavior that always opens a zoom at `(0,0)`.
-- [x] Add host tests for clamping at all world edges and zoom round trips.
-- [x] Exercise repeated zoom-out/return cycles on physical glass.
-
-### Cache policy
-
-- [ ] Protect the recent viewport footprint at each zoom from ordinary global-LRU
-      churn.
-- [ ] Prefer evicting distant/unprotected raw tiles.
-- [x] Preserve zero-fallback returns for protected views across a long 400%
-      tour: permanent `TINYDRAW_GATE1_CACHE_TOUR` gate (protected 100% home
-      returns sharp after a 16-viewport 400% tour at both 320 and 384 slots).
-- [ ] Keep learned uniform identities cheap and revision-safe.
-- [x] Measure 320 versus 384 raw slots only after policy improvements: 384
-      adopted at `6abfa0f`, funded by the 449 KiB freed at `264b60e`.
-      Retention and export-reserve gates green; largest free PSRAM block
-      2,490,368 bytes (harness) / 2,949,120 bytes (product). The cache-tour
-      A/B then proved the benefit directly: returning through a 16-viewport
-      400% tour refills 63 tiles in 409 ms at 320 slots versus 0 tiles in
-      40 ms at 384 (`cache-tour-320.log` / `cache-tour-384.log`).
-- [ ] Do not adopt 448 slots under the current memory plan: it would consume an
-      additional 1 MiB and leave too little margin beside the export reserve.
-- [x] Remove the test-only seed corpus storage from the product app allocation;
-      it remains available only to the exclusive Gate 1 harness.
-
-The 384-slot pool remains adopted for the UI round because its mutation-free
-revisit benefit and memory margin are measured. The next performance round must
-repeat the 320-versus-384 comparison with drawing between visits. Drawing
-latency wins if the two goals conflict. Each raw slot costs 8 KiB.
-
-## Phase 2 — V2 cleanup and repository shape
-
-This bounded cleanup completed before the interaction batch. The milestone
-exposed and hardware-proven the real seams and was fast-forwarded to `main`; it
-was not a rewrite or feature-parity promotion.
-
-- [x] Rename the interactive `production-live-app` concept to the V2 application
-      and remove its test-only startup workload.
-- [x] Put V2 ESP adapters/coordinator/UI under a clear V2-specific directory or
-      source group; do not mix them into legacy `hardware_app.cpp`.
-- [x] Keep `vector_v2/` platform-independent and host-tested.
-- [x] Keep truly shared mechanisms in `core/`; share by dependency, never copy.
-- [x] Leave the raster coordinator behaviorally unchanged.
-- [x] Add explicit build commands for both `raster-v1` and `vector-v2`.
-- [x] Make the named validation commands build both firmware variants. Add
-      hosted CI for ESP-IDF only when a CI workflow is introduced.
-- [x] Remove test-only workload generation and automated gate orchestration from
-      the V2 product coordinator; retain it in the exclusive
-      `vector-v2-gate-harness` target.
-- [ ] Audit remaining rejected or unused experiments only when a current seam
-      makes their removal relevant; this is not an interaction-batch blocker.
-- [x] Quarantine prototype-only renderer sources in the explicit
-      `tinydraw::vector_prototype` test/benchmark target; normal host and product
-      targets do not compile or link them.
-- [x] Archive superseded root handoffs and interim Gate 1 plans.
-- [x] Keep only `README.md`, `PROJECT_STATE.md`, this roadmap, and genuinely
-      current design documents prominent at repository root.
-- [x] Add an index for hardware receipts; retain intermediate captures without
-      deleting load-bearing final receipts.
-- [x] Re-run both full build/test matrices after every structural move.
-
-### Coexistence rules
-
-1. V1 remains runnable until V2 feature parity and migration acceptance.
-2. V1 receives only regressions/security/hardware-preservation fixes.
-3. New product behavior lands in V2.
-4. Shared code must have a platform-neutral interface and tests.
-5. No shared mutable application state between V1 and V2.
-6. No V2 `#ifdef` branches inside the V1 interaction loop.
-7. When V2 supersedes a responsibility, remove the duplicate V2 test adapter—not
-   the still-runnable V1 path—until final promotion.
-8. Switch the default firmware only after feature parity, migration proof, and a
-   final V1/V2 comparison. Keep a named legacy V1 build afterward.
-
-## Phase 3 — Settled anti-aliasing gate
-
-Timebox this. Do not disappear into another renderer project.
-
-- [ ] Implement the smallest analytic-coverage AA experiment for one bounded tile.
-- [ ] Compare it visually against hard-edged immediate output and the rejected
-      four-sample SSAA receipt.
-- [ ] Measure tile compute, complete cold viewport, maximum cooperative slice,
-      PSRAM traffic, and input latency.
-- [ ] Verify painter order and eraser edges.
-- [ ] Publish accepted AA output as `kSettled` or better.
-- [ ] Keep hard-edged `kImmediate` as live/early feedback.
-- [ ] Prove that settled output replaces immediate output one-directionally.
-- [ ] If analytic AA misses the timebox or gates, record the result and choose a
-      simpler coverage policy rather than reviving the rejected atlas renderer.
-- [ ] Decide the named subpixel-stroke policy, including the current minimum
-      visible screen radius.
-
-The prior complete-viewport four-sample SSAA probe took about 808 ms and is not
-the funded product path.
-
-## Phase 4 — Production UI
-
-### Toolbar
-
-- [x] Bottom toolbar: **Undo | Redo | Tools | Colors | Sizes | Document**.
-- [x] Make the toolbar a full-width rectangle with a subtle upper shadow so
-      canvas pixels cannot creep through the curved lower screen corners.
-- [x] Tools pop-up: **Draw | Erase | Pan**, using the V1 icons and reflecting the
-      selected tool in the toolbar.
-- [x] Document pop-up: **New | Export**.
-- [x] Consume an outside tap while dismissing compact popups.
-- [x] Disable Undo/Redo visibly when unavailable.
-- [ ] Keep visual controls compact but later enlarge invisible hit regions and
-      spacing; physical tap targets remain a final glass-polish item.
-
-### Color palette
-
-- [x] Replace current TinyDraw colors with the 16 standard PICO-8 colors.
-- [x] Add the 16-color PICO-8 secret palette as a second page.
-- [x] Use a white second-level 4×4 round-swatch popup above the toolbar, with a
-      tall page-navigation row and a shadow.
-- [x] Keep all 16 colors on each page; do not sacrifice a swatch for navigation.
-- [x] Keep PICO-8 warm white as a drawable color; Erase remains a separate tool.
-- [x] Convert and lock all 32 colors to deterministic RGB565 values in tests.
-- [x] Show the current palette page and selected color clearly.
-
-Palette references:
-
-- <https://pico-8.fandom.com/wiki/Palette>
-- <https://lospec.com/palette-list/pico-8-secret-palette>
-
-### Zoom and navigation overlays
-
-- [x] Add a right-side vertical zoom rail: plus, percentage, minus.
-- [x] Levels: 25 → 50 → 100 → 200 → 400.
-- [x] Disable controls at minimum/maximum zoom.
-- [ ] Add small top/left/right/bottom canvas-extent indicators.
-- [ ] Hide extent indicators at 25%.
-- [x] Keep navigation controls, battery, and minimap as display overlays, never
-      document pixels.
-- [x] Show battery state and transient export progress/status above the canvas.
-- [x] Refresh minimap authority after every completed stroke, including strokes
-      whose final overview update has empty canvas presentation bounds.
-- [x] Exclude fixed overlays from cached-pan reuse and live-ink partial updates;
-      the hardware circle gate stays below 3 ms both on clear canvas and over
-      the overlays.
-- [ ] Reduce changing-minimap cost during pan; the current 100% pan-overlay gate
-      remains red at about 40 ms first-submit.
-
-### Tap-target polish — later
-
-- [ ] Expand hit regions beyond visible icon bounds.
-- [ ] Resolve overlaps deterministically at toolbar/pop-up boundaries.
-- [ ] Add pressed/selected feedback before expensive actions.
-- [ ] Test every target repeatedly with large hands on physical hardware.
-- [ ] Record missed-tap telemetry during the UI glass test.
-
-## Phase 5 — Vector document feature parity
-
-### Undo and redo
-
-- [ ] Define operation-history and snapshot/checkpoint semantics.
-- [ ] Implement vector-aware Undo and Redo without restoring stale tile identities.
-- [ ] Invalidate/rebuild overview and materialization transactionally.
-- [ ] Bound history memory and define behavior at capacity.
-- [ ] Test mixed pen/eraser operations, zoom changes, restart, and branch-after-undo.
-
-### New/Clear
-
-- [ ] Make New/Clear reset operation authority, overview, cache catalog, occupancy,
-      camera state, undo/redo, and autosave state together.
-- [x] Restore the V1-style modal confirmation/cancel behavior.
-- [ ] Test failure atomicity.
-
-### Persistence and recovery
-
-- [ ] Design a versioned vector document format with explicit geometry, palette,
-      operation/sample capacities, checksum, and compatibility policy.
-- [ ] Save transactionally; interrupted writes must preserve the last valid file.
-- [ ] Load operation authority and regenerate derived state safely.
-- [ ] Implement autosave without starving input.
-- [ ] Recover after reset/power loss during append and during save.
-- [ ] Define migration behavior for existing raster drawings: preserve V1 access,
-      import flattened raster where useful, or explicitly keep formats separate.
-- [ ] Never silently reinterpret raster tile persistence as vector authority.
-
-### PNG and USB-C export
-
-- [x] Reuse the stable PNG encoder, FAT16 disk, USB transport, and export-store
-      mechanisms through narrow adapters where their contracts fit. Landed at
-      `7302963`; en route, `88123ee` fixed a latent pngenc corruption path
-      that also affected Raster V1 exports of dense/wide content and added a
-      full decode round-trip host gate.
-- [x] Render/export the complete bounded V2 world with correct painter order
-      (`WorldBandRenderer`: banded forward authority replay, host-proven
-      equal to one-shot replay).
-- [x] Keep export scratch within the proven 1.5 MiB reserve. Measured:
-      51 KiB internal (deflate state; internal placement is what makes the
-      encode take 5.7 s instead of minutes) plus ~390 KiB PSRAM, all
-      transient; zero permanent live-storage growth.
-- [x] Decide whether export uses settled AA or explicitly reports immediate
-      quality: export replays exact hard-edged authority (identical to
-      immediate rendering); revisit only after the settled-AA gate exists.
-- [x] Test export while the cache is full: the harness export gate runs after
-      the cache/full-world gates and the export-reserve gate re-verifies
-      afterward. Long-session soak remains part of Phase 7.
-- [x] Verify generated media on host and physical USB-C. The device artifact
-      passes strict zlib/CRC/defilter decoding, and the final glass test mounted
-      the "TinyDraw Export" drive and opened the correct 1472×1792 DRAWING.PNG.
-      Activating USB ends the serial console until reset, exactly like V1.
-- [x] Yield at each rendered-band progress boundary so CPU 0's idle task can run.
-- [ ] Capture a clean hardware export receipt proving the former five-second
-      task-watchdog warning is gone; implementation alone is not closure.
-- [x] Show bounded export progress and a saved/error state before USB takes over
-      the port.
-
-### Device lifecycle parity
-
-- [x] Integrate the live battery percentage/charging display.
-- [ ] Integrate low-power, sleep/wake, and RTC/time behavior where V1 supports it.
-- [ ] Preserve autosave before risky power transitions.
-- [ ] Define visible errors for save, export, capacity, and hardware failures.
-- [ ] Reuse stable V1 hardware services through adapters; do not copy their logic.
-
-## Phase 6 — Performance campaign
-
-Correctness and profiling come before cleverness. Optimize one measured bottleneck
-at a time and retain before/after receipts.
-
-### Warm pan
-
-- [ ] Re-establish physically correct warm pan. The earlier `4022917` software
-      result (28.1 ms avg, p50 26.95 ms) used a beam model later falsified on
-      glass. At `c86f3ac`, p95 is 47.5–48.6 ms and severe tearing remains.
-- [x] Avoid moving the complete frame per pan step: the toroidal ring makes
-      scroll pointer math and composes only exposed strips; the full-panel
-      transmit remains (the panel shows the whole moved viewport) but is
-      beam-raced and DMA-bound.
-- [x] Increase framebuffer-reuse coverage in the wild: fallback pixels and
-      composition-epoch drift no longer break the cached-pan identity, and
-      refinement region presents preserve reusability (the 2026-08-14 manual
-      session measured reused=0 on all 386 real pan frames before this).
-- [ ] Coalesce touch samples/view updates when the panel is already busy.
-- [ ] Separate camera responsiveness from refinement presentation.
-- [ ] Measure p50/p95/max event-to-first-complete and dropped/coalesced updates.
-
-### Cold refinement
-
-Across 20 reset-separated runs, the earlier overlapping-XL regression gate has
-0.771–0.971 second p95 wall time across 50–400%, with bounded producer/input
-slices. The earlier tapered seed-7 400% case has 0.683 second p95 wall time. See
-`vector_v2/hardware-receipts/492f2ef-overlap-cold-p95-20-runs.log` and
-`vector_v2/hardware-receipts/0560525-overlap-cold-baseline.log`.
-
-The subsequent four-times-adversarial campaign reduced its 400% cold replay from
-9.703 seconds at clean commit `a3ac4fc` to a 1.452-second p95 across 20 clean,
-reset-separated runs at `26a05f5`; overlap and seed-7 400% p95 measured 0.416 and
-0.343 seconds. Saturation-gated replay at `092f2a3`/`264b60e` then cut the
-adversarial 400% p95 to 0.675 seconds (target: below one second) and the
-overlap corpus by 14–30%, with maximum ticks under 11 ms; seed-7 regressed
-6.4% to 0.365 seconds (attributed to producer restructure/code layout, receipt
-retained). Deadline-sliced cold fill (`f20c201`) and the 384-slot pool
-(`6abfa0f`) then settled the final distribution at 0.646 seconds for
-adversarial 400% (−55.5% overall) with every producer tick under 12.7 ms. See
-`vector_v2/hardware-receipts/6abfa0f-cold-p95-20-runs.log` and
-`vector_v2/hardware-receipts/LONGSTROKE_COLDRENDER_INVESTIGATION_2026_08_14.md`.
-
-The permanent validation comprises one exact census sweep and three CTest fuzz
-invocations backed by two distinct fuzzer implementations. Exact painter results
-remain the authority; raw timing receipts are retained without editorial cleanup.
-
-- [x] Profile operation bounds filtering, replay, raster coverage, publication,
-      composition, touch polling, loop pacing, and panel transfer independently.
-- [ ] Batch paper/uniform publication and display updates where it reduces work.
-- [ ] Prioritize newly exposed regions and current motion direction.
-- [ ] Cancel obsolete views immediately when the camera moves.
-- [ ] Prevent progressive display work from delaying touch polling.
-- [x] Remove redundant segment subdivision, reject distant segments, hoist
-      software division, skip finalized mask runs, and replay eligible collinear
-      runs per source segment without weakening exactness or interaction gates.
-- [x] Capture a clean-HEAD 20-run distribution before tightening the current
-      two-second four-times-adversarial alarm. Keep the alarm until the intended
-      product workload margin is explicitly chosen.
-
-### Memory and CPU mechanical sympathy
-
-- [ ] Profile PSRAM traffic and cache behavior before changing representations.
-- [ ] Eliminate redundant full-frame and raw-tile reads.
-- [ ] Evaluate packed/fixed-point loops, IRAM placement, and wider pixel operations
-      only in measured hot paths.
-- [ ] Re-evaluate 320 versus 384 raw slots with a mixed warm-cache drawing and
-      revisit gate; the existing tour A/B contains no intervening mutation.
-- [ ] Keep the 1.5 MiB export reserve and a meaningful fragmentation margin.
-- [ ] Use the second core only for a measured independent workload with explicit
-      ownership, cancellation, and revision publication; do not add locks around
-      the current deep modules speculatively.
-- [ ] Add long-session heap/fragmentation and thermal/power measurements.
-
-## Phase 7 — Robustness and release acceptance
-
-- [ ] Characterize representative long documents, not only seed-7 synthetic data.
-- [ ] Revisit operation/sample capacities with captured aggregate evidence.
-- [ ] Exercise maximum stroke length, XL strokes, dense overdraw, erasing, and all
-      world edges.
-- [ ] Test repeated zoom/pan/draw/save/export cycles for hours.
-- [ ] Test restart and power interruption at every persistence boundary.
-- [ ] Verify no stale pixels after Undo, Redo, New, load, or autosave completion.
-- [ ] Run host tests, sanitizers, format, clang-tidy, cppcheck, both firmware builds,
-      hardware automation, and the final glass checklist.
-- [ ] Compare V1 and V2 feature parity explicitly.
-- [ ] Promote V2 to the default firmware only after the comparison passes.
-- [ ] Retain an explicit legacy raster build and its regression smoke test.
-
-# Stretch goals
-
-These are intentionally outside feature completeness unless promoted later.
-
-- [x] **Minimap skeleton:** compact live overview in the bottom-right canvas
-      corner, directly above the toolbar and below the zoom rail.
-- [x] Show the current viewport rectangle on the minimap.
-- [ ] Hide or simplify the minimap at 25%.
-- [ ] Tap the minimap to jump.
-- [ ] Drag the minimap viewport to navigate continuously.
-- [ ] Toggle the minimap by tapping the zoom percentage.
-- [ ] Ensure minimap interaction never edits the document.
-- [ ] 800% zoom, only if memory, navigation, and quality gates still pass.
-- [ ] Additional document-management conveniences after New/Export are solid.
-
-The minimap is unusually affordable architecturally because V2 already owns a
-complete overview. It still needs careful tap targeting and viewport math.
-
-# Explicit non-goals and guardrails
-
-- No new clean-room rewrite.
-- No further camera-aligned 3×3 atlas development.
-- No V2 state inside `WorldCanvas`, `FirmwareCanvas`, or `hardware_app.cpp`.
-- No four separately stored simplified stroke copies.
-- No camera-aligned cache identities.
-- No hidden dynamic allocation in Vector V2 state modules.
-- No speculative second-core concurrency.
-- No broad V1 refactor merely to make files look symmetrical with V2.
-- No deleting V1 before V2 feature parity and promotion.
-- No endless source-of-truth documents; update this roadmap and `PROJECT_STATE.md`.
-
-# Next concrete sequence
-
-Use the **Current finish-line queue** at the top of this file. Do not begin the
-cold replay, Undo/SVG/autosave, settled-AA, or lifecycle slices until the panel
-A/B and visual-first ink path have stable cross-gate baselines. The detailed
-phase sections above remain the feature-completeness backlog, not permission to
-skip the current physical blockers.
+- [ ] Raster V1 and Vector V2 build independently before and after promotion.
+
+## Dependency reopen matrix
+
+| Change | Reopens |
+|---|---|
+| Presenter, staging, TE cadence | Pan optical correctness; ink presentation latency |
+| Touch buffering or coordinator order | Ink latency/fidelity; pan gesture behavior |
+| Authority, generation, Undo/Redo | Cold exactness; rerender accounting; SVG; autosave |
+| Cache eviction or settled AA | Cold; revisit retention; memory reserve |
+| Autosave/storage scheduling | Pan; ink; cold interaction; memory; power-loss recovery |
+
+## Guardrails and post-ship work
+
+No rewrite, camera-aligned atlas, four stored stroke LODs, hidden V2 allocation,
+V2 state in the Raster V1 loop, or speculative second-core scheduling. Cache
+growth requires a measured reuse contract and must preserve the export reserve.
+
+Post-ship: demo record/replay, minimap drag, semantic/editable SVG, optional
+minimap visibility controls, and 800% zoom.
+
+Completed foundation and historical measurements live in
+[`vector_v2/README.md`](vector_v2/README.md),
+[`vector_v2/hardware-receipts/`](vector_v2/hardware-receipts/),
+[`benchmark-results/`](benchmark-results/), and [`docs/archive/`](docs/archive/).

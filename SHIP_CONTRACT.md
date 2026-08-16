@@ -3,6 +3,9 @@
 Frozen: 2026-08-15, by product owner decision. Changes require an explicit
 owner decision recorded here with a date; nothing below drifts silently.
 
+Stable product priorities live in [`PRODUCT_TENETS.md`](PRODUCT_TENETS.md).
+This contract owns numeric gates and resolves any conflict.
+
 The governing rule: **a requirement is closed only when it has a permanent
 oracle, a guard band, and a known-good tagged revision. No new change may
 reopen a closed requirement. Stretch targets never justify regressing a
@@ -19,9 +22,10 @@ requirements (lesson of `tear_synchronized`, 2026-08-15).
 | Pacing | PANSEQ frame p95 ≤41.7 ms (24 FPS) | p95 ≤38 ms | Gate harness PANSEQ receipts |
 | Stretch | ~29.8 FPS (2 TE periods/frame) | — | same |
 
-Status: correctness GREEN (2026-08-15, boundary-top-sweep); pacing RED
-(52.8 ms p95) with fix in flight (Wave 2 compositor). Hardware ceiling is
-29.4 FPS full-frame (`HARDWARE_LIMITS.md`).
+Status: correctness provisionally GREEN on the final invariant build (owner
+glass check, 2026-08-16); the same-session torn positive-control closure is
+still pending. Pacing is RED at 50.934 ms p95. Hardware ceiling is 29.4 FPS
+full-frame (`HARDWARE_LIMITS.md`).
 
 ### 2. Ink — no perceptible lag  (required)
 
@@ -44,6 +48,18 @@ content) is the primary pre-ship complaint; the cold wait is second.**
 
 "Cold complete" means the **current visible viewport** is exact. Halo,
 remembered zooms, and background sweeps are quality tiers, not gates.
+
+The closure statistic is the maximum wall time across 20 reset-separated
+device runs of the frozen `adversarial_tapered_4x` corpus at 400%, origin
+`(0,0)`, from discarded detail tiles through final exact viewport publication
+and DMA completion. An accepted run has no crash, allocation failure, authority
+mismatch, touch-service violation, telemetry overflow, or presentation failure.
+Development runs before autosave exists are provisional; the final 20-run
+closure has autosave and normal product services enabled.
+
+Current audited baseline: **663.829 ms wall** (577.667 ms compute, 69.371 ms
+presentation, 15.618 ms pacing, 1.173 ms touch service) in
+`benchmark-results/wave2-compositor/gate-invariant-final.log`.
 
 Amplification threshold (1.25) is provisional until first measured; owner
 review after the first real measurement.
@@ -95,6 +111,18 @@ fine, need to see it in action" — 2026-08-15).
 - Onboard clock + one-shot NTP: required (export timestamps).
 - Minimap: tap-to-jump required; viewport-drag out of contract.
 - Zoom: 25/50/100/200/400%. 800% out of contract.
+
+## Document authority policy
+
+Owner decision, 2026-08-16: V2 documents are **blank baseline plus ordered
+vector operations**. The operation sequence and active prefix are the complete
+durable drawing authority; raster overviews and tiles are rebuilt derivatives.
+
+Raster V1 documents remain explicitly Raster V1 and accessible through the V1
+build. They are never silently reinterpreted as V2 vector authority. A future
+flattened import must declare an explicit raster baseline and either embed it in
+SVG or refuse vector-only SVG export. The existing raster-only snapshot restore
+seam is not a valid V2 persistence or Undo mechanism.
 
 ### Post-ship (explicitly deferred, not cut)
 

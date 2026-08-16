@@ -418,7 +418,8 @@ void run_optical_cell(Co5300PanelTransport& display, std::uint16_t* frame_a, std
 }  // namespace
 
 void run_panel_probe() {
-  std::printf("TINYDRAW_PANEL_PROBE_START clock_mhz=%d\n", TINYDRAW_CO5300_CLOCK_MHZ);
+  std::printf("TINYDRAW_PANEL_PROBE_START requested_clock_mhz=%d effective_clock_mhz=%d\n",
+              TINYDRAW_CO5300_CLOCK_MHZ, kEffectiveCo5300ClockMHz);
   Co5300PanelTransport display;
   if (!display.ready()) {
     std::printf("TINYDRAW_PANEL_PROBE_DONE pass=0 reason=display\n");

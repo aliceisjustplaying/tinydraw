@@ -143,7 +143,7 @@ if(TINYDRAW_CO5300_CLOCK_MHZ STREQUAL "60")
           "CO5300 60 MHz is a diagnostic overclock outside the published 50 MHz envelope")
 endif()
 message(STATUS
-        "TinyDraw panel experiment=${TINYDRAW_VECTOR_V2_PRESENTATION_EXPERIMENT}, TE edge=${TINYDRAW_VECTOR_V2_TE_EDGE}, clock=${TINYDRAW_CO5300_CLOCK_MHZ} MHz")
+        "TinyDraw panel experiment=${TINYDRAW_VECTOR_V2_PRESENTATION_EXPERIMENT}, TE edge=${TINYDRAW_VECTOR_V2_TE_EDGE}, requested clock=${TINYDRAW_CO5300_CLOCK_MHZ} MHz, effective clock=40 MHz")
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
   TINYDRAW_CO5300_CLOCK_MHZ=${TINYDRAW_CO5300_CLOCK_MHZ}
 )

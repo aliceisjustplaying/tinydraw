@@ -137,9 +137,8 @@ class Co5300PanelTransport::Impl {
       return;
     }
     std::printf("TINYDRAW_PANEL_HARD_RESET=%u\n", reset_panel_power());
-    std::printf(
-        "TINYDRAW_PANEL_TRANSPORT requested_clock_mhz=%d actual_clock=divider_limited_40mhz\n",
-        kPanelClockMHz);
+    std::printf("TINYDRAW_PANEL_TRANSPORT requested_clock_mhz=%d effective_clock_mhz=%d\n",
+                kPanelClockMHz, kEffectiveCo5300ClockMHz);
 
     spi_bus_config_t bus_config{};
     bus_config.sclk_io_num = GPIO_NUM_11;
