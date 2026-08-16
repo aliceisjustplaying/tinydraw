@@ -17,12 +17,18 @@ promotion. [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) owns acceptance thresholds;
 |---|---|---|
 | Pan correctness | **Green — owner accepted** | Product pan is tear-free on glass at 50%, 100%, 200%, and 400%, including dense hairline content. Formal positive-control evidence still needs archiving for the release packet. |
 | Pan pacing | **Provisional green** | PANSEQ p95 is 33.939 ms at 100% and 33.934 ms at 400% (~29.5 FPS), below the 38 ms guard. Camera motion caused zero persistent chrome redraws. |
-| Ink latency | **Provisional green — visual lane; smoothness yellow** | Curved authority no longer replaces the preview with overt straight-segment corners. The latest owner pass measured 1.47–1.82 ms event→submit and 2.12–2.76 ms event→DMA averages, with zero presentation failures, overflows, or authority mismatches. Remaining live-curve angularity is visible under scrutiny; a costlier four-span experiment was rejected. Formal traces, optical latency, and resumable lift authority remain open. |
+| Ink latency | **Provisional green — visual lane; smoothness yellow** | Curved authority no longer replaces the preview with overt straight-segment corners. The latest owner pass measured 1.47–1.82 ms event→submit and 2.12–2.76 ms event→DMA averages, with zero presentation failures, overflows, or authority mismatches. Remaining live-curve angularity is visible under scrutiny; the four-span experiment was rejected on a cost model that the wave-3 unit sweep has since invalidated — a rematch is owner-gated (see roadmap Phase 2). Formal traces, optical latency, and resumable lift authority remain open. |
 | Cold 400% | **Red, closing** | The wave-3 compute campaign cut the combined corpus from 1,269.157 ms to 668.980 ms maximum across three device runs (-47.3%): 582.9 compute, 66.8 present, 18.4 pacing, 0.9 touch. Requirement is ≤500 ms; compute must fall another ~170 ms. See the wave-3 receipt for accepted/rejected steps. |
 | Revisit retention | **Architecture promising; oracle incomplete** | 448-slot tour returns with zero missing tiles, but revision-keyed accounting can hide spatially unnecessary rerenders and is not connected to the product producer. |
 | Exactness | **Green for implemented scope** | Host exactness and fuzz tests pass. V2 persistence/Undo authority is not implemented. |
-| Settled AA | **Open** | Immediate output is intentionally hard-edged. Four-sample SSAA cost ~808 ms and is rejected. |
+| Settled AA | **Open — design candidate exists** | Immediate output is intentionally hard-edged. Four-sample SSAA cost ~808 ms and is rejected. An unmeasured analytic-coverage design (8-bit alpha mask over the existing newest-first replay, boundary-only coverage) is sketched in the 2026-08-16 review; next step is a host prototype. |
 | Feature parity | **Open** | Undo/Redo, autosave/recovery, device SVG wiring, minimap jump, lifecycle parity, failure UI, and release soak remain. |
+| Mixed-draw appends | **Red — pre-existing, owner decision pending** | 50% in-place appends peak at 18.8 ms against the 15 ms budget. Dating evidence places the regression at the curved committed-ink change (19ebbe3), masked until wave-3 reopened the gate cascade. Owner intends a glass check; if feel is acceptable, adjust the budget with a dated contract note. |
+
+Session continuity: the 2026-08-16 handover for the next working session
+(A/B recipes, ranked cold candidates, device physics notes, open owner
+decisions) is
+[`review_findings_2026_08_16_cold_campaign/HANDOVER.md`](review_findings_2026_08_16_cold_campaign/HANDOVER.md).
 
 Latest permanent receipts:
 
