@@ -1,6 +1,7 @@
 #include "tinydraw/vector_v2/materialized_canvas.h"
 
 #include <algorithm>
+#include <cassert>
 #include <limits>
 #include <numeric>
 #include <tuple>
@@ -209,22 +210,31 @@ MaterializedCanvas::MaterializedCanvas(std::span<std::uint16_t> overview_pixels,
                                        std::span<std::uint8_t> occupancy_bits,
                                        std::span<MaterializedSlotStorage> slots,
                                        std::span<std::uint16_t> tile_pixels,
-                                       DocumentRevision initial_revision)
+                                       DocumentRevision initial_revision,
+                                       std::span<std::uint16_t> raw_slot_directory)
     : overview_pixels_(overview_pixels),
       uniform_catalog_(uniform_catalog),
       occupancy_bits_(occupancy_bits),
       slots_(slots),
       tile_pixels_(tile_pixels),
+      raw_slot_directory_(raw_slot_directory),
       current_revision_(initial_revision) {
   std::fill(uniform_catalog_.begin(), uniform_catalog_.end(), MaterializedUniformStorage{});
   std::fill(occupancy_bits_.begin(), occupancy_bits_.end(), 0U);
   std::fill(slots_.begin(), slots_.end(), MaterializedSlotStorage{});
+  std::fill(raw_slot_directory_.begin(), raw_slot_directory_.end(), kNoRawSlot);
 }
 
 bool MaterializedCanvas::ready() const {
   const bool optional_catalog_ready = (uniform_catalog_.empty() && occupancy_bits_.empty()) ||
                                       (uniform_catalog_.size() == kMaterializedTileIdentityCount &&
                                        occupancy_bits_.size() == kOccupancyBytes);
+  const bool optional_directory_ready =
+      raw_slot_directory_.empty() || (raw_slot_directory_.size() >= kMaterializedTileIdentityCount &&
+                                      slots_.size() < static_cast<std::size_t>(kNoRawSlot));
+  if (!optional_directory_ready) {
+    return false;
+  }
   return overview_pixels_.size() == kOverviewPixels && optional_catalog_ready &&
          tile_pixels_.size() == slots_.size() * kTilePixels;
 }
@@ -233,10 +243,7 @@ DocumentRevision MaterializedCanvas::current_revision() const { return current_r
 
 std::size_t MaterializedCanvas::slot_capacity() const { return slots_.size(); }
 
-std::size_t MaterializedCanvas::resident_raw_tiles() const {
-  return static_cast<std::size_t>(
-      std::count_if(slots_.begin(), slots_.end(), [](const auto& slot) { return slot.occupied_; }));
-}
+std::size_t MaterializedCanvas::resident_raw_tiles() const { return occupied_slots_; }
 
 std::size_t MaterializedCanvas::uniform_capacity() const { return uniform_catalog_.size(); }
 
@@ -406,10 +413,10 @@ bool MaterializedCanvas::publish_overview(DocumentRevision revision,
   if (!exact_bootstrap_source) {
     std::copy(pixels.begin(), pixels.end(), overview_pixels_.begin());
   }
-  for (auto& slot : slots_) {
-    if (slot.occupied_) {
-      slot.occupied_ = false;
-      slot.generation_ = take_generation();
+  for (std::size_t index = 0; index < slots_.size(); ++index) {
+    if (slots_[index].occupied_) {
+      release_slot(index);
+      slots_[index].generation_ = take_generation();
     }
   }
   clear_uniforms();
@@ -438,10 +445,10 @@ bool MaterializedCanvas::restore_snapshot(DocumentRevision revision,
   if (rerender_ledger_ != nullptr) {
     rerender_ledger_->reset();
   }
-  for (auto& slot : slots_) {
-    if (slot.occupied_) {
-      slot.occupied_ = false;
-      slot.generation_ = take_generation();
+  for (std::size_t index = 0; index < slots_.size(); ++index) {
+    if (slots_[index].occupied_) {
+      release_slot(index);
+      slots_[index].generation_ = take_generation();
     }
   }
   clear_uniforms();
@@ -527,12 +534,13 @@ void MaterializedCanvas::write_tile(std::size_t slot_index,
     std::copy_n(publication.pixels.begin() + static_cast<std::ptrdiff_t>(source_offset), width,
                 destination.begin() + static_cast<std::ptrdiff_t>(destination_offset));
   }
+  release_slot(slot_index);
   MaterializedSlotStorage& slot = slots_[slot_index];
   slot.key_ = publication.key;
   slot.revision_ = revision;
   slot.generation_ = take_generation();
   slot.quality_ = publication.quality;
-  slot.occupied_ = true;
+  claim_slot(slot_index);
   touch(slot);
 }
 
@@ -574,7 +582,8 @@ bool MaterializedCanvas::commit_incremental_revision(
 
   apply_overview_publication(overview_publication);
   invalidate_uniforms(affected_world_bounds);
-  for (MaterializedSlotStorage& slot : slots_) {
+  for (std::size_t index = 0; index < slots_.size(); ++index) {
+    MaterializedSlotStorage& slot = slots_[index];
     if (!slot.occupied_) {
       continue;
     }
@@ -583,7 +592,7 @@ bool MaterializedCanvas::commit_incremental_revision(
         tile_publications.begin(), tile_publications.end(),
         [&slot](const TileRevisionPublication& candidate) { return candidate.key == slot.key_; });
     if (affected && !published) {
-      slot.occupied_ = false;
+      release_slot(index);
       slot.generation_ = take_generation();
     } else if (!affected) {
       slot.revision_ = revision;
@@ -597,7 +606,7 @@ bool MaterializedCanvas::commit_incremental_revision(
     if (!uniform_catalog_.empty() && analysis.has_value() && analysis->uniform &&
         uniform_index.has_value()) {
       if (const auto slot_index = find_tile(publication.key); slot_index.has_value()) {
-        slots_[*slot_index].occupied_ = false;
+        release_slot(*slot_index);
         slots_[*slot_index].generation_ = take_generation();
       }
       MaterializedUniformStorage& uniform = uniform_catalog_[*uniform_index];
@@ -658,14 +667,14 @@ std::optional<InPlaceTileEdit> MaterializedCanvas::materialize_uniform_as_raw(Ti
   if (rerender_ledger_ != nullptr && slot.occupied_ && !(slot.key_ == key)) {
     rerender_ledger_->mark_evicted(slot.key_);
   }
-  slot.occupied_ = false;
+  release_slot(*selected);
   slot.generation_ = take_generation();
   auto pixels = tile_pixels_.subspan(*selected * kTilePixels, kTilePixels);
   std::fill(pixels.begin(), pixels.end(), uniform.color_);
   slot.key_ = key;
   slot.revision_ = current_revision_;
   slot.quality_ = uniform.quality_;
-  slot.occupied_ = true;
+  claim_slot(*selected);
   touch(slot);
   uniform.occupied_ = false;
   return InPlaceTileEdit{
@@ -692,7 +701,8 @@ bool MaterializedCanvas::commit_in_place_revision(
   }
   apply_overview_publication(overview_publication);
   invalidate_uniforms(affected_world_bounds, retained_keys, scope);
-  for (MaterializedSlotStorage& slot : slots_) {
+  for (std::size_t index = 0; index < slots_.size(); ++index) {
+    MaterializedSlotStorage& slot = slots_[index];
     if (!slot.occupied_) {
       continue;
     }
@@ -705,7 +715,7 @@ bool MaterializedCanvas::commit_in_place_revision(
       if (scope.cross_zoom_invalidated != nullptr && slot.key_.zoom != scope.priority_zoom) {
         ++*scope.cross_zoom_invalidated;
       }
-      slot.occupied_ = false;
+      release_slot(index);
       slot.generation_ = take_generation();
     }
   }
@@ -715,7 +725,7 @@ bool MaterializedCanvas::commit_in_place_revision(
 
 void MaterializedCanvas::invalidate_identity(TileKey key) {
   if (const auto slot_index = find_tile(key); slot_index.has_value()) {
-    slots_[*slot_index].occupied_ = false;
+    release_slot(*slot_index);
     slots_[*slot_index].generation_ = take_generation();
   }
   if (const auto uniform_index = find_uniform(key); uniform_index.has_value()) {
@@ -729,7 +739,8 @@ bool MaterializedCanvas::accepts_external_workspace(std::span<const std::byte> w
          !storage_overlaps(workspace, std::as_bytes(std::span(uniform_catalog_))) &&
          !storage_overlaps(workspace, std::as_bytes(std::span(occupancy_bits_))) &&
          !storage_overlaps(workspace, std::as_bytes(std::span(tile_pixels_))) &&
-         !storage_overlaps(workspace, std::as_bytes(std::span(slots_)));
+         !storage_overlaps(workspace, std::as_bytes(std::span(slots_))) &&
+         !storage_overlaps(workspace, std::as_bytes(std::span(raw_slot_directory_)));
 }
 
 bool MaterializedCanvas::copy_resident_tile(TileKey key,
@@ -837,13 +848,37 @@ std::optional<std::size_t> MaterializedCanvas::materialized_tiles_intersecting(
 }
 
 std::optional<std::size_t> MaterializedCanvas::find_tile(TileKey key) const {
-  const auto found = std::find_if(slots_.begin(), slots_.end(), [key](const auto& slot) {
-    return slot.occupied_ && slot.key_ == key;
-  });
-  if (found == slots_.end()) {
-    return std::nullopt;
+  const auto scan = [this, key]() -> std::optional<std::size_t> {
+    const auto found = std::find_if(slots_.begin(), slots_.end(), [key](const auto& slot) {
+      return slot.occupied_ && slot.key_ == key;
+    });
+    if (found == slots_.end()) {
+      return std::nullopt;
+    }
+    return static_cast<std::size_t>(found - slots_.begin());
+  };
+  if (raw_slot_directory_.empty()) {
+    return scan();
   }
-  return static_cast<std::size_t>(found - slots_.begin());
+  std::optional<std::size_t> result{};
+  if (const auto identity = tile_identity_index(key);
+      identity.has_value() && *identity < raw_slot_directory_.size()) {
+    const std::uint16_t index = raw_slot_directory_[*identity];
+    if (index != kNoRawSlot && static_cast<std::size_t>(index) < slots_.size() &&
+        slots_[index].occupied_ && slots_[index].key_ == key) {
+      result = static_cast<std::size_t>(index);
+    }
+  }
+  // The linear scan stays the semantic truth; a divergence here is a
+  // directory-maintenance bug and host debug builds fail loudly on it. The
+  // check must stay off the device: firmware ships with assertions enabled
+  // (CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_ENABLE) and the scan-per-lookup
+  // would silently re-tax every find_tile with the cost the directory exists
+  // to remove (measured +8..+14 ms cold on 2026-08-16).
+#if !defined(NDEBUG) && !defined(ESP_PLATFORM)
+  assert(result == scan());
+#endif
+  return result;
 }
 
 std::optional<std::size_t> MaterializedCanvas::find_uniform(TileKey key) const {
@@ -871,11 +906,14 @@ std::uint8_t MaterializedCanvas::protection_rank(TileKey key) const {
 }
 
 std::optional<std::size_t> MaterializedCanvas::choose_slot() const {
-  const auto available = std::find_if(slots_.begin(), slots_.end(), [](const auto& slot) {
-    return !slot.occupied_ && slot.pin_count_ == 0U;
-  });
-  if (available != slots_.end()) {
-    return static_cast<std::size_t>(available - slots_.begin());
+  // A full pool has no unoccupied slot by definition; skip the free scan.
+  if (occupied_slots_ < slots_.size()) {
+    const auto available = std::find_if(slots_.begin(), slots_.end(), [](const auto& slot) {
+      return !slot.occupied_ && slot.pin_count_ == 0U;
+    });
+    if (available != slots_.end()) {
+      return static_cast<std::size_t>(available - slots_.begin());
+    }
   }
   const auto oldest =
       std::min_element(slots_.begin(), slots_.end(), [this](const auto& left, const auto& right) {
@@ -897,6 +935,36 @@ SlotGeneration MaterializedCanvas::take_generation() {
 }
 
 void MaterializedCanvas::touch(MaterializedSlotStorage& slot) { slot.last_use_ = ++use_clock_; }
+
+void MaterializedCanvas::release_slot(std::size_t index) {
+  MaterializedSlotStorage& slot = slots_[index];
+  if (!slot.occupied_) {
+    return;
+  }
+  slot.occupied_ = false;
+  --occupied_slots_;
+  if (!raw_slot_directory_.empty()) {
+    if (const auto identity = tile_identity_index(slot.key_);
+        identity.has_value() && *identity < raw_slot_directory_.size() &&
+        raw_slot_directory_[*identity] == static_cast<std::uint16_t>(index)) {
+      raw_slot_directory_[*identity] = kNoRawSlot;
+    }
+  }
+}
+
+void MaterializedCanvas::claim_slot(std::size_t index) {
+  MaterializedSlotStorage& slot = slots_[index];
+  if (!slot.occupied_) {
+    slot.occupied_ = true;
+    ++occupied_slots_;
+  }
+  if (!raw_slot_directory_.empty()) {
+    if (const auto identity = tile_identity_index(slot.key_);
+        identity.has_value() && *identity < raw_slot_directory_.size()) {
+      raw_slot_directory_[*identity] = static_cast<std::uint16_t>(index);
+    }
+  }
+}
 
 std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, DocumentRevision revision,
                                                             MaterializationQuality quality,
@@ -946,7 +1014,7 @@ std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, Documen
   if (rerender_ledger_ != nullptr && slot.occupied_ && !(slot.key_ == key)) {
     rerender_ledger_->mark_evicted(slot.key_);
   }
-  slot.occupied_ = false;
+  release_slot(index);
   slot.generation_ = take_generation();
   auto destination = tile_pixels_.subspan(index * kTilePixels, kTilePixels);
   for (int row = 0; row < height; ++row) {
@@ -959,7 +1027,7 @@ std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, Documen
   slot.key_ = key;
   slot.revision_ = revision;
   slot.quality_ = quality;
-  slot.occupied_ = true;
+  claim_slot(index);
   if (const auto uniform = tile_identity_index(key);
       uniform.has_value() && *uniform < uniform_catalog_.size()) {
     uniform_catalog_[*uniform].occupied_ = false;
@@ -984,7 +1052,7 @@ std::optional<std::size_t> MaterializedCanvas::publish_uniform(TileKey key,
     if (slot.pin_count_ != 0U || static_cast<int>(quality) < static_cast<int>(slot.quality_)) {
       return std::nullopt;
     }
-    slot.occupied_ = false;
+    release_slot(*raw);
     slot.generation_ = take_generation();
   }
   MaterializedUniformStorage& uniform = uniform_catalog_[*index];
@@ -1201,12 +1269,12 @@ bool MaterializedCanvas::discard_tiles() {
                   [](const auto& slot) { return slot.pin_count_ != 0U; })) {
     return false;
   }
-  for (MaterializedSlotStorage& slot : slots_) {
-    if (!slot.occupied_) {
+  for (std::size_t index = 0; index < slots_.size(); ++index) {
+    if (!slots_[index].occupied_) {
       continue;
     }
-    slot.occupied_ = false;
-    slot.generation_ = take_generation();
+    release_slot(index);
+    slots_[index].generation_ = take_generation();
   }
   clear_uniforms();
   bump_composition_epoch();

@@ -51,6 +51,7 @@ struct Rig {
   std::vector<std::uint8_t> occupancy;
   std::vector<v2::MaterializedSlotStorage> slots;
   std::vector<std::uint16_t> tile_pool;
+  std::vector<std::uint16_t> raw_slot_directory;
   std::vector<std::uint16_t> supertask;
   std::vector<std::uint8_t> mask;
   std::vector<std::uint16_t> summary_rows;
@@ -79,6 +80,7 @@ struct Rig {
         occupancy(v2::kOccupancyBytes, 0U),
         slots(v2::kTileSlotCount),
         tile_pool(v2::kTileSlotCount * v2::kTilePixels),
+        raw_slot_directory(v2::kMaterializedTileIdentityCount),
         supertask(v2::kTileProducerPixels),
         mask(v2::kTileProducerMaskBytes),
         summary_rows(v2::kTileProducerSummaryRows),
@@ -91,7 +93,7 @@ struct Rig {
         publications(kWorkspaceTileCapacity),
         affected_keys(v2::kTileSlotCount + v2::kMaximumVisibleTiles),
         log(records, samples),
-        canvas(overview, *uniforms, occupancy, slots, tile_pool),
+        canvas(overview, *uniforms, occupancy, slots, tile_pool, {}, raw_slot_directory),
         accounting(accounting_entries),
         producer(log, canvas,
                  {.supertask_pixels = supertask,

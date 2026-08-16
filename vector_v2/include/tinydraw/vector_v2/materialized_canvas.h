@@ -32,6 +32,8 @@ inline constexpr std::size_t kOccupancyCellCount =
 inline constexpr std::size_t kOccupancyBytes = (kOccupancyCellCount + 7U) / 8U;
 inline constexpr std::size_t kMaterializedTileIdentityCount = 168U + 644U + 2'576U + 10'304U;
 inline constexpr std::size_t kTiledZoomCount = 4;
+// Sentinel for raw_slot_directory entries: the identity has no raw slot.
+inline constexpr std::uint16_t kNoRawSlot = 0xFFFFU;
 
 enum class ZoomLevel : std::uint8_t {
   k25Percent,
@@ -224,11 +226,17 @@ class MaterializedCanvas {
   MaterializedCanvas(std::span<std::uint16_t> overview_pixels,
                      std::span<MaterializedSlotStorage> slots, std::span<std::uint16_t> tile_pixels,
                      DocumentRevision initial_revision = {});
+  // raw_slot_directory is optional O(1) find_tile metadata: one entry per tile
+  // identity holding the slot index that materializes it (kNoRawSlot when
+  // none). Empty preserves the exact linear slot scan; when provided it must
+  // cover kMaterializedTileIdentityCount entries or the canvas is not ready.
+  // The linear scan remains the semantic truth; debug builds assert parity.
   MaterializedCanvas(std::span<std::uint16_t> overview_pixels,
                      std::span<MaterializedUniformStorage> uniform_catalog,
                      std::span<std::uint8_t> occupancy_bits,
                      std::span<MaterializedSlotStorage> slots, std::span<std::uint16_t> tile_pixels,
-                     DocumentRevision initial_revision = {});
+                     DocumentRevision initial_revision = {},
+                     std::span<std::uint16_t> raw_slot_directory = {});
 
   [[nodiscard]] bool ready() const;
   [[nodiscard]] DocumentRevision current_revision() const;
@@ -403,6 +411,10 @@ class MaterializedCanvas {
   void bump_composition_epoch();
   [[nodiscard]] SlotGeneration take_generation();
   void touch(MaterializedSlotStorage& slot);
+  // Sole occupancy transitions: every occupied_ flip goes through these so
+  // occupied_slots_ and the raw-slot directory can never desynchronize.
+  void release_slot(std::size_t index);
+  void claim_slot(std::size_t index);
 
   std::span<std::uint16_t> overview_pixels_;
   std::span<MaterializedUniformStorage> uniform_catalog_;
@@ -410,6 +422,8 @@ class MaterializedCanvas {
   std::span<MaterializedSlotStorage> slots_;
   RerenderLedger* rerender_ledger_ = nullptr;
   std::span<std::uint16_t> tile_pixels_;
+  std::span<std::uint16_t> raw_slot_directory_;
+  std::size_t occupied_slots_ = 0;
   DocumentRevision current_revision_{};
   DocumentRevision overview_revision_{};
   SlotGeneration overview_generation_{};
