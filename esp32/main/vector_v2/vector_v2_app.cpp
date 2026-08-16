@@ -1055,13 +1055,34 @@ void run_vector_v2_app() {
   std::size_t repair_steps = 0;
   std::uint32_t repair_failures = 0;
   bool repair_planned = false;
-  // Settled-AA idle pass state: one viewport sweep per (view, revision).
+  // Settled-AA idle pass state: one viewport sweep per (view, revision),
+  // fingerprinted so any zoom/origin/revision change restarts the sweep.
   std::size_t settle_cursor = 0;
   bool settle_complete = false;
   std::uint32_t settle_tiles = 0;
   std::int64_t settle_total_us = 0;
   std::int64_t settle_max_us = 0;
   std::uint32_t settle_failures = 0;
+  DocumentRevision settle_pass_revision{};
+  ZoomLevel settle_pass_zoom = ZoomLevel::k25Percent;
+  int settle_pass_x = -1;
+  int settle_pass_y = -1;
+  const auto settle_fingerprint_reset = [&]() {
+    if (settle_pass_zoom == presenter.zoom() && settle_pass_revision == canvas.current_revision() &&
+        settle_pass_x == presenter.level_x() && settle_pass_y == presenter.level_y()) {
+      return;
+    }
+    settle_pass_zoom = presenter.zoom();
+    settle_pass_revision = canvas.current_revision();
+    settle_pass_x = presenter.level_x();
+    settle_pass_y = presenter.level_y();
+    settle_cursor = 0;
+    settle_complete = false;
+    settle_tiles = 0;
+    settle_total_us = 0;
+    settle_max_us = 0;
+    settle_failures = 0;
+  };
   LiftBaselineTiming lift_timing{};
   std::uint32_t next_lift_id = 1U;
   std::uint16_t next_gesture_id = 1U;
@@ -1401,6 +1422,9 @@ void run_vector_v2_app() {
     // The commit tick already performed bounded immediate publication and its
     // display update. Defer cold replay until input has had another poll.
     const bool fill_allowed = !pressed && fill_view_available && !lift_timing.pending;
+    if (!pressed) {
+      settle_fingerprint_reset();
+    }
     // Committed-overlay idle drain: absorbing pending authority outranks
     // fill and repair — fill tiles produced at a stale revision would be
     // invalidated by the very next absorption anyway. One operation per
@@ -1621,8 +1645,11 @@ void run_vector_v2_app() {
             (presenter.level_y() + vector_v2::kOverviewHeight - 1) / vector_v2::kTileHeight;
         const std::size_t columns = static_cast<std::size_t>(last_column - first_column + 1);
         const std::size_t total = columns * static_cast<std::size_t>(last_row - first_row + 1);
-        bool settled_one = false;
-        while (settle_cursor < total && !settled_one) {
+        constexpr std::int64_t kSettleSliceBudgetUs = 8'000;
+        const std::int64_t slice_started = esp_timer_get_time();
+        std::optional<vector_v2::PixelRect> batch_bounds;
+        while (settle_cursor < total &&
+               esp_timer_get_time() - slice_started < kSettleSliceBudgetUs) {
           const vector_v2::TileKey key{
               presenter.zoom(),
               static_cast<std::uint16_t>(first_column + static_cast<int>(settle_cursor % columns)),
@@ -1649,15 +1676,17 @@ void run_vector_v2_app() {
                                 vector_v2::MaterializationQuality::kSettled, pixels)
                   .has_value()) {
             const std::int64_t tile_us = esp_timer_get_time() - tile_started;
-            static_cast<void>(
-                presenter.refresh_region(vector_v2::tile_pixel_bounds(key), chrome, loop_us));
+            include_bounds(batch_bounds, vector_v2::tile_pixel_bounds(key));
             ++settle_tiles;
             settle_total_us += tile_us;
             settle_max_us = std::max(settle_max_us, tile_us);
-            settled_one = true;
           } else {
             ++settle_failures;
           }
+        }
+        if (batch_bounds.has_value()) {
+          // One present per settled batch instead of one per tile.
+          static_cast<void>(presenter.refresh_region(*batch_bounds, chrome, loop_us));
         }
         if (settle_cursor >= total) {
           settle_complete = true;
@@ -1670,6 +1699,68 @@ void run_vector_v2_app() {
                 static_cast<unsigned long>(settle_failures));
             std::fflush(stdout);
           }
+        }
+      }
+    } else if (!pressed && !panning && !lift_timing.pending && !settle_complete &&
+               presenter.zoom() == ZoomLevel::k25Percent &&
+               chrome.popup == vector_v2::ChromePopup::kNone &&
+               vector_v2::pending_operation_count(log, canvas) == 0U) {
+      // The 25% idle settle runs outside the fill chain (25% has no cold
+      // fill by design) and settles PRESENTATION pixels only: the overview
+      // is replay authority and must stay hard-edged. A refresh or new ink
+      // resets the pass via the fill-view fingerprint.
+      constexpr std::int64_t kSettleSliceBudgetUs = 8'000;
+      const std::size_t columns =
+          (static_cast<std::size_t>(vector_v2::kOverviewWidth) + vector_v2::kTileWidth - 1U) /
+          vector_v2::kTileWidth;
+      const std::size_t rows =
+          (static_cast<std::size_t>(vector_v2::kOverviewHeight) + vector_v2::kTileHeight - 1U) /
+          vector_v2::kTileHeight;
+      const std::size_t total = columns * rows;
+      const std::int64_t slice_started = esp_timer_get_time();
+      const vector_v2::SettledTileWorkspace settle_workspace{
+          .operation_alpha = std::span(storage.settle_op_alpha, vector_v2::kTilePixels),
+          .accumulated_alpha = std::span(storage.settle_accumulated, vector_v2::kTilePixels),
+          .red = std::span(storage.settle_red, vector_v2::kTilePixels),
+          .green = std::span(storage.settle_green, vector_v2::kTilePixels),
+          .blue = std::span(storage.settle_blue, vector_v2::kTilePixels),
+      };
+      const auto pixels = std::span(storage.settle_pixels, vector_v2::kTilePixels);
+      std::optional<vector_v2::PixelRect> batch_bounds;
+      while (settle_cursor < total && esp_timer_get_time() - slice_started < kSettleSliceBudgetUs) {
+        const int column = static_cast<int>(settle_cursor % columns);
+        const int row = static_cast<int>(settle_cursor / columns);
+        ++settle_cursor;
+        const vector_v2::PixelRect window{
+            column * vector_v2::kTileWidth, row * vector_v2::kTileHeight,
+            std::min((column + 1) * vector_v2::kTileWidth, vector_v2::kOverviewWidth),
+            std::min((row + 1) * vector_v2::kTileHeight, vector_v2::kOverviewHeight)};
+        const std::int64_t tile_started = esp_timer_get_time();
+        vector_v2::SettledTileStats tile_stats{};
+        if (vector_v2::render_settled_window(log, ZoomLevel::k25Percent, window, settle_workspace,
+                                             pixels, &tile_stats) &&
+            presenter.stage_settled_pixels(window, pixels, window.x1 - window.x0)) {
+          const std::int64_t tile_us = esp_timer_get_time() - tile_started;
+          include_bounds(batch_bounds, window);
+          ++settle_tiles;
+          settle_total_us += tile_us;
+          settle_max_us = std::max(settle_max_us, tile_us);
+        } else {
+          ++settle_failures;
+        }
+      }
+      if (batch_bounds.has_value()) {
+        static_cast<void>(presenter.present_frame_region(*batch_bounds, chrome, loop_us));
+      }
+      if (settle_cursor >= total) {
+        settle_complete = true;
+        if (settle_tiles != 0U || settle_failures != 0U) {
+          std::printf(
+              "TINYDRAW_LIVE_SETTLE zoom=25 tiles=%lu total_us=%lld max_tile_us=%lld "
+              "failures=%lu\n",
+              static_cast<unsigned long>(settle_tiles), static_cast<long long>(settle_total_us),
+              static_cast<long long>(settle_max_us), static_cast<unsigned long>(settle_failures));
+          std::fflush(stdout);
         }
       }
     }

@@ -168,6 +168,42 @@ void VectorV2Presenter::overlay_pending(vector_v2::PixelRect level_bounds,
       {.zoom = zoom(), .level_bounds = level_bounds, .pixels = pixels, .stride = stride}));
 }
 
+bool VectorV2Presenter::stage_settled_pixels(vector_v2::PixelRect panel_bounds,
+                                             std::span<const std::uint16_t> pixels, int stride) {
+  const int width = panel_bounds.x1 - panel_bounds.x0;
+  const int height = panel_bounds.y1 - panel_bounds.y0;
+  if (frame_ring_bottom_ != 0 || width <= 0 || height <= 0 || stride < width ||
+      panel_bounds.x0 < 0 || panel_bounds.y0 < 0 || panel_bounds.x1 > vector_v2::kOverviewWidth ||
+      panel_bounds.y1 > vector_v2::kOverviewHeight ||
+      pixels.size() < static_cast<std::size_t>(height - 1) * static_cast<std::size_t>(stride) +
+                          static_cast<std::size_t>(width)) {
+    return false;
+  }
+  for (int row = 0; row < height; ++row) {
+    const auto source =
+        pixels.subspan(static_cast<std::size_t>(row) * static_cast<std::size_t>(stride),
+                       static_cast<std::size_t>(width));
+    auto target =
+        frame_.subspan(static_cast<std::size_t>(panel_bounds.y0 + row) * vector_v2::kOverviewWidth +
+                           static_cast<std::size_t>(panel_bounds.x0),
+                       static_cast<std::size_t>(width));
+    std::copy(source.begin(), source.end(), target.begin());
+  }
+  // Settled pixels diverge from a fresh canvas compose; pan reuse must not
+  // scroll them silently.
+  frame_reusable_ = false;
+  return true;
+}
+
+LivePresentationTiming VectorV2Presenter::present_frame_region(vector_v2::PixelRect panel_bounds,
+                                                               const vector_v2::ChromeState& chrome,
+                                                               std::uint32_t event_us) {
+  if (frame_ring_bottom_ != 0) {
+    return {};
+  }
+  return present_with_overlays(panel_bounds, chrome, event_us, 0, false);
+}
+
 LivePresentationTiming VectorV2Presenter::refresh(const vector_v2::ChromeState& chrome,
                                                   std::uint32_t event_us) {
   clear_live_overlay();

@@ -41,6 +41,16 @@ struct SettledTileStats {
                                        std::span<std::uint16_t> out_pixels,
                                        SettledTileStats* stats = nullptr);
 
+// Window variant for the 25% presentation settle: renders any level-space
+// window up to kTileWidth x kTileHeight at the given zoom. At 25% the
+// authoritative overview must stay hard-edged (incremental replay depends
+// on its exactness), so callers settle into presentation pixels only.
+[[nodiscard]] bool render_settled_window(const OperationLog& log, ZoomLevel zoom,
+                                         PixelRect window_bounds,
+                                         const SettledTileWorkspace& workspace,
+                                         std::span<std::uint16_t> out_pixels,
+                                         SettledTileStats* stats = nullptr);
+
 }  // namespace tinydraw::vector_v2
 
 #endif  // TINYDRAW_VECTOR_V2_SETTLED_TILE_H

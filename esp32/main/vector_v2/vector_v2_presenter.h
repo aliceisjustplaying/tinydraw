@@ -124,6 +124,16 @@ class VectorV2Presenter {
   // canvas trails. The ring-reuse pan path is intentionally NOT patched —
   // callers must drain the pending range before panning (design §3.4).
   void attach_authority(const vector_v2::OperationLog& log) { authority_ = &log; }
+  // Settled-AA presentation seams. stage_settled_pixels copies caller
+  // pixels into the linear frame (no present; fails while a pan ring is
+  // active); present_frame_region presents already-staged frame content.
+  // The 25% settle uses these because the authoritative overview must stay
+  // hard-edged — settling happens in presentation pixels only.
+  [[nodiscard]] bool stage_settled_pixels(vector_v2::PixelRect panel_bounds,
+                                          std::span<const std::uint16_t> pixels, int stride);
+  [[nodiscard]] LivePresentationTiming present_frame_region(vector_v2::PixelRect panel_bounds,
+                                                            const vector_v2::ChromeState& chrome,
+                                                            std::uint32_t event_us);
   // Read-only transport telemetry (prepare/staging counters) for gates that
   // attribute presentation cost without owning the panel reference.
   [[nodiscard]] Co5300PanelTransport& display() { return display_; }
