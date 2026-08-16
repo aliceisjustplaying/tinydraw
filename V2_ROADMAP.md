@@ -1,6 +1,6 @@
 # TinyDraw V2 roadmap
 
-Last updated: 2026-08-16
+Last updated: 2026-08-16 (post Cold Stage B)
 
 Branch: `feat/v2-performance-followup`
 
@@ -74,8 +74,10 @@ authority work. The owner trace measured 767 samples at 3.22 ms average and
 12.40 ms maximum event→DMA with exact final authority. Lift still drains
 authority synchronously, and formal trace/optical closure remains open.
 
-- [ ] Complete the five canonical traces. At least one must be recorded from the
-      owner's finger; inject through the production buffer `offer()` path.
+- [x] Complete the five canonical traces — all five are recorded owner
+      finger input, embedded in the harness, and replayed through the
+      production buffer `offer()` path with zero lost transitions
+      (`benchmark-results/ink-trace-replay-baseline/BASELINE.md`).
 - [ ] Carry sampler timestamps through consume, geometry-ready, first command,
       first payload, DMA-complete, and optical observation.
 - [ ] Keep a latest-point visual mailbox while preserving the ordered authority
@@ -111,11 +113,12 @@ changes.
 ## Phase 3 — cold viability and rerender truth
 
 The frozen cold corpus combines tapered adversarial content with Alice's evil
-hairlines in one 910-operation, 12,157-sample document. After the wave-3
-compute campaign its three-run 400% maximum is **668.980 ms** wall: 582.9
-compute, 66.8 present, 18.4 pacing, 0.9 touch (was 1,269.157 ms). The
-operation block index stays because it helps normal documents and
-active-prefix replay.
+hairlines in one 910-operation, 12,157-sample document. After Cold Stage B
+(2026-08-16) the three-run maxima are: 50% **437.9 ms**, 100% **428.4 ms**,
+200% **488.0 ms** — all under the ≤500 ms line — and 400% **507.0 ms**
+(431.9 compute + 61.3 present + 12.1 pacing; was 668.980, originally
+1,269.157). The operation block index stays because it helps normal
+documents and active-prefix replay.
 
 Completed experiments (receipts in `benchmark-results/wave2-compositor/` and
 `benchmark-results/wave3-cold-compute/`):
@@ -138,18 +141,32 @@ Completed experiments (receipts in `benchmark-results/wave2-compositor/` and
        saturation, plain-memcpy word masks, 6x2-tile bands without block
        saturation, hybrid warm/seeded shared search.
 
-Remaining ranked candidates for the last ~170 ms (details in the wave-3
-receipt and `review_findings_2026_08_16_cold_campaign/HANDOVER.md`):
+Cold Stage B results (receipts in
+`benchmark-results/cold-stage-b-2026-08-16/RECEIPT.md`):
 
-- [ ] Op-level chord sweep: one row sweep per (operation x group) with a
-      caller-funded chord table; est. 40-60 ms.
-- [ ] Publish strided tile copy (skip the packed intermediate); est. 10-20 ms.
-- [ ] Retest word-mask scans with proven alignment (`assume_aligned`,
-      disassembly-verified inlining); est. 20-40 ms.
+6. [x] Stage B accepted: strided publication straight from the supertask
+       surface (no packed staging), O(1) raw-slot metadata (per-identity
+       directory + occupied count, host-parity-asserted), the H7 op-level
+       chord sweep (y-sorted scanline over whole-operation chord batches,
+       work-budgeted by window-clipped span pixels), and IRAM-pinned
+       presentation strip loops (flash-icache layout was consuming the pan
+       wire-budget margin on unrelated builds). Combined −26% from the
+       wave-3 endpoint.
+7. [x] Stage B rejected with mechanisms recorded: word-mask window scans
+       even with proven `l32i` inlining (`may_alias` loads; post-H7 windows
+       too short — net +4–5 ms), flat row-count slice budgets (blew the
+       idle-repair step contract), per-publish cache flush hooks, and
+       `Cache_WriteBack_All` before the sweep (interrupt-WDT panic).
+
+Remaining candidates for the last ~7 ms of 400% wall (only if the owner
+wants the line closed before autosave re-measurement):
+
 - [ ] Block-granular `MaskedRowSummary` saturation, then re-run the band-unit
       experiment on top of it.
 - [ ] PIE fixed-point probe pre-filter and presentation/compute overlap only
       if the above fall short (the latter reopens pan optical gates).
+- [ ] The 20-run reset-separated closure statistic has still never been run
+      on post-wave-3 numbers; development characterization is 3 runs.
 
 The stop/go gate stands: no generalized checkpoint system without an explicit
 owner decision. The current trajectory has not required one.
@@ -157,12 +174,16 @@ owner decision. The current trajectory has not required one.
 In the same phase, replace the current revision-only amplification metric:
 
 - [ ] Exact-compute ledger keyed by generation/revision + zoom + group.
-- [ ] Spatial-revisit ledger keyed by zoom + group and expected damage set.
-- [ ] Cause every attempt: cold miss, expected damage, eviction, view abort,
-      stale revision, repair, settled refinement, or unknown.
-- [ ] Wire both ledgers into the product `TileProducer`; fail on dropped keys.
+- [x] Spatial-revisit ledger keyed by zoom + group, wired into the product
+      canvas/producer, causing renders as cold / damage / evict / stale /
+      unexplained; pure-revisit tour receipt is amplification 1.000
+      (view-abort / repair / settled-refinement causes and the fail-on-
+      dropped-keys check remain open).
 - [ ] Gate A→B→mutate outside A→return A, local mutation, Undo/Redo, settled AA,
-      autosave, and another return.
+      autosave, and another return. Owner glass session 2026-08-16 confirmed
+      revisit re-rendering after multi-zoom drawing (cross-zoom damage +
+      eviction); first step is printing the ledger cause histogram during
+      live glass sessions so feel maps to counts.
 
 Broad group checkpoints are not funded: one 128×128 RGB565 checkpoint is
 32 KiB, while only ~306 KiB remains with the export reserve held.
@@ -209,6 +230,11 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       analytic capsule coverage composited front-to-back; publish as
       higher-quality cached tiles. First step is a host prototype on one
       group. See `review_findings_2026_08_16_cold_campaign/REVIEW.md`.
+- [ ] Fix zoom-cycle return position: cycling back to a recently explored
+      zoom must restore its saved local position per
+      `VECTOR_V2_ZOOM_NAVIGATION.md` (owner glass report 2026-08-16; the
+      cycle currently loses the 400% viewport). Mechanical fix in the
+      button-cycle path against per-zoom navigation origins.
 - [ ] Add minimap tap-to-jump using pan fallback/delta telemetry. Minimap drag
       remains post-ship.
 - [ ] Integrate V1 power off/on, battery transitions, RTC, one-shot NTP, and
@@ -221,7 +247,10 @@ Derived overview, tile, chrome, and settled caches are never persisted.
 
 ## Phase 7 — all-on release closure
 
-- [ ] Characterize representative long documents and capacity limits.
+- [ ] Characterize representative long documents and capacity limits,
+      including the never-gated 25% paths (overview present cost, append
+      feel at 25%, zoom-out-to-25 transition — 25% has no cold path by
+      design; the overview is the authority).
 - [ ] Exercise hairlines, XL strokes, dense overdraw, erasing, long gestures,
       every world edge, all zooms, and cache pressure.
 - [ ] Soak repeated pan/draw/Undo/Redo/autosave/export/power cycles for hours.
