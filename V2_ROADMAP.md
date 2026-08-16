@@ -25,8 +25,9 @@ is the only forward queue.
 
 - [x] Restore [`PRODUCT_TENETS.md`](PRODUCT_TENETS.md) and make the ship
       contract authoritative for numeric gates.
-- [x] Update the cold baseline to 663.829 ms and define closure as the maximum
-      of 20 reset-separated fixed-corpus device runs.
+- [x] Freeze the combined tapered-adversarial + evil-hairline cold corpus and
+      define closure as the maximum of 20 reset-separated device runs. Current
+      three-run development maximum is 1,269.157 ms.
 - [x] Make firmware cold pass/fail use the ≤500 ms product threshold.
 - [x] Report requested and effective panel clocks separately.
 - [x] Record the authority decision: V2 is blank baseline plus ordered vector
@@ -101,25 +102,27 @@ changes.
 
 ## Phase 3 — cold viability and rerender truth
 
-Current frozen adversarial 400% result is 663.829 ms wall: 577.667 compute,
-69.371 present, 15.618 pacing, and 1.173 touch. The operation block index stays:
-it helps normal documents and active-prefix replay, though it rejects none of
-the 1,038 genuinely intersecting adversarial candidates.
+The frozen cold corpus now combines tapered adversarial content with Sarah's
+evil hairlines in one 910-operation, 12,157-sample document. Its current
+three-run 400% maximum is 1,269.157 ms wall: 1,165.354 compute, 70.182 present,
+31.526 pacing, and 2.095 touch. The operation block index stays because it helps
+normal documents and active-prefix replay.
 
 Run these as independent experiments:
 
-1. [ ] Add exact conservative bounds for fixed-size segment chunks; report
-       operation/chunk/segment counts, metadata bytes, pixel equality, and wall.
-2. [ ] Optimize tapered-raster scanlines with incremental row/x terms and exact
-       boundary fallback; retain exhaustive and fuzz equality oracles.
-3. [ ] Batch adjacent exact publications while reporting first-exact-visible,
-       viewport-exact, publication count, resent pixels, and total wall.
+1. [x] Segment-chunk bounds removed: exact and 8.5% faster on the tapered-only
+       curved-authority device run, but below trajectory and cost 200,002 bytes
+       of scarce PSRAM. See `COLD_SEGMENT_CHUNK_RECEIPT.md`.
+2. [x] Tapered scanline recurrence rejected: exact and storage-free, but 3.3%
+       slower on device. See `COLD_RASTER_RECURRENCE_RECEIPT.md`.
+3. [x] Adjacent exact-publication batching rejected: zero resent pixels, but
+       only 1.6% wall movement and lower-zoom interaction ticks around 22 ms.
+       See `COLD_PUBLICATION_BATCH_RECEIPT.md`.
 
-After experiments 1–2, require a cumulative trajectory of at least ~15% on
-repeated device runs. After all three, every accepted run must be ≤500 ms and
-continue toward the 450 ms guard. If the fixed corpus remains above 500 ms,
-stop before generalized checkpoint caching and make an explicit owner decision
-about corpus, target, hardware, or selective cached representation.
+The bounded campaign did not establish a 15% trajectory, and the combined
+corpus remains above 500 ms. The stop/go gate is active: do not build a
+generalized checkpoint system without an explicit owner decision about target,
+hardware, corpus, or a separately bounded representation experiment.
 
 In the same phase, replace the current revision-only amplification metric:
 

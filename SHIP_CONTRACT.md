@@ -50,16 +50,20 @@ content) is the primary pre-ship complaint; the cold wait is second.**
 remembered zooms, and background sweeps are quality tiers, not gates.
 
 The closure statistic is the maximum wall time across 20 reset-separated
-device runs of the frozen `adversarial_tapered_4x` corpus at 400%, origin
-`(0,0)`, from discarded detail tiles through final exact viewport publication
-and DMA completion. An accepted run has no crash, allocation failure, authority
+device runs of the frozen `adversarial_tapered_4x+evil_hairlines` corpus at
+400%, origin `(0,0)`, from discarded detail tiles through final exact viewport
+publication and DMA completion. The combined authority contains 910 operations
+and 12,157 samples. An accepted run has no crash, allocation failure, authority
 mismatch, touch-service violation, telemetry overflow, or presentation failure.
 Development runs before autosave exists are provisional; the final 20-run
 closure has autosave and normal product services enabled.
 
-Current audited baseline: **663.829 ms wall** (577.667 ms compute, 69.371 ms
-presentation, 15.618 ms pacing, 1.173 ms touch service) in
-`benchmark-results/wave2-compositor/gate-invariant-final.log`.
+Current three-run development baseline: **1,269.157 ms maximum wall**
+(1,165.354 ms compute, 70.182 ms presentation, 31.526 ms pacing, 2.095 ms touch
+service). See
+`benchmark-results/wave2-compositor/COLD_GENERAL_BASELINE_RECEIPT.md`. The older
+663.829 ms straight-authority receipt is historical and no longer describes the
+product renderer or frozen corpus.
 
 Amplification threshold (1.25) is provisional until first measured; owner
 review after the first real measurement.
