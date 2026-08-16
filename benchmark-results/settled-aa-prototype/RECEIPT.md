@@ -63,6 +63,39 @@ slow-stroke oversampling; 4 px shrinks both. The spacing constant is a
 real design choice; the renders let the owner judge the smoothness delta
 per spacing before any constant freezes.
 
+## Addendum — why Raster V1 is not jagged and Vector V2 is (owner question)
+
+Owner observation: AA looks nice but does not fix the optical jaggedness,
+and Raster V1 has no such jaggedness. Answer, with receipts:
+
+1. **V1's historical jaggedness fix was shape smoothing** — commit
+   `d7ec88f` ("smooth sparse hardware strokes") introduced
+   `CurvedRibbonStream`'s midpoint quadratics. V2 inherited exactly that
+   model, live and committed. Smoothing is not the difference.
+2. **The difference is what gets rendered.** V1 rasterizes float geometry
+   directly at screen resolution (plus 4×4 coverage AA). V2's committed
+   authority quantizes sample centers to quarter-world units
+   (`operation_builder.cpp:122`), and at 400% zoom a quarter-world unit is
+   **one full screen pixel** (0.5 px at 200%). Slow, careful strokes emit
+   chords about as long as the quantization step, so the stored centerline
+   itself zigzags — the angularity baseline's joint_max=90° at 400% is
+   this mechanism. Hard edges amplify it; AA renders the zigzag smoothly
+   but faithfully.
+3. **Four-quadrant proof** (`slow-precise-400*-x4.png`):
+   {quantized, float-reference} × {raw, resampled-2px} through the same AA
+   compositor. The float reference (the V1-equivalent path,
+   `-ref-aa-x4.png`) shows a cleaner centerline than the committed render
+   at equal smoothing; resampling cleans the jitter component; the
+   combination (float + resampled) is the cleanest — the V1 look.
+
+**Fix candidate (owner decision needed): sixteenth-world sample units.**
+Max coordinate 1472×16 = 23,552 fits the existing `uint16` — zero storage
+cost — and gives 0.25 px centerline resolution at 400%. It is an
+authority-format change: per the dependency matrix it reopens cold
+exactness, SVG parity, and the frozen corpus statistics (same reopen class
+as the declined Stage C, but with a verified, visible justification).
+Owner has already ruled backwards compatibility out of scope.
+
 ## Reproduce
 
 ```sh

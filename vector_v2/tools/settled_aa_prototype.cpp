@@ -126,6 +126,135 @@ struct CommittedOperation {
   std::vector<vector_v2::CompactOperationSample> samples;
 };
 
+// One tapered capsule segment in level space; the unit both renderers
+// consume so committed (quantized) and float-reference geometry go through
+// the identical compositor.
+struct CapsuleChord {
+  float ax = 0;
+  float ay = 0;
+  float ar = 0;
+  float bx = 0;
+  float by = 0;
+  float br = 0;
+};
+
+struct ChordOperation {
+  std::uint16_t color = 0;
+  bool eraser = false;
+  std::vector<CapsuleChord> chords;
+};
+
+// The V1-equivalent path: midpoint quadratics over the unquantized float
+// InkPoints (screen space == level space at the drawing zoom), densely
+// subdivided. Same smoothing model as CurvedRibbonStream / the prepared
+// curve units — the only variable versus the committed path is the
+// quarter-world sample quantization (and chunk boundaries).
+std::vector<ChordOperation> float_reference_operations(
+    std::span<const vector_v2::TraceEvent> events, float brush_size, float resample_spacing_px,
+    std::uint16_t color) {
+  tinydraw::InkConfig config;
+  config.size = brush_size;
+  tinydraw::InkStream ink(config);
+  std::vector<ChordOperation> operations;
+  std::vector<tinydraw::InkPoint> stroke;
+  const auto commit_stroke = [&](std::span<const tinydraw::InkPoint> raw) {
+    const auto points = resample_arc_length(raw, resample_spacing_px);
+    if (points.size() < 2U) {
+      return;
+    }
+    ChordOperation operation;
+    operation.color = color;
+    constexpr int kSubdivisions = 8;
+    const auto emit_quadratic = [&](const tinydraw::InkPoint& start,
+                                    const tinydraw::InkPoint& control,
+                                    const tinydraw::InkPoint& end) {
+      float px = start.position.x;
+      float py = start.position.y;
+      float pr = start.radius;
+      for (int step = 1; step <= kSubdivisions; ++step) {
+        const float t = static_cast<float>(step) / kSubdivisions;
+        const float u = 1.0F - t;
+        const float x =
+            u * u * start.position.x + 2.0F * u * t * control.position.x + t * t * end.position.x;
+        const float y =
+            u * u * start.position.y + 2.0F * u * t * control.position.y + t * t * end.position.y;
+        const float r = u * u * start.radius + 2.0F * u * t * control.radius + t * t * end.radius;
+        operation.chords.push_back({px, py, pr, x, y, r});
+        px = x;
+        py = y;
+        pr = r;
+      }
+    };
+    const auto midpoint = [](const tinydraw::InkPoint& a, const tinydraw::InkPoint& b) {
+      tinydraw::InkPoint result = b;
+      result.position.x = (a.position.x + b.position.x) * 0.5F;
+      result.position.y = (a.position.y + b.position.y) * 0.5F;
+      result.radius = (a.radius + b.radius) * 0.5F;
+      return result;
+    };
+    if (points.size() == 2U) {
+      operation.chords.push_back({points[0].position.x, points[0].position.y, points[0].radius,
+                                  points[1].position.x, points[1].position.y, points[1].radius});
+    } else {
+      emit_quadratic(points[0], points[0], midpoint(points[0], points[1]));
+      for (std::size_t index = 1; index + 1U < points.size(); ++index) {
+        emit_quadratic(midpoint(points[index - 1U], points[index]), points[index],
+                       midpoint(points[index], points[index + 1U]));
+      }
+      emit_quadratic(midpoint(points[points.size() - 2U], points.back()), points.back(),
+                     points.back());
+    }
+    operations.push_back(std::move(operation));
+  };
+  for (const vector_v2::TraceEvent& event : events) {
+    const tinydraw::TouchPoint touch{
+        .x = static_cast<float>(event.x),
+        .y = static_cast<float>(event.y),
+        .timestamp_us = static_cast<std::uint32_t>(event.t_us),
+    };
+    if (event.kind == vector_v2::TraceEventKind::kDown) {
+      stroke.clear();
+      stroke.push_back(ink.begin(touch));
+      continue;
+    }
+    if (stroke.empty()) {
+      continue;
+    }
+    if (event.kind == vector_v2::TraceEventKind::kMove) {
+      stroke.push_back(ink.update(touch));
+      continue;
+    }
+    stroke.push_back(ink.finish(touch));
+    commit_stroke(stroke);
+    stroke.clear();
+  }
+  return operations;
+}
+
+std::vector<ChordOperation> chords_from_committed(const std::vector<CommittedOperation>& committed,
+                                                  vector_v2::ZoomLevel zoom) {
+  std::vector<ChordOperation> operations;
+  for (const CommittedOperation& operation : committed) {
+    ChordOperation out;
+    out.color = operation.color;
+    out.eraser = operation.tool == vector_v2::OperationTool::kEraser;
+    const auto samples = std::span<const vector_v2::CompactOperationSample>(operation.samples);
+    for (std::size_t endpoint = 1; endpoint < samples.size(); ++endpoint) {
+      const auto unit = vector_v2::prepare_incremental_curve_unit(samples, endpoint, zoom);
+      if (!unit.has_value()) {
+        continue;
+      }
+      for (std::size_t step = 0; step < unit->step_count; ++step) {
+        const auto& chord = unit->steps[step];
+        out.chords.push_back({chord.first_x, chord.first_y, chord.first_radius, chord.second_x,
+                              chord.second_y, chord.second_radius});
+      }
+    }
+    operations.push_back(std::move(out));
+  }
+  return operations;
+}
+
 // Trace -> InkStream -> (optional resample) -> product chunking. Mirrors the
 // angularity tool's pipeline, with the resampler inserted between the ink
 // stream and the builder exactly where review §9.4 puts it.
@@ -228,8 +357,7 @@ struct AaStats {
   std::size_t interior_pixels = 0;
 };
 
-AaStats render_analytic(const std::vector<CommittedOperation>& operations,
-                        vector_v2::ZoomLevel zoom, const Window& window,
+AaStats render_analytic(const std::vector<ChordOperation>& operations, const Window& window,
                         std::span<std::uint16_t> out_pixels) {
   const std::size_t pixel_count =
       static_cast<std::size_t>(window.width) * static_cast<std::size_t>(window.height);
@@ -241,22 +369,16 @@ AaStats render_analytic(const std::vector<CommittedOperation>& operations,
   AaStats stats;
 
   for (std::size_t op_index = operations.size(); op_index-- > 0U;) {
-    const CommittedOperation& operation = operations[op_index];
+    const ChordOperation& operation = operations[op_index];
     std::fill(op_alpha.begin(), op_alpha.end(), 0.0F);
     bool touched = false;
-    const auto samples = std::span<const vector_v2::CompactOperationSample>(operation.samples);
-    for (std::size_t endpoint = 1; endpoint < samples.size(); ++endpoint) {
-      const auto unit = vector_v2::prepare_incremental_curve_unit(samples, endpoint, zoom);
-      if (!unit.has_value()) {
-        continue;
-      }
-      for (std::size_t step = 0; step < unit->step_count; ++step) {
-        const auto& chord = unit->steps[step];
-        const float ax = chord.first_x - static_cast<float>(window.x0);
-        const float ay = chord.first_y - static_cast<float>(window.y0);
-        const float bx = chord.second_x - static_cast<float>(window.x0);
-        const float by = chord.second_y - static_cast<float>(window.y0);
-        const float r_max = std::max(chord.first_radius, chord.second_radius);
+    {
+      for (const CapsuleChord& chord : operation.chords) {
+        const float ax = chord.ax - static_cast<float>(window.x0);
+        const float ay = chord.ay - static_cast<float>(window.y0);
+        const float bx = chord.bx - static_cast<float>(window.x0);
+        const float by = chord.by - static_cast<float>(window.y0);
+        const float r_max = std::max(chord.ar, chord.br);
         const int px0 = std::max(0, static_cast<int>(std::floor(std::min(ax, bx) - r_max - 1.5F)));
         const int py0 = std::max(0, static_cast<int>(std::floor(std::min(ay, by) - r_max - 1.5F)));
         const int px1 =
@@ -278,7 +400,7 @@ AaStats render_analytic(const std::vector<CommittedOperation>& operations,
             const float dx = apx - t * abx;
             const float dy = apy - t * aby;
             const float d = std::sqrt(dx * dx + dy * dy);
-            const float r = chord.first_radius + (chord.second_radius - chord.first_radius) * t;
+            const float r = chord.ar + (chord.br - chord.ar) * t;
             const float alpha = std::clamp(0.5F + (r - d), 0.0F, 1.0F);
             if (alpha > 0.0F) {
               const std::size_t at =
@@ -294,8 +416,7 @@ AaStats render_analytic(const std::vector<CommittedOperation>& operations,
     if (!touched) {
       continue;
     }
-    const std::uint16_t rgb565 =
-        operation.tool == vector_v2::OperationTool::kEraser ? 0xFFFFU : operation.color;
+    const std::uint16_t rgb565 = operation.eraser ? 0xFFFFU : operation.color;
     const float cr = static_cast<float>(((rgb565 >> 11U) & 0x1FU) * 255U / 31U);
     const float cg = static_cast<float>(((rgb565 >> 5U) & 0x3FU) * 255U / 63U);
     const float cb = static_cast<float>((rgb565 & 0x1FU) * 255U / 31U);
@@ -513,7 +634,13 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "baseline render failed\n");
     return 1;
   }
-  const AaStats stats = render_analytic(operations, *zoom, window, analytic);
+  const AaStats stats = render_analytic(chords_from_committed(operations, *zoom), window, analytic);
+  // The V1-equivalent float-geometry reference: same compositor, unquantized
+  // centerline. Any shape difference against the committed AA render is the
+  // quarter-world sample quantization (plus chunk-boundary joints).
+  std::vector<std::uint16_t> reference(pixel_count);
+  static_cast<void>(render_analytic(
+      float_reference_operations(*events, brush_size, resample_px, color), window, reference));
 
   bool ok = write_png(out_prefix + "-baseline.png", baseline, window.width, window.height) &&
             write_png(out_prefix + "-aa.png", analytic, window.width, window.height);
@@ -538,7 +665,9 @@ int main(int argc, char** argv) {
     return write_png(path, magnified, crop_width * kMagnify, crop_height * kMagnify);
   };
   ok = ok && write_crop(baseline, out_prefix + "-baseline-x4.png") &&
-       write_crop(analytic, out_prefix + "-aa-x4.png");
+       write_crop(analytic, out_prefix + "-aa-x4.png") &&
+       write_png(out_prefix + "-ref-aa.png", reference, window.width, window.height) &&
+       write_crop(reference, out_prefix + "-ref-aa-x4.png");
   if (!ok) {
     return 1;
   }
