@@ -176,3 +176,17 @@ owner-gated), PIE fixed-point probing (§4.3), block-granular saturation
 (§4.5), or accept after the 20-run closure statistic. 25%-zoom gates
 (present cost, append feel, zoom-out transition) are a noted future
 addition — 25% has no cold path by design (the overview IS the authority).
+
+## Addendum — owner ruling + hold-the-line guard (2026-08-16, later session)
+
+Owner accepted the 7 ms residual until autosave exists ("ignore as long as
+it does not regress further"); micro-candidates parked. Encoded as
+`kColdViewport400HoldTheLineUs = 510'000` (507.0 ms measured max + twice
+the ≤1.5 ms run spread), applied only to the frozen-corpus 400% gate.
+Device verification (`logs/holdline-verify-1.log`): 400% wall 499,950 µs
+against budget 510,000, pass=1; verdict vector `general_cold=1` with only
+the pre-existing reds remaining (`overlap_cold=0` from the 50% overlap
+workload — 621.9 ms, red since wave-3, surfaced for owner triage — and
+`mixed_draw=0`); ledger amplification=1.000 stale=0 unexplained=0; all
+five INKTRACE pass=1. Full rulings in SHIP_CONTRACT.md "Owner decisions —
+2026-08-16".
