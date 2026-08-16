@@ -1056,9 +1056,11 @@ TEST_CASE("deferred absorption equals synchronous in-place appends") {
                                                    synchronous.in_place_workspace(), priority_view);
       REQUIRE(synchronous_result.has_value());
       // Deferred path: authority publishes immediately, the canvas trails.
-      const auto authority = deferred.log.append(chunk);
+      const auto authority = vector_v2::append_authority_only(deferred.log, chunk);
       REQUIRE(authority.has_value());
-      CHECK(*authority == synchronous_result->identity);
+      CHECK(authority->identity == synchronous_result->identity);
+      CHECK(authority->affected_world_bounds == synchronous_result->affected_world_bounds);
+      CHECK(authority->published_tiles == 0U);
       ++appended_operations;
       CHECK(vector_v2::pending_operation_count(deferred.log, deferred.canvas) ==
             deferred.log.operation_count() -
@@ -1069,6 +1071,35 @@ TEST_CASE("deferred absorption equals synchronous in-place appends") {
                                                              deferred.in_place_workspace(),
                                                              priority_view)
                         .has_value());
+      }
+      // The committed overlay contract: composed trailing canvas + pending
+      // overlay equals full ground-truth replay of the whole log, at every
+      // trailing depth (including zero, where the overlay is a no-op).
+      {
+        std::vector<std::uint16_t> patched(vector_v2::kOverviewPixels);
+        const auto stats = deferred.canvas.compose_view(priority_view, patched);
+        REQUIRE(stats.has_value());
+        REQUIRE(vector_v2::overlay_pending_operations(deferred.log, deferred.canvas,
+                                                      {.zoom = priority_view.zoom,
+                                                       .level_bounds = priority_view.level_pixels,
+                                                       .pixels = patched,
+                                                       .stride = vector_v2::kOverviewWidth}));
+        std::vector<std::uint16_t> direct(vector_v2::kOverviewPixels);
+        prefix_replay(deferred.log, deferred.log.operation_count(), priority_view, direct);
+        CHECK(patched == direct);
+        // A window that no pending operation touches stays byte-identical.
+        // Level (0,0)-(32,32) at 400% maps to world (0,0)-(8,8); the gesture
+        // generator never emits samples there (x,y start at 80 quarter-units
+        // with positive drift), so the overlay must not write a pixel.
+        std::array<std::uint16_t, 32U * 32U> untouched{};
+        untouched.fill(0x1234U);
+        const std::array<std::uint16_t, 32U * 32U> reference_window = untouched;
+        REQUIRE(vector_v2::overlay_pending_operations(deferred.log, deferred.canvas,
+                                                      {.zoom = priority_view.zoom,
+                                                       .level_bounds = {0, 0, 32, 32},
+                                                       .pixels = untouched,
+                                                       .stride = 32}));
+        CHECK(untouched == reference_window);
       }
       while (vector_v2::pending_operation_count(deferred.log, deferred.canvas) >= drain_threshold) {
         const auto absorbed = vector_v2::absorb_pending_operation(

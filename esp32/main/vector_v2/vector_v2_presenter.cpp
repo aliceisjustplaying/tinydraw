@@ -9,6 +9,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "tinydraw/vector_v2/incremental_document.h"
 
 namespace tinydraw::esp32 {
 namespace {
@@ -153,6 +154,20 @@ vector_v2::OperationPoint VectorV2Presenter::operation_point(InkPoint point) con
   };
 }
 
+void VectorV2Presenter::overlay_pending(vector_v2::PixelRect level_bounds,
+                                        std::span<std::uint16_t> pixels, int stride) {
+  // Lockstep is the overwhelmingly common case; the revision check keeps the
+  // patch free when nothing is pending. A failed overlay is deliberately
+  // swallowed: composed canvas pixels are a correct (trailing) fallback, and
+  // the drain loop converges the canvas regardless.
+  if (authority_ == nullptr || authority_->current_revision() == canvas_.current_revision()) {
+    return;
+  }
+  static_cast<void>(vector_v2::overlay_pending_operations(
+      *authority_, canvas_,
+      {.zoom = zoom(), .level_bounds = level_bounds, .pixels = pixels, .stride = stride}));
+}
+
 LivePresentationTiming VectorV2Presenter::refresh(const vector_v2::ChromeState& chrome,
                                                   std::uint32_t event_us) {
   clear_live_overlay();
@@ -164,10 +179,12 @@ LivePresentationTiming VectorV2Presenter::refresh(const vector_v2::ChromeState& 
   frame_ring_ = {};
   frame_ring_bottom_ = 0;
   const std::int64_t compose_started = esp_timer_get_time();
-  const auto stats = canvas_.compose_view(navigation_.view(), frame_);
+  const auto view = navigation_.view();
+  const auto stats = canvas_.compose_view(view, frame_);
   if (!stats.has_value()) {
     return {};
   }
+  overlay_pending(view.level_pixels, frame_, vector_v2::kOverviewWidth);
   auto timing =
       present_with_overlays({0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight}, chrome,
                             event_us, esp_timer_get_time() - compose_started, true);
@@ -310,6 +327,7 @@ LivePresentationTiming VectorV2Presenter::compose_and_present(vector_v2::PixelRe
   if (!stats.has_value()) {
     return {};
   }
+  overlay_pending(level_bounds, destination, width);
   for (int row = 0; row < height; ++row) {
     const auto source = destination.subspan(static_cast<std::size_t>(row) * width, width);
     auto target =

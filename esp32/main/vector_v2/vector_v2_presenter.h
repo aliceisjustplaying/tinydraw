@@ -53,6 +53,11 @@ inline constexpr std::size_t kInteractiveChunkSampleLimit = 32;
 // Bounds only the offscreen raw retention pass of an in-place append; see
 // InPlaceRetentionBudget. It does not bound the complete commit.
 inline constexpr std::int64_t kInPlaceRetentionBudgetUs = 10'000;
+// Committed-overlay pending-range high-water mark. A chunk commit that
+// finds this many unabsorbed operations pays one synchronous absorption
+// first (design §3.5 degradation: today's behavior as the worst case),
+// bounding both the drain backlog and the per-present overlay repaint cost.
+inline constexpr std::size_t kPendingOperationHighWater = 24;
 // Cold-fill producer slices run to this deadline before yielding to input.
 // The worst observed single resumable produce_next step is ~11.2 ms (a seed-7
 // publication step; bounded by the producer's internal budgets), so the
@@ -107,6 +112,12 @@ class VectorV2Presenter {
                     std::span<std::uint16_t> chrome_cache_pixels);
 
   [[nodiscard]] bool ready() const;
+  // Committed-overlay seam (VECTOR_V2_COMMITTED_OVERLAY_DESIGN.md §3.2):
+  // with a read-only authority attached, every frame/region compose is
+  // patched with the pending operation range so glass stays exact while the
+  // canvas trails. The ring-reuse pan path is intentionally NOT patched —
+  // callers must drain the pending range before panning (design §3.4).
+  void attach_authority(const vector_v2::OperationLog& log) { authority_ = &log; }
   // Read-only transport telemetry (prepare/staging counters) for gates that
   // attribute presentation cost without owning the panel reference.
   [[nodiscard]] Co5300PanelTransport& display() { return display_; }
@@ -209,7 +220,11 @@ class VectorV2Presenter {
   void paint_optical_row_pattern(const PanelStageSurface& surface);
 #endif
 
+  void overlay_pending(vector_v2::PixelRect level_bounds, std::span<std::uint16_t> pixels,
+                       int stride);
+
   vector_v2::MaterializedCanvas& canvas_;
+  const vector_v2::OperationLog* authority_ = nullptr;
   vector_v2::NavigationState& navigation_;
   vector_v2::DisplayScheduler& scheduler_;
   Co5300PanelTransport& display_;
