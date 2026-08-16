@@ -2928,6 +2928,8 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
     }
     tinydraw::InkConfig ink_config;
     ink_config.size = spec.brush_size;
+    // Mirror the product coordinator's V2 streamline (vector_v2_app.cpp).
+    ink_config.streamline = 0.4F;
     tinydraw::InkStream ink(ink_config);
     tinydraw::CurvedRibbonStream ribbon;
     vector_v2::ChainedOperationBuilder builder(builder_storage, kInteractiveChunkSampleLimit);

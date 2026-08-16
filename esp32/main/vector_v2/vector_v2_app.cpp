@@ -915,6 +915,10 @@ void run_vector_v2_app() {
   chrome.battery_charging = initial_power.charging;
   InkConfig ink_config;
   ink_config.size = vector_v2::brush_size(chrome.size);
+  // Owner experiment 2026-08-16: stronger input smoothing for V2 (default
+  // 0.35 stays for the Raster V1 fallback). Receipts:
+  // benchmark-results/settled-aa-prototype/ streamline sweep.
+  ink_config.streamline = 0.4F;
   InkStream ink(ink_config);
   CurvedRibbonStream ribbon;
   const auto initial = presenter.refresh(chrome);
@@ -1033,7 +1037,12 @@ void run_vector_v2_app() {
     poll_max_us = std::max(poll_max_us, loop_us - poll_previous_us);
     poll_previous_us = loop_us;
 
-    if (!pressed && power.ready() && loop_us - power_sampled_us >= kPowerRefreshUs) {
+    // The battery redraw is a full-frame present (60-140 ms on dense
+    // content); it is cosmetic and must never ride the post-lift window or
+    // the drain (owner glass receipt: it was the 85 ms "lift spike").
+    if (!pressed && !lift_timing.pending && !stroke_report.pending &&
+        vector_v2::pending_operation_count(log, canvas) == 0U && power.ready() &&
+        loop_us - power_sampled_us >= kPowerRefreshUs) {
       const PowerStatus next_power = power.read();
       power_sampled_us = loop_us;
       if (next_power.valid && next_power != current_power) {

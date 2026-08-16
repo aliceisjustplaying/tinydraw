@@ -45,6 +45,10 @@ namespace {
 
 constexpr std::size_t kProductChunkSampleLimit = 32;  // kInteractiveChunkSampleLimit
 
+// Input-smoothing experiment knob (owner 2026-08-16): perfect-freehand
+// streamline; product default is 0.35 (tinydraw/ink_config.h).
+float g_streamline = 0.35F;
+
 float zoom_scale_of(vector_v2::ZoomLevel zoom) {
   switch (zoom) {
     case vector_v2::ZoomLevel::k25Percent:
@@ -154,6 +158,7 @@ std::vector<ChordOperation> float_reference_operations(
     std::uint16_t color) {
   tinydraw::InkConfig config;
   config.size = brush_size;
+  config.streamline = g_streamline;
   tinydraw::InkStream ink(config);
   std::vector<ChordOperation> operations;
   std::vector<tinydraw::InkPoint> stroke;
@@ -265,6 +270,7 @@ std::vector<CommittedOperation> committed_operations(std::span<const vector_v2::
   const float inverse_scale = 1.0F / zoom_scale_of(zoom);
   tinydraw::InkConfig config;
   config.size = brush_size;
+  config.streamline = g_streamline;
   tinydraw::InkStream ink(config);
   std::vector<vector_v2::CompactOperationSample> storage(65'536);
   vector_v2::ChainedOperationBuilder builder(storage, kProductChunkSampleLimit);
@@ -588,6 +594,8 @@ int main(int argc, char** argv) {
       brush_size = static_cast<float>(std::atof(next_value()));
     } else if (argument == "--resample") {
       resample_px = static_cast<float>(std::atof(next_value()));
+    } else if (argument == "--streamline") {
+      g_streamline = static_cast<float>(std::atof(next_value()));
     } else if (argument == "--out") {
       out_prefix = next_value();
     } else if (argument == "--color") {
