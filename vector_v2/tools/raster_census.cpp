@@ -217,8 +217,8 @@ bool append_realistic_seed7(Rig& rig) {
     }
     for (std::size_t index = 0; index < input.size(); ++index) {
       converted[index] = {
-          .x_quarter = static_cast<std::uint16_t>(std::lround(input[index].x * 4.0F)),
-          .y_quarter = static_cast<std::uint16_t>(std::lround(input[index].y * 4.0F)),
+          .x_quarter = static_cast<std::uint16_t>(std::lround(input[index].x * 16.0F)),
+          .y_quarter = static_cast<std::uint16_t>(std::lround(input[index].y * 16.0F)),
           .radius_256 = static_cast<std::uint16_t>(std::lround(input[index].radius * 256.0F)),
           .elapsed_ms = static_cast<std::uint16_t>(index * 15U),
       };
@@ -249,8 +249,8 @@ bool append_overlap_corpus(Rig& rig) {
           64U + index * static_cast<std::size_t>(v2::kWorldWidth - 128) / (kSamplesPerStroke - 1U);
       const std::size_t y = 320U + triangle * 32U + stroke * 3U;
       samples[index] = {
-          .x_quarter = static_cast<std::uint16_t>(x * 4U),
-          .y_quarter = static_cast<std::uint16_t>(y * 4U),
+          .x_quarter = static_cast<std::uint16_t>(x * 16U),
+          .y_quarter = static_cast<std::uint16_t>(y * 16U),
           .radius_256 = static_cast<std::uint16_t>(80U * 256U),
           .elapsed_ms = static_cast<std::uint16_t>(index * 8U),
       };
@@ -502,8 +502,8 @@ bool append_hairline_stroke(Rig& rig, const v2::IncrementalDocumentWorkspace& wo
     std::size_t count = 0;
     if (continuing) {
       chunk[count++] = {
-          .x_quarter = static_cast<std::uint16_t>(x * 4.0F),
-          .y_quarter = static_cast<std::uint16_t>(y * 4.0F),
+          .x_quarter = static_cast<std::uint16_t>(x * 16.0F),
+          .y_quarter = static_cast<std::uint16_t>(y * 16.0F),
           .radius_256 = static_cast<std::uint16_t>(radius * 256.0F),
           .elapsed_ms = elapsed_ms,
       };
@@ -520,8 +520,8 @@ bool append_hairline_stroke(Rig& rig, const v2::IncrementalDocumentWorkspace& wo
         remaining -= step;
       }
       chunk[count++] = {
-          .x_quarter = static_cast<std::uint16_t>(x * 4.0F),
-          .y_quarter = static_cast<std::uint16_t>(y * 4.0F),
+          .x_quarter = static_cast<std::uint16_t>(x * 16.0F),
+          .y_quarter = static_cast<std::uint16_t>(y * 16.0F),
           .radius_256 = static_cast<std::uint16_t>(radius * 256.0F),
           .elapsed_ms = elapsed_ms,
       };
@@ -816,8 +816,8 @@ int run_fuzz_collinear(std::uint32_t cases, std::uint32_t seed) {
     std::vector<v2::CompactOperationSample> op_samples;
     const bool head = (rng() % 2U) == 0U;
     if (head) {
-      op_samples.push_back({.x_quarter = static_cast<std::uint16_t>(origin_x - 40),
-                            .y_quarter = static_cast<std::uint16_t>(origin_y + 30),
+      op_samples.push_back({.x_quarter = static_cast<std::uint16_t>((origin_x - 40) * 4),
+                            .y_quarter = static_cast<std::uint16_t>((origin_y + 30) * 4),
                             .radius_256 = radius});
     }
     for (int i = 0; i < run_length; ++i) {
@@ -826,8 +826,8 @@ int run_fuzz_collinear(std::uint32_t cases, std::uint32_t seed) {
       if (x < 0 || y < 0 || x > v2::kWorldWidth * 4 || y > v2::kWorldHeight * 4) {
         break;
       }
-      op_samples.push_back({.x_quarter = static_cast<std::uint16_t>(x),
-                            .y_quarter = static_cast<std::uint16_t>(y),
+      op_samples.push_back({.x_quarter = static_cast<std::uint16_t>(x * 4),
+                            .y_quarter = static_cast<std::uint16_t>(y * 4),
                             .radius_256 = radius,
                             .elapsed_ms = static_cast<std::uint16_t>(op_samples.size())});
     }
@@ -888,8 +888,8 @@ int run_fuzz_docs(std::uint32_t cases, std::uint32_t seed) {
         std::vector<v2::CompactOperationSample> op_samples;
         for (std::size_t i = 0; i < sample_count; ++i) {
           op_samples.push_back(
-              {.x_quarter = static_cast<std::uint16_t>(std::clamp(x, 0, v2::kWorldWidth * 4)),
-               .y_quarter = static_cast<std::uint16_t>(std::clamp(y, 0, v2::kWorldHeight * 4)),
+              {.x_quarter = static_cast<std::uint16_t>(std::clamp(x, 0, v2::kWorldWidth * 4) * 4),
+               .y_quarter = static_cast<std::uint16_t>(std::clamp(y, 0, v2::kWorldHeight * 4) * 4),
                .radius_256 = constant_radius ? base_radius
                                              : static_cast<std::uint16_t>(
                                                    64U + (base_radius + i * 173U) % 2'400U),

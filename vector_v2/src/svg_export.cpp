@@ -58,8 +58,8 @@ class Writer {
 
 InkPoint ink_point(CompactOperationSample sample) {
   return {
-      .position = {.x = static_cast<float>(sample.x_quarter) * 0.25F,
-                   .y = static_cast<float>(sample.y_quarter) * 0.25F},
+      .position = {.x = static_cast<float>(sample.x_quarter) * 0.0625F,
+                   .y = static_cast<float>(sample.y_quarter) * 0.0625F},
       .pressure = 0.0F,
       .radius = static_cast<float>(sample.radius_256) / 256.0F,
       .distance = 0.0F,

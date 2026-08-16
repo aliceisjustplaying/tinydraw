@@ -23,9 +23,9 @@ TEST_CASE("operation builder quantizes one bounded stroke") {
   CHECK(append->tool == vector_v2::OperationTool::kPen);
   CHECK(append->color == 0x1234U);
   REQUIRE(append->samples.size() == 3U);
-  CHECK(append->samples[0] == vector_v2::CompactOperationSample{5, 10, 768, 0});
-  CHECK(append->samples[1] == vector_v2::CompactOperationSample{16, 20, 640, 2});
-  CHECK(append->samples[2] == vector_v2::CompactOperationSample{24, 28, 512, 4});
+  CHECK(append->samples[0] == vector_v2::CompactOperationSample{20, 40, 768, 0});
+  CHECK(append->samples[1] == vector_v2::CompactOperationSample{64, 80, 640, 2});
+  CHECK(append->samples[2] == vector_v2::CompactOperationSample{96, 112, 512, 4});
 }
 
 TEST_CASE("operation builder coalesces quantized duplicate positions") {
@@ -41,7 +41,7 @@ TEST_CASE("operation builder coalesces quantized duplicate positions") {
   REQUIRE(append.has_value());
   REQUIRE(append->samples.size() == 2U);
   CHECK(append->samples[0].elapsed_ms == 0U);
-  CHECK(append->samples[1].x_quarter == 44U);
+  CHECK(append->samples[1].x_quarter == 176U);
 }
 
 TEST_CASE("operation builder rejects malformed points and invalid time") {
@@ -68,7 +68,7 @@ TEST_CASE("operation builder publishes an exactly full stroke without its lift p
       builder.finish({.world_x = 2.0F, .world_y = 2.0F, .radius = 1.0F, .timestamp_us = 1'000U});
   REQUIRE(append.has_value());
   CHECK(append->samples.size() == 1U);
-  CHECK(append->samples.front().x_quarter == 4U);
+  CHECK(append->samples.front().x_quarter == 16U);
   CHECK(builder.overflowed());
   CHECK_FALSE(builder.active());
 }

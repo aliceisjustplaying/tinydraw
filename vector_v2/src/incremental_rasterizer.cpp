@@ -104,10 +104,12 @@ Segment make_segment(const Sample& first, const Sample& second) {
 }
 
 Sample scaled_sample(CompactOperationSample sample, ZoomLevel zoom) {
+  // 1/16 is an exact binary fraction, so this stays bit-identical to a
+  // division by kSampleUnitsPerWorldUnit without the libcall.
   const float scale = zoom_scale(zoom);
   return {
-      .x = static_cast<float>(sample.x_quarter) * 0.25F * scale,
-      .y = static_cast<float>(sample.y_quarter) * 0.25F * scale,
+      .x = static_cast<float>(sample.x_quarter) * 0.0625F * scale,
+      .y = static_cast<float>(sample.y_quarter) * 0.0625F * scale,
       .radius =
           std::max(static_cast<float>(sample.radius_256) / 256.0F * scale, kMinimumScreenRadius),
   };
