@@ -50,7 +50,9 @@ inline constexpr std::size_t kInteractiveChunkSampleLimit = 32;
 // (~2 ms) + the commit tail (~1.5 ms); 10 ms keeps that under the 15 ms
 // alarm. The uninterruptible full-width 25% overview band replay (~13.7 ms
 // worst) is the other measured ceiling and the next optimization target.
-inline constexpr std::int64_t kInPlaceCommitBudgetUs = 10'000;
+// Bounds only the offscreen raw retention pass of an in-place append; see
+// InPlaceRetentionBudget. It does not bound the complete commit.
+inline constexpr std::int64_t kInPlaceRetentionBudgetUs = 10'000;
 // Cold-fill producer slices run to this deadline before yielding to input.
 // The worst observed single resumable produce_next step is ~11.2 ms (a seed-7
 // publication step; bounded by the producer's internal budgets), so the

@@ -21,6 +21,19 @@ struct IncrementalDocumentWorkspace {
   std::span<TileKey> affected_keys{};
 };
 
+// Wall time of each in-place commit phase, measured only when a time source
+// is provided. Only offscreen raw-tile retention is deadline-bounded; every
+// other phase is workload-bounded, so these attributions — not the retention
+// budget — explain the caller-visible poll gap.
+struct InPlaceAppendPhases {
+  std::int64_t prepare_us = 0;         // validation + log preparation
+  std::int64_t overview_us = 0;        // overview scratch copy + affected replay
+  std::int64_t enumerate_us = 0;       // resident enumeration + edit validation
+  std::int64_t uniform_retain_us = 0;  // uniform retention / materialize + paint
+  std::int64_t raw_retain_us = 0;      // raw in-place painting (visible + budgeted offscreen)
+  std::int64_t commit_us = 0;          // invalidation + revision metadata commit
+};
+
 struct IncrementalAppendResult {
   OperationIdentity identity{};
   PixelRect affected_world_bounds{};
@@ -34,6 +47,7 @@ struct IncrementalAppendResult {
   // Identities invalidated at zooms other than the priority zoom by an
   // in-place commit; the cold work this stroke deferred to later visits.
   std::size_t cross_zoom_invalidated = 0;
+  InPlaceAppendPhases phases{};
 };
 
 enum class IncrementalPublicationScope : std::uint8_t {
@@ -72,12 +86,16 @@ struct InPlaceAppendWorkspace {
 
 inline constexpr std::size_t kInPlaceTileMaskBytes = (kTilePixels + 7U) / 8U;
 
-// Optional wall-clock bound for one in-place commit. When a time source is
-// provided, tile painting stops at deadline and every unpainted affected tile
-// is dropped to correct overview fallback for lazy re-production; the
-// interactive poll gap is then bounded by construction instead of by
-// workload. A null time source keeps painting unbounded.
-struct InPlaceCommitBudget {
+// Optional wall-clock bound for the offscreen raw-tile retention phase of an
+// in-place commit — and only that phase. Log preparation, the overview
+// region replay, enumeration, uniform retention, visible raw tiles (dropping
+// one is a visible blur, rejected on glass), and the metadata commit are all
+// workload-bounded and run to completion regardless of the deadline. When the
+// deadline passes, every unpainted *offscreen* affected tile is dropped to
+// correct overview fallback for lazy re-production. A null time source keeps
+// offscreen painting unbounded; the time source also enables the per-phase
+// timing in IncrementalAppendResult.
+struct InPlaceRetentionBudget {
   std::int64_t (*now_us)() = nullptr;
   std::int64_t budget_us = 0;
 };
@@ -99,7 +117,7 @@ struct InPlaceCommitBudget {
 [[nodiscard]] std::optional<IncrementalAppendResult> append_incrementally_in_place(
     OperationLog& log, MaterializedCanvas& canvas, const OperationAppend& append_request,
     const InPlaceAppendWorkspace& workspace,
-    std::optional<ViewRequest> priority_view = std::nullopt, InPlaceCommitBudget budget = {});
+    std::optional<ViewRequest> priority_view = std::nullopt, InPlaceRetentionBudget budget = {});
 
 // Coordinates an authoritative snapshot restore. The caller-owned pixels must
 // not alias log or canvas storage. Validation is completed before either state

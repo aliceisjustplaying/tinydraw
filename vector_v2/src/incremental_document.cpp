@@ -218,7 +218,7 @@ struct InPlaceRetainScope {
   const OperationAppend& operation;
   std::uint16_t painted_color;
   const std::optional<ViewRequest>& priority_view;
-  const InPlaceCommitBudget& budget;
+  const InPlaceRetentionBudget& budget;
   std::int64_t deadline_us;
   [[nodiscard]] bool over_budget() const {
     return budget.now_us != nullptr && budget.now_us() >= deadline_us;
@@ -291,9 +291,18 @@ std::size_t retain_raw_tiles(MaterializedCanvas& canvas, const InPlaceRetainScop
 }
 
 std::size_t retain_affected_tiles(MaterializedCanvas& canvas, const InPlaceRetainScope& scope,
-                                  std::span<TileKey> affected, std::span<std::uint8_t> tile_mask) {
+                                  std::span<TileKey> affected, std::span<std::uint8_t> tile_mask,
+                                  InPlaceAppendPhases& phases) {
+  const auto stamp = [&scope]() {
+    return scope.budget.now_us != nullptr ? scope.budget.now_us() : 0;
+  };
+  const std::int64_t uniform_started_us = stamp();
   const std::size_t retained = retain_uniform_tiles(canvas, scope, affected, tile_mask);
-  return retain_raw_tiles(canvas, scope, affected, tile_mask, retained);
+  const std::int64_t raw_started_us = stamp();
+  const std::size_t result = retain_raw_tiles(canvas, scope, affected, tile_mask, retained);
+  phases.uniform_retain_us = raw_started_us - uniform_started_us;
+  phases.raw_retain_us = stamp() - raw_started_us;
+  return result;
 }
 
 }  // namespace
@@ -301,10 +310,14 @@ std::size_t retain_affected_tiles(MaterializedCanvas& canvas, const InPlaceRetai
 std::optional<IncrementalAppendResult> append_incrementally_in_place(
     OperationLog& log, MaterializedCanvas& canvas, const OperationAppend& append_request,
     const InPlaceAppendWorkspace& workspace, std::optional<ViewRequest> priority_view,
-    InPlaceCommitBudget budget) {
-  // The deadline covers the complete commit, including overview replay, so
-  // the caller-visible poll gap is what the budget bounds. Saturate instead
-  // of overflowing on adversarial clocks or budgets.
+    InPlaceRetentionBudget budget) {
+  // The deadline bounds only the offscreen raw retention pass; overview
+  // replay, visible tiles, and the metadata commit run to completion, so the
+  // caller-visible poll gap is attributed by the phase timings rather than
+  // bounded by this budget. Saturate instead of overflowing on adversarial
+  // clocks or budgets.
+  const auto stamp = [&budget]() { return budget.now_us != nullptr ? budget.now_us() : 0; };
+  const std::int64_t prepare_started_us = stamp();
   std::int64_t deadline_us = 0;
   if (budget.now_us != nullptr) {
     const std::int64_t now = budget.now_us();
@@ -328,9 +341,14 @@ std::optional<IncrementalAppendResult> append_incrementally_in_place(
   const PixelRect world_bounds = stored.world_bounds;
   const OperationAppend operation{
       .tool = stored.tool, .color = stored.color, .samples = stored.samples};
+  InPlaceAppendPhases phases{};
+  const std::int64_t overview_started_us = stamp();
+  phases.prepare_us = overview_started_us - prepare_started_us;
   OverviewRevisionPublication overview_publication{};
   const bool overview_ready = prepare_overview(canvas, operation, world_bounds,
                                                workspace.overview_scratch, overview_publication);
+  const std::int64_t enumerate_started_us = stamp();
+  phases.overview_us = enumerate_started_us - overview_started_us;
   const auto resident_count = canvas.materialized_tiles_intersecting(
       world_bounds, workspace.affected_keys, priority_view, false);
   if (!overview_ready || !resident_count.has_value() ||
@@ -338,17 +356,20 @@ std::optional<IncrementalAppendResult> append_incrementally_in_place(
     prepared->cancel();
     return std::nullopt;
   }
+  phases.enumerate_us = stamp() - enumerate_started_us;
 
   const auto affected = workspace.affected_keys.first(*resident_count);
   const std::uint16_t painted_color =
       stored.tool == OperationTool::kEraser ? 0xFFFFU : stored.color;
   const InPlaceRetainScope scope{operation, painted_color, priority_view, budget, deadline_us};
-  const std::size_t retained = retain_affected_tiles(canvas, scope, affected, workspace.tile_mask);
+  const std::size_t retained =
+      retain_affected_tiles(canvas, scope, affected, workspace.tile_mask, phases);
   std::size_t visible_fallback = 0;
   for (std::size_t index = retained; index < affected.size(); ++index) {
     visible_fallback += in_priority_view(affected[index], priority_view) ? 1U : 0U;
   }
   std::size_t cross_zoom_invalidated = 0;
+  const std::int64_t commit_started_us = stamp();
   const MaterializedCanvas::InPlaceCommitScope commit_scope{
       .preserved_uniform_color = painted_color,
       .priority_zoom =
@@ -364,13 +385,15 @@ std::optional<IncrementalAppendResult> append_incrementally_in_place(
     return std::nullopt;
   }
   prepared->publish();
+  phases.commit_us = stamp() - commit_started_us;
   return IncrementalAppendResult{.identity = identity,
                                  .affected_world_bounds = world_bounds,
                                  .affected_resident_tiles = *resident_count,
                                  .published_tiles = retained,
                                  .fallback_tiles = *resident_count - retained,
                                  .visible_fallback_tiles = visible_fallback,
-                                 .cross_zoom_invalidated = cross_zoom_invalidated};
+                                 .cross_zoom_invalidated = cross_zoom_invalidated,
+                                 .phases = phases};
 }
 
 bool restore_document_snapshot(OperationLog& log, MaterializedCanvas& canvas,
