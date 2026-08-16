@@ -137,6 +137,31 @@ struct InPlaceRetentionBudget {
     const InPlaceAppendWorkspace& workspace,
     std::optional<ViewRequest> priority_view = std::nullopt, InPlaceRetentionBudget budget = {});
 
+// Committed-overlay revision split (VECTOR_V2_COMMITTED_OVERLAY_DESIGN.md
+// §3.1): the materialized canvas may trail operation authority when a caller
+// appends to the log without a paired canvas commit. The pending operation
+// range is derived, not stored: it is exactly the log operations between the
+// canvas revision and the log revision.
+//
+// pending_operation_count reports how many operations the canvas has not yet
+// absorbed (0 when in lockstep, not ready, or when the canvas revision left
+// the log's represented range).
+[[nodiscard]] std::size_t pending_operation_count(const OperationLog& log,
+                                                  const MaterializedCanvas& canvas);
+
+// Absorbs the oldest pending operation into the canvas through the same
+// phase machinery as append_incrementally_in_place (identical painters,
+// identical order, identical retention semantics), advancing the canvas by
+// exactly one revision. Authority is never touched. Returns nullopt when
+// nothing is pending or when a fallible step rejects; the canvas then keeps
+// its prior revision and the call may be retried. While the canvas trails,
+// append_incrementally_in_place refuses (lockstep validation), so a drain
+// loop must empty the pending range before synchronous appends resume.
+// Callers must serialize access exactly like the synchronous path.
+[[nodiscard]] std::optional<IncrementalAppendResult> absorb_pending_operation(
+    const OperationLog& log, MaterializedCanvas& canvas, const InPlaceAppendWorkspace& workspace,
+    std::optional<ViewRequest> priority_view = std::nullopt, InPlaceRetentionBudget budget = {});
+
 // Coordinates an authoritative snapshot restore. The caller-owned pixels must
 // not alias log or canvas storage. Validation is completed before either state
 // module changes. Callers must serialize access.
