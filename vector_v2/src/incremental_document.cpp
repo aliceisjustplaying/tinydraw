@@ -166,10 +166,7 @@ std::optional<IncrementalAppendResult> append_incrementally(
 
 namespace {
 
-// Paints exactly the operation's covered pixels into one tile. The operation
-// is a single tool and color, so its segments can replay newest-first through
-// a finalized mask: every covered pixel is written exactly once and the
-// resulting pixel union is identical to forward per-segment painting.
+// Paints exactly the operation's curved covered pixels into one tile.
 bool paint_operation_into_tile(const OperationAppend& operation, const InPlaceTileEdit& edit,
                                std::span<std::uint8_t> tile_mask) {
   const RasterSurface surface{
@@ -182,28 +179,7 @@ bool paint_operation_into_tile(const OperationAppend& operation, const InPlaceTi
   };
   const std::size_t mask_bytes = (surface.pixels.size() + 7U) / 8U;
   std::fill_n(tile_mask.begin(), mask_bytes, std::uint8_t{0});
-  if (operation.samples.size() == 1U) {
-    return apply_masked_incremental_segment({.tool = operation.tool,
-                                             .color = operation.color,
-                                             .first = operation.samples.front(),
-                                             .second = operation.samples.front()},
-                                            surface, tile_mask);
-  }
-  for (std::size_t index = operation.samples.size(); index-- > 1U;) {
-    const PixelRect segment_bounds = incremental_segment_level_bounds(
-        operation.samples[index - 1U], operation.samples[index], edit.key.zoom);
-    if (!intersects(segment_bounds, edit.bounds)) {
-      continue;
-    }
-    if (!apply_masked_incremental_segment({.tool = operation.tool,
-                                           .color = operation.color,
-                                           .first = operation.samples[index - 1U],
-                                           .second = operation.samples[index]},
-                                          surface, tile_mask)) {
-      return false;
-    }
-  }
-  return true;
+  return apply_masked_incremental_operation(operation, surface, tile_mask);
 }
 
 bool valid_in_place_workspace(const OperationLog& log, const MaterializedCanvas& canvas,
