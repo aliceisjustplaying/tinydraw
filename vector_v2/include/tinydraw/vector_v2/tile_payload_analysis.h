@@ -29,6 +29,14 @@ struct TilePayloadAnalysis {
 [[nodiscard]] std::optional<TilePayloadAnalysis> analyze_tile_payload(
     std::span<const std::uint16_t> pixels, int width, int height);
 
+// Strided variant: reads a width x height window out of a larger row-major
+// surface whose rows are source_stride pixels apart. The span must cover
+// exactly (height - 1) * source_stride + width elements starting at the
+// window origin, and source_stride must be >= width. pixel_count/raw_bytes
+// describe the logical window (width * height), not the strided span.
+[[nodiscard]] std::optional<TilePayloadAnalysis> analyze_tile_payload(
+    std::span<const std::uint16_t> pixels, int width, int height, std::size_t source_stride);
+
 }  // namespace tinydraw::vector_v2
 
 #endif  // TINYDRAW_VECTOR_V2_TILE_PAYLOAD_ANALYSIS_H

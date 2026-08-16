@@ -24,6 +24,6 @@ namespace tinydraw::esp32 {
     const vector_v2::InPlaceAppendWorkspace& in_place_workspace, VectorV2Export& exporter,
     std::span<const std::uint16_t> blank_snapshot,
     std::span<vector_v2::CompactOperationSample> conversion_storage,
-    std::span<std::uint16_t> packed_tile_pixels);
+    std::span<std::uint16_t> tile_scratch);
 
 }  // namespace tinydraw::esp32

@@ -200,9 +200,12 @@ struct AppStorage {
   std::uint16_t* region_scratch = nullptr;
   std::uint16_t* chrome_cache = nullptr;
   std::uint16_t* producer_supertask = nullptr;
-  std::uint16_t* producer_packed = nullptr;
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
+  // Harness-only compose/census scratch for one 64x64 tile. The producer
+  // publishes straight from the supertask surface and no longer stages here.
+  std::uint16_t* harness_tile_scratch = nullptr;
+#endif
   bool supertask_internal = false;
-  bool packed_internal = false;
   std::uint8_t* producer_mask = nullptr;
   std::uint16_t* producer_summary_rows = nullptr;
   std::uint32_t* producer_summary_words = nullptr;
@@ -243,11 +246,12 @@ struct AppStorage {
     if (producer_supertask == nullptr) {
       producer_supertask = allocate_array<std::uint16_t>(vector_v2::kTileProducerPixels);
     }
-    producer_packed = allocate_internal<std::uint16_t>(vector_v2::kTilePixels);
-    packed_internal = producer_packed != nullptr;
-    if (producer_packed == nullptr) {
-      producer_packed = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
+    harness_tile_scratch = allocate_internal<std::uint16_t>(vector_v2::kTilePixels);
+    if (harness_tile_scratch == nullptr) {
+      harness_tile_scratch = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
     }
+#endif
     producer_mask = allocate_internal<std::uint8_t>(vector_v2::kTileProducerMaskBytes);
     producer_summary_rows = allocate_internal<std::uint16_t>(vector_v2::kTileProducerSummaryRows);
     producer_summary_words = allocate_internal<std::uint32_t>(vector_v2::kTileProducerSummaryWords);
@@ -270,7 +274,8 @@ struct AppStorage {
 #endif
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
     publications = allocate_array<TileRevisionPublication>(kWorkspaceTileCapacity);
-    const bool harness_workspace_ready = tile_scratch != nullptr && publications != nullptr;
+    const bool harness_workspace_ready =
+        tile_scratch != nullptr && publications != nullptr && harness_tile_scratch != nullptr;
 #else
     const bool harness_workspace_ready = true;
 #endif
@@ -278,8 +283,7 @@ struct AppStorage {
         allocate_array<TileKey>(vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles);
     if (overview == nullptr || snapshot == nullptr || frame == nullptr || tile_pixels == nullptr ||
         overview_scratch == nullptr || !harness_workspace_ready || region_scratch == nullptr ||
-        chrome_cache == nullptr || producer_supertask == nullptr || producer_packed == nullptr ||
-        producer_mask == nullptr || producer_summary_rows == nullptr ||
+        chrome_cache == nullptr || producer_supertask == nullptr || producer_mask == nullptr || producer_summary_rows == nullptr ||
         producer_summary_words == nullptr || chunk_mask == nullptr || uniforms == nullptr ||
         occupancy == nullptr || slots == nullptr || records == nullptr || samples == nullptr ||
         input_samples == nullptr || rerender_entries == nullptr || touch_events == nullptr ||
@@ -757,9 +761,9 @@ void run_vector_v2_app() {
     return;
   }
   std::printf(
-      "TINYDRAW_PRODUCER_SCRATCH supertask_internal=%u packed_internal=%u "
+      "TINYDRAW_PRODUCER_SCRATCH supertask_internal=%u "
       "free_internal=%lu free_psram=%lu\n",
-      storage.supertask_internal, storage.packed_internal,
+      storage.supertask_internal,
       static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
       static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)));
   std::fill_n(storage.snapshot, vector_v2::kOverviewPixels, 0xFFFFU);
@@ -798,7 +802,6 @@ void run_vector_v2_app() {
   vector_v2::TileProducer producer(
       log, canvas,
       {.supertask_pixels = std::span(storage.producer_supertask, vector_v2::kTileProducerPixels),
-       .packed_tile_pixels = std::span(storage.producer_packed, vector_v2::kTilePixels),
        .finalized_pixels = std::span(storage.producer_mask, vector_v2::kTileProducerMaskBytes),
        .summary_row_unset =
            std::span(storage.producer_summary_rows, vector_v2::kTileProducerSummaryRows),
@@ -862,7 +865,7 @@ void run_vector_v2_app() {
                                   harness_workspace, workspace, exporter,
                                   std::span(storage.snapshot, vector_v2::kOverviewPixels),
                                   std::span(storage.input_samples, kInputSampleCapacity),
-                                  std::span(storage.producer_packed, vector_v2::kTilePixels))) {
+                                  std::span(storage.harness_tile_scratch, vector_v2::kTilePixels))) {
     std::printf("TINYDRAW_VECTOR_V2_GATE_HARNESS_DONE pass=0\n");
     return;
   }
@@ -882,9 +885,10 @@ void run_vector_v2_app() {
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
       kWorkspaceTileCapacity * vector_v2::kTilePixels * sizeof(std::uint16_t) +
       kWorkspaceTileCapacity * sizeof(TileRevisionPublication) +
+      vector_v2::kTilePixels * sizeof(std::uint16_t) +
 #endif
       (vector_v2::kTileProducerPixels + kLiveRegionScratchPixels) * sizeof(std::uint16_t) +
-      vector_v2::kTilePixels * sizeof(std::uint16_t) + vector_v2::kTileProducerMaskBytes +
+      vector_v2::kTileProducerMaskBytes +
       vector_v2::kTileProducerSummaryRows * sizeof(std::uint16_t) +
       vector_v2::kTileProducerSummaryWords * sizeof(std::uint32_t) +
       vector_v2::kInPlaceTileMaskBytes + kInputSampleCapacity * sizeof(CompactOperationSample) +

@@ -52,7 +52,6 @@ struct Rig {
   std::vector<v2::MaterializedSlotStorage> slots;
   std::vector<std::uint16_t> tile_pool;
   std::vector<std::uint16_t> supertask;
-  std::vector<std::uint16_t> packed;
   std::vector<std::uint8_t> mask;
   std::vector<std::uint16_t> summary_rows;
   std::vector<std::uint32_t> summary_words;
@@ -80,7 +79,6 @@ struct Rig {
         slots(v2::kTileSlotCount),
         tile_pool(v2::kTileSlotCount * v2::kTilePixels),
         supertask(v2::kTileProducerPixels),
-        packed(v2::kTilePixels),
         mask(v2::kTileProducerMaskBytes),
         summary_rows(v2::kTileProducerSummaryRows),
         summary_words(v2::kTileProducerSummaryWords),
@@ -95,7 +93,6 @@ struct Rig {
         accounting(accounting_entries),
         producer(log, canvas,
                  {.supertask_pixels = supertask,
-                  .packed_tile_pixels = packed,
                   .finalized_pixels = mask,
                   .summary_row_unset = summary_rows,
                   .summary_saturated_words = summary_words,
@@ -687,7 +684,6 @@ struct FuzzRig {
   std::vector<v2::MaterializedSlotStorage> slots;
   std::vector<std::uint16_t> tile_pool;
   std::vector<std::uint16_t> supertask;
-  std::vector<std::uint16_t> packed;
   std::vector<std::uint8_t> mask;
   std::vector<std::uint16_t> summary_rows;
   std::vector<std::uint32_t> summary_words;
@@ -703,7 +699,6 @@ struct FuzzRig {
         slots(64),
         tile_pool(slots.size() * v2::kTilePixels),
         supertask(v2::kTileProducerPixels),
-        packed(v2::kTilePixels),
         mask(v2::kTileProducerMaskBytes),
         summary_rows(v2::kTileProducerSummaryRows),
         summary_words(v2::kTileProducerSummaryWords),
@@ -712,7 +707,6 @@ struct FuzzRig {
         canvas(overview, slots, tile_pool),
         producer(log, canvas,
                  {.supertask_pixels = supertask,
-                  .packed_tile_pixels = packed,
                   .finalized_pixels = mask,
                   .summary_row_unset = summary_rows,
                   .summary_saturated_words = summary_words,

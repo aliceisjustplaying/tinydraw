@@ -41,9 +41,9 @@ TileProducer::TileProducer(OperationLog& log, MaterializedCanvas& canvas,
       baseline_color_(baseline_color) {}
 
 bool TileProducer::ready() const {
-  const std::array<std::span<const std::byte>, 5> workspaces{
-      std::as_bytes(workspace_.supertask_pixels), std::as_bytes(workspace_.packed_tile_pixels),
-      std::as_bytes(workspace_.finalized_pixels), std::as_bytes(workspace_.summary_row_unset),
+  const std::array<std::span<const std::byte>, 4> workspaces{
+      std::as_bytes(workspace_.supertask_pixels), std::as_bytes(workspace_.finalized_pixels),
+      std::as_bytes(workspace_.summary_row_unset),
       std::as_bytes(workspace_.summary_saturated_words)};
   bool workspace_invalid = false;
   for (std::size_t left = 0; left < workspaces.size(); ++left) {
@@ -66,7 +66,6 @@ bool TileProducer::ready() const {
   }
   return !workspace_invalid && log_.ready() && canvas_.ready() &&
          workspace_.supertask_pixels.size() >= kTileProducerPixels &&
-         workspace_.packed_tile_pixels.size() >= kTilePixels &&
          workspace_.finalized_pixels.size() >= kTileProducerMaskBytes &&
          workspace_.summary_row_unset.size() >= kTileProducerSummaryRows &&
          workspace_.summary_saturated_words.size() >= kTileProducerSummaryWords;
@@ -630,18 +629,16 @@ bool TileProducer::publish_surface_tile(TileKey key, PixelRect rendered_bounds,
   const PixelRect bounds = tile_pixel_bounds(key);
   const int width = bounds.x1 - bounds.x0;
   const int height = bounds.y1 - bounds.y0;
-  const std::size_t count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+  constexpr auto kStride = static_cast<std::size_t>(kTileProducerWidth);
   const auto surface = workspace_.supertask_pixels.first(kTileProducerPixels);
-  auto packed = workspace_.packed_tile_pixels.first(count);
-  for (int row = 0; row < height; ++row) {
-    const auto source =
-        static_cast<std::size_t>(bounds.y0 - rendered_bounds.y0 + row) * kTileProducerWidth +
-        static_cast<std::size_t>(bounds.x0 - rendered_bounds.x0);
-    const auto destination = static_cast<std::size_t>(row) * static_cast<std::size_t>(width);
-    std::copy_n(surface.begin() + static_cast<std::ptrdiff_t>(source), width,
-                packed.begin() + static_cast<std::ptrdiff_t>(destination));
-  }
-  const auto analysis = analyze_tile_payload(packed, width, height);
+  // Publish straight from the supertask surface: one strided read replaces
+  // the former supertask->packed->pool double copy.
+  const auto origin =
+      static_cast<std::size_t>(bounds.y0 - rendered_bounds.y0) * kStride +
+      static_cast<std::size_t>(bounds.x0 - rendered_bounds.x0);
+  const auto strided = surface.subspan(
+      origin, static_cast<std::size_t>(height - 1) * kStride + static_cast<std::size_t>(width));
+  const auto analysis = analyze_tile_payload(strided, width, height, kStride);
   if (!analysis.has_value()) {
     return false;
   }
@@ -650,7 +647,7 @@ bool TileProducer::publish_surface_tile(TileKey key, PixelRect rendered_bounds,
         .publish_uniform(key, revision, MaterializationQuality::kImmediate, analysis->uniform_color)
         .has_value();
   }
-  return canvas_.publish_tile(key, revision, MaterializationQuality::kImmediate, packed)
+  return canvas_.publish_tile(key, revision, MaterializationQuality::kImmediate, strided, kStride)
       .has_value();
 }
 

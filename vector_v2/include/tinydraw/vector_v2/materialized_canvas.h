@@ -305,6 +305,16 @@ class MaterializedCanvas {
   [[nodiscard]] std::optional<std::size_t> publish_tile(TileKey key, DocumentRevision revision,
                                                         MaterializationQuality quality,
                                                         std::span<const std::uint16_t> pixels);
+  // Strided variant: pixels is a width x height window of a larger row-major
+  // surface whose rows are source_stride pixels apart. The span must cover
+  // exactly (height - 1) * source_stride + width elements starting at the
+  // window origin, and source_stride must be >= the tile width. Lets the
+  // producer publish straight from its supertask surface without a packed
+  // staging copy.
+  [[nodiscard]] std::optional<std::size_t> publish_tile(TileKey key, DocumentRevision revision,
+                                                        MaterializationQuality quality,
+                                                        std::span<const std::uint16_t> pixels,
+                                                        std::size_t source_stride);
   [[nodiscard]] std::optional<std::size_t> publish_uniform(TileKey key, DocumentRevision revision,
                                                            MaterializationQuality quality,
                                                            std::uint16_t color = 0xFFFFU);
