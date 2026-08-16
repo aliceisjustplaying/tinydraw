@@ -1,8 +1,7 @@
 # TinyDraw project state
 
-Last updated: 2026-08-16 (evening session: safety fixes, recorded ink corpus,
-angularity baseline, append-phase attribution, re-render ledger, trace replay
-gate)
+Last updated: 2026-08-16 (Cold Stage B session: strided publish, O(1) slot
+metadata, H7 op-level chord sweep, IRAM-pinned presentation strip loops)
 
 Branch: `feat/v2-performance-followup`
 
@@ -20,14 +19,17 @@ promotion. [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) owns acceptance thresholds;
 | Pan correctness | **Green — owner accepted** | Product pan is tear-free on glass at 50%, 100%, 200%, and 400%, including dense hairline content. Formal positive-control evidence still needs archiving for the release packet. |
 | Pan pacing | **Provisional green** | PANSEQ p95 is 33.939 ms at 100% and 33.934 ms at 400% (~29.5 FPS), below the 38 ms guard. Camera motion caused zero persistent chrome redraws. |
 | Ink latency | **Provisional green — visual lane; smoothness yellow** | The five-trace canonical corpus is now recorded owner finger input, and the gate harness replays it through the production `offer()` path: zero lost Down/Up, event→DMA p95 2.3–5.3 ms on every trace ([`BASELINE.md`](benchmark-results/ink-trace-replay-baseline/BASELINE.md)). Smoothness: the angularity tool falsified the four-span smoothness case on real input — 2-chord deviation is ≤0.11 px at 400%; the angular signal is input jitter + chunk boundaries + hard-edge aliasing, pointing at arc-length resampling and settled AA instead ([`BASELINE.md`](benchmark-results/ink-angularity-baseline/BASELINE.md)). Optical latency and resumable lift authority remain open. |
-| Cold 400% | **Red, closing** | The wave-3 compute campaign cut the combined corpus from 1,269.157 ms to 668.980 ms maximum across three device runs (-47.3%): 582.9 compute, 66.8 present, 18.4 pacing, 0.9 touch. Requirement is ≤500 ms; compute must fall another ~170 ms. See the wave-3 receipt for accepted/rejected steps. |
+| Cold 400% | **Red by 7 ms — 50/100/200% now green** | Cold Stage B cut the frozen corpus again: compute 50% 434→356, 100% 468→349, 200% 599→410, 400% 587→432 ms (three-run maxima). Walls: 438/428/488 ms are under the ≤500 contract line; 400% is 507 ms (7 ms over). Landed: strided publish, O(1) slot metadata, H7 op-level chord sweep with honest work-budget slices, and IRAM-pinned transport strip loops (the pan wire-budget check no longer moves with flash-icache layout luck). Word-mask scanning re-rejected with device receipts. See [`RECEIPT.md`](benchmark-results/cold-stage-b-2026-08-16/RECEIPT.md). |
 | Revisit retention | **Green for pure revisits — oracle connected** | The spatial re-render ledger is wired into the product canvas/producer and classifies every group render (cold miss / damage / eviction / stale / unexplained). Tour-scoped device receipt: renders=137 unique=137 amplification=1.000, zero unnecessary re-renders. Draw-and-return and Undo scenarios still need dedicated gate scenarios. |
 | Exactness | **Green for implemented scope** | Host exactness and fuzz tests pass. V2 persistence/Undo authority is not implemented. |
 | Settled AA | **Open — design candidate exists** | Immediate output is intentionally hard-edged. Four-sample SSAA cost ~808 ms and is rejected. An unmeasured analytic-coverage design (8-bit alpha mask over the existing newest-first replay, boundary-only coverage) is sketched in the 2026-08-16 review; next step is a host prototype. |
 | Feature parity | **Open** | Undo/Redo, autosave/recovery, device SVG wiring, minimap jump, lifecycle parity, failure UI, and release soak remain. |
 | Mixed-draw appends | **Red — pre-existing, owner decision pending** | 50% in-place appends peak at 18.8 ms against the 15 ms budget. Dating evidence places the regression at the curved committed-ink change (19ebbe3), masked until wave-3 reopened the gate cascade. The in-place commit now reports per-phase maxima (prepare/overview/enumerate/uniform/raw/commit) in `TINYDRAW_GATE1_MIXED_DRAW` and `TINYDRAW_LIVE_STROKE`, so the next harness run attributes the overrun before the owner decides budget vs optimization. The misnamed "commit budget" is renamed: it bounds only offscreen raw retention (`InPlaceRetentionBudget`). |
 
-Session continuity: the next session starts **Cold Stage B**; its handover
+Session continuity: Cold Stage B is **closed** (receipt above); next per the
+owner-approved queue: the ink-replay mid-stroke pixelation diagnosis
+(overview-fallback retention drops — fallback observability first), then the
+post-B queue below. The prior handover context:
 (ranked candidates with code receipts, new standing ledger/ink-trace guards,
 the post-B queue — AA prototype + resampling, then the déjà-vu campaign — and
 pending owner decisions) is
