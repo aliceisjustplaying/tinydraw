@@ -768,6 +768,8 @@ struct EquivalenceRig {
       std::vector<vector_v2::MaterializedSlotStorage>(vector_v2::kTileSlotCount);
   std::vector<std::uint16_t> tile_pool =
       std::vector<std::uint16_t>(slots.size() * vector_v2::kTilePixels);
+  std::vector<std::uint16_t> raw_slot_directory =
+      std::vector<std::uint16_t>(vector_v2::kMaterializedTileIdentityCount);
   std::vector<std::uint16_t> supertask = std::vector<std::uint16_t>(vector_v2::kTileProducerPixels);
   std::vector<std::uint8_t> mask = std::vector<std::uint8_t>(vector_v2::kTileProducerMaskBytes);
   std::vector<std::uint16_t> summary_rows =
@@ -787,7 +789,9 @@ struct EquivalenceRig {
   std::vector<std::uint32_t> chord_plans =
       std::vector<std::uint32_t>(vector_v2::kOperationChordStorageBytes / 4U);
   vector_v2::OperationLog log{records, samples};
-  vector_v2::MaterializedCanvas canvas{overview, *uniforms, occupancy, slots, tile_pool};
+  vector_v2::MaterializedCanvas canvas{overview,  *uniforms, occupancy,
+                                       slots,     tile_pool, vector_v2::DocumentRevision{},
+                                       raw_slot_directory};
   vector_v2::TileProducer producer{
       log,
       canvas,

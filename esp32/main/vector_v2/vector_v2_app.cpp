@@ -214,6 +214,8 @@ struct AppStorage {
   MaterializedUniformStorage* uniforms = nullptr;
   std::uint8_t* occupancy = nullptr;
   MaterializedSlotStorage* slots = nullptr;
+  std::uint16_t* raw_slot_directory = nullptr;
+  bool slot_directory_internal = false;
   OperationRecord* records = nullptr;
   CompactOperationSample* samples = nullptr;
   CompactOperationSample* input_samples = nullptr;
@@ -286,12 +288,25 @@ struct AppStorage {
 #endif
     affected_keys =
         allocate_array<TileKey>(vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles);
+    // O(1) find_tile metadata (27,384 B used), allocated LAST and padded to
+    // 32 KiB. Placement receipts (2026-08-16): internal SRAM shifted the
+    // panel-init DMA staging buffers (+50 us pan strip staging, pan_seq
+    // red); an unpadded PSRAM allocation shifted every later heap address by
+    // 27.4 KB onto presentation-hostile dcache sets (+40 us strip staging in
+    // seven straight build variants). Padding to a multiple of the 8 KiB
+    // dcache way size keeps downstream allocations on the same cache sets
+    // that every pan optical receipt was measured on.
+    constexpr std::size_t kDirectoryPaddedEntries = (32U * 1024U) / sizeof(std::uint16_t);
+    static_assert(kDirectoryPaddedEntries >= vector_v2::kMaterializedTileIdentityCount);
+    raw_slot_directory = allocate_array<std::uint16_t>(kDirectoryPaddedEntries);
+    slot_directory_internal = false;
     if (overview == nullptr || snapshot == nullptr || frame == nullptr || tile_pixels == nullptr ||
         overview_scratch == nullptr || !harness_workspace_ready || region_scratch == nullptr ||
         chrome_cache == nullptr || producer_supertask == nullptr || producer_mask == nullptr ||
         producer_summary_rows == nullptr || producer_summary_words == nullptr ||
         producer_chord_plans == nullptr || chunk_mask == nullptr || uniforms == nullptr ||
-        occupancy == nullptr || slots == nullptr || records == nullptr || samples == nullptr ||
+        occupancy == nullptr || slots == nullptr || raw_slot_directory == nullptr ||
+        records == nullptr || samples == nullptr ||
         input_samples == nullptr || rerender_entries == nullptr || touch_events == nullptr ||
         !ink_trace_ready || affected_keys == nullptr) {
       return false;
@@ -767,9 +782,9 @@ void run_vector_v2_app() {
     return;
   }
   std::printf(
-      "TINYDRAW_PRODUCER_SCRATCH supertask_internal=%u "
+      "TINYDRAW_PRODUCER_SCRATCH supertask_internal=%u slot_directory_internal=%u "
       "free_internal=%lu free_psram=%lu\n",
-      storage.supertask_internal,
+      storage.supertask_internal, storage.slot_directory_internal,
       static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
       static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)));
   std::fill_n(storage.snapshot, vector_v2::kOverviewPixels, 0xFFFFU);
@@ -780,7 +795,9 @@ void run_vector_v2_app() {
       std::span(storage.uniforms, vector_v2::kMaterializedTileIdentityCount),
       std::span(storage.occupancy, vector_v2::kOccupancyBytes),
       std::span(storage.slots, vector_v2::kTileSlotCount),
-      std::span(storage.tile_pixels, vector_v2::kTileSlotCount * vector_v2::kTilePixels));
+      std::span(storage.tile_pixels, vector_v2::kTileSlotCount * vector_v2::kTilePixels),
+      DocumentRevision{},
+      std::span(storage.raw_slot_directory, vector_v2::kMaterializedTileIdentityCount));
   OperationLog log(std::span(storage.records, vector_v2::kOperationCapacity),
                    std::span(storage.samples, vector_v2::kOperationSampleCapacity));
   std::array<DisplayStrip, 3> queue{};
@@ -885,6 +902,7 @@ void run_vector_v2_app() {
   const std::size_t tile_metadata_bytes =
       vector_v2::kTileSlotCount * sizeof(MaterializedSlotStorage) +
       vector_v2::kMaterializedTileIdentityCount * sizeof(MaterializedUniformStorage) +
+      vector_v2::kMaterializedTileIdentityCount * sizeof(std::uint16_t) +
       vector_v2::kOccupancyBytes;
   const std::size_t operation_bytes =
       vector_v2::kOperationCapacity * sizeof(OperationRecord) +

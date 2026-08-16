@@ -27,13 +27,18 @@ struct PaperFixture {
   std::array<std::uint8_t, vector_v2::kOccupancyBytes> occupancy{};
   std::array<vector_v2::MaterializedSlotStorage, 1> slots{};
   std::array<std::uint16_t, vector_v2::kTilePixels> tile_pool{};
+  std::unique_ptr<std::array<std::uint16_t, vector_v2::kMaterializedTileIdentityCount>>
+      raw_slot_directory =
+          std::make_unique<std::array<std::uint16_t, vector_v2::kMaterializedTileIdentityCount>>();
   std::array<std::uint16_t, vector_v2::kTileProducerPixels> supertask{};
   std::array<std::uint8_t, vector_v2::kTileProducerMaskBytes> mask{};
   std::array<std::uint16_t, vector_v2::kTileProducerSummaryRows> summary_rows{};
   std::array<std::uint32_t, vector_v2::kTileProducerSummaryWords> summary_words{};
   std::array<std::uint32_t, vector_v2::kOperationChordStorageBytes / 4U> chord_plans{};
   vector_v2::OperationLog log{records, samples};
-  vector_v2::MaterializedCanvas canvas{overview, *uniforms, occupancy, slots, tile_pool};
+  vector_v2::MaterializedCanvas canvas{overview,  *uniforms, occupancy,
+                                       slots,     tile_pool, vector_v2::DocumentRevision{},
+                                       *raw_slot_directory};
   vector_v2::TileProducer producer{
       log,
       canvas,
