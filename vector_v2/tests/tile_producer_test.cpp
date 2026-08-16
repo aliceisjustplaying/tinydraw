@@ -31,14 +31,17 @@ struct PaperFixture {
   std::array<std::uint8_t, vector_v2::kTileProducerMaskBytes> mask{};
   std::array<std::uint16_t, vector_v2::kTileProducerSummaryRows> summary_rows{};
   std::array<std::uint32_t, vector_v2::kTileProducerSummaryWords> summary_words{};
+  std::array<std::uint32_t, vector_v2::kOperationChordStorageBytes / 4U> chord_plans{};
   vector_v2::OperationLog log{records, samples};
   vector_v2::MaterializedCanvas canvas{overview, *uniforms, occupancy, slots, tile_pool};
-  vector_v2::TileProducer producer{log,
-                                   canvas,
-                                   {.supertask_pixels = supertask,
-                                    .finalized_pixels = mask,
-                                    .summary_row_unset = summary_rows,
-                                    .summary_saturated_words = summary_words}};
+  vector_v2::TileProducer producer{
+      log,
+      canvas,
+      {.supertask_pixels = supertask,
+       .finalized_pixels = mask,
+       .summary_row_unset = summary_rows,
+       .summary_saturated_words = summary_words,
+       .operation_chord_plans = std::as_writable_bytes(std::span(chord_plans))}};
 
   PaperFixture() {
     snapshot.fill(0xFFFFU);
@@ -62,14 +65,17 @@ struct AdversarialFixture {
   std::array<std::uint8_t, vector_v2::kTileProducerMaskBytes> mask{};
   std::array<std::uint16_t, vector_v2::kTileProducerSummaryRows> summary_rows{};
   std::array<std::uint32_t, vector_v2::kTileProducerSummaryWords> summary_words{};
+  std::array<std::uint32_t, vector_v2::kOperationChordStorageBytes / 4U> chord_plans{};
   vector_v2::OperationLog log{records, samples};
   vector_v2::MaterializedCanvas canvas{overview, slots, tile_pool};
-  vector_v2::TileProducer producer{log,
-                                   canvas,
-                                   {.supertask_pixels = supertask,
-                                    .finalized_pixels = mask,
-                                    .summary_row_unset = summary_rows,
-                                    .summary_saturated_words = summary_words}};
+  vector_v2::TileProducer producer{
+      log,
+      canvas,
+      {.supertask_pixels = supertask,
+       .finalized_pixels = mask,
+       .summary_row_unset = summary_rows,
+       .summary_saturated_words = summary_words,
+       .operation_chord_plans = std::as_writable_bytes(std::span(chord_plans))}};
 
   AdversarialFixture() {
     overview.assign(overview.size(), 0xFFFFU);
@@ -87,14 +93,17 @@ struct Fixture {
   std::array<std::uint8_t, vector_v2::kTileProducerMaskBytes> mask{};
   std::array<std::uint16_t, vector_v2::kTileProducerSummaryRows> summary_rows{};
   std::array<std::uint32_t, vector_v2::kTileProducerSummaryWords> summary_words{};
+  std::array<std::uint32_t, vector_v2::kOperationChordStorageBytes / 4U> chord_plans{};
   vector_v2::OperationLog log{records, samples};
   vector_v2::MaterializedCanvas canvas{overview, slots, tile_pool};
-  vector_v2::TileProducer producer{log,
-                                   canvas,
-                                   {.supertask_pixels = supertask,
-                                    .finalized_pixels = mask,
-                                    .summary_row_unset = summary_rows,
-                                    .summary_saturated_words = summary_words}};
+  vector_v2::TileProducer producer{
+      log,
+      canvas,
+      {.supertask_pixels = supertask,
+       .finalized_pixels = mask,
+       .summary_row_unset = summary_rows,
+       .summary_saturated_words = summary_words,
+       .operation_chord_plans = std::as_writable_bytes(std::span(chord_plans))}};
 
   Fixture() {
     overview.fill(0xFFFFU);
@@ -388,7 +397,11 @@ TEST_CASE("tile producer sliced long strokes equal direct painter replay") {
       break;
     }
   }
-  CHECK(partial_steps >= 4U);
+  // The replay must stay resumable: at least one bounded slice returns
+  // before anything publishes. The historical >= 4 floor tracked per-unit
+  // work budgets; the op-level chord sweep (H7) saturates this fat stroke's
+  // group within fewer, still-bounded slices.
+  CHECK(partial_steps >= 1U);
 
   std::vector<std::uint16_t> composed(128U * 128U);
   REQUIRE(fixture.canvas.compose_view(view, composed));
@@ -420,25 +433,29 @@ TEST_CASE("tile producer isolates an oversized newest segment from older raster 
   const auto first = fixture.producer.produce_next(view);
   REQUIRE(first.has_value());
   CHECK_FALSE(first->complete);
-  CHECK(first->operations_rendered == 1U);
-  CHECK(first->raster_steps >= 1U);
-  CHECK(first->raster_work <=
-        vector_v2::kTileProducerRasterWorkBatch + vector_v2::kTileProducerPixels);
+  // The oversized unit sweeps as one work-budgeted batch: the first slice
+  // pauses mid-sweep (rendered work is credited when the batch completes),
+  // and no tile publishes before the replay is whole.
+  CHECK(first->raster_work <= 3U * vector_v2::kTileProducerPixels);
   CHECK(first->tiles_published == 0U);
 
+  std::size_t rendered = first->operations_rendered;
+  std::size_t raster_steps = first->raster_steps;
   std::size_t ticks = 1U;
   while (true) {
     const auto step = fixture.producer.produce_next(view);
     REQUIRE(step.has_value());
+    rendered += step->operations_rendered;
+    raster_steps += step->raster_steps;
     ++ticks;
     REQUIRE(ticks < 64U);
     if (step->complete) {
       break;
     }
-    CHECK(step->raster_steps >= 1U);
-    CHECK(step->raster_work <=
-          vector_v2::kTileProducerRasterWorkBatch + vector_v2::kTileProducerPixels);
+    CHECK(step->raster_work <= 3U * vector_v2::kTileProducerPixels);
   }
+  CHECK(rendered == 1U);
+  CHECK(raster_steps >= 1U);
 
   std::vector<std::uint16_t> composed(128U * 128U);
   REQUIRE(fixture.canvas.compose_view(view, composed));
@@ -517,7 +534,8 @@ TEST_CASE("tile producer rejects 25 percent and aliased or short workspace") {
       {.supertask_pixels = std::span(fixture.supertask).first(1),
        .finalized_pixels = fixture.mask,
        .summary_row_unset = fixture.summary_rows,
-       .summary_saturated_words = fixture.summary_words},
+       .summary_saturated_words = fixture.summary_words,
+       .operation_chord_plans = std::as_writable_bytes(std::span(fixture.chord_plans))},
   };
   CHECK_FALSE(short_workspace.ready());
   vector_v2::TileProducer aliased_workspace{
@@ -527,7 +545,8 @@ TEST_CASE("tile producer rejects 25 percent and aliased or short workspace") {
        .finalized_pixels = fixture.mask,
        .summary_row_unset =
            std::span(fixture.supertask).first(vector_v2::kTileProducerSummaryRows),
-       .summary_saturated_words = fixture.summary_words},
+       .summary_saturated_words = fixture.summary_words,
+       .operation_chord_plans = std::as_writable_bytes(std::span(fixture.chord_plans))},
   };
   CHECK_FALSE(aliased_workspace.ready());
 }

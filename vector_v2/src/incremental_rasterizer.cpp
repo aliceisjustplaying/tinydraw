@@ -1293,6 +1293,248 @@ bool apply_masked_prepared_curve_unit(OperationTool tool, std::uint16_t color,
   return true;
 }
 
+namespace {
+
+// One prepared chord with its per-row sweep plan. Lives in caller-funded
+// opaque storage so the internal geometry types stay private.
+struct OperationChordPlan {
+  Segment segment{};
+  RowSeed seed{};
+  PixelRect bounds{};
+  bool constant = false;
+};
+static_assert(sizeof(OperationChordPlan) <= kPreparedOperationChordBytes);
+static_assert(alignof(OperationChordPlan) <= kPreparedOperationChordAlign);
+
+[[nodiscard]] bool chord_storage_usable(std::span<const std::byte> storage,
+                                        std::size_t chord_count) {
+  return chord_count <= kOperationChordCapacity &&
+         storage.size() >= kOperationChordStorageBytes &&
+         reinterpret_cast<std::uintptr_t>(storage.data()) % alignof(OperationChordPlan) == 0U;
+}
+
+[[nodiscard]] OperationChordPlan* chord_plans(std::span<std::byte> storage) {
+  return reinterpret_cast<OperationChordPlan*>(storage.data());
+}
+
+[[nodiscard]] const OperationChordPlan* chord_plans(std::span<const std::byte> storage) {
+  return reinterpret_cast<const OperationChordPlan*>(storage.data());
+}
+
+// y0-ascending chord order, one byte per chord, stored after the plans.
+[[nodiscard]] std::uint8_t* chord_order(std::span<std::byte> storage) {
+  return reinterpret_cast<std::uint8_t*>(storage.data() +
+                                         kOperationChordCapacity * kPreparedOperationChordBytes);
+}
+
+[[nodiscard]] const std::uint8_t* chord_order(std::span<const std::byte> storage) {
+  return reinterpret_cast<const std::uint8_t*>(
+      storage.data() + kOperationChordCapacity * kPreparedOperationChordBytes);
+}
+
+}  // namespace
+
+std::optional<OperationChordBatch> prepare_operation_chord_batch(
+    std::span<const CompactOperationSample> samples, std::size_t first_endpoint, ZoomLevel zoom,
+    PixelRect surface_bounds, std::span<std::byte> chord_storage) {
+  const std::size_t capacity = kOperationChordCapacity;
+  if (samples.empty() || !chord_storage_usable(chord_storage, capacity)) {
+    return std::nullopt;
+  }
+  OperationChordPlan* plans = chord_plans(chord_storage);
+  OperationChordBatch batch{
+      .clipped_bounds = {surface_bounds.x1, surface_bounds.y1, surface_bounds.x0,
+                         surface_bounds.y0},
+  };
+  const auto append_unit = [&](std::size_t endpoint) -> bool {
+    const auto unit = curved_unit(samples, endpoint, zoom);
+    if (!unit.has_value()) {
+      return false;
+    }
+    for (std::size_t step = 0; step < unit->count; ++step) {
+      const Segment& segment = unit->segments[step];
+      const PixelRect bounds = segment_bounds(segment, surface_bounds);
+      if (bounds.x1 <= bounds.x0 || bounds.y1 <= bounds.y0) {
+        continue;
+      }
+      plans[batch.chord_count++] = {
+          .segment = segment,
+          .seed = make_row_seed(segment),
+          .bounds = bounds,
+          .constant = segment.first.radius == segment.second.radius,
+      };
+      batch.raster_work += static_cast<std::size_t>(bounds.x1 - bounds.x0) *
+                           static_cast<std::size_t>(bounds.y1 - bounds.y0);
+      batch.clipped_bounds.x0 = std::min(batch.clipped_bounds.x0, bounds.x0);
+      batch.clipped_bounds.y0 = std::min(batch.clipped_bounds.y0, bounds.y0);
+      batch.clipped_bounds.x1 = std::max(batch.clipped_bounds.x1, bounds.x1);
+      batch.clipped_bounds.y1 = std::max(batch.clipped_bounds.y1, bounds.y1);
+    }
+    return true;
+  };
+  if (samples.size() <= 2U) {
+    if (!append_unit(first_endpoint)) {
+      return std::nullopt;
+    }
+    batch.next_endpoint = 0U;
+  } else {
+    if (first_endpoint < 2U || first_endpoint >= samples.size()) {
+      return std::nullopt;
+    }
+    std::size_t endpoint = first_endpoint;
+    while (true) {
+      // Units are atomic: stop before an endpoint whose worst-case three
+      // chords would not fit, so a resumed batch never re-prepares chords.
+      if (batch.chord_count + 3U > capacity) {
+        batch.next_endpoint = endpoint;
+        break;
+      }
+      if (!append_unit(endpoint)) {
+        return std::nullopt;
+      }
+      if (endpoint == 2U) {
+        batch.next_endpoint = 0U;
+        break;
+      }
+      --endpoint;
+    }
+  }
+  std::uint8_t* order = chord_order(chord_storage);
+  for (std::size_t index = 0; index < batch.chord_count; ++index) {
+    order[index] = static_cast<std::uint8_t>(index);
+  }
+  std::sort(order, order + batch.chord_count, [plans](std::uint8_t left, std::uint8_t right) {
+    return plans[left].bounds.y0 < plans[right].bounds.y0;
+  });
+  return batch;
+}
+
+bool apply_masked_operation_chord_rows(OperationTool tool, std::uint16_t color,
+                                       std::span<const std::byte> chord_storage,
+                                       const OperationChordBatch& batch, int first_row,
+                                       std::size_t max_work_px, const RasterSurface& surface,
+                                       std::span<std::uint8_t> finalized_pixels,
+                                       MaskedRowSummary* summary, OperationSweepSlice& slice) {
+  const std::size_t required_mask_bytes = (surface.pixels.size() + 7U) / 8U;
+  const bool mask_aliases_pixels = storage_overlaps(
+      std::as_bytes(std::span(surface.pixels)),
+      std::as_bytes(std::span(finalized_pixels)
+                        .first(std::min(finalized_pixels.size(), required_mask_bytes))));
+  const int surface_rows = surface.level_bounds.y1 - surface.level_bounds.y0;
+  const PixelRect bounds = batch.clipped_bounds;
+  if (!valid_surface(surface) || batch.chord_count == 0U ||
+      !chord_storage_usable(chord_storage, batch.chord_count) ||
+      finalized_pixels.size() < required_mask_bytes || mask_aliases_pixels || max_work_px == 0U ||
+      first_row < bounds.y0 || first_row >= bounds.y1 || bounds.x0 < surface.level_bounds.x0 ||
+      bounds.y0 < surface.level_bounds.y0 || bounds.x1 > surface.level_bounds.x1 ||
+      bounds.y1 > surface.level_bounds.y1 ||
+      (summary != nullptr && !summary->ready(static_cast<std::size_t>(surface_rows)))) {
+    return false;
+  }
+  const std::uint16_t applied = tool == OperationTool::kEraser ? kBackground : color;
+  const OperationChordPlan* plans = chord_plans(chord_storage);
+  const std::uint8_t* order = chord_order(chord_storage);
+  // Scanline state over the y0-sorted order: enter admits chords as the
+  // sweep reaches their top row; the active list drops chords lazily once
+  // the sweep passes their bottom row. Resume rebuilds both in one pass.
+  std::array<std::uint8_t, kOperationChordCapacity> active{};
+  std::size_t active_count = 0;
+  std::size_t enter = 0;
+  while (enter < batch.chord_count && plans[order[enter]].bounds.y0 <= first_row) {
+    if (plans[order[enter]].bounds.y1 > first_row) {
+      active[active_count++] = order[enter];
+    }
+    ++enter;
+  }
+  int y = first_row;
+  slice.rows_swept = 0;
+  slice.work_px = 0;
+  while (y < bounds.y1 && (slice.rows_swept == 0 || slice.work_px < max_work_px)) {
+    while (enter < batch.chord_count && plans[order[enter]].bounds.y0 <= y) {
+      active[active_count++] = order[enter];
+      ++enter;
+    }
+    for (std::size_t index = 0; index < active_count;) {
+      if (plans[active[index]].bounds.y1 <= y) {
+        active[index] = active[--active_count];
+      } else {
+        ++index;
+      }
+    }
+    if (active_count == 0U) {
+      // Row gap between chords: jump to the next chord's top row for free.
+      if (enter >= batch.chord_count) {
+        y = bounds.y1;
+        break;
+      }
+      y = plans[order[enter]].bounds.y0;
+      continue;
+    }
+    int row_x0 = bounds.x1;
+    int row_x1 = bounds.x0;
+    for (std::size_t index = 0; index < active_count; ++index) {
+      const OperationChordPlan& plan = plans[active[index]];
+      row_x0 = std::min(row_x0, plan.bounds.x0);
+      row_x1 = std::max(row_x1, plan.bounds.x1);
+    }
+    const int surface_row = y - surface.level_bounds.y0;
+    const std::size_t row =
+        static_cast<std::size_t>(surface_row) * static_cast<std::size_t>(surface.stride);
+    const std::size_t row_first =
+        row + static_cast<std::size_t>(row_x0 - surface.level_bounds.x0);
+    const std::size_t row_last =
+        row + static_cast<std::size_t>(row_x1 - 1 - surface.level_bounds.x0);
+    ++slice.rows_swept;
+    const auto window = mask_unset_window(finalized_pixels, row_first, row_last);
+    if (!window.has_value()) {
+      TINYDRAW_V2_CENSUS_ADD(rows_prefinalized, 1);
+      ++y;
+      continue;
+    }
+    const int window_first = row_x0 + static_cast<int>(window->first - row_first);
+    const int window_last = row_x0 + static_cast<int>(window->last - row_first);
+    // Flat per-row charge for the window scan itself.
+    slice.work_px += 4U;
+    const float pixel_y = static_cast<float>(y) + 0.5F;
+    for (std::size_t index = 0; index < active_count; ++index) {
+      const OperationChordPlan& plan = plans[active[index]];
+      const int chord_first = std::max(window_first, plan.bounds.x0);
+      const int chord_last = std::min(window_last, plan.bounds.x1 - 1);
+      if (chord_last < chord_first) {
+        continue;
+      }
+      slice.work_px += static_cast<std::size_t>(chord_last - chord_first + 1);
+      int newly_finalized = 0;
+      if (plan.constant) {
+        newly_finalized =
+            paint_masked_const_row(plan.segment, plan.seed, plan.bounds, y, row, chord_first,
+                                   chord_last, applied, surface, finalized_pixels);
+      } else {
+        const ScanSpan conservative = conservative_row_span(plan.seed, plan.bounds, pixel_y);
+        const ScanSpan row_span{
+            .first = std::max(conservative.first, chord_first),
+            .last = std::min(conservative.last, chord_last),
+        };
+        if (row_span.empty()) {
+          TINYDRAW_V2_CENSUS_ADD(rows_empty_span, 1);
+          continue;
+        }
+        TINYDRAW_V2_CENSUS_ADD(rows_scanned, 1);
+        TINYDRAW_V2_CENSUS_ADD(span_pixels,
+                               static_cast<std::uint64_t>(row_span.last - row_span.first + 1));
+        newly_finalized = paint_masked_tapered_row(plan.segment, y, row_span, applied, surface,
+                                                   finalized_pixels);
+      }
+      if (newly_finalized != 0 && summary != nullptr) {
+        summary->note_finalized(surface_row, newly_finalized);
+      }
+    }
+    ++y;
+  }
+  slice.next_row = y;
+  return true;
+}
+
 std::optional<AffectedTileResult> affected_tiles(const OperationAppend& operation, ZoomLevel zoom,
                                                  std::span<TileKey> output) {
   if (zoom == ZoomLevel::k25Percent || operation.samples.empty()) {

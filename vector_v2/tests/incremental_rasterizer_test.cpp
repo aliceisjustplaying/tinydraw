@@ -676,3 +676,95 @@ TEST_CASE("masked painter keeps a supplied row summary exact") {
       surface, mask, &summary));
   CHECK(summary.all_saturated());
 }
+
+TEST_CASE("operation chord batch sweep matches per-unit painting bit for bit") {
+  // The H7 union argument: all chords of one operation share a color, so an
+  // op-level y-sorted sweep (including capacity batching and row-slice
+  // resume) must write exactly the pixels and mask bits of sequential
+  // per-endpoint unit painting.
+  constexpr int kSize = 96;
+  // A curved multi-sample operation with tapered and constant spans plus a
+  // partially clipped tail, over a pre-finalized stripe to exercise windows.
+  std::vector<vector_v2::CompactOperationSample> samples;
+  for (int index = 0; index < 24; ++index) {
+    samples.push_back({
+        .x_quarter = static_cast<std::uint16_t>(40 + index * 14 + (index % 5) * 6),
+        .y_quarter = static_cast<std::uint16_t>(60 + ((index * 37) % 190)),
+        .radius_256 = static_cast<std::uint16_t>(256 + (index % 4) * 384),
+    });
+  }
+  const auto run_reference = [&](std::span<std::uint8_t> mask,
+                                 vector_v2::MaskedRowSummary& summary,
+                                 const vector_v2::RasterSurface& surface) {
+    for (std::size_t endpoint = samples.size() - 1U; endpoint >= 2U; --endpoint) {
+      const auto unit = vector_v2::prepare_incremental_curve_unit(
+          samples, endpoint, vector_v2::ZoomLevel::k100Percent);
+      REQUIRE(unit.has_value());
+      REQUIRE(vector_v2::apply_masked_prepared_curve_unit(vector_v2::OperationTool::kPen, 0xF800U,
+                                                          *unit, surface, mask, &summary));
+    }
+  };
+  const auto run_batches = [&](std::span<std::uint8_t> mask,
+                               vector_v2::MaskedRowSummary& summary,
+                               const vector_v2::RasterSurface& surface) {
+    std::vector<std::uint32_t> storage(vector_v2::kOperationChordStorageBytes / 4U);
+    const auto bytes = std::as_writable_bytes(std::span(storage));
+    std::size_t endpoint = samples.size() - 1U;
+    while (true) {
+      const auto batch = vector_v2::prepare_operation_chord_batch(
+          samples, endpoint, vector_v2::ZoomLevel::k100Percent, surface.level_bounds, bytes);
+      REQUIRE(batch.has_value());
+      if (batch->chord_count != 0U) {
+        // Deliberately tiny work slices so resume paths run.
+        int row = batch->clipped_bounds.y0;
+        while (row < batch->clipped_bounds.y1) {
+          vector_v2::OperationSweepSlice slice{};
+          REQUIRE(vector_v2::apply_masked_operation_chord_rows(
+              vector_v2::OperationTool::kPen, 0xF800U, bytes, *batch, row, 25U, surface, mask,
+              &summary, slice));
+          REQUIRE(slice.next_row > row);
+          row = slice.next_row;
+        }
+      }
+      if (batch->next_endpoint == 0U) {
+        break;
+      }
+      endpoint = batch->next_endpoint;
+    }
+  };
+  std::vector<std::uint16_t> reference_pixels(kSize * kSize, 0xFFFFU);
+  std::vector<std::uint16_t> batch_pixels(kSize * kSize, 0xFFFFU);
+  std::vector<std::uint8_t> reference_mask((kSize * kSize + 7) / 8, 0U);
+  std::vector<std::uint8_t> batch_mask((kSize * kSize + 7) / 8, 0U);
+  // Pre-finalize a horizontal stripe (a newer op already painted there).
+  for (int y = 30; y < 34; ++y) {
+    for (int x = 0; x < kSize; ++x) {
+      const std::size_t pixel = static_cast<std::size_t>(y) * kSize + static_cast<std::size_t>(x);
+      reference_mask[pixel >> 3U] |= static_cast<std::uint8_t>(1U << (pixel & 7U));
+      batch_mask[pixel >> 3U] |= static_cast<std::uint8_t>(1U << (pixel & 7U));
+    }
+  }
+  std::vector<std::uint16_t> reference_rows(kSize);
+  std::vector<std::uint32_t> reference_words((kSize + 31) / 32);
+  std::vector<std::uint16_t> batch_rows(kSize);
+  std::vector<std::uint32_t> batch_words((kSize + 31) / 32);
+  vector_v2::MaskedRowSummary reference_summary{reference_rows, reference_words};
+  vector_v2::MaskedRowSummary batch_summary{batch_rows, batch_words};
+  reference_summary.reset(kSize, kSize);
+  batch_summary.reset(kSize, kSize);
+  const vector_v2::RasterSurface reference_surface{.zoom = vector_v2::ZoomLevel::k100Percent,
+                                                   .level_bounds = {8, 8, 8 + kSize, 8 + kSize},
+                                                   .pixels = reference_pixels,
+                                                   .stride = kSize};
+  const vector_v2::RasterSurface batch_surface{.zoom = vector_v2::ZoomLevel::k100Percent,
+                                               .level_bounds = {8, 8, 8 + kSize, 8 + kSize},
+                                               .pixels = batch_pixels,
+                                               .stride = kSize};
+  run_reference(reference_mask, reference_summary, reference_surface);
+  run_batches(batch_mask, batch_summary, batch_surface);
+  CHECK(reference_pixels == batch_pixels);
+  CHECK(reference_mask == batch_mask);
+  for (int row = 0; row < kSize; ++row) {
+    CHECK(reference_summary.row_saturated(row) == batch_summary.row_saturated(row));
+  }
+}

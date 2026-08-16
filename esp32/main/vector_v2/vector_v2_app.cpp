@@ -209,6 +209,7 @@ struct AppStorage {
   std::uint8_t* producer_mask = nullptr;
   std::uint16_t* producer_summary_rows = nullptr;
   std::uint32_t* producer_summary_words = nullptr;
+  std::uint32_t* producer_chord_plans = nullptr;
   std::uint8_t* chunk_mask = nullptr;
   MaterializedUniformStorage* uniforms = nullptr;
   std::uint8_t* occupancy = nullptr;
@@ -255,6 +256,10 @@ struct AppStorage {
     producer_mask = allocate_internal<std::uint8_t>(vector_v2::kTileProducerMaskBytes);
     producer_summary_rows = allocate_internal<std::uint16_t>(vector_v2::kTileProducerSummaryRows);
     producer_summary_words = allocate_internal<std::uint32_t>(vector_v2::kTileProducerSummaryWords);
+    // One operation's prepared chord batch (H7 sweep), read once per chord
+    // per swept row: internal SRAM keeps it off the PSRAM dcache path.
+    producer_chord_plans =
+        allocate_internal<std::uint32_t>(vector_v2::kOperationChordStorageBytes / 4U);
     chunk_mask = allocate_internal<std::uint8_t>(vector_v2::kInPlaceTileMaskBytes);
     uniforms =
         allocate_array<MaterializedUniformStorage>(vector_v2::kMaterializedTileIdentityCount);
@@ -283,8 +288,9 @@ struct AppStorage {
         allocate_array<TileKey>(vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles);
     if (overview == nullptr || snapshot == nullptr || frame == nullptr || tile_pixels == nullptr ||
         overview_scratch == nullptr || !harness_workspace_ready || region_scratch == nullptr ||
-        chrome_cache == nullptr || producer_supertask == nullptr || producer_mask == nullptr || producer_summary_rows == nullptr ||
-        producer_summary_words == nullptr || chunk_mask == nullptr || uniforms == nullptr ||
+        chrome_cache == nullptr || producer_supertask == nullptr || producer_mask == nullptr ||
+        producer_summary_rows == nullptr || producer_summary_words == nullptr ||
+        producer_chord_plans == nullptr || chunk_mask == nullptr || uniforms == nullptr ||
         occupancy == nullptr || slots == nullptr || records == nullptr || samples == nullptr ||
         input_samples == nullptr || rerender_entries == nullptr || touch_events == nullptr ||
         !ink_trace_ready || affected_keys == nullptr) {
@@ -806,7 +812,9 @@ void run_vector_v2_app() {
        .summary_row_unset =
            std::span(storage.producer_summary_rows, vector_v2::kTileProducerSummaryRows),
        .summary_saturated_words =
-           std::span(storage.producer_summary_words, vector_v2::kTileProducerSummaryWords)});
+           std::span(storage.producer_summary_words, vector_v2::kTileProducerSummaryWords),
+       .operation_chord_plans = std::as_writable_bytes(std::span(
+           storage.producer_chord_plans, vector_v2::kOperationChordStorageBytes / 4U))});
   // Re-render truth: every completed group render is classified against the
   // damage/eviction state the canvas reports (déjà-vu oracle; ~27.5 KiB).
   vector_v2::RerenderLedger rerender_ledger(

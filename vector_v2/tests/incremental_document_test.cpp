@@ -784,14 +784,18 @@ struct EquivalenceRig {
       std::vector<vector_v2::TileKey>(vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles);
   std::vector<std::uint8_t> chunk_mask =
       std::vector<std::uint8_t>(vector_v2::kInPlaceTileMaskBytes);
+  std::vector<std::uint32_t> chord_plans =
+      std::vector<std::uint32_t>(vector_v2::kOperationChordStorageBytes / 4U);
   vector_v2::OperationLog log{records, samples};
   vector_v2::MaterializedCanvas canvas{overview, *uniforms, occupancy, slots, tile_pool};
-  vector_v2::TileProducer producer{log,
-                                   canvas,
-                                   {.supertask_pixels = supertask,
-                                    .finalized_pixels = mask,
-                                    .summary_row_unset = summary_rows,
-                                    .summary_saturated_words = summary_words}};
+  vector_v2::TileProducer producer{
+      log,
+      canvas,
+      {.supertask_pixels = supertask,
+       .finalized_pixels = mask,
+       .summary_row_unset = summary_rows,
+       .summary_saturated_words = summary_words,
+       .operation_chord_plans = std::as_writable_bytes(std::span(chord_plans))}};
 
   EquivalenceRig() {
     REQUIRE(vector_v2::restore_document_snapshot(log, canvas, {1}, snapshot));
