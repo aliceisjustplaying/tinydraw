@@ -1,7 +1,6 @@
 #ifndef TINYDRAW_ESP32_VECTOR_V2_INK_TRACE_CAPTURE_H
 #define TINYDRAW_ESP32_VECTOR_V2_INK_TRACE_CAPTURE_H
 
-#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -25,25 +24,17 @@ struct InkTraceCaptureRecord {
 // sampler cadence, comfortably above every canonical gesture.
 inline constexpr std::size_t kInkTraceCaptureCapacity = 12'288U;
 
-// Records the semantic touch stream upstream of coalescing, per
-// docs/INK_TRACE_HARNESS.md §1. The core-1 sampler task feeds every raw
-// contact read through a private, immediately drained TouchEventBuffer, so
-// Down/Move/Up derivation and the lift debounce match production exactly
-// while no Move is ever coalesced (coalescing only merges *pending* moves).
-// The core-0 app dumps the accumulated events as canonical trace CSV between
-// serial markers once the owner has been idle, then resets.
-//
-// Concurrency: single producer (sampler task), single consumer (app task).
-// The consumer must pause capture before reading; dump_and_reset() does.
+// Records the exact semantic touch events consumed by the product, after
+// production coalescing and overflow policy. Recording and dump both run on
+// the core-0 consumer, so snapshot/reset needs no cross-core timing guess.
 class InkTraceCaptureRing {
  public:
   explicit InkTraceCaptureRing(std::span<InkTraceCaptureRecord> storage);
 
   [[nodiscard]] bool ready() const;
 
-  // Producer side: called from the sampler task for every raw contact read.
-  void record_contact_read(vector_v2::TouchContactRead read, vector_v2::TouchContactPoint point,
-                           std::uint32_t timestamp_us);
+  // Called by the product consumer immediately after it pops an event.
+  void record_consumed_event(const vector_v2::TouchEvent& event);
 
   // Consumer side.
   [[nodiscard]] std::size_t size() const;
@@ -51,8 +42,7 @@ class InkTraceCaptureRing {
   [[nodiscard]] std::uint32_t stroke_count() const;
   [[nodiscard]] bool touching() const;
   [[nodiscard]] std::uint32_t last_activity_us() const;
-  // Pauses capture, waits out any in-flight producer iteration, prints the
-  // accumulated events as canonical trace CSV between
+  // Prints accumulated events as canonical trace CSV between
   // TINYDRAW_INKTRACE_CAPTURE_BEGIN/END markers, resets, and resumes.
   void dump_and_reset();
 
@@ -60,8 +50,6 @@ class InkTraceCaptureRing {
   void append(const vector_v2::TouchEvent& event);
 
   std::span<InkTraceCaptureRecord> storage_;
-  std::array<vector_v2::TouchEvent, 8> drain_storage_{};
-  vector_v2::TouchEventBuffer drain_;
   std::atomic<std::size_t> count_{0};
   std::atomic<bool> enabled_{true};
   std::atomic<bool> overflowed_{false};

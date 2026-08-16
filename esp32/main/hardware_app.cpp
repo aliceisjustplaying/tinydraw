@@ -96,18 +96,22 @@ struct TouchTaskContext {
   std::span<const tinydraw::DemoSample> built_in_demo;
   tinydraw::esp32::PowerManager* power = nullptr;
   tinydraw::esp32::PowerStatus power_status{};
+  // State of the newest touch event accepted by the app queue. It is
+  // producer-owned and lets backpressure discard only redundant moves.
+  bool queued_touching = false;
 #ifdef TINYDRAW_PHASE2_PROTOTYPE
   tinydraw::esp32::Phase2TouchProbe* phase2_probe = nullptr;
 #endif
 };
 
-void enqueue_latest(QueueHandle_t queue, const AppEvent& event) {
-  if (xQueueSend(queue, &event, 0) == pdTRUE) {
-    return;
+void enqueue_touch(TouchTaskContext& context, const TouchEvent& touch) {
+  const AppEvent event{.touch = touch};
+  const bool transition = touch.touching != context.queued_touching;
+  if (xQueueSend(context.queue, &event, transition ? portMAX_DELAY : 0) == pdTRUE) {
+    context.queued_touching = touch.touching;
   }
-  AppEvent discarded;
-  static_cast<void>(xQueueReceive(queue, &discarded, 0));
-  static_cast<void>(xQueueSend(queue, &event, 0));
+  // A full queue may discard an intermediate move, but never evicts an
+  // existing control or gesture edge and never drops the incoming edge.
 }
 
 void enqueue_control(QueueHandle_t queue, AppEventKind kind) {
@@ -119,7 +123,7 @@ void emit_touch(TouchTaskContext& context, const TouchEvent& event) {
   if (context.tape->recording()) {
     static_cast<void>(context.tape->record(event));
   }
-  enqueue_latest(context.queue, {.touch = event});
+  enqueue_touch(context, event);
 }
 
 void dump_demo(std::span<const tinydraw::DemoSample> samples, bool overflowed) {
@@ -154,6 +158,7 @@ void replay_demo(TouchTaskContext& context, std::span<const tinydraw::DemoSample
     return;
   }
   xQueueReset(context.queue);
+  context.queued_touching = false;
   enqueue_control(context.queue, AppEventKind::kDemoReplayStarted);
   enqueue_control(context.queue, AppEventKind::kResetForDemo);
 
@@ -161,8 +166,7 @@ void replay_demo(TouchTaskContext& context, std::span<const tinydraw::DemoSample
   const std::uint32_t replay_started_us = timestamp_us();
   for (const auto& sample : samples) {
     wait_for_demo_offset(replay_started_us, sample.offset_us);
-    enqueue_latest(context.queue,
-                   {.touch = tinydraw::replay_demo_sample(sample, replay_started_us)});
+    enqueue_touch(context, tinydraw::replay_demo_sample(sample, replay_started_us));
   }
   enqueue_control(context.queue, AppEventKind::kDemoReplayStopped);
   std::printf("TINYDRAW_DEMO_REPLAY_END\n");

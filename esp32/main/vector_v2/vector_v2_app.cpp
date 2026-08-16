@@ -186,6 +186,11 @@ struct PendingStrokeReport {
 };
 
 struct AppStorage {
+  AppStorage() = default;
+  ~AppStorage() { release(); }
+  AppStorage(const AppStorage&) = delete;
+  AppStorage& operator=(const AppStorage&) = delete;
+
   std::uint16_t* overview = nullptr;
   std::uint16_t* snapshot = nullptr;
   std::uint16_t* frame = nullptr;
@@ -309,6 +314,7 @@ struct AppStorage {
         records == nullptr || samples == nullptr ||
         input_samples == nullptr || rerender_entries == nullptr || touch_events == nullptr ||
         !ink_trace_ready || affected_keys == nullptr) {
+      release();
       return false;
     }
     for (std::size_t index = 0; index < vector_v2::kMaterializedTileIdentityCount; ++index) {
@@ -317,10 +323,64 @@ struct AppStorage {
     for (std::size_t index = 0; index < vector_v2::kTileSlotCount; ++index) {
       std::construct_at(slots + index);
     }
+    metadata_constructed_ = true;
     return true;
   }
 
  private:
+  template <typename Type>
+  static void free_and_clear(Type*& pointer) {
+    if (pointer != nullptr) {
+      heap_caps_free(pointer);
+      pointer = nullptr;
+    }
+  }
+
+  void release() {
+    if (metadata_constructed_) {
+      std::destroy_n(uniforms, vector_v2::kMaterializedTileIdentityCount);
+      std::destroy_n(slots, vector_v2::kTileSlotCount);
+      metadata_constructed_ = false;
+    }
+    free_and_clear(overview);
+    free_and_clear(snapshot);
+    free_and_clear(frame);
+    free_and_clear(tile_pixels);
+    free_and_clear(overview_scratch);
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
+    free_and_clear(tile_scratch);
+#endif
+    free_and_clear(region_scratch);
+    free_and_clear(chrome_cache);
+    free_and_clear(producer_supertask);
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
+    free_and_clear(harness_tile_scratch);
+#endif
+    free_and_clear(producer_mask);
+    free_and_clear(producer_summary_rows);
+    free_and_clear(producer_summary_words);
+    free_and_clear(producer_chord_plans);
+    free_and_clear(chunk_mask);
+    free_and_clear(uniforms);
+    free_and_clear(occupancy);
+    free_and_clear(slots);
+    free_and_clear(raw_slot_directory);
+    free_and_clear(records);
+    free_and_clear(samples);
+    free_and_clear(input_samples);
+    free_and_clear(rerender_entries);
+    free_and_clear(touch_events);
+#ifdef TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE
+    free_and_clear(ink_trace_records);
+#endif
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
+    free_and_clear(publications);
+#endif
+    free_and_clear(affected_keys);
+  }
+
+  bool metadata_constructed_ = false;
+
   template <typename Type>
   [[nodiscard]] static Type* allocate_array(std::size_t count) {
     return static_cast<Type*>(heap_caps_malloc(count * sizeof(Type), kExternalCaps));
@@ -1008,10 +1068,15 @@ void run_vector_v2_app() {
       button_down = true;
     } else if (!next_button_down && button_down) {
       button_down = false;
-      const ZoomLevel zoom = vector_v2::next_zoom(presenter.zoom());
-      const ZoomLevel target = zoom == presenter.zoom() ? ZoomLevel::k25Percent : zoom;
-      const auto timing = presenter.set_zoom(target, chrome, loop_us);
-      print_presentation("zoom", presenter, timing);
+      // A physical-button release can race a touch gesture. Changing the
+      // view here would reinterpret the active builder's remaining points in
+      // a different coordinate system, so defer the action until idle.
+      if (!pressed && !panning && !ink.active()) {
+        const ZoomLevel zoom = vector_v2::next_zoom(presenter.zoom());
+        const ZoomLevel target = zoom == presenter.zoom() ? ZoomLevel::k25Percent : zoom;
+        const auto timing = presenter.set_zoom(target, chrome, loop_us);
+        print_presentation("zoom", presenter, timing);
+      }
     }
 
     Point point{};
@@ -1275,7 +1340,16 @@ void run_vector_v2_app() {
     // enough that the serial burst cannot perturb a gesture.
     if (!pressed && !ink_trace_ring.touching() && ink_trace_ring.size() != 0U &&
         loop_us - ink_trace_ring.last_activity_us() > 2'000'000U) {
+      // Serial output is intentionally blocking. Pause the producer so that
+      // its finite queue cannot overflow with gesture edges during the dump;
+      // reset derivation so a contact present after restart begins with Down.
+      touch_sampler.stop();
+      touch_sampler.reset_pending();
       ink_trace_ring.dump_and_reset();
+      if (!touch_sampler.start()) {
+        std::printf("TINYDRAW_LIVE_FAIL reason=touch_restart_after_capture\n");
+        return;
+      }
     }
 #endif
 

@@ -29,9 +29,11 @@ TraceEvent  { t_us (monotonic, from trace start), kind (Down|Move|Up), x, y }
      lift-drain backlog and stroke-boundary loss.
   5. `under-overlay` — stroke crossing zoom rail, minimap, toolbar regions.
 
-Capture mode: a firmware flag records real finger input (event timestamps from
-the touch sampler) to serial; a host script converts to trace format. One
-session of the owner's real scribbling becomes the canonical corpus.
+Capture mode: a firmware flag records the exact semantic events consumed by
+the app after the production buffer's coalescing and overflow policy (retaining
+the sampler timestamps), then writes them to serial while sampling is paused.
+A host script converts the output to trace format. One session of the owner's
+real scribbling becomes the canonical corpus.
 
 ## 2. Replay mode
 

@@ -55,6 +55,9 @@ class TouchEventBuffer {
                                        std::uint32_t timestamp_us);
   [[nodiscard]] std::optional<TouchEvent> pop();
   [[nodiscard]] std::size_t pending() const;
+  // Discards queued events and contact derivation while preserving the
+  // monotonic sequence counter. The next point is therefore a fresh Down.
+  void reset_pending();
 
  private:
   [[nodiscard]] std::size_t physical_index(std::size_t logical_index) const;

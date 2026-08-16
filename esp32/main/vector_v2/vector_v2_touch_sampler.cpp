@@ -58,6 +58,15 @@ void VectorV2TouchSampler::stop() {
   stop_waiter_ = nullptr;
 }
 
+void VectorV2TouchSampler::reset_pending() {
+  if (task_ != nullptr) {
+    return;
+  }
+  portENTER_CRITICAL(&event_lock_);
+  events_.reset_pending();
+  portEXIT_CRITICAL(&event_lock_);
+}
+
 std::optional<SampledTouch> VectorV2TouchSampler::read_next() {
   portENTER_CRITICAL(&event_lock_);
   const auto event = events_.pop();
@@ -65,6 +74,11 @@ std::optional<SampledTouch> VectorV2TouchSampler::read_next() {
   if (!event.has_value()) {
     return std::nullopt;
   }
+#ifdef TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE
+  if (capture_ring_ != nullptr) {
+    capture_ring_->record_consumed_event(*event);
+  }
+#endif
   const std::uint32_t event_age_us =
       static_cast<std::uint32_t>(esp_timer_get_time()) - event->timestamp_us;
   include_max(maximum_event_age_us_, event_age_us);
@@ -125,12 +139,6 @@ void VectorV2TouchSampler::run() {
                                std::memory_order_relaxed);
     moves_coalesced_.fetch_add(offered == vector_v2::TouchOfferResult::kMoveCoalesced,
                                std::memory_order_relaxed);
-#ifdef TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE
-    if (capture_ring_ != nullptr) {
-      capture_ring_->record_contact_read(contact_read(read), {.x = point.x, .y = point.y},
-                                         completed_us);
-    }
-#endif
     vTaskDelay(pdMS_TO_TICKS(1));
   }
   const TaskHandle_t waiter = stop_waiter_;

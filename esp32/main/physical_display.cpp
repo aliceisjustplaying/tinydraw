@@ -81,7 +81,8 @@ class PhysicalDisplay::Impl {
                                  toolbar_.external_power != toolbar.external_power;
     const bool toast_changed = toolbar_.export_toast != toolbar.export_toast ||
                                ((toolbar_.export_toast || toolbar.export_toast) &&
-                                toolbar_.export_ready != toolbar.export_ready);
+                                (toolbar_.export_ready != toolbar.export_ready ||
+                                 toolbar_.exporting != toolbar.exporting));
     const bool palette_changed =
         toolbar_.tools_open != toolbar.tools_open || toolbar_.colors_open != toolbar.colors_open ||
         toolbar_.sizes_open != toolbar.sizes_open || toolbar_.can_export != toolbar.can_export ||

@@ -81,13 +81,13 @@ struct TouchEvent {
 
 queue_t touch_events;
 
-void enqueue_touch(TouchEvent event) {
-  if (queue_try_add(&touch_events, &event)) {
+void enqueue_touch(TouchEvent event, bool transition) {
+  if (queue_try_add(&touch_events, &event) || !transition) {
     return;
   }
-  TouchEvent discarded{};
-  static_cast<void>(queue_try_remove(&touch_events, &discarded));
-  static_cast<void>(queue_try_add(&touch_events, &event));
+  // Moves may thin under backpressure, but Down/Up define the gesture state
+  // machine and must reach the consumer in order.
+  queue_add_blocking(&touch_events, &event);
 }
 
 void sample_touch() {
@@ -102,7 +102,7 @@ void sample_touch() {
       const auto x = static_cast<std::uint16_t>(FT3168.x_point);
       const auto y = static_cast<std::uint16_t>(FT3168.y_point);
       if (!touching || x != last_x || y != last_y) {
-        enqueue_touch({.x = x, .y = y, .timestamp_us = time_us_32(), .touching = true});
+        enqueue_touch({.x = x, .y = y, .timestamp_us = time_us_32(), .touching = true}, !touching);
         last_x = x;
         last_y = y;
       }
@@ -112,7 +112,7 @@ void sample_touch() {
       if (no_touch_started_us == 0) {
         no_touch_started_us = now;
       } else if (now - no_touch_started_us >= 10'000U) {
-        enqueue_touch({.x = last_x, .y = last_y, .timestamp_us = now, .touching = false});
+        enqueue_touch({.x = last_x, .y = last_y, .timestamp_us = now, .touching = false}, true);
         touching = false;
         no_touch_started_us = 0;
       }

@@ -36,22 +36,13 @@ const char* kind_text(vector_v2::TouchEventKind kind) {
 }  // namespace
 
 InkTraceCaptureRing::InkTraceCaptureRing(std::span<InkTraceCaptureRecord> storage)
-    : storage_(storage), drain_(drain_storage_) {}
+    : storage_(storage) {}
 
-bool InkTraceCaptureRing::ready() const { return !storage_.empty() && drain_.ready(); }
+bool InkTraceCaptureRing::ready() const { return !storage_.empty(); }
 
-void InkTraceCaptureRing::record_contact_read(vector_v2::TouchContactRead read,
-                                              vector_v2::TouchContactPoint point,
-                                              std::uint32_t timestamp_us) {
-  if (!enabled_.load(std::memory_order_relaxed)) {
-    return;
-  }
-  // The drain buffer receives the identical offer stream as the production
-  // buffer, so its Down/Move/Up derivation and lift debounce stay in
-  // lockstep. Popping every event immediately means no Move can coalesce.
-  static_cast<void>(drain_.offer(read, point, timestamp_us));
-  while (const auto event = drain_.pop()) {
-    append(*event);
+void InkTraceCaptureRing::record_consumed_event(const vector_v2::TouchEvent& event) {
+  if (enabled_.load(std::memory_order_relaxed)) {
+    append(event);
   }
 }
 
@@ -91,10 +82,6 @@ std::uint32_t InkTraceCaptureRing::last_activity_us() const {
 
 void InkTraceCaptureRing::dump_and_reset() {
   enabled_.store(false, std::memory_order_relaxed);
-  // The 1 kHz producer iteration is microseconds long; two ticks guarantee
-  // any in-flight append has finished before the consumer reads.
-  vTaskDelay(pdMS_TO_TICKS(2));
-
   const std::size_t count = count_.load(std::memory_order_acquire);
   std::printf("TINYDRAW_INKTRACE_CAPTURE_BEGIN events=%u strokes=%u overflow=%u\n",
               static_cast<unsigned>(count), static_cast<unsigned>(strokes_.load()),

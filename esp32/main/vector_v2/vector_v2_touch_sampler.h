@@ -16,7 +16,7 @@
 
 namespace tinydraw::esp32 {
 
-inline constexpr std::size_t kVectorV2TouchEventCapacity = 16U;
+inline constexpr std::size_t kVectorV2TouchEventCapacity = 64U;
 
 struct SampledTouch {
   Point point{};
@@ -53,11 +53,14 @@ class VectorV2TouchSampler {
 
   [[nodiscard]] bool start();
   void stop();
+  // Valid while stopped. Discards stale semantic state so the first point
+  // after restart is derived as a Down rather than a Move.
+  void reset_pending();
   [[nodiscard]] std::optional<SampledTouch> read_next();
   [[nodiscard]] TouchSamplerMetrics take_metrics();
 #ifdef TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE
-  // Capture-firmware only: mirrors every raw contact read into the trace
-  // ring, upstream of coalescing. Must be set before start().
+  // Capture-firmware only: records each event the app actually consumes,
+  // after the production buffer's coalescing policy. Set before start().
   void set_capture_ring(InkTraceCaptureRing* ring) { capture_ring_ = ring; }
 #endif
 

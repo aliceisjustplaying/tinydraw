@@ -6,6 +6,7 @@ namespace tinydraw::vector_v2 {
 namespace {
 
 constexpr std::size_t kMinimumEventCapacity = 4U;
+constexpr std::size_t kReservedEdgeSlots = 2U;
 constexpr std::uint8_t kLiftConfirmationReads = 2U;
 
 }  // namespace
@@ -62,6 +63,14 @@ std::optional<TouchEvent> TouchEventBuffer::pop() {
 
 std::size_t TouchEventBuffer::pending() const { return size_; }
 
+void TouchEventBuffer::reset_pending() {
+  head_ = 0U;
+  size_ = 0U;
+  last_point_ = {};
+  no_touch_reads_ = 0U;
+  touching_ = false;
+}
+
 std::size_t TouchEventBuffer::physical_index(std::size_t logical_index) const {
   return (head_ + logical_index) % storage_.size();
 }
@@ -87,6 +96,16 @@ TouchOfferResult TouchEventBuffer::enqueue(const TouchEvent& event) {
       storage_[newest] = event;
       return TouchOfferResult::kMoveCoalesced;
     }
+  }
+  // Keep enough room for a complete Down/Up pair even when the consumer is
+  // briefly backpressured. A displaced Move is safe because Up carries the
+  // latest sampled point; gesture edges are not reconstructible.
+  if (event.kind == TouchEventKind::kMove && size_ >= storage_.size() - kReservedEdgeSlots) {
+    if (remove_oldest_move()) {
+      storage_[physical_index(size_)] = event;
+      ++size_;
+    }
+    return TouchOfferResult::kMoveCoalesced;
   }
   if (size_ == storage_.size() && !remove_oldest_move()) {
     return TouchOfferResult::kOverflow;
