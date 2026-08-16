@@ -236,21 +236,22 @@ Derived overview, tile, chrome, and settled caches are never persisted.
 
 - [ ] Wire the exact variable-width SVG core through a pinned authority snapshot
       and transactional temporary sink; promote output only after generation is
-      rechecked. Preserve eraser fidelity.
-- [ ] Implement settled analytic-coverage AA in bounded idle work. Publish a
-      final cached identity and prove revisit retention; retain immediate
-      hard-edged live ink. The rejected four-sample SSAA probe is not a path.
-      Approved design (owner 2026-08-16, prototype go): re-run the
-      newest-first masked replay with the 1-bit mask widened to 8-bit
-      accumulated alpha; interiors keep today's exact span fills, only
-      span-boundary pixels get analytic capsule coverage composited
-      front-to-back; publish as higher-quality cached tiles. First step is a
-      host prototype on one group with rendered before/afters, paired with
-      the arc-length-resampling prototype (external review §9.4; changes
-      future stroke sampling only, so the frozen cold corpus stands, but
-      mixed_draw and ink latency get re-measured). Constraints: within-op
-      self-overlap must UNION coverage; freeze the RGB565 blend model first.
-      See `review_findings_2026_08_16_cold_campaign/REVIEW.md`.
+      rechecked. Preserve eraser fidelity. **Owner raised priority
+      2026-08-16 ("proper SVG export is much higher"); queue right after
+      the overlap-50 cold fix.** Also fix the export-mode USB wedge (MSC
+      re-exposes after eject; needs an on-device exit) before soaks.
+- [x] Implement settled analytic-coverage AA in bounded idle work. **Landed
+      2026-08-16** (`vector_v2/settled_tile.cpp` + app idle pass): settled
+      tiles publish at the settled quality tier under the revision identity
+      (revisit-ledger-safe); fresh ink demotes to immediate and re-settles;
+      25% settles presentation pixels only (the overview stays hard-edged
+      replay authority); live ink stays hard-edged. Per-tile 1.7–5.4 ms
+      mean / 9.3 ms max after round 1 of optimization (annulus sqrt,
+      batched slices+present). Remaining polish, owner-requested: make the
+      settle progression imperceptible (speed ideas ranked in
+      `review_findings_2026_08_16_overnight/HANDOVER.md`), settled PNG
+      export (low-prio). Arc-length resampling remains prototyped-only
+      (spacing choice open; trailing-tip fix todo #13 pairs with it).
 - [ ] Fix zoom-cycle return position: cycling back to a recently explored
       zoom must restore its saved local position per
       `VECTOR_V2_ZOOM_NAVIGATION.md` (owner glass report 2026-08-16; the
