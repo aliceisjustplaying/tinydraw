@@ -1006,7 +1006,7 @@ bool run_long_gesture_commit_gate(VectorV2Presenter& presenter, vector_v2::TileP
       [&](const vector_v2::OperationAppend& chunk, const vector_v2::ViewRequest& view) {
         return vector_v2::append_incrementally_in_place(
             log, canvas, chunk, in_place_workspace, view,
-            {.now_us = &esp_timer_get_time, .budget_us = kInPlaceCommitBudgetUs});
+            {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs});
       },
       in_place);
   const auto print_pass = [](const char* path, const LongGestureMeasurement& measurement,
@@ -1265,6 +1265,7 @@ struct MixedDrawStrokeStats {
   std::size_t chunks = 0;
   std::int64_t append_total_us = 0;
   std::int64_t append_max_us = 0;
+  vector_v2::InPlaceAppendPhases phase_max{};
   std::size_t affected_tiles = 0;
   std::size_t published_tiles = 0;
   std::size_t fallback_tiles = 0;
@@ -1390,13 +1391,24 @@ bool run_mixed_zoom_stroke(VectorV2Presenter& presenter, OperationLog& log,
       // Mirror the product coordinator's commit budget exactly.
       const auto committed = vector_v2::append_incrementally_in_place(
           log, canvas, *pending, workspace, priority_view,
-          {.now_us = &esp_timer_get_time, .budget_us = kInPlaceCommitBudgetUs});
+          {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs});
       const std::int64_t elapsed_us = esp_timer_get_time() - started_us;
       if (!committed.has_value()) {
         return std::nullopt;
       }
       stats.append_total_us += elapsed_us;
       stats.append_max_us = std::max(stats.append_max_us, elapsed_us);
+      stats.phase_max.prepare_us =
+          std::max(stats.phase_max.prepare_us, committed->phases.prepare_us);
+      stats.phase_max.overview_us =
+          std::max(stats.phase_max.overview_us, committed->phases.overview_us);
+      stats.phase_max.enumerate_us =
+          std::max(stats.phase_max.enumerate_us, committed->phases.enumerate_us);
+      stats.phase_max.uniform_retain_us =
+          std::max(stats.phase_max.uniform_retain_us, committed->phases.uniform_retain_us);
+      stats.phase_max.raw_retain_us =
+          std::max(stats.phase_max.raw_retain_us, committed->phases.raw_retain_us);
+      stats.phase_max.commit_us = std::max(stats.phase_max.commit_us, committed->phases.commit_us);
       ++stats.chunks;
       stats.affected_tiles += committed->affected_resident_tiles;
       stats.published_tiles += committed->published_tiles;
@@ -1528,7 +1540,9 @@ bool run_mixed_zoom_draw_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
       std::printf(
           "TINYDRAW_GATE1_MIXED_DRAW zoom=%s tool=%s chunks=%lu append_max_us=%lld "
           "append_avg_us=%lld append_total_us=%lld affected_tiles=%lu published=%lu "
-          "fallback=%lu visible_fallback=%lu committed=%u authority=%u refresh=%u run_ok=%u "
+          "fallback=%lu visible_fallback=%lu ph_prepare_max_us=%lld ph_overview_max_us=%lld "
+          "ph_enumerate_max_us=%lld ph_uniform_max_us=%lld ph_raw_max_us=%lld "
+          "ph_commit_max_us=%lld committed=%u authority=%u refresh=%u run_ok=%u "
           "pass=%u\n",
           zoom_name(zoom), tool_name(tool), static_cast<unsigned long>(stats.chunks),
           static_cast<long long>(stats.append_max_us),
@@ -1539,8 +1553,14 @@ bool run_mixed_zoom_draw_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
           static_cast<unsigned long>(stats.affected_tiles),
           static_cast<unsigned long>(stats.published_tiles),
           static_cast<unsigned long>(stats.fallback_tiles),
-          static_cast<unsigned long>(stats.visible_fallback_tiles), stats.committed,
-          stats.authority, stats.refresh_passed, run_ok, stroke_pass);
+          static_cast<unsigned long>(stats.visible_fallback_tiles),
+          static_cast<long long>(stats.phase_max.prepare_us),
+          static_cast<long long>(stats.phase_max.overview_us),
+          static_cast<long long>(stats.phase_max.enumerate_us),
+          static_cast<long long>(stats.phase_max.uniform_retain_us),
+          static_cast<long long>(stats.phase_max.raw_retain_us),
+          static_cast<long long>(stats.phase_max.commit_us), stats.committed, stats.authority,
+          stats.refresh_passed, run_ok, stroke_pass);
       std::fflush(stdout);
       worst_append_us = std::max(worst_append_us, stats.append_max_us);
       ++strokes;

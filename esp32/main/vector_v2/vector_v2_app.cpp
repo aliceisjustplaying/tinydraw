@@ -174,6 +174,7 @@ struct PendingStrokeReport {
   LiveMetrics metrics{};
   std::uint32_t poll_max_us = 0;
   TouchSamplerMetrics touch{};
+  vector_v2::InPlaceAppendPhases phase_max{};
   std::uint32_t chunks = 0;
   std::size_t free_psram = 0;
   std::size_t largest_psram = 0;
@@ -362,14 +363,25 @@ std::optional<vector_v2::IncrementalAppendResult> commit_pending_chunk(
       log, canvas, *append, workspace,
       presenter.zoom() == ZoomLevel::k25Percent ? std::optional<vector_v2::ViewRequest>{}
                                                 : std::optional{priority_view},
-      {.now_us = &esp_timer_get_time, .budget_us = kInPlaceCommitBudgetUs});
+      {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs});
+}
+
+void include_phase_maxima(vector_v2::InPlaceAppendPhases& maxima,
+                          const vector_v2::InPlaceAppendPhases& sample) {
+  maxima.prepare_us = std::max(maxima.prepare_us, sample.prepare_us);
+  maxima.overview_us = std::max(maxima.overview_us, sample.overview_us);
+  maxima.enumerate_us = std::max(maxima.enumerate_us, sample.enumerate_us);
+  maxima.uniform_retain_us = std::max(maxima.uniform_retain_us, sample.uniform_retain_us);
+  maxima.raw_retain_us = std::max(maxima.raw_retain_us, sample.raw_retain_us);
+  maxima.commit_us = std::max(maxima.commit_us, sample.commit_us);
 }
 
 std::optional<ChainedOperationStatus> commit_ready_chunk(
     ChainedOperationBuilder& builder, OperationLog& log, MaterializedCanvas& canvas,
     const vector_v2::InPlaceAppendWorkspace& workspace, const VectorV2Presenter& presenter,
     std::optional<vector_v2::PixelRect>& accumulated_bounds, std::uint32_t& chunks,
-    std::int64_t& append_us, std::int64_t& append_max_us) {
+    std::int64_t& append_us, std::int64_t& append_max_us,
+    vector_v2::InPlaceAppendPhases& phase_maxima) {
   const std::int64_t started_us = esp_timer_get_time();
   const auto committed = commit_pending_chunk(builder, log, canvas, workspace, presenter);
   const std::int64_t elapsed_us = esp_timer_get_time() - started_us;
@@ -378,6 +390,7 @@ std::optional<ChainedOperationStatus> commit_ready_chunk(
   if (!committed.has_value()) {
     return std::nullopt;
   }
+  include_phase_maxima(phase_maxima, committed->phases);
   include_bounds(accumulated_bounds, committed->affected_world_bounds);
   ++chunks;
   return builder.acknowledge_commit();
@@ -513,7 +526,9 @@ void print_stroke(const PendingStrokeReport& report) {
       "read_complete_max_us=%lu submit_over_16ms=%lu complete_over_33ms=%lu "
       "presentation_failures=%lu poll_max_us=%lu touch_errors=%lu touch_overflows=%lu "
       "touch_moves_coalesced=%lu touch_events=%lu touch_down=%lu touch_up=%lu "
-      "touch_events_ge_8ms=%lu touch_event_age_max_us=%lu chunks=%lu free_psram=%lu "
+      "touch_events_ge_8ms=%lu touch_event_age_max_us=%lu chunks=%lu "
+      "ph_prepare_max_us=%lld ph_overview_max_us=%lld ph_enumerate_max_us=%lld "
+      "ph_uniform_max_us=%lld ph_raw_max_us=%lld ph_commit_max_us=%lld free_psram=%lu "
       "largest_psram=%lu authority_match=%u\n",
       static_cast<unsigned long>(report.revision.value),
       static_cast<unsigned long>(report.operation_count),
@@ -542,7 +557,14 @@ void print_stroke(const PendingStrokeReport& report) {
       static_cast<unsigned long>(report.touch.up_events),
       static_cast<unsigned long>(report.touch.events_at_least_8ms_old),
       static_cast<unsigned long>(report.touch.maximum_event_age_us),
-      static_cast<unsigned long>(report.chunks), static_cast<unsigned long>(report.free_psram),
+      static_cast<unsigned long>(report.chunks),
+      static_cast<long long>(report.phase_max.prepare_us),
+      static_cast<long long>(report.phase_max.overview_us),
+      static_cast<long long>(report.phase_max.enumerate_us),
+      static_cast<long long>(report.phase_max.uniform_retain_us),
+      static_cast<long long>(report.phase_max.raw_retain_us),
+      static_cast<long long>(report.phase_max.commit_us),
+      static_cast<unsigned long>(report.free_psram),
       static_cast<unsigned long>(report.largest_psram), report.authority_match);
 }
 
@@ -916,6 +938,7 @@ void run_vector_v2_app() {
   std::uint32_t stroke_chunks = 0U;
   std::int64_t stroke_append_us = 0;
   std::int64_t stroke_append_max_us = 0;
+  vector_v2::InPlaceAppendPhases stroke_phase_max{};
   bool stroke_commit_failed = false;
   std::uint32_t lift_reports_dropped = 0U;
   PendingStrokeReport stroke_report{};
@@ -1005,6 +1028,7 @@ void run_vector_v2_app() {
           stroke_chunks = 0U;
           stroke_append_us = 0;
           stroke_append_max_us = 0;
+          stroke_phase_max = {};
           stroke_commit_failed = false;
           if (!builder.begin(tool, color, gesture_id, begin_point)) {
             print_stroke_rejected("begin", builder, begin_point);
@@ -1048,7 +1072,7 @@ void run_vector_v2_app() {
               [&] {
                 return commit_ready_chunk(builder, log, canvas, workspace, presenter,
                                           stroke_world_bounds, stroke_chunks, stroke_append_us,
-                                          stroke_append_max_us);
+                                          stroke_append_max_us, stroke_phase_max);
               });
           const ChainedOperationStatus add_status = move.status;
           stroke_commit_failed = move.commit_failed;
@@ -1111,9 +1135,9 @@ void run_vector_v2_app() {
         measured_lift.builder_finish_us = esp_timer_get_time() - builder_finish_started;
         while (finish_status == ChainedOperationStatus::kChunkReady ||
                finish_status == ChainedOperationStatus::kFinalChunkReady) {
-          const auto continued =
-              commit_ready_chunk(builder, log, canvas, workspace, presenter, stroke_world_bounds,
-                                 stroke_chunks, stroke_append_us, stroke_append_max_us);
+          const auto continued = commit_ready_chunk(
+              builder, log, canvas, workspace, presenter, stroke_world_bounds, stroke_chunks,
+              stroke_append_us, stroke_append_max_us, stroke_phase_max);
           if (!continued.has_value()) {
             stroke_commit_failed = true;
             finish_status = ChainedOperationStatus::kRejected;
@@ -1165,6 +1189,7 @@ void run_vector_v2_app() {
             .metrics = live_metrics,
             .poll_max_us = poll_max_us,
             .touch = touch_metrics,
+            .phase_max = stroke_phase_max,
             .chunks = measured_lift.chunks,
             .free_psram = heap_caps_get_free_size(kExternalCaps),
             .largest_psram = heap_caps_get_largest_free_block(kExternalCaps),
