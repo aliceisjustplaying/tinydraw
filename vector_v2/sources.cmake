@@ -16,6 +16,7 @@ set(TINYDRAW_VECTOR_V2_SRCS
   "${CMAKE_CURRENT_LIST_DIR}/src/render_accounting.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/replay_block_index.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/rerender_ledger.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/src/settled_tile.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/svg_export.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/tile_payload_analysis.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/tile_producer.cpp"

@@ -38,6 +38,7 @@ if(TINYDRAW_BUILD_TESTS)
     tests/operation_lod_store_test.cpp
     tests/operation_log_test.cpp
     tests/replay_block_index_test.cpp
+    tests/settled_tile_test.cpp
     tests/rerender_ledger_test.cpp
     tests/svg_export_test.cpp
     tests/tile_payload_analysis_test.cpp
