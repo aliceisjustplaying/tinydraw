@@ -97,7 +97,9 @@ TearSignalEdge selected_tear_edge() {
 #endif
 }
 
-int panel_clock_mhz() { return TINYDRAW_CO5300_CLOCK_MHZ; }
+int requested_panel_clock_mhz() { return TINYDRAW_CO5300_CLOCK_MHZ; }
+
+int effective_panel_clock_mhz() { return kEffectiveCo5300ClockMHz; }
 
 VectorV2Presenter::VectorV2Presenter(vector_v2::MaterializedCanvas& canvas,
                                      vector_v2::NavigationState& navigation,
@@ -115,9 +117,11 @@ VectorV2Presenter::VectorV2Presenter(vector_v2::MaterializedCanvas& canvas,
       chrome_cache_(chrome_cache_pixels),
       renderer_(std::make_unique<RibbonRenderer>()) {
   std::printf(
-      "TINYDRAW_VECTOR_V2_PRESENTATION experiment=%s te_edge=%s clock_mhz=%d "
+      "TINYDRAW_VECTOR_V2_PRESENTATION experiment=%s te_edge=%s "
+      "requested_clock_mhz=%d effective_clock_mhz=%d "
       "optical_acceptance=external_manual\n",
-      presentation_experiment_name(), selected_tear_edge_name(), panel_clock_mhz());
+      presentation_experiment_name(), selected_tear_edge_name(), requested_panel_clock_mhz(),
+      effective_panel_clock_mhz());
 }
 
 bool VectorV2Presenter::ready() const {

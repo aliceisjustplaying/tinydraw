@@ -10,6 +10,10 @@
 
 namespace tinydraw::esp32 {
 
+// Measured on this ESP32-S3 in HARDWARE_LIMITS.md: requested 40/50/60 MHz
+// values all resolve to 40 MHz through the GPSPI divider.
+inline constexpr int kEffectiveCo5300ClockMHz = 40;
+
 struct TearSignalTiming {
   std::uint32_t rising_edges = 0;
   std::uint32_t falling_edges = 0;

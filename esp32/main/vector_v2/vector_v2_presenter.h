@@ -90,7 +90,8 @@ struct LivePresentationTiming {
 [[nodiscard]] const char* presentation_experiment_name();
 [[nodiscard]] const char* selected_tear_edge_name();
 [[nodiscard]] TearSignalEdge selected_tear_edge();
-[[nodiscard]] int panel_clock_mhz();
+[[nodiscard]] int requested_panel_clock_mhz();
+[[nodiscard]] int effective_panel_clock_mhz();
 
 class VectorV2Presenter {
  public:

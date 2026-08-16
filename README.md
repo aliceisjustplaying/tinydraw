@@ -47,16 +47,16 @@ Autosave, charging, power-off/on, and macOS Finder mounting are verified.
   the physical read-only USB drive.
 
 V2's immediate renderer is intentionally hard-edged until the settled
-anti-aliasing gate lands. The latest 2026-08-15 manual glass run rejected the
-current presenter despite a green software battery: panning tore severely at
-100% and 400%, the pan distribution missed the required p95 ≤41.7 ms pacing
-gate, and ink visibly lagged because materialization precedes preview while the
-existing provisional ribbon tail is omitted. Adversarial 400% cold refinement
-is also open at 628 ms p95.
+anti-aliasing gate lands. The final invariant presenter looked tear-free in the
+2026-08-16 owner glass check, with same-session positive-control closure still
+pending; pan pacing remains red at 50.934 ms p95 against the required 41.7 ms.
+Ink remains red because materialization precedes preview while the provisional
+ribbon tail is omitted. Adversarial 400% cold refinement is also red at
+663.829 ms against the ≤500 ms contract.
 
 The correction and evidence are recorded in
-[`espdraw-offline-review-2026-08-15.md`](external_help/espdraw-offline-review-2026-08-15.md)
-and [`c86f3ac-manual-glass.log`](vector_v2/hardware-receipts/c86f3ac-manual-glass.log).
+[`PROJECT_STATE.md`](PROJECT_STATE.md) and
+[`benchmark-results/wave2-compositor/`](benchmark-results/wave2-compositor/).
 Raster V1 remains the operational fallback. See [`PROJECT_STATE.md`](PROJECT_STATE.md)
 for the current verdict and [`V2_ROADMAP.md`](V2_ROADMAP.md) for the sole forward
 queue; dated closure reports preserve history but are not current acceptance.
