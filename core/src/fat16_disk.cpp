@@ -102,14 +102,14 @@ std::uint16_t fat_time(const FatDateTime& time) {
 }
 
 void make_root_sector(std::span<std::uint8_t> sector, std::size_t file_size,
-                      const FatDateTime& modified_time) {
+                      const FatDateTime& modified_time, Fat83Name name) {
   std::memcpy(sector.data(), "TINYDRAW   ", 11);
   sector[11] = 0x08U;
   if (file_size == 0U) {
     return;
   }
   auto file = sector.subspan(32U, 32U);
-  std::memcpy(file.data(), "DRAWING PNG", 11);
+  std::copy(name.bytes.begin(), name.bytes.end(), file.begin());
   file[11] = 0x21U;
   if (valid_fat_time(modified_time)) {
     const auto date = fat_date(modified_time);
@@ -152,7 +152,7 @@ bool Fat16ExportDisk::read(std::uint32_t lba, std::uint32_t offset,
     const auto clusters = static_cast<std::uint32_t>((file_size + kBlockSize - 1U) / kBlockSize);
     make_fat_sector(sector, lba - kSecondFat, clusters);
   } else if (lba == kRootSector) {
-    make_root_sector(sector, file_size, modified_time_);
+    make_root_sector(sector, file_size, modified_time_, name_);
   }
   std::copy_n(sector.begin() + static_cast<std::ptrdiff_t>(offset), output.size(), output.begin());
   return true;

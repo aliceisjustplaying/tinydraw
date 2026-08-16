@@ -85,6 +85,16 @@ TEST_CASE("FAT16 export disk exposes DRAWING.PNG without a disk image buffer") {
                     [](std::uint8_t byte) { return byte == 0U; }));
 }
 
+TEST_CASE("FAT16 export disk exposes a caller-selected 8.3 filename") {
+  const MemoryFile file({0x3CU, 0x73U, 0x76U, 0x67U, 0x3EU});
+  const tinydraw::Fat16ExportDisk disk(file, tinydraw::kDrawingSvgName);
+  std::array<std::uint8_t, 512> sector{};
+
+  REQUIRE(disk.read(129, 0, sector));
+  CHECK(std::memcmp(sector.data() + 32, "DRAWING SVG", 11) == 0);
+  CHECK(u32(sector, 60) == file.size());
+}
+
 TEST_CASE("FAT16 export disk supports partial sector reads and an empty volume") {
   const MemoryFile file({});
   const tinydraw::Fat16ExportDisk disk(file);

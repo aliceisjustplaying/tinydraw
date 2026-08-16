@@ -74,7 +74,7 @@ void usb_device_task(void*) {
 
 namespace tinydraw::esp32 {
 
-UsbExport::UsbExport(const ImageExportStore& store) : file_(store), disk_(file_) {}
+UsbExport::UsbExport(const ReadOnlyFile& file, Fat83Name name) : disk_(file, name) {}
 
 void UsbExport::prepare_export() {
   if (active_) {

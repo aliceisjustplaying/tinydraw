@@ -1,9 +1,8 @@
 # TinyDraw project state
 
-Last updated: 2026-08-16 late night (committed overlay + déjà-vu fix +
-sixteenth-units + streamline 0.4 + device settled-AA all landed and
-glass-tested; the full speed story is in
-[`docs/PERFORMANCE_CHRONICLE.md`](docs/PERFORMANCE_CHRONICLE.md))
+Last updated: 2026-08-17 (detailed SVG export wired to the device, hardware-gated,
+and made 5.69× faster than the prior PNG path; receipt:
+[`RECEIPT.md`](benchmark-results/svg-export-2026-08-17/RECEIPT.md))
 
 Branch: `feat/v2-performance-followup`
 
@@ -24,8 +23,9 @@ promotion. [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) owns acceptance thresholds;
 | Cold 400% | **Hold-the-line accepted (owner 2026-08-16)** | Stage B walls: 437.9/428.4/488.0 ms at 50/100/200% under the ≤500 line; 400% is 507.0 ms. Owner accepted the 7 ms residual until autosave exists; the gate now holds the line at 510 ms and the micro-candidates are parked. The ≤500 requirement still governs the final autosave-enabled 20-run closure. See [`RECEIPT.md`](benchmark-results/cold-stage-b-2026-08-16/RECEIPT.md). **Separate standing red, owner-ruled 2026-08-16:** the `overlap` workload 50% cold gate (8 stacked fat strokes; 628 ms vs 500, red since wave-3, invisible in every prior scorecard) is **binding and will be fixed**, sequenced strictly after the ink lag fix, the AA prototype review, and the déjà-vu fix. Ship-contract process rule 8 now forbids undocumented verdict-vector reds. |
 | Revisit retention | **Fixed in harness — glass acceptance pending** | The déjà-vu fix landed 2026-08-16: idle absorption retains resident raw tiles at every zoom and materializes revisit-bound uniforms inside remembered views under a 25 ms idle budget. The mixed_draw revisit gate went from missing 4/9/16 tiles (188–326 ms visible refill per zoom) to **zero missing, ~0.4 ms** ([`DEJAVU_FIX_RECEIPT.md`](benchmark-results/committed-overlay/DEJAVU_FIX_RECEIPT.md)). Live ledger cause deltas now print during glass sessions (`TINYDRAW_LIVE_LEDGER`). Residuals: slot eviction under pressure, XL-stroke off-view budget skips (idle repair covers), high-water fallback path. Pure-revisit tour amplification stays 1.000. Owner glass verdict: "extremely impressed — way better, basically no redraws"; residual stray re-renders tracked as todo #15 (attribute via `TINYDRAW_LIVE_LEDGER` deltas next session). |
 | Exactness | **Green for implemented scope** | Host exactness and fuzz tests pass. V2 persistence/Undo authority is not implemented. |
-| Settled AA | **On device — provisional, speed round 2 queued** | Landed same-day from prototype to device: idle settle pass republishes tiles at the settled quality tier (revisit-ledger-safe); 25% settles presentation pixels only (the overview stays hard-edged replay authority). Per-tile 1.7–5.4 ms mean / 9.3 ms max after the annulus + batching round (was 5–11/17). Owner: "an improvement" but the settle progression is still perceptible, thick strokes slowest; speed ideas queued. Full battery moved zero gates. Exported PNG stays hard-edged (low-prio); settled export later. |
-| Feature parity | **Open** | Undo/Redo, autosave/recovery, device SVG wiring, minimap jump, lifecycle parity, failure UI, and release soak remain. |
+| Settled AA | **On device — provisional, speed round 2 queued** | Landed same-day from prototype to device: idle settle pass republishes tiles at the settled quality tier (revisit-ledger-safe); 25% settles presentation pixels only (the overview stays hard-edged replay authority). Per-tile 1.7–5.4 ms mean / 9.3 ms max after the annulus + batching round (was 5–11/17). Owner: "an improvement" but the settle progression is still perceptible, thick strokes slowest; speed ideas queued. Full battery moved zero gates. SVG exports exact ribbon outlines; settled AA remains a presentation derivative rather than export authority. |
+| SVG export | **Green for encode/readback; physical USB mount pending** | Device streams one painter-ordered filled path per pen/eraser operation directly from authority. The clean physical gate verified all 157,660 stored bytes, 52/52 paths, CRC and XML structure in 1.024 s with 4 KiB workspace and no watchdog — 5.69× faster than the captured PNG baseline ([`RECEIPT.md`](benchmark-results/svg-export-2026-08-17/RECEIPT.md)). The unattended run deliberately did not enter mass-storage mode; host mounting/ejection remains manual. |
+| Feature parity | **Open** | Undo/Redo, autosave/recovery, minimap pan navigation, lifecycle parity, failure UI, and release soak remain. |
 | Mixed-draw appends | **Green — harness and glass** | The committed-overlay / authority-revision split landed 2026-08-16: chunk commits publish authority only (worst input-path append **173 µs** vs the 15 ms budget, was 19,324 µs), the canvas drains in receipted idle absorptions behind a pending-ink overlay proven bit-exact on host, and lift defers its refresh to one exact swap after drain. `mixed_draw=1` for the first time; `visible_fallback=0`, drop counters zero, INKTRACE at baseline latency, ledger clean ([`RECEIPT.md`](benchmark-results/committed-overlay/RECEIPT.md)). The product-loop drain paths (idle slices, lift swap, pan boundary drain) and 400% draw feel need an owner glass session. Prior diagnosis receipts: [`ink-fallback-observability/RECEIPT.md`](benchmark-results/ink-fallback-observability/RECEIPT.md). |
 
 Session continuity: Cold Stage B is **closed** and glass-tested (receipt
@@ -46,6 +46,7 @@ The wave-3 A/B recipe and device-physics cheat sheet remain authoritative in
 
 Latest permanent receipts:
 
+- [`RECEIPT.md` — detailed SVG export](benchmark-results/svg-export-2026-08-17/RECEIPT.md)
 - [`RECEIPT.md` — Cold Stage B](benchmark-results/cold-stage-b-2026-08-16/RECEIPT.md)
 - [`COLD_COMPUTE_CAMPAIGN_RECEIPT.md`](benchmark-results/wave3-cold-compute/COLD_COMPUTE_CAMPAIGN_RECEIPT.md)
 - [`HARDWARE_LIMITS.md`](HARDWARE_LIMITS.md)
@@ -105,29 +106,22 @@ Undo, persistence, and SVG are frozen in
 
 ## Immediate work order
 
-1. **Overlap-50 cold fix** (owner-sequenced next): 628 ms vs 500; overdraw
-   replay pays every stroke's row geometry even when occluded (todo #10).
-2. **SVG export** — owner raised priority ("proper SVG export is much
-   higher"); contract §6 requires exact variable-width outlines.
-3. **IRAM-pin the producer hot loops** (todo #9): between-build icache dice
-   eats the cold ceiling margin (517/520 typical now).
-4. **AA speed round 2** (owner wants the settle progression imperceptible;
-   thick strokes slowest): span-interior fill, per-op dirty-rect folding,
-   prepared-chord reuse — idea list in the 2026-08-16 overnight handover.
-5. Residual déjà-vu strays: attribute with `TINYDRAW_LIVE_LEDGER` deltas
-   during the next glass session (todo #15); pan micro-glitch note (#14).
-6. UX debt owner hit today: color-picker paints in visibly (#16),
-   pan-over-zoom-button swallowed (#11), export mode wedges USB until
-   power-cycle (needs an on-device exit; bit us mid-session).
-7. Archive the formal torn-positive-control receipt; archive the optical
-   ink-latency receipt; band-sliced big refreshes (#12); provisional tail
-   to raw finger tip (#13).
-8. Establish generation-checked operation snapshots and active-prefix
-   history; then Undo/Redo, autosave/recovery, and transactional SVG
-   wiring. Cold stays hold-the-line (520 ceiling) until the
-   autosave-enabled re-measure; 20-run closure statistic waits there too.
-9. Then minimap tap-to-jump, power/RTC/NTP/lifecycle parity,
-   capacity/failure UI, export receipt, and all-on release closure.
+1. **Make the color dialog much faster** (#16); it currently paints in visibly.
+2. **Stop the zoom overlay swallowing pan gestures** (#11).
+3. **Fix zoom-cycle return position** so each zoom restores its saved origin.
+4. **Implement minimap pan navigation** (tap and drag; owner elevated drag from
+   post-ship on 2026-08-17).
+5. **Overlap-50 cold fix** (#10): 628 ms vs 500; overdraw replay pays every
+   stroke's row geometry even when occluded.
+6. **IRAM-pin the producer hot loops** (#9): between-build icache variance eats
+   the cold ceiling margin (517/520 typical now).
+7. **AA speed round 2**: make settle progression imperceptible, especially on
+   thick strokes; candidates remain in the overnight handover.
+8. Establish generation-checked active-prefix history, then Undo/Redo and
+   autosave/recovery. Cold stays hold-the-line until the autosave-enabled
+   re-measure; the 20-run closure statistic waits there too.
+9. Then power/RTC/NTP/lifecycle parity, capacity/failure UI, physical USB SVG
+   receipt, and all-on release closure.
 
 ## Proven foundation worth preserving
 
@@ -138,7 +132,9 @@ Undo, persistence, and SVG are frozen in
 - Canvas-only toroidal reuse and one ordered row-zero presentation sweep.
 - Independent touch sampling with transition-preserving Down/Up behavior.
 - Exact variable-width SVG core with renderer-raster fidelity tests.
-- Full-world PNG/USB export and a separately proven 1.5 MiB reserve.
+- Direct transactional SVG-on-flash export: one filled path per operation,
+  4 KiB workspace, complete device readback gate, and read-only `DRAWING.SVG`
+  FAT wiring. Prior PNG/USB evidence and the 1.5 MiB reserve remain archived.
 - Production toolbar, two PICO-8 palettes, zoom rail, battery, confirmation UI,
   and live minimap with viewport rectangle.
 - Separate Raster V1 and Vector V2 firmware targets.

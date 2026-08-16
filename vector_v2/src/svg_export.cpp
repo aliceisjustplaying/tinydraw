@@ -1,10 +1,10 @@
 #include "tinydraw/vector_v2/svg_export.h"
 
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <string_view>
 
 #include "tinydraw/ink/ribbon_geometry.h"
@@ -16,7 +16,31 @@ class Writer {
  public:
   explicit Writer(SvgByteSink& sink) : sink_(sink) {}
 
-  bool append(std::string_view text) { return valid_ && (valid_ = sink_.append(text)); }
+  bool append(std::string_view text) {
+    if (!valid_) {
+      return false;
+    }
+    if (text.size() > buffer_.size()) {
+      return flush() && (valid_ = sink_.append(text));
+    }
+    if (text.size() > buffer_.size() - buffered_ && !flush()) {
+      return false;
+    }
+    std::copy(text.begin(), text.end(), buffer_.begin() + static_cast<std::ptrdiff_t>(buffered_));
+    buffered_ += text.size();
+    return true;
+  }
+
+  bool flush() {
+    if (!valid_ || buffered_ == 0U) {
+      return valid_;
+    }
+    valid_ = sink_.append({buffer_.data(), buffered_});
+    if (valid_) {
+      buffered_ = 0U;
+    }
+    return valid_;
+  }
 
   bool integer(int value) {
     std::array<char, 16> buffer{};
@@ -26,12 +50,38 @@ class Writer {
   }
 
   bool number(float value) {
-    std::array<char, 24> buffer{};
-    const auto result =
-        std::to_chars(buffer.data(), buffer.data() + buffer.size(), value,
-                      std::chars_format::general, std::numeric_limits<float>::max_digits10);
-    return result.ec == std::errc{} &&
-           append({buffer.data(), static_cast<std::size_t>(result.ptr - buffer.data())});
+    // The operation log is quantized to 1/16 px positions and 1/256 px radii.
+    // Ribbon intersections add fractional coordinates, but four SVG decimal
+    // places keep their maximum rounding error below 0.00005 px. Formatting
+    // the bounded fixed-point value directly is dramatically cheaper than the
+    // generic floating-point charconv implementation on the ESP32-S3.
+    constexpr int scale = 10'000;
+    const float scaled_value = value * static_cast<float>(scale);
+    const int scaled = static_cast<int>(scaled_value + (scaled_value < 0.0F ? -0.5F : 0.5F));
+    if (scaled == 0) {
+      return append("0");
+    }
+
+    const bool negative = scaled < 0;
+    const std::uint32_t magnitude = static_cast<std::uint32_t>(negative ? -scaled : scaled);
+    if ((negative && !append("-")) || !integer(static_cast<int>(magnitude / scale))) {
+      return false;
+    }
+    std::uint32_t remainder = magnitude % scale;
+    if (remainder == 0U) {
+      return true;
+    }
+
+    std::array<char, 5> fraction{'.', '0', '0', '0', '0'};
+    for (std::size_t index = fraction.size(); index > 1U; --index) {
+      fraction[index - 1U] = static_cast<char>('0' + remainder % 10U);
+      remainder /= 10U;
+    }
+    std::size_t length = fraction.size();
+    while (length > 1U && fraction[length - 1U] == '0') {
+      --length;
+    }
+    return append({fraction.data(), length});
   }
 
   bool color(std::uint16_t rgb565) {
@@ -53,6 +103,8 @@ class Writer {
 
  private:
   SvgByteSink& sink_;
+  std::array<char, 1'024> buffer_{};
+  std::size_t buffered_ = 0;
   bool valid_ = true;
 };
 
@@ -72,31 +124,52 @@ bool emit_point(Writer& writer, Point point) {
   return writer.number(point.x) && writer.append(" ") && writer.number(point.y);
 }
 
-bool emit_primitive(Writer& writer, const RibbonPrimitive& primitive) {
-  if (primitive.kind == RibbonPrimitiveKind::kCircle) {
-    return writer.append("<circle cx=\"") && writer.number(primitive.center.x) &&
-           writer.append("\" cy=\"") && writer.number(primitive.center.y) &&
-           writer.append("\" r=\"") && writer.number(primitive.radius) && writer.append("\"/>\n");
-  }
+bool emit_circle_subpath(Writer& writer, const RibbonPrimitive& primitive) {
+  const float left = primitive.center.x - primitive.radius;
+  const float right = primitive.center.x + primitive.radius;
+  return writer.append("M") && writer.number(right) && writer.append(" ") &&
+         writer.number(primitive.center.y) && writer.append("A") &&
+         writer.number(primitive.radius) && writer.append(" ") && writer.number(primitive.radius) &&
+         writer.append(" 0 1 1 ") && writer.number(left) && writer.append(" ") &&
+         writer.number(primitive.center.y) && writer.append("A") &&
+         writer.number(primitive.radius) && writer.append(" ") && writer.number(primitive.radius) &&
+         writer.append(" 0 1 1 ") && writer.number(right) && writer.append(" ") &&
+         writer.number(primitive.center.y) && writer.append("Z");
+}
 
-  if (primitive.point_count < 3U || primitive.point_count > primitive.points.size() ||
-      !writer.append("<path d=\"M")) {
+float signed_area_twice(const RibbonPrimitive& primitive) {
+  float area = 0.0F;
+  for (std::uint8_t index = 0; index < primitive.point_count; ++index) {
+    const Point first = primitive.points[index];
+    const Point second = primitive.points[(index + 1U) % primitive.point_count];
+    area += first.x * second.y - second.x * first.y;
+  }
+  return area;
+}
+
+bool emit_convex_subpath(Writer& writer, const RibbonPrimitive& primitive) {
+  if (primitive.point_count < 3U || primitive.point_count > primitive.points.size()) {
     return false;
   }
-  for (std::uint8_t index = 0; index < primitive.point_count; ++index) {
-    if (index != 0U && !writer.append("L")) {
-      return false;
-    }
-    if (!emit_point(writer, primitive.points[index])) {
+  const bool reverse = signed_area_twice(primitive) < 0.0F;
+  for (std::uint8_t output_index = 0; output_index < primitive.point_count; ++output_index) {
+    const std::uint8_t index =
+        reverse ? static_cast<std::uint8_t>(primitive.point_count - 1U - output_index)
+                : output_index;
+    if (!writer.append(output_index == 0U ? "M" : "L") ||
+        !emit_point(writer, primitive.points[index])) {
       return false;
     }
   }
-  return writer.append("Z\"/>\n");
+  return writer.append("Z");
 }
 
 bool emit_batch(Writer& writer, const RibbonPrimitiveBatch& batch) {
   for (const RibbonPrimitive& primitive : batch) {
-    if (!emit_primitive(writer, primitive)) {
+    const bool emitted = primitive.kind == RibbonPrimitiveKind::kCircle
+                             ? emit_circle_subpath(writer, primitive)
+                             : emit_convex_subpath(writer, primitive);
+    if (!emitted) {
       return false;
     }
   }
@@ -106,7 +179,8 @@ bool emit_batch(Writer& writer, const RibbonPrimitiveBatch& batch) {
 bool emit_operation(Writer& writer, const StoredOperation& operation, std::uint16_t background) {
   const std::uint16_t color =
       operation.tool == OperationTool::kEraser ? background : operation.color;
-  if (!writer.append("<g fill=\"") || !writer.color(color) || !writer.append("\">\n")) {
+  if (!writer.append("<path fill=\"") || !writer.color(color) ||
+      !writer.append("\" fill-rule=\"nonzero\" d=\"")) {
     return false;
   }
 
@@ -119,7 +193,7 @@ bool emit_operation(Writer& writer, const StoredOperation& operation, std::uint1
       return false;
     }
   }
-  return writer.append("</g>\n");
+  return writer.append("\"/>\n");
 }
 
 bool valid_bounds(PixelRect bounds) {
@@ -155,14 +229,20 @@ bool export_svg(const OperationLog& log, SvgByteSink& sink, SvgExportOptions opt
     return false;
   }
 
+  if (options.progress != nullptr) {
+    options.progress(0U, operation_count, options.progress_context);
+  }
   for (std::size_t index = 0; index < operation_count; ++index) {
     const auto operation = log.operation(index);
     if (!operation.has_value() || !emit_operation(writer, *operation, options.background)) {
       return false;
     }
+    if (options.progress != nullptr) {
+      options.progress(index + 1U, operation_count, options.progress_context);
+    }
   }
 
-  if (!writer.append("</svg>\n")) {
+  if (!writer.append("</svg>\n") || !writer.flush()) {
     return false;
   }
   return log.epoch() == epoch && log.current_revision() == revision &&

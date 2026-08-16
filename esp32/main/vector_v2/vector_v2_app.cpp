@@ -660,21 +660,24 @@ struct ExportProgressContext {
   int last_percentage = 0;
 };
 
-void present_export_progress(int completed_rows, int total_rows, void* raw_context) {
+void present_export_progress(std::size_t completed_operations, std::size_t total_operations,
+                             void* raw_context) {
   auto& context = *static_cast<ExportProgressContext*>(raw_context);
-  if (context.chrome == nullptr || context.presenter == nullptr || total_rows <= 0) {
+  if (context.chrome == nullptr || context.presenter == nullptr || total_operations == 0U) {
     return;
   }
-  const int percentage = std::clamp(completed_rows * 100 / total_rows, 0, 100);
-  if (percentage == context.last_percentage) {
+  const int percentage =
+      static_cast<int>(std::min<std::size_t>(completed_operations * 100U / total_operations, 100U));
+  if (percentage < 100 && percentage < context.last_percentage + 5) {
     return;
   }
   context.last_percentage = percentage;
   context.chrome->export_progress = static_cast<std::uint8_t>(percentage);
   const auto timing = context.presenter->refresh(*context.chrome, now_us());
   print_presentation("export-progress", *context.presenter, timing);
-  // Encoding is intentionally blocking, but yielding at each rendered band
-  // keeps the idle task and task watchdog serviced while the progress UI moves.
+  // Encoding is intentionally blocking. Five-percent UI steps avoid making
+  // panel refreshes dominate the now-fast path export; the flash sink also
+  // yields periodically for maximum-capacity documents.
   vTaskDelay(pdMS_TO_TICKS(1));
 }
 
@@ -696,11 +699,14 @@ bool run_export(VectorV2Export& exporter, const OperationLog& log, vector_v2::Ch
   const auto finished = presenter.refresh(chrome, now_us());
   print_presentation("export-finish", presenter, finished);
   std::printf(
-      "TINYDRAW_V2_EXPORT encoded=%u bytes=%lu elapsed_us=%lld workspace_bytes=%lu "
-      "band_bytes=%lu free_psram=%lu free_internal=%lu usb_attempt=%u\n",
+      "TINYDRAW_V2_EXPORT format=svg encoded=%u bytes=%lu elapsed_us=%lld "
+      "workspace_bytes=%lu operations=%lu sink_calls=%lu flash_pages=%lu crc32=%08lx "
+      "free_psram=%lu free_internal=%lu usb_attempt=%u\n",
       stats.encoded, static_cast<unsigned long>(stats.bytes),
       static_cast<long long>(stats.elapsed_us), static_cast<unsigned long>(stats.workspace_bytes),
-      static_cast<unsigned long>(stats.band_bytes),
+      static_cast<unsigned long>(stats.operation_count),
+      static_cast<unsigned long>(stats.sink_calls), static_cast<unsigned long>(stats.flash_pages),
+      static_cast<unsigned long>(stats.content_crc32),
       static_cast<unsigned long>(stats.free_psram_after),
       static_cast<unsigned long>(stats.free_internal_after), stats.encoded);
   std::fflush(stdout);
@@ -797,8 +803,8 @@ bool apply_chrome_action(vector_v2::ChromeAction action, Point point,
       break;
     }
     case vector_v2::ChromeAction::kExport:
-      // Blocking by design, like Raster V1. Progress updates yield once per
-      // rendered band; activating USB then ends serial until the next reset.
+      // Blocking by design, like Raster V1. Progress is operation-based;
+      // activating USB then ends serial until the next reset.
       return chrome.can_export && run_export(exporter, log, chrome, presenter);
     case vector_v2::ChromeAction::kZoomIn: {
       const ZoomLevel target = vector_v2::next_zoom(presenter.zoom());

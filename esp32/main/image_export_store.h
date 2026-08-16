@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <span>
 
+#include "tinydraw/export/fat16_disk.h"
+
 namespace tinydraw {
 class PngRowSource;
 }  // namespace tinydraw
@@ -19,9 +21,9 @@ struct ImageExportStats {
 
 // Stores one complete full-world PNG in a dedicated flash partition. Encoding
 // uses fixed workspace plus one scanline and never duplicates the drawing
-// world. Dimensions default to the Raster V1 world; the Vector V2 application
-// passes its own bounded-world size.
-class ImageExportStore {
+// world. Dimensions default to the Raster V1 world; callers may provide a
+// different fixed raster size.
+class ImageExportStore : public ReadOnlyFile {
  public:
   ImageExportStore();
   ImageExportStore(int width, int height);
@@ -29,8 +31,9 @@ class ImageExportStore {
   [[nodiscard]] bool ready() const;
   [[nodiscard]] bool has_image() const;
   [[nodiscard]] std::size_t image_size() const;
+  [[nodiscard]] std::size_t size() const override { return image_size(); }
   [[nodiscard]] std::uint32_t generation() const;
-  [[nodiscard]] bool read(std::size_t offset, std::span<std::uint8_t> output) const;
+  [[nodiscard]] bool read(std::size_t offset, std::span<std::uint8_t> output) const override;
   [[nodiscard]] ImageExportStats encode(std::span<const std::uint16_t> world);
   // Row-streamed sibling for worlds without one flat pixel buffer.
   [[nodiscard]] ImageExportStats encode_rows(PngRowSource& source);
