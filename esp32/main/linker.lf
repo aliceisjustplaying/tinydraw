@@ -1,0 +1,12 @@
+# The beam-racing presentation strip loops must not roll dice with the
+# flash instruction cache: their per-strip cost is checked against the QSPI
+# wire budget (pan_seq TINYDRAW_PANSEQ_STRIP), and icache layout luck moved
+# it +2-3% across otherwise-unrelated builds (byte_swap, a pure
+# internal-memory loop, ran 11 -> 18 us in every producer-change build;
+# receipts 2026-08-16, benchmark-results/cold-stage-b-2026-08-16). Pinning
+# the panel transport's code in internal RAM removes the build-to-build
+# variance from the optical contract's tightest margin.
+[mapping:tinydraw_panel_transport]
+archive: libmain.a
+entries:
+    co5300_panel_transport (noflash_text)

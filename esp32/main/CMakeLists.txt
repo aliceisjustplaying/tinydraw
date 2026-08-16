@@ -134,6 +134,7 @@ idf_component_register(
   INCLUDE_DIRS "." "vector_v2" "${TINYDRAW_CORE}/include" "${CMAKE_CURRENT_LIST_DIR}/../../vector_v2/include"
   PRIV_INCLUDE_DIRS "${TINYDRAW_PNGENC}"
   PRIV_REQUIRES ${TINYDRAW_PLATFORM_REQUIRES} esp_partition esp_psram esp_timer espcoredump
+  LDFRAGMENTS "linker.lf"
 )
 
 target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_20)
