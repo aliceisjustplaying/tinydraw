@@ -273,12 +273,15 @@ void print_census(const char* label) {
       " groups_saturated_early=%" PRIu64 "\n    rows_scanned=%" PRIu64 " rows_prefinal=%" PRIu64
       " rows_empty=%" PRIu64 " span_px=%" PRIu64 "\n    mask_skips=%" PRIu64
       " covers_calls=%" PRIu64 " covers_hits=%" PRIu64 " const_span_px=%" PRIu64
-      " const_mask_skips=%" PRIu64 "\n    remaining_scans=%" PRIu64 " remaining_scan_ms=%.2f\n",
+      " const_mask_skips=%" PRIu64 "\n    const_rows_scanned=%" PRIu64
+      " const_search_calls=%" PRIu64 " const_search_last=%" PRIu64 " const_rows_probed_empty=%"
+      PRIu64 "\n    remaining_scans=%" PRIu64 " remaining_scan_ms=%.2f\n",
       label, c.operations_bbox_rejected, c.segments_painted, c.segments_bbox_rejected,
       c.operations_saturation_skipped, c.segments_saturation_skipped, c.groups_saturated_early,
       c.rows_scanned, c.rows_prefinalized, c.rows_empty_span, c.span_pixels, c.mask_skips,
-      c.covers_calls, c.covers_hits, c.const_span_pixels, c.const_mask_skips, c.remaining_scans,
-      static_cast<double>(c.remaining_scan_ns) / 1e6);
+      c.covers_calls, c.covers_hits, c.const_span_pixels, c.const_mask_skips, c.const_rows_scanned,
+      c.const_search_calls, c.const_search_last_calls, c.const_rows_probed_empty,
+      c.remaining_scans, static_cast<double>(c.remaining_scan_ns) / 1e6);
 }
 #else
 void print_census(const char*) {}
@@ -458,6 +461,219 @@ int run_cold_scorecard() {
     }
   }
   std::printf("COLD_SCORECARD_OK\n");
+  return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Combined general cold corpus: host mirror of the device gate harness
+// (`append_general_cold_document`). Deterministic xorshift stream 0x5EED7;
+// same call order as the firmware so the document matches the frozen device
+// corpus up to libm float cos/sin last-ulp drift.
+
+struct HairlineRandom {
+  std::uint32_t state = 0x5EED7u;
+  std::uint32_t next() {
+    state ^= state << 13;
+    state ^= state >> 17;
+    state ^= state << 5;
+    return state;
+  }
+  float range(float low, float high) {
+    return low + (high - low) * (static_cast<float>(next() & 0xFFFFFFu) / 16'777'216.0F);
+  }
+};
+
+bool append_hairline_stroke(Rig& rig, const v2::IncrementalDocumentWorkspace& workspace,
+                            HairlineRandom& random, float radius, std::uint16_t color,
+                            v2::OperationTool tool, std::uint16_t gesture_id, float length) {
+  constexpr std::size_t kChunkSamples = 12;
+  const float margin = radius + 2.0F;
+  float x = random.range(margin, static_cast<float>(v2::kWorldWidth) - margin);
+  float y = random.range(margin, static_cast<float>(v2::kWorldHeight) - margin);
+  float angle = random.range(0.0F, 6.2831853F);
+  float remaining = length;
+  std::uint16_t elapsed_ms = 0;
+  bool continuing = false;
+  std::array<v2::CompactOperationSample, kChunkSamples> chunk{};
+  while (remaining > 0.0F) {
+    std::size_t count = 0;
+    if (continuing) {
+      chunk[count++] = {
+          .x_quarter = static_cast<std::uint16_t>(x * 4.0F),
+          .y_quarter = static_cast<std::uint16_t>(y * 4.0F),
+          .radius_256 = static_cast<std::uint16_t>(radius * 256.0F),
+          .elapsed_ms = elapsed_ms,
+      };
+    }
+    while (count < kChunkSamples && remaining > 0.0F) {
+      if (continuing || count != 0U) {
+        const float step = random.range(24.0F, 40.0F);
+        angle += random.range(-0.15F, 0.15F);
+        x = std::clamp(x + step * std::cos(angle), margin,
+                       static_cast<float>(v2::kWorldWidth) - margin);
+        y = std::clamp(y + step * std::sin(angle), margin,
+                       static_cast<float>(v2::kWorldHeight) - margin);
+        elapsed_ms = static_cast<std::uint16_t>(elapsed_ms + 8U);
+        remaining -= step;
+      }
+      chunk[count++] = {
+          .x_quarter = static_cast<std::uint16_t>(x * 4.0F),
+          .y_quarter = static_cast<std::uint16_t>(y * 4.0F),
+          .radius_256 = static_cast<std::uint16_t>(radius * 256.0F),
+          .elapsed_ms = elapsed_ms,
+      };
+    }
+    continuing = true;
+    if (!v2::append_incrementally(rig.log, rig.canvas,
+                                  {.tool = tool,
+                                   .color = color,
+                                   .gesture_id = gesture_id,
+                                   .samples = std::span(chunk.data(), count)},
+                                  workspace)
+             .has_value()) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool append_hairline_document(Rig& rig) {
+  constexpr std::array<std::uint16_t, 6> kColors{0x0000U, 0x001FU, 0xF800U,
+                                                 0x07E0U, 0x4208U, 0x8010U};
+  const auto workspace = rig.workspace();
+  HairlineRandom random;
+  std::uint16_t gesture_id = 7'000;
+  for (int stroke = 0; stroke < 220; ++stroke) {
+    const bool eraser = (random.next() % 12U) == 0U;
+    if (!append_hairline_stroke(rig, workspace, random, random.range(1.3F, 2.0F),
+                                kColors[random.next() % kColors.size()],
+                                eraser ? v2::OperationTool::kEraser : v2::OperationTool::kPen,
+                                gesture_id++, random.range(300.0F, 1'400.0F))) {
+      return false;
+    }
+  }
+  for (int stroke = 0; stroke < 60; ++stroke) {
+    if (!append_hairline_stroke(rig, workspace, random, random.range(3.5F, 4.7F),
+                                kColors[random.next() % kColors.size()], v2::OperationTool::kPen,
+                                gesture_id++, random.range(200.0F, 800.0F))) {
+      return false;
+    }
+  }
+  for (int stroke = 0; stroke < 10; ++stroke) {
+    const bool eraser = stroke == 4 || stroke == 9;
+    if (!append_hairline_stroke(rig, workspace, random, random.range(40.0F, 80.0F),
+                                kColors[random.next() % kColors.size()],
+                                eraser ? v2::OperationTool::kEraser : v2::OperationTool::kPen,
+                                gesture_id++, random.range(800.0F, 2'000.0F))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+int run_general_sweep(bool indexed, std::size_t runs) {
+  Rig rig(1'024, 16'384, indexed);
+  if (!rig.log.ready() || !rig.canvas.ready() || !rig.producer.ready()) {
+    std::fprintf(stderr, "rig not ready\n");
+    return 1;
+  }
+  if (!rig.reset_blank({1})) {
+    std::fprintf(stderr, "baseline reset failed\n");
+    return 1;
+  }
+  const auto workspace = rig.workspace();
+  const bool appended =
+      v2::test_support::emit_adversarial_tapered_corpus(
+          [&](const v2::OperationAppend& operation) {
+            return v2::append_incrementally(rig.log, rig.canvas, operation, workspace).has_value();
+          },
+          nullptr) &&
+      append_hairline_document(rig);
+  if (!appended) {
+    std::fprintf(stderr, "corpus append failed\n");
+    return 1;
+  }
+  std::printf("== general cold sweep mode=%s operations=%zu samples=%zu ==\n",
+              indexed ? "indexed" : "linear", rig.log.operation_count(), rig.log.sample_count());
+  constexpr std::array zooms{v2::ZoomLevel::k50Percent, v2::ZoomLevel::k100Percent,
+                             v2::ZoomLevel::k200Percent, v2::ZoomLevel::k400Percent};
+  constexpr std::array zoom_names{"50", "100", "200", "400"};
+  for (std::size_t zoom_index = 0; zoom_index < zooms.size(); ++zoom_index) {
+    const v2::ViewRequest zoom_view{
+        .zoom = zooms[zoom_index],
+        .level_pixels = {0, 0, v2::kOverviewWidth, v2::kOverviewHeight},
+    };
+    std::vector<double> zoom_walls;
+    for (std::size_t run = 0; run < runs; ++run) {
+      if (!rig.canvas.discard_tiles()) {
+        return 1;
+      }
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+      v2::g_raster_census.reset();
+#endif
+      const SweepResult sweep = run_cold_fill(rig, zoom_view);
+      if (!sweep.ok) {
+        return 1;
+      }
+      if (run == 0U) {
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+        const v2::RasterCensus zoom_cold_census = v2::g_raster_census;
+#endif
+        if (!compose_equals_forward(rig, zoom_view, nullptr)) {
+          std::fprintf(stderr, "zoom %s NOT EXACT vs forward replay\n", zoom_names[zoom_index]);
+          return 1;
+        }
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+        v2::g_raster_census = zoom_cold_census;
+#endif
+        print_census(zoom_names[zoom_index]);
+      }
+      zoom_walls.push_back(sweep.wall_ms);
+    }
+    std::sort(zoom_walls.begin(), zoom_walls.end());
+    std::printf("GENERAL zoom=%s median_wall_ms=%.3f\n", zoom_names[zoom_index],
+                zoom_walls[zoom_walls.size() / 2U]);
+  }
+  const v2::ViewRequest view{
+      .zoom = v2::ZoomLevel::k400Percent,
+      .level_pixels = {0, 0, v2::kOverviewWidth, v2::kOverviewHeight},
+  };
+  std::vector<double> walls;
+  for (std::size_t run = 0; run < runs; ++run) {
+    if (!rig.canvas.discard_tiles()) {
+      std::fprintf(stderr, "discard_tiles failed\n");
+      return 1;
+    }
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+    v2::g_raster_census.reset();
+#endif
+    const SweepResult sweep = run_cold_fill(rig, view);
+    if (!sweep.ok) {
+      return 1;
+    }
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+    // Snapshot before the forward-replay equality check pollutes counters.
+    const v2::RasterCensus cold_census = v2::g_raster_census;
+#endif
+    if (run == 0U && !compose_equals_forward(rig, view, nullptr)) {
+      std::fprintf(stderr, "general corpus NOT EXACT vs forward replay\n");
+      return 1;
+    }
+    walls.push_back(sweep.wall_ms);
+    std::printf(
+        "run=%zu steps=%zu tiles=%zu wall_ms=%.3f ops_scanned=%zu ops_intersecting=%zu "
+        "groups=%zu\n",
+        run, sweep.steps, sweep.tiles, sweep.wall_ms, sweep.candidates.operations_scanned,
+        sweep.candidates.operations_intersecting, sweep.candidates.groups_published);
+    if (run == 0U) {
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+      v2::g_raster_census = cold_census;
+#endif
+      print_census("census");
+    }
+  }
+  std::sort(walls.begin(), walls.end());
+  std::printf("GENERAL_SWEEP_OK median_wall_ms=%.3f\n", walls[walls.size() / 2U]);
   return 0;
 }
 
@@ -729,6 +945,11 @@ int main(int argc, char** argv) {
   }
   if (argc >= 2 && std::strcmp(argv[1], "--cold-scorecard") == 0) {
     return run_cold_scorecard();
+  }
+  if (argc >= 2 && std::strcmp(argv[1], "--general") == 0) {
+    const bool linear = argc >= 3 && std::strcmp(argv[2], "linear") == 0;
+    const auto runs = static_cast<std::size_t>(argc >= 4 ? std::max(1, std::atoi(argv[3])) : 5);
+    return run_general_sweep(!linear, runs);
   }
   return run_adversarial_sweep();
 }

@@ -121,7 +121,10 @@ class TileProducer {
     // One curved endpoint emits two bounded centerline segments plus a final
     // tail when needed. Zero initializes the endpoint; replay consumes the
     // segments in reverse index order so every producer tick stays bounded.
+    // The prepared unit caches the endpoint's chord geometry so step counting,
+    // step bounds, and step application share one subdivision computation.
     std::size_t next_curve_step = 0;
+    PreparedCurveUnit prepared_unit{};
     // Operation-level visibility and saturation gates run once per operation;
     // the passing fetch is cached here so per-segment replay touches neither
     // the log nor the operation-level rectangle math again. The cached spans

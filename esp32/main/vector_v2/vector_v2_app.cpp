@@ -196,6 +196,8 @@ struct AppStorage {
   std::uint16_t* chrome_cache = nullptr;
   std::uint16_t* producer_supertask = nullptr;
   std::uint16_t* producer_packed = nullptr;
+  bool supertask_internal = false;
+  bool packed_internal = false;
   std::uint8_t* producer_mask = nullptr;
   std::uint16_t* producer_summary_rows = nullptr;
   std::uint32_t* producer_summary_words = nullptr;
@@ -223,8 +225,20 @@ struct AppStorage {
 #endif
     region_scratch = allocate_array<std::uint16_t>(kLiveRegionScratchPixels);
     chrome_cache = allocate_array<std::uint16_t>(vector_v2::kChromeStagingCachePixels);
-    producer_supertask = allocate_array<std::uint16_t>(vector_v2::kTileProducerPixels);
-    producer_packed = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
+    // The producer paint scratch is the hottest pixel memory in cold replay:
+    // every group starts with a 32 KiB fill and ends with a 32 KiB publish
+    // read, with masked span writes in between. Internal SRAM removes the
+    // PSRAM round-trips; the PSRAM fallback keeps allocation infallible.
+    producer_supertask = allocate_internal<std::uint16_t>(vector_v2::kTileProducerPixels);
+    supertask_internal = producer_supertask != nullptr;
+    if (producer_supertask == nullptr) {
+      producer_supertask = allocate_array<std::uint16_t>(vector_v2::kTileProducerPixels);
+    }
+    producer_packed = allocate_internal<std::uint16_t>(vector_v2::kTilePixels);
+    packed_internal = producer_packed != nullptr;
+    if (producer_packed == nullptr) {
+      producer_packed = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
+    }
     producer_mask = allocate_internal<std::uint8_t>(vector_v2::kTileProducerMaskBytes);
     producer_summary_rows = allocate_internal<std::uint16_t>(vector_v2::kTileProducerSummaryRows);
     producer_summary_words = allocate_internal<std::uint32_t>(vector_v2::kTileProducerSummaryWords);
@@ -703,6 +717,12 @@ void run_vector_v2_app() {
                 static_cast<unsigned long>(heap_caps_get_largest_free_block(kExternalCaps)));
     return;
   }
+  std::printf("TINYDRAW_PRODUCER_SCRATCH supertask_internal=%u packed_internal=%u "
+              "free_internal=%lu free_psram=%lu\n",
+              storage.supertask_internal, storage.packed_internal,
+              static_cast<unsigned long>(
+                  heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+              static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)));
   std::fill_n(storage.snapshot, vector_v2::kOverviewPixels, 0xFFFFU);
   std::fill_n(storage.overview, vector_v2::kOverviewPixels, 0xFFFFU);
 
