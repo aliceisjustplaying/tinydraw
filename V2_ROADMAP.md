@@ -95,6 +95,14 @@ authority synchronously, and formal trace/optical closure remains open.
 
 Live ink remains hard-edged. Settled AA does not enter this phase.
 
+Owner-gated follow-up: the four-span (or flatness-adaptive 1-4 span) curved
+authority subdivision was rejected on cost, but the wave-3 unit-merged row
+sweep changed its cost model — extra chords in a unit are nearly free on the
+row axis and subdivision is paid once per endpoint. A rematch directly
+targets the residual live-curve angularity, but it changes committed
+authority geometry and therefore reopens cold exactness, SVG parity, and the
+frozen corpus statistics. Needs an explicit owner go and a re-baseline.
+
 Deferred structural debt: `esp32/main/vector_v2/vector_v2_app.cpp` is over 1,300
 lines. Extract interaction, authority, and lifecycle coordinators after the
 performance gates are closed; keep that refactor out of measured hot-path
@@ -102,13 +110,15 @@ changes.
 
 ## Phase 3 — cold viability and rerender truth
 
-The frozen cold corpus now combines tapered adversarial content with Sarah's
-evil hairlines in one 910-operation, 12,157-sample document. Its current
-three-run 400% maximum is 1,269.157 ms wall: 1,165.354 compute, 70.182 present,
-31.526 pacing, and 2.095 touch. The operation block index stays because it helps
-normal documents and active-prefix replay.
+The frozen cold corpus combines tapered adversarial content with Sarah's evil
+hairlines in one 910-operation, 12,157-sample document. After the wave-3
+compute campaign its three-run 400% maximum is **668.980 ms** wall: 582.9
+compute, 66.8 present, 18.4 pacing, 0.9 touch (was 1,269.157 ms). The
+operation block index stays because it helps normal documents and
+active-prefix replay.
 
-Run these as independent experiments:
+Completed experiments (receipts in `benchmark-results/wave2-compositor/` and
+`benchmark-results/wave3-cold-compute/`):
 
 1. [x] Segment-chunk bounds removed: exact and 8.5% faster on the tapered-only
        curved-authority device run, but below trajectory and cost 200,002 bytes
@@ -118,11 +128,31 @@ Run these as independent experiments:
 3. [x] Adjacent exact-publication batching rejected: zero resent pixels, but
        only 1.6% wall movement and lower-zoom interaction ticks around 22 ms.
        See `COLD_PUBLICATION_BATCH_RECEIPT.md`.
+4. [x] Wave-3 accepted: stateless windowed span search with conservative chord
+       seeds, device-native arithmetic (no per-row float libcalls),
+       internal-SRAM producer scratch, once-per-endpoint prepared curve units,
+       unit-merged masked row sweeps, and caller-split painters (warm append /
+       windowed producer). Combined -47.3%. See
+       `COLD_COMPUTE_CAMPAIGN_RECEIPT.md`.
+5. [x] Wave-3 rejected with mechanisms recorded: summary-bitmap row
+       saturation, plain-memcpy word masks, 6x2-tile bands without block
+       saturation, hybrid warm/seeded shared search.
 
-The bounded campaign did not establish a 15% trajectory, and the combined
-corpus remains above 500 ms. The stop/go gate is active: do not build a
-generalized checkpoint system without an explicit owner decision about target,
-hardware, corpus, or a separately bounded representation experiment.
+Remaining ranked candidates for the last ~170 ms (details in the wave-3
+receipt and `review_findings_2026_08_16_cold_campaign/HANDOVER.md`):
+
+- [ ] Op-level chord sweep: one row sweep per (operation x group) with a
+      caller-funded chord table; est. 40-60 ms.
+- [ ] Publish strided tile copy (skip the packed intermediate); est. 10-20 ms.
+- [ ] Retest word-mask scans with proven alignment (`assume_aligned`,
+      disassembly-verified inlining); est. 20-40 ms.
+- [ ] Block-granular `MaskedRowSummary` saturation, then re-run the band-unit
+      experiment on top of it.
+- [ ] PIE fixed-point probe pre-filter and presentation/compute overlap only
+      if the above fall short (the latter reopens pan optical gates).
+
+The stop/go gate stands: no generalized checkpoint system without an explicit
+owner decision. The current trajectory has not required one.
 
 In the same phase, replace the current revision-only amplification metric:
 
@@ -173,6 +203,12 @@ Derived overview, tile, chrome, and settled caches are never persisted.
 - [ ] Implement settled analytic-coverage AA in bounded idle work. Publish a
       final cached identity and prove revisit retention; retain immediate
       hard-edged live ink. The rejected four-sample SSAA probe is not a path.
+      Candidate design (2026-08-16, unmeasured): re-run the newest-first
+      masked replay with the 1-bit mask widened to 8-bit accumulated alpha;
+      interiors keep today's exact span fills, only span-boundary pixels get
+      analytic capsule coverage composited front-to-back; publish as
+      higher-quality cached tiles. First step is a host prototype on one
+      group. See `review_findings_2026_08_16_cold_campaign/REVIEW.md`.
 - [ ] Add minimap tap-to-jump using pan fallback/delta telemetry. Minimap drag
       remains post-ship.
 - [ ] Integrate V1 power off/on, battery transitions, RTC, one-shot NTP, and
