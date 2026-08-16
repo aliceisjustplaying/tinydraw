@@ -471,6 +471,27 @@ std::optional<IncrementalAppendResult> append_incrementally_in_place(
   return result;
 }
 
+std::optional<IncrementalAppendResult> append_authority_only(OperationLog& log,
+                                                             const OperationAppend& append_request,
+                                                             InPlaceRetentionBudget budget) {
+  const auto stamp = [&budget]() { return budget.now_us != nullptr ? budget.now_us() : 0; };
+  const std::int64_t prepare_started_us = stamp();
+  if (!log.ready()) {
+    return std::nullopt;
+  }
+  auto prepared = log.prepare(append_request);
+  if (!prepared.has_value()) {
+    return std::nullopt;
+  }
+  const OperationIdentity identity = prepared->operation().identity;
+  const PixelRect world_bounds = prepared->operation().world_bounds;
+  prepared->publish();
+  InPlaceAppendPhases phases{};
+  phases.prepare_us = stamp() - prepare_started_us;
+  return IncrementalAppendResult{
+      .identity = identity, .affected_world_bounds = world_bounds, .phases = phases};
+}
+
 std::size_t pending_operation_count(const OperationLog& log, const MaterializedCanvas& canvas) {
   if (!log.ready() || !canvas.ready()) {
     return 0;
@@ -478,6 +499,37 @@ std::size_t pending_operation_count(const OperationLog& log, const MaterializedC
   const auto range =
       log.replay_range(log.epoch(), canvas.current_revision(), log.current_revision());
   return range.has_value() ? range->operation_count : 0;
+}
+
+bool overlay_pending_operations(const OperationLog& log, const MaterializedCanvas& canvas,
+                                const RasterSurface& surface) {
+  if (!log.ready() || !canvas.ready() || surface.pixels.empty() ||
+      surface.stride < surface.level_bounds.x1 - surface.level_bounds.x0) {
+    return false;
+  }
+  const auto range =
+      log.replay_range(log.epoch(), canvas.current_revision(), log.current_revision());
+  if (!range.has_value()) {
+    return false;
+  }
+  for (std::size_t offset = 0; offset < range->operation_count; ++offset) {
+    const auto stored = log.operation(range->first_operation + offset);
+    if (!stored.has_value()) {
+      return false;
+    }
+    const PixelRect bounds = operation_level_bounds(stored->world_bounds, surface.zoom);
+    const bool intersects =
+        bounds.x0 < surface.level_bounds.x1 && surface.level_bounds.x0 < bounds.x1 &&
+        bounds.y0 < surface.level_bounds.y1 && surface.level_bounds.y0 < bounds.y1;
+    if (!intersects) {
+      continue;
+    }
+    if (!apply_incremental_operation(
+            {.tool = stored->tool, .color = stored->color, .samples = stored->samples}, surface)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 std::optional<IncrementalAppendResult> absorb_pending_operation(

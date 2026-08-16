@@ -149,6 +149,16 @@ struct InPlaceRetentionBudget {
 [[nodiscard]] std::size_t pending_operation_count(const OperationLog& log,
                                                   const MaterializedCanvas& canvas);
 
+// Deferred-commit entry (design §3): publishes operation authority without
+// touching the canvas, leaving the new operation in the pending range. The
+// input path pays only log validation and the sample copy; presentation
+// must patch composed pixels with overlay_pending_operations and a drain
+// loop absorbs the range via absorb_pending_operation. The result carries
+// the identity, the operation's world bounds, and prepare_us; every canvas
+// field (published/fallback/drops/other phases) is zero by construction.
+[[nodiscard]] std::optional<IncrementalAppendResult> append_authority_only(
+    OperationLog& log, const OperationAppend& append_request, InPlaceRetentionBudget budget = {});
+
 // Absorbs the oldest pending operation into the canvas through the same
 // phase machinery as append_incrementally_in_place (identical painters,
 // identical order, identical retention semantics), advancing the canvas by
@@ -161,6 +171,19 @@ struct InPlaceRetentionBudget {
 [[nodiscard]] std::optional<IncrementalAppendResult> absorb_pending_operation(
     const OperationLog& log, MaterializedCanvas& canvas, const InPlaceAppendWorkspace& workspace,
     std::optional<ViewRequest> priority_view = std::nullopt, InPlaceRetentionBudget budget = {});
+
+// The committed overlay (design §3.2): paints the pending operation range —
+// the log operations the canvas has not yet absorbed — clipped to a
+// level-space window, in painter order, through the same rasterizer the
+// producer and appends use. Callers patch composed presentation pixels with
+// this before submit so glass stays exact while materialization trails.
+// A window with no intersecting pending operation is left untouched.
+// Returns false only on invalid state (never partially paints an operation
+// that fails validation before its first pixel). Empty pending range is
+// success.
+[[nodiscard]] bool overlay_pending_operations(const OperationLog& log,
+                                              const MaterializedCanvas& canvas,
+                                              const RasterSurface& surface);
 
 // Coordinates an authoritative snapshot restore. The caller-owned pixels must
 // not alias log or canvas storage. Validation is completed before either state

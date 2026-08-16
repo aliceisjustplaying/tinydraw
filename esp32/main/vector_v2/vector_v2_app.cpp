@@ -376,6 +376,18 @@ void include_bounds(std::optional<vector_v2::PixelRect>& accumulated, vector_v2:
   accumulated->y1 = std::max(accumulated->y1, bounds.y1);
 }
 
+std::optional<vector_v2::ViewRequest> current_priority_view(const VectorV2Presenter& presenter) {
+  if (presenter.zoom() == ZoomLevel::k25Percent) {
+    return std::nullopt;
+  }
+  return vector_v2::ViewRequest{
+      .zoom = presenter.zoom(),
+      .level_pixels = {presenter.level_x(), presenter.level_y(),
+                       presenter.level_x() + vector_v2::kOverviewWidth,
+                       presenter.level_y() + vector_v2::kOverviewHeight},
+  };
+}
+
 std::optional<vector_v2::IncrementalAppendResult> commit_pending_chunk(
     ChainedOperationBuilder& builder, OperationLog& log, MaterializedCanvas& canvas,
     const vector_v2::InPlaceAppendWorkspace& workspace, const VectorV2Presenter& presenter) {
@@ -383,17 +395,17 @@ std::optional<vector_v2::IncrementalAppendResult> commit_pending_chunk(
   if (!append.has_value()) {
     return std::nullopt;
   }
-  const vector_v2::ViewRequest priority_view{
-      .zoom = presenter.zoom(),
-      .level_pixels = {presenter.level_x(), presenter.level_y(),
-                       presenter.level_x() + vector_v2::kOverviewWidth,
-                       presenter.level_y() + vector_v2::kOverviewHeight},
-  };
-  return vector_v2::append_incrementally_in_place(
-      log, canvas, *append, workspace,
-      presenter.zoom() == ZoomLevel::k25Percent ? std::optional<vector_v2::ViewRequest>{}
-                                                : std::optional{priority_view},
-      {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs});
+  // Deferred commit (VECTOR_V2_COMMITTED_OVERLAY_DESIGN.md §3): the input
+  // path publishes authority only; idle slices absorb the pending range and
+  // presentation patches pending ink into every compose. The high-water
+  // fallback bounds the range (and the per-present overlay cost) by paying
+  // one synchronous absorption — today's behavior as the worst case.
+  if (vector_v2::pending_operation_count(log, canvas) >= kPendingOperationHighWater) {
+    static_cast<void>(vector_v2::absorb_pending_operation(
+        log, canvas, workspace, current_priority_view(presenter),
+        {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs}));
+  }
+  return vector_v2::append_authority_only(log, *append, {.now_us = &esp_timer_get_time});
 }
 
 void include_phase_maxima(vector_v2::InPlaceAppendPhases& maxima,
@@ -841,6 +853,7 @@ void run_vector_v2_app() {
       canvas, navigation, scheduler, display, std::span(storage.frame, vector_v2::kOverviewPixels),
       std::span(storage.region_scratch, kLiveRegionScratchPixels),
       std::span(storage.chrome_cache, vector_v2::kChromeStagingCachePixels));
+  presenter.attach_authority(log);
   ChainedOperationBuilder builder(std::span(storage.input_samples, kInputSampleCapacity),
                                   kInteractiveChunkSampleLimit);
   vector_v2::TileProducer producer(
@@ -1004,6 +1017,13 @@ void run_vector_v2_app() {
   vector_v2::InPlaceAppendPhases stroke_phase_max{};
   vector_v2::InPlaceRetainDrops stroke_drops{};
   bool stroke_commit_failed = false;
+  // Committed-overlay drain state: world bounds awaiting the exact swap
+  // refresh once the pending range empties, plus per-drain receipts.
+  std::optional<vector_v2::PixelRect> drain_swap_world;
+  std::uint32_t drain_ops = 0U;
+  std::int64_t drain_total_us = 0;
+  std::int64_t drain_max_us = 0;
+  std::uint32_t drain_failures = 0U;
   std::uint32_t lift_reports_dropped = 0U;
   PendingStrokeReport stroke_report{};
   std::uint8_t background_ticks = 0U;
@@ -1071,6 +1091,28 @@ void run_vector_v2_app() {
         } else if (chrome.tool == vector_v2::ChromeTool::kPan) {
           panning = true;
           pan_metrics.reset();
+          // Boundary drain (design §3.4): the ring-reuse pan path composes
+          // exposed strips without the pending overlay, so the canvas must
+          // reach authority before the first pan present.
+          if (vector_v2::pending_operation_count(log, canvas) != 0U) {
+            const std::int64_t boundary_started = esp_timer_get_time();
+            std::uint32_t boundary_ops = 0U;
+            while (vector_v2::pending_operation_count(log, canvas) != 0U) {
+              if (!vector_v2::absorb_pending_operation(
+                       log, canvas, workspace, current_priority_view(presenter),
+                       {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs})
+                       .has_value()) {
+                break;
+              }
+              ++boundary_ops;
+            }
+            drain_swap_world.reset();
+            std::printf(
+                "TINYDRAW_LIVE_DRAIN_BOUNDARY site=pan ops=%lu wall_us=%lld pending=%lu\n",
+                static_cast<unsigned long>(boundary_ops),
+                static_cast<long long>(esp_timer_get_time() - boundary_started),
+                static_cast<unsigned long>(vector_v2::pending_operation_count(log, canvas)));
+          }
           pan_start = point;
           pan_start_x = presenter.level_x();
           pan_start_y = presenter.level_y();
@@ -1230,15 +1272,20 @@ void run_vector_v2_app() {
         builder.cancel();
         ribbon.reset();
         const std::int64_t refresh_started = esp_timer_get_time();
-        // A rejected finish leaves uncommitted preview ink beyond the
-        // committed bounds; only a full repaint clears it.
-        measured_lift.refresh =
-            finish_status == ChainedOperationStatus::kRejected
-                ? presenter.refresh(chrome, finished_us)
-                : (stroke_world_bounds.has_value()
-                       ? presenter.refresh_region(measured_lift.refresh_level_bounds, chrome,
-                                                  finished_us)
-                       : LivePresentationTiming{});
+        if (finish_status == ChainedOperationStatus::kRejected) {
+          // A rejected finish leaves uncommitted preview ink beyond the
+          // committed bounds; only a full repaint clears it. The patched
+          // compose keeps already-committed pending chunks visible.
+          measured_lift.refresh = presenter.refresh(chrome, finished_us);
+        } else if (stroke_world_bounds.has_value()) {
+          // Committed-overlay lift (design §5.4): no synchronous refresh.
+          // Glass keeps the preview; the idle drain absorbs the pending
+          // range and then runs one exact swap refresh over the union of
+          // undrained stroke bounds.
+          include_bounds(drain_swap_world, *stroke_world_bounds);
+          measured_lift.refresh = {};
+          measured_lift.refresh.passed = true;
+        }
         measured_lift.refresh_wall_us = esp_timer_get_time() - refresh_started;
         if (stroke_report.pending || lift_timing.pending) {
           ++lift_reports_dropped;
@@ -1285,12 +1332,58 @@ void run_vector_v2_app() {
     // The commit tick already performed bounded immediate publication and its
     // display update. Defer cold replay until input has had another poll.
     const bool fill_allowed = !pressed && fill_view_available && !lift_timing.pending;
+    // Committed-overlay idle drain: absorbing pending authority outranks
+    // fill and repair — fill tiles produced at a stale revision would be
+    // invalidated by the very next absorption anyway. One operation per
+    // slice; the exact swap refresh runs when the range empties.
+    const std::size_t idle_pending_ops =
+        !pressed && !panning ? vector_v2::pending_operation_count(log, canvas) : 0U;
+    // After repeated absorb failures the drain stands down: the overlay keeps
+    // glass exact indefinitely and the failure counter surfaces in receipts.
+    if (idle_pending_ops != 0U && drain_failures < 16U) {
+      const std::int64_t absorb_started = esp_timer_get_time();
+      const auto absorbed = vector_v2::absorb_pending_operation(
+          log, canvas, workspace, current_priority_view(presenter),
+          {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs});
+      const std::int64_t absorb_us = esp_timer_get_time() - absorb_started;
+      if (absorbed.has_value()) {
+        ++drain_ops;
+        drain_total_us += absorb_us;
+        drain_max_us = std::max(drain_max_us, absorb_us);
+        if (vector_v2::pending_operation_count(log, canvas) == 0U) {
+          LivePresentationTiming swap{};
+          swap.passed = true;
+          std::int64_t swap_wall_us = 0;
+          if (drain_swap_world.has_value()) {
+            const std::int64_t swap_started = esp_timer_get_time();
+            swap = presenter.refresh_region(
+                vector_v2::operation_level_bounds(*drain_swap_world, presenter.zoom()), chrome,
+                loop_us);
+            swap_wall_us = esp_timer_get_time() - swap_started;
+            drain_swap_world.reset();
+          }
+          std::printf(
+              "TINYDRAW_LIVE_DRAIN ops=%lu total_us=%lld max_us=%lld failures=%lu "
+              "swap_wall_us=%lld swap_pass=%u\n",
+              static_cast<unsigned long>(drain_ops), static_cast<long long>(drain_total_us),
+              static_cast<long long>(drain_max_us), static_cast<unsigned long>(drain_failures),
+              static_cast<long long>(swap_wall_us), swap.passed);
+          std::fflush(stdout);
+          drain_ops = 0U;
+          drain_total_us = 0;
+          drain_max_us = 0;
+          drain_failures = 0U;
+        }
+      } else {
+        ++drain_failures;
+      }
+    }
     if (!fill_view_available && fill_measurement_active) {
       print_fill_baseline("paused", fill_zoom, fill_x, fill_y, fill_revision, fill_timing);
       fill_timing.reset();
       fill_measurement_active = false;
     }
-    if (fill_allowed) {
+    if (fill_allowed && idle_pending_ops == 0U) {
       const vector_v2::ViewRequest fill_view{
           .zoom = presenter.zoom(),
           .level_pixels = {presenter.level_x(), presenter.level_y(),

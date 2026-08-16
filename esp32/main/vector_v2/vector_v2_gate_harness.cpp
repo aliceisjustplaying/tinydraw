@@ -1298,6 +1298,11 @@ struct MixedDrawStrokeStats {
   std::size_t published_tiles = 0;
   std::size_t fallback_tiles = 0;
   std::size_t visible_fallback_tiles = 0;
+  // Committed-overlay drain receipts: absorption work that ran off the
+  // input path (high-water fallbacks mid-stroke plus the post-stroke drain).
+  std::size_t drain_ops = 0;
+  std::int64_t drain_total_us = 0;
+  std::int64_t drain_max_us = 0;
   bool committed = false;
   bool authority = false;
   bool refresh_passed = false;
@@ -1407,6 +1412,51 @@ bool run_mixed_zoom_stroke(VectorV2Presenter& presenter, OperationLog& log,
 
   vector_v2::ChainedOperationBuilder builder(builder_storage, kInteractiveChunkSampleLimit);
   std::optional<vector_v2::PixelRect> world_bounds;
+  const auto accumulate = [&](const vector_v2::IncrementalAppendResult& result) {
+    stats.phase_max.prepare_us = std::max(stats.phase_max.prepare_us, result.phases.prepare_us);
+    stats.phase_max.overview_us = std::max(stats.phase_max.overview_us, result.phases.overview_us);
+    stats.phase_max.enumerate_us =
+        std::max(stats.phase_max.enumerate_us, result.phases.enumerate_us);
+    stats.phase_max.uniform_retain_us =
+        std::max(stats.phase_max.uniform_retain_us, result.phases.uniform_retain_us);
+    stats.phase_max.raw_retain_us =
+        std::max(stats.phase_max.raw_retain_us, result.phases.raw_retain_us);
+    stats.phase_max.offscreen_retain_us =
+        std::max(stats.phase_max.offscreen_retain_us, result.phases.offscreen_retain_us);
+    stats.phase_max.commit_us = std::max(stats.phase_max.commit_us, result.phases.commit_us);
+    stats.affected_tiles += result.affected_resident_tiles;
+    stats.published_tiles += result.published_tiles;
+    stats.fallback_tiles += result.fallback_tiles;
+    stats.visible_fallback_tiles += result.visible_fallback_tiles;
+    stats.drops.visible_uniform_no_slot += result.drops.visible_uniform_no_slot;
+    stats.drops.visible_uniform_paint_fail += result.drops.visible_uniform_paint_fail;
+    stats.drops.visible_raw_edit_fail += result.drops.visible_raw_edit_fail;
+    stats.drops.visible_raw_paint_fail += result.drops.visible_raw_paint_fail;
+    stats.drops.offscreen_skipped += result.drops.offscreen_skipped;
+    if (!world_bounds.has_value()) {
+      world_bounds = result.affected_world_bounds;
+    } else {
+      world_bounds->x0 = std::min(world_bounds->x0, result.affected_world_bounds.x0);
+      world_bounds->y0 = std::min(world_bounds->y0, result.affected_world_bounds.y0);
+      world_bounds->x1 = std::max(world_bounds->x1, result.affected_world_bounds.x1);
+      world_bounds->y1 = std::max(world_bounds->y1, result.affected_world_bounds.y1);
+    }
+  };
+  const auto absorb_one = [&]() -> bool {
+    const std::int64_t started_us = esp_timer_get_time();
+    const auto absorbed = vector_v2::absorb_pending_operation(
+        log, canvas, workspace, priority_view,
+        {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs});
+    const std::int64_t elapsed_us = esp_timer_get_time() - started_us;
+    if (!absorbed.has_value()) {
+      return false;
+    }
+    ++stats.drain_ops;
+    stats.drain_total_us += elapsed_us;
+    stats.drain_max_us = std::max(stats.drain_max_us, elapsed_us);
+    accumulate(*absorbed);
+    return true;
+  };
   const auto commit_ready = [&](vector_v2::ChainedOperationStatus status)
       -> std::optional<vector_v2::ChainedOperationStatus> {
     while (status == vector_v2::ChainedOperationStatus::kChunkReady ||
@@ -1415,48 +1465,23 @@ bool run_mixed_zoom_stroke(VectorV2Presenter& presenter, OperationLog& log,
       if (!pending.has_value()) {
         return std::nullopt;
       }
+      // Mirror the product coordinator exactly: deferred authority commit
+      // with the high-water absorption fallback (committed-overlay §3.5).
+      if (vector_v2::pending_operation_count(log, canvas) >= kPendingOperationHighWater &&
+          !absorb_one()) {
+        return std::nullopt;
+      }
       const std::int64_t started_us = esp_timer_get_time();
-      // Mirror the product coordinator's commit budget exactly.
-      const auto committed = vector_v2::append_incrementally_in_place(
-          log, canvas, *pending, workspace, priority_view,
-          {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs});
+      const auto committed =
+          vector_v2::append_authority_only(log, *pending, {.now_us = &esp_timer_get_time});
       const std::int64_t elapsed_us = esp_timer_get_time() - started_us;
       if (!committed.has_value()) {
         return std::nullopt;
       }
       stats.append_total_us += elapsed_us;
       stats.append_max_us = std::max(stats.append_max_us, elapsed_us);
-      stats.phase_max.prepare_us =
-          std::max(stats.phase_max.prepare_us, committed->phases.prepare_us);
-      stats.phase_max.overview_us =
-          std::max(stats.phase_max.overview_us, committed->phases.overview_us);
-      stats.phase_max.enumerate_us =
-          std::max(stats.phase_max.enumerate_us, committed->phases.enumerate_us);
-      stats.phase_max.uniform_retain_us =
-          std::max(stats.phase_max.uniform_retain_us, committed->phases.uniform_retain_us);
-      stats.phase_max.raw_retain_us =
-          std::max(stats.phase_max.raw_retain_us, committed->phases.raw_retain_us);
-      stats.phase_max.offscreen_retain_us =
-          std::max(stats.phase_max.offscreen_retain_us, committed->phases.offscreen_retain_us);
-      stats.phase_max.commit_us = std::max(stats.phase_max.commit_us, committed->phases.commit_us);
       ++stats.chunks;
-      stats.affected_tiles += committed->affected_resident_tiles;
-      stats.published_tiles += committed->published_tiles;
-      stats.fallback_tiles += committed->fallback_tiles;
-      stats.visible_fallback_tiles += committed->visible_fallback_tiles;
-      stats.drops.visible_uniform_no_slot += committed->drops.visible_uniform_no_slot;
-      stats.drops.visible_uniform_paint_fail += committed->drops.visible_uniform_paint_fail;
-      stats.drops.visible_raw_edit_fail += committed->drops.visible_raw_edit_fail;
-      stats.drops.visible_raw_paint_fail += committed->drops.visible_raw_paint_fail;
-      stats.drops.offscreen_skipped += committed->drops.offscreen_skipped;
-      if (!world_bounds.has_value()) {
-        world_bounds = committed->affected_world_bounds;
-      } else {
-        world_bounds->x0 = std::min(world_bounds->x0, committed->affected_world_bounds.x0);
-        world_bounds->y0 = std::min(world_bounds->y0, committed->affected_world_bounds.y0);
-        world_bounds->x1 = std::max(world_bounds->x1, committed->affected_world_bounds.x1);
-        world_bounds->y1 = std::max(world_bounds->y1, committed->affected_world_bounds.y1);
-      }
+      accumulate(*committed);
       status = builder.acknowledge_commit();
     }
     if (status != vector_v2::ChainedOperationStatus::kAccepted &&
@@ -1487,6 +1512,13 @@ bool run_mixed_zoom_stroke(VectorV2Presenter& presenter, OperationLog& log,
         .world_x = x, .world_y = y, .radius = radius, .timestamp_us = timestamp_us};
     const bool final_sample = index + 1U == kStrokeSamples;
     if (!commit_ready(final_sample ? builder.finish(point) : builder.add(point)).has_value()) {
+      return false;
+    }
+  }
+  // Post-stroke drain: production absorbs in idle slices; the gate
+  // compresses that into one receipted loop before the exact swap refresh.
+  while (vector_v2::pending_operation_count(log, canvas) != 0U) {
+    if (!absorb_one()) {
       return false;
     }
   }
@@ -1577,6 +1609,7 @@ bool run_mixed_zoom_draw_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
           "append_avg_us=%lld append_total_us=%lld affected_tiles=%lu published=%lu "
           "fallback=%lu visible_fallback=%lu drop_uni_slot=%lu drop_uni_paint=%lu "
           "drop_raw_edit=%lu drop_raw_paint=%lu off_skip=%lu "
+          "drain_ops=%lu drain_total_us=%lld drain_max_us=%lld "
           "ph_prepare_max_us=%lld ph_overview_max_us=%lld "
           "ph_enumerate_max_us=%lld ph_uniform_max_us=%lld ph_raw_max_us=%lld "
           "ph_offscreen_max_us=%lld "
@@ -1597,6 +1630,8 @@ bool run_mixed_zoom_draw_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
           static_cast<unsigned long>(stats.drops.visible_raw_edit_fail),
           static_cast<unsigned long>(stats.drops.visible_raw_paint_fail),
           static_cast<unsigned long>(stats.drops.offscreen_skipped),
+          static_cast<unsigned long>(stats.drain_ops), static_cast<long long>(stats.drain_total_us),
+          static_cast<long long>(stats.drain_max_us),
           static_cast<long long>(stats.phase_max.prepare_us),
           static_cast<long long>(stats.phase_max.overview_us),
           static_cast<long long>(stats.phase_max.enumerate_us),
@@ -2913,22 +2948,42 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
     std::uint32_t fallback_mid_max = 0;
     std::uint32_t fallback_up_max = 0;
     vector_v2::InPlaceRetainDrops trace_drops{};
+    std::uint32_t drain_ops = 0;
+    std::int64_t drain_max_us = 0;
+    const auto absorb_one = [&]() -> bool {
+      const std::int64_t started_us = esp_timer_get_time();
+      const auto absorbed = vector_v2::absorb_pending_operation(
+          log, canvas, in_place_workspace, priority_view,
+          {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs});
+      if (!absorbed.has_value()) {
+        return false;
+      }
+      ++drain_ops;
+      drain_max_us = std::max(drain_max_us, esp_timer_get_time() - started_us);
+      trace_drops.visible_uniform_no_slot += absorbed->drops.visible_uniform_no_slot;
+      trace_drops.visible_uniform_paint_fail += absorbed->drops.visible_uniform_paint_fail;
+      trace_drops.visible_raw_edit_fail += absorbed->drops.visible_raw_edit_fail;
+      trace_drops.visible_raw_paint_fail += absorbed->drops.visible_raw_paint_fail;
+      trace_drops.offscreen_skipped += absorbed->drops.offscreen_skipped;
+      return true;
+    };
+    // Mirrors the product coordinator: deferred authority commit with the
+    // high-water absorption fallback; the pending overlay keeps every
+    // presented pixel exact while the canvas trails.
     const auto commit_pending = [&]() -> std::optional<vector_v2::ChainedOperationStatus> {
       const auto pending = builder.pending_append();
       if (!pending.has_value()) {
         return std::nullopt;
       }
-      const auto committed = vector_v2::append_incrementally_in_place(
-          log, canvas, *pending, in_place_workspace, priority_view,
-          {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs});
+      if (vector_v2::pending_operation_count(log, canvas) >= kPendingOperationHighWater &&
+          !absorb_one()) {
+        return std::nullopt;
+      }
+      const auto committed =
+          vector_v2::append_authority_only(log, *pending, {.now_us = &esp_timer_get_time});
       if (!committed.has_value()) {
         return std::nullopt;
       }
-      trace_drops.visible_uniform_no_slot += committed->drops.visible_uniform_no_slot;
-      trace_drops.visible_uniform_paint_fail += committed->drops.visible_uniform_paint_fail;
-      trace_drops.visible_raw_edit_fail += committed->drops.visible_raw_edit_fail;
-      trace_drops.visible_raw_paint_fail += committed->drops.visible_raw_paint_fail;
-      trace_drops.offscreen_skipped += committed->drops.offscreen_skipped;
       fallback_mid_max =
           std::max(fallback_mid_max,
                    probe_viewport_overview_fallback(presenter, canvas, spec.zoom).fallback);
@@ -3021,6 +3076,14 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
           }
           finish_status = *continued;
         }
+        // Production drains in idle slices after lift; the gate compresses
+        // that into one loop before the swap refresh.
+        while (vector_v2::pending_operation_count(log, canvas) != 0U) {
+          if (!absorb_one()) {
+            ++commit_failures;
+            break;
+          }
+        }
         static_cast<void>(presenter.refresh(chrome, now_us()));
         fallback_up_max =
             std::max(fallback_up_max,
@@ -3087,7 +3150,7 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
         "presentation_failures=%lu commit_failures=%lu overflows=%lu revision=%lu "
         "fb_tiles=%lu fb_start=%lu fb_mid_max=%lu fb_up_max=%lu fb_end=%lu "
         "drop_uni_slot=%lu drop_uni_paint=%lu drop_raw_edit=%lu drop_raw_paint=%lu "
-        "off_skip=%lu latency_pass=%u pass=%u\n",
+        "off_skip=%lu drain_ops=%lu drain_max_us=%lld latency_pass=%u pass=%u\n",
         spec.name, zoom_name(spec.zoom), static_cast<unsigned long>(counters.received_events),
         static_cast<unsigned long>(counters.consumed_events),
         static_cast<unsigned long>(counters.coalesced_events),
@@ -3117,7 +3180,9 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
         static_cast<unsigned long>(trace_drops.visible_uniform_paint_fail),
         static_cast<unsigned long>(trace_drops.visible_raw_edit_fail),
         static_cast<unsigned long>(trace_drops.visible_raw_paint_fail),
-        static_cast<unsigned long>(trace_drops.offscreen_skipped), latency_pass, trace_pass);
+        static_cast<unsigned long>(trace_drops.offscreen_skipped),
+        static_cast<unsigned long>(drain_ops), static_cast<long long>(drain_max_us), latency_pass,
+        trace_pass);
     std::fflush(stdout);
     all_pass = all_pass && trace_pass;
   }
