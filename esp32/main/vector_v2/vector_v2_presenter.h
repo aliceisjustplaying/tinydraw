@@ -53,6 +53,12 @@ inline constexpr std::size_t kInteractiveChunkSampleLimit = 32;
 // Bounds only the offscreen raw retention pass of an in-place append; see
 // InPlaceRetentionBudget. It does not bound the complete commit.
 inline constexpr std::int64_t kInPlaceRetentionBudgetUs = 10'000;
+// Idle absorption retention budget. Absorption runs between input polls, so
+// it can afford more retention than the input-path commit: 25 ms bounds the
+// idle poll gap while letting the déjà-vu all-zoom retention actually paint
+// the revisit-bound tiles (10 ms skipped 150-200 of them per XL stroke).
+// The high-water input-path fallback keeps kInPlaceRetentionBudgetUs.
+inline constexpr std::int64_t kIdleAbsorbBudgetUs = 25'000;
 // Committed-overlay pending-range high-water mark. A chunk commit that
 // finds this many unabsorbed operations pays one synchronous absorption
 // first (design §3.5 degradation: today's behavior as the worst case),

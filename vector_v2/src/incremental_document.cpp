@@ -220,16 +220,38 @@ struct InPlaceRetainScope {
   const std::optional<ViewRequest>& priority_view;
   const InPlaceRetentionBudget& budget;
   std::int64_t deadline_us;
+  // Déjà-vu fix (owner 2026-08-16): idle absorption retains resident raw
+  // tiles at every zoom — the synchronous-cost argument that justified
+  // dropping cross-zoom tiles died with the committed overlay. The
+  // input-path fallback keeps the priority-only scope.
+  bool retain_all_zooms = false;
   [[nodiscard]] bool over_budget() const {
     return budget.now_us != nullptr && budget.now_us() >= deadline_us;
   }
 };
 
+// True when the tile lies inside the remembered viewport at its zoom — the
+// views a zoom return lands on, which is exactly the déjà-vu revisit
+// population.
+bool in_recent_view(const MaterializedCanvas& canvas, TileKey key) {
+  for (const ViewFootprint& view : canvas.recent_views()) {
+    if (!view.valid || view.zoom != key.zoom) {
+      continue;
+    }
+    const PixelRect bounds = tile_pixel_bounds(key);
+    if (bounds.x0 < view.level_pixels.x1 && view.level_pixels.x0 < bounds.x1 &&
+        bounds.y0 < view.level_pixels.y1 && view.level_pixels.y0 < bounds.y1) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // Uniform pass: same-color uniforms retain for free at every zoom; other
-// affected uniforms materialize as raw and paint only inside the priority
-// view. Visible tiles are exempt from the budget: dropping one blurs pixels
-// the user is looking at (rejected on glass), and the viewport bounds the
-// work.
+// affected uniforms materialize as raw and paint inside the priority view
+// (budget-exempt: dropping one blurs pixels the user is looking at), and —
+// during all-zoom absorption — inside remembered views at other zooms
+// (budget-bounded; a skip falls back to the old drop-and-repair behavior).
 std::size_t retain_uniform_tiles(MaterializedCanvas& canvas, const InPlaceRetainScope& scope,
                                  std::span<TileKey> affected, std::span<std::uint8_t> tile_mask,
                                  InPlaceRetainDrops& drops) {
@@ -253,6 +275,18 @@ std::size_t retain_uniform_tiles(MaterializedCanvas& canvas, const InPlaceRetain
         ++drops.visible_uniform_paint_fail;
       } else {
         ++drops.visible_uniform_no_slot;
+      }
+    } else if (scope.retain_all_zooms && in_recent_view(canvas, key) && !scope.over_budget()) {
+      // Déjà-vu fix: a zoom return lands on this tile; materializing it now
+      // (idle time) beats re-rendering it in front of the user later.
+      const auto edit = canvas.materialize_uniform_as_raw(key);
+      if (edit.has_value() && paint_operation_into_tile(scope.operation, *edit, tile_mask)) {
+        keep = true;
+      } else {
+        if (edit.has_value()) {
+          canvas.invalidate_identity(key);
+        }
+        ++drops.offscreen_skipped;
       }
     } else if (scope.priority_view.has_value() && key.zoom == scope.priority_view->zoom) {
       ++drops.offscreen_skipped;
@@ -304,9 +338,13 @@ std::size_t retain_offscreen_raw_tiles(MaterializedCanvas& canvas, const InPlace
                                        InPlaceRetainDrops& drops) {
   for (std::size_t index = retained; index < affected.size(); ++index) {
     const TileKey key = affected[index];
-    if (!scope.priority_view.has_value() || key.zoom != scope.priority_view->zoom ||
-        in_priority_view(key, scope.priority_view)) {
-      continue;
+    const bool active_zoom =
+        scope.priority_view.has_value() && key.zoom == scope.priority_view->zoom;
+    if (active_zoom && in_priority_view(key, scope.priority_view)) {
+      continue;  // Already handled by the visible pass.
+    }
+    if (!active_zoom && !scope.retain_all_zooms) {
+      continue;  // Cross-zoom drops are counted by cross_zoom_invalidated.
     }
     if (scope.over_budget()) {
       ++drops.offscreen_skipped;
@@ -375,7 +413,7 @@ std::optional<IncrementalAppendResult> run_in_place_phases(
     MaterializedCanvas& canvas, const OperationIdentity& identity, const OperationAppend& operation,
     PixelRect world_bounds, const InPlaceAppendWorkspace& workspace,
     const std::optional<ViewRequest>& priority_view, const InPlaceRetentionBudget& budget,
-    std::int64_t prepare_started_us, std::int64_t deadline_us) {
+    std::int64_t prepare_started_us, std::int64_t deadline_us, bool retain_all_zooms) {
   const auto stamp = [&budget]() { return budget.now_us != nullptr ? budget.now_us() : 0; };
   InPlaceAppendPhases phases{};
   const std::int64_t overview_started_us = stamp();
@@ -393,10 +431,24 @@ std::optional<IncrementalAppendResult> run_in_place_phases(
   }
   phases.enumerate_us = stamp() - enumerate_started_us;
 
-  const auto affected = workspace.affected_keys.first(*resident_count);
+  std::size_t affected_count = *resident_count;
+  if (retain_all_zooms) {
+    // Déjà-vu fix: also enumerate revisit-bound uniforms at other zooms so
+    // the retain pass can materialize them during idle absorption. On
+    // overflow the primary enumeration stands and those uniforms drop to
+    // the old lazy-repair behavior.
+    const auto extended = canvas.append_recent_view_uniform_keys(
+        world_bounds, priority_view.has_value() ? std::optional{priority_view->zoom} : std::nullopt,
+        workspace.affected_keys, affected_count);
+    if (extended.has_value()) {
+      affected_count = *extended;
+    }
+  }
+  const auto affected = workspace.affected_keys.first(affected_count);
   const std::uint16_t painted_color =
       operation.tool == OperationTool::kEraser ? 0xFFFFU : operation.color;
-  const InPlaceRetainScope scope{operation, painted_color, priority_view, budget, deadline_us};
+  const InPlaceRetainScope scope{operation, painted_color, priority_view,
+                                 budget,    deadline_us,   retain_all_zooms};
   InPlaceRetainDrops drops{};
   const std::size_t retained =
       retain_affected_tiles(canvas, scope, affected, workspace.tile_mask, phases, drops);
@@ -422,9 +474,9 @@ std::optional<IncrementalAppendResult> run_in_place_phases(
   phases.commit_us = stamp() - commit_started_us;
   return IncrementalAppendResult{.identity = identity,
                                  .affected_world_bounds = world_bounds,
-                                 .affected_resident_tiles = *resident_count,
+                                 .affected_resident_tiles = affected_count,
                                  .published_tiles = retained,
-                                 .fallback_tiles = *resident_count - retained,
+                                 .fallback_tiles = affected_count - retained,
                                  .visible_fallback_tiles = visible_fallback,
                                  .cross_zoom_invalidated = cross_zoom_invalidated,
                                  .phases = phases,
@@ -461,8 +513,9 @@ std::optional<IncrementalAppendResult> append_incrementally_in_place(
   const PixelRect world_bounds = stored.world_bounds;
   const OperationAppend operation{
       .tool = stored.tool, .color = stored.color, .samples = stored.samples};
-  const auto result = run_in_place_phases(canvas, identity, operation, world_bounds, workspace,
-                                          priority_view, budget, prepare_started_us, deadline_us);
+  const auto result =
+      run_in_place_phases(canvas, identity, operation, world_bounds, workspace, priority_view,
+                          budget, prepare_started_us, deadline_us, /*retain_all_zooms=*/false);
   if (!result.has_value()) {
     prepared->cancel();
     return std::nullopt;
@@ -553,8 +606,11 @@ std::optional<IncrementalAppendResult> absorb_pending_operation(
   }
   const OperationAppend operation{
       .tool = stored->tool, .color = stored->color, .samples = stored->samples};
+  // Idle absorption pays for cross-zoom retention (déjà-vu fix): resident
+  // raw tiles at every zoom stay exact instead of dropping to overview.
   return run_in_place_phases(canvas, stored->identity, operation, stored->world_bounds, workspace,
-                             priority_view, budget, prepare_started_us, deadline_us);
+                             priority_view, budget, prepare_started_us, deadline_us,
+                             /*retain_all_zooms=*/true);
 }
 
 bool restore_document_snapshot(OperationLog& log, MaterializedCanvas& canvas,

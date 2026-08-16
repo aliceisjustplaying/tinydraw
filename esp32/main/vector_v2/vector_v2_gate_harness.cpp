@@ -1446,7 +1446,7 @@ bool run_mixed_zoom_stroke(VectorV2Presenter& presenter, OperationLog& log,
     const std::int64_t started_us = esp_timer_get_time();
     const auto absorbed = vector_v2::absorb_pending_operation(
         log, canvas, workspace, priority_view,
-        {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs});
+        {.now_us = &esp_timer_get_time, .budget_us = kIdleAbsorbBudgetUs});
     const std::int64_t elapsed_us = esp_timer_get_time() - started_us;
     if (!absorbed.has_value()) {
       return false;
@@ -2956,7 +2956,7 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
       const std::int64_t started_us = esp_timer_get_time();
       const auto absorbed = vector_v2::absorb_pending_operation(
           log, canvas, in_place_workspace, priority_view,
-          {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs});
+          {.now_us = &esp_timer_get_time, .budget_us = kIdleAbsorbBudgetUs});
       if (!absorbed.has_value()) {
         return false;
       }

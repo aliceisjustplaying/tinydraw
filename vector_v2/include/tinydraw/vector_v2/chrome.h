@@ -139,6 +139,9 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
 [[nodiscard]] ChromePresentationRegions chrome_unobscured_regions(ChromeRect bounds,
                                                                   const ChromeState& state);
 [[nodiscard]] std::optional<ChromeRect> chrome_minimap_region(const ChromeState& state);
+// The battery indicator's panel-space overlay bounds. A battery-only state
+// change needs to re-present just this region, not the full frame.
+[[nodiscard]] ChromeRect chrome_battery_region();
 [[nodiscard]] bool chrome_minimap_refresh_required(const ChromeState& state, bool overview_changed,
                                                    bool allow_minimap_refresh);
 void draw_chrome(std::span<std::uint16_t> pixels, int width, int height, const ChromeState& state);

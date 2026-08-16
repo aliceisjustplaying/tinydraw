@@ -848,6 +848,28 @@ std::optional<std::size_t> MaterializedCanvas::materialized_tiles_intersecting(
              : std::nullopt;
 }
 
+std::optional<std::size_t> MaterializedCanvas::append_recent_view_uniform_keys(
+    PixelRect world_bounds, std::optional<ZoomLevel> exclude_zoom, std::span<TileKey> output,
+    std::size_t written) const {
+  if (!ready() || !valid_world_bounds(world_bounds) ||
+      !accepts_external_workspace(std::as_bytes(output))) {
+    return std::nullopt;
+  }
+  for (const ViewFootprint& view : recent_views_) {
+    if (!view.valid || view.zoom == ZoomLevel::k25Percent ||
+        (exclude_zoom.has_value() && view.zoom == *exclude_zoom)) {
+      continue;
+    }
+    const auto appended = append_visible_uniform_keys(
+        world_bounds, {.zoom = view.zoom, .level_pixels = view.level_pixels}, output, written);
+    if (!appended.has_value()) {
+      return std::nullopt;
+    }
+    written = *appended;
+  }
+  return written;
+}
+
 std::optional<std::size_t> MaterializedCanvas::find_tile(TileKey key) const {
   const auto scan = [this, key]() -> std::optional<std::size_t> {
     const auto found = std::find_if(slots_.begin(), slots_.end(), [key](const auto& slot) {
