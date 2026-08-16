@@ -119,6 +119,9 @@ class VectorV2Presenter {
   [[nodiscard]] int level_y() const;
   [[nodiscard]] float scale() const;
   [[nodiscard]] vector_v2::OperationPoint operation_point(InkPoint point) const;
+  // Quantizes a live sample through the same compact world representation
+  // consumed by committed authority, then maps it back to panel coordinates.
+  [[nodiscard]] InkPoint authority_ink_point(InkPoint point) const;
 
   [[nodiscard]] LivePresentationTiming refresh(const vector_v2::ChromeState& chrome,
                                                std::uint32_t event_us = 0);

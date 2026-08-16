@@ -154,6 +154,24 @@ vector_v2::OperationPoint VectorV2Presenter::operation_point(InkPoint point) con
   };
 }
 
+InkPoint VectorV2Presenter::authority_ink_point(InkPoint point) const {
+  constexpr float kPositionUnits = 4.0F;
+  constexpr float kRadiusUnits = 256.0F;
+  constexpr float kMinimumScreenRadius = 0.75F;
+  const vector_v2::OperationPoint authority = operation_point(point);
+  const float current_scale = scale();
+  point.position = {
+      .x = std::lround(authority.world_x * kPositionUnits) / kPositionUnits * current_scale -
+           static_cast<float>(level_x()),
+      .y = std::lround(authority.world_y * kPositionUnits) / kPositionUnits * current_scale -
+           static_cast<float>(level_y()),
+  };
+  point.radius =
+      std::max(std::lround(authority.radius * kRadiusUnits) / kRadiusUnits * current_scale,
+               kMinimumScreenRadius);
+  return point;
+}
+
 LivePresentationTiming VectorV2Presenter::refresh(const vector_v2::ChromeState& chrome,
                                                   std::uint32_t event_us) {
   clear_live_overlay();
@@ -341,8 +359,7 @@ LivePresentationTiming VectorV2Presenter::show_start(InkPoint point, std::uint16
   if (canvas_bottom == 0) {
     return {.passed = true};
   }
-  const RibbonPrimitive cap{
-      .kind = RibbonPrimitiveKind::kCircle, .center = point.position, .radius = point.radius};
+  const RibbonPrimitive cap = tapered_ribbon_segment(point, point);
   const std::array primitives{cap};
   live_provisional_[0] = cap;
   live_provisional_count_ = 1U;
@@ -1077,11 +1094,20 @@ vector_v2::PixelRect VectorV2Presenter::primitive_bounds(
   float x1 = 0.0F;
   float y1 = 0.0F;
   for (const RibbonPrimitive& primitive : primitives) {
-    if (primitive.kind == RibbonPrimitiveKind::kCircle) {
+    if (primitive.kind == RibbonPrimitiveKind::kCircle ||
+        primitive.kind == RibbonPrimitiveKind::kTaperedSegment) {
       x0 = std::min(x0, primitive.center.x - primitive.radius - 2.0F);
       y0 = std::min(y0, primitive.center.y - primitive.radius - 2.0F);
       x1 = std::max(x1, primitive.center.x + primitive.radius + 2.0F);
       y1 = std::max(y1, primitive.center.y + primitive.radius + 2.0F);
+      if (primitive.kind == RibbonPrimitiveKind::kTaperedSegment) {
+        const Point second_center = tapered_ribbon_second_center(primitive);
+        const float second_radius = tapered_ribbon_second_radius(primitive);
+        x0 = std::min(x0, second_center.x - second_radius - 2.0F);
+        y0 = std::min(y0, second_center.y - second_radius - 2.0F);
+        x1 = std::max(x1, second_center.x + second_radius + 2.0F);
+        y1 = std::max(y1, second_center.y + second_radius + 2.0F);
+      }
       continue;
     }
     for (std::size_t index = 0; index < primitive.point_count; ++index) {

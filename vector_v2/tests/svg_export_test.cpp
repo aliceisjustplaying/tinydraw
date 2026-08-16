@@ -14,8 +14,8 @@
 #include <string_view>
 #include <vector>
 
-#include "tinydraw/graphics/ribbon_renderer.h"
 #include "tinydraw/ink/ribbon_geometry.h"
+#include "tinydraw/vector_v2/incremental_rasterizer.h"
 #include "tinydraw/vector_v2/memory_layout.h"
 
 namespace vector_v2 = tinydraw::vector_v2;
@@ -69,6 +69,8 @@ struct ParsedShape {
   std::uint8_t point_count = 0;
   tinydraw::Point center{};
   float radius = 0.0F;
+  tinydraw::Point second_center{};
+  float second_radius = 0.0F;
 };
 
 bool parse_float(std::string_view text, std::size_t& cursor, float& value) {
@@ -103,6 +105,18 @@ bool parse_shapes(std::string_view svg, std::vector<ParsedShape>& shapes) {
       if (!parse_attribute(line, "cx", shape.center.x) ||
           !parse_attribute(line, "cy", shape.center.y) ||
           !parse_attribute(line, "r", shape.radius)) {
+        return false;
+      }
+      shapes.push_back(shape);
+    } else if (line.starts_with("<path d=\"M") &&
+               line.find("data-tinydraw-segment=\"1\"") != std::string_view::npos) {
+      ParsedShape shape{.kind = tinydraw::RibbonPrimitiveKind::kTaperedSegment};
+      if (!parse_attribute(line, "x1", shape.center.x) ||
+          !parse_attribute(line, "y1", shape.center.y) ||
+          !parse_attribute(line, "r1", shape.radius) ||
+          !parse_attribute(line, "x2", shape.second_center.x) ||
+          !parse_attribute(line, "y2", shape.second_center.y) ||
+          !parse_attribute(line, "r2", shape.second_radius)) {
         return false;
       }
       shapes.push_back(shape);
@@ -171,28 +185,6 @@ bool well_formed_export(std::string_view svg) {
   return stack.empty();
 }
 
-tinydraw::InkPoint ink_point(vector_v2::CompactOperationSample sample) {
-  return {
-      .position = {.x = static_cast<float>(sample.x_quarter) * 0.25F,
-                   .y = static_cast<float>(sample.y_quarter) * 0.25F},
-      .pressure = 0.0F,
-      .radius = static_cast<float>(sample.radius_256) / 256.0F,
-  };
-}
-
-std::vector<tinydraw::RibbonPrimitive> renderer_geometry(
-    std::span<const vector_v2::CompactOperationSample> samples) {
-  tinydraw::CurvedRibbonStream ribbon;
-  std::vector<tinydraw::RibbonPrimitive> primitives;
-  for (std::size_t index = 0; index < samples.size(); ++index) {
-    const bool final = index + 1U == samples.size();
-    const tinydraw::RibbonUpdate update = final ? ribbon.finish(ink_point(samples[index]))
-                                                : ribbon.append(ink_point(samples[index]), false);
-    primitives.insert(primitives.end(), update.committed.begin(), update.committed.end());
-  }
-  return primitives;
-}
-
 float cross(tinydraw::Point first, tinydraw::Point second, tinydraw::Point point) {
   return (second.x - first.x) * (point.y - first.y) - (second.y - first.y) * (point.x - first.x);
 }
@@ -203,6 +195,12 @@ bool contains(const ParsedShape& shape, tinydraw::Point point) {
     const float delta_y = point.y - shape.center.y;
     return delta_x * delta_x + delta_y * delta_y <= shape.radius * shape.radius;
   }
+  if (shape.kind == tinydraw::RibbonPrimitiveKind::kTaperedSegment) {
+    const tinydraw::RibbonPrimitive primitive = tinydraw::tapered_ribbon_segment(
+        {.position = shape.center, .radius = shape.radius},
+        {.position = shape.second_center, .radius = shape.second_radius});
+    return tinydraw::tapered_ribbon_segment_covers(primitive, point);
+  }
   bool positive = false;
   bool negative = false;
   for (std::uint8_t index = 0; index < shape.point_count; ++index) {
@@ -212,11 +210,6 @@ bool contains(const ParsedShape& shape, tinydraw::Point point) {
     negative = negative || value < 0.0F;
   }
   return !(positive && negative);
-}
-
-std::uint16_t black_over_white(std::uint8_t alpha) {
-  const auto blend = [alpha](int destination) { return (destination * (255 - alpha) + 127) / 255; };
-  return static_cast<std::uint16_t>((blend(31) << 11) | (blend(63) << 5) | blend(31));
 }
 
 }  // namespace
@@ -244,9 +237,9 @@ TEST_CASE("SVG export has stable exact output and painter-ordered eraser geometr
         "viewBox=\"0 0 30 20\">\n"
         "<rect x=\"0\" y=\"0\" width=\"30\" height=\"20\" fill=\"#FFFFFF\"/>\n"
         "<g fill=\"#FF0000\">\n"
-        "<circle cx=\"10\" cy=\"10\" r=\"2\"/>\n"
-        "<path d=\"M10 8L20 6L20 14L10 12Z\"/>\n"
-        "<circle cx=\"20\" cy=\"10\" r=\"4\"/>\n"
+        "<path d=\"M10 12L20 14A4 4 0 0 0 20 6L10 8A2 2 0 0 0 10 12Z\" "
+        "data-tinydraw-segment=\"1\" x1=\"10\" y1=\"10\" r1=\"2\" x2=\"20\" "
+        "y2=\"10\" r2=\"4\"/>\n"
         "</g>\n"
         "<g fill=\"#FFFFFF\">\n"
         "<circle cx=\"15\" cy=\"10\" r=\"1\"/>\n"
@@ -255,7 +248,7 @@ TEST_CASE("SVG export has stable exact output and painter-ordered eraser geometr
   CHECK(sink.maximum_fragment <= 64U);
 }
 
-TEST_CASE("exported primitive coverage exactly matches the ribbon renderer raster") {
+TEST_CASE("exported geometry exactly matches committed authority pixel coverage") {
   LogFixture<2, 8> fixture;
   const std::array samples{
       vector_v2::CompactOperationSample{.x_quarter = 32, .y_quarter = 64, .radius_256 = 256},
@@ -270,50 +263,28 @@ TEST_CASE("exported primitive coverage exactly matches the ribbon renderer raste
 
   std::vector<ParsedShape> shapes;
   REQUIRE(parse_shapes(sink.text, shapes));
-  const std::vector<tinydraw::RibbonPrimitive> primitives = renderer_geometry(samples);
-  REQUIRE(shapes.size() == primitives.size());
-  std::array<std::uint16_t, 64U * 32U> raster{};
-  raster.fill(0xFFFFU);
-  tinydraw::RibbonRenderer renderer;
-  const tinydraw::RibbonRenderStats stats = renderer.render(primitives, raster, 64, 32, 0U);
-  REQUIRE(stats.tiles_rasterized == 1U);
+  REQUIRE_FALSE(shapes.empty());
+  std::array<std::uint16_t, 64U * 32U> authority{};
+  authority.fill(0xFFFFU);
+  REQUIRE(vector_v2::apply_incremental_operation(
+      {.tool = vector_v2::OperationTool::kPen, .color = 0U, .samples = samples},
+      {.zoom = vector_v2::ZoomLevel::k100Percent,
+       .level_bounds = {0, 0, 64, 32},
+       .pixels = authority,
+       .stride = 64}));
 
-  constexpr int samples_per_axis = 4;
-  std::size_t differing_pixels = 0;
   for (int y = 0; y < 32; ++y) {
     for (int x = 0; x < 64; ++x) {
-      int covered = 0;
-      for (int sample_y = 0; sample_y < samples_per_axis; ++sample_y) {
-        for (int sample_x = 0; sample_x < samples_per_axis; ++sample_x) {
-          const tinydraw::Point point{
-              .x = static_cast<float>(x) + (static_cast<float>(sample_x) + 0.5F) / 4.0F,
-              .y = static_cast<float>(y) + (static_cast<float>(sample_y) + 0.5F) / 4.0F,
-          };
-          covered += std::any_of(shapes.begin(), shapes.end(), [point](const ParsedShape& shape) {
-            return contains(shape, point);
-          });
-        }
-      }
-      const std::uint8_t alpha = static_cast<std::uint8_t>(covered * 255 / 16);
-      const std::uint16_t mathematical = black_over_white(alpha);
-      const std::uint16_t rendered = raster[static_cast<std::size_t>(y * 64 + x)];
-      if (rendered != mathematical) {
-        ++differing_pixels;
-      }
-      // CoverageTile's scan converter may classify a point exactly on a
-      // convex edge one 4x4 supersample differently from the direct
-      // half-plane predicate. No channel may differ by more than that one
-      // supersample; all other coverage must be exact.
-      CHECK(std::abs(static_cast<int>((rendered >> 11U) & 31U) -
-                     static_cast<int>((mathematical >> 11U) & 31U)) <= 2);
-      CHECK(std::abs(static_cast<int>((rendered >> 5U) & 63U) -
-                     static_cast<int>((mathematical >> 5U) & 63U)) <= 4);
-      CHECK(std::abs(static_cast<int>(rendered & 31U) - static_cast<int>(mathematical & 31U)) <= 2);
+      const tinydraw::Point center{.x = static_cast<float>(x) + 0.5F,
+                                   .y = static_cast<float>(y) + 0.5F};
+      const bool exported =
+          std::any_of(shapes.begin(), shapes.end(),
+                      [center](const ParsedShape& shape) { return contains(shape, center); });
+      CAPTURE(x);
+      CAPTURE(y);
+      CHECK(exported == (authority[static_cast<std::size_t>(y * 64 + x)] == 0U));
     }
   }
-  CHECK(differing_pixels < 16U);
-  CHECK(contains(shapes.back(), {.x = 54.0F, .y = 20.0F}));
-  CHECK_FALSE(contains(shapes.front(), {.x = 8.0F, .y = 20.0F}));
 }
 
 TEST_CASE("SVG export handles empty and single-dot documents and sink failure") {

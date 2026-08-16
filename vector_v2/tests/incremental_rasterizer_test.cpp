@@ -10,7 +10,9 @@
 #include <vector>
 
 #include "tinydraw/graphics/coverage_tile.h"
+#include "tinydraw/graphics/ribbon_renderer.h"
 #include "tinydraw/ink/ribbon_geometry.h"
+#include "tinydraw/vector_v2/authority_ribbon.h"
 
 namespace vector_v2 = tinydraw::vector_v2;
 
@@ -151,6 +153,48 @@ TEST_CASE("committed sparse ink follows the curved midpoint path") {
   // centre of this pixel. Straight source-segment replay leaves it as paper,
   // producing the visible polygonal corner on sparse circles.
   CHECK(pixels[17U * 64U + 27U] == 0x001FU);
+}
+
+TEST_CASE("live authority ribbon exactly matches committed pixels at every zoom") {
+  const std::array samples{
+      vector_v2::CompactOperationSample{.x_quarter = 8, .y_quarter = 40, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 8, .radius_256 = 768},
+      vector_v2::CompactOperationSample{.x_quarter = 72, .y_quarter = 48, .radius_256 = 384},
+      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 72, .radius_256 = 1'024},
+  };
+  constexpr std::array zooms{
+      vector_v2::ZoomLevel::k25Percent,  vector_v2::ZoomLevel::k50Percent,
+      vector_v2::ZoomLevel::k100Percent, vector_v2::ZoomLevel::k200Percent,
+      vector_v2::ZoomLevel::k400Percent,
+  };
+  for (const vector_v2::ZoomLevel zoom : zooms) {
+    const float scale = static_cast<float>(vector_v2::zoom_percent(zoom)) / 100.0F;
+    std::vector<tinydraw::RibbonPrimitive> primitives;
+    vector_v2::AuthorityRibbonStream ribbon;
+    for (std::size_t index = 0; index < samples.size(); ++index) {
+      const auto sample = samples[index];
+      const tinydraw::InkPoint point{
+          .position = {.x = static_cast<float>(sample.x_quarter) * 0.25F * scale,
+                       .y = static_cast<float>(sample.y_quarter) * 0.25F * scale},
+          .radius = std::max(static_cast<float>(sample.radius_256) / 256.0F * scale, 0.75F),
+      };
+      const auto update =
+          index + 1U == samples.size() ? ribbon.finish(point) : ribbon.append(point, false);
+      primitives.insert(primitives.end(), update.committed.begin(), update.committed.end());
+    }
+
+    std::array<std::uint16_t, 96U * 96U> live{};
+    std::array<std::uint16_t, 96U * 96U> authority{};
+    live.fill(0xFFFFU);
+    authority.fill(0xFFFFU);
+    tinydraw::RibbonRenderer renderer;
+    static_cast<void>(renderer.render(primitives, live, 96, 96, 0x001FU));
+    REQUIRE(vector_v2::apply_incremental_operation(
+        {.tool = vector_v2::OperationTool::kPen, .color = 0x001FU, .samples = samples},
+        {.zoom = zoom, .level_bounds = {0, 0, 96, 96}, .pixels = authority, .stride = 96}));
+    CAPTURE(vector_v2::zoom_percent(zoom));
+    CHECK(live == authority);
+  }
 }
 
 TEST_CASE("eraser applies after pen in painter order") {

@@ -19,6 +19,50 @@ struct Bounds {
   float maximum_y = std::numeric_limits<float>::lowest();
 };
 
+struct PreparedTaperedSegment {
+  Point first{};
+  float first_radius = 0.0F;
+  float delta_x = 0.0F;
+  float delta_y = 0.0F;
+  float second_radius = 0.0F;
+  float inverse_length_squared = 0.0F;
+};
+
+PreparedTaperedSegment prepare_tapered(const RibbonPrimitive& primitive) {
+  const Point second = tapered_ribbon_second_center(primitive);
+  const float delta_x = second.x - primitive.center.x;
+  const float delta_y = second.y - primitive.center.y;
+  const float length_squared = delta_x * delta_x + delta_y * delta_y;
+  return {
+      .first = primitive.center,
+      .first_radius = primitive.radius,
+      .delta_x = delta_x,
+      .delta_y = delta_y,
+      .second_radius = tapered_ribbon_second_radius(primitive),
+      .inverse_length_squared = length_squared == 0.0F ? 0.0F : 1.0F / length_squared,
+  };
+}
+
+bool covers(const PreparedTaperedSegment& segment, Point point) {
+  if (segment.inverse_length_squared == 0.0F) {
+    const float radius = std::max(segment.first_radius, segment.second_radius);
+    const float distance_x = point.x - segment.first.x;
+    const float distance_y = point.y - segment.first.y;
+    return distance_x * distance_x + distance_y * distance_y <= radius * radius;
+  }
+  const float projection = ((point.x - segment.first.x) * segment.delta_x +
+                            (point.y - segment.first.y) * segment.delta_y) *
+                           segment.inverse_length_squared;
+  const float amount = std::clamp(projection, 0.0F, 1.0F);
+  const float center_x = segment.first.x + amount * segment.delta_x;
+  const float center_y = segment.first.y + amount * segment.delta_y;
+  const float radius =
+      segment.first_radius + amount * (segment.second_radius - segment.first_radius);
+  const float distance_x = point.x - center_x;
+  const float distance_y = point.y - center_y;
+  return distance_x * distance_x + distance_y * distance_y <= radius * radius;
+}
+
 bool safe(Point point) {
   return std::isfinite(point.x) && std::isfinite(point.y) &&
          std::abs(point.x) <= kMaximumCoordinateMagnitude &&
@@ -29,6 +73,14 @@ bool valid(const RibbonPrimitive& primitive) {
   if (primitive.kind == RibbonPrimitiveKind::kCircle) {
     return safe(primitive.center) && std::isfinite(primitive.radius) && primitive.radius > 0.0F &&
            primitive.radius <= kMaximumCoordinateMagnitude;
+  }
+  if (primitive.kind == RibbonPrimitiveKind::kTaperedSegment) {
+    const float second_radius = tapered_ribbon_second_radius(primitive);
+    return safe(primitive.center) && safe(tapered_ribbon_second_center(primitive)) &&
+           std::isfinite(primitive.radius) && std::isfinite(second_radius) &&
+           primitive.radius > 0.0F && second_radius > 0.0F &&
+           primitive.radius <= kMaximumCoordinateMagnitude &&
+           second_radius <= kMaximumCoordinateMagnitude;
   }
   if (primitive.point_count < 3U || primitive.point_count > primitive.points.size()) {
     return false;
@@ -56,6 +108,10 @@ Bounds primitive_bounds(std::span<const RibbonPrimitive> primitives) {
     }
     if (primitive.kind == RibbonPrimitiveKind::kCircle) {
       include(bounds, primitive.center, primitive.radius + 1.0F);
+    } else if (primitive.kind == RibbonPrimitiveKind::kTaperedSegment) {
+      include(bounds, primitive.center, primitive.radius + 1.0F);
+      include(bounds, tapered_ribbon_second_center(primitive),
+              tapered_ribbon_second_radius(primitive) + 1.0F);
     } else {
       for (std::uint8_t index = 0; index < primitive.point_count; ++index) {
         include(bounds, primitive.points[index], 1.0F);
@@ -133,7 +189,7 @@ RibbonRenderStats RibbonRenderer::render_surface(std::span<const RibbonPrimitive
         }
         if (primitive.kind == RibbonPrimitiveKind::kCircle) {
           coverage_.rasterize_circle(primitive.center, primitive.radius);
-        } else {
+        } else if (primitive.kind == RibbonPrimitiveKind::kConvex) {
           coverage_.rasterize_convex(std::span(primitive.points.data(), primitive.point_count));
         }
       }
@@ -149,6 +205,21 @@ RibbonRenderStats RibbonRenderer::render_surface(std::span<const RibbonPrimitive
       }
       const std::size_t tile_pixels = static_cast<std::size_t>(tile_width * tile_height);
       composite_rgb565(coverage_, color, std::span(working_.data(), tile_pixels));
+      for (const RibbonPrimitive& primitive : primitives) {
+        if (!valid(primitive) || primitive.kind != RibbonPrimitiveKind::kTaperedSegment) {
+          continue;
+        }
+        const PreparedTaperedSegment segment = prepare_tapered(primitive);
+        for (int y = 0; y < tile_height; ++y) {
+          for (int x = 0; x < tile_width; ++x) {
+            const Point pixel_center{.x = static_cast<float>(tile_x + x) + 0.5F,
+                                     .y = static_cast<float>(tile_y + y) + 0.5F};
+            if (covers(segment, pixel_center)) {
+              working_[static_cast<std::size_t>(y * tile_width + x)] = color;
+            }
+          }
+        }
+      }
       for (int y = 0; y < tile_height; ++y) {
         for (int x = 0; x < tile_width; ++x) {
           const std::size_t canvas_index =

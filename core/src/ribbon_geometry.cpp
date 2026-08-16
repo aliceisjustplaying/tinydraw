@@ -1,5 +1,6 @@
 #include "tinydraw/ink/ribbon_geometry.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 
@@ -148,6 +149,48 @@ void emit_tail(InkPoint start, InkPoint end, Emit emit) {
 }
 
 }  // namespace
+
+RibbonPrimitive tapered_ribbon_segment(InkPoint first, InkPoint second) {
+  return {
+      .kind = RibbonPrimitiveKind::kTaperedSegment,
+      .points = {second.position, Point{.x = second.radius, .y = 0.0F}},
+      .center = first.position,
+      .radius = first.radius,
+  };
+}
+
+Point tapered_ribbon_second_center(const RibbonPrimitive& primitive) { return primitive.points[0]; }
+
+float tapered_ribbon_second_radius(const RibbonPrimitive& primitive) {
+  return primitive.points[1].x;
+}
+
+bool tapered_ribbon_segment_covers(const RibbonPrimitive& primitive, Point point) {
+  if (primitive.kind != RibbonPrimitiveKind::kTaperedSegment) {
+    return false;
+  }
+  const Point second_center = tapered_ribbon_second_center(primitive);
+  const float second_radius = tapered_ribbon_second_radius(primitive);
+  const float delta_x = second_center.x - primitive.center.x;
+  const float delta_y = second_center.y - primitive.center.y;
+  const float length_squared = delta_x * delta_x + delta_y * delta_y;
+  if (length_squared == 0.0F) {
+    const float radius = std::max(primitive.radius, second_radius);
+    const float distance_x = point.x - primitive.center.x;
+    const float distance_y = point.y - primitive.center.y;
+    return distance_x * distance_x + distance_y * distance_y <= radius * radius;
+  }
+  const float projection =
+      ((point.x - primitive.center.x) * delta_x + (point.y - primitive.center.y) * delta_y) /
+      length_squared;
+  const float amount = std::clamp(projection, 0.0F, 1.0F);
+  const float center_x = primitive.center.x + amount * delta_x;
+  const float center_y = primitive.center.y + amount * delta_y;
+  const float radius = primitive.radius + amount * (second_radius - primitive.radius);
+  const float distance_x = point.x - center_x;
+  const float distance_y = point.y - center_y;
+  return distance_x * distance_x + distance_y * distance_y <= radius * radius;
+}
 
 void RibbonPrimitiveBatch::push_back(RibbonPrimitive primitive) {
   // A full batch is a geometry-emission bug; the assert catches it loudly in

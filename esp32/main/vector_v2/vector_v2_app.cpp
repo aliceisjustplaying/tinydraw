@@ -23,6 +23,7 @@
 #endif
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
+#include "tinydraw/vector_v2/authority_ribbon.h"
 #include "tinydraw/vector_v2/chained_operation_builder.h"
 #include "tinydraw/vector_v2/chrome.h"
 #include "tinydraw/vector_v2/idle_repair.h"
@@ -41,6 +42,7 @@
 namespace tinydraw::esp32 {
 namespace {
 
+using vector_v2::AuthorityRibbonStream;
 using vector_v2::ChainedOperationBuilder;
 using vector_v2::ChainedOperationStatus;
 using vector_v2::CompactOperationSample;
@@ -942,7 +944,7 @@ void run_vector_v2_app() {
   InkConfig ink_config;
   ink_config.size = vector_v2::brush_size(chrome.size);
   InkStream ink(ink_config);
-  CurvedRibbonStream ribbon;
+  AuthorityRibbonStream ribbon;
   const auto initial = presenter.refresh(chrome);
   print_presentation("startup", presenter, initial);
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
@@ -1142,8 +1144,9 @@ void run_vector_v2_app() {
             ink.end();
           } else {
             ribbon.reset();
-            static_cast<void>(ribbon.append(last_ink, true));
-            const auto start_timing = presenter.show_start(last_ink, color, chrome, event_us);
+            const InkPoint visual_ink = presenter.authority_ink_point(last_ink);
+            static_cast<void>(ribbon.append(visual_ink, true));
+            const auto start_timing = presenter.show_start(visual_ink, color, chrome, event_us);
             live_metrics.include(start_timing);
             if (!start_timing.passed) {
               // Do not let authority continue from a panel state whose damage
@@ -1176,11 +1179,12 @@ void run_vector_v2_app() {
           last_ink =
               ink.update({.x = canvas_point->x, .y = canvas_point->y, .timestamp_us = event_us});
           const vector_v2::OperationPoint add_point = presenter.operation_point(last_ink);
+          const InkPoint visual_ink = presenter.authority_ink_point(last_ink);
           const std::uint16_t color = chrome.tool == vector_v2::ChromeTool::kErase
                                           ? 0xFFFFU
                                           : vector_v2::selected_color(chrome);
           const auto move = vector_v2::process_live_ink_move(
-              ribbon, builder, last_ink, add_point, event_us,
+              ribbon, builder, visual_ink, add_point, event_us,
               [&](const RibbonUpdate& update, std::uint32_t visual_event_us) {
                 const auto timing = presenter.show_update(update, color, chrome, visual_event_us);
                 live_metrics.include(timing);
@@ -1256,8 +1260,8 @@ void run_vector_v2_app() {
         const std::uint16_t color = chrome.tool == vector_v2::ChromeTool::kErase
                                         ? 0xFFFFU
                                         : vector_v2::selected_color(chrome);
-        live_metrics.include(
-            presenter.show_update(ribbon.finish(last_ink), color, chrome, finished_us));
+        live_metrics.include(presenter.show_update(
+            ribbon.finish(presenter.authority_ink_point(last_ink)), color, chrome, finished_us));
         measured_lift.finish_preview_us = esp_timer_get_time() - finish_preview_started;
 
         const std::int64_t builder_finish_started = esp_timer_get_time();

@@ -1,13 +1,15 @@
 #include "tinydraw/vector_v2/svg_export.h"
 
+#include <algorithm>
 #include <array>
 #include <charconv>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <string_view>
 
-#include "tinydraw/ink/ribbon_geometry.h"
+#include "tinydraw/vector_v2/authority_ribbon.h"
 
 namespace tinydraw::vector_v2 {
 namespace {
@@ -72,11 +74,51 @@ bool emit_point(Writer& writer, Point point) {
   return writer.number(point.x) && writer.append(" ") && writer.number(point.y);
 }
 
+bool emit_circle(Writer& writer, Point center, float radius) {
+  return writer.append("<circle cx=\"") && writer.number(center.x) && writer.append("\" cy=\"") &&
+         writer.number(center.y) && writer.append("\" r=\"") && writer.number(radius) &&
+         writer.append("\"/>\n");
+}
+
+bool emit_tapered_segment(Writer& writer, const RibbonPrimitive& primitive) {
+  const Point second_center = tapered_ribbon_second_center(primitive);
+  const float second_radius = tapered_ribbon_second_radius(primitive);
+  const float delta_x = second_center.x - primitive.center.x;
+  const float delta_y = second_center.y - primitive.center.y;
+  const float length = std::sqrt(delta_x * delta_x + delta_y * delta_y);
+  if (length == 0.0F) {
+    return emit_circle(writer, primitive.center, std::max(primitive.radius, second_radius));
+  }
+  const Point normal{.x = -delta_y / length, .y = delta_x / length};
+  const Point first_left{.x = primitive.center.x + normal.x * primitive.radius,
+                         .y = primitive.center.y + normal.y * primitive.radius};
+  const Point first_right{.x = primitive.center.x - normal.x * primitive.radius,
+                          .y = primitive.center.y - normal.y * primitive.radius};
+  const Point second_left{.x = second_center.x + normal.x * second_radius,
+                          .y = second_center.y + normal.y * second_radius};
+  const Point second_right{.x = second_center.x - normal.x * second_radius,
+                           .y = second_center.y - normal.y * second_radius};
+  return writer.append("<path d=\"M") && emit_point(writer, first_left) && writer.append("L") &&
+         emit_point(writer, second_left) && writer.append("A") && writer.number(second_radius) &&
+         writer.append(" ") && writer.number(second_radius) && writer.append(" 0 0 0 ") &&
+         emit_point(writer, second_right) && writer.append("L") &&
+         emit_point(writer, first_right) && writer.append("A") && writer.number(primitive.radius) &&
+         writer.append(" ") && writer.number(primitive.radius) && writer.append(" 0 0 0 ") &&
+         emit_point(writer, first_left) && writer.append("Z\" data-tinydraw-segment=\"1\" x1=\"") &&
+         writer.number(primitive.center.x) && writer.append("\" y1=\"") &&
+         writer.number(primitive.center.y) && writer.append("\" r1=\"") &&
+         writer.number(primitive.radius) && writer.append("\" x2=\"") &&
+         writer.number(second_center.x) && writer.append("\" y2=\"") &&
+         writer.number(second_center.y) && writer.append("\" r2=\"") &&
+         writer.number(second_radius) && writer.append("\"/>\n");
+}
+
 bool emit_primitive(Writer& writer, const RibbonPrimitive& primitive) {
   if (primitive.kind == RibbonPrimitiveKind::kCircle) {
-    return writer.append("<circle cx=\"") && writer.number(primitive.center.x) &&
-           writer.append("\" cy=\"") && writer.number(primitive.center.y) &&
-           writer.append("\" r=\"") && writer.number(primitive.radius) && writer.append("\"/>\n");
+    return emit_circle(writer, primitive.center, primitive.radius);
+  }
+  if (primitive.kind == RibbonPrimitiveKind::kTaperedSegment) {
+    return emit_tapered_segment(writer, primitive);
   }
 
   if (primitive.point_count < 3U || primitive.point_count > primitive.points.size() ||
@@ -110,7 +152,7 @@ bool emit_operation(Writer& writer, const StoredOperation& operation, std::uint1
     return false;
   }
 
-  CurvedRibbonStream ribbon;
+  AuthorityRibbonStream ribbon;
   for (std::size_t index = 0; index < operation.samples.size(); ++index) {
     const bool final = index + 1U == operation.samples.size();
     const RibbonUpdate update = final ? ribbon.finish(ink_point(operation.samples[index]))

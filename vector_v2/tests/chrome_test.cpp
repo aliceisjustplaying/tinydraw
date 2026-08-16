@@ -595,8 +595,7 @@ TEST_CASE("staging strips reproduce all fixed chrome without mutating canvas sou
   tinydraw::vector_v2::draw_chrome(modal_reference, width, height, modal_state);
   tinydraw::vector_v2::draw_chrome_canvas_overlays(modal_reference, width, height, modal_state,
                                                    navigation);
-  std::vector<std::uint16_t> modal_cache_pixels(
-      tinydraw::vector_v2::kChromeStagingCachePixels);
+  std::vector<std::uint16_t> modal_cache_pixels(tinydraw::vector_v2::kChromeStagingCachePixels);
   tinydraw::vector_v2::ChromeStagingCache modal_cache(modal_cache_pixels);
   REQUIRE(modal_cache.prepare(modal_state, navigation, 7U));
   const auto modal_stats = modal_cache.stats();

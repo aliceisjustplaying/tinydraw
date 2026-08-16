@@ -20,6 +20,7 @@
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
 #include "tinydraw/vector_v2/adversarial_tapered_corpus.h"
+#include "tinydraw/vector_v2/authority_ribbon.h"
 #include "tinydraw/vector_v2/chained_operation_builder.h"
 #include "tinydraw/vector_v2/idle_repair.h"
 #include "tinydraw/vector_v2/ink_trace.h"
@@ -554,7 +555,7 @@ LiveInkPathMeasurement measure_live_ink_circle(VectorV2Presenter& presenter,
                                                float path_radius) {
   constexpr std::size_t kPointCount = 48;
   constexpr float kTau = 6.28318530718F;
-  CurvedRibbonStream ribbon;
+  vector_v2::AuthorityRibbonStream ribbon;
   LiveInkPathMeasurement measurement;
   float running_length = 0.0F;
   Point previous{};
@@ -573,14 +574,15 @@ LiveInkPathMeasurement measure_live_ink_circle(VectorV2Presenter& presenter,
                          .distance = distance,
                          .running_length = running_length,
                          .timestamp_us = timestamp_us};
+    const InkPoint visual_point = presenter.authority_ink_point(point);
     const std::uint32_t event_us = now_us();
     const std::int64_t started_us = esp_timer_get_time();
     LivePresentationTiming timing;
     if (index == 0U) {
-      static_cast<void>(ribbon.append(point, true));
-      timing = presenter.show_start(point, 0x001FU, chrome, event_us);
+      static_cast<void>(ribbon.append(visual_point, true));
+      timing = presenter.show_start(visual_point, 0x001FU, chrome, event_us);
     } else {
-      timing = presenter.show_update(ribbon.append(point, true), 0x001FU, chrome, event_us);
+      timing = presenter.show_update(ribbon.append(visual_point, true), 0x001FU, chrome, event_us);
     }
     const std::int64_t wall_us = esp_timer_get_time() - started_us;
     if (!timing.passed) {
@@ -2838,7 +2840,7 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
     tinydraw::InkConfig ink_config;
     ink_config.size = spec.brush_size;
     tinydraw::InkStream ink(ink_config);
-    tinydraw::CurvedRibbonStream ribbon;
+    vector_v2::AuthorityRibbonStream ribbon;
     vector_v2::ChainedOperationBuilder builder(builder_storage, kInteractiveChunkSampleLimit);
     const std::optional<vector_v2::ViewRequest> priority_view =
         spec.zoom == ZoomLevel::k25Percent
@@ -2939,10 +2941,11 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
         }
         ++gesture_id;
         ribbon.reset();
-        static_cast<void>(ribbon.append(last_ink, true));
+        const InkPoint visual_ink = presenter.authority_ink_point(last_ink);
+        static_cast<void>(ribbon.append(visual_ink, true));
         const std::uint32_t geometry_delta =
             static_cast<std::uint32_t>(esp_timer_get_time()) - event_us;
-        const auto timing = presenter.show_start(last_ink, color, chrome, event_us);
+        const auto timing = presenter.show_start(visual_ink, color, chrome, event_us);
         presentation_failures += !timing.passed;
         if (timing.passed && timing.first_submit_us > 0U) {
           event_to_geometry.push(geometry_delta, kMaximumLatencySamples);
@@ -2960,8 +2963,8 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
       if (sampled->kind == vector_v2::TouchEventKind::kUp && pressed) {
         last_ink = ink.finish(
             {.x = last_ink.position.x, .y = last_ink.position.y, .timestamp_us = event_us});
-        const auto finish_timing =
-            presenter.show_update(ribbon.finish(last_ink), color, chrome, event_us);
+        const auto finish_timing = presenter.show_update(
+            ribbon.finish(presenter.authority_ink_point(last_ink)), color, chrome, event_us);
         presentation_failures += !finish_timing.passed;
         auto finish_status = builder.finish(presenter.operation_point(last_ink));
         while (finish_status == vector_v2::ChainedOperationStatus::kChunkReady ||
@@ -2989,12 +2992,13 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
       }
       last_ink = ink.update({.x = clipped->x, .y = clipped->y, .timestamp_us = event_us});
       const vector_v2::OperationPoint add_point = presenter.operation_point(last_ink);
+      const InkPoint visual_ink = presenter.authority_ink_point(last_ink);
       std::uint32_t geometry_delta = 0;
       std::uint32_t submit_delta = 0;
       std::uint32_t complete_delta = 0;
       bool submitted = false;
       const auto move = vector_v2::process_live_ink_move(
-          ribbon, builder, last_ink, add_point, event_us,
+          ribbon, builder, visual_ink, add_point, event_us,
           [&](const RibbonUpdate& update, std::uint32_t visual_event_us) {
             geometry_delta = static_cast<std::uint32_t>(esp_timer_get_time()) - event_us;
             const auto timing = presenter.show_update(update, color, chrome, visual_event_us);

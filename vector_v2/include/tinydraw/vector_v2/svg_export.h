@@ -23,11 +23,9 @@ struct SvgExportOptions {
 };
 
 // Streams a standalone SVG from the painter-ordered operation authority.
-// Every operation is one group containing the exact circles and convex paths
-// emitted by CurvedRibbonStream, the same ribbon geometry path used by the
-// renderer. The shapes' set union is therefore identical to the rendered
-// ribbon without constructing a potentially self-intersecting outline or
-// approximating variable width. Erasers use the requested opaque background
+// Every operation is one group containing the tapered midpoint chords emitted
+// by AuthorityRibbonStream, the same geometry consumed by committed raster
+// authority and live Vector V2 ink. Erasers use the requested opaque background
 // color and retain their operation order.
 //
 // No document-sized output or geometry buffer is allocated. Formatting uses

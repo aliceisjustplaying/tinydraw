@@ -10,7 +10,11 @@
 
 namespace tinydraw {
 
-enum class RibbonPrimitiveKind { kConvex, kCircle };
+namespace vector_v2 {
+class AuthorityRibbonStream;
+}
+
+enum class RibbonPrimitiveKind { kConvex, kCircle, kTaperedSegment };
 
 struct RibbonPrimitive {
   RibbonPrimitiveKind kind = RibbonPrimitiveKind::kConvex;
@@ -19,6 +23,13 @@ struct RibbonPrimitive {
   Point center{};
   float radius = 0.0F;
 };
+
+// Tapered segments reuse points[0] for the second center and points[1].x for
+// the second radius, keeping RibbonPrimitive's fixed embedded footprint.
+[[nodiscard]] RibbonPrimitive tapered_ribbon_segment(InkPoint first, InkPoint second);
+[[nodiscard]] Point tapered_ribbon_second_center(const RibbonPrimitive& primitive);
+[[nodiscard]] float tapered_ribbon_second_radius(const RibbonPrimitive& primitive);
+[[nodiscard]] bool tapered_ribbon_segment_covers(const RibbonPrimitive& primitive, Point point);
 
 // Worst case is CurvedRibbonStream::finish on a sharp turn with every span
 // split: initial cap (1) + split two-span curve (4) + sharp-turn joint (1) +
@@ -39,6 +50,7 @@ class RibbonPrimitiveBatch {
  private:
   friend class RibbonStream;
   friend class CurvedRibbonStream;
+  friend class vector_v2::AuthorityRibbonStream;
   void push_back(RibbonPrimitive primitive);
 
   std::array<RibbonPrimitive, kRibbonPrimitiveBatchCapacity> primitives_{};

@@ -19,11 +19,11 @@ struct LiveInkMoveResult {
 // The visual adapter always receives the newest provisional tail before the
 // authority adapter can commit a ready chunk. Presentation failure is reported
 // without discarding accepted authority.
-template <typename Present, typename Commit>
-LiveInkMoveResult process_live_ink_move(CurvedRibbonStream& ribbon,
-                                        ChainedOperationBuilder& builder, InkPoint ink_point,
-                                        OperationPoint authority_point, std::uint32_t event_us,
-                                        Present&& present, Commit&& commit) {
+template <typename Ribbon, typename Present, typename Commit>
+LiveInkMoveResult process_live_ink_move(Ribbon& ribbon, ChainedOperationBuilder& builder,
+                                        InkPoint ink_point, OperationPoint authority_point,
+                                        std::uint32_t event_us, Present&& present,
+                                        Commit&& commit) {
   const RibbonUpdate update = ribbon.append(ink_point, true);
   const bool visual_passed = std::forward<Present>(present)(update, event_us);
   ChainedOperationStatus status = builder.add(authority_point);
