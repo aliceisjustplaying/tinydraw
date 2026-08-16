@@ -1,6 +1,7 @@
 # TinyDraw V2 roadmap
 
-Last updated: 2026-08-16 (post Cold Stage B)
+Last updated: 2026-08-16 (post Cold Stage B + owner decisions; see
+[`SHIP_CONTRACT.md`](SHIP_CONTRACT.md#owner-decisions--2026-08-16-post-cold-stage-b-glass-session))
 
 Branch: `feat/v2-performance-followup`
 
@@ -87,6 +88,12 @@ authority synchronously, and formal trace/optical closure remains open.
 - [x] Submit the newest visible tail before chunk commit/materialization.
 - [ ] Convert authority commit, overview work, tile publication, and lift drain
       into resumable bounded slices. Lift closes visually and returns to input.
+      **Execution design adopted (owner 2026-08-16): the committed-overlay /
+      authority-revision split** (external review §8.3–8.4 — revision pair,
+      pending range, overlay lifetime, phase state machine). Also the
+      greenlit fix for the mixed_draw 15 ms append overruns felt on glass at
+      400%. Prerequisite: the mid-stroke fallback observability pass so the
+      design targets measured phase attribution.
 - [ ] Reconcile capacity rejection by erasing only the uncommitted transient
       tail; keep already committed chunks as physical ink.
 - [ ] Report event→consume→geometry→payload→DMA distributions, optical p95/p99,
@@ -97,13 +104,13 @@ authority synchronously, and formal trace/optical closure remains open.
 
 Live ink remains hard-edged. Settled AA does not enter this phase.
 
-Owner-gated follow-up: the four-span (or flatness-adaptive 1-4 span) curved
-authority subdivision was rejected on cost, but the wave-3 unit-merged row
-sweep changed its cost model — extra chords in a unit are nearly free on the
-row axis and subdivision is paid once per endpoint. A rematch directly
-targets the residual live-curve angularity, but it changes committed
-authority geometry and therefore reopens cold exactness, SVG parity, and the
-frozen corpus statistics. Needs an explicit owner go and a re-baseline.
+Declined (owner 2026-08-16): the four-span / flatness-adaptive curved
+authority subdivision rematch (Stage C bundle). The angularity tool
+falsified its smoothness case on recorded owner input (2-chord deviation
+≤0.11 px at 400%), leaving only a speed justification that does not pay for
+reopening cold exactness, SVG parity, and the frozen corpus statistics.
+Smoothness work routes to arc-length resampling + settled AA (approved host
+prototypes, Phase 6).
 
 Deferred structural debt: `esp32/main/vector_v2/vector_v2_app.cpp` is over 1,300
 lines. Extract interaction, authority, and lifecycle coordinators after the
@@ -158,15 +165,19 @@ Cold Stage B results (receipts in
        idle-repair step contract), per-publish cache flush hooks, and
        `Cache_WriteBack_All` before the sweep (interrupt-WDT panic).
 
-Remaining candidates for the last ~7 ms of 400% wall (only if the owner
-wants the line closed before autosave re-measurement):
+Owner decision 2026-08-16: the last ~7 ms of 400% wall is **not** chased
+before autosave. The 507.0 ms development maximum is accepted and the
+firmware gate holds the line at 510 ms (`kColdViewport400HoldTheLineUs`).
+Parked candidates, recorded for the post-autosave re-measure only:
+block-granular `MaskedRowSummary` saturation (+ band-unit rerun), PIE
+fixed-point probe pre-filter, presentation/compute overlap (reopens pan
+optical gates). The 20-run reset-separated closure statistic remains unrun
+and belongs to the final autosave-enabled closure.
 
-- [ ] Block-granular `MaskedRowSummary` saturation, then re-run the band-unit
-      experiment on top of it.
-- [ ] PIE fixed-point probe pre-filter and presentation/compute overlap only
-      if the above fall short (the latter reopens pan optical gates).
-- [ ] The 20-run reset-separated closure statistic has still never been run
-      on post-wave-3 numbers; development characterization is 3 runs.
+Standing red needing owner triage: the `overlap` workload 50% cold gate
+(621.9 ms wall vs its 500 ms budget at Stage B HEAD; red since at least
+wave-3). It is not covered by the 400% hold-the-line ruling and is absent
+from prior scorecards.
 
 The stop/go gate stands: no generalized checkpoint system without an explicit
 owner decision. The current trajectory has not required one.
@@ -224,12 +235,17 @@ Derived overview, tile, chrome, and settled caches are never persisted.
 - [ ] Implement settled analytic-coverage AA in bounded idle work. Publish a
       final cached identity and prove revisit retention; retain immediate
       hard-edged live ink. The rejected four-sample SSAA probe is not a path.
-      Candidate design (2026-08-16, unmeasured): re-run the newest-first
-      masked replay with the 1-bit mask widened to 8-bit accumulated alpha;
-      interiors keep today's exact span fills, only span-boundary pixels get
-      analytic capsule coverage composited front-to-back; publish as
-      higher-quality cached tiles. First step is a host prototype on one
-      group. See `review_findings_2026_08_16_cold_campaign/REVIEW.md`.
+      Approved design (owner 2026-08-16, prototype go): re-run the
+      newest-first masked replay with the 1-bit mask widened to 8-bit
+      accumulated alpha; interiors keep today's exact span fills, only
+      span-boundary pixels get analytic capsule coverage composited
+      front-to-back; publish as higher-quality cached tiles. First step is a
+      host prototype on one group with rendered before/afters, paired with
+      the arc-length-resampling prototype (external review §9.4; changes
+      future stroke sampling only, so the frozen cold corpus stands, but
+      mixed_draw and ink latency get re-measured). Constraints: within-op
+      self-overlap must UNION coverage; freeze the RGB565 blend model first.
+      See `review_findings_2026_08_16_cold_campaign/REVIEW.md`.
 - [ ] Fix zoom-cycle return position: cycling back to a recently explored
       zoom must restore its saved local position per
       `VECTOR_V2_ZOOM_NAVIGATION.md` (owner glass report 2026-08-16; the
