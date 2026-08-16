@@ -476,16 +476,16 @@ bool run_overlap_cold_gates(VectorV2Presenter& presenter, vector_v2::TileProduce
   return passed;
 }
 
-bool run_adversarial_tapered_cold_gates(VectorV2Presenter& presenter,
-                                        vector_v2::TileProducer& producer,
-                                        MaterializedCanvas& canvas, VectorV2TouchSampler& touch,
-                                        const vector_v2::ChromeState& chrome) {
+bool run_general_cold_gates(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
+                            MaterializedCanvas& canvas, VectorV2TouchSampler& touch,
+                            const vector_v2::ChromeState& chrome) {
   constexpr std::array gates{ZoomLevel::k50Percent, ZoomLevel::k100Percent, ZoomLevel::k200Percent,
                              ZoomLevel::k400Percent};
   bool passed = true;
   for (const ZoomLevel zoom : gates) {
     passed = run_paced_cold_gate(presenter, producer, canvas, touch, chrome, zoom, 0, 0,
-                                 "adversarial_tapered_4x", contract::kColdViewportRequiredUs) &&
+                                 "adversarial_tapered_4x+evil_hairlines",
+                                 contract::kColdViewportRequiredUs) &&
              passed;
   }
   return passed;
@@ -2222,6 +2222,25 @@ bool append_hairline_document(OperationLog& log, MaterializedCanvas& canvas,
   return true;
 }
 
+bool append_general_cold_document(OperationLog& log, MaterializedCanvas& canvas,
+                                  const IncrementalDocumentWorkspace& workspace) {
+  if (!append_adversarial_tapered_document(log, canvas, workspace)) {
+    return false;
+  }
+  HairlineAppendStats hairline_stats{};
+  const std::int64_t started = esp_timer_get_time();
+  const bool appended = append_hairline_document(log, canvas, workspace, hairline_stats);
+  std::printf(
+      "TINYDRAW_GENERAL_COLD_WORKLOAD operations=%lu samples=%lu hairline_operations=%lu "
+      "hairline_samples=%lu hairline_load_us=%lld appended=%u\n",
+      static_cast<unsigned long>(log.operation_count()),
+      static_cast<unsigned long>(log.sample_count()),
+      static_cast<unsigned long>(hairline_stats.operations),
+      static_cast<unsigned long>(hairline_stats.samples),
+      static_cast<long long>(esp_timer_get_time() - started), appended);
+  return appended;
+}
+
 struct MeasuredFill {
   std::size_t tiles = 0;
   std::size_t steps = 0;
@@ -2262,7 +2281,7 @@ bool fill_view_measured(vector_v2::TileProducer& producer, const vector_v2::View
 // costs, proves the idle-repair saturation guard stops without churn, and
 // measures the felt cost of edge panning at 100% after a guarded repair.
 bool run_hairline_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
-                       OperationLog& log, MaterializedCanvas& canvas,
+                       OperationLog& log, MaterializedCanvas& canvas, VectorV2TouchSampler& touch,
                        const vector_v2::ChromeState& chrome,
                        const IncrementalDocumentWorkspace& workspace,
                        std::span<const std::uint16_t> blank_snapshot) {
@@ -2285,27 +2304,13 @@ bool run_hairline_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& pr
       .zoom = ZoomLevel::k100Percent,
       .level_pixels = {552, 672, 552 + vector_v2::kOverviewWidth, 672 + vector_v2::kOverviewHeight},
   };
-  const vector_v2::ViewRequest center_400{
-      .zoom = ZoomLevel::k400Percent,
-      .level_pixels = {2'760, 3'360, 2'760 + vector_v2::kOverviewWidth,
-                       3'360 + vector_v2::kOverviewHeight},
-  };
-  MeasuredFill cold_100{};
-  MeasuredFill cold_400{};
-  bool fills_ok = canvas.discard_tiles() &&
-                  presenter.set_view(ZoomLevel::k100Percent, 552, 672, chrome, now_us()).passed &&
-                  fill_view_measured(producer, center_100, cold_100);
-  fills_ok = fills_ok && canvas.discard_tiles() &&
-             presenter.set_view(ZoomLevel::k400Percent, 2'760, 3'360, chrome, now_us()).passed &&
-             fill_view_measured(producer, center_400, cold_400);
-  std::printf(
-      "TINYDRAW_HAIRLINE_COLD zoom=100 wall_us=%lld steps=%lu tiles=%lu worst_step_us=%lld\n",
-      static_cast<long long>(cold_100.wall_us), static_cast<unsigned long>(cold_100.steps),
-      static_cast<unsigned long>(cold_100.tiles), static_cast<long long>(cold_100.worst_step_us));
-  std::printf(
-      "TINYDRAW_HAIRLINE_COLD zoom=400 wall_us=%lld steps=%lu tiles=%lu worst_step_us=%lld\n",
-      static_cast<long long>(cold_400.wall_us), static_cast<unsigned long>(cold_400.steps),
-      static_cast<unsigned long>(cold_400.tiles), static_cast<long long>(cold_400.worst_step_us));
+  bool fills_ok =
+      run_paced_cold_gate(presenter, producer, canvas, touch, chrome, ZoomLevel::k100Percent, 552,
+                          672, "evil_hairlines_capacity", contract::kColdViewportRequiredUs);
+  fills_ok =
+      run_paced_cold_gate(presenter, producer, canvas, touch, chrome, ZoomLevel::k400Percent, 2'760,
+                          3'360, "evil_hairlines_capacity", contract::kColdViewportRequiredUs) &&
+      fills_ok;
   // Guarded idle repair from a quiet moment at 100%, then a second plan
   // pass: saturation must stop the sweep without churning the pool.
   bool repair_ok = canvas.discard_tiles() &&
@@ -2393,8 +2398,7 @@ bool run_hairline_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& pr
       static_cast<long long>(tour_worst_stop), static_cast<long long>(tour_worst_step));
   const MixedDrawCensus census = census_zoom_tiles(canvas, ZoomLevel::k100Percent);
   const std::size_t fallback = count_zoom_fallback(canvas, ZoomLevel::k100Percent);
-  const std::int64_t worst_step = std::max(
-      {cold_100.worst_step_us, cold_400.worst_step_us, repair_worst, pass2_worst, tour_worst_step});
+  const std::int64_t worst_step = std::max({repair_worst, pass2_worst, tour_worst_step});
   // This corpus always saturates the pool, so the guard must have engaged.
   const bool passed =
       fills_ok && repair_ok && tour_ok && no_churn && grid_stopped && worst_step < 15'000;
@@ -2579,22 +2583,21 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   const bool overlap_cold =
       overlap_ready && run_overlap_cold_gates(presenter, producer, canvas, touch, chrome);
 
-  const DocumentRevision adversarial_baseline{canvas.current_revision().value + 1U};
-  const bool reset_for_adversarial =
-      overlap_cold &&
-      vector_v2::restore_document_snapshot(log, canvas, adversarial_baseline, blank_snapshot) &&
-      producer.reset_uniform_baseline(adversarial_baseline);
-  const bool adversarial_ready =
-      reset_for_adversarial && append_adversarial_tapered_document(log, canvas, workspace);
-  const bool adversarial_cold =
-      adversarial_ready &&
-      run_adversarial_tapered_cold_gates(presenter, producer, canvas, touch, chrome);
+  const DocumentRevision general_cold_baseline{canvas.current_revision().value + 1U};
+  const bool reset_for_general_cold =
+      overlap_ready &&
+      vector_v2::restore_document_snapshot(log, canvas, general_cold_baseline, blank_snapshot) &&
+      producer.reset_uniform_baseline(general_cold_baseline);
+  const bool general_cold_ready =
+      reset_for_general_cold && append_general_cold_document(log, canvas, workspace);
+  const bool general_cold =
+      general_cold_ready && run_general_cold_gates(presenter, producer, canvas, touch, chrome);
 
   const DocumentRevision realistic_baseline{canvas.current_revision().value + 1U};
-  // Continue collecting independent receipts even when the adversarial timing
+  // Continue collecting independent receipts even when the general cold timing
   // gate is red; the final verdict still requires it.
   const bool reset_for_realistic =
-      adversarial_ready &&
+      general_cold_ready &&
       vector_v2::restore_document_snapshot(log, canvas, realistic_baseline, blank_snapshot) &&
       producer.reset_uniform_baseline(realistic_baseline);
 
@@ -2672,10 +2675,11 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   const bool idle_repair =
       cache_tour && run_idle_repair_gate(presenter, producer, log, canvas, chrome,
                                          in_place_workspace, conversion_storage);
-  // The hairline gate resets the document (like the long-gesture gate
-  // after it), so it runs only after every gate that needs the rich seed.
-  const bool hairline = cache_tour && run_hairline_gate(presenter, producer, log, canvas, chrome,
-                                                        workspace, blank_snapshot);
+  // Cold timing already includes the evil hairlines. This later reset is the
+  // specialized cache-capacity and repair-saturation gate for that corpus.
+  const bool hairline_capacity =
+      workload_ready &&
+      run_hairline_gate(presenter, producer, log, canvas, touch, chrome, workspace, blank_snapshot);
   const bool long_gesture =
       cache_tour &&
       run_long_gesture_commit_gate(presenter, producer, log, canvas, chrome, workspace,
@@ -2685,19 +2689,19 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   const auto return_overview = presenter.set_view(ZoomLevel::k25Percent, 0, 0, chrome, now_us());
   std::printf(
       "TINYDRAW_GATE1_AUTOMATED_DONE stress=%u stress_100=%u stress_400=%u overlap_ready=%u "
-      "overlap_cold=%u adversarial_ready=%u adversarial_cold=%u workload=%u paced_cold=%u "
+      "overlap_cold=%u general_cold_ready=%u general_cold=%u workload=%u paced_cold=%u "
       "hard_100=%u hard_400=%u pan_100=%u "
       "pan_400=%u pan_seq=%u pan_boundary=%u live_overlay=%u draw_fill=%u cache=%u "
       "full_world_cache=%u "
-      "cache_tour=%u mixed_draw=%u idle_repair=%u hairline=%u long_gesture=%u "
+      "cache_tour=%u mixed_draw=%u idle_repair=%u hairline_capacity=%u long_gesture=%u "
       "export_encode=%u export_reserve=%u return=%u ssaa_receipt=yellow\n",
-      stress_ready, stress_100, stress_400, overlap_ready, overlap_cold, adversarial_ready,
-      adversarial_cold, workload_ready, paced_cold, gate_100, gate_400, pan_100, pan_400,
+      stress_ready, stress_100, stress_400, overlap_ready, overlap_cold, general_cold_ready,
+      general_cold, workload_ready, paced_cold, gate_100, gate_400, pan_100, pan_400,
       pan_sequence, pan_boundary, live_overlay, draw_fill, cache_retention, full_world_cache,
-      cache_tour, mixed_draw, idle_repair, hairline, long_gesture, export_encode, export_reserve,
-      return_overview.passed);
-  return return_overview.passed && export_reserve && overlap_cold && adversarial_cold &&
-         mixed_draw && idle_repair && hairline && pan_100 && pan_400 && pan_sequence &&
+      cache_tour, mixed_draw, idle_repair, hairline_capacity, long_gesture, export_encode,
+      export_reserve, return_overview.passed);
+  return return_overview.passed && export_reserve && overlap_cold && general_cold && mixed_draw &&
+         idle_repair && hairline_capacity && pan_100 && pan_400 && pan_sequence &&
          pan_boundary;
 #endif
 }

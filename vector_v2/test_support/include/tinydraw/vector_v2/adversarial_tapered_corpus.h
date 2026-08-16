@@ -4,6 +4,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 
 #include "tinydraw/vector_v2/operation.h"
 
@@ -26,11 +27,17 @@ struct AdversarialTaperedCorpusStats {
 // Every neighboring sample changes radius, preventing the constant-radius
 // raster fast path from hiding tapered replay cost.
 template <typename AppendOperation>
-bool emit_adversarial_tapered_corpus(AppendOperation&& append_operation,
-                                     AdversarialTaperedCorpusStats* output = nullptr) {
+bool emit_adversarial_tapered_corpus(
+    AppendOperation&& append_operation, AdversarialTaperedCorpusStats* output = nullptr,
+    std::size_t operation_count = kAdversarialTaperedOperationCount,
+    std::size_t samples_per_operation = kAdversarialTaperedSamplesPerOperation) {
+  if (operation_count > kAdversarialTaperedOperationCount || samples_per_operation < 2U ||
+      samples_per_operation > kAdversarialTaperedSamplesPerOperation) {
+    return false;
+  }
   AdversarialTaperedCorpusStats stats{};
   std::array<CompactOperationSample, kAdversarialTaperedSamplesPerOperation> samples{};
-  for (std::size_t operation = 0; operation < kAdversarialTaperedOperationCount; ++operation) {
+  for (std::size_t operation = 0; operation < operation_count; ++operation) {
     for (std::size_t index = 0; index < samples.size(); ++index) {
       const std::size_t x_phase = (index * 11U + operation * 17U) % 80U;
       const std::size_t y_phase = (index * 19U + operation * 13U) % 80U;
@@ -48,12 +55,12 @@ bool emit_adversarial_tapered_corpus(AppendOperation&& append_operation,
     if (!append_operation(OperationAppend{
             .tool = eraser ? OperationTool::kEraser : OperationTool::kPen,
             .color = static_cast<std::uint16_t>(0x001FU + (operation * 977U) % 0xD000U),
-            .samples = samples,
+            .samples = std::span(samples).first(samples_per_operation),
         })) {
       return false;
     }
     ++stats.operations;
-    stats.samples += samples.size();
+    stats.samples += samples_per_operation;
     stats.erasers += eraser;
   }
   if (output != nullptr) {

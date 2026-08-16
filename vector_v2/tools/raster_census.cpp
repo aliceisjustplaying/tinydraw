@@ -284,9 +284,11 @@ void print_census(const char* label) {
 void print_census(const char*) {}
 #endif
 
-int run_adversarial_sweep(bool indexed = true) {
-  Rig rig(v2::test_support::kAdversarialTaperedOperationCount,
-          v2::test_support::kAdversarialTaperedSampleCount, indexed);
+int run_adversarial_sweep(
+    bool indexed = true,
+    std::size_t operation_count = v2::test_support::kAdversarialTaperedOperationCount,
+    std::size_t samples_per_operation = v2::test_support::kAdversarialTaperedSamplesPerOperation) {
+  Rig rig(operation_count, operation_count * samples_per_operation, indexed);
   if (!rig.log.ready() || !rig.canvas.ready() || !rig.producer.ready()) {
     std::fprintf(stderr, "rig not ready\n");
     return 1;
@@ -296,10 +298,11 @@ int run_adversarial_sweep(bool indexed = true) {
     return 1;
   }
   const auto workspace = rig.workspace();
-  const bool appended =
-      v2::test_support::emit_adversarial_tapered_corpus([&](const v2::OperationAppend& operation) {
+  const bool appended = v2::test_support::emit_adversarial_tapered_corpus(
+      [&](const v2::OperationAppend& operation) {
         return v2::append_incrementally(rig.log, rig.canvas, operation, workspace).has_value();
-      });
+      },
+      nullptr, operation_count, samples_per_operation);
   if (!appended) {
     std::fprintf(stderr, "corpus append failed\n");
     return 1;
@@ -716,6 +719,13 @@ int main(int argc, char** argv) {
   }
   if (argc >= 2 && std::strcmp(argv[1], "--linear") == 0) {
     return run_adversarial_sweep(false);
+  }
+  if (argc >= 2 && std::strcmp(argv[1], "--adversarial-ops") == 0) {
+    const auto operation_count =
+        static_cast<std::size_t>(argc >= 3 ? std::max(1, std::atoi(argv[2])) : 1);
+    const auto samples_per_operation =
+        static_cast<std::size_t>(argc >= 4 ? std::max(2, std::atoi(argv[3])) : 32);
+    return run_adversarial_sweep(true, operation_count, samples_per_operation);
   }
   if (argc >= 2 && std::strcmp(argv[1], "--cold-scorecard") == 0) {
     return run_cold_scorecard();
