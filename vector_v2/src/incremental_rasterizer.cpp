@@ -148,6 +148,12 @@ PixelRect segment_bounds(const Segment& segment, PixelRect clip) {
 }
 
 bool covers_pixel(const Segment& segment, float pixel_x, float pixel_y) {
+  if (segment.inverse_length_squared == 0.0F) {
+    const float distance_x = pixel_x - segment.first.x;
+    const float distance_y = pixel_y - segment.first.y;
+    const float radius = std::max(segment.first.radius, segment.second.radius);
+    return distance_x * distance_x + distance_y * distance_y <= radius * radius;
+  }
   const float projection = ((pixel_x - segment.first.x) * segment.delta_x +
                             (pixel_y - segment.first.y) * segment.delta_y) *
                            segment.inverse_length_squared;

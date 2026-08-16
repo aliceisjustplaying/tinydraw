@@ -88,6 +88,24 @@ TEST_CASE("incremental operation paints one stroke without clearing prior pixels
   CHECK(pixels.front() == 0x1111U);
 }
 
+TEST_CASE("coincident samples paint the larger pressure radius") {
+  std::array<std::uint16_t, 24U * 24U> pixels{};
+  pixels.fill(0xFFFFU);
+  const std::array samples{
+      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 2'048},
+  };
+  REQUIRE(vector_v2::apply_incremental_operation(
+      {.tool = vector_v2::OperationTool::kPen, .color = 0x0000U, .samples = samples},
+      {.zoom = vector_v2::ZoomLevel::k100Percent,
+       .level_bounds = {0, 0, 24, 24},
+       .pixels = pixels,
+       .stride = 24}));
+  CHECK(pixels[10U * 24U + 10U] == 0x0000U);
+  CHECK(pixels[10U * 24U + 15U] == 0x0000U);
+  CHECK(pixels[10U * 24U + 19U] == 0xFFFFU);
+}
+
 TEST_CASE("committed sparse ink follows the curved midpoint path") {
   std::array<std::uint16_t, 64U * 48U> pixels{};
   pixels.fill(0xFFFFU);
