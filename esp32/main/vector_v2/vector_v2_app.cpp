@@ -1336,8 +1336,13 @@ void run_vector_v2_app() {
     // fill and repair — fill tiles produced at a stale revision would be
     // invalidated by the very next absorption anyway. One operation per
     // slice; the exact swap refresh runs when the range empties.
-    const std::size_t idle_pending_ops =
-        !pressed && !panning ? vector_v2::pending_operation_count(log, canvas) : 0U;
+    // Drain only on truly idle iterations: a slice must never ride an
+    // iteration that just consumed input (the glass receipt showed the
+    // first absorption inside the lift iteration as a 29 ms unattributed
+    // tail). While events flow, the high-water fallback bounds the range.
+    const std::size_t idle_pending_ops = !pressed && !panning && !sample_ready
+                                             ? vector_v2::pending_operation_count(log, canvas)
+                                             : 0U;
     // After repeated absorb failures the drain stands down: the overlay keeps
     // glass exact indefinitely and the failure counter surfaces in receipts.
     if (idle_pending_ops != 0U && drain_failures < 16U) {

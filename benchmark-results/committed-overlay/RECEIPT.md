@@ -51,11 +51,34 @@ guards on every run:
 - Verdict vector: every gate green except the owner-sequenced
   `overlap_cold` (ship contract decision #5).
 
-## What the automated battery does NOT cover
+## Owner glass session (2026-08-16 21:23–21:29, `glass-session-overlay-2026-08-16.log`)
 
-The product loop's new paths — idle drain slices (`TINYDRAW_LIVE_DRAIN`),
-the deferred lift swap refresh, and the pan boundary drain
-(`TINYDRAW_LIVE_DRAIN_BOUNDARY`) — run only in interactive mode. They
-need an owner glass session: draw-feel at 400%, draw-then-immediately-pan,
-draw-then-zoom, eraser strokes, and the lift-baseline poll-gap receipt
-(87–111 ms before; target ≤20 ms).
+Content: evil hairlines at 25%, heavy overdraw at 50% ("20–30 overlapping
+strokes"), dense drawing at 100% and 400%, hairline figure-circles — one
+122-chunk mega-stroke. Owner verdict: 400% overlapping drawing "much
+better", "it does look fast".
+
+- **Input path confirmed on glass:** `append_max` 93–152 µs on 13 of 14
+  strokes. The 122-chunk stroke hit the 24-op high-water exactly as
+  designed: one synchronous absorption, 13.4 ms — still under the 15 ms
+  alarm (§3.5 degradation working).
+- **Lift hitch: 87–199 ms → 10–34 ms** (`detected_to_poll_start_us`,
+  old glass session vs this one). The remaining >20 ms tails are fully
+  attributed: the first drain absorption ran inside the lift iteration
+  (`unattributed_tail_us=29301` worst; dense-content absorptions reach
+  ~30 ms). Fixed post-session: the drain now runs only on iterations
+  whose input poll came back empty (`step345-overlay-run3-drain-gate.log`
+  battery reproduces the verdict). Expected lift tail after the fix:
+  ~5 ms; verify at the next glass session.
+- **Drain health:** 14 drains, zero failures, every swap refresh passed;
+  worst absorption 30.4 ms, worst swap 79.5 ms (idle-time work).
+- **No correctness events:** all drop counters zero on every stroke,
+  `complete_over_33ms=0` everywhere, zero commit failures.
+- **The 166–184 ms `poll_max` gaps are pre-existing** — the pre-overlay
+  glass session shows identical 173–183 ms values (standing
+  zoom/full-refresh cost, not an overlay regression).
+- **Known consequences, owner-deprioritized:** minimap updates trail
+  drawing by the drain latency (minimap base is keyed on the canvas
+  revision, which now trails during bursts; owner suspects it was always
+  laggy — below déjà-vu and inking in priority). New UX bug logged: a pan
+  starting over the zoom button is swallowed entirely (todo #11).
