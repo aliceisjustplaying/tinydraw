@@ -452,7 +452,7 @@ bool TileProducer::render_active_segment(TileProductionStep& result,
   std::size_t raster_work = 0;
   for (std::size_t step_index = 0; step_index < unit_steps; ++step_index) {
     const auto step_bounds = prepared_curve_step_level_bounds(active_group_.prepared_unit,
-                                                             step_index, active_group_.view.zoom);
+                                                              step_index, active_group_.view.zoom);
     if (!step_bounds.has_value()) {
       continue;
     }
