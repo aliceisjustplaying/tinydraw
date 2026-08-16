@@ -231,7 +231,8 @@ struct InPlaceRetainScope {
 // the user is looking at (rejected on glass), and the viewport bounds the
 // work.
 std::size_t retain_uniform_tiles(MaterializedCanvas& canvas, const InPlaceRetainScope& scope,
-                                 std::span<TileKey> affected, std::span<std::uint8_t> tile_mask) {
+                                 std::span<TileKey> affected, std::span<std::uint8_t> tile_mask,
+                                 InPlaceRetainDrops& drops) {
   std::size_t retained = 0;
   for (std::size_t index = 0; index < affected.size(); ++index) {
     const TileKey key = affected[index];
@@ -249,7 +250,12 @@ std::size_t retain_uniform_tiles(MaterializedCanvas& canvas, const InPlaceRetain
         keep = true;
       } else if (edit.has_value()) {
         canvas.invalidate_identity(key);
+        ++drops.visible_uniform_paint_fail;
+      } else {
+        ++drops.visible_uniform_no_slot;
       }
+    } else if (scope.priority_view.has_value() && key.zoom == scope.priority_view->zoom) {
+      ++drops.offscreen_skipped;
     }
     if (keep) {
       std::swap(affected[index], affected[retained]);
@@ -267,17 +273,24 @@ std::size_t retain_uniform_tiles(MaterializedCanvas& canvas, const InPlaceRetain
 // identity.
 std::size_t retain_raw_tiles(MaterializedCanvas& canvas, const InPlaceRetainScope& scope,
                              std::span<TileKey> affected, std::span<std::uint8_t> tile_mask,
-                             std::size_t retained) {
+                             std::size_t retained, InPlaceRetainDrops& drops) {
   for (std::size_t index = retained; index < affected.size(); ++index) {
     const TileKey key = affected[index];
     if (!scope.priority_view.has_value() || key.zoom != scope.priority_view->zoom) {
-      continue;
+      continue;  // Cross-zoom drops are counted by cross_zoom_invalidated.
     }
-    if (!in_priority_view(key, scope.priority_view) && scope.over_budget()) {
+    const bool visible = in_priority_view(key, scope.priority_view);
+    if (!visible && scope.over_budget()) {
+      ++drops.offscreen_skipped;
       continue;
     }
     const auto edit = canvas.edit_resident_tile(key);
     if (!edit.has_value()) {
+      if (visible) {
+        ++drops.visible_raw_edit_fail;
+      } else {
+        ++drops.offscreen_skipped;
+      }
       continue;
     }
     if (paint_operation_into_tile(scope.operation, *edit, tile_mask)) {
@@ -285,6 +298,11 @@ std::size_t retain_raw_tiles(MaterializedCanvas& canvas, const InPlaceRetainScop
       ++retained;
     } else {
       canvas.invalidate_identity(key);
+      if (visible) {
+        ++drops.visible_raw_paint_fail;
+      } else {
+        ++drops.offscreen_skipped;
+      }
     }
   }
   return retained;
@@ -292,14 +310,14 @@ std::size_t retain_raw_tiles(MaterializedCanvas& canvas, const InPlaceRetainScop
 
 std::size_t retain_affected_tiles(MaterializedCanvas& canvas, const InPlaceRetainScope& scope,
                                   std::span<TileKey> affected, std::span<std::uint8_t> tile_mask,
-                                  InPlaceAppendPhases& phases) {
+                                  InPlaceAppendPhases& phases, InPlaceRetainDrops& drops) {
   const auto stamp = [&scope]() {
     return scope.budget.now_us != nullptr ? scope.budget.now_us() : 0;
   };
   const std::int64_t uniform_started_us = stamp();
-  const std::size_t retained = retain_uniform_tiles(canvas, scope, affected, tile_mask);
+  const std::size_t retained = retain_uniform_tiles(canvas, scope, affected, tile_mask, drops);
   const std::int64_t raw_started_us = stamp();
-  const std::size_t result = retain_raw_tiles(canvas, scope, affected, tile_mask, retained);
+  const std::size_t result = retain_raw_tiles(canvas, scope, affected, tile_mask, retained, drops);
   phases.uniform_retain_us = raw_started_us - uniform_started_us;
   phases.raw_retain_us = stamp() - raw_started_us;
   return result;
@@ -362,8 +380,9 @@ std::optional<IncrementalAppendResult> append_incrementally_in_place(
   const std::uint16_t painted_color =
       stored.tool == OperationTool::kEraser ? 0xFFFFU : stored.color;
   const InPlaceRetainScope scope{operation, painted_color, priority_view, budget, deadline_us};
+  InPlaceRetainDrops drops{};
   const std::size_t retained =
-      retain_affected_tiles(canvas, scope, affected, workspace.tile_mask, phases);
+      retain_affected_tiles(canvas, scope, affected, workspace.tile_mask, phases, drops);
   std::size_t visible_fallback = 0;
   for (std::size_t index = retained; index < affected.size(); ++index) {
     visible_fallback += in_priority_view(affected[index], priority_view) ? 1U : 0U;
@@ -393,7 +412,8 @@ std::optional<IncrementalAppendResult> append_incrementally_in_place(
                                  .fallback_tiles = *resident_count - retained,
                                  .visible_fallback_tiles = visible_fallback,
                                  .cross_zoom_invalidated = cross_zoom_invalidated,
-                                 .phases = phases};
+                                 .phases = phases,
+                                 .drops = drops};
 }
 
 bool restore_document_snapshot(OperationLog& log, MaterializedCanvas& canvas,
