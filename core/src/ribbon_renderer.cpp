@@ -76,7 +76,7 @@ RibbonRenderStats RibbonRenderer::render_surface(std::span<const RibbonPrimitive
                                                  int height, int stride, int origin_x, int origin_y,
                                                  std::uint16_t color) {
   assert(width > 0 && height > 0 && stride >= width);
-  const std::size_t required =
+  [[maybe_unused]] const std::size_t required =
       static_cast<std::size_t>(height - 1) * static_cast<std::size_t>(stride) +
       static_cast<std::size_t>(width);
   assert(surface.size() >= required);
