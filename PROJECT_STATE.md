@@ -26,7 +26,7 @@ promotion. [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) owns acceptance thresholds;
 | Exactness | **Green for implemented scope** | Host exactness and fuzz tests pass. V2 persistence/Undo authority is not implemented. |
 | Settled AA | **Open — prototype approved (owner 2026-08-16)** | Immediate output is intentionally hard-edged. Four-sample SSAA cost ~808 ms and is rejected. The analytic-coverage design (8-bit alpha mask over the existing newest-first replay, boundary-only coverage) is approved for a host prototype with rendered before/afters, paired with an arc-length-resampling prototype (the measured non-AA smoothness lever). |
 | Feature parity | **Open** | Undo/Redo, autosave/recovery, device SVG wiring, minimap jump, lifecycle parity, failure UI, and release soak remain. |
-| Mixed-draw appends | **Red — fix greenlit (owner 2026-08-16)** | The felt 400% lag is ruled unacceptable and the 15 ms per-append budget stands. Worst chunk commits 17–21.6 ms, dominated by `ph_uniform_max` 18.3 ms (paper tiles materialized+painted mid-stroke) plus `ph_raw` up to 12 ms; at 25% one 42 ms commit. Fix: the committed-overlay / authority-revision split (external review §8.3–8.4), adopted as the Phase 2 execution design — after the mid-stroke fallback observability pass supplies phase attribution. |
+| Mixed-draw appends | **Red — fix greenlit (owner 2026-08-16)** | The felt 400% lag is ruled unacceptable and the 15 ms per-append budget stands. Worst chunk commits 17–21.6 ms, dominated by `ph_uniform_max` 18.3 ms (paper tiles materialized+painted mid-stroke) plus `ph_raw` up to 12 ms; at 25% one 42 ms commit. Fix: the committed-overlay / authority-revision split (external review §8.3–8.4), adopted as the Phase 2 execution design. The Phase 1 diagnosis is complete: the mid-stroke pixelation report was falsified as a drop mechanism — all drop counters zero in every harness scenario; benchmark pixelation was pre-existing overview substrate at unwarmed gate views, never reproduced on glass ([`RECEIPT.md`](benchmark-results/ink-fallback-observability/RECEIPT.md)). Latency is the design's only driver. |
 
 Session continuity: Cold Stage B is **closed** and glass-tested (receipt
 above); the Stage B session handover is
@@ -109,11 +109,14 @@ Undo, persistence, and SVG are frozen in
    closure; product glass acceptance is complete.
 2. Finish ink closure: make materialization/lift draining resumable, run the
    canonical production-buffer traces, and archive the optical latency receipt.
-3. Mid-stroke pixelation diagnosis Phase 1: overview-fallback counts on the
-   `TINYDRAW_INKTRACE` line, then drop attribution in the retain passes.
+3. ~~Mid-stroke pixelation diagnosis~~ — done; drop hypothesis falsified
+   with all-zero attribution counters
+   ([`RECEIPT.md`](benchmark-results/ink-fallback-observability/RECEIPT.md)).
+   The counters stay live on `TINYDRAW_LIVE_STROKE` as a standing oracle.
 4. Design and land the committed-overlay / authority-revision split — the
-   owner-greenlit mixed_draw fix (external review §8.3–8.4); it also carries
-   resumable lift drain and part of the déjà-vu retention story.
+   owner-greenlit mixed_draw latency fix (external review §8.3–8.4); it also
+   carries resumable lift drain and part of the déjà-vu retention story.
+   **In progress.**
 5. Host prototypes with rendered before/afters: settled-AA boundary coverage
    and arc-length resampling (both owner-approved 2026-08-16).
 6. Déjà-vu campaign step 1: live ledger cause histograms during glass
