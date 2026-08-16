@@ -2722,13 +2722,12 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
       "cache_tour=%u mixed_draw=%u idle_repair=%u hairline_capacity=%u long_gesture=%u "
       "export_encode=%u export_reserve=%u return=%u ssaa_receipt=yellow\n",
       stress_ready, stress_100, stress_400, overlap_ready, overlap_cold, general_cold_ready,
-      general_cold, workload_ready, paced_cold, gate_100, gate_400, pan_100, pan_400,
-      pan_sequence, pan_boundary, live_overlay, draw_fill, cache_retention, full_world_cache,
-      cache_tour, mixed_draw, idle_repair, hairline_capacity, long_gesture, export_encode,
-      export_reserve, return_overview.passed);
+      general_cold, workload_ready, paced_cold, gate_100, gate_400, pan_100, pan_400, pan_sequence,
+      pan_boundary, live_overlay, draw_fill, cache_retention, full_world_cache, cache_tour,
+      mixed_draw, idle_repair, hairline_capacity, long_gesture, export_encode, export_reserve,
+      return_overview.passed);
   return return_overview.passed && export_reserve && overlap_cold && general_cold && mixed_draw &&
-         idle_repair && hairline_capacity && pan_100 && pan_400 && pan_sequence &&
-         pan_boundary;
+         idle_repair && hairline_capacity && pan_100 && pan_400 && pan_sequence && pan_boundary;
 #endif
 }
 

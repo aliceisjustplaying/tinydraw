@@ -717,12 +717,12 @@ void run_vector_v2_app() {
                 static_cast<unsigned long>(heap_caps_get_largest_free_block(kExternalCaps)));
     return;
   }
-  std::printf("TINYDRAW_PRODUCER_SCRATCH supertask_internal=%u packed_internal=%u "
-              "free_internal=%lu free_psram=%lu\n",
-              storage.supertask_internal, storage.packed_internal,
-              static_cast<unsigned long>(
-                  heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
-              static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)));
+  std::printf(
+      "TINYDRAW_PRODUCER_SCRATCH supertask_internal=%u packed_internal=%u "
+      "free_internal=%lu free_psram=%lu\n",
+      storage.supertask_internal, storage.packed_internal,
+      static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+      static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)));
   std::fill_n(storage.snapshot, vector_v2::kOverviewPixels, 0xFFFFU);
   std::fill_n(storage.overview, vector_v2::kOverviewPixels, 0xFFFFU);
 
