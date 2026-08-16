@@ -91,6 +91,13 @@ if(TINYDRAW_BUILD_TESTS)
     tinydraw_project_options
   )
 
+  add_executable(tinydraw_vector_v2_settled_aa_prototype tools/settled_aa_prototype.cpp)
+  target_link_libraries(tinydraw_vector_v2_settled_aa_prototype PRIVATE
+    tinydraw::core
+    tinydraw::vector_v2
+    tinydraw_project_options
+  )
+
   add_executable(tinydraw_vector_v2_lod_characterization tests/lod_characterization.cpp)
   target_link_libraries(tinydraw_vector_v2_lod_characterization PRIVATE
     tinydraw::vector_prototype
