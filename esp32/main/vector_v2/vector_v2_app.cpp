@@ -886,15 +886,17 @@ void run_vector_v2_app() {
   const auto initial = presenter.refresh(chrome);
   print_presentation("startup", presenter, initial);
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-  if (!run_vector_v2_gate_harness(presenter, producer, log, canvas, touch_sampler, chrome,
-                                  harness_workspace, workspace, exporter,
-                                  std::span(storage.snapshot, vector_v2::kOverviewPixels),
-                                  std::span(storage.input_samples, kInputSampleCapacity),
-                                  std::span(storage.harness_tile_scratch, vector_v2::kTilePixels))) {
-    std::printf("TINYDRAW_VECTOR_V2_GATE_HARNESS_DONE pass=0\n");
-    return;
-  }
-  std::printf("TINYDRAW_VECTOR_V2_GATE_HARNESS_DONE pass=1\n");
+  // The harness leaves the realistic document loaded for manual glass
+  // testing, so a red verdict must not exit the app: with standing known-red
+  // gates (mixed_draw budget, the 400% cold wall) an early return made every
+  // harness boot end before a human could touch the glass. The verdict
+  // stays in the DONE line; automation keys on that, not on liveness.
+  const bool harness_verdict = run_vector_v2_gate_harness(
+      presenter, producer, log, canvas, touch_sampler, chrome, harness_workspace, workspace,
+      exporter, std::span(storage.snapshot, vector_v2::kOverviewPixels),
+      std::span(storage.input_samples, kInputSampleCapacity),
+      std::span(storage.harness_tile_scratch, vector_v2::kTilePixels));
+  std::printf("TINYDRAW_VECTOR_V2_GATE_HARNESS_DONE pass=%u\n", harness_verdict);
 #endif
   const std::size_t overview_bytes = vector_v2::kOverviewPixels * 4U * sizeof(std::uint16_t);
   const std::size_t raw_tile_bytes =
