@@ -1,9 +1,9 @@
 # TinyDraw project state
 
-Last updated: 2026-08-16 (post-Stage-B owner decisions: mixed-draw fix
-greenlit, cold 400% hold-the-line accepted, Stage C declined, settled-AA
-prototype approved — recorded in
-[`SHIP_CONTRACT.md`](SHIP_CONTRACT.md#owner-decisions--2026-08-16-post-cold-stage-b-glass-session))
+Last updated: 2026-08-16 late night (committed overlay + déjà-vu fix +
+sixteenth-units + streamline 0.4 + device settled-AA all landed and
+glass-tested; the full speed story is in
+[`docs/PERFORMANCE_CHRONICLE.md`](docs/PERFORMANCE_CHRONICLE.md))
 
 Branch: `feat/v2-performance-followup`
 
@@ -22,11 +22,11 @@ promotion. [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) owns acceptance thresholds;
 | Pan pacing | **Provisional green** | PANSEQ p95 is 33.939 ms at 100% and 33.934 ms at 400% (~29.5 FPS), below the 38 ms guard. Camera motion caused zero persistent chrome redraws. |
 | Ink latency | **Provisional green — visual lane and lift; smoothness yellow** | The five-trace canonical corpus is recorded owner finger input replayed through the production `offer()` path: zero lost Down/Up, event→DMA p95 2.3–5.3 ms on every trace ([`BASELINE.md`](benchmark-results/ink-trace-replay-baseline/BASELINE.md)). The committed overlay closed the lift hitch on glass: 87–199 ms → 10–34 ms, drain-gated to ~5 ms expected ([`RECEIPT.md`](benchmark-results/committed-overlay/RECEIPT.md)). Smoothness: the dominant mechanism was found and fixed — committed samples quantized to a full screen pixel at 400%; sixteenth-world units (zero storage cost) cut joint_p95 30–40% and the committed render now matches the float-geometry reference, with no measured cold/latency regression and +3–10% sample storage ([`UNITS16_EXPERIMENT.md`](benchmark-results/settled-aa-prototype/UNITS16_EXPERIMENT.md)). Residual angularity is input jitter (resampling, prototyped) + hard edges (AA, prototyped). The formal optical-latency receipt remains open. |
 | Cold 400% | **Hold-the-line accepted (owner 2026-08-16)** | Stage B walls: 437.9/428.4/488.0 ms at 50/100/200% under the ≤500 line; 400% is 507.0 ms. Owner accepted the 7 ms residual until autosave exists; the gate now holds the line at 510 ms and the micro-candidates are parked. The ≤500 requirement still governs the final autosave-enabled 20-run closure. See [`RECEIPT.md`](benchmark-results/cold-stage-b-2026-08-16/RECEIPT.md). **Separate standing red, owner-ruled 2026-08-16:** the `overlap` workload 50% cold gate (8 stacked fat strokes; 628 ms vs 500, red since wave-3, invisible in every prior scorecard) is **binding and will be fixed**, sequenced strictly after the ink lag fix, the AA prototype review, and the déjà-vu fix. Ship-contract process rule 8 now forbids undocumented verdict-vector reds. |
-| Revisit retention | **Fixed in harness — glass acceptance pending** | The déjà-vu fix landed 2026-08-16: idle absorption retains resident raw tiles at every zoom and materializes revisit-bound uniforms inside remembered views under a 25 ms idle budget. The mixed_draw revisit gate went from missing 4/9/16 tiles (188–326 ms visible refill per zoom) to **zero missing, ~0.4 ms** ([`DEJAVU_FIX_RECEIPT.md`](benchmark-results/committed-overlay/DEJAVU_FIX_RECEIPT.md)). Live ledger cause deltas now print during glass sessions (`TINYDRAW_LIVE_LEDGER`). Residuals: slot eviction under pressure, XL-stroke off-view budget skips (idle repair covers), high-water fallback path. Pure-revisit tour amplification stays 1.000. Owner glass session pending. |
+| Revisit retention | **Fixed in harness — glass acceptance pending** | The déjà-vu fix landed 2026-08-16: idle absorption retains resident raw tiles at every zoom and materializes revisit-bound uniforms inside remembered views under a 25 ms idle budget. The mixed_draw revisit gate went from missing 4/9/16 tiles (188–326 ms visible refill per zoom) to **zero missing, ~0.4 ms** ([`DEJAVU_FIX_RECEIPT.md`](benchmark-results/committed-overlay/DEJAVU_FIX_RECEIPT.md)). Live ledger cause deltas now print during glass sessions (`TINYDRAW_LIVE_LEDGER`). Residuals: slot eviction under pressure, XL-stroke off-view budget skips (idle repair covers), high-water fallback path. Pure-revisit tour amplification stays 1.000. Owner glass verdict: "extremely impressed — way better, basically no redraws"; residual stray re-renders tracked as todo #15 (attribute via `TINYDRAW_LIVE_LEDGER` deltas next session). |
 | Exactness | **Green for implemented scope** | Host exactness and fuzz tests pass. V2 persistence/Undo authority is not implemented. |
-| Settled AA | **Open — prototype approved (owner 2026-08-16)** | Immediate output is intentionally hard-edged. Four-sample SSAA cost ~808 ms and is rejected. The analytic-coverage design (8-bit alpha mask over the existing newest-first replay, boundary-only coverage) is approved for a host prototype with rendered before/afters, paired with an arc-length-resampling prototype (the measured non-AA smoothness lever). |
+| Settled AA | **On device — provisional, speed round 2 queued** | Landed same-day from prototype to device: idle settle pass republishes tiles at the settled quality tier (revisit-ledger-safe); 25% settles presentation pixels only (the overview stays hard-edged replay authority). Per-tile 1.7–5.4 ms mean / 9.3 ms max after the annulus + batching round (was 5–11/17). Owner: "an improvement" but the settle progression is still perceptible, thick strokes slowest; speed ideas queued. Full battery moved zero gates. Exported PNG stays hard-edged (low-prio); settled export later. |
 | Feature parity | **Open** | Undo/Redo, autosave/recovery, device SVG wiring, minimap jump, lifecycle parity, failure UI, and release soak remain. |
-| Mixed-draw appends | **Green in harness — glass acceptance pending** | The committed-overlay / authority-revision split landed 2026-08-16: chunk commits publish authority only (worst input-path append **173 µs** vs the 15 ms budget, was 19,324 µs), the canvas drains in receipted idle absorptions behind a pending-ink overlay proven bit-exact on host, and lift defers its refresh to one exact swap after drain. `mixed_draw=1` for the first time; `visible_fallback=0`, drop counters zero, INKTRACE at baseline latency, ledger clean ([`RECEIPT.md`](benchmark-results/committed-overlay/RECEIPT.md)). The product-loop drain paths (idle slices, lift swap, pan boundary drain) and 400% draw feel need an owner glass session. Prior diagnosis receipts: [`ink-fallback-observability/RECEIPT.md`](benchmark-results/ink-fallback-observability/RECEIPT.md). |
+| Mixed-draw appends | **Green — harness and glass** | The committed-overlay / authority-revision split landed 2026-08-16: chunk commits publish authority only (worst input-path append **173 µs** vs the 15 ms budget, was 19,324 µs), the canvas drains in receipted idle absorptions behind a pending-ink overlay proven bit-exact on host, and lift defers its refresh to one exact swap after drain. `mixed_draw=1` for the first time; `visible_fallback=0`, drop counters zero, INKTRACE at baseline latency, ledger clean ([`RECEIPT.md`](benchmark-results/committed-overlay/RECEIPT.md)). The product-loop drain paths (idle slices, lift swap, pan boundary drain) and 400% draw feel need an owner glass session. Prior diagnosis receipts: [`ink-fallback-observability/RECEIPT.md`](benchmark-results/ink-fallback-observability/RECEIPT.md). |
 
 Session continuity: Cold Stage B is **closed** and glass-tested (receipt
 above); the Stage B session handover is
@@ -105,30 +105,28 @@ Undo, persistence, and SVG are frozen in
 
 ## Immediate work order
 
-1. Archive the formal torn-positive-control receipt, then tag provisional pan
-   closure; product glass acceptance is complete.
-2. Finish ink closure: archive the optical latency receipt (lift draining is
-   now resumable via the committed overlay; canonical traces replay green
-   under the deferred protocol).
-3. ~~Mid-stroke pixelation diagnosis~~ — done; drop hypothesis falsified
-   with all-zero attribution counters
-   ([`RECEIPT.md`](benchmark-results/ink-fallback-observability/RECEIPT.md)).
-   The counters stay live on `TINYDRAW_LIVE_STROKE` as a standing oracle.
-4. Design and land the committed-overlay / authority-revision split — the
-   owner-greenlit mixed_draw latency fix (external review §8.3–8.4); it also
-   carries resumable lift drain and part of the déjà-vu retention story.
-   **In progress.**
-5. Host prototypes with rendered before/afters: settled-AA boundary coverage
-   and arc-length resampling (both owner-approved 2026-08-16).
-6. Déjà-vu campaign step 1: live ledger cause histograms during glass
-   sessions; then gate scenarios; then fix per histogram.
-7. Cold is hold-the-line only: 400% guarded at 520 ms (recalibrated for
-   between-build icache variance), candidates parked, 20-run closure
-   statistic waits for the autosave-enabled build. The overlap-50 red
-   (628 ms) is owner-ruled binding, queued after ink/AA/déjà-vu.
-8. Establish generation-checked operation snapshots and active-prefix history;
-   then implement Undo/Redo, autosave/recovery, and transactional SVG wiring.
-9. Finish settled AA, minimap tap-to-jump, power/RTC/NTP/lifecycle parity,
+1. **Overlap-50 cold fix** (owner-sequenced next): 628 ms vs 500; overdraw
+   replay pays every stroke's row geometry even when occluded (todo #10).
+2. **SVG export** — owner raised priority ("proper SVG export is much
+   higher"); contract §6 requires exact variable-width outlines.
+3. **IRAM-pin the producer hot loops** (todo #9): between-build icache dice
+   eats the cold ceiling margin (517/520 typical now).
+4. **AA speed round 2** (owner wants the settle progression imperceptible;
+   thick strokes slowest): span-interior fill, per-op dirty-rect folding,
+   prepared-chord reuse — idea list in the 2026-08-16 overnight handover.
+5. Residual déjà-vu strays: attribute with `TINYDRAW_LIVE_LEDGER` deltas
+   during the next glass session (todo #15); pan micro-glitch note (#14).
+6. UX debt owner hit today: color-picker paints in visibly (#16),
+   pan-over-zoom-button swallowed (#11), export mode wedges USB until
+   power-cycle (needs an on-device exit; bit us mid-session).
+7. Archive the formal torn-positive-control receipt; archive the optical
+   ink-latency receipt; band-sliced big refreshes (#12); provisional tail
+   to raw finger tip (#13).
+8. Establish generation-checked operation snapshots and active-prefix
+   history; then Undo/Redo, autosave/recovery, and transactional SVG
+   wiring. Cold stays hold-the-line (520 ceiling) until the
+   autosave-enabled re-measure; 20-run closure statistic waits there too.
+9. Then minimap tap-to-jump, power/RTC/NTP/lifecycle parity,
    capacity/failure UI, export receipt, and all-on release closure.
 
 ## Proven foundation worth preserving
