@@ -693,8 +693,7 @@ TEST_CASE("operation chord batch sweep matches per-unit painting bit for bit") {
         .radius_256 = static_cast<std::uint16_t>(256 + (index % 4) * 384),
     });
   }
-  const auto run_reference = [&](std::span<std::uint8_t> mask,
-                                 vector_v2::MaskedRowSummary& summary,
+  const auto run_reference = [&](std::span<std::uint8_t> mask, vector_v2::MaskedRowSummary& summary,
                                  const vector_v2::RasterSurface& surface) {
     for (std::size_t endpoint = samples.size() - 1U; endpoint >= 2U; --endpoint) {
       const auto unit = vector_v2::prepare_incremental_curve_unit(
@@ -704,8 +703,7 @@ TEST_CASE("operation chord batch sweep matches per-unit painting bit for bit") {
                                                           *unit, surface, mask, &summary));
     }
   };
-  const auto run_batches = [&](std::span<std::uint8_t> mask,
-                               vector_v2::MaskedRowSummary& summary,
+  const auto run_batches = [&](std::span<std::uint8_t> mask, vector_v2::MaskedRowSummary& summary,
                                const vector_v2::RasterSurface& surface) {
     std::vector<std::uint32_t> storage(vector_v2::kOperationChordStorageBytes / 4U);
     const auto bytes = std::as_writable_bytes(std::span(storage));
@@ -719,9 +717,9 @@ TEST_CASE("operation chord batch sweep matches per-unit painting bit for bit") {
         int row = batch->clipped_bounds.y0;
         while (row < batch->clipped_bounds.y1) {
           vector_v2::OperationSweepSlice slice{};
-          REQUIRE(vector_v2::apply_masked_operation_chord_rows(
-              vector_v2::OperationTool::kPen, 0xF800U, bytes, *batch, row, 25U, surface, mask,
-              &summary, slice));
+          REQUIRE(vector_v2::apply_masked_operation_chord_rows(vector_v2::OperationTool::kPen,
+                                                               0xF800U, bytes, *batch, row, 25U,
+                                                               surface, mask, &summary, slice));
           REQUIRE(slice.next_row > row);
           row = slice.next_row;
         }

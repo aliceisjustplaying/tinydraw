@@ -230,8 +230,9 @@ bool MaterializedCanvas::ready() const {
                                       (uniform_catalog_.size() == kMaterializedTileIdentityCount &&
                                        occupancy_bits_.size() == kOccupancyBytes);
   const bool optional_directory_ready =
-      raw_slot_directory_.empty() || (raw_slot_directory_.size() >= kMaterializedTileIdentityCount &&
-                                      slots_.size() < static_cast<std::size_t>(kNoRawSlot));
+      raw_slot_directory_.empty() ||
+      (raw_slot_directory_.size() >= kMaterializedTileIdentityCount &&
+       slots_.size() < static_cast<std::size_t>(kNoRawSlot));
   if (!optional_directory_ready) {
     return false;
   }

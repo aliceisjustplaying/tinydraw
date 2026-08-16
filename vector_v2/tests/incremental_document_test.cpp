@@ -789,9 +789,9 @@ struct EquivalenceRig {
   std::vector<std::uint32_t> chord_plans =
       std::vector<std::uint32_t>(vector_v2::kOperationChordStorageBytes / 4U);
   vector_v2::OperationLog log{records, samples};
-  vector_v2::MaterializedCanvas canvas{overview,  *uniforms, occupancy,
-                                       slots,     tile_pool, vector_v2::DocumentRevision{},
-                                       raw_slot_directory};
+  vector_v2::MaterializedCanvas canvas{
+      overview,          *uniforms, occupancy, slots, tile_pool, vector_v2::DocumentRevision{},
+      raw_slot_directory};
   vector_v2::TileProducer producer{
       log,
       canvas,
