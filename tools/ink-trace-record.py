@@ -18,6 +18,7 @@ with tools/ink-trace-check before committing.
 """
 
 import argparse
+import re
 import sys
 import time
 from pathlib import Path
@@ -28,6 +29,14 @@ MAGIC = "TINYDRAW_INKTRACE"
 BEGIN = "TINYDRAW_INKTRACE_CAPTURE_BEGIN"
 END = "TINYDRAW_INKTRACE_CAPTURE_END"
 READY = "TINYDRAW_INKTRACE_CAPTURE_READY"
+HEADER_COLUMNS = "magic,version,name,source,sample_rate_note"
+EVENT_COLUMNS = "t_us,kind,x,y"
+# Strict event shape: anything else between BEGIN/END (task-watchdog reports,
+# stray log lines, corrupted output) is skipped as device noise, not counted.
+EVENT_PATTERN = re.compile(r"^\d+,(Down|Move|Up),\d+,\d+$")
+# A real gesture at the 1 kHz sampler cadence produces hundreds of events;
+# anything tiny is a stray tap and must not overwrite a good trace.
+MINIMUM_EVENTS = 100
 
 
 def parse_marker_fields(line: str) -> dict[str, int]:
@@ -47,6 +56,8 @@ def main() -> int:
     parser.add_argument("--note", default="recorded owner finger input via 1kHz sampler stream")
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--timeout-s", type=int, default=600)
+    parser.add_argument("--allow-short", action="store_true",
+                        help=f"accept captures below {MINIMUM_EVENTS} events")
     arguments = parser.parse_args()
 
     if "," in arguments.name or "," in arguments.note:
@@ -78,9 +89,9 @@ def main() -> int:
         strokes = marker.get("strokes", 0)
         print(f"[device] {line}")
 
-        header = port.readline().decode("utf-8", errors="replace").strip()
-        columns = port.readline().decode("utf-8", errors="replace").strip()
+        header_lines: list[str] = []
         events: list[str] = []
+        noise = 0
         while True:
             event_raw = port.readline()
             if not event_raw:
@@ -89,22 +100,38 @@ def main() -> int:
             event_line = event_raw.decode("utf-8", errors="replace").strip()
             if END in event_line:
                 break
-            events.append(event_line)
+            if EVENT_PATTERN.match(event_line):
+                events.append(event_line)
+            elif len(header_lines) < 3 and not events:
+                header_lines.append(event_line)
+            elif event_line:
+                noise += 1
+                print(f"[device-noise] {event_line}")
 
         if overflow:
             print(f"capture overflowed ({expected} events); redraw the gesture", file=sys.stderr)
             continue
-        if not header.startswith(MAGIC) or columns != "t_us,kind,x,y":
-            print(f"malformed capture header: {header!r} / {columns!r}; redraw", file=sys.stderr)
+        header_ok = (
+            len(header_lines) == 3
+            and header_lines[0] == HEADER_COLUMNS
+            and header_lines[1].startswith(MAGIC)
+            and header_lines[2] == EVENT_COLUMNS
+        )
+        if not header_ok:
+            print(f"malformed capture header: {header_lines!r}; redraw", file=sys.stderr)
             continue
         if len(events) != expected:
-            print(f"event count mismatch: expected {expected}, got {len(events)}; redraw", file=sys.stderr)
+            print(f"event count mismatch: expected {expected}, got {len(events)} valid "
+                  f"({noise} noise lines); redraw", file=sys.stderr)
             continue
-        if expected == 0:
-            print("empty capture; redraw", file=sys.stderr)
+        if expected < MINIMUM_EVENTS and not arguments.allow_short:
+            print(f"only {expected} events — looks like a stray tap, not a gesture; "
+                  f"redraw (or pass --allow-short)", file=sys.stderr)
             continue
 
-        content = [f"{MAGIC},1,{arguments.name},recorded,{arguments.note}", "t_us,kind,x,y", *events]
+        content = [HEADER_COLUMNS,
+                   f"{MAGIC},1,{arguments.name},recorded,{arguments.note}",
+                   EVENT_COLUMNS, *events]
         out_path.write_text("\n".join(content) + "\n", encoding="utf-8")
         duration_s = int(events[-1].split(",", 1)[0]) / 1e6
         print(f"saved {out_path}: {len(events)} events, {strokes} strokes, {duration_s:.2f} s")
