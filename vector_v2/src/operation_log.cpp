@@ -114,7 +114,8 @@ bool OperationLog::workspace_overlaps_storage(std::span<const std::byte> workspa
 }
 
 std::optional<PreparedAppend> OperationLog::prepare(const OperationAppend& append_request) {
-  if (!valid_append(append_request)) {
+  if (!valid_append(append_request) ||
+      workspace_overlaps_storage(std::as_bytes(append_request.samples))) {
     return std::nullopt;
   }
   const auto calculated_bounds = operation_world_bounds(append_request.samples);

@@ -5,6 +5,8 @@
 #include <cmath>
 #include <limits>
 
+#include "tinydraw/checked_surface.h"
+
 namespace tinydraw {
 namespace {
 
@@ -82,11 +84,14 @@ RibbonRenderStats RibbonRenderer::render_surface(std::span<const RibbonPrimitive
   if (width <= 0 || height <= 0 || stride < width) {
     return {};
   }
-  const std::size_t required =
-      static_cast<std::size_t>(height - 1) * static_cast<std::size_t>(stride) +
-      static_cast<std::size_t>(width);
-  assert(surface.size() >= required);
-  if (surface.size() < required) {
+  const auto required =
+      checked_surface_extent(static_cast<std::size_t>(width), static_cast<std::size_t>(height),
+                             static_cast<std::size_t>(stride));
+  if (!required.has_value()) {
+    return {};
+  }
+  assert(surface.size() >= *required);
+  if (surface.size() < *required) {
     return {};
   }
   if (primitives.empty()) {
@@ -119,7 +124,9 @@ RibbonRenderStats RibbonRenderer::render_surface(std::span<const RibbonPrimitive
     for (int tile_x = first_tile_x; tile_x <= last_x; tile_x += kTileSize) {
       const int tile_width = std::min(kTileSize, origin_x + width - tile_x);
       const int tile_height = std::min(kTileSize, origin_y + height - tile_y);
-      coverage_.reset(tile_x, tile_y, tile_width, tile_height);
+      if (!coverage_.reset(tile_x, tile_y, tile_width, tile_height)) {
+        continue;
+      }
       for (const RibbonPrimitive& primitive : primitives) {
         if (!valid(primitive)) {
           continue;

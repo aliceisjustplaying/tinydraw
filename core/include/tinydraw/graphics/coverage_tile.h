@@ -15,12 +15,15 @@ class CoverageTile {
  public:
   CoverageTile(int origin_x, int origin_y, int width = kTileSize, int height = kTileSize);
 
-  void reset(int origin_x, int origin_y, int width = kTileSize, int height = kTileSize);
+  [[nodiscard]] bool reset(int origin_x, int origin_y, int width = kTileSize,
+                           int height = kTileSize);
   void clear();
   void union_coverage(int x, int y, std::uint8_t coverage);
   [[nodiscard]] std::uint8_t coverage_at(int x, int y) const;
 
   void rasterize_circle(Point center, float radius);
+  // Ribbon geometry emits at most quads. Larger polygons are rejected rather
+  // than overflowing the fixed four-edge scan-conversion workspace.
   void rasterize_convex(std::span<const Point> polygon);
 
   [[nodiscard]] int origin_x() const { return origin_x_; }

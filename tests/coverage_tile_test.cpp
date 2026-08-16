@@ -65,6 +65,25 @@ TEST_CASE("degenerate and non-finite shapes produce no coverage") {
   CHECK(tile.coverage_at(15, 15) == 0U);
 }
 
+TEST_CASE("coverage tile rejects invalid dimensions without writing") {
+  tinydraw::CoverageTile tile(0, 0, 2, 2);
+  tile.union_coverage(0, 0, 255U);
+  CHECK_FALSE(tile.reset(0, 0, tinydraw::kTileSize + 1, 1));
+  CHECK(tile.width() == 0);
+  CHECK(tile.height() == 0);
+  tile.rasterize_circle({.x = 0.0F, .y = 0.0F}, 10.0F);
+}
+
+TEST_CASE("coverage tile rejects polygons larger than its edge workspace") {
+  tinydraw::CoverageTile tile(0, 0, 32, 32);
+  constexpr std::array pentagon{
+      tinydraw::Point{16.0F, 2.0F}, tinydraw::Point{29.0F, 12.0F}, tinydraw::Point{24.0F, 28.0F},
+      tinydraw::Point{8.0F, 28.0F}, tinydraw::Point{3.0F, 12.0F},
+  };
+  tile.rasterize_convex(pentagon);
+  CHECK(tile.coverage_at(16, 16) == 0U);
+}
+
 TEST_CASE("RGB565 coverage composites once in stored channel space") {
   tinydraw::CoverageTile tile(0, 0, 2, 1);
   tile.union_coverage(0, 0, 255U);

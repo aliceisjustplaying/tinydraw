@@ -36,12 +36,21 @@ void include_strip_x(float x, float& minimum_x, float& maximum_x, bool& found) {
 }  // namespace
 
 CoverageTile::CoverageTile(int origin_x, int origin_y, int width, int height) {
-  reset(origin_x, origin_y, width, height);
+  static_cast<void>(reset(origin_x, origin_y, width, height));
 }
 
-void CoverageTile::reset(int origin_x, int origin_y, int width, int height) {
-  assert(width > 0 && width <= kTileSize);
-  assert(height > 0 && height <= kTileSize);
+bool CoverageTile::reset(int origin_x, int origin_y, int width, int height) {
+  if (width <= 0 || width > kTileSize || height <= 0 || height > kTileSize) {
+    origin_x_ = origin_x;
+    origin_y_ = origin_y;
+    width_ = 0;
+    height_ = 0;
+    dirty_left_ = 0;
+    dirty_top_ = 0;
+    dirty_right_ = -1;
+    dirty_bottom_ = -1;
+    return false;
+  }
   origin_x_ = origin_x;
   origin_y_ = origin_y;
   width_ = width;
@@ -51,6 +60,7 @@ void CoverageTile::reset(int origin_x, int origin_y, int width, int height) {
   dirty_top_ = 0;
   dirty_right_ = -1;
   dirty_bottom_ = -1;
+  return true;
 }
 
 void CoverageTile::clear() {
@@ -189,7 +199,7 @@ void CoverageTile::rasterize_circle(Point center, float radius) {
 }
 
 void CoverageTile::rasterize_convex(std::span<const Point> polygon) {
-  if (polygon.size() < 3U) {
+  if (polygon.size() < 3U || polygon.size() > 4U || width_ <= 0 || height_ <= 0) {
     return;
   }
   float minimum_x = polygon.front().x;

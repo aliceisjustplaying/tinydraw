@@ -5,6 +5,24 @@
 #include <array>
 #include <vector>
 
+#include "tinydraw/ui/pixel_painter.h"
+
+TEST_CASE("pixel painter rejects undersized surfaces and honors stride") {
+  std::array<std::uint16_t, 3> short_pixels{1U, 2U, 3U};
+  tinydraw::PixelPainter invalid(short_pixels, 2, 2);
+  CHECK_FALSE(invalid.ready());
+  invalid.rect({0, 0, 2, 2}, 9U);
+  constexpr std::array<std::uint16_t, 3> unchanged{1U, 2U, 3U};
+  CHECK(short_pixels == unchanged);
+
+  std::array<std::uint16_t, 6> strided{};
+  tinydraw::PixelPainter painter(strided, 2, 2, 4, 0, 0);
+  REQUIRE(painter.ready());
+  painter.pixel(1, 1, 7U);
+  CHECK(strided[5] == 7U);
+  CHECK(strided[3] == 0U);
+}
+
 TEST_CASE("default toolbar keeps every control in one full-width row") {
   const tinydraw::ToolbarState state;
 

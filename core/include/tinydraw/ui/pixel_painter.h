@@ -8,6 +8,8 @@
 #include <span>
 #include <string_view>
 
+#include "tinydraw/checked_surface.h"
+
 namespace tinydraw {
 
 struct UiPixelRect {
@@ -20,19 +22,37 @@ struct UiPixelRect {
 class PixelPainter {
  public:
   PixelPainter(std::span<std::uint16_t> pixels, int width, int height)
-      : pixels_(pixels), width_(width), height_(height) {}
+      : PixelPainter(pixels, width, height, width, 0, 0) {}
   // A painter whose surface's (0, 0) sits at logical coordinate
   // (origin_x, origin_y): callers keep drawing in absolute coordinates and
   // every primitive translates and clips. This lets full-frame drawing code
   // render into small offset scratch surfaces unchanged.
   PixelPainter(std::span<std::uint16_t> pixels, int width, int height, int origin_x, int origin_y)
-      : pixels_(pixels), width_(width), height_(height), origin_x_(origin_x), origin_y_(origin_y) {}
+      : PixelPainter(pixels, width, height, width, origin_x, origin_y) {}
+  PixelPainter(std::span<std::uint16_t> pixels, int width, int height, int stride, int origin_x,
+               int origin_y)
+      : pixels_(pixels), origin_x_(origin_x), origin_y_(origin_y) {
+    if (width <= 0 || height <= 0 || stride < width) {
+      return;
+    }
+    const auto required =
+        checked_surface_extent(static_cast<std::size_t>(width), static_cast<std::size_t>(height),
+                               static_cast<std::size_t>(stride));
+    if (!required.has_value() || pixels.size() < *required) {
+      return;
+    }
+    width_ = width;
+    height_ = height;
+    stride_ = stride;
+  }
+
+  [[nodiscard]] bool ready() const { return width_ > 0 && height_ > 0; }
 
   void pixel(int x, int y, std::uint16_t color) {
     x -= origin_x_;
     y -= origin_y_;
     if (x >= 0 && x < width_ && y >= 0 && y < height_) {
-      pixels_[static_cast<std::size_t>(y) * static_cast<std::size_t>(width_) +
+      pixels_[static_cast<std::size_t>(y) * static_cast<std::size_t>(stride_) +
               static_cast<std::size_t>(x)] = color;
     }
   }
@@ -42,7 +62,7 @@ class PixelPainter {
     const int x1 = std::clamp(bounds.x1 - origin_x_, x0, width_);
     for (int y = std::clamp(bounds.y0 - origin_y_, 0, height_);
          y < std::clamp(bounds.y1 - origin_y_, 0, height_); ++y) {
-      const auto start = pixels_.begin() + static_cast<std::ptrdiff_t>(y) * width_ + x0;
+      const auto start = pixels_.begin() + static_cast<std::ptrdiff_t>(y) * stride_ + x0;
       std::fill(start, start + (x1 - x0), color);
     }
   }
@@ -171,8 +191,9 @@ class PixelPainter {
   }
 
   std::span<std::uint16_t> pixels_;
-  int width_;
-  int height_;
+  int width_ = 0;
+  int height_ = 0;
+  int stride_ = 0;
   int origin_x_ = 0;
   int origin_y_ = 0;
 };

@@ -545,7 +545,7 @@ class Co5300PanelTransport::Impl {
 
   bool stream_rect(int x, int y, int width, int height, const std::uint16_t* pixels, int stride,
                    int strip_rows, PanelStagePatch patch) {
-    if (!ready_ || pixels == nullptr || width <= 0 || height <= 0) {
+    if (!ready_ || pixels == nullptr || width <= 0 || height <= 0 || (width & 1) != 0) {
       return false;
     }
     const int source_stride = stride == 0 ? width : stride;
@@ -643,10 +643,10 @@ class Co5300PanelTransport::Impl {
   bool stream_rect_ring(int x, int y, int width, int height, const std::uint16_t* area_pixels,
                         int stride, int shift_x, int shift_y, int area_width, int area_height,
                         int strip_rows, PanelStagePatch patch) {
-    if (!ready_ || area_pixels == nullptr || width <= 0 || height <= 0 || stride < area_width ||
-        shift_x < 0 || shift_x >= area_width || shift_y < 0 || shift_y >= area_height || x < 0 ||
-        y < 0 || x + width > area_width || y + height > area_height || x + width > kCanvasWidth ||
-        y + height > kCanvasHeight) {
+    if (!ready_ || area_pixels == nullptr || width <= 0 || height <= 0 || (width & 1) != 0 ||
+        stride < area_width || shift_x < 0 || shift_x >= area_width || shift_y < 0 ||
+        shift_y >= area_height || x < 0 || y < 0 || x + width > area_width ||
+        y + height > area_height || x + width > kCanvasWidth || y + height > kCanvasHeight) {
       return false;
     }
     const int rows_per_transfer = std::min(strip_rows, kTransferPixels / width);

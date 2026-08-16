@@ -254,7 +254,9 @@ void StrokeRaster::mark_tiles(const RibbonPrimitiveBatch& primitives, TileFlags&
 void StrokeRaster::load_coverage_tile(int tile_x, int tile_y, StrokeRasterStats& stats) {
   const int tile_width = std::min(kTileSize, kCanvasWidth - tile_x);
   const int tile_height = std::min(kTileSize, kCanvasHeight - tile_y);
-  coverage_.reset(tile_x, tile_y, tile_width, tile_height);
+  if (!coverage_.reset(tile_x, tile_y, tile_width, tile_height)) {
+    return;
+  }
   for (int y = 0; y < tile_height; ++y) {
     const auto index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x);
     std::copy_n(active_coverage_.begin() + static_cast<std::ptrdiff_t>(index), tile_width,

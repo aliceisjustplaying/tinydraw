@@ -4,6 +4,9 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
+
+#include "tinydraw/checked_surface.h"
 
 namespace vector_v2 = tinydraw::vector_v2;
 
@@ -13,6 +16,20 @@ TEST_CASE("tile payload analysis rejects malformed input") {
   CHECK_FALSE(vector_v2::analyze_tile_payload(pixels, 2, 0));
   CHECK_FALSE(vector_v2::analyze_tile_payload(pixels, vector_v2::kTileWidth + 1, 1));
   CHECK_FALSE(vector_v2::analyze_tile_payload(pixels, 2, 3));
+}
+
+TEST_CASE("strided extent overflow is rejected before row access") {
+  std::array<std::uint16_t, 1> pixel{};
+  CHECK_FALSE(
+      vector_v2::analyze_tile_payload(pixel, 2, 2, std::numeric_limits<std::size_t>::max()));
+  const auto esp32_overflow = tinydraw::checked_surface_extent(1U, 65'537U, 65'536U);
+  if constexpr (sizeof(std::size_t) == 4U) {
+    CHECK_FALSE(esp32_overflow);
+  } else {
+    REQUIRE(esp32_overflow);
+    CHECK(*esp32_overflow == 4'294'967'297ULL);
+  }
+  CHECK_FALSE(tinydraw::checked_surface_extent(2U, 2U, std::numeric_limits<std::size_t>::max()));
 }
 
 TEST_CASE("uniform tile has one row run per row") {

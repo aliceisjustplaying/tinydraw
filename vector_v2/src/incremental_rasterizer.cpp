@@ -8,6 +8,7 @@
 #endif
 #include <cmath>
 
+#include "tinydraw/checked_surface.h"
 #include "tinydraw/vector_v2/raster_census.h"
 #include "tinydraw/vector_v2/storage_overlap.h"
 
@@ -123,10 +124,10 @@ bool valid_surface(const RasterSurface& surface) {
       surface.stride < width) {
     return false;
   }
-  const std::size_t required =
-      static_cast<std::size_t>(height - 1) * static_cast<std::size_t>(surface.stride) +
-      static_cast<std::size_t>(width);
-  return surface.pixels.size() >= required;
+  const auto required =
+      checked_surface_extent(static_cast<std::size_t>(width), static_cast<std::size_t>(height),
+                             static_cast<std::size_t>(surface.stride));
+  return required.has_value() && surface.pixels.size() >= *required;
 }
 
 PixelRect segment_bounds(const Segment& segment, PixelRect clip) {
@@ -1121,7 +1122,7 @@ std::optional<PreparedCurveUnit> prepare_incremental_curve_unit(
 
 std::optional<PixelRect> prepared_curve_step_level_bounds(const PreparedCurveUnit& unit,
                                                           std::size_t step_index, ZoomLevel zoom) {
-  if (step_index >= unit.step_count) {
+  if (unit.step_count > unit.steps.size() || step_index >= unit.step_count) {
     return std::nullopt;
   }
   const PixelRect clip{0, 0, kWorldWidth * zoom_percent(zoom) / 100,
@@ -1135,7 +1136,7 @@ bool apply_masked_prepared_curve_step(OperationTool tool, std::uint16_t color,
                                       const RasterSurface& surface,
                                       std::span<std::uint8_t> finalized_pixels,
                                       MaskedRowSummary* summary) {
-  if (step_index >= unit.step_count) {
+  if (unit.step_count > unit.steps.size() || step_index >= unit.step_count) {
     return false;
   }
   // One chord is a one-step unit; the unit painter carries the windowed
@@ -1197,7 +1198,7 @@ bool apply_masked_prepared_curve_unit(OperationTool tool, std::uint16_t color,
       std::as_bytes(std::span(finalized_pixels)
                         .first(std::min(finalized_pixels.size(), required_mask_bytes))));
   const int surface_rows = surface.level_bounds.y1 - surface.level_bounds.y0;
-  if (!valid_surface(surface) || unit.step_count == 0U ||
+  if (!valid_surface(surface) || unit.step_count == 0U || unit.step_count > unit.steps.size() ||
       finalized_pixels.size() < required_mask_bytes || mask_aliases_pixels ||
       (summary != nullptr && !summary->ready(static_cast<std::size_t>(surface_rows)))) {
     return false;

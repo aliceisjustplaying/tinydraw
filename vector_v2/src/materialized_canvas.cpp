@@ -6,6 +6,7 @@
 #include <numeric>
 #include <tuple>
 
+#include "tinydraw/checked_surface.h"
 #include "tinydraw/vector_v2/rerender_ledger.h"
 #include "tinydraw/vector_v2/storage_overlap.h"
 #include "tinydraw/vector_v2/tile_payload_analysis.h"
@@ -987,9 +988,9 @@ std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, Documen
       source_stride < static_cast<std::size_t>(width)) {
     return std::nullopt;
   }
-  const std::size_t expected_pixels =
-      static_cast<std::size_t>(height - 1) * source_stride + static_cast<std::size_t>(width);
-  if (pixels.size() != expected_pixels) {
+  const auto expected_pixels = checked_surface_extent(
+      static_cast<std::size_t>(width), static_cast<std::size_t>(height), source_stride);
+  if (!expected_pixels.has_value() || pixels.size() != *expected_pixels) {
     return std::nullopt;
   }
   const auto existing = find_tile(key);

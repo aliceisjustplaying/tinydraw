@@ -46,6 +46,26 @@ bool reference_covers(vector_v2::CompactOperationSample first,
 
 }  // namespace
 
+TEST_CASE("prepared curve APIs reject a step count beyond fixed storage") {
+  vector_v2::PreparedCurveUnit malformed{};
+  malformed.step_count = malformed.steps.size() + 1U;
+  CHECK_FALSE(vector_v2::prepared_curve_step_level_bounds(malformed, 0U,
+                                                          vector_v2::ZoomLevel::k100Percent));
+
+  std::array<std::uint16_t, 16> pixels{};
+  std::array<std::uint8_t, 2> mask{};
+  const vector_v2::RasterSurface surface{
+      .zoom = vector_v2::ZoomLevel::k100Percent,
+      .level_bounds = {0, 0, 4, 4},
+      .pixels = pixels,
+      .stride = 4,
+  };
+  CHECK_FALSE(vector_v2::apply_masked_prepared_curve_step(vector_v2::OperationTool::kPen, 0U,
+                                                          malformed, 0U, surface, mask));
+  CHECK_FALSE(vector_v2::apply_masked_prepared_curve_unit(vector_v2::OperationTool::kPen, 0U,
+                                                          malformed, surface, mask));
+}
+
 TEST_CASE("incremental operation paints one stroke without clearing prior pixels") {
   std::array<std::uint16_t, 32U * 32U> pixels{};
   pixels.fill(0x1111U);

@@ -353,7 +353,7 @@ bool ViewportRenderer::render_large_stroke(const VectorStroke& stroke,
       const int tile_bottom = std::min({grid_y + kTileSize, kCanvasHeight, region.y1});
       const int width = tile_right - tile_x;
       const int height = tile_bottom - tile_y;
-      lane.coverage.reset(tile_x, tile_y, width, height);
+      static_cast<void>(lane.coverage.reset(tile_x, tile_y, width, height));
 
       CurvedRibbonStream ribbon;
       std::uint32_t tile_primitive_count = 0U;
@@ -529,7 +529,7 @@ void ViewportRenderer::composite_lane(void* raw, int lane) {
     std::size_t range_index = 0;
     std::size_t entry = offset;
     const std::size_t entry_end = static_cast<std::size_t>(offset) + count;
-    coverage.reset(tile_x, tile_y, width, height);
+    static_cast<void>(coverage.reset(tile_x, tile_y, width, height));
     bool first_range = true;
     while (entry < entry_end) {
       if (!first_range) {

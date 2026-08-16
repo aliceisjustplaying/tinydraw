@@ -247,6 +247,18 @@ TEST_CASE("operation log reset adopts snapshot revision and retains caller stora
   CHECK(log.current_revision() == vector_v2::DocumentRevision{0});
 }
 
+TEST_CASE("operation log rejects append samples aliased into its storage") {
+  std::array<vector_v2::OperationRecord, 1> records{};
+  std::array<vector_v2::CompactOperationSample, 2> storage{
+      vector_v2::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 8, .y_quarter = 8, .radius_256 = 256},
+  };
+  vector_v2::OperationLog log(records, storage);
+  CHECK_FALSE(log.prepare({.samples = std::span(storage).subspan(0, 2)}));
+  CHECK(log.operation_count() == 0U);
+  CHECK(log.sample_count() == 0U);
+}
+
 TEST_CASE("operation log with overlapping record and sample storage is not ready") {
   std::array<vector_v2::OperationRecord, 4> records{};
   // Alias the record storage as sample storage; ready() must reject the
