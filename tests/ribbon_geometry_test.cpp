@@ -237,3 +237,43 @@ TEST_CASE("ribbon geometry remains finite for duplicate points") {
     }
   }
 }
+
+TEST_CASE("worst-case curved finish stays within batch capacity without overflow") {
+  // Sharp doubling-back with fat radii maximizes emitted pieces: initial cap,
+  // two curve spans (up to four when split), the sharp-turn joint circle, the
+  // split tail, and the final cap. The batch must absorb the maximum without
+  // tripping the fail-closed overflow path.
+  tinydraw::CurvedRibbonStream stream;
+  static_cast<void>(stream.append(ink_point(0.0F, 0.0F, 12.0F)));
+  static_cast<void>(stream.append(ink_point(10.0F, 0.0F, 3.0F)));
+  const tinydraw::RibbonUpdate update = stream.finish(ink_point(1.0F, 0.5F, 12.0F));
+
+  CHECK(!update.committed.overflowed());
+  CHECK(!update.provisional.overflowed());
+  CHECK(update.committed.size() <= tinydraw::kRibbonPrimitiveBatchCapacity);
+}
+
+TEST_CASE("adversarial zigzag strokes never overflow a primitive batch") {
+  const std::array<tinydraw::Point, 6> zigzag{{{.x = 0.0F, .y = 0.0F},
+                                               {.x = 20.0F, .y = 1.0F},
+                                               {.x = 1.0F, .y = 2.0F},
+                                               {.x = 19.0F, .y = 3.0F},
+                                               {.x = 0.5F, .y = 4.0F},
+                                               {.x = 18.0F, .y = 5.0F}}};
+  for (float radius : {0.5F, 4.0F, 15.0F}) {
+    tinydraw::CurvedRibbonStream curved;
+    tinydraw::RibbonStream straight;
+    for (std::size_t index = 0; index < zigzag.size(); ++index) {
+      const tinydraw::InkPoint point = ink_point(zigzag[index].x, zigzag[index].y, radius);
+      const bool last = index + 1U == zigzag.size();
+      const tinydraw::RibbonUpdate curved_update =
+          last ? curved.finish(point) : curved.append(point);
+      const tinydraw::RibbonUpdate straight_update =
+          last ? straight.finish(point) : straight.append(point);
+      CHECK(!curved_update.committed.overflowed());
+      CHECK(!curved_update.provisional.overflowed());
+      CHECK(!straight_update.committed.overflowed());
+      CHECK(!straight_update.provisional.overflowed());
+    }
+  }
+}

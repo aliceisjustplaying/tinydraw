@@ -217,7 +217,7 @@ class VectorV2Presenter {
   std::uint32_t te_last_count_ = 0;
   std::int64_t te_last_change_us_ = 0;
   std::unique_ptr<RibbonRenderer> renderer_;
-  std::array<RibbonPrimitive, 8> live_provisional_{};
+  std::array<RibbonPrimitive, kRibbonPrimitiveBatchCapacity> live_provisional_{};
   std::size_t live_provisional_count_ = 0;
   vector_v2::PixelRect live_provisional_bounds_{};
   std::uint16_t live_provisional_color_ = 0;

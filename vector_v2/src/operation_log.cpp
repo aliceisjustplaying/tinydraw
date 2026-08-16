@@ -79,7 +79,20 @@ OperationLog::OperationLog(std::span<OperationRecord> records,
                            std::span<CompactOperationSample> samples)
     : records_(records), samples_(samples) {}
 
-bool OperationLog::ready() const { return !records_.empty() && !samples_.empty(); }
+bool OperationLog::ready() const {
+  // Nonempty is not enough: overlapping caller-owned storage would let an
+  // append corrupt records through the sample span (and vice versa), and
+  // OperationRecord stores sample offsets/operation indices as uint32, so
+  // larger spans could silently truncate.
+  if (records_.empty() || samples_.empty()) {
+    return false;
+  }
+  if (storage_overlaps(std::as_bytes(records_), std::as_bytes(samples_))) {
+    return false;
+  }
+  constexpr std::size_t kMaximumIndex = std::numeric_limits<std::uint32_t>::max();
+  return records_.size() <= kMaximumIndex && samples_.size() <= kMaximumIndex;
+}
 
 DocumentRevision OperationLog::current_revision() const { return revision_; }
 

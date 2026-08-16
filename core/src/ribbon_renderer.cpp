@@ -75,11 +75,20 @@ RibbonRenderStats RibbonRenderer::render_surface(std::span<const RibbonPrimitive
                                                  std::span<std::uint16_t> surface, int width,
                                                  int height, int stride, int origin_x, int origin_y,
                                                  std::uint16_t color) {
+  // Validate at runtime before any arithmetic: in Release, negative
+  // dimensions would underflow `height - 1` and an undersized surface would
+  // be written out of bounds. Asserts keep development failures loud.
   assert(width > 0 && height > 0 && stride >= width);
-  [[maybe_unused]] const std::size_t required =
+  if (width <= 0 || height <= 0 || stride < width) {
+    return {};
+  }
+  const std::size_t required =
       static_cast<std::size_t>(height - 1) * static_cast<std::size_t>(stride) +
       static_cast<std::size_t>(width);
   assert(surface.size() >= required);
+  if (surface.size() < required) {
+    return {};
+  }
   if (primitives.empty()) {
     return {};
   }

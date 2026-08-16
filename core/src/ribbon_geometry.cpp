@@ -150,7 +150,14 @@ void emit_tail(InkPoint start, InkPoint end, Emit emit) {
 }  // namespace
 
 void RibbonPrimitiveBatch::push_back(RibbonPrimitive primitive) {
-  assert(count_ < primitives_.size());
+  // A full batch is a geometry-emission bug; the assert catches it loudly in
+  // development. Release builds fail closed: drop the primitive and flag the
+  // batch instead of corrupting memory.
+  assert(count_ < primitives_.size() && "RibbonPrimitiveBatch capacity exceeded");
+  if (count_ >= primitives_.size()) {
+    overflowed_ = true;
+    return;
+  }
   primitives_[count_++] = primitive;
 }
 

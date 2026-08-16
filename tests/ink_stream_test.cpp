@@ -140,3 +140,18 @@ TEST_CASE("ending a stroke permits a new independent stroke") {
   CHECK(point.position.y == doctest::Approx(400.0F));
   CHECK(point.running_length == doctest::Approx(0.0F));
 }
+
+TEST_CASE("input without an active stroke returns a safe inactive point") {
+  tinydraw::InkStream stream;
+
+  const auto moved = stream.update({.x = 5.0F, .y = 6.0F, .timestamp_us = 1'000U});
+  CHECK(!stream.active());
+  CHECK(moved.position.x == 0.0F);
+  CHECK(moved.position.y == 0.0F);
+  CHECK(moved.radius == 0.0F);
+
+  const auto finished = stream.finish({.x = 7.0F, .y = 8.0F, .timestamp_us = 2'000U});
+  CHECK(!stream.active());
+  CHECK(finished.position.x == 0.0F);
+  CHECK(finished.position.y == 0.0F);
+}
