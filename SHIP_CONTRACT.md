@@ -24,7 +24,9 @@ requirements (lesson of `tear_synchronized`, 2026-08-15).
 
 Status: correctness provisionally GREEN on the final invariant build (owner
 glass check, 2026-08-16); the same-session torn positive-control closure is
-still pending. Pacing is RED at 50.934 ms p95. Hardware ceiling is 29.4 FPS
+still pending. Pacing is provisionally GREEN: PANSEQ p95 33.939 ms at 100%
+and 33.934 ms at 400% after the chrome-lifetime split
+(`benchmark-results/wave2-compositor/`). Hardware ceiling is 29.4 FPS
 full-frame (`HARDWARE_LIMITS.md`).
 
 ### 2. Ink — no perceptible lag  (required)
@@ -58,12 +60,14 @@ mismatch, touch-service violation, telemetry overflow, or presentation failure.
 Development runs before autosave exists are provisional; the final 20-run
 closure has autosave and normal product services enabled.
 
-Current three-run development baseline: **1,269.157 ms maximum wall**
-(1,165.354 ms compute, 70.182 ms presentation, 31.526 ms pacing, 2.095 ms touch
-service). See
-`benchmark-results/wave2-compositor/COLD_GENERAL_BASELINE_RECEIPT.md`. The older
-663.829 ms straight-authority receipt is historical and no longer describes the
-product renderer or frozen corpus.
+Current three-run development maxima (Cold Stage B, 2026-08-16): 50%
+**437.9 ms**, 100% **428.4 ms**, 200% **488.0 ms** — under the line — and
+400% **507.0 ms** (431.9 ms compute). See
+`benchmark-results/cold-stage-b-2026-08-16/RECEIPT.md`. The original
+1,269.157 ms baseline
+(`benchmark-results/wave2-compositor/COLD_GENERAL_BASELINE_RECEIPT.md`) and
+the older 663.829 ms straight-authority receipt are historical and no longer
+describe the product renderer or frozen corpus.
 
 Amplification threshold (1.25) is provisional until first measured; owner
 review after the first real measurement.
@@ -127,6 +131,34 @@ build. They are never silently reinterpreted as V2 vector authority. A future
 flattened import must declare an explicit raster baseline and either embed it in
 SVG or refuse vector-only SVG export. The existing raster-only snapshot restore
 seam is not a valid V2 persistence or Undo mechanism.
+
+## Owner decisions — 2026-08-16 (post Cold Stage B glass session)
+
+1. **Mixed-draw append lag is a defect, not a budget problem.** The felt
+   400% drawing lag is unacceptable; the 15 ms per-append harness budget
+   stands. The fix is the committed-overlay / authority-revision split
+   (external review §8.3–8.4,
+   `EXTERNAL_REVIEW_SYNTHESIS_2026-08-16.md` item 9), adopted as the
+   Phase 2 execution design. Diagnosis first: the mid-stroke fallback
+   observability pass supplies phase attribution before the design lands.
+2. **Cold 400% interim ceiling.** The 507.0 ms three-run development
+   maximum (frozen corpus wall, Stage B receipt) is accepted until
+   autosave exists; further regression is not. The firmware gate holds the
+   line at 510 ms (`kColdViewport400HoldTheLineUs` = 507 ms measured max
+   plus twice the observed ≤1.5 ms run spread). The ≤500 ms requirement in
+   §3 is unchanged and governs the final autosave-enabled 20-run closure.
+   The remaining micro-candidates (block-granular saturation, PIE
+   fixed-point probing, presentation/compute overlap) are parked.
+3. **Stage C authority bundle declined.** Conical capsules + adaptive
+   subdivision had only a speed justification left after the angularity
+   tool falsified the smoothness case on recorded owner input
+   (`benchmark-results/ink-angularity-baseline/BASELINE.md`). Smoothness
+   work goes to arc-length resampling (external review §9.4) plus settled
+   AA instead; committed authority geometry stays frozen.
+4. **Settled-AA prototype approved.** The boundary-only analytic-coverage
+   design (8-bit alpha over the newest-first masked replay, interiors keep
+   exact span fills) proceeds to a host prototype with rendered
+   before/afters. On-device go/no-go after owner review of the prototype.
 
 ### Post-ship (explicitly deferred, not cut)
 

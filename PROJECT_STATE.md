@@ -1,7 +1,9 @@
 # TinyDraw project state
 
-Last updated: 2026-08-16 (Cold Stage B session: strided publish, O(1) slot
-metadata, H7 op-level chord sweep, IRAM-pinned presentation strip loops)
+Last updated: 2026-08-16 (post-Stage-B owner decisions: mixed-draw fix
+greenlit, cold 400% hold-the-line accepted, Stage C declined, settled-AA
+prototype approved — recorded in
+[`SHIP_CONTRACT.md`](SHIP_CONTRACT.md#owner-decisions--2026-08-16-post-cold-stage-b-glass-session))
 
 Branch: `feat/v2-performance-followup`
 
@@ -19,18 +21,20 @@ promotion. [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) owns acceptance thresholds;
 | Pan correctness | **Green — owner accepted** | Product pan is tear-free on glass at 50%, 100%, 200%, and 400%, including dense hairline content. Formal positive-control evidence still needs archiving for the release packet. |
 | Pan pacing | **Provisional green** | PANSEQ p95 is 33.939 ms at 100% and 33.934 ms at 400% (~29.5 FPS), below the 38 ms guard. Camera motion caused zero persistent chrome redraws. |
 | Ink latency | **Provisional green — visual lane; smoothness yellow** | The five-trace canonical corpus is now recorded owner finger input, and the gate harness replays it through the production `offer()` path: zero lost Down/Up, event→DMA p95 2.3–5.3 ms on every trace ([`BASELINE.md`](benchmark-results/ink-trace-replay-baseline/BASELINE.md)). Smoothness: the angularity tool falsified the four-span smoothness case on real input — 2-chord deviation is ≤0.11 px at 400%; the angular signal is input jitter + chunk boundaries + hard-edge aliasing, pointing at arc-length resampling and settled AA instead ([`BASELINE.md`](benchmark-results/ink-angularity-baseline/BASELINE.md)). Optical latency and resumable lift authority remain open. |
-| Cold 400% | **Red by 7 ms — 50/100/200% now green** | Cold Stage B cut the frozen corpus again: compute 50% 434→356, 100% 468→349, 200% 599→410, 400% 587→432 ms (three-run maxima). Walls: 438/428/488 ms are under the ≤500 contract line; 400% is 507 ms (7 ms over). Landed: strided publish, O(1) slot metadata, H7 op-level chord sweep with honest work-budget slices, and IRAM-pinned transport strip loops (the pan wire-budget check no longer moves with flash-icache layout luck). Word-mask scanning re-rejected with device receipts. See [`RECEIPT.md`](benchmark-results/cold-stage-b-2026-08-16/RECEIPT.md). |
+| Cold 400% | **Hold-the-line accepted (owner 2026-08-16)** | Stage B walls: 437.9/428.4/488.0 ms at 50/100/200% under the ≤500 line; 400% is 507.0 ms. Owner accepted the 7 ms residual until autosave exists; the gate now holds the line at 510 ms and the micro-candidates are parked. The ≤500 requirement still governs the final autosave-enabled 20-run closure. See [`RECEIPT.md`](benchmark-results/cold-stage-b-2026-08-16/RECEIPT.md). **Separate standing red, not covered by this ruling:** the `overlap` workload 50% cold gate has been over its 500 ms wall since at least wave-3 (648.9 ms then, 621.9 ms at Stage B HEAD, `stageB-final-1.log`) and appears in no scorecard until now — needs owner triage. |
 | Revisit retention | **Green for pure revisits only — glass-confirmed open in general** | The spatial re-render ledger is wired into the product canvas/producer and classifies every group render (cold miss / damage / eviction / stale / unexplained). Tour-scoped device receipt: renders=137 unique=137 amplification=1.000. Owner glass session 2026-08-16: revisit re-rendering is visible at 100% after multi-zoom drawing (cross-zoom damage is by design; eviction pressure adds to it) — the déjà-vu campaign owns this. First step: live ledger cause-histogram receipts during glass sessions. |
 | Exactness | **Green for implemented scope** | Host exactness and fuzz tests pass. V2 persistence/Undo authority is not implemented. |
-| Settled AA | **Open — design candidate exists** | Immediate output is intentionally hard-edged. Four-sample SSAA cost ~808 ms and is rejected. An unmeasured analytic-coverage design (8-bit alpha mask over the existing newest-first replay, boundary-only coverage) is sketched in the 2026-08-16 review; next step is a host prototype. |
+| Settled AA | **Open — prototype approved (owner 2026-08-16)** | Immediate output is intentionally hard-edged. Four-sample SSAA cost ~808 ms and is rejected. The analytic-coverage design (8-bit alpha mask over the existing newest-first replay, boundary-only coverage) is approved for a host prototype with rendered before/afters, paired with an arc-length-resampling prototype (the measured non-AA smoothness lever). |
 | Feature parity | **Open** | Undo/Redo, autosave/recovery, device SVG wiring, minimap jump, lifecycle parity, failure UI, and release soak remain. |
-| Mixed-draw appends | **Red — attributed on glass, owner decision pending** | 50% in-place appends peak at 18.8 ms against the 15 ms budget. The 2026-08-16 owner glass session felt "slight lag" drawing at 400% and the receipts attribute it: worst chunk commits 17–21.6 ms, dominated by `ph_uniform_max` 18.3 ms (paper tiles materialized+painted mid-stroke) plus `ph_raw` up to 12 ms; at 25% one 42 ms commit (`ph_overview` 19.1 + `ph_commit` 22.2). Same retention machinery as the mid-stroke pixelation report — the committed-overlay / revision-split design (external review §8.3–8.4) is the convergent fix candidate. |
+| Mixed-draw appends | **Red — fix greenlit (owner 2026-08-16)** | The felt 400% lag is ruled unacceptable and the 15 ms per-append budget stands. Worst chunk commits 17–21.6 ms, dominated by `ph_uniform_max` 18.3 ms (paper tiles materialized+painted mid-stroke) plus `ph_raw` up to 12 ms; at 25% one 42 ms commit. Fix: the committed-overlay / authority-revision split (external review §8.3–8.4), adopted as the Phase 2 execution design — after the mid-stroke fallback observability pass supplies phase attribution. |
 
 Session continuity: Cold Stage B is **closed** and glass-tested (receipt
 above); the Stage B session handover is
 [`review_findings_2026_08_16_stage_b/HANDOVER.md`](review_findings_2026_08_16_stage_b/HANDOVER.md).
+The four post-Stage-B owner decisions are recorded in the ship contract.
 Next per the owner-approved queue: the mid-stroke pixelation diagnosis
-(fallback observability first), then AA + resampling host prototypes, the
+(fallback observability first), then the committed-overlay /
+authority-revision-split design, then AA + resampling host prototypes, the
 déjà-vu campaign, and a triage pass over the 2026-08-16 correctness review.
 The prior handover context:
 (ranked candidates with code receipts, new standing ledger/ink-trace guards,
@@ -105,17 +109,21 @@ Undo, persistence, and SVG are frozen in
    closure; product glass acceptance is complete.
 2. Finish ink closure: make materialization/lift draining resumable, run the
    canonical production-buffer traces, and archive the optical latency receipt.
-3. Continue the cold compute campaign from 668.980 ms toward ≤500 ms; the
-   wave-3 receipt ranks the remaining candidates (op-level chord sweeps,
-   publish-path copies, PIE fixed-point probing). The stop/go checkpoint
-   question is deferred while the current trajectory holds.
-3b. Resolve the `mixed_draw` 50% append budget (18.8 ms vs 15 ms): evidence
-   dates it to the curved committed-ink change (19ebbe3), masked until now by
-   the cold-gate cascade. Owner should confirm whether the 15 ms per-append
-   budget or the curved append cost is the item to move.
-4. Establish generation-checked operation snapshots and active-prefix history;
+3. Mid-stroke pixelation diagnosis Phase 1: overview-fallback counts on the
+   `TINYDRAW_INKTRACE` line, then drop attribution in the retain passes.
+4. Design and land the committed-overlay / authority-revision split — the
+   owner-greenlit mixed_draw fix (external review §8.3–8.4); it also carries
+   resumable lift drain and part of the déjà-vu retention story.
+5. Host prototypes with rendered before/afters: settled-AA boundary coverage
+   and arc-length resampling (both owner-approved 2026-08-16).
+6. Déjà-vu campaign step 1: live ledger cause histograms during glass
+   sessions; then gate scenarios; then fix per histogram.
+7. Cold is hold-the-line only: 400% guarded at 510 ms, candidates parked,
+   20-run closure statistic waits for the autosave-enabled build. Triage the
+   undocumented `overlap` 50% cold red with the owner.
+8. Establish generation-checked operation snapshots and active-prefix history;
    then implement Undo/Redo, autosave/recovery, and transactional SVG wiring.
-5. Finish settled AA, minimap tap-to-jump, power/RTC/NTP/lifecycle parity,
+9. Finish settled AA, minimap tap-to-jump, power/RTC/NTP/lifecycle parity,
    capacity/failure UI, export receipt, and all-on release closure.
 
 ## Proven foundation worth preserving
