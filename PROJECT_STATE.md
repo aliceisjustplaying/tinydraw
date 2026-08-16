@@ -15,7 +15,7 @@ promotion. [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) owns acceptance thresholds;
 
 | Area | State | Current evidence / gap |
 |---|---|---|
-| Pan correctness | **Reopened for glass** | The cache split changed cadence. All 432 strips stayed faster than wire and TE failures were zero; same-session product glass plus torn positive control remains. |
+| Pan correctness | **Green — owner accepted** | Product pan is tear-free on glass at 50%, 100%, 200%, and 400%, including dense hairline content. Formal positive-control evidence still needs archiving for the release packet. |
 | Pan pacing | **Provisional green** | PANSEQ p95 is 33.939 ms at 100% and 33.934 ms at 400% (~29.5 FPS), below the 38 ms guard. Camera motion caused zero persistent chrome redraws. |
 | Ink latency | **Red** | Authority/materialization precedes visible update, provisional ribbon geometry is omitted, and most calls use loop time instead of the original touch timestamp. |
 | Cold 400% | **Red / kill gate** | Frozen adversarial run is 663.829 ms: 577.667 compute, 69.371 present, 15.618 pacing, 1.173 touch. Requirement is ≤500 ms maximum across the defined 20-run closure. |
@@ -76,8 +76,8 @@ Undo, persistence, and SVG are frozen in
 
 ## Immediate work order
 
-1. Close pan on glass with product motion, under-overlay drawing, and a torn
-   positive control.
+1. Archive the formal torn-positive-control receipt, then tag provisional pan
+   closure; product glass acceptance is complete.
 2. Make ink visual-first: carry original touch timestamps, stage the old/new
    provisional tail without mutating the reusable ring, submit visibility before
    authority work, and make materialization/lift draining resumable.

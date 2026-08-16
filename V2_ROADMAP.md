@@ -38,7 +38,7 @@ is the only forward queue.
 Current result: the chrome lifetime split reduced PANSEQ p95 from 50.934 ms to
 33.939 ms at 100% and 33.934 ms at 400%, below the 38 ms guard. All 432 staged
 strips stayed faster than wire and camera motion caused zero persistent chrome
-redraws. The cadence change reopens optical correctness.
+redraws. Owner glass acceptance is clean at 50%, 100%, 200%, and 400%.
 
 - [x] Use a toroidal canvas-only frame ring and compose only exposed canvas.
 - [x] Patch fixed chrome in internal staging; never mutate reusable canvas.
@@ -57,8 +57,10 @@ redraws. The cadence change reopens optical correctness.
       pacing guard is met.
 - [x] Exercise slow one-pixel motion and cached-pan deltas just below, at, and
       above the 96-pixel fallback boundary.
-- [ ] Close optically in one session with product pan, under-overlay drawing,
-      and the torn positive control. Tag the known-good revision.
+- [x] Accept product pan on glass at 50%, 100%, 200%, and 400%, including dense
+      hairline content and drawing beneath fixed chrome.
+- [ ] Archive the same-session torn positive control and tag the known-good
+      revision for formal release evidence.
 
 Do not alter pacing and carry an old optical verdict forward. Pan tearing is a
 rhythm property; each cadence/staging change reopens the optical gate.
