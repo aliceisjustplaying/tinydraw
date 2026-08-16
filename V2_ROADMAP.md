@@ -55,7 +55,7 @@ redraws. The cadence change reopens optical correctness.
 - [x] Skip the balanced-strip A/B: p95 is below 38 ms.
 - [x] Defer direct exposed-row composition and completion notification: the
       pacing guard is met.
-- [ ] Exercise slow one-pixel motion and cached-pan deltas just below, at, and
+- [x] Exercise slow one-pixel motion and cached-pan deltas just below, at, and
       above the 96-pixel fallback boundary.
 - [ ] Close optically in one session with product pan, under-overlay drawing,
       and the torn positive control. Tag the known-good revision.

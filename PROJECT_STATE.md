@@ -76,8 +76,8 @@ Undo, persistence, and SVG are frozen in
 
 ## Immediate work order
 
-1. Exercise slow one-pixel motion and cached-pan deltas around the 96-pixel
-   fallback boundary, then close pan on glass with a torn positive control.
+1. Close pan on glass with product motion, under-overlay drawing, and a torn
+   positive control.
 2. Make ink visual-first: carry original touch timestamps, stage the old/new
    provisional tail without mutating the reusable ring, submit visibility before
    authority work, and make materialization/lift draining resumable.

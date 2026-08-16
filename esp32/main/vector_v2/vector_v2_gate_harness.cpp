@@ -1851,6 +1851,48 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
   return pass;
 }
 
+bool run_pan_boundary_gate(VectorV2Presenter& presenter, const vector_v2::ChromeState& chrome,
+                           ZoomLevel zoom) {
+  constexpr int kStart = 512;
+  constexpr Point kTouchStart{300.0F, 300.0F};
+  const auto reset = [&] {
+    return presenter.set_view(zoom, kStart, kStart, chrome, now_us()).passed;
+  };
+  if (!reset()) {
+    return false;
+  }
+
+  bool slow_pass = true;
+  for (int drag = 1; drag <= 4; ++drag) {
+    const auto timing = presenter.pan_from(
+        kStart, kStart, kTouchStart, {kTouchStart.x - static_cast<float>(drag), kTouchStart.y},
+        chrome, now_us());
+    const int expected_x = kStart + drag - drag % 2;
+    slow_pass = slow_pass && timing.passed && timing.frame_reused &&
+                presenter.level_x() == expected_x && presenter.level_y() == kStart;
+  }
+
+  const auto probe = [&](int delta, bool expect_reuse) {
+    if (!reset()) {
+      return false;
+    }
+    const auto timing = presenter.pan_from(
+        kStart, kStart, kTouchStart, {kTouchStart.x - static_cast<float>(delta), kTouchStart.y},
+        chrome, now_us());
+    return timing.passed && timing.frame_reused == expect_reuse &&
+           presenter.level_x() == kStart + delta && presenter.level_y() == kStart;
+  };
+  const bool below = probe(94, true);
+  const bool at = probe(kMaximumCachedPanDelta, true);
+  const bool above = probe(98, false);
+  const bool pass = slow_pass && below && at && above;
+  std::printf(
+      "TINYDRAW_GATE1_PAN_BOUNDARY zoom=%s slow_1px_trace=%u below_delta=94 below_reused=%u "
+      "at_delta=%d at_reused=%u above_delta=98 above_fallback=%u pass=%u\n",
+      zoom_name(zoom), slow_pass, below, kMaximumCachedPanDelta, at, above, pass);
+  return pass;
+}
+
 bool run_cache_retention_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
                               MaterializedCanvas& canvas, const vector_v2::ChromeState& chrome) {
   constexpr std::array zooms{
@@ -2601,6 +2643,11 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   const bool pan_sequence_400 =
       gate_400 && run_pan_sequence_gate(presenter, producer, chrome, ZoomLevel::k400Percent);
   const bool pan_sequence = pan_sequence_100 && pan_sequence_400;
+  const bool pan_boundary_100 =
+      gate_400 && run_pan_boundary_gate(presenter, chrome, ZoomLevel::k100Percent);
+  const bool pan_boundary_400 =
+      gate_400 && run_pan_boundary_gate(presenter, chrome, ZoomLevel::k400Percent);
+  const bool pan_boundary = pan_boundary_100 && pan_boundary_400;
   const bool draw_fill =
       gate_400 && run_draw_while_fill_gate(presenter, producer, log, canvas, chrome, workspace,
                                            conversion_storage);
@@ -2637,16 +2684,18 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
       "TINYDRAW_GATE1_AUTOMATED_DONE stress=%u stress_100=%u stress_400=%u overlap_ready=%u "
       "overlap_cold=%u adversarial_ready=%u adversarial_cold=%u workload=%u paced_cold=%u "
       "hard_100=%u hard_400=%u pan_100=%u "
-      "pan_400=%u pan_seq=%u live_overlay=%u draw_fill=%u cache=%u full_world_cache=%u "
+      "pan_400=%u pan_seq=%u pan_boundary=%u live_overlay=%u draw_fill=%u cache=%u "
+      "full_world_cache=%u "
       "cache_tour=%u mixed_draw=%u idle_repair=%u hairline=%u long_gesture=%u "
       "export_encode=%u export_reserve=%u return=%u ssaa_receipt=yellow\n",
       stress_ready, stress_100, stress_400, overlap_ready, overlap_cold, adversarial_ready,
       adversarial_cold, workload_ready, paced_cold, gate_100, gate_400, pan_100, pan_400,
-      pan_sequence, live_overlay, draw_fill, cache_retention, full_world_cache, cache_tour,
-      mixed_draw, idle_repair, hairline, long_gesture, export_encode, export_reserve,
+      pan_sequence, pan_boundary, live_overlay, draw_fill, cache_retention, full_world_cache,
+      cache_tour, mixed_draw, idle_repair, hairline, long_gesture, export_encode, export_reserve,
       return_overview.passed);
   return return_overview.passed && export_reserve && overlap_cold && adversarial_cold &&
-         mixed_draw && idle_repair && hairline && pan_100 && pan_400 && pan_sequence;
+         mixed_draw && idle_repair && hairline && pan_100 && pan_400 && pan_sequence &&
+         pan_boundary;
 #endif
 }
 
