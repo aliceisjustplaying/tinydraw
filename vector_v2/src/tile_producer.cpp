@@ -446,8 +446,8 @@ bool TileProducer::render_active_operation_slice(TileProductionStep& result,
       active_group_.next_sample = operation.samples.size() - 1U;
     }
     const auto batch = prepare_operation_chord_batch(
-        operation.samples, active_group_.next_sample, active_group_.view.zoom,
-        active_group_.bounds, workspace_.operation_chord_plans.first(kOperationChordStorageBytes));
+        operation.samples, active_group_.next_sample, active_group_.view.zoom, active_group_.bounds,
+        workspace_.operation_chord_plans.first(kOperationChordStorageBytes));
     if (!batch.has_value()) {
       return false;
     }

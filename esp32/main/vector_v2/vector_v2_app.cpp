@@ -313,9 +313,9 @@ struct AppStorage {
         producer_summary_rows == nullptr || producer_summary_words == nullptr ||
         producer_chord_plans == nullptr || chunk_mask == nullptr || uniforms == nullptr ||
         occupancy == nullptr || slots == nullptr || raw_slot_directory == nullptr ||
-        records == nullptr || samples == nullptr ||
-        input_samples == nullptr || rerender_entries == nullptr || touch_events == nullptr ||
-        !ink_trace_ready || affected_keys == nullptr) {
+        records == nullptr || samples == nullptr || input_samples == nullptr ||
+        rerender_entries == nullptr || touch_events == nullptr || !ink_trace_ready ||
+        affected_keys == nullptr) {
       release();
       return false;
     }
@@ -892,8 +892,8 @@ void run_vector_v2_app() {
            std::span(storage.producer_summary_rows, vector_v2::kTileProducerSummaryRows),
        .summary_saturated_words =
            std::span(storage.producer_summary_words, vector_v2::kTileProducerSummaryWords),
-       .operation_chord_plans = std::as_writable_bytes(std::span(
-           storage.producer_chord_plans, vector_v2::kOperationChordStorageBytes / 4U))});
+       .operation_chord_plans = std::as_writable_bytes(
+           std::span(storage.producer_chord_plans, vector_v2::kOperationChordStorageBytes / 4U))});
   // Re-render truth: every completed group render is classified against the
   // damage/eviction state the canvas reports (déjà-vu oracle; ~27.5 KiB).
   vector_v2::RerenderLedger rerender_ledger(

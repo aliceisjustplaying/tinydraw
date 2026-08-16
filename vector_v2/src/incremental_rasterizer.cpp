@@ -1315,8 +1315,7 @@ static_assert(alignof(OperationChordPlan) <= kPreparedOperationChordAlign);
 
 [[nodiscard]] bool chord_storage_usable(std::span<const std::byte> storage,
                                         std::size_t chord_count) {
-  return chord_count <= kOperationChordCapacity &&
-         storage.size() >= kOperationChordStorageBytes &&
+  return chord_count <= kOperationChordCapacity && storage.size() >= kOperationChordStorageBytes &&
          reinterpret_cast<std::uintptr_t>(storage.data()) % alignof(OperationChordPlan) == 0U;
 }
 
@@ -1335,8 +1334,8 @@ static_assert(alignof(OperationChordPlan) <= kPreparedOperationChordAlign);
 }
 
 [[nodiscard]] const std::uint8_t* chord_order(std::span<const std::byte> storage) {
-  return reinterpret_cast<const std::uint8_t*>(
-      storage.data() + kOperationChordCapacity * kPreparedOperationChordBytes);
+  return reinterpret_cast<const std::uint8_t*>(storage.data() + kOperationChordCapacity *
+                                                                    kPreparedOperationChordBytes);
 }
 
 }  // namespace
@@ -1487,8 +1486,7 @@ bool apply_masked_operation_chord_rows(OperationTool tool, std::uint16_t color,
     const int surface_row = y - surface.level_bounds.y0;
     const std::size_t row =
         static_cast<std::size_t>(surface_row) * static_cast<std::size_t>(surface.stride);
-    const std::size_t row_first =
-        row + static_cast<std::size_t>(row_x0 - surface.level_bounds.x0);
+    const std::size_t row_first = row + static_cast<std::size_t>(row_x0 - surface.level_bounds.x0);
     const std::size_t row_last =
         row + static_cast<std::size_t>(row_x1 - 1 - surface.level_bounds.x0);
     ++slice.rows_swept;
@@ -1529,8 +1527,8 @@ bool apply_masked_operation_chord_rows(OperationTool tool, std::uint16_t color,
         TINYDRAW_V2_CENSUS_ADD(rows_scanned, 1);
         TINYDRAW_V2_CENSUS_ADD(span_pixels,
                                static_cast<std::uint64_t>(row_span.last - row_span.first + 1));
-        newly_finalized = paint_masked_tapered_row(plan.segment, y, row_span, applied, surface,
-                                                   finalized_pixels);
+        newly_finalized =
+            paint_masked_tapered_row(plan.segment, y, row_span, applied, surface, finalized_pixels);
       }
       if (newly_finalized != 0 && summary != nullptr) {
         summary->note_finalized(surface_row, newly_finalized);

@@ -36,9 +36,9 @@ struct PaperFixture {
   std::array<std::uint32_t, vector_v2::kTileProducerSummaryWords> summary_words{};
   std::array<std::uint32_t, vector_v2::kOperationChordStorageBytes / 4U> chord_plans{};
   vector_v2::OperationLog log{records, samples};
-  vector_v2::MaterializedCanvas canvas{overview,  *uniforms, occupancy,
-                                       slots,     tile_pool, vector_v2::DocumentRevision{},
-                                       *raw_slot_directory};
+  vector_v2::MaterializedCanvas canvas{
+      overview,           *uniforms, occupancy, slots, tile_pool, vector_v2::DocumentRevision{},
+      *raw_slot_directory};
   vector_v2::TileProducer producer{
       log,
       canvas,
@@ -571,8 +571,7 @@ TEST_CASE("tile producer rejects 25 percent and aliased or short workspace") {
       fixture.canvas,
       {.supertask_pixels = fixture.supertask,
        .finalized_pixels = fixture.mask,
-       .summary_row_unset =
-           std::span(fixture.supertask).first(vector_v2::kTileProducerSummaryRows),
+       .summary_row_unset = std::span(fixture.supertask).first(vector_v2::kTileProducerSummaryRows),
        .summary_saturated_words = fixture.summary_words,
        .operation_chord_plans = std::as_writable_bytes(std::span(fixture.chord_plans))},
   };
