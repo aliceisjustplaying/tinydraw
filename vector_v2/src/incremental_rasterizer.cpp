@@ -489,7 +489,7 @@ struct RowSeed {
 RowSeed make_row_seed(const Segment& segment) {
   const float length_squared =
       segment.delta_x * segment.delta_x + segment.delta_y * segment.delta_y;
-  const float radius = segment.first.radius;
+  const float radius = std::max(segment.first.radius, segment.second.radius);
   if (length_squared > radius * radius) {
     return {.table = make_tapered_span_table(segment)};
   }
@@ -519,6 +519,33 @@ ScanSpan conservative_row_span(const RowSeed& seed, PixelRect bounds, float pixe
       std::max(bounds.x0, fast_floor(seed.center_x - reach - kRoundingMargin) - 1);
   const int last = std::min(bounds.x1 - 1, fast_ceil(seed.center_x + reach + kRoundingMargin));
   return {.first = first, .last = last};
+}
+
+// Paints one row of a constant-radius chord inside an externally computed
+// unfinalized window, returning newly finalized pixels. The conservative
+// seed and the window each bound the true chord one-sidedly, so the
+// monotone probes cannot miss coverage; covers_pixel stays authoritative.
+int paint_masked_const_row(const Segment& segment, const RowSeed& seed, PixelRect bounds, int y,
+                           std::size_t row, int window_first, int window_last, std::uint16_t color,
+                           const RasterSurface& surface, std::span<std::uint8_t> finalized) {
+  const float pixel_y = static_cast<float>(y) + 0.5F;
+  const ScanSpan conservative = conservative_row_span(seed, bounds, pixel_y);
+  const int search_first = std::max(conservative.first, window_first);
+  const int search_last = std::min(conservative.last, window_last);
+  if (search_last < search_first) {
+    TINYDRAW_V2_CENSUS_ADD(rows_empty_span, 1);
+    return 0;
+  }
+  TINYDRAW_V2_CENSUS_ADD(const_rows_scanned, 1);
+  const int first_covered = first_covered_at_or_after(segment, search_first, search_last, pixel_y);
+  if (first_covered > search_last) {
+    TINYDRAW_V2_CENSUS_ADD(const_rows_probed_empty, 1);
+    return 0;
+  }
+  const int last_covered = last_covered_at_or_before(segment, first_covered, search_last, pixel_y);
+  TINYDRAW_V2_CENSUS_ADD(const_span_pixels,
+                         static_cast<std::uint64_t>(last_covered - first_covered + 1));
+  return paint_masked_exact_span(first_covered, last_covered, row, color, surface, finalized);
 }
 
 void paint_masked_constant_radius_segment(const Segment& segment, PixelRect bounds,
@@ -551,29 +578,10 @@ void paint_masked_constant_radius_segment(const Segment& segment, PixelRect boun
       TINYDRAW_V2_CENSUS_ADD(rows_prefinalized, 1);
       continue;
     }
-    const float pixel_y = static_cast<float>(y) + 0.5F;
-    const ScanSpan conservative = conservative_row_span(seed, bounds, pixel_y);
     const int window_first = bounds.x0 + static_cast<int>(window->first - row_first);
     const int window_last = bounds.x0 + static_cast<int>(window->last - row_first);
-    const int search_first = std::max(conservative.first, window_first);
-    const int search_last = std::min(conservative.last, window_last);
-    if (search_last < search_first) {
-      TINYDRAW_V2_CENSUS_ADD(rows_empty_span, 1);
-      continue;
-    }
-    TINYDRAW_V2_CENSUS_ADD(const_rows_scanned, 1);
-    const int first_covered =
-        first_covered_at_or_after(segment, search_first, search_last, pixel_y);
-    if (first_covered > search_last) {
-      TINYDRAW_V2_CENSUS_ADD(const_rows_probed_empty, 1);
-      continue;
-    }
-    const int last_covered =
-        last_covered_at_or_before(segment, first_covered, search_last, pixel_y);
-    TINYDRAW_V2_CENSUS_ADD(const_span_pixels,
-                           static_cast<std::uint64_t>(last_covered - first_covered + 1));
-    const int newly_finalized =
-        paint_masked_exact_span(first_covered, last_covered, row, color, surface, finalized);
+    const int newly_finalized = paint_masked_const_row(
+        segment, seed, bounds, y, row, window_first, window_last, color, surface, finalized);
     if (newly_finalized != 0 && summary != nullptr) {
       summary->note_finalized(surface_row, newly_finalized);
     }
@@ -1083,6 +1091,113 @@ bool apply_masked_incremental_curve_step(const OperationAppend& operation, std::
       operation.tool == OperationTool::kEraser ? kBackground : operation.color;
   paint_masked_segment(unit->segments[step_index].first, unit->segments[step_index].second, color,
                        surface, finalized_pixels, summary);
+  return true;
+}
+
+bool apply_masked_prepared_curve_unit(OperationTool tool, std::uint16_t color,
+                                      const PreparedCurveUnit& unit,
+                                      const RasterSurface& surface,
+                                      std::span<std::uint8_t> finalized_pixels,
+                                      MaskedRowSummary* summary) {
+  const std::size_t required_mask_bytes = (surface.pixels.size() + 7U) / 8U;
+  const bool mask_aliases_pixels = storage_overlaps(
+      std::as_bytes(std::span(surface.pixels)),
+      std::as_bytes(std::span(finalized_pixels)
+                        .first(std::min(finalized_pixels.size(), required_mask_bytes))));
+  const int surface_rows = surface.level_bounds.y1 - surface.level_bounds.y0;
+  if (!valid_surface(surface) || unit.step_count == 0U ||
+      finalized_pixels.size() < required_mask_bytes || mask_aliases_pixels ||
+      (summary != nullptr && !summary->ready(static_cast<std::size_t>(surface_rows)))) {
+    return false;
+  }
+  const std::uint16_t applied = tool == OperationTool::kEraser ? kBackground : color;
+  // A unit's chords share one color and overlap around their joints, so one
+  // row sweep over the union bounds may process them in any order: the
+  // finalized mask keeps the written pixel set identical to sequential
+  // per-chord painting, and a window left stale by an earlier chord on the
+  // same row only widens a clamp that the masked walks re-check anyway.
+  struct ChordPlan {
+    Segment segment{};
+    RowSeed seed{};
+    PixelRect bounds{};
+    bool constant = false;
+  };
+  std::array<ChordPlan, 3> plans{};
+  std::size_t plan_count = 0;
+  PixelRect union_bounds{surface.level_bounds.x1, surface.level_bounds.y1,
+                         surface.level_bounds.x0, surface.level_bounds.y0};
+  for (std::size_t step = 0; step < unit.step_count; ++step) {
+    const Segment segment = unpack_prepared_step(unit.steps[step]);
+    const PixelRect bounds = segment_bounds(segment, surface.level_bounds);
+    if (bounds.x1 <= bounds.x0 || bounds.y1 <= bounds.y0) {
+      continue;
+    }
+    plans[plan_count++] = {
+        .segment = segment,
+        .seed = make_row_seed(segment),
+        .bounds = bounds,
+        .constant = segment.first.radius == segment.second.radius,
+    };
+    union_bounds.x0 = std::min(union_bounds.x0, bounds.x0);
+    union_bounds.y0 = std::min(union_bounds.y0, bounds.y0);
+    union_bounds.x1 = std::max(union_bounds.x1, bounds.x1);
+    union_bounds.y1 = std::max(union_bounds.y1, bounds.y1);
+  }
+  if (plan_count == 0U) {
+    return true;
+  }
+  for (int y = union_bounds.y0; y < union_bounds.y1; ++y) {
+    const int surface_row = y - surface.level_bounds.y0;
+    const std::size_t row =
+        static_cast<std::size_t>(surface_row) * static_cast<std::size_t>(surface.stride);
+    const std::size_t row_first =
+        row + static_cast<std::size_t>(union_bounds.x0 - surface.level_bounds.x0);
+    const std::size_t row_last =
+        row + static_cast<std::size_t>(union_bounds.x1 - 1 - surface.level_bounds.x0);
+    const auto window = mask_unset_window(finalized_pixels, row_first, row_last);
+    if (!window.has_value()) {
+      TINYDRAW_V2_CENSUS_ADD(rows_prefinalized, 1);
+      continue;
+    }
+    const int window_first = union_bounds.x0 + static_cast<int>(window->first - row_first);
+    const int window_last = union_bounds.x0 + static_cast<int>(window->last - row_first);
+    const float pixel_y = static_cast<float>(y) + 0.5F;
+    for (std::size_t index = 0; index < plan_count; ++index) {
+      const ChordPlan& plan = plans[index];
+      if (y < plan.bounds.y0 || y >= plan.bounds.y1) {
+        continue;
+      }
+      const int chord_first = std::max(window_first, plan.bounds.x0);
+      const int chord_last = std::min(window_last, plan.bounds.x1 - 1);
+      if (chord_last < chord_first) {
+        continue;
+      }
+      int newly_finalized = 0;
+      if (plan.constant) {
+        newly_finalized =
+            paint_masked_const_row(plan.segment, plan.seed, plan.bounds, y, row, chord_first,
+                                   chord_last, applied, surface, finalized_pixels);
+      } else {
+        const ScanSpan conservative = conservative_row_span(plan.seed, plan.bounds, pixel_y);
+        const ScanSpan row_span{
+            .first = std::max(conservative.first, chord_first),
+            .last = std::min(conservative.last, chord_last),
+        };
+        if (row_span.empty()) {
+          TINYDRAW_V2_CENSUS_ADD(rows_empty_span, 1);
+          continue;
+        }
+        TINYDRAW_V2_CENSUS_ADD(rows_scanned, 1);
+        TINYDRAW_V2_CENSUS_ADD(span_pixels,
+                               static_cast<std::uint64_t>(row_span.last - row_span.first + 1));
+        newly_finalized = paint_masked_tapered_row(plan.segment, y, row_span, applied, surface,
+                                                   finalized_pixels);
+      }
+      if (newly_finalized != 0 && summary != nullptr) {
+        summary->note_finalized(surface_row, newly_finalized);
+      }
+    }
+  }
   return true;
 }
 

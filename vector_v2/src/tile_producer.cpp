@@ -444,39 +444,53 @@ bool TileProducer::render_active_segment(TileProductionStep& result,
     active_group_.prepared_unit = *prepared;
     active_group_.next_curve_step = prepared->step_count;
   }
-  const std::size_t step_index = active_group_.next_curve_step - 1U;
-  const auto unit_bounds = prepared_curve_step_level_bounds(active_group_.prepared_unit, step_index,
-                                                            active_group_.view.zoom);
-  if (!unit_bounds.has_value()) {
-    return false;
-  }
-  const auto finish_curve_step = [&] {
-    --active_group_.next_curve_step;
-    if (active_group_.next_curve_step == 0U) {
-      finish_active_segment(endpoint, result, operations_consumed);
+  // The whole unit paints as one row sweep, so its chords' clipped bounds
+  // union into one work estimate, one rejection, and one saturation gate.
+  const std::size_t unit_steps = active_group_.next_curve_step;
+  PixelRect clipped{active_group_.bounds.x1, active_group_.bounds.y1, active_group_.bounds.x0,
+                    active_group_.bounds.y0};
+  std::size_t raster_work = 0;
+  for (std::size_t step_index = 0; step_index < unit_steps; ++step_index) {
+    const auto step_bounds = prepared_curve_step_level_bounds(active_group_.prepared_unit,
+                                                             step_index, active_group_.view.zoom);
+    if (!step_bounds.has_value()) {
+      continue;
     }
+    const PixelRect step_clipped{
+        .x0 = std::max(step_bounds->x0, active_group_.bounds.x0),
+        .y0 = std::max(step_bounds->y0, active_group_.bounds.y0),
+        .x1 = std::min(step_bounds->x1, active_group_.bounds.x1),
+        .y1 = std::min(step_bounds->y1, active_group_.bounds.y1),
+    };
+    const std::size_t step_work =
+        static_cast<std::size_t>(std::max(0, step_clipped.x1 - step_clipped.x0)) *
+        static_cast<std::size_t>(std::max(0, step_clipped.y1 - step_clipped.y0));
+    if (step_work == 0U) {
+      TINYDRAW_V2_CENSUS_ADD(segments_bbox_rejected, 1);
+      continue;
+    }
+    raster_work += step_work;
+    clipped.x0 = std::min(clipped.x0, step_clipped.x0);
+    clipped.y0 = std::min(clipped.y0, step_clipped.y0);
+    clipped.x1 = std::max(clipped.x1, step_clipped.x1);
+    clipped.y1 = std::max(clipped.y1, step_clipped.y1);
+  }
+  const auto finish_unit = [&] {
+    active_group_.next_curve_step = 0U;
+    finish_active_segment(endpoint, result, operations_consumed);
   };
-  const PixelRect clipped{
-      .x0 = std::max(unit_bounds->x0, active_group_.bounds.x0),
-      .y0 = std::max(unit_bounds->y0, active_group_.bounds.y0),
-      .x1 = std::min(unit_bounds->x1, active_group_.bounds.x1),
-      .y1 = std::min(unit_bounds->y1, active_group_.bounds.y1),
-  };
-  const std::size_t raster_work = static_cast<std::size_t>(std::max(0, clipped.x1 - clipped.x0)) *
-                                  static_cast<std::size_t>(std::max(0, clipped.y1 - clipped.y0));
   if (raster_work == 0U) {
-    // Count a rejected operation against the per-call cursor budget.
-    TINYDRAW_V2_CENSUS_ADD(segments_bbox_rejected, 1);
-    ++raster_steps_consumed;
-    finish_curve_step();
+    // Count a rejected unit against the per-call cursor budget.
+    raster_steps_consumed += unit_steps;
+    finish_unit();
     return true;
   }
   if (summary_.rows_saturated(clipped.y0 - active_group_.bounds.y0,
                               clipped.y1 - 1 - active_group_.bounds.y0)) {
-    // The operation's clipped footprint lies entirely in saturated rows.
+    // The unit's clipped footprint lies entirely in saturated rows.
     TINYDRAW_V2_CENSUS_ADD(segments_saturation_skipped, 1);
-    ++raster_steps_consumed;
-    finish_curve_step();
+    raster_steps_consumed += unit_steps;
+    finish_unit();
     return true;
   }
 
@@ -485,8 +499,8 @@ bool TileProducer::render_active_segment(TileProductionStep& result,
   const std::uint32_t paint_started = raster_census_now();
   TINYDRAW_V2_CENSUS_ADD(setup_ticks, paint_started - setup_started);
 #endif
-  if (!apply_masked_prepared_curve_step(
-          operation.tool, operation.color, active_group_.prepared_unit, step_index,
+  if (!apply_masked_prepared_curve_unit(
+          operation.tool, operation.color, active_group_.prepared_unit,
           {.zoom = active_group_.view.zoom,
            .level_bounds = active_group_.bounds,
            .pixels = surface,
@@ -498,12 +512,12 @@ bool TileProducer::render_active_segment(TileProductionStep& result,
 #if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
   TINYDRAW_V2_CENSUS_ADD(paint_ticks, raster_census_now() - paint_started);
 #endif
-  ++raster_steps_consumed;
+  raster_steps_consumed += unit_steps;
   raster_work_consumed += raster_work;
-  ++result.raster_steps;
+  result.raster_steps += unit_steps;
   result.raster_work += raster_work;
   ++result.operations_rendered;
-  finish_curve_step();
+  finish_unit();
   return true;
 }
 

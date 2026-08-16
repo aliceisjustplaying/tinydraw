@@ -154,6 +154,16 @@ struct PreparedCurveUnit {
                                                     std::span<std::uint8_t> finalized_pixels,
                                                     MaskedRowSummary* summary = nullptr);
 
+// Paints every chord of one prepared unit in a single row sweep over their
+// union bounds, sharing one unfinalized-window scan per row. All chords of a
+// unit carry one color, so with the finalized mask the written pixel set is
+// identical to sequential per-chord painting in any order.
+[[nodiscard]] bool apply_masked_prepared_curve_unit(OperationTool tool, std::uint16_t color,
+                                                    const PreparedCurveUnit& unit,
+                                                    const RasterSurface& surface,
+                                                    std::span<std::uint8_t> finalized_pixels,
+                                                    MaskedRowSummary* summary = nullptr);
+
 struct AffectedTileResult {
   std::size_t required = 0;
   std::size_t written = 0;
