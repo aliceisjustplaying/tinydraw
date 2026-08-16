@@ -17,6 +17,9 @@
 #include "power_manager.h"
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
 #include "vector_v2_gate_harness.h"
+#ifdef TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE
+#include "vector_v2_ink_trace_capture.h"
+#endif
 #endif
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
@@ -209,6 +212,9 @@ struct AppStorage {
   CompactOperationSample* samples = nullptr;
   CompactOperationSample* input_samples = nullptr;
   vector_v2::TouchEvent* touch_events = nullptr;
+#ifdef TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE
+  InkTraceCaptureRecord* ink_trace_records = nullptr;
+#endif
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
   TileRevisionPublication* publications = nullptr;
 #endif
@@ -251,6 +257,12 @@ struct AppStorage {
     samples = allocate_array<CompactOperationSample>(vector_v2::kOperationSampleCapacity);
     input_samples = allocate_array<CompactOperationSample>(kInputSampleCapacity);
     touch_events = allocate_internal<vector_v2::TouchEvent>(kVectorV2TouchEventCapacity);
+#ifdef TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE
+    ink_trace_records = allocate_array<InkTraceCaptureRecord>(kInkTraceCaptureCapacity);
+    const bool ink_trace_ready = ink_trace_records != nullptr;
+#else
+    const bool ink_trace_ready = true;
+#endif
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
     publications = allocate_array<TileRevisionPublication>(kWorkspaceTileCapacity);
     const bool harness_workspace_ready = tile_scratch != nullptr && publications != nullptr;
@@ -265,7 +277,8 @@ struct AppStorage {
         producer_mask == nullptr || producer_summary_rows == nullptr ||
         producer_summary_words == nullptr || chunk_mask == nullptr || uniforms == nullptr ||
         occupancy == nullptr || slots == nullptr || records == nullptr || samples == nullptr ||
-        input_samples == nullptr || touch_events == nullptr || affected_keys == nullptr) {
+        input_samples == nullptr || touch_events == nullptr || !ink_trace_ready ||
+        affected_keys == nullptr) {
       return false;
     }
     for (std::size_t index = 0; index < vector_v2::kMaterializedTileIdentityCount; ++index) {
@@ -741,6 +754,13 @@ void run_vector_v2_app() {
   PowerManager power(touch.bus());
   VectorV2TouchSampler touch_sampler(touch,
                                      std::span(storage.touch_events, kVectorV2TouchEventCapacity));
+#ifdef TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE
+  InkTraceCaptureRing ink_trace_ring(
+      std::span(storage.ink_trace_records, kInkTraceCaptureCapacity));
+  touch_sampler.set_capture_ring(&ink_trace_ring);
+  std::printf("TINYDRAW_INKTRACE_CAPTURE_READY capacity=%u\n",
+              static_cast<unsigned>(kInkTraceCaptureCapacity));
+#endif
   vector_v2::NavigationState navigation;
   VectorV2Export exporter;
   VectorV2Presenter presenter(
@@ -1159,6 +1179,15 @@ void run_vector_v2_app() {
         poll_max_us = 0;
       }
     }
+
+#ifdef TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE
+    // Dump a finished capture only when the owner has been hands-off long
+    // enough that the serial burst cannot perturb a gesture.
+    if (!pressed && !ink_trace_ring.touching() && ink_trace_ring.size() != 0U &&
+        loop_us - ink_trace_ring.last_activity_us() > 2'000'000U) {
+      ink_trace_ring.dump_and_reset();
+    }
+#endif
 
     const bool fill_view_available =
         presenter.zoom() != ZoomLevel::k25Percent && chrome.popup == vector_v2::ChromePopup::kNone;

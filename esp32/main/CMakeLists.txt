@@ -51,6 +51,11 @@ if(TINYDRAW_VECTOR_V2_OVERVIEW_WALK OR TINYDRAW_VECTOR_V2_APP)
         "vector_v2/vector_v2_tile_census.cpp"
       )
     endif()
+    if(TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE)
+      list(APPEND TINYDRAW_VECTOR_V2_HARDWARE_SRCS
+        "vector_v2/vector_v2_ink_trace_capture.cpp"
+      )
+    endif()
     set(TINYDRAW_VECTOR_V2_CORE_SRCS
       "${TINYDRAW_CORE}/src/coverage_tile.cpp"
       "${TINYDRAW_CORE}/src/fat16_disk.cpp"
@@ -213,6 +218,9 @@ if(TINYDRAW_VECTOR_V2_GATE_HARNESS)
 endif()
 if(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_V2_RASTER_CENSUS=1)
+endif()
+if(TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE=1)
 endif()
 if(TINYDRAW_VECTOR_V2_TILE_CENSUS)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_V2_TILE_CENSUS=1)
