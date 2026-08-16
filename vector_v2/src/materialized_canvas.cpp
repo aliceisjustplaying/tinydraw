@@ -432,6 +432,12 @@ bool MaterializedCanvas::restore_snapshot(DocumentRevision revision,
     return false;
   }
   std::copy(pixels.begin(), pixels.end(), overview_pixels_.begin());
+  // A restore replaces the entire document authority; prior per-group render
+  // history is meaningless for the new document, so the re-render ledger
+  // starts a fresh session instead of misclassifying every next render.
+  if (rerender_ledger_ != nullptr) {
+    rerender_ledger_->reset();
+  }
   for (auto& slot : slots_) {
     if (slot.occupied_) {
       slot.occupied_ = false;

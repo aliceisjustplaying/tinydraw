@@ -215,6 +215,14 @@ if(TINYDRAW_VECTOR_V2_GATE_HARNESS)
   target_include_directories(${COMPONENT_LIB} PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}/../../vector_v2/test_support/include"
   )
+  # Recorded owner ink traces for the replay gate. under-overlay stays out
+  # (streamed delivery, ~190 KiB); the rest total ~95 KiB of app flash.
+  foreach(TINYDRAW_INK_TRACE
+      fast-curve-dense-25 fast-curve-400 fast-curve-400-xl slow-precise-100
+      scribble-multistroke)
+    target_add_binary_data(${COMPONENT_LIB}
+      "${CMAKE_CURRENT_LIST_DIR}/../../testdata/ink-traces/${TINYDRAW_INK_TRACE}.csv" TEXT)
+  endforeach()
 endif()
 if(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_V2_RASTER_CENSUS=1)
