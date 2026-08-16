@@ -22,6 +22,7 @@
 #include "tinydraw/vector_v2/idle_repair.h"
 #include "tinydraw/vector_v2/memory_layout.h"
 #include "tinydraw/vector_v2/raster_census.h"
+#include "tinydraw/vector_v2/rerender_ledger.h"
 #include "vector_v2_ship_contract.h"
 
 namespace tinydraw::esp32 {
@@ -2708,8 +2709,26 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   const bool cache_retention =
       draw_fill && run_cache_retention_gate(presenter, producer, canvas, chrome);
   const bool full_world_cache = cache_retention && run_full_world_cache_gate(producer, canvas);
+  const auto print_rerender_ledger = [&canvas](const char* site) {
+    if (canvas.rerender_ledger() == nullptr) {
+      return;
+    }
+    const auto ledger_totals = canvas.rerender_ledger()->totals();
+    std::printf(
+        "TINYDRAW_RERENDER_LEDGER site=%s renders=%lu unique=%lu amplification=%.3f "
+        "cold=%lu damage=%lu evict=%lu stale=%lu unexplained=%lu\n",
+        site, static_cast<unsigned long>(ledger_totals.renders),
+        static_cast<unsigned long>(ledger_totals.unique_groups), ledger_totals.amplification(),
+        static_cast<unsigned long>(ledger_totals.cold_miss),
+        static_cast<unsigned long>(ledger_totals.expected_damage),
+        static_cast<unsigned long>(ledger_totals.eviction),
+        static_cast<unsigned long>(ledger_totals.stale_revision),
+        static_cast<unsigned long>(ledger_totals.unexplained));
+    std::fflush(stdout);
+  };
   const bool cache_tour =
       full_world_cache && run_cache_tour_gate(presenter, producer, canvas, chrome);
+  print_rerender_ledger("cache_tour");
   // The mixed-zoom drawing gate is part of the final verdict: warm-cache
   // interactive chunk commits must stay under the 15 ms alarm at every zoom.
   // It still must not stop later receipts when red.
@@ -2733,6 +2752,7 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   const bool export_encode = long_gesture && run_export_encode_gate(exporter, log);
   const bool export_reserve = export_encode && verify_export_reserve();
   const auto return_overview = presenter.set_view(ZoomLevel::k25Percent, 0, 0, chrome, now_us());
+  print_rerender_ledger("final");
   std::printf(
       "TINYDRAW_GATE1_AUTOMATED_DONE stress=%u stress_100=%u stress_400=%u overlap_ready=%u "
       "overlap_cold=%u general_cold_ready=%u general_cold=%u workload=%u paced_cold=%u "

@@ -95,6 +95,9 @@ class TileProducer {
   // reset. Rejected unless both authorities are empty and at this revision.
   [[nodiscard]] bool reset_uniform_baseline(DocumentRevision revision,
                                             std::uint16_t color = 0xFFFFU);
+  // Optional re-render truth observer; completed group renders are classified
+  // against damage/eviction state the canvas reports. Null disables.
+  void set_rerender_ledger(RerenderLedger* ledger) { rerender_ledger_ = ledger; }
 
  private:
   struct GroupPublication {
@@ -173,6 +176,7 @@ class TileProducer {
   MaskedRowSummary summary_;
   ReplayBlockIndex replay_index_;
   RenderAccounting* render_accounting_ = nullptr;
+  RerenderLedger* rerender_ledger_ = nullptr;
   CandidateDiscoveryCounters candidate_counters_{};
   DocumentRevision baseline_revision_{};
   std::uint16_t baseline_color_ = 0xFFFFU;

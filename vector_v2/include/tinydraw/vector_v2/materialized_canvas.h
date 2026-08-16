@@ -215,6 +215,8 @@ class PinnedSource {
   SourceSelection source_{};
 };
 
+class RerenderLedger;
+
 class MaterializedCanvas {
  public:
   // All spans are caller-owned and must outlive this object. Slot elements must
@@ -296,6 +298,10 @@ class MaterializedCanvas {
   // Defensive recovery: drops any raw slot and uniform entry for key so the
   // identity falls back to the authoritative overview.
   void invalidate_identity(TileKey key);
+  // Optional re-render truth observer. The canvas reports revision damage
+  // bounds and raw-slot evictions; it never reads the ledger. Null disables.
+  void set_rerender_ledger(RerenderLedger* ledger) { rerender_ledger_ = ledger; }
+  [[nodiscard]] RerenderLedger* rerender_ledger() const { return rerender_ledger_; }
   [[nodiscard]] std::optional<std::size_t> publish_tile(TileKey key, DocumentRevision revision,
                                                         MaterializationQuality quality,
                                                         std::span<const std::uint16_t> pixels);
@@ -392,6 +398,7 @@ class MaterializedCanvas {
   std::span<MaterializedUniformStorage> uniform_catalog_;
   std::span<std::uint8_t> occupancy_bits_;
   std::span<MaterializedSlotStorage> slots_;
+  RerenderLedger* rerender_ledger_ = nullptr;
   std::span<std::uint16_t> tile_pixels_;
   DocumentRevision current_revision_{};
   DocumentRevision overview_revision_{};

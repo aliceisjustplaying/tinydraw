@@ -32,6 +32,7 @@
 #include "tinydraw/vector_v2/navigation_state.h"
 #include "tinydraw/vector_v2/operation_builder.h"
 #include "tinydraw/vector_v2/operation_log.h"
+#include "tinydraw/vector_v2/rerender_ledger.h"
 #include "tinydraw/vector_v2/tile_producer.h"
 #include "vector_v2_export.h"
 #include "vector_v2_presenter.h"
@@ -212,6 +213,7 @@ struct AppStorage {
   OperationRecord* records = nullptr;
   CompactOperationSample* samples = nullptr;
   CompactOperationSample* input_samples = nullptr;
+  vector_v2::RerenderLedgerEntry* rerender_entries = nullptr;
   vector_v2::TouchEvent* touch_events = nullptr;
 #ifdef TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE
   InkTraceCaptureRecord* ink_trace_records = nullptr;
@@ -257,6 +259,8 @@ struct AppStorage {
     records = allocate_array<OperationRecord>(vector_v2::kOperationCapacity);
     samples = allocate_array<CompactOperationSample>(vector_v2::kOperationSampleCapacity);
     input_samples = allocate_array<CompactOperationSample>(kInputSampleCapacity);
+    rerender_entries =
+        allocate_array<vector_v2::RerenderLedgerEntry>(vector_v2::kRerenderLedgerEntryCount);
     touch_events = allocate_internal<vector_v2::TouchEvent>(kVectorV2TouchEventCapacity);
 #ifdef TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE
     ink_trace_records = allocate_array<InkTraceCaptureRecord>(kInkTraceCaptureCapacity);
@@ -278,8 +282,8 @@ struct AppStorage {
         producer_mask == nullptr || producer_summary_rows == nullptr ||
         producer_summary_words == nullptr || chunk_mask == nullptr || uniforms == nullptr ||
         occupancy == nullptr || slots == nullptr || records == nullptr || samples == nullptr ||
-        input_samples == nullptr || touch_events == nullptr || !ink_trace_ready ||
-        affected_keys == nullptr) {
+        input_samples == nullptr || rerender_entries == nullptr || touch_events == nullptr ||
+        !ink_trace_ready || affected_keys == nullptr) {
       return false;
     }
     for (std::size_t index = 0; index < vector_v2::kMaterializedTileIdentityCount; ++index) {
@@ -800,6 +804,12 @@ void run_vector_v2_app() {
            std::span(storage.producer_summary_rows, vector_v2::kTileProducerSummaryRows),
        .summary_saturated_words =
            std::span(storage.producer_summary_words, vector_v2::kTileProducerSummaryWords)});
+  // Re-render truth: every completed group render is classified against the
+  // damage/eviction state the canvas reports (déjà-vu oracle; ~27.5 KiB).
+  vector_v2::RerenderLedger rerender_ledger(
+      std::span(storage.rerender_entries, vector_v2::kRerenderLedgerEntryCount));
+  canvas.set_rerender_ledger(&rerender_ledger);
+  producer.set_rerender_ledger(&rerender_ledger);
   const vector_v2::InPlaceAppendWorkspace workspace{
       .overview_scratch = std::span(storage.overview_scratch, vector_v2::kOverviewPixels),
       .affected_keys = std::span(storage.affected_keys,
