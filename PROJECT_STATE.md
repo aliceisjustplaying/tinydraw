@@ -27,9 +27,12 @@ promotion. [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) owns acceptance thresholds;
 | Feature parity | **Open** | Undo/Redo, autosave/recovery, device SVG wiring, minimap jump, lifecycle parity, failure UI, and release soak remain. |
 | Mixed-draw appends | **Red — pre-existing, owner decision pending** | 50% in-place appends peak at 18.8 ms against the 15 ms budget. Dating evidence places the regression at the curved committed-ink change (19ebbe3), masked until wave-3 reopened the gate cascade. The in-place commit now reports per-phase maxima (prepare/overview/enumerate/uniform/raw/commit) in `TINYDRAW_GATE1_MIXED_DRAW` and `TINYDRAW_LIVE_STROKE`, so the next harness run attributes the overrun before the owner decides budget vs optimization. The misnamed "commit budget" is renamed: it bounds only offscreen raw retention (`InPlaceRetentionBudget`). |
 
-Session continuity: the 2026-08-16 handover for the next working session
-(A/B recipes, ranked cold candidates, device physics notes, open owner
-decisions) is
+Session continuity: the next session starts **Cold Stage B**; its handover
+(ranked candidates with code receipts, new standing ledger/ink-trace guards,
+the post-B queue — AA prototype + resampling, then the déjà-vu campaign — and
+pending owner decisions) is
+[`review_findings_2026_08_16_oracle_session/HANDOVER.md`](review_findings_2026_08_16_oracle_session/HANDOVER.md).
+The wave-3 A/B recipe and device-physics cheat sheet remain authoritative in
 [`review_findings_2026_08_16_cold_campaign/HANDOVER.md`](review_findings_2026_08_16_cold_campaign/HANDOVER.md).
 
 Latest permanent receipts:
