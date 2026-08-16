@@ -86,14 +86,19 @@ authority synchronously, and formal trace/optical closure remains open.
 - [x] Stage a transient old/new provisional tail over authoritative canvas;
       never bake it into the ring, document, or cache identity.
 - [x] Submit the newest visible tail before chunk commit/materialization.
-- [ ] Convert authority commit, overview work, tile publication, and lift drain
+- [x] Convert authority commit, overview work, tile publication, and lift drain
       into resumable bounded slices. Lift closes visually and returns to input.
-      **Execution design adopted (owner 2026-08-16): the committed-overlay /
-      authority-revision split** (external review §8.3–8.4 — revision pair,
-      pending range, overlay lifetime, phase state machine). Also the
-      greenlit fix for the mixed_draw 15 ms append overruns felt on glass at
-      400%. Prerequisite: the mid-stroke fallback observability pass so the
-      design targets measured phase attribution.
+      **Landed 2026-08-16 as the committed-overlay / authority-revision
+      split** (external review §8.3–8.4): chunk commits publish authority
+      only (worst input-path append 173 µs vs 15 ms budget, was 19.3 ms);
+      the canvas drains per-operation in empty-poll idle slices behind a
+      host-proven bit-exact pending-ink overlay; lift defers its refresh to
+      one exact swap after drain (glass: 87–199 ms → 10–34 ms, expected
+      ~5 ms after the drain gate). `mixed_draw` green for the first time.
+      Receipts: `benchmark-results/committed-overlay/RECEIPT.md`. Remaining
+      refinement, not gated: absorption slices are bounded per operation
+      (≤30 ms on dense content); the full §8.4 intra-operation phase
+      machine can cap them further if idle-slice length ever matters.
 - [ ] Reconcile capacity rejection by erasing only the uncommitted transient
       tail; keep already committed chunks as physical ink.
 - [ ] Report event→consume→geometry→payload→DMA distributions, optical p95/p99,
