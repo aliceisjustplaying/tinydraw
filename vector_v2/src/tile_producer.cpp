@@ -8,6 +8,7 @@
 #endif
 
 #include "tinydraw/vector_v2/raster_census.h"
+#include "tinydraw/vector_v2/rerender_ledger.h"
 #include "tinydraw/vector_v2/storage_overlap.h"
 #include "tinydraw/vector_v2/tile_payload_analysis.h"
 
@@ -594,6 +595,11 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
     ++candidate_counters_.groups_published;
     if (render_accounting_ != nullptr) {
       render_accounting_->record_completion(active_group_key());
+    }
+    if (rerender_ledger_ != nullptr) {
+      static_cast<void>(rerender_ledger_->record_group_render(
+          active_group_.view.zoom, active_group_.origin.column, active_group_.origin.row,
+          active_group_.revision));
     }
   }
   const ViewRequest view = active_group_.view;

@@ -5,6 +5,7 @@
 #include <numeric>
 #include <tuple>
 
+#include "tinydraw/vector_v2/rerender_ledger.h"
 #include "tinydraw/vector_v2/storage_overlap.h"
 #include "tinydraw/vector_v2/tile_payload_analysis.h"
 
@@ -505,6 +506,10 @@ bool MaterializedCanvas::valid_incremental_revision(
 void MaterializedCanvas::write_tile(std::size_t slot_index,
                                     const TileRevisionPublication& publication,
                                     DocumentRevision revision) {
+  if (rerender_ledger_ != nullptr && slots_[slot_index].occupied_ &&
+      !(slots_[slot_index].key_ == publication.key)) {
+    rerender_ledger_->mark_evicted(slots_[slot_index].key_);
+  }
   const PixelRect bounds = tile_pixel_bounds(publication.key);
   const int width = bounds.x1 - bounds.x0;
   const int height = bounds.y1 - bounds.y0;
@@ -543,6 +548,9 @@ void MaterializedCanvas::apply_overview_publication(
 
 void MaterializedCanvas::finish_revision(DocumentRevision revision,
                                          PixelRect affected_world_bounds) {
+  if (rerender_ledger_ != nullptr) {
+    rerender_ledger_->mark_world_damage(affected_world_bounds);
+  }
   mark_occupied(affected_world_bounds);
   current_revision_ = revision;
   overview_revision_ = revision;
@@ -641,6 +649,9 @@ std::optional<InPlaceTileEdit> MaterializedCanvas::materialize_uniform_as_raw(Ti
   }
   MaterializedUniformStorage& uniform = uniform_catalog_[*uniform_index];
   MaterializedSlotStorage& slot = slots_[*selected];
+  if (rerender_ledger_ != nullptr && slot.occupied_ && !(slot.key_ == key)) {
+    rerender_ledger_->mark_evicted(slot.key_);
+  }
   slot.occupied_ = false;
   slot.generation_ = take_generation();
   auto pixels = tile_pixels_.subspan(*selected * kTilePixels, kTilePixels);
@@ -914,6 +925,9 @@ std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, Documen
   }
   const std::size_t index = *selected;
   MaterializedSlotStorage& slot = slots_[index];
+  if (rerender_ledger_ != nullptr && slot.occupied_ && !(slot.key_ == key)) {
+    rerender_ledger_->mark_evicted(slot.key_);
+  }
   slot.occupied_ = false;
   slot.generation_ = take_generation();
   auto destination = tile_pixels_.subspan(index * kTilePixels, kTilePixels);
