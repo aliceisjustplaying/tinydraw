@@ -99,6 +99,7 @@ void InkTraceCaptureRing::dump_and_reset() {
   std::printf("TINYDRAW_INKTRACE_CAPTURE_BEGIN events=%u strokes=%u overflow=%u\n",
               static_cast<unsigned>(count), static_cast<unsigned>(strokes_.load()),
               overflowed_.load() ? 1U : 0U);
+  std::printf("magic,version,name,source,sample_rate_note\n");
   std::printf("%.*s,%u,captured,recorded,captured 1kHz sampler stream\n",
               static_cast<int>(vector_v2::kInkTraceMagic.size()), vector_v2::kInkTraceMagic.data(),
               static_cast<unsigned>(vector_v2::kInkTraceVersion));
@@ -114,6 +115,13 @@ void InkTraceCaptureRing::dump_and_reset() {
     std::printf("%llu,%s,%u,%u\n", static_cast<unsigned long long>(relative_us),
                 kind_text(record.kind), static_cast<unsigned>(record.x),
                 static_cast<unsigned>(record.y));
+    if ((index & 0xFFU) == 0xFFU) {
+      // Long dumps otherwise starve the idle task until the task watchdog
+      // fires and interleaves its report into the CSV stream; yielding also
+      // lets the USB console buffer drain instead of dropping bytes.
+      std::fflush(stdout);
+      vTaskDelay(pdMS_TO_TICKS(2));
+    }
   }
   std::printf("TINYDRAW_INKTRACE_CAPTURE_END events=%u\n", static_cast<unsigned>(count));
 
