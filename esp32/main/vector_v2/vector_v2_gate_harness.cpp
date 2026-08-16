@@ -1436,6 +1436,8 @@ bool run_mixed_zoom_stroke(VectorV2Presenter& presenter, OperationLog& log,
           std::max(stats.phase_max.uniform_retain_us, committed->phases.uniform_retain_us);
       stats.phase_max.raw_retain_us =
           std::max(stats.phase_max.raw_retain_us, committed->phases.raw_retain_us);
+      stats.phase_max.offscreen_retain_us =
+          std::max(stats.phase_max.offscreen_retain_us, committed->phases.offscreen_retain_us);
       stats.phase_max.commit_us = std::max(stats.phase_max.commit_us, committed->phases.commit_us);
       ++stats.chunks;
       stats.affected_tiles += committed->affected_resident_tiles;
@@ -1577,6 +1579,7 @@ bool run_mixed_zoom_draw_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
           "drop_raw_edit=%lu drop_raw_paint=%lu off_skip=%lu "
           "ph_prepare_max_us=%lld ph_overview_max_us=%lld "
           "ph_enumerate_max_us=%lld ph_uniform_max_us=%lld ph_raw_max_us=%lld "
+          "ph_offscreen_max_us=%lld "
           "ph_commit_max_us=%lld committed=%u authority=%u refresh=%u run_ok=%u "
           "pass=%u\n",
           zoom_name(zoom), tool_name(tool), static_cast<unsigned long>(stats.chunks),
@@ -1599,6 +1602,7 @@ bool run_mixed_zoom_draw_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
           static_cast<long long>(stats.phase_max.enumerate_us),
           static_cast<long long>(stats.phase_max.uniform_retain_us),
           static_cast<long long>(stats.phase_max.raw_retain_us),
+          static_cast<long long>(stats.phase_max.offscreen_retain_us),
           static_cast<long long>(stats.phase_max.commit_us), stats.committed, stats.authority,
           stats.refresh_passed, run_ok, stroke_pass);
       std::fflush(stdout);
