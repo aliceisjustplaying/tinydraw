@@ -181,8 +181,13 @@ addition — 25% has no cold path by design (the overview IS the authority).
 
 Owner accepted the 7 ms residual until autosave exists ("ignore as long as
 it does not regress further"); micro-candidates parked. Encoded as
-`kColdViewport400HoldTheLineUs = 510'000` (507.0 ms measured max + twice
-the ≤1.5 ms run spread), applied only to the frozen-corpus 400% gate.
+`kColdViewport400HoldTheLineUs`, applied only to the frozen-corpus 400%
+gate. First calibrated at 510'000 (507.0 ms measured max + twice the
+≤1.5 ms within-build spread); recalibrated to 520'000 the same day after
+four builds walked the wall 499.95/507.98/508.98/512.27 ms — between-build
+flash-icache layout dice on the unpinned producer loops (this receipt's
+±2–3% law), including +6 ms between builds with no cold-path diff.
+IRAM-pinning the producer hot loops is queued to let the ceiling tighten.
 Device verification (`logs/holdline-verify-1.log`): 400% wall 499,950 µs
 against budget 510,000, pass=1; verdict vector `general_cold=1` with only
 the pre-existing reds remaining (`overlap_cold=0` from the 50% overlap
