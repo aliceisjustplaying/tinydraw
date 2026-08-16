@@ -155,6 +155,7 @@ vector_v2::OperationPoint VectorV2Presenter::operation_point(InkPoint point) con
 
 LivePresentationTiming VectorV2Presenter::refresh(const vector_v2::ChromeState& chrome,
                                                   std::uint32_t event_us) {
+  clear_live_overlay();
   // Composition mutates the cached frame. It cannot remain reusable unless the
   // entire compose-and-present transaction succeeds below. A full compose
   // also rewrites every canvas row linearly, which materializes any active
@@ -339,9 +340,11 @@ LivePresentationTiming VectorV2Presenter::show_start(InkPoint point, std::uint16
   const RibbonPrimitive cap{
       .kind = RibbonPrimitiveKind::kCircle, .center = point.position, .radius = point.radius};
   const std::array primitives{cap};
-  static_cast<void>(
-      renderer_->render(primitives, frame_, vector_v2::kOverviewWidth, canvas_bottom, color));
-  return present_unobscured(primitive_bounds(primitives, canvas_bottom), chrome, event_us);
+  live_provisional_[0] = cap;
+  live_provisional_count_ = 1U;
+  live_provisional_bounds_ = primitive_bounds(primitives, canvas_bottom);
+  live_provisional_color_ = color;
+  return present_unobscured(live_provisional_bounds_, chrome, event_us);
 }
 
 LivePresentationTiming VectorV2Presenter::show_update(const RibbonUpdate& update,
@@ -353,14 +356,42 @@ LivePresentationTiming VectorV2Presenter::show_update(const RibbonUpdate& update
   }
   frame_reusable_ = false;
   const int canvas_bottom = vector_v2::chrome_input_bottom(chrome);
-  if (update.committed.empty() || canvas_bottom == 0) {
+  if (canvas_bottom == 0) {
+    clear_live_overlay();
     return {.passed = true};
   }
-  static_cast<void>(renderer_->render(std::span(update.committed.begin(), update.committed.size()),
-                                      frame_, vector_v2::kOverviewWidth, canvas_bottom, color));
-  return present_unobscured(
-      primitive_bounds(std::span(update.committed.begin(), update.committed.size()), canvas_bottom),
-      chrome, event_us);
+  const vector_v2::PixelRect old_provisional_bounds = live_provisional_bounds_;
+  const auto committed = std::span(update.committed.begin(), update.committed.size());
+  if (!committed.empty()) {
+    static_cast<void>(
+        renderer_->render(committed, frame_, vector_v2::kOverviewWidth, canvas_bottom, color));
+  }
+  const vector_v2::PixelRect committed_bounds = primitive_bounds(committed, canvas_bottom);
+
+  live_provisional_count_ = update.provisional.size();
+  std::copy(update.provisional.begin(), update.provisional.end(), live_provisional_.begin());
+  const auto provisional =
+      std::span(live_provisional_.data(), static_cast<std::size_t>(live_provisional_count_));
+  live_provisional_bounds_ = primitive_bounds(provisional, canvas_bottom);
+  live_provisional_color_ = color;
+
+  vector_v2::PixelRect damage = old_provisional_bounds;
+  const auto include = [&damage](vector_v2::PixelRect bounds) {
+    if (bounds.x0 >= bounds.x1 || bounds.y0 >= bounds.y1) {
+      return;
+    }
+    if (damage.x0 >= damage.x1 || damage.y0 >= damage.y1) {
+      damage = bounds;
+      return;
+    }
+    damage.x0 = std::min(damage.x0, bounds.x0);
+    damage.y0 = std::min(damage.y0, bounds.y0);
+    damage.x1 = std::max(damage.x1, bounds.x1);
+    damage.y1 = std::max(damage.y1, bounds.y1);
+  };
+  include(committed_bounds);
+  include(live_provisional_bounds_);
+  return present_unobscured(damage, chrome, event_us);
 }
 
 LivePresentationTiming VectorV2Presenter::set_zoom(vector_v2::ZoomLevel target_zoom,
@@ -823,6 +854,15 @@ bool VectorV2Presenter::paint_stage_surface(StageContext& context,
   }
   context.exposed_us += esp_timer_get_time() - exposed_started;
 
+  if (live_provisional_count_ != 0U) {
+    if (surface.byte_swapped) {
+      return false;
+    }
+    static_cast<void>(renderer_->render_surface(
+        std::span(live_provisional_.data(), live_provisional_count_), surface.pixels, surface.width,
+        surface.height, surface.stride, surface.panel_x, surface.panel_y, live_provisional_color_));
+  }
+
   const std::int64_t chrome_started = esp_timer_get_time();
   if (!chrome_cache_.paint({surface.pixels, surface.width, surface.height, surface.panel_x,
                             surface.panel_y, surface.byte_swapped},
@@ -1009,6 +1049,12 @@ vector_v2::PixelRect VectorV2Presenter::primitive_bounds(
                               static_cast<int>(std::ceil(x1)), static_cast<int>(std::ceil(y1))});
   bounds.y1 = std::min(bounds.y1, canvas_bottom);
   return bounds;
+}
+
+void VectorV2Presenter::clear_live_overlay() {
+  live_provisional_count_ = 0U;
+  live_provisional_bounds_ = {};
+  live_provisional_color_ = 0;
 }
 
 }  // namespace tinydraw::esp32

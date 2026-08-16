@@ -28,6 +28,7 @@ if(TINYDRAW_BUILD_TESTS)
     tests/frame_scroller_test.cpp
     tests/idle_repair_test.cpp
     tests/ink_trace_test.cpp
+    tests/live_ink_coordinator_test.cpp
     tests/incremental_document_test.cpp
     tests/incremental_rasterizer_test.cpp
     tests/materialized_canvas_test.cpp

@@ -67,9 +67,11 @@ rhythm property; each cadence/staging change reopens the optical gate.
 
 ## Phase 2 — close visual-first ink
 
-Current result: authority work can run before visibility, provisional geometry
-is omitted, lift drains authority synchronously, and timing often starts at loop
-dispatch. The small-region presenter itself is fast enough.
+Current result: the visual lane is provisionally closed. The transient
+provisional tail uses the original sampler timestamp and reaches DMA before
+authority work. The owner trace measured 767 samples at 3.22 ms average and
+12.40 ms maximum event→DMA with exact final authority. Lift still drains
+authority synchronously, and formal trace/optical closure remains open.
 
 - [ ] Complete the five canonical traces. At least one must be recorded from the
       owner's finger; inject through the production buffer `offer()` path.
@@ -77,9 +79,9 @@ dispatch. The small-region presenter itself is fast enough.
       first payload, DMA-complete, and optical observation.
 - [ ] Keep a latest-point visual mailbox while preserving the ordered authority
       FIFO and every Down/Up transition.
-- [ ] Stage a transient old/new provisional tail over authoritative canvas;
+- [x] Stage a transient old/new provisional tail over authoritative canvas;
       never bake it into the ring, document, or cache identity.
-- [ ] Submit the newest visible tail before chunk commit/materialization.
+- [x] Submit the newest visible tail before chunk commit/materialization.
 - [ ] Convert authority commit, overview work, tile publication, and lift drain
       into resumable bounded slices. Lift closes visually and returns to input.
 - [ ] Reconcile capacity rejection by erasing only the uncommitted transient
@@ -91,6 +93,11 @@ dispatch. The small-region presenter itself is fast enough.
       known-good revision.
 
 Live ink remains hard-edged. Settled AA does not enter this phase.
+
+Deferred structural debt: `esp32/main/vector_v2/vector_v2_app.cpp` is 1,326
+lines. Extract interaction, authority, and lifecycle coordinators after the
+performance gates are closed; keep that refactor out of measured hot-path
+changes.
 
 ## Phase 3 — cold viability and rerender truth
 

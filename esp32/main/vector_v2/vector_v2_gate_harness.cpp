@@ -525,10 +525,10 @@ LiveInkPathMeasurement measure_live_ink_circle(VectorV2Presenter& presenter,
     const std::int64_t started_us = esp_timer_get_time();
     LivePresentationTiming timing;
     if (index == 0U) {
-      static_cast<void>(ribbon.append(point, false));
+      static_cast<void>(ribbon.append(point, true));
       timing = presenter.show_start(point, 0x001FU, chrome, event_us);
     } else {
-      timing = presenter.show_update(ribbon.append(point, false), 0x001FU, chrome, event_us);
+      timing = presenter.show_update(ribbon.append(point, true), 0x001FU, chrome, event_us);
     }
     const std::int64_t wall_us = esp_timer_get_time() - started_us;
     if (!timing.passed) {

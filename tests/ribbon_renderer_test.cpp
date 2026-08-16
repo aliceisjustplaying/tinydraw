@@ -93,3 +93,29 @@ TEST_CASE("dirty ribbon bounds enumerate every crossed tile") {
   CHECK(stats.pixels_considered == 2U * 64U * 64U);
   CHECK(std::count(canvas.begin(), canvas.end(), 0x001FU) > 0);
 }
+
+TEST_CASE("ribbon renderer paints a panel-origin sub-surface without touching stride padding") {
+  constexpr int width = 20;
+  constexpr int height = 18;
+  constexpr int stride = 24;
+  constexpr int origin_x = 100;
+  constexpr int origin_y = 200;
+  const std::array primitives{tinydraw::RibbonPrimitive{
+      .kind = tinydraw::RibbonPrimitiveKind::kCircle,
+      .center = {.x = 108.0F, .y = 207.0F},
+      .radius = 4.0F,
+  }};
+  std::vector<std::uint16_t> surface(static_cast<std::size_t>(stride * height), 0xFFFFU);
+  tinydraw::RibbonRenderer renderer;
+
+  const auto stats = renderer.render_surface(primitives, surface, width, height, stride, origin_x,
+                                             origin_y, 0x001FU);
+
+  CHECK(stats.tiles_rasterized == 1U);
+  CHECK(std::count(surface.begin(), surface.end(), 0x001FU) > 0);
+  for (int y = 0; y < height; ++y) {
+    const auto padding = surface.begin() + y * stride + width;
+    CHECK(std::all_of(padding, surface.begin() + (y + 1) * stride,
+                      [](std::uint16_t pixel) { return pixel == 0xFFFFU; }));
+  }
+}
