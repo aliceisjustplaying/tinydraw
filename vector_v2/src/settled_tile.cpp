@@ -31,25 +31,29 @@ Channels expand_565(std::uint16_t rgb565) {
 
 }  // namespace
 
-bool render_settled_tile(const OperationLog& log, TileKey key,
-                         const SettledTileWorkspace& workspace, std::span<std::uint16_t> out_pixels,
-                         SettledTileStats* stats) {
-  if (!log.ready() || !valid_tile_key(key) || out_pixels.size() < kTilePixels ||
-      workspace.operation_alpha.size() < kTilePixels ||
-      workspace.accumulated_alpha.size() < kTilePixels || workspace.red.size() < kTilePixels ||
-      workspace.green.size() < kTilePixels || workspace.blue.size() < kTilePixels) {
-    return false;
-  }
-  const PixelRect tile_bounds = tile_pixel_bounds(key);
+bool render_settled_window(const OperationLog& log, ZoomLevel zoom, PixelRect window_bounds,
+                           const SettledTileWorkspace& workspace,
+                           std::span<std::uint16_t> out_pixels, SettledTileStats* stats) {
+  const PixelRect tile_bounds = window_bounds;
   const int tile_width = tile_bounds.x1 - tile_bounds.x0;
   const int tile_height = tile_bounds.y1 - tile_bounds.y0;
+  if (!log.ready() || tile_width <= 0 || tile_height <= 0 ||
+      tile_width > static_cast<int>(kTileWidth) || tile_height > static_cast<int>(kTileHeight)) {
+    return false;
+  }
   const std::size_t pixel_count =
       static_cast<std::size_t>(tile_width) * static_cast<std::size_t>(tile_height);
-  // Tile level bounds to conservative world bounds for operation culling.
-  const int percent = zoom_percent(key.zoom);
+  if (out_pixels.size() < pixel_count || workspace.operation_alpha.size() < pixel_count ||
+      workspace.accumulated_alpha.size() < pixel_count || workspace.red.size() < pixel_count ||
+      workspace.green.size() < pixel_count || workspace.blue.size() < pixel_count) {
+    return false;
+  }
+  // Window level bounds to conservative world bounds for operation culling.
+  const int percent = zoom_percent(zoom);
   const PixelRect tile_world{tile_bounds.x0 * 100 / percent - 1, tile_bounds.y0 * 100 / percent - 1,
                              (tile_bounds.x1 * 100 + percent - 1) / percent + 1,
                              (tile_bounds.y1 * 100 + percent - 1) / percent + 1};
+  const ZoomLevel key_zoom = zoom;
 
   std::memset(workspace.accumulated_alpha.data(), 0, pixel_count);
   std::memset(workspace.red.data(), 0, pixel_count * sizeof(std::uint16_t));
@@ -72,7 +76,7 @@ bool render_settled_tile(const OperationLog& log, TileKey key,
     bool touched = false;
     const auto samples = stored->samples;
     for (std::size_t endpoint = 1; endpoint < samples.size(); ++endpoint) {
-      const auto unit = prepare_incremental_curve_unit(samples, endpoint, key.zoom);
+      const auto unit = prepare_incremental_curve_unit(samples, endpoint, key_zoom);
       if (!unit.has_value()) {
         continue;
       }
@@ -107,14 +111,25 @@ bool render_settled_tile(const OperationLog& log, TileKey key,
                 std::clamp((ap_x * delta_x + ap_y * delta_y) * inverse_length_squared, 0.0F, 1.0F);
             const float dx = ap_x - t * delta_x;
             const float dy = ap_y - t * delta_y;
-            const float distance = std::sqrt(dx * dx + dy * dy);
+            const float distance_squared = dx * dx + dy * dy;
             const float radius =
                 chord.first_radius + (chord.second_radius - chord.first_radius) * t;
-            const float alpha = std::clamp(0.5F + (radius - distance), 0.0F, 1.0F);
-            if (alpha <= 0.0F) {
+            // Squared-distance classification keeps sqrt off the interior
+            // and exterior; only the one-pixel boundary annulus pays it.
+            const float interior = radius - 0.5F;
+            const float exterior = radius + 0.5F;
+            if (distance_squared >= exterior * exterior) {
               continue;
             }
-            const auto alpha_255 = static_cast<std::uint8_t>(alpha * 255.0F + 0.5F);
+            std::uint8_t alpha_255 = 255U;
+            if (interior <= 0.0F || distance_squared > interior * interior) {
+              const float distance = std::sqrt(distance_squared);
+              const float alpha = std::clamp(0.5F + (radius - distance), 0.0F, 1.0F);
+              if (alpha <= 0.0F) {
+                continue;
+              }
+              alpha_255 = static_cast<std::uint8_t>(alpha * 255.0F + 0.5F);
+            }
             if (alpha_255 > row[x]) {
               row[x] = alpha_255;
               touched = true;
@@ -172,6 +187,15 @@ bool render_settled_tile(const OperationLog& log, TileKey key,
         static_cast<std::uint16_t>(((r8 >> 3U) << 11U) | ((g8 >> 2U) << 5U) | (b8 >> 3U));
   }
   return true;
+}
+
+bool render_settled_tile(const OperationLog& log, TileKey key,
+                         const SettledTileWorkspace& workspace, std::span<std::uint16_t> out_pixels,
+                         SettledTileStats* stats) {
+  if (!valid_tile_key(key)) {
+    return false;
+  }
+  return render_settled_window(log, key.zoom, tile_pixel_bounds(key), workspace, out_pixels, stats);
 }
 
 }  // namespace tinydraw::vector_v2
