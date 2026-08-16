@@ -1,0 +1,528 @@
+diff --git a/esp32/main/vector_v2/vector_v2_app.cpp b/esp32/main/vector_v2/vector_v2_app.cpp
+index 9f75609..1316232 100644
+--- a/esp32/main/vector_v2/vector_v2_app.cpp
++++ b/esp32/main/vector_v2/vector_v2_app.cpp
+@@ -213,6 +213,8 @@ struct AppStorage {
+   MaterializedUniformStorage* uniforms = nullptr;
+   std::uint8_t* occupancy = nullptr;
+   MaterializedSlotStorage* slots = nullptr;
++  std::uint16_t* raw_slot_directory = nullptr;
++  bool slot_directory_internal = false;
+   OperationRecord* records = nullptr;
+   CompactOperationSample* samples = nullptr;
+   CompactOperationSample* input_samples = nullptr;
+@@ -281,11 +283,24 @@ struct AppStorage {
+ #endif
+     affected_keys =
+         allocate_array<TileKey>(vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles);
++    // O(1) find_tile metadata (27,384 B used), allocated LAST and padded to
++    // 32 KiB. Placement receipts (2026-08-16): internal SRAM shifted the
++    // panel-init DMA staging buffers (+50 us pan strip staging, pan_seq
++    // red); an unpadded PSRAM allocation shifted every later heap address by
++    // 27.4 KB onto presentation-hostile dcache sets (+40 us strip staging in
++    // seven straight build variants). Padding to a multiple of the 8 KiB
++    // dcache way size keeps downstream allocations on the same cache sets
++    // that every pan optical receipt was measured on.
++    constexpr std::size_t kDirectoryPaddedEntries = (32U * 1024U) / sizeof(std::uint16_t);
++    static_assert(kDirectoryPaddedEntries >= vector_v2::kMaterializedTileIdentityCount);
++    raw_slot_directory = allocate_array<std::uint16_t>(kDirectoryPaddedEntries);
++    slot_directory_internal = false;
+     if (overview == nullptr || snapshot == nullptr || frame == nullptr || tile_pixels == nullptr ||
+         overview_scratch == nullptr || !harness_workspace_ready || region_scratch == nullptr ||
+         chrome_cache == nullptr || producer_supertask == nullptr || producer_mask == nullptr || producer_summary_rows == nullptr ||
+         producer_summary_words == nullptr || chunk_mask == nullptr || uniforms == nullptr ||
+-        occupancy == nullptr || slots == nullptr || records == nullptr || samples == nullptr ||
++        occupancy == nullptr || slots == nullptr || raw_slot_directory == nullptr ||
++        records == nullptr || samples == nullptr ||
+         input_samples == nullptr || rerender_entries == nullptr || touch_events == nullptr ||
+         !ink_trace_ready || affected_keys == nullptr) {
+       return false;
+@@ -761,9 +776,9 @@ void run_vector_v2_app() {
+     return;
+   }
+   std::printf(
+-      "TINYDRAW_PRODUCER_SCRATCH supertask_internal=%u "
++      "TINYDRAW_PRODUCER_SCRATCH supertask_internal=%u slot_directory_internal=%u "
+       "free_internal=%lu free_psram=%lu\n",
+-      storage.supertask_internal,
++      storage.supertask_internal, storage.slot_directory_internal,
+       static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+       static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)));
+   std::fill_n(storage.snapshot, vector_v2::kOverviewPixels, 0xFFFFU);
+@@ -774,7 +789,9 @@ void run_vector_v2_app() {
+       std::span(storage.uniforms, vector_v2::kMaterializedTileIdentityCount),
+       std::span(storage.occupancy, vector_v2::kOccupancyBytes),
+       std::span(storage.slots, vector_v2::kTileSlotCount),
+-      std::span(storage.tile_pixels, vector_v2::kTileSlotCount * vector_v2::kTilePixels));
++      std::span(storage.tile_pixels, vector_v2::kTileSlotCount * vector_v2::kTilePixels),
++      DocumentRevision{},
++      std::span(storage.raw_slot_directory, vector_v2::kMaterializedTileIdentityCount));
+   OperationLog log(std::span(storage.records, vector_v2::kOperationCapacity),
+                    std::span(storage.samples, vector_v2::kOperationSampleCapacity));
+   std::array<DisplayStrip, 3> queue{};
+@@ -877,6 +894,7 @@ void run_vector_v2_app() {
+   const std::size_t tile_metadata_bytes =
+       vector_v2::kTileSlotCount * sizeof(MaterializedSlotStorage) +
+       vector_v2::kMaterializedTileIdentityCount * sizeof(MaterializedUniformStorage) +
++      vector_v2::kMaterializedTileIdentityCount * sizeof(std::uint16_t) +
+       vector_v2::kOccupancyBytes;
+   const std::size_t operation_bytes =
+       vector_v2::kOperationCapacity * sizeof(OperationRecord) +
+diff --git a/vector_v2/include/tinydraw/vector_v2/materialized_canvas.h b/vector_v2/include/tinydraw/vector_v2/materialized_canvas.h
+index 23f22af..8bba8d7 100644
+--- a/vector_v2/include/tinydraw/vector_v2/materialized_canvas.h
++++ b/vector_v2/include/tinydraw/vector_v2/materialized_canvas.h
+@@ -32,6 +32,8 @@ inline constexpr std::size_t kOccupancyCellCount =
+ inline constexpr std::size_t kOccupancyBytes = (kOccupancyCellCount + 7U) / 8U;
+ inline constexpr std::size_t kMaterializedTileIdentityCount = 168U + 644U + 2'576U + 10'304U;
+ inline constexpr std::size_t kTiledZoomCount = 4;
++// Sentinel for raw_slot_directory entries: the identity has no raw slot.
++inline constexpr std::uint16_t kNoRawSlot = 0xFFFFU;
+ 
+ enum class ZoomLevel : std::uint8_t {
+   k25Percent,
+@@ -224,11 +226,17 @@ class MaterializedCanvas {
+   MaterializedCanvas(std::span<std::uint16_t> overview_pixels,
+                      std::span<MaterializedSlotStorage> slots, std::span<std::uint16_t> tile_pixels,
+                      DocumentRevision initial_revision = {});
++  // raw_slot_directory is optional O(1) find_tile metadata: one entry per tile
++  // identity holding the slot index that materializes it (kNoRawSlot when
++  // none). Empty preserves the exact linear slot scan; when provided it must
++  // cover kMaterializedTileIdentityCount entries or the canvas is not ready.
++  // The linear scan remains the semantic truth; debug builds assert parity.
+   MaterializedCanvas(std::span<std::uint16_t> overview_pixels,
+                      std::span<MaterializedUniformStorage> uniform_catalog,
+                      std::span<std::uint8_t> occupancy_bits,
+                      std::span<MaterializedSlotStorage> slots, std::span<std::uint16_t> tile_pixels,
+-                     DocumentRevision initial_revision = {});
++                     DocumentRevision initial_revision = {},
++                     std::span<std::uint16_t> raw_slot_directory = {});
+ 
+   [[nodiscard]] bool ready() const;
+   [[nodiscard]] DocumentRevision current_revision() const;
+@@ -403,6 +411,10 @@ class MaterializedCanvas {
+   void bump_composition_epoch();
+   [[nodiscard]] SlotGeneration take_generation();
+   void touch(MaterializedSlotStorage& slot);
++  // Sole occupancy transitions: every occupied_ flip goes through these so
++  // occupied_slots_ and the raw-slot directory can never desynchronize.
++  void release_slot(std::size_t index);
++  void claim_slot(std::size_t index);
+ 
+   std::span<std::uint16_t> overview_pixels_;
+   std::span<MaterializedUniformStorage> uniform_catalog_;
+@@ -410,6 +422,8 @@ class MaterializedCanvas {
+   std::span<MaterializedSlotStorage> slots_;
+   RerenderLedger* rerender_ledger_ = nullptr;
+   std::span<std::uint16_t> tile_pixels_;
++  std::span<std::uint16_t> raw_slot_directory_;
++  std::size_t occupied_slots_ = 0;
+   DocumentRevision current_revision_{};
+   DocumentRevision overview_revision_{};
+   SlotGeneration overview_generation_{};
+diff --git a/vector_v2/src/materialized_canvas.cpp b/vector_v2/src/materialized_canvas.cpp
+index 843bb1d..9b56838 100644
+--- a/vector_v2/src/materialized_canvas.cpp
++++ b/vector_v2/src/materialized_canvas.cpp
+@@ -1,6 +1,7 @@
+ #include "tinydraw/vector_v2/materialized_canvas.h"
+ 
+ #include <algorithm>
++#include <cassert>
+ #include <limits>
+ #include <numeric>
+ #include <tuple>
+@@ -209,22 +210,31 @@ MaterializedCanvas::MaterializedCanvas(std::span<std::uint16_t> overview_pixels,
+                                        std::span<std::uint8_t> occupancy_bits,
+                                        std::span<MaterializedSlotStorage> slots,
+                                        std::span<std::uint16_t> tile_pixels,
+-                                       DocumentRevision initial_revision)
++                                       DocumentRevision initial_revision,
++                                       std::span<std::uint16_t> raw_slot_directory)
+     : overview_pixels_(overview_pixels),
+       uniform_catalog_(uniform_catalog),
+       occupancy_bits_(occupancy_bits),
+       slots_(slots),
+       tile_pixels_(tile_pixels),
++      raw_slot_directory_(raw_slot_directory),
+       current_revision_(initial_revision) {
+   std::fill(uniform_catalog_.begin(), uniform_catalog_.end(), MaterializedUniformStorage{});
+   std::fill(occupancy_bits_.begin(), occupancy_bits_.end(), 0U);
+   std::fill(slots_.begin(), slots_.end(), MaterializedSlotStorage{});
++  std::fill(raw_slot_directory_.begin(), raw_slot_directory_.end(), kNoRawSlot);
+ }
+ 
+ bool MaterializedCanvas::ready() const {
+   const bool optional_catalog_ready = (uniform_catalog_.empty() && occupancy_bits_.empty()) ||
+                                       (uniform_catalog_.size() == kMaterializedTileIdentityCount &&
+                                        occupancy_bits_.size() == kOccupancyBytes);
++  const bool optional_directory_ready =
++      raw_slot_directory_.empty() || (raw_slot_directory_.size() >= kMaterializedTileIdentityCount &&
++                                      slots_.size() < static_cast<std::size_t>(kNoRawSlot));
++  if (!optional_directory_ready) {
++    return false;
++  }
+   return overview_pixels_.size() == kOverviewPixels && optional_catalog_ready &&
+          tile_pixels_.size() == slots_.size() * kTilePixels;
+ }
+@@ -233,10 +243,7 @@ DocumentRevision MaterializedCanvas::current_revision() const { return current_r
+ 
+ std::size_t MaterializedCanvas::slot_capacity() const { return slots_.size(); }
+ 
+-std::size_t MaterializedCanvas::resident_raw_tiles() const {
+-  return static_cast<std::size_t>(
+-      std::count_if(slots_.begin(), slots_.end(), [](const auto& slot) { return slot.occupied_; }));
+-}
++std::size_t MaterializedCanvas::resident_raw_tiles() const { return occupied_slots_; }
+ 
+ std::size_t MaterializedCanvas::uniform_capacity() const { return uniform_catalog_.size(); }
+ 
+@@ -406,10 +413,10 @@ bool MaterializedCanvas::publish_overview(DocumentRevision revision,
+   if (!exact_bootstrap_source) {
+     std::copy(pixels.begin(), pixels.end(), overview_pixels_.begin());
+   }
+-  for (auto& slot : slots_) {
+-    if (slot.occupied_) {
+-      slot.occupied_ = false;
+-      slot.generation_ = take_generation();
++  for (std::size_t index = 0; index < slots_.size(); ++index) {
++    if (slots_[index].occupied_) {
++      release_slot(index);
++      slots_[index].generation_ = take_generation();
+     }
+   }
+   clear_uniforms();
+@@ -438,10 +445,10 @@ bool MaterializedCanvas::restore_snapshot(DocumentRevision revision,
+   if (rerender_ledger_ != nullptr) {
+     rerender_ledger_->reset();
+   }
+-  for (auto& slot : slots_) {
+-    if (slot.occupied_) {
+-      slot.occupied_ = false;
+-      slot.generation_ = take_generation();
++  for (std::size_t index = 0; index < slots_.size(); ++index) {
++    if (slots_[index].occupied_) {
++      release_slot(index);
++      slots_[index].generation_ = take_generation();
+     }
+   }
+   clear_uniforms();
+@@ -527,12 +534,13 @@ void MaterializedCanvas::write_tile(std::size_t slot_index,
+     std::copy_n(publication.pixels.begin() + static_cast<std::ptrdiff_t>(source_offset), width,
+                 destination.begin() + static_cast<std::ptrdiff_t>(destination_offset));
+   }
++  release_slot(slot_index);
+   MaterializedSlotStorage& slot = slots_[slot_index];
+   slot.key_ = publication.key;
+   slot.revision_ = revision;
+   slot.generation_ = take_generation();
+   slot.quality_ = publication.quality;
+-  slot.occupied_ = true;
++  claim_slot(slot_index);
+   touch(slot);
+ }
+ 
+@@ -574,7 +582,8 @@ bool MaterializedCanvas::commit_incremental_revision(
+ 
+   apply_overview_publication(overview_publication);
+   invalidate_uniforms(affected_world_bounds);
+-  for (MaterializedSlotStorage& slot : slots_) {
++  for (std::size_t index = 0; index < slots_.size(); ++index) {
++    MaterializedSlotStorage& slot = slots_[index];
+     if (!slot.occupied_) {
+       continue;
+     }
+@@ -583,7 +592,7 @@ bool MaterializedCanvas::commit_incremental_revision(
+         tile_publications.begin(), tile_publications.end(),
+         [&slot](const TileRevisionPublication& candidate) { return candidate.key == slot.key_; });
+     if (affected && !published) {
+-      slot.occupied_ = false;
++      release_slot(index);
+       slot.generation_ = take_generation();
+     } else if (!affected) {
+       slot.revision_ = revision;
+@@ -597,7 +606,7 @@ bool MaterializedCanvas::commit_incremental_revision(
+     if (!uniform_catalog_.empty() && analysis.has_value() && analysis->uniform &&
+         uniform_index.has_value()) {
+       if (const auto slot_index = find_tile(publication.key); slot_index.has_value()) {
+-        slots_[*slot_index].occupied_ = false;
++        release_slot(*slot_index);
+         slots_[*slot_index].generation_ = take_generation();
+       }
+       MaterializedUniformStorage& uniform = uniform_catalog_[*uniform_index];
+@@ -658,14 +667,14 @@ std::optional<InPlaceTileEdit> MaterializedCanvas::materialize_uniform_as_raw(Ti
+   if (rerender_ledger_ != nullptr && slot.occupied_ && !(slot.key_ == key)) {
+     rerender_ledger_->mark_evicted(slot.key_);
+   }
+-  slot.occupied_ = false;
++  release_slot(*selected);
+   slot.generation_ = take_generation();
+   auto pixels = tile_pixels_.subspan(*selected * kTilePixels, kTilePixels);
+   std::fill(pixels.begin(), pixels.end(), uniform.color_);
+   slot.key_ = key;
+   slot.revision_ = current_revision_;
+   slot.quality_ = uniform.quality_;
+-  slot.occupied_ = true;
++  claim_slot(*selected);
+   touch(slot);
+   uniform.occupied_ = false;
+   return InPlaceTileEdit{
+@@ -692,7 +701,8 @@ bool MaterializedCanvas::commit_in_place_revision(
+   }
+   apply_overview_publication(overview_publication);
+   invalidate_uniforms(affected_world_bounds, retained_keys, scope);
+-  for (MaterializedSlotStorage& slot : slots_) {
++  for (std::size_t index = 0; index < slots_.size(); ++index) {
++    MaterializedSlotStorage& slot = slots_[index];
+     if (!slot.occupied_) {
+       continue;
+     }
+@@ -705,7 +715,7 @@ bool MaterializedCanvas::commit_in_place_revision(
+       if (scope.cross_zoom_invalidated != nullptr && slot.key_.zoom != scope.priority_zoom) {
+         ++*scope.cross_zoom_invalidated;
+       }
+-      slot.occupied_ = false;
++      release_slot(index);
+       slot.generation_ = take_generation();
+     }
+   }
+@@ -715,7 +725,7 @@ bool MaterializedCanvas::commit_in_place_revision(
+ 
+ void MaterializedCanvas::invalidate_identity(TileKey key) {
+   if (const auto slot_index = find_tile(key); slot_index.has_value()) {
+-    slots_[*slot_index].occupied_ = false;
++    release_slot(*slot_index);
+     slots_[*slot_index].generation_ = take_generation();
+   }
+   if (const auto uniform_index = find_uniform(key); uniform_index.has_value()) {
+@@ -729,7 +739,8 @@ bool MaterializedCanvas::accepts_external_workspace(std::span<const std::byte> w
+          !storage_overlaps(workspace, std::as_bytes(std::span(uniform_catalog_))) &&
+          !storage_overlaps(workspace, std::as_bytes(std::span(occupancy_bits_))) &&
+          !storage_overlaps(workspace, std::as_bytes(std::span(tile_pixels_))) &&
+-         !storage_overlaps(workspace, std::as_bytes(std::span(slots_)));
++         !storage_overlaps(workspace, std::as_bytes(std::span(slots_))) &&
++         !storage_overlaps(workspace, std::as_bytes(std::span(raw_slot_directory_)));
+ }
+ 
+ bool MaterializedCanvas::copy_resident_tile(TileKey key,
+@@ -837,13 +848,37 @@ std::optional<std::size_t> MaterializedCanvas::materialized_tiles_intersecting(
+ }
+ 
+ std::optional<std::size_t> MaterializedCanvas::find_tile(TileKey key) const {
+-  const auto found = std::find_if(slots_.begin(), slots_.end(), [key](const auto& slot) {
+-    return slot.occupied_ && slot.key_ == key;
+-  });
+-  if (found == slots_.end()) {
+-    return std::nullopt;
++  const auto scan = [this, key]() -> std::optional<std::size_t> {
++    const auto found = std::find_if(slots_.begin(), slots_.end(), [key](const auto& slot) {
++      return slot.occupied_ && slot.key_ == key;
++    });
++    if (found == slots_.end()) {
++      return std::nullopt;
++    }
++    return static_cast<std::size_t>(found - slots_.begin());
++  };
++  if (raw_slot_directory_.empty()) {
++    return scan();
+   }
+-  return static_cast<std::size_t>(found - slots_.begin());
++  std::optional<std::size_t> result{};
++  if (const auto identity = tile_identity_index(key);
++      identity.has_value() && *identity < raw_slot_directory_.size()) {
++    const std::uint16_t index = raw_slot_directory_[*identity];
++    if (index != kNoRawSlot && static_cast<std::size_t>(index) < slots_.size() &&
++        slots_[index].occupied_ && slots_[index].key_ == key) {
++      result = static_cast<std::size_t>(index);
++    }
++  }
++  // The linear scan stays the semantic truth; a divergence here is a
++  // directory-maintenance bug and host debug builds fail loudly on it. The
++  // check must stay off the device: firmware ships with assertions enabled
++  // (CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_ENABLE) and the scan-per-lookup
++  // would silently re-tax every find_tile with the cost the directory exists
++  // to remove (measured +8..+14 ms cold on 2026-08-16).
++#if !defined(NDEBUG) && !defined(ESP_PLATFORM)
++  assert(result == scan());
++#endif
++  return result;
+ }
+ 
+ std::optional<std::size_t> MaterializedCanvas::find_uniform(TileKey key) const {
+@@ -871,11 +906,14 @@ std::uint8_t MaterializedCanvas::protection_rank(TileKey key) const {
+ }
+ 
+ std::optional<std::size_t> MaterializedCanvas::choose_slot() const {
+-  const auto available = std::find_if(slots_.begin(), slots_.end(), [](const auto& slot) {
+-    return !slot.occupied_ && slot.pin_count_ == 0U;
+-  });
+-  if (available != slots_.end()) {
+-    return static_cast<std::size_t>(available - slots_.begin());
++  // A full pool has no unoccupied slot by definition; skip the free scan.
++  if (occupied_slots_ < slots_.size()) {
++    const auto available = std::find_if(slots_.begin(), slots_.end(), [](const auto& slot) {
++      return !slot.occupied_ && slot.pin_count_ == 0U;
++    });
++    if (available != slots_.end()) {
++      return static_cast<std::size_t>(available - slots_.begin());
++    }
+   }
+   const auto oldest =
+       std::min_element(slots_.begin(), slots_.end(), [this](const auto& left, const auto& right) {
+@@ -898,6 +936,36 @@ SlotGeneration MaterializedCanvas::take_generation() {
+ 
+ void MaterializedCanvas::touch(MaterializedSlotStorage& slot) { slot.last_use_ = ++use_clock_; }
+ 
++void MaterializedCanvas::release_slot(std::size_t index) {
++  MaterializedSlotStorage& slot = slots_[index];
++  if (!slot.occupied_) {
++    return;
++  }
++  slot.occupied_ = false;
++  --occupied_slots_;
++  if (!raw_slot_directory_.empty()) {
++    if (const auto identity = tile_identity_index(slot.key_);
++        identity.has_value() && *identity < raw_slot_directory_.size() &&
++        raw_slot_directory_[*identity] == static_cast<std::uint16_t>(index)) {
++      raw_slot_directory_[*identity] = kNoRawSlot;
++    }
++  }
++}
++
++void MaterializedCanvas::claim_slot(std::size_t index) {
++  MaterializedSlotStorage& slot = slots_[index];
++  if (!slot.occupied_) {
++    slot.occupied_ = true;
++    ++occupied_slots_;
++  }
++  if (!raw_slot_directory_.empty()) {
++    if (const auto identity = tile_identity_index(slot.key_);
++        identity.has_value() && *identity < raw_slot_directory_.size()) {
++      raw_slot_directory_[*identity] = static_cast<std::uint16_t>(index);
++    }
++  }
++}
++
+ std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, DocumentRevision revision,
+                                                             MaterializationQuality quality,
+                                                             std::span<const std::uint16_t> pixels) {
+@@ -946,7 +1014,7 @@ std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, Documen
+   if (rerender_ledger_ != nullptr && slot.occupied_ && !(slot.key_ == key)) {
+     rerender_ledger_->mark_evicted(slot.key_);
+   }
+-  slot.occupied_ = false;
++  release_slot(index);
+   slot.generation_ = take_generation();
+   auto destination = tile_pixels_.subspan(index * kTilePixels, kTilePixels);
+   for (int row = 0; row < height; ++row) {
+@@ -959,7 +1027,7 @@ std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, Documen
+   slot.key_ = key;
+   slot.revision_ = revision;
+   slot.quality_ = quality;
+-  slot.occupied_ = true;
++  claim_slot(index);
+   if (const auto uniform = tile_identity_index(key);
+       uniform.has_value() && *uniform < uniform_catalog_.size()) {
+     uniform_catalog_[*uniform].occupied_ = false;
+@@ -984,7 +1052,7 @@ std::optional<std::size_t> MaterializedCanvas::publish_uniform(TileKey key,
+     if (slot.pin_count_ != 0U || static_cast<int>(quality) < static_cast<int>(slot.quality_)) {
+       return std::nullopt;
+     }
+-    slot.occupied_ = false;
++    release_slot(*raw);
+     slot.generation_ = take_generation();
+   }
+   MaterializedUniformStorage& uniform = uniform_catalog_[*index];
+@@ -1201,12 +1269,12 @@ bool MaterializedCanvas::discard_tiles() {
+                   [](const auto& slot) { return slot.pin_count_ != 0U; })) {
+     return false;
+   }
+-  for (MaterializedSlotStorage& slot : slots_) {
+-    if (!slot.occupied_) {
++  for (std::size_t index = 0; index < slots_.size(); ++index) {
++    if (!slots_[index].occupied_) {
+       continue;
+     }
+-    slot.occupied_ = false;
+-    slot.generation_ = take_generation();
++    release_slot(index);
++    slots_[index].generation_ = take_generation();
+   }
+   clear_uniforms();
+   bump_composition_epoch();
+diff --git a/vector_v2/tests/incremental_document_test.cpp b/vector_v2/tests/incremental_document_test.cpp
+index cc827c3..927c86d 100644
+--- a/vector_v2/tests/incremental_document_test.cpp
++++ b/vector_v2/tests/incremental_document_test.cpp
+@@ -768,6 +768,8 @@ struct EquivalenceRig {
+       std::vector<vector_v2::MaterializedSlotStorage>(vector_v2::kTileSlotCount);
+   std::vector<std::uint16_t> tile_pool =
+       std::vector<std::uint16_t>(slots.size() * vector_v2::kTilePixels);
++  std::vector<std::uint16_t> raw_slot_directory =
++      std::vector<std::uint16_t>(vector_v2::kMaterializedTileIdentityCount);
+   std::vector<std::uint16_t> supertask = std::vector<std::uint16_t>(vector_v2::kTileProducerPixels);
+   std::vector<std::uint8_t> mask = std::vector<std::uint8_t>(vector_v2::kTileProducerMaskBytes);
+   std::vector<std::uint16_t> summary_rows =
+@@ -785,7 +787,9 @@ struct EquivalenceRig {
+   std::vector<std::uint8_t> chunk_mask =
+       std::vector<std::uint8_t>(vector_v2::kInPlaceTileMaskBytes);
+   vector_v2::OperationLog log{records, samples};
+-  vector_v2::MaterializedCanvas canvas{overview, *uniforms, occupancy, slots, tile_pool};
++  vector_v2::MaterializedCanvas canvas{overview,  *uniforms, occupancy,
++                                       slots,     tile_pool, vector_v2::DocumentRevision{},
++                                       raw_slot_directory};
+   vector_v2::TileProducer producer{log,
+                                    canvas,
+                                    {.supertask_pixels = supertask,
+diff --git a/vector_v2/tests/tile_producer_test.cpp b/vector_v2/tests/tile_producer_test.cpp
+index 104b0ce..f667b53 100644
+--- a/vector_v2/tests/tile_producer_test.cpp
++++ b/vector_v2/tests/tile_producer_test.cpp
+@@ -27,12 +27,17 @@ struct PaperFixture {
+   std::array<std::uint8_t, vector_v2::kOccupancyBytes> occupancy{};
+   std::array<vector_v2::MaterializedSlotStorage, 1> slots{};
+   std::array<std::uint16_t, vector_v2::kTilePixels> tile_pool{};
++  std::unique_ptr<std::array<std::uint16_t, vector_v2::kMaterializedTileIdentityCount>>
++      raw_slot_directory =
++          std::make_unique<std::array<std::uint16_t, vector_v2::kMaterializedTileIdentityCount>>();
+   std::array<std::uint16_t, vector_v2::kTileProducerPixels> supertask{};
+   std::array<std::uint8_t, vector_v2::kTileProducerMaskBytes> mask{};
+   std::array<std::uint16_t, vector_v2::kTileProducerSummaryRows> summary_rows{};
+   std::array<std::uint32_t, vector_v2::kTileProducerSummaryWords> summary_words{};
+   vector_v2::OperationLog log{records, samples};
+-  vector_v2::MaterializedCanvas canvas{overview, *uniforms, occupancy, slots, tile_pool};
++  vector_v2::MaterializedCanvas canvas{overview,  *uniforms, occupancy,
++                                       slots,     tile_pool, vector_v2::DocumentRevision{},
++                                       *raw_slot_directory};
+   vector_v2::TileProducer producer{log,
+                                    canvas,
+                                    {.supertask_pixels = supertask,
+diff --git a/vector_v2/tools/raster_census.cpp b/vector_v2/tools/raster_census.cpp
+index 829bf49..2868993 100644
+--- a/vector_v2/tools/raster_census.cpp
++++ b/vector_v2/tools/raster_census.cpp
+@@ -51,6 +51,7 @@ struct Rig {
+   std::vector<std::uint8_t> occupancy;
+   std::vector<v2::MaterializedSlotStorage> slots;
+   std::vector<std::uint16_t> tile_pool;
++  std::vector<std::uint16_t> raw_slot_directory;
+   std::vector<std::uint16_t> supertask;
+   std::vector<std::uint8_t> mask;
+   std::vector<std::uint16_t> summary_rows;
+@@ -78,6 +79,7 @@ struct Rig {
+         occupancy(v2::kOccupancyBytes, 0U),
+         slots(v2::kTileSlotCount),
+         tile_pool(v2::kTileSlotCount * v2::kTilePixels),
++        raw_slot_directory(v2::kMaterializedTileIdentityCount),
+         supertask(v2::kTileProducerPixels),
+         mask(v2::kTileProducerMaskBytes),
+         summary_rows(v2::kTileProducerSummaryRows),
+@@ -89,7 +91,7 @@ struct Rig {
+         publications(kWorkspaceTileCapacity),
+         affected_keys(v2::kTileSlotCount + v2::kMaximumVisibleTiles),
+         log(records, samples),
+-        canvas(overview, *uniforms, occupancy, slots, tile_pool),
++        canvas(overview, *uniforms, occupancy, slots, tile_pool, {}, raw_slot_directory),
+         accounting(accounting_entries),
+         producer(log, canvas,
+                  {.supertask_pixels = supertask,
