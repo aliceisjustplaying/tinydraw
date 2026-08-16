@@ -20,16 +20,19 @@ promotion. [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) owns acceptance thresholds;
 | Pan pacing | **Provisional green** | PANSEQ p95 is 33.939 ms at 100% and 33.934 ms at 400% (~29.5 FPS), below the 38 ms guard. Camera motion caused zero persistent chrome redraws. |
 | Ink latency | **Provisional green — visual lane; smoothness yellow** | The five-trace canonical corpus is now recorded owner finger input, and the gate harness replays it through the production `offer()` path: zero lost Down/Up, event→DMA p95 2.3–5.3 ms on every trace ([`BASELINE.md`](benchmark-results/ink-trace-replay-baseline/BASELINE.md)). Smoothness: the angularity tool falsified the four-span smoothness case on real input — 2-chord deviation is ≤0.11 px at 400%; the angular signal is input jitter + chunk boundaries + hard-edge aliasing, pointing at arc-length resampling and settled AA instead ([`BASELINE.md`](benchmark-results/ink-angularity-baseline/BASELINE.md)). Optical latency and resumable lift authority remain open. |
 | Cold 400% | **Red by 7 ms — 50/100/200% now green** | Cold Stage B cut the frozen corpus again: compute 50% 434→356, 100% 468→349, 200% 599→410, 400% 587→432 ms (three-run maxima). Walls: 438/428/488 ms are under the ≤500 contract line; 400% is 507 ms (7 ms over). Landed: strided publish, O(1) slot metadata, H7 op-level chord sweep with honest work-budget slices, and IRAM-pinned transport strip loops (the pan wire-budget check no longer moves with flash-icache layout luck). Word-mask scanning re-rejected with device receipts. See [`RECEIPT.md`](benchmark-results/cold-stage-b-2026-08-16/RECEIPT.md). |
-| Revisit retention | **Green for pure revisits — oracle connected** | The spatial re-render ledger is wired into the product canvas/producer and classifies every group render (cold miss / damage / eviction / stale / unexplained). Tour-scoped device receipt: renders=137 unique=137 amplification=1.000, zero unnecessary re-renders. Draw-and-return and Undo scenarios still need dedicated gate scenarios. |
+| Revisit retention | **Green for pure revisits only — glass-confirmed open in general** | The spatial re-render ledger is wired into the product canvas/producer and classifies every group render (cold miss / damage / eviction / stale / unexplained). Tour-scoped device receipt: renders=137 unique=137 amplification=1.000. Owner glass session 2026-08-16: revisit re-rendering is visible at 100% after multi-zoom drawing (cross-zoom damage is by design; eviction pressure adds to it) — the déjà-vu campaign owns this. First step: live ledger cause-histogram receipts during glass sessions. |
 | Exactness | **Green for implemented scope** | Host exactness and fuzz tests pass. V2 persistence/Undo authority is not implemented. |
 | Settled AA | **Open — design candidate exists** | Immediate output is intentionally hard-edged. Four-sample SSAA cost ~808 ms and is rejected. An unmeasured analytic-coverage design (8-bit alpha mask over the existing newest-first replay, boundary-only coverage) is sketched in the 2026-08-16 review; next step is a host prototype. |
 | Feature parity | **Open** | Undo/Redo, autosave/recovery, device SVG wiring, minimap jump, lifecycle parity, failure UI, and release soak remain. |
-| Mixed-draw appends | **Red — pre-existing, owner decision pending** | 50% in-place appends peak at 18.8 ms against the 15 ms budget. Dating evidence places the regression at the curved committed-ink change (19ebbe3), masked until wave-3 reopened the gate cascade. The in-place commit now reports per-phase maxima (prepare/overview/enumerate/uniform/raw/commit) in `TINYDRAW_GATE1_MIXED_DRAW` and `TINYDRAW_LIVE_STROKE`, so the next harness run attributes the overrun before the owner decides budget vs optimization. The misnamed "commit budget" is renamed: it bounds only offscreen raw retention (`InPlaceRetentionBudget`). |
+| Mixed-draw appends | **Red — attributed on glass, owner decision pending** | 50% in-place appends peak at 18.8 ms against the 15 ms budget. The 2026-08-16 owner glass session felt "slight lag" drawing at 400% and the receipts attribute it: worst chunk commits 17–21.6 ms, dominated by `ph_uniform_max` 18.3 ms (paper tiles materialized+painted mid-stroke) plus `ph_raw` up to 12 ms; at 25% one 42 ms commit (`ph_overview` 19.1 + `ph_commit` 22.2). Same retention machinery as the mid-stroke pixelation report — the committed-overlay / revision-split design (external review §8.3–8.4) is the convergent fix candidate. |
 
-Session continuity: Cold Stage B is **closed** (receipt above); next per the
-owner-approved queue: the ink-replay mid-stroke pixelation diagnosis
-(overview-fallback retention drops — fallback observability first), then the
-post-B queue below. The prior handover context:
+Session continuity: Cold Stage B is **closed** and glass-tested (receipt
+above); the Stage B session handover is
+[`review_findings_2026_08_16_stage_b/HANDOVER.md`](review_findings_2026_08_16_stage_b/HANDOVER.md).
+Next per the owner-approved queue: the mid-stroke pixelation diagnosis
+(fallback observability first), then AA + resampling host prototypes, the
+déjà-vu campaign, and a triage pass over the 2026-08-16 correctness review.
+The prior handover context:
 (ranked candidates with code receipts, new standing ledger/ink-trace guards,
 the post-B queue — AA prototype + resampling, then the déjà-vu campaign — and
 pending owner decisions) is
@@ -39,6 +42,7 @@ The wave-3 A/B recipe and device-physics cheat sheet remain authoritative in
 
 Latest permanent receipts:
 
+- [`RECEIPT.md` — Cold Stage B](benchmark-results/cold-stage-b-2026-08-16/RECEIPT.md)
 - [`COLD_COMPUTE_CAMPAIGN_RECEIPT.md`](benchmark-results/wave3-cold-compute/COLD_COMPUTE_CAMPAIGN_RECEIPT.md)
 - [`HARDWARE_LIMITS.md`](HARDWARE_LIMITS.md)
 - [`STAGING_INVARIANT_RECEIPT.md`](benchmark-results/wave2-compositor/STAGING_INVARIANT_RECEIPT.md)
