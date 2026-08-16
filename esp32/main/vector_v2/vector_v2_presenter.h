@@ -1,6 +1,8 @@
 #ifndef TINYDRAW_ESP32_VECTOR_V2_PRESENTER_H
 #define TINYDRAW_ESP32_VECTOR_V2_PRESENTER_H
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -172,6 +174,7 @@ class VectorV2Presenter {
       bool wait_for_completion = true);
   [[nodiscard]] vector_v2::PixelRect primitive_bounds(std::span<const RibbonPrimitive> primitives,
                                                       int canvas_bottom) const;
+  void clear_live_overlay();
   [[nodiscard]] LivePresentationTiming compose_and_present(vector_v2::PixelRect level_bounds,
                                                            vector_v2::PixelRect panel_bounds,
                                                            const vector_v2::ChromeState& chrome,
@@ -212,6 +215,10 @@ class VectorV2Presenter {
   std::uint32_t te_last_count_ = 0;
   std::int64_t te_last_change_us_ = 0;
   std::unique_ptr<RibbonRenderer> renderer_;
+  std::array<RibbonPrimitive, 8> live_provisional_{};
+  std::size_t live_provisional_count_ = 0;
+  vector_v2::PixelRect live_provisional_bounds_{};
+  std::uint16_t live_provisional_color_ = 0;
   vector_v2::ZoomLevel frame_zoom_ = vector_v2::ZoomLevel::k25Percent;
   int frame_level_x_ = 0;
   int frame_level_y_ = 0;

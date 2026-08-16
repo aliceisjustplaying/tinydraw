@@ -21,6 +21,12 @@ class RibbonRenderer {
   [[nodiscard]] RibbonRenderStats render(std::span<const RibbonPrimitive> primitives,
                                          std::span<std::uint16_t> canvas, int width, int height,
                                          std::uint16_t color);
+  // Renders panel-coordinate geometry into a caller-owned sub-surface. Stride
+  // may exceed width; padding pixels are never touched.
+  [[nodiscard]] RibbonRenderStats render_surface(std::span<const RibbonPrimitive> primitives,
+                                                 std::span<std::uint16_t> surface, int width,
+                                                 int height, int stride, int origin_x, int origin_y,
+                                                 std::uint16_t color);
 
  private:
   CoverageTile coverage_{0, 0};

@@ -24,6 +24,7 @@
 #include "tinydraw/vector_v2/chrome.h"
 #include "tinydraw/vector_v2/idle_repair.h"
 #include "tinydraw/vector_v2/incremental_document.h"
+#include "tinydraw/vector_v2/live_ink_coordinator.h"
 #include "tinydraw/vector_v2/memory_layout.h"
 #include "tinydraw/vector_v2/navigation_state.h"
 #include "tinydraw/vector_v2/operation_builder.h"
@@ -967,8 +968,8 @@ void run_vector_v2_app() {
             ink.end();
           } else {
             ribbon.reset();
-            static_cast<void>(ribbon.append(last_ink, false));
-            live_metrics.include(presenter.show_start(last_ink, color, chrome, loop_us));
+            static_cast<void>(ribbon.append(last_ink, true));
+            live_metrics.include(presenter.show_start(last_ink, color, chrome, event_us));
           }
         }
       } else if (toolbar_pressed && (point.x != last_touch.x || point.y != last_touch.y)) {
@@ -979,7 +980,7 @@ void run_vector_v2_app() {
       } else if (panning && (point.x != last_touch.x || point.y != last_touch.y)) {
         last_touch = point;
         const auto timing =
-            presenter.pan_from(pan_start_x, pan_start_y, pan_start, point, chrome, loop_us);
+            presenter.pan_from(pan_start_x, pan_start_y, pan_start, point, chrome, event_us);
         pan_metrics.include(timing);
       } else if (ink.active() && (point.x != last_touch.x || point.y != last_touch.y)) {
         const auto clipped = vector_v2::clip_canvas_segment({last_touch.x, last_touch.y},
@@ -991,14 +992,23 @@ void run_vector_v2_app() {
           last_ink =
               ink.update({.x = canvas_point->x, .y = canvas_point->y, .timestamp_us = event_us});
           const vector_v2::OperationPoint add_point = presenter.operation_point(last_ink);
-          ChainedOperationStatus add_status = builder.add(add_point);
-          if (add_status == ChainedOperationStatus::kChunkReady) {
-            const auto continued =
-                commit_ready_chunk(builder, log, canvas, workspace, presenter, stroke_world_bounds,
-                                   stroke_chunks, stroke_append_us, stroke_append_max_us);
-            add_status = continued.value_or(ChainedOperationStatus::kRejected);
-            stroke_commit_failed = !continued.has_value();
-          }
+          const std::uint16_t color = chrome.tool == vector_v2::ChromeTool::kErase
+                                          ? 0xFFFFU
+                                          : vector_v2::selected_color(chrome);
+          const auto move = vector_v2::process_live_ink_move(
+              ribbon, builder, last_ink, add_point, event_us,
+              [&](const RibbonUpdate& update, std::uint32_t visual_event_us) {
+                const auto timing = presenter.show_update(update, color, chrome, visual_event_us);
+                live_metrics.include(timing);
+                return timing.passed;
+              },
+              [&] {
+                return commit_ready_chunk(builder, log, canvas, workspace, presenter,
+                                          stroke_world_bounds, stroke_chunks, stroke_append_us,
+                                          stroke_append_max_us);
+              });
+          const ChainedOperationStatus add_status = move.status;
+          stroke_commit_failed = move.commit_failed;
           if (add_status != ChainedOperationStatus::kAccepted) {
             // Accepted streaming policy: chunks already committed stay in
             // the document like physical ink; only the uncommitted tail of
@@ -1012,22 +1022,8 @@ void run_vector_v2_app() {
             builder.cancel();
             ribbon.reset();
             ink.end();
-            // The live preview mutated the frame beyond whatever committed:
-            // a bounds-limited refresh leaves the rejected tail as ghost
-            // ink. Repaint everything; rejection is rare.
-            static_cast<void>(presenter.refresh(chrome, loop_us));
-          } else {
-            const std::uint16_t color = chrome.tool == vector_v2::ChromeTool::kErase
-                                            ? 0xFFFFU
-                                            : vector_v2::selected_color(chrome);
-            // Committed-only ribbon geometry (append(..., false)): the live
-            // preview writes into the persistent frame, and provisional
-            // segments are replaced by the next sample, so rendering them
-            // would leave stale ink. The trade is a one-smoothing-window lag
-            // behind the finger; the start cap gives immediate contact
-            // feedback.
-            live_metrics.include(
-                presenter.show_update(ribbon.append(last_ink, false), color, chrome, loop_us));
+            // Restore authority beneath the discarded transient tail.
+            static_cast<void>(presenter.refresh(chrome, event_us));
           }
         }
       }
@@ -1056,7 +1052,7 @@ void run_vector_v2_app() {
             .id = next_lift_id++,
             .detected_us = esp_timer_get_time(),
         };
-        const std::uint32_t finished_us = now_us();
+        const std::uint32_t finished_us = event_us;
         const std::int64_t finish_preview_started = esp_timer_get_time();
         last_ink = ink.finish(
             {.x = last_ink.position.x, .y = last_ink.position.y, .timestamp_us = finished_us});
