@@ -902,14 +902,26 @@ std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, Documen
                                                             MaterializationQuality quality,
                                                             std::span<const std::uint16_t> pixels) {
   const PixelRect bounds = tile_pixel_bounds(key);
+  return publish_tile(key, revision, quality, pixels,
+                      static_cast<std::size_t>(bounds.x1 - bounds.x0));
+}
+
+std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, DocumentRevision revision,
+                                                            MaterializationQuality quality,
+                                                            std::span<const std::uint16_t> pixels,
+                                                            std::size_t source_stride) {
+  const PixelRect bounds = tile_pixel_bounds(key);
   const int width = bounds.x1 - bounds.x0;
   const int height = bounds.y1 - bounds.y0;
-  const std::size_t expected_pixels =
-      static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
   const bool source_overlaps_pool = !accepts_external_workspace(std::as_bytes(pixels));
   if (!ready() || slots_.empty() || !valid_tile_key(key) || revision != current_revision_ ||
       quality == MaterializationQuality::kOverviewFallback || source_overlaps_pool ||
-      pixels.size() != expected_pixels) {
+      source_stride < static_cast<std::size_t>(width)) {
+    return std::nullopt;
+  }
+  const std::size_t expected_pixels =
+      static_cast<std::size_t>(height - 1) * source_stride + static_cast<std::size_t>(width);
+  if (pixels.size() != expected_pixels) {
     return std::nullopt;
   }
   const auto existing = find_tile(key);
@@ -938,7 +950,7 @@ std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, Documen
   slot.generation_ = take_generation();
   auto destination = tile_pixels_.subspan(index * kTilePixels, kTilePixels);
   for (int row = 0; row < height; ++row) {
-    const auto source_offset = static_cast<std::size_t>(row) * static_cast<std::size_t>(width);
+    const auto source_offset = static_cast<std::size_t>(row) * source_stride;
     const auto destination_offset =
         static_cast<std::size_t>(row) * static_cast<std::size_t>(kTileWidth);
     std::copy_n(pixels.begin() + static_cast<std::ptrdiff_t>(source_offset), width,

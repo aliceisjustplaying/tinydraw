@@ -30,10 +30,9 @@ inline constexpr std::size_t kTileProducerSampleBatch = 96;
 inline constexpr std::size_t kTileProducerRasterWorkBatch = 16'000;
 
 struct TileProducerWorkspace {
-  // Row-major 128x128 supertask surface.
+  // Row-major 128x128 supertask surface. Publication reads tiles straight
+  // out of this surface with a strided copy; there is no packed staging.
   std::span<std::uint16_t> supertask_pixels{};
-  // Tightly packed publication scratch for one 64x64-or-smaller edge tile.
-  std::span<std::uint16_t> packed_tile_pixels{};
   // One finalized bit per supertask pixel for exact newest-first replay.
   std::span<std::uint8_t> finalized_pixels{};
   // Exact row-saturation summary over the supertask mask: per-row unfinalized

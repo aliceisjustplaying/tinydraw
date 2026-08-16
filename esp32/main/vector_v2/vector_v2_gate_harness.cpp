@@ -3043,7 +3043,7 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
                                 VectorV2Export& exporter,
                                 std::span<const std::uint16_t> blank_snapshot,
                                 std::span<CompactOperationSample> conversion_storage,
-                                std::span<std::uint16_t> packed_tile_pixels) {
+                                std::span<std::uint16_t> tile_scratch) {
   const bool stress_ready = append_stress_document(log, canvas, workspace);
   const bool stress_100 = stress_ready && run_tile_gate(presenter, producer, log, canvas, chrome,
                                                         ZoomLevel::k100Percent);
@@ -3091,7 +3091,7 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   realistic_samples.reset();
 #ifdef TINYDRAW_VECTOR_V2_TILE_CENSUS
   const bool census =
-      workload_ready && run_vector_v2_tile_census(producer, canvas, packed_tile_pixels);
+      workload_ready && run_vector_v2_tile_census(producer, canvas, tile_scratch);
   std::printf("TINYDRAW_TILE_CENSUS_APP_DONE workload=%u census=%u revision=%lu\n", workload_ready,
               census, static_cast<unsigned long>(canvas.current_revision().value));
   std::fflush(stdout);
@@ -3110,7 +3110,7 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   const bool live_overlay =
       gate_100 && run_overlay_canvas_purity_gate(presenter, log, canvas, chrome, workspace) &&
       run_live_ink_overlay_gate(presenter, chrome) &&
-      run_edge_ink_case(presenter, producer, log, canvas, chrome, workspace, packed_tile_pixels);
+      run_edge_ink_case(presenter, producer, log, canvas, chrome, workspace, tile_scratch);
   // Pan gates are part of the final verdict; downstream gates still key on
   // the last state-producing gate so a red pan number cannot stop later
   // receipts from reporting.

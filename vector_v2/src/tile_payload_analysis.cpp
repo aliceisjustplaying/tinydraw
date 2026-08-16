@@ -6,22 +6,32 @@ namespace tinydraw::vector_v2 {
 
 std::optional<TilePayloadAnalysis> analyze_tile_payload(std::span<const std::uint16_t> pixels,
                                                         int width, int height) {
-  if (width <= 0 || height <= 0 || width > kTileWidth || height > kTileHeight) {
+  return analyze_tile_payload(pixels, width, height, static_cast<std::size_t>(width));
+}
+
+std::optional<TilePayloadAnalysis> analyze_tile_payload(std::span<const std::uint16_t> pixels,
+                                                        int width, int height,
+                                                        std::size_t source_stride) {
+  if (width <= 0 || height <= 0 || width > kTileWidth || height > kTileHeight ||
+      source_stride < static_cast<std::size_t>(width)) {
     return std::nullopt;
   }
-  const std::size_t expected = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+  const std::size_t expected =
+      static_cast<std::size_t>(height - 1) * source_stride + static_cast<std::size_t>(width);
   if (pixels.size() != expected || pixels.empty()) {
     return std::nullopt;
   }
 
+  const std::size_t window_pixels =
+      static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
   TilePayloadAnalysis result{
-      .pixel_count = pixels.size(),
-      .raw_bytes = pixels.size_bytes(),
+      .pixel_count = window_pixels,
+      .raw_bytes = window_pixels * sizeof(std::uint16_t),
       .uniform_color = pixels.front(),
       .uniform = true,
   };
   for (int row = 0; row < height; ++row) {
-    const std::size_t row_start = static_cast<std::size_t>(row) * static_cast<std::size_t>(width);
+    const std::size_t row_start = static_cast<std::size_t>(row) * source_stride;
     ++result.row_runs;
     std::uint16_t previous = pixels[row_start];
     result.uniform = result.uniform && previous == result.uniform_color;

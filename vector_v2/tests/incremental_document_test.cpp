@@ -769,7 +769,6 @@ struct EquivalenceRig {
   std::vector<std::uint16_t> tile_pool =
       std::vector<std::uint16_t>(slots.size() * vector_v2::kTilePixels);
   std::vector<std::uint16_t> supertask = std::vector<std::uint16_t>(vector_v2::kTileProducerPixels);
-  std::vector<std::uint16_t> packed = std::vector<std::uint16_t>(vector_v2::kTilePixels);
   std::vector<std::uint8_t> mask = std::vector<std::uint8_t>(vector_v2::kTileProducerMaskBytes);
   std::vector<std::uint16_t> summary_rows =
       std::vector<std::uint16_t>(vector_v2::kTileProducerSummaryRows);
@@ -790,7 +789,6 @@ struct EquivalenceRig {
   vector_v2::TileProducer producer{log,
                                    canvas,
                                    {.supertask_pixels = supertask,
-                                    .packed_tile_pixels = packed,
                                     .finalized_pixels = mask,
                                     .summary_row_unset = summary_rows,
                                     .summary_saturated_words = summary_words}};

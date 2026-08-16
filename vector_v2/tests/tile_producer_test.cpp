@@ -28,7 +28,6 @@ struct PaperFixture {
   std::array<vector_v2::MaterializedSlotStorage, 1> slots{};
   std::array<std::uint16_t, vector_v2::kTilePixels> tile_pool{};
   std::array<std::uint16_t, vector_v2::kTileProducerPixels> supertask{};
-  std::array<std::uint16_t, vector_v2::kTilePixels> packed{};
   std::array<std::uint8_t, vector_v2::kTileProducerMaskBytes> mask{};
   std::array<std::uint16_t, vector_v2::kTileProducerSummaryRows> summary_rows{};
   std::array<std::uint32_t, vector_v2::kTileProducerSummaryWords> summary_words{};
@@ -37,7 +36,6 @@ struct PaperFixture {
   vector_v2::TileProducer producer{log,
                                    canvas,
                                    {.supertask_pixels = supertask,
-                                    .packed_tile_pixels = packed,
                                     .finalized_pixels = mask,
                                     .summary_row_unset = summary_rows,
                                     .summary_saturated_words = summary_words}};
@@ -61,7 +59,6 @@ struct AdversarialFixture {
   std::vector<std::uint16_t> tile_pool =
       std::vector<std::uint16_t>(slots.size() * vector_v2::kTilePixels);
   std::array<std::uint16_t, vector_v2::kTileProducerPixels> supertask{};
-  std::array<std::uint16_t, vector_v2::kTilePixels> packed{};
   std::array<std::uint8_t, vector_v2::kTileProducerMaskBytes> mask{};
   std::array<std::uint16_t, vector_v2::kTileProducerSummaryRows> summary_rows{};
   std::array<std::uint32_t, vector_v2::kTileProducerSummaryWords> summary_words{};
@@ -70,7 +67,6 @@ struct AdversarialFixture {
   vector_v2::TileProducer producer{log,
                                    canvas,
                                    {.supertask_pixels = supertask,
-                                    .packed_tile_pixels = packed,
                                     .finalized_pixels = mask,
                                     .summary_row_unset = summary_rows,
                                     .summary_saturated_words = summary_words}};
@@ -88,7 +84,6 @@ struct Fixture {
   std::array<vector_v2::MaterializedSlotStorage, 64> slots{};
   std::array<std::uint16_t, 64U * vector_v2::kTilePixels> tile_pool{};
   std::array<std::uint16_t, vector_v2::kTileProducerPixels> supertask{};
-  std::array<std::uint16_t, vector_v2::kTilePixels> packed{};
   std::array<std::uint8_t, vector_v2::kTileProducerMaskBytes> mask{};
   std::array<std::uint16_t, vector_v2::kTileProducerSummaryRows> summary_rows{};
   std::array<std::uint32_t, vector_v2::kTileProducerSummaryWords> summary_words{};
@@ -97,7 +92,6 @@ struct Fixture {
   vector_v2::TileProducer producer{log,
                                    canvas,
                                    {.supertask_pixels = supertask,
-                                    .packed_tile_pixels = packed,
                                     .finalized_pixels = mask,
                                     .summary_row_unset = summary_rows,
                                     .summary_saturated_words = summary_words}};
@@ -521,7 +515,6 @@ TEST_CASE("tile producer rejects 25 percent and aliased or short workspace") {
       fixture.log,
       fixture.canvas,
       {.supertask_pixels = std::span(fixture.supertask).first(1),
-       .packed_tile_pixels = fixture.packed,
        .finalized_pixels = fixture.mask,
        .summary_row_unset = fixture.summary_rows,
        .summary_saturated_words = fixture.summary_words},
@@ -531,9 +524,9 @@ TEST_CASE("tile producer rejects 25 percent and aliased or short workspace") {
       fixture.log,
       fixture.canvas,
       {.supertask_pixels = fixture.supertask,
-       .packed_tile_pixels = std::span(fixture.supertask).first(vector_v2::kTilePixels),
        .finalized_pixels = fixture.mask,
-       .summary_row_unset = fixture.summary_rows,
+       .summary_row_unset =
+           std::span(fixture.supertask).first(vector_v2::kTileProducerSummaryRows),
        .summary_saturated_words = fixture.summary_words},
   };
   CHECK_FALSE(aliased_workspace.ready());
