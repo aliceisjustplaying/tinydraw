@@ -1293,6 +1293,7 @@ struct MixedDrawStrokeStats {
   std::int64_t append_total_us = 0;
   std::int64_t append_max_us = 0;
   vector_v2::InPlaceAppendPhases phase_max{};
+  vector_v2::InPlaceRetainDrops drops{};
   std::size_t affected_tiles = 0;
   std::size_t published_tiles = 0;
   std::size_t fallback_tiles = 0;
@@ -1441,6 +1442,11 @@ bool run_mixed_zoom_stroke(VectorV2Presenter& presenter, OperationLog& log,
       stats.published_tiles += committed->published_tiles;
       stats.fallback_tiles += committed->fallback_tiles;
       stats.visible_fallback_tiles += committed->visible_fallback_tiles;
+      stats.drops.visible_uniform_no_slot += committed->drops.visible_uniform_no_slot;
+      stats.drops.visible_uniform_paint_fail += committed->drops.visible_uniform_paint_fail;
+      stats.drops.visible_raw_edit_fail += committed->drops.visible_raw_edit_fail;
+      stats.drops.visible_raw_paint_fail += committed->drops.visible_raw_paint_fail;
+      stats.drops.offscreen_skipped += committed->drops.offscreen_skipped;
       if (!world_bounds.has_value()) {
         world_bounds = committed->affected_world_bounds;
       } else {
@@ -1567,7 +1573,9 @@ bool run_mixed_zoom_draw_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
       std::printf(
           "TINYDRAW_GATE1_MIXED_DRAW zoom=%s tool=%s chunks=%lu append_max_us=%lld "
           "append_avg_us=%lld append_total_us=%lld affected_tiles=%lu published=%lu "
-          "fallback=%lu visible_fallback=%lu ph_prepare_max_us=%lld ph_overview_max_us=%lld "
+          "fallback=%lu visible_fallback=%lu drop_uni_slot=%lu drop_uni_paint=%lu "
+          "drop_raw_edit=%lu drop_raw_paint=%lu off_skip=%lu "
+          "ph_prepare_max_us=%lld ph_overview_max_us=%lld "
           "ph_enumerate_max_us=%lld ph_uniform_max_us=%lld ph_raw_max_us=%lld "
           "ph_commit_max_us=%lld committed=%u authority=%u refresh=%u run_ok=%u "
           "pass=%u\n",
@@ -1581,6 +1589,11 @@ bool run_mixed_zoom_draw_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
           static_cast<unsigned long>(stats.published_tiles),
           static_cast<unsigned long>(stats.fallback_tiles),
           static_cast<unsigned long>(stats.visible_fallback_tiles),
+          static_cast<unsigned long>(stats.drops.visible_uniform_no_slot),
+          static_cast<unsigned long>(stats.drops.visible_uniform_paint_fail),
+          static_cast<unsigned long>(stats.drops.visible_raw_edit_fail),
+          static_cast<unsigned long>(stats.drops.visible_raw_paint_fail),
+          static_cast<unsigned long>(stats.drops.offscreen_skipped),
           static_cast<long long>(stats.phase_max.prepare_us),
           static_cast<long long>(stats.phase_max.overview_us),
           static_cast<long long>(stats.phase_max.enumerate_us),
@@ -2785,6 +2798,44 @@ LatencySummaryLine summarize_deltas(LatencyDeltas& deltas) {
   return {.p50 = rank(0.50), .p95 = rank(0.95), .max = deltas.values[deltas.count - 1U]};
 }
 
+// Counts viewport tile identities whose lookup() falls back to the
+// pixelated overview (or has no source at all) at a tiled zoom. This is the
+// mid-stroke pixelation oracle: an append commit that invalidates a
+// viewport identity without retaining it drops that tile from raw/uniform
+// to SourceKind::kOverview until a producer pass repairs it. 25% has no
+// tile identities by design (the overview IS the authority), so the probe
+// reports zero there. ~56 O(1) lookups per call; cheap enough to run after
+// every chunk commit.
+struct ViewportFallbackProbe {
+  std::uint32_t tiles = 0;
+  std::uint32_t fallback = 0;
+};
+
+ViewportFallbackProbe probe_viewport_overview_fallback(const VectorV2Presenter& presenter,
+                                                       const MaterializedCanvas& canvas,
+                                                       ZoomLevel zoom) {
+  ViewportFallbackProbe probe{};
+  if (zoom == ZoomLevel::k25Percent) {
+    return probe;
+  }
+  const int x0 = presenter.level_x();
+  const int y0 = presenter.level_y();
+  const int first_column = x0 / vector_v2::kTileWidth;
+  const int last_column = (x0 + vector_v2::kOverviewWidth - 1) / vector_v2::kTileWidth;
+  const int first_row = y0 / vector_v2::kTileHeight;
+  const int last_row = (y0 + vector_v2::kOverviewHeight - 1) / vector_v2::kTileHeight;
+  for (int row = first_row; row <= last_row; ++row) {
+    for (int column = first_column; column <= last_column; ++column) {
+      ++probe.tiles;
+      const auto selection = canvas.lookup(
+          {zoom, static_cast<std::uint16_t>(column), static_cast<std::uint16_t>(row)});
+      probe.fallback += static_cast<std::uint32_t>(
+          !selection.has_value() || selection->kind == vector_v2::SourceKind::kOverview);
+    }
+  }
+  return probe;
+}
+
 // Replays one recorded trace through the production interaction pipeline
 // (InkStream -> curved ribbon -> visual-first coordinator -> in-place
 // authority commits) and reports the event->consumed->geometry->submit->DMA
@@ -2849,6 +2900,15 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
                   .level_pixels = {presenter.level_x(), presenter.level_y(),
                                    presenter.level_x() + vector_v2::kOverviewWidth,
                                    presenter.level_y() + vector_v2::kOverviewHeight}}};
+    // Mid-stroke pixelation observability: fb_start is the pre-ink state of
+    // the viewport, fb_mid_max the worst overview fallback seen right after
+    // any chunk commit, fb_up_max the worst state at any lift, fb_end the
+    // state after the whole trace. Counts, not verdicts: pass is unchanged.
+    const ViewportFallbackProbe fallback_start =
+        probe_viewport_overview_fallback(presenter, canvas, spec.zoom);
+    std::uint32_t fallback_mid_max = 0;
+    std::uint32_t fallback_up_max = 0;
+    vector_v2::InPlaceRetainDrops trace_drops{};
     const auto commit_pending = [&]() -> std::optional<vector_v2::ChainedOperationStatus> {
       const auto pending = builder.pending_append();
       if (!pending.has_value()) {
@@ -2860,6 +2920,14 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
       if (!committed.has_value()) {
         return std::nullopt;
       }
+      trace_drops.visible_uniform_no_slot += committed->drops.visible_uniform_no_slot;
+      trace_drops.visible_uniform_paint_fail += committed->drops.visible_uniform_paint_fail;
+      trace_drops.visible_raw_edit_fail += committed->drops.visible_raw_edit_fail;
+      trace_drops.visible_raw_paint_fail += committed->drops.visible_raw_paint_fail;
+      trace_drops.offscreen_skipped += committed->drops.offscreen_skipped;
+      fallback_mid_max =
+          std::max(fallback_mid_max,
+                   probe_viewport_overview_fallback(presenter, canvas, spec.zoom).fallback);
       return builder.acknowledge_commit();
     };
 
@@ -2950,6 +3018,9 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
           finish_status = *continued;
         }
         static_cast<void>(presenter.refresh(chrome, now_us()));
+        fallback_up_max =
+            std::max(fallback_up_max,
+                     probe_viewport_overview_fallback(presenter, canvas, spec.zoom).fallback);
         pressed = false;
         continue;
       }
@@ -2991,6 +3062,8 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
       }
     }
     replayer.stop();
+    const ViewportFallbackProbe fallback_end =
+        probe_viewport_overview_fallback(presenter, canvas, spec.zoom);
 
     counters.received_events = replayer.offered();
     counters.coalesced_events = replayer.coalesced();
@@ -3008,7 +3081,9 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
         "e2c_p50=%lu e2c_p95=%lu e2c_max=%lu e2g_p95=%lu e2s_p95=%lu "
         "e2d_p50=%lu e2d_p95=%lu e2d_max=%lu latency_samples=%lu "
         "presentation_failures=%lu commit_failures=%lu overflows=%lu revision=%lu "
-        "latency_pass=%u pass=%u\n",
+        "fb_tiles=%lu fb_start=%lu fb_mid_max=%lu fb_up_max=%lu fb_end=%lu "
+        "drop_uni_slot=%lu drop_uni_paint=%lu drop_raw_edit=%lu drop_raw_paint=%lu "
+        "off_skip=%lu latency_pass=%u pass=%u\n",
         spec.name, zoom_name(spec.zoom), static_cast<unsigned long>(counters.received_events),
         static_cast<unsigned long>(counters.consumed_events),
         static_cast<unsigned long>(counters.coalesced_events),
@@ -3029,7 +3104,16 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
         static_cast<unsigned long>(presentation_failures),
         static_cast<unsigned long>(commit_failures),
         static_cast<unsigned long>(replayer.overflows()),
-        static_cast<unsigned long>(canvas.current_revision().value), latency_pass, trace_pass);
+        static_cast<unsigned long>(canvas.current_revision().value),
+        static_cast<unsigned long>(fallback_start.tiles),
+        static_cast<unsigned long>(fallback_start.fallback),
+        static_cast<unsigned long>(fallback_mid_max), static_cast<unsigned long>(fallback_up_max),
+        static_cast<unsigned long>(fallback_end.fallback),
+        static_cast<unsigned long>(trace_drops.visible_uniform_no_slot),
+        static_cast<unsigned long>(trace_drops.visible_uniform_paint_fail),
+        static_cast<unsigned long>(trace_drops.visible_raw_edit_fail),
+        static_cast<unsigned long>(trace_drops.visible_raw_paint_fail),
+        static_cast<unsigned long>(trace_drops.offscreen_skipped), latency_pass, trace_pass);
     std::fflush(stdout);
     all_pass = all_pass && trace_pass;
   }
@@ -3095,8 +3179,7 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   realistic_strokes.reset();
   realistic_samples.reset();
 #ifdef TINYDRAW_VECTOR_V2_TILE_CENSUS
-  const bool census =
-      workload_ready && run_vector_v2_tile_census(producer, canvas, tile_scratch);
+  const bool census = workload_ready && run_vector_v2_tile_census(producer, canvas, tile_scratch);
   std::printf("TINYDRAW_TILE_CENSUS_APP_DONE workload=%u census=%u revision=%lu\n", workload_ready,
               census, static_cast<unsigned long>(canvas.current_revision().value));
   std::fflush(stdout);

@@ -34,6 +34,22 @@ struct InPlaceAppendPhases {
   std::int64_t commit_us = 0;          // invalidation + revision metadata commit
 };
 
+// Drop attribution for the in-place retain passes. A counted drop is an
+// affected identity that was sharp (uniform or current raw) before this
+// commit and was not retained, so it composes as pixelated overview
+// fallback until a producer pass repairs it. The visible_* causes
+// decompose visible_fallback_tiles — each one is on-glass mid-stroke
+// pixelation. offscreen_skipped counts active-zoom identities outside the
+// priority view dropped by accepted lazy-repair policy (retention-budget
+// exhaustion, non-priority uniform invalidation, failed offscreen edits).
+struct InPlaceRetainDrops {
+  std::uint32_t visible_uniform_no_slot = 0;     // materialize_uniform_as_raw nullopt
+  std::uint32_t visible_uniform_paint_fail = 0;  // materialized, then paint failed
+  std::uint32_t visible_raw_edit_fail = 0;       // edit_resident_tile nullopt
+  std::uint32_t visible_raw_paint_fail = 0;      // paint failed, identity invalidated
+  std::uint32_t offscreen_skipped = 0;
+};
+
 struct IncrementalAppendResult {
   OperationIdentity identity{};
   PixelRect affected_world_bounds{};
@@ -48,6 +64,7 @@ struct IncrementalAppendResult {
   // in-place commit; the cold work this stroke deferred to later visits.
   std::size_t cross_zoom_invalidated = 0;
   InPlaceAppendPhases phases{};
+  InPlaceRetainDrops drops{};
 };
 
 enum class IncrementalPublicationScope : std::uint8_t {
