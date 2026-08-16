@@ -8,8 +8,10 @@
 namespace tinydraw::vector_v2 {
 namespace {
 
-constexpr std::uint16_t kMaximumXQuarter = static_cast<std::uint16_t>(kWorldWidth * 4);
-constexpr std::uint16_t kMaximumYQuarter = static_cast<std::uint16_t>(kWorldHeight * 4);
+constexpr std::uint16_t kMaximumXQuarter =
+    static_cast<std::uint16_t>(kWorldWidth * kSampleUnitsPerWorldUnit);
+constexpr std::uint16_t kMaximumYQuarter =
+    static_cast<std::uint16_t>(kWorldHeight * kSampleUnitsPerWorldUnit);
 
 bool valid_sample(CompactOperationSample sample) {
   return sample.x_quarter <= kMaximumXQuarter && sample.y_quarter <= kMaximumYQuarter &&

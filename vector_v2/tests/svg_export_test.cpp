@@ -173,8 +173,8 @@ bool well_formed_export(std::string_view svg) {
 
 tinydraw::InkPoint ink_point(vector_v2::CompactOperationSample sample) {
   return {
-      .position = {.x = static_cast<float>(sample.x_quarter) * 0.25F,
-                   .y = static_cast<float>(sample.y_quarter) * 0.25F},
+      .position = {.x = static_cast<float>(sample.x_quarter) * 0.0625F,
+                   .y = static_cast<float>(sample.y_quarter) * 0.0625F},
       .pressure = 0.0F,
       .radius = static_cast<float>(sample.radius_256) / 256.0F,
   };
@@ -224,11 +224,11 @@ std::uint16_t black_over_white(std::uint8_t alpha) {
 TEST_CASE("SVG export has stable exact output and painter-ordered eraser geometry") {
   LogFixture<4, 8> fixture;
   const std::array pen{
-      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 512},
-      vector_v2::CompactOperationSample{.x_quarter = 80, .y_quarter = 40, .radius_256 = 1'024},
+      vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 160, .radius_256 = 512},
+      vector_v2::CompactOperationSample{.x_quarter = 320, .y_quarter = 160, .radius_256 = 1'024},
   };
   const std::array eraser{
-      vector_v2::CompactOperationSample{.x_quarter = 60, .y_quarter = 40, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 240, .y_quarter = 160, .radius_256 = 256},
   };
   REQUIRE(fixture.log.append({.color = 0xF800U, .samples = pen}).has_value());
   REQUIRE(fixture.log
@@ -258,10 +258,10 @@ TEST_CASE("SVG export has stable exact output and painter-ordered eraser geometr
 TEST_CASE("exported primitive coverage exactly matches the ribbon renderer raster") {
   LogFixture<2, 8> fixture;
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 32, .y_quarter = 64, .radius_256 = 256},
-      vector_v2::CompactOperationSample{.x_quarter = 80, .y_quarter = 32, .radius_256 = 768},
-      vector_v2::CompactOperationSample{.x_quarter = 144, .y_quarter = 80, .radius_256 = 1'536},
-      vector_v2::CompactOperationSample{.x_quarter = 216, .y_quarter = 48, .radius_256 = 2'560},
+      vector_v2::CompactOperationSample{.x_quarter = 128, .y_quarter = 256, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 320, .y_quarter = 128, .radius_256 = 768},
+      vector_v2::CompactOperationSample{.x_quarter = 576, .y_quarter = 320, .radius_256 = 1'536},
+      vector_v2::CompactOperationSample{.x_quarter = 864, .y_quarter = 192, .radius_256 = 2'560},
   };
   REQUIRE(fixture.log.append({.color = 0U, .samples = samples}).has_value());
   StringSink sink;
@@ -324,7 +324,7 @@ TEST_CASE("SVG export handles empty and single-dot documents and sink failure") 
   CHECK(empty.text.find("<g ") == std::string::npos);
 
   const std::array dot{
-      vector_v2::CompactOperationSample{.x_quarter = 4, .y_quarter = 8, .radius_256 = 128}};
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 32, .radius_256 = 128}};
   REQUIRE(fixture.log.append({.color = 0x001FU, .samples = dot}).has_value());
   StringSink single;
   REQUIRE(vector_v2::export_svg(fixture.log, single));
@@ -386,8 +386,8 @@ TEST_CASE("maximum-capacity authority streams without document-sized exporter st
                 vector_v2::kOperationSampleCapacity);
   std::array<vector_v2::CompactOperationSample, samples_per_operation> samples{};
   for (std::size_t index = 0; index < samples.size(); ++index) {
-    samples[index] = {.x_quarter = 100,
-                      .y_quarter = 100,
+    samples[index] = {.x_quarter = 400,
+                      .y_quarter = 400,
                       .radius_256 = 256,
                       .elapsed_ms = static_cast<std::uint16_t>(index)};
   }

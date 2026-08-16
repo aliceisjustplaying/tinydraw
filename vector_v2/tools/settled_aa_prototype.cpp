@@ -539,10 +539,10 @@ Window ink_window(const std::vector<CommittedOperation>& operations, vector_v2::
   const float scale = zoom_scale_of(zoom);
   for (const CommittedOperation& operation : operations) {
     for (const vector_v2::CompactOperationSample& sample : operation.samples) {
-      min_x = std::min(min_x, static_cast<float>(sample.x_quarter) * 0.25F * scale);
-      min_y = std::min(min_y, static_cast<float>(sample.y_quarter) * 0.25F * scale);
-      max_x = std::max(max_x, static_cast<float>(sample.x_quarter) * 0.25F * scale);
-      max_y = std::max(max_y, static_cast<float>(sample.y_quarter) * 0.25F * scale);
+      min_x = std::min(min_x, static_cast<float>(sample.x_quarter) * 0.0625F * scale);
+      min_y = std::min(min_y, static_cast<float>(sample.y_quarter) * 0.0625F * scale);
+      max_x = std::max(max_x, static_cast<float>(sample.x_quarter) * 0.0625F * scale);
+      max_y = std::max(max_y, static_cast<float>(sample.y_quarter) * 0.0625F * scale);
     }
   }
   const int center_x = static_cast<int>((min_x + max_x) * 0.5F);

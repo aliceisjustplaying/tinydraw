@@ -45,8 +45,8 @@ bool emit_adversarial_tapered_corpus(
       const std::size_t y_triangle = y_phase <= 40U ? y_phase : 80U - y_phase;
       const std::size_t radius_step = (index * 5U + operation * 3U) % 7U;
       samples[index] = {
-          .x_quarter = static_cast<std::uint16_t>((20U + x_triangle * 2U) * 4U),
-          .y_quarter = static_cast<std::uint16_t>((20U + y_triangle * 2U) * 4U),
+          .x_quarter = static_cast<std::uint16_t>((20U + x_triangle * 2U) * 16U),
+          .y_quarter = static_cast<std::uint16_t>((20U + y_triangle * 2U) * 16U),
           .radius_256 = static_cast<std::uint16_t>((3U + radius_step) * 256U + 64U),
           .elapsed_ms = static_cast<std::uint16_t>(index * 8U),
       };

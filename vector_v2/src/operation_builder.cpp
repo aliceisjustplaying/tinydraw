@@ -7,7 +7,7 @@
 namespace tinydraw::vector_v2 {
 namespace {
 
-constexpr float kQuarterUnitsPerWorldUnit = 4.0F;
+constexpr float kQuarterUnitsPerWorldUnit = static_cast<float>(kSampleUnitsPerWorldUnit);
 constexpr float kRadiusUnitsPerWorldUnit = 256.0F;
 constexpr std::uint32_t kMaximumElapsedUs =
     static_cast<std::uint32_t>(std::numeric_limits<std::uint16_t>::max()) * 1'000U + 999U;

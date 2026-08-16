@@ -22,26 +22,25 @@ struct ExportFixture {
     // Pen strokes across band boundaries, a tapered stroke, and an eraser,
     // including geometry at the world edges.
     const std::array first{
-        vector_v2::CompactOperationSample{.x_quarter = 8, .y_quarter = 8, .radius_256 = 1'024},
+        vector_v2::CompactOperationSample{.x_quarter = 32, .y_quarter = 32, .radius_256 = 1'024},
         vector_v2::CompactOperationSample{
-            .x_quarter = 5'800, .y_quarter = 7'100, .radius_256 = 1'024, .elapsed_ms = 8},
+            .x_quarter = 23200, .y_quarter = 28400, .radius_256 = 1'024, .elapsed_ms = 8},
     };
     const std::array second{
+        vector_v2::CompactOperationSample{.x_quarter = 8000, .y_quarter = 400, .radius_256 = 2'048},
         vector_v2::CompactOperationSample{
-            .x_quarter = 2'000, .y_quarter = 100, .radius_256 = 2'048},
+            .x_quarter = 8400, .y_quarter = 14000, .radius_256 = 384, .elapsed_ms = 8},
         vector_v2::CompactOperationSample{
-            .x_quarter = 2'100, .y_quarter = 3'500, .radius_256 = 384, .elapsed_ms = 8},
-        vector_v2::CompactOperationSample{
-            .x_quarter = 900, .y_quarter = 6'900, .radius_256 = 2'400, .elapsed_ms = 16},
+            .x_quarter = 3600, .y_quarter = 27600, .radius_256 = 2'400, .elapsed_ms = 16},
     };
     const std::array erased{
         vector_v2::CompactOperationSample{
-            .x_quarter = 1'800, .y_quarter = 1'800, .radius_256 = 1'600},
+            .x_quarter = 7200, .y_quarter = 7200, .radius_256 = 1'600},
         vector_v2::CompactOperationSample{
-            .x_quarter = 3'000, .y_quarter = 2'600, .radius_256 = 1'600, .elapsed_ms = 8},
+            .x_quarter = 12000, .y_quarter = 10400, .radius_256 = 1'600, .elapsed_ms = 8},
     };
     const std::array dot{
-        vector_v2::CompactOperationSample{.x_quarter = 5'880, .y_quarter = 20, .radius_256 = 900},
+        vector_v2::CompactOperationSample{.x_quarter = 23520, .y_quarter = 80, .radius_256 = 900},
     };
     REQUIRE(log.append({.tool = vector_v2::OperationTool::kPen, .color = 0xF800U, .samples = first})
                 .has_value());

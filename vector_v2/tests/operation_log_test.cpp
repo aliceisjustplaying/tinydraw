@@ -16,9 +16,9 @@ TEST_CASE("operation log appends ordered samples and advances one revision") {
   vector_v2::OperationLog log(records, storage);
   const std::array samples{
       vector_v2::CompactOperationSample{
-          .x_quarter = 40, .y_quarter = 80, .radius_256 = 512, .elapsed_ms = 0},
+          .x_quarter = 160, .y_quarter = 320, .radius_256 = 512, .elapsed_ms = 0},
       vector_v2::CompactOperationSample{
-          .x_quarter = 120, .y_quarter = 160, .radius_256 = 768, .elapsed_ms = 12},
+          .x_quarter = 480, .y_quarter = 640, .radius_256 = 768, .elapsed_ms = 12},
   };
 
   const auto identity =
@@ -44,8 +44,8 @@ TEST_CASE("stored operation feeds the incremental renderer without translation")
   std::array<vector_v2::CompactOperationSample, 2> storage{};
   vector_v2::OperationLog log(records, storage);
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256},
-      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 4, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 16, .radius_256 = 256},
   };
   REQUIRE(log.append({.color = 0xF800U, .samples = samples}));
   const auto stored = log.operation(0);
@@ -68,9 +68,9 @@ TEST_CASE("operation log preserves painter order across tools") {
   std::array<vector_v2::CompactOperationSample, 2> storage{};
   vector_v2::OperationLog log(records, storage);
   const std::array pen_sample{
-      vector_v2::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256}};
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
   const std::array eraser_sample{
-      vector_v2::CompactOperationSample{.x_quarter = 8, .y_quarter = 8, .radius_256 = 256}};
+      vector_v2::CompactOperationSample{.x_quarter = 32, .y_quarter = 32, .radius_256 = 256}};
   REQUIRE(log.append(
       {.tool = vector_v2::OperationTool::kPen, .color = 0x001FU, .samples = pen_sample}));
   const auto eraser =
@@ -88,8 +88,8 @@ TEST_CASE("operation log append may exactly fill sample capacity") {
   std::array<vector_v2::CompactOperationSample, 2> storage{};
   vector_v2::OperationLog log(records, storage);
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256},
-      vector_v2::CompactOperationSample{.x_quarter = 8, .y_quarter = 8, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 32, .y_quarter = 32, .radius_256 = 256},
   };
   CHECK(log.append({.samples = samples}));
   CHECK(log.sample_count() == log.sample_capacity());
@@ -100,8 +100,8 @@ TEST_CASE("prepared append advances authority only when published") {
   std::array<vector_v2::CompactOperationSample, 2> storage{};
   vector_v2::OperationLog log(records, storage);
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256},
-      vector_v2::CompactOperationSample{.x_quarter = 8, .y_quarter = 8, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 32, .y_quarter = 32, .radius_256 = 256},
   };
   auto prepared = log.prepare({.color = 0xF800U, .samples = samples});
   REQUIRE(prepared.has_value());
@@ -126,7 +126,7 @@ TEST_CASE("canceling a prepared append leaves authority unchanged") {
   std::array<vector_v2::CompactOperationSample, 1> storage{};
   vector_v2::OperationLog log(records, storage);
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256}};
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
   auto prepared = log.prepare({.samples = samples});
   REQUIRE(prepared.has_value());
   prepared->cancel();
@@ -143,13 +143,13 @@ TEST_CASE("operation log capacity failure is atomic") {
   std::array<vector_v2::CompactOperationSample, 2> storage{};
   vector_v2::OperationLog log(records, storage);
   const std::array first{
-      vector_v2::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256}};
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
   REQUIRE(log.append({.samples = first}));
   const auto before = log.operation(0);
   REQUIRE(before.has_value());
   const std::array too_many{
-      vector_v2::CompactOperationSample{.x_quarter = 8, .y_quarter = 8, .radius_256 = 256},
-      vector_v2::CompactOperationSample{.x_quarter = 12, .y_quarter = 12, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 32, .y_quarter = 32, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 48, .y_quarter = 48, .radius_256 = 256},
   };
 
   CHECK_FALSE(log.append({.samples = too_many}));
@@ -165,16 +165,16 @@ TEST_CASE("operation log rejects malformed samples without mutation") {
   vector_v2::OperationLog log(records, storage);
   const std::array reversed_time{
       vector_v2::CompactOperationSample{
-          .x_quarter = 4, .y_quarter = 4, .radius_256 = 256, .elapsed_ms = 2},
+          .x_quarter = 16, .y_quarter = 16, .radius_256 = 256, .elapsed_ms = 2},
       vector_v2::CompactOperationSample{
-          .x_quarter = 8, .y_quarter = 8, .radius_256 = 256, .elapsed_ms = 1},
+          .x_quarter = 32, .y_quarter = 32, .radius_256 = 256, .elapsed_ms = 1},
   };
   CHECK_FALSE(log.append({.samples = reversed_time}));
   const std::array outside{
-      vector_v2::CompactOperationSample{.x_quarter = 6000, .y_quarter = 4, .radius_256 = 256}};
+      vector_v2::CompactOperationSample{.x_quarter = 24000, .y_quarter = 16, .radius_256 = 256}};
   CHECK_FALSE(log.append({.samples = outside}));
   const std::array zero_radius{
-      vector_v2::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 0}};
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 0}};
   CHECK_FALSE(log.append({.samples = zero_radius}));
   CHECK(log.operation_count() == 0U);
   CHECK(log.sample_count() == 0U);
@@ -186,7 +186,7 @@ TEST_CASE("operation log exposes only represented contiguous replay ranges") {
   std::array<vector_v2::CompactOperationSample, 3> storage{};
   vector_v2::OperationLog log(records, storage);
   const std::array sample{
-      vector_v2::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256}};
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
   REQUIRE(log.reset({8}));
   const vector_v2::OperationLogEpoch epoch = log.epoch();
   REQUIRE(log.append({.color = 0x001FU, .samples = sample}));
@@ -216,7 +216,7 @@ TEST_CASE("operation log withholds replay ranges while an append is prepared") {
   std::array<vector_v2::CompactOperationSample, 1> storage{};
   vector_v2::OperationLog log(records, storage);
   const std::array sample{
-      vector_v2::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256}};
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
   const vector_v2::OperationLogEpoch epoch = log.epoch();
   auto prepared = log.prepare({.samples = sample});
   REQUIRE(prepared.has_value());
@@ -232,7 +232,7 @@ TEST_CASE("operation log reset adopts snapshot revision and retains caller stora
   std::array<vector_v2::CompactOperationSample, 1> storage{};
   vector_v2::OperationLog log(records, storage);
   const std::array sample{
-      vector_v2::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256}};
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
   REQUIRE(log.append({.samples = sample}));
   REQUIRE(log.reset({8}));
   CHECK(log.ready());

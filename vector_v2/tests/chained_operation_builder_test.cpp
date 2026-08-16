@@ -83,7 +83,7 @@ TEST_CASE("chained builder proactively bounds an interactive chunk below storage
   REQUIRE(first.has_value());
   REQUIRE(first->samples.size() == 3U);
   const std::uint16_t boundary_x = first->samples.back().x_quarter;
-  CHECK(boundary_x == 120U);
+  CHECK(boundary_x == 480U);
 
   CHECK(chained.acknowledge_commit() == vector_v2::ChainedOperationStatus::kAccepted);
   CHECK(chained.sample_count() == 2U);
@@ -92,7 +92,7 @@ TEST_CASE("chained builder proactively bounds an interactive chunk below storage
   const auto second = chained.pending_append();
   REQUIRE(second.has_value());
   CHECK(second->samples.front().x_quarter == boundary_x);
-  CHECK(second->samples[1].x_quarter == 160U);
+  CHECK(second->samples[1].x_quarter == 640U);
 }
 
 TEST_CASE("chained builder rejects an unusable proactive chunk limit") {
@@ -134,10 +134,10 @@ TEST_CASE("operation log retains logical gesture identity across chunks") {
   std::array<vector_v2::CompactOperationSample, 8> samples{};
   vector_v2::OperationLog log(records, samples);
   const std::array first{
-      vector_v2::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256},
   };
   const std::array second{
-      vector_v2::CompactOperationSample{.x_quarter = 8, .y_quarter = 8, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 32, .y_quarter = 32, .radius_256 = 256},
   };
   REQUIRE(log.append({.gesture_id = 91U, .samples = first}).has_value());
   REQUIRE(log.append({.gesture_id = 91U, .samples = second}).has_value());

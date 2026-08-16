@@ -72,8 +72,8 @@ TEST_CASE("incremental document advances log and canvas together") {
   REQUIRE(
       fixture.canvas.publish_tile(at_400, {0}, vector_v2::MaterializationQuality::kSettled, tile));
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 512},
       vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 160, .radius_256 = 512},
+      vector_v2::CompactOperationSample{.x_quarter = 640, .y_quarter = 640, .radius_256 = 512},
   };
 
   const auto result = vector_v2::append_incrementally(
@@ -128,8 +128,8 @@ TEST_CASE("XL append preserves every refined tile in a worst-case visible viewpo
     }
   }
   const std::array stroke{
-      vector_v2::CompactOperationSample{.x_quarter = 20, .y_quarter = 20, .radius_256 = 1'280},
-      vector_v2::CompactOperationSample{.x_quarter = 440, .y_quarter = 504, .radius_256 = 1'280},
+      vector_v2::CompactOperationSample{.x_quarter = 80, .y_quarter = 80, .radius_256 = 1'280},
+      vector_v2::CompactOperationSample{.x_quarter = 1760, .y_quarter = 2016, .radius_256 = 1'280},
   };
 
   const auto result =
@@ -179,8 +179,8 @@ TEST_CASE("append preserves a visible refined paper tile without overview fallba
     }
   }
   const std::array stroke{
-      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 1'280},
-      vector_v2::CompactOperationSample{.x_quarter = 80, .y_quarter = 80, .radius_256 = 1'280},
+      vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 160, .radius_256 = 1'280},
+      vector_v2::CompactOperationSample{.x_quarter = 320, .y_quarter = 320, .radius_256 = 1'280},
   };
   const vector_v2::ViewRequest visible{
       .zoom = vector_v2::ZoomLevel::k400Percent,
@@ -242,8 +242,8 @@ TEST_CASE("append keeps unaffected cached zoom tiles and invalidates bounded aff
     }
   }
   const std::array local_stroke{
-      vector_v2::CompactOperationSample{.x_quarter = 20, .y_quarter = 20, .radius_256 = 1'280},
       vector_v2::CompactOperationSample{.x_quarter = 80, .y_quarter = 80, .radius_256 = 1'280},
+      vector_v2::CompactOperationSample{.x_quarter = 320, .y_quarter = 320, .radius_256 = 1'280},
   };
 
   const auto result =
@@ -298,8 +298,8 @@ TEST_CASE("bounded append scratch prioritizes every affected tile in the visible
   }
   const std::array world_spanning_stroke{
       vector_v2::CompactOperationSample{.x_quarter = 0, .y_quarter = 0, .radius_256 = 1'280},
-      vector_v2::CompactOperationSample{.x_quarter = vector_v2::kWorldWidth * 4,
-                                        .y_quarter = vector_v2::kWorldHeight * 4,
+      vector_v2::CompactOperationSample{.x_quarter = vector_v2::kWorldWidth * 16,
+                                        .y_quarter = vector_v2::kWorldHeight * 16,
                                         .radius_256 = 1'280},
   };
   const vector_v2::ViewRequest visible{
@@ -360,8 +360,8 @@ TEST_CASE("priority-view append bounds immediate publication to the active zoom"
                                 blank_tile));
   }
   const std::array stroke{
-      vector_v2::CompactOperationSample{.x_quarter = 20, .y_quarter = 20, .radius_256 = 1'280},
       vector_v2::CompactOperationSample{.x_quarter = 80, .y_quarter = 80, .radius_256 = 1'280},
+      vector_v2::CompactOperationSample{.x_quarter = 320, .y_quarter = 320, .radius_256 = 1'280},
   };
   const vector_v2::ViewRequest visible{
       .zoom = vector_v2::ZoomLevel::k400Percent,
@@ -395,8 +395,8 @@ TEST_CASE("bounded overview publication matches full rendering at worst thin-str
   full_render->fill(0xFFFFU);
   REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 6, .y_quarter = 6, .radius_256 = 1},
-      vector_v2::CompactOperationSample{.x_quarter = 70, .y_quarter = 70, .radius_256 = 1},
+      vector_v2::CompactOperationSample{.x_quarter = 24, .y_quarter = 24, .radius_256 = 1},
+      vector_v2::CompactOperationSample{.x_quarter = 280, .y_quarter = 280, .radius_256 = 1},
   };
   REQUIRE(vector_v2::apply_incremental_operation(
       {.color = 0xF800U, .samples = samples},
@@ -424,8 +424,8 @@ TEST_CASE("incremental document falls back excess affected residents when scratc
   REQUIRE(
       fixture.canvas.publish_tile(second, {0}, vector_v2::MaterializationQuality::kSettled, tile));
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 512},
       vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 160, .radius_256 = 512},
+      vector_v2::CompactOperationSample{.x_quarter = 640, .y_quarter = 640, .radius_256 = 512},
   };
   auto workspace = fixture.workspace();
   workspace.tile_scratch = std::span(fixture.tile_scratch).first(vector_v2::kTilePixels);
@@ -459,7 +459,7 @@ TEST_CASE("coarsest tiled append republishes both sides of a tile boundary") {
   REQUIRE(
       fixture.canvas.publish_tile(right, {0}, vector_v2::MaterializationQuality::kSettled, tile));
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 512, .y_quarter = 256, .radius_256 = 1},
+      vector_v2::CompactOperationSample{.x_quarter = 2048, .y_quarter = 1024, .radius_256 = 1},
   };
 
   const auto result = vector_v2::append_incrementally(
@@ -488,7 +488,7 @@ TEST_CASE("incremental document rejects non-exact canvas overview storage before
   std::array<vector_v2::TileRevisionPublication, 1> publications{};
   std::array<vector_v2::TileKey, 1> affected{};
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 256}};
+      vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 160, .radius_256 = 256}};
 
   CHECK_FALSE(vector_v2::append_incrementally(
       log, canvas, {.samples = samples},
@@ -506,8 +506,8 @@ TEST_CASE("incremental document fails atomically when overview scratch is too sm
   fixture.overview.fill(0xFFFFU);
   REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 512},
       vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 160, .radius_256 = 512},
+      vector_v2::CompactOperationSample{.x_quarter = 640, .y_quarter = 640, .radius_256 = 512},
   };
   auto workspace = fixture.workspace();
   workspace.overview_scratch = std::span(fixture.next_overview).first(1);
@@ -524,7 +524,7 @@ TEST_CASE("incremental document rejects workspace aliasing live canvas pixels") 
   fixture.overview.fill(0xFFFFU);
   REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 256}};
+      vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 160, .radius_256 = 256}};
   auto workspace = fixture.workspace();
   workspace.overview_scratch = fixture.overview;
 
@@ -540,7 +540,7 @@ TEST_CASE("incremental document rejects overlapping publication workspaces") {
   fixture.overview.fill(0xFFFFU);
   REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 256}};
+      vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 160, .radius_256 = 256}};
   auto workspace = fixture.workspace();
   workspace.tile_scratch = workspace.overview_scratch.first(vector_v2::kTilePixels);
 
@@ -556,7 +556,7 @@ TEST_CASE("incremental document rejects metadata that aliases tile scratch") {
   fixture.overview.fill(0xFFFFU);
   REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 256}};
+      vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 160, .radius_256 = 256}};
   auto workspace = fixture.workspace();
   workspace.tile_scratch =
       std::span(reinterpret_cast<std::uint16_t*>(fixture.publications.data()),
@@ -573,7 +573,7 @@ TEST_CASE("incremental document rejects keys that alias canvas slot metadata") {
   fixture.overview.fill(0xFFFFU);
   REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 256}};
+      vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 160, .radius_256 = 256}};
   auto workspace = fixture.workspace();
   workspace.affected_keys =
       std::span(reinterpret_cast<vector_v2::TileKey*>(fixture.slots.data()), 1U);
@@ -589,7 +589,7 @@ TEST_CASE("incremental document rejects keys that alias operation storage") {
   fixture.overview.fill(0xFFFFU);
   REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 256}};
+      vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 160, .radius_256 = 256}};
   auto workspace = fixture.workspace();
   workspace.affected_keys =
       std::span(reinterpret_cast<vector_v2::TileKey*>(fixture.records.data()), 1U);
@@ -655,7 +655,7 @@ TEST_CASE("document snapshot restore fails atomically while an append is prepare
   fixture.overview.fill(0xFFFFU);
   REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256}};
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
   auto prepared = fixture.log.prepare({.samples = samples});
   REQUIRE(prepared.has_value());
   fixture.next_overview.fill(0x1234U);
@@ -695,8 +695,8 @@ TEST_CASE("settlement rehearsal replays validated slices and rebases after resto
 
   for (std::size_t index = 0; index < kOperationCount; ++index) {
     const std::array sample{vector_v2::CompactOperationSample{
-        .x_quarter = static_cast<std::uint16_t>(40U + index * 32U),
-        .y_quarter = static_cast<std::uint16_t>(80U + index * 24U),
+        .x_quarter = static_cast<std::uint16_t>(160U + index * 128U),
+        .y_quarter = static_cast<std::uint16_t>(320U + index * 96U),
         .radius_256 = 256}};
     REQUIRE(vector_v2::append_incrementally(
         log, canvas,
@@ -719,7 +719,7 @@ TEST_CASE("settlement rehearsal replays validated slices and rebases after resto
   const vector_v2::OperationLogEpoch restored_epoch = log.epoch();
   std::copy(canvas.overview_pixels().begin(), canvas.overview_pixels().end(), replay->begin());
   const std::array restored_sample{
-      vector_v2::CompactOperationSample{.x_quarter = 400, .y_quarter = 400, .radius_256 = 512}};
+      vector_v2::CompactOperationSample{.x_quarter = 1600, .y_quarter = 1600, .radius_256 = 512}};
   REQUIRE(vector_v2::append_incrementally(
       log, canvas, {.color = 0xF800U, .samples = restored_sample}, workspace));
   const auto restored_range = log.replay_range(restored_epoch, {3}, {4});
@@ -733,7 +733,7 @@ TEST_CASE("incremental document can commit with no affected resident tiles") {
   fixture.overview.fill(0xFFFFU);
   REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 400, .y_quarter = 400, .radius_256 = 256}};
+      vector_v2::CompactOperationSample{.x_quarter = 1600, .y_quarter = 1600, .radius_256 = 256}};
   auto workspace = fixture.workspace();
   workspace.tile_scratch = {};
 
@@ -875,15 +875,17 @@ TEST_CASE("in-place append equals the reference transactional append") {
   std::size_t chunk_count = 0;
   for (std::size_t gesture_index = 0; gesture_index < 8U; ++gesture_index) {
     gesture.clear();
-    int x = 80 + static_cast<int>(next_random() % 400U);
-    int y = 80 + static_cast<int>(next_random() % 480U);
+    int x = 320 + static_cast<int>(next_random() % 400U) * 4;
+    int y = 320 + static_cast<int>(next_random() % 480U) * 4;
     const bool eraser = gesture_index % 3U == 2U;
     const bool constant_radius = gesture_index % 2U == 0U;
     const std::uint16_t base_radius = static_cast<std::uint16_t>(192U + next_random() % 1'600U);
     const std::size_t gesture_samples = 40U + next_random() % 160U;
     for (std::size_t index = 0; index < gesture_samples; ++index) {
-      x = std::clamp(x + static_cast<int>(next_random() % 15U) - 7, 0, vector_v2::kWorldWidth * 4);
-      y = std::clamp(y + static_cast<int>(next_random() % 15U) - 7, 0, vector_v2::kWorldHeight * 4);
+      x = std::clamp(x + (static_cast<int>(next_random() % 15U) - 7) * 4, 0,
+                     vector_v2::kWorldWidth * 16);
+      y = std::clamp(y + (static_cast<int>(next_random() % 15U) - 7) * 4, 0,
+                     vector_v2::kWorldHeight * 16);
       gesture.push_back({.x_quarter = static_cast<std::uint16_t>(x),
                          .y_quarter = static_cast<std::uint16_t>(y),
                          .radius_256 = constant_radius
@@ -1022,14 +1024,16 @@ TEST_CASE("deferred absorption equals synchronous in-place appends") {
   std::size_t appended_operations = 0;
   for (std::size_t gesture_index = 0; gesture_index < 6U; ++gesture_index) {
     gesture.clear();
-    int x = 80 + static_cast<int>(next_random() % 400U);
-    int y = 80 + static_cast<int>(next_random() % 480U);
+    int x = 320 + static_cast<int>(next_random() % 400U) * 4;
+    int y = 320 + static_cast<int>(next_random() % 480U) * 4;
     const bool eraser = gesture_index % 3U == 2U;
     const std::uint16_t base_radius = static_cast<std::uint16_t>(192U + next_random() % 1'600U);
     const std::size_t gesture_samples = 40U + next_random() % 120U;
     for (std::size_t index = 0; index < gesture_samples; ++index) {
-      x = std::clamp(x + static_cast<int>(next_random() % 15U) - 7, 0, vector_v2::kWorldWidth * 4);
-      y = std::clamp(y + static_cast<int>(next_random() % 15U) - 7, 0, vector_v2::kWorldHeight * 4);
+      x = std::clamp(x + (static_cast<int>(next_random() % 15U) - 7) * 4, 0,
+                     vector_v2::kWorldWidth * 16);
+      y = std::clamp(y + (static_cast<int>(next_random() % 15U) - 7) * 4, 0,
+                     vector_v2::kWorldHeight * 16);
       gesture.push_back(
           {.x_quarter = static_cast<std::uint16_t>(x),
            .y_quarter = static_cast<std::uint16_t>(y),
@@ -1162,8 +1166,8 @@ TEST_CASE("in-place append bounds mutation to the active zoom") {
   {
     std::array<vector_v2::CompactOperationSample, 12> ink{};
     for (std::size_t index = 0; index < ink.size(); ++index) {
-      ink[index] = {.x_quarter = static_cast<std::uint16_t>(20U + index * 40U),
-                    .y_quarter = static_cast<std::uint16_t>(460U - index * 36U),
+      ink[index] = {.x_quarter = static_cast<std::uint16_t>(80U + index * 160U),
+                    .y_quarter = static_cast<std::uint16_t>(1840U - index * 144U),
                     .radius_256 = 2'048U,
                     .elapsed_ms = static_cast<std::uint16_t>(index * 8U)};
     }
@@ -1183,8 +1187,8 @@ TEST_CASE("in-place append bounds mutation to the active zoom") {
   // resident 100% tiles.
   std::array<vector_v2::CompactOperationSample, 8> samples{};
   for (std::size_t index = 0; index < samples.size(); ++index) {
-    samples[index] = {.x_quarter = static_cast<std::uint16_t>(40U + index * 36U),
-                      .y_quarter = static_cast<std::uint16_t>(48U + index * 40U),
+    samples[index] = {.x_quarter = static_cast<std::uint16_t>(160U + index * 144U),
+                      .y_quarter = static_cast<std::uint16_t>(192U + index * 160U),
                       .radius_256 = 1'024U,
                       .elapsed_ms = static_cast<std::uint16_t>(index * 8U)};
   }
@@ -1226,8 +1230,8 @@ TEST_CASE("in-place append bounds mutation to the active zoom") {
   // is dropped and only the overview is painted.
   std::array<vector_v2::CompactOperationSample, 4> second{};
   for (std::size_t index = 0; index < second.size(); ++index) {
-    second[index] = {.x_quarter = static_cast<std::uint16_t>(60U + index * 48U),
-                     .y_quarter = static_cast<std::uint16_t>(120U + index * 32U),
+    second[index] = {.x_quarter = static_cast<std::uint16_t>(240U + index * 192U),
+                     .y_quarter = static_cast<std::uint16_t>(480U + index * 128U),
                      .radius_256 = 1'024U,
                      .elapsed_ms = static_cast<std::uint16_t>(index * 8U)};
   }
@@ -1251,8 +1255,8 @@ TEST_CASE("in-place append retains matching uniforms under an eraser") {
 
   std::array<vector_v2::CompactOperationSample, 8> erase{};
   for (std::size_t index = 0; index < erase.size(); ++index) {
-    erase[index] = {.x_quarter = static_cast<std::uint16_t>(60U + index * 40U),
-                    .y_quarter = static_cast<std::uint16_t>(60U + index * 40U),
+    erase[index] = {.x_quarter = static_cast<std::uint16_t>(240U + index * 160U),
+                    .y_quarter = static_cast<std::uint16_t>(240U + index * 160U),
                     .radius_256 = 1'024U,
                     .elapsed_ms = static_cast<std::uint16_t>(index * 8U)};
   }
@@ -1371,13 +1375,13 @@ TEST_CASE("in-place append fails atomically before mutation") {
   const auto revision_before = rig.canvas.current_revision();
 
   const std::array valid{
-      vector_v2::CompactOperationSample{.x_quarter = 100, .y_quarter = 100, .radius_256 = 512},
+      vector_v2::CompactOperationSample{.x_quarter = 400, .y_quarter = 400, .radius_256 = 512},
       vector_v2::CompactOperationSample{
-          .x_quarter = 300, .y_quarter = 300, .radius_256 = 512, .elapsed_ms = 8},
+          .x_quarter = 1200, .y_quarter = 1200, .radius_256 = 512, .elapsed_ms = 8},
   };
   // Invalid sample: zero radius is rejected by log preparation.
   const std::array invalid{
-      vector_v2::CompactOperationSample{.x_quarter = 100, .y_quarter = 100, .radius_256 = 0}};
+      vector_v2::CompactOperationSample{.x_quarter = 400, .y_quarter = 400, .radius_256 = 0}};
   CHECK_FALSE(vector_v2::append_incrementally_in_place(rig.log, rig.canvas,
                                                        {.color = 0x001FU, .samples = invalid},
                                                        rig.in_place_workspace(), view)
@@ -1419,8 +1423,8 @@ TEST_CASE("in-place append preserves same-color uniforms at every zoom") {
   std::array<vector_v2::CompactOperationSample, 4> samples{};
   for (std::size_t index = 0; index < samples.size(); ++index) {
     // World x 20..110 with radius 8: crosses both 64-px 100% tiles.
-    samples[index] = {.x_quarter = static_cast<std::uint16_t>((20U + index * 30U) * 4U),
-                      .y_quarter = static_cast<std::uint16_t>(20U * 4U),
+    samples[index] = {.x_quarter = static_cast<std::uint16_t>((20U + index * 30U) * 16U),
+                      .y_quarter = static_cast<std::uint16_t>(20U * 16U),
                       .radius_256 = 8U * 256U,
                       .elapsed_ms = static_cast<std::uint16_t>(index * 8U)};
   }

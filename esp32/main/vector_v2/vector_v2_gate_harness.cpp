@@ -146,8 +146,8 @@ bool load_realistic_document(OperationLog& log, MaterializedCanvas& canvas,
     }
     for (std::size_t index = 0; index < input.size(); ++index) {
       conversion_storage[index] = {
-          .x_quarter = static_cast<std::uint16_t>(std::lround(input[index].x * 4.0F)),
-          .y_quarter = static_cast<std::uint16_t>(std::lround(input[index].y * 4.0F)),
+          .x_quarter = static_cast<std::uint16_t>(std::lround(input[index].x * 16.0F)),
+          .y_quarter = static_cast<std::uint16_t>(std::lround(input[index].y * 16.0F)),
           .radius_256 = static_cast<std::uint16_t>(std::lround(input[index].radius * 256.0F)),
           .elapsed_ms = static_cast<std::uint16_t>(index * 15U),
       };
@@ -463,8 +463,8 @@ bool append_overlapping_scribble(OperationLog& log, MaterializedCanvas& canvas,
                                       (kSamplesPerStroke - 1U);
       const std::size_t y = 320U + triangle * 32U + stroke * 3U;
       samples[index] = {
-          .x_quarter = static_cast<std::uint16_t>(x * 4U),
-          .y_quarter = static_cast<std::uint16_t>(y * 4U),
+          .x_quarter = static_cast<std::uint16_t>(x * 16U),
+          .y_quarter = static_cast<std::uint16_t>(y * 16U),
           .radius_256 = kRadius256,
           .elapsed_ms = static_cast<std::uint16_t>(index * 8U),
       };
@@ -637,8 +637,8 @@ bool run_edge_ink_case(VectorV2Presenter& presenter, vector_v2::TileProducer& pr
     }
     // At 100% with origin (0, 0) panel coordinates equal world coordinates.
     const std::array<CompactOperationSample, 1> samples{{{
-        .x_quarter = static_cast<std::uint16_t>(corner[0] * 4),
-        .y_quarter = static_cast<std::uint16_t>(corner[1] * 4),
+        .x_quarter = static_cast<std::uint16_t>(corner[0] * 16),
+        .y_quarter = static_cast<std::uint16_t>(corner[1] * 16),
         .radius_256 = static_cast<std::uint16_t>(kRadius * 256.0F),
         .elapsed_ms = 0,
     }}};
@@ -703,8 +703,8 @@ bool run_overlay_canvas_purity_gate(VectorV2Presenter& presenter, OperationLog& 
   std::uint16_t gesture_id = 6'000;
   for (const auto& center : kOverlayCenters) {
     const std::array<CompactOperationSample, 1> sample{{{
-        .x_quarter = static_cast<std::uint16_t>(center[0] * 4),
-        .y_quarter = static_cast<std::uint16_t>(center[1] * 4),
+        .x_quarter = static_cast<std::uint16_t>(center[0] * 16),
+        .y_quarter = static_cast<std::uint16_t>(center[1] * 16),
         .radius_256 = 12U * 256U,
         .elapsed_ms = 0,
     }}};
@@ -804,8 +804,8 @@ bool run_draw_while_fill_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
   auto fast_xl = interaction_samples.first(8U);
   for (std::size_t index = 0; index < fast_xl.size(); ++index) {
     fast_xl[index] = {
-        .x_quarter = static_cast<std::uint16_t>(20U + index * 48U),
-        .y_quarter = static_cast<std::uint16_t>(index % 2U == 0U ? 180U : 240U),
+        .x_quarter = static_cast<std::uint16_t>(80U + index * 192U),
+        .y_quarter = static_cast<std::uint16_t>(index % 2U == 0U ? 720U : 960U),
         // XL is 20 screen pixels; at 400% that is 5 world units.
         .radius_256 = 1'280U,
         .elapsed_ms = static_cast<std::uint16_t>(index * 8U),
@@ -2264,8 +2264,8 @@ bool append_hairline_stroke(OperationLog& log, MaterializedCanvas& canvas,
       // Chained chunks share endpoints: the first sample repeats the
       // previous chunk's final position so no segment is skipped.
       chunk[count++] = {
-          .x_quarter = static_cast<std::uint16_t>(x * 4.0F),
-          .y_quarter = static_cast<std::uint16_t>(y * 4.0F),
+          .x_quarter = static_cast<std::uint16_t>(x * 16.0F),
+          .y_quarter = static_cast<std::uint16_t>(y * 16.0F),
           .radius_256 = static_cast<std::uint16_t>(radius * 256.0F),
           .elapsed_ms = elapsed_ms,
       };
@@ -2282,8 +2282,8 @@ bool append_hairline_stroke(OperationLog& log, MaterializedCanvas& canvas,
         remaining -= step;
       }
       chunk[count++] = {
-          .x_quarter = static_cast<std::uint16_t>(x * 4.0F),
-          .y_quarter = static_cast<std::uint16_t>(y * 4.0F),
+          .x_quarter = static_cast<std::uint16_t>(x * 16.0F),
+          .y_quarter = static_cast<std::uint16_t>(y * 16.0F),
           .radius_256 = static_cast<std::uint16_t>(radius * 256.0F),
           .elapsed_ms = elapsed_ms,
       };
@@ -2649,8 +2649,8 @@ bool append_stress_document(OperationLog& log, MaterializedCanvas& canvas,
       const float y = std::clamp(base_y + static_cast<float>(wave * 3), 0.0F,
                                  static_cast<float>(vector_v2::kWorldHeight));
       samples[index] = {
-          .x_quarter = static_cast<std::uint16_t>(x * 4.0F),
-          .y_quarter = static_cast<std::uint16_t>(y * 4.0F),
+          .x_quarter = static_cast<std::uint16_t>(x * 16.0F),
+          .y_quarter = static_cast<std::uint16_t>(y * 16.0F),
           .radius_256 = static_cast<std::uint16_t>((3U + operation % 6U) * 256U),
           .elapsed_ms = static_cast<std::uint16_t>(index * 8U),
       };

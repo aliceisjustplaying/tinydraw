@@ -20,10 +20,10 @@ bool reference_covers(vector_v2::CompactOperationSample first,
                       vector_v2::CompactOperationSample second, float pixel_x, float pixel_y) {
   constexpr float scale = 4.0F;
   constexpr float minimum_radius = 0.75F;
-  const float first_x = static_cast<float>(first.x_quarter) * 0.25F * scale;
-  const float first_y = static_cast<float>(first.y_quarter) * 0.25F * scale;
-  const float second_x = static_cast<float>(second.x_quarter) * 0.25F * scale;
-  const float second_y = static_cast<float>(second.y_quarter) * 0.25F * scale;
+  const float first_x = static_cast<float>(first.x_quarter) * 0.0625F * scale;
+  const float first_y = static_cast<float>(first.y_quarter) * 0.0625F * scale;
+  const float second_x = static_cast<float>(second.x_quarter) * 0.0625F * scale;
+  const float second_y = static_cast<float>(second.y_quarter) * 0.0625F * scale;
   const float first_radius =
       std::max(static_cast<float>(first.radius_256) / 256.0F * scale, minimum_radius);
   const float second_radius =
@@ -50,8 +50,8 @@ TEST_CASE("incremental operation paints one stroke without clearing prior pixels
   std::array<std::uint16_t, 32U * 32U> pixels{};
   pixels.fill(0x1111U);
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 512},
-      vector_v2::CompactOperationSample{.x_quarter = 80, .y_quarter = 40, .radius_256 = 512},
+      vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 160, .radius_256 = 512},
+      vector_v2::CompactOperationSample{.x_quarter = 320, .y_quarter = 160, .radius_256 = 512},
   };
   const vector_v2::OperationAppend operation{
       .tool = vector_v2::OperationTool::kPen,
@@ -72,9 +72,9 @@ TEST_CASE("committed sparse ink follows the curved midpoint path") {
   std::array<std::uint16_t, 64U * 48U> pixels{};
   pixels.fill(0xFFFFU);
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 120, .radius_256 = 384},
-      vector_v2::CompactOperationSample{.x_quarter = 120, .y_quarter = 40, .radius_256 = 384},
-      vector_v2::CompactOperationSample{.x_quarter = 200, .y_quarter = 120, .radius_256 = 384},
+      vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 480, .radius_256 = 384},
+      vector_v2::CompactOperationSample{.x_quarter = 480, .y_quarter = 160, .radius_256 = 384},
+      vector_v2::CompactOperationSample{.x_quarter = 800, .y_quarter = 480, .radius_256 = 384},
   };
   const vector_v2::OperationAppend operation{
       .tool = vector_v2::OperationTool::kPen,
@@ -87,8 +87,8 @@ TEST_CASE("committed sparse ink follows the curved midpoint path") {
   for (std::size_t index = 0; index < samples.size(); ++index) {
     const auto sample = samples[index];
     const tinydraw::InkPoint point{
-        .position = {.x = static_cast<float>(sample.x_quarter) * 0.25F,
-                     .y = static_cast<float>(sample.y_quarter) * 0.25F},
+        .position = {.x = static_cast<float>(sample.x_quarter) * 0.0625F,
+                     .y = static_cast<float>(sample.y_quarter) * 0.0625F},
         .radius = static_cast<float>(sample.radius_256) / 256.0F,
     };
     const auto update =
@@ -119,8 +119,8 @@ TEST_CASE("eraser applies after pen in painter order") {
   std::array<std::uint16_t, 24U * 24U> pixels{};
   pixels.fill(0xFFFFU);
   const std::array pen_samples{
-      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 40, .radius_256 = 768},
-      vector_v2::CompactOperationSample{.x_quarter = 80, .y_quarter = 40, .radius_256 = 768},
+      vector_v2::CompactOperationSample{.x_quarter = 64, .y_quarter = 160, .radius_256 = 768},
+      vector_v2::CompactOperationSample{.x_quarter = 320, .y_quarter = 160, .radius_256 = 768},
   };
   const vector_v2::OperationAppend pen{
       .tool = vector_v2::OperationTool::kPen, .color = 0x001FU, .samples = pen_samples};
@@ -131,8 +131,8 @@ TEST_CASE("eraser applies after pen in painter order") {
   CHECK(pixels[10U * 24U + 10U] == 0x001FU);
 
   const std::array eraser_samples{
-      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 16, .radius_256 = 512},
-      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 64, .radius_256 = 512},
+      vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 64, .radius_256 = 512},
+      vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 256, .radius_256 = 512},
   };
   const vector_v2::OperationAppend eraser{.tool = vector_v2::OperationTool::kEraser,
                                           .samples = eraser_samples};
@@ -150,7 +150,7 @@ TEST_CASE("overview and tile surfaces map the same world operation") {
   std::array<std::uint16_t, vector_v2::kTilePixels> tile{};
   tile.fill(0xFFFFU);
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 272, .y_quarter = 16, .radius_256 = 1024},
+      vector_v2::CompactOperationSample{.x_quarter = 1088, .y_quarter = 64, .radius_256 = 1024},
   };
   const vector_v2::OperationAppend operation{.color = 0x07E0U, .samples = samples};
   REQUIRE(vector_v2::apply_incremental_operation(
@@ -170,8 +170,8 @@ TEST_CASE("overview and tile surfaces map the same world operation") {
 TEST_CASE("shared operation bounds conservatively include radius and clip to the world") {
   const std::array samples{
       vector_v2::CompactOperationSample{.x_quarter = 0, .y_quarter = 0, .radius_256 = 512},
-      vector_v2::CompactOperationSample{.x_quarter = vector_v2::kWorldWidth * 4,
-                                        .y_quarter = vector_v2::kWorldHeight * 4,
+      vector_v2::CompactOperationSample{.x_quarter = vector_v2::kWorldWidth * 16,
+                                        .y_quarter = vector_v2::kWorldHeight * 16,
                                         .radius_256 = 512},
   };
   CHECK(vector_v2::operation_world_bounds(samples) ==
@@ -182,9 +182,9 @@ TEST_CASE("shared operation bounds conservatively include radius and clip to the
 TEST_CASE("a clipped source segment is one bounded raster unit") {
   constexpr vector_v2::PixelRect bounds{0, 0, 128, 128};
   constexpr auto first =
-      vector_v2::CompactOperationSample{.x_quarter = 20, .y_quarter = 20, .radius_256 = 5'120};
+      vector_v2::CompactOperationSample{.x_quarter = 80, .y_quarter = 80, .radius_256 = 5'120};
   constexpr auto second =
-      vector_v2::CompactOperationSample{.x_quarter = 420, .y_quarter = 360, .radius_256 = 3'328};
+      vector_v2::CompactOperationSample{.x_quarter = 1680, .y_quarter = 1440, .radius_256 = 3'328};
   std::array<std::uint16_t, 128U * 128U> complete{};
   std::array<std::uint16_t, 128U * 128U> sliced{};
   complete.fill(0xFFFFU);
@@ -225,13 +225,13 @@ TEST_CASE("constant and tapered segments match a per-pixel oracle across clip bo
 
   for (int case_index = 0; case_index < 256; ++case_index) {
     vector_v2::CompactOperationSample first{
-        .x_quarter = static_cast<std::uint16_t>(8U + next() % 112U),
-        .y_quarter = static_cast<std::uint16_t>(8U + next() % 112U),
+        .x_quarter = static_cast<std::uint16_t>((8U + next() % 112U) * 4U),
+        .y_quarter = static_cast<std::uint16_t>((8U + next() % 112U) * 4U),
         .radius_256 = static_cast<std::uint16_t>(64U + next() % 4'096U),
     };
     vector_v2::CompactOperationSample second{
-        .x_quarter = static_cast<std::uint16_t>(8U + next() % 112U),
-        .y_quarter = static_cast<std::uint16_t>(8U + next() % 112U),
+        .x_quarter = static_cast<std::uint16_t>((8U + next() % 112U) * 4U),
+        .y_quarter = static_cast<std::uint16_t>((8U + next() % 112U) * 4U),
         .radius_256 = static_cast<std::uint16_t>(64U + next() % 4'096U),
     };
     if (case_index % 2 == 0) {
@@ -281,9 +281,9 @@ TEST_CASE("constructed two-span taper stays on the exact raster path") {
   constexpr int height = 128;
   constexpr std::size_t pixel_count = static_cast<std::size_t>(width * height);
   constexpr auto first =
-      vector_v2::CompactOperationSample{.x_quarter = 48, .y_quarter = 48, .radius_256 = 4'096};
+      vector_v2::CompactOperationSample{.x_quarter = 192, .y_quarter = 192, .radius_256 = 4'096};
   constexpr auto second =
-      vector_v2::CompactOperationSample{.x_quarter = 50, .y_quarter = 50, .radius_256 = 1'472};
+      vector_v2::CompactOperationSample{.x_quarter = 200, .y_quarter = 200, .radius_256 = 1'472};
   const std::array samples{first, second};
   const vector_v2::OperationAppend operation{.color = 0x001FU, .samples = samples};
   std::vector<std::uint16_t> rendered(pixel_count, 0xFFFFU);
@@ -317,9 +317,9 @@ TEST_CASE("masked segment never repaints finalized pixels and finalizes covered 
   constexpr int width = 32;
   constexpr int height = 32;
   constexpr auto first =
-      vector_v2::CompactOperationSample{.x_quarter = 12, .y_quarter = 16, .radius_256 = 1'024};
+      vector_v2::CompactOperationSample{.x_quarter = 48, .y_quarter = 64, .radius_256 = 1'024};
   constexpr auto second =
-      vector_v2::CompactOperationSample{.x_quarter = 100, .y_quarter = 96, .radius_256 = 2'048};
+      vector_v2::CompactOperationSample{.x_quarter = 400, .y_quarter = 384, .radius_256 = 2'048};
   const vector_v2::IncrementalSegment segment{.color = 0x001FU, .first = first, .second = second};
   const vector_v2::RasterSurface make_surface = {.zoom = vector_v2::ZoomLevel::k100Percent,
                                                  .level_bounds = {0, 0, width, height},
@@ -375,7 +375,7 @@ TEST_CASE("masked painter rejects a mask that aliases its pixel surface") {
   CHECK_FALSE(vector_v2::apply_masked_incremental_segment(
       {.color = 0x001FU,
        .first = {.x_quarter = 0, .y_quarter = 0, .radius_256 = 256},
-       .second = {.x_quarter = 12, .y_quarter = 12, .radius_256 = 256}},
+       .second = {.x_quarter = 48, .y_quarter = 48, .radius_256 = 256}},
       surface, aliased_mask));
 }
 
@@ -384,9 +384,9 @@ TEST_CASE("masked painter honors edge bounds narrower than its stride") {
   constexpr int height = 32;
   constexpr int stride = 128;
   constexpr auto first =
-      vector_v2::CompactOperationSample{.x_quarter = 150, .y_quarter = 30, .radius_256 = 2'560};
+      vector_v2::CompactOperationSample{.x_quarter = 600, .y_quarter = 120, .radius_256 = 2'560};
   constexpr auto second =
-      vector_v2::CompactOperationSample{.x_quarter = 210, .y_quarter = 110, .radius_256 = 1'024};
+      vector_v2::CompactOperationSample{.x_quarter = 840, .y_quarter = 440, .radius_256 = 1'024};
   const vector_v2::IncrementalSegment segment{.color = 0x07E0U, .first = first, .second = second};
 
   constexpr std::uint16_t kPad = 0xDEADU;
@@ -431,9 +431,9 @@ TEST_CASE("constructed two-span taper is identical through the masked path") {
   constexpr int width = 128;
   constexpr int height = 128;
   constexpr auto first =
-      vector_v2::CompactOperationSample{.x_quarter = 48, .y_quarter = 48, .radius_256 = 4'096};
+      vector_v2::CompactOperationSample{.x_quarter = 192, .y_quarter = 192, .radius_256 = 4'096};
   constexpr auto second =
-      vector_v2::CompactOperationSample{.x_quarter = 50, .y_quarter = 50, .radius_256 = 1'472};
+      vector_v2::CompactOperationSample{.x_quarter = 200, .y_quarter = 200, .radius_256 = 1'472};
   std::vector<std::uint16_t> masked(static_cast<std::size_t>(width * height), 0xFFFFU);
   std::vector<std::uint16_t> direct(masked.size(), 0xFFFFU);
   std::vector<std::uint8_t> mask((masked.size() + 7U) / 8U, 0U);
@@ -456,7 +456,7 @@ TEST_CASE("constructed two-span taper is identical through the masked path") {
 TEST_CASE("affected tile enumeration clips to the bounded world") {
   const std::array samples{
       vector_v2::CompactOperationSample{.x_quarter = 0, .y_quarter = 0, .radius_256 = 2048},
-      vector_v2::CompactOperationSample{.x_quarter = 272, .y_quarter = 272, .radius_256 = 2048},
+      vector_v2::CompactOperationSample{.x_quarter = 1088, .y_quarter = 1088, .radius_256 = 2048},
   };
   const vector_v2::OperationAppend operation{.samples = samples};
   std::array<vector_v2::TileKey, 4> keys{};
@@ -480,7 +480,7 @@ TEST_CASE("affected tile enumeration clips to the bounded world") {
 
 TEST_CASE("thin stroke bounds include the coarsest tiled paint halo") {
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 255, .y_quarter = 256, .radius_256 = 1},
+      vector_v2::CompactOperationSample{.x_quarter = 1020, .y_quarter = 1024, .radius_256 = 1},
   };
   CHECK(vector_v2::operation_world_bounds(samples) == vector_v2::PixelRect{62, 62, 66, 66});
   const vector_v2::OperationAppend operation{.samples = samples};
@@ -495,8 +495,8 @@ TEST_CASE("thin stroke bounds include the coarsest tiled paint halo") {
 
 TEST_CASE("affected tiles cover partial edge grids and high zooms") {
   const std::array edge_sample{
-      vector_v2::CompactOperationSample{.x_quarter = vector_v2::kWorldWidth * 4,
-                                        .y_quarter = vector_v2::kWorldHeight * 4,
+      vector_v2::CompactOperationSample{.x_quarter = vector_v2::kWorldWidth * 16,
+                                        .y_quarter = vector_v2::kWorldHeight * 16,
                                         .radius_256 = 256}};
   const vector_v2::OperationAppend operation{.samples = edge_sample};
   std::array<vector_v2::TileKey, 4> keys{};
@@ -518,7 +518,7 @@ TEST_CASE("all committed zooms paint the same world center and enumerate its til
       vector_v2::ZoomLevel::k400Percent,
   };
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 400, .y_quarter = 480, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 1600, .y_quarter = 1920, .radius_256 = 256},
   };
   const vector_v2::OperationAppend operation{.color = 0xF800U, .samples = samples};
   for (const vector_v2::ZoomLevel zoom : zooms) {
@@ -556,7 +556,7 @@ TEST_CASE("raster surface honors a stride larger than its visible width") {
   std::array<std::uint16_t, 4U * 3U> pixels{};
   pixels.fill(0x1111U);
   const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256}};
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
   REQUIRE(vector_v2::apply_incremental_operation({.color = 0xF800U, .samples = samples},
                                                  {.zoom = vector_v2::ZoomLevel::k100Percent,
                                                   .level_bounds = {0, 0, 2, 3},
@@ -654,8 +654,8 @@ TEST_CASE("masked painter keeps a supplied row summary exact") {
   // A fat constant-radius segment across the middle saturates interior rows.
   REQUIRE(vector_v2::apply_masked_incremental_segment(
       {.color = 0x001FU,
-       .first = {.x_quarter = 0, .y_quarter = 64, .radius_256 = 8 * 256},
-       .second = {.x_quarter = 128, .y_quarter = 64, .radius_256 = 8 * 256}},
+       .first = {.x_quarter = 0, .y_quarter = 256, .radius_256 = 8 * 256},
+       .second = {.x_quarter = 512, .y_quarter = 256, .radius_256 = 8 * 256}},
       surface, mask, &summary));
   // Verify the summary against the mask bit-for-bit.
   for (int row = 0; row < kSize; ++row) {
@@ -671,8 +671,8 @@ TEST_CASE("masked painter keeps a supplied row summary exact") {
   // An eraser finalizes background pixels the same way; cover everything.
   REQUIRE(vector_v2::apply_masked_incremental_segment(
       {.tool = vector_v2::OperationTool::kEraser,
-       .first = {.x_quarter = 64, .y_quarter = 64, .radius_256 = 64 * 256},
-       .second = {.x_quarter = 64, .y_quarter = 64, .radius_256 = 64 * 256}},
+       .first = {.x_quarter = 256, .y_quarter = 256, .radius_256 = 64 * 256},
+       .second = {.x_quarter = 256, .y_quarter = 256, .radius_256 = 64 * 256}},
       surface, mask, &summary));
   CHECK(summary.all_saturated());
 }

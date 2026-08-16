@@ -17,8 +17,8 @@ TEST_CASE("replay block index is conservative and masks queries to an active pre
   for (std::size_t index = 0; index < 40U; ++index) {
     const int x = index < 16U ? 20 : (index < 32U ? 700 : 1'300);
     const std::array sample{vector_v2::CompactOperationSample{
-        .x_quarter = static_cast<std::uint16_t>(x * 4),
-        .y_quarter = static_cast<std::uint16_t>(40 * 4),
+        .x_quarter = static_cast<std::uint16_t>(x * 16),
+        .y_quarter = static_cast<std::uint16_t>(40 * 16),
         .radius_256 = 256,
     }};
     REQUIRE(log.append({.samples = sample}));
@@ -47,7 +47,7 @@ TEST_CASE("replay block index is conservative and masks queries to an active pre
 
   REQUIRE(log.reset({50}));
   const std::array reset_sample{vector_v2::CompactOperationSample{
-      .x_quarter = 1'000U * 4U, .y_quarter = 1'000U * 4U, .radius_256 = 256}};
+      .x_quarter = 1'000U * 16U, .y_quarter = 1'000U * 16U, .radius_256 = 256}};
   REQUIRE(log.append({.samples = reset_sample}));
   REQUIRE(index.sync(log));
   auto old_cell = index.query({0, 0, 128, 128}, 0, 1);

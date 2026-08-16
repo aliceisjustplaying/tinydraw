@@ -9,8 +9,8 @@ namespace tinydraw::vector_v2 {
 namespace {
 
 bool valid_sample(CompactLodSample sample) {
-  return sample.x_quarter <= kWorldWidth * 4 && sample.y_quarter <= kWorldHeight * 4 &&
-         sample.radius_256 != 0U;
+  return sample.x_quarter <= kWorldWidth * kSampleUnitsPerWorldUnit &&
+         sample.y_quarter <= kWorldHeight * kSampleUnitsPerWorldUnit && sample.radius_256 != 0U;
 }
 
 }  // namespace

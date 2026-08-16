@@ -14,8 +14,18 @@ enum class OperationTool : std::uint8_t {
   kEraser,
 };
 
-// Append-time sample encoding. Coordinates are quarter world units; centers
-// may lie on the clipped right/bottom world edge. Radius is 1/256 world units
+// Sample-center coordinate resolution. Owner experiment 2026-08-16: raised
+// from 4 (quarter world units — one full screen pixel of centerline
+// resolution at 400%, the measured optical-jaggedness mechanism; see
+// benchmark-results/settled-aa-prototype/RECEIPT.md) to 16 (0.25 px at
+// 400%). 1472*16 = 23,552 and 1792*16 = 28,672 both fit uint16, so the
+// encoding costs zero additional storage.
+inline constexpr int kSampleUnitsPerWorldUnit = 16;
+
+// Append-time sample encoding. Coordinates are 1/kSampleUnitsPerWorldUnit
+// world units (the x_quarter/y_quarter field names predate the resolution
+// experiment; rename lands only if the experiment sticks). Centers may lie
+// on the clipped right/bottom world edge. Radius is 1/256 world units
 // across the full uint16 range; elapsed time is relative to operation start.
 struct CompactOperationSample {
   std::uint16_t x_quarter = 0;

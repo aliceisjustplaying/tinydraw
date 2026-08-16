@@ -231,16 +231,16 @@ TEST_CASE("tile producer publishes one completed supertask as a group") {
 TEST_CASE("tile producer output equals direct painter-ordered viewport replay") {
   Fixture fixture;
   const std::array first{
-      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 80, .radius_256 = 768},
-      vector_v2::CompactOperationSample{.x_quarter = 600, .y_quarter = 400, .radius_256 = 1024},
+      vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 320, .radius_256 = 768},
+      vector_v2::CompactOperationSample{.x_quarter = 2400, .y_quarter = 1600, .radius_256 = 1024},
   };
   const std::array second{
-      vector_v2::CompactOperationSample{.x_quarter = 300, .y_quarter = 100, .radius_256 = 512},
-      vector_v2::CompactOperationSample{.x_quarter = 300, .y_quarter = 600, .radius_256 = 512},
+      vector_v2::CompactOperationSample{.x_quarter = 1200, .y_quarter = 400, .radius_256 = 512},
+      vector_v2::CompactOperationSample{.x_quarter = 1200, .y_quarter = 2400, .radius_256 = 512},
   };
   const std::array erased{
-      vector_v2::CompactOperationSample{.x_quarter = 280, .y_quarter = 260, .radius_256 = 384},
-      vector_v2::CompactOperationSample{.x_quarter = 360, .y_quarter = 340, .radius_256 = 384},
+      vector_v2::CompactOperationSample{.x_quarter = 1120, .y_quarter = 1040, .radius_256 = 384},
+      vector_v2::CompactOperationSample{.x_quarter = 1440, .y_quarter = 1360, .radius_256 = 384},
   };
   REQUIRE(fixture.log.append(append(first, 0xF800U)));
   REQUIRE(fixture.log.append(append(second, 0x001FU)));
@@ -283,7 +283,7 @@ TEST_CASE("tile producer output equals direct painter-ordered viewport replay") 
 TEST_CASE("tile producer scans painter order once per supertask and skips distant operations") {
   Fixture fixture;
   const std::array visible{
-      vector_v2::CompactOperationSample{.x_quarter = 80, .y_quarter = 80, .radius_256 = 256}};
+      vector_v2::CompactOperationSample{.x_quarter = 320, .y_quarter = 320, .radius_256 = 256}};
   const std::array distant{vector_v2::CompactOperationSample{
       .x_quarter = 4U * 1'000U, .y_quarter = 4U * 1'000U, .radius_256 = 256}};
   REQUIRE(fixture.log.append(append(visible)));
@@ -303,9 +303,9 @@ TEST_CASE("tile producer scans painter order once per supertask and skips distan
 TEST_CASE("tile producer rejects distant segments inside an overlapping operation bound") {
   Fixture fixture;
   const std::array around_view{
-      vector_v2::CompactOperationSample{.x_quarter = 0, .y_quarter = 1'200, .radius_256 = 256},
-      vector_v2::CompactOperationSample{.x_quarter = 1'200, .y_quarter = 1'200, .radius_256 = 256},
-      vector_v2::CompactOperationSample{.x_quarter = 1'200, .y_quarter = 0, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 0, .y_quarter = 4'800, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 4'800, .y_quarter = 4'800, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 4'800, .y_quarter = 0, .radius_256 = 256},
   };
   REQUIRE(fixture.log.append(append(around_view, 0x001FU)));
   std::array<std::uint16_t, vector_v2::kOverviewPixels> revised_overview{};
@@ -370,7 +370,7 @@ TEST_CASE("tile producer validates uniform baseline reset") {
   Fixture fixture;
   CHECK(fixture.producer.reset_uniform_baseline({0}));
   const std::array point{
-      vector_v2::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256}};
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
   REQUIRE(fixture.log.append(append(point)));
   CHECK_FALSE(fixture.producer.reset_uniform_baseline({1}));
 }
@@ -422,9 +422,9 @@ TEST_CASE("tile producer sliced long strokes equal direct painter replay") {
 TEST_CASE("tile producer isolates an oversized newest segment from older raster work") {
   Fixture fixture;
   const std::array oversized_segments{
-      vector_v2::CompactOperationSample{.x_quarter = 20, .y_quarter = 20, .radius_256 = 256},
-      vector_v2::CompactOperationSample{.x_quarter = 200, .y_quarter = 200, .radius_256 = 256},
-      vector_v2::CompactOperationSample{.x_quarter = 48, .y_quarter = 48, .radius_256 = 5'120},
+      vector_v2::CompactOperationSample{.x_quarter = 80, .y_quarter = 80, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 800, .y_quarter = 800, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 192, .y_quarter = 192, .radius_256 = 5'120},
   };
   REQUIRE(fixture.log.append(append(oversized_segments, 0x001FU)));
   std::array<std::uint16_t, vector_v2::kOverviewPixels> revised_overview{};
@@ -492,8 +492,8 @@ TEST_CASE("tile producer restarts after revision changes during sliced replay") 
   REQUIRE(fixture.producer.produce_next(view));
 
   const std::array second{
-      vector_v2::CompactOperationSample{.x_quarter = 80, .y_quarter = 80, .radius_256 = 2'048},
-      vector_v2::CompactOperationSample{.x_quarter = 360, .y_quarter = 360, .radius_256 = 2'048},
+      vector_v2::CompactOperationSample{.x_quarter = 320, .y_quarter = 320, .radius_256 = 2'048},
+      vector_v2::CompactOperationSample{.x_quarter = 1440, .y_quarter = 1440, .radius_256 = 2'048},
   };
   REQUIRE(fixture.log.append(append(second, 0xF800U)));
   std::array<std::uint16_t, vector_v2::kOverviewPixels> overview_two{};
@@ -575,8 +575,10 @@ TEST_CASE("saturated groups complete without replaying buried older work") {
   }
   const bool eraser_cover = false;
   const std::array cover{
-      vector_v2::CompactOperationSample{.x_quarter = 60, .y_quarter = 256, .radius_256 = 80 * 256},
-      vector_v2::CompactOperationSample{.x_quarter = 460, .y_quarter = 256, .radius_256 = 80 * 256},
+      vector_v2::CompactOperationSample{
+          .x_quarter = 240, .y_quarter = 1024, .radius_256 = 80 * 256},
+      vector_v2::CompactOperationSample{
+          .x_quarter = 1840, .y_quarter = 1024, .radius_256 = 80 * 256},
   };
   REQUIRE(fixture.log.append(
       append(cover, 0x07E0U,

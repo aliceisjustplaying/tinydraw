@@ -420,9 +420,11 @@ void run_vector_v2_overview_walk() {
     const std::uint16_t x = static_cast<std::uint16_t>(32U + (index % 6U) * 32U);
     const std::uint16_t y = static_cast<std::uint16_t>(32U + (index / 6U) * 32U);
     const std::array burst_samples{
-        CompactOperationSample{.x_quarter = x, .y_quarter = y, .radius_256 = 512},
-        CompactOperationSample{.x_quarter = static_cast<std::uint16_t>(x + 24U),
-                               .y_quarter = static_cast<std::uint16_t>(y + 16U),
+        CompactOperationSample{.x_quarter = static_cast<std::uint16_t>(x * 4U),
+                               .y_quarter = static_cast<std::uint16_t>(y * 4U),
+                               .radius_256 = 512},
+        CompactOperationSample{.x_quarter = static_cast<std::uint16_t>(x * 4U + 96U),
+                               .y_quarter = static_cast<std::uint16_t>(y * 4U + 64U),
                                .radius_256 = 512},
     };
     const std::int64_t append_started = esp_timer_get_time();
