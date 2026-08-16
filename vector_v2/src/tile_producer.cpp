@@ -41,10 +41,11 @@ TileProducer::TileProducer(OperationLog& log, MaterializedCanvas& canvas,
       baseline_color_(baseline_color) {}
 
 bool TileProducer::ready() const {
-  const std::array<std::span<const std::byte>, 4> workspaces{
+  const std::array<std::span<const std::byte>, 5> workspaces{
       std::as_bytes(workspace_.supertask_pixels), std::as_bytes(workspace_.finalized_pixels),
       std::as_bytes(workspace_.summary_row_unset),
-      std::as_bytes(workspace_.summary_saturated_words)};
+      std::as_bytes(workspace_.summary_saturated_words),
+      std::span<const std::byte>(workspace_.operation_chord_plans)};
   bool workspace_invalid = false;
   for (std::size_t left = 0; left < workspaces.size(); ++left) {
     workspace_invalid = workspace_invalid ||
@@ -68,7 +69,8 @@ bool TileProducer::ready() const {
          workspace_.supertask_pixels.size() >= kTileProducerPixels &&
          workspace_.finalized_pixels.size() >= kTileProducerMaskBytes &&
          workspace_.summary_row_unset.size() >= kTileProducerSummaryRows &&
-         workspace_.summary_saturated_words.size() >= kTileProducerSummaryWords;
+         workspace_.summary_saturated_words.size() >= kTileProducerSummaryWords &&
+         workspace_.operation_chord_plans.size() >= kOperationChordStorageBytes;
 }
 
 const CandidateDiscoveryCounters& TileProducer::candidate_counters() const {
@@ -365,7 +367,7 @@ void TileProducer::record_view_reuses(const ViewRequest& view) {
 
 void TileProducer::consume_active_operation(TileProductionStep&, std::size_t& operations_consumed) {
   active_group_.next_sample = 0U;
-  active_group_.next_curve_step = 0U;
+  active_group_.batch_active = false;
   active_group_.cached_operation_index = kNoCachedOperation;
   ++operations_consumed;
 }
@@ -411,113 +413,98 @@ TileProducer::OperationGate TileProducer::gate_active_operation(TileProductionSt
   return OperationGate::kReady;
 }
 
-void TileProducer::finish_active_segment(std::size_t endpoint, TileProductionStep& result,
-                                         std::size_t& operations_consumed) {
-  const StoredOperation& operation = active_group_.cached_operation;
-  const bool operation_complete = operation.samples.size() <= 2U || endpoint == 2U;
-  if (operation_complete) {
+void TileProducer::finish_active_batch(TileProductionStep& result,
+                                       std::size_t& operations_consumed) {
+  active_group_.batch_active = false;
+  if (active_group_.batch_next_endpoint == 0U) {
     consume_active_operation(result, operations_consumed);
   } else {
-    active_group_.next_sample = endpoint - 1U;
-    active_group_.next_curve_step = 0U;
+    active_group_.next_sample = active_group_.batch_next_endpoint;
   }
 }
 
-bool TileProducer::render_active_segment(TileProductionStep& result,
-                                         std::size_t& operations_consumed,
-                                         std::size_t& raster_steps_consumed,
-                                         std::size_t& raster_work_consumed) {
-#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
-  const std::uint32_t setup_started = raster_census_now();
-#endif
+bool TileProducer::render_active_operation_slice(TileProductionStep& result,
+                                                 std::size_t& operations_consumed,
+                                                 std::size_t& chords_consumed,
+                                                 std::size_t& work_consumed) {
   const StoredOperation& operation = active_group_.cached_operation;
-  if (active_group_.next_sample == 0U) {
-    active_group_.next_sample = operation.samples.size() - 1U;
-  }
-  const std::size_t endpoint = active_group_.next_sample;
-  if (active_group_.next_curve_step == 0U) {
-    const auto prepared =
-        prepare_incremental_curve_unit(operation.samples, endpoint, active_group_.view.zoom);
-    if (!prepared.has_value() || prepared->step_count == 0U) {
+  if (!active_group_.batch_active) {
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+    const std::uint32_t setup_started = raster_census_now();
+#endif
+    if (active_group_.next_sample == 0U) {
+      active_group_.next_sample = operation.samples.size() - 1U;
+    }
+    const auto batch = prepare_operation_chord_batch(
+        operation.samples, active_group_.next_sample, active_group_.view.zoom,
+        active_group_.bounds, workspace_.operation_chord_plans.first(kOperationChordStorageBytes));
+    if (!batch.has_value()) {
       return false;
     }
-    active_group_.prepared_unit = *prepared;
-    active_group_.next_curve_step = prepared->step_count;
-  }
-  // The whole unit paints as one row sweep, so its chords' clipped bounds
-  // union into one work estimate, one rejection, and one saturation gate.
-  const std::size_t unit_steps = active_group_.next_curve_step;
-  PixelRect clipped{active_group_.bounds.x1, active_group_.bounds.y1, active_group_.bounds.x0,
-                    active_group_.bounds.y0};
-  std::size_t raster_work = 0;
-  for (std::size_t step_index = 0; step_index < unit_steps; ++step_index) {
-    const auto step_bounds = prepared_curve_step_level_bounds(active_group_.prepared_unit,
-                                                              step_index, active_group_.view.zoom);
-    if (!step_bounds.has_value()) {
-      continue;
-    }
-    const PixelRect step_clipped{
-        .x0 = std::max(step_bounds->x0, active_group_.bounds.x0),
-        .y0 = std::max(step_bounds->y0, active_group_.bounds.y0),
-        .x1 = std::min(step_bounds->x1, active_group_.bounds.x1),
-        .y1 = std::min(step_bounds->y1, active_group_.bounds.y1),
-    };
-    const std::size_t step_work =
-        static_cast<std::size_t>(std::max(0, step_clipped.x1 - step_clipped.x0)) *
-        static_cast<std::size_t>(std::max(0, step_clipped.y1 - step_clipped.y0));
-    if (step_work == 0U) {
+    // Preparation moves the endpoint cursor; count it against the per-call
+    // chord budget even when every chord clipped away.
+    chords_consumed += std::max<std::size_t>(batch->chord_count, 1U);
+    active_group_.batch_chords = batch->chord_count;
+    active_group_.batch_next_endpoint = batch->next_endpoint;
+    active_group_.batch_bounds = batch->clipped_bounds;
+    active_group_.batch_work = batch->raster_work;
+    active_group_.batch_row = batch->clipped_bounds.y0;
+    active_group_.batch_active = true;
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+    TINYDRAW_V2_CENSUS_ADD(setup_ticks, raster_census_now() - setup_started);
+#endif
+    if (batch->chord_count == 0U) {
       TINYDRAW_V2_CENSUS_ADD(segments_bbox_rejected, 1);
-      continue;
+      finish_active_batch(result, operations_consumed);
+      return true;
     }
-    raster_work += step_work;
-    clipped.x0 = std::min(clipped.x0, step_clipped.x0);
-    clipped.y0 = std::min(clipped.y0, step_clipped.y0);
-    clipped.x1 = std::max(clipped.x1, step_clipped.x1);
-    clipped.y1 = std::max(clipped.y1, step_clipped.y1);
+    if (summary_.rows_saturated(batch->clipped_bounds.y0 - active_group_.bounds.y0,
+                                batch->clipped_bounds.y1 - 1 - active_group_.bounds.y0)) {
+      // The whole batch footprint lies in saturated rows.
+      TINYDRAW_V2_CENSUS_ADD(segments_saturation_skipped, 1);
+      finish_active_batch(result, operations_consumed);
+      return true;
+    }
   }
-  const auto finish_unit = [&] {
-    active_group_.next_curve_step = 0U;
-    finish_active_segment(endpoint, result, operations_consumed);
-  };
-  if (raster_work == 0U) {
-    // Count a rejected unit against the per-call cursor budget.
-    raster_steps_consumed += unit_steps;
-    finish_unit();
-    return true;
-  }
-  if (summary_.rows_saturated(clipped.y0 - active_group_.bounds.y0,
-                              clipped.y1 - 1 - active_group_.bounds.y0)) {
-    // The unit's clipped footprint lies entirely in saturated rows.
-    TINYDRAW_V2_CENSUS_ADD(segments_saturation_skipped, 1);
-    raster_steps_consumed += unit_steps;
-    finish_unit();
-    return true;
-  }
-
   const auto surface = workspace_.supertask_pixels.first(kTileProducerPixels);
+  const std::size_t max_work =
+      kTileProducerSweepWorkBatch - std::min(kTileProducerSweepWorkBatch, work_consumed);
+  if (max_work == 0U) {
+    return true;
+  }
 #if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
   const std::uint32_t paint_started = raster_census_now();
-  TINYDRAW_V2_CENSUS_ADD(setup_ticks, paint_started - setup_started);
 #endif
-  if (!apply_masked_prepared_curve_unit(
-          operation.tool, operation.color, active_group_.prepared_unit,
+  const OperationChordBatch batch{
+      .chord_count = active_group_.batch_chords,
+      .next_endpoint = active_group_.batch_next_endpoint,
+      .clipped_bounds = active_group_.batch_bounds,
+      .raster_work = active_group_.batch_work,
+  };
+  OperationSweepSlice slice{};
+  if (!apply_masked_operation_chord_rows(
+          operation.tool, operation.color,
+          workspace_.operation_chord_plans.first(kOperationChordStorageBytes), batch,
+          active_group_.batch_row, max_work,
           {.zoom = active_group_.view.zoom,
            .level_bounds = active_group_.bounds,
            .pixels = surface,
            .stride = kTileProducerWidth},
-          workspace_.finalized_pixels.first(kTileProducerMaskBytes), &summary_)) {
+          workspace_.finalized_pixels.first(kTileProducerMaskBytes), &summary_, slice)) {
     return false;
   }
-  TINYDRAW_V2_CENSUS_ADD(segments_painted, 1);
 #if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
   TINYDRAW_V2_CENSUS_ADD(paint_ticks, raster_census_now() - paint_started);
 #endif
-  raster_steps_consumed += unit_steps;
-  raster_work_consumed += raster_work;
-  result.raster_steps += unit_steps;
-  result.raster_work += raster_work;
-  ++result.operations_rendered;
-  finish_unit();
+  work_consumed += slice.work_px;
+  active_group_.batch_row = slice.next_row;
+  if (slice.next_row >= active_group_.batch_bounds.y1) {
+    TINYDRAW_V2_CENSUS_ADD(segments_painted, static_cast<std::uint64_t>(batch.chord_count));
+    result.raster_steps += batch.chord_count;
+    result.raster_work += active_group_.batch_work;
+    ++result.operations_rendered;
+    finish_active_batch(result, operations_consumed);
+  }
   return true;
 }
 
@@ -530,11 +517,11 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
   }
   TileProductionStep result{.level_bounds = active_group_.bounds};
   std::size_t operations_consumed = 0;
-  std::size_t raster_steps_consumed = 0;
-  std::size_t raster_work_consumed = 0;
+  std::size_t chords_consumed = 0;
+  std::size_t work_consumed = 0;
   while (active_group_has_work() && operations_consumed < kTileProducerOperationBatch &&
-         raster_steps_consumed < kTileProducerSampleBatch &&
-         raster_work_consumed < kTileProducerRasterWorkBatch) {
+         chords_consumed < kTileProducerSampleBatch &&
+         work_consumed < kTileProducerSweepWorkBatch) {
 #if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
     const std::uint32_t gate_started = raster_census_now();
 #endif
@@ -558,8 +545,8 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
     if (gate == OperationGate::kConsumed) {
       continue;
     }
-    if (!render_active_segment(result, operations_consumed, raster_steps_consumed,
-                               raster_work_consumed)) {
+    if (!render_active_operation_slice(result, operations_consumed, chords_consumed,
+                                       work_consumed)) {
       discard_active_group();
       return std::nullopt;
     }
@@ -570,9 +557,9 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
     // Avoid rescanning PSRAM slot metadata on every resumable batch.
     return result;
   }
-  if (raster_work_consumed >= kTileProducerRasterWorkBatch) {
-    // Preserve the interaction boundary after an oversized final unit. The
-    // completed group publishes on the next producer call.
+  if (work_consumed >= kTileProducerSweepWorkBatch) {
+    // Preserve the interaction boundary after a slice-filling final sweep.
+    // The completed group publishes on the next producer call.
     return result;
   }
 #if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)

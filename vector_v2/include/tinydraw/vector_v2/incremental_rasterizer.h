@@ -164,6 +164,73 @@ struct PreparedCurveUnit {
                                                     std::span<std::uint8_t> finalized_pixels,
                                                     MaskedRowSummary* summary = nullptr);
 
+// Operation-level chord table (H7). One group visit prepares a batch of an
+// operation's chords — every chord of every endpoint unit, newest first —
+// into caller-funded storage, then paints them in a single y-sorted row
+// sweep sharing one unfinalized-window scan per row across the whole batch.
+// All chords of one operation carry one color, so under the finalized mask
+// the written pixel set is identical to sequential per-unit painting in any
+// order and to any endpoint grouping (batches stay exact). Endpoint units
+// are atomic within a batch: a unit's chords never split across batches.
+//
+// Chord-plan storage is opaque caller-funded bytes; the implementation
+// static_asserts its layout fits these bounds.
+inline constexpr std::size_t kPreparedOperationChordBytes = 128;
+inline constexpr std::size_t kPreparedOperationChordAlign = 4;
+inline constexpr std::size_t kOperationChordCapacity = 96;
+// Plans plus a one-byte-per-chord y-sorted order table: sorting indices
+// instead of 128-byte plan structs keeps preparation cheap for the many
+// small-footprint operations at 50% zoom.
+inline constexpr std::size_t kOperationChordStorageBytes =
+    kOperationChordCapacity * kPreparedOperationChordBytes + kOperationChordCapacity;
+
+struct OperationChordBatch {
+  std::size_t chord_count = 0;
+  // Next endpoint to prepare after this batch (endpoints descend, newest
+  // first). Zero when the operation is exhausted.
+  std::size_t next_endpoint = 0;
+  // Union of the batch chords' surface-clipped bounds. Empty (x1 <= x0)
+  // when every chord clipped away.
+  PixelRect clipped_bounds{};
+  // Sum of the chords' clipped bounding-box areas (legacy work accounting).
+  std::size_t raster_work = 0;
+};
+
+// Prepares chords for endpoints [first_endpoint .. 2] (descending) of one
+// operation, stopping early when chord_storage cannot hold another whole
+// unit. first_endpoint follows the producer's resume cursor semantics: for
+// operations with at most two samples it is the final sample index. Chord
+// geometry is bit-identical to prepare_incremental_curve_unit per endpoint;
+// chords fully outside surface_bounds are dropped. The prepared batch is
+// sorted by top row for the sweep.
+[[nodiscard]] std::optional<OperationChordBatch> prepare_operation_chord_batch(
+    std::span<const CompactOperationSample> samples, std::size_t first_endpoint, ZoomLevel zoom,
+    PixelRect surface_bounds, std::span<std::byte> chord_storage);
+
+struct OperationSweepSlice {
+  // First unswept row; the batch is complete when this reaches
+  // clipped_bounds.y1.
+  int next_row = 0;
+  // Rows actually swept (rows with no live chord are jumped, not counted).
+  int rows_swept = 0;
+  // Accumulated work: the window-clipped span pixels visited per active
+  // chord per row, plus a small flat per-row scan charge. This is the
+  // honest slice cost — a fat batch with every chord active on a row pays
+  // per chord, a hairline batch pays a few pixels per row.
+  std::size_t work_px = 0;
+};
+
+// Sweeps rows of a prepared batch, resuming at first_row and stopping at a
+// row boundary once accumulated work reaches max_work_px (at least one row
+// always completes). Per-pixel decisions are identical to the per-unit
+// painters: covers_pixel stays the sole geometry authority and the
+// finalized mask keeps every pixel single-writer.
+[[nodiscard]] bool apply_masked_operation_chord_rows(
+    OperationTool tool, std::uint16_t color, std::span<const std::byte> chord_storage,
+    const OperationChordBatch& batch, int first_row, std::size_t max_work_px,
+    const RasterSurface& surface, std::span<std::uint8_t> finalized_pixels,
+    MaskedRowSummary* summary, OperationSweepSlice& slice);
+
 struct AffectedTileResult {
   std::size_t required = 0;
   std::size_t written = 0;

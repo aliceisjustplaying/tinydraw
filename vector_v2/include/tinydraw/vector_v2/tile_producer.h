@@ -25,9 +25,12 @@ inline constexpr std::size_t kTileProducerSummaryRows =
 inline constexpr std::size_t kTileProducerSummaryWords = (kTileProducerSummaryRows + 31U) / 32U;
 inline constexpr std::size_t kTileProducerOperationBatch = 64;
 inline constexpr std::size_t kTileProducerSampleBatch = 96;
-// Conservative projected bounding-box work budget. It complements the sample
-// cap because raster cost also grows with segment length and radius.
-inline constexpr std::size_t kTileProducerRasterWorkBatch = 16'000;
+// Per-slice work budget for the op-level chord sweep, in window-clipped
+// span pixels actually visited (plus a flat per-row scan charge). This is
+// the honest slice cost: dense fat batches stop after few rows, hairline
+// batches sweep hundreds. The value keeps the historical worst-slice bound
+// that the idle-repair step contract was calibrated against.
+inline constexpr std::size_t kTileProducerSweepWorkBatch = 16'000;
 
 struct TileProducerWorkspace {
   // Row-major 128x128 supertask surface. Publication reads tiles straight
@@ -41,6 +44,9 @@ struct TileProducerWorkspace {
   // output.
   std::span<std::uint16_t> summary_row_unset{};
   std::span<std::uint32_t> summary_saturated_words{};
+  // Opaque storage for one operation's prepared chord batch (H7 op-level
+  // sweep), at least kOperationChordStorageBytes and 4-aligned.
+  std::span<std::byte> operation_chord_plans{};
   // Optional host-prototype storage. Empty preserves the exact linear replay
   // fallback; a full kReplayIndexWords span enables indexed discovery.
   std::span<std::uint32_t> replay_index_words{};
@@ -120,13 +126,16 @@ class TileProducer {
     // Current reverse segment endpoint. Zero initializes a newly selected
     // operation; single-sample operations are handled as one bounded unit.
     std::size_t next_sample = 0;
-    // One curved endpoint emits two bounded centerline segments plus a final
-    // tail when needed. Zero initializes the endpoint; replay consumes the
-    // segments in reverse index order so every producer tick stays bounded.
-    // The prepared unit caches the endpoint's chord geometry so step counting,
-    // step bounds, and step application share one subdivision computation.
-    std::size_t next_curve_step = 0;
-    PreparedCurveUnit prepared_unit{};
+    // Prepared chord-batch sweep state (H7). A batch holds whole endpoint
+    // units of the cached operation in the caller-funded chord storage; the
+    // sweep resumes at batch_row between producer slices. batch_next_endpoint
+    // is the endpoint cursor after this batch (zero = operation exhausted).
+    bool batch_active = false;
+    std::size_t batch_chords = 0;
+    std::size_t batch_next_endpoint = 0;
+    std::size_t batch_work = 0;
+    PixelRect batch_bounds{};
+    int batch_row = 0;
     // Operation-level visibility and saturation gates run once per operation;
     // the passing fetch is cached here so per-segment replay touches neither
     // the log nor the operation-level rectangle math again. The cached spans
@@ -155,12 +164,11 @@ class TileProducer {
   void consume_active_operation(TileProductionStep& result, std::size_t& operations_consumed);
   [[nodiscard]] OperationGate gate_active_operation(TileProductionStep& result,
                                                     std::size_t& operations_consumed);
-  void finish_active_segment(std::size_t endpoint, TileProductionStep& result,
-                             std::size_t& operations_consumed);
-  [[nodiscard]] bool render_active_segment(TileProductionStep& result,
-                                           std::size_t& operations_consumed,
-                                           std::size_t& raster_steps_consumed,
-                                           std::size_t& raster_work_consumed);
+  void finish_active_batch(TileProductionStep& result, std::size_t& operations_consumed);
+  [[nodiscard]] bool render_active_operation_slice(TileProductionStep& result,
+                                                   std::size_t& operations_consumed,
+                                                   std::size_t& chords_consumed,
+                                                   std::size_t& work_consumed);
   [[nodiscard]] std::optional<TileProductionStep> render_active_batch();
   [[nodiscard]] std::optional<GroupPublication> publish_group(PixelRect rendered_bounds,
                                                               PixelRect visible_bounds,

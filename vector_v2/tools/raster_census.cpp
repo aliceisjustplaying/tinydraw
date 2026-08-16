@@ -55,6 +55,7 @@ struct Rig {
   std::vector<std::uint8_t> mask;
   std::vector<std::uint16_t> summary_rows;
   std::vector<std::uint32_t> summary_words;
+  std::vector<std::uint32_t> chord_plans;
   std::vector<std::uint32_t> replay_index_words;
   std::vector<v2::RenderAccountingEntry> accounting_entries;
   // append_incrementally workspace (mirrors the app).
@@ -82,6 +83,7 @@ struct Rig {
         mask(v2::kTileProducerMaskBytes),
         summary_rows(v2::kTileProducerSummaryRows),
         summary_words(v2::kTileProducerSummaryWords),
+        chord_plans(v2::kOperationChordStorageBytes / 4U),
         replay_index_words(indexed ? v2::kReplayIndexWords : 0U),
         accounting_entries(v2::kMaximumVisibleTiles),
         overview_scratch(v2::kOverviewPixels),
@@ -96,6 +98,7 @@ struct Rig {
                   .finalized_pixels = mask,
                   .summary_row_unset = summary_rows,
                   .summary_saturated_words = summary_words,
+                  .operation_chord_plans = std::as_writable_bytes(std::span(chord_plans)),
                   .replay_index_words = replay_index_words},
                  {}, 0xFFFFU, &accounting) {}
 
@@ -687,6 +690,7 @@ struct FuzzRig {
   std::vector<std::uint8_t> mask;
   std::vector<std::uint16_t> summary_rows;
   std::vector<std::uint32_t> summary_words;
+  std::vector<std::uint32_t> chord_plans;
   std::vector<std::uint32_t> replay_index_words;
   v2::OperationLog log;
   v2::MaterializedCanvas canvas;
@@ -702,6 +706,7 @@ struct FuzzRig {
         mask(v2::kTileProducerMaskBytes),
         summary_rows(v2::kTileProducerSummaryRows),
         summary_words(v2::kTileProducerSummaryWords),
+        chord_plans(v2::kOperationChordStorageBytes / 4U),
         replay_index_words(v2::kReplayIndexWords),
         log(records, samples),
         canvas(overview, slots, tile_pool),
@@ -710,6 +715,7 @@ struct FuzzRig {
                   .finalized_pixels = mask,
                   .summary_row_unset = summary_rows,
                   .summary_saturated_words = summary_words,
+                  .operation_chord_plans = std::as_writable_bytes(std::span(chord_plans)),
                   .replay_index_words = replay_index_words}) {}
 };
 
