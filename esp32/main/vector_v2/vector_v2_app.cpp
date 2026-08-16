@@ -33,6 +33,7 @@
 #include "tinydraw/vector_v2/operation_builder.h"
 #include "tinydraw/vector_v2/operation_log.h"
 #include "tinydraw/vector_v2/rerender_ledger.h"
+#include "tinydraw/vector_v2/settled_tile.h"
 #include "tinydraw/vector_v2/tile_producer.h"
 #include "vector_v2_export.h"
 #include "vector_v2_presenter.h"
@@ -212,6 +213,18 @@ struct AppStorage {
   std::uint32_t* producer_summary_words = nullptr;
   std::uint32_t* producer_chord_plans = nullptr;
   std::uint8_t* chunk_mask = nullptr;
+  // Settled-AA workspace (40 KiB PSRAM — exactly five 8 KiB dcache ways, so
+  // downstream allocations keep their measured cache sets; internal SRAM is
+  // off-limits here per the panel-init DMA razor note below): per-op union
+  // alpha, accumulated alpha, exact 16-bit channel accumulators, and the
+  // output staging tile. Settling is idle-budget work; PSRAM latency is
+  // acceptable.
+  std::uint8_t* settle_op_alpha = nullptr;
+  std::uint8_t* settle_accumulated = nullptr;
+  std::uint16_t* settle_red = nullptr;
+  std::uint16_t* settle_green = nullptr;
+  std::uint16_t* settle_blue = nullptr;
+  std::uint16_t* settle_pixels = nullptr;
   MaterializedUniformStorage* uniforms = nullptr;
   std::uint8_t* occupancy = nullptr;
   MaterializedSlotStorage* slots = nullptr;
@@ -300,6 +313,15 @@ struct AppStorage {
     constexpr std::size_t kDirectoryPaddedEntries = (32U * 1024U) / sizeof(std::uint16_t);
     static_assert(kDirectoryPaddedEntries >= vector_v2::kMaterializedTileIdentityCount);
     raw_slot_directory = allocate_array<std::uint16_t>(kDirectoryPaddedEntries);
+    // Settled-AA workspace, allocated dead LAST so it shifts no other
+    // allocation's cache sets (the first settle-build battery measured the
+    // 400% cold wall +9 ms with these placed mid-heap).
+    settle_op_alpha = allocate_array<std::uint8_t>(vector_v2::kTilePixels);
+    settle_accumulated = allocate_array<std::uint8_t>(vector_v2::kTilePixels);
+    settle_red = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
+    settle_green = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
+    settle_blue = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
+    settle_pixels = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
     slot_directory_internal = false;
     if (overview == nullptr || snapshot == nullptr || frame == nullptr || tile_pixels == nullptr ||
         overview_scratch == nullptr || !harness_workspace_ready || region_scratch == nullptr ||
@@ -309,7 +331,9 @@ struct AppStorage {
         occupancy == nullptr || slots == nullptr || raw_slot_directory == nullptr ||
         records == nullptr || samples == nullptr || input_samples == nullptr ||
         rerender_entries == nullptr || touch_events == nullptr || !ink_trace_ready ||
-        affected_keys == nullptr) {
+        affected_keys == nullptr || settle_op_alpha == nullptr || settle_accumulated == nullptr ||
+        settle_red == nullptr || settle_green == nullptr || settle_blue == nullptr ||
+        settle_pixels == nullptr) {
       return false;
     }
     for (std::size_t index = 0; index < vector_v2::kMaterializedTileIdentityCount; ++index) {
@@ -1031,6 +1055,13 @@ void run_vector_v2_app() {
   std::size_t repair_steps = 0;
   std::uint32_t repair_failures = 0;
   bool repair_planned = false;
+  // Settled-AA idle pass state: one viewport sweep per (view, revision).
+  std::size_t settle_cursor = 0;
+  bool settle_complete = false;
+  std::uint32_t settle_tiles = 0;
+  std::int64_t settle_total_us = 0;
+  std::int64_t settle_max_us = 0;
+  std::uint32_t settle_failures = 0;
   LiftBaselineTiming lift_timing{};
   std::uint32_t next_lift_id = 1U;
   std::uint16_t next_gesture_id = 1U;
@@ -1452,6 +1483,12 @@ void run_vector_v2_app() {
         pending_fill = {};
         repair_planned = false;
         repair_failures = 0;
+        settle_cursor = 0;
+        settle_complete = false;
+        settle_tiles = 0;
+        settle_total_us = 0;
+        settle_max_us = 0;
+        settle_failures = 0;
       }
       if (pending_fill.pending) {
         const bool still_current = pending_fill.zoom == fill_view.zoom &&
@@ -1569,6 +1606,70 @@ void run_vector_v2_app() {
           std::printf("TINYDRAW_LIVE_REPAIR views=%u steps=%u\n",
                       static_cast<unsigned>(repair_plan.count),
                       static_cast<unsigned>(repair_steps));
+        }
+      } else if (!settle_complete && presenter.zoom() != ZoomLevel::k25Percent) {
+        // Settled-AA pass (ship contract §4): with drain, fill, and repair
+        // quiet, re-render one visible tile per slice with analytic
+        // coverage and republish it at the settled quality tier. The live
+        // path stays hard-edged; fresh ink demotes tiles back to immediate
+        // quality so they re-settle on the next quiet stretch.
+        const int first_column = presenter.level_x() / vector_v2::kTileWidth;
+        const int last_column =
+            (presenter.level_x() + vector_v2::kOverviewWidth - 1) / vector_v2::kTileWidth;
+        const int first_row = presenter.level_y() / vector_v2::kTileHeight;
+        const int last_row =
+            (presenter.level_y() + vector_v2::kOverviewHeight - 1) / vector_v2::kTileHeight;
+        const std::size_t columns = static_cast<std::size_t>(last_column - first_column + 1);
+        const std::size_t total = columns * static_cast<std::size_t>(last_row - first_row + 1);
+        bool settled_one = false;
+        while (settle_cursor < total && !settled_one) {
+          const vector_v2::TileKey key{
+              presenter.zoom(),
+              static_cast<std::uint16_t>(first_column + static_cast<int>(settle_cursor % columns)),
+              static_cast<std::uint16_t>(first_row + static_cast<int>(settle_cursor / columns))};
+          ++settle_cursor;
+          const auto source = canvas.lookup(key);
+          if (!source.has_value() || source->kind != vector_v2::SourceKind::kTileSlot ||
+              source->identity.quality >= vector_v2::MaterializationQuality::kSettled) {
+            continue;
+          }
+          const std::int64_t tile_started = esp_timer_get_time();
+          vector_v2::SettledTileStats tile_stats{};
+          const vector_v2::SettledTileWorkspace settle_workspace{
+              .operation_alpha = std::span(storage.settle_op_alpha, vector_v2::kTilePixels),
+              .accumulated_alpha = std::span(storage.settle_accumulated, vector_v2::kTilePixels),
+              .red = std::span(storage.settle_red, vector_v2::kTilePixels),
+              .green = std::span(storage.settle_green, vector_v2::kTilePixels),
+              .blue = std::span(storage.settle_blue, vector_v2::kTilePixels),
+          };
+          const auto pixels = std::span(storage.settle_pixels, vector_v2::kTilePixels);
+          if (vector_v2::render_settled_tile(log, key, settle_workspace, pixels, &tile_stats) &&
+              canvas
+                  .publish_tile(key, canvas.current_revision(),
+                                vector_v2::MaterializationQuality::kSettled, pixels)
+                  .has_value()) {
+            const std::int64_t tile_us = esp_timer_get_time() - tile_started;
+            static_cast<void>(
+                presenter.refresh_region(vector_v2::tile_pixel_bounds(key), chrome, loop_us));
+            ++settle_tiles;
+            settle_total_us += tile_us;
+            settle_max_us = std::max(settle_max_us, tile_us);
+            settled_one = true;
+          } else {
+            ++settle_failures;
+          }
+        }
+        if (settle_cursor >= total) {
+          settle_complete = true;
+          if (settle_tiles != 0U || settle_failures != 0U) {
+            std::printf(
+                "TINYDRAW_LIVE_SETTLE zoom=%s tiles=%lu total_us=%lld max_tile_us=%lld "
+                "failures=%lu\n",
+                zoom_name(presenter.zoom()), static_cast<unsigned long>(settle_tiles),
+                static_cast<long long>(settle_total_us), static_cast<long long>(settle_max_us),
+                static_cast<unsigned long>(settle_failures));
+            std::fflush(stdout);
+          }
         }
       }
     }

@@ -644,8 +644,10 @@ std::optional<InPlaceTileEdit> MaterializedCanvas::edit_resident_tile(TileKey ke
   }
   // Content diverges from the old generation immediately; identity-based
   // consumers must revalidate. Touch keeps the edited slot off the LRU floor
-  // so a same-commit uniform conversion cannot evict it.
+  // so a same-commit uniform conversion cannot evict it. Fresh hard-edged
+  // ink also demotes a settled tile so the idle settle pass revisits it.
   slot.generation_ = take_generation();
+  slot.quality_ = MaterializationQuality::kImmediate;
   touch(slot);
   return InPlaceTileEdit{
       .key = key,
