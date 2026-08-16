@@ -1,0 +1,130 @@
+From d200e2c08a93ce7170cd43d5275a275c01788bbb Mon Sep 17 00:00:00 2001
+From: TKTK <TKTK>
+Date: Sun, 16 Aug 2026 17:32:03 +0100
+Subject: [PATCH 05/10] fix: keep cache repair and rerender accounting truthful
+
+---
+ esp32/main/vector_v2/vector_v2_app.cpp       |  5 ++---
+ vector_v2/src/materialized_canvas.cpp        |  8 ++++++++
+ vector_v2/src/tile_producer.cpp              | 21 +++++++++++++++++---
+ vector_v2/tests/materialized_canvas_test.cpp | 21 ++++++++++++++++++++
+ 4 files changed, 49 insertions(+), 6 deletions(-)
+
+diff --git a/esp32/main/vector_v2/vector_v2_app.cpp b/esp32/main/vector_v2/vector_v2_app.cpp
+index 1ef7212..28b73ef 100644
+--- a/esp32/main/vector_v2/vector_v2_app.cpp
++++ b/esp32/main/vector_v2/vector_v2_app.cpp
+@@ -1352,9 +1352,8 @@ void run_vector_v2_app() {
+           // The level sweep stops when the pool saturates: past that point
+           // every publication evicts warmer tiles (dense documents exceed
+           // pool capacity at 100%), which churned instead of repairing.
+-          if (repair_cursor >= repair_plan.grid_start &&
+-              canvas.resident_raw_tiles() + kRepairSaturationHeadroomTiles >=
+-                  canvas.slot_capacity()) {
++          if (canvas.resident_raw_tiles() + kRepairSaturationHeadroomTiles >=
++              canvas.slot_capacity()) {
+             repair_cursor = repair_plan.count;
+             break;
+           }
+diff --git a/vector_v2/src/materialized_canvas.cpp b/vector_v2/src/materialized_canvas.cpp
+index 5d98af2..7336641 100644
+--- a/vector_v2/src/materialized_canvas.cpp
++++ b/vector_v2/src/materialized_canvas.cpp
+@@ -407,6 +407,9 @@ bool MaterializedCanvas::publish_overview(DocumentRevision revision,
+   if (!exact_bootstrap_source) {
+     std::copy(pixels.begin(), pixels.end(), overview_pixels_.begin());
+   }
++  if (rerender_ledger_ != nullptr) {
++    rerender_ledger_->reset();
++  }
+   for (auto& slot : slots_) {
+     if (slot.occupied_) {
+       slot.occupied_ = false;
+@@ -1202,6 +1205,11 @@ bool MaterializedCanvas::discard_tiles() {
+                   [](const auto& slot) { return slot.pin_count_ != 0U; })) {
+     return false;
+   }
++  // An explicit all-cache discard begins a fresh ledger session. Without
++  // this, same-revision refills are mislabeled as unexplained rerenders.
++  if (rerender_ledger_ != nullptr) {
++    rerender_ledger_->reset();
++  }
+   for (MaterializedSlotStorage& slot : slots_) {
+     if (!slot.occupied_) {
+       continue;
+diff --git a/vector_v2/src/tile_producer.cpp b/vector_v2/src/tile_producer.cpp
+index e0e91e8..9a32693 100644
+--- a/vector_v2/src/tile_producer.cpp
++++ b/vector_v2/src/tile_producer.cpp
+@@ -608,9 +608,24 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
+       render_accounting_->record_completion(active_group_key());
+     }
+     if (rerender_ledger_ != nullptr) {
+-      static_cast<void>(rerender_ledger_->record_group_render(
+-          active_group_.view.zoom, active_group_.origin.column, active_group_.origin.row,
+-          active_group_.revision));
++      const TileGrid grid = tile_grid(active_group_.view.zoom);
++      bool group_complete = true;
++      for (int row = active_group_.origin.row;
++           row < std::min(grid.rows, static_cast<int>(active_group_.origin.row) + 2); ++row) {
++        for (int column = active_group_.origin.column;
++             column < std::min(grid.columns, static_cast<int>(active_group_.origin.column) + 2);
++             ++column) {
++          group_complete = group_complete && tile_satisfies({active_group_.view.zoom,
++                                                             static_cast<std::uint16_t>(column),
++                                                             static_cast<std::uint16_t>(row)},
++                                                            MaterializationQuality::kImmediate);
++        }
++      }
++      if (group_complete) {
++        static_cast<void>(rerender_ledger_->record_group_render(
++            active_group_.view.zoom, active_group_.origin.column, active_group_.origin.row,
++            active_group_.revision));
++      }
+     }
+   }
+   const ViewRequest view = active_group_.view;
+diff --git a/vector_v2/tests/materialized_canvas_test.cpp b/vector_v2/tests/materialized_canvas_test.cpp
+index 32861c5..9d7744c 100644
+--- a/vector_v2/tests/materialized_canvas_test.cpp
++++ b/vector_v2/tests/materialized_canvas_test.cpp
+@@ -6,8 +6,10 @@
+ #include <cstdint>
+ #include <memory>
+ #include <span>
++#include <vector>
+ 
+ #include "tinydraw/vector_v2/memory_layout.h"
++#include "tinydraw/vector_v2/rerender_ledger.h"
+ 
+ namespace vector_v2 = tinydraw::vector_v2;
+ 
+@@ -748,6 +750,25 @@ TEST_CASE("discarding tiles preserves current overview and fails while pinned")
+   CHECK(fallback->identity.revision == vector_v2::DocumentRevision{2});
+ }
+ 
++TEST_CASE("discarding every tile starts a fresh rerender ledger session") {
++  std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
++  std::array<vector_v2::MaterializedSlotStorage, 1> slots{};
++  std::array<std::uint16_t, vector_v2::kTilePixels> tile_storage{};
++  std::array<std::uint16_t, vector_v2::kTilePixels> tile{};
++  vector_v2::MaterializedCanvas canvas(overview, slots, tile_storage);
++  std::vector<vector_v2::RerenderLedgerEntry> entries(vector_v2::kRerenderLedgerEntryCount);
++  vector_v2::RerenderLedger ledger(entries);
++  canvas.set_rerender_ledger(&ledger);
++  REQUIRE(canvas.publish_overview({2}, overview));
++  REQUIRE(canvas.publish_tile({vector_v2::ZoomLevel::k100Percent, 0, 0}, {2},
++                              vector_v2::MaterializationQuality::kImmediate, tile));
++  static_cast<void>(ledger.record_group_render(vector_v2::ZoomLevel::k100Percent, 0, 0, {2}));
++  REQUIRE(ledger.totals().renders == 1U);
++
++  REQUIRE(canvas.discard_tiles());
++  CHECK(ledger.totals().renders == 0U);
++}
++
+ TEST_CASE("compose view rejects destinations that alias owned source storage") {
+   std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
+   std::array<vector_v2::MaterializedSlotStorage, 1> slots{};
+-- 
+2.54.0 (Apple Git-156)
+

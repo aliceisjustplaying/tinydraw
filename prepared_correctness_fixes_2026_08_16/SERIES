@@ -1,0 +1,10 @@
+0001-fix-make-firmware-replay-gates-fail-closed.patch
+0002-fix-validate-raster-and-staging-descriptors.patch
+0003-fix-preserve-pressure-changes-at-stationary-samples.patch
+0004-fix-make-raster-metrics-match-production-behavior.patch
+0005-fix-keep-cache-repair-and-rerender-accounting-truthf.patch
+0006-fix-make-drawing-snapshots-crash-consistent.patch
+0007-fix-conserve-input-transitions-under-backpressure.patch
+0008-fix-make-panel-presentation-failures-converge.patch
+0009-fix-unify-live-export-and-authority-stroke-geometry.patch
+0010-fix-preflight-tile-group-publications.patch

@@ -1,0 +1,301 @@
+From 515fe8039a0e8e3e325cd18477d6e4ac23e2a3d8 Mon Sep 17 00:00:00 2001
+From: TKTK <TKTK>
+Date: Sun, 16 Aug 2026 17:17:39 +0100
+Subject: [PATCH 01/10] fix: make firmware replay gates fail closed
+
+---
+ esp32/main/CMakeLists.txt                     |  6 +-
+ esp32/main/vector_v2/vector_v2_app.cpp        | 24 +++--
+ .../main/vector_v2/vector_v2_gate_harness.cpp | 93 ++++++++++++++-----
+ 3 files changed, 86 insertions(+), 37 deletions(-)
+
+diff --git a/esp32/main/CMakeLists.txt b/esp32/main/CMakeLists.txt
+index bbeb18b..e903457 100644
+--- a/esp32/main/CMakeLists.txt
++++ b/esp32/main/CMakeLists.txt
+@@ -215,11 +215,11 @@ if(TINYDRAW_VECTOR_V2_GATE_HARNESS)
+   target_include_directories(${COMPONENT_LIB} PRIVATE
+     "${CMAKE_CURRENT_LIST_DIR}/../../vector_v2/test_support/include"
+   )
+-  # Recorded owner ink traces for the replay gate. under-overlay stays out
+-  # (streamed delivery, ~190 KiB); the rest total ~95 KiB of app flash.
++  # Recorded owner ink traces for the replay gate. Parser and replay storage
++  # match the 12,288-event capture capacity, including under-overlay.
+   foreach(TINYDRAW_INK_TRACE
+       fast-curve-dense-25 fast-curve-400 fast-curve-400-xl slow-precise-100
+-      scribble-multistroke)
++      scribble-multistroke under-overlay)
+     target_add_binary_data(${COMPONENT_LIB}
+       "${CMAKE_CURRENT_LIST_DIR}/../../testdata/ink-traces/${TINYDRAW_INK_TRACE}.csv" TEXT)
+   endforeach()
+diff --git a/esp32/main/vector_v2/vector_v2_app.cpp b/esp32/main/vector_v2/vector_v2_app.cpp
+index 9f75609..1ef7212 100644
+--- a/esp32/main/vector_v2/vector_v2_app.cpp
++++ b/esp32/main/vector_v2/vector_v2_app.cpp
+@@ -283,11 +283,12 @@ struct AppStorage {
+         allocate_array<TileKey>(vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles);
+     if (overview == nullptr || snapshot == nullptr || frame == nullptr || tile_pixels == nullptr ||
+         overview_scratch == nullptr || !harness_workspace_ready || region_scratch == nullptr ||
+-        chrome_cache == nullptr || producer_supertask == nullptr || producer_mask == nullptr || producer_summary_rows == nullptr ||
+-        producer_summary_words == nullptr || chunk_mask == nullptr || uniforms == nullptr ||
+-        occupancy == nullptr || slots == nullptr || records == nullptr || samples == nullptr ||
+-        input_samples == nullptr || rerender_entries == nullptr || touch_events == nullptr ||
+-        !ink_trace_ready || affected_keys == nullptr) {
++        chrome_cache == nullptr || producer_supertask == nullptr || producer_mask == nullptr ||
++        producer_summary_rows == nullptr || producer_summary_words == nullptr ||
++        chunk_mask == nullptr || uniforms == nullptr || occupancy == nullptr || slots == nullptr ||
++        records == nullptr || samples == nullptr || input_samples == nullptr ||
++        rerender_entries == nullptr || touch_events == nullptr || !ink_trace_ready ||
++        affected_keys == nullptr) {
+       return false;
+     }
+     for (std::size_t index = 0; index < vector_v2::kMaterializedTileIdentityCount; ++index) {
+@@ -861,15 +862,18 @@ void run_vector_v2_app() {
+   const auto initial = presenter.refresh(chrome);
+   print_presentation("startup", presenter, initial);
+ #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
+-  if (!run_vector_v2_gate_harness(presenter, producer, log, canvas, touch_sampler, chrome,
+-                                  harness_workspace, workspace, exporter,
+-                                  std::span(storage.snapshot, vector_v2::kOverviewPixels),
+-                                  std::span(storage.input_samples, kInputSampleCapacity),
+-                                  std::span(storage.harness_tile_scratch, vector_v2::kTilePixels))) {
++  if (!run_vector_v2_gate_harness(
++          presenter, producer, log, canvas, touch_sampler, chrome, harness_workspace, workspace,
++          exporter, std::span(storage.snapshot, vector_v2::kOverviewPixels),
++          std::span(storage.input_samples, kInputSampleCapacity),
++          std::span(storage.harness_tile_scratch, vector_v2::kTilePixels))) {
+     std::printf("TINYDRAW_VECTOR_V2_GATE_HARNESS_DONE pass=0\n");
+     return;
+   }
+   std::printf("TINYDRAW_VECTOR_V2_GATE_HARNESS_DONE pass=1\n");
++  // A gate image is a verification appliance. Do not enter the interactive
++  // product loop with the harness's long-gesture authority and export data.
++  return;
+ #endif
+   const std::size_t overview_bytes = vector_v2::kOverviewPixels * 4U * sizeof(std::uint16_t);
+   const std::size_t raw_tile_bytes =
+diff --git a/esp32/main/vector_v2/vector_v2_gate_harness.cpp b/esp32/main/vector_v2/vector_v2_gate_harness.cpp
+index 9c35c91..f53dfac 100644
+--- a/esp32/main/vector_v2/vector_v2_gate_harness.cpp
++++ b/esp32/main/vector_v2/vector_v2_gate_harness.cpp
+@@ -29,9 +29,8 @@
+ #include "tinydraw/vector_v2/rerender_ledger.h"
+ 
+ // Canonical recorded owner traces embedded by the gate-harness build
+-// (esp32/main/CMakeLists.txt). under-overlay (9,284 events, ~190 KiB) is
+-// deliberately not embedded; it needs streamed delivery and is covered by
+-// the capture-side receipts for now.
++// (esp32/main/CMakeLists.txt). Keep the parser capacity aligned with the
++// capture ring so every capture-side receipt can be replayed by this gate.
+ extern "C" {
+ extern const char _binary_fast_curve_dense_25_csv_start[];
+ extern const char _binary_fast_curve_dense_25_csv_end[];
+@@ -43,6 +42,8 @@ extern const char _binary_slow_precise_100_csv_start[];
+ extern const char _binary_slow_precise_100_csv_end[];
+ extern const char _binary_scribble_multistroke_csv_start[];
+ extern const char _binary_scribble_multistroke_csv_end[];
++extern const char _binary_under_overlay_csv_start[];
++extern const char _binary_under_overlay_csv_end[];
+ }
+ #include "vector_v2_ship_contract.h"
+ 
+@@ -2697,10 +2698,10 @@ class TouchTraceReplayer {
+     vTaskSuspend(nullptr);
+   }
+ 
+-  void offer(vector_v2::TouchContactRead read, vector_v2::TouchContactPoint point) {
+-    const auto stamp = static_cast<std::uint32_t>(esp_timer_get_time());
++  void offer(vector_v2::TouchContactRead read, vector_v2::TouchContactPoint point,
++             std::uint32_t trace_stamp_us) {
+     portENTER_CRITICAL(&lock_);
+-    const auto result = buffer_.offer(read, point, stamp);
++    const auto result = buffer_.offer(read, point, trace_stamp_us);
+     portEXIT_CRITICAL(&lock_);
+     coalesced_ += result == vector_v2::TouchOfferResult::kMoveCoalesced;
+     overflows_ += result == vector_v2::TouchOfferResult::kOverflow;
+@@ -2717,15 +2718,16 @@ class TouchTraceReplayer {
+         now_us = esp_timer_get_time();
+       }
+       ++offered_;
++      const auto trace_stamp_us = static_cast<std::uint32_t>(target_us);
+       if (event.kind == vector_v2::TraceEventKind::kUp) {
+-        // Two consecutive no-touch reads, one sampler period apart, mirror
+-        // the production lift-confirmation debounce.
+-        offer(vector_v2::TouchContactRead::kNoTouch, {});
++        // Keep the recorded event timestamp even if delivery is late. Wall
++        // time is measured separately by event-to-consumed latency.
++        offer(vector_v2::TouchContactRead::kNoTouch, {}, trace_stamp_us);
+         vTaskDelay(pdMS_TO_TICKS(1));
+-        offer(vector_v2::TouchContactRead::kNoTouch, {});
++        offer(vector_v2::TouchContactRead::kNoTouch, {}, trace_stamp_us);
+       } else {
+         offer(vector_v2::TouchContactRead::kPoint,
+-              {.x = static_cast<float>(event.x), .y = static_cast<float>(event.y)});
++              {.x = static_cast<float>(event.x), .y = static_cast<float>(event.y)}, trace_stamp_us);
+       }
+     }
+     done_.store(true, std::memory_order_release);
+@@ -2789,7 +2791,7 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
+                                MaterializedCanvas& canvas, const vector_v2::ChromeState& chrome,
+                                const vector_v2::InPlaceAppendWorkspace& in_place_workspace,
+                                std::span<CompactOperationSample> builder_storage) {
+-  const std::array<InkTraceSpec, 5> specs{{
++  const std::array<InkTraceSpec, 6> specs{{
+       {"fast-curve-dense-25", _binary_fast_curve_dense_25_csv_start,
+        _binary_fast_curve_dense_25_csv_end, ZoomLevel::k25Percent, 5.0F},
+       {"fast-curve-400", _binary_fast_curve_400_csv_start, _binary_fast_curve_400_csv_end,
+@@ -2800,9 +2802,11 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
+        ZoomLevel::k100Percent, 5.0F},
+       {"scribble-multistroke", _binary_scribble_multistroke_csv_start,
+        _binary_scribble_multistroke_csv_end, ZoomLevel::k100Percent, 5.0F},
++      {"under-overlay", _binary_under_overlay_csv_start, _binary_under_overlay_csv_end,
++       ZoomLevel::k100Percent, 5.0F},
+   }};
+-  constexpr std::size_t kMaximumTraceEvents = 4'096;
+-  constexpr std::size_t kMaximumLatencySamples = 4'096;
++  constexpr std::size_t kMaximumTraceEvents = 12'288;
++  constexpr std::size_t kMaximumLatencySamples = kMaximumTraceEvents;
+   auto* events = static_cast<vector_v2::TraceEvent*>(
+       heap_caps_malloc(kMaximumTraceEvents * sizeof(vector_v2::TraceEvent), kExternalCaps));
+   auto* delta_storage = static_cast<std::uint32_t*>(
+@@ -2878,6 +2882,9 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
+     tinydraw::InkPoint last_ink{};
+     Point last_touch{};
+     bool pressed = false;
++    bool chrome_gesture = false;
++    bool unclosed_stroke = false;
++    std::uint32_t chrome_routing_mismatches = 0;
+     std::uint32_t presentation_failures = 0;
+     std::uint32_t commit_failures = 0;
+     std::uint32_t previous_consumed_us = 0;
+@@ -2886,7 +2893,8 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
+     while (true) {
+       const auto sampled = replayer.read_next();
+       if (!sampled.has_value()) {
+-        if (!pressed && replayer.exhausted()) {
++        if (replayer.exhausted()) {
++          unclosed_stroke = pressed;
+           break;
+         }
+         vTaskDelay(1);
+@@ -2911,6 +2919,14 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
+       have_previous = true;
+ 
+       if (sampled->kind == vector_v2::TouchEventKind::kDown && !pressed) {
++        if (vector_v2::chrome_contains({sampled->point.x, sampled->point.y}, chrome)) {
++          // Captures are upstream of product routing. Do not silently grade
++          // a chrome gesture as ink; fail this corpus until replay shares the
++          // product router or the fixture is explicitly post-routing.
++          chrome_gesture = true;
++          ++chrome_routing_mismatches;
++          continue;
++        }
+         pressed = true;
+         last_touch = sampled->point;
+         last_ink =
+@@ -2924,8 +2940,21 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
+         ++gesture_id;
+         ribbon.reset();
+         static_cast<void>(ribbon.append(last_ink, true));
++        const std::uint32_t geometry_delta =
++            static_cast<std::uint32_t>(esp_timer_get_time()) - event_us;
+         const auto timing = presenter.show_start(last_ink, color, chrome, event_us);
+         presentation_failures += !timing.passed;
++        if (timing.passed && timing.first_submit_us > 0U) {
++          event_to_geometry.push(geometry_delta, kMaximumLatencySamples);
++          event_to_submit.push(timing.first_submit_us, kMaximumLatencySamples);
++          event_to_complete.push(timing.first_complete_us, kMaximumLatencySamples);
++        }
++        continue;
++      }
++      if (chrome_gesture) {
++        if (sampled->kind == vector_v2::TouchEventKind::kUp) {
++          chrome_gesture = false;
++        }
+         continue;
+       }
+       if (sampled->kind == vector_v2::TouchEventKind::kUp && pressed) {
+@@ -2979,6 +3008,13 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
+           },
+           commit_pending);
+       commit_failures += move.commit_failed;
++      if (move.status != vector_v2::ChainedOperationStatus::kAccepted) {
++        builder.cancel();
++        ribbon.reset();
++        ink.end();
++        static_cast<void>(presenter.refresh(chrome, event_us));
++        pressed = false;
++      }
+       if (submitted) {
+         event_to_geometry.push(geometry_delta, kMaximumLatencySamples);
+         event_to_submit.push(submit_delta, kMaximumLatencySamples);
+@@ -2993,17 +3029,18 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
+     const auto geometry_line = summarize_deltas(event_to_geometry);
+     const auto submit_line = summarize_deltas(event_to_submit);
+     const auto complete_line = summarize_deltas(event_to_complete);
+-    const bool conserved = counters.down_up_conserved();
+-    const bool latency_pass = complete_line.p95 <= 28'000U;
+-    const bool trace_pass = conserved && replayer.overflows() == 0U && commit_failures == 0U &&
+-                            presentation_failures == 0U;
++    const bool conserved = counters.valid() && counters.down_up_conserved();
++    const bool latency_pass = event_to_complete.count != 0U && complete_line.p95 <= 28'000U;
++    const bool trace_pass = conserved && latency_pass && replayer.overflows() == 0U &&
++                            commit_failures == 0U && presentation_failures == 0U &&
++                            chrome_routing_mismatches == 0U && !unclosed_stroke;
+     std::printf(
+         "TINYDRAW_INKTRACE trace=%s zoom=%s events=%lu consumed=%lu coalesced=%lu "
+         "down=%lu/%lu up=%lu/%lu max_time_gap_us=%llu max_space_gap_px=%.2f "
+         "e2c_p50=%lu e2c_p95=%lu e2c_max=%lu e2g_p95=%lu e2s_p95=%lu "
+         "e2d_p50=%lu e2d_p95=%lu e2d_max=%lu latency_samples=%lu "
+-        "presentation_failures=%lu commit_failures=%lu overflows=%lu revision=%lu "
+-        "latency_pass=%u pass=%u\n",
++        "presentation_failures=%lu commit_failures=%lu overflows=%lu chrome_mismatches=%lu "
++        "unclosed_stroke=%u revision=%lu latency_pass=%u pass=%u\n",
+         spec.name, zoom_name(spec.zoom), static_cast<unsigned long>(counters.received_events),
+         static_cast<unsigned long>(counters.consumed_events),
+         static_cast<unsigned long>(counters.coalesced_events),
+@@ -3024,6 +3061,7 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
+         static_cast<unsigned long>(presentation_failures),
+         static_cast<unsigned long>(commit_failures),
+         static_cast<unsigned long>(replayer.overflows()),
++        static_cast<unsigned long>(chrome_routing_mismatches), unclosed_stroke,
+         static_cast<unsigned long>(canvas.current_revision().value), latency_pass, trace_pass);
+     std::fflush(stdout);
+     all_pass = all_pass && trace_pass;
+@@ -3090,8 +3128,7 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
+   realistic_strokes.reset();
+   realistic_samples.reset();
+ #ifdef TINYDRAW_VECTOR_V2_TILE_CENSUS
+-  const bool census =
+-      workload_ready && run_vector_v2_tile_census(producer, canvas, tile_scratch);
++  const bool census = workload_ready && run_vector_v2_tile_census(producer, canvas, tile_scratch);
+   std::printf("TINYDRAW_TILE_CENSUS_APP_DONE workload=%u census=%u revision=%lu\n", workload_ready,
+               census, static_cast<unsigned long>(canvas.current_revision().value));
+   std::fflush(stdout);
+@@ -3164,6 +3201,13 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
+   const bool cache_tour =
+       full_world_cache && run_cache_tour_gate(presenter, producer, canvas, chrome);
+   print_rerender_ledger("cache_tour");
++  bool cache_tour_ledger_pass = false;
++  if (canvas.rerender_ledger() != nullptr) {
++    const auto totals = canvas.rerender_ledger()->totals();
++    cache_tour_ledger_pass = totals.unique_groups != 0U && totals.stale_revision == 0U &&
++                             totals.unexplained == 0U && totals.amplification() <= 1.25;
++  }
++  std::printf("TINYDRAW_RERENDER_LEDGER_VERDICT pass=%u\n", cache_tour_ledger_pass);
+   // The mixed-zoom drawing gate is part of the final verdict: warm-cache
+   // interactive chunk commits must stay under the 15 ms alarm at every zoom.
+   // It still must not stop later receipts when red.
+@@ -3209,7 +3253,8 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
+       mixed_draw, idle_repair, ink_trace_replay, hairline_capacity, long_gesture, export_encode,
+       export_reserve, return_overview.passed);
+   return return_overview.passed && export_reserve && overlap_cold && general_cold && mixed_draw &&
+-         idle_repair && hairline_capacity && pan_100 && pan_400 && pan_sequence && pan_boundary;
++         idle_repair && ink_trace_replay && cache_tour_ledger_pass && hairline_capacity &&
++         pan_100 && pan_400 && pan_sequence && pan_boundary;
+ #endif
+ }
+ 
+-- 
+2.54.0 (Apple Git-156)
+

@@ -1,0 +1,1018 @@
+From 0292d82b8dfcb8181286bb7836a68b88c476b440 Mon Sep 17 00:00:00 2001
+From: TKTK <TKTK>
+Date: Sun, 16 Aug 2026 18:14:23 +0100
+Subject: [PATCH 09/10] fix: unify live export and authority stroke geometry
+
+---
+ core/include/tinydraw/ink/ribbon_geometry.h   |  14 ++-
+ core/src/ribbon_geometry.cpp                  |  43 +++++++
+ core/src/ribbon_renderer.cpp                  |  73 ++++++++++-
+ esp32/main/vector_v2/vector_v2_app.cpp        |  16 ++-
+ .../main/vector_v2/vector_v2_gate_harness.cpp |  24 ++--
+ esp32/main/vector_v2/vector_v2_presenter.cpp  |  32 ++++-
+ esp32/main/vector_v2/vector_v2_presenter.h    |   3 +
+ .../tinydraw/vector_v2/authority_ribbon.h     |  29 +++++
+ .../tinydraw/vector_v2/live_ink_coordinator.h |  10 +-
+ .../include/tinydraw/vector_v2/svg_export.h   |   8 +-
+ vector_v2/sources.cmake                       |   1 +
+ vector_v2/src/authority_ribbon.cpp            |  94 +++++++++++++++
+ vector_v2/src/svg_export.cpp                  |  52 +++++++-
+ vector_v2/tests/chrome_test.cpp               |   3 +-
+ .../tests/incremental_rasterizer_test.cpp     |  44 +++++++
+ vector_v2/tests/svg_export_test.cpp           | 113 +++++++-----------
+ vector_v2/tests/tile_producer_test.cpp        |   3 +-
+ 17 files changed, 451 insertions(+), 111 deletions(-)
+ create mode 100644 vector_v2/include/tinydraw/vector_v2/authority_ribbon.h
+ create mode 100644 vector_v2/src/authority_ribbon.cpp
+
+diff --git a/core/include/tinydraw/ink/ribbon_geometry.h b/core/include/tinydraw/ink/ribbon_geometry.h
+index b0d12fd..8fa2723 100644
+--- a/core/include/tinydraw/ink/ribbon_geometry.h
++++ b/core/include/tinydraw/ink/ribbon_geometry.h
+@@ -10,7 +10,11 @@
+ 
+ namespace tinydraw {
+ 
+-enum class RibbonPrimitiveKind { kConvex, kCircle };
++namespace vector_v2 {
++class AuthorityRibbonStream;
++}
++
++enum class RibbonPrimitiveKind { kConvex, kCircle, kTaperedSegment };
+ 
+ struct RibbonPrimitive {
+   RibbonPrimitiveKind kind = RibbonPrimitiveKind::kConvex;
+@@ -20,6 +24,13 @@ struct RibbonPrimitive {
+   float radius = 0.0F;
+ };
+ 
++// Tapered segments reuse points[0] for the second center and points[1].x for
++// the second radius, keeping RibbonPrimitive's fixed embedded footprint.
++[[nodiscard]] RibbonPrimitive tapered_ribbon_segment(InkPoint first, InkPoint second);
++[[nodiscard]] Point tapered_ribbon_second_center(const RibbonPrimitive& primitive);
++[[nodiscard]] float tapered_ribbon_second_radius(const RibbonPrimitive& primitive);
++[[nodiscard]] bool tapered_ribbon_segment_covers(const RibbonPrimitive& primitive, Point point);
++
+ // Worst case is CurvedRibbonStream::finish on a sharp turn with every span
+ // split: initial cap (1) + split two-span curve (4) + sharp-turn joint (1) +
+ // split provisional tail (2) + final cap (1) = 9, plus one slot of margin.
+@@ -39,6 +50,7 @@ class RibbonPrimitiveBatch {
+  private:
+   friend class RibbonStream;
+   friend class CurvedRibbonStream;
++  friend class vector_v2::AuthorityRibbonStream;
+   void push_back(RibbonPrimitive primitive);
+ 
+   std::array<RibbonPrimitive, kRibbonPrimitiveBatchCapacity> primitives_{};
+diff --git a/core/src/ribbon_geometry.cpp b/core/src/ribbon_geometry.cpp
+index 476b394..ef96117 100644
+--- a/core/src/ribbon_geometry.cpp
++++ b/core/src/ribbon_geometry.cpp
+@@ -1,5 +1,6 @@
+ #include "tinydraw/ink/ribbon_geometry.h"
+ 
++#include <algorithm>
+ #include <cassert>
+ #include <cmath>
+ 
+@@ -149,6 +150,48 @@ void emit_tail(InkPoint start, InkPoint end, Emit emit) {
+ 
+ }  // namespace
+ 
++RibbonPrimitive tapered_ribbon_segment(InkPoint first, InkPoint second) {
++  return {
++      .kind = RibbonPrimitiveKind::kTaperedSegment,
++      .points = {second.position, Point{.x = second.radius, .y = 0.0F}},
++      .center = first.position,
++      .radius = first.radius,
++  };
++}
++
++Point tapered_ribbon_second_center(const RibbonPrimitive& primitive) { return primitive.points[0]; }
++
++float tapered_ribbon_second_radius(const RibbonPrimitive& primitive) {
++  return primitive.points[1].x;
++}
++
++bool tapered_ribbon_segment_covers(const RibbonPrimitive& primitive, Point point) {
++  if (primitive.kind != RibbonPrimitiveKind::kTaperedSegment) {
++    return false;
++  }
++  const Point second_center = tapered_ribbon_second_center(primitive);
++  const float second_radius = tapered_ribbon_second_radius(primitive);
++  const float delta_x = second_center.x - primitive.center.x;
++  const float delta_y = second_center.y - primitive.center.y;
++  const float length_squared = delta_x * delta_x + delta_y * delta_y;
++  if (length_squared == 0.0F) {
++    const float radius = std::max(primitive.radius, second_radius);
++    const float distance_x = point.x - primitive.center.x;
++    const float distance_y = point.y - primitive.center.y;
++    return distance_x * distance_x + distance_y * distance_y <= radius * radius;
++  }
++  const float projection =
++      ((point.x - primitive.center.x) * delta_x + (point.y - primitive.center.y) * delta_y) /
++      length_squared;
++  const float amount = std::clamp(projection, 0.0F, 1.0F);
++  const float center_x = primitive.center.x + amount * delta_x;
++  const float center_y = primitive.center.y + amount * delta_y;
++  const float radius = primitive.radius + amount * (second_radius - primitive.radius);
++  const float distance_x = point.x - center_x;
++  const float distance_y = point.y - center_y;
++  return distance_x * distance_x + distance_y * distance_y <= radius * radius;
++}
++
+ void RibbonPrimitiveBatch::push_back(RibbonPrimitive primitive) {
+   // A full batch is a geometry-emission bug; the assert catches it loudly in
+   // development. Release builds fail closed: drop the primitive and flag the
+diff --git a/core/src/ribbon_renderer.cpp b/core/src/ribbon_renderer.cpp
+index ac0c79b..280e73a 100644
+--- a/core/src/ribbon_renderer.cpp
++++ b/core/src/ribbon_renderer.cpp
+@@ -19,6 +19,50 @@ struct Bounds {
+   float maximum_y = std::numeric_limits<float>::lowest();
+ };
+ 
++struct PreparedTaperedSegment {
++  Point first{};
++  float first_radius = 0.0F;
++  float delta_x = 0.0F;
++  float delta_y = 0.0F;
++  float second_radius = 0.0F;
++  float inverse_length_squared = 0.0F;
++};
++
++PreparedTaperedSegment prepare_tapered(const RibbonPrimitive& primitive) {
++  const Point second = tapered_ribbon_second_center(primitive);
++  const float delta_x = second.x - primitive.center.x;
++  const float delta_y = second.y - primitive.center.y;
++  const float length_squared = delta_x * delta_x + delta_y * delta_y;
++  return {
++      .first = primitive.center,
++      .first_radius = primitive.radius,
++      .delta_x = delta_x,
++      .delta_y = delta_y,
++      .second_radius = tapered_ribbon_second_radius(primitive),
++      .inverse_length_squared = length_squared == 0.0F ? 0.0F : 1.0F / length_squared,
++  };
++}
++
++bool covers(const PreparedTaperedSegment& segment, Point point) {
++  if (segment.inverse_length_squared == 0.0F) {
++    const float radius = std::max(segment.first_radius, segment.second_radius);
++    const float distance_x = point.x - segment.first.x;
++    const float distance_y = point.y - segment.first.y;
++    return distance_x * distance_x + distance_y * distance_y <= radius * radius;
++  }
++  const float projection = ((point.x - segment.first.x) * segment.delta_x +
++                            (point.y - segment.first.y) * segment.delta_y) *
++                           segment.inverse_length_squared;
++  const float amount = std::clamp(projection, 0.0F, 1.0F);
++  const float center_x = segment.first.x + amount * segment.delta_x;
++  const float center_y = segment.first.y + amount * segment.delta_y;
++  const float radius =
++      segment.first_radius + amount * (segment.second_radius - segment.first_radius);
++  const float distance_x = point.x - center_x;
++  const float distance_y = point.y - center_y;
++  return distance_x * distance_x + distance_y * distance_y <= radius * radius;
++}
++
+ bool safe(Point point) {
+   return std::isfinite(point.x) && std::isfinite(point.y) &&
+          std::abs(point.x) <= kMaximumCoordinateMagnitude &&
+@@ -30,6 +74,14 @@ bool valid(const RibbonPrimitive& primitive) {
+     return safe(primitive.center) && std::isfinite(primitive.radius) && primitive.radius > 0.0F &&
+            primitive.radius <= kMaximumCoordinateMagnitude;
+   }
++  if (primitive.kind == RibbonPrimitiveKind::kTaperedSegment) {
++    const float second_radius = tapered_ribbon_second_radius(primitive);
++    return safe(primitive.center) && safe(tapered_ribbon_second_center(primitive)) &&
++           std::isfinite(primitive.radius) && std::isfinite(second_radius) &&
++           primitive.radius > 0.0F && second_radius > 0.0F &&
++           primitive.radius <= kMaximumCoordinateMagnitude &&
++           second_radius <= kMaximumCoordinateMagnitude;
++  }
+   if (primitive.point_count < 3U || primitive.point_count > primitive.points.size()) {
+     return false;
+   }
+@@ -56,6 +108,10 @@ Bounds primitive_bounds(std::span<const RibbonPrimitive> primitives) {
+     }
+     if (primitive.kind == RibbonPrimitiveKind::kCircle) {
+       include(bounds, primitive.center, primitive.radius + 1.0F);
++    } else if (primitive.kind == RibbonPrimitiveKind::kTaperedSegment) {
++      include(bounds, primitive.center, primitive.radius + 1.0F);
++      include(bounds, tapered_ribbon_second_center(primitive),
++              tapered_ribbon_second_radius(primitive) + 1.0F);
+     } else {
+       for (std::uint8_t index = 0; index < primitive.point_count; ++index) {
+         include(bounds, primitive.points[index], 1.0F);
+@@ -133,7 +189,7 @@ RibbonRenderStats RibbonRenderer::render_surface(std::span<const RibbonPrimitive
+         }
+         if (primitive.kind == RibbonPrimitiveKind::kCircle) {
+           coverage_.rasterize_circle(primitive.center, primitive.radius);
+-        } else {
++        } else if (primitive.kind == RibbonPrimitiveKind::kConvex) {
+           coverage_.rasterize_convex(std::span(primitive.points.data(), primitive.point_count));
+         }
+       }
+@@ -149,6 +205,21 @@ RibbonRenderStats RibbonRenderer::render_surface(std::span<const RibbonPrimitive
+       }
+       const std::size_t tile_pixels = static_cast<std::size_t>(tile_width * tile_height);
+       composite_rgb565(coverage_, color, std::span(working_.data(), tile_pixels));
++      for (const RibbonPrimitive& primitive : primitives) {
++        if (!valid(primitive) || primitive.kind != RibbonPrimitiveKind::kTaperedSegment) {
++          continue;
++        }
++        const PreparedTaperedSegment segment = prepare_tapered(primitive);
++        for (int y = 0; y < tile_height; ++y) {
++          for (int x = 0; x < tile_width; ++x) {
++            const Point pixel_center{.x = static_cast<float>(tile_x + x) + 0.5F,
++                                     .y = static_cast<float>(tile_y + y) + 0.5F};
++            if (covers(segment, pixel_center)) {
++              working_[static_cast<std::size_t>(y * tile_width + x)] = color;
++            }
++          }
++        }
++      }
+       for (int y = 0; y < tile_height; ++y) {
+         for (int x = 0; x < tile_width; ++x) {
+           const std::size_t canvas_index =
+diff --git a/esp32/main/vector_v2/vector_v2_app.cpp b/esp32/main/vector_v2/vector_v2_app.cpp
+index 2dbb95c..fdac779 100644
+--- a/esp32/main/vector_v2/vector_v2_app.cpp
++++ b/esp32/main/vector_v2/vector_v2_app.cpp
+@@ -23,6 +23,7 @@
+ #endif
+ #include "tinydraw/ink/ink_stream.h"
+ #include "tinydraw/ink/ribbon_geometry.h"
++#include "tinydraw/vector_v2/authority_ribbon.h"
+ #include "tinydraw/vector_v2/chained_operation_builder.h"
+ #include "tinydraw/vector_v2/chrome.h"
+ #include "tinydraw/vector_v2/idle_repair.h"
+@@ -41,6 +42,7 @@
+ namespace tinydraw::esp32 {
+ namespace {
+ 
++using vector_v2::AuthorityRibbonStream;
+ using vector_v2::ChainedOperationBuilder;
+ using vector_v2::ChainedOperationStatus;
+ using vector_v2::CompactOperationSample;
+@@ -916,7 +918,7 @@ void run_vector_v2_app() {
+   InkConfig ink_config;
+   ink_config.size = vector_v2::brush_size(chrome.size);
+   InkStream ink(ink_config);
+-  CurvedRibbonStream ribbon;
++  AuthorityRibbonStream ribbon;
+   const auto initial = presenter.refresh(chrome);
+   print_presentation("startup", presenter, initial);
+ #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
+@@ -1116,8 +1118,9 @@ void run_vector_v2_app() {
+             ink.end();
+           } else {
+             ribbon.reset();
+-            static_cast<void>(ribbon.append(last_ink, true));
+-            const auto start_timing = presenter.show_start(last_ink, color, chrome, event_us);
++            const InkPoint visual_ink = presenter.authority_ink_point(last_ink);
++            static_cast<void>(ribbon.append(visual_ink, true));
++            const auto start_timing = presenter.show_start(visual_ink, color, chrome, event_us);
+             live_metrics.include(start_timing);
+             if (!start_timing.passed) {
+               // Do not let authority continue from a panel state whose damage
+@@ -1150,11 +1153,12 @@ void run_vector_v2_app() {
+           last_ink =
+               ink.update({.x = canvas_point->x, .y = canvas_point->y, .timestamp_us = event_us});
+           const vector_v2::OperationPoint add_point = presenter.operation_point(last_ink);
++          const InkPoint visual_ink = presenter.authority_ink_point(last_ink);
+           const std::uint16_t color = chrome.tool == vector_v2::ChromeTool::kErase
+                                           ? 0xFFFFU
+                                           : vector_v2::selected_color(chrome);
+           const auto move = vector_v2::process_live_ink_move(
+-              ribbon, builder, last_ink, add_point, event_us,
++              ribbon, builder, visual_ink, add_point, event_us,
+               [&](const RibbonUpdate& update, std::uint32_t visual_event_us) {
+                 const auto timing = presenter.show_update(update, color, chrome, visual_event_us);
+                 live_metrics.include(timing);
+@@ -1230,8 +1234,8 @@ void run_vector_v2_app() {
+         const std::uint16_t color = chrome.tool == vector_v2::ChromeTool::kErase
+                                         ? 0xFFFFU
+                                         : vector_v2::selected_color(chrome);
+-        live_metrics.include(
+-            presenter.show_update(ribbon.finish(last_ink), color, chrome, finished_us));
++        live_metrics.include(presenter.show_update(
++            ribbon.finish(presenter.authority_ink_point(last_ink)), color, chrome, finished_us));
+         measured_lift.finish_preview_us = esp_timer_get_time() - finish_preview_started;
+ 
+         const std::int64_t builder_finish_started = esp_timer_get_time();
+diff --git a/esp32/main/vector_v2/vector_v2_gate_harness.cpp b/esp32/main/vector_v2/vector_v2_gate_harness.cpp
+index f53dfac..296e6bf 100644
+--- a/esp32/main/vector_v2/vector_v2_gate_harness.cpp
++++ b/esp32/main/vector_v2/vector_v2_gate_harness.cpp
+@@ -20,6 +20,7 @@
+ #include "tinydraw/ink/ink_stream.h"
+ #include "tinydraw/ink/ribbon_geometry.h"
+ #include "tinydraw/vector_v2/adversarial_tapered_corpus.h"
++#include "tinydraw/vector_v2/authority_ribbon.h"
+ #include "tinydraw/vector_v2/chained_operation_builder.h"
+ #include "tinydraw/vector_v2/idle_repair.h"
+ #include "tinydraw/vector_v2/ink_trace.h"
+@@ -554,7 +555,7 @@ LiveInkPathMeasurement measure_live_ink_circle(VectorV2Presenter& presenter,
+                                                float path_radius) {
+   constexpr std::size_t kPointCount = 48;
+   constexpr float kTau = 6.28318530718F;
+-  CurvedRibbonStream ribbon;
++  vector_v2::AuthorityRibbonStream ribbon;
+   LiveInkPathMeasurement measurement;
+   float running_length = 0.0F;
+   Point previous{};
+@@ -573,14 +574,15 @@ LiveInkPathMeasurement measure_live_ink_circle(VectorV2Presenter& presenter,
+                          .distance = distance,
+                          .running_length = running_length,
+                          .timestamp_us = timestamp_us};
++    const InkPoint visual_point = presenter.authority_ink_point(point);
+     const std::uint32_t event_us = now_us();
+     const std::int64_t started_us = esp_timer_get_time();
+     LivePresentationTiming timing;
+     if (index == 0U) {
+-      static_cast<void>(ribbon.append(point, true));
+-      timing = presenter.show_start(point, 0x001FU, chrome, event_us);
++      static_cast<void>(ribbon.append(visual_point, true));
++      timing = presenter.show_start(visual_point, 0x001FU, chrome, event_us);
+     } else {
+-      timing = presenter.show_update(ribbon.append(point, true), 0x001FU, chrome, event_us);
++      timing = presenter.show_update(ribbon.append(visual_point, true), 0x001FU, chrome, event_us);
+     }
+     const std::int64_t wall_us = esp_timer_get_time() - started_us;
+     if (!timing.passed) {
+@@ -2838,7 +2840,7 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
+     tinydraw::InkConfig ink_config;
+     ink_config.size = spec.brush_size;
+     tinydraw::InkStream ink(ink_config);
+-    tinydraw::CurvedRibbonStream ribbon;
++    vector_v2::AuthorityRibbonStream ribbon;
+     vector_v2::ChainedOperationBuilder builder(builder_storage, kInteractiveChunkSampleLimit);
+     const std::optional<vector_v2::ViewRequest> priority_view =
+         spec.zoom == ZoomLevel::k25Percent
+@@ -2939,10 +2941,11 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
+         }
+         ++gesture_id;
+         ribbon.reset();
+-        static_cast<void>(ribbon.append(last_ink, true));
++        const InkPoint visual_ink = presenter.authority_ink_point(last_ink);
++        static_cast<void>(ribbon.append(visual_ink, true));
+         const std::uint32_t geometry_delta =
+             static_cast<std::uint32_t>(esp_timer_get_time()) - event_us;
+-        const auto timing = presenter.show_start(last_ink, color, chrome, event_us);
++        const auto timing = presenter.show_start(visual_ink, color, chrome, event_us);
+         presentation_failures += !timing.passed;
+         if (timing.passed && timing.first_submit_us > 0U) {
+           event_to_geometry.push(geometry_delta, kMaximumLatencySamples);
+@@ -2960,8 +2963,8 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
+       if (sampled->kind == vector_v2::TouchEventKind::kUp && pressed) {
+         last_ink = ink.finish(
+             {.x = last_ink.position.x, .y = last_ink.position.y, .timestamp_us = event_us});
+-        const auto finish_timing =
+-            presenter.show_update(ribbon.finish(last_ink), color, chrome, event_us);
++        const auto finish_timing = presenter.show_update(
++            ribbon.finish(presenter.authority_ink_point(last_ink)), color, chrome, event_us);
+         presentation_failures += !finish_timing.passed;
+         auto finish_status = builder.finish(presenter.operation_point(last_ink));
+         while (finish_status == vector_v2::ChainedOperationStatus::kChunkReady ||
+@@ -2989,12 +2992,13 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
+       }
+       last_ink = ink.update({.x = clipped->x, .y = clipped->y, .timestamp_us = event_us});
+       const vector_v2::OperationPoint add_point = presenter.operation_point(last_ink);
++      const InkPoint visual_ink = presenter.authority_ink_point(last_ink);
+       std::uint32_t geometry_delta = 0;
+       std::uint32_t submit_delta = 0;
+       std::uint32_t complete_delta = 0;
+       bool submitted = false;
+       const auto move = vector_v2::process_live_ink_move(
+-          ribbon, builder, last_ink, add_point, event_us,
++          ribbon, builder, visual_ink, add_point, event_us,
+           [&](const RibbonUpdate& update, std::uint32_t visual_event_us) {
+             geometry_delta = static_cast<std::uint32_t>(esp_timer_get_time()) - event_us;
+             const auto timing = presenter.show_update(update, color, chrome, visual_event_us);
+diff --git a/esp32/main/vector_v2/vector_v2_presenter.cpp b/esp32/main/vector_v2/vector_v2_presenter.cpp
+index ce5b81f..6408648 100644
+--- a/esp32/main/vector_v2/vector_v2_presenter.cpp
++++ b/esp32/main/vector_v2/vector_v2_presenter.cpp
+@@ -154,6 +154,24 @@ vector_v2::OperationPoint VectorV2Presenter::operation_point(InkPoint point) con
+   };
+ }
+ 
++InkPoint VectorV2Presenter::authority_ink_point(InkPoint point) const {
++  constexpr float kPositionUnits = 4.0F;
++  constexpr float kRadiusUnits = 256.0F;
++  constexpr float kMinimumScreenRadius = 0.75F;
++  const vector_v2::OperationPoint authority = operation_point(point);
++  const float current_scale = scale();
++  point.position = {
++      .x = std::lround(authority.world_x * kPositionUnits) / kPositionUnits * current_scale -
++           static_cast<float>(level_x()),
++      .y = std::lround(authority.world_y * kPositionUnits) / kPositionUnits * current_scale -
++           static_cast<float>(level_y()),
++  };
++  point.radius =
++      std::max(std::lround(authority.radius * kRadiusUnits) / kRadiusUnits * current_scale,
++               kMinimumScreenRadius);
++  return point;
++}
++
+ LivePresentationTiming VectorV2Presenter::refresh(const vector_v2::ChromeState& chrome,
+                                                   std::uint32_t event_us) {
+   clear_live_overlay();
+@@ -341,8 +359,7 @@ LivePresentationTiming VectorV2Presenter::show_start(InkPoint point, std::uint16
+   if (canvas_bottom == 0) {
+     return {.passed = true};
+   }
+-  const RibbonPrimitive cap{
+-      .kind = RibbonPrimitiveKind::kCircle, .center = point.position, .radius = point.radius};
++  const RibbonPrimitive cap = tapered_ribbon_segment(point, point);
+   const std::array primitives{cap};
+   live_provisional_[0] = cap;
+   live_provisional_count_ = 1U;
+@@ -1077,11 +1094,20 @@ vector_v2::PixelRect VectorV2Presenter::primitive_bounds(
+   float x1 = 0.0F;
+   float y1 = 0.0F;
+   for (const RibbonPrimitive& primitive : primitives) {
+-    if (primitive.kind == RibbonPrimitiveKind::kCircle) {
++    if (primitive.kind == RibbonPrimitiveKind::kCircle ||
++        primitive.kind == RibbonPrimitiveKind::kTaperedSegment) {
+       x0 = std::min(x0, primitive.center.x - primitive.radius - 2.0F);
+       y0 = std::min(y0, primitive.center.y - primitive.radius - 2.0F);
+       x1 = std::max(x1, primitive.center.x + primitive.radius + 2.0F);
+       y1 = std::max(y1, primitive.center.y + primitive.radius + 2.0F);
++      if (primitive.kind == RibbonPrimitiveKind::kTaperedSegment) {
++        const Point second_center = tapered_ribbon_second_center(primitive);
++        const float second_radius = tapered_ribbon_second_radius(primitive);
++        x0 = std::min(x0, second_center.x - second_radius - 2.0F);
++        y0 = std::min(y0, second_center.y - second_radius - 2.0F);
++        x1 = std::max(x1, second_center.x + second_radius + 2.0F);
++        y1 = std::max(y1, second_center.y + second_radius + 2.0F);
++      }
+       continue;
+     }
+     for (std::size_t index = 0; index < primitive.point_count; ++index) {
+diff --git a/esp32/main/vector_v2/vector_v2_presenter.h b/esp32/main/vector_v2/vector_v2_presenter.h
+index d07089e..879dc51 100644
+--- a/esp32/main/vector_v2/vector_v2_presenter.h
++++ b/esp32/main/vector_v2/vector_v2_presenter.h
+@@ -119,6 +119,9 @@ class VectorV2Presenter {
+   [[nodiscard]] int level_y() const;
+   [[nodiscard]] float scale() const;
+   [[nodiscard]] vector_v2::OperationPoint operation_point(InkPoint point) const;
++  // Quantizes a live sample through the same compact world representation
++  // consumed by committed authority, then maps it back to panel coordinates.
++  [[nodiscard]] InkPoint authority_ink_point(InkPoint point) const;
+ 
+   [[nodiscard]] LivePresentationTiming refresh(const vector_v2::ChromeState& chrome,
+                                                std::uint32_t event_us = 0);
+diff --git a/vector_v2/include/tinydraw/vector_v2/authority_ribbon.h b/vector_v2/include/tinydraw/vector_v2/authority_ribbon.h
+new file mode 100644
+index 0000000..30d4fb5
+--- /dev/null
++++ b/vector_v2/include/tinydraw/vector_v2/authority_ribbon.h
+@@ -0,0 +1,29 @@
++#pragma once
++
++#include <cstddef>
++
++#include "tinydraw/ink/ribbon_geometry.h"
++
++namespace tinydraw::vector_v2 {
++
++// Streams the exact midpoint-chord geometry consumed by the incremental
++// authority rasterizer. Stable geometry lags one point; the provisional chord
++// reaches the latest accepted point and is replaced by the next update.
++class AuthorityRibbonStream {
++ public:
++  [[nodiscard]] RibbonUpdate append(InkPoint point, bool provisional_needed = true);
++  [[nodiscard]] RibbonUpdate finish(InkPoint point);
++  void reset();
++
++  [[nodiscard]] bool active() const { return point_count_ != 0U; }
++
++ private:
++  [[nodiscard]] RibbonPrimitive provisional_segment() const;
++
++  InkPoint first_{};
++  InkPoint stable_{};
++  InkPoint last_{};
++  std::size_t point_count_ = 0U;
++};
++
++}  // namespace tinydraw::vector_v2
+diff --git a/vector_v2/include/tinydraw/vector_v2/live_ink_coordinator.h b/vector_v2/include/tinydraw/vector_v2/live_ink_coordinator.h
+index c77b287..273410a 100644
+--- a/vector_v2/include/tinydraw/vector_v2/live_ink_coordinator.h
++++ b/vector_v2/include/tinydraw/vector_v2/live_ink_coordinator.h
+@@ -19,11 +19,11 @@ struct LiveInkMoveResult {
+ // The visual adapter always receives the newest provisional tail before the
+ // authority adapter can commit a ready chunk. Presentation failure is reported
+ // without discarding accepted authority.
+-template <typename Present, typename Commit>
+-LiveInkMoveResult process_live_ink_move(CurvedRibbonStream& ribbon,
+-                                        ChainedOperationBuilder& builder, InkPoint ink_point,
+-                                        OperationPoint authority_point, std::uint32_t event_us,
+-                                        Present&& present, Commit&& commit) {
++template <typename Ribbon, typename Present, typename Commit>
++LiveInkMoveResult process_live_ink_move(Ribbon& ribbon, ChainedOperationBuilder& builder,
++                                        InkPoint ink_point, OperationPoint authority_point,
++                                        std::uint32_t event_us, Present&& present,
++                                        Commit&& commit) {
+   const RibbonUpdate update = ribbon.append(ink_point, true);
+   const bool visual_passed = std::forward<Present>(present)(update, event_us);
+   ChainedOperationStatus status = builder.add(authority_point);
+diff --git a/vector_v2/include/tinydraw/vector_v2/svg_export.h b/vector_v2/include/tinydraw/vector_v2/svg_export.h
+index b121355..24ee8c1 100644
+--- a/vector_v2/include/tinydraw/vector_v2/svg_export.h
++++ b/vector_v2/include/tinydraw/vector_v2/svg_export.h
+@@ -23,11 +23,9 @@ struct SvgExportOptions {
+ };
+ 
+ // Streams a standalone SVG from the painter-ordered operation authority.
+-// Every operation is one group containing the exact circles and convex paths
+-// emitted by CurvedRibbonStream, the same ribbon geometry path used by the
+-// renderer. The shapes' set union is therefore identical to the rendered
+-// ribbon without constructing a potentially self-intersecting outline or
+-// approximating variable width. Erasers use the requested opaque background
++// Every operation is one group containing the tapered midpoint chords emitted
++// by AuthorityRibbonStream, the same geometry consumed by committed raster
++// authority and live Vector V2 ink. Erasers use the requested opaque background
+ // color and retain their operation order.
+ //
+ // No document-sized output or geometry buffer is allocated. Formatting uses
+diff --git a/vector_v2/sources.cmake b/vector_v2/sources.cmake
+index f67557c..1a7ab57 100644
+--- a/vector_v2/sources.cmake
++++ b/vector_v2/sources.cmake
+@@ -1,4 +1,5 @@
+ set(TINYDRAW_VECTOR_V2_SRCS
++  "${CMAKE_CURRENT_LIST_DIR}/src/authority_ribbon.cpp"
+   "${CMAKE_CURRENT_LIST_DIR}/src/chained_operation_builder.cpp"
+   "${CMAKE_CURRENT_LIST_DIR}/src/chrome.cpp"
+   "${CMAKE_CURRENT_LIST_DIR}/src/display_scheduler.cpp"
+diff --git a/vector_v2/src/authority_ribbon.cpp b/vector_v2/src/authority_ribbon.cpp
+new file mode 100644
+index 0000000..4c3b9b7
+--- /dev/null
++++ b/vector_v2/src/authority_ribbon.cpp
+@@ -0,0 +1,94 @@
++#include "tinydraw/vector_v2/authority_ribbon.h"
++
++namespace tinydraw::vector_v2 {
++namespace {
++
++bool same_geometry(InkPoint first, InkPoint second) {
++  return first.position.x == second.position.x && first.position.y == second.position.y &&
++         first.radius == second.radius;
++}
++
++InkPoint midpoint(InkPoint first, InkPoint second) {
++  InkPoint result = second;
++  result.position = {
++      .x = (first.position.x + second.position.x) * 0.5F,
++      .y = (first.position.y + second.position.y) * 0.5F,
++  };
++  result.radius = (first.radius + second.radius) * 0.5F;
++  return result;
++}
++
++InkPoint quadratic_middle(InkPoint start, InkPoint control, InkPoint end) {
++  InkPoint result = control;
++  result.position = {
++      .x = start.position.x * 0.25F + control.position.x * 0.5F + end.position.x * 0.25F,
++      .y = start.position.y * 0.25F + control.position.y * 0.5F + end.position.y * 0.25F,
++  };
++  result.radius = start.radius * 0.25F + control.radius * 0.5F + end.radius * 0.25F;
++  return result;
++}
++
++}  // namespace
++
++RibbonPrimitive AuthorityRibbonStream::provisional_segment() const {
++  if (point_count_ == 1U) {
++    return tapered_ribbon_segment(first_, first_);
++  }
++  return tapered_ribbon_segment(stable_, last_);
++}
++
++RibbonUpdate AuthorityRibbonStream::append(InkPoint point, bool provisional_needed) {
++  RibbonUpdate update;
++  if (point_count_ == 0U) {
++    first_ = point;
++    stable_ = point;
++    last_ = point;
++    point_count_ = 1U;
++    if (provisional_needed) {
++      update.provisional.push_back(provisional_segment());
++    }
++    return update;
++  }
++
++  if (same_geometry(last_, point)) {
++    if (provisional_needed) {
++      update.provisional.push_back(provisional_segment());
++    }
++    return update;
++  }
++
++  if (point_count_ == 1U) {
++    last_ = point;
++    point_count_ = 2U;
++    if (provisional_needed) {
++      update.provisional.push_back(provisional_segment());
++    }
++    return update;
++  }
++
++  const InkPoint stable_end = midpoint(last_, point);
++  const InkPoint curve_midpoint = quadratic_middle(stable_, last_, stable_end);
++  update.committed.push_back(tapered_ribbon_segment(stable_, curve_midpoint));
++  update.committed.push_back(tapered_ribbon_segment(curve_midpoint, stable_end));
++  stable_ = stable_end;
++  last_ = point;
++  ++point_count_;
++  if (provisional_needed) {
++    update.provisional.push_back(provisional_segment());
++  }
++  return update;
++}
++
++RibbonUpdate AuthorityRibbonStream::finish(InkPoint point) {
++  RibbonUpdate update = append(point, true);
++  for (const RibbonPrimitive& primitive : update.provisional) {
++    update.committed.push_back(primitive);
++  }
++  update.provisional = {};
++  reset();
++  return update;
++}
++
++void AuthorityRibbonStream::reset() { point_count_ = 0U; }
++
++}  // namespace tinydraw::vector_v2
+diff --git a/vector_v2/src/svg_export.cpp b/vector_v2/src/svg_export.cpp
+index 3bae0af..f834e33 100644
+--- a/vector_v2/src/svg_export.cpp
++++ b/vector_v2/src/svg_export.cpp
+@@ -1,13 +1,15 @@
+ #include "tinydraw/vector_v2/svg_export.h"
+ 
++#include <algorithm>
+ #include <array>
+ #include <charconv>
++#include <cmath>
+ #include <cstddef>
+ #include <cstdint>
+ #include <limits>
+ #include <string_view>
+ 
+-#include "tinydraw/ink/ribbon_geometry.h"
++#include "tinydraw/vector_v2/authority_ribbon.h"
+ 
+ namespace tinydraw::vector_v2 {
+ namespace {
+@@ -72,11 +74,51 @@ bool emit_point(Writer& writer, Point point) {
+   return writer.number(point.x) && writer.append(" ") && writer.number(point.y);
+ }
+ 
++bool emit_circle(Writer& writer, Point center, float radius) {
++  return writer.append("<circle cx=\"") && writer.number(center.x) && writer.append("\" cy=\"") &&
++         writer.number(center.y) && writer.append("\" r=\"") && writer.number(radius) &&
++         writer.append("\"/>\n");
++}
++
++bool emit_tapered_segment(Writer& writer, const RibbonPrimitive& primitive) {
++  const Point second_center = tapered_ribbon_second_center(primitive);
++  const float second_radius = tapered_ribbon_second_radius(primitive);
++  const float delta_x = second_center.x - primitive.center.x;
++  const float delta_y = second_center.y - primitive.center.y;
++  const float length = std::sqrt(delta_x * delta_x + delta_y * delta_y);
++  if (length == 0.0F) {
++    return emit_circle(writer, primitive.center, std::max(primitive.radius, second_radius));
++  }
++  const Point normal{.x = -delta_y / length, .y = delta_x / length};
++  const Point first_left{.x = primitive.center.x + normal.x * primitive.radius,
++                         .y = primitive.center.y + normal.y * primitive.radius};
++  const Point first_right{.x = primitive.center.x - normal.x * primitive.radius,
++                          .y = primitive.center.y - normal.y * primitive.radius};
++  const Point second_left{.x = second_center.x + normal.x * second_radius,
++                          .y = second_center.y + normal.y * second_radius};
++  const Point second_right{.x = second_center.x - normal.x * second_radius,
++                           .y = second_center.y - normal.y * second_radius};
++  return writer.append("<path d=\"M") && emit_point(writer, first_left) && writer.append("L") &&
++         emit_point(writer, second_left) && writer.append("A") && writer.number(second_radius) &&
++         writer.append(" ") && writer.number(second_radius) && writer.append(" 0 0 0 ") &&
++         emit_point(writer, second_right) && writer.append("L") &&
++         emit_point(writer, first_right) && writer.append("A") && writer.number(primitive.radius) &&
++         writer.append(" ") && writer.number(primitive.radius) && writer.append(" 0 0 0 ") &&
++         emit_point(writer, first_left) && writer.append("Z\" data-tinydraw-segment=\"1\" x1=\"") &&
++         writer.number(primitive.center.x) && writer.append("\" y1=\"") &&
++         writer.number(primitive.center.y) && writer.append("\" r1=\"") &&
++         writer.number(primitive.radius) && writer.append("\" x2=\"") &&
++         writer.number(second_center.x) && writer.append("\" y2=\"") &&
++         writer.number(second_center.y) && writer.append("\" r2=\"") &&
++         writer.number(second_radius) && writer.append("\"/>\n");
++}
++
+ bool emit_primitive(Writer& writer, const RibbonPrimitive& primitive) {
+   if (primitive.kind == RibbonPrimitiveKind::kCircle) {
+-    return writer.append("<circle cx=\"") && writer.number(primitive.center.x) &&
+-           writer.append("\" cy=\"") && writer.number(primitive.center.y) &&
+-           writer.append("\" r=\"") && writer.number(primitive.radius) && writer.append("\"/>\n");
++    return emit_circle(writer, primitive.center, primitive.radius);
++  }
++  if (primitive.kind == RibbonPrimitiveKind::kTaperedSegment) {
++    return emit_tapered_segment(writer, primitive);
+   }
+ 
+   if (primitive.point_count < 3U || primitive.point_count > primitive.points.size() ||
+@@ -110,7 +152,7 @@ bool emit_operation(Writer& writer, const StoredOperation& operation, std::uint1
+     return false;
+   }
+ 
+-  CurvedRibbonStream ribbon;
++  AuthorityRibbonStream ribbon;
+   for (std::size_t index = 0; index < operation.samples.size(); ++index) {
+     const bool final = index + 1U == operation.samples.size();
+     const RibbonUpdate update = final ? ribbon.finish(ink_point(operation.samples[index]))
+diff --git a/vector_v2/tests/chrome_test.cpp b/vector_v2/tests/chrome_test.cpp
+index 35d58e1..b1689f8 100644
+--- a/vector_v2/tests/chrome_test.cpp
++++ b/vector_v2/tests/chrome_test.cpp
+@@ -595,8 +595,7 @@ TEST_CASE("staging strips reproduce all fixed chrome without mutating canvas sou
+   tinydraw::vector_v2::draw_chrome(modal_reference, width, height, modal_state);
+   tinydraw::vector_v2::draw_chrome_canvas_overlays(modal_reference, width, height, modal_state,
+                                                    navigation);
+-  std::vector<std::uint16_t> modal_cache_pixels(
+-      tinydraw::vector_v2::kChromeStagingCachePixels);
++  std::vector<std::uint16_t> modal_cache_pixels(tinydraw::vector_v2::kChromeStagingCachePixels);
+   tinydraw::vector_v2::ChromeStagingCache modal_cache(modal_cache_pixels);
+   REQUIRE(modal_cache.prepare(modal_state, navigation, 7U));
+   const auto modal_stats = modal_cache.stats();
+diff --git a/vector_v2/tests/incremental_rasterizer_test.cpp b/vector_v2/tests/incremental_rasterizer_test.cpp
+index 4fd9ec9..667da1c 100644
+--- a/vector_v2/tests/incremental_rasterizer_test.cpp
++++ b/vector_v2/tests/incremental_rasterizer_test.cpp
+@@ -10,7 +10,9 @@
+ #include <vector>
+ 
+ #include "tinydraw/graphics/coverage_tile.h"
++#include "tinydraw/graphics/ribbon_renderer.h"
+ #include "tinydraw/ink/ribbon_geometry.h"
++#include "tinydraw/vector_v2/authority_ribbon.h"
+ 
+ namespace vector_v2 = tinydraw::vector_v2;
+ 
+@@ -153,6 +155,48 @@ TEST_CASE("committed sparse ink follows the curved midpoint path") {
+   CHECK(pixels[17U * 64U + 27U] == 0x001FU);
+ }
+ 
++TEST_CASE("live authority ribbon exactly matches committed pixels at every zoom") {
++  const std::array samples{
++      vector_v2::CompactOperationSample{.x_quarter = 8, .y_quarter = 40, .radius_256 = 256},
++      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 8, .radius_256 = 768},
++      vector_v2::CompactOperationSample{.x_quarter = 72, .y_quarter = 48, .radius_256 = 384},
++      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 72, .radius_256 = 1'024},
++  };
++  constexpr std::array zooms{
++      vector_v2::ZoomLevel::k25Percent,  vector_v2::ZoomLevel::k50Percent,
++      vector_v2::ZoomLevel::k100Percent, vector_v2::ZoomLevel::k200Percent,
++      vector_v2::ZoomLevel::k400Percent,
++  };
++  for (const vector_v2::ZoomLevel zoom : zooms) {
++    const float scale = static_cast<float>(vector_v2::zoom_percent(zoom)) / 100.0F;
++    std::vector<tinydraw::RibbonPrimitive> primitives;
++    vector_v2::AuthorityRibbonStream ribbon;
++    for (std::size_t index = 0; index < samples.size(); ++index) {
++      const auto sample = samples[index];
++      const tinydraw::InkPoint point{
++          .position = {.x = static_cast<float>(sample.x_quarter) * 0.25F * scale,
++                       .y = static_cast<float>(sample.y_quarter) * 0.25F * scale},
++          .radius = std::max(static_cast<float>(sample.radius_256) / 256.0F * scale, 0.75F),
++      };
++      const auto update =
++          index + 1U == samples.size() ? ribbon.finish(point) : ribbon.append(point, false);
++      primitives.insert(primitives.end(), update.committed.begin(), update.committed.end());
++    }
++
++    std::array<std::uint16_t, 96U * 96U> live{};
++    std::array<std::uint16_t, 96U * 96U> authority{};
++    live.fill(0xFFFFU);
++    authority.fill(0xFFFFU);
++    tinydraw::RibbonRenderer renderer;
++    static_cast<void>(renderer.render(primitives, live, 96, 96, 0x001FU));
++    REQUIRE(vector_v2::apply_incremental_operation(
++        {.tool = vector_v2::OperationTool::kPen, .color = 0x001FU, .samples = samples},
++        {.zoom = zoom, .level_bounds = {0, 0, 96, 96}, .pixels = authority, .stride = 96}));
++    CAPTURE(vector_v2::zoom_percent(zoom));
++    CHECK(live == authority);
++  }
++}
++
+ TEST_CASE("eraser applies after pen in painter order") {
+   std::array<std::uint16_t, 24U * 24U> pixels{};
+   pixels.fill(0xFFFFU);
+diff --git a/vector_v2/tests/svg_export_test.cpp b/vector_v2/tests/svg_export_test.cpp
+index 129bbc1..11cb2c6 100644
+--- a/vector_v2/tests/svg_export_test.cpp
++++ b/vector_v2/tests/svg_export_test.cpp
+@@ -14,8 +14,8 @@
+ #include <string_view>
+ #include <vector>
+ 
+-#include "tinydraw/graphics/ribbon_renderer.h"
+ #include "tinydraw/ink/ribbon_geometry.h"
++#include "tinydraw/vector_v2/incremental_rasterizer.h"
+ #include "tinydraw/vector_v2/memory_layout.h"
+ 
+ namespace vector_v2 = tinydraw::vector_v2;
+@@ -69,6 +69,8 @@ struct ParsedShape {
+   std::uint8_t point_count = 0;
+   tinydraw::Point center{};
+   float radius = 0.0F;
++  tinydraw::Point second_center{};
++  float second_radius = 0.0F;
+ };
+ 
+ bool parse_float(std::string_view text, std::size_t& cursor, float& value) {
+@@ -106,6 +108,18 @@ bool parse_shapes(std::string_view svg, std::vector<ParsedShape>& shapes) {
+         return false;
+       }
+       shapes.push_back(shape);
++    } else if (line.starts_with("<path d=\"M") &&
++               line.find("data-tinydraw-segment=\"1\"") != std::string_view::npos) {
++      ParsedShape shape{.kind = tinydraw::RibbonPrimitiveKind::kTaperedSegment};
++      if (!parse_attribute(line, "x1", shape.center.x) ||
++          !parse_attribute(line, "y1", shape.center.y) ||
++          !parse_attribute(line, "r1", shape.radius) ||
++          !parse_attribute(line, "x2", shape.second_center.x) ||
++          !parse_attribute(line, "y2", shape.second_center.y) ||
++          !parse_attribute(line, "r2", shape.second_radius)) {
++        return false;
++      }
++      shapes.push_back(shape);
+     } else if (line.starts_with("<path d=\"M")) {
+       ParsedShape shape;
+       std::size_t cursor = std::string_view("<path d=\"M").size();
+@@ -171,28 +185,6 @@ bool well_formed_export(std::string_view svg) {
+   return stack.empty();
+ }
+ 
+-tinydraw::InkPoint ink_point(vector_v2::CompactOperationSample sample) {
+-  return {
+-      .position = {.x = static_cast<float>(sample.x_quarter) * 0.25F,
+-                   .y = static_cast<float>(sample.y_quarter) * 0.25F},
+-      .pressure = 0.0F,
+-      .radius = static_cast<float>(sample.radius_256) / 256.0F,
+-  };
+-}
+-
+-std::vector<tinydraw::RibbonPrimitive> renderer_geometry(
+-    std::span<const vector_v2::CompactOperationSample> samples) {
+-  tinydraw::CurvedRibbonStream ribbon;
+-  std::vector<tinydraw::RibbonPrimitive> primitives;
+-  for (std::size_t index = 0; index < samples.size(); ++index) {
+-    const bool final = index + 1U == samples.size();
+-    const tinydraw::RibbonUpdate update = final ? ribbon.finish(ink_point(samples[index]))
+-                                                : ribbon.append(ink_point(samples[index]), false);
+-    primitives.insert(primitives.end(), update.committed.begin(), update.committed.end());
+-  }
+-  return primitives;
+-}
+-
+ float cross(tinydraw::Point first, tinydraw::Point second, tinydraw::Point point) {
+   return (second.x - first.x) * (point.y - first.y) - (second.y - first.y) * (point.x - first.x);
+ }
+@@ -203,6 +195,12 @@ bool contains(const ParsedShape& shape, tinydraw::Point point) {
+     const float delta_y = point.y - shape.center.y;
+     return delta_x * delta_x + delta_y * delta_y <= shape.radius * shape.radius;
+   }
++  if (shape.kind == tinydraw::RibbonPrimitiveKind::kTaperedSegment) {
++    const tinydraw::RibbonPrimitive primitive = tinydraw::tapered_ribbon_segment(
++        {.position = shape.center, .radius = shape.radius},
++        {.position = shape.second_center, .radius = shape.second_radius});
++    return tinydraw::tapered_ribbon_segment_covers(primitive, point);
++  }
+   bool positive = false;
+   bool negative = false;
+   for (std::uint8_t index = 0; index < shape.point_count; ++index) {
+@@ -214,11 +212,6 @@ bool contains(const ParsedShape& shape, tinydraw::Point point) {
+   return !(positive && negative);
+ }
+ 
+-std::uint16_t black_over_white(std::uint8_t alpha) {
+-  const auto blend = [alpha](int destination) { return (destination * (255 - alpha) + 127) / 255; };
+-  return static_cast<std::uint16_t>((blend(31) << 11) | (blend(63) << 5) | blend(31));
+-}
+-
+ }  // namespace
+ 
+ TEST_CASE("SVG export has stable exact output and painter-ordered eraser geometry") {
+@@ -244,9 +237,9 @@ TEST_CASE("SVG export has stable exact output and painter-ordered eraser geometr
+         "viewBox=\"0 0 30 20\">\n"
+         "<rect x=\"0\" y=\"0\" width=\"30\" height=\"20\" fill=\"#FFFFFF\"/>\n"
+         "<g fill=\"#FF0000\">\n"
+-        "<circle cx=\"10\" cy=\"10\" r=\"2\"/>\n"
+-        "<path d=\"M10 8L20 6L20 14L10 12Z\"/>\n"
+-        "<circle cx=\"20\" cy=\"10\" r=\"4\"/>\n"
++        "<path d=\"M10 12L20 14A4 4 0 0 0 20 6L10 8A2 2 0 0 0 10 12Z\" "
++        "data-tinydraw-segment=\"1\" x1=\"10\" y1=\"10\" r1=\"2\" x2=\"20\" "
++        "y2=\"10\" r2=\"4\"/>\n"
+         "</g>\n"
+         "<g fill=\"#FFFFFF\">\n"
+         "<circle cx=\"15\" cy=\"10\" r=\"1\"/>\n"
+@@ -255,7 +248,7 @@ TEST_CASE("SVG export has stable exact output and painter-ordered eraser geometr
+   CHECK(sink.maximum_fragment <= 64U);
+ }
+ 
+-TEST_CASE("exported primitive coverage exactly matches the ribbon renderer raster") {
++TEST_CASE("exported geometry exactly matches committed authority pixel coverage") {
+   LogFixture<2, 8> fixture;
+   const std::array samples{
+       vector_v2::CompactOperationSample{.x_quarter = 32, .y_quarter = 64, .radius_256 = 256},
+@@ -270,50 +263,28 @@ TEST_CASE("exported primitive coverage exactly matches the ribbon renderer raste
+ 
+   std::vector<ParsedShape> shapes;
+   REQUIRE(parse_shapes(sink.text, shapes));
+-  const std::vector<tinydraw::RibbonPrimitive> primitives = renderer_geometry(samples);
+-  REQUIRE(shapes.size() == primitives.size());
+-  std::array<std::uint16_t, 64U * 32U> raster{};
+-  raster.fill(0xFFFFU);
+-  tinydraw::RibbonRenderer renderer;
+-  const tinydraw::RibbonRenderStats stats = renderer.render(primitives, raster, 64, 32, 0U);
+-  REQUIRE(stats.tiles_rasterized == 1U);
++  REQUIRE_FALSE(shapes.empty());
++  std::array<std::uint16_t, 64U * 32U> authority{};
++  authority.fill(0xFFFFU);
++  REQUIRE(vector_v2::apply_incremental_operation(
++      {.tool = vector_v2::OperationTool::kPen, .color = 0U, .samples = samples},
++      {.zoom = vector_v2::ZoomLevel::k100Percent,
++       .level_bounds = {0, 0, 64, 32},
++       .pixels = authority,
++       .stride = 64}));
+ 
+-  constexpr int samples_per_axis = 4;
+-  std::size_t differing_pixels = 0;
+   for (int y = 0; y < 32; ++y) {
+     for (int x = 0; x < 64; ++x) {
+-      int covered = 0;
+-      for (int sample_y = 0; sample_y < samples_per_axis; ++sample_y) {
+-        for (int sample_x = 0; sample_x < samples_per_axis; ++sample_x) {
+-          const tinydraw::Point point{
+-              .x = static_cast<float>(x) + (static_cast<float>(sample_x) + 0.5F) / 4.0F,
+-              .y = static_cast<float>(y) + (static_cast<float>(sample_y) + 0.5F) / 4.0F,
+-          };
+-          covered += std::any_of(shapes.begin(), shapes.end(), [point](const ParsedShape& shape) {
+-            return contains(shape, point);
+-          });
+-        }
+-      }
+-      const std::uint8_t alpha = static_cast<std::uint8_t>(covered * 255 / 16);
+-      const std::uint16_t mathematical = black_over_white(alpha);
+-      const std::uint16_t rendered = raster[static_cast<std::size_t>(y * 64 + x)];
+-      if (rendered != mathematical) {
+-        ++differing_pixels;
+-      }
+-      // CoverageTile's scan converter may classify a point exactly on a
+-      // convex edge one 4x4 supersample differently from the direct
+-      // half-plane predicate. No channel may differ by more than that one
+-      // supersample; all other coverage must be exact.
+-      CHECK(std::abs(static_cast<int>((rendered >> 11U) & 31U) -
+-                     static_cast<int>((mathematical >> 11U) & 31U)) <= 2);
+-      CHECK(std::abs(static_cast<int>((rendered >> 5U) & 63U) -
+-                     static_cast<int>((mathematical >> 5U) & 63U)) <= 4);
+-      CHECK(std::abs(static_cast<int>(rendered & 31U) - static_cast<int>(mathematical & 31U)) <= 2);
++      const tinydraw::Point center{.x = static_cast<float>(x) + 0.5F,
++                                   .y = static_cast<float>(y) + 0.5F};
++      const bool exported =
++          std::any_of(shapes.begin(), shapes.end(),
++                      [center](const ParsedShape& shape) { return contains(shape, center); });
++      CAPTURE(x);
++      CAPTURE(y);
++      CHECK(exported == (authority[static_cast<std::size_t>(y * 64 + x)] == 0U));
+     }
+   }
+-  CHECK(differing_pixels < 16U);
+-  CHECK(contains(shapes.back(), {.x = 54.0F, .y = 20.0F}));
+-  CHECK_FALSE(contains(shapes.front(), {.x = 8.0F, .y = 20.0F}));
+ }
+ 
+ TEST_CASE("SVG export handles empty and single-dot documents and sink failure") {
+diff --git a/vector_v2/tests/tile_producer_test.cpp b/vector_v2/tests/tile_producer_test.cpp
+index 104b0ce..4e795f1 100644
+--- a/vector_v2/tests/tile_producer_test.cpp
++++ b/vector_v2/tests/tile_producer_test.cpp
+@@ -525,8 +525,7 @@ TEST_CASE("tile producer rejects 25 percent and aliased or short workspace") {
+       fixture.canvas,
+       {.supertask_pixels = fixture.supertask,
+        .finalized_pixels = fixture.mask,
+-       .summary_row_unset =
+-           std::span(fixture.supertask).first(vector_v2::kTileProducerSummaryRows),
++       .summary_row_unset = std::span(fixture.supertask).first(vector_v2::kTileProducerSummaryRows),
+        .summary_saturated_words = fixture.summary_words},
+   };
+   CHECK_FALSE(aliased_workspace.ready());
+-- 
+2.54.0 (Apple Git-156)
+

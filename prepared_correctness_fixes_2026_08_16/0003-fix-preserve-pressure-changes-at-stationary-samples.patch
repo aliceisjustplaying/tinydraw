@@ -1,0 +1,59 @@
+From a951a6e0e1cad3320badb05d04a2260743c84a72 Mon Sep 17 00:00:00 2001
+From: TKTK <TKTK>
+Date: Sun, 16 Aug 2026 17:28:39 +0100
+Subject: [PATCH 03/10] fix: preserve pressure changes at stationary samples
+
+---
+ vector_v2/src/incremental_rasterizer.cpp       |  6 ++++++
+ .../tests/incremental_rasterizer_test.cpp      | 18 ++++++++++++++++++
+ 2 files changed, 24 insertions(+)
+
+diff --git a/vector_v2/src/incremental_rasterizer.cpp b/vector_v2/src/incremental_rasterizer.cpp
+index d818113..8bdd20a 100644
+--- a/vector_v2/src/incremental_rasterizer.cpp
++++ b/vector_v2/src/incremental_rasterizer.cpp
+@@ -148,6 +148,12 @@ PixelRect segment_bounds(const Segment& segment, PixelRect clip) {
+ }
+ 
+ bool covers_pixel(const Segment& segment, float pixel_x, float pixel_y) {
++  if (segment.inverse_length_squared == 0.0F) {
++    const float distance_x = pixel_x - segment.first.x;
++    const float distance_y = pixel_y - segment.first.y;
++    const float radius = std::max(segment.first.radius, segment.second.radius);
++    return distance_x * distance_x + distance_y * distance_y <= radius * radius;
++  }
+   const float projection = ((pixel_x - segment.first.x) * segment.delta_x +
+                             (pixel_y - segment.first.y) * segment.delta_y) *
+                            segment.inverse_length_squared;
+diff --git a/vector_v2/tests/incremental_rasterizer_test.cpp b/vector_v2/tests/incremental_rasterizer_test.cpp
+index 6fa0c9f..4fd9ec9 100644
+--- a/vector_v2/tests/incremental_rasterizer_test.cpp
++++ b/vector_v2/tests/incremental_rasterizer_test.cpp
+@@ -88,6 +88,24 @@ TEST_CASE("incremental operation paints one stroke without clearing prior pixels
+   CHECK(pixels.front() == 0x1111U);
+ }
+ 
++TEST_CASE("coincident samples paint the larger pressure radius") {
++  std::array<std::uint16_t, 24U * 24U> pixels{};
++  pixels.fill(0xFFFFU);
++  const std::array samples{
++      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 256},
++      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 2'048},
++  };
++  REQUIRE(vector_v2::apply_incremental_operation(
++      {.tool = vector_v2::OperationTool::kPen, .color = 0x0000U, .samples = samples},
++      {.zoom = vector_v2::ZoomLevel::k100Percent,
++       .level_bounds = {0, 0, 24, 24},
++       .pixels = pixels,
++       .stride = 24}));
++  CHECK(pixels[10U * 24U + 10U] == 0x0000U);
++  CHECK(pixels[10U * 24U + 15U] == 0x0000U);
++  CHECK(pixels[10U * 24U + 19U] == 0xFFFFU);
++}
++
+ TEST_CASE("committed sparse ink follows the curved midpoint path") {
+   std::array<std::uint16_t, 64U * 48U> pixels{};
+   pixels.fill(0xFFFFU);
+-- 
+2.54.0 (Apple Git-156)
+

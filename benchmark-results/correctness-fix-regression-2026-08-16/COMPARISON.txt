@@ -1,0 +1,57 @@
+CLAIM: e14e6e9 introduces no device performance regression relative to accepted Stage B 75c9145.
+BASELINE: benchmark-results/cold-stage-b-2026-08-16/logs/stageB-B23iram-1.log, benchmark-results/cold-stage-b-2026-08-16/logs/stageB-B23iram-2.log, benchmark-results/cold-stage-b-2026-08-16/logs/stageB-B23iram-3.log, benchmark-results/cold-stage-b-2026-08-16/logs/stageB-final-1.log
+TREATMENT: /tmp/e14e6e9-full-device-benchmark-run1.log, /tmp/e14e6e9-full-device-benchmark-run2.log, /tmp/e14e6e9-full-device-benchmark-run3.log
+
+GENERAL_COLD (max of baseline 3-run+confirmation vs max of treatment 3-run)
+zoom metric baseline_max treatment_max delta percent baseline_passes treatment_passes
+50 compute_us 356150 366792 +10642 +2.99% 1/1/1/1 0/0/0
+50 present_us 71414 141848 +70434 +98.63% 1/1/1/1 0/0/0
+50 wall_us 437948 518989 +81041 +18.50% 1/1/1/1 0/0/0
+50 max_tick_us 8660 23908 +15248 +176.07% 1/1/1/1 0/0/0
+100 compute_us 348620 355325 +6705 +1.92% 1/1/1/1 0/0/0
+100 present_us 67191 135536 +68345 +101.72% 1/1/1/1 0/0/0
+100 wall_us 428362 500409 +72047 +16.82% 1/1/1/1 0/0/0
+100 max_tick_us 8489 17997 +9508 +112.00% 1/1/1/1 0/0/0
+200 compute_us 410133 412845 +2712 +0.66% 1/1/1/1 0/0/0
+200 present_us 64795 125637 +60842 +93.90% 1/1/1/1 0/0/0
+200 wall_us 487981 549632 +61651 +12.63% 1/1/1/1 0/0/0
+200 max_tick_us 7918 21287 +13369 +168.84% 1/1/1/1 0/0/0
+400 compute_us 431908 428575 -3333 -0.77% 0/0/0/0 0/0/0
+400 present_us 63363 114607 +51244 +80.87% 0/0/0/0 0/0/0
+400 wall_us 506950 553856 +46906 +9.25% 0/0/0/0 0/0/0
+400 max_tick_us 10111 23692 +13581 +134.32% 0/0/0/0 0/0/0
+
+SEED7_400
+compute_us 192585 211354 +18769 +9.75%
+present_us 80755 217809 +137054 +169.72%
+wall_us 279949 435956 +156007 +55.73%
+max_tick_us 9652 21016 +11364 +117.74%
+passes 1/1/1/1 0/0/0
+
+LIVE_STRESS
+total_us 751027 802941 +51914 +6.91%
+average_us 751 802 +51 +6.79%
+maximum_us 1069 1043 -26 -2.43%
+
+VERDICTS
+baseline benchmark-results/cold-stage-b-2026-08-16/logs/stageB-B23iram-1.log 246 paced_cold=1 hairline_capacity=1
+baseline benchmark-results/cold-stage-b-2026-08-16/logs/stageB-B23iram-2.log 246 paced_cold=1 hairline_capacity=1
+baseline benchmark-results/cold-stage-b-2026-08-16/logs/stageB-B23iram-3.log 246 paced_cold=1 hairline_capacity=1
+baseline benchmark-results/cold-stage-b-2026-08-16/logs/stageB-final-1.log 246 paced_cold=1 hairline_capacity=1
+baseline benchmark-results/cold-stage-b-2026-08-16/logs/stageB-B23iram-1.log 247 pass=0
+baseline benchmark-results/cold-stage-b-2026-08-16/logs/stageB-B23iram-2.log 247 pass=0
+baseline benchmark-results/cold-stage-b-2026-08-16/logs/stageB-B23iram-3.log 247 pass=0
+baseline benchmark-results/cold-stage-b-2026-08-16/logs/stageB-final-1.log 247 pass=0
+treatment /tmp/e14e6e9-full-device-benchmark-run1.log 115 paced_cold=0 hairline_capacity=0
+treatment /tmp/e14e6e9-full-device-benchmark-run2.log 115 paced_cold=0 hairline_capacity=0
+treatment /tmp/e14e6e9-full-device-benchmark-run3.log 115 paced_cold=0 hairline_capacity=0
+treatment /tmp/e14e6e9-full-device-benchmark-run1.log 116 pass=0
+treatment /tmp/e14e6e9-full-device-benchmark-run2.log 116 pass=0
+treatment /tmp/e14e6e9-full-device-benchmark-run3.log 116 pass=0
+
+LOG_SHA256
+aaf31b3a2babaa029018c6533a469329ed96bc41d9cf589c536e44f41ec872f3 /tmp/e14e6e9-full-device-benchmark-run1.log
+d0931482df70f6bfd43763557da3ed83afd8a8c3ffa78c2a9c2d0e0fa72d846c /tmp/e14e6e9-full-device-benchmark-run2.log
+ba40761b8baa34b87f966e0cace0416a45ed7f98264f8bb45cd172ab83775aad /tmp/e14e6e9-full-device-benchmark-run3.log
+
+VERDICT: NOT VERIFIED
