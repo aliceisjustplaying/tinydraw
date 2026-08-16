@@ -49,7 +49,7 @@ constexpr std::size_t rect_pixels(ChromeRect rect) {
 }
 static_assert(rect_pixels(kZoomRailOverlayRect) + rect_pixels(kMinimapOverlayRect) +
                       rect_pixels(kBatteryOverlayRect) + rect_pixels(kBottomCacheRect) ==
-                  kChromeStagingCachePixels,
+                  kChromeSpriteCachePixels,
               "chrome staging cache layout must match its caller-funded size");
 static_assert([] {
   for (const auto& palette : kPico8Palettes) {
@@ -903,6 +903,29 @@ bool ChromeStagingCache::prepare_for(ChromeRect panel_bounds, const ChromeState&
     return false;
   }
   if (!canvas_overlays_visible(state)) {
+    const bool navigation_matches =
+        modal_zoom_percent_ == navigation.zoom_percent && modal_level_x_ == navigation.level_x &&
+        modal_level_y_ == navigation.level_y && modal_level_width_ == navigation.level_width &&
+        modal_level_height_ == navigation.level_height &&
+        modal_overview_revision_ == overview_revision;
+    if (!modal_valid_ || modal_state_ != state || !navigation_matches) {
+      auto modal = pixels_.subspan(kChromeSpriteCachePixels, kChromeModalCachePixels);
+      std::fill(modal.begin(), modal.end(), kCacheTransparent);
+      const MinimapSurface surface{modal, kWidth, kHeight, 0, 0};
+      draw_fixed_chrome(surface, state);
+      Painter painter(modal, kWidth, kHeight);
+      draw_export_toast(painter, state);
+      static_cast<void>(draw_strip_overlays(surface, state, navigation));
+      modal_state_ = state;
+      modal_zoom_percent_ = navigation.zoom_percent;
+      modal_level_x_ = navigation.level_x;
+      modal_level_y_ = navigation.level_y;
+      modal_level_width_ = navigation.level_width;
+      modal_level_height_ = navigation.level_height;
+      modal_overview_revision_ = overview_revision;
+      modal_valid_ = true;
+      ++stats_.modal_redraws;
+    }
     return true;
   }
 
@@ -994,11 +1017,16 @@ bool ChromeStagingCache::paint_prepared(const MinimapSurface& surface, const Chr
     return false;
   }
   if (!canvas_overlays_visible(state)) {
-    draw_fixed_chrome(surface, state);
-    Painter painter(surface.pixels, surface.width, surface.height, surface.origin_x,
-                    surface.origin_y);
-    draw_export_toast(painter, state);
-    static_cast<void>(draw_strip_overlays(surface, state, navigation));
+    const bool navigation_matches =
+        modal_zoom_percent_ == navigation.zoom_percent && modal_level_x_ == navigation.level_x &&
+        modal_level_y_ == navigation.level_y && modal_level_width_ == navigation.level_width &&
+        modal_level_height_ == navigation.level_height &&
+        modal_overview_revision_ == overview_revision;
+    if (!modal_valid_ || modal_state_ != state || !navigation_matches) {
+      return false;
+    }
+    blend_cached_sprite(surface, {0, 0, kWidth, kHeight},
+                        pixels_.subspan(kChromeSpriteCachePixels, kChromeModalCachePixels));
     return true;
   }
   const ChromeRect panel_bounds{surface.origin_x, surface.origin_y,

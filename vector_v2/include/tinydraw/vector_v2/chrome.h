@@ -159,16 +159,19 @@ struct MinimapSurface {
   bool byte_swapped = false;
 };
 
-// Caller-funded PSRAM for prerendered fixed chrome sprites. The cache keeps
-// rasterization out of per-strip DMA staging while the canvas ring remains
-// presentation-pure. Popup/modal states use the uncached general renderer.
-inline constexpr std::size_t kChromeStagingCachePixels = 53'956U;
+// Caller-funded PSRAM for prerendered fixed chrome sprites and one transparent
+// full-panel modal overlay. Rasterization always finishes before DMA staging.
+inline constexpr std::size_t kChromeSpriteCachePixels = 53'956U;
+inline constexpr std::size_t kChromeModalCachePixels = 368U * 448U;
+inline constexpr std::size_t kChromeStagingCachePixels =
+    kChromeSpriteCachePixels + kChromeModalCachePixels;
 
 struct ChromeStagingCacheStats {
   std::uint32_t bottom_redraws = 0;
   std::uint32_t battery_redraws = 0;
   std::uint32_t zoom_redraws = 0;
   std::uint32_t minimap_base_redraws = 0;
+  std::uint32_t modal_redraws = 0;
 };
 
 class ChromeStagingCache {
@@ -198,6 +201,13 @@ class ChromeStagingCache {
  private:
   std::span<std::uint16_t> pixels_{};
   ChromeState bottom_state_{};
+  ChromeState modal_state_{};
+  int modal_zoom_percent_ = 0;
+  int modal_level_x_ = 0;
+  int modal_level_y_ = 0;
+  int modal_level_width_ = 0;
+  int modal_level_height_ = 0;
+  std::uint32_t modal_overview_revision_ = 0;
   int battery_percentage_ = -1;
   bool battery_charging_ = false;
   int zoom_percent_ = 0;
@@ -207,6 +217,7 @@ class ChromeStagingCache {
   bool battery_valid_ = false;
   bool zoom_valid_ = false;
   bool minimap_base_valid_ = false;
+  bool modal_valid_ = false;
 };
 // Draws the minimap into the surface; the pan path composes the overlay into
 // a small scratch surface instead of writing into the (possibly

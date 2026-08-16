@@ -590,6 +590,28 @@ TEST_CASE("staging strips reproduce all fixed chrome without mutating canvas sou
   }
   CHECK(swapped_cached == swapped_reference);
 
+  const ChromeState modal_state{.popup = tinydraw::vector_v2::ChromePopup::kColors};
+  std::vector<std::uint16_t> modal_reference = canvas;
+  tinydraw::vector_v2::draw_chrome(modal_reference, width, height, modal_state);
+  tinydraw::vector_v2::draw_chrome_canvas_overlays(modal_reference, width, height, modal_state,
+                                                   navigation);
+  std::vector<std::uint16_t> modal_cache_pixels(
+      tinydraw::vector_v2::kChromeStagingCachePixels);
+  tinydraw::vector_v2::ChromeStagingCache modal_cache(modal_cache_pixels);
+  REQUIRE(modal_cache.prepare(modal_state, navigation, 7U));
+  const auto modal_stats = modal_cache.stats();
+  CHECK(modal_stats.modal_redraws == 1U);
+  std::vector<std::uint16_t> modal_staged = canvas;
+  for (int y = 0; y < height; y += rows_per_strip) {
+    const int rows = std::min(rows_per_strip, height - y);
+    auto strip =
+        std::span(modal_staged)
+            .subspan(static_cast<std::size_t>(y) * width, static_cast<std::size_t>(rows) * width);
+    REQUIRE(modal_cache.paint_prepared({strip, width, rows, 0, y}, modal_state, navigation, 7U));
+  }
+  CHECK(modal_staged == modal_reference);
+  CHECK(modal_cache.stats().modal_redraws == modal_stats.modal_redraws);
+
   auto moved = navigation;
   moved.level_x += 137;
   moved.level_y += 211;

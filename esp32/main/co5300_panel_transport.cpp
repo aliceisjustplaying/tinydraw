@@ -41,6 +41,7 @@ static_assert(kPanelClockMHz == 40 || kPanelClockMHz == 50 || kPanelClockMHz == 
 // ~90 us; a one-window RAMWR/RAMWRC stream minimizes both.
 constexpr int kTransferPixels = 16384;
 constexpr int kTransferQueueDepth = 3;
+constexpr TickType_t kTransferAcquireTimeout = pdMS_TO_TICKS(2'000U);
 constexpr std::size_t kTransferHistory = 64U;
 constexpr std::uint16_t kIoExpanderAddress = 0x20;
 constexpr std::uint8_t kIoExpanderOutputRegister = 0x01;
@@ -193,7 +194,11 @@ class Co5300PanelTransport::Impl {
     tear_config.mode = GPIO_MODE_INPUT;
     tear_config.pull_up_en = GPIO_PULLUP_DISABLE;
     tear_config.pull_down_en = GPIO_PULLDOWN_DISABLE;
-    tear_config.intr_type = GPIO_INTR_ANYEDGE;
+#ifdef TINYDRAW_VECTOR_V2_TE_EDGE_FALLING
+    tear_config.intr_type = GPIO_INTR_NEGEDGE;
+#else
+    tear_config.intr_type = GPIO_INTR_POSEDGE;
+#endif
     const esp_err_t isr_service = gpio_install_isr_service(0);
     if (gpio_config(&tear_config) != ESP_OK ||
         (isr_service != ESP_OK && isr_service != ESP_ERR_INVALID_STATE) ||
@@ -255,9 +260,14 @@ class Co5300PanelTransport::Impl {
     const std::uint32_t falling = tear_falling_edges_.load(std::memory_order_acquire);
     const std::uint32_t period = tear_period_us_.load(std::memory_order_relaxed);
     const std::uint32_t high = tear_high_us_.load(std::memory_order_relaxed);
+#ifdef TINYDRAW_VECTOR_V2_TE_EDGE_FALLING
+    const std::uint32_t period_edges = falling;
+#else
+    const std::uint32_t period_edges = rising;
+#endif
     return {.rising_edges = rising,
             .falling_edges = falling,
-            .period_us = rising < 2U ? -1 : static_cast<std::int64_t>(period),
+            .period_us = period_edges < 2U ? -1 : static_cast<std::int64_t>(period),
             .high_us = high == 0U ? -1 : static_cast<std::int64_t>(high),
             .level = gpio_get_level(kTearPin) != 0};
   }
@@ -333,8 +343,7 @@ class Co5300PanelTransport::Impl {
         }
         const TickType_t ticks = std::max<TickType_t>(
             1, pdMS_TO_TICKS(static_cast<std::uint64_t>(remaining_us + 999) / 1'000U));
-        // Either edge posts this semaphore. A wake from the unselected edge is
-        // ignored unless the selected counter also advanced.
+        // The GPIO is configured for the selected edge only.
         static_cast<void>(xSemaphoreTake(tear_semaphore_, ticks));
       }
     };
@@ -376,14 +385,22 @@ class Co5300PanelTransport::Impl {
         paged && esp_lcd_panel_io_tx_param(io_, 0x35, init_35.data(), init_35.size()) == ESP_OK;
     // Sample the pin across roughly two frame periods: a toggling level
     // means the panel emits TE and the interrupt side lost it.
+#ifdef TINYDRAW_VECTOR_V2_TE_EDGE_FALLING
     const std::uint32_t edges_before = tear_falling_edges_.load(std::memory_order_acquire);
+#else
+    const std::uint32_t edges_before = tear_rising_edges_.load(std::memory_order_acquire);
+#endif
     int high_samples = 0;
     constexpr int kProbes = 34;
     for (int probe = 0; probe < kProbes; ++probe) {
       high_samples += gpio_get_level(kTearPin) != 0;
       vTaskDelay(pdMS_TO_TICKS(1));
     }
+#ifdef TINYDRAW_VECTOR_V2_TE_EDGE_FALLING
     const std::uint32_t edges_after = tear_falling_edges_.load(std::memory_order_acquire);
+#else
+    const std::uint32_t edges_after = tear_rising_edges_.load(std::memory_order_acquire);
+#endif
     const bool pin_toggles = high_samples != 0 && high_samples != kProbes;
     bool isr_reinstalled = false;
     if (pin_toggles && edges_after == edges_before) {
@@ -392,7 +409,7 @@ class Co5300PanelTransport::Impl {
     }
     std::printf(
         "TINYDRAW_PANEL_TE_HEAL drained=%u paged=%u sent=%u high=%d/%d edges_delta=%lu "
-        "isr_reinstall=%u falling_edges=%lu\n",
+        "isr_reinstall=%u selected_edges=%lu\n",
         drained, paged, sent, high_samples, kProbes,
         static_cast<unsigned long>(edges_after - edges_before), isr_reinstalled,
         static_cast<unsigned long>(edges_after));
@@ -419,6 +436,9 @@ class Co5300PanelTransport::Impl {
     // counter rollover.
     while (static_cast<std::int32_t>(complete_count() - target) < 0) {
       if (esp_timer_get_time() - started >= timeout_us) {
+        // A missing completion callback means slot ownership is unknowable.
+        // Fail closed instead of letting a later acquire block forever.
+        ready_ = false;
         return false;
       }
       vTaskDelay(pdMS_TO_TICKS(1));
@@ -460,8 +480,11 @@ class Co5300PanelTransport::Impl {
     }
 
     const std::int64_t transfer_started = esp_timer_get_time();
-    ESP_ERROR_CHECK(xSemaphoreTake(transfer_semaphore_, portMAX_DELAY) == pdTRUE ? ESP_OK
-                                                                                 : ESP_FAIL);
+    if (xSemaphoreTake(transfer_semaphore_, kTransferAcquireTimeout) != pdTRUE) {
+      ready_ = false;
+      ++rejected_push_count_;
+      return;
+    }
     auto* transfer =
         transfer_pixels_ + static_cast<std::ptrdiff_t>(transfer_index_ * kTransferPixels);
     transfer_index_ = (transfer_index_ + 1U) % kTransferQueueDepth;
@@ -522,8 +545,11 @@ class Co5300PanelTransport::Impl {
     }
 
     const std::int64_t transfer_started = esp_timer_get_time();
-    ESP_ERROR_CHECK(xSemaphoreTake(transfer_semaphore_, portMAX_DELAY) == pdTRUE ? ESP_OK
-                                                                                 : ESP_FAIL);
+    if (xSemaphoreTake(transfer_semaphore_, kTransferAcquireTimeout) != pdTRUE) {
+      ready_ = false;
+      ++rejected_push_count_;
+      return;
+    }
     auto* transfer =
         transfer_pixels_ + static_cast<std::ptrdiff_t>(transfer_index_ * kTransferPixels);
     transfer_index_ = (transfer_index_ + 1U) % kTransferQueueDepth;
@@ -580,7 +606,8 @@ class Co5300PanelTransport::Impl {
     for (int row = 0; row < height; row += rows_per_transfer) {
       const int rows = std::min(rows_per_transfer, height - row);
       const std::int64_t transfer_started = esp_timer_get_time();
-      if (xSemaphoreTake(transfer_semaphore_, portMAX_DELAY) != pdTRUE) {
+      if (xSemaphoreTake(transfer_semaphore_, kTransferAcquireTimeout) != pdTRUE) {
+        ready_ = false;
         return false;
       }
       auto* transfer =
@@ -675,7 +702,8 @@ class Co5300PanelTransport::Impl {
     for (int row = 0; row < height; row += rows_per_transfer, ++strip_index) {
       const int rows = std::min(rows_per_transfer, height - row);
       const std::int64_t transfer_started = esp_timer_get_time();
-      if (xSemaphoreTake(transfer_semaphore_, portMAX_DELAY) != pdTRUE) {
+      if (xSemaphoreTake(transfer_semaphore_, kTransferAcquireTimeout) != pdTRUE) {
+        ready_ = false;
         return false;
       }
       auto* transfer =
@@ -799,20 +827,21 @@ class Co5300PanelTransport::Impl {
   static void on_tear_edge(void* context) {
     auto& self = *static_cast<Impl*>(context);
     const std::uint32_t now = static_cast<std::uint32_t>(esp_timer_get_time());
-    if (gpio_get_level(kTearPin) != 0) {
-      const std::uint32_t prior = self.tear_last_rise_us_.exchange(now, std::memory_order_relaxed);
-      if (prior != 0U) {
-        self.tear_period_us_.store(now - prior, std::memory_order_relaxed);
-      }
-      self.tear_rising_edges_.fetch_add(1U, std::memory_order_release);
-    } else {
-      const std::uint32_t rise = self.tear_last_rise_us_.load(std::memory_order_relaxed);
-      if (rise != 0U) {
-        self.tear_high_us_.store(now - rise, std::memory_order_relaxed);
-      }
-      self.tear_last_fall_us_.store(now, std::memory_order_relaxed);
-      self.tear_falling_edges_.fetch_add(1U, std::memory_order_release);
+    // The GPIO peripheral, rather than a delayed pin sample, classifies the
+    // only edge used by this build's presentation policy.
+#ifdef TINYDRAW_VECTOR_V2_TE_EDGE_FALLING
+    const std::uint32_t prior = self.tear_last_fall_us_.exchange(now, std::memory_order_relaxed);
+    if (prior != 0U) {
+      self.tear_period_us_.store(now - prior, std::memory_order_relaxed);
     }
+    self.tear_falling_edges_.fetch_add(1U, std::memory_order_release);
+#else
+    const std::uint32_t prior = self.tear_last_rise_us_.exchange(now, std::memory_order_relaxed);
+    if (prior != 0U) {
+      self.tear_period_us_.store(now - prior, std::memory_order_relaxed);
+    }
+    self.tear_rising_edges_.fetch_add(1U, std::memory_order_release);
+#endif
     BaseType_t woke = pdFALSE;
     xSemaphoreGiveFromISR(self.tear_semaphore_, &woke);
     if (woke == pdTRUE) {

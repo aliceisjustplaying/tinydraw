@@ -248,6 +248,8 @@ void AMOLED_1IN8_DisplayWindowPacked(uint32_t Xstart, uint32_t Ystart, uint32_t 
                           (Xend - Xstart) * (Yend - Ystart) * 2,
                           true);
     while(dma_channel_is_busy(dma_tx));
+    // Match the full-frame path: DMA completion precedes the PIO shifter.
+    busy_wait_us_32(1);
     QSPI_Deselect(qspi);
 }
 

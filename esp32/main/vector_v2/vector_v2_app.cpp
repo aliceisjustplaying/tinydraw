@@ -1078,7 +1078,17 @@ void run_vector_v2_app() {
           } else {
             ribbon.reset();
             static_cast<void>(ribbon.append(last_ink, true));
-            live_metrics.include(presenter.show_start(last_ink, color, chrome, event_us));
+            const auto start_timing = presenter.show_start(last_ink, color, chrome, event_us);
+            live_metrics.include(start_timing);
+            if (!start_timing.passed) {
+              // Do not let authority continue from a panel state whose damage
+              // is unknown. Discard the uncommitted gesture and repaint the
+              // last durable document before accepting more input.
+              builder.cancel();
+              ribbon.reset();
+              ink.end();
+              static_cast<void>(presenter.refresh(chrome, event_us));
+            }
           }
         }
       } else if (toolbar_pressed && (point.x != last_touch.x || point.y != last_touch.y)) {
@@ -1118,7 +1128,15 @@ void run_vector_v2_app() {
               });
           const ChainedOperationStatus add_status = move.status;
           stroke_commit_failed = move.commit_failed;
-          if (add_status != ChainedOperationStatus::kAccepted) {
+          if (!move.visual_passed) {
+            // The coordinator may have committed a ready chunk after the
+            // failed visual attempt. Keep that durable prefix, discard only
+            // the transient tail, and converge the panel with a full compose.
+            builder.cancel();
+            ribbon.reset();
+            ink.end();
+            static_cast<void>(presenter.refresh(chrome, event_us));
+          } else if (add_status != ChainedOperationStatus::kAccepted) {
             // Accepted streaming policy: chunks already committed stay in
             // the document like physical ink; only the uncommitted tail of
             // the gesture is discarded on capacity rejection.
@@ -1155,6 +1173,11 @@ void run_vector_v2_app() {
       } else if (panning) {
         panning = false;
         print_pan_baseline(presenter, pan_metrics);
+        // A failed final ring sweep may leave navigation ahead of the panel.
+        // Lift is the transaction boundary: always materialize and present
+        // the selected origin before the gesture is considered complete.
+        const auto timing = presenter.refresh(chrome, event_us);
+        print_presentation("pan-lift", presenter, timing);
         std::fflush(stdout);
       } else if (ink.active()) {
         LiftBaselineTiming measured_lift{

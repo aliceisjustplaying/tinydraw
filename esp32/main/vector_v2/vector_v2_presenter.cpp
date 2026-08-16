@@ -33,6 +33,7 @@ namespace {
 
 constexpr std::uint16_t kBackground = 0xFFFFU;
 constexpr std::int64_t kTearWaitTimeoutUs = 40'000;
+constexpr int kPartialTearSyncRows = 32;
 #ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
 constexpr int kOpticalPatternX = 176;
 constexpr int kOpticalPatternWidth = 16;
@@ -620,6 +621,13 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   timing.tear_edge_wait_resumed = edge_timing.tear_edge_wait_resumed;
   std::int64_t band_wait_us = 0;
   if (timing.passed && start_row > 0) {
+    // The second window has independent CASET/RASET commands. Drain the
+    // first band's color queue before programming those registers.
+    if (!display_.wait_for_all(2'000'000)) {
+      timing.passed = false;
+    }
+  }
+  if (timing.passed && start_row > 0) {
     const std::int64_t band_started = esp_timer_get_time();
     bool band_ready = false;
     const std::int64_t band_deadline = band_started + 2 * kTePeriodUs;
@@ -786,6 +794,11 @@ void VectorV2Presenter::copy_ring_to_stage(vector_v2::PixelRect panel_bounds,
       std::copy(source_row.begin(), source_row.begin() + (width - first),
                 destination.begin() + first);
     }
+    if (surface.byte_swapped) {
+      for (std::uint16_t& pixel : destination) {
+        pixel = static_cast<std::uint16_t>((pixel >> 8U) | (pixel << 8U));
+      }
+    }
   }
 }
 
@@ -934,10 +947,14 @@ LivePresentationTiming VectorV2Presenter::present_ring(
       scheduled->strip.source_area_width, scheduled->strip.source_area_height, rows_per_strip,
       {.context = &context, .paint = &paint_stage_thunk, .accepts_byte_swapped = true});
   if (!streamed) {
+    // A later strip may fail after earlier color transactions were queued.
+    // Never allow the next CASET/RASET sequence to overtake that tail.
+    static_cast<void>(display_.wait_for_all(2'000'000));
     static_cast<void>(scheduler_.abort(*sequence));
     return timing;
   }
   if (!scheduler_.complete(*sequence)) {
+    static_cast<void>(display_.wait_for_all(2'000'000));
     return timing;
   }
   timing.pushes = display_.push_count() - pushes_before;
@@ -995,7 +1012,10 @@ LivePresentationTiming VectorV2Presenter::present_pixels(
   const bool full_frame = bounds.x0 == 0 && bounds.y0 == 0 &&
                           bounds.x1 == vector_v2::kOverviewWidth &&
                           bounds.y1 == vector_v2::kOverviewHeight;
-  if (full_frame) {
+  // Small live-tail windows are intentionally asynchronous. Region/fill
+  // windows span enough scanlines to race scanout and get their own edge.
+  const bool tear_synchronized = full_frame || height >= kPartialTearSyncRows;
+  if (tear_synchronized) {
     const std::int64_t tear_wait_started = esp_timer_get_time();
     const auto wait = display_.wait_for_tear_edge(selected_tear_edge(), kTearWaitTimeoutUs);
     timing.tear_wait_us = esp_timer_get_time() - tear_wait_started;
@@ -1023,10 +1043,12 @@ LivePresentationTiming VectorV2Presenter::present_pixels(
       bounds.x0, bounds.y0, width, height, scheduled->strip.pixels.data(), scheduled->strip.stride,
       rows_per_strip, {.context = &context, .paint = &paint_stage_thunk});
   if (!streamed) {
+    static_cast<void>(display_.wait_for_all(2'000'000));
     static_cast<void>(scheduler_.abort(*sequence));
     return timing;
   }
   if (!scheduler_.complete(*sequence)) {
+    static_cast<void>(display_.wait_for_all(2'000'000));
     return timing;
   }
 
