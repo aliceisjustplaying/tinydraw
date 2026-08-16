@@ -20,21 +20,30 @@ struct RibbonPrimitive {
   float radius = 0.0F;
 };
 
+// Worst case is CurvedRibbonStream::finish on a sharp turn with every span
+// split: initial cap (1) + split two-span curve (4) + sharp-turn joint (1) +
+// split provisional tail (2) + final cap (1) = 9, plus one slot of margin.
+inline constexpr std::size_t kRibbonPrimitiveBatchCapacity = 10;
+
 class RibbonPrimitiveBatch {
  public:
   [[nodiscard]] const RibbonPrimitive* begin() const { return primitives_.data(); }
   [[nodiscard]] const RibbonPrimitive* end() const { return begin() + count_; }
   [[nodiscard]] std::size_t size() const { return count_; }
   [[nodiscard]] bool empty() const { return count_ == 0U; }
+  // True when a push was dropped because the batch was full. Release builds
+  // fail closed (drop + flag) instead of writing out of bounds; callers that
+  // see an overflowed batch should request a full refresh of the stroke.
+  [[nodiscard]] bool overflowed() const { return overflowed_; }
 
  private:
   friend class RibbonStream;
   friend class CurvedRibbonStream;
   void push_back(RibbonPrimitive primitive);
 
-  // Enough for a split two-span curve, initial cap, split provisional tail, and final cap.
-  std::array<RibbonPrimitive, 8> primitives_{};
+  std::array<RibbonPrimitive, kRibbonPrimitiveBatchCapacity> primitives_{};
   std::size_t count_ = 0;
+  bool overflowed_ = false;
 };
 
 struct RibbonUpdate {

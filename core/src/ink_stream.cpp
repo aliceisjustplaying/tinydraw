@@ -43,8 +43,10 @@ InkPoint InkStream::finish(TouchPoint point) {
 }
 
 InkPoint InkStream::ingest(TouchPoint point, bool complete) {
-  assert(active_ && "InkStream input requires an active stroke");
-  if (!valid(point)) {
+  // Update/finish without an active stroke can be produced by anomalous
+  // touch event streams, not only by caller bugs, so this is a runtime
+  // guard rather than an assert: return the safe inactive point unchanged.
+  if (!active_ || !valid(point)) {
     return previous_;
   }
 
