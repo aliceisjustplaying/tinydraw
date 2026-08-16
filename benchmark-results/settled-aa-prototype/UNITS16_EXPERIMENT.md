@@ -51,3 +51,29 @@ jitter (arc-length resampling's territory), per the stack model.
 
 Logs: `/tmp/units16-1.log` archived as
 `../committed-overlay/units16-battery-1.log` (same battery format).
+
+## Addendum — streamline 0.4 (owner follow-up, same day)
+
+Owner glass verdict on units16: "much better," wants it even smoother;
+suggested raising the perfect-freehand streamline (0.445 was an STT
+artifact; corrected to 0.4). Mechanism: `InkConfig.streamline` scales the
+exponential trailing filter α = 0.15 + (1−s)·0.85 (`ink_stream.cpp:64`);
+0.35→0.4 lowers α 0.70→0.66.
+
+Sweep at 400% (angularity tool, `--streamline`):
+
+| s | fast-curve p95 / j>20 | slow-precise p95 / j>20 |
+|---|---|---|
+| 0.35 | 14.0° / 27 | 36.9° / 129 |
+| **0.4** | **13.1° / 19** | **22.8° / 132** |
+| 0.445 | 13.4° / 16 | 26.6° / 133 |
+| 0.55 | 9.3° / 7 | 22.8° / 109 |
+
+Landed: `streamline = 0.4` scoped to the V2 app + harness mirror (Raster
+V1 fallback keeps the 0.35 default). Renders: `*-sl40-*.png`. Battery
+verdict identical (`../committed-overlay/streamline40-battery-1.log`).
+
+Also landed from the same glass session: the "lift spike" was attributed
+to the battery chrome refresh (full-frame present, 60.7 ms compose,
+`kind=power` in the lift window — not the ink path); the power redraw now
+defers until no lift/stroke report or pending drain is outstanding.

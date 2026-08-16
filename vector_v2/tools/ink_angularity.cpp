@@ -37,6 +37,10 @@ namespace vector_v2 = tinydraw::vector_v2;
 
 namespace {
 
+// Input-smoothing experiment knob (owner 2026-08-16): perfect-freehand
+// streamline; product default is 0.35 (tinydraw/ink_config.h).
+float g_streamline = 0.35F;
+
 struct Point {
   float x = 0;
   float y = 0;
@@ -131,6 +135,7 @@ std::vector<std::vector<vector_v2::CompactOperationSample>> committed_operations
   const float inverse_scale = 1.0F / zoom_scale_of(zoom);
   tinydraw::InkConfig config;
   config.size = brush_size;
+  config.streamline = g_streamline;
   tinydraw::InkStream ink(config);
 
   std::vector<vector_v2::CompactOperationSample> storage(65'536);
@@ -376,6 +381,8 @@ int main(int argc, char** argv) {
       size_override = static_cast<float>(std::atof(argv[++index]));
     } else if (std::strcmp(argv[index], "--chords") == 0 && index + 1 < argc) {
       chords = std::atoi(argv[++index]);
+    } else if (std::strcmp(argv[index], "--streamline") == 0 && index + 1 < argc) {
+      g_streamline = static_cast<float>(std::atof(argv[++index]));
     } else {
       paths.push_back(argv[index]);
     }
