@@ -69,16 +69,86 @@ non-B2 builds sit at 660±3. B1's strip-8 headroom was only ~35–40 µs, so B2
 turns the gate into a coin flip or worse. Device-assert removal, placement,
 and padding each shaved a few µs; nothing recovered the baseline.
 
-## Open decision (owner)
+## Open decision (owner) — RESOLVED later this session
 
-1. **Park B2**, proceed to B3/B4; revisit with transport-level work
-   (DMA-fed staging or prefetch) or after understanding the staging tax.
-2. **Accept-and-fix forward**: land B2 given whole-frame pacing stays green,
-   with a work order on the staging pipeline; requires an explicit owner
-   ruling on the strip wire-budget contract (it currently gates the verdict).
-3. **Keep grinding variants** (not recommended: 8 tried, diminishing).
+Owner chose "park B2, proceed to B3". B3 then hit the same strip razor,
+which forced the mechanism to a conclusion (below); the razor fix un-shelved
+B2 the same day.
 
-Note for B3 (H7 chord sweep): if the staging tax is a general
-"producer-memory-behavior during pan frames" coupling, B3 may trip the same
-razor; B1 did not, so it is not universal. Measure pan_seq strip 8 on the
-first B3 flash.
+---
+
+# Session 2 addendum — Stage B closed
+
+## The strip-staging mystery, resolved
+
+B3 (with zero canvas changes and no producer work inside the timed pan
+frames — the gate prewarms every footprint) reproduced the identical
+elevation, killing the "faster producer contends with staging" theory.
+Further falsification probes on pure B1 code: reversed tile→slot
+assignment (`choose_slot` from the end) measured 654–658 µs — fine; ~1 KB
+of never-called dead code — 659 µs — fine. The phase receipts then showed
+the smoking gun: `byte_swap`, a pure internal-memory CPU loop, ran 11 µs on
+every baseline-layout image and 17–18 µs on every producer-change image,
+with all prepare subphases up ~2–3% uniformly — **flash instruction-cache
+layout luck**, larger than the strip-8 wire margin.
+
+**Fix (landed, `11edbd7`):** a linker fragment pins the panel transport's
+code in internal RAM (`esp32/main/linker.lf`, noflash_text; IRAM_ATTR on
+the in-class methods trips Xtensa l32r literal errors). Receipt on B1 code:
+strip-8 z100 staging mean 660→633 µs, max ~700→647 µs, max−mean jitter
+40→13 µs. The optical contract's tightest margin no longer moves with
+unrelated code changes.
+
+## Landed experiments (all pushed)
+
+| Commit | Experiment | 400% cold compute (3-run max) |
+|---|---|---|
+| `f2f6da7` | B1 strided publish | 586.6 → 577.5 ms |
+| `11edbd7` | IRAM transport pin (razor fix) | — (presentation) |
+| `bdd95e7` | B3 H7 op-level chord sweep + honest work-budget slices + index sort | 577.5 → 458.2 ms |
+| `75c9145` | B2 un-shelved: O(1) slot metadata | 458.2 → 431.9 ms |
+
+B3 notes: a flat 128-row slice budget red-flagged idle_repair
+(worst_step 18.1 ms); budgeting by window-clipped span pixels actually
+visited restored the step contract (6.1 ms, better than baseline 6.5).
+Sorting 1-byte chord indices instead of 128-byte plans recovered ~40 ms at
+50% zoom.
+
+## Final Stage B numbers (device, 3-run max + confirmation run)
+
+| zoom | session A compute | final compute | final wall |
+|---|---|---|---|
+| 50  | 434,462 | **356,150** (−78 ms) | **437.9 ms ✓ ≤500** |
+| 100 | 468,006 | **348,620** (−119 ms) | **428.4 ms ✓** |
+| 200 | 598,516 | **410,133** (−188 ms) | **488.0 ms ✓** |
+| 400 | 586,606 | **431,908** (−155 ms) | 507.0 ms — 7 ms over |
+
+Every run of every landed variant: cache-tour ledger
+`amplification=1.000 stale=0 unexplained=0`, five `INKTRACE pass=1`,
+verdict vector identical to the session baseline (pre-existing reds only).
+
+## B4 — word-mask window scan: REJECTED (again, with new receipts)
+
+1. `__builtin_assume_aligned` + fixed-size `memcpy` STILL emits a `callx8`
+   memcpy libcall on GCC-Xtensa (caught by the objdump gate BEFORE
+   flashing; the wave-3 prescription was insufficient). A
+   `__attribute__((may_alias))` typed load does compile to a bare `l32i`
+   (0 callx8 in both scan functions, verified).
+2. Even with correct `l32i` loads, the device measured a net LOSS:
+   z50 +4.3 ms, z400 +5.1 ms, z100/z200 −1 ms. Post-H7 the unfinalized
+   windows are the per-row active-chord unions — typically a few bytes — so
+   alignment stepping and extra branches outweigh the word loads. Do not
+   retry without a structurally longer scan.
+
+Also observed once (B4 run 1): a boot where the panel TE signal never
+arrived (`tear_edge_observed=0 tear_edge_timeout=1 tear_heal_attempted=1`
+from startup), cascading every gate red. Panel bring-up flake, healed by
+the next reset; unrelated to any Stage B change.
+
+## Remaining to ≤500 ms at 400%
+
+~7 ms of wall. Candidates: presentation/compute overlap (wave-3 §4.4,
+owner-gated), PIE fixed-point probing (§4.3), block-granular saturation
+(§4.5), or accept after the 20-run closure statistic. 25%-zoom gates
+(present cost, append feel, zoom-out transition) are a noted future
+addition — 25% has no cold path by design (the overview IS the authority).
