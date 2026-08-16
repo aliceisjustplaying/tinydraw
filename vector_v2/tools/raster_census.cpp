@@ -267,21 +267,22 @@ bool append_overlap_corpus(Rig& rig) {
 #if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
 void print_census(const char* label) {
   const auto& c = v2::g_raster_census;
-  std::printf(
-      "  %s ops_rejected=%" PRIu64 " segs_painted=%" PRIu64 " segs_rejected=%" PRIu64
-      "\n    ops_saturation_skipped=%" PRIu64 " segs_saturation_skipped=%" PRIu64
-      " groups_saturated_early=%" PRIu64 "\n    rows_scanned=%" PRIu64 " rows_prefinal=%" PRIu64
-      " rows_empty=%" PRIu64 " span_px=%" PRIu64 "\n    mask_skips=%" PRIu64
-      " covers_calls=%" PRIu64 " covers_hits=%" PRIu64 " const_span_px=%" PRIu64
-      " const_mask_skips=%" PRIu64 "\n    const_rows_scanned=%" PRIu64
-      " const_search_calls=%" PRIu64 " const_search_last=%" PRIu64 " const_rows_probed_empty=%"
-      PRIu64 "\n    remaining_scans=%" PRIu64 " remaining_scan_ms=%.2f\n",
-      label, c.operations_bbox_rejected, c.segments_painted, c.segments_bbox_rejected,
-      c.operations_saturation_skipped, c.segments_saturation_skipped, c.groups_saturated_early,
-      c.rows_scanned, c.rows_prefinalized, c.rows_empty_span, c.span_pixels, c.mask_skips,
-      c.covers_calls, c.covers_hits, c.const_span_pixels, c.const_mask_skips, c.const_rows_scanned,
-      c.const_search_calls, c.const_search_last_calls, c.const_rows_probed_empty,
-      c.remaining_scans, static_cast<double>(c.remaining_scan_ns) / 1e6);
+  std::printf("  %s ops_rejected=%" PRIu64 " segs_painted=%" PRIu64 " segs_rejected=%" PRIu64
+              "\n    ops_saturation_skipped=%" PRIu64 " segs_saturation_skipped=%" PRIu64
+              " groups_saturated_early=%" PRIu64 "\n    rows_scanned=%" PRIu64
+              " rows_prefinal=%" PRIu64 " rows_empty=%" PRIu64 " span_px=%" PRIu64
+              "\n    mask_skips=%" PRIu64 " covers_calls=%" PRIu64 " covers_hits=%" PRIu64
+              " const_span_px=%" PRIu64 " const_mask_skips=%" PRIu64
+              "\n    const_rows_scanned=%" PRIu64 " const_search_calls=%" PRIu64
+              " const_search_last=%" PRIu64 " const_rows_probed_empty=%" PRIu64
+              "\n    remaining_scans=%" PRIu64 " remaining_scan_ms=%.2f\n",
+              label, c.operations_bbox_rejected, c.segments_painted, c.segments_bbox_rejected,
+              c.operations_saturation_skipped, c.segments_saturation_skipped,
+              c.groups_saturated_early, c.rows_scanned, c.rows_prefinalized, c.rows_empty_span,
+              c.span_pixels, c.mask_skips, c.covers_calls, c.covers_hits, c.const_span_pixels,
+              c.const_mask_skips, c.const_rows_scanned, c.const_search_calls,
+              c.const_search_last_calls, c.const_rows_probed_empty, c.remaining_scans,
+              static_cast<double>(c.remaining_scan_ns) / 1e6);
 }
 #else
 void print_census(const char*) {}
