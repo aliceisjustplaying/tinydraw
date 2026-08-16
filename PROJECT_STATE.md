@@ -30,6 +30,7 @@ Latest permanent receipts:
 - [`STAGING_INVARIANT_RECEIPT.md`](benchmark-results/wave2-compositor/STAGING_INVARIANT_RECEIPT.md)
 - [`CHROME_LIFETIME_RECEIPT.md`](benchmark-results/wave2-compositor/CHROME_LIFETIME_RECEIPT.md)
 - [`VISUAL_FIRST_INK_RECEIPT.md`](benchmark-results/wave2-compositor/VISUAL_FIRST_INK_RECEIPT.md)
+- [`CHROME_PRESTAGE_RECEIPT.md`](benchmark-results/wave2-compositor/CHROME_PRESTAGE_RECEIPT.md)
 - [`GLASS_OBSERVATIONS.md`](benchmark-results/wave2-compositor/GLASS_OBSERVATIONS.md)
 - [`gate-invariant-final.log`](benchmark-results/wave2-compositor/gate-invariant-final.log)
 
@@ -121,7 +122,7 @@ but do not override this scorecard or the frozen contract.
   dependent gates as defined in the roadmap.
 - Glass is authoritative for visible correctness and feel; software receipts
   provide attribution.
-- Deferred structural debt: `vector_v2_app.cpp` is 1,326 lines. Split its
+- Deferred structural debt: `vector_v2_app.cpp` is over 1,300 lines. Split its
   interaction, authority, and lifecycle coordinators after hot-path closure;
   do not mix that refactor into the performance campaign.
 

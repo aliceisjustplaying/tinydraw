@@ -71,7 +71,8 @@ void print_presentation(const char* kind, const VectorV2Presenter& presenter,
                         const LivePresentationTiming& timing) {
   std::printf(
       "TINYDRAW_LIVE_PRESENT kind=%s zoom=%s x=%d y=%d compose_us=%lld scroll_us=%lld "
-      "exposed_compose_us=%lld chrome_us=%lld read_submit_us=%lld read_complete_us=%lld "
+      "exposed_compose_us=%lld chrome_us=%lld chrome_prepare_us=%lld chrome_stage_us=%lld "
+      "read_submit_us=%lld read_complete_us=%lld "
       "transfer_wait_us=%lld tile_pixels=%lu "
       "uniform_pixels=%lu overview_pixels=%lu fallback_pixels=%lu resident_tiles=%lu "
       "fallback_tiles=%lu pushes=%lu tear_wait_us=%lld tear_edge_isr_to_resume_us=%lu "
@@ -83,6 +84,8 @@ void print_presentation(const char* kind, const VectorV2Presenter& presenter,
       kind, zoom_name(presenter.zoom()), presenter.level_x(), presenter.level_y(),
       static_cast<long long>(timing.compose_us), static_cast<long long>(timing.scroll_us),
       static_cast<long long>(timing.exposed_compose_us), static_cast<long long>(timing.chrome_us),
+      static_cast<long long>(timing.chrome_prepare_us),
+      static_cast<long long>(timing.chrome_stage_us),
       static_cast<long long>(timing.first_submit_us),
       static_cast<long long>(timing.first_complete_us), static_cast<long long>(timing.complete_us),
       static_cast<unsigned long>(timing.tile_pixels),

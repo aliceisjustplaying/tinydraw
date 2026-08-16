@@ -55,6 +55,7 @@ Two rare micro-flickers were reported but could not be reproduced. No live-ink
 anomaly coincided with them. The trace contains one unrelated full-frame chrome
 refresh with 82.192 ms spent in staged chrome and 96.577 ms total transfer wait;
 that refresh is tracked separately.
+See `CHROME_PRESTAGE_RECEIPT.md` for its fix and device receipt.
 
 ## Remaining closure
 

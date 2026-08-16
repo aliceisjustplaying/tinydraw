@@ -275,6 +275,9 @@ LivePresentationTiming VectorV2Presenter::refresh_region(vector_v2::PixelRect le
     }
     total.compose_us += part.compose_us;
     total.complete_us += part.complete_us;
+    total.chrome_us += part.chrome_us;
+    total.chrome_prepare_us += part.chrome_prepare_us;
+    total.chrome_stage_us += part.chrome_stage_us;
     total.tile_pixels += part.tile_pixels;
     total.uniform_pixels += part.uniform_pixels;
     total.overview_pixels += part.overview_pixels;
@@ -647,6 +650,8 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
       timing.pushes += wrapped.pushes;
       timing.exposed_compose_us += wrapped.exposed_compose_us;
       timing.chrome_us += wrapped.chrome_us;
+      timing.chrome_prepare_us += wrapped.chrome_prepare_us;
+      timing.chrome_stage_us += wrapped.chrome_stage_us;
       timing.compose_us += wrapped.exposed_compose_us;
       timing.passed = wrapped.passed;
     } else {
@@ -676,6 +681,7 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
 
   timing.exposed_compose_us += prestaged_exposed_us;
   timing.chrome_us += prestaged_chrome_us;
+  timing.chrome_prepare_us += prestaged_chrome_us;
   timing.compose_us += prestaged_exposed_us;
 
   // Every strip belongs to this ordered presentation. Drain once after the
@@ -864,9 +870,10 @@ bool VectorV2Presenter::paint_stage_surface(StageContext& context,
   }
 
   const std::int64_t chrome_started = esp_timer_get_time();
-  if (!chrome_cache_.paint({surface.pixels, surface.width, surface.height, surface.panel_x,
-                            surface.panel_y, surface.byte_swapped},
-                           *context.chrome, context.navigation, canvas_.current_revision().value)) {
+  if (!chrome_cache_.paint_prepared({surface.pixels, surface.width, surface.height, surface.panel_x,
+                                     surface.panel_y, surface.byte_swapped},
+                                    *context.chrome, context.navigation,
+                                    canvas_.current_revision().value)) {
     return false;
   }
   context.chrome_us += esp_timer_get_time() - chrome_started;
@@ -892,6 +899,13 @@ LivePresentationTiming VectorV2Presenter::present_ring(
   if (frame_ring_bottom_ <= 0 || band.y1 > frame_ring_bottom_) {
     return timing;
   }
+  const auto navigation = chrome_navigation();
+  const std::int64_t chrome_prepare_started = esp_timer_get_time();
+  if (!chrome_cache_.prepare_for({band.x0, band.y0, band.x1, band.y1}, chrome, navigation,
+                                 canvas_.current_revision().value)) {
+    return timing;
+  }
+  timing.chrome_prepare_us = esp_timer_get_time() - chrome_prepare_started;
   const std::size_t area_pixels =
       static_cast<std::size_t>(frame_ring_bottom_) * vector_v2::kOverviewWidth;
   scheduler_.require_revision(canvas_.current_revision());
@@ -911,7 +925,7 @@ LivePresentationTiming VectorV2Presenter::present_ring(
   int rows_per_strip = std::max(2, 16'384 / band_width);
   rows_per_strip &= ~1;
   StageContext context{
-      .presenter = this, .chrome = &chrome, .navigation = chrome_navigation(), .exposed = exposed};
+      .presenter = this, .chrome = &chrome, .navigation = navigation, .exposed = exposed};
   const std::uint32_t pushes_before = display_.push_count();
   const std::int64_t first_submitted = esp_timer_get_time();
   const bool streamed = display_.stream_rect_ring(
@@ -932,7 +946,8 @@ LivePresentationTiming VectorV2Presenter::present_ring(
           ? 0
           : static_cast<std::uint32_t>(static_cast<std::uint32_t>(first_submitted) - event_us);
   timing.exposed_compose_us = context.exposed_us;
-  timing.chrome_us = context.chrome_us;
+  timing.chrome_stage_us = context.chrome_us;
+  timing.chrome_us = timing.chrome_prepare_us + timing.chrome_stage_us;
   timing.passed = true;
   return timing;
 }
@@ -968,6 +983,14 @@ LivePresentationTiming VectorV2Presenter::present_pixels(
     return timing;
   }
 
+  const auto navigation = chrome_navigation();
+  const std::int64_t chrome_prepare_started = esp_timer_get_time();
+  if (!chrome_cache_.prepare_for({bounds.x0, bounds.y0, bounds.x1, bounds.y1}, chrome, navigation,
+                                 canvas_.current_revision().value)) {
+    return timing;
+  }
+  timing.chrome_prepare_us = esp_timer_get_time() - chrome_prepare_started;
+
   scheduler_.require_revision(canvas_.current_revision());
   const bool full_frame = bounds.x0 == 0 && bounds.y0 == 0 &&
                           bounds.x1 == vector_v2::kOverviewWidth &&
@@ -992,7 +1015,7 @@ LivePresentationTiming VectorV2Presenter::present_pixels(
   }
   int rows_per_strip = std::max(2, 16'384 / width);
   rows_per_strip &= ~1;
-  StageContext context{.presenter = this, .chrome = &chrome, .navigation = chrome_navigation()};
+  StageContext context{.presenter = this, .chrome = &chrome, .navigation = navigation};
   const std::uint32_t submits_before = display_.submit_count();
   const std::uint32_t pushes_before = display_.push_count();
   const std::int64_t first_submitted = esp_timer_get_time();
@@ -1018,7 +1041,8 @@ LivePresentationTiming VectorV2Presenter::present_pixels(
   timing.first_complete_us =
       event_us == 0U ? 0 : static_cast<std::uint32_t>(dma_complete_us - event_us);
   timing.complete_us = finished - first_submitted;
-  timing.chrome_us = context.chrome_us;
+  timing.chrome_stage_us = context.chrome_us;
+  timing.chrome_us = timing.chrome_prepare_us + timing.chrome_stage_us;
   timing.pushes = display_.push_count() - pushes_before;
   timing.passed = completed;
   return timing;
