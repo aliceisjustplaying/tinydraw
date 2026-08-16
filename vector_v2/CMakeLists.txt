@@ -56,12 +56,12 @@ if(TINYDRAW_BUILD_TESTS)
     ${PROJECT_SOURCE_DIR}/third_party/doctest
   )
   add_test(NAME tinydraw_vector_v2_tests COMMAND tinydraw_vector_v2_tests)
-  add_test(NAME tinydraw_ink_trace_check_synthetic
+  add_test(NAME tinydraw_ink_trace_check_recorded
            COMMAND "${PROJECT_SOURCE_DIR}/tools/ink-trace-check"
                    "${PROJECT_SOURCE_DIR}/testdata/ink-traces/scribble-multistroke.csv")
-  set_tests_properties(tinydraw_ink_trace_check_synthetic PROPERTIES
+  set_tests_properties(tinydraw_ink_trace_check_recorded PROPERTIES
     PASS_REGULAR_EXPRESSION
-      "valid name=scribble-multistroke source=synthetic events=31 strokes=5")
+      "valid name=scribble-multistroke source=recorded events=848 strokes=7")
 
   add_executable(tinydraw_vector_v2_raster_census tools/raster_census.cpp)
   target_link_libraries(tinydraw_vector_v2_raster_census PRIVATE
@@ -82,6 +82,13 @@ if(TINYDRAW_BUILD_TESTS)
            COMMAND tinydraw_vector_v2_raster_census --fuzz-collinear 4000 987654321)
   add_test(NAME tinydraw_vector_v2_fuzz_random_documents
            COMMAND tinydraw_vector_v2_raster_census --fuzz-docs 150 48879)
+
+  add_executable(tinydraw_vector_v2_ink_angularity tools/ink_angularity.cpp)
+  target_link_libraries(tinydraw_vector_v2_ink_angularity PRIVATE
+    tinydraw::core
+    tinydraw::vector_v2
+    tinydraw_project_options
+  )
 
   add_executable(tinydraw_vector_v2_lod_characterization tests/lod_characterization.cpp)
   target_link_libraries(tinydraw_vector_v2_lod_characterization PRIVATE
