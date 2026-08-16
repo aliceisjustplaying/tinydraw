@@ -2,6 +2,6 @@
 nvs,       data, nvs,           , 0x6000,
 phy_init,  data, phy,           , 0x1000,
 factory,   app,  factory,       , 1M,
-drawing,   data, 0x40,          , 3M,
+drawing,   data, 0x40,          , 6M,
 export,    data, 0x41,          , 5M,
 coredump,  data, coredump,      , 64K,
