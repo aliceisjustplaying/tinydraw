@@ -86,6 +86,17 @@ bool canvas_overlays_visible(const ChromeState& state) {
          state.export_status == ChromeExportStatus::kIdle;
 }
 
+bool bottom_cache_matches(const ChromeState& cached, const ChromeState& current) {
+  return cached.tool == current.tool && cached.size == current.size &&
+         cached.palette_page == current.palette_page && cached.color_index == current.color_index &&
+         cached.can_undo == current.can_undo && cached.can_redo == current.can_redo;
+}
+
+bool surface_intersects(const MinimapSurface& surface, ChromeRect rect) {
+  return rect.x0 < surface.origin_x + surface.width && rect.x1 > surface.origin_x &&
+         rect.y0 < surface.origin_y + surface.height && rect.y1 > surface.origin_y;
+}
+
 void draw_dock(Painter& painter, int top, int bottom) {
   painter.rounded({6, top + 3, kWidth - 2, bottom + 3}, 11, kShadow);
   painter.rounded({3, top - 1, kWidth - 3, bottom + 1}, 11, kBorder);
@@ -335,7 +346,7 @@ void draw_zoom_rail(Painter& painter, const ChromeNavigation& navigation) {
 
 // Fills the minimap interior with the resampled overview. The interior is
 // fully inside the surface, so rows write directly without per-pixel
-// clipping; this runs on every pan frame and must stay cheap.
+// clipping. The staging cache runs this only when overview authority changes.
 void draw_minimap_content(const MinimapSurface& surface, const ChromeNavigation& navigation) {
   const int map_left = kMinimapLeft - surface.origin_x;
   const int map_top = kMinimapTop - surface.origin_y;
@@ -366,7 +377,9 @@ void draw_minimap_content(const MinimapSurface& surface, const ChromeNavigation&
 
 // Draws the viewport rectangle over the minimap interior in absolute panel
 // coordinates; the painter translates and clips.
-void draw_minimap_viewport(Painter& painter, const ChromeNavigation& navigation) {
+void draw_minimap_viewport(const MinimapSurface& surface, const ChromeNavigation& navigation) {
+  Painter painter(surface.pixels, surface.width, surface.height, surface.origin_x,
+                  surface.origin_y);
   const int map_left = kMinimapLeft;
   const int map_top = kMinimapTop;
   const int level_width = std::max(navigation.level_width, 1);
@@ -378,10 +391,13 @@ void draw_minimap_viewport(Painter& painter, const ChromeNavigation& navigation)
       map_top + (navigation.level_y + kChromeCanvasBottom) * kMinimapHeight / level_height;
   const int right = std::clamp(x1, x0 + 2, map_left + kMinimapWidth);
   const int bottom = std::clamp(y1, y0 + 2, map_top + kMinimapHeight);
-  painter.line({x0, y0, right, y0}, kSelected, 1);
-  painter.line({right, y0, right, bottom}, kSelected, 1);
-  painter.line({right, bottom, x0, bottom}, kSelected, 1);
-  painter.line({x0, bottom, x0, y0}, kSelected, 1);
+  const std::uint16_t color =
+      surface.byte_swapped ? static_cast<std::uint16_t>((kSelected >> 8U) | (kSelected << 8U))
+                           : kSelected;
+  painter.line({x0, y0, right, y0}, color, 1);
+  painter.line({right, y0, right, bottom}, color, 1);
+  painter.line({right, bottom, x0, bottom}, color, 1);
+  painter.line({x0, bottom, x0, y0}, color, 1);
 }
 
 void draw_minimap_base(const MinimapSurface& surface, const ChromeNavigation& navigation) {
@@ -417,9 +433,7 @@ void draw_minimap_base(const MinimapSurface& surface, const ChromeNavigation& na
 // covering just the minimap overlay region.
 void draw_minimap(const MinimapSurface& surface, const ChromeNavigation& navigation) {
   draw_minimap_base(surface, navigation);
-  Painter painter(surface.pixels, surface.width, surface.height, surface.origin_x,
-                  surface.origin_y);
-  draw_minimap_viewport(painter, navigation);
+  draw_minimap_viewport(surface, navigation);
 }
 
 void blend_cached_sprite(const MinimapSurface& destination, ChromeRect rect,
@@ -881,12 +895,6 @@ bool ChromeStagingCache::prepare(const ChromeState& state, const ChromeNavigatio
   if (!canvas_overlays_visible(state)) {
     return true;
   }
-  if (valid_ && state_ == state && zoom_percent_ == navigation.zoom_percent &&
-      level_x_ == navigation.level_x && level_y_ == navigation.level_y &&
-      level_width_ == navigation.level_width && level_height_ == navigation.level_height &&
-      overview_revision_ == overview_revision) {
-    return true;
-  }
 
   std::size_t offset = 0;
   const auto sprite = [this, &offset](ChromeRect rect) {
@@ -899,34 +907,50 @@ bool ChromeStagingCache::prepare(const ChromeState& state, const ChromeNavigatio
   const auto minimap = sprite(kMinimapOverlayRect);
   const auto battery = sprite(kBatteryOverlayRect);
   const auto bottom = sprite(kBottomCacheRect);
-  std::fill(pixels_.begin(), pixels_.begin() + static_cast<std::ptrdiff_t>(offset),
-            kCacheTransparent);
-  Painter zoom_painter(zoom, kZoomRailOverlayRect.x1 - kZoomRailOverlayRect.x0,
-                       kZoomRailOverlayRect.y1 - kZoomRailOverlayRect.y0, kZoomRailOverlayRect.x0,
-                       kZoomRailOverlayRect.y0);
-  draw_zoom_rail(zoom_painter, navigation);
-  draw_minimap({minimap, kMinimapOverlayRect.x1 - kMinimapOverlayRect.x0,
-                kMinimapOverlayRect.y1 - kMinimapOverlayRect.y0, kMinimapOverlayRect.x0,
-                kMinimapOverlayRect.y0},
-               navigation);
-  if (state.battery_percentage >= 0) {
-    Painter painter(battery, kBatteryOverlayRect.x1 - kBatteryOverlayRect.x0,
-                    kBatteryOverlayRect.y1 - kBatteryOverlayRect.y0, kBatteryOverlayRect.x0,
-                    kBatteryOverlayRect.y0);
-    draw_battery(painter, state);
+  if (!zoom_valid_ || zoom_percent_ != navigation.zoom_percent) {
+    std::fill(zoom.begin(), zoom.end(), kCacheTransparent);
+    Painter zoom_painter(zoom, kZoomRailOverlayRect.x1 - kZoomRailOverlayRect.x0,
+                         kZoomRailOverlayRect.y1 - kZoomRailOverlayRect.y0, kZoomRailOverlayRect.x0,
+                         kZoomRailOverlayRect.y0);
+    draw_zoom_rail(zoom_painter, navigation);
+    zoom_percent_ = navigation.zoom_percent;
+    zoom_valid_ = true;
+    ++stats_.zoom_redraws;
   }
-  Painter bottom_painter(bottom, kBottomCacheRect.x1 - kBottomCacheRect.x0,
-                         kBottomCacheRect.y1 - kBottomCacheRect.y0, kBottomCacheRect.x0,
-                         kBottomCacheRect.y0);
-  draw_bottom(bottom_painter, state);
-  state_ = state;
-  zoom_percent_ = navigation.zoom_percent;
-  level_x_ = navigation.level_x;
-  level_y_ = navigation.level_y;
-  level_width_ = navigation.level_width;
-  level_height_ = navigation.level_height;
-  overview_revision_ = overview_revision;
-  valid_ = true;
+  if (!minimap_base_valid_ || overview_revision_ != overview_revision) {
+    std::fill(minimap.begin(), minimap.end(), kCacheTransparent);
+    draw_minimap_base({minimap, kMinimapOverlayRect.x1 - kMinimapOverlayRect.x0,
+                       kMinimapOverlayRect.y1 - kMinimapOverlayRect.y0, kMinimapOverlayRect.x0,
+                       kMinimapOverlayRect.y0},
+                      navigation);
+    overview_revision_ = overview_revision;
+    minimap_base_valid_ = true;
+    ++stats_.minimap_base_redraws;
+  }
+  if (!battery_valid_ || battery_percentage_ != state.battery_percentage ||
+      battery_charging_ != state.battery_charging) {
+    std::fill(battery.begin(), battery.end(), kCacheTransparent);
+    if (state.battery_percentage >= 0) {
+      Painter painter(battery, kBatteryOverlayRect.x1 - kBatteryOverlayRect.x0,
+                      kBatteryOverlayRect.y1 - kBatteryOverlayRect.y0, kBatteryOverlayRect.x0,
+                      kBatteryOverlayRect.y0);
+      draw_battery(painter, state);
+    }
+    battery_percentage_ = state.battery_percentage;
+    battery_charging_ = state.battery_charging;
+    battery_valid_ = true;
+    ++stats_.battery_redraws;
+  }
+  if (!bottom_valid_ || !bottom_cache_matches(bottom_state_, state)) {
+    std::fill(bottom.begin(), bottom.end(), kCacheTransparent);
+    Painter bottom_painter(bottom, kBottomCacheRect.x1 - kBottomCacheRect.x0,
+                           kBottomCacheRect.y1 - kBottomCacheRect.y0, kBottomCacheRect.x0,
+                           kBottomCacheRect.y0);
+    draw_bottom(bottom_painter, state);
+    bottom_state_ = state;
+    bottom_valid_ = true;
+    ++stats_.bottom_redraws;
+  }
   return true;
 }
 
@@ -964,6 +988,9 @@ bool ChromeStagingCache::paint(const MinimapSurface& surface, const ChromeState&
   blend_cached_sprite(surface, kBottomCacheRect, bottom);
   blend_cached_sprite(surface, kZoomRailOverlayRect, zoom);
   blend_cached_sprite(surface, kMinimapOverlayRect, minimap);
+  if (surface_intersects(surface, kMinimapOverlayRect)) {
+    draw_minimap_viewport(surface, navigation);
+  }
   if (state.battery_percentage >= 0) {
     blend_cached_sprite(surface, kBatteryOverlayRect, battery);
   }

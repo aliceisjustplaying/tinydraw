@@ -4,7 +4,7 @@ Last updated: 2026-08-16
 
 Branch: `feat/v2-performance-followup`
 
-State audited from: `c0bcf99`
+State audited through: `gate-chrome-lifetime-split.log`
 
 Raster V1 remains the default firmware and operational fallback. Vector V2 is
 the accepted product architecture, but it is not feature complete or ready for
@@ -15,8 +15,8 @@ promotion. [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) owns acceptance thresholds;
 
 | Area | State | Current evidence / gap |
 |---|---|---|
-| Pan correctness | **Provisional green** | Final invariant build looked tear-free on glass; staging stayed faster than wire for all 432 measured strips. Same-session torn positive-control closure remains pending. |
-| Pan pacing | **Red** | PANSEQ p95 50.934 ms (~20 FPS), requirement 41.7 ms, guard 38 ms. Chrome preparation averages 10.7 ms and is invalidated by every camera coordinate. |
+| Pan correctness | **Reopened for glass** | The cache split changed cadence. All 432 strips stayed faster than wire and TE failures were zero; same-session product glass plus torn positive control remains. |
+| Pan pacing | **Provisional green** | PANSEQ p95 is 33.939 ms at 100% and 33.934 ms at 400% (~29.5 FPS), below the 38 ms guard. Camera motion caused zero persistent chrome redraws. |
 | Ink latency | **Red** | Authority/materialization precedes visible update, provisional ribbon geometry is omitted, and most calls use loop time instead of the original touch timestamp. |
 | Cold 400% | **Red / kill gate** | Frozen adversarial run is 663.829 ms: 577.667 compute, 69.371 present, 15.618 pacing, 1.173 touch. Requirement is ≤500 ms maximum across the defined 20-run closure. |
 | Revisit retention | **Architecture promising; oracle incomplete** | 448-slot tour returns with zero missing tiles, but revision-keyed accounting can hide spatially unnecessary rerenders and is not connected to the product producer. |
@@ -28,6 +28,7 @@ Latest permanent receipts:
 
 - [`HARDWARE_LIMITS.md`](HARDWARE_LIMITS.md)
 - [`STAGING_INVARIANT_RECEIPT.md`](benchmark-results/wave2-compositor/STAGING_INVARIANT_RECEIPT.md)
+- [`CHROME_LIFETIME_RECEIPT.md`](benchmark-results/wave2-compositor/CHROME_LIFETIME_RECEIPT.md)
 - [`GLASS_OBSERVATIONS.md`](benchmark-results/wave2-compositor/GLASS_OBSERVATIONS.md)
 - [`gate-invariant-final.log`](benchmark-results/wave2-compositor/gate-invariant-final.log)
 
@@ -41,7 +42,7 @@ Latest permanent receipts:
 - A 448-row edge-synchronized stream sustains 29.4 FPS. A ≤368-row stream
   sustains 58.8 FPS; the one-period boundary is roughly 390–400 rows.
 - The product pan sweep covers rows 0–371. Its 13.69 ms payload fits the panel
-  envelope; the current miss is preparation/cadence, not wire throughput.
+  envelope; the cache split now catches the two-TE cadence in device PANSEQ.
 - The final product allocation uses 448 raw 64×64 tile slots. With the 1.5 MiB
   export reserve held, the final receipt leaves ~306 KiB free and ~303 KiB as
   the largest block. Broad viewport checkpoint caches are therefore unfunded.
@@ -75,10 +76,8 @@ Undo, persistence, and SVG are frozen in
 
 ## Immediate work order
 
-1. Split chrome staging cache identities by lifetime: toolbar state, battery,
-   zoom, minimap base/content, and a tiny dynamic viewport rectangle. Run a
-   one-variable hardware A/B; require PANSEQ p95 ≤38 ms and preserve the strip
-   invariant. Any pacing change reopens optical pan correctness.
+1. Exercise slow one-pixel motion and cached-pan deltas around the 96-pixel
+   fallback boundary, then close pan on glass with a torn positive control.
 2. Make ink visual-first: carry original touch timestamps, stage the old/new
    provisional tail without mutating the reusable ring, submit visibility before
    authority work, and make materialization/lift draining resumable.
