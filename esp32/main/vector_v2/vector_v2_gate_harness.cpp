@@ -1605,6 +1605,7 @@ bool verify_pan_adapter(VectorV2Presenter& presenter, vector_v2::TileProducer& p
 struct PanSequenceFrame {
   std::int64_t scroll_us = 0;
   std::int64_t exposed_us = 0;
+  std::int64_t chrome_us = 0;
   std::int64_t tear_wait_us = 0;
   std::int64_t present_us = 0;
   std::int64_t prepare_us = 0;
@@ -1689,6 +1690,7 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
   if (!setup.passed) {
     return false;
   }
+  const vector_v2::ChromeStagingCacheStats chrome_before = presenter.chrome_cache_stats();
   presenter.display().reset_timing();
   bool all_passed = true;
   bool all_reused = true;
@@ -1712,6 +1714,7 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
     frames.get()[step] = {
         .scroll_us = timing.scroll_us,
         .exposed_us = timing.exposed_compose_us,
+        .chrome_us = timing.chrome_us,
         .tear_wait_us = timing.tear_wait_us,
         .present_us = timing.complete_us,
         .prepare_us = presenter.display().prepare_us() - prepare_before,
@@ -1740,23 +1743,25 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
     const PanSequenceFrame& frame = frames.get()[step];
     std::printf(
         "TINYDRAW_PANSEQ_FRAME zoom=%s step=%u dx=%d dy=%d scroll_us=%lld "
-        "exposed_compose_us=%lld tear_wait_us=%lld present_us=%lld prepare_us=%lld "
+        "exposed_compose_us=%lld chrome_us=%lld tear_wait_us=%lld present_us=%lld "
+        "prepare_us=%lld "
         "acquire_wait_us=%lld ring_copy_us=%lld patch_us=%lld byte_swap_us=%lld "
         "staging_us=%lld event_submit_us=%lld event_complete_us=%lld frame_us=%lld "
         "tear_edge_observed=%u frame_reused=%u pass=%u\n",
         zoom_name(zoom), static_cast<unsigned>(step), frame.delta_x, frame.delta_y,
         static_cast<long long>(frame.scroll_us), static_cast<long long>(frame.exposed_us),
-        static_cast<long long>(frame.tear_wait_us), static_cast<long long>(frame.present_us),
-        static_cast<long long>(frame.prepare_us), static_cast<long long>(frame.acquire_wait_us),
-        static_cast<long long>(frame.ring_copy_us), static_cast<long long>(frame.patch_us),
-        static_cast<long long>(frame.byte_swap_us), static_cast<long long>(frame.staging_us),
-        static_cast<long long>(frame.first_submit_us),
+        static_cast<long long>(frame.chrome_us), static_cast<long long>(frame.tear_wait_us),
+        static_cast<long long>(frame.present_us), static_cast<long long>(frame.prepare_us),
+        static_cast<long long>(frame.acquire_wait_us), static_cast<long long>(frame.ring_copy_us),
+        static_cast<long long>(frame.patch_us), static_cast<long long>(frame.byte_swap_us),
+        static_cast<long long>(frame.staging_us), static_cast<long long>(frame.first_submit_us),
         static_cast<long long>(frame.first_complete_us), static_cast<long long>(frame.frame_us),
         frame.tear_edge_observed, frame.reused, frame.passed);
     sorted_frame[step] = frame.frame_us;
     sorted_complete[step] = frame.first_complete_us;
     totals.scroll_us += frame.scroll_us;
     totals.exposed_us += frame.exposed_us;
+    totals.chrome_us += frame.chrome_us;
     totals.tear_wait_us += frame.tear_wait_us;
     totals.present_us += frame.present_us;
     totals.prepare_us += frame.prepare_us;
@@ -1791,6 +1796,7 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
       staging.samples == 0U ? 0 : staging.total_us / static_cast<std::int64_t>(staging.samples);
   const std::int64_t worst_headroom_us = worst.wire_budget_us - worst.maximum_us;
   const std::int64_t frame_p95_us = pan_sequence_percentile(sorted_frame, 95);
+  const vector_v2::ChromeStagingCacheStats chrome_after = presenter.chrome_cache_stats();
   const bool pacing_pass = frame_p95_us <= contract::kPanFrameP95RequiredUs;
   // Transport discipline requires a factual configured-edge observation and
   // every strip producer staying strictly faster than its measured wire time.
@@ -1799,19 +1805,22 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
                     staging.all_under_wire && pacing_pass;
   std::printf(
       "TINYDRAW_GATE1_PANSEQ zoom=%s frames=%u scroll_avg_us=%lld exposed_avg_us=%lld "
-      "tear_wait_avg_us=%lld present_avg_us=%lld prepare_avg_us=%lld "
+      "chrome_avg_us=%lld tear_wait_avg_us=%lld present_avg_us=%lld prepare_avg_us=%lld "
       "acquire_wait_avg_us=%lld ring_copy_avg_us=%lld patch_avg_us=%lld "
       "byte_swap_avg_us=%lld staging_avg_us=%lld frame_avg_us=%lld frame_p50_us=%lld "
       "frame_p95_us=%lld frame_max_us=%lld "
       "complete_p50_us=%lld complete_p95_us=%lld complete_max_us=%lld "
       "tear_edge_failures=%lu presentation_experiment=%s te_edge=%s "
       "requested_clock_mhz=%d effective_clock_mhz=%d "
+      "chrome_bottom_redraws=%lu chrome_battery_redraws=%lu chrome_zoom_redraws=%lu "
+      "chrome_minimap_base_redraws=%lu "
       "strip_samples=%lu staging_mean_us=%lld staging_max_us=%lld worst_strip=%u "
       "worst_strip_y=%d worst_wire_budget_us=%lld worst_headroom_us=%lld "
       "staging_invariant=%u pacing_pass=%u all_reused=%u pass=%u\n",
       zoom_name(zoom), static_cast<unsigned>(kPanSequenceFrames),
       static_cast<long long>(totals.scroll_us / kFrames),
       static_cast<long long>(totals.exposed_us / kFrames),
+      static_cast<long long>(totals.chrome_us / kFrames),
       static_cast<long long>(totals.tear_wait_us / kFrames),
       static_cast<long long>(totals.present_us / kFrames),
       static_cast<long long>(totals.prepare_us / kFrames),
@@ -1828,6 +1837,11 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
       static_cast<long long>(sorted_complete.back()),
       static_cast<unsigned long>(tear_edge_failures), presentation_experiment_name(),
       selected_tear_edge_name(), requested_panel_clock_mhz(), effective_panel_clock_mhz(),
+      static_cast<unsigned long>(chrome_after.bottom_redraws - chrome_before.bottom_redraws),
+      static_cast<unsigned long>(chrome_after.battery_redraws - chrome_before.battery_redraws),
+      static_cast<unsigned long>(chrome_after.zoom_redraws - chrome_before.zoom_redraws),
+      static_cast<unsigned long>(chrome_after.minimap_base_redraws -
+                                 chrome_before.minimap_base_redraws),
       static_cast<unsigned long>(staging.samples), static_cast<long long>(staging_mean_us),
       static_cast<long long>(staging.maximum_us), static_cast<unsigned>(staging.worst_strip_index),
       worst.panel_y, static_cast<long long>(worst.wire_budget_us),

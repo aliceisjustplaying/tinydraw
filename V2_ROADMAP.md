@@ -35,9 +35,10 @@ is the only forward queue.
 
 ## Phase 1 — close pan
 
-Current result: canvas-only ring and staging invariant are green; owner glass
-check saw no tear. PANSEQ p95 is 50.934 ms at 400%, with ~10.7 ms average chrome
-preparation. Requirement is ≤41.7 ms; guard is ≤38 ms.
+Current result: the chrome lifetime split reduced PANSEQ p95 from 50.934 ms to
+33.939 ms at 100% and 33.934 ms at 400%, below the 38 ms guard. All 432 staged
+strips stayed faster than wire and camera motion caused zero persistent chrome
+redraws. The cadence change reopens optical correctness.
 
 - [x] Use a toroidal canvas-only frame ring and compose only exposed canvas.
 - [x] Patch fixed chrome in internal staging; never mutate reusable canvas.
@@ -45,15 +46,15 @@ preparation. Requirement is ≤41.7 ms; guard is ≤38 ms.
 - [x] Keep every strip's staging time below its measured wire time.
 - [x] Prove drawing beneath zoom/minimap/toolbar/battery does not corrupt
       authority or canvas pixels.
-- [ ] Split the existing 53,956-pixel chrome allocation by lifetime:
+- [x] Split the existing 53,956-pixel chrome allocation by lifetime:
       toolbar state, battery state, zoom, minimap base/content, and dynamic
       old/new viewport rectangle lines.
-- [ ] Run the one-variable cache-split A/B with p50/p95/max, TE-period
+- [x] Run the one-variable cache-split A/B with p50/p95/max, TE-period
       histogram, chrome prep, exposed compose, sweep, strip headroom, and
-      fallback counts.
-- [ ] If p95 remains above 38 ms, A/B a balanced nine-strip partition.
-- [ ] If still needed, compose exposed rows directly into the ring and remove
-      the intermediate copy; then consider completion notification latency.
+      reuse outcome.
+- [x] Skip the balanced-strip A/B: p95 is below 38 ms.
+- [x] Defer direct exposed-row composition and completion notification: the
+      pacing guard is met.
 - [ ] Exercise slow one-pixel motion and cached-pan deltas just below, at, and
       above the 96-pixel fallback boundary.
 - [ ] Close optically in one session with product pan, under-overlay drawing,

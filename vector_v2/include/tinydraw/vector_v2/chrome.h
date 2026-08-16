@@ -164,29 +164,38 @@ struct MinimapSurface {
 // presentation-pure. Popup/modal states use the uncached general renderer.
 inline constexpr std::size_t kChromeStagingCachePixels = 53'956U;
 
+struct ChromeStagingCacheStats {
+  std::uint32_t bottom_redraws = 0;
+  std::uint32_t battery_redraws = 0;
+  std::uint32_t zoom_redraws = 0;
+  std::uint32_t minimap_base_redraws = 0;
+};
+
 class ChromeStagingCache {
  public:
   explicit ChromeStagingCache(std::span<std::uint16_t> pixels) : pixels_(pixels) {}
 
   [[nodiscard]] bool ready() const { return pixels_.size() >= kChromeStagingCachePixels; }
-  // Regenerates caller-funded sprites only when chrome, viewport, zoom, or
-  // overview revision changes. Call before a row-zero sweep so paint() is a
-  // bounded transparent blit for every staged strip.
+  // Regenerates each caller-funded sprite at its own lifetime. Camera motion
+  // changes only the transient minimap viewport drawn by paint().
   [[nodiscard]] bool prepare(const ChromeState& state, const ChromeNavigation& navigation,
                              std::uint32_t overview_revision);
   [[nodiscard]] bool paint(const MinimapSurface& surface, const ChromeState& state,
                            const ChromeNavigation& navigation, std::uint32_t overview_revision);
+  [[nodiscard]] ChromeStagingCacheStats stats() const { return stats_; }
 
  private:
   std::span<std::uint16_t> pixels_{};
-  ChromeState state_{};
+  ChromeState bottom_state_{};
+  int battery_percentage_ = -1;
+  bool battery_charging_ = false;
   int zoom_percent_ = 0;
-  int level_x_ = 0;
-  int level_y_ = 0;
-  int level_width_ = 0;
-  int level_height_ = 0;
   std::uint32_t overview_revision_ = 0;
-  bool valid_ = false;
+  ChromeStagingCacheStats stats_{};
+  bool bottom_valid_ = false;
+  bool battery_valid_ = false;
+  bool zoom_valid_ = false;
+  bool minimap_base_valid_ = false;
 };
 // Draws the minimap into the surface; the pan path composes the overlay into
 // a small scratch surface instead of writing into the (possibly

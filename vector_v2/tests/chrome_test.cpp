@@ -531,8 +531,17 @@ TEST_CASE("staging strips reproduce all fixed chrome without mutating canvas sou
   tinydraw::vector_v2::ChromeStagingCache cache(cache_pixels);
   REQUIRE(cache.prepare(state, navigation, 7U));
   const std::vector<std::uint16_t> prepared_cache = cache_pixels;
+  const auto initial_stats = cache.stats();
+  CHECK(initial_stats.bottom_redraws == 1U);
+  CHECK(initial_stats.battery_redraws == 1U);
+  CHECK(initial_stats.zoom_redraws == 1U);
+  CHECK(initial_stats.minimap_base_redraws == 1U);
   REQUIRE(cache.prepare(state, navigation, 7U));
   CHECK(cache_pixels == prepared_cache);
+  CHECK(cache.stats().bottom_redraws == initial_stats.bottom_redraws);
+  CHECK(cache.stats().battery_redraws == initial_stats.battery_redraws);
+  CHECK(cache.stats().zoom_redraws == initial_stats.zoom_redraws);
+  CHECK(cache.stats().minimap_base_redraws == initial_stats.minimap_base_redraws);
   std::vector<std::uint16_t> cached = canvas;
   for (int y = 0; y < height; y += rows_per_strip) {
     const int rows = std::min(rows_per_strip, height - y);
@@ -569,7 +578,11 @@ TEST_CASE("staging strips reproduce all fixed chrome without mutating canvas sou
   tinydraw::vector_v2::draw_chrome(moved_reference, width, height, state);
   tinydraw::vector_v2::draw_chrome_canvas_overlays(moved_reference, width, height, state, moved);
   REQUIRE(cache.prepare(state, moved, 7U));
-  CHECK(cache_pixels != prepared_cache);
+  CHECK(cache_pixels == prepared_cache);
+  CHECK(cache.stats().bottom_redraws == initial_stats.bottom_redraws);
+  CHECK(cache.stats().battery_redraws == initial_stats.battery_redraws);
+  CHECK(cache.stats().zoom_redraws == initial_stats.zoom_redraws);
+  CHECK(cache.stats().minimap_base_redraws == initial_stats.minimap_base_redraws);
   std::vector<std::uint16_t> moved_cached = canvas;
   for (int y = 0; y < height; y += rows_per_strip) {
     const int rows = std::min(rows_per_strip, height - y);
@@ -579,6 +592,30 @@ TEST_CASE("staging strips reproduce all fixed chrome without mutating canvas sou
     REQUIRE(cache.paint({strip, width, rows, 0, y}, state, moved, 7U));
   }
   CHECK(moved_cached == moved_reference);
+
+  auto zoomed = moved;
+  zoomed.zoom_percent = 400;
+  REQUIRE(cache.prepare(state, zoomed, 7U));
+  CHECK(cache.stats().zoom_redraws == initial_stats.zoom_redraws + 1U);
+  CHECK(cache.stats().bottom_redraws == initial_stats.bottom_redraws);
+  CHECK(cache.stats().battery_redraws == initial_stats.battery_redraws);
+  CHECK(cache.stats().minimap_base_redraws == initial_stats.minimap_base_redraws);
+
+  auto battery_changed = state;
+  battery_changed.battery_percentage = 74;
+  REQUIRE(cache.prepare(battery_changed, zoomed, 7U));
+  CHECK(cache.stats().battery_redraws == initial_stats.battery_redraws + 1U);
+  CHECK(cache.stats().bottom_redraws == initial_stats.bottom_redraws);
+
+  auto bottom_changed = battery_changed;
+  bottom_changed.can_undo = true;
+  REQUIRE(cache.prepare(bottom_changed, zoomed, 7U));
+  CHECK(cache.stats().bottom_redraws == initial_stats.bottom_redraws + 1U);
+  CHECK(cache.stats().battery_redraws == initial_stats.battery_redraws + 1U);
+
+  overview[0] ^= 0xFFFFU;
+  REQUIRE(cache.prepare(bottom_changed, zoomed, 8U));
+  CHECK(cache.stats().minimap_base_redraws == initial_stats.minimap_base_redraws + 1U);
   CHECK(canvas == original);
 }
 
