@@ -767,6 +767,8 @@ ChromeAction chrome_action_at(ChromePoint point, const ChromeState& state) {
   return actions[index];
 }
 
+ChromeRect chrome_battery_region() { return kBatteryOverlayRect; }
+
 std::optional<ChromeRect> chrome_minimap_region(const ChromeState& state) {
   return canvas_overlays_visible(state) ? std::optional{kMinimapOverlayRect} : std::nullopt;
 }

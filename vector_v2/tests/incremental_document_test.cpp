@@ -1150,6 +1150,123 @@ TEST_CASE("deferred absorption equals synchronous in-place appends") {
   CHECK(appended_operations >= 8U);
 }
 
+TEST_CASE("deferred absorption retains resident raw tiles at every zoom") {
+  // Déjà-vu fix: idle absorption paints affected resident raw tiles at every
+  // zoom instead of dropping them to overview fallback. The synchronous path
+  // keeps the priority-only scope (proven by "in-place append bounds
+  // mutation to the active zoom" below).
+  EquivalenceRig rig;
+  const vector_v2::ViewRequest fine{
+      .zoom = vector_v2::ZoomLevel::k400Percent,
+      .level_pixels = {0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
+  };
+  const vector_v2::ViewRequest coarse{
+      .zoom = vector_v2::ZoomLevel::k100Percent,
+      .level_pixels = {0, 0, 256, 256},
+  };
+  rig.cold_fill(fine);
+  rig.cold_fill(coarse);
+  // Stroke A (synchronous, coarse priority) turns 100% tiles into resident
+  // raw ink.
+  std::array<vector_v2::CompactOperationSample, 6> first_stroke{};
+  for (std::size_t index = 0; index < first_stroke.size(); ++index) {
+    first_stroke[index] = {.x_quarter = static_cast<std::uint16_t>((20U + index * 20U) * 16U),
+                           .y_quarter = static_cast<std::uint16_t>(30U * 16U),
+                           .radius_256 = 6U * 256U,
+                           .elapsed_ms = static_cast<std::uint16_t>(index * 8U)};
+  }
+  REQUIRE(vector_v2::append_incrementally_in_place(rig.log, rig.canvas,
+                                                   {.color = 0x07E0U, .samples = first_stroke},
+                                                   rig.in_place_workspace(), coarse)
+              .has_value());
+  const vector_v2::TileKey coarse_key{vector_v2::ZoomLevel::k100Percent, 0, 0};
+  REQUIRE(rig.canvas.lookup(coarse_key).has_value());
+  REQUIRE(rig.canvas.lookup(coarse_key)->kind == vector_v2::SourceKind::kTileSlot);
+  // Stroke B commits through the deferred path with the 400% priority view;
+  // absorption must keep the affected 100% raw tile exact instead of
+  // dropping it.
+  std::array<vector_v2::CompactOperationSample, 6> second_stroke{};
+  for (std::size_t index = 0; index < second_stroke.size(); ++index) {
+    second_stroke[index] = {.x_quarter = static_cast<std::uint16_t>((22U + index * 18U) * 16U),
+                            .y_quarter = static_cast<std::uint16_t>(34U * 16U),
+                            .radius_256 = 6U * 256U,
+                            .elapsed_ms = static_cast<std::uint16_t>(index * 8U)};
+  }
+  REQUIRE(vector_v2::append_authority_only(rig.log, {.color = 0x001FU, .samples = second_stroke})
+              .has_value());
+  const auto absorbed =
+      vector_v2::absorb_pending_operation(rig.log, rig.canvas, rig.in_place_workspace(), fine);
+  REQUIRE(absorbed.has_value());
+  CHECK(vector_v2::pending_operation_count(rig.log, rig.canvas) == 0U);
+  const auto retained = rig.canvas.lookup(coarse_key);
+  REQUIRE(retained.has_value());
+  CHECK(retained->kind == vector_v2::SourceKind::kTileSlot);
+  // The retained tile's pixels equal ground-truth replay of the full log.
+  std::vector<std::uint16_t> coarse_direct(256U * 256U);
+  forward_replay(rig.log, coarse, coarse_direct);
+  std::array<std::uint16_t, vector_v2::kTilePixels> resident_tile{};
+  REQUIRE(rig.canvas.copy_resident_tile(coarse_key, resident_tile));
+  bool equal = true;
+  for (int y = 0; y < vector_v2::kTileHeight; ++y) {
+    for (int x = 0; x < vector_v2::kTileWidth; ++x) {
+      equal = equal &&
+              resident_tile[static_cast<std::size_t>(y) * vector_v2::kTileWidth +
+                            static_cast<std::size_t>(x)] ==
+                  coarse_direct[static_cast<std::size_t>(y) * 256U + static_cast<std::size_t>(x)];
+    }
+  }
+  CHECK(equal);
+}
+
+TEST_CASE("deferred absorption materializes revisit-bound uniforms at other zooms") {
+  // The other half of the déjà-vu fix: a fresh-paper (uniform) tile inside a
+  // remembered view at another zoom materializes and paints during idle
+  // absorption instead of dropping to overview fallback.
+  EquivalenceRig rig;
+  const vector_v2::ViewRequest fine{
+      .zoom = vector_v2::ZoomLevel::k400Percent,
+      .level_pixels = {0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
+  };
+  const vector_v2::ViewRequest coarse{
+      .zoom = vector_v2::ZoomLevel::k100Percent,
+      .level_pixels = {0, 0, 256, 256},
+  };
+  rig.cold_fill(fine);
+  rig.cold_fill(coarse);
+  REQUIRE(rig.canvas.remember_view(coarse));
+  const vector_v2::TileKey coarse_key{vector_v2::ZoomLevel::k100Percent, 0, 0};
+  REQUIRE(rig.canvas.lookup(coarse_key).has_value());
+  REQUIRE(rig.canvas.lookup(coarse_key)->kind == vector_v2::SourceKind::kUniform);
+  std::array<vector_v2::CompactOperationSample, 6> stroke{};
+  for (std::size_t index = 0; index < stroke.size(); ++index) {
+    stroke[index] = {.x_quarter = static_cast<std::uint16_t>((20U + index * 8U) * 16U),
+                     .y_quarter = static_cast<std::uint16_t>(30U * 16U),
+                     .radius_256 = 4U * 256U,
+                     .elapsed_ms = static_cast<std::uint16_t>(index * 8U)};
+  }
+  REQUIRE(
+      vector_v2::append_authority_only(rig.log, {.color = 0xF800U, .samples = stroke}).has_value());
+  REQUIRE(vector_v2::absorb_pending_operation(rig.log, rig.canvas, rig.in_place_workspace(), fine)
+              .has_value());
+  const auto retained = rig.canvas.lookup(coarse_key);
+  REQUIRE(retained.has_value());
+  CHECK(retained->kind == vector_v2::SourceKind::kTileSlot);
+  std::vector<std::uint16_t> coarse_direct(256U * 256U);
+  forward_replay(rig.log, coarse, coarse_direct);
+  std::array<std::uint16_t, vector_v2::kTilePixels> resident_tile{};
+  REQUIRE(rig.canvas.copy_resident_tile(coarse_key, resident_tile));
+  bool equal = true;
+  for (int y = 0; y < vector_v2::kTileHeight; ++y) {
+    for (int x = 0; x < vector_v2::kTileWidth; ++x) {
+      equal = equal &&
+              resident_tile[static_cast<std::size_t>(y) * vector_v2::kTileWidth +
+                            static_cast<std::size_t>(x)] ==
+                  coarse_direct[static_cast<std::size_t>(y) * 256U + static_cast<std::size_t>(x)];
+    }
+  }
+  CHECK(equal);
+}
+
 TEST_CASE("in-place append bounds mutation to the active zoom") {
   EquivalenceRig rig;
   const vector_v2::ViewRequest fine_view{

@@ -868,9 +868,29 @@ void run_vector_v2_app() {
            std::span(storage.producer_chord_plans, vector_v2::kOperationChordStorageBytes / 4U))});
   // Re-render truth: every completed group render is classified against the
   // damage/eviction state the canvas reports (déjà-vu oracle; ~27.5 KiB).
+  // Déjà-vu campaign step 1: the spatial re-render ledger speaks during
+  // glass sessions. Deltas since the previous print attribute each
+  // transition's re-renders to a cause; cumulative amplification rides along.
+  vector_v2::RerenderLedgerTotals ledger_printed{};
   vector_v2::RerenderLedger rerender_ledger(
       std::span(storage.rerender_entries, vector_v2::kRerenderLedgerEntryCount));
   canvas.set_rerender_ledger(&rerender_ledger);
+  const auto print_live_ledger = [&rerender_ledger, &ledger_printed](const char* site) {
+    const auto totals = rerender_ledger.totals();
+    std::printf(
+        "TINYDRAW_LIVE_LEDGER site=%s renders=%lu cold=%lu damage=%lu evict=%lu stale=%lu "
+        "unexplained=%lu total_renders=%lu unique=%lu amplification=%.3f\n",
+        site, static_cast<unsigned long>(totals.renders - ledger_printed.renders),
+        static_cast<unsigned long>(totals.cold_miss - ledger_printed.cold_miss),
+        static_cast<unsigned long>(totals.expected_damage - ledger_printed.expected_damage),
+        static_cast<unsigned long>(totals.eviction - ledger_printed.eviction),
+        static_cast<unsigned long>(totals.stale_revision - ledger_printed.stale_revision),
+        static_cast<unsigned long>(totals.unexplained - ledger_printed.unexplained),
+        static_cast<unsigned long>(totals.renders),
+        static_cast<unsigned long>(totals.unique_groups), totals.amplification());
+    std::fflush(stdout);
+    ledger_printed = totals;
+  };
   producer.set_rerender_ledger(&rerender_ledger);
   const vector_v2::InPlaceAppendWorkspace workspace{
       .overview_scratch = std::span(storage.overview_scratch, vector_v2::kOverviewPixels),
@@ -1049,7 +1069,14 @@ void run_vector_v2_app() {
         current_power = next_power;
         chrome.battery_percentage = current_power.percentage;
         chrome.battery_charging = current_power.charging;
-        const auto timing = presenter.refresh(chrome, loop_us);
+        // A battery change re-presents only the battery overlay region
+        // (owner question 2026-08-16: the full-frame refresh here cost
+        // 60-140 ms on dense content for a cosmetic glyph).
+        const vector_v2::ChromeRect battery = vector_v2::chrome_battery_region();
+        const auto timing = presenter.refresh_region(
+            {presenter.level_x() + battery.x0, presenter.level_y() + battery.y0,
+             presenter.level_x() + battery.x1, presenter.level_y() + battery.y1},
+            chrome, loop_us);
         print_presentation("power", presenter, timing);
       }
     }
@@ -1063,6 +1090,7 @@ void run_vector_v2_app() {
       const ZoomLevel target = zoom == presenter.zoom() ? ZoomLevel::k25Percent : zoom;
       const auto timing = presenter.set_zoom(target, chrome, loop_us);
       print_presentation("zoom", presenter, timing);
+      print_live_ledger("zoom");
     }
 
     Point point{};
@@ -1229,6 +1257,7 @@ void run_vector_v2_app() {
       } else if (panning) {
         panning = false;
         print_pan_baseline(presenter, pan_metrics);
+        print_live_ledger("pan_end");
         std::fflush(stdout);
       } else if (ink.active()) {
         LiftBaselineTiming measured_lift{
@@ -1358,7 +1387,7 @@ void run_vector_v2_app() {
       const std::int64_t absorb_started = esp_timer_get_time();
       const auto absorbed = vector_v2::absorb_pending_operation(
           log, canvas, workspace, current_priority_view(presenter),
-          {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs});
+          {.now_us = &esp_timer_get_time, .budget_us = kIdleAbsorbBudgetUs});
       const std::int64_t absorb_us = esp_timer_get_time() - absorb_started;
       if (absorbed.has_value()) {
         ++drain_ops;
@@ -1383,6 +1412,7 @@ void run_vector_v2_app() {
               static_cast<long long>(drain_max_us), static_cast<unsigned long>(drain_failures),
               static_cast<long long>(swap_wall_us), swap.passed);
           std::fflush(stdout);
+          print_live_ledger("drain");
           drain_ops = 0U;
           drain_total_us = 0;
           drain_max_us = 0;

@@ -353,6 +353,14 @@ class MaterializedCanvas {
       PixelRect world_bounds, std::span<TileKey> output,
       std::optional<ViewRequest> priority_view = std::nullopt,
       bool priority_view_only = false) const;
+  // Appends uniform keys intersecting world_bounds inside each remembered
+  // view at zooms other than exclude_zoom, continuing an enumeration that
+  // already wrote `written` keys. All-zoom absorption uses this so
+  // revisit-bound paper tiles can materialize during idle work (déjà-vu
+  // fix); failure (output too small) leaves the primary enumeration usable.
+  [[nodiscard]] std::optional<std::size_t> append_recent_view_uniform_keys(
+      PixelRect world_bounds, std::optional<ZoomLevel> exclude_zoom, std::span<TileKey> output,
+      std::size_t written) const;
   // Copies one current resident tile without exposing mutable pool storage.
   [[nodiscard]] bool copy_resident_tile(TileKey key, std::span<std::uint16_t> destination) const;
   // Workspace used to prepare a next revision must not alias live canvas pixels.

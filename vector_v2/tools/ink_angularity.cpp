@@ -300,6 +300,52 @@ struct TraceRun {
   float brush_size;
 };
 
+// Streamline trailing: the screen-space gap between the raw finger position
+// and the smoothed point the geometry actually uses, per consumed move event
+// while the stroke is active. The lift point is exact by contract (alpha=1
+// on finish), so only mid-stroke trailing is reported.
+struct TrailingMetrics {
+  float p95 = 0;
+  float max = 0;
+};
+
+TrailingMetrics measure_trailing(std::span<const vector_v2::TraceEvent> events, float brush_size) {
+  tinydraw::InkConfig config;
+  config.size = brush_size;
+  config.streamline = g_streamline;
+  tinydraw::InkStream ink(config);
+  std::vector<float> gaps;
+  bool active = false;
+  for (const vector_v2::TraceEvent& event : events) {
+    const tinydraw::TouchPoint touch{
+        .x = static_cast<float>(event.x),
+        .y = static_cast<float>(event.y),
+        .timestamp_us = static_cast<std::uint32_t>(event.t_us),
+    };
+    if (event.kind == vector_v2::TraceEventKind::kDown) {
+      static_cast<void>(ink.begin(touch));
+      active = true;
+      continue;
+    }
+    if (!active) {
+      continue;
+    }
+    if (event.kind == vector_v2::TraceEventKind::kUp) {
+      static_cast<void>(ink.finish(touch));
+      active = false;
+      continue;
+    }
+    const tinydraw::InkPoint adjusted = ink.update(touch);
+    const float dx = adjusted.position.x - touch.x;
+    const float dy = adjusted.position.y - touch.y;
+    gaps.push_back(std::sqrt(dx * dx + dy * dy));
+  }
+  TrailingMetrics metrics;
+  metrics.p95 = percentile(gaps, 0.95).value_or(0.0F);
+  metrics.max = gaps.empty() ? 0.0F : *std::max_element(gaps.begin(), gaps.end());
+  return metrics;
+}
+
 int run_trace(const char* path, float brush_size, int zoom_percent, int chord_override) {
   std::ifstream file(path);
   if (!file) {
@@ -323,6 +369,8 @@ int run_trace(const char* path, float brush_size, int zoom_percent, int chord_ov
 
   const auto operations =
       committed_operations(std::span(events.data(), parsed.event_count), brush_size, *zoom);
+  const TrailingMetrics trailing =
+      measure_trailing(std::span(events.data(), parsed.event_count), brush_size);
   TraceMetrics metrics;
   for (const auto& operation : operations) {
     measure_operation(operation, *zoom, chord_override, metrics);
@@ -358,12 +406,14 @@ int run_trace(const char* path, float brush_size, int zoom_percent, int chord_ov
   std::printf(
       "%-26s zoom=%-3d size=%-4.1f chords=%d ops=%-3zu units=%-4zu chords_n=%-5zu "
       "dev_max=%-6.2f dev_p95=%-6.2f joint_p50=%-5.1f joint_p95=%-5.1f joint_max=%-6.1f "
-      "j>10=%-4zu j>20=%-4zu chord_len=%-5.1f mean_r=%-5.2f dev/width=%.3f\n",
+      "j>10=%-4zu j>20=%-4zu chord_len=%-5.1f mean_r=%-5.2f dev/width=%.3f "
+      "trail_p95=%-5.2f trail_max=%.2f\n",
       name, zoom_percent, static_cast<double>(brush_size), chord_override, metrics.operations,
       metrics.units, metrics.chords, static_cast<double>(deviation_max),
       static_cast<double>(deviation_p95), static_cast<double>(joint_p50),
       static_cast<double>(joint_p95), static_cast<double>(joint_max), joints_over_10,
-      joints_over_20, mean_chord, mean_radius, deviation_ratio);
+      joints_over_20, mean_chord, mean_radius, deviation_ratio, static_cast<double>(trailing.p95),
+      static_cast<double>(trailing.max));
   return 0;
 }
 
