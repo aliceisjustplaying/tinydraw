@@ -148,12 +148,18 @@ SweepResult run_cold_fill(Rig& rig, const v2::ViewRequest& view) {
   result.wall_ms =
       std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
   result.candidates = rig.producer.candidate_counters();
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+  const v2::RasterCensus cold_census = v2::g_raster_census;
+#endif
   // One immediate revisit exercises reuse accounting without affecting cold
-  // wall time or candidate-discovery totals.
+  // wall time, candidate-discovery totals, or the cold raster census.
   if (!rig.producer.produce_next(view).has_value()) {
     return result;
   }
   result.accounting = rig.accounting.totals();
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+  v2::g_raster_census = cold_census;
+#endif
   result.ok = true;
   return result;
 }

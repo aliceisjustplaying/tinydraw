@@ -15,6 +15,18 @@ WIDTH = 368
 HEIGHT = 448
 HEADER_COLUMNS = ["magic", "version", "name", "source", "sample_rate_note"]
 EVENT_COLUMNS = ["t_us", "kind", "x", "y"]
+UINT16_MAX = (1 << 16) - 1
+UINT32_MAX = (1 << 32) - 1
+UINT64_MAX = (1 << 64) - 1
+
+
+def unsigned_decimal(text: str, maximum: int, line_number: int, field: str) -> int:
+    if not text or any(character < "0" or character > "9" for character in text):
+        raise ValueError(f"line {line_number}: {field} is not an unsigned ASCII decimal")
+    value = int(text, 10)
+    if value > maximum:
+        raise ValueError(f"line {line_number}: {field} is out of range")
+    return value
 
 
 def fields(line: str, count: int, line_number: int) -> list[str]:
@@ -32,10 +44,7 @@ def parse_trace(path: Path) -> tuple[dict[str, str], list[tuple[int, str, int, i
     header = dict(zip(HEADER_COLUMNS, header_values, strict=True))
     if header["magic"] != MAGIC:
         raise ValueError("line 2: invalid magic")
-    try:
-        version = int(header["version"])
-    except ValueError as error:
-        raise ValueError("line 2: version is not an integer") from error
+    version = unsigned_decimal(header["version"], UINT32_MAX, 2, "version")
     if version != VERSION:
         raise ValueError(f"line 2: unsupported version {version}")
     if not header["name"] or not header["sample_rate_note"]:
@@ -50,13 +59,10 @@ def parse_trace(path: Path) -> tuple[dict[str, str], list[tuple[int, str, int, i
     previous_t = 0
     for line_number, line in enumerate(lines[3:], start=4):
         values = fields(line, 4, line_number)
-        try:
-            timestamp, x, y = int(values[0]), int(values[2]), int(values[3])
-        except ValueError as error:
-            raise ValueError(f"line {line_number}: timestamp and coordinates must be integers") from error
+        timestamp = unsigned_decimal(values[0], UINT64_MAX, line_number, "timestamp")
+        x = unsigned_decimal(values[2], UINT16_MAX, line_number, "x")
+        y = unsigned_decimal(values[3], UINT16_MAX, line_number, "y")
         kind = values[1]
-        if timestamp < 0:
-            raise ValueError(f"line {line_number}: timestamp must be non-negative")
         if events and timestamp < previous_t:
             raise ValueError(f"line {line_number}: timestamp is not monotonic")
         if not (0 <= x < WIDTH and 0 <= y < HEIGHT):

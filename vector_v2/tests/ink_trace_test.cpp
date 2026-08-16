@@ -59,6 +59,20 @@ TEST_CASE("ink trace parsing reports caller capacity and malformed lifecycle") {
   CHECK(invalid.line == 4U);
 }
 
+TEST_CASE("ink trace validation reports malformed metadata on line two") {
+  constexpr std::string_view csv =
+      "magic,version,name,source,sample_rate_note\n"
+      "WRONG,1,metadata,recorded,125Hz touch sampler\n"
+      "t_us,kind,x,y\n"
+      "0,Down,10,20\n"
+      "8,Up,10,20\n";
+  std::array<vector_v2::TraceEvent, 2> storage{};
+  const auto invalid = vector_v2::parse_ink_trace_csv(csv, storage);
+  CHECK(invalid.status == vector_v2::TraceParseStatus::kInvalidTrace);
+  CHECK(invalid.validation.error == vector_v2::TraceValidationError::kInvalidHeader);
+  CHECK(invalid.line == 2U);
+}
+
 TEST_CASE("ink trace validation enforces time coordinates and stroke edges") {
   const vector_v2::TraceHeader header{
       .name = "validation",

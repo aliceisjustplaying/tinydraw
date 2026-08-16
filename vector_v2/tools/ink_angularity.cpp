@@ -124,9 +124,14 @@ std::optional<vector_v2::ZoomLevel> zoom_from_percent(int percent) {
   return std::nullopt;
 }
 
+struct ReconstructedOperation {
+  std::vector<vector_v2::CompactOperationSample> samples;
+  std::uint16_t gesture_id = 0;
+};
+
 // Collects the committed operations (chunked exactly like the product) for
 // one trace at one brush size and zoom.
-std::vector<std::vector<vector_v2::CompactOperationSample>> committed_operations(
+std::vector<ReconstructedOperation> committed_operations(
     std::span<const vector_v2::TraceEvent> events, float brush_size, vector_v2::ZoomLevel zoom) {
   const float inverse_scale = 1.0F / zoom_scale_of(zoom);
   tinydraw::InkConfig config;
@@ -137,13 +142,16 @@ std::vector<std::vector<vector_v2::CompactOperationSample>> committed_operations
   constexpr std::size_t kProductChunkSampleLimit = 32;  // kInteractiveChunkSampleLimit
   vector_v2::ChainedOperationBuilder builder(storage, kProductChunkSampleLimit);
 
-  std::vector<std::vector<vector_v2::CompactOperationSample>> operations;
+  std::vector<ReconstructedOperation> operations;
+  std::uint16_t gesture_id = 0;
   const auto capture_chunk = [&]() {
     const auto pending = builder.pending_append();
-    if (pending.has_value()) {
-      operations.emplace_back(pending->samples.begin(), pending->samples.end());
+    if (!pending.has_value()) {
+      return vector_v2::ChainedOperationStatus::kRejected;
     }
-    static_cast<void>(builder.acknowledge_commit());
+    operations.push_back(
+        {.samples = {pending->samples.begin(), pending->samples.end()}, .gesture_id = gesture_id});
+    return builder.acknowledge_commit();
   };
   const auto operation_point = [&](tinydraw::InkPoint point) {
     return vector_v2::OperationPoint{
@@ -165,31 +173,26 @@ std::vector<std::vector<vector_v2::CompactOperationSample>> committed_operations
     };
     if (event.kind == vector_v2::TraceEventKind::kDown) {
       const tinydraw::InkPoint begun = ink.begin(touch);
-      stroke_active =
-          builder.begin(vector_v2::OperationTool::kPen, 0x0000U, 1U, operation_point(begun));
+      ++gesture_id;
+      stroke_active = builder.begin(vector_v2::OperationTool::kPen, 0x0000U, gesture_id,
+                                    operation_point(begun));
       continue;
     }
     if (!stroke_active) {
       continue;
     }
     if (event.kind == vector_v2::TraceEventKind::kMove) {
-      auto status = builder.add(operation_point(ink.update(touch)));
+      const tinydraw::InkPoint updated = ink.update(touch);
+      auto status = builder.add(operation_point(updated));
       while (status == vector_v2::ChainedOperationStatus::kChunkReady) {
-        capture_chunk();
-        status = builder.add(operation_point(ink.update(touch)));
-        break;  // The product re-offers the rejected point once; mirror that.
+        status = capture_chunk();
       }
       continue;
     }
     auto status = builder.finish(operation_point(ink.finish(touch)));
     while (status == vector_v2::ChainedOperationStatus::kChunkReady ||
            status == vector_v2::ChainedOperationStatus::kFinalChunkReady) {
-      capture_chunk();
-      status = builder.acknowledge_commit();
-      if (status == vector_v2::ChainedOperationStatus::kComplete ||
-          status == vector_v2::ChainedOperationStatus::kAccepted) {
-        break;
-      }
+      status = capture_chunk();
     }
     stroke_active = false;
   }
@@ -199,7 +202,8 @@ std::vector<std::vector<vector_v2::CompactOperationSample>> committed_operations
 // Rebuilds the polyline the authority paints for one operation and folds the
 // unit deviations/joint angles into the metrics.
 void measure_operation(std::span<const vector_v2::CompactOperationSample> samples,
-                       vector_v2::ZoomLevel zoom, int chord_override, TraceMetrics& metrics) {
+                       vector_v2::ZoomLevel zoom, int chord_override, TraceMetrics& metrics,
+                       std::optional<Chord>& previous_terminal) {
   if (samples.empty()) {
     return;
   }
@@ -275,18 +279,25 @@ void measure_operation(std::span<const vector_v2::CompactOperationSample> sample
     metrics.radius_total += chord.mean_radius;
     ++metrics.radius_samples;
   }
-  for (std::size_t index = 0; index + 1U < chain.size(); ++index) {
-    const Point a{chain[index].second.x - chain[index].first.x,
-                  chain[index].second.y - chain[index].first.y};
-    const Point b{chain[index + 1U].second.x - chain[index + 1U].first.x,
-                  chain[index + 1U].second.y - chain[index + 1U].first.y};
+  const auto include_joint = [&metrics](const Chord& first, const Chord& second) {
+    const Point a{first.second.x - first.first.x, first.second.y - first.first.y};
+    const Point b{second.second.x - second.first.x, second.second.y - second.first.y};
     const float la = std::sqrt(a.x * a.x + a.y * a.y);
     const float lb = std::sqrt(b.x * b.x + b.y * b.y);
     if (la <= 1e-6F || lb <= 1e-6F) {
-      continue;
+      return;
     }
     const float cosine = std::clamp((a.x * b.x + a.y * b.y) / (la * lb), -1.0F, 1.0F);
     metrics.joint_degrees.push_back(std::acos(cosine) * 180.0F / 3.14159265F);
+  };
+  if (!chain.empty() && previous_terminal.has_value()) {
+    include_joint(*previous_terminal, chain.front());
+  }
+  for (std::size_t index = 0; index + 1U < chain.size(); ++index) {
+    include_joint(chain[index], chain[index + 1U]);
+  }
+  if (!chain.empty()) {
+    previous_terminal = chain.back();
   }
 }
 
@@ -319,8 +330,14 @@ int run_trace(const char* path, float brush_size, int zoom_percent, int chord_ov
   const auto operations =
       committed_operations(std::span(events.data(), parsed.event_count), brush_size, *zoom);
   TraceMetrics metrics;
+  std::optional<Chord> previous_terminal;
+  std::uint16_t previous_gesture = 0;
   for (const auto& operation : operations) {
-    measure_operation(operation, *zoom, chord_override, metrics);
+    if (operation.gesture_id != previous_gesture) {
+      previous_terminal.reset();
+      previous_gesture = operation.gesture_id;
+    }
+    measure_operation(operation.samples, *zoom, chord_override, metrics, previous_terminal);
   }
 
   const float deviation_max =

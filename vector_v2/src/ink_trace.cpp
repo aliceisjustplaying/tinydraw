@@ -320,7 +320,9 @@ TraceParseResult parse_ink_trace_csv(std::string_view csv, std::span<TraceEvent>
     return {.status = TraceParseStatus::kInvalidTrace,
             .header = header,
             .event_count = event_count,
-            .line = 4U + validation.event_index,
+            .line = validation.error == TraceValidationError::kInvalidHeader
+                        ? 2U
+                        : 4U + validation.event_index,
             .validation = validation};
   }
   return {.status = TraceParseStatus::kOk,
