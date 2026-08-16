@@ -351,42 +351,32 @@ std::size_t retain_affected_tiles(MaterializedCanvas& canvas, const InPlaceRetai
   return retained;
 }
 
-}  // namespace
+// Saturating deadline for the offscreen retention pass. Zero time source
+// means no deadline (host determinism).
+std::int64_t retention_deadline_us(const InPlaceRetentionBudget& budget) {
+  if (budget.now_us == nullptr) {
+    return 0;
+  }
+  const std::int64_t now = budget.now_us();
+  return budget.budget_us > std::numeric_limits<std::int64_t>::max() - now
+             ? std::numeric_limits<std::int64_t>::max()
+             : now + budget.budget_us;
+}
 
-std::optional<IncrementalAppendResult> append_incrementally_in_place(
-    OperationLog& log, MaterializedCanvas& canvas, const OperationAppend& append_request,
-    const InPlaceAppendWorkspace& workspace, std::optional<ViewRequest> priority_view,
-    InPlaceRetentionBudget budget) {
-  // The deadline bounds only the offscreen raw retention pass; overview
-  // replay, visible tiles, and the metadata commit run to completion, so the
-  // caller-visible poll gap is attributed by the phase timings rather than
-  // bounded by this budget. Saturate instead of overflowing on adversarial
-  // clocks or budgets.
+// The §8.4 phase runner for one operation whose authority is already
+// decided: PrepareOverviewRows → EnumerateAffected → RetainVisibleUniforms
+// → RetainVisibleRawTiles → RetainOffscreenWithinBudget →
+// CommitRevisionMetadata. Advances the canvas from identity.revision - 1 to
+// identity.revision; never touches the operation log. Fail-safe: on nullopt
+// the canvas keeps its old revision (tiles painted before a failed metadata
+// commit are invalidated to correct overview fallback) and the call may be
+// retried.
+std::optional<IncrementalAppendResult> run_in_place_phases(
+    MaterializedCanvas& canvas, const OperationIdentity& identity, const OperationAppend& operation,
+    PixelRect world_bounds, const InPlaceAppendWorkspace& workspace,
+    const std::optional<ViewRequest>& priority_view, const InPlaceRetentionBudget& budget,
+    std::int64_t prepare_started_us, std::int64_t deadline_us) {
   const auto stamp = [&budget]() { return budget.now_us != nullptr ? budget.now_us() : 0; };
-  const std::int64_t prepare_started_us = stamp();
-  std::int64_t deadline_us = 0;
-  if (budget.now_us != nullptr) {
-    const std::int64_t now = budget.now_us();
-    deadline_us = budget.budget_us > std::numeric_limits<std::int64_t>::max() - now
-                      ? std::numeric_limits<std::int64_t>::max()
-                      : now + budget.budget_us;
-  }
-  if (!canvas.ready() || !log.ready() || !valid_in_place_workspace(log, canvas, workspace) ||
-      canvas.overview_pixels().size() != kOverviewPixels ||
-      log.current_revision() != canvas.current_revision() || !valid_priority_view(priority_view)) {
-    return std::nullopt;
-  }
-  auto prepared = log.prepare(append_request);
-  if (!prepared.has_value()) {
-    return std::nullopt;
-  }
-  const StoredOperation& stored = prepared->operation();
-  // publish() clears the prepared view; copy everything the result needs
-  // before the commit succeeds.
-  const OperationIdentity identity = stored.identity;
-  const PixelRect world_bounds = stored.world_bounds;
-  const OperationAppend operation{
-      .tool = stored.tool, .color = stored.color, .samples = stored.samples};
   InPlaceAppendPhases phases{};
   const std::int64_t overview_started_us = stamp();
   phases.prepare_us = overview_started_us - prepare_started_us;
@@ -399,14 +389,13 @@ std::optional<IncrementalAppendResult> append_incrementally_in_place(
       world_bounds, workspace.affected_keys, priority_view, false);
   if (!overview_ready || !resident_count.has_value() ||
       !canvas.can_edit_in_place_revision(identity.revision, overview_publication, world_bounds)) {
-    prepared->cancel();
     return std::nullopt;
   }
   phases.enumerate_us = stamp() - enumerate_started_us;
 
   const auto affected = workspace.affected_keys.first(*resident_count);
   const std::uint16_t painted_color =
-      stored.tool == OperationTool::kEraser ? 0xFFFFU : stored.color;
+      operation.tool == OperationTool::kEraser ? 0xFFFFU : operation.color;
   const InPlaceRetainScope scope{operation, painted_color, priority_view, budget, deadline_us};
   InPlaceRetainDrops drops{};
   const std::size_t retained =
@@ -428,10 +417,8 @@ std::optional<IncrementalAppendResult> append_incrementally_in_place(
     for (const TileKey key : affected.first(retained)) {
       canvas.invalidate_identity(key);
     }
-    prepared->cancel();
     return std::nullopt;
   }
-  prepared->publish();
   phases.commit_us = stamp() - commit_started_us;
   return IncrementalAppendResult{.identity = identity,
                                  .affected_world_bounds = world_bounds,
@@ -442,6 +429,80 @@ std::optional<IncrementalAppendResult> append_incrementally_in_place(
                                  .cross_zoom_invalidated = cross_zoom_invalidated,
                                  .phases = phases,
                                  .drops = drops};
+}
+
+}  // namespace
+
+std::optional<IncrementalAppendResult> append_incrementally_in_place(
+    OperationLog& log, MaterializedCanvas& canvas, const OperationAppend& append_request,
+    const InPlaceAppendWorkspace& workspace, std::optional<ViewRequest> priority_view,
+    InPlaceRetentionBudget budget) {
+  // The deadline bounds only the offscreen raw retention pass; overview
+  // replay, visible tiles, and the metadata commit run to completion, so the
+  // caller-visible poll gap is attributed by the phase timings rather than
+  // bounded by this budget. Saturate instead of overflowing on adversarial
+  // clocks or budgets.
+  const auto stamp = [&budget]() { return budget.now_us != nullptr ? budget.now_us() : 0; };
+  const std::int64_t prepare_started_us = stamp();
+  const std::int64_t deadline_us = retention_deadline_us(budget);
+  if (!canvas.ready() || !log.ready() || !valid_in_place_workspace(log, canvas, workspace) ||
+      canvas.overview_pixels().size() != kOverviewPixels ||
+      log.current_revision() != canvas.current_revision() || !valid_priority_view(priority_view)) {
+    return std::nullopt;
+  }
+  auto prepared = log.prepare(append_request);
+  if (!prepared.has_value()) {
+    return std::nullopt;
+  }
+  const StoredOperation& stored = prepared->operation();
+  // publish() clears the prepared view; copy everything the phases need
+  // before deciding the log's fate.
+  const OperationIdentity identity = stored.identity;
+  const PixelRect world_bounds = stored.world_bounds;
+  const OperationAppend operation{
+      .tool = stored.tool, .color = stored.color, .samples = stored.samples};
+  const auto result = run_in_place_phases(canvas, identity, operation, world_bounds, workspace,
+                                          priority_view, budget, prepare_started_us, deadline_us);
+  if (!result.has_value()) {
+    prepared->cancel();
+    return std::nullopt;
+  }
+  prepared->publish();
+  return result;
+}
+
+std::size_t pending_operation_count(const OperationLog& log, const MaterializedCanvas& canvas) {
+  if (!log.ready() || !canvas.ready()) {
+    return 0;
+  }
+  const auto range =
+      log.replay_range(log.epoch(), canvas.current_revision(), log.current_revision());
+  return range.has_value() ? range->operation_count : 0;
+}
+
+std::optional<IncrementalAppendResult> absorb_pending_operation(
+    const OperationLog& log, MaterializedCanvas& canvas, const InPlaceAppendWorkspace& workspace,
+    std::optional<ViewRequest> priority_view, InPlaceRetentionBudget budget) {
+  const auto stamp = [&budget]() { return budget.now_us != nullptr ? budget.now_us() : 0; };
+  const std::int64_t prepare_started_us = stamp();
+  const std::int64_t deadline_us = retention_deadline_us(budget);
+  if (!canvas.ready() || !log.ready() || !valid_in_place_workspace(log, canvas, workspace) ||
+      canvas.overview_pixels().size() != kOverviewPixels || !valid_priority_view(priority_view)) {
+    return std::nullopt;
+  }
+  const auto range =
+      log.replay_range(log.epoch(), canvas.current_revision(), log.current_revision());
+  if (!range.has_value() || range->operation_count == 0U) {
+    return std::nullopt;
+  }
+  const auto stored = log.operation(range->first_operation);
+  if (!stored.has_value()) {
+    return std::nullopt;
+  }
+  const OperationAppend operation{
+      .tool = stored->tool, .color = stored->color, .samples = stored->samples};
+  return run_in_place_phases(canvas, stored->identity, operation, stored->world_bounds, workspace,
+                             priority_view, budget, prepare_started_us, deadline_us);
 }
 
 bool restore_document_snapshot(OperationLog& log, MaterializedCanvas& canvas,

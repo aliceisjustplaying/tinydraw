@@ -982,6 +982,139 @@ TEST_CASE("in-place append equals the reference transactional append") {
   static_cast<void>(resident_coarse_tiles);
 }
 
+TEST_CASE("deferred absorption equals synchronous in-place appends") {
+  // Committed-overlay step 2 (VECTOR_V2_COMMITTED_OVERLAY_DESIGN.md §5.2):
+  // appending authority only and absorbing the pending range later, in any
+  // slice cadence, must end bit-identical to the synchronous path, and every
+  // intermediate canvas state must equal ground-truth replay of the absorbed
+  // log prefix.
+  EquivalenceRig synchronous;
+  EquivalenceRig deferred;
+  const vector_v2::ViewRequest priority_view{
+      .zoom = vector_v2::ZoomLevel::k400Percent,
+      .level_pixels = {64, 64, 64 + vector_v2::kOverviewWidth, 64 + vector_v2::kOverviewHeight},
+  };
+  synchronous.cold_fill(priority_view);
+  deferred.cold_fill(priority_view);
+
+  const auto prefix_replay = [](vector_v2::OperationLog& log, std::size_t operation_count,
+                                const vector_v2::ViewRequest& view,
+                                std::span<std::uint16_t> pixels) {
+    std::fill(pixels.begin(), pixels.end(), 0xFFFFU);
+    for (std::size_t index = 0; index < operation_count; ++index) {
+      const auto stored = log.operation(index);
+      REQUIRE(stored.has_value());
+      REQUIRE(vector_v2::apply_incremental_operation(
+          {.tool = stored->tool, .color = stored->color, .samples = stored->samples},
+          {.zoom = view.zoom,
+           .level_bounds = view.level_pixels,
+           .pixels = pixels,
+           .stride = view.level_pixels.x1 - view.level_pixels.x0}));
+    }
+  };
+
+  std::uint32_t state = 0x0BAD'CAFEU;
+  const auto next_random = [&state]() {
+    state = state * 1'664'525U + 1'013'904'223U;
+    return state >> 8U;
+  };
+  std::vector<vector_v2::CompactOperationSample> gesture;
+  std::size_t appended_operations = 0;
+  for (std::size_t gesture_index = 0; gesture_index < 6U; ++gesture_index) {
+    gesture.clear();
+    int x = 80 + static_cast<int>(next_random() % 400U);
+    int y = 80 + static_cast<int>(next_random() % 480U);
+    const bool eraser = gesture_index % 3U == 2U;
+    const std::uint16_t base_radius = static_cast<std::uint16_t>(192U + next_random() % 1'600U);
+    const std::size_t gesture_samples = 40U + next_random() % 120U;
+    for (std::size_t index = 0; index < gesture_samples; ++index) {
+      x = std::clamp(x + static_cast<int>(next_random() % 15U) - 7, 0, vector_v2::kWorldWidth * 4);
+      y = std::clamp(y + static_cast<int>(next_random() % 15U) - 7, 0, vector_v2::kWorldHeight * 4);
+      gesture.push_back(
+          {.x_quarter = static_cast<std::uint16_t>(x),
+           .y_quarter = static_cast<std::uint16_t>(y),
+           .radius_256 = static_cast<std::uint16_t>(128U + (base_radius + index * 173U) % 1'800U),
+           .elapsed_ms = 0U});
+    }
+    // The drain cadence is the experiment variable: gesture 0 drains after
+    // every chunk, later gestures let the canvas trail by up to 3 operations.
+    const std::size_t drain_threshold = 1U + gesture_index % 3U;
+    std::size_t start = 0;
+    while (start < gesture.size()) {
+      const std::size_t count = std::min<std::size_t>(64U, gesture.size() - start);
+      const auto chunk_samples = std::span(gesture).subspan(start, count);
+      for (std::size_t index = 0; index < chunk_samples.size(); ++index) {
+        chunk_samples[index].elapsed_ms = static_cast<std::uint16_t>(index * 8U);
+      }
+      const vector_v2::OperationAppend chunk{
+          .tool = eraser ? vector_v2::OperationTool::kEraser : vector_v2::OperationTool::kPen,
+          .color = static_cast<std::uint16_t>(next_random() & 0xFFFFU),
+          .samples = chunk_samples,
+      };
+      const auto synchronous_result =
+          vector_v2::append_incrementally_in_place(synchronous.log, synchronous.canvas, chunk,
+                                                   synchronous.in_place_workspace(), priority_view);
+      REQUIRE(synchronous_result.has_value());
+      // Deferred path: authority publishes immediately, the canvas trails.
+      const auto authority = deferred.log.append(chunk);
+      REQUIRE(authority.has_value());
+      CHECK(*authority == synchronous_result->identity);
+      ++appended_operations;
+      CHECK(vector_v2::pending_operation_count(deferred.log, deferred.canvas) ==
+            deferred.log.operation_count() -
+                static_cast<std::size_t>(deferred.canvas.current_revision().value - 1U));
+      // The synchronous entry point must refuse while the canvas trails.
+      if (vector_v2::pending_operation_count(deferred.log, deferred.canvas) != 0U) {
+        CHECK_FALSE(vector_v2::append_incrementally_in_place(deferred.log, deferred.canvas, chunk,
+                                                             deferred.in_place_workspace(),
+                                                             priority_view)
+                        .has_value());
+      }
+      while (vector_v2::pending_operation_count(deferred.log, deferred.canvas) >= drain_threshold) {
+        const auto absorbed = vector_v2::absorb_pending_operation(
+            deferred.log, deferred.canvas, deferred.in_place_workspace(), priority_view);
+        REQUIRE(absorbed.has_value());
+        CHECK(absorbed->identity.revision == deferred.canvas.current_revision());
+        // Every intermediate state is the exact absorbed prefix: composable,
+        // fully resident in the priority view, and equal to ground truth.
+        std::vector<std::uint16_t> mid_view(vector_v2::kOverviewPixels);
+        const auto mid_stats = deferred.canvas.compose_view(priority_view, mid_view);
+        REQUIRE(mid_stats.has_value());
+        CHECK(mid_stats->fallback_pixels == 0U);
+        std::vector<std::uint16_t> mid_direct(vector_v2::kOverviewPixels);
+        prefix_replay(deferred.log, absorbed->identity.operation_index + 1U, priority_view,
+                      mid_direct);
+        CHECK(mid_view == mid_direct);
+      }
+      start += count == 64U ? 63U : count;
+    }
+    // Gesture boundary: drain fully and compare against the synchronous rig.
+    while (vector_v2::pending_operation_count(deferred.log, deferred.canvas) != 0U) {
+      REQUIRE(vector_v2::absorb_pending_operation(deferred.log, deferred.canvas,
+                                                  deferred.in_place_workspace(), priority_view)
+                  .has_value());
+    }
+    CHECK_FALSE(vector_v2::absorb_pending_operation(deferred.log, deferred.canvas,
+                                                    deferred.in_place_workspace(), priority_view)
+                    .has_value());
+    CHECK(deferred.log.current_revision() == synchronous.log.current_revision());
+    CHECK(deferred.canvas.current_revision() == synchronous.canvas.current_revision());
+    std::vector<std::uint16_t> synchronous_view(vector_v2::kOverviewPixels);
+    std::vector<std::uint16_t> deferred_view(vector_v2::kOverviewPixels);
+    const auto synchronous_stats = synchronous.canvas.compose_view(priority_view, synchronous_view);
+    const auto deferred_stats = deferred.canvas.compose_view(priority_view, deferred_view);
+    REQUIRE(synchronous_stats.has_value());
+    REQUIRE(deferred_stats.has_value());
+    CHECK(synchronous_stats->fallback_pixels == 0U);
+    CHECK(deferred_stats->fallback_pixels == 0U);
+    CHECK(synchronous_view == deferred_view);
+    CHECK(std::equal(synchronous.canvas.overview_pixels().begin(),
+                     synchronous.canvas.overview_pixels().end(),
+                     deferred.canvas.overview_pixels().begin()));
+  }
+  CHECK(appended_operations >= 8U);
+}
+
 TEST_CASE("in-place append bounds mutation to the active zoom") {
   EquivalenceRig rig;
   const vector_v2::ViewRequest fine_view{
