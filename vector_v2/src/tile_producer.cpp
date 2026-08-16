@@ -583,9 +583,24 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
       render_accounting_->record_completion(active_group_key());
     }
     if (rerender_ledger_ != nullptr) {
-      static_cast<void>(rerender_ledger_->record_group_render(
-          active_group_.view.zoom, active_group_.origin.column, active_group_.origin.row,
-          active_group_.revision));
+      const TileGrid grid = tile_grid(active_group_.view.zoom);
+      bool group_complete = true;
+      for (int row = active_group_.origin.row;
+           row < std::min(grid.rows, static_cast<int>(active_group_.origin.row) + 2); ++row) {
+        for (int column = active_group_.origin.column;
+             column < std::min(grid.columns, static_cast<int>(active_group_.origin.column) + 2);
+             ++column) {
+          group_complete = group_complete && tile_satisfies({active_group_.view.zoom,
+                                                             static_cast<std::uint16_t>(column),
+                                                             static_cast<std::uint16_t>(row)},
+                                                            MaterializationQuality::kImmediate);
+        }
+      }
+      if (group_complete) {
+        static_cast<void>(rerender_ledger_->record_group_render(
+            active_group_.view.zoom, active_group_.origin.column, active_group_.origin.row,
+            active_group_.revision));
+      }
     }
   }
   const ViewRequest view = active_group_.view;

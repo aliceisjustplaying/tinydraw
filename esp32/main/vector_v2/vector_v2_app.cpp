@@ -1399,9 +1399,8 @@ void run_vector_v2_app() {
           // The level sweep stops when the pool saturates: past that point
           // every publication evicts warmer tiles (dense documents exceed
           // pool capacity at 100%), which churned instead of repairing.
-          if (repair_cursor >= repair_plan.grid_start &&
-              canvas.resident_raw_tiles() + kRepairSaturationHeadroomTiles >=
-                  canvas.slot_capacity()) {
+          if (canvas.resident_raw_tiles() + kRepairSaturationHeadroomTiles >=
+              canvas.slot_capacity()) {
             repair_cursor = repair_plan.count;
             break;
           }

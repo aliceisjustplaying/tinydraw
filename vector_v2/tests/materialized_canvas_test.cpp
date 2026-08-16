@@ -6,8 +6,10 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <vector>
 
 #include "tinydraw/vector_v2/memory_layout.h"
+#include "tinydraw/vector_v2/rerender_ledger.h"
 
 namespace vector_v2 = tinydraw::vector_v2;
 
@@ -746,6 +748,25 @@ TEST_CASE("discarding tiles preserves current overview and fails while pinned") 
   REQUIRE(fallback.has_value());
   CHECK(fallback->kind == vector_v2::SourceKind::kOverview);
   CHECK(fallback->identity.revision == vector_v2::DocumentRevision{2});
+}
+
+TEST_CASE("discarding every tile starts a fresh rerender ledger session") {
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
+  std::array<vector_v2::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, vector_v2::kTilePixels> tile_storage{};
+  std::array<std::uint16_t, vector_v2::kTilePixels> tile{};
+  vector_v2::MaterializedCanvas canvas(overview, slots, tile_storage);
+  std::vector<vector_v2::RerenderLedgerEntry> entries(vector_v2::kRerenderLedgerEntryCount);
+  vector_v2::RerenderLedger ledger(entries);
+  canvas.set_rerender_ledger(&ledger);
+  REQUIRE(canvas.publish_overview({2}, overview));
+  REQUIRE(canvas.publish_tile({vector_v2::ZoomLevel::k100Percent, 0, 0}, {2},
+                              vector_v2::MaterializationQuality::kImmediate, tile));
+  static_cast<void>(ledger.record_group_render(vector_v2::ZoomLevel::k100Percent, 0, 0, {2}));
+  REQUIRE(ledger.totals().renders == 1U);
+
+  REQUIRE(canvas.discard_tiles());
+  CHECK(ledger.totals().renders == 0U);
 }
 
 TEST_CASE("compose view rejects destinations that alias owned source storage") {

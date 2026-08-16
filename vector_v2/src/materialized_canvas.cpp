@@ -414,6 +414,9 @@ bool MaterializedCanvas::publish_overview(DocumentRevision revision,
   if (!exact_bootstrap_source) {
     std::copy(pixels.begin(), pixels.end(), overview_pixels_.begin());
   }
+  if (rerender_ledger_ != nullptr) {
+    rerender_ledger_->reset();
+  }
   for (std::size_t index = 0; index < slots_.size(); ++index) {
     if (slots_[index].occupied_) {
       release_slot(index);
@@ -1269,6 +1272,11 @@ bool MaterializedCanvas::discard_tiles() {
       std::any_of(slots_.begin(), slots_.end(),
                   [](const auto& slot) { return slot.pin_count_ != 0U; })) {
     return false;
+  }
+  // An explicit all-cache discard begins a fresh ledger session. Without
+  // this, same-revision refills are mislabeled as unexplained rerenders.
+  if (rerender_ledger_ != nullptr) {
+    rerender_ledger_->reset();
   }
   for (std::size_t index = 0; index < slots_.size(); ++index) {
     if (!slots_[index].occupied_) {
