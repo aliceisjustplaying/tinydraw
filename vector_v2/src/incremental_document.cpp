@@ -265,32 +265,22 @@ std::size_t retain_uniform_tiles(MaterializedCanvas& canvas, const InPlaceRetain
   return retained;
 }
 
-// Raw pass: resident raw tiles paint in place only at the priority view's
-// zoom. Tiles visible in the priority view always paint (the viewport
-// bounds them; dropping one is a visible blur, rejected on glass);
-// off-screen tiles at that zoom paint within the remaining budget and
-// otherwise drop for idle repair to rebuild. A failed paint invalidates the
-// identity.
-std::size_t retain_raw_tiles(MaterializedCanvas& canvas, const InPlaceRetainScope& scope,
-                             std::span<TileKey> affected, std::span<std::uint8_t> tile_mask,
-                             std::size_t retained, InPlaceRetainDrops& drops) {
+// Visible raw phase (§8.4 RetainVisibleRawTiles): resident raw tiles inside
+// the priority view always paint in place — the viewport bounds them and
+// dropping one is a visible blur, rejected on glass. A failed paint
+// invalidates the identity.
+std::size_t retain_visible_raw_tiles(MaterializedCanvas& canvas, const InPlaceRetainScope& scope,
+                                     std::span<TileKey> affected, std::span<std::uint8_t> tile_mask,
+                                     std::size_t retained, InPlaceRetainDrops& drops) {
   for (std::size_t index = retained; index < affected.size(); ++index) {
     const TileKey key = affected[index];
-    if (!scope.priority_view.has_value() || key.zoom != scope.priority_view->zoom) {
-      continue;  // Cross-zoom drops are counted by cross_zoom_invalidated.
-    }
-    const bool visible = in_priority_view(key, scope.priority_view);
-    if (!visible && scope.over_budget()) {
-      ++drops.offscreen_skipped;
+    if (!scope.priority_view.has_value() || key.zoom != scope.priority_view->zoom ||
+        !in_priority_view(key, scope.priority_view)) {
       continue;
     }
     const auto edit = canvas.edit_resident_tile(key);
     if (!edit.has_value()) {
-      if (visible) {
-        ++drops.visible_raw_edit_fail;
-      } else {
-        ++drops.offscreen_skipped;
-      }
+      ++drops.visible_raw_edit_fail;
       continue;
     }
     if (paint_operation_into_tile(scope.operation, *edit, tile_mask)) {
@@ -298,16 +288,51 @@ std::size_t retain_raw_tiles(MaterializedCanvas& canvas, const InPlaceRetainScop
       ++retained;
     } else {
       canvas.invalidate_identity(key);
-      if (visible) {
-        ++drops.visible_raw_paint_fail;
-      } else {
-        ++drops.offscreen_skipped;
-      }
+      ++drops.visible_raw_paint_fail;
     }
   }
   return retained;
 }
 
+// Offscreen raw phase (§8.4 RetainOffscreenWithinBudget): active-zoom tiles
+// outside the priority view paint within the remaining budget and otherwise
+// drop for idle repair to rebuild. Cross-zoom tiles are not painted at all;
+// their drops are counted by cross_zoom_invalidated at commit.
+std::size_t retain_offscreen_raw_tiles(MaterializedCanvas& canvas, const InPlaceRetainScope& scope,
+                                       std::span<TileKey> affected,
+                                       std::span<std::uint8_t> tile_mask, std::size_t retained,
+                                       InPlaceRetainDrops& drops) {
+  for (std::size_t index = retained; index < affected.size(); ++index) {
+    const TileKey key = affected[index];
+    if (!scope.priority_view.has_value() || key.zoom != scope.priority_view->zoom ||
+        in_priority_view(key, scope.priority_view)) {
+      continue;
+    }
+    if (scope.over_budget()) {
+      ++drops.offscreen_skipped;
+      continue;
+    }
+    const auto edit = canvas.edit_resident_tile(key);
+    if (!edit.has_value()) {
+      ++drops.offscreen_skipped;
+      continue;
+    }
+    if (paint_operation_into_tile(scope.operation, *edit, tile_mask)) {
+      std::swap(affected[index], affected[retained]);
+      ++retained;
+    } else {
+      canvas.invalidate_identity(key);
+      ++drops.offscreen_skipped;
+    }
+  }
+  return retained;
+}
+
+// Runs the retain phases in §8.4 order: visible uniforms, visible raw
+// tiles, then budget-bounded offscreen raw tiles. Visible-first ordering is
+// the resumability seam — a future drain slice pauses between phases — and
+// means offscreen retention sees the deadline after visible work, which
+// only changes outcomes when the budget engages (off_skip receipts).
 std::size_t retain_affected_tiles(MaterializedCanvas& canvas, const InPlaceRetainScope& scope,
                                   std::span<TileKey> affected, std::span<std::uint8_t> tile_mask,
                                   InPlaceAppendPhases& phases, InPlaceRetainDrops& drops) {
@@ -315,12 +340,15 @@ std::size_t retain_affected_tiles(MaterializedCanvas& canvas, const InPlaceRetai
     return scope.budget.now_us != nullptr ? scope.budget.now_us() : 0;
   };
   const std::int64_t uniform_started_us = stamp();
-  const std::size_t retained = retain_uniform_tiles(canvas, scope, affected, tile_mask, drops);
+  std::size_t retained = retain_uniform_tiles(canvas, scope, affected, tile_mask, drops);
   const std::int64_t raw_started_us = stamp();
-  const std::size_t result = retain_raw_tiles(canvas, scope, affected, tile_mask, retained, drops);
+  retained = retain_visible_raw_tiles(canvas, scope, affected, tile_mask, retained, drops);
+  const std::int64_t offscreen_started_us = stamp();
+  retained = retain_offscreen_raw_tiles(canvas, scope, affected, tile_mask, retained, drops);
   phases.uniform_retain_us = raw_started_us - uniform_started_us;
-  phases.raw_retain_us = stamp() - raw_started_us;
-  return result;
+  phases.raw_retain_us = offscreen_started_us - raw_started_us;
+  phases.offscreen_retain_us = stamp() - offscreen_started_us;
+  return retained;
 }
 
 }  // namespace

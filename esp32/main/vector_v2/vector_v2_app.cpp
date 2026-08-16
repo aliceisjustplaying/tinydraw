@@ -403,6 +403,7 @@ void include_phase_maxima(vector_v2::InPlaceAppendPhases& maxima,
   maxima.enumerate_us = std::max(maxima.enumerate_us, sample.enumerate_us);
   maxima.uniform_retain_us = std::max(maxima.uniform_retain_us, sample.uniform_retain_us);
   maxima.raw_retain_us = std::max(maxima.raw_retain_us, sample.raw_retain_us);
+  maxima.offscreen_retain_us = std::max(maxima.offscreen_retain_us, sample.offscreen_retain_us);
   maxima.commit_us = std::max(maxima.commit_us, sample.commit_us);
 }
 
@@ -568,7 +569,8 @@ void print_stroke(const PendingStrokeReport& report) {
       "touch_moves_coalesced=%lu touch_events=%lu touch_down=%lu touch_up=%lu "
       "touch_events_ge_8ms=%lu touch_event_age_max_us=%lu chunks=%lu "
       "ph_prepare_max_us=%lld ph_overview_max_us=%lld ph_enumerate_max_us=%lld "
-      "ph_uniform_max_us=%lld ph_raw_max_us=%lld ph_commit_max_us=%lld "
+      "ph_uniform_max_us=%lld ph_raw_max_us=%lld ph_offscreen_max_us=%lld "
+      "ph_commit_max_us=%lld "
       "drop_uni_slot=%lu drop_uni_paint=%lu drop_raw_edit=%lu drop_raw_paint=%lu "
       "off_skip=%lu free_psram=%lu "
       "largest_psram=%lu authority_match=%u\n",
@@ -605,6 +607,7 @@ void print_stroke(const PendingStrokeReport& report) {
       static_cast<long long>(report.phase_max.enumerate_us),
       static_cast<long long>(report.phase_max.uniform_retain_us),
       static_cast<long long>(report.phase_max.raw_retain_us),
+      static_cast<long long>(report.phase_max.offscreen_retain_us),
       static_cast<long long>(report.phase_max.commit_us),
       static_cast<unsigned long>(report.drops.visible_uniform_no_slot),
       static_cast<unsigned long>(report.drops.visible_uniform_paint_fail),

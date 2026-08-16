@@ -26,12 +26,13 @@ struct IncrementalDocumentWorkspace {
 // other phase is workload-bounded, so these attributions — not the retention
 // budget — explain the caller-visible poll gap.
 struct InPlaceAppendPhases {
-  std::int64_t prepare_us = 0;         // validation + log preparation
-  std::int64_t overview_us = 0;        // overview scratch copy + affected replay
-  std::int64_t enumerate_us = 0;       // resident enumeration + edit validation
-  std::int64_t uniform_retain_us = 0;  // uniform retention / materialize + paint
-  std::int64_t raw_retain_us = 0;      // raw in-place painting (visible + budgeted offscreen)
-  std::int64_t commit_us = 0;          // invalidation + revision metadata commit
+  std::int64_t prepare_us = 0;           // validation + log preparation
+  std::int64_t overview_us = 0;          // overview scratch copy + affected replay
+  std::int64_t enumerate_us = 0;         // resident enumeration + edit validation
+  std::int64_t uniform_retain_us = 0;    // uniform retention / materialize + paint
+  std::int64_t raw_retain_us = 0;        // visible raw in-place painting (budget-exempt)
+  std::int64_t offscreen_retain_us = 0;  // budget-bounded offscreen raw painting
+  std::int64_t commit_us = 0;            // invalidation + revision metadata commit
 };
 
 // Drop attribution for the in-place retain passes. A counted drop is an
