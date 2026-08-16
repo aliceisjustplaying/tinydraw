@@ -145,6 +145,30 @@ arrived (`tear_edge_observed=0 tear_edge_timeout=1 tear_heal_attempted=1`
 from startup), cascading every gate red. Panel bring-up flake, healed by
 the next reset; unrelated to any Stage B change.
 
+## Owner glass session (2026-08-16 18:42–18:50, log: `logs/glass-session-2026-08-16.log`)
+
+Drawing at 25→400% (long strokes, evil hairlines, fat lines, multiple
+colors), stress panning at every tiled zoom, draw-then-zoom-return.
+
+- **Tearing: none observed on glass**, and zero missed presentation
+  bounds in the receipts (`submit_over_16ms=0 complete_over_33ms=0` on
+  all 18 strokes). Cold redraw content correct at every zoom. Owner
+  verdict: cold render closable barring regressions.
+- **400% drawing lag (felt, slight)**: attributed to the known mixed_draw
+  overrun — worst chunk commits 17–21.6 ms with `ph_uniform_max` up to
+  18.3 ms (fresh paper tiles materialized+painted mid-stroke) and
+  `ph_raw_max` up to 12 ms. At 25% the single worst commit was 42 ms
+  (`ph_overview` 19.1 + `ph_commit` 22.2) but too rare to feel.
+- **Zoom-cycle return position bug** (new): cycling back to 400% does not
+  restore the previous viewport, violating VECTOR_V2_ZOOM_NAVIGATION.md's
+  documented return behavior. Queued as a mechanical fix.
+- **Déjà-vu confirmed open**: pan-around-then-revisit at 100% (after
+  drawing at several zooms) visibly re-renders. Pure-revisit amplification
+  is exactly 1.000 in the tour gate, so the observed causes are
+  damage/eviction — cross-zoom invalidation by design (commits drop
+  affected tiles at non-active zooms) plus slot pressure. Campaign step 1:
+  live ledger cause-histogram receipts during glass sessions.
+
 ## Remaining to ≤500 ms at 400%
 
 ~7 ms of wall. Candidates: presentation/compute overlap (wave-3 §4.4,
