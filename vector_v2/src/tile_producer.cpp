@@ -25,6 +25,13 @@ std::size_t distance_squared(int x, int y, int center_x, int center_y) {
   return static_cast<std::size_t>(delta_x * delta_x + delta_y * delta_y);
 }
 
+struct PreparedTilePublication {
+  TileKey key{};
+  PixelRect bounds{};
+  std::span<const std::uint16_t> pixels{};
+  TilePayloadAnalysis analysis{};
+};
+
 }  // namespace
 
 TileProducer::TileProducer(OperationLog& log, MaterializedCanvas& canvas,
@@ -182,6 +189,9 @@ std::optional<TileProductionStep> TileProducer::publish_certain_paper_group(cons
                                                                             TileKey origin) {
   const TileGrid grid = tile_grid(view.zoom);
   GroupPublication publication{};
+  if (canvas_.pins_outstanding() != 0U || canvas_.uniform_capacity() == 0U) {
+    return std::nullopt;
+  }
   for (int row = origin.row; row < std::min(grid.rows, static_cast<int>(origin.row) + 2); ++row) {
     for (int column = origin.column;
          column < std::min(grid.columns, static_cast<int>(origin.column) + 2); ++column) {
@@ -626,33 +636,6 @@ void TileProducer::include_bounds(PixelRect bounds, GroupPublication& publicatio
   ++publication.tiles_published;
 }
 
-bool TileProducer::publish_surface_tile(TileKey key, PixelRect rendered_bounds,
-                                        DocumentRevision revision) {
-  const PixelRect bounds = tile_pixel_bounds(key);
-  const int width = bounds.x1 - bounds.x0;
-  const int height = bounds.y1 - bounds.y0;
-  constexpr auto kStride = static_cast<std::size_t>(kTileProducerWidth);
-  const auto surface = workspace_.supertask_pixels.first(kTileProducerPixels);
-  // Publish straight from the supertask surface: one strided read replaces
-  // the former supertask->packed->pool double copy.
-  const auto origin =
-      static_cast<std::size_t>(bounds.y0 - rendered_bounds.y0) * kStride +
-      static_cast<std::size_t>(bounds.x0 - rendered_bounds.x0);
-  const auto strided = surface.subspan(
-      origin, static_cast<std::size_t>(height - 1) * kStride + static_cast<std::size_t>(width));
-  const auto analysis = analyze_tile_payload(strided, width, height, kStride);
-  if (!analysis.has_value()) {
-    return false;
-  }
-  if (analysis->uniform && canvas_.uniform_capacity() != 0U) {
-    return canvas_
-        .publish_uniform(key, revision, MaterializationQuality::kImmediate, analysis->uniform_color)
-        .has_value();
-  }
-  return canvas_.publish_tile(key, revision, MaterializationQuality::kImmediate, strided, kStride)
-      .has_value();
-}
-
 std::optional<TileProducer::GroupPublication> TileProducer::publish_group(
     PixelRect rendered_bounds, PixelRect visible_bounds, ZoomLevel zoom,
     DocumentRevision revision) {
@@ -664,6 +647,14 @@ std::optional<TileProducer::GroupPublication> TileProducer::publish_group(
   if (canvas_.pins_outstanding() != 0U) {
     return std::nullopt;
   }
+
+  // Validate and classify the complete group before changing cache state. The
+  // serialized canvas contract and the no-pins check make every subsequent
+  // same-revision kImmediate publication deterministic.
+  std::array<PreparedTilePublication, 4> prepared{};
+  std::size_t prepared_count = 0U;
+  constexpr auto kStride = static_cast<std::size_t>(kTileProducerWidth);
+  const auto surface = workspace_.supertask_pixels.first(kTileProducerPixels);
   for (int row = first_row; row <= last_row; ++row) {
     for (int column = first_column; column <= last_column; ++column) {
       const TileKey key{zoom, static_cast<std::uint16_t>(column), static_cast<std::uint16_t>(row)};
@@ -671,11 +662,45 @@ std::optional<TileProducer::GroupPublication> TileProducer::publish_group(
         continue;
       }
       const PixelRect bounds = tile_pixel_bounds(key);
-      if (!publish_surface_tile(key, rendered_bounds, revision)) {
+      const int width = bounds.x1 - bounds.x0;
+      const int height = bounds.y1 - bounds.y0;
+      const auto origin = static_cast<std::size_t>(bounds.y0 - rendered_bounds.y0) * kStride +
+                          static_cast<std::size_t>(bounds.x0 - rendered_bounds.x0);
+      const auto pixels = surface.subspan(
+          origin, static_cast<std::size_t>(height - 1) * kStride + static_cast<std::size_t>(width));
+      const auto analysis = analyze_tile_payload(pixels, width, height, kStride);
+      if (!analysis.has_value() || prepared_count == prepared.size()) {
         return std::nullopt;
       }
-      include_bounds(bounds, publication);
+      prepared[prepared_count++] = {
+          .key = key, .bounds = bounds, .pixels = pixels, .analysis = *analysis};
     }
+  }
+
+  const bool requires_raw_slot =
+      std::any_of(prepared.begin(), prepared.begin() + static_cast<std::ptrdiff_t>(prepared_count),
+                  [&](const PreparedTilePublication& tile) {
+                    return !tile.analysis.uniform || canvas_.uniform_capacity() == 0U;
+                  });
+  if (requires_raw_slot && canvas_.slot_capacity() == 0U) {
+    return std::nullopt;
+  }
+
+  for (const PreparedTilePublication& tile : std::span(prepared).first(prepared_count)) {
+    const bool published =
+        tile.analysis.uniform && canvas_.uniform_capacity() != 0U
+            ? canvas_
+                  .publish_uniform(tile.key, revision, MaterializationQuality::kImmediate,
+                                   tile.analysis.uniform_color)
+                  .has_value()
+            : canvas_
+                  .publish_tile(tile.key, revision, MaterializationQuality::kImmediate, tile.pixels,
+                                kStride)
+                  .has_value();
+    if (!published) {
+      return std::nullopt;
+    }
+    include_bounds(tile.bounds, publication);
   }
   return publication;
 }

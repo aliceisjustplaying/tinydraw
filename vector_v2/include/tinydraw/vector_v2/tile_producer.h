@@ -174,8 +174,6 @@ class TileProducer {
                                                               PixelRect visible_bounds,
                                                               ZoomLevel zoom,
                                                               DocumentRevision revision);
-  [[nodiscard]] bool publish_surface_tile(TileKey key, PixelRect rendered_bounds,
-                                          DocumentRevision revision);
   static void include_bounds(PixelRect bounds, GroupPublication& publication);
   OperationLog& log_;
   MaterializedCanvas& canvas_;

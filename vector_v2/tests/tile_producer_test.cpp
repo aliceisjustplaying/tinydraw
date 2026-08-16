@@ -186,6 +186,29 @@ TEST_CASE("tile producer publishes certainly-paper tiles in natural supertask gr
   }
 }
 
+TEST_CASE("paper group publication changes no tiles while a source is pinned") {
+  PaperFixture fixture;
+  const vector_v2::ViewRequest view{
+      .zoom = vector_v2::ZoomLevel::k100Percent,
+      .level_pixels = {0, 0, 128, 128},
+  };
+  auto pin = fixture.canvas.pin({vector_v2::ZoomLevel::k100Percent, 0, 0});
+  REQUIRE(pin.has_value());
+
+  CHECK_FALSE(fixture.producer.produce_next(view).has_value());
+  for (std::uint16_t row = 0; row < 2; ++row) {
+    for (std::uint16_t column = 0; column < 2; ++column) {
+      CHECK(fixture.canvas.lookup({vector_v2::ZoomLevel::k100Percent, column, row})->kind ==
+            vector_v2::SourceKind::kOverview);
+    }
+  }
+
+  pin.reset();
+  const auto step = fixture.producer.produce_next(view);
+  REQUIRE(step.has_value());
+  CHECK(step->tiles_published == 4U);
+}
+
 TEST_CASE("tile producer ignores overview fallback when finding missing resident tiles") {
   Fixture fixture;
   REQUIRE(fixture.producer.ready());
