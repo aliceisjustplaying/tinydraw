@@ -4,7 +4,7 @@ Last updated: 2026-08-16
 
 Branch: `feat/v2-performance-followup`
 
-State audited through: [`COLD_GENERAL_BASELINE_RECEIPT.md`](benchmark-results/wave2-compositor/COLD_GENERAL_BASELINE_RECEIPT.md)
+State audited through: [`COLD_COMPUTE_CAMPAIGN_RECEIPT.md`](benchmark-results/wave3-cold-compute/COLD_COMPUTE_CAMPAIGN_RECEIPT.md)
 
 Raster V1 remains the default firmware and operational fallback. Vector V2 is
 the accepted product architecture, but it is not feature complete or ready for
@@ -18,7 +18,7 @@ promotion. [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) owns acceptance thresholds;
 | Pan correctness | **Green — owner accepted** | Product pan is tear-free on glass at 50%, 100%, 200%, and 400%, including dense hairline content. Formal positive-control evidence still needs archiving for the release packet. |
 | Pan pacing | **Provisional green** | PANSEQ p95 is 33.939 ms at 100% and 33.934 ms at 400% (~29.5 FPS), below the 38 ms guard. Camera motion caused zero persistent chrome redraws. |
 | Ink latency | **Provisional green — visual lane; smoothness yellow** | Curved authority no longer replaces the preview with overt straight-segment corners. The latest owner pass measured 1.47–1.82 ms event→submit and 2.12–2.76 ms event→DMA averages, with zero presentation failures, overflows, or authority mismatches. Remaining live-curve angularity is visible under scrutiny; a costlier four-span experiment was rejected. Formal traces, optical latency, and resumable lift authority remain open. |
-| Cold 400% | **Red / kill gate** | The combined tapered-adversarial + evil-hairline corpus is 1,269.157 ms maximum across three current device runs: 1,165.354 compute, 70.182 present, 31.526 pacing, 2.095 touch. Requirement is ≤500 ms. |
+| Cold 400% | **Red, closing** | The wave-3 compute campaign cut the combined corpus from 1,269.157 ms to 668.980 ms maximum across three device runs (-47.3%): 582.9 compute, 66.8 present, 18.4 pacing, 0.9 touch. Requirement is ≤500 ms; compute must fall another ~170 ms. See the wave-3 receipt for accepted/rejected steps. |
 | Revisit retention | **Architecture promising; oracle incomplete** | 448-slot tour returns with zero missing tiles, but revision-keyed accounting can hide spatially unnecessary rerenders and is not connected to the product producer. |
 | Exactness | **Green for implemented scope** | Host exactness and fuzz tests pass. V2 persistence/Undo authority is not implemented. |
 | Settled AA | **Open** | Immediate output is intentionally hard-edged. Four-sample SSAA cost ~808 ms and is rejected. |
@@ -26,6 +26,7 @@ promotion. [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) owns acceptance thresholds;
 
 Latest permanent receipts:
 
+- [`COLD_COMPUTE_CAMPAIGN_RECEIPT.md`](benchmark-results/wave3-cold-compute/COLD_COMPUTE_CAMPAIGN_RECEIPT.md)
 - [`HARDWARE_LIMITS.md`](HARDWARE_LIMITS.md)
 - [`STAGING_INVARIANT_RECEIPT.md`](benchmark-results/wave2-compositor/STAGING_INVARIANT_RECEIPT.md)
 - [`CHROME_LIFETIME_RECEIPT.md`](benchmark-results/wave2-compositor/CHROME_LIFETIME_RECEIPT.md)
@@ -87,9 +88,14 @@ Undo, persistence, and SVG are frozen in
    closure; product glass acceptance is complete.
 2. Finish ink closure: make materialization/lift draining resumable, run the
    canonical production-buffer traces, and archive the optical latency receipt.
-3. Apply the cold stop/go decision. The three bounded experiments did not
-   produce the required trajectory, and the combined frozen corpus is 1.269 s.
-   Do not add generalized checkpoint caching without an owner decision.
+3. Continue the cold compute campaign from 668.980 ms toward ≤500 ms; the
+   wave-3 receipt ranks the remaining candidates (op-level chord sweeps,
+   publish-path copies, PIE fixed-point probing). The stop/go checkpoint
+   question is deferred while the current trajectory holds.
+3b. Resolve the `mixed_draw` 50% append budget (18.8 ms vs 15 ms): evidence
+   dates it to the curved committed-ink change (19ebbe3), masked until now by
+   the cold-gate cascade. Owner should confirm whether the 15 ms per-append
+   budget or the curved append cost is the item to move.
 4. Establish generation-checked operation snapshots and active-prefix history;
    then implement Undo/Redo, autosave/recovery, and transactional SVG wiring.
 5. Finish settled AA, minimap tap-to-jump, power/RTC/NTP/lifecycle parity,
