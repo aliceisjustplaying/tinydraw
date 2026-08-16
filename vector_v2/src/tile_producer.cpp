@@ -436,8 +436,8 @@ bool TileProducer::render_active_operation_slice(TileProductionStep& result,
       active_group_.next_sample = operation.samples.size() - 1U;
     }
     const auto batch = prepare_operation_chord_batch(
-        operation.samples, active_group_.next_sample, active_group_.view.zoom,
-        active_group_.bounds, workspace_.operation_chord_plans.first(kOperationChordStorageBytes));
+        operation.samples, active_group_.next_sample, active_group_.view.zoom, active_group_.bounds,
+        workspace_.operation_chord_plans.first(kOperationChordStorageBytes));
     if (!batch.has_value()) {
       return false;
     }
@@ -620,9 +620,8 @@ bool TileProducer::publish_surface_tile(TileKey key, PixelRect rendered_bounds,
   const auto surface = workspace_.supertask_pixels.first(kTileProducerPixels);
   // Publish straight from the supertask surface: one strided read replaces
   // the former supertask->packed->pool double copy.
-  const auto origin =
-      static_cast<std::size_t>(bounds.y0 - rendered_bounds.y0) * kStride +
-      static_cast<std::size_t>(bounds.x0 - rendered_bounds.x0);
+  const auto origin = static_cast<std::size_t>(bounds.y0 - rendered_bounds.y0) * kStride +
+                      static_cast<std::size_t>(bounds.x0 - rendered_bounds.x0);
   const auto strided = surface.subspan(
       origin, static_cast<std::size_t>(height - 1) * kStride + static_cast<std::size_t>(width));
   const auto analysis = analyze_tile_payload(strided, width, height, kStride);
