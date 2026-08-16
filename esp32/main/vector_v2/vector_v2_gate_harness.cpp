@@ -21,6 +21,7 @@
 #include "tinydraw/vector_v2/chained_operation_builder.h"
 #include "tinydraw/vector_v2/idle_repair.h"
 #include "tinydraw/vector_v2/memory_layout.h"
+#include "tinydraw/vector_v2/raster_census.h"
 #include "vector_v2_ship_contract.h"
 
 namespace tinydraw::esp32 {
@@ -304,6 +305,9 @@ bool run_paced_cold_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& 
   if (!canvas.discard_tiles()) {
     return false;
   }
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+  vector_v2::g_raster_census.reset();
+#endif
   const auto fallback = presenter.set_view(zoom, level_x, level_y, chrome, now_us());
   if (!fallback.passed) {
     return false;
@@ -398,6 +402,28 @@ bool run_paced_cold_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& 
       static_cast<unsigned long>(sampler.maximum_event_age_us),
       static_cast<unsigned long>(sampler.errors),
       static_cast<unsigned long>(sampler.queue_overflows), passed);
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+  {
+    const auto& census = vector_v2::g_raster_census;
+    std::printf(
+        "TINYDRAW_RASTER_CENSUS corpus=%s zoom=%s gate_ms=%.1f setup_ms=%.1f paint_ms=%.1f "
+        "publish_ms=%.1f segs_painted=%llu segs_rejected=%llu rows_prefinal=%llu "
+        "const_rows=%llu const_search=%llu const_probed_empty=%llu span_px=%llu "
+        "const_span_px=%llu\n",
+        corpus, zoom_name(zoom), static_cast<double>(census.gate_ticks) / 240e3,
+        static_cast<double>(census.setup_ticks) / 240e3,
+        static_cast<double>(census.paint_ticks) / 240e3,
+        static_cast<double>(census.publish_ticks) / 240e3,
+        static_cast<unsigned long long>(census.segments_painted),
+        static_cast<unsigned long long>(census.segments_bbox_rejected),
+        static_cast<unsigned long long>(census.rows_prefinalized),
+        static_cast<unsigned long long>(census.const_rows_scanned),
+        static_cast<unsigned long long>(census.const_search_calls),
+        static_cast<unsigned long long>(census.const_rows_probed_empty),
+        static_cast<unsigned long long>(census.span_pixels),
+        static_cast<unsigned long long>(census.const_span_pixels));
+  }
+#endif
   return passed;
 }
 

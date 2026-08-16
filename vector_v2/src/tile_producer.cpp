@@ -427,21 +427,26 @@ bool TileProducer::render_active_segment(TileProductionStep& result,
                                          std::size_t& operations_consumed,
                                          std::size_t& raster_steps_consumed,
                                          std::size_t& raster_work_consumed) {
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+  const std::uint32_t setup_started = raster_census_now();
+#endif
   const StoredOperation& operation = active_group_.cached_operation;
   if (active_group_.next_sample == 0U) {
     active_group_.next_sample = operation.samples.size() - 1U;
   }
   const std::size_t endpoint = active_group_.next_sample;
   if (active_group_.next_curve_step == 0U) {
-    active_group_.next_curve_step =
-        incremental_curve_unit_step_count(operation.samples, endpoint, active_group_.view.zoom);
-  }
-  if (active_group_.next_curve_step == 0U) {
-    return false;
+    const auto prepared =
+        prepare_incremental_curve_unit(operation.samples, endpoint, active_group_.view.zoom);
+    if (!prepared.has_value() || prepared->step_count == 0U) {
+      return false;
+    }
+    active_group_.prepared_unit = *prepared;
+    active_group_.next_curve_step = prepared->step_count;
   }
   const std::size_t step_index = active_group_.next_curve_step - 1U;
-  const auto unit_bounds = incremental_curve_step_level_bounds(operation.samples, endpoint,
-                                                               step_index, active_group_.view.zoom);
+  const auto unit_bounds = prepared_curve_step_level_bounds(active_group_.prepared_unit, step_index,
+                                                            active_group_.view.zoom);
   if (!unit_bounds.has_value()) {
     return false;
   }
@@ -476,9 +481,12 @@ bool TileProducer::render_active_segment(TileProductionStep& result,
   }
 
   const auto surface = workspace_.supertask_pixels.first(kTileProducerPixels);
-  if (!apply_masked_incremental_curve_step(
-          {.tool = operation.tool, .color = operation.color, .samples = operation.samples},
-          endpoint, step_index,
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+  const std::uint32_t paint_started = raster_census_now();
+  TINYDRAW_V2_CENSUS_ADD(setup_ticks, paint_started - setup_started);
+#endif
+  if (!apply_masked_prepared_curve_step(
+          operation.tool, operation.color, active_group_.prepared_unit, step_index,
           {.zoom = active_group_.view.zoom,
            .level_bounds = active_group_.bounds,
            .pixels = surface,
@@ -487,6 +495,9 @@ bool TileProducer::render_active_segment(TileProductionStep& result,
     return false;
   }
   TINYDRAW_V2_CENSUS_ADD(segments_painted, 1);
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+  TINYDRAW_V2_CENSUS_ADD(paint_ticks, raster_census_now() - paint_started);
+#endif
   ++raster_steps_consumed;
   raster_work_consumed += raster_work;
   ++result.raster_steps;
@@ -510,6 +521,9 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
   while (active_group_has_work() && operations_consumed < kTileProducerOperationBatch &&
          raster_steps_consumed < kTileProducerSampleBatch &&
          raster_work_consumed < kTileProducerRasterWorkBatch) {
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+    const std::uint32_t gate_started = raster_census_now();
+#endif
     if (summary_.all_saturated()) {
       // Every pixel of the group surface is finalized; the remaining older
       // operations cannot change any pixel. Complete the replay immediately.
@@ -520,6 +534,9 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
       break;
     }
     const OperationGate gate = gate_active_operation(result, operations_consumed);
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+    TINYDRAW_V2_CENSUS_ADD(gate_ticks, raster_census_now() - gate_started);
+#endif
     if (gate == OperationGate::kFailed) {
       discard_active_group();
       return std::nullopt;
@@ -544,8 +561,14 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
     // completed group publishes on the next producer call.
     return result;
   }
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+  const std::uint32_t publish_started = raster_census_now();
+#endif
   const auto published = publish_group(active_group_.bounds, active_group_.view.level_pixels,
                                        active_group_.view.zoom, active_group_.revision);
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+  TINYDRAW_V2_CENSUS_ADD(publish_ticks, raster_census_now() - publish_started);
+#endif
   if (!published.has_value()) {
     discard_active_group();
     return std::nullopt;

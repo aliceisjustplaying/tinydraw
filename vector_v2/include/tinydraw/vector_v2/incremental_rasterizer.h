@@ -1,6 +1,7 @@
 #ifndef TINYDRAW_VECTOR_V2_INCREMENTAL_RASTERIZER_H
 #define TINYDRAW_VECTOR_V2_INCREMENTAL_RASTERIZER_H
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -118,6 +119,40 @@ class MaskedRowSummary {
                                                        const RasterSurface& surface,
                                                        std::span<std::uint8_t> finalized_pixels,
                                                        MaskedRowSummary* summary = nullptr);
+
+// One endpoint's curve unit prepared once and replayed step by step. The
+// prepared chords carry exactly the level-space floats the per-call unit
+// computation produces, so step bounds and painted pixels are bit-identical
+// to the unprepared entry points while the subdivision, scaling, and
+// reciprocal-length work is paid once per endpoint instead of once per
+// step-count, step-bounds, and step-apply call.
+struct PreparedCurveStep {
+  float first_x = 0;
+  float first_y = 0;
+  float first_radius = 0;
+  float second_x = 0;
+  float second_y = 0;
+  float second_radius = 0;
+  float delta_x = 0;
+  float delta_y = 0;
+  float inverse_length_squared = 0;
+};
+
+struct PreparedCurveUnit {
+  std::size_t step_count = 0;
+  std::array<PreparedCurveStep, 3> steps{};
+};
+
+[[nodiscard]] std::optional<PreparedCurveUnit> prepare_incremental_curve_unit(
+    std::span<const CompactOperationSample> samples, std::size_t endpoint, ZoomLevel zoom);
+[[nodiscard]] std::optional<PixelRect> prepared_curve_step_level_bounds(
+    const PreparedCurveUnit& unit, std::size_t step_index, ZoomLevel zoom);
+[[nodiscard]] bool apply_masked_prepared_curve_step(OperationTool tool, std::uint16_t color,
+                                                    const PreparedCurveUnit& unit,
+                                                    std::size_t step_index,
+                                                    const RasterSurface& surface,
+                                                    std::span<std::uint8_t> finalized_pixels,
+                                                    MaskedRowSummary* summary = nullptr);
 
 struct AffectedTileResult {
   std::size_t required = 0;

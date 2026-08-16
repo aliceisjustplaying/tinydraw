@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS) && !defined(__XTENSA__)
+#include <chrono>
+#endif
 #include <cmath>
 
 #include "tinydraw/vector_v2/raster_census.h"
@@ -12,6 +15,12 @@ namespace tinydraw::vector_v2 {
 
 #if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
 RasterCensus g_raster_census{};
+#if !defined(__XTENSA__)
+std::uint32_t raster_census_now() {
+  return static_cast<std::uint32_t>(
+      std::chrono::steady_clock::now().time_since_epoch().count());
+}
+#endif
 #endif
 
 namespace {
@@ -27,6 +36,52 @@ struct Sample {
   float y = 0;
   float radius = 0;
 };
+
+// floor/ceil for in-range values without the floorf/ceilf libcalls the
+// Xtensa toolchain emits: TRUNC.S plus one native compare. Bit-identical to
+// std::floor/std::ceil for every |value| < 2^31.
+int fast_floor(float value) {
+  const int truncated = static_cast<int>(value);
+  return truncated - static_cast<int>(static_cast<float>(truncated) > value);
+}
+
+int fast_ceil(float value) {
+  const int truncated = static_cast<int>(value);
+  return truncated + static_cast<int>(static_cast<float>(truncated) < value);
+}
+
+// Conservative upper bound on sqrt(value) from the classic reciprocal-sqrt
+// bit seed with one Newton step (relative error under 0.2%), padded by a
+// 0.5% margin. Native FPU only — the toolchain's sqrtf is a library call.
+// Callers use it solely to widen probe seeds, never as geometry authority.
+float conservative_sqrt_upper(float value) {
+  if (value <= 0.0F) {
+    return 0.0F;
+  }
+  const auto bits = std::bit_cast<std::uint32_t>(value);
+  float estimate = std::bit_cast<float>(0x5F3759DFU - (bits >> 1U));
+  estimate = estimate * (1.5F - 0.5F * value * estimate * estimate);
+  return value * estimate * 1.005F;
+}
+
+// Committed zoom scales are exact binary fractions, so this lookup is
+// bit-identical to the historical zoom_percent(zoom) / 100.0F division while
+// avoiding the per-sample __divsf3 library call.
+float zoom_scale(ZoomLevel zoom) {
+  switch (zoom) {
+    case ZoomLevel::k25Percent:
+      return 0.25F;
+    case ZoomLevel::k50Percent:
+      return 0.5F;
+    case ZoomLevel::k100Percent:
+      return 1.0F;
+    case ZoomLevel::k200Percent:
+      return 2.0F;
+    case ZoomLevel::k400Percent:
+      return 4.0F;
+  }
+  return static_cast<float>(zoom_percent(zoom)) / 100.0F;
+}
 
 struct Segment {
   Sample first{};
@@ -50,7 +105,7 @@ Segment make_segment(const Sample& first, const Sample& second) {
 }
 
 Sample scaled_sample(CompactOperationSample sample, ZoomLevel zoom) {
-  const float scale = static_cast<float>(zoom_percent(zoom)) / 100.0F;
+  const float scale = zoom_scale(zoom);
   return {
       .x = static_cast<float>(sample.x_quarter) * 0.25F * scale,
       .y = static_cast<float>(sample.y_quarter) * 0.25F * scale,
@@ -85,10 +140,10 @@ PixelRect segment_bounds(const Segment& segment, PixelRect clip) {
   const float maximum_y =
       std::max(segment.first.y + segment.first.radius, segment.second.y + segment.second.radius);
   return {
-      .x0 = std::max(clip.x0, static_cast<int>(std::floor(minimum_x))),
-      .y0 = std::max(clip.y0, static_cast<int>(std::floor(minimum_y))),
-      .x1 = std::min(clip.x1, static_cast<int>(std::ceil(maximum_x))),
-      .y1 = std::min(clip.y1, static_cast<int>(std::ceil(maximum_y))),
+      .x0 = std::max(clip.x0, fast_floor(minimum_x)),
+      .y0 = std::max(clip.y0, fast_floor(minimum_y)),
+      .x1 = std::min(clip.x1, fast_ceil(maximum_x)),
+      .y1 = std::min(clip.y1, fast_ceil(maximum_y)),
   };
 }
 
@@ -165,65 +220,104 @@ struct ParameterInterval {
   [[nodiscard]] bool empty() const { return last < first; }
 };
 
-bool constrain_at_most(float origin, float delta, float limit, ParameterInterval& interval) {
-  if (delta == 0.0F) {
-    return origin <= limit;
-  }
-  const float crossing = (limit - origin) / delta;
-  if (delta > 0.0F) {
-    interval.last = std::min(interval.last, crossing);
-  } else {
-    interval.first = std::max(interval.first, crossing);
-  }
-  return !interval.empty();
-}
+// Per-segment precomputation for the conservative row span. The two edge
+// crossings are linear in the row coordinate, so the divisions historically
+// paid per row (each a __divsf3 library call on the Xtensa toolchain) hoist
+// into two reciprocals paid once per painted segment; each row then costs
+// native multiplies only. The reciprocal changes crossings by at most a few
+// ulp, which the rounding margin and whole-pixel guard absorb; covers_pixel
+// remains the sole geometry authority inside the conservative interval.
+struct TaperedSpanTable {
+  float origin_low = 0;
+  float delta_low = 0;
+  float inverse_low = 0;
+  float origin_high = 0;
+  float delta_high = 0;
+  float inverse_high = 0;
+  float left_origin = 0;
+  float left_delta = 0;
+  float right_origin = 0;
+  float right_delta = 0;
+};
 
-bool constrain_at_least(float origin, float delta, float limit, ParameterInterval& interval) {
-  return constrain_at_most(-origin, -delta, -limit, interval);
-}
-
-ScanSpan conservative_tapered_row_span(const Segment& segment, PixelRect bounds, float pixel_y) {
-  // A covered pixel's projected center must be no farther than its interpolated
-  // radius from this row. Both y-radius and y+radius are linear in the segment
-  // parameter, so intersecting those two half-planes cheaply rejects most of
-  // the old bounding-box scan without approximating the final predicate.
-  constexpr float kRoundingMargin = 0.01F;
+TaperedSpanTable make_tapered_span_table(const Segment& segment) {
   const float radius_delta = segment.second.radius - segment.first.radius;
+  TaperedSpanTable table{
+      .origin_low = segment.first.y - segment.first.radius,
+      .delta_low = segment.delta_y - radius_delta,
+      .inverse_low = 0.0F,
+      .origin_high = segment.first.y + segment.first.radius,
+      .delta_high = segment.delta_y + radius_delta,
+      .inverse_high = 0.0F,
+      .left_origin = segment.first.x - segment.first.radius,
+      .left_delta = segment.delta_x - radius_delta,
+      .right_origin = segment.first.x + segment.first.radius,
+      .right_delta = segment.delta_x + radius_delta,
+  };
+  table.inverse_low = table.delta_low != 0.0F ? 1.0F / table.delta_low : 0.0F;
+  table.inverse_high = table.delta_high != 0.0F ? 1.0F / table.delta_high : 0.0F;
+  return table;
+}
+
+ScanSpan conservative_tapered_row_span(const TaperedSpanTable& table, PixelRect bounds,
+                                       float pixel_y) {
+  // A covered pixel's projected center must be no farther than its
+  // interpolated radius from this row. Both y-radius and y+radius are linear
+  // in the segment parameter, so intersecting those two half-planes cheaply
+  // rejects most of the old bounding-box scan without approximating the
+  // final predicate.
+  constexpr float kRoundingMargin = 0.01F;
+  const ScanSpan empty{.first = bounds.x0, .last = bounds.x0 - 1};
   ParameterInterval interval{};
-  if (!constrain_at_most(segment.first.y - segment.first.radius, segment.delta_y - radius_delta,
-                         pixel_y + kRoundingMargin, interval) ||
-      !constrain_at_least(segment.first.y + segment.first.radius, segment.delta_y + radius_delta,
-                          pixel_y - kRoundingMargin, interval)) {
-    return {.first = bounds.x0, .last = bounds.x0 - 1};
+  if (table.delta_low == 0.0F) {
+    if (table.origin_low > pixel_y + kRoundingMargin) {
+      return empty;
+    }
+  } else {
+    const float crossing = (pixel_y + kRoundingMargin - table.origin_low) * table.inverse_low;
+    if (table.delta_low > 0.0F) {
+      interval.last = std::min(interval.last, crossing);
+    } else {
+      interval.first = std::max(interval.first, crossing);
+    }
+  }
+  if (table.delta_high == 0.0F) {
+    if (table.origin_high < pixel_y - kRoundingMargin) {
+      return empty;
+    }
+  } else {
+    const float crossing = (pixel_y - kRoundingMargin - table.origin_high) * table.inverse_high;
+    if (table.delta_high > 0.0F) {
+      interval.first = std::max(interval.first, crossing);
+    } else {
+      interval.last = std::min(interval.last, crossing);
+    }
+  }
+  if (interval.empty()) {
+    return empty;
   }
   interval.first = std::clamp(interval.first, 0.0F, 1.0F);
   interval.last = std::clamp(interval.last, 0.0F, 1.0F);
   if (interval.empty()) {
-    return {.first = bounds.x0, .last = bounds.x0 - 1};
+    return empty;
   }
-
-  const float left_origin = segment.first.x - segment.first.radius;
-  const float left_delta = segment.delta_x - radius_delta;
-  const float right_origin = segment.first.x + segment.first.radius;
-  const float right_delta = segment.delta_x + radius_delta;
-  const float minimum_x =
-      std::min(left_origin + interval.first * left_delta, left_origin + interval.last * left_delta);
-  const float maximum_x = std::max(right_origin + interval.first * right_delta,
-                                   right_origin + interval.last * right_delta);
+  const float minimum_x = std::min(table.left_origin + interval.first * table.left_delta,
+                                   table.left_origin + interval.last * table.left_delta);
+  const float maximum_x = std::max(table.right_origin + interval.first * table.right_delta,
+                                   table.right_origin + interval.last * table.right_delta);
   // Keep a whole-pixel guard around float edge arithmetic. covers_pixel remains
   // the sole authority inside this conservative interval.
-  const int first =
-      std::max(bounds.x0, static_cast<int>(std::floor(minimum_x - kRoundingMargin)) - 1);
-  const int last =
-      std::min(bounds.x1 - 1, static_cast<int>(std::ceil(maximum_x + kRoundingMargin)));
+  const int first = std::max(bounds.x0, fast_floor(minimum_x - kRoundingMargin) - 1);
+  const int last = std::min(bounds.x1 - 1, fast_ceil(maximum_x + kRoundingMargin));
   return {.first = first, .last = last};
 }
 
 void paint_tapered_segment(const Segment& segment, PixelRect bounds, std::uint16_t color,
                            const RasterSurface& surface) {
+  const TaperedSpanTable table = make_tapered_span_table(segment);
   for (int y = bounds.y0; y < bounds.y1; ++y) {
     const float pixel_y = static_cast<float>(y) + 0.5F;
-    const ScanSpan row_span = conservative_tapered_row_span(segment, bounds, pixel_y);
+    const ScanSpan row_span = conservative_tapered_row_span(table, bounds, pixel_y);
     if (row_span.empty()) {
       continue;
     }
@@ -244,24 +338,59 @@ void finalize_pixel(std::span<std::uint8_t> finalized, std::size_t pixel) {
   finalized[pixel >> 3U] = static_cast<std::uint8_t>(finalized[pixel >> 3U] | bit);
 }
 
-// True when every mask bit in the inclusive pixel range [first, last] is set.
-bool mask_range_all_set(std::span<const std::uint8_t> finalized, std::size_t first,
-                        std::size_t last) {
+struct UnsetWindow {
+  std::size_t first = 0;
+  std::size_t last = 0;
+};
+
+// Inclusive pixel range of not-yet-finalized pixels within [first, last], or
+// nullopt when every mask bit in the range is set. Pixels outside the window
+// are finalized, so exact masked painting may clamp both the span search and
+// the span walk to it without changing any written pixel.
+std::optional<UnsetWindow> mask_unset_window(std::span<const std::uint8_t> finalized,
+                                             std::size_t first, std::size_t last) {
   const std::size_t first_byte = first >> 3U;
   const std::size_t last_byte = last >> 3U;
   const std::uint8_t first_mask = static_cast<std::uint8_t>(0xFFU << (first & 7U));
   const std::uint8_t last_mask = static_cast<std::uint8_t>(0xFFU >> (7U - (last & 7U)));
-  if (first_byte == last_byte) {
-    const std::uint8_t need = first_mask & last_mask;
-    return (finalized[first_byte] & need) == need;
+  std::size_t byte = first_byte;
+  std::uint8_t unset = 0;
+  while (byte <= last_byte) {
+    std::uint8_t candidate = static_cast<std::uint8_t>(~finalized[byte]);
+    if (byte == first_byte) {
+      candidate &= first_mask;
+    }
+    if (byte == last_byte) {
+      candidate &= last_mask;
+    }
+    if (candidate != 0U) {
+      unset = candidate;
+      break;
+    }
+    ++byte;
   }
-  if ((finalized[first_byte] & first_mask) != first_mask ||
-      (finalized[last_byte] & last_mask) != last_mask) {
-    return false;
+  if (byte > last_byte) {
+    return std::nullopt;
   }
-  return std::all_of(finalized.begin() + static_cast<std::ptrdiff_t>(first_byte + 1U),
-                     finalized.begin() + static_cast<std::ptrdiff_t>(last_byte),
-                     [](std::uint8_t byte) { return byte == 0xFFU; });
+  UnsetWindow window{};
+  window.first = (byte << 3U) + static_cast<std::size_t>(std::countr_zero(unset));
+  std::size_t tail_byte = last_byte;
+  while (true) {
+    std::uint8_t candidate = static_cast<std::uint8_t>(~finalized[tail_byte]);
+    if (tail_byte == first_byte) {
+      candidate &= first_mask;
+    }
+    if (tail_byte == last_byte) {
+      candidate &= last_mask;
+    }
+    if (candidate != 0U) {
+      window.last =
+          (tail_byte << 3U) + (7U - static_cast<std::size_t>(std::countl_zero(candidate)));
+      break;
+    }
+    --tail_byte;
+  }
+  return window;
 }
 
 // Per-bit fallback for a chunk that mixes finalized and free pixels. Every
@@ -317,15 +446,98 @@ int paint_masked_exact_span(int first_covered, int last_covered, std::size_t row
   return newly_finalized;
 }
 
+// First covered pixel in [first, last], or last + 1 when none. The caller
+// guarantees no covered-and-relevant pixel exists left of first, so the walk
+// is monotone right and never misses coverage.
+int first_covered_at_or_after(const Segment& segment, int first, int last, float pixel_y) {
+  int x = first;
+  while (x <= last && (TINYDRAW_V2_CENSUS_ADD(const_search_calls, 1),
+                       !covers_pixel(segment, static_cast<float>(x) + 0.5F, pixel_y))) {
+    ++x;
+  }
+  return x;
+}
+
+// Last covered pixel in [first, last]; the caller guarantees first is covered
+// and no relevant covered pixel exists right of last.
+int last_covered_at_or_before(const Segment& segment, int first, int last, float pixel_y) {
+  int x = last;
+  while (x > first && (TINYDRAW_V2_CENSUS_ADD(const_search_calls, 1),
+                       TINYDRAW_V2_CENSUS_ADD(const_search_last_calls, 1),
+                       !covers_pixel(segment, static_cast<float>(x) + 0.5F, pixel_y))) {
+    --x;
+  }
+  return x;
+}
+
+// One conservative chord estimate per row, chosen per segment shape. The
+// parallelogram interval from conservative_tapered_row_span degenerates to
+// the full bounding box for zero-length segments (world-margin-clamped fat
+// strokes replay as pure circles), so circle-like segments use the exact
+// one-sqrt circle chord instead: a point capsule is a circle, and a segment
+// shorter than its radius is contained in the circle at its midpoint with
+// radius r + len/2. Every tier is conservative; covers_pixel remains the
+// sole geometry authority via the probe searches that follow.
+struct RowSeed {
+  bool circular = false;
+  float center_x = 0.0F;
+  float center_y = 0.0F;
+  float radius = 0.0F;
+  TaperedSpanTable table{};
+};
+
+RowSeed make_row_seed(const Segment& segment) {
+  const float length_squared =
+      segment.delta_x * segment.delta_x + segment.delta_y * segment.delta_y;
+  const float radius = segment.first.radius;
+  if (length_squared > radius * radius) {
+    return {.table = make_tapered_span_table(segment)};
+  }
+  // The padded radius keeps the containment argument conservative against
+  // float rounding in the length and midpoint arithmetic.
+  const float half_length = 0.5F * conservative_sqrt_upper(length_squared);
+  return {
+      .circular = true,
+      .center_x = segment.first.x + 0.5F * segment.delta_x,
+      .center_y = segment.first.y + 0.5F * segment.delta_y,
+      .radius = radius + half_length + 0.01F,
+  };
+}
+
+ScanSpan conservative_row_span(const RowSeed& seed, PixelRect bounds, float pixel_y) {
+  if (!seed.circular) {
+    return conservative_tapered_row_span(seed.table, bounds, pixel_y);
+  }
+  constexpr float kRoundingMargin = 0.01F;
+  const float row_distance = pixel_y - seed.center_y;
+  const float reach_squared = seed.radius * seed.radius - row_distance * row_distance;
+  if (reach_squared < 0.0F) {
+    return {.first = bounds.x0, .last = bounds.x0 - 1};
+  }
+  const float reach = conservative_sqrt_upper(reach_squared);
+  const int first =
+      std::max(bounds.x0, fast_floor(seed.center_x - reach - kRoundingMargin) - 1);
+  const int last = std::min(bounds.x1 - 1, fast_ceil(seed.center_x + reach + kRoundingMargin));
+  return {.first = first, .last = last};
+}
+
 void paint_masked_constant_radius_segment(const Segment& segment, PixelRect bounds,
                                           std::uint16_t color, const RasterSurface& surface,
                                           std::span<std::uint8_t> finalized,
                                           MaskedRowSummary* summary) {
-  // Row-level saturation is left to the existing mask byte scan: a per-row
-  // bitmap probe measurably taxed corpora with partial saturation (seed-7
-  // +8% compute) for no exactness benefit. The summary pays off at the
-  // segment, operation, and group levels instead.
-  ScanSpan prior{.first = bounds.x0, .last = bounds.x0 - 1};
+  // Stateless per-row search: the conservative row span bounds the true chord
+  // from both sides, and the row's unfinalized mask window bounds the pixels
+  // that could still change. Their intersection clamps both the predicate
+  // search and the span walk, so replay cost tracks unfinalized content
+  // instead of capsule area. covers_pixel remains the sole geometry
+  // authority; a pixel outside the window is finalized by definition and a
+  // pixel outside the conservative span is uncovered by construction, so the
+  // written set is identical to the previous full-width warm-start search.
+  // Row-level saturation stays on the mask window scan: routing it through
+  // the summary bitmap was re-measured on device 2026-08-16 with this
+  // windowed painter and still trades a 400% win (-2.2%) for a 50% loss
+  // (+4.0%) under partial saturation.
+  const RowSeed seed = make_row_seed(segment);
   for (int y = bounds.y0; y < bounds.y1; ++y) {
     const int surface_row = y - surface.level_bounds.y0;
     const std::size_t row =
@@ -334,21 +546,30 @@ void paint_masked_constant_radius_segment(const Segment& segment, PixelRect boun
         row + static_cast<std::size_t>(bounds.x0 - surface.level_bounds.x0);
     const std::size_t row_last =
         row + static_cast<std::size_t>(bounds.x1 - 1 - surface.level_bounds.x0);
-    if (mask_range_all_set(finalized, row_first, row_last)) {
+    const auto window = mask_unset_window(finalized, row_first, row_last);
+    if (!window.has_value()) {
       TINYDRAW_V2_CENSUS_ADD(rows_prefinalized, 1);
-      // The warm-start hint assumes row-adjacent spans; after a skipped row
-      // the next scanned row must search from the full bounds again.
-      prior = {.first = bounds.x0, .last = bounds.x0 - 1};
       continue;
     }
     const float pixel_y = static_cast<float>(y) + 0.5F;
-    const int first_covered = find_first_covered(segment, bounds, pixel_y, prior);
-    if (first_covered == bounds.x1) {
-      prior.last = prior.first - 1;
+    const ScanSpan conservative = conservative_row_span(seed, bounds, pixel_y);
+    const int window_first = bounds.x0 + static_cast<int>(window->first - row_first);
+    const int window_last = bounds.x0 + static_cast<int>(window->last - row_first);
+    const int search_first = std::max(conservative.first, window_first);
+    const int search_last = std::min(conservative.last, window_last);
+    if (search_last < search_first) {
+      TINYDRAW_V2_CENSUS_ADD(rows_empty_span, 1);
       continue;
     }
-    const int last_covered = find_last_covered(segment, bounds, pixel_y, prior, first_covered);
-    prior = {.first = first_covered, .last = last_covered};
+    TINYDRAW_V2_CENSUS_ADD(const_rows_scanned, 1);
+    const int first_covered =
+        first_covered_at_or_after(segment, search_first, search_last, pixel_y);
+    if (first_covered > search_last) {
+      TINYDRAW_V2_CENSUS_ADD(const_rows_probed_empty, 1);
+      continue;
+    }
+    const int last_covered =
+        last_covered_at_or_before(segment, first_covered, search_last, pixel_y);
     TINYDRAW_V2_CENSUS_ADD(const_span_pixels,
                            static_cast<std::uint64_t>(last_covered - first_covered + 1));
     const int newly_finalized =
@@ -414,6 +635,7 @@ void paint_masked_tapered_segment(const Segment& segment, PixelRect bounds, std:
                                   MaskedRowSummary* summary) {
   // See paint_masked_constant_radius_segment: row-level saturation stays on
   // the mask byte scan; the summary is consulted at coarser levels only.
+  const TaperedSpanTable table = make_tapered_span_table(segment);
   for (int y = bounds.y0; y < bounds.y1; ++y) {
     const int surface_row = y - surface.level_bounds.y0;
     const std::size_t row =
@@ -422,13 +644,22 @@ void paint_masked_tapered_segment(const Segment& segment, PixelRect bounds, std:
         row + static_cast<std::size_t>(bounds.x0 - surface.level_bounds.x0);
     const std::size_t row_last =
         row + static_cast<std::size_t>(bounds.x1 - 1 - surface.level_bounds.x0);
-    if (mask_range_all_set(finalized, row_first, row_last)) {
+    const auto window = mask_unset_window(finalized, row_first, row_last);
+    if (!window.has_value()) {
       TINYDRAW_V2_CENSUS_ADD(rows_prefinalized, 1);
       continue;
     }
     const float pixel_y = static_cast<float>(y) + 0.5F;
     TINYDRAW_V2_CENSUS_ADD(rows_scanned, 1);
-    const ScanSpan row_span = conservative_tapered_row_span(segment, bounds, pixel_y);
+    const ScanSpan conservative = conservative_tapered_row_span(table, bounds, pixel_y);
+    // Pixels outside the unfinalized window are mask skips by definition;
+    // clamping the walk to it preserves the written set exactly.
+    const ScanSpan row_span{
+        .first = std::max(conservative.first,
+                          bounds.x0 + static_cast<int>(window->first - row_first)),
+        .last =
+            std::min(conservative.last, bounds.x0 + static_cast<int>(window->last - row_first)),
+    };
     if (row_span.empty()) {
       TINYDRAW_V2_CENSUS_ADD(rows_empty_span, 1);
       continue;
@@ -727,6 +958,89 @@ std::size_t incremental_curve_unit_step_count(std::span<const CompactOperationSa
                                               std::size_t endpoint, ZoomLevel zoom) {
   const auto unit = curved_unit(samples, endpoint, zoom);
   return unit.has_value() ? unit->count : 0U;
+}
+
+namespace {
+
+PreparedCurveStep pack_prepared_step(const Segment& segment) {
+  return {
+      .first_x = segment.first.x,
+      .first_y = segment.first.y,
+      .first_radius = segment.first.radius,
+      .second_x = segment.second.x,
+      .second_y = segment.second.y,
+      .second_radius = segment.second.radius,
+      .delta_x = segment.delta_x,
+      .delta_y = segment.delta_y,
+      .inverse_length_squared = segment.inverse_length_squared,
+  };
+}
+
+Segment unpack_prepared_step(const PreparedCurveStep& step) {
+  return {
+      .first = {.x = step.first_x, .y = step.first_y, .radius = step.first_radius},
+      .second = {.x = step.second_x, .y = step.second_y, .radius = step.second_radius},
+      .delta_x = step.delta_x,
+      .delta_y = step.delta_y,
+      .inverse_length_squared = step.inverse_length_squared,
+  };
+}
+
+}  // namespace
+
+std::optional<PreparedCurveUnit> prepare_incremental_curve_unit(
+    std::span<const CompactOperationSample> samples, std::size_t endpoint, ZoomLevel zoom) {
+  const auto unit = curved_unit(samples, endpoint, zoom);
+  if (!unit.has_value()) {
+    return std::nullopt;
+  }
+  PreparedCurveUnit prepared{.step_count = unit->count};
+  for (std::size_t step = 0; step < unit->count; ++step) {
+    prepared.steps[step] = pack_prepared_step(unit->segments[step]);
+  }
+  return prepared;
+}
+
+std::optional<PixelRect> prepared_curve_step_level_bounds(const PreparedCurveUnit& unit,
+                                                          std::size_t step_index, ZoomLevel zoom) {
+  if (step_index >= unit.step_count) {
+    return std::nullopt;
+  }
+  const PixelRect clip{0, 0, kWorldWidth * zoom_percent(zoom) / 100,
+                       kWorldHeight * zoom_percent(zoom) / 100};
+  const PixelRect bounds = segment_bounds(unpack_prepared_step(unit.steps[step_index]), clip);
+  return bounds.x0 < bounds.x1 && bounds.y0 < bounds.y1 ? std::optional{bounds} : std::nullopt;
+}
+
+bool apply_masked_prepared_curve_step(OperationTool tool, std::uint16_t color,
+                                      const PreparedCurveUnit& unit, std::size_t step_index,
+                                      const RasterSurface& surface,
+                                      std::span<std::uint8_t> finalized_pixels,
+                                      MaskedRowSummary* summary) {
+  const std::size_t required_mask_bytes = (surface.pixels.size() + 7U) / 8U;
+  const bool mask_aliases_pixels = storage_overlaps(
+      std::as_bytes(std::span(surface.pixels)),
+      std::as_bytes(std::span(finalized_pixels)
+                        .first(std::min(finalized_pixels.size(), required_mask_bytes))));
+  const int surface_rows = surface.level_bounds.y1 - surface.level_bounds.y0;
+  if (!valid_surface(surface) || step_index >= unit.step_count ||
+      finalized_pixels.size() < required_mask_bytes || mask_aliases_pixels ||
+      (summary != nullptr && !summary->ready(static_cast<std::size_t>(surface_rows)))) {
+    return false;
+  }
+  const Segment segment = unpack_prepared_step(unit.steps[step_index]);
+  const std::uint16_t applied = tool == OperationTool::kEraser ? kBackground : color;
+  const PixelRect bounds = segment_bounds(segment, surface.level_bounds);
+  if (bounds.x1 <= bounds.x0 || bounds.y1 <= bounds.y0) {
+    return true;
+  }
+  if (segment.first.radius == segment.second.radius) {
+    paint_masked_constant_radius_segment(segment, bounds, applied, surface, finalized_pixels,
+                                         summary);
+  } else {
+    paint_masked_tapered_segment(segment, bounds, applied, surface, finalized_pixels, summary);
+  }
+  return true;
 }
 
 std::optional<PixelRect> incremental_curve_step_level_bounds(
