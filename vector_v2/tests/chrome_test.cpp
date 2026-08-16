@@ -542,6 +542,25 @@ TEST_CASE("staging strips reproduce all fixed chrome without mutating canvas sou
   CHECK(cache.stats().battery_redraws == initial_stats.battery_redraws);
   CHECK(cache.stats().zoom_redraws == initial_stats.zoom_redraws);
   CHECK(cache.stats().minimap_base_redraws == initial_stats.minimap_base_redraws);
+
+  // A document revision outside the submitted bounds must not regenerate the
+  // minimap, and staged painting must never perform cache work itself.
+  std::vector<std::uint16_t> scoped_cache_pixels(tinydraw::vector_v2::kChromeStagingCachePixels);
+  tinydraw::vector_v2::ChromeStagingCache scoped_cache(scoped_cache_pixels);
+  REQUIRE(scoped_cache.prepare(state, navigation, 7U));
+  const auto scoped_stats = scoped_cache.stats();
+  const tinydraw::vector_v2::ChromeRect ink_bounds{120, 220, 180, 280};
+  REQUIRE(scoped_cache.prepare_for(ink_bounds, state, navigation, 8U));
+  CHECK(scoped_cache.stats().minimap_base_redraws == scoped_stats.minimap_base_redraws);
+  std::vector<std::uint16_t> ink_surface(60U * 60U, 0xFFFFU);
+  REQUIRE(scoped_cache.paint_prepared({ink_surface, 60, 60, 120, 220}, state, navigation, 8U));
+  std::vector<std::uint16_t> stale_minimap(118U * 140U, 0xFFFFU);
+  CHECK_FALSE(
+      scoped_cache.paint_prepared({stale_minimap, 118, 140, 250, 240}, state, navigation, 8U));
+  CHECK(scoped_cache.stats().minimap_base_redraws == scoped_stats.minimap_base_redraws);
+  REQUIRE(scoped_cache.prepare_for({250, 240, 368, 380}, state, navigation, 8U));
+  CHECK(scoped_cache.stats().minimap_base_redraws == scoped_stats.minimap_base_redraws + 1U);
+  REQUIRE(scoped_cache.paint_prepared({stale_minimap, 118, 140, 250, 240}, state, navigation, 8U));
   std::vector<std::uint16_t> cached = canvas;
   for (int y = 0; y < height; y += rows_per_strip) {
     const int rows = std::min(rows_per_strip, height - y);

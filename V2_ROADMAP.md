@@ -94,7 +94,7 @@ authority synchronously, and formal trace/optical closure remains open.
 
 Live ink remains hard-edged. Settled AA does not enter this phase.
 
-Deferred structural debt: `esp32/main/vector_v2/vector_v2_app.cpp` is 1,326
+Deferred structural debt: `esp32/main/vector_v2/vector_v2_app.cpp` is over 1,300
 lines. Extract interaction, authority, and lifecycle coordinators after the
 performance gates are closed; keep that refactor out of measured hot-path
 changes.

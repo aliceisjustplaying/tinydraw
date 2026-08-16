@@ -68,6 +68,8 @@ struct LivePresentationTiming {
   std::int64_t scroll_us = 0;
   std::int64_t exposed_compose_us = 0;
   std::int64_t chrome_us = 0;
+  std::int64_t chrome_prepare_us = 0;
+  std::int64_t chrome_stage_us = 0;
   std::int64_t first_submit_us = 0;
   std::int64_t first_complete_us = 0;
   std::int64_t complete_us = 0;

@@ -180,8 +180,19 @@ class ChromeStagingCache {
   // changes only the transient minimap viewport drawn by paint().
   [[nodiscard]] bool prepare(const ChromeState& state, const ChromeNavigation& navigation,
                              std::uint32_t overview_revision);
+  // Prepares only sprites intersecting one upcoming panel submission. This is
+  // safe to call before transport starts, keeping cache rasterization out of
+  // DMA staging and unrelated cache lifetimes out of small ink updates.
+  [[nodiscard]] bool prepare_for(ChromeRect panel_bounds, const ChromeState& state,
+                                 const ChromeNavigation& navigation,
+                                 std::uint32_t overview_revision);
   [[nodiscard]] bool paint(const MinimapSurface& surface, const ChromeState& state,
                            const ChromeNavigation& navigation, std::uint32_t overview_revision);
+  // Paints without regenerating cache state. Returns false if an intersecting
+  // sprite was not prepared for the requested identity.
+  [[nodiscard]] bool paint_prepared(const MinimapSurface& surface, const ChromeState& state,
+                                    const ChromeNavigation& navigation,
+                                    std::uint32_t overview_revision);
   [[nodiscard]] ChromeStagingCacheStats stats() const { return stats_; }
 
  private:

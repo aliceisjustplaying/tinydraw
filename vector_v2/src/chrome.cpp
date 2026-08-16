@@ -97,6 +97,10 @@ bool surface_intersects(const MinimapSurface& surface, ChromeRect rect) {
          rect.y0 < surface.origin_y + surface.height && rect.y1 > surface.origin_y;
 }
 
+bool rects_intersect(ChromeRect lhs, ChromeRect rhs) {
+  return lhs.x0 < rhs.x1 && lhs.x1 > rhs.x0 && lhs.y0 < rhs.y1 && lhs.y1 > rhs.y0;
+}
+
 void draw_dock(Painter& painter, int top, int bottom) {
   painter.rounded({6, top + 3, kWidth - 2, bottom + 3}, 11, kShadow);
   painter.rounded({3, top - 1, kWidth - 3, bottom + 1}, 11, kBorder);
@@ -889,6 +893,12 @@ bool draw_chrome_strip_overlays(const MinimapSurface& surface, const ChromeState
 
 bool ChromeStagingCache::prepare(const ChromeState& state, const ChromeNavigation& navigation,
                                  std::uint32_t overview_revision) {
+  return prepare_for({0, 0, kWidth, kHeight}, state, navigation, overview_revision);
+}
+
+bool ChromeStagingCache::prepare_for(ChromeRect panel_bounds, const ChromeState& state,
+                                     const ChromeNavigation& navigation,
+                                     std::uint32_t overview_revision) {
   if (!ready()) {
     return false;
   }
@@ -907,7 +917,8 @@ bool ChromeStagingCache::prepare(const ChromeState& state, const ChromeNavigatio
   const auto minimap = sprite(kMinimapOverlayRect);
   const auto battery = sprite(kBatteryOverlayRect);
   const auto bottom = sprite(kBottomCacheRect);
-  if (!zoom_valid_ || zoom_percent_ != navigation.zoom_percent) {
+  if (rects_intersect(panel_bounds, kZoomRailOverlayRect) &&
+      (!zoom_valid_ || zoom_percent_ != navigation.zoom_percent)) {
     std::fill(zoom.begin(), zoom.end(), kCacheTransparent);
     Painter zoom_painter(zoom, kZoomRailOverlayRect.x1 - kZoomRailOverlayRect.x0,
                          kZoomRailOverlayRect.y1 - kZoomRailOverlayRect.y0, kZoomRailOverlayRect.x0,
@@ -917,7 +928,8 @@ bool ChromeStagingCache::prepare(const ChromeState& state, const ChromeNavigatio
     zoom_valid_ = true;
     ++stats_.zoom_redraws;
   }
-  if (!minimap_base_valid_ || overview_revision_ != overview_revision) {
+  if (rects_intersect(panel_bounds, kMinimapOverlayRect) &&
+      (!minimap_base_valid_ || overview_revision_ != overview_revision)) {
     std::fill(minimap.begin(), minimap.end(), kCacheTransparent);
     draw_minimap_base({minimap, kMinimapOverlayRect.x1 - kMinimapOverlayRect.x0,
                        kMinimapOverlayRect.y1 - kMinimapOverlayRect.y0, kMinimapOverlayRect.x0,
@@ -927,8 +939,9 @@ bool ChromeStagingCache::prepare(const ChromeState& state, const ChromeNavigatio
     minimap_base_valid_ = true;
     ++stats_.minimap_base_redraws;
   }
-  if (!battery_valid_ || battery_percentage_ != state.battery_percentage ||
-      battery_charging_ != state.battery_charging) {
+  if (rects_intersect(panel_bounds, kBatteryOverlayRect) &&
+      (!battery_valid_ || battery_percentage_ != state.battery_percentage ||
+       battery_charging_ != state.battery_charging)) {
     std::fill(battery.begin(), battery.end(), kCacheTransparent);
     if (state.battery_percentage >= 0) {
       Painter painter(battery, kBatteryOverlayRect.x1 - kBatteryOverlayRect.x0,
@@ -941,7 +954,8 @@ bool ChromeStagingCache::prepare(const ChromeState& state, const ChromeNavigatio
     battery_valid_ = true;
     ++stats_.battery_redraws;
   }
-  if (!bottom_valid_ || !bottom_cache_matches(bottom_state_, state)) {
+  if (rects_intersect(panel_bounds, kBottomCacheRect) &&
+      (!bottom_valid_ || !bottom_cache_matches(bottom_state_, state))) {
     std::fill(bottom.begin(), bottom.end(), kCacheTransparent);
     Painter bottom_painter(bottom, kBottomCacheRect.x1 - kBottomCacheRect.x0,
                            kBottomCacheRect.y1 - kBottomCacheRect.y0, kBottomCacheRect.x0,
@@ -962,6 +976,23 @@ bool ChromeStagingCache::paint(const MinimapSurface& surface, const ChromeState&
           static_cast<std::size_t>(surface.width) * static_cast<std::size_t>(surface.height)) {
     return false;
   }
+  const ChromeRect panel_bounds{surface.origin_x, surface.origin_y,
+                                surface.origin_x + surface.width,
+                                surface.origin_y + surface.height};
+  if (!prepare_for(panel_bounds, state, navigation, overview_revision)) {
+    return false;
+  }
+  return paint_prepared(surface, state, navigation, overview_revision);
+}
+
+bool ChromeStagingCache::paint_prepared(const MinimapSurface& surface, const ChromeState& state,
+                                        const ChromeNavigation& navigation,
+                                        std::uint32_t overview_revision) {
+  if (!ready() || surface.width <= 0 || surface.height <= 0 ||
+      surface.pixels.size() <
+          static_cast<std::size_t>(surface.width) * static_cast<std::size_t>(surface.height)) {
+    return false;
+  }
   if (!canvas_overlays_visible(state)) {
     draw_fixed_chrome(surface, state);
     Painter painter(surface.pixels, surface.width, surface.height, surface.origin_x,
@@ -970,7 +1001,18 @@ bool ChromeStagingCache::paint(const MinimapSurface& surface, const ChromeState&
     static_cast<void>(draw_strip_overlays(surface, state, navigation));
     return true;
   }
-  if (!prepare(state, navigation, overview_revision)) {
+  const ChromeRect panel_bounds{surface.origin_x, surface.origin_y,
+                                surface.origin_x + surface.width,
+                                surface.origin_y + surface.height};
+  if ((rects_intersect(panel_bounds, kZoomRailOverlayRect) &&
+       (!zoom_valid_ || zoom_percent_ != navigation.zoom_percent)) ||
+      (rects_intersect(panel_bounds, kMinimapOverlayRect) &&
+       (!minimap_base_valid_ || overview_revision_ != overview_revision)) ||
+      (rects_intersect(panel_bounds, kBatteryOverlayRect) &&
+       (!battery_valid_ || battery_percentage_ != state.battery_percentage ||
+        battery_charging_ != state.battery_charging)) ||
+      (rects_intersect(panel_bounds, kBottomCacheRect) &&
+       (!bottom_valid_ || !bottom_cache_matches(bottom_state_, state)))) {
     return false;
   }
 
