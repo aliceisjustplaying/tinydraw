@@ -10,6 +10,9 @@
 #include "freertos/task.h"
 #include "physical_touch.h"
 #include "tinydraw/vector_v2/touch_event_buffer.h"
+#ifdef TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE
+#include "vector_v2_ink_trace_capture.h"
+#endif
 
 namespace tinydraw::esp32 {
 
@@ -52,6 +55,11 @@ class VectorV2TouchSampler {
   void stop();
   [[nodiscard]] std::optional<SampledTouch> read_next();
   [[nodiscard]] TouchSamplerMetrics take_metrics();
+#ifdef TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE
+  // Capture-firmware only: mirrors every raw contact read into the trace
+  // ring, upstream of coalescing. Must be set before start().
+  void set_capture_ring(InkTraceCaptureRing* ring) { capture_ring_ = ring; }
+#endif
 
  private:
   static void task_entry(void* argument);
@@ -59,6 +67,9 @@ class VectorV2TouchSampler {
 
   PhysicalTouch& touch_;
   vector_v2::TouchEventBuffer events_;
+#ifdef TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE
+  InkTraceCaptureRing* capture_ring_ = nullptr;
+#endif
   TaskHandle_t task_ = nullptr;
   TaskHandle_t stop_waiter_ = nullptr;
   portMUX_TYPE event_lock_ = portMUX_INITIALIZER_UNLOCKED;
