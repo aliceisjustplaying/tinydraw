@@ -48,24 +48,50 @@ class PixelPainter {
   }
 
   void circle(int center_x, int center_y, int radius, std::uint16_t color) {
-    for (int y = center_y - radius; y <= center_y + radius; ++y) {
-      for (int x = center_x - radius; x <= center_x + radius; ++x) {
-        const int dx = x - center_x;
-        const int dy = y - center_y;
-        if (dx * dx + dy * dy <= radius * radius) {
-          pixel(x, y, color);
-        }
+    if (radius < 0) {
+      return;
+    }
+    const int squared_radius = radius * radius;
+    int half_width = 0;
+    // Walking from the cap toward the center makes the accepted half-width
+    // monotonic. Every row becomes one clipped contiguous fill instead of a
+    // bounding-square scan with a branch and bounds check for every pixel.
+    for (int offset_y = radius; offset_y >= 0; --offset_y) {
+      while (half_width < radius &&
+             (half_width + 1) * (half_width + 1) + offset_y * offset_y <= squared_radius) {
+        ++half_width;
+      }
+      horizontal_span(center_x - half_width, center_x + half_width + 1, center_y - offset_y, color);
+      if (offset_y != 0) {
+        horizontal_span(center_x - half_width, center_x + half_width + 1, center_y + offset_y,
+                        color);
       }
     }
   }
 
   void rounded(UiPixelRect bounds, int radius, std::uint16_t color) {
-    rect({bounds.x0 + radius, bounds.y0, bounds.x1 - radius, bounds.y1}, color);
-    rect({bounds.x0, bounds.y0 + radius, bounds.x1, bounds.y1 - radius}, color);
-    circle(bounds.x0 + radius, bounds.y0 + radius, radius, color);
-    circle(bounds.x1 - radius - 1, bounds.y0 + radius, radius, color);
-    circle(bounds.x0 + radius, bounds.y1 - radius - 1, radius, color);
-    circle(bounds.x1 - radius - 1, bounds.y1 - radius - 1, radius, color);
+    if (bounds.x1 <= bounds.x0 || bounds.y1 <= bounds.y0 || radius < 0) {
+      return;
+    }
+    radius = std::min({radius, (bounds.x1 - bounds.x0 - 1) / 2, (bounds.y1 - bounds.y0 - 1) / 2});
+    const int squared_radius = radius * radius;
+    int half_width = 0;
+    for (int offset_y = radius; offset_y >= 0; --offset_y) {
+      while (half_width < radius &&
+             (half_width + 1) * (half_width + 1) + offset_y * offset_y <= squared_radius) {
+        ++half_width;
+      }
+      const int x0 = bounds.x0 + radius - half_width;
+      const int x1 = bounds.x1 - radius + half_width;
+      horizontal_span(x0, x1, bounds.y0 + radius - offset_y, color);
+      const int bottom_y = bounds.y1 - radius - 1 + offset_y;
+      if (bottom_y != bounds.y0 + radius - offset_y) {
+        horizontal_span(x0, x1, bottom_y, color);
+      }
+    }
+    for (int y = bounds.y0 + radius + 1; y < bounds.y1 - radius - 1; ++y) {
+      horizontal_span(bounds.x0, bounds.x1, y, color);
+    }
   }
 
   void line(UiPixelRect ends, std::uint16_t color, int thickness = 1) {
@@ -115,6 +141,17 @@ class PixelPainter {
   }
 
  private:
+  void horizontal_span(int x0, int x1, int y, std::uint16_t color) {
+    y -= origin_y_;
+    if (y < 0 || y >= height_) {
+      return;
+    }
+    x0 = std::clamp(x0 - origin_x_, 0, width_);
+    x1 = std::clamp(x1 - origin_x_, x0, width_);
+    const auto start = pixels_.begin() + static_cast<std::ptrdiff_t>(y) * width_ + x0;
+    std::fill(start, start + (x1 - x0), color);
+  }
+
   [[nodiscard]] static std::array<std::uint8_t, 7> glyph_rows(char character) {
     switch (character) {
       case 'A':
