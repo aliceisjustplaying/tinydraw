@@ -22,9 +22,9 @@ struct LiveInkMoveResult {
 template <typename Present, typename Commit>
 LiveInkMoveResult process_live_ink_move(CurvedRibbonStream& ribbon,
                                         ChainedOperationBuilder& builder, InkPoint ink_point,
-                                        OperationPoint authority_point, std::uint32_t event_us,
-                                        Present&& present, Commit&& commit) {
-  const RibbonUpdate update = ribbon.append(ink_point, true);
+                                        OperationPoint authority_point, Point visual_endpoint,
+                                        std::uint32_t event_us, Present&& present, Commit&& commit) {
+  const RibbonUpdate update = ribbon.append(ink_point, true, visual_endpoint);
   const bool visual_passed = std::forward<Present>(present)(update, event_us);
   ChainedOperationStatus status = builder.add(authority_point);
   bool commit_failed = false;

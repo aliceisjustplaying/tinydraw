@@ -1101,6 +1101,7 @@ void run_vector_v2_app() {
   std::optional<std::uint32_t> time_sync_terminal_since;
   bool panning = false;
   Point last_touch{};
+  Point last_canvas_touch{};
   Point toolbar_start{};
   Point toolbar_sum{};
   std::uint32_t toolbar_samples = 0;
@@ -1326,6 +1327,7 @@ void run_vector_v2_app() {
         } else {
           ink_config.size = vector_v2::brush_size(chrome.size);
           ink.set_config(ink_config);
+          last_canvas_touch = point;
           last_ink = ink.begin({.x = point.x, .y = point.y, .timestamp_us = event_us});
           const OperationTool tool = chrome.tool == vector_v2::ChromeTool::kErase
                                          ? OperationTool::kEraser
@@ -1391,6 +1393,7 @@ void run_vector_v2_app() {
                                                       : std::optional<Point>{};
         last_touch = point;
         if (canvas_point.has_value()) {
+          last_canvas_touch = *canvas_point;
           last_ink =
               ink.update({.x = canvas_point->x, .y = canvas_point->y, .timestamp_us = event_us});
           const vector_v2::OperationPoint add_point = presenter.operation_point(last_ink);
@@ -1398,7 +1401,7 @@ void run_vector_v2_app() {
                                           ? 0xFFFFU
                                           : vector_v2::selected_color(chrome);
           const auto move = vector_v2::process_live_ink_move(
-              ribbon, builder, last_ink, add_point, event_us,
+              ribbon, builder, last_ink, add_point, last_canvas_touch, event_us,
               [&](const RibbonUpdate& update, std::uint32_t visual_event_us) {
                 const auto timing = presenter.show_update(update, color, chrome, visual_event_us);
                 live_metrics.include(timing);
@@ -1469,8 +1472,9 @@ void run_vector_v2_app() {
         };
         const std::uint32_t finished_us = event_us;
         const std::int64_t finish_preview_started = esp_timer_get_time();
-        last_ink = ink.finish(
-            {.x = last_ink.position.x, .y = last_ink.position.y, .timestamp_us = finished_us});
+        last_ink = ink.finish({.x = last_canvas_touch.x,
+                               .y = last_canvas_touch.y,
+                               .timestamp_us = finished_us});
         const std::uint16_t color = chrome.tool == vector_v2::ChromeTool::kErase
                                         ? 0xFFFFU
                                         : vector_v2::selected_color(chrome);
