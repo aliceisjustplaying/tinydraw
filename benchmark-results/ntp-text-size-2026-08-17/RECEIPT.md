@@ -37,4 +37,10 @@ red color intentionally excludes it from the ink-color measurement.
 - No mass-storage command was run.
 
 The combined product includes the fine 400% minimap mapping from commit
-`803bc97`. Owner glass acceptance of both changes remains pending.
+`803bc97`.
+
+## Owner glass verdict
+
+**Accepted 2026-08-17.** The owner observed `CONNECTING`, `SYNCING`, and
+`TIME SET`, confirmed unavailable-network handling terminates, and accepted the
+larger centered text. Clock sync is done for the current release scope.
