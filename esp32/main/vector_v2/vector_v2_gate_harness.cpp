@@ -123,22 +123,22 @@ const char* zoom_name(ZoomLevel zoom) {
       !vector_v2::chrome_promotes_minimap_dock_drag({274.0F, 400.0F}, {274.0F, 399.0F}, chrome) &&
       vector_v2::chrome_promotes_minimap_dock_drag({274.0F, 400.0F}, {274.0F, 398.0F}, chrome);
   const auto initial = presenter.set_view(ZoomLevel::k100Percent, 400, 600, chrome, now_us());
-  const auto tap = presenter.jump_from_minimap({312.0F, 307.0F}, chrome, now_us());
+  const auto tap = presenter.jump_from_minimap({312.0F, 281.0F}, chrome, now_us());
   const bool tap_position = presenter.level_x() == 552 && presenter.level_y() == 710;
   const int drag_start_x = presenter.level_x();
   const int drag_start_y = presenter.level_y();
-  const auto drag = presenter.pan_minimap_from(drag_start_x, drag_start_y, {312.0F, 307.0F},
-                                               {316.0F, 311.0F}, chrome, now_us());
+  const auto drag = presenter.pan_minimap_from(drag_start_x, drag_start_y, {312.0F, 281.0F},
+                                               {316.0F, 285.0F}, chrome, now_us());
   const bool drag_position = presenter.level_x() == 626 && presenter.level_y() == 782;
   const auto acquire_initial =
       presenter.set_view(ZoomLevel::k400Percent, 5'520, 6'796, chrome, now_us());
-  const auto acquire = presenter.pan_minimap_from(5'520, 6'796, {352.0F, 356.0F},
-                                                  {312.0F, 307.0F}, chrome, now_us());
+  const auto acquire = presenter.pan_minimap_from(5'520, 6'796, {352.0F, 330.0F},
+                                                  {312.0F, 281.0F}, chrome, now_us());
   const bool acquire_position = presenter.level_x() == 2'760 && presenter.level_y() == 3'398;
   const int edge_start_x = presenter.level_x();
   const int edge_start_y = presenter.level_y();
-  const auto edge = presenter.pan_minimap_from(edge_start_x, edge_start_y, {312.0F, 307.0F},
-                                               {272.0F, 258.0F}, chrome, now_us());
+  const auto edge = presenter.pan_minimap_from(edge_start_x, edge_start_y, {312.0F, 281.0F},
+                                               {272.0F, 232.0F}, chrome, now_us());
   const bool edge_position = presenter.level_x() == 0 && presenter.level_y() == 0;
   const bool passed = hit && dock_drag && initial.passed && tap.passed && tap_position &&
                       drag.passed && drag.frame_reused && drag_position && acquire_initial.passed &&
