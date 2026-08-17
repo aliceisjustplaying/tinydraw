@@ -211,6 +211,11 @@ enum class HistoryDirection : std::uint8_t {
                                              DocumentRevision revision,
                                              std::span<const std::uint16_t> overview_pixels);
 
+// Coordinates a new-document reset directly to paper without a full overview
+// snapshot allocation. Callers must serialize access.
+[[nodiscard]] bool reset_blank_document(OperationLog& log, MaterializedCanvas& canvas,
+                                        DocumentRevision revision);
+
 }  // namespace tinydraw::vector_v2
 
 #endif  // TINYDRAW_VECTOR_V2_INCREMENTAL_DOCUMENT_H

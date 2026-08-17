@@ -6,7 +6,9 @@
 #include <numeric>
 #include <tuple>
 
+#ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
 #include "tinydraw/vector_v2/rerender_ledger.h"
+#endif
 #include "tinydraw/vector_v2/storage_overlap.h"
 #include "tinydraw/vector_v2/tile_payload_analysis.h"
 
@@ -402,9 +404,11 @@ bool MaterializedCanvas::restore_snapshot(DocumentRevision revision,
   // A restore replaces the entire document authority; prior per-group render
   // history is meaningless for the new document, so the re-render ledger
   // starts a fresh session instead of misclassifying every next render.
+#ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
   if (rerender_ledger_ != nullptr) {
     rerender_ledger_->reset();
   }
+#endif
   for (std::size_t index = 0; index < slots_.size(); ++index) {
     if (slots_[index].occupied_) {
       release_slot(index);
@@ -412,6 +416,30 @@ bool MaterializedCanvas::restore_snapshot(DocumentRevision revision,
   }
   clear_uniforms();
   rebuild_occupancy_from_overview();
+  current_revision_ = revision;
+  overview_revision_ = revision;
+  overview_valid_ = true;
+  bump_composition_epoch();
+  return true;
+}
+
+bool MaterializedCanvas::reset_blank(DocumentRevision revision) {
+  if (!ready()) {
+    return false;
+  }
+  std::fill(overview_pixels_.begin(), overview_pixels_.end(), 0xFFFFU);
+#ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
+  if (rerender_ledger_ != nullptr) {
+    rerender_ledger_->reset();
+  }
+#endif
+  for (std::size_t index = 0; index < slots_.size(); ++index) {
+    if (slots_[index].occupied_) {
+      release_slot(index);
+    }
+  }
+  clear_uniforms();
+  std::fill(occupancy_bits_.begin(), occupancy_bits_.end(), 0U);
   current_revision_ = revision;
   overview_revision_ = revision;
   overview_valid_ = true;
@@ -474,10 +502,12 @@ bool MaterializedCanvas::valid_incremental_revision(
 void MaterializedCanvas::write_tile(std::size_t slot_index,
                                     const TileRevisionPublication& publication,
                                     DocumentRevision revision) {
+#ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
   if (rerender_ledger_ != nullptr && slots_[slot_index].occupied_ &&
       !(slots_[slot_index].key_ == publication.key)) {
     rerender_ledger_->mark_evicted(slots_[slot_index].key_);
   }
+#endif
   const PixelRect bounds = tile_pixel_bounds(publication.key);
   const int width = bounds.x1 - bounds.x0;
   const int height = bounds.y1 - bounds.y0;
@@ -516,9 +546,11 @@ void MaterializedCanvas::apply_overview_publication(
 
 void MaterializedCanvas::finish_revision(DocumentRevision revision,
                                          PixelRect affected_world_bounds) {
+#ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
   if (rerender_ledger_ != nullptr) {
     rerender_ledger_->mark_world_damage(affected_world_bounds);
   }
+#endif
   mark_occupied(affected_world_bounds);
   current_revision_ = revision;
   overview_revision_ = revision;
@@ -615,9 +647,11 @@ std::optional<InPlaceTileEdit> MaterializedCanvas::materialize_uniform_as_raw(Ti
   }
   MaterializedUniformStorage& uniform = uniform_catalog_[*uniform_index];
   MaterializedSlotStorage& slot = slots_[*selected];
+#ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
   if (rerender_ledger_ != nullptr && slot.occupied_ && !(slot.key_ == key)) {
     rerender_ledger_->mark_evicted(slot.key_);
   }
+#endif
   release_slot(*selected);
   auto pixels = tile_pixels_.subspan(*selected * kTilePixels, kTilePixels);
   std::fill(pixels.begin(), pixels.end(), uniform.color_);
@@ -971,9 +1005,11 @@ std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, Documen
   }
   const std::size_t index = *selected;
   MaterializedSlotStorage& slot = slots_[index];
+#ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
   if (rerender_ledger_ != nullptr && slot.occupied_ && !(slot.key_ == key)) {
     rerender_ledger_->mark_evicted(slot.key_);
   }
+#endif
   release_slot(index);
   auto destination = tile_pixels_.subspan(index * kTilePixels, kTilePixels);
   for (int row = 0; row < height; ++row) {

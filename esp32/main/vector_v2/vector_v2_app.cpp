@@ -191,7 +191,11 @@ struct PendingStrokeReport {
 
 struct AppStorage {
   std::uint16_t* overview = nullptr;
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
   std::uint16_t* snapshot = nullptr;
+#else
+  void* blank_snapshot_layout_reservation = nullptr;
+#endif
   std::uint16_t* frame = nullptr;
   std::uint16_t* tile_pixels = nullptr;
   std::uint16_t* overview_scratch = nullptr;
@@ -231,11 +235,14 @@ struct AppStorage {
   std::uint8_t* occupancy = nullptr;
   MaterializedSlotStorage* slots = nullptr;
   std::uint16_t* raw_slot_directory = nullptr;
-  bool slot_directory_internal = false;
   OperationRecord* records = nullptr;
   CompactOperationSample* samples = nullptr;
   CompactOperationSample* input_samples = nullptr;
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
   vector_v2::RerenderLedgerEntry* rerender_entries = nullptr;
+#else
+  void* rerender_ledger_layout_reservation = nullptr;
+#endif
   vector_v2::TouchEvent* touch_events = nullptr;
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
   TileRevisionPublication* publications = nullptr;
@@ -244,7 +251,14 @@ struct AppStorage {
 
   [[nodiscard]] bool allocate() {
     overview = allocate_array<std::uint16_t>(vector_v2::kOverviewPixels);
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
     snapshot = allocate_array<std::uint16_t>(vector_v2::kOverviewPixels);
+#else
+    // Retain the measured PSRAM layout without constructing a product-facing
+    // blank snapshot. heap_caps_malloc provides naturally aligned storage.
+    blank_snapshot_layout_reservation =
+        allocate_aligned_layout_reservation<std::uint16_t>(vector_v2::kOverviewPixels);
+#endif
     frame = allocate_array<std::uint16_t>(vector_v2::kOverviewPixels);
     tile_pixels = allocate_array<std::uint16_t>(vector_v2::kTileSlotCount * vector_v2::kTilePixels);
     overview_scratch = allocate_array<std::uint16_t>(vector_v2::kOverviewPixels);
@@ -283,8 +297,16 @@ struct AppStorage {
     records = allocate_array<OperationRecord>(vector_v2::kOperationCapacity);
     samples = allocate_array<CompactOperationSample>(vector_v2::kOperationSampleCapacity);
     input_samples = allocate_array<CompactOperationSample>(kInputSampleCapacity);
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
     rerender_entries =
         allocate_array<vector_v2::RerenderLedgerEntry>(vector_v2::kRerenderLedgerEntryCount);
+#else
+    // This inert block preserves the downstream allocation/cache placement
+    // measured before the diagnostic ledger left the product image.
+    rerender_ledger_layout_reservation =
+        allocate_aligned_layout_reservation<vector_v2::RerenderLedgerEntry>(
+            vector_v2::kRerenderLedgerEntryCount);
+#endif
     touch_events = allocate_internal<vector_v2::TouchEvent>(kVectorV2TouchEventCapacity);
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
     publications = allocate_array<TileRevisionPublication>(kWorkspaceTileCapacity);
@@ -315,17 +337,29 @@ struct AppStorage {
     settle_green = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
     settle_blue = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
     settle_pixels = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
-    slot_directory_internal = false;
-    if (overview == nullptr || snapshot == nullptr || frame == nullptr || tile_pixels == nullptr ||
-        overview_scratch == nullptr || !harness_workspace_ready || region_scratch == nullptr ||
-        chrome_cache == nullptr || producer_supertask == nullptr || producer_mask == nullptr ||
-        producer_summary_rows == nullptr || producer_summary_words == nullptr ||
-        producer_chord_plans == nullptr || chunk_mask == nullptr || uniforms == nullptr ||
-        occupancy == nullptr || slots == nullptr || raw_slot_directory == nullptr ||
-        records == nullptr || samples == nullptr || input_samples == nullptr ||
-        rerender_entries == nullptr || touch_events == nullptr || affected_keys == nullptr ||
-        settle_op_alpha == nullptr || settle_accumulated == nullptr || settle_red == nullptr ||
-        settle_green == nullptr || settle_blue == nullptr || settle_pixels == nullptr) {
+    const bool snapshot_layout_ready =
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
+        snapshot != nullptr;
+#else
+        blank_snapshot_layout_reservation != nullptr;
+#endif
+    const bool rerender_layout_ready =
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
+        rerender_entries != nullptr;
+#else
+        rerender_ledger_layout_reservation != nullptr;
+#endif
+    if (overview == nullptr || !snapshot_layout_ready || frame == nullptr ||
+        tile_pixels == nullptr || overview_scratch == nullptr || !harness_workspace_ready ||
+        region_scratch == nullptr || chrome_cache == nullptr || producer_supertask == nullptr ||
+        producer_mask == nullptr || producer_summary_rows == nullptr ||
+        producer_summary_words == nullptr || producer_chord_plans == nullptr ||
+        chunk_mask == nullptr || uniforms == nullptr || occupancy == nullptr || slots == nullptr ||
+        raw_slot_directory == nullptr || records == nullptr || samples == nullptr ||
+        input_samples == nullptr || !rerender_layout_ready || touch_events == nullptr ||
+        affected_keys == nullptr || settle_op_alpha == nullptr || settle_accumulated == nullptr ||
+        settle_red == nullptr || settle_green == nullptr || settle_blue == nullptr ||
+        settle_pixels == nullptr) {
       return false;
     }
     for (std::size_t index = 0; index < vector_v2::kMaterializedTileIdentityCount; ++index) {
@@ -341,6 +375,12 @@ struct AppStorage {
   template <typename Type>
   [[nodiscard]] static Type* allocate_array(std::size_t count) {
     return static_cast<Type*>(heap_caps_malloc(count * sizeof(Type), kExternalCaps));
+  }
+
+  template <typename Type>
+  [[nodiscard]] static void* allocate_aligned_layout_reservation(std::size_t count) {
+    static_assert(alignof(Type) <= alignof(std::max_align_t));
+    return heap_caps_malloc(count * sizeof(Type), kExternalCaps);
   }
 
   template <typename Type>
@@ -493,7 +533,7 @@ void print_presentation(const char* kind, const VectorV2Presenter& presenter,
       "tear_edge_observed=%u tear_edge_wait_resumed=%u tear_edge_timeout=%u "
       "tear_heal_attempted=%u "
       "tear_heal_command_sent=%u presentation_experiment=%s te_edge=%s "
-      "requested_clock_mhz=%d effective_clock_mhz=%d "
+      "clock_mhz=%d "
       "frame_reused=%u pass=%u\n",
       kind, zoom_name(presenter.zoom()), presenter.level_x(), presenter.level_y(),
       static_cast<long long>(timing.compose_us), static_cast<long long>(timing.scroll_us),
@@ -512,7 +552,7 @@ void print_presentation(const char* kind, const VectorV2Presenter& presenter,
       static_cast<unsigned long>(timing.tear_edge_isr_to_resume_us), timing.tear_edge_observed,
       timing.tear_edge_wait_resumed, timing.tear_edge_timed_out, timing.tear_heal_attempted,
       timing.tear_heal_command_sent, presentation_experiment_name(), selected_tear_edge_name(),
-      requested_panel_clock_mhz(), effective_panel_clock_mhz(), timing.frame_reused, timing.passed);
+      kCo5300ClockMHz, timing.frame_reused, timing.passed);
 }
 
 void print_pan_baseline(const VectorV2Presenter& presenter, const PanMetrics& metrics) {
@@ -770,14 +810,19 @@ LivePresentationTiming present_history_controls(VectorV2Presenter& presenter,
 class ChromeController {
  public:
   ChromeController(vector_v2::ChromeState& chrome, OperationLog& log, MaterializedCanvas& canvas,
-                   vector_v2::TileProducer& producer, std::span<const std::uint16_t> blank_snapshot,
+                   vector_v2::TileProducer& producer,
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
+                   std::span<const std::uint16_t> blank_snapshot,
+#endif
                    std::span<std::uint16_t> history_scratch, VectorV2Presenter& presenter,
                    VectorV2Export& exporter, TimeSyncController& time_sync, RtcClock& clock)
       : chrome_(chrome),
         log_(log),
         canvas_(canvas),
         producer_(producer),
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
         blank_snapshot_(blank_snapshot),
+#endif
         history_scratch_(history_scratch),
         presenter_(presenter),
         exporter_(exporter),
@@ -789,7 +834,6 @@ class ChromeController {
     auto& log = log_;
     auto& canvas = canvas_;
     auto& producer = producer_;
-    const auto blank_snapshot = blank_snapshot_;
     const auto history_scratch = history_scratch_;
     auto& presenter = presenter_;
     auto& exporter = exporter_;
@@ -869,8 +913,13 @@ class ChromeController {
           break;
         }
         const DocumentRevision revision{current_generation + 1U};
-        if (!vector_v2::restore_document_snapshot(log, canvas, revision, blank_snapshot) ||
-            !producer.reset_uniform_baseline(revision)) {
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
+        const bool reset =
+            vector_v2::restore_document_snapshot(log, canvas, revision, blank_snapshot_);
+#else
+        const bool reset = vector_v2::reset_blank_document(log, canvas, revision);
+#endif
+        if (!reset || !producer.reset_uniform_baseline(revision)) {
           return false;
         }
         static_cast<void>(sync_history_controls(chrome, log));
@@ -968,7 +1017,9 @@ class ChromeController {
   OperationLog& log_;
   MaterializedCanvas& canvas_;
   vector_v2::TileProducer& producer_;
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
   std::span<const std::uint16_t> blank_snapshot_;
+#endif
   std::span<std::uint16_t> history_scratch_;
   VectorV2Presenter& presenter_;
   VectorV2Export& exporter_;
@@ -987,12 +1038,13 @@ void run_vector_v2_app() {
     return;
   }
   std::printf(
-      "TINYDRAW_PRODUCER_SCRATCH supertask_internal=%u slot_directory_internal=%u "
-      "free_internal=%lu free_psram=%lu\n",
-      storage.supertask_internal, storage.slot_directory_internal,
+      "TINYDRAW_PRODUCER_SCRATCH supertask_internal=%u free_internal=%lu free_psram=%lu\n",
+      storage.supertask_internal,
       static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
       static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)));
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
   std::fill_n(storage.snapshot, vector_v2::kOverviewPixels, 0xFFFFU);
+#endif
   std::fill_n(storage.overview, vector_v2::kOverviewPixels, 0xFFFFU);
 
   MaterializedCanvas canvas(
@@ -1063,6 +1115,7 @@ void run_vector_v2_app() {
   // Déjà-vu campaign step 1: the spatial re-render ledger speaks during
   // glass sessions. Deltas since the previous print attribute each
   // transition's re-renders to a cause; cumulative amplification rides along.
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
   vector_v2::RerenderLedgerTotals ledger_printed{};
   vector_v2::RerenderLedger rerender_ledger(
       std::span(storage.rerender_entries, vector_v2::kRerenderLedgerEntryCount));
@@ -1084,6 +1137,7 @@ void run_vector_v2_app() {
     ledger_printed = totals;
   };
   producer.set_rerender_ledger(&rerender_ledger);
+#endif
   const vector_v2::InPlaceAppendWorkspace workspace{
       .overview_scratch = std::span(storage.overview_scratch, vector_v2::kOverviewPixels),
       .affected_keys = std::span(storage.affected_keys,
@@ -1102,7 +1156,7 @@ void run_vector_v2_app() {
 #endif
   const auto startup_overview =
       autosave_restored ? std::span(storage.overview_scratch, vector_v2::kOverviewPixels)
-                        : std::span(storage.snapshot, vector_v2::kOverviewPixels);
+                        : std::span(storage.overview, vector_v2::kOverviewPixels);
   const bool restored_overview =
       !autosave_restored || vector_v2::replay_active_overview(log, startup_overview);
   if (!restored_overview || !canvas.publish_overview(log.current_revision(), startup_overview) ||
@@ -1136,7 +1190,9 @@ void run_vector_v2_app() {
   chrome.battery_charging = initial_power.charging;
   ChromeController chrome_controller(
       chrome, log, canvas, producer,
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
       std::span<const std::uint16_t>(storage.snapshot, vector_v2::kOverviewPixels),
+#endif
       std::span<std::uint16_t>(storage.overview_scratch, vector_v2::kOverviewPixels), presenter,
       exporter, time_sync, clock);
   const auto current_journal_state = [&] {
@@ -1445,7 +1501,9 @@ void run_vector_v2_app() {
         const ZoomLevel target = zoom == presenter.zoom() ? ZoomLevel::k25Percent : zoom;
         const auto timing = presenter.set_zoom(target, chrome, loop_us);
         print_presentation("zoom", presenter, timing);
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
         print_live_ledger("zoom");
+#endif
         static_cast<void>(autosave.submit({.kind = vector_v2::JournalChangeKind::kState}, log,
                                           current_journal_state()));
       }
@@ -1648,7 +1706,9 @@ void run_vector_v2_app() {
         minimap_pressed = false;
         panning = false;
         print_pan_baseline(presenter, pan_metrics);
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
         print_live_ledger("minimap_pointer_end");
+#endif
         static_cast<void>(autosave.submit({.kind = vector_v2::JournalChangeKind::kState}, log,
                                           current_journal_state()));
         std::fflush(stdout);
@@ -1695,7 +1755,9 @@ void run_vector_v2_app() {
       } else if (panning) {
         panning = false;
         print_pan_baseline(presenter, pan_metrics);
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
         print_live_ledger("pan_end");
+#endif
         static_cast<void>(autosave.submit({.kind = vector_v2::JournalChangeKind::kState}, log,
                                           current_journal_state()));
         std::fflush(stdout);
@@ -1881,7 +1943,9 @@ void run_vector_v2_app() {
               static_cast<long long>(drain_max_us), static_cast<unsigned long>(drain_failures),
               static_cast<long long>(swap_wall_us), swap.passed);
           std::fflush(stdout);
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
           print_live_ledger("drain");
+#endif
           drain_ops = 0U;
           drain_total_us = 0;
           drain_max_us = 0;

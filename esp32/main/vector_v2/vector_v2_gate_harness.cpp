@@ -103,8 +103,8 @@ const char* zoom_name(ZoomLevel zoom) {
   const bool drag_position = presenter.level_x() == 626 && presenter.level_y() == 782;
   const auto acquire_initial =
       presenter.set_view(ZoomLevel::k400Percent, 5'520, 6'796, chrome, now_us());
-  const auto acquire = presenter.pan_minimap_from(5'520, 6'796, {352.0F, 356.0F},
-                                                  {312.0F, 307.0F}, chrome, now_us());
+  const auto acquire = presenter.pan_minimap_from(5'520, 6'796, {352.0F, 356.0F}, {312.0F, 307.0F},
+                                                  chrome, now_us());
   const bool acquire_position = presenter.level_x() == 2'760 && presenter.level_y() == 3'398;
   const int edge_start_x = presenter.level_x();
   const int edge_start_y = presenter.level_y();
@@ -140,7 +140,7 @@ void print_presentation(const char* kind, const VectorV2Presenter& presenter,
       "tear_edge_observed=%u tear_edge_wait_resumed=%u tear_edge_timeout=%u "
       "tear_heal_attempted=%u "
       "tear_heal_command_sent=%u presentation_experiment=%s te_edge=%s "
-      "requested_clock_mhz=%d effective_clock_mhz=%d "
+      "clock_mhz=%d "
       "frame_reused=%u pass=%u\n",
       kind, zoom_name(presenter.zoom()), presenter.level_x(), presenter.level_y(),
       static_cast<long long>(timing.compose_us), static_cast<long long>(timing.scroll_us),
@@ -159,7 +159,7 @@ void print_presentation(const char* kind, const VectorV2Presenter& presenter,
       static_cast<unsigned long>(timing.tear_edge_isr_to_resume_us), timing.tear_edge_observed,
       timing.tear_edge_wait_resumed, timing.tear_edge_timed_out, timing.tear_heal_attempted,
       timing.tear_heal_command_sent, presentation_experiment_name(), selected_tear_edge_name(),
-      requested_panel_clock_mhz(), effective_panel_clock_mhz(), timing.frame_reused, timing.passed);
+      kCo5300ClockMHz, timing.frame_reused, timing.passed);
 }
 
 bool load_realistic_document(OperationLog& log, MaterializedCanvas& canvas,
@@ -266,8 +266,7 @@ bool run_tearing_probe(VectorV2Presenter& presenter, const vector_v2::ChromeStat
     return sorted[std::min(count - 1U, rank - 1U)];
   };
   std::printf(
-      "TINYDRAW_TEARING_AB policy=%s edge=%s requested_clock_mhz=%d "
-      "effective_clock_mhz=%d frames=%lu "
+      "TINYDRAW_TEARING_AB policy=%s edge=%s clock_mhz=%d frames=%lu "
       "initial_edge_observed=%u edge_failures=%lu edge_wait_resume_samples=%lu "
       "edge_wait_isr_to_resume_p50_us=%lld "
       "edge_wait_isr_to_resume_p95_us=%lld edge_wait_isr_to_resume_max_us=%lld "
@@ -275,8 +274,8 @@ bool run_tearing_probe(VectorV2Presenter& presenter, const vector_v2::ChromeStat
       "required_deadline_misses=%lu guard_deadline_misses=%lu "
       "optical_pattern=alternating_frame_id_row_barcode_v1 "
       "optical_acceptance=external_manual software_pass=%u\n",
-      presentation_experiment_name(), selected_tear_edge_name(), requested_panel_clock_mhz(),
-      effective_panel_clock_mhz(), static_cast<unsigned long>(frames), initial.tear_edge_observed,
+      presentation_experiment_name(), selected_tear_edge_name(), kCo5300ClockMHz,
+      static_cast<unsigned long>(frames), initial.tear_edge_observed,
       static_cast<unsigned long>(edge_failures), static_cast<unsigned long>(resume_samples),
       static_cast<long long>(percentile(resume_latencies, resume_samples, 50)),
       static_cast<long long>(percentile(resume_latencies, resume_samples, 95)),
@@ -2070,7 +2069,7 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
       "frame_p95_us=%lld frame_max_us=%lld "
       "complete_p50_us=%lld complete_p95_us=%lld complete_max_us=%lld "
       "tear_edge_failures=%lu presentation_experiment=%s te_edge=%s "
-      "requested_clock_mhz=%d effective_clock_mhz=%d "
+      "clock_mhz=%d "
       "chrome_bottom_redraws=%lu chrome_battery_redraws=%lu chrome_zoom_redraws=%lu "
       "chrome_minimap_base_redraws=%lu "
       "strip_samples=%lu staging_mean_us=%lld staging_max_us=%lld worst_strip=%u "
@@ -2095,7 +2094,7 @@ bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer
       static_cast<long long>(pan_sequence_percentile(sorted_complete, 95)),
       static_cast<long long>(sorted_complete.back()),
       static_cast<unsigned long>(tear_edge_failures), presentation_experiment_name(),
-      selected_tear_edge_name(), requested_panel_clock_mhz(), effective_panel_clock_mhz(),
+      selected_tear_edge_name(), kCo5300ClockMHz,
       static_cast<unsigned long>(chrome_after.bottom_redraws - chrome_before.bottom_redraws),
       static_cast<unsigned long>(chrome_after.battery_redraws - chrome_before.battery_redraws),
       static_cast<unsigned long>(chrome_after.zoom_redraws - chrome_before.zoom_redraws),
