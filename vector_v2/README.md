@@ -64,12 +64,14 @@ SVG path. Paths contain the exact round-cap and variable-width convex subpaths;
 erasers emit background-colored paths in operation order, and the root omits a
 synthetic background rectangle. The ESP adapter preserves those SVG bytes and
 also streams `DRAWING.PNG` from production settled-AA windows. It retains one
-64-row world band, one 64×64
-window, and fixed PNGenc workspace. The existing Saving progress bar advances
-across both PNG windows and SVG operations. A shared metadata page commits the
-pair only after the authority epoch, revision, and operation count are rechecked.
-The generic FAT/USB adapter exposes both files read-only. SVG host coverage/fuzz
-tests and physical evidence are in the
+64-row world band, one 64×64 window, and fixed PNGenc workspace. The existing
+Saving progress bar advances across both PNG windows and SVG operations. A
+shared metadata page commits the pair only after the authority epoch, revision,
+and operation count are rechecked. The generic FAT/USB adapter exposes both
+files read-only. Export presentation is an explicit app mode: host eject
+latches the medium absent, and the on-screen **Return to Drawing** action
+deinitializes TinyUSB and releases the USB PHY without a board reset. Host
+coverage/fuzz tests and physical evidence are in the
 [`original receipt`](../benchmark-results/svg-export-2026-08-17/RECEIPT.md)
 and [`stroke-grouping follow-up`](../benchmark-results/stroke-svg-minimap-acquire-2026-08-17/RECEIPT.md).
 

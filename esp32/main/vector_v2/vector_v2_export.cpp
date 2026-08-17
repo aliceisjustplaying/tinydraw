@@ -169,6 +169,10 @@ bool VectorV2Export::present_usb() {
   return usb_.finish_export(store_.has_file() && store_.has_png());
 }
 
+bool VectorV2Export::usb_host_ejected() const { return usb_.host_ejected(); }
+
+bool VectorV2Export::stop_usb() { return usb_.stop(); }
+
 void VectorV2Export::prepare_reencode() { usb_.prepare_export(); }
 
 }  // namespace tinydraw::esp32

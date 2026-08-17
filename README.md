@@ -42,7 +42,9 @@ Autosave, charging, power-off/on, and macOS Finder mounting are verified.
   Span-rasterized swatches and frame reuse open the full color dialog in about
   27.6 ms on device (4.81× faster than its captured baseline).
 - New has a confirmation dialog; Export streams the vector authority to flash
-  with visible progress before the physical read-only USB drive takes over.
+  with visible progress, then opens an explicit read-only USB mode with an
+  on-screen **Return to Drawing** action. Host eject keeps the medium absent
+  instead of allowing later probes to re-expose it.
 - The document popup's clock action performs an on-demand asynchronous
   Wi-Fi/NTP correction, writes the onboard RTC, and shows connecting, syncing,
   success, or error feedback. Terminal feedback appears only after Wi-Fi is
@@ -103,7 +105,7 @@ Draw with the mouse, use `Cmd-Z` to undo, `C` for New, and `Esc` to quit.
 ```
 
 `./scripts/esp32 build` remains an alias for `raster-v1`. Both named commands build in separate
-directories; `vector-v2 PORT` also flashes the V2 app. Use an explicit serial port. Export replaces USB serial with a read-only drive.
+directories; `vector-v2 PORT` also flashes the V2 app. Use an explicit serial port. Export temporarily replaces USB serial with a read-only drive; **Return to Drawing** stops the USB device stack without resetting the board.
 To flash again on battery, power off, hold BOOT, and short-press power for a cold
 boot. Short BOOT records/replays demos. Hold the lower button four seconds to
 power off; short-press it to start. There is no sleep mode yet.

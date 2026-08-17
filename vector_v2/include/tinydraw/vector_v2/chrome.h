@@ -35,7 +35,7 @@ inline constexpr std::size_t kPaletteColorCount = 16;
 enum class ChromeTool { kDraw, kErase, kPan };
 enum class ChromeSize { kSmall, kMedium, kLarge, kExtraLarge };
 enum class ChromePopup { kNone, kTools, kColors, kSizes, kDocument };
-enum class ChromeExportStatus { kIdle, kSaving, kSaved, kError };
+enum class ChromeExportStatus { kIdle, kSaving, kSaved, kPresented, kHostEjected, kError };
 enum class ChromeTimeSyncStatus { kIdle, kConnecting, kSynchronizing, kSaved, kError };
 inline constexpr std::uint32_t kChromeTimeSyncToastDurationUs = 3'000'000U;
 enum class ChromeAction {
@@ -60,6 +60,7 @@ enum class ChromeAction {
   kCancelNewDrawing,
   kConfirmNewDrawing,
   kExport,
+  kExitExport,
   kSyncTime,
   kZoomIn,
   kZoomOut,

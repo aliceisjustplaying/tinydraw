@@ -746,10 +746,9 @@ bool run_export(VectorV2Export& exporter, const OperationLog& log, vector_v2::Ch
   }
   vTaskDelay(pdMS_TO_TICKS(150));
   const bool usb_ready = exporter.present_usb();
-  if (!usb_ready) {
-    chrome.export_status = vector_v2::ChromeExportStatus::kError;
-    static_cast<void>(presenter.refresh(chrome, now_us()));
-  }
+  chrome.export_status =
+      usb_ready ? vector_v2::ChromeExportStatus::kPresented : vector_v2::ChromeExportStatus::kError;
+  static_cast<void>(presenter.refresh(chrome, now_us()));
   return usb_ready;
 }
 
@@ -855,9 +854,14 @@ bool apply_chrome_action(vector_v2::ChromeAction action, Point point,
       break;
     }
     case vector_v2::ChromeAction::kExport:
-      // Blocking by design, like Raster V1. Progress is operation-based;
-      // activating USB then ends serial until the next reset.
+      // Blocking by design. Progress is operation-based, then the explicit
+      // export mode owns input until the user returns to drawing.
       return chrome.can_export && run_export(exporter, log, chrome, presenter, clock);
+    case vector_v2::ChromeAction::kExitExport:
+      chrome.export_status = exporter.stop_usb() ? vector_v2::ChromeExportStatus::kIdle
+                                                 : vector_v2::ChromeExportStatus::kError;
+      chrome.popup = vector_v2::ChromePopup::kNone;
+      break;
     case vector_v2::ChromeAction::kSyncTime:
       chrome.popup = vector_v2::ChromePopup::kNone;
       if (chrome.can_sync_time) {
@@ -1238,6 +1242,13 @@ void run_vector_v2_app() {
     const std::uint32_t loop_us = now_us();
     poll_max_us = std::max(poll_max_us, loop_us - poll_previous_us);
     poll_previous_us = loop_us;
+
+    if (chrome.export_status == vector_v2::ChromeExportStatus::kPresented &&
+        exporter.usb_host_ejected()) {
+      chrome.export_status = vector_v2::ChromeExportStatus::kHostEjected;
+      const auto timing = presenter.refresh(chrome, loop_us);
+      print_presentation("export-host-ejected", presenter, timing);
+    }
 
     const auto next_time_sync_status = chrome_time_sync_status(time_sync.status());
     if (next_time_sync_status != chrome.time_sync_status) {
