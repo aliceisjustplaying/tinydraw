@@ -1,8 +1,8 @@
 # TinyDraw V2 roadmap
 
-Last updated: 2026-08-17 (absolute minimap control owner-accepted; next is the
-authority/storage spine + Undo/Redo, then autosave, touch targets, PNG, USB
-exit, and final AA/cold optimization; see
+Last updated: 2026-08-17 (absolute minimap control owner-accepted; Undo/Redo
+software integration is green with its device gate pending; next is autosave,
+touch targets, export hardware gates, and final AA/cold optimization; see
 [`PROJECT_STATE.md`](PROJECT_STATE.md#immediate-work-order))
 
 Branch: `feat/v2-performance-followup`
@@ -218,12 +218,12 @@ The proposed implementation seam and test-first slices are recorded in
 `OperationLog` remains the single in-memory owner; history adds an active
 prefix, retained Redo tail, monotonic generation, and prepared history changes.
 
-- [ ] Add a generation-pinned immutable read view over operation storage.
-- [ ] Separate append/storage epoch, active operation-prefix cursor, and
+- [x] Add a generation-pinned immutable read view over operation storage.
+- [x] Separate append/storage epoch, active operation-prefix cursor, and
       monotonic document generation.
-- [ ] Undo/Redo changes the active prefix and advances generation; a new gesture
-      after Undo truncates the redo branch or begins a new epoch.
-- [ ] Compute whole-gesture damage as the union of its chunks and invalidate only
+- [x] Undo/Redo changes the active prefix and advances generation; a new gesture
+      after Undo truncates the redo branch and begins a new epoch.
+- [x] Compute whole-gesture damage as the union of its chunks and invalidate only
       intersecting overview cells and tile groups.
 - [ ] Make New/Clear reset operation authority, overview, cache catalog, camera,
       history, and autosave state transactionally.
@@ -231,8 +231,12 @@ prefix, retained Redo tail, monotonic generation, and prepared history changes.
 
 ## Phase 5 — Undo, persistence, autosave
 
-- [ ] Implement whole-gesture Undo/Redo with ≥10 guaranteed depth and exact
-      mixed pen/eraser, branch-after-Undo, zoom, and localized-damage fixtures.
+- [x] Implement whole-gesture Undo/Redo with ≥10 guaranteed depth and exact
+      mixed pen/eraser, branch-after-Undo, producer-rebuild, and localized-damage
+      fixtures. Product buttons drain deferred chunks at the history boundary,
+      guard stale/disabled taps, refresh bounded damage and the dock separately,
+      and compile in both credentials-enabled firmware variants. Physical
+      multi-zoom/latency/export validation remains the device gate.
 - [ ] Define a versioned append-only authority journal: operation records,
       gesture commit boundaries, active prefix, generation/epoch, and view/tool
       state, with sequence numbers, CRCs, and commit markers/superblocks.
