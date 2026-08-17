@@ -5,6 +5,7 @@
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string_view>
 
 #include "tinydraw/ink/ribbon_geometry.h"
@@ -176,14 +177,23 @@ bool emit_batch(Writer& writer, const RibbonPrimitiveBatch& batch) {
   return true;
 }
 
-bool emit_operation(Writer& writer, const StoredOperation& operation, std::uint16_t background) {
-  const std::uint16_t color =
-      operation.tool == OperationTool::kEraser ? background : operation.color;
-  if (!writer.append("<path fill=\"") || !writer.color(color) ||
-      !writer.append("\" fill-rule=\"nonzero\" d=\"")) {
-    return false;
-  }
+std::uint16_t operation_color(const StoredOperation& operation, std::uint16_t background) {
+  return operation.tool == OperationTool::kEraser ? background : operation.color;
+}
 
+bool same_logical_gesture(const StoredOperation& previous, const StoredOperation& current) {
+  // Gesture zero is reserved for imported/legacy operation records that do not
+  // declare logical grouping. Keep those as independent paths.
+  return current.gesture_id != 0U && current.gesture_id == previous.gesture_id &&
+         current.tool == previous.tool && current.color == previous.color;
+}
+
+bool begin_path(Writer& writer, const StoredOperation& operation, std::uint16_t background) {
+  return writer.append("<path fill=\"") && writer.color(operation_color(operation, background)) &&
+         writer.append("\" fill-rule=\"nonzero\" d=\"");
+}
+
+bool emit_operation_geometry(Writer& writer, const StoredOperation& operation) {
   CurvedRibbonStream ribbon;
   for (std::size_t index = 0; index < operation.samples.size(); ++index) {
     const bool final = index + 1U == operation.samples.size();
@@ -193,7 +203,7 @@ bool emit_operation(Writer& writer, const StoredOperation& operation, std::uint1
       return false;
     }
   }
-  return writer.append("\"/>\n");
+  return true;
 }
 
 bool valid_bounds(PixelRect bounds) {
@@ -221,28 +231,39 @@ bool export_svg(const OperationLog& log, SvgByteSink& sink, SvgExportOptions opt
       !writer.append("\" viewBox=\"") || !writer.integer(options.world_bounds.x0) ||
       !writer.append(" ") || !writer.integer(options.world_bounds.y0) || !writer.append(" ") ||
       !writer.integer(width) || !writer.append(" ") || !writer.integer(height) ||
-      !writer.append("\">\n<rect x=\"") || !writer.integer(options.world_bounds.x0) ||
-      !writer.append("\" y=\"") || !writer.integer(options.world_bounds.y0) ||
-      !writer.append("\" width=\"") || !writer.integer(width) || !writer.append("\" height=\"") ||
-      !writer.integer(height) || !writer.append("\" fill=\"") ||
-      !writer.color(options.background) || !writer.append("\"/>\n")) {
+      !writer.append("\">\n")) {
     return false;
   }
 
   if (options.progress != nullptr) {
     options.progress(0U, operation_count, options.progress_context);
   }
+  std::optional<StoredOperation> previous;
+  bool path_open = false;
   for (std::size_t index = 0; index < operation_count; ++index) {
     const auto operation = log.operation(index);
-    if (!operation.has_value() || !emit_operation(writer, *operation, options.background)) {
+    if (!operation.has_value()) {
       return false;
     }
+    const bool continues_gesture =
+        previous.has_value() && same_logical_gesture(*previous, *operation);
+    if (!continues_gesture) {
+      if ((path_open && !writer.append("\"/>\n")) ||
+          !begin_path(writer, *operation, options.background)) {
+        return false;
+      }
+      path_open = true;
+    }
+    if (!emit_operation_geometry(writer, *operation)) {
+      return false;
+    }
+    previous = operation;
     if (options.progress != nullptr) {
       options.progress(index + 1U, operation_count, options.progress_context);
     }
   }
 
-  if (!writer.append("</svg>\n") || !writer.flush()) {
+  if ((path_open && !writer.append("\"/>\n")) || !writer.append("</svg>\n") || !writer.flush()) {
     return false;
   }
   return log.epoch() == epoch && log.current_revision() == revision &&
