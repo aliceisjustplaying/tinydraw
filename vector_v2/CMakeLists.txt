@@ -27,43 +27,50 @@ target_link_libraries(tinydraw_ink_trace_check PRIVATE
 )
 
 if(TINYDRAW_BUILD_TESTS)
-  add_executable(tinydraw_vector_v2_tests
-    tests/test_main.cpp
+  function(tinydraw_add_vector_v2_tests target)
+    add_executable(${target} tests/test_main.cpp ${ARGN})
+    target_link_libraries(${target} PRIVATE
+      tinydraw::vector_v2
+      tinydraw::core
+      tinydraw_project_options
+    )
+    target_include_directories(${target} PRIVATE
+      ${CMAKE_CURRENT_LIST_DIR}/test_support/include
+    )
+    target_include_directories(${target} SYSTEM PRIVATE
+      ${PROJECT_SOURCE_DIR}/third_party/doctest
+    )
+    add_test(NAME ${target} COMMAND ${target})
+  endfunction()
+
+  tinydraw_add_vector_v2_tests(tinydraw_vector_v2_authority_tests
     tests/authority_journal_test.cpp
     tests/chained_operation_builder_test.cpp
+    tests/incremental_document_test.cpp
+    tests/operation_builder_test.cpp
+    tests/operation_log_test.cpp
+    tests/svg_export_test.cpp
+    tests/world_export_test.cpp
+  )
+  tinydraw_add_vector_v2_tests(tinydraw_vector_v2_interaction_tests
     tests/chrome_test.cpp
     tests/display_scheduler_test.cpp
     tests/frame_scroller_test.cpp
-    tests/idle_repair_test.cpp
     tests/ink_trace_test.cpp
     tests/live_ink_coordinator_test.cpp
-    tests/incremental_document_test.cpp
+    tests/navigation_state_test.cpp
+    tests/panel_staging_test.cpp
+    tests/touch_event_buffer_test.cpp
+  )
+  tinydraw_add_vector_v2_tests(tinydraw_vector_v2_rendering_tests
+    tests/idle_repair_test.cpp
     tests/incremental_rasterizer_test.cpp
     tests/materialized_canvas_test.cpp
-    tests/navigation_state_test.cpp
-    tests/operation_builder_test.cpp
-    tests/panel_staging_test.cpp
-    tests/operation_log_test.cpp
     tests/settled_tile_test.cpp
     tests/rerender_ledger_test.cpp
-    tests/svg_export_test.cpp
     tests/tile_payload_analysis_test.cpp
     tests/tile_producer_test.cpp
-    tests/touch_event_buffer_test.cpp
-    tests/world_export_test.cpp
   )
-  target_link_libraries(tinydraw_vector_v2_tests PRIVATE
-    tinydraw::vector_v2
-    tinydraw::core
-    tinydraw_project_options
-  )
-  target_include_directories(tinydraw_vector_v2_tests PRIVATE
-    ${CMAKE_CURRENT_LIST_DIR}/test_support/include
-  )
-  target_include_directories(tinydraw_vector_v2_tests SYSTEM PRIVATE
-    ${PROJECT_SOURCE_DIR}/third_party/doctest
-  )
-  add_test(NAME tinydraw_vector_v2_tests COMMAND tinydraw_vector_v2_tests)
   add_test(NAME tinydraw_ink_trace_check_recorded
            COMMAND tinydraw_ink_trace_check
                    "${PROJECT_SOURCE_DIR}/testdata/ink-traces/scribble-multistroke.csv")
