@@ -8,7 +8,9 @@
 #endif
 
 #include "tinydraw/vector_v2/raster_census.h"
+#ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
 #include "tinydraw/vector_v2/rerender_ledger.h"
+#endif
 #include "tinydraw/vector_v2/storage_overlap.h"
 #include "tinydraw/vector_v2/tile_payload_analysis.h"
 
@@ -509,11 +511,13 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
     result.level_bounds = published->level_bounds;
     result.tiles_published = published->tiles_published;
     result.groups_published = 1U;
+#ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
     if (rerender_ledger_ != nullptr) {
       static_cast<void>(rerender_ledger_->record_group_render(
           active_group_.view.zoom, active_group_.origin.column, active_group_.origin.row,
           active_group_.revision));
     }
+#endif
   }
   const ViewRequest view = active_group_.view;
   active_group_ = {};

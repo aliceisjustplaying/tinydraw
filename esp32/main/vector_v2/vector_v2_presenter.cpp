@@ -63,10 +63,6 @@ const char* selected_tear_edge_name() { return "rising"; }
 
 TearSignalEdge selected_tear_edge() { return TearSignalEdge::kRising; }
 
-int requested_panel_clock_mhz() { return kEffectiveCo5300ClockMHz; }
-
-int effective_panel_clock_mhz() { return kEffectiveCo5300ClockMHz; }
-
 VectorV2Presenter::VectorV2Presenter(vector_v2::MaterializedCanvas& canvas,
                                      vector_v2::NavigationState& navigation,
                                      vector_v2::DisplayScheduler& scheduler,
@@ -84,10 +80,9 @@ VectorV2Presenter::VectorV2Presenter(vector_v2::MaterializedCanvas& canvas,
       renderer_(std::make_unique<RibbonRenderer>()) {
   std::printf(
       "TINYDRAW_VECTOR_V2_PRESENTATION experiment=%s te_edge=%s "
-      "requested_clock_mhz=%d effective_clock_mhz=%d "
+      "clock_mhz=%d "
       "optical_acceptance=external_manual\n",
-      presentation_experiment_name(), selected_tear_edge_name(), requested_panel_clock_mhz(),
-      effective_panel_clock_mhz());
+      presentation_experiment_name(), selected_tear_edge_name(), kCo5300ClockMHz);
 }
 
 bool VectorV2Presenter::ready() const {
@@ -425,6 +420,7 @@ LivePresentationTiming VectorV2Presenter::set_zoom(vector_v2::ZoomLevel target_z
   return refresh(chrome, event_us);
 }
 
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
 LivePresentationTiming VectorV2Presenter::set_view(vector_v2::ZoomLevel target_zoom, int level_x,
                                                    int level_y,
                                                    const vector_v2::ChromeState& chrome,
@@ -435,6 +431,7 @@ LivePresentationTiming VectorV2Presenter::set_view(vector_v2::ZoomLevel target_z
   }
   return refresh(chrome, event_us);
 }
+#endif
 
 LivePresentationTiming VectorV2Presenter::pan_from(int start_x, int start_y, Point start_touch,
                                                    Point current_touch,
