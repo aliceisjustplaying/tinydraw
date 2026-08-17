@@ -33,6 +33,19 @@ class MemoryJournalSource final : public vector_v2::AuthorityJournalSource {
   std::span<const std::byte> bytes_;
 };
 
+bool append_encoded(std::vector<std::byte>& journal, vector_v2::JournalChange change,
+                    const vector_v2::OperationLog& log, const vector_v2::JournalState& state,
+                    std::uint64_t sequence) {
+  const auto size = vector_v2::authority_journal_encoded_size(change, log);
+  if (!size.has_value()) {
+    return false;
+  }
+  const std::size_t offset = journal.size();
+  journal.resize(offset + *size);
+  return vector_v2::encode_authority_journal(
+      change, log, state, sequence, std::span(journal).subspan(offset, *size));
+}
+
 vector_v2::JournalState example_state() {
   vector_v2::NavigationState navigation;
   static_cast<void>(navigation.set_zoom(vector_v2::ZoomLevel::k100Percent, {184, 186}));
@@ -133,5 +146,234 @@ TEST_CASE("authority journal checkpoint restores drawing history and session sta
     CHECK(actual->world_bounds == expected->world_bounds);
     CHECK(std::equal(actual->samples.begin(), actual->samples.end(), expected->samples.begin(),
                      expected->samples.end()));
+  }
+}
+
+TEST_CASE("authority journal append replaces the persisted Redo branch") {
+  std::array<vector_v2::OperationRecord, 4> source_records{};
+  std::array<vector_v2::CompactOperationSample, 4> source_samples{};
+  vector_v2::OperationLog source(source_records, source_samples);
+  const std::array first{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 160, .y_quarter = 160, .radius_256 = 256, .elapsed_ms = 0},
+  };
+  const std::array discarded{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 320, .y_quarter = 320, .radius_256 = 256, .elapsed_ms = 0},
+  };
+  const std::array replacement{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 480, .y_quarter = 480, .radius_256 = 256, .elapsed_ms = 0},
+  };
+  REQUIRE(source.append({.color = 0x001FU, .gesture_id = 1, .samples = first}));
+  REQUIRE(source.append({.color = 0xF800U, .gesture_id = 2, .samples = discarded}));
+  auto undo = source.prepare_undo();
+  REQUIRE(undo.has_value());
+  undo->publish();
+
+  const vector_v2::JournalState checkpoint_state = example_state();
+  const vector_v2::JournalChange checkpoint{
+      .kind = vector_v2::JournalChangeKind::kCheckpoint,
+  };
+  const auto checkpoint_size = vector_v2::authority_journal_encoded_size(checkpoint, source);
+  REQUIRE(checkpoint_size.has_value());
+  std::vector<std::byte> encoded(*checkpoint_size);
+  REQUIRE(vector_v2::encode_authority_journal(checkpoint, source, checkpoint_state, 30U, encoded));
+
+  REQUIRE(source.append({.color = 0x07E0U, .gesture_id = 3, .samples = replacement}));
+  vector_v2::JournalState replacement_state = checkpoint_state;
+  replacement_state.tool = vector_v2::ChromeTool::kDraw;
+  replacement_state.next_stroke_id = 4;
+  const vector_v2::JournalChange append{
+      .kind = vector_v2::JournalChangeKind::kAppendStroke,
+      .first_operation = 1U,
+  };
+  const auto append_size = vector_v2::authority_journal_encoded_size(append, source);
+  REQUIRE(append_size.has_value());
+  const std::size_t append_offset = encoded.size();
+  encoded.resize(encoded.size() + *append_size);
+  REQUIRE(vector_v2::encode_authority_journal(
+      append, source, replacement_state, 31U,
+      std::span(encoded).subspan(append_offset, *append_size)));
+
+  std::array<vector_v2::OperationRecord, 4> recovered_records{};
+  std::array<vector_v2::CompactOperationSample, 4> recovered_samples{};
+  vector_v2::JournalState recovered_state{};
+  const MemoryJournalSource journal(encoded);
+  const vector_v2::JournalRecovery recovered = vector_v2::recover_authority_journal(
+      journal, encoded.size(), recovered_records, recovered_samples, recovered_state);
+
+  CHECK(recovered.status == vector_v2::JournalRecoveryStatus::kRecovered);
+  CHECK(recovered.transaction_count == 2U);
+  CHECK(recovered.sequence == 31U);
+  CHECK(recovered.state == source.read_view());
+  CHECK(recovered.retained_sample_count == 2U);
+  CHECK(recovered_state == replacement_state);
+  REQUIRE(recovered.state.retained_operation_count == 2U);
+  CHECK(recovered_records[1].color == 0x07E0U);
+  CHECK(recovered_records[1].gesture_id == 3U);
+  CHECK(recovered_samples[1].x_quarter == replacement.front().x_quarter);
+}
+
+TEST_CASE("authority journal replays history state and New commits") {
+  std::array<vector_v2::OperationRecord, 3> source_records{};
+  std::array<vector_v2::CompactOperationSample, 3> source_samples{};
+  vector_v2::OperationLog source(source_records, source_samples);
+  const std::array first{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 160, .y_quarter = 160, .radius_256 = 256, .elapsed_ms = 0},
+  };
+  const std::array second{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 320, .y_quarter = 320, .radius_256 = 256, .elapsed_ms = 0},
+  };
+  REQUIRE(source.append({.gesture_id = 1, .samples = first}));
+  REQUIRE(source.append({.gesture_id = 2, .samples = second}));
+  vector_v2::JournalState state = example_state();
+  std::vector<std::byte> encoded;
+  REQUIRE(append_encoded(encoded, {.kind = vector_v2::JournalChangeKind::kCheckpoint}, source,
+                         state, 40U));
+
+  auto undo = source.prepare_undo();
+  REQUIRE(undo.has_value());
+  undo->publish();
+  state.tool = vector_v2::ChromeTool::kPan;
+  REQUIRE(append_encoded(encoded, {.kind = vector_v2::JournalChangeKind::kHistory}, source, state,
+                         41U));
+  state.size = vector_v2::ChromeSize::kSmall;
+  state.color_index = 3;
+  REQUIRE(append_encoded(encoded, {.kind = vector_v2::JournalChangeKind::kState}, source, state,
+                         42U));
+
+  std::array<vector_v2::OperationRecord, 3> recovered_records{};
+  std::array<vector_v2::CompactOperationSample, 3> recovered_samples{};
+  vector_v2::JournalState recovered_state{};
+  const MemoryJournalSource history_source(encoded);
+  const auto history_recovery = vector_v2::recover_authority_journal(
+      history_source, encoded.size(), recovered_records, recovered_samples, recovered_state);
+  CHECK(history_recovery.status == vector_v2::JournalRecoveryStatus::kRecovered);
+  CHECK(history_recovery.transaction_count == 3U);
+  CHECK(history_recovery.state == source.read_view());
+  CHECK(history_recovery.state.active_operation_count == 1U);
+  CHECK(history_recovery.state.retained_operation_count == 2U);
+  CHECK(recovered_state == state);
+  CHECK(recovered_records[1].gesture_id == 2U);
+
+  REQUIRE(source.reset({source.current_revision().value + 1U}));
+  state.next_stroke_id = 1U;
+  REQUIRE(append_encoded(encoded, {.kind = vector_v2::JournalChangeKind::kReset}, source, state,
+                         43U));
+  const MemoryJournalSource reset_source(encoded);
+  const auto reset_recovery = vector_v2::recover_authority_journal(
+      reset_source, encoded.size(), recovered_records, recovered_samples, recovered_state);
+  CHECK(reset_recovery.status == vector_v2::JournalRecoveryStatus::kRecovered);
+  CHECK(reset_recovery.transaction_count == 4U);
+  CHECK(reset_recovery.state == source.read_view());
+  CHECK(reset_recovery.retained_sample_count == 0U);
+  CHECK(recovered_state == state);
+}
+
+TEST_CASE("authority journal accepts a blank first checkpoint") {
+  std::array<vector_v2::OperationRecord, 1> source_records{};
+  std::array<vector_v2::CompactOperationSample, 1> source_samples{};
+  vector_v2::OperationLog source(source_records, source_samples);
+  const vector_v2::JournalState saved_state = example_state();
+  std::vector<std::byte> encoded;
+  REQUIRE(append_encoded(encoded, {.kind = vector_v2::JournalChangeKind::kCheckpoint}, source,
+                         saved_state, 1U));
+
+  std::array<vector_v2::OperationRecord, 1> recovered_records{};
+  std::array<vector_v2::CompactOperationSample, 1> recovered_samples{};
+  vector_v2::JournalState recovered_state{};
+  const MemoryJournalSource journal(encoded);
+  const auto recovered = vector_v2::recover_authority_journal(
+      journal, encoded.size(), recovered_records, recovered_samples, recovered_state);
+  CHECK(recovered.status == vector_v2::JournalRecoveryStatus::kRecovered);
+  CHECK(recovered.transaction_count == 1U);
+  CHECK(recovered.state == source.read_view());
+  CHECK(recovered.retained_sample_count == 0U);
+  CHECK(recovered_state == saved_state);
+}
+
+TEST_CASE("authority journal keeps the prior recovery point after every truncated tail byte") {
+  std::array<vector_v2::OperationRecord, 2> source_records{};
+  std::array<vector_v2::CompactOperationSample, 2> source_samples{};
+  vector_v2::OperationLog source(source_records, source_samples);
+  const std::array sample{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 160, .y_quarter = 160, .radius_256 = 256, .elapsed_ms = 0},
+  };
+  REQUIRE(source.append({.gesture_id = 1, .samples = sample}));
+  vector_v2::JournalState checkpoint_state = example_state();
+  std::vector<std::byte> encoded;
+  REQUIRE(append_encoded(encoded, {.kind = vector_v2::JournalChangeKind::kCheckpoint}, source,
+                         checkpoint_state, 50U));
+  const std::size_t recovery_point_bytes = encoded.size();
+  vector_v2::JournalState latest_state = checkpoint_state;
+  latest_state.color_index = 2;
+  REQUIRE(append_encoded(encoded, {.kind = vector_v2::JournalChangeKind::kState}, source,
+                         latest_state, 51U));
+
+  for (std::size_t cut = recovery_point_bytes + 1U; cut < encoded.size(); ++cut) {
+    std::array<vector_v2::OperationRecord, 2> recovered_records{};
+    std::array<vector_v2::CompactOperationSample, 2> recovered_samples{};
+    vector_v2::JournalState recovered_state{};
+    const MemoryJournalSource journal(std::span(encoded).first(cut));
+    const auto recovered = vector_v2::recover_authority_journal(
+        journal, cut, recovered_records, recovered_samples, recovered_state);
+    CAPTURE(cut);
+    CHECK(recovered.status == vector_v2::JournalRecoveryStatus::kRecovered);
+    CHECK(recovered.sequence == 50U);
+    CHECK(recovered.transaction_count == 1U);
+    CHECK(recovered.bytes_consumed == recovery_point_bytes);
+    CHECK(recovered.discarded_tail);
+    CHECK(recovered_state == checkpoint_state);
+  }
+}
+
+TEST_CASE("authority journal rejects every single-byte corruption in a later commit") {
+  std::array<vector_v2::OperationRecord, 3> source_records{};
+  std::array<vector_v2::CompactOperationSample, 3> source_samples{};
+  vector_v2::OperationLog source(source_records, source_samples);
+  const std::array first{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 160, .y_quarter = 160, .radius_256 = 256, .elapsed_ms = 0},
+  };
+  const std::array second{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 320, .y_quarter = 320, .radius_256 = 256, .elapsed_ms = 0},
+  };
+  REQUIRE(source.append({.color = 0x001FU, .gesture_id = 1, .samples = first}));
+  const vector_v2::JournalState checkpoint_state = example_state();
+  std::vector<std::byte> encoded;
+  REQUIRE(append_encoded(encoded, {.kind = vector_v2::JournalChangeKind::kCheckpoint}, source,
+                         checkpoint_state, 60U));
+  const std::size_t recovery_point_bytes = encoded.size();
+  REQUIRE(source.append({.color = 0xF800U, .gesture_id = 2, .samples = second}));
+  vector_v2::JournalState latest_state = checkpoint_state;
+  latest_state.next_stroke_id = 3;
+  REQUIRE(append_encoded(encoded,
+                         {.kind = vector_v2::JournalChangeKind::kAppendStroke,
+                          .first_operation = 1U},
+                         source, latest_state, 61U));
+
+  for (std::size_t corrupt = recovery_point_bytes; corrupt < encoded.size(); ++corrupt) {
+    std::vector<std::byte> damaged = encoded;
+    damaged[corrupt] ^= std::byte{0x01};
+    std::array<vector_v2::OperationRecord, 3> recovered_records{};
+    std::array<vector_v2::CompactOperationSample, 3> recovered_samples{};
+    vector_v2::JournalState recovered_state{};
+    const MemoryJournalSource journal(damaged);
+    const auto recovered = vector_v2::recover_authority_journal(
+        journal, damaged.size(), recovered_records, recovered_samples, recovered_state);
+    CAPTURE(corrupt);
+    CHECK(recovered.status == vector_v2::JournalRecoveryStatus::kRecovered);
+    CHECK(recovered.sequence == 60U);
+    CHECK(recovered.transaction_count == 1U);
+    CHECK(recovered.bytes_consumed == recovery_point_bytes);
+    CHECK(recovered.discarded_tail);
+    CHECK(recovered_state == checkpoint_state);
+    CHECK(recovered_records[0].color == 0x001FU);
+    CHECK(recovered_samples[0].x_quarter == first.front().x_quarter);
   }
 }

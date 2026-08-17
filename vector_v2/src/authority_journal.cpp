@@ -221,7 +221,9 @@ std::optional<ChangeDescription> describe_change(JournalChange change, const Ope
       break;
   }
 
-  std::size_t payload = count == 0U ? 0U : sizeof(std::uint32_t);
+  const bool carries_operations = change.kind == JournalChangeKind::kCheckpoint ||
+                                  change.kind == JournalChangeKind::kAppendStroke;
+  std::size_t payload = carries_operations ? sizeof(std::uint32_t) : 0U;
   for (std::size_t offset = 0; offset < count; ++offset) {
     const std::size_t index = first + offset;
     const auto operation = change.kind == JournalChangeKind::kCheckpoint
@@ -564,7 +566,7 @@ bool encode_authority_journal(JournalChange change, const OperationLog& log,
   put_u32(header, 60U, static_cast<std::uint32_t>(description->retained_sample_count));
   encode_state(state, header);
 
-  if (description->operation_count != 0U) {
+  if (!payload.empty()) {
     put_u32(payload, 0U, static_cast<std::uint32_t>(description->operation_count));
     std::size_t position = sizeof(std::uint32_t);
     for (std::size_t offset = 0; offset < description->operation_count; ++offset) {
@@ -601,7 +603,10 @@ JournalRecovery recover_authority_journal(const AuthorityJournalSource& source, 
   std::size_t offset = 0U;
   std::array<std::byte, 4> magic{};
   while (offset < bytes) {
-    if (bytes - offset < magic.size() || !source.read(offset, magic)) {
+    if (bytes - offset < magic.size()) {
+      return failed_recovery(JournalRecoveryStatus::kCorrupt, result, true);
+    }
+    if (!source.read(offset, magic)) {
       return failed_recovery(JournalRecoveryStatus::kIoError, result, false);
     }
     if (std::all_of(magic.begin(), magic.end(), [](std::byte value) {
