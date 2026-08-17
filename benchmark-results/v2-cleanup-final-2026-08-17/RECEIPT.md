@@ -1,5 +1,11 @@
 # Feature-complete cleanup receipt
 
+> Historical checkpoint. Later work on the same cleanup branch closed the
+> overlap 50% cold gate at 476.969 ms, raised the raw-tile pool to 448 slots,
+> and split `vector_v2_app.cpp` below 1,000 lines. See
+> [`../overlap-cold-fix-2026-08-17/RECEIPT.md`](../overlap-cold-fix-2026-08-17/RECEIPT.md)
+> and the current [`PROJECT_STATE.md`](../../PROJECT_STATE.md).
+
 Baseline: `v2-feature-complete-pre-cleanup` (`3f23c09`).
 
 Cleanup integration: `cleanup/v2-degoldplate` at `23f514e` before this receipt.

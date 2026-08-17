@@ -1,5 +1,13 @@
 # Vector V2 autosave/recovery receipt — 2026-08-17
 
+> Historical receipt. It records the first autosave implementation and its
+> physical recovery run. The 2026-08-17 maintainability cleanup later narrowed
+> the durable format to drawing authority only. Navigation, tool, palette, and
+> color now restart from product defaults; the next Stroke identity is derived
+> from restored active authority. Current policy lives in
+> [`VECTOR_V2_AUTOSAVE_DESIGN.md`](../../VECTOR_V2_AUTOSAVE_DESIGN.md) and
+> [`SHIP_CONTRACT.md`](../../SHIP_CONTRACT.md).
+
 ## Verdict
 
 **Software integration and real drawn-document reset/recovery are green;

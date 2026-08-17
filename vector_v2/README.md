@@ -86,19 +86,28 @@ implementation through `TimeSyncController`. The document popup supplies the
 only trigger; controller status crosses the task boundary atomically while the
 main loop alone owns Chrome state. Connecting and synchronizing are modal, and
 a terminal success/error becomes visible only after the task has stopped and
-deinitialized Wi-Fi. Credentials remain in the ignored local header. Host and
-build evidence is in the
-[`NTP receipt`](../benchmark-results/v2-ntp-sync-2026-08-17/RECEIPT.md).
+deinitialized Wi-Fi. Credentials remain in the ignored local header. The owner
+accepted unavailable-network handling, successful RTC sync, centering, and text
+size on glass. Evidence is in the
+[`NTP receipt`](../benchmark-results/v2-ntp-sync-2026-08-17/RECEIPT.md) and
+[`text-size follow-up`](../benchmark-results/ntp-text-size-2026-08-17/RECEIPT.md).
 
 Vector persistence uses the portable `authority_journal` module and one ESP
 flash adapter. Journal commits persist retained operations/samples, the active
-Redo boundary, generation/epoch, complete remembered navigation, chrome
-selections, and the next Stroke identity; raster caches remain derived. Each
+Redo boundary, generation, and epoch; navigation, chrome selections, the next
+Stroke counter, and raster caches are not persisted. Navigation and chrome
+restart from defaults, and the next Stroke identity is derived from restored
+active authority. Each
 transaction occupies aligned 4 KiB sectors and publishes its CRC-checked final
 marker last. The ESP worker performs erase/write/readback below the touch task,
 while startup replays only active authority into a fresh overview. The current
 3 MiB journal preserves existing Recovery points and reports full rather than
 compacting; owner direction defers two-arena recycling and metadata.
+
+Navigation stores the current zoom/origin and one world-space focus. Every zoom
+transition derives and clamps its target origin from that focus; no dormant
+per-zoom origin is retained. This focus-centered model supersedes the earlier
+exact-origin restoration receipt.
 
 ## First milestone: `MaterializedCanvas`
 
@@ -208,17 +217,16 @@ gates is made here.
 
 ## Task #55 revision seam
 
-Incremental append does not use `publish_overview`, which deliberately replaces
-a whole revision and invalidates all tiles. `commit_incremental_revision` now
-provides this transactional behavior:
+Deferred absorption does not use `publish_overview`, which deliberately replaces
+a whole revision and invalidates all tiles. The committed-overlay path provides
+this behavior:
 
 1. The renderer copies only the conservative affected overview rectangle into
-   caller-owned compact scratch, applies operation N there, and prepares scratch
-   copies of affected resident tiles.
-2. The canvas validates the next revision, exact overview bounds and pixel
-   count, affected tile keys, and replacement pixels before changing state.
-3. One commit copies the bounded overview rows, carries unaffected resident
-   tiles forward to revision N, and publishes or invalidates affected tiles.
+   caller-owned compact scratch and applies operation N there.
+2. The canvas validates the next revision, exact overview bounds and affected
+   tile keys before changing revision metadata.
+3. One commit copies the bounded overview rows, carries retained resident
+   tiles forward to revision N, and invalidates the rest.
    Failure leaves the prior revision and every source identity unchanged.
 4. Missing affected tile pixels remain valid overview fallback and may be
    republished from incremental scratch later; operations 1…N−1 are never
@@ -226,12 +234,10 @@ provides this transactional behavior:
 
 Affected identity is now expressed as conservative world bounds, so an
 operation cannot accidentally carry stale intersecting residents at other zooms
-forward as current. `append_incrementally` owns the prepare/render/commit/publish
-ordering behind one host-tested interface: prepared samples are not authoritative
-until the overview and bounded affected resident tiles have been rendered and the
-canvas revision commits; excess affected residents become current overview
-fallback. Its overview, tile scratch, publication, and key spans are caller-owned
-and alias-checked. Snapshot restore must go through
+forward as current. `append_authority_only` publishes the operation immediately;
+`absorb_pending_operation` advances materialization through caller-owned,
+alias-checked overview, tile-key, and mask scratch. Pending operations patch
+presentation from vector truth until absorption catches up. Snapshot restore must go through
 `restore_document_snapshot`, which validates both modules before replacing the
 canvas overview and resetting operation authority to the same revision.
 
@@ -243,12 +249,14 @@ from paper and active painter order, invalidates only intersecting tile
 identities, then publishes the prepared history transition. Host fixtures cover
 at least ten levels, canceled/rejected branches, a pen line cut by an eraser,
 and producer reconstruction after history. Product buttons drain deferred ink
-before this transaction and refresh bounded canvas damage plus the dock; the
-physical multi-zoom gate remains open.
+before this transaction and refresh bounded canvas damage plus the dock;
+correctness and ordinary-glass checks are green. High-zoom affected-region
+rebuilding remains the final history performance problem.
 
 The interface expresses a revision plus bounded affected-tile publications; it
-does not expose mutable pool storage or renderer callbacks. Tile size and slot
-count remain provisional and may change after captured workloads. Callers
+does not expose mutable pool storage or renderer callbacks. The current tile
+size and slot count are part of the measured memory/cache baseline; changing
+them reopens retention, cold, and export-reserve gates. Callers
 serialize composition and publication, so source lookup does not expose a
 second lifetime protocol.
 
@@ -256,21 +264,18 @@ The immediate renderer is intentionally opaque and hard-edged; publications are
 labeled `kImmediate`, below `kSettled`. `kSettled` is reserved for anti-aliased
 output, so provisional pixels cannot masquerade as accepted quality. Long sparse
 segments are subdivided into bounded raster steps, and tile enumeration reports
-required versus written capacity. Anti-aliased settled convergence remains open.
+required versus written capacity. Analytic settled convergence is implemented
+and appearance is accepted. Progression remains an open performance gate: the
+current 25% verification reached 76.416 ms for one tile, above the nominal 8 ms
+cooperative slice.
 
-The latest exclusive hardware proof is
-[`hardware-receipts/fa39abe-operation-builder-walk.log`](https://github.com/aliceisjustplaying/tinydraw/blob/v2-feature-complete-pre-cleanup/vector_v2/hardware-receipts/fa39abe-operation-builder-walk.log).
-It quantized deterministic input-shaped pen and eraser points through the
-fixed-capacity `OperationBuilder`, advanced document authority and materialization
-together through 32 compact operations, then composed the expected deterministic
-`d4e162c4` result. Every one of the walk's 168 bounded strips passed through
-`DisplayScheduler`; all 168 were accepted and completed in order with zero
-stale or other scheduler rejects, and transport completed 168/168 with zero
-CO5300 window rejects. The 30-operation burst averaged 50.284 ms per coordinated
-append. The same deterministic hashes and zero-rejection scheduler/transport
-result passed again after the replay-range seam in
-[`hardware-receipts/20dbab7-production-regression-walk.log`](https://github.com/aliceisjustplaying/tinydraw/blob/v2-feature-complete-pre-cleanup/vector_v2/hardware-receipts/20dbab7-production-regression-walk.log).
-That regression walk does not exercise the host-only range query itself.
+The current presenter validates each strip and sends it directly to the panel
+transport. The former synchronous `DisplayScheduler` queue was removed because
+no production path ever queued behind an in-flight strip. Existing receipts
+collectively cover transport, cold replay, interaction pacing, cache retention,
+long gestures, and export. The cleanup/application split passed the current
+448-slot hardware battery; the final release candidate still needs its own
+same-head battery.
 
 A separate PSRAM measurement compared full copy, swappable double buffers, and
 bounded dirty-region publication; its method and limits are archived in
