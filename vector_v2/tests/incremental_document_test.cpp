@@ -53,6 +53,114 @@ void replay_operations(vector_v2::OperationLog& log, const vector_v2::OperationR
 
 }  // namespace
 
+TEST_CASE("history restores a line cut by an eraser Stroke") {
+  Fixture fixture;
+  fixture.overview.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
+  const std::array pen{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 3'200, .y_quarter = 6'400, .radius_256 = 5'120},
+      vector_v2::CompactOperationSample{
+          .x_quarter = 9'600, .y_quarter = 6'400, .radius_256 = 5'120},
+  };
+  const std::array eraser{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 6'400, .y_quarter = 4'800, .radius_256 = 5'120},
+      vector_v2::CompactOperationSample{
+          .x_quarter = 6'400, .y_quarter = 8'000, .radius_256 = 5'120},
+  };
+  REQUIRE(vector_v2::append_incrementally(fixture.log, fixture.canvas,
+                                          {.color = 0xF800U, .gesture_id = 1U, .samples = pen},
+                                          fixture.workspace()));
+  const auto line_pixels = fixture.overview;
+  CHECK(line_pixels[100U * vector_v2::kOverviewWidth + 80U] == 0xF800U);
+  CHECK(line_pixels[100U * vector_v2::kOverviewWidth + 100U] == 0xF800U);
+
+  REQUIRE(vector_v2::append_incrementally(
+      fixture.log, fixture.canvas,
+      {.tool = vector_v2::OperationTool::kEraser, .gesture_id = 2U, .samples = eraser},
+      fixture.workspace()));
+  const auto erased_pixels = fixture.overview;
+  CHECK(erased_pixels[100U * vector_v2::kOverviewWidth + 80U] == 0xF800U);
+  CHECK(erased_pixels[100U * vector_v2::kOverviewWidth + 100U] == 0xFFFFU);
+
+  const auto undone = vector_v2::move_history_incrementally(
+      fixture.log, fixture.canvas, vector_v2::HistoryDirection::kUndo, fixture.next_overview);
+  REQUIRE(undone.has_value());
+  CHECK(fixture.overview == line_pixels);
+  CHECK(fixture.log.current_revision() == vector_v2::DocumentRevision{3});
+  CHECK(fixture.canvas.current_revision() == vector_v2::DocumentRevision{3});
+
+  const auto redone = vector_v2::move_history_incrementally(
+      fixture.log, fixture.canvas, vector_v2::HistoryDirection::kRedo, fixture.next_overview);
+  REQUIRE(redone.has_value());
+  CHECK(fixture.overview == erased_pixels);
+  CHECK(fixture.log.current_revision() == vector_v2::DocumentRevision{4});
+  CHECK(fixture.canvas.current_revision() == vector_v2::DocumentRevision{4});
+}
+
+TEST_CASE("history refuses to run while the canvas trails authority") {
+  Fixture fixture;
+  fixture.overview.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
+  const std::array pen{
+      vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 160, .radius_256 = 512}};
+  REQUIRE(vector_v2::append_authority_only(fixture.log,
+                                           {.color = 0xF800U, .gesture_id = 1U, .samples = pen}));
+
+  CHECK_FALSE(vector_v2::move_history_incrementally(
+      fixture.log, fixture.canvas, vector_v2::HistoryDirection::kUndo, fixture.next_overview));
+  CHECK(fixture.log.current_revision() == vector_v2::DocumentRevision{1});
+  CHECK(fixture.canvas.current_revision() == vector_v2::DocumentRevision{0});
+  CHECK(fixture.log.operation_count() == 1U);
+}
+
+TEST_CASE("failed history scratch validation leaves both revisions unchanged") {
+  Fixture fixture;
+  fixture.overview.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
+  const std::array pen{
+      vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 160, .radius_256 = 512}};
+  REQUIRE(vector_v2::append_incrementally(fixture.log, fixture.canvas,
+                                          {.color = 0xF800U, .gesture_id = 1U, .samples = pen},
+                                          fixture.workspace()));
+
+  CHECK_FALSE(vector_v2::move_history_incrementally(fixture.log, fixture.canvas,
+                                                    vector_v2::HistoryDirection::kUndo, {}));
+  CHECK(fixture.log.current_revision() == vector_v2::DocumentRevision{1});
+  CHECK(fixture.canvas.current_revision() == vector_v2::DocumentRevision{1});
+  CHECK(fixture.log.can_undo());
+}
+
+TEST_CASE("history invalidates only tiles intersecting Stroke damage") {
+  Fixture fixture;
+  fixture.overview.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({0}, fixture.overview));
+  std::array<std::uint16_t, vector_v2::kTilePixels> paper{};
+  paper.fill(0xFFFFU);
+  const vector_v2::TileKey affected{vector_v2::ZoomLevel::k100Percent, 0, 0};
+  const vector_v2::TileKey unaffected{vector_v2::ZoomLevel::k100Percent, 10, 10};
+  REQUIRE(fixture.canvas.publish_tile(affected, {0}, vector_v2::MaterializationQuality::kSettled,
+                                      paper));
+  REQUIRE(fixture.canvas.publish_tile(unaffected, {0}, vector_v2::MaterializationQuality::kSettled,
+                                      paper));
+  const std::array pen{
+      vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 160, .radius_256 = 512}};
+  REQUIRE(vector_v2::append_incrementally(fixture.log, fixture.canvas,
+                                          {.color = 0xF800U, .gesture_id = 1U, .samples = pen},
+                                          fixture.workspace()));
+  REQUIRE(fixture.canvas.lookup(affected)->kind == vector_v2::SourceKind::kTileSlot);
+  REQUIRE(fixture.canvas.lookup(unaffected)->kind == vector_v2::SourceKind::kTileSlot);
+
+  REQUIRE(vector_v2::move_history_incrementally(
+      fixture.log, fixture.canvas, vector_v2::HistoryDirection::kUndo, fixture.next_overview));
+  CHECK(fixture.canvas.lookup(affected)->kind == vector_v2::SourceKind::kOverview);
+  const auto retained = fixture.canvas.lookup(unaffected);
+  REQUIRE(retained.has_value());
+  CHECK(retained->kind == vector_v2::SourceKind::kTileSlot);
+  CHECK(retained->identity.revision == vector_v2::DocumentRevision{2});
+}
+
 TEST_CASE("incremental document advances log and canvas together") {
   Fixture fixture;
   fixture.overview.fill(0xFFFFU);

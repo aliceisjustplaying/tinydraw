@@ -159,6 +159,20 @@ struct InPlaceRetentionBudget {
 [[nodiscard]] std::optional<IncrementalAppendResult> append_authority_only(
     OperationLog& log, const OperationAppend& append_request, InPlaceRetentionBudget budget = {});
 
+enum class HistoryDirection : std::uint8_t {
+  kUndo,
+  kRedo,
+};
+
+// Moves authority across one whole Stroke and rebuilds only its damaged
+// overview rectangle from painter-ordered vector truth. Affected tiles are
+// invalidated; unaffected materialization advances to the new generation.
+// Failure leaves both authority and canvas unchanged. Pending appends must be
+// drained so log and canvas revisions are equal before entry.
+[[nodiscard]] std::optional<HistoryChange> move_history_incrementally(
+    OperationLog& log, MaterializedCanvas& canvas, HistoryDirection direction,
+    std::span<std::uint16_t> overview_scratch);
+
 // Absorbs the oldest pending operation into the canvas through the same
 // phase machinery as append_incrementally_in_place (identical painters,
 // identical order, identical retention semantics), advancing the canvas by

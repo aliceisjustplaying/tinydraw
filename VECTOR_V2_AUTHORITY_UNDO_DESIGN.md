@@ -7,7 +7,7 @@ Progress:
 - [x] Slice 1: coherent active/retained authority read views with generation-checked reads.
 - [x] Slice 2: whole-Stroke Undo/Redo and exact damage.
 - [x] Slice 3: branch replacement after Undo.
-- [ ] Slice 4: localized canvas transition.
+- [x] Slice 4: localized canvas transition, including exact mixed pen/eraser replay.
 - [ ] Slice 5: product wiring.
 - [ ] Slice 6: device gate.
 

@@ -91,6 +91,7 @@ class PreparedHistoryChange {
   PreparedHistoryChange& operator=(PreparedHistoryChange&& other) noexcept;
 
   [[nodiscard]] const HistoryChange& change() const;
+  [[nodiscard]] std::optional<StoredOperation> target_operation(std::size_t active_index) const;
   void publish();
   void cancel();
 
@@ -156,6 +157,8 @@ class OperationLog {
   [[nodiscard]] PixelRect bounds_for_range(std::size_t first, std::size_t last) const;
   void publish_prepared(const PreparedAppend& prepared);
   void cancel_prepared(const PreparedAppend& prepared);
+  [[nodiscard]] std::optional<StoredOperation> history_operation(
+      const PreparedHistoryChange& prepared, std::size_t active_index) const;
   void publish_history(const PreparedHistoryChange& prepared);
   void cancel_history(const PreparedHistoryChange& prepared);
 
