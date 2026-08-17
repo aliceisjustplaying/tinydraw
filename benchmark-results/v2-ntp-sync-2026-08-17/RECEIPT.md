@@ -2,7 +2,7 @@
 
 ## Status
 
-**Host and product firmware builds pass. Product commit `25abc19` is flashed and booted in ordinary USB-Serial/JTAG mode; the owner-triggered network/glass check remains pending. No mass-storage transition was invoked.**
+**Host and product firmware builds pass. The owner-triggered network attempt visibly completed `CONNECTING` → `SYNCING` → `TIME SET`; subsequent product boots retain the synchronized RTC. The latest combined product commit `c404456` is flashed in ordinary USB-Serial/JTAG mode. No mass-storage transition was invoked.**
 
 ## Product behavior
 
@@ -67,13 +67,18 @@ TE edges, eleven pushes, and `pass=1`; the owner confirmed the screen recovered
 Commit `f1b2d47` now retries a failed startup presentation up to three times with
 a 20 ms gap and refuses to print READY if all attempts fail. The ordinary
 product image compiles and links with this guard
-([`startup-retry-product-build.log`](startup-retry-product-build.log)); the guard
-is not flashed yet while the owner tests the recovered toast build.
+([`startup-retry-product-build.log`](startup-retry-product-build.log)). The guard,
+missing glyphs, centered two-line status labels, and three-second terminal-toast
+expiry are all present in the latest combined product. Its boot records startup
+`pass=1`, app version `c404456`, retained RTC time
+`2026-08-17T11:29:43`, and 6,312 bytes of stack headroom
+([`combined product boot`](../svg-logical-gate-2026-08-17/product-boot.log)).
 
-## Pending physical receipt
+## Remaining physical receipt
 
-With the ordinary product image now running:
-
-- press Document → Clock;
-- capture `TINYDRAW_NTP_PHASE phase=connecting`, `phase=synchronizing`, `TINYDRAW_NTP_OK`, and `TINYDRAW_NTP_DONE success=1 wifi_stopped=1`;
-- confirm `TIME SET` on glass and an ordinary retry after dismissing it.
+The owner has already observed a successful network sequence through `TIME SET`.
+A final combined-build glass check should confirm the corrected label centering,
+three-second dismissal, and an ordinary second attempt. Capturing the serial
+`TINYDRAW_NTP_PHASE`, `TINYDRAW_NTP_OK`, and `TINYDRAW_NTP_DONE success=1
+wifi_stopped=1` lines would make that UI observation a complete durable network
+receipt.
