@@ -1,8 +1,8 @@
 # TinyDraw V2 roadmap
 
-Last updated: 2026-08-17 (absolute minimap control owner-accepted; Undo/Redo
-software integration is green with its device gate pending; next is autosave,
-touch targets, export hardware gates, and final AA/cold optimization; see
+Last updated: 2026-08-17 (absolute minimap control and Undo/Redo are owner-accepted;
+next is autosave, touch targets, export hardware gates, and final AA/cold
+optimization; see
 [`PROJECT_STATE.md`](PROJECT_STATE.md#immediate-work-order))
 
 Branch: `feat/v2-performance-followup`
@@ -235,8 +235,10 @@ prefix, retained Redo tail, monotonic generation, and prepared history changes.
       mixed pen/eraser, branch-after-Undo, producer-rebuild, and localized-damage
       fixtures. Product buttons drain deferred chunks at the history boundary,
       guard stale/disabled taps, refresh bounded damage and the dock separately,
-      and compile in both credentials-enabled firmware variants. Physical
-      multi-zoom/latency/export validation remains the device gate.
+      and compile in both credentials-enabled firmware variants. **Owner glass
+      verdict 2026-08-17:** functionally working. The visibly brutal high-zoom
+      cold rebuild after Undo is deferred to the owner-ordered final optimization
+      round rather than blocking autosave.
 - [ ] Define a versioned append-only authority journal: operation records,
       gesture commit boundaries, active prefix, generation/epoch, and view/tool
       state, with sequence numbers, CRCs, and commit markers/superblocks.
