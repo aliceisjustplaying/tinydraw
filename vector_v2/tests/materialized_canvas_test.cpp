@@ -38,10 +38,8 @@ TEST_CASE("production memory plan records every fixed-capacity region") {
                 sizeof(vector_v2::MaterializedUniformStorage) +
             vector_v2::kOccupancyBytes);
   CHECK(vector_v2::kOperationStorageBytes == 720'000U);
-  CHECK(vector_v2::kLodStorageBytes == 668'000U);
   CHECK(vector_v2::kRendererWorkspaceBytes == 163'840U);
   CHECK(vector_v2::kDisplayWorkspaceBytes == 103'040U);
-  CHECK(vector_v2::kExternalPlanBytes == 6'058'328U);
   CHECK(vector_v2::kTargetContiguousReserveBytes == 1'572'864U);
 }
 
@@ -502,14 +500,13 @@ TEST_CASE("same-revision publication cannot downgrade immediate settled or exact
       canvas.publish_tile(key, {0}, vector_v2::MaterializationQuality::kSettled, published_tile));
   const auto settled = canvas.lookup(key);
   REQUIRE(settled.has_value());
-  CHECK(settled->identity.generation.value > immediate->identity.generation.value);
+  CHECK(settled->identity.quality == vector_v2::MaterializationQuality::kSettled);
   CHECK_FALSE(
       canvas.publish_tile(key, {0}, vector_v2::MaterializationQuality::kImmediate, published_tile));
   REQUIRE(canvas.publish_tile(key, {0}, vector_v2::MaterializationQuality::kExact, published_tile));
   const auto exact = canvas.lookup(key);
   REQUIRE(exact.has_value());
   CHECK(exact->slot_index == settled->slot_index);
-  CHECK(exact->identity.generation.value > settled->identity.generation.value);
   CHECK(exact->identity.quality == vector_v2::MaterializationQuality::kExact);
   CHECK_FALSE(
       canvas.publish_tile(key, {0}, vector_v2::MaterializationQuality::kSettled, published_tile));
@@ -659,74 +656,7 @@ TEST_CASE("transactional overview publication prevents stale fallback labeling")
   CHECK(destination[32] == 0x3333U);
 }
 
-TEST_CASE("pinned sources cannot be replaced and validate only while pinned") {
-  std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
-  std::array<std::uint16_t, vector_v2::kOverviewPixels> revised_overview{};
-  std::array<vector_v2::MaterializedSlotStorage, 1> slots{};
-  std::array<std::uint16_t, vector_v2::kTilePixels> tile_storage{};
-  std::array<std::uint16_t, vector_v2::kTilePixels> tile{};
-  vector_v2::MaterializedCanvas canvas(overview, slots, tile_storage);
-  REQUIRE(canvas.publish_overview({0}, overview));
-  const vector_v2::TileKey key{vector_v2::ZoomLevel::k100Percent, 0, 0};
-  REQUIRE(canvas.publish_tile(key, {0}, vector_v2::MaterializationQuality::kExact, tile));
-
-  const auto unpinned_lookup = canvas.lookup(key);
-  REQUIRE(unpinned_lookup.has_value());
-  auto pinned_tile = canvas.pin(key);
-  REQUIRE(pinned_tile.has_value());
-  CHECK(canvas.validate(*pinned_tile));
-  auto second_tile_pin = canvas.pin(key);
-  REQUIRE(second_tile_pin.has_value());
-  CHECK(canvas.pins_outstanding() == 2U);
-  second_tile_pin->reset();
-  CHECK(canvas.pins_outstanding() == 1U);
-  CHECK(unpinned_lookup->pin_token == 0U);
-  CHECK_FALSE(canvas.publish_tile(key, {0}, vector_v2::MaterializationQuality::kSettled, tile));
-  CHECK_FALSE(canvas.publish_overview({1}, revised_overview));
-  pinned_tile->reset();
-  CHECK(canvas.pins_outstanding() == 0U);
-  CHECK_FALSE(pinned_tile->valid());
-  REQUIRE(canvas.publish_overview({1}, revised_overview));
-  CHECK_FALSE(canvas.validate(*pinned_tile));
-
-  const vector_v2::TileKey missing{vector_v2::ZoomLevel::k100Percent, 1, 0};
-  const auto unpinned_overview = canvas.lookup(missing);
-  REQUIRE(unpinned_overview.has_value());
-  auto pinned_overview = canvas.pin(missing);
-  REQUIRE(pinned_overview.has_value());
-  CHECK(pinned_overview->source().kind == vector_v2::SourceKind::kOverview);
-  CHECK(canvas.validate(*pinned_overview));
-  auto second_overview_pin = canvas.pin(missing);
-  REQUIRE(second_overview_pin.has_value());
-  CHECK(canvas.pins_outstanding() == 2U);
-  second_overview_pin->reset();
-  CHECK(canvas.pins_outstanding() == 1U);
-  CHECK(unpinned_overview->pin_token == 0U);
-  CHECK_FALSE(canvas.publish_overview({2}, overview));
-  pinned_overview->reset();
-  CHECK(canvas.pins_outstanding() == 0U);
-  CHECK_FALSE(pinned_overview->valid());
-}
-
-TEST_CASE("all pinned slots prevent eviction until one is released") {
-  std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
-  std::array<vector_v2::MaterializedSlotStorage, 1> slots{};
-  std::array<std::uint16_t, vector_v2::kTilePixels> tile_storage{};
-  std::array<std::uint16_t, vector_v2::kTilePixels> tile{};
-  vector_v2::MaterializedCanvas canvas(overview, slots, tile_storage);
-  const vector_v2::TileKey first{vector_v2::ZoomLevel::k100Percent, 0, 0};
-  const vector_v2::TileKey second{vector_v2::ZoomLevel::k100Percent, 1, 0};
-  REQUIRE(canvas.publish_tile(first, {0}, vector_v2::MaterializationQuality::kExact, tile));
-  auto pinned = canvas.pin(first);
-  REQUIRE(pinned.has_value());
-  CHECK_FALSE(canvas.publish_tile(second, {0}, vector_v2::MaterializationQuality::kExact, tile));
-  pinned->reset();
-  CHECK_FALSE(pinned->valid());
-  REQUIRE(canvas.publish_tile(second, {0}, vector_v2::MaterializationQuality::kExact, tile));
-  CHECK_FALSE(canvas.validate(*pinned));
-}
-
-TEST_CASE("discarding tiles preserves current overview and fails while pinned") {
+TEST_CASE("discarding tiles preserves current overview") {
   std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
   std::array<vector_v2::MaterializedSlotStorage, 1> slots{};
   std::array<std::uint16_t, vector_v2::kTilePixels> tile_storage{};
@@ -735,12 +665,6 @@ TEST_CASE("discarding tiles preserves current overview and fails while pinned") 
   const vector_v2::TileKey key{vector_v2::ZoomLevel::k100Percent, 0, 0};
   REQUIRE(canvas.publish_overview({2}, overview));
   REQUIRE(canvas.publish_tile(key, {2}, vector_v2::MaterializationQuality::kImmediate, tile));
-  auto pinned = canvas.pin(key);
-  REQUIRE(pinned.has_value());
-  CHECK_FALSE(canvas.discard_tiles());
-  CHECK(canvas.lookup(key)->kind == vector_v2::SourceKind::kTileSlot);
-  pinned->reset();
-
   REQUIRE(canvas.discard_tiles());
   const auto fallback = canvas.lookup(key);
   REQUIRE(fallback.has_value());
@@ -861,7 +785,6 @@ TEST_CASE("incremental revision updates affected tiles and carries unaffected ti
   REQUIRE(carried_after.has_value());
   CHECK(carried_after->kind == vector_v2::SourceKind::kTileSlot);
   CHECK(carried_after->slot_index == carried_before->slot_index);
-  CHECK(carried_after->identity.generation == carried_before->identity.generation);
   CHECK(carried_after->identity.revision == vector_v2::DocumentRevision{1});
 }
 
@@ -972,12 +895,6 @@ TEST_CASE("incremental revision rejection leaves pixels and identities unchanged
   CHECK(canvas.overview_pixels().front() == 0x1111U);
   CHECK(canvas.lookup(key)->identity == before->identity);
   CHECK(tile_storage.front() == 0x3333U);
-
-  auto pin = canvas.pin(key);
-  REQUIRE(pin.has_value());
-  CHECK_FALSE(canvas.commit_incremental_revision({1}, publication, {0, 0, 64, 64}, {}));
-  CHECK(canvas.current_revision() == vector_v2::DocumentRevision{0});
-  CHECK(canvas.overview_pixels().front() == 0x1111U);
 }
 
 TEST_CASE("incremental revision rejects incomplete or aliased overview publications") {
@@ -1042,7 +959,7 @@ TEST_CASE("canvas accepts caller-owned dynamically constructed slot storage") {
   CHECK(source->kind == vector_v2::SourceKind::kTileSlot);
 }
 
-TEST_CASE("in-place edit primitives enforce residency, pins, and slot pressure") {
+TEST_CASE("in-place edit primitives enforce residency and slot pressure") {
   std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
   overview.fill(0xFFFFU);
   std::array<vector_v2::MaterializedSlotStorage, 1> slots{};
@@ -1064,20 +981,12 @@ TEST_CASE("in-place edit primitives enforce residency, pins, and slot pressure")
   CHECK(canvas.uniform_color(uniform_key) == 0xFFFFU);
   CHECK_FALSE(canvas.uniform_color(raw_key).has_value());
 
-  // A pinned raw slot cannot be edited and blocks uniform conversion (the
-  // only slot is pinned).
-  auto pin = canvas.pin(raw_key);
-  REQUIRE(pin.has_value());
-  CHECK_FALSE(canvas.edit_resident_tile(raw_key).has_value());
-  CHECK_FALSE(canvas.materialize_uniform_as_raw(uniform_key).has_value());
-  pin->reset();
-
   const auto edit = canvas.edit_resident_tile(raw_key);
   REQUIRE(edit.has_value());
   CHECK(edit->bounds == vector_v2::tile_pixel_bounds(raw_key));
   edit->pixels[0] = 0xBEEF;
 
-  // Conversion evicts the unpinned raw slot (single-slot canvas) and fills
+  // Conversion evicts the raw slot (single-slot canvas) and fills
   // with the uniform color; the uniform entry is consumed.
   const auto converted = canvas.materialize_uniform_as_raw(uniform_key);
   REQUIRE(converted.has_value());

@@ -741,23 +741,6 @@ TEST_CASE("document snapshot restore accepts revision zero at the current revisi
   CHECK(fixture.canvas.overview_pixels().front() == 0x1234U);
 }
 
-TEST_CASE("document snapshot restore fails atomically while a source is pinned") {
-  Fixture fixture;
-  fixture.overview.fill(0xFFFFU);
-  REQUIRE(fixture.canvas.publish_overview({2}, fixture.overview));
-  REQUIRE(fixture.log.reset({2}));
-  const vector_v2::TileKey missing{vector_v2::ZoomLevel::k100Percent, 0, 0};
-  auto pin = fixture.canvas.pin(missing);
-  REQUIRE(pin.has_value());
-  fixture.next_overview.fill(0x1234U);
-
-  CHECK_FALSE(vector_v2::restore_document_snapshot(fixture.log, fixture.canvas, {1},
-                                                   fixture.next_overview));
-  CHECK(fixture.log.current_revision() == vector_v2::DocumentRevision{2});
-  CHECK(fixture.canvas.current_revision() == vector_v2::DocumentRevision{2});
-  CHECK(fixture.canvas.overview_pixels().front() == 0xFFFFU);
-}
-
 TEST_CASE("document snapshot restore fails atomically while an append is prepared") {
   Fixture fixture;
   fixture.overview.fill(0xFFFFU);
@@ -1650,19 +1633,10 @@ TEST_CASE("in-place append fails atomically before mutation") {
                                                        {.color = 0x001FU, .samples = invalid},
                                                        rig.in_place_workspace(), view)
                   .has_value());
-  // A pinned source blocks the canvas validation stage.
-  auto pin = rig.canvas.pin({vector_v2::ZoomLevel::k400Percent, 0, 0});
-  REQUIRE(pin.has_value());
-  CHECK_FALSE(vector_v2::append_incrementally_in_place(rig.log, rig.canvas,
-                                                       {.color = 0x001FU, .samples = valid},
-                                                       rig.in_place_workspace(), view)
-                  .has_value());
-  pin->reset();
   CHECK(rig.canvas.current_revision() == revision_before);
   CHECK(rig.log.current_revision() == revision_before);
   CHECK(std::equal(overview_before.begin(), overview_before.end(),
                    rig.canvas.overview_pixels().begin()));
-  // The same request succeeds once the pin is released.
   CHECK(vector_v2::append_incrementally_in_place(rig.log, rig.canvas,
                                                  {.color = 0x001FU, .samples = valid},
                                                  rig.in_place_workspace(), view)

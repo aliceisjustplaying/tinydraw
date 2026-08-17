@@ -50,11 +50,6 @@ struct DocumentRevision {
   bool operator==(const DocumentRevision&) const = default;
 };
 
-struct SlotGeneration {
-  std::uint32_t value = 0;
-  bool operator==(const SlotGeneration&) const = default;
-};
-
 struct WorldPoint {
   int x = 0;
   int y = 0;
@@ -98,7 +93,6 @@ enum class MaterializationProvenance : std::uint8_t {
 
 struct MaterializationIdentity {
   DocumentRevision revision{};
-  SlotGeneration generation{};
   MaterializationQuality quality = MaterializationQuality::kOverviewFallback;
   MaterializationProvenance provenance = MaterializationProvenance::kCompleteOverview;
   bool operator==(const MaterializationIdentity&) const = default;
@@ -119,7 +113,6 @@ struct SourceSelection {
   std::optional<std::size_t> slot_index{};
   int source_stride = 0;
   std::uint16_t uniform_color = 0xFFFFU;
-  std::uint32_t pin_token = 0;
 };
 
 struct OverviewRevisionPublication {
@@ -187,34 +180,9 @@ class MaterializedSlotStorage {
 
   TileKey key_{};
   DocumentRevision revision_{};
-  SlotGeneration generation_{};
   MaterializationQuality quality_ = MaterializationQuality::kImmediate;
   std::uint64_t last_use_ = 0;
-  std::uint32_t pin_count_ = 0;
   bool occupied_ = false;
-};
-
-class MaterializedCanvas;
-
-// A pin must not outlive its owning MaterializedCanvas.
-class PinnedSource {
- public:
-  ~PinnedSource();
-  PinnedSource(const PinnedSource&) = delete;
-  PinnedSource& operator=(const PinnedSource&) = delete;
-  PinnedSource(PinnedSource&& other) noexcept;
-  PinnedSource& operator=(PinnedSource&& other) noexcept;
-
-  [[nodiscard]] const SourceSelection& source() const;
-  [[nodiscard]] bool valid() const;
-  void reset();
-
- private:
-  friend class MaterializedCanvas;
-  PinnedSource(MaterializedCanvas& owner, const SourceSelection& source);
-
-  MaterializedCanvas* owner_ = nullptr;
-  SourceSelection source_{};
 };
 
 class RerenderLedger;
@@ -256,8 +224,8 @@ class MaterializedCanvas {
                                       std::span<const std::uint16_t> pixels);
   // Replaces materialization from a complete 25% snapshot at any revision,
   // rebuilds conservative paper occupancy, and invalidates every tile. This is
-  // not an ordinary revision publication. Fails while a source is pinned or
-  // when pixels alias owned canvas storage.
+  // not an ordinary revision publication. Fails when pixels alias owned
+  // canvas storage.
   [[nodiscard]] bool restore_snapshot(DocumentRevision revision,
                                       std::span<const std::uint16_t> pixels);
   // Commits exactly the next document revision. The overview publication is a
@@ -283,7 +251,7 @@ class MaterializedCanvas {
       PixelRect affected_world_bounds) const;
   [[nodiscard]] std::optional<InPlaceTileEdit> edit_resident_tile(TileKey key);
   // Converts one resident uniform into a raw slot filled with its color and
-  // returns the slot for editing. May evict an unpinned LRU slot. Returns
+  // returns the slot for editing. May evict an LRU slot. Returns
   // nullopt when no slot is available; the caller falls back to invalidation.
   [[nodiscard]] std::optional<InPlaceTileEdit> materialize_uniform_as_raw(TileKey key);
   [[nodiscard]] std::optional<std::uint16_t> uniform_color(TileKey key) const;
@@ -327,20 +295,16 @@ class MaterializedCanvas {
                                                            MaterializationQuality quality,
                                                            std::uint16_t color = 0xFFFFU);
   [[nodiscard]] std::optional<SourceSelection> lookup(TileKey key) const;
-  [[nodiscard]] std::optional<PinnedSource> pin(TileKey key);
-  [[nodiscard]] bool validate(const PinnedSource& source) const;
-  [[nodiscard]] std::size_t pins_outstanding() const;
   [[nodiscard]] bool mark_used(TileKey key);
   // Softly protects one recent viewport at each tiled zoom. Protection only
-  // changes eviction order: an unpinned protected tile can still be replaced
+  // changes eviction order: a protected tile can still be replaced
   // when every raw slot belongs to remembered footprints.
   [[nodiscard]] bool remember_view(const ViewRequest& view);
   // The most recent valid view per tiled zoom, as recorded by remember_view.
   // Idle repair uses these so zoom returns land on materialized tiles.
   [[nodiscard]] std::span<const ViewFootprint> recent_views() const { return recent_views_; }
   // Discards every raster tile while retaining document revision and complete
-  // overview authority. Used for cold-cache transitions and snapshot policy;
-  // fails while any source is pinned.
+  // overview authority. Used for cold-cache transitions and snapshot policy.
   [[nodiscard]] bool discard_tiles();
   [[nodiscard]] std::optional<ViewCompositionStats> compose_view(
       const ViewRequest& request, std::span<std::uint16_t> destination);
@@ -367,9 +331,6 @@ class MaterializedCanvas {
   [[nodiscard]] bool accepts_external_workspace(std::span<const std::byte> workspace) const;
 
  private:
-  friend class PinnedSource;
-  [[nodiscard]] bool validate_selection(const SourceSelection& source) const;
-  [[nodiscard]] bool release_pin(const SourceSelection& source);
   [[nodiscard]] std::optional<std::size_t> find_tile(TileKey key) const;
   [[nodiscard]] std::optional<std::size_t> find_uniform(TileKey key) const;
   [[nodiscard]] std::optional<std::size_t> choose_slot() const;
@@ -417,7 +378,6 @@ class MaterializedCanvas {
   void rebuild_occupancy_from_overview();
   void clear_uniforms();
   void bump_composition_epoch();
-  [[nodiscard]] SlotGeneration take_generation();
   void touch(MaterializedSlotStorage& slot);
   // Sole occupancy transitions: every occupied_ flip goes through these so
   // occupied_slots_ and the raw-slot directory can never desynchronize.
@@ -434,12 +394,7 @@ class MaterializedCanvas {
   std::size_t occupied_slots_ = 0;
   DocumentRevision current_revision_{};
   DocumentRevision overview_revision_{};
-  SlotGeneration overview_generation_{};
-  std::uint32_t next_generation_ = 1;
   std::uint64_t use_clock_ = 0;
-  std::uint32_t next_pin_token_ = 1;
-  std::uint32_t overview_pin_count_ = 0;
-  std::uint32_t uniform_pin_count_ = 0;
   std::uint64_t composition_epoch_ = 1;
   std::array<ViewFootprint, kTiledZoomCount> recent_views_{};
   ZoomLevel active_view_zoom_ = ZoomLevel::k25Percent;

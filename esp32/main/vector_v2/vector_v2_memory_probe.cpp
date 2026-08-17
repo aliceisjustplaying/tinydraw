@@ -40,8 +40,6 @@ void run_vector_v2_memory_probe() {
       Allocation{"tile_metadata", kTileMetadataBytes},
       Allocation{"operation_records", kOperationRecordBytes},
       Allocation{"operation_samples", kOperationSampleBytes},
-      Allocation{"lod_samples", kLodSampleBytes},
-      Allocation{"lod_spans", kLodSpanBytes},
       Allocation{"renderer_workspace", kRendererWorkspaceBytes},
       Allocation{"display_workspace", kDisplayWorkspaceBytes},
   };
