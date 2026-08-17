@@ -39,6 +39,9 @@ constexpr ChromeRect kZoomRailRect{304, 72, 360, 226};
 constexpr ChromeRect kZoomRailOverlayRect{kZoomRailRect.x0 - 1, kZoomRailRect.y0 - 1,
                                           kZoomRailRect.x1 + 2, kZoomRailRect.y1 + 3};
 constexpr ChromeRect kMinimapRect{266, 252, 358, 366};
+// Guard the visible frame against finger/calibration error. Near-frame misses
+// used to become real short strokes in the canvas authority.
+constexpr ChromeRect kMinimapHitRect{250, 236, 368, kChromeCanvasBottom};
 constexpr ChromeRect kMinimapOverlayRect{kMinimapRect.x0 - 1, kMinimapRect.y0 - 1,
                                          kMinimapRect.x1 + 2, kMinimapRect.y1 + 3};
 constexpr ChromeRect kBatteryOverlayRect{kBatteryLeft - 2, kBatteryTop - 2, kBatteryRight + 4,
@@ -71,6 +74,8 @@ constexpr float kMinimapDragPromotionPixels = 4.0F;
 constexpr float kMinimapDragPromotionPixels200 = 3.0F;
 constexpr float kMinimapDragPromotionPixels400 = 2.0F;
 constexpr int kMinimapMinimumGrabPixels = 28;
+constexpr int kMinimapMinimumGrabPixels200 = 36;
+constexpr int kMinimapMinimumGrabPixels400 = 44;
 constexpr float kPanDragPromotionPixels = 8.0F;
 constexpr int kMainHitTop = kMainTop - kHitSlop;
 constexpr std::array kMainCenters{34, 94, 154, 214, 274, 334};
@@ -417,8 +422,11 @@ ChromeRect minimap_viewport_rect(const ChromeNavigation& navigation) {
 
 ChromeRect minimap_viewport_grab_rect(const ChromeNavigation& navigation) {
   const ChromeRect viewport = minimap_viewport_rect(navigation);
-  const int width = std::max(viewport.x1 - viewport.x0, kMinimapMinimumGrabPixels);
-  const int height = std::max(viewport.y1 - viewport.y0, kMinimapMinimumGrabPixels);
+  const int minimum_grab = navigation.zoom_percent >= 400   ? kMinimapMinimumGrabPixels400
+                           : navigation.zoom_percent >= 200 ? kMinimapMinimumGrabPixels200
+                                                            : kMinimapMinimumGrabPixels;
+  const int width = std::max(viewport.x1 - viewport.x0, minimum_grab);
+  const int height = std::max(viewport.y1 - viewport.y0, minimum_grab);
   const int center_x = (viewport.x0 + viewport.x1) / 2;
   const int center_y = (viewport.y0 + viewport.y1) / 2;
   const int x0 =
@@ -727,8 +735,9 @@ static bool zoom_rail_contains(ChromePoint point, const ChromeState& state) {
 
 bool chrome_minimap_contains(ChromePoint point, const ChromeState& state) {
   return canvas_overlays_visible(state) &&
-         inside(point, static_cast<float>(kMinimapRect.x0), static_cast<float>(kMinimapRect.y0),
-                static_cast<float>(kMinimapRect.x1), static_cast<float>(kMinimapRect.y1));
+         inside(point, static_cast<float>(kMinimapHitRect.x0),
+                static_cast<float>(kMinimapHitRect.y0), static_cast<float>(kMinimapHitRect.x1),
+                static_cast<float>(kMinimapHitRect.y1));
 }
 
 ChromeLevelPoint chrome_minimap_level_point(ChromePoint point, const ChromeNavigation& navigation) {

@@ -199,10 +199,13 @@ TEST_CASE("pan drags promote through the zoom rail while taps stay controls") {
       tinydraw::vector_v2::chrome_promotes_pan_drag({332.0F, 98.0F}, {350.0F, 98.0F}, popup));
 }
 
-TEST_CASE("minimap hit testing and projection share the rendered geometry") {
+TEST_CASE("minimap hit guard absorbs imprecise touches around the rendered frame") {
   const ChromeState state;
+  CHECK(tinydraw::vector_v2::chrome_minimap_contains({250.0F, 236.0F}, state));
   CHECK(tinydraw::vector_v2::chrome_minimap_contains({266.0F, 252.0F}, state));
-  CHECK(tinydraw::vector_v2::chrome_minimap_contains({357.0F, 365.0F}, state));
+  CHECK(tinydraw::vector_v2::chrome_minimap_contains({367.0F, 371.0F}, state));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_minimap_contains({249.0F, 235.0F}, state));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_minimap_contains({249.0F, 372.0F}, state));
   CHECK(tinydraw::vector_v2::chrome_contains({310.0F, 310.0F}, state));
   CHECK_FALSE(tinydraw::vector_v2::chrome_minimap_contains({310.0F, 310.0F},
                                                            {.popup = ChromePopup::kTools}));
@@ -250,6 +253,9 @@ TEST_CASE("far minimap drag acquires viewport while enlarged target preserves gr
   // The visible 400% viewport is about 5x5 px. Its invisible grab target
   // includes this point, preserving relative drag instead of jumping.
   CHECK(tinydraw::vector_v2::chrome_minimap_drag_origin({287.0F, 273.0F}, {289.0F, 275.0F}, focus,
+                                                        navigation) ==
+        tinydraw::vector_v2::ChromeLevelPoint{146, 146});
+  CHECK(tinydraw::vector_v2::chrome_minimap_drag_origin({300.0F, 290.0F}, {302.0F, 292.0F}, focus,
                                                         navigation) ==
         tinydraw::vector_v2::ChromeLevelPoint{146, 146});
   // Starting elsewhere in the minimap directly acquires the viewport under
