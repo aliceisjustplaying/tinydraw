@@ -9,7 +9,7 @@ Progress:
 - [x] Slice 3: branch replacement after Undo.
 - [x] Slice 4: localized canvas transition, including exact mixed pen/eraser replay.
 - [x] Slice 5: product wiring, host suite, and credentials-enabled product/gate builds.
-- [ ] Slice 6: device gate.
+- [x] Slice 6: normal firmware flash and cursory owner glass acceptance; high-zoom cold rebuild optimization is deferred to the final performance round.
 
 This design covers the in-memory authority and whole-Stroke Undo/Redo. It does
 not define the autosave journal; autosave will consume the read view defined
