@@ -767,12 +767,10 @@ TEST_CASE("blank document reset rejects atomically while an append is prepared")
       vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
   auto prepared = fixture.log.prepare({.samples = samples});
   REQUIRE(prepared.has_value());
-  const std::uint64_t old_composition_epoch = fixture.canvas.composition_epoch();
 
   CHECK_FALSE(vector_v2::reset_blank_document(fixture.log, fixture.canvas, {9}));
   CHECK(fixture.log.current_revision() == vector_v2::DocumentRevision{8});
   CHECK(fixture.canvas.current_revision() == vector_v2::DocumentRevision{8});
-  CHECK(fixture.canvas.composition_epoch() == old_composition_epoch);
   CHECK(fixture.canvas.overview_pixels().front() == 0x1234U);
   prepared->cancel();
 }

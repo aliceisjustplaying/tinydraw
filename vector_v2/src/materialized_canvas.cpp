@@ -216,8 +216,6 @@ std::size_t MaterializedCanvas::resident_raw_tiles() const { return occupied_slo
 
 std::size_t MaterializedCanvas::uniform_capacity() const { return uniform_catalog_.size(); }
 
-std::uint64_t MaterializedCanvas::composition_epoch() const { return composition_epoch_; }
-
 std::span<const std::uint16_t> MaterializedCanvas::overview_pixels() const {
   return overview_pixels_;
 }
@@ -241,13 +239,6 @@ bool MaterializedCanvas::certainly_paper(TileKey key) const {
     }
   }
   return true;
-}
-
-void MaterializedCanvas::bump_composition_epoch() {
-  ++composition_epoch_;
-  if (composition_epoch_ == 0U) {
-    composition_epoch_ = 1U;
-  }
 }
 
 void MaterializedCanvas::clear_uniforms() {
@@ -390,7 +381,6 @@ bool MaterializedCanvas::publish_overview(DocumentRevision revision,
   current_revision_ = revision;
   overview_revision_ = revision;
   overview_valid_ = true;
-  bump_composition_epoch();
   return true;
 }
 
@@ -419,7 +409,6 @@ bool MaterializedCanvas::restore_snapshot(DocumentRevision revision,
   current_revision_ = revision;
   overview_revision_ = revision;
   overview_valid_ = true;
-  bump_composition_epoch();
   return true;
 }
 
@@ -443,7 +432,6 @@ bool MaterializedCanvas::reset_blank(DocumentRevision revision) {
   current_revision_ = revision;
   overview_revision_ = revision;
   overview_valid_ = true;
-  bump_composition_epoch();
   return true;
 }
 
@@ -554,7 +542,6 @@ void MaterializedCanvas::finish_revision(DocumentRevision revision,
   mark_occupied(affected_world_bounds);
   current_revision_ = revision;
   overview_revision_ = revision;
-  bump_composition_epoch();
 }
 
 bool MaterializedCanvas::commit_incremental_revision(
@@ -713,7 +700,6 @@ void MaterializedCanvas::invalidate_identity(TileKey key) {
   if (const auto uniform_index = find_uniform(key); uniform_index.has_value()) {
     uniform_catalog_[*uniform_index].occupied_ = false;
   }
-  bump_composition_epoch();
 }
 
 bool MaterializedCanvas::accepts_external_workspace(std::span<const std::byte> workspace) const {
@@ -1028,7 +1014,6 @@ std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, Documen
     uniform_catalog_[*uniform].occupied_ = false;
   }
   touch(slot);
-  bump_composition_epoch();
   return index;
 }
 
@@ -1055,7 +1040,6 @@ std::optional<std::size_t> MaterializedCanvas::publish_uniform(TileKey key,
   uniform.color_ = color;
   uniform.quality_ = quality;
   uniform.occupied_ = true;
-  bump_composition_epoch();
   return index;
 }
 
@@ -1131,15 +1115,6 @@ std::optional<SourceSelection> MaterializedCanvas::lookup(TileKey key) const {
   return std::nullopt;
 }
 
-bool MaterializedCanvas::mark_used(TileKey key) {
-  const auto index = find_tile(key);
-  if (index.has_value() && slots_[*index].revision_ == current_revision_) {
-    touch(slots_[*index]);
-    return true;
-  }
-  return find_uniform(key).has_value();
-}
-
 bool MaterializedCanvas::remember_view(const ViewRequest& view) {
   const int width = view.level_pixels.x1 - view.level_pixels.x0;
   const int height = view.level_pixels.y1 - view.level_pixels.y0;
@@ -1168,7 +1143,6 @@ bool MaterializedCanvas::discard_tiles() {
     release_slot(index);
   }
   clear_uniforms();
-  bump_composition_epoch();
   return true;
 }
 

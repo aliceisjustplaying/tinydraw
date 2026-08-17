@@ -152,8 +152,9 @@ TEST_CASE("fixed-capacity slots replace the least recently used slot") {
       canvas.publish_tile(first, {0}, vector_v2::MaterializationQuality::kSettled, published_tile));
   REQUIRE(canvas.publish_tile(second, {0}, vector_v2::MaterializationQuality::kSettled,
                               published_tile));
-  REQUIRE(canvas.lookup(first));
-  REQUIRE(canvas.mark_used(first));
+  std::array<std::uint16_t, vector_v2::kTilePixels> composed{};
+  REQUIRE(canvas.compose_view(
+      {.zoom = vector_v2::ZoomLevel::k100Percent, .level_pixels = {0, 0, 64, 64}}, composed));
   REQUIRE(
       canvas.publish_tile(third, {0}, vector_v2::MaterializationQuality::kExact, published_tile));
 
@@ -174,6 +175,8 @@ TEST_CASE("cache retains every zoom viewport across a disjoint pan fill") {
       std::make_unique<std::array<vector_v2::MaterializedSlotStorage, vector_v2::kTileSlotCount>>();
   auto tile_storage = std::make_unique<
       std::array<std::uint16_t, vector_v2::kTileSlotCount * vector_v2::kTilePixels>>();
+  auto composed = std::make_unique<
+      std::array<std::uint16_t, vector_v2::kMaximumVisibleTiles * vector_v2::kTilePixels>>();
   vector_v2::MaterializedCanvas canvas(*overview, *slots, *tile_storage);
   REQUIRE(canvas.publish_overview({0}, *overview));
   std::array<std::uint16_t, vector_v2::kTilePixels> tile{};
@@ -196,11 +199,11 @@ TEST_CASE("cache retains every zoom viewport across a disjoint pan fill") {
     }
   }
   for (const auto zoom : zooms) {
+    REQUIRE(canvas.compose_view({.zoom = zoom, .level_pixels = {0, 0, 448, 512}}, *composed));
     for (std::uint16_t row = 0; row < 8; ++row) {
       for (std::uint16_t column = 0; column < 7; ++column) {
         const vector_v2::TileKey key{zoom, column, row};
         CHECK(canvas.lookup(key)->kind == vector_v2::SourceKind::kTileSlot);
-        REQUIRE(canvas.mark_used(key));
       }
     }
   }
@@ -424,8 +427,6 @@ TEST_CASE("blank reset clears materialization and restores paper occupancy") {
   REQUIRE(canvas.resident_raw_tiles() == 1U);
   REQUIRE(canvas.uniform_color(uniform).has_value());
   REQUIRE_FALSE(canvas.certainly_paper(raw));
-  const std::uint64_t old_epoch = canvas.composition_epoch();
-
   REQUIRE(canvas.reset_blank({5}));
   CHECK(canvas.current_revision() == vector_v2::DocumentRevision{5});
   CHECK(canvas.resident_raw_tiles() == 0U);
@@ -434,7 +435,6 @@ TEST_CASE("blank reset clears materialization and restores paper occupancy") {
   CHECK(canvas.lookup(uniform)->kind == vector_v2::SourceKind::kOverview);
   CHECK(canvas.certainly_paper(raw));
   CHECK(canvas.certainly_paper(uniform));
-  CHECK(canvas.composition_epoch() != old_epoch);
   CHECK(std::all_of(canvas.overview_pixels().begin(), canvas.overview_pixels().end(),
                     [](std::uint16_t pixel) { return pixel == 0xFFFFU; }));
 }
