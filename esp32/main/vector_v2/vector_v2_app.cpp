@@ -40,6 +40,7 @@
 #include "tinydraw/vector_v2/rerender_ledger.h"
 #include "tinydraw/vector_v2/settled_tile.h"
 #include "tinydraw/vector_v2/tile_producer.h"
+#include "vector_v2_autosave_store.h"
 #include "vector_v2_export.h"
 #include "vector_v2_presenter.h"
 #include "vector_v2_touch_sampler.h"
@@ -997,6 +998,35 @@ void run_vector_v2_app() {
       std::span(storage.raw_slot_directory, vector_v2::kMaterializedTileIdentityCount));
   OperationLog log(std::span(storage.records, vector_v2::kOperationCapacity),
                    std::span(storage.samples, vector_v2::kOperationSampleCapacity));
+  // Navigation and the next Stroke identity are authority-adjacent session
+  // state: restore them before the first overview compose or presentation.
+  static vector_v2::NavigationState navigation;
+  VectorV2AutosaveStore autosave;
+  vector_v2::JournalState recovered_journal_state{};
+  const VectorV2AutosaveRestoreStatus autosave_restore =
+      autosave.restore(log, recovered_journal_state);
+  const bool autosave_restored =
+      autosave_restore == VectorV2AutosaveRestoreStatus::kRestored ||
+      autosave_restore == VectorV2AutosaveRestoreStatus::kRecoveredTail;
+  if (autosave_restored && !navigation.restore(recovered_journal_state.navigation)) {
+    std::printf("TINYDRAW_AUTOSAVE_RESTORE_FAIL reason=navigation\n");
+    return;
+  }
+  std::uint16_t next_gesture_id = autosave_restored ? recovered_journal_state.next_stroke_id : 1U;
+  if (autosave_restore == VectorV2AutosaveRestoreStatus::kUnavailable ||
+      autosave_restore == VectorV2AutosaveRestoreStatus::kError) {
+    std::printf("TINYDRAW_AUTOSAVE_DISABLED status=%u\n",
+                static_cast<unsigned>(autosave_restore));
+  } else {
+    std::printf(
+        "TINYDRAW_AUTOSAVE_RESTORE status=%u generation=%lu active=%lu retained=%lu "
+        "sequence=%llu\n",
+        static_cast<unsigned>(autosave_restore),
+        static_cast<unsigned long>(log.current_revision().value),
+        static_cast<unsigned long>(log.operation_count()),
+        static_cast<unsigned long>(log.read_view().retained_operation_count),
+        static_cast<unsigned long long>(autosave.committed_sequence()));
+  }
   std::array<DisplayStrip, 3> queue{};
   DisplayScheduler scheduler(queue);
   Co5300PanelTransport display;
@@ -1022,7 +1052,6 @@ void run_vector_v2_app() {
 #endif
   // Navigation lives for the app's entire lifetime. Keep remembered zoom
   // views out of the latency-sensitive 16 KiB main-task stack.
-  static vector_v2::NavigationState navigation;
   VectorV2Export exporter;
   VectorV2Presenter presenter(
       canvas, navigation, scheduler, display, std::span(storage.frame, vector_v2::kOverviewPixels),
@@ -1083,7 +1112,14 @@ void run_vector_v2_app() {
                                  vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles),
   };
 #endif
-  if (!canvas.publish_overview({0}, std::span(storage.snapshot, vector_v2::kOverviewPixels)) ||
+  const auto startup_overview =
+      autosave_restored
+          ? std::span(storage.overview_scratch, vector_v2::kOverviewPixels)
+          : std::span(storage.snapshot, vector_v2::kOverviewPixels);
+  const bool restored_overview =
+      !autosave_restored || vector_v2::replay_active_overview(log, startup_overview);
+  if (!restored_overview ||
+      !canvas.publish_overview(log.current_revision(), startup_overview) ||
       !log.ready() || !presenter.ready() || !touch.ready() || !touch_sampler.start() ||
       !builder.ready() || !producer.ready()) {
     std::printf(
@@ -1103,13 +1139,25 @@ void run_vector_v2_app() {
   const PowerStatus initial_power = power.read();
   PowerStatus current_power = initial_power;
   vector_v2::ChromeState chrome;
-  chrome.tool = vector_v2::ChromeTool::kDraw;
-  chrome.size = vector_v2::ChromeSize::kLarge;
+  chrome.tool = autosave_restored ? recovered_journal_state.tool : vector_v2::ChromeTool::kDraw;
+  chrome.size = autosave_restored ? recovered_journal_state.size : vector_v2::ChromeSize::kLarge;
+  chrome.palette_page = autosave_restored ? recovered_journal_state.palette_page : 0U;
+  chrome.color_index = autosave_restored ? recovered_journal_state.color_index : 12U;
   chrome.can_export = exporter.ready();
   chrome.can_sync_time = time_sync.available();
   static_cast<void>(sync_history_controls(chrome, log));
   chrome.battery_percentage = initial_power.percentage;
   chrome.battery_charging = initial_power.charging;
+  const auto current_journal_state = [&] {
+    return vector_v2::JournalState{
+        .navigation = navigation.snapshot(),
+        .tool = chrome.tool,
+        .size = chrome.size,
+        .palette_page = chrome.palette_page,
+        .color_index = chrome.color_index,
+        .next_stroke_id = next_gesture_id,
+    };
+  };
   InkConfig ink_config;
   ink_config.size = vector_v2::brush_size(chrome.size);
   // Owner experiment 2026-08-16: stronger input smoothing for V2 (default
@@ -1253,7 +1301,7 @@ void run_vector_v2_app() {
   };
   LiftBaselineTiming lift_timing{};
   std::uint32_t next_lift_id = 1U;
-  std::uint16_t next_gesture_id = 1U;
+  std::size_t stroke_first_operation = log.operation_count();
   std::optional<vector_v2::PixelRect> stroke_world_bounds;
   std::uint32_t stroke_chunks = 0U;
   std::int64_t stroke_append_us = 0;
@@ -1271,6 +1319,7 @@ void run_vector_v2_app() {
   std::uint32_t lift_reports_dropped = 0U;
   PendingStrokeReport stroke_report{};
   bool history_chrome_dirty = false;
+  std::uint32_t autosave_checkpoint_retry_us = 0U;
   std::uint8_t background_ticks = 0U;
 
   const auto begin_pan = [&](Point start) {
@@ -1412,6 +1461,8 @@ void run_vector_v2_app() {
         const auto timing = presenter.set_zoom(target, chrome, loop_us);
         print_presentation("zoom", presenter, timing);
         print_live_ledger("zoom");
+        static_cast<void>(autosave.submit(
+            {.kind = vector_v2::JournalChangeKind::kState}, log, current_journal_state()));
       }
     }
 
@@ -1514,6 +1565,7 @@ void run_vector_v2_app() {
           const std::uint16_t color =
               tool == OperationTool::kEraser ? 0xFFFFU : vector_v2::selected_color(chrome);
           const vector_v2::OperationPoint begin_point = presenter.operation_point(last_ink);
+          stroke_first_operation = log.operation_count();
           const std::uint16_t gesture_id = next_gesture_id++;
           if (next_gesture_id == 0U) {
             next_gesture_id = 1U;
@@ -1635,6 +1687,8 @@ void run_vector_v2_app() {
         panning = false;
         print_pan_baseline(presenter, pan_metrics);
         print_live_ledger("minimap_pointer_end");
+        static_cast<void>(autosave.submit(
+            {.kind = vector_v2::JournalChangeKind::kState}, log, current_journal_state()));
         std::fflush(stdout);
       } else if (toolbar_pressed) {
         toolbar_pressed = false;
@@ -1646,13 +1700,35 @@ void run_vector_v2_app() {
               vector_v2::chrome_action_at({tap.x, tap.y}, chrome);
           const bool history_action =
               action == vector_v2::ChromeAction::kUndo || action == vector_v2::ChromeAction::kRedo;
-          const bool boundary_ready = !history_action || drain_history_boundary();
+          const vector_v2::AuthorityReadView authority_before = log.read_view();
+          const vector_v2::JournalState journal_before = current_journal_state();
+          if (action == vector_v2::ChromeAction::kExport && autosave.ready() &&
+              autosave.checkpoint_required()) {
+            static_cast<void>(autosave.submit_checkpoint(log, journal_before));
+          }
+          const bool save_ready = action != vector_v2::ChromeAction::kExport ||
+                                  !autosave.ready() || autosave.flush(5'000U);
+          const bool boundary_ready = save_ready && (!history_action || drain_history_boundary());
           const bool applied =
               boundary_ready &&
               apply_chrome_action(action, tap, chrome, log, canvas, producer,
                                   std::span(storage.snapshot, vector_v2::kOverviewPixels),
                                   std::span(storage.overview_scratch, vector_v2::kOverviewPixels),
                                   presenter, exporter, time_sync, clock);
+          if (applied) {
+            const vector_v2::AuthorityReadView authority_after = log.read_view();
+            const vector_v2::JournalState journal_after = current_journal_state();
+            if (authority_after != authority_before) {
+              const vector_v2::JournalChangeKind kind =
+                  action == vector_v2::ChromeAction::kConfirmNewDrawing
+                      ? vector_v2::JournalChangeKind::kReset
+                      : vector_v2::JournalChangeKind::kHistory;
+              static_cast<void>(autosave.submit({.kind = kind}, log, journal_after));
+            } else if (journal_after != journal_before) {
+              static_cast<void>(autosave.submit(
+                  {.kind = vector_v2::JournalChangeKind::kState}, log, journal_after));
+            }
+          }
           if (applied &&
               (history_action || action == vector_v2::ChromeAction::kConfirmNewDrawing)) {
             history_chrome_dirty = false;
@@ -1663,6 +1739,8 @@ void run_vector_v2_app() {
         panning = false;
         print_pan_baseline(presenter, pan_metrics);
         print_live_ledger("pan_end");
+        static_cast<void>(autosave.submit(
+            {.kind = vector_v2::JournalChangeKind::kState}, log, current_journal_state()));
         std::fflush(stdout);
       } else if (ink.active()) {
         LiftBaselineTiming measured_lift{
@@ -1732,6 +1810,18 @@ void run_vector_v2_app() {
           measured_lift.refresh.passed = true;
         }
         measured_lift.refresh_wall_us = esp_timer_get_time() - refresh_started;
+        if (log.operation_count() > stroke_first_operation) {
+          const std::int64_t autosave_started = esp_timer_get_time();
+          const bool queued = autosave.submit(
+              {.kind = vector_v2::JournalChangeKind::kAppendStroke,
+               .first_operation = stroke_first_operation},
+              log, current_journal_state());
+          measured_lift.stroke_logging_us = esp_timer_get_time() - autosave_started;
+          if (!queued) {
+            std::printf("TINYDRAW_AUTOSAVE_QUEUE_FAIL site=stroke generation=%lu\n",
+                        static_cast<unsigned long>(log.current_revision().value));
+          }
+        }
         if (stroke_report.pending || lift_timing.pending) {
           ++lift_reports_dropped;
         }
@@ -1789,6 +1879,23 @@ void run_vector_v2_app() {
       ink_trace_ring.dump_and_reset();
     }
 #endif
+
+    // Queue/resync failures collapse into one complete checkpoint after input
+    // is quiet. Flash work remains on the worker; this call only snapshots
+    // coherent vector authority into immutable PSRAM.
+    if (!pressed && !panning && !sample_ready && !lift_timing.pending && autosave.ready() &&
+        autosave.checkpoint_required() &&
+        static_cast<std::int32_t>(loop_us - autosave_checkpoint_retry_us) >= 0) {
+      const std::int64_t checkpoint_started = esp_timer_get_time();
+      const bool queued = autosave.submit_checkpoint(log, current_journal_state());
+      std::printf("TINYDRAW_AUTOSAVE_CHECKPOINT queued=%u encode_us=%lld generation=%lu\n", queued,
+                  static_cast<long long>(esp_timer_get_time() - checkpoint_started),
+                  static_cast<unsigned long>(log.current_revision().value));
+      std::fflush(stdout);
+      if (!queued) {
+        autosave_checkpoint_retry_us = loop_us + 500'000U;
+      }
+    }
 
     const bool fill_view_available =
         presenter.zoom() != ZoomLevel::k25Percent && chrome.popup == vector_v2::ChromePopup::kNone;
