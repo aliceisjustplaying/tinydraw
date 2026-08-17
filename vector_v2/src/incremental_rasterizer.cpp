@@ -956,68 +956,6 @@ PixelRect operation_level_bounds(PixelRect world_bounds, ZoomLevel zoom) {
   };
 }
 
-PixelRect incremental_segment_level_bounds(CompactOperationSample first,
-                                           CompactOperationSample second, ZoomLevel zoom) {
-  const int level_width = kWorldWidth * zoom_percent(zoom) / 100;
-  const int level_height = kWorldHeight * zoom_percent(zoom) / 100;
-  return segment_bounds(make_segment(scaled_sample(first, zoom), scaled_sample(second, zoom)),
-                        {0, 0, level_width, level_height});
-}
-
-std::size_t incremental_segment_step_count(CompactOperationSample, CompactOperationSample,
-                                           ZoomLevel) {
-  return 1U;
-}
-
-std::size_t incremental_segment_step_work(CompactOperationSample first,
-                                          CompactOperationSample second, ZoomLevel zoom,
-                                          PixelRect clip, std::size_t step) {
-  if (step != 0U) {
-    return 0U;
-  }
-  const PixelRect bounds =
-      segment_bounds(make_segment(scaled_sample(first, zoom), scaled_sample(second, zoom)), clip);
-  return static_cast<std::size_t>(std::max(0, bounds.x1 - bounds.x0)) *
-         static_cast<std::size_t>(std::max(0, bounds.y1 - bounds.y0));
-}
-
-bool apply_incremental_segment_steps(const IncrementalSegment& segment,
-                                     const RasterSurface& surface, std::size_t first_step,
-                                     std::size_t step_count) {
-  if (!valid_surface(surface)) {
-    return false;
-  }
-  if (first_step != 0U || step_count != 1U) {
-    return false;
-  }
-  paint_bounded_segment(
-      scaled_sample(segment.first, surface.zoom), scaled_sample(segment.second, surface.zoom),
-      segment.tool == OperationTool::kEraser ? kBackground : segment.color, surface);
-  return true;
-}
-
-bool apply_masked_incremental_segment(const IncrementalSegment& segment,
-                                      const RasterSurface& surface,
-                                      std::span<std::uint8_t> finalized_pixels,
-                                      MaskedRowSummary* summary) {
-  const std::size_t required_mask_bytes = (surface.pixels.size() + 7U) / 8U;
-  const bool mask_aliases_pixels = storage_overlaps(
-      std::as_bytes(std::span(surface.pixels)),
-      std::as_bytes(std::span(finalized_pixels)
-                        .first(std::min(finalized_pixels.size(), required_mask_bytes))));
-  const int surface_rows = surface.level_bounds.y1 - surface.level_bounds.y0;
-  if (!valid_surface(surface) || finalized_pixels.size() < required_mask_bytes ||
-      mask_aliases_pixels ||
-      (summary != nullptr && !summary->ready(static_cast<std::size_t>(surface_rows)))) {
-    return false;
-  }
-  paint_masked_segment(scaled_sample(segment.first, surface.zoom),
-                       scaled_sample(segment.second, surface.zoom),
-                       segment.tool == OperationTool::kEraser ? kBackground : segment.color,
-                       surface, finalized_pixels, summary);
-  return true;
-}
-
 bool apply_incremental_operation(const OperationAppend& operation, const RasterSurface& surface) {
   if (!valid_surface(surface) || operation.samples.empty()) {
     return false;
@@ -1074,12 +1012,6 @@ bool apply_masked_incremental_operation(const OperationAppend& operation,
   return true;
 }
 
-std::size_t incremental_curve_unit_step_count(std::span<const CompactOperationSample> samples,
-                                              std::size_t endpoint, ZoomLevel zoom) {
-  const auto unit = curved_unit(samples, endpoint, zoom);
-  return unit.has_value() ? unit->count : 0U;
-}
-
 namespace {
 
 PreparedCurveStep pack_prepared_step(const Segment& segment) {
@@ -1096,16 +1028,6 @@ PreparedCurveStep pack_prepared_step(const Segment& segment) {
   };
 }
 
-Segment unpack_prepared_step(const PreparedCurveStep& step) {
-  return {
-      .first = {.x = step.first_x, .y = step.first_y, .radius = step.first_radius},
-      .second = {.x = step.second_x, .y = step.second_y, .radius = step.second_radius},
-      .delta_x = step.delta_x,
-      .delta_y = step.delta_y,
-      .inverse_length_squared = step.inverse_length_squared,
-  };
-}
-
 }  // namespace
 
 std::optional<PreparedCurveUnit> prepare_incremental_curve_unit(
@@ -1119,180 +1041,6 @@ std::optional<PreparedCurveUnit> prepare_incremental_curve_unit(
     prepared.steps[step] = pack_prepared_step(unit->segments[step]);
   }
   return prepared;
-}
-
-std::optional<PixelRect> prepared_curve_step_level_bounds(const PreparedCurveUnit& unit,
-                                                          std::size_t step_index, ZoomLevel zoom) {
-  if (step_index >= unit.step_count) {
-    return std::nullopt;
-  }
-  const PixelRect clip{0, 0, kWorldWidth * zoom_percent(zoom) / 100,
-                       kWorldHeight * zoom_percent(zoom) / 100};
-  const PixelRect bounds = segment_bounds(unpack_prepared_step(unit.steps[step_index]), clip);
-  return bounds.x0 < bounds.x1 && bounds.y0 < bounds.y1 ? std::optional{bounds} : std::nullopt;
-}
-
-bool apply_masked_prepared_curve_step(OperationTool tool, std::uint16_t color,
-                                      const PreparedCurveUnit& unit, std::size_t step_index,
-                                      const RasterSurface& surface,
-                                      std::span<std::uint8_t> finalized_pixels,
-                                      MaskedRowSummary* summary) {
-  if (step_index >= unit.step_count) {
-    return false;
-  }
-  // One chord is a one-step unit; the unit painter carries the windowed
-  // producer machinery and its validation.
-  const PreparedCurveUnit single{.step_count = 1U, .steps = {unit.steps[step_index]}};
-  return apply_masked_prepared_curve_unit(tool, color, single, surface, finalized_pixels, summary);
-}
-
-std::optional<PixelRect> incremental_curve_step_level_bounds(
-    std::span<const CompactOperationSample> samples, std::size_t endpoint, std::size_t step_index,
-    ZoomLevel zoom) {
-  const auto unit = curved_unit(samples, endpoint, zoom);
-  if (!unit.has_value() || step_index >= unit->count) {
-    return std::nullopt;
-  }
-  const PixelRect clip{0, 0, kWorldWidth * zoom_percent(zoom) / 100,
-                       kWorldHeight * zoom_percent(zoom) / 100};
-  const PixelRect bounds = segment_bounds(unit->segments[step_index], clip);
-  return bounds.x0 < bounds.x1 && bounds.y0 < bounds.y1 ? std::optional{bounds} : std::nullopt;
-}
-
-bool apply_masked_incremental_curve_step(const OperationAppend& operation, std::size_t endpoint,
-                                         std::size_t step_index, const RasterSurface& surface,
-                                         std::span<std::uint8_t> finalized_pixels,
-                                         MaskedRowSummary* summary) {
-  const std::size_t required_mask_bytes = (surface.pixels.size() + 7U) / 8U;
-  const bool mask_aliases_pixels = storage_overlaps(
-      std::as_bytes(std::span(surface.pixels)),
-      std::as_bytes(std::span(finalized_pixels)
-                        .first(std::min(finalized_pixels.size(), required_mask_bytes))));
-  const int surface_rows = surface.level_bounds.y1 - surface.level_bounds.y0;
-  const auto unit = curved_unit(operation.samples, endpoint, surface.zoom);
-  if (!valid_surface(surface) || !unit.has_value() || step_index >= unit->count ||
-      finalized_pixels.size() < required_mask_bytes || mask_aliases_pixels ||
-      (summary != nullptr && !summary->ready(static_cast<std::size_t>(surface_rows)))) {
-    return false;
-  }
-  if (operation.samples.size() <= 2U) {
-    return apply_masked_incremental_segment({.tool = operation.tool,
-                                             .color = operation.color,
-                                             .first = operation.samples.front(),
-                                             .second = operation.samples.back()},
-                                            surface, finalized_pixels, summary);
-  }
-  const std::uint16_t color =
-      operation.tool == OperationTool::kEraser ? kBackground : operation.color;
-  paint_masked_segment(unit->segments[step_index].first, unit->segments[step_index].second, color,
-                       surface, finalized_pixels, summary);
-  return true;
-}
-
-bool apply_masked_prepared_curve_unit(OperationTool tool, std::uint16_t color,
-                                      const PreparedCurveUnit& unit, const RasterSurface& surface,
-                                      std::span<std::uint8_t> finalized_pixels,
-                                      MaskedRowSummary* summary) {
-  const std::size_t required_mask_bytes = (surface.pixels.size() + 7U) / 8U;
-  const bool mask_aliases_pixels = storage_overlaps(
-      std::as_bytes(std::span(surface.pixels)),
-      std::as_bytes(std::span(finalized_pixels)
-                        .first(std::min(finalized_pixels.size(), required_mask_bytes))));
-  const int surface_rows = surface.level_bounds.y1 - surface.level_bounds.y0;
-  if (!valid_surface(surface) || unit.step_count == 0U ||
-      finalized_pixels.size() < required_mask_bytes || mask_aliases_pixels ||
-      (summary != nullptr && !summary->ready(static_cast<std::size_t>(surface_rows)))) {
-    return false;
-  }
-  const std::uint16_t applied = tool == OperationTool::kEraser ? kBackground : color;
-  // A unit's chords share one color and overlap around their joints, so one
-  // row sweep over the union bounds may process them in any order: the
-  // finalized mask keeps the written pixel set identical to sequential
-  // per-chord painting, and a window left stale by an earlier chord on the
-  // same row only widens a clamp that the masked walks re-check anyway.
-  struct ChordPlan {
-    Segment segment{};
-    RowSeed seed{};
-    PixelRect bounds{};
-    bool constant = false;
-  };
-  std::array<ChordPlan, 3> plans{};
-  std::size_t plan_count = 0;
-  PixelRect union_bounds{surface.level_bounds.x1, surface.level_bounds.y1, surface.level_bounds.x0,
-                         surface.level_bounds.y0};
-  for (std::size_t step = 0; step < unit.step_count; ++step) {
-    const Segment segment = unpack_prepared_step(unit.steps[step]);
-    const PixelRect bounds = segment_bounds(segment, surface.level_bounds);
-    if (bounds.x1 <= bounds.x0 || bounds.y1 <= bounds.y0) {
-      continue;
-    }
-    plans[plan_count++] = {
-        .segment = segment,
-        .seed = make_row_seed(segment),
-        .bounds = bounds,
-        .constant = segment.first.radius == segment.second.radius,
-    };
-    union_bounds.x0 = std::min(union_bounds.x0, bounds.x0);
-    union_bounds.y0 = std::min(union_bounds.y0, bounds.y0);
-    union_bounds.x1 = std::max(union_bounds.x1, bounds.x1);
-    union_bounds.y1 = std::max(union_bounds.y1, bounds.y1);
-  }
-  if (plan_count == 0U) {
-    return true;
-  }
-  for (int y = union_bounds.y0; y < union_bounds.y1; ++y) {
-    const int surface_row = y - surface.level_bounds.y0;
-    const std::size_t row =
-        static_cast<std::size_t>(surface_row) * static_cast<std::size_t>(surface.stride);
-    const std::size_t row_first =
-        row + static_cast<std::size_t>(union_bounds.x0 - surface.level_bounds.x0);
-    const std::size_t row_last =
-        row + static_cast<std::size_t>(union_bounds.x1 - 1 - surface.level_bounds.x0);
-    const auto window = mask_unset_window(finalized_pixels, row_first, row_last);
-    if (!window.has_value()) {
-      TINYDRAW_V2_CENSUS_ADD(rows_prefinalized, 1);
-      continue;
-    }
-    const int window_first = union_bounds.x0 + static_cast<int>(window->first - row_first);
-    const int window_last = union_bounds.x0 + static_cast<int>(window->last - row_first);
-    const float pixel_y = static_cast<float>(y) + 0.5F;
-    for (std::size_t index = 0; index < plan_count; ++index) {
-      const ChordPlan& plan = plans[index];
-      if (y < plan.bounds.y0 || y >= plan.bounds.y1) {
-        continue;
-      }
-      const int chord_first = std::max(window_first, plan.bounds.x0);
-      const int chord_last = std::min(window_last, plan.bounds.x1 - 1);
-      if (chord_last < chord_first) {
-        continue;
-      }
-      int newly_finalized = 0;
-      if (plan.constant) {
-        newly_finalized =
-            paint_masked_const_row(plan.segment, plan.seed, plan.bounds, y, row, chord_first,
-                                   chord_last, applied, surface, finalized_pixels);
-      } else {
-        const ScanSpan conservative = conservative_row_span(plan.seed, plan.bounds, pixel_y);
-        const ScanSpan row_span{
-            .first = std::max(conservative.first, chord_first),
-            .last = std::min(conservative.last, chord_last),
-        };
-        if (row_span.empty()) {
-          TINYDRAW_V2_CENSUS_ADD(rows_empty_span, 1);
-          continue;
-        }
-        TINYDRAW_V2_CENSUS_ADD(rows_scanned, 1);
-        TINYDRAW_V2_CENSUS_ADD(span_pixels,
-                               static_cast<std::uint64_t>(row_span.last - row_span.first + 1));
-        newly_finalized =
-            paint_masked_tapered_row(plan.segment, y, row_span, applied, surface, finalized_pixels);
-      }
-      if (newly_finalized != 0 && summary != nullptr) {
-        summary->note_finalized(surface_row, newly_finalized);
-      }
-    }
-  }
-  return true;
 }
 
 namespace {
@@ -1533,35 +1281,6 @@ bool apply_masked_operation_chord_rows(OperationTool tool, std::uint16_t color,
   }
   slice.next_row = y;
   return true;
-}
-
-std::optional<AffectedTileResult> affected_tiles(const OperationAppend& operation, ZoomLevel zoom,
-                                                 std::span<TileKey> output) {
-  if (zoom == ZoomLevel::k25Percent || operation.samples.empty()) {
-    return std::nullopt;
-  }
-  const auto world_bounds = operation_world_bounds(operation.samples);
-  if (!world_bounds.has_value()) {
-    return std::nullopt;
-  }
-  const PixelRect bounds = operation_level_bounds(*world_bounds, zoom);
-  if (bounds.x1 <= bounds.x0 || bounds.y1 <= bounds.y0) {
-    return AffectedTileResult{};
-  }
-  const int first_column = bounds.x0 / kTileWidth;
-  const int last_column = (bounds.x1 - 1) / kTileWidth;
-  const int first_row = bounds.y0 / kTileHeight;
-  const int last_row = (bounds.y1 - 1) / kTileHeight;
-  const std::size_t required = static_cast<std::size_t>(last_column - first_column + 1) *
-                               static_cast<std::size_t>(last_row - first_row + 1);
-  std::size_t written = 0;
-  for (int row = first_row; row <= last_row && written < output.size(); ++row) {
-    for (int column = first_column; column <= last_column && written < output.size(); ++column) {
-      output[written++] = {zoom, static_cast<std::uint16_t>(column),
-                           static_cast<std::uint16_t>(row)};
-    }
-  }
-  return AffectedTileResult{.required = required, .written = written};
 }
 
 }  // namespace tinydraw::vector_v2
