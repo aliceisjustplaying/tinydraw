@@ -65,8 +65,9 @@ erasers emit background-colored paths in operation order, and the root omits a
 synthetic background rectangle. The ESP adapter preserves those SVG bytes and
 also streams `DRAWING.PNG` from production settled-AA windows. It retains one
 64-row world band, one 64×64
-window, and fixed PNGenc workspace. A shared metadata page commits the pair
-only after the authority epoch, revision, and operation count are rechecked.
+window, and fixed PNGenc workspace. The existing Saving progress bar advances
+across both PNG windows and SVG operations. A shared metadata page commits the
+pair only after the authority epoch, revision, and operation count are rechecked.
 The generic FAT/USB adapter exposes both files read-only. SVG host coverage/fuzz
 tests and physical evidence are in the
 [`original receipt`](../benchmark-results/svg-export-2026-08-17/RECEIPT.md)
