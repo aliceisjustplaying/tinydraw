@@ -1,8 +1,6 @@
 #ifndef TINYDRAW_VECTOR_V2_NAVIGATION_STATE_H
 #define TINYDRAW_VECTOR_V2_NAVIGATION_STATE_H
 
-#include <array>
-#include <cstddef>
 #include <cstdint>
 
 #include "tinydraw/vector_v2/materialized_canvas.h"
@@ -23,18 +21,6 @@ struct NavigationExtent {
   bool operator==(const NavigationExtent&) const = default;
 };
 
-// Complete user-navigation state. Persistence stores this value rather than
-// only the active origin so zoom-cycle return positions survive restart.
-struct NavigationSnapshot {
-  ZoomLevel zoom = ZoomLevel::k25Percent;
-  NavigationPoint origin{};
-  NavigationPoint focus_quarter_world{kWorldWidth * 2, kWorldHeight * 2};
-  std::array<NavigationPoint, 4> remembered_origins{};
-  std::array<NavigationPoint, 4> remembered_focuses{};
-  std::array<bool, 4> remembered_valid{};
-  bool operator==(const NavigationSnapshot&) const = default;
-};
-
 class NavigationState {
  public:
   NavigationState();
@@ -44,14 +30,7 @@ class NavigationState {
   [[nodiscard]] NavigationPoint focus_quarter_world() const;
   [[nodiscard]] ViewRequest view() const;
   [[nodiscard]] NavigationExtent extent() const;
-  [[nodiscard]] NavigationSnapshot snapshot() const;
-  // Validates every persisted coordinate before replacing live navigation.
-  // Failure leaves this object unchanged.
-  [[nodiscard]] bool restore(const NavigationSnapshot& snapshot);
-
-  // Changes zoom around panel_focus. A compatible remembered view restores
-  // exactly; otherwise the retained world focus is centered there. Entering
-  // 25% retains the tiled focus; the initial 25% view uses the world center.
+  // Changes zoom around panel_focus while retaining the focused world point.
   [[nodiscard]] bool set_zoom(ZoomLevel target_zoom, NavigationPoint panel_focus);
   // Moves the active camera and updates its world focus. This is also the seam
   // used by deterministic hardware views and future minimap navigation.
@@ -70,9 +49,6 @@ class NavigationState {
   ZoomLevel zoom_ = ZoomLevel::k25Percent;
   NavigationPoint origin_{};
   NavigationPoint focus_quarter_world_{kWorldWidth * 2, kWorldHeight * 2};
-  std::array<NavigationPoint, 4> remembered_origins_{};
-  std::array<NavigationPoint, 4> remembered_focuses_{};
-  std::array<bool, 4> remembered_valid_{};
 };
 
 [[nodiscard]] ZoomLevel next_zoom(ZoomLevel zoom);

@@ -78,8 +78,8 @@ bool TileProducer::valid_view(const ViewRequest& view) {
 bool TileProducer::tile_satisfies(TileKey key, MaterializationQuality quality) const {
   const auto source = canvas_.lookup(key);
   return source.has_value() && source->kind != SourceKind::kOverview &&
-         source->identity.revision == canvas_.current_revision() &&
-         static_cast<int>(source->identity.quality) >= static_cast<int>(quality);
+         source->revision == canvas_.current_revision() &&
+         static_cast<int>(source->quality) >= static_cast<int>(quality);
 }
 
 std::optional<std::size_t> TileProducer::visible_tiles_remaining(const ViewRequest& view) const {
@@ -559,7 +559,7 @@ bool TileProducer::publish_surface_tile(TileKey key, PixelRect rendered_bounds,
   if (!analysis.has_value()) {
     return false;
   }
-  if (analysis->uniform && canvas_.uniform_capacity() != 0U) {
+  if (analysis->uniform) {
     return canvas_
         .publish_uniform(key, revision, MaterializationQuality::kImmediate, analysis->uniform_color)
         .has_value();

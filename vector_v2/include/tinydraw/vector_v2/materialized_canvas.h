@@ -83,19 +83,6 @@ enum class MaterializationQuality : std::uint8_t {
   kOverviewFallback,
   kImmediate,
   kSettled,
-  kExact,
-};
-
-enum class MaterializationProvenance : std::uint8_t {
-  kCompleteOverview,
-  kWorldTile,
-};
-
-struct MaterializationIdentity {
-  DocumentRevision revision{};
-  MaterializationQuality quality = MaterializationQuality::kOverviewFallback;
-  MaterializationProvenance provenance = MaterializationProvenance::kCompleteOverview;
-  bool operator==(const MaterializationIdentity&) const = default;
 };
 
 enum class SourceKind : std::uint8_t {
@@ -106,13 +93,8 @@ enum class SourceKind : std::uint8_t {
 
 struct SourceSelection {
   SourceKind kind = SourceKind::kOverview;
-  MaterializationIdentity identity{};
-  TileKey requested_tile{};
-  PixelRect source_pixels{};
-  PixelRect destination_pixels{};
-  std::optional<std::size_t> slot_index{};
-  int source_stride = 0;
-  std::uint16_t uniform_color = 0xFFFFU;
+  DocumentRevision revision{};
+  MaterializationQuality quality = MaterializationQuality::kOverviewFallback;
 };
 
 struct OverviewRevisionPublication {
@@ -153,7 +135,6 @@ struct ViewCompositionStats {
   std::size_t uniform_pixels = 0;
   std::size_t immediate_tiles = 0;
   std::size_t settled_tiles = 0;
-  std::size_t exact_tiles = 0;
   std::size_t fallback_tiles = 0;
 };
 
@@ -191,20 +172,15 @@ class MaterializedCanvas {
  public:
   // All spans are caller-owned and must outlive this object. Slot elements must
   // be constructed before the span is passed; the constructor resets their state.
-  MaterializedCanvas(std::span<std::uint16_t> overview_pixels,
-                     std::span<MaterializedSlotStorage> slots, std::span<std::uint16_t> tile_pixels,
-                     DocumentRevision initial_revision = {});
-  // raw_slot_directory is optional O(1) find_tile metadata: one entry per tile
-  // identity holding the slot index that materializes it (kNoRawSlot when
-  // none). Empty preserves the exact linear slot scan; when provided it must
-  // cover kMaterializedTileIdentityCount entries or the canvas is not ready.
-  // The linear scan remains the semantic truth; debug builds assert parity.
+  // The catalog, occupancy map, and raw-slot directory are part of the one
+  // production storage shape. raw_slot_directory maps every tile identity to
+  // its resident slot (kNoRawSlot when absent).
   MaterializedCanvas(std::span<std::uint16_t> overview_pixels,
                      std::span<MaterializedUniformStorage> uniform_catalog,
                      std::span<std::uint8_t> occupancy_bits,
                      std::span<MaterializedSlotStorage> slots, std::span<std::uint16_t> tile_pixels,
-                     DocumentRevision initial_revision = {},
-                     std::span<std::uint16_t> raw_slot_directory = {});
+                     DocumentRevision initial_revision,
+                     std::span<std::uint16_t> raw_slot_directory);
 
   [[nodiscard]] bool ready() const;
   [[nodiscard]] DocumentRevision current_revision() const;
@@ -212,7 +188,6 @@ class MaterializedCanvas {
   // Occupied raw slots. Idle repair uses this to stop a level sweep once the
   // pool saturates: past that point every publication evicts warmer tiles.
   [[nodiscard]] std::size_t resident_raw_tiles() const;
-  [[nodiscard]] std::size_t uniform_capacity() const;
   [[nodiscard]] std::span<const std::uint16_t> overview_pixels() const;
   [[nodiscard]] bool certainly_paper(TileKey key) const;
 
@@ -338,8 +313,6 @@ class MaterializedCanvas {
   [[nodiscard]] std::optional<std::size_t> find_uniform(TileKey key) const;
   [[nodiscard]] std::optional<std::size_t> choose_slot() const;
   [[nodiscard]] std::uint8_t protection_rank(TileKey key) const;
-  [[nodiscard]] SourceSelection select_overview(TileKey requested) const;
-  [[nodiscard]] SourceSelection select_uniform(TileKey requested, std::size_t index) const;
   [[nodiscard]] bool valid_incremental_revision(
       DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
       PixelRect affected_world_bounds,
@@ -357,7 +330,6 @@ class MaterializedCanvas {
     int view_width = 0;
   };
 
-  [[nodiscard]] SourceSelection select_tile(TileKey requested, std::size_t slot_index) const;
   [[nodiscard]] bool valid_view(const ViewRequest& request, std::size_t destination_size) const;
   [[nodiscard]] bool has_complete_source(const ViewRequest& request) const;
   [[nodiscard]] std::optional<ViewCompositionStats> compose_overview_view(
@@ -368,8 +340,6 @@ class MaterializedCanvas {
                                      CompositionContext& context);
   void compose_fallback_pixels(PixelRect bounds, CompositionContext& context);
   static void include_quality(MaterializationQuality quality, ViewCompositionStats& stats);
-  [[nodiscard]] static TileKey key_for_identity(std::size_t index);
-  [[nodiscard]] static bool uniform_intersects(std::size_t index, PixelRect world_bounds);
   void invalidate_zoom_uniforms(ZoomLevel zoom, PixelRect world_bounds,
                                 std::span<const TileKey> retained_keys,
                                 const InPlaceCommitScope& scope);
@@ -414,7 +384,6 @@ class MaterializedCanvas {
 [[nodiscard]] bool valid_tile_key(TileKey key);
 [[nodiscard]] std::optional<TileKey> tile_key_for_world(ZoomLevel zoom, WorldPoint point);
 [[nodiscard]] PixelRect tile_pixel_bounds(TileKey key);
-[[nodiscard]] PixelRect overview_source_bounds(TileKey key);
 
 }  // namespace tinydraw::vector_v2
 

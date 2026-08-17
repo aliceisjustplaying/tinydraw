@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <span>
 
 #include "tinydraw/vector_v2/materialized_canvas.h"
 
@@ -15,14 +14,6 @@ struct FrameScrollResult {
   std::array<PixelRect, 2> exposed{};
   std::size_t exposed_count = 0;
 };
-
-// Reuses the overlap between two views by moving pixels in place. delta_x and
-// delta_y are new view origin minus old view origin. The returned rectangles
-// partition the newly exposed area without overlap. Pixels outside area are
-// untouched.
-[[nodiscard]] std::optional<FrameScrollResult> scroll_frame(std::span<std::uint16_t> frame,
-                                                            int stride, PixelRect area, int delta_x,
-                                                            int delta_y);
 
 // Toroidal frame addressing: pan advances the ring origin instead of moving
 // pixels, and consumers de-rotate while they copy (the panel byte-swap
@@ -37,8 +28,8 @@ struct RingFrame {
 };
 
 // Advances the ring origin by the pan delta and returns the same exposed
-// panel-rectangle partition scroll_frame produces, without touching pixels.
-// Fails for deltas at or beyond the area extent, like scroll_frame.
+// panel-rectangle partition without touching pixels. Fails for deltas at or
+// beyond the area extent.
 [[nodiscard]] std::optional<FrameScrollResult> ring_scroll(RingFrame& ring, PixelRect area,
                                                            int delta_x, int delta_y);
 

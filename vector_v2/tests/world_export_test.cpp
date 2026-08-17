@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "tinydraw/export/png_encoder.h"
-#include "tinydraw/vector_v2/incremental_rasterizer.h"
 
 namespace vector_v2 = tinydraw::vector_v2;
 
@@ -98,40 +97,6 @@ struct SettledWorkspaceStorage {
 };
 
 }  // namespace
-
-TEST_CASE("world band renderer equals one-shot forward replay") {
-  ExportFixture fixture;
-  fixture.append_document();
-
-  // Ground truth: the complete world in one buffer, forward painter order.
-  std::vector<std::uint16_t> world(static_cast<std::size_t>(vector_v2::kWorldWidth) *
-                                       static_cast<std::size_t>(vector_v2::kWorldHeight),
-                                   0xFFFFU);
-  for (std::size_t index = 0; index < fixture.log.operation_count(); ++index) {
-    const auto stored = fixture.log.operation(index);
-    REQUIRE(stored.has_value());
-    REQUIRE(vector_v2::apply_incremental_operation(
-        {.tool = stored->tool, .color = stored->color, .samples = stored->samples},
-        {.zoom = vector_v2::ZoomLevel::k100Percent,
-         .level_bounds = {0, 0, vector_v2::kWorldWidth, vector_v2::kWorldHeight},
-         .pixels = world,
-         .stride = vector_v2::kWorldWidth}));
-  }
-
-  // A deliberately awkward band height (37 rows) exercises ragged band
-  // boundaries including the final partial band.
-  std::vector<std::uint16_t> band(static_cast<std::size_t>(vector_v2::kWorldWidth) * 37U);
-  vector_v2::WorldBandRenderer renderer(fixture.log, band);
-  REQUIRE(renderer.ready());
-  CHECK(renderer.band_rows() == 37);
-  std::vector<std::uint16_t> row(vector_v2::kWorldWidth);
-  for (int y = 0; y < vector_v2::kWorldHeight; ++y) {
-    REQUIRE(renderer.render_row(y, row));
-    const auto expected = std::span(world).subspan(
-        static_cast<std::size_t>(y) * vector_v2::kWorldWidth, vector_v2::kWorldWidth);
-    REQUIRE(std::equal(row.begin(), row.end(), expected.begin()));
-  }
-}
 
 TEST_CASE("settled world band renderer stitches the production AA windows exactly") {
   ExportFixture fixture;
@@ -250,21 +215,4 @@ TEST_CASE("settled world band renderer rejects an authority change during a band
   CHECK_FALSE(renderer.render_row(0, row));
   CHECK(mutation.appended);
   CHECK_FALSE(renderer.ready());
-}
-
-TEST_CASE("world band renderer rejects invalid requests") {
-  ExportFixture fixture;
-  fixture.append_document();
-  std::vector<std::uint16_t> band(static_cast<std::size_t>(vector_v2::kWorldWidth) * 8U);
-  vector_v2::WorldBandRenderer renderer(fixture.log, band);
-  REQUIRE(renderer.ready());
-  std::vector<std::uint16_t> row(vector_v2::kWorldWidth);
-  CHECK_FALSE(renderer.render_row(-1, row));
-  CHECK_FALSE(renderer.render_row(vector_v2::kWorldHeight, row));
-  CHECK_FALSE(renderer.render_row(0, std::span(row).first(vector_v2::kWorldWidth - 1)));
-
-  // A band shorter than one row is not usable.
-  std::vector<std::uint16_t> tiny(static_cast<std::size_t>(vector_v2::kWorldWidth) - 1U);
-  vector_v2::WorldBandRenderer short_renderer(fixture.log, tiny);
-  CHECK_FALSE(short_renderer.ready());
 }

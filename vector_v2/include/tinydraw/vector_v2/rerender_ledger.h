@@ -22,12 +22,9 @@ enum class RerenderCause : std::uint8_t {
   kUnexplained,     // same revision, no damage, no eviction: a rerender bug
 };
 
-// 8 bytes per group; the full five-zoom world is ~27.5 KiB.
 struct RerenderLedgerEntry {
   std::uint32_t revision = 0;
-  std::uint16_t renders = 0;
   std::uint8_t flags = 0;
-  std::uint8_t last_cause = 0;
 };
 
 struct RerenderLedgerTotals {

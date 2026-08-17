@@ -30,14 +30,14 @@ TEST_CASE("chained builder overlaps capacity chunks and preserves exact pixels")
   std::vector<std::vector<vector_v2::CompactOperationSample>> chunks;
   auto append = chained.pending_append();
   REQUIRE(append.has_value());
-  CHECK(append->gesture_id == 42U);
-  chunks.emplace_back(append->samples.begin(), append->samples.end());
+  CHECK(append->operation().gesture_id == 42U);
+  chunks.emplace_back(append->operation().samples.begin(), append->operation().samples.end());
   CHECK(chained.acknowledge_commit() == vector_v2::ChainedOperationStatus::kAccepted);
   CHECK(chained.finish(point(50.0F, 4'000U)) ==
         vector_v2::ChainedOperationStatus::kFinalChunkReady);
   append = chained.pending_append();
   REQUIRE(append.has_value());
-  chunks.emplace_back(append->samples.begin(), append->samples.end());
+  chunks.emplace_back(append->operation().samples.begin(), append->operation().samples.end());
   CHECK(chunks[0].back().x_quarter == chunks[1].front().x_quarter);
   CHECK(chained.acknowledge_commit() == vector_v2::ChainedOperationStatus::kComplete);
 
@@ -64,10 +64,11 @@ TEST_CASE("chained builder overlaps capacity chunks and preserves exact pixels")
   REQUIRE(reference.add(point(40.0F, 3'000U)));
   const auto full = reference.finish(point(50.0F, 4'000U));
   REQUIRE(full.has_value());
-  REQUIRE(vector_v2::apply_incremental_operation(*full, {.zoom = vector_v2::ZoomLevel::k100Percent,
-                                                         .level_bounds = {0, 0, 64, 64},
-                                                         .pixels = reference_pixels,
-                                                         .stride = 64}));
+  REQUIRE(vector_v2::apply_incremental_operation(full->operation(),
+                                                 {.zoom = vector_v2::ZoomLevel::k100Percent,
+                                                  .level_bounds = {0, 0, 64, 64},
+                                                  .pixels = reference_pixels,
+                                                  .stride = 64}));
   CHECK(chained_pixels == reference_pixels);
 }
 
@@ -81,8 +82,8 @@ TEST_CASE("chained builder proactively bounds an interactive chunk below storage
   CHECK(chained.add(point(40.0F, 3'000U)) == vector_v2::ChainedOperationStatus::kChunkReady);
   const auto first = chained.pending_append();
   REQUIRE(first.has_value());
-  REQUIRE(first->samples.size() == 3U);
-  const std::uint16_t boundary_x = first->samples.back().x_quarter;
+  REQUIRE(first->operation().samples.size() == 3U);
+  const std::uint16_t boundary_x = first->operation().samples.back().x_quarter;
   CHECK(boundary_x == 480U);
 
   CHECK(chained.acknowledge_commit() == vector_v2::ChainedOperationStatus::kAccepted);
@@ -91,8 +92,8 @@ TEST_CASE("chained builder proactively bounds an interactive chunk below storage
         vector_v2::ChainedOperationStatus::kFinalChunkReady);
   const auto second = chained.pending_append();
   REQUIRE(second.has_value());
-  CHECK(second->samples.front().x_quarter == boundary_x);
-  CHECK(second->samples[1].x_quarter == 640U);
+  CHECK(second->operation().samples.front().x_quarter == boundary_x);
+  CHECK(second->operation().samples[1].x_quarter == 640U);
 }
 
 TEST_CASE("chained builder rejects an unusable proactive chunk limit") {
@@ -117,8 +118,8 @@ TEST_CASE("chained builder splits elapsed time and completes a three minute gest
            status == vector_v2::ChainedOperationStatus::kFinalChunkReady) {
       const auto append = chained.pending_append();
       REQUIRE(append.has_value());
-      CHECK(append->gesture_id == 7U);
-      CHECK(append->samples.back().elapsed_ms <= 65'535U);
+      CHECK(append->operation().gesture_id == 7U);
+      CHECK(append->operation().samples.back().elapsed_ms <= 65'535U);
       ++chunks;
       status = chained.acknowledge_commit();
     }

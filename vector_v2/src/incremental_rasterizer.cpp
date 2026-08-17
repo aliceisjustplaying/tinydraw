@@ -1246,10 +1246,30 @@ bool apply_masked_operation_chord_rows(OperationTool tool, std::uint16_t color,
     const float pixel_y = static_cast<float>(y) + 0.5F;
     for (std::size_t index = 0; index < active_count; ++index) {
       const OperationChordPlan& plan = plans[active[index]];
-      const int chord_first = std::max(window_first, plan.bounds.x0);
-      const int chord_last = std::min(window_last, plan.bounds.x1 - 1);
+      int chord_first = std::max(window_first, plan.bounds.x0);
+      int chord_last = std::min(window_last, plan.bounds.x1 - 1);
       if (chord_last < chord_first) {
         continue;
+      }
+      // Overlapping chords on the same row mutate the mask as they run. The
+      // row-wide window above becomes stale after the first chord, so dense
+      // rows would keep probing chords whose complete span is already final.
+      // Refresh against each chord's narrower bounds only when overlap makes
+      // that stale-window tax possible; the common one-chord row keeps its
+      // single scan.
+      if (active_count > 1U) {
+        const std::size_t chord_row_first =
+            row + static_cast<std::size_t>(chord_first - surface.level_bounds.x0);
+        const std::size_t chord_row_last =
+            row + static_cast<std::size_t>(chord_last - surface.level_bounds.x0);
+        const auto chord_window =
+            mask_unset_window(finalized_pixels, chord_row_first, chord_row_last);
+        slice.work_px += 4U;
+        if (!chord_window.has_value()) {
+          continue;
+        }
+        chord_first += static_cast<int>(chord_window->first - chord_row_first);
+        chord_last -= static_cast<int>(chord_row_last - chord_window->last);
       }
       slice.work_px += static_cast<std::size_t>(chord_last - chord_first + 1);
       int newly_finalized = 0;

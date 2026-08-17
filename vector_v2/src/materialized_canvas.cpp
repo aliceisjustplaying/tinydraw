@@ -1,7 +1,6 @@
 #include "tinydraw/vector_v2/materialized_canvas.h"
 
 #include <algorithm>
-#include <cassert>
 #include <limits>
 #include <numeric>
 #include <tuple>
@@ -148,31 +147,6 @@ PixelRect tile_pixel_bounds(TileKey key) {
   };
 }
 
-PixelRect overview_source_bounds(TileKey key) {
-  const PixelRect destination = tile_pixel_bounds(key);
-  if (destination.x1 <= destination.x0 || destination.y1 <= destination.y0) {
-    return {};
-  }
-  const int percent = zoom_percent(key.zoom);
-  return {
-      .x0 = destination.x0 * 25 / percent,
-      .y0 = destination.y0 * 25 / percent,
-      .x1 = ceil_div(destination.x1 * 25, percent),
-      .y1 = ceil_div(destination.y1 * 25, percent),
-  };
-}
-
-MaterializedCanvas::MaterializedCanvas(std::span<std::uint16_t> overview_pixels,
-                                       std::span<MaterializedSlotStorage> slots,
-                                       std::span<std::uint16_t> tile_pixels,
-                                       DocumentRevision initial_revision)
-    : overview_pixels_(overview_pixels),
-      slots_(slots),
-      tile_pixels_(tile_pixels),
-      current_revision_(initial_revision) {
-  std::fill(slots_.begin(), slots_.end(), MaterializedSlotStorage{});
-}
-
 MaterializedCanvas::MaterializedCanvas(std::span<std::uint16_t> overview_pixels,
                                        std::span<MaterializedUniformStorage> uniform_catalog,
                                        std::span<std::uint8_t> occupancy_bits,
@@ -194,17 +168,11 @@ MaterializedCanvas::MaterializedCanvas(std::span<std::uint16_t> overview_pixels,
 }
 
 bool MaterializedCanvas::ready() const {
-  const bool optional_catalog_ready = (uniform_catalog_.empty() && occupancy_bits_.empty()) ||
-                                      (uniform_catalog_.size() == kMaterializedTileIdentityCount &&
-                                       occupancy_bits_.size() == kOccupancyBytes);
-  const bool optional_directory_ready =
-      raw_slot_directory_.empty() ||
-      (raw_slot_directory_.size() >= kMaterializedTileIdentityCount &&
-       slots_.size() < static_cast<std::size_t>(kNoRawSlot));
-  if (!optional_directory_ready) {
-    return false;
-  }
-  return overview_pixels_.size() == kOverviewPixels && optional_catalog_ready &&
+  return overview_pixels_.size() == kOverviewPixels &&
+         uniform_catalog_.size() == kMaterializedTileIdentityCount &&
+         occupancy_bits_.size() == kOccupancyBytes &&
+         raw_slot_directory_.size() == kMaterializedTileIdentityCount &&
+         slots_.size() < static_cast<std::size_t>(kNoRawSlot) &&
          tile_pixels_.size() == slots_.size() * kTilePixels;
 }
 
@@ -214,14 +182,12 @@ std::size_t MaterializedCanvas::slot_capacity() const { return slots_.size(); }
 
 std::size_t MaterializedCanvas::resident_raw_tiles() const { return occupied_slots_; }
 
-std::size_t MaterializedCanvas::uniform_capacity() const { return uniform_catalog_.size(); }
-
 std::span<const std::uint16_t> MaterializedCanvas::overview_pixels() const {
   return overview_pixels_;
 }
 
 bool MaterializedCanvas::certainly_paper(TileKey key) const {
-  if (occupancy_bits_.size() != kOccupancyBytes || !valid_tile_key(key)) {
+  if (!ready() || !valid_tile_key(key)) {
     return false;
   }
   const PixelRect world = tile_world_bounds(key);
@@ -245,29 +211,6 @@ void MaterializedCanvas::clear_uniforms() {
   std::fill(uniform_catalog_.begin(), uniform_catalog_.end(), MaterializedUniformStorage{});
 }
 
-TileKey MaterializedCanvas::key_for_identity(std::size_t index) {
-  constexpr std::array zooms{ZoomLevel::k50Percent, ZoomLevel::k100Percent, ZoomLevel::k200Percent,
-                             ZoomLevel::k400Percent};
-  constexpr std::array offsets{std::size_t{0}, std::size_t{168}, std::size_t{812},
-                               std::size_t{3'388}};
-  for (std::size_t zoom_index = zooms.size(); zoom_index-- > 0U;) {
-    if (index < offsets[zoom_index]) {
-      continue;
-    }
-    const TileGrid grid = tile_grid(zooms[zoom_index]);
-    const std::size_t local = index - offsets[zoom_index];
-    return {zooms[zoom_index],
-            static_cast<std::uint16_t>(local % static_cast<std::size_t>(grid.columns)),
-            static_cast<std::uint16_t>(local / static_cast<std::size_t>(grid.columns))};
-  }
-  return {};
-}
-
-bool MaterializedCanvas::uniform_intersects(std::size_t index, PixelRect world_bounds) {
-  return index < kMaterializedTileIdentityCount &&
-         rectangles_intersect(tile_world_bounds(key_for_identity(index)), world_bounds);
-}
-
 void MaterializedCanvas::invalidate_zoom_uniforms(ZoomLevel zoom, PixelRect world_bounds,
                                                   std::span<const TileKey> retained_keys,
                                                   const InPlaceCommitScope& scope) {
@@ -285,8 +228,8 @@ void MaterializedCanvas::invalidate_zoom_uniforms(ZoomLevel zoom, PixelRect worl
     for (int column = first_column; column <= last_column; ++column) {
       const TileKey key{zoom, static_cast<std::uint16_t>(column), static_cast<std::uint16_t>(row)};
       const auto index = tile_identity_index(key);
-      if (!index.has_value() || *index >= uniform_catalog_.size() ||
-          !uniform_catalog_[*index].occupied_ || !uniform_intersects(*index, world_bounds)) {
+      if (!index.has_value() || !uniform_catalog_[*index].occupied_ ||
+          !rectangles_intersect(tile_world_bounds(key), world_bounds)) {
         continue;
       }
       // Painting a color over an identical uniform is a no-op at any zoom,
@@ -306,11 +249,11 @@ void MaterializedCanvas::invalidate_zoom_uniforms(ZoomLevel zoom, PixelRect worl
 void MaterializedCanvas::invalidate_uniforms(PixelRect world_bounds,
                                              std::span<const TileKey> retained_keys,
                                              const InPlaceCommitScope& scope) {
-  if (uniform_catalog_.empty() || !valid_world_bounds(world_bounds)) {
+  if (!valid_world_bounds(world_bounds)) {
     return;
   }
-  // Walk only a conservative tile-index window per zoom instead of all 13,692
-  // identities; uniform_intersects stays the exact authority inside it.
+  // Walk only a conservative tile window per zoom instead of all 13,692
+  // identities.
   constexpr std::array zooms{ZoomLevel::k50Percent, ZoomLevel::k100Percent, ZoomLevel::k200Percent,
                              ZoomLevel::k400Percent};
   for (const ZoomLevel zoom : zooms) {
@@ -319,9 +262,6 @@ void MaterializedCanvas::invalidate_uniforms(PixelRect world_bounds,
 }
 
 void MaterializedCanvas::rebuild_occupancy_from_overview() {
-  if (occupancy_bits_.size() != kOccupancyBytes) {
-    return;
-  }
   std::fill(occupancy_bits_.begin(), occupancy_bits_.end(), 0U);
   for (int row = 0; row < kOccupancyRows; ++row) {
     for (int column = 0; column < kOccupancyColumns; ++column) {
@@ -339,9 +279,6 @@ void MaterializedCanvas::rebuild_occupancy_from_overview() {
 }
 
 void MaterializedCanvas::mark_occupied(PixelRect world_bounds) {
-  if (occupancy_bits_.size() != kOccupancyBytes) {
-    return;
-  }
   const int first_column = world_bounds.x0 / kOccupancyCellWorldSize;
   const int last_column = (world_bounds.x1 - 1) / kOccupancyCellWorldSize;
   const int first_row = world_bounds.y0 / kOccupancyCellWorldSize;
@@ -482,7 +419,7 @@ bool MaterializedCanvas::valid_incremental_revision(
         !accepts_external_workspace(std::as_bytes(publication.pixels))) {
       return false;
     }
-    raw_publications += !analysis->uniform || uniform_catalog_.empty();
+    raw_publications += !analysis->uniform;
   }
   return raw_publications <= slots_.size();
 }
@@ -574,8 +511,7 @@ bool MaterializedCanvas::commit_incremental_revision(
     const auto analysis =
         analyze_tile_payload(publication.pixels, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0);
     const auto uniform_index = tile_identity_index(publication.key);
-    if (!uniform_catalog_.empty() && analysis.has_value() && analysis->uniform &&
-        uniform_index.has_value()) {
+    if (analysis.has_value() && analysis->uniform && uniform_index.has_value()) {
       if (const auto slot_index = find_tile(publication.key); slot_index.has_value()) {
         release_slot(*slot_index);
       }
@@ -838,42 +774,21 @@ std::optional<std::size_t> MaterializedCanvas::append_recent_view_uniform_keys(
 }
 
 std::optional<std::size_t> MaterializedCanvas::find_tile(TileKey key) const {
-  const auto scan = [this, key]() -> std::optional<std::size_t> {
-    const auto found = std::find_if(slots_.begin(), slots_.end(), [key](const auto& slot) {
-      return slot.occupied_ && slot.key_ == key;
-    });
-    if (found == slots_.end()) {
-      return std::nullopt;
-    }
-    return static_cast<std::size_t>(found - slots_.begin());
-  };
-  if (raw_slot_directory_.empty()) {
-    return scan();
+  const auto identity = tile_identity_index(key);
+  if (raw_slot_directory_.size() != kMaterializedTileIdentityCount || !identity.has_value()) {
+    return std::nullopt;
   }
-  std::optional<std::size_t> result{};
-  if (const auto identity = tile_identity_index(key);
-      identity.has_value() && *identity < raw_slot_directory_.size()) {
-    const std::uint16_t index = raw_slot_directory_[*identity];
-    if (index != kNoRawSlot && static_cast<std::size_t>(index) < slots_.size() &&
-        slots_[index].occupied_ && slots_[index].key_ == key) {
-      result = static_cast<std::size_t>(index);
-    }
+  const std::uint16_t index = raw_slot_directory_[*identity];
+  if (index == kNoRawSlot || static_cast<std::size_t>(index) >= slots_.size() ||
+      !slots_[index].occupied_ || !(slots_[index].key_ == key)) {
+    return std::nullopt;
   }
-  // The linear scan stays the semantic truth; a divergence here is a
-  // directory-maintenance bug and host debug builds fail loudly on it. The
-  // check must stay off the device: firmware ships with assertions enabled
-  // (CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_ENABLE) and the scan-per-lookup
-  // would silently re-tax every find_tile with the cost the directory exists
-  // to remove (measured +8..+14 ms cold on 2026-08-16).
-#if !defined(NDEBUG) && !defined(ESP_PLATFORM)
-  assert(result == scan());
-#endif
-  return result;
+  return static_cast<std::size_t>(index);
 }
 
 std::optional<std::size_t> MaterializedCanvas::find_uniform(TileKey key) const {
   const auto index = tile_identity_index(key);
-  if (!index.has_value() || *index >= uniform_catalog_.size() ||
+  if (uniform_catalog_.size() != kMaterializedTileIdentityCount || !index.has_value() ||
       !uniform_catalog_[*index].occupied_) {
     return std::nullopt;
   }
@@ -924,12 +839,9 @@ void MaterializedCanvas::release_slot(std::size_t index) {
   }
   slot.occupied_ = false;
   --occupied_slots_;
-  if (!raw_slot_directory_.empty()) {
-    if (const auto identity = tile_identity_index(slot.key_);
-        identity.has_value() && *identity < raw_slot_directory_.size() &&
-        raw_slot_directory_[*identity] == static_cast<std::uint16_t>(index)) {
-      raw_slot_directory_[*identity] = kNoRawSlot;
-    }
+  if (const auto identity = tile_identity_index(slot.key_);
+      identity.has_value() && raw_slot_directory_[*identity] == static_cast<std::uint16_t>(index)) {
+    raw_slot_directory_[*identity] = kNoRawSlot;
   }
 }
 
@@ -939,11 +851,8 @@ void MaterializedCanvas::claim_slot(std::size_t index) {
     slot.occupied_ = true;
     ++occupied_slots_;
   }
-  if (!raw_slot_directory_.empty()) {
-    if (const auto identity = tile_identity_index(slot.key_);
-        identity.has_value() && *identity < raw_slot_directory_.size()) {
-      raw_slot_directory_[*identity] = static_cast<std::uint16_t>(index);
-    }
+  if (const auto identity = tile_identity_index(slot.key_); identity.has_value()) {
+    raw_slot_directory_[*identity] = static_cast<std::uint16_t>(index);
   }
 }
 
@@ -1009,8 +918,7 @@ std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, Documen
   slot.revision_ = revision;
   slot.quality_ = quality;
   claim_slot(index);
-  if (const auto uniform = tile_identity_index(key);
-      uniform.has_value() && *uniform < uniform_catalog_.size()) {
+  if (const auto uniform = tile_identity_index(key); uniform.has_value()) {
     uniform_catalog_[*uniform].occupied_ = false;
   }
   touch(slot);
@@ -1022,8 +930,8 @@ std::optional<std::size_t> MaterializedCanvas::publish_uniform(TileKey key,
                                                                MaterializationQuality quality,
                                                                std::uint16_t color) {
   const auto index = tile_identity_index(key);
-  if (!ready() || !index.has_value() || *index >= uniform_catalog_.size() ||
-      revision != current_revision_ || quality == MaterializationQuality::kOverviewFallback) {
+  if (!ready() || !index.has_value() || revision != current_revision_ ||
+      quality == MaterializationQuality::kOverviewFallback) {
     return std::nullopt;
   }
   if (const auto raw = find_tile(key); raw.has_value()) {
@@ -1043,74 +951,25 @@ std::optional<std::size_t> MaterializedCanvas::publish_uniform(TileKey key,
   return index;
 }
 
-SourceSelection MaterializedCanvas::select_overview(TileKey requested) const {
-  return {
-      .kind = SourceKind::kOverview,
-      .identity =
-          {
-              .revision = overview_revision_,
-              .quality = MaterializationQuality::kOverviewFallback,
-              .provenance = MaterializationProvenance::kCompleteOverview,
-          },
-      .requested_tile = requested,
-      .source_pixels = overview_source_bounds(requested),
-      .destination_pixels = tile_pixel_bounds(requested),
-      .slot_index = std::nullopt,
-      .source_stride = kOverviewWidth,
-  };
-}
-
-SourceSelection MaterializedCanvas::select_uniform(TileKey requested, std::size_t index) const {
-  const MaterializedUniformStorage& uniform = uniform_catalog_[index];
-  return {
-      .kind = SourceKind::kUniform,
-      .identity =
-          {
-              .revision = current_revision_,
-              .quality = uniform.quality_,
-              .provenance = MaterializationProvenance::kWorldTile,
-          },
-      .requested_tile = requested,
-      .source_pixels = tile_pixel_bounds(requested),
-      .destination_pixels = tile_pixel_bounds(requested),
-      .slot_index = std::nullopt,
-      .source_stride = 0,
-      .uniform_color = uniform.color_,
-  };
-}
-
-SourceSelection MaterializedCanvas::select_tile(TileKey requested, std::size_t slot_index) const {
-  const MaterializedSlotStorage& slot = slots_[slot_index];
-  const PixelRect bounds = tile_pixel_bounds(requested);
-  return {
-      .kind = SourceKind::kTileSlot,
-      .identity =
-          {
-              .revision = slot.revision_,
-              .quality = slot.quality_,
-              .provenance = MaterializationProvenance::kWorldTile,
-          },
-      .requested_tile = requested,
-      .source_pixels = {0, 0, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0},
-      .destination_pixels = bounds,
-      .slot_index = slot_index,
-      .source_stride = kTileWidth,
-  };
-}
-
 std::optional<SourceSelection> MaterializedCanvas::lookup(TileKey key) const {
   if (!ready() || !valid_tile_key(key)) {
     return std::nullopt;
   }
   const std::optional<std::size_t> tile_index = find_tile(key);
   if (tile_index.has_value() && slots_[*tile_index].revision_ == current_revision_) {
-    return select_tile(key, *tile_index);
+    return SourceSelection{.kind = SourceKind::kTileSlot,
+                           .revision = slots_[*tile_index].revision_,
+                           .quality = slots_[*tile_index].quality_};
   }
   if (const auto uniform = find_uniform(key); uniform.has_value()) {
-    return select_uniform(key, *uniform);
+    return SourceSelection{.kind = SourceKind::kUniform,
+                           .revision = current_revision_,
+                           .quality = uniform_catalog_[*uniform].quality_};
   }
   if (overview_valid_ && overview_revision_ == current_revision_) {
-    return select_overview(key);
+    return SourceSelection{.kind = SourceKind::kOverview,
+                           .revision = overview_revision_,
+                           .quality = MaterializationQuality::kOverviewFallback};
   }
   return std::nullopt;
 }
@@ -1204,7 +1063,6 @@ std::optional<ViewCompositionStats> MaterializedCanvas::compose_overview_view(
 
 void MaterializedCanvas::include_quality(MaterializationQuality quality,
                                          ViewCompositionStats& stats) {
-  stats.exact_tiles += quality == MaterializationQuality::kExact;
   stats.immediate_tiles += quality == MaterializationQuality::kImmediate;
   stats.settled_tiles += quality == MaterializationQuality::kSettled;
 }

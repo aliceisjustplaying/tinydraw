@@ -33,7 +33,7 @@ class ChainedOperationBuilder {
   [[nodiscard]] bool active() const;
   [[nodiscard]] OperationBuilderReject last_reject() const;
   [[nodiscard]] std::size_t sample_count() const;
-  [[nodiscard]] std::optional<OperationAppend> pending_append() const;
+  [[nodiscard]] std::optional<BuiltOperation> pending_append() const;
 
   [[nodiscard]] bool begin(OperationTool tool, std::uint16_t color, std::uint16_t gesture_id,
                            OperationPoint point);
@@ -53,7 +53,7 @@ class ChainedOperationBuilder {
 
   [[nodiscard]] ChainedOperationStatus capture_boundary(OperationPoint rejected,
                                                         bool finish_after_commit);
-  [[nodiscard]] ChainedOperationStatus capture_final(OperationPoint point);
+  [[nodiscard]] ChainedOperationStatus capture_final();
 
   OperationBuilder builder_;
   std::size_t maximum_chunk_samples_ = 0;

@@ -83,9 +83,6 @@ constexpr int kMinimapTop = 258;
 constexpr int kMinimapWidth = 80;
 constexpr int kMinimapHeight = 98;
 constexpr int kHitSlop = 8;
-constexpr float kMinimapDragPromotionPixels = 4.0F;
-constexpr float kMinimapDragPromotionPixels200 = 3.0F;
-constexpr float kMinimapDragPromotionPixels400 = 2.0F;
 constexpr float kMinimapDockDragPromotionPixels = 8.0F;
 constexpr float kMinimapDockUpPromotionPixels = 2.0F;
 constexpr float kPanDragPromotionPixels = 8.0F;
@@ -789,8 +786,7 @@ ChromeLevelPoint chrome_minimap_level_point(ChromePoint point, const ChromeNavig
   };
 }
 
-ChromeLevelPoint chrome_minimap_drag_origin(ChromePoint /*start*/, ChromePoint current,
-                                            ChromeLevelPoint focus,
+ChromeLevelPoint chrome_minimap_drag_origin(ChromePoint current, ChromeLevelPoint focus,
                                             const ChromeNavigation& navigation) {
   const ChromeLevelPoint current_level = chrome_minimap_level_point(current, navigation);
   // The minimap is an absolute pointer, not a miniature relative trackpad.
@@ -830,22 +826,6 @@ bool chrome_promotes_minimap_dock_drag(ChromePoint start, ChromePoint current,
   return delta_y <= -kMinimapDockUpPromotionPixels ||
          delta_x * delta_x + delta_y * delta_y >=
              kMinimapDockDragPromotionPixels * kMinimapDockDragPromotionPixels;
-}
-
-bool chrome_promotes_minimap_drag(ChromePoint start, ChromePoint current, const ChromeState& state,
-                                  int zoom_percent) {
-  if (!chrome_minimap_contains(start, state)) {
-    return false;
-  }
-  // The whole minimap is already a drag target. At higher zoom the viewport
-  // indicator becomes only a few panel pixels wide, so reduce the movement
-  // needed to claim a drag while retaining one pixel of jitter tolerance.
-  const float threshold = zoom_percent >= 400   ? kMinimapDragPromotionPixels400
-                          : zoom_percent >= 200 ? kMinimapDragPromotionPixels200
-                                                : kMinimapDragPromotionPixels;
-  const float delta_x = current.x - start.x;
-  const float delta_y = current.y - start.y;
-  return delta_x * delta_x + delta_y * delta_y >= threshold * threshold;
 }
 
 bool chrome_contains(ChromePoint point, const ChromeState& state) {
@@ -1005,122 +985,6 @@ bool chrome_minimap_refresh_required(const ChromeState& state, bool overview_cha
   return canvas_overlays_visible(state) && overview_changed && allow_minimap_refresh;
 }
 
-ChromeOverlayRegions chrome_overlay_regions(const ChromeState& state) {
-  ChromeOverlayRegions result;
-  if (!canvas_overlays_visible(state)) {
-    return result;
-  }
-  result.regions[result.count++] = kZoomRailOverlayRect;
-  result.regions[result.count++] = kMinimapOverlayRect;
-  if (state.battery_percentage >= 0) {
-    result.regions[result.count++] = kBatteryOverlayRect;
-  }
-  return result;
-}
-
-ChromePresentationRegions chrome_unobscured_regions(ChromeRect bounds, const ChromeState& state) {
-  const auto align_to_panel = [](ChromeRect region) {
-    region.x0 = std::clamp(region.x0 & ~1, 0, kWidth);
-    region.y0 = std::clamp(region.y0 & ~1, 0, kHeight);
-    region.x1 = std::clamp((region.x1 + 1) & ~1, region.x0, kWidth);
-    region.y1 = std::clamp((region.y1 + 1) & ~1, region.y0, kHeight);
-    return region;
-  };
-  const auto append = [](ChromePresentationRegions& regions, ChromeRect region) {
-    if (region.x1 <= region.x0 || region.y1 <= region.y0) {
-      return;
-    }
-    if (regions.count >= regions.regions.size()) {
-      regions.overflowed = true;
-      return;
-    }
-    regions.regions[regions.count++] = region;
-  };
-
-  ChromePresentationRegions visible;
-  append(visible, align_to_panel(bounds));
-  const auto overlays = chrome_overlay_regions(state);
-  for (std::size_t overlay_index = 0; overlay_index < overlays.count; ++overlay_index) {
-    const ChromeRect overlay = align_to_panel(overlays.regions[overlay_index]);
-    ChromePresentationRegions next;
-    next.overflowed = visible.overflowed;
-    for (std::size_t region_index = 0; region_index < visible.count; ++region_index) {
-      const ChromeRect region = visible.regions[region_index];
-      const ChromeRect intersection{
-          std::max(region.x0, overlay.x0), std::max(region.y0, overlay.y0),
-          std::min(region.x1, overlay.x1), std::min(region.y1, overlay.y1)};
-      if (intersection.x1 <= intersection.x0 || intersection.y1 <= intersection.y0) {
-        append(next, region);
-        continue;
-      }
-      append(next, {region.x0, region.y0, region.x1, intersection.y0});
-      append(next, {region.x0, intersection.y1, region.x1, region.y1});
-      append(next, {region.x0, intersection.y0, intersection.x0, intersection.y1});
-      append(next, {intersection.x1, intersection.y0, region.x1, intersection.y1});
-    }
-    visible = next;
-  }
-  return visible;
-}
-
-void draw_chrome(std::span<std::uint16_t> pixels, int width, int height, const ChromeState& state) {
-  if (width != kWidth || height != kHeight ||
-      pixels.size() < static_cast<std::size_t>(width) * static_cast<std::size_t>(height)) {
-    return;
-  }
-  const MinimapSurface surface{pixels, width, height, 0, 0};
-  draw_fixed_chrome(surface, state);
-  Painter painter(pixels, width, height);
-  draw_export_toast(painter, state);
-  draw_time_sync_toast(painter, state);
-}
-
-void draw_chrome_canvas_overlays(std::span<std::uint16_t> pixels, int width, int height,
-                                 const ChromeState& state, const ChromeNavigation& navigation) {
-  if (width != kWidth || height != kHeight ||
-      pixels.size() < static_cast<std::size_t>(width) * static_cast<std::size_t>(height) ||
-      !canvas_overlays_visible(state)) {
-    return;
-  }
-  Painter painter(pixels, width, height);
-  draw_zoom_rail(painter, navigation);
-  draw_minimap({pixels, width, height, 0, 0}, navigation);
-  draw_battery(painter, state);
-}
-
-bool draw_chrome_minimap_overlay(std::span<std::uint16_t> pixels, int width, int height,
-                                 const ChromeState& state, const ChromeNavigation& navigation) {
-  if (width != kWidth || height != kHeight ||
-      pixels.size() < static_cast<std::size_t>(width) * static_cast<std::size_t>(height) ||
-      !canvas_overlays_visible(state)) {
-    return false;
-  }
-  draw_minimap({pixels, width, height, 0, 0}, navigation);
-  return true;
-}
-
-bool draw_chrome_minimap_surface(const MinimapSurface& surface, const ChromeState& state,
-                                 const ChromeNavigation& navigation) {
-  if (surface.width <= 0 || surface.height <= 0 ||
-      surface.pixels.size() <
-          static_cast<std::size_t>(surface.width) * static_cast<std::size_t>(surface.height) ||
-      !canvas_overlays_visible(state)) {
-    return false;
-  }
-  draw_minimap(surface, navigation);
-  return true;
-}
-
-bool draw_chrome_strip_overlays(const MinimapSurface& surface, const ChromeState& state,
-                                const ChromeNavigation& navigation) {
-  if (surface.width <= 0 || surface.height <= 0 ||
-      surface.pixels.size() <
-          static_cast<std::size_t>(surface.width) * static_cast<std::size_t>(surface.height)) {
-    return false;
-  }
-  return draw_strip_overlays(surface, state, navigation);
-}
-
 bool ChromeStagingCache::prepare(const ChromeState& state, const ChromeNavigation& navigation,
                                  std::uint32_t overview_revision) {
   return prepare_for({0, 0, kWidth, kHeight}, state, navigation, overview_revision);
@@ -1156,7 +1020,9 @@ bool ChromeStagingCache::prepare_for(ChromeRect panel_bounds, const ChromeState&
     draw_zoom_rail(zoom_painter, navigation);
     zoom_percent_ = navigation.zoom_percent;
     zoom_valid_ = true;
+#ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
     ++stats_.zoom_redraws;
+#endif
   }
   if (rects_intersect(panel_bounds, kMinimapOverlayRect) &&
       (!minimap_base_valid_ || overview_revision_ != overview_revision)) {
@@ -1167,7 +1033,9 @@ bool ChromeStagingCache::prepare_for(ChromeRect panel_bounds, const ChromeState&
                       navigation);
     overview_revision_ = overview_revision;
     minimap_base_valid_ = true;
+#ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
     ++stats_.minimap_base_redraws;
+#endif
   }
   if (rects_intersect(panel_bounds, kBatteryOverlayRect) &&
       (!battery_valid_ || battery_percentage_ != state.battery_percentage ||
@@ -1182,7 +1050,9 @@ bool ChromeStagingCache::prepare_for(ChromeRect panel_bounds, const ChromeState&
     battery_percentage_ = state.battery_percentage;
     battery_charging_ = state.battery_charging;
     battery_valid_ = true;
+#ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
     ++stats_.battery_redraws;
+#endif
   }
   if (rects_intersect(panel_bounds, kBottomCacheRect) &&
       (!bottom_valid_ || !bottom_cache_matches(bottom_state_, state))) {
@@ -1193,26 +1063,11 @@ bool ChromeStagingCache::prepare_for(ChromeRect panel_bounds, const ChromeState&
     draw_bottom(bottom_painter, state);
     bottom_state_ = state;
     bottom_valid_ = true;
+#ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
     ++stats_.bottom_redraws;
+#endif
   }
   return true;
-}
-
-bool ChromeStagingCache::paint(const MinimapSurface& surface, const ChromeState& state,
-                               const ChromeNavigation& navigation,
-                               std::uint32_t overview_revision) {
-  if (!ready() || surface.width <= 0 || surface.height <= 0 ||
-      surface.pixels.size() <
-          static_cast<std::size_t>(surface.width) * static_cast<std::size_t>(surface.height)) {
-    return false;
-  }
-  const ChromeRect panel_bounds{surface.origin_x, surface.origin_y,
-                                surface.origin_x + surface.width,
-                                surface.origin_y + surface.height};
-  if (!prepare_for(panel_bounds, state, navigation, overview_revision)) {
-    return false;
-  }
-  return paint_prepared(surface, state, navigation, overview_revision);
 }
 
 bool ChromeStagingCache::paint_prepared(const MinimapSurface& surface, const ChromeState& state,
@@ -1267,22 +1122,6 @@ bool ChromeStagingCache::paint_prepared(const MinimapSurface& surface, const Chr
   if (state.battery_percentage >= 0) {
     blend_cached_sprite(surface, kBatteryOverlayRect, battery);
   }
-  return true;
-}
-
-bool draw_chrome_staging_surface(const MinimapSurface& surface, const ChromeState& state,
-                                 const ChromeNavigation& navigation) {
-  if (surface.width <= 0 || surface.height <= 0 ||
-      surface.pixels.size() <
-          static_cast<std::size_t>(surface.width) * static_cast<std::size_t>(surface.height)) {
-    return false;
-  }
-  draw_fixed_chrome(surface, state);
-  Painter painter(surface.pixels, surface.width, surface.height, surface.origin_x,
-                  surface.origin_y);
-  draw_export_toast(painter, state);
-  draw_time_sync_toast(painter, state);
-  static_cast<void>(draw_strip_overlays(surface, state, navigation));
   return true;
 }
 

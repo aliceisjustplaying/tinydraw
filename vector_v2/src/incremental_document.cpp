@@ -4,6 +4,7 @@
 #include <array>
 #include <limits>
 
+#include "tinydraw/vector_v2/operation_builder.h"
 #include "tinydraw/vector_v2/storage_overlap.h"
 
 namespace tinydraw::vector_v2 {
@@ -59,110 +60,7 @@ bool in_priority_view(TileKey key, const std::optional<ViewRequest>& view) {
          intersects(tile_pixel_bounds(key), view->level_pixels);
 }
 
-void prioritize_view(std::span<TileKey> keys, const std::optional<ViewRequest>& view) {
-  std::size_t destination = 0;
-  for (std::size_t candidate = 0; candidate < keys.size(); ++candidate) {
-    if (in_priority_view(keys[candidate], view)) {
-      std::swap(keys[destination], keys[candidate]);
-      ++destination;
-    }
-  }
-}
-
-bool prepare_tile(const MaterializedCanvas& canvas, const OperationAppend& operation, TileKey key,
-                  std::span<std::uint16_t> scratch, TileRevisionPublication& publication) {
-  const PixelRect bounds = tile_pixel_bounds(key);
-  const std::size_t pixel_count = static_cast<std::size_t>(bounds.x1 - bounds.x0) *
-                                  static_cast<std::size_t>(bounds.y1 - bounds.y0);
-  const auto pixels = scratch.first(pixel_count);
-  if (!canvas.copy_resident_tile(key, pixels) ||
-      !apply_incremental_operation(operation, {.zoom = key.zoom,
-                                               .level_bounds = bounds,
-                                               .pixels = pixels,
-                                               .stride = bounds.x1 - bounds.x0})) {
-    return false;
-  }
-  publication = {
-      .key = key,
-      .quality = MaterializationQuality::kImmediate,
-      .pixels = pixels,
-  };
-  return true;
-}
-
 }  // namespace
-
-std::optional<IncrementalAppendResult> append_incrementally(
-    OperationLog& log, MaterializedCanvas& canvas, const OperationAppend& append_request,
-    const IncrementalDocumentWorkspace& workspace, IncrementalAppendOptions options) {
-  const std::array<std::span<const std::byte>, 4> workspaces{
-      std::as_bytes(workspace.overview_scratch), std::as_bytes(workspace.tile_scratch),
-      std::as_bytes(workspace.publications), std::as_bytes(workspace.affected_keys)};
-  bool workspaces_overlap = false;
-  for (std::size_t left = 0; left < workspaces.size(); ++left) {
-    for (std::size_t right = left + 1U; right < workspaces.size(); ++right) {
-      workspaces_overlap =
-          workspaces_overlap || storage_overlaps(workspaces[left], workspaces[right]);
-    }
-  }
-  const bool workspace_aliases_owned_storage =
-      std::any_of(workspaces.begin(), workspaces.end(), [&](const auto workspace_bytes) {
-        return !canvas.accepts_external_workspace(workspace_bytes) ||
-               log.workspace_overlaps_storage(workspace_bytes);
-      });
-  if (!canvas.ready() || !log.ready() || canvas.overview_pixels().size() != kOverviewPixels ||
-      workspaces_overlap || workspace_aliases_owned_storage ||
-      log.current_revision() != canvas.current_revision() ||
-      !valid_priority_view(options.priority_view)) {
-    return std::nullopt;
-  }
-  auto prepared = log.prepare(append_request);
-  if (!prepared.has_value()) {
-    return std::nullopt;
-  }
-  const StoredOperation& stored = prepared->operation();
-  // publish() clears the prepared view; copy everything the result needs
-  // before the commit succeeds.
-  const OperationIdentity identity = stored.identity;
-  const PixelRect world_bounds = stored.world_bounds;
-  const OperationAppend operation{
-      .tool = stored.tool, .color = stored.color, .samples = stored.samples};
-  OverviewRevisionPublication overview_publication{};
-  const bool overview_ready = prepare_overview(canvas, operation, world_bounds,
-                                               workspace.overview_scratch, overview_publication);
-  const auto resident_count = canvas.materialized_tiles_intersecting(
-      world_bounds, workspace.affected_keys, options.priority_view,
-      options.publication_scope == IncrementalPublicationScope::kPriorityView);
-  if (!overview_ready || !resident_count.has_value()) {
-    prepared->cancel();
-    return std::nullopt;
-  }
-  const std::size_t publication_capacity =
-      std::min(workspace.publications.size(), workspace.tile_scratch.size() / kTilePixels);
-  const std::size_t publication_count = std::min(*resident_count, publication_capacity);
-  if (options.priority_view.has_value() && publication_count < *resident_count) {
-    prioritize_view(workspace.affected_keys.first(*resident_count), options.priority_view);
-  }
-  for (std::size_t index = 0; index < publication_count; ++index) {
-    auto scratch = workspace.tile_scratch.subspan(index * kTilePixels, kTilePixels);
-    if (!prepare_tile(canvas, operation, workspace.affected_keys[index], scratch,
-                      workspace.publications[index])) {
-      prepared->cancel();
-      return std::nullopt;
-    }
-  }
-  if (!canvas.commit_incremental_revision(identity.revision, overview_publication, world_bounds,
-                                          workspace.publications.first(publication_count))) {
-    prepared->cancel();
-    return std::nullopt;
-  }
-  prepared->publish();
-  return IncrementalAppendResult{.identity = identity,
-                                 .affected_world_bounds = world_bounds,
-                                 .affected_resident_tiles = *resident_count,
-                                 .published_tiles = publication_count,
-                                 .fallback_tiles = *resident_count - publication_count};
-}
 
 namespace {
 
@@ -485,64 +383,38 @@ std::optional<IncrementalAppendResult> run_in_place_phases(
 
 }  // namespace
 
-std::optional<IncrementalAppendResult> append_incrementally_in_place(
-    OperationLog& log, MaterializedCanvas& canvas, const OperationAppend& append_request,
-    const InPlaceAppendWorkspace& workspace, std::optional<ViewRequest> priority_view,
-    InPlaceRetentionBudget budget) {
-  // The deadline bounds only the offscreen raw retention pass; overview
-  // replay, visible tiles, and the metadata commit run to completion, so the
-  // caller-visible poll gap is attributed by the phase timings rather than
-  // bounded by this budget. Saturate instead of overflowing on adversarial
-  // clocks or budgets.
-  const auto stamp = [&budget]() { return budget.now_us != nullptr ? budget.now_us() : 0; };
-  const std::int64_t prepare_started_us = stamp();
-  const std::int64_t deadline_us = retention_deadline_us(budget);
-  if (!canvas.ready() || !log.ready() || !valid_in_place_workspace(log, canvas, workspace) ||
-      canvas.overview_pixels().size() != kOverviewPixels ||
-      log.current_revision() != canvas.current_revision() || !valid_priority_view(priority_view)) {
-    return std::nullopt;
-  }
-  auto prepared = log.prepare(append_request);
-  if (!prepared.has_value()) {
-    return std::nullopt;
-  }
-  const StoredOperation& stored = prepared->operation();
-  // publish() clears the prepared view; copy everything the phases need
-  // before deciding the log's fate.
-  const OperationIdentity identity = stored.identity;
-  const PixelRect world_bounds = stored.world_bounds;
-  const OperationAppend operation{
-      .tool = stored.tool, .color = stored.color, .samples = stored.samples};
-  const auto result =
-      run_in_place_phases(canvas, identity, operation, world_bounds, workspace, priority_view,
-                          budget, prepare_started_us, deadline_us, /*retain_all_zooms=*/false);
-  if (!result.has_value()) {
-    prepared->cancel();
-    return std::nullopt;
-  }
-  prepared->publish();
-  return result;
-}
-
 std::optional<IncrementalAppendResult> append_authority_only(OperationLog& log,
                                                              const OperationAppend& append_request,
                                                              InPlaceRetentionBudget budget) {
   const auto stamp = [&budget]() { return budget.now_us != nullptr ? budget.now_us() : 0; };
   const std::int64_t prepare_started_us = stamp();
-  if (!log.ready()) {
+  const auto identity = log.append(append_request);
+  if (!identity.has_value()) {
     return std::nullopt;
   }
-  auto prepared = log.prepare(append_request);
-  if (!prepared.has_value()) {
+  const auto operation = log.operation(identity->operation_index);
+  if (!operation.has_value()) {
     return std::nullopt;
   }
-  const OperationIdentity identity = prepared->operation().identity;
-  const PixelRect world_bounds = prepared->operation().world_bounds;
-  prepared->publish();
   InPlaceAppendPhases phases{};
   phases.prepare_us = stamp() - prepare_started_us;
   return IncrementalAppendResult{
-      .identity = identity, .affected_world_bounds = world_bounds, .phases = phases};
+      .identity = *identity, .affected_world_bounds = operation->world_bounds, .phases = phases};
+}
+
+std::optional<IncrementalAppendResult> append_authority_only(OperationLog& log,
+                                                             const BuiltOperation& operation,
+                                                             InPlaceRetentionBudget budget) {
+  const auto stamp = [&budget]() { return budget.now_us != nullptr ? budget.now_us() : 0; };
+  const std::int64_t started_us = stamp();
+  const auto identity = log.append(operation);
+  if (!identity.has_value()) {
+    return std::nullopt;
+  }
+  InPlaceAppendPhases phases{};
+  phases.prepare_us = stamp() - started_us;
+  return IncrementalAppendResult{
+      .identity = *identity, .affected_world_bounds = operation.world_bounds(), .phases = phases};
 }
 
 std::optional<HistoryChange> move_history_incrementally(OperationLog& log,
@@ -684,7 +556,7 @@ bool replay_active_overview(const OperationLog& log, std::span<std::uint16_t> ou
       .stride = kOverviewWidth,
   };
   for (std::size_t index = 0; index < view.active_operation_count; ++index) {
-    const auto operation = log.operation(view, index);
+    const auto operation = log.operation(index);
     if (!operation.has_value() ||
         !apply_incremental_operation(
             {.tool = operation->tool, .color = operation->color, .samples = operation->samples},
@@ -692,7 +564,7 @@ bool replay_active_overview(const OperationLog& log, std::span<std::uint16_t> ou
       return false;
     }
   }
-  return log.unchanged(view);
+  return true;
 }
 
 bool restore_document_snapshot(OperationLog& log, MaterializedCanvas& canvas,

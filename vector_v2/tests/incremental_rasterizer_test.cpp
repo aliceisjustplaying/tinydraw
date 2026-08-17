@@ -673,3 +673,43 @@ TEST_CASE("operation chord batch sweep matches the production operation painter 
     CHECK(reference_summary.row_saturated(row) == batch_summary.row_saturated(row));
   }
 }
+
+TEST_CASE("operation chord sweep refreshes finalized windows between overlapping chords") {
+  constexpr int kSize = 64;
+  constexpr std::uint16_t kRadius = 20U * 256U;
+  const std::array<vector_v2::CompactOperationSample, 8> samples{{
+      {.x_quarter = 20U * 16U, .y_quarter = 30U * 16U, .radius_256 = kRadius},
+      {.x_quarter = 44U * 16U, .y_quarter = 34U * 16U, .radius_256 = kRadius},
+      {.x_quarter = 20U * 16U, .y_quarter = 32U * 16U, .radius_256 = kRadius},
+      {.x_quarter = 44U * 16U, .y_quarter = 30U * 16U, .radius_256 = kRadius},
+      {.x_quarter = 20U * 16U, .y_quarter = 34U * 16U, .radius_256 = kRadius},
+      {.x_quarter = 44U * 16U, .y_quarter = 32U * 16U, .radius_256 = kRadius},
+      {.x_quarter = 20U * 16U, .y_quarter = 30U * 16U, .radius_256 = kRadius},
+      {.x_quarter = 44U * 16U, .y_quarter = 34U * 16U, .radius_256 = kRadius},
+  }};
+  std::vector<std::uint32_t> storage(vector_v2::kOperationChordStorageBytes / 4U);
+  const auto bytes = std::as_writable_bytes(std::span(storage));
+  const auto batch = vector_v2::prepare_operation_chord_batch(
+      samples, samples.size() - 1U, vector_v2::ZoomLevel::k100Percent, {0, 0, kSize, kSize}, bytes);
+  REQUIRE(batch.has_value());
+  REQUIRE(batch->chord_count > 2U);
+
+  std::array<std::uint16_t, kSize * kSize> pixels{};
+  std::array<std::uint8_t, (kSize * kSize + 7U) / 8U> mask{};
+  std::array<std::uint16_t, kSize> unset_rows{};
+  std::array<std::uint32_t, (kSize + 31U) / 32U> saturated_rows{};
+  vector_v2::MaskedRowSummary summary{unset_rows, saturated_rows};
+  summary.reset(kSize, kSize);
+  const vector_v2::RasterSurface surface{
+      .zoom = vector_v2::ZoomLevel::k100Percent,
+      .level_bounds = {0, 0, kSize, kSize},
+      .pixels = pixels,
+      .stride = kSize,
+  };
+  vector_v2::OperationSweepSlice slice{};
+  REQUIRE(vector_v2::apply_masked_operation_chord_rows(
+      vector_v2::OperationTool::kPen, 0x001FU, bytes, *batch, batch->clipped_bounds.y0,
+      std::numeric_limits<std::size_t>::max(), surface, mask, &summary, slice));
+  CHECK(slice.next_row == batch->clipped_bounds.y1);
+  CHECK(slice.work_px < 15'000U);
+}
