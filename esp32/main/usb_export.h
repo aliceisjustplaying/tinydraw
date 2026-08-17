@@ -20,7 +20,7 @@ class UsbExport {
   [[nodiscard]] bool media_present() const { return session_.media_present(); }
   [[nodiscard]] bool host_ejected() const { return session_.host_ejected(); }
   void set_modified_time(FatDateTime time) { disk_.set_modified_time(time); }
-  void prepare_export();
+  [[nodiscard]] bool prepare_export();
   [[nodiscard]] bool finish_export(bool image_available);
   [[nodiscard]] bool stop();
   [[nodiscard]] bool read(std::uint32_t lba, std::uint32_t offset,

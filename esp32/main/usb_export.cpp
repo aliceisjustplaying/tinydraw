@@ -68,29 +68,44 @@ void usb_device_task(void*) {
     xTaskNotifyGive(waiter);
   }
 
-  while (!usb_stop_requested.load()) {
-    if (initialized) {
-      // A bounded wait lets the same task that initialized TinyUSB also own
-      // deinitialization when the application asks to leave export mode.
-      tud_task_ext(10U, false);
-    } else {
-      vTaskDelay(pdMS_TO_TICKS(1));
+  for (;;) {
+    while (!usb_stop_requested.load()) {
+      if (initialized) {
+        // A bounded wait lets the same task that initialized TinyUSB also own
+        // deinitialization when the application asks to leave export mode.
+        tud_task_ext(10U, false);
+      } else {
+        vTaskDelay(pdMS_TO_TICKS(1));
+      }
     }
-  }
 
-  bool stopped = !initialized || tud_deinit(0);
-  usb_stack_ready.store(false);
-  if (stopped) {
-    if (const usb_phy_handle_t phy = usb_phy.exchange(nullptr); phy != nullptr) {
-      stopped = usb_del_phy(phy) == ESP_OK;
+    // TinyUSB must be deinitialized by its owning task. If it refuses, keep
+    // servicing the stack and let the application retry instead of abandoning
+    // a live controller while claiming that drawing mode resumed.
+    if (initialized && !tud_deinit(0)) {
+      usb_stop_succeeded.store(false);
+      usb_stop_requested.store(false);
+      if (const TaskHandle_t waiter = usb_stop_waiter.load(); waiter != nullptr) {
+        xTaskNotifyGive(waiter);
+      }
+      continue;
     }
+
+    usb_stack_ready.store(false);
+    bool phy_released = true;
+    if (const usb_phy_handle_t phy = usb_phy.load(); phy != nullptr) {
+      phy_released = usb_del_phy(phy) == ESP_OK;
+      if (phy_released) {
+        usb_phy.store(nullptr);
+      }
+    }
+    usb_stop_succeeded.store(phy_released);
+    usb_task_handle.store(nullptr);
+    if (const TaskHandle_t waiter = usb_stop_waiter.load(); waiter != nullptr) {
+      xTaskNotifyGive(waiter);
+    }
+    vTaskDelete(nullptr);
   }
-  usb_stop_succeeded.store(stopped);
-  usb_task_handle.store(nullptr);
-  if (const TaskHandle_t waiter = usb_stop_waiter.load(); waiter != nullptr) {
-    xTaskNotifyGive(waiter);
-  }
-  vTaskDelete(nullptr);
 }
 
 }  // namespace
@@ -103,7 +118,7 @@ UsbExport::UsbExport(const ReadOnlyFile& first_file, Fat83Name first_name,
                      const ReadOnlyFile& second_file, Fat83Name second_name)
     : disk_(first_file, first_name, second_file, second_name) {}
 
-void UsbExport::prepare_export() { static_cast<void>(stop()); }
+bool UsbExport::prepare_export() { return stop(); }
 
 bool UsbExport::finish_export(bool image_available) { return image_available && start(); }
 
@@ -111,15 +126,28 @@ bool UsbExport::stop() {
   if (const UsbExport* owner = active_export.load(); owner != nullptr && owner != this) {
     return false;
   }
-  session_.end();
-  UsbExport* expected = this;
-  static_cast<void>(active_export.compare_exchange_strong(expected, nullptr));
+
+  const bool owns_session = active_export.load() == this || session_.active();
+  if (owns_session && !session_.begin_stop()) {
+    return false;
+  }
+
+  const auto finish_stop = [&]() {
+    UsbExport* expected = this;
+    static_cast<void>(active_export.compare_exchange_strong(expected, nullptr));
+    session_.end();
+    usb_stop_requested.store(false);
+    return true;
+  };
 
   if (usb_task_handle.load() == nullptr) {
-    if (const usb_phy_handle_t phy = usb_phy.exchange(nullptr); phy != nullptr) {
-      return usb_del_phy(phy) == ESP_OK;
+    if (const usb_phy_handle_t phy = usb_phy.load(); phy != nullptr) {
+      if (usb_del_phy(phy) != ESP_OK) {
+        return false;
+      }
+      usb_phy.store(nullptr);
     }
-    return true;
+    return finish_stop();
   }
 
   usb_stop_succeeded.store(false);
@@ -127,7 +155,10 @@ bool UsbExport::stop() {
   usb_stop_requested.store(true);
   const bool notified = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2'000)) != 0U;
   usb_stop_waiter.store(nullptr);
-  return notified && usb_stop_succeeded.load();
+  if (!notified || !usb_stop_succeeded.load()) {
+    return false;
+  }
+  return finish_stop();
 }
 
 bool UsbExport::read(std::uint32_t lba, std::uint32_t offset,

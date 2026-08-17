@@ -22,6 +22,15 @@ TEST_CASE("USB export session keeps an ejected medium absent until an explicit e
   CHECK(session.host_ejected());
   CHECK_FALSE(session.begin());
 
+  CHECK(session.begin_stop());
+  CHECK(session.begin_stop());
+  CHECK(session.state() == tinydraw::UsbExportSessionState::kStopping);
+  CHECK(session.active());
+  CHECK_FALSE(session.media_present());
+  CHECK_FALSE(session.begin());
+  session.note_host_ejected();
+  CHECK(session.state() == tinydraw::UsbExportSessionState::kStopping);
+
   session.end();
   session.end();
   CHECK_FALSE(session.active());

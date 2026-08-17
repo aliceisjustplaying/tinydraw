@@ -57,7 +57,7 @@ class VectorV2Export {
   [[nodiscard]] bool stop_usb();
   // Fully stops an active USB session before re-encoding. A fresh session is
   // started only after the new export has committed.
-  void prepare_reencode();
+  [[nodiscard]] bool prepare_reencode();
 
  private:
   SvgExportStore store_;

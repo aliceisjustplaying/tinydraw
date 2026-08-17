@@ -173,6 +173,6 @@ bool VectorV2Export::usb_host_ejected() const { return usb_.host_ejected(); }
 
 bool VectorV2Export::stop_usb() { return usb_.stop(); }
 
-void VectorV2Export::prepare_reencode() { usb_.prepare_export(); }
+bool VectorV2Export::prepare_reencode() { return usb_.prepare_export(); }
 
 }  // namespace tinydraw::esp32

@@ -111,7 +111,8 @@ bool time_sync_active(const ChromeState& state) {
 
 bool export_mode_active(const ChromeState& state) {
   return state.export_status == ChromeExportStatus::kPresented ||
-         state.export_status == ChromeExportStatus::kHostEjected;
+         state.export_status == ChromeExportStatus::kHostEjected ||
+         state.export_status == ChromeExportStatus::kExitError;
 }
 
 bool canvas_overlays_visible(const ChromeState& state) {
@@ -609,6 +610,9 @@ void draw_export_toast(Painter& painter, const ChromeState& state) {
     if (state.export_status == ChromeExportStatus::kHostEjected) {
       painter.text(107, 174, "DRIVE EJECTED", kSelected, 2);
       painter.text(145, 205, "SAFE TO RETURN", kMuted);
+    } else if (state.export_status == ChromeExportStatus::kExitError) {
+      painter.text(107, 174, "RETURN FAILED", 0xE186U, 2);
+      painter.text(133, 205, "PLEASE TRY AGAIN", kMuted);
     } else {
       painter.text(95, 174, "READ-ONLY DRIVE", kInk, 2);
       painter.text(139, 205, "COPY YOUR FILES", kMuted);

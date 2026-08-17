@@ -70,7 +70,9 @@ shared metadata page commits the pair only after the authority epoch, revision,
 and operation count are rechecked. The generic FAT/USB adapter exposes both
 files read-only. Export presentation is an explicit app mode: host eject
 latches the medium absent, and the on-screen **Return to Drawing** action
-deinitializes TinyUSB and releases the USB PHY without a board reset. Host
+deinitializes TinyUSB and releases the USB PHY without a board reset. A failed
+shutdown remains modal and offers another return attempt rather than re-enabling
+drawing over a live USB stack. Host
 coverage/fuzz tests and physical evidence are in the
 [`original receipt`](../benchmark-results/svg-export-2026-08-17/RECEIPT.md)
 and [`stroke-grouping follow-up`](../benchmark-results/stroke-svg-minimap-acquire-2026-08-17/RECEIPT.md).

@@ -271,7 +271,8 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       **Implemented 2026-08-17; physical gate pending:** eject/unmount latches
       the read-only medium absent, the app shows explicit connected/ejected
       export state, and **Return to Drawing** deinitializes TinyUSB and releases
-      the USB PHY without a reset. Host lifecycle/UI tests and the Vector V2
+      the USB PHY without a reset. Failed shutdown stays modal for a safe retry.
+      Host lifecycle/UI tests and the Vector V2
       ESP-IDF build pass. The state is volume-level so a future
       `DRAWING.SVG` + `DRAWING.PNG` disk uses the same lifecycle unchanged.
 - [x] Make color-dialog drawing imperceptibly fast. **Landed 2026-08-17:**

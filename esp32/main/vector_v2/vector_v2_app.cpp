@@ -709,7 +709,11 @@ bool run_export(VectorV2Export& exporter, const OperationLog& log, vector_v2::Ch
   const auto started = presenter.refresh(chrome, now_us());
   print_presentation("export-start", presenter, started);
 
-  exporter.prepare_reencode();
+  if (!exporter.prepare_reencode()) {
+    chrome.export_status = vector_v2::ChromeExportStatus::kExitError;
+    static_cast<void>(presenter.refresh(chrome, now_us()));
+    return false;
+  }
   FatDateTime modified_time;
   if (clock.read(modified_time)) {
     exporter.set_modified_time(modified_time);
@@ -859,7 +863,7 @@ bool apply_chrome_action(vector_v2::ChromeAction action, Point point,
       return chrome.can_export && run_export(exporter, log, chrome, presenter, clock);
     case vector_v2::ChromeAction::kExitExport:
       chrome.export_status = exporter.stop_usb() ? vector_v2::ChromeExportStatus::kIdle
-                                                 : vector_v2::ChromeExportStatus::kError;
+                                                 : vector_v2::ChromeExportStatus::kExitError;
       chrome.popup = vector_v2::ChromePopup::kNone;
       break;
     case vector_v2::ChromeAction::kSyncTime:
@@ -1298,6 +1302,10 @@ void run_vector_v2_app() {
       }
     }
 
+    const bool export_mode_owns_input =
+        chrome.export_status == vector_v2::ChromeExportStatus::kPresented ||
+        chrome.export_status == vector_v2::ChromeExportStatus::kHostEjected ||
+        chrome.export_status == vector_v2::ChromeExportStatus::kExitError;
     const bool next_button_down = gpio_get_level(kModeButton) == 0;
     if (next_button_down && !button_down) {
       button_down = true;
@@ -1309,11 +1317,13 @@ void run_vector_v2_app() {
 #ifdef TINYDRAW_VECTOR_V2_MINIMAP_TRACE_CAPTURE
       minimap_trace.note_activity(loop_us);
 #endif
-      const ZoomLevel zoom = vector_v2::next_zoom(presenter.zoom());
-      const ZoomLevel target = zoom == presenter.zoom() ? ZoomLevel::k25Percent : zoom;
-      const auto timing = presenter.set_zoom(target, chrome, loop_us);
-      print_presentation("zoom", presenter, timing);
-      print_live_ledger("zoom");
+      if (!export_mode_owns_input) {
+        const ZoomLevel zoom = vector_v2::next_zoom(presenter.zoom());
+        const ZoomLevel target = zoom == presenter.zoom() ? ZoomLevel::k25Percent : zoom;
+        const auto timing = presenter.set_zoom(target, chrome, loop_us);
+        print_presentation("zoom", presenter, timing);
+        print_live_ledger("zoom");
+      }
     }
 
     Point point{};
