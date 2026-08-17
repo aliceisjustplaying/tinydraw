@@ -37,15 +37,13 @@ constexpr int kBatteryLeft = 222;
 constexpr int kBatteryTop = 18;
 constexpr int kBatteryRight = 340;
 constexpr int kBatteryBottom = 54;
-constexpr ChromeRect kZoomRailRect{304, 62, 360, 216};
+constexpr ChromeRect kZoomRailRect{304, 72, 360, 226};
 constexpr ChromeRect kZoomRailOverlayRect{kZoomRailRect.x0 - 1, kZoomRailRect.y0 - 1,
                                           kZoomRailRect.x1 + 2, kZoomRailRect.y1 + 3};
-constexpr ChromeRect kMinimapRect{266, 226, 358, 340};
+constexpr ChromeRect kMinimapRect{266, 252, 358, 366};
 // Guard the visible frame against finger/calibration error. Near-frame misses
 // used to become real short strokes in the canvas authority.
-// The zoom hit region ends exactly where this one starts. The map's generous
-// lower slop now remains entirely above the dock instead of competing with it.
-constexpr ChromeRect kMinimapHitRect{250, 224, 368, kChromeCanvasBottom};
+constexpr ChromeRect kMinimapHitRect{250, 236, 368, kChromeCanvasBottom};
 // A finger centered on the minimap's bottom edge can report inside the dock.
 // This zone never steals a stationary button tap: it only makes that press a
 // candidate for explicit drag-intent arbitration in the app coordinator.
@@ -75,7 +73,7 @@ static_assert([] {
   return true;
 }());
 constexpr int kMinimapLeft = 272;
-constexpr int kMinimapTop = 232;
+constexpr int kMinimapTop = 258;
 constexpr int kMinimapWidth = 80;
 constexpr int kMinimapHeight = 98;
 constexpr int kHitSlop = 8;
@@ -358,13 +356,13 @@ void draw_zoom_rail(Painter& painter, const ChromeNavigation& navigation) {
       kBorder);
   painter.rounded({kZoomRailRect.x0, kZoomRailRect.y0, kZoomRailRect.x1, kZoomRailRect.y1}, 10,
                   kWhite);
-  painter.rect({kZoomRailRect.x0, 113, kZoomRailRect.x1, 115}, kBorder);
-  painter.rect({kZoomRailRect.x0, 163, kZoomRailRect.x1, 165}, kBorder);
+  painter.rect({kZoomRailRect.x0, 123, kZoomRailRect.x1, 125}, kBorder);
+  painter.rect({kZoomRailRect.x0, 173, kZoomRailRect.x1, 175}, kBorder);
   const std::uint16_t plus = navigation.zoom_percent < 400 ? kInk : kMuted;
   const std::uint16_t minus = navigation.zoom_percent > 25 ? kInk : kMuted;
-  painter.line({320, 88, 344, 88}, plus, 2);
-  painter.line({332, 76, 332, 100}, plus, 2);
-  painter.line({320, 190, 344, 190}, minus, 2);
+  painter.line({320, 98, 344, 98}, plus, 2);
+  painter.line({332, 86, 332, 110}, plus, 2);
+  painter.line({320, 200, 344, 200}, minus, 2);
 
   std::array<char, 4> label{};
   std::size_t length = 0;
@@ -378,7 +376,7 @@ void draw_zoom_rail(Painter& painter, const ChromeNavigation& navigation) {
   label[length++] = static_cast<char>('0' + value % 10);
   label[length++] = '%';
   const int text_x = 332 - static_cast<int>(length) * 6;
-  painter.text(text_x, 132, std::string_view(label.data(), length), kInk);
+  painter.text(text_x, 142, std::string_view(label.data(), length), kInk);
 }
 
 // Fills the minimap interior with the resampled overview. The interior is
@@ -894,10 +892,10 @@ ChromeAction popup_action_at(ChromePoint point, ChromePopup popup) {
 }
 
 ChromeAction zoom_action_at(ChromePoint point) {
-  if (point.y < 115.0F) {
+  if (point.y < 125.0F) {
     return ChromeAction::kZoomIn;
   }
-  return point.y >= 165.0F ? ChromeAction::kZoomOut : ChromeAction::kNone;
+  return point.y >= 175.0F ? ChromeAction::kZoomOut : ChromeAction::kNone;
 }
 
 }  // namespace
