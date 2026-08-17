@@ -13,6 +13,12 @@ struct ChromePoint {
   float y = 0.0F;
 };
 
+struct ChromeLevelPoint {
+  int x = 0;
+  int y = 0;
+  bool operator==(const ChromeLevelPoint&) const = default;
+};
+
 struct ChromeRect {
   int x0 = 0;
   int y0 = 0;
@@ -130,6 +136,15 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
                                                              ChromePoint current,
                                                              const ChromeState& state);
 [[nodiscard]] bool chrome_contains(ChromePoint point, const ChromeState& state);
+// Minimap gestures own its visible frame regardless of the selected tool.
+[[nodiscard]] bool chrome_minimap_contains(ChromePoint point, const ChromeState& state);
+// Projects panel coordinates into the active level, clamping beyond the
+// minimap interior so a captured drag continues smoothly outside its frame.
+[[nodiscard]] ChromeLevelPoint chrome_minimap_level_point(ChromePoint point,
+                                                          const ChromeNavigation& navigation);
+// Suppresses touch jitter so a stationary minimap gesture remains a jump tap.
+[[nodiscard]] bool chrome_promotes_minimap_drag(ChromePoint start, ChromePoint current,
+                                                const ChromeState& state);
 // Zoom controls own stationary taps, but a deliberate drag that starts on the
 // rail becomes a canvas pan when the pan tool is active.
 [[nodiscard]] bool chrome_promotes_pan_drag(ChromePoint start, ChromePoint current,

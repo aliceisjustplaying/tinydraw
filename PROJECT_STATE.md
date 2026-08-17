@@ -1,11 +1,13 @@
 # TinyDraw project state
 
 Last updated: 2026-08-17 (detailed SVG export, faster color dialog,
-zoom-overlay pan promotion, and exact zoom-cycle return landed; receipts:
+zoom-overlay pan promotion, exact zoom-cycle return, and interactive minimap
+navigation landed; receipts:
 [`SVG`](benchmark-results/svg-export-2026-08-17/RECEIPT.md),
 [`color dialog`](benchmark-results/color-dialog-2026-08-17/RECEIPT.md),
 [`zoom-overlay pan`](benchmark-results/zoom-overlay-pan-2026-08-17/RECEIPT.md),
-[`zoom-cycle return`](benchmark-results/zoom-cycle-return-2026-08-17/RECEIPT.md))
+[`zoom-cycle return`](benchmark-results/zoom-cycle-return-2026-08-17/RECEIPT.md),
+[`minimap navigation`](benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md))
 
 Branch: `feat/v2-performance-followup`
 
@@ -23,7 +25,7 @@ promotion. [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) owns acceptance thresholds;
 | Pan correctness | **Green — owner accepted** | Product pan is tear-free on glass at 50%, 100%, 200%, and 400%, including dense hairline content. Formal positive-control evidence still needs archiving for the release packet. |
 | Pan pacing | **Provisional green** | PANSEQ p95 is 33.939 ms at 100% and 33.934 ms at 400% (~29.5 FPS), below the 38 ms guard. Camera motion caused zero persistent chrome redraws. |
 | Ink latency | **Provisional green — visual lane and lift; smoothness yellow** | The five-trace canonical corpus is recorded owner finger input replayed through the production `offer()` path: zero lost Down/Up, event→DMA p95 2.3–5.3 ms on every trace ([`BASELINE.md`](benchmark-results/ink-trace-replay-baseline/BASELINE.md)). The committed overlay closed the lift hitch on glass: 87–199 ms → 10–34 ms, drain-gated to ~5 ms expected ([`RECEIPT.md`](benchmark-results/committed-overlay/RECEIPT.md)). Smoothness: the dominant mechanism was found and fixed — committed samples quantized to a full screen pixel at 400%; sixteenth-world units (zero storage cost) cut joint_p95 30–40% and the committed render now matches the float-geometry reference, with no measured cold/latency regression and +3–10% sample storage ([`UNITS16_EXPERIMENT.md`](benchmark-results/settled-aa-prototype/UNITS16_EXPERIMENT.md)). Residual angularity is input jitter (resampling, prototyped) + hard edges (AA, prototyped). The formal optical-latency receipt remains open. |
-| Cold 400% | **Hold-the-line accepted (owner 2026-08-16)** | Stage B walls: 437.9/428.4/488.0 ms at 50/100/200% under the ≤500 line; 400% is 507.0 ms. Owner accepted the 7 ms residual until autosave exists; the gate now holds the line at 510 ms and the micro-candidates are parked. The ≤500 requirement still governs the final autosave-enabled 20-run closure. See [`RECEIPT.md`](benchmark-results/cold-stage-b-2026-08-16/RECEIPT.md). **Separate standing red, owner-ruled 2026-08-16:** the `overlap` workload 50% cold gate (8 stacked fat strokes; 628 ms vs 500, red since wave-3, invisible in every prior scorecard) is **binding and will be fixed**, sequenced strictly after the ink lag fix, the AA prototype review, and the déjà-vu fix. Ship-contract process rule 8 now forbids undocumented verdict-vector reds. |
+| Cold 400% | **Hold-the-line accepted (owner 2026-08-16)** | Stage B walls: 437.9/428.4/488.0 ms at 50/100/200% under the ≤500 line; 400% was 507.0 ms. Owner accepted the residual until autosave exists; the gate holds at 520 ms and the ≤500 requirement still governs the final autosave-enabled 20-run closure. On 2026-08-17, unrelated minimap code layout moved two runs to 524.243/526.063 ms red; the queued 6.3 KiB producer IRAM pin removed that cache-placement lottery and produced a 496.693 ms green wall ([`receipt`](benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md)). **Separate standing red, owner-ruled 2026-08-16:** the `overlap` workload 50% cold gate (8 stacked fat strokes; 628 ms vs 500, red since wave-3, invisible in every prior scorecard) is **binding and will be fixed**, sequenced strictly after the ink lag fix, the AA prototype review, and the déjà-vu fix. Ship-contract process rule 8 now forbids undocumented verdict-vector reds. |
 | Revisit retention | **Fixed in harness — glass acceptance pending** | The déjà-vu fix landed 2026-08-16: idle absorption retains resident raw tiles at every zoom and materializes revisit-bound uniforms inside remembered views under a 25 ms idle budget. The mixed_draw revisit gate went from missing 4/9/16 tiles (188–326 ms visible refill per zoom) to **zero missing, ~0.4 ms** ([`DEJAVU_FIX_RECEIPT.md`](benchmark-results/committed-overlay/DEJAVU_FIX_RECEIPT.md)). Live ledger cause deltas now print during glass sessions (`TINYDRAW_LIVE_LEDGER`). Residuals: slot eviction under pressure, XL-stroke off-view budget skips (idle repair covers), high-water fallback path. Pure-revisit tour amplification stays 1.000. Owner glass verdict: "extremely impressed — way better, basically no redraws"; residual stray re-renders tracked as todo #15 (attribute via `TINYDRAW_LIVE_LEDGER` deltas next session). |
 | Exactness | **Green for implemented scope** | Host exactness and fuzz tests pass. V2 persistence/Undo authority is not implemented. |
 | Settled AA | **On device — provisional, speed round 2 queued** | Landed same-day from prototype to device: idle settle pass republishes tiles at the settled quality tier (revisit-ledger-safe); 25% settles presentation pixels only (the overview stays hard-edged replay authority). Per-tile 1.7–5.4 ms mean / 9.3 ms max after the annulus + batching round (was 5–11/17). Owner: "an improvement" but the settle progression is still perceptible, thick strokes slowest; speed ideas queued. Full battery moved zero gates. SVG exports exact ribbon outlines; settled AA remains a presentation derivative rather than export authority. |
@@ -31,7 +33,8 @@ promotion. [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) owns acceptance thresholds;
 | Color dialog | **Green — device gate** | Exact span rasterization plus color-only frame re-presentation cut open time 132.466 → 27.568 ms (4.81×); chrome work fell 82.364 → 9.396 ms (8.77×). A ≤40 ms physical guard and bit-exact snapshot/reference tests are live ([`RECEIPT.md`](benchmark-results/color-dialog-2026-08-17/RECEIPT.md)). |
 | Overlay gesture arbitration | **Green — host + device classifier gate** | Zoom In/Out still own taps. With the pan tool active, an 8 px drag starting anywhere on the zoom rail promotes to the existing boundary-drained canvas pan from the original Down point; other tools/popups do not promote ([`RECEIPT.md`](benchmark-results/zoom-overlay-pan-2026-08-17/RECEIPT.md)). |
 | Zoom-cycle return | **Green — host + device classifier gate** | Each tiled zoom remembers its explored origin and associated focus. The complete 400→25→50→100→200→400 button route returns exactly to `(2300,3100)`; stale views still yield to a changed focus. The normal 16 KiB product image boots with 6,504 bytes of measured stack margin ([`RECEIPT.md`](benchmark-results/zoom-cycle-return-2026-08-17/RECEIPT.md)). |
-| Feature parity | **Open** | Undo/Redo, autosave/recovery, minimap pan navigation, lifecycle parity, failure UI, and release soak remain. |
+| Minimap navigation | **Green automated — glass feel pending** | The minimap owns gestures for every tool: stationary tap-to-jump, 4 px intent threshold, then continuously captured viewport drag through the existing boundary-drained pan path. Physical classifier: exact tap `(552,710)`, drag `(626,782)`, 20.164/16.529 ms completion, ring reuse, all pass ([`RECEIPT.md`](benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md)). |
+| Feature parity | **Open** | Undo/Redo, autosave/recovery, lifecycle parity, failure UI, and release soak remain. |
 | Mixed-draw appends | **Green — harness and glass** | The committed-overlay / authority-revision split landed 2026-08-16: chunk commits publish authority only (worst input-path append **173 µs** vs the 15 ms budget, was 19,324 µs), the canvas drains in receipted idle absorptions behind a pending-ink overlay proven bit-exact on host, and lift defers its refresh to one exact swap after drain. `mixed_draw=1` for the first time; `visible_fallback=0`, drop counters zero, INKTRACE at baseline latency, ledger clean ([`RECEIPT.md`](benchmark-results/committed-overlay/RECEIPT.md)). The product-loop drain paths (idle slices, lift swap, pan boundary drain) and 400% draw feel need an owner glass session. Prior diagnosis receipts: [`ink-fallback-observability/RECEIPT.md`](benchmark-results/ink-fallback-observability/RECEIPT.md). |
 
 Session continuity: Cold Stage B is **closed** and glass-tested (receipt
@@ -52,6 +55,7 @@ The wave-3 A/B recipe and device-physics cheat sheet remain authoritative in
 
 Latest permanent receipts:
 
+- [`RECEIPT.md` — minimap navigation](benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md)
 - [`RECEIPT.md` — zoom-cycle return](benchmark-results/zoom-cycle-return-2026-08-17/RECEIPT.md)
 - [`RECEIPT.md` — zoom-overlay pan](benchmark-results/zoom-overlay-pan-2026-08-17/RECEIPT.md)
 - [`RECEIPT.md` — color dialog](benchmark-results/color-dialog-2026-08-17/RECEIPT.md)
@@ -85,10 +89,14 @@ Latest permanent receipts:
 - The final product allocation uses 448 raw 64×64 tile slots. With the 1.5 MiB
   export reserve held, the final receipt leaves ~306 KiB free and ~303 KiB as
   the largest block. Broad viewport checkpoint caches are therefore unfunded.
-- Product keeps a 16 KiB main-task stack and measured 6,504 bytes free after
-  startup. The monolithic diagnostic battery alone uses a 20 KiB gate-only
-  stack and retains 2,280 bytes after completion
-  ([receipt](benchmark-results/zoom-cycle-return-2026-08-17/RECEIPT.md)).
+- Product keeps a 16 KiB main-task stack; the latest normal boot measured
+  6,408 bytes free. The monolithic diagnostic battery alone uses a 20 KiB
+  gate-only stack and retained 2,136 bytes after the latest full battery.
+- The bounded 6.3 KiB tile-producer text object is IRAM-pinned. This costs
+  5,632 bytes of free internal memory in the gate build (290,860 remain) and
+  removed a repeatable 524–526 ms flash-layout cold regression; the treated
+  400% wall is 496.693 ms
+  ([receipt](benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md)).
 
 ## Current architecture
 
@@ -119,18 +127,14 @@ Undo, persistence, and SVG are frozen in
 
 ## Immediate work order
 
-1. **Implement minimap pan navigation** (tap and drag; owner elevated drag from
-   post-ship on 2026-08-17).
-2. **Overlap-50 cold fix** (#10): 628 ms vs 500; overdraw replay pays every
+1. **Overlap-50 cold fix** (#10): 628 ms vs 500; overdraw replay pays every
    stroke's row geometry even when occluded.
-3. **IRAM-pin the producer hot loops** (#9): between-build icache variance eats
-   the cold ceiling margin (517/520 typical now).
-4. **AA speed round 2**: make settle progression imperceptible, especially on
+2. **AA speed round 2**: make settle progression imperceptible, especially on
    thick strokes; candidates remain in the overnight handover.
-5. Establish generation-checked active-prefix history, then Undo/Redo and
+3. Establish generation-checked active-prefix history, then Undo/Redo and
    autosave/recovery. Cold stays hold-the-line until the autosave-enabled
    re-measure; the 20-run closure statistic waits there too.
-6. Then power/RTC/NTP/lifecycle parity, capacity/failure UI, physical USB SVG
+4. Then power/RTC/NTP/lifecycle parity, capacity/failure UI, physical USB SVG
    receipt, and all-on release closure.
 
 ## Proven foundation worth preserving
@@ -146,7 +150,7 @@ Undo, persistence, and SVG are frozen in
   4 KiB workspace, complete device readback gate, and read-only `DRAWING.SVG`
   FAT wiring. Prior PNG/USB evidence and the 1.5 MiB reserve remain archived.
 - Production toolbar, two PICO-8 palettes, zoom rail, battery, confirmation UI,
-  and live minimap with viewport rectangle.
+  and an interactive minimap with tap-to-jump and captured viewport dragging.
 - Separate Raster V1 and Vector V2 firmware targets.
 
 Foundation receipts and architectural history live in

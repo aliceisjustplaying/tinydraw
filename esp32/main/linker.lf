@@ -10,3 +10,12 @@
 archive: libmain.a
 entries:
     co5300_panel_transport (noflash_text)
+
+# Cold rendering's 520 ms hold line repeatedly moved by 2-3% when unrelated
+# UI code changed flash layout. The producer is a bounded 6.3 KiB text object;
+# keep its scheduling and hot operation loops in internal RAM so feature work
+# cannot consume the cold guard band through instruction-cache placement luck.
+[mapping:tinydraw_tile_producer]
+archive: libmain.a
+entries:
+    tile_producer (noflash_text)

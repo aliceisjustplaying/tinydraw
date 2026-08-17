@@ -112,6 +112,34 @@ const char* zoom_name(ZoomLevel zoom) {
   return passed;
 }
 
+[[gnu::noinline]] bool classify_minimap_navigation(VectorV2Presenter& presenter,
+                                                   const vector_v2::ChromeState& chrome) {
+  const bool hit = vector_v2::chrome_minimap_contains({310.0F, 310.0F}, chrome) &&
+                   vector_v2::chrome_contains({310.0F, 310.0F}, chrome);
+  const bool intent =
+      !vector_v2::chrome_promotes_minimap_drag({312.0F, 307.0F}, {315.0F, 307.0F}, chrome) &&
+      vector_v2::chrome_promotes_minimap_drag({312.0F, 307.0F}, {316.0F, 307.0F}, chrome);
+  const auto initial = presenter.set_view(ZoomLevel::k100Percent, 400, 600, chrome, now_us());
+  const auto tap = presenter.jump_from_minimap({312.0F, 307.0F}, chrome, now_us());
+  const bool tap_position = presenter.level_x() == 552 && presenter.level_y() == 710;
+  const int drag_start_x = presenter.level_x();
+  const int drag_start_y = presenter.level_y();
+  const auto drag = presenter.pan_minimap_from(drag_start_x, drag_start_y, {312.0F, 307.0F},
+                                               {316.0F, 311.0F}, chrome, now_us());
+  const bool drag_position = presenter.level_x() == 626 && presenter.level_y() == 782;
+  const bool passed = hit && intent && initial.passed && tap.passed && tap_position &&
+                      drag.passed && drag.frame_reused && drag_position;
+  std::printf(
+      "TINYDRAW_GATE1_MINIMAP_NAV hit=%u threshold_px=4 intent=%u tap_x=552 tap_y=710 "
+      "tap_complete_us=%lld tap_pass=%u drag_x=626 drag_y=782 drag_complete_us=%lld "
+      "drag_reused=%u drag_pass=%u pass=%u\n",
+      hit, intent, static_cast<long long>(tap.complete_us), tap.passed && tap_position,
+      static_cast<long long>(drag.complete_us), drag.frame_reused, drag.passed && drag_position,
+      passed);
+  std::fflush(stdout);
+  return passed;
+}
+
 void print_presentation(const char* kind, const VectorV2Presenter& presenter,
                         const LivePresentationTiming& timing) {
   std::printf(
@@ -3286,6 +3314,8 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
     color_close = presenter.refresh(chrome, now_us());
   }
 
+  const bool minimap_navigation = classify_minimap_navigation(presenter, chrome);
+
   const bool stress_ready = append_stress_document(log, canvas, workspace);
   const bool stress_100 = stress_ready && run_tile_gate(presenter, producer, log, canvas, chrome,
                                                         ZoomLevel::k100Percent);
@@ -3436,8 +3466,8 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   const auto return_overview = presenter.set_view(ZoomLevel::k25Percent, 0, 0, chrome, now_us());
   print_rerender_ledger("final");
   std::printf(
-      "TINYDRAW_GATE1_AUTOMATED_DONE zoom_cycle_return=%u zoom_overlay_pan=%u color_dialog=%u "
-      "stress=%u stress_100=%u stress_400=%u overlap_ready=%u "
+      "TINYDRAW_GATE1_AUTOMATED_DONE minimap_navigation=%u zoom_cycle_return=%u "
+      "zoom_overlay_pan=%u color_dialog=%u stress=%u stress_100=%u stress_400=%u overlap_ready=%u "
       "overlap_cold=%u general_cold_ready=%u general_cold=%u workload=%u paced_cold=%u "
       "hard_100=%u hard_400=%u pan_100=%u "
       "pan_400=%u pan_seq=%u pan_boundary=%u live_overlay=%u draw_fill=%u cache=%u "
@@ -3445,14 +3475,15 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
       "cache_tour=%u mixed_draw=%u idle_repair=%u ink_trace=%u hairline_capacity=%u "
       "long_gesture=%u "
       "export_encode=%u export_reserve=%u return=%u ssaa_receipt=yellow\n",
-      zoom_cycle_return, zoom_overlay_pan, color_dialog, stress_ready, stress_100, stress_400,
-      overlap_ready, overlap_cold, general_cold_ready, general_cold, workload_ready, paced_cold,
-      gate_100, gate_400, pan_100, pan_400, pan_sequence, pan_boundary, live_overlay, draw_fill,
-      cache_retention, full_world_cache, cache_tour, mixed_draw, idle_repair, ink_trace_replay,
-      hairline_capacity, long_gesture, export_encode, export_reserve, return_overview.passed);
-  return zoom_cycle_return && zoom_overlay_pan && color_dialog && return_overview.passed &&
-         export_reserve && overlap_cold && general_cold && mixed_draw && idle_repair &&
-         hairline_capacity && pan_100 && pan_400 && pan_sequence && pan_boundary;
+      minimap_navigation, zoom_cycle_return, zoom_overlay_pan, color_dialog, stress_ready,
+      stress_100, stress_400, overlap_ready, overlap_cold, general_cold_ready, general_cold,
+      workload_ready, paced_cold, gate_100, gate_400, pan_100, pan_400, pan_sequence, pan_boundary,
+      live_overlay, draw_fill, cache_retention, full_world_cache, cache_tour, mixed_draw,
+      idle_repair, ink_trace_replay, hairline_capacity, long_gesture, export_encode, export_reserve,
+      return_overview.passed);
+  return minimap_navigation && zoom_cycle_return && zoom_overlay_pan && color_dialog &&
+         return_overview.passed && export_reserve && overlap_cold && general_cold && mixed_draw &&
+         idle_repair && hairline_capacity && pan_100 && pan_400 && pan_sequence && pan_boundary;
 #endif
 }
 

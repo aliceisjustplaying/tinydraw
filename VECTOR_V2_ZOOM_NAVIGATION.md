@@ -1,13 +1,12 @@
 # Vector V2 zoom and navigation behavior
 
-Status: zoom/pan implemented; required minimap interaction pending
+Status: zoom, pan, and required minimap interaction implemented
 Last updated: 2026-08-17
 
 ## Scope
 
 This document defines camera, zoom, pan, cache-protection, and navigation-overlay
-behavior for Vector V2. It does not define settled anti-aliasing, persistence,
-or the internal implementation of the required minimap interaction.
+behavior for Vector V2. It does not define settled anti-aliasing or persistence.
 
 ## Geometry
 
@@ -228,20 +227,31 @@ current measurements live in [`PROJECT_STATE.md`](PROJECT_STATE.md).
 6. Visit every world edge and verify directional markers.
 7. Confirm protected warm views do not visibly replay after the tour.
 
-## Required minimap follow-up
+## Minimap navigation
 
-The minimap belongs in the bottom-right canvas corner, immediately above the
+The minimap sits in the bottom-right canvas corner, immediately above the
 bottom toolbar and below the zoom rail. It reuses the complete overview and
 shows the current viewport rectangle.
 
-Required interactions:
+Implemented behavior:
 
-- tap to jump;
-- drag the viewport rectangle to navigate continuously.
+- its visible frame owns touch for every selected tool, so an interactive
+  overlay cannot leak pen/eraser authority beneath itself;
+- a stationary tap centers the drawing-area focus on the selected overview
+  point and performs one complete overlay-safe refresh;
+- movement below 4 px is treated as touch jitter and remains a tap;
+- at 4 px, the gesture becomes a continuous viewport drag through the ordinary
+  boundary-drained pan path;
+- drag projection is relative to the gesture's starting origin, remains
+  captured outside the frame, and clamps at every world edge;
+- popup, confirmation, and export-progress states hide and disable the minimap;
+- at 25%, where the full world already fits, tap and drag are successful no-ops.
 
 Tapping the zoom percentage to toggle visibility remains optional. The owner
-promoted viewport dragging into feature-complete scope on 2026-08-17. Minimap
-interaction must never write document pixels or starve touch input.
+promoted viewport dragging into feature-complete scope on 2026-08-17; host and
+physical presenter gates landed the same day. The physical tap/drag sample
+completed in 20.164/16.529 ms with ring reuse and exact target origins. See
+[`RECEIPT.md`](benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md).
 
 ## Non-goals
 

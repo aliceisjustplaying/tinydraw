@@ -1,0 +1,7 @@
+tile_producer object text:
+   text	   data	    bss	    dec	    hex	filename
+   6310	      0	      0	   6310	   18a6	out/build/esp32-vector-v2-gate-harness/esp-idf/main/CMakeFiles/__idf_main.dir/Users/sarah/src/tries/2026-08-09-espdraw/vector_v2/src/tile_producer.cpp.obj
+
+product map IRAM addresses:
+                0x40384534                _ZN8tinydraw9vector_v212TileProducer19render_active_batchEv
+                0x403847f0                _ZN8tinydraw9vector_v212TileProducer12produce_nextERKNS0_11ViewRequestE

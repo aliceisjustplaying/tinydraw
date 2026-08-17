@@ -1048,6 +1048,7 @@ void run_vector_v2_app() {
 
   bool pressed = false;
   bool toolbar_pressed = false;
+  bool minimap_pressed = false;
   bool popup_dismissed_press = false;
   bool panning = false;
   Point last_touch{};
@@ -1217,7 +1218,12 @@ void run_vector_v2_app() {
           chrome.export_status = vector_v2::ChromeExportStatus::kIdle;
           static_cast<void>(presenter.refresh(chrome, loop_us));
         }
-        if (vector_v2::chrome_contains({point.x, point.y}, chrome)) {
+        if (vector_v2::chrome_minimap_contains({point.x, point.y}, chrome)) {
+          // Minimap navigation owns its frame for every tool. A stationary
+          // gesture jumps on Up; the first movement enters continuous pan.
+          minimap_pressed = true;
+          toolbar_start = point;
+        } else if (vector_v2::chrome_contains({point.x, point.y}, chrome)) {
           toolbar_pressed = true;
           toolbar_start = point;
           toolbar_sum = point;
@@ -1260,6 +1266,16 @@ void run_vector_v2_app() {
             static_cast<void>(ribbon.append(last_ink, true));
             live_metrics.include(presenter.show_start(last_ink, color, chrome, event_us));
           }
+        }
+      } else if (minimap_pressed && (point.x != last_touch.x || point.y != last_touch.y)) {
+        if (!panning && vector_v2::chrome_promotes_minimap_drag({toolbar_start.x, toolbar_start.y},
+                                                                {point.x, point.y}, chrome)) {
+          begin_pan(toolbar_start);
+        }
+        last_touch = point;
+        if (panning) {
+          pan_metrics.include(presenter.pan_minimap_from(pan_start_x, pan_start_y, pan_start, point,
+                                                         chrome, event_us));
         }
       } else if (toolbar_pressed && (point.x != last_touch.x || point.y != last_touch.y)) {
         if (vector_v2::chrome_promotes_pan_drag({toolbar_start.x, toolbar_start.y},
@@ -1331,6 +1347,18 @@ void run_vector_v2_app() {
       pressed = false;
       if (popup_dismissed_press) {
         popup_dismissed_press = false;
+      } else if (minimap_pressed) {
+        minimap_pressed = false;
+        if (panning) {
+          panning = false;
+          print_pan_baseline(presenter, pan_metrics);
+          print_live_ledger("minimap_pan_end");
+          std::fflush(stdout);
+        } else {
+          const auto timing = presenter.jump_from_minimap(toolbar_start, chrome, event_us);
+          print_presentation("minimap-tap", presenter, timing);
+          print_live_ledger("minimap_tap");
+        }
       } else if (toolbar_pressed) {
         toolbar_pressed = false;
         const float divisor = static_cast<float>(std::max<std::uint32_t>(1U, toolbar_samples));

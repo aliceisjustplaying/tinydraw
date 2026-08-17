@@ -133,6 +133,36 @@ TEST_CASE("pan drags promote through the zoom rail while taps stay controls") {
       tinydraw::vector_v2::chrome_promotes_pan_drag({332.0F, 98.0F}, {350.0F, 98.0F}, popup));
 }
 
+TEST_CASE("minimap hit testing and projection share the rendered geometry") {
+  const ChromeState state;
+  CHECK(tinydraw::vector_v2::chrome_minimap_contains({266.0F, 252.0F}, state));
+  CHECK(tinydraw::vector_v2::chrome_minimap_contains({357.0F, 365.0F}, state));
+  CHECK(tinydraw::vector_v2::chrome_contains({310.0F, 310.0F}, state));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_minimap_contains({310.0F, 310.0F},
+                                                           {.popup = ChromePopup::kTools}));
+  CHECK_FALSE(
+      tinydraw::vector_v2::chrome_promotes_minimap_drag({310.0F, 310.0F}, {313.0F, 310.0F}, state));
+  CHECK(
+      tinydraw::vector_v2::chrome_promotes_minimap_drag({310.0F, 310.0F}, {314.0F, 310.0F}, state));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_promotes_minimap_drag({310.0F, 310.0F}, {320.0F, 310.0F},
+                                                                {.popup = ChromePopup::kTools}));
+
+  const tinydraw::vector_v2::ChromeNavigation navigation{
+      .zoom_percent = 200,
+      .level_width = 2944,
+      .level_height = 3584,
+  };
+  CHECK(tinydraw::vector_v2::chrome_minimap_level_point({272.0F, 258.0F}, navigation) ==
+        tinydraw::vector_v2::ChromeLevelPoint{});
+  CHECK(tinydraw::vector_v2::chrome_minimap_level_point({312.0F, 307.0F}, navigation) ==
+        tinydraw::vector_v2::ChromeLevelPoint{1472, 1792});
+  CHECK(tinydraw::vector_v2::chrome_minimap_level_point({352.0F, 356.0F}, navigation) ==
+        tinydraw::vector_v2::ChromeLevelPoint{2944, 3584});
+  // A captured drag keeps navigating after leaving the visible frame.
+  CHECK(tinydraw::vector_v2::chrome_minimap_level_point({100.0F, 500.0F}, navigation) ==
+        tinydraw::vector_v2::ChromeLevelPoint{0, 3584});
+}
+
 TEST_CASE("overview mutations schedule a minimap refresh outside its panel bounds") {
   const ChromeState state;
   CHECK(tinydraw::vector_v2::chrome_minimap_refresh_required(state, true, true));
