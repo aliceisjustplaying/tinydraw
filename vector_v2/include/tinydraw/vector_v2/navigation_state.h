@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 
 #include "tinydraw/vector_v2/materialized_canvas.h"
 
@@ -22,6 +23,18 @@ struct NavigationExtent {
   bool operator==(const NavigationExtent&) const = default;
 };
 
+// Complete user-navigation state. Persistence stores this value rather than
+// only the active origin so zoom-cycle return positions survive restart.
+struct NavigationSnapshot {
+  ZoomLevel zoom = ZoomLevel::k25Percent;
+  NavigationPoint origin{};
+  NavigationPoint focus_quarter_world{kWorldWidth * 2, kWorldHeight * 2};
+  std::array<NavigationPoint, 4> remembered_origins{};
+  std::array<NavigationPoint, 4> remembered_focuses{};
+  std::array<bool, 4> remembered_valid{};
+  bool operator==(const NavigationSnapshot&) const = default;
+};
+
 class NavigationState {
  public:
   NavigationState();
@@ -31,6 +44,10 @@ class NavigationState {
   [[nodiscard]] NavigationPoint focus_quarter_world() const;
   [[nodiscard]] ViewRequest view() const;
   [[nodiscard]] NavigationExtent extent() const;
+  [[nodiscard]] NavigationSnapshot snapshot() const;
+  // Validates every persisted coordinate before replacing live navigation.
+  // Failure leaves this object unchanged.
+  [[nodiscard]] bool restore(const NavigationSnapshot& snapshot);
 
   // Changes zoom around panel_focus. A compatible remembered view restores
   // exactly; otherwise the retained world focus is centered there. Entering

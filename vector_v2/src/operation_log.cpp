@@ -425,6 +425,68 @@ std::optional<OperationReplayRange> OperationLog::active_replay_range(
   };
 }
 
+bool OperationLog::restore(const AuthorityRestore& restore) {
+  if (!ready() || !can_reset() || restore.active_operation_count > restore.records.size() ||
+      restore.records.size() > records_.size() || restore.samples.size() > samples_.size() ||
+      restore.generation.value < restore.active_operation_count ||
+      workspace_overlaps_storage(std::as_bytes(restore.records)) ||
+      workspace_overlaps_storage(std::as_bytes(restore.samples))) {
+    return false;
+  }
+  const std::uint64_t base_revision =
+      static_cast<std::uint64_t>(restore.generation.value) - restore.active_operation_count;
+  if (base_revision + restore.records.size() > std::numeric_limits<std::uint32_t>::max()) {
+    return false;
+  }
+  std::size_t expected_sample = 0;
+  for (const OperationRecord& record : restore.records) {
+    if (record.first_sample != expected_sample || record.sample_count == 0U ||
+        record.flags != 0U ||
+        (record.tool != OperationTool::kPen && record.tool != OperationTool::kEraser) ||
+        record.sample_count > restore.samples.size() - expected_sample) {
+      return false;
+    }
+    const auto operation_samples = restore.samples.subspan(expected_sample, record.sample_count);
+    if (!valid_samples(operation_samples)) {
+      return false;
+    }
+    const auto bounds = operation_world_bounds(operation_samples);
+    if (!bounds.has_value() ||
+        *bounds != PixelRect{record.bounds_x0, record.bounds_y0, record.bounds_x1,
+                             record.bounds_y1}) {
+      return false;
+    }
+    expected_sample += record.sample_count;
+  }
+  if (expected_sample != restore.samples.size()) {
+    return false;
+  }
+  if (restore.active_operation_count != 0U &&
+      restore.active_operation_count < restore.records.size()) {
+    const std::uint16_t previous = restore.records[restore.active_operation_count - 1U].gesture_id;
+    const std::uint16_t next = restore.records[restore.active_operation_count].gesture_id;
+    if (previous != 0U && previous == next) {
+      return false;
+    }
+  }
+
+  std::copy(restore.records.begin(), restore.records.end(), records_.begin());
+  std::copy(restore.samples.begin(), restore.samples.end(), samples_.begin());
+  retained_operation_count_ = restore.records.size();
+  retained_sample_count_ = restore.samples.size();
+  operation_count_ = restore.active_operation_count;
+  sample_count_ = sample_count_for_prefix(operation_count_);
+  base_revision_ = {static_cast<std::uint32_t>(base_revision)};
+  revision_ = restore.generation;
+  epoch_ = restore.epoch;
+  append_pending_ = false;
+  pending_sample_count_ = 0;
+  pending_token_ = 0;
+  history_pending_ = false;
+  pending_history_token_ = 0;
+  return true;
+}
+
 bool OperationLog::reset(DocumentRevision revision) {
   if (append_pending_ || history_pending_) {
     return false;
