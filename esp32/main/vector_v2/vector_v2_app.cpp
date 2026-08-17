@@ -23,6 +23,9 @@
 #include "vector_v2_ink_trace_capture.h"
 #endif
 #endif
+#ifdef TINYDRAW_VECTOR_V2_MINIMAP_TRACE_CAPTURE
+#include "vector_v2_minimap_trace_capture.h"
+#endif
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
 #include "tinydraw/vector_v2/chained_operation_builder.h"
@@ -242,6 +245,9 @@ struct AppStorage {
 #ifdef TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE
   InkTraceCaptureRecord* ink_trace_records = nullptr;
 #endif
+#ifdef TINYDRAW_VECTOR_V2_MINIMAP_TRACE_CAPTURE
+  MinimapTraceRecord* minimap_trace_records = nullptr;
+#endif
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
   TileRevisionPublication* publications = nullptr;
 #endif
@@ -326,6 +332,14 @@ struct AppStorage {
     settle_green = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
     settle_blue = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
     settle_pixels = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
+#ifdef TINYDRAW_VECTOR_V2_MINIMAP_TRACE_CAPTURE
+    // Capture storage is truly last: unlike the old raw-ink capture build, it
+    // cannot shift any product allocation onto different PSRAM cache sets.
+    minimap_trace_records = allocate_array<MinimapTraceRecord>(kMinimapTraceCapacity);
+    const bool minimap_trace_ready = minimap_trace_records != nullptr;
+#else
+    const bool minimap_trace_ready = true;
+#endif
     slot_directory_internal = false;
     if (overview == nullptr || snapshot == nullptr || frame == nullptr || tile_pixels == nullptr ||
         overview_scratch == nullptr || !harness_workspace_ready || region_scratch == nullptr ||
@@ -335,7 +349,8 @@ struct AppStorage {
         occupancy == nullptr || slots == nullptr || raw_slot_directory == nullptr ||
         records == nullptr || samples == nullptr || input_samples == nullptr ||
         rerender_entries == nullptr || touch_events == nullptr || !ink_trace_ready ||
-        affected_keys == nullptr || settle_op_alpha == nullptr || settle_accumulated == nullptr ||
+        !minimap_trace_ready || affected_keys == nullptr || settle_op_alpha == nullptr ||
+        settle_accumulated == nullptr ||
         settle_red == nullptr || settle_green == nullptr || settle_blue == nullptr ||
         settle_pixels == nullptr) {
       return false;
@@ -927,6 +942,13 @@ void run_vector_v2_app() {
   std::printf("TINYDRAW_INKTRACE_CAPTURE_READY capacity=%u\n",
               static_cast<unsigned>(kInkTraceCaptureCapacity));
 #endif
+#ifdef TINYDRAW_VECTOR_V2_MINIMAP_TRACE_CAPTURE
+  MinimapTraceCapture minimap_trace(
+      std::span(storage.minimap_trace_records, kMinimapTraceCapacity));
+  std::printf("TINYDRAW_MINIMAP_CAPTURE_READY capacity=%u record_bytes=%u\n",
+              static_cast<unsigned>(kMinimapTraceCapacity),
+              static_cast<unsigned>(sizeof(MinimapTraceRecord)));
+#endif
   // Navigation lives for the app's entire lifetime. Keep remembered zoom
   // views out of the latency-sensitive 16 KiB main-task stack.
   static vector_v2::NavigationState navigation;
@@ -1262,8 +1284,14 @@ void run_vector_v2_app() {
     const bool next_button_down = gpio_get_level(kModeButton) == 0;
     if (next_button_down && !button_down) {
       button_down = true;
+#ifdef TINYDRAW_VECTOR_V2_MINIMAP_TRACE_CAPTURE
+      minimap_trace.note_activity(loop_us);
+#endif
     } else if (!next_button_down && button_down) {
       button_down = false;
+#ifdef TINYDRAW_VECTOR_V2_MINIMAP_TRACE_CAPTURE
+      minimap_trace.note_activity(loop_us);
+#endif
       const ZoomLevel zoom = vector_v2::next_zoom(presenter.zoom());
       const ZoomLevel target = zoom == presenter.zoom() ? ZoomLevel::k25Percent : zoom;
       const auto timing = presenter.set_zoom(target, chrome, loop_us);
@@ -1283,6 +1311,26 @@ void run_vector_v2_app() {
     const bool lift_event = sample_ready && sampled_touch->kind == vector_v2::TouchEventKind::kUp;
     const bool point_event = sample_ready && (!lift_event || pressed);
     const std::uint32_t event_us = sample_ready ? sampled_touch->timestamp_us : loop_us;
+#ifdef TINYDRAW_VECTOR_V2_MINIMAP_TRACE_CAPTURE
+    const auto capture_state = [&](Point event_point) {
+      std::uint8_t flags = 0U;
+      flags |= pressed ? minimap_trace_flag(MinimapTraceFlag::kPressed) : 0U;
+      flags |= minimap_pressed ? minimap_trace_flag(MinimapTraceFlag::kMinimap) : 0U;
+      flags |= panning ? minimap_trace_flag(MinimapTraceFlag::kPanning) : 0U;
+      flags |= toolbar_pressed ? minimap_trace_flag(MinimapTraceFlag::kToolbar) : 0U;
+      flags |= ink.active() ? minimap_trace_flag(MinimapTraceFlag::kInk) : 0U;
+      flags |= vector_v2::chrome_minimap_contains({event_point.x, event_point.y}, chrome)
+                   ? minimap_trace_flag(MinimapTraceFlag::kHit)
+                   : 0U;
+      return MinimapTraceState{.level_x = static_cast<std::int16_t>(presenter.level_x()),
+                               .level_y = static_cast<std::int16_t>(presenter.level_y()),
+                               .flags = flags};
+    };
+    MinimapTraceState capture_before{};
+    if (sample_ready) {
+      capture_before = capture_state(point);
+    }
+#endif
     if (point_event) {
       if (!pressed && sampled_touch->kind == vector_v2::TouchEventKind::kDown) {
         pressed = true;
@@ -1552,6 +1600,24 @@ void run_vector_v2_app() {
         poll_max_us = 0;
       }
     }
+
+#ifdef TINYDRAW_VECTOR_V2_MINIMAP_TRACE_CAPTURE
+    if (sample_ready) {
+      const std::int64_t capture_started_us = esp_timer_get_time();
+      minimap_trace.record(sampled_touch->timestamp_us, sampled_touch->sequence,
+                           sampled_touch->kind, point.x, point.y,
+                           vector_v2::zoom_percent(presenter.zoom()), capture_before,
+                           capture_state(point));
+      minimap_trace.include_append_us(
+          static_cast<std::uint32_t>(esp_timer_get_time() - capture_started_us));
+    }
+    // Serial output is forbidden near interaction. Eight hands-off seconds
+    // are required before the compact post-coordinator trace is emitted.
+    if (!pressed && !button_down && minimap_trace.size() != 0U &&
+        loop_us - minimap_trace.last_activity_us() > 8'000'000U) {
+      minimap_trace.dump_and_reset();
+    }
+#endif
 
 #ifdef TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE
     // Dump a finished capture only when the owner has been hands-off long
