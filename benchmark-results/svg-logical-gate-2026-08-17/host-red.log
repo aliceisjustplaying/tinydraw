@@ -1,8 +1,0 @@
-[1/2] Building CXX object vector_v2/CMakeFiles/tinydraw_vector_v2_tests.dir/tests/svg_export_test.cpp.o
-FAILED: [code=1] vector_v2/CMakeFiles/tinydraw_vector_v2_tests.dir/tests/svg_export_test.cpp.o 
-/opt/homebrew/bin/ccache /usr/bin/c++  -Ivector_v2/test_support/include -Ivector_v2/include -Icore/include -isystem third_party/doctest -g -std=c++20 -arch arm64 -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Werror -MD -MT vector_v2/CMakeFiles/tinydraw_vector_v2_tests.dir/tests/svg_export_test.cpp.o -MF vector_v2/CMakeFiles/tinydraw_vector_v2_tests.dir/tests/svg_export_test.cpp.o.d -o vector_v2/CMakeFiles/tinydraw_vector_v2_tests.dir/tests/svg_export_test.cpp.o -c vector_v2/tests/svg_export_test.cpp
-vector_v2/tests/svg_export_test.cpp:320:20: error: no member named 'svg_path_count' in namespace 'tinydraw::vector_v2'
-  320 |   CHECK(vector_v2::svg_path_count(fixture.log) == 2U);
-      |                    ^~~~~~~~~~~~~~
-1 error generated.
-ninja: build stopped: subcommand failed.

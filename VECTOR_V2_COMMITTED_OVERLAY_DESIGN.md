@@ -11,7 +11,7 @@ item 9 as the Phase 2 execution design.
 
 The felt 400% drawing lag (owner glass, 2026-08-16) is the synchronous
 chunk commit blocking the input poll loop. Current per-chunk maxima
-(`benchmark-results/ink-fallback-observability/gate-dropattr-1.log`,
+([`gate-dropattr-1.log`](https://github.com/aliceisjustplaying/tinydraw/blob/v2-feature-complete-pre-cleanup/benchmark-results/ink-fallback-observability/gate-dropattr-1.log),
 mixed_draw gate, warm multi-zoom cache):
 
 | zoom | append_max | ph_raw | ph_uniform | ph_overview | ph_commit |

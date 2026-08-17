@@ -1,9 +1,15 @@
 # Vector V2 hardware receipts
 
+Raw artifacts named below are archived at
+[`v2-feature-complete-pre-cleanup`](../../docs/EVIDENCE_ARCHIVE.md); this tree
+retains the interpreted receipts and closure documents.
+
 - [`../../benchmark-results/v2-autosave-2026-08-17/RECEIPT.md`](../../benchmark-results/v2-autosave-2026-08-17/RECEIPT.md) — single-journal authority autosave, exhaustive truncation/corruption recovery fixtures, background ESP flash adapter, normal firmware flash, blank and real multi-Stroke reboot restoration, and owner-confirmed Redo/session recovery; autosave-enabled performance joins the final optimization round.
 - [`../../benchmark-results/svg-export-2026-08-17/RECEIPT.md`](../../benchmark-results/svg-export-2026-08-17/RECEIPT.md) — original detailed SVG export: one filled variable-width path per operation chunk, transactional 4 KiB flash streaming, complete physical-device readback/CRC verification in 1.024 s, and no watchdog. The [owner-artifact follow-up](../../benchmark-results/stroke-svg-minimap-acquire-2026-08-17/RECEIPT.md) groups chunks into one path per physical Stroke and removes the synthetic background rectangle.
 
-These logs are immutable evidence captured from the physical ESP32-S3. Historical log names and telemetry markers retain their original `production` wording so they remain traceable to the commits and commands that produced them.
+The archived logs are immutable evidence captured from the physical ESP32-S3.
+Historical log names and telemetry markers retain their original `production`
+wording so they remain traceable to the commits and commands that produced them.
 
 ## Current corrective evidence — 2026-08-15
 
