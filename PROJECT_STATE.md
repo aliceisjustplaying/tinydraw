@@ -93,7 +93,7 @@ Latest permanent receipts:
 - [`COLD_PUBLICATION_BATCH_RECEIPT.md`](benchmark-results/wave2-compositor/COLD_PUBLICATION_BATCH_RECEIPT.md)
 - [`COLD_GENERAL_BASELINE_RECEIPT.md`](benchmark-results/wave2-compositor/COLD_GENERAL_BASELINE_RECEIPT.md)
 - [`GLASS_OBSERVATIONS.md`](benchmark-results/wave2-compositor/GLASS_OBSERVATIONS.md)
-- [`gate-invariant-final.log`](benchmark-results/wave2-compositor/gate-invariant-final.log)
+- [`gate-invariant-final.log`](https://github.com/aliceisjustplaying/tinydraw/blob/v2-feature-complete-pre-cleanup/benchmark-results/wave2-compositor/gate-invariant-final.log)
 
 ## Measured machine
 

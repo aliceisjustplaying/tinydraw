@@ -1,8 +1,0 @@
-I (662) app_init: App version:      b73f91e
-TINYDRAW_PRODUCTION_WALK_FRAME zoom=25 x=0 y=0 hash=d76c09b1 pushes=21 elapsed_us=20368 completed=1 submit=21 complete=21
-TINYDRAW_PRODUCTION_WALK_FRAME zoom=100 x=0 y=0 hash=d9e39425 pushes=21 compose_us=9302 elapsed_us=24996 completed=1 submit=42 complete=42
-TINYDRAW_PRODUCTION_WALK_FRAME zoom=100 x=184 y=224 hash=a4ce26e5 pushes=21 compose_us=9178 elapsed_us=24999 completed=1 submit=63 complete=63
-TINYDRAW_PRODUCTION_WALK_FRAME zoom=100 x=552 y=672 hash=1b5753a5 pushes=21 compose_us=9287 elapsed_us=24999 completed=1 submit=84 complete=84
-TINYDRAW_PRODUCTION_WALK_FRAME zoom=100 x=1104 y=1344 hash=91f8b705 pushes=21 compose_us=10116 elapsed_us=25999 completed=1 submit=105 complete=105
-TINYDRAW_PRODUCTION_WALK_INCREMENTAL revision=1 hash=eab6f725 pushes=21 tile_pixels=8192 fallback_pixels=156672 elapsed_us=26259 completed=1 submit=126 complete=126
-TINYDRAW_PRODUCTION_WALK_DONE pass=1 panel_rejects=0 prepare_us=29679 transfer_us=19507 pushes=126 submit=126 complete=126 free_psram=7673348 largest_psram=7602176
