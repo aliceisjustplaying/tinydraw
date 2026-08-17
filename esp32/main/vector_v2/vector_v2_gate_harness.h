@@ -20,9 +20,8 @@ namespace tinydraw::esp32 {
 [[nodiscard]] bool run_vector_v2_gate_harness(
     VectorV2Presenter& presenter, vector_v2::TileProducer& producer, vector_v2::OperationLog& log,
     vector_v2::MaterializedCanvas& canvas, VectorV2TouchSampler& touch,
-    const vector_v2::ChromeState& chrome, const vector_v2::IncrementalDocumentWorkspace& workspace,
-    const vector_v2::InPlaceAppendWorkspace& in_place_workspace, VectorV2Export& exporter,
-    std::span<const std::uint16_t> blank_snapshot,
+    const vector_v2::ChromeState& chrome, const vector_v2::InPlaceAppendWorkspace& workspace,
+    VectorV2Export& exporter, std::span<const std::uint16_t> blank_snapshot,
     std::span<vector_v2::CompactOperationSample> conversion_storage,
     std::span<std::uint16_t> tile_scratch);
 

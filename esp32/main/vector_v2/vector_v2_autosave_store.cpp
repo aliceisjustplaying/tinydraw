@@ -62,7 +62,6 @@ struct PendingWrite {
   std::size_t size = 0;
   std::size_t offset = 0;
   std::uint64_t sequence = 0;
-  vector_v2::AuthorityReadView authority{};
   bool erase_partition = false;
   bool erase_tail = false;
 };
@@ -176,13 +175,6 @@ struct VectorV2AutosaveStore::Impl {
       if (xQueueReceive(queue, &pending, portMAX_DELAY) != pdTRUE || pending == nullptr) {
         continue;
       }
-      // Taking ownership under the submit mutex closes the only window in
-      // which a newer state-only snapshot may replace this queued buffer.
-      xSemaphoreTake(mutex, portMAX_DELAY);
-      if (coalescible_state == pending) {
-        coalescible_state = nullptr;
-      }
-      xSemaphoreGive(mutex);
       const bool written = !write_failed.load() && write_pending(*pending);
       if (written) {
         std::printf("TINYDRAW_AUTOSAVE_COMMIT sequence=%llu bytes=%lu offset=%lu\n",
@@ -210,17 +202,16 @@ struct VectorV2AutosaveStore::Impl {
 
   bool ready() const { return ready_flag; }
 
-  bool submit(vector_v2::JournalChange change, const vector_v2::OperationLog& log,
-              const vector_v2::JournalState& state) {
+  bool submit(vector_v2::JournalChange change, const vector_v2::OperationLog& log) {
     if (!ready() || !initialized.load() || write_failed.load() ||
         (checkpoint_needed.load() && change.kind != vector_v2::JournalChangeKind::kCheckpoint)) {
       return false;
     }
-    const auto minimum = vector_v2::authority_journal_encoded_size(change, log);
-    if (!minimum.has_value()) {
+    const auto plan = vector_v2::prepare_authority_journal(change, log);
+    if (!plan.has_value()) {
       return false;
     }
-    const std::size_t transaction_bytes = align_to_sector(*minimum);
+    const std::size_t transaction_bytes = align_to_sector(plan->encoded_bytes);
     if (transaction_bytes == 0U) {
       return false;
     }
@@ -243,33 +234,6 @@ struct VectorV2AutosaveStore::Impl {
     const std::uint64_t sequence = next_sequence;
     const std::size_t offset = reserved_offset;
     const std::size_t partition_bytes = partition->size;
-    const vector_v2::AuthorityReadView authority = log.read_view();
-    // State-only transactions carry no drawing payload. While the newest one
-    // is still queue-owned, replace its immutable buffer at the same flash
-    // offset and sequence so recovery sees one committed state transition.
-    const bool replace_queued_state =
-        change.kind == vector_v2::JournalChangeKind::kState && coalescible_state != nullptr &&
-        coalescible_state->size == transaction_bytes && coalescible_state->authority == authority;
-    if (replace_queued_state) {
-      pending->size = transaction_bytes;
-      pending->offset = coalescible_state->offset;
-      pending->sequence = coalescible_state->sequence;
-      pending->authority = authority;
-      const bool encoded = vector_v2::encode_authority_journal(
-          change, log, state, pending->sequence, std::span(pending->bytes, pending->size));
-      if (encoded) {
-        std::swap(pending->bytes, coalescible_state->bytes);
-        save_status.store(AutosaveStatus::kSaving);
-        xSemaphoreGive(mutex);
-        free_pending(pending);
-        return true;
-      }
-      xSemaphoreGive(mutex);
-      free_pending(pending);
-      checkpoint_needed.store(true);
-      save_status.store(AutosaveStatus::kNeedsCheckpoint);
-      return false;
-    }
     if (offset > partition_bytes || transaction_bytes > partition_bytes - offset) {
       xSemaphoreGive(mutex);
       free_pending(pending);
@@ -279,11 +243,10 @@ struct VectorV2AutosaveStore::Impl {
     pending->size = transaction_bytes;
     pending->offset = offset;
     pending->sequence = sequence;
-    pending->authority = authority;
     pending->erase_partition = erase_partition_before_next;
     pending->erase_tail = erase_tail_before_next;
     const bool encoded = vector_v2::encode_authority_journal(
-        change, log, state, sequence, std::span(pending->bytes, pending->size));
+        *plan, log, sequence, std::span(pending->bytes, pending->size));
     if (!encoded) {
       xSemaphoreGive(mutex);
       free_pending(pending);
@@ -307,7 +270,6 @@ struct VectorV2AutosaveStore::Impl {
     }
     erase_partition_before_next = false;
     erase_tail_before_next = false;
-    coalescible_state = change.kind == vector_v2::JournalChangeKind::kState ? pending : nullptr;
     if (change.kind == vector_v2::JournalChangeKind::kCheckpoint) {
       checkpoint_needed.store(false);
     }
@@ -329,8 +291,6 @@ struct VectorV2AutosaveStore::Impl {
   // Counts queue-owned and worker-owned writes, closing the dequeue window
   // where uxQueueMessagesWaiting() alone could let flush return early.
   std::atomic<std::size_t> outstanding_writes{0U};
-  // Guarded by mutex; cleared when the worker claims the pointed-to write.
-  PendingWrite* coalescible_state = nullptr;
   std::size_t reserved_offset = 0U;
   std::uint64_t next_sequence = 1U;
   bool erase_partition_before_next = false;
@@ -344,8 +304,7 @@ VectorV2AutosaveStore::~VectorV2AutosaveStore() { delete impl_; }
 
 bool VectorV2AutosaveStore::ready() const { return impl_ != nullptr && impl_->ready(); }
 
-VectorV2AutosaveRestoreStatus VectorV2AutosaveStore::restore(vector_v2::OperationLog& log,
-                                                             vector_v2::JournalState& state) {
+VectorV2AutosaveRestoreStatus VectorV2AutosaveStore::restore(vector_v2::OperationLog& log) {
   if (!ready() || impl_->initialized.load()) {
     return VectorV2AutosaveRestoreStatus::kUnavailable;
   }
@@ -359,10 +318,9 @@ VectorV2AutosaveRestoreStatus VectorV2AutosaveStore::restore(vector_v2::Operatio
     return VectorV2AutosaveRestoreStatus::kError;
   }
   const PartitionJournalSource source(impl_->partition);
-  vector_v2::JournalState recovered_state{};
   const vector_v2::JournalRecovery recovery = vector_v2::recover_authority_journal(
       source, impl_->partition->size, std::span(records, vector_v2::kOperationCapacity),
-      std::span(samples, vector_v2::kOperationSampleCapacity), recovered_state);
+      std::span(samples, vector_v2::kOperationSampleCapacity));
 
   VectorV2AutosaveRestoreStatus status = VectorV2AutosaveRestoreStatus::kError;
   if (recovery.status == vector_v2::JournalRecoveryStatus::kRecovered) {
@@ -371,9 +329,8 @@ VectorV2AutosaveRestoreStatus VectorV2AutosaveStore::restore(vector_v2::Operatio
                      .generation = recovery.state.generation,
                      .active_operation_count = recovery.state.active_operation_count,
                      .records = std::span(records, recovery.state.retained_operation_count),
-                     .samples = std::span(samples, recovery.retained_sample_count)});
+                     .samples = std::span(samples, recovery.state.retained_sample_count)});
     if (restored && recovery.bytes_consumed % kSectorBytes == 0U) {
-      state = recovered_state;
       impl_->reserved_offset = recovery.bytes_consumed;
       impl_->next_sequence = recovery.sequence + 1U;
       if (impl_->next_sequence == 0U) {
@@ -405,14 +362,12 @@ VectorV2AutosaveRestoreStatus VectorV2AutosaveStore::restore(vector_v2::Operatio
 }
 
 bool VectorV2AutosaveStore::submit(vector_v2::JournalChange change,
-                                   const vector_v2::OperationLog& log,
-                                   const vector_v2::JournalState& state) {
-  return impl_ != nullptr && impl_->submit(change, log, state);
+                                   const vector_v2::OperationLog& log) {
+  return impl_ != nullptr && impl_->submit(change, log);
 }
 
-bool VectorV2AutosaveStore::submit_checkpoint(const vector_v2::OperationLog& log,
-                                              const vector_v2::JournalState& state) {
-  return submit({.kind = vector_v2::JournalChangeKind::kCheckpoint}, log, state);
+bool VectorV2AutosaveStore::submit_checkpoint(const vector_v2::OperationLog& log) {
+  return submit({.kind = vector_v2::JournalChangeKind::kCheckpoint}, log);
 }
 
 bool VectorV2AutosaveStore::checkpoint_required() const {

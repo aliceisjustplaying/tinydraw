@@ -42,8 +42,10 @@ class VectorV2Export {
   [[nodiscard]] bool ready() const;
   [[nodiscard]] std::size_t file_size() const;
   [[nodiscard]] std::size_t png_size() const;
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
   [[nodiscard]] bool read_file(std::size_t offset, std::span<std::uint8_t> output) const;
   [[nodiscard]] bool read_png(std::size_t offset, std::span<std::uint8_t> output) const;
+#endif
   // Streams the same authority snapshot into both formats and commits their
   // shared manifest last. Never touches USB, so automated runs keep serial.
   [[nodiscard]] VectorV2ExportStats encode(const vector_v2::OperationLog& log,
