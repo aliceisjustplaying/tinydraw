@@ -13,7 +13,6 @@
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
 #include "tinydraw/vector_v2/chrome.h"
-#include "tinydraw/vector_v2/display_scheduler.h"
 #include "tinydraw/vector_v2/frame_scroller.h"
 #include "tinydraw/vector_v2/materialized_canvas.h"
 #include "tinydraw/vector_v2/navigation_state.h"
@@ -108,8 +107,8 @@ struct LivePresentationTiming {
 class VectorV2Presenter {
  public:
   VectorV2Presenter(vector_v2::MaterializedCanvas& canvas, vector_v2::NavigationState& navigation,
-                    vector_v2::DisplayScheduler& scheduler, Co5300PanelTransport& display,
-                    std::span<std::uint16_t> frame_pixels, std::span<std::uint16_t> region_pixels,
+                    Co5300PanelTransport& display, std::span<std::uint16_t> frame_pixels,
+                    std::span<std::uint16_t> region_pixels,
                     std::span<std::uint16_t> chrome_cache_pixels);
 
   [[nodiscard]] bool ready() const;
@@ -170,13 +169,9 @@ class VectorV2Presenter {
                                                 Point current_touch,
                                                 const vector_v2::ChromeState& chrome,
                                                 std::uint32_t event_us);
-  // Minimap tap centers the selected level point. Drag directly acquires from
-  // outside the visible viewport, then uses fine high-zoom deltas through the
-  // ordinary pan presentation path.
-  [[nodiscard]] LivePresentationTiming jump_from_minimap(Point point,
-                                                         const vector_v2::ChromeState& chrome,
-                                                         std::uint32_t event_us);
-  [[nodiscard]] LivePresentationTiming pan_minimap_from(int start_x, int start_y, Point start_touch,
+  // Minimap input directly acquires from outside the visible viewport, then
+  // uses fine high-zoom deltas through the ordinary pan presentation path.
+  [[nodiscard]] LivePresentationTiming pan_minimap_from(int start_x, int start_y,
                                                         Point current_touch,
                                                         const vector_v2::ChromeState& chrome,
                                                         std::uint32_t event_us);
@@ -250,7 +245,6 @@ class VectorV2Presenter {
   vector_v2::MaterializedCanvas& canvas_;
   const vector_v2::OperationLog* authority_ = nullptr;
   vector_v2::NavigationState& navigation_;
-  vector_v2::DisplayScheduler& scheduler_;
   Co5300PanelTransport& display_;
   std::span<std::uint16_t> frame_;
   std::span<std::uint16_t> region_;

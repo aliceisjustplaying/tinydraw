@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string_view>
 
@@ -28,6 +29,7 @@
 #include "tinydraw/vector_v2/memory_layout.h"
 #include "tinydraw/vector_v2/raster_census.h"
 #include "tinydraw/vector_v2/rerender_ledger.h"
+#include "vector_v2_live_stroke_session.h"
 
 // Canonical recorded owner traces embedded by the gate-harness build
 // (esp32/main/CMakeLists.txt). under-overlay (9,284 events, ~190 KiB) is
@@ -52,7 +54,7 @@ namespace {
 
 using vector_v2::CompactOperationSample;
 using vector_v2::DocumentRevision;
-using vector_v2::IncrementalDocumentWorkspace;
+using vector_v2::InPlaceAppendWorkspace;
 using vector_v2::MaterializedCanvas;
 using vector_v2::OperationLog;
 using vector_v2::OperationTool;
@@ -64,7 +66,6 @@ constexpr std::uint32_t kStressOperations = 1'000;
 constexpr std::uint32_t kStressSamplesPerOperation = 20;
 constexpr std::size_t kRealisticStrokeCapacity = 1'000;
 constexpr std::size_t kRealisticSampleCapacity = 24'576;
-constexpr std::size_t kWorkspaceTileCapacity = vector_v2::kMaximumVisibleTiles;
 
 template <typename Type>
 [[nodiscard]] std::unique_ptr<Type, decltype(&heap_caps_free)> allocate_external(
@@ -94,22 +95,21 @@ const char* zoom_name(ZoomLevel zoom) {
 [[gnu::noinline]] bool classify_minimap_navigation(VectorV2Presenter& presenter,
                                                    const vector_v2::ChromeState& chrome) {
   const auto initial = presenter.set_view(ZoomLevel::k100Percent, 400, 600, chrome, now_us());
-  const auto tap = presenter.jump_from_minimap({312.0F, 307.0F}, chrome, now_us());
+  const auto tap = presenter.pan_minimap_from(400, 600, {312.0F, 307.0F}, chrome, now_us());
   const bool tap_position = presenter.level_x() == 552 && presenter.level_y() == 710;
   const int drag_start_x = presenter.level_x();
   const int drag_start_y = presenter.level_y();
-  const auto drag = presenter.pan_minimap_from(drag_start_x, drag_start_y, {312.0F, 307.0F},
-                                               {316.0F, 311.0F}, chrome, now_us());
+  const auto drag =
+      presenter.pan_minimap_from(drag_start_x, drag_start_y, {316.0F, 311.0F}, chrome, now_us());
   const bool drag_position = presenter.level_x() == 626 && presenter.level_y() == 782;
   const auto acquire_initial =
       presenter.set_view(ZoomLevel::k400Percent, 5'520, 6'796, chrome, now_us());
-  const auto acquire = presenter.pan_minimap_from(5'520, 6'796, {352.0F, 356.0F}, {312.0F, 307.0F},
-                                                  chrome, now_us());
+  const auto acquire = presenter.pan_minimap_from(5'520, 6'796, {312.0F, 307.0F}, chrome, now_us());
   const bool acquire_position = presenter.level_x() == 2'760 && presenter.level_y() == 3'398;
   const int edge_start_x = presenter.level_x();
   const int edge_start_y = presenter.level_y();
-  const auto edge = presenter.pan_minimap_from(edge_start_x, edge_start_y, {312.0F, 307.0F},
-                                               {272.0F, 258.0F}, chrome, now_us());
+  const auto edge =
+      presenter.pan_minimap_from(edge_start_x, edge_start_y, {272.0F, 258.0F}, chrome, now_us());
   const bool edge_position = presenter.level_x() == 0 && presenter.level_y() == 0;
   const bool passed = initial.passed && tap.passed && tap_position && drag.passed &&
                       drag.frame_reused && drag_position && acquire_initial.passed &&
@@ -162,8 +162,24 @@ void print_presentation(const char* kind, const VectorV2Presenter& presenter,
       kCo5300ClockMHz, timing.frame_reused, timing.passed);
 }
 
+// Gate setup follows the production authority-first path. This helper is
+// deliberately local to the harness: production input publishes authority,
+// then the background pipeline performs the same absorption step later.
+template <typename Operation>
+std::optional<vector_v2::IncrementalAppendResult> append_and_absorb(
+    OperationLog& log, MaterializedCanvas& canvas, const Operation& operation,
+    const InPlaceAppendWorkspace& workspace,
+    std::optional<vector_v2::ViewRequest> priority_view = std::nullopt,
+    vector_v2::InPlaceRetentionBudget budget = {}) {
+  if (vector_v2::pending_operation_count(log, canvas) != 0U ||
+      !vector_v2::append_authority_only(log, operation, budget).has_value()) {
+    return std::nullopt;
+  }
+  return vector_v2::absorb_pending_operation(log, canvas, workspace, priority_view, budget);
+}
+
 bool load_realistic_document(OperationLog& log, MaterializedCanvas& canvas,
-                             const IncrementalDocumentWorkspace& workspace,
+                             const InPlaceAppendWorkspace& workspace,
                              std::span<VectorStroke> stroke_storage,
                              std::span<StrokeSample> sample_storage,
                              std::span<CompactOperationSample> conversion_storage) {
@@ -190,12 +206,14 @@ bool load_realistic_document(OperationLog& log, MaterializedCanvas& canvas,
           .elapsed_ms = static_cast<std::uint16_t>(index * 15U),
       };
     }
-    const auto result = vector_v2::append_incrementally(
-        log, canvas,
-        {.tool = stroke.tool == VectorTool::kEraser ? OperationTool::kEraser : OperationTool::kPen,
-         .color = stroke.color,
-         .samples = conversion_storage.first(input.size())},
-        workspace);
+    const auto result =
+        append_and_absorb(log, canvas,
+                          vector_v2::OperationAppend{
+                              .tool = stroke.tool == VectorTool::kEraser ? OperationTool::kEraser
+                                                                         : OperationTool::kPen,
+                              .color = stroke.color,
+                              .samples = conversion_storage.first(input.size())},
+                          workspace);
     if (!result.has_value()) {
       return false;
     }
@@ -487,7 +505,7 @@ bool run_paced_cold_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& 
 }
 
 bool append_overlapping_scribble(OperationLog& log, MaterializedCanvas& canvas,
-                                 const IncrementalDocumentWorkspace& workspace) {
+                                 const InPlaceAppendWorkspace& workspace) {
   constexpr std::size_t kStrokeCount = 8;
   constexpr std::size_t kSamplesPerStroke = 150;
   constexpr std::uint16_t kRadius256 = 80U * 256U;
@@ -506,12 +524,12 @@ bool append_overlapping_scribble(OperationLog& log, MaterializedCanvas& canvas,
           .elapsed_ms = static_cast<std::uint16_t>(index * 8U),
       };
     }
-    if (!vector_v2::append_incrementally(
-             log, canvas,
-             {.tool = OperationTool::kPen,
-              .color = static_cast<std::uint16_t>(0x001FU + stroke * 0x111U),
-              .samples = samples},
-             workspace)
+    if (!append_and_absorb(log, canvas,
+                           vector_v2::OperationAppend{
+                               .tool = OperationTool::kPen,
+                               .color = static_cast<std::uint16_t>(0x001FU + stroke * 0x111U),
+                               .samples = samples},
+                           workspace)
              .has_value()) {
       return false;
     }
@@ -523,12 +541,12 @@ bool append_overlapping_scribble(OperationLog& log, MaterializedCanvas& canvas,
 }
 
 bool append_adversarial_tapered_document(OperationLog& log, MaterializedCanvas& canvas,
-                                         const IncrementalDocumentWorkspace& workspace) {
+                                         const InPlaceAppendWorkspace& workspace) {
   vector_v2::test_support::AdversarialTaperedCorpusStats stats{};
   const std::int64_t started = esp_timer_get_time();
   const bool appended = vector_v2::test_support::emit_adversarial_tapered_corpus(
       [&](const vector_v2::OperationAppend& operation) {
-        return vector_v2::append_incrementally(log, canvas, operation, workspace).has_value();
+        return append_and_absorb(log, canvas, operation, workspace).has_value();
       },
       &stats);
   std::printf(
@@ -650,7 +668,7 @@ bool fill_view_to_completion(vector_v2::TileProducer& producer, const vector_v2:
 bool run_edge_ink_case(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
                        OperationLog& log, MaterializedCanvas& canvas,
                        const vector_v2::ChromeState& chrome,
-                       const IncrementalDocumentWorkspace& workspace,
+                       const InPlaceAppendWorkspace& workspace,
                        std::span<std::uint16_t> compose_scratch) {
   if (!presenter.set_view(ZoomLevel::k100Percent, 0, 0, chrome, now_us()).passed) {
     return false;
@@ -679,8 +697,9 @@ bool run_edge_ink_case(VectorV2Presenter& presenter, vector_v2::TileProducer& pr
         .radius_256 = static_cast<std::uint16_t>(kRadius * 256.0F),
         .elapsed_ms = 0,
     }}};
-    if (!vector_v2::append_incrementally(log, canvas, {.color = kColor, .samples = samples},
-                                         workspace)
+    if (!append_and_absorb(log, canvas,
+                           vector_v2::OperationAppend{.color = kColor, .samples = samples},
+                           workspace)
              .has_value()) {
       return false;
     }
@@ -729,7 +748,7 @@ bool run_edge_ink_case(VectorV2Presenter& presenter, vector_v2::TileProducer& pr
 bool run_overlay_canvas_purity_gate(VectorV2Presenter& presenter, OperationLog& log,
                                     MaterializedCanvas& canvas,
                                     const vector_v2::ChromeState& chrome,
-                                    const IncrementalDocumentWorkspace& workspace) {
+                                    const InPlaceAppendWorkspace& workspace) {
   constexpr std::array<std::array<int, 2>, 4> kOverlayCenters{{
       {280, 36},   // battery
       {332, 150},  // zoom rail
@@ -745,12 +764,12 @@ bool run_overlay_canvas_purity_gate(VectorV2Presenter& presenter, OperationLog& 
         .radius_256 = 12U * 256U,
         .elapsed_ms = 0,
     }}};
-    if (!vector_v2::append_incrementally(log, canvas,
-                                         {.tool = OperationTool::kPen,
-                                          .color = 0xF800U,
-                                          .gesture_id = gesture_id++,
-                                          .samples = sample},
-                                         workspace)
+    if (!append_and_absorb(log, canvas,
+                           vector_v2::OperationAppend{.tool = OperationTool::kPen,
+                                                      .color = 0xF800U,
+                                                      .gesture_id = gesture_id++,
+                                                      .samples = sample},
+                           workspace)
              .has_value()) {
       return false;
     }
@@ -803,7 +822,7 @@ bool run_live_ink_overlay_gate(VectorV2Presenter& presenter, const vector_v2::Ch
 bool run_draw_while_fill_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
                               OperationLog& log, MaterializedCanvas& canvas,
                               const vector_v2::ChromeState& chrome,
-                              const IncrementalDocumentWorkspace& workspace,
+                              const InPlaceAppendWorkspace& workspace,
                               std::span<CompactOperationSample> interaction_samples) {
   const auto fallback = presenter.set_view(ZoomLevel::k400Percent, 0, 0, chrome, now_us());
   if (!fallback.passed || !canvas.discard_tiles()) {
@@ -849,9 +868,10 @@ bool run_draw_while_fill_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
     };
   }
   const std::int64_t append_started = esp_timer_get_time();
-  const auto append = vector_v2::append_incrementally(
-      log, canvas, {.tool = OperationTool::kPen, .color = 0x001FU, .samples = fast_xl}, workspace,
-      {.priority_view = view});
+  const auto append = append_and_absorb(
+      log, canvas,
+      vector_v2::OperationAppend{.tool = OperationTool::kPen, .color = 0x001FU, .samples = fast_xl},
+      workspace, view);
   const std::int64_t append_us = esp_timer_get_time() - append_started;
   // A revision change now restarts stale producer state within produce_next;
   // the old contract returned nullopt and required a caller retry.
@@ -1049,63 +1069,39 @@ bool run_long_gesture_pass(VectorV2Presenter& presenter, vector_v2::TileProducer
 bool run_long_gesture_commit_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
                                   OperationLog& log, MaterializedCanvas& canvas,
                                   const vector_v2::ChromeState& chrome,
-                                  const IncrementalDocumentWorkspace& workspace,
-                                  const vector_v2::InPlaceAppendWorkspace& in_place_workspace,
+                                  const InPlaceAppendWorkspace& workspace,
                                   std::span<const std::uint16_t> blank_snapshot,
                                   std::span<CompactOperationSample> builder_storage) {
-  LongGestureMeasurement reference{};
-  const bool reference_ok = run_long_gesture_pass(
-      presenter, producer, log, canvas, chrome, blank_snapshot, builder_storage, 64U,
-      [&](const vector_v2::OperationAppend& chunk, const vector_v2::ViewRequest& view) {
-        return vector_v2::append_incrementally(
-            log, canvas, chunk, workspace,
-            {.priority_view = view,
-             .publication_scope = vector_v2::IncrementalPublicationScope::kPriorityView});
-      },
-      reference);
-  LongGestureMeasurement in_place{};
-  const bool in_place_ok = run_long_gesture_pass(
+  LongGestureMeasurement production{};
+  const bool run_ok = run_long_gesture_pass(
       presenter, producer, log, canvas, chrome, blank_snapshot, builder_storage,
       kInteractiveChunkSampleLimit,
-      [&](const vector_v2::OperationAppend& chunk, const vector_v2::ViewRequest& view) {
-        return vector_v2::append_incrementally_in_place(
-            log, canvas, chunk, in_place_workspace, view,
+      [&](const vector_v2::BuiltOperation& chunk, const vector_v2::ViewRequest& view) {
+        return append_and_absorb(
+            log, canvas, chunk, workspace, view,
             {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs});
       },
-      in_place);
-  const auto print_pass = [](const char* path, const LongGestureMeasurement& measurement,
-                             bool run_ok) {
-    std::printf(
-        "TINYDRAW_GATE1_LONG_GESTURE path=%s samples=%lu chunks=%lu append_total_us=%lld "
-        "append_max_us=%lld append_avg_us=%lld refresh_fallback_pixels=%lu "
-        "settled_fallback_pixels=%lu committed=%u "
-        "authority=%u refresh=%u run_ok=%u\n",
-        path, static_cast<unsigned long>(measurement.samples),
-        static_cast<unsigned long>(measurement.chunks),
-        static_cast<long long>(measurement.append_total_us),
-        static_cast<long long>(measurement.append_max_us),
-        static_cast<long long>(measurement.chunks == 0U
-                                   ? 0
-                                   : measurement.append_total_us /
-                                         static_cast<std::int64_t>(measurement.chunks)),
-        static_cast<unsigned long>(measurement.fallback_pixels),
-        static_cast<unsigned long>(measurement.settled_fallback_pixels), measurement.committed,
-        measurement.authority_match, measurement.refresh_passed, run_ok);
-  };
-  print_pass("reference", reference, reference_ok);
-  print_pass("in_place", in_place, in_place_ok);
+      production);
+  std::printf(
+      "TINYDRAW_GATE1_LONG_GESTURE path=committed_overlay samples=%lu chunks=%lu "
+      "append_total_us=%lld append_max_us=%lld append_avg_us=%lld "
+      "refresh_fallback_pixels=%lu settled_fallback_pixels=%lu committed=%u "
+      "authority=%u refresh=%u run_ok=%u\n",
+      static_cast<unsigned long>(production.samples), static_cast<unsigned long>(production.chunks),
+      static_cast<long long>(production.append_total_us),
+      static_cast<long long>(production.append_max_us),
+      static_cast<long long>(production.chunks == 0U
+                                 ? 0
+                                 : production.append_total_us /
+                                       static_cast<std::int64_t>(production.chunks)),
+      static_cast<unsigned long>(production.fallback_pixels),
+      static_cast<unsigned long>(production.settled_fallback_pixels), production.committed,
+      production.authority_match, production.refresh_passed, run_ok);
   std::fflush(stdout);
-  const auto correct = [](const LongGestureMeasurement& measurement) {
-    return measurement.committed && measurement.authority_match && measurement.refresh_passed &&
-           measurement.settled_fallback_pixels == 0U && measurement.chunks >= 24U;
-  };
-  // Visible tiles are exempt from the commit budget, so the interactive
-  // path's pen-up refresh must show zero fallback: any visible fallback is
-  // an on-glass blur, not an allowed transient. Intermediate commits must
-  // also fit inside a 15 ms input-poll slice; the reference pass is a
-  // measured comparison only.
-  return reference_ok && in_place_ok && correct(reference) && correct(in_place) &&
-         in_place.fallback_pixels == 0U && in_place.append_max_us < 15'000;
+  return run_ok && production.committed && production.authority_match &&
+         production.refresh_passed && production.fallback_pixels == 0U &&
+         production.settled_fallback_pixels == 0U && production.chunks >= 24U &&
+         production.append_max_us < 15'000;
 }
 
 // Encodes the currently loaded seed-7 authority directly to SVG and verifies
@@ -2376,7 +2372,7 @@ struct HairlineAppendStats {
 // One wandering stroke committed as chained operations of at most 12 samples
 // sharing endpoints, mirroring interactive chunked commits.
 bool append_hairline_stroke(OperationLog& log, MaterializedCanvas& canvas,
-                            const IncrementalDocumentWorkspace& workspace, HairlineRandom& random,
+                            const InPlaceAppendWorkspace& workspace, HairlineRandom& random,
                             float radius, std::uint16_t color, OperationTool tool,
                             std::uint16_t gesture_id, float length, HairlineAppendStats& stats) {
   constexpr std::size_t kChunkSamples = 12;
@@ -2420,12 +2416,13 @@ bool append_hairline_stroke(OperationLog& log, MaterializedCanvas& canvas,
     }
     continuing = true;
     const std::int64_t append_started = esp_timer_get_time();
-    const auto result = vector_v2::append_incrementally(log, canvas,
-                                                        {.tool = tool,
-                                                         .color = color,
-                                                         .gesture_id = gesture_id,
-                                                         .samples = std::span(chunk.data(), count)},
-                                                        workspace);
+    const auto result =
+        append_and_absorb(log, canvas,
+                          vector_v2::OperationAppend{.tool = tool,
+                                                     .color = color,
+                                                     .gesture_id = gesture_id,
+                                                     .samples = std::span(chunk.data(), count)},
+                          workspace);
     const std::int64_t append_us = esp_timer_get_time() - append_started;
     if (!result.has_value()) {
       return false;
@@ -2443,8 +2440,7 @@ bool append_hairline_stroke(OperationLog& log, MaterializedCanvas& canvas,
 // thick sweeps with erasers mixed in. Dense hairlines defeat uniform-tile
 // coverage, so this is the capacity worst case for the raw slot pool.
 bool append_hairline_document(OperationLog& log, MaterializedCanvas& canvas,
-                              const IncrementalDocumentWorkspace& workspace,
-                              HairlineAppendStats& stats) {
+                              const InPlaceAppendWorkspace& workspace, HairlineAppendStats& stats) {
   constexpr std::array<std::uint16_t, 6> kColors{0x0000U, 0x001FU, 0xF800U,
                                                  0x07E0U, 0x4208U, 0x8010U};
   HairlineRandom random;
@@ -2478,7 +2474,7 @@ bool append_hairline_document(OperationLog& log, MaterializedCanvas& canvas,
 }
 
 bool append_general_cold_document(OperationLog& log, MaterializedCanvas& canvas,
-                                  const IncrementalDocumentWorkspace& workspace) {
+                                  const InPlaceAppendWorkspace& workspace) {
   if (!append_adversarial_tapered_document(log, canvas, workspace)) {
     return false;
   }
@@ -2538,7 +2534,7 @@ bool fill_view_measured(vector_v2::TileProducer& producer, const vector_v2::View
 bool run_hairline_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
                        OperationLog& log, MaterializedCanvas& canvas, VectorV2TouchSampler& touch,
                        const vector_v2::ChromeState& chrome,
-                       const IncrementalDocumentWorkspace& workspace,
+                       const InPlaceAppendWorkspace& workspace,
                        std::span<const std::uint16_t> blank_snapshot) {
   const DocumentRevision baseline{canvas.current_revision().value + 1U};
   if (!vector_v2::restore_document_snapshot(log, canvas, baseline, blank_snapshot) ||
@@ -2765,7 +2761,7 @@ bool verify_export_reserve() {
 }
 
 bool append_stress_document(OperationLog& log, MaterializedCanvas& canvas,
-                            const IncrementalDocumentWorkspace& workspace) {
+                            const InPlaceAppendWorkspace& workspace) {
   std::array<CompactOperationSample, kStressSamplesPerOperation> samples{};
   const std::int64_t started = esp_timer_get_time();
   std::int64_t maximum_us = 0;
@@ -2786,11 +2782,12 @@ bool append_stress_document(OperationLog& log, MaterializedCanvas& canvas,
       };
     }
     const std::int64_t append_started = esp_timer_get_time();
-    const auto result = vector_v2::append_incrementally(
+    const auto result = append_and_absorb(
         log, canvas,
-        {.tool = operation % 11U == 10U ? OperationTool::kEraser : OperationTool::kPen,
-         .color = static_cast<std::uint16_t>(0x1800U + (operation * 97U) % 0xCFFFU),
-         .samples = samples},
+        vector_v2::OperationAppend{
+            .tool = operation % 11U == 10U ? OperationTool::kEraser : OperationTool::kPen,
+            .color = static_cast<std::uint16_t>(0x1800U + (operation * 97U) % 0xCFFFU),
+            .samples = samples},
         workspace);
     maximum_us = std::max(maximum_us, esp_timer_get_time() - append_started);
     if (!result.has_value()) {
@@ -3056,21 +3053,7 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
       all_pass = false;
       continue;
     }
-    tinydraw::InkConfig ink_config;
-    ink_config.size = spec.brush_size;
-    // Mirror the product coordinator's V2 streamline (vector_v2_app.cpp).
-    ink_config.streamline = 0.4F;
-    tinydraw::InkStream ink(ink_config);
-    tinydraw::CurvedRibbonStream ribbon;
-    vector_v2::ChainedOperationBuilder builder(builder_storage, kInteractiveChunkSampleLimit);
-    const std::optional<vector_v2::ViewRequest> priority_view =
-        spec.zoom == ZoomLevel::k25Percent
-            ? std::optional<vector_v2::ViewRequest>{}
-            : std::optional{vector_v2::ViewRequest{
-                  .zoom = spec.zoom,
-                  .level_pixels = {presenter.level_x(), presenter.level_y(),
-                                   presenter.level_x() + vector_v2::kOverviewWidth,
-                                   presenter.level_y() + vector_v2::kOverviewHeight}}};
+    LiveStrokeSession stroke(builder_storage, log, canvas, in_place_workspace, presenter);
     // Mid-stroke pixelation observability: fb_start is the pre-ink state of
     // the viewport, fb_mid_max the worst overview fallback seen right after
     // any chunk commit, fb_up_max the worst state at any lift, fb_end the
@@ -3084,9 +3067,7 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
     std::int64_t drain_max_us = 0;
     const auto absorb_one = [&]() -> bool {
       const std::int64_t started_us = esp_timer_get_time();
-      const auto absorbed = vector_v2::absorb_pending_operation(
-          log, canvas, in_place_workspace, priority_view,
-          {.now_us = &esp_timer_get_time, .budget_us = kIdleAbsorbBudgetUs});
+      const auto absorbed = stroke.absorb_one(kIdleAbsorbBudgetUs);
       if (!absorbed.has_value()) {
         return false;
       }
@@ -3099,29 +3080,6 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
       trace_drops.offscreen_skipped += absorbed->drops.offscreen_skipped;
       return true;
     };
-    // Mirrors the product coordinator: deferred authority commit with the
-    // high-water absorption fallback; the pending overlay keeps every
-    // presented pixel exact while the canvas trails.
-    const auto commit_pending = [&]() -> std::optional<vector_v2::ChainedOperationStatus> {
-      const auto pending = builder.pending_append();
-      if (!pending.has_value()) {
-        return std::nullopt;
-      }
-      if (vector_v2::pending_operation_count(log, canvas) >= kPendingOperationHighWater &&
-          !absorb_one()) {
-        return std::nullopt;
-      }
-      const auto committed =
-          vector_v2::append_authority_only(log, *pending, {.now_us = &esp_timer_get_time});
-      if (!committed.has_value()) {
-        return std::nullopt;
-      }
-      fallback_mid_max =
-          std::max(fallback_mid_max,
-                   probe_viewport_overview_fallback(presenter, canvas, spec.zoom).fallback);
-      return builder.acknowledge_commit();
-    };
-
     LatencyDeltas event_to_consumed{delta_storage, 0};
     LatencyDeltas event_to_geometry{delta_storage + kMaximumLatencySamples, 0};
     LatencyDeltas event_to_submit{delta_storage + 2U * kMaximumLatencySamples, 0};
@@ -3139,9 +3097,6 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
       continue;
     }
     const std::uint16_t color = 0x0000U;
-    tinydraw::InkPoint last_ink{};
-    Point last_touch{};
-    Point last_canvas_touch{};
     bool pressed = false;
     std::uint32_t presentation_failures = 0;
     std::uint32_t commit_failures = 0;
@@ -3177,39 +3132,29 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
 
       if (sampled->kind == vector_v2::TouchEventKind::kDown && !pressed) {
         pressed = true;
-        last_touch = sampled->point;
-        last_canvas_touch = sampled->point;
-        last_ink =
-            ink.begin({.x = sampled->point.x, .y = sampled->point.y, .timestamp_us = event_us});
-        if (!builder.begin(OperationTool::kPen, color, gesture_id,
-                           presenter.operation_point(last_ink))) {
-          ink.end();
+        const LiveStrokeStartResult started =
+            stroke.begin(sampled->point, event_us, spec.brush_size, OperationTool::kPen, color,
+                         gesture_id, chrome);
+        if (!started.accepted) {
           pressed = false;
           continue;
         }
         ++gesture_id;
-        ribbon.reset();
-        static_cast<void>(ribbon.append(last_ink, true));
-        const auto timing = presenter.show_start(last_ink, color, chrome, event_us);
-        presentation_failures += !timing.passed;
+        presentation_failures += !started.presentation.passed;
         continue;
       }
       if (sampled->kind == vector_v2::TouchEventKind::kUp && pressed) {
-        last_ink = ink.finish(
-            {.x = last_canvas_touch.x, .y = last_canvas_touch.y, .timestamp_us = event_us});
-        const auto finish_timing =
-            presenter.show_update(ribbon.finish(last_ink), color, chrome, event_us);
-        presentation_failures += !finish_timing.passed;
-        auto finish_status = builder.finish(presenter.operation_point(last_ink));
-        while (finish_status == vector_v2::ChainedOperationStatus::kChunkReady ||
-               finish_status == vector_v2::ChainedOperationStatus::kFinalChunkReady) {
-          const auto continued = commit_pending();
-          if (!continued.has_value()) {
-            ++commit_failures;
-            break;
-          }
-          finish_status = *continued;
-        }
+        const LiveStrokeFinishResult finished = stroke.finish(event_us, chrome);
+        presentation_failures += !finished.preview.passed;
+        commit_failures += finished.commit_failed;
+        drain_ops += finished.high_water_absorptions;
+        drain_max_us = std::max(drain_max_us, finished.high_water_absorb_max_us);
+        trace_drops.visible_uniform_no_slot += finished.high_water_drops.visible_uniform_no_slot;
+        trace_drops.visible_uniform_paint_fail +=
+            finished.high_water_drops.visible_uniform_paint_fail;
+        trace_drops.visible_raw_edit_fail += finished.high_water_drops.visible_raw_edit_fail;
+        trace_drops.visible_raw_paint_fail += finished.high_water_drops.visible_raw_paint_fail;
+        trace_drops.offscreen_skipped += finished.high_water_drops.offscreen_skipped;
         // Production drains in idle slices after lift; the gate compresses
         // that into one loop before the swap refresh.
         while (vector_v2::pending_operation_count(log, canvas) != 0U) {
@@ -3225,38 +3170,27 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
         pressed = false;
         continue;
       }
-      if (!pressed || !ink.active() ||
-          (sampled->point.x == last_touch.x && sampled->point.y == last_touch.y)) {
+      if (!pressed || !stroke.active()) {
         continue;
       }
-      const auto clipped = vector_v2::clip_canvas_segment(
-          {last_touch.x, last_touch.y}, {sampled->point.x, sampled->point.y}, chrome);
-      last_touch = sampled->point;
-      if (!clipped.has_value()) {
-        continue;
-      }
-      last_canvas_touch = {.x = clipped->x, .y = clipped->y};
-      last_ink = ink.update({.x = clipped->x, .y = clipped->y, .timestamp_us = event_us});
-      const vector_v2::OperationPoint add_point = presenter.operation_point(last_ink);
       std::uint32_t geometry_delta = 0;
       std::uint32_t submit_delta = 0;
       std::uint32_t complete_delta = 0;
       bool submitted = false;
-      const auto move = vector_v2::process_live_ink_move(
-          ribbon, builder, last_ink, add_point, last_canvas_touch, event_us,
-          [&](const RibbonUpdate& update, std::uint32_t visual_event_us) {
-            geometry_delta = static_cast<std::uint32_t>(esp_timer_get_time()) - event_us;
-            const auto timing = presenter.show_update(update, color, chrome, visual_event_us);
-            if (timing.passed && timing.first_submit_us > 0) {
-              submit_delta = static_cast<std::uint32_t>(timing.first_submit_us);
-              complete_delta = static_cast<std::uint32_t>(timing.first_complete_us);
-              submitted = true;
-            }
-            presentation_failures += !timing.passed;
-            return timing.passed;
-          },
-          commit_pending);
+      const LiveStrokeMoveResult move = stroke.move(sampled->point, event_us, chrome);
+      geometry_delta = move.geometry_us;
+      if (move.presented && move.presentation.passed && move.presentation.first_submit_us > 0) {
+        submit_delta = static_cast<std::uint32_t>(move.presentation.first_submit_us);
+        complete_delta = static_cast<std::uint32_t>(move.presentation.first_complete_us);
+        submitted = true;
+      }
+      presentation_failures += move.presented && !move.presentation.passed;
       commit_failures += move.commit_failed;
+      if (move.chunk_committed) {
+        fallback_mid_max =
+            std::max(fallback_mid_max,
+                     probe_viewport_overview_fallback(presenter, canvas, spec.zoom).fallback);
+      }
       if (submitted) {
         event_to_geometry.push(geometry_delta, kMaximumLatencySamples);
         event_to_submit.push(submit_delta, kMaximumLatencySamples);
@@ -3331,9 +3265,7 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
 bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
                                 OperationLog& log, MaterializedCanvas& canvas,
                                 VectorV2TouchSampler& touch, const vector_v2::ChromeState& chrome,
-                                const IncrementalDocumentWorkspace& workspace,
-                                const vector_v2::InPlaceAppendWorkspace& in_place_workspace,
-                                VectorV2Export& exporter,
+                                const InPlaceAppendWorkspace& workspace, VectorV2Export& exporter,
                                 std::span<const std::uint16_t> blank_snapshot,
                                 std::span<CompactOperationSample> conversion_storage,
                                 std::span<std::uint16_t> tile_scratch) {
@@ -3489,28 +3421,27 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   // interactive chunk commits must stay under the 15 ms alarm at every zoom.
   // It still must not stop later receipts when red.
   const bool mixed_draw =
-      cache_tour && run_mixed_zoom_draw_gate(presenter, producer, log, canvas, chrome,
-                                             in_place_workspace, conversion_storage);
+      cache_tour && run_mixed_zoom_draw_gate(presenter, producer, log, canvas, chrome, workspace,
+                                             conversion_storage);
   // Idle repair rides the same rich document; it discards and rebuilds its
   // own cache state, so mixed-draw's drops cannot skew it.
   const bool idle_repair =
-      cache_tour && run_idle_repair_gate(presenter, producer, log, canvas, chrome,
-                                         in_place_workspace, conversion_storage);
+      cache_tour &&
+      run_idle_repair_gate(presenter, producer, log, canvas, chrome, workspace, conversion_storage);
   // Replays the recorded owner corpus through the production offer() path.
   // Runs after the cache gates on the deterministic post-idle-repair document
   // and before the long-gesture gate resets authority.
   const bool ink_trace_replay =
-      cache_tour && run_ink_trace_replay_gate(presenter, log, canvas, chrome, in_place_workspace,
-                                              conversion_storage);
+      cache_tour &&
+      run_ink_trace_replay_gate(presenter, log, canvas, chrome, workspace, conversion_storage);
   // Cold timing already includes the evil hairlines. This later reset is the
   // specialized cache-capacity and repair-saturation gate for that corpus.
   const bool hairline_capacity =
       workload_ready &&
       run_hairline_gate(presenter, producer, log, canvas, touch, chrome, workspace, blank_snapshot);
   const bool long_gesture =
-      cache_tour &&
-      run_long_gesture_commit_gate(presenter, producer, log, canvas, chrome, workspace,
-                                   in_place_workspace, blank_snapshot, conversion_storage);
+      cache_tour && run_long_gesture_commit_gate(presenter, producer, log, canvas, chrome,
+                                                 workspace, blank_snapshot, conversion_storage);
   const bool export_encode = long_gesture && run_export_encode_gate(exporter, log);
   const bool export_reserve = export_encode && verify_export_reserve();
   const auto return_overview = presenter.set_view(ZoomLevel::k25Percent, 0, 0, chrome, now_us());
@@ -3526,14 +3457,13 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
       "long_gesture=%u "
       "export_encode=%u export_reserve=%u return=%u ssaa_receipt=yellow\n",
       minimap_navigation, color_dialog, stress_ready, stress_100, stress_400, overlap_ready,
-      overlap_cold, general_cold_ready, general_cold,
-      workload_ready, paced_cold, gate_100, gate_400, pan_100, pan_400, pan_sequence, pan_boundary,
-      live_overlay, draw_fill, cache_retention, full_world_cache, cache_tour, mixed_draw,
-      idle_repair, ink_trace_replay, hairline_capacity, long_gesture, export_encode, export_reserve,
-      return_overview.passed);
+      overlap_cold, general_cold_ready, general_cold, workload_ready, paced_cold, gate_100,
+      gate_400, pan_100, pan_400, pan_sequence, pan_boundary, live_overlay, draw_fill,
+      cache_retention, full_world_cache, cache_tour, mixed_draw, idle_repair, ink_trace_replay,
+      hairline_capacity, long_gesture, export_encode, export_reserve, return_overview.passed);
   return minimap_navigation && color_dialog && return_overview.passed && export_reserve &&
-         overlap_cold && general_cold && mixed_draw &&
-         idle_repair && hairline_capacity && pan_100 && pan_400 && pan_sequence && pan_boundary;
+         overlap_cold && general_cold && mixed_draw && idle_repair && hairline_capacity &&
+         pan_100 && pan_400 && pan_sequence && pan_boundary;
 #endif
 }
 

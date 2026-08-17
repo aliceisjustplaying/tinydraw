@@ -1,10 +1,7 @@
 #include <algorithm>
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <limits>
-#include <memory>
 #include <optional>
 #include <span>
 
@@ -20,35 +17,30 @@
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
 #include "vector_v2_gate_harness.h"
 #endif
-#include "tinydraw/ink/ink_stream.h"
-#include "tinydraw/ink/ribbon_geometry.h"
 #include "tinydraw/vector_v2/chained_operation_builder.h"
 #include "tinydraw/vector_v2/chrome.h"
-#include "tinydraw/vector_v2/idle_repair.h"
 #include "tinydraw/vector_v2/incremental_document.h"
-#include "tinydraw/vector_v2/live_ink_coordinator.h"
 #include "tinydraw/vector_v2/memory_layout.h"
 #include "tinydraw/vector_v2/navigation_state.h"
 #include "tinydraw/vector_v2/operation_builder.h"
 #include "tinydraw/vector_v2/operation_log.h"
 #include "tinydraw/vector_v2/rerender_ledger.h"
-#include "tinydraw/vector_v2/settled_tile.h"
 #include "tinydraw/vector_v2/tile_producer.h"
+#include "vector_v2_app_diagnostics.h"
+#include "vector_v2_app_storage.h"
 #include "vector_v2_autosave_store.h"
+#include "vector_v2_background_pipeline.h"
+#include "vector_v2_chrome_controller.h"
 #include "vector_v2_export.h"
+#include "vector_v2_live_stroke_session.h"
 #include "vector_v2_presenter.h"
 #include "vector_v2_touch_sampler.h"
 
 namespace tinydraw::esp32 {
 namespace {
 
-using vector_v2::ChainedOperationBuilder;
-using vector_v2::ChainedOperationStatus;
 using vector_v2::CompactOperationSample;
-using vector_v2::DisplayScheduler;
-using vector_v2::DisplayStrip;
 using vector_v2::DocumentRevision;
-using vector_v2::IncrementalDocumentWorkspace;
 using vector_v2::MaterializedCanvas;
 using vector_v2::MaterializedSlotStorage;
 using vector_v2::MaterializedUniformStorage;
@@ -56,7 +48,6 @@ using vector_v2::OperationLog;
 using vector_v2::OperationRecord;
 using vector_v2::OperationTool;
 using vector_v2::TileKey;
-using vector_v2::TileRevisionPublication;
 using vector_v2::ZoomLevel;
 
 constexpr std::uint32_t kExternalCaps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
@@ -64,8 +55,6 @@ constexpr gpio_num_t kModeButton = GPIO_NUM_0;
 constexpr std::uint32_t kPowerRefreshUs = 30'000'000U;
 constexpr int kStartupPresentationAttempts = 3;
 constexpr TickType_t kStartupPresentationRetryDelay = pdMS_TO_TICKS(20);
-constexpr std::size_t kInputSampleCapacity = 4'096;
-constexpr std::size_t kWorkspaceTileCapacity = vector_v2::kMaximumVisibleTiles;
 
 struct LiftBaselineTiming {
   std::uint32_t id = 0;
@@ -82,28 +71,6 @@ struct LiftBaselineTiming {
   bool committed = false;
   bool commit_failed = false;
   bool pending = false;
-};
-
-struct PendingFillPresentation {
-  vector_v2::PixelRect level_bounds{};
-  ZoomLevel zoom = ZoomLevel::k25Percent;
-  int x = 0;
-  int y = 0;
-  bool pending = false;
-};
-
-struct FillBaselineTiming {
-  std::int64_t started_us = 0;
-  std::uint32_t steps = 0;
-  std::int64_t compute_total_us = 0;
-  std::int64_t compute_max_us = 0;
-  std::int64_t present_total_us = 0;
-  std::int64_t present_max_us = 0;
-  std::int64_t tick_max_us = 0;
-  std::uint32_t producer_failures = 0;
-  std::uint32_t presentation_failures = 0;
-
-  void reset() { *this = {}; }
 };
 
 struct PanMetrics {
@@ -138,36 +105,6 @@ struct PanMetrics {
   void reset() { *this = {}; }
 };
 
-struct LiveMetrics {
-  std::uint64_t submit_total_us = 0;
-  std::uint64_t complete_total_us = 0;
-  std::uint32_t samples = 0;
-  std::uint32_t submit_max_us = 0;
-  std::uint32_t complete_max_us = 0;
-  std::uint32_t submit_over_16ms = 0;
-  std::uint32_t complete_over_33ms = 0;
-  std::uint32_t failures = 0;
-
-  void include(const LivePresentationTiming& timing) {
-    if (!timing.passed) {
-      ++failures;
-      return;
-    }
-    if (timing.first_submit_us <= 0 || timing.first_complete_us <= 0) {
-      return;
-    }
-    const auto submit = static_cast<std::uint32_t>(timing.first_submit_us);
-    const auto complete = static_cast<std::uint32_t>(timing.first_complete_us);
-    submit_total_us += submit;
-    complete_total_us += complete;
-    ++samples;
-    submit_max_us = std::max(submit_max_us, submit);
-    complete_max_us = std::max(complete_max_us, complete);
-    submit_over_16ms += submit > 16'667U;
-    complete_over_33ms += complete > 33'333U;
-  }
-};
-
 struct PendingStrokeReport {
   DocumentRevision revision{};
   std::size_t operation_count = 0;
@@ -175,7 +112,7 @@ struct PendingStrokeReport {
   std::int64_t append_us = 0;
   std::int64_t append_max_us = 0;
   LivePresentationTiming refresh{};
-  LiveMetrics metrics{};
+  LiveStrokeMetrics metrics{};
   std::uint32_t poll_max_us = 0;
   TouchSamplerMetrics touch{};
   vector_v2::InPlaceAppendPhases phase_max{};
@@ -189,321 +126,19 @@ struct PendingStrokeReport {
   bool pending = false;
 };
 
-struct AppStorage {
-  std::uint16_t* overview = nullptr;
-#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-  std::uint16_t* snapshot = nullptr;
-#else
-  void* blank_snapshot_layout_reservation = nullptr;
-#endif
-  std::uint16_t* frame = nullptr;
-  std::uint16_t* tile_pixels = nullptr;
-  std::uint16_t* overview_scratch = nullptr;
-#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-  // The transactional reference append used by harness corpus construction
-  // still stages whole tiles; the product interactive path commits in place
-  // and no longer funds this scratch.
-  std::uint16_t* tile_scratch = nullptr;
-#endif
-  std::uint16_t* region_scratch = nullptr;
-  std::uint16_t* chrome_cache = nullptr;
-  std::uint16_t* producer_supertask = nullptr;
-#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-  // Harness-only compose/census scratch for one 64x64 tile. The producer
-  // publishes straight from the supertask surface and no longer stages here.
-  std::uint16_t* harness_tile_scratch = nullptr;
-#endif
-  bool supertask_internal = false;
-  std::uint8_t* producer_mask = nullptr;
-  std::uint16_t* producer_summary_rows = nullptr;
-  std::uint32_t* producer_summary_words = nullptr;
-  std::uint32_t* producer_chord_plans = nullptr;
-  std::uint8_t* chunk_mask = nullptr;
-  // Settled-AA workspace (40 KiB PSRAM — exactly five 8 KiB dcache ways, so
-  // downstream allocations keep their measured cache sets; internal SRAM is
-  // off-limits here per the panel-init DMA razor note below): per-op union
-  // alpha, accumulated alpha, exact 16-bit channel accumulators, and the
-  // output staging tile. Settling is idle-budget work; PSRAM latency is
-  // acceptable.
-  std::uint8_t* settle_op_alpha = nullptr;
-  std::uint8_t* settle_accumulated = nullptr;
-  std::uint16_t* settle_red = nullptr;
-  std::uint16_t* settle_green = nullptr;
-  std::uint16_t* settle_blue = nullptr;
-  std::uint16_t* settle_pixels = nullptr;
-  MaterializedUniformStorage* uniforms = nullptr;
-  std::uint8_t* occupancy = nullptr;
-  MaterializedSlotStorage* slots = nullptr;
-  std::uint16_t* raw_slot_directory = nullptr;
-  OperationRecord* records = nullptr;
-  CompactOperationSample* samples = nullptr;
-  CompactOperationSample* input_samples = nullptr;
-#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-  vector_v2::RerenderLedgerEntry* rerender_entries = nullptr;
-#else
-  void* rerender_ledger_layout_reservation = nullptr;
-#endif
-  vector_v2::TouchEvent* touch_events = nullptr;
-#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-  TileRevisionPublication* publications = nullptr;
-#endif
-  TileKey* affected_keys = nullptr;
-
-  [[nodiscard]] bool allocate() {
-    overview = allocate_array<std::uint16_t>(vector_v2::kOverviewPixels);
-#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-    snapshot = allocate_array<std::uint16_t>(vector_v2::kOverviewPixels);
-#else
-    // Retain the measured PSRAM layout without constructing a product-facing
-    // blank snapshot. heap_caps_malloc provides naturally aligned storage.
-    blank_snapshot_layout_reservation =
-        allocate_aligned_layout_reservation<std::uint16_t>(vector_v2::kOverviewPixels);
-#endif
-    frame = allocate_array<std::uint16_t>(vector_v2::kOverviewPixels);
-    tile_pixels = allocate_array<std::uint16_t>(vector_v2::kTileSlotCount * vector_v2::kTilePixels);
-    overview_scratch = allocate_array<std::uint16_t>(vector_v2::kOverviewPixels);
-#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-    tile_scratch = allocate_array<std::uint16_t>(kWorkspaceTileCapacity * vector_v2::kTilePixels);
-#endif
-    region_scratch = allocate_array<std::uint16_t>(kLiveRegionScratchPixels);
-    chrome_cache = allocate_array<std::uint16_t>(vector_v2::kChromeStagingCachePixels);
-    // The producer paint scratch is the hottest pixel memory in cold replay:
-    // every group starts with a 32 KiB fill and ends with a 32 KiB publish
-    // read, with masked span writes in between. Internal SRAM removes the
-    // PSRAM round-trips; the PSRAM fallback keeps allocation infallible.
-    producer_supertask = allocate_internal<std::uint16_t>(vector_v2::kTileProducerPixels);
-    supertask_internal = producer_supertask != nullptr;
-    if (producer_supertask == nullptr) {
-      producer_supertask = allocate_array<std::uint16_t>(vector_v2::kTileProducerPixels);
-    }
-#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-    harness_tile_scratch = allocate_internal<std::uint16_t>(vector_v2::kTilePixels);
-    if (harness_tile_scratch == nullptr) {
-      harness_tile_scratch = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
-    }
-#endif
-    producer_mask = allocate_internal<std::uint8_t>(vector_v2::kTileProducerMaskBytes);
-    producer_summary_rows = allocate_internal<std::uint16_t>(vector_v2::kTileProducerSummaryRows);
-    producer_summary_words = allocate_internal<std::uint32_t>(vector_v2::kTileProducerSummaryWords);
-    // One operation's prepared chord batch (H7 sweep), read once per chord
-    // per swept row: internal SRAM keeps it off the PSRAM dcache path.
-    producer_chord_plans =
-        allocate_internal<std::uint32_t>(vector_v2::kOperationChordStorageBytes / 4U);
-    chunk_mask = allocate_internal<std::uint8_t>(vector_v2::kInPlaceTileMaskBytes);
-    uniforms =
-        allocate_array<MaterializedUniformStorage>(vector_v2::kMaterializedTileIdentityCount);
-    occupancy = allocate_array<std::uint8_t>(vector_v2::kOccupancyBytes);
-    slots = allocate_array<MaterializedSlotStorage>(vector_v2::kTileSlotCount);
-    records = allocate_array<OperationRecord>(vector_v2::kOperationCapacity);
-    samples = allocate_array<CompactOperationSample>(vector_v2::kOperationSampleCapacity);
-    input_samples = allocate_array<CompactOperationSample>(kInputSampleCapacity);
-#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-    rerender_entries =
-        allocate_array<vector_v2::RerenderLedgerEntry>(vector_v2::kRerenderLedgerEntryCount);
-#else
-    // This inert block preserves the downstream allocation/cache placement
-    // measured before the diagnostic ledger left the product image.
-    rerender_ledger_layout_reservation =
-        allocate_aligned_layout_reservation<vector_v2::RerenderLedgerEntry>(
-            vector_v2::kRerenderLedgerEntryCount);
-#endif
-    touch_events = allocate_internal<vector_v2::TouchEvent>(kVectorV2TouchEventCapacity);
-#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-    publications = allocate_array<TileRevisionPublication>(kWorkspaceTileCapacity);
-    const bool harness_workspace_ready =
-        tile_scratch != nullptr && publications != nullptr && harness_tile_scratch != nullptr;
-#else
-    const bool harness_workspace_ready = true;
-#endif
-    affected_keys =
-        allocate_array<TileKey>(vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles);
-    // O(1) find_tile metadata (27,384 B used), allocated LAST and padded to
-    // 32 KiB. Placement receipts (2026-08-16): internal SRAM shifted the
-    // panel-init DMA staging buffers (+50 us pan strip staging, pan_seq
-    // red); an unpadded PSRAM allocation shifted every later heap address by
-    // 27.4 KB onto presentation-hostile dcache sets (+40 us strip staging in
-    // seven straight build variants). Padding to a multiple of the 8 KiB
-    // dcache way size keeps downstream allocations on the same cache sets
-    // that every pan optical receipt was measured on.
-    constexpr std::size_t kDirectoryPaddedEntries = (32U * 1024U) / sizeof(std::uint16_t);
-    static_assert(kDirectoryPaddedEntries >= vector_v2::kMaterializedTileIdentityCount);
-    raw_slot_directory = allocate_array<std::uint16_t>(kDirectoryPaddedEntries);
-    // Settled-AA workspace, allocated dead LAST so it shifts no other
-    // allocation's cache sets (the first settle-build battery measured the
-    // 400% cold wall +9 ms with these placed mid-heap).
-    settle_op_alpha = allocate_array<std::uint8_t>(vector_v2::kTilePixels);
-    settle_accumulated = allocate_array<std::uint8_t>(vector_v2::kTilePixels);
-    settle_red = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
-    settle_green = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
-    settle_blue = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
-    settle_pixels = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
-    const bool snapshot_layout_ready =
-#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-        snapshot != nullptr;
-#else
-        blank_snapshot_layout_reservation != nullptr;
-#endif
-    const bool rerender_layout_ready =
-#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-        rerender_entries != nullptr;
-#else
-        rerender_ledger_layout_reservation != nullptr;
-#endif
-    if (overview == nullptr || !snapshot_layout_ready || frame == nullptr ||
-        tile_pixels == nullptr || overview_scratch == nullptr || !harness_workspace_ready ||
-        region_scratch == nullptr || chrome_cache == nullptr || producer_supertask == nullptr ||
-        producer_mask == nullptr || producer_summary_rows == nullptr ||
-        producer_summary_words == nullptr || producer_chord_plans == nullptr ||
-        chunk_mask == nullptr || uniforms == nullptr || occupancy == nullptr || slots == nullptr ||
-        raw_slot_directory == nullptr || records == nullptr || samples == nullptr ||
-        input_samples == nullptr || !rerender_layout_ready || touch_events == nullptr ||
-        affected_keys == nullptr || settle_op_alpha == nullptr || settle_accumulated == nullptr ||
-        settle_red == nullptr || settle_green == nullptr || settle_blue == nullptr ||
-        settle_pixels == nullptr) {
-      return false;
-    }
-    for (std::size_t index = 0; index < vector_v2::kMaterializedTileIdentityCount; ++index) {
-      std::construct_at(uniforms + index);
-    }
-    for (std::size_t index = 0; index < vector_v2::kTileSlotCount; ++index) {
-      std::construct_at(slots + index);
-    }
-    return true;
+std::uint16_t next_gesture_id(const OperationLog& log) {
+  if (log.operation_count() == 0U) {
+    return 1U;
   }
-
- private:
-  template <typename Type>
-  [[nodiscard]] static Type* allocate_array(std::size_t count) {
-    return static_cast<Type*>(heap_caps_malloc(count * sizeof(Type), kExternalCaps));
+  const auto operation = log.operation(log.operation_count() - 1U);
+  if (!operation.has_value()) {
+    return 1U;
   }
-
-  template <typename Type>
-  [[nodiscard]] static void* allocate_aligned_layout_reservation(std::size_t count) {
-    static_assert(alignof(Type) <= alignof(std::max_align_t));
-    return heap_caps_malloc(count * sizeof(Type), kExternalCaps);
-  }
-
-  template <typename Type>
-  [[nodiscard]] static Type* allocate_internal(std::size_t count) {
-    return static_cast<Type*>(
-        heap_caps_malloc(count * sizeof(Type), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-  }
-};
+  const auto next = static_cast<std::uint16_t>(operation->gesture_id + 1U);
+  return next == 0U ? 1U : next;
+}
 
 std::uint32_t now_us() { return static_cast<std::uint32_t>(esp_timer_get_time()); }
-
-const char* reject_name(vector_v2::OperationBuilderReject reject) {
-  switch (reject) {
-    case vector_v2::OperationBuilderReject::kNone:
-      return "none";
-    case vector_v2::OperationBuilderReject::kNotActive:
-      return "not_active";
-    case vector_v2::OperationBuilderReject::kInvalidPoint:
-      return "invalid_point";
-    case vector_v2::OperationBuilderReject::kTimestampRegression:
-      return "timestamp_regression";
-    case vector_v2::OperationBuilderReject::kElapsedOverflow:
-      return "elapsed_overflow";
-    case vector_v2::OperationBuilderReject::kCapacityOverflow:
-      return "capacity_overflow";
-  }
-  return "unknown";
-}
-
-void print_stroke_rejected(const char* site, const ChainedOperationBuilder& builder,
-                           vector_v2::OperationPoint point) {
-  std::printf(
-      "TINYDRAW_STROKE_REJECTED site=%s reason=%s samples=%lu x=%.3f y=%.3f radius=%.5f "
-      "timestamp_us=%lu\n",
-      site, reject_name(builder.last_reject()), static_cast<unsigned long>(builder.sample_count()),
-      static_cast<double>(point.world_x), static_cast<double>(point.world_y),
-      static_cast<double>(point.radius), static_cast<unsigned long>(point.timestamp_us));
-  std::fflush(stdout);
-}
-
-void include_bounds(std::optional<vector_v2::PixelRect>& accumulated, vector_v2::PixelRect bounds) {
-  if (!accumulated.has_value()) {
-    accumulated = bounds;
-    return;
-  }
-  accumulated->x0 = std::min(accumulated->x0, bounds.x0);
-  accumulated->y0 = std::min(accumulated->y0, bounds.y0);
-  accumulated->x1 = std::max(accumulated->x1, bounds.x1);
-  accumulated->y1 = std::max(accumulated->y1, bounds.y1);
-}
-
-std::optional<vector_v2::ViewRequest> current_priority_view(const VectorV2Presenter& presenter) {
-  if (presenter.zoom() == ZoomLevel::k25Percent) {
-    return std::nullopt;
-  }
-  return vector_v2::ViewRequest{
-      .zoom = presenter.zoom(),
-      .level_pixels = {presenter.level_x(), presenter.level_y(),
-                       presenter.level_x() + vector_v2::kOverviewWidth,
-                       presenter.level_y() + vector_v2::kOverviewHeight},
-  };
-}
-
-std::optional<vector_v2::IncrementalAppendResult> commit_pending_chunk(
-    ChainedOperationBuilder& builder, OperationLog& log, MaterializedCanvas& canvas,
-    const vector_v2::InPlaceAppendWorkspace& workspace, const VectorV2Presenter& presenter) {
-  const auto append = builder.pending_append();
-  if (!append.has_value()) {
-    return std::nullopt;
-  }
-  // Deferred commit (VECTOR_V2_COMMITTED_OVERLAY_DESIGN.md §3): the input
-  // path publishes authority only; idle slices absorb the pending range and
-  // presentation patches pending ink into every compose. The high-water
-  // fallback bounds the range (and the per-present overlay cost) by paying
-  // one synchronous absorption — today's behavior as the worst case.
-  if (vector_v2::pending_operation_count(log, canvas) >= kPendingOperationHighWater) {
-    static_cast<void>(vector_v2::absorb_pending_operation(
-        log, canvas, workspace, current_priority_view(presenter),
-        {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs}));
-  }
-  return vector_v2::append_authority_only(log, *append, {.now_us = &esp_timer_get_time});
-}
-
-void include_phase_maxima(vector_v2::InPlaceAppendPhases& maxima,
-                          const vector_v2::InPlaceAppendPhases& sample) {
-  maxima.prepare_us = std::max(maxima.prepare_us, sample.prepare_us);
-  maxima.overview_us = std::max(maxima.overview_us, sample.overview_us);
-  maxima.enumerate_us = std::max(maxima.enumerate_us, sample.enumerate_us);
-  maxima.uniform_retain_us = std::max(maxima.uniform_retain_us, sample.uniform_retain_us);
-  maxima.raw_retain_us = std::max(maxima.raw_retain_us, sample.raw_retain_us);
-  maxima.offscreen_retain_us = std::max(maxima.offscreen_retain_us, sample.offscreen_retain_us);
-  maxima.commit_us = std::max(maxima.commit_us, sample.commit_us);
-}
-
-void include_retain_drops(vector_v2::InPlaceRetainDrops& total,
-                          const vector_v2::InPlaceRetainDrops& sample) {
-  total.visible_uniform_no_slot += sample.visible_uniform_no_slot;
-  total.visible_uniform_paint_fail += sample.visible_uniform_paint_fail;
-  total.visible_raw_edit_fail += sample.visible_raw_edit_fail;
-  total.visible_raw_paint_fail += sample.visible_raw_paint_fail;
-  total.offscreen_skipped += sample.offscreen_skipped;
-}
-
-std::optional<ChainedOperationStatus> commit_ready_chunk(
-    ChainedOperationBuilder& builder, OperationLog& log, MaterializedCanvas& canvas,
-    const vector_v2::InPlaceAppendWorkspace& workspace, const VectorV2Presenter& presenter,
-    std::optional<vector_v2::PixelRect>& accumulated_bounds, std::uint32_t& chunks,
-    std::int64_t& append_us, std::int64_t& append_max_us,
-    vector_v2::InPlaceAppendPhases& phase_maxima, vector_v2::InPlaceRetainDrops& drops) {
-  const std::int64_t started_us = esp_timer_get_time();
-  const auto committed = commit_pending_chunk(builder, log, canvas, workspace, presenter);
-  const std::int64_t elapsed_us = esp_timer_get_time() - started_us;
-  append_us += elapsed_us;
-  append_max_us = std::max(append_max_us, elapsed_us);
-  if (!committed.has_value()) {
-    return std::nullopt;
-  }
-  include_phase_maxima(phase_maxima, committed->phases);
-  include_retain_drops(drops, committed->drops);
-  include_bounds(accumulated_bounds, committed->affected_world_bounds);
-  ++chunks;
-  return builder.acknowledge_commit();
-}
 
 const char* zoom_name(ZoomLevel zoom) {
   switch (zoom) {
@@ -519,40 +154,6 @@ const char* zoom_name(ZoomLevel zoom) {
       return "400";
   }
   return "unknown";
-}
-
-void print_presentation(const char* kind, const VectorV2Presenter& presenter,
-                        const LivePresentationTiming& timing) {
-  std::printf(
-      "TINYDRAW_LIVE_PRESENT kind=%s zoom=%s x=%d y=%d compose_us=%lld scroll_us=%lld "
-      "exposed_compose_us=%lld chrome_us=%lld chrome_prepare_us=%lld chrome_stage_us=%lld "
-      "read_submit_us=%lld read_complete_us=%lld "
-      "transfer_wait_us=%lld tile_pixels=%lu "
-      "uniform_pixels=%lu overview_pixels=%lu fallback_pixels=%lu resident_tiles=%lu "
-      "fallback_tiles=%lu pushes=%lu tear_wait_us=%lld tear_edge_isr_to_resume_us=%lu "
-      "tear_edge_observed=%u tear_edge_wait_resumed=%u tear_edge_timeout=%u "
-      "tear_heal_attempted=%u "
-      "tear_heal_command_sent=%u presentation_experiment=%s te_edge=%s "
-      "clock_mhz=%d "
-      "frame_reused=%u pass=%u\n",
-      kind, zoom_name(presenter.zoom()), presenter.level_x(), presenter.level_y(),
-      static_cast<long long>(timing.compose_us), static_cast<long long>(timing.scroll_us),
-      static_cast<long long>(timing.exposed_compose_us), static_cast<long long>(timing.chrome_us),
-      static_cast<long long>(timing.chrome_prepare_us),
-      static_cast<long long>(timing.chrome_stage_us),
-      static_cast<long long>(timing.first_submit_us),
-      static_cast<long long>(timing.first_complete_us), static_cast<long long>(timing.complete_us),
-      static_cast<unsigned long>(timing.tile_pixels),
-      static_cast<unsigned long>(timing.uniform_pixels),
-      static_cast<unsigned long>(timing.overview_pixels),
-      static_cast<unsigned long>(timing.fallback_pixels),
-      static_cast<unsigned long>(timing.resident_tiles),
-      static_cast<unsigned long>(timing.fallback_tiles), static_cast<unsigned long>(timing.pushes),
-      static_cast<long long>(timing.tear_wait_us),
-      static_cast<unsigned long>(timing.tear_edge_isr_to_resume_us), timing.tear_edge_observed,
-      timing.tear_edge_wait_resumed, timing.tear_edge_timed_out, timing.tear_heal_attempted,
-      timing.tear_heal_command_sent, presentation_experiment_name(), selected_tear_edge_name(),
-      kCo5300ClockMHz, timing.frame_reused, timing.passed);
 }
 
 void print_pan_baseline(const VectorV2Presenter& presenter, const PanMetrics& metrics) {
@@ -572,27 +173,6 @@ void print_pan_baseline(const VectorV2Presenter& presenter, const PanMetrics& me
           metrics.frames == 0U ? 0U : metrics.tear_wait_total_us / metrics.frames),
       static_cast<unsigned long>(metrics.tear_wait_max_us),
       static_cast<unsigned long>(metrics.failures));
-}
-
-void print_fill_baseline(const char* result, ZoomLevel zoom, int x, int y,
-                         DocumentRevision revision, const FillBaselineTiming& timing) {
-  if (timing.steps == 0U) {
-    return;
-  }
-  std::printf(
-      "TINYDRAW_FILL_BASELINE result=%s zoom=%s x=%d y=%d revision=%lu steps=%lu "
-      "wall_us=%lld compute_total_us=%lld compute_max_us=%lld present_total_us=%lld "
-      "present_max_us=%lld tick_max_us=%lld producer_failures=%lu "
-      "presentation_failures=%lu\n",
-      result, zoom_name(zoom), x, y, static_cast<unsigned long>(revision.value),
-      static_cast<unsigned long>(timing.steps),
-      static_cast<long long>(timing.started_us == 0 ? 0 : esp_timer_get_time() - timing.started_us),
-      static_cast<long long>(timing.compute_total_us),
-      static_cast<long long>(timing.compute_max_us),
-      static_cast<long long>(timing.present_total_us),
-      static_cast<long long>(timing.present_max_us), static_cast<long long>(timing.tick_max_us),
-      static_cast<unsigned long>(timing.producer_failures),
-      static_cast<unsigned long>(timing.presentation_failures));
 }
 
 void print_lift_baseline(const LiftBaselineTiming& timing, std::int64_t poll_started_us,
@@ -686,348 +266,6 @@ void print_stroke(const PendingStrokeReport& report) {
       static_cast<unsigned long>(report.largest_psram), report.authority_match);
 }
 
-struct ExportProgressContext {
-  vector_v2::ChromeState* chrome = nullptr;
-  VectorV2Presenter* presenter = nullptr;
-  int last_percentage = 0;
-};
-
-void present_export_progress(std::size_t completed_operations, std::size_t total_operations,
-                             void* raw_context) {
-  auto& context = *static_cast<ExportProgressContext*>(raw_context);
-  if (context.chrome == nullptr || context.presenter == nullptr || total_operations == 0U) {
-    return;
-  }
-  const int percentage =
-      static_cast<int>(std::min<std::size_t>(completed_operations * 100U / total_operations, 100U));
-  if (percentage < 100 && percentage < context.last_percentage + 5) {
-    return;
-  }
-  context.last_percentage = percentage;
-  context.chrome->export_progress = static_cast<std::uint8_t>(percentage);
-  const auto timing = context.presenter->refresh(*context.chrome, now_us());
-  print_presentation("export-progress", *context.presenter, timing);
-  // Encoding is intentionally blocking. Five-percent UI steps avoid making
-  // panel refreshes dominate the now-fast path export; the flash sink also
-  // yields periodically for maximum-capacity documents.
-  vTaskDelay(pdMS_TO_TICKS(1));
-}
-
-bool run_export(VectorV2Export& exporter, const OperationLog& log, vector_v2::ChromeState& chrome,
-                VectorV2Presenter& presenter, RtcClock& clock) {
-  chrome.popup = vector_v2::ChromePopup::kNone;
-  chrome.confirm_new = false;
-  chrome.export_status = vector_v2::ChromeExportStatus::kSaving;
-  chrome.export_progress = 0;
-  const auto started = presenter.refresh(chrome, now_us());
-  print_presentation("export-start", presenter, started);
-
-  if (!exporter.prepare_reencode()) {
-    chrome.export_status = vector_v2::ChromeExportStatus::kExitError;
-    static_cast<void>(presenter.refresh(chrome, now_us()));
-    return false;
-  }
-  FatDateTime modified_time;
-  if (clock.read(modified_time)) {
-    exporter.set_modified_time(modified_time);
-    std::printf("TINYDRAW_V2_EXPORT_TIME local=%04u-%02u-%02uT%02u:%02u:%02u\n", modified_time.year,
-                modified_time.month, modified_time.day, modified_time.hour, modified_time.minute,
-                modified_time.second);
-  }
-  ExportProgressContext progress{.chrome = &chrome, .presenter = &presenter};
-  const VectorV2ExportStats stats = exporter.encode(log, present_export_progress, &progress);
-  chrome.export_progress = stats.encoded ? 100 : chrome.export_progress;
-  chrome.export_status =
-      stats.encoded ? vector_v2::ChromeExportStatus::kSaved : vector_v2::ChromeExportStatus::kError;
-  const auto finished = presenter.refresh(chrome, now_us());
-  print_presentation("export-finish", presenter, finished);
-  std::printf(
-      "TINYDRAW_V2_EXPORT formats=svg,png encoded=%u svg_bytes=%lu png_bytes=%lu "
-      "elapsed_us=%lld svg_workspace_bytes=%lu png_workspace_bytes=%lu "
-      "render_workspace_bytes=%lu peak_workspace_bytes=%lu operations=%lu sink_calls=%lu "
-      "flash_pages=%lu crc32=%08lx free_psram=%lu free_internal=%lu usb_attempt=%u\n",
-      stats.encoded, static_cast<unsigned long>(stats.bytes),
-      static_cast<unsigned long>(stats.png_bytes), static_cast<long long>(stats.elapsed_us),
-      static_cast<unsigned long>(stats.workspace_bytes),
-      static_cast<unsigned long>(stats.png_workspace_bytes),
-      static_cast<unsigned long>(stats.render_workspace_bytes),
-      static_cast<unsigned long>(stats.peak_workspace_bytes),
-      static_cast<unsigned long>(stats.operation_count),
-      static_cast<unsigned long>(stats.sink_calls), static_cast<unsigned long>(stats.flash_pages),
-      static_cast<unsigned long>(stats.content_crc32),
-      static_cast<unsigned long>(stats.free_psram_after),
-      static_cast<unsigned long>(stats.free_internal_after), stats.encoded);
-  std::fflush(stdout);
-  if (!stats.encoded) {
-    return false;
-  }
-  vTaskDelay(pdMS_TO_TICKS(150));
-  const bool usb_ready = exporter.present_usb();
-  chrome.export_status =
-      usb_ready ? vector_v2::ChromeExportStatus::kPresented : vector_v2::ChromeExportStatus::kError;
-  static_cast<void>(presenter.refresh(chrome, now_us()));
-  return usb_ready;
-}
-
-vector_v2::ChromeTimeSyncStatus chrome_time_sync_status(TimeSyncStatus status) {
-  switch (status) {
-    case TimeSyncStatus::kIdle:
-      return vector_v2::ChromeTimeSyncStatus::kIdle;
-    case TimeSyncStatus::kConnecting:
-      return vector_v2::ChromeTimeSyncStatus::kConnecting;
-    case TimeSyncStatus::kSynchronizing:
-      return vector_v2::ChromeTimeSyncStatus::kSynchronizing;
-    case TimeSyncStatus::kSucceeded:
-      return vector_v2::ChromeTimeSyncStatus::kSaved;
-    case TimeSyncStatus::kFailed:
-      return vector_v2::ChromeTimeSyncStatus::kError;
-  }
-  return vector_v2::ChromeTimeSyncStatus::kError;
-}
-
-bool sync_history_controls(vector_v2::ChromeState& chrome, const OperationLog& log) {
-  const bool can_undo = log.can_undo();
-  const bool can_redo = log.can_redo();
-  const bool changed = chrome.can_undo != can_undo || chrome.can_redo != can_redo;
-  chrome.can_undo = can_undo;
-  chrome.can_redo = can_redo;
-  return changed;
-}
-
-LivePresentationTiming present_history_controls(VectorV2Presenter& presenter,
-                                                const vector_v2::ChromeState& chrome,
-                                                std::uint32_t event_us) {
-  auto timing =
-      presenter.present_frame_region({0, vector_v2::chrome_canvas_bottom(chrome),
-                                      vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
-                                     chrome, event_us);
-  if (!timing.passed) {
-    timing = presenter.refresh(chrome, event_us);
-  }
-  return timing;
-}
-
-class ChromeController {
- public:
-  ChromeController(vector_v2::ChromeState& chrome, OperationLog& log, MaterializedCanvas& canvas,
-                   vector_v2::TileProducer& producer,
-#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-                   std::span<const std::uint16_t> blank_snapshot,
-#endif
-                   std::span<std::uint16_t> history_scratch, VectorV2Presenter& presenter,
-                   VectorV2Export& exporter, TimeSyncController& time_sync, RtcClock& clock)
-      : chrome_(chrome),
-        log_(log),
-        canvas_(canvas),
-        producer_(producer),
-#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-        blank_snapshot_(blank_snapshot),
-#endif
-        history_scratch_(history_scratch),
-        presenter_(presenter),
-        exporter_(exporter),
-        time_sync_(time_sync),
-        clock_(clock) {
-  }
-
-  [[nodiscard]] bool apply(vector_v2::ChromeAction action, Point point) {
-    auto& chrome = chrome_;
-    auto& log = log_;
-    auto& canvas = canvas_;
-    auto& producer = producer_;
-    const auto history_scratch = history_scratch_;
-    auto& presenter = presenter_;
-    auto& exporter = exporter_;
-    auto& time_sync = time_sync_;
-    auto& clock = clock_;
-    const auto toggle = [&](vector_v2::ChromePopup popup) {
-      chrome.popup = chrome.popup == popup ? vector_v2::ChromePopup::kNone : popup;
-    };
-    const bool palette_only_refresh = action == vector_v2::ChromeAction::kSelectColor ||
-                                      action == vector_v2::ChromeAction::kToggleColors ||
-                                      action == vector_v2::ChromeAction::kPreviousPalette ||
-                                      action == vector_v2::ChromeAction::kNextPalette;
-    switch (action) {
-      case vector_v2::ChromeAction::kSelectDraw:
-        chrome.tool = vector_v2::ChromeTool::kDraw;
-        chrome.popup = vector_v2::ChromePopup::kNone;
-        break;
-      case vector_v2::ChromeAction::kSelectErase:
-        chrome.tool = vector_v2::ChromeTool::kErase;
-        chrome.popup = vector_v2::ChromePopup::kNone;
-        break;
-      case vector_v2::ChromeAction::kSelectPan:
-        chrome.tool = vector_v2::ChromeTool::kPan;
-        chrome.popup = vector_v2::ChromePopup::kNone;
-        break;
-      case vector_v2::ChromeAction::kSelectColor:
-        if (const auto color = vector_v2::chrome_color_at({point.x, point.y}, chrome);
-            color.has_value()) {
-          chrome.color_index = *color;
-          chrome.tool = vector_v2::ChromeTool::kDraw;
-          chrome.popup = vector_v2::ChromePopup::kNone;
-        }
-        break;
-      case vector_v2::ChromeAction::kToggleTools:
-        toggle(vector_v2::ChromePopup::kTools);
-        break;
-      case vector_v2::ChromeAction::kToggleColors:
-        toggle(vector_v2::ChromePopup::kColors);
-        break;
-      case vector_v2::ChromeAction::kToggleSizes:
-        toggle(vector_v2::ChromePopup::kSizes);
-        break;
-      case vector_v2::ChromeAction::kToggleDocument:
-        toggle(vector_v2::ChromePopup::kDocument);
-        break;
-      case vector_v2::ChromeAction::kSelectSmall:
-      case vector_v2::ChromeAction::kSelectMedium:
-      case vector_v2::ChromeAction::kSelectLarge:
-      case vector_v2::ChromeAction::kSelectExtraLarge:
-        chrome.size =
-            action == vector_v2::ChromeAction::kSelectSmall    ? vector_v2::ChromeSize::kSmall
-            : action == vector_v2::ChromeAction::kSelectMedium ? vector_v2::ChromeSize::kMedium
-            : action == vector_v2::ChromeAction::kSelectLarge  ? vector_v2::ChromeSize::kLarge
-                                                               : vector_v2::ChromeSize::kExtraLarge;
-        chrome.popup = vector_v2::ChromePopup::kNone;
-        break;
-      case vector_v2::ChromeAction::kPreviousPalette:
-        chrome.palette_page = 0;
-        break;
-      case vector_v2::ChromeAction::kNextPalette:
-        chrome.palette_page = 1;
-        break;
-      case vector_v2::ChromeAction::kNewDrawing:
-        chrome.popup = vector_v2::ChromePopup::kNone;
-        chrome.confirm_new = true;
-        break;
-      case vector_v2::ChromeAction::kCancelNewDrawing:
-        chrome.confirm_new = false;
-        break;
-      case vector_v2::ChromeAction::kConfirmNewDrawing: {
-        // New advances beyond both authorities even when committed-overlay ink
-        // still leaves the canvas one or more chunks behind.
-        const std::uint32_t current_generation =
-            std::max(log.current_revision().value, canvas.current_revision().value);
-        if (current_generation == std::numeric_limits<std::uint32_t>::max()) {
-          chrome.confirm_new = false;
-          break;
-        }
-        const DocumentRevision revision{current_generation + 1U};
-#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-        const bool reset =
-            vector_v2::restore_document_snapshot(log, canvas, revision, blank_snapshot_);
-#else
-        const bool reset = vector_v2::reset_blank_document(log, canvas, revision);
-#endif
-        if (!reset || !producer.reset_uniform_baseline(revision)) {
-          return false;
-        }
-        static_cast<void>(sync_history_controls(chrome, log));
-        chrome.confirm_new = false;
-        chrome.popup = vector_v2::ChromePopup::kNone;
-        break;
-      }
-      case vector_v2::ChromeAction::kExport:
-        // Blocking by design. Progress covers PNG windows and SVG operations,
-        // then the explicit export mode owns input until the user returns.
-        return chrome.can_export && run_export(exporter, log, chrome, presenter, clock);
-      case vector_v2::ChromeAction::kExitExport:
-        chrome.export_status = exporter.stop_usb() ? vector_v2::ChromeExportStatus::kIdle
-                                                   : vector_v2::ChromeExportStatus::kExitError;
-        chrome.popup = vector_v2::ChromePopup::kNone;
-        break;
-      case vector_v2::ChromeAction::kSyncTime:
-        chrome.popup = vector_v2::ChromePopup::kNone;
-        if (chrome.can_sync_time) {
-          static_cast<void>(time_sync.start());
-          chrome.time_sync_status = chrome_time_sync_status(time_sync.status());
-        }
-        break;
-      case vector_v2::ChromeAction::kZoomIn: {
-        const ZoomLevel target = vector_v2::next_zoom(presenter.zoom());
-        if (target == presenter.zoom()) {
-          return true;
-        }
-        const auto timing = presenter.set_zoom(target, chrome, now_us());
-        print_presentation("zoom-ui", presenter, timing);
-        return timing.passed;
-      }
-      case vector_v2::ChromeAction::kZoomOut: {
-        const ZoomLevel target = vector_v2::previous_zoom(presenter.zoom());
-        if (target == presenter.zoom()) {
-          return true;
-        }
-        const auto timing = presenter.set_zoom(target, chrome, now_us());
-        print_presentation("zoom-ui", presenter, timing);
-        return timing.passed;
-      }
-      case vector_v2::ChromeAction::kUndo:
-      case vector_v2::ChromeAction::kRedo: {
-        const bool undo = action == vector_v2::ChromeAction::kUndo;
-        const bool enabled = undo ? chrome.can_undo : chrome.can_redo;
-        const bool authority_enabled = undo ? log.can_undo() : log.can_redo();
-        if (!enabled || !authority_enabled) {
-          if (!sync_history_controls(chrome, log)) {
-            return true;
-          }
-          const auto timing = present_history_controls(presenter, chrome, now_us());
-          print_presentation("history-stale-guard", presenter, timing);
-          return timing.passed;
-        }
-        const auto change = vector_v2::move_history_incrementally(
-            log, canvas,
-            undo ? vector_v2::HistoryDirection::kUndo : vector_v2::HistoryDirection::kRedo,
-            history_scratch);
-        if (!change.has_value()) {
-          static_cast<void>(sync_history_controls(chrome, log));
-          return false;
-        }
-        chrome.popup = vector_v2::ChromePopup::kNone;
-        static_cast<void>(sync_history_controls(chrome, log));
-        const auto canvas_timing = presenter.refresh_region(
-            vector_v2::operation_level_bounds(change->affected_world_bounds, presenter.zoom()),
-            chrome, now_us());
-        print_presentation(undo ? "undo-canvas" : "redo-canvas", presenter, canvas_timing);
-        if (!canvas_timing.passed) {
-          return false;
-        }
-        const auto dock_timing = present_history_controls(presenter, chrome, now_us());
-        print_presentation(undo ? "undo-dock" : "redo-dock", presenter, dock_timing);
-        return dock_timing.passed;
-      }
-      case vector_v2::ChromeAction::kNone:
-        break;
-    }
-    auto timing =
-        palette_only_refresh
-            ? presenter.present_frame_region(
-                  {0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight}, chrome, now_us())
-            : LivePresentationTiming{};
-    if (!palette_only_refresh || !timing.passed) {
-      // A cached pan leaves frame_ ring-addressed; only a full compose may
-      // materialize it before ordinary linear presentation.
-      timing = presenter.refresh(chrome, now_us());
-    }
-    print_presentation("chrome", presenter, timing);
-    return timing.passed;
-  }
-
- private:
-  vector_v2::ChromeState& chrome_;
-  OperationLog& log_;
-  MaterializedCanvas& canvas_;
-  vector_v2::TileProducer& producer_;
-#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-  std::span<const std::uint16_t> blank_snapshot_;
-#endif
-  std::span<std::uint16_t> history_scratch_;
-  VectorV2Presenter& presenter_;
-  VectorV2Export& exporter_;
-  TimeSyncController& time_sync_;
-  RtcClock& clock_;
-};
-
 }  // namespace
 
 void run_vector_v2_app() {
@@ -1058,20 +296,12 @@ void run_vector_v2_app() {
       std::span(storage.raw_slot_directory, vector_v2::kMaterializedTileIdentityCount));
   OperationLog log(std::span(storage.records, vector_v2::kOperationCapacity),
                    std::span(storage.samples, vector_v2::kOperationSampleCapacity));
-  // Navigation and the next Stroke identity are authority-adjacent session
-  // state: restore them before the first overview compose or presentation.
   static vector_v2::NavigationState navigation;
   VectorV2AutosaveStore autosave;
-  vector_v2::JournalState recovered_journal_state{};
-  const VectorV2AutosaveRestoreStatus autosave_restore =
-      autosave.restore(log, recovered_journal_state);
+  const VectorV2AutosaveRestoreStatus autosave_restore = autosave.restore(log);
   const bool autosave_restored = autosave_restore == VectorV2AutosaveRestoreStatus::kRestored ||
                                  autosave_restore == VectorV2AutosaveRestoreStatus::kRecoveredTail;
-  if (autosave_restored && !navigation.restore(recovered_journal_state.navigation)) {
-    std::printf("TINYDRAW_AUTOSAVE_RESTORE_FAIL reason=navigation\n");
-    return;
-  }
-  std::uint16_t next_gesture_id = autosave_restored ? recovered_journal_state.next_stroke_id : 1U;
+  std::uint16_t next_gesture = next_gesture_id(log);
   if (autosave_restore == VectorV2AutosaveRestoreStatus::kUnavailable ||
       autosave_restore == VectorV2AutosaveRestoreStatus::kError) {
     std::printf("TINYDRAW_AUTOSAVE_DISABLED status=%u\n", static_cast<unsigned>(autosave_restore));
@@ -1082,8 +312,6 @@ void run_vector_v2_app() {
                 static_cast<unsigned long>(log.operation_count()),
                 static_cast<unsigned long>(log.read_view().retained_operation_count));
   }
-  std::array<DisplayStrip, 3> queue{};
-  DisplayScheduler scheduler(queue);
   Co5300PanelTransport display;
   PhysicalTouch touch;
   PowerManager power(touch.bus());
@@ -1091,16 +319,12 @@ void run_vector_v2_app() {
   TimeSyncController time_sync(clock);
   VectorV2TouchSampler touch_sampler(touch,
                                      std::span(storage.touch_events, kVectorV2TouchEventCapacity));
-  // Navigation lives for the app's entire lifetime. Keep remembered zoom
-  // views out of the latency-sensitive 16 KiB main-task stack.
   VectorV2Export exporter;
   VectorV2Presenter presenter(
-      canvas, navigation, scheduler, display, std::span(storage.frame, vector_v2::kOverviewPixels),
+      canvas, navigation, display, std::span(storage.frame, vector_v2::kOverviewPixels),
       std::span(storage.region_scratch, kLiveRegionScratchPixels),
       std::span(storage.chrome_cache, vector_v2::kChromeStagingCachePixels));
   presenter.attach_authority(log);
-  ChainedOperationBuilder builder(std::span(storage.input_samples, kInputSampleCapacity),
-                                  kInteractiveChunkSampleLimit);
   vector_v2::TileProducer producer(
       log, canvas,
       {.supertask_pixels = std::span(storage.producer_supertask, vector_v2::kTileProducerPixels),
@@ -1113,9 +337,9 @@ void run_vector_v2_app() {
            std::span(storage.producer_chord_plans, vector_v2::kOperationChordStorageBytes / 4U))});
   // Re-render truth: every completed group render is classified against the
   // damage/eviction state the canvas reports (déjà-vu oracle; ~27.5 KiB).
-  // Déjà-vu campaign step 1: the spatial re-render ledger speaks during
-  // glass sessions. Deltas since the previous print attribute each
-  // transition's re-renders to a cause; cumulative amplification rides along.
+  // The gate-only re-render ledger can speak during diagnostic glass sessions.
+  // Deltas since the previous print attribute each transition's re-renders to a
+  // cause; cumulative amplification rides along.
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
   vector_v2::RerenderLedgerTotals ledger_printed{};
   vector_v2::RerenderLedger rerender_ledger(
@@ -1145,16 +369,8 @@ void run_vector_v2_app() {
                                  vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles),
       .tile_mask = std::span(storage.chunk_mask, vector_v2::kInPlaceTileMaskBytes),
   };
-#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-  const IncrementalDocumentWorkspace harness_workspace{
-      .overview_scratch = std::span(storage.overview_scratch, vector_v2::kOverviewPixels),
-      .tile_scratch =
-          std::span(storage.tile_scratch, kWorkspaceTileCapacity * vector_v2::kTilePixels),
-      .publications = std::span(storage.publications, kWorkspaceTileCapacity),
-      .affected_keys = std::span(storage.affected_keys,
-                                 vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles),
-  };
-#endif
+  LiveStrokeSession stroke(std::span(storage.input_samples, kInputSampleCapacity), log, canvas,
+                           workspace, presenter);
   const auto startup_overview =
       autosave_restored ? std::span(storage.overview_scratch, vector_v2::kOverviewPixels)
                         : std::span(storage.overview, vector_v2::kOverviewPixels);
@@ -1162,11 +378,11 @@ void run_vector_v2_app() {
       !autosave_restored || vector_v2::replay_active_overview(log, startup_overview);
   if (!restored_overview || !canvas.publish_overview(log.current_revision(), startup_overview) ||
       !log.ready() || !presenter.ready() || !touch.ready() || !touch_sampler.start() ||
-      !builder.ready() || !producer.ready()) {
+      !stroke.ready() || !producer.ready()) {
     std::printf(
         "TINYDRAW_LIVE_FAIL reason=bootstrap canvas=%u log=%u presenter=%u touch=%u builder=%u "
         "producer=%u\n",
-        canvas.ready(), log.ready(), presenter.ready(), touch.ready(), builder.ready(),
+        canvas.ready(), log.ready(), presenter.ready(), touch.ready(), stroke.ready(),
         producer.ready());
     return;
   }
@@ -1180,40 +396,30 @@ void run_vector_v2_app() {
   const PowerStatus initial_power = power.read();
   PowerStatus current_power = initial_power;
   vector_v2::ChromeState chrome;
-  chrome.tool = autosave_restored ? recovered_journal_state.tool : vector_v2::ChromeTool::kDraw;
-  chrome.size = autosave_restored ? recovered_journal_state.size : vector_v2::ChromeSize::kLarge;
-  chrome.palette_page = autosave_restored ? recovered_journal_state.palette_page : 0U;
-  chrome.color_index = autosave_restored ? recovered_journal_state.color_index : 12U;
+  chrome.tool = vector_v2::ChromeTool::kDraw;
+  chrome.size = vector_v2::ChromeSize::kLarge;
+  chrome.palette_page = 0U;
+  chrome.color_index = 12U;
   chrome.can_export = exporter.ready();
   chrome.can_sync_time = time_sync.available();
   static_cast<void>(sync_history_controls(chrome, log));
   chrome.battery_percentage = initial_power.percentage;
   chrome.battery_charging = initial_power.charging;
-  ChromeController chrome_controller(
+  VectorV2ChromeController chrome_controller(
       chrome, log, canvas, producer,
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
       std::span<const std::uint16_t>(storage.snapshot, vector_v2::kOverviewPixels),
 #endif
       std::span<std::uint16_t>(storage.overview_scratch, vector_v2::kOverviewPixels), presenter,
       exporter, time_sync, clock);
-  const auto current_journal_state = [&] {
-    return vector_v2::JournalState{
-        .navigation = navigation.snapshot(),
-        .tool = chrome.tool,
-        .size = chrome.size,
-        .palette_page = chrome.palette_page,
-        .color_index = chrome.color_index,
-        .next_stroke_id = next_gesture_id,
-    };
-  };
-  InkConfig ink_config;
-  ink_config.size = vector_v2::brush_size(chrome.size);
-  // Owner experiment 2026-08-16: stronger input smoothing for V2. Raster V1
-  // remains an independent product with its established 0.35 setting. Receipts:
-  // benchmark-results/settled-aa-prototype/ streamline sweep.
-  ink_config.streamline = 0.4F;
-  InkStream ink(ink_config);
-  CurvedRibbonStream ribbon;
+  VectorV2BackgroundPipeline background(
+      log, canvas, producer, workspace,
+      {.operation_alpha = std::span(storage.settle_op_alpha, vector_v2::kTilePixels),
+       .accumulated_alpha = std::span(storage.settle_accumulated, vector_v2::kTilePixels),
+       .red = std::span(storage.settle_red, vector_v2::kTilePixels),
+       .green = std::span(storage.settle_green, vector_v2::kTilePixels),
+       .blue = std::span(storage.settle_blue, vector_v2::kTilePixels)},
+      std::span(storage.settle_pixels, vector_v2::kTilePixels), presenter, chrome);
   auto initial = presenter.refresh(chrome);
   print_presentation("startup", presenter, initial);
   for (int attempt = 1; !initial.passed && attempt < kStartupPresentationAttempts; ++attempt) {
@@ -1228,15 +434,13 @@ void run_vector_v2_app() {
   }
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
   // The harness leaves the realistic document loaded for manual glass
-  // testing, so a red verdict must not exit the app: with standing known-red
-  // gates (mixed_draw budget, the 400% cold wall) an early return made every
-  // harness boot end before a human could touch the glass. The verdict
-  // stays in the DONE line; automation keys on that, not on liveness.
-  const bool harness_verdict = run_vector_v2_gate_harness(
-      presenter, producer, log, canvas, touch_sampler, chrome, harness_workspace, workspace,
-      exporter, std::span(storage.snapshot, vector_v2::kOverviewPixels),
-      std::span(storage.input_samples, kInputSampleCapacity),
-      std::span(storage.harness_tile_scratch, vector_v2::kTilePixels));
+  // testing, so a future red verdict must not exit the app before a human can
+  // inspect the glass. Automation keys on the DONE-line verdict, not liveness.
+  const bool harness_verdict =
+      run_vector_v2_gate_harness(presenter, producer, log, canvas, touch_sampler, chrome, workspace,
+                                 exporter, std::span(storage.snapshot, vector_v2::kOverviewPixels),
+                                 std::span(storage.input_samples, kInputSampleCapacity),
+                                 std::span(storage.harness_tile_scratch, vector_v2::kTilePixels));
   std::printf("TINYDRAW_VECTOR_V2_GATE_HARNESS_DONE pass=%u\n", harness_verdict);
 #endif
   const std::size_t overview_bytes = vector_v2::kOverviewPixels * 4U * sizeof(std::uint16_t);
@@ -1252,8 +456,6 @@ void run_vector_v2_app() {
       vector_v2::kOperationSampleCapacity * sizeof(CompactOperationSample);
   const std::size_t live_scratch_bytes =
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-      kWorkspaceTileCapacity * vector_v2::kTilePixels * sizeof(std::uint16_t) +
-      kWorkspaceTileCapacity * sizeof(TileRevisionPublication) +
       vector_v2::kTilePixels * sizeof(std::uint16_t) +
 #endif
       (vector_v2::kTileProducerPixels + kLiveRegionScratchPixels) * sizeof(std::uint16_t) +
@@ -1292,81 +494,21 @@ void run_vector_v2_app() {
   std::optional<std::uint32_t> time_sync_terminal_since;
   bool panning = false;
   Point last_touch{};
-  Point last_canvas_touch{};
   Point toolbar_start{};
   Point toolbar_sum{};
   std::uint32_t toolbar_samples = 0;
   Point pan_start{};
   int pan_start_x = 0;
   int pan_start_y = 0;
-  InkPoint last_ink{};
-  LiveMetrics live_metrics{};
   PanMetrics pan_metrics{};
   std::uint32_t poll_previous_us = now_us();
   std::uint32_t poll_max_us = 0;
   std::uint32_t power_sampled_us = now_us();
   bool button_down = false;
-  ZoomLevel fill_zoom = ZoomLevel::k25Percent;
-  int fill_x = 0;
-  int fill_y = 0;
-  DocumentRevision fill_revision = canvas.current_revision();
-  bool fill_complete = true;
-  FillBaselineTiming fill_timing{};
-  bool fill_measurement_active = false;
-  PendingFillPresentation pending_fill{};
-  vector_v2::IdleRepairPlan repair_plan{};
-  std::size_t repair_cursor = 0;
-  std::size_t repair_steps = 0;
-  std::uint32_t repair_failures = 0;
-  bool repair_planned = false;
-  // Settled-AA idle pass state: one viewport sweep per (view, revision),
-  // fingerprinted so any zoom/origin/revision change restarts the sweep.
-  std::size_t settle_cursor = 0;
-  bool settle_complete = false;
-  std::uint32_t settle_tiles = 0;
-  std::int64_t settle_total_us = 0;
-  std::int64_t settle_max_us = 0;
-  std::uint32_t settle_failures = 0;
-  DocumentRevision settle_pass_revision{};
-  ZoomLevel settle_pass_zoom = ZoomLevel::k25Percent;
-  int settle_pass_x = -1;
-  int settle_pass_y = -1;
-  const auto settle_fingerprint_reset = [&]() {
-    if (settle_pass_zoom == presenter.zoom() && settle_pass_revision == canvas.current_revision() &&
-        settle_pass_x == presenter.level_x() && settle_pass_y == presenter.level_y()) {
-      return;
-    }
-    settle_pass_zoom = presenter.zoom();
-    settle_pass_revision = canvas.current_revision();
-    settle_pass_x = presenter.level_x();
-    settle_pass_y = presenter.level_y();
-    settle_cursor = 0;
-    settle_complete = false;
-    settle_tiles = 0;
-    settle_total_us = 0;
-    settle_max_us = 0;
-    settle_failures = 0;
-  };
   LiftBaselineTiming lift_timing{};
   std::uint32_t next_lift_id = 1U;
-  std::size_t stroke_first_operation = log.operation_count();
-  std::optional<vector_v2::PixelRect> stroke_world_bounds;
-  std::uint32_t stroke_chunks = 0U;
-  std::int64_t stroke_append_us = 0;
-  std::int64_t stroke_append_max_us = 0;
-  vector_v2::InPlaceAppendPhases stroke_phase_max{};
-  vector_v2::InPlaceRetainDrops stroke_drops{};
-  bool stroke_commit_failed = false;
-  // Committed-overlay drain state: world bounds awaiting the exact swap
-  // refresh once the pending range empties, plus per-drain receipts.
-  std::optional<vector_v2::PixelRect> drain_swap_world;
-  std::uint32_t drain_ops = 0U;
-  std::int64_t drain_total_us = 0;
-  std::int64_t drain_max_us = 0;
-  std::uint32_t drain_failures = 0U;
   std::uint32_t lift_reports_dropped = 0U;
   PendingStrokeReport stroke_report{};
-  bool history_chrome_dirty = false;
   std::uint32_t autosave_checkpoint_retry_us = 0U;
   std::uint8_t background_ticks = 0U;
 
@@ -1377,55 +519,11 @@ void run_vector_v2_app() {
     // composes exposed strips without the pending overlay, so the canvas must
     // reach authority before the first pan present.
     if (vector_v2::pending_operation_count(log, canvas) != 0U) {
-      const std::int64_t boundary_started = esp_timer_get_time();
-      std::uint32_t boundary_ops = 0U;
-      while (vector_v2::pending_operation_count(log, canvas) != 0U) {
-        if (!vector_v2::absorb_pending_operation(
-                 log, canvas, workspace, current_priority_view(presenter),
-                 {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs})
-                 .has_value()) {
-          break;
-        }
-        ++boundary_ops;
-      }
-      drain_swap_world.reset();
-      std::printf("TINYDRAW_LIVE_DRAIN_BOUNDARY site=pan ops=%lu wall_us=%lld pending=%lu\n",
-                  static_cast<unsigned long>(boundary_ops),
-                  static_cast<long long>(esp_timer_get_time() - boundary_started),
-                  static_cast<unsigned long>(vector_v2::pending_operation_count(log, canvas)));
+      static_cast<void>(background.drain_boundary(BackgroundDrainBoundary::kPan));
     }
     pan_start = start;
     pan_start_x = presenter.level_x();
     pan_start_y = presenter.level_y();
-  };
-
-  const auto drain_history_boundary = [&] {
-    const std::int64_t started = esp_timer_get_time();
-    std::uint32_t operations = 0U;
-    while (vector_v2::pending_operation_count(log, canvas) != 0U) {
-      if (!vector_v2::absorb_pending_operation(
-               log, canvas, workspace, current_priority_view(presenter),
-               {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs})
-               .has_value()) {
-        break;
-      }
-      ++operations;
-    }
-    const bool lockstep = log.current_revision() == canvas.current_revision();
-    std::printf(
-        "TINYDRAW_LIVE_DRAIN_BOUNDARY site=history ops=%lu wall_us=%lld pending=%lu "
-        "lockstep=%u\n",
-        static_cast<unsigned long>(operations),
-        static_cast<long long>(esp_timer_get_time() - started),
-        static_cast<unsigned long>(vector_v2::pending_operation_count(log, canvas)), lockstep);
-    if (lockstep) {
-      drain_swap_world.reset();
-      drain_ops = 0U;
-      drain_total_us = 0;
-      drain_max_us = 0;
-      drain_failures = 0U;
-    }
-    return lockstep;
   };
 
   for (;;) {
@@ -1505,8 +603,6 @@ void run_vector_v2_app() {
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
         print_live_ledger("zoom");
 #endif
-        static_cast<void>(autosave.submit({.kind = vector_v2::JournalChangeKind::kState}, log,
-                                          current_journal_state()));
       }
     }
 
@@ -1551,8 +647,8 @@ void run_vector_v2_app() {
           minimap_pressed = true;
           toolbar_start = point;
           begin_pan(point);
-          pan_metrics.include(presenter.pan_minimap_from(pan_start_x, pan_start_y, pan_start, point,
-                                                         chrome, event_us));
+          pan_metrics.include(
+              presenter.pan_minimap_from(pan_start_x, pan_start_y, point, chrome, event_us));
         } else if (vector_v2::chrome_minimap_dock_drag_candidate({point.x, point.y}, chrome)) {
           // This physical finger zone overlaps the size/document buttons.
           // Preserve a stationary toolbar tap, but let deliberate movement
@@ -1577,41 +673,22 @@ void run_vector_v2_app() {
         } else if (chrome.tool == vector_v2::ChromeTool::kPan) {
           begin_pan(point);
         } else {
-          ink_config.size = vector_v2::brush_size(chrome.size);
-          ink.set_config(ink_config);
-          last_canvas_touch = point;
-          last_ink = ink.begin({.x = point.x, .y = point.y, .timestamp_us = event_us});
           const OperationTool tool = chrome.tool == vector_v2::ChromeTool::kErase
                                          ? OperationTool::kEraser
                                          : OperationTool::kPen;
           const std::uint16_t color =
               tool == OperationTool::kEraser ? 0xFFFFU : vector_v2::selected_color(chrome);
-          const vector_v2::OperationPoint begin_point = presenter.operation_point(last_ink);
-          stroke_first_operation = log.operation_count();
-          const std::uint16_t gesture_id = next_gesture_id++;
-          if (next_gesture_id == 0U) {
-            next_gesture_id = 1U;
+          const std::uint16_t gesture_id = next_gesture++;
+          if (next_gesture == 0U) {
+            next_gesture = 1U;
           }
-          stroke_world_bounds.reset();
-          stroke_chunks = 0U;
-          stroke_append_us = 0;
-          stroke_append_max_us = 0;
-          stroke_phase_max = {};
-          stroke_drops = {};
-          stroke_commit_failed = false;
-          if (!builder.begin(tool, color, gesture_id, begin_point)) {
-            print_stroke_rejected("begin", builder, begin_point);
-            ink.end();
-          } else {
-            ribbon.reset();
-            static_cast<void>(ribbon.append(last_ink, true));
-            live_metrics.include(presenter.show_start(last_ink, color, chrome, event_us));
-          }
+          static_cast<void>(stroke.begin(point, event_us, vector_v2::brush_size(chrome.size), tool,
+                                         color, gesture_id, chrome));
         }
       } else if (minimap_pressed && (point.x != last_touch.x || point.y != last_touch.y)) {
         last_touch = point;
-        pan_metrics.include(presenter.pan_minimap_from(pan_start_x, pan_start_y, pan_start, point,
-                                                       chrome, event_us));
+        pan_metrics.include(
+            presenter.pan_minimap_from(pan_start_x, pan_start_y, point, chrome, event_us));
       } else if (minimap_dock_candidate && (point.x != last_touch.x || point.y != last_touch.y)) {
         if (vector_v2::chrome_promotes_minimap_dock_drag({toolbar_start.x, toolbar_start.y},
                                                          {point.x, point.y}, chrome)) {
@@ -1621,8 +698,8 @@ void run_vector_v2_app() {
           minimap_pressed = true;
           begin_pan(toolbar_start);
           last_touch = point;
-          pan_metrics.include(presenter.pan_minimap_from(pan_start_x, pan_start_y, pan_start, point,
-                                                         chrome, event_us));
+          pan_metrics.include(
+              presenter.pan_minimap_from(pan_start_x, pan_start_y, point, chrome, event_us));
         } else {
           toolbar_sum.x += point.x;
           toolbar_sum.y += point.y;
@@ -1649,51 +726,15 @@ void run_vector_v2_app() {
         const auto timing =
             presenter.pan_from(pan_start_x, pan_start_y, pan_start, point, chrome, event_us);
         pan_metrics.include(timing);
-      } else if (ink.active() && (point.x != last_touch.x || point.y != last_touch.y)) {
-        const auto clipped = vector_v2::clip_canvas_segment({last_touch.x, last_touch.y},
-                                                            {point.x, point.y}, chrome);
-        const auto canvas_point = clipped.has_value() ? std::optional{Point{clipped->x, clipped->y}}
-                                                      : std::optional<Point>{};
+      } else if (stroke.active() && (point.x != last_touch.x || point.y != last_touch.y)) {
         last_touch = point;
-        if (canvas_point.has_value()) {
-          last_canvas_touch = *canvas_point;
-          last_ink =
-              ink.update({.x = canvas_point->x, .y = canvas_point->y, .timestamp_us = event_us});
-          const vector_v2::OperationPoint add_point = presenter.operation_point(last_ink);
-          const std::uint16_t color = chrome.tool == vector_v2::ChromeTool::kErase
-                                          ? 0xFFFFU
-                                          : vector_v2::selected_color(chrome);
-          const auto move = vector_v2::process_live_ink_move(
-              ribbon, builder, last_ink, add_point, last_canvas_touch, event_us,
-              [&](const RibbonUpdate& update, std::uint32_t visual_event_us) {
-                const auto timing = presenter.show_update(update, color, chrome, visual_event_us);
-                live_metrics.include(timing);
-                return timing.passed;
-              },
-              [&] {
-                return commit_ready_chunk(builder, log, canvas, workspace, presenter,
-                                          stroke_world_bounds, stroke_chunks, stroke_append_us,
-                                          stroke_append_max_us, stroke_phase_max, stroke_drops);
-              });
-          const ChainedOperationStatus add_status = move.status;
-          stroke_commit_failed = move.commit_failed;
-          if (add_status != ChainedOperationStatus::kAccepted) {
-            // Accepted streaming policy: chunks already committed stay in
-            // the document like physical ink; only the uncommitted tail of
-            // the gesture is discarded on capacity rejection.
-            if (stroke_commit_failed) {
-              std::printf("TINYDRAW_STROKE_REJECTED site=commit reason=document_capacity\n");
-              std::fflush(stdout);
-            } else {
-              print_stroke_rejected("add", builder, add_point);
-            }
-            history_chrome_dirty = sync_history_controls(chrome, log) || history_chrome_dirty;
-            builder.cancel();
-            ribbon.reset();
-            ink.end();
-            // Restore authority beneath the discarded transient tail.
-            const auto rejected_refresh = presenter.refresh(chrome, event_us);
-            history_chrome_dirty = history_chrome_dirty && !rejected_refresh.passed;
+        const LiveStrokeMoveResult move = stroke.move(point, event_us, chrome);
+        if (move.rejected) {
+          if (sync_history_controls(chrome, log)) {
+            background.mark_history_controls_dirty();
+          }
+          if (move.rejection_refresh.passed) {
+            background.history_controls_presented();
           }
         }
       }
@@ -1710,8 +751,6 @@ void run_vector_v2_app() {
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
         print_live_ledger("minimap_pointer_end");
 #endif
-        static_cast<void>(autosave.submit({.kind = vector_v2::JournalChangeKind::kState}, log,
-                                          current_journal_state()));
         std::fflush(stdout);
       } else if (toolbar_pressed) {
         toolbar_pressed = false;
@@ -1724,33 +763,30 @@ void run_vector_v2_app() {
           const bool history_action =
               action == vector_v2::ChromeAction::kUndo || action == vector_v2::ChromeAction::kRedo;
           const vector_v2::AuthorityReadView authority_before = log.read_view();
-          const vector_v2::JournalState journal_before = current_journal_state();
           if (action == vector_v2::ChromeAction::kExport && autosave.ready() &&
               autosave.checkpoint_required()) {
-            static_cast<void>(autosave.submit_checkpoint(log, journal_before));
+            static_cast<void>(autosave.submit_checkpoint(log));
           }
           const bool save_ready = action != vector_v2::ChromeAction::kExport || !autosave.ready() ||
                                   autosave.flush(5'000U);
-          const bool boundary_ready = save_ready && (!history_action || drain_history_boundary());
+          const bool boundary_ready =
+              save_ready &&
+              (!history_action || background.drain_boundary(BackgroundDrainBoundary::kHistory));
           const bool applied = boundary_ready && chrome_controller.apply(action, tap);
           if (applied) {
             const vector_v2::AuthorityReadView authority_after = log.read_view();
-            const vector_v2::JournalState journal_after = current_journal_state();
             if (authority_after != authority_before) {
-              const vector_v2::JournalChangeKind kind =
-                  action == vector_v2::ChromeAction::kConfirmNewDrawing
-                      ? vector_v2::JournalChangeKind::kReset
-                      : vector_v2::JournalChangeKind::kHistory;
-              static_cast<void>(autosave.submit({.kind = kind}, log, journal_after));
-            } else if (journal_after != journal_before) {
-              static_cast<void>(autosave.submit({.kind = vector_v2::JournalChangeKind::kState}, log,
-                                                journal_after));
+              if (action == vector_v2::ChromeAction::kConfirmNewDrawing) {
+                static_cast<void>(autosave.submit_checkpoint(log));
+              } else {
+                static_cast<void>(
+                    autosave.submit({.kind = vector_v2::JournalChangeKind::kUpdate}, log));
+              }
             }
           }
           if (applied &&
               (history_action || action == vector_v2::ChromeAction::kConfirmNewDrawing)) {
-            history_chrome_dirty = false;
-            drain_swap_world.reset();
+            background.reset_document_state();
           }
         }
       } else if (panning) {
@@ -1759,82 +795,46 @@ void run_vector_v2_app() {
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
         print_live_ledger("pan_end");
 #endif
-        static_cast<void>(autosave.submit({.kind = vector_v2::JournalChangeKind::kState}, log,
-                                          current_journal_state()));
         std::fflush(stdout);
-      } else if (ink.active()) {
+      } else if (stroke.active()) {
         LiftBaselineTiming measured_lift{
             .id = next_lift_id++,
             .detected_us = esp_timer_get_time(),
         };
         const std::uint32_t finished_us = event_us;
-        const std::int64_t finish_preview_started = esp_timer_get_time();
-        last_ink = ink.finish(
-            {.x = last_canvas_touch.x, .y = last_canvas_touch.y, .timestamp_us = finished_us});
-        const std::uint16_t color = chrome.tool == vector_v2::ChromeTool::kErase
-                                        ? 0xFFFFU
-                                        : vector_v2::selected_color(chrome);
-        live_metrics.include(
-            presenter.show_update(ribbon.finish(last_ink), color, chrome, finished_us));
-        measured_lift.finish_preview_us = esp_timer_get_time() - finish_preview_started;
-
-        const std::int64_t builder_finish_started = esp_timer_get_time();
-        ChainedOperationStatus finish_status = builder.finish(presenter.operation_point(last_ink));
-        measured_lift.builder_finish_us = esp_timer_get_time() - builder_finish_started;
-        while (finish_status == ChainedOperationStatus::kChunkReady ||
-               finish_status == ChainedOperationStatus::kFinalChunkReady) {
-          const auto continued = commit_ready_chunk(
-              builder, log, canvas, workspace, presenter, stroke_world_bounds, stroke_chunks,
-              stroke_append_us, stroke_append_max_us, stroke_phase_max, stroke_drops);
-          if (!continued.has_value()) {
-            stroke_commit_failed = true;
-            finish_status = ChainedOperationStatus::kRejected;
-            break;
-          }
-          finish_status = *continued;
-        }
-        measured_lift.committed = finish_status == ChainedOperationStatus::kComplete;
-        measured_lift.commit_failed = stroke_commit_failed;
-        measured_lift.chunks = stroke_chunks;
-        measured_lift.append_us = stroke_append_us;
-        measured_lift.append_max_us = stroke_append_max_us;
-        if (stroke_world_bounds.has_value()) {
+        const LiveStrokeFinishResult finished = stroke.finish(finished_us, chrome);
+        measured_lift.finish_preview_us = finished.finish_preview_us;
+        measured_lift.builder_finish_us = finished.builder_finish_us;
+        measured_lift.committed = finished.committed;
+        measured_lift.commit_failed = finished.commit_failed;
+        measured_lift.chunks = finished.chunks;
+        measured_lift.append_us = finished.append_us;
+        measured_lift.append_max_us = finished.append_max_us;
+        if (finished.world_bounds.has_value()) {
           measured_lift.refresh_level_bounds =
-              vector_v2::operation_level_bounds(*stroke_world_bounds, presenter.zoom());
+              vector_v2::operation_level_bounds(*finished.world_bounds, presenter.zoom());
         }
-        if (finish_status == ChainedOperationStatus::kRejected) {
-          if (stroke_commit_failed) {
-            std::printf("TINYDRAW_STROKE_REJECTED site=commit reason=document_capacity\n");
-            std::fflush(stdout);
-          } else {
-            print_stroke_rejected("finish", builder, presenter.operation_point(last_ink));
+        if (sync_history_controls(chrome, log)) {
+          background.mark_history_controls_dirty();
+        }
+        measured_lift.refresh = finished.refresh;
+        if (!finished.committed) {
+          if (measured_lift.refresh.passed) {
+            background.history_controls_presented();
           }
-        }
-        history_chrome_dirty = sync_history_controls(chrome, log) || history_chrome_dirty;
-        builder.cancel();
-        ribbon.reset();
-        const std::int64_t refresh_started = esp_timer_get_time();
-        if (finish_status == ChainedOperationStatus::kRejected) {
-          // A rejected finish leaves uncommitted preview ink beyond the
-          // committed bounds; only a full repaint clears it. The patched
-          // compose keeps already-committed pending chunks visible.
-          measured_lift.refresh = presenter.refresh(chrome, finished_us);
-          history_chrome_dirty = history_chrome_dirty && !measured_lift.refresh.passed;
-        } else if (stroke_world_bounds.has_value()) {
+        } else if (finished.world_bounds.has_value()) {
           // Committed-overlay lift (design §5.4): no synchronous refresh.
           // Glass keeps the preview; the idle drain absorbs the pending
           // range and then runs one exact swap refresh over the union of
           // undrained stroke bounds.
-          include_bounds(drain_swap_world, *stroke_world_bounds);
-          measured_lift.refresh = {};
-          measured_lift.refresh.passed = true;
+          background.note_committed_bounds(*finished.world_bounds);
         }
-        measured_lift.refresh_wall_us = esp_timer_get_time() - refresh_started;
-        if (log.operation_count() > stroke_first_operation) {
+        measured_lift.refresh_wall_us = finished.refresh_wall_us;
+        if (log.operation_count() > finished.first_operation) {
           const std::int64_t autosave_started = esp_timer_get_time();
           const bool queued = autosave.submit({.kind = vector_v2::JournalChangeKind::kAppendStroke,
-                                               .first_operation = stroke_first_operation},
-                                              log, current_journal_state());
+                                               .first_operation = finished.first_operation},
+                                              log);
           measured_lift.stroke_logging_us = esp_timer_get_time() - autosave_started;
           if (!queued) {
             std::printf("TINYDRAW_AUTOSAVE_QUEUE_FAIL site=stroke generation=%lu\n",
@@ -1852,11 +852,11 @@ void run_vector_v2_app() {
             .append_us = measured_lift.append_us,
             .append_max_us = measured_lift.append_max_us,
             .refresh = measured_lift.refresh,
-            .metrics = live_metrics,
+            .metrics = finished.metrics,
             .poll_max_us = poll_max_us,
             .touch = touch_metrics,
-            .phase_max = stroke_phase_max,
-            .drops = stroke_drops,
+            .phase_max = finished.phase_max,
+            .drops = finished.drops,
             .chunks = measured_lift.chunks,
             .free_psram = heap_caps_get_free_size(kExternalCaps),
             .largest_psram = heap_caps_get_largest_free_block(kExternalCaps),
@@ -1867,7 +867,6 @@ void run_vector_v2_app() {
         };
         measured_lift.pending = true;
         lift_timing = measured_lift;
-        live_metrics = {};
         poll_max_us = 0;
       }
     }
@@ -1879,7 +878,7 @@ void run_vector_v2_app() {
         autosave.checkpoint_required() &&
         static_cast<std::int32_t>(loop_us - autosave_checkpoint_retry_us) >= 0) {
       const std::int64_t checkpoint_started = esp_timer_get_time();
-      const bool queued = autosave.submit_checkpoint(log, current_journal_state());
+      const bool queued = autosave.submit_checkpoint(log);
       std::printf("TINYDRAW_AUTOSAVE_CHECKPOINT queued=%u encode_us=%lld generation=%lu\n", queued,
                   static_cast<long long>(esp_timer_get_time() - checkpoint_started),
                   static_cast<unsigned long>(log.current_revision().value));
@@ -1889,360 +888,18 @@ void run_vector_v2_app() {
       }
     }
 
-    const bool fill_view_available =
-        presenter.zoom() != ZoomLevel::k25Percent && chrome.popup == vector_v2::ChromePopup::kNone;
-    // The commit tick already performed bounded immediate publication and its
-    // display update. Defer cold replay until input has had another poll.
-    const bool fill_allowed = !pressed && fill_view_available && !lift_timing.pending;
-    if (!pressed) {
-      settle_fingerprint_reset();
-    }
-    // Committed-overlay idle drain: absorbing pending authority outranks
-    // fill and repair — fill tiles produced at a stale revision would be
-    // invalidated by the very next absorption anyway. One operation per
-    // slice; the exact swap refresh runs when the range empties.
-    // Drain only on truly idle iterations: a slice must never ride an
-    // iteration that just consumed input (the glass receipt showed the
-    // first absorption inside the lift iteration as a 29 ms unattributed
-    // tail). While events flow, the high-water fallback bounds the range.
-    const std::size_t idle_pending_ops = !pressed && !panning && !sample_ready
-                                             ? vector_v2::pending_operation_count(log, canvas)
-                                             : 0U;
-    // After repeated absorb failures the drain stands down: the overlay keeps
-    // glass exact indefinitely and the failure counter surfaces in receipts.
-    if (idle_pending_ops != 0U && drain_failures < 16U) {
-      const std::int64_t absorb_started = esp_timer_get_time();
-      const auto absorbed = vector_v2::absorb_pending_operation(
-          log, canvas, workspace, current_priority_view(presenter),
-          {.now_us = &esp_timer_get_time, .budget_us = kIdleAbsorbBudgetUs});
-      const std::int64_t absorb_us = esp_timer_get_time() - absorb_started;
-      if (absorbed.has_value()) {
-        ++drain_ops;
-        drain_total_us += absorb_us;
-        drain_max_us = std::max(drain_max_us, absorb_us);
-        if (vector_v2::pending_operation_count(log, canvas) == 0U) {
-          LivePresentationTiming swap{};
-          swap.passed = true;
-          std::int64_t swap_wall_us = 0;
-          if (drain_swap_world.has_value()) {
-            const std::int64_t swap_started = esp_timer_get_time();
-            swap = presenter.refresh_region(
-                vector_v2::operation_level_bounds(*drain_swap_world, presenter.zoom()), chrome,
-                loop_us);
-            swap_wall_us = esp_timer_get_time() - swap_started;
-            drain_swap_world.reset();
-          }
-          if (history_chrome_dirty && swap.passed) {
-            const auto dock = present_history_controls(presenter, chrome, loop_us);
-            print_presentation("history-dock", presenter, dock);
-            history_chrome_dirty = !dock.passed;
-          }
-          std::printf(
-              "TINYDRAW_LIVE_DRAIN ops=%lu total_us=%lld max_us=%lld failures=%lu "
-              "swap_wall_us=%lld swap_pass=%u\n",
-              static_cast<unsigned long>(drain_ops), static_cast<long long>(drain_total_us),
-              static_cast<long long>(drain_max_us), static_cast<unsigned long>(drain_failures),
-              static_cast<long long>(swap_wall_us), swap.passed);
-          std::fflush(stdout);
+    const BackgroundSliceResult background_result = background.run_slice({
+        .loop_us = loop_us,
+        .pressed = pressed,
+        .panning = panning,
+        .sample_ready = sample_ready,
+        .lift_report_pending = lift_timing.pending,
+    });
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-          print_live_ledger("drain");
+    if (background_result.drain_completed) {
+      print_live_ledger("drain");
+    }
 #endif
-          drain_ops = 0U;
-          drain_total_us = 0;
-          drain_max_us = 0;
-          drain_failures = 0U;
-        }
-      } else {
-        ++drain_failures;
-      }
-    }
-    if (!fill_view_available && fill_measurement_active) {
-      print_fill_baseline("paused", fill_zoom, fill_x, fill_y, fill_revision, fill_timing);
-      fill_timing.reset();
-      fill_measurement_active = false;
-    }
-    if (fill_allowed && idle_pending_ops == 0U) {
-      const vector_v2::ViewRequest fill_view{
-          .zoom = presenter.zoom(),
-          .level_pixels = {presenter.level_x(), presenter.level_y(),
-                           presenter.level_x() + vector_v2::kOverviewWidth,
-                           presenter.level_y() + vector_v2::kOverviewHeight},
-      };
-      const bool fill_view_changed =
-          fill_zoom != fill_view.zoom || fill_x != fill_view.level_pixels.x0 ||
-          fill_y != fill_view.level_pixels.y0 || fill_revision != canvas.current_revision();
-      if (fill_view_changed) {
-        if (fill_measurement_active) {
-          print_fill_baseline("superseded", fill_zoom, fill_x, fill_y, fill_revision, fill_timing);
-        }
-        fill_zoom = fill_view.zoom;
-        fill_x = fill_view.level_pixels.x0;
-        fill_y = fill_view.level_pixels.y0;
-        fill_revision = canvas.current_revision();
-        fill_complete = false;
-        fill_timing.reset();
-        fill_timing.started_us = esp_timer_get_time();
-        fill_measurement_active = true;
-        pending_fill = {};
-        repair_planned = false;
-        repair_failures = 0;
-        settle_cursor = 0;
-        settle_complete = false;
-        settle_tiles = 0;
-        settle_total_us = 0;
-        settle_max_us = 0;
-        settle_failures = 0;
-      }
-      if (pending_fill.pending) {
-        const bool still_current = pending_fill.zoom == fill_view.zoom &&
-                                   pending_fill.x == fill_view.level_pixels.x0 &&
-                                   pending_fill.y == fill_view.level_pixels.y0;
-        if (!still_current) {
-          pending_fill = {};
-        } else {
-          const std::int64_t present_started = esp_timer_get_time();
-          const auto presentation = presenter.refresh_region(pending_fill.level_bounds, chrome);
-          const std::int64_t present_us = esp_timer_get_time() - present_started;
-          fill_timing.present_total_us += present_us;
-          fill_timing.present_max_us = std::max(fill_timing.present_max_us, present_us);
-          fill_timing.presentation_failures += !presentation.passed;
-          if (presentation.passed) {
-            pending_fill = {};
-          }
-        }
-      } else if (!fill_complete) {
-        if (!fill_measurement_active) {
-          fill_timing.reset();
-          fill_timing.started_us = esp_timer_get_time();
-          fill_measurement_active = true;
-        }
-        const std::int64_t fill_tick_started = esp_timer_get_time();
-        // Fill the slice up to a deadline instead of taking one bounded
-        // producer step per tick: the per-step work budget under-predicts
-        // masked-replay cost by an order of magnitude, so single-step ticks
-        // waste most of the slice on fixed loop overhead and idle pacing.
-        // Resumable produce_next keeps each inner step bounded, so the worst
-        // tick stays under the 15 ms input-poll alarm.
-        do {
-          const std::int64_t compute_started = esp_timer_get_time();
-          const auto step = producer.produce_next(fill_view);
-          const std::int64_t compute_us = esp_timer_get_time() - compute_started;
-          ++fill_timing.steps;
-          fill_timing.compute_total_us += compute_us;
-          fill_timing.compute_max_us = std::max(fill_timing.compute_max_us, compute_us);
-          if (!step.has_value()) {
-            ++fill_timing.producer_failures;
-            break;
-          }
-          if (step->tiles_published != 0U) {
-            pending_fill = {.level_bounds = step->level_bounds,
-                            .zoom = fill_view.zoom,
-                            .x = fill_view.level_pixels.x0,
-                            .y = fill_view.level_pixels.y0,
-                            .pending = true};
-          }
-          fill_complete = step->complete;
-        } while (!fill_complete && !pending_fill.pending &&
-                 esp_timer_get_time() - fill_tick_started < kColdFillSliceDeadlineUs);
-        fill_timing.tick_max_us =
-            std::max(fill_timing.tick_max_us, esp_timer_get_time() - fill_tick_started);
-        // fill_complete only becomes true through a successful producer step.
-        if (fill_complete && !pending_fill.pending) {
-          print_fill_baseline("complete", fill_zoom, fill_x, fill_y, fill_revision, fill_timing);
-          std::printf("TINYDRAW_LIVE_FILL_DONE zoom=%s x=%d y=%d revision=%lu\n",
-                      zoom_name(fill_zoom), fill_x, fill_y,
-                      static_cast<unsigned long>(fill_revision.value));
-          fill_measurement_active = false;
-        }
-      } else if (!pending_fill.pending && fill_measurement_active) {
-        print_fill_baseline("complete", fill_zoom, fill_x, fill_y, fill_revision, fill_timing);
-        std::printf("TINYDRAW_LIVE_FILL_DONE zoom=%s x=%d y=%d revision=%lu\n",
-                    zoom_name(fill_zoom), fill_x, fill_y,
-                    static_cast<unsigned long>(fill_revision.value));
-        fill_measurement_active = false;
-      } else if (!repair_planned || repair_cursor < repair_plan.count) {
-        // Idle cache repair: the visible fill is complete and input is
-        // quiet, so pre-produce the views a pan or zoom return will hit
-        // next. Publications never present from here; they only make future
-        // composition sharp. Bounded by the same slice deadline as fill.
-        if (!repair_planned) {
-          repair_plan = vector_v2::plan_idle_repair(fill_view, canvas.recent_views());
-          repair_cursor = 0;
-          repair_steps = 0;
-          repair_planned = true;
-        }
-        const std::int64_t repair_tick_started = esp_timer_get_time();
-        while (repair_cursor < repair_plan.count &&
-               esp_timer_get_time() - repair_tick_started < kColdFillSliceDeadlineUs) {
-          // The level sweep stops when the pool saturates: past that point
-          // every publication evicts warmer tiles (dense documents exceed
-          // pool capacity at 100%), which churned instead of repairing.
-          if (repair_cursor >= repair_plan.grid_start &&
-              canvas.resident_raw_tiles() + kRepairSaturationHeadroomTiles >=
-                  canvas.slot_capacity()) {
-            repair_cursor = repair_plan.count;
-            break;
-          }
-          const auto step = producer.produce_next(repair_plan.views[repair_cursor]);
-          if (!step.has_value()) {
-            // Producer failure: replan and retry on the next quiet slice
-            // (leaving the cursor exhausted silently disabled repair for
-            // this camera). Three failures for the same view/revision mean
-            // something structural; stop until the fingerprint changes.
-            ++repair_failures;
-            if (repair_failures < 3U) {
-              repair_planned = false;
-            } else {
-              repair_cursor = repair_plan.count;
-            }
-            std::printf("TINYDRAW_LIVE_REPAIR_ABANDON view=%u failures=%u\n",
-                        static_cast<unsigned>(repair_cursor),
-                        static_cast<unsigned>(repair_failures));
-            break;
-          }
-          ++repair_steps;
-          if (step->complete) {
-            ++repair_cursor;
-          }
-        }
-        if (repair_planned && repair_cursor >= repair_plan.count && repair_plan.count != 0U) {
-          std::printf("TINYDRAW_LIVE_REPAIR views=%u steps=%u\n",
-                      static_cast<unsigned>(repair_plan.count),
-                      static_cast<unsigned>(repair_steps));
-        }
-      } else if (!settle_complete && presenter.zoom() != ZoomLevel::k25Percent) {
-        // Settled-AA pass (ship contract §4): with drain, fill, and repair
-        // quiet, re-render one visible tile per slice with analytic
-        // coverage and republish it at the settled quality tier. The live
-        // path stays hard-edged; fresh ink demotes tiles back to immediate
-        // quality so they re-settle on the next quiet stretch.
-        const int first_column = presenter.level_x() / vector_v2::kTileWidth;
-        const int last_column =
-            (presenter.level_x() + vector_v2::kOverviewWidth - 1) / vector_v2::kTileWidth;
-        const int first_row = presenter.level_y() / vector_v2::kTileHeight;
-        const int last_row =
-            (presenter.level_y() + vector_v2::kOverviewHeight - 1) / vector_v2::kTileHeight;
-        const std::size_t columns = static_cast<std::size_t>(last_column - first_column + 1);
-        const std::size_t total = columns * static_cast<std::size_t>(last_row - first_row + 1);
-        constexpr std::int64_t kSettleSliceBudgetUs = 8'000;
-        const std::int64_t slice_started = esp_timer_get_time();
-        std::optional<vector_v2::PixelRect> batch_bounds;
-        while (settle_cursor < total &&
-               esp_timer_get_time() - slice_started < kSettleSliceBudgetUs) {
-          const vector_v2::TileKey key{
-              presenter.zoom(),
-              static_cast<std::uint16_t>(first_column + static_cast<int>(settle_cursor % columns)),
-              static_cast<std::uint16_t>(first_row + static_cast<int>(settle_cursor / columns))};
-          ++settle_cursor;
-          const auto source = canvas.lookup(key);
-          if (!source.has_value() || source->kind != vector_v2::SourceKind::kTileSlot ||
-              source->identity.quality >= vector_v2::MaterializationQuality::kSettled) {
-            continue;
-          }
-          const std::int64_t tile_started = esp_timer_get_time();
-          vector_v2::SettledTileStats tile_stats{};
-          const vector_v2::SettledTileWorkspace settle_workspace{
-              .operation_alpha = std::span(storage.settle_op_alpha, vector_v2::kTilePixels),
-              .accumulated_alpha = std::span(storage.settle_accumulated, vector_v2::kTilePixels),
-              .red = std::span(storage.settle_red, vector_v2::kTilePixels),
-              .green = std::span(storage.settle_green, vector_v2::kTilePixels),
-              .blue = std::span(storage.settle_blue, vector_v2::kTilePixels),
-          };
-          const auto pixels = std::span(storage.settle_pixels, vector_v2::kTilePixels);
-          if (vector_v2::render_settled_tile(log, key, settle_workspace, pixels, &tile_stats) &&
-              canvas
-                  .publish_tile(key, canvas.current_revision(),
-                                vector_v2::MaterializationQuality::kSettled, pixels)
-                  .has_value()) {
-            const std::int64_t tile_us = esp_timer_get_time() - tile_started;
-            include_bounds(batch_bounds, vector_v2::tile_pixel_bounds(key));
-            ++settle_tiles;
-            settle_total_us += tile_us;
-            settle_max_us = std::max(settle_max_us, tile_us);
-          } else {
-            ++settle_failures;
-          }
-        }
-        if (batch_bounds.has_value()) {
-          // One present per settled batch instead of one per tile.
-          static_cast<void>(presenter.refresh_region(*batch_bounds, chrome, loop_us));
-        }
-        if (settle_cursor >= total) {
-          settle_complete = true;
-          if (settle_tiles != 0U || settle_failures != 0U) {
-            std::printf(
-                "TINYDRAW_LIVE_SETTLE zoom=%s tiles=%lu total_us=%lld max_tile_us=%lld "
-                "failures=%lu\n",
-                zoom_name(presenter.zoom()), static_cast<unsigned long>(settle_tiles),
-                static_cast<long long>(settle_total_us), static_cast<long long>(settle_max_us),
-                static_cast<unsigned long>(settle_failures));
-            std::fflush(stdout);
-          }
-        }
-      }
-    } else if (!pressed && !panning && !lift_timing.pending && !settle_complete &&
-               presenter.zoom() == ZoomLevel::k25Percent &&
-               chrome.popup == vector_v2::ChromePopup::kNone &&
-               vector_v2::pending_operation_count(log, canvas) == 0U) {
-      // The 25% idle settle runs outside the fill chain (25% has no cold
-      // fill by design) and settles PRESENTATION pixels only: the overview
-      // is replay authority and must stay hard-edged. A refresh or new ink
-      // resets the pass via the fill-view fingerprint.
-      constexpr std::int64_t kSettleSliceBudgetUs = 8'000;
-      const std::size_t columns =
-          (static_cast<std::size_t>(vector_v2::kOverviewWidth) + vector_v2::kTileWidth - 1U) /
-          vector_v2::kTileWidth;
-      const std::size_t rows =
-          (static_cast<std::size_t>(vector_v2::kOverviewHeight) + vector_v2::kTileHeight - 1U) /
-          vector_v2::kTileHeight;
-      const std::size_t total = columns * rows;
-      const std::int64_t slice_started = esp_timer_get_time();
-      const vector_v2::SettledTileWorkspace settle_workspace{
-          .operation_alpha = std::span(storage.settle_op_alpha, vector_v2::kTilePixels),
-          .accumulated_alpha = std::span(storage.settle_accumulated, vector_v2::kTilePixels),
-          .red = std::span(storage.settle_red, vector_v2::kTilePixels),
-          .green = std::span(storage.settle_green, vector_v2::kTilePixels),
-          .blue = std::span(storage.settle_blue, vector_v2::kTilePixels),
-      };
-      const auto pixels = std::span(storage.settle_pixels, vector_v2::kTilePixels);
-      std::optional<vector_v2::PixelRect> batch_bounds;
-      while (settle_cursor < total && esp_timer_get_time() - slice_started < kSettleSliceBudgetUs) {
-        const int column = static_cast<int>(settle_cursor % columns);
-        const int row = static_cast<int>(settle_cursor / columns);
-        ++settle_cursor;
-        const vector_v2::PixelRect window{
-            column * vector_v2::kTileWidth, row * vector_v2::kTileHeight,
-            std::min((column + 1) * vector_v2::kTileWidth, vector_v2::kOverviewWidth),
-            std::min((row + 1) * vector_v2::kTileHeight, vector_v2::kOverviewHeight)};
-        const std::int64_t tile_started = esp_timer_get_time();
-        vector_v2::SettledTileStats tile_stats{};
-        if (vector_v2::render_settled_window(log, ZoomLevel::k25Percent, window, settle_workspace,
-                                             pixels, &tile_stats) &&
-            presenter.stage_settled_pixels(window, pixels, window.x1 - window.x0)) {
-          const std::int64_t tile_us = esp_timer_get_time() - tile_started;
-          include_bounds(batch_bounds, window);
-          ++settle_tiles;
-          settle_total_us += tile_us;
-          settle_max_us = std::max(settle_max_us, tile_us);
-        } else {
-          ++settle_failures;
-        }
-      }
-      if (batch_bounds.has_value()) {
-        static_cast<void>(presenter.present_frame_region(*batch_bounds, chrome, loop_us));
-      }
-      if (settle_cursor >= total) {
-        settle_complete = true;
-        if (settle_tiles != 0U || settle_failures != 0U) {
-          std::printf(
-              "TINYDRAW_LIVE_SETTLE zoom=25 tiles=%lu total_us=%lld max_tile_us=%lld "
-              "failures=%lu\n",
-              static_cast<unsigned long>(settle_tiles), static_cast<long long>(settle_total_us),
-              static_cast<long long>(settle_max_us), static_cast<unsigned long>(settle_failures));
-          std::fflush(stdout);
-        }
-      }
-    }
     if (lift_timing.pending && stroke_report.pending && idle_before_poll && !pressed) {
       print_stroke(stroke_report);
       std::printf("TINYDRAW_LIVE_STROKE_DONE committed=%u refresh=%u commit_failed=%u\n",
@@ -2257,8 +914,7 @@ void run_vector_v2_app() {
       // it out of the pre-existing stroke poll-gap metric.
       poll_previous_us = now_us();
     }
-    const bool background_busy = fill_allowed && (!fill_complete || pending_fill.pending);
-    if (background_busy) {
+    if (background_result.fill_busy) {
       // Producer calls are bounded input-poll slices. Avoid paying a fixed
       // two-millisecond tax after every slice, but periodically unblock idle.
       if (++background_ticks == 8U) {

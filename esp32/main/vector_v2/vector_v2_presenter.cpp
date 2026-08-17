@@ -55,6 +55,33 @@ vector_v2::PixelRect align_bounds(vector_v2::PixelRect bounds) {
   return bounds;
 }
 
+bool valid_panel_strip(vector_v2::PixelRect bounds, std::span<const std::uint16_t> pixels,
+                       int stride) {
+  const int width = bounds.x1 - bounds.x0;
+  const int height = bounds.y1 - bounds.y0;
+  const bool valid_bounds = width > 0 && height > 0 && bounds.x0 >= 0 && bounds.y0 >= 0 &&
+                            bounds.x1 <= vector_v2::kOverviewWidth &&
+                            bounds.y1 <= vector_v2::kOverviewHeight &&
+                            ((bounds.x0 | bounds.y0 | width | height) & 1) == 0 && stride >= width;
+  const std::size_t required = height > 0 && stride > 0 ? static_cast<std::size_t>(height - 1) *
+                                                                  static_cast<std::size_t>(stride) +
+                                                              static_cast<std::size_t>(width)
+                                                        : 0U;
+  return valid_bounds && pixels.size() >= required;
+}
+
+bool valid_ring_strip(vector_v2::PixelRect bounds, std::span<const std::uint16_t> pixels,
+                      int stride, int shift_x, int shift_y, int area_width, int area_height) {
+  const std::size_t required =
+      area_height > 0 && stride > 0
+          ? static_cast<std::size_t>(area_height - 1) * static_cast<std::size_t>(stride) +
+                static_cast<std::size_t>(area_width)
+          : 0U;
+  return valid_panel_strip(bounds, pixels, stride) && area_width >= bounds.x1 &&
+         area_height >= bounds.y1 && shift_x >= 0 && shift_x < area_width && shift_y >= 0 &&
+         shift_y < area_height && stride >= area_width && pixels.size() >= required;
+}
+
 }  // namespace
 
 const char* presentation_experiment_name() { return "boundary-top-sweep"; }
@@ -65,14 +92,12 @@ TearSignalEdge selected_tear_edge() { return TearSignalEdge::kRising; }
 
 VectorV2Presenter::VectorV2Presenter(vector_v2::MaterializedCanvas& canvas,
                                      vector_v2::NavigationState& navigation,
-                                     vector_v2::DisplayScheduler& scheduler,
                                      Co5300PanelTransport& display,
                                      std::span<std::uint16_t> frame_pixels,
                                      std::span<std::uint16_t> region_pixels,
                                      std::span<std::uint16_t> chrome_cache_pixels)
     : canvas_(canvas),
       navigation_(navigation),
-      scheduler_(scheduler),
       display_(display),
       frame_(frame_pixels),
       region_(region_pixels),
@@ -86,8 +111,7 @@ VectorV2Presenter::VectorV2Presenter(vector_v2::MaterializedCanvas& canvas,
 }
 
 bool VectorV2Presenter::ready() const {
-  return canvas_.ready() && scheduler_.ready() && display_.ready() &&
-         frame_.size() == vector_v2::kOverviewPixels &&
+  return canvas_.ready() && display_.ready() && frame_.size() == vector_v2::kOverviewPixels &&
          region_.size() >= kLiveRegionScratchPixels && chrome_cache_.ready() &&
          renderer_ != nullptr;
 }
@@ -193,7 +217,7 @@ LivePresentationTiming VectorV2Presenter::refresh(const vector_v2::ChromeState& 
   timing.uniform_pixels = stats->uniform_pixels;
   timing.overview_pixels = stats->overview_pixels;
   timing.fallback_pixels = stats->fallback_pixels;
-  timing.resident_tiles = stats->immediate_tiles + stats->settled_tiles + stats->exact_tiles;
+  timing.resident_tiles = stats->immediate_tiles + stats->settled_tiles;
   timing.fallback_tiles = stats->fallback_tiles;
   frame_zoom_ = zoom();
   frame_level_x_ = level_x();
@@ -338,7 +362,7 @@ LivePresentationTiming VectorV2Presenter::compose_and_present(vector_v2::PixelRe
   timing.uniform_pixels = stats->uniform_pixels;
   timing.overview_pixels = stats->overview_pixels;
   timing.fallback_pixels = stats->fallback_pixels;
-  timing.resident_tiles = stats->immediate_tiles + stats->settled_tiles + stats->exact_tiles;
+  timing.resident_tiles = stats->immediate_tiles + stats->settled_tiles;
   timing.fallback_tiles = stats->fallback_tiles;
   return timing;
 }
@@ -466,27 +490,8 @@ LivePresentationTiming VectorV2Presenter::pan_from(int start_x, int start_y, Poi
   return refresh_pan(old_x, old_y, chrome, event_us);
 }
 
-LivePresentationTiming VectorV2Presenter::jump_from_minimap(Point point,
-                                                            const vector_v2::ChromeState& chrome,
-                                                            std::uint32_t event_us) {
-  const int old_x = level_x();
-  const int old_y = level_y();
-  const auto target =
-      vector_v2::chrome_minimap_level_point({point.x, point.y}, chrome_navigation());
-  if (!navigation_.set_origin(target.x - kDefaultNavigationFocus.x,
-                              target.y - kDefaultNavigationFocus.y, kDefaultNavigationFocus)) {
-    return {};
-  }
-  if (level_x() == old_x && level_y() == old_y) {
-    return {.frame_reused = true, .passed = true};
-  }
-  // A tap may jump farther than the reusable ring and does not pass through
-  // the pan boundary drain, so compose a complete overlay-safe frame.
-  return refresh(chrome, event_us);
-}
-
 LivePresentationTiming VectorV2Presenter::pan_minimap_from(int start_x, int start_y,
-                                                           Point start_touch, Point current_touch,
+                                                           Point current_touch,
                                                            const vector_v2::ChromeState& chrome,
                                                            std::uint32_t event_us) {
   const int old_x = level_x();
@@ -497,7 +502,7 @@ LivePresentationTiming VectorV2Presenter::pan_minimap_from(int start_x, int star
   navigation.level_x = start_x;
   navigation.level_y = start_y;
   const auto requested = vector_v2::chrome_minimap_drag_origin(
-      {start_touch.x, start_touch.y}, {current_touch.x, current_touch.y},
+      {current_touch.x, current_touch.y},
       {.x = kDefaultNavigationFocus.x, .y = kDefaultNavigationFocus.y}, navigation);
   if (!navigation_.set_origin(requested.x, requested.y, kDefaultNavigationFocus)) {
     return {};
@@ -567,8 +572,7 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   // Composition-epoch drift is deliberately not part of this identity:
   // same-revision tile content is deterministic, so canvas changes between
   // frames (production, eviction) only affect quality, never correctness.
-  // Revision changes invalidate through the scheduler's require_revision and
-  // the frame writers.
+  // Revision changes invalidate through the frame writers.
   const bool reusable = frame_reusable_ && frame_zoom_ == zoom() && frame_level_x_ == old_x &&
                         frame_level_y_ == old_y && frame_chrome_ == chrome &&
                         std::abs(delta_x) <= kMaximumCachedPanDelta &&
@@ -863,17 +867,9 @@ LivePresentationTiming VectorV2Presenter::present_ring(
   timing.chrome_prepare_us = esp_timer_get_time() - chrome_prepare_started;
   const std::size_t area_pixels =
       static_cast<std::size_t>(frame_ring_bottom_) * vector_v2::kOverviewWidth;
-  scheduler_.require_revision(canvas_.current_revision());
-  const auto sequence = scheduler_.schedule({.revision = canvas_.current_revision(),
-                                             .panel_bounds = band,
-                                             .pixels = frame_.first(area_pixels),
-                                             .stride = vector_v2::kOverviewWidth,
-                                             .source_shift_x = frame_ring_.shift_x,
-                                             .source_shift_y = frame_ring_.shift_y,
-                                             .source_area_width = vector_v2::kOverviewWidth,
-                                             .source_area_height = frame_ring_bottom_});
-  const auto scheduled = scheduler_.front();
-  if (!sequence.has_value() || !scheduled.has_value() || scheduled->sequence != *sequence) {
+  const auto ring_pixels = frame_.first(area_pixels);
+  if (!valid_ring_strip(band, ring_pixels, vector_v2::kOverviewWidth, frame_ring_.shift_x,
+                        frame_ring_.shift_y, vector_v2::kOverviewWidth, frame_ring_bottom_)) {
     return timing;
   }
 
@@ -884,15 +880,11 @@ LivePresentationTiming VectorV2Presenter::present_ring(
   const std::uint32_t pushes_before = display_.push_count();
   const std::int64_t first_submitted = esp_timer_get_time();
   const bool streamed = display_.stream_rect_ring(
-      band.x0, band.y0, band_width, band_height, scheduled->strip.pixels.data(),
-      scheduled->strip.stride, scheduled->strip.source_shift_x, scheduled->strip.source_shift_y,
-      scheduled->strip.source_area_width, scheduled->strip.source_area_height, rows_per_strip,
+      band.x0, band.y0, band_width, band_height, ring_pixels.data(), vector_v2::kOverviewWidth,
+      frame_ring_.shift_x, frame_ring_.shift_y, vector_v2::kOverviewWidth, frame_ring_bottom_,
+      rows_per_strip,
       {.context = &context, .paint = &paint_stage_thunk, .accepts_byte_swapped = true});
   if (!streamed) {
-    static_cast<void>(scheduler_.abort(*sequence));
-    return timing;
-  }
-  if (!scheduler_.complete(*sequence)) {
     return timing;
   }
   timing.pushes = display_.push_count() - pushes_before;
@@ -946,7 +938,6 @@ LivePresentationTiming VectorV2Presenter::present_pixels(
   }
   timing.chrome_prepare_us = esp_timer_get_time() - chrome_prepare_started;
 
-  scheduler_.require_revision(canvas_.current_revision());
   const bool full_frame = bounds.x0 == 0 && bounds.y0 == 0 &&
                           bounds.x1 == vector_v2::kOverviewWidth &&
                           bounds.y1 == vector_v2::kOverviewHeight;
@@ -960,12 +951,7 @@ LivePresentationTiming VectorV2Presenter::present_pixels(
     }
   }
 
-  const auto sequence = scheduler_.schedule({.revision = canvas_.current_revision(),
-                                             .panel_bounds = bounds,
-                                             .pixels = pixels,
-                                             .stride = stride});
-  const auto scheduled = scheduler_.front();
-  if (!sequence.has_value() || !scheduled.has_value() || scheduled->sequence != *sequence) {
+  if (!valid_panel_strip(bounds, pixels, stride)) {
     return timing;
   }
   int rows_per_strip = std::max(2, 16'384 / width);
@@ -974,14 +960,10 @@ LivePresentationTiming VectorV2Presenter::present_pixels(
   const std::uint32_t submits_before = display_.submit_count();
   const std::uint32_t pushes_before = display_.push_count();
   const std::int64_t first_submitted = esp_timer_get_time();
-  const bool streamed = display_.stream_rect(
-      bounds.x0, bounds.y0, width, height, scheduled->strip.pixels.data(), scheduled->strip.stride,
-      rows_per_strip, {.context = &context, .paint = &paint_stage_thunk});
+  const bool streamed =
+      display_.stream_rect(bounds.x0, bounds.y0, width, height, pixels.data(), stride,
+                           rows_per_strip, {.context = &context, .paint = &paint_stage_thunk});
   if (!streamed) {
-    static_cast<void>(scheduler_.abort(*sequence));
-    return timing;
-  }
-  if (!scheduler_.complete(*sequence)) {
     return timing;
   }
 
