@@ -1,0 +1,9 @@
+[1/6] Linking CXX executable vector_v2/tinydraw_vector_v2_ink_angularity
+ld: warning: ignoring duplicate libraries: 'core/libtinydraw_core.a'
+[2/6] Linking CXX executable vector_v2/tinydraw_vector_v2_raster_census
+ld: warning: ignoring duplicate libraries: 'core/libtinydraw_core.a'
+[3/6] Linking CXX executable vector_v2/tinydraw_vector_v2_lod_characterization
+[4/6] Linking CXX executable vector_v2/tinydraw_vector_v2_settled_aa_prototype
+ld: warning: ignoring duplicate libraries: 'core/libtinydraw_core.a'
+[5/6] Building CXX object vector_v2/CMakeFiles/tinydraw_vector_v2_tests.dir/tests/live_ink_coordinator_test.cpp.o
+[6/6] Linking CXX executable vector_v2/tinydraw_vector_v2_tests

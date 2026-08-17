@@ -1472,9 +1472,8 @@ void run_vector_v2_app() {
         };
         const std::uint32_t finished_us = event_us;
         const std::int64_t finish_preview_started = esp_timer_get_time();
-        last_ink = ink.finish({.x = last_canvas_touch.x,
-                               .y = last_canvas_touch.y,
-                               .timestamp_us = finished_us});
+        last_ink = ink.finish(
+            {.x = last_canvas_touch.x, .y = last_canvas_touch.y, .timestamp_us = finished_us});
         const std::uint16_t color = chrome.tool == vector_v2::ChromeTool::kErase
                                         ? 0xFFFFU
                                         : vector_v2::selected_color(chrome);

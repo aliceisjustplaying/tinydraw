@@ -60,19 +60,17 @@ TEST_CASE("live ink move publishes the newest tail before ready authority") {
     return builder.acknowledge_commit();
   };
 
-  const auto first =
-      vector_v2::process_live_ink_move(ribbon, builder, ink_point(20.0F, 2'000U),
-                                       operation_point(20.0F, 2'000U), expected_tip, 2'000U,
-                                       present, commit);
+  const auto first = vector_v2::process_live_ink_move(ribbon, builder, ink_point(20.0F, 2'000U),
+                                                      operation_point(20.0F, 2'000U), expected_tip,
+                                                      2'000U, present, commit);
   CHECK(first.status == vector_v2::ChainedOperationStatus::kAccepted);
 
   order.clear();
   const tinydraw::Point raw_tip{.x = 38.0F, .y = 40.0F};
   expected_tip = raw_tip;
-  const auto second =
-      vector_v2::process_live_ink_move(ribbon, builder, ink_point(30.0F, 3'000U),
-                                       operation_point(30.0F, 3'000U), raw_tip, 3'000U, present,
-                                       commit);
+  const auto second = vector_v2::process_live_ink_move(ribbon, builder, ink_point(30.0F, 3'000U),
+                                                       operation_point(30.0F, 3'000U), raw_tip,
+                                                       3'000U, present, commit);
   CHECK(second.visual_passed);
   CHECK(second.status == vector_v2::ChainedOperationStatus::kAccepted);
   CHECK_FALSE(second.commit_failed);

@@ -73,9 +73,6 @@ constexpr int kHitSlop = 8;
 constexpr float kMinimapDragPromotionPixels = 4.0F;
 constexpr float kMinimapDragPromotionPixels200 = 3.0F;
 constexpr float kMinimapDragPromotionPixels400 = 2.0F;
-constexpr int kMinimapMinimumGrabPixels = 28;
-constexpr int kMinimapMinimumGrabPixels200 = 36;
-constexpr int kMinimapMinimumGrabPixels400 = 44;
 constexpr float kPanDragPromotionPixels = 8.0F;
 constexpr int kMainHitTop = kMainTop - kHitSlop;
 constexpr std::array kMainCenters{34, 94, 154, 214, 274, 334};
@@ -420,22 +417,6 @@ ChromeRect minimap_viewport_rect(const ChromeNavigation& navigation) {
   };
 }
 
-ChromeRect minimap_viewport_grab_rect(const ChromeNavigation& navigation) {
-  const ChromeRect viewport = minimap_viewport_rect(navigation);
-  const int minimum_grab = navigation.zoom_percent >= 400   ? kMinimapMinimumGrabPixels400
-                           : navigation.zoom_percent >= 200 ? kMinimapMinimumGrabPixels200
-                                                            : kMinimapMinimumGrabPixels;
-  const int width = std::max(viewport.x1 - viewport.x0, minimum_grab);
-  const int height = std::max(viewport.y1 - viewport.y0, minimum_grab);
-  const int center_x = (viewport.x0 + viewport.x1) / 2;
-  const int center_y = (viewport.y0 + viewport.y1) / 2;
-  const int x0 =
-      std::clamp(center_x - width / 2, kMinimapLeft, kMinimapLeft + kMinimapWidth - width);
-  const int y0 =
-      std::clamp(center_y - height / 2, kMinimapTop, kMinimapTop + kMinimapHeight - height);
-  return {.x0 = x0, .y0 = y0, .x1 = x0 + width, .y1 = y0 + height};
-}
-
 // Draws the viewport rectangle over the minimap interior in absolute panel
 // coordinates; the painter translates and clips.
 void draw_minimap_viewport(const MinimapSurface& surface, const ChromeNavigation& navigation) {
@@ -757,15 +738,24 @@ ChromeLevelPoint chrome_minimap_drag_origin(ChromePoint start, ChromePoint curre
                                             const ChromeNavigation& navigation) {
   const ChromeLevelPoint start_level = chrome_minimap_level_point(start, navigation);
   const ChromeLevelPoint current_level = chrome_minimap_level_point(current, navigation);
-  const ChromeRect grab = minimap_viewport_grab_rect(navigation);
+  const ChromeRect viewport = minimap_viewport_rect(navigation);
   const bool preserves_grab =
-      inside(start, static_cast<float>(grab.x0), static_cast<float>(grab.y0),
-             static_cast<float>(grab.x1), static_cast<float>(grab.y1));
+      inside(start, static_cast<float>(viewport.x0), static_cast<float>(viewport.y0),
+             static_cast<float>(viewport.x1), static_cast<float>(viewport.y1));
   const int base_x = preserves_grab ? navigation.level_x : start_level.x - focus.x;
   const int base_y = preserves_grab ? navigation.level_y : start_level.y - focus.y;
+  // Direct acquisition supplies global travel; drag deltas then retain the
+  // 100% map scale at higher zooms so one panel pixel does not become a
+  // quarter of the 400% viewport.
+  const float drag_scale =
+      std::min(1.0F, 100.0F / static_cast<float>(std::max(navigation.zoom_percent, 1)));
+  const int drag_x = static_cast<int>(
+      std::lround(static_cast<float>(current_level.x - start_level.x) * drag_scale));
+  const int drag_y = static_cast<int>(
+      std::lround(static_cast<float>(current_level.y - start_level.y) * drag_scale));
   const auto quantize_even = [](int delta) { return delta - delta % 2; };
-  const int requested_x = base_x + current_level.x - start_level.x;
-  const int requested_y = base_y + current_level.y - start_level.y;
+  const int requested_x = base_x + drag_x;
+  const int requested_y = base_y + drag_y;
   const int quantized_x = navigation.level_x + quantize_even(requested_x - navigation.level_x);
   const int quantized_y = navigation.level_y + quantize_even(requested_y - navigation.level_y);
   return {

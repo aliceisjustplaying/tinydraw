@@ -1,0 +1,26 @@
+[1/4] Building CXX object vector_v2/CMakeFiles/tinydraw_vector_v2.dir/src/chrome.cpp.o
+[2/4] Linking CXX static library vector_v2/libtinydraw_vector_v2.a
+[3/4] Building CXX object vector_v2/CMakeFiles/tinydraw_vector_v2_tests.dir/tests/chrome_test.cpp.o
+[4/4] Linking CXX executable vector_v2/tinydraw_vector_v2_tests
+[doctest] doctest version is "2.5.3"
+[doctest] run with "--help" for options
+===============================================================================
+vector_v2/tests/chrome_test.cpp:243:
+TEST CASE:  whole minimap acquires the viewport with fine high-zoom adjustment
+
+vector_v2/tests/chrome_test.cpp:257: ERROR: CHECK( tinydraw::vector_v2::chrome_minimap_drag_origin({274.0F, 260.0F}, {276.0F, 262.0F}, focus, navigation) == tinydraw::vector_v2::ChromeLevelPoint{36, 36} ) is NOT correct!
+  values: CHECK( {?} == {?} )
+
+vector_v2/tests/chrome_test.cpp:262: ERROR: CHECK( tinydraw::vector_v2::chrome_minimap_drag_origin({287.0F, 273.0F}, {289.0F, 275.0F}, focus, navigation) == tinydraw::vector_v2::ChromeLevelPoint{956, 948} ) is NOT correct!
+  values: CHECK( {?} == {?} )
+
+vector_v2/tests/chrome_test.cpp:265: ERROR: CHECK( tinydraw::vector_v2::chrome_minimap_drag_origin({300.0F, 290.0F}, {302.0F, 292.0F}, focus, navigation) == tinydraw::vector_v2::ChromeLevelPoint{1'914, 2'192} ) is NOT correct!
+  values: CHECK( {?} == {?} )
+
+vector_v2/tests/chrome_test.cpp:268: ERROR: CHECK( tinydraw::vector_v2::chrome_minimap_drag_origin({312.0F, 307.0F}, {314.0F, 309.0F}, focus, navigation) == tinydraw::vector_v2::ChromeLevelPoint{2'796, 3'434} ) is NOT correct!
+  values: CHECK( {?} == {?} )
+
+===============================================================================
+[doctest] test cases: 1 | 0 passed | 1 failed | 242 skipped
+[doctest] assertions: 4 | 0 passed | 4 failed |
+[doctest] Status: FAILURE!
