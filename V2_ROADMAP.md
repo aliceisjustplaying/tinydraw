@@ -362,8 +362,11 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       unavailable-network handling, successful `TIME SET`, centering, and text
       size are accepted. See `benchmark-results/v2-ntp-sync-2026-08-17/RECEIPT.md`
       and `benchmark-results/ntp-text-size-2026-08-17/RECEIPT.md`.
-- [ ] Integrate V1 power off/on and autosave-before-risky-transition through
-      narrow adapters. Battery transitions are already present.
+- [x] Retain V1 power off/on behavior. `PowerManager` configures the AXP2101
+      for four-second long-press full shutdown with restart-after-long-press
+      disabled, and the owner physically confirmed shutdown on 2026-08-17.
+      Autosave commits continuously; an explicit hold-triggered flush is a
+      later durability refinement, not a missing power feature.
 - [ ] Add visible capacity, save, export, storage, and hardware failure states.
 - [ ] Enlarge invisible tap targets, add pressed feedback, resolve overlaps, and
       run the physical missed-tap check.
