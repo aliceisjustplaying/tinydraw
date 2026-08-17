@@ -31,6 +31,8 @@ constexpr int kToastLeft = 104;
 constexpr int kToastTop = 70;
 constexpr int kToastRight = 264;
 constexpr int kToastBottom = 132;
+constexpr int kTimeToastLeft = 80;
+constexpr int kTimeToastRight = 288;
 constexpr int kBatteryLeft = 222;
 constexpr int kBatteryTop = 18;
 constexpr int kBatteryRight = 340;
@@ -592,9 +594,9 @@ void draw_export_toast(Painter& painter, const ChromeState& state) {
 }
 
 void draw_centered_toast_text(Painter& painter, std::string_view text, std::uint16_t color) {
-  constexpr int scale = 2;
+  constexpr int scale = 3;
   const int text_width = static_cast<int>(text.size()) * 6 * scale - scale;
-  const int x = (kToastLeft + kToastRight - text_width) / 2;
+  const int x = (kTimeToastLeft + kTimeToastRight - text_width) / 2;
   const int y = (kToastTop + kToastBottom - 7 * scale) / 2;
   painter.text(x, y, text, color, scale);
 }
@@ -603,9 +605,11 @@ void draw_time_sync_toast(Painter& painter, const ChromeState& state) {
   if (state.time_sync_status == ChromeTimeSyncStatus::kIdle) {
     return;
   }
-  painter.rounded({kToastLeft + 2, kToastTop + 3, kToastRight + 2, kToastBottom + 3}, 12, kShadow);
-  painter.rounded({kToastLeft - 1, kToastTop - 1, kToastRight + 1, kToastBottom + 1}, 12, kBorder);
-  painter.rounded({kToastLeft, kToastTop, kToastRight, kToastBottom}, 11, kWhite);
+  painter.rounded({kTimeToastLeft + 2, kToastTop + 3, kTimeToastRight + 2, kToastBottom + 3}, 12,
+                  kShadow);
+  painter.rounded({kTimeToastLeft - 1, kToastTop - 1, kTimeToastRight + 1, kToastBottom + 1}, 12,
+                  kBorder);
+  painter.rounded({kTimeToastLeft, kToastTop, kTimeToastRight, kToastBottom}, 11, kWhite);
   switch (state.time_sync_status) {
     case ChromeTimeSyncStatus::kConnecting:
       draw_centered_toast_text(painter, "CONNECTING", kInk);

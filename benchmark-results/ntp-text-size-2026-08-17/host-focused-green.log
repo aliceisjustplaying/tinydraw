@@ -1,0 +1,8 @@
+[1/2] Building CXX object vector_v2/CMakeFiles/tinydraw_vector_v2_tests.dir/tests/chrome_test.cpp.o
+[2/2] Linking CXX executable vector_v2/tinydraw_vector_v2_tests
+[doctest] doctest version is "2.5.3"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  1 |  1 passed | 0 failed | 242 skipped
+[doctest] assertions: 16 | 16 passed | 0 failed |
+[doctest] Status: SUCCESS!
