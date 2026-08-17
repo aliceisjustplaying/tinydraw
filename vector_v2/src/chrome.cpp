@@ -70,6 +70,7 @@ constexpr int kHitSlop = 8;
 constexpr float kMinimapDragPromotionPixels = 4.0F;
 constexpr float kMinimapDragPromotionPixels200 = 3.0F;
 constexpr float kMinimapDragPromotionPixels400 = 2.0F;
+constexpr int kMinimapMinimumGrabPixels = 28;
 constexpr float kPanDragPromotionPixels = 8.0F;
 constexpr int kMainHitTop = kMainTop - kHitSlop;
 constexpr std::array kMainCenters{34, 94, 154, 214, 274, 334};
@@ -384,29 +385,48 @@ void draw_minimap_content(const MinimapSurface& surface, const ChromeNavigation&
   }
 }
 
+ChromeRect minimap_viewport_rect(const ChromeNavigation& navigation) {
+  const int level_width = std::max(navigation.level_width, 1);
+  const int level_height = std::max(navigation.level_height, 1);
+  const int x0 = kMinimapLeft + navigation.level_x * kMinimapWidth / level_width;
+  const int y0 = kMinimapTop + navigation.level_y * kMinimapHeight / level_height;
+  const int x1 = kMinimapLeft + (navigation.level_x + kWidth) * kMinimapWidth / level_width;
+  const int y1 =
+      kMinimapTop + (navigation.level_y + kChromeCanvasBottom) * kMinimapHeight / level_height;
+  return {
+      .x0 = x0,
+      .y0 = y0,
+      .x1 = std::clamp(x1, x0 + 2, kMinimapLeft + kMinimapWidth),
+      .y1 = std::clamp(y1, y0 + 2, kMinimapTop + kMinimapHeight),
+  };
+}
+
+ChromeRect minimap_viewport_grab_rect(const ChromeNavigation& navigation) {
+  const ChromeRect viewport = minimap_viewport_rect(navigation);
+  const int width = std::max(viewport.x1 - viewport.x0, kMinimapMinimumGrabPixels);
+  const int height = std::max(viewport.y1 - viewport.y0, kMinimapMinimumGrabPixels);
+  const int center_x = (viewport.x0 + viewport.x1) / 2;
+  const int center_y = (viewport.y0 + viewport.y1) / 2;
+  const int x0 =
+      std::clamp(center_x - width / 2, kMinimapLeft, kMinimapLeft + kMinimapWidth - width);
+  const int y0 =
+      std::clamp(center_y - height / 2, kMinimapTop, kMinimapTop + kMinimapHeight - height);
+  return {.x0 = x0, .y0 = y0, .x1 = x0 + width, .y1 = y0 + height};
+}
+
 // Draws the viewport rectangle over the minimap interior in absolute panel
 // coordinates; the painter translates and clips.
 void draw_minimap_viewport(const MinimapSurface& surface, const ChromeNavigation& navigation) {
   Painter painter(surface.pixels, surface.width, surface.height, surface.origin_x,
                   surface.origin_y);
-  const int map_left = kMinimapLeft;
-  const int map_top = kMinimapTop;
-  const int level_width = std::max(navigation.level_width, 1);
-  const int level_height = std::max(navigation.level_height, 1);
-  const int x0 = map_left + navigation.level_x * kMinimapWidth / level_width;
-  const int y0 = map_top + navigation.level_y * kMinimapHeight / level_height;
-  const int x1 = map_left + (navigation.level_x + kWidth) * kMinimapWidth / level_width;
-  const int y1 =
-      map_top + (navigation.level_y + kChromeCanvasBottom) * kMinimapHeight / level_height;
-  const int right = std::clamp(x1, x0 + 2, map_left + kMinimapWidth);
-  const int bottom = std::clamp(y1, y0 + 2, map_top + kMinimapHeight);
+  const ChromeRect viewport = minimap_viewport_rect(navigation);
   const std::uint16_t color =
       surface.byte_swapped ? static_cast<std::uint16_t>((kSelected >> 8U) | (kSelected << 8U))
                            : kSelected;
-  painter.line({x0, y0, right, y0}, color, 1);
-  painter.line({right, y0, right, bottom}, color, 1);
-  painter.line({right, bottom, x0, bottom}, color, 1);
-  painter.line({x0, bottom, x0, y0}, color, 1);
+  painter.line({viewport.x0, viewport.y0, viewport.x1, viewport.y0}, color, 1);
+  painter.line({viewport.x1, viewport.y0, viewport.x1, viewport.y1}, color, 1);
+  painter.line({viewport.x1, viewport.y1, viewport.x0, viewport.y1}, color, 1);
+  painter.line({viewport.x0, viewport.y1, viewport.x0, viewport.y0}, color, 1);
 }
 
 void draw_minimap_base(const MinimapSurface& surface, const ChromeNavigation& navigation) {
@@ -662,6 +682,28 @@ ChromeLevelPoint chrome_minimap_level_point(ChromePoint point, const ChromeNavig
   return {
       .x = project(point.x, kMinimapLeft, kMinimapWidth, navigation.level_width),
       .y = project(point.y, kMinimapTop, kMinimapHeight, navigation.level_height),
+  };
+}
+
+ChromeLevelPoint chrome_minimap_drag_origin(ChromePoint start, ChromePoint current,
+                                            ChromeLevelPoint focus,
+                                            const ChromeNavigation& navigation) {
+  const ChromeLevelPoint start_level = chrome_minimap_level_point(start, navigation);
+  const ChromeLevelPoint current_level = chrome_minimap_level_point(current, navigation);
+  const ChromeRect grab = minimap_viewport_grab_rect(navigation);
+  const bool preserves_grab =
+      inside(start, static_cast<float>(grab.x0), static_cast<float>(grab.y0),
+             static_cast<float>(grab.x1), static_cast<float>(grab.y1));
+  const int base_x = preserves_grab ? navigation.level_x : start_level.x - focus.x;
+  const int base_y = preserves_grab ? navigation.level_y : start_level.y - focus.y;
+  const auto quantize_even = [](int delta) { return delta - delta % 2; };
+  const int requested_x = base_x + current_level.x - start_level.x;
+  const int requested_y = base_y + current_level.y - start_level.y;
+  const int quantized_x = navigation.level_x + quantize_even(requested_x - navigation.level_x);
+  const int quantized_y = navigation.level_y + quantize_even(requested_y - navigation.level_y);
+  return {
+      .x = std::clamp(quantized_x, 0, std::max(navigation.level_width - kWidth, 0)),
+      .y = std::clamp(quantized_y, 0, std::max(navigation.level_height - kChromeCanvasBottom, 0)),
   };
 }
 

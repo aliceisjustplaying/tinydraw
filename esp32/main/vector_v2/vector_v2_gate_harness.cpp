@@ -129,16 +129,22 @@ const char* zoom_name(ZoomLevel zoom) {
   const auto drag = presenter.pan_minimap_from(drag_start_x, drag_start_y, {312.0F, 307.0F},
                                                {316.0F, 311.0F}, chrome, now_us());
   const bool drag_position = presenter.level_x() == 626 && presenter.level_y() == 782;
+  const auto acquire_initial = presenter.set_view(ZoomLevel::k400Percent, 0, 0, chrome, now_us());
+  const auto acquire =
+      presenter.pan_minimap_from(0, 0, {312.0F, 307.0F}, {314.0F, 309.0F}, chrome, now_us());
+  const bool acquire_position = presenter.level_x() == 2'906 && presenter.level_y() == 3'544;
   const bool passed = hit && intent && initial.passed && tap.passed && tap_position &&
-                      drag.passed && drag.frame_reused && drag_position;
+                      drag.passed && drag.frame_reused && drag_position && acquire_initial.passed &&
+                      acquire.passed && acquire_position;
   std::printf(
       "TINYDRAW_GATE1_MINIMAP_NAV hit=%u threshold_px=4 threshold_400_px=2 intent=%u tap_x=552 "
       "tap_y=710 "
       "tap_complete_us=%lld tap_pass=%u drag_x=626 drag_y=782 drag_complete_us=%lld "
-      "drag_reused=%u drag_pass=%u pass=%u\n",
+      "drag_reused=%u drag_pass=%u acquire_x=2906 acquire_y=3544 acquire_complete_us=%lld "
+      "acquire_pass=%u pass=%u\n",
       hit, intent, static_cast<long long>(tap.complete_us), tap.passed && tap_position,
       static_cast<long long>(drag.complete_us), drag.frame_reused, drag.passed && drag_position,
-      passed);
+      static_cast<long long>(acquire.complete_us), acquire.passed && acquire_position, passed);
   std::fflush(stdout);
   return passed;
 }

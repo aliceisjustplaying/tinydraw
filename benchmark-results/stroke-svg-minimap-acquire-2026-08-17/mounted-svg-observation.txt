@@ -1,0 +1,9 @@
+Owner-mounted pre-fix DRAWING.SVG observation — 2026-08-17
+source=/Volumes/TINYDRAW/DRAWING.SVG
+bytes=98456
+paths=24
+rects=1
+sha256=6addd2c0b7a359ad2cd3c63f0e7152c2130b8e1dd9ba58df7b5f99d7c635f796
+prefix=<?xml version="1.0" encoding="UTF-8"?> <svg xmlns="http://www.w3.org/2000/svg" width="1472" height="1792" viewBox="0 0 1472 1792"> <rect x="0" y="0" width="1472" height="1792" fill="#FFFFFF"/> <path ...
+
+The drawing geometry was not copied into the repository. The mounted drive was not written, ejected, or reset by the agent.

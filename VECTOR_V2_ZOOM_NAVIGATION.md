@@ -245,8 +245,12 @@ Implemented behavior:
   25–100%, 3 px at 200%, and 2 px at 400%;
 - reaching that threshold becomes a continuous viewport drag through the
   ordinary boundary-drained pan path;
-- drag projection is relative to the gesture's starting origin, remains
-  captured outside the frame, and clamps at every world edge;
+- the truthful ~5×5 px viewport at 400% has a 28×28 px invisible grab target
+  clamped inside the minimap; starting there preserves the finger's offset;
+- starting elsewhere in the minimap directly acquires the viewport under the
+  finger instead of applying an easy-to-miss delta to a distant tiny box;
+- after acquisition the gesture remains captured outside the frame and clamps
+  at every world edge;
 - popup, confirmation, and export-progress states hide and disable the minimap;
 - at 25%, where the full world already fits, tap and drag are successful no-ops.
 
@@ -256,8 +260,11 @@ physical presenter gates landed the same day. The physical tap/drag sample
 completed in 20.164/16.529 ms with ring reuse and exact target origins. See
 [`navigation receipt`](benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md).
 The same-day owner glass follow-up liked minimap navigation but found the 400%
-viewport difficult to grab; the zoom-scaled intent adjustment and host/product
-build evidence are in the [`touch-target receipt`](benchmark-results/minimap-touch-target-2026-08-17/RECEIPT.md).
+viewport difficult to grab. Reducing the intent threshold alone did not solve
+it: a far-start drag was hit-tested but moved the distant viewport only by the
+small relative finger delta. The enlarged grab target and direct-acquisition
+follow-up are covered by the
+[`follow-up receipt`](benchmark-results/stroke-svg-minimap-acquire-2026-08-17/RECEIPT.md).
 
 ## Non-goals
 

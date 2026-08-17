@@ -101,8 +101,10 @@ fine, need to see it in action" — 2026-08-15).
 
 - **Exact variable-width Perfect-Freehand fidelity. Centerline/uniform-width
   export is forbidden** (owner: "absolutely no").
-- Mechanism: per-stroke filled outline paths from the existing ribbon
-  geometry; visually identical to glass. File size is unconstrained for v1.
+- Mechanism: exactly one filled outline path per physical finger-down/up
+  Stroke, even when bounded storage splits it into internal chunks; geometry
+  comes from the existing ribbon and is visually identical to glass. The SVG
+  has no synthetic background rectangle. File size is unconstrained for v1.
 - Delivered over the existing USB export flow; read-only authority snapshot;
   no dependence on tile caches or presentation state.
 

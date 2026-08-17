@@ -531,15 +531,15 @@ LivePresentationTiming VectorV2Presenter::pan_minimap_from(int start_x, int star
                                                            std::uint32_t event_us) {
   const int old_x = level_x();
   const int old_y = level_y();
-  const auto navigation = chrome_navigation();
-  const auto start =
-      vector_v2::chrome_minimap_level_point({start_touch.x, start_touch.y}, navigation);
-  const auto current =
-      vector_v2::chrome_minimap_level_point({current_touch.x, current_touch.y}, navigation);
-  const auto quantize_even = [](int delta) { return delta - delta % 2; };
-  const int requested_x = start_x + quantize_even(current.x - start.x);
-  const int requested_y = start_y + quantize_even(current.y - start.y);
-  if (!navigation_.set_origin(requested_x, requested_y, kDefaultNavigationFocus)) {
+  auto navigation = chrome_navigation();
+  // Projection is relative to the gesture's original view even after earlier
+  // Move events changed the live origin.
+  navigation.level_x = start_x;
+  navigation.level_y = start_y;
+  const auto requested = vector_v2::chrome_minimap_drag_origin(
+      {start_touch.x, start_touch.y}, {current_touch.x, current_touch.y},
+      {.x = kDefaultNavigationFocus.x, .y = kDefaultNavigationFocus.y}, navigation);
+  if (!navigation_.set_origin(requested.x, requested.y, kDefaultNavigationFocus)) {
     return {};
   }
   if (level_x() == old_x && level_y() == old_y) {

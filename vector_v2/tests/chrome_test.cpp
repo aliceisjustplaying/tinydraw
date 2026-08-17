@@ -171,6 +171,29 @@ TEST_CASE("minimap hit testing and projection share the rendered geometry") {
         tinydraw::vector_v2::ChromeLevelPoint{0, 3584});
 }
 
+TEST_CASE("far minimap drag acquires viewport while enlarged target preserves grab") {
+  const tinydraw::vector_v2::ChromeNavigation navigation{
+      .zoom_percent = 400,
+      .level_x = 0,
+      .level_y = 0,
+      .level_width = 5'888,
+      .level_height = 7'168,
+  };
+  constexpr tinydraw::vector_v2::ChromeLevelPoint focus{184, 186};
+
+  // The visible 400% viewport is about 5x5 px. Its invisible grab target
+  // includes this point, preserving relative drag instead of jumping.
+  CHECK(tinydraw::vector_v2::chrome_minimap_drag_origin({287.0F, 273.0F}, {289.0F, 275.0F}, focus,
+                                                        navigation) ==
+        tinydraw::vector_v2::ChromeLevelPoint{146, 146});
+  // Starting elsewhere in the minimap directly acquires the viewport under
+  // the finger, then follows the drag. A merely relative delta would be
+  // {146,146}, leaving the tiny box apparently untouched at the far corner.
+  CHECK(tinydraw::vector_v2::chrome_minimap_drag_origin({312.0F, 307.0F}, {314.0F, 309.0F}, focus,
+                                                        navigation) ==
+        tinydraw::vector_v2::ChromeLevelPoint{2'906, 3'544});
+}
+
 TEST_CASE("overview mutations schedule a minimap refresh outside its panel bounds") {
   const ChromeState state;
   CHECK(tinydraw::vector_v2::chrome_minimap_refresh_required(state, true, true));
