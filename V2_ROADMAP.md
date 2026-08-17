@@ -231,6 +231,10 @@ prefix, retained Redo tail, monotonic generation, and prepared history changes.
 
 ## Phase 5 — Undo, persistence, autosave
 
+The versioned wire format, two-arena publication protocol, portable recovery
+seam, and ESP flash adapter are fixed in
+[`VECTOR_V2_AUTOSAVE_DESIGN.md`](VECTOR_V2_AUTOSAVE_DESIGN.md).
+
 - [x] Implement whole-gesture Undo/Redo with ≥10 guaranteed depth and exact
       mixed pen/eraser, branch-after-Undo, producer-rebuild, and localized-damage
       fixtures. Product buttons drain deferred chunks at the history boundary,
