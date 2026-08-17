@@ -19,6 +19,12 @@ if(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
   target_compile_definitions(tinydraw_vector_v2 PUBLIC TINYDRAW_VECTOR_V2_RASTER_CENSUS=1)
 endif()
 
+add_executable(tinydraw_ink_trace_check tools/ink_trace_check.cpp)
+target_link_libraries(tinydraw_ink_trace_check PRIVATE
+  tinydraw::vector_v2
+  tinydraw_project_options
+)
+
 if(TINYDRAW_BUILD_TESTS)
   add_executable(tinydraw_vector_v2_tests
     tests/test_main.cpp
@@ -60,7 +66,7 @@ if(TINYDRAW_BUILD_TESTS)
   )
   add_test(NAME tinydraw_vector_v2_tests COMMAND tinydraw_vector_v2_tests)
   add_test(NAME tinydraw_ink_trace_check_recorded
-           COMMAND "${PROJECT_SOURCE_DIR}/tools/ink-trace-check"
+           COMMAND tinydraw_ink_trace_check
                    "${PROJECT_SOURCE_DIR}/testdata/ink-traces/scribble-multistroke.csv")
   set_tests_properties(tinydraw_ink_trace_check_recorded PROPERTIES
     PASS_REGULAR_EXPRESSION
@@ -86,24 +92,26 @@ if(TINYDRAW_BUILD_TESTS)
   add_test(NAME tinydraw_vector_v2_fuzz_random_documents
            COMMAND tinydraw_vector_v2_raster_census --fuzz-docs 150 48879)
 
-  add_executable(tinydraw_vector_v2_ink_angularity tools/ink_angularity.cpp)
-  target_link_libraries(tinydraw_vector_v2_ink_angularity PRIVATE
-    tinydraw::core
-    tinydraw::vector_v2
-    tinydraw_project_options
-  )
+  if(TINYDRAW_BUILD_EXPERIMENTS)
+    add_executable(tinydraw_vector_v2_ink_angularity tools/ink_angularity.cpp)
+    target_link_libraries(tinydraw_vector_v2_ink_angularity PRIVATE
+      tinydraw::core
+      tinydraw::vector_v2
+      tinydraw_project_options
+    )
 
-  add_executable(tinydraw_vector_v2_settled_aa_prototype tools/settled_aa_prototype.cpp)
-  target_link_libraries(tinydraw_vector_v2_settled_aa_prototype PRIVATE
-    tinydraw::core
-    tinydraw::vector_v2
-    tinydraw_project_options
-  )
+    add_executable(tinydraw_vector_v2_settled_aa_prototype tools/settled_aa_prototype.cpp)
+    target_link_libraries(tinydraw_vector_v2_settled_aa_prototype PRIVATE
+      tinydraw::core
+      tinydraw::vector_v2
+      tinydraw_project_options
+    )
 
-  add_executable(tinydraw_vector_v2_lod_characterization tests/lod_characterization.cpp)
-  target_link_libraries(tinydraw_vector_v2_lod_characterization PRIVATE
-    tinydraw::vector_prototype
-    tinydraw::vector_v2
-    tinydraw_project_options
-  )
+    add_executable(tinydraw_vector_v2_lod_characterization tests/lod_characterization.cpp)
+    target_link_libraries(tinydraw_vector_v2_lod_characterization PRIVATE
+      tinydraw::vector_prototype
+      tinydraw::vector_v2
+      tinydraw_project_options
+    )
+  endif()
 endif()

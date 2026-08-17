@@ -19,6 +19,7 @@ with tools/ink-trace-check before committing.
 
 import argparse
 import re
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -135,7 +136,11 @@ def main() -> int:
         out_path.write_text("\n".join(content) + "\n", encoding="utf-8")
         duration_s = int(events[-1].split(",", 1)[0]) / 1e6
         print(f"saved {out_path}: {len(events)} events, {strokes} strokes, {duration_s:.2f} s")
-        print(f"validate with: ./tools/ink-trace-check {out_path}")
+        validator = Path(__file__).with_name("ink-trace-check")
+        validation = subprocess.run([validator, out_path], check=False)
+        if validation.returncode != 0:
+            print("saved capture failed canonical validation", file=sys.stderr)
+            return 1
         return 0
 
     print("timed out waiting for a capture", file=sys.stderr)

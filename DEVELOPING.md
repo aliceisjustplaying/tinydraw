@@ -31,6 +31,9 @@ machine was bootstrapped with Apple Clang 21 and SDL 2.32 through `sdl2-compat`.
 ./scripts/dev cppcheck      # Cppcheck, Vector V2 module only
 ```
 
+Concluded characterization binaries are excluded from normal builds. Configure
+with `-DTINYDRAW_BUILD_EXPERIMENTS=ON` only when reproducing their archived receipts.
+
 The wrapper is intentionally thin. Raw commands also work:
 
 ```sh
