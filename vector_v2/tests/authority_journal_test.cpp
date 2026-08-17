@@ -24,8 +24,7 @@ class MemoryJournalSource final : public vector_v2::AuthorityJournalSource {
       return false;
     }
     std::copy(bytes_.begin() + static_cast<std::ptrdiff_t>(offset),
-              bytes_.begin() + static_cast<std::ptrdiff_t>(offset + output.size()),
-              output.begin());
+              bytes_.begin() + static_cast<std::ptrdiff_t>(offset + output.size()), output.begin());
     return true;
   }
 
@@ -42,8 +41,8 @@ bool append_encoded(std::vector<std::byte>& journal, vector_v2::JournalChange ch
   }
   const std::size_t offset = journal.size();
   journal.resize(offset + *size);
-  return vector_v2::encode_authority_journal(
-      change, log, state, sequence, std::span(journal).subspan(offset, *size));
+  return vector_v2::encode_authority_journal(change, log, state, sequence,
+                                             std::span(journal).subspan(offset, *size));
 }
 
 vector_v2::JournalState example_state() {
@@ -125,14 +124,12 @@ TEST_CASE("authority journal checkpoint restores drawing history and session sta
   std::array<vector_v2::OperationRecord, 4> destination_records{};
   std::array<vector_v2::CompactOperationSample, 8> destination_samples{};
   vector_v2::OperationLog destination(destination_records, destination_samples);
-  REQUIRE(destination.restore({.epoch = recovered.state.epoch,
-                               .generation = recovered.state.generation,
-                               .active_operation_count =
-                                   recovered.state.active_operation_count,
-                               .records = std::span(recovered_records)
-                                              .first(recovered.state.retained_operation_count),
-                               .samples = std::span(recovered_samples)
-                                              .first(recovered.retained_sample_count)}));
+  REQUIRE(destination.restore(
+      {.epoch = recovered.state.epoch,
+       .generation = recovered.state.generation,
+       .active_operation_count = recovered.state.active_operation_count,
+       .records = std::span(recovered_records).first(recovered.state.retained_operation_count),
+       .samples = std::span(recovered_samples).first(recovered.retained_sample_count)}));
 
   CHECK(destination.read_view() == source.read_view());
   for (std::size_t index = 0; index < source.read_view().retained_operation_count; ++index) {
@@ -192,9 +189,9 @@ TEST_CASE("authority journal append replaces the persisted Redo branch") {
   REQUIRE(append_size.has_value());
   const std::size_t append_offset = encoded.size();
   encoded.resize(encoded.size() + *append_size);
-  REQUIRE(vector_v2::encode_authority_journal(
-      append, source, replacement_state, 31U,
-      std::span(encoded).subspan(append_offset, *append_size)));
+  REQUIRE(
+      vector_v2::encode_authority_journal(append, source, replacement_state, 31U,
+                                          std::span(encoded).subspan(append_offset, *append_size)));
 
   std::array<vector_v2::OperationRecord, 4> recovered_records{};
   std::array<vector_v2::CompactOperationSample, 4> recovered_samples{};
@@ -242,8 +239,8 @@ TEST_CASE("authority journal replays history state and New commits") {
                          41U));
   state.size = vector_v2::ChromeSize::kSmall;
   state.color_index = 3;
-  REQUIRE(append_encoded(encoded, {.kind = vector_v2::JournalChangeKind::kState}, source, state,
-                         42U));
+  REQUIRE(
+      append_encoded(encoded, {.kind = vector_v2::JournalChangeKind::kState}, source, state, 42U));
 
   std::array<vector_v2::OperationRecord, 3> recovered_records{};
   std::array<vector_v2::CompactOperationSample, 3> recovered_samples{};
@@ -261,8 +258,8 @@ TEST_CASE("authority journal replays history state and New commits") {
 
   REQUIRE(source.reset({source.current_revision().value + 1U}));
   state.next_stroke_id = 1U;
-  REQUIRE(append_encoded(encoded, {.kind = vector_v2::JournalChangeKind::kReset}, source, state,
-                         43U));
+  REQUIRE(
+      append_encoded(encoded, {.kind = vector_v2::JournalChangeKind::kReset}, source, state, 43U));
   const MemoryJournalSource reset_source(encoded);
   const auto reset_recovery = vector_v2::recover_authority_journal(
       reset_source, encoded.size(), recovered_records, recovered_samples, recovered_state);
@@ -319,8 +316,8 @@ TEST_CASE("authority journal keeps the prior recovery point after every truncate
     std::array<vector_v2::CompactOperationSample, 2> recovered_samples{};
     vector_v2::JournalState recovered_state{};
     const MemoryJournalSource journal(std::span(encoded).first(cut));
-    const auto recovered = vector_v2::recover_authority_journal(
-        journal, cut, recovered_records, recovered_samples, recovered_state);
+    const auto recovered = vector_v2::recover_authority_journal(journal, cut, recovered_records,
+                                                                recovered_samples, recovered_state);
     CAPTURE(cut);
     CHECK(recovered.status == vector_v2::JournalRecoveryStatus::kRecovered);
     CHECK(recovered.sequence == 50U);
@@ -352,10 +349,9 @@ TEST_CASE("authority journal rejects every single-byte corruption in a later com
   REQUIRE(source.append({.color = 0xF800U, .gesture_id = 2, .samples = second}));
   vector_v2::JournalState latest_state = checkpoint_state;
   latest_state.next_stroke_id = 3;
-  REQUIRE(append_encoded(encoded,
-                         {.kind = vector_v2::JournalChangeKind::kAppendStroke,
-                          .first_operation = 1U},
-                         source, latest_state, 61U));
+  REQUIRE(append_encoded(
+      encoded, {.kind = vector_v2::JournalChangeKind::kAppendStroke, .first_operation = 1U}, source,
+      latest_state, 61U));
 
   for (std::size_t corrupt = recovery_point_bytes; corrupt < encoded.size(); ++corrupt) {
     std::vector<std::byte> damaged = encoded;
@@ -406,4 +402,40 @@ TEST_CASE("authority journal supports sector-aligned committed transactions") {
   CHECK(recovered.sequence == 70U);
   CHECK(recovered.bytes_consumed == 4096U);
   CHECK(recovered.state == source.read_view());
+}
+
+TEST_CASE("authority journal permits replacing an uncommitted queued state transaction") {
+  std::array<vector_v2::OperationRecord, 1> source_records{};
+  std::array<vector_v2::CompactOperationSample, 1> source_samples{};
+  vector_v2::OperationLog source(source_records, source_samples);
+  std::vector<std::byte> encoded(2U * 4096U);
+
+  REQUIRE(vector_v2::encode_authority_journal({.kind = vector_v2::JournalChangeKind::kCheckpoint},
+                                              source, example_state(), 1U,
+                                              std::span(encoded).first(4096U)));
+  vector_v2::JournalState superseded = example_state();
+  superseded.tool = vector_v2::ChromeTool::kPan;
+  REQUIRE(vector_v2::encode_authority_journal({.kind = vector_v2::JournalChangeKind::kState},
+                                              source, superseded, 2U,
+                                              std::span(encoded).subspan(4096U)));
+
+  vector_v2::JournalState latest = superseded;
+  latest.tool = vector_v2::ChromeTool::kDraw;
+  latest.color_index = 4U;
+  REQUIRE(vector_v2::encode_authority_journal({.kind = vector_v2::JournalChangeKind::kState},
+                                              source, latest, 2U,
+                                              std::span(encoded).subspan(4096U)));
+
+  std::array<vector_v2::OperationRecord, 1> recovered_records{};
+  std::array<vector_v2::CompactOperationSample, 1> recovered_samples{};
+  vector_v2::JournalState recovered_state{};
+  const MemoryJournalSource journal(encoded);
+  const auto recovered = vector_v2::recover_authority_journal(
+      journal, encoded.size(), recovered_records, recovered_samples, recovered_state);
+
+  CHECK(recovered.status == vector_v2::JournalRecoveryStatus::kRecovered);
+  CHECK(recovered.transaction_count == 2U);
+  CHECK(recovered.sequence == 2U);
+  CHECK(recovered.bytes_consumed == encoded.size());
+  CHECK(recovered_state == latest);
 }

@@ -15,19 +15,12 @@ enum class VectorV2AutosaveRestoreStatus : std::uint8_t {
   kError,
 };
 
-enum class VectorV2AutosaveStatus : std::uint8_t {
-  kIdle,
-  kSaving,
-  kNeedsCheckpoint,
-  kFull,
-  kError,
-};
-
 // Asynchronous ESP flash adapter for the portable Vector V2 authority journal.
 // submit() copies one coherent transaction; a low-priority worker owns every
 // erase, write, and readback after that copy. Transactions start and end on
 // 4 KiB boundaries so an interrupted tail can be erased without touching the
-// previous Recovery point.
+// previous Recovery point. Consecutive state-only submissions for unchanged
+// drawing authority may replace the newest queue-owned transaction.
 class VectorV2AutosaveStore {
  public:
   VectorV2AutosaveStore();
@@ -37,17 +30,14 @@ class VectorV2AutosaveStore {
   VectorV2AutosaveStore& operator=(const VectorV2AutosaveStore&) = delete;
 
   [[nodiscard]] bool ready() const;
-  [[nodiscard]] VectorV2AutosaveRestoreStatus restore(
-      vector_v2::OperationLog& log, vector_v2::JournalState& state);
-  [[nodiscard]] bool submit(vector_v2::JournalChange change,
-                            const vector_v2::OperationLog& log,
+  [[nodiscard]] VectorV2AutosaveRestoreStatus restore(vector_v2::OperationLog& log,
+                                                      vector_v2::JournalState& state);
+  [[nodiscard]] bool submit(vector_v2::JournalChange change, const vector_v2::OperationLog& log,
                             const vector_v2::JournalState& state);
   [[nodiscard]] bool submit_checkpoint(const vector_v2::OperationLog& log,
                                        const vector_v2::JournalState& state);
   [[nodiscard]] bool checkpoint_required() const;
   [[nodiscard]] bool flush(std::uint32_t timeout_ms);
-  [[nodiscard]] VectorV2AutosaveStatus status() const;
-  [[nodiscard]] std::uint64_t committed_sequence() const;
 
  private:
   struct Impl;
