@@ -1,8 +1,8 @@
 # TinyDraw V2 roadmap
 
-Last updated: 2026-08-17 (zoom-cycle return and minimap navigation closed;
-overlap-50 cold next; see
-[`PROJECT_STATE.md`](PROJECT_STATE.md#immediate-work-order))
+Last updated: 2026-08-17 (owner-locked feature-finishing order: minimap;
+authority + Undo/Redo; autosave; touch targets; PNG; USB exit; final AA/cold
+optimization; see [`PROJECT_STATE.md`](PROJECT_STATE.md#immediate-work-order))
 
 Branch: `feat/v2-performance-followup`
 
@@ -252,8 +252,10 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       providing the artifact that exposed and now locks down chunk grouping.
       See `benchmark-results/svg-export-2026-08-17/RECEIPT.md` and
       `benchmark-results/stroke-svg-minimap-acquire-2026-08-17/RECEIPT.md`.
+- [ ] Add a settled anti-aliased `DRAWING.PNG` alongside the editable
+      path-based `DRAWING.SVG`; this is fifth in the owner-locked finish queue.
 - [ ] Fix the export-mode USB wedge (MSC re-exposes after eject; needs an
-      on-device exit) before soaks.
+      on-device exit); this is sixth in the owner-locked finish queue.
 - [x] Make color-dialog drawing imperceptibly fast. **Landed 2026-08-17:**
       exact horizontal-span circle/rounded rasterization and color-only frame
       re-presentation cut physical open time 132.466 → 27.568 ms (4.81×),
@@ -267,10 +269,12 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       replay authority); live ink stays hard-edged. Per-tile 1.7–5.4 ms
       mean / 9.3 ms max after round 1 of optimization (annulus sqrt,
       batched slices+present). **Owner verdict 2026-08-17:** accepted as done
-      for the current release scope. Faster settle progression and cosmetic
-      tuning remain optional backlog, not blockers (ideas are ranked in
-      `review_findings_2026_08_16_overnight/HANDOVER.md`). Settled PNG export
-      is low priority. Arc-length resampling remains prototyped-only.
+      for functional release scope. Faster settle progression is explicitly
+      reserved for the final optimization round after the remaining features
+      land (ideas are ranked in
+      `review_findings_2026_08_16_overnight/HANDOVER.md`). A settled-AA PNG is
+      the fifth item in the owner-locked finish queue. Arc-length resampling
+      remains prototyped-only.
 - [x] Let pan-tool drags pass through the zoom overlay while preserving zoom
       taps. **Landed 2026-08-17:** an 8 px intent threshold promotes rail drags
       into the existing boundary-drained pan state; host and physical classifier
@@ -331,7 +335,9 @@ Derived overview, tile, chrome, and settled caches are never persisted.
 - [ ] Exercise hairlines, XL strokes, dense overdraw, erasing, long gestures,
       every world edge, all zooms, and cache pressure.
 - [ ] Soak repeated pan/draw/Undo/Redo/autosave/export/power cycles for hours.
-- [ ] Interrupt power at every persistence boundary and verify exact recovery.
+- [ ] Keep deterministic journal truncation/corruption recovery fixtures in
+      the autosave phase; destructive physical power-interruption testing is
+      excluded from the owner-prioritized release work.
 - [ ] Run host tests, sanitizers, formatting, static analysis, both firmware
       builds, hardware gates, optical checks, and export verification.
 - [ ] Compare Raster V1 and Vector V2 feature parity explicitly.
