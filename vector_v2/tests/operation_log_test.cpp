@@ -8,13 +8,13 @@
 #include <span>
 
 #include "tinydraw/vector_v2/incremental_rasterizer.h"
+#include "tinydraw/vector_v2/test_fixtures.h"
 
 namespace vector_v2 = tinydraw::vector_v2;
 
 TEST_CASE("operation log appends ordered samples and advances one revision") {
-  std::array<vector_v2::OperationRecord, 2> records{};
-  std::array<vector_v2::CompactOperationSample, 5> storage{};
-  vector_v2::OperationLog log(records, storage);
+  vector_v2::test::OperationLogFixture<2, 5> fixture;
+  auto& log = fixture.log;
   const std::array samples{
       vector_v2::CompactOperationSample{
           .x_quarter = 160, .y_quarter = 320, .radius_256 = 512, .elapsed_ms = 0},
@@ -41,9 +41,8 @@ TEST_CASE("operation log appends ordered samples and advances one revision") {
 }
 
 TEST_CASE("authority read views expose one coherent generation") {
-  std::array<vector_v2::OperationRecord, 2> records{};
-  std::array<vector_v2::CompactOperationSample, 2> storage{};
-  vector_v2::OperationLog log(records, storage);
+  vector_v2::test::OperationLogFixture<2, 2> fixture;
+  auto& log = fixture.log;
   const std::array sample{
       vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
 
@@ -72,17 +71,14 @@ TEST_CASE("authority read views expose one coherent generation") {
 }
 
 TEST_CASE("Undo moves across every chunk in the final Stroke") {
-  std::array<vector_v2::OperationRecord, 3> records{};
-  std::array<vector_v2::CompactOperationSample, 3> storage{};
-  vector_v2::OperationLog log(records, storage);
+  vector_v2::test::OperationLogFixture<3, 3> fixture;
+  auto& log = fixture.log;
   const std::array first_stroke{
       vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
-  const std::array second_stroke_first{
-      vector_v2::CompactOperationSample{
-          .x_quarter = 160, .y_quarter = 320, .radius_256 = 512, .elapsed_ms = 0}};
-  const std::array second_stroke_second{
-      vector_v2::CompactOperationSample{
-          .x_quarter = 480, .y_quarter = 640, .radius_256 = 768, .elapsed_ms = 12}};
+  const std::array second_stroke_first{vector_v2::CompactOperationSample{
+      .x_quarter = 160, .y_quarter = 320, .radius_256 = 512, .elapsed_ms = 0}};
+  const std::array second_stroke_second{vector_v2::CompactOperationSample{
+      .x_quarter = 480, .y_quarter = 640, .radius_256 = 768, .elapsed_ms = 12}};
   REQUIRE(log.append({.gesture_id = 6U, .samples = first_stroke}));
   REQUIRE(log.append({.gesture_id = 7U, .samples = second_stroke_first}));
   REQUIRE(log.append({.gesture_id = 7U, .samples = second_stroke_second}));
@@ -118,17 +114,14 @@ TEST_CASE("Undo moves across every chunk in the final Stroke") {
 }
 
 TEST_CASE("Redo restores every chunk in the next Stroke") {
-  std::array<vector_v2::OperationRecord, 3> records{};
-  std::array<vector_v2::CompactOperationSample, 3> storage{};
-  vector_v2::OperationLog log(records, storage);
+  vector_v2::test::OperationLogFixture<3, 3> fixture;
+  auto& log = fixture.log;
   const std::array first_stroke{
       vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
-  const std::array second_stroke_first{
-      vector_v2::CompactOperationSample{
-          .x_quarter = 160, .y_quarter = 320, .radius_256 = 512, .elapsed_ms = 0}};
-  const std::array second_stroke_second{
-      vector_v2::CompactOperationSample{
-          .x_quarter = 480, .y_quarter = 640, .radius_256 = 768, .elapsed_ms = 12}};
+  const std::array second_stroke_first{vector_v2::CompactOperationSample{
+      .x_quarter = 160, .y_quarter = 320, .radius_256 = 512, .elapsed_ms = 0}};
+  const std::array second_stroke_second{vector_v2::CompactOperationSample{
+      .x_quarter = 480, .y_quarter = 640, .radius_256 = 768, .elapsed_ms = 12}};
   REQUIRE(log.append({.gesture_id = 6U, .samples = first_stroke}));
   REQUIRE(log.append({.gesture_id = 7U, .samples = second_stroke_first}));
   REQUIRE(log.append({.gesture_id = 7U, .samples = second_stroke_second}));
@@ -156,9 +149,8 @@ TEST_CASE("Redo restores every chunk in the next Stroke") {
 }
 
 TEST_CASE("a prepared history change owns the authority mutation slot") {
-  std::array<vector_v2::OperationRecord, 2> records{};
-  std::array<vector_v2::CompactOperationSample, 2> storage{};
-  vector_v2::OperationLog log(records, storage);
+  vector_v2::test::OperationLogFixture<2, 2> fixture;
+  auto& log = fixture.log;
   const std::array sample{
       vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
   REQUIRE(log.append({.gesture_id = 1U, .samples = sample}));
@@ -177,20 +169,18 @@ TEST_CASE("a prepared history change owns the authority mutation slot") {
 }
 
 TEST_CASE("history preserves ten levels and treats zero identities as separate Strokes") {
-  std::array<vector_v2::OperationRecord, 12> records{};
-  std::array<vector_v2::CompactOperationSample, 12> storage{};
-  vector_v2::OperationLog log(records, storage);
+  vector_v2::test::OperationLogFixture<12, 12> fixture;
+  auto& log = fixture.log;
   const std::array sample{
       vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
-  for (std::size_t index = 0; index < records.size(); ++index) {
+  for (std::size_t index = 0; index < fixture.records.size(); ++index) {
     REQUIRE(log.append({.gesture_id = 0U, .samples = sample}));
   }
 
   for (std::size_t index = 0; index < 10U; ++index) {
     auto undo = log.prepare_undo();
     REQUIRE(undo.has_value());
-    CHECK(undo->change().previous_active_operation_count -
-              undo->change().active_operation_count ==
+    CHECK(undo->change().previous_active_operation_count - undo->change().active_operation_count ==
           1U);
     undo->publish();
   }
@@ -206,9 +196,8 @@ TEST_CASE("history preserves ten levels and treats zero identities as separate S
 }
 
 TEST_CASE("history stops before the document generation would wrap") {
-  std::array<vector_v2::OperationRecord, 1> records{};
-  std::array<vector_v2::CompactOperationSample, 1> storage{};
-  vector_v2::OperationLog log(records, storage);
+  vector_v2::test::OperationLogFixture<1, 1> fixture;
+  auto& log = fixture.log;
   const std::array sample{
       vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
   REQUIRE(log.reset({std::numeric_limits<std::uint32_t>::max() - 1U}));
@@ -221,9 +210,8 @@ TEST_CASE("history stops before the document generation would wrap") {
 }
 
 TEST_CASE("canceling new ink after Undo preserves the Redo Stroke") {
-  std::array<vector_v2::OperationRecord, 3> records{};
-  std::array<vector_v2::CompactOperationSample, 3> storage{};
-  vector_v2::OperationLog log(records, storage);
+  vector_v2::test::OperationLogFixture<3, 3> fixture;
+  auto& log = fixture.log;
   const std::array first{
       vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
   const std::array second{
@@ -251,9 +239,8 @@ TEST_CASE("canceling new ink after Undo preserves the Redo Stroke") {
 }
 
 TEST_CASE("publishing new ink after Undo replaces the Redo Stroke") {
-  std::array<vector_v2::OperationRecord, 3> records{};
-  std::array<vector_v2::CompactOperationSample, 3> storage{};
-  vector_v2::OperationLog log(records, storage);
+  vector_v2::test::OperationLogFixture<3, 3> fixture;
+  auto& log = fixture.log;
   const std::array first{
       vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
   const std::array second{
@@ -286,9 +273,8 @@ TEST_CASE("publishing new ink after Undo replaces the Redo Stroke") {
 }
 
 TEST_CASE("rejected replacement ink after Undo preserves the Redo Stroke") {
-  std::array<vector_v2::OperationRecord, 3> records{};
-  std::array<vector_v2::CompactOperationSample, 2> storage{};
-  vector_v2::OperationLog log(records, storage);
+  vector_v2::test::OperationLogFixture<3, 2> fixture;
+  auto& log = fixture.log;
   const std::array first{
       vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
   const std::array second{
@@ -315,9 +301,8 @@ TEST_CASE("rejected replacement ink after Undo preserves the Redo Stroke") {
 }
 
 TEST_CASE("stored operation feeds the incremental renderer without translation") {
-  std::array<vector_v2::OperationRecord, 1> records{};
-  std::array<vector_v2::CompactOperationSample, 2> storage{};
-  vector_v2::OperationLog log(records, storage);
+  vector_v2::test::OperationLogFixture<1, 2> fixture;
+  auto& log = fixture.log;
   const std::array samples{
       vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256},
       vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 16, .radius_256 = 256},
@@ -339,9 +324,8 @@ TEST_CASE("stored operation feeds the incremental renderer without translation")
 }
 
 TEST_CASE("operation log preserves painter order across tools") {
-  std::array<vector_v2::OperationRecord, 2> records{};
-  std::array<vector_v2::CompactOperationSample, 2> storage{};
-  vector_v2::OperationLog log(records, storage);
+  vector_v2::test::OperationLogFixture<2, 2> fixture;
+  auto& log = fixture.log;
   const std::array pen_sample{
       vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
   const std::array eraser_sample{
@@ -359,9 +343,8 @@ TEST_CASE("operation log preserves painter order across tools") {
 }
 
 TEST_CASE("operation log append may exactly fill sample capacity") {
-  std::array<vector_v2::OperationRecord, 1> records{};
-  std::array<vector_v2::CompactOperationSample, 2> storage{};
-  vector_v2::OperationLog log(records, storage);
+  vector_v2::test::OperationLogFixture<1, 2> fixture;
+  auto& log = fixture.log;
   const std::array samples{
       vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256},
       vector_v2::CompactOperationSample{.x_quarter = 32, .y_quarter = 32, .radius_256 = 256},
@@ -371,9 +354,8 @@ TEST_CASE("operation log append may exactly fill sample capacity") {
 }
 
 TEST_CASE("prepared append advances authority only when published") {
-  std::array<vector_v2::OperationRecord, 1> records{};
-  std::array<vector_v2::CompactOperationSample, 2> storage{};
-  vector_v2::OperationLog log(records, storage);
+  vector_v2::test::OperationLogFixture<1, 2> fixture;
+  auto& log = fixture.log;
   const std::array samples{
       vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256},
       vector_v2::CompactOperationSample{.x_quarter = 32, .y_quarter = 32, .radius_256 = 256},
@@ -397,9 +379,8 @@ TEST_CASE("prepared append advances authority only when published") {
 }
 
 TEST_CASE("canceling a prepared append leaves authority unchanged") {
-  std::array<vector_v2::OperationRecord, 1> records{};
-  std::array<vector_v2::CompactOperationSample, 1> storage{};
-  vector_v2::OperationLog log(records, storage);
+  vector_v2::test::OperationLogFixture<1, 1> fixture;
+  auto& log = fixture.log;
   const std::array samples{
       vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
   auto prepared = log.prepare({.samples = samples});
@@ -414,9 +395,8 @@ TEST_CASE("canceling a prepared append leaves authority unchanged") {
 }
 
 TEST_CASE("operation log capacity failure is atomic") {
-  std::array<vector_v2::OperationRecord, 2> records{};
-  std::array<vector_v2::CompactOperationSample, 2> storage{};
-  vector_v2::OperationLog log(records, storage);
+  vector_v2::test::OperationLogFixture<2, 2> fixture;
+  auto& log = fixture.log;
   const std::array first{
       vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
   REQUIRE(log.append({.samples = first}));
@@ -435,9 +415,8 @@ TEST_CASE("operation log capacity failure is atomic") {
 }
 
 TEST_CASE("operation log rejects malformed samples without mutation") {
-  std::array<vector_v2::OperationRecord, 1> records{};
-  std::array<vector_v2::CompactOperationSample, 2> storage{};
-  vector_v2::OperationLog log(records, storage);
+  vector_v2::test::OperationLogFixture<1, 2> fixture;
+  auto& log = fixture.log;
   const std::array reversed_time{
       vector_v2::CompactOperationSample{
           .x_quarter = 16, .y_quarter = 16, .radius_256 = 256, .elapsed_ms = 2},
@@ -457,9 +436,8 @@ TEST_CASE("operation log rejects malformed samples without mutation") {
 }
 
 TEST_CASE("operation log exposes only represented contiguous replay ranges") {
-  std::array<vector_v2::OperationRecord, 3> records{};
-  std::array<vector_v2::CompactOperationSample, 3> storage{};
-  vector_v2::OperationLog log(records, storage);
+  vector_v2::test::OperationLogFixture<3, 3> fixture;
+  auto& log = fixture.log;
   const std::array sample{
       vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
   REQUIRE(log.reset({8}));
@@ -487,9 +465,8 @@ TEST_CASE("operation log exposes only represented contiguous replay ranges") {
 }
 
 TEST_CASE("operation log withholds replay ranges while an append is prepared") {
-  std::array<vector_v2::OperationRecord, 1> records{};
-  std::array<vector_v2::CompactOperationSample, 1> storage{};
-  vector_v2::OperationLog log(records, storage);
+  vector_v2::test::OperationLogFixture<1, 1> fixture;
+  auto& log = fixture.log;
   const std::array sample{
       vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
   const vector_v2::OperationLogEpoch epoch = log.epoch();
@@ -503,9 +480,8 @@ TEST_CASE("operation log withholds replay ranges while an append is prepared") {
 }
 
 TEST_CASE("operation log restore rejects malformed persistence without mutation") {
-  std::array<vector_v2::OperationRecord, 2> records{};
-  std::array<vector_v2::CompactOperationSample, 2> storage{};
-  vector_v2::OperationLog log(records, storage);
+  vector_v2::test::OperationLogFixture<2, 2> fixture;
+  auto& log = fixture.log;
   const std::array original{
       vector_v2::CompactOperationSample{
           .x_quarter = 16, .y_quarter = 16, .radius_256 = 256, .elapsed_ms = 0},
@@ -540,9 +516,8 @@ TEST_CASE("operation log restore rejects malformed persistence without mutation"
 }
 
 TEST_CASE("operation log reset adopts snapshot revision and retains caller storage") {
-  std::array<vector_v2::OperationRecord, 1> records{};
-  std::array<vector_v2::CompactOperationSample, 1> storage{};
-  vector_v2::OperationLog log(records, storage);
+  vector_v2::test::OperationLogFixture<1, 1> fixture;
+  auto& log = fixture.log;
   const std::array sample{
       vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
   REQUIRE(log.append({.samples = sample}));
