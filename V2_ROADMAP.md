@@ -258,8 +258,14 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       providing the artifact that exposed and now locks down chunk grouping.
       See `benchmark-results/svg-export-2026-08-17/RECEIPT.md` and
       `benchmark-results/stroke-svg-minimap-acquire-2026-08-17/RECEIPT.md`.
-- [ ] Add a settled anti-aliased `DRAWING.PNG` alongside the editable
-      path-based `DRAWING.SVG`; this is fifth in the owner-locked finish queue.
+- [x] Add a settled anti-aliased `DRAWING.PNG` alongside the editable
+      path-based `DRAWING.SVG`. **Landed 2026-08-17:** full-world rows stitch
+      the production settled-AA renderer through a fixed 229,376-byte render
+      workspace and the existing streamed PNGenc path. PNG and unchanged SVG
+      bytes share one metadata-last authority-snapshot commit, then appear as
+      separate read-only files in the synthesized FAT16 volume. Host renderer,
+      PNG, FAT readback, normal V2 compile, and gate-harness compile are green;
+      physical export/mount validation remains with release integration.
 - [ ] Fix the export-mode USB wedge (MSC re-exposes after eject; needs an
       on-device exit); this is sixth in the owner-locked finish queue.
 - [x] Make color-dialog drawing imperceptibly fast. **Landed 2026-08-17:**

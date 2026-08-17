@@ -49,17 +49,18 @@ Autosave, charging, power-off/on, and macOS Finder mounting are verified.
   stopped and deinitialized.
 - Battery status, a five-level zoom rail, and a live interactive minimap with
   tap-to-jump and zoom-scaled drag intent are visible over the canvas.
-- Detailed SVG export emits one painter-ordered filled path per physical
-  finger-down/up Stroke as `DRAWING.SVG`, even when bounded input storage splits
-  that Stroke into internal chunks. The SVG omits a synthetic background
-  rectangle. The device gate verifies full flash readback, XML structure, and
-  CRC with a 4 KiB workspace; the owner has mounted and opened the export in
-  Inkscape. Prior full-world PNG USB evidence remains archived.
+- Export produces an editable `DRAWING.SVG` and a settled anti-aliased
+  `DRAWING.PNG` from one vector-authority snapshot. SVG retains one
+  painter-ordered filled path per physical finger-down/up Stroke and no
+  synthetic background rectangle. PNG rows stream through bounded settled
+  render and encoder workspaces. Both files are exposed read-only in one
+  synthesized FAT16 volume after a shared metadata-last commit.
 
-V2's immediate renderer is intentionally hard-edged until the settled
-anti-aliasing gate lands. The final invariant presenter looked tear-free in the
-2026-08-16 owner glass check, with same-session positive-control closure still
-pending; pan pacing remains red at 50.934 ms p95 against the required 41.7 ms.
+V2's immediate renderer is hard-edged while drawing and refines to the accepted
+settled anti-aliased output after lift. The final invariant presenter looked
+tear-free in the 2026-08-16 owner glass check, with same-session positive-control
+closure still pending; pan pacing remains red at 50.934 ms p95 against the
+required 41.7 ms.
 Ink remains red because materialization precedes preview while the provisional
 ribbon tail is omitted. Adversarial 400% cold refinement is also red at
 663.829 ms against the ≤500 ms contract.
