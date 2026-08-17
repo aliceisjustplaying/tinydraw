@@ -20,13 +20,21 @@ Both firmware builds used ESP-IDF v6.0.2 and completed without errors. The exist
 
 ## Device allocation and timing reference
 
-The accepted product device record is
-[`zoom-cycle-return-2026-08-17/product-device.log`](../zoom-cycle-return-2026-08-17/product-device.log):
+Fresh product firmware was flashed and hash-verified on `/dev/cu.usbmodem1101` after the host builds:
 
 - Producer scratch: internal; slot directory: PSRAM.
-- Free internal RAM after producer setup: 308,784 bytes.
-- Ready-state PSRAM: 2,278,592 bytes free; 2,228,224-byte largest block.
+- Free internal RAM after producer setup: 247,448 bytes.
+- Ready-state PSRAM: 2,278,540 bytes free; 2,228,224-byte largest block.
 - Live storage: 5,915,800 bytes; overview: 1,318,912 bytes; raw tiles: 3,670,016 bytes.
-- TE period: 16,813 us; high interval: 579 us.
+- Startup compose: 26,101 us; chrome: 13,478 us; transfer wait: 20,540 us; pass.
+- TE period: 16,804 us; high interval: 578 us.
+- Initial settle: 42 tiles in 293,168 us; no failures.
+- Autosave restored generation 53 with 15 retained operations at sequence 57.
 
-No ESP32-S3 serial device was attached while this receipt was created, so the hardware values above are the latest accepted on-device record. Any cleanup that changes allocation order, presenter pacing, IRAM placement, or hot-path budgets must produce a fresh device receipt before its temporary layout pads are reclaimed.
+The fresh 384-slot gate battery completed without a crash. Every named gate passed except
+`overlap_cold`: its 50% cold rebuild took 604,187 us against a 500,000 us limit. The 100%, 200%,
+and 400% overlap runs passed; the final settled-AA receipt remains yellow. This is the cleanup
+baseline, so Wave 1 must not introduce additional failures and should not claim to have fixed this
+performance miss without a dedicated measurement.
+
+Any cleanup that changes allocation order, presenter pacing, IRAM placement, or hot-path budgets must produce a fresh device receipt before its temporary layout pads are reclaimed.
