@@ -1,6 +1,7 @@
 # TinyDraw project state
 
-Last updated: 2026-08-17 (stroke-logical SVG export, settled-AA PNG export,
+Last updated: 2026-08-17 (feature-complete cleanup plus stroke-logical SVG
+export, settled-AA PNG export,
 faster color dialog, zoom-overlay pan promotion, exact zoom-cycle return,
 owner-accepted absolute minimap control, on-demand V2 NTP UI, and the first
 single-journal V2 autosave/recovery path landed;
@@ -18,10 +19,12 @@ receipts:
 [`fine minimap control`](benchmark-results/minimap-fine-control-2026-08-17/RECEIPT.md),
 [`NTP text size`](benchmark-results/ntp-text-size-2026-08-17/RECEIPT.md))
 
-State audited through: [`COLD_COMPUTE_CAMPAIGN_RECEIPT.md`](benchmark-results/wave3-cold-compute/COLD_COMPUTE_CAMPAIGN_RECEIPT.md)
+State audited through:
+[`feature-complete cleanup receipt`](benchmark-results/v2-cleanup-final-2026-08-17/RECEIPT.md)
 
 Raster V1 and Vector V2 are supported ESP32 product generations. V2 is feature
-complete; known bugs, cleanup, and final performance closure remain.
+complete; cleanup is closed, and known bugs plus final performance closure
+remain.
 [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) owns V2 acceptance thresholds;
 [`V2_ROADMAP.md`](V2_ROADMAP.md) is its forward queue.
 
@@ -147,8 +150,8 @@ Undo, persistence, and SVG are frozen in
 
 ## Immediate work order
 
-The owner locked the feature-finishing order on 2026-08-17. Do not pull the
-remaining performance campaign ahead of unfinished product features:
+Feature implementation and the feature-complete cleanup are closed. The
+remaining queue is release validation and the final measured optimization round:
 
 1. **Done 2026-08-17:** build a non-perturbing exact minimap capture path,
    capture the rejected bottom-right→center interaction, and fix the minimap
@@ -169,8 +172,8 @@ remaining performance campaign ahead of unfinished product features:
 6. **Implemented; physical gate pending:** fix the USB export-mode exit wedge
    with latched host eject and an on-device **Return to Drawing** action.
 7. Run one final optimization round covering settled-AA progression and the
-   binding overlap workload's 50% cold stroke (628 ms vs 500), then call the
-   implementation complete and enter release closure.
+   binding overlap workload's 50% cold stroke (592 ms vs 500 after cleanup),
+   then call the implementation complete and enter release closure.
 
 NTP and functional settled AA are accepted. Capacity/failure polish is not in
 this ordered blocker list, and destructive power-interruption testing is not an
