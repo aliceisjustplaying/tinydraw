@@ -377,3 +377,33 @@ TEST_CASE("authority journal rejects every single-byte corruption in a later com
     CHECK(recovered_samples[0].x_quarter == first.front().x_quarter);
   }
 }
+
+TEST_CASE("authority journal supports sector-aligned committed transactions") {
+  std::array<vector_v2::OperationRecord, 1> source_records{};
+  std::array<vector_v2::CompactOperationSample, 1> source_samples{};
+  vector_v2::OperationLog source(source_records, source_samples);
+  const std::array sample{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 160, .y_quarter = 160, .radius_256 = 256, .elapsed_ms = 0},
+  };
+  REQUIRE(source.append({.gesture_id = 1, .samples = sample}));
+  const vector_v2::JournalChange checkpoint{
+      .kind = vector_v2::JournalChangeKind::kCheckpoint,
+  };
+  const auto minimum = vector_v2::authority_journal_encoded_size(checkpoint, source);
+  REQUIRE(minimum.has_value());
+  REQUIRE(*minimum < 4096U);
+  std::vector<std::byte> encoded(4096U);
+  REQUIRE(vector_v2::encode_authority_journal(checkpoint, source, example_state(), 70U, encoded));
+
+  std::array<vector_v2::OperationRecord, 1> recovered_records{};
+  std::array<vector_v2::CompactOperationSample, 1> recovered_samples{};
+  vector_v2::JournalState recovered_state{};
+  const MemoryJournalSource journal(encoded);
+  const auto recovered = vector_v2::recover_authority_journal(
+      journal, encoded.size(), recovered_records, recovered_samples, recovered_state);
+  CHECK(recovered.status == vector_v2::JournalRecoveryStatus::kRecovered);
+  CHECK(recovered.sequence == 70U);
+  CHECK(recovered.bytes_consumed == 4096U);
+  CHECK(recovered.state == source.read_view());
+}
