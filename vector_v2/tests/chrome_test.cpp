@@ -260,32 +260,30 @@ TEST_CASE("minimap hit guard absorbs imprecise touches around the rendered frame
         tinydraw::vector_v2::ChromeLevelPoint{0, 3584});
 }
 
-TEST_CASE("whole minimap acquires the viewport with fine high-zoom adjustment") {
+TEST_CASE("minimap pointer absolutely centers the viewport at every zoom") {
+  constexpr tinydraw::vector_v2::ChromeLevelPoint focus{184, 186};
   const tinydraw::vector_v2::ChromeNavigation navigation{
       .zoom_percent = 400,
-      .level_x = 0,
-      .level_y = 0,
+      .level_x = 5'520,
+      .level_y = 6'796,
       .level_width = 5'888,
       .level_height = 7'168,
   };
-  constexpr tinydraw::vector_v2::ChromeLevelPoint focus{184, 186};
 
-  // Only the truthful visible viewport (about 5x5 px) preserves grab offset.
-  // Two panel pixels then move 36 level pixels rather than the coarse 146 px.
-  CHECK(tinydraw::vector_v2::chrome_minimap_drag_origin({274.0F, 260.0F}, {276.0F, 262.0F}, focus,
+  // A touch anywhere on the minimap acquires that absolute world position;
+  // there is no requirement to grab the tiny viewport indicator first.
+  CHECK(tinydraw::vector_v2::chrome_minimap_drag_origin({352.0F, 356.0F}, {352.0F, 356.0F}, focus,
                                                         navigation) ==
-        tinydraw::vector_v2::ChromeLevelPoint{36, 36});
-  // A start outside that visible box directly acquires the viewport even when
-  // it lies inside the old invisible 44x44 zone.
-  CHECK(tinydraw::vector_v2::chrome_minimap_drag_origin({287.0F, 273.0F}, {289.0F, 275.0F}, focus,
+        tinydraw::vector_v2::ChromeLevelPoint{5'520, 6'796});
+  // Moving from the bottom-right to the map center must reach center within
+  // the available finger travel, even at 400%.
+  CHECK(tinydraw::vector_v2::chrome_minimap_drag_origin({352.0F, 356.0F}, {312.0F, 307.0F}, focus,
                                                         navigation) ==
-        tinydraw::vector_v2::ChromeLevelPoint{956, 948});
-  CHECK(tinydraw::vector_v2::chrome_minimap_drag_origin({300.0F, 290.0F}, {302.0F, 292.0F}, focus,
+        tinydraw::vector_v2::ChromeLevelPoint{2'760, 3'398});
+  // Projection clamps continuously at every world edge.
+  CHECK(tinydraw::vector_v2::chrome_minimap_drag_origin({352.0F, 356.0F}, {272.0F, 258.0F}, focus,
                                                         navigation) ==
-        tinydraw::vector_v2::ChromeLevelPoint{1'914, 2'192});
-  CHECK(tinydraw::vector_v2::chrome_minimap_drag_origin({312.0F, 307.0F}, {314.0F, 309.0F}, focus,
-                                                        navigation) ==
-        tinydraw::vector_v2::ChromeLevelPoint{2'796, 3'434});
+        tinydraw::vector_v2::ChromeLevelPoint{});
 }
 
 TEST_CASE("overview mutations schedule a minimap refresh outside its panel bounds") {

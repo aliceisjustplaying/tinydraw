@@ -737,29 +737,18 @@ ChromeLevelPoint chrome_minimap_level_point(ChromePoint point, const ChromeNavig
   };
 }
 
-ChromeLevelPoint chrome_minimap_drag_origin(ChromePoint start, ChromePoint current,
+ChromeLevelPoint chrome_minimap_drag_origin(ChromePoint /*start*/, ChromePoint current,
                                             ChromeLevelPoint focus,
                                             const ChromeNavigation& navigation) {
-  const ChromeLevelPoint start_level = chrome_minimap_level_point(start, navigation);
   const ChromeLevelPoint current_level = chrome_minimap_level_point(current, navigation);
-  const ChromeRect viewport = minimap_viewport_rect(navigation);
-  const bool preserves_grab =
-      inside(start, static_cast<float>(viewport.x0), static_cast<float>(viewport.y0),
-             static_cast<float>(viewport.x1), static_cast<float>(viewport.y1));
-  const int base_x = preserves_grab ? navigation.level_x : start_level.x - focus.x;
-  const int base_y = preserves_grab ? navigation.level_y : start_level.y - focus.y;
-  // Direct acquisition supplies global travel; drag deltas then retain the
-  // 100% map scale at higher zooms so one panel pixel does not become a
-  // quarter of the 400% viewport.
-  const float drag_scale =
-      std::min(1.0F, 100.0F / static_cast<float>(std::max(navigation.zoom_percent, 1)));
-  const int drag_x = static_cast<int>(
-      std::lround(static_cast<float>(current_level.x - start_level.x) * drag_scale));
-  const int drag_y = static_cast<int>(
-      std::lround(static_cast<float>(current_level.y - start_level.y) * drag_scale));
+  // The minimap is an absolute pointer, not a miniature relative trackpad.
+  // Every position centers the viewport beneath the finger, so available map
+  // travel always spans the complete world even when the viewport indicator
+  // is only a few pixels wide at 400%.
+  const int requested_x = current_level.x - focus.x;
+  const int requested_y = current_level.y - focus.y;
+  // Preserve the even-origin invariant used by the fast ring-shift path.
   const auto quantize_even = [](int delta) { return delta - delta % 2; };
-  const int requested_x = base_x + drag_x;
-  const int requested_y = base_y + drag_y;
   const int quantized_x = navigation.level_x + quantize_even(requested_x - navigation.level_x);
   const int quantized_y = navigation.level_y + quantize_even(requested_y - navigation.level_y);
   return {
