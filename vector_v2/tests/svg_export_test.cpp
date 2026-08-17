@@ -276,7 +276,6 @@ TEST_CASE("SVG export has stable exact output and painter-ordered eraser geometr
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"30\" height=\"20\" "
         "viewBox=\"0 0 30 20\">\n"
-        "<rect x=\"0\" y=\"0\" width=\"30\" height=\"20\" fill=\"#FFFFFF\"/>\n"
         "<path fill=\"#FF0000\" fill-rule=\"nonzero\" "
         "d=\"M12 10A2 2 0 1 1 8 10A2 2 0 1 1 12 10Z"
         "M10 8L20 6L20 14L10 12Z"
@@ -287,6 +286,44 @@ TEST_CASE("SVG export has stable exact output and painter-ordered eraser geometr
   CHECK(sink.maximum_fragment <= 1'024U);
   CHECK(progress.completed == std::vector<std::size_t>{0U, 1U, 2U});
   CHECK(progress.totals == std::vector<std::size_t>{2U, 2U, 2U});
+}
+
+TEST_CASE("operation chunks from one physical gesture export as one path") {
+  LogFixture<4, 8> fixture;
+  const std::array first{
+      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 40, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 80, .y_quarter = 40, .radius_256 = 256},
+  };
+  const std::array second{
+      vector_v2::CompactOperationSample{.x_quarter = 120, .y_quarter = 40, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 40, .radius_256 = 256},
+  };
+  const std::array next_gesture{
+      vector_v2::CompactOperationSample{.x_quarter = 40, .y_quarter = 80, .radius_256 = 256},
+  };
+  REQUIRE(fixture.log.append({.color = 0U, .gesture_id = 7U, .samples = first}).has_value());
+  REQUIRE(fixture.log.append({.color = 0U, .gesture_id = 7U, .samples = second}).has_value());
+  REQUIRE(fixture.log.append({.color = 0U, .gesture_id = 8U, .samples = next_gesture}).has_value());
+
+  StringSink sink;
+  REQUIRE(vector_v2::export_svg(fixture.log, sink));
+  const auto occurrences = [&sink](std::string_view needle) {
+    std::size_t count = 0;
+    std::size_t cursor = 0;
+    while ((cursor = sink.text.find(needle, cursor)) != std::string::npos) {
+      ++count;
+      cursor += needle.size();
+    }
+    return count;
+  };
+  CHECK(occurrences("<path ") == 2U);
+}
+
+TEST_CASE("SVG export omits a synthetic background rectangle") {
+  LogFixture<1, 1> fixture;
+  StringSink sink;
+  REQUIRE(vector_v2::export_svg(fixture.log, sink));
+  CHECK(sink.text.find("<rect ") == std::string::npos);
 }
 
 TEST_CASE("exported primitive coverage exactly matches the ribbon renderer raster") {

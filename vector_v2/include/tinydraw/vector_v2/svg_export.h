@@ -29,12 +29,15 @@ struct SvgExportOptions {
 };
 
 // Streams a standalone SVG from the painter-ordered operation authority.
-// Every operation becomes one filled SVG path containing consistently wound
-// subpaths for the exact circles and convex shapes emitted by
-// CurvedRibbonStream, the same variable-width ribbon geometry used by the
-// renderer. Nonzero filling makes their union identical to the rendered
-// stroke without a centerline/stroke-width approximation. Erasers use the
-// requested opaque background color and retain their operation order.
+// Adjacent operation chunks with one nonzero gesture ID become one filled SVG
+// path: a physical finger-down/up stroke is the logical export unit even when
+// bounded live-input storage split it internally. Ungrouped legacy operations
+// remain individual paths. Each path contains consistently wound subpaths for
+// the exact circles and convex shapes emitted by CurvedRibbonStream, the same
+// variable-width ribbon geometry used by the renderer. Nonzero filling makes
+// their union identical to the rendered stroke without a centerline or
+// stroke-width approximation. The root has no synthetic background rectangle;
+// erasers use the requested opaque background color and retain painter order.
 //
 // No document-sized output or geometry buffer is allocated. Formatting and
 // sink batching use fixed stack storage plus RibbonPrimitiveBatch's bounded
