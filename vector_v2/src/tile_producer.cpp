@@ -294,7 +294,7 @@ bool TileProducer::start_group(const ViewRequest& view, TileKey group_origin) {
   };
   const OperationLogEpoch epoch = log_.epoch();
   const DocumentRevision revision = log_.current_revision();
-  const auto replay = log_.replay_range(epoch, baseline_revision_, revision);
+  const auto replay = log_.active_replay_range(epoch);
   if (bounds.x1 <= bounds.x0 || bounds.y1 <= bounds.y0 || !replay.has_value() ||
       revision != canvas_.current_revision()) {
     return false;

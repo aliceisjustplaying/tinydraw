@@ -411,6 +411,20 @@ std::optional<OperationReplayRange> OperationLog::replay_range(
   };
 }
 
+std::optional<OperationReplayRange> OperationLog::active_replay_range(
+    OperationLogEpoch requested_epoch) const {
+  if (append_pending_ || history_pending_ || requested_epoch != epoch_) {
+    return std::nullopt;
+  }
+  return OperationReplayRange{
+      .epoch = epoch_,
+      .baseline_revision = base_revision_,
+      .destination_revision = revision_,
+      .first_operation = 0U,
+      .operation_count = operation_count_,
+  };
+}
+
 bool OperationLog::reset(DocumentRevision revision) {
   if (append_pending_ || history_pending_) {
     return false;
