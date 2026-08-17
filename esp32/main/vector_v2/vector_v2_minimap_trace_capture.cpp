@@ -35,6 +35,17 @@ void MinimapTraceCapture::record(std::uint32_t timestamp_us, std::uint32_t seque
                                  int zoom_percent, MinimapTraceState before,
                                  MinimapTraceState after) {
   last_activity_us_ = timestamp_us;
+  ++offers_;
+  const std::uint16_t quantized_x = quantize(x, 367U);
+  const std::uint16_t quantized_y = quantize(y, 447U);
+  if (kind == vector_v2::TouchEventKind::kMove && have_last_point_ &&
+      quantized_x == last_x_ && quantized_y == last_y_) {
+    ++duplicate_moves_;
+    return;
+  }
+  last_x_ = quantized_x;
+  last_y_ = quantized_y;
+  have_last_point_ = kind != vector_v2::TouchEventKind::kUp;
   if (count_ >= storage_.size()) {
     overflowed_ = true;
     return;
@@ -42,8 +53,8 @@ void MinimapTraceCapture::record(std::uint32_t timestamp_us, std::uint32_t seque
   storage_[count_++] = {
       .timestamp_us = timestamp_us,
       .sequence = sequence,
-      .x = quantize(x, 367U),
-      .y = quantize(y, 447U),
+      .x = quantized_x,
+      .y = quantized_y,
       .zoom_percent = static_cast<std::uint16_t>(std::clamp(zoom_percent, 0, 65'535)),
       .before_x = static_cast<std::int16_t>(before.level_x),
       .before_y = static_cast<std::int16_t>(before.level_y),
@@ -62,9 +73,10 @@ void MinimapTraceCapture::include_append_us(std::uint32_t duration_us) {
 
 void MinimapTraceCapture::dump_and_reset() {
   std::printf(
-      "TINYDRAW_MINIMAP_CAPTURE_BEGIN events=%u overflow=%u append_total_us=%llu "
-      "append_max_us=%u\n",
-      static_cast<unsigned>(count_), overflowed_ ? 1U : 0U,
+      "TINYDRAW_MINIMAP_CAPTURE_BEGIN events=%u offers=%u duplicate_moves=%u overflow=%u "
+      "append_total_us=%llu append_max_us=%u\n",
+      static_cast<unsigned>(count_), static_cast<unsigned>(offers_),
+      static_cast<unsigned>(duplicate_moves_), overflowed_ ? 1U : 0U,
       static_cast<unsigned long long>(append_total_us_), static_cast<unsigned>(append_max_us_));
   std::printf(
       "t_us,sequence,kind,x,y,zoom,before_x,before_y,after_x,after_y,before_flags,after_flags\n");
@@ -93,6 +105,9 @@ void MinimapTraceCapture::dump_and_reset() {
   count_ = 0;
   append_total_us_ = 0;
   append_max_us_ = 0;
+  offers_ = 0;
+  duplicate_moves_ = 0;
+  have_last_point_ = false;
   overflowed_ = false;
 }
 

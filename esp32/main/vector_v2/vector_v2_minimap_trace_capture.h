@@ -73,7 +73,12 @@ class MinimapTraceCapture {
   std::size_t count_ = 0;
   std::uint64_t append_total_us_ = 0;
   std::uint32_t append_max_us_ = 0;
+  std::uint32_t offers_ = 0;
+  std::uint32_t duplicate_moves_ = 0;
   std::uint32_t last_activity_us_ = 0;
+  std::uint16_t last_x_ = 0;
+  std::uint16_t last_y_ = 0;
+  bool have_last_point_ = false;
   bool overflowed_ = false;
 };
 
