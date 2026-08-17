@@ -98,6 +98,22 @@ TEST_CASE("overview round trip restores a compatible remembered tiled origin") {
   CHECK(navigation.origin() == remembered);
 }
 
+TEST_CASE("full button cycle restores the explored 400 percent origin") {
+  vector_v2::NavigationState navigation;
+  REQUIRE(navigation.set_zoom(vector_v2::ZoomLevel::k400Percent, kDrawingCenter));
+  REQUIRE(navigation.set_origin(2300, 3100, kDrawingCenter));
+  const auto explored = navigation.origin();
+
+  constexpr vector_v2::ZoomLevel cycle[]{
+      vector_v2::ZoomLevel::k25Percent, vector_v2::ZoomLevel::k50Percent,
+      vector_v2::ZoomLevel::k100Percent, vector_v2::ZoomLevel::k200Percent,
+      vector_v2::ZoomLevel::k400Percent};
+  for (const auto zoom : cycle) {
+    REQUIRE(navigation.set_zoom(zoom, kDrawingCenter));
+  }
+  CHECK(navigation.origin() == explored);
+}
+
 TEST_CASE("incompatible remembered origin yields to current focus") {
   vector_v2::NavigationState navigation;
   REQUIRE(navigation.set_zoom(vector_v2::ZoomLevel::k400Percent, kDrawingCenter));

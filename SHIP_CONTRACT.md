@@ -122,7 +122,12 @@ fine, need to see it in action" — 2026-08-15).
 - Onboard clock + one-shot NTP: required (export timestamps).
 - Minimap: tap-to-jump and viewport-drag navigation required (owner elevated
   drag from post-ship on 2026-08-17).
-- Zoom: 25/50/100/200/400%. 800% out of contract.
+- Zoom: 25/50/100/200/400%. Returning through the complete button cycle must
+  restore a compatible zoom's exact explored origin; stale remembered views
+  yield to the current focus. Closed 2026-08-17 with host and physical
+  classifier receipts
+  (`benchmark-results/zoom-cycle-return-2026-08-17/RECEIPT.md`). 800% is out
+  of contract.
 
 ## Document authority policy
 
