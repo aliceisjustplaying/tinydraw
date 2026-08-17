@@ -155,6 +155,13 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
 [[nodiscard]] ChromeLevelPoint chrome_minimap_drag_origin(ChromePoint start, ChromePoint current,
                                                           ChromeLevelPoint focus,
                                                           const ChromeNavigation& navigation);
+// The minimap and the size/document dock buttons share a physical finger
+// footprint near the map's bottom edge. A Down in this zone remains a normal
+// dock tap unless movement crosses chrome_promotes_minimap_dock_drag().
+[[nodiscard]] bool chrome_minimap_dock_drag_candidate(ChromePoint point,
+                                                       const ChromeState& state);
+[[nodiscard]] bool chrome_promotes_minimap_dock_drag(ChromePoint start, ChromePoint current,
+                                                      const ChromeState& state);
 // Suppresses touch jitter so a stationary minimap gesture remains a jump tap.
 // The promotion distance shrinks at high zoom; the whole minimap remains a
 // direct-acquisition target without an ambiguous invisible viewport zone.

@@ -222,7 +222,7 @@ TEST_CASE("pan drags promote through the zoom rail while taps stay controls") {
 TEST_CASE("minimap hit guard absorbs imprecise touches around the rendered frame") {
   const ChromeState state;
   CHECK(tinydraw::vector_v2::chrome_minimap_contains({250.0F, 236.0F}, state));
-  CHECK(tinydraw::vector_v2::chrome_minimap_contains({266.0F, 236.0F}, state));
+  CHECK(tinydraw::vector_v2::chrome_minimap_contains({266.0F, 252.0F}, state));
   CHECK(tinydraw::vector_v2::chrome_minimap_contains({367.0F, 371.0F}, state));
   CHECK_FALSE(tinydraw::vector_v2::chrome_minimap_contains({249.0F, 235.0F}, state));
   CHECK_FALSE(tinydraw::vector_v2::chrome_minimap_contains({249.0F, 372.0F}, state));
@@ -249,15 +249,33 @@ TEST_CASE("minimap hit guard absorbs imprecise touches around the rendered frame
       .level_width = 2944,
       .level_height = 3584,
   };
-  CHECK(tinydraw::vector_v2::chrome_minimap_level_point({272.0F, 242.0F}, navigation) ==
+  CHECK(tinydraw::vector_v2::chrome_minimap_level_point({272.0F, 258.0F}, navigation) ==
         tinydraw::vector_v2::ChromeLevelPoint{});
-  CHECK(tinydraw::vector_v2::chrome_minimap_level_point({312.0F, 291.0F}, navigation) ==
+  CHECK(tinydraw::vector_v2::chrome_minimap_level_point({312.0F, 307.0F}, navigation) ==
         tinydraw::vector_v2::ChromeLevelPoint{1472, 1792});
-  CHECK(tinydraw::vector_v2::chrome_minimap_level_point({352.0F, 340.0F}, navigation) ==
+  CHECK(tinydraw::vector_v2::chrome_minimap_level_point({352.0F, 356.0F}, navigation) ==
         tinydraw::vector_v2::ChromeLevelPoint{2944, 3584});
   // A captured drag keeps navigating after leaving the visible frame.
   CHECK(tinydraw::vector_v2::chrome_minimap_level_point({100.0F, 500.0F}, navigation) ==
         tinydraw::vector_v2::ChromeLevelPoint{0, 3584});
+}
+
+TEST_CASE("ambiguous minimap dock presses preserve taps and promote deliberate drags") {
+  const ChromeState state;
+  // Both affected toolbar buttons remain truthful stationary taps.
+  CHECK(tinydraw::vector_v2::chrome_action_at({274.0F, 400.0F}, state) ==
+        ChromeAction::kToggleSizes);
+  CHECK(tinydraw::vector_v2::chrome_action_at({334.0F, 400.0F}, state) ==
+        ChromeAction::kToggleDocument);
+  CHECK_FALSE(tinydraw::vector_v2::chrome_minimap_contains({274.0F, 400.0F}, state));
+  CHECK(tinydraw::vector_v2::chrome_minimap_dock_drag_candidate({274.0F, 400.0F}, state));
+  CHECK(tinydraw::vector_v2::chrome_minimap_dock_drag_candidate({334.0F, 400.0F}, state));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_promotes_minimap_dock_drag(
+      {274.0F, 400.0F}, {281.0F, 400.0F}, state));
+  CHECK(tinydraw::vector_v2::chrome_promotes_minimap_dock_drag(
+      {274.0F, 400.0F}, {282.0F, 400.0F}, state));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_minimap_dock_drag_candidate(
+      {274.0F, 400.0F}, {.popup = ChromePopup::kSizes}));
 }
 
 TEST_CASE("minimap pointer absolutely centers the viewport at every zoom") {
@@ -272,16 +290,16 @@ TEST_CASE("minimap pointer absolutely centers the viewport at every zoom") {
 
   // A touch anywhere on the minimap acquires that absolute world position;
   // there is no requirement to grab the tiny viewport indicator first.
-  CHECK(tinydraw::vector_v2::chrome_minimap_drag_origin({352.0F, 340.0F}, {352.0F, 340.0F}, focus,
+  CHECK(tinydraw::vector_v2::chrome_minimap_drag_origin({352.0F, 356.0F}, {352.0F, 356.0F}, focus,
                                                         navigation) ==
         tinydraw::vector_v2::ChromeLevelPoint{5'520, 6'796});
   // Moving from the bottom-right to the map center must reach center within
   // the available finger travel, even at 400%.
-  CHECK(tinydraw::vector_v2::chrome_minimap_drag_origin({352.0F, 340.0F}, {312.0F, 291.0F}, focus,
+  CHECK(tinydraw::vector_v2::chrome_minimap_drag_origin({352.0F, 356.0F}, {312.0F, 307.0F}, focus,
                                                         navigation) ==
         tinydraw::vector_v2::ChromeLevelPoint{2'760, 3'398});
   // Projection clamps continuously at every world edge.
-  CHECK(tinydraw::vector_v2::chrome_minimap_drag_origin({352.0F, 340.0F}, {272.0F, 242.0F}, focus,
+  CHECK(tinydraw::vector_v2::chrome_minimap_drag_origin({352.0F, 356.0F}, {272.0F, 258.0F}, focus,
                                                         navigation) ==
         tinydraw::vector_v2::ChromeLevelPoint{});
 }

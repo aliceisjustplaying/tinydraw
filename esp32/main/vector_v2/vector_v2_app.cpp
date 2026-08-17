@@ -1119,6 +1119,7 @@ void run_vector_v2_app() {
   bool pressed = false;
   bool toolbar_pressed = false;
   bool minimap_pressed = false;
+  bool minimap_dock_candidate = false;
   bool popup_dismissed_press = false;
   std::optional<std::uint32_t> time_sync_terminal_since;
   bool panning = false;
@@ -1315,7 +1316,9 @@ void run_vector_v2_app() {
     const auto capture_state = [&](Point event_point) {
       std::uint8_t flags = 0U;
       flags |= pressed ? minimap_trace_flag(MinimapTraceFlag::kPressed) : 0U;
-      flags |= minimap_pressed ? minimap_trace_flag(MinimapTraceFlag::kMinimap) : 0U;
+      flags |= (minimap_pressed || minimap_dock_candidate)
+                   ? minimap_trace_flag(MinimapTraceFlag::kMinimap)
+                   : 0U;
       flags |= panning ? minimap_trace_flag(MinimapTraceFlag::kPanning) : 0U;
       flags |= toolbar_pressed ? minimap_trace_flag(MinimapTraceFlag::kToolbar) : 0U;
       flags |= ink.active() ? minimap_trace_flag(MinimapTraceFlag::kInk) : 0U;
@@ -1362,6 +1365,15 @@ void run_vector_v2_app() {
           begin_pan(point);
           pan_metrics.include(presenter.pan_minimap_from(
               pan_start_x, pan_start_y, pan_start, point, chrome, event_us));
+        } else if (vector_v2::chrome_minimap_dock_drag_candidate({point.x, point.y}, chrome)) {
+          // This physical finger zone overlaps the size/document buttons.
+          // Preserve a stationary toolbar tap, but let deliberate movement
+          // promote the captured gesture into absolute minimap navigation.
+          minimap_dock_candidate = true;
+          toolbar_pressed = true;
+          toolbar_start = point;
+          toolbar_sum = point;
+          toolbar_samples = 1;
         } else if (vector_v2::chrome_contains({point.x, point.y}, chrome)) {
           toolbar_pressed = true;
           toolbar_start = point;
@@ -1411,6 +1423,24 @@ void run_vector_v2_app() {
         last_touch = point;
         pan_metrics.include(presenter.pan_minimap_from(pan_start_x, pan_start_y, pan_start, point,
                                                        chrome, event_us));
+      } else if (minimap_dock_candidate &&
+                 (point.x != last_touch.x || point.y != last_touch.y)) {
+        if (vector_v2::chrome_promotes_minimap_dock_drag(
+                {toolbar_start.x, toolbar_start.y}, {point.x, point.y}, chrome)) {
+          minimap_dock_candidate = false;
+          toolbar_pressed = false;
+          toolbar_samples = 0;
+          minimap_pressed = true;
+          begin_pan(toolbar_start);
+          last_touch = point;
+          pan_metrics.include(presenter.pan_minimap_from(
+              pan_start_x, pan_start_y, pan_start, point, chrome, event_us));
+        } else {
+          toolbar_sum.x += point.x;
+          toolbar_sum.y += point.y;
+          ++toolbar_samples;
+          last_touch = point;
+        }
       } else if (toolbar_pressed && (point.x != last_touch.x || point.y != last_touch.y)) {
         if (vector_v2::chrome_promotes_pan_drag({toolbar_start.x, toolbar_start.y},
                                                 {point.x, point.y}, chrome)) {
@@ -1480,6 +1510,7 @@ void run_vector_v2_app() {
     }
     if (lift_event && pressed) {
       pressed = false;
+      minimap_dock_candidate = false;
       if (popup_dismissed_press) {
         popup_dismissed_press = false;
       } else if (minimap_pressed) {

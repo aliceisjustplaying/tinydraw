@@ -40,14 +40,15 @@ constexpr int kBatteryBottom = 54;
 constexpr ChromeRect kZoomRailRect{304, 72, 360, 226};
 constexpr ChromeRect kZoomRailOverlayRect{kZoomRailRect.x0 - 1, kZoomRailRect.y0 - 1,
                                           kZoomRailRect.x1 + 2, kZoomRailRect.y1 + 3};
-// Keep a finger-width gap above the dock. When the viewport sat at the old
-// y=366 frame edge, bottom-world acquisition landed in the dock often enough
-// to trigger its buttons; lifting the same-size map avoids that overlap
-// without adding any per-frame chrome pixels.
-constexpr ChromeRect kMinimapRect{266, 236, 358, 350};
+constexpr ChromeRect kMinimapRect{266, 252, 358, 366};
 // Guard the visible frame against finger/calibration error. Near-frame misses
 // used to become real short strokes in the canvas authority.
 constexpr ChromeRect kMinimapHitRect{250, 236, 368, kChromeCanvasBottom};
+// A finger centered on the minimap's bottom edge can report inside the dock.
+// This zone never steals a stationary button tap: it only makes that press a
+// candidate for explicit drag-intent arbitration in the app coordinator.
+constexpr ChromeRect kMinimapDockDragRect{kMinimapHitRect.x0, kChromeCanvasBottom,
+                                          kMinimapHitRect.x1, 424};
 constexpr ChromeRect kMinimapOverlayRect{kMinimapRect.x0 - 1, kMinimapRect.y0 - 1,
                                          kMinimapRect.x1 + 2, kMinimapRect.y1 + 3};
 constexpr ChromeRect kBatteryOverlayRect{kBatteryLeft - 2, kBatteryTop - 2, kBatteryRight + 4,
@@ -72,13 +73,14 @@ static_assert([] {
   return true;
 }());
 constexpr int kMinimapLeft = 272;
-constexpr int kMinimapTop = 242;
+constexpr int kMinimapTop = 258;
 constexpr int kMinimapWidth = 80;
 constexpr int kMinimapHeight = 98;
 constexpr int kHitSlop = 8;
 constexpr float kMinimapDragPromotionPixels = 4.0F;
 constexpr float kMinimapDragPromotionPixels200 = 3.0F;
 constexpr float kMinimapDragPromotionPixels400 = 2.0F;
+constexpr float kMinimapDockDragPromotionPixels = 8.0F;
 constexpr float kPanDragPromotionPixels = 8.0F;
 constexpr int kMainHitTop = kMainTop - kHitSlop;
 constexpr std::array kMainCenters{34, 94, 154, 214, 274, 334};
@@ -759,6 +761,25 @@ ChromeLevelPoint chrome_minimap_drag_origin(ChromePoint /*start*/, ChromePoint c
       .x = std::clamp(quantized_x, 0, std::max(navigation.level_width - kWidth, 0)),
       .y = std::clamp(quantized_y, 0, std::max(navigation.level_height - kChromeCanvasBottom, 0)),
   };
+}
+
+bool chrome_minimap_dock_drag_candidate(ChromePoint point, const ChromeState& state) {
+  return canvas_overlays_visible(state) &&
+         inside(point, static_cast<float>(kMinimapDockDragRect.x0),
+                static_cast<float>(kMinimapDockDragRect.y0),
+                static_cast<float>(kMinimapDockDragRect.x1),
+                static_cast<float>(kMinimapDockDragRect.y1));
+}
+
+bool chrome_promotes_minimap_dock_drag(ChromePoint start, ChromePoint current,
+                                       const ChromeState& state) {
+  if (!chrome_minimap_dock_drag_candidate(start, state)) {
+    return false;
+  }
+  const float delta_x = current.x - start.x;
+  const float delta_y = current.y - start.y;
+  return delta_x * delta_x + delta_y * delta_y >=
+         kMinimapDockDragPromotionPixels * kMinimapDockDragPromotionPixels;
 }
 
 bool chrome_promotes_minimap_drag(ChromePoint start, ChromePoint current, const ChromeState& state,
