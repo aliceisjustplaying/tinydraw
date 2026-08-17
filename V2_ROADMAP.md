@@ -266,11 +266,11 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       25% settles presentation pixels only (the overview stays hard-edged
       replay authority); live ink stays hard-edged. Per-tile 1.7–5.4 ms
       mean / 9.3 ms max after round 1 of optimization (annulus sqrt,
-      batched slices+present). Remaining polish, owner-requested: make the
-      settle progression imperceptible (speed ideas ranked in
-      `review_findings_2026_08_16_overnight/HANDOVER.md`), settled PNG
-      export (low-prio). Arc-length resampling remains prototyped-only
-      (spacing choice open; trailing-tip fix todo #13 pairs with it).
+      batched slices+present). **Owner verdict 2026-08-17:** accepted as done
+      for the current release scope. Faster settle progression and cosmetic
+      tuning remain optional backlog, not blockers (ideas are ranked in
+      `review_findings_2026_08_16_overnight/HANDOVER.md`). Settled PNG export
+      is low priority. Arc-length resampling remains prototyped-only.
 - [x] Let pan-tool drags pass through the zoom overlay while preserving zoom
       taps. **Landed 2026-08-17:** an 8 px intent threshold promotes rail drags
       into the existing boundary-drained pan state; host and physical classifier
@@ -296,13 +296,23 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       `benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md`,
       `benchmark-results/minimap-touch-target-2026-08-17/RECEIPT.md`, and
       `benchmark-results/minimap-input-leak-2026-08-17/RECEIPT.md`.
+- [ ] Repair 400% minimap glass control from a non-perturbing exact touch
+      capture. **Owner verdict 2026-08-17:** commit `54dc125` is worse from the
+      bottom-right—acquisition took roughly five attempts, then the 0.25 drag
+      scale exhausted physical finger travel before reaching center. The
+      deterministic endpoint gate missed both symptoms. The existing capture
+      build is disqualified because its synchronous CSV dump blocks the app
+      loop; build a capture path that cannot perturb interaction before another
+      mapping change.
 - [x] Integrate the RTC and one-shot NTP through a narrow asynchronous adapter.
       **Landed 2026-08-17:** Document → Clock owns three explicit controller
       phases (connecting, synchronizing, terminal), writes PCF85063A time, and
-      publishes success/error only after Wi-Fi teardown. Host and firmware
-      builds pass; physical network/glass evidence awaits the owner's reset out
-      of the mounted export. See
-      `benchmark-results/v2-ntp-sync-2026-08-17/RECEIPT.md`.
+      publishes success/error only after Wi-Fi teardown. Missing glyphs,
+      centering, terminal expiry, and startup retry are fixed; all status labels
+      now match export `SAVING` at scale 3. **Owner verdict 2026-08-17:**
+      unavailable-network handling, successful `TIME SET`, centering, and text
+      size are accepted. See `benchmark-results/v2-ntp-sync-2026-08-17/RECEIPT.md`
+      and `benchmark-results/ntp-text-size-2026-08-17/RECEIPT.md`.
 - [ ] Integrate V1 power off/on and autosave-before-risky-transition through
       narrow adapters. Battery transitions are already present.
 - [ ] Add visible capacity, save, export, storage, and hardware failure states.

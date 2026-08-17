@@ -63,5 +63,14 @@ acquisition. Header comments describe the new contract.
   standing unrelated `overlap_cold=0` remains visible (`device-gate.log:245`).
 - No panic, watchdog, stack overflow, or mass-storage command occurred.
 
-Owner glass acceptance of the revised mapping remains pending after the
-combined product flash.
+## Owner glass verdict
+
+**Rejected 2026-08-17.** The mapping was worse in the bottom-right→center case:
+acquisition took roughly five attempts, then the 0.25 400% drag scale exhausted
+the owner's physical finger travel before the viewport could reach center. The
+green deterministic classifier proved arithmetic endpoints but did not model
+acquisition reliability or finite finger travel.
+
+This receipt remains valid evidence for the hidden-zone diagnosis and automated
+behavior, but its mapping is not accepted product behavior. A non-perturbing
+exact minimap capture is required before the next change.
