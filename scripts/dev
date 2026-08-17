@@ -41,7 +41,7 @@ case "$command_name" in
     exec "$root/out/build/host-release/tests/tinydraw_perf_characterization"
     ;;
   vector-perf)
-    cmake --preset host-release
+    cmake --preset host-release -DTINYDRAW_BUILD_EXPERIMENTS=ON
     cmake --build --preset host-release --target tinydraw_vector_rebuild_benchmark
     exec "$root/out/build/host-release/tests/tinydraw_vector_rebuild_benchmark"
     ;;
