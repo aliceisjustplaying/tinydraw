@@ -368,6 +368,10 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       Autosave commits continuously; an explicit hold-triggered flush is a
       later durability refinement, not a missing power feature.
 - [ ] Add visible capacity, save, export, storage, and hardware failure states.
+- [ ] Center the USB export helper line in the later UI refinement round. The
+      `d9b4bb8` font fix restored every missing glyph on glass, but the owner
+      observed that `COPY YOUR FILES` is horizontally misaligned; its current
+      `x=139` should be centered from its measured scale-2 width.
 - [ ] Enlarge invisible tap targets, add pressed feedback, resolve overlaps, and
       run the physical missed-tap check.
 - [ ] Capture a physical host mount/eject receipt for `DRAWING.SVG` without a
