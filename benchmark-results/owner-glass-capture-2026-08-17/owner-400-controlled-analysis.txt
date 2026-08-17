@@ -1,0 +1,7 @@
+source=benchmark-results/owner-glass-capture-2026-08-17/owner-400-controlled.log
+events=2381 down=1 move=2379 up=1
+duration_us=2575977
+distinct_coordinate_changes=190 rate_hz=73.758
+change_interval_us_min=12001 median=13000.0 p95=14000 max=65982
+spatial_step_px_min=1.000 median=9.220 p95=28.000 max=34.482
+bounds_x=50..334 bounds_y=47..369
