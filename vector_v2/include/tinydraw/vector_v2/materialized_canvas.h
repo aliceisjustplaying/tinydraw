@@ -213,7 +213,6 @@ class MaterializedCanvas {
   // pool saturates: past that point every publication evicts warmer tiles.
   [[nodiscard]] std::size_t resident_raw_tiles() const;
   [[nodiscard]] std::size_t uniform_capacity() const;
-  [[nodiscard]] std::uint64_t composition_epoch() const;
   [[nodiscard]] std::span<const std::uint16_t> overview_pixels() const;
   [[nodiscard]] bool certainly_paper(TileKey key) const;
 
@@ -300,7 +299,6 @@ class MaterializedCanvas {
                                                            MaterializationQuality quality,
                                                            std::uint16_t color = 0xFFFFU);
   [[nodiscard]] std::optional<SourceSelection> lookup(TileKey key) const;
-  [[nodiscard]] bool mark_used(TileKey key);
   // Softly protects one recent viewport at each tiled zoom. Protection only
   // changes eviction order: a protected tile can still be replaced
   // when every raw slot belongs to remembered footprints.
@@ -382,7 +380,6 @@ class MaterializedCanvas {
   void mark_occupied(PixelRect world_bounds);
   void rebuild_occupancy_from_overview();
   void clear_uniforms();
-  void bump_composition_epoch();
   void touch(MaterializedSlotStorage& slot);
   // Sole occupancy transitions: every occupied_ flip goes through these so
   // occupied_slots_ and the raw-slot directory can never desynchronize.
@@ -402,7 +399,6 @@ class MaterializedCanvas {
   DocumentRevision current_revision_{};
   DocumentRevision overview_revision_{};
   std::uint64_t use_clock_ = 0;
-  std::uint64_t composition_epoch_ = 1;
   std::array<ViewFootprint, kTiledZoomCount> recent_views_{};
   ZoomLevel active_view_zoom_ = ZoomLevel::k25Percent;
   bool overview_valid_ = false;
