@@ -83,9 +83,11 @@ class TileProducer {
   // reset. Rejected unless both authorities are empty and at this revision.
   [[nodiscard]] bool reset_uniform_baseline(DocumentRevision revision,
                                             std::uint16_t color = 0xFFFFU);
+#ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
   // Optional re-render truth observer; completed group renders are classified
   // against damage/eviction state the canvas reports. Null disables.
   void set_rerender_ledger(RerenderLedger* ledger) { rerender_ledger_ = ledger; }
+#endif
 
  private:
   struct GroupPublication {
@@ -163,7 +165,9 @@ class TileProducer {
   MaterializedCanvas& canvas_;
   TileProducerWorkspace workspace_;
   MaskedRowSummary summary_;
+#ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
   RerenderLedger* rerender_ledger_ = nullptr;
+#endif
   DocumentRevision baseline_revision_{};
   std::uint16_t baseline_color_ = 0xFFFFU;
   ActiveGroup active_group_{};

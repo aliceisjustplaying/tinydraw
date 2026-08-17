@@ -27,10 +27,7 @@ namespace {
 
 constexpr int kPanelGapX = 0x10;
 constexpr gpio_num_t kTearPin = GPIO_NUM_13;
-constexpr int kPanelClockMHz = kEffectiveCo5300ClockMHz;
-// Measured 2026-08-15 (benchmark-results/blockA-panel-limits): requests of 40,
-// 50, and 60 MHz produce identical transfer walls. The GPSPI divider from the
-// 80 MHz source clamps all three to 40 MHz actual; no overclock ever engaged.
+constexpr int kPanelClockMHz = kCo5300ClockMHz;
 // Vector V2 uses three 32 KiB bounce buffers to keep staging ahead of the
 // measured 20 MB/s wire. Raster V1 reserves the remaining contiguous internal
 // SRAM for its full-screen coverage plane and uses two queued transfers.
@@ -136,8 +133,7 @@ class Co5300PanelTransport::Impl {
       return;
     }
     std::printf("TINYDRAW_PANEL_HARD_RESET=%u\n", reset_panel_power());
-    std::printf("TINYDRAW_PANEL_TRANSPORT requested_clock_mhz=%d effective_clock_mhz=%d\n",
-                kPanelClockMHz, kEffectiveCo5300ClockMHz);
+    std::printf("TINYDRAW_PANEL_TRANSPORT clock_mhz=%d\n", kPanelClockMHz);
 
     spi_bus_config_t bus_config{};
     bus_config.sclk_io_num = GPIO_NUM_11;

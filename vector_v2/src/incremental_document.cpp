@@ -713,4 +713,18 @@ bool restore_document_snapshot(OperationLog& log, MaterializedCanvas& canvas,
   return log.reset(revision);
 }
 
+bool reset_blank_document(OperationLog& log, MaterializedCanvas& canvas,
+                          DocumentRevision revision) {
+  if (!log.ready() || !canvas.ready() || !log.can_reset()) {
+    return false;
+  }
+  // reset_blank cannot fail after the readiness check under the serialized
+  // ownership contract. Reset is called second so validation cannot discard
+  // document authority.
+  if (!canvas.reset_blank(revision)) {
+    return false;
+  }
+  return log.reset(revision);
+}
+
 }  // namespace tinydraw::vector_v2

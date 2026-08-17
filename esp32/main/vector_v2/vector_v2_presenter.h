@@ -104,8 +104,6 @@ struct LivePresentationTiming {
 [[nodiscard]] const char* presentation_experiment_name();
 [[nodiscard]] const char* selected_tear_edge_name();
 [[nodiscard]] TearSignalEdge selected_tear_edge();
-[[nodiscard]] int requested_panel_clock_mhz();
-[[nodiscard]] int effective_panel_clock_mhz();
 
 class VectorV2Presenter {
  public:
@@ -161,11 +159,13 @@ class VectorV2Presenter {
   [[nodiscard]] LivePresentationTiming set_zoom(vector_v2::ZoomLevel zoom,
                                                 const vector_v2::ChromeState& chrome,
                                                 std::uint32_t event_us);
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
   // Test/adapter seam for deterministic hardware views. Coordinates are
   // clamped to the selected level before the full fallback view is presented.
   [[nodiscard]] LivePresentationTiming set_view(vector_v2::ZoomLevel zoom, int level_x, int level_y,
                                                 const vector_v2::ChromeState& chrome,
                                                 std::uint32_t event_us);
+#endif
   [[nodiscard]] LivePresentationTiming pan_from(int start_x, int start_y, Point start_touch,
                                                 Point current_touch,
                                                 const vector_v2::ChromeState& chrome,

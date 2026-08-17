@@ -107,7 +107,6 @@ idf_component_register(
 )
 
 target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_20)
-target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_CO5300_CLOCK_MHZ=40)
 idf_component_get_property(TINYUSB_LIB espressif__tinyusb COMPONENT_LIB)
 target_include_directories(${TINYUSB_LIB} PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
 if(NOT TINYDRAW_QEMU)
@@ -140,7 +139,10 @@ if(NOT TINYDRAW_VECTOR_V2_TILE_SLOTS STREQUAL "448")
   )
 endif()
 if(TINYDRAW_VECTOR_V2_GATE_HARNESS)
-  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_V2_GATE_HARNESS=1)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    TINYDRAW_VECTOR_V2_GATE_HARNESS=1
+    TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS=1
+  )
   target_include_directories(${COMPONENT_LIB} PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}/../../vector_v2/test_support/include"
   )
