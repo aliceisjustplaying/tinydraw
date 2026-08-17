@@ -47,6 +47,8 @@ VectorV2ExportStats VectorV2Export::encode(const vector_v2::OperationLog& log,
   return stats;
 }
 
+void VectorV2Export::set_modified_time(FatDateTime time) { usb_.set_modified_time(time); }
+
 bool VectorV2Export::present_usb() { return usb_.finish_export(store_.has_file()); }
 
 void VectorV2Export::prepare_reencode() { usb_.prepare_export(); }
