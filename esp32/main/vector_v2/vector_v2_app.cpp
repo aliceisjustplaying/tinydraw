@@ -1079,6 +1079,7 @@ void run_vector_v2_app() {
   bool toolbar_pressed = false;
   bool minimap_pressed = false;
   bool popup_dismissed_press = false;
+  std::optional<std::uint32_t> time_sync_terminal_since;
   bool panning = false;
   Point last_touch{};
   Point toolbar_start{};
@@ -1194,8 +1195,24 @@ void run_vector_v2_app() {
     if (next_time_sync_status != chrome.time_sync_status) {
       chrome.time_sync_status = next_time_sync_status;
       chrome.popup = vector_v2::ChromePopup::kNone;
+      if (next_time_sync_status == vector_v2::ChromeTimeSyncStatus::kSaved ||
+          next_time_sync_status == vector_v2::ChromeTimeSyncStatus::kError) {
+        time_sync_terminal_since = loop_us;
+      } else {
+        time_sync_terminal_since.reset();
+      }
       const auto timing = presenter.refresh(chrome, loop_us);
       print_presentation("time-sync", presenter, timing);
+    }
+    if (time_sync_terminal_since.has_value() &&
+        vector_v2::chrome_time_sync_status_after(chrome.time_sync_status,
+                                                 loop_us - *time_sync_terminal_since) ==
+            vector_v2::ChromeTimeSyncStatus::kIdle) {
+      time_sync.dismiss();
+      chrome.time_sync_status = vector_v2::ChromeTimeSyncStatus::kIdle;
+      time_sync_terminal_since.reset();
+      const auto timing = presenter.refresh(chrome, loop_us);
+      print_presentation("time-sync-dismiss", presenter, timing);
     }
 
     // The battery redraw is a full-frame present (60-140 ms on dense
@@ -1259,6 +1276,7 @@ void run_vector_v2_app() {
           chrome.export_status = vector_v2::ChromeExportStatus::kIdle;
           if (time_toast) {
             time_sync.dismiss();
+            time_sync_terminal_since.reset();
           }
           chrome.time_sync_status = vector_v2::ChromeTimeSyncStatus::kIdle;
           popup_dismissed_press = true;

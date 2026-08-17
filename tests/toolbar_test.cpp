@@ -42,6 +42,26 @@ TEST_CASE("span circle raster stays exact under clipping") {
   }
 }
 
+TEST_CASE("pixel font covers every glyph used by NTP feedback") {
+  constexpr int scale = 3;
+  constexpr int glyph_advance = 6 * scale;
+  constexpr int width = glyph_advance * 3;
+  constexpr int height = 7 * scale;
+  std::array<std::uint16_t, width * height> pixels{};
+
+  tinydraw::PixelPainter(pixels, width, height).text(0, 0, "CTM", 0xABCDU, scale);
+
+  for (int glyph = 0; glyph < 3; ++glyph) {
+    bool painted = false;
+    for (int y = 0; y < height; ++y) {
+      for (int x = glyph * glyph_advance; x < (glyph + 1) * glyph_advance; ++x) {
+        painted = painted || pixels[static_cast<std::size_t>(y * width + x)] == 0xABCDU;
+      }
+    }
+    CHECK(painted);
+  }
+}
+
 TEST_CASE("default toolbar keeps every control in one full-width row") {
   const tinydraw::ToolbarState state;
 

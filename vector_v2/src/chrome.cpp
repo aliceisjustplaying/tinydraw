@@ -635,6 +635,14 @@ std::uint16_t selected_color(const ChromeState& state) {
   return kPico8Palettes[page][color];
 }
 
+ChromeTimeSyncStatus chrome_time_sync_status_after(ChromeTimeSyncStatus status,
+                                                   std::uint32_t elapsed_us) {
+  const bool terminal =
+      status == ChromeTimeSyncStatus::kSaved || status == ChromeTimeSyncStatus::kError;
+  return terminal && elapsed_us >= kChromeTimeSyncToastDurationUs ? ChromeTimeSyncStatus::kIdle
+                                                                  : status;
+}
+
 float brush_size(ChromeSize size) {
   switch (size) {
     case ChromeSize::kSmall:

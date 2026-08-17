@@ -59,6 +59,19 @@ TEST_CASE("document popup gives new export and time sync equal touch targets") {
   CHECK(tinydraw::vector_v2::chrome_action_at({306.0F, 331.0F}, state) == ChromeAction::kSyncTime);
 }
 
+TEST_CASE("terminal time sync feedback expires but active work does not") {
+  constexpr std::uint32_t timeout = tinydraw::vector_v2::kChromeTimeSyncToastDurationUs;
+  CHECK(tinydraw::vector_v2::chrome_time_sync_status_after(
+            ChromeTimeSyncStatus::kSaved, timeout - 1U) == ChromeTimeSyncStatus::kSaved);
+  CHECK(tinydraw::vector_v2::chrome_time_sync_status_after(ChromeTimeSyncStatus::kSaved, timeout) ==
+        ChromeTimeSyncStatus::kIdle);
+  CHECK(tinydraw::vector_v2::chrome_time_sync_status_after(ChromeTimeSyncStatus::kError, timeout) ==
+        ChromeTimeSyncStatus::kIdle);
+  CHECK(tinydraw::vector_v2::chrome_time_sync_status_after(ChromeTimeSyncStatus::kSynchronizing,
+                                                           timeout * 2U) ==
+        ChromeTimeSyncStatus::kSynchronizing);
+}
+
 TEST_CASE("active time sync is modal and hides navigation overlays") {
   constexpr int width = 368;
   constexpr int height = 448;
