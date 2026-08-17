@@ -117,8 +117,10 @@ const char* zoom_name(ZoomLevel zoom) {
   const bool hit = vector_v2::chrome_minimap_contains({310.0F, 310.0F}, chrome) &&
                    vector_v2::chrome_contains({310.0F, 310.0F}, chrome);
   const bool intent =
-      !vector_v2::chrome_promotes_minimap_drag({312.0F, 307.0F}, {315.0F, 307.0F}, chrome) &&
-      vector_v2::chrome_promotes_minimap_drag({312.0F, 307.0F}, {316.0F, 307.0F}, chrome);
+      !vector_v2::chrome_promotes_minimap_drag({312.0F, 307.0F}, {315.0F, 307.0F}, chrome, 100) &&
+      vector_v2::chrome_promotes_minimap_drag({312.0F, 307.0F}, {316.0F, 307.0F}, chrome, 100) &&
+      !vector_v2::chrome_promotes_minimap_drag({312.0F, 307.0F}, {313.0F, 307.0F}, chrome, 400) &&
+      vector_v2::chrome_promotes_minimap_drag({312.0F, 307.0F}, {314.0F, 307.0F}, chrome, 400);
   const auto initial = presenter.set_view(ZoomLevel::k100Percent, 400, 600, chrome, now_us());
   const auto tap = presenter.jump_from_minimap({312.0F, 307.0F}, chrome, now_us());
   const bool tap_position = presenter.level_x() == 552 && presenter.level_y() == 710;
@@ -130,7 +132,8 @@ const char* zoom_name(ZoomLevel zoom) {
   const bool passed = hit && intent && initial.passed && tap.passed && tap_position &&
                       drag.passed && drag.frame_reused && drag_position;
   std::printf(
-      "TINYDRAW_GATE1_MINIMAP_NAV hit=%u threshold_px=4 intent=%u tap_x=552 tap_y=710 "
+      "TINYDRAW_GATE1_MINIMAP_NAV hit=%u threshold_px=4 threshold_400_px=2 intent=%u tap_x=552 "
+      "tap_y=710 "
       "tap_complete_us=%lld tap_pass=%u drag_x=626 drag_y=782 drag_complete_us=%lld "
       "drag_reused=%u drag_pass=%u pass=%u\n",
       hit, intent, static_cast<long long>(tap.complete_us), tap.passed && tap_position,

@@ -280,11 +280,15 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       `(2300,3100)`. See
       `benchmark-results/zoom-cycle-return-2026-08-17/RECEIPT.md`.
 - [x] Add minimap tap-to-jump and drag-to-pan. **Landed 2026-08-17:** the
-      visible frame owns gestures for every tool; 4 px separates jitter from
-      drag; projection is shared with rendered geometry; drag stays captured,
-      clamps at world edges, and reuses the boundary-drained pan ring. Physical
-      tap/drag completion was 20.164/16.529 ms with exact target origins. See
-      `benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md`.
+      visible frame owns gestures for every tool; projection is shared with
+      rendered geometry; drag stays captured, clamps at world edges, and reuses
+      the boundary-drained pan ring. Physical tap/drag completion was
+      20.164/16.529 ms with exact target origins. Owner glass follow-up found
+      the tiny 400% viewport hard to grab, so drag intent now scales from 4 px
+      at ≤100% to 3 px at 200% and 2 px at 400%, preserving a tap-jitter band
+      without expanding canvas occlusion. See
+      `benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md` and
+      `benchmark-results/minimap-touch-target-2026-08-17/RECEIPT.md`.
 - [ ] Integrate V1 power off/on, battery transitions, RTC, one-shot NTP, and
       autosave-before-risky-transition through narrow adapters.
 - [ ] Add visible capacity, save, export, storage, and hardware failure states.

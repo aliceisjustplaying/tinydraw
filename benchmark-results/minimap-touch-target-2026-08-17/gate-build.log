@@ -1,0 +1,114 @@
+2026-08-17 10:45:15 - 10 - 08 - INFO - Using selected IDF version: v6.0.2
+Added environment variable ESP_IDF_VERSION = 6.0
+Added environment variable IDF_VERSION = 6.0.2
+Added environment variable IDF_TOOLS_PATH = $HOME/.espressif/tools
+Added environment variable IDF_COMPONENT_LOCAL_STORAGE_URL = file://$HOME/.espressif/tools
+Added environment variable IDF_PATH = $HOME/.espressif/v6.0.2/esp-idf
+Added environment variable ESP_ROM_ELF_DIR = $HOME/.espressif/tools/esp-rom-elfs/20241011/
+Added environment variable OPENOCD_SCRIPTS = $HOME/.espressif/tools/openocd-esp32/v0.12.0-esp32-20260424/openocd-esp32/share/openocd/scripts
+Added environment variable IDF_PYTHON_ENV_PATH = $HOME/.espressif/tools/python/v6.0.2/venv
+Added environment variable ESP_CLANG_LIBS_PATH = $HOME/.espressif/tools/esp-clang-libs/esp-20.1.1_20250829/esp-clang/lib
+Added proper directory to PATH
+Activated virtual environment at $HOME/.espressif/tools/python/v6.0.2/venv
+Environment setup complete for the current shell session.
+These changes will be lost when you close this terminal.
+You are now using IDF version 6.0.2.
+eim select v6.0.2
+Executing action: all (aliases: build)
+Running ninja in directory out/build/esp32-vector-v2-gate-harness
+Executing "ninja all"...
+[0/1] Re-running CMake...
+-- Vector V2 presentation experiment=boundary-top-sweep, TE edge=rising
+-- Component directory $HOME/.espressif/v6.0.2/esp-idf/components/mqtt does not contain a CMakeLists.txt file. No component will be added
+-- Minimal build - ON
+-- Building ESP-IDF components for target esp32s3
+NOTICE: 
+Following dependencies have new versions available:
+Dependency "espressif/esp_lcd_touch_cst816s": "1.1.1~2" -> "1.1.2"
+Consider running "idf.py update-dependencies" to update your lock file.
+NOTICE: Processing 8 dependencies:
+NOTICE: [1/8] espressif/cmake_utilities (0.5.3)
+NOTICE: [2/8] espressif/esp_lcd_co5300 (2.1.0)
+NOTICE: [3/8] espressif/esp_lcd_qemu_rgb (1.0.2)
+NOTICE: [4/8] espressif/esp_lcd_touch (1.2.1)
+NOTICE: [5/8] espressif/esp_lcd_touch_cst816s (1.1.1~2)
+NOTICE: [6/8] espressif/tinyusb (0.21.0~1)
+NOTICE: [7/8] waveshare/pcf85063a (2.0.0)
+NOTICE: [8/8] idf (6.0.2)
+-- ESP-TEE is currently supported only on the esp32c6;esp32h2;esp32c5;esp32c61 SoCs
+-- KCONFIG_REPORT_VERBOSITY not set, using default
+-- Project sdkconfig file out/build/esp32-vector-v2-gate-harness/sdkconfig
+Loading defaults file esp32/sdkconfig.defaults...
+Loading defaults file esp32/sdkconfig.gateharness.defaults...
+NOTE: Kconfig parser version: 1
+NOTE: Kconfig defaults policy: use sdkconfig
+NOTE: Status: Finished successfully
+-- Compiler supported targets: xtensa-esp-elf
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- App "tinydraw_esp32" version: 2465874-dirty
+-- Setting up mbedtls configuration
+-- Linkage type is PUBLIC
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_wdt/esp32s3/rom.wdt.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_system/ld/esp32s3/memory.ld.in
+--   -> Preprocessing .in script: $HOME/.espressif/v6.0.2/esp-idf/components/esp_system/ld/esp32s3/memory.ld.in
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_system/ld/esp32s3/sections.ld.in
+--   -> Preprocessing .in script: $HOME/.espressif/v6.0.2/esp-idf/components/esp_system/ld/esp32s3/sections.ld.in
+--   -> Applying ldgen processing: out/build/esp32-vector-v2-gate-harness/esp-idf/esp_system/ld/sections.ld.in
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.api.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.bt_funcs.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.libgcc.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.version.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.ble_master.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.ble_50.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.ble_smp.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.ble_dtm.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.ble_test.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.ble_scan.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.libc.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/soc/esp32s3/ld/esp32s3.peripherals.ld
+-- ESP_LCD_CO5300: 2.1.0
+-- TinyDraw panel experiment=boundary-top-sweep, TE edge=rising, requested clock=50 MHz, effective clock=40 MHz
+-- Components: app_update bootloader bootloader_support cxx driver efuse esp_app_format esp_blockdev esp_bootloader_format esp_coex esp_common esp_driver_bitscrambler esp_driver_dma esp_driver_gpio esp_driver_i2c esp_driver_i2s esp_driver_parlio esp_driver_spi esp_driver_uart esp_driver_usb_serial_jtag esp_event esp_hal_ana_conv esp_hal_clock esp_hal_dma esp_hal_gpio esp_hal_gpspi esp_hal_i2c esp_hal_i2s esp_hal_lcd esp_hal_mspi esp_hal_parlio esp_hal_pmu esp_hal_rtc_timer esp_hal_security esp_hal_timg esp_hal_touch_sens esp_hal_twai esp_hal_uart esp_hal_usb esp_hal_wdt esp_hw_support esp_lcd esp_libc esp_mm esp_netif esp_netif_stack esp_partition esp_phy esp_pm esp_psram esp_ringbuf esp_rom esp_security esp_stdio esp_system esp_timer esp_usb_cdc_rom_console esp_wifi espcoredump espressif__cmake_utilities espressif__esp_lcd_co5300 espressif__esp_lcd_qemu_rgb espressif__esp_lcd_touch espressif__esp_lcd_touch_cst816s espressif__tinyusb esptool_py freertos hal heap log lwip main mbedtls nvs_flash nvs_sec_provider partition_table pthread soc spi_flash vfs waveshare__pcf85063a wpa_supplicant xtensa
+-- Component paths: $HOME/.espressif/v6.0.2/esp-idf/components/app_update $HOME/.espressif/v6.0.2/esp-idf/components/bootloader $HOME/.espressif/v6.0.2/esp-idf/components/bootloader_support $HOME/.espressif/v6.0.2/esp-idf/components/cxx $HOME/.espressif/v6.0.2/esp-idf/components/driver $HOME/.espressif/v6.0.2/esp-idf/components/efuse $HOME/.espressif/v6.0.2/esp-idf/components/esp_app_format $HOME/.espressif/v6.0.2/esp-idf/components/esp_blockdev $HOME/.espressif/v6.0.2/esp-idf/components/esp_bootloader_format $HOME/.espressif/v6.0.2/esp-idf/components/esp_coex $HOME/.espressif/v6.0.2/esp-idf/components/esp_common $HOME/.espressif/v6.0.2/esp-idf/components/esp_driver_bitscrambler $HOME/.espressif/v6.0.2/esp-idf/components/esp_driver_dma $HOME/.espressif/v6.0.2/esp-idf/components/esp_driver_gpio $HOME/.espressif/v6.0.2/esp-idf/components/esp_driver_i2c $HOME/.espressif/v6.0.2/esp-idf/components/esp_driver_i2s $HOME/.espressif/v6.0.2/esp-idf/components/esp_driver_parlio $HOME/.espressif/v6.0.2/esp-idf/components/esp_driver_spi $HOME/.espressif/v6.0.2/esp-idf/components/esp_driver_uart $HOME/.espressif/v6.0.2/esp-idf/components/esp_driver_usb_serial_jtag $HOME/.espressif/v6.0.2/esp-idf/components/esp_event $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_ana_conv $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_clock $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_dma $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_gpio $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_gpspi $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_i2c $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_i2s $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_lcd $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_mspi $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_parlio $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_pmu $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_rtc_timer $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_security $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_timg $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_touch_sens $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_twai $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_uart $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_usb $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_wdt $HOME/.espressif/v6.0.2/esp-idf/components/esp_hw_support $HOME/.espressif/v6.0.2/esp-idf/components/esp_lcd $HOME/.espressif/v6.0.2/esp-idf/components/esp_libc $HOME/.espressif/v6.0.2/esp-idf/components/esp_mm $HOME/.espressif/v6.0.2/esp-idf/components/esp_netif $HOME/.espressif/v6.0.2/esp-idf/components/esp_netif_stack $HOME/.espressif/v6.0.2/esp-idf/components/esp_partition $HOME/.espressif/v6.0.2/esp-idf/components/esp_phy $HOME/.espressif/v6.0.2/esp-idf/components/esp_pm $HOME/.espressif/v6.0.2/esp-idf/components/esp_psram $HOME/.espressif/v6.0.2/esp-idf/components/esp_ringbuf $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom $HOME/.espressif/v6.0.2/esp-idf/components/esp_security $HOME/.espressif/v6.0.2/esp-idf/components/esp_stdio $HOME/.espressif/v6.0.2/esp-idf/components/esp_system $HOME/.espressif/v6.0.2/esp-idf/components/esp_timer $HOME/.espressif/v6.0.2/esp-idf/components/esp_usb_cdc_rom_console $HOME/.espressif/v6.0.2/esp-idf/components/esp_wifi $HOME/.espressif/v6.0.2/esp-idf/components/espcoredump esp32/managed_components/espressif__cmake_utilities esp32/managed_components/espressif__esp_lcd_co5300 esp32/managed_components/espressif__esp_lcd_qemu_rgb esp32/managed_components/espressif__esp_lcd_touch esp32/managed_components/espressif__esp_lcd_touch_cst816s esp32/managed_components/espressif__tinyusb $HOME/.espressif/v6.0.2/esp-idf/components/esptool_py $HOME/.espressif/v6.0.2/esp-idf/components/freertos $HOME/.espressif/v6.0.2/esp-idf/components/hal $HOME/.espressif/v6.0.2/esp-idf/components/heap $HOME/.espressif/v6.0.2/esp-idf/components/log $HOME/.espressif/v6.0.2/esp-idf/components/lwip esp32/main $HOME/.espressif/v6.0.2/esp-idf/components/mbedtls $HOME/.espressif/v6.0.2/esp-idf/components/nvs_flash $HOME/.espressif/v6.0.2/esp-idf/components/nvs_sec_provider $HOME/.espressif/v6.0.2/esp-idf/components/partition_table $HOME/.espressif/v6.0.2/esp-idf/components/pthread $HOME/.espressif/v6.0.2/esp-idf/components/soc $HOME/.espressif/v6.0.2/esp-idf/components/spi_flash $HOME/.espressif/v6.0.2/esp-idf/components/vfs esp32/managed_components/waveshare__pcf85063a $HOME/.espressif/v6.0.2/esp-idf/components/wpa_supplicant $HOME/.espressif/v6.0.2/esp-idf/components/xtensa
+-- Configuring done (9.2s)
+-- Generating done (0.5s)
+-- Build files have been written to: out/build/esp32-vector-v2-gate-harness
+[1/15] Performing build step for 'bootloader'
+[1/1] cd out/build/esp32-vector-v2-gate-harness/bootloader && $HOME/.espressif/tools/python/v6.0.2/venv/bin/python $HOME/.espressif/v6.0.2/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x0 out/build/esp32-vector-v2-gate-harness/bootloader/bootloader.bin
+Bootloader binary size 0x57e0 bytes. 0x2820 bytes (31%) free.
+[2/15] Building C object esp-idf/esp_app_format/CMakeFiles/__idf_esp_app_format.dir/esp_app_desc.c.obj
+[3/15] No install step for 'bootloader'
+[4/15] Completed 'bootloader'
+[5/15] Linking C static library esp-idf/esp_app_format/libesp_app_format.a
+[6/15] Building CXX object esp-idf/main/CMakeFiles/__idf_main.dir/vector_v2/vector_v2_presenter.cpp.obj
+[7/15] Building CXX object esp-idf/main/CMakeFiles/__idf_main.dirvector_v2/src/chrome.cpp.obj
+[8/15] Building CXX object esp-idf/main/CMakeFiles/__idf_main.dir/vector_v2/vector_v2_app.cpp.obj
+[9/15] Building CXX object esp-idf/main/CMakeFiles/__idf_main.dir/vector_v2/vector_v2_gate_harness.cpp.obj
+[10/15] Linking C static library esp-idf/main/libmain.a
+[11/15] Generating esp-idf/esp_system/ld/sections.ld
+[12/15] Linking CXX executable tinydraw_esp32.elf
+[13/15] Generating binary image from built executable
+esptool v5.3.1
+Creating ESP32-S3 image...
+Merged 3 ELF sections.
+Successfully created ESP32-S3 image.
+Generated out/build/esp32-vector-v2-gate-harness/tinydraw_esp32.bin
+[14/15] cd out/build/esp32-vector-v2-gate-harness && $HOME/.espressif/tools/python/v6.0.2/venv/bin/python $HOME/.espressif/v6.0.2/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 partition --type app out/build/esp32-vector-v2-gate-harness/partition_table/partition-table.bin out/build/esp32-vector-v2-gate-harness/tinydraw_esp32.bin
+tinydraw_esp32.bin binary size 0x8d8d0 bytes. Smallest app partition is 0x100000 bytes. 0x72730 bytes (45%) free.
+
+Project build complete. To flash, run:
+ idf.py flash
+or
+ idf.py -p PORT flash
+or
+ python -m esptool --chip esp32s3 -b 460800 --before default-reset --after hard-reset write-flash --flash-mode dio --flash-size 16MB --flash-freq 80m 0x0 ../out/build/esp32-vector-v2-gate-harness/bootloader/bootloader.bin 0x8000 ../out/build/esp32-vector-v2-gate-harness/partition_table/partition-table.bin 0x10000 ../out/build/esp32-vector-v2-gate-harness/tinydraw_esp32.bin
+or from the "out/build/esp32-vector-v2-gate-harness" directory
+ python -m esptool --chip esp32s3 -b 460800 --before default-reset --after hard-reset write-flash "@flash_args"

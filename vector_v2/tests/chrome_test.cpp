@@ -140,12 +140,20 @@ TEST_CASE("minimap hit testing and projection share the rendered geometry") {
   CHECK(tinydraw::vector_v2::chrome_contains({310.0F, 310.0F}, state));
   CHECK_FALSE(tinydraw::vector_v2::chrome_minimap_contains({310.0F, 310.0F},
                                                            {.popup = ChromePopup::kTools}));
-  CHECK_FALSE(
-      tinydraw::vector_v2::chrome_promotes_minimap_drag({310.0F, 310.0F}, {313.0F, 310.0F}, state));
-  CHECK(
-      tinydraw::vector_v2::chrome_promotes_minimap_drag({310.0F, 310.0F}, {314.0F, 310.0F}, state));
-  CHECK_FALSE(tinydraw::vector_v2::chrome_promotes_minimap_drag({310.0F, 310.0F}, {320.0F, 310.0F},
-                                                                {.popup = ChromePopup::kTools}));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_promotes_minimap_drag({310.0F, 310.0F}, {313.0F, 310.0F},
+                                                                state, 100));
+  CHECK(tinydraw::vector_v2::chrome_promotes_minimap_drag({310.0F, 310.0F}, {314.0F, 310.0F}, state,
+                                                          100));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_promotes_minimap_drag({310.0F, 310.0F}, {312.0F, 310.0F},
+                                                                state, 200));
+  CHECK(tinydraw::vector_v2::chrome_promotes_minimap_drag({310.0F, 310.0F}, {313.0F, 310.0F}, state,
+                                                          200));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_promotes_minimap_drag({310.0F, 310.0F}, {311.0F, 310.0F},
+                                                                state, 400));
+  CHECK(tinydraw::vector_v2::chrome_promotes_minimap_drag({310.0F, 310.0F}, {312.0F, 310.0F}, state,
+                                                          400));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_promotes_minimap_drag(
+      {310.0F, 310.0F}, {320.0F, 310.0F}, {.popup = ChromePopup::kTools}, 400));
 
   const tinydraw::vector_v2::ChromeNavigation navigation{
       .zoom_percent = 200,

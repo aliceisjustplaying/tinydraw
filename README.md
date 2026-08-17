@@ -43,8 +43,8 @@ Autosave, charging, power-off/on, and macOS Finder mounting are verified.
   27.6 ms on device (4.81× faster than its captured baseline).
 - New has a confirmation dialog; Export streams the vector authority to flash
   with visible progress before the physical read-only USB drive takes over.
-- Battery status, a five-level zoom rail, and a live noninteractive minimap with
-  a viewport rectangle are visible over the canvas.
+- Battery status, a five-level zoom rail, and a live interactive minimap with
+  tap-to-jump and zoom-scaled drag intent are visible over the canvas.
 - Detailed SVG export emits one painter-ordered filled path per variable-width
   pen/eraser operation as `DRAWING.SVG`; the device gate verifies full flash
   readback, XML structure, and CRC in about 1.02 s with a 4 KiB workspace.

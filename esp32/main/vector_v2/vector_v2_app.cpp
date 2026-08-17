@@ -1268,8 +1268,9 @@ void run_vector_v2_app() {
           }
         }
       } else if (minimap_pressed && (point.x != last_touch.x || point.y != last_touch.y)) {
-        if (!panning && vector_v2::chrome_promotes_minimap_drag({toolbar_start.x, toolbar_start.y},
-                                                                {point.x, point.y}, chrome)) {
+        if (!panning && vector_v2::chrome_promotes_minimap_drag(
+                            {toolbar_start.x, toolbar_start.y}, {point.x, point.y}, chrome,
+                            vector_v2::zoom_percent(presenter.zoom()))) {
           begin_pan(toolbar_start);
         }
         last_touch = point;
