@@ -28,6 +28,11 @@ constexpr TickType_t kConnectPoll = pdMS_TO_TICKS(100);
 constexpr int kConnectPolls = 100;
 constexpr TickType_t kNtpTimeout = pdMS_TO_TICKS(10'000);
 
+bool credentials_valid() {
+  return !kSsid.empty() && kSsid.size() < sizeof(wifi_sta_config_t{}.ssid) &&
+         kPassword.size() < sizeof(wifi_sta_config_t{}.password);
+}
+
 void stop_network(esp_netif_t* station, bool wifi_initialized, bool sntp_initialized,
                   bool nvs_initialized) {
   if (sntp_initialized) {
@@ -108,7 +113,7 @@ bool connect_to_hotspot(esp_netif_t*& station, bool& wifi_initialized, bool& nvs
   return false;
 }
 
-bool sync_clock(RtcClock& clock) {
+bool sync_clock(RtcClock& clock, std::atomic<TimeSyncStatus>* status = nullptr) {
   esp_netif_t* station = nullptr;
   bool wifi_initialized = false;
   bool sntp_initialized = false;
@@ -116,6 +121,10 @@ bool sync_clock(RtcClock& clock) {
   bool success = false;
 
   if (connect_to_hotspot(station, wifi_initialized, nvs_initialized)) {
+    if (status != nullptr) {
+      status->store(TimeSyncStatus::kSynchronizing);
+    }
+    std::printf("TINYDRAW_NTP_PHASE phase=synchronizing\n");
     const esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
     if (esp_netif_sntp_init(&config) == ESP_OK) {
       sntp_initialized = true;
@@ -155,10 +164,53 @@ void time_sync_task(void* argument) {
 
 }  // namespace
 
+bool TimeSyncController::available() const { return clock_.ready() && credentials_valid(); }
+
+bool TimeSyncController::start() {
+  if (!available()) {
+    status_.store(TimeSyncStatus::kFailed);
+    std::printf("TINYDRAW_NTP_DISABLED rtc=%u credentials=%u\n", clock_.ready(),
+                credentials_valid());
+    return false;
+  }
+  bool expected = false;
+  if (!running_.compare_exchange_strong(expected, true)) {
+    return false;
+  }
+  status_.store(TimeSyncStatus::kConnecting);
+  std::printf("TINYDRAW_NTP_PHASE phase=connecting\n");
+  if (xTaskCreatePinnedToCore(task_entry, "tinydraw_ntp", 4096U, this, 1U, nullptr, 1) != pdPASS) {
+    running_.store(false);
+    status_.store(TimeSyncStatus::kFailed);
+    return false;
+  }
+  return true;
+}
+
+void TimeSyncController::dismiss() {
+  TimeSyncStatus current = status_.load();
+  while ((current == TimeSyncStatus::kSucceeded || current == TimeSyncStatus::kFailed) &&
+         !status_.compare_exchange_weak(current, TimeSyncStatus::kIdle)) {
+  }
+}
+
+void TimeSyncController::task_entry(void* argument) {
+  static_cast<TimeSyncController*>(argument)->run();
+  vTaskDelete(nullptr);
+}
+
+void TimeSyncController::run() {
+  const bool success = sync_clock(clock_, &status_);
+  // sync_clock tears the network down before returning, so terminal UI means
+  // the radio is already stopped rather than merely scheduled to stop.
+  status_.store(success ? TimeSyncStatus::kSucceeded : TimeSyncStatus::kFailed);
+  running_.store(false);
+}
+
 bool start_time_sync(RtcClock& clock) {
-  if (!clock.ready() || kSsid.empty() || kSsid.size() >= sizeof(wifi_sta_config_t{}.ssid) ||
-      kPassword.size() >= sizeof(wifi_sta_config_t{}.password)) {
-    std::printf("TINYDRAW_NTP_DISABLED rtc=%u credentials=%u\n", clock.ready(), !kSsid.empty());
+  if (!clock.ready() || !credentials_valid()) {
+    std::printf("TINYDRAW_NTP_DISABLED rtc=%u credentials=%u\n", clock.ready(),
+                credentials_valid());
     return false;
   }
   return xTaskCreatePinnedToCore(time_sync_task, "tinydraw_ntp", 4096U, &clock, 1U, nullptr, 1) ==

@@ -15,6 +15,8 @@
 #include "freertos/task.h"
 #include "physical_touch.h"
 #include "power_manager.h"
+#include "rtc_clock.h"
+#include "time_sync.h"
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
 #include "vector_v2_gate_harness.h"
 #ifdef TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE
@@ -722,11 +724,28 @@ bool run_export(VectorV2Export& exporter, const OperationLog& log, vector_v2::Ch
   return usb_ready;
 }
 
+vector_v2::ChromeTimeSyncStatus chrome_time_sync_status(TimeSyncStatus status) {
+  switch (status) {
+    case TimeSyncStatus::kIdle:
+      return vector_v2::ChromeTimeSyncStatus::kIdle;
+    case TimeSyncStatus::kConnecting:
+      return vector_v2::ChromeTimeSyncStatus::kConnecting;
+    case TimeSyncStatus::kSynchronizing:
+      return vector_v2::ChromeTimeSyncStatus::kSynchronizing;
+    case TimeSyncStatus::kSucceeded:
+      return vector_v2::ChromeTimeSyncStatus::kSaved;
+    case TimeSyncStatus::kFailed:
+      return vector_v2::ChromeTimeSyncStatus::kError;
+  }
+  return vector_v2::ChromeTimeSyncStatus::kError;
+}
+
 bool apply_chrome_action(vector_v2::ChromeAction action, Point point,
                          vector_v2::ChromeState& chrome, OperationLog& log,
                          MaterializedCanvas& canvas, vector_v2::TileProducer& producer,
                          std::span<const std::uint16_t> blank_snapshot,
-                         VectorV2Presenter& presenter, VectorV2Export& exporter) {
+                         VectorV2Presenter& presenter, VectorV2Export& exporter,
+                         TimeSyncController& time_sync) {
   const auto toggle = [&](vector_v2::ChromePopup popup) {
     chrome.popup = chrome.popup == popup ? vector_v2::ChromePopup::kNone : popup;
   };
@@ -810,6 +829,13 @@ bool apply_chrome_action(vector_v2::ChromeAction action, Point point,
       // Blocking by design, like Raster V1. Progress is operation-based;
       // activating USB then ends serial until the next reset.
       return chrome.can_export && run_export(exporter, log, chrome, presenter);
+    case vector_v2::ChromeAction::kSyncTime:
+      chrome.popup = vector_v2::ChromePopup::kNone;
+      if (chrome.can_sync_time) {
+        static_cast<void>(time_sync.start());
+        chrome.time_sync_status = chrome_time_sync_status(time_sync.status());
+      }
+      break;
     case vector_v2::ChromeAction::kZoomIn: {
       const ZoomLevel target = vector_v2::next_zoom(presenter.zoom());
       if (target == presenter.zoom()) {
@@ -881,6 +907,8 @@ void run_vector_v2_app() {
   Co5300PanelTransport display;
   PhysicalTouch touch;
   PowerManager power(touch.bus());
+  RtcClock clock(touch.bus());
+  TimeSyncController time_sync(clock);
   VectorV2TouchSampler touch_sampler(touch,
                                      std::span(storage.touch_events, kVectorV2TouchEventCapacity));
 #ifdef TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE
@@ -976,6 +1004,7 @@ void run_vector_v2_app() {
   chrome.tool = vector_v2::ChromeTool::kDraw;
   chrome.size = vector_v2::ChromeSize::kLarge;
   chrome.can_export = exporter.ready();
+  chrome.can_sync_time = time_sync.available();
   chrome.battery_percentage = initial_power.percentage;
   chrome.battery_charging = initial_power.charging;
   InkConfig ink_config;
@@ -1161,6 +1190,14 @@ void run_vector_v2_app() {
     poll_max_us = std::max(poll_max_us, loop_us - poll_previous_us);
     poll_previous_us = loop_us;
 
+    const auto next_time_sync_status = chrome_time_sync_status(time_sync.status());
+    if (next_time_sync_status != chrome.time_sync_status) {
+      chrome.time_sync_status = next_time_sync_status;
+      chrome.popup = vector_v2::ChromePopup::kNone;
+      const auto timing = presenter.refresh(chrome, loop_us);
+      print_presentation("time-sync", presenter, timing);
+    }
+
     // The battery redraw is a full-frame present (60-140 ms on dense
     // content); it is cosmetic and must never ride the post-lift window or
     // the drain (owner glass receipt: it was the 85 ms "lift spike").
@@ -1213,12 +1250,24 @@ void run_vector_v2_app() {
       if (!pressed && sampled_touch->kind == vector_v2::TouchEventKind::kDown) {
         pressed = true;
         last_touch = point;
-        if (chrome.export_status == vector_v2::ChromeExportStatus::kSaved ||
-            chrome.export_status == vector_v2::ChromeExportStatus::kError) {
+        const bool export_toast = chrome.export_status == vector_v2::ChromeExportStatus::kSaved ||
+                                  chrome.export_status == vector_v2::ChromeExportStatus::kError;
+        const bool time_toast =
+            chrome.time_sync_status == vector_v2::ChromeTimeSyncStatus::kSaved ||
+            chrome.time_sync_status == vector_v2::ChromeTimeSyncStatus::kError;
+        if (export_toast || time_toast) {
           chrome.export_status = vector_v2::ChromeExportStatus::kIdle;
+          if (time_toast) {
+            time_sync.dismiss();
+          }
+          chrome.time_sync_status = vector_v2::ChromeTimeSyncStatus::kIdle;
+          popup_dismissed_press = true;
           static_cast<void>(presenter.refresh(chrome, loop_us));
         }
-        if (vector_v2::chrome_minimap_contains({point.x, point.y}, chrome)) {
+        if (popup_dismissed_press) {
+          // Consume the complete gesture that dismisses a terminal toast so
+          // it cannot also begin a stroke or navigation gesture beneath it.
+        } else if (vector_v2::chrome_minimap_contains({point.x, point.y}, chrome)) {
           // Minimap navigation owns its frame for every tool. A stationary
           // gesture jumps on Up; the first movement enters continuous pan.
           minimap_pressed = true;
@@ -1369,7 +1418,7 @@ void run_vector_v2_app() {
           static_cast<void>(apply_chrome_action(
               vector_v2::chrome_action_at({tap.x, tap.y}, chrome), tap, chrome, log, canvas,
               producer, std::span(storage.snapshot, vector_v2::kOverviewPixels), presenter,
-              exporter));
+              exporter, time_sync));
         }
       } else if (panning) {
         panning = false;
