@@ -77,6 +77,64 @@ void PreparedAppend::cancel() {
   }
 }
 
+PreparedHistoryChange::PreparedHistoryChange(OperationLog& owner, HistoryChange change,
+                                             std::size_t active_sample_count,
+                                             std::uint32_t token)
+    : owner_(&owner),
+      change_(change),
+      active_sample_count_(active_sample_count),
+      token_(token) {}
+
+PreparedHistoryChange::~PreparedHistoryChange() { cancel(); }
+
+PreparedHistoryChange::PreparedHistoryChange(PreparedHistoryChange&& other) noexcept
+    : owner_(other.owner_),
+      change_(other.change_),
+      active_sample_count_(other.active_sample_count_),
+      token_(other.token_) {
+  other.owner_ = nullptr;
+  other.change_ = {};
+  other.active_sample_count_ = 0;
+  other.token_ = 0;
+}
+
+PreparedHistoryChange& PreparedHistoryChange::operator=(PreparedHistoryChange&& other) noexcept {
+  if (this != &other) {
+    cancel();
+    owner_ = other.owner_;
+    change_ = other.change_;
+    active_sample_count_ = other.active_sample_count_;
+    token_ = other.token_;
+    other.owner_ = nullptr;
+    other.change_ = {};
+    other.active_sample_count_ = 0;
+    other.token_ = 0;
+  }
+  return *this;
+}
+
+const HistoryChange& PreparedHistoryChange::change() const { return change_; }
+
+void PreparedHistoryChange::publish() {
+  if (owner_ != nullptr) {
+    owner_->publish_history(*this);
+    owner_ = nullptr;
+    change_ = {};
+    active_sample_count_ = 0;
+    token_ = 0;
+  }
+}
+
+void PreparedHistoryChange::cancel() {
+  if (owner_ != nullptr) {
+    owner_->cancel_history(*this);
+    owner_ = nullptr;
+    change_ = {};
+    active_sample_count_ = 0;
+    token_ = 0;
+  }
+}
+
 OperationLog::OperationLog(std::span<OperationRecord> records,
                            std::span<CompactOperationSample> samples)
     : records_(records), samples_(samples) {}
@@ -108,7 +166,17 @@ std::size_t OperationLog::operation_capacity() const { return records_.size(); }
 
 std::size_t OperationLog::sample_capacity() const { return samples_.size(); }
 
-bool OperationLog::can_reset() const { return !append_pending_; }
+bool OperationLog::can_reset() const { return !append_pending_ && !history_pending_; }
+
+bool OperationLog::can_undo() const {
+  return !append_pending_ && !history_pending_ && operation_count_ != 0U &&
+         revision_.value != std::numeric_limits<std::uint32_t>::max();
+}
+
+bool OperationLog::can_redo() const {
+  return !append_pending_ && !history_pending_ && operation_count_ < retained_operation_count_ &&
+         revision_.value != std::numeric_limits<std::uint32_t>::max();
+}
 
 bool OperationLog::workspace_overlaps_storage(std::span<const std::byte> workspace) const {
   return storage_overlaps(workspace, std::as_bytes(std::span(records_))) ||
@@ -200,7 +268,7 @@ AuthorityReadView OperationLog::read_view() const {
 }
 
 bool OperationLog::unchanged(const AuthorityReadView& view) const {
-  return !append_pending_ && view == read_view();
+  return !append_pending_ && !history_pending_ && view == read_view();
 }
 
 std::optional<StoredOperation> OperationLog::operation(std::size_t index) const {
@@ -252,10 +320,65 @@ std::optional<StoredOperation> OperationLog::retained_operation(
   };
 }
 
+std::optional<PreparedHistoryChange> OperationLog::prepare_undo() {
+  if (!can_undo()) {
+    return std::nullopt;
+  }
+  const std::size_t previous_count = operation_count_;
+  std::size_t target_count = previous_count - 1U;
+  const std::uint16_t gesture_id = records_[target_count].gesture_id;
+  if (gesture_id != 0U) {
+    while (target_count != 0U && records_[target_count - 1U].gesture_id == gesture_id) {
+      --target_count;
+    }
+  }
+  const HistoryChange change{
+      .generation = {revision_.value + 1U},
+      .previous_active_operation_count = previous_count,
+      .active_operation_count = target_count,
+      .affected_world_bounds = bounds_for_range(target_count, previous_count),
+  };
+  pending_history_token_ = next_history_token_++;
+  if (next_history_token_ == 0U) {
+    next_history_token_ = 1U;
+  }
+  history_pending_ = true;
+  return PreparedHistoryChange(*this, change, sample_count_for_prefix(target_count),
+                               pending_history_token_);
+}
+
+std::optional<PreparedHistoryChange> OperationLog::prepare_redo() {
+  if (!can_redo()) {
+    return std::nullopt;
+  }
+  const std::size_t previous_count = operation_count_;
+  std::size_t target_count = previous_count + 1U;
+  const std::uint16_t gesture_id = records_[previous_count].gesture_id;
+  if (gesture_id != 0U) {
+    while (target_count < retained_operation_count_ &&
+           records_[target_count].gesture_id == gesture_id) {
+      ++target_count;
+    }
+  }
+  const HistoryChange change{
+      .generation = {revision_.value + 1U},
+      .previous_active_operation_count = previous_count,
+      .active_operation_count = target_count,
+      .affected_world_bounds = bounds_for_range(previous_count, target_count),
+  };
+  pending_history_token_ = next_history_token_++;
+  if (next_history_token_ == 0U) {
+    next_history_token_ = 1U;
+  }
+  history_pending_ = true;
+  return PreparedHistoryChange(*this, change, sample_count_for_prefix(target_count),
+                               pending_history_token_);
+}
+
 std::optional<OperationReplayRange> OperationLog::replay_range(
     OperationLogEpoch baseline_epoch, DocumentRevision baseline_revision,
     DocumentRevision destination_revision) const {
-  if (append_pending_ || baseline_epoch != epoch_ ||
+  if (append_pending_ || history_pending_ || baseline_epoch != epoch_ ||
       baseline_revision.value < base_revision_.value ||
       destination_revision.value < baseline_revision.value ||
       destination_revision.value > revision_.value) {
@@ -276,7 +399,7 @@ std::optional<OperationReplayRange> OperationLog::replay_range(
 }
 
 bool OperationLog::reset(DocumentRevision revision) {
-  if (append_pending_) {
+  if (append_pending_ || history_pending_) {
     return false;
   }
   operation_count_ = 0;
@@ -291,13 +414,60 @@ bool OperationLog::reset(DocumentRevision revision) {
   }
   pending_sample_count_ = 0;
   pending_token_ = 0;
+  pending_history_token_ = 0;
   return true;
 }
 
 bool OperationLog::clear() { return reset(); }
 
+std::size_t OperationLog::sample_count_for_prefix(std::size_t operation_count) const {
+  if (operation_count == 0U) {
+    return 0U;
+  }
+  const OperationRecord& final_record = records_[operation_count - 1U];
+  return static_cast<std::size_t>(final_record.first_sample) + final_record.sample_count;
+}
+
+PixelRect OperationLog::bounds_for_range(std::size_t first, std::size_t last) const {
+  const OperationRecord& initial = records_[first];
+  PixelRect bounds{initial.bounds_x0, initial.bounds_y0, initial.bounds_x1, initial.bounds_y1};
+  for (std::size_t index = first + 1U; index < last; ++index) {
+    const OperationRecord& record = records_[index];
+    bounds.x0 = std::min(bounds.x0, static_cast<int>(record.bounds_x0));
+    bounds.y0 = std::min(bounds.y0, static_cast<int>(record.bounds_y0));
+    bounds.x1 = std::max(bounds.x1, static_cast<int>(record.bounds_x1));
+    bounds.y1 = std::max(bounds.y1, static_cast<int>(record.bounds_y1));
+  }
+  return bounds;
+}
+
+void OperationLog::publish_history(const PreparedHistoryChange& prepared) {
+  if (!history_pending_ || prepared.token_ != pending_history_token_) {
+    return;
+  }
+  operation_count_ = prepared.change_.active_operation_count;
+  sample_count_ = prepared.active_sample_count_;
+  revision_ = prepared.change_.generation;
+  base_revision_ = {revision_.value - static_cast<std::uint32_t>(operation_count_)};
+  ++epoch_.value;
+  if (epoch_.value == 0U) {
+    ++epoch_.value;
+  }
+  history_pending_ = false;
+  pending_history_token_ = 0;
+}
+
+void OperationLog::cancel_history(const PreparedHistoryChange& prepared) {
+  if (!history_pending_ || prepared.token_ != pending_history_token_) {
+    return;
+  }
+  history_pending_ = false;
+  pending_history_token_ = 0;
+}
+
 bool OperationLog::valid_append(const OperationAppend& append_request) const {
-  if (!ready() || append_pending_ || append_request.samples.empty() ||
+  if (!ready() || append_pending_ || history_pending_ ||
+      operation_count_ != retained_operation_count_ || append_request.samples.empty() ||
       append_request.samples.size() > std::numeric_limits<std::uint16_t>::max() ||
       retained_operation_count_ >= records_.size() ||
       revision_.value == std::numeric_limits<std::uint32_t>::max() ||
