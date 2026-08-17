@@ -6,7 +6,7 @@ Progress:
 
 - [x] Slice 1: coherent active/retained authority read views with generation-checked reads.
 - [x] Slice 2: whole-Stroke Undo/Redo and exact damage.
-- [ ] Slice 3: branch replacement after Undo.
+- [x] Slice 3: branch replacement after Undo.
 - [ ] Slice 4: localized canvas transition.
 - [ ] Slice 5: product wiring.
 - [ ] Slice 6: device gate.
@@ -111,7 +111,7 @@ PNG, and autosave must recheck `unchanged()` before promoting output.
   overwriting retained Redo samples. The prepared object temporarily refers to
   the caller-owned input samples; publication copies them into the active tail,
   truncates Redo, and stores the new record. Canceling preparation leaves Redo
-  intact. Callers must therefore keep append input alive until publish/cancel,
+  intact. Callers must therefore keep append input alive and unchanged until publish/cancel,
   which every current prepared-append caller already does.
 - Reads used for normal rendering expose only the active prefix. Persistence
   can separately serialize the retained prefix plus the active boundary so

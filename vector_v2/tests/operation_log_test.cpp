@@ -220,6 +220,100 @@ TEST_CASE("history stops before the document generation would wrap") {
   CHECK_FALSE(log.prepare_undo());
 }
 
+TEST_CASE("canceling new ink after Undo preserves the Redo Stroke") {
+  std::array<vector_v2::OperationRecord, 3> records{};
+  std::array<vector_v2::CompactOperationSample, 3> storage{};
+  vector_v2::OperationLog log(records, storage);
+  const std::array first{
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
+  const std::array second{
+      vector_v2::CompactOperationSample{.x_quarter = 32, .y_quarter = 32, .radius_256 = 256}};
+  const std::array replacement{
+      vector_v2::CompactOperationSample{.x_quarter = 48, .y_quarter = 48, .radius_256 = 256}};
+  REQUIRE(log.append({.gesture_id = 1U, .samples = first}));
+  REQUIRE(log.append({.gesture_id = 2U, .samples = second}));
+  auto undo = log.prepare_undo();
+  REQUIRE(undo.has_value());
+  undo->publish();
+
+  auto prepared = log.prepare({.gesture_id = 3U, .samples = replacement});
+  REQUIRE(prepared.has_value());
+  CHECK(prepared->operation().samples.front().x_quarter == 48U);
+  CHECK_FALSE(log.can_redo());
+  prepared->cancel();
+
+  CHECK(log.can_redo());
+  const vector_v2::AuthorityReadView after_cancel = log.read_view();
+  CHECK(after_cancel.active_operation_count == 1U);
+  CHECK(after_cancel.retained_operation_count == 2U);
+  REQUIRE(log.retained_operation(after_cancel, 1));
+  CHECK(log.retained_operation(after_cancel, 1)->samples.front().x_quarter == 32U);
+}
+
+TEST_CASE("publishing new ink after Undo replaces the Redo Stroke") {
+  std::array<vector_v2::OperationRecord, 3> records{};
+  std::array<vector_v2::CompactOperationSample, 3> storage{};
+  vector_v2::OperationLog log(records, storage);
+  const std::array first{
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
+  const std::array second{
+      vector_v2::CompactOperationSample{.x_quarter = 32, .y_quarter = 32, .radius_256 = 256}};
+  const std::array replacement{
+      vector_v2::CompactOperationSample{.x_quarter = 48, .y_quarter = 48, .radius_256 = 256}};
+  REQUIRE(log.append({.gesture_id = 1U, .samples = first}));
+  REQUIRE(log.append({.gesture_id = 2U, .samples = second}));
+  auto undo = log.prepare_undo();
+  REQUIRE(undo.has_value());
+  undo->publish();
+  const vector_v2::OperationLogEpoch undo_epoch = log.epoch();
+
+  auto prepared = log.prepare({.gesture_id = 3U, .samples = replacement});
+  REQUIRE(prepared.has_value());
+  CHECK(prepared->operation().identity == vector_v2::OperationIdentity{{4}, 1});
+  prepared->publish();
+
+  CHECK(log.current_revision() == vector_v2::DocumentRevision{4});
+  CHECK(log.epoch() != undo_epoch);
+  CHECK(log.operation_count() == 2U);
+  CHECK(log.sample_count() == 2U);
+  CHECK_FALSE(log.can_redo());
+  const vector_v2::AuthorityReadView after_publish = log.read_view();
+  CHECK(after_publish.active_operation_count == 2U);
+  CHECK(after_publish.retained_operation_count == 2U);
+  REQUIRE(log.operation(after_publish, 1));
+  CHECK(log.operation(after_publish, 1)->gesture_id == 3U);
+  CHECK(log.operation(after_publish, 1)->samples.front().x_quarter == 48U);
+}
+
+TEST_CASE("rejected replacement ink after Undo preserves the Redo Stroke") {
+  std::array<vector_v2::OperationRecord, 3> records{};
+  std::array<vector_v2::CompactOperationSample, 2> storage{};
+  vector_v2::OperationLog log(records, storage);
+  const std::array first{
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
+  const std::array second{
+      vector_v2::CompactOperationSample{.x_quarter = 32, .y_quarter = 32, .radius_256 = 256}};
+  const std::array too_large{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 48, .y_quarter = 48, .radius_256 = 256, .elapsed_ms = 0},
+      vector_v2::CompactOperationSample{
+          .x_quarter = 64, .y_quarter = 64, .radius_256 = 256, .elapsed_ms = 1},
+  };
+  REQUIRE(log.append({.gesture_id = 1U, .samples = first}));
+  REQUIRE(log.append({.gesture_id = 2U, .samples = second}));
+  auto undo = log.prepare_undo();
+  REQUIRE(undo.has_value());
+  undo->publish();
+
+  CHECK_FALSE(log.prepare({.gesture_id = 3U, .samples = too_large}));
+  CHECK(log.can_redo());
+  const vector_v2::AuthorityReadView after_rejection = log.read_view();
+  CHECK(after_rejection.active_operation_count == 1U);
+  CHECK(after_rejection.retained_operation_count == 2U);
+  REQUIRE(log.retained_operation(after_rejection, 1));
+  CHECK(log.retained_operation(after_rejection, 1)->samples.front().x_quarter == 32U);
+}
+
 TEST_CASE("stored operation feeds the incremental renderer without translation") {
   std::array<vector_v2::OperationRecord, 1> records{};
   std::array<vector_v2::CompactOperationSample, 2> storage{};

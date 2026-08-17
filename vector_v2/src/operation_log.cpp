@@ -191,8 +191,6 @@ std::optional<PreparedAppend> OperationLog::prepare(const OperationAppend& appen
   if (!calculated_bounds.has_value()) {
     return std::nullopt;
   }
-  std::copy(append_request.samples.begin(), append_request.samples.end(),
-            samples_.subspan(sample_count_).begin());
   pending_sample_count_ = append_request.samples.size();
   pending_token_ = next_prepare_token_++;
   if (next_prepare_token_ == 0U) {
@@ -208,7 +206,7 @@ std::optional<PreparedAppend> OperationLog::prepare(const OperationAppend& appen
           .color = append_request.color,
           .gesture_id = append_request.gesture_id,
           .world_bounds = *calculated_bounds,
-          .samples = samples_.subspan(sample_count_, pending_sample_count_),
+          .samples = append_request.samples,
       },
       pending_token_);
 }
@@ -217,6 +215,9 @@ void OperationLog::publish_prepared(const PreparedAppend& prepared) {
   if (!append_pending_ || prepared.token_ != pending_token_) {
     return;
   }
+  const bool replaces_redo = operation_count_ != retained_operation_count_;
+  std::copy(prepared.operation_.samples.begin(), prepared.operation_.samples.end(),
+            samples_.subspan(sample_count_, pending_sample_count_).begin());
   const PixelRect bounds = prepared.operation_.world_bounds;
   records_[operation_count_] = {
       .first_sample = static_cast<std::uint32_t>(sample_count_),
@@ -234,6 +235,13 @@ void OperationLog::publish_prepared(const PreparedAppend& prepared) {
   retained_sample_count_ = sample_count_;
   retained_operation_count_ = operation_count_;
   revision_ = prepared.operation_.identity.revision;
+  if (replaces_redo) {
+    base_revision_ = {revision_.value - static_cast<std::uint32_t>(operation_count_)};
+    ++epoch_.value;
+    if (epoch_.value == 0U) {
+      ++epoch_.value;
+    }
+  }
   append_pending_ = false;
   pending_sample_count_ = 0;
   pending_token_ = 0;
@@ -466,12 +474,11 @@ void OperationLog::cancel_history(const PreparedHistoryChange& prepared) {
 }
 
 bool OperationLog::valid_append(const OperationAppend& append_request) const {
-  if (!ready() || append_pending_ || history_pending_ ||
-      operation_count_ != retained_operation_count_ || append_request.samples.empty() ||
+  if (!ready() || append_pending_ || history_pending_ || append_request.samples.empty() ||
       append_request.samples.size() > std::numeric_limits<std::uint16_t>::max() ||
-      retained_operation_count_ >= records_.size() ||
+      operation_count_ >= records_.size() ||
       revision_.value == std::numeric_limits<std::uint32_t>::max() ||
-      append_request.samples.size() > samples_.size() - retained_sample_count_ ||
+      append_request.samples.size() > samples_.size() - sample_count_ ||
       (append_request.tool != OperationTool::kPen &&
        append_request.tool != OperationTool::kEraser)) {
     return false;
