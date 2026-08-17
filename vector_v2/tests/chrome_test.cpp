@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -539,6 +540,42 @@ TEST_CASE("USB export mode blocks drawing and offers an explicit return action")
   }
   CHECK(renderings[0] != renderings[1]);
   CHECK(renderings[1] != renderings[2]);
+}
+
+TEST_CASE("USB export screen font renders every displayed character") {
+  constexpr int width = 368;
+  constexpr int height = 448;
+  constexpr std::uint16_t white = 0xFFFFU;
+  constexpr std::uint16_t ink = 0x2104U;
+  constexpr std::uint16_t muted = 0x8410U;
+  constexpr std::uint16_t selected = 0x349FU;
+  std::vector<std::uint16_t> pixels(static_cast<std::size_t>(width * height), white);
+  tinydraw::vector_v2::draw_chrome(
+      pixels, width, height, {.export_status = ChromeExportStatus::kPresented});
+
+  const auto check_label = [&](int text_x, int text_y, std::string_view text, std::uint16_t color,
+                               int scale) {
+    int glyph_x = text_x;
+    for (const char character : text) {
+      if (character != ' ') {
+        bool rendered = false;
+        for (int y = text_y; y < text_y + 7 * scale; ++y) {
+          for (int x = glyph_x; x < glyph_x + 5 * scale; ++x) {
+            rendered = rendered ||
+                       pixels[static_cast<std::size_t>(y * width + x)] == color;
+          }
+        }
+        CHECK_MESSAGE(rendered, "missing export-screen glyph: ", character);
+      }
+      glyph_x += 6 * scale;
+    }
+  };
+
+  check_label(96, 122, "USB EXPORT", ink, 3);
+  check_label(95, 174, "READ-ONLY DRIVE", ink, 2);
+  check_label(139, 205, "COPY YOUR FILES", muted, 2);
+  check_label(83, 260, "RETURN TO DRAWING", white, 2);
+  CHECK(pixels[245U * width + 60U] == selected);
 }
 
 TEST_CASE("palette hit testing gives large cells to the circular swatches") {
