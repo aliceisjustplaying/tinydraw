@@ -8,10 +8,12 @@
 
 namespace tinydraw::esp32 {
 
-// Exposes one read-only file as a synthesized FAT16 USB drive.
+// Exposes one or two read-only files as a synthesized FAT16 USB drive.
 class UsbExport {
  public:
   explicit UsbExport(const ReadOnlyFile& file, Fat83Name name = kDrawingPngName);
+  UsbExport(const ReadOnlyFile& first_file, Fat83Name first_name, const ReadOnlyFile& second_file,
+            Fat83Name second_name);
 
   [[nodiscard]] bool active() const { return active_; }
   void set_modified_time(FatDateTime time) { disk_.set_modified_time(time); }

@@ -3,10 +3,12 @@
 #include <doctest.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <vector>
 
+#include "tinydraw/export/png_encoder.h"
 #include "tinydraw/vector_v2/incremental_rasterizer.h"
 
 namespace vector_v2 = tinydraw::vector_v2;
@@ -53,6 +55,30 @@ struct ExportFixture {
     REQUIRE(log.append({.tool = vector_v2::OperationTool::kPen, .color = 0x07E0U, .samples = dot})
                 .has_value());
   }
+};
+
+class MemoryPngOutput final : public tinydraw::PngOutput {
+ public:
+  bool write(std::size_t offset, std::span<const std::uint8_t> input) override {
+    if (offset > bytes.max_size() - input.size()) {
+      return false;
+    }
+    if (offset + input.size() > bytes.size()) {
+      bytes.resize(offset + input.size());
+    }
+    std::copy(input.begin(), input.end(), bytes.begin() + static_cast<std::ptrdiff_t>(offset));
+    return true;
+  }
+
+  bool read(std::size_t offset, std::span<std::uint8_t> output) override {
+    if (offset > bytes.size() || output.size() > bytes.size() - offset) {
+      return false;
+    }
+    std::copy_n(bytes.begin() + static_cast<std::ptrdiff_t>(offset), output.size(), output.begin());
+    return true;
+  }
+
+  std::vector<std::uint8_t> bytes;
 };
 
 struct SettledWorkspaceStorage {
@@ -150,21 +176,80 @@ TEST_CASE("settled world band renderer stitches the production AA windows exactl
   CHECK(blended_pixels > 0U);
 }
 
-TEST_CASE("settled world band renderer rejects an authority change") {
+TEST_CASE("settled world rows stream through the production PNG encoder") {
   ExportFixture fixture;
   fixture.append_document();
-  std::vector<std::uint16_t> band(static_cast<std::size_t>(vector_v2::kWorldWidth) * 4U);
+  std::vector<std::uint16_t> band(static_cast<std::size_t>(vector_v2::kWorldWidth) * 11U);
   std::vector<std::uint16_t> window(vector_v2::kTilePixels);
   SettledWorkspaceStorage storage;
   vector_v2::SettledWorldBandRenderer renderer(fixture.log, band, window, storage.workspace());
   REQUIRE(renderer.ready());
 
+  class RowSource final : public tinydraw::PngRowSource {
+   public:
+    explicit RowSource(vector_v2::SettledWorldBandRenderer& renderer) : renderer_(renderer) {}
+    bool row(int y, std::span<std::uint16_t> destination) override {
+      return renderer_.render_row(y, destination);
+    }
+
+   private:
+    vector_v2::SettledWorldBandRenderer& renderer_;
+  } source(renderer);
+
+  std::vector<std::max_align_t> encoder_workspace(
+      (tinydraw::png_encoder_workspace_bytes() + sizeof(std::max_align_t) - 1U) /
+      sizeof(std::max_align_t));
+  std::vector<std::uint8_t> row_storage(tinydraw::png_encoder_row_bytes(vector_v2::kWorldWidth));
+  std::vector<std::uint16_t> row_pixels(vector_v2::kWorldWidth);
+  MemoryPngOutput output;
+  const auto encoded = tinydraw::encode_png_rgb565_rows(
+      source, vector_v2::kWorldWidth, vector_v2::kWorldHeight, output, encoder_workspace.data(),
+      encoder_workspace.size() * sizeof(std::max_align_t), row_storage, row_pixels);
+
+  REQUIRE(encoded.success());
+  CHECK(encoded.bytes_written == output.bytes.size());
+  constexpr std::array<std::uint8_t, 8> kSignature{0x89U, 0x50U, 0x4EU, 0x47U,
+                                                   0x0DU, 0x0AU, 0x1AU, 0x0AU};
+  REQUIRE(output.bytes.size() >= 24U);
+  CHECK(std::equal(kSignature.begin(), kSignature.end(), output.bytes.begin()));
+  const auto big_endian = [&](std::size_t offset) {
+    return static_cast<std::uint32_t>(output.bytes[offset]) << 24U |
+           static_cast<std::uint32_t>(output.bytes[offset + 1U]) << 16U |
+           static_cast<std::uint32_t>(output.bytes[offset + 2U]) << 8U |
+           static_cast<std::uint32_t>(output.bytes[offset + 3U]);
+  };
+  CHECK(big_endian(16U) == static_cast<std::uint32_t>(vector_v2::kWorldWidth));
+  CHECK(big_endian(20U) == static_cast<std::uint32_t>(vector_v2::kWorldHeight));
+}
+
+TEST_CASE("settled world band renderer rejects an authority change during a band") {
+  ExportFixture fixture;
+  fixture.append_document();
+  std::vector<std::uint16_t> band(static_cast<std::size_t>(vector_v2::kWorldWidth) * 4U);
+  std::vector<std::uint16_t> window(vector_v2::kTilePixels);
+  SettledWorkspaceStorage storage;
   const std::array extra{
       vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
-  REQUIRE(fixture.log.append({.color = 0x0000U, .samples = extra}).has_value());
+  struct Mutation {
+    vector_v2::OperationLog* log = nullptr;
+    std::span<const vector_v2::CompactOperationSample> samples;
+    bool appended = false;
+  } mutation{.log = &fixture.log, .samples = extra};
+  const auto mutate = [](void* raw_context) {
+    auto& context = *static_cast<Mutation*>(raw_context);
+    if (!context.appended) {
+      context.appended =
+          context.log->append({.color = 0x0000U, .samples = context.samples}).has_value();
+    }
+  };
+  vector_v2::SettledWorldBandRenderer renderer(fixture.log, band, window, storage.workspace(),
+                                               mutate, &mutation);
+  REQUIRE(renderer.ready());
+
   std::vector<std::uint16_t> row(vector_v2::kWorldWidth);
-  CHECK_FALSE(renderer.ready());
   CHECK_FALSE(renderer.render_row(0, row));
+  CHECK(mutation.appended);
+  CHECK_FALSE(renderer.ready());
 }
 
 TEST_CASE("world band renderer rejects invalid requests") {

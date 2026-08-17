@@ -15,8 +15,12 @@ using VectorV2ExportProgress = vector_v2::SvgExportProgress;
 struct VectorV2ExportStats {
   bool encoded = false;
   std::size_t bytes = 0;
+  std::size_t png_bytes = 0;
   std::int64_t elapsed_us = 0;
   std::size_t workspace_bytes = 0;
+  std::size_t png_workspace_bytes = 0;
+  std::size_t render_workspace_bytes = 0;
+  std::size_t peak_workspace_bytes = 0;
   std::size_t operation_count = 0;
   std::size_t sink_calls = 0;
   std::size_t flash_pages = 0;
@@ -25,21 +29,23 @@ struct VectorV2ExportStats {
   std::size_t free_internal_after = 0;
 };
 
-// Exports the complete Vector V2 authority as one SVG in the dedicated flash
-// partition and presents DRAWING.SVG on the proven read-only USB transport.
-// Every physical gesture is one filled variable-width path built from the
-// renderer's exact ribbon geometry; bounded chunks with the same gesture ID
-// are grouped, while tile caches and presentation state are never read.
-// Encoding batches output through one transient 4 KiB flash-page workspace.
+// Exports one authority snapshot as an editable path-based DRAWING.SVG and a
+// settled-AA DRAWING.PNG in the dedicated flash partition, then presents both
+// through the proven read-only USB transport. SVG geometry and bytes retain
+// the existing exact ribbon path behavior. PNG rows stream from the production
+// settled renderer through bounded band/tile/encoder workspaces; neither file
+// depends on tile-cache residency or presentation state.
 class VectorV2Export {
  public:
   VectorV2Export();
 
   [[nodiscard]] bool ready() const;
   [[nodiscard]] std::size_t file_size() const;
+  [[nodiscard]] std::size_t png_size() const;
   [[nodiscard]] bool read_file(std::size_t offset, std::span<std::uint8_t> output) const;
-  // Streams authority paths transactionally into flash. Never touches USB, so
-  // automated runs keep their serial console.
+  [[nodiscard]] bool read_png(std::size_t offset, std::span<std::uint8_t> output) const;
+  // Streams the same authority snapshot into both formats and commits their
+  // shared manifest last. Never touches USB, so automated runs keep serial.
   [[nodiscard]] VectorV2ExportStats encode(const vector_v2::OperationLog& log,
                                            VectorV2ExportProgress progress = nullptr,
                                            void* progress_context = nullptr);

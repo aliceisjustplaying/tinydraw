@@ -1163,6 +1163,70 @@ std::uint32_t export_crc32(std::uint32_t crc, std::span<const std::uint8_t> byte
   return ~crc;
 }
 
+std::uint32_t big_endian_u32(std::span<const std::uint8_t> bytes) {
+  return static_cast<std::uint32_t>(bytes[0]) << 24U | static_cast<std::uint32_t>(bytes[1]) << 16U |
+         static_cast<std::uint32_t>(bytes[2]) << 8U | static_cast<std::uint32_t>(bytes[3]);
+}
+
+struct PngVerification {
+  bool signature = false;
+  bool dimensions = false;
+  bool chunks = false;
+  std::size_t chunk_count = 0;
+};
+
+PngVerification verify_png(VectorV2Export& exporter, std::size_t total_bytes) {
+  PngVerification result;
+  std::array<std::uint8_t, 24> header{};
+  constexpr std::array<std::uint8_t, 8> kSignature{0x89U, 0x50U, 0x4EU, 0x47U,
+                                                   0x0DU, 0x0AU, 0x1AU, 0x0AU};
+  if (total_bytes < 45U || !exporter.read_png(0, header)) {
+    return result;
+  }
+  result.signature = std::equal(kSignature.begin(), kSignature.end(), header.begin());
+  result.dimensions = big_endian_u32(std::span(header).subspan(16U, 4U)) ==
+                          static_cast<std::uint32_t>(vector_v2::kWorldWidth) &&
+                      big_endian_u32(std::span(header).subspan(20U, 4U)) ==
+                          static_cast<std::uint32_t>(vector_v2::kWorldHeight);
+
+  std::array<std::uint8_t, 4'096> buffer{};
+  std::size_t offset = 8U;
+  bool saw_iend = false;
+  while (offset + 12U <= total_bytes && !saw_iend) {
+    std::array<std::uint8_t, 8> chunk_header{};
+    if (!exporter.read_png(offset, chunk_header)) {
+      return result;
+    }
+    const std::size_t length = big_endian_u32(std::span(chunk_header).first(4U));
+    if (length > total_bytes - offset - 12U) {
+      return result;
+    }
+    std::uint32_t crc = export_crc32(0U, std::span(chunk_header).subspan(4U));
+    std::size_t payload_offset = offset + 8U;
+    std::size_t remaining = length;
+    while (remaining > 0U) {
+      const std::size_t count = std::min(remaining, buffer.size());
+      if (!exporter.read_png(payload_offset, std::span(buffer).first(count))) {
+        return result;
+      }
+      crc = export_crc32(crc, std::span<const std::uint8_t>(buffer).first(count));
+      payload_offset += count;
+      remaining -= count;
+      vTaskDelay(1);
+    }
+    std::array<std::uint8_t, 4> stored_crc{};
+    if (!exporter.read_png(offset + 8U + length, stored_crc) || crc != big_endian_u32(stored_crc)) {
+      return result;
+    }
+    constexpr std::array<std::uint8_t, 4> kIend{'I', 'E', 'N', 'D'};
+    saw_iend = std::equal(kIend.begin(), kIend.end(), chunk_header.begin() + 4);
+    offset += length + 12U;
+    ++result.chunk_count;
+  }
+  result.chunks = saw_iend && offset == total_bytes;
+  return result;
+}
+
 struct SvgVerification {
   bool prolog = false;
   bool dimensions = false;
@@ -1237,27 +1301,35 @@ SvgVerification verify_svg(VectorV2Export& exporter, std::size_t total_bytes,
 bool run_export_encode_gate(VectorV2Export& exporter, OperationLog& log) {
   const auto expected_paths = vector_v2::svg_path_count(log);
   const VectorV2ExportStats stats = exporter.encode(log);
-  const SvgVerification verified =
+  const SvgVerification svg =
       stats.encoded && expected_paths.has_value()
           ? verify_svg(exporter, stats.bytes, *expected_paths, stats.content_crc32)
           : SvgVerification{};
-  const bool passed = stats.encoded && stats.bytes > 64U && verified.prolog &&
-                      verified.dimensions && verified.terminator && verified.crc &&
-                      verified.path_only;
+  const PngVerification png =
+      stats.encoded ? verify_png(exporter, stats.png_bytes) : PngVerification{};
+  const bool passed = stats.encoded && stats.bytes > 64U && svg.prolog && svg.dimensions &&
+                      svg.terminator && svg.crc && svg.path_only && png.signature &&
+                      png.dimensions && png.chunks;
   std::printf(
-      "TINYDRAW_GATE1_EXPORT format=svg encoded=%u bytes=%lu elapsed_us=%lld "
-      "workspace_bytes=%lu operations=%lu sink_calls=%lu flash_pages=%lu crc32=%08lx "
-      "free_psram=%lu free_internal=%lu prolog=%u dimensions=%u terminator=%u crc_ok=%u "
-      "paths=%lu path_only=%u pass=%u\n",
+      "TINYDRAW_GATE1_EXPORT formats=svg,png encoded=%u svg_bytes=%lu png_bytes=%lu "
+      "elapsed_us=%lld svg_workspace_bytes=%lu png_workspace_bytes=%lu "
+      "render_workspace_bytes=%lu peak_workspace_bytes=%lu operations=%lu sink_calls=%lu "
+      "flash_pages=%lu crc32=%08lx free_psram=%lu free_internal=%lu prolog=%u "
+      "svg_dimensions=%u terminator=%u crc_ok=%u paths=%lu path_only=%u png_signature=%u "
+      "png_dimensions=%u png_chunks=%lu png_chunks_ok=%u pass=%u\n",
       stats.encoded, static_cast<unsigned long>(stats.bytes),
-      static_cast<long long>(stats.elapsed_us), static_cast<unsigned long>(stats.workspace_bytes),
+      static_cast<unsigned long>(stats.png_bytes), static_cast<long long>(stats.elapsed_us),
+      static_cast<unsigned long>(stats.workspace_bytes),
+      static_cast<unsigned long>(stats.png_workspace_bytes),
+      static_cast<unsigned long>(stats.render_workspace_bytes),
+      static_cast<unsigned long>(stats.peak_workspace_bytes),
       static_cast<unsigned long>(stats.operation_count),
       static_cast<unsigned long>(stats.sink_calls), static_cast<unsigned long>(stats.flash_pages),
       static_cast<unsigned long>(stats.content_crc32),
       static_cast<unsigned long>(stats.free_psram_after),
-      static_cast<unsigned long>(stats.free_internal_after), verified.prolog, verified.dimensions,
-      verified.terminator, verified.crc, static_cast<unsigned long>(verified.paths),
-      verified.path_only, passed);
+      static_cast<unsigned long>(stats.free_internal_after), svg.prolog, svg.dimensions,
+      svg.terminator, svg.crc, static_cast<unsigned long>(svg.paths), svg.path_only, png.signature,
+      png.dimensions, static_cast<unsigned long>(png.chunk_count), png.chunks, passed);
   std::fflush(stdout);
   return passed;
 }
