@@ -45,6 +45,7 @@ class VectorV2Export {
   // Starts or refreshes the USB mass-storage presentation. Activating USB
   // repurposes the shared USB port and ends any serial console session until
   // the next reset, matching Raster V1 export semantics.
+  void set_modified_time(FatDateTime time);
   [[nodiscard]] bool present_usb();
   // Disconnects an active USB disk before re-encoding so hosts re-read it.
   void prepare_reencode();

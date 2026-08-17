@@ -686,7 +686,7 @@ void present_export_progress(std::size_t completed_operations, std::size_t total
 }
 
 bool run_export(VectorV2Export& exporter, const OperationLog& log, vector_v2::ChromeState& chrome,
-                VectorV2Presenter& presenter) {
+                VectorV2Presenter& presenter, RtcClock& clock) {
   chrome.popup = vector_v2::ChromePopup::kNone;
   chrome.confirm_new = false;
   chrome.export_status = vector_v2::ChromeExportStatus::kSaving;
@@ -695,6 +695,13 @@ bool run_export(VectorV2Export& exporter, const OperationLog& log, vector_v2::Ch
   print_presentation("export-start", presenter, started);
 
   exporter.prepare_reencode();
+  FatDateTime modified_time;
+  if (clock.read(modified_time)) {
+    exporter.set_modified_time(modified_time);
+    std::printf("TINYDRAW_V2_EXPORT_TIME local=%04u-%02u-%02uT%02u:%02u:%02u\n", modified_time.year,
+                modified_time.month, modified_time.day, modified_time.hour, modified_time.minute,
+                modified_time.second);
+  }
   ExportProgressContext progress{.chrome = &chrome, .presenter = &presenter};
   const VectorV2ExportStats stats = exporter.encode(log, present_export_progress, &progress);
   chrome.export_progress = stats.encoded ? 100 : chrome.export_progress;
@@ -747,7 +754,7 @@ bool apply_chrome_action(vector_v2::ChromeAction action, Point point,
                          MaterializedCanvas& canvas, vector_v2::TileProducer& producer,
                          std::span<const std::uint16_t> blank_snapshot,
                          VectorV2Presenter& presenter, VectorV2Export& exporter,
-                         TimeSyncController& time_sync) {
+                         TimeSyncController& time_sync, RtcClock& clock) {
   const auto toggle = [&](vector_v2::ChromePopup popup) {
     chrome.popup = chrome.popup == popup ? vector_v2::ChromePopup::kNone : popup;
   };
@@ -830,7 +837,7 @@ bool apply_chrome_action(vector_v2::ChromeAction action, Point point,
     case vector_v2::ChromeAction::kExport:
       // Blocking by design, like Raster V1. Progress is operation-based;
       // activating USB then ends serial until the next reset.
-      return chrome.can_export && run_export(exporter, log, chrome, presenter);
+      return chrome.can_export && run_export(exporter, log, chrome, presenter, clock);
     case vector_v2::ChromeAction::kSyncTime:
       chrome.popup = vector_v2::ChromePopup::kNone;
       if (chrome.can_sync_time) {
@@ -1448,7 +1455,7 @@ void run_vector_v2_app() {
           static_cast<void>(apply_chrome_action(
               vector_v2::chrome_action_at({tap.x, tap.y}, chrome), tap, chrome, log, canvas,
               producer, std::span(storage.snapshot, vector_v2::kOverviewPixels), presenter,
-              exporter, time_sync));
+              exporter, time_sync, clock));
         }
       } else if (panning) {
         panning = false;
