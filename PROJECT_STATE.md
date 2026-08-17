@@ -1,13 +1,14 @@
 # TinyDraw project state
 
 Last updated: 2026-08-17 (stroke-logical SVG export, faster color dialog,
-zoom-overlay pan promotion, exact zoom-cycle return, direct-acquisition
-minimap navigation, and on-demand V2 NTP UI landed; receipts:
+zoom-overlay pan promotion, exact zoom-cycle return, owner-accepted absolute
+minimap control, and on-demand V2 NTP UI landed; receipts:
 [`SVG`](benchmark-results/svg-export-2026-08-17/RECEIPT.md),
 [`color dialog`](benchmark-results/color-dialog-2026-08-17/RECEIPT.md),
 [`zoom-overlay pan`](benchmark-results/zoom-overlay-pan-2026-08-17/RECEIPT.md),
 [`zoom-cycle return`](benchmark-results/zoom-cycle-return-2026-08-17/RECEIPT.md),
 [`minimap navigation`](benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md),
+[`absolute minimap control`](benchmark-results/minimap-absolute-pointer-2026-08-17/RECEIPT.md),
 [`responsive 0.40 ink`](benchmark-results/live-ink-responsive-tail-2026-08-17/RECEIPT.md),
 [`logical SVG gate`](benchmark-results/svg-logical-gate-2026-08-17/RECEIPT.md),
 [`NTP`](benchmark-results/v2-ntp-sync-2026-08-17/RECEIPT.md),
@@ -39,7 +40,7 @@ promotion. [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) owns acceptance thresholds;
 | Color dialog | **Green — device gate** | Exact span rasterization plus color-only frame re-presentation cut open time 132.466 → 27.568 ms (4.81×); chrome work fell 82.364 → 9.396 ms (8.77×). A ≤40 ms physical guard and bit-exact snapshot/reference tests are live ([`RECEIPT.md`](benchmark-results/color-dialog-2026-08-17/RECEIPT.md)). |
 | Overlay gesture arbitration | **Green — host + device classifier gate** | Zoom In/Out still own taps. With the pan tool active, an 8 px drag starting anywhere on the zoom rail promotes to the existing boundary-drained canvas pan from the original Down point; other tools/popups do not promote ([`RECEIPT.md`](benchmark-results/zoom-overlay-pan-2026-08-17/RECEIPT.md)). |
 | Zoom-cycle return | **Green — host + device classifier gate** | Each tiled zoom remembers its explored origin and associated focus. The complete 400→25→50→100→200→400 button route returns exactly to `(2300,3100)`; stale views still yield to a changed focus. The normal 16 KiB product image boots with 6,504 bytes of measured stack margin ([`RECEIPT.md`](benchmark-results/zoom-cycle-return-2026-08-17/RECEIPT.md)). |
-| Minimap navigation | **Provisional yellow — major owner improvement; one directional check pending** | Absolute-pointer mapping now spans the full world at every zoom: direct Down centers immediately, and dragging follows the finger without grabbing the tiny viewport box or applying the rejected 0.25 scale. The original minimap position is restored. The real bottom conflict is arbitrated by intent: stationary overlap presses remain size/document taps, while deliberate drags promote and stay captured. A non-perturbing post-coordinator capture recorded 866 compact events from 4,916 offers with zero overflow; all 14 dock-overlap gestures promoted. The owner called this “way better than anything we had before.” The capture also measured the remaining sticky-up cause at 118.482 ms median / 225.993 ms max behind the 8 px ambiguity threshold; the queued directional follow-up uses 2 px only when returning upward toward the visible map (replay median 78.995 ms) and retains 8 px otherwise. Final green waits for one short 100%/400% glass check with size/document taps ([receipt](benchmark-results/minimap-absolute-pointer-2026-08-17/RECEIPT.md)). |
+| Minimap navigation | **Green — owner accepted** | Absolute-pointer mapping spans the full world at every zoom: direct Down centers immediately, and dragging follows the finger without grabbing the tiny viewport box or applying the rejected 0.25 scale. The owner-preferred original visual position is restored. Bottom-map and dock ambiguity is resolved by intent: stationary presses remain size/document taps, deliberate upward movement promotes at 2 px, horizontal/downward movement promotes at 8 px, and drag candidacy covers the complete right-side dock through `y=448`. The final compact capture recorded 778 events from 4,074 offers with zero overflow or failure marker; dock-started drags promoted and remained captured through `y=441`, while four stationary `y=443..445` taps left the origin unchanged. Owner verdict: “this will do … consider this done”; optional refinement is pinned for the later all-target review ([receipt](benchmark-results/minimap-absolute-pointer-2026-08-17/RECEIPT.md)). |
 | RTC / one-shot NTP | **Green — owner accepted** | Document → Clock launches a low-priority asynchronous connect/NTP/RTC-write attempt with modal `CONNECTING`/`SYNCING` and terminal `TIME SET`/`TIME ERROR` feedback. The owner confirmed unavailable-network handling terminates, successful sync reaches `TIME SET`, labels are centered, and the scale-3 text size is good. The NTP-only toast widens symmetrically to fit `CONNECTING`; the focused pixel test passes 16 assertions and the combined product booted `pass=1` ([text-size receipt](benchmark-results/ntp-text-size-2026-08-17/RECEIPT.md), [NTP receipt](benchmark-results/v2-ntp-sync-2026-08-17/RECEIPT.md)). Credentials stay in the ignored local header; timezone is UTC. |
 | Feature parity | **Open** | Undo/Redo, autosave/recovery, power lifecycle parity, remaining failure UI, and release soak remain. |
 | Mixed-draw appends | **Green — harness and glass** | The committed-overlay / authority-revision split landed 2026-08-16: chunk commits publish authority only (worst input-path append **173 µs** vs the 15 ms budget, was 19,324 µs), the canvas drains in receipted idle absorptions behind a pending-ink overlay proven bit-exact on host, and lift defers its refresh to one exact swap after drain. `mixed_draw=1` for the first time; `visible_fallback=0`, drop counters zero, INKTRACE at baseline latency, ledger clean ([`RECEIPT.md`](benchmark-results/committed-overlay/RECEIPT.md)). The product-loop drain paths (idle slices, lift swap, pan boundary drain) and 400% draw feel need an owner glass session. Prior diagnosis receipts: [`ink-fallback-observability/RECEIPT.md`](benchmark-results/ink-fallback-observability/RECEIPT.md). |
@@ -146,11 +147,12 @@ Undo, persistence, and SVG are frozen in
 The owner locked the feature-finishing order on 2026-08-17. Do not pull the
 remaining performance campaign ahead of unfinished product features:
 
-1. Build a non-perturbing exact minimap capture path, capture the rejected
-   bottom-right→center interaction, and fix the minimap with absolute-pointer
-   behavior: touching anywhere in the map immediately centers the viewport
-   there, then dragging follows the finger one-for-one.
-2. Establish the authority/storage spine and ship whole-gesture Undo/Redo.
+1. **Done 2026-08-17:** build a non-perturbing exact minimap capture path,
+   capture the rejected bottom-right→center interaction, and fix the minimap
+   with absolute-pointer behavior. The final full-dock arbitration passed host,
+   exact capture, and owner glass acceptance.
+2. **Next:** establish the authority/storage spine and ship whole-gesture
+   Undo/Redo.
 3. Complete all autosave work: versioned journal, bounded idle writes,
    recovery, and lifecycle integration before risky transitions.
 4. Review and physically validate every touch target and overlap.
