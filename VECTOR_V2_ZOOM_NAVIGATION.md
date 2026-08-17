@@ -1,13 +1,13 @@
 # Vector V2 zoom and navigation behavior
 
-Status: accepted design for implementation  
-Last updated: 2026-08-13
+Status: zoom/pan implemented; required minimap interaction pending
+Last updated: 2026-08-17
 
 ## Scope
 
 This document defines camera, zoom, pan, cache-protection, and navigation-overlay
-behavior for Vector V2. It does not define settled anti-aliasing, persistence, or
-the final minimap interaction implementation.
+behavior for Vector V2. It does not define settled anti-aliasing, persistence,
+or the internal implementation of the required minimap interaction.
 
 ## Geometry
 
@@ -53,7 +53,8 @@ The navigation model stores:
 1. the current zoom;
 2. the current level-space origin;
 3. the last clamped origin used at each tiled zoom;
-4. the current world-space focus point.
+4. the world-space focus associated with each remembered origin;
+5. the current world-space focus point.
 
 Per-zoom origins improve return navigation. World-space focus preserves spatial
 continuity when entering a zoom that has no useful remembered view.
@@ -79,8 +80,11 @@ When changing from zoom A to zoom B:
 
 1. Convert the panel-space focus at zoom A to a world-space point.
 2. Save zoom A's current clamped origin.
-3. If zoom B has a remembered origin whose viewport still contains the
-   world-space focus, restore that origin.
+3. If zoom B has a remembered origin whose associated focus matches the
+   retained focus within four quarter-world units and whose viewport still
+   contains that focus, restore that origin. The tolerance covers the bounded
+   integer-conversion drift of a complete button cycle without accepting a
+   stale view after the user pans elsewhere.
 4. Otherwise calculate zoom B's origin so the same world-space point remains at
    the same panel-space focus.
 5. Clamp the result to zoom B's world extent.
@@ -93,6 +97,11 @@ This hybrid rule gives both desirable behaviors:
 - zooming in/out stays centered on the same part of the drawing;
 - returning to a recently explored zoom restores its useful local position when
   doing so does not cause a surprising jump away from the current focus.
+
+Implemented 2026-08-17. The physical 400→25→50→100→200→400 classifier returns
+exactly to the explored `(2300,3100)` origin; host coverage also rejects stale
+remembered views. See
+[`RECEIPT.md`](benchmark-results/zoom-cycle-return-2026-08-17/RECEIPT.md).
 
 ### 25% transitions
 
@@ -149,9 +158,10 @@ Rules:
 
 ## Cache-protection behavior
 
-The raw materialized-tile pool started at 320 slots and currently uses 384.
-The larger pool passed memory and mutation-free tour gates; a mixed drawing and
-revisit A/B remains open.
+The raw materialized-tile pool started at 320 slots and currently uses 448.
+The current pool and idle-repair policy pass mixed-drawing revisit gates; the
+remaining overlap-50 cold-render red is tracked separately in
+[`PROJECT_STATE.md`](PROJECT_STATE.md#finish-line-scorecard).
 
 Each tiled zoom may protect the raw identities intersecting its most recently
 committed viewport footprint. Protection means eviction preference, not an
@@ -174,14 +184,13 @@ and correctness purpose.
 
 A worst-case arbitrary-alignment viewport intersects at most 56 tiles. Four
 tiled zoom footprints require at most 224 raw identities before accounting for
-uniform tiles, leaving 160 of the current 384 raw slots for the active route and
+uniform tiles, leaving 224 of the current 448 raw slots for the active route and
 churn. Actual paper-aware demand is lower in sparse documents.
 
 A mutation-free 16-stop 400% tour measured 63 return-trip refills at 320 slots
-and none at 384. Drawing against a warm multi-zoom cache later exposed
-120–132 ms commits at lower zooms, so the next performance round must measure
-both capacities under mutation before treating 384 as final. A 448-slot default
-is not approved under the current export-reserve margin.
+and none at 384. The later 448-slot default, committed-overlay split, and idle
+repair close the mixed-drawing revisit gate while preserving the export reserve;
+current measurements live in [`PROJECT_STATE.md`](PROJECT_STATE.md).
 
 ## Zoom and cache acceptance tests
 
@@ -189,6 +198,8 @@ is not approved under the current export-reserve margin.
 
 - all adjacent zoom transitions preserve the chosen world focus before clamping;
 - round trips 25→50→25, 25→100→25, 100→400→100, and 400→25→400;
+- the complete 400→25→50→100→200→400 button cycle restores the exact explored
+  400% origin;
 - remembered origins restore only when compatible with current focus;
 - every corner and edge clamps correctly at every zoom;
 - extent indicators match pan availability;
@@ -204,7 +215,8 @@ is not approved under the current export-reserve margin.
 - warm 100% and 400% views, tour at 400%, then return with zero fallback in the
   protected footprints;
 - verify the 1.5 MiB export reserve still allocates;
-- record p50/p95/max touch-poll and presentation timings.
+- record p50/p95/max touch-poll and presentation timings;
+- classify the complete button cycle on device and require exact origin return.
 
 ### Glass test
 
@@ -216,21 +228,20 @@ is not approved under the current export-reserve margin.
 6. Visit every world edge and verify directional markers.
 7. Confirm protected warm views do not visibly replay after the tour.
 
-## Minimap stretch goal
+## Required minimap follow-up
 
 The minimap belongs in the bottom-right canvas corner, immediately above the
 bottom toolbar and below the zoom rail. It reuses the complete overview and
 shows the current viewport rectangle.
 
-Future interactions:
+Required interactions:
 
 - tap to jump;
-- drag the viewport rectangle to navigate continuously;
-- tap the zoom percentage to toggle visibility.
+- drag the viewport rectangle to navigate continuously.
 
-The minimap is not required for the initial navigation batch or V2 feature
-completeness unless promoted later. It must never write document pixels or
-starve touch input.
+Tapping the zoom percentage to toggle visibility remains optional. The owner
+promoted viewport dragging into feature-complete scope on 2026-08-17. Minimap
+interaction must never write document pixels or starve touch input.
 
 ## Non-goals
 

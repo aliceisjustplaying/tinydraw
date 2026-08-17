@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <cstdlib>
 
 namespace tinydraw::vector_v2 {
 namespace {
@@ -15,6 +16,23 @@ int level_extent(int world_extent, ZoomLevel zoom) {
 
 int rounded_divide(std::int64_t numerator, int denominator) {
   return static_cast<int>((numerator + denominator / 2) / denominator);
+}
+
+std::size_t tiled_zoom_index(ZoomLevel zoom) {
+  switch (zoom) {
+    case ZoomLevel::k50Percent:
+      return 0U;
+    case ZoomLevel::k100Percent:
+      return 1U;
+    case ZoomLevel::k200Percent:
+      return 2U;
+    case ZoomLevel::k400Percent:
+      return 3U;
+    case ZoomLevel::k25Percent:
+      // Callers exclude the overview; retain a bounds-safe fallback.
+      return 0U;
+  }
+  return 0U;
 }
 
 }  // namespace
@@ -88,19 +106,40 @@ bool NavigationState::set_zoom(ZoomLevel target_zoom, NavigationPoint panel_focu
   }
   if (zoom_ != ZoomLevel::k25Percent) {
     focus_quarter_world_ = focus_for_view(zoom_, origin_, panel_focus);
+    const std::size_t current_index = tiled_zoom_index(zoom_);
+    remembered_origins_[current_index] = origin_;
+    remembered_focuses_[current_index] = focus_quarter_world_;
+    remembered_valid_[current_index] = true;
   }
   zoom_ = target_zoom;
   if (zoom_ == ZoomLevel::k25Percent) {
     origin_ = {};
     return true;
   }
-  // Zoom always centers the retained world focus at the panel focus. Exact
-  // same-zoom round trips through 25% fall out of the focus math (the focus
-  // derives from origin plus panel focus, so re-centering reproduces the
-  // origin bit-for-bit away from level edges). A remembered-origin reuse
-  // used to live here and made the zoom button land the focused point in a
-  // stale view's corner instead of the center.
-  origin_ = centered_origin(zoom_, panel_focus);
+
+  const NavigationPoint centered = centered_origin(zoom_, panel_focus);
+  const std::size_t target_index = tiled_zoom_index(zoom_);
+  const NavigationPoint remembered = remembered_origins_[target_index];
+  const NavigationPoint remembered_focus = remembered_focuses_[target_index];
+  // A full 25→50→100→200→400 cycle can move the retained focus by up to four
+  // quarter-world units through integer zoom conversion. Treat that bounded
+  // quantization as the same focus, but reject a stale remembered view whose
+  // old focus merely happens to contain the new one near a viewport corner.
+  constexpr int kFocusCompatibilityQuarterWorld = 4;
+  const bool focus_matches =
+      std::abs(remembered_focus.x - focus_quarter_world_.x) <= kFocusCompatibilityQuarterWorld &&
+      std::abs(remembered_focus.y - focus_quarter_world_.y) <= kFocusCompatibilityQuarterWorld;
+  const int percent = zoom_percent(zoom_);
+  const NavigationPoint focus_level{
+      .x = rounded_divide(static_cast<std::int64_t>(focus_quarter_world_.x) * percent, 400),
+      .y = rounded_divide(static_cast<std::int64_t>(focus_quarter_world_.y) * percent, 400),
+  };
+  const bool remembered_contains_focus =
+      focus_level.x >= remembered.x && focus_level.x < remembered.x + kViewportWidth &&
+      focus_level.y >= remembered.y && focus_level.y < remembered.y + kViewportHeight;
+  origin_ = remembered_valid_[target_index] && focus_matches && remembered_contains_focus
+                ? remembered
+                : centered;
   return true;
 }
 
@@ -111,6 +150,10 @@ bool NavigationState::set_origin(int x, int y, NavigationPoint panel_focus) {
   origin_ = clamp_origin(zoom_, x, y);
   if (zoom_ != ZoomLevel::k25Percent) {
     focus_quarter_world_ = focus_for_view(zoom_, origin_, panel_focus);
+    const std::size_t index = tiled_zoom_index(zoom_);
+    remembered_origins_[index] = origin_;
+    remembered_focuses_[index] = focus_quarter_world_;
+    remembered_valid_[index] = true;
   }
   return true;
 }

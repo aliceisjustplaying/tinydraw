@@ -890,7 +890,9 @@ void run_vector_v2_app() {
   std::printf("TINYDRAW_INKTRACE_CAPTURE_READY capacity=%u\n",
               static_cast<unsigned>(kInkTraceCaptureCapacity));
 #endif
-  vector_v2::NavigationState navigation;
+  // Navigation lives for the app's entire lifetime. Keep remembered zoom
+  // views out of the latency-sensitive 16 KiB main-task stack.
+  static vector_v2::NavigationState navigation;
   VectorV2Export exporter;
   VectorV2Presenter presenter(
       canvas, navigation, scheduler, display, std::span(storage.frame, vector_v2::kOverviewPixels),

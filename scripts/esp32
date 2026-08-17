@@ -128,6 +128,7 @@ case "$action" in
     cd "$root/esp32"
     eim run "idf.py -B '$gate_harness_build' -DTINYDRAW_QEMU=OFF -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_VECTOR_V2_MEMORY_PROBE=OFF -DTINYDRAW_VECTOR_V2_OVERVIEW_WALK=OFF -DTINYDRAW_VECTOR_V2_APP=ON -DTINYDRAW_VECTOR_V2_GATE_HARNESS=ON -DTINYDRAW_VECTOR_V2_TILE_CENSUS=OFF -DTINYDRAW_VECTOR_V2_TILE_SLOTS=$slots build"
     assert_config "$gate_harness_build/sdkconfig" OCT
+    grep -q '^CONFIG_ESP_MAIN_TASK_STACK_SIZE=20480$' "$gate_harness_build/sdkconfig"
     eim run "idf.py -B '$gate_harness_build' -p '$port' flash"
     if [[ "$verify" == "verify" ]]; then
       # Capture the battery and parse the verdict: flashing alone is not a
@@ -136,13 +137,13 @@ case "$action" in
       cd "$root"
       uv run --script tools/esp32-capture.py "$port" "$log" 480 \
         --end-marker TINYDRAW_GATE1_AUTOMATED_DONE \
-        --failure-regex 'task_wdt|Guru Meditation'
+        --failure-regex 'task_wdt|Guru Meditation|TG1WDT_SYS_RST|stack overflow'
       done_line=$(grep TINYDRAW_GATE1_AUTOMATED_DONE "$log" | tail -1 || true)
       if [[ -z "$done_line" ]]; then
         echo "GATE VERIFY FAILED: no TINYDRAW_GATE1_AUTOMATED_DONE in $log" >&2
         exit 1
       fi
-      if grep -qE 'task_wdt|Guru Meditation' "$log"; then
+      if grep -qE 'task_wdt|Guru Meditation|TG1WDT_SYS_RST|stack overflow' "$log"; then
         echo "GATE VERIFY FAILED: watchdog or crash in $log" >&2
         exit 1
       fi

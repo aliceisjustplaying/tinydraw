@@ -1,7 +1,7 @@
 # TinyDraw V2 roadmap
 
-Last updated: 2026-08-16 (post Cold Stage B + owner decisions; see
-[`SHIP_CONTRACT.md`](SHIP_CONTRACT.md#owner-decisions--2026-08-16-post-cold-stage-b-glass-session))
+Last updated: 2026-08-17 (zoom-cycle return closed; minimap navigation next;
+see [`PROJECT_STATE.md`](PROJECT_STATE.md#immediate-work-order))
 
 Branch: `feat/v2-performance-followup`
 
@@ -267,11 +267,12 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       into the existing boundary-drained pan state; host and physical classifier
       gates are green. See
       `benchmark-results/zoom-overlay-pan-2026-08-17/RECEIPT.md`.
-- [ ] Fix zoom-cycle return position: cycling back to a recently explored
-      zoom must restore its saved local position per
-      `VECTOR_V2_ZOOM_NAVIGATION.md` (owner glass report 2026-08-16; the
-      cycle currently loses the 400% viewport). Mechanical fix in the
-      button-cycle path against per-zoom navigation origins.
+- [x] Fix zoom-cycle return position. **Landed 2026-08-17:** per-tiled-zoom
+      origins and associated focuses restore the exact explored viewport when
+      compatible, while changed focuses reject stale views. Host regressions
+      and the physical 400→25→50→100→200→400 classifier return exactly to
+      `(2300,3100)`. See
+      `benchmark-results/zoom-cycle-return-2026-08-17/RECEIPT.md`.
 - [ ] Add minimap tap-to-jump and drag-to-pan using pan fallback/delta
       telemetry. Owner elevated drag from post-ship on 2026-08-17.
 - [ ] Integrate V1 power off/on, battery transitions, RTC, one-shot NTP, and
