@@ -95,6 +95,49 @@ TEST_CASE("FAT16 export disk exposes a caller-selected 8.3 filename") {
   CHECK(u32(sector, 60) == file.size());
 }
 
+TEST_CASE("FAT16 export disk exposes SVG and PNG as separate contiguous files") {
+  std::vector<std::uint8_t> svg(700U);
+  std::vector<std::uint8_t> png(900U);
+  for (std::size_t index = 0; index < svg.size(); ++index) {
+    svg[index] = static_cast<std::uint8_t>(0x53U + index);
+  }
+  for (std::size_t index = 0; index < png.size(); ++index) {
+    png[index] = static_cast<std::uint8_t>(0x89U + index * 3U);
+  }
+  const MemoryFile svg_file(svg);
+  const MemoryFile png_file(png);
+  const tinydraw::Fat16ExportDisk disk(svg_file, tinydraw::kDrawingSvgName, png_file,
+                                       tinydraw::kDrawingPngName);
+  std::array<std::uint8_t, 512> sector{};
+
+  REQUIRE(disk.read(1, 0, sector));
+  CHECK(u16(sector, 4) == 3U);
+  CHECK(u16(sector, 6) == 0xFFFFU);
+  CHECK(u16(sector, 8) == 5U);
+  CHECK(u16(sector, 10) == 0xFFFFU);
+
+  REQUIRE(disk.read(129, 0, sector));
+  CHECK(std::memcmp(sector.data() + 32, "DRAWING SVG", 11) == 0);
+  CHECK(u16(sector, 58) == 2U);
+  CHECK(u32(sector, 60) == svg.size());
+  CHECK(std::memcmp(sector.data() + 64, "DRAWING PNG", 11) == 0);
+  CHECK(u16(sector, 90) == 4U);
+  CHECK(u32(sector, 92) == png.size());
+
+  std::vector<std::uint8_t> restored_svg(1'024U, 0xFFU);
+  std::vector<std::uint8_t> restored_png(1'024U, 0xFFU);
+  REQUIRE(disk.read(130, 0, std::span(restored_svg).first(512U)));
+  REQUIRE(disk.read(131, 0, std::span(restored_svg).subspan(512U)));
+  REQUIRE(disk.read(132, 0, std::span(restored_png).first(512U)));
+  REQUIRE(disk.read(133, 0, std::span(restored_png).subspan(512U)));
+  CHECK(std::equal(svg.begin(), svg.end(), restored_svg.begin()));
+  CHECK(std::equal(png.begin(), png.end(), restored_png.begin()));
+  CHECK(std::all_of(restored_svg.begin() + static_cast<std::ptrdiff_t>(svg.size()),
+                    restored_svg.end(), [](std::uint8_t byte) { return byte == 0U; }));
+  CHECK(std::all_of(restored_png.begin() + static_cast<std::ptrdiff_t>(png.size()),
+                    restored_png.end(), [](std::uint8_t byte) { return byte == 0U; }));
+}
+
 TEST_CASE("FAT16 export disk supports partial sector reads and an empty volume") {
   const MemoryFile file({});
   const tinydraw::Fat16ExportDisk disk(file);
