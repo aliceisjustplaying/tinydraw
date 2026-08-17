@@ -76,6 +76,10 @@ namespace tinydraw::esp32 {
 
 UsbExport::UsbExport(const ReadOnlyFile& file, Fat83Name name) : disk_(file, name) {}
 
+UsbExport::UsbExport(const ReadOnlyFile& first_file, Fat83Name first_name,
+                     const ReadOnlyFile& second_file, Fat83Name second_name)
+    : disk_(first_file, first_name, second_file, second_name) {}
+
 void UsbExport::prepare_export() {
   if (active_) {
     static_cast<void>(tud_disconnect());

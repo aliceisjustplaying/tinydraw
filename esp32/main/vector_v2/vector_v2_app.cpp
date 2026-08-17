@@ -725,11 +725,16 @@ bool run_export(VectorV2Export& exporter, const OperationLog& log, vector_v2::Ch
   const auto finished = presenter.refresh(chrome, now_us());
   print_presentation("export-finish", presenter, finished);
   std::printf(
-      "TINYDRAW_V2_EXPORT format=svg encoded=%u bytes=%lu elapsed_us=%lld "
-      "workspace_bytes=%lu operations=%lu sink_calls=%lu flash_pages=%lu crc32=%08lx "
-      "free_psram=%lu free_internal=%lu usb_attempt=%u\n",
+      "TINYDRAW_V2_EXPORT formats=svg,png encoded=%u svg_bytes=%lu png_bytes=%lu "
+      "elapsed_us=%lld svg_workspace_bytes=%lu png_workspace_bytes=%lu "
+      "render_workspace_bytes=%lu peak_workspace_bytes=%lu operations=%lu sink_calls=%lu "
+      "flash_pages=%lu crc32=%08lx free_psram=%lu free_internal=%lu usb_attempt=%u\n",
       stats.encoded, static_cast<unsigned long>(stats.bytes),
-      static_cast<long long>(stats.elapsed_us), static_cast<unsigned long>(stats.workspace_bytes),
+      static_cast<unsigned long>(stats.png_bytes), static_cast<long long>(stats.elapsed_us),
+      static_cast<unsigned long>(stats.workspace_bytes),
+      static_cast<unsigned long>(stats.png_workspace_bytes),
+      static_cast<unsigned long>(stats.render_workspace_bytes),
+      static_cast<unsigned long>(stats.peak_workspace_bytes),
       static_cast<unsigned long>(stats.operation_count),
       static_cast<unsigned long>(stats.sink_calls), static_cast<unsigned long>(stats.flash_pages),
       static_cast<unsigned long>(stats.content_crc32),
