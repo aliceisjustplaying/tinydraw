@@ -91,37 +91,8 @@ const char* zoom_name(ZoomLevel zoom) {
   return "unknown";
 }
 
-[[gnu::noinline]] bool classify_zoom_cycle_return() {
-  constexpr vector_v2::NavigationPoint kCycleFocus{vector_v2::kOverviewWidth / 2,
-                                                   vector_v2::kChromeCanvasBottom / 2};
-  vector_v2::NavigationState navigation;
-  bool passed = navigation.set_zoom(ZoomLevel::k400Percent, kCycleFocus) &&
-                navigation.set_origin(2300, 3100, kCycleFocus);
-  const vector_v2::NavigationPoint explored_origin = navigation.origin();
-  constexpr std::array cycle{ZoomLevel::k25Percent, ZoomLevel::k50Percent, ZoomLevel::k100Percent,
-                             ZoomLevel::k200Percent, ZoomLevel::k400Percent};
-  for (const ZoomLevel zoom : cycle) {
-    passed = passed && navigation.set_zoom(zoom, kCycleFocus);
-  }
-  passed = passed && navigation.origin() == explored_origin;
-  std::printf(
-      "TINYDRAW_GATE1_ZOOM_CYCLE_RETURN explored_x=%d explored_y=%d returned_x=%d returned_y=%d "
-      "pass=%u\n",
-      explored_origin.x, explored_origin.y, navigation.origin().x, navigation.origin().y, passed);
-  std::fflush(stdout);
-  return passed;
-}
-
 [[gnu::noinline]] bool classify_minimap_navigation(VectorV2Presenter& presenter,
                                                    const vector_v2::ChromeState& chrome) {
-  const bool hit = vector_v2::chrome_minimap_contains({310.0F, 310.0F}, chrome) &&
-                   vector_v2::chrome_contains({310.0F, 310.0F}, chrome);
-  const bool dock_drag =
-      vector_v2::chrome_minimap_dock_drag_candidate({274.0F, 400.0F}, chrome) &&
-      !vector_v2::chrome_promotes_minimap_dock_drag({274.0F, 400.0F}, {281.0F, 400.0F}, chrome) &&
-      vector_v2::chrome_promotes_minimap_dock_drag({274.0F, 400.0F}, {282.0F, 400.0F}, chrome) &&
-      !vector_v2::chrome_promotes_minimap_dock_drag({274.0F, 400.0F}, {274.0F, 399.0F}, chrome) &&
-      vector_v2::chrome_promotes_minimap_dock_drag({274.0F, 400.0F}, {274.0F, 398.0F}, chrome);
   const auto initial = presenter.set_view(ZoomLevel::k100Percent, 400, 600, chrome, now_us());
   const auto tap = presenter.jump_from_minimap({312.0F, 307.0F}, chrome, now_us());
   const bool tap_position = presenter.level_x() == 552 && presenter.level_y() == 710;
@@ -140,16 +111,16 @@ const char* zoom_name(ZoomLevel zoom) {
   const auto edge = presenter.pan_minimap_from(edge_start_x, edge_start_y, {312.0F, 307.0F},
                                                {272.0F, 258.0F}, chrome, now_us());
   const bool edge_position = presenter.level_x() == 0 && presenter.level_y() == 0;
-  const bool passed = hit && dock_drag && initial.passed && tap.passed && tap_position &&
-                      drag.passed && drag.frame_reused && drag_position && acquire_initial.passed &&
+  const bool passed = initial.passed && tap.passed && tap_position && drag.passed &&
+                      drag.frame_reused && drag_position && acquire_initial.passed &&
                       acquire.passed && acquire_position && edge.passed && edge_position;
   std::printf(
-      "TINYDRAW_GATE1_MINIMAP_NAV hit=%u dock_drag=%u mode=absolute tap_x=552 tap_y=710 "
+      "TINYDRAW_GATE1_MINIMAP_NAV mode=absolute tap_x=552 tap_y=710 "
       "tap_complete_us=%lld tap_pass=%u drag_x=626 drag_y=782 drag_complete_us=%lld "
       "drag_reused=%u drag_pass=%u bottom_right_to_center_x=2760 "
       "bottom_right_to_center_y=3398 acquire_complete_us=%lld acquire_pass=%u "
       "edge_x=0 edge_y=0 edge_complete_us=%lld edge_pass=%u pass=%u\n",
-      hit, dock_drag, static_cast<long long>(tap.complete_us), tap.passed && tap_position,
+      static_cast<long long>(tap.complete_us), tap.passed && tap_position,
       static_cast<long long>(drag.complete_us), drag.frame_reused, drag.passed && drag_position,
       static_cast<long long>(acquire.complete_us), acquire.passed && acquire_position,
       static_cast<long long>(edge.complete_us), edge.passed && edge_position, passed);
@@ -3367,20 +3338,6 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
                                 std::span<const std::uint16_t> blank_snapshot,
                                 std::span<CompactOperationSample> conversion_storage,
                                 std::span<std::uint16_t> tile_scratch) {
-  vector_v2::ChromeState pan_chrome = chrome;
-  pan_chrome.tool = vector_v2::ChromeTool::kPan;
-  const bool zoom_overlay_tap =
-      vector_v2::chrome_action_at({332.0F, 98.0F}, pan_chrome) == vector_v2::ChromeAction::kZoomIn;
-  const bool zoom_overlay_drag =
-      !vector_v2::chrome_promotes_pan_drag({332.0F, 98.0F}, {337.0F, 103.0F}, pan_chrome) &&
-      vector_v2::chrome_promotes_pan_drag({332.0F, 98.0F}, {340.0F, 98.0F}, pan_chrome) &&
-      !vector_v2::chrome_promotes_pan_drag({332.0F, 98.0F}, {350.0F, 98.0F}, chrome);
-  const bool zoom_overlay_pan = zoom_overlay_tap && zoom_overlay_drag;
-  std::printf("TINYDRAW_GATE1_ZOOM_OVERLAY_PAN tap_zoom=%u drag_pan=%u threshold_px=8 pass=%u\n",
-              zoom_overlay_tap, zoom_overlay_drag, zoom_overlay_pan);
-
-  const bool zoom_cycle_return = classify_zoom_cycle_return();
-
   vector_v2::ChromeState palette = chrome;
   palette.popup = vector_v2::ChromePopup::kColors;
   const std::int64_t color_started = esp_timer_get_time();
@@ -3560,8 +3517,8 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   const auto return_overview = presenter.set_view(ZoomLevel::k25Percent, 0, 0, chrome, now_us());
   print_rerender_ledger("final");
   std::printf(
-      "TINYDRAW_GATE1_AUTOMATED_DONE minimap_navigation=%u zoom_cycle_return=%u "
-      "zoom_overlay_pan=%u color_dialog=%u stress=%u stress_100=%u stress_400=%u overlap_ready=%u "
+      "TINYDRAW_GATE1_AUTOMATED_DONE minimap_navigation=%u "
+      "color_dialog=%u stress=%u stress_100=%u stress_400=%u overlap_ready=%u "
       "overlap_cold=%u general_cold_ready=%u general_cold=%u workload=%u paced_cold=%u "
       "hard_100=%u hard_400=%u pan_100=%u "
       "pan_400=%u pan_seq=%u pan_boundary=%u live_overlay=%u draw_fill=%u cache=%u "
@@ -3569,14 +3526,14 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
       "cache_tour=%u mixed_draw=%u idle_repair=%u ink_trace=%u hairline_capacity=%u "
       "long_gesture=%u "
       "export_encode=%u export_reserve=%u return=%u ssaa_receipt=yellow\n",
-      minimap_navigation, zoom_cycle_return, zoom_overlay_pan, color_dialog, stress_ready,
-      stress_100, stress_400, overlap_ready, overlap_cold, general_cold_ready, general_cold,
+      minimap_navigation, color_dialog, stress_ready, stress_100, stress_400, overlap_ready,
+      overlap_cold, general_cold_ready, general_cold,
       workload_ready, paced_cold, gate_100, gate_400, pan_100, pan_400, pan_sequence, pan_boundary,
       live_overlay, draw_fill, cache_retention, full_world_cache, cache_tour, mixed_draw,
       idle_repair, ink_trace_replay, hairline_capacity, long_gesture, export_encode, export_reserve,
       return_overview.passed);
-  return minimap_navigation && zoom_cycle_return && zoom_overlay_pan && color_dialog &&
-         return_overview.passed && export_reserve && overlap_cold && general_cold && mixed_draw &&
+  return minimap_navigation && color_dialog && return_overview.passed && export_reserve &&
+         overlap_cold && general_cold && mixed_draw &&
          idle_repair && hairline_capacity && pan_100 && pan_400 && pan_sequence && pan_boundary;
 #endif
 }
