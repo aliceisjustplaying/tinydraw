@@ -1,13 +1,14 @@
 # TinyDraw project state
 
 Last updated: 2026-08-17 (stroke-logical SVG export, faster color dialog,
-zoom-overlay pan promotion, exact zoom-cycle return, and direct-acquisition
-minimap navigation landed; receipts:
+zoom-overlay pan promotion, exact zoom-cycle return, direct-acquisition
+minimap navigation, and on-demand V2 NTP UI landed; receipts:
 [`SVG`](benchmark-results/svg-export-2026-08-17/RECEIPT.md),
 [`color dialog`](benchmark-results/color-dialog-2026-08-17/RECEIPT.md),
 [`zoom-overlay pan`](benchmark-results/zoom-overlay-pan-2026-08-17/RECEIPT.md),
 [`zoom-cycle return`](benchmark-results/zoom-cycle-return-2026-08-17/RECEIPT.md),
-[`minimap navigation`](benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md))
+[`minimap navigation`](benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md),
+[`NTP`](benchmark-results/v2-ntp-sync-2026-08-17/RECEIPT.md))
 
 Branch: `feat/v2-performance-followup`
 
@@ -34,7 +35,8 @@ promotion. [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) owns acceptance thresholds;
 | Overlay gesture arbitration | **Green — host + device classifier gate** | Zoom In/Out still own taps. With the pan tool active, an 8 px drag starting anywhere on the zoom rail promotes to the existing boundary-drained canvas pan from the original Down point; other tools/popups do not promote ([`RECEIPT.md`](benchmark-results/zoom-overlay-pan-2026-08-17/RECEIPT.md)). |
 | Zoom-cycle return | **Green — host + device classifier gate** | Each tiled zoom remembers its explored origin and associated focus. The complete 400→25→50→100→200→400 button route returns exactly to `(2300,3100)`; stale views still yield to a changed focus. The normal 16 KiB product image boots with 6,504 bytes of measured stack margin ([`RECEIPT.md`](benchmark-results/zoom-cycle-return-2026-08-17/RECEIPT.md)). |
 | Minimap navigation | **Host green — corrected 400% interaction pending device reflash/glass** | The owner correctly reported that dragging away from the tiny 400% viewport did not feel like the whole minimap was active. Hit-testing covered the frame, but the old relative-delta behavior left the viewport far from the finger. The truthful ~5×5 px box now has a clamped 28×28 px invisible grab target; starting there preserves offset, while starting elsewhere directly acquires the viewport under the finger and follows the drag. Intent remains 4/3/2 px at ≤100/200/400% ([navigation receipt](benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md), [follow-up receipt](benchmark-results/stroke-svg-minimap-acquire-2026-08-17/RECEIPT.md)). |
-| Feature parity | **Open** | Undo/Redo, autosave/recovery, lifecycle parity, failure UI, and release soak remain. |
+| RTC / one-shot NTP | **Implemented — physical network receipt pending** | Document → Clock launches a low-priority asynchronous connect/NTP/RTC-write attempt with modal `CONNECTING`/`SYNCING` and terminal `TIME SET`/`TIME ERROR` feedback. The terminal state is published only after Wi-Fi teardown. Credentials stay in the ignored local header; timezone defaults to UTC pending owner input. Host release/sanitizer suites and product/gate builds pass ([`RECEIPT.md`](benchmark-results/v2-ntp-sync-2026-08-17/RECEIPT.md)). |
+| Feature parity | **Open** | Undo/Redo, autosave/recovery, power lifecycle parity, remaining failure UI, and release soak remain. |
 | Mixed-draw appends | **Green — harness and glass** | The committed-overlay / authority-revision split landed 2026-08-16: chunk commits publish authority only (worst input-path append **173 µs** vs the 15 ms budget, was 19,324 µs), the canvas drains in receipted idle absorptions behind a pending-ink overlay proven bit-exact on host, and lift defers its refresh to one exact swap after drain. `mixed_draw=1` for the first time; `visible_fallback=0`, drop counters zero, INKTRACE at baseline latency, ledger clean ([`RECEIPT.md`](benchmark-results/committed-overlay/RECEIPT.md)). The product-loop drain paths (idle slices, lift swap, pan boundary drain) and 400% draw feel need an owner glass session. Prior diagnosis receipts: [`ink-fallback-observability/RECEIPT.md`](benchmark-results/ink-fallback-observability/RECEIPT.md). |
 
 Session continuity: Cold Stage B is **closed** and glass-tested (receipt
@@ -55,6 +57,7 @@ The wave-3 A/B recipe and device-physics cheat sheet remain authoritative in
 
 Latest permanent receipts:
 
+- [`RECEIPT.md` — Vector V2 on-demand NTP](benchmark-results/v2-ntp-sync-2026-08-17/RECEIPT.md)
 - [`RECEIPT.md` — stroke SVG + minimap acquisition](benchmark-results/stroke-svg-minimap-acquire-2026-08-17/RECEIPT.md)
 - [`RECEIPT.md` — minimap high-zoom touch target](benchmark-results/minimap-touch-target-2026-08-17/RECEIPT.md)
 - [`RECEIPT.md` — minimap navigation](benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md)
@@ -136,8 +139,8 @@ Undo, persistence, and SVG are frozen in
 3. Establish generation-checked active-prefix history, then Undo/Redo and
    autosave/recovery. Cold stays hold-the-line until the autosave-enabled
    re-measure; the 20-run closure statistic waits there too.
-4. Then power/RTC/NTP/lifecycle parity, capacity/failure UI, physical USB SVG
-   receipt, and all-on release closure.
+4. Then power/lifecycle parity, capacity/failure UI, physical NTP and USB SVG
+   receipts, and all-on release closure.
 
 ## Proven foundation worth preserving
 
@@ -152,7 +155,8 @@ Undo, persistence, and SVG are frozen in
   4 KiB workspace, complete device readback gate, and read-only `DRAWING.SVG`
   FAT wiring. Prior PNG/USB evidence and the 1.5 MiB reserve remain archived.
 - Production toolbar, two PICO-8 palettes, zoom rail, battery, confirmation UI,
-  and an interactive minimap with tap-to-jump and captured viewport dragging.
+  on-demand RTC/NTP feedback, and an interactive minimap with tap-to-jump and
+  captured viewport dragging.
 - Separate Raster V1 and Vector V2 firmware targets.
 
 Foundation receipts and architectural history live in

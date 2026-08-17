@@ -1,0 +1,57 @@
+vector_v2/include/tinydraw/vector_v2/materialized_canvas.h:300:18: warning: Member variable 'InPlaceCommitScope::cross_zoom_invalidated' has no initializer. [uninitMemberVarNoCtor]
+    std::size_t* cross_zoom_invalidated;
+                 ^
+vector_v2/include/tinydraw/vector_v2/materialized_canvas.h:300:18: warning: Member variable 'InPlaceCommitScope::cross_zoom_invalidated' has no initializer. [uninitMemberVarNoCtor]
+    std::size_t* cross_zoom_invalidated;
+                 ^
+vector_v2/include/tinydraw/vector_v2/panel_staging.h:70:11: style: Consider using std::transform algorithm instead of a raw loop. [useStlAlgorithm]
+    pixel = static_cast<std::uint16_t>((pixel >> 8U) | (pixel << 8U));
+          ^
+vector_v2/src/incremental_document.cpp:219:17: warning: Member variable 'InPlaceRetainScope::painted_color' has no initializer. [uninitMemberVarNoCtor]
+  std::uint16_t painted_color;
+                ^
+vector_v2/src/incremental_document.cpp:220:37: warning: Member variable 'InPlaceRetainScope::priority_view' has no initializer. [uninitMemberVarNoCtor]
+  const std::optional<ViewRequest>& priority_view;
+                                    ^
+vector_v2/src/incremental_document.cpp:222:16: warning: Member variable 'InPlaceRetainScope::deadline_us' has no initializer. [uninitMemberVarNoCtor]
+  std::int64_t deadline_us;
+               ^
+vector_v2/src/incremental_document.cpp:237:3: style: Consider using std::any_of algorithm instead of a raw loop. [useStlAlgorithm]
+  for (const ViewFootprint& view : canvas.recent_views()) {
+  ^
+vector_v2/src/incremental_document.cpp:457:22: style: Consider using std::accumulate algorithm instead of a raw loop. [useStlAlgorithm]
+    visible_fallback += in_priority_view(affected[index], priority_view) ? 1U : 0U;
+                     ^
+vector_v2/src/ink_trace.cpp:355:31: style: Consider using std::any_of algorithm instead of a raw loop. [useStlAlgorithm]
+        !writer.append("\n")) {
+                              ^
+vector_v2/include/tinydraw/vector_v2/rerender_ledger.h:85:38: performance: Function 'totals()' should return member 'totals_' by const reference. [returnByReference]
+  [[nodiscard]] RerenderLedgerTotals totals() const;
+                                     ^
+vector_v2/src/svg_export.cpp:275:22: style: The comparison 'log.epoch() == epoch' is always true because 'log.epoch()' and 'epoch' represent the same value. [knownConditionTrueFalse]
+  return log.epoch() == epoch && log.current_revision() == revision &&
+                     ^
+vector_v2/src/svg_export.cpp:261:44: note: 'epoch' is assigned value 'log.epoch()' here.
+  const OperationLogEpoch epoch = log.epoch();
+                                           ^
+vector_v2/src/svg_export.cpp:275:22: note: The comparison 'log.epoch() == epoch' is always true because 'log.epoch()' and 'epoch' represent the same value.
+  return log.epoch() == epoch && log.current_revision() == revision &&
+                     ^
+vector_v2/src/svg_export.cpp:275:57: style: The comparison 'log.current_revision() == revision' is always true because 'log.current_revision()' and 'revision' represent the same value. [knownConditionTrueFalse]
+  return log.epoch() == epoch && log.current_revision() == revision &&
+                                                        ^
+vector_v2/src/svg_export.cpp:262:57: note: 'revision' is assigned value 'log.current_revision()' here.
+  const DocumentRevision revision = log.current_revision();
+                                                        ^
+vector_v2/src/svg_export.cpp:275:57: note: The comparison 'log.current_revision() == revision' is always true because 'log.current_revision()' and 'revision' represent the same value.
+  return log.epoch() == epoch && log.current_revision() == revision &&
+                                                        ^
+vector_v2/src/svg_export.cpp:276:32: style: The comparison 'log.operation_count() == operation_count' is always true because 'log.operation_count()' and 'operation_count' represent the same value. [knownConditionTrueFalse]
+         log.operation_count() == operation_count;
+                               ^
+vector_v2/src/svg_export.cpp:263:58: note: 'operation_count' is assigned value 'log.operation_count()' here.
+  const std::size_t operation_count = log.operation_count();
+                                                         ^
+vector_v2/src/svg_export.cpp:276:32: note: The comparison 'log.operation_count() == operation_count' is always true because 'log.operation_count()' and 'operation_count' represent the same value.
+         log.operation_count() == operation_count;
+                               ^
