@@ -2,7 +2,8 @@
 
 Measured: 2026-08-15, ESP32-S3 Touch AMOLED 1.8 (V2 hardware, CO5300
 controller), panel-probe target (`./scripts/esp32 panel-probe PORT [CLOCK]`).
-Receipts: `benchmark-results/blockA-panel-limits/probe-{40,50,60}mhz.log`.
+Receipts: `benchmark-results/blockA-panel-limits/probe-{40,50,60}mhz.log` at
+[`v2-feature-complete-pre-cleanup`](docs/EVIDENCE_ARCHIVE.md).
 
 This file records **software-measured physics only**. Nothing here is an
 optical tearing verdict; those belong to the Block B camera cells. Every
@@ -103,7 +104,7 @@ The QSPI read transaction completes (no error, ~36 µs) but always returns
 0. Control reads settle the attribution: RDDID (0x04), RDDST (0x09),
 RDDPM (0x0A), RDDMADCTL (0x0B), RDDCOLMOD (0x0C), and brightness readback
 (0x52 — written 0xFF at init) **all read 0**
-(`probe-40mhz-readcontrol.log`). QSPI register reads are broken or
+(`probe-40mhz-readcontrol.log` at the archived tag). QSPI register reads are broken or
 unsupported as configured (likely missing dummy-cycle insertion in the
 `esp_lcd` SPI io path). **No software beam-position oracle exists; optical
 capture is the only tear instrument.**

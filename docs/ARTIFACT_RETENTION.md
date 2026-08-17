@@ -5,9 +5,11 @@ hardware/setup, commands, decisive counters, verdict, and the smallest useful
 counterexample. Keep canonical input traces and approved deterministic snapshots
 when they are active regression fixtures.
 
-Store raw serial logs, videos, extracted capture frames, profiler dumps, and
-build transcripts outside Git. A receipt must name that external artifact and
-record its checksum when reproducing the verdict depends on it. Promote a raw
-artifact into Git only when it becomes a compact regression fixture.
+The current tree excludes raw serial logs, videos, extracted capture frames,
+profiler dumps, and build transcripts. A receipt must name the external artifact
+and record its checksum when reproducing the verdict depends on it. Promote a
+raw artifact into Git only when it becomes a compact regression fixture.
 
-Existing historical evidence remains available; this policy governs new runs.
+Pre-cleanup raw evidence is preserved at tag
+[`v2-feature-complete-pre-cleanup`](EVIDENCE_ARCHIVE.md). This policy applies to
+the current tree and all new runs.

@@ -145,7 +145,7 @@ then attempted a separate 1.5 MiB allocation. Its archived result is an allocati
 receipt, not proof that current encoders and renderers meet interaction gates.
 
 The current empty-heap ESP32-S3 allocation receipt is
-[`hardware-receipts/636b9c7-memory-layout-320.log`](hardware-receipts/636b9c7-memory-layout-320.log):
+[`hardware-receipts/636b9c7-memory-layout-320.log`](https://github.com/aliceisjustplaying/tinydraw/blob/v2-feature-complete-pre-cleanup/vector_v2/hardware-receipts/636b9c7-memory-layout-320.log):
 
 - both the live and next-revision overviews are explicitly budgeted;
 - the 320-slot plan allocated all **4,948,576 bytes**;
@@ -154,8 +154,8 @@ The current empty-heap ESP32-S3 allocation receipt is
 - free/largest after holding both plan and reserve: 1,832,000 / 1,802,240 bytes.
 
 The earlier 128-slot and pre-publication-buffer receipts remain archived as
-[`hardware-receipts/756e080-memory-layout.log`](hardware-receipts/756e080-memory-layout.log)
-and [`hardware-receipts/1f91ed0-memory-layout.log`](hardware-receipts/1f91ed0-memory-layout.log).
+[`hardware-receipts/756e080-memory-layout.log`](https://github.com/aliceisjustplaying/tinydraw/blob/v2-feature-complete-pre-cleanup/vector_v2/hardware-receipts/756e080-memory-layout.log)
+and [`hardware-receipts/1f91ed0-memory-layout.log`](https://github.com/aliceisjustplaying/tinydraw/blob/v2-feature-complete-pre-cleanup/vector_v2/hardware-receipts/1f91ed0-memory-layout.log).
 
 This proves only that the provisional external-memory slabs and reserve are
 simultaneously allocatable on an otherwise empty 8 MiB PSRAM heap. It does not
@@ -191,7 +191,7 @@ overview pixels as current. The only rejected requests are malformed/out-of-worl
 rectangles or a bootstrap state where no current source covers every pixel.
 
 The minimal hardware seam is recorded in
-[`hardware-receipts/3b69d59-production-overview-walk.log`](hardware-receipts/3b69d59-production-overview-walk.log).
+[`hardware-receipts/3b69d59-production-overview-walk.log`](https://github.com/aliceisjustplaying/tinydraw/blob/v2-feature-complete-pre-cleanup/vector_v2/hardware-receipts/3b69d59-production-overview-walk.log).
 An exclusive ESP32 image transferred the 25% overview directly, then composed
 four complete 100% views in bounded 368×22 strips. Those views completed in
 27 ms with fail-closed expected hashes, 105/105 physical transfers complete, and no
@@ -200,7 +200,7 @@ not the interactive ≤35 ms gate under concurrent product workloads.
 
 Host tests remain the oracle for the no-checkerboard composition policy. The
 same walk passed after the instance-owned CO5300 transport extraction at
-[`hardware-receipts/1b0710a-panel-transport-walk.log`](hardware-receipts/1b0710a-panel-transport-walk.log).
+[`hardware-receipts/1b0710a-panel-transport-walk.log`](https://github.com/aliceisjustplaying/tinydraw/blob/v2-feature-complete-pre-cleanup/vector_v2/hardware-receipts/1b0710a-panel-transport-walk.log).
 The exclusive walk now depends directly on transport, not the legacy toolbar
 compositor. Final scheduler behavior, incremental publication, and the ≤35 ms
 pan gate require the later display scheduler; no claim about those hardware
@@ -259,7 +259,7 @@ segments are subdivided into bounded raster steps, and tile enumeration reports
 required versus written capacity. Anti-aliased settled convergence remains open.
 
 The latest exclusive hardware proof is
-[`hardware-receipts/fa39abe-operation-builder-walk.log`](hardware-receipts/fa39abe-operation-builder-walk.log).
+[`hardware-receipts/fa39abe-operation-builder-walk.log`](https://github.com/aliceisjustplaying/tinydraw/blob/v2-feature-complete-pre-cleanup/vector_v2/hardware-receipts/fa39abe-operation-builder-walk.log).
 It quantized deterministic input-shaped pen and eraser points through the
 fixed-capacity `OperationBuilder`, advanced document authority and materialization
 together through 32 compact operations, then composed the expected deterministic
@@ -269,14 +269,14 @@ stale or other scheduler rejects, and transport completed 168/168 with zero
 CO5300 window rejects. The 30-operation burst averaged 50.284 ms per coordinated
 append. The same deterministic hashes and zero-rejection scheduler/transport
 result passed again after the replay-range seam in
-[`hardware-receipts/20dbab7-production-regression-walk.log`](hardware-receipts/20dbab7-production-regression-walk.log).
+[`hardware-receipts/20dbab7-production-regression-walk.log`](https://github.com/aliceisjustplaying/tinydraw/blob/v2-feature-complete-pre-cleanup/vector_v2/hardware-receipts/20dbab7-production-regression-walk.log).
 That regression walk does not exercise the host-only range query itself.
 
 A separate PSRAM measurement compared full copy, swappable double buffers, and
 bounded dirty-region publication; its method and limits are archived in
 [`OVERVIEW_PUBLICATION_MEASUREMENT_2026_08_13.md`](../docs/archive/2026-08-raster-and-vector-prototypes/OVERVIEW_PUBLICATION_MEASUREMENT_2026_08_13.md).
 After adopting the bounded path, the exact-commit hardware receipt
-[`hardware-receipts/16dc9b2-bounded-overview-publication.log`](hardware-receipts/16dc9b2-bounded-overview-publication.log)
+[`hardware-receipts/16dc9b2-bounded-overview-publication.log`](https://github.com/aliceisjustplaying/tinydraw/blob/v2-feature-complete-pre-cleanup/vector_v2/hardware-receipts/16dc9b2-bounded-overview-publication.log)
 preserved every expected hash and all 168 ordered transfers with zero rejects.
 The deterministic 30-operation burst fell from 50.295 ms to 6.404 ms average
 under the existing outer probe; warm individual coordinated appends were about
