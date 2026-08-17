@@ -44,11 +44,12 @@ constexpr ChromeRect kMinimapRect{266, 252, 358, 366};
 // Guard the visible frame against finger/calibration error. Near-frame misses
 // used to become real short strokes in the canvas authority.
 constexpr ChromeRect kMinimapHitRect{250, 236, 368, kChromeCanvasBottom};
-// A finger centered on the minimap's bottom edge can report inside the dock.
-// This zone never steals a stationary button tap: it only makes that press a
-// candidate for explicit drag-intent arbitration in the app coordinator.
+// A finger centered on the minimap's bottom edge can report anywhere inside
+// the dock. This zone never steals a stationary button tap: it only makes that
+// press a candidate for explicit drag-intent arbitration in the app
+// coordinator. Cover the full dock so low touches do not bypass arbitration.
 constexpr ChromeRect kMinimapDockDragRect{kMinimapHitRect.x0, kChromeCanvasBottom,
-                                          kMinimapHitRect.x1, 424};
+                                          kMinimapHitRect.x1, kHeight};
 constexpr ChromeRect kMinimapOverlayRect{kMinimapRect.x0 - 1, kMinimapRect.y0 - 1,
                                          kMinimapRect.x1 + 2, kMinimapRect.y1 + 3};
 constexpr ChromeRect kBatteryOverlayRect{kBatteryLeft - 2, kBatteryTop - 2, kBatteryRight + 4,

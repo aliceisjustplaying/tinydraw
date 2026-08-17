@@ -270,14 +270,22 @@ TEST_CASE("ambiguous minimap dock presses preserve taps and promote deliberate d
   CHECK_FALSE(tinydraw::vector_v2::chrome_minimap_contains({274.0F, 400.0F}, state));
   CHECK(tinydraw::vector_v2::chrome_minimap_dock_drag_candidate({274.0F, 400.0F}, state));
   CHECK(tinydraw::vector_v2::chrome_minimap_dock_drag_candidate({334.0F, 400.0F}, state));
-  CHECK_FALSE(tinydraw::vector_v2::chrome_promotes_minimap_dock_drag(
-      {274.0F, 400.0F}, {281.0F, 400.0F}, state));
-  CHECK(tinydraw::vector_v2::chrome_promotes_minimap_dock_drag(
-      {274.0F, 400.0F}, {282.0F, 400.0F}, state));
-  CHECK_FALSE(tinydraw::vector_v2::chrome_promotes_minimap_dock_drag(
-      {274.0F, 400.0F}, {274.0F, 399.0F}, state));
-  CHECK(tinydraw::vector_v2::chrome_promotes_minimap_dock_drag(
-      {274.0F, 400.0F}, {274.0F, 398.0F}, state));
+  // The owner's captured misses landed at y=435..443: the drag candidate must
+  // span the full dock, while a stationary release remains the same button.
+  CHECK(tinydraw::vector_v2::chrome_action_at({334.0F, 442.0F}, state) ==
+        ChromeAction::kToggleDocument);
+  CHECK(tinydraw::vector_v2::chrome_minimap_dock_drag_candidate({274.0F, 442.0F}, state));
+  CHECK(tinydraw::vector_v2::chrome_minimap_dock_drag_candidate({334.0F, 442.0F}, state));
+  CHECK(tinydraw::vector_v2::chrome_promotes_minimap_dock_drag({334.0F, 442.0F}, {334.0F, 440.0F},
+                                                               state));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_promotes_minimap_dock_drag({274.0F, 400.0F},
+                                                                     {281.0F, 400.0F}, state));
+  CHECK(tinydraw::vector_v2::chrome_promotes_minimap_dock_drag({274.0F, 400.0F}, {282.0F, 400.0F},
+                                                               state));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_promotes_minimap_dock_drag({274.0F, 400.0F},
+                                                                     {274.0F, 399.0F}, state));
+  CHECK(tinydraw::vector_v2::chrome_promotes_minimap_dock_drag({274.0F, 400.0F}, {274.0F, 398.0F},
+                                                               state));
   CHECK_FALSE(tinydraw::vector_v2::chrome_minimap_dock_drag_candidate(
       {274.0F, 400.0F}, {.popup = ChromePopup::kSizes}));
 }
