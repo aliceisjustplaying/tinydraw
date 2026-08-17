@@ -130,6 +130,10 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
                                                              ChromePoint current,
                                                              const ChromeState& state);
 [[nodiscard]] bool chrome_contains(ChromePoint point, const ChromeState& state);
+// Zoom controls own stationary taps, but a deliberate drag that starts on the
+// rail becomes a canvas pan when the pan tool is active.
+[[nodiscard]] bool chrome_promotes_pan_drag(ChromePoint start, ChromePoint current,
+                                            const ChromeState& state);
 [[nodiscard]] ChromeAction chrome_action_at(ChromePoint point, const ChromeState& state);
 [[nodiscard]] std::optional<std::uint8_t> chrome_color_at(ChromePoint point,
                                                           const ChromeState& state);

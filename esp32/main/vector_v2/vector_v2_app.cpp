@@ -1049,6 +1049,7 @@ void run_vector_v2_app() {
   bool popup_dismissed_press = false;
   bool panning = false;
   Point last_touch{};
+  Point toolbar_start{};
   Point toolbar_sum{};
   std::uint32_t toolbar_samples = 0;
   Point pan_start{};
@@ -1123,6 +1124,35 @@ void run_vector_v2_app() {
   PendingStrokeReport stroke_report{};
   std::uint8_t background_ticks = 0U;
 
+  const auto begin_pan = [&](Point start) {
+    panning = true;
+    pan_metrics.reset();
+    // Boundary drain (committed-overlay design §3.4): the ring-reuse pan path
+    // composes exposed strips without the pending overlay, so the canvas must
+    // reach authority before the first pan present.
+    if (vector_v2::pending_operation_count(log, canvas) != 0U) {
+      const std::int64_t boundary_started = esp_timer_get_time();
+      std::uint32_t boundary_ops = 0U;
+      while (vector_v2::pending_operation_count(log, canvas) != 0U) {
+        if (!vector_v2::absorb_pending_operation(
+                 log, canvas, workspace, current_priority_view(presenter),
+                 {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs})
+                 .has_value()) {
+          break;
+        }
+        ++boundary_ops;
+      }
+      drain_swap_world.reset();
+      std::printf("TINYDRAW_LIVE_DRAIN_BOUNDARY site=pan ops=%lu wall_us=%lld pending=%lu\n",
+                  static_cast<unsigned long>(boundary_ops),
+                  static_cast<long long>(esp_timer_get_time() - boundary_started),
+                  static_cast<unsigned long>(vector_v2::pending_operation_count(log, canvas)));
+    }
+    pan_start = start;
+    pan_start_x = presenter.level_x();
+    pan_start_y = presenter.level_y();
+  };
+
   for (;;) {
     const std::uint32_t loop_us = now_us();
     poll_max_us = std::max(poll_max_us, loop_us - poll_previous_us);
@@ -1187,6 +1217,7 @@ void run_vector_v2_app() {
         }
         if (vector_v2::chrome_contains({point.x, point.y}, chrome)) {
           toolbar_pressed = true;
+          toolbar_start = point;
           toolbar_sum = point;
           toolbar_samples = 1;
         } else if (chrome.popup != vector_v2::ChromePopup::kNone) {
@@ -1197,33 +1228,7 @@ void run_vector_v2_app() {
           const auto timing = presenter.refresh(chrome, loop_us);
           print_presentation("chrome-dismiss", presenter, timing);
         } else if (chrome.tool == vector_v2::ChromeTool::kPan) {
-          panning = true;
-          pan_metrics.reset();
-          // Boundary drain (design §3.4): the ring-reuse pan path composes
-          // exposed strips without the pending overlay, so the canvas must
-          // reach authority before the first pan present.
-          if (vector_v2::pending_operation_count(log, canvas) != 0U) {
-            const std::int64_t boundary_started = esp_timer_get_time();
-            std::uint32_t boundary_ops = 0U;
-            while (vector_v2::pending_operation_count(log, canvas) != 0U) {
-              if (!vector_v2::absorb_pending_operation(
-                       log, canvas, workspace, current_priority_view(presenter),
-                       {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs})
-                       .has_value()) {
-                break;
-              }
-              ++boundary_ops;
-            }
-            drain_swap_world.reset();
-            std::printf(
-                "TINYDRAW_LIVE_DRAIN_BOUNDARY site=pan ops=%lu wall_us=%lld pending=%lu\n",
-                static_cast<unsigned long>(boundary_ops),
-                static_cast<long long>(esp_timer_get_time() - boundary_started),
-                static_cast<unsigned long>(vector_v2::pending_operation_count(log, canvas)));
-          }
-          pan_start = point;
-          pan_start_x = presenter.level_x();
-          pan_start_y = presenter.level_y();
+          begin_pan(point);
         } else {
           ink_config.size = vector_v2::brush_size(chrome.size);
           ink.set_config(ink_config);
@@ -1255,10 +1260,20 @@ void run_vector_v2_app() {
           }
         }
       } else if (toolbar_pressed && (point.x != last_touch.x || point.y != last_touch.y)) {
-        toolbar_sum.x += point.x;
-        toolbar_sum.y += point.y;
-        ++toolbar_samples;
-        last_touch = point;
+        if (vector_v2::chrome_promotes_pan_drag({toolbar_start.x, toolbar_start.y},
+                                                {point.x, point.y}, chrome)) {
+          toolbar_pressed = false;
+          toolbar_samples = 0;
+          begin_pan(toolbar_start);
+          last_touch = point;
+          pan_metrics.include(
+              presenter.pan_from(pan_start_x, pan_start_y, pan_start, point, chrome, event_us));
+        } else {
+          toolbar_sum.x += point.x;
+          toolbar_sum.y += point.y;
+          ++toolbar_samples;
+          last_touch = point;
+        }
       } else if (panning && (point.x != last_touch.x || point.y != last_touch.y)) {
         last_touch = point;
         const auto timing =

@@ -117,6 +117,22 @@ TEST_CASE("right zoom rail exposes plus and minus without stealing its label") {
   CHECK(tinydraw::vector_v2::chrome_action_at({332.0F, 98.0F}, popup) == ChromeAction::kNone);
 }
 
+TEST_CASE("pan drags promote through the zoom rail while taps stay controls") {
+  const ChromeState pan{.tool = tinydraw::vector_v2::ChromeTool::kPan};
+  CHECK_FALSE(
+      tinydraw::vector_v2::chrome_promotes_pan_drag({332.0F, 98.0F}, {337.0F, 103.0F}, pan));
+  CHECK(tinydraw::vector_v2::chrome_promotes_pan_drag({332.0F, 98.0F}, {340.0F, 98.0F}, pan));
+  CHECK(tinydraw::vector_v2::chrome_promotes_pan_drag({332.0F, 150.0F}, {332.0F, 142.0F}, pan));
+
+  const ChromeState draw;
+  CHECK_FALSE(
+      tinydraw::vector_v2::chrome_promotes_pan_drag({332.0F, 98.0F}, {350.0F, 98.0F}, draw));
+  const ChromeState popup{.tool = tinydraw::vector_v2::ChromeTool::kPan,
+                          .popup = ChromePopup::kTools};
+  CHECK_FALSE(
+      tinydraw::vector_v2::chrome_promotes_pan_drag({332.0F, 98.0F}, {350.0F, 98.0F}, popup));
+}
+
 TEST_CASE("overview mutations schedule a minimap refresh outside its panel bounds") {
   const ChromeState state;
   CHECK(tinydraw::vector_v2::chrome_minimap_refresh_required(state, true, true));

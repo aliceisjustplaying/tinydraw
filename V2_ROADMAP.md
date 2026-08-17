@@ -262,6 +262,11 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       `review_findings_2026_08_16_overnight/HANDOVER.md`), settled PNG
       export (low-prio). Arc-length resampling remains prototyped-only
       (spacing choice open; trailing-tip fix todo #13 pairs with it).
+- [x] Let pan-tool drags pass through the zoom overlay while preserving zoom
+      taps. **Landed 2026-08-17:** an 8 px intent threshold promotes rail drags
+      into the existing boundary-drained pan state; host and physical classifier
+      gates are green. See
+      `benchmark-results/zoom-overlay-pan-2026-08-17/RECEIPT.md`.
 - [ ] Fix zoom-cycle return position: cycling back to a recently explored
       zoom must restore its saved local position per
       `VECTOR_V2_ZOOM_NAVIGATION.md` (owner glass report 2026-08-16; the

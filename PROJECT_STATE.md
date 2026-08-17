@@ -1,9 +1,10 @@
 # TinyDraw project state
 
-Last updated: 2026-08-17 (detailed SVG export wired and hardware-gated;
-color dialog made 4.81× faster; receipts:
+Last updated: 2026-08-17 (detailed SVG export and faster color dialog landed;
+zoom rail now promotes pan-tool drags; receipts:
 [`SVG`](benchmark-results/svg-export-2026-08-17/RECEIPT.md),
-[`color dialog`](benchmark-results/color-dialog-2026-08-17/RECEIPT.md))
+[`color dialog`](benchmark-results/color-dialog-2026-08-17/RECEIPT.md),
+[`zoom-overlay pan`](benchmark-results/zoom-overlay-pan-2026-08-17/RECEIPT.md))
 
 Branch: `feat/v2-performance-followup`
 
@@ -27,6 +28,7 @@ promotion. [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) owns acceptance thresholds;
 | Settled AA | **On device — provisional, speed round 2 queued** | Landed same-day from prototype to device: idle settle pass republishes tiles at the settled quality tier (revisit-ledger-safe); 25% settles presentation pixels only (the overview stays hard-edged replay authority). Per-tile 1.7–5.4 ms mean / 9.3 ms max after the annulus + batching round (was 5–11/17). Owner: "an improvement" but the settle progression is still perceptible, thick strokes slowest; speed ideas queued. Full battery moved zero gates. SVG exports exact ribbon outlines; settled AA remains a presentation derivative rather than export authority. |
 | SVG export | **Green for encode/readback; physical USB mount pending** | Device streams one painter-ordered filled path per pen/eraser operation directly from authority. The clean physical gate verified all 157,660 stored bytes, 52/52 paths, CRC and XML structure in 1.024 s with 4 KiB workspace and no watchdog — 5.69× faster than the captured PNG baseline ([`RECEIPT.md`](benchmark-results/svg-export-2026-08-17/RECEIPT.md)). The unattended run deliberately did not enter mass-storage mode; host mounting/ejection remains manual. |
 | Color dialog | **Green — device gate** | Exact span rasterization plus color-only frame re-presentation cut open time 132.466 → 27.568 ms (4.81×); chrome work fell 82.364 → 9.396 ms (8.77×). A ≤40 ms physical guard and bit-exact snapshot/reference tests are live ([`RECEIPT.md`](benchmark-results/color-dialog-2026-08-17/RECEIPT.md)). |
+| Overlay gesture arbitration | **Green — host + device classifier gate** | Zoom In/Out still own taps. With the pan tool active, an 8 px drag starting anywhere on the zoom rail promotes to the existing boundary-drained canvas pan from the original Down point; other tools/popups do not promote ([`RECEIPT.md`](benchmark-results/zoom-overlay-pan-2026-08-17/RECEIPT.md)). |
 | Feature parity | **Open** | Undo/Redo, autosave/recovery, minimap pan navigation, lifecycle parity, failure UI, and release soak remain. |
 | Mixed-draw appends | **Green — harness and glass** | The committed-overlay / authority-revision split landed 2026-08-16: chunk commits publish authority only (worst input-path append **173 µs** vs the 15 ms budget, was 19,324 µs), the canvas drains in receipted idle absorptions behind a pending-ink overlay proven bit-exact on host, and lift defers its refresh to one exact swap after drain. `mixed_draw=1` for the first time; `visible_fallback=0`, drop counters zero, INKTRACE at baseline latency, ledger clean ([`RECEIPT.md`](benchmark-results/committed-overlay/RECEIPT.md)). The product-loop drain paths (idle slices, lift swap, pan boundary drain) and 400% draw feel need an owner glass session. Prior diagnosis receipts: [`ink-fallback-observability/RECEIPT.md`](benchmark-results/ink-fallback-observability/RECEIPT.md). |
 
@@ -48,6 +50,7 @@ The wave-3 A/B recipe and device-physics cheat sheet remain authoritative in
 
 Latest permanent receipts:
 
+- [`RECEIPT.md` — zoom-overlay pan](benchmark-results/zoom-overlay-pan-2026-08-17/RECEIPT.md)
 - [`RECEIPT.md` — color dialog](benchmark-results/color-dialog-2026-08-17/RECEIPT.md)
 - [`RECEIPT.md` — detailed SVG export](benchmark-results/svg-export-2026-08-17/RECEIPT.md)
 - [`RECEIPT.md` — Cold Stage B](benchmark-results/cold-stage-b-2026-08-16/RECEIPT.md)
@@ -109,20 +112,19 @@ Undo, persistence, and SVG are frozen in
 
 ## Immediate work order
 
-1. **Stop the zoom overlay swallowing pan gestures** (#11).
-2. **Fix zoom-cycle return position** so each zoom restores its saved origin.
-3. **Implement minimap pan navigation** (tap and drag; owner elevated drag from
+1. **Fix zoom-cycle return position** so each zoom restores its saved origin.
+2. **Implement minimap pan navigation** (tap and drag; owner elevated drag from
    post-ship on 2026-08-17).
-4. **Overlap-50 cold fix** (#10): 628 ms vs 500; overdraw replay pays every
+3. **Overlap-50 cold fix** (#10): 628 ms vs 500; overdraw replay pays every
    stroke's row geometry even when occluded.
-5. **IRAM-pin the producer hot loops** (#9): between-build icache variance eats
+4. **IRAM-pin the producer hot loops** (#9): between-build icache variance eats
    the cold ceiling margin (517/520 typical now).
-6. **AA speed round 2**: make settle progression imperceptible, especially on
+5. **AA speed round 2**: make settle progression imperceptible, especially on
    thick strokes; candidates remain in the overnight handover.
-7. Establish generation-checked active-prefix history, then Undo/Redo and
+6. Establish generation-checked active-prefix history, then Undo/Redo and
    autosave/recovery. Cold stays hold-the-line until the autosave-enabled
    re-measure; the 20-run closure statistic waits there too.
-8. Then power/RTC/NTP/lifecycle parity, capacity/failure UI, physical USB SVG
+7. Then power/RTC/NTP/lifecycle parity, capacity/failure UI, physical USB SVG
    receipt, and all-on release closure.
 
 ## Proven foundation worth preserving
