@@ -27,7 +27,10 @@ glass check, 2026-08-16); the same-session torn positive-control closure is
 still pending. Pacing is provisionally GREEN: PANSEQ p95 33.939 ms at 100%
 and 33.934 ms at 400% after the chrome-lifetime split
 (`benchmark-results/wave2-compositor/`). Hardware ceiling is 29.4 FPS
-full-frame (`HARDWARE_LIMITS.md`).
+full-frame (`HARDWARE_LIMITS.md`). Pan-tool drags that start on canvas overlays
+must enter pan after an 8 px intent threshold; stationary overlay taps retain
+their control action (owner-reported zoom-rail swallowing defect, fixed and
+gated 2026-08-17).
 
 ### 2. Ink — no perceptible lag  (required)
 

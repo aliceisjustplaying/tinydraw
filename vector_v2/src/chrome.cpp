@@ -66,6 +66,7 @@ constexpr int kMinimapTop = 258;
 constexpr int kMinimapWidth = 80;
 constexpr int kMinimapHeight = 98;
 constexpr int kHitSlop = 8;
+constexpr float kPanDragPromotionPixels = 8.0F;
 constexpr int kMainHitTop = kMainTop - kHitSlop;
 constexpr std::array kMainCenters{34, 94, 154, 214, 274, 334};
 constexpr std::array kPopupCenters{62, 184, 306};
@@ -635,6 +636,13 @@ std::optional<ChromePoint> clip_canvas_segment(ChromePoint previous, ChromePoint
   return ChromePoint{previous.x + (current.x - previous.x) * progress, bottom};
 }
 
+static bool zoom_rail_contains(ChromePoint point, const ChromeState& state) {
+  return canvas_overlays_visible(state) &&
+         inside(point, static_cast<float>(kZoomRailRect.x0 - kHitSlop),
+                static_cast<float>(kZoomRailRect.y0 - kHitSlop), static_cast<float>(kWidth),
+                static_cast<float>(kZoomRailRect.y1 + kHitSlop));
+}
+
 bool chrome_contains(ChromePoint point, const ChromeState& state) {
   if (state.confirm_new || state.export_status == ChromeExportStatus::kSaving ||
       state.popup == ChromePopup::kColors) {
@@ -648,12 +656,16 @@ bool chrome_contains(ChromePoint point, const ChromeState& state) {
   const bool popup = state.popup != ChromePopup::kNone &&
                      inside(point, 0.0F, static_cast<float>(kPopupTop - kHitSlop),
                             static_cast<float>(kWidth), static_cast<float>(kMainTop));
-  const bool zoom_rail =
-      canvas_overlays_visible(state) &&
-      inside(point, static_cast<float>(kZoomRailRect.x0 - kHitSlop),
-             static_cast<float>(kZoomRailRect.y0 - kHitSlop), static_cast<float>(kWidth),
-             static_cast<float>(kZoomRailRect.y1 + kHitSlop));
-  return main || popup || zoom_rail;
+  return main || popup || zoom_rail_contains(point, state);
+}
+
+bool chrome_promotes_pan_drag(ChromePoint start, ChromePoint current, const ChromeState& state) {
+  if (state.tool != ChromeTool::kPan || !zoom_rail_contains(start, state)) {
+    return false;
+  }
+  const float delta_x = current.x - start.x;
+  const float delta_y = current.y - start.y;
+  return delta_x * delta_x + delta_y * delta_y >= kPanDragPromotionPixels * kPanDragPromotionPixels;
 }
 
 std::optional<std::uint8_t> chrome_color_at(ChromePoint point, const ChromeState& state) {
