@@ -602,6 +602,14 @@ void draw_export_toast(Painter& painter, const ChromeState& state) {
                saved ? kInk : 0xE186U, 3);
 }
 
+void draw_centered_toast_text(Painter& painter, std::string_view text, std::uint16_t color) {
+  constexpr int scale = 2;
+  const int text_width = static_cast<int>(text.size()) * 6 * scale - scale;
+  const int x = (kToastLeft + kToastRight - text_width) / 2;
+  const int y = (kToastTop + kToastBottom - 7 * scale) / 2;
+  painter.text(x, y, text, color, scale);
+}
+
 void draw_time_sync_toast(Painter& painter, const ChromeState& state) {
   if (state.time_sync_status == ChromeTimeSyncStatus::kIdle) {
     return;
@@ -611,16 +619,16 @@ void draw_time_sync_toast(Painter& painter, const ChromeState& state) {
   painter.rounded({kToastLeft, kToastTop, kToastRight, kToastBottom}, 11, kWhite);
   switch (state.time_sync_status) {
     case ChromeTimeSyncStatus::kConnecting:
-      painter.text(121, 91, "CONNECTING", kInk, 3);
+      draw_centered_toast_text(painter, "CONNECTING", kInk);
       break;
     case ChromeTimeSyncStatus::kSynchronizing:
-      painter.text(130, 91, "SYNCING", kInk, 3);
+      draw_centered_toast_text(painter, "SYNCING", kInk);
       break;
     case ChromeTimeSyncStatus::kSaved:
-      painter.text(124, 91, "TIME SET", kInk, 3);
+      draw_centered_toast_text(painter, "TIME SET", kInk);
       break;
     case ChromeTimeSyncStatus::kError:
-      painter.text(121, 91, "TIME ERROR", 0xE186U, 3);
+      draw_centered_toast_text(painter, "TIME ERROR", 0xE186U);
       break;
     case ChromeTimeSyncStatus::kIdle:
       break;
