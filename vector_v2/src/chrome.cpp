@@ -40,7 +40,11 @@ constexpr int kBatteryBottom = 54;
 constexpr ChromeRect kZoomRailRect{304, 72, 360, 226};
 constexpr ChromeRect kZoomRailOverlayRect{kZoomRailRect.x0 - 1, kZoomRailRect.y0 - 1,
                                           kZoomRailRect.x1 + 2, kZoomRailRect.y1 + 3};
-constexpr ChromeRect kMinimapRect{266, 252, 358, 366};
+// Keep a finger-width gap above the dock. When the viewport sat at the old
+// y=366 frame edge, bottom-world acquisition landed in the dock often enough
+// to trigger its buttons; lifting the same-size map avoids that overlap
+// without adding any per-frame chrome pixels.
+constexpr ChromeRect kMinimapRect{266, 236, 358, 350};
 // Guard the visible frame against finger/calibration error. Near-frame misses
 // used to become real short strokes in the canvas authority.
 constexpr ChromeRect kMinimapHitRect{250, 236, 368, kChromeCanvasBottom};
@@ -68,7 +72,7 @@ static_assert([] {
   return true;
 }());
 constexpr int kMinimapLeft = 272;
-constexpr int kMinimapTop = 258;
+constexpr int kMinimapTop = 242;
 constexpr int kMinimapWidth = 80;
 constexpr int kMinimapHeight = 98;
 constexpr int kHitSlop = 8;
