@@ -1,5 +1,6 @@
 #include "vector_v2_export.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -23,14 +24,40 @@ constexpr std::size_t kExportRenderWorkspaceBytes =
     kExportBandPixels * sizeof(std::uint16_t) + vector_v2::kTileBytes +
     vector_v2::kTilePixels * 2U * sizeof(std::uint8_t) +
     vector_v2::kTilePixels * 3U * sizeof(std::uint16_t);
+constexpr std::size_t kPngWindowCount =
+    ((vector_v2::kWorldWidth + vector_v2::kTileWidth - 1U) / vector_v2::kTileWidth) *
+    ((vector_v2::kWorldHeight + vector_v2::kTileHeight - 1U) / vector_v2::kTileHeight);
 
-void service_png_render(void*) { vTaskDelay(1); }
+struct CombinedExportProgress {
+  VectorV2ExportProgress progress = nullptr;
+  void* context = nullptr;
+  std::size_t png_completed = 0;
+  std::size_t svg_operations = 0;
+};
+
+void service_png_render(void* raw_progress) {
+  auto& progress = *static_cast<CombinedExportProgress*>(raw_progress);
+  progress.png_completed = std::min(progress.png_completed + 1U, kPngWindowCount);
+  if (progress.progress != nullptr) {
+    progress.progress(progress.png_completed, kPngWindowCount + progress.svg_operations,
+                      progress.context);
+  }
+  vTaskDelay(1);
+}
+
+void present_svg_progress(std::size_t completed, std::size_t total, void* raw_progress) {
+  auto& progress = *static_cast<CombinedExportProgress*>(raw_progress);
+  if (progress.progress != nullptr) {
+    progress.progress(kPngWindowCount + completed, kPngWindowCount + total, progress.context);
+  }
+}
 
 class SettledBandRowSource final : public PngRowSource {
  public:
   SettledBandRowSource(const vector_v2::OperationLog& log, std::span<std::uint16_t> band,
-                       std::span<std::uint16_t> window, vector_v2::SettledTileWorkspace workspace)
-      : renderer_(log, band, window, workspace, service_png_render) {}
+                       std::span<std::uint16_t> window, vector_v2::SettledTileWorkspace workspace,
+                       CombinedExportProgress& progress)
+      : renderer_(log, band, window, workspace, service_png_render, &progress) {}
 
   [[nodiscard]] bool ready() const { return renderer_.ready(); }
 
@@ -106,14 +133,21 @@ VectorV2ExportStats VectorV2Export::encode(const vector_v2::OperationLog& log,
     auto blue =
         std::span(reinterpret_cast<std::uint16_t*>(memory + offset), vector_v2::kTilePixels);
 
+    CombinedExportProgress combined_progress{
+        .progress = progress,
+        .context = progress_context,
+        .svg_operations = stats.operation_count,
+    };
     SettledBandRowSource source(log, band, window,
                                 {.operation_alpha = operation_alpha,
                                  .accumulated_alpha = accumulated_alpha,
                                  .red = red,
                                  .green = green,
-                                 .blue = blue});
+                                 .blue = blue},
+                                combined_progress);
     if (source.ready()) {
-      const SvgExportStoreStats encoded = store_.encode(log, source, progress, progress_context);
+      const SvgExportStoreStats encoded =
+          store_.encode(log, source, present_svg_progress, &combined_progress);
       stats.encoded = encoded.success;
       stats.bytes = encoded.bytes;
       stats.png_bytes = encoded.png_bytes;
