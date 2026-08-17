@@ -1,0 +1,7 @@
+[1/4] Linking CXX executable vector_v2/tinydraw_vector_v2_settled_aa_prototype
+ld: warning: ignoring duplicate libraries: 'core/libtinydraw_core.a'
+[2/4] Linking CXX executable vector_v2/tinydraw_vector_v2_ink_angularity
+ld: warning: ignoring duplicate libraries: 'core/libtinydraw_core.a'
+[3/4] Linking CXX executable vector_v2/tinydraw_vector_v2_lod_characterization
+[4/4] Linking CXX executable vector_v2/tinydraw_vector_v2_raster_census
+ld: warning: ignoring duplicate libraries: 'core/libtinydraw_core.a'

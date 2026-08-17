@@ -72,9 +72,24 @@ TEST_CASE("terminal time sync feedback expires but active work does not") {
         ChromeTimeSyncStatus::kSynchronizing);
 }
 
-TEST_CASE("time sync labels stay centered inside the toast") {
+TEST_CASE("time sync labels match SAVING size and stay centered") {
   constexpr int width = 368;
   constexpr int height = 448;
+  std::vector<std::uint16_t> saving(static_cast<std::size_t>(width * height), 0xFFFFU);
+  tinydraw::vector_v2::draw_chrome(saving, width, height,
+                                   {.export_status = ChromeExportStatus::kSaving});
+  int saving_ink_top = height;
+  int saving_ink_bottom = 0;
+  for (int y = 70; y < 108; ++y) {
+    for (int x = 0; x < width; ++x) {
+      if (saving[static_cast<std::size_t>(y * width + x)] == 0x2104U) {
+        saving_ink_top = std::min(saving_ink_top, y);
+        saving_ink_bottom = std::max(saving_ink_bottom, y);
+      }
+    }
+  }
+  REQUIRE(saving_ink_top < saving_ink_bottom);
+
   constexpr std::array statuses{ChromeTimeSyncStatus::kConnecting,
                                 ChromeTimeSyncStatus::kSynchronizing, ChromeTimeSyncStatus::kSaved};
   for (const auto status : statuses) {
@@ -83,18 +98,23 @@ TEST_CASE("time sync labels stay centered inside the toast") {
 
     int ink_left = width;
     int ink_right = 0;
+    int ink_top = height;
+    int ink_bottom = 0;
     for (int y = 70; y < 132; ++y) {
       for (int x = 0; x < width; ++x) {
         if (pixels[static_cast<std::size_t>(y * width + x)] == 0x2104U) {
           ink_left = std::min(ink_left, x);
           ink_right = std::max(ink_right, x);
+          ink_top = std::min(ink_top, y);
+          ink_bottom = std::max(ink_bottom, y);
         }
       }
     }
     REQUIRE(ink_left < ink_right);
-    CHECK(ink_left >= 104);
-    CHECK(ink_right < 264);
-    CHECK(std::abs((ink_left + ink_right) - (104 + 264)) <= 4);
+    CHECK(ink_bottom - ink_top == saving_ink_bottom - saving_ink_top);
+    CHECK(ink_left >= 80);
+    CHECK(ink_right < 288);
+    CHECK(std::abs((ink_left + ink_right) - (80 + 288)) <= 4);
   }
 }
 
