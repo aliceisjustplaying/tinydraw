@@ -1,7 +1,7 @@
 # External review synthesis — adoption plan
 
 Date: 2026-08-16
-Input: [`LATEST_tinydraw-review-report.md`](LATEST_tinydraw-review-report.md)
+Input: `LATEST_tinydraw-review-report.md` at archived revision `9be7a53`
 (external review of snapshot `a560d20`, pre-wave-3)
 Compared against: HEAD `cc5ec29` (wave-3 landed),
 [`COLD_COMPUTE_CAMPAIGN_RECEIPT.md`](benchmark-results/wave3-cold-compute/COLD_COMPUTE_CAMPAIGN_RECEIPT.md),

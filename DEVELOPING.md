@@ -114,6 +114,8 @@ Daily firmware commands:
 ```sh
 ./scripts/esp32 build          # build the shipping Vector V2 app
 ./scripts/esp32 vector-v2 PORT # build and flash the Vector V2 app
+./scripts/esp32 raster-v1 [PORT] # build Raster V1; optionally flash it
+./scripts/esp32 vector-v2-gate-harness PORT [TILE_SLOTS] [verify]
 ./scripts/esp32 qemu           # headless Raster V1 boot + asserted replay marker
 ./scripts/esp32 graphics-test  # short automated virtual-framebuffer check
 ./scripts/esp32 graphics       # visible stroke + shared toolbar; Ctrl-A then X to close

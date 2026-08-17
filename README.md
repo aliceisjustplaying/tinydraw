@@ -7,8 +7,9 @@
 </p>
 
 TinyDraw is a small finger-drawing app for Waveshare's 368×448 ESP32-S3 and
-RP2350 Touch AMOLED 1.8-inch boards. A macOS app and ESP-IDF/QEMU targets
-exercise the same C++20 drawing and UI core.
+RP2350 Touch AMOLED 1.8-inch boards. The supported macOS frontend and QEMU
+target run Raster V1; ESP32 firmware supports both Raster V1 and Vector V2.
+All targets share the C++20 drawing and UI core where their models overlap.
 
 ## Current state
 
@@ -70,7 +71,7 @@ The RP2350 build currently provides screen-sized ink, erasing, colors, sizes,
 and New. It has no pan, Undo, or persistence. Native replays, exact snapshots,
 ASan/UBSan, QEMU, and device telemetry cover the shared core.
 
-## Run the macOS app
+## Run the Raster V1 macOS app
 ```sh
 ./scripts/bootstrap-macos   # once
 ./scripts/dev run           # use run-2x or run-3x for a larger demo window
