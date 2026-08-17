@@ -64,6 +64,8 @@ using vector_v2::ZoomLevel;
 constexpr std::uint32_t kExternalCaps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
 constexpr gpio_num_t kModeButton = GPIO_NUM_0;
 constexpr std::uint32_t kPowerRefreshUs = 30'000'000U;
+constexpr int kStartupPresentationAttempts = 3;
+constexpr TickType_t kStartupPresentationRetryDelay = pdMS_TO_TICKS(20);
 constexpr std::size_t kInputSampleCapacity = 4'096;
 constexpr std::size_t kWorkspaceTileCapacity = vector_v2::kMaximumVisibleTiles;
 
@@ -1015,8 +1017,18 @@ void run_vector_v2_app() {
   ink_config.streamline = 0.4F;
   InkStream ink(ink_config);
   CurvedRibbonStream ribbon;
-  const auto initial = presenter.refresh(chrome);
+  auto initial = presenter.refresh(chrome);
   print_presentation("startup", presenter, initial);
+  for (int attempt = 1; !initial.passed && attempt < kStartupPresentationAttempts; ++attempt) {
+    vTaskDelay(kStartupPresentationRetryDelay);
+    initial = presenter.refresh(chrome);
+    print_presentation("startup-retry", presenter, initial);
+  }
+  if (!initial.passed) {
+    std::printf("TINYDRAW_LIVE_FAIL reason=startup_presentation attempts=%d\n",
+                kStartupPresentationAttempts);
+    return;
+  }
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
   // The harness leaves the realistic document loaded for manual glass
   // testing, so a red verdict must not exit the app: with standing known-red
