@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "tinydraw/vector_v2/incremental_rasterizer.h"
-#include "tinydraw/vector_v2/operation_log.h"
+#include "tinydraw/vector_v2/test_fixtures.h"
 
 namespace vector_v2 = tinydraw::vector_v2;
 
@@ -130,9 +130,8 @@ TEST_CASE("chained builder splits elapsed time and completes a three minute gest
 }
 
 TEST_CASE("operation log retains logical gesture identity across chunks") {
-  std::array<vector_v2::OperationRecord, 4> records{};
-  std::array<vector_v2::CompactOperationSample, 8> samples{};
-  vector_v2::OperationLog log(records, samples);
+  vector_v2::test::OperationLogFixture<4, 8> fixture;
+  auto& log = fixture.log;
   const std::array first{
       vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256},
   };
