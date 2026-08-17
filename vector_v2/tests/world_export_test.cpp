@@ -55,6 +55,22 @@ struct ExportFixture {
   }
 };
 
+struct SettledWorkspaceStorage {
+  std::vector<std::uint8_t> operation_alpha = std::vector<std::uint8_t>(vector_v2::kTilePixels);
+  std::vector<std::uint8_t> accumulated_alpha = std::vector<std::uint8_t>(vector_v2::kTilePixels);
+  std::vector<std::uint16_t> red = std::vector<std::uint16_t>(vector_v2::kTilePixels);
+  std::vector<std::uint16_t> green = std::vector<std::uint16_t>(vector_v2::kTilePixels);
+  std::vector<std::uint16_t> blue = std::vector<std::uint16_t>(vector_v2::kTilePixels);
+
+  [[nodiscard]] vector_v2::SettledTileWorkspace workspace() {
+    return {.operation_alpha = operation_alpha,
+            .accumulated_alpha = accumulated_alpha,
+            .red = red,
+            .green = green,
+            .blue = blue};
+  }
+};
+
 }  // namespace
 
 TEST_CASE("world band renderer equals one-shot forward replay") {
@@ -89,6 +105,66 @@ TEST_CASE("world band renderer equals one-shot forward replay") {
         static_cast<std::size_t>(y) * vector_v2::kWorldWidth, vector_v2::kWorldWidth);
     REQUIRE(std::equal(row.begin(), row.end(), expected.begin()));
   }
+}
+
+TEST_CASE("settled world band renderer stitches the production AA windows exactly") {
+  ExportFixture fixture;
+  fixture.append_document();
+  constexpr int kBandRows = 17;
+  constexpr int kFirstRow = 31;
+  std::vector<std::uint16_t> band(static_cast<std::size_t>(vector_v2::kWorldWidth) * kBandRows);
+  std::vector<std::uint16_t> window(vector_v2::kTilePixels);
+  SettledWorkspaceStorage storage;
+  vector_v2::SettledWorldBandRenderer renderer(fixture.log, band, window, storage.workspace());
+  REQUIRE(renderer.ready());
+  CHECK(renderer.band_rows() == kBandRows);
+
+  std::vector<std::uint16_t> expected(band.size());
+  for (int first_column = 0; first_column < vector_v2::kWorldWidth;
+       first_column += vector_v2::kTileWidth) {
+    const int width = std::min(vector_v2::kTileWidth, vector_v2::kWorldWidth - first_column);
+    const auto rendered = std::span(window).first(static_cast<std::size_t>(width) * kBandRows);
+    REQUIRE(vector_v2::render_settled_window(
+        fixture.log, vector_v2::ZoomLevel::k100Percent,
+        {first_column, kFirstRow, first_column + width, kFirstRow + kBandRows}, storage.workspace(),
+        rendered));
+    for (int row = 0; row < kBandRows; ++row) {
+      std::copy_n(rendered.begin() + static_cast<std::ptrdiff_t>(row * width), width,
+                  expected.begin() +
+                      static_cast<std::ptrdiff_t>(row * vector_v2::kWorldWidth + first_column));
+    }
+  }
+
+  std::vector<std::uint16_t> row(vector_v2::kWorldWidth);
+  std::size_t blended_pixels = 0;
+  for (int y = kFirstRow; y < kFirstRow + kBandRows; ++y) {
+    REQUIRE(renderer.render_row(y, row));
+    const auto expected_row = std::span(expected).subspan(
+        static_cast<std::size_t>(y - kFirstRow) * vector_v2::kWorldWidth, vector_v2::kWorldWidth);
+    CHECK(std::equal(row.begin(), row.end(), expected_row.begin()));
+    blended_pixels +=
+        static_cast<std::size_t>(std::count_if(row.begin(), row.end(), [](auto pixel) {
+          return pixel != 0xFFFFU && pixel != 0xF800U && pixel != 0x001FU && pixel != 0x07E0U;
+        }));
+  }
+  CHECK(blended_pixels > 0U);
+}
+
+TEST_CASE("settled world band renderer rejects an authority change") {
+  ExportFixture fixture;
+  fixture.append_document();
+  std::vector<std::uint16_t> band(static_cast<std::size_t>(vector_v2::kWorldWidth) * 4U);
+  std::vector<std::uint16_t> window(vector_v2::kTilePixels);
+  SettledWorkspaceStorage storage;
+  vector_v2::SettledWorldBandRenderer renderer(fixture.log, band, window, storage.workspace());
+  REQUIRE(renderer.ready());
+
+  const std::array extra{
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
+  REQUIRE(fixture.log.append({.color = 0x0000U, .samples = extra}).has_value());
+  std::vector<std::uint16_t> row(vector_v2::kWorldWidth);
+  CHECK_FALSE(renderer.ready());
+  CHECK_FALSE(renderer.render_row(0, row));
 }
 
 TEST_CASE("world band renderer rejects invalid requests") {
