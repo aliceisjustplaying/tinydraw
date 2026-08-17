@@ -41,9 +41,12 @@ Autosave, charging, power-off/on, and macOS Finder mounting are verified.
   opens compact tool, size, document, and two-page round-swatch color popups.
   Span-rasterized swatches and frame reuse open the full color dialog in about
   27.6 ms on device (4.81× faster than its captured baseline).
-- New has a confirmation dialog; Export streams the vector authority to flash
-  with visible progress, then opens an explicit read-only USB mode with an
-  on-screen **Return to Drawing** action. Host eject keeps the medium absent
+- New has a confirmation dialog. Whole-Stroke Undo/Redo keeps internal chunks
+  grouped, preserves at least ten levels, and replays bounded pen/eraser damage;
+  host and firmware builds are green, with physical validation pending.
+- Export streams the vector authority to flash with visible progress, then
+  opens an explicit read-only USB mode with an on-screen **Return to Drawing**
+  action. Host eject keeps the medium absent
   instead of allowing later probes to re-expose it.
 - The document popup's clock action performs an on-demand asynchronous
   Wi-Fi/NTP correction, writes the onboard RTC, and shows connecting, syncing,

@@ -223,6 +223,17 @@ and alias-checked. Snapshot restore must go through
 `restore_document_snapshot`, which validates both modules before replacing the
 canvas overview and resetting operation authority to the same revision.
 
+`OperationLog` also owns the active Stroke-chunk prefix and retained Redo tail.
+Undo/Redo advances one monotonic generation across every adjacent chunk with the
+same nonzero Stroke identity; new ink truncates Redo only when publication
+succeeds. `move_history_incrementally` rebuilds the affected overview rectangle
+from paper and active painter order, invalidates only intersecting tile
+identities, then publishes the prepared history transition. Host fixtures cover
+at least ten levels, canceled/rejected branches, a pen line cut by an eraser,
+and producer reconstruction after history. Product buttons drain deferred ink
+before this transaction and refresh bounded canvas damage plus the dock; the
+physical multi-zoom gate remains open.
+
 The interface expresses a revision plus bounded affected-tile publications; it
 does not expose mutable pool storage or renderer callbacks. Tile size and slot
 count remain provisional and may change after captured workloads. Shared read

@@ -8,7 +8,7 @@ Progress:
 - [x] Slice 2: whole-Stroke Undo/Redo and exact damage.
 - [x] Slice 3: branch replacement after Undo.
 - [x] Slice 4: localized canvas transition, including exact mixed pen/eraser replay.
-- [ ] Slice 5: product wiring.
+- [x] Slice 5: product wiring, host suite, and credentials-enabled product/gate builds.
 - [ ] Slice 6: device gate.
 
 This design covers the in-memory authority and whole-Stroke Undo/Redo. It does

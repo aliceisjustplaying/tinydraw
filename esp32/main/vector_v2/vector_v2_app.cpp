@@ -772,12 +772,34 @@ vector_v2::ChromeTimeSyncStatus chrome_time_sync_status(TimeSyncStatus status) {
   return vector_v2::ChromeTimeSyncStatus::kError;
 }
 
+bool sync_history_controls(vector_v2::ChromeState& chrome, const OperationLog& log) {
+  const bool can_undo = log.can_undo();
+  const bool can_redo = log.can_redo();
+  const bool changed = chrome.can_undo != can_undo || chrome.can_redo != can_redo;
+  chrome.can_undo = can_undo;
+  chrome.can_redo = can_redo;
+  return changed;
+}
+
+LivePresentationTiming present_history_controls(VectorV2Presenter& presenter,
+                                                const vector_v2::ChromeState& chrome,
+                                                std::uint32_t event_us) {
+  auto timing =
+      presenter.present_frame_region({0, vector_v2::chrome_canvas_bottom(chrome),
+                                      vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
+                                     chrome, event_us);
+  if (!timing.passed) {
+    timing = presenter.refresh(chrome, event_us);
+  }
+  return timing;
+}
+
 bool apply_chrome_action(vector_v2::ChromeAction action, Point point,
                          vector_v2::ChromeState& chrome, OperationLog& log,
                          MaterializedCanvas& canvas, vector_v2::TileProducer& producer,
                          std::span<const std::uint16_t> blank_snapshot,
-                         VectorV2Presenter& presenter, VectorV2Export& exporter,
-                         TimeSyncController& time_sync, RtcClock& clock) {
+                         std::span<std::uint16_t> history_scratch, VectorV2Presenter& presenter,
+                         VectorV2Export& exporter, TimeSyncController& time_sync, RtcClock& clock) {
   const auto toggle = [&](vector_v2::ChromePopup popup) {
     chrome.popup = chrome.popup == popup ? vector_v2::ChromePopup::kNone : popup;
   };
@@ -843,16 +865,20 @@ bool apply_chrome_action(vector_v2::ChromeAction action, Point point,
       chrome.confirm_new = false;
       break;
     case vector_v2::ChromeAction::kConfirmNewDrawing: {
-      // UINT32_MAX is the declared terminal revision; never wrap past it.
-      if (canvas.current_revision().value >= std::numeric_limits<std::uint32_t>::max() - 1U) {
+      // New advances beyond both authorities even when committed-overlay ink
+      // still leaves the canvas one or more chunks behind.
+      const std::uint32_t current_generation =
+          std::max(log.current_revision().value, canvas.current_revision().value);
+      if (current_generation == std::numeric_limits<std::uint32_t>::max()) {
         chrome.confirm_new = false;
         break;
       }
-      const DocumentRevision revision{canvas.current_revision().value + 1U};
+      const DocumentRevision revision{current_generation + 1U};
       if (!vector_v2::restore_document_snapshot(log, canvas, revision, blank_snapshot) ||
           !producer.reset_uniform_baseline(revision)) {
         return false;
       }
+      static_cast<void>(sync_history_controls(chrome, log));
       chrome.confirm_new = false;
       chrome.popup = vector_v2::ChromePopup::kNone;
       break;
@@ -891,9 +917,41 @@ bool apply_chrome_action(vector_v2::ChromeAction action, Point point,
       print_presentation("zoom-ui", presenter, timing);
       return timing.passed;
     }
-    case vector_v2::ChromeAction::kNone:
     case vector_v2::ChromeAction::kUndo:
-    case vector_v2::ChromeAction::kRedo:
+    case vector_v2::ChromeAction::kRedo: {
+      const bool undo = action == vector_v2::ChromeAction::kUndo;
+      const bool enabled = undo ? chrome.can_undo : chrome.can_redo;
+      const bool authority_enabled = undo ? log.can_undo() : log.can_redo();
+      if (!enabled || !authority_enabled) {
+        if (!sync_history_controls(chrome, log)) {
+          return true;
+        }
+        const auto timing = present_history_controls(presenter, chrome, now_us());
+        print_presentation("history-stale-guard", presenter, timing);
+        return timing.passed;
+      }
+      const auto change = vector_v2::move_history_incrementally(
+          log, canvas,
+          undo ? vector_v2::HistoryDirection::kUndo : vector_v2::HistoryDirection::kRedo,
+          history_scratch);
+      if (!change.has_value()) {
+        static_cast<void>(sync_history_controls(chrome, log));
+        return false;
+      }
+      chrome.popup = vector_v2::ChromePopup::kNone;
+      static_cast<void>(sync_history_controls(chrome, log));
+      const auto canvas_timing = presenter.refresh_region(
+          vector_v2::operation_level_bounds(change->affected_world_bounds, presenter.zoom()),
+          chrome, now_us());
+      print_presentation(undo ? "undo-canvas" : "redo-canvas", presenter, canvas_timing);
+      if (!canvas_timing.passed) {
+        return false;
+      }
+      const auto dock_timing = present_history_controls(presenter, chrome, now_us());
+      print_presentation(undo ? "undo-dock" : "redo-dock", presenter, dock_timing);
+      return dock_timing.passed;
+    }
+    case vector_v2::ChromeAction::kNone:
       break;
   }
   auto timing =
@@ -1049,6 +1107,7 @@ void run_vector_v2_app() {
   chrome.size = vector_v2::ChromeSize::kLarge;
   chrome.can_export = exporter.ready();
   chrome.can_sync_time = time_sync.available();
+  static_cast<void>(sync_history_controls(chrome, log));
   chrome.battery_percentage = initial_power.percentage;
   chrome.battery_charging = initial_power.charging;
   InkConfig ink_config;
@@ -1211,6 +1270,7 @@ void run_vector_v2_app() {
   std::uint32_t drain_failures = 0U;
   std::uint32_t lift_reports_dropped = 0U;
   PendingStrokeReport stroke_report{};
+  bool history_chrome_dirty = false;
   std::uint8_t background_ticks = 0U;
 
   const auto begin_pan = [&](Point start) {
@@ -1240,6 +1300,35 @@ void run_vector_v2_app() {
     pan_start = start;
     pan_start_x = presenter.level_x();
     pan_start_y = presenter.level_y();
+  };
+
+  const auto drain_history_boundary = [&] {
+    const std::int64_t started = esp_timer_get_time();
+    std::uint32_t operations = 0U;
+    while (vector_v2::pending_operation_count(log, canvas) != 0U) {
+      if (!vector_v2::absorb_pending_operation(
+               log, canvas, workspace, current_priority_view(presenter),
+               {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs})
+               .has_value()) {
+        break;
+      }
+      ++operations;
+    }
+    const bool lockstep = log.current_revision() == canvas.current_revision();
+    std::printf(
+        "TINYDRAW_LIVE_DRAIN_BOUNDARY site=history ops=%lu wall_us=%lld pending=%lu "
+        "lockstep=%u\n",
+        static_cast<unsigned long>(operations),
+        static_cast<long long>(esp_timer_get_time() - started),
+        static_cast<unsigned long>(vector_v2::pending_operation_count(log, canvas)), lockstep);
+    if (lockstep) {
+      drain_swap_world.reset();
+      drain_ops = 0U;
+      drain_total_us = 0;
+      drain_max_us = 0;
+      drain_failures = 0U;
+    }
+    return lockstep;
   };
 
   for (;;) {
@@ -1525,11 +1614,13 @@ void run_vector_v2_app() {
             } else {
               print_stroke_rejected("add", builder, add_point);
             }
+            history_chrome_dirty = sync_history_controls(chrome, log) || history_chrome_dirty;
             builder.cancel();
             ribbon.reset();
             ink.end();
             // Restore authority beneath the discarded transient tail.
-            static_cast<void>(presenter.refresh(chrome, event_us));
+            const auto rejected_refresh = presenter.refresh(chrome, event_us);
+            history_chrome_dirty = history_chrome_dirty && !rejected_refresh.passed;
           }
         }
       }
@@ -1551,10 +1642,22 @@ void run_vector_v2_app() {
         const Point tap{toolbar_sum.x / divisor, toolbar_sum.y / divisor};
         toolbar_samples = 0;
         if (vector_v2::chrome_contains({tap.x, tap.y}, chrome)) {
-          static_cast<void>(apply_chrome_action(
-              vector_v2::chrome_action_at({tap.x, tap.y}, chrome), tap, chrome, log, canvas,
-              producer, std::span(storage.snapshot, vector_v2::kOverviewPixels), presenter,
-              exporter, time_sync, clock));
+          const vector_v2::ChromeAction action =
+              vector_v2::chrome_action_at({tap.x, tap.y}, chrome);
+          const bool history_action =
+              action == vector_v2::ChromeAction::kUndo || action == vector_v2::ChromeAction::kRedo;
+          const bool boundary_ready = !history_action || drain_history_boundary();
+          const bool applied =
+              boundary_ready &&
+              apply_chrome_action(action, tap, chrome, log, canvas, producer,
+                                  std::span(storage.snapshot, vector_v2::kOverviewPixels),
+                                  std::span(storage.overview_scratch, vector_v2::kOverviewPixels),
+                                  presenter, exporter, time_sync, clock);
+          if (applied &&
+              (history_action || action == vector_v2::ChromeAction::kConfirmNewDrawing)) {
+            history_chrome_dirty = false;
+            drain_swap_world.reset();
+          }
         }
       } else if (panning) {
         panning = false;
@@ -1609,6 +1712,7 @@ void run_vector_v2_app() {
             print_stroke_rejected("finish", builder, presenter.operation_point(last_ink));
           }
         }
+        history_chrome_dirty = sync_history_controls(chrome, log) || history_chrome_dirty;
         builder.cancel();
         ribbon.reset();
         const std::int64_t refresh_started = esp_timer_get_time();
@@ -1617,6 +1721,7 @@ void run_vector_v2_app() {
           // committed bounds; only a full repaint clears it. The patched
           // compose keeps already-committed pending chunks visible.
           measured_lift.refresh = presenter.refresh(chrome, finished_us);
+          history_chrome_dirty = history_chrome_dirty && !measured_lift.refresh.passed;
         } else if (stroke_world_bounds.has_value()) {
           // Committed-overlay lift (design §5.4): no synchronous refresh.
           // Glass keeps the preview; the idle drain absorbs the pending
@@ -1727,6 +1832,11 @@ void run_vector_v2_app() {
                 loop_us);
             swap_wall_us = esp_timer_get_time() - swap_started;
             drain_swap_world.reset();
+          }
+          if (history_chrome_dirty && swap.passed) {
+            const auto dock = present_history_controls(presenter, chrome, loop_us);
+            print_presentation("history-dock", presenter, dock);
+            history_chrome_dirty = !dock.passed;
           }
           std::printf(
               "TINYDRAW_LIVE_DRAIN ops=%lu total_us=%lld max_us=%lld failures=%lu "
