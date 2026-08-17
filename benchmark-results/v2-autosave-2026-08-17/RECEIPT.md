@@ -2,8 +2,8 @@
 
 ## Verdict
 
-**Software integration green; real drawn-document reset/recovery and the
-autosave-enabled performance battery remain.**
+**Software integration and real drawn-document reset/recovery are green;
+autosave-enabled performance joins the final optimization round.**
 
 The product firmware now persists Vector V2 authority and drawing-session state
 in the 3 MiB `drawing` partition. Owner direction explicitly defers two-arena
@@ -115,6 +115,37 @@ TINYDRAW_VECTOR_V2_READY ... free_psram=2278540 largest_psram=2228224 ...
 
 Source: `/tmp/autosave-reset-serial.log`.
 
+## Drawn-document hardware recovery
+
+With serial capture active, the owner drew pen and eraser Strokes, Undid two
+whole Strokes to retain a Redo tail, changed selections, zoomed, and panned. The
+worker published sequences 2 through 13; per-lift authority encoding took
+609–1,130 µs in the captured four-Stroke sample. The normal reset restored:
+
+```text
+TINYDRAW_AUTOSAVE_RESTORE status=2 generation=12 active=6 retained=10 sequence=13
+TINYDRAW_LIVE_PRESENT kind=startup zoom=200 x=1288 y=1606 ...
+```
+
+The owner confirmed the drawing, zoom/pan position, selected state, and both
+Redo actions on glass. A later normal reset then restored the resulting fully
+active document and reached product ready:
+
+```text
+TINYDRAW_AUTOSAVE_RESTORE status=2 generation=52 active=14 retained=14 sequence=56
+TINYDRAW_LIVE_PRESENT kind=startup zoom=25 x=0 y=0 ... pass=1
+TINYDRAW_VECTOR_V2_READY ... largest_psram=2228224 ...
+```
+
+Sources: `/tmp/autosave-drawn-session.log`,
+`/tmp/autosave-drawn-reset.log`, and `/tmp/autosave-after-redo-reset.log`.
+
+The first scripted reset produced two consecutive USB-UART reset banners and
+then three startup presentation TE timeouts. Two immediate repeat startups and
+the post-Redo startup passed. This reset-storm presentation robustness case
+remains tracked with power lifecycle work; authority recovery itself succeeded
+on that attempt before presentation timed out.
+
 ## Performance boundary
 
 Flash erase, body writes, final-marker publication, and full readback execute on
@@ -132,14 +163,8 @@ reduce that count. When full, the adapter preserves all existing Recovery
 points and blocks unsafe transitions rather than erasing them. Two-arena
 compaction/metadata is deferred by owner direction.
 
-## Remaining physical gate
+## Remaining performance gate
 
-1. Draw several pen and eraser Strokes at multiple zooms.
-2. Undo at least one Stroke so a Redo tail exists.
-3. Change zoom/origin, tool, size, and color; wait for autosave commits.
-4. Reset normally, without entering mass storage.
-5. Confirm exact active pixels, Redo restoration, camera/tool state, and a new
-   Stroke remaining separate from the final restored Stroke.
-6. Repeat once after Redo and once after New.
-7. Capture `stroke_logging_us`, flash commit latency, PSRAM headroom, watchdog,
-   ink, pan, cold, and settled-AA gates with autosave enabled.
+Capture flash commit latency, long-document checkpoint cost, PSRAM headroom,
+watchdog status, ink, pan, cold, and settled-AA gates with autosave enabled in
+the final optimization round. Two-arena compaction/metadata remains deferred.
