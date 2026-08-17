@@ -39,6 +39,25 @@ elseif(TINYDRAW_PANEL_PROBE)
   )
   set(TINYDRAW_PLATFORM_SRCS "")
   set(TINYDRAW_PLATFORM_REQUIRES esp_lcd_co5300 esp_lcd_touch_cst816s)
+elseif(TINYDRAW_RASTER_V1)
+  list(APPEND TINYDRAW_APP_SRCS
+    "co5300_panel_transport.cpp"
+    "drawing_store.cpp"
+    "hardware_app.cpp"
+    "image_export_store.cpp"
+    "physical_display.cpp"
+    "physical_touch.cpp"
+    "power_manager.cpp"
+    "rtc_clock.cpp"
+    "time_sync.cpp"
+    "usb_export.cpp"
+    "${TINYDRAW_CORE}/src/fat16_disk.cpp"
+    "${TINYDRAW_CORE}/src/png_encoder.cpp"
+    ${TINYDRAW_PNGENC_SRCS}
+  )
+  set(TINYDRAW_PLATFORM_SRCS "")
+  set(TINYDRAW_PLATFORM_REQUIRES
+      esp_event esp_hw_support esp_lcd_co5300 esp_lcd_touch_cst816s esp_netif esp_wifi nvs_flash pcf85063a tinyusb)
 else()
   set(TINYDRAW_APP_SRCS
     "co5300_panel_transport.cpp"
@@ -111,6 +130,9 @@ if(TINYDRAW_PANEL_PROBE)
 endif()
 if(TINYDRAW_VECTOR_V2_APP)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_V2_APP=1)
+endif()
+if(TINYDRAW_RASTER_V1)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_RASTER_V1=1)
 endif()
 if(NOT TINYDRAW_VECTOR_V2_TILE_SLOTS STREQUAL "448")
   target_compile_definitions(${COMPONENT_LIB} PRIVATE

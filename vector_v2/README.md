@@ -1,8 +1,8 @@
 # Vector V2 foundation
 
-This directory contains TinyDraw's platform-independent, vector-authoritative
-product architecture. Its modules are integrated by the ESP32 product and host
-test targets.
+This directory contains TinyDraw V2's platform-independent,
+vector-authoritative architecture. TinyDraw V1 remains a separately supported
+raster product; V2 modules are integrated by the V2 firmware and host tests.
 
 Current state lives in [`PROJECT_STATE.md`](../PROJECT_STATE.md), and the complete forward worklist lives in [`V2_ROADMAP.md`](../V2_ROADMAP.md). Historical prototype plans belong in [`docs/archive/`](../docs/archive/).
 
