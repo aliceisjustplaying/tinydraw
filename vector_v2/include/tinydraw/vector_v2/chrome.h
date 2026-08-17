@@ -149,9 +149,9 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
 // minimap interior so a captured drag continues smoothly outside its frame.
 [[nodiscard]] ChromeLevelPoint chrome_minimap_level_point(ChromePoint point,
                                                           const ChromeNavigation& navigation);
-// Resolves a minimap drag to a level origin. Only the truthful visible
-// viewport preserves grab offset; every other start directly acquires it.
-// High-zoom drag deltas use the 100% map scale for fine adjustment.
+// Resolves the current minimap pointer to a centered level origin. The start
+// parameter is retained for call-site compatibility but does not change the
+// absolute mapping: the whole minimap directly acquires the viewport.
 [[nodiscard]] ChromeLevelPoint chrome_minimap_drag_origin(ChromePoint start, ChromePoint current,
                                                           ChromeLevelPoint focus,
                                                           const ChromeNavigation& navigation);

@@ -116,11 +116,6 @@ const char* zoom_name(ZoomLevel zoom) {
                                                    const vector_v2::ChromeState& chrome) {
   const bool hit = vector_v2::chrome_minimap_contains({310.0F, 310.0F}, chrome) &&
                    vector_v2::chrome_contains({310.0F, 310.0F}, chrome);
-  const bool intent =
-      !vector_v2::chrome_promotes_minimap_drag({312.0F, 307.0F}, {315.0F, 307.0F}, chrome, 100) &&
-      vector_v2::chrome_promotes_minimap_drag({312.0F, 307.0F}, {316.0F, 307.0F}, chrome, 100) &&
-      !vector_v2::chrome_promotes_minimap_drag({312.0F, 307.0F}, {313.0F, 307.0F}, chrome, 400) &&
-      vector_v2::chrome_promotes_minimap_drag({312.0F, 307.0F}, {314.0F, 307.0F}, chrome, 400);
   const auto initial = presenter.set_view(ZoomLevel::k100Percent, 400, 600, chrome, now_us());
   const auto tap = presenter.jump_from_minimap({312.0F, 307.0F}, chrome, now_us());
   const bool tap_position = presenter.level_x() == 552 && presenter.level_y() == 710;
@@ -129,30 +124,29 @@ const char* zoom_name(ZoomLevel zoom) {
   const auto drag = presenter.pan_minimap_from(drag_start_x, drag_start_y, {312.0F, 307.0F},
                                                {316.0F, 311.0F}, chrome, now_us());
   const bool drag_position = presenter.level_x() == 626 && presenter.level_y() == 782;
-  const auto acquire_zone_initial =
-      presenter.set_view(ZoomLevel::k400Percent, 0, 0, chrome, now_us());
-  const auto acquire_zone =
-      presenter.pan_minimap_from(0, 0, {300.0F, 290.0F}, {302.0F, 292.0F}, chrome, now_us());
-  const bool acquire_zone_position = presenter.level_x() == 1'914 && presenter.level_y() == 2'192;
-  const auto acquire_initial = presenter.set_view(ZoomLevel::k400Percent, 0, 0, chrome, now_us());
-  const auto acquire =
-      presenter.pan_minimap_from(0, 0, {312.0F, 307.0F}, {314.0F, 309.0F}, chrome, now_us());
-  const bool acquire_position = presenter.level_x() == 2'796 && presenter.level_y() == 3'434;
-  const bool passed = hit && intent && initial.passed && tap.passed && tap_position &&
-                      drag.passed && drag.frame_reused && drag_position &&
-                      acquire_zone_initial.passed && acquire_zone.passed && acquire_zone_position &&
-                      acquire_initial.passed && acquire.passed && acquire_position;
+  const auto acquire_initial =
+      presenter.set_view(ZoomLevel::k400Percent, 5'520, 6'796, chrome, now_us());
+  const auto acquire = presenter.pan_minimap_from(5'520, 6'796, {352.0F, 356.0F},
+                                                  {312.0F, 307.0F}, chrome, now_us());
+  const bool acquire_position = presenter.level_x() == 2'760 && presenter.level_y() == 3'398;
+  const int edge_start_x = presenter.level_x();
+  const int edge_start_y = presenter.level_y();
+  const auto edge = presenter.pan_minimap_from(edge_start_x, edge_start_y, {312.0F, 307.0F},
+                                               {272.0F, 258.0F}, chrome, now_us());
+  const bool edge_position = presenter.level_x() == 0 && presenter.level_y() == 0;
+  const bool passed = hit && initial.passed && tap.passed && tap_position && drag.passed &&
+                      drag.frame_reused && drag_position && acquire_initial.passed &&
+                      acquire.passed && acquire_position && edge.passed && edge_position;
   std::printf(
-      "TINYDRAW_GATE1_MINIMAP_NAV hit=%u threshold_px=4 threshold_400_px=2 intent=%u tap_x=552 "
-      "tap_y=710 "
+      "TINYDRAW_GATE1_MINIMAP_NAV hit=%u mode=absolute tap_x=552 tap_y=710 "
       "tap_complete_us=%lld tap_pass=%u drag_x=626 drag_y=782 drag_complete_us=%lld "
-      "drag_reused=%u drag_pass=%u acquire_zone_x=1914 acquire_zone_y=2192 "
-      "acquire_zone_pass=%u acquire_x=2796 acquire_y=3434 acquire_complete_us=%lld "
-      "acquire_pass=%u fine_400_px=36 pass=%u\n",
-      hit, intent, static_cast<long long>(tap.complete_us), tap.passed && tap_position,
+      "drag_reused=%u drag_pass=%u bottom_right_to_center_x=2760 "
+      "bottom_right_to_center_y=3398 acquire_complete_us=%lld acquire_pass=%u "
+      "edge_x=0 edge_y=0 edge_complete_us=%lld edge_pass=%u pass=%u\n",
+      hit, static_cast<long long>(tap.complete_us), tap.passed && tap_position,
       static_cast<long long>(drag.complete_us), drag.frame_reused, drag.passed && drag_position,
-      acquire_zone.passed && acquire_zone_position, static_cast<long long>(acquire.complete_us),
-      acquire.passed && acquire_position, passed);
+      static_cast<long long>(acquire.complete_us), acquire.passed && acquire_position,
+      static_cast<long long>(edge.complete_us), edge.passed && edge_position, passed);
   std::fflush(stdout);
   return passed;
 }
