@@ -124,9 +124,9 @@ class OperationLog {
   [[nodiscard]] bool can_redo() const;
   [[nodiscard]] bool workspace_overlaps_storage(std::span<const std::byte> workspace) const;
 
-  // Preparation copies into unused caller storage but does not advance document
-  // authority. Exactly one append may be prepared. Publish is valid only for
-  // that preparation; cancel leaves operation/sample counts and revision intact.
+  // Preparation validates the caller-owned samples but does not mutate storage
+  // or authority. The samples must outlive publish/cancel. Publish copies them,
+  // atomically replacing any Redo tail; cancel leaves that tail intact.
   [[nodiscard]] std::optional<PreparedAppend> prepare(const OperationAppend& append_request);
   [[nodiscard]] std::optional<OperationIdentity> append(const OperationAppend& append_request);
   [[nodiscard]] AuthorityReadView read_view() const;
