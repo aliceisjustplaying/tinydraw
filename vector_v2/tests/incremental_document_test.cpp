@@ -836,6 +836,45 @@ TEST_CASE("settlement rehearsal replays validated slices and rebases after resto
   CHECK(std::equal(replay->begin(), replay->end(), canvas.overview_pixels().begin()));
 }
 
+TEST_CASE("restored authority rebuilds the overview from only its active prefix") {
+  std::array<vector_v2::OperationRecord, 2> records{};
+  std::array<vector_v2::CompactOperationSample, 4> samples{};
+  vector_v2::OperationLog log(records, samples);
+  const std::array pen{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 160, .y_quarter = 160, .radius_256 = 512, .elapsed_ms = 0},
+      vector_v2::CompactOperationSample{
+          .x_quarter = 1600, .y_quarter = 160, .radius_256 = 512, .elapsed_ms = 10},
+  };
+  const std::array eraser{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 800, .y_quarter = 160, .radius_256 = 768, .elapsed_ms = 0},
+  };
+  REQUIRE(log.append({.tool = vector_v2::OperationTool::kPen,
+                      .color = 0x001FU,
+                      .gesture_id = 1,
+                      .samples = pen}));
+  REQUIRE(log.append({.tool = vector_v2::OperationTool::kEraser,
+                      .gesture_id = 2,
+                      .samples = eraser}));
+  auto undo = log.prepare_undo();
+  REQUIRE(undo.has_value());
+  undo->publish();
+
+  auto replay = std::make_unique<std::array<std::uint16_t, vector_v2::kOverviewPixels>>();
+  auto expected = std::make_unique<std::array<std::uint16_t, vector_v2::kOverviewPixels>>();
+  expected->fill(0xFFFFU);
+  REQUIRE(vector_v2::apply_incremental_operation(
+      {.tool = vector_v2::OperationTool::kPen, .color = 0x001FU, .samples = pen},
+      {.zoom = vector_v2::ZoomLevel::k25Percent,
+       .level_bounds = {0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
+       .pixels = *expected,
+       .stride = vector_v2::kOverviewWidth}));
+
+  REQUIRE(vector_v2::replay_active_overview(log, *replay));
+  CHECK(*replay == *expected);
+}
+
 TEST_CASE("incremental document can commit with no affected resident tiles") {
   Fixture fixture;
   fixture.overview.fill(0xFFFFU);

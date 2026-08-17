@@ -502,6 +502,43 @@ TEST_CASE("operation log withholds replay ranges while an append is prepared") {
         vector_v2::OperationReplayRange{epoch, {0}, {0}, 0, 0});
 }
 
+TEST_CASE("operation log restore rejects malformed persistence without mutation") {
+  std::array<vector_v2::OperationRecord, 2> records{};
+  std::array<vector_v2::CompactOperationSample, 2> storage{};
+  vector_v2::OperationLog log(records, storage);
+  const std::array original{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 16, .y_quarter = 16, .radius_256 = 256, .elapsed_ms = 0},
+  };
+  REQUIRE(log.append({.color = 0x001FU, .gesture_id = 1U, .samples = original}));
+  const vector_v2::AuthorityReadView before = log.read_view();
+
+  std::array<vector_v2::OperationRecord, 1> restored_records{{
+      {.first_sample = 0,
+       .sample_count = 1,
+       .color = 0xF800U,
+       .bounds_x0 = 99,
+       .bounds_y0 = 99,
+       .bounds_x1 = 100,
+       .bounds_y1 = 100,
+       .tool = vector_v2::OperationTool::kPen,
+       .gesture_id = 7U},
+  }};
+  const std::array restored_samples{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 160, .y_quarter = 160, .radius_256 = 256, .elapsed_ms = 0},
+  };
+  CHECK_FALSE(log.restore({.epoch = {9},
+                           .generation = {8},
+                           .active_operation_count = 1,
+                           .records = restored_records,
+                           .samples = restored_samples}));
+  CHECK(log.read_view() == before);
+  REQUIRE(log.operation(0));
+  CHECK(log.operation(0)->color == 0x001FU);
+  CHECK(log.operation(0)->samples.front() == original.front());
+}
+
 TEST_CASE("operation log reset adopts snapshot revision and retains caller storage") {
   std::array<vector_v2::OperationRecord, 1> records{};
   std::array<vector_v2::CompactOperationSample, 1> storage{};

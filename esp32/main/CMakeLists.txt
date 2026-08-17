@@ -34,6 +34,7 @@ if(TINYDRAW_VECTOR_V2_OVERVIEW_WALK OR TINYDRAW_VECTOR_V2_APP)
   if(TINYDRAW_VECTOR_V2_APP)
     set(TINYDRAW_VECTOR_V2_HARDWARE_SRCS
       "vector_v2/vector_v2_app.cpp"
+      "vector_v2/vector_v2_autosave_store.cpp"
       "vector_v2/vector_v2_export.cpp"
       "vector_v2/svg_export_store.cpp"
       "vector_v2/vector_v2_presenter.cpp"

@@ -670,6 +670,31 @@ std::optional<IncrementalAppendResult> absorb_pending_operation(
                              /*retain_all_zooms=*/true);
 }
 
+bool replay_active_overview(const OperationLog& log, std::span<std::uint16_t> output) {
+  if (!log.ready() || output.size() != kOverviewPixels ||
+      log.workspace_overlaps_storage(std::as_bytes(output))) {
+    return false;
+  }
+  const AuthorityReadView view = log.read_view();
+  std::fill(output.begin(), output.end(), 0xFFFFU);
+  const RasterSurface surface{
+      .zoom = ZoomLevel::k25Percent,
+      .level_bounds = {0, 0, kOverviewWidth, kOverviewHeight},
+      .pixels = output,
+      .stride = kOverviewWidth,
+  };
+  for (std::size_t index = 0; index < view.active_operation_count; ++index) {
+    const auto operation = log.operation(view, index);
+    if (!operation.has_value() ||
+        !apply_incremental_operation(
+            {.tool = operation->tool, .color = operation->color, .samples = operation->samples},
+            surface)) {
+      return false;
+    }
+  }
+  return log.unchanged(view);
+}
+
 bool restore_document_snapshot(OperationLog& log, MaterializedCanvas& canvas,
                                DocumentRevision revision,
                                std::span<const std::uint16_t> overview_pixels) {
