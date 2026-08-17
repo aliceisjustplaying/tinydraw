@@ -54,162 +54,50 @@ add_executable(tinydraw_perf_characterization perf_characterization.cpp)
 target_link_libraries(tinydraw_perf_characterization PRIVATE tinydraw::core tinydraw_project_options)
 add_test(NAME tinydraw_perf_characterization COMMAND tinydraw_perf_characterization)
 
-add_executable(tinydraw_vector_rebuild_benchmark vector_rebuild_benchmark.cpp)
-target_link_libraries(tinydraw_vector_rebuild_benchmark PRIVATE
-  tinydraw::vector_prototype
-  tinydraw_project_options
-)
+if(TINYDRAW_BUILD_EXPERIMENTS)
+  add_executable(tinydraw_vector_rebuild_benchmark vector_rebuild_benchmark.cpp)
+  target_link_libraries(tinydraw_vector_rebuild_benchmark PRIVATE
+    tinydraw::vector_prototype
+    tinydraw_project_options
+  )
+endif()
 
 if(TARGET tinydraw_host)
   set(REPLAY_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/replay")
   file(MAKE_DIRECTORY "${REPLAY_OUTPUT_DIR}")
 
-  add_test(
-    NAME tinydraw_replay_e2e
-    COMMAND tinydraw_host
-      --replay "${PROJECT_SOURCE_DIR}/testdata/strokes/zigzag.stroke"
-      --output "${REPLAY_OUTPUT_DIR}/zigzag.ppm"
-  )
-  set_tests_properties(tinydraw_replay_e2e PROPERTIES
-    FIXTURES_SETUP replay_zigzag
-    TIMEOUT 5
-  )
+  function(tinydraw_add_snapshot_test name fixture output snapshot)
+    add_test(NAME ${name}_e2e COMMAND tinydraw_host ${ARGN} --output "${output}")
+    set_tests_properties(${name}_e2e PROPERTIES FIXTURES_SETUP ${fixture} TIMEOUT 5)
+    add_test(NAME ${name}_snapshot COMMAND ${CMAKE_COMMAND} -E compare_files
+      "${output}" "${snapshot}")
+    set_tests_properties(${name}_snapshot PROPERTIES FIXTURES_REQUIRED ${fixture})
+  endfunction()
 
-  add_test(
-    NAME tinydraw_replay_snapshot
-    COMMAND ${CMAKE_COMMAND} -E compare_files
-      "${REPLAY_OUTPUT_DIR}/zigzag.ppm"
-      "${PROJECT_SOURCE_DIR}/testdata/snapshots/zigzag.ppm"
-  )
-  set_tests_properties(tinydraw_replay_snapshot PROPERTIES
-    FIXTURES_REQUIRED replay_zigzag
-  )
-
-  add_test(
-    NAME tinydraw_overlap_e2e
-    COMMAND tinydraw_host
-      --replay "${PROJECT_SOURCE_DIR}/testdata/strokes/dependency-probe.stroke"
-      --output "${REPLAY_OUTPUT_DIR}/dependency-probe.ppm"
-  )
-  set_tests_properties(tinydraw_overlap_e2e PROPERTIES
-    FIXTURES_SETUP replay_overlap
-    TIMEOUT 5
-  )
-
-  add_test(
-    NAME tinydraw_overlap_snapshot
-    COMMAND ${CMAKE_COMMAND} -E compare_files
-      "${REPLAY_OUTPUT_DIR}/dependency-probe.ppm"
-      "${PROJECT_SOURCE_DIR}/testdata/snapshots/dependency-probe.ppm"
-  )
-  set_tests_properties(tinydraw_overlap_snapshot PROPERTIES
-    FIXTURES_REQUIRED replay_overlap
-  )
-
-  add_test(
-    NAME tinydraw_tight_joins_e2e
-    COMMAND tinydraw_host
-      --replay "${PROJECT_SOURCE_DIR}/testdata/strokes/tight-joins.stroke"
-      --output "${REPLAY_OUTPUT_DIR}/tight-joins.ppm"
-  )
-  set_tests_properties(tinydraw_tight_joins_e2e PROPERTIES
-    FIXTURES_SETUP replay_tight_joins
-    TIMEOUT 5
-  )
-
-  add_test(
-    NAME tinydraw_tight_joins_snapshot
-    COMMAND ${CMAKE_COMMAND} -E compare_files
-      "${REPLAY_OUTPUT_DIR}/tight-joins.ppm"
-      "${PROJECT_SOURCE_DIR}/testdata/snapshots/tight-joins.ppm"
-  )
-  set_tests_properties(tinydraw_tight_joins_snapshot PROPERTIES
-    FIXTURES_REQUIRED replay_tight_joins
-  )
-
-  add_test(
-    NAME tinydraw_ui_preview_e2e
-    COMMAND tinydraw_host
-      --ui-preview
-      --output "${REPLAY_OUTPUT_DIR}/ui-preview.ppm"
-  )
-  set_tests_properties(tinydraw_ui_preview_e2e PROPERTIES
-    FIXTURES_SETUP ui_preview
-    TIMEOUT 5
-  )
-
-  add_test(
-    NAME tinydraw_ui_preview_snapshot
-    COMMAND ${CMAKE_COMMAND} -E compare_files
-      "${REPLAY_OUTPUT_DIR}/ui-preview.ppm"
-      "${PROJECT_SOURCE_DIR}/testdata/snapshots/ui-preview.ppm"
-  )
-  set_tests_properties(tinydraw_ui_preview_snapshot PROPERTIES
-    FIXTURES_REQUIRED ui_preview
-  )
-
-  add_test(
-    NAME tinydraw_color_palette_e2e
-    COMMAND tinydraw_host
-      --color-palette-preview
-      --output "${REPLAY_OUTPUT_DIR}/color-palette.ppm"
-  )
-  set_tests_properties(tinydraw_color_palette_e2e PROPERTIES
-    FIXTURES_SETUP color_palette
-    TIMEOUT 5
-  )
-
-  add_test(
-    NAME tinydraw_color_palette_snapshot
-    COMMAND ${CMAKE_COMMAND} -E compare_files
-      "${REPLAY_OUTPUT_DIR}/color-palette.ppm"
-      "${PROJECT_SOURCE_DIR}/testdata/snapshots/color-palette.ppm"
-  )
-  set_tests_properties(tinydraw_color_palette_snapshot PROPERTIES
-    FIXTURES_REQUIRED color_palette
-  )
-
-  add_test(
-    NAME tinydraw_tool_palette_e2e
-    COMMAND tinydraw_host
-      --tool-palette-preview
-      --output "${REPLAY_OUTPUT_DIR}/tool-palette.ppm"
-  )
-  set_tests_properties(tinydraw_tool_palette_e2e PROPERTIES
-    FIXTURES_SETUP tool_palette
-    TIMEOUT 5
-  )
-
-  add_test(
-    NAME tinydraw_tool_palette_snapshot
-    COMMAND ${CMAKE_COMMAND} -E compare_files
-      "${REPLAY_OUTPUT_DIR}/tool-palette.ppm"
-      "${PROJECT_SOURCE_DIR}/testdata/snapshots/tool-palette.ppm"
-  )
-  set_tests_properties(tinydraw_tool_palette_snapshot PROPERTIES
-    FIXTURES_REQUIRED tool_palette
-  )
-
-  add_test(
-    NAME tinydraw_new_dialog_e2e
-    COMMAND tinydraw_host
-      --new-dialog-preview
-      --output "${REPLAY_OUTPUT_DIR}/new-dialog.ppm"
-  )
-  set_tests_properties(tinydraw_new_dialog_e2e PROPERTIES
-    FIXTURES_SETUP new_dialog
-    TIMEOUT 5
-  )
-
-  add_test(
-    NAME tinydraw_new_dialog_snapshot
-    COMMAND ${CMAKE_COMMAND} -E compare_files
-      "${REPLAY_OUTPUT_DIR}/new-dialog.ppm"
-      "${PROJECT_SOURCE_DIR}/testdata/snapshots/new-dialog.ppm"
-  )
-  set_tests_properties(tinydraw_new_dialog_snapshot PROPERTIES
-    FIXTURES_REQUIRED new_dialog
-  )
+  tinydraw_add_snapshot_test(tinydraw_replay replay_zigzag
+    "${REPLAY_OUTPUT_DIR}/zigzag.ppm"
+    "${PROJECT_SOURCE_DIR}/testdata/snapshots/zigzag.ppm"
+    --replay "${PROJECT_SOURCE_DIR}/testdata/strokes/zigzag.stroke")
+  tinydraw_add_snapshot_test(tinydraw_overlap replay_overlap
+    "${REPLAY_OUTPUT_DIR}/dependency-probe.ppm"
+    "${PROJECT_SOURCE_DIR}/testdata/snapshots/dependency-probe.ppm"
+    --replay "${PROJECT_SOURCE_DIR}/testdata/strokes/dependency-probe.stroke")
+  tinydraw_add_snapshot_test(tinydraw_tight_joins replay_tight_joins
+    "${REPLAY_OUTPUT_DIR}/tight-joins.ppm"
+    "${PROJECT_SOURCE_DIR}/testdata/snapshots/tight-joins.ppm"
+    --replay "${PROJECT_SOURCE_DIR}/testdata/strokes/tight-joins.stroke")
+  tinydraw_add_snapshot_test(tinydraw_ui_preview ui_preview
+    "${REPLAY_OUTPUT_DIR}/ui-preview.ppm"
+    "${PROJECT_SOURCE_DIR}/testdata/snapshots/ui-preview.ppm" --ui-preview)
+  tinydraw_add_snapshot_test(tinydraw_color_palette color_palette
+    "${REPLAY_OUTPUT_DIR}/color-palette.ppm"
+    "${PROJECT_SOURCE_DIR}/testdata/snapshots/color-palette.ppm" --color-palette-preview)
+  tinydraw_add_snapshot_test(tinydraw_tool_palette tool_palette
+    "${REPLAY_OUTPUT_DIR}/tool-palette.ppm"
+    "${PROJECT_SOURCE_DIR}/testdata/snapshots/tool-palette.ppm" --tool-palette-preview)
+  tinydraw_add_snapshot_test(tinydraw_new_dialog new_dialog
+    "${REPLAY_OUTPUT_DIR}/new-dialog.ppm"
+    "${PROJECT_SOURCE_DIR}/testdata/snapshots/new-dialog.ppm" --new-dialog-preview)
 
   add_test(
     NAME tinydraw_replay_rejects_invalid_lifecycle

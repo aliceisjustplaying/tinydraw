@@ -33,6 +33,10 @@ Capture mode: a firmware flag records real finger input (event timestamps from
 the touch sampler) to serial; a host script converts to trace format. One
 session of the owner's real scribbling becomes the canonical corpus.
 
+Build the canonical validator with `cmake --build --preset host-debug --target
+tinydraw_ink_trace_check`. `tools/ink-trace-record.py` runs it after every
+capture; `tools/ink-trace-check TRACE.csv` is the standalone entry point.
+
 ## 2. Replay mode
 
 A gate-harness mode injects trace events through the touch buffer's production

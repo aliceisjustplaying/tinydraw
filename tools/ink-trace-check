@@ -1,132 +1,18 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.11"
-# dependencies = []
-# ///
-"""Validate a TinyDraw ink trace CSV and print replay-relevant statistics."""
+#!/bin/sh
+set -eu
 
-import argparse
-import math
-from pathlib import Path
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+for validator in \
+  "${TINYDRAW_INK_TRACE_CHECK:-}" \
+  "$root/out/build/host-debug/vector_v2/tinydraw_ink_trace_check" \
+  "$root/out/build/host-release/vector_v2/tinydraw_ink_trace_check" \
+  "$root/out/build/host-asan/vector_v2/tinydraw_ink_trace_check"
+do
+  if [ -n "$validator" ] && [ -x "$validator" ]; then
+    exec "$validator" "$@"
+  fi
+done
 
-MAGIC = "TINYDRAW_INKTRACE"
-VERSION = 1
-WIDTH = 368
-HEIGHT = 448
-HEADER_COLUMNS = ["magic", "version", "name", "source", "sample_rate_note"]
-EVENT_COLUMNS = ["t_us", "kind", "x", "y"]
-
-
-def fields(line: str, count: int, line_number: int) -> list[str]:
-    values = line.split(",")
-    if len(values) != count:
-        raise ValueError(f"line {line_number}: expected {count} comma-separated fields")
-    return values
-
-
-def parse_trace(path: Path) -> tuple[dict[str, str], list[tuple[int, str, int, int]]]:
-    lines = path.read_text(encoding="utf-8").splitlines()
-    if len(lines) < 3 or lines[0].split(",") != HEADER_COLUMNS:
-        raise ValueError("line 1: invalid header columns")
-    header_values = fields(lines[1], 5, 2)
-    header = dict(zip(HEADER_COLUMNS, header_values, strict=True))
-    if header["magic"] != MAGIC:
-        raise ValueError("line 2: invalid magic")
-    try:
-        version = int(header["version"])
-    except ValueError as error:
-        raise ValueError("line 2: version is not an integer") from error
-    if version != VERSION:
-        raise ValueError(f"line 2: unsupported version {version}")
-    if not header["name"] or not header["sample_rate_note"]:
-        raise ValueError("line 2: name and sample-rate note must be non-empty")
-    if header["source"] not in {"recorded", "synthetic"}:
-        raise ValueError("line 2: source must be recorded or synthetic")
-    if lines[2].split(",") != EVENT_COLUMNS:
-        raise ValueError("line 3: invalid event columns")
-
-    events: list[tuple[int, str, int, int]] = []
-    stroke_open = False
-    previous_t = 0
-    for line_number, line in enumerate(lines[3:], start=4):
-        values = fields(line, 4, line_number)
-        try:
-            timestamp, x, y = int(values[0]), int(values[2]), int(values[3])
-        except ValueError as error:
-            raise ValueError(f"line {line_number}: timestamp and coordinates must be integers") from error
-        kind = values[1]
-        if timestamp < 0:
-            raise ValueError(f"line {line_number}: timestamp must be non-negative")
-        if events and timestamp < previous_t:
-            raise ValueError(f"line {line_number}: timestamp is not monotonic")
-        if not (0 <= x < WIDTH and 0 <= y < HEIGHT):
-            raise ValueError(f"line {line_number}: coordinate outside {WIDTH}x{HEIGHT}")
-        if kind == "Down":
-            if stroke_open:
-                raise ValueError(f"line {line_number}: Down while a stroke is open")
-            stroke_open = True
-        elif kind == "Move":
-            if not stroke_open:
-                raise ValueError(f"line {line_number}: Move outside a stroke")
-        elif kind == "Up":
-            if not stroke_open:
-                raise ValueError(f"line {line_number}: Up outside a stroke")
-            stroke_open = False
-        else:
-            raise ValueError(f"line {line_number}: unknown event kind {kind!r}")
-        events.append((timestamp, kind, x, y))
-        previous_t = timestamp
-
-    if not events:
-        raise ValueError("trace contains no events")
-    if stroke_open:
-        raise ValueError("trace ends with an open stroke")
-    return header, events
-
-
-def trace_stats(events: list[tuple[int, str, int, int]]) -> dict[str, int | float]:
-    max_time_gap = 0
-    max_space_gap = 0.0
-    strokes = 0
-    previous_event = None
-    previous_sample = None
-    for event in events:
-        timestamp, kind, x, y = event
-        if previous_event is not None:
-            max_time_gap = max(max_time_gap, timestamp - previous_event[0])
-        if kind == "Down":
-            strokes += 1
-            previous_sample = (x, y)
-        else:
-            assert previous_sample is not None
-            max_space_gap = max(max_space_gap, math.hypot(x - previous_sample[0], y - previous_sample[1]))
-            previous_sample = None if kind == "Up" else (x, y)
-        previous_event = event
-    return {
-        "events": len(events),
-        "strokes": strokes,
-        "duration_us": events[-1][0],
-        "max_time_gap_us": max_time_gap,
-        "max_space_gap_px": max_space_gap,
-    }
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("trace", type=Path)
-    args = parser.parse_args()
-    try:
-        header, events = parse_trace(args.trace)
-    except (OSError, UnicodeError, ValueError) as error:
-        parser.exit(2, f"invalid ink trace: {error}\n")
-    stats = trace_stats(events)
-    print(
-        f"valid name={header['name']} source={header['source']} "
-        f"events={stats['events']} strokes={stats['strokes']} "
-        f"duration_us={stats['duration_us']} max_time_gap_us={stats['max_time_gap_us']} "
-        f"max_space_gap_px={stats['max_space_gap_px']:.2f}"
-    )
-
-
-if __name__ == "__main__":
-    main()
+echo "ink-trace validator is not built; run:" >&2
+echo "  cmake --preset host-debug && cmake --build --preset host-debug --target tinydraw_ink_trace_check" >&2
+exit 2
