@@ -1,0 +1,204 @@
+2026-08-17 11:46:08 - 11 - 08 - INFO - Using selected IDF version: v6.0.2
+Added environment variable ESP_IDF_VERSION = 6.0
+Added environment variable IDF_VERSION = 6.0.2
+Added environment variable IDF_TOOLS_PATH = $HOME/.espressif/tools
+Added environment variable IDF_COMPONENT_LOCAL_STORAGE_URL = file://$HOME/.espressif/tools
+Added environment variable IDF_PATH = $HOME/.espressif/v6.0.2/esp-idf
+Added environment variable ESP_ROM_ELF_DIR = $HOME/.espressif/tools/esp-rom-elfs/20241011/
+Added environment variable OPENOCD_SCRIPTS = $HOME/.espressif/tools/openocd-esp32/v0.12.0-esp32-20260424/openocd-esp32/share/openocd/scripts
+Added environment variable IDF_PYTHON_ENV_PATH = $HOME/.espressif/tools/python/v6.0.2/venv
+Added environment variable ESP_CLANG_LIBS_PATH = $HOME/.espressif/tools/esp-clang-libs/esp-20.1.1_20250829/esp-clang/lib
+Added proper directory to PATH
+Activated virtual environment at $HOME/.espressif/tools/python/v6.0.2/venv
+Environment setup complete for the current shell session.
+These changes will be lost when you close this terminal.
+You are now using IDF version 6.0.2.
+eim select v6.0.2
+Adding "flash"'s dependency "all" to list of commands with default set of options.
+Executing action: all (aliases: build)
+Running ninja in directory out/build/esp32-vector-v2
+Executing "ninja all"...
+[0/1] Re-running CMake...
+-- Vector V2 presentation experiment=boundary-top-sweep, TE edge=rising
+-- Component directory $HOME/.espressif/v6.0.2/esp-idf/components/mqtt does not contain a CMakeLists.txt file. No component will be added
+-- Minimal build - ON
+-- Building ESP-IDF components for target esp32s3
+NOTICE: 
+Following dependencies have new versions available:
+Dependency "espressif/esp_lcd_touch_cst816s": "1.1.1~2" -> "1.1.2"
+Consider running "idf.py update-dependencies" to update your lock file.
+NOTICE: Processing 8 dependencies:
+NOTICE: [1/8] espressif/cmake_utilities (0.5.3)
+NOTICE: [2/8] espressif/esp_lcd_co5300 (2.1.0)
+NOTICE: [3/8] espressif/esp_lcd_qemu_rgb (1.0.2)
+NOTICE: [4/8] espressif/esp_lcd_touch (1.2.1)
+NOTICE: [5/8] espressif/esp_lcd_touch_cst816s (1.1.1~2)
+NOTICE: [6/8] espressif/tinyusb (0.21.0~1)
+NOTICE: [7/8] waveshare/pcf85063a (2.0.0)
+NOTICE: [8/8] idf (6.0.2)
+-- ESP-TEE is currently supported only on the esp32c6;esp32h2;esp32c5;esp32c61 SoCs
+-- KCONFIG_REPORT_VERBOSITY not set, using default
+-- Project sdkconfig file out/build/esp32-vector-v2/sdkconfig
+Loading defaults file esp32/sdkconfig.defaults...
+NOTE: Kconfig parser version: 1
+NOTE: Kconfig defaults policy: use sdkconfig
+NOTE: Status: Finished successfully
+-- Compiler supported targets: xtensa-esp-elf
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- App "tinydraw_esp32" version: 383609e
+-- Setting up mbedtls configuration
+-- Linkage type is PUBLIC
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_wdt/esp32s3/rom.wdt.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_system/ld/esp32s3/memory.ld.in
+--   -> Preprocessing .in script: $HOME/.espressif/v6.0.2/esp-idf/components/esp_system/ld/esp32s3/memory.ld.in
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_system/ld/esp32s3/sections.ld.in
+--   -> Preprocessing .in script: $HOME/.espressif/v6.0.2/esp-idf/components/esp_system/ld/esp32s3/sections.ld.in
+--   -> Applying ldgen processing: out/build/esp32-vector-v2/esp-idf/esp_system/ld/sections.ld.in
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.api.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.bt_funcs.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.libgcc.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.version.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.ble_master.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.ble_50.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.ble_smp.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.ble_dtm.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.ble_test.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.ble_scan.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom/esp32s3/ld/esp32s3.rom.libc.ld
+-- Adding linker script $HOME/.espressif/v6.0.2/esp-idf/components/soc/esp32s3/ld/esp32s3.peripherals.ld
+-- ESP_LCD_CO5300: 2.1.0
+-- TinyDraw panel experiment=boundary-top-sweep, TE edge=rising, requested clock=50 MHz, effective clock=40 MHz
+-- Components: app_update bootloader bootloader_support cxx driver efuse esp_app_format esp_blockdev esp_bootloader_format esp_coex esp_common esp_driver_bitscrambler esp_driver_dma esp_driver_gpio esp_driver_i2c esp_driver_i2s esp_driver_parlio esp_driver_spi esp_driver_uart esp_driver_usb_serial_jtag esp_event esp_hal_ana_conv esp_hal_clock esp_hal_dma esp_hal_gpio esp_hal_gpspi esp_hal_i2c esp_hal_i2s esp_hal_lcd esp_hal_mspi esp_hal_parlio esp_hal_pmu esp_hal_rtc_timer esp_hal_security esp_hal_timg esp_hal_touch_sens esp_hal_twai esp_hal_uart esp_hal_usb esp_hal_wdt esp_hw_support esp_lcd esp_libc esp_mm esp_netif esp_netif_stack esp_partition esp_phy esp_pm esp_psram esp_ringbuf esp_rom esp_security esp_stdio esp_system esp_timer esp_usb_cdc_rom_console esp_wifi espcoredump espressif__cmake_utilities espressif__esp_lcd_co5300 espressif__esp_lcd_qemu_rgb espressif__esp_lcd_touch espressif__esp_lcd_touch_cst816s espressif__tinyusb esptool_py freertos hal heap log lwip main mbedtls nvs_flash nvs_sec_provider partition_table pthread soc spi_flash vfs waveshare__pcf85063a wpa_supplicant xtensa
+-- Component paths: $HOME/.espressif/v6.0.2/esp-idf/components/app_update $HOME/.espressif/v6.0.2/esp-idf/components/bootloader $HOME/.espressif/v6.0.2/esp-idf/components/bootloader_support $HOME/.espressif/v6.0.2/esp-idf/components/cxx $HOME/.espressif/v6.0.2/esp-idf/components/driver $HOME/.espressif/v6.0.2/esp-idf/components/efuse $HOME/.espressif/v6.0.2/esp-idf/components/esp_app_format $HOME/.espressif/v6.0.2/esp-idf/components/esp_blockdev $HOME/.espressif/v6.0.2/esp-idf/components/esp_bootloader_format $HOME/.espressif/v6.0.2/esp-idf/components/esp_coex $HOME/.espressif/v6.0.2/esp-idf/components/esp_common $HOME/.espressif/v6.0.2/esp-idf/components/esp_driver_bitscrambler $HOME/.espressif/v6.0.2/esp-idf/components/esp_driver_dma $HOME/.espressif/v6.0.2/esp-idf/components/esp_driver_gpio $HOME/.espressif/v6.0.2/esp-idf/components/esp_driver_i2c $HOME/.espressif/v6.0.2/esp-idf/components/esp_driver_i2s $HOME/.espressif/v6.0.2/esp-idf/components/esp_driver_parlio $HOME/.espressif/v6.0.2/esp-idf/components/esp_driver_spi $HOME/.espressif/v6.0.2/esp-idf/components/esp_driver_uart $HOME/.espressif/v6.0.2/esp-idf/components/esp_driver_usb_serial_jtag $HOME/.espressif/v6.0.2/esp-idf/components/esp_event $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_ana_conv $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_clock $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_dma $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_gpio $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_gpspi $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_i2c $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_i2s $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_lcd $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_mspi $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_parlio $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_pmu $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_rtc_timer $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_security $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_timg $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_touch_sens $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_twai $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_uart $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_usb $HOME/.espressif/v6.0.2/esp-idf/components/esp_hal_wdt $HOME/.espressif/v6.0.2/esp-idf/components/esp_hw_support $HOME/.espressif/v6.0.2/esp-idf/components/esp_lcd $HOME/.espressif/v6.0.2/esp-idf/components/esp_libc $HOME/.espressif/v6.0.2/esp-idf/components/esp_mm $HOME/.espressif/v6.0.2/esp-idf/components/esp_netif $HOME/.espressif/v6.0.2/esp-idf/components/esp_netif_stack $HOME/.espressif/v6.0.2/esp-idf/components/esp_partition $HOME/.espressif/v6.0.2/esp-idf/components/esp_phy $HOME/.espressif/v6.0.2/esp-idf/components/esp_pm $HOME/.espressif/v6.0.2/esp-idf/components/esp_psram $HOME/.espressif/v6.0.2/esp-idf/components/esp_ringbuf $HOME/.espressif/v6.0.2/esp-idf/components/esp_rom $HOME/.espressif/v6.0.2/esp-idf/components/esp_security $HOME/.espressif/v6.0.2/esp-idf/components/esp_stdio $HOME/.espressif/v6.0.2/esp-idf/components/esp_system $HOME/.espressif/v6.0.2/esp-idf/components/esp_timer $HOME/.espressif/v6.0.2/esp-idf/components/esp_usb_cdc_rom_console $HOME/.espressif/v6.0.2/esp-idf/components/esp_wifi $HOME/.espressif/v6.0.2/esp-idf/components/espcoredump esp32/managed_components/espressif__cmake_utilities esp32/managed_components/espressif__esp_lcd_co5300 esp32/managed_components/espressif__esp_lcd_qemu_rgb esp32/managed_components/espressif__esp_lcd_touch esp32/managed_components/espressif__esp_lcd_touch_cst816s esp32/managed_components/espressif__tinyusb $HOME/.espressif/v6.0.2/esp-idf/components/esptool_py $HOME/.espressif/v6.0.2/esp-idf/components/freertos $HOME/.espressif/v6.0.2/esp-idf/components/hal $HOME/.espressif/v6.0.2/esp-idf/components/heap $HOME/.espressif/v6.0.2/esp-idf/components/log $HOME/.espressif/v6.0.2/esp-idf/components/lwip esp32/main $HOME/.espressif/v6.0.2/esp-idf/components/mbedtls $HOME/.espressif/v6.0.2/esp-idf/components/nvs_flash $HOME/.espressif/v6.0.2/esp-idf/components/nvs_sec_provider $HOME/.espressif/v6.0.2/esp-idf/components/partition_table $HOME/.espressif/v6.0.2/esp-idf/components/pthread $HOME/.espressif/v6.0.2/esp-idf/components/soc $HOME/.espressif/v6.0.2/esp-idf/components/spi_flash $HOME/.espressif/v6.0.2/esp-idf/components/vfs esp32/managed_components/waveshare__pcf85063a $HOME/.espressif/v6.0.2/esp-idf/components/wpa_supplicant $HOME/.espressif/v6.0.2/esp-idf/components/xtensa
+-- Configuring done (6.6s)
+-- Generating done (0.5s)
+-- Build files have been written to: out/build/esp32-vector-v2
+[1/10] Performing build step for 'bootloader'
+[1/1] cd out/build/esp32-vector-v2/bootloader && $HOME/.espressif/tools/python/v6.0.2/venv/bin/python $HOME/.espressif/v6.0.2/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x0 out/build/esp32-vector-v2/bootloader/bootloader.bin
+Bootloader binary size 0x57e0 bytes. 0x2820 bytes (31%) free.
+[2/10] Building C object esp-idf/esp_app_format/CMakeFiles/__idf_esp_app_format.dir/esp_app_desc.c.obj
+[3/10] No install step for 'bootloader'
+[4/10] Completed 'bootloader'
+[5/10] Linking C static library esp-idf/esp_app_format/libesp_app_format.a
+[6/10] Generating esp-idf/esp_system/ld/sections.ld
+[7/10] Linking CXX executable tinydraw_esp32.elf
+[8/10] Generating binary image from built executable
+esptool v5.3.1
+Creating ESP32-S3 image...
+Merged 3 ELF sections.
+Successfully created ESP32-S3 image.
+Generated out/build/esp32-vector-v2/tinydraw_esp32.bin
+[9/10] cd out/build/esp32-vector-v2 && $HOME/.espressif/tools/python/v6.0.2/venv/bin/python $HOME/.espressif/v6.0.2/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 partition --type app out/build/esp32-vector-v2/partition_table/partition-table.bin out/build/esp32-vector-v2/tinydraw_esp32.bin
+tinydraw_esp32.bin binary size 0xf5250 bytes. Smallest app partition is 0x100000 bytes. 0xadb0 bytes (4%) free.
+Warning: The smallest app partition is nearly full (4% free space left)!
+Executing action: flash
+Running ninja in directory out/build/esp32-vector-v2
+Executing "ninja flash"...
+[1/5] cd out/build/esp32-vector-v2 && $HOME/.espressif/tools/python/v6.0.2/venv/bin/python $HOME/.espressif/v6.0.2/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 partition --type app out/build/esp32-vector-v2/partition_table/partition-table.bin out/build/esp32-vector-v2/tinydraw_esp32.bin
+tinydraw_esp32.bin binary size 0xf5250 bytes. Smallest app partition is 0x100000 bytes. 0xadb0 bytes (4%) free.
+Warning: The smallest app partition is nearly full (4% free space left)!
+[2/5] Performing build step for 'bootloader'
+[1/1] cd out/build/esp32-vector-v2/bootloader && $HOME/.espressif/tools/python/v6.0.2/venv/bin/python $HOME/.espressif/v6.0.2/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x0 out/build/esp32-vector-v2/bootloader/bootloader.bin
+Bootloader binary size 0x57e0 bytes. 0x2820 bytes (31%) free.
+[3/5] No install step for 'bootloader'
+[4/5] Completed 'bootloader'
+[4/5] Running utility command for flash
+esptool --chip esp32s3 -p /dev/cu.usbmodem101 -b 460800 --before=default-reset --after=hard-reset write-flash --flash-mode dio --flash-freq 80m --flash-size 16MB 0x0 bootloader/bootloader.bin 0x8000 partition_table/partition-table.bin 0x10000 tinydraw_esp32.bin
+esptool v5.3.1
+Serial port /dev/cu.usbmodem101:
+Connecting...
+Connected to ESP32-S3 on /dev/cu.usbmodem101:
+Chip type:          ESP32-S3 (QFN56) (revision v0.2)
+Features:           Wi-Fi, BT 5 (LE), Dual Core + LP Core, 240MHz, Embedded PSRAM 8MB (AP_3v3)
+Crystal frequency:  40MHz
+USB mode:           USB-Serial/JTAG
+MAC:                1c:db:d4:7b:85:c8
+
+Uploading stub flasher...
+Running stub flasher...
+Stub flasher running.
+Changing baud rate to 460800...
+Changed.
+
+Configuring flash size...
+
+Writing 'bootloader/bootloader.bin' at 0x00000000...
+SHA digest in image updated.
+Flash will be erased from 0x00000000 to 0x00005fff...
+Compressed 22496 bytes to 14401...
+Writing at 0x00000000 [                              ]   0.0% 0/14401 bytes... 
+Writing at 0x000057e0 [==============================] 100.0% 14401/14401 bytes... 
+Wrote 22496 bytes (14401 compressed) at 0x00000000 in 0.3 seconds (717.1 kbit/s).
+Verifying written data...
+Hash of data verified.
+
+Writing 'partition_table/partition-table.bin' at 0x00008000...
+Flash will be erased from 0x00008000 to 0x00008fff...
+Compressed 3072 bytes to 152...
+Writing at 0x00008000 [                              ]   0.0% 0/152 bytes... 
+Writing at 0x00008c00 [==============================] 100.0% 152/152 bytes... 
+Wrote 3072 bytes (152 compressed) at 0x00008000 in 0.0 seconds (613.4 kbit/s).
+Verifying written data...
+Hash of data verified.
+
+Writing 'tinydraw_esp32.bin' at 0x00010000...
+Flash will be erased from 0x00010000 to 0x00105fff...
+Compressed 1004112 bytes to 688197...
+Writing at 0x00010000 [                              ]   0.0% 0/688197 bytes... 
+Writing at 0x0001ca56 [                              ]   2.4% 16384/688197 bytes... 
+Writing at 0x00026d40 [>                             ]   4.8% 32768/688197 bytes... 
+Writing at 0x0002e032 [=>                            ]   7.1% 49152/688197 bytes... 
+Writing at 0x0003892c [=>                            ]   9.5% 65536/688197 bytes... 
+Writing at 0x0003e167 [==>                           ]  11.9% 81920/688197 bytes... 
+Writing at 0x0004430f [===>                          ]  14.3% 98304/688197 bytes... 
+Writing at 0x00049ccc [===>                          ]  16.7% 114688/688197 bytes... 
+Writing at 0x0004f3c3 [====>                         ]  19.0% 131072/688197 bytes... 
+Writing at 0x00054a04 [=====>                        ]  21.4% 147456/688197 bytes... 
+Writing at 0x0005a3cb [======>                       ]  23.8% 163840/688197 bytes... 
+Writing at 0x0005f844 [======>                       ]  26.2% 180224/688197 bytes... 
+Writing at 0x00064ea3 [=======>                      ]  28.6% 196608/688197 bytes... 
+Writing at 0x00069da0 [========>                     ]  30.9% 212992/688197 bytes... 
+Writing at 0x0006f15b [========>                     ]  33.3% 229376/688197 bytes... 
+Writing at 0x00074936 [=========>                    ]  35.7% 245760/688197 bytes... 
+Writing at 0x0007a811 [==========>                   ]  38.1% 262144/688197 bytes... 
+Writing at 0x0007fd17 [===========>                  ]  40.5% 278528/688197 bytes... 
+Writing at 0x00085639 [===========>                  ]  42.9% 294912/688197 bytes... 
+Writing at 0x0008aa62 [============>                 ]  45.2% 311296/688197 bytes... 
+Writing at 0x00090332 [=============>                ]  47.6% 327680/688197 bytes... 
+Writing at 0x00095696 [=============>                ]  50.0% 344064/688197 bytes... 
+Writing at 0x0009a855 [==============>               ]  52.4% 360448/688197 bytes... 
+Writing at 0x0009fc5c [===============>              ]  54.8% 376832/688197 bytes... 
+Writing at 0x000a54ba [================>             ]  57.1% 393216/688197 bytes... 
+Writing at 0x000aaa8e [================>             ]  59.5% 409600/688197 bytes... 
+Writing at 0x000aff32 [=================>            ]  61.9% 425984/688197 bytes... 
+Writing at 0x000b5402 [==================>           ]  64.3% 442368/688197 bytes... 
+Writing at 0x000bb254 [==================>           ]  66.7% 458752/688197 bytes... 
+Writing at 0x000c0419 [===================>          ]  69.0% 475136/688197 bytes... 
+Writing at 0x000c5596 [====================>         ]  71.4% 491520/688197 bytes... 
+Writing at 0x000ca606 [=====================>        ]  73.8% 507904/688197 bytes... 
+Writing at 0x000cf6c8 [=====================>        ]  76.2% 524288/688197 bytes... 
+Writing at 0x000d4cbe [======================>       ]  78.6% 540672/688197 bytes... 
+Writing at 0x000d9e94 [=======================>      ]  80.9% 557056/688197 bytes... 
+Writing at 0x000def43 [=======================>      ]  83.3% 573440/688197 bytes... 
+Writing at 0x000e422b [========================>     ]  85.7% 589824/688197 bytes... 
+Writing at 0x000e9689 [=========================>    ]  88.1% 606208/688197 bytes... 
+Writing at 0x000eedc8 [==========================>   ]  90.5% 622592/688197 bytes... 
+Writing at 0x000f4c21 [==========================>   ]  92.8% 638976/688197 bytes... 
+Writing at 0x000faa5e [===========================>  ]  95.2% 655360/688197 bytes... 
+Writing at 0x000ff78d [============================> ]  97.6% 671744/688197 bytes... 
+Writing at 0x001051da [============================> ] 100.0% 688128/688197 bytes... 
+Writing at 0x00105250 [==============================] 100.0% 688197/688197 bytes... 
+Wrote 1004112 bytes (688197 compressed) at 0x00010000 in 6.0 seconds (1339.0 kbit/s).
+Verifying written data...
+Hash of data verified.
+
+Hard resetting via RTS pin...
+Done
