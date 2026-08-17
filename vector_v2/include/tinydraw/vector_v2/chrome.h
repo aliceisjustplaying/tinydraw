@@ -149,15 +149,15 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
 // minimap interior so a captured drag continues smoothly outside its frame.
 [[nodiscard]] ChromeLevelPoint chrome_minimap_level_point(ChromePoint point,
                                                           const ChromeNavigation& navigation);
-// Resolves a minimap drag to a level origin. A minimum-size invisible target
-// around the truthful viewport preserves grab offset; a start elsewhere in
-// the minimap directly acquires the viewport beneath the finger.
+// Resolves a minimap drag to a level origin. Only the truthful visible
+// viewport preserves grab offset; every other start directly acquires it.
+// High-zoom drag deltas use the 100% map scale for fine adjustment.
 [[nodiscard]] ChromeLevelPoint chrome_minimap_drag_origin(ChromePoint start, ChromePoint current,
                                                           ChromeLevelPoint focus,
                                                           const ChromeNavigation& navigation);
 // Suppresses touch jitter so a stationary minimap gesture remains a jump tap.
-// The promotion distance shrinks with the viewport at high zoom, making the
-// tiny viewport easier to grab without enlarging the minimap's canvas occlusion.
+// The promotion distance shrinks at high zoom; the whole minimap remains a
+// direct-acquisition target without an ambiguous invisible viewport zone.
 [[nodiscard]] bool chrome_promotes_minimap_drag(ChromePoint start, ChromePoint current,
                                                 const ChromeState& state, int zoom_percent);
 // Zoom controls own stationary taps, but a deliberate drag that starts on the

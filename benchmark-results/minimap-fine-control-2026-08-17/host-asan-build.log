@@ -1,0 +1,12 @@
+[1/9] Building CXX object vector_v2/CMakeFiles/tinydraw_vector_v2.dir/src/chrome.cpp.o
+[2/9] Building CXX object vector_v2/CMakeFiles/tinydraw_vector_v2_tests.dir/tests/live_ink_coordinator_test.cpp.o
+[3/9] Linking CXX static library vector_v2/libtinydraw_vector_v2.a
+[4/9] Linking CXX executable vector_v2/tinydraw_vector_v2_ink_angularity
+ld: warning: ignoring duplicate libraries: 'core/libtinydraw_core.a'
+[5/9] Linking CXX executable vector_v2/tinydraw_vector_v2_lod_characterization
+[6/9] Linking CXX executable vector_v2/tinydraw_vector_v2_raster_census
+ld: warning: ignoring duplicate libraries: 'core/libtinydraw_core.a'
+[7/9] Linking CXX executable vector_v2/tinydraw_vector_v2_settled_aa_prototype
+ld: warning: ignoring duplicate libraries: 'core/libtinydraw_core.a'
+[8/9] Building CXX object vector_v2/CMakeFiles/tinydraw_vector_v2_tests.dir/tests/chrome_test.cpp.o
+[9/9] Linking CXX executable vector_v2/tinydraw_vector_v2_tests

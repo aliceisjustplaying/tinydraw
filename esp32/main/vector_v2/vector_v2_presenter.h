@@ -172,8 +172,9 @@ class VectorV2Presenter {
                                                 Point current_touch,
                                                 const vector_v2::ChromeState& chrome,
                                                 std::uint32_t event_us);
-  // Minimap tap centers the selected level point; drag moves the viewport by
-  // the projected level delta and reuses the ordinary pan presentation path.
+  // Minimap tap centers the selected level point. Drag directly acquires from
+  // outside the visible viewport, then uses fine high-zoom deltas through the
+  // ordinary pan presentation path.
   [[nodiscard]] LivePresentationTiming jump_from_minimap(Point point,
                                                          const vector_v2::ChromeState& chrome,
                                                          std::uint32_t event_us);

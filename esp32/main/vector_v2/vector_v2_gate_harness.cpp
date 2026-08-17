@@ -129,22 +129,30 @@ const char* zoom_name(ZoomLevel zoom) {
   const auto drag = presenter.pan_minimap_from(drag_start_x, drag_start_y, {312.0F, 307.0F},
                                                {316.0F, 311.0F}, chrome, now_us());
   const bool drag_position = presenter.level_x() == 626 && presenter.level_y() == 782;
+  const auto acquire_zone_initial =
+      presenter.set_view(ZoomLevel::k400Percent, 0, 0, chrome, now_us());
+  const auto acquire_zone =
+      presenter.pan_minimap_from(0, 0, {300.0F, 290.0F}, {302.0F, 292.0F}, chrome, now_us());
+  const bool acquire_zone_position = presenter.level_x() == 1'914 && presenter.level_y() == 2'192;
   const auto acquire_initial = presenter.set_view(ZoomLevel::k400Percent, 0, 0, chrome, now_us());
   const auto acquire =
       presenter.pan_minimap_from(0, 0, {312.0F, 307.0F}, {314.0F, 309.0F}, chrome, now_us());
-  const bool acquire_position = presenter.level_x() == 2'906 && presenter.level_y() == 3'544;
+  const bool acquire_position = presenter.level_x() == 2'796 && presenter.level_y() == 3'434;
   const bool passed = hit && intent && initial.passed && tap.passed && tap_position &&
-                      drag.passed && drag.frame_reused && drag_position && acquire_initial.passed &&
-                      acquire.passed && acquire_position;
+                      drag.passed && drag.frame_reused && drag_position &&
+                      acquire_zone_initial.passed && acquire_zone.passed && acquire_zone_position &&
+                      acquire_initial.passed && acquire.passed && acquire_position;
   std::printf(
       "TINYDRAW_GATE1_MINIMAP_NAV hit=%u threshold_px=4 threshold_400_px=2 intent=%u tap_x=552 "
       "tap_y=710 "
       "tap_complete_us=%lld tap_pass=%u drag_x=626 drag_y=782 drag_complete_us=%lld "
-      "drag_reused=%u drag_pass=%u acquire_x=2906 acquire_y=3544 acquire_complete_us=%lld "
-      "acquire_pass=%u pass=%u\n",
+      "drag_reused=%u drag_pass=%u acquire_zone_x=1914 acquire_zone_y=2192 "
+      "acquire_zone_pass=%u acquire_x=2796 acquire_y=3434 acquire_complete_us=%lld "
+      "acquire_pass=%u fine_400_px=36 pass=%u\n",
       hit, intent, static_cast<long long>(tap.complete_us), tap.passed && tap_position,
       static_cast<long long>(drag.complete_us), drag.frame_reused, drag.passed && drag_position,
-      static_cast<long long>(acquire.complete_us), acquire.passed && acquire_position, passed);
+      acquire_zone.passed && acquire_zone_position, static_cast<long long>(acquire.complete_us),
+      acquire.passed && acquire_position, passed);
   std::fflush(stdout);
   return passed;
 }
@@ -3145,9 +3153,8 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
         continue;
       }
       if (sampled->kind == vector_v2::TouchEventKind::kUp && pressed) {
-        last_ink = ink.finish({.x = last_canvas_touch.x,
-                               .y = last_canvas_touch.y,
-                               .timestamp_us = event_us});
+        last_ink = ink.finish(
+            {.x = last_canvas_touch.x, .y = last_canvas_touch.y, .timestamp_us = event_us});
         const auto finish_timing =
             presenter.show_update(ribbon.finish(last_ink), color, chrome, event_us);
         presentation_failures += !finish_timing.passed;
