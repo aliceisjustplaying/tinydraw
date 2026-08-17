@@ -3,6 +3,17 @@
 Date: 2026-08-17  
 Branch: `feat/v2-performance-followup`
 
+## Verdict
+
+**Green for the release scope; owner accepted.** The owner’s final glass
+verdict on `dbc4f67` was:
+
+> this will do let's consider this done. maybe put a pin in it for further
+> refinements but this is good enough now
+
+Optional cosmetic or interaction refinement is deferred to the later general
+touch-target review; it is not a blocker for authority/storage and Undo/Redo.
+
 ## Problem
 
 Owner glass testing rejected the relative high-zoom mapping: the 0.25 drag
@@ -11,53 +22,57 @@ viewport frequently became size/document dock taps. Moving the whole minimap
 up 16 px improved bottom acquisition but was aesthetically rejected and still
 left bottom-left presses colliding with the size picker.
 
-The structural conflict is that a physical finger centered on the minimap's
+The structural conflict is that a physical finger centered on the minimap’s
 bottom edge can report inside the dock. Rectangle expansion alone cannot make
-the same Down coordinate an immediate minimap press and a truthful stationary
-button tap.
+the same stationary Down/Up coordinates both an immediate minimap jump and a
+truthful dock-button tap. Movement is the available intent signal.
 
-## Implemented contract
+## Final contract
 
-1. The visible minimap is restored to its original position.
-2. Every direct minimap Down immediately maps the pointer's absolute minimap
+1. The visible minimap remains at its original, owner-preferred position.
+2. Every direct minimap Down immediately maps the pointer’s absolute minimap
    position to a centered viewport origin. Dragging continues that absolute
-   mapping; there is no viewport-box grab requirement and no zoom-dependent
-   delta scale.
-3. A Down in `(250,372)..(368,424)` is an ambiguous dock candidate:
+   mapping; there is no viewport-box grab requirement or zoom-dependent delta
+   scale.
+3. A Down in the right-side dock below the minimap is an ambiguous candidate:
    - stationary release remains the existing size/document action;
    - 8 px horizontal/downward movement promotes to captured minimap control;
-   - after the first owner capture, 2 px upward movement toward the visible map
-     promotes early to remove measured stickiness.
-4. Once promoted, the gesture stays captured outside the minimap and dock.
+   - 2 px upward movement toward the visible map promotes early.
+4. The candidate spans the complete dock height `(250,372)..(368,448)`, based
+   on captured owner touches at `y=435..445` rather than an assumed finger
+   bound.
+5. Once promoted, the gesture stays captured outside the minimap and dock.
 
-Commits:
+Relevant commits:
 
 - `c0d3ec1` — absolute pointer mapping and immediate direct acquisition.
 - `278f1cb` — post-coordinator capture without touch-path serial output.
 - `01ae7a0` — compact duplicate Move samples.
 - `62d8c8e` — dock/minimap intent arbitration; original map position restored.
-- directional upward-threshold follow-up: pending commit at receipt write time.
+- `3980b90` — 2 px upward promotion based on measured directional stickiness.
+- `428b14a` — rejected coordinated vertical-stack layout experiment.
+- `4c8d144` — restores the uncluttered, owner-preferred layout.
+- `dbc4f67` — extends drag-only candidate arbitration through the full dock.
 
 ## Deterministic gates
 
-Focused tests:
+The full-dock regression was written red first. At `y=442`, the document
+button remained the truthful stationary action, but candidate and upward-drag
+promotion assertions failed. After `dbc4f67`, the focused result was:
 
 ```text
-ambiguous minimap dock presses preserve taps and promote deliberate drags
-10 assertions passed
-
-minimap pointer absolutely centers the viewport at every zoom
-3 assertions passed
+test cases:  1 |  1 passed | 0 failed | 243 skipped
+assertions: 14 | 14 passed | 0 failed
 ```
 
-Full host battery:
+The full host battery then passed:
 
 ```text
 test cases:   244 |   244 passed | 0 failed
-assertions: 92440 | 92440 passed | 0 failed
+assertions: 92444 | 92444 passed | 0 failed
 ```
 
-The pre-arbitration physical gate proved the absolute endpoints:
+The physical classifier for absolute endpoints remains green:
 
 ```text
 TINYDRAW_GATE1_MINIMAP_NAV hit=1 mode=absolute ...
@@ -65,71 +80,92 @@ bottom_right_to_center_x=2760 bottom_right_to_center_y=3398 ...
 edge_x=0 edge_y=0 ... pass=1
 ```
 
-Source: [`gate.log`](gate.log). Its only verdict red was the separately known
-and owner-scheduled overlap-50 cold workload (`604187 us > 500000 us`); every
-other automated verdict bit was 1.
+Source: [`gate.log`](gate.log). Its only verdict red was the separately known,
+owner-scheduled overlap-50 cold workload (`604187 us > 500000 us`); every other
+automated verdict bit was 1.
 
-## Exact owner capture
+The repository-wide formatting gate is not claimed green: it still reports
+pre-existing formatting violations in capture-related files, including
+`esp32/main/vector_v2/vector_v2_app.cpp` and
+`esp32/main/vector_v2/vector_v2_minimap_trace_capture.cpp`.
 
-Artifact: [`owner-capture-arbitrated.log`](owner-capture-arbitrated.log)
+## Capture design
 
 Capture mechanics:
 
 - one compact record per Down/Up or coordinate-changing product-consumed Move;
-- camera and routing flags recorded before and after the coordinator;
+- camera and routing flags recorded before and after the product coordinator;
 - no serial output until eight hands-off seconds;
-- PSRAM record storage allocated after every product workspace.
+- PSRAM record storage allocated after every product workspace;
+- no touch-path filesystem or serial I/O.
 
-Capture result:
+The capture flag bits are pressed `0x01`, minimap `0x02`, pan `0x04`, toolbar
+`0x08`, ink `0x10`, and direct minimap hit `0x20`.
+
+## First owner capture and directional treatment
+
+Artifact: [`owner-capture-arbitrated.log`](owner-capture-arbitrated.log)
 
 ```text
 events=866 offers=4916 duplicate_moves=4050 overflow=0
 append_total_us=50248 append_max_us=78
 ```
 
-This is 10.22 us average capture bookkeeping per offered event including timer
-measurement. There was no capture overflow, watchdog, crash, or serial output
-during interaction.
-
-The capture contains 22 complete gestures: one ink Stroke and 21 minimap
-gestures, including one stationary direct tap. All 14 gestures beginning in
-the dock-overlap candidate zone promoted to minimap control. Candidate Down
-coordinates reached `y=418`, validating that the conflict extends well into
-the dock rather than ending at the rendered frame.
+The capture contained 22 complete gestures: one ink Stroke and 21 minimap
+gestures. All 14 gestures beginning in the dock-overlap candidate zone
+promoted to minimap control. Candidate Down coordinates reached `y=418`,
+proving that the conflict extends well into the dock.
 
 A stationary direct minimap tap at `(332,342)` changed the origin on Down from
-`(2098,3618)` to `(4232,5958)` and retained it on Up (log lines 857–858).
+`(2098,3618)` to `(4232,5958)` and retained it on Up (artifact lines 857–858).
+The owner called this version “way better than anything we had before.”
 
-## Owner verdict and sticky-up treatment
+Across those 14 candidates, the original 8 px threshold delayed ownership by
+118.4815 ms median / 225.993 ms max. Replaying the same events with a 2 px
+upward-only threshold predicted 78.9945 ms median while preserving 8 px for
+horizontal/downward dock ambiguity. That directional rule landed in `3980b90`.
 
-Owner verdict on `62d8c8e`:
+Artifact [`owner-capture-directional.log`](owner-capture-directional.log)
+recorded 726 events from 5,352 offers, 4,626 duplicate Moves, zero overflow,
+71,852 us total append bookkeeping, and 90 us maximum. It also exposed four
+stationary lower touches at `y=435..443`, below the then-current candidate end
+at `y=424` (artifact lines 1055–1061). Those coordinates drove the full-dock
+regression rather than another visual-layout guess.
 
-> This is way better than anything we had before.
+## Final owner capture
 
-The remaining upward stickiness had a measured cause. Across the 14 candidate
-gestures, the 8 px promotion threshold delayed ownership by:
+Artifact: [`owner-capture-full-dock.log`](owner-capture-full-dock.log)
 
 ```text
-median=118.4815 ms
-max=225.993 ms
+events=778 offers=4074 duplicate_moves=3296 overflow=0
+append_total_us=63596 append_max_us=87
 ```
 
-Replaying those exact events with a directional rule—2 px upward toward the
-visible map, 8 px otherwise—predicts:
+The driver reached `TINYDRAW_MINIMAP_CAPTURE_END`, reported
+`failure_marker=False`, and the artifact contains no watchdog, Guru Meditation,
+system-WDT reset, stack-overflow, or capture-overflow marker.
 
-```text
-median=78.9945 ms
-max=225.993 ms
-```
+The 778 records form 32 complete gestures. Six deliberate gestures beginning in
+the dock-overlap zone promoted and changed the camera. Examples:
 
-The unchanged maximum is a gesture that initially moved right/down, so the
-rule correctly preserves the dock ambiguity rather than classifying it as an
-upward return. Physical owner acceptance of the directional follow-up remains
-pending.
+- Down `(288,407)` promoted at `(295,404)` and moved the origin to
+  `(5262,6720)` (artifact lines 540–547).
+- Down `(359,393)` promoted after 3 px upward movement and reached the top
+  world edge (artifact lines 701–707).
+- Down `(359,412)` promoted after 2 px upward movement (artifact lines
+  861–864).
+- Down `(304,408)` promoted and traveled through the minimap to the top edge
+  (artifact lines 1032–1047).
 
-## Verdict
+Captured minimap drags remained owned while the finger crossed the complete
+lower dock, including `y=440` (artifact lines 839–860) and `y=441` (artifact
+lines 995–1001). Four stationary taps at `y=443..445` did not promote and did
+not change the origin (artifact lines 1002–1009), preserving dock intent.
 
-**Provisional yellow.** Absolute mapping and dock arbitration are validated by
-host, hardware classifier, exact capture, and a strong owner improvement
-verdict. Final green waits for one short glass check of upward acquisition at
-100% and 400% with ordinary size/document taps preserved.
+## Deferred refinement pin
+
+The accepted design has an unavoidable semantic boundary: a stationary miss
+whose reported coordinate lands on a dock button remains a dock tap. A future
+touch-target review may revisit visual placement, pressed feedback, or a
+separate explicit minimap affordance. The release implementation should not be
+reopened with unmeasured rectangle or geometry changes.

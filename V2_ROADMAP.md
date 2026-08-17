@@ -1,8 +1,9 @@
 # TinyDraw V2 roadmap
 
-Last updated: 2026-08-17 (owner-locked feature-finishing order: minimap;
-authority + Undo/Redo; autosave; touch targets; PNG; USB exit; final AA/cold
-optimization; see [`PROJECT_STATE.md`](PROJECT_STATE.md#immediate-work-order))
+Last updated: 2026-08-17 (absolute minimap control owner-accepted; next is the
+authority/storage spine + Undo/Redo, then autosave, touch targets, PNG, USB
+exit, and final AA/cold optimization; see
+[`PROJECT_STATE.md`](PROJECT_STATE.md#immediate-work-order))
 
 Branch: `feat/v2-performance-followup`
 
@@ -300,20 +301,19 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       `benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md`,
       `benchmark-results/minimap-touch-target-2026-08-17/RECEIPT.md`, and
       `benchmark-results/minimap-input-leak-2026-08-17/RECEIPT.md`.
-- [ ] Close absolute minimap control after one final directional glass check.
-      **Reworked 2026-08-17:** direct Down now centers immediately and every
-      Move maps absolutely, so world travel no longer depends on zoom or
-      grabbing the tiny viewport box. Bottom-map touches genuinely overlap the
-      size/document dock (captured Down coordinates reached y=418), so a
-      stationary ambiguous press remains a button tap while a deliberate drag
-      promotes to captured minimap navigation. The original map position is
-      restored. The non-perturbing compact capture recorded 866 events / 4,916
-      offers, zero overflow, and all 14 ambiguous drags promoted; owner verdict:
-      “way better than anything we had before.” Exact replay attributed the
-      remaining sticky-up feel to the 8 px threshold (118.482 ms median), so
-      upward return now promotes at 2 px while horizontal/downward ambiguity
-      retains 8 px (predicted median 78.995 ms). Recheck upward acquisition at
-      100%/400% plus ordinary size/document taps, then mark green. See
+- [x] Close absolute minimap control. **Owner-accepted 2026-08-17:** direct
+      Down centers immediately and every Move maps absolutely, so world travel
+      no longer depends on zoom or grabbing the tiny viewport box. The original
+      visual position is restored after a rejected cramped-layout experiment.
+      Stationary overlap presses remain size/document taps; upward return
+      promotes at 2 px, horizontal/downward movement at 8 px, and drag-only
+      arbitration spans the complete right-side dock through y=448. The final
+      compact capture recorded 778 events / 4,074 offers, zero overflow and no
+      failure marker; promoted gestures remained captured through y=441 while
+      four stationary y=443..445 gestures left the origin unchanged. Full host
+      battery: 244 cases / 92,444 assertions. Owner verdict: “this will do …
+      consider this done.” Further refinement is deferred to the later full
+      touch-target review. See
       `benchmark-results/minimap-absolute-pointer-2026-08-17/RECEIPT.md`.
 - [x] Integrate the RTC and one-shot NTP through a narrow asynchronous adapter.
       **Landed 2026-08-17:** Document → Clock owns three explicit controller
