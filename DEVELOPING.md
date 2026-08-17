@@ -153,6 +153,9 @@ asserts those effective settings after each build. This proves our explicit capa
 path against the emulator. It does not prove the physical board's PSRAM capacity, bandwidth, DMA
 behavior, or timing; those remain hardware checks. The active target is the V2 board with a CO5300
 display, CST820 touch controller, 8 MiB octal PSRAM, 16 MiB flash, and AXP2101 power manager.
+The product partition table gives firmware 1.5 MiB while retaining 3 MiB for drawing authority and
+5 MiB for transactional exports. The diagnostic gate gets a 1.75 MiB app slot without shrinking
+either data partition.
 
 The physical build autosaves changed 32×32 world tiles after 500 ms idle. It samples the PMU every
 second only while touch is idle. Short BOOT presses toggle demo recording and a long press
@@ -167,8 +170,10 @@ commits both files only when their authority epoch, revision, and operation coun
 
 A read-only FAT16 volume is synthesized one requested sector at a time and served through TinyUSB
 MSC. Raster V1 exposes `DRAWING.PNG`; Vector V2 exposes `DRAWING.SVG` and `DRAWING.PNG`. Starting
-MSC replaces USB Serial/JTAG because both use the S3's internal PHY. On a battery-powered board,
-eject the volume, power off, then hold BOOT during power-on to recover the ROM flashing port.
+MSC replaces USB Serial/JTAG because both use the S3's internal PHY. Vector V2's on-screen
+**Return to Drawing** action deinitializes TinyUSB and releases that PHY without a reset; a failed
+shutdown stays modal and can be retried. To enter the ROM flashing port on a battery-powered board,
+power off, hold BOOT, and power on.
 
 ## Dependency policy
 

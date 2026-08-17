@@ -272,9 +272,8 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       the read-only medium absent, the app shows explicit connected/ejected
       export state, and **Return to Drawing** deinitializes TinyUSB and releases
       the USB PHY without a reset. Failed shutdown stays modal for a safe retry.
-      Host lifecycle/UI tests and the Vector V2
-      ESP-IDF build pass. The state is volume-level so a future
-      `DRAWING.SVG` + `DRAWING.PNG` disk uses the same lifecycle unchanged.
+      Host lifecycle/UI tests and the Vector V2 ESP-IDF build pass. The state
+      is volume-level and owns the combined `DRAWING.SVG` + `DRAWING.PNG` disk.
 - [x] Make color-dialog drawing imperceptibly fast. **Landed 2026-08-17:**
       exact horizontal-span circle/rounded rasterization and color-only frame
       re-presentation cut physical open time 132.466 → 27.568 ms (4.81×),

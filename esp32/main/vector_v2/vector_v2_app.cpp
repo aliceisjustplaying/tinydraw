@@ -858,8 +858,8 @@ bool apply_chrome_action(vector_v2::ChromeAction action, Point point,
       break;
     }
     case vector_v2::ChromeAction::kExport:
-      // Blocking by design. Progress is operation-based, then the explicit
-      // export mode owns input until the user returns to drawing.
+      // Blocking by design. Progress covers PNG windows and SVG operations,
+      // then the explicit export mode owns input until the user returns.
       return chrome.can_export && run_export(exporter, log, chrome, presenter, clock);
     case vector_v2::ChromeAction::kExitExport:
       chrome.export_status = exporter.stop_usb() ? vector_v2::ChromeExportStatus::kIdle
