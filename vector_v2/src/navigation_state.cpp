@@ -18,6 +18,30 @@ int rounded_divide(std::int64_t numerator, int denominator) {
   return static_cast<int>((numerator + denominator / 2) / denominator);
 }
 
+constexpr std::array<ZoomLevel, 4> kTiledZooms{
+    ZoomLevel::k50Percent,
+    ZoomLevel::k100Percent,
+    ZoomLevel::k200Percent,
+    ZoomLevel::k400Percent,
+};
+
+bool valid_zoom(ZoomLevel zoom) {
+  switch (zoom) {
+    case ZoomLevel::k25Percent:
+    case ZoomLevel::k50Percent:
+    case ZoomLevel::k100Percent:
+    case ZoomLevel::k200Percent:
+    case ZoomLevel::k400Percent:
+      return true;
+  }
+  return false;
+}
+
+bool valid_focus(NavigationPoint point) {
+  return point.x >= 0 && point.x <= kWorldWidth * 4 && point.y >= 0 &&
+         point.y <= kWorldHeight * 4;
+}
+
 std::size_t tiled_zoom_index(ZoomLevel zoom) {
   switch (zoom) {
     case ZoomLevel::k50Percent:
@@ -61,6 +85,39 @@ NavigationExtent NavigationState::extent() const {
           .left = origin_.x > 0,
           .right = origin_.x < maximum_x,
           .bottom = origin_.y < maximum_y};
+}
+
+NavigationSnapshot NavigationState::snapshot() const {
+  return {
+      .zoom = zoom_,
+      .origin = origin_,
+      .focus_quarter_world = focus_quarter_world_,
+      .remembered_origins = remembered_origins_,
+      .remembered_focuses = remembered_focuses_,
+      .remembered_valid = remembered_valid_,
+  };
+}
+
+bool NavigationState::restore(const NavigationSnapshot& snapshot) {
+  if (!valid_zoom(snapshot.zoom) || !valid_focus(snapshot.focus_quarter_world) ||
+      clamp_origin(snapshot.zoom, snapshot.origin.x, snapshot.origin.y) != snapshot.origin) {
+    return false;
+  }
+  for (std::size_t index = 0; index < kTiledZooms.size(); ++index) {
+    if (!valid_focus(snapshot.remembered_focuses[index]) ||
+        clamp_origin(kTiledZooms[index], snapshot.remembered_origins[index].x,
+                     snapshot.remembered_origins[index].y) !=
+            snapshot.remembered_origins[index]) {
+      return false;
+    }
+  }
+  zoom_ = snapshot.zoom;
+  origin_ = snapshot.origin;
+  focus_quarter_world_ = snapshot.focus_quarter_world;
+  remembered_origins_ = snapshot.remembered_origins;
+  remembered_focuses_ = snapshot.remembered_focuses;
+  remembered_valid_ = snapshot.remembered_valid;
+  return true;
 }
 
 bool NavigationState::valid_panel_focus(NavigationPoint point) {

@@ -46,6 +46,17 @@ struct AuthorityReadView {
   bool operator==(const AuthorityReadView&) const = default;
 };
 
+// Validated persistence input. Records are painter ordered and their sample
+// offsets are contiguous within samples. The active prefix may end before the
+// retained Redo tail, but only at a whole-Stroke boundary.
+struct AuthorityRestore {
+  OperationLogEpoch epoch{};
+  DocumentRevision generation{};
+  std::size_t active_operation_count = 0;
+  std::span<const OperationRecord> records{};
+  std::span<const CompactOperationSample> samples{};
+};
+
 struct HistoryChange {
   DocumentRevision generation{};
   std::size_t previous_active_operation_count = 0;
@@ -149,6 +160,9 @@ class OperationLog {
   // rebases the represented range.
   [[nodiscard]] std::optional<OperationReplayRange> active_replay_range(
       OperationLogEpoch requested_epoch) const;
+  // Atomically replaces authority from a validated persistence snapshot.
+  // Failure leaves active and retained history unchanged.
+  [[nodiscard]] bool restore(const AuthorityRestore& restore);
   // Resets empty authority to a snapshot revision. Fails while a
   // PreparedAppend owns the pending slot. Existing operations are discarded.
   [[nodiscard]] bool reset(DocumentRevision revision = {});
