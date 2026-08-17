@@ -295,8 +295,8 @@ std::optional<DecodedHeader> decode_header(std::array<std::byte, kAuthorityJourn
   }
   const std::uint32_t total_bytes = get_u32(bytes, 12U);
   const std::uint32_t payload_bytes = get_u32(bytes, 16U);
-  if (total_bytes != kAuthorityJournalHeaderBytes + payload_bytes +
-                         kAuthorityJournalCommitMarkerBytes) {
+  if (total_bytes < kAuthorityJournalHeaderBytes + payload_bytes +
+                        kAuthorityJournalCommitMarkerBytes) {
     return std::nullopt;
   }
   return DecodedHeader{
@@ -542,11 +542,12 @@ bool encode_authority_journal(JournalChange change, const OperationLog& log,
                               std::span<std::byte> output) {
   const auto description = describe_change(change, log);
   const auto size = authority_journal_encoded_size(change, log);
-  if (!description.has_value() || !size.has_value() || output.size() != *size || sequence == 0U ||
+  if (!description.has_value() || !size.has_value() || output.size() < *size ||
+      output.size() > std::numeric_limits<std::uint32_t>::max() || sequence == 0U ||
       !valid_state(state)) {
     return false;
   }
-  std::fill(output.begin(), output.end(), std::byte{0});
+  std::fill(output.begin(), output.end(), std::byte{0xFF});
   auto header = output.first(kAuthorityJournalHeaderBytes);
   auto payload = output.subspan(kAuthorityJournalHeaderBytes, description->payload_bytes);
   put_u32(header, 0U, kTransactionMagic);
@@ -636,7 +637,8 @@ JournalRecovery recover_authority_journal(const AuthorityJournalSource& source, 
                              result, payload_crc.has_value());
     }
     std::array<std::byte, kAuthorityJournalCommitMarkerBytes> marker{};
-    if (!source.read(payload_offset + header->payload_bytes, marker)) {
+    const std::size_t marker_offset = offset + header->total_bytes - marker.size();
+    if (!source.read(marker_offset, marker)) {
       return failed_recovery(JournalRecoveryStatus::kIoError, result, false);
     }
     std::uint32_t transaction_crc = crc32_update(0xFFFF'FFFFU, raw_header);
