@@ -351,9 +351,8 @@ struct AppStorage {
         records == nullptr || samples == nullptr || input_samples == nullptr ||
         rerender_entries == nullptr || touch_events == nullptr || !ink_trace_ready ||
         !minimap_trace_ready || affected_keys == nullptr || settle_op_alpha == nullptr ||
-        settle_accumulated == nullptr ||
-        settle_red == nullptr || settle_green == nullptr || settle_blue == nullptr ||
-        settle_pixels == nullptr) {
+        settle_accumulated == nullptr || settle_red == nullptr || settle_green == nullptr ||
+        settle_blue == nullptr || settle_pixels == nullptr) {
       return false;
     }
     for (std::size_t index = 0; index < vector_v2::kMaterializedTileIdentityCount; ++index) {
@@ -795,179 +794,214 @@ LivePresentationTiming present_history_controls(VectorV2Presenter& presenter,
   return timing;
 }
 
-bool apply_chrome_action(vector_v2::ChromeAction action, Point point,
-                         vector_v2::ChromeState& chrome, OperationLog& log,
-                         MaterializedCanvas& canvas, vector_v2::TileProducer& producer,
-                         std::span<const std::uint16_t> blank_snapshot,
-                         std::span<std::uint16_t> history_scratch, VectorV2Presenter& presenter,
-                         VectorV2Export& exporter, TimeSyncController& time_sync, RtcClock& clock) {
-  const auto toggle = [&](vector_v2::ChromePopup popup) {
-    chrome.popup = chrome.popup == popup ? vector_v2::ChromePopup::kNone : popup;
-  };
-  const bool palette_only_refresh = action == vector_v2::ChromeAction::kSelectColor ||
-                                    action == vector_v2::ChromeAction::kToggleColors ||
-                                    action == vector_v2::ChromeAction::kPreviousPalette ||
-                                    action == vector_v2::ChromeAction::kNextPalette;
-  switch (action) {
-    case vector_v2::ChromeAction::kSelectDraw:
-      chrome.tool = vector_v2::ChromeTool::kDraw;
-      chrome.popup = vector_v2::ChromePopup::kNone;
-      break;
-    case vector_v2::ChromeAction::kSelectErase:
-      chrome.tool = vector_v2::ChromeTool::kErase;
-      chrome.popup = vector_v2::ChromePopup::kNone;
-      break;
-    case vector_v2::ChromeAction::kSelectPan:
-      chrome.tool = vector_v2::ChromeTool::kPan;
-      chrome.popup = vector_v2::ChromePopup::kNone;
-      break;
-    case vector_v2::ChromeAction::kSelectColor:
-      if (const auto color = vector_v2::chrome_color_at({point.x, point.y}, chrome);
-          color.has_value()) {
-        chrome.color_index = *color;
+class ChromeController {
+ public:
+  ChromeController(vector_v2::ChromeState& chrome, OperationLog& log, MaterializedCanvas& canvas,
+                   vector_v2::TileProducer& producer, std::span<const std::uint16_t> blank_snapshot,
+                   std::span<std::uint16_t> history_scratch, VectorV2Presenter& presenter,
+                   VectorV2Export& exporter, TimeSyncController& time_sync, RtcClock& clock)
+      : chrome_(chrome),
+        log_(log),
+        canvas_(canvas),
+        producer_(producer),
+        blank_snapshot_(blank_snapshot),
+        history_scratch_(history_scratch),
+        presenter_(presenter),
+        exporter_(exporter),
+        time_sync_(time_sync),
+        clock_(clock) {}
+
+  [[nodiscard]] bool apply(vector_v2::ChromeAction action, Point point) {
+    auto& chrome = chrome_;
+    auto& log = log_;
+    auto& canvas = canvas_;
+    auto& producer = producer_;
+    const auto blank_snapshot = blank_snapshot_;
+    const auto history_scratch = history_scratch_;
+    auto& presenter = presenter_;
+    auto& exporter = exporter_;
+    auto& time_sync = time_sync_;
+    auto& clock = clock_;
+    const auto toggle = [&](vector_v2::ChromePopup popup) {
+      chrome.popup = chrome.popup == popup ? vector_v2::ChromePopup::kNone : popup;
+    };
+    const bool palette_only_refresh = action == vector_v2::ChromeAction::kSelectColor ||
+                                      action == vector_v2::ChromeAction::kToggleColors ||
+                                      action == vector_v2::ChromeAction::kPreviousPalette ||
+                                      action == vector_v2::ChromeAction::kNextPalette;
+    switch (action) {
+      case vector_v2::ChromeAction::kSelectDraw:
         chrome.tool = vector_v2::ChromeTool::kDraw;
         chrome.popup = vector_v2::ChromePopup::kNone;
-      }
-      break;
-    case vector_v2::ChromeAction::kToggleTools:
-      toggle(vector_v2::ChromePopup::kTools);
-      break;
-    case vector_v2::ChromeAction::kToggleColors:
-      toggle(vector_v2::ChromePopup::kColors);
-      break;
-    case vector_v2::ChromeAction::kToggleSizes:
-      toggle(vector_v2::ChromePopup::kSizes);
-      break;
-    case vector_v2::ChromeAction::kToggleDocument:
-      toggle(vector_v2::ChromePopup::kDocument);
-      break;
-    case vector_v2::ChromeAction::kSelectSmall:
-    case vector_v2::ChromeAction::kSelectMedium:
-    case vector_v2::ChromeAction::kSelectLarge:
-    case vector_v2::ChromeAction::kSelectExtraLarge:
-      chrome.size =
-          action == vector_v2::ChromeAction::kSelectSmall    ? vector_v2::ChromeSize::kSmall
-          : action == vector_v2::ChromeAction::kSelectMedium ? vector_v2::ChromeSize::kMedium
-          : action == vector_v2::ChromeAction::kSelectLarge  ? vector_v2::ChromeSize::kLarge
-                                                             : vector_v2::ChromeSize::kExtraLarge;
-      chrome.popup = vector_v2::ChromePopup::kNone;
-      break;
-    case vector_v2::ChromeAction::kPreviousPalette:
-      chrome.palette_page = 0;
-      break;
-    case vector_v2::ChromeAction::kNextPalette:
-      chrome.palette_page = 1;
-      break;
-    case vector_v2::ChromeAction::kNewDrawing:
-      chrome.popup = vector_v2::ChromePopup::kNone;
-      chrome.confirm_new = true;
-      break;
-    case vector_v2::ChromeAction::kCancelNewDrawing:
-      chrome.confirm_new = false;
-      break;
-    case vector_v2::ChromeAction::kConfirmNewDrawing: {
-      // New advances beyond both authorities even when committed-overlay ink
-      // still leaves the canvas one or more chunks behind.
-      const std::uint32_t current_generation =
-          std::max(log.current_revision().value, canvas.current_revision().value);
-      if (current_generation == std::numeric_limits<std::uint32_t>::max()) {
+        break;
+      case vector_v2::ChromeAction::kSelectErase:
+        chrome.tool = vector_v2::ChromeTool::kErase;
+        chrome.popup = vector_v2::ChromePopup::kNone;
+        break;
+      case vector_v2::ChromeAction::kSelectPan:
+        chrome.tool = vector_v2::ChromeTool::kPan;
+        chrome.popup = vector_v2::ChromePopup::kNone;
+        break;
+      case vector_v2::ChromeAction::kSelectColor:
+        if (const auto color = vector_v2::chrome_color_at({point.x, point.y}, chrome);
+            color.has_value()) {
+          chrome.color_index = *color;
+          chrome.tool = vector_v2::ChromeTool::kDraw;
+          chrome.popup = vector_v2::ChromePopup::kNone;
+        }
+        break;
+      case vector_v2::ChromeAction::kToggleTools:
+        toggle(vector_v2::ChromePopup::kTools);
+        break;
+      case vector_v2::ChromeAction::kToggleColors:
+        toggle(vector_v2::ChromePopup::kColors);
+        break;
+      case vector_v2::ChromeAction::kToggleSizes:
+        toggle(vector_v2::ChromePopup::kSizes);
+        break;
+      case vector_v2::ChromeAction::kToggleDocument:
+        toggle(vector_v2::ChromePopup::kDocument);
+        break;
+      case vector_v2::ChromeAction::kSelectSmall:
+      case vector_v2::ChromeAction::kSelectMedium:
+      case vector_v2::ChromeAction::kSelectLarge:
+      case vector_v2::ChromeAction::kSelectExtraLarge:
+        chrome.size =
+            action == vector_v2::ChromeAction::kSelectSmall    ? vector_v2::ChromeSize::kSmall
+            : action == vector_v2::ChromeAction::kSelectMedium ? vector_v2::ChromeSize::kMedium
+            : action == vector_v2::ChromeAction::kSelectLarge  ? vector_v2::ChromeSize::kLarge
+                                                               : vector_v2::ChromeSize::kExtraLarge;
+        chrome.popup = vector_v2::ChromePopup::kNone;
+        break;
+      case vector_v2::ChromeAction::kPreviousPalette:
+        chrome.palette_page = 0;
+        break;
+      case vector_v2::ChromeAction::kNextPalette:
+        chrome.palette_page = 1;
+        break;
+      case vector_v2::ChromeAction::kNewDrawing:
+        chrome.popup = vector_v2::ChromePopup::kNone;
+        chrome.confirm_new = true;
+        break;
+      case vector_v2::ChromeAction::kCancelNewDrawing:
         chrome.confirm_new = false;
         break;
+      case vector_v2::ChromeAction::kConfirmNewDrawing: {
+        // New advances beyond both authorities even when committed-overlay ink
+        // still leaves the canvas one or more chunks behind.
+        const std::uint32_t current_generation =
+            std::max(log.current_revision().value, canvas.current_revision().value);
+        if (current_generation == std::numeric_limits<std::uint32_t>::max()) {
+          chrome.confirm_new = false;
+          break;
+        }
+        const DocumentRevision revision{current_generation + 1U};
+        if (!vector_v2::restore_document_snapshot(log, canvas, revision, blank_snapshot) ||
+            !producer.reset_uniform_baseline(revision)) {
+          return false;
+        }
+        static_cast<void>(sync_history_controls(chrome, log));
+        chrome.confirm_new = false;
+        chrome.popup = vector_v2::ChromePopup::kNone;
+        break;
       }
-      const DocumentRevision revision{current_generation + 1U};
-      if (!vector_v2::restore_document_snapshot(log, canvas, revision, blank_snapshot) ||
-          !producer.reset_uniform_baseline(revision)) {
-        return false;
-      }
-      static_cast<void>(sync_history_controls(chrome, log));
-      chrome.confirm_new = false;
-      chrome.popup = vector_v2::ChromePopup::kNone;
-      break;
-    }
-    case vector_v2::ChromeAction::kExport:
-      // Blocking by design. Progress covers PNG windows and SVG operations,
-      // then the explicit export mode owns input until the user returns.
-      return chrome.can_export && run_export(exporter, log, chrome, presenter, clock);
-    case vector_v2::ChromeAction::kExitExport:
-      chrome.export_status = exporter.stop_usb() ? vector_v2::ChromeExportStatus::kIdle
-                                                 : vector_v2::ChromeExportStatus::kExitError;
-      chrome.popup = vector_v2::ChromePopup::kNone;
-      break;
-    case vector_v2::ChromeAction::kSyncTime:
-      chrome.popup = vector_v2::ChromePopup::kNone;
-      if (chrome.can_sync_time) {
-        static_cast<void>(time_sync.start());
-        chrome.time_sync_status = chrome_time_sync_status(time_sync.status());
-      }
-      break;
-    case vector_v2::ChromeAction::kZoomIn: {
-      const ZoomLevel target = vector_v2::next_zoom(presenter.zoom());
-      if (target == presenter.zoom()) {
-        return true;
-      }
-      const auto timing = presenter.set_zoom(target, chrome, now_us());
-      print_presentation("zoom-ui", presenter, timing);
-      return timing.passed;
-    }
-    case vector_v2::ChromeAction::kZoomOut: {
-      const ZoomLevel target = vector_v2::previous_zoom(presenter.zoom());
-      if (target == presenter.zoom()) {
-        return true;
-      }
-      const auto timing = presenter.set_zoom(target, chrome, now_us());
-      print_presentation("zoom-ui", presenter, timing);
-      return timing.passed;
-    }
-    case vector_v2::ChromeAction::kUndo:
-    case vector_v2::ChromeAction::kRedo: {
-      const bool undo = action == vector_v2::ChromeAction::kUndo;
-      const bool enabled = undo ? chrome.can_undo : chrome.can_redo;
-      const bool authority_enabled = undo ? log.can_undo() : log.can_redo();
-      if (!enabled || !authority_enabled) {
-        if (!sync_history_controls(chrome, log)) {
+      case vector_v2::ChromeAction::kExport:
+        // Blocking by design. Progress covers PNG windows and SVG operations,
+        // then the explicit export mode owns input until the user returns.
+        return chrome.can_export && run_export(exporter, log, chrome, presenter, clock);
+      case vector_v2::ChromeAction::kExitExport:
+        chrome.export_status = exporter.stop_usb() ? vector_v2::ChromeExportStatus::kIdle
+                                                   : vector_v2::ChromeExportStatus::kExitError;
+        chrome.popup = vector_v2::ChromePopup::kNone;
+        break;
+      case vector_v2::ChromeAction::kSyncTime:
+        chrome.popup = vector_v2::ChromePopup::kNone;
+        if (chrome.can_sync_time) {
+          static_cast<void>(time_sync.start());
+          chrome.time_sync_status = chrome_time_sync_status(time_sync.status());
+        }
+        break;
+      case vector_v2::ChromeAction::kZoomIn: {
+        const ZoomLevel target = vector_v2::next_zoom(presenter.zoom());
+        if (target == presenter.zoom()) {
           return true;
         }
-        const auto timing = present_history_controls(presenter, chrome, now_us());
-        print_presentation("history-stale-guard", presenter, timing);
+        const auto timing = presenter.set_zoom(target, chrome, now_us());
+        print_presentation("zoom-ui", presenter, timing);
         return timing.passed;
       }
-      const auto change = vector_v2::move_history_incrementally(
-          log, canvas,
-          undo ? vector_v2::HistoryDirection::kUndo : vector_v2::HistoryDirection::kRedo,
-          history_scratch);
-      if (!change.has_value()) {
+      case vector_v2::ChromeAction::kZoomOut: {
+        const ZoomLevel target = vector_v2::previous_zoom(presenter.zoom());
+        if (target == presenter.zoom()) {
+          return true;
+        }
+        const auto timing = presenter.set_zoom(target, chrome, now_us());
+        print_presentation("zoom-ui", presenter, timing);
+        return timing.passed;
+      }
+      case vector_v2::ChromeAction::kUndo:
+      case vector_v2::ChromeAction::kRedo: {
+        const bool undo = action == vector_v2::ChromeAction::kUndo;
+        const bool enabled = undo ? chrome.can_undo : chrome.can_redo;
+        const bool authority_enabled = undo ? log.can_undo() : log.can_redo();
+        if (!enabled || !authority_enabled) {
+          if (!sync_history_controls(chrome, log)) {
+            return true;
+          }
+          const auto timing = present_history_controls(presenter, chrome, now_us());
+          print_presentation("history-stale-guard", presenter, timing);
+          return timing.passed;
+        }
+        const auto change = vector_v2::move_history_incrementally(
+            log, canvas,
+            undo ? vector_v2::HistoryDirection::kUndo : vector_v2::HistoryDirection::kRedo,
+            history_scratch);
+        if (!change.has_value()) {
+          static_cast<void>(sync_history_controls(chrome, log));
+          return false;
+        }
+        chrome.popup = vector_v2::ChromePopup::kNone;
         static_cast<void>(sync_history_controls(chrome, log));
-        return false;
+        const auto canvas_timing = presenter.refresh_region(
+            vector_v2::operation_level_bounds(change->affected_world_bounds, presenter.zoom()),
+            chrome, now_us());
+        print_presentation(undo ? "undo-canvas" : "redo-canvas", presenter, canvas_timing);
+        if (!canvas_timing.passed) {
+          return false;
+        }
+        const auto dock_timing = present_history_controls(presenter, chrome, now_us());
+        print_presentation(undo ? "undo-dock" : "redo-dock", presenter, dock_timing);
+        return dock_timing.passed;
       }
-      chrome.popup = vector_v2::ChromePopup::kNone;
-      static_cast<void>(sync_history_controls(chrome, log));
-      const auto canvas_timing = presenter.refresh_region(
-          vector_v2::operation_level_bounds(change->affected_world_bounds, presenter.zoom()),
-          chrome, now_us());
-      print_presentation(undo ? "undo-canvas" : "redo-canvas", presenter, canvas_timing);
-      if (!canvas_timing.passed) {
-        return false;
-      }
-      const auto dock_timing = present_history_controls(presenter, chrome, now_us());
-      print_presentation(undo ? "undo-dock" : "redo-dock", presenter, dock_timing);
-      return dock_timing.passed;
+      case vector_v2::ChromeAction::kNone:
+        break;
     }
-    case vector_v2::ChromeAction::kNone:
-      break;
+    auto timing =
+        palette_only_refresh
+            ? presenter.present_frame_region(
+                  {0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight}, chrome, now_us())
+            : LivePresentationTiming{};
+    if (!palette_only_refresh || !timing.passed) {
+      // A cached pan leaves frame_ ring-addressed; only a full compose may
+      // materialize it before ordinary linear presentation.
+      timing = presenter.refresh(chrome, now_us());
+    }
+    print_presentation("chrome", presenter, timing);
+    return timing.passed;
   }
-  auto timing =
-      palette_only_refresh
-          ? presenter.present_frame_region(
-                {0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight}, chrome, now_us())
-          : LivePresentationTiming{};
-  if (!palette_only_refresh || !timing.passed) {
-    // A cached pan leaves frame_ ring-addressed; only a full compose may
-    // materialize it before ordinary linear presentation.
-    timing = presenter.refresh(chrome, now_us());
-  }
-  print_presentation("chrome", presenter, timing);
-  return timing.passed;
-}
+
+ private:
+  vector_v2::ChromeState& chrome_;
+  OperationLog& log_;
+  MaterializedCanvas& canvas_;
+  vector_v2::TileProducer& producer_;
+  std::span<const std::uint16_t> blank_snapshot_;
+  std::span<std::uint16_t> history_scratch_;
+  VectorV2Presenter& presenter_;
+  VectorV2Export& exporter_;
+  TimeSyncController& time_sync_;
+  RtcClock& clock_;
+};
 
 }  // namespace
 
@@ -1005,9 +1039,8 @@ void run_vector_v2_app() {
   vector_v2::JournalState recovered_journal_state{};
   const VectorV2AutosaveRestoreStatus autosave_restore =
       autosave.restore(log, recovered_journal_state);
-  const bool autosave_restored =
-      autosave_restore == VectorV2AutosaveRestoreStatus::kRestored ||
-      autosave_restore == VectorV2AutosaveRestoreStatus::kRecoveredTail;
+  const bool autosave_restored = autosave_restore == VectorV2AutosaveRestoreStatus::kRestored ||
+                                 autosave_restore == VectorV2AutosaveRestoreStatus::kRecoveredTail;
   if (autosave_restored && !navigation.restore(recovered_journal_state.navigation)) {
     std::printf("TINYDRAW_AUTOSAVE_RESTORE_FAIL reason=navigation\n");
     return;
@@ -1015,8 +1048,7 @@ void run_vector_v2_app() {
   std::uint16_t next_gesture_id = autosave_restored ? recovered_journal_state.next_stroke_id : 1U;
   if (autosave_restore == VectorV2AutosaveRestoreStatus::kUnavailable ||
       autosave_restore == VectorV2AutosaveRestoreStatus::kError) {
-    std::printf("TINYDRAW_AUTOSAVE_DISABLED status=%u\n",
-                static_cast<unsigned>(autosave_restore));
+    std::printf("TINYDRAW_AUTOSAVE_DISABLED status=%u\n", static_cast<unsigned>(autosave_restore));
   } else {
     std::printf(
         "TINYDRAW_AUTOSAVE_RESTORE status=%u generation=%lu active=%lu retained=%lu "
@@ -1113,13 +1145,11 @@ void run_vector_v2_app() {
   };
 #endif
   const auto startup_overview =
-      autosave_restored
-          ? std::span(storage.overview_scratch, vector_v2::kOverviewPixels)
-          : std::span(storage.snapshot, vector_v2::kOverviewPixels);
+      autosave_restored ? std::span(storage.overview_scratch, vector_v2::kOverviewPixels)
+                        : std::span(storage.snapshot, vector_v2::kOverviewPixels);
   const bool restored_overview =
       !autosave_restored || vector_v2::replay_active_overview(log, startup_overview);
-  if (!restored_overview ||
-      !canvas.publish_overview(log.current_revision(), startup_overview) ||
+  if (!restored_overview || !canvas.publish_overview(log.current_revision(), startup_overview) ||
       !log.ready() || !presenter.ready() || !touch.ready() || !touch_sampler.start() ||
       !builder.ready() || !producer.ready()) {
     std::printf(
@@ -1148,6 +1178,11 @@ void run_vector_v2_app() {
   static_cast<void>(sync_history_controls(chrome, log));
   chrome.battery_percentage = initial_power.percentage;
   chrome.battery_charging = initial_power.charging;
+  ChromeController chrome_controller(
+      chrome, log, canvas, producer,
+      std::span<const std::uint16_t>(storage.snapshot, vector_v2::kOverviewPixels),
+      std::span<std::uint16_t>(storage.overview_scratch, vector_v2::kOverviewPixels), presenter,
+      exporter, time_sync, clock);
   const auto current_journal_state = [&] {
     return vector_v2::JournalState{
         .navigation = navigation.snapshot(),
@@ -1461,8 +1496,8 @@ void run_vector_v2_app() {
         const auto timing = presenter.set_zoom(target, chrome, loop_us);
         print_presentation("zoom", presenter, timing);
         print_live_ledger("zoom");
-        static_cast<void>(autosave.submit(
-            {.kind = vector_v2::JournalChangeKind::kState}, log, current_journal_state()));
+        static_cast<void>(autosave.submit({.kind = vector_v2::JournalChangeKind::kState}, log,
+                                          current_journal_state()));
       }
     }
 
@@ -1529,8 +1564,8 @@ void run_vector_v2_app() {
           minimap_pressed = true;
           toolbar_start = point;
           begin_pan(point);
-          pan_metrics.include(presenter.pan_minimap_from(
-              pan_start_x, pan_start_y, pan_start, point, chrome, event_us));
+          pan_metrics.include(presenter.pan_minimap_from(pan_start_x, pan_start_y, pan_start, point,
+                                                         chrome, event_us));
         } else if (vector_v2::chrome_minimap_dock_drag_candidate({point.x, point.y}, chrome)) {
           // This physical finger zone overlaps the size/document buttons.
           // Preserve a stationary toolbar tap, but let deliberate movement
@@ -1590,18 +1625,17 @@ void run_vector_v2_app() {
         last_touch = point;
         pan_metrics.include(presenter.pan_minimap_from(pan_start_x, pan_start_y, pan_start, point,
                                                        chrome, event_us));
-      } else if (minimap_dock_candidate &&
-                 (point.x != last_touch.x || point.y != last_touch.y)) {
-        if (vector_v2::chrome_promotes_minimap_dock_drag(
-                {toolbar_start.x, toolbar_start.y}, {point.x, point.y}, chrome)) {
+      } else if (minimap_dock_candidate && (point.x != last_touch.x || point.y != last_touch.y)) {
+        if (vector_v2::chrome_promotes_minimap_dock_drag({toolbar_start.x, toolbar_start.y},
+                                                         {point.x, point.y}, chrome)) {
           minimap_dock_candidate = false;
           toolbar_pressed = false;
           toolbar_samples = 0;
           minimap_pressed = true;
           begin_pan(toolbar_start);
           last_touch = point;
-          pan_metrics.include(presenter.pan_minimap_from(
-              pan_start_x, pan_start_y, pan_start, point, chrome, event_us));
+          pan_metrics.include(presenter.pan_minimap_from(pan_start_x, pan_start_y, pan_start, point,
+                                                         chrome, event_us));
         } else {
           toolbar_sum.x += point.x;
           toolbar_sum.y += point.y;
@@ -1687,8 +1721,8 @@ void run_vector_v2_app() {
         panning = false;
         print_pan_baseline(presenter, pan_metrics);
         print_live_ledger("minimap_pointer_end");
-        static_cast<void>(autosave.submit(
-            {.kind = vector_v2::JournalChangeKind::kState}, log, current_journal_state()));
+        static_cast<void>(autosave.submit({.kind = vector_v2::JournalChangeKind::kState}, log,
+                                          current_journal_state()));
         std::fflush(stdout);
       } else if (toolbar_pressed) {
         toolbar_pressed = false;
@@ -1706,15 +1740,10 @@ void run_vector_v2_app() {
               autosave.checkpoint_required()) {
             static_cast<void>(autosave.submit_checkpoint(log, journal_before));
           }
-          const bool save_ready = action != vector_v2::ChromeAction::kExport ||
-                                  !autosave.ready() || autosave.flush(5'000U);
+          const bool save_ready = action != vector_v2::ChromeAction::kExport || !autosave.ready() ||
+                                  autosave.flush(5'000U);
           const bool boundary_ready = save_ready && (!history_action || drain_history_boundary());
-          const bool applied =
-              boundary_ready &&
-              apply_chrome_action(action, tap, chrome, log, canvas, producer,
-                                  std::span(storage.snapshot, vector_v2::kOverviewPixels),
-                                  std::span(storage.overview_scratch, vector_v2::kOverviewPixels),
-                                  presenter, exporter, time_sync, clock);
+          const bool applied = boundary_ready && chrome_controller.apply(action, tap);
           if (applied) {
             const vector_v2::AuthorityReadView authority_after = log.read_view();
             const vector_v2::JournalState journal_after = current_journal_state();
@@ -1725,8 +1754,8 @@ void run_vector_v2_app() {
                       : vector_v2::JournalChangeKind::kHistory;
               static_cast<void>(autosave.submit({.kind = kind}, log, journal_after));
             } else if (journal_after != journal_before) {
-              static_cast<void>(autosave.submit(
-                  {.kind = vector_v2::JournalChangeKind::kState}, log, journal_after));
+              static_cast<void>(autosave.submit({.kind = vector_v2::JournalChangeKind::kState}, log,
+                                                journal_after));
             }
           }
           if (applied &&
@@ -1739,8 +1768,8 @@ void run_vector_v2_app() {
         panning = false;
         print_pan_baseline(presenter, pan_metrics);
         print_live_ledger("pan_end");
-        static_cast<void>(autosave.submit(
-            {.kind = vector_v2::JournalChangeKind::kState}, log, current_journal_state()));
+        static_cast<void>(autosave.submit({.kind = vector_v2::JournalChangeKind::kState}, log,
+                                          current_journal_state()));
         std::fflush(stdout);
       } else if (ink.active()) {
         LiftBaselineTiming measured_lift{
@@ -1812,10 +1841,9 @@ void run_vector_v2_app() {
         measured_lift.refresh_wall_us = esp_timer_get_time() - refresh_started;
         if (log.operation_count() > stroke_first_operation) {
           const std::int64_t autosave_started = esp_timer_get_time();
-          const bool queued = autosave.submit(
-              {.kind = vector_v2::JournalChangeKind::kAppendStroke,
-               .first_operation = stroke_first_operation},
-              log, current_journal_state());
+          const bool queued = autosave.submit({.kind = vector_v2::JournalChangeKind::kAppendStroke,
+                                               .first_operation = stroke_first_operation},
+                                              log, current_journal_state());
           measured_lift.stroke_logging_us = esp_timer_get_time() - autosave_started;
           if (!queued) {
             std::printf("TINYDRAW_AUTOSAVE_QUEUE_FAIL site=stroke generation=%lu\n",
@@ -1856,10 +1884,9 @@ void run_vector_v2_app() {
 #ifdef TINYDRAW_VECTOR_V2_MINIMAP_TRACE_CAPTURE
     if (sample_ready) {
       const std::int64_t capture_started_us = esp_timer_get_time();
-      minimap_trace.record(sampled_touch->timestamp_us, sampled_touch->sequence,
-                           sampled_touch->kind, point.x, point.y,
-                           vector_v2::zoom_percent(presenter.zoom()), capture_before,
-                           capture_state(point));
+      minimap_trace.record(
+          sampled_touch->timestamp_us, sampled_touch->sequence, sampled_touch->kind, point.x,
+          point.y, vector_v2::zoom_percent(presenter.zoom()), capture_before, capture_state(point));
       minimap_trace.include_append_us(
           static_cast<std::uint32_t>(esp_timer_get_time() - capture_started_us));
     }
