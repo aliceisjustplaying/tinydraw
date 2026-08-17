@@ -52,7 +52,6 @@ enum class AppEventKind : std::uint8_t {
   kDemoReplayStarted,
   kDemoReplayStopped,
   kPowerStatusChanged,
-  kRefinementPublished,
 };
 
 struct AppEvent {
@@ -587,9 +586,6 @@ void run_hardware_app() {
     }
     if (app_event.kind == AppEventKind::kResetForDemo) {
       reset_for_demo();
-      continue;
-    }
-    if (app_event.kind == AppEventKind::kRefinementPublished) {
       continue;
     }
     if (app_event.kind == AppEventKind::kPowerStatusChanged) {
