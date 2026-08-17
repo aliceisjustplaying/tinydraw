@@ -1,7 +1,7 @@
 # TinyDraw V2 roadmap
 
-Last updated: 2026-08-17 (feature implementation complete; cleanup, known bug
-fixes, release gates, and final optimization remain; see
+Last updated: 2026-08-17 (feature implementation and cleanup complete; known
+bug fixes, release gates, and final optimization remain; see
 [`PROJECT_STATE.md`](PROJECT_STATE.md#immediate-work-order))
 
 V2 is the vector-authoritative ESP32 product generation. Raster-authoritative
@@ -223,9 +223,9 @@ prefix, retained Redo tail, monotonic generation, and prepared history changes.
       after Undo truncates the redo branch and begins a new epoch.
 - [x] Compute whole-gesture damage as the union of its chunks and invalidate only
       intersecting overview cells and tile groups.
-- [ ] Make New/Clear reset operation authority, overview, cache catalog, camera,
+- [x] Make New/Clear reset operation authority, overview, cache catalog, camera,
       history, and autosave state transactionally.
-- [ ] Remove raster-only snapshot restore from product V2 load/Undo flows.
+- [x] Remove raster-only snapshot restore from product V2 load/Undo flows.
 
 ## Phase 5 — Undo, persistence, autosave
 
