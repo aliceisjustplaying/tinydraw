@@ -1227,10 +1227,12 @@ SvgVerification verify_svg(VectorV2Export& exporter, std::size_t total_bytes,
 }
 
 bool run_export_encode_gate(VectorV2Export& exporter, OperationLog& log) {
+  const auto expected_paths = vector_v2::svg_path_count(log);
   const VectorV2ExportStats stats = exporter.encode(log);
   const SvgVerification verified =
-      stats.encoded ? verify_svg(exporter, stats.bytes, log.operation_count(), stats.content_crc32)
-                    : SvgVerification{};
+      stats.encoded && expected_paths.has_value()
+          ? verify_svg(exporter, stats.bytes, *expected_paths, stats.content_crc32)
+          : SvgVerification{};
   const bool passed = stats.encoded && stats.bytes > 64U && verified.prolog &&
                       verified.dimensions && verified.terminator && verified.crc &&
                       verified.path_only;

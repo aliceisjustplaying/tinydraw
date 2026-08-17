@@ -27,8 +27,9 @@ struct VectorV2ExportStats {
 
 // Exports the complete Vector V2 authority as one SVG in the dedicated flash
 // partition and presents DRAWING.SVG on the proven read-only USB transport.
-// Every operation is one filled variable-width path built from the renderer's
-// exact ribbon geometry; tile caches and presentation state are never read.
+// Every physical gesture is one filled variable-width path built from the
+// renderer's exact ribbon geometry; bounded chunks with the same gesture ID
+// are grouped, while tile caches and presentation state are never read.
 // Encoding batches output through one transient 4 KiB flash-page workspace.
 class VectorV2Export {
  public:

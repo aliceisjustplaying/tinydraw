@@ -253,6 +253,30 @@ bool emit_operations(Writer& writer, const OperationLog& log, std::size_t operat
 
 }  // namespace
 
+std::optional<std::size_t> svg_path_count(const OperationLog& log) {
+  if (!log.ready()) {
+    return std::nullopt;
+  }
+  const OperationLogEpoch epoch = log.epoch();
+  const DocumentRevision revision = log.current_revision();
+  const std::size_t operation_count = log.operation_count();
+  std::optional<StoredOperation> previous;
+  std::size_t paths = 0U;
+  for (std::size_t index = 0; index < operation_count; ++index) {
+    const auto operation = log.operation(index);
+    if (!operation.has_value()) {
+      return std::nullopt;
+    }
+    paths += !previous.has_value() || !same_logical_gesture(*previous, *operation);
+    previous = operation;
+  }
+  if (log.epoch() != epoch || log.current_revision() != revision ||
+      log.operation_count() != operation_count) {
+    return std::nullopt;
+  }
+  return paths;
+}
+
 bool export_svg(const OperationLog& log, SvgByteSink& sink, SvgExportOptions options) {
   if (!log.ready() || !valid_bounds(options.world_bounds)) {
     return false;
