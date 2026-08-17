@@ -143,16 +143,27 @@ Undo, persistence, and SVG are frozen in
 
 ## Immediate work order
 
+The owner locked the feature-finishing order on 2026-08-17. Do not pull the
+remaining performance campaign ahead of unfinished product features:
+
 1. Build a non-perturbing exact minimap capture path, capture the rejected
-   bottom-right→center interaction, and fix the minimap from that evidence.
-2. **Overlap-50 cold fix**: 628 ms vs 500; overdraw replay pays every stroke's
-   row geometry even when occluded.
-3. Establish generation-checked active-prefix history, then Undo/Redo and
-   autosave/recovery. Cold stays hold-the-line until the autosave-enabled
-   re-measure; the 20-run closure statistic waits there too.
-4. Then fix the USB export-mode exit, complete power/lifecycle parity and
-   capacity/failure UI, archive the mounted SVG timestamp receipt, and run
-   all-on release closure. AA and NTP are accepted for current scope.
+   bottom-right→center interaction, and fix the minimap with absolute-pointer
+   behavior: touching anywhere in the map immediately centers the viewport
+   there, then dragging follows the finger one-for-one.
+2. Establish the authority/storage spine and ship whole-gesture Undo/Redo.
+3. Complete all autosave work: versioned journal, bounded idle writes,
+   recovery, and lifecycle integration before risky transitions.
+4. Review and physically validate every touch target and overlap.
+5. Add a settled anti-aliased PNG alongside the editable path-based SVG.
+6. Fix the USB export-mode exit wedge.
+7. Run one final optimization round covering settled-AA progression and the
+   binding overlap workload's 50% cold stroke (628 ms vs 500), then call the
+   implementation complete and enter release closure.
+
+NTP and functional settled AA are accepted. Capacity/failure polish is not in
+this ordered blocker list, and destructive power-interruption testing is not an
+owner priority; autosave's deterministic recovery fixtures remain part of the
+autosave feature itself.
 
 ## Proven foundation worth preserving
 
