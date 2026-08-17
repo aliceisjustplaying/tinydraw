@@ -741,6 +741,23 @@ TEST_CASE("document snapshot restore accepts revision zero at the current revisi
   CHECK(fixture.canvas.overview_pixels().front() == 0x1234U);
 }
 
+TEST_CASE("blank document reset clears both authorities without a snapshot") {
+  Fixture fixture;
+  fixture.overview.fill(0x1234U);
+  REQUIRE(fixture.canvas.publish_overview({8}, fixture.overview));
+  REQUIRE(fixture.log.reset({8}));
+
+  const vector_v2::OperationLogEpoch old_epoch = fixture.log.epoch();
+  REQUIRE(vector_v2::reset_blank_document(fixture.log, fixture.canvas, {9}));
+  CHECK(fixture.log.current_revision() == vector_v2::DocumentRevision{9});
+  CHECK(fixture.canvas.current_revision() == vector_v2::DocumentRevision{9});
+  CHECK(fixture.log.operation_count() == 0U);
+  CHECK(std::all_of(fixture.canvas.overview_pixels().begin(),
+                    fixture.canvas.overview_pixels().end(),
+                    [](std::uint16_t pixel) { return pixel == 0xFFFFU; }));
+  CHECK(fixture.log.epoch() != old_epoch);
+}
+
 TEST_CASE("document snapshot restore fails atomically while an append is prepared") {
   Fixture fixture;
   fixture.overview.fill(0xFFFFU);

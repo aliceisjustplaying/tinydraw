@@ -7,6 +7,9 @@ add_library(tinydraw_vector_v2
 add_library(tinydraw::vector_v2 ALIAS tinydraw_vector_v2)
 
 target_compile_features(tinydraw_vector_v2 PUBLIC cxx_std_20)
+target_compile_definitions(tinydraw_vector_v2 PUBLIC
+  TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS=1
+)
 target_include_directories(tinydraw_vector_v2 PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>"
 )

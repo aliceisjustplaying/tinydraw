@@ -228,6 +228,9 @@ class MaterializedCanvas {
   // canvas storage.
   [[nodiscard]] bool restore_snapshot(DocumentRevision revision,
                                       std::span<const std::uint16_t> pixels);
+  // Resets materialization directly to uniform paper without requiring a
+  // caller-owned full-overview snapshot.
+  [[nodiscard]] bool reset_blank(DocumentRevision revision);
   // Commits exactly the next document revision. The overview publication is a
   // compact, row-major replacement rectangle prepared outside live storage.
   // Tiles intersecting the conservative world bounds are affected at every
@@ -274,10 +277,12 @@ class MaterializedCanvas {
   // Defensive recovery: drops any raw slot and uniform entry for key so the
   // identity falls back to the authoritative overview.
   void invalidate_identity(TileKey key);
+#ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
   // Optional re-render truth observer. The canvas reports revision damage
   // bounds and raw-slot evictions; it never reads the ledger. Null disables.
   void set_rerender_ledger(RerenderLedger* ledger) { rerender_ledger_ = ledger; }
   [[nodiscard]] RerenderLedger* rerender_ledger() const { return rerender_ledger_; }
+#endif
   [[nodiscard]] std::optional<std::size_t> publish_tile(TileKey key, DocumentRevision revision,
                                                         MaterializationQuality quality,
                                                         std::span<const std::uint16_t> pixels);
@@ -388,7 +393,9 @@ class MaterializedCanvas {
   std::span<MaterializedUniformStorage> uniform_catalog_;
   std::span<std::uint8_t> occupancy_bits_;
   std::span<MaterializedSlotStorage> slots_;
+#ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
   RerenderLedger* rerender_ledger_ = nullptr;
+#endif
   std::span<std::uint16_t> tile_pixels_;
   std::span<std::uint16_t> raw_slot_directory_;
   std::size_t occupied_slots_ = 0;
