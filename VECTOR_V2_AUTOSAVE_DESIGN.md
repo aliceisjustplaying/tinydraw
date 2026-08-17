@@ -1,8 +1,9 @@
 # Vector V2 autosave and recovery design
 
-Status: single-journal baseline implemented 2026-08-17; drawn-document hardware
-recovery and performance gates remain. Two-arena compaction and arena metadata
-are explicitly deferred by owner direction.
+Status: single-journal baseline and drawn-document hardware recovery accepted
+2026-08-17. Autosave-enabled performance joins the final optimization round.
+Two-arena compaction and arena metadata are explicitly deferred by owner
+direction.
 
 This design persists Vector V2 drawing authority without moving flash work into
 the ink path. It follows the product contract in `SHIP_CONTRACT.md` §7 and the

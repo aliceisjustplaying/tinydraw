@@ -243,8 +243,8 @@ Recovery points and reports capacity instead of erasing them.
       guard stale/disabled taps, refresh bounded damage and the dock separately,
       and compile in both credentials-enabled firmware variants. **Owner glass
       verdict 2026-08-17:** functionally working. The visibly brutal high-zoom
-      cold rebuild after Undo is deferred to the owner-ordered final optimization
-      round rather than blocking autosave.
+      affected-region rebuild after Undo/Redo is a binding final-optimization
+      requirement rather than an autosave blocker.
 - [x] Define a versioned append-only authority journal: operation records,
       whole-Stroke append boundaries, active/retained prefixes, generation,
       epoch, complete zoom-return state, tool state, and next Stroke identity,
@@ -257,7 +257,11 @@ Recovery points and reports capacity instead of erasing them.
       later-transaction byte and after every single-byte header, payload, CRC,
       or marker corruption. Active pixels rebuild from vector authority; Redo,
       navigation, selections, and next Stroke identity survive recovery.
-- [ ] Re-run pan, ink, cold, rerender, and memory gates with autosave enabled.
+- [x] Restore a real multi-Stroke document with a retained Redo tail, camera,
+      and chrome state after normal reset; owner glass acceptance confirmed the
+      drawing and Redo behavior. A later reset restored the fully active tail.
+- [ ] Re-run pan, ink, cold, rerender, and memory gates with autosave enabled in
+      the owner-ordered final optimization round.
 
 Derived overview, tile, chrome, and settled caches are never persisted.
 
