@@ -136,10 +136,9 @@ first complete allocation plan. Its capacity assumptions are explicit:
 - a 368×76 overlay and two 368×32 staging strips;
 - a second 368×448 overview buffer for transactional revision publication.
 
-The opt-in `TINYDRAW_VECTOR_V2_MEMORY_PROBE` firmware allocates every region
-simultaneously, then attempts a separate 1.5 MiB allocation. This is an
-allocation receipt, not proof that the eventual encoders and renderers fit the
-reserved capacities or meet interaction gates.
+The retired memory-probe firmware allocated every planned region simultaneously,
+then attempted a separate 1.5 MiB allocation. Its archived result is an allocation
+receipt, not proof that current encoders and renderers meet interaction gates.
 
 The current empty-heap ESP32-S3 allocation receipt is
 [`hardware-receipts/636b9c7-memory-layout-320.log`](hardware-receipts/636b9c7-memory-layout-320.log):

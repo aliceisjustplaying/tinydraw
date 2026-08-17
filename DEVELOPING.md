@@ -112,7 +112,7 @@ is in `.idf-version`. One-time setup installs v6.0.2 and the Xtensa QEMU tool:
 Daily firmware commands:
 
 ```sh
-./scripts/esp32 raster-v1      # build the shipping/default Raster V1 app
+./scripts/esp32 build          # build the shipping Vector V2 app
 ./scripts/esp32 vector-v2 PORT # build and flash the Vector V2 app
 ./scripts/esp32 qemu           # headless Raster V1 boot + asserted replay marker
 ./scripts/esp32 graphics-test  # short automated virtual-framebuffer check
@@ -120,10 +120,9 @@ Daily firmware commands:
 ./scripts/esp32 clean
 ```
 
-`./scripts/esp32 build` remains a compatibility alias for `raster-v1`. The exclusive
-`vector-v2-gate-harness`, `vector-v2-overview-walk`, `vector-v2-memory-probe`, and
-`vector-v2-tile-census` commands preserve hardware evidence machinery without compiling it into
-the normal V2 app.
+Firmware configuration uses one `TINYDRAW_FIRMWARE_VARIANT` selector. Product, gate, QEMU,
+panel-probe, tearing-probe, and tile-census variants keep diagnostic machinery out of the normal
+V2 app.
 
 The firmware embeds the same seven points as `zigzag.stroke` and feeds them incrementally through
 `InkStream`, `RibbonStream`, `StrokeRaster`, 4×4 coverage, RGB565 composition, and optionally
