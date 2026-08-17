@@ -37,6 +37,7 @@ enum class ChromeSize { kSmall, kMedium, kLarge, kExtraLarge };
 enum class ChromePopup { kNone, kTools, kColors, kSizes, kDocument };
 enum class ChromeExportStatus { kIdle, kSaving, kSaved, kError };
 enum class ChromeTimeSyncStatus { kIdle, kConnecting, kSynchronizing, kSaved, kError };
+inline constexpr std::uint32_t kChromeTimeSyncToastDurationUs = 3'000'000U;
 enum class ChromeAction {
   kNone,
   kUndo,
@@ -126,6 +127,8 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
 }};
 
 [[nodiscard]] std::uint16_t selected_color(const ChromeState& state);
+[[nodiscard]] ChromeTimeSyncStatus chrome_time_sync_status_after(ChromeTimeSyncStatus status,
+                                                                 std::uint32_t elapsed_us);
 [[nodiscard]] float brush_size(ChromeSize size);
 [[nodiscard]] int chrome_canvas_bottom(const ChromeState& state);
 [[nodiscard]] int chrome_input_bottom(const ChromeState& state);
