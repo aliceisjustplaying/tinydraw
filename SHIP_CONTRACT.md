@@ -121,7 +121,10 @@ fine, need to see it in action" — 2026-08-15).
 ### 8. Platform features  (required)
 
 - Power off/on flow: required (V1 parity).
-- Onboard clock + one-shot NTP: required (export timestamps).
+- Onboard clock + one-shot NTP: required (export timestamps). V2's on-demand
+  Document → Clock flow and post-teardown feedback landed 2026-08-17; physical
+  network/RTC evidence remains open
+  (`benchmark-results/v2-ntp-sync-2026-08-17/RECEIPT.md`).
 - Minimap: tap-to-jump and viewport-drag navigation required (owner elevated
   drag from post-ship on 2026-08-17). Closed the same day with a 4 px intent
   threshold, captured/clamped drag, host geometry tests, and a physical

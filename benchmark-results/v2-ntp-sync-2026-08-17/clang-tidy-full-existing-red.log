@@ -1,0 +1,67 @@
+-- Configuring done (0.2s)
+-- Generating done (0.0s)
+-- Build files have been written to: /Users/sarah/src/tries/2026-08-09-espdraw/out/build/host-debug
+/Users/sarah/src/tries/2026-08-09-espdraw/vector_v2/src/incremental_document.cpp:255:13: error: function 'retain_uniform_tiles' exceeds recommended size/complexity thresholds [readability-function-size,-warnings-as-errors]
+  255 | std::size_t retain_uniform_tiles(MaterializedCanvas& canvas, const InPlaceRetainScope& scope,
+      |             ^
+/Users/sarah/src/tries/2026-08-09-espdraw/vector_v2/src/incremental_document.cpp:286:31: note: nesting level 5 starts here (threshold 4)
+  286 |         if (edit.has_value()) {
+      |                               ^
+/Users/sarah/src/tries/2026-08-09-espdraw/vector_v2/src/incremental_document.cpp:255:13: error: function 'retain_uniform_tiles' has cognitive complexity of 27 (threshold 20) [readability-function-cognitive-complexity,-warnings-as-errors]
+  255 | std::size_t retain_uniform_tiles(MaterializedCanvas& canvas, const InPlaceRetainScope& scope,
+      |             ^
+/Users/sarah/src/tries/2026-08-09-espdraw/vector_v2/src/incremental_document.cpp:259:3: note: +1, including nesting penalty of 0, nesting level increased to 1
+  259 |   for (std::size_t index = 0; index < affected.size(); ++index) {
+      |   ^
+/Users/sarah/src/tries/2026-08-09-espdraw/vector_v2/src/incremental_document.cpp:262:5: note: +2, including nesting penalty of 1, nesting level increased to 2
+  262 |     if (!color.has_value()) {
+      |     ^
+/Users/sarah/src/tries/2026-08-09-espdraw/vector_v2/src/incremental_document.cpp:266:5: note: +2, including nesting penalty of 1, nesting level increased to 2
+  266 |     if (*color == scope.painted_color) {
+      |     ^
+/Users/sarah/src/tries/2026-08-09-espdraw/vector_v2/src/incremental_document.cpp:269:12: note: +1, nesting level increased to 2
+  269 |     } else if (in_priority_view(key, scope.priority_view)) {
+      |            ^
+/Users/sarah/src/tries/2026-08-09-espdraw/vector_v2/src/incremental_document.cpp:271:7: note: +3, including nesting penalty of 2, nesting level increased to 3
+  271 |       if (edit.has_value() && paint_operation_into_tile(scope.operation, *edit, tile_mask)) {
+      |       ^
+/Users/sarah/src/tries/2026-08-09-espdraw/vector_v2/src/incremental_document.cpp:271:28: note: +1
+  271 |       if (edit.has_value() && paint_operation_into_tile(scope.operation, *edit, tile_mask)) {
+      |                            ^
+/Users/sarah/src/tries/2026-08-09-espdraw/vector_v2/src/incremental_document.cpp:273:14: note: +1, nesting level increased to 3
+  273 |       } else if (edit.has_value()) {
+      |              ^
+/Users/sarah/src/tries/2026-08-09-espdraw/vector_v2/src/incremental_document.cpp:276:9: note: +1, nesting level increased to 3
+  276 |       } else {
+      |         ^
+/Users/sarah/src/tries/2026-08-09-espdraw/vector_v2/src/incremental_document.cpp:279:12: note: +1, nesting level increased to 2
+  279 |     } else if (scope.retain_all_zooms && in_recent_view(canvas, key) && !scope.over_budget()) {
+      |            ^
+/Users/sarah/src/tries/2026-08-09-espdraw/vector_v2/src/incremental_document.cpp:279:70: note: +1
+  279 |     } else if (scope.retain_all_zooms && in_recent_view(canvas, key) && !scope.over_budget()) {
+      |                                                                      ^
+/Users/sarah/src/tries/2026-08-09-espdraw/vector_v2/src/incremental_document.cpp:283:7: note: +3, including nesting penalty of 2, nesting level increased to 3
+  283 |       if (edit.has_value() && paint_operation_into_tile(scope.operation, *edit, tile_mask)) {
+      |       ^
+/Users/sarah/src/tries/2026-08-09-espdraw/vector_v2/src/incremental_document.cpp:283:28: note: +1
+  283 |       if (edit.has_value() && paint_operation_into_tile(scope.operation, *edit, tile_mask)) {
+      |                            ^
+/Users/sarah/src/tries/2026-08-09-espdraw/vector_v2/src/incremental_document.cpp:285:9: note: +1, nesting level increased to 3
+  285 |       } else {
+      |         ^
+/Users/sarah/src/tries/2026-08-09-espdraw/vector_v2/src/incremental_document.cpp:286:9: note: +4, including nesting penalty of 3, nesting level increased to 4
+  286 |         if (edit.has_value()) {
+      |         ^
+/Users/sarah/src/tries/2026-08-09-espdraw/vector_v2/src/incremental_document.cpp:291:12: note: +1, nesting level increased to 2
+  291 |     } else if (scope.priority_view.has_value() && key.zoom == scope.priority_view->zoom) {
+      |            ^
+/Users/sarah/src/tries/2026-08-09-espdraw/vector_v2/src/incremental_document.cpp:291:48: note: +1
+  291 |     } else if (scope.priority_view.has_value() && key.zoom == scope.priority_view->zoom) {
+      |                                                ^
+/Users/sarah/src/tries/2026-08-09-espdraw/vector_v2/src/incremental_document.cpp:294:5: note: +2, including nesting penalty of 1, nesting level increased to 2
+  294 |     if (keep) {
+      |     ^
+/Users/sarah/src/tries/2026-08-09-espdraw/vector_v2/src/incremental_document.cpp:412:40: error: function 'run_in_place_phases' exceeds recommended size/complexity thresholds [readability-function-size,-warnings-as-errors]
+  412 | std::optional<IncrementalAppendResult> run_in_place_phases(
+      |                                        ^
+/Users/sarah/src/tries/2026-08-09-espdraw/vector_v2/src/incremental_document.cpp:412:40: note: 10 parameters (threshold 6)

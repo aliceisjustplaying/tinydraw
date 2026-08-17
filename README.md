@@ -43,6 +43,10 @@ Autosave, charging, power-off/on, and macOS Finder mounting are verified.
   27.6 ms on device (4.81× faster than its captured baseline).
 - New has a confirmation dialog; Export streams the vector authority to flash
   with visible progress before the physical read-only USB drive takes over.
+- The document popup's clock action performs an on-demand asynchronous
+  Wi-Fi/NTP correction, writes the onboard RTC, and shows connecting, syncing,
+  success, or error feedback. Terminal feedback appears only after Wi-Fi is
+  stopped and deinitialized.
 - Battery status, a five-level zoom rail, and a live interactive minimap with
   tap-to-jump and zoom-scaled drag intent are visible over the canvas.
 - Detailed SVG export emits one painter-ordered filled path per physical

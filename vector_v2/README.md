@@ -69,6 +69,15 @@ tests and physical evidence are in the
 [`original receipt`](../benchmark-results/svg-export-2026-08-17/RECEIPT.md)
 and [`stroke-grouping follow-up`](../benchmark-results/stroke-svg-minimap-acquire-2026-08-17/RECEIPT.md).
 
+The ESP application reuses the platform `RtcClock` and one-shot Wi-Fi/NTP
+implementation through `TimeSyncController`. The document popup supplies the
+only trigger; controller status crosses the task boundary atomically while the
+main loop alone owns Chrome state. Connecting and synchronizing are modal, and
+a terminal success/error becomes visible only after the task has stopped and
+deinitialized Wi-Fi. Credentials remain in the ignored local header. Host and
+build evidence is in the
+[`NTP receipt`](../benchmark-results/v2-ntp-sync-2026-08-17/RECEIPT.md).
+
 ## First milestone: `MaterializedCanvas`
 
 Task #52 may initially add only:

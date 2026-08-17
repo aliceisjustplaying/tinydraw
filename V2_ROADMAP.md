@@ -292,8 +292,15 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       without expanding canvas occlusion. See
       `benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md` and
       `benchmark-results/minimap-touch-target-2026-08-17/RECEIPT.md`.
-- [ ] Integrate V1 power off/on, battery transitions, RTC, one-shot NTP, and
-      autosave-before-risky-transition through narrow adapters.
+- [x] Integrate the RTC and one-shot NTP through a narrow asynchronous adapter.
+      **Landed 2026-08-17:** Document → Clock owns three explicit controller
+      phases (connecting, synchronizing, terminal), writes PCF85063A time, and
+      publishes success/error only after Wi-Fi teardown. Host and firmware
+      builds pass; physical network/glass evidence awaits the owner's reset out
+      of the mounted export. See
+      `benchmark-results/v2-ntp-sync-2026-08-17/RECEIPT.md`.
+- [ ] Integrate V1 power off/on and autosave-before-risky-transition through
+      narrow adapters. Battery transitions are already present.
 - [ ] Add visible capacity, save, export, storage, and hardware failure states.
 - [ ] Enlarge invisible tap targets, add pressed feedback, resolve overlaps, and
       run the physical missed-tap check.
