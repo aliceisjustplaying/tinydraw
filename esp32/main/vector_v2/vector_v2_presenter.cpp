@@ -34,6 +34,8 @@ namespace {
 
 constexpr std::uint16_t kBackground = 0xFFFFU;
 constexpr std::int64_t kTearWaitTimeoutUs = 40'000;
+constexpr vector_v2::NavigationPoint kDefaultNavigationFocus{vector_v2::kOverviewWidth / 2,
+                                                             vector_v2::kChromeCanvasBottom / 2};
 #ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
 constexpr int kOpticalPatternX = 176;
 constexpr int kOpticalPatternWidth = 16;
@@ -454,9 +456,7 @@ LivePresentationTiming VectorV2Presenter::show_update(const RibbonUpdate& update
 LivePresentationTiming VectorV2Presenter::set_zoom(vector_v2::ZoomLevel target_zoom,
                                                    const vector_v2::ChromeState& chrome,
                                                    std::uint32_t event_us) {
-  constexpr vector_v2::NavigationPoint kDefaultFocus{vector_v2::kOverviewWidth / 2,
-                                                     vector_v2::kChromeCanvasBottom / 2};
-  if (!navigation_.set_zoom(target_zoom, kDefaultFocus)) {
+  if (!navigation_.set_zoom(target_zoom, kDefaultNavigationFocus)) {
     return {};
   }
   return refresh(chrome, event_us);
@@ -466,10 +466,8 @@ LivePresentationTiming VectorV2Presenter::set_view(vector_v2::ZoomLevel target_z
                                                    int level_y,
                                                    const vector_v2::ChromeState& chrome,
                                                    std::uint32_t event_us) {
-  constexpr vector_v2::NavigationPoint kDefaultFocus{vector_v2::kOverviewWidth / 2,
-                                                     vector_v2::kChromeCanvasBottom / 2};
-  if (!navigation_.set_zoom(target_zoom, kDefaultFocus) ||
-      !navigation_.set_origin(level_x, level_y, kDefaultFocus)) {
+  if (!navigation_.set_zoom(target_zoom, kDefaultNavigationFocus) ||
+      !navigation_.set_origin(level_x, level_y, kDefaultNavigationFocus)) {
     return {};
   }
   return refresh(chrome, event_us);
@@ -503,6 +501,48 @@ LivePresentationTiming VectorV2Presenter::pan_from(int start_x, int start_y, Poi
     // Quantization or the level clamp absorbed the drag: a successful no-op,
     // not a presentation failure (it was inflating the pan failure counter
     // during edge scrubbing).
+    return {.frame_reused = true, .passed = true};
+  }
+  return refresh_pan(old_x, old_y, chrome, event_us);
+}
+
+LivePresentationTiming VectorV2Presenter::jump_from_minimap(Point point,
+                                                            const vector_v2::ChromeState& chrome,
+                                                            std::uint32_t event_us) {
+  const int old_x = level_x();
+  const int old_y = level_y();
+  const auto target =
+      vector_v2::chrome_minimap_level_point({point.x, point.y}, chrome_navigation());
+  if (!navigation_.set_origin(target.x - kDefaultNavigationFocus.x,
+                              target.y - kDefaultNavigationFocus.y, kDefaultNavigationFocus)) {
+    return {};
+  }
+  if (level_x() == old_x && level_y() == old_y) {
+    return {.frame_reused = true, .passed = true};
+  }
+  // A tap may jump farther than the reusable ring and does not pass through
+  // the pan boundary drain, so compose a complete overlay-safe frame.
+  return refresh(chrome, event_us);
+}
+
+LivePresentationTiming VectorV2Presenter::pan_minimap_from(int start_x, int start_y,
+                                                           Point start_touch, Point current_touch,
+                                                           const vector_v2::ChromeState& chrome,
+                                                           std::uint32_t event_us) {
+  const int old_x = level_x();
+  const int old_y = level_y();
+  const auto navigation = chrome_navigation();
+  const auto start =
+      vector_v2::chrome_minimap_level_point({start_touch.x, start_touch.y}, navigation);
+  const auto current =
+      vector_v2::chrome_minimap_level_point({current_touch.x, current_touch.y}, navigation);
+  const auto quantize_even = [](int delta) { return delta - delta % 2; };
+  const int requested_x = start_x + quantize_even(current.x - start.x);
+  const int requested_y = start_y + quantize_even(current.y - start.y);
+  if (!navigation_.set_origin(requested_x, requested_y, kDefaultNavigationFocus)) {
+    return {};
+  }
+  if (level_x() == old_x && level_y() == old_y) {
     return {.frame_reused = true, .passed = true};
   }
   return refresh_pan(old_x, old_y, chrome, event_us);

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdlib>
 
 #include "tinydraw/ui/pixel_painter.h"
@@ -66,6 +67,7 @@ constexpr int kMinimapTop = 258;
 constexpr int kMinimapWidth = 80;
 constexpr int kMinimapHeight = 98;
 constexpr int kHitSlop = 8;
+constexpr float kMinimapDragPromotionPixels = 4.0F;
 constexpr float kPanDragPromotionPixels = 8.0F;
 constexpr int kMainHitTop = kMainTop - kHitSlop;
 constexpr std::array kMainCenters{34, 94, 154, 214, 274, 334};
@@ -643,6 +645,35 @@ static bool zoom_rail_contains(ChromePoint point, const ChromeState& state) {
                 static_cast<float>(kZoomRailRect.y1 + kHitSlop));
 }
 
+bool chrome_minimap_contains(ChromePoint point, const ChromeState& state) {
+  return canvas_overlays_visible(state) &&
+         inside(point, static_cast<float>(kMinimapRect.x0), static_cast<float>(kMinimapRect.y0),
+                static_cast<float>(kMinimapRect.x1), static_cast<float>(kMinimapRect.y1));
+}
+
+ChromeLevelPoint chrome_minimap_level_point(ChromePoint point, const ChromeNavigation& navigation) {
+  const auto project = [](float coordinate, int origin, int span, int extent) {
+    const float scaled = (coordinate - static_cast<float>(origin)) *
+                         static_cast<float>(std::max(extent, 0)) / static_cast<float>(span);
+    return std::clamp(static_cast<int>(std::lround(scaled)), 0, std::max(extent, 0));
+  };
+  return {
+      .x = project(point.x, kMinimapLeft, kMinimapWidth, navigation.level_width),
+      .y = project(point.y, kMinimapTop, kMinimapHeight, navigation.level_height),
+  };
+}
+
+bool chrome_promotes_minimap_drag(ChromePoint start, ChromePoint current,
+                                  const ChromeState& state) {
+  if (!chrome_minimap_contains(start, state)) {
+    return false;
+  }
+  const float delta_x = current.x - start.x;
+  const float delta_y = current.y - start.y;
+  return delta_x * delta_x + delta_y * delta_y >=
+         kMinimapDragPromotionPixels * kMinimapDragPromotionPixels;
+}
+
 bool chrome_contains(ChromePoint point, const ChromeState& state) {
   if (state.confirm_new || state.export_status == ChromeExportStatus::kSaving ||
       state.popup == ChromePopup::kColors) {
@@ -656,7 +687,7 @@ bool chrome_contains(ChromePoint point, const ChromeState& state) {
   const bool popup = state.popup != ChromePopup::kNone &&
                      inside(point, 0.0F, static_cast<float>(kPopupTop - kHitSlop),
                             static_cast<float>(kWidth), static_cast<float>(kMainTop));
-  return main || popup || zoom_rail_contains(point, state);
+  return main || popup || zoom_rail_contains(point, state) || chrome_minimap_contains(point, state);
 }
 
 bool chrome_promotes_pan_drag(ChromePoint start, ChromePoint current, const ChromeState& state) {

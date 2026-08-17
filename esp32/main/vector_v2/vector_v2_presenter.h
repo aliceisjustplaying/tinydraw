@@ -172,6 +172,15 @@ class VectorV2Presenter {
                                                 Point current_touch,
                                                 const vector_v2::ChromeState& chrome,
                                                 std::uint32_t event_us);
+  // Minimap tap centers the selected level point; drag moves the viewport by
+  // the projected level delta and reuses the ordinary pan presentation path.
+  [[nodiscard]] LivePresentationTiming jump_from_minimap(Point point,
+                                                         const vector_v2::ChromeState& chrome,
+                                                         std::uint32_t event_us);
+  [[nodiscard]] LivePresentationTiming pan_minimap_from(int start_x, int start_y, Point start_touch,
+                                                        Point current_touch,
+                                                        const vector_v2::ChromeState& chrome,
+                                                        std::uint32_t event_us);
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
   // Deterministic acceptance seam: re-presents the complete staged frame and
   // proves transport/chrome composition did not mutate the pure canvas ring.

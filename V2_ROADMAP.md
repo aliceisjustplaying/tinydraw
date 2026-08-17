@@ -1,7 +1,8 @@
 # TinyDraw V2 roadmap
 
-Last updated: 2026-08-17 (zoom-cycle return closed; minimap navigation next;
-see [`PROJECT_STATE.md`](PROJECT_STATE.md#immediate-work-order))
+Last updated: 2026-08-17 (zoom-cycle return and minimap navigation closed;
+overlap-50 cold next; see
+[`PROJECT_STATE.md`](PROJECT_STATE.md#immediate-work-order))
 
 Branch: `feat/v2-performance-followup`
 
@@ -169,10 +170,15 @@ Cold Stage B results (receipts in
        too short — net +4–5 ms), flat row-count slice budgets (blew the
        idle-repair step contract), per-publish cache flush hooks, and
        `Cache_WriteBack_All` before the sweep (interrupt-WDT panic).
+8. [x] Layout-variance containment landed 2026-08-17: the 6.3 KiB tile
+       producer text object is IRAM-pinned. Two unrelated-feature builds at
+       524.243/526.063 ms (over the 520 ms hold line) fell to 496.693 ms;
+       gate free internal memory remains 290,860 bytes. See
+       `benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md`.
 
 Owner decision 2026-08-16: the last ~7 ms of 400% wall is **not** chased
-before autosave. The 507.0 ms development maximum is accepted and the
-firmware gate holds the line at 510 ms (`kColdViewport400HoldTheLineUs`).
+before autosave. The 507.0 ms development maximum was accepted and the
+firmware gate holds the line at 520 ms (`kColdViewport400HoldTheLineUs`).
 Parked candidates, recorded for the post-autosave re-measure only:
 block-granular `MaskedRowSummary` saturation (+ band-unit rerun), PIE
 fixed-point probe pre-filter, presentation/compute overlap (reopens pan
@@ -273,8 +279,12 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       and the physical 400→25→50→100→200→400 classifier return exactly to
       `(2300,3100)`. See
       `benchmark-results/zoom-cycle-return-2026-08-17/RECEIPT.md`.
-- [ ] Add minimap tap-to-jump and drag-to-pan using pan fallback/delta
-      telemetry. Owner elevated drag from post-ship on 2026-08-17.
+- [x] Add minimap tap-to-jump and drag-to-pan. **Landed 2026-08-17:** the
+      visible frame owns gestures for every tool; 4 px separates jitter from
+      drag; projection is shared with rendered geometry; drag stays captured,
+      clamps at world edges, and reuses the boundary-drained pan ring. Physical
+      tap/drag completion was 20.164/16.529 ms with exact target origins. See
+      `benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md`.
 - [ ] Integrate V1 power off/on, battery transitions, RTC, one-shot NTP, and
       autosave-before-risky-transition through narrow adapters.
 - [ ] Add visible capacity, save, export, storage, and hardware failure states.

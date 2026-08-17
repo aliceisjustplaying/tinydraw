@@ -121,7 +121,11 @@ fine, need to see it in action" — 2026-08-15).
 - Power off/on flow: required (V1 parity).
 - Onboard clock + one-shot NTP: required (export timestamps).
 - Minimap: tap-to-jump and viewport-drag navigation required (owner elevated
-  drag from post-ship on 2026-08-17).
+  drag from post-ship on 2026-08-17). Closed the same day with a 4 px intent
+  threshold, captured/clamped drag, host geometry tests, and a physical
+  presenter classifier (`benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md`);
+  owner glass-feel confirmation remains qualitative polish, not missing
+  function.
 - Zoom: 25/50/100/200/400%. Returning through the complete button cycle must
   restore a compatible zoom's exact explored origin; stale remembered views
   yield to the current focus. Closed 2026-08-17 with host and physical
@@ -160,8 +164,11 @@ seam is not a valid V2 persistence or Undo mechanism.
    variance (Stage B receipt, ±2–3%/build; producer cold loops are not
    IRAM-pinned), including +6 ms between builds with no cold-path diff.
    520 = observed max + ~2.5% of compute, so the guard catches real
-   ≥~10 ms regressions instead of coin-flipping on layout luck.
-   IRAM-pinning the producer loops (queued) would let it tighten. The
+   ≥~10 ms regressions instead of coin-flipping on layout luck. Producer
+   IRAM-pinning landed 2026-08-17 after two unrelated-layout runs crossed the
+   hold line at 524.243/526.063 ms; the treated run was 496.693 ms with 290,860
+   bytes of free internal memory
+   (`benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md`). The
    ≤500 ms requirement in §3 is unchanged and governs the final
    autosave-enabled 20-run closure. The remaining micro-candidates
    (block-granular saturation, PIE fixed-point probing,
