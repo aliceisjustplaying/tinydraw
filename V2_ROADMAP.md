@@ -213,6 +213,11 @@ Broad group checkpoints are not funded: one 128×128 RGB565 checkpoint is
 
 ## Phase 4 — authority spine
 
+The proposed implementation seam and test-first slices are recorded in
+[`VECTOR_V2_AUTHORITY_UNDO_DESIGN.md`](VECTOR_V2_AUTHORITY_UNDO_DESIGN.md).
+`OperationLog` remains the single in-memory owner; history adds an active
+prefix, retained Redo tail, monotonic generation, and prepared history changes.
+
 - [ ] Add a generation-pinned immutable read view over operation storage.
 - [ ] Separate append/storage epoch, active operation-prefix cursor, and
       monotonic document generation.
