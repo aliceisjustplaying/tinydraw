@@ -1,0 +1,5 @@
+samples=5000000 pieces=20045000 total_ns=340889292 ns_per_append=68.178
+samples=5000000 pieces=20045000 total_ns=344891750 ns_per_append=68.978
+samples=5000000 pieces=20045000 total_ns=346949334 ns_per_append=69.390
+samples=5000000 pieces=20045000 total_ns=339674166 ns_per_append=67.935
+samples=5000000 pieces=20045000 total_ns=339017959 ns_per_append=67.804
