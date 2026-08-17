@@ -5,7 +5,7 @@ Status: implementation in progress, 2026-08-17.
 Progress:
 
 - [x] Slice 1: coherent active/retained authority read views with generation-checked reads.
-- [ ] Slice 2: whole-Stroke Undo/Redo and exact damage.
+- [x] Slice 2: whole-Stroke Undo/Redo and exact damage.
 - [ ] Slice 3: branch replacement after Undo.
 - [ ] Slice 4: localized canvas transition.
 - [ ] Slice 5: product wiring.

@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <span>
 
 #include "tinydraw/vector_v2/incremental_rasterizer.h"
@@ -68,6 +69,155 @@ TEST_CASE("authority read views expose one coherent generation") {
   REQUIRE(log.reset({8}));
   CHECK_FALSE(log.unchanged(one));
   CHECK_FALSE(log.retained_operation(one, 0));
+}
+
+TEST_CASE("Undo moves across every chunk in the final Stroke") {
+  std::array<vector_v2::OperationRecord, 3> records{};
+  std::array<vector_v2::CompactOperationSample, 3> storage{};
+  vector_v2::OperationLog log(records, storage);
+  const std::array first_stroke{
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
+  const std::array second_stroke_first{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 160, .y_quarter = 320, .radius_256 = 512, .elapsed_ms = 0}};
+  const std::array second_stroke_second{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 480, .y_quarter = 640, .radius_256 = 768, .elapsed_ms = 12}};
+  REQUIRE(log.append({.gesture_id = 6U, .samples = first_stroke}));
+  REQUIRE(log.append({.gesture_id = 7U, .samples = second_stroke_first}));
+  REQUIRE(log.append({.gesture_id = 7U, .samples = second_stroke_second}));
+  const vector_v2::AuthorityReadView before = log.read_view();
+
+  CHECK(log.can_undo());
+  CHECK_FALSE(log.can_redo());
+  auto canceled = log.prepare_undo();
+  REQUIRE(canceled.has_value());
+  CHECK(canceled->change().generation == vector_v2::DocumentRevision{4});
+  CHECK(canceled->change().previous_active_operation_count == 3U);
+  CHECK(canceled->change().active_operation_count == 1U);
+  CHECK(canceled->change().affected_world_bounds == vector_v2::PixelRect{8, 18, 33, 43});
+  CHECK_FALSE(log.unchanged(before));
+  canceled->cancel();
+  CHECK(log.unchanged(before));
+
+  auto undo = log.prepare_undo();
+  REQUIRE(undo.has_value());
+  undo->publish();
+  CHECK(log.current_revision() == vector_v2::DocumentRevision{4});
+  CHECK(log.operation_count() == 1U);
+  CHECK(log.sample_count() == 1U);
+  CHECK(log.can_undo());
+  CHECK(log.can_redo());
+  CHECK(log.epoch() != before.epoch);
+  CHECK_FALSE(log.operation(1));
+  const vector_v2::AuthorityReadView after = log.read_view();
+  CHECK(after.active_operation_count == 1U);
+  CHECK(after.retained_operation_count == 3U);
+  REQUIRE(log.retained_operation(after, 2));
+  CHECK(log.retained_operation(after, 2)->gesture_id == 7U);
+}
+
+TEST_CASE("Redo restores every chunk in the next Stroke") {
+  std::array<vector_v2::OperationRecord, 3> records{};
+  std::array<vector_v2::CompactOperationSample, 3> storage{};
+  vector_v2::OperationLog log(records, storage);
+  const std::array first_stroke{
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
+  const std::array second_stroke_first{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 160, .y_quarter = 320, .radius_256 = 512, .elapsed_ms = 0}};
+  const std::array second_stroke_second{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 480, .y_quarter = 640, .radius_256 = 768, .elapsed_ms = 12}};
+  REQUIRE(log.append({.gesture_id = 6U, .samples = first_stroke}));
+  REQUIRE(log.append({.gesture_id = 7U, .samples = second_stroke_first}));
+  REQUIRE(log.append({.gesture_id = 7U, .samples = second_stroke_second}));
+  auto undo = log.prepare_undo();
+  REQUIRE(undo.has_value());
+  undo->publish();
+  const vector_v2::OperationLogEpoch undo_epoch = log.epoch();
+
+  auto redo = log.prepare_redo();
+  REQUIRE(redo.has_value());
+  CHECK(redo->change().generation == vector_v2::DocumentRevision{5});
+  CHECK(redo->change().previous_active_operation_count == 1U);
+  CHECK(redo->change().active_operation_count == 3U);
+  CHECK(redo->change().affected_world_bounds == vector_v2::PixelRect{8, 18, 33, 43});
+  redo->publish();
+
+  CHECK(log.current_revision() == vector_v2::DocumentRevision{5});
+  CHECK(log.operation_count() == 3U);
+  CHECK(log.sample_count() == 3U);
+  CHECK(log.can_undo());
+  CHECK_FALSE(log.can_redo());
+  CHECK(log.epoch() != undo_epoch);
+  REQUIRE(log.operation(2));
+  CHECK(log.operation(2)->gesture_id == 7U);
+}
+
+TEST_CASE("a prepared history change owns the authority mutation slot") {
+  std::array<vector_v2::OperationRecord, 2> records{};
+  std::array<vector_v2::CompactOperationSample, 2> storage{};
+  vector_v2::OperationLog log(records, storage);
+  const std::array sample{
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
+  REQUIRE(log.append({.gesture_id = 1U, .samples = sample}));
+  const vector_v2::OperationLogEpoch epoch = log.epoch();
+  auto undo = log.prepare_undo();
+  REQUIRE(undo.has_value());
+
+  CHECK_FALSE(log.replay_range(epoch, {0}, {1}));
+  CHECK_FALSE(log.prepare({.gesture_id = 2U, .samples = sample}));
+  CHECK_FALSE(log.reset());
+  undo->cancel();
+
+  CHECK(log.replay_range(epoch, {0}, {1}) ==
+        vector_v2::OperationReplayRange{epoch, {0}, {1}, 0, 1});
+  CHECK(log.prepare({.gesture_id = 2U, .samples = sample}));
+}
+
+TEST_CASE("history preserves ten levels and treats zero identities as separate Strokes") {
+  std::array<vector_v2::OperationRecord, 12> records{};
+  std::array<vector_v2::CompactOperationSample, 12> storage{};
+  vector_v2::OperationLog log(records, storage);
+  const std::array sample{
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
+  for (std::size_t index = 0; index < records.size(); ++index) {
+    REQUIRE(log.append({.gesture_id = 0U, .samples = sample}));
+  }
+
+  for (std::size_t index = 0; index < 10U; ++index) {
+    auto undo = log.prepare_undo();
+    REQUIRE(undo.has_value());
+    CHECK(undo->change().previous_active_operation_count -
+              undo->change().active_operation_count ==
+          1U);
+    undo->publish();
+  }
+  CHECK(log.operation_count() == 2U);
+
+  for (std::size_t index = 0; index < 10U; ++index) {
+    auto redo = log.prepare_redo();
+    REQUIRE(redo.has_value());
+    redo->publish();
+  }
+  CHECK(log.operation_count() == 12U);
+  CHECK_FALSE(log.can_redo());
+}
+
+TEST_CASE("history stops before the document generation would wrap") {
+  std::array<vector_v2::OperationRecord, 1> records{};
+  std::array<vector_v2::CompactOperationSample, 1> storage{};
+  vector_v2::OperationLog log(records, storage);
+  const std::array sample{
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
+  REQUIRE(log.reset({std::numeric_limits<std::uint32_t>::max() - 1U}));
+  REQUIRE(log.append({.gesture_id = 1U, .samples = sample}));
+
+  CHECK(log.current_revision() ==
+        vector_v2::DocumentRevision{std::numeric_limits<std::uint32_t>::max()});
+  CHECK_FALSE(log.can_undo());
+  CHECK_FALSE(log.prepare_undo());
 }
 
 TEST_CASE("stored operation feeds the incremental renderer without translation") {

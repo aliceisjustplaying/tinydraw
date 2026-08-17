@@ -46,6 +46,14 @@ struct AuthorityReadView {
   bool operator==(const AuthorityReadView&) const = default;
 };
 
+struct HistoryChange {
+  DocumentRevision generation{};
+  std::size_t previous_active_operation_count = 0;
+  std::size_t active_operation_count = 0;
+  PixelRect affected_world_bounds{};
+  bool operator==(const HistoryChange&) const = default;
+};
+
 class OperationLog;
 
 // Move-only preparation owned by one OperationLog. It must not outlive that
@@ -72,6 +80,31 @@ class PreparedAppend {
   std::uint32_t token_ = 0;
 };
 
+// Move-only whole-Stroke history transition. Destruction or cancel leaves
+// authority unchanged; publish is infallible for a live preparation.
+class PreparedHistoryChange {
+ public:
+  ~PreparedHistoryChange();
+  PreparedHistoryChange(const PreparedHistoryChange&) = delete;
+  PreparedHistoryChange& operator=(const PreparedHistoryChange&) = delete;
+  PreparedHistoryChange(PreparedHistoryChange&& other) noexcept;
+  PreparedHistoryChange& operator=(PreparedHistoryChange&& other) noexcept;
+
+  [[nodiscard]] const HistoryChange& change() const;
+  void publish();
+  void cancel();
+
+ private:
+  friend class OperationLog;
+  PreparedHistoryChange(OperationLog& owner, HistoryChange change,
+                        std::size_t active_sample_count, std::uint32_t token);
+
+  OperationLog* owner_ = nullptr;
+  HistoryChange change_{};
+  std::size_t active_sample_count_ = 0;
+  std::uint32_t token_ = 0;
+};
+
 // Fixed-capacity, ordered document authority. Storage is caller-owned and must
 // outlive the log. Append validates all input and capacity before mutation.
 // Callers must serialize reads, appends, and clear operations.
@@ -87,6 +120,8 @@ class OperationLog {
   [[nodiscard]] std::size_t operation_capacity() const;
   [[nodiscard]] std::size_t sample_capacity() const;
   [[nodiscard]] bool can_reset() const;
+  [[nodiscard]] bool can_undo() const;
+  [[nodiscard]] bool can_redo() const;
   [[nodiscard]] bool workspace_overlaps_storage(std::span<const std::byte> workspace) const;
 
   // Preparation copies into unused caller storage but does not advance document
@@ -101,6 +136,8 @@ class OperationLog {
                                                          std::size_t active_index) const;
   [[nodiscard]] std::optional<StoredOperation> retained_operation(
       const AuthorityReadView& view, std::size_t retained_index) const;
+  [[nodiscard]] std::optional<PreparedHistoryChange> prepare_undo();
+  [[nodiscard]] std::optional<PreparedHistoryChange> prepare_redo();
   // Returns the exact contiguous operations needed to advance a caller-owned
   // baseline snapshot. Both revisions must still be represented by this log.
   [[nodiscard]] std::optional<OperationReplayRange> replay_range(
@@ -113,9 +150,14 @@ class OperationLog {
 
  private:
   friend class PreparedAppend;
+  friend class PreparedHistoryChange;
   [[nodiscard]] bool valid_append(const OperationAppend& append_request) const;
+  [[nodiscard]] std::size_t sample_count_for_prefix(std::size_t operation_count) const;
+  [[nodiscard]] PixelRect bounds_for_range(std::size_t first, std::size_t last) const;
   void publish_prepared(const PreparedAppend& prepared);
   void cancel_prepared(const PreparedAppend& prepared);
+  void publish_history(const PreparedHistoryChange& prepared);
+  void cancel_history(const PreparedHistoryChange& prepared);
 
   std::span<OperationRecord> records_;
   std::span<CompactOperationSample> samples_;
@@ -130,6 +172,9 @@ class OperationLog {
   std::uint32_t pending_token_ = 0;
   std::size_t pending_sample_count_ = 0;
   bool append_pending_ = false;
+  std::uint32_t next_history_token_ = 1;
+  std::uint32_t pending_history_token_ = 0;
+  bool history_pending_ = false;
 };
 
 }  // namespace tinydraw::vector_v2
