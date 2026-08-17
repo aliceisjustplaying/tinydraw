@@ -5,6 +5,43 @@
 #include <array>
 #include <vector>
 
+#include "tinydraw/ui/pixel_painter.h"
+
+TEST_CASE("span circle raster stays exact under clipping") {
+  constexpr int width = 31;
+  constexpr int height = 27;
+  constexpr int origin_x = 7;
+  constexpr int origin_y = 11;
+  std::array<std::uint16_t, width * height> expected{};
+  std::array<std::uint16_t, width * height> actual{};
+
+  for (int radius = 0; radius <= 12; ++radius) {
+    for (const int center_x :
+         std::array{origin_x - 2, origin_x, origin_x + width / 2, origin_x + width + 2}) {
+      for (const int center_y :
+           std::array{origin_y - 2, origin_y, origin_y + height / 2, origin_y + height + 2}) {
+        expected.fill(0x1357U);
+        actual = expected;
+        for (int y = center_y - radius; y <= center_y + radius; ++y) {
+          for (int x = center_x - radius; x <= center_x + radius; ++x) {
+            const int dx = x - center_x;
+            const int dy = y - center_y;
+            const int local_x = x - origin_x;
+            const int local_y = y - origin_y;
+            if (dx * dx + dy * dy <= radius * radius && local_x >= 0 && local_x < width &&
+                local_y >= 0 && local_y < height) {
+              expected[static_cast<std::size_t>(local_y * width + local_x)] = 0xABCDU;
+            }
+          }
+        }
+        tinydraw::PixelPainter(actual, width, height, origin_x, origin_y)
+            .circle(center_x, center_y, radius, 0xABCDU);
+        CHECK(actual == expected);
+      }
+    }
+  }
+}
+
 TEST_CASE("default toolbar keeps every control in one full-width row") {
   const tinydraw::ToolbarState state;
 

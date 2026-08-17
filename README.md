@@ -39,6 +39,8 @@ Autosave, charging, power-off/on, and macOS Finder mounting are verified.
 - Touch sampling remains independent of cooperative rendering work.
 - The refined toolbar uses the V1 tool icons, reflects the active tool, and
   opens compact tool, size, document, and two-page round-swatch color popups.
+  Span-rasterized swatches and frame reuse open the full color dialog in about
+  27.6 ms on device (4.81× faster than its captured baseline).
 - New has a confirmation dialog; Export streams the vector authority to flash
   with visible progress before the physical read-only USB drive takes over.
 - Battery status, a five-level zoom rail, and a live noninteractive minimap with

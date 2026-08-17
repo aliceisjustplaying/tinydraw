@@ -245,6 +245,11 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       intentionally did not enter MSC; physical host mount/eject remains open.
 - [ ] Fix the export-mode USB wedge (MSC re-exposes after eject; needs an
       on-device exit) before soaks.
+- [x] Make color-dialog drawing imperceptibly fast. **Landed 2026-08-17:**
+      exact horizontal-span circle/rounded rasterization and color-only frame
+      re-presentation cut physical open time 132.466 → 27.568 ms (4.81×),
+      with a ≤40 ms gate and unchanged pixel snapshots. See
+      `benchmark-results/color-dialog-2026-08-17/RECEIPT.md`.
 - [x] Implement settled analytic-coverage AA in bounded idle work. **Landed
       2026-08-16** (`vector_v2/settled_tile.cpp` + app idle pass): settled
       tiles publish at the settled quality tier under the revision identity

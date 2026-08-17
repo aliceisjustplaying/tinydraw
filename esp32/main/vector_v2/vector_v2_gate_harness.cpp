@@ -3224,6 +3224,33 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
                                 std::span<const std::uint16_t> blank_snapshot,
                                 std::span<CompactOperationSample> conversion_storage,
                                 std::span<std::uint16_t> tile_scratch) {
+  vector_v2::ChromeState palette = chrome;
+  palette.popup = vector_v2::ChromePopup::kColors;
+  const std::int64_t color_started = esp_timer_get_time();
+  auto color_open = presenter.present_frame_region(
+      {0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight}, palette, now_us());
+  if (!color_open.passed) {
+    color_open = presenter.refresh(palette, now_us());
+  }
+  const std::int64_t color_wall_us = esp_timer_get_time() - color_started;
+  constexpr std::int64_t kColorDialogMaximumUs = 40'000;
+  const bool color_dialog = color_open.passed && color_wall_us <= kColorDialogMaximumUs;
+  std::printf(
+      "TINYDRAW_GATE1_COLOR_DIALOG wall_us=%lld maximum_us=%lld compose_us=%lld chrome_us=%lld "
+      "chrome_prepare_us=%lld chrome_stage_us=%lld complete_us=%lld pushes=%lu pass=%u\n",
+      static_cast<long long>(color_wall_us), static_cast<long long>(kColorDialogMaximumUs),
+      static_cast<long long>(color_open.compose_us), static_cast<long long>(color_open.chrome_us),
+      static_cast<long long>(color_open.chrome_prepare_us),
+      static_cast<long long>(color_open.chrome_stage_us),
+      static_cast<long long>(color_open.complete_us), static_cast<unsigned long>(color_open.pushes),
+      color_dialog);
+  std::fflush(stdout);
+  auto color_close = presenter.present_frame_region(
+      {0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight}, chrome, now_us());
+  if (!color_close.passed) {
+    color_close = presenter.refresh(chrome, now_us());
+  }
+
   const bool stress_ready = append_stress_document(log, canvas, workspace);
   const bool stress_100 = stress_ready && run_tile_gate(presenter, producer, log, canvas, chrome,
                                                         ZoomLevel::k100Percent);
@@ -3374,7 +3401,8 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   const auto return_overview = presenter.set_view(ZoomLevel::k25Percent, 0, 0, chrome, now_us());
   print_rerender_ledger("final");
   std::printf(
-      "TINYDRAW_GATE1_AUTOMATED_DONE stress=%u stress_100=%u stress_400=%u overlap_ready=%u "
+      "TINYDRAW_GATE1_AUTOMATED_DONE color_dialog=%u stress=%u stress_100=%u stress_400=%u "
+      "overlap_ready=%u "
       "overlap_cold=%u general_cold_ready=%u general_cold=%u workload=%u paced_cold=%u "
       "hard_100=%u hard_400=%u pan_100=%u "
       "pan_400=%u pan_seq=%u pan_boundary=%u live_overlay=%u draw_fill=%u cache=%u "
@@ -3382,13 +3410,14 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
       "cache_tour=%u mixed_draw=%u idle_repair=%u ink_trace=%u hairline_capacity=%u "
       "long_gesture=%u "
       "export_encode=%u export_reserve=%u return=%u ssaa_receipt=yellow\n",
-      stress_ready, stress_100, stress_400, overlap_ready, overlap_cold, general_cold_ready,
-      general_cold, workload_ready, paced_cold, gate_100, gate_400, pan_100, pan_400, pan_sequence,
-      pan_boundary, live_overlay, draw_fill, cache_retention, full_world_cache, cache_tour,
-      mixed_draw, idle_repair, ink_trace_replay, hairline_capacity, long_gesture, export_encode,
-      export_reserve, return_overview.passed);
-  return return_overview.passed && export_reserve && overlap_cold && general_cold && mixed_draw &&
-         idle_repair && hairline_capacity && pan_100 && pan_400 && pan_sequence && pan_boundary;
+      color_dialog, stress_ready, stress_100, stress_400, overlap_ready, overlap_cold,
+      general_cold_ready, general_cold, workload_ready, paced_cold, gate_100, gate_400, pan_100,
+      pan_400, pan_sequence, pan_boundary, live_overlay, draw_fill, cache_retention,
+      full_world_cache, cache_tour, mixed_draw, idle_repair, ink_trace_replay, hairline_capacity,
+      long_gesture, export_encode, export_reserve, return_overview.passed);
+  return color_dialog && return_overview.passed && export_reserve && overlap_cold && general_cold &&
+         mixed_draw && idle_repair && hairline_capacity && pan_100 && pan_400 && pan_sequence &&
+         pan_boundary;
 #endif
 }
 

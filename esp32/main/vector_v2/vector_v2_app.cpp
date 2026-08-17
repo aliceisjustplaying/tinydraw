@@ -730,6 +730,10 @@ bool apply_chrome_action(vector_v2::ChromeAction action, Point point,
   const auto toggle = [&](vector_v2::ChromePopup popup) {
     chrome.popup = chrome.popup == popup ? vector_v2::ChromePopup::kNone : popup;
   };
+  const bool palette_only_refresh = action == vector_v2::ChromeAction::kSelectColor ||
+                                    action == vector_v2::ChromeAction::kToggleColors ||
+                                    action == vector_v2::ChromeAction::kPreviousPalette ||
+                                    action == vector_v2::ChromeAction::kNextPalette;
   switch (action) {
     case vector_v2::ChromeAction::kSelectDraw:
       chrome.tool = vector_v2::ChromeTool::kDraw;
@@ -829,7 +833,16 @@ bool apply_chrome_action(vector_v2::ChromeAction action, Point point,
     case vector_v2::ChromeAction::kRedo:
       break;
   }
-  const auto timing = presenter.refresh(chrome, now_us());
+  auto timing =
+      palette_only_refresh
+          ? presenter.present_frame_region(
+                {0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight}, chrome, now_us())
+          : LivePresentationTiming{};
+  if (!palette_only_refresh || !timing.passed) {
+    // A cached pan leaves frame_ ring-addressed; only a full compose may
+    // materialize it before ordinary linear presentation.
+    timing = presenter.refresh(chrome, now_us());
+  }
   print_presentation("chrome", presenter, timing);
   return timing.passed;
 }
