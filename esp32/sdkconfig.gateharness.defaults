@@ -1,3 +1,6 @@
 # Gate-harness builds run the entire diagnostic battery on the main task;
 # its frame is deliberately allowed to be larger than the product app's.
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=20480
+# Gate-only diagnostics carry embedded traces and may exceed the 1 MiB product
+# app partition. The alternate table preserves the total flash footprint.
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.gate.csv"

@@ -87,9 +87,15 @@ bool inside(ChromePoint point, float x0, float y0, float x1, float y1) {
   return point.x >= x0 && point.x < x1 && point.y >= y0 && point.y < y1;
 }
 
+bool time_sync_active(const ChromeState& state) {
+  return state.time_sync_status == ChromeTimeSyncStatus::kConnecting ||
+         state.time_sync_status == ChromeTimeSyncStatus::kSynchronizing;
+}
+
 bool canvas_overlays_visible(const ChromeState& state) {
   return state.popup == ChromePopup::kNone && !state.confirm_new &&
-         state.export_status == ChromeExportStatus::kIdle;
+         state.export_status == ChromeExportStatus::kIdle &&
+         state.time_sync_status == ChromeTimeSyncStatus::kIdle;
 }
 
 bool bottom_cache_matches(const ChromeState& cached, const ChromeState& current) {
@@ -163,6 +169,13 @@ void draw_document(Painter& painter, int cx, int cy, std::uint16_t color) {
   painter.line({cx - 12, cy + 16, cx - 12, cy - 16}, color, 2);
   painter.line({cx - 6, cy - 5, cx + 4, cy - 5}, color);
   painter.line({cx - 6, cy + 3, cx + 4, cy + 3}, color);
+}
+
+void draw_clock(Painter& painter, int cx, int cy, std::uint16_t color) {
+  painter.circle(cx, cy, 17, color);
+  painter.circle(cx, cy, 14, kWhite);
+  painter.line({cx, cy, cx, cy - 9}, color, 2);
+  painter.line({cx, cy, cx + 7, cy + 5}, color, 2);
 }
 
 int size_radius(ChromeSize size) {
@@ -254,10 +267,11 @@ void draw_sizes_popup(Painter& painter, const ChromeState& state) {
 }
 
 void draw_document_popup(Painter& painter, const ChromeState& state) {
-  draw_document(painter, 92, 331, kInk);
-  painter.line({76, 331, 108, 331}, kInk, 2);
-  painter.line({92, 315, 92, 347}, kInk, 2);
-  draw_arrow(painter, 276, 331, true, state.can_export ? kInk : kMuted);
+  draw_document(painter, kPopupCenters[0], 331, kInk);
+  painter.line({kPopupCenters[0] - 16, 331, kPopupCenters[0] + 16, 331}, kInk, 2);
+  painter.line({kPopupCenters[0], 315, kPopupCenters[0], 347}, kInk, 2);
+  draw_arrow(painter, kPopupCenters[1], 331, true, state.can_export ? kInk : kMuted);
+  draw_clock(painter, kPopupCenters[2], 331, state.can_sync_time ? kInk : kMuted);
 }
 
 void draw_new_dialog(Painter& painter) {
@@ -537,7 +551,8 @@ void draw_fixed_chrome(const MinimapSurface& surface, const ChromeState& state) 
     draw_bottom(painter, state);
   }
   if (state.popup == ChromePopup::kColors && !state.confirm_new &&
-      state.export_status == ChromeExportStatus::kIdle) {
+      state.export_status == ChromeExportStatus::kIdle &&
+      state.time_sync_status == ChromeTimeSyncStatus::kIdle) {
     if (intersects_rows(kColorPopupTop, kColorPopupBottom)) {
       draw_palette(painter, state);
     }
@@ -587,6 +602,31 @@ void draw_export_toast(Painter& painter, const ChromeState& state) {
                saved ? kInk : 0xE186U, 3);
 }
 
+void draw_time_sync_toast(Painter& painter, const ChromeState& state) {
+  if (state.time_sync_status == ChromeTimeSyncStatus::kIdle) {
+    return;
+  }
+  painter.rounded({kToastLeft + 2, kToastTop + 3, kToastRight + 2, kToastBottom + 3}, 12, kShadow);
+  painter.rounded({kToastLeft - 1, kToastTop - 1, kToastRight + 1, kToastBottom + 1}, 12, kBorder);
+  painter.rounded({kToastLeft, kToastTop, kToastRight, kToastBottom}, 11, kWhite);
+  switch (state.time_sync_status) {
+    case ChromeTimeSyncStatus::kConnecting:
+      painter.text(121, 91, "CONNECTING", kInk, 3);
+      break;
+    case ChromeTimeSyncStatus::kSynchronizing:
+      painter.text(130, 91, "SYNCING", kInk, 3);
+      break;
+    case ChromeTimeSyncStatus::kSaved:
+      painter.text(124, 91, "TIME SET", kInk, 3);
+      break;
+    case ChromeTimeSyncStatus::kError:
+      painter.text(121, 91, "TIME ERROR", 0xE186U, 3);
+      break;
+    case ChromeTimeSyncStatus::kIdle:
+      break;
+  }
+}
+
 }  // namespace
 
 std::uint16_t selected_color(const ChromeState& state) {
@@ -617,7 +657,8 @@ int chrome_canvas_bottom(const ChromeState& state) {
 }
 
 int chrome_input_bottom(const ChromeState& state) {
-  if (state.confirm_new || state.export_status == ChromeExportStatus::kSaving) {
+  if (state.confirm_new || state.export_status == ChromeExportStatus::kSaving ||
+      time_sync_active(state)) {
     return 0;
   }
   if (state.popup == ChromePopup::kNone) {
@@ -627,7 +668,8 @@ int chrome_input_bottom(const ChromeState& state) {
 }
 
 int chrome_ink_bottom(const ChromeState& state) {
-  if (state.confirm_new || state.export_status == ChromeExportStatus::kSaving) {
+  if (state.confirm_new || state.export_status == ChromeExportStatus::kSaving ||
+      time_sync_active(state)) {
     return 0;
   }
   if (state.popup == ChromePopup::kNone) {
@@ -725,7 +767,7 @@ bool chrome_promotes_minimap_drag(ChromePoint start, ChromePoint current, const 
 
 bool chrome_contains(ChromePoint point, const ChromeState& state) {
   if (state.confirm_new || state.export_status == ChromeExportStatus::kSaving ||
-      state.popup == ChromePopup::kColors) {
+      time_sync_active(state) || state.popup == ChromePopup::kColors) {
     return inside(point, 0.0F, 0.0F, static_cast<float>(kWidth), static_cast<float>(kHeight));
   }
   // The dock face starts at the canvas bottom; rows above it are visible
@@ -799,8 +841,11 @@ ChromeAction popup_action_at(ChromePoint point, ChromePopup popup) {
                                    ChromeAction::kSelectLarge, ChromeAction::kSelectExtraLarge};
       return actions[quarter];
     }
-    case ChromePopup::kDocument:
-      return point.x < kWidth / 2.0F ? ChromeAction::kNewDrawing : ChromeAction::kExport;
+    case ChromePopup::kDocument: {
+      constexpr std::array actions{ChromeAction::kNewDrawing, ChromeAction::kExport,
+                                   ChromeAction::kSyncTime};
+      return actions[third];
+    }
     case ChromePopup::kNone:
     case ChromePopup::kColors:
       return ChromeAction::kNone;
@@ -821,7 +866,7 @@ ChromeAction chrome_action_at(ChromePoint point, const ChromeState& state) {
   if (state.confirm_new) {
     return confirmation_action_at(point);
   }
-  if (state.export_status == ChromeExportStatus::kSaving) {
+  if (state.export_status == ChromeExportStatus::kSaving || time_sync_active(state)) {
     return ChromeAction::kNone;
   }
   if (state.popup == ChromePopup::kColors) {
@@ -937,6 +982,7 @@ void draw_chrome(std::span<std::uint16_t> pixels, int width, int height, const C
   draw_fixed_chrome(surface, state);
   Painter painter(pixels, width, height);
   draw_export_toast(painter, state);
+  draw_time_sync_toast(painter, state);
 }
 
 void draw_chrome_canvas_overlays(std::span<std::uint16_t> pixels, int width, int height,
@@ -1092,6 +1138,7 @@ bool ChromeStagingCache::paint_prepared(const MinimapSurface& surface, const Chr
     Painter painter(surface.pixels, surface.width, surface.height, surface.origin_x,
                     surface.origin_y);
     draw_export_toast(painter, state);
+    draw_time_sync_toast(painter, state);
     static_cast<void>(draw_strip_overlays(surface, state, navigation));
     return true;
   }
@@ -1144,6 +1191,7 @@ bool draw_chrome_staging_surface(const MinimapSurface& surface, const ChromeStat
   Painter painter(surface.pixels, surface.width, surface.height, surface.origin_x,
                   surface.origin_y);
   draw_export_toast(painter, state);
+  draw_time_sync_toast(painter, state);
   static_cast<void>(draw_strip_overlays(surface, state, navigation));
   return true;
 }

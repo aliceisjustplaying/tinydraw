@@ -12,6 +12,7 @@ using tinydraw::vector_v2::ChromeAction;
 using tinydraw::vector_v2::ChromeExportStatus;
 using tinydraw::vector_v2::ChromePopup;
 using tinydraw::vector_v2::ChromeState;
+using tinydraw::vector_v2::ChromeTimeSyncStatus;
 using tinydraw::vector_v2::ChromeTool;
 
 TEST_CASE("PICO-8 palettes are locked to RGB565") {
@@ -49,6 +50,32 @@ TEST_CASE("tools popup contains draw erase and pan") {
   CHECK(tinydraw::vector_v2::chrome_action_at({306.0F, 331.0F}, state) == ChromeAction::kSelectPan);
   state.tool = ChromeTool::kErase;
   CHECK(tinydraw::vector_v2::chrome_contains({184.0F, 331.0F}, state));
+}
+
+TEST_CASE("document popup gives new export and time sync equal touch targets") {
+  const ChromeState state{.popup = ChromePopup::kDocument};
+  CHECK(tinydraw::vector_v2::chrome_action_at({60.0F, 331.0F}, state) == ChromeAction::kNewDrawing);
+  CHECK(tinydraw::vector_v2::chrome_action_at({184.0F, 331.0F}, state) == ChromeAction::kExport);
+  CHECK(tinydraw::vector_v2::chrome_action_at({306.0F, 331.0F}, state) == ChromeAction::kSyncTime);
+}
+
+TEST_CASE("active time sync is modal and hides navigation overlays") {
+  constexpr int width = 368;
+  constexpr int height = 448;
+  std::vector<std::uint16_t> connecting(static_cast<std::size_t>(width * height), 0xFFFFU);
+  auto synchronizing = connecting;
+  const ChromeState connecting_state{.time_sync_status = ChromeTimeSyncStatus::kConnecting};
+  const ChromeState synchronizing_state{.time_sync_status = ChromeTimeSyncStatus::kSynchronizing};
+
+  CHECK(tinydraw::vector_v2::chrome_contains({10.0F, 10.0F}, connecting_state));
+  CHECK(tinydraw::vector_v2::chrome_input_bottom(connecting_state) == 0);
+  CHECK(tinydraw::vector_v2::chrome_action_at({184.0F, 100.0F}, connecting_state) ==
+        ChromeAction::kNone);
+  CHECK(tinydraw::vector_v2::chrome_overlay_regions(connecting_state).count == 0U);
+
+  tinydraw::vector_v2::draw_chrome(connecting, width, height, connecting_state);
+  tinydraw::vector_v2::draw_chrome(synchronizing, width, height, synchronizing_state);
+  CHECK(connecting != synchronizing);
 }
 
 TEST_CASE("rectangular bottom toolbar owns the curved lower display corners") {

@@ -39,6 +39,8 @@ if(TINYDRAW_VECTOR_V2_OVERVIEW_WALK OR TINYDRAW_VECTOR_V2_APP)
       "vector_v2/vector_v2_presenter.cpp"
       "vector_v2/vector_v2_touch_sampler.cpp"
       "power_manager.cpp"
+      "rtc_clock.cpp"
+      "time_sync.cpp"
       "usb_export.cpp"
     )
     if(TINYDRAW_VECTOR_V2_GATE_HARNESS)
@@ -74,7 +76,7 @@ if(TINYDRAW_VECTOR_V2_OVERVIEW_WALK OR TINYDRAW_VECTOR_V2_APP)
     ${TINYDRAW_VECTOR_V2_SRCS}
   )
   set(TINYDRAW_PLATFORM_SRCS "")
-  set(TINYDRAW_PLATFORM_REQUIRES esp_lcd_co5300 esp_lcd_touch_cst816s)
+  set(TINYDRAW_PLATFORM_REQUIRES esp_event esp_lcd_co5300 esp_lcd_touch_cst816s esp_netif esp_wifi nvs_flash pcf85063a)
 elseif(NOT TINYDRAW_QEMU)
   list(APPEND TINYDRAW_PLATFORM_SRCS
     "co5300_panel_transport.cpp"

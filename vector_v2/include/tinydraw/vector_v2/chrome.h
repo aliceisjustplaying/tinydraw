@@ -36,6 +36,7 @@ enum class ChromeTool { kDraw, kErase, kPan };
 enum class ChromeSize { kSmall, kMedium, kLarge, kExtraLarge };
 enum class ChromePopup { kNone, kTools, kColors, kSizes, kDocument };
 enum class ChromeExportStatus { kIdle, kSaving, kSaved, kError };
+enum class ChromeTimeSyncStatus { kIdle, kConnecting, kSynchronizing, kSaved, kError };
 enum class ChromeAction {
   kNone,
   kUndo,
@@ -58,6 +59,7 @@ enum class ChromeAction {
   kCancelNewDrawing,
   kConfirmNewDrawing,
   kExport,
+  kSyncTime,
   kZoomIn,
   kZoomOut,
 };
@@ -71,9 +73,11 @@ struct ChromeState {
   bool can_undo = false;
   bool can_redo = false;
   bool can_export = false;
+  bool can_sync_time = false;
   bool confirm_new = false;
   ChromeExportStatus export_status = ChromeExportStatus::kIdle;
   std::uint8_t export_progress = 0;
+  ChromeTimeSyncStatus time_sync_status = ChromeTimeSyncStatus::kIdle;
   int battery_percentage = -1;
   bool battery_charging = false;
   bool operator==(const ChromeState&) const = default;
