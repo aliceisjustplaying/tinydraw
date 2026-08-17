@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string_view>
 
 #include "tinydraw/vector_v2/operation_log.h"
@@ -46,6 +47,10 @@ struct SvgExportOptions {
 // snapshot read. A sink failure or authority change makes the export fail.
 [[nodiscard]] bool export_svg(const OperationLog& log, SvgByteSink& sink,
                               SvgExportOptions options = {});
+
+// Counts the logical paths export_svg will emit without encoding geometry.
+// Callers must serialize mutation of log for this snapshot read.
+[[nodiscard]] std::optional<std::size_t> svg_path_count(const OperationLog& log);
 
 }  // namespace tinydraw::vector_v2
 

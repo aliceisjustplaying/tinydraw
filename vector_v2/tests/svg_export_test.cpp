@@ -317,6 +317,7 @@ TEST_CASE("operation chunks from one physical gesture export as one path") {
     return count;
   };
   CHECK(occurrences("<path ") == 2U);
+  CHECK(vector_v2::svg_path_count(fixture.log) == 2U);
 }
 
 TEST_CASE("SVG export omits a synthetic background rectangle") {
