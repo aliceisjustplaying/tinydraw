@@ -12,6 +12,7 @@ memory_probe_build="$root/out/build/esp32-vector-v2-memory-probe"
 vector_v2_build="$root/out/build/esp32-vector-v2"
 gate_harness_build="$root/out/build/esp32-vector-v2-gate-harness"
 ink_capture_build="$root/out/build/esp32-vector-v2-ink-capture"
+minimap_capture_build="$root/out/build/esp32-vector-v2-minimap-capture"
 tile_census_build="$root/out/build/esp32-vector-v2-tile-census"
 tearing_probe_build="$root/out/build/esp32-vector-v2-tearing-probe"
 panel_probe_build="$root/out/build/esp32-panel-probe"
@@ -116,6 +117,18 @@ case "$action" in
     assert_config "$ink_capture_build/sdkconfig" OCT
     eim run "idf.py -B '$ink_capture_build' -p '$port' flash"
     ;;
+  vector-v2-minimap-capture)
+    port="${2:-}"
+    if [[ -z "$port" ]]; then
+      echo "usage: $0 vector-v2-minimap-capture PORT" >&2
+      exit 2
+    fi
+    rm -rf "$minimap_capture_build"
+    cd "$root/esp32"
+    eim run "idf.py -B '$minimap_capture_build' -DTINYDRAW_QEMU=OFF -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_VECTOR_V2_MEMORY_PROBE=OFF -DTINYDRAW_VECTOR_V2_OVERVIEW_WALK=OFF -DTINYDRAW_VECTOR_V2_APP=ON -DTINYDRAW_VECTOR_V2_GATE_HARNESS=OFF -DTINYDRAW_VECTOR_V2_TILE_CENSUS=OFF -DTINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE=OFF -DTINYDRAW_VECTOR_V2_MINIMAP_TRACE_CAPTURE=ON build"
+    assert_config "$minimap_capture_build/sdkconfig" OCT
+    eim run "idf.py -B '$minimap_capture_build' -p '$port' flash"
+    ;;
   vector-v2-gate-harness)
     port="${2:-}"
     slots="${3:-448}"
@@ -215,10 +228,10 @@ case "$action" in
     fi
     ;;
   clean)
-    rm -rf "$raster_v1_build" "$qemu_build" "$graphics_build" "$vector_build" "$interactive_pan_build" "$overview_walk_build" "$memory_probe_build" "$vector_v2_build" "$gate_harness_build" "$tile_census_build" "$tearing_probe_build" "$panel_probe_build"
+    rm -rf "$raster_v1_build" "$qemu_build" "$graphics_build" "$vector_build" "$interactive_pan_build" "$overview_walk_build" "$memory_probe_build" "$vector_v2_build" "$gate_harness_build" "$ink_capture_build" "$minimap_capture_build" "$tile_census_build" "$tearing_probe_build" "$panel_probe_build"
     ;;
   *)
-    echo "usage: $0 {build|raster-v1|vector-v2 PORT|vector-benchmark PORT|interactive-pan-benchmark PORT|vector-v2-overview-walk PORT|vector-v2-memory-probe PORT|vector-v2-gate-harness PORT|vector-v2-tearing-probe PORT [POLICY] [EDGE] [CLOCK_MHZ]|panel-probe PORT [CLOCK_MHZ]|vector-v2-tile-census PORT|qemu|graphics|graphics-test|clean}" >&2
+    echo "usage: $0 {build|raster-v1|vector-v2 PORT|vector-v2-ink-capture PORT|vector-v2-minimap-capture PORT|vector-benchmark PORT|interactive-pan-benchmark PORT|vector-v2-overview-walk PORT|vector-v2-memory-probe PORT|vector-v2-gate-harness PORT|vector-v2-tearing-probe PORT [POLICY] [EDGE] [CLOCK_MHZ]|panel-probe PORT [CLOCK_MHZ]|vector-v2-tile-census PORT|qemu|graphics|graphics-test|clean}" >&2
     exit 2
     ;;
 esac
