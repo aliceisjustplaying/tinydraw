@@ -19,7 +19,7 @@
 #include "tinydraw/ink/ribbon_geometry.h"
 #include "tinydraw/ui/toolbar.h"
 
-#ifndef TINYDRAW_PANEL_PROBE
+#ifdef TINYDRAW_QEMU
 namespace {
 
 constexpr std::uint16_t kBackground = 0xFFFFU;
@@ -150,9 +150,16 @@ void accumulate(ReplayStats& total, const tinydraw::RibbonUpdate& update,
 }  // namespace
 #endif
 
+#ifdef TINYDRAW_RASTER_V1
+void run_hardware_app();
+#endif
+
 extern "C" void app_main() {
 #ifdef TINYDRAW_PANEL_PROBE
   tinydraw::esp32::run_panel_probe();
+  return;
+#elif defined(TINYDRAW_RASTER_V1)
+  run_hardware_app();
   return;
 #else
   NullDisplay null_display;

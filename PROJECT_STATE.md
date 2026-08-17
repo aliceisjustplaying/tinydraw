@@ -20,9 +20,10 @@ receipts:
 
 State audited through: [`COLD_COMPUTE_CAMPAIGN_RECEIPT.md`](benchmark-results/wave3-cold-compute/COLD_COMPUTE_CAMPAIGN_RECEIPT.md)
 
-Vector V2 is the feature-complete ESP32 product. Known bugs, cleanup, and final
-performance closure remain. [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) owns
-acceptance thresholds; [`V2_ROADMAP.md`](V2_ROADMAP.md) is the forward queue.
+Raster V1 and Vector V2 are supported ESP32 product generations. V2 is feature
+complete; known bugs, cleanup, and final performance closure remain.
+[`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) owns V2 acceptance thresholds;
+[`V2_ROADMAP.md`](V2_ROADMAP.md) is its forward queue.
 
 ## Finish-line scorecard
 
@@ -191,7 +192,7 @@ autosave feature itself.
 - Production toolbar, two PICO-8 palettes, zoom rail, battery, confirmation UI,
   on-demand RTC/NTP feedback, and an interactive minimap with tap-to-jump and
   captured viewport dragging.
-- Product, gate, QEMU, and focused hardware-diagnostic firmware variants.
+- TinyDraw V1, TinyDraw V2, V2 gate, QEMU, and focused hardware-diagnostic variants.
 
 Foundation receipts and architectural history live in
 [`vector_v2/README.md`](vector_v2/README.md),
@@ -227,6 +228,6 @@ Host validation:
 git diff --check
 ```
 
-ESP integration must build the product and gate variants. Release closure also
+ESP integration must build V1, V2, and the V2 gate variant. V2 release closure also
 requires the relevant focused diagnostics, physical optical/ink checks,
 interrupted-write tests, and a long-session soak.

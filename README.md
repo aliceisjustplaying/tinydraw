@@ -12,13 +12,20 @@ exercise the same C++20 drawing and UI core.
 
 ## Current state
 
-The ESP32 product is the feature-complete Vector V2 application. Cleanup,
-known bug fixes, and the final performance campaign remain. Current status
-lives in [`PROJECT_STATE.md`](PROJECT_STATE.md); [`V2_ROADMAP.md`](V2_ROADMAP.md)
-owns the remaining work, and [`vector_v2/README.md`](vector_v2/README.md)
-defines the module boundaries.
+The ESP32 has two supported product generations: raster-authoritative TinyDraw
+V1 and vector-authoritative TinyDraw V2. V2 is feature complete; cleanup, known
+bug fixes, and its final performance campaign remain. Current status lives in
+[`PROJECT_STATE.md`](PROJECT_STATE.md), and [`V2_ROADMAP.md`](V2_ROADMAP.md)
+owns the remaining V2 work.
 
-### ESP32 product
+### TinyDraw V1 — Raster
+
+- Variable-width, Perfect Freehand-style ink with 4×4 edge smoothing
+- Solid self-overlaps, rounded sharp turns, twelve colors, and four sizes
+- Pan, ten Undos, a 3×3 canvas, autosave, battery status, and USB PNG export
+- Onboard clock, one-shot NTP correction, demos, and battery-powered off/on
+
+### TinyDraw V2 — Vector
 
 - Vector operations are authoritative for pen and eraser strokes.
 - The bounded 1472×1792 world supports 25%, 50%, 100%, 200%, and 400% zoom.
@@ -84,13 +91,15 @@ Draw with the mouse, use `Cmd-Z` to undo, `C` for New, and `Esc` to quit.
 ## Build ESP32 firmware
 ```sh
 ./scripts/bootstrap-idf     # once; isolated ESP-IDF v6.0.2
-./scripts/esp32 build
-./scripts/esp32 vector-v2 PORT
+./scripts/esp32 build             # build TinyDraw V2
+./scripts/esp32 vector-v2 PORT    # build + flash TinyDraw V2
+./scripts/esp32 raster-v1         # build TinyDraw V1
+./scripts/esp32 raster-v1 PORT    # build + flash TinyDraw V1
 ./scripts/esp32 graphics-test
 ```
 
-`build` builds the product firmware; `vector-v2 PORT` rebuilds and flashes it.
-Use an explicit serial port. Export temporarily replaces USB serial with a read-only drive;
+V1 and V2 use separate build directories. Use an explicit serial port when flashing.
+Export temporarily replaces USB serial with a read-only drive;
 **Return to Drawing** stops the USB device stack without resetting the board.
 To flash again on battery, power off, hold BOOT, and short-press power for a cold
 boot. Short BOOT records/replays demos. Hold the lower button four seconds to

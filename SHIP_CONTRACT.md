@@ -144,11 +144,11 @@ Owner decision, 2026-08-16: V2 documents are **blank baseline plus ordered
 vector operations**. The operation sequence and active prefix are the complete
 durable drawing authority; raster overviews and tiles are rebuilt derivatives.
 
-Raster V1 documents are never silently reinterpreted as V2 vector authority.
-Access requires a future explicit importer. A flattened import must declare an
-explicit raster baseline and either embed it in SVG or refuse vector-only SVG
-export. The old raster-only snapshot restore seam is not a valid V2 persistence
-or Undo mechanism.
+Raster V1 documents remain explicitly Raster V1 and accessible through the V1
+build. They are never silently reinterpreted as V2 vector authority. A future
+flattened V2 import must declare an explicit raster baseline and either embed it
+in SVG or refuse vector-only SVG export. The V1 raster snapshot restore seam is
+not a valid V2 persistence or Undo mechanism.
 
 ## Owner decisions — 2026-08-16 (post Cold Stage B glass session)
 

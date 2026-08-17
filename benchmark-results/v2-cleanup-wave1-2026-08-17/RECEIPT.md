@@ -5,8 +5,8 @@ Baseline: tag `v2-feature-complete-pre-cleanup`, commit
 
 ## Change
 
-Wave 1 removed 9,298 lines and added 674. It retired superseded Raster V1 and
-prototype firmware, replaced the firmware Boolean matrix with one variant
+Wave 1 retired prototype firmware while retaining TinyDraw V1 and V2 as
+supported products. It replaced the firmware Boolean matrix with one variant
 selector, removed unused vector-core experiments and instrumentation, moved
 host experiments behind an opt-in build flag, centralized ink-trace validation,
 factored snapshot registration, and narrowed chrome interaction to one app
