@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <cstdio>
 
-#include "esp_rom_sys.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -13,24 +12,6 @@
 
 namespace tinydraw::esp32 {
 namespace {
-
-#if !defined(TINYDRAW_VECTOR_V2_PRESENTATION_BOUNDARY_TOP_SWEEP) && \
-    !defined(TINYDRAW_VECTOR_V2_PRESENTATION_BEAM_RACE_CONTROL)
-#define TINYDRAW_VECTOR_V2_PRESENTATION_BOUNDARY_TOP_SWEEP 1
-#endif
-#if defined(TINYDRAW_VECTOR_V2_PRESENTATION_BOUNDARY_TOP_SWEEP) && \
-    defined(TINYDRAW_VECTOR_V2_PRESENTATION_BEAM_RACE_CONTROL)
-#error "Select exactly one Vector V2 presentation experiment"
-#endif
-#if !defined(TINYDRAW_VECTOR_V2_TE_EDGE_RISING) && !defined(TINYDRAW_VECTOR_V2_TE_EDGE_FALLING)
-#define TINYDRAW_VECTOR_V2_TE_EDGE_RISING 1
-#endif
-#if defined(TINYDRAW_VECTOR_V2_TE_EDGE_RISING) && defined(TINYDRAW_VECTOR_V2_TE_EDGE_FALLING)
-#error "Select exactly one Vector V2 TE edge"
-#endif
-#ifndef TINYDRAW_CO5300_CLOCK_MHZ
-#define TINYDRAW_CO5300_CLOCK_MHZ 50
-#endif
 
 constexpr std::uint16_t kBackground = 0xFFFFU;
 constexpr std::int64_t kTearWaitTimeoutUs = 40'000;
@@ -76,31 +57,13 @@ vector_v2::PixelRect align_bounds(vector_v2::PixelRect bounds) {
 
 }  // namespace
 
-const char* presentation_experiment_name() {
-#ifdef TINYDRAW_VECTOR_V2_PRESENTATION_BEAM_RACE_CONTROL
-  return "beam-race-control";
-#else
-  return "boundary-top-sweep";
-#endif
-}
+const char* presentation_experiment_name() { return "boundary-top-sweep"; }
 
-const char* selected_tear_edge_name() {
-#ifdef TINYDRAW_VECTOR_V2_TE_EDGE_FALLING
-  return "falling";
-#else
-  return "rising";
-#endif
-}
+const char* selected_tear_edge_name() { return "rising"; }
 
-TearSignalEdge selected_tear_edge() {
-#ifdef TINYDRAW_VECTOR_V2_TE_EDGE_FALLING
-  return TearSignalEdge::kFalling;
-#else
-  return TearSignalEdge::kRising;
-#endif
-}
+TearSignalEdge selected_tear_edge() { return TearSignalEdge::kRising; }
 
-int requested_panel_clock_mhz() { return TINYDRAW_CO5300_CLOCK_MHZ; }
+int requested_panel_clock_mhz() { return kEffectiveCo5300ClockMHz; }
 
 int effective_panel_clock_mhz() { return kEffectiveCo5300ClockMHz; }
 
@@ -656,106 +619,8 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   std::int64_t tear_completed = tear_started;
   const std::uint32_t first_sequence = display_.submit_count() + 1U;
 
-#ifdef TINYDRAW_VECTOR_V2_PRESENTATION_BEAM_RACE_CONTROL
-  // Experimental control only: retain the two-band age model without claiming
-  // that estimated rows correspond to visible scanout.
-  constexpr std::int64_t kBeamMarginUs =
-      static_cast<std::int64_t>(kBeamStartMarginRows) * kTePeriodUs / kPanelSweepRows;
-  const auto te = display_.tear_signal_timing();
-  const std::uint32_t selected_count =
-      selected_tear_edge() == TearSignalEdge::kRising ? te.rising_edges : te.falling_edges;
-  const std::int64_t now_us_health = esp_timer_get_time();
-  if (selected_count != te_last_count_) {
-    te_last_count_ = selected_count;
-    te_last_change_us_ = now_us_health;
-  }
-  timing.tear_edge_observed = selected_count != 0U;
-  if (selected_count == 0U || now_us_health - te_last_change_us_ > 100'000) {
-    return timing;
-  }
-
-  int start_row = 0;
-  bool model_ready = false;
-  const std::int64_t discipline_deadline = tear_started + 2 * kTePeriodUs;
-  while (!model_ready && esp_timer_get_time() < discipline_deadline) {
-    const std::int64_t age = display_.tear_age_us(selected_tear_edge());
-    if (age < 0) {
-      break;
-    }
-    if (age < kBeamMarginUs) {
-      esp_rom_delay_us(100);
-      continue;
-    }
-    const std::int64_t estimated_row = age * kPanelSweepRows / kTePeriodUs;
-    if (estimated_row < canvas_bottom) {
-      start_row = std::max(0, static_cast<int>(estimated_row) - kBeamStartMarginRows) & ~1;
-      model_ready = true;
-    } else {
-      const auto wait = display_.wait_for_tear_edge(selected_tear_edge(), kTearWaitTimeoutUs);
-      record_tear_wait(timing, wait);
-      if (!wait.observed) {
-        break;
-      }
-    }
-  }
-  if (!model_ready) {
-    return timing;
-  }
-  tear_completed = esp_timer_get_time();
-  const LivePresentationTiming edge_timing = timing;
-  timing = present_ring({0, start_row, vector_v2::kOverviewWidth, canvas_bottom}, chrome, event_us,
-                        no_exposed);
-  timing.compose_us = scroll_completed - started + timing.exposed_compose_us;
-  timing.tear_edge_observed = true;
-  timing.tear_edge_timed_out = edge_timing.tear_edge_timed_out;
-  timing.tear_heal_attempted = edge_timing.tear_heal_attempted;
-  timing.tear_heal_command_sent = edge_timing.tear_heal_command_sent;
-  timing.tear_edge_isr_to_resume_us = edge_timing.tear_edge_isr_to_resume_us;
-  timing.tear_edge_wait_resumed = edge_timing.tear_edge_wait_resumed;
-  std::int64_t band_wait_us = 0;
-  if (timing.passed && start_row > 0) {
-    const std::int64_t band_started = esp_timer_get_time();
-    bool band_ready = false;
-    const std::int64_t band_deadline = band_started + 2 * kTePeriodUs;
-    while (!band_ready && esp_timer_get_time() < band_deadline) {
-      const std::int64_t age = display_.tear_age_us(selected_tear_edge());
-      if (age < 0) {
-        break;
-      }
-      const bool wrapped_during_band = age < esp_timer_get_time() - tear_completed;
-      if (!wrapped_during_band) {
-        const auto wait = display_.wait_for_tear_edge(selected_tear_edge(), kTearWaitTimeoutUs);
-        record_tear_wait(timing, wait);
-        if (!wait.observed) {
-          break;
-        }
-        continue;
-      }
-      if (age < kBeamMarginUs) {
-        esp_rom_delay_us(100);
-        continue;
-      }
-      band_ready = true;
-    }
-    band_wait_us = esp_timer_get_time() - band_started;
-    if (band_ready) {
-      const auto wrapped =
-          present_ring({0, 0, vector_v2::kOverviewWidth, start_row}, chrome, event_us, no_exposed);
-      timing.pushes += wrapped.pushes;
-      timing.exposed_compose_us += wrapped.exposed_compose_us;
-      timing.chrome_us += wrapped.chrome_us;
-      timing.chrome_prepare_us += wrapped.chrome_prepare_us;
-      timing.chrome_stage_us += wrapped.chrome_stage_us;
-      timing.compose_us += wrapped.exposed_compose_us;
-      timing.passed = wrapped.passed;
-    } else {
-      timing.passed = false;
-    }
-  }
-  timing.tear_wait_us = (tear_completed - tear_started) + band_wait_us;
-#else
-  // Normal development path: require a newly observed configured TE edge,
-  // then submit one monotonically increasing row-zero sweep.
+  // Require a newly observed rising TE edge, then submit one monotonically
+  // increasing row-zero sweep.
   const auto wait = display_.wait_for_tear_edge(selected_tear_edge(), kTearWaitTimeoutUs);
   tear_completed = esp_timer_get_time();
   timing.tear_wait_us = tear_completed - tear_started;
@@ -771,7 +636,6 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   timing.chrome_us = sweep.chrome_us;
   timing.compose_us += sweep.exposed_compose_us;
   timing.passed = sweep.passed;
-#endif
 
   timing.exposed_compose_us += prestaged_exposed_us;
   timing.chrome_us += prestaged_chrome_us;

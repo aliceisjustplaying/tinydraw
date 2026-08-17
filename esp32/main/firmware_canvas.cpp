@@ -84,14 +84,4 @@ std::span<std::uint16_t> FirmwareCanvas::visible() {
   return ready() ? std::span(visible_, kPixelCount) : std::span<std::uint16_t>{};
 }
 
-#ifdef TINYDRAW_INTERACTIVE_PAN_BENCHMARK
-std::span<std::uint16_t> FirmwareCanvas::prototype_materialization_storage() {
-  // The decisive prototype deliberately defers raster Undo. Reuse its 3.28 MiB
-  // arena as a second 3x3 materialization buffer rather than increasing PSRAM.
-  return ready() && TileUndoHistory::kRequiredPixels >= WorldCanvas::kRequiredPixels
-             ? std::span(undo_storage_, WorldCanvas::kRequiredPixels)
-             : std::span<std::uint16_t>{};
-}
-#endif
-
 }  // namespace tinydraw::esp32

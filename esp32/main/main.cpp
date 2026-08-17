@@ -11,9 +11,6 @@
 #ifdef TINYDRAW_QEMU_GRAPHICS
 #include "qemu_display.h"
 #endif
-#ifdef TINYDRAW_VECTOR_V2_MEMORY_PROBE
-#include "vector_v2_memory_probe.h"
-#endif
 #ifdef TINYDRAW_PANEL_PROBE
 #include "panel_probe.h"
 #endif
@@ -22,6 +19,7 @@
 #include "tinydraw/ink/ribbon_geometry.h"
 #include "tinydraw/ui/toolbar.h"
 
+#ifndef TINYDRAW_PANEL_PROBE
 namespace {
 
 constexpr std::uint16_t kBackground = 0xFFFFU;
@@ -150,24 +148,13 @@ void accumulate(ReplayStats& total, const tinydraw::RibbonUpdate& update,
 }
 
 }  // namespace
-
-#ifndef TINYDRAW_QEMU
-void run_hardware_app();
 #endif
 
 extern "C" void app_main() {
-#ifdef TINYDRAW_VECTOR_V2_MEMORY_PROBE
-  tinydraw::esp32::run_vector_v2_memory_probe();
-  return;
-#endif
 #ifdef TINYDRAW_PANEL_PROBE
   tinydraw::esp32::run_panel_probe();
   return;
-#endif
-#ifndef TINYDRAW_QEMU
-  run_hardware_app();
-  return;
-#endif
+#else
   NullDisplay null_display;
   tinydraw::DisplayBackend* display = &null_display;
 #ifdef TINYDRAW_QEMU_GRAPHICS
@@ -282,4 +269,5 @@ extern "C" void app_main() {
       static_cast<unsigned>(total.maximum_psram_write_per_frame));
   vTaskDelay(1);
   std::printf("TINYDRAW_QEMU_DONE\n");
+#endif
 }

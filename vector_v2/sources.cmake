@@ -5,7 +5,6 @@ set(TINYDRAW_VECTOR_V2_SRCS
   "${CMAKE_CURRENT_LIST_DIR}/src/display_scheduler.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/frame_scroller.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/idle_repair.cpp"
-  "${CMAKE_CURRENT_LIST_DIR}/src/ink_trace.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/incremental_document.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/incremental_rasterizer.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/materialized_canvas.cpp"
@@ -23,4 +22,8 @@ set(TINYDRAW_VECTOR_V2_SRCS
   "${CMAKE_CURRENT_LIST_DIR}/src/tile_producer.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/touch_event_buffer.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/world_export.cpp"
+)
+
+set(TINYDRAW_VECTOR_V2_DIAGNOSTIC_SRCS
+  "${CMAKE_CURRENT_LIST_DIR}/src/ink_trace.cpp"
 )

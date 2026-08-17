@@ -125,12 +125,6 @@ void VectorV2TouchSampler::run() {
                                std::memory_order_relaxed);
     moves_coalesced_.fetch_add(offered == vector_v2::TouchOfferResult::kMoveCoalesced,
                                std::memory_order_relaxed);
-#ifdef TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE
-    if (capture_ring_ != nullptr) {
-      capture_ring_->record_contact_read(contact_read(read), {.x = point.x, .y = point.y},
-                                         completed_us);
-    }
-#endif
     vTaskDelay(pdMS_TO_TICKS(1));
   }
   const TaskHandle_t waiter = stop_waiter_;
