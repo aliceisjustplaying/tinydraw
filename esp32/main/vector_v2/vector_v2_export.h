@@ -49,12 +49,14 @@ class VectorV2Export {
   [[nodiscard]] VectorV2ExportStats encode(const vector_v2::OperationLog& log,
                                            VectorV2ExportProgress progress = nullptr,
                                            void* progress_context = nullptr);
-  // Starts or refreshes the USB mass-storage presentation. Activating USB
-  // repurposes the shared USB port and ends any serial console session until
-  // the next reset, matching Raster V1 export semantics.
+  // Starts the USB mass-storage presentation. Activating USB repurposes the
+  // shared port until stop_usb() returns the device to the drawing app.
   void set_modified_time(FatDateTime time);
   [[nodiscard]] bool present_usb();
-  // Disconnects an active USB disk before re-encoding so hosts re-read it.
+  [[nodiscard]] bool usb_host_ejected() const;
+  [[nodiscard]] bool stop_usb();
+  // Fully stops an active USB session before re-encoding. A fresh session is
+  // started only after the new export has committed.
   void prepare_reencode();
 
  private:

@@ -31,6 +31,11 @@ constexpr int kToastLeft = 104;
 constexpr int kToastTop = 70;
 constexpr int kToastRight = 264;
 constexpr int kToastBottom = 132;
+constexpr int kExportDialogLeft = 24;
+constexpr int kExportDialogTop = 92;
+constexpr int kExportDialogRight = 344;
+constexpr int kExportDialogBottom = 326;
+constexpr ChromeRect kExportExitRect{52, 238, 316, 298};
 constexpr int kTimeToastLeft = 80;
 constexpr int kTimeToastRight = 288;
 constexpr int kBatteryLeft = 222;
@@ -102,6 +107,11 @@ bool inside(ChromePoint point, float x0, float y0, float x1, float y1) {
 bool time_sync_active(const ChromeState& state) {
   return state.time_sync_status == ChromeTimeSyncStatus::kConnecting ||
          state.time_sync_status == ChromeTimeSyncStatus::kSynchronizing;
+}
+
+bool export_mode_active(const ChromeState& state) {
+  return state.export_status == ChromeExportStatus::kPresented ||
+         state.export_status == ChromeExportStatus::kHostEjected;
 }
 
 bool canvas_overlays_visible(const ChromeState& state) {
@@ -585,6 +595,33 @@ void draw_export_toast(Painter& painter, const ChromeState& state) {
   if (state.export_status == ChromeExportStatus::kIdle) {
     return;
   }
+  if (export_mode_active(state)) {
+    painter.rect({0, 0, kWidth, kHeight}, kWhite);
+    painter.rounded({kExportDialogLeft + 2, kExportDialogTop + 3, kExportDialogRight + 2,
+                     kExportDialogBottom + 3},
+                    12, kShadow);
+    painter.rounded({kExportDialogLeft - 1, kExportDialogTop - 1, kExportDialogRight + 1,
+                     kExportDialogBottom + 1},
+                    12, kBorder);
+    painter.rounded({kExportDialogLeft, kExportDialogTop, kExportDialogRight, kExportDialogBottom},
+                    11, kWhite);
+    painter.text(96, 122, "USB EXPORT", kInk, 3);
+    if (state.export_status == ChromeExportStatus::kHostEjected) {
+      painter.text(107, 174, "DRIVE EJECTED", kSelected, 2);
+      painter.text(145, 205, "SAFE TO RETURN", kMuted);
+    } else {
+      painter.text(95, 174, "READ-ONLY DRIVE", kInk, 2);
+      painter.text(139, 205, "COPY YOUR FILES", kMuted);
+    }
+    painter.rounded({kExportExitRect.x0 + 2, kExportExitRect.y0 + 3, kExportExitRect.x1 + 2,
+                     kExportExitRect.y1 + 3},
+                    10, kShadow);
+    painter.rounded(
+        {kExportExitRect.x0, kExportExitRect.y0, kExportExitRect.x1, kExportExitRect.y1}, 10,
+        kSelected);
+    painter.text(83, 260, "RETURN TO DRAWING", kWhite, 2);
+    return;
+  }
   painter.rounded({kToastLeft + 2, kToastTop + 3, kToastRight + 2, kToastBottom + 3}, 12, kShadow);
   painter.rounded({kToastLeft - 1, kToastTop - 1, kToastRight + 1, kToastBottom + 1}, 12, kBorder);
   painter.rounded({kToastLeft, kToastTop, kToastRight, kToastBottom}, 11, kWhite);
@@ -667,6 +704,9 @@ float brush_size(ChromeSize size) {
 }
 
 int chrome_canvas_bottom(const ChromeState& state) {
+  if (export_mode_active(state)) {
+    return 0;
+  }
   if (state.popup == ChromePopup::kNone) {
     return kChromeCanvasBottom;
   }
@@ -675,7 +715,7 @@ int chrome_canvas_bottom(const ChromeState& state) {
 
 int chrome_input_bottom(const ChromeState& state) {
   if (state.confirm_new || state.export_status == ChromeExportStatus::kSaving ||
-      time_sync_active(state)) {
+      export_mode_active(state) || time_sync_active(state)) {
     return 0;
   }
   if (state.popup == ChromePopup::kNone) {
@@ -686,7 +726,7 @@ int chrome_input_bottom(const ChromeState& state) {
 
 int chrome_ink_bottom(const ChromeState& state) {
   if (state.confirm_new || state.export_status == ChromeExportStatus::kSaving ||
-      time_sync_active(state)) {
+      export_mode_active(state) || time_sync_active(state)) {
     return 0;
   }
   if (state.popup == ChromePopup::kNone) {
@@ -806,7 +846,7 @@ bool chrome_promotes_minimap_drag(ChromePoint start, ChromePoint current, const 
 
 bool chrome_contains(ChromePoint point, const ChromeState& state) {
   if (state.confirm_new || state.export_status == ChromeExportStatus::kSaving ||
-      time_sync_active(state) || state.popup == ChromePopup::kColors) {
+      export_mode_active(state) || time_sync_active(state) || state.popup == ChromePopup::kColors) {
     return inside(point, 0.0F, 0.0F, static_cast<float>(kWidth), static_cast<float>(kHeight));
   }
   // The dock face starts at the canvas bottom; rows above it are visible
@@ -904,6 +944,13 @@ ChromeAction zoom_action_at(ChromePoint point) {
 ChromeAction chrome_action_at(ChromePoint point, const ChromeState& state) {
   if (state.confirm_new) {
     return confirmation_action_at(point);
+  }
+  if (export_mode_active(state)) {
+    return inside(point, static_cast<float>(kExportExitRect.x0),
+                  static_cast<float>(kExportExitRect.y0), static_cast<float>(kExportExitRect.x1),
+                  static_cast<float>(kExportExitRect.y1))
+               ? ChromeAction::kExitExport
+               : ChromeAction::kNone;
   }
   if (state.export_status == ChromeExportStatus::kSaving || time_sync_active(state)) {
     return ChromeAction::kNone;

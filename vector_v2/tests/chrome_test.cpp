@@ -513,6 +513,32 @@ TEST_CASE("saving toast is modal and renders determinate progress") {
   CHECK(empty != half);
 }
 
+TEST_CASE("USB export mode blocks drawing and offers an explicit return action") {
+  constexpr int width = 368;
+  constexpr int height = 448;
+  const std::size_t pixel_count = static_cast<std::size_t>(width * height);
+  std::array<std::vector<std::uint16_t>, 2> renderings;
+  std::size_t rendering_index = 0;
+
+  for (const auto status : {ChromeExportStatus::kPresented, ChromeExportStatus::kHostEjected}) {
+    const ChromeState state{.export_status = status};
+    CHECK(tinydraw::vector_v2::chrome_canvas_bottom(state) == 0);
+    CHECK(tinydraw::vector_v2::chrome_input_bottom(state) == 0);
+    CHECK(tinydraw::vector_v2::chrome_ink_bottom(state) == 0);
+    CHECK(tinydraw::vector_v2::chrome_contains({10.0F, 10.0F}, state));
+    CHECK(tinydraw::vector_v2::chrome_action_at({184.0F, 268.0F}, state) ==
+          ChromeAction::kExitExport);
+    CHECK(tinydraw::vector_v2::chrome_action_at({184.0F, 180.0F}, state) == ChromeAction::kNone);
+
+    auto& pixels = renderings[rendering_index++];
+    pixels.assign(pixel_count, 0x1234U);
+    tinydraw::vector_v2::draw_chrome(pixels, width, height, state);
+    CHECK(pixels[0] == 0xFFFFU);
+    CHECK(pixels[245U * width + 60U] == 0x349FU);
+  }
+  CHECK(renderings[0] != renderings[1]);
+}
+
 TEST_CASE("palette hit testing gives large cells to the circular swatches") {
   const ChromeState state{.popup = ChromePopup::kColors};
   CHECK_FALSE(tinydraw::vector_v2::chrome_color_at({46.0F, 63.0F}, state).has_value());
