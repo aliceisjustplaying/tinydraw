@@ -285,16 +285,18 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       workspace and the existing streamed PNGenc path. PNG and unchanged SVG
       bytes share one metadata-last authority-snapshot commit, then appear as
       separate read-only files in the synthesized FAT16 volume. Host renderer,
-      PNG, FAT readback, normal V2 compile, and gate-harness compile are green;
-      physical export/mount validation remains with release integration.
+      PNG, FAT readback, normal V2 compile, and gate-harness compile are green.
+      The owner physically mounted and opened `DRAWING.PNG` on 2026-08-17 and
+      judged the settled-AA output good. Exact physical timing/readback telemetry
+      remains release instrumentation.
 - [x] Fix the export-mode USB wedge (MSC re-exposes after eject; needs an
       on-device exit); this is sixth in the owner-locked finish queue.
-      **Implemented 2026-08-17; physical gate pending:** eject/unmount latches
-      the read-only medium absent, the app shows explicit connected/ejected
-      export state, and **Return to Drawing** deinitializes TinyUSB and releases
-      the USB PHY without a reset. Failed shutdown stays modal for a safe retry.
-      Host lifecycle/UI tests and the Vector V2 ESP-IDF build pass. The state
-      is volume-level and owns the combined `DRAWING.SVG` + `DRAWING.PNG` disk.
+      **Owner-accepted 2026-08-17:** eject/unmount latches the read-only medium
+      absent, the app shows explicit connected/ejected export state, and
+      **Return to Drawing** deinitializes TinyUSB and releases the USB PHY without
+      a reset. The owner confirmed the drive disconnects and drawing resumes.
+      Host lifecycle/UI tests and the Vector V2 ESP-IDF build pass. The state is
+      volume-level and owns the combined `DRAWING.SVG` + `DRAWING.PNG` disk.
 - [x] Make color-dialog drawing imperceptibly fast. **Landed 2026-08-17:**
       exact horizontal-span circle/rounded rasterization and color-only frame
       re-presentation cut physical open time 132.466 → 27.568 ms (4.81×),
@@ -368,6 +370,10 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       Autosave commits continuously; an explicit hold-triggered flush is a
       later durability refinement, not a missing power feature.
 - [ ] Add visible capacity, save, export, storage, and hardware failure states.
+- [ ] Represent SVG eraser Strokes as transparent cutouts rather than white
+      filled paths. The owner found the current white-path behavior during the
+      physical SVG+PNG review; preserve the one-path-per-physical-Stroke model
+      while making erasing correct over transparent or nonwhite backgrounds.
 - [ ] Center the USB export helper line in the later UI refinement round. The
       `d9b4bb8` font fix restored every missing glyph on glass, but the owner
       observed that `COPY YOUR FILES` is horizontally misaligned; its current
