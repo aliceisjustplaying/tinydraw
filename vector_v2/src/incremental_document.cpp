@@ -545,6 +545,63 @@ std::optional<IncrementalAppendResult> append_authority_only(OperationLog& log,
       .identity = identity, .affected_world_bounds = world_bounds, .phases = phases};
 }
 
+std::optional<HistoryChange> move_history_incrementally(OperationLog& log,
+                                                        MaterializedCanvas& canvas,
+                                                        HistoryDirection direction,
+                                                        std::span<std::uint16_t> overview_scratch) {
+  if (!log.ready() || !canvas.ready() || log.current_revision() != canvas.current_revision() ||
+      !canvas.accepts_external_workspace(std::as_bytes(overview_scratch)) ||
+      log.workspace_overlaps_storage(std::as_bytes(overview_scratch))) {
+    return std::nullopt;
+  }
+  auto prepared = direction == HistoryDirection::kUndo ? log.prepare_undo() : log.prepare_redo();
+  if (!prepared.has_value()) {
+    return std::nullopt;
+  }
+  const HistoryChange change = prepared->change();
+  const PixelRect overview_bounds = overview_bounds_for_world(change.affected_world_bounds);
+  const int width = overview_bounds.x1 - overview_bounds.x0;
+  const int height = overview_bounds.y1 - overview_bounds.y0;
+  const std::size_t pixel_count =
+      static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+  if (width <= 0 || height <= 0 || overview_scratch.size() < pixel_count) {
+    prepared->cancel();
+    return std::nullopt;
+  }
+  auto pixels = overview_scratch.first(pixel_count);
+  std::fill(pixels.begin(), pixels.end(), 0xFFFFU);
+  const RasterSurface surface{
+      .zoom = ZoomLevel::k25Percent,
+      .level_bounds = overview_bounds,
+      .pixels = pixels,
+      .stride = width,
+  };
+  for (std::size_t index = 0; index < change.active_operation_count; ++index) {
+    const auto stored = prepared->target_operation(index);
+    if (!stored.has_value()) {
+      prepared->cancel();
+      return std::nullopt;
+    }
+    if (!intersects(operation_level_bounds(stored->world_bounds, ZoomLevel::k25Percent),
+                    overview_bounds)) {
+      continue;
+    }
+    if (!apply_incremental_operation(
+            {.tool = stored->tool, .color = stored->color, .samples = stored->samples}, surface)) {
+      prepared->cancel();
+      return std::nullopt;
+    }
+  }
+  if (!canvas.commit_incremental_revision(change.generation,
+                                          {.bounds = overview_bounds, .pixels = pixels},
+                                          change.affected_world_bounds, {})) {
+    prepared->cancel();
+    return std::nullopt;
+  }
+  prepared->publish();
+  return change;
+}
+
 std::size_t pending_operation_count(const OperationLog& log, const MaterializedCanvas& canvas) {
   if (!log.ready() || !canvas.ready()) {
     return 0;
