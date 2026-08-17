@@ -3089,6 +3089,7 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
     const std::uint16_t color = 0x0000U;
     tinydraw::InkPoint last_ink{};
     Point last_touch{};
+    Point last_canvas_touch{};
     bool pressed = false;
     std::uint32_t presentation_failures = 0;
     std::uint32_t commit_failures = 0;
@@ -3125,6 +3126,7 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
       if (sampled->kind == vector_v2::TouchEventKind::kDown && !pressed) {
         pressed = true;
         last_touch = sampled->point;
+        last_canvas_touch = sampled->point;
         last_ink =
             ink.begin({.x = sampled->point.x, .y = sampled->point.y, .timestamp_us = event_us});
         if (!builder.begin(OperationTool::kPen, color, gesture_id,
@@ -3141,8 +3143,9 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
         continue;
       }
       if (sampled->kind == vector_v2::TouchEventKind::kUp && pressed) {
-        last_ink = ink.finish(
-            {.x = last_ink.position.x, .y = last_ink.position.y, .timestamp_us = event_us});
+        last_ink = ink.finish({.x = last_canvas_touch.x,
+                               .y = last_canvas_touch.y,
+                               .timestamp_us = event_us});
         const auto finish_timing =
             presenter.show_update(ribbon.finish(last_ink), color, chrome, event_us);
         presentation_failures += !finish_timing.passed;
@@ -3181,6 +3184,7 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
       if (!clipped.has_value()) {
         continue;
       }
+      last_canvas_touch = {.x = clipped->x, .y = clipped->y};
       last_ink = ink.update({.x = clipped->x, .y = clipped->y, .timestamp_us = event_us});
       const vector_v2::OperationPoint add_point = presenter.operation_point(last_ink);
       std::uint32_t geometry_delta = 0;
@@ -3188,7 +3192,7 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
       std::uint32_t complete_delta = 0;
       bool submitted = false;
       const auto move = vector_v2::process_live_ink_move(
-          ribbon, builder, last_ink, add_point, event_us,
+          ribbon, builder, last_ink, add_point, last_canvas_touch, event_us,
           [&](const RibbonUpdate& update, std::uint32_t visual_event_us) {
             geometry_delta = static_cast<std::uint32_t>(esp_timer_get_time()) - event_us;
             const auto timing = presenter.show_update(update, color, chrome, visual_event_us);

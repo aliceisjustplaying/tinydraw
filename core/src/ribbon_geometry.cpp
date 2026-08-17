@@ -244,15 +244,20 @@ void RibbonStream::reset() {
   first_cap_pending_ = false;
 }
 
-RibbonUpdate CurvedRibbonStream::append(InkPoint point, bool provisional_needed) {
+RibbonUpdate CurvedRibbonStream::append(InkPoint point, bool provisional_needed,
+                                        std::optional<Point> visual_endpoint) {
   RibbonUpdate update;
+  InkPoint visual_point = point;
+  if (visual_endpoint.has_value()) {
+    visual_point.position = *visual_endpoint;
+  }
   if (point_count_ == 0U) {
     first_ = point;
     stable_ = point;
     last_ = point;
     point_count_ = 1U;
     if (provisional_needed) {
-      update.provisional.push_back(circle(point.position, point.radius));
+      update.provisional.push_back(circle(visual_point.position, visual_point.radius));
     }
     return update;
   }
@@ -262,15 +267,20 @@ RibbonUpdate CurvedRibbonStream::append(InkPoint point, bool provisional_needed)
       return update;
     }
     if (point_count_ == 1U) {
-      update.provisional.push_back(circle(last_.position, last_.radius));
+      update.provisional.push_back(circle(first_.position, first_.radius));
+      if (!equal(first_.position, visual_point.position)) {
+        emit_tail(stable_, visual_point,
+                  [&](RibbonPrimitive primitive) { update.provisional.push_back(primitive); });
+        update.provisional.push_back(circle(visual_point.position, visual_point.radius));
+      }
       return update;
     }
     if (first_cap_pending_) {
       update.provisional.push_back(circle(first_.position, first_.radius));
     }
-    emit_tail(stable_, last_,
+    emit_tail(stable_, visual_point,
               [&](RibbonPrimitive primitive) { update.provisional.push_back(primitive); });
-    update.provisional.push_back(circle(last_.position, last_.radius));
+    update.provisional.push_back(circle(visual_point.position, visual_point.radius));
     return update;
   }
 
@@ -280,9 +290,9 @@ RibbonUpdate CurvedRibbonStream::append(InkPoint point, bool provisional_needed)
     first_cap_pending_ = true;
     if (provisional_needed) {
       update.provisional.push_back(circle(first_.position, first_.radius));
-      emit_tail(stable_, last_,
+      emit_tail(stable_, visual_point,
                 [&](RibbonPrimitive primitive) { update.provisional.push_back(primitive); });
-      update.provisional.push_back(circle(last_.position, last_.radius));
+      update.provisional.push_back(circle(visual_point.position, visual_point.radius));
     }
     return update;
   }
@@ -302,9 +312,9 @@ RibbonUpdate CurvedRibbonStream::append(InkPoint point, bool provisional_needed)
   last_ = point;
   ++point_count_;
   if (provisional_needed) {
-    emit_tail(stable_, last_,
+    emit_tail(stable_, visual_point,
               [&](RibbonPrimitive primitive) { update.provisional.push_back(primitive); });
-    update.provisional.push_back(circle(last_.position, last_.radius));
+    update.provisional.push_back(circle(visual_point.position, visual_point.radius));
   }
   return update;
 }

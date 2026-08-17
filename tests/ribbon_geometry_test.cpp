@@ -126,6 +126,31 @@ TEST_CASE("curved ribbon stabilizes midpoint curves while its tail reaches the l
   CHECK(third.provisional.end()[-1].radius == doctest::Approx(6.0F));
 }
 
+TEST_CASE("curved ribbon visual tip does not change smoothed committed geometry") {
+  tinydraw::CurvedRibbonStream authority_only;
+  tinydraw::CurvedRibbonStream responsive_preview;
+  const std::array points{ink_point(10.0F, 30.0F, 2.0F), ink_point(25.0F, 20.0F, 3.0F),
+                          ink_point(40.0F, 30.0F, 4.0F), ink_point(55.0F, 20.0F, 5.0F)};
+
+  for (std::size_t index = 0; index < points.size(); ++index) {
+    const auto authority_update = authority_only.append(points[index]);
+    const tinydraw::Point raw_tip{.x = points[index].position.x + 8.0F,
+                                  .y = points[index].position.y + 3.0F};
+    const auto preview_update = responsive_preview.append(points[index], true, raw_tip);
+
+    REQUIRE(authority_update.committed.size() == preview_update.committed.size());
+    for (std::size_t primitive = 0; primitive < authority_update.committed.size(); ++primitive) {
+      check_primitive(preview_update.committed.begin()[primitive],
+                      authority_update.committed.begin()[primitive]);
+    }
+    REQUIRE_FALSE(preview_update.provisional.empty());
+    const auto& tip = preview_update.provisional.end()[-1];
+    CHECK(tip.kind == tinydraw::RibbonPrimitiveKind::kCircle);
+    CHECK(tip.center.x == doctest::Approx(raw_tip.x));
+    CHECK(tip.center.y == doctest::Approx(raw_tip.y));
+  }
+}
+
 TEST_CASE("curved ribbon pieces fully cover their internal join") {
   tinydraw::CurvedRibbonStream stream;
   static_cast<void>(stream.append(ink_point(5.0F, 50.0F, 8.0F)));

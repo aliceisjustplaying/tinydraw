@@ -48,12 +48,11 @@ TEST_CASE("live ink move publishes the newest tail before ready authority") {
 
   std::vector<char> order;
   std::uint32_t presented_event_us = 0;
-  tinydraw::Point presented_tip{};
+  tinydraw::Point expected_tip = ink_point(20.0F, 2'000U).position;
   const auto present = [&](const tinydraw::RibbonUpdate& update, std::uint32_t event_us) {
     order.push_back('V');
     presented_event_us = event_us;
-    presented_tip = ink_point(30.0F, event_us).position;
-    return reaches(update.provisional, presented_tip);
+    return reaches(update.provisional, expected_tip);
   };
   const auto commit = [&]() -> std::optional<vector_v2::ChainedOperationStatus> {
     order.push_back('A');
@@ -63,17 +62,21 @@ TEST_CASE("live ink move publishes the newest tail before ready authority") {
 
   const auto first =
       vector_v2::process_live_ink_move(ribbon, builder, ink_point(20.0F, 2'000U),
-                                       operation_point(20.0F, 2'000U), 2'000U, present, commit);
+                                       operation_point(20.0F, 2'000U), expected_tip, 2'000U,
+                                       present, commit);
   CHECK(first.status == vector_v2::ChainedOperationStatus::kAccepted);
 
   order.clear();
+  const tinydraw::Point raw_tip{.x = 38.0F, .y = 40.0F};
+  expected_tip = raw_tip;
   const auto second =
       vector_v2::process_live_ink_move(ribbon, builder, ink_point(30.0F, 3'000U),
-                                       operation_point(30.0F, 3'000U), 3'000U, present, commit);
+                                       operation_point(30.0F, 3'000U), raw_tip, 3'000U, present,
+                                       commit);
   CHECK(second.visual_passed);
   CHECK(second.status == vector_v2::ChainedOperationStatus::kAccepted);
   CHECK_FALSE(second.commit_failed);
   CHECK(order == std::vector<char>{'V', 'A'});
   CHECK(presented_event_us == 3'000U);
-  CHECK(presented_tip.x == 30.0F);
+  CHECK(expected_tip.x == 38.0F);
 }

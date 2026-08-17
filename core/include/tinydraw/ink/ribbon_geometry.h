@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -76,8 +77,11 @@ class RibbonStream {
 class CurvedRibbonStream {
  public:
   // provisional_needed=false skips building the replaceable display tail for
-  // offline replay; committed geometry is identical either way.
-  [[nodiscard]] RibbonUpdate append(InkPoint point, bool provisional_needed = true);
+  // offline replay. A visual_endpoint lets that replaceable tail reach an
+  // unsmoothed touch position while all stream state and committed geometry
+  // remain derived from the smoothed InkPoint.
+  [[nodiscard]] RibbonUpdate append(InkPoint point, bool provisional_needed = true,
+                                    std::optional<Point> visual_endpoint = std::nullopt);
   [[nodiscard]] RibbonUpdate finish(InkPoint point);
   void reset();
 
