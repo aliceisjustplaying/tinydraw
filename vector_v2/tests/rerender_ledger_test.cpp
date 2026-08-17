@@ -2,6 +2,7 @@
 
 #include <doctest.h>
 
+#include <algorithm>
 #include <array>
 #include <vector>
 
@@ -28,6 +29,21 @@ TEST_CASE("rerender ledger classifies the first render as a cold miss") {
   CHECK(totals.unique_groups == 1U);
   CHECK(totals.cold_miss == 1U);
   CHECK(totals.amplification() == doctest::Approx(1.0));
+}
+
+TEST_CASE("rerender ledger initializes caller-owned storage") {
+  std::vector<vector_v2::RerenderLedgerEntry> storage(vector_v2::kRerenderLedgerEntryCount);
+  std::fill(storage.begin(), storage.end(),
+            vector_v2::RerenderLedgerEntry{
+                .revision = 0xFFFFFFFFU, .renders = 0xFFFFU, .flags = 0xFFU, .last_cause = 0xFFU});
+
+  vector_v2::RerenderLedger ledger(storage);
+  REQUIRE(ledger.ready());
+  const auto cause = ledger.record_group_render(vector_v2::ZoomLevel::k400Percent, 4, 6,
+                                                vector_v2::DocumentRevision{7});
+  CHECK(cause == vector_v2::RerenderCause::kColdMiss);
+  CHECK(ledger.totals().renders == 1U);
+  CHECK(ledger.totals().unique_groups == 1U);
 }
 
 TEST_CASE("an identical repeat render is unexplained — the déjà-vu signal") {

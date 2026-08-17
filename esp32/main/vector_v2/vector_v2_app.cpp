@@ -827,7 +827,8 @@ class ChromeController {
         presenter_(presenter),
         exporter_(exporter),
         time_sync_(time_sync),
-        clock_(clock) {}
+        clock_(clock) {
+  }
 
   [[nodiscard]] bool apply(vector_v2::ChromeAction action, Point point) {
     auto& chrome = chrome_;
@@ -1207,8 +1208,8 @@ void run_vector_v2_app() {
   };
   InkConfig ink_config;
   ink_config.size = vector_v2::brush_size(chrome.size);
-  // Owner experiment 2026-08-16: stronger input smoothing for V2 (default
-  // 0.35 stays for the Raster V1 fallback). Receipts:
+  // Owner experiment 2026-08-16: stronger input smoothing for V2. Raster V1
+  // remains an independent product with its established 0.35 setting. Receipts:
   // benchmark-results/settled-aa-prototype/ streamline sweep.
   ink_config.streamline = 0.4F;
   InkStream ink(ink_config);

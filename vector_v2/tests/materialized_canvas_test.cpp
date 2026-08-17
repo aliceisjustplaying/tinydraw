@@ -403,6 +403,42 @@ TEST_CASE("snapshot restore derives conservative occupancy from non-paper pixels
   CHECK(canvas.overview_pixels()[3U * vector_v2::kOverviewWidth + 2U] == 0x001FU);
 }
 
+TEST_CASE("blank reset clears materialization and restores paper occupancy") {
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> snapshot{};
+  snapshot.fill(0xFFFFU);
+  snapshot[0] = 0x001FU;
+  auto uniforms = std::make_unique<std::array<vector_v2::MaterializedUniformStorage,
+                                              vector_v2::kMaterializedTileIdentityCount>>();
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> occupancy{};
+  std::array<vector_v2::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, vector_v2::kTilePixels> tile_storage{};
+  std::array<std::uint16_t, vector_v2::kTilePixels> published_tile{};
+  vector_v2::MaterializedCanvas canvas(overview, *uniforms, occupancy, slots, tile_storage);
+  const vector_v2::TileKey raw{vector_v2::ZoomLevel::k100Percent, 0, 0};
+  const vector_v2::TileKey uniform{vector_v2::ZoomLevel::k100Percent, 1, 0};
+
+  REQUIRE(canvas.restore_snapshot({4}, snapshot));
+  REQUIRE(canvas.publish_tile(raw, {4}, vector_v2::MaterializationQuality::kExact, published_tile));
+  REQUIRE(canvas.publish_uniform(uniform, {4}, vector_v2::MaterializationQuality::kExact));
+  REQUIRE(canvas.resident_raw_tiles() == 1U);
+  REQUIRE(canvas.uniform_color(uniform).has_value());
+  REQUIRE_FALSE(canvas.certainly_paper(raw));
+  const std::uint64_t old_epoch = canvas.composition_epoch();
+
+  REQUIRE(canvas.reset_blank({5}));
+  CHECK(canvas.current_revision() == vector_v2::DocumentRevision{5});
+  CHECK(canvas.resident_raw_tiles() == 0U);
+  CHECK_FALSE(canvas.uniform_color(uniform).has_value());
+  CHECK(canvas.lookup(raw)->kind == vector_v2::SourceKind::kOverview);
+  CHECK(canvas.lookup(uniform)->kind == vector_v2::SourceKind::kOverview);
+  CHECK(canvas.certainly_paper(raw));
+  CHECK(canvas.certainly_paper(uniform));
+  CHECK(canvas.composition_epoch() != old_epoch);
+  CHECK(std::all_of(canvas.overview_pixels().begin(), canvas.overview_pixels().end(),
+                    [](std::uint16_t pixel) { return pixel == 0xFFFFU; }));
+}
+
 TEST_CASE("invalidated learned paper composes updated overview until relearned") {
   std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
   overview.fill(0xFFFFU);

@@ -51,7 +51,9 @@ PlaneGeometry plane_geometry(ZoomLevel zoom) {
 
 }  // namespace
 
-RerenderLedger::RerenderLedger(std::span<RerenderLedgerEntry> entries) : entries_(entries) {}
+RerenderLedger::RerenderLedger(std::span<RerenderLedgerEntry> entries) : entries_(entries) {
+  reset();
+}
 
 bool RerenderLedger::ready() const { return entries_.size() >= kRerenderLedgerEntryCount; }
 

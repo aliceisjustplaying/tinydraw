@@ -758,6 +758,25 @@ TEST_CASE("blank document reset clears both authorities without a snapshot") {
   CHECK(fixture.log.epoch() != old_epoch);
 }
 
+TEST_CASE("blank document reset rejects atomically while an append is prepared") {
+  Fixture fixture;
+  fixture.overview.fill(0x1234U);
+  REQUIRE(fixture.canvas.publish_overview({8}, fixture.overview));
+  REQUIRE(fixture.log.reset({8}));
+  const std::array samples{
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
+  auto prepared = fixture.log.prepare({.samples = samples});
+  REQUIRE(prepared.has_value());
+  const std::uint64_t old_composition_epoch = fixture.canvas.composition_epoch();
+
+  CHECK_FALSE(vector_v2::reset_blank_document(fixture.log, fixture.canvas, {9}));
+  CHECK(fixture.log.current_revision() == vector_v2::DocumentRevision{8});
+  CHECK(fixture.canvas.current_revision() == vector_v2::DocumentRevision{8});
+  CHECK(fixture.canvas.composition_epoch() == old_composition_epoch);
+  CHECK(fixture.canvas.overview_pixels().front() == 0x1234U);
+  prepared->cancel();
+}
+
 TEST_CASE("document snapshot restore fails atomically while an append is prepared") {
   Fixture fixture;
   fixture.overview.fill(0xFFFFU);
@@ -850,13 +869,10 @@ TEST_CASE("restored authority rebuilds the overview from only its active prefix"
       vector_v2::CompactOperationSample{
           .x_quarter = 800, .y_quarter = 160, .radius_256 = 768, .elapsed_ms = 0},
   };
-  REQUIRE(log.append({.tool = vector_v2::OperationTool::kPen,
-                      .color = 0x001FU,
-                      .gesture_id = 1,
-                      .samples = pen}));
-  REQUIRE(log.append({.tool = vector_v2::OperationTool::kEraser,
-                      .gesture_id = 2,
-                      .samples = eraser}));
+  REQUIRE(log.append(
+      {.tool = vector_v2::OperationTool::kPen, .color = 0x001FU, .gesture_id = 1, .samples = pen}));
+  REQUIRE(
+      log.append({.tool = vector_v2::OperationTool::kEraser, .gesture_id = 2, .samples = eraser}));
   auto undo = log.prepare_undo();
   REQUIRE(undo.has_value());
   undo->publish();
