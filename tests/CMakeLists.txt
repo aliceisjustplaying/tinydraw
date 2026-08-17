@@ -19,6 +19,7 @@ add_executable(tinydraw_tests
   stroke_raster_test.cpp
   tile_undo_history_test.cpp
   toolbar_test.cpp
+  usb_export_session_test.cpp
   vector_benchmark_test.cpp
   vector_document_test.cpp
   viewport_renderer_test.cpp
