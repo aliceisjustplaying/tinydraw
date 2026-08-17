@@ -289,9 +289,13 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       20.164/16.529 ms with exact target origins. Owner glass follow-up found
       the tiny 400% viewport hard to grab, so drag intent now scales from 4 px
       at ≤100% to 3 px at 200% and 2 px at 400%, preserving a tap-jitter band
-      without expanding canvas occlusion. See
-      `benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md` and
-      `benchmark-results/minimap-touch-target-2026-08-17/RECEIPT.md`.
+      without expanding canvas occlusion. A later owner SVG proved exact-frame
+      misses could become committed short strokes; the invisible frame guard
+      now extends to `(250,236)..(368,372)` and viewport grab targets scale to
+      36 px at 200% and 44 px at 400%. See
+      `benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md`,
+      `benchmark-results/minimap-touch-target-2026-08-17/RECEIPT.md`, and
+      `benchmark-results/minimap-input-leak-2026-08-17/RECEIPT.md`.
 - [x] Integrate the RTC and one-shot NTP through a narrow asynchronous adapter.
       **Landed 2026-08-17:** Document → Clock owns three explicit controller
       phases (connecting, synchronizing, terminal), writes PCF85063A time, and
