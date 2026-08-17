@@ -1,6 +1,7 @@
 # Vector V2 autosave and recovery design
 
-Status: accepted implementation plan, 2026-08-17.
+Status: implementation plan, revised 2026-08-17. Single-journal autosave ships first;
+two-arena compaction and arena metadata are explicitly deferred by owner direction.
 
 This design persists Vector V2 drawing authority without moving flash work into
 the ink path. It follows the product contract in `SHIP_CONTRACT.md` §7 and the
@@ -14,9 +15,10 @@ new document state, but it does not store overview or tile pixels. A commit is
 recoverable only after its final marker reaches flash.
 
 Most drawing commits contain only the newly completed Stroke. Undo, Redo, and
-UI-state commits contain no sample payload. A periodic checkpoint contains the
-complete retained operation list, including the inactive Redo tail. Checkpoints
-bound recovery work and let the writer switch safely between two flash arenas.
+UI-state commits contain no sample payload. A checkpoint contains the complete retained operation list, including the
+inactive Redo tail. The first Journal commit is a checkpoint; a later checkpoint
+may resynchronize after a queue/allocation failure. Recycling a full partition
+is deferred.
 
 The app copies authority bytes before handing a commit to the flash worker. The
 worker never reads `OperationLog`, `MaterializedCanvas`, navigation, or chrome
@@ -65,9 +67,9 @@ recovered authority and state.
 
 ### ESP flash adapter seam
 
-`VectorV2AutosaveStore` owns the `drawing` partition, two fixed arenas, the
-FreeRTOS writer task, queueing, arena selection, bounded sector erase/write,
-and promotion of a checkpoint by metadata-last arena commit.
+`VectorV2AutosaveStore` owns the `drawing` partition, the FreeRTOS writer task,
+queueing, bounded sector erase/write, startup scanning, and visible full/error
+status. It never erases a committed Journal entry.
 
 ```cpp
 class VectorV2AutosaveStore {
@@ -75,7 +77,6 @@ class VectorV2AutosaveStore {
   RestoreStatus restore(OperationLog&, NavigationState&, ChromeState&,
                         std::uint16_t& next_stroke_id);
   bool submit(JournalChange, const OperationLog&, const JournalState&);
-  bool checkpoint_needed() const;
   bool submit_checkpoint(const OperationLog&, const JournalState&);
   bool flush(TickType_t timeout);
   SaveStatus status() const;
@@ -107,19 +108,18 @@ requests a later full checkpoint instead of publishing a partial delta.
 
 ## Flash layout and interruption behavior
 
-The 3 MiB `drawing` partition is split into two equal arenas. Each arena
-reserves its first 4 KiB sector for metadata and stores transactions
-sequentially afterward.
+The 3 MiB `drawing` partition is one append-only journal. Fresh initialization
+erases it once, writes the first checkpoint body, and writes that checkpoint's
+commit marker last. Later transactions append only into erased bytes. Startup
+scans to the newest valid marker and resumes at the first erased byte.
 
-Normal commits append only into erased bytes. When remaining space reaches the
-largest possible authority checkpoint reserve, the app submits a checkpoint.
-The worker erases the inactive arena one sector at a time, writes and validates
-the checkpoint, then writes the new arena metadata last. Until that final
-metadata write, startup continues to select the old arena. Later commits append
-after the promoted checkpoint.
+When no complete next transaction fits, autosave reports `full` and preserves
+all existing Recovery points. It does not erase or compact committed data.
+Two-arena compaction and metadata—which would safely recycle a full partition
+while retaining the old Recovery point—are deferred for a later project round.
 
 No destructive physical power-cut test is required. Host fixtures simulate
-interruption after every transaction and arena-promotion write phase.
+interruption after every transaction write phase.
 
 ## Product scheduling
 
@@ -161,8 +161,8 @@ interruption after every transaction and arena-promotion write phase.
    prior complete commit.
 5. OperationLog restore rejects malformed/capacity-exceeding snapshots without
    mutation.
-6. Two-arena promotion fixtures select old metadata until the new checkpoint is
-   fully committed, then select the new arena.
+6. A single-journal adapter resumes at the first erased byte and reports full
+   without erasing any Recovery point.
 7. Product startup rebuilds overview pixels exactly and queues later mutations
    without touching the live-ink presentation path.
 8. ESP builds, autosave-enabled performance gates, and a normal firmware flash
