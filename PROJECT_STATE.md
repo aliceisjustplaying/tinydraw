@@ -148,7 +148,7 @@ Undo, persistence, and SVG are frozen in
 - Canvas-only toroidal reuse and one ordered row-zero presentation sweep.
 - Independent touch sampling with transition-preserving Down/Up behavior.
 - Exact variable-width SVG core with renderer-raster fidelity tests.
-- Direct transactional SVG-on-flash export: one filled path per operation,
+- Direct transactional SVG-on-flash export: one filled path per physical Stroke,
   4 KiB workspace, complete device readback gate, and read-only `DRAWING.SVG`
   FAT wiring. Prior PNG/USB evidence and the 1.5 MiB reserve remain archived.
 - Production toolbar, two PICO-8 palettes, zoom rail, battery, confirmation UI,
