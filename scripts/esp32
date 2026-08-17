@@ -2,17 +2,10 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-raster_v1_build="$root/out/build/esp32-raster-v1"
 qemu_build="$root/out/build/esp32-qemu"
 graphics_build="$root/out/build/esp32-graphics"
-vector_build="$root/out/build/esp32-vector-benchmark"
-interactive_pan_build="$root/out/build/esp32-interactive-pan-benchmark"
-overview_walk_build="$root/out/build/esp32-vector-v2-overview-walk"
-memory_probe_build="$root/out/build/esp32-vector-v2-memory-probe"
 vector_v2_build="$root/out/build/esp32-vector-v2"
 gate_harness_build="$root/out/build/esp32-vector-v2-gate-harness"
-ink_capture_build="$root/out/build/esp32-vector-v2-ink-capture"
-minimap_capture_build="$root/out/build/esp32-vector-v2-minimap-capture"
 tile_census_build="$root/out/build/esp32-vector-v2-tile-census"
 tearing_probe_build="$root/out/build/esp32-vector-v2-tearing-probe"
 panel_probe_build="$root/out/build/esp32-panel-probe"
@@ -42,56 +35,10 @@ enable_qemu() {
 }
 
 case "$action" in
-  build|raster-v1)
+  build)
     cd "$root/esp32"
-    eim run "idf.py -B '$raster_v1_build' -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_VECTOR_V2_MEMORY_PROBE=OFF -DTINYDRAW_VECTOR_V2_OVERVIEW_WALK=OFF -DTINYDRAW_VECTOR_V2_APP=OFF build"
-    assert_config "$raster_v1_build/sdkconfig" OCT
-    ;;
-  vector-benchmark)
-    port="${2:-}"
-    if [[ -z "$port" ]]; then
-      echo "usage: $0 vector-benchmark PORT" >&2
-      exit 2
-    fi
-    cd "$root/esp32"
-    eim run "idf.py -B '$vector_build' -DTINYDRAW_VECTOR_BENCHMARK=ON build"
-    assert_config "$vector_build/sdkconfig" OCT
-    eim run "idf.py -B '$vector_build' -p '$port' flash"
-    ;;
-  interactive-pan-benchmark)
-    port="${2:-}"
-    if [[ -z "$port" ]]; then
-      echo "usage: $0 interactive-pan-benchmark PORT" >&2
-      exit 2
-    fi
-    cd "$root/esp32"
-    eim run "idf.py -B '$interactive_pan_build' -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=ON build"
-    assert_config "$interactive_pan_build/sdkconfig" OCT
-    eim run "idf.py -B '$interactive_pan_build' -p '$port' flash"
-    ;;
-  vector-v2-overview-walk)
-    port="${2:-}"
-    if [[ -z "$port" ]]; then
-      echo "usage: $0 vector-v2-overview-walk PORT" >&2
-      exit 2
-    fi
-    rm -rf "$overview_walk_build"
-    cd "$root/esp32"
-    eim run "idf.py -B '$overview_walk_build' -DTINYDRAW_QEMU=OFF -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_VECTOR_V2_MEMORY_PROBE=OFF -DTINYDRAW_VECTOR_V2_OVERVIEW_WALK=ON build"
-    assert_config "$overview_walk_build/sdkconfig" OCT
-    eim run "idf.py -B '$overview_walk_build' -p '$port' flash"
-    ;;
-  vector-v2-memory-probe)
-    port="${2:-}"
-    if [[ -z "$port" ]]; then
-      echo "usage: $0 vector-v2-memory-probe PORT" >&2
-      exit 2
-    fi
-    rm -rf "$memory_probe_build"
-    cd "$root/esp32"
-    eim run "idf.py -B '$memory_probe_build' -DTINYDRAW_QEMU=OFF -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_VECTOR_V2_MEMORY_PROBE=ON -DTINYDRAW_VECTOR_V2_OVERVIEW_WALK=OFF -DTINYDRAW_VECTOR_V2_APP=OFF build"
-    assert_config "$memory_probe_build/sdkconfig" OCT
-    eim run "idf.py -B '$memory_probe_build' -p '$port' flash"
+    eim run "idf.py -B '$vector_v2_build' -DTINYDRAW_FIRMWARE_VARIANT=product build"
+    assert_config "$vector_v2_build/sdkconfig" OCT
     ;;
   vector-v2)
     port="${2:-}"
@@ -101,33 +48,9 @@ case "$action" in
     fi
     rm -rf "$vector_v2_build"
     cd "$root/esp32"
-    eim run "idf.py -B '$vector_v2_build' -DTINYDRAW_QEMU=OFF -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_VECTOR_V2_MEMORY_PROBE=OFF -DTINYDRAW_VECTOR_V2_OVERVIEW_WALK=OFF -DTINYDRAW_VECTOR_V2_APP=ON -DTINYDRAW_VECTOR_V2_GATE_HARNESS=OFF -DTINYDRAW_VECTOR_V2_TILE_CENSUS=OFF build"
+    eim run "idf.py -B '$vector_v2_build' -DTINYDRAW_FIRMWARE_VARIANT=product build"
     assert_config "$vector_v2_build/sdkconfig" OCT
     eim run "idf.py -B '$vector_v2_build' -p '$port' flash"
-    ;;
-  vector-v2-ink-capture)
-    port="${2:-}"
-    if [[ -z "$port" ]]; then
-      echo "usage: $0 vector-v2-ink-capture PORT" >&2
-      exit 2
-    fi
-    rm -rf "$ink_capture_build"
-    cd "$root/esp32"
-    eim run "idf.py -B '$ink_capture_build' -DTINYDRAW_QEMU=OFF -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_VECTOR_V2_MEMORY_PROBE=OFF -DTINYDRAW_VECTOR_V2_OVERVIEW_WALK=OFF -DTINYDRAW_VECTOR_V2_APP=ON -DTINYDRAW_VECTOR_V2_GATE_HARNESS=OFF -DTINYDRAW_VECTOR_V2_TILE_CENSUS=OFF -DTINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE=ON build"
-    assert_config "$ink_capture_build/sdkconfig" OCT
-    eim run "idf.py -B '$ink_capture_build' -p '$port' flash"
-    ;;
-  vector-v2-minimap-capture)
-    port="${2:-}"
-    if [[ -z "$port" ]]; then
-      echo "usage: $0 vector-v2-minimap-capture PORT" >&2
-      exit 2
-    fi
-    rm -rf "$minimap_capture_build"
-    cd "$root/esp32"
-    eim run "idf.py -B '$minimap_capture_build' -DTINYDRAW_QEMU=OFF -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_VECTOR_V2_MEMORY_PROBE=OFF -DTINYDRAW_VECTOR_V2_OVERVIEW_WALK=OFF -DTINYDRAW_VECTOR_V2_APP=ON -DTINYDRAW_VECTOR_V2_GATE_HARNESS=OFF -DTINYDRAW_VECTOR_V2_TILE_CENSUS=OFF -DTINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE=OFF -DTINYDRAW_VECTOR_V2_MINIMAP_TRACE_CAPTURE=ON build"
-    assert_config "$minimap_capture_build/sdkconfig" OCT
-    eim run "idf.py -B '$minimap_capture_build' -p '$port' flash"
     ;;
   vector-v2-gate-harness)
     port="${2:-}"
@@ -139,7 +62,7 @@ case "$action" in
     fi
     rm -rf "$gate_harness_build"
     cd "$root/esp32"
-    eim run "idf.py -B '$gate_harness_build' -DTINYDRAW_QEMU=OFF -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_VECTOR_V2_MEMORY_PROBE=OFF -DTINYDRAW_VECTOR_V2_OVERVIEW_WALK=OFF -DTINYDRAW_VECTOR_V2_APP=ON -DTINYDRAW_VECTOR_V2_GATE_HARNESS=ON -DTINYDRAW_VECTOR_V2_TILE_CENSUS=OFF -DTINYDRAW_VECTOR_V2_TILE_SLOTS=$slots build"
+    eim run "idf.py -B '$gate_harness_build' -DTINYDRAW_FIRMWARE_VARIANT=gate -DTINYDRAW_VECTOR_V2_TILE_SLOTS=$slots build"
     assert_config "$gate_harness_build/sdkconfig" OCT
     grep -q '^CONFIG_ESP_MAIN_TASK_STACK_SIZE=20480$' "$gate_harness_build/sdkconfig"
     eim run "idf.py -B '$gate_harness_build' -p '$port' flash"
@@ -169,30 +92,26 @@ case "$action" in
     ;;
   panel-probe)
     port="${2:-}"
-    clock_mhz="${3:-40}"
-    cell="${4:-0}"
+    cell="${3:-0}"
     if [[ -z "$port" ]]; then
-      echo "usage: $0 panel-probe PORT [40|50|60] [CELL 0-6]" >&2
+      echo "usage: $0 panel-probe PORT [CELL 0-6]" >&2
       echo "cells: 0=software suite, 1=boundary-rising-full, 2=boundary-falling-full, 3=midframe-wrap-rising, 4=freerun-unsynced (positive control), 5=boundary-rising-canvas368, 6=cycle 4,1,5,2,3 in one take" >&2
       exit 2
     fi
     cd "$root/esp32"
-    eim run "idf.py -B '$panel_probe_build' -DTINYDRAW_QEMU=OFF -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_VECTOR_V2_MEMORY_PROBE=OFF -DTINYDRAW_VECTOR_V2_OVERVIEW_WALK=OFF -DTINYDRAW_VECTOR_V2_APP=OFF -DTINYDRAW_PANEL_PROBE=ON -DTINYDRAW_CO5300_CLOCK_MHZ='$clock_mhz' -DTINYDRAW_PANEL_PROBE_CELL='$cell' build"
+    eim run "idf.py -B '$panel_probe_build' -DTINYDRAW_FIRMWARE_VARIANT=panel-probe -DTINYDRAW_PANEL_PROBE_CELL='$cell' build"
     assert_config "$panel_probe_build/sdkconfig" OCT
     eim run "idf.py -B '$panel_probe_build' -p '$port' flash"
     ;;
   vector-v2-tearing-probe)
     port="${2:-}"
-    presentation="${3:-boundary-top-sweep}"
-    edge="${4:-rising}"
-    clock_mhz="${5:-50}"
     if [[ -z "$port" ]]; then
-      echo "usage: $0 vector-v2-tearing-probe PORT [boundary-top-sweep|beam-race-control] [rising|falling] [40|50|60]" >&2
+      echo "usage: $0 vector-v2-tearing-probe PORT" >&2
       exit 2
     fi
     rm -rf "$tearing_probe_build"
     cd "$root/esp32"
-    eim run "idf.py -B '$tearing_probe_build' -DTINYDRAW_QEMU=OFF -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_VECTOR_V2_MEMORY_PROBE=OFF -DTINYDRAW_VECTOR_V2_OVERVIEW_WALK=OFF -DTINYDRAW_VECTOR_V2_APP=ON -DTINYDRAW_VECTOR_V2_GATE_HARNESS=ON -DTINYDRAW_VECTOR_V2_TILE_CENSUS=OFF -DTINYDRAW_VECTOR_V2_TEARING_PROBE=ON -DTINYDRAW_VECTOR_V2_PRESENTATION_EXPERIMENT='$presentation' -DTINYDRAW_VECTOR_V2_TE_EDGE='$edge' -DTINYDRAW_CO5300_CLOCK_MHZ='$clock_mhz' build"
+    eim run "idf.py -B '$tearing_probe_build' -DTINYDRAW_FIRMWARE_VARIANT=tearing-probe build"
     assert_config "$tearing_probe_build/sdkconfig" OCT
     eim run "idf.py -B '$tearing_probe_build' -p '$port' flash"
     ;;
@@ -204,21 +123,21 @@ case "$action" in
     fi
     rm -rf "$tile_census_build"
     cd "$root/esp32"
-    eim run "idf.py -B '$tile_census_build' -DTINYDRAW_QEMU=OFF -DTINYDRAW_VECTOR_BENCHMARK=OFF -DTINYDRAW_PHASE2_PROTOTYPE=OFF -DTINYDRAW_RASTER_PAN_BENCHMARK=OFF -DTINYDRAW_INTERACTIVE_PAN_BENCHMARK=OFF -DTINYDRAW_VECTOR_V2_MEMORY_PROBE=OFF -DTINYDRAW_VECTOR_V2_OVERVIEW_WALK=OFF -DTINYDRAW_VECTOR_V2_APP=ON -DTINYDRAW_VECTOR_V2_GATE_HARNESS=ON -DTINYDRAW_VECTOR_V2_TILE_CENSUS=ON build"
+    eim run "idf.py -B '$tile_census_build' -DTINYDRAW_FIRMWARE_VARIANT=tile-census build"
     assert_config "$tile_census_build/sdkconfig" OCT
     eim run "idf.py -B '$tile_census_build' -p '$port' flash"
     ;;
   qemu)
     enable_qemu
     cd "$root/esp32"
-    eim run "idf.py -B '$qemu_build' -DTINYDRAW_QEMU=ON build"
+    eim run "idf.py -B '$qemu_build' -DTINYDRAW_FIRMWARE_VARIANT=qemu build"
     assert_config "$qemu_build/sdkconfig" QUAD
     python3 "$root/tools/qemu-replay.py" --build "$qemu_build"
     ;;
   graphics|graphics-test)
     enable_qemu
     cd "$root/esp32"
-    eim run "idf.py -B '$graphics_build' -DTINYDRAW_QEMU=ON -DTINYDRAW_QEMU_GRAPHICS=ON build"
+    eim run "idf.py -B '$graphics_build' -DTINYDRAW_FIRMWARE_VARIANT=qemu -DTINYDRAW_QEMU_GRAPHICS=ON build"
     assert_config "$graphics_build/sdkconfig" QUAD
     if [[ "$action" == graphics-test ]]; then
       python3 "$root/tools/qemu-replay.py" --build "$graphics_build" --graphics
@@ -228,10 +147,10 @@ case "$action" in
     fi
     ;;
   clean)
-    rm -rf "$raster_v1_build" "$qemu_build" "$graphics_build" "$vector_build" "$interactive_pan_build" "$overview_walk_build" "$memory_probe_build" "$vector_v2_build" "$gate_harness_build" "$ink_capture_build" "$minimap_capture_build" "$tile_census_build" "$tearing_probe_build" "$panel_probe_build"
+    rm -rf "$qemu_build" "$graphics_build" "$vector_v2_build" "$gate_harness_build" "$tile_census_build" "$tearing_probe_build" "$panel_probe_build"
     ;;
   *)
-    echo "usage: $0 {build|raster-v1|vector-v2 PORT|vector-v2-ink-capture PORT|vector-v2-minimap-capture PORT|vector-benchmark PORT|interactive-pan-benchmark PORT|vector-v2-overview-walk PORT|vector-v2-memory-probe PORT|vector-v2-gate-harness PORT|vector-v2-tearing-probe PORT [POLICY] [EDGE] [CLOCK_MHZ]|panel-probe PORT [CLOCK_MHZ]|vector-v2-tile-census PORT|qemu|graphics|graphics-test|clean}" >&2
+    echo "usage: $0 {build|vector-v2 PORT|vector-v2-gate-harness PORT [TILE_SLOTS] [verify]|vector-v2-tearing-probe PORT|panel-probe PORT [CELL]|vector-v2-tile-census PORT|qemu|graphics|graphics-test|clean}" >&2
     exit 2
     ;;
 esac

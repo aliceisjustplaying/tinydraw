@@ -27,12 +27,7 @@ namespace {
 
 constexpr int kPanelGapX = 0x10;
 constexpr gpio_num_t kTearPin = GPIO_NUM_13;
-#ifndef TINYDRAW_CO5300_CLOCK_MHZ
-#define TINYDRAW_CO5300_CLOCK_MHZ 50
-#endif
-constexpr int kPanelClockMHz = TINYDRAW_CO5300_CLOCK_MHZ;
-static_assert(kPanelClockMHz == 40 || kPanelClockMHz == 50 || kPanelClockMHz == 60,
-              "CO5300 clock must be one of the supported 40/50/60 MHz experiment points");
+constexpr int kPanelClockMHz = kEffectiveCo5300ClockMHz;
 // Measured 2026-08-15 (benchmark-results/blockA-panel-limits): requests of 40,
 // 50, and 60 MHz produce identical transfer walls. The GPSPI divider from the
 // 80 MHz source clamps all three to 40 MHz actual; no overclock ever engaged.

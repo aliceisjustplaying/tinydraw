@@ -2,6 +2,7 @@ include(sources.cmake)
 
 add_library(tinydraw_vector_v2
   ${TINYDRAW_VECTOR_V2_SRCS}
+  ${TINYDRAW_VECTOR_V2_DIAGNOSTIC_SRCS}
 )
 add_library(tinydraw::vector_v2 ALIAS tinydraw_vector_v2)
 

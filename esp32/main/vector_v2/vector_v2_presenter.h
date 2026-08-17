@@ -31,9 +31,6 @@ inline constexpr std::size_t kMaximumProgressiveRegionPixels =
 inline constexpr int kMaximumCachedPanDelta = 96;
 // Legacy timing-model inputs retained only for the explicitly selected
 // beam-race control. They are not panel-phase or glass-correctness claims.
-inline constexpr std::int64_t kTePeriodUs = 16'800;
-inline constexpr int kPanelSweepRows = 448;
-inline constexpr int kBeamStartMarginRows = 48;
 // Cached pan composition is strip-looped through the same bounded scratch as
 // progressive tile presentation, so wider reuse costs no additional PSRAM.
 inline constexpr std::size_t kLiveRegionScratchPixels = kMaximumProgressiveRegionPixels;
@@ -134,13 +131,14 @@ class VectorV2Presenter {
   [[nodiscard]] LivePresentationTiming present_frame_region(vector_v2::PixelRect panel_bounds,
                                                             const vector_v2::ChromeState& chrome,
                                                             std::uint32_t event_us);
-  // Read-only transport telemetry (prepare/staging counters) for gates that
-  // attribute presentation cost without owning the panel reference.
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
+  // Read-only transport telemetry for the hardware gate only.
   [[nodiscard]] Co5300PanelTransport& display() { return display_; }
   [[nodiscard]] const Co5300PanelTransport& display() const { return display_; }
   [[nodiscard]] vector_v2::ChromeStagingCacheStats chrome_cache_stats() const {
     return chrome_cache_.stats();
   }
+#endif
   [[nodiscard]] vector_v2::ZoomLevel zoom() const;
   [[nodiscard]] int level_x() const;
   [[nodiscard]] int level_y() const;
@@ -257,8 +255,6 @@ class VectorV2Presenter {
   std::span<std::uint16_t> frame_;
   std::span<std::uint16_t> region_;
   vector_v2::ChromeStagingCache chrome_cache_;
-  std::uint32_t te_last_count_ = 0;
-  std::int64_t te_last_change_us_ = 0;
   std::unique_ptr<RibbonRenderer> renderer_;
   std::array<RibbonPrimitive, kRibbonPrimitiveBatchCapacity> live_provisional_{};
   std::size_t live_provisional_count_ = 0;
