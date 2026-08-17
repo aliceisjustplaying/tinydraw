@@ -29,32 +29,6 @@ struct RasterSurface {
 [[nodiscard]] bool apply_incremental_operation(const OperationAppend& operation,
                                                const RasterSurface& surface);
 
-// Each source segment is one bounded raster unit. Surface clipping limits one
-// unit to the caller's work surface, while the cold producer resumes between
-// source segments without changing pixels or painter order. first_step is
-// zero-based and step_count must remain within the segment.
-struct IncrementalSegment {
-  OperationTool tool = OperationTool::kPen;
-  std::uint16_t color = 0;
-  CompactOperationSample first{};
-  CompactOperationSample second{};
-};
-
-// Conservative level-space bounds for one segment, including projected radii.
-// This lets callers reject irrelevant segments before subdivision or raster work.
-[[nodiscard]] PixelRect incremental_segment_level_bounds(CompactOperationSample first,
-                                                         CompactOperationSample second,
-                                                         ZoomLevel zoom);
-[[nodiscard]] std::size_t incremental_segment_step_count(CompactOperationSample first,
-                                                         CompactOperationSample second,
-                                                         ZoomLevel zoom);
-[[nodiscard]] std::size_t incremental_segment_step_work(CompactOperationSample first,
-                                                        CompactOperationSample second,
-                                                        ZoomLevel zoom, PixelRect clip,
-                                                        std::size_t step);
-[[nodiscard]] bool apply_incremental_segment_steps(const IncrementalSegment& segment,
-                                                   const RasterSurface& surface,
-                                                   std::size_t first_step, std::size_t step_count);
 // Exact per-row saturation summary for a masked raster surface. A row is
 // saturated when every pixel in the surface's clipped width is finalized;
 // saturated row ranges answer in O(words), letting callers skip rows, whole
@@ -85,18 +59,6 @@ class MaskedRowSummary {
   int unsaturated_rows_ = 0;
 };
 
-// Exact newest-first painter seam. A set bit means the corresponding surface
-// pixel already has its final color and must not be touched by older segments.
-// Covered pixels are written and finalized atomically from the caller's point
-// of view; uncovered baseline pixels remain unmarked. When a summary is
-// supplied it must have been reset for this surface and fed every prior
-// masked paint on it; the painter keeps it exact and uses it to skip
-// saturated rows.
-[[nodiscard]] bool apply_masked_incremental_segment(const IncrementalSegment& segment,
-                                                    const RasterSurface& surface,
-                                                    std::span<std::uint8_t> finalized_pixels,
-                                                    MaskedRowSummary* summary = nullptr);
-
 // Paints the live ink midpoint-curve centerline while respecting a newest-first
 // finalized mask. All segments in one operation share a color, so their union
 // may be processed forward without changing painter-order semantics.
@@ -105,27 +67,10 @@ class MaskedRowSummary {
                                                       std::span<std::uint8_t> finalized_pixels,
                                                       MaskedRowSummary* summary = nullptr);
 
-// Curved operations with three or more samples replay as endpoint-indexed
-// units [2, sample_count). One- and two-sample operations use their final
-// sample index as a single unit. This keeps cold replay resumable without
-// changing the geometry used by forward authority.
-[[nodiscard]] std::size_t incremental_curve_unit_step_count(
-    std::span<const CompactOperationSample> samples, std::size_t endpoint, ZoomLevel zoom);
-[[nodiscard]] std::optional<PixelRect> incremental_curve_step_level_bounds(
-    std::span<const CompactOperationSample> samples, std::size_t endpoint, std::size_t step_index,
-    ZoomLevel zoom);
-[[nodiscard]] bool apply_masked_incremental_curve_step(const OperationAppend& operation,
-                                                       std::size_t endpoint, std::size_t step_index,
-                                                       const RasterSurface& surface,
-                                                       std::span<std::uint8_t> finalized_pixels,
-                                                       MaskedRowSummary* summary = nullptr);
-
-// One endpoint's curve unit prepared once and replayed step by step. The
-// prepared chords carry exactly the level-space floats the per-call unit
-// computation produces, so step bounds and painted pixels are bit-identical
-// to the unprepared entry points while the subdivision, scaling, and
-// reciprocal-length work is paid once per endpoint instead of once per
-// step-count, step-bounds, and step-apply call.
+// One endpoint's authoritative curve chords for settled rendering and
+// characterization tools. The prepared chords carry exactly the level-space
+// floats used by immediate raster authority, with subdivision, scaling, and
+// reciprocal-length work paid once per endpoint.
 struct PreparedCurveStep {
   float first_x = 0;
   float first_y = 0;
@@ -145,33 +90,15 @@ struct PreparedCurveUnit {
 
 [[nodiscard]] std::optional<PreparedCurveUnit> prepare_incremental_curve_unit(
     std::span<const CompactOperationSample> samples, std::size_t endpoint, ZoomLevel zoom);
-[[nodiscard]] std::optional<PixelRect> prepared_curve_step_level_bounds(
-    const PreparedCurveUnit& unit, std::size_t step_index, ZoomLevel zoom);
-[[nodiscard]] bool apply_masked_prepared_curve_step(OperationTool tool, std::uint16_t color,
-                                                    const PreparedCurveUnit& unit,
-                                                    std::size_t step_index,
-                                                    const RasterSurface& surface,
-                                                    std::span<std::uint8_t> finalized_pixels,
-                                                    MaskedRowSummary* summary = nullptr);
-
-// Paints every chord of one prepared unit in a single row sweep over their
-// union bounds, sharing one unfinalized-window scan per row. All chords of a
-// unit carry one color, so with the finalized mask the written pixel set is
-// identical to sequential per-chord painting in any order.
-[[nodiscard]] bool apply_masked_prepared_curve_unit(OperationTool tool, std::uint16_t color,
-                                                    const PreparedCurveUnit& unit,
-                                                    const RasterSurface& surface,
-                                                    std::span<std::uint8_t> finalized_pixels,
-                                                    MaskedRowSummary* summary = nullptr);
 
 // Operation-level chord table (H7). One group visit prepares a batch of an
 // operation's chords — every chord of every endpoint unit, newest first —
 // into caller-funded storage, then paints them in a single y-sorted row
 // sweep sharing one unfinalized-window scan per row across the whole batch.
 // All chords of one operation carry one color, so under the finalized mask
-// the written pixel set is identical to sequential per-unit painting in any
-// order and to any endpoint grouping (batches stay exact). Endpoint units
-// are atomic within a batch: a unit's chords never split across batches.
+// the written pixel set is identical to whole-operation painting and to any
+// endpoint grouping (batches stay exact). Endpoint units are atomic within a
+// batch: a unit's chords never split across batches.
 //
 // Chord-plan storage is opaque caller-funded bytes; the implementation
 // static_asserts its layout fits these bounds.
@@ -222,27 +149,14 @@ struct OperationSweepSlice {
 
 // Sweeps rows of a prepared batch, resuming at first_row and stopping at a
 // row boundary once accumulated work reaches max_work_px (at least one row
-// always completes). Per-pixel decisions are identical to the per-unit
-// painters: covers_pixel stays the sole geometry authority and the
-// finalized mask keeps every pixel single-writer.
+// always completes). Per-pixel decisions are identical to the whole-operation
+// painter: covers_pixel stays the sole geometry authority and the finalized
+// mask keeps every pixel single-writer.
 [[nodiscard]] bool apply_masked_operation_chord_rows(
     OperationTool tool, std::uint16_t color, std::span<const std::byte> chord_storage,
     const OperationChordBatch& batch, int first_row, std::size_t max_work_px,
     const RasterSurface& surface, std::span<std::uint8_t> finalized_pixels,
     MaskedRowSummary* summary, OperationSweepSlice& slice);
-
-struct AffectedTileResult {
-  std::size_t required = 0;
-  std::size_t written = 0;
-  [[nodiscard]] bool complete() const { return required == written; }
-};
-
-// Enumerates world-aligned tiles touched at zoom. Returns nullopt for an empty
-// operation or the overview level. If output is short, its prefix is filled and
-// required reports the capacity needed for a complete list.
-[[nodiscard]] std::optional<AffectedTileResult> affected_tiles(const OperationAppend& operation,
-                                                               ZoomLevel zoom,
-                                                               std::span<TileKey> output);
 
 }  // namespace tinydraw::vector_v2
 
