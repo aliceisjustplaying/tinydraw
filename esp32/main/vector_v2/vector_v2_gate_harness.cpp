@@ -119,7 +119,9 @@ const char* zoom_name(ZoomLevel zoom) {
   const bool dock_drag =
       vector_v2::chrome_minimap_dock_drag_candidate({274.0F, 400.0F}, chrome) &&
       !vector_v2::chrome_promotes_minimap_dock_drag({274.0F, 400.0F}, {281.0F, 400.0F}, chrome) &&
-      vector_v2::chrome_promotes_minimap_dock_drag({274.0F, 400.0F}, {282.0F, 400.0F}, chrome);
+      vector_v2::chrome_promotes_minimap_dock_drag({274.0F, 400.0F}, {282.0F, 400.0F}, chrome) &&
+      !vector_v2::chrome_promotes_minimap_dock_drag({274.0F, 400.0F}, {274.0F, 399.0F}, chrome) &&
+      vector_v2::chrome_promotes_minimap_dock_drag({274.0F, 400.0F}, {274.0F, 398.0F}, chrome);
   const auto initial = presenter.set_view(ZoomLevel::k100Percent, 400, 600, chrome, now_us());
   const auto tap = presenter.jump_from_minimap({312.0F, 307.0F}, chrome, now_us());
   const bool tap_position = presenter.level_x() == 552 && presenter.level_y() == 710;

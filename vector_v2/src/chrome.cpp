@@ -81,6 +81,7 @@ constexpr float kMinimapDragPromotionPixels = 4.0F;
 constexpr float kMinimapDragPromotionPixels200 = 3.0F;
 constexpr float kMinimapDragPromotionPixels400 = 2.0F;
 constexpr float kMinimapDockDragPromotionPixels = 8.0F;
+constexpr float kMinimapDockUpPromotionPixels = 2.0F;
 constexpr float kPanDragPromotionPixels = 8.0F;
 constexpr int kMainHitTop = kMainTop - kHitSlop;
 constexpr std::array kMainCenters{34, 94, 154, 214, 274, 334};
@@ -778,8 +779,12 @@ bool chrome_promotes_minimap_dock_drag(ChromePoint start, ChromePoint current,
   }
   const float delta_x = current.x - start.x;
   const float delta_y = current.y - start.y;
-  return delta_x * delta_x + delta_y * delta_y >=
-         kMinimapDockDragPromotionPixels * kMinimapDockDragPromotionPixels;
+  // Returning upward toward the visible map is unambiguous intent and should
+  // not feel stuck behind the full dock-tap jitter band. Horizontal/downward
+  // motion retains 8 px because it crosses the actual size/document buttons.
+  return delta_y <= -kMinimapDockUpPromotionPixels ||
+         delta_x * delta_x + delta_y * delta_y >=
+             kMinimapDockDragPromotionPixels * kMinimapDockDragPromotionPixels;
 }
 
 bool chrome_promotes_minimap_drag(ChromePoint start, ChromePoint current, const ChromeState& state,

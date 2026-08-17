@@ -300,14 +300,21 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       `benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md`,
       `benchmark-results/minimap-touch-target-2026-08-17/RECEIPT.md`, and
       `benchmark-results/minimap-input-leak-2026-08-17/RECEIPT.md`.
-- [ ] Repair 400% minimap glass control from a non-perturbing exact touch
-      capture. **Owner verdict 2026-08-17:** commit `54dc125` is worse from the
-      bottom-right—acquisition took roughly five attempts, then the 0.25 drag
-      scale exhausted physical finger travel before reaching center. The
-      deterministic endpoint gate missed both symptoms. The existing capture
-      build is disqualified because its synchronous CSV dump blocks the app
-      loop; build a capture path that cannot perturb interaction before another
-      mapping change.
+- [ ] Close absolute minimap control after one final directional glass check.
+      **Reworked 2026-08-17:** direct Down now centers immediately and every
+      Move maps absolutely, so world travel no longer depends on zoom or
+      grabbing the tiny viewport box. Bottom-map touches genuinely overlap the
+      size/document dock (captured Down coordinates reached y=418), so a
+      stationary ambiguous press remains a button tap while a deliberate drag
+      promotes to captured minimap navigation. The original map position is
+      restored. The non-perturbing compact capture recorded 866 events / 4,916
+      offers, zero overflow, and all 14 ambiguous drags promoted; owner verdict:
+      “way better than anything we had before.” Exact replay attributed the
+      remaining sticky-up feel to the 8 px threshold (118.482 ms median), so
+      upward return now promotes at 2 px while horizontal/downward ambiguity
+      retains 8 px (predicted median 78.995 ms). Recheck upward acquisition at
+      100%/400% plus ordinary size/document taps, then mark green. See
+      `benchmark-results/minimap-absolute-pointer-2026-08-17/RECEIPT.md`.
 - [x] Integrate the RTC and one-shot NTP through a narrow asynchronous adapter.
       **Landed 2026-08-17:** Document → Clock owns three explicit controller
       phases (connecting, synchronizing, terminal), writes PCF85063A time, and

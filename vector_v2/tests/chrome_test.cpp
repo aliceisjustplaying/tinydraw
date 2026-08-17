@@ -274,6 +274,10 @@ TEST_CASE("ambiguous minimap dock presses preserve taps and promote deliberate d
       {274.0F, 400.0F}, {281.0F, 400.0F}, state));
   CHECK(tinydraw::vector_v2::chrome_promotes_minimap_dock_drag(
       {274.0F, 400.0F}, {282.0F, 400.0F}, state));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_promotes_minimap_dock_drag(
+      {274.0F, 400.0F}, {274.0F, 399.0F}, state));
+  CHECK(tinydraw::vector_v2::chrome_promotes_minimap_dock_drag(
+      {274.0F, 400.0F}, {274.0F, 398.0F}, state));
   CHECK_FALSE(tinydraw::vector_v2::chrome_minimap_dock_drag_candidate(
       {274.0F, 400.0F}, {.popup = ChromePopup::kSizes}));
 }
