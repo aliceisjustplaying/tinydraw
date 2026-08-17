@@ -287,7 +287,7 @@ bool append_and_commit_probe(OperationLog& log, MaterializedCanvas& canvas,
          carried.has_value() && updated->identity.revision == result->identity.revision &&
          updated->identity.quality == MaterializationQuality::kImmediate &&
          carried->identity.revision == result->identity.revision &&
-         carried->identity.generation == carried_before->identity.generation;
+         carried->slot_index == carried_before->slot_index;
 }
 
 }  // namespace

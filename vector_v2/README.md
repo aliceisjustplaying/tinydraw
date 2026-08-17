@@ -246,10 +246,9 @@ physical multi-zoom gate remains open.
 
 The interface expresses a revision plus bounded affected-tile publications; it
 does not expose mutable pool storage or renderer callbacks. Tile size and slot
-count remain provisional and may change after captured workloads. Shared read
-pins protect source storage only while a display adapter copies it into DMA
-staging; `pins_outstanding()` is the fail-closed diagnostic. Renderer work never
-holds a pin while waiting for panel capacity.
+count remain provisional and may change after captured workloads. Callers
+serialize composition and publication, so source lookup does not expose a
+second lifetime protocol.
 
 The immediate renderer is intentionally opaque and hard-edged; publications are
 labeled `kImmediate`, below `kSettled`. `kSettled` is reserved for anti-aliased
@@ -290,8 +289,7 @@ materialization: partial edge coverage blended over already-painted edge pixels
 cannot remove the immediate renderer's wider binary silhouette. Settlement must
 start from an explicit pre-operation source or checkpoint and replay a contiguous
 painter-ordered operation range. Its interface must therefore identify the
-baseline revision, destination revision, and operation range together; append-time
-zoom-specific LOD storage must also have an explicit owner and capacity receipt.
+baseline revision, destination revision, and operation range together.
 Do not hide these requirements behind a `settle(current_pixels)` helper or copy
 the rejected prototype renderer into Vector V2.
 
@@ -309,14 +307,3 @@ existing immediate rasterizer, and proves byte equality with live materializatio
 It then restores an older snapshot, rejects the held epoch, rebases, and repeats.
 This validates ordering and reset ownership only; it is not settled-renderer
 quality or performance evidence.
-
-`OperationLodStore` gives append-time zoom-specific centerline samples a separate
-fixed-capacity owner. It prepares all four tiled zoom spans together, publishes
-them under the exact next operation identity and log epoch, and invalidates them
-on snapshot reset. Its source, span, and sample storage are caller-owned and
-alias-checked. The first implementation deliberately stores caller-generated
-samples without choosing a simplification algorithm; capacity remains
-provisional until representative captured input exists. Published LODs remain
-readable while the next operation is prepared. Eventual integration must prepare
-both log and LOD state before publishing either, so a skipped LOD append cannot
-wedge their exact-next identities.
