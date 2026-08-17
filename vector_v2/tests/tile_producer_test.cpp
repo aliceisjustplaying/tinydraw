@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "tinydraw/vector_v2/adversarial_tapered_corpus.h"
+#include "tinydraw/vector_v2/incremental_document.h"
 
 namespace vector_v2 = tinydraw::vector_v2;
 
@@ -163,6 +164,47 @@ TEST_CASE("adversarial tapered corpus is four times the dense physical sample co
         {.tool = operation->tool, .color = operation->color, .samples = operation->samples},
         {.zoom = view.zoom, .level_bounds = view.level_pixels, .pixels = direct, .stride = 128}));
   }
+  CHECK(composed == direct);
+}
+
+TEST_CASE("tile producer rebuilds invalidated pixels after Undo and Redo") {
+  PaperFixture fixture;
+  const std::array stroke{
+      vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 160, .radius_256 = 512},
+      vector_v2::CompactOperationSample{.x_quarter = 640, .y_quarter = 640, .radius_256 = 512},
+  };
+  REQUIRE(fixture.log.append({.color = 0xF800U, .gesture_id = 1U, .samples = stroke}));
+  fixture.snapshot.fill(0xFFFFU);
+  REQUIRE(vector_v2::apply_incremental_operation(
+      {.color = 0xF800U, .samples = stroke},
+      {.zoom = vector_v2::ZoomLevel::k25Percent,
+       .level_bounds = {0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
+       .pixels = fixture.snapshot,
+       .stride = vector_v2::kOverviewWidth}));
+  REQUIRE(fixture.canvas.restore_snapshot(fixture.log.current_revision(), fixture.snapshot));
+  REQUIRE(vector_v2::move_history_incrementally(
+      fixture.log, fixture.canvas, vector_v2::HistoryDirection::kUndo, fixture.snapshot));
+  REQUIRE(vector_v2::move_history_incrementally(
+      fixture.log, fixture.canvas, vector_v2::HistoryDirection::kRedo, fixture.snapshot));
+
+  const vector_v2::ViewRequest view{
+      .zoom = vector_v2::ZoomLevel::k100Percent,
+      .level_pixels = {0, 0, 128, 128},
+  };
+  while (true) {
+    const auto step = fixture.producer.produce_next(view);
+    REQUIRE(step.has_value());
+    if (step->complete) {
+      break;
+    }
+  }
+  std::array<std::uint16_t, 128U * 128U> composed{};
+  REQUIRE(fixture.canvas.compose_view(view, composed));
+  std::array<std::uint16_t, 128U * 128U> direct{};
+  direct.fill(0xFFFFU);
+  REQUIRE(vector_v2::apply_incremental_operation(
+      {.color = 0xF800U, .samples = stroke},
+      {.zoom = view.zoom, .level_bounds = view.level_pixels, .pixels = direct, .stride = 128}));
   CHECK(composed == direct);
 }
 

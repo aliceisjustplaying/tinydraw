@@ -144,6 +144,11 @@ class OperationLog {
   [[nodiscard]] std::optional<OperationReplayRange> replay_range(
       OperationLogEpoch baseline_epoch, DocumentRevision baseline_revision,
       DocumentRevision destination_revision) const;
+  // Returns the complete active painter-order prefix from its current uniform
+  // baseline. Unlike a caller-held revision, this remains valid after history
+  // rebases the represented range.
+  [[nodiscard]] std::optional<OperationReplayRange> active_replay_range(
+      OperationLogEpoch requested_epoch) const;
   // Resets empty authority to a snapshot revision. Fails while a
   // PreparedAppend owns the pending slot. Existing operations are discarded.
   [[nodiscard]] bool reset(DocumentRevision revision = {});
