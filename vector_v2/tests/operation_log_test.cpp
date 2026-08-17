@@ -39,6 +39,37 @@ TEST_CASE("operation log appends ordered samples and advances one revision") {
   CHECK(stored->world_bounds == vector_v2::PixelRect{8, 18, 33, 43});
 }
 
+TEST_CASE("authority read views expose one coherent generation") {
+  std::array<vector_v2::OperationRecord, 2> records{};
+  std::array<vector_v2::CompactOperationSample, 2> storage{};
+  vector_v2::OperationLog log(records, storage);
+  const std::array sample{
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
+
+  const vector_v2::AuthorityReadView empty = log.read_view();
+  CHECK(empty.generation == vector_v2::DocumentRevision{0});
+  CHECK(empty.active_operation_count == 0U);
+  CHECK(empty.retained_operation_count == 0U);
+  CHECK(log.unchanged(empty));
+
+  REQUIRE(log.append({.gesture_id = 7U, .samples = sample}));
+  CHECK_FALSE(log.unchanged(empty));
+  CHECK_FALSE(log.operation(empty, 0));
+
+  const vector_v2::AuthorityReadView one = log.read_view();
+  CHECK(one.generation == vector_v2::DocumentRevision{1});
+  CHECK(one.active_operation_count == 1U);
+  CHECK(one.retained_operation_count == 1U);
+  REQUIRE(log.operation(one, 0));
+  CHECK(log.operation(one, 0)->gesture_id == 7U);
+  REQUIRE(log.retained_operation(one, 0));
+  CHECK(log.retained_operation(one, 0)->identity.operation_index == 0U);
+
+  REQUIRE(log.reset({8}));
+  CHECK_FALSE(log.unchanged(one));
+  CHECK_FALSE(log.retained_operation(one, 0));
+}
+
 TEST_CASE("stored operation feeds the incremental renderer without translation") {
   std::array<vector_v2::OperationRecord, 1> records{};
   std::array<vector_v2::CompactOperationSample, 2> storage{};

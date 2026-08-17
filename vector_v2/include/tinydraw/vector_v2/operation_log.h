@@ -36,6 +36,16 @@ struct OperationReplayRange {
   bool operator==(const OperationReplayRange&) const = default;
 };
 
+// One coherent drawing-authority observation. The active prefix is visible;
+// the retained prefix also includes any future Redo tail.
+struct AuthorityReadView {
+  OperationLogEpoch epoch{};
+  DocumentRevision generation{};
+  std::size_t active_operation_count = 0;
+  std::size_t retained_operation_count = 0;
+  bool operator==(const AuthorityReadView&) const = default;
+};
+
 class OperationLog;
 
 // Move-only preparation owned by one OperationLog. It must not outlive that
@@ -84,7 +94,13 @@ class OperationLog {
   // that preparation; cancel leaves operation/sample counts and revision intact.
   [[nodiscard]] std::optional<PreparedAppend> prepare(const OperationAppend& append_request);
   [[nodiscard]] std::optional<OperationIdentity> append(const OperationAppend& append_request);
+  [[nodiscard]] AuthorityReadView read_view() const;
+  [[nodiscard]] bool unchanged(const AuthorityReadView& view) const;
   [[nodiscard]] std::optional<StoredOperation> operation(std::size_t index) const;
+  [[nodiscard]] std::optional<StoredOperation> operation(const AuthorityReadView& view,
+                                                         std::size_t active_index) const;
+  [[nodiscard]] std::optional<StoredOperation> retained_operation(
+      const AuthorityReadView& view, std::size_t retained_index) const;
   // Returns the exact contiguous operations needed to advance a caller-owned
   // baseline snapshot. Both revisions must still be represented by this log.
   [[nodiscard]] std::optional<OperationReplayRange> replay_range(
@@ -105,6 +121,8 @@ class OperationLog {
   std::span<CompactOperationSample> samples_;
   std::size_t operation_count_ = 0;
   std::size_t sample_count_ = 0;
+  std::size_t retained_operation_count_ = 0;
+  std::size_t retained_sample_count_ = 0;
   DocumentRevision base_revision_{};
   DocumentRevision revision_{};
   OperationLogEpoch epoch_{};

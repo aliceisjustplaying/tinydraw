@@ -163,6 +163,8 @@ void OperationLog::publish_prepared(const PreparedAppend& prepared) {
   };
   sample_count_ += pending_sample_count_;
   ++operation_count_;
+  retained_sample_count_ = sample_count_;
+  retained_operation_count_ = operation_count_;
   revision_ = prepared.operation_.identity.revision;
   append_pending_ = false;
   pending_sample_count_ = 0;
@@ -188,6 +190,19 @@ std::optional<OperationIdentity> OperationLog::append(const OperationAppend& app
   return identity;
 }
 
+AuthorityReadView OperationLog::read_view() const {
+  return {
+      .epoch = epoch_,
+      .generation = revision_,
+      .active_operation_count = operation_count_,
+      .retained_operation_count = retained_operation_count_,
+  };
+}
+
+bool OperationLog::unchanged(const AuthorityReadView& view) const {
+  return !append_pending_ && view == read_view();
+}
+
 std::optional<StoredOperation> OperationLog::operation(std::size_t index) const {
   if (index >= operation_count_) {
     return std::nullopt;
@@ -196,6 +211,36 @@ std::optional<StoredOperation> OperationLog::operation(std::size_t index) const 
   return StoredOperation{
       .identity = {.revision = {base_revision_.value + static_cast<std::uint32_t>(index) + 1U},
                    .operation_index = static_cast<std::uint32_t>(index)},
+      .tool = record.tool,
+      .color = record.color,
+      .gesture_id = record.gesture_id,
+      .world_bounds = {.x0 = record.bounds_x0,
+                       .y0 = record.bounds_y0,
+                       .x1 = record.bounds_x1,
+                       .y1 = record.bounds_y1},
+      .samples = samples_.subspan(record.first_sample, record.sample_count),
+  };
+}
+
+std::optional<StoredOperation> OperationLog::operation(const AuthorityReadView& view,
+                                                       std::size_t active_index) const {
+  if (!unchanged(view) || active_index >= view.active_operation_count) {
+    return std::nullopt;
+  }
+  return operation(active_index);
+}
+
+std::optional<StoredOperation> OperationLog::retained_operation(
+    const AuthorityReadView& view, std::size_t retained_index) const {
+  if (!unchanged(view) || retained_index >= view.retained_operation_count) {
+    return std::nullopt;
+  }
+  const OperationRecord& record = records_[retained_index];
+  return StoredOperation{
+      .identity = {
+          .revision = {base_revision_.value + static_cast<std::uint32_t>(retained_index) + 1U},
+          .operation_index = static_cast<std::uint32_t>(retained_index),
+      },
       .tool = record.tool,
       .color = record.color,
       .gesture_id = record.gesture_id,
@@ -236,6 +281,8 @@ bool OperationLog::reset(DocumentRevision revision) {
   }
   operation_count_ = 0;
   sample_count_ = 0;
+  retained_operation_count_ = 0;
+  retained_sample_count_ = 0;
   base_revision_ = revision;
   revision_ = revision;
   ++epoch_.value;
@@ -252,9 +299,9 @@ bool OperationLog::clear() { return reset(); }
 bool OperationLog::valid_append(const OperationAppend& append_request) const {
   if (!ready() || append_pending_ || append_request.samples.empty() ||
       append_request.samples.size() > std::numeric_limits<std::uint16_t>::max() ||
-      operation_count_ >= records_.size() ||
+      retained_operation_count_ >= records_.size() ||
       revision_.value == std::numeric_limits<std::uint32_t>::max() ||
-      append_request.samples.size() > samples_.size() - sample_count_ ||
+      append_request.samples.size() > samples_.size() - retained_sample_count_ ||
       (append_request.tool != OperationTool::kPen &&
        append_request.tool != OperationTool::kEraser)) {
     return false;
