@@ -18,14 +18,11 @@ receipts:
 [`fine minimap control`](benchmark-results/minimap-fine-control-2026-08-17/RECEIPT.md),
 [`NTP text size`](benchmark-results/ntp-text-size-2026-08-17/RECEIPT.md))
 
-Branch: `feat/v2-performance-followup`
-
 State audited through: [`COLD_COMPUTE_CAMPAIGN_RECEIPT.md`](benchmark-results/wave3-cold-compute/COLD_COMPUTE_CAMPAIGN_RECEIPT.md)
 
-Raster V1 remains the default firmware and operational fallback. Vector V2 is
-the accepted product architecture, but it is not feature complete or ready for
-promotion. [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) owns acceptance thresholds;
-[`V2_ROADMAP.md`](V2_ROADMAP.md) is the only forward queue.
+Vector V2 is the feature-complete ESP32 product. Known bugs, cleanup, and final
+performance closure remain. [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) owns
+acceptance thresholds; [`V2_ROADMAP.md`](V2_ROADMAP.md) is the forward queue.
 
 ## Finish-line scorecard
 
@@ -194,7 +191,7 @@ autosave feature itself.
 - Production toolbar, two PICO-8 palettes, zoom rail, battery, confirmation UI,
   on-demand RTC/NTP feedback, and an interactive minimap with tap-to-jump and
   captured viewport dragging.
-- Separate Raster V1 and Vector V2 firmware targets.
+- Product, gate, QEMU, and focused hardware-diagnostic firmware variants.
 
 Foundation receipts and architectural history live in
 [`vector_v2/README.md`](vector_v2/README.md),
@@ -206,8 +203,8 @@ but do not override this scorecard or the frozen contract.
 
 - No rewrite, camera-aligned atlas, hidden V2 allocation, or speculative
   second-core concurrency.
-- Keep V2 state out of `WorldCanvas`, `FirmwareCanvas`, and the V1 interaction
-  loop. Share stable platform-neutral mechanisms through narrow dependencies.
+- Keep vector product state out of legacy core types such as `WorldCanvas` and
+  `FirmwareCanvas`. Share stable platform-neutral mechanisms through narrow dependencies.
 - Every cache needs a byte budget, identity, invalidation owner, reuse receipt,
   exactness oracle, and removal condition.
 - One measured hot-path hypothesis per change. A shared-path change reopens its
@@ -230,6 +227,6 @@ Host validation:
 git diff --check
 ```
 
-ESP integration must build both firmware variants. Final promotion additionally
-requires the gate harness, physical optical/ink checks, interrupted-write tests,
-long-session soak, and explicit V1/V2 parity review.
+ESP integration must build the product and gate variants. Release closure also
+requires the relevant focused diagnostics, physical optical/ink checks,
+interrupted-write tests, and a long-session soak.

@@ -12,25 +12,13 @@ exercise the same C++20 drawing and UI core.
 
 ## Current state
 
-`main` contains two independent ESP32 applications. **Raster V1** remains the
-default firmware while **Vector V2** moves toward feature parity. V2 is the
-accepted architecture, but it is not yet feature complete or ready to replace
-V1. Current status lives in [`PROJECT_STATE.md`](PROJECT_STATE.md); the remaining
-work is tracked in [`V2_ROADMAP.md`](V2_ROADMAP.md), and
-[`vector_v2/README.md`](vector_v2/README.md) defines the module boundaries.
+The ESP32 product is the feature-complete Vector V2 application. Cleanup,
+known bug fixes, and the final performance campaign remain. Current status
+lives in [`PROJECT_STATE.md`](PROJECT_STATE.md); [`V2_ROADMAP.md`](V2_ROADMAP.md)
+owns the remaining work, and [`vector_v2/README.md`](vector_v2/README.md)
+defines the module boundaries.
 
-### Raster V1
-
-- Variable-width, Perfect Freehand-style ink with 4×4 edge smoothing
-- Solid self-overlaps, rounded sharp turns, twelve colors, and four sizes
-- Pan, ten Undos, a 3×3 canvas, autosave, battery status, and USB PNG export
-- Onboard clock, one-shot NTP correction, demos, and battery-powered off/on
-
-Raster V1 long strokes average 2.5–3.4 ms per update. Export mounts the full
-1104×1344 drawing as `TINYDRAW/DRAWING.PNG` with the RTC-backed local time.
-Autosave, charging, power-off/on, and macOS Finder mounting are verified.
-
-### Vector V2
+### ESP32 product
 
 - Vector operations are authoritative for pen and eraser strokes.
 - The bounded 1472×1792 world supports 25%, 50%, 100%, 200%, and 400% zoom.
@@ -67,21 +55,9 @@ Autosave, charging, power-off/on, and macOS Finder mounting are verified.
   render and encoder workspaces. Both files are exposed read-only in one
   synthesized FAT16 volume after a shared metadata-last commit.
 
-V2's immediate renderer is hard-edged while drawing and refines to the accepted
-settled anti-aliased output after lift. The final invariant presenter looked
-tear-free in the 2026-08-16 owner glass check, with same-session positive-control
-closure still pending; pan pacing remains red at 50.934 ms p95 against the
-required 41.7 ms.
-Ink remains red because materialization precedes preview while the provisional
-ribbon tail is omitted. Adversarial 400% cold refinement is also red at
-663.829 ms against the ≤500 ms contract.
-
-The correction and evidence are recorded in
-[`PROJECT_STATE.md`](PROJECT_STATE.md) and
-[`benchmark-results/wave2-compositor/`](benchmark-results/wave2-compositor/).
-Raster V1 remains the operational fallback. See [`PROJECT_STATE.md`](PROJECT_STATE.md)
-for the current verdict and [`V2_ROADMAP.md`](V2_ROADMAP.md) for the sole forward
-queue; dated closure reports preserve history but are not current acceptance.
+Immediate ink is refined to the accepted settled anti-aliased output after
+lift. Dated receipts preserve historical measurements; the scorecard in
+[`PROJECT_STATE.md`](PROJECT_STATE.md) is the current acceptance record.
 
 The RP2350 build currently provides screen-sized ink, erasing, colors, sizes,
 and New. It has no pan, Undo, or persistence. Native replays, exact snapshots,
@@ -108,13 +84,14 @@ Draw with the mouse, use `Cmd-Z` to undo, `C` for New, and `Esc` to quit.
 ## Build ESP32 firmware
 ```sh
 ./scripts/bootstrap-idf     # once; isolated ESP-IDF v6.0.2
-./scripts/esp32 raster-v1
+./scripts/esp32 build
 ./scripts/esp32 vector-v2 PORT
 ./scripts/esp32 graphics-test
 ```
 
-`./scripts/esp32 build` remains an alias for `raster-v1`. Both named commands build in separate
-directories; `vector-v2 PORT` also flashes the V2 app. Use an explicit serial port. Export temporarily replaces USB serial with a read-only drive; **Return to Drawing** stops the USB device stack without resetting the board.
+`build` builds the product firmware; `vector-v2 PORT` rebuilds and flashes it.
+Use an explicit serial port. Export temporarily replaces USB serial with a read-only drive;
+**Return to Drawing** stops the USB device stack without resetting the board.
 To flash again on battery, power off, hold BOOT, and short-press power for a cold
 boot. Short BOOT records/replays demos. Hold the lower button four seconds to
 power off; short-press it to start. There is no sleep mode yet.

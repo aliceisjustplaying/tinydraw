@@ -1,14 +1,10 @@
 # TinyDraw V2 roadmap
 
-Last updated: 2026-08-17 (absolute minimap control and Undo/Redo are owner-accepted;
-next is autosave, touch targets, export hardware gates, and final AA/cold
-optimization; see
+Last updated: 2026-08-17 (feature implementation complete; cleanup, known bug
+fixes, release gates, and final optimization remain; see
 [`PROJECT_STATE.md`](PROJECT_STATE.md#immediate-work-order))
 
-Branch: `feat/v2-performance-followup`
-
-V2 is the accepted architecture. Raster V1 remains the default and fallback
-until every required item in [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md) closes.
+V2 is the ESP32 product architecture.
 [`PROJECT_STATE.md`](PROJECT_STATE.md) contains current measurements; this file
 is the only forward queue.
 
@@ -382,7 +378,6 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       run the physical missed-tap check.
 - [ ] Capture a physical host mount/eject receipt for `DRAWING.SVG` without a
       watchdog or USB-mode wedge.
-- [ ] Revalidate Raster V1 on the current board as the fallback.
 
 ## Phase 7 — all-on release closure
 
@@ -396,11 +391,9 @@ Derived overview, tile, chrome, and settled caches are never persisted.
 - [ ] Keep deterministic journal truncation/corruption recovery fixtures in
       the autosave phase; destructive physical power-interruption testing is
       excluded from the owner-prioritized release work.
-- [ ] Run host tests, sanitizers, formatting, static analysis, both firmware
+- [ ] Run host tests, sanitizers, formatting, static analysis, product and gate
       builds, hardware gates, optical checks, and export verification.
-- [ ] Compare Raster V1 and Vector V2 feature parity explicitly.
-- [ ] Tag each requirement's known-good revision, promote V2 to default, and
-      retain a named legacy Raster V1 build.
+- [ ] Tag each requirement's known-good revision and publish the release build.
 
 ## Definition of feature complete
 
@@ -411,7 +404,7 @@ Derived overview, tile, chrome, and settled caches are never persisted.
       fallback on revisit within cache capacity.
 - [ ] Input remains responsive during rendering, saving, recovery, and export.
 - [ ] Long-session and restart tests show no corruption, leaks, or stale pixels.
-- [ ] Raster V1 and Vector V2 build independently before and after promotion.
+- [ ] Product, gate, and required focused diagnostic variants build independently.
 
 ## Dependency reopen matrix
 
