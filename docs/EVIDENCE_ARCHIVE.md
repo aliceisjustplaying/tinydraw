@@ -1,9 +1,10 @@
 # Raw measurement evidence archive
 
 The current tree keeps concise receipts, active regression fixtures, and compact
-structured data. It omits 340 raw serial/build/flash logs, videos, and extracted
-frames (67,163,799 bytes) from `benchmark-results/` and
-`vector_v2/hardware-receipts/`.
+structured data. It omits 377 raw serial/build/flash logs, hardware transcripts,
+generated benchmark binaries, videos, and extracted frames (68,217,490 bytes)
+from `benchmark-results/`, `vector_v2/hardware-receipts/`, and
+`second_review_hardware_ab/`.
 
 Every removed artifact remains byte-for-byte available at tag
 [`v2-feature-complete-pre-cleanup`](https://github.com/aliceisjustplaying/tinydraw/tree/v2-feature-complete-pre-cleanup).

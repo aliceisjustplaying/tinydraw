@@ -12,10 +12,11 @@ __pycache__/
 
 # Measurement receipts retain summaries and minimal counterexamples in Git.
 # Raw capture material belongs in external storage; see docs/ARTIFACT_RETENTION.md.
-/benchmark-results/**/*.log
+*.log
 /benchmark-results/**/*.mov
 /benchmark-results/**/*.mp4
+/benchmark-results/**/*.bin
+/benchmark-results/**/hardware-*.txt
 /benchmark-results/**/frames/
 /benchmark-results/**/raw/
 /benchmark-results/**/build-transcript*.txt
-/vector_v2/hardware-receipts/*.log
