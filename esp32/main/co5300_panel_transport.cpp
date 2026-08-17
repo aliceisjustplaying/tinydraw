@@ -31,11 +31,15 @@ constexpr int kPanelClockMHz = kEffectiveCo5300ClockMHz;
 // Measured 2026-08-15 (benchmark-results/blockA-panel-limits): requests of 40,
 // 50, and 60 MHz produce identical transfer walls. The GPSPI divider from the
 // 80 MHz source clamps all three to 40 MHz actual; no overclock ever engaged.
-// Three 32 KiB bounce buffers keep staging ahead of the measured 20 MB/s
-// wire. Marginal color-transaction setup is ~44 us and a window pair is
-// ~90 us; a one-window RAMWR/RAMWRC stream minimizes both.
+// Vector V2 uses three 32 KiB bounce buffers to keep staging ahead of the
+// measured 20 MB/s wire. Raster V1 reserves the remaining contiguous internal
+// SRAM for its full-screen coverage plane and uses two queued transfers.
 constexpr int kTransferPixels = 16384;
+#ifdef TINYDRAW_RASTER_V1
+constexpr int kTransferQueueDepth = 2;
+#else
 constexpr int kTransferQueueDepth = 3;
+#endif
 constexpr std::size_t kTransferHistory = 64U;
 constexpr std::uint16_t kIoExpanderAddress = 0x20;
 constexpr std::uint8_t kIoExpanderOutputRegister = 0x01;
