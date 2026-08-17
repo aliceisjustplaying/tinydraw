@@ -1,7 +1,8 @@
 # Vector V2 autosave and recovery design
 
-Status: implementation plan, revised 2026-08-17. Single-journal autosave ships first;
-two-arena compaction and arena metadata are explicitly deferred by owner direction.
+Status: single-journal baseline implemented 2026-08-17; drawn-document hardware
+recovery and performance gates remain. Two-arena compaction and arena metadata
+are explicitly deferred by owner direction.
 
 This design persists Vector V2 drawing authority without moving flash work into
 the ink path. It follows the product contract in `SHIP_CONTRACT.md` §7 and the
@@ -110,11 +111,18 @@ requests a later full checkpoint instead of publishing a partial delta.
 
 The 3 MiB `drawing` partition is one append-only journal. Fresh initialization
 erases it once, writes the first checkpoint body, and writes that checkpoint's
-commit marker last. Later transactions append only into erased bytes. Startup
-scans to the newest valid marker and resumes at the first erased byte.
+commit marker last. Each transaction occupies a whole number of 4 KiB sectors;
+its marker is the final 16 bytes of that sector-aligned extent. Later
+transactions append into fresh sectors. Startup scans to the newest valid
+marker and resumes at its aligned end. An interrupted tail therefore begins at
+a sector boundary and can be erased without touching the prior Recovery point.
+This deliberately trades packing density for simple, exact tail recovery while
+two-arena compaction remains deferred.
 
 When no complete next transaction fits, autosave reports `full` and preserves
-all existing Recovery points. It does not erase or compact committed data.
+all existing Recovery points. It does not erase or compact committed data. A
+minimum-size transaction consumes 4 KiB, so the current 3 MiB partition holds
+at most 768 Journal commits; multi-sector long Strokes reduce that count.
 Two-arena compaction and metadata—which would safely recycle a full partition
 while retaining the old Recovery point—are deferred for a later project round.
 
@@ -139,17 +147,17 @@ interruption after every transaction write phase.
 
 ## Startup recovery
 
-1. Validate both arena metadata sectors and choose the newest committed arena.
-2. Scan from its checkpoint through the last complete journal commit.
-3. Restore retained operations, active prefix, generation, epoch, navigation,
+1. Scan aligned transactions from the beginning of the `drawing` partition
+   through the last complete journal commit.
+2. Restore retained operations, active prefix, generation, epoch, navigation,
    chrome selections, and next Stroke identity.
-4. Replay only the active prefix into a fresh 25% overview.
-5. Publish that overview at the recovered generation; all higher-zoom tiles
+3. Replay only the active prefix into a fresh 25% overview.
+4. Publish that overview at the recovered generation; all higher-zoom tiles
    begin cold and rebuild through the existing producer.
-6. If no arena is valid, start a blank document and schedule its first
-   checkpoint. If valid data becomes corrupt after at least one commit,
-   recover the prior commit and surface a recovery warning rather than erasing
-   it.
+5. If no valid V2 transaction exists, start a blank document and schedule its
+   first checkpoint. If a later transaction is incomplete or corrupt, recover
+   the prior commit and schedule a checkpoint after erasing only the aligned
+   tail on the background worker.
 
 ## TDD slices
 

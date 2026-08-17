@@ -245,13 +245,18 @@ Recovery points and reports capacity instead of erasing them.
       verdict 2026-08-17:** functionally working. The visibly brutal high-zoom
       cold rebuild after Undo is deferred to the owner-ordered final optimization
       round rather than blocking autosave.
-- [ ] Define a versioned append-only authority journal: operation records,
-      gesture commit boundaries, active prefix, generation/epoch, and view/tool
-      state, with sequence numbers, CRCs, and commit markers/superblocks.
-- [ ] Save in bounded idle slices without entering the visual ink path.
-- [ ] Recover to the last complete committed state after interruption at every
-      record phase; lose at most the in-progress gesture plus the contract's
-      reviewed committed-work window.
+- [x] Define a versioned append-only authority journal: operation records,
+      whole-Stroke append boundaries, active/retained prefixes, generation,
+      epoch, complete zoom-return state, tool state, and next Stroke identity,
+      with explicit little-endian fields, CRCs, and a final commit marker.
+- [x] Copy one coherent transaction after a logical change, then perform every
+      4 KiB erase/write/readback on a low-priority worker. An interrupted tail
+      starts at an aligned sector and is replaced by a full checkpoint without
+      erasing the prior Recovery point.
+- [x] Recover to the last complete committed state after truncation at every
+      later-transaction byte and after every single-byte header, payload, CRC,
+      or marker corruption. Active pixels rebuild from vector authority; Redo,
+      navigation, selections, and next Stroke identity survive recovery.
 - [ ] Re-run pan, ink, cold, rerender, and memory gates with autosave enabled.
 
 Derived overview, tile, chrome, and settled caches are never persisted.
