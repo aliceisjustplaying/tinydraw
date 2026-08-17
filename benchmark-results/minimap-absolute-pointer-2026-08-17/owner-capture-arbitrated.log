@@ -1,0 +1,1109 @@
+[17:28:18] ESP-ROM:esp32s3-20210327
+[17:28:18] Build:Mar 27 2021
+[17:28:18] rst:0x15 (USB_UART_CHIP_RESET),boot:0x2b (SPI_FAST_FLASH_BOOT)
+[17:28:18] Saved PC:0x4037db92
+[17:28:18] SPIWP:0xee
+[17:28:18] mode:DIO, clock div:1
+[17:28:18] load:0x3fce2820,len:0x1664
+[17:28:18] load:0x403c8700,len:0xf38
+[17:28:18] load:0x403cb700,len:0x31e8
+[17:28:18] entry 0x403c8930
+[17:28:18] I (24) boot: ESP-IDF v6.0.2 2nd stage bootloader
+[17:28:18] I (24) boot: compile time Aug 17 2026 14:06:48
+[17:28:18] I (25) boot: Multicore bootloader
+[17:28:18] I (25) boot: chip revision: v0.2
+[17:28:18] I (28) boot: efuse block revision: v1.3
+[17:28:18] I (31) qio_mode: Enabling default flash chip QIO
+[17:28:18] I (36) boot.esp32s3: Boot SPI Speed : 80MHz
+[17:28:18] I (39) boot.esp32s3: SPI Mode       : QIO
+[17:28:18] I (43) boot.esp32s3: SPI Flash Size : 16MB
+[17:28:18] I (47) boot: Enabling RNG early entropy source...
+[17:28:18] I (51) boot: Partition Table:
+[17:28:18] I (54) boot: ## Label            Usage          Type ST Offset   Length
+[17:28:18] I (60) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+[17:28:18] I (67) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+[17:28:18] I (73) boot:  2 factory          factory app      00 00 00010000 00100000
+[17:28:18] I (80) boot:  3 drawing          Unknown data     01 40 00110000 00300000
+[17:28:18] I (86) boot:  4 export           Unknown data     01 41 00410000 00500000
+[17:28:18] I (93) boot:  5 coredump         Unknown data     01 03 00910000 00010000
+[17:28:18] I (100) boot: End of partition table
+[17:28:18] I (103) esp_image: segment 0: paddr=00010020 vaddr=3c0c0020 size=21204h (135684) map
+[17:28:18] I (131) esp_image: segment 1: paddr=0003122c vaddr=3fc9e000 size=05658h ( 22104) load
+[17:28:18] I (136) esp_image: segment 2: paddr=0003688c vaddr=40374000 size=0978ch ( 38796) load
+[17:28:18] I (144) esp_image: segment 3: paddr=00040020 vaddr=42000020 size=b4738h (739128) map
+[17:28:18] I (259) esp_image: segment 4: paddr=000f4760 vaddr=4037d78c size=107f0h ( 67568) load
+[17:28:18] I (273) esp_image: segment 5: paddr=00104f58 vaddr=50000000 size=00024h (    36) load
+[17:28:18] I (284) boot: Loaded app from partition at offset 0x10000
+[17:28:18] I (284) boot: Disabling RNG early entropy source...
+[17:28:18] I (294) octal_psram: vendor id    : 0x0d (AP)
+[17:28:18] I (294) octal_psram: dev id       : 0x02 (generation 3)
+[17:28:18] I (295) octal_psram: density      : 0x03 (64 Mbit)
+[17:28:18] I (297) octal_psram: good-die     : 0x01 (Pass)
+[17:28:18] I (301) octal_psram: Latency      : 0x01 (Fixed)
+[17:28:18] I (305) octal_psram: VCC          : 0x01 (3V)
+[17:28:18] I (309) octal_psram: SRF          : 0x01 (Fast Refresh)
+[17:28:18] I (314) octal_psram: BurstType    : 0x01 (Hybrid Wrap)
+[17:28:18] I (319) octal_psram: BurstLen     : 0x01 (32 Byte)
+[17:28:18] I (324) octal_psram: Readlatency  : 0x02 (10 cycles@Fixed)
+[17:28:18] I (329) octal_psram: DriveStrength: 0x00 (1/1)
+[17:28:18] I (333) MSPI Timing: Enter psram timing tuning
+[17:28:18] I (338) esp_psram: Found 8MB PSRAM device
+[17:28:18] I (341) esp_psram: Speed: 80MHz
+[17:28:18] I (344) cpu_start: Multicore app
+[17:28:18] I (760) esp_psram: SPI SRAM memory test OK
+[17:28:18] I (768) cpu_start: GPIO 44 and 43 are used as console UART I/O pins
+[17:28:18] I (768) cpu_start: Pro cpu start user code
+[17:28:18] I (769) cpu_start: cpu freq: 240000000 Hz
+[17:28:18] I (770) app_init: Application information:
+[17:28:18] I (774) app_init: Project name:     tinydraw_esp32
+[17:28:18] I (779) app_init: App version:      62d8c8e
+[17:28:18] I (782) app_init: Compile time:     Aug 17 2026 17:27:47
+[17:28:18] I (787) app_init: ELF file SHA256:  35463b201...
+[17:28:18] I (792) app_init: ESP-IDF:          v6.0.2
+[17:28:18] I (796) efuse_init: Min chip rev:     v0.0
+[17:28:18] I (799) efuse_init: Max chip rev:     v0.99 
+[17:28:18] I (803) efuse_init: Chip rev:         v0.2
+[17:28:18] I (807) heap_init: Initializing. RAM available for dynamic allocation:
+[17:28:18] I (814) heap_init: At 3FCA81B0 len 00041560 (261 KiB): RAM
+[17:28:18] I (819) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+[17:28:18] I (824) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
+[17:28:18] I (829) heap_init: At 600FE000 len 00001FE8 (7 KiB): RTCRAM
+[17:28:18] I (835) esp_psram: Adding pool of 8192K of PSRAM memory to heap allocator
+[17:28:18] I (841) spi_flash: detected chip: generic
+[17:28:18] I (845) spi_flash: flash io: qio
+[17:28:18] I (848) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+[17:28:18] I (854) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+[17:28:18] I (861) main_task: Started on CPU0
+[17:28:18] I (864) main_task: Calling app_main()
+[17:28:18] TINYDRAW_PRODUCER_SCRATCH supertask_internal=1 slot_directory_internal=0 free_internal=248488 free_psram=2222832
+[17:28:19] TINYDRAW_PANEL_HARD_RESET=1
+[17:28:19] TINYDRAW_PANEL_TRANSPORT requested_clock_mhz=50 effective_clock_mhz=40
+[17:28:19] I (1071) co5300: version: 2.1.0
+[17:28:19] I (1071) co5300_spi: LCD panel create success, version: 2.1.0
+[17:28:19] W (1156) co5300_spi: The 3Ah command has been used and will be overwritten by external initialization sequence
+[17:28:19] I (1257) CST816S: IC id: 183
+[17:28:19] I (1258) PCF85063A: PCF85063A initialized successfully
+[17:28:19] TINYDRAW_RTC ready=1 retained=1 local=2026-08-17T16:28:17
+[17:28:19] TINYDRAW_MINIMAP_CAPTURE_READY capacity=2048 record_bytes=28
+[17:28:19] TINYDRAW_VECTOR_V2_PRESENTATION experiment=boundary-top-sweep te_edge=rising requested_clock_mhz=50 effective_clock_mhz=40 optical_acceptance=external_manual
+[17:28:19] TINYDRAW_LIVE_PRESENT kind=startup zoom=25 x=0 y=0 compose_us=26361 scroll_us=0 exposed_compose_us=0 chrome_us=13411 chrome_prepare_us=8510 chrome_stage_us=4901 read_submit_us=0 read_complete_us=0 transfer_wait_us=20448 tile_pixels=0 uniform_pixels=0 overview_pixels=164864 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=11 tear_wait_us=4401 tear_edge_isr_to_resume_us=13 tear_edge_observed=1 tear_edge_wait_resumed=1 tear_edge_timeout=0 tear_heal_attempted=0 tear_heal_command_sent=0 presentation_experiment=boundary-top-sweep te_edge=rising requested_clock_mhz=50 effective_clock_mhz=40 frame_reused=0 pass=1
+[17:28:19] TINYDRAW_VECTOR_V2_READY zoom=25 controls=chrome button=cycle_all_zooms operations_capacity=4000 samples_capacity=80000 live_storage_bytes=5915800 overview_bytes=1318912 raw_tile_bytes=3670016 tile_metadata_bytes=101360 operation_bytes=720000 live_scratch_bytes=105512 free_psram=2221192 largest_psram=2162688 te_edges=9 te_period_us=16792 te_high_us=578 te_level=0 main_stack_free=5992
+[17:28:19] TINYDRAW_LIVE_SETTLE zoom=25 tiles=42 total_us=75011 max_tile_us=1972 failures=0
+[17:28:49] TINYDRAW_LIVE_PRESENT kind=power zoom=25 x=0 y=0 compose_us=1640 scroll_us=0 exposed_compose_us=0 chrome_us=501 chrome_prepare_us=19 chrome_stage_us=482 read_submit_us=2358 read_complete_us=3852 transfer_wait_us=1642 tile_pixels=0 uniform_pixels=0 overview_pixels=5456 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=1 tear_wait_us=0 tear_edge_isr_to_resume_us=0 tear_edge_observed=0 tear_edge_wait_resumed=0 tear_edge_timeout=0 tear_heal_attempted=0 tear_heal_command_sent=0 presentation_experiment=boundary-top-sweep te_edge=rising requested_clock_mhz=50 effective_clock_mhz=40 frame_reused=0 pass=1
+[17:29:49] TINYDRAW_LIVE_PRESENT kind=power zoom=25 x=0 y=0 compose_us=1587 scroll_us=0 exposed_compose_us=0 chrome_us=504 chrome_prepare_us=19 chrome_stage_us=485 read_submit_us=2286 read_complete_us=3778 transfer_wait_us=1714 tile_pixels=0 uniform_pixels=0 overview_pixels=5456 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=1 tear_wait_us=0 tear_edge_isr_to_resume_us=0 tear_edge_observed=0 tear_edge_wait_resumed=0 tear_edge_timeout=0 tear_heal_attempted=0 tear_heal_command_sent=0 presentation_experiment=boundary-top-sweep te_edge=rising requested_clock_mhz=50 effective_clock_mhz=40 frame_reused=0 pass=1
+[17:30:19] TINYDRAW_LIVE_PRESENT kind=power zoom=25 x=0 y=0 compose_us=1584 scroll_us=0 exposed_compose_us=0 chrome_us=499 chrome_prepare_us=19 chrome_stage_us=480 read_submit_us=2296 read_complete_us=3795 transfer_wait_us=1704 tile_pixels=0 uniform_pixels=0 overview_pixels=5456 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=1 tear_wait_us=0 tear_edge_isr_to_resume_us=0 tear_edge_observed=0 tear_edge_wait_resumed=0 tear_edge_timeout=0 tear_heal_attempted=0 tear_heal_command_sent=0 presentation_experiment=boundary-top-sweep te_edge=rising requested_clock_mhz=50 effective_clock_mhz=40 frame_reused=0 pass=1
+[17:30:45] TINYDRAW_LIVE_PRESENT kind=zoom zoom=50 x=184 y=262 compose_us=15133 scroll_us=0 exposed_compose_us=0 chrome_us=5675 chrome_prepare_us=1135 chrome_stage_us=4540 read_submit_us=17805 read_complete_us=21411 transfer_wait_us=21195 tile_pixels=0 uniform_pixels=0 overview_pixels=0 fallback_pixels=164864 resident_tiles=0 fallback_tiles=56 pushes=11 tear_wait_us=1400 tear_edge_isr_to_resume_us=13 tear_edge_observed=1 tear_edge_wait_resumed=1 tear_edge_timeout=0 tear_heal_attempted=0 tear_heal_command_sent=0 presentation_experiment=boundary-top-sweep te_edge=rising requested_clock_mhz=50 effective_clock_mhz=40 frame_reused=0 pass=1
+[17:30:45] TINYDRAW_LIVE_LEDGER site=zoom renders=0 cold=0 damage=0 evict=0 stale=0 unexplained=0 total_renders=0 unique=0 amplification=0.000
+[17:30:46] TINYDRAW_FILL_BASELINE result=complete zoom=50 x=184 y=262 revision=0 steps=16 wall_us=109341 compute_total_us=36106 compute_max_us=2580 present_total_us=66304 present_max_us=8210 tick_max_us=2595 producer_failures=0 presentation_failures=0
+[17:30:46] TINYDRAW_LIVE_FILL_DONE zoom=50 x=184 y=262 revision=0
+[17:30:46] TINYDRAW_LIVE_PRESENT kind=zoom zoom=100 x=552 y=710 compose_us=11580 scroll_us=0 exposed_compose_us=0 chrome_us=5580 chrome_prepare_us=1130 chrome_stage_us=4450 read_submit_us=18076 read_complete_us=21679 transfer_wait_us=20922 tile_pixels=0 uniform_pixels=0 overview_pixels=0 fallback_pixels=164864 resident_tiles=0 fallback_tiles=56 pushes=11 tear_wait_us=5201 tear_edge_isr_to_resume_us=14 tear_edge_observed=1 tear_edge_wait_resumed=1 tear_edge_timeout=0 tear_heal_attempted=0 tear_heal_command_sent=0 presentation_experiment=boundary-top-sweep te_edge=rising requested_clock_mhz=50 effective_clock_mhz=40 frame_reused=0 pass=1
+[17:30:46] TINYDRAW_LIVE_LEDGER site=zoom renders=28 cold=6 damage=3 evict=0 stale=10 unexplained=9 total_renders=28 unique=6 amplification=4.667
+[17:30:46] TINYDRAW_LIVE_PRESENT kind=zoom zoom=200 x=1288 y=1606 compose_us=12862 scroll_us=0 exposed_compose_us=0 chrome_us=5476 chrome_prepare_us=1165 chrome_stage_us=4311 read_submit_us=26769 read_complete_us=30348 transfer_wait_us=20198 tile_pixels=0 uniform_pixels=0 overview_pixels=0 fallback_pixels=164864 resident_tiles=0 fallback_tiles=48 pushes=11 tear_wait_us=12568 tear_edge_isr_to_resume_us=15 tear_edge_observed=1 tear_edge_wait_resumed=1 tear_edge_timeout=0 tear_heal_attempted=0 tear_heal_command_sent=0 presentation_experiment=boundary-top-sweep te_edge=rising requested_clock_mhz=50 effective_clock_mhz=40 frame_reused=0 pass=1
+[17:30:46] TINYDRAW_LIVE_LEDGER site=zoom renders=13 cold=3 damage=4 evict=0 stale=6 unexplained=0 total_renders=41 unique=9 amplification=4.556
+[17:30:46] TINYDRAW_FILL_BASELINE result=superseded zoom=100 x=552 y=710 revision=0 steps=13 wall_us=201172 compute_total_us=30078 compute_max_us=2575 present_total_us=62348 present_max_us=8344 tick_max_us=2592 producer_failures=0 presentation_failures=0
+[17:30:46] TINYDRAW_FILL_BASELINE result=complete zoom=200 x=1288 y=1606 revision=0 steps=15 wall_us=102481 compute_total_us=31541 compute_max_us=2360 present_total_us=63635 present_max_us=7520 tick_max_us=2387 producer_failures=0 presentation_failures=0
+[17:30:46] TINYDRAW_LIVE_FILL_DONE zoom=200 x=1288 y=1606 revision=0
+[17:30:46] TINYDRAW_LIVE_REPAIR views=7 steps=63
+[17:30:46] TINYDRAW_LIVE_PRESENT kind=zoom zoom=400 x=2760 y=3398 compose_us=12721 scroll_us=0 exposed_compose_us=0 chrome_us=5416 chrome_prepare_us=1118 chrome_stage_us=4298 read_submit_us=18613 read_complete_us=22259 transfer_wait_us=20387 tile_pixels=0 uniform_pixels=0 overview_pixels=0 fallback_pixels=164864 resident_tiles=0 fallback_tiles=48 pushes=11 tear_wait_us=4628 tear_edge_isr_to_resume_us=11 tear_edge_observed=1 tear_edge_wait_resumed=1 tear_edge_timeout=0 tear_heal_attempted=0 tear_heal_command_sent=0 presentation_experiment=boundary-top-sweep te_edge=rising requested_clock_mhz=50 effective_clock_mhz=40 frame_reused=0 pass=1
+[17:30:46] TINYDRAW_LIVE_LEDGER site=zoom renders=76 cold=17 damage=35 evict=0 stale=11 unexplained=13 total_renders=117 unique=26 amplification=4.500
+[17:30:46] TINYDRAW_FILL_BASELINE result=complete zoom=400 x=2760 y=3398 revision=0 steps=20 wall_us=115329 compute_total_us=38577 compute_max_us=2388 present_total_us=68165 present_max_us=7827 tick_max_us=2410 producer_failures=0 presentation_failures=0
+[17:30:46] TINYDRAW_LIVE_FILL_DONE zoom=400 x=2760 y=3398 revision=0
+[17:30:47] TINYDRAW_LIVE_REPAIR views=8 steps=76
+[17:30:49] TINYDRAW_LIVE_STROKE revision=0 operations=4 samples=127 append_us=490 append_max_us=125 refresh_compose_us=0 refresh_complete_us=0 ink_samples=119 read_submit_avg_us=1627 read_submit_max_us=3328 read_complete_avg_us=2555 read_complete_max_us=5710 submit_over_16ms=0 complete_over_33ms=0 presentation_failures=0 poll_max_us=126932 touch_errors=0 touch_overflows=0 touch_moves_coalesced=914 touch_events=662 touch_down=1 touch_up=1 touch_events_ge_8ms=0 touch_event_age_max_us=1222 chunks=4 ph_prepare_max_us=80 ph_overview_max_us=0 ph_enumerate_max_us=0 ph_uniform_max_us=0 ph_raw_max_us=0 ph_offscreen_max_us=0 ph_commit_max_us=0 drop_uni_slot=0 drop_uni_paint=0 drop_raw_edit=0 drop_raw_paint=0 off_skip=0 free_psram=2221192 largest_psram=2162688 authority_match=0
+[17:30:49] TINYDRAW_LIVE_STROKE_DONE committed=1 refresh=1 commit_failed=0
+[17:30:49] TINYDRAW_LIFT_BASELINE id=1 finish_preview_us=1983 builder_finish_us=63 append_us=490 append_max_us=125 refresh_wall_us=14 refresh_x0=2788 refresh_y0=3408 refresh_x1=3096 refresh_y1=3800 refresh_compose_us=0 refresh_first_submit_us=0 refresh_first_complete_us=0 refresh_transfer_wait_us=0 stroke_logging_us=0 detected_to_poll_start_us=3983 detected_to_poll_complete_us=3995 poll_read_us=12 unattributed_tail_us=1433 reports_dropped=0 chunks=4 committed=1 refresh=1 commit_failed=0
+[17:30:49] TINYDRAW_LIVE_DRAIN ops=4 total_us=77469 max_us=26103 failures=0 swap_wall_us=69273 swap_pass=1
+[17:30:49] TINYDRAW_LIVE_LEDGER site=drain renders=92 cold=18 damage=11 evict=0 stale=45 unexplained=18 total_renders=209 unique=44 amplification=4.750
+[17:30:49] TINYDRAW_LIVE_PRESENT kind=power zoom=400 x=2760 y=3398 compose_us=1521 scroll_us=0 exposed_compose_us=0 chrome_us=544 chrome_prepare_us=20 chrome_stage_us=524 read_submit_us=2302 read_complete_us=3845 transfer_wait_us=1696 tile_pixels=5456 uniform_pixels=0 overview_pixels=0 fallback_pixels=0 resident_tiles=6 fallback_tiles=0 pushes=1 tear_wait_us=0 tear_edge_isr_to_resume_us=0 tear_edge_observed=0 tear_edge_wait_resumed=0 tear_edge_timeout=0 tear_heal_attempted=0 tear_heal_command_sent=0 presentation_experiment=boundary-top-sweep te_edge=rising requested_clock_mhz=50 effective_clock_mhz=40 frame_reused=0 pass=1
+[17:30:50] TINYDRAW_FILL_BASELINE result=complete zoom=400 x=2760 y=3398 revision=4 steps=1 wall_us=342 compute_total_us=300 compute_max_us=300 present_total_us=0 present_max_us=0 tick_max_us=312 producer_failures=0 presentation_failures=0
+[17:30:50] TINYDRAW_LIVE_FILL_DONE zoom=400 x=2760 y=3398 revision=4
+[17:30:50] TINYDRAW_LIVE_REPAIR views=8 steps=9
+[17:30:50] TINYDRAW_LIVE_SETTLE zoom=400 tiles=42 total_us=160100 max_tile_us=7496 failures=0
+[17:30:52] TINYDRAW_PAN_BASELINE zoom=400 x=5520 y=6720 frames=43 reused=37 compose_avg_us=2055 compose_max_us=12795 present_avg_us=3656 present_max_us=21073 tear_wait_avg_us=1899 tear_wait_max_us=16672 failures=0
+[17:30:52] TINYDRAW_LIVE_LEDGER site=minimap_pointer_end renders=1 cold=0 damage=1 evict=0 stale=0 unexplained=0 total_renders=210 unique=44 amplification=4.773
+[17:30:52] TINYDRAW_FILL_BASELINE result=complete zoom=400 x=5520 y=6720 revision=4 steps=12 wall_us=94071 compute_total_us=26074 compute_max_us=2304 present_total_us=61519 present_max_us=7518 tick_max_us=2319 producer_failures=0 presentation_failures=0
+[17:30:52] TINYDRAW_LIVE_FILL_DONE zoom=400 x=5520 y=6720 revision=4
+[17:30:52] TINYDRAW_LIVE_REPAIR views=6 steps=28
+[17:30:57] TINYDRAW_PAN_BASELINE zoom=400 x=1436 y=6720 frames=143 reused=89 compose_avg_us=5641 compose_max_us=13051 present_avg_us=9975 present_max_us=21167 tear_wait_avg_us=5815 tear_wait_max_us=16417 failures=0
+[17:30:57] TINYDRAW_LIVE_LEDGER site=minimap_pointer_end renders=36 cold=0 damage=3 evict=7 stale=23 unexplained=3 total_renders=246 unique=44 amplification=5.591
+[17:30:57] TINYDRAW_FILL_BASELINE result=complete zoom=400 x=1436 y=6720 revision=4 steps=16 wall_us=110810 compute_total_us=34394 compute_max_us=2477 present_total_us=67904 present_max_us=8379 tick_max_us=2494 producer_failures=0 presentation_failures=0
+[17:30:57] TINYDRAW_LIVE_FILL_DONE zoom=400 x=1436 y=6720 revision=4
+[17:30:57] TINYDRAW_LIVE_REPAIR views=7 steps=44
+[17:31:01] TINYDRAW_PAN_BASELINE zoom=400 x=1142 y=4934 frames=33 reused=7 compose_avg_us=9417 compose_max_us=13031 present_avg_us=17729 present_max_us=21151 tear_wait_avg_us=9510 tear_wait_max_us=16671 failures=0
+[17:31:01] TINYDRAW_LIVE_LEDGER site=minimap_pointer_end renders=56 cold=30 damage=6 evict=12 stale=0 unexplained=8 total_renders=302 unique=74 amplification=4.081
+[17:31:01] TINYDRAW_FILL_BASELINE result=complete zoom=400 x=1142 y=4934 revision=4 steps=20 wall_us=117703 compute_total_us=42624 compute_max_us=2583 present_total_us=66048 present_max_us=7293 tick_max_us=2599 producer_failures=0 presentation_failures=0
+[17:31:01] TINYDRAW_LIVE_FILL_DONE zoom=400 x=1142 y=4934 revision=4
+[17:31:01] TINYDRAW_LIVE_REPAIR views=8 steps=66
+[17:31:02] TINYDRAW_PAN_BASELINE zoom=400 x=3274 y=6470 frames=9 reused=7 compose_avg_us=5651 compose_max_us=13061 present_avg_us=11753 present_max_us=20435 tear_wait_avg_us=4589 tear_wait_max_us=14406 failures=0
+[17:31:02] TINYDRAW_LIVE_LEDGER site=minimap_pointer_end renders=82 cold=60 damage=9 evict=0 stale=0 unexplained=13 total_renders=384 unique=134 amplification=2.866
+[17:31:02] TINYDRAW_FILL_BASELINE result=complete zoom=400 x=3274 y=6470 revision=4 steps=20 wall_us=156694 compute_total_us=39449 compute_max_us=2502 present_total_us=108251 present_max_us=47085 tick_max_us=2519 producer_failures=0 presentation_failures=0
+[17:31:02] TINYDRAW_LIVE_FILL_DONE zoom=400 x=3274 y=6470 revision=4
+[17:31:02] TINYDRAW_LIVE_REPAIR views=8 steps=68
+[17:31:03] TINYDRAW_PAN_BASELINE zoom=400 x=0 y=6720 frames=8 reused=0 compose_avg_us=11093 compose_max_us=12471 present_avg_us=20702 present_max_us=21177 tear_wait_avg_us=6840 tear_wait_max_us=16329 failures=0
+[17:31:03] TINYDRAW_LIVE_LEDGER site=minimap_pointer_end renders=84 cold=46 damage=6 evict=14 stale=0 unexplained=18 total_renders=468 unique=180 amplification=2.600
+[17:31:03] TINYDRAW_FILL_BASELINE result=complete zoom=400 x=0 y=6720 revision=4 steps=12 wall_us=94840 compute_total_us=26121 compute_max_us=2386 present_total_us=62235 present_max_us=7215 tick_max_us=2401 producer_failures=0 presentation_failures=0
+[17:31:03] TINYDRAW_LIVE_FILL_DONE zoom=400 x=0 y=6720 revision=4
+[17:31:03] TINYDRAW_LIVE_REPAIR views=6 steps=28
+[17:31:03] TINYDRAW_PAN_BASELINE zoom=400 x=2392 y=6720 frames=6 reused=0 compose_avg_us=11261 compose_max_us=13064 present_avg_us=20775 present_max_us=21076 tear_wait_avg_us=9563 tear_wait_max_us=16634 failures=0
+[17:31:03] TINYDRAW_LIVE_LEDGER site=minimap_pointer_end renders=36 cold=2 damage=0 evict=7 stale=24 unexplained=3 total_renders=504 unique=182 amplification=2.769
+[17:31:04] TINYDRAW_FILL_BASELINE result=complete zoom=400 x=2392 y=6720 revision=4 steps=16 wall_us=110809 compute_total_us=34887 compute_max_us=2545 present_total_us=67463 present_max_us=7401 tick_max_us=2560 producer_failures=0 presentation_failures=0
+[17:31:04] TINYDRAW_LIVE_FILL_DONE zoom=400 x=2392 y=6720 revision=4
+[17:31:04] TINYDRAW_LIVE_REPAIR views=7 steps=36
+[17:31:05] TINYDRAW_PAN_BASELINE zoom=400 x=3054 y=6104 frames=10 reused=5 compose_avg_us=6205 compose_max_us=12197 present_avg_us=11932 present_max_us=20994 tear_wait_avg_us=3435 tear_wait_max_us=15702 failures=0
+[17:31:05] TINYDRAW_LIVE_LEDGER site=minimap_pointer_end renders=48 cold=24 damage=4 evict=7 stale=0 unexplained=13 total_renders=552 unique=206 amplification=2.680
+[17:31:05] TINYDRAW_FILL_BASELINE result=complete zoom=400 x=3054 y=6104 revision=4 steps=12 wall_us=69663 compute_total_us=23699 compute_max_us=2621 present_total_us=39439 present_max_us=7556 tick_max_us=2648 producer_failures=0 presentation_failures=0
+[17:31:05] TINYDRAW_LIVE_FILL_DONE zoom=400 x=3054 y=6104 revision=4
+[17:31:05] TINYDRAW_LIVE_REPAIR views=8 steps=42
+[17:31:05] TINYDRAW_PAN_BASELINE zoom=400 x=1436 y=5228 frames=9 reused=0 compose_avg_us=11392 compose_max_us=12924 present_avg_us=20511 present_max_us=20893 tear_wait_avg_us=7193 tear_wait_max_us=16514 failures=0
+[17:31:05] TINYDRAW_LIVE_LEDGER site=minimap_pointer_end renders=50 cold=24 damage=3 evict=1 stale=0 unexplained=22 total_renders=602 unique=230 amplification=2.617
+[17:31:06] TINYDRAW_FILL_BASELINE result=complete zoom=400 x=1436 y=5228 revision=4 steps=9 wall_us=44674 compute_total_us=17556 compute_max_us=2584 present_total_us=21860 present_max_us=6269 tick_max_us=2599 producer_failures=0 presentation_failures=0
+[17:31:06] TINYDRAW_LIVE_FILL_DONE zoom=400 x=1436 y=5228 revision=4
+[17:31:06] TINYDRAW_LIVE_REPAIR views=8 steps=40
+[17:31:06] TINYDRAW_PAN_BASELINE zoom=400 x=3128 y=6542 frames=5 reused=0 compose_avg_us=10262 compose_max_us=10460 present_avg_us=20695 present_max_us=21088 tear_wait_avg_us=2207 tear_wait_max_us=9539 failures=0
+[17:31:06] TINYDRAW_LIVE_LEDGER site=minimap_pointer_end renders=45 cold=28 damage=2 evict=0 stale=0 unexplained=15 total_renders=647 unique=258 amplification=2.508
+[17:31:06] TINYDRAW_FILL_BASELINE result=complete zoom=400 x=3128 y=6542 revision=4 steps=1 wall_us=466 compute_total_us=424 compute_max_us=424 present_total_us=0 present_max_us=0 tick_max_us=437 producer_failures=0 presentation_failures=0
+[17:31:06] TINYDRAW_LIVE_FILL_DONE zoom=400 x=3128 y=6542 revision=4
+[17:31:06] TINYDRAW_LIVE_REPAIR views=8 steps=12
+[17:31:07] TINYDRAW_PAN_BASELINE zoom=400 x=3570 y=6720 frames=3 reused=0 compose_avg_us=12101 compose_max_us=13068 present_avg_us=20422 present_max_us=20751 tear_wait_avg_us=13570 tear_wait_max_us=16585 failures=0
+[17:31:07] TINYDRAW_LIVE_LEDGER site=minimap_pointer_end renders=7 cold=0 damage=0 evict=0 stale=0 unexplained=7 total_renders=654 unique=258 amplification=2.535
+[17:31:07] TINYDRAW_FILL_BASELINE result=complete zoom=400 x=3570 y=6720 revision=4 steps=4 wall_us=20837 compute_total_us=8024 compute_max_us=2131 present_total_us=9957 present_max_us=3660 tick_max_us=2148 producer_failures=0 presentation_failures=0
+[17:31:07] TINYDRAW_LIVE_FILL_DONE zoom=400 x=3570 y=6720 revision=4
+[17:31:07] TINYDRAW_LIVE_REPAIR views=7 steps=19
+[17:31:08] TINYDRAW_PAN_BASELINE zoom=400 x=2392 y=4862 frames=5 reused=0 compose_avg_us=11128 compose_max_us=12873 present_avg_us=20652 present_max_us=20932 tear_wait_avg_us=6594 tear_wait_max_us=15649 failures=0
+[17:31:08] TINYDRAW_LIVE_LEDGER site=minimap_pointer_end renders=18 cold=8 damage=0 evict=3 stale=1 unexplained=6 total_renders=672 unique=266 amplification=2.526
+[17:31:08] TINYDRAW_FILL_BASELINE result=complete zoom=400 x=2392 y=4862 revision=4 steps=20 wall_us=118833 compute_total_us=42079 compute_max_us=2634 present_total_us=67330 present_max_us=7321 tick_max_us=2661 producer_failures=0 presentation_failures=0
+[17:31:08] TINYDRAW_LIVE_FILL_DONE zoom=400 x=2392 y=4862 revision=4
+[17:31:08] TINYDRAW_LIVE_REPAIR views=8 steps=69
+[17:31:08] TINYDRAW_PAN_BASELINE zoom=400 x=2538 y=4568 frames=9 reused=4 compose_avg_us=5946 compose_max_us=11810 present_avg_us=11595 present_max_us=21043 tear_wait_avg_us=6000 tear_wait_max_us=16438 failures=0
+[17:31:08] TINYDRAW_LIVE_LEDGER site=minimap_pointer_end renders=85 cold=62 damage=8 evict=0 stale=0 unexplained=15 total_renders=757 unique=328 amplification=2.308
+[17:31:08] TINYDRAW_FILL_BASELINE result=complete zoom=400 x=2538 y=4568 revision=4 steps=3 wall_us=20751 compute_total_us=6719 compute_max_us=2551 present_total_us=11352 present_max_us=5250 tick_max_us=2566 producer_failures=0 presentation_failures=0
+[17:31:08] TINYDRAW_LIVE_FILL_DONE zoom=400 x=2538 y=4568 revision=4
+[17:31:08] TINYDRAW_LIVE_REPAIR views=8 steps=36
+[17:31:09] TINYDRAW_PAN_BASELINE zoom=400 x=4158 y=4350 frames=5 reused=1 compose_avg_us=11527 compose_max_us=13080 present_avg_us=19978 present_max_us=21100 tear_wait_avg_us=10481 tear_wait_max_us=14603 failures=0
+[17:31:09] TINYDRAW_LIVE_LEDGER site=minimap_pointer_end renders=35 cold=16 damage=0 evict=0 stale=7 unexplained=12 total_renders=792 unique=344 amplification=2.302
+[17:31:09] TINYDRAW_FILL_BASELINE result=complete zoom=400 x=4158 y=4350 revision=4 steps=20 wall_us=118550 compute_total_us=42569 compute_max_us=2602 present_total_us=66688 present_max_us=7319 tick_max_us=2617 producer_failures=0 presentation_failures=0
+[17:31:09] TINYDRAW_LIVE_FILL_DONE zoom=400 x=4158 y=4350 revision=4
+[17:31:09] TINYDRAW_LIVE_REPAIR views=8 steps=71
+[17:31:13] TINYDRAW_PAN_BASELINE zoom=400 x=2686 y=4714 frames=60 reused=16 compose_avg_us=9487 compose_max_us=13078 present_avg_us=17908 present_max_us=21190 tear_wait_avg_us=10030 tear_wait_max_us=16730 failures=0
+[17:31:13] TINYDRAW_LIVE_LEDGER site=minimap_pointer_end renders=87 cold=52 damage=8 evict=0 stale=14 unexplained=13 total_renders=879 unique=396 amplification=2.220
+[17:31:13] TINYDRAW_FILL_BASELINE result=complete zoom=400 x=2686 y=4714 revision=4 steps=1 wall_us=453 compute_total_us=412 compute_max_us=412 present_total_us=0 present_max_us=0 tick_max_us=424 producer_failures=0 presentation_failures=0
+[17:31:13] TINYDRAW_LIVE_FILL_DONE zoom=400 x=2686 y=4714 revision=4
+[17:31:13] TINYDRAW_LIVE_REPAIR views=8 steps=20
+[17:31:14] TINYDRAW_PAN_BASELINE zoom=400 x=5520 y=0 frames=9 reused=1 compose_avg_us=11337 compose_max_us=13031 present_avg_us=20072 present_max_us=21092 tear_wait_avg_us=13365 tear_wait_max_us=15692 failures=0
+[17:31:14] TINYDRAW_LIVE_LEDGER site=minimap_pointer_end renders=15 cold=6 damage=1 evict=0 stale=3 unexplained=5 total_renders=894 unique=402 amplification=2.224
+[17:31:14] TINYDRAW_FILL_BASELINE result=complete zoom=400 x=5520 y=0 revision=4 steps=12 wall_us=131956 compute_total_us=25158 compute_max_us=2308 present_total_us=100793 present_max_us=47543 tick_max_us=2324 producer_failures=0 presentation_failures=0
+[17:31:14] TINYDRAW_LIVE_FILL_DONE zoom=400 x=5520 y=0 revision=4
+[17:31:14] TINYDRAW_LIVE_REPAIR views=6 steps=28
+[17:31:15] TINYDRAW_PAN_BASELINE zoom=400 x=0 y=6720 frames=40 reused=19 compose_avg_us=6066 compose_max_us=12960 present_avg_us=12076 present_max_us=21123 tear_wait_avg_us=3077 tear_wait_max_us=16728 failures=0
+[17:31:15] TINYDRAW_LIVE_LEDGER site=minimap_pointer_end renders=36 cold=8 damage=0 evict=0 stale=25 unexplained=3 total_renders=930 unique=410 amplification=2.268
+[17:31:16] TINYDRAW_FILL_BASELINE result=complete zoom=400 x=0 y=6720 revision=4 steps=1 wall_us=349 compute_total_us=307 compute_max_us=307 present_total_us=0 present_max_us=0 tick_max_us=321 producer_failures=0 presentation_failures=0
+[17:31:16] TINYDRAW_LIVE_FILL_DONE zoom=400 x=0 y=6720 revision=4
+[17:31:16] TINYDRAW_LIVE_REPAIR views=6 steps=6
+[17:31:16] TINYDRAW_PAN_BASELINE zoom=400 x=5520 y=6720 frames=9 reused=0 compose_avg_us=10520 compose_max_us=12783 present_avg_us=20754 present_max_us=21124 tear_wait_avg_us=3158 tear_wait_max_us=14597 failures=0
+[17:31:16] TINYDRAW_LIVE_LEDGER site=minimap_pointer_end renders=0 cold=0 damage=0 evict=0 stale=0 unexplained=0 total_renders=930 unique=410 amplification=2.268
+[17:31:16] TINYDRAW_FILL_BASELINE result=complete zoom=400 x=5520 y=6720 revision=4 steps=1 wall_us=373 compute_total_us=312 compute_max_us=312 present_total_us=0 present_max_us=0 tick_max_us=331 producer_failures=0 presentation_failures=0
+[17:31:16] TINYDRAW_LIVE_FILL_DONE zoom=400 x=5520 y=6720 revision=4
+[17:31:16] TINYDRAW_LIVE_REPAIR views=6 steps=6
+[17:31:18] TINYDRAW_PAN_BASELINE zoom=400 x=2098 y=3618 frames=21 reused=7 compose_avg_us=7570 compose_max_us=12778 present_avg_us=14589 present_max_us=21171 tear_wait_avg_us=5203 tear_wait_max_us=16464 failures=0
+[17:31:18] TINYDRAW_LIVE_LEDGER site=minimap_pointer_end renders=0 cold=0 damage=0 evict=0 stale=0 unexplained=0 total_renders=930 unique=410 amplification=2.268
+[17:31:18] TINYDRAW_FILL_BASELINE result=complete zoom=400 x=2098 y=3618 revision=4 steps=14 wall_us=134995 compute_total_us=32310 compute_max_us=2626 present_total_us=94756 present_max_us=46267 tick_max_us=2645 producer_failures=0 presentation_failures=0
+[17:31:18] TINYDRAW_LIVE_FILL_DONE zoom=400 x=2098 y=3618 revision=4
+[17:31:18] TINYDRAW_LIVE_REPAIR views=8 steps=51
+[17:31:19] TINYDRAW_PAN_BASELINE zoom=400 x=4232 y=5958 frames=1 reused=0 compose_avg_us=12804 compose_max_us=12804 present_avg_us=20989 present_max_us=20989 tear_wait_avg_us=14942 tear_wait_max_us=14942 failures=0
+[17:31:19] TINYDRAW_LIVE_LEDGER site=minimap_pointer_end renders=61 cold=37 damage=6 evict=0 stale=10 unexplained=8 total_renders=991 unique=447 amplification=2.217
+[17:31:19] TINYDRAW_FILL_BASELINE result=complete zoom=400 x=4232 y=5958 revision=4 steps=15 wall_us=103579 compute_total_us=32283 compute_max_us=2447 present_total_us=63661 present_max_us=7397 tick_max_us=2469 producer_failures=0 presentation_failures=0
+[17:31:19] TINYDRAW_LIVE_FILL_DONE zoom=400 x=4232 y=5958 revision=4
+[17:31:19] TINYDRAW_LIVE_REPAIR views=8 steps=55
+[17:31:19] TINYDRAW_LIVE_PRESENT kind=power zoom=400 x=4232 y=5958 compose_us=1066 scroll_us=0 exposed_compose_us=0 chrome_us=436 chrome_prepare_us=19 chrome_stage_us=417 read_submit_us=1805 read_complete_us=3274 transfer_wait_us=2195 tile_pixels=0 uniform_pixels=5456 overview_pixels=0 fallback_pixels=0 resident_tiles=6 fallback_tiles=0 pushes=1 tear_wait_us=0 tear_edge_isr_to_resume_us=0 tear_edge_observed=0 tear_edge_wait_resumed=0 tear_edge_timeout=0 tear_heal_attempted=0 tear_heal_command_sent=0 presentation_experiment=boundary-top-sweep te_edge=rising requested_clock_mhz=50 effective_clock_mhz=40 frame_reused=0 pass=1
+[17:31:21] TINYDRAW_PAN_BASELINE zoom=400 x=5520 y=6720 frames=28 reused=6 compose_avg_us=8943 compose_max_us=12787 present_avg_us=16768 present_max_us=21071 tear_wait_avg_us=7318 tear_wait_max_us=16626 failures=0
+[17:31:21] TINYDRAW_LIVE_LEDGER site=minimap_pointer_end renders=66 cold=12 damage=2 evict=4 stale=40 unexplained=8 total_renders=1057 unique=459 amplification=2.303
+[17:31:21] TINYDRAW_FILL_BASELINE result=complete zoom=400 x=5520 y=6720 revision=4 steps=1 wall_us=473 compute_total_us=404 compute_max_us=404 present_total_us=0 present_max_us=0 tick_max_us=427 producer_failures=0 presentation_failures=0
+[17:31:21] TINYDRAW_LIVE_FILL_DONE zoom=400 x=5520 y=6720 revision=4
+[17:31:21] TINYDRAW_LIVE_REPAIR views=6 steps=6
+[17:31:27] TINYDRAW_PAN_BASELINE zoom=400 x=626 y=1862 frames=197 reused=140 compose_avg_us=3332 compose_max_us=12759 present_avg_us=6618 present_max_us=21164 tear_wait_avg_us=2734 tear_wait_max_us=16769 failures=0
+[17:31:27] TINYDRAW_LIVE_LEDGER site=minimap_pointer_end renders=0 cold=0 damage=0 evict=0 stale=0 unexplained=0 total_renders=1057 unique=459 amplification=2.303
+[17:31:27] TINYDRAW_FILL_BASELINE result=complete zoom=400 x=626 y=1862 revision=4 steps=20 wall_us=147756 compute_total_us=42771 compute_max_us=2591 present_total_us=96857 present_max_us=37044 tick_max_us=2608 producer_failures=0 presentation_failures=0
+[17:31:27] TINYDRAW_LIVE_FILL_DONE zoom=400 x=626 y=1862 revision=4
+[17:31:28] TINYDRAW_LIVE_REPAIR views=8 steps=66
+[17:31:35] TINYDRAW_MINIMAP_CAPTURE_BEGIN events=866 offers=4916 duplicate_moves=4050 overflow=0 append_total_us=50248 append_max_us=78
+[17:31:35] t_us,sequence,kind,x,y,zoom,before_x,before_y,after_x,after_y,before_flags,after_flags
+[17:31:35] 0,148646,Down,53,243,400,2760,3398,2760,3398,0x00,0x11
+[17:31:35] 39968,148685,Move,53,242,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 51970,148696,Move,54,240,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 65963,148709,Move,56,236,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 77965,148720,Move,59,230,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 90968,148733,Move,66,219,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 103967,148745,Move,77,202,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 116967,148758,Move,90,180,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 131969,148771,Move,105,155,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 144973,148784,Move,123,127,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 157968,148797,Move,139,101,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 169976,148808,Move,154,78,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 182967,148820,Move,165,60,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 195968,148832,Move,173,46,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 210967,148846,Move,178,36,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 222967,148857,Move,181,29,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 236963,148871,Move,182,25,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 248965,148882,Move,182,22,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 262963,148895,Move,182,20,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 274965,148906,Move,178,18,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 288963,148919,Move,173,16,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 300968,148931,Move,169,17,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 314967,148944,Move,160,24,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 327968,148957,Move,146,44,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 340968,148970,Move,130,73,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 353969,148983,Move,115,105,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 367977,148996,Move,104,133,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 380968,149009,Move,96,162,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 393967,149022,Move,90,193,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 406971,149035,Move,85,227,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 419969,149048,Move,79,269,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 432967,149060,Move,72,314,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 444966,149072,Move,64,349,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 457968,149085,Move,55,370,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 470967,149097,Move,48,382,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 484967,149110,Move,44,386,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 497970,149122,Move,40,386,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 511968,149135,Move,38,383,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 523968,149147,Move,36,374,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 536971,149159,Move,36,358,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 550969,149172,Move,37,334,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 563969,149185,Move,40,305,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 576969,149198,Move,45,275,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 589969,149210,Move,51,247,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 602970,149223,Move,59,223,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 615969,149235,Move,68,201,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 628969,149248,Move,78,184,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 641969,149260,Move,87,173,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 654969,149272,Move,94,166,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 668969,149285,Move,98,164,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 680969,149297,Move,101,165,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 694969,149310,Move,104,174,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 706969,149322,Move,106,200,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 719969,149335,Move,106,236,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 732969,149347,Move,104,270,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 745968,149360,Move,102,295,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 758967,149372,Move,101,308,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 772963,149386,Move,101,313,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 784965,149397,Move,102,314,400,2760,3398,2760,3398,0x11,0x11
+[17:31:35] 798963,149410,Move,103,314,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 811968,149423,Move,108,309,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 823967,149435,Move,115,297,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 836968,149448,Move,129,273,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 851968,149463,Move,142,247,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 864968,149476,Move,152,220,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 877967,149488,Move,159,193,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 890969,149501,Move,163,172,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 903967,149513,Move,165,158,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 915967,149525,Move,166,151,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 929967,149538,Move,166,149,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 941970,149549,Move,166,150,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 955967,149562,Move,164,160,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 967970,149573,Move,158,192,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 980968,149586,Move,151,233,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 993967,149598,Move,146,263,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1006973,149611,Move,143,280,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1021967,149625,Move,142,287,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1033970,149636,Move,142,288,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1047967,149649,Move,144,287,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1059967,149661,Move,150,281,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1073967,149674,Move,162,265,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1086968,149687,Move,174,238,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1099967,149699,Move,185,206,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1112969,149711,Move,191,182,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1125967,149723,Move,194,168,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1138968,149735,Move,195,164,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1163967,149759,Move,195,173,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1177967,149772,Move,194,195,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1190968,149785,Move,193,218,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1203969,149796,Move,192,234,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1216968,149809,Move,192,242,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1230968,149822,Move,193,244,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1242968,149834,Move,198,243,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1255967,149846,Move,209,236,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1269967,149859,Move,224,220,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1282968,149872,Move,238,199,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1295969,149885,Move,248,181,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1308968,149897,Move,254,170,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1321968,149909,Move,257,165,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1334967,149922,Move,258,165,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1348967,149935,Move,258,172,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1361967,149947,Move,251,212,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1374967,149959,Move,232,281,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1387973,149971,Move,204,342,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1400968,149984,Move,182,375,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1412971,149996,Move,167,389,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1425968,150008,Move,158,395,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1438968,150020,Move,153,396,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1452968,150034,Move,151,395,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1464968,150046,Move,150,389,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1478967,150060,Move,150,374,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1491971,150072,Move,156,337,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1504969,150084,Move,170,285,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1516972,150095,Move,195,228,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1531967,150110,Move,226,175,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1543969,150122,Move,256,137,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1556966,150135,Move,280,109,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1569968,150147,Move,297,91,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1582973,150160,Move,308,79,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1595968,150172,Move,317,71,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1609959,150186,Move,323,66,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1622972,150199,Move,327,63,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1635969,150211,Move,328,62,400,2760,3398,2760,3398,0x11,0x11
+[17:31:36] 1646994,150222,Up,328,62,400,2760,3398,2760,3398,0x11,0x00
+[17:31:36] 3373966,151949,Down,352,338,400,2760,3398,5520,5664,0x20,0x27
+[17:31:36] 3478968,152054,Move,351,338,400,5520,5664,5520,5664,0x27,0x27
+[17:31:36] 3492968,152068,Move,351,339,400,5520,5664,5520,5738,0x27,0x27
+[17:31:36] 3533975,152109,Move,350,342,400,5520,5738,5520,5958,0x27,0x27
+[17:31:36] 3571983,152147,Move,350,344,400,5520,5958,5520,6104,0x27,0x27
+[17:31:36] 3622981,152198,Move,350,345,400,5520,6104,5520,6176,0x27,0x27
+[17:31:36] 3651968,152227,Move,350,347,400,5520,6176,5520,6324,0x27,0x27
+[17:31:36] 3689971,152265,Move,350,350,400,5520,6324,5520,6542,0x27,0x27
+[17:31:36] 3739964,152315,Move,350,355,400,5520,6542,5520,6720,0x27,0x27
+[17:31:36] 3790972,152366,Move,350,365,400,5520,6720,5520,6720,0x27,0x27
+[17:31:36] 3794968,152370,Move,350,368,400,5520,6720,5520,6720,0x27,0x27
+[17:31:36] 3806968,152382,Move,350,371,400,5520,6720,5520,6720,0x27,0x27
+[17:31:36] 3820968,152396,Move,350,373,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 3832968,152408,Move,350,375,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 3846968,152422,Move,350,377,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 3858968,152434,Move,350,378,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 3872968,152448,Move,350,379,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 3884968,152460,Move,350,380,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 3898968,152474,Move,351,382,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 3912968,152488,Move,352,384,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 3924968,152500,Move,353,386,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 3938968,152514,Move,354,388,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 3950968,152526,Move,355,390,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 3964968,152540,Move,356,392,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 3976968,152552,Move,357,394,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 3990968,152566,Move,358,396,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 4002968,152578,Move,359,398,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 4016967,152592,Move,360,400,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 4030968,152606,Move,360,402,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 4042968,152618,Move,360,404,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 4056968,152632,Move,360,405,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 4068968,152644,Move,360,406,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 4082968,152658,Move,360,408,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 4096968,152672,Move,360,410,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 4108967,152684,Move,360,412,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 4122968,152698,Move,360,414,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 4134968,152710,Move,360,416,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 4148968,152724,Move,360,418,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 4160968,152736,Move,360,420,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 4174968,152750,Move,360,421,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 4186968,152762,Move,360,422,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 4200968,152776,Move,360,423,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 4212968,152788,Move,360,424,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 4224968,152800,Up,360,424,400,5520,6720,5520,6720,0x07,0x00
+[17:31:36] 5218978,153794,Down,367,415,400,5520,6720,5520,6720,0x00,0x0b
+[17:31:36] 5324970,153900,Move,367,414,400,5520,6720,5520,6720,0x0b,0x0b
+[17:31:36] 5336970,153912,Move,366,413,400,5520,6720,5520,6720,0x0b,0x0b
+[17:31:36] 5350968,153926,Move,365,412,400,5520,6720,5520,6720,0x0b,0x0b
+[17:31:36] 5362968,153938,Move,364,410,400,5520,6720,5520,6720,0x0b,0x0b
+[17:31:36] 5376970,153952,Move,363,407,400,5520,6720,5520,6720,0x0b,0x07
+[17:31:36] 5388968,153964,Move,361,404,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 5402968,153978,Move,359,398,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 5414968,153990,Move,357,393,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 5428968,154004,Move,355,389,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 5442968,154018,Move,352,385,400,5520,6720,5520,6720,0x07,0x07
+[17:31:36] 5454968,154030,Move,349,381,400,5520,6720,5484,6720,0x07,0x07
+[17:31:36] 5483961,154059,Move,342,373,400,5484,6720,4968,6720,0x07,0x07
+[17:31:36] 5521975,154097,Move,333,358,400,4968,6720,4306,6720,0x27,0x27
+[17:31:36] 5571973,154147,Move,322,327,400,4306,6720,3496,4862,0x27,0x27
+[17:31:36] 5622973,154198,Move,316,303,400,3496,4862,3054,3106,0x27,0x27
+[17:31:36] 5672972,154248,Move,313,282,400,3054,3106,2834,1570,0x27,0x27
+[17:31:36] 5722966,154298,Move,313,268,400,2834,1570,2834,546,0x27,0x27
+[17:31:36] 5773972,154349,Move,313,258,400,2834,546,2834,0,0x27,0x27
+[17:31:36] 5823966,154399,Move,313,245,400,2834,0,2834,0,0x27,0x27
+[17:31:36] 5833963,154409,Move,313,240,400,2834,0,2834,0,0x27,0x27
+[17:31:36] 5847963,154423,Move,313,235,400,2834,0,2834,0,0x07,0x07
+[17:31:36] 5859963,154435,Move,313,230,400,2834,0,2834,0,0x07,0x07
+[17:31:36] 5873963,154449,Move,313,226,400,2834,0,2834,0,0x07,0x07
+[17:31:36] 5885963,154461,Move,313,222,400,2834,0,2834,0,0x07,0x07
+[17:31:36] 5899963,154475,Move,313,220,400,2834,0,2834,0,0x07,0x07
+[17:31:36] 5911963,154487,Move,313,218,400,2834,0,2834,0,0x07,0x07
+[17:31:36] 5925963,154501,Move,313,216,400,2834,0,2834,0,0x07,0x07
+[17:31:36] 5939963,154515,Move,313,215,400,2834,0,2834,0,0x07,0x07
+[17:31:36] 5951963,154527,Move,312,214,400,2834,0,2760,0,0x07,0x07
+[17:31:36] 5987973,154563,Move,311,211,400,2760,0,2686,0,0x07,0x07
+[17:31:36] 6021968,154597,Move,310,205,400,2686,0,2614,0,0x07,0x07
+[17:31:36] 6054976,154629,Move,308,203,400,2614,0,2466,0,0x07,0x07
+[17:31:36] 6092971,154667,Move,306,200,400,2466,0,2318,0,0x07,0x07
+[17:31:36] 6143977,154718,Move,305,196,400,2318,0,2246,0,0x07,0x07
+[17:31:36] 6172973,154747,Move,305,195,400,2246,0,2246,0,0x07,0x07
+[17:31:36] 6226968,154801,Move,304,195,400,2246,0,2172,0,0x07,0x07
+[17:31:36] 6256977,154831,Move,303,197,400,2172,0,2098,0,0x07,0x07
+[17:31:36] 6290969,154864,Move,303,201,400,2098,0,2098,0,0x07,0x07
+[17:31:36] 6292971,154866,Move,303,203,400,2098,0,2098,0,0x07,0x07
+[17:31:36] 6304968,154878,Move,303,205,400,2098,0,2098,0,0x07,0x07
+[17:31:36] 6316968,154890,Move,303,208,400,2098,0,2098,0,0x07,0x07
+[17:31:36] 6330968,154904,Move,303,211,400,2098,0,2098,0,0x07,0x07
+[17:31:36] 6344968,154918,Move,303,213,400,2098,0,2098,0,0x07,0x07
+[17:31:36] 6356968,154930,Move,303,215,400,2098,0,2098,0,0x07,0x07
+[17:31:36] 6370968,154944,Move,303,217,400,2098,0,2098,0,0x07,0x07
+[17:31:36] 6382968,154956,Move,303,220,400,2098,0,2098,0,0x07,0x07
+[17:31:36] 6396968,154970,Move,303,223,400,2098,0,2098,0,0x07,0x07
+[17:31:36] 6408968,154982,Move,303,226,400,2098,0,2098,0,0x07,0x07
+[17:31:36] 6422968,154996,Move,303,229,400,2098,0,2098,0,0x07,0x07
+[17:31:36] 6434968,155008,Move,303,233,400,2098,0,2098,0,0x07,0x07
+[17:31:36] 6448968,155022,Move,303,236,400,2098,0,2098,0,0x27,0x27
+[17:31:36] 6460968,155034,Move,303,240,400,2098,0,2098,0,0x27,0x27
+[17:31:36] 6474967,155048,Move,303,243,400,2098,0,2098,0,0x27,0x27
+[17:31:36] 6488968,155062,Move,303,245,400,2098,0,2098,0,0x27,0x27
+[17:31:36] 6500968,155074,Move,303,247,400,2098,0,2098,0,0x27,0x27
+[17:31:36] 6514968,155088,Move,303,250,400,2098,0,2098,0,0x27,0x27
+[17:31:36] 6526968,155100,Move,303,253,400,2098,0,2098,0,0x27,0x27
+[17:31:36] 6540968,155114,Move,303,255,400,2098,0,2098,0,0x27,0x27
+[17:31:36] 6552968,155126,Move,303,257,400,2098,0,2098,0,0x27,0x27
+[17:31:36] 6566968,155140,Move,304,259,400,2098,0,2172,0,0x27,0x27
+[17:31:36] 6593959,155167,Move,306,263,400,2172,0,2318,180,0x27,0x27
+[17:31:36] 6630974,155204,Move,309,269,400,2318,180,2540,620,0x27,0x27
+[17:31:36] 6681975,155255,Move,312,275,400,2540,620,2760,1058,0x27,0x27
+[17:31:36] 6731963,155305,Move,316,281,400,2760,1058,3054,1496,0x27,0x27
+[17:31:36] 6782975,155356,Move,320,289,400,3054,1496,3350,2082,0x27,0x27
+[17:31:36] 6832972,155406,Move,324,296,400,3350,2082,3644,2594,0x27,0x27
+[17:31:36] 6883976,155457,Move,326,301,400,3644,2594,3790,2960,0x27,0x27
+[17:31:36] 6933975,155506,Move,329,308,400,3790,2960,4012,3472,0x27,0x27
+[17:31:36] 6984975,155557,Move,329,313,400,4012,3472,4012,3838,0x27,0x27
+[17:31:36] 7034975,155606,Move,330,317,400,4012,3838,4086,4130,0x27,0x27
+[17:31:36] 7084968,155656,Move,333,321,400,4086,4130,4306,4422,0x27,0x27
+[17:31:36] 7135976,155707,Move,333,325,400,4306,4422,4306,4716,0x27,0x27
+[17:31:36] 7185972,155757,Move,336,329,400,4306,4716,4526,5008,0x27,0x27
+[17:31:36] 7236981,155807,Move,336,334,400,4526,5008,4526,5374,0x27,0x27
+[17:31:36] 7286975,155857,Move,336,338,400,4526,5374,4526,5666,0x27,0x27
+[17:31:36] 7336963,155907,Move,337,343,400,4526,5666,4600,6032,0x27,0x27
+[17:31:36] 7387976,155958,Move,340,346,400,4600,6032,4822,6252,0x27,0x27
+[17:31:36] 7437967,156008,Move,341,351,400,4822,6252,4894,6616,0x27,0x27
+[17:31:36] 7488975,156059,Move,343,359,400,4894,6616,5042,6720,0x27,0x27
+[17:31:37] 7538975,156108,Move,343,368,400,5042,6720,5042,6720,0x27,0x27
+[17:31:37] 7546967,156116,Move,343,370,400,5042,6720,5042,6720,0x27,0x27
+[17:31:37] 7560968,156130,Move,343,373,400,5042,6720,5042,6720,0x07,0x07
+[17:31:37] 7572968,156142,Move,343,376,400,5042,6720,5042,6720,0x07,0x07
+[17:31:37] 7586968,156156,Move,343,379,400,5042,6720,5042,6720,0x07,0x07
+[17:31:37] 7598968,156168,Move,343,382,400,5042,6720,5042,6720,0x07,0x07
+[17:31:37] 7612968,156182,Move,343,384,400,5042,6720,5042,6720,0x07,0x07
+[17:31:37] 7624968,156194,Move,343,387,400,5042,6720,5042,6720,0x07,0x07
+[17:31:37] 7638968,156208,Move,343,389,400,5042,6720,5042,6720,0x07,0x07
+[17:31:37] 7650968,156220,Move,343,392,400,5042,6720,5042,6720,0x07,0x07
+[17:31:37] 7664968,156234,Move,343,394,400,5042,6720,5042,6720,0x07,0x07
+[17:31:37] 7676968,156246,Move,343,396,400,5042,6720,5042,6720,0x07,0x07
+[17:31:37] 7690968,156260,Move,343,398,400,5042,6720,5042,6720,0x07,0x07
+[17:31:37] 7702968,156272,Move,343,400,400,5042,6720,5042,6720,0x07,0x07
+[17:31:37] 7716968,156286,Move,343,402,400,5042,6720,5042,6720,0x07,0x07
+[17:31:37] 7728968,156298,Move,343,403,400,5042,6720,5042,6720,0x07,0x07
+[17:31:37] 7768968,156338,Move,343,402,400,5042,6720,5042,6720,0x07,0x07
+[17:31:37] 7782968,156352,Move,342,400,400,5042,6720,4968,6720,0x07,0x07
+[17:31:37] 7819973,156389,Move,340,396,400,4968,6720,4822,6720,0x07,0x07
+[17:31:37] 7857967,156427,Move,336,387,400,4822,6720,4526,6720,0x07,0x07
+[17:31:37] 7908972,156478,Move,332,371,400,4526,6720,4232,6720,0x27,0x27
+[17:31:37] 7958974,156528,Move,329,351,400,4232,6720,4012,6616,0x27,0x27
+[17:31:37] 8009972,156579,Move,328,334,400,4012,6616,3938,5374,0x27,0x27
+[17:31:37] 8059975,156629,Move,328,309,400,3938,5374,3938,3544,0x27,0x27
+[17:31:37] 8109964,156679,Move,328,295,400,3938,3544,3938,2520,0x27,0x27
+[17:31:37] 8160974,156730,Move,328,291,400,3938,2520,3938,2228,0x27,0x27
+[17:31:37] 8210972,156780,Move,328,290,400,3938,2228,3938,2156,0x27,0x27
+[17:31:37] 8251969,156821,Move,327,290,400,3938,2156,3864,2156,0x27,0x27
+[17:31:37] 8290968,156860,Move,325,290,400,3864,2156,3718,2156,0x27,0x27
+[17:31:37] 8328976,156898,Move,322,290,400,3718,2156,3496,2156,0x27,0x27
+[17:31:37] 8378970,156948,Move,318,290,400,3496,2156,3202,2156,0x27,0x27
+[17:31:37] 8429978,156999,Move,317,290,400,3202,2156,3128,2156,0x27,0x27
+[17:31:37] 8458968,157028,Move,316,290,400,3128,2156,3054,2156,0x27,0x27
+[17:31:37] 8491977,157061,Move,315,290,400,3054,2156,2982,2156,0x27,0x27
+[17:31:37] 8525975,157095,Move,314,290,400,2982,2156,2908,2156,0x27,0x27
+[17:31:37] 8559959,157129,Move,313,290,400,2908,2156,2834,2156,0x27,0x27
+[17:31:37] 8592976,157161,Move,310,290,400,2834,2156,2614,2156,0x27,0x27
+[17:31:37] 8630971,157199,Move,308,290,400,2614,2156,2466,2156,0x27,0x27
+[17:31:37] 8681972,157250,Move,307,290,400,2466,2156,2392,2156,0x27,0x27
+[17:31:37] 8984969,157553,Move,307,291,400,2392,2156,2392,2228,0x27,0x27
+[17:31:37] 9012973,157581,Move,307,293,400,2392,2228,2392,2374,0x27,0x27
+[17:31:37] 9050976,157619,Move,307,297,400,2392,2374,2392,2668,0x27,0x27
+[17:31:37] 9101975,157670,Move,307,303,400,2392,2668,2392,3106,0x27,0x27
+[17:31:37] 9151975,157720,Move,307,310,400,2392,3106,2392,3618,0x27,0x27
+[17:31:37] 9201967,157769,Move,307,322,400,2392,3618,2392,4496,0x27,0x27
+[17:31:37] 9252975,157820,Move,307,333,400,2392,4496,2392,5300,0x27,0x27
+[17:31:37] 9302967,157870,Move,307,343,400,2392,5300,2392,6032,0x27,0x27
+[17:31:37] 9353976,157921,Move,307,350,400,2392,6032,2392,6544,0x27,0x27
+[17:31:37] 9403975,157971,Move,307,354,400,2392,6544,2392,6720,0x27,0x27
+[17:31:37] 9453964,158021,Move,307,358,400,2392,6720,2392,6720,0x27,0x27
+[17:31:37] 9455968,158023,Move,307,360,400,2392,6720,2392,6720,0x27,0x27
+[17:31:37] 9467959,158035,Move,307,362,400,2392,6720,2392,6720,0x27,0x27
+[17:31:37] 9481959,158049,Move,307,364,400,2392,6720,2392,6720,0x27,0x27
+[17:31:37] 9493959,158061,Move,307,366,400,2392,6720,2392,6720,0x27,0x27
+[17:31:37] 9507959,158075,Move,307,369,400,2392,6720,2392,6720,0x27,0x27
+[17:31:37] 9519959,158087,Move,307,372,400,2392,6720,2392,6720,0x07,0x07
+[17:31:37] 9533959,158101,Move,307,375,400,2392,6720,2392,6720,0x07,0x07
+[17:31:37] 9545959,158113,Move,307,379,400,2392,6720,2392,6720,0x07,0x07
+[17:31:37] 9559959,158127,Move,307,384,400,2392,6720,2392,6720,0x07,0x07
+[17:31:37] 9571959,158139,Move,307,388,400,2392,6720,2392,6720,0x07,0x07
+[17:31:37] 9585959,158153,Move,307,393,400,2392,6720,2392,6720,0x07,0x07
+[17:31:37] 9599959,158167,Move,307,398,400,2392,6720,2392,6720,0x07,0x07
+[17:31:37] 9611959,158179,Move,307,402,400,2392,6720,2392,6720,0x07,0x07
+[17:31:37] 9625959,158193,Move,306,405,400,2392,6720,2318,6720,0x07,0x07
+[17:31:37] 9651968,158219,Move,304,410,400,2318,6720,2172,6720,0x07,0x07
+[17:31:37] 9689972,158257,Move,302,414,400,2172,6720,2024,6720,0x07,0x07
+[17:31:37] 9739974,158307,Move,298,418,400,2024,6720,1730,6720,0x07,0x07
+[17:31:37] 9790974,158358,Move,294,421,400,1730,6720,1436,6720,0x07,0x07
+[17:31:37] 9806966,158374,Up,294,421,400,1436,6720,1436,6720,0x07,0x00
+[17:31:37] 11755974,160321,Down,311,393,400,1436,6720,1436,6720,0x00,0x0b
+[17:31:37] 11887968,160453,Move,311,392,400,1436,6720,1436,6720,0x0b,0x0b
+[17:31:37] 11899968,160465,Move,311,391,400,1436,6720,1436,6720,0x0b,0x0b
+[17:31:37] 11913971,160479,Move,311,390,400,1436,6720,1436,6720,0x0b,0x0b
+[17:31:37] 11925971,160491,Move,311,388,400,1436,6720,1436,6720,0x0b,0x0b
+[17:31:37] 11939968,160505,Move,311,384,400,1436,6720,2686,6720,0x0b,0x07
+[17:31:37] 11990967,160556,Move,309,363,400,2686,6720,2538,6720,0x27,0x27
+[17:31:37] 12041973,160607,Move,302,334,400,2538,6720,2024,5374,0x27,0x27
+[17:31:37] 12091973,160657,Move,286,310,400,2024,5374,846,3618,0x27,0x27
+[17:31:37] 12142975,160708,Move,264,293,400,846,3618,0,2374,0x27,0x27
+[17:31:37] 12192973,160758,Move,249,283,400,0,2374,0,1644,0x07,0x07
+[17:31:37] 12242961,160808,Move,240,279,400,0,1644,0,1350,0x07,0x07
+[17:31:37] 12276977,160842,Move,237,277,400,0,1350,0,1204,0x07,0x07
+[17:31:37] 12326964,160891,Move,233,273,400,0,1204,0,912,0x07,0x07
+[17:31:37] 12360975,160925,Move,230,271,400,0,912,0,766,0x07,0x07
+[17:31:37] 12410967,160974,Move,227,271,400,0,766,0,766,0x07,0x07
+[17:31:37] 12502966,161066,Move,228,272,400,0,766,0,838,0x07,0x07
+[17:31:37] 12541961,161105,Move,233,277,400,0,838,0,1204,0x07,0x07
+[17:31:37] 12579975,161143,Move,240,285,400,0,1204,0,1790,0x07,0x07
+[17:31:37] 12629975,161193,Move,246,294,400,0,1790,0,2448,0x07,0x07
+[17:31:37] 12679963,161243,Move,250,300,400,0,2448,0,2886,0x27,0x27
+[17:31:37] 12713978,161277,Move,253,303,400,0,2886,0,3106,0x27,0x27
+[17:31:37] 12763961,161327,Move,253,307,400,0,3106,0,3398,0x27,0x27
+[17:31:37] 12797979,161361,Move,253,308,400,0,3398,0,3472,0x27,0x27
+[17:31:37] 12826973,161389,Move,254,310,400,0,3472,0,3618,0x27,0x27
+[17:31:37] 12864970,161427,Move,257,313,400,0,3618,0,3838,0x27,0x27
+[17:31:37] 12898975,161461,Move,260,316,400,0,3838,0,4056,0x27,0x27
+[17:31:37] 12948967,161510,Move,264,319,400,0,4056,0,4276,0x27,0x27
+[17:31:37] 12982975,161544,Move,266,319,400,0,4276,0,4276,0x27,0x27
+[17:31:37] 12986968,161548,Move,268,319,400,0,4276,0,4276,0x27,0x27
+[17:31:37] 12998968,161560,Move,269,319,400,0,4276,0,4276,0x27,0x27
+[17:31:37] 13012968,161574,Move,271,320,400,0,4276,0,4350,0x27,0x27
+[17:31:37] 13045966,161607,Move,275,322,400,0,4350,38,4496,0x27,0x27
+[17:31:37] 13083973,161645,Move,281,323,400,38,4496,478,4568,0x27,0x27
+[17:31:37] 13133973,161695,Move,285,326,400,478,4568,774,4788,0x27,0x27
+[17:31:37] 13184974,161746,Move,288,326,400,774,4788,994,4788,0x27,0x27
+[17:31:37] 13234973,161796,Move,290,326,400,994,4788,1142,4788,0x27,0x27
+[17:31:37] 13269005,161830,Move,290,328,400,1142,4788,1142,4934,0x27,0x27
+[17:31:37] 13271012,161832,Up,290,328,400,1142,4934,1142,4934,0x27,0x20
+[17:31:37] 13939997,162499,Down,316,361,400,1142,4934,3054,6720,0x20,0x27
+[17:31:37] 14188962,162748,Move,316,360,400,3054,6720,3054,6720,0x27,0x27
+[17:31:37] 14202963,162762,Move,316,359,400,3054,6720,3054,6720,0x27,0x27
+[17:31:37] 14214963,162774,Move,316,358,400,3054,6720,3054,6720,0x27,0x27
+[17:31:37] 14228963,162788,Move,317,357,400,3054,6720,3128,6720,0x27,0x27
+[17:31:37] 14255970,162815,Move,318,355,400,3128,6720,3202,6720,0x27,0x27
+[17:31:37] 14289961,162849,Move,319,353,400,3202,6720,3274,6720,0x27,0x27
+[17:31:37] 14322976,162882,Move,319,350,400,3274,6720,3274,6542,0x27,0x27
+[17:31:37] 14341991,162901,Move,319,349,400,3274,6542,3274,6470,0x27,0x27
+[17:31:37] 14343980,162903,Up,319,349,400,3274,6470,3274,6470,0x27,0x20
+[17:31:37] 14907000,163465,Down,334,385,400,3274,6470,3274,6470,0x00,0x0b
+[17:31:37] 14973969,163532,Move,333,385,400,3274,6470,3274,6470,0x0b,0x0b
+[17:31:37] 14985972,163544,Move,332,384,400,3274,6470,3274,6470,0x0b,0x0b
+[17:31:37] 14999968,163558,Move,331,383,400,3274,6470,3274,6470,0x0b,0x0b
+[17:31:37] 15011970,163570,Move,329,382,400,3274,6470,3274,6470,0x0b,0x0b
+[17:31:37] 15025969,163584,Move,327,381,400,3274,6470,3864,6720,0x0b,0x07
+[17:31:37] 15066976,163625,Move,318,378,400,3864,6720,3202,6720,0x07,0x07
+[17:31:37] 15100971,163659,Move,310,375,400,3202,6720,2614,6720,0x07,0x07
+[17:31:37] 15150974,163709,Move,294,371,400,2614,6720,1436,6720,0x27,0x27
+[17:31:37] 15184973,163743,Move,287,368,400,1436,6720,920,6720,0x27,0x27
+[17:31:37] 15218976,163777,Move,283,366,400,920,6720,626,6720,0x27,0x27
+[17:31:37] 15268973,163827,Move,277,365,400,626,6720,184,6720,0x27,0x27
+[17:31:37] 15308972,163867,Move,273,362,400,184,6720,0,6720,0x27,0x27
+[17:31:37] 15311011,163869,Up,273,362,400,0,6720,0,6720,0x27,0x20
+[17:31:37] 15704975,164262,Down,278,404,400,0,6720,0,6720,0x00,0x0b
+[17:31:37] 15782970,164340,Move,278,403,400,0,6720,0,6720,0x0b,0x0b
+[17:31:37] 15796968,164354,Move,279,402,400,0,6720,0,6720,0x0b,0x0b
+[17:31:37] 15808968,164366,Move,280,401,400,0,6720,0,6720,0x0b,0x0b
+[17:31:37] 15822970,164380,Move,281,400,400,0,6720,0,6720,0x0b,0x0b
+[17:31:37] 15836968,164394,Move,282,399,400,0,6720,0,6720,0x0b,0x0b
+[17:31:37] 15848968,164406,Move,283,398,400,0,6720,0,6720,0x0b,0x0b
+[17:31:37] 15862970,164420,Move,284,396,400,0,6720,698,6720,0x0b,0x07
+[17:31:37] 15907975,164465,Move,287,389,400,698,6720,920,6720,0x07,0x07
+[17:31:37] 15957976,164515,Move,295,377,400,920,6720,1508,6720,0x07,0x07
+[17:31:37] 15991977,164548,Move,299,372,400,1508,6720,1802,6720,0x07,0x07
+[17:31:37] 16024964,164581,Move,304,367,400,1802,6720,2170,6720,0x27,0x27
+[17:31:37] 16075973,164632,Move,307,363,400,2170,6720,2392,6720,0x27,0x27
+[17:31:37] 16081986,164638,Up,307,363,400,2392,6720,2392,6720,0x27,0x20
+[17:31:37] 16593976,165146,Down,327,392,400,2392,6720,2392,6720,0x00,0x0b
+[17:31:37] 16659970,165212,Move,327,391,400,2392,6720,2392,6720,0x0b,0x0b
+[17:31:37] 16671970,165224,Move,327,390,400,2392,6720,2392,6720,0x0b,0x0b
+[17:31:37] 16685968,165238,Move,327,388,400,2392,6720,2392,6720,0x0b,0x0b
+[17:31:37] 16697968,165250,Move,327,386,400,2392,6720,2392,6720,0x0b,0x0b
+[17:31:37] 16711970,165264,Move,327,383,400,2392,6720,3864,6720,0x0b,0x07
+[17:31:37] 16747978,165300,Move,327,377,400,3864,6720,3864,6720,0x07,0x07
+[17:31:37] 16751972,165304,Move,327,374,400,3864,6720,3864,6720,0x07,0x07
+[17:31:37] 16763968,165316,Move,327,371,400,3864,6720,3864,6720,0x27,0x27
+[17:31:37] 16777968,165330,Move,327,369,400,3864,6720,3864,6720,0x27,0x27
+[17:31:37] 16789968,165342,Move,326,366,400,3864,6720,3790,6720,0x27,0x27
+[17:31:37] 16826971,165379,Move,324,361,400,3790,6720,3642,6720,0x27,0x27
+[17:31:37] 16864967,165417,Move,321,354,400,3642,6720,3422,6720,0x27,0x27
+[17:31:37] 16898978,165451,Move,318,346,400,3422,6720,3202,6252,0x27,0x27
+[17:31:37] 16916980,165469,Move,316,344,400,3202,6252,3054,6104,0x27,0x27
+[17:31:37] 16918990,165471,Up,316,344,400,3054,6104,3054,6104,0x27,0x20
+[17:31:37] 17468968,166018,Down,334,400,400,3054,6104,3054,6104,0x00,0x0b
+[17:31:37] 17496966,166046,Move,334,399,400,3054,6104,3054,6104,0x0b,0x0b
+[17:31:37] 17508964,166058,Move,334,397,400,3054,6104,3054,6104,0x0b,0x0b
+[17:31:37] 17522964,166072,Move,333,395,400,3054,6104,3054,6104,0x0b,0x0b
+[17:31:37] 17534966,166084,Move,332,392,400,3054,6104,4232,6720,0x0b,0x07
+[17:31:37] 17570974,166120,Move,329,384,400,4232,6720,4010,6720,0x07,0x07
+[17:31:37] 17620963,166170,Move,321,369,400,4010,6720,3422,6720,0x27,0x27
+[17:31:37] 17654972,166204,Move,315,360,400,3422,6720,2982,6720,0x27,0x27
+[17:31:37] 17688975,166237,Move,313,354,400,2982,6720,2834,6720,0x27,0x27
+[17:31:37] 17721969,166270,Move,310,348,400,2834,6720,2614,6396,0x27,0x27
+[17:31:37] 17755974,166304,Move,307,344,400,2614,6396,2392,6104,0x27,0x27
+[17:31:37] 17805968,166354,Move,300,338,400,2392,6104,1878,5666,0x27,0x27
+[17:31:37] 17856972,166405,Move,294,332,400,1878,5666,1436,5228,0x27,0x27
+[17:31:37] 17861010,166408,Up,294,332,400,1436,5228,1436,5228,0x27,0x20
+[17:31:37] 18424000,166970,Down,306,392,400,1436,5228,1436,5228,0x00,0x0b
+[17:31:37] 18462970,167009,Move,306,391,400,1436,5228,1436,5228,0x0b,0x0b
+[17:31:37] 18476970,167023,Move,306,389,400,1436,5228,1436,5228,0x0b,0x0b
+[17:31:37] 18488968,167035,Move,306,387,400,1436,5228,1436,5228,0x0b,0x0b
+[17:31:37] 18502970,167049,Move,307,384,400,1436,5228,2392,6720,0x0b,0x07
+[17:31:37] 18545973,167092,Move,310,373,400,2392,6720,2612,6720,0x07,0x07
+[17:31:37] 18578974,167125,Move,312,365,400,2612,6720,2760,6720,0x27,0x27
+[17:31:37] 18612976,167159,Move,315,357,400,2760,6720,2980,6720,0x27,0x27
+[17:31:37] 18646981,167193,Move,317,350,400,2980,6720,3128,6542,0x27,0x27
+[17:31:37] 18657022,167203,Up,317,350,400,3128,6542,3128,6542,0x27,0x20
+[17:31:38] 19207978,167754,Down,331,395,400,3128,6542,3128,6542,0x00,0x0b
+[17:31:38] 19233972,167780,Move,331,394,400,3128,6542,3128,6542,0x0b,0x0b
+[17:31:38] 19247972,167794,Move,331,392,400,3128,6542,3128,6542,0x0b,0x0b
+[17:31:38] 19259972,167806,Move,331,390,400,3128,6542,3128,6542,0x0b,0x0b
+[17:31:38] 19273972,167820,Move,331,387,400,3128,6542,4158,6720,0x0b,0x07
+[17:31:38] 19317967,167864,Move,328,378,400,4158,6720,3938,6720,0x07,0x07
+[17:31:38] 19348012,167894,Move,323,372,400,3938,6720,3570,6720,0x07,0x07
+[17:31:38] 19349988,167896,Up,323,372,400,3570,6720,3570,6720,0x07,0x00
+[17:31:38] 19835001,168381,Down,328,388,400,3570,6720,3570,6720,0x00,0x0b
+[17:31:38] 19847963,168394,Move,328,387,400,3570,6720,3570,6720,0x0b,0x0b
+[17:31:38] 19861965,168408,Move,328,385,400,3570,6720,3570,6720,0x0b,0x0b
+[17:31:38] 19873965,168420,Move,327,381,400,3570,6720,3570,6720,0x0b,0x0b
+[17:31:38] 19887965,168434,Move,326,376,400,3570,6720,3790,6720,0x0b,0x07
+[17:31:38] 19922970,168469,Move,323,363,400,3790,6720,3570,6720,0x27,0x27
+[17:31:38] 19956972,168503,Move,317,344,400,3570,6720,3128,6104,0x27,0x27
+[17:31:38] 19989967,168536,Move,313,335,400,3128,6104,2834,5446,0x27,0x27
+[17:31:38] 20027991,168574,Move,307,327,400,2834,5446,2392,4862,0x27,0x27
+[17:31:38] 20029979,168576,Up,307,327,400,2392,4862,2392,4862,0x27,0x20
+[17:31:38] 20579978,169123,Down,309,362,400,2392,4862,2538,6720,0x20,0x27
+[17:31:38] 20628979,169172,Move,309,361,400,2538,6720,2538,6720,0x27,0x27
+[17:31:38] 20632968,169176,Move,309,359,400,2538,6720,2538,6720,0x27,0x27
+[17:31:38] 20646966,169190,Move,309,357,400,2538,6720,2538,6720,0x27,0x27
+[17:31:38] 20658968,169202,Move,309,354,400,2538,6720,2538,6720,0x27,0x27
+[17:31:38] 20672968,169216,Move,309,351,400,2538,6720,2538,6616,0x27,0x27
+[17:31:38] 20712976,169256,Move,309,341,400,2538,6616,2538,5884,0x27,0x27
+[17:31:38] 20762976,169306,Move,309,330,400,2538,5884,2538,5080,0x27,0x27
+[17:31:38] 20785991,169329,Move,309,323,400,2538,5080,2538,4568,0x27,0x27
+[17:31:38] 20787989,169331,Up,309,323,400,2538,4568,2538,4568,0x27,0x20
+[17:31:38] 21390997,169934,Down,331,349,400,2538,4568,4158,6470,0x20,0x27
+[17:31:38] 21458968,170002,Move,331,348,400,4158,6470,4158,6396,0x27,0x27
+[17:31:38] 21497964,170041,Move,331,343,400,4158,6396,4158,6030,0x27,0x27
+[17:31:38] 21535976,170079,Move,331,335,400,4158,6030,4158,5446,0x27,0x27
+[17:31:38] 21573008,170116,Move,331,320,400,4158,5446,4158,4350,0x27,0x27
+[17:31:38] 21575023,170118,Up,331,320,400,4158,4350,4158,4350,0x27,0x20
+[17:31:38] 22216969,170758,Down,349,362,400,4158,4350,5482,6720,0x20,0x27
+[17:31:38] 22269968,170811,Move,348,361,400,5482,6720,5410,6720,0x27,0x27
+[17:31:38] 22303969,170845,Move,346,359,400,5410,6720,5262,6720,0x27,0x27
+[17:31:38] 22341973,170882,Move,339,356,400,5262,6720,4746,6720,0x27,0x27
+[17:31:38] 22391965,170932,Move,323,350,400,4746,6720,3570,6542,0x27,0x27
+[17:31:38] 22425975,170966,Move,314,346,400,3570,6542,2908,6250,0x27,0x27
+[17:31:38] 22459976,171000,Move,302,341,400,2908,6250,2024,5884,0x27,0x27
+[17:31:38] 22509974,171050,Move,290,337,400,2024,5884,1142,5592,0x27,0x27
+[17:31:38] 22543976,171083,Move,284,335,400,1142,5592,700,5446,0x27,0x27
+[17:31:38] 22593969,171133,Move,277,332,400,700,5446,184,5226,0x27,0x27
+[17:31:38] 22643972,171183,Move,273,331,400,184,5226,0,5152,0x27,0x27
+[17:31:38] 22701968,171241,Move,273,330,400,0,5152,0,5080,0x27,0x27
+[17:31:38] 22740969,171280,Move,273,329,400,0,5080,0,5006,0x27,0x27
+[17:31:38] 22818959,171357,Move,273,328,400,0,5006,0,4934,0x27,0x27
+[17:31:38] 22858963,171397,Move,276,326,400,0,4934,110,4788,0x27,0x27
+[17:31:38] 22896976,171435,Move,278,326,400,110,4788,258,4788,0x27,0x27
+[17:31:38] 22946976,171485,Move,282,324,400,258,4788,552,4640,0x27,0x27
+[17:31:38] 22996967,171535,Move,286,320,400,552,4640,846,4350,0x27,0x27
+[17:31:38] 23030978,171569,Move,289,317,400,846,4350,1068,4130,0x27,0x27
+[17:31:38] 23080972,171619,Move,293,313,400,1068,4130,1362,3838,0x27,0x27
+[17:31:38] 23131975,171670,Move,296,310,400,1362,3838,1582,3618,0x27,0x27
+[17:31:38] 23181965,171720,Move,299,306,400,1582,3618,1804,3326,0x27,0x27
+[17:31:38] 23232975,171771,Move,303,302,400,1804,3326,2098,3032,0x27,0x27
+[17:31:38] 23282974,171821,Move,307,296,400,2098,3032,2392,2594,0x27,0x27
+[17:31:38] 23333975,171872,Move,311,292,400,2392,2594,2686,2302,0x27,0x27
+[17:31:38] 23383974,171922,Move,315,288,400,2686,2302,2982,2008,0x27,0x27
+[17:31:38] 23433965,171972,Move,315,286,400,2982,2008,2982,1862,0x27,0x27
+[17:31:38] 23630968,172169,Move,315,287,400,2982,1862,2982,1936,0x27,0x27
+[17:31:38] 23664976,172203,Move,313,289,400,2982,1936,2834,2082,0x27,0x27
+[17:31:38] 23702967,172240,Move,308,294,400,2834,2082,2466,2448,0x27,0x27
+[17:31:38] 23753975,172291,Move,294,302,400,2466,2448,1436,3032,0x27,0x27
+[17:31:38] 23803975,172341,Move,278,310,400,1436,3032,258,3618,0x27,0x27
+[17:31:38] 23854977,172392,Move,266,314,400,258,3618,0,3910,0x27,0x27
+[17:31:38] 23904974,172442,Move,255,318,400,0,3910,0,4204,0x27,0x27
+[17:31:38] 23954970,172492,Move,249,321,400,0,4204,0,4422,0x07,0x07
+[17:31:38] 23988975,172526,Move,246,324,400,0,4422,0,4640,0x07,0x07
+[17:31:38] 24039972,172577,Move,245,324,400,0,4640,0,4640,0x07,0x07
+[17:31:38] 24205968,172743,Move,246,324,400,0,4640,0,4640,0x07,0x07
+[17:31:38] 24217968,172755,Move,247,324,400,0,4640,0,4640,0x07,0x07
+[17:31:38] 24231966,172769,Move,249,325,400,0,4640,0,4714,0x07,0x07
+[17:31:38] 24270963,172808,Move,261,325,400,0,4714,0,4714,0x27,0x27
+[17:31:38] 24282963,172820,Move,266,325,400,0,4714,0,4714,0x27,0x27
+[17:31:38] 24296962,172834,Move,270,325,400,0,4714,0,4714,0x27,0x27
+[17:31:38] 24310963,172848,Move,275,325,400,0,4714,38,4714,0x27,0x27
+[17:31:38] 24337969,172875,Move,284,324,400,38,4714,700,4640,0x27,0x27
+[17:31:38] 24375975,172913,Move,297,320,400,700,4640,1656,4350,0x27,0x27
+[17:31:38] 24425975,172963,Move,306,317,400,1656,4350,2318,4130,0x27,0x27
+[17:31:38] 24476978,173014,Move,313,313,400,2318,4130,2834,3838,0x27,0x27
+[17:31:38] 24526973,173063,Move,317,311,400,2834,3838,3128,3692,0x27,0x27
+[17:31:38] 24576966,173112,Move,321,311,400,3128,3692,3422,3692,0x27,0x27
+[17:31:38] 24627975,173163,Move,323,311,400,3422,3692,3570,3692,0x27,0x27
+[17:31:38] 24715963,173251,Move,323,312,400,3570,3692,3570,3764,0x27,0x27
+[17:31:38] 24740974,173276,Move,323,314,400,3570,3764,3570,3910,0x27,0x27
+[17:31:38] 24778970,173314,Move,322,316,400,3570,3910,3496,4056,0x27,0x27
+[17:31:38] 24829975,173365,Move,319,320,400,3496,4056,3276,4350,0x27,0x27
+[17:31:38] 24879972,173415,Move,316,322,400,3276,4350,3054,4494,0x27,0x27
+[17:31:38] 24930972,173466,Move,313,322,400,3054,4494,2834,4494,0x27,0x27
+[17:31:38] 24980972,173516,Move,312,324,400,2834,4494,2760,4640,0x27,0x27
+[17:31:38] 25014972,173549,Move,311,324,400,2760,4640,2686,4640,0x27,0x27
+[17:31:38] 25093968,173627,Move,311,325,400,2686,4640,2686,4714,0x27,0x27
+[17:31:38] 25274984,173808,Up,311,325,400,2686,4714,2686,4714,0x27,0x20
+[17:31:38] 25982973,174516,Down,304,374,400,2686,4714,2686,4714,0x00,0x0b
+[17:31:38] 26008970,174542,Move,304,373,400,2686,4714,2686,4714,0x0b,0x0b
+[17:31:38] 26022967,174556,Move,304,371,400,2686,4714,2686,4714,0x2b,0x2b
+[17:31:38] 26034967,174568,Move,304,367,400,2686,4714,2686,4714,0x2b,0x2b
+[17:31:38] 26048970,174582,Move,304,362,400,2686,4714,2172,6720,0x2b,0x27
+[17:31:38] 26089970,174623,Move,305,341,400,2172,6720,2246,5884,0x27,0x27
+[17:31:38] 26140974,174673,Move,306,310,400,2246,5884,2318,3618,0x27,0x27
+[17:31:38] 26190974,174723,Move,308,292,400,2318,3618,2466,2302,0x27,0x27
+[17:31:38] 26240961,174773,Move,313,273,400,2466,2302,2834,912,0x27,0x27
+[17:31:38] 26291974,174824,Move,321,256,400,2834,912,3422,0,0x27,0x27
+[17:31:38] 26341966,174874,Move,334,239,400,3422,0,4378,0,0x27,0x27
+[17:31:38] 26392974,174925,Move,349,217,400,4378,0,5482,0,0x07,0x07
+[17:31:38] 26436992,174968,Move,353,207,400,5482,0,5520,0,0x07,0x07
+[17:31:38] 26438972,174970,Up,353,207,400,5520,0,5520,0,0x07,0x00
+[17:31:38] 26950997,175482,Down,356,275,400,5520,0,5520,1056,0x20,0x27
+[17:31:38] 27015968,175547,Move,356,276,400,5520,1056,5520,1130,0x27,0x27
+[17:31:38] 27043963,175575,Move,355,276,400,5520,1130,5520,1130,0x27,0x27
+[17:31:38] 27055959,175587,Move,354,278,400,5520,1130,5520,1276,0x27,0x27
+[17:31:38] 27097972,175629,Move,349,289,400,5520,1276,5484,2080,0x27,0x27
+[17:31:38] 27148979,175680,Move,340,308,400,5484,2080,4822,3470,0x27,0x27
+[17:31:38] 27198969,175730,Move,331,322,400,4822,3470,4158,4494,0x27,0x27
+[17:31:38] 27232976,175764,Move,323,336,400,4158,4494,3570,5518,0x27,0x27
+[17:31:38] 27282966,175814,Move,315,356,400,3570,5518,2982,6720,0x27,0x27
+[17:31:38] 27316976,175848,Move,309,369,400,2982,6720,2540,6720,0x27,0x27
+[17:31:38] 27350978,175882,Move,307,375,400,2540,6720,2392,6720,0x07,0x07
+[17:31:38] 27383966,175915,Move,304,381,400,2392,6720,2172,6720,0x07,0x07
+[17:31:38] 27417976,175949,Move,302,383,400,2172,6720,2024,6720,0x07,0x07
+[17:31:38] 27451976,175982,Move,299,386,400,2024,6720,1804,6720,0x07,0x07
+[17:31:38] 27484968,176015,Move,297,388,400,1804,6720,1656,6720,0x07,0x07
+[17:31:38] 27518976,176049,Move,295,390,400,1656,6720,1510,6720,0x07,0x07
+[17:31:38] 27551966,176082,Move,293,392,400,1510,6720,1362,6720,0x07,0x07
+[17:31:38] 27585967,176116,Move,290,393,400,1362,6720,1142,6720,0x07,0x07
+[17:31:38] 27619979,176150,Move,287,393,400,1142,6720,920,6720,0x07,0x07
+[17:31:38] 27669977,176200,Move,283,393,400,920,6720,626,6720,0x07,0x07
+[17:31:38] 27703979,176234,Move,281,393,400,626,6720,478,6720,0x07,0x07
+[17:31:38] 27753976,176283,Move,279,393,400,478,6720,332,6720,0x07,0x07
+[17:31:38] 27787977,176317,Move,276,393,400,332,6720,110,6720,0x07,0x07
+[17:31:38] 27820968,176350,Move,275,393,400,110,6720,38,6720,0x07,0x07
+[17:31:38] 27850960,176380,Move,273,393,400,38,6720,0,6720,0x07,0x07
+[17:31:38] 27883969,176412,Move,270,393,400,0,6720,0,6720,0x07,0x07
+[17:31:38] 27893968,176422,Move,269,393,400,0,6720,0,6720,0x07,0x07
+[17:31:38] 27905968,176434,Move,268,393,400,0,6720,0,6720,0x07,0x07
+[17:31:38] 27919968,176448,Move,267,393,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 27931968,176460,Move,265,393,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 27945968,176474,Move,263,394,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 27957968,176486,Move,261,395,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 27971968,176500,Move,258,396,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 27983968,176512,Move,254,398,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 27997968,176526,Move,250,400,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 28009968,176538,Move,246,402,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 28023968,176552,Move,241,404,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 28035968,176564,Move,236,406,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 28049968,176578,Move,231,409,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 28063968,176592,Move,224,412,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 28073968,176602,Up,224,412,400,0,6720,0,6720,0x07,0x00
+[17:31:39] 28388995,176916,Down,272,399,400,0,6720,0,6720,0x00,0x0b
+[17:31:39] 28479974,177007,Move,273,399,400,0,6720,0,6720,0x0b,0x0b
+[17:31:39] 28493969,177021,Move,274,399,400,0,6720,0,6720,0x0b,0x0b
+[17:31:39] 28505969,177033,Move,276,399,400,0,6720,0,6720,0x0b,0x0b
+[17:31:39] 28519972,177047,Move,278,399,400,0,6720,0,6720,0x0b,0x0b
+[17:31:39] 28533969,177061,Move,281,399,400,0,6720,478,6720,0x0b,0x07
+[17:31:39] 28577977,177105,Move,292,400,400,478,6720,1288,6720,0x07,0x07
+[17:31:39] 28610966,177137,Move,303,403,400,1288,6720,2098,6720,0x07,0x07
+[17:31:39] 28644975,177171,Move,311,405,400,2098,6720,2686,6720,0x07,0x07
+[17:31:39] 28678974,177205,Move,322,408,400,2686,6720,3496,6720,0x07,0x07
+[17:31:39] 28711971,177238,Move,328,410,400,3496,6720,3938,6720,0x07,0x07
+[17:31:39] 28745976,177272,Move,338,413,400,3938,6720,4674,6720,0x07,0x07
+[17:31:39] 28795969,177322,Move,348,419,400,4674,6720,5410,6720,0x07,0x07
+[17:31:39] 28817004,177343,Move,350,421,400,5410,6720,5520,6720,0x07,0x07
+[17:31:39] 28818986,177345,Up,350,421,400,5520,6720,5520,6720,0x07,0x00
+[17:31:39] 29486977,178013,Down,361,418,400,5520,6720,5520,6720,0x00,0x0b
+[17:31:39] 29552972,178079,Move,361,417,400,5520,6720,5520,6720,0x0b,0x0b
+[17:31:39] 29566972,178093,Move,361,416,400,5520,6720,5520,6720,0x0b,0x0b
+[17:31:39] 29578969,178105,Move,361,415,400,5520,6720,5520,6720,0x0b,0x0b
+[17:31:39] 29592972,178119,Move,360,413,400,5520,6720,5520,6720,0x0b,0x0b
+[17:31:39] 29604972,178131,Move,359,411,400,5520,6720,5520,6720,0x0b,0x0b
+[17:31:39] 29618968,178145,Move,358,409,400,5520,6720,5520,6720,0x0b,0x07
+[17:31:39] 29630971,178157,Move,357,407,400,5520,6720,5520,6720,0x07,0x07
+[17:31:39] 29644971,178171,Move,356,405,400,5520,6720,5520,6720,0x07,0x07
+[17:31:39] 29656971,178183,Move,355,402,400,5520,6720,5520,6720,0x07,0x07
+[17:31:39] 29670971,178197,Move,353,400,400,5520,6720,5520,6720,0x07,0x07
+[17:31:39] 29682971,178209,Move,351,397,400,5520,6720,5520,6720,0x07,0x07
+[17:31:39] 29696971,178223,Move,348,394,400,5520,6720,5410,6720,0x07,0x07
+[17:31:39] 29737979,178264,Move,340,385,400,5410,6720,4822,6720,0x07,0x07
+[17:31:39] 29787976,178314,Move,330,373,400,4822,6720,4086,6720,0x07,0x07
+[17:31:39] 29837965,178364,Move,324,364,400,4086,6720,3644,6720,0x27,0x27
+[17:31:39] 29871976,178398,Move,320,355,400,3644,6720,3350,6720,0x27,0x27
+[17:31:39] 29905974,178432,Move,317,349,400,3350,6720,3128,6470,0x27,0x27
+[17:31:39] 29938966,178465,Move,315,345,400,3128,6470,2982,6178,0x27,0x27
+[17:31:39] 29972974,178499,Move,312,339,400,2982,6178,2760,5740,0x27,0x27
+[17:31:39] 30022967,178549,Move,309,333,400,2760,5740,2540,5300,0x27,0x27
+[17:31:39] 30056977,178583,Move,306,327,400,2540,5300,2318,4862,0x27,0x27
+[17:31:39] 30090979,178617,Move,303,324,400,2318,4862,2098,4642,0x27,0x27
+[17:31:39] 30123965,178650,Move,303,320,400,2098,4642,2098,4350,0x27,0x27
+[17:31:39] 30174979,178701,Move,303,315,400,2098,4350,2098,3984,0x27,0x27
+[17:31:39] 30224978,178751,Move,303,311,400,2098,3984,2098,3692,0x27,0x27
+[17:31:39] 30275978,178802,Move,303,310,400,2098,3692,2098,3618,0x27,0x27
+[17:31:39] 30505978,179032,Up,303,310,400,2098,3618,2098,3618,0x27,0x20
+[17:31:39] 31265993,179791,Down,332,342,400,2098,3618,4232,5958,0x20,0x27
+[17:31:39] 31317048,179842,Up,332,342,400,4232,5958,4232,5958,0x27,0x20
+[17:31:39] 32286978,180811,Down,364,397,400,4232,5958,4232,5958,0x00,0x0b
+[17:31:39] 32312974,180837,Move,364,396,400,4232,5958,4232,5958,0x0b,0x0b
+[17:31:39] 32326974,180851,Move,363,394,400,4232,5958,4232,5958,0x0b,0x0b
+[17:31:39] 32338976,180863,Move,362,392,400,4232,5958,4232,5958,0x0b,0x0b
+[17:31:39] 32352976,180877,Move,361,389,400,4232,5958,5520,6720,0x0b,0x07
+[17:31:39] 32392964,180917,Move,354,376,400,5520,6720,5520,6720,0x07,0x07
+[17:31:39] 32404965,180929,Move,351,371,400,5520,6720,5520,6720,0x27,0x27
+[17:31:39] 32418965,180943,Move,348,366,400,5520,6720,5410,6720,0x27,0x27
+[17:31:39] 32459963,180984,Move,339,351,400,5410,6720,4746,6616,0x27,0x27
+[17:31:39] 32510975,181035,Move,325,330,400,4746,6616,3718,5080,0x27,0x27
+[17:31:39] 32560966,181085,Move,308,313,400,3718,5080,2466,3838,0x27,0x27
+[17:31:39] 32594974,181119,Move,291,298,400,2466,3838,1214,2740,0x27,0x27
+[17:31:39] 32644966,181169,Move,278,286,400,1214,2740,258,1862,0x27,0x27
+[17:31:39] 32678978,181203,Move,275,283,400,258,1862,38,1644,0x27,0x27
+[17:31:39] 32728962,181253,Move,270,276,400,38,1644,0,1132,0x27,0x27
+[17:31:39] 32762978,181287,Move,267,271,400,0,1132,0,766,0x27,0x27
+[17:31:39] 32812970,181337,Move,263,267,400,0,766,0,472,0x27,0x27
+[17:31:39] 32846978,181371,Move,261,265,400,0,472,0,326,0x27,0x27
+[17:31:39] 32896968,181421,Move,260,263,400,0,326,0,180,0x27,0x27
+[17:31:39] 33018966,181543,Move,261,263,400,0,180,0,180,0x27,0x27
+[17:31:39] 33032967,181557,Move,262,263,400,0,180,0,180,0x27,0x27
+[17:31:39] 33044968,181569,Move,263,264,400,0,180,0,254,0x27,0x27
+[17:31:39] 33077967,181602,Move,266,266,400,0,254,0,400,0x27,0x27
+[17:31:39] 33115974,181640,Move,274,273,400,0,400,0,912,0x27,0x27
+[17:31:39] 33165970,181690,Move,288,287,400,0,912,994,1936,0x27,0x27
+[17:31:39] 33216976,181741,Move,301,303,400,994,1936,1950,3106,0x27,0x27
+[17:31:39] 33266974,181791,Move,310,316,400,1950,3106,2614,4056,0x27,0x27
+[17:31:39] 33300978,181825,Move,319,331,400,2614,4056,3276,5154,0x27,0x27
+[17:31:39] 33350974,181875,Move,333,357,400,3276,5154,4306,6720,0x27,0x27
+[17:31:39] 33400965,181924,Move,348,391,400,4306,6720,5410,6720,0x07,0x07
+[17:31:39] 33434974,181958,Move,352,401,400,5410,6720,5520,6720,0x07,0x07
+[17:31:39] 33468974,181991,Move,355,412,400,5520,6720,5520,6720,0x07,0x07
+[17:31:39] 33474968,181997,Up,355,412,400,5520,6720,5520,6720,0x07,0x00
+[17:31:39] 34455973,182978,Down,352,408,400,5520,6720,5520,6720,0x00,0x0b
+[17:31:39] 34615964,183138,Move,351,408,400,5520,6720,5520,6720,0x0b,0x0b
+[17:31:39] 34629966,183152,Move,350,408,400,5520,6720,5520,6720,0x0b,0x0b
+[17:31:39] 34641966,183164,Move,349,408,400,5520,6720,5520,6720,0x0b,0x0b
+[17:31:39] 34655964,183178,Move,348,408,400,5520,6720,5520,6720,0x0b,0x0b
+[17:31:39] 34667964,183190,Move,346,409,400,5520,6720,5520,6720,0x0b,0x0b
+[17:31:39] 34681966,183204,Move,344,410,400,5520,6720,5116,6720,0x0b,0x07
+[17:31:39] 34727970,183250,Move,336,410,400,5116,6720,4526,6720,0x07,0x07
+[17:31:39] 34778983,183301,Move,312,410,400,4526,6720,2760,6720,0x07,0x07
+[17:31:39] 34811964,183334,Move,292,410,400,2760,6720,1288,6720,0x07,0x07
+[17:31:39] 34845972,183368,Move,283,410,400,1288,6720,626,6720,0x07,0x07
+[17:31:39] 34895961,183418,Move,267,410,400,626,6720,0,6720,0x07,0x07
+[17:31:39] 34929969,183451,Move,259,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 34943967,183465,Move,257,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 34955967,183477,Move,255,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 34969967,183491,Move,253,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 34981967,183503,Move,252,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 34995967,183517,Move,250,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35007967,183529,Move,248,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35021967,183543,Move,247,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35033967,183555,Move,245,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35047967,183569,Move,244,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35059967,183581,Move,242,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35073967,183595,Move,240,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35085967,183607,Move,238,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35099967,183621,Move,236,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35111967,183633,Move,234,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35125967,183647,Move,233,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35139967,183661,Move,232,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35151965,183673,Move,231,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35165967,183687,Move,230,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35177967,183699,Move,229,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35191967,183713,Move,228,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35217964,183739,Move,227,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35361968,183883,Move,228,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35373968,183895,Move,229,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35387968,183909,Move,230,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35399966,183921,Move,231,410,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35413968,183935,Move,232,409,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35425968,183947,Move,233,408,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35439968,183961,Move,234,407,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35451968,183973,Move,235,406,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35465968,183987,Move,237,404,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35477968,183999,Move,238,402,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35491966,184013,Move,239,400,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35505968,184027,Move,240,398,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35517968,184039,Move,241,395,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35531968,184053,Move,242,393,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35543968,184065,Move,243,391,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35557968,184079,Move,244,389,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35569968,184091,Move,244,387,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35583968,184105,Move,244,385,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35595968,184117,Move,244,383,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35609968,184131,Move,244,381,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35621968,184143,Move,244,378,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35635968,184157,Move,243,375,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35647968,184169,Move,242,373,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35661968,184183,Move,241,371,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35673968,184195,Move,240,369,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35687968,184209,Move,239,367,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35701968,184223,Move,239,366,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35713968,184235,Move,238,364,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35727968,184249,Move,237,363,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35739968,184261,Move,236,362,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35753968,184275,Move,236,361,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35765968,184287,Move,235,360,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35779968,184301,Move,235,359,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35791968,184313,Move,234,358,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35805968,184327,Move,234,357,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35831968,184353,Move,233,356,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35857968,184379,Move,232,355,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35871968,184393,Move,231,355,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35883968,184405,Move,230,354,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35897968,184419,Move,229,354,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35909968,184431,Move,228,354,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35923968,184445,Move,227,354,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35949968,184471,Move,226,353,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 35961968,184483,Move,225,352,400,0,6720,0,6690,0x07,0x07
+[17:31:39] 35983970,184505,Move,225,351,400,0,6690,0,6616,0x07,0x07
+[17:31:39] 36017968,184538,Move,222,343,400,0,6616,0,6032,0x07,0x07
+[17:31:39] 36055980,184576,Move,219,330,400,0,6032,0,5080,0x07,0x07
+[17:31:39] 36105976,184626,Move,216,317,400,0,5080,0,4130,0x07,0x07
+[17:31:39] 36156975,184677,Move,215,305,400,0,4130,0,3252,0x07,0x07
+[17:31:39] 36206976,184727,Move,211,297,400,0,3252,0,2668,0x07,0x07
+[17:31:39] 36257976,184778,Move,211,290,400,0,2668,0,2156,0x07,0x07
+[17:31:39] 36307976,184828,Move,211,286,400,0,2156,0,1862,0x07,0x07
+[17:31:39] 36357963,184877,Move,210,282,400,0,1862,0,1570,0x07,0x07
+[17:31:39] 36391977,184911,Move,210,280,400,0,1570,0,1424,0x07,0x07
+[17:31:39] 36441963,184960,Move,209,276,400,0,1424,0,1132,0x07,0x07
+[17:31:39] 36525968,185044,Move,208,276,400,0,1132,0,1132,0x07,0x07
+[17:31:39] 36539968,185058,Move,207,277,400,0,1132,0,1204,0x07,0x07
+[17:31:39] 36572960,185091,Move,205,280,400,0,1204,0,1424,0x07,0x07
+[17:31:39] 36609966,185128,Move,202,292,400,0,1424,0,2302,0x07,0x07
+[17:31:39] 36643978,185162,Move,199,310,400,0,2302,0,3618,0x07,0x07
+[17:31:39] 36693969,185212,Move,198,330,400,0,3618,0,5080,0x07,0x07
+[17:31:39] 36727978,185246,Move,198,349,400,0,5080,0,6470,0x07,0x07
+[17:31:39] 36761975,185280,Move,198,367,400,0,6470,0,6720,0x07,0x07
+[17:31:39] 36794965,185313,Move,198,379,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 36800963,185319,Move,198,385,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 36814963,185333,Move,198,390,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 36826963,185345,Move,198,395,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 36840963,185359,Move,198,399,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 36852963,185371,Move,198,402,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 36866963,185385,Move,198,405,400,0,6720,0,6720,0x07,0x07
+[17:31:39] 36878963,185397,Move,198,407,400,0,6720,0,6720,0x07,0x07
+[17:31:40] 36892963,185411,Move,198,408,400,0,6720,0,6720,0x07,0x07
+[17:31:40] 36904963,185423,Move,198,409,400,0,6720,0,6720,0x07,0x07
+[17:31:40] 36918963,185437,Move,198,410,400,0,6720,0,6720,0x07,0x07
+[17:31:40] 36930963,185449,Move,198,411,400,0,6720,0,6720,0x07,0x07
+[17:31:40] 36944963,185463,Move,198,412,400,0,6720,0,6720,0x07,0x07
+[17:31:40] 37048963,185567,Move,198,411,400,0,6720,0,6720,0x07,0x07
+[17:31:40] 37062963,185581,Move,198,410,400,0,6720,0,6720,0x07,0x07
+[17:31:40] 37074963,185593,Move,198,408,400,0,6720,0,6720,0x07,0x07
+[17:31:40] 37088962,185607,Move,198,406,400,0,6720,0,6720,0x07,0x07
+[17:31:40] 37100963,185619,Move,198,402,400,0,6720,0,6720,0x07,0x07
+[17:31:40] 37114963,185633,Move,198,398,400,0,6720,0,6720,0x07,0x07
+[17:31:40] 37126963,185645,Move,198,394,400,0,6720,0,6720,0x07,0x07
+[17:31:40] 37140963,185659,Move,197,390,400,0,6720,0,6720,0x07,0x07
+[17:31:40] 37154963,185673,Move,196,385,400,0,6720,0,6720,0x07,0x07
+[17:31:40] 37166963,185685,Move,195,380,400,0,6720,0,6720,0x07,0x07
+[17:31:40] 37180963,185699,Move,194,375,400,0,6720,0,6720,0x07,0x07
+[17:31:40] 37192963,185711,Move,193,369,400,0,6720,0,6720,0x07,0x07
+[17:31:40] 37206963,185725,Move,192,363,400,0,6720,0,6720,0x07,0x07
+[17:31:40] 37218963,185737,Move,191,357,400,0,6720,0,6720,0x07,0x07
+[17:31:40] 37232963,185751,Move,190,351,400,0,6720,0,6616,0x07,0x07
+[17:31:40] 37281969,185800,Move,187,337,400,0,6616,0,5592,0x07,0x07
+[17:31:40] 37315979,185834,Move,184,323,400,0,5592,0,4568,0x07,0x07
+[17:31:40] 37366974,185885,Move,180,307,400,0,4568,0,3398,0x07,0x07
+[17:31:40] 37416974,185935,Move,176,298,400,0,3398,0,2740,0x07,0x07
+[17:31:40] 37466966,185985,Move,172,290,400,0,2740,0,2156,0x07,0x07
+[17:31:40] 37500979,186019,Move,170,286,400,0,2156,0,1862,0x07,0x07
+[17:31:40] 37550962,186069,Move,168,278,400,0,1862,0,1278,0x07,0x07
+[17:31:40] 37584978,186103,Move,167,272,400,0,1278,0,838,0x07,0x07
+[17:31:40] 37634962,186152,Move,164,266,400,0,838,0,400,0x07,0x07
+[17:31:40] 37668979,186186,Move,161,258,400,0,400,0,0,0x07,0x07
+[17:31:40] 37718966,186236,Move,157,248,400,0,0,0,0,0x07,0x07
+[17:31:40] 37728963,186246,Move,156,246,400,0,0,0,0,0x07,0x07
+[17:31:40] 37742963,186260,Move,155,244,400,0,0,0,0,0x07,0x07
+[17:31:40] 37754963,186272,Move,154,242,400,0,0,0,0,0x07,0x07
+[17:31:40] 37768963,186286,Move,154,240,400,0,0,0,0,0x07,0x07
+[17:31:40] 37780963,186298,Move,154,239,400,0,0,0,0,0x07,0x07
+[17:31:40] 37794963,186312,Move,154,238,400,0,0,0,0,0x07,0x07
+[17:31:40] 37806963,186324,Move,154,237,400,0,0,0,0,0x07,0x07
+[17:31:40] 37820963,186338,Move,154,236,400,0,0,0,0,0x07,0x07
+[17:31:40] 37832963,186350,Move,154,235,400,0,0,0,0,0x07,0x07
+[17:31:40] 37846963,186364,Move,154,234,400,0,0,0,0,0x07,0x07
+[17:31:40] 37938963,186456,Move,155,235,400,0,0,0,0,0x07,0x07
+[17:31:40] 37950963,186468,Move,156,236,400,0,0,0,0,0x07,0x07
+[17:31:40] 37964963,186482,Move,158,238,400,0,0,0,0,0x07,0x07
+[17:31:40] 37976963,186494,Move,160,241,400,0,0,0,0,0x07,0x07
+[17:31:40] 37990963,186508,Move,162,244,400,0,0,0,0,0x07,0x07
+[17:31:40] 38002963,186520,Move,165,248,400,0,0,0,0,0x07,0x07
+[17:31:40] 38016963,186534,Move,168,252,400,0,0,0,0,0x07,0x07
+[17:31:40] 38028963,186546,Move,170,256,400,0,0,0,0,0x07,0x07
+[17:31:40] 38042963,186560,Move,173,260,400,0,0,0,0,0x07,0x07
+[17:31:40] 38054963,186572,Move,176,264,400,0,0,0,254,0x07,0x07
+[17:31:40] 38088977,186606,Move,182,272,400,0,254,0,838,0x07,0x07
+[17:31:40] 38138962,186656,Move,194,292,400,0,838,0,2302,0x07,0x07
+[17:31:40] 38172979,186690,Move,204,304,400,0,2302,0,3180,0x07,0x07
+[17:31:40] 38222962,186740,Move,213,316,400,0,3180,0,4056,0x07,0x07
+[17:31:40] 38256978,186774,Move,220,325,400,0,4056,0,4716,0x07,0x07
+[17:31:40] 38306967,186824,Move,228,334,400,0,4716,0,5374,0x07,0x07
+[17:31:40] 38340978,186858,Move,232,338,400,0,5374,0,5666,0x07,0x07
+[17:31:40] 38390970,186908,Move,236,342,400,0,5666,0,5958,0x07,0x07
+[17:31:40] 38424978,186942,Move,239,344,400,0,5958,0,6104,0x07,0x07
+[17:31:40] 38458977,186976,Move,240,344,400,0,6104,0,6104,0x07,0x07
+[17:31:40] 38460967,186978,Move,241,344,400,0,6104,0,6104,0x07,0x07
+[17:31:40] 38474967,186992,Move,242,344,400,0,6104,0,6104,0x07,0x07
+[17:31:40] 38512967,187030,Move,243,343,400,0,6104,0,6032,0x07,0x07
+[17:31:40] 38537975,187055,Move,244,342,400,0,6032,0,5958,0x07,0x07
+[17:31:40] 38571972,187088,Move,247,339,400,0,5958,0,5740,0x07,0x07
+[17:31:40] 38609975,187126,Move,250,336,400,0,5740,0,5520,0x27,0x27
+[17:31:40] 38659965,187176,Move,254,332,400,0,5520,0,5228,0x27,0x27
+[17:31:40] 38693978,187210,Move,255,332,400,0,5228,0,5228,0x27,0x27
+[17:31:40] 38695973,187212,Move,256,332,400,0,5228,0,5228,0x27,0x27
+[17:31:40] 38721967,187238,Move,257,332,400,0,5228,0,5228,0x27,0x27
+[17:31:40] 38735968,187252,Move,258,332,400,0,5228,0,5228,0x27,0x27
+[17:31:40] 38747966,187264,Move,259,332,400,0,5228,0,5228,0x27,0x27
+[17:31:40] 38761968,187278,Move,260,332,400,0,5228,0,5228,0x27,0x27
+[17:31:40] 38773968,187290,Move,261,332,400,0,5228,0,5228,0x27,0x27
+[17:31:40] 38787968,187304,Move,262,332,400,0,5228,0,5228,0x27,0x27
+[17:31:40] 38799968,187316,Move,263,332,400,0,5228,0,5228,0x27,0x27
+[17:31:40] 38813968,187330,Move,264,332,400,0,5228,0,5228,0x27,0x27
+[17:31:40] 38825966,187342,Move,265,332,400,0,5228,0,5228,0x27,0x27
+[17:31:40] 38839968,187356,Move,266,332,400,0,5228,0,5228,0x27,0x27
+[17:31:40] 38853968,187370,Move,268,332,400,0,5228,0,5228,0x27,0x27
+[17:31:40] 38865968,187382,Move,269,332,400,0,5228,0,5228,0x27,0x27
+[17:31:40] 38879968,187396,Move,271,332,400,0,5228,0,5228,0x27,0x27
+[17:31:40] 38891968,187408,Move,273,332,400,0,5228,0,5228,0x27,0x27
+[17:31:40] 38905968,187422,Move,275,332,400,0,5228,38,5228,0x27,0x27
+[17:31:40] 38941963,187458,Move,277,332,400,38,5228,184,5228,0x27,0x27
+[17:31:40] 38979973,187496,Move,280,332,400,184,5228,406,5228,0x27,0x27
+[17:31:40] 39029974,187546,Move,283,332,400,406,5228,626,5228,0x27,0x27
+[17:31:40] 39115968,187631,Move,283,331,400,626,5228,626,5154,0x27,0x27
+[17:31:40] 39142975,187658,Move,283,329,400,626,5154,626,5008,0x27,0x27
+[17:31:40] 39180973,187696,Move,283,326,400,626,5008,626,4788,0x27,0x27
+[17:31:40] 39214978,187730,Move,283,324,400,626,4788,626,4642,0x27,0x27
+[17:31:40] 39264975,187780,Move,283,315,400,626,4642,626,3984,0x27,0x27
+[17:31:40] 39298980,187814,Move,283,304,400,626,3984,626,3180,0x27,0x27
+[17:31:40] 39349975,187865,Move,283,296,400,626,3180,626,2594,0x27,0x27
+[17:31:40] 39399974,187915,Move,283,291,400,626,2594,626,2228,0x27,0x27
+[17:31:40] 39449968,187964,Move,283,287,400,626,2228,626,1936,0x27,0x27
+[17:31:40] 39483977,187998,Move,283,286,400,626,1936,626,1862,0x27,0x27
+[17:31:40] 39858967,188372,Up,283,286,400,626,1862,626,1862,0x27,0x20
+[17:31:40] TINYDRAW_MINIMAP_CAPTURE_END events=866
+[17:31:42] TINYDRAW_LIVE_PRESENT kind=zoom zoom=25 x=0 y=0 compose_us=26348 scroll_us=0 exposed_compose_us=0 chrome_us=6001 chrome_prepare_us=1103 chrome_stage_us=4898 read_submit_us=41297 read_complete_us=44859 transfer_wait_us=20703 tile_pixels=0 uniform_pixels=0 overview_pixels=164864 fallback_pixels=0 resident_tiles=0 fallback_tiles=0 pushes=11 tear_wait_us=13727 tear_edge_isr_to_resume_us=11 tear_edge_observed=1 tear_edge_wait_resumed=1 tear_edge_timeout=0 tear_heal_attempted=0 tear_heal_command_sent=0 presentation_experiment=boundary-top-sweep te_edge=rising requested_clock_mhz=50 effective_clock_mhz=40 frame_reused=0 pass=1
+[17:31:42] TINYDRAW_LIVE_LEDGER site=zoom renders=82 cold=60 damage=9 evict=0 stale=0 unexplained=13 total_renders=1139 unique=519 amplification=2.195
+[17:31:42] TINYDRAW_LIVE_PRESENT kind=zoom zoom=50 x=0 y=70 compose_us=12165 scroll_us=0 exposed_compose_us=0 chrome_us=5725 chrome_prepare_us=1156 chrome_stage_us=4569 read_submit_us=19798 read_complete_us=23365 transfer_wait_us=21200 tile_pixels=6144 uniform_pixels=90272 overview_pixels=0 fallback_pixels=68448 resident_tiles=30 fallback_tiles=18 pushes=11 tear_wait_us=6306 tear_edge_isr_to_resume_us=14 tear_edge_observed=1 tear_edge_wait_resumed=1 tear_edge_timeout=0 tear_heal_attempted=0 tear_heal_command_sent=0 presentation_experiment=boundary-top-sweep te_edge=rising requested_clock_mhz=50 effective_clock_mhz=40 frame_reused=0 pass=1
+[17:31:42] TINYDRAW_LIVE_LEDGER site=zoom renders=0 cold=0 damage=0 evict=0 stale=0 unexplained=0 total_renders=1139 unique=519 amplification=2.195
+[17:31:42] TINYDRAW_FILL_BASELINE result=complete zoom=50 x=0 y=70 revision=4 steps=6 wall_us=47599 compute_total_us=12582 compute_max_us=2320 present_total_us=30801 present_max_us=7048 tick_max_us=2337 producer_failures=0 presentation_failures=0
+[17:31:42] TINYDRAW_LIVE_FILL_DONE zoom=50 x=0 y=70 revision=4
+[17:31:42] TINYDRAW_LIVE_REPAIR views=7 steps=16
+[17:31:42] TINYDRAW_LIVE_SETTLE zoom=50 tiles=2 total_us=12211 max_tile_us=6479 failures=0
+[17:31:42] TINYDRAW_LIVE_PRESENT kind=zoom zoom=100 x=184 y=326 compose_us=11635 scroll_us=0 exposed_compose_us=0 chrome_us=5529 chrome_prepare_us=1142 chrome_stage_us=4387 read_submit_us=22624 read_complete_us=26242 transfer_wait_us=20376 tile_pixels=0 uniform_pixels=2800 overview_pixels=0 fallback_pixels=162064 resident_tiles=2 fallback_tiles=54 pushes=11 tear_wait_us=9695 tear_edge_isr_to_resume_us=12 tear_edge_observed=1 tear_edge_wait_resumed=1 tear_edge_timeout=0 tear_heal_attempted=0 tear_heal_command_sent=0 presentation_experiment=boundary-top-sweep te_edge=rising requested_clock_mhz=50 effective_clock_mhz=40 frame_reused=0 pass=1
+[17:31:42] TINYDRAW_LIVE_LEDGER site=zoom renders=18 cold=6 damage=6 evict=0 stale=3 unexplained=3 total_renders=1157 unique=525 amplification=2.204
+[17:31:42] TINYDRAW_FILL_BASELINE result=complete zoom=100 x=184 y=326 revision=4 steps=19 wall_us=118379 compute_total_us=41303 compute_max_us=2596 present_total_us=67502 present_max_us=8303 tick_max_us=2612 producer_failures=0 presentation_failures=0
+[17:31:42] TINYDRAW_LIVE_FILL_DONE zoom=100 x=184 y=326 revision=4
+[17:31:42] TINYDRAW_LIVE_REPAIR views=24 steps=185
