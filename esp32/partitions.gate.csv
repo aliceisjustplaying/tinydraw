@@ -1,9 +1,9 @@
-# Gate-only layout: diagnostic text gets 256 KiB from the export partition.
-# Product firmware continues to use partitions.csv unchanged.
+# Gate-only layout: diagnostic text gets 256 KiB beyond the product app partition.
+# The 16 MiB flash has room to preserve the complete drawing and export partitions.
 # Name,   Type, SubType, Offset, Size, Flags
 nvs,       data, nvs,           , 0x6000,
 phy_init,  data, phy,           , 0x1000,
-factory,   app,  factory,       , 1280K,
+factory,   app,  factory,       , 1792K,
 drawing,   data, 0x40,          , 3M,
-export,    data, 0x41,          , 4864K,
+export,    data, 0x41,          , 5M,
 coredump,  data, coredump,      , 64K,
