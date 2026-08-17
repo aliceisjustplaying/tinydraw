@@ -86,6 +86,16 @@ deinitialized Wi-Fi. Credentials remain in the ignored local header. Host and
 build evidence is in the
 [`NTP receipt`](../benchmark-results/v2-ntp-sync-2026-08-17/RECEIPT.md).
 
+Vector persistence uses the portable `authority_journal` module and one ESP
+flash adapter. Journal commits persist retained operations/samples, the active
+Redo boundary, generation/epoch, complete remembered navigation, chrome
+selections, and the next Stroke identity; raster caches remain derived. Each
+transaction occupies aligned 4 KiB sectors and publishes its CRC-checked final
+marker last. The ESP worker performs erase/write/readback below the touch task,
+while startup replays only active authority into a fresh overview. The current
+3 MiB journal preserves existing Recovery points and reports full rather than
+compacting; owner direction defers two-arena recycling and metadata.
+
 ## First milestone: `MaterializedCanvas`
 
 Task #52 may initially add only:

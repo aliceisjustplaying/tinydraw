@@ -45,6 +45,11 @@ Autosave, charging, power-off/on, and macOS Finder mounting are verified.
   grouped, preserves at least ten levels, and replays bounded pen/eraser damage.
   Host, sanitizer, firmware, and owner glass checks are green; high-zoom cold
   rebuilding remains in the final optimization round.
+- Autosave appends whole-Stroke, history, New, navigation, and tool-state
+  Journal commits to the 3 MiB drawing partition. A low-priority flash worker
+  publishes a CRC-checked final marker last; startup restores vector authority,
+  Redo, zoom-return positions, and selections, then rebuilds derived pixels.
+  Full-journal compaction is deliberately deferred.
 - Export streams the vector authority to flash with visible progress, then
   opens an explicit read-only USB mode with an on-screen **Return to Drawing**
   action. Host eject keeps the medium absent
