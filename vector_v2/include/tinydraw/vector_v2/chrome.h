@@ -143,8 +143,10 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
 [[nodiscard]] ChromeLevelPoint chrome_minimap_level_point(ChromePoint point,
                                                           const ChromeNavigation& navigation);
 // Suppresses touch jitter so a stationary minimap gesture remains a jump tap.
+// The promotion distance shrinks with the viewport at high zoom, making the
+// tiny viewport easier to grab without enlarging the minimap's canvas occlusion.
 [[nodiscard]] bool chrome_promotes_minimap_drag(ChromePoint start, ChromePoint current,
-                                                const ChromeState& state);
+                                                const ChromeState& state, int zoom_percent);
 // Zoom controls own stationary taps, but a deliberate drag that starts on the
 // rail becomes a canvas pan when the pan tool is active.
 [[nodiscard]] bool chrome_promotes_pan_drag(ChromePoint start, ChromePoint current,

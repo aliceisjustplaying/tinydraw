@@ -68,6 +68,8 @@ constexpr int kMinimapWidth = 80;
 constexpr int kMinimapHeight = 98;
 constexpr int kHitSlop = 8;
 constexpr float kMinimapDragPromotionPixels = 4.0F;
+constexpr float kMinimapDragPromotionPixels200 = 3.0F;
+constexpr float kMinimapDragPromotionPixels400 = 2.0F;
 constexpr float kPanDragPromotionPixels = 8.0F;
 constexpr int kMainHitTop = kMainTop - kHitSlop;
 constexpr std::array kMainCenters{34, 94, 154, 214, 274, 334};
@@ -663,15 +665,20 @@ ChromeLevelPoint chrome_minimap_level_point(ChromePoint point, const ChromeNavig
   };
 }
 
-bool chrome_promotes_minimap_drag(ChromePoint start, ChromePoint current,
-                                  const ChromeState& state) {
+bool chrome_promotes_minimap_drag(ChromePoint start, ChromePoint current, const ChromeState& state,
+                                  int zoom_percent) {
   if (!chrome_minimap_contains(start, state)) {
     return false;
   }
+  // The whole minimap is already a drag target. At higher zoom the viewport
+  // indicator becomes only a few panel pixels wide, so reduce the movement
+  // needed to claim a drag while retaining one pixel of jitter tolerance.
+  const float threshold = zoom_percent >= 400   ? kMinimapDragPromotionPixels400
+                          : zoom_percent >= 200 ? kMinimapDragPromotionPixels200
+                                                : kMinimapDragPromotionPixels;
   const float delta_x = current.x - start.x;
   const float delta_y = current.y - start.y;
-  return delta_x * delta_x + delta_y * delta_y >=
-         kMinimapDragPromotionPixels * kMinimapDragPromotionPixels;
+  return delta_x * delta_x + delta_y * delta_y >= threshold * threshold;
 }
 
 bool chrome_contains(ChromePoint point, const ChromeState& state) {

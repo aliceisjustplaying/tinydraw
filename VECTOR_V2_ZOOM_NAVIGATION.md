@@ -239,9 +239,12 @@ Implemented behavior:
   overlay cannot leak pen/eraser authority beneath itself;
 - a stationary tap centers the drawing-area focus on the selected overview
   point and performs one complete overlay-safe refresh;
-- movement below 4 px is treated as touch jitter and remains a tap;
-- at 4 px, the gesture becomes a continuous viewport drag through the ordinary
-  boundary-drained pan path;
+- the whole visible minimap is the drag-start target, not only the viewport
+  rectangle;
+- movement below the zoom-scaled intent threshold remains a tap: 4 px at
+  25–100%, 3 px at 200%, and 2 px at 400%;
+- reaching that threshold becomes a continuous viewport drag through the
+  ordinary boundary-drained pan path;
 - drag projection is relative to the gesture's starting origin, remains
   captured outside the frame, and clamps at every world edge;
 - popup, confirmation, and export-progress states hide and disable the minimap;
@@ -251,7 +254,10 @@ Tapping the zoom percentage to toggle visibility remains optional. The owner
 promoted viewport dragging into feature-complete scope on 2026-08-17; host and
 physical presenter gates landed the same day. The physical tap/drag sample
 completed in 20.164/16.529 ms with ring reuse and exact target origins. See
-[`RECEIPT.md`](benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md).
+[`navigation receipt`](benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md).
+The same-day owner glass follow-up liked minimap navigation but found the 400%
+viewport difficult to grab; the zoom-scaled intent adjustment and host/product
+build evidence are in the [`touch-target receipt`](benchmark-results/minimap-touch-target-2026-08-17/RECEIPT.md).
 
 ## Non-goals
 

@@ -1,0 +1,77 @@
+-- Configuring done (0.2s)
+-- Generating done (0.0s)
+-- Build files have been written to: /Users/sarah/src/tries/2026-08-09-espdraw/out/build/host-release
+[1/8] Building CXX object vector_v2/CMakeFiles/tinydraw_vector_v2.dir/src/chrome.cpp.o
+[2/8] Linking CXX static library vector_v2/libtinydraw_vector_v2.a
+[3/8] Linking CXX executable vector_v2/tinydraw_vector_v2_ink_angularity
+ld: warning: ignoring duplicate libraries: 'core/libtinydraw_core.a'
+[4/8] Linking CXX executable vector_v2/tinydraw_vector_v2_lod_characterization
+[5/8] Linking CXX executable vector_v2/tinydraw_vector_v2_settled_aa_prototype
+ld: warning: ignoring duplicate libraries: 'core/libtinydraw_core.a'
+[6/8] Linking CXX executable vector_v2/tinydraw_vector_v2_raster_census
+ld: warning: ignoring duplicate libraries: 'core/libtinydraw_core.a'
+[7/8] Building CXX object vector_v2/CMakeFiles/tinydraw_vector_v2_tests.dir/tests/chrome_test.cpp.o
+[8/8] Linking CXX executable vector_v2/tinydraw_vector_v2_tests
+Test project /Users/sarah/src/tries/2026-08-09-espdraw/out/build/host-release
+      Start  1: tinydraw_vector_v2_tests
+ 1/29 Test  #1: tinydraw_vector_v2_tests .......................   Passed    0.38 sec
+      Start  2: tinydraw_ink_trace_check_recorded
+ 2/29 Test  #2: tinydraw_ink_trace_check_recorded ..............   Passed    0.15 sec
+      Start  3: tinydraw_vector_v2_cold_replay_exactness
+ 3/29 Test  #3: tinydraw_vector_v2_cold_replay_exactness .......   Passed    0.19 sec
+      Start  4: tinydraw_vector_v2_fuzz_collinear_coalesce
+ 4/29 Test  #4: tinydraw_vector_v2_fuzz_collinear_coalesce .....   Passed    0.11 sec
+      Start  5: tinydraw_vector_v2_fuzz_collinear_regression
+ 5/29 Test  #5: tinydraw_vector_v2_fuzz_collinear_regression ...   Passed    0.47 sec
+      Start  6: tinydraw_vector_v2_fuzz_random_documents
+ 6/29 Test  #6: tinydraw_vector_v2_fuzz_random_documents .......   Passed    0.06 sec
+      Start  7: tinydraw_tests
+ 7/29 Test  #7: tinydraw_tests .................................   Passed    0.08 sec
+      Start  8: tinydraw_fat16_generate
+ 8/29 Test  #8: tinydraw_fat16_generate ........................   Passed    0.01 sec
+      Start  9: tinydraw_fat16_fsck
+ 9/29 Test  #9: tinydraw_fat16_fsck ............................   Passed    0.00 sec
+      Start 10: tinydraw_perf_characterization
+10/29 Test #10: tinydraw_perf_characterization .................   Passed    0.03 sec
+      Start 11: tinydraw_replay_e2e
+11/29 Test #11: tinydraw_replay_e2e ............................   Passed    0.02 sec
+      Start 12: tinydraw_replay_snapshot
+12/29 Test #12: tinydraw_replay_snapshot .......................   Passed    0.01 sec
+      Start 13: tinydraw_overlap_e2e
+13/29 Test #13: tinydraw_overlap_e2e ...........................   Passed    0.01 sec
+      Start 14: tinydraw_overlap_snapshot
+14/29 Test #14: tinydraw_overlap_snapshot ......................   Passed    0.01 sec
+      Start 15: tinydraw_tight_joins_e2e
+15/29 Test #15: tinydraw_tight_joins_e2e .......................   Passed    0.01 sec
+      Start 16: tinydraw_tight_joins_snapshot
+16/29 Test #16: tinydraw_tight_joins_snapshot ..................   Passed    0.01 sec
+      Start 17: tinydraw_ui_preview_e2e
+17/29 Test #17: tinydraw_ui_preview_e2e ........................   Passed    0.01 sec
+      Start 18: tinydraw_ui_preview_snapshot
+18/29 Test #18: tinydraw_ui_preview_snapshot ...................   Passed    0.01 sec
+      Start 19: tinydraw_color_palette_e2e
+19/29 Test #19: tinydraw_color_palette_e2e .....................   Passed    0.02 sec
+      Start 20: tinydraw_color_palette_snapshot
+20/29 Test #20: tinydraw_color_palette_snapshot ................   Passed    0.01 sec
+      Start 21: tinydraw_tool_palette_e2e
+21/29 Test #21: tinydraw_tool_palette_e2e ......................   Passed    0.02 sec
+      Start 22: tinydraw_tool_palette_snapshot
+22/29 Test #22: tinydraw_tool_palette_snapshot .................   Passed    0.01 sec
+      Start 23: tinydraw_new_dialog_e2e
+23/29 Test #23: tinydraw_new_dialog_e2e ........................   Passed    0.01 sec
+      Start 24: tinydraw_new_dialog_snapshot
+24/29 Test #24: tinydraw_new_dialog_snapshot ...................   Passed    0.01 sec
+      Start 25: tinydraw_replay_rejects_invalid_lifecycle
+25/29 Test #25: tinydraw_replay_rejects_invalid_lifecycle ......   Passed    0.01 sec
+      Start 26: tinydraw_replay_rejects_invalid_syntax
+26/29 Test #26: tinydraw_replay_rejects_invalid_syntax .........   Passed    0.01 sec
+      Start 27: tinydraw_undo_e2e
+27/29 Test #27: tinydraw_undo_e2e ..............................   Passed    0.02 sec
+      Start 28: tinydraw_pan_e2e
+28/29 Test #28: tinydraw_pan_e2e ...............................   Passed    0.01 sec
+      Start 29: tinydraw_png_roundtrip
+29/29 Test #29: tinydraw_png_roundtrip .........................   Passed    0.02 sec
+
+100% tests passed out of 29
+
+Total Test time (real) =   1.75 sec
