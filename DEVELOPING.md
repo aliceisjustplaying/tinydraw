@@ -159,8 +159,14 @@ second only while touch is idle. Short BOOT presses toggle demo recording and a 
 replays it. The lower PMU button performs a four-second hardware shutdown and short-press cold
 boot; no sleep mode exists yet.
 
-Export streams the 1104×1344 RGB565 world through PNGenc into a raw flash partition. A read-only
-FAT16 volume is synthesized one requested sector at a time and served through TinyUSB MSC. Starting
+Raster V1 export streams the 1104×1344 RGB565 world through PNGenc into a raw flash partition.
+Vector V2 export renders the 1472×1792 world with the production settled-AA algorithm in one
+64-row band plus one 64×64 window, then sends those rows through the same PNG encoder. It also
+streams the existing path-based SVG without changing its geometry or formatting. One metadata page
+commits both files only when their authority epoch, revision, and operation count still match.
+
+A read-only FAT16 volume is synthesized one requested sector at a time and served through TinyUSB
+MSC. Raster V1 exposes `DRAWING.PNG`; Vector V2 exposes `DRAWING.SVG` and `DRAWING.PNG`. Starting
 MSC replaces USB Serial/JTAG because both use the S3's internal PHY. On a battery-powered board,
 eject the volume, power off, then hold BOOT during power-on to recover the ROM flashing port.
 
