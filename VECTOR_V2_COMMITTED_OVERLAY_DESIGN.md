@@ -65,9 +65,8 @@ invariant (review §8.3):
 - `materialized_revision` — the revision the canvas (overview + tiles)
   has fully absorbed. Trails authority by the **pending operation range**
   `[first_pending_op, authority_end)`.
-- Absorption happens per-operation (or per bounded batch) through the
-  existing `append_incrementally_in_place` machinery, restructured as the
-  §8.4 phase machine so a slice can stop between phases, not inside one.
+- Absorption happens per-operation through `absorb_pending_operation` and the
+  §8.4 phase runner.
   Mutation stays fail-safe: a tile that cannot be finished in this slice
   simply is not retained yet.
 
@@ -102,7 +101,7 @@ length, which drain keeps short.
 
 ### 3.4 Serialization boundaries
 
-Pan, zoom, Undo (future), SVG export, autosave snapshot (future), New, and
+Pan, zoom, Undo/Redo, SVG/PNG export, autosave checkpoint, New, and
 document capacity rejection **drain first** at an explicit boundary
 (review §8.3). Each boundary emits a drain receipt (ops drained, slices,
 wall). Rationale: these paths either recompose large regions (pan/zoom —
@@ -126,14 +125,13 @@ Today's behavior is the worst case, never worse.
 | presenter staging | pending-ink patch on staged regions | ink presentation receipts; pan stays untouched (drain-before-pan) |
 
 Not touched: pan compose/cadence (drain-before-pan), panel transport, cold
-producer, autosave (not yet built — this design is why the final cold
-20-run closure waits for it).
+producer, or the autosave worker. Autosave is now enabled in the full device
+battery; the final 20-run cold closure remains open.
 
 ## 5. Landing plan (one measured hypothesis per revision)
 
-1. **Scaffold, no behavior change:** restructure
-   `append_incrementally_in_place` into explicit §8.4 phases with the
-   existing single-revision semantics; phase/work counters already exist.
+1. **Scaffold, no behavior change:** extract the explicit §8.4 phase runner;
+   phase/work counters already exist.
    Receipt: byte-identical gate battery (verdict vector, exactness,
    INKTRACE latencies within noise).
 2. **Revision pair + pending range in core, host-first:** absorption

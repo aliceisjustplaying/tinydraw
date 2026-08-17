@@ -1,7 +1,7 @@
 # Vector V2 zoom and navigation behavior
 
 Status: zoom, pan, and required minimap interaction implemented
-Last updated: 2026-08-17
+Last updated: 2026-08-18
 
 ## Scope
 
@@ -47,20 +47,13 @@ Vector V2 uses a vertical navigation rail on the right side of the drawing area:
 
 ## Camera state
 
-The navigation model stores:
+The navigation model stores the current zoom, current level-space origin, and
+one world-space focus point. Every zoom transition derives and clamps its target
+origin from that focus. There are no per-zoom remembered-origin arrays or exact
+origin round trips.
 
-1. the current zoom;
-2. the current level-space origin;
-3. the last clamped origin used at each tiled zoom;
-4. the world-space focus associated with each remembered origin;
-5. the current world-space focus point.
-
-Per-zoom origins improve return navigation. World-space focus preserves spatial
-continuity when entering a zoom that has no useful remembered view.
-
-Camera state is application state, not document authority. It is reset by New
-for the first implementation. Persistence across restart may be added later as
-user-preference/session state.
+Camera state is application state, not document authority. New and restart use
+product defaults; ordinary navigation never creates a Journal transaction.
 
 ## Zoom transition algorithm
 
@@ -78,29 +71,16 @@ A later gesture or minimap action may supply an explicit panel-space focus.
 When changing from zoom A to zoom B:
 
 1. Convert the panel-space focus at zoom A to a world-space point.
-2. Save zoom A's current clamped origin.
-3. If zoom B has a remembered origin whose associated focus matches the
-   retained focus within four quarter-world units and whose viewport still
-   contains that focus, restore that origin. The tolerance covers the bounded
-   integer-conversion drift of a complete button cycle without accepting a
-   stale view after the user pans elsewhere.
-4. Otherwise calculate zoom B's origin so the same world-space point remains at
-   the same panel-space focus.
-5. Clamp the result to zoom B's world extent.
-6. Make zoom B and the new origin current.
-7. Present valid cached materialization immediately and refine missing detail
+2. Calculate zoom B's origin so that world point remains at the same panel-space
+   focus.
+3. Clamp the result to zoom B's world extent.
+4. Make zoom B and the derived origin current.
+5. Present valid cached materialization immediately and refine missing detail
    cooperatively.
 
-This hybrid rule gives both desirable behaviors:
-
-- zooming in/out stays centered on the same part of the drawing;
-- returning to a recently explored zoom restores its useful local position when
-  doing so does not cause a surprising jump away from the current focus.
-
-Implemented 2026-08-17. The physical 400→25→50→100→200→400 classifier returns
-exactly to the explored `(2300,3100)` origin; host coverage also rejects stale
-remembered views. See
-[`RECEIPT.md`](benchmark-results/zoom-cycle-return-2026-08-17/RECEIPT.md).
+The complete button cycle preserves the explored world focus within four
+quarter-world units. Exact dormant-camera restoration was removed during the
+maintainability cleanup because it duplicated state and persistence policy.
 
 ### 25% transitions
 
@@ -110,8 +90,8 @@ world-space focus is retained.
 Leaving 25% uses that retained focus. If the user has not established a focus
 through a prior tiled view, use the world center.
 
-The current test-app behavior that always enters tiled zooms at `(0,0)` is not
-product behavior and must be removed.
+Test-only fixtures may begin tiled zooms at `(0,0)` when navigation continuity
+is outside their scope; that is not product behavior.
 
 ## Pan behavior
 
@@ -158,9 +138,9 @@ Rules:
 ## Cache-protection behavior
 
 The raw materialized-tile pool started at 320 slots and currently uses 448.
-The current pool and idle-repair policy pass mixed-drawing revisit gates; the
-remaining overlap-50 cold-render red is tracked separately in
-[`PROJECT_STATE.md`](PROJECT_STATE.md#finish-line-scorecard).
+The current pool and idle-repair policy pass mixed-drawing revisit gates. The
+formerly binding overlap-50 cold gate is also closed; current measurements are
+in [`PROJECT_STATE.md`](PROJECT_STATE.md#finish-line-scorecard).
 
 Each tiled zoom may protect the raw identities intersecting its most recently
 committed viewport footprint. Protection means eviction preference, not an
@@ -175,9 +155,8 @@ absolute pin:
 6. a revision mutation invalidates affected protected identities normally;
 7. cache policy never changes document or pixel correctness.
 
-The implementation should use a small explicit protection generation/tier rather
-than permanent display pins. Display pins retain their existing short lifetime
-and correctness purpose.
+The implementation uses recent-view protection preference rather than permanent
+display pins. Display pins retain their short lifetime and correctness purpose.
 
 ### Capacity expectation
 
@@ -196,10 +175,9 @@ current measurements live in [`PROJECT_STATE.md`](PROJECT_STATE.md).
 ### Host tests
 
 - all adjacent zoom transitions preserve the chosen world focus before clamping;
-- round trips 25→50→25, 25→100→25, 100→400→100, and 400→25→400;
-- the complete 400→25→50→100→200→400 button cycle restores the exact explored
-  400% origin;
-- remembered origins restore only when compatible with current focus;
+- round trips 25→50→25, 25→100→25, 100→400→100, and 400→25→400 preserve focus;
+- the complete 400→25→50→100→200→400 button cycle preserves the explored
+  world focus within bounded integer rounding;
 - every corner and edge clamps correctly at every zoom;
 - extent indicators match pan availability;
 - 25% always uses `(0,0)` and exposes no pan/extent affordance;
@@ -215,7 +193,7 @@ current measurements live in [`PROJECT_STATE.md`](PROJECT_STATE.md).
   protected footprints;
 - verify the 1.5 MiB export reserve still allocates;
 - record p50/p95/max touch-poll and presentation timings;
-- classify the complete button cycle on device and require exact origin return.
+- classify the complete button cycle on device and require focus continuity.
 
 ### Glass test
 
@@ -237,34 +215,25 @@ Implemented behavior:
 
 - its visible frame owns touch for every selected tool, so an interactive
   overlay cannot leak pen/eraser authority beneath itself;
-- a stationary tap centers the drawing-area focus on the selected overview
-  point and performs one complete overlay-safe refresh;
-- the whole visible minimap is the drag-start target, not only the viewport
-  rectangle;
-- movement below the zoom-scaled intent threshold remains a tap: 4 px at
-  25–100%, 3 px at 200%, and 2 px at 400%;
-- reaching that threshold becomes a continuous viewport drag through the
-  ordinary boundary-drained pan path;
-- the truthful ~5×5 px viewport at 400% has a 28×28 px invisible grab target
-  clamped inside the minimap; starting there preserves the finger's offset;
-- starting elsewhere in the minimap directly acquires the viewport under the
-  finger instead of applying an easy-to-miss delta to a distant tiny box;
-- after acquisition the gesture remains captured outside the frame and clamps
-  at every world edge;
+- Down maps absolutely into the world and centers immediately; every promoted
+  Move continues that absolute mapping, so travel does not depend on zoom or on
+  grabbing the tiny viewport rectangle;
+- drag candidacy covers the complete right-side dock through `y=448` and stays
+  captured after promotion;
+- stationary presses in the bottom overlap remain size/document taps; upward
+  motion promotes at 2 px, while horizontal or downward motion promotes at 8 px;
+- promoted movement uses the ordinary boundary-drained pan path and clamps at
+  every world edge;
 - popup, confirmation, and export-progress states hide and disable the minimap;
 - at 25%, where the full world already fits, tap and drag are successful no-ops.
 
-Tapping the zoom percentage to toggle visibility remains optional. The owner
-promoted viewport dragging into feature-complete scope on 2026-08-17; host and
-physical presenter gates landed the same day. The physical tap/drag sample
-completed in 20.164/16.529 ms with ring reuse and exact target origins. See
-[`navigation receipt`](benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md).
-The same-day owner glass follow-up liked minimap navigation but found the 400%
-viewport difficult to grab. Reducing the intent threshold alone did not solve
-it: a far-start drag was hit-tested but moved the distant viewport only by the
-small relative finger delta. The enlarged grab target and direct-acquisition
-follow-up are covered by the
-[`follow-up receipt`](benchmark-results/stroke-svg-minimap-acquire-2026-08-17/RECEIPT.md).
+Tapping the zoom percentage to toggle visibility remains optional. The earlier
+relative-drag and enlarged-grab-target iterations are historical. Absolute
+pointer control and full-dock arbitration were owner-accepted on 2026-08-17;
+the final compact capture recorded 778 events / 4,074 offers, zero overflow or
+failure marker, promoted drags through `y=441`, and stationary `y=443..445`
+taps with no camera movement. See the
+[`final receipt`](benchmark-results/minimap-absolute-pointer-2026-08-17/RECEIPT.md).
 
 ## Non-goals
 

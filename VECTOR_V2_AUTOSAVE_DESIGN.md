@@ -1,179 +1,134 @@
-# Vector V2 autosave and recovery design
+# Vector V2 autosave and recovery contract
 
-Status: single-journal baseline and drawn-document hardware recovery accepted
-2026-08-17. Autosave-enabled performance joins the final optimization round.
-Two-arena compaction and arena metadata are explicitly deferred by owner
-direction.
+Status: the authority-only append journal and host recovery fixtures are
+implemented. The earlier physical drawn-document receipt covered the superseded
+session-state schema; current-head physical recovery and normal-product
+performance with real journal writes remain release work. Safe partition
+recycling remains deferred.
 
-This design persists Vector V2 drawing authority without moving flash work into
-the ink path. It follows the product contract in `SHIP_CONTRACT.md` §7 and the
-finish order in `V2_ROADMAP.md` Phase 5.
+Owner decision, 2026-08-17: persistence contains drawing authority only. The
+earlier session-state journal was deliberately narrowed; navigation and chrome
+state are not durable product data.
 
-## Plain-English model
+Autosave persists only `OperationLog` authority. Navigation, selected tool,
+brush size, palette state, and chrome state start from product defaults after a
+restart. The next Stroke identity is derived from the restored active authority,
+not stored as separate session state. Overview pixels,
+tiles, settled output, chrome sprites, previews, and export buffers are derived
+and are rebuilt.
 
-A completed Stroke, Undo, Redo, New, camera change, or tool change creates one
-small **journal commit**. The commit records enough information to reproduce the
-new document state, but it does not store overview or tile pixels. A commit is
-recoverable only after its final marker reaches flash.
+## Authority model
 
-Most drawing commits contain only the newly completed Stroke. Undo, Redo, and
-UI-state commits contain no sample payload. A checkpoint contains the complete retained operation list, including the
-inactive Redo tail. The first Journal commit is a checkpoint; a later checkpoint
-may resynchronize after a queue/allocation failure. Recycling a full partition
-is deferred.
+`OperationLog` remains the only live owner of painter-ordered operations. The
+journal records immutable snapshots or deltas from a generation-checked
+`AuthorityReadView`:
 
-The app copies authority bytes before handing a commit to the flash worker. The
-worker never reads `OperationLog`, `MaterializedCanvas`, navigation, or chrome
-state. Flash erase/write latency therefore cannot lock or race drawing
-authority.
+- `kCheckpoint` carries every retained operation and sample, including the
+  inactive Redo tail, plus the active prefix, generation, and epoch.
+- `kAppendStroke` carries operations from `first_operation` through the new
+  active prefix. The branch point replaces any persisted Redo tail.
+- `kUpdate` carries no operation payload. It publishes a changed active prefix,
+  generation, or epoch for history changes.
 
-## One durable authority
+The first transaction is a checkpoint. A blank checkpoint represents New or a
+fresh document. No transaction stores cache pixels or UI-only state.
 
-The persisted state is:
+## Portable journal seam
 
-1. painter-ordered retained Stroke chunks and samples, including Redo;
-2. the active chunk prefix;
-3. monotonic document generation and operation-log epoch;
-4. complete navigation state needed for zoom-cycle return positions;
-5. selected drawing tool, size, palette page, and color;
-6. the next nonzero Stroke identity, so a post-restart Stroke cannot merge with
-   the final restored Stroke.
-
-Overview pixels, tile pixels, occupancy, replay indexes, chrome sprites,
-settled-AA pixels, and other caches are rebuilt after recovery.
-
-## Deep module seams
-
-### Portable journal seam
-
-`authority_journal.h` owns the versioned wire format, CRC validation, final
-commit marker, transaction semantics, interrupted-write recovery, and bounded
-caller-owned restore storage.
+[`authority_journal.h`](vector_v2/include/tinydraw/vector_v2/authority_journal.h)
+owns the wire format and recovery rules:
 
 ```cpp
-class AuthorityJournal {
- public:
-  static std::optional<std::size_t> encoded_size(
-      JournalChange, const OperationLog&);
-  static bool encode(JournalChange, const OperationLog&, JournalState,
-                     std::uint64_t sequence, std::span<std::byte> output);
-  static JournalRecovery recover(const JournalSource&, std::size_t bytes,
-                                 OperationLog&, JournalState&,
-                                 std::span<std::byte> scratch);
-};
+std::optional<AuthorityJournalPlan> prepare_authority_journal(
+    JournalChange change, const OperationLog& log);
+
+bool encode_authority_journal(const AuthorityJournalPlan& plan,
+                              const OperationLog& log,
+                              std::uint64_t sequence,
+                              std::span<std::byte> output);
+
+JournalRecovery recover_authority_journal(
+    const AuthorityJournalSource& source, std::size_t bytes,
+    std::span<OperationRecord> records,
+    std::span<CompactOperationSample> samples);
 ```
 
-The portable seam is tested with memory-backed sources. Tests truncate every
-write phase and corrupt headers, payloads, CRCs, and markers. They observe only
-recovered authority and state.
+Callers prepare and encode while holding the log's serialized ownership.
+Recovery writes into caller-owned bounded storage and returns an
+`AuthorityReadView`; the caller restores `OperationLog` only after the complete
+journal scan succeeds.
 
-### ESP flash adapter seam
+## ESP flash adapter
 
-`VectorV2AutosaveStore` owns the `drawing` partition, the FreeRTOS writer task,
-queueing, bounded sector erase/write, startup scanning, and visible full/error
-status. It never erases a committed Journal entry.
+`VectorV2AutosaveStore` owns the `drawing` partition, queue, low-priority writer,
+erase/write/readback work, startup scan, and flush:
 
 ```cpp
-class VectorV2AutosaveStore {
- public:
-  RestoreStatus restore(OperationLog&, NavigationState&, ChromeState&,
-                        std::uint16_t& next_stroke_id);
-  bool submit(JournalChange, const OperationLog&, const JournalState&);
-  bool submit_checkpoint(const OperationLog&, const JournalState&);
-  bool flush(TickType_t timeout);
-  SaveStatus status() const;
-};
+VectorV2AutosaveRestoreStatus restore(OperationLog& log);
+bool submit(JournalChange change, const OperationLog& log);
+bool submit_checkpoint(const OperationLog& log);
+bool checkpoint_required() const;
+bool flush(std::uint32_t timeout_ms);
 ```
 
-Callers submit only after a logical state change. `submit()` copies and encodes
-from one generation-checked authority view, then queues immutable bytes. The
-worker owns and frees those bytes after writing. A queue/allocation failure
-requests a later full checkpoint instead of publishing a partial delta.
+`submit()` sizes and encodes one coherent transaction into PSRAM before it
+queues the immutable bytes. The worker never reads the live log or canvas.
+Allocation, encoding, queue, or write failure requests a later checkpoint and
+never publishes a partial delta.
 
-## Wire and publication rules
+## Wire and interruption rules
 
-- All integers have an explicit little-endian encoding; raw C++ object layout
-  is never persisted.
-- Every transaction has magic, format version, kind, total/payload lengths,
-  sequence, resulting authority counters, persisted UI state, payload CRC, and
-  header CRC.
-- Stroke and checkpoint payloads encode operation metadata followed by exact
-  compact samples. Sample offsets are rebuilt during recovery.
-- The final marker repeats the transaction sequence and whole-transaction CRC.
-  It is the last write. Missing or invalid markers leave the prior commit as
-  the recovery point.
-- Recovery validates a complete transaction before applying it. Structural or
-  semantic failure stops the scan and preserves the last valid state.
-- Append commits declare the active prefix they replace. This reproduces
-  branch-after-Undo without retaining a second history owner.
-- Checkpoints replace recovered state; later commits replay normally.
+- Integers use explicit little-endian encoding; C++ object layout is never
+  persisted.
+- Headers contain format/kind/length fields, sequence, authority identity and
+  counts, and a header CRC.
+- Checkpoint and append payloads contain explicit operation metadata followed
+  by exact compact samples.
+- The final 16-byte marker repeats the sequence and transaction CRC and is
+  written last.
+- Recovery validates lengths, ordering, authority transitions, operation
+  boundaries, payloads, CRCs, and the marker before accepting a transaction.
+- An invalid or incomplete tail after a valid transaction is discarded; the
+  preceding committed transaction remains the recovery point.
 
-## Flash layout and interruption behavior
+## Flash layout and scheduling
 
-The 3 MiB `drawing` partition is one append-only journal. Fresh initialization
-erases it once, writes the first checkpoint body, and writes that checkpoint's
-commit marker last. Each transaction occupies a whole number of 4 KiB sectors;
-its marker is the final 16 bytes of that sector-aligned extent. Later
-transactions append into fresh sectors. Startup scans to the newest valid
-marker and resumes at its aligned end. An interrupted tail therefore begins at
-a sector boundary and can be erased without touching the prior Recovery point.
-This deliberately trades packing density for simple, exact tail recovery while
-two-arena compaction remains deferred.
+The 3 MiB partition is one sector-aligned append-only journal. Each transaction
+occupies whole 4 KiB sectors, so an interrupted tail begins at a sector boundary
+and can be erased without touching the preceding commit. Fresh initialization
+erases the partition on the worker before publishing the first checkpoint.
 
-When no complete next transaction fits, autosave reports `full` and preserves
-all existing Recovery points. It does not erase or compact committed data. A
-minimum-size transaction consumes 4 KiB, so the current 3 MiB partition holds
-at most 768 Journal commits; multi-sector long Strokes reduce that count.
-Two-arena compaction and metadata—which would safely recycle a full partition
-while retaining the old Recovery point—are deferred for a later project round.
+A completed physical stroke queues one append after authority publication.
+Undo and Redo queue an update; New queues a blank checkpoint. An interrupted
+tail or failed delta sets `checkpoint_required()`. Export and other hardware
+ownership transitions call `flush()` and remain in drawing mode if it times out.
+Pan, zoom, tool, color, and other UI-only changes do not write flash.
 
-No destructive physical power-cut test is required. Host fixtures simulate
-interruption after every transaction write phase.
-
-## Product scheduling
-
-- A completed Stroke queues one append commit after finger-up. The in-progress
-  Stroke is never persisted.
-- Undo, Redo, and New queue their authority commit after successful
-  publication.
-- Pan, zoom, tool, size, and color changes queue state commits; repeated
-  state-only changes may be coalesced while an equivalent newer state remains
-  queued.
-- The flash worker runs below the touch sampler. Its only units of flash work
-  are one sector erase, one bounded data write, or one final marker/metadata
-  write.
-- Export and power-risk transitions call `flush()` before changing hardware
-  ownership. A timeout leaves drawing mode active and reports a save failure.
-- Product performance gates run with the same store and worker enabled.
+The worker stays below touch sampling priority and performs bounded erase,
+write, marker, and readback units. Final performance evidence must exercise this
+store from normal product-loop Stroke/history events; gate-harness restoration
+alone does not measure write contention.
 
 ## Startup recovery
 
-1. Scan aligned transactions from the beginning of the `drawing` partition
-   through the last complete journal commit.
-2. Restore retained operations, active prefix, generation, epoch, navigation,
-   chrome selections, and next Stroke identity.
-3. Replay only the active prefix into a fresh 25% overview.
-4. Publish that overview at the recovered generation; all higher-zoom tiles
-   begin cold and rebuild through the existing producer.
-5. If no valid V2 transaction exists, start a blank document and schedule its
-   first checkpoint. If a later transaction is incomplete or corrupt, recover
-   the prior commit and schedule a checkpoint after erasing only the aligned
-   tail on the background worker.
+1. Scan aligned transactions through the newest complete commit.
+2. Restore retained operations, samples, active prefix, generation, and epoch.
+3. Replay the active prefix into a fresh 25% overview.
+4. Start at the default 25% view; higher zooms rebuild through the normal
+   producer when first visited.
+5. On empty or pre-V2 data, start blank and schedule the first checkpoint.
+6. After a discarded tail, erase only that aligned tail on the worker and
+   schedule a checkpoint.
 
-## TDD slices
+## Limits and verification
 
-1. One checkpoint round-trips retained operations, Redo boundary, generation,
-   epoch, navigation, tool state, and next Stroke identity.
-2. A multi-chunk Stroke append after Undo replaces the Redo tail exactly.
-3. Undo, Redo, state-only, and New commits replay exactly.
-4. Truncation at every byte and corruption of each integrity field recover the
-   prior complete commit.
-5. OperationLog restore rejects malformed/capacity-exceeding snapshots without
-   mutation.
-6. A single-journal adapter resumes at the first erased byte and reports full
-   without erasing any Recovery point.
-7. Product startup rebuilds overview pixels exactly and queues later mutations
-   without touching the live-ink presentation path.
-8. ESP builds, autosave-enabled performance gates, and a normal firmware flash
-   close the integration. Physical power-cut testing remains excluded by owner
-   direction.
+The journal reports full without erasing committed recovery points. A minimum
+transaction consumes 4 KiB; long strokes may consume several sectors. Two-arena
+compaction and metadata are deferred until partition recycling is required.
+
+Host tests cover checkpoint, append-after-Undo branch replacement, history
+updates, blank reset, bounded restore capacity, truncation at every later-tail
+byte, single-byte corruption, and sector padding. Release closure additionally
+requires product/gate builds, normal-product performance with real journal
+writes, a physical authority-only recovery check, and export-flush verification. Destructive physical
+power-cut testing remains excluded by owner direction.

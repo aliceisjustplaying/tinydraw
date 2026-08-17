@@ -1,19 +1,18 @@
 # Vector V2 drawing history design
 
-Status: implementation in progress, 2026-08-17.
+Status: implemented, 2026-08-17.
 
 Progress:
 
-- [x] Slice 1: coherent active/retained authority read views with generation-checked reads.
+- [x] Slice 1: coherent active/retained authority read views.
 - [x] Slice 2: whole-Stroke Undo/Redo and exact damage.
 - [x] Slice 3: branch replacement after Undo.
 - [x] Slice 4: localized canvas transition, including exact mixed pen/eraser replay.
 - [x] Slice 5: product wiring, host suite, and credentials-enabled product/gate builds.
 - [x] Slice 6: normal firmware flash and cursory owner glass acceptance; high-zoom cold rebuild optimization is deferred to the final performance round.
 
-This design covers the in-memory authority and whole-Stroke Undo/Redo. It does
-not define the autosave journal; autosave will consume the read view defined
-here after this seam is proven.
+This design covers the in-memory authority and whole-Stroke Undo/Redo. Autosave
+consumes the same serialized authority view.
 
 ## Plain-English model
 
@@ -31,13 +30,13 @@ history authority.
 
 ## One owner, not two
 
-`OperationLog` will be deepened into the complete in-memory drawing authority.
+`OperationLog` is the complete in-memory drawing authority.
 A second `StrokeAuthority` wrapper would create two objects that could disagree
 about the active prefix, generation, or redo tail. Existing append, replay,
 SVG, producer, and canvas code already depend on `OperationLog`, so keeping one
 owner also gives migration a narrow compatibility path.
 
-`OperationLog` will own these separate values:
+`OperationLog` owns these separate values:
 
 1. **Retained prefix:** chunks and samples physically retained, including Redo.
 2. **Active prefix:** chunks and samples in the current visible drawing.
@@ -56,8 +55,7 @@ work from crossing a history transition.
 
 ## Public seam
 
-Appending keeps the existing prepared-then-publish transaction. The added
-surface is intentionally small:
+The public surface is intentionally small:
 
 ```cpp
 struct AuthorityReadView {
@@ -65,6 +63,7 @@ struct AuthorityReadView {
   DocumentRevision generation;
   std::size_t active_operation_count;
   std::size_t retained_operation_count;
+  std::size_t retained_sample_count;
 };
 
 struct HistoryChange {
@@ -78,25 +77,25 @@ class OperationLog {
  public:
   bool can_undo() const;
   bool can_redo() const;
+  std::optional<OperationIdentity> append(const OperationAppend&);
+  std::optional<OperationIdentity> append(const BuiltOperation&);
   std::optional<PreparedHistoryChange> prepare_undo();
   std::optional<PreparedHistoryChange> prepare_redo();
   AuthorityReadView read_view() const;
-  bool unchanged(const AuthorityReadView&) const;
-  std::optional<StoredOperation> operation(const AuthorityReadView&,
-                                           std::size_t active_index) const;
+  std::optional<StoredOperation> operation(std::size_t active_index) const;
   std::optional<StoredOperation> retained_operation(
-      const AuthorityReadView&, std::size_t retained_index) const;
+      std::size_t retained_index) const;
 };
 ```
 
-`PreparedHistoryChange` is move-only, like `PreparedAppend`. It exposes the
-target prefix, next generation, and union of every chunk bound in the affected
-Stroke. Destruction or `cancel()` changes nothing. `publish()` is infallible
-after the caller has prepared the replacement raster pixels.
+`PreparedHistoryChange` is move-only. It exposes the target prefix, next
+generation, and union of every chunk bound in the affected Stroke. Destruction
+or `cancel()` changes nothing. `publish()` is infallible after the caller has
+prepared the replacement raster pixels.
 
-The app remains single-threaded and serializes mutation. A read view does not
-add a lock; each read checks the captured epoch, generation, and prefixes. SVG,
-PNG, and autosave must recheck `unchanged()` before promoting output.
+The app remains single-threaded and serializes mutation. A read view is a
+coherent value snapshot for metadata and persistence; indexed reads use the
+same serialized ownership boundary.
 
 ## Required behavior
 
@@ -105,14 +104,11 @@ PNG, and autosave must recheck `unchanged()` before promoting output.
   history item by itself.
 - Undo selects the final active Stroke. Redo selects the first inactive Stroke.
 - The damage rectangle is the union of all chunks in that Stroke.
-- A history request fails without mutation while an append/history change is
+- A history request fails without mutation while another history change is
   prepared, at a generation limit, or when no matching history exists.
-- Preparing a new append after Undo validates against the active prefix without
-  overwriting retained Redo samples. The prepared object temporarily refers to
-  the caller-owned input samples; publication copies them into the active tail,
-  truncates Redo, and stores the new record. Canceling preparation leaves Redo
-  intact. Callers must therefore keep append input alive and unchanged until publish/cancel,
-  which every current prepared-append caller already does.
+- Appending after Undo validates against the active prefix, then atomically
+  truncates the Redo tail and stores the new record. Invalid or capacity-rejected
+  appends leave Redo intact.
 - Reads used for normal rendering expose only the active prefix. Persistence
   can separately serialize the retained prefix plus the active boundary so
   Redo survives restart.
@@ -138,6 +134,21 @@ For Undo or Redo:
 No composition occurs between steps 3 and 4. The same order already used by a
 prepared append—derived pixels first, infallible authority publication
 second—keeps log and canvas from becoming partially updated.
+
+## Open performance work
+
+History correctness is closed. Latency is not. `move_history_incrementally()`
+currently clears the conservative overview damage, scans the active operation
+prefix, replays every intersecting operation synchronously, invalidates
+intersecting detail tiles, and then refreshes the visible damage. High-zoom
+Undo and Redo can therefore expose a cold fallback while those tiles rebuild.
+
+There is no dedicated device history-latency gate yet. The first optimization
+step is a deterministic high-zoom workload that records affected bounds,
+invalidated and reused tile counts, overview replay time, first presentation,
+time to exact pixels, and maximum input-poll gap. Any fix must keep painter
+order, whole-Stroke semantics, bounded damage, generation atomicity, and the
+1.5 MiB export reserve.
 
 ## Test-first landing slices
 

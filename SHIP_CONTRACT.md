@@ -60,22 +60,28 @@ device runs of the frozen `adversarial_tapered_4x+evil_hairlines` corpus at
 publication and DMA completion. The combined authority contains 910 operations
 and 12,157 samples. An accepted run has no crash, allocation failure, authority
 mismatch, touch-service violation, telemetry overflow, or presentation failure.
-Development runs before autosave exists are provisional; the final 20-run
-closure has autosave and normal product services enabled.
+The final 20-run closure uses normal product firmware and includes real journal
+activity, not only autosave service initialization in the gate harness.
 
-Current three-run development maxima (Cold Stage B, 2026-08-16): 50%
-**437.9 ms**, 100% **428.4 ms**, 200% **488.0 ms** — under the line — and
-400% **507.0 ms** (431.9 ms compute). See
-`benchmark-results/cold-stage-b-2026-08-16/RECEIPT.md`. The original
+Current gate results recorded across the 2026-08-17 cleanup and overlap receipts:
+50% **421.787 ms**, 100% **399.498 ms**, 200% **464.071 ms**,
+and 400% **515.123 ms** under its 520 ms development guard. The separate
+stacked-overlap 50% gate is **476.969 ms** under the 500 ms product line. See
+`benchmark-results/overlap-cold-fix-2026-08-17/RECEIPT.md`. The 400% result is
+inside the temporary 520 ms development guard but above the
+≤500 ms release requirement. The gate runs before the ordinary product loop and
+does not measure concurrent journal writes. The 20-run reset-separated normal-
+product 400% closure statistic remains open. The original
 1,269.157 ms baseline
 (`benchmark-results/wave2-compositor/COLD_GENERAL_BASELINE_RECEIPT.md`) and
 the older 663.829 ms straight-authority receipt are historical and no longer
 describe the product renderer or frozen corpus.
 
-Amplification threshold (1.25) is provisional until first measured; owner
-review after the first real measurement.
+The first pure-revisit measurement is 1.000 amplification with zero unexplained
+renders. Residual glass strays still require cause attribution in the gate build;
+`TINYDRAW_LIVE_LEDGER` is not compiled into ordinary product firmware.
 
-### 4. Anti-aliasing — settled refinement  (required, pending first look)
+### 4. Anti-aliasing — settled refinement  (appearance accepted; progression open)
 
 Live strokes remain crisp/hard-edged while the finger is down; edges
 anti-alias during idle settling shortly after lift/settle. Brute-force
@@ -85,8 +91,12 @@ Constraint binding it to §3: settling must never cause visible
 cold-to-sharp cycling on revisit — settled output is cached content and
 falls under the déjà vu gate like any other rendered pixels.
 
-Owner acceptance: explicitly provisional until seen on glass ("probably
-fine, need to see it in action" — 2026-08-15).
+The analytic boundary-coverage implementation is functionally accepted on
+glass. Earlier tiled measurements were 1.7–5.4 ms mean / 9.3 ms maximum, but
+they are not a universal current bound: the current 25% gate settled 42 tiles in
+152.945 ms and recorded a 76.416 ms maximum tile, breaking the nominal 8 ms
+cooperative slice. Settled progression therefore remains an open measured
+performance gate even though AA correctness and appearance are accepted.
 
 ### 5. Undo / Redo  (required)
 
@@ -110,33 +120,36 @@ fine, need to see it in action" — 2026-08-15).
 
 ### 7. Autosave & data safety  (required)
 
-- Authority (operations + samples + revision + view/tool state) persists;
-  derived caches are never persisted.
+- By owner decision on 2026-08-17, authority (operations + samples +
+  active/retained prefixes + generation and epoch) persists; session UI state
+  and derived caches never persist. The next Stroke identity is derived from
+  restored active authority rather than stored separately.
 - Power loss loses at most the in-progress gesture plus ≤5 s of committed
   work. (PROPOSED default — owner has not reviewed this number.)
 - Recovery is exact and verified by interrupted-write fixtures.
-- Autosave must be **enabled during all ink/pan gate measurements** — a
-  benchmark with autosave off is not a product benchmark.
+- Autosave must be **enabled during all ink/pan gate measurements**, and
+  committed-Stroke workloads must exercise real queued journal writes. Service
+  initialization without product-loop writes is not final product evidence.
 
 ### 8. Platform features  (required)
 
 - Power off/on flow: required (V1 parity).
 - Onboard clock + one-shot NTP: required (export timestamps). V2's on-demand
-  Document → Clock flow and post-teardown feedback landed 2026-08-17; physical
-  network/RTC evidence remains open
+  Document → Clock flow and post-teardown feedback landed 2026-08-17. The
+  owner accepted unavailable-network handling, successful RTC sync, centered
+  terminal feedback, and text size on glass
   (`benchmark-results/v2-ntp-sync-2026-08-17/RECEIPT.md`).
 - Minimap: tap-to-jump and viewport-drag navigation required (owner elevated
-  drag from post-ship on 2026-08-17). Closed the same day with a 4 px intent
-  threshold, captured/clamped drag, host geometry tests, and a physical
-  presenter classifier (`benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md`);
-  owner glass-feel confirmation remains qualitative polish, not missing
-  function.
-- Zoom: 25/50/100/200/400%. Returning through the complete button cycle must
-  restore a compatible zoom's exact explored origin; stale remembered views
-  yield to the current focus. Closed 2026-08-17 with host and physical
-  classifier receipts
-  (`benchmark-results/zoom-cycle-return-2026-08-17/RECEIPT.md`). 800% is out
-  of contract.
+  drag from post-ship on 2026-08-17). Closed with absolute Down/Move mapping,
+  captured/clamped drag across the full right dock, 2 px upward and 8 px
+  horizontal/downward promotion, host geometry tests, an exact physical capture,
+  and owner glass acceptance
+  (`benchmark-results/minimap-absolute-pointer-2026-08-17/RECEIPT.md`).
+- Zoom: 25/50/100/200/400%. By owner decision on 2026-08-17, transitions keep
+  one world focus centered, derive and clamp the new origin, and retain no
+  dormant per-zoom origins. The complete cycle preserves focus within four
+  quarter-world units. The older exact-origin receipt describes the superseded
+  pre-cleanup model. 800% is out of contract.
 
 ## Document authority policy
 
@@ -175,7 +188,7 @@ not a valid V2 persistence or Undo mechanism.
    bytes of free internal memory
    (`benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md`). The
    ≤500 ms requirement in §3 is unchanged and governs the final
-   autosave-enabled 20-run closure. The remaining micro-candidates
+   normal-product 20-run closure with real journal writes. The remaining micro-candidates
    (block-granular saturation, PIE fixed-point probing,
    presentation/compute overlap) are parked.
 3. **Stage C authority bundle declined.** Conical capsules + adaptive
@@ -195,7 +208,22 @@ not a valid V2 persistence or Undo mechanism.
    the settled-AA prototype review, and the déjà-vu fix. Owner was
    explicit that its invisibility through multiple paid cold-render
    sessions is unacceptable; process rule 8 below is the anti-recurrence
-   guard.
+   guard. **Closed 2026-08-17:** per-chord finalized-window refresh reduced the
+   full-battery result to 476.969 ms and every verdict flag passed.
+
+## Owner decisions — 2026-08-17 cleanup closure
+
+1. **Authority-only persistence.** Durable V2 state is the painter-ordered
+   operation/sample authority, active/retained boundary, generation, and epoch.
+   Navigation and chrome restart from defaults; next Stroke identity derives
+   from restored active authority. The earlier session-state receipt remains
+   historical evidence, not the current persistence contract.
+2. **Focus-centered zoom.** Navigation stores the current zoom/origin and one
+   world focus. Every transition derives its target origin from that focus;
+   dormant per-zoom origin arrays and exact-origin restoration are removed.
+3. **Functional AA accepted; progression still measured.** Appearance and
+   settled-cache correctness are accepted. The current 25% 76.416 ms tile tail
+   keeps progression performance open.
 
 ### Post-ship (explicitly deferred, not cut)
 

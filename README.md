@@ -14,10 +14,12 @@ All targets share the C++20 drawing and UI core where their models overlap.
 ## Current state
 
 The ESP32 has two supported product generations: raster-authoritative TinyDraw
-V1 and vector-authoritative TinyDraw V2. V2 is feature complete; cleanup, known
-bug fixes, and its final performance campaign remain. Current status lives in
+V1 and vector-authoritative TinyDraw V2. V2 feature work and the maintainability
+cleanup are complete; known bug fixes, release validation, and the final measured
+performance round remain. Current status lives in
 [`PROJECT_STATE.md`](PROJECT_STATE.md), and [`V2_ROADMAP.md`](V2_ROADMAP.md)
-owns the remaining V2 work.
+owns the remaining V2 work. The receipt-backed history of wins and rejected
+performance experiments is [`docs/PERFORMANCE_CHRONICLE.md`](docs/PERFORMANCE_CHRONICLE.md).
 
 ### TinyDraw V1 — Raster
 
@@ -30,6 +32,8 @@ owns the remaining V2 work.
 
 - Vector operations are authoritative for pen and eraser strokes.
 - The bounded 1472×1792 world supports 25%, 50%, 100%, 200%, and 400% zoom.
+  Zoom preserves one world-space focus and derives each clamped origin; dormant
+  per-zoom camera origins are not retained.
 - A complete overview provides fallback while a 448-slot world-aligned tile
   cache refines visible detail.
 - Touch sampling remains independent of cooperative rendering work.
@@ -41,10 +45,11 @@ owns the remaining V2 work.
   grouped, preserves at least ten levels, and replays bounded pen/eraser damage.
   Host, sanitizer, firmware, and owner glass checks are green; high-zoom cold
   rebuilding remains in the final optimization round.
-- Autosave appends whole-Stroke, history, New, navigation, and tool-state
-  Journal commits to the 3 MiB drawing partition. A low-priority flash worker
-  publishes a CRC-checked final marker last; startup restores vector authority,
-  Redo, zoom-return positions, and selections, then rebuilds derived pixels.
+- Autosave appends whole-Stroke, history, and New Journal commits to the 3 MiB
+  drawing partition. A low-priority flash worker publishes a CRC-checked final
+  marker last; startup restores vector authority and Redo, then rebuilds derived
+  pixels. Navigation and chrome selections restart from product defaults; the
+  next Stroke identity is derived from the restored active authority.
   Full-journal compaction is deliberately deferred.
 - Export streams the vector authority to flash with visible progress, then
   opens an explicit read-only USB mode with an on-screen **Return to Drawing**
@@ -54,8 +59,10 @@ owns the remaining V2 work.
   Wi-Fi/NTP correction, writes the onboard RTC, and shows connecting, syncing,
   success, or error feedback. Terminal feedback appears only after Wi-Fi is
   stopped and deinitialized.
-- Battery status, a five-level zoom rail, and a live interactive minimap with
-  tap-to-jump and zoom-scaled drag intent are visible over the canvas.
+- Battery status, a five-level zoom rail, and a live interactive minimap are
+  visible over the canvas. Minimap Down maps absolutely into the world; promoted
+  drags stay captured across the right dock, while stationary dock taps retain
+  their size/document actions.
 - Export produces an editable `DRAWING.SVG` and a settled anti-aliased
   `DRAWING.PNG` from one vector-authority snapshot. SVG retains one
   painter-ordered filled path per physical finger-down/up Stroke and no

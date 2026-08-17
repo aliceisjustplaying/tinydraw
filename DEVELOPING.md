@@ -23,6 +23,7 @@ machine was bootstrapped with Apple Clang 21 and SDL 2.32 through `sdl2-compat`.
 ./scripts/dev test          # debug build + all native tests
 ./scripts/dev run           # SDL host; ten-level Cmd-Z undo, undoable C new, Esc quit
 ./scripts/dev perf          # deterministic sustained-XL operation/traffic report
+./scripts/dev vector-perf   # retained Vector V2 rebuild benchmark
 ./scripts/dev asan          # AddressSanitizer + UndefinedBehaviorSanitizer on SDL-free core
 ./scripts/dev release       # optimized build + tests
 ./scripts/dev format-check
@@ -31,8 +32,12 @@ machine was bootstrapped with Apple Clang 21 and SDL 2.32 through `sdl2-compat`.
 ./scripts/dev cppcheck      # Cppcheck, Vector V2 module only
 ```
 
-Concluded characterization binaries are excluded from normal builds. Configure
-with `-DTINYDRAW_BUILD_EXPERIMENTS=ON` only when reproducing their archived receipts.
+The retained `vector-perf` benchmark still uses
+`-DTINYDRAW_BUILD_EXPERIMENTS=ON`. Concluded one-off tools such as
+`tinydraw_vector_v2_settled_aa_prototype` and
+`tinydraw_vector_v2_ink_angularity` were removed; their source and raw evidence
+remain at tag `v2-feature-complete-pre-cleanup`, which should be checked out in a
+separate worktree when reproducing those archived receipts.
 
 The wrapper is intentionally thin. Raw commands also work:
 
@@ -162,7 +167,9 @@ The product partition table gives firmware 1.5 MiB while retaining 3 MiB for dra
 either data partition.
 
 TinyDraw V1 autosaves changed 32×32 world tiles after 500 ms idle. TinyDraw V2
-journals vector authority and session state through a low-priority flash worker.
+journals only vector authority through a low-priority flash worker; navigation,
+tool, palette, and chrome restart from defaults, while the next Stroke identity
+is derived from restored active authority rather than persisted separately.
 Both sample the PMU only while touch is idle. The lower PMU button performs a
 four-second hardware shutdown and short-press cold boot; no sleep mode exists yet.
 
