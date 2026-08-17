@@ -517,10 +517,11 @@ TEST_CASE("USB export mode blocks drawing and offers an explicit return action")
   constexpr int width = 368;
   constexpr int height = 448;
   const std::size_t pixel_count = static_cast<std::size_t>(width * height);
-  std::array<std::vector<std::uint16_t>, 2> renderings;
+  std::array<std::vector<std::uint16_t>, 3> renderings;
   std::size_t rendering_index = 0;
 
-  for (const auto status : {ChromeExportStatus::kPresented, ChromeExportStatus::kHostEjected}) {
+  for (const auto status : {ChromeExportStatus::kPresented, ChromeExportStatus::kHostEjected,
+                            ChromeExportStatus::kExitError}) {
     const ChromeState state{.export_status = status};
     CHECK(tinydraw::vector_v2::chrome_canvas_bottom(state) == 0);
     CHECK(tinydraw::vector_v2::chrome_input_bottom(state) == 0);
@@ -537,6 +538,7 @@ TEST_CASE("USB export mode blocks drawing and offers an explicit return action")
     CHECK(pixels[245U * width + 60U] == 0x349FU);
   }
   CHECK(renderings[0] != renderings[1]);
+  CHECK(renderings[1] != renderings[2]);
 }
 
 TEST_CASE("palette hit testing gives large cells to the circular swatches") {

@@ -9,6 +9,7 @@ enum class UsbExportSessionState : std::uint8_t {
   kInactive,
   kPresenting,
   kHostEjected,
+  kStopping,
 };
 
 // Cross-task lifecycle for a read-only USB export volume. Host eject removes
@@ -29,7 +30,7 @@ class UsbExportSession {
       if (current == UsbExportSessionState::kPresenting) {
         return true;
       }
-      if (current == UsbExportSessionState::kHostEjected) {
+      if (current != UsbExportSessionState::kInactive) {
         return false;
       }
       if (state_.compare_exchange_weak(current, UsbExportSessionState::kPresenting)) {
@@ -42,6 +43,23 @@ class UsbExportSession {
     UsbExportSessionState expected = UsbExportSessionState::kPresenting;
     static_cast<void>(
         state_.compare_exchange_strong(expected, UsbExportSessionState::kHostEjected));
+  }
+
+  // Removes the medium before stack shutdown begins. The session remains
+  // active and cannot restart until the owner confirms shutdown with end().
+  [[nodiscard]] bool begin_stop() {
+    UsbExportSessionState current = state_.load();
+    for (;;) {
+      if (current == UsbExportSessionState::kStopping) {
+        return true;
+      }
+      if (current == UsbExportSessionState::kInactive) {
+        return false;
+      }
+      if (state_.compare_exchange_weak(current, UsbExportSessionState::kStopping)) {
+        return true;
+      }
+    }
   }
 
   void end() { state_.store(UsbExportSessionState::kInactive); }
