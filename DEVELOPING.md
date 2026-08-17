@@ -159,20 +159,19 @@ The product partition table gives firmware 1.5 MiB while retaining 3 MiB for dra
 5 MiB for transactional exports. The diagnostic gate gets a 1.75 MiB app slot without shrinking
 either data partition.
 
-The physical build autosaves changed 32×32 world tiles after 500 ms idle. It samples the PMU every
-second only while touch is idle. Short BOOT presses toggle demo recording and a long press
-replays it. The lower PMU button performs a four-second hardware shutdown and short-press cold
-boot; no sleep mode exists yet.
+The physical build journals vector authority and session state through a
+low-priority flash worker. It samples the PMU every second only while touch is
+idle. The lower PMU button performs a four-second hardware shutdown and
+short-press cold boot; no sleep mode exists yet.
 
-Raster V1 export streams the 1104×1344 RGB565 world through PNGenc into a raw flash partition.
-Vector V2 export renders the 1472×1792 world with the production settled-AA algorithm in one
+Product export renders the 1472×1792 world with the production settled-AA algorithm in one
 64-row band plus one 64×64 window, then sends those rows through the same PNG encoder. It also
 streams the existing path-based SVG without changing its geometry or formatting. One metadata page
 commits both files only when their authority epoch, revision, and operation count still match.
 
 A read-only FAT16 volume is synthesized one requested sector at a time and served through TinyUSB
 MSC. Raster V1 exposes `DRAWING.PNG`; Vector V2 exposes `DRAWING.SVG` and `DRAWING.PNG`. Starting
-MSC replaces USB Serial/JTAG because both use the S3's internal PHY. Vector V2's on-screen
+MSC replaces USB Serial/JTAG because both use the S3's internal PHY. The on-screen
 **Return to Drawing** action deinitializes TinyUSB and releases that PHY without a reset; a failed
 shutdown stays modal and can be retried. To enter the ROM flashing port on a battery-powered board,
 power off, hold BOOT, and power on.

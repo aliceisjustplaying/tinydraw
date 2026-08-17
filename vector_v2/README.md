@@ -1,6 +1,8 @@
 # Vector V2 foundation
 
-This directory contains TinyDraw's platform-independent, vector-authoritative V2 architecture. It is **not** a clean-room rewrite. Raster V1 remains runnable while V2 modules replace it one behavior at a time.
+This directory contains TinyDraw's platform-independent, vector-authoritative
+product architecture. Its modules are integrated by the ESP32 product and host
+test targets.
 
 Current state lives in [`PROJECT_STATE.md`](../PROJECT_STATE.md), and the complete forward worklist lives in [`V2_ROADMAP.md`](../V2_ROADMAP.md). Historical prototype plans belong in [`docs/archive/`](../docs/archive/).
 
@@ -12,7 +14,7 @@ The Vector V2 module must not depend on:
 
 - `WorldCanvas`, `ViewOrigin`, or the 3×3 raster geometry;
 - `FirmwareCanvas` or ESP-IDF allocation;
-- `interactive_pan_benchmark` or other benchmark coordinators;
+- benchmark coordinators or archived prototype policy;
 - hardware display, toolbar, persistence, or task-loop policy;
 - camera-aligned atlas identities or arbitrary zoom values.
 
@@ -24,7 +26,8 @@ Adapters outside this directory connect V2 modules to the app and hardware. They
 - Keep state deterministic and host-testable.
 - Use caller-owned fixed-capacity storage; no hidden allocation.
 - Represent the bounded 1472×1792 world and committed zoom levels explicitly.
-- Keep source identity, quality, provenance, generation, and document revision together in validated values rather than parallel option arrays.
+- Keep source identity, quality, provenance, and document revision together in
+  validated values rather than parallel option arrays.
 - Never expose mutable cache storage through lookup results.
 - Do not hold state locks while waiting for display capacity or transfer completion.
 - Do not add speculative seams. Add an adapter only when a real second implementation or test substitute exists.
@@ -41,15 +44,16 @@ Vector V2 is compiled through the independent `tinydraw::vector_v2` CMake target
 
 `clang-tidy` treats its curated analyzer, bug-prone, performance, portability, function-size, and cognitive-complexity findings as errors. Cppcheck supplies an independent C++20 analysis pass. Neither analyzer scans the frozen legacy or prototype tree.
 
-## Migration rule
+## Integration rule
 
-Every V2 milestone must replace or prepare to replace an identified Raster V1 responsibility. Do not create an indefinite third path.
+Product behavior enters through one narrow adapter after its module contract is
+proved independently.
 
 1. Build and review the V2 module through host tests.
 2. Prove its memory layout where required.
 3. Add one narrow adapter to the V2 application.
 4. Validate behavior and hardware gates.
-5. Remove the superseded legacy path when the production path owns that responsibility.
+5. Remove superseded diagnostic or prototype paths once production owns the responsibility.
 
 The retired prototype remains evidence and benchmark machinery. It is frozen except for evidence-preservation fixes.
 
@@ -212,8 +216,7 @@ provides this transactional behavior:
    caller-owned compact scratch, applies operation N there, and prepares scratch
    copies of affected resident tiles.
 2. The canvas validates the next revision, exact overview bounds and pixel
-   count, affected tile keys, replacement pixels, and that no source is pinned
-   before changing state.
+   count, affected tile keys, and replacement pixels before changing state.
 3. One commit copies the bounded overview rows, carries unaffected resident
    tiles forward to revision N, and publishes or invalidates affected tiles.
    Failure leaves the prior revision and every source identity unchanged.

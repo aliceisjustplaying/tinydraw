@@ -29,13 +29,12 @@ TraceEvent  { t_us (monotonic, from trace start), kind (Down|Move|Up), x, y }
      lift-drain backlog and stroke-boundary loss.
   5. `under-overlay` — stroke crossing zoom rail, minimap, toolbar regions.
 
-Capture mode: a firmware flag records real finger input (event timestamps from
-the touch sampler) to serial; a host script converts to trace format. One
-session of the owner's real scribbling becomes the canonical corpus.
+The canonical owner corpus is complete and frozen. The temporary firmware
+capture mode and recorder were retired after producing it.
 
 Build the canonical validator with `cmake --build --preset host-debug --target
-tinydraw_ink_trace_check`. `tools/ink-trace-record.py` runs it after every
-capture; `tools/ink-trace-check TRACE.csv` is the standalone entry point.
+tinydraw_ink_trace_check`. `tools/ink-trace-check TRACE.csv` is the standalone
+entry point.
 
 ## 2. Replay mode
 
@@ -91,13 +90,9 @@ validates the method once.
 - No synthetic-only grading: at least one canonical trace must come from
   recorded real finger input.
 
-## 7. Implementation order (for the ink worker)
+## 7. Implementation record
 
-1. Trace format + replay injection at the event-buffer boundary.
-2. Timestamp plumbing (t_event end-to-end) + per-stroke receipt line.
-3. Record canonical corpus from owner finger session (5 traces). Four synthetic
-   fixtures currently exist; `fast-curve-dense-25.csv` is still missing.
-4. Baseline receipts on current build (pre-visual-first) — this is the
-   "before" scorecard.
-5. Visual-first reorder + provisional tail (the actual Wave 2 ink work).
-6. After receipts + optical spot-check + side-by-side vs Raster V1.
+The trace format, event-buffer replay, end-to-end timestamps, five owner traces,
+baseline receipts, responsive visual tail, and optical spot-check are complete.
+The gate harness and canonical C++ validator remain; capture-only firmware was
+removed after the corpus was frozen.
