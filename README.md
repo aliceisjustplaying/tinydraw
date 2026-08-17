@@ -45,11 +45,12 @@ Autosave, charging, power-off/on, and macOS Finder mounting are verified.
   with visible progress before the physical read-only USB drive takes over.
 - Battery status, a five-level zoom rail, and a live interactive minimap with
   tap-to-jump and zoom-scaled drag intent are visible over the canvas.
-- Detailed SVG export emits one painter-ordered filled path per variable-width
-  pen/eraser operation as `DRAWING.SVG`; the device gate verifies full flash
-  readback, XML structure, and CRC in about 1.02 s with a 4 KiB workspace.
-  Physical USB mounting of the SVG remains to be checked with an operator
-  present. Prior full-world PNG USB evidence remains archived.
+- Detailed SVG export emits one painter-ordered filled path per physical
+  finger-down/up Stroke as `DRAWING.SVG`, even when bounded input storage splits
+  that Stroke into internal chunks. The SVG omits a synthetic background
+  rectangle. The device gate verifies full flash readback, XML structure, and
+  CRC with a 4 KiB workspace; the owner has mounted and opened the export in
+  Inkscape. Prior full-world PNG USB evidence remains archived.
 
 V2's immediate renderer is intentionally hard-edged until the settled
 anti-aliasing gate lands. The final invariant presenter looked tear-free in the

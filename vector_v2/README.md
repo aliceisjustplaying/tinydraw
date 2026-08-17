@@ -58,13 +58,16 @@ The retired prototype remains evidence and benchmark machinery. It is frozen exc
 The initial production milestones and Gate 1 cache/interaction feasibility are complete. The vector-authoritative architecture is accepted for V2. See [`GATE_1_RECEIPT_2026_08_13.md`](GATE_1_RECEIPT_2026_08_13.md) and [`GATE_1_CACHE_CLOSURE_2026_08_13.md`](GATE_1_CACHE_CLOSURE_2026_08_13.md). Remaining work is tracked only in the V2 roadmap; the numbered sections below preserve architectural history and contracts rather than current task order.
 
 The SVG module streams renderer-derived ribbon geometry without document-sized
-storage. Each operation becomes one painter-ordered filled path containing its
-round-cap and variable-width convex subpaths; erasers emit background-colored
-paths in operation order. The ESP adapter writes 4 KiB pages into the export
-partition, commits metadata last, and exposes the result as `DRAWING.SVG`
-through the generic read-only FAT/USB adapter. Host coverage/fuzz tests and the
-physical encode/readback receipt are in
-[`benchmark-results/svg-export-2026-08-17/RECEIPT.md`](../benchmark-results/svg-export-2026-08-17/RECEIPT.md).
+storage. Adjacent internal chunks with one nonzero gesture ID become one
+painter-ordered filled path, so one physical finger-down/up Stroke remains one
+SVG path. Paths contain the exact round-cap and variable-width convex subpaths;
+erasers emit background-colored paths in operation order, and the root omits a
+synthetic background rectangle. The ESP adapter writes 4 KiB pages into the
+export partition, commits metadata last, and exposes the result as
+`DRAWING.SVG` through the generic read-only FAT/USB adapter. Host coverage/fuzz
+tests and physical evidence are in the
+[`original receipt`](../benchmark-results/svg-export-2026-08-17/RECEIPT.md)
+and [`stroke-grouping follow-up`](../benchmark-results/stroke-svg-minimap-acquire-2026-08-17/RECEIPT.md).
 
 ## First milestone: `MaterializedCanvas`
 

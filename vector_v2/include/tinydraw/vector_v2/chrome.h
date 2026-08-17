@@ -142,6 +142,12 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
 // minimap interior so a captured drag continues smoothly outside its frame.
 [[nodiscard]] ChromeLevelPoint chrome_minimap_level_point(ChromePoint point,
                                                           const ChromeNavigation& navigation);
+// Resolves a minimap drag to a level origin. A minimum-size invisible target
+// around the truthful viewport preserves grab offset; a start elsewhere in
+// the minimap directly acquires the viewport beneath the finger.
+[[nodiscard]] ChromeLevelPoint chrome_minimap_drag_origin(ChromePoint start, ChromePoint current,
+                                                          ChromeLevelPoint focus,
+                                                          const ChromeNavigation& navigation);
 // Suppresses touch jitter so a stationary minimap gesture remains a jump tap.
 // The promotion distance shrinks with the viewport at high zoom, making the
 // tiny viewport easier to grab without enlarging the minimap's canvas occlusion.

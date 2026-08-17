@@ -211,33 +211,19 @@ bool valid_bounds(PixelRect bounds) {
          bounds.y1 <= kWorldHeight && bounds.x1 > bounds.x0 && bounds.y1 > bounds.y0;
 }
 
-}  // namespace
+bool emit_header(Writer& writer, PixelRect bounds) {
+  const int width = bounds.x1 - bounds.x0;
+  const int height = bounds.y1 - bounds.y0;
+  return writer.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n") &&
+         writer.append("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"") &&
+         writer.integer(width) && writer.append("\" height=\"") && writer.integer(height) &&
+         writer.append("\" viewBox=\"") && writer.integer(bounds.x0) && writer.append(" ") &&
+         writer.integer(bounds.y0) && writer.append(" ") && writer.integer(width) &&
+         writer.append(" ") && writer.integer(height) && writer.append("\">\n");
+}
 
-bool export_svg(const OperationLog& log, SvgByteSink& sink, SvgExportOptions options) {
-  if (!log.ready() || !valid_bounds(options.world_bounds)) {
-    return false;
-  }
-
-  const OperationLogEpoch epoch = log.epoch();
-  const DocumentRevision revision = log.current_revision();
-  const std::size_t operation_count = log.operation_count();
-  Writer writer(sink);
-  const int width = options.world_bounds.x1 - options.world_bounds.x0;
-  const int height = options.world_bounds.y1 - options.world_bounds.y0;
-
-  if (!writer.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n") ||
-      !writer.append("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"") ||
-      !writer.integer(width) || !writer.append("\" height=\"") || !writer.integer(height) ||
-      !writer.append("\" viewBox=\"") || !writer.integer(options.world_bounds.x0) ||
-      !writer.append(" ") || !writer.integer(options.world_bounds.y0) || !writer.append(" ") ||
-      !writer.integer(width) || !writer.append(" ") || !writer.integer(height) ||
-      !writer.append("\">\n")) {
-    return false;
-  }
-
-  if (options.progress != nullptr) {
-    options.progress(0U, operation_count, options.progress_context);
-  }
+bool emit_operations(Writer& writer, const OperationLog& log, std::size_t operation_count,
+                     const SvgExportOptions& options) {
   std::optional<StoredOperation> previous;
   bool path_open = false;
   for (std::size_t index = 0; index < operation_count; ++index) {
@@ -262,8 +248,28 @@ bool export_svg(const OperationLog& log, SvgByteSink& sink, SvgExportOptions opt
       options.progress(index + 1U, operation_count, options.progress_context);
     }
   }
+  return !path_open || writer.append("\"/>\n");
+}
 
-  if ((path_open && !writer.append("\"/>\n")) || !writer.append("</svg>\n") || !writer.flush()) {
+}  // namespace
+
+bool export_svg(const OperationLog& log, SvgByteSink& sink, SvgExportOptions options) {
+  if (!log.ready() || !valid_bounds(options.world_bounds)) {
+    return false;
+  }
+
+  const OperationLogEpoch epoch = log.epoch();
+  const DocumentRevision revision = log.current_revision();
+  const std::size_t operation_count = log.operation_count();
+  Writer writer(sink);
+  if (!emit_header(writer, options.world_bounds)) {
+    return false;
+  }
+  if (options.progress != nullptr) {
+    options.progress(0U, operation_count, options.progress_context);
+  }
+  if (!emit_operations(writer, log, operation_count, options) || !writer.append("</svg>\n") ||
+      !writer.flush()) {
     return false;
   }
   return log.epoch() == epoch && log.current_revision() == revision &&

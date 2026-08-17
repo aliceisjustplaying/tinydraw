@@ -243,12 +243,15 @@ Derived overview, tile, chrome, and settled caches are never persisted.
 - [x] Wire the exact variable-width SVG core through a generation-checked
       authority read and transactional sink; promote output only after the
       generation is rechecked. **Landed 2026-08-17:** one painter-ordered filled
-      `<path>` per pen/eraser operation, direct 4 KiB flash streaming,
-      metadata-last commit, and read-only `DRAWING.SVG` FAT wiring. Physical
-      gate: 157,660 bytes in 1.024 s, 52/52 paths, full readback CRC/XML checks,
-      no watchdog; 5.69× faster than prior PNG. See
-      `benchmark-results/svg-export-2026-08-17/RECEIPT.md`. The unattended gate
-      intentionally did not enter MSC; physical host mount/eject remains open.
+      `<path>` per physical finger-down/up Stroke, with adjacent bounded chunks
+      joined by their preserved gesture ID; no synthetic background rectangle;
+      direct 4 KiB flash streaming, metadata-last commit, and read-only
+      `DRAWING.SVG` FAT wiring. The original physical gate encoded 157,660 bytes
+      in 1.024 s with full readback CRC/XML checks and no watchdog, 5.69× faster
+      than prior PNG. The owner later mounted and opened an export in Inkscape,
+      providing the artifact that exposed and now locks down chunk grouping.
+      See `benchmark-results/svg-export-2026-08-17/RECEIPT.md` and
+      `benchmark-results/stroke-svg-minimap-acquire-2026-08-17/RECEIPT.md`.
 - [ ] Fix the export-mode USB wedge (MSC re-exposes after eject; needs an
       on-device exit) before soaks.
 - [x] Make color-dialog drawing imperceptibly fast. **Landed 2026-08-17:**
