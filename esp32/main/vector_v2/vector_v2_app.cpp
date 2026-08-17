@@ -1023,14 +1023,11 @@ void run_vector_v2_app() {
       autosave_restore == VectorV2AutosaveRestoreStatus::kError) {
     std::printf("TINYDRAW_AUTOSAVE_DISABLED status=%u\n", static_cast<unsigned>(autosave_restore));
   } else {
-    std::printf(
-        "TINYDRAW_AUTOSAVE_RESTORE status=%u generation=%lu active=%lu retained=%lu "
-        "sequence=%llu\n",
-        static_cast<unsigned>(autosave_restore),
-        static_cast<unsigned long>(log.current_revision().value),
-        static_cast<unsigned long>(log.operation_count()),
-        static_cast<unsigned long>(log.read_view().retained_operation_count),
-        static_cast<unsigned long long>(autosave.committed_sequence()));
+    std::printf("TINYDRAW_AUTOSAVE_RESTORE status=%u generation=%lu active=%lu retained=%lu\n",
+                static_cast<unsigned>(autosave_restore),
+                static_cast<unsigned long>(log.current_revision().value),
+                static_cast<unsigned long>(log.operation_count()),
+                static_cast<unsigned long>(log.read_view().retained_operation_count));
   }
   std::array<DisplayStrip, 3> queue{};
   DisplayScheduler scheduler(queue);
