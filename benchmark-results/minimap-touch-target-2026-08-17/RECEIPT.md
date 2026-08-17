@@ -26,6 +26,10 @@ uses the existing captured, boundary-drained minimap pan path.
 - [`host-asan.log`](host-asan.log): 11/11 ASan/UBSan CTest targets pass.
 - [`product-build.log`](product-build.log): the ordinary ESP32-S3 Vector V2
   product image compiles and links successfully.
+- [`product-device.log`](product-device.log): the ordinary product image was
+  flashed after the owner's SVG test and reached `TINYDRAW_VECTOR_V2_READY`
+  with no watchdog, panic, reset, or stack-overflow marker and 6,472 bytes of
+  main-task stack margin.
 - [`gate-build.log`](gate-build.log): the physical gate-harness image compiles
   and links with both intent thresholds in its classifier.
 - [`clang-tidy.log`](clang-tidy.log): changed production source has no
@@ -35,7 +39,8 @@ uses the existing captured, boundary-drained minimap pan path.
 - The gate classifier now checks both the established 4 px behavior at 100%
   and the new 2 px behavior at 400%.
 
-The device was actively available to the owner for the requested physical SVG
-USB test during this follow-up. This change was therefore built but not flashed,
-so it did not interrupt or reset that test and did not invoke USB mass-storage
-mode. A product flash and owner glass check of the new 400% threshold remain.
+The first build deliberately left the device available for the owner's physical
+SVG USB test. After the owner reset the device and explicitly said it was ready,
+the ordinary product firmware was flashed over USB Serial/JTAG and its startup
+marker was captured. This validation did not invoke USB mass-storage mode. The
+owner glass check of the new 400% threshold remains.
