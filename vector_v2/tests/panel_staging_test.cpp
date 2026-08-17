@@ -10,8 +10,6 @@ namespace {
 using tinydraw::vector_v2::copy_ring_row;
 using tinydraw::vector_v2::stage_pixels_swapped;
 using tinydraw::vector_v2::stage_ring_row;
-using tinydraw::vector_v2::swap_pixel_pair;
-using tinydraw::vector_v2::swap_pixel_word;
 using tinydraw::vector_v2::swap_pixels_in_place;
 
 std::uint16_t byte_swapped(std::uint16_t pixel) {
@@ -26,18 +24,6 @@ std::vector<std::uint16_t> pattern(std::size_t count, std::uint32_t seed) {
     pixel = static_cast<std::uint16_t>(state >> 16U);
   }
   return pixels;
-}
-
-TEST_CASE("pair and word swaps agree with the per-pixel byte swap") {
-  CHECK(swap_pixel_pair(0x1234U, 0xABCDU) == 0xCDAB3412U);
-  CHECK(swap_pixel_word(0xABCD1234U) == swap_pixel_pair(0x1234U, 0xABCDU));
-  for (std::uint32_t value : {0x0000FFFFU, 0xFFFF0000U, 0x00FF00FFU, 0xDEADBEEFU}) {
-    const auto low = static_cast<std::uint16_t>(value & 0xFFFFU);
-    const auto high = static_cast<std::uint16_t>(value >> 16U);
-    const std::uint32_t swapped = swap_pixel_word(value);
-    CHECK(static_cast<std::uint16_t>(swapped & 0xFFFFU) == byte_swapped(low));
-    CHECK(static_cast<std::uint16_t>(swapped >> 16U) == byte_swapped(high));
-  }
 }
 
 TEST_CASE("staged runs equal the naive byte-swap model at aligned and odd sources") {

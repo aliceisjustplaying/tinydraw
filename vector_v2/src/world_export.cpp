@@ -2,71 +2,7 @@
 
 #include <algorithm>
 
-#include "tinydraw/vector_v2/incremental_rasterizer.h"
-
 namespace tinydraw::vector_v2 {
-
-WorldBandRenderer::WorldBandRenderer(const OperationLog& log, std::span<std::uint16_t> band_pixels)
-    : log_(log),
-      band_pixels_(band_pixels),
-      band_rows_(
-          static_cast<int>(std::min(band_pixels.size() / static_cast<std::size_t>(kWorldWidth),
-                                    static_cast<std::size_t>(kWorldHeight)))) {}
-
-bool WorldBandRenderer::ready() const { return log_.ready() && band_rows_ > 0; }
-
-int WorldBandRenderer::band_rows() const { return band_rows_; }
-
-bool WorldBandRenderer::render_band(int first_row) {
-  const int height = std::min(band_rows_, kWorldHeight - first_row);
-  const PixelRect bounds{0, first_row, kWorldWidth, first_row + height};
-  const auto pixels =
-      band_pixels_.first(static_cast<std::size_t>(kWorldWidth) * static_cast<std::size_t>(height));
-  std::fill(pixels.begin(), pixels.end(), 0xFFFFU);
-  const RasterSurface surface{
-      .zoom = ZoomLevel::k100Percent,
-      .level_bounds = bounds,
-      .pixels = pixels,
-      .stride = kWorldWidth,
-  };
-  for (std::size_t index = 0; index < log_.operation_count(); ++index) {
-    const auto stored = log_.operation(index);
-    if (!stored.has_value()) {
-      return false;
-    }
-    // World units are 100% level pixels; the conservative operation bounds
-    // reject whole out-of-band operations before per-segment work.
-    if (stored->world_bounds.y1 <= bounds.y0 || stored->world_bounds.y0 >= bounds.y1) {
-      continue;
-    }
-    if (!apply_incremental_operation(
-            {.tool = stored->tool, .color = stored->color, .samples = stored->samples}, surface)) {
-      return false;
-    }
-  }
-  band_first_ = first_row;
-  band_height_ = height;
-  band_valid_ = true;
-  return true;
-}
-
-bool WorldBandRenderer::render_row(int y, std::span<std::uint16_t> destination) {
-  if (!ready() || y < 0 || y >= kWorldHeight ||
-      destination.size() < static_cast<std::size_t>(kWorldWidth)) {
-    return false;
-  }
-  if (!band_valid_ || y < band_first_ || y >= band_first_ + band_height_) {
-    if (!render_band(y)) {
-      band_valid_ = false;
-      return false;
-    }
-  }
-  const auto source = band_pixels_.subspan(
-      static_cast<std::size_t>(y - band_first_) * static_cast<std::size_t>(kWorldWidth),
-      static_cast<std::size_t>(kWorldWidth));
-  std::copy(source.begin(), source.end(), destination.begin());
-  return true;
-}
 
 SettledWorldBandRenderer::SettledWorldBandRenderer(const OperationLog& log,
                                                    std::span<std::uint16_t> band_pixels,

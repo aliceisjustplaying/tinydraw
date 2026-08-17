@@ -1,9 +1,7 @@
 #include "tinydraw/vector_v2/navigation_state.h"
 
 #include <algorithm>
-#include <array>
 #include <cstdint>
-#include <cstdlib>
 
 namespace tinydraw::vector_v2 {
 namespace {
@@ -16,47 +14,6 @@ int level_extent(int world_extent, ZoomLevel zoom) {
 
 int rounded_divide(std::int64_t numerator, int denominator) {
   return static_cast<int>((numerator + denominator / 2) / denominator);
-}
-
-constexpr std::array<ZoomLevel, 4> kTiledZooms{
-    ZoomLevel::k50Percent,
-    ZoomLevel::k100Percent,
-    ZoomLevel::k200Percent,
-    ZoomLevel::k400Percent,
-};
-
-bool valid_zoom(ZoomLevel zoom) {
-  switch (zoom) {
-    case ZoomLevel::k25Percent:
-    case ZoomLevel::k50Percent:
-    case ZoomLevel::k100Percent:
-    case ZoomLevel::k200Percent:
-    case ZoomLevel::k400Percent:
-      return true;
-  }
-  return false;
-}
-
-bool valid_focus(NavigationPoint point) {
-  return point.x >= 0 && point.x <= kWorldWidth * 4 && point.y >= 0 &&
-         point.y <= kWorldHeight * 4;
-}
-
-std::size_t tiled_zoom_index(ZoomLevel zoom) {
-  switch (zoom) {
-    case ZoomLevel::k50Percent:
-      return 0U;
-    case ZoomLevel::k100Percent:
-      return 1U;
-    case ZoomLevel::k200Percent:
-      return 2U;
-    case ZoomLevel::k400Percent:
-      return 3U;
-    case ZoomLevel::k25Percent:
-      // Callers exclude the overview; retain a bounds-safe fallback.
-      return 0U;
-  }
-  return 0U;
 }
 
 }  // namespace
@@ -85,39 +42,6 @@ NavigationExtent NavigationState::extent() const {
           .left = origin_.x > 0,
           .right = origin_.x < maximum_x,
           .bottom = origin_.y < maximum_y};
-}
-
-NavigationSnapshot NavigationState::snapshot() const {
-  return {
-      .zoom = zoom_,
-      .origin = origin_,
-      .focus_quarter_world = focus_quarter_world_,
-      .remembered_origins = remembered_origins_,
-      .remembered_focuses = remembered_focuses_,
-      .remembered_valid = remembered_valid_,
-  };
-}
-
-bool NavigationState::restore(const NavigationSnapshot& snapshot) {
-  if (!valid_zoom(snapshot.zoom) || !valid_focus(snapshot.focus_quarter_world) ||
-      clamp_origin(snapshot.zoom, snapshot.origin.x, snapshot.origin.y) != snapshot.origin) {
-    return false;
-  }
-  for (std::size_t index = 0; index < kTiledZooms.size(); ++index) {
-    if (!valid_focus(snapshot.remembered_focuses[index]) ||
-        clamp_origin(kTiledZooms[index], snapshot.remembered_origins[index].x,
-                     snapshot.remembered_origins[index].y) !=
-            snapshot.remembered_origins[index]) {
-      return false;
-    }
-  }
-  zoom_ = snapshot.zoom;
-  origin_ = snapshot.origin;
-  focus_quarter_world_ = snapshot.focus_quarter_world;
-  remembered_origins_ = snapshot.remembered_origins;
-  remembered_focuses_ = snapshot.remembered_focuses;
-  remembered_valid_ = snapshot.remembered_valid;
-  return true;
 }
 
 bool NavigationState::valid_panel_focus(NavigationPoint point) {
@@ -163,10 +87,6 @@ bool NavigationState::set_zoom(ZoomLevel target_zoom, NavigationPoint panel_focu
   }
   if (zoom_ != ZoomLevel::k25Percent) {
     focus_quarter_world_ = focus_for_view(zoom_, origin_, panel_focus);
-    const std::size_t current_index = tiled_zoom_index(zoom_);
-    remembered_origins_[current_index] = origin_;
-    remembered_focuses_[current_index] = focus_quarter_world_;
-    remembered_valid_[current_index] = true;
   }
   zoom_ = target_zoom;
   if (zoom_ == ZoomLevel::k25Percent) {
@@ -174,29 +94,7 @@ bool NavigationState::set_zoom(ZoomLevel target_zoom, NavigationPoint panel_focu
     return true;
   }
 
-  const NavigationPoint centered = centered_origin(zoom_, panel_focus);
-  const std::size_t target_index = tiled_zoom_index(zoom_);
-  const NavigationPoint remembered = remembered_origins_[target_index];
-  const NavigationPoint remembered_focus = remembered_focuses_[target_index];
-  // A full 25→50→100→200→400 cycle can move the retained focus by up to four
-  // quarter-world units through integer zoom conversion. Treat that bounded
-  // quantization as the same focus, but reject a stale remembered view whose
-  // old focus merely happens to contain the new one near a viewport corner.
-  constexpr int kFocusCompatibilityQuarterWorld = 4;
-  const bool focus_matches =
-      std::abs(remembered_focus.x - focus_quarter_world_.x) <= kFocusCompatibilityQuarterWorld &&
-      std::abs(remembered_focus.y - focus_quarter_world_.y) <= kFocusCompatibilityQuarterWorld;
-  const int percent = zoom_percent(zoom_);
-  const NavigationPoint focus_level{
-      .x = rounded_divide(static_cast<std::int64_t>(focus_quarter_world_.x) * percent, 400),
-      .y = rounded_divide(static_cast<std::int64_t>(focus_quarter_world_.y) * percent, 400),
-  };
-  const bool remembered_contains_focus =
-      focus_level.x >= remembered.x && focus_level.x < remembered.x + kViewportWidth &&
-      focus_level.y >= remembered.y && focus_level.y < remembered.y + kViewportHeight;
-  origin_ = remembered_valid_[target_index] && focus_matches && remembered_contains_focus
-                ? remembered
-                : centered;
+  origin_ = centered_origin(zoom_, panel_focus);
   return true;
 }
 
@@ -207,10 +105,6 @@ bool NavigationState::set_origin(int x, int y, NavigationPoint panel_focus) {
   origin_ = clamp_origin(zoom_, x, y);
   if (zoom_ != ZoomLevel::k25Percent) {
     focus_quarter_world_ = focus_for_view(zoom_, origin_, panel_focus);
-    const std::size_t index = tiled_zoom_index(zoom_);
-    remembered_origins_[index] = origin_;
-    remembered_focuses_[index] = focus_quarter_world_;
-    remembered_valid_[index] = true;
   }
   return true;
 }

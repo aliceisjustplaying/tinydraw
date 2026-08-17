@@ -16,7 +16,7 @@ namespace tinydraw::vector_v2 {
 // the other half of that bargain.
 //
 // The plan holds, in priority order:
-// 1. The active view's cardinal neighbors at the active zoom, one full
+// 1. The cardinal neighbors at the active zoom, one full
 //    viewport step away, clamped to the level and deduplicated. Panning in
 //    any direction after a quiet moment meets materialized tiles first.
 // 2. The remembered view at every other tiled zoom, so zoom returns land

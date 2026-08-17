@@ -16,6 +16,14 @@ using tinydraw::vector_v2::ChromeState;
 using tinydraw::vector_v2::ChromeTimeSyncStatus;
 using tinydraw::vector_v2::ChromeTool;
 
+void paint_chrome(std::span<std::uint16_t> pixels, int width, int height, const ChromeState& state,
+                  const tinydraw::vector_v2::ChromeNavigation& navigation = {}) {
+  std::vector<std::uint16_t> cache_pixels(tinydraw::vector_v2::kChromeStagingCachePixels);
+  tinydraw::vector_v2::ChromeStagingCache cache(cache_pixels);
+  REQUIRE(cache.prepare(state, navigation, 0U));
+  REQUIRE(cache.paint_prepared({pixels, width, height, 0, 0}, state, navigation, 0U));
+}
+
 TEST_CASE("PICO-8 palettes are locked to RGB565") {
   using tinydraw::vector_v2::kPico8Palettes;
   CHECK(kPico8Palettes[0][0] == 0x0000U);
@@ -77,8 +85,7 @@ TEST_CASE("time sync labels match SAVING size and stay centered") {
   constexpr int width = 368;
   constexpr int height = 448;
   std::vector<std::uint16_t> saving(static_cast<std::size_t>(width * height), 0xFFFFU);
-  tinydraw::vector_v2::draw_chrome(saving, width, height,
-                                   {.export_status = ChromeExportStatus::kSaving});
+  paint_chrome(saving, width, height, {.export_status = ChromeExportStatus::kSaving});
   int saving_ink_top = height;
   int saving_ink_bottom = 0;
   for (int y = 70; y < 108; ++y) {
@@ -95,7 +102,7 @@ TEST_CASE("time sync labels match SAVING size and stay centered") {
                                 ChromeTimeSyncStatus::kSynchronizing, ChromeTimeSyncStatus::kSaved};
   for (const auto status : statuses) {
     std::vector<std::uint16_t> pixels(static_cast<std::size_t>(width * height), 0xFFFFU);
-    tinydraw::vector_v2::draw_chrome(pixels, width, height, {.time_sync_status = status});
+    paint_chrome(pixels, width, height, {.time_sync_status = status});
 
     int ink_left = width;
     int ink_right = 0;
@@ -131,10 +138,9 @@ TEST_CASE("active time sync is modal and hides navigation overlays") {
   CHECK(tinydraw::vector_v2::chrome_input_bottom(connecting_state) == 0);
   CHECK(tinydraw::vector_v2::chrome_action_at({184.0F, 100.0F}, connecting_state) ==
         ChromeAction::kNone);
-  CHECK(tinydraw::vector_v2::chrome_overlay_regions(connecting_state).count == 0U);
 
-  tinydraw::vector_v2::draw_chrome(connecting, width, height, connecting_state);
-  tinydraw::vector_v2::draw_chrome(synchronizing, width, height, synchronizing_state);
+  paint_chrome(connecting, width, height, connecting_state);
+  paint_chrome(synchronizing, width, height, synchronizing_state);
   CHECK(connecting != synchronizing);
 }
 
@@ -144,7 +150,7 @@ TEST_CASE("rectangular bottom toolbar owns the curved lower display corners") {
   constexpr std::uint16_t untouched = 0x1234U;
   std::vector<std::uint16_t> pixels(static_cast<std::size_t>(width * height), untouched);
 
-  tinydraw::vector_v2::draw_chrome(pixels, width, height, {});
+  paint_chrome(pixels, width, height, {});
 
   CHECK(pixels[372U * width] == 0xBDF7U);
   CHECK(pixels[373U * width] == 0xDEDBU);
@@ -160,7 +166,7 @@ TEST_CASE("color palette is a second-level popup above the persistent toolbar") 
   std::vector<std::uint16_t> pixels(static_cast<std::size_t>(width * height), untouched);
   const ChromeState state{.popup = ChromePopup::kColors};
 
-  tinydraw::vector_v2::draw_chrome(pixels, width, height, state);
+  paint_chrome(pixels, width, height, state);
 
   CHECK(pixels[0] == untouched);
   CHECK(pixels[365U * width + 46U] == 0xFFFFU);
@@ -230,21 +236,6 @@ TEST_CASE("minimap hit guard absorbs imprecise touches around the rendered frame
   CHECK(tinydraw::vector_v2::chrome_contains({310.0F, 310.0F}, state));
   CHECK_FALSE(tinydraw::vector_v2::chrome_minimap_contains({310.0F, 310.0F},
                                                            {.popup = ChromePopup::kTools}));
-  CHECK_FALSE(tinydraw::vector_v2::chrome_promotes_minimap_drag({310.0F, 310.0F}, {313.0F, 310.0F},
-                                                                state, 100));
-  CHECK(tinydraw::vector_v2::chrome_promotes_minimap_drag({310.0F, 310.0F}, {314.0F, 310.0F}, state,
-                                                          100));
-  CHECK_FALSE(tinydraw::vector_v2::chrome_promotes_minimap_drag({310.0F, 310.0F}, {312.0F, 310.0F},
-                                                                state, 200));
-  CHECK(tinydraw::vector_v2::chrome_promotes_minimap_drag({310.0F, 310.0F}, {313.0F, 310.0F}, state,
-                                                          200));
-  CHECK_FALSE(tinydraw::vector_v2::chrome_promotes_minimap_drag({310.0F, 310.0F}, {311.0F, 310.0F},
-                                                                state, 400));
-  CHECK(tinydraw::vector_v2::chrome_promotes_minimap_drag({310.0F, 310.0F}, {312.0F, 310.0F}, state,
-                                                          400));
-  CHECK_FALSE(tinydraw::vector_v2::chrome_promotes_minimap_drag(
-      {310.0F, 310.0F}, {320.0F, 310.0F}, {.popup = ChromePopup::kTools}, 400));
-
   const tinydraw::vector_v2::ChromeNavigation navigation{
       .zoom_percent = 200,
       .level_width = 2944,
@@ -303,17 +294,14 @@ TEST_CASE("minimap pointer absolutely centers the viewport at every zoom") {
 
   // A touch anywhere on the minimap acquires that absolute world position;
   // there is no requirement to grab the tiny viewport indicator first.
-  CHECK(tinydraw::vector_v2::chrome_minimap_drag_origin({352.0F, 356.0F}, {352.0F, 356.0F}, focus,
-                                                        navigation) ==
+  CHECK(tinydraw::vector_v2::chrome_minimap_drag_origin({352.0F, 356.0F}, focus, navigation) ==
         tinydraw::vector_v2::ChromeLevelPoint{5'520, 6'796});
   // Moving from the bottom-right to the map center must reach center within
   // the available finger travel, even at 400%.
-  CHECK(tinydraw::vector_v2::chrome_minimap_drag_origin({352.0F, 356.0F}, {312.0F, 307.0F}, focus,
-                                                        navigation) ==
+  CHECK(tinydraw::vector_v2::chrome_minimap_drag_origin({312.0F, 307.0F}, focus, navigation) ==
         tinydraw::vector_v2::ChromeLevelPoint{2'760, 3'398});
   // Projection clamps continuously at every world edge.
-  CHECK(tinydraw::vector_v2::chrome_minimap_drag_origin({352.0F, 356.0F}, {272.0F, 258.0F}, focus,
-                                                        navigation) ==
+  CHECK(tinydraw::vector_v2::chrome_minimap_drag_origin({272.0F, 258.0F}, focus, navigation) ==
         tinydraw::vector_v2::ChromeLevelPoint{});
 }
 
@@ -324,88 +312,6 @@ TEST_CASE("overview mutations schedule a minimap refresh outside its panel bound
   CHECK_FALSE(tinydraw::vector_v2::chrome_minimap_refresh_required(state, true, false));
   CHECK_FALSE(tinydraw::vector_v2::chrome_minimap_refresh_required({.popup = ChromePopup::kTools},
                                                                    true, true));
-}
-
-TEST_CASE("canvas overlay regions disappear for modal and popup chrome") {
-  CHECK(tinydraw::vector_v2::chrome_overlay_regions({}).count == 2U);
-  CHECK(tinydraw::vector_v2::chrome_overlay_regions({.battery_percentage = 50}).count == 3U);
-  CHECK(tinydraw::vector_v2::chrome_overlay_regions({.popup = ChromePopup::kTools}).count == 0U);
-  CHECK(tinydraw::vector_v2::chrome_overlay_regions({.confirm_new = true}).count == 0U);
-  CHECK(tinydraw::vector_v2::chrome_overlay_regions({.export_status = ChromeExportStatus::kSaving})
-            .count == 0U);
-}
-
-TEST_CASE("live ink presentation regions exclude every fixed canvas overlay") {
-  const ChromeState state{.battery_percentage = 50};
-  const auto regions = tinydraw::vector_v2::chrome_unobscured_regions({0, 0, 368, 372}, state);
-  const auto contains = [&](int x, int y) {
-    for (std::size_t index = 0; index < regions.count; ++index) {
-      const auto region = regions.regions[index];
-      if (x >= region.x0 && x < region.x1 && y >= region.y0 && y < region.y1) {
-        return true;
-      }
-    }
-    return false;
-  };
-
-  CHECK(contains(100, 100));
-  CHECK(contains(100, 300));
-  CHECK_FALSE(contains(332, 98));
-  CHECK_FALSE(contains(300, 300));
-  CHECK_FALSE(contains(230, 28));
-  for (std::size_t index = 0; index < regions.count; ++index) {
-    const auto region = regions.regions[index];
-    CHECK((region.x0 & 1) == 0);
-    CHECK((region.y0 & 1) == 0);
-    CHECK((region.x1 & 1) == 0);
-    CHECK((region.y1 & 1) == 0);
-  }
-
-  const ChromeState popup{.popup = ChromePopup::kTools};
-  const auto popup_regions =
-      tinydraw::vector_v2::chrome_unobscured_regions({20, 40, 120, 160}, popup);
-  REQUIRE(popup_regions.count == 1U);
-  CHECK(popup_regions.regions[0] == tinydraw::vector_v2::ChromeRect{20, 40, 120, 160});
-}
-
-TEST_CASE("canvas overlay regions own every pixel their painters mutate") {
-  constexpr int width = 368;
-  constexpr int height = 448;
-  constexpr std::uint16_t untouched = 0x1234U;
-  const std::size_t pixel_count = static_cast<std::size_t>(width * height);
-  std::vector<std::uint16_t> pixels(pixel_count, untouched);
-  std::vector<std::uint16_t> overview(pixel_count, 0x4567U);
-  const ChromeState state{.battery_percentage = 50};
-  const tinydraw::vector_v2::ChromeNavigation navigation{
-      .zoom_percent = 100,
-      .level_x = 200,
-      .level_y = 300,
-      .level_width = 1472,
-      .level_height = 1792,
-      .can_pan_top = true,
-      .can_pan_left = true,
-      .can_pan_right = true,
-      .can_pan_bottom = true,
-      .overview_pixels = overview,
-  };
-
-  tinydraw::vector_v2::draw_chrome_canvas_overlays(pixels, width, height, state, navigation);
-  const auto regions = tinydraw::vector_v2::chrome_overlay_regions(state);
-  std::size_t mutated_outside_owned_regions = 0;
-  for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; ++x) {
-      if (pixels[static_cast<std::size_t>(y * width + x)] == untouched) {
-        continue;
-      }
-      bool owned = false;
-      for (std::size_t index = 0; index < regions.count; ++index) {
-        const auto region = regions.regions[index];
-        owned = owned || (x >= region.x0 && x < region.x1 && y >= region.y0 && y < region.y1);
-      }
-      mutated_outside_owned_regions += owned ? 0U : 1U;
-    }
-  }
-  CHECK(mutated_outside_owned_regions == 0U);
 }
 
 TEST_CASE("navigation overlays render overview viewport zoom and battery") {
@@ -428,7 +334,7 @@ TEST_CASE("navigation overlays render overview viewport zoom and battery") {
       .overview_pixels = overview,
   };
 
-  tinydraw::vector_v2::draw_chrome_canvas_overlays(pixels, width, height, state, navigation);
+  paint_chrome(pixels, width, height, state, navigation);
 
   CHECK(pixels[98U * width + 332U] == 0x2104U);
   CHECK(pixels[150U * width + 332U] != 0x1234U);
@@ -487,7 +393,7 @@ TEST_CASE("saved export label sits one pixel below the old baseline") {
   std::vector<std::uint16_t> pixels(static_cast<std::size_t>(width * height), 0xFFFFU);
   const ChromeState state{.export_status = ChromeExportStatus::kSaved};
 
-  tinydraw::vector_v2::draw_chrome(pixels, width, height, state);
+  paint_chrome(pixels, width, height, state);
 
   CHECK(pixels[90U * width + 142U] == 0xFFFFU);
   CHECK(pixels[91U * width + 142U] == 0x2104U);
@@ -507,8 +413,8 @@ TEST_CASE("saving toast is modal and renders determinate progress") {
   CHECK(tinydraw::vector_v2::chrome_action_at({184.0F, 100.0F}, empty_state) ==
         ChromeAction::kNone);
 
-  tinydraw::vector_v2::draw_chrome(empty, width, height, empty_state);
-  tinydraw::vector_v2::draw_chrome(half, width, height, half_state);
+  paint_chrome(empty, width, height, empty_state);
+  paint_chrome(half, width, height, half_state);
   CHECK(empty[116U * width + 150U] == 0xFFFFU);
   CHECK(half[116U * width + 150U] == 0x349FU);
   CHECK(empty != half);
@@ -534,7 +440,7 @@ TEST_CASE("USB export mode blocks drawing and offers an explicit return action")
 
     auto& pixels = renderings[rendering_index++];
     pixels.assign(pixel_count, 0x1234U);
-    tinydraw::vector_v2::draw_chrome(pixels, width, height, state);
+    paint_chrome(pixels, width, height, state);
     CHECK(pixels[0] == 0xFFFFU);
     CHECK(pixels[245U * width + 60U] == 0x349FU);
   }
@@ -550,8 +456,7 @@ TEST_CASE("USB export screen font renders every displayed character") {
   constexpr std::uint16_t muted = 0x8410U;
   constexpr std::uint16_t selected = 0x349FU;
   std::vector<std::uint16_t> pixels(static_cast<std::size_t>(width * height), white);
-  tinydraw::vector_v2::draw_chrome(
-      pixels, width, height, {.export_status = ChromeExportStatus::kPresented});
+  paint_chrome(pixels, width, height, {.export_status = ChromeExportStatus::kPresented});
 
   const auto check_label = [&](int text_x, int text_y, std::string_view text, std::uint16_t color,
                                int scale) {
@@ -561,8 +466,7 @@ TEST_CASE("USB export screen font renders every displayed character") {
         bool rendered = false;
         for (int y = text_y; y < text_y + 7 * scale; ++y) {
           for (int x = glyph_x; x < glyph_x + 5 * scale; ++x) {
-            rendered = rendered ||
-                       pixels[static_cast<std::size_t>(y * width + x)] == color;
+            rendered = rendered || pixels[static_cast<std::size_t>(y * width + x)] == color;
           }
         }
         CHECK_MESSAGE(rendered, "missing export-screen glyph: ", character);
@@ -592,12 +496,12 @@ TEST_CASE("chrome rendering stays within the framebuffer") {
   constexpr int height = 448;
   std::vector<std::uint16_t> pixels(static_cast<std::size_t>(width * height), 0xFFFFU);
   const auto untouched = pixels[100U * width + 100U];
-  tinydraw::vector_v2::draw_chrome(pixels, width, height, {});
+  paint_chrome(pixels, width, height, {});
   CHECK(pixels[100U * width + 100U] == untouched);
   CHECK(pixels[410U * width + 214U] != 0xFFFFU);
 
   pixels.assign(pixels.size(), 0x1234U);
-  tinydraw::vector_v2::draw_chrome(pixels, width, height, {});
+  paint_chrome(pixels, width, height, {});
   for (int y = tinydraw::vector_v2::kChromeCanvasBottom; y < 374; ++y) {
     for (int x = 0; x < width; ++x) {
       CHECK(pixels[static_cast<std::size_t>(y * width + x)] != 0x1234U);
@@ -606,7 +510,7 @@ TEST_CASE("chrome rendering stays within the framebuffer") {
 
   ChromeState popup{.popup = ChromePopup::kTools};
   pixels.assign(pixels.size(), 0x1234U);
-  tinydraw::vector_v2::draw_chrome(pixels, width, height, popup);
+  paint_chrome(pixels, width, height, popup);
   for (int y = tinydraw::vector_v2::kChromePopupCanvasBottom; y < 296; ++y) {
     for (int x = 0; x < width; ++x) {
       CHECK(pixels[static_cast<std::size_t>(y * width + x)] != 0x1234U);
@@ -614,7 +518,7 @@ TEST_CASE("chrome rendering stays within the framebuffer") {
   }
 
   const ChromeState palette{.popup = ChromePopup::kColors};
-  tinydraw::vector_v2::draw_chrome(pixels, width, height, palette);
+  paint_chrome(pixels, width, height, palette);
   CHECK(pixels[108U * width + 46U] == tinydraw::vector_v2::kPico8Palettes[0][0]);
   CHECK(pixels[32U * width + 184U] == 0xFFFFU);
 }
@@ -627,9 +531,9 @@ TEST_CASE("main tool button renders the selected Raster V1 glyph") {
   std::vector<std::uint16_t> eraser = pen;
   std::vector<std::uint16_t> hand = pen;
 
-  tinydraw::vector_v2::draw_chrome(pen, width, height, {.tool = ChromeTool::kDraw});
-  tinydraw::vector_v2::draw_chrome(eraser, width, height, {.tool = ChromeTool::kErase});
-  tinydraw::vector_v2::draw_chrome(hand, width, height, {.tool = ChromeTool::kPan});
+  paint_chrome(pen, width, height, {.tool = ChromeTool::kDraw});
+  paint_chrome(eraser, width, height, {.tool = ChromeTool::kErase});
+  paint_chrome(hand, width, height, {.tool = ChromeTool::kPan});
 
   CHECK(pen != eraser);
   CHECK(pen != hand);
@@ -643,7 +547,7 @@ TEST_CASE("new drawing dialog preserves canvas outside its bounds") {
   constexpr int height = 448;
   std::vector<std::uint16_t> pixels(static_cast<std::size_t>(width * height), 0x1234U);
 
-  tinydraw::vector_v2::draw_chrome(pixels, width, height, {.confirm_new = true});
+  paint_chrome(pixels, width, height, {.confirm_new = true});
 
   CHECK(pixels[20U * width + 20U] == 0x1234U);
   CHECK(pixels[140U * width + 180U] == 0xFFFFU);
@@ -651,108 +555,7 @@ TEST_CASE("new drawing dialog preserves canvas outside its bounds") {
 
 }  // namespace
 
-TEST_CASE("minimap surface draw matches the full overlay draw") {
-  constexpr int width = 368;
-  constexpr int height = 448;
-  const std::size_t pixel_count = static_cast<std::size_t>(width * height);
-  std::vector<std::uint16_t> frame(pixel_count);
-  std::vector<std::uint16_t> overview(pixel_count);
-  for (std::size_t index = 0; index < pixel_count; ++index) {
-    frame[index] = static_cast<std::uint16_t>(index * 7U);
-    overview[index] = static_cast<std::uint16_t>(index * 13U);
-  }
-  const ChromeState state{.battery_percentage = 50};
-  const tinydraw::vector_v2::ChromeNavigation navigation{
-      .zoom_percent = 200,
-      .level_x = 511,
-      .level_y = 833,
-      .level_width = 2944,
-      .level_height = 3584,
-      .can_pan_top = true,
-      .can_pan_left = true,
-      .can_pan_right = true,
-      .can_pan_bottom = true,
-      .overview_pixels = overview,
-  };
-  const auto region = tinydraw::vector_v2::chrome_minimap_region(state);
-  REQUIRE(region.has_value());
-  const int region_width = region->x1 - region->x0;
-  const int region_height = region->y1 - region->y0;
-  // The surface starts as a copy of the frame's backdrop under the overlay.
-  std::vector<std::uint16_t> surface(static_cast<std::size_t>(region_width) *
-                                     static_cast<std::size_t>(region_height));
-  for (int y = 0; y < region_height; ++y) {
-    for (int x = 0; x < region_width; ++x) {
-      surface[static_cast<std::size_t>(y) * static_cast<std::size_t>(region_width) +
-              static_cast<std::size_t>(x)] =
-          frame[static_cast<std::size_t>(region->y0 + y) * width +
-                static_cast<std::size_t>(region->x0 + x)];
-    }
-  }
-  REQUIRE(
-      tinydraw::vector_v2::draw_chrome_minimap_overlay(frame, width, height, state, navigation));
-  REQUIRE(tinydraw::vector_v2::draw_chrome_minimap_surface(
-      {surface, region_width, region_height, region->x0, region->y0}, state, navigation));
-  for (int y = 0; y < region_height; ++y) {
-    for (int x = 0; x < region_width; ++x) {
-      CHECK(surface[static_cast<std::size_t>(y) * static_cast<std::size_t>(region_width) +
-                    static_cast<std::size_t>(x)] ==
-            frame[static_cast<std::size_t>(region->y0 + y) * width +
-                  static_cast<std::size_t>(region->x0 + x)]);
-    }
-  }
-}
-
-TEST_CASE("full-width strip overlay drawing matches the full overlay draw") {
-  constexpr int width = 368;
-  constexpr int height = 448;
-  constexpr int canvas_bottom = 372;
-  constexpr int rows_per_strip = 44;
-  const std::size_t pixel_count = static_cast<std::size_t>(width * height);
-  std::vector<std::uint16_t> canvas(pixel_count);
-  std::vector<std::uint16_t> overview(pixel_count);
-  for (std::size_t index = 0; index < pixel_count; ++index) {
-    canvas[index] = static_cast<std::uint16_t>(index * 7U);
-    overview[index] = static_cast<std::uint16_t>(index * 13U);
-  }
-  const ChromeState state{.battery_percentage = 50};
-  const tinydraw::vector_v2::ChromeNavigation navigation{
-      .zoom_percent = 200,
-      .level_x = 511,
-      .level_y = 833,
-      .level_width = 2944,
-      .level_height = 3584,
-      .can_pan_top = true,
-      .can_pan_left = true,
-      .can_pan_right = true,
-      .can_pan_bottom = true,
-      .overview_pixels = overview,
-  };
-  // Reference: overlays drawn over the canvas in one full-frame pass.
-  std::vector<std::uint16_t> reference = canvas;
-  tinydraw::vector_v2::draw_chrome_canvas_overlays(reference, width, height, state, navigation);
-  // The pan sweep path: each full-width strip starts as backdrop and draws
-  // just its intersecting overlay shares.
-  std::size_t mismatches = 0;
-  for (int y = 0; y < canvas_bottom; y += rows_per_strip) {
-    const int rows = std::min(rows_per_strip, canvas_bottom - y);
-    std::vector<std::uint16_t> strip(
-        canvas.begin() + static_cast<std::ptrdiff_t>(y) * width,
-        canvas.begin() + static_cast<std::ptrdiff_t>(y + rows) * width);
-    REQUIRE(tinydraw::vector_v2::draw_chrome_strip_overlays({strip, width, rows, 0, y}, state,
-                                                            navigation));
-    for (int row = 0; row < rows; ++row) {
-      for (int x = 0; x < width; ++x) {
-        mismatches +=
-            strip[static_cast<std::size_t>(row) * width + static_cast<std::size_t>(x)] !=
-            reference[static_cast<std::size_t>(y + row) * width + static_cast<std::size_t>(x)];
-      }
-    }
-  }
-  CHECK(mismatches == 0);
-}
-
-TEST_CASE("staging strips reproduce all fixed chrome without mutating canvas source") {
+TEST_CASE("prepared staging cache reproduces chrome without mutating canvas source") {
   constexpr int width = 368;
   constexpr int height = 448;
   constexpr int rows_per_strip = 44;
@@ -779,17 +582,7 @@ TEST_CASE("staging strips reproduce all fixed chrome without mutating canvas sou
   };
 
   std::vector<std::uint16_t> reference = canvas;
-  tinydraw::vector_v2::draw_chrome(reference, width, height, state);
-  tinydraw::vector_v2::draw_chrome_canvas_overlays(reference, width, height, state, navigation);
-  std::vector<std::uint16_t> staged = canvas;
-  for (int y = 0; y < height; y += rows_per_strip) {
-    const int rows = std::min(rows_per_strip, height - y);
-    auto strip = std::span(staged).subspan(static_cast<std::size_t>(y) * width,
-                                           static_cast<std::size_t>(rows) * width);
-    REQUIRE(tinydraw::vector_v2::draw_chrome_staging_surface({strip, width, rows, 0, y}, state,
-                                                             navigation));
-  }
-  CHECK(staged == reference);
+  paint_chrome(reference, width, height, state, navigation);
 
   std::vector<std::uint16_t> cache_pixels(tinydraw::vector_v2::kChromeStagingCachePixels);
   tinydraw::vector_v2::ChromeStagingCache cache(cache_pixels);
@@ -830,7 +623,7 @@ TEST_CASE("staging strips reproduce all fixed chrome without mutating canvas sou
     const int rows = std::min(rows_per_strip, height - y);
     auto strip = std::span(cached).subspan(static_cast<std::size_t>(y) * width,
                                            static_cast<std::size_t>(rows) * width);
-    REQUIRE(cache.paint({strip, width, rows, 0, y}, state, navigation, 7U));
+    REQUIRE(cache.paint_prepared({strip, width, rows, 0, y}, state, navigation, 7U));
   }
   CHECK(cached == reference);
 
@@ -850,7 +643,7 @@ TEST_CASE("staging strips reproduce all fixed chrome without mutating canvas sou
     auto strip =
         std::span(swapped_cached)
             .subspan(static_cast<std::size_t>(y) * width, static_cast<std::size_t>(rows) * width);
-    REQUIRE(cache.paint({strip, width, rows, 0, y, true}, state, navigation, 7U));
+    REQUIRE(cache.paint_prepared({strip, width, rows, 0, y, true}, state, navigation, 7U));
   }
   CHECK(swapped_cached == swapped_reference);
 
@@ -858,8 +651,7 @@ TEST_CASE("staging strips reproduce all fixed chrome without mutating canvas sou
   moved.level_x += 137;
   moved.level_y += 211;
   std::vector<std::uint16_t> moved_reference = canvas;
-  tinydraw::vector_v2::draw_chrome(moved_reference, width, height, state);
-  tinydraw::vector_v2::draw_chrome_canvas_overlays(moved_reference, width, height, state, moved);
+  paint_chrome(moved_reference, width, height, state, moved);
   REQUIRE(cache.prepare(state, moved, 7U));
   CHECK(cache_pixels == prepared_cache);
   CHECK(cache.stats().bottom_redraws == initial_stats.bottom_redraws);
@@ -872,7 +664,7 @@ TEST_CASE("staging strips reproduce all fixed chrome without mutating canvas sou
     auto strip =
         std::span(moved_cached)
             .subspan(static_cast<std::size_t>(y) * width, static_cast<std::size_t>(rows) * width);
-    REQUIRE(cache.paint({strip, width, rows, 0, y}, state, moved, 7U));
+    REQUIRE(cache.paint_prepared({strip, width, rows, 0, y}, state, moved, 7U));
   }
   CHECK(moved_cached == moved_reference);
 
@@ -914,59 +706,4 @@ TEST_CASE("dock hit region starts at the dock face, not the last canvas rows") {
   CHECK(tinydraw::vector_v2::chrome_contains({100.0F, 400.0F}, state));
   CHECK(tinydraw::vector_v2::chrome_action_at({100.0F, 400.0F}, state) !=
         tinydraw::vector_v2::ChromeAction::kNone);
-}
-
-TEST_CASE("unobscured regions cover the bounds exactly and never overflow") {
-  const ChromeState state{.battery_percentage = 50};
-  const auto overlays = tinydraw::vector_v2::chrome_overlay_regions(state);
-  REQUIRE(overlays.count == 3);
-  const auto aligned = [](tinydraw::vector_v2::ChromeRect rect) {
-    rect.x0 = std::clamp(rect.x0 & ~1, 0, 368);
-    rect.y0 = std::clamp(rect.y0 & ~1, 0, 448);
-    rect.x1 = std::clamp((rect.x1 + 1) & ~1, rect.x0, 368);
-    rect.y1 = std::clamp((rect.y1 + 1) & ~1, rect.y0, 448);
-    return rect;
-  };
-  const std::array bounds_cases{
-      tinydraw::vector_v2::ChromeRect{0, 0, 368, 372},
-      tinydraw::vector_v2::ChromeRect{0, 200, 368, 372},
-      tinydraw::vector_v2::ChromeRect{0, 0, 2, 372},
-  };
-  for (const auto& bounds : bounds_cases) {
-    const auto regions = tinydraw::vector_v2::chrome_unobscured_regions(bounds, state);
-    CHECK_FALSE(regions.overflowed);
-    // Every pixel of the aligned bounds is covered exactly once by a
-    // returned region or sits under an aligned overlay: no dropped strips,
-    // no even-aligned holes at x=0 or x=366, no double pushes.
-    const auto aligned_bounds = aligned(bounds);
-    std::vector<std::uint8_t> coverage(368U * 448U, 0U);
-    for (std::size_t index = 0; index < regions.count; ++index) {
-      const auto& region = regions.regions[index];
-      for (int y = region.y0; y < region.y1; ++y) {
-        for (int x = region.x0; x < region.x1; ++x) {
-          ++coverage[static_cast<std::size_t>(y) * 368U + static_cast<std::size_t>(x)];
-        }
-      }
-    }
-    for (std::size_t index = 0; index < overlays.count; ++index) {
-      const auto overlay = aligned(overlays.regions[index]);
-      for (int y = overlay.y0; y < overlay.y1; ++y) {
-        for (int x = overlay.x0; x < overlay.x1; ++x) {
-          ++coverage[static_cast<std::size_t>(y) * 368U + static_cast<std::size_t>(x)];
-        }
-      }
-    }
-    std::size_t holes = 0;
-    std::size_t doubles = 0;
-    for (int y = aligned_bounds.y0; y < aligned_bounds.y1; ++y) {
-      for (int x = aligned_bounds.x0; x < aligned_bounds.x1; ++x) {
-        const auto value =
-            coverage[static_cast<std::size_t>(y) * 368U + static_cast<std::size_t>(x)];
-        holes += value == 0U;
-        doubles += value > 1U && x >= aligned_bounds.x0 && x < aligned_bounds.x1;
-      }
-    }
-    CHECK(holes == 0U);
-    CHECK(doubles == 0U);
-  }
 }

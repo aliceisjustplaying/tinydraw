@@ -24,7 +24,7 @@ OperationBuilderReject ChainedOperationBuilder::last_reject() const {
 
 std::size_t ChainedOperationBuilder::sample_count() const { return builder_.sample_count(); }
 
-std::optional<OperationAppend> ChainedOperationBuilder::pending_append() const {
+std::optional<BuiltOperation> ChainedOperationBuilder::pending_append() const {
   if (state_ != State::kChunkReady && state_ != State::kFinalChunkReady) {
     return std::nullopt;
   }
@@ -83,7 +83,7 @@ ChainedOperationStatus ChainedOperationBuilder::finish(OperationPoint point) {
     return ChainedOperationStatus::kRejected;
   }
   last_accepted_ = point;
-  return capture_final(point);
+  return capture_final();
 }
 
 ChainedOperationStatus ChainedOperationBuilder::acknowledge_commit() {
@@ -104,7 +104,7 @@ ChainedOperationStatus ChainedOperationBuilder::acknowledge_commit() {
   state_ = State::kCollecting;
   if (finish_after_commit_) {
     finish_after_commit_ = false;
-    return capture_final(rejected_);
+    return capture_final();
   }
   return ChainedOperationStatus::kAccepted;
 }
@@ -132,8 +132,8 @@ ChainedOperationStatus ChainedOperationBuilder::capture_boundary(OperationPoint 
   return ChainedOperationStatus::kChunkReady;
 }
 
-ChainedOperationStatus ChainedOperationBuilder::capture_final(OperationPoint point) {
-  const auto append = builder_.finish(point);
+ChainedOperationStatus ChainedOperationBuilder::capture_final() {
+  const auto append = builder_.finish();
   if (!append.has_value()) {
     state_ = State::kRejected;
     return ChainedOperationStatus::kRejected;

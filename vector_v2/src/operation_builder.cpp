@@ -38,14 +38,17 @@ bool OperationBuilder::overflowed() const { return overflowed_; }
 
 OperationBuilderReject OperationBuilder::last_reject() const { return last_reject_; }
 
-std::optional<OperationAppend> OperationBuilder::collected() const {
+std::optional<BuiltOperation> OperationBuilder::collected() const {
   if (sample_count_ == 0U) {
     return std::nullopt;
   }
-  return OperationAppend{.tool = tool_,
-                         .color = color_,
-                         .gesture_id = gesture_id_,
-                         .samples = storage_.first(sample_count_)};
+  const OperationAppend operation{.tool = tool_,
+                                  .color = color_,
+                                  .gesture_id = gesture_id_,
+                                  .samples = storage_.first(sample_count_)};
+  return world_bounds_.has_value()
+             ? std::optional<BuiltOperation>(BuiltOperation(operation, *world_bounds_))
+             : std::nullopt;
 }
 
 std::size_t OperationBuilder::sample_count() const { return sample_count_; }
@@ -83,7 +86,7 @@ bool OperationBuilder::add(OperationPoint point) {
   return true;
 }
 
-std::optional<OperationAppend> OperationBuilder::finish(OperationPoint point) {
+std::optional<BuiltOperation> OperationBuilder::finish(OperationPoint point) {
   if (!active_ || overflowed_) {
     return std::nullopt;
   }
@@ -95,8 +98,17 @@ std::optional<OperationAppend> OperationBuilder::finish(OperationPoint point) {
   return collected();
 }
 
+std::optional<BuiltOperation> OperationBuilder::finish() {
+  if (!active_ || overflowed_) {
+    return std::nullopt;
+  }
+  active_ = false;
+  return collected();
+}
+
 void OperationBuilder::cancel() {
   sample_count_ = 0;
+  world_bounds_.reset();
   active_ = false;
   overflowed_ = false;
   gesture_id_ = 0;
@@ -137,6 +149,19 @@ bool OperationBuilder::append_point(OperationPoint point, bool retain_duplicate)
     return false;
   }
   storage_[sample_count_++] = sample;
+  const auto sample_bounds = operation_sample_world_bounds(sample);
+  if (!sample_bounds.has_value()) {
+    last_reject_ = OperationBuilderReject::kInvalidPoint;
+    return false;
+  }
+  if (!world_bounds_.has_value()) {
+    world_bounds_ = sample_bounds;
+  } else {
+    world_bounds_->x0 = std::min(world_bounds_->x0, sample_bounds->x0);
+    world_bounds_->y0 = std::min(world_bounds_->y0, sample_bounds->y0);
+    world_bounds_->x1 = std::max(world_bounds_->x1, sample_bounds->x1);
+    world_bounds_->y1 = std::max(world_bounds_->y1, sample_bounds->y1);
+  }
   return true;
 }
 

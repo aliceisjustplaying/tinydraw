@@ -65,8 +65,8 @@ TEST_CASE("idle repair plans nothing at 25 percent") {
 TEST_CASE("idle repair at 400 percent covers the cardinal neighborhood") {
   // Center of the 5888x7168 level: all four neighbors are distinct.
   const auto plan = plan_idle_repair(view_at(ZoomLevel::k400Percent, 2760, 3360), {});
-  CHECK(plan.count == 5);
-  CHECK(contains(plan, ZoomLevel::k400Percent, 2760, 3360));
+  CHECK(plan.count == 4);
+  CHECK(!contains(plan, ZoomLevel::k400Percent, 2760, 3360));
   CHECK(contains(plan, ZoomLevel::k400Percent, 2760 - kOverviewWidth, 3360));
   CHECK(contains(plan, ZoomLevel::k400Percent, 2760 + kOverviewWidth, 3360));
   CHECK(contains(plan, ZoomLevel::k400Percent, 2760, 3360 - kOverviewHeight));
@@ -79,8 +79,8 @@ TEST_CASE("idle repair clamps and deduplicates at the level corner") {
   // Top-left corner of the 400% level: left and up neighbors clamp onto the
   // active view and disappear.
   const auto plan = plan_idle_repair(view_at(ZoomLevel::k400Percent, 0, 0), {});
-  CHECK(plan.count == 3);
-  CHECK(contains(plan, ZoomLevel::k400Percent, 0, 0));
+  CHECK(plan.count == 2);
+  CHECK(!contains(plan, ZoomLevel::k400Percent, 0, 0));
   CHECK(contains(plan, ZoomLevel::k400Percent, kOverviewWidth, 0));
   CHECK(contains(plan, ZoomLevel::k400Percent, 0, kOverviewHeight));
   CHECK(all_views_unique(plan));
@@ -95,7 +95,7 @@ TEST_CASE("idle repair includes remembered views at other zooms only") {
   const auto plan = plan_idle_repair(view_at(ZoomLevel::k400Percent, 2760, 3360), remembered);
   // The remembered 400% view matches the active zoom and is skipped; the
   // invalid 50% footprint is skipped.
-  CHECK(plan.count == 6);
+  CHECK(plan.count == 5);
   CHECK(contains(plan, ZoomLevel::k200Percent, 368, 448));
   CHECK(!contains(plan, ZoomLevel::k400Percent, 736, 896));
   CHECK(all_views_valid(plan));
@@ -104,8 +104,8 @@ TEST_CASE("idle repair includes remembered views at other zooms only") {
 
 TEST_CASE("idle repair at 100 percent sweeps the full level grid") {
   const auto plan = plan_idle_repair(view_at(ZoomLevel::k100Percent, 500, 700), {});
-  // Active + 4 neighbors (grid-unaligned, so no dedupe) + 16 grid cells.
-  CHECK(plan.count == 21);
+  // Four neighbors (grid-unaligned, so no dedupe) + 16 grid cells.
+  CHECK(plan.count == 20);
   for (int grid_y = 0; grid_y < kOverviewHeight << 2; grid_y += kOverviewHeight) {
     for (int grid_x = 0; grid_x < kOverviewWidth << 2; grid_x += kOverviewWidth) {
       CHECK(contains(plan, ZoomLevel::k100Percent, grid_x, grid_y));
@@ -117,7 +117,7 @@ TEST_CASE("idle repair at 100 percent sweeps the full level grid") {
 
 TEST_CASE("idle repair at a grid-aligned 100 percent origin dedupes the grid") {
   const auto plan = plan_idle_repair(view_at(ZoomLevel::k100Percent, 368, 448), {});
-  // Active and all four neighbors coincide with grid cells.
+  // All four neighbors coincide with grid cells.
   CHECK(plan.count == 16);
   CHECK(all_views_valid(plan));
   CHECK(all_views_unique(plan));

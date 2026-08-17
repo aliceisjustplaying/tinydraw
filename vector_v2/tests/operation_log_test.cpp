@@ -40,7 +40,7 @@ TEST_CASE("operation log appends ordered samples and advances one revision") {
   CHECK(stored->world_bounds == vector_v2::PixelRect{8, 18, 33, 43});
 }
 
-TEST_CASE("authority read views expose one coherent generation") {
+TEST_CASE("authority read views snapshot generation and retained counts") {
   vector_v2::test::OperationLogFixture<2, 2> fixture;
   auto& log = fixture.log;
   const std::array sample{
@@ -50,24 +50,22 @@ TEST_CASE("authority read views expose one coherent generation") {
   CHECK(empty.generation == vector_v2::DocumentRevision{0});
   CHECK(empty.active_operation_count == 0U);
   CHECK(empty.retained_operation_count == 0U);
-  CHECK(log.unchanged(empty));
 
   REQUIRE(log.append({.gesture_id = 7U, .samples = sample}));
-  CHECK_FALSE(log.unchanged(empty));
-  CHECK_FALSE(log.operation(empty, 0));
 
   const vector_v2::AuthorityReadView one = log.read_view();
   CHECK(one.generation == vector_v2::DocumentRevision{1});
   CHECK(one.active_operation_count == 1U);
   CHECK(one.retained_operation_count == 1U);
-  REQUIRE(log.operation(one, 0));
-  CHECK(log.operation(one, 0)->gesture_id == 7U);
-  REQUIRE(log.retained_operation(one, 0));
-  CHECK(log.retained_operation(one, 0)->identity.operation_index == 0U);
+  CHECK(one.retained_sample_count == 1U);
+  REQUIRE(log.operation(0));
+  CHECK(log.operation(0)->gesture_id == 7U);
+  REQUIRE(log.retained_operation(0));
+  CHECK(log.retained_operation(0)->identity.operation_index == 0U);
 
   REQUIRE(log.reset({8}));
-  CHECK_FALSE(log.unchanged(one));
-  CHECK_FALSE(log.retained_operation(one, 0));
+  CHECK(log.read_view() != one);
+  CHECK_FALSE(log.retained_operation(0));
 }
 
 TEST_CASE("Undo moves across every chunk in the final Stroke") {
@@ -92,9 +90,8 @@ TEST_CASE("Undo moves across every chunk in the final Stroke") {
   CHECK(canceled->change().previous_active_operation_count == 3U);
   CHECK(canceled->change().active_operation_count == 1U);
   CHECK(canceled->change().affected_world_bounds == vector_v2::PixelRect{8, 18, 33, 43});
-  CHECK_FALSE(log.unchanged(before));
   canceled->cancel();
-  CHECK(log.unchanged(before));
+  CHECK(log.read_view() == before);
 
   auto undo = log.prepare_undo();
   REQUIRE(undo.has_value());
@@ -109,8 +106,8 @@ TEST_CASE("Undo moves across every chunk in the final Stroke") {
   const vector_v2::AuthorityReadView after = log.read_view();
   CHECK(after.active_operation_count == 1U);
   CHECK(after.retained_operation_count == 3U);
-  REQUIRE(log.retained_operation(after, 2));
-  CHECK(log.retained_operation(after, 2)->gesture_id == 7U);
+  REQUIRE(log.retained_operation(2));
+  CHECK(log.retained_operation(2)->gesture_id == 7U);
 }
 
 TEST_CASE("Redo restores every chunk in the next Stroke") {
@@ -159,13 +156,13 @@ TEST_CASE("a prepared history change owns the authority mutation slot") {
   REQUIRE(undo.has_value());
 
   CHECK_FALSE(log.replay_range(epoch, {0}, {1}));
-  CHECK_FALSE(log.prepare({.gesture_id = 2U, .samples = sample}));
+  CHECK_FALSE(log.append({.gesture_id = 2U, .samples = sample}));
   CHECK_FALSE(log.reset());
   undo->cancel();
 
   CHECK(log.replay_range(epoch, {0}, {1}) ==
         vector_v2::OperationReplayRange{epoch, {0}, {1}, 0, 1});
-  CHECK(log.prepare({.gesture_id = 2U, .samples = sample}));
+  CHECK(log.append({.gesture_id = 2U, .samples = sample}));
 }
 
 TEST_CASE("history preserves ten levels and treats zero identities as separate Strokes") {
@@ -209,36 +206,7 @@ TEST_CASE("history stops before the document generation would wrap") {
   CHECK_FALSE(log.prepare_undo());
 }
 
-TEST_CASE("canceling new ink after Undo preserves the Redo Stroke") {
-  vector_v2::test::OperationLogFixture<3, 3> fixture;
-  auto& log = fixture.log;
-  const std::array first{
-      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
-  const std::array second{
-      vector_v2::CompactOperationSample{.x_quarter = 32, .y_quarter = 32, .radius_256 = 256}};
-  const std::array replacement{
-      vector_v2::CompactOperationSample{.x_quarter = 48, .y_quarter = 48, .radius_256 = 256}};
-  REQUIRE(log.append({.gesture_id = 1U, .samples = first}));
-  REQUIRE(log.append({.gesture_id = 2U, .samples = second}));
-  auto undo = log.prepare_undo();
-  REQUIRE(undo.has_value());
-  undo->publish();
-
-  auto prepared = log.prepare({.gesture_id = 3U, .samples = replacement});
-  REQUIRE(prepared.has_value());
-  CHECK(prepared->operation().samples.front().x_quarter == 48U);
-  CHECK_FALSE(log.can_redo());
-  prepared->cancel();
-
-  CHECK(log.can_redo());
-  const vector_v2::AuthorityReadView after_cancel = log.read_view();
-  CHECK(after_cancel.active_operation_count == 1U);
-  CHECK(after_cancel.retained_operation_count == 2U);
-  REQUIRE(log.retained_operation(after_cancel, 1));
-  CHECK(log.retained_operation(after_cancel, 1)->samples.front().x_quarter == 32U);
-}
-
-TEST_CASE("publishing new ink after Undo replaces the Redo Stroke") {
+TEST_CASE("new ink after Undo replaces the Redo Stroke") {
   vector_v2::test::OperationLogFixture<3, 3> fixture;
   auto& log = fixture.log;
   const std::array first{
@@ -254,10 +222,8 @@ TEST_CASE("publishing new ink after Undo replaces the Redo Stroke") {
   undo->publish();
   const vector_v2::OperationLogEpoch undo_epoch = log.epoch();
 
-  auto prepared = log.prepare({.gesture_id = 3U, .samples = replacement});
-  REQUIRE(prepared.has_value());
-  CHECK(prepared->operation().identity == vector_v2::OperationIdentity{{4}, 1});
-  prepared->publish();
+  CHECK(log.append({.gesture_id = 3U, .samples = replacement}) ==
+        vector_v2::OperationIdentity{{4}, 1});
 
   CHECK(log.current_revision() == vector_v2::DocumentRevision{4});
   CHECK(log.epoch() != undo_epoch);
@@ -267,9 +233,9 @@ TEST_CASE("publishing new ink after Undo replaces the Redo Stroke") {
   const vector_v2::AuthorityReadView after_publish = log.read_view();
   CHECK(after_publish.active_operation_count == 2U);
   CHECK(after_publish.retained_operation_count == 2U);
-  REQUIRE(log.operation(after_publish, 1));
-  CHECK(log.operation(after_publish, 1)->gesture_id == 3U);
-  CHECK(log.operation(after_publish, 1)->samples.front().x_quarter == 48U);
+  REQUIRE(log.operation(1));
+  CHECK(log.operation(1)->gesture_id == 3U);
+  CHECK(log.operation(1)->samples.front().x_quarter == 48U);
 }
 
 TEST_CASE("rejected replacement ink after Undo preserves the Redo Stroke") {
@@ -291,13 +257,13 @@ TEST_CASE("rejected replacement ink after Undo preserves the Redo Stroke") {
   REQUIRE(undo.has_value());
   undo->publish();
 
-  CHECK_FALSE(log.prepare({.gesture_id = 3U, .samples = too_large}));
+  CHECK_FALSE(log.append({.gesture_id = 3U, .samples = too_large}));
   CHECK(log.can_redo());
   const vector_v2::AuthorityReadView after_rejection = log.read_view();
   CHECK(after_rejection.active_operation_count == 1U);
   CHECK(after_rejection.retained_operation_count == 2U);
-  REQUIRE(log.retained_operation(after_rejection, 1));
-  CHECK(log.retained_operation(after_rejection, 1)->samples.front().x_quarter == 32U);
+  REQUIRE(log.retained_operation(1));
+  CHECK(log.retained_operation(1)->samples.front().x_quarter == 32U);
 }
 
 TEST_CASE("stored operation feeds the incremental renderer without translation") {
@@ -351,47 +317,6 @@ TEST_CASE("operation log append may exactly fill sample capacity") {
   };
   CHECK(log.append({.samples = samples}));
   CHECK(log.sample_count() == log.sample_capacity());
-}
-
-TEST_CASE("prepared append advances authority only when published") {
-  vector_v2::test::OperationLogFixture<1, 2> fixture;
-  auto& log = fixture.log;
-  const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256},
-      vector_v2::CompactOperationSample{.x_quarter = 32, .y_quarter = 32, .radius_256 = 256},
-  };
-  auto prepared = log.prepare({.color = 0xF800U, .samples = samples});
-  REQUIRE(prepared.has_value());
-  CHECK(prepared->operation().identity == vector_v2::OperationIdentity{{1}, 0});
-  CHECK(log.operation_count() == 0U);
-  CHECK(log.sample_count() == 0U);
-  CHECK(log.current_revision() == vector_v2::DocumentRevision{0});
-  CHECK_FALSE(log.prepare({.samples = samples}));
-  CHECK_FALSE(log.clear());
-  CHECK(log.current_revision() == vector_v2::DocumentRevision{0});
-
-  prepared->publish();
-  CHECK(prepared->operation().samples.empty());
-  prepared->publish();
-  CHECK(log.operation_count() == 1U);
-  CHECK(log.sample_count() == 2U);
-  CHECK(log.current_revision() == vector_v2::DocumentRevision{1});
-}
-
-TEST_CASE("canceling a prepared append leaves authority unchanged") {
-  vector_v2::test::OperationLogFixture<1, 1> fixture;
-  auto& log = fixture.log;
-  const std::array samples{
-      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
-  auto prepared = log.prepare({.samples = samples});
-  REQUIRE(prepared.has_value());
-  prepared->cancel();
-  CHECK(prepared->operation().samples.empty());
-  prepared->cancel();
-  CHECK(log.operation_count() == 0U);
-  CHECK(log.sample_count() == 0U);
-  CHECK(log.current_revision() == vector_v2::DocumentRevision{0});
-  CHECK(log.append({.samples = samples}) == vector_v2::OperationIdentity{{1}, 0});
 }
 
 TEST_CASE("operation log capacity failure is atomic") {
@@ -462,21 +387,6 @@ TEST_CASE("operation log exposes only represented contiguous replay ranges") {
   CHECK_FALSE(log.replay_range(epoch, {8}, {8}));
   CHECK(log.replay_range(log.epoch(), {8}, {8}) ==
         vector_v2::OperationReplayRange{log.epoch(), {8}, {8}, 0, 0});
-}
-
-TEST_CASE("operation log withholds replay ranges while an append is prepared") {
-  vector_v2::test::OperationLogFixture<1, 1> fixture;
-  auto& log = fixture.log;
-  const std::array sample{
-      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256}};
-  const vector_v2::OperationLogEpoch epoch = log.epoch();
-  auto prepared = log.prepare({.samples = sample});
-  REQUIRE(prepared.has_value());
-
-  CHECK_FALSE(log.replay_range(epoch, {0}, {0}));
-  prepared->cancel();
-  CHECK(log.replay_range(epoch, {0}, {0}) ==
-        vector_v2::OperationReplayRange{epoch, {0}, {0}, 0, 0});
 }
 
 TEST_CASE("operation log restore rejects malformed persistence without mutation") {

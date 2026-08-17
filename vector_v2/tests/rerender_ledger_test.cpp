@@ -34,8 +34,7 @@ TEST_CASE("rerender ledger classifies the first render as a cold miss") {
 TEST_CASE("rerender ledger initializes caller-owned storage") {
   std::vector<vector_v2::RerenderLedgerEntry> storage(vector_v2::kRerenderLedgerEntryCount);
   std::fill(storage.begin(), storage.end(),
-            vector_v2::RerenderLedgerEntry{
-                .revision = 0xFFFFFFFFU, .renders = 0xFFFFU, .flags = 0xFFU, .last_cause = 0xFFU});
+            vector_v2::RerenderLedgerEntry{.revision = 0xFFFFFFFFU, .flags = 0xFFU});
 
   vector_v2::RerenderLedger ledger(storage);
   REQUIRE(ledger.ready());

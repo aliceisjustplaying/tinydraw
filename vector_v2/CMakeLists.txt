@@ -2,14 +2,10 @@ include(sources.cmake)
 
 add_library(tinydraw_vector_v2
   ${TINYDRAW_VECTOR_V2_SRCS}
-  ${TINYDRAW_VECTOR_V2_DIAGNOSTIC_SRCS}
 )
 add_library(tinydraw::vector_v2 ALIAS tinydraw_vector_v2)
 
 target_compile_features(tinydraw_vector_v2 PUBLIC cxx_std_20)
-target_compile_definitions(tinydraw_vector_v2 PUBLIC
-  TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS=1
-)
 target_include_directories(tinydraw_vector_v2 PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>"
 )
@@ -23,13 +19,20 @@ if(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
   target_compile_definitions(tinydraw_vector_v2 PUBLIC TINYDRAW_VECTOR_V2_RASTER_CENSUS=1)
 endif()
 
-add_executable(tinydraw_ink_trace_check tools/ink_trace_check.cpp)
-target_link_libraries(tinydraw_ink_trace_check PRIVATE
-  tinydraw::vector_v2
-  tinydraw_project_options
-)
-
 if(TINYDRAW_BUILD_TESTS)
+  target_sources(tinydraw_vector_v2 PRIVATE
+    ${TINYDRAW_VECTOR_V2_DIAGNOSTIC_SRCS}
+  )
+  target_compile_definitions(tinydraw_vector_v2 PUBLIC
+    TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS=1
+  )
+
+  add_executable(tinydraw_ink_trace_check tools/ink_trace_check.cpp)
+  target_link_libraries(tinydraw_ink_trace_check PRIVATE
+    tinydraw::vector_v2
+    tinydraw_project_options
+  )
+
   function(tinydraw_add_vector_v2_tests target)
     add_executable(${target} tests/test_main.cpp ${ARGN})
     target_link_libraries(${target} PRIVATE
@@ -57,7 +60,6 @@ if(TINYDRAW_BUILD_TESTS)
   )
   tinydraw_add_vector_v2_tests(tinydraw_vector_v2_interaction_tests
     tests/chrome_test.cpp
-    tests/display_scheduler_test.cpp
     tests/frame_scroller_test.cpp
     tests/ink_trace_test.cpp
     tests/live_ink_coordinator_test.cpp
@@ -68,7 +70,12 @@ if(TINYDRAW_BUILD_TESTS)
   tinydraw_add_vector_v2_tests(tinydraw_vector_v2_rendering_tests
     tests/idle_repair_test.cpp
     tests/incremental_rasterizer_test.cpp
-    tests/materialized_canvas_test.cpp
+    tests/materialized_canvas_cache_test.cpp
+    tests/materialized_canvas_composition_test.cpp
+    tests/materialized_canvas_in_place_test.cpp
+    tests/materialized_canvas_layout_test.cpp
+    tests/materialized_canvas_occupancy_test.cpp
+    tests/materialized_canvas_revision_test.cpp
     tests/settled_tile_test.cpp
     tests/rerender_ledger_test.cpp
     tests/tile_payload_analysis_test.cpp
@@ -101,20 +108,4 @@ if(TINYDRAW_BUILD_TESTS)
   add_test(NAME tinydraw_vector_v2_fuzz_random_documents
            COMMAND tinydraw_vector_v2_raster_census --fuzz-docs 150 48879)
 
-  if(TINYDRAW_BUILD_EXPERIMENTS)
-    add_executable(tinydraw_vector_v2_ink_angularity tools/ink_angularity.cpp)
-    target_link_libraries(tinydraw_vector_v2_ink_angularity PRIVATE
-      tinydraw::core
-      tinydraw::vector_v2
-      tinydraw_project_options
-    )
-
-    add_executable(tinydraw_vector_v2_settled_aa_prototype tools/settled_aa_prototype.cpp)
-    target_link_libraries(tinydraw_vector_v2_settled_aa_prototype PRIVATE
-      tinydraw::core
-      tinydraw::vector_v2
-      tinydraw_project_options
-    )
-
-  endif()
 endif()

@@ -39,8 +39,6 @@ namespace v2 = tinydraw::vector_v2;
 
 namespace {
 
-constexpr std::size_t kWorkspaceTileCapacity = v2::kMaximumVisibleTiles;
-
 struct Rig {
   std::vector<v2::OperationRecord> records;
   std::vector<v2::CompactOperationSample> samples;
@@ -57,10 +55,9 @@ struct Rig {
   std::vector<std::uint16_t> summary_rows;
   std::vector<std::uint32_t> summary_words;
   std::vector<std::uint32_t> chord_plans;
-  // append_incrementally workspace (mirrors the app).
+  // Authority absorption workspace (mirrors the app).
   std::vector<std::uint16_t> overview_scratch;
-  std::vector<std::uint16_t> tile_scratch;
-  std::vector<v2::TileRevisionPublication> publications;
+  std::vector<std::uint8_t> append_mask;
   std::vector<v2::TileKey> affected_keys;
 
   v2::OperationLog log;
@@ -84,8 +81,7 @@ struct Rig {
         summary_words(v2::kTileProducerSummaryWords),
         chord_plans(v2::kOperationChordStorageBytes / 4U),
         overview_scratch(v2::kOverviewPixels),
-        tile_scratch(kWorkspaceTileCapacity * v2::kTilePixels),
-        publications(kWorkspaceTileCapacity),
+        append_mask(v2::kInPlaceTileMaskBytes),
         affected_keys(v2::kTileSlotCount + v2::kMaximumVisibleTiles),
         log(records, samples),
         canvas(overview, *uniforms, occupancy, slots, tile_pool, {}, raw_slot_directory),
@@ -97,13 +93,18 @@ struct Rig {
                   .operation_chord_plans = std::as_writable_bytes(std::span(chord_plans))},
                  {}, 0xFFFFU) {}
 
-  [[nodiscard]] v2::IncrementalDocumentWorkspace workspace() {
+  [[nodiscard]] v2::InPlaceAppendWorkspace workspace() {
     return {
         .overview_scratch = overview_scratch,
-        .tile_scratch = tile_scratch,
-        .publications = publications,
         .affected_keys = affected_keys,
+        .tile_mask = append_mask,
     };
+  }
+
+  [[nodiscard]] bool append(const v2::OperationAppend& operation) {
+    return v2::pending_operation_count(log, canvas) == 0U &&
+           v2::append_authority_only(log, operation).has_value() &&
+           v2::absorb_pending_operation(log, canvas, workspace()).has_value();
   }
 
   [[nodiscard]] bool reset_blank(v2::DocumentRevision revision) {
@@ -201,7 +202,6 @@ bool append_realistic_seed7(Rig& rig) {
     return false;
   }
   std::vector<v2::CompactOperationSample> converted(200);
-  const auto workspace = rig.workspace();
   for (const auto& stroke : document.strokes()) {
     const auto input = document.samples(stroke);
     if (input.empty() || input.size() > converted.size()) {
@@ -215,13 +215,11 @@ bool append_realistic_seed7(Rig& rig) {
           .elapsed_ms = static_cast<std::uint16_t>(index * 15U),
       };
     }
-    if (!v2::append_incrementally(
-            rig.log, rig.canvas,
-            {.tool = stroke.tool == tinydraw::VectorTool::kEraser ? v2::OperationTool::kEraser
-                                                                  : v2::OperationTool::kPen,
-             .color = stroke.color,
-             .samples = std::span(converted).first(input.size())},
-            workspace)) {
+    if (!rig.append({.tool = stroke.tool == tinydraw::VectorTool::kEraser
+                                 ? v2::OperationTool::kEraser
+                                 : v2::OperationTool::kPen,
+                     .color = stroke.color,
+                     .samples = std::span(converted).first(input.size())})) {
       return false;
     }
   }
@@ -232,7 +230,6 @@ bool append_overlap_corpus(Rig& rig) {
   constexpr std::size_t kStrokeCount = 8;
   constexpr std::size_t kSamplesPerStroke = 150;
   std::array<v2::CompactOperationSample, kSamplesPerStroke> samples{};
-  const auto workspace = rig.workspace();
   for (std::size_t stroke = 0; stroke < kStrokeCount; ++stroke) {
     for (std::size_t index = 0; index < samples.size(); ++index) {
       const std::size_t phase = (index + stroke * 7U) % 64U;
@@ -247,11 +244,9 @@ bool append_overlap_corpus(Rig& rig) {
           .elapsed_ms = static_cast<std::uint16_t>(index * 8U),
       };
     }
-    if (!v2::append_incrementally(rig.log, rig.canvas,
-                                  {.tool = v2::OperationTool::kPen,
-                                   .color = static_cast<std::uint16_t>(0x001FU + stroke * 0x111U),
-                                   .samples = samples},
-                                  workspace)) {
+    if (!rig.append({.tool = v2::OperationTool::kPen,
+                     .color = static_cast<std::uint16_t>(0x001FU + stroke * 0x111U),
+                     .samples = samples})) {
       return false;
     }
   }
@@ -294,12 +289,9 @@ int run_adversarial_sweep(
     std::fprintf(stderr, "baseline reset failed\n");
     return 1;
   }
-  const auto workspace = rig.workspace();
   const bool appended = v2::test_support::emit_adversarial_tapered_corpus(
-      [&](const v2::OperationAppend& operation) {
-        return v2::append_incrementally(rig.log, rig.canvas, operation, workspace).has_value();
-      },
-      nullptr, operation_count, samples_per_operation);
+      [&](const v2::OperationAppend& operation) { return rig.append(operation); }, nullptr,
+      operation_count, samples_per_operation);
   if (!appended) {
     std::fprintf(stderr, "corpus append failed\n");
     return 1;
@@ -373,11 +365,8 @@ std::optional<ScorecardResult> measure_scorecard_corpus(ScorecardCorpus corpus) 
   if (corpus == ScorecardCorpus::kSeed7) {
     appended = append_realistic_seed7(rig);
   } else if (corpus == ScorecardCorpus::kAdversarial) {
-    const auto workspace = rig.workspace();
     appended = v2::test_support::emit_adversarial_tapered_corpus(
-        [&](const v2::OperationAppend& operation) {
-          return v2::append_incrementally(rig.log, rig.canvas, operation, workspace).has_value();
-        });
+        [&](const v2::OperationAppend& operation) { return rig.append(operation); });
   } else {
     appended = append_overlap_corpus(rig);
   }
@@ -434,10 +423,10 @@ int run_cold_scorecard() {
       return 1;
     }
     const auto& candidates = result->sweep.candidates;
-    const double operations_per_group =
-        candidates.groups_published == 0U ? 0.0
-                                          : static_cast<double>(candidates.operations_scanned) /
-                                                static_cast<double>(candidates.groups_published);
+    const double operations_per_group = candidates.groups_published == 0U
+                                            ? 0.0
+                                            : static_cast<double>(candidates.operations_scanned) /
+                                                  static_cast<double>(candidates.groups_published);
     std::printf(
         "SCORE corpus=%s ops_scanned=%zu ops_intersecting=%zu groups=%zu "
         "ops_per_group=%.2f wall_ms=%.3f exact=%u\n",
@@ -467,8 +456,7 @@ struct HairlineRandom {
   }
 };
 
-bool append_hairline_stroke(Rig& rig, const v2::IncrementalDocumentWorkspace& workspace,
-                            HairlineRandom& random, float radius, std::uint16_t color,
+bool append_hairline_stroke(Rig& rig, HairlineRandom& random, float radius, std::uint16_t color,
                             v2::OperationTool tool, std::uint16_t gesture_id, float length) {
   constexpr std::size_t kChunkSamples = 12;
   const float margin = radius + 2.0F;
@@ -508,13 +496,10 @@ bool append_hairline_stroke(Rig& rig, const v2::IncrementalDocumentWorkspace& wo
       };
     }
     continuing = true;
-    if (!v2::append_incrementally(rig.log, rig.canvas,
-                                  {.tool = tool,
-                                   .color = color,
-                                   .gesture_id = gesture_id,
-                                   .samples = std::span(chunk.data(), count)},
-                                  workspace)
-             .has_value()) {
+    if (!rig.append({.tool = tool,
+                     .color = color,
+                     .gesture_id = gesture_id,
+                     .samples = std::span(chunk.data(), count)})) {
       return false;
     }
   }
@@ -524,12 +509,11 @@ bool append_hairline_stroke(Rig& rig, const v2::IncrementalDocumentWorkspace& wo
 bool append_hairline_document(Rig& rig) {
   constexpr std::array<std::uint16_t, 6> kColors{0x0000U, 0x001FU, 0xF800U,
                                                  0x07E0U, 0x4208U, 0x8010U};
-  const auto workspace = rig.workspace();
   HairlineRandom random;
   std::uint16_t gesture_id = 7'000;
   for (int stroke = 0; stroke < 220; ++stroke) {
     const bool eraser = (random.next() % 12U) == 0U;
-    if (!append_hairline_stroke(rig, workspace, random, random.range(1.3F, 2.0F),
+    if (!append_hairline_stroke(rig, random, random.range(1.3F, 2.0F),
                                 kColors[random.next() % kColors.size()],
                                 eraser ? v2::OperationTool::kEraser : v2::OperationTool::kPen,
                                 gesture_id++, random.range(300.0F, 1'400.0F))) {
@@ -537,7 +521,7 @@ bool append_hairline_document(Rig& rig) {
     }
   }
   for (int stroke = 0; stroke < 60; ++stroke) {
-    if (!append_hairline_stroke(rig, workspace, random, random.range(3.5F, 4.7F),
+    if (!append_hairline_stroke(rig, random, random.range(3.5F, 4.7F),
                                 kColors[random.next() % kColors.size()], v2::OperationTool::kPen,
                                 gesture_id++, random.range(200.0F, 800.0F))) {
       return false;
@@ -545,7 +529,7 @@ bool append_hairline_document(Rig& rig) {
   }
   for (int stroke = 0; stroke < 10; ++stroke) {
     const bool eraser = stroke == 4 || stroke == 9;
-    if (!append_hairline_stroke(rig, workspace, random, random.range(40.0F, 80.0F),
+    if (!append_hairline_stroke(rig, random, random.range(40.0F, 80.0F),
                                 kColors[random.next() % kColors.size()],
                                 eraser ? v2::OperationTool::kEraser : v2::OperationTool::kPen,
                                 gesture_id++, random.range(800.0F, 2'000.0F))) {
@@ -565,13 +549,9 @@ int run_general_sweep(std::size_t runs) {
     std::fprintf(stderr, "baseline reset failed\n");
     return 1;
   }
-  const auto workspace = rig.workspace();
   const bool appended =
       v2::test_support::emit_adversarial_tapered_corpus(
-          [&](const v2::OperationAppend& operation) {
-            return v2::append_incrementally(rig.log, rig.canvas, operation, workspace).has_value();
-          },
-          nullptr) &&
+          [&](const v2::OperationAppend& operation) { return rig.append(operation); }, nullptr) &&
       append_hairline_document(rig);
   if (!appended) {
     std::fprintf(stderr, "corpus append failed\n");
@@ -667,8 +647,12 @@ struct FuzzRig {
   std::vector<v2::OperationRecord> records;
   std::vector<v2::CompactOperationSample> samples;
   std::vector<std::uint16_t> overview;
+  std::unique_ptr<std::array<v2::MaterializedUniformStorage, v2::kMaterializedTileIdentityCount>>
+      uniforms;
+  std::vector<std::uint8_t> occupancy;
   std::vector<v2::MaterializedSlotStorage> slots;
   std::vector<std::uint16_t> tile_pool;
+  std::vector<std::uint16_t> raw_slot_directory;
   std::vector<std::uint16_t> supertask;
   std::vector<std::uint8_t> mask;
   std::vector<std::uint16_t> summary_rows;
@@ -682,15 +666,19 @@ struct FuzzRig {
       : records(64),
         samples(4'096),
         overview(v2::kOverviewPixels, 0xFFFFU),
+        uniforms(std::make_unique<
+                 std::array<v2::MaterializedUniformStorage, v2::kMaterializedTileIdentityCount>>()),
+        occupancy(v2::kOccupancyBytes, 0U),
         slots(64),
         tile_pool(slots.size() * v2::kTilePixels),
+        raw_slot_directory(v2::kMaterializedTileIdentityCount),
         supertask(v2::kTileProducerPixels),
         mask(v2::kTileProducerMaskBytes),
         summary_rows(v2::kTileProducerSummaryRows),
         summary_words(v2::kTileProducerSummaryWords),
         chord_plans(v2::kOperationChordStorageBytes / 4U),
         log(records, samples),
-        canvas(overview, slots, tile_pool),
+        canvas(overview, *uniforms, occupancy, slots, tile_pool, {}, raw_slot_directory),
         producer(log, canvas,
                  {.supertask_pixels = supertask,
                   .finalized_pixels = mask,

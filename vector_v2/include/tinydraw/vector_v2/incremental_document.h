@@ -11,16 +11,6 @@
 
 namespace tinydraw::vector_v2 {
 
-struct IncrementalDocumentWorkspace {
-  // Compact row-major scratch for the conservative affected overview region.
-  // Full overview capacity handles the worst case, but ordinary appends use
-  // only their bounded prefix.
-  std::span<std::uint16_t> overview_scratch{};
-  std::span<std::uint16_t> tile_scratch{};
-  std::span<TileRevisionPublication> publications{};
-  std::span<TileKey> affected_keys{};
-};
-
 // Wall time of each in-place commit phase, measured only when a time source
 // is provided. Only offscreen raw-tile retention is deadline-bounded; every
 // other phase is workload-bounded, so these attributions — not the retention
@@ -68,26 +58,6 @@ struct IncrementalAppendResult {
   InPlaceRetainDrops drops{};
 };
 
-enum class IncrementalPublicationScope : std::uint8_t {
-  kAllMaterialized,
-  kPriorityView,
-};
-
-struct IncrementalAppendOptions {
-  // Priority-view scope updates only affected materialization intersecting the
-  // active tiled view. Other affected identities become correct overview
-  // fallback and are replayed cooperatively after input returns.
-  std::optional<ViewRequest> priority_view{};
-  IncrementalPublicationScope publication_scope = IncrementalPublicationScope::kAllMaterialized;
-};
-
-// Coordinates document authority and materialization as one append. All
-// workspace is caller-owned. Failure leaves both log and canvas at their prior
-// revisions; callers must serialize access to the log, canvas, and workspace.
-[[nodiscard]] std::optional<IncrementalAppendResult> append_incrementally(
-    OperationLog& log, MaterializedCanvas& canvas, const OperationAppend& append_request,
-    const IncrementalDocumentWorkspace& workspace, IncrementalAppendOptions options = {});
-
 struct InPlaceAppendWorkspace {
   // Compact row-major scratch for the conservative affected overview region.
   std::span<std::uint16_t> overview_scratch{};
@@ -118,25 +88,6 @@ struct InPlaceRetentionBudget {
   std::int64_t budget_us = 0;
 };
 
-// Interactive-path sibling of append_incrementally that paints the new
-// operation directly into resident raw tiles instead of copying each affected
-// tile out and back. Every fallible step (log preparation, overview scratch,
-// canvas validation, enumeration) runs before any owned pixel changes, so
-// failure still leaves both authorities at their prior revisions. Mutation is
-// bounded to the active zoom: affected resident raw tiles at priority_view's
-// zoom are updated in place; resident uniforms whose color equals the painted
-// color are retained untouched at every zoom; uniforms inside priority_view
-// are converted to raw and painted; every other affected identity - including
-// every raw tile at another zoom - is invalidated to correct overview
-// fallback and re-produced lazily on its next visit. Composed pixels equal
-// ground-truth replay wherever both are resident, and the priority view never
-// falls back. Callers must serialize access and must not compose between
-// internal edits (single-threaded use).
-[[nodiscard]] std::optional<IncrementalAppendResult> append_incrementally_in_place(
-    OperationLog& log, MaterializedCanvas& canvas, const OperationAppend& append_request,
-    const InPlaceAppendWorkspace& workspace,
-    std::optional<ViewRequest> priority_view = std::nullopt, InPlaceRetentionBudget budget = {});
-
 // Committed-overlay revision split (VECTOR_V2_COMMITTED_OVERLAY_DESIGN.md
 // §3.1): the materialized canvas may trail operation authority when a caller
 // appends to the log without a paired canvas commit. The pending operation
@@ -158,6 +109,8 @@ struct InPlaceRetentionBudget {
 // field (published/fallback/drops/other phases) is zero by construction.
 [[nodiscard]] std::optional<IncrementalAppendResult> append_authority_only(
     OperationLog& log, const OperationAppend& append_request, InPlaceRetentionBudget budget = {});
+[[nodiscard]] std::optional<IncrementalAppendResult> append_authority_only(
+    OperationLog& log, const BuiltOperation& operation, InPlaceRetentionBudget budget = {});
 
 enum class HistoryDirection : std::uint8_t {
   kUndo,
@@ -174,14 +127,11 @@ enum class HistoryDirection : std::uint8_t {
     std::span<std::uint16_t> overview_scratch);
 
 // Absorbs the oldest pending operation into the canvas through the same
-// phase machinery as append_incrementally_in_place (identical painters,
-// identical order, identical retention semantics), advancing the canvas by
+// committed-overlay phase machinery, advancing the canvas by
 // exactly one revision. Authority is never touched. Returns nullopt when
 // nothing is pending or when a fallible step rejects; the canvas then keeps
 // its prior revision and the call may be retried. While the canvas trails,
-// append_incrementally_in_place refuses (lockstep validation), so a drain
-// loop must empty the pending range before synchronous appends resume.
-// Callers must serialize access exactly like the synchronous path.
+// a drain loop may retry later. Callers must serialize access.
 [[nodiscard]] std::optional<IncrementalAppendResult> absorb_pending_operation(
     const OperationLog& log, MaterializedCanvas& canvas, const InPlaceAppendWorkspace& workspace,
     std::optional<ViewRequest> priority_view = std::nullopt, InPlaceRetentionBudget budget = {});
@@ -201,8 +151,7 @@ enum class HistoryDirection : std::uint8_t {
 
 // Rebuilds a complete 25% overview from the active authority prefix. Retained
 // Redo operations are deliberately excluded. Failure leaves output unspecified.
-[[nodiscard]] bool replay_active_overview(const OperationLog& log,
-                                          std::span<std::uint16_t> output);
+[[nodiscard]] bool replay_active_overview(const OperationLog& log, std::span<std::uint16_t> output);
 
 // Coordinates an authoritative snapshot restore. The caller-owned pixels must
 // not alias log or canvas storage. Validation is completed before either state

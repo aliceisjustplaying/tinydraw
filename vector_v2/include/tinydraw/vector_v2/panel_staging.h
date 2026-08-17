@@ -2,29 +2,12 @@
 #define TINYDRAW_VECTOR_V2_PANEL_STAGING_H
 
 #include <cstdint>
-#include <cstring>
 #include <span>
 
 namespace tinydraw::vector_v2 {
 
 // Byte-swap staging shared by the CO5300 transport and its host tests: the
 // panel wire format is big-endian RGB565, host pixels are little-endian.
-// All multi-byte access goes through std::memcpy so the staging math stays
-// free of strict-aliasing undefined behavior on every toolchain.
-
-constexpr std::uint32_t swap_pixel_pair(std::uint16_t first, std::uint16_t second) {
-  const std::uint32_t pixels =
-      static_cast<std::uint32_t>(first) | (static_cast<std::uint32_t>(second) << 16U);
-  return ((pixels >> 8U) & 0x00FF00FFU) | ((pixels << 8U) & 0xFF00FF00U);
-}
-
-static_assert(swap_pixel_pair(0x1234U, 0xABCDU) == 0xCDAB3412U);
-
-constexpr std::uint32_t swap_pixel_word(std::uint32_t pair) {
-  return ((pair >> 8U) & 0x00FF00FFU) | ((pair << 8U) & 0xFF00FF00U);
-}
-
-static_assert(swap_pixel_word(0xABCD1234U) == swap_pixel_pair(0x1234U, 0xABCDU));
 
 // Stages one run of an even number of pixels into wire byte order using
 // plain uint16 element access: aliasing-legal on every toolchain, and the

@@ -64,6 +64,14 @@ struct AdversarialFixture {
   std::vector<std::uint16_t> overview = std::vector<std::uint16_t>(vector_v2::kOverviewPixels);
   std::vector<std::uint16_t> snapshot =
       std::vector<std::uint16_t>(vector_v2::kOverviewPixels, 0xFFFFU);
+  std::unique_ptr<
+      std::array<vector_v2::MaterializedUniformStorage, vector_v2::kMaterializedTileIdentityCount>>
+      uniforms = std::make_unique<std::array<vector_v2::MaterializedUniformStorage,
+                                             vector_v2::kMaterializedTileIdentityCount>>();
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> occupancy{};
+  std::unique_ptr<std::array<std::uint16_t, vector_v2::kMaterializedTileIdentityCount>>
+      raw_slot_directory =
+          std::make_unique<std::array<std::uint16_t, vector_v2::kMaterializedTileIdentityCount>>();
   std::array<vector_v2::MaterializedSlotStorage, 4> slots{};
   std::vector<std::uint16_t> tile_pool =
       std::vector<std::uint16_t>(slots.size() * vector_v2::kTilePixels);
@@ -73,7 +81,8 @@ struct AdversarialFixture {
   std::array<std::uint32_t, vector_v2::kTileProducerSummaryWords> summary_words{};
   std::array<std::uint32_t, vector_v2::kOperationChordStorageBytes / 4U> chord_plans{};
   vector_v2::OperationLog log{records, samples};
-  vector_v2::MaterializedCanvas canvas{overview, slots, tile_pool};
+  vector_v2::MaterializedCanvas canvas{overview,  *uniforms, occupancy,          slots,
+                                       tile_pool, {},        *raw_slot_directory};
   vector_v2::TileProducer producer{
       log,
       canvas,
@@ -93,6 +102,14 @@ struct Fixture {
   std::array<vector_v2::OperationRecord, 96> records{};
   std::array<vector_v2::CompactOperationSample, 2'048> samples{};
   std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
+  std::unique_ptr<
+      std::array<vector_v2::MaterializedUniformStorage, vector_v2::kMaterializedTileIdentityCount>>
+      uniforms = std::make_unique<std::array<vector_v2::MaterializedUniformStorage,
+                                             vector_v2::kMaterializedTileIdentityCount>>();
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> occupancy{};
+  std::unique_ptr<std::array<std::uint16_t, vector_v2::kMaterializedTileIdentityCount>>
+      raw_slot_directory =
+          std::make_unique<std::array<std::uint16_t, vector_v2::kMaterializedTileIdentityCount>>();
   std::array<vector_v2::MaterializedSlotStorage, 64> slots{};
   std::array<std::uint16_t, 64U * vector_v2::kTilePixels> tile_pool{};
   std::array<std::uint16_t, vector_v2::kTileProducerPixels> supertask{};
@@ -101,7 +118,8 @@ struct Fixture {
   std::array<std::uint32_t, vector_v2::kTileProducerSummaryWords> summary_words{};
   std::array<std::uint32_t, vector_v2::kOperationChordStorageBytes / 4U> chord_plans{};
   vector_v2::OperationLog log{records, samples};
-  vector_v2::MaterializedCanvas canvas{overview, slots, tile_pool};
+  vector_v2::MaterializedCanvas canvas{overview,  *uniforms, occupancy,          slots,
+                                       tile_pool, {},        *raw_slot_directory};
   vector_v2::TileProducer producer{
       log,
       canvas,
@@ -137,7 +155,7 @@ TEST_CASE("adversarial tapered corpus is four times the dense physical sample co
   CHECK(stats.samples == 4'096U);
   CHECK(stats.erasers == 12U);
   CHECK(fixture.log.current_revision() == vector_v2::DocumentRevision{128});
-  REQUIRE(fixture.canvas.restore_snapshot(fixture.log.current_revision(), fixture.snapshot));
+  REQUIRE(fixture.canvas.publish_overview(fixture.log.current_revision(), fixture.snapshot));
 
   const vector_v2::ViewRequest view{
       .zoom = vector_v2::ZoomLevel::k400Percent,
@@ -252,8 +270,8 @@ TEST_CASE("tile producer ignores overview fallback when finding missing resident
   CHECK(published == 4U);
   const auto source = fixture.canvas.lookup({vector_v2::ZoomLevel::k100Percent, 0, 0});
   REQUIRE(source.has_value());
-  CHECK(source->kind == vector_v2::SourceKind::kTileSlot);
-  CHECK(source->identity.quality == vector_v2::MaterializationQuality::kImmediate);
+  CHECK(source->kind == vector_v2::SourceKind::kUniform);
+  CHECK(source->quality == vector_v2::MaterializationQuality::kImmediate);
 }
 
 TEST_CASE("tile producer publishes one completed supertask as a group") {

@@ -20,12 +20,12 @@ TEST_CASE("operation builder quantizes one bounded stroke") {
       builder.finish({.world_x = 6.0F, .world_y = 7.0F, .radius = 2.0F, .timestamp_us = 14'001U});
   REQUIRE(append.has_value());
   CHECK_FALSE(builder.active());
-  CHECK(append->tool == vector_v2::OperationTool::kPen);
-  CHECK(append->color == 0x1234U);
-  REQUIRE(append->samples.size() == 3U);
-  CHECK(append->samples[0] == vector_v2::CompactOperationSample{20, 40, 768, 0});
-  CHECK(append->samples[1] == vector_v2::CompactOperationSample{64, 80, 640, 2});
-  CHECK(append->samples[2] == vector_v2::CompactOperationSample{96, 112, 512, 4});
+  CHECK(append->operation().tool == vector_v2::OperationTool::kPen);
+  CHECK(append->operation().color == 0x1234U);
+  REQUIRE(append->operation().samples.size() == 3U);
+  CHECK(append->operation().samples[0] == vector_v2::CompactOperationSample{20, 40, 768, 0});
+  CHECK(append->operation().samples[1] == vector_v2::CompactOperationSample{64, 80, 640, 2});
+  CHECK(append->operation().samples[2] == vector_v2::CompactOperationSample{96, 112, 512, 4});
 }
 
 TEST_CASE("operation builder coalesces quantized duplicate positions") {
@@ -39,9 +39,9 @@ TEST_CASE("operation builder coalesces quantized duplicate positions") {
   const auto append =
       builder.finish({.world_x = 11.0F, .world_y = 20.0F, .radius = 2.0F, .timestamp_us = 5'000U});
   REQUIRE(append.has_value());
-  REQUIRE(append->samples.size() == 2U);
-  CHECK(append->samples[0].elapsed_ms == 0U);
-  CHECK(append->samples[1].x_quarter == 176U);
+  REQUIRE(append->operation().samples.size() == 2U);
+  CHECK(append->operation().samples[0].elapsed_ms == 0U);
+  CHECK(append->operation().samples[1].x_quarter == 176U);
 }
 
 TEST_CASE("operation builder rejects malformed points and invalid time") {
@@ -67,8 +67,8 @@ TEST_CASE("operation builder publishes an exactly full stroke without its lift p
   const auto append =
       builder.finish({.world_x = 2.0F, .world_y = 2.0F, .radius = 1.0F, .timestamp_us = 1'000U});
   REQUIRE(append.has_value());
-  CHECK(append->samples.size() == 1U);
-  CHECK(append->samples.front().x_quarter == 16U);
+  CHECK(append->operation().samples.size() == 1U);
+  CHECK(append->operation().samples.front().x_quarter == 16U);
   CHECK(builder.overflowed());
   CHECK_FALSE(builder.active());
 }
@@ -97,5 +97,5 @@ TEST_CASE("operation builder handles uint32 timestamp wrap") {
   const auto append = builder.finish(
       {.world_x = 2.0F, .world_y = 2.0F, .radius = 1.0F, .timestamp_us = 0x0000'02E8U});
   REQUIRE(append.has_value());
-  CHECK(append->samples.back().elapsed_ms == 1U);
+  CHECK(append->operation().samples.back().elapsed_ms == 1U);
 }

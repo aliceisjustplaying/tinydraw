@@ -12,7 +12,8 @@ namespace {
 // one panel, 400% is 16x.
 constexpr int level_shift(ZoomLevel zoom) { return static_cast<int>(zoom); }
 
-void append_view(IdleRepairPlan& plan, ZoomLevel zoom, int x, int y) {
+void append_view(IdleRepairPlan& plan, ZoomLevel zoom, int x, int y,
+                 const ViewRequest* excluded = nullptr) {
   const auto origin = NavigationState::clamp_origin(zoom, x, y);
   const ViewRequest view{
       .zoom = zoom,
@@ -20,6 +21,11 @@ void append_view(IdleRepairPlan& plan, ZoomLevel zoom, int x, int y) {
   };
   const auto begin = plan.views.begin();
   const auto end = begin + static_cast<std::ptrdiff_t>(plan.count);
+  if (excluded != nullptr && excluded->zoom == view.zoom &&
+      excluded->level_pixels.x0 == view.level_pixels.x0 &&
+      excluded->level_pixels.y0 == view.level_pixels.y0) {
+    return;
+  }
   const bool duplicate = std::any_of(begin, end, [&](const ViewRequest& existing) {
     return existing.zoom == view.zoom && existing.level_pixels.x0 == view.level_pixels.x0 &&
            existing.level_pixels.y0 == view.level_pixels.y0;
@@ -39,16 +45,12 @@ IdleRepairPlan plan_idle_repair(const ViewRequest& active_view,
     // repair; other zooms are covered when the user is actually in them.
     return plan;
   }
-  // The active view leads the plan so deduplication naturally removes it and
-  // any neighbor that clamps back onto it; it is already complete when
-  // repair starts, so producing it again is a cheap no-op scan.
   const int x = active_view.level_pixels.x0;
   const int y = active_view.level_pixels.y0;
-  append_view(plan, active_view.zoom, x, y);
-  append_view(plan, active_view.zoom, x - kOverviewWidth, y);
-  append_view(plan, active_view.zoom, x + kOverviewWidth, y);
-  append_view(plan, active_view.zoom, x, y - kOverviewHeight);
-  append_view(plan, active_view.zoom, x, y + kOverviewHeight);
+  append_view(plan, active_view.zoom, x - kOverviewWidth, y, &active_view);
+  append_view(plan, active_view.zoom, x + kOverviewWidth, y, &active_view);
+  append_view(plan, active_view.zoom, x, y - kOverviewHeight, &active_view);
+  append_view(plan, active_view.zoom, x, y + kOverviewHeight, &active_view);
   for (const ViewFootprint& footprint : remembered) {
     if (footprint.valid && footprint.zoom != active_view.zoom) {
       append_view(plan, footprint.zoom, footprint.level_pixels.x0, footprint.level_pixels.y0);

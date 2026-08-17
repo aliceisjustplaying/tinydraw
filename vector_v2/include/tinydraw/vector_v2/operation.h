@@ -66,6 +66,7 @@ static_assert(sizeof(OperationRecord) == 20);
 
 // Conservative world-pixel bounds including sample radii, clipped to the
 // bounded world. Empty or malformed sample sequences return nullopt.
+[[nodiscard]] std::optional<PixelRect> operation_sample_world_bounds(CompactOperationSample sample);
 [[nodiscard]] std::optional<PixelRect> operation_world_bounds(
     std::span<const CompactOperationSample> samples);
 

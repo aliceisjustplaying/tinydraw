@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <array>
-#include <limits>
 
 namespace tinydraw::vector_v2 {
 namespace {
@@ -130,10 +129,6 @@ RerenderCause RerenderLedger::record_group_render(ZoomLevel zoom, std::uint16_t 
   ++totals_.renders;
   entry->revision = revision.value;
   entry->flags = kRenderedFlag;
-  entry->renders = entry->renders == std::numeric_limits<std::uint16_t>::max()
-                       ? entry->renders
-                       : entry->renders + 1U;
-  entry->last_cause = static_cast<std::uint8_t>(cause);
   return cause;
 }
 

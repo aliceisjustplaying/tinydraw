@@ -29,6 +29,20 @@ enum class OperationBuilderReject : std::uint8_t {
   kCapacityOverflow,
 };
 
+class BuiltOperation {
+ public:
+  [[nodiscard]] const OperationAppend& operation() const { return operation_; }
+  [[nodiscard]] PixelRect world_bounds() const { return world_bounds_; }
+
+ private:
+  friend class OperationBuilder;
+  BuiltOperation(OperationAppend operation, PixelRect world_bounds)
+      : operation_(operation), world_bounds_(world_bounds) {}
+
+  OperationAppend operation_{};
+  PixelRect world_bounds_{};
+};
+
 // Fixed-capacity collector for one input operation. It quantizes world-space
 // points into the persistent append encoding and owns stroke lifecycle. Input
 // timestamps may wrap normally but may not move backward. The returned append
@@ -44,12 +58,13 @@ class OperationBuilder {
   [[nodiscard]] bool overflowed() const;
   [[nodiscard]] std::size_t sample_count() const;
   [[nodiscard]] OperationBuilderReject last_reject() const;
-  [[nodiscard]] std::optional<OperationAppend> collected() const;
+  [[nodiscard]] std::optional<BuiltOperation> collected() const;
 
   [[nodiscard]] bool begin(OperationTool tool, std::uint16_t color, OperationPoint point,
                            std::uint16_t gesture_id = 0);
   [[nodiscard]] bool add(OperationPoint point);
-  [[nodiscard]] std::optional<OperationAppend> finish(OperationPoint point);
+  [[nodiscard]] std::optional<BuiltOperation> finish(OperationPoint point);
+  [[nodiscard]] std::optional<BuiltOperation> finish();
   void cancel();
 
  private:
@@ -62,6 +77,7 @@ class OperationBuilder {
   std::uint32_t started_us_ = 0;
   std::uint32_t previous_us_ = 0;
   std::size_t sample_count_ = 0;
+  std::optional<PixelRect> world_bounds_{};
   bool active_ = false;
   bool overflowed_ = false;
   OperationBuilderReject last_reject_ = OperationBuilderReject::kNone;

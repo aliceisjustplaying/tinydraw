@@ -43,6 +43,7 @@ struct AuthorityReadView {
   DocumentRevision generation{};
   std::size_t active_operation_count = 0;
   std::size_t retained_operation_count = 0;
+  std::size_t retained_sample_count = 0;
   bool operator==(const AuthorityReadView&) const = default;
 };
 
@@ -66,30 +67,7 @@ struct HistoryChange {
 };
 
 class OperationLog;
-
-// Move-only preparation owned by one OperationLog. It must not outlive that
-// log. Destruction cancels an unpublished preparation. publish() is infallible
-// for a live preparation.
-class PreparedAppend {
- public:
-  ~PreparedAppend();
-  PreparedAppend(const PreparedAppend&) = delete;
-  PreparedAppend& operator=(const PreparedAppend&) = delete;
-  PreparedAppend(PreparedAppend&& other) noexcept;
-  PreparedAppend& operator=(PreparedAppend&& other) noexcept;
-
-  [[nodiscard]] const StoredOperation& operation() const;
-  void publish();
-  void cancel();
-
- private:
-  friend class OperationLog;
-  PreparedAppend(OperationLog& owner, StoredOperation operation, std::uint32_t token);
-
-  OperationLog* owner_ = nullptr;
-  StoredOperation operation_{};
-  std::uint32_t token_ = 0;
-};
+class BuiltOperation;
 
 // Move-only whole-Stroke history transition. Destruction or cancel leaves
 // authority unchanged; publish is infallible for a live preparation.
@@ -108,13 +86,11 @@ class PreparedHistoryChange {
 
  private:
   friend class OperationLog;
-  PreparedHistoryChange(OperationLog& owner, HistoryChange change,
-                        std::size_t active_sample_count, std::uint32_t token);
+  PreparedHistoryChange(OperationLog& owner, HistoryChange change, std::size_t active_sample_count);
 
   OperationLog* owner_ = nullptr;
   HistoryChange change_{};
   std::size_t active_sample_count_ = 0;
-  std::uint32_t token_ = 0;
 };
 
 // Fixed-capacity, ordered document authority. Storage is caller-owned and must
@@ -136,18 +112,11 @@ class OperationLog {
   [[nodiscard]] bool can_redo() const;
   [[nodiscard]] bool workspace_overlaps_storage(std::span<const std::byte> workspace) const;
 
-  // Preparation validates the caller-owned samples but does not mutate storage
-  // or authority. The samples must outlive publish/cancel. Publish copies them,
-  // atomically replacing any Redo tail; cancel leaves that tail intact.
-  [[nodiscard]] std::optional<PreparedAppend> prepare(const OperationAppend& append_request);
   [[nodiscard]] std::optional<OperationIdentity> append(const OperationAppend& append_request);
+  [[nodiscard]] std::optional<OperationIdentity> append(const BuiltOperation& operation);
   [[nodiscard]] AuthorityReadView read_view() const;
-  [[nodiscard]] bool unchanged(const AuthorityReadView& view) const;
   [[nodiscard]] std::optional<StoredOperation> operation(std::size_t index) const;
-  [[nodiscard]] std::optional<StoredOperation> operation(const AuthorityReadView& view,
-                                                         std::size_t active_index) const;
-  [[nodiscard]] std::optional<StoredOperation> retained_operation(
-      const AuthorityReadView& view, std::size_t retained_index) const;
+  [[nodiscard]] std::optional<StoredOperation> retained_operation(std::size_t index) const;
   [[nodiscard]] std::optional<PreparedHistoryChange> prepare_undo();
   [[nodiscard]] std::optional<PreparedHistoryChange> prepare_redo();
   // Returns the exact contiguous operations needed to advance a caller-owned
@@ -163,19 +132,18 @@ class OperationLog {
   // Atomically replaces authority from a validated persistence snapshot.
   // Failure leaves active and retained history unchanged.
   [[nodiscard]] bool restore(const AuthorityRestore& restore);
-  // Resets empty authority to a snapshot revision. Fails while a
-  // PreparedAppend owns the pending slot. Existing operations are discarded.
+  // Resets empty authority to a snapshot revision. Existing operations are discarded.
   [[nodiscard]] bool reset(DocumentRevision revision = {});
   [[nodiscard]] bool clear();
 
  private:
-  friend class PreparedAppend;
   friend class PreparedHistoryChange;
   [[nodiscard]] bool valid_append(const OperationAppend& append_request) const;
+  [[nodiscard]] bool accepts_append(const OperationAppend& append_request) const;
+  [[nodiscard]] OperationIdentity append_validated(const OperationAppend& append_request,
+                                                   PixelRect bounds);
   [[nodiscard]] std::size_t sample_count_for_prefix(std::size_t operation_count) const;
   [[nodiscard]] PixelRect bounds_for_range(std::size_t first, std::size_t last) const;
-  void publish_prepared(const PreparedAppend& prepared);
-  void cancel_prepared(const PreparedAppend& prepared);
   [[nodiscard]] std::optional<StoredOperation> history_operation(
       const PreparedHistoryChange& prepared, std::size_t active_index) const;
   void publish_history(const PreparedHistoryChange& prepared);
@@ -190,12 +158,6 @@ class OperationLog {
   DocumentRevision base_revision_{};
   DocumentRevision revision_{};
   OperationLogEpoch epoch_{};
-  std::uint32_t next_prepare_token_ = 1;
-  std::uint32_t pending_token_ = 0;
-  std::size_t pending_sample_count_ = 0;
-  bool append_pending_ = false;
-  std::uint32_t next_history_token_ = 1;
-  std::uint32_t pending_history_token_ = 0;
   bool history_pending_ = false;
 };
 

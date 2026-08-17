@@ -2,7 +2,6 @@ set(TINYDRAW_VECTOR_V2_SRCS
   "${CMAKE_CURRENT_LIST_DIR}/src/authority_journal.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/chained_operation_builder.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/chrome.cpp"
-  "${CMAKE_CURRENT_LIST_DIR}/src/display_scheduler.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/frame_scroller.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/idle_repair.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/incremental_document.cpp"
