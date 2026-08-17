@@ -42,6 +42,34 @@ The first gate rebuild exposed a real diagnostic-layout constraint: linking Wi-F
 
 Full repository clang-tidy/cppcheck remain red on pre-existing unrelated findings in `incremental_document.cpp`, `materialized_canvas.h`, `panel_staging.h`, `ink_trace.cpp`, `rerender_ledger.h`, and `svg_export.cpp`; receipts are [`clang-tidy-full-existing-red.log`](clang-tidy-full-existing-red.log) and [`cppcheck.log`](cppcheck.log).
 
+## Toast glyph and lifetime correction
+
+The first physical NTP check exposed two UI defects. `CONNECTING`, `SYNCING`,
+and `TIME SET` appeared as `ONNE ING`, `SY ING`, and `I E SE` because the shared
+5×7 pixel font had no C, T, or M glyphs. Those three glyphs now have a focused
+regression in `tests/toolbar_test.cpp`. Terminal success/error remains
+immediately tap-dismissible and now expires automatically after three seconds;
+active connecting/synchronizing states never expire. Focused and full host
+release/ASan runs pass ([`toast-fix-host-release.log`](toast-fix-host-release.log),
+[`toast-fix-host-asan.log`](toast-fix-host-asan.log)). Commit `383609e` was
+flashed and reached the application loop.
+
+## Black-start incident and guard
+
+The first `383609e` boot left the glass black. This was not a framebuffer/font
+failure: its startup presentation recorded zero TE edges, zero pushes,
+`tear_edge_timeout=1`, and `pass=0`, but the old app still printed READY
+([`toast-fix-product-boot.log`](toast-fix-product-boot.log)). A normal serial
+hard reset, with no flash or mass-storage transition, immediately produced nine
+TE edges, eleven pushes, and `pass=1`; the owner confirmed the screen recovered
+([`toast-fix-reset-recovery.log`](toast-fix-reset-recovery.log)).
+
+Commit `f1b2d47` now retries a failed startup presentation up to three times with
+a 20 ms gap and refuses to print READY if all attempts fail. The ordinary
+product image compiles and links with this guard
+([`startup-retry-product-build.log`](startup-retry-product-build.log)); the guard
+is not flashed yet while the owner tests the recovered toast build.
+
 ## Pending physical receipt
 
 With the ordinary product image now running:
