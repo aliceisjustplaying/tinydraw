@@ -2,7 +2,7 @@
 
 ## Status
 
-**Host and product firmware builds pass. Physical flash and network behavior are pending because the device remains mounted as the read-only `TINYDRAW` export volume; no mass-storage reset/eject was attempted.**
+**Host and product firmware builds pass. Product commit `25abc19` is flashed and booted in ordinary USB-Serial/JTAG mode; the owner-triggered network/glass check remains pending. No mass-storage transition was invoked.**
 
 ## Product behavior
 
@@ -34,6 +34,8 @@ The focused test executable passes 241/241 cases and 92,405/92,405 assertions as
 - [`format-check.log`](format-check.log): repository format check passes.
 - [`clang-tidy-chrome.log`](clang-tidy-chrome.log): changed platform-neutral Chrome implementation is clean.
 - [`product-build.log`](product-build.log): ordinary Vector V2 firmware compiles/links; binary is `0xf4fa0` bytes with `0xb060` bytes left in the 1 MiB product app partition.
+- [`product-flash.log`](product-flash.log): commit `25abc19` was written and hash-verified over `/dev/cu.usbmodem101` in USB-Serial/JTAG mode.
+- [`product-boot.log`](product-boot.log): RTC retained time, the app reached `TINYDRAW_VECTOR_V2_READY`, no failure marker appeared, and the 16 KiB main stack retained 6,152 bytes.
 - [`gate-build.log`](gate-build.log): gate firmware compiles/links using the gate-only 1.25 MiB app partition.
 
 The first gate rebuild exposed a real diagnostic-layout constraint: linking Wi-Fi/NTP made the trace-heavy gate image `0x11eda0`, overflowing the 1 MiB product app partition by `0x1eda0` ([`gate-build-1m-red.log`](gate-build-1m-red.log)). `partitions.gate.csv` now moves 256 KiB from the gate-only export partition to the app partition while preserving the total layout footprint; product `partitions.csv` is unchanged.
@@ -42,9 +44,8 @@ Full repository clang-tidy/cppcheck remain red on pre-existing unrelated finding
 
 ## Pending physical receipt
 
-After the owner ejects the mounted export and resets the board back to serial mode:
+With the ordinary product image now running:
 
-- flash the ordinary product image without entering mass-storage mode;
 - press Document → Clock;
 - capture `TINYDRAW_NTP_PHASE phase=connecting`, `phase=synchronizing`, `TINYDRAW_NTP_OK`, and `TINYDRAW_NTP_DONE success=1 wifi_stopped=1`;
 - confirm `TIME SET` on glass and an ordinary retry after dismissing it.

@@ -2,8 +2,9 @@
 
 ## Status
 
-**Host and firmware builds pass; physical flash is waiting for the owner to
-finish the currently mounted SVG test and reset the device.**
+**Host and firmware builds pass; product commit `25abc19`, including these SVG
+and minimap corrections, was flashed and reached the ready marker on 2026-08-17.
+Owner glass/export follow-up remains pending.**
 
 ## Owner SVG artifact
 
@@ -85,4 +86,7 @@ The physical gate classifier contains the same far-acquisition check.
 The first gate flash attempt in [`gate-flash.log`](gate-flash.log) stopped
 before connecting because `/dev/cu.usbmodem101` was absent while the owner's
 `TINYDRAW` export volume was mounted. No flash write occurred in that attempt,
-and the agent did not invoke mass-storage mode.
+and the agent did not invoke mass-storage mode. The later ordinary product flash
+and ready boot are recorded in
+[`../v2-ntp-sync-2026-08-17/product-flash.log`](../v2-ntp-sync-2026-08-17/product-flash.log)
+and [`product-boot.log`](../v2-ntp-sync-2026-08-17/product-boot.log).
