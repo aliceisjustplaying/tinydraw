@@ -4,7 +4,9 @@ Last updated: 2026-08-17 (feature implementation complete; cleanup, known bug
 fixes, release gates, and final optimization remain; see
 [`PROJECT_STATE.md`](PROJECT_STATE.md#immediate-work-order))
 
-V2 is the ESP32 product architecture.
+V2 is the vector-authoritative ESP32 product generation. Raster-authoritative
+V1 remains a separately supported product on physical ESP32 hardware, QEMU,
+and macOS.
 [`PROJECT_STATE.md`](PROJECT_STATE.md) contains current measurements; this file
 is the only forward queue.
 
@@ -17,8 +19,8 @@ is the only forward queue.
 - Glass-visible gates need optical evidence and a failing positive control.
 - Preserve the 1.5 MiB export reserve and report free/largest PSRAM.
 - Revert a change that pushes a closed metric outside its guard.
-- Keep accepted receipts; rejected experiments remain in Git and dated evidence
-  directories, not in this queue.
+- Keep accepted receipts in Git. Tags and history retain rejected experiments;
+  raw logs and captures belong in external run artifacts, not the source tree.
 
 ## Phase 0 — one source of truth
 

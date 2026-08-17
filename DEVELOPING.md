@@ -120,9 +120,9 @@ Daily firmware commands:
 ./scripts/esp32 clean
 ```
 
-Firmware configuration uses one `TINYDRAW_FIRMWARE_VARIANT` selector. Product, gate, QEMU,
-panel-probe, tearing-probe, and tile-census variants keep diagnostic machinery out of the normal
-V2 app.
+Firmware configuration uses one `TINYDRAW_FIRMWARE_VARIANT` selector. Vector V2 product, Raster
+V1 product, gate, QEMU, panel-probe, tearing-probe, and tile-census variants keep diagnostic
+machinery out of both normal product apps.
 
 The firmware embeds the same seven points as `zigzag.stroke` and feeds them incrementally through
 `InkStream`, `RibbonStream`, `StrokeRaster`, 4×4 coverage, RGB565 composition, and optionally
