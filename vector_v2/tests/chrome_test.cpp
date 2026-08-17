@@ -72,6 +72,32 @@ TEST_CASE("terminal time sync feedback expires but active work does not") {
         ChromeTimeSyncStatus::kSynchronizing);
 }
 
+TEST_CASE("time sync labels stay centered inside the toast") {
+  constexpr int width = 368;
+  constexpr int height = 448;
+  constexpr std::array statuses{ChromeTimeSyncStatus::kConnecting,
+                                ChromeTimeSyncStatus::kSynchronizing, ChromeTimeSyncStatus::kSaved};
+  for (const auto status : statuses) {
+    std::vector<std::uint16_t> pixels(static_cast<std::size_t>(width * height), 0xFFFFU);
+    tinydraw::vector_v2::draw_chrome(pixels, width, height, {.time_sync_status = status});
+
+    int ink_left = width;
+    int ink_right = 0;
+    for (int y = 70; y < 132; ++y) {
+      for (int x = 0; x < width; ++x) {
+        if (pixels[static_cast<std::size_t>(y * width + x)] == 0x2104U) {
+          ink_left = std::min(ink_left, x);
+          ink_right = std::max(ink_right, x);
+        }
+      }
+    }
+    REQUIRE(ink_left < ink_right);
+    CHECK(ink_left >= 104);
+    CHECK(ink_right < 264);
+    CHECK(std::abs((ink_left + ink_right) - (104 + 264)) <= 4);
+  }
+}
+
 TEST_CASE("active time sync is modal and hides navigation overlays") {
   constexpr int width = 368;
   constexpr int height = 448;
