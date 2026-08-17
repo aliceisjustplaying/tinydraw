@@ -1,6 +1,6 @@
 # Vector V2 hardware receipts
 
-- [`../../benchmark-results/svg-export-2026-08-17/RECEIPT.md`](../../benchmark-results/svg-export-2026-08-17/RECEIPT.md) — detailed SVG export: one filled variable-width path per operation, transactional 4 KiB flash streaming, complete physical-device readback/CRC verification in 1.024 s, and no watchdog. The unattended receipt deliberately excludes USB mass-storage presentation.
+- [`../../benchmark-results/svg-export-2026-08-17/RECEIPT.md`](../../benchmark-results/svg-export-2026-08-17/RECEIPT.md) — original detailed SVG export: one filled variable-width path per operation chunk, transactional 4 KiB flash streaming, complete physical-device readback/CRC verification in 1.024 s, and no watchdog. The [owner-artifact follow-up](../../benchmark-results/stroke-svg-minimap-acquire-2026-08-17/RECEIPT.md) groups chunks into one path per physical Stroke and removes the synthetic background rectangle.
 
 These logs are immutable evidence captured from the physical ESP32-S3. Historical log names and telemetry markers retain their original `production` wording so they remain traceable to the commits and commands that produced them.
 
