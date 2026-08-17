@@ -1,7 +1,9 @@
 # CO5300 panel hardware limits (measured)
 
 Measured: 2026-08-15, ESP32-S3 Touch AMOLED 1.8 (V2 hardware, CO5300
-controller), panel-probe target (`./scripts/esp32 panel-probe PORT [CLOCK]`).
+controller), panel-probe target (`./scripts/esp32 panel-probe PORT [CELL 0-6]`).
+Cell 0 runs the software suite; cells 1-5 select optical workloads and cell 6
+cycles the camera comparison set in one take.
 Receipts: `benchmark-results/blockA-panel-limits/probe-{40,50,60}mhz.log` at
 [`v2-feature-complete-pre-cleanup`](docs/EVIDENCE_ARCHIVE.md).
 
