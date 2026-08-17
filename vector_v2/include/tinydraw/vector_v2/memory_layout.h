@@ -5,7 +5,7 @@
 #include <cstdint>
 
 #include "tinydraw/vector_v2/materialized_canvas.h"
-#include "tinydraw/vector_v2/operation_lod_store.h"
+#include "tinydraw/vector_v2/operation_log.h"
 
 namespace tinydraw::vector_v2 {
 
@@ -38,8 +38,6 @@ inline constexpr std::size_t kTileSlotCount = TINYDRAW_VECTOR_V2_TILE_SLOTS;
 static_assert(kTileSlotCount >= 280);
 inline constexpr std::size_t kOperationCapacity = 4'000;
 inline constexpr std::size_t kOperationSampleCapacity = 80'000;
-inline constexpr std::size_t kMaterializedZoomCount = kLodZoomCount;
-inline constexpr std::size_t kLodSampleCapacity = 90'000;
 inline constexpr std::size_t kRendererTaskCount = 2;
 inline constexpr std::size_t kRendererCoverageBytes = 128U * 128U;
 inline constexpr std::size_t kRendererDestinationBytes = 128U * 128U * sizeof(std::uint16_t);
@@ -56,17 +54,13 @@ inline constexpr std::size_t kOperationRecordBytes = kOperationCapacity * sizeof
 inline constexpr std::size_t kOperationSampleBytes =
     kOperationSampleCapacity * sizeof(CompactOperationSample);
 inline constexpr std::size_t kOperationStorageBytes = kOperationRecordBytes + kOperationSampleBytes;
-inline constexpr std::size_t kLodSampleBytes = kLodSampleCapacity * sizeof(CompactLodSample);
-inline constexpr std::size_t kLodSpanBytes =
-    kMaterializedZoomCount * kOperationCapacity * sizeof(LodSpan);
-inline constexpr std::size_t kLodStorageBytes = kLodSampleBytes + kLodSpanBytes;
 inline constexpr std::size_t kRendererWorkspaceBytes =
     kRendererTaskCount * (kRendererCoverageBytes + kRendererDestinationBytes) +
     kRendererGeometryBytes;
 inline constexpr std::size_t kDisplayWorkspaceBytes = kOverlayBytes + kStagingBytes;
 inline constexpr std::size_t kExternalPlanBytes =
     kOverviewBytes + kOverviewPublicationBytes + kTilePoolBytes + kTileMetadataBytes +
-    kOperationStorageBytes + kLodStorageBytes + kRendererWorkspaceBytes + kDisplayWorkspaceBytes;
+    kOperationStorageBytes + kRendererWorkspaceBytes + kDisplayWorkspaceBytes;
 
 }  // namespace tinydraw::vector_v2
 
