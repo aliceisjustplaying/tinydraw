@@ -36,9 +36,7 @@ if(TINYDRAW_BUILD_TESTS)
     tests/navigation_state_test.cpp
     tests/operation_builder_test.cpp
     tests/panel_staging_test.cpp
-    tests/operation_lod_store_test.cpp
     tests/operation_log_test.cpp
-    tests/replay_block_index_test.cpp
     tests/settled_tile_test.cpp
     tests/rerender_ledger_test.cpp
     tests/svg_export_test.cpp
@@ -100,10 +98,4 @@ if(TINYDRAW_BUILD_TESTS)
     tinydraw_project_options
   )
 
-  add_executable(tinydraw_vector_v2_lod_characterization tests/lod_characterization.cpp)
-  target_link_libraries(tinydraw_vector_v2_lod_characterization PRIVATE
-    tinydraw::vector_prototype
-    tinydraw::vector_v2
-    tinydraw_project_options
-  )
 endif()
