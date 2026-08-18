@@ -510,6 +510,12 @@ round. F13's retained IRAM mapping improves all zooms by 6.52–7.45% in its
 same-revision physical A/B, but the 50–400% whole-view totals still exceed
 500 ms, so settled AA remains yellow.
 
+The final post-F2/F13 full hardware gate reached the all-ones verdict at
+16:43:59; SSAA remains yellow. Producer telemetry recorded
+`free_internal=217364 free_psram=2189168`. Export recorded
+`free_internal=84168 free_psram=2187528 pass=1`, and its reserve check recorded
+`free_held=614660 largest_held=606208 pass=1`.
+
 The final performance round preserves exact output in all dedicated oracles.
 F10’s release authority suite passes 79/79 tests and 25,609 assertions. The F2
 seam raises the complete ASan totals to 82/82 Authority/Export tests with
