@@ -1,7 +1,14 @@
+# Colonized 16 MiB layout (2026-08-18, owner-directed): TinyDraw owns the
+# whole device. Offsets are explicit and identical to partitions.gate.csv so
+# flashing between product and gate variants never relocates the drawing
+# journal or export volume. The app partition fits both variants; export
+# takes every remaining byte, covering the projected worst-case ~7.3 MiB
+# SVG (80,000 samples at the measured ~93 B/sample) that the old 5 MiB
+# volume could not hold.
 # Name,   Type, SubType, Offset, Size, Flags
-nvs,       data, nvs,           , 0x6000,
-phy_init,  data, phy,           , 0x1000,
-factory,   app,  factory,       , 1536K,
-drawing,   data, 0x40,          , 3M,
-export,    data, 0x41,          , 5M,
-coredump,  data, coredump,      , 64K,
+nvs,       data, nvs,      0x9000,   0x6000,
+phy_init,  data, phy,      0xF000,   0x1000,
+factory,   app,  factory,  0x10000,  0x1C0000,
+drawing,   data, 0x40,     0x1D0000, 0x400000,
+export,    data, 0x41,     0x5D0000, 0xA20000,
+coredump,  data, coredump, 0xFF0000, 0x10000,
