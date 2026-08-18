@@ -111,6 +111,12 @@ class OperationLog {
   [[nodiscard]] bool ready() const;
   [[nodiscard]] DocumentRevision current_revision() const;
   [[nodiscard]] OperationLogEpoch epoch() const;
+  // Identifies one immutable operations-array timeline. Unlike epoch(), it
+  // survives pure Undo/Redo (only the active prefix moves) and changes only
+  // when array content changes meaning: redo-replacing append, reset, and
+  // journal restore. Preserved history pre-images are valid within one
+  // timeline.
+  [[nodiscard]] std::uint64_t history_timeline() const;
   [[nodiscard]] std::size_t operation_count() const;
   [[nodiscard]] std::size_t sample_count() const;
   [[nodiscard]] std::size_t operation_capacity() const;
@@ -177,6 +183,7 @@ class OperationLog {
   DocumentRevision base_revision_{};
   DocumentRevision revision_{};
   OperationLogEpoch epoch_{};
+  std::uint64_t history_timeline_ = 1;
   bool history_pending_ = false;
   OperationSpatialIndex* spatial_index_ = nullptr;
   bool spatial_index_usable_ = false;

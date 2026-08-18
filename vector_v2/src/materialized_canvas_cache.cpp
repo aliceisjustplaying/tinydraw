@@ -219,11 +219,26 @@ std::uint8_t MaterializedCanvas::protection_rank(TileKey key) const {
 
 std::optional<std::size_t> MaterializedCanvas::choose_slot() const {
   // A full pool has no unoccupied slot by definition; skip the free scan.
-  if (occupied_slots_ < slots_.size()) {
-    const auto available = std::find_if(slots_.begin(), slots_.end(),
-                                        [](const auto& slot) { return !slot.occupied_; });
+  if (occupied_slots_ + preserved_slots_ < slots_.size()) {
+    const auto available =
+        std::find_if(slots_.begin(), slots_.end(),
+                     [](const auto& slot) { return !slot.occupied_ && !slot.preserved_; });
     if (available != slots_.end()) {
       return static_cast<std::size_t>(available - slots_.begin());
+    }
+  }
+  if (preserved_slots_ != 0U) {
+    // Preserved history pre-images are the expendable class: reuse the
+    // stalest one before evicting any current tile.
+    const MaterializedSlotStorage* oldest_preserved = nullptr;
+    for (const MaterializedSlotStorage& slot : slots_) {
+      if (slot.preserved_ &&
+          (oldest_preserved == nullptr || slot.last_use_ < oldest_preserved->last_use_)) {
+        oldest_preserved = &slot;
+      }
+    }
+    if (oldest_preserved != nullptr) {
+      return static_cast<std::size_t>(oldest_preserved - slots_.data());
     }
   }
   const auto oldest =
@@ -254,6 +269,11 @@ void MaterializedCanvas::release_slot(std::size_t index) {
 
 void MaterializedCanvas::claim_slot(std::size_t index) {
   MaterializedSlotStorage& slot = slots_[index];
+  if (slot.preserved_) {
+    // Any ordinary claim of a preserved slot consumes the pre-image.
+    slot.preserved_ = false;
+    --preserved_slots_;
+  }
   if (!slot.occupied_) {
     slot.occupied_ = true;
     ++occupied_slots_;
@@ -411,8 +431,20 @@ bool MaterializedCanvas::discard_tiles() {
     }
     release_slot(index);
   }
+  drop_preserved_slots();
   clear_uniforms();
   return true;
+}
+
+void MaterializedCanvas::drop_preserved_slots() {
+  if (preserved_slots_ == 0U) {
+    return;
+  }
+  for (MaterializedSlotStorage& slot : slots_) {
+    slot.preserved_ = false;
+    slot.preserved_prefix_ = 0U;
+  }
+  preserved_slots_ = 0U;
 }
 
 bool MaterializedCanvas::valid_view(const ViewRequest& request,

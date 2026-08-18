@@ -271,6 +271,13 @@ class MaterializedSlotStorage {
   DocumentRevision revision_{};
   MaterializationQuality quality_ = MaterializationQuality::kImmediate;
   std::uint64_t last_use_ = 0;
+  // A preserved slot holds the exact pixels this tile had at active-prefix
+  // preserved_prefix_ within the canvas's preserved epoch. It is not in the
+  // raw-slot directory, is invisible to composition and residency counts,
+  // and is the first eviction class under pool pressure. Whole-Stroke
+  // Undo/Redo swaps preserved slots back to current instead of rebuilding.
+  std::uint16_t preserved_prefix_ = 0;
+  bool preserved_ = false;
   bool occupied_ = false;
 };
 
@@ -300,6 +307,29 @@ class MaterializedCanvas {
   [[nodiscard]] bool ready() const;
   [[nodiscard]] DocumentRevision current_revision() const;
   [[nodiscard]] std::size_t slot_capacity() const;
+
+  // Receipt for the most recent whole-Stroke history commit.
+  struct HistoryCommitStats {
+    std::size_t preserved = 0;
+    std::size_t swapped_in = 0;
+    std::size_t invalidated = 0;
+    bool operator==(const HistoryCommitStats&) const = default;
+  };
+
+  // Transactional whole-Stroke history commit (Undo or Redo): applies the
+  // replayed overview patch, retags affected current raw tiles as preserved
+  // pre-images of the departing active prefix, swaps in preserved tiles of
+  // the arriving prefix as current, and invalidates whatever remains
+  // uncovered. A different authority timeline (OperationLog
+  // history_timeline: redo-replacing append, reset, or restore) drops every
+  // preserved slot first. Uniform identities remain invalidate-and-rebuild.
+  [[nodiscard]] bool commit_history_revision(
+      DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
+      PixelRect affected_world_bounds, std::uint64_t authority_timeline,
+      std::uint16_t departing_prefix, std::uint16_t arriving_prefix);
+  [[nodiscard]] HistoryCommitStats last_history_commit_stats() const {
+    return last_history_commit_stats_;
+  }
   // Occupied raw slots. Idle repair uses this to stop a level sweep once the
   // pool saturates: past that point every publication evicts warmer tiles.
   [[nodiscard]] std::size_t resident_raw_tiles() const;
@@ -532,6 +562,7 @@ class MaterializedCanvas {
   // occupied_slots_ and the raw-slot directory can never desynchronize.
   void release_slot(std::size_t index);
   void claim_slot(std::size_t index);
+  void drop_preserved_slots();
 
   std::span<std::uint16_t> overview_pixels_;
   std::span<MaterializedUniformStorage> uniform_catalog_;
@@ -543,6 +574,9 @@ class MaterializedCanvas {
   std::span<std::uint16_t> tile_pixels_;
   std::span<std::uint16_t> raw_slot_directory_;
   std::size_t occupied_slots_ = 0;
+  std::size_t preserved_slots_ = 0;
+  std::uint64_t preserved_epoch_ = 0;
+  HistoryCommitStats last_history_commit_stats_{};
   DocumentRevision current_revision_{};
   DocumentRevision overview_revision_{};
   std::uint64_t use_clock_ = 0;
