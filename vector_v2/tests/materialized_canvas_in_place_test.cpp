@@ -117,6 +117,70 @@ TEST_CASE("commit_in_place_revision retains listed keys and rejects invalid comm
                                  static_cast<std::size_t>(overview_bounds.x0)] == 0x001FU);
 }
 
+TEST_CASE("staged overview publication is row-bounded and fails closed on mismatched resume") {
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
+  overview.fill(0xFFFFU);
+  std::array<vector_v2::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, vector_v2::kTilePixels> tile_pool{};
+  TestCanvas canvas(overview, slots, tile_pool);
+  REQUIRE(canvas.publish_overview({0}, overview));
+
+  const vector_v2::PixelRect world_bounds{0, 0, 96, 96};
+  const vector_v2::PixelRect bounds = vector_v2::overview_bounds_for_world(world_bounds);
+  const int width = bounds.x1 - bounds.x0;
+  const int height = bounds.y1 - bounds.y0;
+  std::array<std::uint16_t, 24U * 24U> patch{};
+  patch.fill(0x001FU);
+  const vector_v2::OverviewRevisionPublication publication{
+      .bounds = bounds,
+      .pixels = std::span(patch).first(static_cast<std::size_t>(width * height)),
+  };
+  vector_v2::InPlaceOverviewStage stage;
+  CHECK(canvas.stage_in_place_overview_rows({1}, publication, world_bounds, 1U, stage) ==
+        vector_v2::OverviewStageStatus::kInProgress);
+  REQUIRE(stage.active());
+  CHECK_FALSE(stage.complete());
+  const auto first = static_cast<std::size_t>(bounds.y0) * vector_v2::kOverviewWidth +
+                     static_cast<std::size_t>(bounds.x0);
+  CHECK(canvas.overview_pixels()[first] == 0x001FU);
+  CHECK(canvas.overview_pixels()[first + vector_v2::kOverviewWidth] == 0xFFFFU);
+
+  auto different_source = patch;
+  const vector_v2::OverviewRevisionPublication mismatched{.bounds = bounds,
+                                                          .pixels = different_source};
+  CHECK(canvas.stage_in_place_overview_rows({1}, mismatched, world_bounds, 1U, stage) ==
+        vector_v2::OverviewStageStatus::kError);
+  CHECK(stage.active());
+  CHECK(canvas.stage_in_place_overview_rows({1}, publication, world_bounds, 1U, stage) ==
+        vector_v2::OverviewStageStatus::kInProgress);
+
+  // Any intervening canvas mutation invalidates the proof before another row
+  // or the metadata commit can be accepted.
+  canvas.invalidate_identity({vector_v2::ZoomLevel::k100Percent, 0, 0});
+  CHECK(canvas.stage_in_place_overview_rows({1}, publication, world_bounds, 1U, stage) ==
+        vector_v2::OverviewStageStatus::kError);
+  CHECK_FALSE(canvas.commit_staged_in_place_revision({1}, publication, world_bounds, {}, stage));
+  CHECK(canvas.current_revision() == vector_v2::DocumentRevision{0});
+
+  stage.cancel();
+  while (!stage.complete()) {
+    const auto status =
+        canvas.stage_in_place_overview_rows({1}, publication, world_bounds, 1U, stage);
+    REQUIRE(status != vector_v2::OverviewStageStatus::kError);
+  }
+  REQUIRE(canvas.commit_staged_in_place_revision({1}, publication, world_bounds, {}, stage));
+  CHECK_FALSE(stage.active());
+  CHECK(canvas.current_revision() == vector_v2::DocumentRevision{1});
+  for (int row = bounds.y0; row < bounds.y1; ++row) {
+    const auto offset = static_cast<std::size_t>(row) * vector_v2::kOverviewWidth +
+                        static_cast<std::size_t>(bounds.x0);
+    CHECK(std::all_of(canvas.overview_pixels().begin() + static_cast<std::ptrdiff_t>(offset),
+                      canvas.overview_pixels().begin() +
+                          static_cast<std::ptrdiff_t>(offset + static_cast<std::size_t>(width)),
+                      [](std::uint16_t pixel) { return pixel == 0x001FU; }));
+  }
+}
+
 TEST_CASE("raw publication cannot downgrade a settled uniform") {
   std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
   auto uniforms = std::make_unique<std::array<vector_v2::MaterializedUniformStorage,
