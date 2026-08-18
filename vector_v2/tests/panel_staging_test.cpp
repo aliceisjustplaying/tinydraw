@@ -3,12 +3,17 @@
 #include <doctest.h>
 
 #include <cstdint>
+#include <span>
 #include <vector>
+
+#include "tinydraw/vector_v2/frame_scroller.h"
 
 namespace {
 
 using tinydraw::vector_v2::copy_ring_row;
 using tinydraw::vector_v2::copy_to_ring_row;
+using tinydraw::vector_v2::PixelRect;
+using tinydraw::vector_v2::RingFrame;
 using tinydraw::vector_v2::stage_pixels_swapped;
 using tinydraw::vector_v2::stage_ring_row;
 using tinydraw::vector_v2::swap_pixels_in_place;
@@ -25,6 +30,97 @@ std::vector<std::uint16_t> pattern(std::size_t count, std::uint32_t seed) {
     pixel = static_cast<std::uint16_t>(state >> 16U);
   }
   return pixels;
+}
+
+constexpr int kOracleWidth = 12;
+constexpr int kOracleHeight = 10;
+constexpr PixelRect kOracleArea{0, 0, kOracleWidth, kOracleHeight};
+
+std::size_t oracle_index(int x, int y) {
+  return static_cast<std::size_t>(y) * kOracleWidth + static_cast<std::size_t>(x);
+}
+
+std::uint16_t oracle_pixel(std::uint16_t generation, int x, int y) {
+  return static_cast<std::uint16_t>(generation | static_cast<std::uint16_t>(y << 4U) |
+                                    static_cast<std::uint16_t>(x));
+}
+
+void paint_rect(std::span<std::uint16_t> pixels, PixelRect bounds, std::uint16_t generation) {
+  for (int y = bounds.y0; y < bounds.y1; ++y) {
+    for (int x = bounds.x0; x < bounds.x1; ++x) {
+      pixels[oracle_index(x, y)] = oracle_pixel(generation, x, y);
+    }
+  }
+}
+
+void copy_rect_to_ring(std::span<const std::uint16_t> source, std::span<std::uint16_t> ring_pixels,
+                       const RingFrame& ring, PixelRect bounds) {
+  for (int y = bounds.y0; y < bounds.y1; ++y) {
+    const int ring_y = tinydraw::vector_v2::ring_row(ring, kOracleArea, y);
+    copy_to_ring_row(source.data() + oracle_index(bounds.x0, y), bounds.x1 - bounds.x0,
+                     ring_pixels.data() + oracle_index(0, ring_y), kOracleWidth, ring.shift_x,
+                     bounds.x0);
+  }
+}
+
+std::vector<std::uint16_t> shifted_oracle(std::span<const std::uint16_t> before, int delta_x,
+                                          int delta_y) {
+  std::vector<std::uint16_t> after(before.size());
+  for (int y = 0; y < kOracleHeight; ++y) {
+    for (int x = 0; x < kOracleWidth; ++x) {
+      after[oracle_index(x, y)] =
+          before[oracle_index((x + delta_x) % kOracleWidth, (y + delta_y) % kOracleHeight)];
+    }
+  }
+  return after;
+}
+
+void paint_staged_rect(std::span<std::uint16_t> staged, PixelRect bounds, std::uint16_t color,
+                       bool byte_swapped_surface) {
+  const std::uint16_t staged_color = byte_swapped_surface ? byte_swapped(color) : color;
+  for (int y = bounds.y0; y < bounds.y1; ++y) {
+    for (int x = bounds.x0; x < bounds.x1; ++x) {
+      staged[oracle_index(x, y)] = staged_color;
+    }
+  }
+}
+
+std::vector<std::uint16_t> stage_oracle_frame(std::span<const std::uint16_t> ring_pixels,
+                                              const RingFrame& ring, bool byte_swapped_surface,
+                                              PixelRect chrome, std::uint16_t chrome_color,
+                                              PixelRect provisional = {},
+                                              std::uint16_t provisional_color = 0U) {
+  std::vector<std::uint16_t> staged(ring_pixels.size());
+  for (int y = 0; y < kOracleHeight; ++y) {
+    const int ring_y = tinydraw::vector_v2::ring_row(ring, kOracleArea, y);
+    const auto* source = ring_pixels.data() + oracle_index(0, ring_y);
+    auto* destination = staged.data() + oracle_index(0, y);
+    if (byte_swapped_surface) {
+      stage_ring_row(source, kOracleWidth, ring.shift_x, 0, kOracleWidth, destination);
+    } else {
+      copy_ring_row(source, kOracleWidth, ring.shift_x, 0, kOracleWidth, destination);
+    }
+  }
+  paint_staged_rect(staged, chrome, chrome_color, byte_swapped_surface);
+  if (provisional.x0 < provisional.x1 && provisional.y0 < provisional.y1) {
+    paint_staged_rect(staged, provisional, provisional_color, byte_swapped_surface);
+  }
+  if (!byte_swapped_surface) {
+    swap_pixels_in_place(staged);
+  }
+  return staged;
+}
+
+std::vector<std::uint16_t> wire_oracle(std::span<const std::uint16_t> canvas, PixelRect chrome,
+                                       std::uint16_t chrome_color, PixelRect provisional = {},
+                                       std::uint16_t provisional_color = 0U) {
+  std::vector<std::uint16_t> expected(canvas.begin(), canvas.end());
+  paint_staged_rect(expected, chrome, chrome_color, false);
+  if (provisional.x0 < provisional.x1 && provisional.y0 < provisional.y1) {
+    paint_staged_rect(expected, provisional, provisional_color, false);
+  }
+  swap_pixels_in_place(expected);
+  return expected;
 }
 
 TEST_CASE("staged runs equal the naive byte-swap model at aligned and odd sources") {
@@ -169,6 +265,71 @@ TEST_CASE("44-row strip staging equals single-pass staging across seams") {
       CAPTURE(column);
       CHECK(stripped[index] == byte_swapped(frame[index]));
     }
+  }
+}
+
+TEST_CASE("ring-local presentation sequence matches the pixel oracle across x and y wraps") {
+  constexpr PixelRect kLocalTile{0, 0, 4, 4};
+  constexpr PixelRect kChrome{8, 0, 12, 2};
+  constexpr PixelRect kProvisionalInk{2, 2, 6, 4};
+  constexpr std::uint16_t kChromeColor = 0xE71CU;
+  constexpr std::uint16_t kProvisionalColor = 0x001FU;
+  constexpr std::uint16_t kCommittedColor = 0x07E0U;
+
+  for (const bool byte_swapped_surface : {false, true}) {
+    CAPTURE(byte_swapped_surface);
+    std::vector<std::uint16_t> oracle(static_cast<std::size_t>(kOracleWidth) * kOracleHeight);
+    paint_rect(oracle, kOracleArea, 0x1000U);
+    std::vector<std::uint16_t> ring_pixels = oracle;
+    RingFrame ring{};
+
+    // The first pan places both axes two pixels before their physical wrap.
+    // Its exposed strips are then composed directly into toroidal storage.
+    constexpr int kFirstDeltaX = 10;
+    constexpr int kFirstDeltaY = 8;
+    const auto first_scroll =
+        tinydraw::vector_v2::ring_scroll(ring, kOracleArea, kFirstDeltaX, kFirstDeltaY);
+    REQUIRE(first_scroll.has_value());
+    oracle = shifted_oracle(oracle, kFirstDeltaX, kFirstDeltaY);
+    for (std::size_t index = 0; index < first_scroll->exposed_count; ++index) {
+      paint_rect(oracle, first_scroll->exposed[index], 0x2000U);
+      copy_rect_to_ring(oracle, ring_pixels, ring, first_scroll->exposed[index]);
+    }
+    CHECK(stage_oracle_frame(ring_pixels, ring, byte_swapped_surface, kChrome, kChromeColor) ==
+          wire_oracle(oracle, kChrome, kChromeColor));
+
+    // This local tile crosses both physical seams at shift (10, 8).
+    paint_rect(oracle, kLocalTile, 0x3000U);
+    copy_rect_to_ring(oracle, ring_pixels, ring, kLocalTile);
+    CHECK(stage_oracle_frame(ring_pixels, ring, byte_swapped_surface, kChrome, kChromeColor) ==
+          wire_oracle(oracle, kChrome, kChromeColor));
+
+    // Chrome and provisional ink exist only in the transfer surface. The
+    // committed pixels subsequently enter the ring at the same logical bounds.
+    CHECK(stage_oracle_frame(ring_pixels, ring, byte_swapped_surface, kChrome, kChromeColor,
+                             kProvisionalInk, kProvisionalColor) ==
+          wire_oracle(oracle, kChrome, kChromeColor, kProvisionalInk, kProvisionalColor));
+    paint_staged_rect(oracle, kProvisionalInk, kCommittedColor, false);
+    copy_rect_to_ring(oracle, ring_pixels, ring, kProvisionalInk);
+    CHECK(stage_oracle_frame(ring_pixels, ring, byte_swapped_surface, kChrome, kChromeColor) ==
+          wire_oracle(oracle, kChrome, kChromeColor));
+
+    // A second pan wraps both accumulated shifts and proves all local writes
+    // remain correctly addressed in the next reusable frame.
+    constexpr int kSecondDeltaX = 4;
+    constexpr int kSecondDeltaY = 4;
+    const auto second_scroll =
+        tinydraw::vector_v2::ring_scroll(ring, kOracleArea, kSecondDeltaX, kSecondDeltaY);
+    REQUIRE(second_scroll.has_value());
+    oracle = shifted_oracle(oracle, kSecondDeltaX, kSecondDeltaY);
+    for (std::size_t index = 0; index < second_scroll->exposed_count; ++index) {
+      paint_rect(oracle, second_scroll->exposed[index], 0x4000U);
+      copy_rect_to_ring(oracle, ring_pixels, ring, second_scroll->exposed[index]);
+    }
+    CHECK(ring.shift_x == 2);
+    CHECK(ring.shift_y == 2);
+    CHECK(stage_oracle_frame(ring_pixels, ring, byte_swapped_surface, kChrome, kChromeColor) ==
+          wire_oracle(oracle, kChrome, kChromeColor));
   }
 }
 

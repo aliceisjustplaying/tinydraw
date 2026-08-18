@@ -136,7 +136,8 @@ void print_presentation(const char* kind, const VectorV2Presenter& presenter,
       "read_submit_us=%lld read_complete_us=%lld "
       "transfer_wait_us=%lld tile_pixels=%lu "
       "uniform_pixels=%lu overview_pixels=%lu fallback_pixels=%lu resident_tiles=%lu "
-      "fallback_tiles=%lu pushes=%lu tear_wait_us=%lld tear_edge_isr_to_resume_us=%lu "
+      "fallback_tiles=%lu submitted_pixels=%lu pushes=%lu tear_wait_us=%lld "
+      "tear_edge_isr_to_resume_us=%lu "
       "tear_edge_observed=%u tear_edge_wait_resumed=%u tear_edge_timeout=%u "
       "tear_heal_attempted=%u "
       "tear_heal_command_sent=%u presentation_experiment=%s te_edge=%s "
@@ -154,8 +155,9 @@ void print_presentation(const char* kind, const VectorV2Presenter& presenter,
       static_cast<unsigned long>(timing.overview_pixels),
       static_cast<unsigned long>(timing.fallback_pixels),
       static_cast<unsigned long>(timing.resident_tiles),
-      static_cast<unsigned long>(timing.fallback_tiles), static_cast<unsigned long>(timing.pushes),
-      static_cast<long long>(timing.tear_wait_us),
+      static_cast<unsigned long>(timing.fallback_tiles),
+      static_cast<unsigned long>(timing.submitted_pixels),
+      static_cast<unsigned long>(timing.pushes), static_cast<long long>(timing.tear_wait_us),
       static_cast<unsigned long>(timing.tear_edge_isr_to_resume_us), timing.tear_edge_observed,
       timing.tear_edge_wait_resumed, timing.tear_edge_timed_out, timing.tear_heal_attempted,
       timing.tear_heal_command_sent, presentation_experiment_name(), selected_tear_edge_name(),
@@ -1866,7 +1868,9 @@ bool verify_pan_adapter(VectorV2Presenter& presenter, vector_v2::TileProducer& p
          pan.first_complete_us < 60'000;
 }
 
-bool run_ring_locality_gate(VectorV2Presenter& presenter, const vector_v2::ChromeState& chrome) {
+bool run_ring_locality_gate(VectorV2Presenter& presenter, OperationLog& log,
+                            MaterializedCanvas& canvas, const vector_v2::ChromeState& chrome,
+                            const InPlaceAppendWorkspace& workspace) {
   constexpr int kOrigin = 256;
   constexpr Point kPanTouch{240.0F, 240.0F};
   if (!presenter.set_view(ZoomLevel::k400Percent, kOrigin, kOrigin, chrome, now_us()).passed) {
@@ -1889,10 +1893,13 @@ bool run_ring_locality_gate(VectorV2Presenter& presenter, const vector_v2::Chrom
   CurvedRibbonStream ribbon;
   constexpr std::array<Point, 4> kPoints{
       {{96.0F, 120.0F}, {120.0F, 132.0F}, {144.0F, 124.0F}, {168.0F, 142.0F}}};
+  std::array<CompactOperationSample, kPoints.size()> operation_samples{};
   float running_length = 0.0F;
   Point previous = kPoints.front();
   std::uint32_t timestamp_us = now_us();
   bool ink_pass = true;
+  std::uint32_t ink_max_pushes = 0;
+  std::size_t ink_max_submitted_pixels = 0;
   InkPoint last{};
   for (std::size_t index = 0; index < kPoints.size(); ++index) {
     const float distance =
@@ -1906,29 +1913,81 @@ bool run_ring_locality_gate(VectorV2Presenter& presenter, const vector_v2::Chrom
             .distance = distance,
             .running_length = running_length,
             .timestamp_us = timestamp_us};
+    const vector_v2::OperationPoint operation_point = presenter.operation_point(last);
+    operation_samples[index] = {
+        .x_quarter = static_cast<std::uint16_t>(std::lround(operation_point.world_x * 16.0F)),
+        .y_quarter = static_cast<std::uint16_t>(std::lround(operation_point.world_y * 16.0F)),
+        .radius_256 = static_cast<std::uint16_t>(std::lround(operation_point.radius * 256.0F)),
+        .elapsed_ms = static_cast<std::uint16_t>(index * 8U),
+    };
+    LivePresentationTiming ink{};
     if (index == 0U) {
       static_cast<void>(ribbon.append(last, true));
-      ink_pass = presenter.show_start(last, 0x001FU, changed_chrome, now_us()).passed;
+      ink = presenter.show_start(last, 0x001FU, changed_chrome, now_us());
     } else {
-      ink_pass = ink_pass &&
-                 presenter.show_update(ribbon.append(last, true), 0x001FU, changed_chrome, now_us())
-                     .passed;
+      ink = presenter.show_update(ribbon.append(last, true), 0x001FU, changed_chrome, now_us());
     }
+    ink_pass = ink_pass && ink.passed && ink.pushes != 0U;
+    ink_max_pushes = std::max(ink_max_pushes, ink.pushes);
+    ink_max_submitted_pixels = std::max(ink_max_submitted_pixels, ink.submitted_pixels);
     previous = kPoints[index];
   }
-  ink_pass = ink_pass &&
-             presenter.show_update(ribbon.finish(last), 0x001FU, changed_chrome, now_us()).passed;
+  const auto ink_finish =
+      presenter.show_update(ribbon.finish(last), 0x001FU, changed_chrome, now_us());
+  ink_pass = ink_pass && ink_finish.passed && ink_finish.pushes != 0U;
+  ink_max_pushes = std::max(ink_max_pushes, ink_finish.pushes);
+  ink_max_submitted_pixels = std::max(ink_max_submitted_pixels, ink_finish.submitted_pixels);
+
+  const auto committed = append_and_absorb(
+      log, canvas,
+      vector_v2::OperationAppend{.tool = OperationTool::kPen,
+                                 .color = 0x001FU,
+                                 .gesture_id = 7'001U,
+                                 .samples = operation_samples},
+      workspace,
+      vector_v2::ViewRequest{
+          .zoom = presenter.zoom(),
+          .level_pixels = {presenter.level_x(), presenter.level_y(),
+                           presenter.level_x() + vector_v2::kOverviewWidth,
+                           presenter.level_y() + vector_v2::chrome_canvas_bottom(changed_chrome)},
+      });
+  const vector_v2::PixelRect committed_level{ring_x + 86, ring_y + 110, ring_x + 178, ring_y + 152};
+  const auto committed_ink =
+      committed.has_value() ? presenter.refresh_region(committed_level, changed_chrome, now_us())
+                            : LivePresentationTiming{};
 
   const auto second_pan =
       presenter.pan_from(ring_x, ring_y, kPanTouch, {224.0F, 224.0F}, changed_chrome, now_us());
+  const std::uint32_t local_max_pushes =
+      std::max({local.pushes, local_chrome.pushes, ink_max_pushes, committed_ink.pushes});
+  const std::size_t local_max_submitted_pixels =
+      std::max({local.submitted_pixels, local_chrome.submitted_pixels, ink_max_submitted_pixels,
+                committed_ink.submitted_pixels});
+  const std::size_t full_canvas_pixels = static_cast<std::size_t>(vector_v2::kOverviewWidth) *
+                                         vector_v2::chrome_canvas_bottom(changed_chrome);
+  const bool local_submissions =
+      local.submitted_pixels != 0U && local_chrome.submitted_pixels != 0U &&
+      committed_ink.submitted_pixels != 0U && ink_max_submitted_pixels != 0U &&
+      local_max_submitted_pixels < full_canvas_pixels;
+  const bool full_sweeps = first_pan.submitted_pixels == full_canvas_pixels &&
+                           second_pan.submitted_pixels == full_canvas_pixels;
   const bool passed = first_pan.passed && first_pan.frame_reused && local.passed &&
-                      local_chrome.passed && ink_pass && second_pan.passed &&
-                      second_pan.frame_reused;
+                      local_chrome.passed && ink_pass && committed.has_value() &&
+                      committed_ink.passed && local_submissions && second_pan.passed &&
+                      second_pan.frame_reused && full_sweeps;
   std::printf(
       "TINYDRAW_GATE1_RING_LOCAL first_pan=%u local_refresh=%u local_chrome=%u live_ink=%u "
-      "next_pan=%u next_reused=%u pass=%u\n",
+      "committed_ink=%u full_pushes=%lu local_max_pushes=%lu local_max_submitted_pixels=%lu "
+      "full_canvas_pixels=%lu first_pan_submitted_pixels=%lu next_pan_submitted_pixels=%lu "
+      "next_pan=%u next_reused=%u full_sweeps=%u pass=%u\n",
       first_pan.passed && first_pan.frame_reused, local.passed, local_chrome.passed, ink_pass,
-      second_pan.passed, second_pan.frame_reused, passed);
+      committed.has_value() && committed_ink.passed, static_cast<unsigned long>(first_pan.pushes),
+      static_cast<unsigned long>(local_max_pushes),
+      static_cast<unsigned long>(local_max_submitted_pixels),
+      static_cast<unsigned long>(full_canvas_pixels),
+      static_cast<unsigned long>(first_pan.submitted_pixels),
+      static_cast<unsigned long>(second_pan.submitted_pixels), second_pan.passed,
+      second_pan.frame_reused, full_sweeps, passed);
   std::fflush(stdout);
   return passed;
 }
@@ -3460,7 +3519,8 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
                                                       ZoomLevel::k400Percent);
   const bool pan_400 =
       gate_400 && verify_pan_adapter(presenter, producer, chrome, ZoomLevel::k400Percent);
-  const bool ring_local = pan_400 && run_ring_locality_gate(presenter, chrome);
+  const bool ring_local =
+      pan_400 && run_ring_locality_gate(presenter, log, canvas, chrome, workspace);
   const bool pan_sequence_100 =
       gate_400 && run_pan_sequence_gate(presenter, producer, chrome, ZoomLevel::k100Percent);
   const bool pan_sequence_400 =

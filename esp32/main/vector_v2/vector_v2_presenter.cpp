@@ -317,6 +317,7 @@ LivePresentationTiming VectorV2Presenter::refresh_region(vector_v2::PixelRect le
     total.fallback_pixels += part.fallback_pixels;
     total.resident_tiles += part.resident_tiles;
     total.fallback_tiles += part.fallback_tiles;
+    total.submitted_pixels += part.submitted_pixels;
     total.pushes += part.pushes;
   }
   frame_reusable_ = was_reusable && total.passed;
@@ -609,6 +610,7 @@ LivePresentationTiming VectorV2Presenter::present_ring_region(vector_v2::PixelRe
     timing.chrome_prepare_us += part.chrome_prepare_us;
     timing.chrome_stage_us += part.chrome_stage_us;
     timing.chrome_us += part.chrome_us;
+    timing.submitted_pixels += part.submitted_pixels;
     timing.pushes += part.pushes;
     timing.first_submit_us = part.first_submit_us;
     if (!part.passed) {
@@ -625,6 +627,7 @@ LivePresentationTiming VectorV2Presenter::present_ring_region(vector_v2::PixelRe
     if (!submitted) {
       timing.first_submit_us = part.first_submit_us;
     }
+    timing.submitted_pixels += part.submitted_pixels;
     timing.pushes += part.pushes;
     if (!part.passed) {
       return fail_after_drain();
@@ -719,6 +722,7 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
   const auto sweep =
       present_ring({0, 0, vector_v2::kOverviewWidth, canvas_bottom}, chrome, event_us, no_exposed);
   timing.pushes = sweep.pushes;
+  timing.submitted_pixels = sweep.submitted_pixels;
   timing.first_submit_us = sweep.first_submit_us;
   timing.exposed_compose_us = sweep.exposed_compose_us;
   timing.chrome_us = sweep.chrome_us;
@@ -1026,6 +1030,7 @@ LivePresentationTiming VectorV2Presenter::present_ring(
     return timing;
   }
   timing.pushes = display_.push_count() - pushes_before;
+  timing.submitted_pixels = static_cast<std::size_t>(band_width) * band_height;
   timing.first_submit_us =
       event_us == 0U
           ? 0
@@ -1119,6 +1124,7 @@ LivePresentationTiming VectorV2Presenter::present_pixels(
   timing.chrome_stage_us = context.chrome_us;
   timing.chrome_us = timing.chrome_prepare_us + timing.chrome_stage_us;
   timing.pushes = display_.push_count() - pushes_before;
+  timing.submitted_pixels = static_cast<std::size_t>(width) * height;
   timing.passed = completed;
   return timing;
 }
