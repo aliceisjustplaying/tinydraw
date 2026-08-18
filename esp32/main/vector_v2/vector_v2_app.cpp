@@ -214,7 +214,7 @@ void print_stroke(const PendingStrokeReport& report) {
       "read_submit_avg_us=%llu read_submit_max_us=%lu read_complete_avg_us=%llu "
       "read_complete_max_us=%lu submit_over_16ms=%lu complete_over_33ms=%lu "
       "presentation_failures=%lu poll_max_us=%lu touch_errors=%lu touch_overflows=%lu "
-      "touch_moves_coalesced=%lu touch_events=%lu touch_down=%lu touch_up=%lu "
+      "touch_resyncs=%lu touch_moves_coalesced=%lu touch_events=%lu touch_down=%lu touch_up=%lu "
       "touch_events_ge_8ms=%lu touch_event_age_max_us=%lu chunks=%lu "
       "ph_prepare_max_us=%lld ph_overview_max_us=%lld ph_enumerate_max_us=%lld "
       "ph_uniform_max_us=%lld ph_raw_max_us=%lld ph_offscreen_max_us=%lld "
@@ -243,6 +243,7 @@ void print_stroke(const PendingStrokeReport& report) {
       static_cast<unsigned long>(report.poll_max_us),
       static_cast<unsigned long>(report.touch.errors),
       static_cast<unsigned long>(report.touch.queue_overflows),
+      static_cast<unsigned long>(report.touch.queue_resyncs),
       static_cast<unsigned long>(report.touch.moves_coalesced),
       static_cast<unsigned long>(report.touch.events_consumed),
       static_cast<unsigned long>(report.touch.down_events),
@@ -537,6 +538,7 @@ void run_vector_v2_app() {
   PendingStrokeReport stroke_report{};
   std::uint32_t autosave_checkpoint_retry_us = 0U;
   std::uint8_t background_ticks = 0U;
+  std::uint8_t drained_touch_events = 0U;
 
   const auto begin_pan = [&](Point start) {
     panning = true;
@@ -551,15 +553,31 @@ void run_vector_v2_app() {
     poll_max_us = std::max(poll_max_us, loop_us - poll_previous_us);
     poll_previous_us = loop_us;
 
-    if (chrome.export_status == vector_v2::ChromeExportStatus::kPresented &&
-        exporter.usb_host_ejected()) {
+    Point point{};
+    const bool idle_before_poll = !pressed;
+    const std::int64_t poll_started_us = esp_timer_get_time();
+    const auto sampled_touch = touch_sampler.read_next();
+    const std::int64_t poll_completed_us = esp_timer_get_time();
+    const bool sample_ready = sampled_touch.has_value();
+    if (sample_ready) {
+      point = sampled_touch->point;
+    }
+    const bool lift_event = sample_ready && sampled_touch->kind == vector_v2::TouchEventKind::kUp;
+    const bool point_event = sample_ready && (!lift_event || pressed);
+    const std::uint32_t event_us = sample_ready ? sampled_touch->timestamp_us : loop_us;
+    bool cosmetic_work = false;
+
+    if (!sample_ready && chrome.export_status == vector_v2::ChromeExportStatus::kPresented &&
+        !touch_sampler.touch_urgent() && exporter.usb_host_ejected()) {
       chrome.export_status = vector_v2::ChromeExportStatus::kHostEjected;
       const auto timing = presenter.refresh(chrome, loop_us);
       print_presentation("export-host-ejected", presenter, timing);
+      cosmetic_work = true;
     }
 
     const auto next_time_sync_status = chrome_time_sync_status(time_sync.status());
-    if (next_time_sync_status != chrome.time_sync_status) {
+    if (!sample_ready && !cosmetic_work && !touch_sampler.touch_urgent() &&
+        next_time_sync_status != chrome.time_sync_status) {
       chrome.time_sync_status = next_time_sync_status;
       chrome.popup = vector_v2::ChromePopup::kNone;
       if (next_time_sync_status == vector_v2::ChromeTimeSyncStatus::kSaved ||
@@ -570,8 +588,10 @@ void run_vector_v2_app() {
       }
       const auto timing = presenter.refresh(chrome, loop_us);
       print_presentation("time-sync", presenter, timing);
+      cosmetic_work = true;
     }
-    if (time_sync_terminal_since.has_value() &&
+    if (!sample_ready && !cosmetic_work && !touch_sampler.touch_urgent() &&
+        time_sync_terminal_since.has_value() &&
         vector_v2::chrome_time_sync_status_after(chrome.time_sync_status,
                                                  loop_us - *time_sync_terminal_since) ==
             vector_v2::ChromeTimeSyncStatus::kIdle) {
@@ -580,14 +600,17 @@ void run_vector_v2_app() {
       time_sync_terminal_since.reset();
       const auto timing = presenter.refresh(chrome, loop_us);
       print_presentation("time-sync-dismiss", presenter, timing);
+      cosmetic_work = true;
     }
 
     // The battery redraw is a full-frame present (60-140 ms on dense
     // content); it is cosmetic and must never ride the post-lift window or
     // the drain (owner glass receipt: it was the 85 ms "lift spike").
-    if (!pressed && !lift_timing.pending && !stroke_report.pending &&
+    if (!sample_ready && !cosmetic_work && !touch_sampler.touch_urgent() && !pressed &&
+        !lift_timing.pending && !stroke_report.pending &&
         vector_v2::pending_operation_count(log, canvas) == 0U && power.ready() &&
         loop_us - power_sampled_us >= kPowerRefreshUs) {
+      cosmetic_work = true;
       const PowerStatus next_power = power.read();
       power_sampled_us = loop_us;
       if (next_power.valid && next_power != current_power) {
@@ -606,38 +629,31 @@ void run_vector_v2_app() {
       }
     }
 
-    const bool export_mode_owns_input =
-        chrome.export_status == vector_v2::ChromeExportStatus::kPresented ||
-        chrome.export_status == vector_v2::ChromeExportStatus::kHostEjected ||
-        chrome.export_status == vector_v2::ChromeExportStatus::kExitError;
-    const bool next_button_down = gpio_get_level(kModeButton) == 0;
-    if (next_button_down && !button_down) {
-      button_down = true;
-    } else if (!next_button_down && button_down) {
-      button_down = false;
-      if (!export_mode_owns_input) {
-        const ZoomLevel zoom = vector_v2::next_zoom(presenter.zoom());
-        const ZoomLevel target = zoom == presenter.zoom() ? ZoomLevel::k25Percent : zoom;
-        const auto timing = presenter.set_zoom(target, chrome, loop_us);
-        print_presentation("zoom", presenter, timing);
+    if (!sample_ready && !cosmetic_work && !touch_sampler.touch_urgent()) {
+      const bool export_mode_owns_input =
+          chrome.export_status == vector_v2::ChromeExportStatus::kPresented ||
+          chrome.export_status == vector_v2::ChromeExportStatus::kHostEjected ||
+          chrome.export_status == vector_v2::ChromeExportStatus::kExitError;
+      const bool next_button_down = gpio_get_level(kModeButton) == 0;
+      if (next_button_down && !button_down) {
+        button_down = true;
+      } else if (!next_button_down && button_down) {
+        button_down = false;
+        if (!export_mode_owns_input) {
+          const ZoomLevel zoom = vector_v2::next_zoom(presenter.zoom());
+          const ZoomLevel target = zoom == presenter.zoom() ? ZoomLevel::k25Percent : zoom;
+          const auto timing = presenter.set_zoom(target, chrome, loop_us);
+          print_presentation("zoom", presenter, timing);
+          cosmetic_work = true;
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-        print_live_ledger("zoom");
+          print_live_ledger("zoom");
 #endif
+        }
       }
     }
-
-    Point point{};
-    const bool idle_before_poll = !pressed;
-    const std::int64_t poll_started_us = esp_timer_get_time();
-    const auto sampled_touch = touch_sampler.read_next();
-    const std::int64_t poll_completed_us = esp_timer_get_time();
-    const bool sample_ready = sampled_touch.has_value();
-    if (sample_ready) {
-      point = sampled_touch->point;
+    if (cosmetic_work) {
+      continue;
     }
-    const bool lift_event = sample_ready && sampled_touch->kind == vector_v2::TouchEventKind::kUp;
-    const bool point_event = sample_ready && (!lift_event || pressed);
-    const std::uint32_t event_us = sample_ready ? sampled_touch->timestamp_us : loop_us;
     if (point_event) {
       if (!pressed && sampled_touch->kind == vector_v2::TouchEventKind::kDown) {
         pressed = true;
@@ -894,8 +910,9 @@ void run_vector_v2_app() {
     // Queue/resync failures collapse into one complete checkpoint after input
     // is quiet. Flash work remains on the worker; this call only snapshots
     // coherent vector authority into immutable PSRAM.
-    if (!pressed && !panning && !sample_ready && !lift_timing.pending && autosave.ready() &&
-        autosave.checkpoint_required() &&
+    const bool touch_backlog = touch_sampler.touch_urgent();
+    if (!pressed && !panning && !sample_ready && !touch_backlog && !touch_sampler.touch_urgent() &&
+        !lift_timing.pending && autosave.ready() && autosave.checkpoint_required() &&
         static_cast<std::int32_t>(loop_us - autosave_checkpoint_retry_us) >= 0) {
       const std::int64_t checkpoint_started = esp_timer_get_time();
       const bool queued = autosave.submit_checkpoint(log);
@@ -908,19 +925,22 @@ void run_vector_v2_app() {
       }
     }
 
+    const bool background_urgent = touch_backlog || touch_sampler.touch_urgent();
     const BackgroundSliceResult background_result = background.run_slice({
         .loop_us = loop_us,
         .pressed = pressed,
         .panning = panning,
-        .sample_ready = sample_ready,
+        .sample_ready = sample_ready || background_urgent,
         .lift_report_pending = lift_timing.pending,
+        .touch_urgency = touch_sampler.urgency_probe(),
     });
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
     if (background_result.drain_completed) {
       print_live_ledger("drain");
     }
 #endif
-    if (lift_timing.pending && stroke_report.pending && idle_before_poll && !pressed) {
+    if (lift_timing.pending && stroke_report.pending && idle_before_poll && !pressed &&
+        !background_urgent && !touch_sampler.touch_urgent()) {
       print_stroke(stroke_report);
       std::printf("TINYDRAW_LIVE_STROKE_DONE committed=%u refresh=%u commit_failed=%u\n",
                   stroke_report.committed, stroke_report.refresh.passed,
@@ -934,16 +954,27 @@ void run_vector_v2_app() {
       // it out of the pre-existing stroke poll-gap metric.
       poll_previous_us = now_us();
     }
+    if (background_urgent || touch_sampler.touch_urgent()) {
+      // Drain queued semantic edges and the newest coalesced Move before any
+      // more background work, diagnostics, or cosmetic presentation.
+      background_ticks = 0U;
+      if (++drained_touch_events == 8U) {
+        drained_touch_events = 0U;
+        taskYIELD();
+      }
+      continue;
+    }
+    drained_touch_events = 0U;
     if (background_result.fill_busy) {
       // Producer calls are bounded input-poll slices. Avoid paying a fixed
       // two-millisecond tax after every slice, but periodically unblock idle.
       if (++background_ticks == 8U) {
         background_ticks = 0U;
-        vTaskDelay(pdMS_TO_TICKS(1));
+        static_cast<void>(touch_sampler.wait_for_event(pdMS_TO_TICKS(1)));
       }
     } else {
       background_ticks = 0U;
-      vTaskDelay(pdMS_TO_TICKS(2));
+      static_cast<void>(touch_sampler.wait_for_event(pdMS_TO_TICKS(2)));
     }
   }
 }

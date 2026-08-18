@@ -456,14 +456,16 @@ bool run_paced_cold_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& 
   const TouchSamplerMetrics sampler = touch.take_metrics();
   const bool passed = wall_us <= maximum_wall_us && maximum_tick_us < kMaximumTickUs &&
                       sampler.maximum_interval_us < kMaximumTouchIntervalUs &&
-                      sampler.errors == 0U && sampler.queue_overflows == 0U;
+                      sampler.errors == 0U && sampler.queue_overflows == 0U &&
+                      sampler.queue_resyncs == 0U;
   std::printf(
       "TINYDRAW_GATE1_PACED_COLD corpus=%s zoom=%s x=%d y=%d steps=%lu tiles=%lu "
       "compute_us=%lld present_us=%lld touch_us=%lld pacing_us=%lld wall_us=%lld "
       "maximum_wall_us=%lld "
       "max_tick_us=%lld touch_samples=%lu touch_interval_max_us=%lu touch_read_max_us=%lu "
       "touch_events=%lu touch_down=%lu touch_up=%lu touch_events_ge_8ms=%lu "
-      "touch_event_age_max_us=%lu touch_errors=%lu touch_overflows=%lu pass=%u\n",
+      "touch_event_age_max_us=%lu touch_errors=%lu touch_overflows=%lu touch_resyncs=%lu "
+      "pass=%u\n",
       corpus, zoom_name(zoom), presenter.level_x(), presenter.level_y(),
       static_cast<unsigned long>(steps), static_cast<unsigned long>(tiles),
       static_cast<long long>(compute_us), static_cast<long long>(present_us),
@@ -478,7 +480,8 @@ bool run_paced_cold_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& 
       static_cast<unsigned long>(sampler.events_at_least_8ms_old),
       static_cast<unsigned long>(sampler.maximum_event_age_us),
       static_cast<unsigned long>(sampler.errors),
-      static_cast<unsigned long>(sampler.queue_overflows), passed);
+      static_cast<unsigned long>(sampler.queue_overflows),
+      static_cast<unsigned long>(sampler.queue_resyncs), passed);
 #if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
   {
     const auto& census = vector_v2::g_raster_census;
@@ -2894,6 +2897,7 @@ class TouchTraceReplayer {
     offered_ = 0;
     coalesced_ = 0;
     overflows_ = 0;
+    resyncs_ = 0;
     if (xTaskCreatePinnedToCore(task_entry, "v2_replay", 3'072U, this, 5U, &task_, 1) != pdPASS) {
       task_ = nullptr;
       return false;
@@ -2941,6 +2945,7 @@ class TouchTraceReplayer {
   [[nodiscard]] std::uint32_t offered() const { return offered_; }
   [[nodiscard]] std::uint32_t coalesced() const { return coalesced_; }
   [[nodiscard]] std::uint32_t overflows() const { return overflows_; }
+  [[nodiscard]] std::uint32_t resyncs() const { return resyncs_; }
 
  private:
   static void task_entry(void* argument) {
@@ -2955,6 +2960,7 @@ class TouchTraceReplayer {
     portEXIT_CRITICAL(&lock_);
     coalesced_ += result == vector_v2::TouchOfferResult::kMoveCoalesced;
     overflows_ += result == vector_v2::TouchOfferResult::kOverflow;
+    resyncs_ += result == vector_v2::TouchOfferResult::kResynchronized;
   }
 
   void run() {
@@ -2991,6 +2997,7 @@ class TouchTraceReplayer {
   std::uint32_t offered_ = 0;
   std::uint32_t coalesced_ = 0;
   std::uint32_t overflows_ = 0;
+  std::uint32_t resyncs_ = 0;
 };
 
 struct InkTraceSpec {
@@ -3276,14 +3283,14 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
     const auto complete_line = summarize_deltas(event_to_complete);
     const bool conserved = counters.down_up_conserved();
     const bool latency_pass = complete_line.p95 <= 28'000U;
-    const bool trace_pass = conserved && replayer.overflows() == 0U && commit_failures == 0U &&
-                            presentation_failures == 0U;
+    const bool trace_pass = conserved && replayer.overflows() == 0U && replayer.resyncs() == 0U &&
+                            commit_failures == 0U && presentation_failures == 0U;
     std::printf(
         "TINYDRAW_INKTRACE trace=%s zoom=%s events=%lu consumed=%lu coalesced=%lu "
         "down=%lu/%lu up=%lu/%lu max_time_gap_us=%llu max_space_gap_px=%.2f "
         "e2c_p50=%lu e2c_p95=%lu e2c_max=%lu e2g_p95=%lu e2s_p95=%lu "
         "e2d_p50=%lu e2d_p95=%lu e2d_max=%lu latency_samples=%lu "
-        "presentation_failures=%lu commit_failures=%lu overflows=%lu revision=%lu "
+        "presentation_failures=%lu commit_failures=%lu overflows=%lu resyncs=%lu revision=%lu "
         "fb_tiles=%lu fb_start=%lu fb_mid_max=%lu fb_up_max=%lu fb_end=%lu "
         "drop_uni_slot=%lu drop_uni_paint=%lu drop_raw_edit=%lu drop_raw_paint=%lu "
         "off_skip=%lu drain_ops=%lu drain_max_us=%lld latency_pass=%u pass=%u\n",
@@ -3307,6 +3314,7 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
         static_cast<unsigned long>(presentation_failures),
         static_cast<unsigned long>(commit_failures),
         static_cast<unsigned long>(replayer.overflows()),
+        static_cast<unsigned long>(replayer.resyncs()),
         static_cast<unsigned long>(canvas.current_revision().value),
         static_cast<unsigned long>(fallback_start.tiles),
         static_cast<unsigned long>(fallback_start.fallback),

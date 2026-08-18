@@ -10,6 +10,7 @@
 #include "tinydraw/vector_v2/incremental_document.h"
 #include "tinydraw/vector_v2/settled_tile.h"
 #include "tinydraw/vector_v2/tile_producer.h"
+#include "vector_v2_touch_sampler.h"
 
 namespace tinydraw::esp32 {
 
@@ -26,6 +27,7 @@ struct BackgroundSliceInput {
   bool panning = false;
   bool sample_ready = false;
   bool lift_report_pending = false;
+  TouchUrgencyProbe touch_urgency{};
 };
 
 struct BackgroundSliceResult {
@@ -73,12 +75,18 @@ class VectorV2BackgroundPipeline {
     std::uint32_t presentation_failures = 0;
   };
 
+  struct PendingSettlePresentation {
+    vector_v2::PixelRect level_bounds{};
+    bool overview = false;
+    bool pending = false;
+  };
+
   void reset_settle_fingerprint();
   void reset_settle_pass();
   void print_fill(const char* result) const;
-  void run_fill(const vector_v2::ViewRequest& view);
-  void run_repair(const vector_v2::ViewRequest& view);
-  void run_settle(std::uint32_t loop_us);
+  void run_fill(const vector_v2::ViewRequest& view, TouchUrgencyProbe touch_urgency);
+  void run_repair(const vector_v2::ViewRequest& view, TouchUrgencyProbe touch_urgency);
+  void run_settle(std::uint32_t loop_us, TouchUrgencyProbe touch_urgency);
 
   vector_v2::OperationLog& log_;
   vector_v2::MaterializedCanvas& canvas_;
@@ -109,6 +117,9 @@ class VectorV2BackgroundPipeline {
   std::int64_t settle_total_us_ = 0;
   std::int64_t settle_max_us_ = 0;
   std::uint32_t settle_failures_ = 0;
+  std::uint8_t settle_retry_count_ = 0;
+  std::uint32_t settle_permanent_failures_ = 0;
+  PendingSettlePresentation pending_settle_{};
   vector_v2::DocumentRevision settle_revision_{};
   vector_v2::ZoomLevel settle_zoom_ = vector_v2::ZoomLevel::k25Percent;
   int settle_x_ = -1;
@@ -119,6 +130,7 @@ class VectorV2BackgroundPipeline {
   std::int64_t drain_total_us_ = 0;
   std::int64_t drain_max_us_ = 0;
   std::uint32_t drain_failures_ = 0;
+  bool drain_ready_to_present_ = false;
   bool history_controls_dirty_ = false;
 };
 
