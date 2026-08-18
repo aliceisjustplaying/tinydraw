@@ -56,6 +56,11 @@ class AuthorityJournalStager {
   [[nodiscard]] bool complete() const { return complete_; }
 
  private:
+  [[nodiscard]] AuthorityJournalStageResult resume_operation(const StoredOperation& operation,
+                                                             std::span<std::byte> payload,
+                                                             std::size_t maximum_payload_bytes,
+                                                             std::size_t& spent);
+
   AuthorityJournalPlan plan_{};
   std::span<std::byte> output_{};
   std::size_t operation_offset_ = 0;

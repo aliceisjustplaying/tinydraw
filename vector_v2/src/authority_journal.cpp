@@ -169,8 +169,16 @@ void encode_samples(std::span<const CompactOperationSample> samples, std::span<s
   }
 }
 
+enum class WireKind : std::uint8_t {
+  kCheckpoint = 1,
+  kAppendStroke = 2,
+  kUpdate = 3,
+  kReset = 4,
+  kHistoryUpdate = 5,
+};
+
 struct DecodedHeader {
-  std::uint16_t wire_kind = 0;
+  WireKind kind = WireKind::kCheckpoint;
   std::uint32_t total_bytes = 0;
   std::uint32_t payload_bytes = 0;
   AuthorityReadView authority{};
@@ -186,7 +194,8 @@ std::optional<DecodedHeader> decode_header(
     return std::nullopt;
   }
   const std::uint16_t wire_kind = get_u16(bytes, 6U);
-  if (wire_kind < 1U || wire_kind > 5U) {
+  if (wire_kind < static_cast<std::uint16_t>(WireKind::kCheckpoint) ||
+      wire_kind > static_cast<std::uint16_t>(WireKind::kHistoryUpdate)) {
     return std::nullopt;
   }
   const std::uint32_t expected_header_crc = get_u32(bytes, 20U);
@@ -201,7 +210,7 @@ std::optional<DecodedHeader> decode_header(
     return std::nullopt;
   }
   return DecodedHeader{
-      .wire_kind = wire_kind,
+      .kind = static_cast<WireKind>(wire_kind),
       .total_bytes = total_bytes,
       .payload_bytes = payload_bytes,
       .authority = {.epoch = {get_u64(bytes, 32U)},
@@ -233,14 +242,85 @@ std::optional<std::uint32_t> source_crc(const AuthorityJournalSource& source, st
 struct PayloadValidation {
   std::size_t operation_count = 0;
   std::size_t sample_count = 0;
-  std::uint16_t before_active_gesture = 0;
-  std::uint16_t at_active_gesture = 0;
 };
+
+struct WireOperation {
+  std::size_t sample_count = 0;
+  std::uint16_t color = 0;
+  PixelRect bounds{};
+  OperationTool tool = OperationTool::kPen;
+  std::uint16_t gesture_id = 0;
+};
+
+std::optional<WireOperation> decode_operation(std::span<const std::byte> metadata) {
+  const std::size_t sample_count = get_u16(metadata, 0U);
+  const OperationTool tool = static_cast<OperationTool>(get_u8(metadata, 12U));
+  if (sample_count == 0U || get_u8(metadata, 13U) != 0U ||
+      (tool != OperationTool::kPen && tool != OperationTool::kEraser)) {
+    return std::nullopt;
+  }
+  return WireOperation{
+      .sample_count = sample_count,
+      .color = get_u16(metadata, 2U),
+      .bounds = {get_u16(metadata, 4U), get_u16(metadata, 6U), get_u16(metadata, 8U),
+                 get_u16(metadata, 10U)},
+      .tool = tool,
+      .gesture_id = get_u16(metadata, 14U),
+  };
+}
+
+CompactOperationSample decode_sample(std::span<const std::byte> bytes, std::size_t offset) {
+  return {
+      .x_quarter = get_u16(bytes, offset),
+      .y_quarter = get_u16(bytes, offset + 2U),
+      .radius_256 = get_u16(bytes, offset + 4U),
+      .elapsed_ms = get_u16(bytes, offset + 6U),
+  };
+}
+
+void include_bounds(PixelRect& bounds, PixelRect sample) {
+  bounds.x0 = std::min(bounds.x0, sample.x0);
+  bounds.y0 = std::min(bounds.y0, sample.y0);
+  bounds.x1 = std::max(bounds.x1, sample.x1);
+  bounds.y1 = std::max(bounds.y1, sample.y1);
+}
+
+std::optional<PixelRect> validate_samples(const AuthorityJournalSource& source,
+                                          std::size_t samples_offset, std::size_t sample_count) {
+  std::array<std::byte, kCrcChunkBytes> bytes{};
+  std::optional<PixelRect> bounds;
+  std::uint16_t previous_elapsed = 0;
+  std::size_t sample_index = 0;
+  while (sample_index < sample_count) {
+    const std::size_t chunk_samples =
+        std::min(sample_count - sample_index, bytes.size() / sizeof(CompactOperationSample));
+    auto chunk = std::span(bytes).first(chunk_samples * sizeof(CompactOperationSample));
+    if (!source.read(samples_offset + sample_index * sizeof(CompactOperationSample), chunk)) {
+      return std::nullopt;
+    }
+    for (std::size_t index = 0; index < chunk_samples; ++index) {
+      const CompactOperationSample sample =
+          decode_sample(chunk, index * sizeof(CompactOperationSample));
+      const auto sample_bounds = operation_sample_world_bounds(sample);
+      if (!sample_bounds.has_value() ||
+          (sample_index + index != 0U && sample.elapsed_ms < previous_elapsed)) {
+        return std::nullopt;
+      }
+      if (bounds.has_value()) {
+        include_bounds(*bounds, *sample_bounds);
+      } else {
+        bounds = sample_bounds;
+      }
+      previous_elapsed = sample.elapsed_ms;
+    }
+    sample_index += chunk_samples;
+  }
+  return bounds;
+}
 
 std::optional<PayloadValidation> validate_payload(const AuthorityJournalSource& source,
                                                   std::size_t payload_offset,
-                                                  std::size_t payload_bytes,
-                                                  std::size_t active_count) {
+                                                  std::size_t payload_bytes) {
   if (payload_bytes < sizeof(std::uint32_t)) {
     return std::nullopt;
   }
@@ -253,73 +333,28 @@ std::optional<PayloadValidation> validate_payload(const AuthorityJournalSource& 
   std::size_t samples_seen = 0;
   PayloadValidation validation{.operation_count = operation_count};
   std::array<std::byte, kOperationWireBytes> metadata{};
-  std::array<std::byte, kCrcChunkBytes> sample_bytes{};
   for (std::size_t operation_index = 0; operation_index < operation_count; ++operation_index) {
     if (cursor > payload_bytes || kOperationWireBytes > payload_bytes - cursor ||
         !source.read(payload_offset + cursor, metadata)) {
       return std::nullopt;
     }
-    const std::size_t sample_count = get_u16(metadata, 0U);
-    const OperationTool tool = static_cast<OperationTool>(get_u8(metadata, 12U));
-    if (sample_count == 0U || get_u8(metadata, 13U) != 0U ||
-        (tool != OperationTool::kPen && tool != OperationTool::kEraser)) {
+    const auto operation = decode_operation(metadata);
+    if (!operation.has_value()) {
       return std::nullopt;
     }
-    const std::uint16_t gesture = get_u16(metadata, 14U);
-    if (operation_index + 1U == active_count) {
-      validation.before_active_gesture = gesture;
-    }
-    if (operation_index == active_count) {
-      validation.at_active_gesture = gesture;
-    }
     cursor += kOperationWireBytes;
-    const std::size_t operation_sample_bytes = sample_count * sizeof(CompactOperationSample);
+    const std::size_t operation_sample_bytes =
+        operation->sample_count * sizeof(CompactOperationSample);
     if (cursor > payload_bytes || operation_sample_bytes > payload_bytes - cursor) {
       return std::nullopt;
     }
-
-    std::optional<PixelRect> calculated;
-    std::uint16_t previous_elapsed = 0;
-    bool first_sample = true;
-    std::size_t sample_cursor = 0;
-    while (sample_cursor < operation_sample_bytes) {
-      const std::size_t read_count =
-          std::min(operation_sample_bytes - sample_cursor, sample_bytes.size());
-      if (!source.read(payload_offset + cursor + sample_cursor,
-                       std::span(sample_bytes).first(read_count))) {
-        return std::nullopt;
-      }
-      for (std::size_t offset = 0; offset < read_count; offset += sizeof(CompactOperationSample)) {
-        const CompactOperationSample sample{
-            .x_quarter = get_u16(sample_bytes, offset),
-            .y_quarter = get_u16(sample_bytes, offset + 2U),
-            .radius_256 = get_u16(sample_bytes, offset + 4U),
-            .elapsed_ms = get_u16(sample_bytes, offset + 6U),
-        };
-        const auto sample_bounds = operation_sample_world_bounds(sample);
-        if (!sample_bounds.has_value() || (!first_sample && sample.elapsed_ms < previous_elapsed)) {
-          return std::nullopt;
-        }
-        if (!calculated.has_value()) {
-          calculated = sample_bounds;
-        } else {
-          calculated->x0 = std::min(calculated->x0, sample_bounds->x0);
-          calculated->y0 = std::min(calculated->y0, sample_bounds->y0);
-          calculated->x1 = std::max(calculated->x1, sample_bounds->x1);
-          calculated->y1 = std::max(calculated->y1, sample_bounds->y1);
-        }
-        previous_elapsed = sample.elapsed_ms;
-        first_sample = false;
-      }
-      sample_cursor += read_count;
-    }
-    const PixelRect encoded{get_u16(metadata, 4U), get_u16(metadata, 6U), get_u16(metadata, 8U),
-                            get_u16(metadata, 10U)};
-    if (!calculated.has_value() || *calculated != encoded) {
+    const auto calculated =
+        validate_samples(source, payload_offset + cursor, operation->sample_count);
+    if (!calculated.has_value() || *calculated != operation->bounds) {
       return std::nullopt;
     }
     cursor += operation_sample_bytes;
-    samples_seen += sample_count;
+    samples_seen += operation->sample_count;
   }
   if (cursor != payload_bytes) {
     return std::nullopt;
@@ -345,10 +380,36 @@ bool valid_active_boundary(std::span<const OperationRecord> records, std::size_t
   return previous == 0U || previous != records[active_count].gesture_id;
 }
 
+bool copy_samples(const AuthorityJournalSource& source, std::size_t source_offset,
+                  std::size_t sample_count, std::span<CompactOperationSample> destination,
+                  std::size_t& destination_offset) {
+  std::array<std::byte, kCrcChunkBytes> bytes{};
+  std::size_t sample_index = 0;
+  while (sample_index < sample_count) {
+    const std::size_t chunk_samples =
+        std::min(sample_count - sample_index, bytes.size() / sizeof(CompactOperationSample));
+    const auto chunk = std::span(bytes).first(chunk_samples * sizeof(CompactOperationSample));
+    if (!source.read(source_offset + sample_index * sizeof(CompactOperationSample), chunk)) {
+      return false;
+    }
+    for (std::size_t index = 0; index < chunk_samples; ++index) {
+      destination[destination_offset++] =
+          decode_sample(chunk, index * sizeof(CompactOperationSample));
+    }
+    sample_index += chunk_samples;
+  }
+  return true;
+}
+
+struct PayloadDestination {
+  std::size_t operation_offset = 0;
+  std::size_t sample_offset = 0;
+  std::span<OperationRecord> records{};
+  std::span<CompactOperationSample> samples{};
+};
+
 bool copy_payload(const AuthorityJournalSource& source, std::size_t payload_offset,
-                  std::size_t payload_bytes, std::size_t destination_operation,
-                  std::size_t destination_sample, std::span<OperationRecord> records,
-                  std::span<CompactOperationSample> samples) {
+                  std::size_t payload_bytes, PayloadDestination destination) {
   std::array<std::byte, 4> count_bytes{};
   if (!source.read(payload_offset, count_bytes)) {
     return false;
@@ -356,43 +417,32 @@ bool copy_payload(const AuthorityJournalSource& source, std::size_t payload_offs
   const std::size_t operation_count = get_u32(count_bytes, 0U);
   std::size_t cursor = sizeof(std::uint32_t);
   std::array<std::byte, kOperationWireBytes> metadata{};
-  std::array<std::byte, kCrcChunkBytes> sample_bytes{};
   for (std::size_t operation_offset = 0; operation_offset < operation_count; ++operation_offset) {
     if (!source.read(payload_offset + cursor, metadata)) {
       return false;
     }
-    const std::size_t sample_count = get_u16(metadata, 0U);
-    records[destination_operation + operation_offset] = {
-        .first_sample = static_cast<std::uint32_t>(destination_sample),
-        .sample_count = static_cast<std::uint16_t>(sample_count),
-        .color = get_u16(metadata, 2U),
-        .bounds_x0 = get_u16(metadata, 4U),
-        .bounds_y0 = get_u16(metadata, 6U),
-        .bounds_x1 = get_u16(metadata, 8U),
-        .bounds_y1 = get_u16(metadata, 10U),
-        .tool = static_cast<OperationTool>(get_u8(metadata, 12U)),
+    const auto operation = decode_operation(metadata);
+    if (!operation.has_value()) {
+      return false;
+    }
+    destination.records[destination.operation_offset + operation_offset] = {
+        .first_sample = static_cast<std::uint32_t>(destination.sample_offset),
+        .sample_count = static_cast<std::uint16_t>(operation->sample_count),
+        .color = operation->color,
+        .bounds_x0 = static_cast<std::uint16_t>(operation->bounds.x0),
+        .bounds_y0 = static_cast<std::uint16_t>(operation->bounds.y0),
+        .bounds_x1 = static_cast<std::uint16_t>(operation->bounds.x1),
+        .bounds_y1 = static_cast<std::uint16_t>(operation->bounds.y1),
+        .tool = operation->tool,
         .flags = 0U,
-        .gesture_id = get_u16(metadata, 14U),
+        .gesture_id = operation->gesture_id,
     };
     cursor += kOperationWireBytes;
-    const std::size_t operation_sample_bytes = sample_count * sizeof(CompactOperationSample);
-    std::size_t sample_cursor = 0;
-    while (sample_cursor < operation_sample_bytes) {
-      const std::size_t read_count =
-          std::min(operation_sample_bytes - sample_cursor, sample_bytes.size());
-      if (!source.read(payload_offset + cursor + sample_cursor,
-                       std::span(sample_bytes).first(read_count))) {
-        return false;
-      }
-      for (std::size_t offset = 0; offset < read_count; offset += sizeof(CompactOperationSample)) {
-        samples[destination_sample++] = {
-            .x_quarter = get_u16(sample_bytes, offset),
-            .y_quarter = get_u16(sample_bytes, offset + 2U),
-            .radius_256 = get_u16(sample_bytes, offset + 4U),
-            .elapsed_ms = get_u16(sample_bytes, offset + 6U),
-        };
-      }
-      sample_cursor += read_count;
+    const std::size_t operation_sample_bytes =
+        operation->sample_count * sizeof(CompactOperationSample);
+    if (!copy_samples(source, payload_offset + cursor, operation->sample_count, destination.samples,
+                      destination.sample_offset)) {
+      return false;
     }
     cursor += operation_sample_bytes;
   }
@@ -410,6 +460,175 @@ JournalRecovery failed_recovery(JournalRecoveryStatus status, const JournalRecov
   JournalRecovery failed = previous;
   failed.status = status;
   return failed;
+}
+
+struct LoadedTransaction {
+  DecodedHeader header{};
+  std::size_t payload_offset = 0;
+  std::optional<PayloadValidation> payload{};
+};
+
+struct TransactionLoad {
+  std::optional<LoadedTransaction> transaction{};
+  JournalRecoveryStatus failure = JournalRecoveryStatus::kCorrupt;
+  bool discardable = true;
+};
+
+TransactionLoad load_transaction(const AuthorityJournalSource& source, std::size_t bytes,
+                                 std::size_t offset, const JournalRecovery& previous) {
+  if (bytes - offset < kAuthorityJournalHeaderBytes + kAuthorityJournalCommitMarkerBytes) {
+    return {};
+  }
+  std::array<std::byte, kAuthorityJournalHeaderBytes> raw_header{};
+  if (!source.read(offset, raw_header)) {
+    return {.failure = JournalRecoveryStatus::kIoError, .discardable = false};
+  }
+  const auto header = decode_header(raw_header);
+  if (!header.has_value() || header->total_bytes > bytes - offset || header->sequence == 0U ||
+      (previous.transaction_count != 0U && header->sequence <= previous.sequence) ||
+      (previous.transaction_count == 0U && header->kind != WireKind::kCheckpoint)) {
+    return {};
+  }
+
+  std::array<std::byte, kAuthorityJournalCommitMarkerBytes> marker{};
+  const std::size_t marker_offset = offset + header->total_bytes - marker.size();
+  if (!source.read(marker_offset, marker)) {
+    return {.failure = JournalRecoveryStatus::kIoError, .discardable = false};
+  }
+  const std::size_t payload_offset = offset + kAuthorityJournalHeaderBytes;
+  const auto continued_crc = source_crc(source, payload_offset, header->payload_bytes,
+                                        crc32_update(0xFFFF'FFFFU, raw_header));
+  if (!continued_crc.has_value()) {
+    return {.failure = JournalRecoveryStatus::kIoError, .discardable = false};
+  }
+  if (get_u32(marker, 0U) != kCommitMagic || get_u64(marker, 8U) != header->sequence ||
+      get_u32(marker, 4U) != ~*continued_crc) {
+    return {};
+  }
+
+  std::optional<PayloadValidation> payload;
+  if (header->payload_bytes != 0U) {
+    payload = validate_payload(source, payload_offset, header->payload_bytes);
+    if (!payload.has_value()) {
+      return {};
+    }
+  }
+  return {.transaction = LoadedTransaction{
+              .header = *header,
+              .payload_offset = payload_offset,
+              .payload = payload,
+          }};
+}
+
+struct ReplayPlan {
+  std::size_t destination_operation = 0;
+  std::size_t destination_sample = 0;
+};
+
+struct ReplayValidation {
+  std::optional<ReplayPlan> plan{};
+  JournalRecoveryStatus failure = JournalRecoveryStatus::kCorrupt;
+};
+
+ReplayValidation validate_replay(const LoadedTransaction& transaction,
+                                 const JournalRecovery& previous,
+                                 std::span<const OperationRecord> records,
+                                 std::span<const CompactOperationSample> samples) {
+  const DecodedHeader& header = transaction.header;
+  const auto& payload = transaction.payload;
+  if (header.authority.retained_operation_count > records.size() ||
+      header.authority.retained_sample_count > samples.size()) {
+    return {.failure = JournalRecoveryStatus::kInsufficientStorage};
+  }
+  if (header.authority.generation.value < header.authority.active_operation_count) {
+    return {};
+  }
+
+  const std::size_t retained_count = previous.state.retained_operation_count;
+  const std::size_t retained_samples = previous.state.retained_sample_count;
+  ReplayPlan plan;
+  bool valid = false;
+  switch (header.kind) {
+    case WireKind::kCheckpoint:
+      valid = payload.has_value() &&
+              payload->operation_count == header.authority.retained_operation_count &&
+              payload->sample_count == header.authority.retained_sample_count &&
+              header.authority.active_operation_count <= header.authority.retained_operation_count;
+      break;
+    case WireKind::kAppendStroke:
+      valid = payload.has_value() &&
+              header.base_active_count == previous.state.active_operation_count &&
+              header.base_active_count <= header.authority.retained_operation_count &&
+              payload->operation_count ==
+                  header.authority.retained_operation_count - header.base_active_count &&
+              header.authority.active_operation_count == header.authority.retained_operation_count;
+      if (!valid) {
+        return {};
+      }
+      plan.destination_operation = header.base_active_count;
+      plan.destination_sample = sample_count_for_prefix(records, plan.destination_operation);
+      valid =
+          plan.destination_sample + payload->sample_count == header.authority.retained_sample_count;
+      break;
+    case WireKind::kUpdate:
+    case WireKind::kHistoryUpdate:
+      valid = header.payload_bytes == 0U &&
+              header.authority.retained_operation_count == retained_count &&
+              header.authority.retained_sample_count == retained_samples &&
+              header.authority.active_operation_count <= retained_count &&
+              valid_active_boundary(records.first(retained_count),
+                                    header.authority.active_operation_count);
+      break;
+    case WireKind::kReset:
+      valid = header.payload_bytes == 0U && header.authority.active_operation_count == 0U &&
+              header.authority.retained_operation_count == 0U &&
+              header.authority.retained_sample_count == 0U;
+      break;
+  }
+  return valid ? ReplayValidation{.plan = plan} : ReplayValidation{};
+}
+
+struct RecoveryStep {
+  JournalRecovery recovery{};
+  bool advanced = false;
+};
+
+RecoveryStep recover_transaction(const AuthorityJournalSource& source, std::size_t bytes,
+                                 std::size_t offset, std::span<OperationRecord> records,
+                                 std::span<CompactOperationSample> samples,
+                                 const JournalRecovery& previous) {
+  const TransactionLoad loaded = load_transaction(source, bytes, offset, previous);
+  if (!loaded.transaction.has_value()) {
+    return {.recovery = failed_recovery(loaded.failure, previous, loaded.discardable)};
+  }
+  const ReplayValidation replay = validate_replay(*loaded.transaction, previous, records, samples);
+  if (!replay.plan.has_value()) {
+    const bool discardable = replay.failure != JournalRecoveryStatus::kInsufficientStorage;
+    return {.recovery = failed_recovery(replay.failure, previous, discardable)};
+  }
+
+  const LoadedTransaction& transaction = *loaded.transaction;
+  if (transaction.payload.has_value() &&
+      !copy_payload(source, transaction.payload_offset, transaction.header.payload_bytes,
+                    {.operation_offset = replay.plan->destination_operation,
+                     .sample_offset = replay.plan->destination_sample,
+                     .records = records,
+                     .samples = samples})) {
+    return {.recovery = failed_recovery(JournalRecoveryStatus::kIoError, previous, false)};
+  }
+  if (!valid_active_boundary(records.first(transaction.header.authority.retained_operation_count),
+                             transaction.header.authority.active_operation_count)) {
+    return {.recovery = failed_recovery(JournalRecoveryStatus::kCorrupt, previous, true)};
+  }
+
+  JournalRecovery recovered = previous;
+  recovered.status = JournalRecoveryStatus::kRecovered;
+  recovered.state = transaction.header.authority;
+  recovered.bytes_consumed = offset + transaction.header.total_bytes;
+  ++recovered.transaction_count;
+  recovered.sequence = transaction.header.sequence;
+  recovered.discarded_tail = false;
+  return {.recovery = recovered, .advanced = true};
 }
 
 }  // namespace
@@ -432,8 +651,9 @@ bool AuthorityJournalStager::start(const AuthorityJournalPlan& plan, const Opera
   }
   auto header = output.first(kAuthorityJournalHeaderBytes);
   auto payload = output.subspan(kAuthorityJournalHeaderBytes, plan.payload_bytes);
+  auto marker = output.last(kAuthorityJournalCommitMarkerBytes);
   std::fill(header.begin(), header.end(), std::byte{0xFF});
-  std::fill(output.last(kAuthorityJournalCommitMarkerBytes).begin(), output.end(), std::byte{0xFF});
+  std::fill(marker.begin(), marker.end(), std::byte{0xFF});
   put_u32(header, 0U, kTransactionMagic);
   put_u16(header, 4U, kFormatVersion);
   put_u16(header, 6U, static_cast<std::uint16_t>(plan.change.kind));
@@ -463,6 +683,47 @@ bool AuthorityJournalStager::start(const AuthorityJournalPlan& plan, const Opera
   return true;
 }
 
+AuthorityJournalStageResult AuthorityJournalStager::resume_operation(
+    const StoredOperation& operation, std::span<std::byte> payload,
+    std::size_t maximum_payload_bytes, std::size_t& spent) {
+  if (!operation_header_staged_) {
+    if (maximum_payload_bytes - spent < kOperationWireBytes) {
+      return AuthorityJournalStageResult::kProgress;
+    }
+    if (payload_position_ > payload.size() ||
+        kOperationWireBytes > payload.size() - payload_position_) {
+      return AuthorityJournalStageResult::kError;
+    }
+    encode_operation_header(operation, payload.subspan(payload_position_, kOperationWireBytes));
+    payload_position_ += kOperationWireBytes;
+    spent += kOperationWireBytes;
+    operation_header_staged_ = true;
+  }
+
+  const std::size_t remaining_samples = operation.samples.size() - sample_offset_;
+  const std::size_t available_samples =
+      (maximum_payload_bytes - spent) / sizeof(CompactOperationSample);
+  const std::size_t copied_samples = std::min(remaining_samples, available_samples);
+  const std::size_t copied_bytes = copied_samples * sizeof(CompactOperationSample);
+  if (copied_bytes != 0U) {
+    if (payload_position_ > payload.size() || copied_bytes > payload.size() - payload_position_) {
+      return AuthorityJournalStageResult::kError;
+    }
+    encode_samples(operation.samples.subspan(sample_offset_, copied_samples),
+                   payload.subspan(payload_position_, copied_bytes));
+    payload_position_ += copied_bytes;
+    sample_offset_ += copied_samples;
+    spent += copied_bytes;
+  }
+  if (sample_offset_ != operation.samples.size()) {
+    return AuthorityJournalStageResult::kProgress;
+  }
+  ++operation_offset_;
+  sample_offset_ = 0U;
+  operation_header_staged_ = false;
+  return AuthorityJournalStageResult::kComplete;
+}
+
 AuthorityJournalStageResult AuthorityJournalStager::resume(const OperationLog& log,
                                                            std::size_t maximum_payload_bytes) {
   if (!active_ || maximum_payload_bytes < kOperationWireBytes) {
@@ -486,44 +747,13 @@ AuthorityJournalStageResult AuthorityJournalStager::resume(const OperationLog& l
       reset();
       return AuthorityJournalStageResult::kError;
     }
-    if (!operation_header_staged_) {
-      if (maximum_payload_bytes - spent < kOperationWireBytes) {
-        return AuthorityJournalStageResult::kProgress;
-      }
-      if (payload_position_ > payload.size() ||
-          kOperationWireBytes > payload.size() - payload_position_) {
+    const AuthorityJournalStageResult operation_result =
+        resume_operation(*operation, payload, maximum_payload_bytes, spent);
+    if (operation_result != AuthorityJournalStageResult::kComplete) {
+      if (operation_result == AuthorityJournalStageResult::kError) {
         reset();
-        return AuthorityJournalStageResult::kError;
       }
-      encode_operation_header(*operation, payload.subspan(payload_position_, kOperationWireBytes));
-      payload_position_ += kOperationWireBytes;
-      spent += kOperationWireBytes;
-      operation_header_staged_ = true;
-    }
-    const std::size_t remaining_samples = operation->samples.size() - sample_offset_;
-    const std::size_t available_samples =
-        (maximum_payload_bytes - spent) / sizeof(CompactOperationSample);
-    const std::size_t copied_samples = std::min(remaining_samples, available_samples);
-    const std::size_t copied_bytes = copied_samples * sizeof(CompactOperationSample);
-    if (copied_samples != 0U) {
-      if (payload_position_ > payload.size() - copied_bytes) {
-        reset();
-        return AuthorityJournalStageResult::kError;
-      }
-      encode_samples(operation->samples.subspan(sample_offset_, copied_samples),
-                     payload.subspan(payload_position_, copied_bytes));
-      payload_position_ += copied_bytes;
-      sample_offset_ += copied_samples;
-      spent += copied_bytes;
-    }
-    if (sample_offset_ != operation->samples.size()) {
-      return AuthorityJournalStageResult::kProgress;
-    }
-    ++operation_offset_;
-    sample_offset_ = 0U;
-    operation_header_staged_ = false;
-    if (spent == maximum_payload_bytes && operation_offset_ < plan_.operation_count) {
-      return AuthorityJournalStageResult::kProgress;
+      return operation_result;
     }
   }
   if (payload_position_ != plan_.payload_bytes) {
@@ -621,115 +851,11 @@ JournalRecovery recover_authority_journal(const AuthorityJournalSource& source, 
                     [](std::byte value) { return value == std::byte{0xFF}; })) {
       break;
     }
-    if (bytes - offset < kAuthorityJournalHeaderBytes + kAuthorityJournalCommitMarkerBytes) {
-      return failed_recovery(JournalRecoveryStatus::kCorrupt, result, true);
+    RecoveryStep step = recover_transaction(source, bytes, offset, records, samples, result);
+    if (!step.advanced) {
+      return step.recovery;
     }
-    std::array<std::byte, kAuthorityJournalHeaderBytes> raw_header{};
-    if (!source.read(offset, raw_header)) {
-      return failed_recovery(JournalRecoveryStatus::kIoError, result, false);
-    }
-    const auto header = decode_header(raw_header);
-    if (!header.has_value() || header->total_bytes > bytes - offset || header->sequence == 0U ||
-        (result.transaction_count != 0U && header->sequence <= result.sequence) ||
-        (result.transaction_count == 0U && header->wire_kind != 1U)) {
-      return failed_recovery(JournalRecoveryStatus::kCorrupt, result, true);
-    }
-    const std::size_t payload_offset = offset + kAuthorityJournalHeaderBytes;
-    std::array<std::byte, kAuthorityJournalCommitMarkerBytes> marker{};
-    const std::size_t marker_offset = offset + header->total_bytes - marker.size();
-    if (!source.read(marker_offset, marker)) {
-      return failed_recovery(JournalRecoveryStatus::kIoError, result, false);
-    }
-    std::uint32_t transaction_crc = crc32_update(0xFFFF'FFFFU, raw_header);
-    const auto continued_crc =
-        source_crc(source, payload_offset, header->payload_bytes, transaction_crc);
-    if (!continued_crc.has_value() || get_u32(marker, 0U) != kCommitMagic ||
-        get_u64(marker, 8U) != header->sequence || get_u32(marker, 4U) != ~*continued_crc) {
-      return failed_recovery(continued_crc.has_value() ? JournalRecoveryStatus::kCorrupt
-                                                       : JournalRecoveryStatus::kIoError,
-                             result, continued_crc.has_value());
-    }
-
-    std::optional<PayloadValidation> payload;
-    if (header->payload_bytes != 0U) {
-      payload = validate_payload(source, payload_offset, header->payload_bytes,
-                                 header->authority.active_operation_count);
-      if (!payload.has_value()) {
-        return failed_recovery(JournalRecoveryStatus::kCorrupt, result, true);
-      }
-    }
-    const std::size_t current_retained = result.state.retained_operation_count;
-    const std::size_t current_samples = result.state.retained_sample_count;
-    std::size_t destination_operation = 0U;
-    std::size_t destination_sample = 0U;
-    bool semantic_valid = true;
-    switch (header->wire_kind) {
-      case 1U:
-        semantic_valid =
-            payload.has_value() &&
-            payload->operation_count == header->authority.retained_operation_count &&
-            payload->sample_count == header->authority.retained_sample_count &&
-            header->authority.active_operation_count <= header->authority.retained_operation_count;
-        break;
-      case 2U:
-        semantic_valid =
-            payload.has_value() &&
-            header->base_active_count == result.state.active_operation_count &&
-            payload->operation_count ==
-                header->authority.retained_operation_count - header->base_active_count &&
-            header->authority.active_operation_count == header->authority.retained_operation_count;
-        destination_operation = header->base_active_count;
-        destination_sample = sample_count_for_prefix(records, destination_operation);
-        semantic_valid = semantic_valid && destination_sample + payload->sample_count ==
-                                               header->authority.retained_sample_count;
-        break;
-      case 3U:
-      case 5U:
-        semantic_valid = header->payload_bytes == 0U &&
-                         header->authority.retained_operation_count == current_retained &&
-                         header->authority.retained_sample_count == current_samples &&
-                         header->authority.active_operation_count <= current_retained &&
-                         valid_active_boundary(records.first(current_retained),
-                                               header->authority.active_operation_count);
-        break;
-      case 4U:
-        semantic_valid = header->payload_bytes == 0U &&
-                         header->authority.active_operation_count == 0U &&
-                         header->authority.retained_operation_count == 0U &&
-                         header->authority.retained_sample_count == 0U;
-        break;
-      default:
-        semantic_valid = false;
-        break;
-    }
-    if (header->authority.generation.value < header->authority.active_operation_count ||
-        header->authority.retained_operation_count > records.size() ||
-        header->authority.retained_sample_count > samples.size()) {
-      semantic_valid = false;
-    }
-    if (!semantic_valid) {
-      const bool insufficient = header->authority.retained_operation_count > records.size() ||
-                                header->authority.retained_sample_count > samples.size();
-      return failed_recovery(insufficient ? JournalRecoveryStatus::kInsufficientStorage
-                                          : JournalRecoveryStatus::kCorrupt,
-                             result, !insufficient);
-    }
-    if (payload.has_value() &&
-        !copy_payload(source, payload_offset, header->payload_bytes, destination_operation,
-                      destination_sample, records, samples)) {
-      return failed_recovery(JournalRecoveryStatus::kIoError, result, false);
-    }
-    if (!valid_active_boundary(records.first(header->authority.retained_operation_count),
-                               header->authority.active_operation_count)) {
-      return failed_recovery(JournalRecoveryStatus::kCorrupt, result, true);
-    }
-
-    result.status = JournalRecoveryStatus::kRecovered;
-    result.state = header->authority;
-    result.bytes_consumed = offset + header->total_bytes;
-    ++result.transaction_count;
-    result.sequence = header->sequence;
-    result.discarded_tail = false;
+    result = step.recovery;
     offset = result.bytes_consumed;
   }
   return result;
