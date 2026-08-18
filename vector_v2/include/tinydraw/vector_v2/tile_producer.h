@@ -85,6 +85,9 @@ class TileProducer {
   // result means every visible key has a current tile at kImmediate or better.
   [[nodiscard]] std::optional<TileProductionStep> produce_next(const ViewRequest& view);
   [[nodiscard]] std::optional<std::size_t> visible_tiles_remaining(const ViewRequest& view) const;
+  // Abandons an unpublished group so another serialized renderer may reuse
+  // the caller-owned chord workspace. The next produce_next starts fresh.
+  void cancel_pending_work();
   // Changes the authoritative uniform snapshot after a coordinated log/canvas
   // reset. Rejected unless both authorities are empty and at this revision.
   [[nodiscard]] bool reset_uniform_baseline(DocumentRevision revision,

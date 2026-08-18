@@ -263,6 +263,8 @@ std::optional<TileProductionStep> TileProducer::produce_next(const ViewRequest& 
   return render_active_batch();
 }
 
+void TileProducer::cancel_pending_work() { discard_active_group(); }
+
 bool TileProducer::reset_uniform_baseline(DocumentRevision revision, std::uint16_t color) {
   if (log_.operation_count() != 0U || log_.current_revision() != revision ||
       canvas_.current_revision() != revision) {
