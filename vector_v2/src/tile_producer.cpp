@@ -12,7 +12,7 @@
 #include "tinydraw/vector_v2/rerender_ledger.h"
 #endif
 #include "tinydraw/vector_v2/storage_overlap.h"
-#include "tinydraw/vector_v2/tile_payload_analysis.h"
+#include "tinydraw/vector_v2/tile_uniform.h"
 
 namespace tinydraw::vector_v2 {
 namespace {
