@@ -5,6 +5,7 @@
 
 #include "esp_timer.h"
 #include "vector_v2_app_diagnostics.h"
+#include "vector_v2_chrome_controller.h"
 #include "vector_v2_presenter.h"
 
 namespace tinydraw::esp32 {
@@ -32,22 +33,6 @@ struct AbsorbSliceLimit {
   }
 };
 
-const char* zoom_name(ZoomLevel zoom) {
-  switch (zoom) {
-    case ZoomLevel::k25Percent:
-      return "25";
-    case ZoomLevel::k50Percent:
-      return "50";
-    case ZoomLevel::k100Percent:
-      return "100";
-    case ZoomLevel::k200Percent:
-      return "200";
-    case ZoomLevel::k400Percent:
-      return "400";
-  }
-  return "unknown";
-}
-
 void include_bounds(std::optional<PixelRect>& accumulated, PixelRect bounds) {
   if (!accumulated.has_value()) {
     accumulated = bounds;
@@ -69,19 +54,6 @@ std::optional<ViewRequest> priority_view(const VectorV2Presenter& presenter) {
                        presenter.level_x() + vector_v2::kOverviewWidth,
                        presenter.level_y() + vector_v2::kOverviewHeight},
   };
-}
-
-LivePresentationTiming present_history_controls(VectorV2Presenter& presenter,
-                                                const vector_v2::ChromeState& chrome,
-                                                std::uint32_t event_us) {
-  auto timing =
-      presenter.present_frame_region({0, vector_v2::chrome_canvas_bottom(chrome),
-                                      vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
-                                     chrome, event_us);
-  if (!timing.passed) {
-    timing = presenter.refresh(chrome, event_us);
-  }
-  return timing;
 }
 
 }  // namespace

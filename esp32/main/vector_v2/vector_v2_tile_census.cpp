@@ -10,6 +10,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "tinydraw/vector_v2/tile_payload_analysis.h"
+#include "vector_v2_app_diagnostics.h"
 
 namespace tinydraw::esp32 {
 namespace {
@@ -17,22 +18,6 @@ namespace {
 using vector_v2::MaterializedCanvas;
 using vector_v2::TileKey;
 using vector_v2::ZoomLevel;
-
-const char* zoom_name(ZoomLevel zoom) {
-  switch (zoom) {
-    case ZoomLevel::k25Percent:
-      return "25";
-    case ZoomLevel::k50Percent:
-      return "50";
-    case ZoomLevel::k100Percent:
-      return "100";
-    case ZoomLevel::k200Percent:
-      return "200";
-    case ZoomLevel::k400Percent:
-      return "400";
-  }
-  return "invalid";
-}
 
 struct TileClassCensus {
   std::size_t tiles = 0;

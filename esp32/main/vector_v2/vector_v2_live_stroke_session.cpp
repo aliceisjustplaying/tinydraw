@@ -119,13 +119,6 @@ std::optional<vector_v2::ViewRequest> LiveStrokeSession::priority_view() const {
   };
 }
 
-std::optional<vector_v2::IncrementalAppendResult> LiveStrokeSession::absorb_one(
-    std::int64_t budget_us) {
-  return vector_v2::absorb_pending_operation(
-      log_, canvas_, workspace_, priority_view(),
-      {.now_us = &esp_timer_get_time, .budget_us = budget_us});
-}
-
 void LiveStrokeSession::reset_stroke_stats() {
   world_bounds_.reset();
   metrics_ = {};

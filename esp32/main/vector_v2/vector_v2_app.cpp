@@ -56,79 +56,6 @@ constexpr std::uint32_t kPowerRefreshUs = 30'000'000U;
 constexpr int kStartupPresentationAttempts = 3;
 constexpr TickType_t kStartupPresentationRetryDelay = pdMS_TO_TICKS(20);
 
-struct LiftBaselineTiming {
-  std::uint32_t id = 0;
-  std::int64_t detected_us = 0;
-  std::int64_t finish_preview_us = 0;
-  std::int64_t builder_finish_us = 0;
-  std::int64_t append_us = 0;
-  std::int64_t append_max_us = 0;
-  std::int64_t refresh_wall_us = 0;
-  vector_v2::PixelRect refresh_level_bounds{};
-  std::int64_t stroke_logging_us = 0;
-  LivePresentationTiming refresh{};
-  std::uint32_t chunks = 0;
-  bool committed = false;
-  bool commit_failed = false;
-  bool pending = false;
-};
-
-struct PanMetrics {
-  std::uint64_t compose_total_us = 0;
-  std::uint64_t present_total_us = 0;
-  std::uint64_t tear_wait_total_us = 0;
-  std::uint32_t frames = 0;
-  std::uint32_t reused_frames = 0;
-  std::uint32_t compose_max_us = 0;
-  std::uint32_t present_max_us = 0;
-  std::uint32_t tear_wait_max_us = 0;
-  std::uint32_t failures = 0;
-
-  void include(const LivePresentationTiming& timing) {
-    if (timing.compose_pending) {
-      return;
-    }
-    if (!timing.passed) {
-      ++failures;
-      return;
-    }
-    const auto compose = static_cast<std::uint32_t>(timing.compose_us);
-    const auto present = static_cast<std::uint32_t>(timing.complete_us);
-    const auto tear_wait = static_cast<std::uint32_t>(timing.tear_wait_us);
-    compose_total_us += compose;
-    present_total_us += present;
-    tear_wait_total_us += tear_wait;
-    ++frames;
-    reused_frames += timing.frame_reused;
-    compose_max_us = std::max(compose_max_us, compose);
-    present_max_us = std::max(present_max_us, present);
-    tear_wait_max_us = std::max(tear_wait_max_us, tear_wait);
-  }
-
-  void reset() { *this = {}; }
-};
-
-struct PendingStrokeReport {
-  DocumentRevision revision{};
-  std::size_t operation_count = 0;
-  std::size_t sample_count = 0;
-  std::int64_t append_us = 0;
-  std::int64_t append_max_us = 0;
-  LivePresentationTiming refresh{};
-  LiveStrokeMetrics metrics{};
-  std::uint32_t poll_max_us = 0;
-  TouchSamplerMetrics touch{};
-  vector_v2::InPlaceAppendPhases phase_max{};
-  vector_v2::InPlaceRetainDrops drops{};
-  std::uint32_t chunks = 0;
-  std::size_t free_psram = 0;
-  std::size_t largest_psram = 0;
-  bool authority_match = false;
-  bool committed = false;
-  bool commit_failed = false;
-  bool pending = false;
-};
-
 std::uint16_t next_gesture_id(const OperationLog& log) {
   if (log.operation_count() == 0U) {
     return 1U;
@@ -142,133 +69,6 @@ std::uint16_t next_gesture_id(const OperationLog& log) {
 }
 
 std::uint32_t now_us() { return static_cast<std::uint32_t>(esp_timer_get_time()); }
-
-const char* zoom_name(ZoomLevel zoom) {
-  switch (zoom) {
-    case ZoomLevel::k25Percent:
-      return "25";
-    case ZoomLevel::k50Percent:
-      return "50";
-    case ZoomLevel::k100Percent:
-      return "100";
-    case ZoomLevel::k200Percent:
-      return "200";
-    case ZoomLevel::k400Percent:
-      return "400";
-  }
-  return "unknown";
-}
-
-void print_pan_baseline(const VectorV2Presenter& presenter, const PanMetrics& metrics) {
-  std::printf(
-      "TINYDRAW_PAN_BASELINE zoom=%s x=%d y=%d frames=%lu reused=%lu "
-      "compose_avg_us=%llu compose_max_us=%lu present_avg_us=%llu present_max_us=%lu "
-      "tear_wait_avg_us=%llu tear_wait_max_us=%lu failures=%lu\n",
-      zoom_name(presenter.zoom()), presenter.level_x(), presenter.level_y(),
-      static_cast<unsigned long>(metrics.frames), static_cast<unsigned long>(metrics.reused_frames),
-      static_cast<unsigned long long>(
-          metrics.frames == 0U ? 0U : metrics.compose_total_us / metrics.frames),
-      static_cast<unsigned long>(metrics.compose_max_us),
-      static_cast<unsigned long long>(
-          metrics.frames == 0U ? 0U : metrics.present_total_us / metrics.frames),
-      static_cast<unsigned long>(metrics.present_max_us),
-      static_cast<unsigned long long>(
-          metrics.frames == 0U ? 0U : metrics.tear_wait_total_us / metrics.frames),
-      static_cast<unsigned long>(metrics.tear_wait_max_us),
-      static_cast<unsigned long>(metrics.failures));
-}
-
-void print_lift_baseline(const LiftBaselineTiming& timing, std::int64_t poll_started_us,
-                         std::int64_t poll_completed_us, std::uint32_t reports_dropped) {
-  const std::int64_t measured_phase_us = timing.finish_preview_us + timing.builder_finish_us +
-                                         timing.append_us + timing.refresh_wall_us +
-                                         timing.stroke_logging_us;
-  const std::int64_t detected_to_poll_us = poll_started_us - timing.detected_us;
-  std::printf(
-      "TINYDRAW_LIFT_BASELINE id=%lu finish_preview_us=%lld builder_finish_us=%lld "
-      "append_us=%lld append_max_us=%lld refresh_wall_us=%lld refresh_x0=%d refresh_y0=%d "
-      "refresh_x1=%d refresh_y1=%d refresh_compose_us=%lld "
-      "refresh_first_submit_us=%lld refresh_first_complete_us=%lld "
-      "refresh_transfer_wait_us=%lld stroke_logging_us=%lld "
-      "detected_to_poll_start_us=%lld detected_to_poll_complete_us=%lld poll_read_us=%lld "
-      "unattributed_tail_us=%lld reports_dropped=%lu chunks=%lu committed=%u refresh=%u "
-      "commit_failed=%u\n",
-      static_cast<unsigned long>(timing.id), static_cast<long long>(timing.finish_preview_us),
-      static_cast<long long>(timing.builder_finish_us), static_cast<long long>(timing.append_us),
-      static_cast<long long>(timing.append_max_us), static_cast<long long>(timing.refresh_wall_us),
-      timing.refresh_level_bounds.x0, timing.refresh_level_bounds.y0,
-      timing.refresh_level_bounds.x1, timing.refresh_level_bounds.y1,
-      static_cast<long long>(timing.refresh.compose_us),
-      static_cast<long long>(timing.refresh.first_submit_us),
-      static_cast<long long>(timing.refresh.first_complete_us),
-      static_cast<long long>(timing.refresh.complete_us),
-      static_cast<long long>(timing.stroke_logging_us), static_cast<long long>(detected_to_poll_us),
-      static_cast<long long>(poll_completed_us - timing.detected_us),
-      static_cast<long long>(poll_completed_us - poll_started_us),
-      static_cast<long long>(detected_to_poll_us - measured_phase_us),
-      static_cast<unsigned long>(reports_dropped), static_cast<unsigned long>(timing.chunks),
-      timing.committed, timing.refresh.passed, timing.commit_failed);
-}
-
-void print_stroke(const PendingStrokeReport& report) {
-  std::printf(
-      "TINYDRAW_LIVE_STROKE revision=%lu operations=%lu samples=%lu append_us=%lld "
-      "append_max_us=%lld refresh_compose_us=%lld refresh_complete_us=%lld ink_samples=%lu "
-      "read_submit_avg_us=%llu read_submit_max_us=%lu read_complete_avg_us=%llu "
-      "read_complete_max_us=%lu submit_over_16ms=%lu complete_over_33ms=%lu "
-      "presentation_failures=%lu poll_max_us=%lu touch_errors=%lu touch_overflows=%lu "
-      "touch_resyncs=%lu touch_moves_coalesced=%lu touch_events=%lu touch_down=%lu touch_up=%lu "
-      "touch_events_ge_8ms=%lu touch_event_age_max_us=%lu chunks=%lu "
-      "ph_prepare_max_us=%lld ph_overview_max_us=%lld ph_enumerate_max_us=%lld "
-      "ph_uniform_max_us=%lld ph_raw_max_us=%lld ph_offscreen_max_us=%lld "
-      "ph_commit_max_us=%lld "
-      "drop_uni_slot=%lu drop_uni_paint=%lu drop_raw_edit=%lu drop_raw_paint=%lu "
-      "off_skip=%lu free_psram=%lu "
-      "largest_psram=%lu authority_match=%u\n",
-      static_cast<unsigned long>(report.revision.value),
-      static_cast<unsigned long>(report.operation_count),
-      static_cast<unsigned long>(report.sample_count), static_cast<long long>(report.append_us),
-      static_cast<long long>(report.append_max_us),
-      static_cast<long long>(report.refresh.compose_us),
-      static_cast<long long>(report.refresh.complete_us),
-      static_cast<unsigned long>(report.metrics.samples),
-      static_cast<unsigned long long>(
-          report.metrics.samples == 0U ? 0U
-                                       : report.metrics.submit_total_us / report.metrics.samples),
-      static_cast<unsigned long>(report.metrics.submit_max_us),
-      static_cast<unsigned long long>(
-          report.metrics.samples == 0U ? 0U
-                                       : report.metrics.complete_total_us / report.metrics.samples),
-      static_cast<unsigned long>(report.metrics.complete_max_us),
-      static_cast<unsigned long>(report.metrics.submit_over_16ms),
-      static_cast<unsigned long>(report.metrics.complete_over_33ms),
-      static_cast<unsigned long>(report.metrics.failures),
-      static_cast<unsigned long>(report.poll_max_us),
-      static_cast<unsigned long>(report.touch.errors),
-      static_cast<unsigned long>(report.touch.queue_overflows),
-      static_cast<unsigned long>(report.touch.queue_resyncs),
-      static_cast<unsigned long>(report.touch.moves_coalesced),
-      static_cast<unsigned long>(report.touch.events_consumed),
-      static_cast<unsigned long>(report.touch.down_events),
-      static_cast<unsigned long>(report.touch.up_events),
-      static_cast<unsigned long>(report.touch.events_at_least_8ms_old),
-      static_cast<unsigned long>(report.touch.maximum_event_age_us),
-      static_cast<unsigned long>(report.chunks),
-      static_cast<long long>(report.phase_max.prepare_us),
-      static_cast<long long>(report.phase_max.overview_us),
-      static_cast<long long>(report.phase_max.enumerate_us),
-      static_cast<long long>(report.phase_max.uniform_retain_us),
-      static_cast<long long>(report.phase_max.raw_retain_us),
-      static_cast<long long>(report.phase_max.offscreen_retain_us),
-      static_cast<long long>(report.phase_max.commit_us),
-      static_cast<unsigned long>(report.drops.visible_uniform_no_slot),
-      static_cast<unsigned long>(report.drops.visible_uniform_paint_fail),
-      static_cast<unsigned long>(report.drops.visible_raw_edit_fail),
-      static_cast<unsigned long>(report.drops.visible_raw_paint_fail),
-      static_cast<unsigned long>(report.drops.offscreen_skipped),
-      static_cast<unsigned long>(report.free_psram),
-      static_cast<unsigned long>(report.largest_psram), report.authority_match);
-}
 
 }  // namespace
 
@@ -537,7 +337,6 @@ void run_vector_v2_app() {
   std::uint32_t poll_max_us = 0;
   std::uint32_t power_sampled_us = now_us();
   bool button_down = false;
-  LiftBaselineTiming lift_timing{};
   std::uint32_t next_lift_id = 1U;
   std::uint32_t lift_reports_dropped = 0U;
   PendingStrokeReport stroke_report{};
@@ -632,9 +431,8 @@ void run_vector_v2_app() {
     // content); it is cosmetic and must never ride the post-lift window or
     // the drain (owner glass receipt: it was the 85 ms "lift spike").
     if (!sample_ready && !cosmetic_work && !touch_sampler.touch_urgent() && !pressed &&
-        !lift_timing.pending && !stroke_report.pending &&
-        vector_v2::pending_operation_count(log, canvas) == 0U && power.ready() &&
-        loop_us - power_sampled_us >= kPowerRefreshUs) {
+        !stroke_report.pending && vector_v2::pending_operation_count(log, canvas) == 0U &&
+        power.ready() && loop_us - power_sampled_us >= kPowerRefreshUs) {
       cosmetic_work = true;
       const PowerStatus next_power = power.read();
       power_sampled_us = loop_us;
@@ -865,29 +663,28 @@ void run_vector_v2_app() {
 #endif
         std::fflush(stdout);
       } else if (stroke.active()) {
-        LiftBaselineTiming measured_lift{
-            .id = next_lift_id++,
-            .detected_us = esp_timer_get_time(),
-        };
+        PendingStrokeReport report{};
+        report.detected_us = esp_timer_get_time();
+        report.id = next_lift_id++;
         const std::uint32_t finished_us = event_us;
         const LiveStrokeFinishResult finished = stroke.finish(finished_us, chrome);
-        measured_lift.finish_preview_us = finished.finish_preview_us;
-        measured_lift.builder_finish_us = finished.builder_finish_us;
-        measured_lift.committed = finished.committed;
-        measured_lift.commit_failed = finished.commit_failed;
-        measured_lift.chunks = finished.chunks;
-        measured_lift.append_us = finished.append_us;
-        measured_lift.append_max_us = finished.append_max_us;
+        report.finish_preview_us = finished.finish_preview_us;
+        report.builder_finish_us = finished.builder_finish_us;
+        report.committed = finished.committed;
+        report.commit_failed = finished.commit_failed;
+        report.chunks = finished.chunks;
+        report.append_us = finished.append_us;
+        report.append_max_us = finished.append_max_us;
         if (finished.world_bounds.has_value()) {
-          measured_lift.refresh_level_bounds =
+          report.refresh_level_bounds =
               vector_v2::operation_level_bounds(*finished.world_bounds, presenter.zoom());
         }
         if (sync_history_controls(chrome, log)) {
           background.mark_history_controls_dirty();
         }
-        measured_lift.refresh = finished.refresh;
+        report.refresh = finished.refresh;
         if (!finished.committed) {
-          if (measured_lift.refresh.passed) {
+          if (report.refresh.passed) {
             background.history_controls_presented();
           }
         } else if (finished.world_bounds.has_value()) {
@@ -897,44 +694,35 @@ void run_vector_v2_app() {
           // undrained stroke bounds.
           background.note_committed_bounds(*finished.world_bounds);
         }
-        measured_lift.refresh_wall_us = finished.refresh_wall_us;
+        report.refresh_wall_us = finished.refresh_wall_us;
         if (log.operation_count() > finished.first_operation) {
           const std::int64_t autosave_started = esp_timer_get_time();
           const bool queued = autosave.submit({.kind = vector_v2::JournalChangeKind::kAppendStroke,
                                                .first_operation = finished.first_operation},
                                               log);
-          measured_lift.stroke_logging_us = esp_timer_get_time() - autosave_started;
+          report.stroke_logging_us = esp_timer_get_time() - autosave_started;
           if (!queued) {
             std::printf("TINYDRAW_AUTOSAVE_QUEUE_FAIL site=stroke generation=%lu\n",
                         static_cast<unsigned long>(log.current_revision().value));
           }
         }
-        if (stroke_report.pending || lift_timing.pending) {
+        if (stroke_report.pending) {
           ++lift_reports_dropped;
         }
         const TouchSamplerMetrics touch_metrics = touch_sampler.take_metrics();
-        stroke_report = {
-            .revision = canvas.current_revision(),
-            .operation_count = log.operation_count(),
-            .sample_count = log.sample_count(),
-            .append_us = measured_lift.append_us,
-            .append_max_us = measured_lift.append_max_us,
-            .refresh = measured_lift.refresh,
-            .metrics = finished.metrics,
-            .poll_max_us = poll_max_us,
-            .touch = touch_metrics,
-            .phase_max = finished.phase_max,
-            .drops = finished.drops,
-            .chunks = measured_lift.chunks,
-            .free_psram = heap_caps_get_free_size(kExternalCaps),
-            .largest_psram = heap_caps_get_largest_free_block(kExternalCaps),
-            .authority_match = log.current_revision() == canvas.current_revision(),
-            .committed = measured_lift.committed,
-            .commit_failed = measured_lift.commit_failed,
-            .pending = true,
-        };
-        measured_lift.pending = true;
-        lift_timing = measured_lift;
+        report.revision = canvas.current_revision();
+        report.operation_count = log.operation_count();
+        report.sample_count = log.sample_count();
+        report.metrics = finished.metrics;
+        report.poll_max_us = poll_max_us;
+        report.touch = touch_metrics;
+        report.phase_max = finished.phase_max;
+        report.drops = finished.drops;
+        report.free_psram = heap_caps_get_free_size(kExternalCaps);
+        report.largest_psram = heap_caps_get_largest_free_block(kExternalCaps);
+        report.authority_match = log.current_revision() == canvas.current_revision();
+        report.pending = true;
+        stroke_report = report;
         poll_max_us = 0;
       }
     }
@@ -950,7 +738,7 @@ void run_vector_v2_app() {
     // coherent vector authority into immutable PSRAM.
     const bool touch_backlog = touch_sampler.touch_urgent();
     if (!pressed && !panning && !sample_ready && !touch_backlog && !touch_sampler.touch_urgent() &&
-        !lift_timing.pending && autosave.ready() && autosave.checkpoint_required() &&
+        !stroke_report.pending && autosave.ready() && autosave.checkpoint_required() &&
         static_cast<std::int32_t>(loop_us - autosave_checkpoint_retry_us) >= 0) {
       const std::int64_t checkpoint_started = esp_timer_get_time();
       const bool queued = autosave.submit_checkpoint(log);
@@ -972,7 +760,7 @@ void run_vector_v2_app() {
         .pressed = pressed,
         .panning = panning,
         .sample_ready = sample_ready || background_urgent,
-        .lift_report_pending = lift_timing.pending,
+        .lift_report_pending = stroke_report.pending,
         .touch_urgency = touch_sampler.urgency_probe(),
     });
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
@@ -980,17 +768,16 @@ void run_vector_v2_app() {
       print_live_ledger("drain");
     }
 #endif
-    if (lift_timing.pending && stroke_report.pending && idle_before_poll && !pressed &&
-        !background_urgent && !touch_sampler.touch_urgent()) {
+    if (stroke_report.pending && idle_before_poll && !pressed && !background_urgent &&
+        !touch_sampler.touch_urgent()) {
       print_stroke(stroke_report);
       std::printf("TINYDRAW_LIVE_STROKE_DONE committed=%u refresh=%u commit_failed=%u\n",
                   stroke_report.committed, stroke_report.refresh.passed,
                   stroke_report.commit_failed);
-      print_lift_baseline(lift_timing, poll_started_us, poll_completed_us, lift_reports_dropped);
+      print_lift_baseline(stroke_report, poll_started_us, poll_completed_us, lift_reports_dropped);
       std::fflush(stdout);
       lift_reports_dropped = 0U;
       stroke_report.pending = false;
-      lift_timing.pending = false;
       // This diagnostic write happens only after a completed input poll. Keep
       // it out of the pre-existing stroke poll-gap metric.
       poll_previous_us = now_us();

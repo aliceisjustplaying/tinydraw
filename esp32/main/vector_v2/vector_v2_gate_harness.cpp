@@ -29,6 +29,7 @@
 #include "tinydraw/vector_v2/memory_layout.h"
 #include "tinydraw/vector_v2/raster_census.h"
 #include "tinydraw/vector_v2/rerender_ledger.h"
+#include "vector_v2_app_diagnostics.h"
 #include "vector_v2_live_stroke_session.h"
 
 // Canonical recorded owner traces embedded by the gate-harness build
@@ -90,22 +91,6 @@ template <typename Type>
 
 std::uint32_t now_us() { return static_cast<std::uint32_t>(esp_timer_get_time()); }
 
-const char* zoom_name(ZoomLevel zoom) {
-  switch (zoom) {
-    case ZoomLevel::k25Percent:
-      return "25";
-    case ZoomLevel::k50Percent:
-      return "50";
-    case ZoomLevel::k100Percent:
-      return "100";
-    case ZoomLevel::k200Percent:
-      return "200";
-    case ZoomLevel::k400Percent:
-      return "400";
-  }
-  return "unknown";
-}
-
 [[gnu::noinline]] bool classify_minimap_navigation(VectorV2Presenter& presenter,
                                                    const vector_v2::ChromeState& chrome) {
   const auto initial = presenter.set_view(ZoomLevel::k100Percent, 400, 600, chrome, now_us());
@@ -142,8 +127,8 @@ const char* zoom_name(ZoomLevel zoom) {
   return passed;
 }
 
-void print_presentation(const char* kind, const VectorV2Presenter& presenter,
-                        const LivePresentationTiming& timing) {
+void print_gate_presentation(const char* kind, const VectorV2Presenter& presenter,
+                             const LivePresentationTiming& timing) {
   std::printf(
       "TINYDRAW_LIVE_PRESENT kind=%s zoom=%s x=%d y=%d compose_us=%lld scroll_us=%lld "
       "exposed_compose_us=%lld chrome_us=%lld chrome_prepare_us=%lld chrome_stage_us=%lld "
@@ -440,7 +425,7 @@ bool run_tile_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& produc
   // The seed-7 corpus fills lines from the upper left. Fixing the origin makes
   // both zooms measure real ink rather than a potentially blank center crop.
   const auto fallback = presenter.set_view(zoom, 0, 0, chrome, now_us());
-  print_presentation("gate_fallback", presenter, fallback);
+  print_gate_presentation("gate_fallback", presenter, fallback);
   if (!fallback.passed || !canvas.discard_tiles()) {
     return false;
   }
