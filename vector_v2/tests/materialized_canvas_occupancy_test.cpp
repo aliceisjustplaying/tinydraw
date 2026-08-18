@@ -253,6 +253,31 @@ TEST_CASE("incremental erase keeps may-ink conservative") {
   CHECK_FALSE(canvas.certainly_paper(key));
 }
 
+TEST_CASE("current-revision authority may-ink replacement validates and changes no pixels") {
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> blank{};
+  blank.fill(0xFFFFU);
+  auto uniforms = std::make_unique<std::array<vector_v2::MaterializedUniformStorage,
+                                              vector_v2::kMaterializedTileIdentityCount>>();
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> occupancy{};
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> may_ink{};
+  std::array<vector_v2::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, vector_v2::kTilePixels> tile_storage{};
+  TestCanvas canvas(overview, *uniforms, occupancy, slots, tile_storage);
+  const vector_v2::TileKey key{vector_v2::ZoomLevel::k400Percent, 0, 0};
+
+  REQUIRE(canvas.restore_snapshot({7}, blank, may_ink));
+  REQUIRE(canvas.certainly_paper(key));
+  may_ink[0] = 1U;
+  CHECK_FALSE(canvas.replace_tiled_may_ink({6}, may_ink));
+  CHECK_FALSE(canvas.replace_tiled_may_ink({7}, std::span(may_ink).first(may_ink.size() - 1U)));
+  CHECK_FALSE(canvas.replace_tiled_may_ink({7}, occupancy));
+  REQUIRE(canvas.replace_tiled_may_ink({7}, may_ink));
+  CHECK_FALSE(canvas.certainly_paper(key));
+  CHECK(std::all_of(canvas.overview_pixels().begin(), canvas.overview_pixels().end(),
+                    [](std::uint16_t pixel) { return pixel == 0xFFFFU; }));
+}
+
 TEST_CASE("partial erase preserves occupancy for ink remaining in the same cell") {
   std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
   std::array<std::uint16_t, vector_v2::kOverviewPixels> snapshot{};

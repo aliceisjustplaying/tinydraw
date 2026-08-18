@@ -316,6 +316,12 @@ class MaterializedCanvas {
   [[nodiscard]] bool restore_snapshot(DocumentRevision revision,
                                       std::span<const std::uint16_t> pixels,
                                       std::span<const std::uint8_t> tiled_may_ink);
+  // Replaces only the conservative may-ink proof for the current revision.
+  // The caller derives it from the complete active pen authority while canvas,
+  // history, and tile production are serialized. No materialized pixels or
+  // identities change.
+  [[nodiscard]] bool replace_tiled_may_ink(DocumentRevision revision,
+                                           std::span<const std::uint8_t> tiled_may_ink);
   // Resets materialization directly to uniform paper without requiring a
   // caller-owned full-overview snapshot.
   [[nodiscard]] bool reset_blank(DocumentRevision revision);

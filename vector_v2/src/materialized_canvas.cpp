@@ -377,6 +377,17 @@ bool MaterializedCanvas::restore_snapshot(DocumentRevision revision,
   return true;
 }
 
+bool MaterializedCanvas::replace_tiled_may_ink(DocumentRevision revision,
+                                               std::span<const std::uint8_t> tiled_may_ink) {
+  if (!ready() || !overview_valid_ || revision != current_revision_ ||
+      tiled_may_ink.size() != kOccupancyBytes ||
+      !accepts_external_workspace(std::as_bytes(tiled_may_ink))) {
+    return false;
+  }
+  std::copy(tiled_may_ink.begin(), tiled_may_ink.end(), occupancy_bits_.begin());
+  return true;
+}
+
 bool MaterializedCanvas::reset_blank(DocumentRevision revision) {
   if (!ready()) {
     return false;

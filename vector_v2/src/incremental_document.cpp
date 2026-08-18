@@ -488,6 +488,14 @@ std::optional<HistoryChange> move_history_incrementally(OperationLog& log,
     return std::nullopt;
   }
   prepared->publish();
+  auto map_storage = std::as_writable_bytes(overview_scratch);
+  if (map_storage.size() >= kOccupancyBytes) {
+    std::span<std::uint8_t> tiled_may_ink{reinterpret_cast<std::uint8_t*>(map_storage.data()),
+                                          kOccupancyBytes};
+    if (build_tiled_may_ink(log, tiled_may_ink)) {
+      static_cast<void>(canvas.replace_tiled_may_ink(change.generation, tiled_may_ink));
+    }
+  }
   return change;
 }
 
