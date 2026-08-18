@@ -123,6 +123,7 @@ void VectorV2BackgroundPipeline::reset_document_state() {
   pending_fill_ = {};
 
   repair_plan_ = {};
+  repair_pan_delta_ = {};
   repair_cursor_ = 0;
   repair_steps_ = 0;
   repair_planned_ = false;
@@ -252,6 +253,10 @@ void VectorV2BackgroundPipeline::run_fill(const ViewRequest& view,
     if (fill_measurement_active_) {
       print_fill("superseded");
     }
+    repair_pan_delta_ = fill_zoom_ == view.zoom && fill_revision_ == canvas_.current_revision()
+                            ? vector_v2::IdleRepairPanDelta{.x = view.level_pixels.x0 - fill_x_,
+                                                            .y = view.level_pixels.y0 - fill_y_}
+                            : vector_v2::IdleRepairPanDelta{};
     fill_zoom_ = view.zoom;
     fill_x_ = view.level_pixels.x0;
     fill_y_ = view.level_pixels.y0;
@@ -341,7 +346,8 @@ void VectorV2BackgroundPipeline::run_fill(const ViewRequest& view,
 void VectorV2BackgroundPipeline::run_repair(const ViewRequest& view,
                                             TouchUrgencyProbe touch_urgency) {
   if (!repair_planned_) {
-    repair_plan_ = vector_v2::plan_idle_repair(view, canvas_.recent_views());
+    repair_plan_ = vector_v2::plan_idle_repair(view, canvas_.recent_views(), repair_pan_delta_);
+    repair_pan_delta_ = {};
     repair_cursor_ = 0;
     repair_steps_ = 0;
     repair_planned_ = true;

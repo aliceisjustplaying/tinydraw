@@ -16,9 +16,9 @@ namespace tinydraw::vector_v2 {
 // the other half of that bargain.
 //
 // The plan holds, in priority order:
-// 1. The cardinal neighbors at the active zoom, one full
-//    viewport step away, clamped to the level and deduplicated. Panning in
-//    any direction after a quiet moment meets materialized tiles first.
+// 1. With a last-pan hint, the continued-travel viewport followed by one-tile
+//    reverse and perpendicular runways. Without a hint, the four cardinal
+//    neighbors one full viewport away. Every view is clamped and deduplicated.
 // 2. The remembered view at every other tiled zoom, so zoom returns land
 //    sharp.
 // 3. At 100% only: the full-level viewport grid. The whole 100% world's raw
@@ -36,8 +36,17 @@ struct IdleRepairPlan {
   std::size_t grid_start = 0;
 };
 
+// Last completed pan in level pixels. A zero delta preserves the symmetric
+// cardinal plan. A nonzero delta spends the first repair view on continued
+// travel, then lays one-tile reverse and perpendicular runways.
+struct IdleRepairPanDelta {
+  int x = 0;
+  int y = 0;
+};
+
 [[nodiscard]] IdleRepairPlan plan_idle_repair(const ViewRequest& active_view,
-                                              std::span<const ViewFootprint> remembered);
+                                              std::span<const ViewFootprint> remembered,
+                                              IdleRepairPanDelta last_pan = {});
 
 }  // namespace tinydraw::vector_v2
 

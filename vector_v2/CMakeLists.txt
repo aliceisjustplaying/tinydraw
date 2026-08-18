@@ -33,6 +33,14 @@ if(TINYDRAW_BUILD_TESTS)
     tinydraw_project_options
   )
 
+  add_executable(tinydraw_vector_v2_idle_repair_benchmark
+    tools/idle_repair_benchmark.cpp
+  )
+  target_link_libraries(tinydraw_vector_v2_idle_repair_benchmark PRIVATE
+    tinydraw::vector_v2
+    tinydraw_project_options
+  )
+
   function(tinydraw_add_vector_v2_tests target)
     add_executable(${target} tests/test_main.cpp ${ARGN})
     target_link_libraries(${target} PRIVATE
