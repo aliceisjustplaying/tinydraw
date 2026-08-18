@@ -174,3 +174,15 @@ dense overlapping operations re-rasterized per window. The next credible
 lever is edge-span recording (immediate rasterization persists its span
 boundaries per tile; settle touches only the one-pixel annulus), which
 attacks the overdraw itself rather than its memory placement.
+
+Treatment 3 — saturated-destination skip, re-opened and accepted: the
+2026-08-18 rejection compared revision-160 against revision-156 (unlike
+corpora, admitted in the round receipt). Under the deterministic
+same-corpus settle gate the exact per-pixel skip (saturated destination
+receives zero contribution; coverage math elided) measures
+−36.3/−42.7/−39.9/−41.1/−40.3% at 25–400%, matching its host numbers.
+Frozen checksums byte-identical; battery all-ones. Cumulative settle
+result this session at 400% on the evil corpus: 1,765.3 → 1,010.4 ms
+(−42.8%). Residual attribution: slices still charge full row work while
+saturated pixels cost one byte load — true remaining overdraw is the
+edge-span target.
