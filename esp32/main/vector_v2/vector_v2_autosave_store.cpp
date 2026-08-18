@@ -12,6 +12,7 @@
 
 #include "esp_heap_caps.h"
 #include "esp_partition.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -27,6 +28,7 @@ constexpr std::size_t kSectorBytes = 4096U;
 constexpr std::size_t kWriteQueueLength = 8U;
 constexpr std::size_t kWorkerStackBytes = 8192U;
 constexpr UBaseType_t kWorkerPriority = 1U;
+constexpr std::size_t kCheckpointStagePayloadBytes = 16U * 1024U;
 
 enum class AutosaveStatus : std::uint8_t {
   kIdle,
@@ -103,6 +105,7 @@ struct VectorV2AutosaveStore::Impl {
       }
       vQueueDelete(queue);
     }
+    free_pending(staged_checkpoint);
     heap_caps_free(io_buffer);
   }
 
@@ -175,18 +178,31 @@ struct VectorV2AutosaveStore::Impl {
       if (xQueueReceive(queue, &pending, portMAX_DELAY) != pdTRUE || pending == nullptr) {
         continue;
       }
-      const bool written = !write_failed.load() && write_pending(*pending);
+      const std::int64_t started = esp_timer_get_time();
+      const bool sealed = !write_failed.load() && vector_v2::seal_authority_journal(
+                                                      std::span(pending->bytes, pending->size));
+      const std::int64_t sealed_at = esp_timer_get_time();
+      const bool written = sealed && write_pending(*pending);
+      const std::int64_t finished = esp_timer_get_time();
       if (written) {
-        std::printf("TINYDRAW_AUTOSAVE_COMMIT sequence=%llu bytes=%lu offset=%lu\n",
-                    static_cast<unsigned long long>(pending->sequence),
-                    static_cast<unsigned long>(pending->size),
-                    static_cast<unsigned long>(pending->offset));
+        std::printf(
+            "TINYDRAW_AUTOSAVE_COMMIT sequence=%llu bytes=%lu offset=%lu seal_us=%lld "
+            "io_us=%lld worker_us=%lld\n",
+            static_cast<unsigned long long>(pending->sequence),
+            static_cast<unsigned long>(pending->size), static_cast<unsigned long>(pending->offset),
+            static_cast<long long>(sealed_at - started),
+            static_cast<long long>(finished - sealed_at),
+            static_cast<long long>(finished - started));
       } else {
         write_failed.store(true);
         checkpoint_needed.store(true);
-        std::printf("TINYDRAW_AUTOSAVE_WRITE_FAIL sequence=%llu offset=%lu\n",
-                    static_cast<unsigned long long>(pending->sequence),
-                    static_cast<unsigned long>(pending->offset));
+        std::printf(
+            "TINYDRAW_AUTOSAVE_WRITE_FAIL sequence=%llu offset=%lu sealed=%u seal_us=%lld "
+            "io_us=%lld\n",
+            static_cast<unsigned long long>(pending->sequence),
+            static_cast<unsigned long>(pending->offset), sealed,
+            static_cast<long long>(sealed_at - started),
+            static_cast<long long>(finished - sealed_at));
       }
       std::fflush(stdout);
       free_pending(pending);
@@ -202,10 +218,125 @@ struct VectorV2AutosaveStore::Impl {
 
   bool ready() const { return ready_flag; }
 
+  PendingWrite* allocate_pending(std::size_t transaction_bytes) {
+    auto* pending = new (std::nothrow) PendingWrite;
+    if (pending != nullptr) {
+      pending->bytes = static_cast<std::byte*>(
+          heap_caps_malloc(transaction_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    }
+    if (pending == nullptr || pending->bytes == nullptr) {
+      free_pending(pending);
+      checkpoint_needed.store(true);
+      save_status.store(AutosaveStatus::kNeedsCheckpoint);
+      return nullptr;
+    }
+    return pending;
+  }
+
+  bool reserve_pending(PendingWrite& pending, std::size_t transaction_bytes) {
+    if (reserved_offset > partition->size ||
+        transaction_bytes > partition->size - reserved_offset) {
+      save_status.store(AutosaveStatus::kFull);
+      return false;
+    }
+    pending.size = transaction_bytes;
+    pending.offset = reserved_offset;
+    pending.sequence = next_sequence;
+    pending.erase_partition = erase_partition_before_next;
+    pending.erase_tail = erase_tail_before_next;
+    return true;
+  }
+
+  bool enqueue_pending(PendingWrite* pending, bool checkpoint) {
+    const std::size_t transaction_bytes = pending->size;
+    const std::size_t previous_reserved_offset = reserved_offset;
+    const std::uint64_t previous_sequence = next_sequence;
+    const bool previous_erase_partition = erase_partition_before_next;
+    const bool previous_erase_tail = erase_tail_before_next;
+
+    reserved_offset += transaction_bytes;
+    ++next_sequence;
+    if (next_sequence == 0U) {
+      next_sequence = 1U;
+    }
+    erase_partition_before_next = false;
+    erase_tail_before_next = false;
+    if (checkpoint) {
+      checkpoint_needed.store(false);
+    }
+    save_status.store(AutosaveStatus::kSaving);
+    outstanding_writes.fetch_add(1U);
+    if (xQueueSend(queue, &pending, 0) != pdTRUE) {
+      outstanding_writes.fetch_sub(1U);
+      reserved_offset = previous_reserved_offset;
+      next_sequence = previous_sequence;
+      erase_partition_before_next = previous_erase_partition;
+      erase_tail_before_next = previous_erase_tail;
+      free_pending(pending);
+      checkpoint_needed.store(true);
+      save_status.store(AutosaveStatus::kNeedsCheckpoint);
+      return false;
+    }
+    return true;
+  }
+
+  bool submit_checkpoint_slice(const vector_v2::OperationLog& log) {
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    if (staged_checkpoint == nullptr) {
+      const auto plan = vector_v2::prepare_authority_journal(
+          {.kind = vector_v2::JournalChangeKind::kCheckpoint}, log);
+      const std::size_t transaction_bytes =
+          plan.has_value() ? align_to_sector(plan->encoded_bytes) : 0U;
+      PendingWrite* pending =
+          transaction_bytes != 0U ? allocate_pending(transaction_bytes) : nullptr;
+      if (pending == nullptr || !reserve_pending(*pending, transaction_bytes) ||
+          !checkpoint_stager.start(*plan, log, next_sequence,
+                                   std::span(pending->bytes, pending->size))) {
+        free_pending(pending);
+        checkpoint_stager.reset();
+        checkpoint_needed.store(true);
+        if (save_status.load() != AutosaveStatus::kFull) {
+          save_status.store(AutosaveStatus::kNeedsCheckpoint);
+        }
+        xSemaphoreGive(mutex);
+        return false;
+      }
+      staged_checkpoint = pending;
+    }
+
+    const vector_v2::AuthorityJournalStageResult result =
+        checkpoint_stager.resume(log, kCheckpointStagePayloadBytes);
+    if (result == vector_v2::AuthorityJournalStageResult::kProgress) {
+      save_status.store(AutosaveStatus::kNeedsCheckpoint);
+      xSemaphoreGive(mutex);
+      return false;
+    }
+    if (result != vector_v2::AuthorityJournalStageResult::kComplete) {
+      free_pending(staged_checkpoint);
+      staged_checkpoint = nullptr;
+      checkpoint_stager.reset();
+      checkpoint_needed.store(true);
+      save_status.store(AutosaveStatus::kNeedsCheckpoint);
+      xSemaphoreGive(mutex);
+      return false;
+    }
+
+    PendingWrite* pending = staged_checkpoint;
+    staged_checkpoint = nullptr;
+    checkpoint_stager.reset();
+    const bool queued = enqueue_pending(pending, true);
+    xSemaphoreGive(mutex);
+    return queued;
+  }
+
   bool submit(vector_v2::JournalChange change, const vector_v2::OperationLog& log) {
     if (!ready() || !initialized.load() || write_failed.load() ||
-        (checkpoint_needed.load() && change.kind != vector_v2::JournalChangeKind::kCheckpoint)) {
+        ((checkpoint_needed.load() || staged_checkpoint != nullptr) &&
+         change.kind != vector_v2::JournalChangeKind::kCheckpoint)) {
       return false;
+    }
+    if (change.kind == vector_v2::JournalChangeKind::kCheckpoint) {
+      return submit_checkpoint_slice(log);
     }
     const auto plan = vector_v2::prepare_authority_journal(change, log);
     if (!plan.has_value()) {
@@ -215,38 +346,19 @@ struct VectorV2AutosaveStore::Impl {
     if (transaction_bytes == 0U) {
       return false;
     }
-    auto* pending = new (std::nothrow) PendingWrite;
+    PendingWrite* pending = allocate_pending(transaction_bytes);
     if (pending == nullptr) {
-      checkpoint_needed.store(true);
-      save_status.store(AutosaveStatus::kNeedsCheckpoint);
-      return false;
-    }
-    pending->bytes = static_cast<std::byte*>(
-        heap_caps_malloc(transaction_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-    if (pending->bytes == nullptr) {
-      free_pending(pending);
-      checkpoint_needed.store(true);
-      save_status.store(AutosaveStatus::kNeedsCheckpoint);
       return false;
     }
 
     xSemaphoreTake(mutex, portMAX_DELAY);
-    const std::uint64_t sequence = next_sequence;
-    const std::size_t offset = reserved_offset;
-    const std::size_t partition_bytes = partition->size;
-    if (offset > partition_bytes || transaction_bytes > partition_bytes - offset) {
+    if (!reserve_pending(*pending, transaction_bytes)) {
       xSemaphoreGive(mutex);
       free_pending(pending);
-      save_status.store(AutosaveStatus::kFull);
       return false;
     }
-    pending->size = transaction_bytes;
-    pending->offset = offset;
-    pending->sequence = sequence;
-    pending->erase_partition = erase_partition_before_next;
-    pending->erase_tail = erase_tail_before_next;
-    const bool encoded = vector_v2::encode_authority_journal(
-        *plan, log, sequence, std::span(pending->bytes, pending->size));
+    const bool encoded = vector_v2::stage_authority_journal(
+        *plan, log, pending->sequence, std::span(pending->bytes, pending->size));
     if (!encoded) {
       xSemaphoreGive(mutex);
       free_pending(pending);
@@ -254,28 +366,9 @@ struct VectorV2AutosaveStore::Impl {
       save_status.store(AutosaveStatus::kNeedsCheckpoint);
       return false;
     }
-    outstanding_writes.fetch_add(1U);
-    if (xQueueSend(queue, &pending, 0) != pdTRUE) {
-      outstanding_writes.fetch_sub(1U);
-      xSemaphoreGive(mutex);
-      free_pending(pending);
-      checkpoint_needed.store(true);
-      save_status.store(AutosaveStatus::kNeedsCheckpoint);
-      return false;
-    }
-    reserved_offset += transaction_bytes;
-    ++next_sequence;
-    if (next_sequence == 0U) {
-      next_sequence = 1U;
-    }
-    erase_partition_before_next = false;
-    erase_tail_before_next = false;
-    if (change.kind == vector_v2::JournalChangeKind::kCheckpoint) {
-      checkpoint_needed.store(false);
-    }
-    save_status.store(AutosaveStatus::kSaving);
+    const bool queued = enqueue_pending(pending, false);
     xSemaphoreGive(mutex);
-    return true;
+    return queued;
   }
 
   const esp_partition_t* partition = nullptr;
@@ -293,6 +386,8 @@ struct VectorV2AutosaveStore::Impl {
   std::atomic<std::size_t> outstanding_writes{0U};
   std::size_t reserved_offset = 0U;
   std::uint64_t next_sequence = 1U;
+  PendingWrite* staged_checkpoint = nullptr;
+  vector_v2::AuthorityJournalStager checkpoint_stager{};
   bool erase_partition_before_next = false;
   bool erase_tail_before_next = false;
   bool ready_flag = false;
@@ -372,6 +467,10 @@ bool VectorV2AutosaveStore::submit_checkpoint(const vector_v2::OperationLog& log
 
 bool VectorV2AutosaveStore::checkpoint_required() const {
   return impl_ != nullptr && impl_->checkpoint_needed.load();
+}
+
+bool VectorV2AutosaveStore::checkpoint_staging() const {
+  return impl_ != nullptr && impl_->staged_checkpoint != nullptr;
 }
 
 bool VectorV2AutosaveStore::flush(std::uint32_t timeout_ms) {

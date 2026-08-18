@@ -825,7 +825,15 @@ void run_vector_v2_app() {
           const vector_v2::AuthorityReadView authority_before = log.read_view();
           if (action == vector_v2::ChromeAction::kExport && autosave.ready() &&
               autosave.checkpoint_required()) {
-            static_cast<void>(autosave.submit_checkpoint(log));
+            // Export is already a non-interactive ownership boundary. Finish
+            // an unusual outstanding checkpoint here so one tap still saves.
+            bool queued = false;
+            for (std::size_t attempt = 0U; attempt < 2U && !queued; ++attempt) {
+              queued = autosave.submit_checkpoint(log);
+              while (!queued && autosave.checkpoint_staging()) {
+                queued = autosave.submit_checkpoint(log);
+              }
+            }
           }
           const bool save_ready = action != vector_v2::ChromeAction::kExport || !autosave.ready() ||
                                   autosave.flush(5'000U);
@@ -946,11 +954,14 @@ void run_vector_v2_app() {
         static_cast<std::int32_t>(loop_us - autosave_checkpoint_retry_us) >= 0) {
       const std::int64_t checkpoint_started = esp_timer_get_time();
       const bool queued = autosave.submit_checkpoint(log);
-      std::printf("TINYDRAW_AUTOSAVE_CHECKPOINT queued=%u encode_us=%lld generation=%lu\n", queued,
-                  static_cast<long long>(esp_timer_get_time() - checkpoint_started),
-                  static_cast<unsigned long>(log.current_revision().value));
-      std::fflush(stdout);
-      if (!queued) {
+      const bool staging = autosave.checkpoint_staging();
+      if (queued || !staging) {
+        std::printf("TINYDRAW_AUTOSAVE_CHECKPOINT queued=%u stage_us=%lld generation=%lu\n", queued,
+                    static_cast<long long>(esp_timer_get_time() - checkpoint_started),
+                    static_cast<unsigned long>(log.current_revision().value));
+        std::fflush(stdout);
+      }
+      if (!queued && !staging) {
         autosave_checkpoint_retry_us = loop_us + 500'000U;
       }
     }
