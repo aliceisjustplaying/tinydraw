@@ -1568,6 +1568,7 @@ struct MixedDrawStrokeStats {
   std::size_t max_pending_operations = 0;
   std::int64_t drain_total_us = 0;
   std::int64_t drain_max_slice_us = 0;
+  vector_v2::PendingAbsorptionWorkUnit drain_max_unit = vector_v2::PendingAbsorptionWorkUnit::kNone;
   bool committed = false;
   bool authority = false;
   bool refresh_passed = false;
@@ -1575,6 +1576,39 @@ struct MixedDrawStrokeStats {
 
 const char* tool_name(OperationTool tool) {
   return tool == OperationTool::kEraser ? "eraser" : "pen";
+}
+
+const char* absorption_unit_name(vector_v2::PendingAbsorptionWorkUnit unit) {
+  using Unit = vector_v2::PendingAbsorptionWorkUnit;
+  switch (unit) {
+    case Unit::kNone:
+      return "none";
+    case Unit::kCopyOverview:
+      return "copy_overview";
+    case Unit::kRasterOverview:
+      return "raster_overview";
+    case Unit::kEnumerate:
+      return "enumerate";
+    case Unit::kUniform:
+      return "uniform";
+    case Unit::kVisibleRaw:
+      return "visible_raw";
+    case Unit::kOffscreenRaw:
+      return "offscreen_raw";
+    case Unit::kStageOverview:
+      return "stage_overview";
+    case Unit::kStageUniforms:
+      return "stage_uniforms";
+    case Unit::kStageRawSlots:
+      return "stage_raw_slots";
+    case Unit::kStageRerenderDamage:
+      return "stage_rerender";
+    case Unit::kStageOccupancy:
+      return "stage_occupancy";
+    case Unit::kCommit:
+      return "commit";
+  }
+  return "unknown";
 }
 
 // Every mixed-draw viewport is anchored at world (48, 48) so each zoom's
@@ -1730,7 +1764,10 @@ bool run_mixed_zoom_stroke(VectorV2Presenter& presenter, vector_v2::TileProducer
     const std::int64_t elapsed_us = esp_timer_get_time() - started_us;
     ++stats.drain_slices;
     stats.drain_total_us += elapsed_us;
-    stats.drain_max_slice_us = std::max(stats.drain_max_slice_us, elapsed_us);
+    if (elapsed_us > stats.drain_max_slice_us) {
+      stats.drain_max_slice_us = elapsed_us;
+      stats.drain_max_unit = absorbed.work_unit;
+    }
     if (absorbed.status == vector_v2::PendingAbsorptionStatus::kError) {
       absorption.cancel();
       return false;
@@ -1902,7 +1939,7 @@ bool run_mixed_zoom_draw_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
           "fallback=%lu visible_fallback=%lu drop_uni_slot=%lu drop_uni_paint=%lu "
           "drop_raw_edit=%lu drop_raw_paint=%lu off_skip=%lu "
           "drain_ops=%lu drain_slices=%lu max_pending=%lu drain_total_us=%lld "
-          "drain_max_slice_us=%lld "
+          "drain_max_slice_us=%lld drain_max_unit=%s "
           "ph_prepare_max_us=%lld ph_overview_max_us=%lld "
           "ph_enumerate_max_us=%lld ph_uniform_max_us=%lld ph_raw_max_us=%lld "
           "ph_offscreen_max_us=%lld "
@@ -1928,6 +1965,7 @@ bool run_mixed_zoom_draw_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
           static_cast<unsigned long>(stats.max_pending_operations),
           static_cast<long long>(stats.drain_total_us),
           static_cast<long long>(stats.drain_max_slice_us),
+          absorption_unit_name(stats.drain_max_unit),
           static_cast<long long>(stats.phase_max.prepare_us),
           static_cast<long long>(stats.phase_max.overview_us),
           static_cast<long long>(stats.phase_max.enumerate_us),
@@ -3375,6 +3413,8 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, vector_v2::TileProd
     std::size_t max_pending_operations = 0;
     std::int64_t drain_total_us = 0;
     std::int64_t drain_max_slice_us = 0;
+    vector_v2::PendingAbsorptionWorkUnit drain_max_unit =
+        vector_v2::PendingAbsorptionWorkUnit::kNone;
     vector_v2::PendingOperationAbsorption absorption;
     const std::optional<vector_v2::ViewRequest> priority_view =
         spec.zoom == ZoomLevel::k25Percent
@@ -3406,7 +3446,10 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, vector_v2::TileProd
       const std::int64_t elapsed_us = esp_timer_get_time() - started_us;
       ++drain_slices;
       drain_total_us += elapsed_us;
-      drain_max_slice_us = std::max(drain_max_slice_us, elapsed_us);
+      if (elapsed_us > drain_max_slice_us) {
+        drain_max_slice_us = elapsed_us;
+        drain_max_unit = absorbed.work_unit;
+      }
       if (absorbed.status == vector_v2::PendingAbsorptionStatus::kError) {
         absorption.cancel();
         return false;
@@ -3583,7 +3626,8 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, vector_v2::TileProd
         "fb_tiles=%lu fb_start=%lu fb_mid_max=%lu fb_up_max=%lu fb_end=%lu "
         "drop_uni_slot=%lu drop_uni_paint=%lu drop_raw_edit=%lu drop_raw_paint=%lu "
         "off_skip=%lu drain_ops=%lu drain_slices=%lu drain_skipped_ready=%lu "
-        "max_pending=%lu drain_total_us=%lld drain_max_slice_us=%lld drain_guard_us=%lld "
+        "max_pending=%lu drain_total_us=%lld drain_max_slice_us=%lld drain_max_unit=%s "
+        "drain_guard_us=%lld "
         "absorb_cadence=between_samples_skip_ready cooperative_pass=%u latency_pass=%u pass=%u\n",
         spec.name, zoom_name(spec.zoom), static_cast<unsigned long>(counters.received_events),
         static_cast<unsigned long>(counters.consumed_events),
@@ -3619,7 +3663,7 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, vector_v2::TileProd
         static_cast<unsigned long>(drain_ops), static_cast<unsigned long>(drain_slices),
         static_cast<unsigned long>(drain_skipped_ready),
         static_cast<unsigned long>(max_pending_operations), static_cast<long long>(drain_total_us),
-        static_cast<long long>(drain_max_slice_us),
+        static_cast<long long>(drain_max_slice_us), absorption_unit_name(drain_max_unit),
         static_cast<long long>(kInkTraceAbsorbSliceGuardUs), cooperative_pass, latency_pass,
         trace_pass);
     std::fflush(stdout);
