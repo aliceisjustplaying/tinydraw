@@ -1,5 +1,7 @@
 #include <doctest.h>
 
+#include <algorithm>
+
 #include "test_support/materialized_canvas_fixture.h"
 
 TEST_CASE("view composition uses current tiles and overview for every miss") {
@@ -218,4 +220,135 @@ TEST_CASE("clipped 50 percent tile stores and composes its packed source") {
       {.zoom = vector_v2::ZoomLevel::k50Percent, .level_pixels = {704, 832, 736, 896}}, composed);
   REQUIRE(stats.has_value());
   CHECK(composed == edge_pixels);
+}
+
+TEST_CASE("cooperative composition pauses at a fixed row bound and resumes exactly") {
+  constexpr int kWidth = 192;
+  constexpr int kHeight = 75;
+  constexpr std::size_t kPixels = static_cast<std::size_t>(kWidth) * kHeight;
+  constexpr std::uint16_t kUnwritten = 0xDEADU;
+  const vector_v2::ViewRequest request{
+      .zoom = vector_v2::ZoomLevel::k100Percent,
+      .level_pixels = {7, 3, 7 + kWidth, 3 + kHeight},
+  };
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
+  for (std::size_t index = 0; index < overview.size(); ++index) {
+    overview[index] = static_cast<std::uint16_t>(index ^ (index >> 16U));
+  }
+  std::array<vector_v2::MaterializedSlotStorage, 2> slots{};
+  std::array<std::uint16_t, 2U * vector_v2::kTilePixels> tile_storage{};
+  std::array<std::uint16_t, vector_v2::kTilePixels> settled{};
+  std::array<std::uint16_t, vector_v2::kTilePixels> immediate{};
+  settled.fill(0x1234U);
+  immediate.fill(0x5678U);
+  TestCanvas canvas(overview, slots, tile_storage);
+  REQUIRE(canvas.publish_overview({4}, overview));
+  REQUIRE(canvas.publish_tile({vector_v2::ZoomLevel::k100Percent, 1, 0}, {4},
+                              vector_v2::MaterializationQuality::kSettled, settled));
+  REQUIRE(canvas.publish_tile({vector_v2::ZoomLevel::k100Percent, 2, 1}, {4},
+                              vector_v2::MaterializationQuality::kImmediate, immediate));
+  REQUIRE(canvas.publish_uniform({vector_v2::ZoomLevel::k100Percent, 0, 1}, {4},
+                                 vector_v2::MaterializationQuality::kSettled, 0xABCDU));
+
+  std::array<std::uint16_t, kPixels> expected{};
+  const auto expected_stats = canvas.compose_view(request, expected);
+  REQUIRE(expected_stats.has_value());
+
+  std::array<std::uint16_t, kPixels> actual{};
+  actual.fill(kUnwritten);
+  vector_v2::ViewCompositionCursor cursor;
+  auto slice = canvas.compose_view_slice(request, actual, cursor);
+  CHECK(slice.status == vector_v2::ViewCompositionStatus::kInProgress);
+  CHECK(cursor.active());
+  CHECK(std::equal(actual.begin(),
+                   actual.begin() + kWidth * vector_v2::kViewCompositionRowsPerSlice,
+                   expected.begin()));
+  CHECK(std::all_of(actual.begin() + kWidth * vector_v2::kViewCompositionRowsPerSlice, actual.end(),
+                    [](std::uint16_t pixel) { return pixel == kUnwritten; }));
+
+  int slice_count = 1;
+  while (slice.status == vector_v2::ViewCompositionStatus::kInProgress) {
+    slice = canvas.compose_view_slice(request, actual, cursor);
+    ++slice_count;
+  }
+  CHECK(slice_count == 10);
+  CHECK(slice.status == vector_v2::ViewCompositionStatus::kComplete);
+  CHECK_FALSE(cursor.active());
+  CHECK(actual == expected);
+  CHECK(slice.stats == *expected_stats);
+}
+
+TEST_CASE("cooperative composition cancellation and stale resumes fail closed") {
+  constexpr int kWidth = 17;
+  constexpr int kHeight = 19;
+  constexpr std::size_t kPixels = static_cast<std::size_t>(kWidth) * kHeight;
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
+  for (std::size_t index = 0; index < overview.size(); ++index) {
+    overview[index] = static_cast<std::uint16_t>(index);
+  }
+  std::array<vector_v2::MaterializedSlotStorage, 0> slots{};
+  std::array<std::uint16_t, 0> tile_storage{};
+  TestCanvas canvas(overview, slots, tile_storage);
+  REQUIRE(canvas.publish_overview({0}, overview));
+
+  for (const auto zoom : {vector_v2::ZoomLevel::k25Percent, vector_v2::ZoomLevel::k50Percent,
+                          vector_v2::ZoomLevel::k100Percent, vector_v2::ZoomLevel::k200Percent,
+                          vector_v2::ZoomLevel::k400Percent}) {
+    const vector_v2::ViewRequest request{.zoom = zoom, .level_pixels = {3, 5, 20, 24}};
+    std::array<std::uint16_t, kPixels> expected{};
+    REQUIRE(canvas.compose_view(request, expected));
+
+    std::array<std::uint16_t, kPixels> actual{};
+    vector_v2::ViewCompositionCursor cursor;
+    CHECK(canvas.compose_view_slice(request, actual, cursor).status ==
+          vector_v2::ViewCompositionStatus::kInProgress);
+    cursor.cancel();
+    CHECK_FALSE(cursor.active());
+    actual.fill(0U);
+    vector_v2::ViewCompositionSliceResult result{};
+    do {
+      result = canvas.compose_view_slice(request, actual, cursor);
+    } while (result.status == vector_v2::ViewCompositionStatus::kInProgress);
+    CHECK(result.status == vector_v2::ViewCompositionStatus::kComplete);
+    CHECK(actual == expected);
+  }
+
+  const vector_v2::ViewRequest request{
+      .zoom = vector_v2::ZoomLevel::k100Percent,
+      .level_pixels = {3, 5, 20, 24},
+  };
+  std::array<std::uint16_t, kPixels> first{};
+  std::array<std::uint16_t, kPixels> second{};
+  vector_v2::ViewCompositionCursor cursor;
+  CHECK(canvas.compose_view_slice(request, first, cursor).status ==
+        vector_v2::ViewCompositionStatus::kInProgress);
+  CHECK(canvas.compose_view_slice(request, second, cursor).status ==
+        vector_v2::ViewCompositionStatus::kError);
+  CHECK_FALSE(cursor.active());
+
+  CHECK(canvas.compose_view_slice(request, first, cursor).status ==
+        vector_v2::ViewCompositionStatus::kInProgress);
+  const vector_v2::ViewRequest moved_request{
+      .zoom = request.zoom,
+      .level_pixels = {4, 5, 21, 24},
+  };
+  CHECK(canvas.compose_view_slice(moved_request, first, cursor).status ==
+        vector_v2::ViewCompositionStatus::kError);
+  CHECK_FALSE(cursor.active());
+
+  CHECK(canvas.compose_view_slice(request, first, cursor).status ==
+        vector_v2::ViewCompositionStatus::kInProgress);
+  REQUIRE(canvas.publish_uniform({vector_v2::ZoomLevel::k100Percent, 0, 0}, {0},
+                                 vector_v2::MaterializationQuality::kImmediate, 0x1234U));
+  CHECK(canvas.compose_view_slice(request, first, cursor).status ==
+        vector_v2::ViewCompositionStatus::kError);
+  CHECK_FALSE(cursor.active());
+
+  CHECK(canvas.compose_view_slice(request, first, cursor).status ==
+        vector_v2::ViewCompositionStatus::kInProgress);
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> revised_overview = overview;
+  REQUIRE(canvas.publish_overview({1}, revised_overview));
+  CHECK(canvas.compose_view_slice(request, first, cursor).status ==
+        vector_v2::ViewCompositionStatus::kError);
+  CHECK_FALSE(cursor.active());
 }

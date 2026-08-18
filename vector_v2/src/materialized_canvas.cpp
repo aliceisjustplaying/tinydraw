@@ -12,6 +12,18 @@
 #include "tinydraw/vector_v2/tile_payload_analysis.h"
 
 namespace tinydraw::vector_v2 {
+
+void ViewCompositionCursor::cancel() {
+  canvas_ = nullptr;
+  request_ = {};
+  destination_ = nullptr;
+  destination_size_ = 0;
+  revision_ = {};
+  canvas_epoch_ = 0;
+  stats_ = {};
+  next_y_ = 0;
+  active_ = false;
+}
 namespace {
 
 constexpr int ceil_div(int numerator, int denominator) {
@@ -276,6 +288,7 @@ bool MaterializedCanvas::publish_overview(DocumentRevision revision,
       pixels.size() != kOverviewPixels) {
     return false;
   }
+  ++composition_epoch_;
   if (!exact_bootstrap_source) {
     std::copy(pixels.begin(), pixels.end(), overview_pixels_.begin());
   }
@@ -298,6 +311,7 @@ bool MaterializedCanvas::restore_snapshot(DocumentRevision revision,
   if (!ready() || pixels.size() != kOverviewPixels || !source_is_external) {
     return false;
   }
+  ++composition_epoch_;
   std::copy(pixels.begin(), pixels.end(), overview_pixels_.begin());
   // A restore replaces the entire document authority; prior per-group render
   // history is meaningless for the new document, so the re-render ledger
@@ -331,6 +345,7 @@ bool MaterializedCanvas::restore_snapshot(DocumentRevision revision,
       storage_overlaps(pixel_bytes, map_bytes)) {
     return false;
   }
+  ++composition_epoch_;
   std::copy(pixels.begin(), pixels.end(), overview_pixels_.begin());
   std::copy(tiled_may_ink.begin(), tiled_may_ink.end(), occupancy_bits_.begin());
 #ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
@@ -354,6 +369,7 @@ bool MaterializedCanvas::reset_blank(DocumentRevision revision) {
   if (!ready()) {
     return false;
   }
+  ++composition_epoch_;
   std::fill(overview_pixels_.begin(), overview_pixels_.end(), 0xFFFFU);
 #ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
   if (rerender_ledger_ != nullptr) {
@@ -491,6 +507,7 @@ bool MaterializedCanvas::commit_incremental_revision(
                                   tile_publications)) {
     return false;
   }
+  ++composition_epoch_;
 
   apply_overview_publication(overview_publication);
   invalidate_uniforms(affected_world_bounds);
@@ -550,6 +567,7 @@ std::optional<InPlaceTileEdit> MaterializedCanvas::edit_resident_tile(TileKey ke
   if (slot.revision_ != current_revision_) {
     return std::nullopt;
   }
+  ++composition_epoch_;
   // Touch keeps the edited slot off the LRU floor so a same-commit uniform
   // conversion cannot evict it. Fresh hard-edged ink also demotes a settled
   // tile so the idle settle pass revisits it.
@@ -571,6 +589,7 @@ std::optional<InPlaceTileEdit> MaterializedCanvas::materialize_uniform_as_raw(Ti
   if (!selected.has_value()) {
     return std::nullopt;
   }
+  ++composition_epoch_;
   MaterializedUniformStorage& uniform = uniform_catalog_[*uniform_index];
   MaterializedSlotStorage& slot = slots_[*selected];
 #ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
@@ -609,6 +628,7 @@ bool MaterializedCanvas::commit_in_place_revision(
   if (!valid_incremental_revision(revision, overview_publication, affected_world_bounds, {})) {
     return false;
   }
+  ++composition_epoch_;
   apply_overview_publication(overview_publication);
   invalidate_uniforms(affected_world_bounds, retained_keys, scope);
   for (std::size_t index = 0; index < slots_.size(); ++index) {
@@ -633,6 +653,7 @@ bool MaterializedCanvas::commit_in_place_revision(
 }
 
 void MaterializedCanvas::invalidate_identity(TileKey key) {
+  ++composition_epoch_;
   if (const auto slot_index = find_tile(key); slot_index.has_value()) {
     release_slot(*slot_index);
   }
@@ -901,6 +922,7 @@ std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, Documen
   if (!selected.has_value()) {
     return std::nullopt;
   }
+  ++composition_epoch_;
   const std::size_t index = *selected;
   MaterializedSlotStorage& slot = slots_[index];
 #ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
@@ -937,6 +959,7 @@ std::optional<std::size_t> MaterializedCanvas::publish_uniform(TileKey key,
       quality == MaterializationQuality::kOverviewFallback) {
     return std::nullopt;
   }
+  ++composition_epoch_;
   if (const auto raw = find_tile(key); raw.has_value()) {
     MaterializedSlotStorage& slot = slots_[*raw];
     if (static_cast<int>(quality) < static_cast<int>(slot.quality_)) {
@@ -998,6 +1021,7 @@ bool MaterializedCanvas::discard_tiles() {
   if (!ready()) {
     return false;
   }
+  ++composition_epoch_;
   for (std::size_t index = 0; index < slots_.size(); ++index) {
     if (!slots_[index].occupied_) {
       continue;
@@ -1043,25 +1067,20 @@ bool MaterializedCanvas::has_complete_source(const ViewRequest& request) const {
   return true;
 }
 
-std::optional<ViewCompositionStats> MaterializedCanvas::compose_overview_view(
-    const ViewRequest& request, std::span<std::uint16_t> destination) const {
-  if (!overview_valid_ || overview_revision_ != current_revision_) {
-    return std::nullopt;
-  }
-  const PixelRect rect = request.level_pixels;
-  const int width = rect.x1 - rect.x0;
-  for (int y = rect.y0; y < rect.y1; ++y) {
+void MaterializedCanvas::compose_overview_pixels(PixelRect bounds,
+                                                 CompositionContext& context) const {
+  const PixelRect view = context.request.level_pixels;
+  for (int y = bounds.y0; y < bounds.y1; ++y) {
     const auto source_offset =
-        static_cast<std::size_t>(y) * kOverviewWidth + static_cast<std::size_t>(rect.x0);
+        static_cast<std::size_t>(y) * kOverviewWidth + static_cast<std::size_t>(bounds.x0);
     const auto destination_offset =
-        static_cast<std::size_t>(y - rect.y0) * static_cast<std::size_t>(width);
-    std::copy_n(overview_pixels_.begin() + static_cast<std::ptrdiff_t>(source_offset), width,
-                destination.begin() + static_cast<std::ptrdiff_t>(destination_offset));
+        static_cast<std::size_t>(y - view.y0) * static_cast<std::size_t>(context.view_width);
+    std::copy_n(overview_pixels_.begin() + static_cast<std::ptrdiff_t>(source_offset),
+                bounds.x1 - bounds.x0,
+                context.destination.begin() + static_cast<std::ptrdiff_t>(destination_offset));
   }
-  return ViewCompositionStats{
-      .revision = current_revision_,
-      .overview_pixels = destination.size(),
-  };
+  context.stats.overview_pixels += static_cast<std::size_t>(bounds.x1 - bounds.x0) *
+                                   static_cast<std::size_t>(bounds.y1 - bounds.y0);
 }
 
 void MaterializedCanvas::include_quality(MaterializationQuality quality,
@@ -1124,28 +1143,33 @@ void MaterializedCanvas::compose_fallback_pixels(PixelRect bounds, CompositionCo
                                    static_cast<std::size_t>(bounds.y1 - bounds.y0);
 }
 
-void MaterializedCanvas::compose_tile(TileKey key, CompositionContext& context) {
+void MaterializedCanvas::compose_tile(TileKey key, PixelRect band, CompositionContext& context) {
   const PixelRect tile = tile_pixel_bounds(key);
   const PixelRect view = context.request.level_pixels;
   const PixelRect bounds{.x0 = std::max(view.x0, tile.x0),
-                         .y0 = std::max(view.y0, tile.y0),
+                         .y0 = std::max(band.y0, tile.y0),
                          .x1 = std::min(view.x1, tile.x1),
-                         .y1 = std::min(view.y1, tile.y1)};
+                         .y1 = std::min(band.y1, tile.y1)};
+  const bool first_slice = bounds.y0 == std::max(view.y0, tile.y0);
   const auto raw = find_tile(key);
   const bool raw_current = raw.has_value() && slots_[*raw].revision_ == current_revision_;
   if (raw_current) {
-    touch(slots_[*raw]);
-    include_quality(slots_[*raw].quality_, context.stats);
+    if (first_slice) {
+      touch(slots_[*raw]);
+      include_quality(slots_[*raw].quality_, context.stats);
+    }
     compose_raw_pixels(*raw, bounds, context);
     return;
   }
   const auto uniform = find_uniform(key);
   if (uniform.has_value()) {
-    include_quality(uniform_catalog_[*uniform].quality_, context.stats);
+    if (first_slice) {
+      include_quality(uniform_catalog_[*uniform].quality_, context.stats);
+    }
     compose_uniform_pixels(uniform_catalog_[*uniform].color_, bounds, context);
     return;
   }
-  ++context.stats.fallback_tiles;
+  context.stats.fallback_tiles += first_slice;
   compose_fallback_pixels(bounds, context);
 }
 
@@ -1159,9 +1183,6 @@ std::optional<ViewCompositionStats> MaterializedCanvas::compose_view(
       !has_complete_source(request)) {
     return std::nullopt;
   }
-  if (request.zoom == ZoomLevel::k25Percent) {
-    return compose_overview_view(request, destination);
-  }
   CompositionContext context{
       .request = request,
       .destination = destination,
@@ -1169,18 +1190,96 @@ std::optional<ViewCompositionStats> MaterializedCanvas::compose_view(
       .view_width = request.level_pixels.x1 - request.level_pixels.x0,
   };
   const PixelRect rect = request.level_pixels;
-  const int first_column = rect.x0 / kTileWidth;
-  const int last_column = (rect.x1 - 1) / kTileWidth;
-  const int first_row = rect.y0 / kTileHeight;
-  const int last_row = (rect.y1 - 1) / kTileHeight;
-  for (int row = first_row; row <= last_row; ++row) {
-    for (int column = first_column; column <= last_column; ++column) {
-      compose_tile(
-          {request.zoom, static_cast<std::uint16_t>(column), static_cast<std::uint16_t>(row)},
-          context);
+  if (request.zoom == ZoomLevel::k25Percent) {
+    compose_overview_pixels(rect, context);
+  } else {
+    const int first_column = rect.x0 / kTileWidth;
+    const int last_column = (rect.x1 - 1) / kTileWidth;
+    const int first_row = rect.y0 / kTileHeight;
+    const int last_row = (rect.y1 - 1) / kTileHeight;
+    for (int row = first_row; row <= last_row; ++row) {
+      for (int column = first_column; column <= last_column; ++column) {
+        compose_tile(
+            {request.zoom, static_cast<std::uint16_t>(column), static_cast<std::uint16_t>(row)},
+            rect, context);
+      }
     }
   }
   return context.stats;
+}
+
+ViewCompositionSliceResult MaterializedCanvas::compose_view_slice(
+    const ViewRequest& request, std::span<std::uint16_t> destination,
+    ViewCompositionCursor& cursor) {
+  if (cursor.active_) {
+    const bool same_transaction = cursor.canvas_ == this && cursor.request_ == request &&
+                                  cursor.destination_ == destination.data() &&
+                                  cursor.destination_size_ == destination.size() &&
+                                  cursor.revision_ == current_revision_ &&
+                                  cursor.canvas_epoch_ == composition_epoch_;
+    if (!same_transaction) {
+      cursor.cancel();
+      return {};
+    }
+  }
+
+  if (!cursor.active_) {
+    const bool destination_aliases_source =
+        storage_overlaps(std::as_bytes(destination), std::as_bytes(std::span(overview_pixels_))) ||
+        storage_overlaps(std::as_bytes(destination), std::as_bytes(std::span(tile_pixels_))) ||
+        storage_overlaps(std::as_bytes(destination), std::as_bytes(std::span(slots_)));
+    if (!valid_view(request, destination.size()) || destination_aliases_source ||
+        !has_complete_source(request)) {
+      cursor.cancel();
+      return {};
+    }
+    cursor.canvas_ = this;
+    cursor.request_ = request;
+    cursor.destination_ = destination.data();
+    cursor.destination_size_ = destination.size();
+    cursor.revision_ = current_revision_;
+    cursor.canvas_epoch_ = composition_epoch_;
+    cursor.stats_ = {.revision = current_revision_};
+    cursor.next_y_ = request.level_pixels.y0;
+    cursor.active_ = true;
+  }
+
+  CompositionContext context{
+      .request = request,
+      .destination = destination,
+      .stats = cursor.stats_,
+      .view_width = request.level_pixels.x1 - request.level_pixels.x0,
+  };
+  const PixelRect rect = request.level_pixels;
+  const int band_y1 = std::min(cursor.next_y_ + kViewCompositionRowsPerSlice, rect.y1);
+  const PixelRect band{rect.x0, cursor.next_y_, rect.x1, band_y1};
+  if (request.zoom == ZoomLevel::k25Percent) {
+    compose_overview_pixels(band, context);
+  } else {
+    const int first_column = rect.x0 / kTileWidth;
+    const int last_column = (rect.x1 - 1) / kTileWidth;
+    const int first_row = band.y0 / kTileHeight;
+    const int last_row = (band.y1 - 1) / kTileHeight;
+    for (int row = first_row; row <= last_row; ++row) {
+      for (int column = first_column; column <= last_column; ++column) {
+        compose_tile(
+            {request.zoom, static_cast<std::uint16_t>(column), static_cast<std::uint16_t>(row)},
+            band, context);
+      }
+    }
+  }
+
+  cursor.stats_ = context.stats;
+  cursor.next_y_ = band_y1;
+  const bool complete = band_y1 == rect.y1;
+  const ViewCompositionSliceResult result{
+      .status = complete ? ViewCompositionStatus::kComplete : ViewCompositionStatus::kInProgress,
+      .stats = context.stats,
+  };
+  if (complete) {
+    cursor.cancel();
+  }
+  return result;
 }
 
 }  // namespace tinydraw::vector_v2

@@ -32,6 +32,10 @@ inline constexpr std::size_t kOccupancyCellCount =
 inline constexpr std::size_t kOccupancyBytes = (kOccupancyCellCount + 7U) / 8U;
 inline constexpr std::size_t kMaterializedTileIdentityCount = 168U + 644U + 2'576U + 10'304U;
 inline constexpr std::size_t kTiledZoomCount = 4;
+// Cooperative composition stops after at most this many complete destination
+// rows. A display-width slice therefore writes at most 2,944 pixels before
+// returning control to the caller.
+inline constexpr int kViewCompositionRowsPerSlice = 8;
 // Sentinel for raw_slot_directory entries: the identity has no raw slot.
 inline constexpr std::uint16_t kNoRawSlot = 0xFFFFU;
 
@@ -119,6 +123,7 @@ struct TileRevisionPublication {
 struct ViewRequest {
   ZoomLevel zoom = ZoomLevel::k25Percent;
   PixelRect level_pixels{};
+  bool operator==(const ViewRequest&) const = default;
 };
 
 struct ViewFootprint {
@@ -136,6 +141,43 @@ struct ViewCompositionStats {
   std::size_t immediate_tiles = 0;
   std::size_t settled_tiles = 0;
   std::size_t fallback_tiles = 0;
+  bool operator==(const ViewCompositionStats&) const = default;
+};
+
+enum class ViewCompositionStatus : std::uint8_t {
+  kInProgress,
+  kComplete,
+  kError,
+};
+
+struct ViewCompositionSliceResult {
+  ViewCompositionStatus status = ViewCompositionStatus::kError;
+  ViewCompositionStats stats{};
+};
+
+class MaterializedCanvas;
+
+// Caller-owned continuation for one logical composition transaction. While it
+// is active the request, destination, and canvas must remain serialized and
+// unchanged. cancel() abandons partial destination pixels and makes the cursor
+// reusable for a fresh transaction.
+class ViewCompositionCursor {
+ public:
+  void cancel();
+  [[nodiscard]] bool active() const { return active_; }
+
+ private:
+  friend class MaterializedCanvas;
+
+  const MaterializedCanvas* canvas_ = nullptr;
+  ViewRequest request_{};
+  std::uint16_t* destination_ = nullptr;
+  std::size_t destination_size_ = 0;
+  DocumentRevision revision_{};
+  std::uint64_t canvas_epoch_ = 0;
+  ViewCompositionStats stats_{};
+  int next_y_ = 0;
+  bool active_ = false;
 };
 
 class MaterializedUniformStorage {
@@ -292,6 +334,13 @@ class MaterializedCanvas {
   [[nodiscard]] bool discard_tiles();
   [[nodiscard]] std::optional<ViewCompositionStats> compose_view(
       const ViewRequest& request, std::span<std::uint16_t> destination);
+  // Advances one allocation-free row band. The caller can inspect touch
+  // urgency after every incomplete result and resume later with the same
+  // request, destination, and cursor. Panel submission remains a separate
+  // transaction after kComplete.
+  [[nodiscard]] ViewCompositionSliceResult compose_view_slice(const ViewRequest& request,
+                                                              std::span<std::uint16_t> destination,
+                                                              ViewCompositionCursor& cursor);
   // Returns intersecting current-revision raw-slot keys plus uniform keys in
   // priority_view. The visible uniform keys must be materialized before an
   // append invalidates their paper entries, or the committed frame would
@@ -338,9 +387,8 @@ class MaterializedCanvas {
 
   [[nodiscard]] bool valid_view(const ViewRequest& request, std::size_t destination_size) const;
   [[nodiscard]] bool has_complete_source(const ViewRequest& request) const;
-  [[nodiscard]] std::optional<ViewCompositionStats> compose_overview_view(
-      const ViewRequest& request, std::span<std::uint16_t> destination) const;
-  void compose_tile(TileKey key, CompositionContext& context);
+  void compose_overview_pixels(PixelRect bounds, CompositionContext& context) const;
+  void compose_tile(TileKey key, PixelRect band, CompositionContext& context);
   void compose_raw_pixels(std::size_t slot_index, PixelRect bounds, CompositionContext& context);
   static void compose_uniform_pixels(std::uint16_t color, PixelRect bounds,
                                      CompositionContext& context);
@@ -376,6 +424,7 @@ class MaterializedCanvas {
   std::uint64_t use_clock_ = 0;
   std::array<ViewFootprint, kTiledZoomCount> recent_views_{};
   ZoomLevel active_view_zoom_ = ZoomLevel::k25Percent;
+  std::uint64_t composition_epoch_ = 0;
   bool overview_valid_ = false;
 };
 
