@@ -8,6 +8,7 @@
 namespace {
 
 using tinydraw::vector_v2::copy_ring_row;
+using tinydraw::vector_v2::copy_to_ring_row;
 using tinydraw::vector_v2::stage_pixels_swapped;
 using tinydraw::vector_v2::stage_ring_row;
 using tinydraw::vector_v2::swap_pixels_in_place;
@@ -68,6 +69,40 @@ TEST_CASE("host-order ring copy can be patched before one in-place byte swap") {
       CAPTURE(column);
       CHECK(staged[static_cast<std::size_t>(column)] ==
             byte_swapped(source_row[static_cast<std::size_t>((column + shift_x) % kAreaWidth)]));
+    }
+  }
+}
+
+TEST_CASE("logical local patches round-trip through a wrapped ring row") {
+  constexpr int kAreaWidth = 368;
+  auto ring_row = pattern(kAreaWidth, 0xA11CEU);
+  const auto original = ring_row;
+  constexpr int kPatchX = 320;
+  constexpr int kPatchWidth = 48;
+  const auto patch = pattern(kPatchWidth, 0x10CA1U);
+
+  for (const int shift_x : {0, 17, 367}) {
+    ring_row = original;
+    copy_to_ring_row(patch.data(), kPatchWidth, ring_row.data(), kAreaWidth, shift_x, kPatchX);
+
+    auto expected = original;
+    for (int column = 0; column < kPatchWidth; ++column) {
+      expected[static_cast<std::size_t>((kPatchX + column + shift_x) % kAreaWidth)] =
+          patch[static_cast<std::size_t>(column)];
+    }
+    CHECK(ring_row == expected);
+
+    std::vector<std::uint16_t> copied(kPatchWidth, 0U);
+    copy_ring_row(ring_row.data(), kAreaWidth, shift_x, kPatchX, kPatchWidth, copied.data());
+    CHECK(copied == patch);
+
+    std::vector<std::uint16_t> staged(kPatchWidth, 0U);
+    stage_ring_row(ring_row.data(), kAreaWidth, shift_x, kPatchX, kPatchWidth, staged.data());
+    for (int column = 0; column < kPatchWidth; ++column) {
+      CAPTURE(shift_x);
+      CAPTURE(column);
+      CHECK(staged[static_cast<std::size_t>(column)] ==
+            byte_swapped(patch[static_cast<std::size_t>(column)]));
     }
   }
 }

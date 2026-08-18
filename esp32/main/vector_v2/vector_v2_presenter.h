@@ -113,14 +113,13 @@ class VectorV2Presenter {
 
   [[nodiscard]] bool ready() const;
   // Committed-overlay seam (VECTOR_V2_COMMITTED_OVERLAY_DESIGN.md §3.2):
-  // with a read-only authority attached, every frame/region compose is
+  // with a read-only authority attached, every frame/region/ring compose is
   // patched with the pending operation range so glass stays exact while the
-  // canvas trails. The ring-reuse pan path is intentionally NOT patched —
-  // callers must drain the pending range before panning (design §3.4).
+  // canvas trails.
   void attach_authority(const vector_v2::OperationLog& log) { authority_ = &log; }
   // Settled-AA presentation seams. stage_settled_pixels copies caller
-  // pixels into the linear frame (no present; fails while a pan ring is
-  // active); present_frame_region presents already-staged frame content.
+  // pixels into the current linear/ring frame without presenting;
+  // present_frame_region presents already-staged frame content.
   // The 25% settle uses these because the authoritative overview must stay
   // hard-edged — settling happens in presentation pixels only.
   [[nodiscard]] bool stage_settled_pixels(vector_v2::PixelRect panel_bounds,
@@ -230,7 +229,16 @@ class VectorV2Presenter {
                                                     const vector_v2::ChromeState& chrome,
                                                     std::uint32_t event_us,
                                                     std::span<const vector_v2::PixelRect> exposed);
+  [[nodiscard]] LivePresentationTiming present_ring_region(vector_v2::PixelRect bounds,
+                                                           const vector_v2::ChromeState& chrome,
+                                                           std::uint32_t event_us,
+                                                           std::int64_t compose_us = 0,
+                                                           bool wait_for_completion = true);
   [[nodiscard]] bool compose_into_ring(vector_v2::PixelRect panel_bounds);
+  void copy_pixels_to_ring(vector_v2::PixelRect panel_bounds, std::span<const std::uint16_t> pixels,
+                           int stride);
+  [[nodiscard]] bool render_into_ring(std::span<const RibbonPrimitive> primitives,
+                                      std::uint16_t color, vector_v2::PixelRect panel_bounds);
   void copy_ring_to_stage(vector_v2::PixelRect panel_bounds, const PanelStageSurface& surface);
   [[nodiscard]] LivePresentationTiming refresh_pan(int old_x, int old_y,
                                                    const vector_v2::ChromeState& chrome,
@@ -260,9 +268,9 @@ class VectorV2Presenter {
   vector_v2::ChromeState frame_chrome_{};
   vector_v2::DocumentRevision presented_minimap_revision_{};
   // Toroidal pan addressing: while frame_ring_bottom_ is nonzero the canvas
-  // rows [0, frame_ring_bottom_) of frame_ are ring-rotated by frame_ring_
-  // and only the ring-aware pan present may read them; every other frame
-  // writer materializes first through a full refresh.
+  // rows [0, frame_ring_bottom_) of frame_ are ring-rotated by frame_ring_.
+  // Canvas damage and live ink remain local by reading/writing through the
+  // ring mapping; fixed chrome is applied only to transport staging.
   vector_v2::RingFrame frame_ring_{};
   int frame_ring_bottom_ = 0;
   bool minimap_presented_ = false;

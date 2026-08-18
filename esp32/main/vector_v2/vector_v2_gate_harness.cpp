@@ -1851,6 +1851,73 @@ bool verify_pan_adapter(VectorV2Presenter& presenter, vector_v2::TileProducer& p
          pan.first_complete_us < 60'000;
 }
 
+bool run_ring_locality_gate(VectorV2Presenter& presenter, const vector_v2::ChromeState& chrome) {
+  constexpr int kOrigin = 256;
+  constexpr Point kPanTouch{240.0F, 240.0F};
+  if (!presenter.set_view(ZoomLevel::k400Percent, kOrigin, kOrigin, chrome, now_us()).passed) {
+    return false;
+  }
+  const auto first_pan =
+      presenter.pan_from(kOrigin, kOrigin, kPanTouch, {216.0F, 216.0F}, chrome, now_us());
+  const int ring_x = presenter.level_x();
+  const int ring_y = presenter.level_y();
+  const auto local = presenter.refresh_region(
+      {ring_x + 40, ring_y + 40, ring_x + 104, ring_y + 104}, chrome, now_us());
+
+  vector_v2::ChromeState changed_chrome = chrome;
+  changed_chrome.battery_percentage =
+      static_cast<std::uint8_t>(changed_chrome.battery_percentage == 50U ? 51U : 50U);
+  const vector_v2::ChromeRect battery = vector_v2::chrome_battery_region();
+  const auto local_chrome = presenter.present_frame_region(
+      {battery.x0, battery.y0, battery.x1, battery.y1}, changed_chrome, now_us());
+
+  CurvedRibbonStream ribbon;
+  constexpr std::array<Point, 4> kPoints{
+      {{96.0F, 120.0F}, {120.0F, 132.0F}, {144.0F, 124.0F}, {168.0F, 142.0F}}};
+  float running_length = 0.0F;
+  Point previous = kPoints.front();
+  std::uint32_t timestamp_us = now_us();
+  bool ink_pass = true;
+  InkPoint last{};
+  for (std::size_t index = 0; index < kPoints.size(); ++index) {
+    const float distance =
+        index == 0U ? 0.0F
+                    : std::hypot(kPoints[index].x - previous.x, kPoints[index].y - previous.y);
+    running_length += distance;
+    timestamp_us += 8'333U;
+    last = {.position = kPoints[index],
+            .pressure = 1.0F,
+            .radius = 8.0F,
+            .distance = distance,
+            .running_length = running_length,
+            .timestamp_us = timestamp_us};
+    if (index == 0U) {
+      static_cast<void>(ribbon.append(last, true));
+      ink_pass = presenter.show_start(last, 0x001FU, changed_chrome, now_us()).passed;
+    } else {
+      ink_pass = ink_pass &&
+                 presenter.show_update(ribbon.append(last, true), 0x001FU, changed_chrome, now_us())
+                     .passed;
+    }
+    previous = kPoints[index];
+  }
+  ink_pass = ink_pass &&
+             presenter.show_update(ribbon.finish(last), 0x001FU, changed_chrome, now_us()).passed;
+
+  const auto second_pan =
+      presenter.pan_from(ring_x, ring_y, kPanTouch, {224.0F, 224.0F}, changed_chrome, now_us());
+  const bool passed = first_pan.passed && first_pan.frame_reused && local.passed &&
+                      local_chrome.passed && ink_pass && second_pan.passed &&
+                      second_pan.frame_reused;
+  std::printf(
+      "TINYDRAW_GATE1_RING_LOCAL first_pan=%u local_refresh=%u local_chrome=%u live_ink=%u "
+      "next_pan=%u next_reused=%u pass=%u\n",
+      first_pan.passed && first_pan.frame_reused, local.passed, local_chrome.passed, ink_pass,
+      second_pan.passed, second_pan.frame_reused, passed);
+  std::fflush(stdout);
+  return passed;
+}
+
 // Scripted warm-pan drag attribution. Every microsecond of a cached pan frame
 // is accounted: PSRAM scroll, exposed-strip compose, TE wait, byte-swap
 // staging (prepare), staging-slot waits, and DMA completion. The pass bound is
@@ -3373,6 +3440,7 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
                                                       ZoomLevel::k400Percent);
   const bool pan_400 =
       gate_400 && verify_pan_adapter(presenter, producer, chrome, ZoomLevel::k400Percent);
+  const bool ring_local = pan_400 && run_ring_locality_gate(presenter, chrome);
   const bool pan_sequence_100 =
       gate_400 && run_pan_sequence_gate(presenter, producer, chrome, ZoomLevel::k100Percent);
   const bool pan_sequence_400 =
@@ -3451,19 +3519,19 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
       "color_dialog=%u stress=%u stress_100=%u stress_400=%u overlap_ready=%u "
       "overlap_cold=%u general_cold_ready=%u general_cold=%u workload=%u paced_cold=%u "
       "hard_100=%u hard_400=%u pan_100=%u "
-      "pan_400=%u pan_seq=%u pan_boundary=%u live_overlay=%u draw_fill=%u cache=%u "
+      "pan_400=%u ring_local=%u pan_seq=%u pan_boundary=%u live_overlay=%u draw_fill=%u cache=%u "
       "full_world_cache=%u "
       "cache_tour=%u mixed_draw=%u idle_repair=%u ink_trace=%u hairline_capacity=%u "
       "long_gesture=%u "
       "export_encode=%u export_reserve=%u return=%u ssaa_receipt=yellow\n",
       minimap_navigation, color_dialog, stress_ready, stress_100, stress_400, overlap_ready,
       overlap_cold, general_cold_ready, general_cold, workload_ready, paced_cold, gate_100,
-      gate_400, pan_100, pan_400, pan_sequence, pan_boundary, live_overlay, draw_fill,
+      gate_400, pan_100, pan_400, ring_local, pan_sequence, pan_boundary, live_overlay, draw_fill,
       cache_retention, full_world_cache, cache_tour, mixed_draw, idle_repair, ink_trace_replay,
       hairline_capacity, long_gesture, export_encode, export_reserve, return_overview.passed);
   return minimap_navigation && color_dialog && return_overview.passed && export_reserve &&
          overlap_cold && general_cold && mixed_draw && idle_repair && hairline_capacity &&
-         pan_100 && pan_400 && pan_sequence && pan_boundary;
+         pan_100 && pan_400 && ring_local && pan_sequence && pan_boundary;
 #endif
 }
 
