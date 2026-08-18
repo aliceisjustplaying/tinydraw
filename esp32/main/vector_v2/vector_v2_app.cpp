@@ -294,8 +294,15 @@ void run_vector_v2_app() {
       std::span(storage.tile_pixels, vector_v2::kTileSlotCount * vector_v2::kTilePixels),
       DocumentRevision{},
       std::span(storage.raw_slot_directory, vector_v2::kMaterializedTileIdentityCount));
+  vector_v2::OperationSpatialIndex operation_spatial_index(
+      vector_v2::kOperationCapacity,
+      std::span(storage.operation_spatial_cells,
+                vector_v2::operation_spatial_cell_word_count(vector_v2::kOperationCapacity)),
+      std::span(storage.operation_spatial_large,
+                vector_v2::operation_spatial_word_count(vector_v2::kOperationCapacity)));
   OperationLog log(std::span(storage.records, vector_v2::kOperationCapacity),
-                   std::span(storage.samples, vector_v2::kOperationSampleCapacity));
+                   std::span(storage.samples, vector_v2::kOperationSampleCapacity),
+                   &operation_spatial_index);
   static vector_v2::NavigationState navigation;
   VectorV2AutosaveStore autosave;
   const VectorV2AutosaveRestoreStatus autosave_restore = autosave.restore(log);
@@ -334,7 +341,9 @@ void run_vector_v2_app() {
        .summary_saturated_words =
            std::span(storage.producer_summary_words, vector_v2::kTileProducerSummaryWords),
        .operation_chord_plans = std::as_writable_bytes(
-           std::span(storage.producer_chord_plans, vector_v2::kOperationChordStorageBytes / 4U))});
+           std::span(storage.producer_chord_plans, vector_v2::kOperationChordStorageBytes / 4U)),
+       .candidate_indices =
+           std::span(storage.operation_candidates, vector_v2::kOperationCapacity)});
   // Re-render truth: every completed group render is classified against the
   // damage/eviction state the canvas reports (déjà-vu oracle; ~27.5 KiB).
   // The gate-only re-render ledger can speak during diagnostic glass sessions.
@@ -426,7 +435,8 @@ void run_vector_v2_app() {
        .accumulated_alpha = std::span(storage.settle_accumulated, vector_v2::kTilePixels),
        .red = std::span(storage.settle_red, vector_v2::kTilePixels),
        .green = std::span(storage.settle_green, vector_v2::kTilePixels),
-       .blue = std::span(storage.settle_blue, vector_v2::kTilePixels)},
+       .blue = std::span(storage.settle_blue, vector_v2::kTilePixels),
+       .candidate_indices = std::span(storage.operation_candidates, vector_v2::kOperationCapacity)},
       std::span(storage.settle_pixels, vector_v2::kTilePixels), presenter, chrome);
   auto initial = presenter.refresh(chrome);
   print_presentation("startup", presenter, initial);
@@ -462,6 +472,11 @@ void run_vector_v2_app() {
   const std::size_t operation_bytes =
       vector_v2::kOperationCapacity * sizeof(OperationRecord) +
       vector_v2::kOperationSampleCapacity * sizeof(CompactOperationSample);
+  const std::size_t operation_index_bytes =
+      (vector_v2::operation_spatial_cell_word_count(vector_v2::kOperationCapacity) +
+       vector_v2::operation_spatial_word_count(vector_v2::kOperationCapacity)) *
+          sizeof(std::uint64_t) +
+      vector_v2::kOperationCapacity * sizeof(std::uint16_t);
   const std::size_t live_scratch_bytes =
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
       vector_v2::kTilePixels * sizeof(std::uint16_t) +
@@ -473,20 +488,23 @@ void run_vector_v2_app() {
       vector_v2::kInPlaceTileMaskBytes + kInputSampleCapacity * sizeof(CompactOperationSample) +
       kVectorV2TouchEventCapacity * sizeof(vector_v2::TouchEvent) +
       (vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles) * sizeof(TileKey);
-  const std::size_t live_storage_bytes =
-      overview_bytes + raw_tile_bytes + tile_metadata_bytes + operation_bytes + live_scratch_bytes;
+  const std::size_t live_storage_bytes = overview_bytes + raw_tile_bytes + tile_metadata_bytes +
+                                         operation_bytes + operation_index_bytes +
+                                         live_scratch_bytes;
   const auto tear_signal = display.tear_signal_timing();
   std::printf(
       "TINYDRAW_VECTOR_V2_READY zoom=25 controls=chrome button=cycle_all_zooms "
       "operations_capacity=%lu samples_capacity=%lu live_storage_bytes=%lu "
       "overview_bytes=%lu raw_tile_bytes=%lu tile_metadata_bytes=%lu operation_bytes=%lu "
-      "live_scratch_bytes=%lu free_psram=%lu largest_psram=%lu "
+      "operation_index_bytes=%lu live_scratch_bytes=%lu free_psram=%lu largest_psram=%lu "
       "te_edges=%lu te_period_us=%lld te_high_us=%lld te_level=%u main_stack_free=%lu\n",
       static_cast<unsigned long>(log.operation_capacity()),
       static_cast<unsigned long>(log.sample_capacity()),
       static_cast<unsigned long>(live_storage_bytes), static_cast<unsigned long>(overview_bytes),
       static_cast<unsigned long>(raw_tile_bytes), static_cast<unsigned long>(tile_metadata_bytes),
-      static_cast<unsigned long>(operation_bytes), static_cast<unsigned long>(live_scratch_bytes),
+      static_cast<unsigned long>(operation_bytes),
+      static_cast<unsigned long>(operation_index_bytes),
+      static_cast<unsigned long>(live_scratch_bytes),
       static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)),
       static_cast<unsigned long>(heap_caps_get_largest_free_block(kExternalCaps)),
       static_cast<unsigned long>(tear_signal.rising_edges),

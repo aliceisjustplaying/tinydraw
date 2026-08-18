@@ -56,6 +56,9 @@ struct AppStorage {
   vector_v2::OperationRecord* records = nullptr;
   vector_v2::CompactOperationSample* samples = nullptr;
   vector_v2::CompactOperationSample* input_samples = nullptr;
+  std::uint64_t* operation_spatial_cells = nullptr;
+  std::uint64_t* operation_spatial_large = nullptr;
+  std::uint16_t* operation_candidates = nullptr;
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
   vector_v2::RerenderLedgerEntry* rerender_entries = nullptr;
 #else

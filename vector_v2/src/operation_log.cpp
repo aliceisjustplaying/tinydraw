@@ -87,8 +87,11 @@ void PreparedHistoryChange::cancel() {
 }
 
 OperationLog::OperationLog(std::span<OperationRecord> records,
-                           std::span<CompactOperationSample> samples)
-    : records_(records), samples_(samples) {}
+                           std::span<CompactOperationSample> samples,
+                           OperationSpatialIndex* spatial_index)
+    : records_(records), samples_(samples), spatial_index_(spatial_index) {
+  rebuild_spatial_index();
+}
 
 bool OperationLog::ready() const {
   // Nonempty is not enough: overlapping caller-owned storage would let an
@@ -131,7 +134,8 @@ bool OperationLog::can_redo() const {
 
 bool OperationLog::workspace_overlaps_storage(std::span<const std::byte> workspace) const {
   return storage_overlaps(workspace, std::as_bytes(std::span(records_))) ||
-         storage_overlaps(workspace, std::as_bytes(std::span(samples_)));
+         storage_overlaps(workspace, std::as_bytes(std::span(samples_))) ||
+         (spatial_index_ != nullptr && spatial_index_->workspace_overlaps_storage(workspace));
 }
 
 std::optional<OperationIdentity> OperationLog::append(const OperationAppend& append_request) {
@@ -185,6 +189,9 @@ OperationIdentity OperationLog::append_validated(const OperationAppend& append_r
       ++epoch_.value;
     }
   }
+  if (spatial_index_usable_ && !spatial_index_->replace(operation_count_ - 1U, bounds)) {
+    spatial_index_usable_ = false;
+  }
   return identity;
 }
 
@@ -237,6 +244,18 @@ std::optional<StoredOperation> OperationLog::retained_operation(std::size_t inde
                        .y1 = record.bounds_y1},
       .samples = samples_.subspan(record.first_sample, record.sample_count),
   };
+}
+
+std::optional<std::size_t> OperationLog::query_spatial(
+    PixelRect world_bounds, std::size_t first_operation, std::size_t requested_operation_count,
+    std::span<std::uint16_t> newest_first_candidates, OperationSpatialQueryStats* stats) const {
+  if (!spatial_index_usable_ || history_pending_ || first_operation > operation_count_ ||
+      requested_operation_count > operation_count_ - first_operation ||
+      workspace_overlaps_storage(std::as_bytes(newest_first_candidates))) {
+    return std::nullopt;
+  }
+  return spatial_index_->query(world_bounds, first_operation, requested_operation_count,
+                               newest_first_candidates, stats);
 }
 
 std::optional<PreparedHistoryChange> OperationLog::prepare_undo() {
@@ -374,6 +393,7 @@ bool OperationLog::restore(const AuthorityRestore& restore) {
   revision_ = restore.generation;
   epoch_ = restore.epoch;
   history_pending_ = false;
+  rebuild_spatial_index();
   return true;
 }
 
@@ -391,6 +411,7 @@ bool OperationLog::reset(DocumentRevision revision) {
   if (epoch_.value == 0U) {
     ++epoch_.value;
   }
+  rebuild_spatial_index();
   return true;
 }
 
@@ -442,6 +463,29 @@ std::optional<StoredOperation> OperationLog::history_operation(
                        .y1 = record.bounds_y1},
       .samples = samples_.subspan(record.first_sample, record.sample_count),
   };
+}
+
+bool OperationLog::can_use_spatial_index() const {
+  return spatial_index_ != nullptr && spatial_index_->ready() &&
+         spatial_index_->operation_capacity() >= records_.size() &&
+         !spatial_index_->workspace_overlaps_storage(std::as_bytes(std::span(records_))) &&
+         !spatial_index_->workspace_overlaps_storage(std::as_bytes(std::span(samples_)));
+}
+
+void OperationLog::rebuild_spatial_index() {
+  spatial_index_usable_ = can_use_spatial_index();
+  if (!spatial_index_usable_) {
+    return;
+  }
+  spatial_index_->clear();
+  for (std::size_t index = 0; index < retained_operation_count_; ++index) {
+    const OperationRecord& record = records_[index];
+    if (!spatial_index_->replace(
+            index, {record.bounds_x0, record.bounds_y0, record.bounds_x1, record.bounds_y1})) {
+      spatial_index_usable_ = false;
+      return;
+    }
+  }
 }
 
 void OperationLog::publish_history(const PreparedHistoryChange& prepared) {

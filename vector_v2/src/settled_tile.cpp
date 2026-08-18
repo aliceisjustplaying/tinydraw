@@ -9,6 +9,10 @@
 namespace tinydraw::vector_v2 {
 namespace {
 
+bool prefer_spatial_candidates(std::size_t candidate_count, std::size_t authority_count) {
+  return candidate_count <= authority_count - authority_count / 4U;
+}
+
 bool rects_intersect(PixelRect left, PixelRect right) {
   return left.x0 < right.x1 && right.x0 < left.x1 && left.y0 < right.y1 && right.y0 < left.y1;
 }
@@ -61,7 +65,22 @@ bool render_settled_window(const OperationLog& log, ZoomLevel zoom, PixelRect wi
   std::memset(workspace.blue.data(), 0, pixel_count * sizeof(std::uint16_t));
 
   std::size_t saturated_pixels = 0;
-  for (std::size_t operation_index = log.operation_count(); operation_index-- > 0U;) {
+  OperationSpatialQueryStats spatial_stats{};
+  const auto candidates = log.query_spatial(tile_world, 0U, log.operation_count(),
+                                            workspace.candidate_indices, &spatial_stats);
+  if (stats != nullptr) {
+    stats->operations_in_authority += log.operation_count();
+    if (candidates.has_value()) {
+      stats->index_candidates += spatial_stats.index_candidates;
+      stats->deduplicated_candidates += spatial_stats.deduplicated_candidates;
+    }
+  }
+  const bool use_candidates =
+      candidates.has_value() && prefer_spatial_candidates(*candidates, log.operation_count());
+  const std::size_t replay_count = use_candidates ? *candidates : log.operation_count();
+  for (std::size_t replay_index = 0; replay_index < replay_count; ++replay_index) {
+    const std::size_t operation_index = use_candidates ? workspace.candidate_indices[replay_index]
+                                                       : log.operation_count() - 1U - replay_index;
     const auto stored = log.operation(operation_index);
     if (!stored.has_value()) {
       return false;
@@ -71,6 +90,9 @@ bool render_settled_window(const OperationLog& log, ZoomLevel zoom, PixelRect wi
     }
     if (!rects_intersect(stored->world_bounds, tile_world)) {
       continue;
+    }
+    if (stats != nullptr) {
+      ++stats->operations_intersecting;
     }
     std::memset(workspace.operation_alpha.data(), 0, pixel_count);
     bool touched = false;

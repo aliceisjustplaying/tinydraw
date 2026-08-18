@@ -45,11 +45,17 @@ struct TileProducerWorkspace {
   // Opaque storage for one operation's prepared chord batch (H7 op-level
   // sweep), at least kOperationChordStorageBytes and 4-aligned.
   std::span<std::byte> operation_chord_plans{};
+  // Optional F11 spatial-query output. Capacity must cover the operation log;
+  // when absent or short the producer retains the exact authority scan.
+  std::span<std::uint16_t> candidate_indices{};
 };
 
 struct TileProductionStep {
   PixelRect level_bounds{};
   std::size_t operations_scanned = 0;
+  std::size_t operations_in_authority = 0;
+  std::size_t index_candidates = 0;
+  std::size_t deduplicated_candidates = 0;
   std::size_t operations_intersecting = 0;
   std::size_t operations_rendered = 0;
   std::size_t groups_published = 0;
@@ -109,6 +115,11 @@ class TileProducer {
     DocumentRevision revision{};
     std::size_t first_operation = 0;
     std::size_t next_operation = 0;
+    std::size_t candidate_count = 0;
+    std::size_t next_candidate = 0;
+    OperationSpatialQueryStats spatial_stats{};
+    bool uses_spatial_index = false;
+    bool spatial_stats_pending = false;
     // Current reverse segment endpoint. Zero initializes a newly selected
     // operation; single-sample operations are handled as one bounded unit.
     std::size_t next_sample = 0;
