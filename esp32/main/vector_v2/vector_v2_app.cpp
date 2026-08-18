@@ -546,7 +546,7 @@ void run_vector_v2_app() {
   std::uint8_t drained_touch_events = 0U;
 
   const auto advance_full_refresh = [&](const char* kind, std::uint32_t event_us) {
-    const auto timing = presenter.refresh_slice(chrome, event_us);
+    const auto timing = presenter.refresh_slice(chrome, event_us, pressed);
     if (!timing.compose_pending) {
       std::printf(
           "TINYDRAW_COOPERATIVE_COMPOSE kind=%s slices=%lu max_slice_us=%lld compose_us=%lld "
@@ -590,7 +590,9 @@ void run_vector_v2_app() {
       static_cast<void>(advance_full_refresh("deferred-full", loop_us));
       // One input poll per bounded compose slice. Background canvas mutation
       // waits until the complete frame has entered its single panel sweep.
-      continue;
+      if (presenter.refresh_composing()) {
+        continue;
+      }
     }
 
     if (!sample_ready && chrome.export_status == vector_v2::ChromeExportStatus::kPresented &&
@@ -929,7 +931,7 @@ void run_vector_v2_app() {
       }
     }
 
-    if (presenter.refresh_pending()) {
+    if (presenter.refresh_composing()) {
       // The first slice can be requested from inside input handling. Keep the
       // canvas source epoch stable until the next input poll advances it.
       continue;

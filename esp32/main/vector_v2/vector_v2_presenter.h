@@ -137,12 +137,15 @@ class VectorV2Presenter {
 
   [[nodiscard]] LivePresentationTiming refresh(const vector_v2::ChromeState& chrome,
                                                std::uint32_t event_us = 0);
-  // Advances a full-frame CPU compose by one bounded row slice. Incomplete
-  // frames stay presenter-private; only the completed frame enters the
-  // existing single-window, TE-aligned panel sweep.
+  // Advances a full-frame CPU compose by one bounded row slice. Active input
+  // or trailing materialization records a deferred request without touching
+  // the frame; incomplete frames stay presenter-private until the completed
+  // frame enters the existing single-window, TE-aligned panel sweep.
   [[nodiscard]] LivePresentationTiming refresh_slice(const vector_v2::ChromeState& chrome,
-                                                     std::uint32_t event_us = 0);
-  [[nodiscard]] bool refresh_pending() const { return refresh_pending_; }
+                                                     std::uint32_t event_us = 0,
+                                                     bool interaction_active = false);
+  [[nodiscard]] bool refresh_pending() const { return refresh_pending_ || refresh_deferred_; }
+  [[nodiscard]] bool refresh_composing() const { return refresh_pending_; }
   void cancel_refresh();
   // Re-composes and presents only the intersection between changed level-space
   // pixels and the visible canvas above the chrome.
@@ -250,6 +253,7 @@ class VectorV2Presenter {
 
   void overlay_pending(vector_v2::PixelRect level_bounds, std::span<std::uint16_t> pixels,
                        int stride);
+  void interrupt_refresh();
 
   vector_v2::MaterializedCanvas& canvas_;
   const vector_v2::OperationLog* authority_ = nullptr;
@@ -284,6 +288,7 @@ class VectorV2Presenter {
   bool minimap_presented_ = false;
   bool frame_reusable_ = false;
   bool refresh_pending_ = false;
+  bool refresh_deferred_ = false;
 #ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
   bool optical_row_pattern_enabled_ = false;
   std::uint8_t optical_generation_ = 0;
