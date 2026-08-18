@@ -1689,11 +1689,6 @@ bool run_mixed_zoom_stroke(VectorV2Presenter& presenter, vector_v2::TileProducer
       status = builder.acknowledge_commit();
       stats.max_pending_operations =
           std::max(stats.max_pending_operations, vector_v2::pending_operation_count(log, canvas));
-      // Mirror the background opportunity after a handled input sample: one
-      // deadline-bounded slice, with remaining work carried to later ticks.
-      if (!absorb_slice()) {
-        return std::nullopt;
-      }
     }
     if (status != vector_v2::ChainedOperationStatus::kAccepted &&
         status != vector_v2::ChainedOperationStatus::kComplete) {
@@ -1723,6 +1718,12 @@ bool run_mixed_zoom_stroke(VectorV2Presenter& presenter, vector_v2::TileProducer
         .world_x = x, .world_y = y, .radius = radius, .timestamp_us = timestamp_us};
     const bool final_sample = index + 1U == kStrokeSamples;
     if (!commit_ready(final_sample ? builder.finish(point) : builder.add(point)).has_value()) {
+      return false;
+    }
+    // Product polls background after every handled sample, not only after a
+    // 32-sample authority chunk. Carry one bounded absorption quantum through
+    // each of those opportunities so backlog telemetry has product cadence.
+    if (!absorb_slice()) {
       return false;
     }
   }
