@@ -37,7 +37,26 @@ bool VectorV2TouchSampler::start() {
   if (!touch_.ready() || !events_.ready()) {
     return false;
   }
-  stop_waiter_ = nullptr;
+  if (event_ready_ == nullptr) {
+    event_ready_ = xSemaphoreCreateBinaryStatic(&event_ready_storage_);
+  }
+  if (stopped_ == nullptr) {
+    stopped_ = xSemaphoreCreateBinaryStatic(&stopped_storage_);
+  }
+  if (event_ready_ == nullptr || stopped_ == nullptr) {
+    return false;
+  }
+  while (xSemaphoreTake(event_ready_, 0) == pdTRUE) {
+  }
+  while (xSemaphoreTake(stopped_, 0) == pdTRUE) {
+  }
+  portENTER_CRITICAL(&event_lock_);
+  const bool has_pending = events_.pending() != 0U;
+  touch_urgent_.store(has_pending, std::memory_order_release);
+  portEXIT_CRITICAL(&event_lock_);
+  if (has_pending) {
+    static_cast<void>(xSemaphoreGive(event_ready_));
+  }
   stop_requested_.store(false, std::memory_order_release);
   if (xTaskCreatePinnedToCore(task_entry, "v2_touch", 3'072U, this, 5U, &task_, 1) != pdPASS) {
     task_ = nullptr;
@@ -50,18 +69,56 @@ void VectorV2TouchSampler::stop() {
   if (task_ == nullptr) {
     return;
   }
-  stop_waiter_ = xTaskGetCurrentTaskHandle();
   stop_requested_.store(true, std::memory_order_release);
-  static_cast<void>(ulTaskNotifyTake(pdTRUE, portMAX_DELAY));
-  vTaskDelete(task_);
+  static_cast<void>(xSemaphoreTake(stopped_, portMAX_DELAY));
   task_ = nullptr;
-  stop_waiter_ = nullptr;
+}
+
+std::size_t VectorV2TouchSampler::pending() const {
+  portENTER_CRITICAL(&event_lock_);
+  const std::size_t count = events_.pending();
+  portEXIT_CRITICAL(&event_lock_);
+  return count;
+}
+
+bool VectorV2TouchSampler::touch_urgent() const {
+  return touch_urgent_.load(std::memory_order_acquire);
+}
+
+bool VectorV2TouchSampler::wait_for_event(TickType_t timeout_ticks) {
+  if (touch_urgent()) {
+    return true;
+  }
+  if (event_ready_ == nullptr) {
+    return false;
+  }
+
+  TimeOut_t timeout{};
+  vTaskSetTimeOutState(&timeout);
+  TickType_t remaining_ticks = timeout_ticks;
+  for (;;) {
+    if (xSemaphoreTake(event_ready_, remaining_ticks) != pdTRUE) {
+      return touch_urgent();
+    }
+    if (touch_urgent()) {
+      return true;
+    }
+    if (timeout_ticks != portMAX_DELAY &&
+        xTaskCheckForTimeOut(&timeout, &remaining_ticks) == pdTRUE) {
+      return touch_urgent();
+    }
+  }
 }
 
 std::optional<SampledTouch> VectorV2TouchSampler::read_next() {
   portENTER_CRITICAL(&event_lock_);
   const auto event = events_.pop();
+  const bool has_pending = events_.pending() != 0U;
+  touch_urgent_.store(has_pending, std::memory_order_release);
   portEXIT_CRITICAL(&event_lock_);
+  if (!has_pending && event_ready_ != nullptr) {
+    static_cast<void>(xSemaphoreTake(event_ready_, 0));
+  }
   if (!event.has_value()) {
     return std::nullopt;
   }
@@ -85,6 +142,7 @@ TouchSamplerMetrics VectorV2TouchSampler::take_metrics() {
       .samples = samples_.exchange(0U, std::memory_order_relaxed),
       .errors = errors_.exchange(0U, std::memory_order_relaxed),
       .queue_overflows = queue_overflows_.exchange(0U, std::memory_order_relaxed),
+      .queue_resyncs = queue_resyncs_.exchange(0U, std::memory_order_relaxed),
       .moves_coalesced = moves_coalesced_.exchange(0U, std::memory_order_relaxed),
       .maximum_interval_us = maximum_interval_us_.exchange(0U, std::memory_order_relaxed),
       .maximum_read_us = maximum_read_us_.exchange(0U, std::memory_order_relaxed),
@@ -98,7 +156,10 @@ TouchSamplerMetrics VectorV2TouchSampler::take_metrics() {
 
 void VectorV2TouchSampler::task_entry(void* argument) {
   static_cast<VectorV2TouchSampler*>(argument)->run();
-  vTaskSuspend(nullptr);
+  // The worker owns its cross-core teardown. Once run() signals stopped_ it
+  // touches no sampler state again, and self-deletion avoids deleting a task
+  // that may still be returning on the other core.
+  vTaskDelete(nullptr);
 }
 
 void VectorV2TouchSampler::run() {
@@ -118,19 +179,26 @@ void VectorV2TouchSampler::run() {
     errors_.fetch_add(read == TouchRead::kError, std::memory_order_relaxed);
 
     portENTER_CRITICAL(&event_lock_);
+    const bool was_empty = events_.pending() == 0U;
     const vector_v2::TouchOfferResult offered =
         events_.offer(contact_read(read), {.x = point.x, .y = point.y}, completed_us);
+    const bool became_nonempty = was_empty && events_.pending() != 0U;
+    if (became_nonempty) {
+      touch_urgent_.store(true, std::memory_order_release);
+    }
     portEXIT_CRITICAL(&event_lock_);
+    if (became_nonempty) {
+      static_cast<void>(xSemaphoreGive(event_ready_));
+    }
     queue_overflows_.fetch_add(offered == vector_v2::TouchOfferResult::kOverflow,
                                std::memory_order_relaxed);
+    queue_resyncs_.fetch_add(offered == vector_v2::TouchOfferResult::kResynchronized,
+                             std::memory_order_relaxed);
     moves_coalesced_.fetch_add(offered == vector_v2::TouchOfferResult::kMoveCoalesced,
                                std::memory_order_relaxed);
     vTaskDelay(pdMS_TO_TICKS(1));
   }
-  const TaskHandle_t waiter = stop_waiter_;
-  if (waiter != nullptr) {
-    xTaskNotifyGive(waiter);
-  }
+  static_cast<void>(xSemaphoreGive(stopped_));
 }
 
 }  // namespace tinydraw::esp32
