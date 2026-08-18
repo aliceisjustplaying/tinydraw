@@ -56,6 +56,22 @@ constexpr std::uint32_t kPowerRefreshUs = 30'000'000U;
 constexpr int kStartupPresentationAttempts = 3;
 constexpr TickType_t kStartupPresentationRetryDelay = pdMS_TO_TICKS(20);
 
+enum class InteractionMode : std::uint8_t {
+  kIdle,
+  kDismissOverlay,
+  kMinimapPan,
+  kMinimapDockCandidate,
+  kToolbarCandidate,
+  kPan,
+  kStroke,
+};
+
+constexpr bool interaction_active(InteractionMode mode) { return mode != InteractionMode::kIdle; }
+
+constexpr bool navigation_active(InteractionMode mode) {
+  return mode == InteractionMode::kMinimapPan || mode == InteractionMode::kPan;
+}
+
 std::uint16_t next_gesture_id(const OperationLog& log) {
   if (log.operation_count() == 0U) {
     return 1U;
@@ -327,13 +343,8 @@ void run_vector_v2_app() {
       tear_signal.level, static_cast<unsigned long>(uxTaskGetStackHighWaterMark(nullptr)));
   std::fflush(stdout);
 
-  bool pressed = false;
-  bool toolbar_pressed = false;
-  bool minimap_pressed = false;
-  bool minimap_dock_candidate = false;
-  bool popup_dismissed_press = false;
+  InteractionMode interaction = InteractionMode::kIdle;
   std::optional<std::uint32_t> time_sync_terminal_since;
-  bool panning = false;
   Point last_touch{};
   Point toolbar_start{};
   Point toolbar_sum{};
@@ -354,7 +365,7 @@ void run_vector_v2_app() {
   std::uint8_t drained_touch_events = 0U;
 
   const auto advance_full_refresh = [&](const char* kind, std::uint32_t event_us) {
-    const auto timing = presenter.refresh_slice(chrome, event_us, pressed);
+    const auto timing = presenter.refresh_slice(chrome, event_us, interaction_active(interaction));
     if (!timing.compose_pending) {
       std::printf(
           "TINYDRAW_COOPERATIVE_COMPOSE kind=%s slices=%lu max_slice_us=%lld compose_us=%lld "
@@ -367,8 +378,8 @@ void run_vector_v2_app() {
     return timing;
   };
 
-  const auto begin_pan = [&](Point start) {
-    panning = true;
+  const auto begin_pan = [&](Point start, InteractionMode mode) {
+    interaction = mode;
     pan_metrics.reset();
     pan_start = start;
     pan_start_x = presenter.level_x();
@@ -381,7 +392,7 @@ void run_vector_v2_app() {
     poll_previous_us = loop_us;
 
     Point point{};
-    const bool idle_before_poll = !pressed;
+    const bool idle_before_poll = !interaction_active(interaction);
     const std::int64_t poll_started_us = esp_timer_get_time();
     const auto sampled_touch = touch_sampler.read_next();
     const std::int64_t poll_completed_us = esp_timer_get_time();
@@ -390,7 +401,7 @@ void run_vector_v2_app() {
       point = sampled_touch->point;
     }
     const bool lift_event = sample_ready && sampled_touch->kind == vector_v2::TouchEventKind::kUp;
-    const bool point_event = sample_ready && (!lift_event || pressed);
+    const bool point_event = sample_ready && (!lift_event || interaction_active(interaction));
     const std::uint32_t event_us = sample_ready ? sampled_touch->timestamp_us : loop_us;
     bool cosmetic_work = false;
 
@@ -439,9 +450,10 @@ void run_vector_v2_app() {
     // The battery redraw is a full-frame present (60-140 ms on dense
     // content); it is cosmetic and must never ride the post-lift window or
     // the drain (owner glass receipt: it was the 85 ms "lift spike").
-    if (!sample_ready && !cosmetic_work && !touch_sampler.touch_urgent() && !pressed &&
-        !stroke_report.pending && vector_v2::pending_operation_count(log, canvas) == 0U &&
-        power.ready() && loop_us - power_sampled_us >= kPowerRefreshUs) {
+    if (!sample_ready && !cosmetic_work && !touch_sampler.touch_urgent() &&
+        !interaction_active(interaction) && !stroke_report.pending &&
+        vector_v2::pending_operation_count(log, canvas) == 0U && power.ready() &&
+        loop_us - power_sampled_us >= kPowerRefreshUs) {
       cosmetic_work = true;
       const PowerStatus next_power = power.read();
       power_sampled_us = loop_us;
@@ -487,8 +499,8 @@ void run_vector_v2_app() {
       continue;
     }
     if (point_event) {
-      if (!pressed && sampled_touch->kind == vector_v2::TouchEventKind::kDown) {
-        pressed = true;
+      if (!interaction_active(interaction) &&
+          sampled_touch->kind == vector_v2::TouchEventKind::kDown) {
         last_touch = point;
         const bool export_toast = chrome.export_status == vector_v2::ChromeExportStatus::kSaved ||
                                   chrome.export_status == vector_v2::ChromeExportStatus::kError;
@@ -502,32 +514,30 @@ void run_vector_v2_app() {
             time_sync_terminal_since.reset();
           }
           chrome.time_sync_status = vector_v2::ChromeTimeSyncStatus::kIdle;
-          popup_dismissed_press = true;
+          interaction = InteractionMode::kDismissOverlay;
           static_cast<void>(advance_full_refresh("toast-dismiss", loop_us));
         }
-        if (popup_dismissed_press) {
+        if (interaction == InteractionMode::kDismissOverlay) {
           // Consume the complete gesture that dismisses a terminal toast so
           // it cannot also begin a stroke or navigation gesture beneath it.
         } else if (vector_v2::chrome_minimap_contains({point.x, point.y}, chrome)) {
           // The minimap is an absolute pointer for every tool: Down acquires
           // immediately, then every changed Move follows the finger without a
           // tiny-viewport grab requirement or a delayed promotion threshold.
-          minimap_pressed = true;
           toolbar_start = point;
-          begin_pan(point);
+          begin_pan(point, InteractionMode::kMinimapPan);
           pan_metrics.include(
               presenter.pan_minimap_from(pan_start_x, pan_start_y, point, chrome, event_us));
         } else if (vector_v2::chrome_minimap_dock_drag_candidate({point.x, point.y}, chrome)) {
           // This physical finger zone overlaps the size/document buttons.
           // Preserve a stationary toolbar tap, but let deliberate movement
           // promote the captured gesture into absolute minimap navigation.
-          minimap_dock_candidate = true;
-          toolbar_pressed = true;
+          interaction = InteractionMode::kMinimapDockCandidate;
           toolbar_start = point;
           toolbar_sum = point;
           toolbar_samples = 1;
         } else if (vector_v2::chrome_contains({point.x, point.y}, chrome)) {
-          toolbar_pressed = true;
+          interaction = InteractionMode::kToolbarCandidate;
           toolbar_start = point;
           toolbar_sum = point;
           toolbar_samples = 1;
@@ -535,11 +545,12 @@ void run_vector_v2_app() {
           // A tap outside a compact popup dismisses it and consumes the
           // complete gesture. It must never leak through as a stroke or pan.
           chrome.popup = vector_v2::ChromePopup::kNone;
-          popup_dismissed_press = true;
+          interaction = InteractionMode::kDismissOverlay;
           static_cast<void>(advance_full_refresh("chrome-dismiss", loop_us));
         } else if (chrome.tool == vector_v2::ChromeTool::kPan) {
-          begin_pan(point);
+          begin_pan(point, InteractionMode::kPan);
         } else {
+          interaction = InteractionMode::kStroke;
           const OperationTool tool = chrome.tool == vector_v2::ChromeTool::kErase
                                          ? OperationTool::kEraser
                                          : OperationTool::kPen;
@@ -552,18 +563,17 @@ void run_vector_v2_app() {
           static_cast<void>(stroke.begin(point, event_us, vector_v2::brush_size(chrome.size), tool,
                                          color, gesture_id, chrome));
         }
-      } else if (minimap_pressed && (point.x != last_touch.x || point.y != last_touch.y)) {
+      } else if (interaction == InteractionMode::kMinimapPan &&
+                 (point.x != last_touch.x || point.y != last_touch.y)) {
         last_touch = point;
         pan_metrics.include(
             presenter.pan_minimap_from(pan_start_x, pan_start_y, point, chrome, event_us));
-      } else if (minimap_dock_candidate && (point.x != last_touch.x || point.y != last_touch.y)) {
+      } else if (interaction == InteractionMode::kMinimapDockCandidate &&
+                 (point.x != last_touch.x || point.y != last_touch.y)) {
         if (vector_v2::chrome_promotes_minimap_dock_drag({toolbar_start.x, toolbar_start.y},
                                                          {point.x, point.y}, chrome)) {
-          minimap_dock_candidate = false;
-          toolbar_pressed = false;
           toolbar_samples = 0;
-          minimap_pressed = true;
-          begin_pan(toolbar_start);
+          begin_pan(toolbar_start, InteractionMode::kMinimapPan);
           last_touch = point;
           pan_metrics.include(
               presenter.pan_minimap_from(pan_start_x, pan_start_y, point, chrome, event_us));
@@ -573,12 +583,12 @@ void run_vector_v2_app() {
           ++toolbar_samples;
           last_touch = point;
         }
-      } else if (toolbar_pressed && (point.x != last_touch.x || point.y != last_touch.y)) {
+      } else if (interaction == InteractionMode::kToolbarCandidate &&
+                 (point.x != last_touch.x || point.y != last_touch.y)) {
         if (vector_v2::chrome_promotes_pan_drag({toolbar_start.x, toolbar_start.y},
                                                 {point.x, point.y}, chrome)) {
-          toolbar_pressed = false;
           toolbar_samples = 0;
-          begin_pan(toolbar_start);
+          begin_pan(toolbar_start, InteractionMode::kPan);
           last_touch = point;
           pan_metrics.include(
               presenter.pan_from(pan_start_x, pan_start_y, pan_start, point, chrome, event_us));
@@ -588,12 +598,14 @@ void run_vector_v2_app() {
           ++toolbar_samples;
           last_touch = point;
         }
-      } else if (panning && (point.x != last_touch.x || point.y != last_touch.y)) {
+      } else if (interaction == InteractionMode::kPan &&
+                 (point.x != last_touch.x || point.y != last_touch.y)) {
         last_touch = point;
         const auto timing =
             presenter.pan_from(pan_start_x, pan_start_y, pan_start, point, chrome, event_us);
         pan_metrics.include(timing);
-      } else if (stroke.active() && (point.x != last_touch.x || point.y != last_touch.y)) {
+      } else if (interaction == InteractionMode::kStroke && stroke.active() &&
+                 (point.x != last_touch.x || point.y != last_touch.y)) {
         last_touch = point;
         const LiveStrokeMoveResult move = stroke.move(point, event_us, chrome);
         if (move.rejected) {
@@ -606,21 +618,19 @@ void run_vector_v2_app() {
         }
       }
     }
-    if (lift_event && pressed) {
-      pressed = false;
-      minimap_dock_candidate = false;
-      if (popup_dismissed_press) {
-        popup_dismissed_press = false;
-      } else if (minimap_pressed) {
-        minimap_pressed = false;
-        panning = false;
+    if (lift_event && interaction_active(interaction)) {
+      const InteractionMode completed_interaction = interaction;
+      interaction = InteractionMode::kIdle;
+      if (completed_interaction == InteractionMode::kDismissOverlay) {
+        // The gesture was fully consumed when the overlay was dismissed.
+      } else if (completed_interaction == InteractionMode::kMinimapPan) {
         print_pan_baseline(presenter, pan_metrics);
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
         print_live_ledger("minimap_pointer_end");
 #endif
         std::fflush(stdout);
-      } else if (toolbar_pressed) {
-        toolbar_pressed = false;
+      } else if (completed_interaction == InteractionMode::kToolbarCandidate ||
+                 completed_interaction == InteractionMode::kMinimapDockCandidate) {
         const float divisor = static_cast<float>(std::max<std::uint32_t>(1U, toolbar_samples));
         const Point tap{toolbar_sum.x / divisor, toolbar_sum.y / divisor};
         toolbar_samples = 0;
@@ -664,14 +674,13 @@ void run_vector_v2_app() {
             background.reset_document_state();
           }
         }
-      } else if (panning) {
-        panning = false;
+      } else if (completed_interaction == InteractionMode::kPan) {
         print_pan_baseline(presenter, pan_metrics);
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
         print_live_ledger("pan_end");
 #endif
         std::fflush(stdout);
-      } else if (stroke.active()) {
+      } else if (completed_interaction == InteractionMode::kStroke && stroke.active()) {
         PendingStrokeReport report{};
         report.detected_us = esp_timer_get_time();
         report.id = next_lift_id++;
@@ -746,8 +755,9 @@ void run_vector_v2_app() {
     // is quiet. Flash work remains on the worker; this call only snapshots
     // coherent vector authority into immutable PSRAM.
     const bool touch_backlog = touch_sampler.touch_urgent();
-    if (!pressed && !panning && !sample_ready && !touch_backlog && !touch_sampler.touch_urgent() &&
-        !stroke_report.pending && autosave.ready() && autosave.checkpoint_required() &&
+    if (!interaction_active(interaction) && !sample_ready && !touch_backlog &&
+        !touch_sampler.touch_urgent() && !stroke_report.pending && autosave.ready() &&
+        autosave.checkpoint_required() &&
         static_cast<std::int32_t>(loop_us - autosave_checkpoint_retry_us) >= 0) {
       const std::int64_t checkpoint_started = esp_timer_get_time();
       const bool queued = autosave.submit_checkpoint(log);
@@ -766,8 +776,8 @@ void run_vector_v2_app() {
     const bool background_urgent = touch_backlog || touch_sampler.touch_urgent();
     const BackgroundSliceResult background_result = background.run_slice({
         .loop_us = loop_us,
-        .pressed = pressed,
-        .panning = panning,
+        .pressed = interaction_active(interaction),
+        .panning = navigation_active(interaction),
         .sample_ready = sample_ready || background_urgent,
         .lift_report_pending = stroke_report.pending,
         .touch_urgency = touch_sampler.urgency_probe(),
@@ -777,7 +787,7 @@ void run_vector_v2_app() {
       print_live_ledger("drain");
     }
 #endif
-    if (stroke_report.pending && idle_before_poll && !pressed && !background_urgent &&
+    if (stroke_report.pending && idle_before_poll && !interaction_active(interaction) &&
         !touch_sampler.touch_urgent()) {
       print_stroke(stroke_report);
       std::printf("TINYDRAW_LIVE_STROKE_DONE committed=%u refresh=%u commit_failed=%u\n",
