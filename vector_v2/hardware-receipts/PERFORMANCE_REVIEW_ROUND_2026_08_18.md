@@ -216,11 +216,12 @@ There is no per-chunk scan or persistent-memory growth.
 
 At 100–400%, representative Undo producer time improves 32.2–57.7% and branch
 replacement improves 19.9–49.3%; adversarial full Undo improves 87.5–92.9%.
-All 30 map/view cases compose exact pixels. False-positive replay creates
-uniform paper, so this treatment removes cold/immediate producer work but adds
-zero settled tiles and zero settled work. Erase-only overlap remains
-conservative while active pen bounds exist because overview paper cannot prove
-a high-zoom hairline absent. Full evidence is in
+All 24 tiled map/view cases compose exact pixels; the six 25% cases record the
+direct-overview bypass and map counts. False-positive replay creates uniform
+paper, so this treatment removes cold/immediate producer work but adds zero
+settled tiles and zero settled work. Erase-only overlap remains conservative
+while active pen bounds exist because overview paper cannot prove a high-zoom
+hairline absent. Full evidence is in
 [`F2_OCCUPANCY_HISTORY_REBUILD_2026_08_18.md`](../F2_OCCUPANCY_HISTORY_REBUILD_2026_08_18.md).
 
 ### F13 banded 25% settle — exact rejection A/B
@@ -511,8 +512,8 @@ same-revision physical A/B, but the 50–400% whole-view totals still exceed
 
 The final performance round preserves exact output in all dedicated oracles.
 F10’s release authority suite passes 79/79 tests and 25,609 assertions. The F2
-seam raises the complete ASan totals to 81/81 Authority/Export tests with
-25,643 assertions and 126/126 Rendering tests with 63,098 assertions. After
+seam raises the complete ASan totals to 82/82 Authority/Export tests with
+25,650 assertions and 126/126 Rendering tests with 63,098 assertions. After
 reverting the physically rejected saturated skip, F13 also passes 25 frozen
 benchmark checks. F21 passes its recorded Debug, Release, and ASan rendering
 suites. The F24 product and gate images

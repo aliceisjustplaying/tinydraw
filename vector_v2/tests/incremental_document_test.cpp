@@ -738,6 +738,26 @@ TEST_CASE("history rebuilds may-ink and branch replacement preserves the rebuilt
   CHECK_FALSE(fixture.canvas.certainly_paper(*branch_key));
 }
 
+TEST_CASE("history with short scratch retains its conservative may-ink proof") {
+  Fixture fixture;
+  const std::array point{
+      vector_v2::CompactOperationSample{.x_quarter = 720U * vector_v2::kSampleUnitsPerWorldUnit,
+                                        .y_quarter = 800U * vector_v2::kSampleUnitsPerWorldUnit,
+                                        .radius_256 = 256U}};
+  const auto key =
+      vector_v2::tile_key_for_world(vector_v2::ZoomLevel::k400Percent, {.x = 720, .y = 800});
+  REQUIRE(key.has_value());
+  REQUIRE(fixture.append_and_absorb({.color = 0x001FU, .gesture_id = 1U, .samples = point}));
+  REQUIRE_FALSE(fixture.canvas.certainly_paper(*key));
+
+  std::array<std::uint16_t, 128> short_scratch{};
+  static_assert(sizeof(short_scratch) < vector_v2::kOccupancyBytes);
+  REQUIRE(vector_v2::move_history_incrementally(fixture.log, fixture.canvas,
+                                                vector_v2::HistoryDirection::kUndo, short_scratch));
+  CHECK(fixture.log.current_revision() == fixture.canvas.current_revision());
+  CHECK_FALSE(fixture.canvas.certainly_paper(*key));
+}
+
 TEST_CASE("history refuses while materialization trails authority") {
   Fixture fixture;
   REQUIRE(vector_v2::append_authority_only(fixture.log,
