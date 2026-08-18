@@ -289,7 +289,9 @@ TEST_CASE("staged metadata commit matches synchronous mixed materialization comm
       .pixels = std::span(patch).first(static_cast<std::size_t>(bounds.x1 - bounds.x0) *
                                        static_cast<std::size_t>(bounds.y1 - bounds.y0)),
   };
-  const std::array retained{raw_kept, uniform_kept};
+  // The unaffected uniform is deliberately superfluous: retained membership
+  // must not leak transient state when a caller supplies an extra key.
+  const std::array retained{raw_kept, uniform_kept, uniform_unaffected};
   std::size_t direct_cross_zoom = 0;
   std::size_t staged_cross_zoom = 0;
   const vector_v2::MaterializedCanvas::InPlaceCommitScope direct_scope{
@@ -341,6 +343,54 @@ TEST_CASE("staged metadata commit matches synchronous mixed materialization comm
         vector_v2::RerenderCause::kExpectedDamage);
   CHECK(staged_ledger.record_group_render(vector_v2::ZoomLevel::k400Percent, 0, 0, {1}) ==
         vector_v2::RerenderCause::kExpectedDamage);
+}
+
+TEST_CASE("cancelled retained-key prepass restores raw and uniform lookup state") {
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
+  std::array<vector_v2::MaterializedSlotStorage, 2> slots{};
+  std::array<std::uint16_t, 2U * vector_v2::kTilePixels> tile_pool{};
+  TestCanvas canvas(overview, slots, tile_pool);
+  REQUIRE(canvas.reset_blank({0}));
+
+  const vector_v2::TileKey raw{vector_v2::ZoomLevel::k100Percent, 0, 0};
+  const vector_v2::TileKey uniform{vector_v2::ZoomLevel::k200Percent, 0, 0};
+  std::array<std::uint16_t, vector_v2::kTilePixels> tile{};
+  tile.fill(0x1234U);
+  REQUIRE(canvas.publish_tile(raw, {0}, vector_v2::MaterializationQuality::kImmediate, tile));
+  REQUIRE(
+      canvas.publish_uniform(uniform, {0}, vector_v2::MaterializationQuality::kSettled, 0xEEEEU));
+
+  const vector_v2::PixelRect world_bounds{0, 0, 96, 96};
+  const auto bounds = vector_v2::overview_bounds_for_world(world_bounds);
+  std::array<std::uint16_t, 24U * 24U> patch{};
+  const vector_v2::OverviewRevisionPublication publication{
+      .bounds = bounds,
+      .pixels = std::span(patch).first(static_cast<std::size_t>(bounds.x1 - bounds.x0) *
+                                       static_cast<std::size_t>(bounds.y1 - bounds.y0)),
+  };
+  vector_v2::InPlaceOverviewStage stage;
+  while (!stage.complete()) {
+    REQUIRE(canvas.stage_in_place_overview_rows({1}, publication, world_bounds, 4U, stage) !=
+            vector_v2::OverviewStageStatus::kError);
+  }
+  const std::array retained{uniform, raw};
+  const auto first =
+      canvas.stage_in_place_metadata({1}, publication, world_bounds, retained, 1U, stage);
+  REQUIRE(first.status == vector_v2::OverviewStageStatus::kInProgress);
+  CHECK(first.phase == vector_v2::InPlaceMetadataPhase::kUniforms);
+  CHECK(first.work_items == 1U);
+  stage.cancel();
+
+  CHECK(canvas.current_revision() == vector_v2::DocumentRevision{0});
+  const auto raw_source = canvas.lookup(raw);
+  const auto uniform_source = canvas.lookup(uniform);
+  REQUIRE(raw_source.has_value());
+  REQUIRE(uniform_source.has_value());
+  CHECK(raw_source->kind == vector_v2::SourceKind::kTileSlot);
+  CHECK(raw_source->revision == vector_v2::DocumentRevision{0});
+  CHECK(uniform_source->kind == vector_v2::SourceKind::kUniform);
+  CHECK(uniform_source->quality == vector_v2::MaterializationQuality::kSettled);
+  CHECK(canvas.uniform_color(uniform) == 0xEEEEU);
 }
 
 TEST_CASE("raw publication cannot downgrade a settled uniform") {

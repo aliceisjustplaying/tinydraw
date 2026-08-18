@@ -33,6 +33,10 @@ void InPlaceOverviewStage::cancel() {
 }
 namespace {
 
+// raw_slot_directory_ is serialized with every revision commit. Its otherwise
+// unused penultimate sentinel is a zero-byte transient retained-uniform mark.
+constexpr std::uint16_t kRetainedUniformSlot = 0xFFFEU;
+
 constexpr int ceil_div(int numerator, int denominator) {
   return (numerator + denominator - 1) / denominator;
 }
@@ -179,7 +183,7 @@ bool MaterializedCanvas::ready() const {
          uniform_catalog_.size() == kMaterializedTileIdentityCount &&
          occupancy_bits_.size() == kOccupancyBytes &&
          raw_slot_directory_.size() == kMaterializedTileIdentityCount &&
-         slots_.size() < static_cast<std::size_t>(kNoRawSlot) &&
+         slots_.size() < static_cast<std::size_t>(kRetainedUniformSlot) &&
          tile_pixels_.size() == slots_.size() * kTilePixels;
 }
 
@@ -219,7 +223,6 @@ void MaterializedCanvas::clear_uniforms() {
 }
 
 void MaterializedCanvas::invalidate_zoom_uniforms(ZoomLevel zoom, PixelRect world_bounds,
-                                                  std::span<const TileKey> retained_keys,
                                                   const InPlaceCommitScope& scope) {
   const int percent = zoom_percent(zoom);
   const TileGrid grid = tile_grid(zoom);
@@ -241,10 +244,13 @@ void MaterializedCanvas::invalidate_zoom_uniforms(ZoomLevel zoom, PixelRect worl
       }
       // Painting a color over an identical uniform is a no-op at any zoom,
       // so those uniforms survive without being enumerated.
+      const bool retained_marked = raw_slot_directory_[*index] == kRetainedUniformSlot;
       const bool retained =
-          (scope.preserved_uniform_color.has_value() &&
-           uniform_catalog_[*index].color_ == *scope.preserved_uniform_color) ||
-          std::find(retained_keys.begin(), retained_keys.end(), key) != retained_keys.end();
+          retained_marked || (scope.preserved_uniform_color.has_value() &&
+                              uniform_catalog_[*index].color_ == *scope.preserved_uniform_color);
+      if (retained_marked) {
+        raw_slot_directory_[*index] = kNoRawSlot;
+      }
       if (!retained && scope.cross_zoom_invalidated != nullptr && zoom != scope.priority_zoom) {
         ++*scope.cross_zoom_invalidated;
       }
@@ -254,7 +260,6 @@ void MaterializedCanvas::invalidate_zoom_uniforms(ZoomLevel zoom, PixelRect worl
 }
 
 void MaterializedCanvas::invalidate_uniforms(PixelRect world_bounds,
-                                             std::span<const TileKey> retained_keys,
                                              const InPlaceCommitScope& scope) {
   if (!valid_world_bounds(world_bounds)) {
     return;
@@ -264,7 +269,7 @@ void MaterializedCanvas::invalidate_uniforms(PixelRect world_bounds,
   constexpr std::array zooms{ZoomLevel::k50Percent, ZoomLevel::k100Percent, ZoomLevel::k200Percent,
                              ZoomLevel::k400Percent};
   for (const ZoomLevel zoom : zooms) {
-    invalidate_zoom_uniforms(zoom, world_bounds, retained_keys, scope);
+    invalidate_zoom_uniforms(zoom, world_bounds, scope);
   }
 }
 
@@ -645,15 +650,20 @@ void MaterializedCanvas::finish_in_place_revision(DocumentRevision revision,
                                                   PixelRect affected_world_bounds,
                                                   std::span<const TileKey> retained_keys,
                                                   const InPlaceCommitScope& scope) {
-  invalidate_uniforms(affected_world_bounds, retained_keys, scope);
+  for (const TileKey key : retained_keys) {
+    mark_retained_key(key, revision);
+  }
+  invalidate_uniforms(affected_world_bounds, scope);
+  for (const TileKey key : retained_keys) {
+    clear_retained_marker(key);
+  }
   for (std::size_t index = 0; index < slots_.size(); ++index) {
     MaterializedSlotStorage& slot = slots_[index];
     if (!slot.occupied_) {
       continue;
     }
     const bool affected = rectangles_intersect(tile_world_bounds(slot.key_), affected_world_bounds);
-    const bool retained = !affected || std::find(retained_keys.begin(), retained_keys.end(),
-                                                 slot.key_) != retained_keys.end();
+    const bool retained = !affected || slot.revision_ == revision;
     if (retained) {
       slot.revision_ = revision;
     } else {
@@ -664,6 +674,23 @@ void MaterializedCanvas::finish_in_place_revision(DocumentRevision revision,
     }
   }
   finish_revision(revision, affected_world_bounds);
+}
+
+void MaterializedCanvas::mark_retained_key(TileKey key, DocumentRevision revision) {
+  if (const auto raw = find_tile(key); raw.has_value()) {
+    slots_[*raw].revision_ = revision;
+    return;
+  }
+  if (const auto uniform = find_uniform(key); uniform.has_value()) {
+    raw_slot_directory_[*uniform] = kRetainedUniformSlot;
+  }
+}
+
+void MaterializedCanvas::clear_retained_marker(TileKey key) {
+  if (const auto identity = tile_identity_index(key);
+      identity.has_value() && raw_slot_directory_[*identity] == kRetainedUniformSlot) {
+    raw_slot_directory_[*identity] = kNoRawSlot;
+  }
 }
 
 OverviewStageStatus MaterializedCanvas::stage_in_place_overview_rows(
@@ -756,6 +783,27 @@ InPlaceMetadataSlice MaterializedCanvas::stage_in_place_metadata(
     case InPlaceMetadataPhase::kUniforms: {
       constexpr std::array zooms{ZoomLevel::k50Percent, ZoomLevel::k100Percent,
                                  ZoomLevel::k200Percent, ZoomLevel::k400Percent};
+      constexpr std::size_t kMarkRetained = kTiledZoomCount + 1U;
+      constexpr std::size_t kClearRetained = kTiledZoomCount + 2U;
+      if (stage.metadata_zoom_ == kMarkRetained) {
+        if (!stage.raw_staging_started_) {
+          staged_in_place_revision_ = revision;
+          staged_in_place_active_ = true;
+          stage.raw_staging_started_ = true;
+          mutated = true;
+        }
+        while (stage.metadata_offset_ < retained.size() && output.work_items < max_work_items) {
+          mark_retained_key(retained[stage.metadata_offset_], revision);
+          ++stage.metadata_offset_;
+          ++output.work_items;
+          mutated = true;
+        }
+        if (stage.metadata_offset_ != retained.size()) {
+          break;
+        }
+        stage.metadata_zoom_ = 0U;
+        stage.metadata_offset_ = 0U;
+      }
       while (stage.metadata_zoom_ < zooms.size() && output.work_items < max_work_items) {
         const ZoomLevel zoom = zooms[stage.metadata_zoom_];
         const int percent = zoom_percent(zoom);
@@ -784,9 +832,14 @@ InPlaceMetadataSlice MaterializedCanvas::stage_in_place_metadata(
           const auto index = tile_identity_index(key);
           if (index.has_value() && uniform_catalog_[*index].occupied_ &&
               rectangles_intersect(tile_world_bounds(key), affected_world_bounds)) {
-            const bool keep = (scope.preserved_uniform_color.has_value() &&
-                               uniform_catalog_[*index].color_ == *scope.preserved_uniform_color) ||
-                              std::find(retained.begin(), retained.end(), key) != retained.end();
+            const bool retained_marked = raw_slot_directory_[*index] == kRetainedUniformSlot;
+            const bool keep = retained_marked ||
+                              (scope.preserved_uniform_color.has_value() &&
+                               uniform_catalog_[*index].color_ == *scope.preserved_uniform_color);
+            if (retained_marked) {
+              raw_slot_directory_[*index] = kNoRawSlot;
+              mutated = true;
+            }
             if (!keep) {
               uniform_catalog_[*index].occupied_ = false;
               stage.cross_zoom_invalidated_ += zoom != scope.priority_zoom ? 1U : 0U;
@@ -802,24 +855,28 @@ InPlaceMetadataSlice MaterializedCanvas::stage_in_place_metadata(
         }
       }
       if (stage.metadata_zoom_ == zooms.size()) {
+        stage.metadata_zoom_ = kClearRetained;
+        stage.metadata_offset_ = retained.size();
+      }
+      while (stage.metadata_zoom_ == kClearRetained && stage.metadata_offset_ != 0U &&
+             output.work_items < max_work_items) {
+        --stage.metadata_offset_;
+        clear_retained_marker(retained[stage.metadata_offset_]);
+        ++output.work_items;
+        mutated = true;
+      }
+      if (stage.metadata_zoom_ == kClearRetained && stage.metadata_offset_ == 0U) {
         stage.metadata_phase_ = InPlaceMetadataPhase::kRawSlots;
       }
       break;
     }
     case InPlaceMetadataPhase::kRawSlots: {
-      if (!stage.raw_staging_started_) {
-        staged_in_place_revision_ = revision;
-        staged_in_place_active_ = true;
-        stage.raw_staging_started_ = true;
-        mutated = true;
-      }
       while (stage.raw_slot_ < slots_.size() && output.work_items < max_work_items) {
         MaterializedSlotStorage& slot = slots_[stage.raw_slot_];
         if (slot.occupied_) {
           const bool affected =
               rectangles_intersect(tile_world_bounds(slot.key_), affected_world_bounds);
-          const bool keep =
-              !affected || std::find(retained.begin(), retained.end(), slot.key_) != retained.end();
+          const bool keep = !affected || slot.revision_ == revision;
           if (keep) {
             slot.revision_ = revision;
           } else {
@@ -928,6 +985,9 @@ void MaterializedCanvas::cancel_in_place_stage(InPlaceOverviewStage& stage) {
   if (!stage.raw_staging_started_ || !staged_in_place_active_ ||
       staged_in_place_revision_ != stage.revision_) {
     return;
+  }
+  for (const TileKey key : std::span(stage.retained_keys_, stage.retained_count_)) {
+    clear_retained_marker(key);
   }
   for (MaterializedSlotStorage& slot : slots_) {
     if (slot.occupied_ && slot.revision_ == stage.revision_) {
