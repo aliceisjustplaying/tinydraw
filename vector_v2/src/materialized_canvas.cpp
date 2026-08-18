@@ -452,14 +452,15 @@ bool MaterializedCanvas::valid_incremental_revision(
         tile_publications.begin() + static_cast<std::ptrdiff_t>(index);
     const bool resident =
         find_tile(publication.key).has_value() || find_uniform(publication.key).has_value();
-    const auto analysis = analyze_tile_payload(publication.pixels, width, height);
+    const auto classified_color =
+        tile_uniform_color(publication.pixels, width, height, static_cast<std::size_t>(width));
     if (!key_is_affected || !publication_is_unique || !resident ||
         publication.quality == MaterializationQuality::kOverviewFallback ||
-        publication.pixels.size() != expected_pixels || !analysis.has_value() ||
+        publication.pixels.size() != expected_pixels ||
         !accepts_external_workspace(std::as_bytes(publication.pixels))) {
       return false;
     }
-    raw_publications += !analysis->uniform;
+    raw_publications += !classified_color.has_value();
   }
   return raw_publications <= slots_.size();
 }
@@ -551,15 +552,16 @@ bool MaterializedCanvas::commit_incremental_revision(
   }
   for (const TileRevisionPublication& publication : tile_publications) {
     const PixelRect bounds = tile_pixel_bounds(publication.key);
-    const auto analysis =
-        analyze_tile_payload(publication.pixels, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0);
+    const auto classified_color =
+        tile_uniform_color(publication.pixels, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0,
+                           static_cast<std::size_t>(bounds.x1 - bounds.x0));
     const auto uniform_index = tile_identity_index(publication.key);
-    if (analysis.has_value() && analysis->uniform && uniform_index.has_value()) {
+    if (classified_color.has_value() && uniform_index.has_value()) {
       if (const auto slot_index = find_tile(publication.key); slot_index.has_value()) {
         release_slot(*slot_index);
       }
       MaterializedUniformStorage& uniform = uniform_catalog_[*uniform_index];
-      uniform.color_ = analysis->uniform_color;
+      uniform.color_ = *classified_color;
       uniform.quality_ = publication.quality;
       uniform.occupied_ = true;
       continue;

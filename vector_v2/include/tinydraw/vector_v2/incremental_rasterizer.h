@@ -166,16 +166,6 @@ struct OperationSweepCursor {
     const RasterSurface& surface, std::span<std::uint8_t> finalized_pixels,
     MaskedRowSummary* summary, OperationSweepSlice& slice);
 
-// Unmasked companion for caller-owned operation replay. It paints a prepared
-// batch in row-boundary quanta and is exact for one operation because every
-// chord has the same opaque color. max_work_px is a scheduling charge, not a
-// pixel-count promise; at least one live row completes per call.
-[[nodiscard]] bool apply_operation_chord_rows(OperationTool tool, std::uint16_t color,
-                                              std::span<const std::byte> chord_storage,
-                                              const OperationChordBatch& batch, int first_row,
-                                              std::size_t max_work_px, const RasterSurface& surface,
-                                              OperationSweepSlice& slice);
-
 // Intra-row resumable unmasked replay. Stops at a chord boundary once the
 // work charge reaches max_work_px; one chord is the smallest atomic unit.
 // Initialize cursor to {batch.clipped_bounds.y0, 0}. Completion is
