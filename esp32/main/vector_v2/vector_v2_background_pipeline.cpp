@@ -14,8 +14,23 @@ using vector_v2::PixelRect;
 using vector_v2::ViewRequest;
 using vector_v2::ZoomLevel;
 
+// One quiet-time tick may use several work quanta; touch urgency is sampled
+// before every quantum, limiting preemption latency to one 512-work slice.
 constexpr std::int64_t kSettleSliceBudgetUs = 8'000;
+constexpr std::size_t kSettleWorkPixels = 512U;
+constexpr std::int64_t kAbsorbSliceBudgetUs = 1'500;
+constexpr std::size_t kAbsorbRasterWorkPixels = 256U;
 constexpr std::uint8_t kSettleRetryLimit = 3U;
+
+struct AbsorbSliceLimit {
+  TouchUrgencyProbe touch_urgency{};
+  std::int64_t deadline_us = 0;
+
+  static bool requested(const void* context) {
+    const auto& limit = *static_cast<const AbsorbSliceLimit*>(context);
+    return limit.touch_urgency.requested() || esp_timer_get_time() >= limit.deadline_us;
+  }
+};
 
 const char* zoom_name(ZoomLevel zoom) {
   switch (zoom) {
@@ -113,7 +128,11 @@ void VectorV2BackgroundPipeline::reset_document_state() {
   repair_planned_ = false;
 
   drain_swap_world_.reset();
+  absorption_.cancel();
   drain_operations_ = 0;
+  drain_slices_ = 0;
+  drain_restarts_ = 0;
+  drain_max_pending_ = 0;
   drain_total_us_ = 0;
   drain_max_us_ = 0;
   drain_failures_ = 0;
@@ -125,14 +144,23 @@ void VectorV2BackgroundPipeline::reset_document_state() {
 bool VectorV2BackgroundPipeline::drain_boundary(BackgroundDrainBoundary boundary) {
   const std::int64_t started = esp_timer_get_time();
   std::uint32_t operations = 0U;
-  while (vector_v2::pending_operation_count(log_, canvas_) != 0U) {
-    if (!vector_v2::absorb_pending_operation(
-             log_, canvas_, append_workspace_, priority_view(presenter_),
-             {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs})
-             .has_value()) {
+  // A quiet-time continuation may carry the larger idle-retention policy.
+  // Restarting is pixel-idempotent and keeps this synchronous boundary on its
+  // own policy fingerprint.
+  absorption_.cancel();
+  producer_.cancel_pending_work();
+  while (absorption_.active() || vector_v2::pending_operation_count(log_, canvas_) != 0U) {
+    const auto absorbed = vector_v2::absorb_pending_operation_slice(
+        log_, canvas_, append_workspace_, absorption_, priority_view(presenter_), {},
+        {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs});
+    if (absorbed.status == vector_v2::PendingAbsorptionStatus::kComplete) {
+      ++operations;
+    } else if (absorbed.status == vector_v2::PendingAbsorptionStatus::kIdle) {
+      break;
+    } else if (absorbed.status == vector_v2::PendingAbsorptionStatus::kError) {
+      absorption_.cancel();
       break;
     }
-    ++operations;
   }
   const bool lockstep = log_.current_revision() == canvas_.current_revision();
   if (boundary == BackgroundDrainBoundary::kPan) {
@@ -153,6 +181,9 @@ bool VectorV2BackgroundPipeline::drain_boundary(BackgroundDrainBoundary boundary
       drain_swap_world_.reset();
       drain_ready_to_present_ = false;
       drain_operations_ = 0U;
+      drain_slices_ = 0U;
+      drain_restarts_ = 0U;
+      drain_max_pending_ = 0U;
       drain_total_us_ = 0;
       drain_max_us_ = 0;
       drain_failures_ = 0U;
@@ -162,9 +193,13 @@ bool VectorV2BackgroundPipeline::drain_boundary(BackgroundDrainBoundary boundary
 }
 
 void VectorV2BackgroundPipeline::reset_settle_pass() {
+  settle_render_.cursor.cancel();
+  settle_render_ = {};
   settle_cursor_ = 0;
   settle_complete_ = false;
   settle_tiles_ = 0;
+  settle_slices_ = 0;
+  settle_work_ = 0;
   settle_total_us_ = 0;
   settle_max_us_ = 0;
   settle_failures_ = 0;
@@ -378,44 +413,61 @@ void VectorV2BackgroundPipeline::run_settle(std::uint32_t loop_us,
     if (touch_urgency.requested()) {
       break;
     }
-    const int column = static_cast<int>(settle_cursor_ % columns);
-    const int row = static_cast<int>(settle_cursor_ / columns);
-    const std::int64_t tile_started = esp_timer_get_time();
-    vector_v2::SettledTileStats stats{};
-    PixelRect bounds{};
-    bool rendered = false;
-    if (overview) {
-      bounds = {column * vector_v2::kTileWidth, row * vector_v2::kTileHeight,
-                std::min((column + 1) * vector_v2::kTileWidth, vector_v2::kOverviewWidth),
-                std::min((row + 1) * vector_v2::kTileHeight, vector_v2::kOverviewHeight)};
-      rendered = vector_v2::render_settled_window(log_, ZoomLevel::k25Percent, bounds,
-                                                  settle_workspace_, settle_pixels_, &stats) &&
-                 presenter_.stage_settled_pixels(bounds, settle_pixels_, bounds.x1 - bounds.x0);
-    } else {
-      const vector_v2::TileKey key{presenter_.zoom(),
-                                   static_cast<std::uint16_t>(first_column + column),
-                                   static_cast<std::uint16_t>(first_row + row)};
-      const auto source = canvas_.lookup(key);
-      if (!source.has_value() || source->kind != vector_v2::SourceKind::kTileSlot ||
-          source->quality >= vector_v2::MaterializationQuality::kSettled) {
-        ++settle_cursor_;
-        settle_retry_count_ = 0U;
-        continue;
+    if (!settle_render_.active) {
+      const int column = static_cast<int>(settle_cursor_ % columns);
+      const int row = static_cast<int>(settle_cursor_ / columns);
+      settle_render_.overview = overview;
+      if (overview) {
+        settle_render_.level_bounds = {
+            column * vector_v2::kTileWidth, row * vector_v2::kTileHeight,
+            std::min((column + 1) * vector_v2::kTileWidth, vector_v2::kOverviewWidth),
+            std::min((row + 1) * vector_v2::kTileHeight, vector_v2::kOverviewHeight)};
+      } else {
+        settle_render_.key = {presenter_.zoom(), static_cast<std::uint16_t>(first_column + column),
+                              static_cast<std::uint16_t>(first_row + row)};
+        const auto source = canvas_.lookup(settle_render_.key);
+        if (!source.has_value() || source->kind != vector_v2::SourceKind::kTileSlot ||
+            source->quality >= vector_v2::MaterializationQuality::kSettled) {
+          ++settle_cursor_;
+          settle_retry_count_ = 0U;
+          continue;
+        }
+        settle_render_.level_bounds = vector_v2::tile_pixel_bounds(settle_render_.key);
       }
-      bounds = vector_v2::tile_pixel_bounds(key);
-      rendered =
-          vector_v2::render_settled_tile(log_, key, settle_workspace_, settle_pixels_, &stats) &&
-          canvas_
-              .publish_tile(key, canvas_.current_revision(),
-                            vector_v2::MaterializationQuality::kSettled, settle_pixels_)
-              .has_value();
+      settle_render_.cursor.cancel();
+      settle_render_.active = true;
     }
+
+    const std::int64_t render_started = esp_timer_get_time();
+    const auto slice = vector_v2::render_settled_window_slice(
+        log_, settle_render_.overview ? ZoomLevel::k25Percent : settle_render_.key.zoom,
+        settle_render_.level_bounds, settle_workspace_, settle_pixels_, settle_render_.cursor,
+        kSettleWorkPixels);
+    const PixelRect bounds = settle_render_.level_bounds;
+    bool rendered = false;
+    if (slice.status == vector_v2::SettledRenderStatus::kComplete) {
+      rendered =
+          settle_render_.overview
+              ? presenter_.stage_settled_pixels(bounds, settle_pixels_, bounds.x1 - bounds.x0)
+              : canvas_
+                    .publish_tile(settle_render_.key, canvas_.current_revision(),
+                                  vector_v2::MaterializationQuality::kSettled, settle_pixels_)
+                    .has_value();
+    }
+    const std::int64_t render_us = esp_timer_get_time() - render_started;
+    ++settle_slices_;
+    settle_work_ += slice.work_px;
+    settle_total_us_ += render_us;
+    settle_max_us_ = std::max(settle_max_us_, render_us);
+    if (slice.status == vector_v2::SettledRenderStatus::kInProgress) {
+      continue;
+    }
+
+    settle_render_.cursor.cancel();
+    settle_render_.active = false;
     if (rendered) {
-      const std::int64_t tile_us = esp_timer_get_time() - tile_started;
       include_bounds(batch_bounds, bounds);
       ++settle_tiles_;
-      settle_total_us_ += tile_us;
-      settle_max_us_ = std::max(settle_max_us_, tile_us);
       ++settle_cursor_;
       settle_retry_count_ = 0U;
     } else {
@@ -450,10 +502,11 @@ void VectorV2BackgroundPipeline::run_settle(std::uint32_t loop_us,
     settle_complete_ = true;
     if (settle_tiles_ != 0U || settle_failures_ != 0U) {
       std::printf(
-          "TINYDRAW_LIVE_SETTLE zoom=%s tiles=%lu total_us=%lld max_tile_us=%lld "
-          "failures=%lu permanent_failures=%lu\n",
+          "TINYDRAW_LIVE_SETTLE zoom=%s tiles=%lu slices=%lu total_us=%lld "
+          "max_slice_us=%lld work=%llu failures=%lu permanent_failures=%lu\n",
           zoom_name(presenter_.zoom()), static_cast<unsigned long>(settle_tiles_),
-          static_cast<long long>(settle_total_us_), static_cast<long long>(settle_max_us_),
+          static_cast<unsigned long>(settle_slices_), static_cast<long long>(settle_total_us_),
+          static_cast<long long>(settle_max_us_), static_cast<unsigned long long>(settle_work_),
           static_cast<unsigned long>(settle_failures_),
           static_cast<unsigned long>(settle_permanent_failures_));
       std::fflush(stdout);
@@ -471,30 +524,55 @@ BackgroundSliceResult VectorV2BackgroundPipeline::run_slice(const BackgroundSlic
     reset_settle_fingerprint();
   }
 
-  const std::size_t idle_pending = !input.pressed && !input.panning && !input.sample_ready
-                                       ? vector_v2::pending_operation_count(log_, canvas_)
-                                       : 0U;
-  if (idle_pending != 0U && drain_failures_ < 16U && !input.touch_urgency.requested()) {
+  std::size_t pending = vector_v2::pending_operation_count(log_, canvas_);
+  drain_max_pending_ = std::max(drain_max_pending_, pending);
+  if (pending != 0U) {
+    drain_ready_to_present_ = false;
+  }
+  const bool absorption_allowed = !input.panning && !input.sample_ready &&
+                                  !input.lift_report_pending && drain_failures_ < 16U &&
+                                  !input.touch_urgency.requested();
+  if ((absorption_.active() || pending != 0U) && absorption_allowed) {
+    if (!absorption_.active()) {
+      // A producer group targets the canvas revision absorption is about to
+      // replace, so its unpublished work cannot survive the commit. Dropping
+      // it also makes the shared chord workspace exclusively available.
+      producer_.cancel_pending_work();
+    }
     const std::int64_t started = esp_timer_get_time();
-    const auto absorbed = vector_v2::absorb_pending_operation(
-        log_, canvas_, append_workspace_, priority_view(presenter_),
+    const AbsorbSliceLimit limit{.touch_urgency = input.touch_urgency,
+                                 .deadline_us = started + kAbsorbSliceBudgetUs};
+    const auto absorbed = vector_v2::absorb_pending_operation_slice(
+        log_, canvas_, append_workspace_, absorption_, priority_view(presenter_),
+        {.requested = &AbsorbSliceLimit::requested,
+         .context = &limit,
+         .raster_work_px = kAbsorbRasterWorkPixels},
         {.now_us = &esp_timer_get_time, .budget_us = kIdleAbsorbBudgetUs});
     const std::int64_t elapsed = esp_timer_get_time() - started;
-    if (absorbed.has_value()) {
+    ++drain_slices_;
+    drain_total_us_ += elapsed;
+    drain_max_us_ = std::max(drain_max_us_, elapsed);
+    if (absorbed.status == vector_v2::PendingAbsorptionStatus::kComplete) {
       ++drain_operations_;
-      drain_total_us_ += elapsed;
-      drain_max_us_ = std::max(drain_max_us_, elapsed);
-      if (vector_v2::pending_operation_count(log_, canvas_) == 0U) {
+      pending = vector_v2::pending_operation_count(log_, canvas_);
+      if (pending == 0U) {
         drain_ready_to_present_ = true;
       }
-    } else {
-      ++drain_failures_;
+    } else if (absorbed.status == vector_v2::PendingAbsorptionStatus::kError) {
+      const bool superseded = absorption_.active();
+      absorption_.cancel();
+      if (superseded) {
+        ++drain_restarts_;
+      } else {
+        ++drain_failures_;
+      }
     }
   }
 
   const bool drain_presentation_allowed =
       !input.pressed && !input.panning && !input.sample_ready && !input.lift_report_pending;
-  if (drain_ready_to_present_ && drain_presentation_allowed && !input.touch_urgency.requested()) {
+  if (drain_ready_to_present_ && pending == 0U && !absorption_.active() &&
+      drain_presentation_allowed && !input.touch_urgency.requested()) {
     LivePresentationTiming swap{};
     swap.passed = true;
     std::int64_t swap_wall_us = 0;
@@ -515,13 +593,18 @@ BackgroundSliceResult VectorV2BackgroundPipeline::run_slice(const BackgroundSlic
     }
     if (swap.passed && !history_controls_dirty_) {
       std::printf(
-          "TINYDRAW_LIVE_DRAIN ops=%lu total_us=%lld max_us=%lld failures=%lu "
-          "swap_wall_us=%lld swap_pass=%u\n",
-          static_cast<unsigned long>(drain_operations_), static_cast<long long>(drain_total_us_),
+          "TINYDRAW_LIVE_DRAIN ops=%lu slices=%lu restarts=%lu max_pending=%lu total_us=%lld "
+          "max_slice_us=%lld failures=%lu swap_wall_us=%lld swap_pass=%u\n",
+          static_cast<unsigned long>(drain_operations_), static_cast<unsigned long>(drain_slices_),
+          static_cast<unsigned long>(drain_restarts_),
+          static_cast<unsigned long>(drain_max_pending_), static_cast<long long>(drain_total_us_),
           static_cast<long long>(drain_max_us_), static_cast<unsigned long>(drain_failures_),
           static_cast<long long>(swap_wall_us), swap.passed);
       std::fflush(stdout);
       drain_operations_ = 0U;
+      drain_slices_ = 0U;
+      drain_restarts_ = 0U;
+      drain_max_pending_ = 0U;
       drain_total_us_ = 0;
       drain_max_us_ = 0;
       drain_failures_ = 0U;
@@ -535,7 +618,8 @@ BackgroundSliceResult VectorV2BackgroundPipeline::run_slice(const BackgroundSlic
     fill_timing_ = {};
     fill_measurement_active_ = false;
   }
-  if (fill_allowed && idle_pending == 0U) {
+  pending = vector_v2::pending_operation_count(log_, canvas_);
+  if (fill_allowed && pending == 0U && !absorption_.active()) {
     const ViewRequest view{
         .zoom = presenter_.zoom(),
         .level_pixels = {presenter_.level_x(), presenter_.level_y(),
@@ -560,7 +644,8 @@ BackgroundSliceResult VectorV2BackgroundPipeline::run_slice(const BackgroundSlic
              vector_v2::pending_operation_count(log_, canvas_) == 0U) {
     run_settle(input.loop_us, input.touch_urgency);
   }
-  result.fill_busy = fill_allowed && (!fill_complete_ || pending_fill_.pending);
+  result.fill_busy = absorption_.active() || pending != 0U ||
+                     (fill_allowed && (!fill_complete_ || pending_fill_.pending));
   return result;
 }
 

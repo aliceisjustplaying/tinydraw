@@ -39,26 +39,14 @@ inline constexpr std::size_t kLiveRegionScratchPixels = kMaximumProgressiveRegio
 // commit must paint; the mixed-draw and long-gesture gates re-prove the
 // 15 ms slice bound with this exact constant.
 inline constexpr std::size_t kInteractiveChunkSampleLimit = 32;
-// Wall-clock bound for one in-place chunk commit (overview replay plus
-// visible-tile painting). Tiles that do not fit are dropped to correct
-// overview fallback and re-produced lazily. The deadline is checked between
-// tiles, so the worst commit is budget + one uniform-conversion paint
-// (~2 ms) + the commit tail (~1.5 ms); 10 ms keeps that under the 15 ms
-// alarm. The uninterruptible full-width 25% overview band replay (~13.7 ms
-// worst) is the other measured ceiling and the next optimization target.
-// Bounds only the offscreen raw retention pass of an in-place append; see
-// InPlaceRetentionBudget. It does not bound the complete commit.
+// Offscreen-retention policy for synchronous history/navigation boundaries.
+// Interactive authority publication no longer runs absorption inline.
 inline constexpr std::int64_t kInPlaceRetentionBudgetUs = 10'000;
-// Idle absorption retention budget. Absorption runs between input polls, so
-// it can afford more retention than the input-path commit: 25 ms bounds the
-// idle poll gap while letting the déjà-vu all-zoom retention actually paint
-// the revisit-bound tiles (10 ms skipped 150-200 of them per XL stroke).
-// The high-water input-path fallback keeps kInPlaceRetentionBudgetUs.
+// Cooperative absorption may spend this much measured compute retaining
+// revisit-bound offscreen tiles across its bounded foreground slices.
 inline constexpr std::int64_t kIdleAbsorbBudgetUs = 25'000;
-// Committed-overlay pending-range high-water mark. A chunk commit that
-// finds this many unabsorbed operations pays one synchronous absorption
-// first (design §3.5 degradation: today's behavior as the worst case),
-// bounding both the drain backlog and the per-present overlay repaint cost.
+// Acceptance guard for the committed-overlay backlog. Product absorption is
+// cooperative; device traces fail if it cannot stay below this bound.
 inline constexpr std::size_t kPendingOperationHighWater = 24;
 // Cold-fill producer slices run to this deadline before yielding to input.
 // The worst observed single resumable produce_next step is ~11.2 ms (a seed-7

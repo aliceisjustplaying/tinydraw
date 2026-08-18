@@ -381,6 +381,8 @@ void run_vector_v2_app() {
       .affected_keys = std::span(storage.affected_keys,
                                  vector_v2::kTileSlotCount + vector_v2::kMaximumVisibleTiles),
       .tile_mask = std::span(storage.chunk_mask, vector_v2::kInPlaceTileMaskBytes),
+      .operation_chord_plans = std::as_writable_bytes(
+          std::span(storage.producer_chord_plans, vector_v2::kOperationChordStorageBytes / 4U)),
   };
   LiveStrokeSession stroke(std::span(storage.input_samples, kInputSampleCapacity), log, canvas,
                            workspace, presenter);

@@ -49,15 +49,12 @@ struct LiveStrokeFinishResult {
   LiveStrokeMetrics metrics{};
   vector_v2::InPlaceAppendPhases phase_max{};
   vector_v2::InPlaceRetainDrops drops{};
-  vector_v2::InPlaceRetainDrops high_water_drops{};
   std::int64_t finish_preview_us = 0;
   std::int64_t builder_finish_us = 0;
   std::int64_t append_us = 0;
   std::int64_t append_max_us = 0;
   std::int64_t refresh_wall_us = 0;
   std::uint32_t chunks = 0;
-  std::uint32_t high_water_absorptions = 0;
-  std::int64_t high_water_absorb_max_us = 0;
   bool committed = false;
   bool commit_failed = false;
 };
@@ -110,12 +107,9 @@ class LiveStrokeSession {
   LiveStrokeMetrics metrics_{};
   vector_v2::InPlaceAppendPhases phase_max_{};
   vector_v2::InPlaceRetainDrops drops_{};
-  vector_v2::InPlaceRetainDrops high_water_drops_{};
   std::uint32_t chunks_ = 0;
   std::int64_t append_us_ = 0;
   std::int64_t append_max_us_ = 0;
-  std::uint32_t high_water_absorptions_ = 0;
-  std::int64_t high_water_absorb_max_us_ = 0;
   bool commit_failed_ = false;
 };
 
