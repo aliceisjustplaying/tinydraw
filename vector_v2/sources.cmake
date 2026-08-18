@@ -15,8 +15,8 @@ set(TINYDRAW_VECTOR_V2_SRCS
   "${CMAKE_CURRENT_LIST_DIR}/src/operation_spatial_index.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/settled_tile.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/svg_export.cpp"
-  "${CMAKE_CURRENT_LIST_DIR}/src/tile_payload_analysis.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/tile_producer.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/src/tile_uniform.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/touch_event_buffer.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/world_export.cpp"
 )
@@ -24,4 +24,5 @@ set(TINYDRAW_VECTOR_V2_SRCS
 set(TINYDRAW_VECTOR_V2_DIAGNOSTIC_SRCS
   "${CMAKE_CURRENT_LIST_DIR}/src/ink_trace.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/rerender_ledger.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/src/tile_payload_analysis.cpp"
 )

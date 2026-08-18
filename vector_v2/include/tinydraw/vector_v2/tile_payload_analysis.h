@@ -6,7 +6,7 @@
 #include <optional>
 #include <span>
 
-#include "tinydraw/vector_v2/materialized_canvas.h"
+#include "tinydraw/vector_v2/tile_uniform.h"
 
 namespace tinydraw::vector_v2 {
 
@@ -14,14 +14,6 @@ namespace tinydraw::vector_v2 {
 // row-run stream needs one byte for a 1..64-pixel run length and two bytes for
 // its RGB565 value. No compressed storage policy depends on this estimate.
 inline constexpr std::size_t kEstimatedRowRunBytes = 3;
-
-// Product-side classification. Returns the shared color only when every
-// pixel in a valid strided tile window matches. Nonuniform and malformed
-// payloads both return nullopt; callers that accept arbitrary input validate
-// the shape separately.
-[[nodiscard]] std::optional<std::uint16_t> tile_uniform_color(std::span<const std::uint16_t> pixels,
-                                                              int width, int height,
-                                                              std::size_t source_stride);
 
 struct TilePayloadAnalysis {
   std::size_t pixel_count = 0;

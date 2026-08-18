@@ -5,6 +5,8 @@
 #include <array>
 #include <cstdint>
 
+#include "tinydraw/vector_v2/materialized_canvas.h"
+
 namespace vector_v2 = tinydraw::vector_v2;
 
 TEST_CASE("uniform tile classification exits without measurement data") {
