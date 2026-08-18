@@ -19,9 +19,16 @@ and the owner’s final glass test are also green. A final host round accepts
 F10’s sparse spatial history replay, F13’s all-zoom local-span AA work, and
 F21’s direct retained-key markers. F13’s product timing kept every slice below
 2.341 ms with zero failures. Whole-view settle passed at 25% in 396.111 ms but
-took 603.894–1,026.000 ms at 50–400%. F13 is therefore a host-accepted
-optimization but is not physically accepted. F24 is physically accepted with
-a green 11-case cold A/B and an all-ones full gate. Settled AA remains yellow.
+took 603.894–1,026.000 ms at 50–400%. The local-span treatment therefore lacks
+a same-tree physical baseline. A follow-up exact host treatment
+removes fully hidden raster work with zero product storage growth and improves
+the five-corpus total 23.1–52.7% at 100–400%, but its revision-160 device run
+still took 624.740–1,003.380 ms at 50–400% and showed no persuasive physical
+gain. That treatment is reverted. A same-revision-162 physical A/B accepts the
+settled-tile IRAM mapping with 6.52–7.45% gains at every zoom, identical work,
+and zero failures. F24 is physically accepted with a green 11-case cold A/B
+and an all-ones full gate. Settled AA remains yellow because 50–400% still
+exceed 500 ms.
 
 ## Measurement baseline
 
@@ -46,7 +53,7 @@ not a universal host-wall win.
 
 | Review findings | Accepted change and evidence |
 |---|---|
-| F1; F2 partial | Blank boot uses `reset_blank`; autosave restore rebuilds the exact overview and a conservative tiled-may-ink map. Pen bounds only set bits; erasers never unsafely clear them. Boundary and 400% minimum-radius tests cover the occupancy certificate. Affected-cell clearing/reclassification remains open, so erase-heavy sessions can retain false-positive occupancy until a safe rebuild. |
+| F1; F2 | Blank boot uses `reset_blank`; autosave restore and completed Undo/Redo rebuild the exact conservative tiled-may-ink map. History reuses 1,288 bytes of caller scratch after commit; branch replacement inherits its preceding Undo rebuild and marks the new branch normally. There is no per-chunk scan or persistent-memory growth. Active pen bounds remain conservative after erase-only overlap because overview paper cannot disprove high-zoom hairlines. |
 | F3–F5, F16–F18 | Local refresh, settled staging, chrome, provisional ink, committed ink, and exposed-strip pending-authority overlays operate on the toroidal frame ring. Canvas and chrome bands remain separate, byte order is preserved, and partial failures drain queued display work. `TINYDRAW_GATE1_RING_LOCAL ... pass=1`; the next pan remains reusable. |
 | F6–F8 | The sampler now signals empty-to-nonempty through a binary semaphore, keeps stop signaling separate, publishes an allocation-free urgent atomic, and self-deletes after cross-core teardown. The main loop drains queued events before cosmetic work, handles one cosmetic transition per iteration, and blocks on the event wake when idle. |
 | F6–F9 | Hard queue overflow now resynchronizes to a valid Down/Up stream and reports `touch_resyncs`. Background fill, repair, settle, absorption, and presentation boundaries consult touch urgency. In the accepted gate, `touch_resyncs=0`; draw-while-fill measured 4.904 ms poll gap, 8.049 ms maximum compute slice, and passed. |
@@ -198,6 +205,24 @@ candidate enumeration and keeps the original full-prefix path, measuring
 growth is zero bytes. The complete receipt is
 [`F10_HISTORY_SPATIAL_REPLAY_2026_08_18.md`](../F10_HISTORY_SPATIAL_REPLAY_2026_08_18.md).
 
+### F2 completed-history may-ink rebuild — accepted
+
+Completed Undo and Redo now rebuild the 1,288-byte tiled may-ink proof from the
+active pen authority after the transition commits. The rebuild reuses caller
+scratch and costs 1.125 us for the representative Undo, 3.375 us for Redo, and
+1.542 us for branch replacement. Branch replacement inherits the rebuild from
+its required preceding Undo, then marks the new branch operation normally.
+There is no per-chunk scan or persistent-memory growth.
+
+At 100–400%, representative Undo producer time improves 32.2–57.7% and branch
+replacement improves 19.9–49.3%; adversarial full Undo improves 87.5–92.9%.
+All 30 map/view cases compose exact pixels. False-positive replay creates
+uniform paper, so this treatment removes cold/immediate producer work but adds
+zero settled tiles and zero settled work. Erase-only overlap remains
+conservative while active pen bounds exist because overview paper cannot prove
+a high-zoom hairline absent. Full evidence is in
+[`F2_OCCUPANCY_HISTORY_REBUILD_2026_08_18.md`](../F2_OCCUPANCY_HISTORY_REBUILD_2026_08_18.md).
+
 ### F13 banded 25% settle — exact rejection A/B
 
 All candidates produced exact pixels. On the distributed 1,000-operation
@@ -216,7 +241,7 @@ its long-stroke win does not generalize and its larger form spends substantial
 memory. The exact tiled implementation remained while a different treatment
 was measured.
 
-### F13 all-zoom local-span AA — host accepted, physical not accepted
+### F13 all-zoom local-span AA — host and IRAM accepted; follow-up rejected
 
 The accepted host treatment tracks the x/y alpha span touched by each
 operation and clears/composites only that span. It keeps painter order,
@@ -250,6 +275,55 @@ identity. There is no same-tree device full-alpha baseline, so the run does not
 establish a physical local-span speedup. During later 400% panning the owner
 saw transient blue dots; this receipt does not assign a cause or connect them
 to F13.
+
+Phase timing after local spans attributed 87.3–91.1% of measured renderer time
+to raster math at every zoom; mean query plus scan was only 0.124–0.184 ms and
+publication 0.021–0.029 ms. The exact follow-up skipped coverage math where the
+newest-first accumulated alpha is already 255 once half the window is opaque.
+It reused the existing alpha plane and saturation count, added no product state
+or workspace, and kept the original conservative raster work charge.
+
+Five alternating host process pairs, each already a median of five renders,
+kept all 25 RGB565 checksums exact. The five-corpus total changed by +0.2%,
+-5.6%, -23.1%, -42.0%, and -52.7% at 25%, 50%, 100%, 200%, and 400%.
+Every long-crossing, hairline/eraser, and dense case at 100–400% improved
+10.8–54.7%; no heavy corpus regressed materially. This cleared the host gate.
+The cold revision-160 device run recorded:
+
+| Zoom | Tiles | Slices | Total settle | Maximum slice | Failures |
+|---:|---:|---:|---:|---:|---:|
+| 25% | 42 | 1,650 | 418.266 ms | 2.263 ms | 0 |
+| 50% | 47 | 2,502 | 624.740 ms | 2.309 ms | 0 |
+| 100% | 51 | 3,863 | 915.430 ms | 2.119 ms | 0 |
+| 200% | 48 | 4,399 | 1,003.380 ms | 2.095 ms | 0 |
+| 400% | 48 | 3,388 | 735.274 ms | 2.097 ms | 0 |
+
+All slices and failures remained green, but 50–400% still exceeded 500 ms.
+Revision 160 is not like-for-like with revision 156; its raw totals were slower
+at 25–100% and only 2.2%/6.8% lower at 200%/400%, so there is no persuasive
+device gain. The saturated-skip production, diagnostic, benchmark, and test
+changes were reverted; the accepted local-span treatment remains.
+
+A cold same-revision-162 physical A/B then placed the settled-tile
+implementation in internal RAM:
+
+| Zoom | Flash text | Internal RAM | Change |
+|---:|---:|---:|---:|
+| 25% | 407.426 ms | 377.439 ms | -7.36% |
+| 50% | 606.535 ms | 561.363 ms | -7.45% |
+| 100% | 903.449 ms | 840.370 ms | -6.98% |
+| 200% | 1,027.491 ms | 958.249 ms | -6.74% |
+| 400% | 790.251 ms | 738.756 ms | -6.52% |
+
+Work was identical, failures were zero, and maximum slices improved or stayed
+in the 1.97–2.35 ms range. The mapping costs 4,528 bytes of text and 4,608
+bytes of internal heap and is physically accepted. The consistent all-zoom
+gain does not close the whole-view bound: 50–400% still exceed 500 ms.
+
+The owner also reproduced a transient blue dot during 50→100% zoom while
+cache/refinement was incomplete. It moved or disappeared as rendering
+progressed and did not recur on the immediate repeat. This rules out a pan-only
+trigger but does not identify a cause or connect it to either F13 treatment.
 
 ### F20 autosave caller latency — accepted treatment
 
@@ -342,6 +416,19 @@ source-warning failure. Linux CI remains open.
 
 ## Rejected and reverted experiments
 
+- **Adaptive settled AA bands (F13):** exact 368x11 windows reused the existing
+  4,096-pixel planes with zero persistent or scratch growth. They improved long
+  crossing by 2.64–3.60% at 25–100%, then regressed it by 11.94% at 200% and
+  57.61% at 400%; dense 400% regressed 83.09%. A zero-preflight hybrid retained
+  only 2.23–3.37% and breached the representative regression gate three times.
+  Rejected; see
+  [`SETTLED_AA_ADAPTIVE_BAND_PROBE_2026_08_18.md`](../SETTLED_AA_ADAPTIVE_BAND_PROBE_2026_08_18.md).
+- **Cross-tile settled candidate batching (F13):** one viewport query reused the
+  existing candidate span with zero extra bytes and exact per-tile operation
+  order in all 40 host comparisons. Its useful 400% cases projected to only
+  0.29–0.44% of whole-render time, while distributed 50% added 16.5%; a full
+  prepared-curve cache needs at least 30–120 KiB. Rejected; see
+  [`SETTLED_AA_CROSS_TILE_REUSE_PROBE_2026_08_18.md`](../SETTLED_AA_CROSS_TILE_REUSE_PROBE_2026_08_18.md).
 - **Prepared geometry cache (F12):** exact caller-funded cache keyed by
   epoch/operation/zoom recorded 131 hits, 34 misses, and 25,632 live bytes.
   Setup fell from roughly 0.36 to 0.031 ms in the minimized census, but the
@@ -418,24 +505,27 @@ firmware built at `0x103b70`, gate firmware at `0x130e50`, and Raster V1 at
 `0xe7a70`. The release cold scorecard and 29-step hairline-pan reproduction
 were exact. The final physical run returned the all-ones automated verdict
 described above. The owner’s follow-up glass test is green for the earlier
-round. F13 later ran on product; 25% completed in 396.111 ms, but its 50–400%
-whole-view totals exceeded 500 ms, so settled AA remains yellow.
+round. F13's retained IRAM mapping improves all zooms by 6.52–7.45% in its
+same-revision physical A/B, but the 50–400% whole-view totals still exceed
+500 ms, so settled AA remains yellow.
 
 The final performance round preserves exact output in all dedicated oracles.
-F10’s release authority suite passes 79/79 tests and 25,609
-assertions. F13 passes 25 frozen benchmark checks plus the Rendering and
-Authority/Export ASan suites. F21 passes the Debug, Release, and ASan rendering
-suites at 125/125 tests and 63,090 assertions. The F24 product and gate images
+F10’s release authority suite passes 79/79 tests and 25,609 assertions. The F2
+seam raises the complete ASan totals to 81/81 Authority/Export tests with
+25,643 assertions and 126/126 Rendering tests with 63,098 assertions. After
+reverting the physically rejected saturated skip, F13 also passes 25 frozen
+benchmark checks. F21 passes its recorded Debug, Release, and ASan rendering
+suites. The F24 product and gate images
 compile and link; its 11 paced cold A/B cases improve 6.93–11.68% and the full
 physical gate returns all ones.
 
 ## Remaining work
 
-1. F13 local-span AA needs a same-tree device A/B at every zoom on the recorded
-   corpora. Its unchanged correctness, workspace, and publication contracts
-   are host-proven, its 2.341 ms worst product slice is green, and 25% passes
-   at 396.111 ms. The captured 603.894–1,026.000 ms totals at 50–400% are not
-   accepted as the all-zoom performance finish line.
+1. F13 local spans remain host-accepted and settled-tile IRAM is physically
+   accepted, but settled AA still exceeds 500 ms at 50–400%.
+   Saturated-destination skipping, zero-memory cross-tile candidate batching,
+   and adaptive 8/11-row band scheduling are closed measured no-gos. Any future
+   treatment needs a new measured raster direction and product proof.
 2. F10’s sparse prefix discovery and F21’s retained membership scans are
    closed. Dense history intentionally keeps full replay, and full-pool
    eviction intentionally keeps exact LRU. Revisit only after a measured dense
@@ -446,10 +536,11 @@ physical gate returns all ones.
    for this round.
 4. F29 perceptual AA ordering is deferred. It changes when refined pixels
    appear, not total AA work, and has no current glass failure.
-5. Settled AA stays yellow. F13 passes the whole-view bound at 25% but exceeds
-   it at 50–400%. Transient blue dots seen during later 400% panning are
-   recorded without attribution and need a separate reproduction before any
-   correctness conclusion.
+5. Settled AA stays yellow. The retained local-span plus IRAM image passes the
+   whole-view bound at 25% but exceeds it at 50–400%. Transient blue dots seen
+   during incomplete refinement on both pan and zoom are recorded without
+   attribution; they need a separate reproduction before any correctness
+   conclusion.
 6. Boundedness still has explicit atomic tails. A masked resident-tile row can
     charge roughly 12,676 raster work pixels in the static worst case, although
     the physical 50–400% corpora stayed below the guard. A settled spatial query
@@ -465,8 +556,11 @@ physical gate returns all ones.
 ## Evidence and artifact paths
 
 - Review source: `tinydraw-v2-performance-review-20260818.md`
+- F2 history may-ink rebuild: [`F2_OCCUPANCY_HISTORY_REBUILD_2026_08_18.md`](../F2_OCCUPANCY_HISTORY_REBUILD_2026_08_18.md)
 - F10 sparse history replay: [`F10_HISTORY_SPATIAL_REPLAY_2026_08_18.md`](../F10_HISTORY_SPATIAL_REPLAY_2026_08_18.md)
 - F13 all-zoom AA: [`SETTLED_AA_ALL_ZOOM_2026_08_18.md`](../SETTLED_AA_ALL_ZOOM_2026_08_18.md)
+- F13 adaptive band probe: [`SETTLED_AA_ADAPTIVE_BAND_PROBE_2026_08_18.md`](../SETTLED_AA_ADAPTIVE_BAND_PROBE_2026_08_18.md)
+- F13 cross-tile reuse probe: [`SETTLED_AA_CROSS_TILE_REUSE_PROBE_2026_08_18.md`](../SETTLED_AA_CROSS_TILE_REUSE_PROBE_2026_08_18.md)
 - F21 cache commit scans: [`F21_CACHE_COMMIT_SCANS_2026_08_18.md`](F21_CACHE_COMMIT_SCANS_2026_08_18.md)
 - F24 raster IRAM map: [`F24_RASTER_IRAM_AB_2026_08_18.md`](F24_RASTER_IRAM_AB_2026_08_18.md)
 - Minimized hairline trace: [`HAIRLINE_PAN_TRACE_2026_08_18.md`](HAIRLINE_PAN_TRACE_2026_08_18.md)
