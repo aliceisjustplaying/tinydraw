@@ -6,7 +6,7 @@
 NO-GO AND REVERTED.** Settled analytic AA retains the exact local-span treatment
 that clears and composites only alpha touched by the current operation. Its
 settled-tile implementation is retained in internal RAM after a same-revision
-device A/B improved every zoom by 6.5–7.4%. A follow-up that omitted raster math
+device A/B improved every zoom by 6.52–7.45%. A follow-up that omitted raster math
 behind fully opaque newer pixels passed the host gate but did not produce a
 persuasive device gain or meet the 500 ms whole-view target at 50–400%; its
 production, diagnostic, benchmark, and test changes were removed.
