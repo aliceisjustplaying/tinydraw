@@ -76,6 +76,7 @@ else()
     "vector_v2/vector_v2_export.cpp"
     "vector_v2/vector_v2_live_stroke_session.cpp"
     "vector_v2/vector_v2_presenter.cpp"
+    "vector_v2/vector_v2_presenter_staging.cpp"
     "vector_v2/vector_v2_touch_sampler.cpp"
     "${TINYDRAW_CORE}/src/coverage_tile.cpp"
     "${TINYDRAW_CORE}/src/fat16_disk.cpp"
