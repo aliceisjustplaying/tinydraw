@@ -526,6 +526,12 @@ suites. The F24 product and gate images
 compile and link; its 11 paced cold A/B cases improve 6.93–11.68% and the full
 physical gate returns all ones.
 
+F27's blind glass A/B is also closed as a no-go. Streamline 0.0 made slow
+circles jaggier; the existing 0.4 setting was preferred for smoother lines,
+despite its inward-pulling tail and harder circle closure. Both runs reported
+zero failures, touch overflows, and resynchronizations. The temporary build
+override was removed and product behavior remains the literal 0.4 setting.
+
 ## Remaining work
 
 1. F13 local spans remain host-accepted and settled-tile IRAM is physically
@@ -537,10 +543,10 @@ physical gate returns all ones.
    closed. Dense history intentionally keeps full replay, and full-pool
    eviction intentionally keeps exact LRU. Revisit only after a measured dense
    history or eviction regression.
-3. F12 prepared geometry and F25 producer-selection state remain closed no-go
-   experiments. F20 caller latency, F26 pan-directed repair, F28 composition,
-   F24 IRAM placement, and the prior ring/absorption glass acceptance are closed
-   for this round.
+3. F12 prepared geometry, F25 producer-selection state, and F27 streamline
+   tuning remain closed no-go experiments. F20 caller latency, F26 pan-directed
+   repair, F28 composition, F24 IRAM placement, and the prior ring/absorption
+   glass acceptance are closed for this round.
 4. F29 perceptual AA ordering is deferred. It changes when refined pixels
    appear, not total AA work, and has no current glass failure.
 5. Settled AA stays yellow. The retained local-span plus IRAM image passes the
