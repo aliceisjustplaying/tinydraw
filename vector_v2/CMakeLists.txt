@@ -41,6 +41,13 @@ if(TINYDRAW_BUILD_TESTS)
     tinydraw_project_options
   )
 
+  add_executable(tinydraw_vector_v2_journal_corpus_check
+    tools/journal_corpus_check.cpp
+  )
+  target_link_libraries(tinydraw_vector_v2_journal_corpus_check PRIVATE
+    tinydraw::vector_v2
+    tinydraw_project_options
+  )
   add_executable(tinydraw_vector_v2_settled_aa_benchmark
     tools/settled_aa_benchmark.cpp
   )
