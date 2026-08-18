@@ -29,12 +29,8 @@ out/build/host-release/vector_v2/tinydraw_vector_v2_journal_corpus_check \
   [testdata/documents/owner-torture-2026-08-19.tdoc]
 ```
 
-Planned battery use (not yet wired): embed the `.tdoc` in the gate build
-via `target_add_binary_data` (the ink-trace pattern in
-`esp32/main/CMakeLists.txt`; sample bytes start at offset `12 + 5*ops`,
-2-byte aligned, so a `CompactOperationSample` span can view the blob
-directly), append into a local log, then run settle/cold instruments over
-the 25% full overview grid plus centroid-centered window grids at 50–400%.
-Note the one-sample-stroke dot bug
-(`docs/receipts/vector-v2/ONE_SAMPLE_STROKE_DOT_BUG_2026_08_19.md`) if
-this document contains tap-only operations.
+The physical gate embeds the `.tdoc`, validates its exact 102-operation /
+2,706-sample shape, replays it through production append and absorption, and
+runs centroid-centered cold windows at 50–400%. The first device battery is
+recorded in
+[`benchmark-results/owner-document-battery-2026-08-19/RECEIPT.md`](../../benchmark-results/owner-document-battery-2026-08-19/RECEIPT.md).

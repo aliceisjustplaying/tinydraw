@@ -200,11 +200,16 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   const bool general_cold =
       general_cold_ready && run_general_cold_gates(presenter, producer, canvas, touch, chrome);
 
+  const bool owner_document =
+      general_cold_ready &&
+      run_owner_document_cold_gate(presenter, producer, log, canvas, touch, chrome, workspace,
+                                   blank_snapshot, conversion_storage);
+
   const DocumentRevision realistic_baseline{canvas.current_revision().value + 1U};
   // Continue collecting independent receipts even when the general cold timing
   // gate is red; the final verdict still requires it.
   const bool reset_for_realistic =
-      general_cold_ready &&
+      owner_document &&
       vector_v2::restore_document_snapshot(log, canvas, realistic_baseline, blank_snapshot) &&
       producer.reset_uniform_baseline(realistic_baseline);
 
@@ -339,7 +344,8 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
       "TINYDRAW_GATE1_AUTOMATED_DONE minimap_navigation=%u "
       "color_dialog=%u cooperative_compose=%u stress=%u stress_100=%u stress_400=%u "
       "overlap_ready=%u "
-      "overlap_cold=%u general_cold_ready=%u general_cold=%u workload=%u paced_cold=%u "
+      "overlap_cold=%u general_cold_ready=%u general_cold=%u owner_document=%u "
+      "workload=%u paced_cold=%u "
       "hard_100=%u hard_400=%u pan_100=%u "
       "pan_400=%u ring_local=%u pan_seq=%u pan_boundary=%u live_overlay=%u draw_fill=%u cache=%u "
       "full_world_cache=%u "
@@ -347,15 +353,15 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
       "long_gesture=%u history_latency=%u settle_timing=%u "
       "export_encode=%u export_reserve=%u return=%u ssaa_receipt=yellow\n",
       minimap_navigation, color_dialog, cooperative_compose, stress_ready, stress_100, stress_400,
-      overlap_ready, overlap_cold, general_cold_ready, general_cold, workload_ready, paced_cold,
-      gate_100, gate_400, pan_100, pan_400, ring_local, pan_sequence, pan_boundary, live_overlay,
-      draw_fill, cache_retention, full_world_cache, cache_tour, mixed_draw, idle_repair,
-      ink_trace_replay, hairline_capacity, long_gesture, history_latency, settle_timing,
-      export_encode, export_reserve, return_overview.passed);
+      overlap_ready, overlap_cold, general_cold_ready, general_cold, owner_document, workload_ready,
+      paced_cold, gate_100, gate_400, pan_100, pan_400, ring_local, pan_sequence, pan_boundary,
+      live_overlay, draw_fill, cache_retention, full_world_cache, cache_tour, mixed_draw,
+      idle_repair, ink_trace_replay, hairline_capacity, long_gesture, history_latency,
+      settle_timing, export_encode, export_reserve, return_overview.passed);
   return minimap_navigation && color_dialog && cooperative_compose && return_overview.passed &&
-         export_reserve && overlap_cold && general_cold && mixed_draw && idle_repair &&
-         hairline_capacity && history_latency && settle_timing && pan_100 && pan_400 &&
-         ring_local && pan_sequence && pan_boundary;
+         export_reserve && overlap_cold && general_cold && owner_document && mixed_draw &&
+         idle_repair && hairline_capacity && history_latency && settle_timing && pan_100 &&
+         pan_400 && ring_local && pan_sequence && pan_boundary;
 #endif
 }
 
