@@ -37,15 +37,18 @@ enum class TouchOfferResult : std::uint8_t {
   kQueued,
   kMoveCoalesced,
   kErrorHeld,
+  kResynchronized,
   kOverflow,
 };
 
 // Converts noisy physical contact reads into ordered semantic events. Caller-
 // owned storage keeps allocation policy outside this module. Down and Up edges
 // are never coalesced; redundant Moves collapse to the newest point. When an
-// edge arrives at capacity, an older Move is discarded before any edge is
-// refused. Access must be externally serialized when producer and consumer run
-// on different cores.
+// edge arrives at capacity, an older Move is discarded first. An edge-only
+// backlog is then collapsed to the shortest sequence that brings the consumer
+// to the current physical contact state, so a brief tap cannot disappear.
+// Access must be externally serialized when producer and consumer run on
+// different cores.
 class TouchEventBuffer {
  public:
   explicit TouchEventBuffer(std::span<TouchEvent> storage);
@@ -59,6 +62,8 @@ class TouchEventBuffer {
  private:
   [[nodiscard]] std::size_t physical_index(std::size_t logical_index) const;
   [[nodiscard]] bool remove_oldest_move();
+  void append_unchecked(const TouchEvent& event);
+  void resynchronize(const TouchEvent& event);
   [[nodiscard]] TouchOfferResult enqueue(const TouchEvent& event);
 
   std::span<TouchEvent> storage_{};
@@ -66,8 +71,10 @@ class TouchEventBuffer {
   std::size_t size_ = 0;
   std::uint32_t sequence_ = 0;
   TouchContactPoint last_point_{};
+  TouchEvent active_down_{};
   std::uint8_t no_touch_reads_ = 0;
   bool touching_ = false;
+  bool consumer_touching_ = false;
 };
 
 }  // namespace tinydraw::vector_v2
