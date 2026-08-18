@@ -558,6 +558,46 @@ TEST_CASE("tile producer sliced long strokes equal direct painter replay") {
   CHECK(composed == direct);
 }
 
+TEST_CASE("cancelled producer work restarts exactly with reusable chord storage") {
+  Fixture fixture;
+  std::vector<vector_v2::CompactOperationSample> long_stroke(400);
+  for (std::size_t index = 0; index < long_stroke.size(); ++index) {
+    long_stroke[index] = {
+        .x_quarter = static_cast<std::uint16_t>(32U + index),
+        .y_quarter = static_cast<std::uint16_t>(120U + index % 80U),
+        .radius_256 = static_cast<std::uint16_t>(index % 2U == 0U ? 5'120U : 3'328U),
+    };
+  }
+  REQUIRE(fixture.log.append(append(long_stroke, 0x001FU)));
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> revised_overview{};
+  revised_overview.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({1}, revised_overview));
+  const vector_v2::ViewRequest view{
+      .zoom = vector_v2::ZoomLevel::k400Percent,
+      .level_pixels = {0, 0, 128, 128},
+  };
+  const auto partial = fixture.producer.produce_next(view);
+  REQUIRE(partial.has_value());
+  REQUIRE(partial->tiles_published == 0U);
+
+  fixture.producer.cancel_pending_work();
+  while (true) {
+    const auto step = fixture.producer.produce_next(view);
+    REQUIRE(step.has_value());
+    if (step->complete) {
+      break;
+    }
+  }
+
+  std::vector<std::uint16_t> composed(128U * 128U);
+  REQUIRE(fixture.canvas.compose_view(view, composed));
+  std::vector<std::uint16_t> direct(composed.size(), 0xFFFFU);
+  REQUIRE(vector_v2::apply_incremental_operation(
+      append(long_stroke, 0x001FU),
+      {.zoom = view.zoom, .level_bounds = view.level_pixels, .pixels = direct, .stride = 128}));
+  CHECK(composed == direct);
+}
+
 TEST_CASE("tile producer isolates an oversized newest segment from older raster work") {
   Fixture fixture;
   const std::array oversized_segments{
