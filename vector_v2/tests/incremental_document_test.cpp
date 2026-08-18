@@ -702,6 +702,42 @@ TEST_CASE("history moves whole gestures after pending work is drained") {
   CHECK(fixture.overview == erased_pixels);
 }
 
+TEST_CASE("history rebuilds may-ink and branch replacement preserves the rebuilt proof") {
+  Fixture fixture;
+  const auto point = [](int x, int y) {
+    return std::array{vector_v2::CompactOperationSample{
+        .x_quarter = static_cast<std::uint16_t>(x * vector_v2::kSampleUnitsPerWorldUnit),
+        .y_quarter = static_cast<std::uint16_t>(y * vector_v2::kSampleUnitsPerWorldUnit),
+        .radius_256 = 256U}};
+  };
+  const auto first = point(80, 80);
+  const auto replaced = point(720, 800);
+  const auto branch = point(1'200, 1'600);
+  const auto replaced_key =
+      vector_v2::tile_key_for_world(vector_v2::ZoomLevel::k400Percent, {.x = 720, .y = 800});
+  const auto branch_key =
+      vector_v2::tile_key_for_world(vector_v2::ZoomLevel::k400Percent, {.x = 1'200, .y = 1'600});
+  REQUIRE(replaced_key.has_value());
+  REQUIRE(branch_key.has_value());
+
+  REQUIRE(fixture.append_and_absorb({.color = 0x001FU, .gesture_id = 1U, .samples = first}));
+  REQUIRE(fixture.append_and_absorb({.color = 0xF800U, .gesture_id = 2U, .samples = replaced}));
+  REQUIRE_FALSE(fixture.canvas.certainly_paper(*replaced_key));
+
+  REQUIRE(vector_v2::move_history_incrementally(
+      fixture.log, fixture.canvas, vector_v2::HistoryDirection::kUndo, fixture.scratch));
+  CHECK(fixture.canvas.certainly_paper(*replaced_key));
+  REQUIRE(vector_v2::move_history_incrementally(
+      fixture.log, fixture.canvas, vector_v2::HistoryDirection::kRedo, fixture.scratch));
+  CHECK_FALSE(fixture.canvas.certainly_paper(*replaced_key));
+
+  REQUIRE(vector_v2::move_history_incrementally(
+      fixture.log, fixture.canvas, vector_v2::HistoryDirection::kUndo, fixture.scratch));
+  REQUIRE(fixture.append_and_absorb({.color = 0x07E0U, .gesture_id = 3U, .samples = branch}));
+  CHECK(fixture.canvas.certainly_paper(*replaced_key));
+  CHECK_FALSE(fixture.canvas.certainly_paper(*branch_key));
+}
+
 TEST_CASE("history refuses while materialization trails authority") {
   Fixture fixture;
   REQUIRE(vector_v2::append_authority_only(fixture.log,
@@ -769,4 +805,58 @@ TEST_CASE("active-overview replay excludes retained redo operations") {
 
   REQUIRE(vector_v2::replay_active_overview(log, replay));
   CHECK(replay == expected);
+}
+
+TEST_CASE("authority may-ink rebuild follows Undo Redo and branch replacement") {
+  std::array<vector_v2::OperationRecord, 4> records{};
+  std::array<vector_v2::CompactOperationSample, 4> storage{};
+  vector_v2::OperationLog log(records, storage);
+  const auto point = [](int x, int y) {
+    return std::array{vector_v2::CompactOperationSample{
+        .x_quarter = static_cast<std::uint16_t>(x * vector_v2::kSampleUnitsPerWorldUnit),
+        .y_quarter = static_cast<std::uint16_t>(y * vector_v2::kSampleUnitsPerWorldUnit),
+        .radius_256 = 256U}};
+  };
+  const auto first = point(80, 80);
+  const auto undone = point(720, 800);
+  const auto branch = point(1'200, 1'600);
+  const auto eraser = point(1'360, 240);
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> may_ink{};
+  const auto marked = [&may_ink](int x, int y) {
+    const std::size_t bit = static_cast<std::size_t>(y / vector_v2::kOccupancyCellWorldSize) *
+                                vector_v2::kOccupancyColumns +
+                            static_cast<std::size_t>(x / vector_v2::kOccupancyCellWorldSize);
+    return (may_ink[bit / 8U] & static_cast<std::uint8_t>(1U << (bit % 8U))) != 0U;
+  };
+
+  REQUIRE(log.append({.color = 0x001FU, .gesture_id = 1U, .samples = first}));
+  REQUIRE(log.append({.color = 0xF800U, .gesture_id = 2U, .samples = undone}));
+  REQUIRE(vector_v2::build_tiled_may_ink(log, may_ink));
+  CHECK(marked(80, 80));
+  CHECK(marked(720, 800));
+
+  auto undo = log.prepare_undo();
+  REQUIRE(undo.has_value());
+  undo->publish();
+  REQUIRE(vector_v2::build_tiled_may_ink(log, may_ink));
+  CHECK(marked(80, 80));
+  CHECK_FALSE(marked(720, 800));
+
+  auto redo = log.prepare_redo();
+  REQUIRE(redo.has_value());
+  redo->publish();
+  REQUIRE(vector_v2::build_tiled_may_ink(log, may_ink));
+  CHECK(marked(720, 800));
+
+  undo = log.prepare_undo();
+  REQUIRE(undo.has_value());
+  undo->publish();
+  REQUIRE(log.append({.color = 0x07E0U, .gesture_id = 3U, .samples = branch}));
+  REQUIRE(
+      log.append({.tool = vector_v2::OperationTool::kEraser, .gesture_id = 4U, .samples = eraser}));
+  REQUIRE(vector_v2::build_tiled_may_ink(log, may_ink));
+  CHECK(marked(80, 80));
+  CHECK_FALSE(marked(720, 800));
+  CHECK(marked(1'200, 1'600));
+  CHECK_FALSE(marked(1'360, 240));
 }
