@@ -4,29 +4,34 @@ This receipt closes the pre-final overengineering and repository-structure round
 
 ## Scope
 
-- Moved product-loop diagnostics out of `vector_v2_app.cpp` and merged its duplicate pending-stroke
-  report state. The app entry point fell from 1,025 to 812 lines.
-- Removed unused raster, live-stroke, and export APIs.
-- Reused the canonical zoom and history-control helpers.
-- Replaced product calls to full tile payload measurement with early-exit uniform classification;
-  the detailed row-run/RLE census remains available to diagnostic tooling.
-- Consolidated current design/review documents, historical campaigns, and hardware receipts under
-  `docs/`. Active test fixtures remain in `testdata/` and are indexed there.
+- Replaced six overlapping gesture flags with one `InteractionMode`; lift handling now dispatches
+  from the completed mode.
+- Removed the product-only blank-snapshot and re-render-ledger reservations. The gate retains the
+  real diagnostic storage; the product allocates neither it nor inert cache-layout padding. Exact
+  fixed PSRAM reclaimed: 357,264 bytes.
+- Split uniform detection from the diagnostic payload census. Product code links the early-exit
+  classifier; row-run/RLE analysis remains diagnostic-only.
+- Split the gate coordinator, presenter, materialized canvas, incremental document, rasterizer,
+  chrome, raster census, and rasterizer tests at cohesive boundaries. No Vector V2 or ESP32 Vector
+  V2 C++ source/header is 1,000 lines or longer.
+- Replaced long-parameter raster, absorption, materialized-canvas, and settled-render calls with
+  request objects. Authority-journal validation and replay, spatial queries, staged metadata, and
+  settled-render phases now have named helpers with unchanged wire/pixel semantics.
+- Removed analyzer suppressions from the affected paths and cleared every clang-tidy finding.
 
 ## Acceptance
 
-- Host debug: 31/31 passed.
-- Host release: 31/31 passed.
+- Host debug and release: 31/31 passed in each configuration.
 - Host ASan/UBSan: 13/13 passed.
-- ESP32 product, 448-slot gate-harness, tile-census, and QEMU builds passed; QEMU replay passed.
-- Nine-run release cache A/B against `98174f5`: absorption 3.306 → 3.273 µs, raw-history commit
-  59.171 → 58.648 µs, uniform-history commit 132.445 → 132.306 µs. Exactness and work counters
-  were unchanged; remaining sub-microsecond variation was within timer noise.
-- The physical 448-slot automated battery passed all 31 flags with no crash or watchdog marker.
-  Settled AA retains its existing yellow performance classification.
+- `./scripts/dev tidy`, format check, and `git diff --check` passed with no suppressions.
+- QEMU built and replayed successfully with checksum `92d3e6ea`.
+- ESP32 product (`0x103b60`) and 448-slot gate (`0x130320`) images built and linked.
+- The physical 448-slot automated battery passed every flag with no crash or watchdog marker.
+  Settled AA retains its accepted yellow performance classification.
 - The normal product image was restored after the gate. Boot reached `TINYDRAW_VECTOR_V2_READY`
-  with 2,187,528 bytes free PSRAM, a 2,162,688-byte largest block, and 6,088 bytes of main-stack
+  with 2,551,056 bytes free PSRAM, a 2,490,368-byte largest block, and 6,088 bytes of main-stack
   headroom.
 
-The full static-analysis commands still stop on established complexity warnings in the authority
-journal and raster hot paths. Changed code added no analyzer finding.
+The exhaustive cppcheck command still exits nonzero on its established style/flow diagnostics and
+required-field aggregate false positives. Clang-tidy, compiler, sanitizer, exactness, QEMU, and
+physical-gate validation are green.

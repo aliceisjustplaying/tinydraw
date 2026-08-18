@@ -218,9 +218,11 @@ but do not override this scorecard or the frozen contract.
 - Glass is authoritative for visible correctness and feel; software receipts
   provide attribution.
 - The application split is landed: storage, diagnostics, background work,
-  chrome actions, and live-stroke coordination have explicit modules, reducing
-  `vector_v2_app.cpp` to 933 lines. Preserve these boundaries during the
-  final performance round and validate the split on the same release head.
+  chrome actions, and live-stroke coordination have explicit modules;
+  `vector_v2_app.cpp` is 831 lines and uses one interaction mode. Product-only
+  diagnostic reservations are gone, reclaiming 357,264 fixed PSRAM bytes.
+  Preserve these boundaries during the final performance round and validate
+  the split on the same release head.
 
 Host validation:
 
