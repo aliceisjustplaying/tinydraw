@@ -81,6 +81,14 @@ class VectorV2BackgroundPipeline {
     bool pending = false;
   };
 
+  struct PendingSettleRender {
+    vector_v2::SettledRenderCursor cursor{};
+    vector_v2::PixelRect level_bounds{};
+    vector_v2::TileKey key{};
+    bool overview = false;
+    bool active = false;
+  };
+
   void reset_settle_fingerprint();
   void reset_settle_pass();
   void print_fill(const char* result) const;
@@ -114,11 +122,14 @@ class VectorV2BackgroundPipeline {
   std::size_t settle_cursor_ = 0;
   bool settle_complete_ = false;
   std::uint32_t settle_tiles_ = 0;
+  std::uint32_t settle_slices_ = 0;
+  std::uint64_t settle_work_ = 0;
   std::int64_t settle_total_us_ = 0;
   std::int64_t settle_max_us_ = 0;
   std::uint32_t settle_failures_ = 0;
   std::uint8_t settle_retry_count_ = 0;
   std::uint32_t settle_permanent_failures_ = 0;
+  PendingSettleRender settle_render_{};
   PendingSettlePresentation pending_settle_{};
   vector_v2::DocumentRevision settle_revision_{};
   vector_v2::ZoomLevel settle_zoom_ = vector_v2::ZoomLevel::k25Percent;
@@ -126,7 +137,11 @@ class VectorV2BackgroundPipeline {
   int settle_y_ = -1;
 
   std::optional<vector_v2::PixelRect> drain_swap_world_;
+  vector_v2::PendingOperationAbsorption absorption_{};
   std::uint32_t drain_operations_ = 0;
+  std::uint32_t drain_slices_ = 0;
+  std::uint32_t drain_restarts_ = 0;
+  std::size_t drain_max_pending_ = 0;
   std::int64_t drain_total_us_ = 0;
   std::int64_t drain_max_us_ = 0;
   std::uint32_t drain_failures_ = 0;

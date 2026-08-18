@@ -131,12 +131,9 @@ void LiveStrokeSession::reset_stroke_stats() {
   metrics_ = {};
   phase_max_ = {};
   drops_ = {};
-  high_water_drops_ = {};
   chunks_ = 0;
   append_us_ = 0;
   append_max_us_ = 0;
-  high_water_absorptions_ = 0;
-  high_water_absorb_max_us_ = 0;
   commit_failed_ = false;
 }
 
@@ -172,18 +169,9 @@ std::optional<vector_v2::ChainedOperationStatus> LiveStrokeSession::commit_ready
     return std::nullopt;
   }
   const std::int64_t started_us = esp_timer_get_time();
-  // Match the product degradation path exactly: bound the overlay backlog by
-  // attempting one synchronous absorption before publishing more authority.
-  if (vector_v2::pending_operation_count(log_, canvas_) >= kPendingOperationHighWater) {
-    const std::int64_t absorb_started_us = esp_timer_get_time();
-    const auto absorbed = absorb_one(kInPlaceRetentionBudgetUs);
-    high_water_absorb_max_us_ =
-        std::max(high_water_absorb_max_us_, esp_timer_get_time() - absorb_started_us);
-    if (absorbed.has_value()) {
-      ++high_water_absorptions_;
-      include_retain_drops(high_water_drops_, absorbed->drops);
-    }
-  }
+  // Pending authority stays presentation-exact through the committed overlay.
+  // The background pipeline now absorbs it cooperatively between touch samples,
+  // so the input path never enters the former synchronous high-water drain.
   const auto committed =
       vector_v2::append_authority_only(log_, *append, {.now_us = &esp_timer_get_time});
   const std::int64_t elapsed_us = esp_timer_get_time() - started_us;
@@ -298,12 +286,9 @@ LiveStrokeFinishResult LiveStrokeSession::finish(std::uint32_t event_us,
   result.metrics = metrics_;
   result.phase_max = phase_max_;
   result.drops = drops_;
-  result.high_water_drops = high_water_drops_;
   result.chunks = chunks_;
   result.append_us = append_us_;
   result.append_max_us = append_max_us_;
-  result.high_water_absorptions = high_water_absorptions_;
-  result.high_water_absorb_max_us = high_water_absorb_max_us_;
   return result;
 }
 
