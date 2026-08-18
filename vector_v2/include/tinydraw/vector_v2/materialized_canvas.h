@@ -112,17 +112,35 @@ enum class OverviewStageStatus : std::uint8_t {
   kError,
 };
 
+enum class InPlaceMetadataPhase : std::uint8_t {
+  kUniforms,
+  kRawSlots,
+  kRerenderDamage,
+  kOccupancy,
+  kComplete,
+};
+
+struct InPlaceMetadataSlice {
+  OverviewStageStatus status = OverviewStageStatus::kError;
+  InPlaceMetadataPhase phase = InPlaceMetadataPhase::kUniforms;
+  std::size_t work_items = 0;
+};
+
 class MaterializedCanvas;
+class RerenderLedger;
 
 // Caller-owned proof for a cooperatively staged overview publication. Partial
 // rows may be abandoned only while an idempotent pending overlay remains the
 // presentation authority; cancel() forgets the proof but does not roll pixels
 // back. A restarted opaque operation replay converges those pixels exactly.
+// Any retained_keys backing passed after overview completion must stay alive
+// and immutable through commit or cancel. Resume validation fingerprints its
+// pointer and size so each slice remains bounded.
 class InPlaceOverviewStage {
  public:
   [[nodiscard]] bool active() const { return canvas_ != nullptr; }
   [[nodiscard]] bool complete() const { return active() && next_row_ == bounds_.y1; }
-  void cancel() { *this = {}; }
+  void cancel();
 
  private:
   friend class MaterializedCanvas;
@@ -135,6 +153,21 @@ class InPlaceOverviewStage {
   std::size_t source_size_ = 0;
   std::uint64_t expected_canvas_epoch_ = 0;
   int next_row_ = 0;
+  const TileKey* retained_keys_ = nullptr;
+  std::size_t retained_count_ = 0;
+  std::optional<std::uint16_t> preserved_uniform_color_{};
+  std::optional<ZoomLevel> priority_zoom_{};
+  const RerenderLedger* rerender_ledger_ = nullptr;
+  InPlaceMetadataPhase metadata_phase_ = InPlaceMetadataPhase::kUniforms;
+  std::size_t metadata_zoom_ = 0;
+  std::size_t metadata_offset_ = 0;
+  std::size_t raw_slot_ = 0;
+  std::size_t rerender_plane_ = 0;
+  std::size_t rerender_offset_ = 0;
+  std::size_t occupancy_offset_ = 0;
+  std::size_t cross_zoom_invalidated_ = 0;
+  bool metadata_started_ = false;
+  bool raw_staging_started_ = false;
 };
 
 // Mutable window over one resident raw tile for an in-place revision commit.
@@ -330,10 +363,20 @@ class MaterializedCanvas {
   // Copies at most max_rows of a validated overview publication into owned
   // storage and advances a caller-owned proof. Every resume must use the same
   // canvas, revision, bounds, source span, affected bounds, and canvas epoch.
-  // One overview row is the smallest atomic unit.
+  // The serialized caller must keep at most one live stage per canvas. One
+  // overview row is the smallest atomic unit.
   [[nodiscard]] OverviewStageStatus stage_in_place_overview_rows(
       DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
       PixelRect affected_world_bounds, std::size_t max_rows, InPlaceOverviewStage& stage);
+  // Advances one bounded metadata phase after every overview row is staged.
+  // max_work_items caps identities, slots, damage groups, or occupancy cells;
+  // a call never crosses a phase boundary. Resume inputs and the canvas epoch
+  // must match the stage proof exactly.
+  [[nodiscard]] InPlaceMetadataSlice stage_in_place_metadata(
+      DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
+      PixelRect affected_world_bounds, std::span<const TileKey> retained_keys,
+      std::size_t max_work_items, InPlaceOverviewStage& stage,
+      const InPlaceCommitScope& scope = {});
   // Metadata-only completion for a fully staged overview. Validation is
   // mutation-free; a mismatch leaves the stage live for its original caller.
   [[nodiscard]] bool commit_staged_in_place_revision(
@@ -408,6 +451,7 @@ class MaterializedCanvas {
   [[nodiscard]] bool accepts_external_workspace(std::span<const std::byte> workspace) const;
 
  private:
+  friend class InPlaceOverviewStage;
   [[nodiscard]] std::optional<std::size_t> find_tile(TileKey key) const;
   [[nodiscard]] std::optional<std::size_t> find_uniform(TileKey key) const;
   [[nodiscard]] std::optional<std::size_t> choose_slot() const;
@@ -449,6 +493,8 @@ class MaterializedCanvas {
                                 const InPlaceCommitScope& scope);
   void finish_revision(DocumentRevision revision, PixelRect affected_world_bounds);
   void mark_occupied(PixelRect world_bounds);
+  void cancel_in_place_stage(InPlaceOverviewStage& stage);
+  [[nodiscard]] bool raw_slot_is_current(const MaterializedSlotStorage& slot) const;
   void clear_uniforms();
   void touch(MaterializedSlotStorage& slot);
   // Sole occupancy transitions: every occupied_ flip goes through these so
@@ -472,6 +518,8 @@ class MaterializedCanvas {
   std::array<ViewFootprint, kTiledZoomCount> recent_views_{};
   ZoomLevel active_view_zoom_ = ZoomLevel::k25Percent;
   std::uint64_t composition_epoch_ = 0;
+  DocumentRevision staged_in_place_revision_{};
+  bool staged_in_place_active_ = false;
   bool overview_valid_ = false;
 };
 

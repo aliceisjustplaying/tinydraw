@@ -9,7 +9,10 @@
 
 namespace tinydraw::vector_v2 {
 
-void PendingOperationAbsorption::cancel() { *this = PendingOperationAbsorption{}; }
+void PendingOperationAbsorption::cancel() {
+  overview_stage_.cancel();
+  *this = PendingOperationAbsorption{};
+}
 namespace {
 
 bool prepare_overview(const MaterializedCanvas& canvas, const OperationAppend& operation,
@@ -549,7 +552,10 @@ PendingAbsorptionSliceResult absorb_pending_operation_slice(
     PendingOperationAbsorption& state, std::optional<ViewRequest> priority_view,
     CooperativeWorkLimit limit, InPlaceRetentionBudget retention) {
   PendingAbsorptionSliceResult output{};
-  const auto reset = [&state]() { state = PendingOperationAbsorption{}; };
+  const auto reset = [&state]() {
+    state.overview_stage_.cancel();
+    state = PendingOperationAbsorption{};
+  };
   const auto stamp = [&state]() {
     return state.retention_.now_us != nullptr ? state.retention_.now_us() : 0;
   };
@@ -959,6 +965,47 @@ PendingAbsorptionSliceResult absorb_pending_operation_slice(
           return output;
         }
         if (staged == OverviewStageStatus::kComplete) {
+          state.phase_ = PendingOperationAbsorption::Phase::kStageMetadata;
+        }
+        break;
+      }
+      case PendingOperationAbsorption::Phase::kStageMetadata: {
+        auto affected = state.workspace_.affected_keys.first(state.affected_count_);
+        const MaterializedCanvas::InPlaceCommitScope scope{
+            .preserved_uniform_color = painted_color,
+            .priority_zoom = state.priority_view_.has_value()
+                                 ? std::optional{state.priority_view_->zoom}
+                                 : std::nullopt,
+            .cross_zoom_invalidated = nullptr,
+        };
+        const InPlaceMetadataSlice staged = canvas.stage_in_place_metadata(
+            state.operation_.identity.revision, state.overview_publication_,
+            state.operation_.world_bounds, affected.first(state.retained_count_),
+            limit.raster_work_px, state.overview_stage_, scope);
+        switch (staged.phase) {
+          case InPlaceMetadataPhase::kUniforms:
+            output.work_unit = PendingAbsorptionWorkUnit::kStageUniforms;
+            break;
+          case InPlaceMetadataPhase::kRawSlots:
+            output.work_unit = PendingAbsorptionWorkUnit::kStageRawSlots;
+            break;
+          case InPlaceMetadataPhase::kRerenderDamage:
+            output.work_unit = PendingAbsorptionWorkUnit::kStageRerenderDamage;
+            break;
+          case InPlaceMetadataPhase::kOccupancy:
+            output.work_unit = PendingAbsorptionWorkUnit::kStageOccupancy;
+            break;
+          case InPlaceMetadataPhase::kComplete:
+            output.work_unit = PendingAbsorptionWorkUnit::kCommit;
+            break;
+        }
+        state.phases_.commit_us += stamp() - unit_started_us;
+        if (staged.status == OverviewStageStatus::kError) {
+          reset();
+          output.status = PendingAbsorptionStatus::kError;
+          return output;
+        }
+        if (staged.status == OverviewStageStatus::kComplete) {
           state.phase_ = PendingOperationAbsorption::Phase::kCommit;
         }
         break;

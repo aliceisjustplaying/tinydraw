@@ -72,10 +72,23 @@ RerenderLedgerEntry* RerenderLedger::entry_at(ZoomLevel zoom, int group_column, 
 }
 
 void RerenderLedger::mark_world_damage(PixelRect world_bounds) {
-  if (!ready() || world_bounds.x1 <= world_bounds.x0 || world_bounds.y1 <= world_bounds.y0) {
-    return;
+  std::size_t plane = 0;
+  std::size_t offset = 0;
+  std::size_t marked = 0;
+  static_cast<void>(
+      mark_world_damage_slice(world_bounds, kRerenderLedgerEntryCount, plane, offset, marked));
+}
+
+bool RerenderLedger::mark_world_damage_slice(PixelRect world_bounds, std::size_t max_groups,
+                                             std::size_t& plane_index, std::size_t& offset,
+                                             std::size_t& groups_marked) {
+  groups_marked = 0;
+  if (!ready() || max_groups == 0U || world_bounds.x1 <= world_bounds.x0 ||
+      world_bounds.y1 <= world_bounds.y0 || plane_index > kPlanes.size()) {
+    return false;
   }
-  for (const ZoomPlane& plane : kPlanes) {
+  while (plane_index < kPlanes.size()) {
+    const ZoomPlane& plane = kPlanes[plane_index];
     // Conservative outward rounding: a partially covered group is damaged.
     const int x0 = world_bounds.x0 * plane.percent / 100;
     const int y0 = world_bounds.y0 * plane.percent / 100;
@@ -86,14 +99,28 @@ void RerenderLedger::mark_world_damage(PixelRect world_bounds) {
     const int last_column = std::clamp((x1 - 1) / kGroupLevelPixels, 0, geometry.group_columns - 1);
     const int first_row = std::clamp(y0 / kGroupLevelPixels, 0, geometry.group_rows - 1);
     const int last_row = std::clamp((y1 - 1) / kGroupLevelPixels, 0, geometry.group_rows - 1);
-    for (int row = first_row; row <= last_row; ++row) {
-      for (int column = first_column; column <= last_column; ++column) {
-        if (RerenderLedgerEntry* entry = entry_at(plane.zoom, column, row)) {
-          entry->flags |= kDamagedFlag;
-        }
+    const std::size_t columns = static_cast<std::size_t>(last_column - first_column + 1);
+    const std::size_t rows = static_cast<std::size_t>(last_row - first_row + 1);
+    const std::size_t count = columns * rows;
+    while (offset < count && groups_marked < max_groups) {
+      const int row = first_row + static_cast<int>(offset / columns);
+      const int column = first_column + static_cast<int>(offset % columns);
+      if (RerenderLedgerEntry* entry = entry_at(plane.zoom, column, row)) {
+        entry->flags |= kDamagedFlag;
       }
+      ++offset;
+      ++groups_marked;
+    }
+    if (offset != count) {
+      return false;
+    }
+    ++plane_index;
+    offset = 0;
+    if (groups_marked == max_groups) {
+      return plane_index == kPlanes.size();
     }
   }
+  return true;
 }
 
 void RerenderLedger::mark_evicted(TileKey key) {

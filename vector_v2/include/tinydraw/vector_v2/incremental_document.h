@@ -121,6 +121,10 @@ enum class PendingAbsorptionWorkUnit : std::uint8_t {
   kVisibleRaw,
   kOffscreenRaw,
   kStageOverview,
+  kStageUniforms,
+  kStageRawSlots,
+  kStageRerenderDamage,
+  kStageOccupancy,
   kCommit,
 };
 
@@ -166,6 +170,7 @@ class PendingOperationAbsorption {
     kVisibleRaw,
     kOffscreenRaw,
     kStageOverview,
+    kStageMetadata,
     kCommit,
   };
 
