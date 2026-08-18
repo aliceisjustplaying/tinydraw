@@ -61,7 +61,7 @@ The current queue is high-zoom Undo/Redo reconstruction, faster AA progression,
 residual revisit attribution, band-sliced full-frame refreshes,
 known product bugs, and same-head release validation. Historical A/B recipes,
 rejected experiments, and the device-physics cheat sheet remain in
-[`review_findings_2026_08_16_cold_campaign/HANDOVER.md`](review_findings_2026_08_16_cold_campaign/HANDOVER.md)
+[`HANDOVER.md`](docs/archive/2026-08-code-reviews/review-findings/2026-08-16-cold-campaign/HANDOVER.md)
 and [`docs/PERFORMANCE_CHRONICLE.md`](docs/PERFORMANCE_CHRONICLE.md).
 
 Latest permanent receipts:
@@ -201,7 +201,7 @@ autosave feature itself.
 
 Foundation receipts and architectural history live in
 [`vector_v2/README.md`](vector_v2/README.md),
-[`vector_v2/hardware-receipts/`](vector_v2/hardware-receipts/), and
+[`docs/receipts/vector-v2/`](docs/receipts/vector-v2/), and
 [`docs/archive/`](docs/archive/). Superseded results remain valuable evidence,
 but do not override this scorecard or the frozen contract.
 

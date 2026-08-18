@@ -106,7 +106,7 @@ class VectorV2Presenter {
                     std::span<std::uint16_t> chrome_cache_pixels);
 
   [[nodiscard]] bool ready() const;
-  // Committed-overlay seam (VECTOR_V2_COMMITTED_OVERLAY_DESIGN.md §3.2):
+  // Committed-overlay seam (docs/design/VECTOR_V2_COMMITTED_OVERLAY_DESIGN.md §3.2):
   // with a read-only authority attached, every frame/region/ring compose is
   // patched with the pending operation range so glass stays exact while the
   // canvas trails.

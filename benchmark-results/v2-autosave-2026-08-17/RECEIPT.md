@@ -5,7 +5,7 @@
 > the durable format to drawing authority only. Navigation, tool, palette, and
 > color now restart from product defaults; the next Stroke identity is derived
 > from restored active authority. Current policy lives in
-> [`VECTOR_V2_AUTOSAVE_DESIGN.md`](../../VECTOR_V2_AUTOSAVE_DESIGN.md) and
+> [`VECTOR_V2_AUTOSAVE_DESIGN.md`](../../docs/design/VECTOR_V2_AUTOSAVE_DESIGN.md) and
 > [`SHIP_CONTRACT.md`](../../SHIP_CONTRACT.md).
 
 ## Verdict
