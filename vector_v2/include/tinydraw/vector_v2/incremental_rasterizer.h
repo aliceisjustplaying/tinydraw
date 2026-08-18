@@ -158,6 +158,16 @@ struct OperationSweepSlice {
     const RasterSurface& surface, std::span<std::uint8_t> finalized_pixels,
     MaskedRowSummary* summary, OperationSweepSlice& slice);
 
+// Unmasked companion for caller-owned operation replay. It paints a prepared
+// batch in row-boundary quanta and is exact for one operation because every
+// chord has the same opaque color. max_work_px is a scheduling charge, not a
+// pixel-count promise; at least one live row completes per call.
+[[nodiscard]] bool apply_operation_chord_rows(OperationTool tool, std::uint16_t color,
+                                              std::span<const std::byte> chord_storage,
+                                              const OperationChordBatch& batch, int first_row,
+                                              std::size_t max_work_px, const RasterSurface& surface,
+                                              OperationSweepSlice& slice);
+
 }  // namespace tinydraw::vector_v2
 
 #endif  // TINYDRAW_VECTOR_V2_INCREMENTAL_RASTERIZER_H
