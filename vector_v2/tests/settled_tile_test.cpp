@@ -189,6 +189,38 @@ TEST_CASE("settled spatial replay fetches only conservative local candidates") {
   CHECK(stats.operations_rendered == 1U);
 }
 
+TEST_CASE("settled rendering preserves a one-sample tap as a visible dot") {
+  SettleRig rig;
+  const std::array dot{vector_v2::CompactOperationSample{
+      .x_quarter = 32U * 16U, .y_quarter = 32U * 16U, .radius_256 = 4U * 256U}};
+  REQUIRE(rig.log.append({.color = 0x001FU, .samples = dot}).has_value());
+
+  const vector_v2::PixelRect bounds{0, 0, vector_v2::kTileWidth, vector_v2::kTileHeight};
+  std::vector<std::uint16_t> settled(vector_v2::kTilePixels);
+  vector_v2::SettledTileStats stats{};
+  REQUIRE(vector_v2::render_settled_window(rig.log, vector_v2::ZoomLevel::k100Percent, bounds,
+                                           rig.workspace(), settled, &stats));
+
+  CHECK(settled[32U * vector_v2::kTileWidth + 32U] == 0x001FU);
+  CHECK(stats.operations_rendered == 1U);
+  CHECK(stats.curve_units_prepared == 1U);
+
+  std::vector<std::uint16_t> sliced(vector_v2::kTilePixels, 0x1234U);
+  vector_v2::SettledRenderCursor cursor;
+  do {
+    const auto slice =
+        vector_v2::render_settled_window_slice({.log = rig.log,
+                                                .zoom = vector_v2::ZoomLevel::k100Percent,
+                                                .window_bounds = bounds,
+                                                .workspace = rig.workspace(),
+                                                .out_pixels = sliced,
+                                                .cursor = cursor,
+                                                .max_work_px = 17U});
+    REQUIRE(slice.status != vector_v2::SettledRenderStatus::kError);
+  } while (cursor.active());
+  CHECK(sliced == settled);
+}
+
 TEST_CASE("settled tile matches hard-edged interiors and smooths boundaries") {
   SettleRig rig;
   // A fat horizontal stroke through tile (0,0) at 100%: world y=32, radius
