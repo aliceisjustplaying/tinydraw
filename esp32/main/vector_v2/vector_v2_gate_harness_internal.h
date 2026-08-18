@@ -150,6 +150,11 @@ bool run_history_latency_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
                               std::span<const std::uint16_t> blank_snapshot,
                               std::span<CompactOperationSample> builder_storage,
                               std::span<std::uint16_t> overview_scratch);
+bool run_settle_timing_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
+                            OperationLog& log, MaterializedCanvas& canvas,
+                            const vector_v2::ChromeState& chrome,
+                            const vector_v2::SettledTileWorkspace& settle_workspace,
+                            std::span<std::uint16_t> settle_pixels);
 bool run_export_encode_gate(VectorV2Export& exporter, OperationLog& log);
 
 bool run_cache_tour_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,

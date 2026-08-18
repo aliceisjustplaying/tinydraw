@@ -32,6 +32,7 @@ struct AppStorage {
   std::uint16_t* harness_tile_scratch = nullptr;
 #endif
   bool supertask_internal = false;
+  bool settle_internal = false;
   std::uint8_t* producer_mask = nullptr;
   std::uint16_t* producer_summary_rows = nullptr;
   std::uint32_t* producer_summary_words = nullptr;

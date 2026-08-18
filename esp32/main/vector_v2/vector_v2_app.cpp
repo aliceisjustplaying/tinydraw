@@ -97,8 +97,9 @@ void run_vector_v2_app() {
     return;
   }
   std::printf(
-      "TINYDRAW_PRODUCER_SCRATCH supertask_internal=%u free_internal=%lu free_psram=%lu\n",
-      storage.supertask_internal,
+      "TINYDRAW_PRODUCER_SCRATCH supertask_internal=%u settle_internal=%u free_internal=%lu "
+      "free_psram=%lu\n",
+      storage.supertask_internal, storage.settle_internal,
       static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
       static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)));
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
@@ -284,7 +285,17 @@ void run_vector_v2_app() {
                                  exporter, std::span(storage.snapshot, vector_v2::kOverviewPixels),
                                  std::span(storage.input_samples, kInputSampleCapacity),
                                  std::span(storage.harness_tile_scratch, vector_v2::kTilePixels),
-                                 std::span(storage.overview_scratch, vector_v2::kOverviewPixels));
+                                 std::span(storage.overview_scratch, vector_v2::kOverviewPixels),
+                                 {.operation_alpha = std::span(storage.settle_op_alpha,
+                                                               vector_v2::kTilePixels),
+                                  .accumulated_alpha = std::span(storage.settle_accumulated,
+                                                                 vector_v2::kTilePixels),
+                                  .red = std::span(storage.settle_red, vector_v2::kTilePixels),
+                                  .green = std::span(storage.settle_green, vector_v2::kTilePixels),
+                                  .blue = std::span(storage.settle_blue, vector_v2::kTilePixels),
+                                  .candidate_indices = std::span(storage.operation_candidates,
+                                                                 vector_v2::kOperationCapacity)},
+                                 std::span(storage.settle_pixels, vector_v2::kTilePixels));
   std::printf("TINYDRAW_VECTOR_V2_GATE_HARNESS_DONE pass=%u\n", harness_verdict);
 #endif
   const std::size_t overview_bytes = vector_v2::kOverviewPixels *

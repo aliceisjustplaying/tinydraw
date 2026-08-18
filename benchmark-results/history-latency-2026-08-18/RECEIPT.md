@@ -145,3 +145,32 @@ authority/overview patch replay (15–31 ms) and one exact presentation
 (62–87 ms at 400%) — F16/F17 composition work and a future preserved
 overview patch are the follow-on targets. Same-log adversarial paced cold:
 391.8/382.5/457.3/492.8 ms — within dice, ≤500 held.
+
+## Settled-AA round 1 — deterministic all-zoom gate + two treatments
+
+`settle_timing` now rides the evil-hairline document in the battery,
+closing the 50–400% automated coverage gap. Baseline (PSRAM planes):
+107.2 / 138.8 / 276.9 / 661.0 / 1,765.3 ms at 25–400%; the 50% figure is
+one 64×64 window containing the whole corpus (138.8 ms for a single tile).
+
+Treatment 1 — no_ink white fast path (kept): windows the conservative
+index proves empty complete as one atomic white fill and skip
+publication/staging/presentation. 25% on this document: 41/42 windows
+skipped, 166.8→107.1 ms, slices 959→438. Frozen AA checksums
+byte-identical; the win scales with the ink-free fraction of real
+drawings and does not move the dense window.
+
+Treatment 2 — settle planes internal (kept): all six planes allocate
+internal-first (40,960 B = exactly five 8 KiB dcache ways, so PSRAM
+cache-set placement is preserved). Same-work A/B: −1.9/−1.9/−2.8/−3.4/
+−4.1% at 25–400%. Cost: steady internal free 223→182 KiB; export dip
+48,804 B free internal (thin, green — watch NTP/export margins).
+The PSRAM-plane hypothesis for the host/device divergence is therefore
+mostly falsified.
+
+Attribution from the slice ledger: 8,812 slices × 512 work-px ≈ 4.5 M
+work-pixels for 172 K settled output pixels at 400% — ~26× overdraw from
+dense overlapping operations re-rasterized per window. The next credible
+lever is edge-span recording (immediate rasterization persists its span
+boundaries per tile; settle touches only the one-pixel annulus), which
+attacks the overdraw itself rather than its memory placement.

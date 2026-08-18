@@ -362,4 +362,135 @@ bool run_history_latency_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
   return mechanical_ok && log.current_revision() == canvas.current_revision();
 }
 
+
+namespace {
+
+struct SettleTimingTotals {
+  std::size_t tiles = 0;
+  std::size_t no_ink = 0;
+  std::size_t slices = 0;
+  std::int64_t total_us = 0;
+  std::int64_t max_slice_us = 0;
+  std::size_t failures = 0;
+};
+
+// Renders one window/tile to settled completion through the production
+// cooperative slice API, charging the same 512-pixel work quantum the
+// product uses.
+bool settle_one_window(OperationLog& log, ZoomLevel zoom, vector_v2::PixelRect bounds,
+                       const vector_v2::SettledTileWorkspace& workspace,
+                       std::span<std::uint16_t> settle_pixels, SettleTimingTotals& totals,
+                       bool& no_ink) {
+  vector_v2::SettledRenderCursor cursor;
+  no_ink = false;
+  while (true) {
+    const std::int64_t started = esp_timer_get_time();
+    const auto slice = vector_v2::render_settled_window_slice({.log = log,
+                                                              .zoom = zoom,
+                                                              .window_bounds = bounds,
+                                                              .workspace = workspace,
+                                                              .out_pixels = settle_pixels,
+                                                              .cursor = cursor,
+                                                              .max_work_px = 512U});
+    const std::int64_t elapsed = esp_timer_get_time() - started;
+    ++totals.slices;
+    totals.total_us += elapsed;
+    totals.max_slice_us = std::max(totals.max_slice_us, elapsed);
+    if (slice.status == vector_v2::SettledRenderStatus::kError) {
+      return false;
+    }
+    if (slice.status == vector_v2::SettledRenderStatus::kComplete) {
+      no_ink = slice.no_ink;
+      return true;
+    }
+  }
+}
+
+}  // namespace
+
+// Deterministic all-zoom settled-AA timing over the evil-hairline history
+// document: one dense window plus ink-free margins at every zoom. Closes
+// the coverage gap where 50-400% settle walls only existed as manual
+// product captures.
+bool run_settle_timing_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
+                            OperationLog& log, MaterializedCanvas& canvas,
+                            const vector_v2::ChromeState& chrome,
+                            const vector_v2::SettledTileWorkspace& settle_workspace,
+                            std::span<std::uint16_t> settle_pixels) {
+  constexpr std::array kZooms{ZoomLevel::k25Percent, ZoomLevel::k50Percent,
+                              ZoomLevel::k100Percent, ZoomLevel::k200Percent,
+                              ZoomLevel::k400Percent};
+  bool all_passed = true;
+  for (const ZoomLevel zoom : kZooms) {
+    if (!presenter.set_view(zoom, 0, 0, chrome, now_us()).passed) {
+      return false;
+    }
+    const vector_v2::ViewRequest view{
+        .zoom = zoom,
+        .level_pixels = {presenter.level_x(), presenter.level_y(),
+                         presenter.level_x() + vector_v2::kOverviewWidth,
+                         presenter.level_y() + vector_v2::kOverviewHeight},
+    };
+    if (zoom != ZoomLevel::k25Percent) {
+      std::size_t steps = 0;
+      std::size_t tiles = 0;
+      std::size_t scanned = 0;
+      std::size_t rendered = 0;
+      if (!fill_history_view(producer, view, steps, tiles, scanned, rendered)) {
+        return false;
+      }
+    }
+    SettleTimingTotals totals{};
+    const int first_column = zoom == ZoomLevel::k25Percent ? 0 : view.level_pixels.x0 / 64;
+    const int first_row = zoom == ZoomLevel::k25Percent ? 0 : view.level_pixels.y0 / 64;
+    for (int row = 0; row * 64 < vector_v2::kOverviewHeight; ++row) {
+      for (int column = 0; column * 64 < vector_v2::kOverviewWidth; ++column) {
+        vector_v2::PixelRect bounds{};
+        bool renderable = true;
+        vector_v2::TileKey key{zoom, static_cast<std::uint16_t>(first_column + column),
+                               static_cast<std::uint16_t>(first_row + row)};
+        if (zoom == ZoomLevel::k25Percent) {
+          bounds = {column * 64, row * 64,
+                    std::min((column + 1) * 64, vector_v2::kOverviewWidth),
+                    std::min((row + 1) * 64, vector_v2::kOverviewHeight)};
+        } else {
+          const auto source = canvas.lookup(key);
+          renderable = source.has_value() && source->kind == vector_v2::SourceKind::kTileSlot &&
+                       source->quality < vector_v2::MaterializationQuality::kSettled;
+          bounds = vector_v2::tile_pixel_bounds(key);
+        }
+        if (!renderable) {
+          continue;
+        }
+        bool no_ink = false;
+        if (!settle_one_window(log, zoom, bounds, settle_workspace, settle_pixels, totals,
+                               no_ink)) {
+          ++totals.failures;
+          continue;
+        }
+        ++totals.tiles;
+        totals.no_ink += no_ink;
+        if (!no_ink && zoom != ZoomLevel::k25Percent &&
+            !canvas
+                 .publish_tile(key, canvas.current_revision(),
+                               vector_v2::MaterializationQuality::kSettled, settle_pixels)
+                 .has_value()) {
+          ++totals.failures;
+        }
+      }
+    }
+    const bool passed = totals.failures == 0U;
+    all_passed = all_passed && passed;
+    std::printf(
+        "TINYDRAW_GATE1_SETTLE_TIMING zoom=%s tiles=%lu no_ink=%lu slices=%lu total_us=%lld "
+        "max_slice_us=%lld failures=%lu pass=%u\n",
+        zoom_name(zoom), static_cast<unsigned long>(totals.tiles),
+        static_cast<unsigned long>(totals.no_ink), static_cast<unsigned long>(totals.slices),
+        static_cast<long long>(totals.total_us), static_cast<long long>(totals.max_slice_us),
+        static_cast<unsigned long>(totals.failures), passed);
+    std::fflush(stdout);
+  }
+  return all_passed;
+}
+
 }  // namespace tinydraw::esp32::gate_harness
