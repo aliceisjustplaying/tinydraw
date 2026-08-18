@@ -159,7 +159,9 @@ class InPlaceOverviewStage {
   std::optional<ZoomLevel> priority_zoom_{};
   const RerenderLedger* rerender_ledger_ = nullptr;
   InPlaceMetadataPhase metadata_phase_ = InPlaceMetadataPhase::kUniforms;
-  std::size_t metadata_zoom_ = 0;
+  // kTiledZoomCount + 1 is the bounded retained-key marking prepass;
+  // kTiledZoomCount + 2 is its cleanup pass.
+  std::size_t metadata_zoom_ = kTiledZoomCount + 1U;
   std::size_t metadata_offset_ = 0;
   std::size_t raw_slot_ = 0;
   std::size_t rerender_plane_ = 0;
@@ -483,14 +485,14 @@ class MaterializedCanvas {
   void compose_fallback_pixels(PixelRect bounds, CompositionContext& context);
   static void include_quality(MaterializationQuality quality, ViewCompositionStats& stats);
   void invalidate_zoom_uniforms(ZoomLevel zoom, PixelRect world_bounds,
-                                std::span<const TileKey> retained_keys,
                                 const InPlaceCommitScope& scope);
-  void invalidate_uniforms(PixelRect world_bounds, std::span<const TileKey> retained_keys = {},
-                           const InPlaceCommitScope& scope = {});
+  void invalidate_uniforms(PixelRect world_bounds, const InPlaceCommitScope& scope = {});
   void apply_overview_publication(const OverviewRevisionPublication& overview_publication);
   void finish_in_place_revision(DocumentRevision revision, PixelRect affected_world_bounds,
                                 std::span<const TileKey> retained_keys,
                                 const InPlaceCommitScope& scope);
+  void mark_retained_key(TileKey key, DocumentRevision revision);
+  void clear_retained_marker(TileKey key);
   void finish_revision(DocumentRevision revision, PixelRect affected_world_bounds);
   void mark_occupied(PixelRect world_bounds);
   void cancel_in_place_stage(InPlaceOverviewStage& stage);
