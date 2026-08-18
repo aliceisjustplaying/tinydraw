@@ -3,6 +3,8 @@
 
 #include <doctest.h>
 
+#include <cfloat>
+
 #include "tinydraw/geometry.h"
 
 TEST_CASE("touch corners map to the logical canvas") {

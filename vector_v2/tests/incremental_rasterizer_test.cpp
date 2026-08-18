@@ -89,7 +89,11 @@ TEST_CASE("committed sparse ink follows the curved midpoint path") {
     const tinydraw::InkPoint point{
         .position = {.x = static_cast<float>(sample.x_quarter) * 0.0625F,
                      .y = static_cast<float>(sample.y_quarter) * 0.0625F},
+        .pressure = 0.0F,
         .radius = static_cast<float>(sample.radius_256) / 256.0F,
+        .distance = 0.0F,
+        .running_length = 0.0F,
+        .timestamp_us = 0U,
     };
     const auto update =
         index + 1U == samples.size() ? ribbon.finish(point) : ribbon.append(point, false);

@@ -5,7 +5,9 @@
 // which keep chunk structure and CRCs valid while corrupting the stream.
 #include <zlib.h>
 
+#include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
