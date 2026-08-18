@@ -176,8 +176,12 @@ TEST_CASE("staged overview publication is row-bounded and fails closed on mismat
   std::array<bool, 4> saw_phase{};
   bool rejected_metadata_mismatch = false;
   while (true) {
-    const auto metadata =
-        canvas.stage_in_place_metadata({1}, publication, world_bounds, {}, 1U, stage);
+    const auto metadata = canvas.stage_in_place_metadata({.revision = {1},
+                                                          .overview_publication = publication,
+                                                          .affected_world_bounds = world_bounds,
+                                                          .retained_keys = {},
+                                                          .max_work_items = 1U,
+                                                          .stage = stage});
     REQUIRE(metadata.status != vector_v2::OverviewStageStatus::kError);
     CHECK(metadata.work_items <= 1U);
     switch (metadata.phase) {
@@ -201,8 +205,13 @@ TEST_CASE("staged overview publication is row-bounded and fails closed on mismat
           .preserved_uniform_color = std::nullopt,
           .priority_zoom = vector_v2::ZoomLevel::k100Percent,
           .cross_zoom_invalidated = nullptr};
-      const auto rejected =
-          canvas.stage_in_place_metadata({1}, publication, world_bounds, {}, 1U, stage, mismatch);
+      const auto rejected = canvas.stage_in_place_metadata({.revision = {1},
+                                                            .overview_publication = publication,
+                                                            .affected_world_bounds = world_bounds,
+                                                            .retained_keys = {},
+                                                            .max_work_items = 1U,
+                                                            .stage = stage,
+                                                            .scope = mismatch});
       CHECK(rejected.status == vector_v2::OverviewStageStatus::kError);
       CHECK(stage.active());
       rejected_metadata_mismatch = true;
@@ -310,8 +319,13 @@ TEST_CASE("staged metadata commit matches synchronous mixed materialization comm
             vector_v2::OverviewStageStatus::kError);
   }
   while (true) {
-    const auto slice = staged.stage_in_place_metadata({1}, publication, world_bounds, retained, 3U,
-                                                      stage, staged_scope);
+    const auto slice = staged.stage_in_place_metadata({.revision = {1},
+                                                       .overview_publication = publication,
+                                                       .affected_world_bounds = world_bounds,
+                                                       .retained_keys = retained,
+                                                       .max_work_items = 3U,
+                                                       .stage = stage,
+                                                       .scope = staged_scope});
     REQUIRE(slice.status != vector_v2::OverviewStageStatus::kError);
     if (slice.status == vector_v2::OverviewStageStatus::kComplete) {
       break;
@@ -374,8 +388,12 @@ TEST_CASE("cancelled retained-key prepass restores raw and uniform lookup state"
             vector_v2::OverviewStageStatus::kError);
   }
   const std::array retained{uniform, raw};
-  const auto first =
-      canvas.stage_in_place_metadata({1}, publication, world_bounds, retained, 1U, stage);
+  const auto first = canvas.stage_in_place_metadata({.revision = {1},
+                                                     .overview_publication = publication,
+                                                     .affected_world_bounds = world_bounds,
+                                                     .retained_keys = retained,
+                                                     .max_work_items = 1U,
+                                                     .stage = stage});
   REQUIRE(first.status == vector_v2::OverviewStageStatus::kInProgress);
   CHECK(first.phase == vector_v2::InPlaceMetadataPhase::kUniforms);
   CHECK(first.work_items == 1U);

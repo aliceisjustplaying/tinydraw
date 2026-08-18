@@ -39,8 +39,13 @@ struct Rig {
   std::vector<std::uint16_t> tile_pixels{};
   std::vector<std::uint16_t> raw_directory =
       std::vector<std::uint16_t>(v2::kMaterializedTileIdentityCount);
-  v2::MaterializedCanvas canvas{overview,    uniforms, occupancy,    slots,
-                                tile_pixels, {0},      raw_directory};
+  v2::MaterializedCanvas canvas{{.overview_pixels = overview,
+                                 .uniform_catalog = uniforms,
+                                 .occupancy_bits = occupancy,
+                                 .slots = slots,
+                                 .tile_pixels = tile_pixels,
+                                 .initial_revision = {0},
+                                 .raw_slot_directory = raw_directory}};
 
   bool initialize(bool dense) {
     if (!log.ready() || !canvas.ready()) {

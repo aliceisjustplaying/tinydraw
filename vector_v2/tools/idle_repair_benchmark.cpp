@@ -59,7 +59,13 @@ struct Rig {
       std::vector<std::uint16_t>(v2::kMaterializedTileIdentityCount);
   std::array<std::uint16_t, v2::kTilePixels> tile{};
   std::vector<std::uint16_t> composed = std::vector<std::uint16_t>(v2::kOverviewPixels);
-  v2::MaterializedCanvas canvas{overview, uniforms, occupancy, slots, tile_pixels, {1}, directory};
+  v2::MaterializedCanvas canvas{{.overview_pixels = overview,
+                                 .uniform_catalog = uniforms,
+                                 .occupancy_bits = occupancy,
+                                 .slots = slots,
+                                 .tile_pixels = tile_pixels,
+                                 .initial_revision = {1},
+                                 .raw_slot_directory = directory}};
 
   bool ready() { return canvas.ready() && canvas.publish_overview({1}, overview); }
 

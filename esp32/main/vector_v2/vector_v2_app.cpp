@@ -90,14 +90,17 @@ void run_vector_v2_app() {
 #endif
   std::fill_n(storage.overview, vector_v2::kOverviewPixels, 0xFFFFU);
 
-  MaterializedCanvas canvas(
-      std::span(storage.overview, vector_v2::kOverviewPixels),
-      std::span(storage.uniforms, vector_v2::kMaterializedTileIdentityCount),
-      std::span(storage.occupancy, vector_v2::kOccupancyBytes),
-      std::span(storage.slots, vector_v2::kTileSlotCount),
-      std::span(storage.tile_pixels, vector_v2::kTileSlotCount * vector_v2::kTilePixels),
-      DocumentRevision{},
-      std::span(storage.raw_slot_directory, vector_v2::kMaterializedTileIdentityCount));
+  MaterializedCanvas canvas({
+      .overview_pixels = std::span(storage.overview, vector_v2::kOverviewPixels),
+      .uniform_catalog = std::span(storage.uniforms, vector_v2::kMaterializedTileIdentityCount),
+      .occupancy_bits = std::span(storage.occupancy, vector_v2::kOccupancyBytes),
+      .slots = std::span(storage.slots, vector_v2::kTileSlotCount),
+      .tile_pixels =
+          std::span(storage.tile_pixels, vector_v2::kTileSlotCount * vector_v2::kTilePixels),
+      .initial_revision = DocumentRevision{},
+      .raw_slot_directory =
+          std::span(storage.raw_slot_directory, vector_v2::kMaterializedTileIdentityCount),
+  });
   vector_v2::OperationSpatialIndex operation_spatial_index(
       vector_v2::kOperationCapacity,
       std::span(storage.operation_spatial_cells,

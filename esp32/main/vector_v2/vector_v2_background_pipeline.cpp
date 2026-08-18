@@ -124,8 +124,13 @@ bool VectorV2BackgroundPipeline::drain_boundary(BackgroundDrainBoundary boundary
   producer_.cancel_pending_work();
   while (absorption_.active() || vector_v2::pending_operation_count(log_, canvas_) != 0U) {
     const auto absorbed = vector_v2::absorb_pending_operation_slice(
-        log_, canvas_, append_workspace_, absorption_, priority_view(presenter_), {},
-        {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs});
+        {log_,
+         canvas_,
+         append_workspace_,
+         absorption_,
+         priority_view(presenter_),
+         {},
+         {.now_us = &esp_timer_get_time, .budget_us = kInPlaceRetentionBudgetUs}});
     if (absorbed.status == vector_v2::PendingAbsorptionStatus::kComplete) {
       ++operations;
     } else if (absorbed.status == vector_v2::PendingAbsorptionStatus::kIdle) {
@@ -418,9 +423,13 @@ void VectorV2BackgroundPipeline::run_settle(std::uint32_t loop_us,
 
     const std::int64_t render_started = esp_timer_get_time();
     const auto slice = vector_v2::render_settled_window_slice(
-        log_, settle_render_.overview ? ZoomLevel::k25Percent : settle_render_.key.zoom,
-        settle_render_.level_bounds, settle_workspace_, settle_pixels_, settle_render_.cursor,
-        kSettleWorkPixels);
+        {.log = log_,
+         .zoom = settle_render_.overview ? ZoomLevel::k25Percent : settle_render_.key.zoom,
+         .window_bounds = settle_render_.level_bounds,
+         .workspace = settle_workspace_,
+         .out_pixels = settle_pixels_,
+         .cursor = settle_render_.cursor,
+         .max_work_px = kSettleWorkPixels});
     const PixelRect bounds = settle_render_.level_bounds;
     bool rendered = false;
     if (slice.status == vector_v2::SettledRenderStatus::kComplete) {
@@ -521,11 +530,15 @@ BackgroundSliceResult VectorV2BackgroundPipeline::run_slice(const BackgroundSlic
     const AbsorbSliceLimit limit{.touch_urgency = input.touch_urgency,
                                  .deadline_us = started + kAbsorbSliceBudgetUs};
     const auto absorbed = vector_v2::absorb_pending_operation_slice(
-        log_, canvas_, append_workspace_, absorption_, priority_view(presenter_),
-        {.requested = &AbsorbSliceLimit::requested,
-         .context = &limit,
-         .raster_work_px = kAbsorbRasterWorkPixels},
-        {.now_us = &esp_timer_get_time, .budget_us = kIdleAbsorbBudgetUs});
+        {log_,
+         canvas_,
+         append_workspace_,
+         absorption_,
+         priority_view(presenter_),
+         {.requested = &AbsorbSliceLimit::requested,
+          .context = &limit,
+          .raster_work_px = kAbsorbRasterWorkPixels},
+         {.now_us = &esp_timer_get_time, .budget_us = kIdleAbsorbBudgetUs}});
     const std::int64_t elapsed = esp_timer_get_time() - started;
     ++drain_slices_;
     drain_total_us_ += elapsed;

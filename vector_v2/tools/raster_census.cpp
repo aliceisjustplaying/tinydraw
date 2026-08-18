@@ -1,14 +1,5 @@
-// Host measurement + equality rig for the Vector V2 cold producer.
-//
-// Modes:
-//   (default)            adversarial-corpus census sweep across zooms with a
-//                        bit-exact check against direct forward painter replay
-//   --fuzz-collinear N   randomized collinear constant-radius runs: producer
-//                        per-segment replay vs direct forward replay
-//   --fuzz-docs N        randomized mixed documents (tapered/constant/collinear,
-//                        erasers): producer vs direct forward replay
-//
-// Counters require the library to be built with TINYDRAW_VECTOR_V2_RASTER_CENSUS.
+// Host measurement + equality rig; fuzz implementations live in raster_census_fuzz.cpp.
+// Counters require a library built with TINYDRAW_VECTOR_V2_RASTER_CENSUS.
 
 #include "tinydraw/vector_v2/raster_census.h"
 
@@ -23,10 +14,10 @@
 #include <cstring>
 #include <memory>
 #include <optional>
-#include <random>
 #include <span>
 #include <vector>
 
+#include "raster_census_fuzz.h"
 #include "tinydraw/document/realistic_workload.h"
 #include "tinydraw/vector_v2/adversarial_tapered_corpus.h"
 #include "tinydraw/vector_v2/incremental_document.h"
@@ -92,7 +83,13 @@ struct Rig {
         affected_keys(v2::kTileSlotCount + v2::kMaximumVisibleTiles),
         spatial_index(record_capacity, spatial_cells, spatial_large),
         log(records, samples, &spatial_index),
-        canvas(overview, *uniforms, occupancy, slots, tile_pool, {}, raw_slot_directory),
+        canvas({.overview_pixels = overview,
+                .uniform_catalog = *uniforms,
+                .occupancy_bits = occupancy,
+                .slots = slots,
+                .tile_pixels = tile_pool,
+                .initial_revision = {},
+                .raw_slot_directory = raw_slot_directory}),
         producer(log, canvas,
                  {.supertask_pixels = supertask,
                   .finalized_pixels = mask,
@@ -841,16 +838,10 @@ int run_hairline_pan_repro(int thin_strokes, int medium_strokes, int thick_strok
       static_cast<double>(target_census.setup_ticks) / 1e6,
       static_cast<double>(target_census.paint_ticks) / 1e6, complete, steps < kMaximumSteps,
       !budget_complete || budget_missing_blocks != 0U || budget_fallback != 0U);
-  const bool reproduced_budget_regression = !budget_complete && budget_missing_blocks == 2U &&
-                                            budget_fallback != 0U &&
-                                            steps > kFiveHundredMsEquivalentSteps;
-  if (mismatches != 0U || white_blocks != 0U) {
-    return 1;
-  }
-  if (reproduced_budget_regression) {
-    return 1;
-  }
-  return budget_complete && budget_missing_blocks == 0U && budget_fallback == 0U ? 0 : 1;
+  const bool exact = mismatches == 0U && white_blocks == 0U;
+  const bool completed_in_budget =
+      budget_complete && budget_missing_blocks == 0U && budget_fallback == 0U;
+  return exact && completed_in_budget ? 0 : 1;
 }
 
 int run_general_sweep(std::size_t runs) {
@@ -965,254 +956,6 @@ int run_general_sweep(std::size_t runs) {
   return 0;
 }
 
-// ---------------------------------------------------------------------------
-
-struct FuzzRig {
-  std::vector<v2::OperationRecord> records;
-  std::vector<v2::CompactOperationSample> samples;
-  std::vector<std::uint16_t> overview;
-  std::unique_ptr<std::array<v2::MaterializedUniformStorage, v2::kMaterializedTileIdentityCount>>
-      uniforms;
-  std::vector<std::uint8_t> occupancy;
-  std::vector<v2::MaterializedSlotStorage> slots;
-  std::vector<std::uint16_t> tile_pool;
-  std::vector<std::uint16_t> raw_slot_directory;
-  std::vector<std::uint16_t> supertask;
-  std::vector<std::uint8_t> mask;
-  std::vector<std::uint16_t> summary_rows;
-  std::vector<std::uint32_t> summary_words;
-  std::vector<std::uint32_t> chord_plans;
-  v2::OperationLog log;
-  v2::MaterializedCanvas canvas;
-  v2::TileProducer producer;
-
-  FuzzRig()
-      : records(64),
-        samples(4'096),
-        overview(v2::kOverviewPixels, 0xFFFFU),
-        uniforms(std::make_unique<
-                 std::array<v2::MaterializedUniformStorage, v2::kMaterializedTileIdentityCount>>()),
-        occupancy(v2::kOccupancyBytes, 0U),
-        slots(64),
-        tile_pool(slots.size() * v2::kTilePixels),
-        raw_slot_directory(v2::kMaterializedTileIdentityCount),
-        supertask(v2::kTileProducerPixels),
-        mask(v2::kTileProducerMaskBytes),
-        summary_rows(v2::kTileProducerSummaryRows),
-        summary_words(v2::kTileProducerSummaryWords),
-        chord_plans(v2::kOperationChordStorageBytes / 4U),
-        log(records, samples),
-        canvas(overview, *uniforms, occupancy, slots, tile_pool, {}, raw_slot_directory),
-        producer(log, canvas,
-                 {.supertask_pixels = supertask,
-                  .finalized_pixels = mask,
-                  .summary_row_unset = summary_rows,
-                  .summary_saturated_words = summary_words,
-                  .operation_chord_plans = std::as_writable_bytes(std::span(chord_plans))}) {}
-};
-
-bool replay_and_compare(FuzzRig& rig, const v2::ViewRequest& view, std::uint32_t case_index,
-                        const char* label) {
-  std::vector<std::uint16_t> refreshed(v2::kOverviewPixels, 0xFFFFU);
-  if (!rig.canvas.publish_overview({rig.log.current_revision()}, refreshed)) {
-    std::fprintf(stderr, "[%s %u] overview publish failed\n", label, case_index);
-    return false;
-  }
-  std::size_t steps = 0;
-  while (true) {
-    const auto step = rig.producer.produce_next(view);
-    if (!step.has_value()) {
-      std::fprintf(stderr, "[%s %u] produce failed at step %zu\n", label, case_index, steps);
-      return false;
-    }
-    ++steps;
-    if (step->complete) {
-      break;
-    }
-    if (steps > 200'000) {
-      std::fprintf(stderr, "[%s %u] runaway\n", label, case_index);
-      return false;
-    }
-  }
-  const int width = view.level_pixels.x1 - view.level_pixels.x0;
-  const int height = view.level_pixels.y1 - view.level_pixels.y0;
-  std::vector<std::uint16_t> composed(static_cast<std::size_t>(width) *
-                                      static_cast<std::size_t>(height));
-  if (!rig.canvas.compose_view(view, composed).has_value()) {
-    std::fprintf(stderr, "[%s %u] compose failed\n", label, case_index);
-    return false;
-  }
-  std::vector<std::uint16_t> direct(composed.size(), 0xFFFFU);
-  for (std::size_t index = 0; index < rig.log.operation_count(); ++index) {
-    const auto operation = rig.log.operation(index);
-    if (!operation.has_value() ||
-        !v2::apply_incremental_operation(
-            {.tool = operation->tool, .color = operation->color, .samples = operation->samples},
-            {.zoom = view.zoom,
-             .level_bounds = view.level_pixels,
-             .pixels = direct,
-             .stride = width})) {
-      std::fprintf(stderr, "[%s %u] forward replay failed\n", label, case_index);
-      return false;
-    }
-  }
-  if (composed != direct) {
-    std::size_t mismatches = 0;
-    std::size_t first_mismatch = 0;
-    for (std::size_t i = 0; i < composed.size(); ++i) {
-      if (composed[i] != direct[i]) {
-        if (mismatches == 0) {
-          first_mismatch = i;
-        }
-        ++mismatches;
-      }
-    }
-    std::fprintf(
-        stderr, "[%s %u] MISMATCH %zu pixels, first at (%d,%d) got=%04x want=%04x ops=%zu\n", label,
-        case_index, mismatches, view.level_pixels.x0 + static_cast<int>(first_mismatch) % width,
-        view.level_pixels.y0 + static_cast<int>(first_mismatch) / width, composed[first_mismatch],
-        direct[first_mismatch], rig.log.operation_count());
-    // Dump the document for reproduction.
-    for (std::size_t index = 0; index < rig.log.operation_count(); ++index) {
-      const auto operation = rig.log.operation(index);
-      std::fprintf(stderr, "  op %zu tool=%d color=%04x:", index, static_cast<int>(operation->tool),
-                   operation->color);
-      for (const auto sample : operation->samples) {
-        std::fprintf(stderr, " (%u,%u,r%u)", sample.x_quarter, sample.y_quarter, sample.radius_256);
-      }
-      std::fprintf(stderr, "\n");
-    }
-    return false;
-  }
-  return true;
-}
-
-int run_fuzz_collinear(std::uint32_t cases, std::uint32_t seed) {
-  std::mt19937 rng(seed);
-  std::uint32_t failures = 0;
-  for (std::uint32_t case_index = 0; case_index < cases; ++case_index) {
-    FuzzRig rig;
-    // Random collinear run, constant radius, optional non-collinear tail/head.
-    const int dir_x = static_cast<int>(rng() % 13U) - 6;
-    const int dir_y = static_cast<int>(rng() % 13U) - 6;
-    if (dir_x == 0 && dir_y == 0) {
-      continue;
-    }
-    const int step_scale = 1 + static_cast<int>(rng() % 6U);
-    const int run_length = 3 + static_cast<int>(rng() % 30U);
-    const std::uint16_t radius = static_cast<std::uint16_t>(64U + rng() % 3'000U);
-    const int origin_x = 200 + static_cast<int>(rng() % 600U);
-    const int origin_y = 200 + static_cast<int>(rng() % 600U);
-    std::vector<v2::CompactOperationSample> op_samples;
-    const bool head = (rng() % 2U) == 0U;
-    if (head) {
-      op_samples.push_back({.x_quarter = static_cast<std::uint16_t>((origin_x - 40) * 4),
-                            .y_quarter = static_cast<std::uint16_t>((origin_y + 30) * 4),
-                            .radius_256 = radius});
-    }
-    for (int i = 0; i < run_length; ++i) {
-      const int x = origin_x + i * dir_x * step_scale;
-      const int y = origin_y + i * dir_y * step_scale;
-      if (x < 0 || y < 0 || x > v2::kWorldWidth * 4 || y > v2::kWorldHeight * 4) {
-        break;
-      }
-      op_samples.push_back({.x_quarter = static_cast<std::uint16_t>(x * 4),
-                            .y_quarter = static_cast<std::uint16_t>(y * 4),
-                            .radius_256 = radius,
-                            .elapsed_ms = static_cast<std::uint16_t>(op_samples.size())});
-    }
-    if (op_samples.size() < 3U) {
-      continue;
-    }
-    for (std::size_t i = 0; i < op_samples.size(); ++i) {
-      op_samples[i].elapsed_ms = static_cast<std::uint16_t>(i);
-    }
-    if (!rig.log.append(
-            {.tool = v2::OperationTool::kPen, .color = 0x001FU, .samples = op_samples})) {
-      continue;
-    }
-    // View around the run at a random zoom, tile-aligned 128x128.
-    constexpr std::array zooms{v2::ZoomLevel::k100Percent, v2::ZoomLevel::k200Percent,
-                               v2::ZoomLevel::k400Percent};
-    const v2::ZoomLevel zoom = zooms[rng() % zooms.size()];
-    const int percent = v2::zoom_percent(zoom);
-    const int level_x = (origin_x / 4) * percent / 100;
-    const int level_y = (origin_y / 4) * percent / 100;
-    const int level_width = v2::kWorldWidth * percent / 100;
-    const int level_height = v2::kWorldHeight * percent / 100;
-    const int view_x = std::clamp((level_x / 64) * 64 - 64, 0, std::max(0, level_width - 128));
-    const int view_y = std::clamp((level_y / 64) * 64 - 64, 0, std::max(0, level_height - 128));
-    const v2::ViewRequest view{
-        .zoom = zoom,
-        .level_pixels = {view_x, view_y, std::min(view_x + 128, level_width),
-                         std::min(view_y + 128, level_height)},
-    };
-    if (!replay_and_compare(rig, view, case_index, "collinear")) {
-      ++failures;
-      if (failures >= 5U) {
-        return 1;
-      }
-    }
-  }
-  std::printf(failures == 0U ? "FUZZ_COLLINEAR_OK cases=%u\n" : "FUZZ_COLLINEAR_FAIL cases=%u\n",
-              cases);
-  return failures == 0U ? 0 : 1;
-}
-
-int run_fuzz_docs(std::uint32_t cases, std::uint32_t seed) {
-  std::mt19937 rng(seed);
-  std::uint32_t failures = 0;
-  for (std::uint32_t case_index = 0; case_index < cases; ++case_index) {
-    {
-      std::mt19937 doc_rng(seed ^ (case_index * 2654435761U));
-      FuzzRig rig;
-      const std::size_t op_count = 2U + doc_rng() % 10U;
-      bool appended = true;
-      for (std::size_t op = 0; op < op_count && appended; ++op) {
-        const std::size_t sample_count = 2U + doc_rng() % 24U;
-        const bool eraser = doc_rng() % 5U == 0U;
-        const bool constant_radius = doc_rng() % 3U == 0U;
-        const std::uint16_t base_radius = static_cast<std::uint16_t>(96U + doc_rng() % 2'000U);
-        int x = 300 + static_cast<int>(doc_rng() % 500U);
-        int y = 300 + static_cast<int>(doc_rng() % 500U);
-        std::vector<v2::CompactOperationSample> op_samples;
-        for (std::size_t i = 0; i < sample_count; ++i) {
-          op_samples.push_back(
-              {.x_quarter = static_cast<std::uint16_t>(std::clamp(x, 0, v2::kWorldWidth * 4) * 4),
-               .y_quarter = static_cast<std::uint16_t>(std::clamp(y, 0, v2::kWorldHeight * 4) * 4),
-               .radius_256 = constant_radius ? base_radius
-                                             : static_cast<std::uint16_t>(
-                                                   64U + (base_radius + i * 173U) % 2'400U),
-               .elapsed_ms = static_cast<std::uint16_t>(i * 4U)});
-          x += static_cast<int>(doc_rng() % 90U) - 45;
-          y += static_cast<int>(doc_rng() % 90U) - 45;
-        }
-        appended =
-            rig.log
-                .append({.tool = eraser ? v2::OperationTool::kEraser : v2::OperationTool::kPen,
-                         .color = static_cast<std::uint16_t>(doc_rng() & 0xFFFFU),
-                         .samples = op_samples})
-                .has_value();
-      }
-      if (!appended) {
-        continue;
-      }
-      const v2::ViewRequest view{
-          .zoom = v2::ZoomLevel::k400Percent,
-          .level_pixels = {256, 256, 512, 512},
-      };
-      if (!replay_and_compare(rig, view, case_index, "docs")) {
-        ++failures;
-        if (failures >= 5U) {
-          return 1;
-        }
-      }
-    }
-  }
-  std::printf(failures == 0U ? "FUZZ_DOCS_OK cases=%u\n" : "FUZZ_DOCS_FAIL cases=%u\n", cases);
-  return failures == 0U ? 0 : 1;
-}
-
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -1229,12 +972,12 @@ int main(int argc, char** argv) {
   if (argc >= 2 && std::strcmp(argv[1], "--fuzz-collinear") == 0) {
     const auto cases = static_cast<std::uint32_t>(argc >= 3 ? std::atoi(argv[2]) : 2'000);
     const auto seed = static_cast<std::uint32_t>(argc >= 4 ? std::atoi(argv[3]) : 0xC0FFEE);
-    return run_fuzz_collinear(cases, seed);
+    return tinydraw::vector_v2::raster_census_tool::run_fuzz_collinear(cases, seed);
   }
   if (argc >= 2 && std::strcmp(argv[1], "--fuzz-docs") == 0) {
     const auto cases = static_cast<std::uint32_t>(argc >= 3 ? std::atoi(argv[2]) : 400);
     const auto seed = static_cast<std::uint32_t>(argc >= 4 ? std::atoi(argv[3]) : 0xBEEF);
-    return run_fuzz_docs(cases, seed);
+    return tinydraw::vector_v2::raster_census_tool::run_fuzz_docs(cases, seed);
   }
   if (argc >= 2 && std::strcmp(argv[1], "--adversarial-ops") == 0) {
     const auto operation_count =

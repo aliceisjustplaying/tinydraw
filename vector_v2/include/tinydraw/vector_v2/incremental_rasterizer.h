@@ -155,25 +155,43 @@ struct OperationSweepCursor {
   std::size_t next_chord = 0;
 };
 
+struct MaskedOperationChordRowsRequest {
+  OperationTool tool;
+  std::uint16_t color;
+  std::span<const std::byte> chord_storage;
+  const OperationChordBatch& batch;
+  int first_row;
+  std::size_t max_work_px;
+  const RasterSurface& surface;
+  std::span<std::uint8_t> finalized_pixels;
+  MaskedRowSummary* summary;
+  OperationSweepSlice& slice;
+};
+
+struct OperationChordSliceRequest {
+  OperationTool tool;
+  std::uint16_t color;
+  std::span<const std::byte> chord_storage;
+  const OperationChordBatch& batch;
+  std::size_t max_work_px;
+  const RasterSurface& surface;
+  OperationSweepCursor& cursor;
+  OperationSweepSlice& slice;
+};
+
 // Sweeps rows of a prepared batch, resuming at first_row and stopping at a
 // row boundary once accumulated work reaches max_work_px (at least one row
 // always completes). Per-pixel decisions are identical to the whole-operation
 // painter: covers_pixel stays the sole geometry authority and the finalized
 // mask keeps every pixel single-writer.
 [[nodiscard]] bool apply_masked_operation_chord_rows(
-    OperationTool tool, std::uint16_t color, std::span<const std::byte> chord_storage,
-    const OperationChordBatch& batch, int first_row, std::size_t max_work_px,
-    const RasterSurface& surface, std::span<std::uint8_t> finalized_pixels,
-    MaskedRowSummary* summary, OperationSweepSlice& slice);
+    const MaskedOperationChordRowsRequest& request);
 
 // Intra-row resumable unmasked replay. Stops at a chord boundary once the
 // work charge reaches max_work_px; one chord is the smallest atomic unit.
 // Initialize cursor to {batch.clipped_bounds.y0, 0}. Completion is
 // cursor.next_row == batch.clipped_bounds.y1 with next_chord == 0.
-[[nodiscard]] bool apply_operation_chord_slice(
-    OperationTool tool, std::uint16_t color, std::span<const std::byte> chord_storage,
-    const OperationChordBatch& batch, std::size_t max_work_px, const RasterSurface& surface,
-    OperationSweepCursor& cursor, OperationSweepSlice& slice);
+[[nodiscard]] bool apply_operation_chord_slice(const OperationChordSliceRequest& request);
 
 }  // namespace tinydraw::vector_v2
 

@@ -32,7 +32,13 @@ struct Rig {
   std::vector<std::uint16_t> directory =
       std::vector<std::uint16_t>(v2::kMaterializedTileIdentityCount);
   std::array<std::uint16_t, v2::kTilePixels> tile{};
-  v2::MaterializedCanvas canvas{overview, uniforms, occupancy, slots, tile_pixels, {0}, directory};
+  v2::MaterializedCanvas canvas{{.overview_pixels = overview,
+                                 .uniform_catalog = uniforms,
+                                 .occupancy_bits = occupancy,
+                                 .slots = slots,
+                                 .tile_pixels = tile_pixels,
+                                 .initial_revision = {0},
+                                 .raw_slot_directory = directory}};
 
   Rig() { tile.fill(0x39E7U); }
 
@@ -160,8 +166,12 @@ double measure_raw_metadata_fresh(std::span<const v2::TileKey> resident,
     }
     const auto start = Clock::now();
     while (true) {
-      const auto slice =
-          rig.canvas.stage_in_place_metadata({1}, publication, world_bounds, retained, 64U, stage);
+      const auto slice = rig.canvas.stage_in_place_metadata({.revision = {1},
+                                                             .overview_publication = publication,
+                                                             .affected_world_bounds = world_bounds,
+                                                             .retained_keys = retained,
+                                                             .max_work_items = 64U,
+                                                             .stage = stage});
       if (slice.status == v2::OverviewStageStatus::kError) {
         return -1.0;
       }
@@ -204,8 +214,12 @@ double measure_uniform_metadata_fresh(std::span<const v2::TileKey> keys,
     }
     const auto start = Clock::now();
     while (true) {
-      const auto slice =
-          rig.canvas.stage_in_place_metadata({1}, publication, world_bounds, retained, 64U, stage);
+      const auto slice = rig.canvas.stage_in_place_metadata({.revision = {1},
+                                                             .overview_publication = publication,
+                                                             .affected_world_bounds = world_bounds,
+                                                             .retained_keys = retained,
+                                                             .max_work_items = 64U,
+                                                             .stage = stage});
       if (slice.status == v2::OverviewStageStatus::kError) {
         return -1.0;
       }

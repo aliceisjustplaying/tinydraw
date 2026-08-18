@@ -34,8 +34,13 @@ struct Fixture {
   alignas(vector_v2::kPreparedOperationChordAlign)
       std::array<std::byte, vector_v2::kOperationChordStorageBytes> chord_plans{};
   vector_v2::OperationLog log{records, samples};
-  vector_v2::MaterializedCanvas canvas{overview,  uniforms, occupancy,         slots,
-                                       tile_pool, {0},      raw_slot_directory};
+  vector_v2::MaterializedCanvas canvas{{.overview_pixels = overview,
+                                        .uniform_catalog = uniforms,
+                                        .occupancy_bits = occupancy,
+                                        .slots = slots,
+                                        .tile_pixels = tile_pool,
+                                        .initial_revision = {0},
+                                        .raw_slot_directory = raw_slot_directory}};
 
   Fixture() {
     overview.fill(0xFFFFU);
@@ -134,10 +139,13 @@ TEST_CASE("pending absorption yields within one bounded replay quantum and stays
   do {
     yield.checks = 0;
     slice = vector_v2::absorb_pending_operation_slice(
-        fixture.log, fixture.canvas, fixture.workspace(), state,
-        vector_v2::ViewRequest{.zoom = vector_v2::ZoomLevel::k400Percent,
-                               .level_pixels = {0, 0, 64, 64}},
-        {.requested = &YieldAfterOne::requested, .context = &yield, .raster_work_px = 64U});
+        {fixture.log,
+         fixture.canvas,
+         fixture.workspace(),
+         state,
+         vector_v2::ViewRequest{.zoom = vector_v2::ZoomLevel::k400Percent,
+                                .level_pixels = {0, 0, 64, 64}},
+         {.requested = &YieldAfterOne::requested, .context = &yield, .raster_work_px = 64U}});
     CHECK(slice.checkpoints <= 2U);
     pauses += slice.status == vector_v2::PendingAbsorptionStatus::kInProgress ? 1U : 0U;
   } while (slice.status == vector_v2::PendingAbsorptionStatus::kInProgress);
@@ -166,14 +174,14 @@ TEST_CASE("pending absorption yields within one bounded replay quantum and stays
 TEST_CASE("pending absorption reports idle and rejects missing replay storage") {
   Fixture fixture;
   vector_v2::PendingOperationAbsorption state;
-  CHECK(vector_v2::absorb_pending_operation_slice(fixture.log, fixture.canvas, fixture.workspace(),
-                                                  state)
+  CHECK(vector_v2::absorb_pending_operation_slice(
+            {fixture.log, fixture.canvas, fixture.workspace(), state})
             .status == vector_v2::PendingAbsorptionStatus::kIdle);
   REQUIRE(vector_v2::append_authority_only(fixture.log,
                                            {.color = 0xF800U, .gesture_id = 1U, .samples = kPen}));
   auto invalid = fixture.workspace();
   invalid.operation_chord_plans = {};
-  CHECK(vector_v2::absorb_pending_operation_slice(fixture.log, fixture.canvas, invalid, state)
+  CHECK(vector_v2::absorb_pending_operation_slice({fixture.log, fixture.canvas, invalid, state})
             .status == vector_v2::PendingAbsorptionStatus::kError);
   CHECK_FALSE(state.active());
   CHECK(fixture.canvas.current_revision() == vector_v2::DocumentRevision{0});
@@ -201,10 +209,13 @@ TEST_CASE("resumable eraser retains visible uniform and offscreen raw tiles exac
   vector_v2::PendingAbsorptionSliceResult slice{};
   do {
     slice = vector_v2::absorb_pending_operation_slice(
-        fixture.log, fixture.canvas, fixture.workspace(), state,
-        vector_v2::ViewRequest{.zoom = vector_v2::ZoomLevel::k400Percent,
-                               .level_pixels = {0, 0, 64, 64}},
-        {.raster_work_px = 32U});
+        {fixture.log,
+         fixture.canvas,
+         fixture.workspace(),
+         state,
+         vector_v2::ViewRequest{.zoom = vector_v2::ZoomLevel::k400Percent,
+                                .level_pixels = {0, 0, 64, 64}},
+         {.raster_work_px = 32U}});
   } while (slice.status == vector_v2::PendingAbsorptionStatus::kInProgress);
   REQUIRE(slice.status == vector_v2::PendingAbsorptionStatus::kComplete);
   CHECK(slice.result.published_tiles == 2U);
@@ -233,19 +244,26 @@ TEST_CASE("mismatched resume preserves the original absorption continuation") {
                                         .level_pixels = {0, 0, 64, 64}};
   vector_v2::PendingOperationAbsorption state;
   CHECK(vector_v2::absorb_pending_operation_slice(
-            fixture.log, fixture.canvas, fixture.workspace(), state, original,
-            {.requested = &YieldImmediately::requested, .raster_work_px = 64U})
+            {fixture.log,
+             fixture.canvas,
+             fixture.workspace(),
+             state,
+             original,
+             {.requested = &YieldImmediately::requested, .raster_work_px = 64U}})
             .status == vector_v2::PendingAbsorptionStatus::kInProgress);
   REQUIRE(state.active());
   CHECK(vector_v2::absorb_pending_operation_slice(
-            fixture.log, fixture.canvas, fixture.workspace(), state,
-            vector_v2::ViewRequest{.zoom = vector_v2::ZoomLevel::k200Percent,
-                                   .level_pixels = {0, 0, 64, 64}},
-            {.raster_work_px = 64U})
+            {fixture.log,
+             fixture.canvas,
+             fixture.workspace(),
+             state,
+             vector_v2::ViewRequest{.zoom = vector_v2::ZoomLevel::k200Percent,
+                                    .level_pixels = {0, 0, 64, 64}},
+             {.raster_work_px = 64U}})
             .status == vector_v2::PendingAbsorptionStatus::kError);
   CHECK(state.active());
   const auto recovered = vector_v2::absorb_pending_operation_slice(
-      fixture.log, fixture.canvas, fixture.workspace(), state, original, {.raster_work_px = 64U});
+      {fixture.log, fixture.canvas, fixture.workspace(), state, original, {.raster_work_px = 64U}});
   REQUIRE(recovered.status == vector_v2::PendingAbsorptionStatus::kComplete);
   CHECK_FALSE(state.active());
   std::array<std::uint16_t, vector_v2::kOverviewPixels> expected{};
@@ -300,8 +318,12 @@ TEST_CASE("cancelled partial tile paint restarts exactly with a changed priority
   for (std::size_t slice_index = 0; slice_index < 1'000U; ++slice_index) {
     yield.checks = 0;
     const auto slice = vector_v2::absorb_pending_operation_slice(
-        fixture.log, fixture.canvas, fixture.workspace(), state, original_view,
-        {.requested = &YieldAfterOne::requested, .context = &yield, .raster_work_px = 64U});
+        {fixture.log,
+         fixture.canvas,
+         fixture.workspace(),
+         state,
+         original_view,
+         {.requested = &YieldAfterOne::requested, .context = &yield, .raster_work_px = 64U}});
     REQUIRE(slice.status == vector_v2::PendingAbsorptionStatus::kInProgress);
     const auto painted_whites = static_cast<std::size_t>(
         std::count(fixture.tile_pool.begin(), fixture.tile_pool.end(), 0xFFFFU));
@@ -328,9 +350,12 @@ TEST_CASE("cancelled partial tile paint restarts exactly with a changed priority
                                             .level_pixels = {64, 0, 128, 64}};
   vector_v2::PendingAbsorptionSliceResult restarted{};
   do {
-    restarted =
-        vector_v2::absorb_pending_operation_slice(fixture.log, fixture.canvas, fixture.workspace(),
-                                                  state, changed_view, {.raster_work_px = 64U});
+    restarted = vector_v2::absorb_pending_operation_slice({fixture.log,
+                                                           fixture.canvas,
+                                                           fixture.workspace(),
+                                                           state,
+                                                           changed_view,
+                                                           {.raster_work_px = 64U}});
   } while (restarted.status == vector_v2::PendingAbsorptionStatus::kInProgress);
   REQUIRE(restarted.status == vector_v2::PendingAbsorptionStatus::kComplete);
   CHECK_FALSE(state.active());
@@ -376,8 +401,12 @@ TEST_CASE("cancelled partial overview stage restarts with exact pending presenta
   for (std::size_t slice_index = 0; slice_index < 10'000U; ++slice_index) {
     yield.checks = 0;
     const auto slice = vector_v2::absorb_pending_operation_slice(
-        fixture.log, fixture.canvas, fixture.workspace(), state, std::nullopt,
-        {.requested = &YieldAfterOne::requested, .context = &yield, .raster_work_px = 64U});
+        {fixture.log,
+         fixture.canvas,
+         fixture.workspace(),
+         state,
+         std::nullopt,
+         {.requested = &YieldAfterOne::requested, .context = &yield, .raster_work_px = 64U}});
     REQUIRE(slice.status == vector_v2::PendingAbsorptionStatus::kInProgress);
     if (slice.work_unit != vector_v2::PendingAbsorptionWorkUnit::kStageOverview) {
       continue;
@@ -404,9 +433,12 @@ TEST_CASE("cancelled partial overview stage restarts with exact pending presenta
 
   state.cancel();
   CHECK_FALSE(state.active());
-  const auto restarted =
-      vector_v2::absorb_pending_operation_slice(fixture.log, fixture.canvas, fixture.workspace(),
-                                                state, std::nullopt, {.raster_work_px = 64U});
+  const auto restarted = vector_v2::absorb_pending_operation_slice({fixture.log,
+                                                                    fixture.canvas,
+                                                                    fixture.workspace(),
+                                                                    state,
+                                                                    std::nullopt,
+                                                                    {.raster_work_px = 64U}});
   REQUIRE(restarted.status == vector_v2::PendingAbsorptionStatus::kComplete);
   CHECK(fixture.overview == expected);
   CHECK(fixture.canvas.current_revision() == fixture.log.current_revision());
@@ -441,8 +473,12 @@ TEST_CASE("cancelled partial metadata stage rolls raw revisions back before exac
   for (std::size_t slice_index = 0; slice_index < 10'000U; ++slice_index) {
     yield.checks = 0;
     const auto slice = vector_v2::absorb_pending_operation_slice(
-        fixture.log, fixture.canvas, fixture.workspace(), state, view,
-        {.requested = &YieldAfterOne::requested, .context = &yield, .raster_work_px = 1U});
+        {fixture.log,
+         fixture.canvas,
+         fixture.workspace(),
+         state,
+         view,
+         {.requested = &YieldAfterOne::requested, .context = &yield, .raster_work_px = 1U}});
     REQUIRE(slice.status == vector_v2::PendingAbsorptionStatus::kInProgress);
     if (slice.work_unit == vector_v2::PendingAbsorptionWorkUnit::kStageRawSlots) {
       raw_metadata_started = true;
@@ -463,7 +499,7 @@ TEST_CASE("cancelled partial metadata stage rolls raw revisions back before exac
   CHECK(rolled_back->revision == vector_v2::DocumentRevision{0});
 
   const auto restarted = vector_v2::absorb_pending_operation_slice(
-      fixture.log, fixture.canvas, fixture.workspace(), state, view, {.raster_work_px = 64U});
+      {fixture.log, fixture.canvas, fixture.workspace(), state, view, {.raster_work_px = 64U}});
   REQUIRE(restarted.status == vector_v2::PendingAbsorptionStatus::kComplete);
   auto expected = blue;
   REQUIRE(
@@ -489,20 +525,30 @@ TEST_CASE("later authority may append while the oldest absorption is paused") {
   };
   vector_v2::PendingOperationAbsorption state;
   CHECK(vector_v2::absorb_pending_operation_slice(
-            fixture.log, fixture.canvas, fixture.workspace(), state, std::nullopt,
-            {.requested = &YieldImmediately::requested, .raster_work_px = 64U})
+            {fixture.log,
+             fixture.canvas,
+             fixture.workspace(),
+             state,
+             std::nullopt,
+             {.requested = &YieldImmediately::requested, .raster_work_px = 64U}})
             .status == vector_v2::PendingAbsorptionStatus::kInProgress);
   REQUIRE(vector_v2::append_authority_only(
       fixture.log, {.color = 0x07E0U, .gesture_id = 2U, .samples = second}));
-  const auto first =
-      vector_v2::absorb_pending_operation_slice(fixture.log, fixture.canvas, fixture.workspace(),
-                                                state, std::nullopt, {.raster_work_px = 64U});
+  const auto first = vector_v2::absorb_pending_operation_slice({fixture.log,
+                                                                fixture.canvas,
+                                                                fixture.workspace(),
+                                                                state,
+                                                                std::nullopt,
+                                                                {.raster_work_px = 64U}});
   REQUIRE(first.status == vector_v2::PendingAbsorptionStatus::kComplete);
   CHECK(fixture.canvas.current_revision() == vector_v2::DocumentRevision{1});
   CHECK(vector_v2::pending_operation_count(fixture.log, fixture.canvas) == 1U);
-  const auto second_absorb =
-      vector_v2::absorb_pending_operation_slice(fixture.log, fixture.canvas, fixture.workspace(),
-                                                state, std::nullopt, {.raster_work_px = 64U});
+  const auto second_absorb = vector_v2::absorb_pending_operation_slice({fixture.log,
+                                                                        fixture.canvas,
+                                                                        fixture.workspace(),
+                                                                        state,
+                                                                        std::nullopt,
+                                                                        {.raster_work_px = 64U}});
   REQUIRE(second_absorb.status == vector_v2::PendingAbsorptionStatus::kComplete);
   CHECK(fixture.canvas.current_revision() == vector_v2::DocumentRevision{2});
   std::array<std::uint16_t, vector_v2::kOverviewPixels> expected{};
@@ -542,11 +588,15 @@ TEST_CASE("wall pauses between absorption slices do not spend retention budget")
     do {
       yield.checks = 0;
       result = vector_v2::absorb_pending_operation_slice(
-          fixture.log, fixture.canvas, fixture.workspace(), state, view,
-          {.requested = pause_between_slices ? &YieldAfterOne::requested : nullptr,
-           .context = &yield,
-           .raster_work_px = 64U},
-          {.now_us = &fake_retention_now_us, .budget_us = 10'000});
+          {fixture.log,
+           fixture.canvas,
+           fixture.workspace(),
+           state,
+           view,
+           {.requested = pause_between_slices ? &YieldAfterOne::requested : nullptr,
+            .context = &yield,
+            .raster_work_px = 64U},
+           {.now_us = &fake_retention_now_us, .budget_us = 10'000}});
       if (result.status == vector_v2::PendingAbsorptionStatus::kInProgress) {
         g_fake_retention_us += 1'000'000;
       }

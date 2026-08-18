@@ -30,21 +30,36 @@ class TestCanvas : private TestCanvasMetadata, public vector_v2::MaterializedCan
  public:
   TestCanvas(std::span<std::uint16_t> overview, std::span<vector_v2::MaterializedSlotStorage> slots,
              std::span<std::uint16_t> tile_pixels, vector_v2::DocumentRevision revision = {})
-      : vector_v2::MaterializedCanvas(overview, *uniforms_, occupancy_, slots, tile_pixels,
-                                      revision, *directory_) {}
+      : vector_v2::MaterializedCanvas({.overview_pixels = overview,
+                                       .uniform_catalog = *uniforms_,
+                                       .occupancy_bits = occupancy_,
+                                       .slots = slots,
+                                       .tile_pixels = tile_pixels,
+                                       .initial_revision = revision,
+                                       .raw_slot_directory = *directory_}) {}
 
   TestCanvas(std::span<std::uint16_t> overview,
              std::span<vector_v2::MaterializedUniformStorage> uniforms,
              std::span<std::uint8_t> occupancy, std::span<vector_v2::MaterializedSlotStorage> slots,
              std::span<std::uint16_t> tile_pixels, vector_v2::DocumentRevision revision = {})
-      : vector_v2::MaterializedCanvas(overview, uniforms, occupancy, slots, tile_pixels, revision,
-                                      *directory_) {}
+      : vector_v2::MaterializedCanvas({.overview_pixels = overview,
+                                       .uniform_catalog = uniforms,
+                                       .occupancy_bits = occupancy,
+                                       .slots = slots,
+                                       .tile_pixels = tile_pixels,
+                                       .initial_revision = revision,
+                                       .raw_slot_directory = *directory_}) {}
 
   TestCanvas(std::span<std::uint16_t> overview,
              std::span<vector_v2::MaterializedUniformStorage> uniforms,
              std::span<std::uint8_t> occupancy, std::span<vector_v2::MaterializedSlotStorage> slots,
              std::span<std::uint16_t> tile_pixels, vector_v2::DocumentRevision revision,
              std::span<std::uint16_t> directory)
-      : vector_v2::MaterializedCanvas(overview, uniforms, occupancy, slots, tile_pixels, revision,
-                                      directory) {}
+      : vector_v2::MaterializedCanvas({.overview_pixels = overview,
+                                       .uniform_catalog = uniforms,
+                                       .occupancy_bits = occupancy,
+                                       .slots = slots,
+                                       .tile_pixels = tile_pixels,
+                                       .initial_revision = revision,
+                                       .raw_slot_directory = directory}) {}
 };

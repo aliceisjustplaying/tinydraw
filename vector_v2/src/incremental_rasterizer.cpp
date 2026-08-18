@@ -8,8 +8,8 @@
 #endif
 #include <cmath>
 
+#include "incremental_rasterizer_internal.h"
 #include "tinydraw/vector_v2/raster_census.h"
-#include "tinydraw/vector_v2/storage_overlap.h"
 
 namespace tinydraw::vector_v2 {
 
@@ -22,19 +22,12 @@ std::uint32_t raster_census_now() {
 #endif
 #endif
 
-namespace {
+namespace raster_internal {
 
-constexpr std::uint16_t kBackground = 0xFFFFU;
 // A center on a pixel-grid intersection is sqrt(0.5) pixels from the nearest
 // pixel center. Keep thin projected operations above that distance so stroke
 // presence survives every committed zoom.
 constexpr float kMinimumScreenRadius = 0.75F;
-
-struct Sample {
-  float x = 0;
-  float y = 0;
-  float radius = 0;
-};
 
 // floor/ceil for in-range values without the floorf/ceilf libcalls the
 // Xtensa toolchain emits: TRUNC.S plus one native compare. Bit-identical to
@@ -81,14 +74,6 @@ float zoom_scale(ZoomLevel zoom) {
   }
   return static_cast<float>(zoom_percent(zoom)) / 100.0F;
 }
-
-struct Segment {
-  Sample first{};
-  Sample second{};
-  float delta_x = 0;
-  float delta_y = 0;
-  float inverse_length_squared = 0;
-};
 
 Segment make_segment(const Sample& first, const Sample& second) {
   const float delta_x = second.x - first.x;
@@ -162,13 +147,6 @@ bool covers_pixel(const Segment& segment, float pixel_x, float pixel_y) {
   return distance_x * distance_x + distance_y * distance_y <= radius * radius;
 }
 
-struct ScanSpan {
-  int first = 0;
-  int last = -1;
-
-  [[nodiscard]] bool empty() const { return last < first; }
-};
-
 int find_first_covered(const Segment& segment, PixelRect bounds, float pixel_y, ScanSpan prior) {
   int x = prior.empty() ? bounds.x0 : std::clamp(prior.first, bounds.x0, bounds.x1 - 1);
   while (x > bounds.x0 && covers_pixel(segment, static_cast<float>(x - 1) + 0.5F, pixel_y)) {
@@ -228,19 +206,6 @@ struct ParameterInterval {
 // native multiplies only. The reciprocal changes crossings by at most a few
 // ulp, which the rounding margin and whole-pixel guard absorb; covers_pixel
 // remains the sole geometry authority inside the conservative interval.
-struct TaperedSpanTable {
-  float origin_low = 0;
-  float delta_low = 0;
-  float inverse_low = 0;
-  float origin_high = 0;
-  float delta_high = 0;
-  float inverse_high = 0;
-  float left_origin = 0;
-  float left_delta = 0;
-  float right_origin = 0;
-  float right_delta = 0;
-};
-
 TaperedSpanTable make_tapered_span_table(const Segment& segment) {
   const float radius_delta = segment.second.radius - segment.first.radius;
   TaperedSpanTable table{
@@ -338,11 +303,6 @@ void finalize_pixel(std::span<std::uint8_t> finalized, std::size_t pixel) {
   const std::uint8_t bit = static_cast<std::uint8_t>(1U << (pixel & 7U));
   finalized[pixel >> 3U] = static_cast<std::uint8_t>(finalized[pixel >> 3U] | bit);
 }
-
-struct UnsetWindow {
-  std::size_t first = 0;
-  std::size_t last = 0;
-};
 
 // Inclusive pixel range of not-yet-finalized pixels within [first, last], or
 // nullopt when every mask bit in the range is set. Pixels outside the window
@@ -499,14 +459,6 @@ int last_covered_at_or_before(const Segment& segment, int first, int last, float
 // shorter than its radius is contained in the circle at its midpoint with
 // radius r + len/2. Every tier is conservative; covers_pixel remains the
 // sole geometry authority via the probe searches that follow.
-struct RowSeed {
-  bool circular = false;
-  float center_x = 0.0F;
-  float center_y = 0.0F;
-  float radius = 0.0F;
-  TaperedSpanTable table{};
-};
-
 RowSeed make_row_seed(const Segment& segment) {
   const float length_squared =
       segment.delta_x * segment.delta_x + segment.delta_y * segment.delta_y;
@@ -545,13 +497,12 @@ ScanSpan conservative_row_span(const RowSeed& seed, PixelRect bounds, float pixe
 // unfinalized window, returning newly finalized pixels. The conservative
 // seed and the window each bound the true chord one-sidedly, so the
 // monotone probes cannot miss coverage; covers_pixel stays authoritative.
-int paint_masked_const_row(const Segment& segment, const RowSeed& seed, PixelRect bounds, int y,
-                           std::size_t row, int window_first, int window_last, std::uint16_t color,
-                           const RasterSurface& surface, std::span<std::uint8_t> finalized) {
-  const float pixel_y = static_cast<float>(y) + 0.5F;
+int paint_masked_const_row(const Segment& segment, const RowSeed& seed, PixelRect bounds,
+                           const MaskedRowTarget& target) {
+  const float pixel_y = static_cast<float>(target.y) + 0.5F;
   const ScanSpan conservative = conservative_row_span(seed, bounds, pixel_y);
-  const int search_first = std::max(conservative.first, window_first);
-  const int search_last = std::min(conservative.last, window_last);
+  const int search_first = std::max(conservative.first, target.window_first);
+  const int search_last = std::min(conservative.last, target.window_last);
   if (search_last < search_first) {
     TINYDRAW_V2_CENSUS_ADD(rows_empty_span, 1);
     return 0;
@@ -565,7 +516,8 @@ int paint_masked_const_row(const Segment& segment, const RowSeed& seed, PixelRec
   const int last_covered = last_covered_at_or_before(segment, first_covered, search_last, pixel_y);
   TINYDRAW_V2_CENSUS_ADD(const_span_pixels,
                          static_cast<std::uint64_t>(last_covered - first_covered + 1));
-  return paint_masked_exact_span(first_covered, last_covered, row, color, surface, finalized);
+  return paint_masked_exact_span(first_covered, last_covered, target.row, target.color,
+                                 target.surface, target.finalized);
 }
 
 // Interactive-append masked const painter: the historical warm-start search.
@@ -727,11 +679,6 @@ void paint_segment(const Sample& start, const Sample& end, std::uint16_t color,
   }
 }
 
-void paint_bounded_segment(const Sample& first, const Sample& second, std::uint16_t color,
-                           const RasterSurface& surface) {
-  paint_segment(first, second, color, surface);
-}
-
 Sample midpoint(const Sample& first, const Sample& second) {
   return {
       .x = (first.x + second.x) * 0.5F,
@@ -739,11 +686,6 @@ Sample midpoint(const Sample& first, const Sample& second) {
       .radius = (first.radius + second.radius) * 0.5F,
   };
 }
-
-struct CurveUnit {
-  std::array<Segment, 3> segments{};
-  std::size_t count = 0U;
-};
 
 std::optional<CurveUnit> curved_unit(std::span<const CompactOperationSample> samples,
                                      std::size_t endpoint, ZoomLevel zoom) {
@@ -782,20 +724,17 @@ std::optional<CurveUnit> curved_unit(std::span<const CompactOperationSample> sam
 // them together pays one mask-range scan per row instead of one per chord,
 // while each chord keeps the historical warm-start search that fresh append
 // masks reward (no skipped rows, so warm chains never break).
-void paint_masked_curve_unit_warm(const CurveUnit& unit, std::uint16_t color,
-                                  const RasterSurface& surface, std::span<std::uint8_t> finalized,
-                                  MaskedRowSummary* summary) {
-  struct ChordState {
-    Segment segment{};
-    TaperedSpanTable table{};
-    PixelRect bounds{};
-    ScanSpan prior{};
-    bool constant = false;
-  };
-  std::array<ChordState, 3> chords{};
+struct WarmChord {
+  Segment segment{};
+  TaperedSpanTable table{};
+  PixelRect bounds{};
+  ScanSpan prior{};
+  bool constant = false;
+};
+
+std::size_t prepare_warm_chords(const CurveUnit& unit, const RasterSurface& surface,
+                                std::span<WarmChord> chords, PixelRect& union_bounds) {
   std::size_t chord_count = 0;
-  PixelRect union_bounds{surface.level_bounds.x1, surface.level_bounds.y1, surface.level_bounds.x0,
-                         surface.level_bounds.y0};
   for (std::size_t step = 0; step < unit.count; ++step) {
     const Segment& segment = unit.segments[step];
     const PixelRect bounds = segment_bounds(segment, surface.level_bounds);
@@ -803,22 +742,69 @@ void paint_masked_curve_unit_warm(const CurveUnit& unit, std::uint16_t color,
       continue;
     }
     const bool constant = segment.first.radius == segment.second.radius;
-    chords[chord_count] = {
+    chords[chord_count++] = {
         .segment = segment,
         .table = constant ? TaperedSpanTable{} : make_tapered_span_table(segment),
         .bounds = bounds,
         .prior = {.first = bounds.x0, .last = bounds.x0 - 1},
         .constant = constant,
     };
-    ++chord_count;
     union_bounds.x0 = std::min(union_bounds.x0, bounds.x0);
     union_bounds.y0 = std::min(union_bounds.y0, bounds.y0);
     union_bounds.x1 = std::max(union_bounds.x1, bounds.x1);
     union_bounds.y1 = std::max(union_bounds.y1, bounds.y1);
   }
+  return chord_count;
+}
+
+void reset_warm_spans(std::span<WarmChord> chords) {
+  for (WarmChord& chord : chords) {
+    chord.prior = {.first = chord.bounds.x0, .last = chord.bounds.x0 - 1};
+  }
+}
+
+int paint_warm_chord_row(WarmChord& chord, int y, std::size_t row, std::uint16_t color,
+                         const RasterSurface& surface, std::span<std::uint8_t> finalized) {
+  if (y < chord.bounds.y0 || y >= chord.bounds.y1) {
+    return 0;
+  }
+  const float pixel_y = static_cast<float>(y) + 0.5F;
+  if (chord.constant) {
+    const int first_covered = find_first_covered(chord.segment, chord.bounds, pixel_y, chord.prior);
+    if (first_covered == chord.bounds.x1) {
+      chord.prior.last = chord.prior.first - 1;
+      return 0;
+    }
+    const int last_covered =
+        find_last_covered(chord.segment, chord.bounds, pixel_y, chord.prior, first_covered);
+    chord.prior = {.first = first_covered, .last = last_covered};
+    TINYDRAW_V2_CENSUS_ADD(const_span_pixels,
+                           static_cast<std::uint64_t>(last_covered - first_covered + 1));
+    return paint_masked_exact_span(first_covered, last_covered, row, color, surface, finalized);
+  }
+
+  TINYDRAW_V2_CENSUS_ADD(rows_scanned, 1);
+  const ScanSpan row_span = conservative_tapered_row_span(chord.table, chord.bounds, pixel_y);
+  if (row_span.empty()) {
+    TINYDRAW_V2_CENSUS_ADD(rows_empty_span, 1);
+    return 0;
+  }
+  TINYDRAW_V2_CENSUS_ADD(span_pixels,
+                         static_cast<std::uint64_t>(row_span.last - row_span.first + 1));
+  return paint_masked_tapered_row(chord.segment, y, row_span, color, surface, finalized);
+}
+
+void paint_masked_curve_unit_warm(const CurveUnit& unit, std::uint16_t color,
+                                  const RasterSurface& surface, std::span<std::uint8_t> finalized,
+                                  MaskedRowSummary* summary) {
+  std::array<WarmChord, 3> chords{};
+  PixelRect union_bounds{surface.level_bounds.x1, surface.level_bounds.y1, surface.level_bounds.x0,
+                         surface.level_bounds.y0};
+  const std::size_t chord_count = prepare_warm_chords(unit, surface, chords, union_bounds);
   if (chord_count == 0U) {
     return;
   }
+  const auto active_chords = std::span(chords).first(chord_count);
   for (int y = union_bounds.y0; y < union_bounds.y1; ++y) {
     const int surface_row = y - surface.level_bounds.y0;
     const std::size_t row =
@@ -829,45 +815,11 @@ void paint_masked_curve_unit_warm(const CurveUnit& unit, std::uint16_t color,
         row + static_cast<std::size_t>(union_bounds.x1 - 1 - surface.level_bounds.x0);
     if (mask_range_all_set(finalized, row_first, row_last)) {
       TINYDRAW_V2_CENSUS_ADD(rows_prefinalized, 1);
-      for (std::size_t index = 0; index < chord_count; ++index) {
-        chords[index].prior = {.first = chords[index].bounds.x0,
-                               .last = chords[index].bounds.x0 - 1};
-      }
+      reset_warm_spans(active_chords);
       continue;
     }
-    const float pixel_y = static_cast<float>(y) + 0.5F;
-    for (std::size_t index = 0; index < chord_count; ++index) {
-      ChordState& chord = chords[index];
-      if (y < chord.bounds.y0 || y >= chord.bounds.y1) {
-        continue;
-      }
-      int newly_finalized = 0;
-      if (chord.constant) {
-        const int first_covered =
-            find_first_covered(chord.segment, chord.bounds, pixel_y, chord.prior);
-        if (first_covered == chord.bounds.x1) {
-          chord.prior.last = chord.prior.first - 1;
-          continue;
-        }
-        const int last_covered =
-            find_last_covered(chord.segment, chord.bounds, pixel_y, chord.prior, first_covered);
-        chord.prior = {.first = first_covered, .last = last_covered};
-        TINYDRAW_V2_CENSUS_ADD(const_span_pixels,
-                               static_cast<std::uint64_t>(last_covered - first_covered + 1));
-        newly_finalized =
-            paint_masked_exact_span(first_covered, last_covered, row, color, surface, finalized);
-      } else {
-        TINYDRAW_V2_CENSUS_ADD(rows_scanned, 1);
-        const ScanSpan row_span = conservative_tapered_row_span(chord.table, chord.bounds, pixel_y);
-        if (row_span.empty()) {
-          TINYDRAW_V2_CENSUS_ADD(rows_empty_span, 1);
-          continue;
-        }
-        TINYDRAW_V2_CENSUS_ADD(span_pixels,
-                               static_cast<std::uint64_t>(row_span.last - row_span.first + 1));
-        newly_finalized =
-            paint_masked_tapered_row(chord.segment, y, row_span, color, surface, finalized);
-      }
+    for (WarmChord& chord : active_chords) {
+      const int newly_finalized = paint_warm_chord_row(chord, y, row, color, surface, finalized);
       if (newly_finalized != 0 && summary != nullptr) {
         summary->note_finalized(surface_row, newly_finalized);
       }
@@ -875,7 +827,7 @@ void paint_masked_curve_unit_warm(const CurveUnit& unit, std::uint16_t color,
   }
 }
 
-}  // namespace
+}  // namespace raster_internal
 
 MaskedRowSummary::MaskedRowSummary(std::span<std::uint16_t> unset_counts,
                                    std::span<std::uint32_t> saturated_words)
@@ -954,499 +906,6 @@ PixelRect operation_level_bounds(PixelRect world_bounds, ZoomLevel zoom) {
       .x1 = std::min(kWorldWidth * percent / 100, (world_bounds.x1 * percent + 99) / 100),
       .y1 = std::min(kWorldHeight * percent / 100, (world_bounds.y1 * percent + 99) / 100),
   };
-}
-
-bool apply_incremental_operation(const OperationAppend& operation, const RasterSurface& surface) {
-  if (!valid_surface(surface) || operation.samples.empty()) {
-    return false;
-  }
-  const std::uint16_t color =
-      operation.tool == OperationTool::kEraser ? kBackground : operation.color;
-  if (operation.samples.size() <= 2U) {
-    paint_bounded_segment(scaled_sample(operation.samples.front(), surface.zoom),
-                          scaled_sample(operation.samples.back(), surface.zoom), color, surface);
-    return true;
-  }
-  for (std::size_t endpoint = 2U; endpoint < operation.samples.size(); ++endpoint) {
-    const auto unit = curved_unit(operation.samples, endpoint, surface.zoom);
-    if (!unit.has_value()) {
-      return false;
-    }
-    for (std::size_t step = 0U; step < unit->count; ++step) {
-      paint_segment(unit->segments[step].first, unit->segments[step].second, color, surface);
-    }
-  }
-  return true;
-}
-
-bool apply_masked_incremental_operation(const OperationAppend& operation,
-                                        const RasterSurface& surface,
-                                        std::span<std::uint8_t> finalized_pixels,
-                                        MaskedRowSummary* summary) {
-  const std::size_t required_mask_bytes = (surface.pixels.size() + 7U) / 8U;
-  const bool mask_aliases_pixels = storage_overlaps(
-      std::as_bytes(std::span(surface.pixels)),
-      std::as_bytes(std::span(finalized_pixels)
-                        .first(std::min(finalized_pixels.size(), required_mask_bytes))));
-  const int surface_rows = surface.level_bounds.y1 - surface.level_bounds.y0;
-  if (!valid_surface(surface) || operation.samples.empty() ||
-      finalized_pixels.size() < required_mask_bytes || mask_aliases_pixels ||
-      (summary != nullptr && !summary->ready(static_cast<std::size_t>(surface_rows)))) {
-    return false;
-  }
-  const std::uint16_t color =
-      operation.tool == OperationTool::kEraser ? kBackground : operation.color;
-  if (operation.samples.size() <= 2U) {
-    paint_masked_segment(scaled_sample(operation.samples.front(), surface.zoom),
-                         scaled_sample(operation.samples.back(), surface.zoom), color, surface,
-                         finalized_pixels, summary);
-    return true;
-  }
-  for (std::size_t endpoint = 2U; endpoint < operation.samples.size(); ++endpoint) {
-    const auto unit = curved_unit(operation.samples, endpoint, surface.zoom);
-    if (!unit.has_value()) {
-      return false;
-    }
-    paint_masked_curve_unit_warm(*unit, color, surface, finalized_pixels, summary);
-  }
-  return true;
-}
-
-namespace {
-
-PreparedCurveStep pack_prepared_step(const Segment& segment) {
-  return {
-      .first_x = segment.first.x,
-      .first_y = segment.first.y,
-      .first_radius = segment.first.radius,
-      .second_x = segment.second.x,
-      .second_y = segment.second.y,
-      .second_radius = segment.second.radius,
-      .delta_x = segment.delta_x,
-      .delta_y = segment.delta_y,
-      .inverse_length_squared = segment.inverse_length_squared,
-  };
-}
-
-}  // namespace
-
-std::optional<PreparedCurveUnit> prepare_incremental_curve_unit(
-    std::span<const CompactOperationSample> samples, std::size_t endpoint, ZoomLevel zoom) {
-  const auto unit = curved_unit(samples, endpoint, zoom);
-  if (!unit.has_value()) {
-    return std::nullopt;
-  }
-  PreparedCurveUnit prepared{.step_count = unit->count};
-  for (std::size_t step = 0; step < unit->count; ++step) {
-    prepared.steps[step] = pack_prepared_step(unit->segments[step]);
-  }
-  return prepared;
-}
-
-namespace {
-
-// One prepared chord with its per-row sweep plan. Lives in caller-funded
-// opaque storage so the internal geometry types stay private.
-struct OperationChordPlan {
-  Segment segment{};
-  RowSeed seed{};
-  PixelRect bounds{};
-  bool constant = false;
-  bool covers_surface = false;
-};
-static_assert(sizeof(OperationChordPlan) <= kPreparedOperationChordBytes);
-static_assert(alignof(OperationChordPlan) <= kPreparedOperationChordAlign);
-
-[[nodiscard]] bool chord_storage_usable(std::span<const std::byte> storage,
-                                        std::size_t chord_count) {
-  return chord_count <= kOperationChordCapacity && storage.size() >= kOperationChordStorageBytes &&
-         reinterpret_cast<std::uintptr_t>(storage.data()) % alignof(OperationChordPlan) == 0U;
-}
-
-[[nodiscard]] OperationChordPlan* chord_plans(std::span<std::byte> storage) {
-  return reinterpret_cast<OperationChordPlan*>(storage.data());
-}
-
-[[nodiscard]] const OperationChordPlan* chord_plans(std::span<const std::byte> storage) {
-  return reinterpret_cast<const OperationChordPlan*>(storage.data());
-}
-
-// y0-ascending chord order, one byte per chord, stored after the plans.
-[[nodiscard]] std::uint8_t* chord_order(std::span<std::byte> storage) {
-  return reinterpret_cast<std::uint8_t*>(storage.data() +
-                                         kOperationChordCapacity * kPreparedOperationChordBytes);
-}
-
-[[nodiscard]] const std::uint8_t* chord_order(std::span<const std::byte> storage) {
-  return reinterpret_cast<const std::uint8_t*>(storage.data() + kOperationChordCapacity *
-                                                                    kPreparedOperationChordBytes);
-}
-
-bool constant_capsule_covers_surface(const Segment& segment, PixelRect surface_bounds) {
-  constexpr float kNumericGuard = 1.0F;
-  if (segment.first.radius != segment.second.radius || segment.first.radius <= kNumericGuard ||
-      surface_bounds.x1 <= surface_bounds.x0 || surface_bounds.y1 <= surface_bounds.y0) {
-    return false;
-  }
-  Segment guarded = segment;
-  guarded.first.radius -= kNumericGuard;
-  guarded.second.radius -= kNumericGuard;
-  // A constant-radius capsule is convex. If the four pixel-center corners
-  // lie inside the capsule shrunk by a full level pixel, every pixel center
-  // lies inside the authoritative capsule with ample float-rounding margin.
-  const float first_x = static_cast<float>(surface_bounds.x0) + 0.5F;
-  const float first_y = static_cast<float>(surface_bounds.y0) + 0.5F;
-  const float last_x = static_cast<float>(surface_bounds.x1) - 0.5F;
-  const float last_y = static_cast<float>(surface_bounds.y1) - 0.5F;
-  return covers_pixel(guarded, first_x, first_y) && covers_pixel(guarded, last_x, first_y) &&
-         covers_pixel(guarded, first_x, last_y) && covers_pixel(guarded, last_x, last_y);
-}
-
-}  // namespace
-
-std::optional<OperationChordBatch> prepare_operation_chord_batch(
-    std::span<const CompactOperationSample> samples, std::size_t first_endpoint, ZoomLevel zoom,
-    PixelRect surface_bounds, std::span<std::byte> chord_storage) {
-  const std::size_t capacity = kOperationChordCapacity;
-  if (samples.empty() || !chord_storage_usable(chord_storage, capacity)) {
-    return std::nullopt;
-  }
-  OperationChordPlan* plans = chord_plans(chord_storage);
-  OperationChordBatch batch{
-      .clipped_bounds = {surface_bounds.x1, surface_bounds.y1, surface_bounds.x0,
-                         surface_bounds.y0},
-  };
-  const auto append_unit = [&](std::size_t endpoint) -> bool {
-    const auto unit = curved_unit(samples, endpoint, zoom);
-    if (!unit.has_value()) {
-      return false;
-    }
-    for (std::size_t step = 0; step < unit->count; ++step) {
-      const Segment& segment = unit->segments[step];
-      const PixelRect bounds = segment_bounds(segment, surface_bounds);
-      if (bounds.x1 <= bounds.x0 || bounds.y1 <= bounds.y0) {
-        continue;
-      }
-      const bool spans_surface = bounds.x0 == surface_bounds.x0 && bounds.y0 == surface_bounds.y0 &&
-                                 bounds.x1 == surface_bounds.x1 && bounds.y1 == surface_bounds.y1;
-      plans[batch.chord_count++] = {
-          .segment = segment,
-          .seed = make_row_seed(segment),
-          .bounds = bounds,
-          .constant = segment.first.radius == segment.second.radius,
-          .covers_surface =
-              spans_surface && constant_capsule_covers_surface(segment, surface_bounds),
-      };
-      batch.raster_work += static_cast<std::size_t>(bounds.x1 - bounds.x0) *
-                           static_cast<std::size_t>(bounds.y1 - bounds.y0);
-      batch.clipped_bounds.x0 = std::min(batch.clipped_bounds.x0, bounds.x0);
-      batch.clipped_bounds.y0 = std::min(batch.clipped_bounds.y0, bounds.y0);
-      batch.clipped_bounds.x1 = std::max(batch.clipped_bounds.x1, bounds.x1);
-      batch.clipped_bounds.y1 = std::max(batch.clipped_bounds.y1, bounds.y1);
-    }
-    return true;
-  };
-  if (samples.size() <= 2U) {
-    if (!append_unit(first_endpoint)) {
-      return std::nullopt;
-    }
-    batch.next_endpoint = 0U;
-  } else {
-    if (first_endpoint < 2U || first_endpoint >= samples.size()) {
-      return std::nullopt;
-    }
-    std::size_t endpoint = first_endpoint;
-    while (true) {
-      // Units are atomic: stop before an endpoint whose worst-case three
-      // chords would not fit, so a resumed batch never re-prepares chords.
-      if (batch.chord_count + 3U > capacity) {
-        batch.next_endpoint = endpoint;
-        break;
-      }
-      if (!append_unit(endpoint)) {
-        return std::nullopt;
-      }
-      if (endpoint == 2U) {
-        batch.next_endpoint = 0U;
-        break;
-      }
-      --endpoint;
-    }
-  }
-  std::uint8_t* order = chord_order(chord_storage);
-  for (std::size_t index = 0; index < batch.chord_count; ++index) {
-    order[index] = static_cast<std::uint8_t>(index);
-  }
-  std::sort(order, order + batch.chord_count, [plans](std::uint8_t left, std::uint8_t right) {
-    return plans[left].bounds.y0 < plans[right].bounds.y0;
-  });
-  return batch;
-}
-
-bool apply_masked_operation_chord_rows(OperationTool tool, std::uint16_t color,
-                                       std::span<const std::byte> chord_storage,
-                                       const OperationChordBatch& batch, int first_row,
-                                       std::size_t max_work_px, const RasterSurface& surface,
-                                       std::span<std::uint8_t> finalized_pixels,
-                                       MaskedRowSummary* summary, OperationSweepSlice& slice) {
-  const std::size_t required_mask_bytes = (surface.pixels.size() + 7U) / 8U;
-  const bool mask_aliases_pixels = storage_overlaps(
-      std::as_bytes(std::span(surface.pixels)),
-      std::as_bytes(std::span(finalized_pixels)
-                        .first(std::min(finalized_pixels.size(), required_mask_bytes))));
-  const int surface_rows = surface.level_bounds.y1 - surface.level_bounds.y0;
-  const PixelRect bounds = batch.clipped_bounds;
-  if (!valid_surface(surface) || batch.chord_count == 0U ||
-      !chord_storage_usable(chord_storage, batch.chord_count) ||
-      finalized_pixels.size() < required_mask_bytes || mask_aliases_pixels || max_work_px == 0U ||
-      first_row < bounds.y0 || first_row >= bounds.y1 || bounds.x0 < surface.level_bounds.x0 ||
-      bounds.y0 < surface.level_bounds.y0 || bounds.x1 > surface.level_bounds.x1 ||
-      bounds.y1 > surface.level_bounds.y1 ||
-      (summary != nullptr && !summary->ready(static_cast<std::size_t>(surface_rows)))) {
-    return false;
-  }
-  const std::uint16_t applied = tool == OperationTool::kEraser ? kBackground : color;
-  const OperationChordPlan* plans = chord_plans(chord_storage);
-  const std::uint8_t* order = chord_order(chord_storage);
-  const int surface_width = surface.level_bounds.x1 - surface.level_bounds.x0;
-  const int surface_height = surface.level_bounds.y1 - surface.level_bounds.y0;
-  const std::size_t surface_pixel_count =
-      static_cast<std::size_t>(surface_width) * static_cast<std::size_t>(surface_height);
-  const std::size_t bulk_work = (surface_pixel_count + 1U) / 2U + required_mask_bytes +
-                                static_cast<std::size_t>(surface_height);
-  const bool contiguous_surface = surface.stride == surface_width &&
-                                  surface.pixels.size() == surface_pixel_count &&
-                                  surface_pixel_count % 8U == 0U;
-  const bool starts_at_surface_top = first_row == surface.level_bounds.y0;
-  const bool has_full_surface_chord =
-      std::any_of(plans, plans + batch.chord_count, [&](const OperationChordPlan& plan) {
-        return plan.covers_surface && plan.bounds.x0 == surface.level_bounds.x0 &&
-               plan.bounds.y0 == surface.level_bounds.y0 &&
-               plan.bounds.x1 == surface.level_bounds.x1 &&
-               plan.bounds.y1 == surface.level_bounds.y1;
-      });
-  const bool fresh_mask =
-      has_full_surface_chord && contiguous_surface &&
-      std::all_of(finalized_pixels.begin(),
-                  finalized_pixels.begin() + static_cast<std::ptrdiff_t>(required_mask_bytes),
-                  [](std::uint8_t byte) { return byte == 0U; });
-  if (starts_at_surface_top && fresh_mask && has_full_surface_chord && bulk_work <= max_work_px) {
-    TINYDRAW_V2_CENSUS_ADD(const_full_surface_fills, 1);
-    TINYDRAW_V2_CENSUS_ADD(const_full_surface_pixels, surface_pixel_count);
-    std::fill(surface.pixels.begin(), surface.pixels.end(), applied);
-    std::fill_n(finalized_pixels.begin(), required_mask_bytes, 0xFFU);
-    if (summary != nullptr) {
-      for (int row = 0; row < surface_height; ++row) {
-        summary->note_finalized(row, surface_width);
-      }
-    }
-    slice.next_row = surface.level_bounds.y1;
-    slice.rows_swept = surface_height;
-    // The bulk path writes packed RGB565 words, mask bytes, and one row-summary
-    // entry per row. Charge those actual memory operations to the slice budget.
-    slice.work_px = bulk_work;
-    return true;
-  }
-  // Scanline state over the y0-sorted order: enter admits chords as the
-  // sweep reaches their top row; the active list drops chords lazily once
-  // the sweep passes their bottom row. Resume rebuilds both in one pass.
-  std::array<std::uint8_t, kOperationChordCapacity> active{};
-  std::size_t active_count = 0;
-  std::size_t enter = 0;
-  while (enter < batch.chord_count && plans[order[enter]].bounds.y0 <= first_row) {
-    if (plans[order[enter]].bounds.y1 > first_row) {
-      active[active_count++] = order[enter];
-    }
-    ++enter;
-  }
-  int y = first_row;
-  slice.rows_swept = 0;
-  slice.work_px = 0;
-  while (y < bounds.y1 && (slice.rows_swept == 0 || slice.work_px < max_work_px)) {
-    while (enter < batch.chord_count && plans[order[enter]].bounds.y0 <= y) {
-      active[active_count++] = order[enter];
-      ++enter;
-    }
-    for (std::size_t index = 0; index < active_count;) {
-      if (plans[active[index]].bounds.y1 <= y) {
-        active[index] = active[--active_count];
-      } else {
-        ++index;
-      }
-    }
-    if (active_count == 0U) {
-      // Row gap between chords: jump to the next chord's top row for free.
-      if (enter >= batch.chord_count) {
-        y = bounds.y1;
-        break;
-      }
-      y = plans[order[enter]].bounds.y0;
-      continue;
-    }
-    int row_x0 = bounds.x1;
-    int row_x1 = bounds.x0;
-    for (std::size_t index = 0; index < active_count; ++index) {
-      const OperationChordPlan& plan = plans[active[index]];
-      row_x0 = std::min(row_x0, plan.bounds.x0);
-      row_x1 = std::max(row_x1, plan.bounds.x1);
-    }
-    const int surface_row = y - surface.level_bounds.y0;
-    const std::size_t row =
-        static_cast<std::size_t>(surface_row) * static_cast<std::size_t>(surface.stride);
-    const std::size_t row_first = row + static_cast<std::size_t>(row_x0 - surface.level_bounds.x0);
-    const std::size_t row_last =
-        row + static_cast<std::size_t>(row_x1 - 1 - surface.level_bounds.x0);
-    ++slice.rows_swept;
-    const auto window = mask_unset_window(finalized_pixels, row_first, row_last);
-    if (!window.has_value()) {
-      TINYDRAW_V2_CENSUS_ADD(rows_prefinalized, 1);
-      ++y;
-      continue;
-    }
-    const int window_first = row_x0 + static_cast<int>(window->first - row_first);
-    const int window_last = row_x0 + static_cast<int>(window->last - row_first);
-    // Flat per-row charge for the window scan itself.
-    slice.work_px += 4U;
-    const float pixel_y = static_cast<float>(y) + 0.5F;
-    for (std::size_t index = 0; index < active_count; ++index) {
-      const OperationChordPlan& plan = plans[active[index]];
-      int chord_first = std::max(window_first, plan.bounds.x0);
-      int chord_last = std::min(window_last, plan.bounds.x1 - 1);
-      if (chord_last < chord_first) {
-        continue;
-      }
-      // Overlapping chords on the same row mutate the mask as they run. The
-      // row-wide window above becomes stale after the first chord, so dense
-      // rows would keep probing chords whose complete span is already final.
-      // Refresh against each chord's narrower bounds only when overlap makes
-      // that stale-window tax possible; the common one-chord row keeps its
-      // single scan.
-      if (active_count > 1U) {
-        const std::size_t chord_row_first =
-            row + static_cast<std::size_t>(chord_first - surface.level_bounds.x0);
-        const std::size_t chord_row_last =
-            row + static_cast<std::size_t>(chord_last - surface.level_bounds.x0);
-        const auto chord_window =
-            mask_unset_window(finalized_pixels, chord_row_first, chord_row_last);
-        slice.work_px += 4U;
-        if (!chord_window.has_value()) {
-          continue;
-        }
-        chord_first += static_cast<int>(chord_window->first - chord_row_first);
-        chord_last -= static_cast<int>(chord_row_last - chord_window->last);
-      }
-      slice.work_px += static_cast<std::size_t>(chord_last - chord_first + 1);
-      int newly_finalized = 0;
-      if (plan.constant) {
-        newly_finalized =
-            paint_masked_const_row(plan.segment, plan.seed, plan.bounds, y, row, chord_first,
-                                   chord_last, applied, surface, finalized_pixels);
-      } else {
-        const ScanSpan conservative = conservative_row_span(plan.seed, plan.bounds, pixel_y);
-        const ScanSpan row_span{
-            .first = std::max(conservative.first, chord_first),
-            .last = std::min(conservative.last, chord_last),
-        };
-        if (row_span.empty()) {
-          TINYDRAW_V2_CENSUS_ADD(rows_empty_span, 1);
-          continue;
-        }
-        TINYDRAW_V2_CENSUS_ADD(rows_scanned, 1);
-        TINYDRAW_V2_CENSUS_ADD(span_pixels,
-                               static_cast<std::uint64_t>(row_span.last - row_span.first + 1));
-        newly_finalized =
-            paint_masked_tapered_row(plan.segment, y, row_span, applied, surface, finalized_pixels);
-      }
-      if (newly_finalized != 0 && summary != nullptr) {
-        summary->note_finalized(surface_row, newly_finalized);
-      }
-    }
-    ++y;
-  }
-  slice.next_row = y;
-  return true;
-}
-
-bool apply_operation_chord_slice(OperationTool tool, std::uint16_t color,
-                                 std::span<const std::byte> chord_storage,
-                                 const OperationChordBatch& batch, std::size_t max_work_px,
-                                 const RasterSurface& surface, OperationSweepCursor& cursor,
-                                 OperationSweepSlice& slice) {
-  const PixelRect bounds = batch.clipped_bounds;
-  if (!valid_surface(surface) || batch.chord_count == 0U ||
-      !chord_storage_usable(chord_storage, batch.chord_count) || max_work_px == 0U ||
-      cursor.next_row < bounds.y0 || cursor.next_row >= bounds.y1 ||
-      bounds.x0 < surface.level_bounds.x0 || bounds.y0 < surface.level_bounds.y0 ||
-      bounds.x1 > surface.level_bounds.x1 || bounds.y1 > surface.level_bounds.y1) {
-    return false;
-  }
-  const std::uint16_t applied = tool == OperationTool::kEraser ? kBackground : color;
-  const OperationChordPlan* plans = chord_plans(chord_storage);
-  const std::uint8_t* order = chord_order(chord_storage);
-  std::array<std::uint8_t, kOperationChordCapacity> active{};
-  slice.rows_swept = 0;
-  slice.work_px = 0;
-  while (cursor.next_row < bounds.y1) {
-    const int y = cursor.next_row;
-    std::size_t active_count = 0;
-    std::size_t enter = 0;
-    while (enter < batch.chord_count && plans[order[enter]].bounds.y0 <= y) {
-      if (plans[order[enter]].bounds.y1 > y) {
-        active[active_count++] = order[enter];
-      }
-      ++enter;
-    }
-    if (active_count == 0U) {
-      if (enter >= batch.chord_count) {
-        cursor.next_row = bounds.y1;
-        cursor.next_chord = 0U;
-        break;
-      }
-      cursor.next_row = plans[order[enter]].bounds.y0;
-      cursor.next_chord = 0U;
-      continue;
-    }
-    if (cursor.next_chord >= active_count) {
-      return false;
-    }
-    const float pixel_y = static_cast<float>(y) + 0.5F;
-    const std::size_t row = static_cast<std::size_t>(y - surface.level_bounds.y0) *
-                            static_cast<std::size_t>(surface.stride);
-    for (std::size_t index = cursor.next_chord; index < active_count; ++index) {
-      const OperationChordPlan& plan = plans[active[index]];
-      const ScanSpan span = conservative_row_span(plan.seed, plan.bounds, pixel_y);
-      if (!span.empty()) {
-        slice.work_px += static_cast<std::size_t>(span.last - span.first + 1);
-        if (plan.constant) {
-          const int first = first_covered_at_or_after(plan.segment, span.first, span.last, pixel_y);
-          if (first <= span.last) {
-            const int last = last_covered_at_or_before(plan.segment, first, span.last, pixel_y);
-            const auto begin = surface.pixels.begin() +
-                               static_cast<std::ptrdiff_t>(
-                                   row + static_cast<std::size_t>(first - surface.level_bounds.x0));
-            std::fill_n(begin, static_cast<std::size_t>(last - first + 1), applied);
-          }
-        } else {
-          for (int x = span.first; x <= span.last; ++x) {
-            if (covers_pixel(plan.segment, static_cast<float>(x) + 0.5F, pixel_y)) {
-              surface.pixels[row + static_cast<std::size_t>(x - surface.level_bounds.x0)] = applied;
-            }
-          }
-        }
-      }
-      cursor.next_chord = index + 1U;
-      if (slice.work_px >= max_work_px && cursor.next_chord < active_count) {
-        slice.next_row = cursor.next_row;
-        return true;
-      }
-    }
-    ++slice.rows_swept;
-    ++cursor.next_row;
-    cursor.next_chord = 0U;
-    break;
-  }
-  slice.next_row = cursor.next_row;
-  return true;
 }
 
 }  // namespace tinydraw::vector_v2
