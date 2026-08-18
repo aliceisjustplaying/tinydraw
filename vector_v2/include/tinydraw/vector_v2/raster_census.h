@@ -30,10 +30,12 @@ struct RasterCensus {
   // Masked constant-radius path.
   std::uint64_t const_span_pixels = 0;
   std::uint64_t const_mask_skips = 0;
-  std::uint64_t const_rows_scanned = 0;       // rows entering the span search
-  std::uint64_t const_search_calls = 0;       // covers_pixel evaluations in span search
-  std::uint64_t const_search_last_calls = 0;  // …of which in the right-edge search
-  std::uint64_t const_rows_probed_empty = 0;  // rows probed end to end without coverage
+  std::uint64_t const_rows_scanned = 0;        // rows entering the span search
+  std::uint64_t const_search_calls = 0;        // covers_pixel evaluations in span search
+  std::uint64_t const_search_last_calls = 0;   // …of which in the right-edge search
+  std::uint64_t const_rows_probed_empty = 0;   // rows probed end to end without coverage
+  std::uint64_t const_full_surface_fills = 0;  // guarded full-capsule bulk fills
+  std::uint64_t const_full_surface_pixels = 0;
   // produce_next overhead.
   std::uint64_t remaining_scans = 0;
   std::uint64_t remaining_scan_ns = 0;

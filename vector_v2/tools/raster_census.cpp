@@ -55,11 +55,15 @@ struct Rig {
   std::vector<std::uint16_t> summary_rows;
   std::vector<std::uint32_t> summary_words;
   std::vector<std::uint32_t> chord_plans;
+  std::vector<std::uint64_t> spatial_cells;
+  std::vector<std::uint64_t> spatial_large;
+  std::vector<std::uint16_t> candidates;
   // Authority absorption workspace (mirrors the app).
   std::vector<std::uint16_t> overview_scratch;
   std::vector<std::uint8_t> append_mask;
   std::vector<v2::TileKey> affected_keys;
 
+  v2::OperationSpatialIndex spatial_index;
   v2::OperationLog log;
   v2::MaterializedCanvas canvas;
   v2::TileProducer producer;
@@ -80,17 +84,22 @@ struct Rig {
         summary_rows(v2::kTileProducerSummaryRows),
         summary_words(v2::kTileProducerSummaryWords),
         chord_plans(v2::kOperationChordStorageBytes / 4U),
+        spatial_cells(v2::operation_spatial_cell_word_count(record_capacity)),
+        spatial_large(v2::operation_spatial_word_count(record_capacity)),
+        candidates(record_capacity),
         overview_scratch(v2::kOverviewPixels),
         append_mask(v2::kInPlaceTileMaskBytes),
         affected_keys(v2::kTileSlotCount + v2::kMaximumVisibleTiles),
-        log(records, samples),
+        spatial_index(record_capacity, spatial_cells, spatial_large),
+        log(records, samples, &spatial_index),
         canvas(overview, *uniforms, occupancy, slots, tile_pool, {}, raw_slot_directory),
         producer(log, canvas,
                  {.supertask_pixels = supertask,
                   .finalized_pixels = mask,
                   .summary_row_unset = summary_rows,
                   .summary_saturated_words = summary_words,
-                  .operation_chord_plans = std::as_writable_bytes(std::span(chord_plans))},
+                  .operation_chord_plans = std::as_writable_bytes(std::span(chord_plans)),
+                  .candidate_indices = candidates},
                  {}, 0xFFFFU) {}
 
   [[nodiscard]] v2::InPlaceAppendWorkspace workspace() {
@@ -114,6 +123,9 @@ struct Rig {
 };
 
 struct CandidateDiscoveryCounters {
+  std::size_t operations_in_authority = 0;
+  std::size_t index_candidates = 0;
+  std::size_t deduplicated_candidates = 0;
   std::size_t operations_scanned = 0;
   std::size_t operations_intersecting = 0;
   std::size_t groups_published = 0;
@@ -138,6 +150,9 @@ SweepResult run_cold_fill(Rig& rig, const v2::ViewRequest& view) {
     }
     ++result.steps;
     result.tiles += step->tiles_published;
+    result.candidates.operations_in_authority += step->operations_in_authority;
+    result.candidates.index_candidates += step->index_candidates;
+    result.candidates.deduplicated_candidates += step->deduplicated_candidates;
     result.candidates.operations_scanned += step->operations_scanned;
     result.candidates.operations_intersecting += step->operations_intersecting;
     result.candidates.groups_published += step->groups_published;
@@ -328,11 +343,14 @@ int run_adversarial_sweep(
             : static_cast<double>(sweep.candidates.operations_scanned) /
                   static_cast<double>(sweep.candidates.groups_published);
     std::printf(
-        "zoom=%s steps=%zu tiles=%zu wall_ms=%.3f ops_scanned=%zu ops_intersecting=%zu "
+        "zoom=%s steps=%zu tiles=%zu wall_ms=%.3f ops_authority=%zu index_candidates=%zu "
+        "dedup_candidates=%zu ops_scanned=%zu ops_intersecting=%zu "
         "groups=%zu ops_per_group=%.2f exact=1\n",
         zoom_names[zoom_index], sweep.steps, sweep.tiles, sweep.wall_ms,
-        sweep.candidates.operations_scanned, sweep.candidates.operations_intersecting,
-        sweep.candidates.groups_published, operations_per_group);
+        sweep.candidates.operations_in_authority, sweep.candidates.index_candidates,
+        sweep.candidates.deduplicated_candidates, sweep.candidates.operations_scanned,
+        sweep.candidates.operations_intersecting, sweep.candidates.groups_published,
+        operations_per_group);
     print_census("census");
   }
   std::printf("ADVERSARIAL_SWEEP_OK\n");
@@ -428,10 +446,13 @@ int run_cold_scorecard() {
                                             : static_cast<double>(candidates.operations_scanned) /
                                                   static_cast<double>(candidates.groups_published);
     std::printf(
-        "SCORE corpus=%s ops_scanned=%zu ops_intersecting=%zu groups=%zu "
+        "SCORE corpus=%s ops_authority=%zu index_candidates=%zu dedup_candidates=%zu "
+        "ops_scanned=%zu ops_intersecting=%zu groups=%zu "
         "ops_per_group=%.2f wall_ms=%.3f exact=%u\n",
-        names[corpus], candidates.operations_scanned, candidates.operations_intersecting,
-        candidates.groups_published, operations_per_group, result->sweep.wall_ms, result->exact);
+        names[corpus], candidates.operations_in_authority, candidates.index_candidates,
+        candidates.deduplicated_candidates, candidates.operations_scanned,
+        candidates.operations_intersecting, candidates.groups_published, operations_per_group,
+        result->sweep.wall_ms, result->exact);
   }
   std::printf("COLD_SCORECARD_OK\n");
   return 0;
@@ -506,12 +527,13 @@ bool append_hairline_stroke(Rig& rig, HairlineRandom& random, float radius, std:
   return true;
 }
 
-bool append_hairline_document(Rig& rig) {
+bool append_hairline_document(Rig& rig, int thin_strokes = 220, int medium_strokes = 60,
+                              int thick_strokes = 10) {
   constexpr std::array<std::uint16_t, 6> kColors{0x0000U, 0x001FU, 0xF800U,
                                                  0x07E0U, 0x4208U, 0x8010U};
   HairlineRandom random;
   std::uint16_t gesture_id = 7'000;
-  for (int stroke = 0; stroke < 220; ++stroke) {
+  for (int stroke = 0; stroke < thin_strokes; ++stroke) {
     const bool eraser = (random.next() % 12U) == 0U;
     if (!append_hairline_stroke(rig, random, random.range(1.3F, 2.0F),
                                 kColors[random.next() % kColors.size()],
@@ -520,14 +542,14 @@ bool append_hairline_document(Rig& rig) {
       return false;
     }
   }
-  for (int stroke = 0; stroke < 60; ++stroke) {
+  for (int stroke = 0; stroke < medium_strokes; ++stroke) {
     if (!append_hairline_stroke(rig, random, random.range(3.5F, 4.7F),
                                 kColors[random.next() % kColors.size()], v2::OperationTool::kPen,
                                 gesture_id++, random.range(200.0F, 800.0F))) {
       return false;
     }
   }
-  for (int stroke = 0; stroke < 10; ++stroke) {
+  for (int stroke = 0; stroke < thick_strokes; ++stroke) {
     const bool eraser = stroke == 4 || stroke == 9;
     if (!append_hairline_stroke(rig, random, random.range(40.0F, 80.0F),
                                 kColors[random.next() % kColors.size()],
@@ -537,6 +559,298 @@ bool append_hairline_document(Rig& rig) {
     }
   }
   return true;
+}
+
+bool append_dense_eraser_grid(Rig& rig, int lines_per_axis = 24) {
+  constexpr std::size_t kSamples = 12;
+  constexpr std::uint16_t kRadius = 384U;  // 1.5 world pixels
+  std::array<v2::CompactOperationSample, kSamples> samples{};
+  std::uint16_t gesture_id = 8'000U;
+  for (int line = 0; line < lines_per_axis; ++line) {
+    for (std::size_t sample = 0; sample < samples.size(); ++sample) {
+      samples[sample] = {
+          .x_quarter = static_cast<std::uint16_t>((650 + static_cast<int>(sample) * 18) * 16),
+          .y_quarter = static_cast<std::uint16_t>((825 + line * 6) * 16),
+          .radius_256 = kRadius,
+          .elapsed_ms = static_cast<std::uint16_t>(sample * 8U),
+      };
+    }
+    if (!rig.append(
+            {.tool = v2::OperationTool::kEraser, .gesture_id = gesture_id++, .samples = samples})) {
+      return false;
+    }
+  }
+  for (int line = 0; line < lines_per_axis; ++line) {
+    for (std::size_t sample = 0; sample < samples.size(); ++sample) {
+      samples[sample] = {
+          .x_quarter = static_cast<std::uint16_t>((675 + line * 6) * 16),
+          .y_quarter = static_cast<std::uint16_t>((810 + static_cast<int>(sample) * 18) * 16),
+          .radius_256 = kRadius,
+          .elapsed_ms = static_cast<std::uint16_t>(sample * 8U),
+      };
+    }
+    if (!rig.append(
+            {.tool = v2::OperationTool::kEraser, .gesture_id = gesture_id++, .samples = samples})) {
+      return false;
+    }
+  }
+  return true;
+}
+
+int run_hairline_pan_repro(int thin_strokes, int medium_strokes, int thick_strokes,
+                           int eraser_lines_per_axis, int warm_rows, bool trace) {
+  Rig rig(1'024, 16'384);
+  if (!rig.reset_blank({1}) ||
+      !append_hairline_document(rig, thin_strokes, medium_strokes, thick_strokes) ||
+      !append_dense_eraser_grid(rig, eraser_lines_per_axis)) {
+    std::fprintf(stderr, "hairline pan setup failed\n");
+    return 1;
+  }
+  const v2::ViewRequest target{
+      .zoom = v2::ZoomLevel::k400Percent,
+      .level_pixels = {2'760, 3'360, 3'128, 3'808},
+  };
+  std::size_t warm_steps = 0U;
+  double warm_wall_ms = 0.0;
+  if (warm_rows != 0) {
+    const int first_tile_row = target.level_pixels.y0 / v2::kTileHeight;
+    const int warm_y1 = warm_rows < 0 ? target.level_pixels.y1
+                                      : std::min(target.level_pixels.y1,
+                                                 (first_tile_row + warm_rows) * v2::kTileHeight);
+    const v2::ViewRequest warm{
+        .zoom = v2::ZoomLevel::k400Percent,
+        .level_pixels = warm_rows < 0
+                            ? v2::PixelRect{2'392, target.level_pixels.y0, target.level_pixels.x0,
+                                            target.level_pixels.y1}
+                            : v2::PixelRect{target.level_pixels.x0 - 8, target.level_pixels.y0,
+                                            target.level_pixels.x0, warm_y1},
+    };
+    const SweepResult warm_fill = run_cold_fill(rig, warm);
+    if (!warm_fill.ok || !compose_equals_forward(rig, warm, nullptr)) {
+      std::fprintf(stderr, "hairline warm view failed\n");
+      return 1;
+    }
+    warm_steps = warm_fill.steps;
+    warm_wall_ms = warm_fill.wall_ms;
+  }
+
+  constexpr std::size_t kMaximumSteps = 20'000U;
+  // Current device receipt: 508,346 us / 30 producer calls. Twenty-nine
+  // calls are the deterministic host proxy for the first ~500 ms of work.
+  constexpr std::size_t kFiveHundredMsEquivalentSteps = 29U;
+  const std::size_t pixel_count =
+      static_cast<std::size_t>(v2::kOverviewWidth) * static_cast<std::size_t>(v2::kOverviewHeight);
+  std::vector<std::uint16_t> composed(pixel_count);
+  std::size_t steps = 0U;
+  std::size_t publications = 0U;
+  std::size_t previous_fallback = pixel_count + 1U;
+  std::size_t budget_fallback = 0U;
+  std::size_t budget_missing_blocks = 0U;
+  bool budget_complete = false;
+  bool complete = false;
+  std::optional<std::size_t> trace_remaining;
+  if (trace) {
+    trace_remaining = rig.producer.visible_tiles_remaining(target);
+    if (!trace_remaining.has_value()) {
+      std::fprintf(stderr, "hairline pan initial remaining scan failed\n");
+      return 1;
+    }
+  }
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+  v2::g_raster_census.reset();
+#endif
+  const auto target_started = std::chrono::steady_clock::now();
+  while (steps < kMaximumSteps) {
+    v2::RasterCensus census_before{};
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+    census_before = v2::g_raster_census;
+#endif
+    const auto slice_started = std::chrono::steady_clock::now();
+    const auto step = rig.producer.produce_next(target);
+    if (!step.has_value()) {
+      std::fprintf(stderr, "hairline pan producer failed step=%zu\n", steps);
+      return 1;
+    }
+    const double slice_wall_ms =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - slice_started)
+            .count();
+    v2::RasterCensus census_after{};
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+    census_after = v2::g_raster_census;
+#endif
+    if (trace && (step->tiles_published != 0U || step->complete)) {
+      trace_remaining = step->visible_tiles_remaining;
+    }
+    if (trace) {
+      const int group_column = step->level_bounds.x0 / v2::kTileWidth & ~1;
+      const int group_row = step->level_bounds.y0 / v2::kTileHeight & ~1;
+      const v2::PixelRect group_bounds{
+          .x0 = group_column * v2::kTileWidth,
+          .y0 = group_row * v2::kTileHeight,
+          .x1 = (group_column + v2::kTileProducerColumns) * v2::kTileWidth,
+          .y1 = (group_row + v2::kTileProducerRows) * v2::kTileHeight,
+      };
+      std::printf(
+          "HAIRLINE_PAN_TRACE slice=%zu group=[%d,%d,%d,%d] wall_ms=%.3f authority=%zu "
+          "index_candidates=%zu dedup_candidates=%zu ops_scanned=%zu ops_intersecting=%zu "
+          "ops_rendered=%zu raster_steps=%zu raster_work=%zu groups_published=%zu "
+          "tiles_published=%zu remaining=%zu gate_ticks=%llu setup_ticks=%llu "
+          "paint_ticks=%llu publish_ticks=%llu remaining_scan_ns=%llu rows_scanned=%llu "
+          "span_pixels=%llu mask_skips=%llu const_rows=%llu const_search_calls=%llu "
+          "const_span_pixels=%llu const_mask_skips=%llu rows_prefinalized=%llu "
+          "const_full_fills=%llu const_full_pixels=%llu "
+          "operation_saturation_skips=%llu segment_saturation_skips=%llu "
+          "groups_saturated_early=%llu complete=%u\n",
+          steps + 1U, group_bounds.x0, group_bounds.y0, group_bounds.x1, group_bounds.y1,
+          slice_wall_ms, step->operations_in_authority, step->index_candidates,
+          step->deduplicated_candidates, step->operations_scanned, step->operations_intersecting,
+          step->operations_rendered, step->raster_steps, step->raster_work, step->groups_published,
+          step->tiles_published, *trace_remaining,
+          static_cast<unsigned long long>(census_after.gate_ticks - census_before.gate_ticks),
+          static_cast<unsigned long long>(census_after.setup_ticks - census_before.setup_ticks),
+          static_cast<unsigned long long>(census_after.paint_ticks - census_before.paint_ticks),
+          static_cast<unsigned long long>(census_after.publish_ticks - census_before.publish_ticks),
+          static_cast<unsigned long long>(census_after.remaining_scan_ns -
+                                          census_before.remaining_scan_ns),
+          static_cast<unsigned long long>(census_after.rows_scanned - census_before.rows_scanned),
+          static_cast<unsigned long long>(census_after.span_pixels - census_before.span_pixels),
+          static_cast<unsigned long long>(census_after.mask_skips - census_before.mask_skips),
+          static_cast<unsigned long long>(census_after.const_rows_scanned -
+                                          census_before.const_rows_scanned),
+          static_cast<unsigned long long>(census_after.const_search_calls -
+                                          census_before.const_search_calls),
+          static_cast<unsigned long long>(census_after.const_span_pixels -
+                                          census_before.const_span_pixels),
+          static_cast<unsigned long long>(census_after.const_mask_skips -
+                                          census_before.const_mask_skips),
+          static_cast<unsigned long long>(census_after.rows_prefinalized -
+                                          census_before.rows_prefinalized),
+          static_cast<unsigned long long>(census_after.const_full_surface_fills -
+                                          census_before.const_full_surface_fills),
+          static_cast<unsigned long long>(census_after.const_full_surface_pixels -
+                                          census_before.const_full_surface_pixels),
+          static_cast<unsigned long long>(census_after.operations_saturation_skipped -
+                                          census_before.operations_saturation_skipped),
+          static_cast<unsigned long long>(census_after.segments_saturation_skipped -
+                                          census_before.segments_saturation_skipped),
+          static_cast<unsigned long long>(census_after.groups_saturated_early -
+                                          census_before.groups_saturated_early),
+          step->complete);
+    }
+    if (step->tiles_published != 0U) {
+      ++publications;
+      const auto stats = rig.canvas.compose_view(target, composed);
+      if (!stats.has_value() || stats->fallback_pixels > previous_fallback) {
+        std::fprintf(stderr, "hairline pan fallback regressed step=%zu fallback=%zu previous=%zu\n",
+                     steps, stats.has_value() ? stats->fallback_pixels : pixel_count,
+                     previous_fallback);
+        return 1;
+      }
+      previous_fallback = stats->fallback_pixels;
+    }
+    ++steps;
+    if (steps == kFiveHundredMsEquivalentSteps) {
+      const auto stats = rig.canvas.compose_view(target, composed);
+      if (!stats.has_value()) {
+        std::fprintf(stderr, "hairline budget compose failed\n");
+        return 1;
+      }
+      budget_complete = step->complete;
+      budget_fallback = stats->fallback_pixels;
+      for (int row = target.level_pixels.y0 / v2::kTileHeight;
+           row <= (target.level_pixels.y1 - 1) / v2::kTileHeight; ++row) {
+        for (int column = target.level_pixels.x0 / v2::kTileWidth;
+             column <= (target.level_pixels.x1 - 1) / v2::kTileWidth; ++column) {
+          const auto source = rig.canvas.lookup(
+              {target.zoom, static_cast<std::uint16_t>(column), static_cast<std::uint16_t>(row)});
+          budget_missing_blocks +=
+              !source.has_value() || source->kind == v2::SourceKind::kOverview ? 1U : 0U;
+        }
+      }
+    }
+    if (step->complete) {
+      complete = true;
+      break;
+    }
+  }
+  const double target_wall_ms =
+      std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - target_started)
+          .count();
+  v2::RasterCensus target_census{};
+#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+  target_census = v2::g_raster_census;
+#endif
+  const auto final_stats = rig.canvas.compose_view(target, composed);
+  if (!complete || publications == 0U || !final_stats.has_value() ||
+      final_stats->fallback_pixels != 0U) {
+    std::fprintf(stderr,
+                 "hairline pan incomplete complete=%u steps=%zu publications=%zu fallback=%zu\n",
+                 complete, steps, publications,
+                 final_stats.has_value() ? final_stats->fallback_pixels : pixel_count);
+    return 1;
+  }
+  if (steps <= kFiveHundredMsEquivalentSteps) {
+    budget_complete = true;
+    budget_missing_blocks = 0U;
+    budget_fallback = final_stats->fallback_pixels;
+  }
+
+  std::vector<std::uint16_t> direct(pixel_count, 0xFFFFU);
+  for (std::size_t index = 0; index < rig.log.operation_count(); ++index) {
+    const auto operation = rig.log.operation(index);
+    if (!operation.has_value() ||
+        !v2::apply_incremental_operation(
+            {.tool = operation->tool, .color = operation->color, .samples = operation->samples},
+            {.zoom = target.zoom,
+             .level_bounds = target.level_pixels,
+             .pixels = direct,
+             .stride = v2::kOverviewWidth})) {
+      std::fprintf(stderr, "hairline direct replay failed operation=%zu\n", index);
+      return 1;
+    }
+  }
+  std::size_t mismatches = 0U;
+  std::size_t white_blocks = 0U;
+  for (int block_y = 0; block_y < v2::kOverviewHeight; block_y += v2::kTileHeight) {
+    for (int block_x = 0; block_x < v2::kOverviewWidth; block_x += v2::kTileWidth) {
+      bool composed_is_paper = true;
+      bool direct_has_ink = false;
+      for (int y = block_y; y < std::min(block_y + v2::kTileHeight, v2::kOverviewHeight); ++y) {
+        for (int x = block_x; x < std::min(block_x + v2::kTileWidth, v2::kOverviewWidth); ++x) {
+          const std::size_t at =
+              static_cast<std::size_t>(y) * v2::kOverviewWidth + static_cast<std::size_t>(x);
+          mismatches += composed[at] != direct[at] ? 1U : 0U;
+          composed_is_paper = composed_is_paper && composed[at] == 0xFFFFU;
+          direct_has_ink = direct_has_ink || direct[at] != 0xFFFFU;
+        }
+      }
+      white_blocks += composed_is_paper && direct_has_ink ? 1U : 0U;
+    }
+  }
+  std::printf(
+      "HAIRLINE_PAN_REPRO thin=%d medium=%d thick=%d eraser_axis=%d warm_rows=%d "
+      "warm_steps=%zu warm_wall_ms=%.3f target_wall_ms=%.3f operations=%zu "
+      "samples=%zu budget_steps=%zu budget_complete=%u "
+      "budget_missing_blocks=%zu budget_fallback=%zu steps=%zu publications=%zu fallback=%zu "
+      "mismatches=%zu white_blocks=%zu setup_ms=%.3f paint_ms=%.3f "
+      "complete=%u bounded=%u regression=%u\n",
+      thin_strokes, medium_strokes, thick_strokes, eraser_lines_per_axis, warm_rows, warm_steps,
+      warm_wall_ms, target_wall_ms, rig.log.operation_count(), rig.log.sample_count(),
+      kFiveHundredMsEquivalentSteps, budget_complete, budget_missing_blocks, budget_fallback, steps,
+      publications, final_stats->fallback_pixels, mismatches, white_blocks,
+      static_cast<double>(target_census.setup_ticks) / 1e6,
+      static_cast<double>(target_census.paint_ticks) / 1e6, complete, steps < kMaximumSteps,
+      !budget_complete || budget_missing_blocks != 0U || budget_fallback != 0U);
+  const bool reproduced_budget_regression = !budget_complete && budget_missing_blocks == 2U &&
+                                            budget_fallback != 0U &&
+                                            steps > kFiveHundredMsEquivalentSteps;
+  if (mismatches != 0U || white_blocks != 0U) {
+    return 1;
+  }
+  if (reproduced_budget_regression) {
+    return 1;
+  }
+  return budget_complete && budget_missing_blocks == 0U && budget_fallback == 0U ? 0 : 1;
 }
 
 int run_general_sweep(std::size_t runs) {
@@ -568,6 +882,7 @@ int run_general_sweep(std::size_t runs) {
         .level_pixels = {0, 0, v2::kOverviewWidth, v2::kOverviewHeight},
     };
     std::vector<double> zoom_walls;
+    CandidateDiscoveryCounters zoom_candidates{};
     for (std::size_t run = 0; run < runs; ++run) {
       if (!rig.canvas.discard_tiles()) {
         return 1;
@@ -580,6 +895,7 @@ int run_general_sweep(std::size_t runs) {
         return 1;
       }
       if (run == 0U) {
+        zoom_candidates = sweep.candidates;
 #if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
         const v2::RasterCensus zoom_cold_census = v2::g_raster_census;
 #endif
@@ -595,8 +911,13 @@ int run_general_sweep(std::size_t runs) {
       zoom_walls.push_back(sweep.wall_ms);
     }
     std::sort(zoom_walls.begin(), zoom_walls.end());
-    std::printf("GENERAL zoom=%s median_wall_ms=%.3f\n", zoom_names[zoom_index],
-                zoom_walls[zoom_walls.size() / 2U]);
+    std::printf(
+        "GENERAL zoom=%s median_wall_ms=%.3f ops_authority=%zu index_candidates=%zu "
+        "dedup_candidates=%zu ops_scanned=%zu ops_intersecting=%zu\n",
+        zoom_names[zoom_index], zoom_walls[zoom_walls.size() / 2U],
+        zoom_candidates.operations_in_authority, zoom_candidates.index_candidates,
+        zoom_candidates.deduplicated_candidates, zoom_candidates.operations_scanned,
+        zoom_candidates.operations_intersecting);
   }
   const v2::ViewRequest view{
       .zoom = v2::ZoomLevel::k400Percent,
@@ -625,10 +946,13 @@ int run_general_sweep(std::size_t runs) {
     }
     walls.push_back(sweep.wall_ms);
     std::printf(
-        "run=%zu steps=%zu tiles=%zu wall_ms=%.3f ops_scanned=%zu ops_intersecting=%zu "
+        "run=%zu steps=%zu tiles=%zu wall_ms=%.3f ops_authority=%zu index_candidates=%zu "
+        "dedup_candidates=%zu ops_scanned=%zu ops_intersecting=%zu "
         "groups=%zu\n",
-        run, sweep.steps, sweep.tiles, sweep.wall_ms, sweep.candidates.operations_scanned,
-        sweep.candidates.operations_intersecting, sweep.candidates.groups_published);
+        run, sweep.steps, sweep.tiles, sweep.wall_ms, sweep.candidates.operations_in_authority,
+        sweep.candidates.index_candidates, sweep.candidates.deduplicated_candidates,
+        sweep.candidates.operations_scanned, sweep.candidates.operations_intersecting,
+        sweep.candidates.groups_published);
     if (run == 0U) {
 #if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
       v2::g_raster_census = cold_census;
@@ -892,6 +1216,16 @@ int run_fuzz_docs(std::uint32_t cases, std::uint32_t seed) {
 }  // namespace
 
 int main(int argc, char** argv) {
+  if (argc >= 2 && (std::strcmp(argv[1], "--hairline-pan-repro") == 0 ||
+                    std::strcmp(argv[1], "--hairline-pan-trace") == 0)) {
+    const int thin = argc >= 3 ? std::atoi(argv[2]) : 10;
+    const int medium = argc >= 4 ? std::atoi(argv[3]) : 1;
+    const int thick = argc >= 5 ? std::atoi(argv[4]) : 1;
+    const int eraser_axis = argc >= 6 ? std::atoi(argv[5]) : 16;
+    const int warm_rows = argc >= 7 ? std::atoi(argv[6]) : 8;
+    const bool trace = std::strcmp(argv[1], "--hairline-pan-trace") == 0;
+    return run_hairline_pan_repro(thin, medium, thick, eraser_axis, warm_rows, trace);
+  }
   if (argc >= 2 && std::strcmp(argv[1], "--fuzz-collinear") == 0) {
     const auto cases = static_cast<std::uint32_t>(argc >= 3 ? std::atoi(argv[2]) : 2'000);
     const auto seed = static_cast<std::uint32_t>(argc >= 4 ? std::atoi(argv[3]) : 0xC0FFEE);
