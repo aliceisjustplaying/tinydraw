@@ -155,7 +155,7 @@ void VectorV2Presenter::overlay_pending(vector_v2::PixelRect level_bounds,
 
 bool VectorV2Presenter::stage_settled_pixels(vector_v2::PixelRect panel_bounds,
                                              std::span<const std::uint16_t> pixels, int stride) {
-  cancel_refresh();
+  interrupt_refresh();
   const int width = panel_bounds.x1 - panel_bounds.x0;
   const int height = panel_bounds.y1 - panel_bounds.y0;
   if (width <= 0 || height <= 0 || stride < width || panel_bounds.x0 < 0 || panel_bounds.y0 < 0 ||
@@ -187,13 +187,26 @@ bool VectorV2Presenter::stage_settled_pixels(vector_v2::PixelRect panel_bounds,
 LivePresentationTiming VectorV2Presenter::present_frame_region(vector_v2::PixelRect panel_bounds,
                                                                const vector_v2::ChromeState& chrome,
                                                                std::uint32_t event_us) {
-  cancel_refresh();
+  interrupt_refresh();
   return present_with_overlays(panel_bounds, chrome, event_us, 0, false);
 }
 
 void VectorV2Presenter::cancel_refresh() {
   refresh_cursor_.cancel();
   refresh_pending_ = false;
+  refresh_deferred_ = false;
+  refresh_compose_us_ = 0;
+  refresh_compose_slice_max_us_ = 0;
+  refresh_compose_slices_ = 0;
+}
+
+void VectorV2Presenter::interrupt_refresh() {
+  if (!refresh_pending_ && !refresh_deferred_) {
+    return;
+  }
+  refresh_cursor_.cancel();
+  refresh_pending_ = false;
+  refresh_deferred_ = true;
   refresh_compose_us_ = 0;
   refresh_compose_slice_max_us_ = 0;
   refresh_compose_slices_ = 0;
@@ -245,12 +258,24 @@ LivePresentationTiming VectorV2Presenter::refresh(const vector_v2::ChromeState& 
 }
 
 LivePresentationTiming VectorV2Presenter::refresh_slice(const vector_v2::ChromeState& chrome,
-                                                        std::uint32_t event_us) {
+                                                        std::uint32_t event_us,
+                                                        bool interaction_active) {
+  const bool authority_pending =
+      authority_ != nullptr && authority_->current_revision() != canvas_.current_revision();
+  if (interaction_active || authority_pending) {
+    if (!refresh_pending_ && !refresh_deferred_) {
+      refresh_deferred_ = true;
+    } else {
+      interrupt_refresh();
+    }
+    return {.compose_pending = true};
+  }
   const auto view = navigation_.view();
   if (refresh_pending_ && (!(refresh_view_ == view) || !(refresh_chrome_ == chrome))) {
     cancel_refresh();
   }
   if (!refresh_pending_) {
+    refresh_deferred_ = false;
     clear_live_overlay();
     frame_reusable_ = false;
     frame_ring_ = {};
@@ -326,7 +351,7 @@ LivePresentationTiming VectorV2Presenter::refresh_slice(const vector_v2::ChromeS
 LivePresentationTiming VectorV2Presenter::refresh_region(vector_v2::PixelRect level_bounds,
                                                          const vector_v2::ChromeState& chrome,
                                                          std::uint32_t event_us) {
-  cancel_refresh();
+  interrupt_refresh();
   // A successful region update writes exact current-revision pixels into the
   // linear or ring frame, preserving its current addressing and reusability.
   const bool was_reusable = frame_reusable_;
@@ -419,7 +444,7 @@ LivePresentationTiming VectorV2Presenter::compose_and_present(vector_v2::PixelRe
                                                               vector_v2::PixelRect panel_bounds,
                                                               const vector_v2::ChromeState& chrome,
                                                               std::uint32_t event_us) {
-  cancel_refresh();
+  interrupt_refresh();
   const int width = panel_bounds.x1 - panel_bounds.x0;
   const int height = panel_bounds.y1 - panel_bounds.y0;
   if (width <= 0 || height <= 0) {
@@ -466,7 +491,7 @@ LivePresentationTiming VectorV2Presenter::compose_and_present(vector_v2::PixelRe
 LivePresentationTiming VectorV2Presenter::show_start(InkPoint point, std::uint16_t color,
                                                      const vector_v2::ChromeState& chrome,
                                                      std::uint32_t event_us) {
-  cancel_refresh();
+  interrupt_refresh();
   if (frame_ring_bottom_ == 0) {
     frame_reusable_ = false;
   }
@@ -488,7 +513,7 @@ LivePresentationTiming VectorV2Presenter::show_update(const RibbonUpdate& update
                                                       std::uint16_t color,
                                                       const vector_v2::ChromeState& chrome,
                                                       std::uint32_t event_us) {
-  cancel_refresh();
+  interrupt_refresh();
   if (frame_ring_bottom_ == 0) {
     frame_reusable_ = false;
   }
