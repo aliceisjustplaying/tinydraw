@@ -54,6 +54,13 @@ void add_stats(SettledTileStats& destination, const SettledTileStats& source) {
   destination.deduplicated_candidates += source.deduplicated_candidates;
   destination.operations_intersecting += source.operations_intersecting;
   destination.operations_rendered += source.operations_rendered;
+  destination.candidate_queries += source.candidate_queries;
+  destination.initialize_pixels += source.initialize_pixels;
+  destination.operation_clear_pixels += source.operation_clear_pixels;
+  destination.curve_units_prepared += source.curve_units_prepared;
+  destination.raster_pixels += source.raster_pixels;
+  destination.composite_pixels += source.composite_pixels;
+  destination.fold_pixels += source.fold_pixels;
   destination.saturated_early = destination.saturated_early || source.saturated_early;
 }
 
@@ -114,6 +121,10 @@ SettledRenderSlice render_settled_window_slice(const OperationLog& log, ZoomLeve
     cursor.width_ = width;
     cursor.height_ = height;
     cursor.pixel_count_ = pixel_count;
+    cursor.operation_min_x_.fill(static_cast<std::uint8_t>(width));
+    cursor.operation_max_x_.fill(0U);
+    cursor.operation_min_y_ = static_cast<std::uint8_t>(height);
+    cursor.operation_max_y_ = 0U;
     cursor.phase_ = SettledRenderCursor::Phase::kInitialize;
   }
 
@@ -133,7 +144,9 @@ SettledRenderSlice render_settled_window_slice(const OperationLog& log, ZoomLeve
                     count * sizeof(std::uint16_t));
         std::memset(workspace.blue.data() + cursor.initialize_at_, 0,
                     count * sizeof(std::uint16_t));
+        std::memset(workspace.operation_alpha.data() + cursor.initialize_at_, 0, count);
         cursor.initialize_at_ += count;
+        cursor.stats_.initialize_pixels += count;
         work += count;
         if (cursor.initialize_at_ != cursor.pixel_count_) {
           return {.status = SettledRenderStatus::kInProgress, .work_px = work};
@@ -150,6 +163,7 @@ SettledRenderSlice render_settled_window_slice(const OperationLog& log, ZoomLeve
         const auto candidates =
             log.query_spatial(cursor.world_bounds_, 0U, cursor.authority_.active_operation_count,
                               workspace.candidate_indices, &spatial_stats);
+        ++cursor.stats_.candidate_queries;
         cursor.stats_.operations_in_authority += cursor.authority_.active_operation_count;
         if (candidates.has_value()) {
           cursor.stats_.index_candidates += spatial_stats.index_candidates;
@@ -193,20 +207,34 @@ SettledRenderSlice render_settled_window_slice(const OperationLog& log, ZoomLeve
         cursor.operation_color_ = stored->color;
         cursor.operation_samples_ = stored->samples;
         cursor.operation_touched_ = false;
-        cursor.clear_at_ = 0U;
+        cursor.clear_row_ = cursor.operation_min_y_;
         cursor.endpoint_ = 1U;
         cursor.phase_ = SettledRenderCursor::Phase::kClearOperation;
         break;
       }
 
       case SettledRenderCursor::Phase::kClearOperation: {
-        const std::size_t count = std::min(room(), cursor.pixel_count_ - cursor.clear_at_);
-        std::memset(workspace.operation_alpha.data() + cursor.clear_at_, 0, count);
-        cursor.clear_at_ += count;
-        work += count;
-        if (cursor.clear_at_ != cursor.pixel_count_) {
-          return {.status = SettledRenderStatus::kInProgress, .work_px = work};
+        while (cursor.clear_row_ < cursor.operation_max_y_) {
+          const std::size_t row = cursor.clear_row_;
+          const std::size_t begin = cursor.operation_min_x_[row];
+          const std::size_t end = cursor.operation_max_x_[row];
+          const std::size_t count = end > begin ? end - begin : 0U;
+          if (stop_before(count)) {
+            return {.status = SettledRenderStatus::kInProgress, .work_px = work};
+          }
+          if (count != 0U) {
+            std::memset(workspace.operation_alpha.data() +
+                            row * static_cast<std::size_t>(cursor.width_) + begin,
+                        0, count);
+          }
+          cursor.operation_min_x_[row] = static_cast<std::uint8_t>(cursor.width_);
+          cursor.operation_max_x_[row] = 0U;
+          ++cursor.clear_row_;
+          cursor.stats_.operation_clear_pixels += count;
+          work += count;
         }
+        cursor.operation_min_y_ = static_cast<std::uint8_t>(cursor.height_);
+        cursor.operation_max_y_ = 0U;
         cursor.phase_ = SettledRenderCursor::Phase::kPrepareEndpoint;
         break;
       }
@@ -218,7 +246,8 @@ SettledRenderSlice render_settled_window_slice(const OperationLog& log, ZoomLeve
             cursor.phase_ = SettledRenderCursor::Phase::kScanOperation;
           } else {
             ++cursor.stats_.operations_rendered;
-            cursor.composite_at_ = 0U;
+            cursor.composite_row_ = cursor.operation_min_y_;
+            cursor.composite_x_ = cursor.operation_min_x_[cursor.composite_row_];
             cursor.phase_ = SettledRenderCursor::Phase::kCompositeOperation;
           }
           break;
@@ -234,6 +263,7 @@ SettledRenderSlice render_settled_window_slice(const OperationLog& log, ZoomLeve
           break;
         }
         cursor.prepared_unit_ = *unit;
+        ++cursor.stats_.curve_units_prepared;
         cursor.step_ = 0U;
         cursor.chord_next_y_ = 0;
         cursor.chord_y1_ = 0;
@@ -316,9 +346,19 @@ SettledRenderSlice render_settled_window_slice(const OperationLog& log, ZoomLeve
           if (alpha_255 > row[x]) {
             row[x] = alpha_255;
             cursor.operation_touched_ = true;
+            const std::size_t row_index = static_cast<std::size_t>(y);
+            cursor.operation_min_x_[row_index] =
+                std::min(cursor.operation_min_x_[row_index], static_cast<std::uint8_t>(x));
+            cursor.operation_max_x_[row_index] =
+                std::max(cursor.operation_max_x_[row_index], static_cast<std::uint8_t>(x + 1));
+            cursor.operation_min_y_ =
+                std::min(cursor.operation_min_y_, static_cast<std::uint8_t>(y));
+            cursor.operation_max_y_ =
+                std::max(cursor.operation_max_y_, static_cast<std::uint8_t>(y + 1));
           }
         }
         work += row_work;
+        cursor.stats_.raster_pixels += row_work;
         ++cursor.chord_next_y_;
         if (cursor.chord_next_y_ == cursor.chord_y1_) {
           ++cursor.step_;
@@ -329,37 +369,54 @@ SettledRenderSlice render_settled_window_slice(const OperationLog& log, ZoomLeve
       }
 
       case SettledRenderCursor::Phase::kCompositeOperation: {
-        const std::size_t count = std::min(room(), cursor.pixel_count_ - cursor.composite_at_);
         const Channels color =
             expand_565(cursor.operation_tool_ == OperationTool::kEraser ? std::uint16_t{0xFFFFU}
                                                                         : cursor.operation_color_);
-        for (std::size_t offset = 0; offset < count; ++offset) {
-          const std::size_t at = cursor.composite_at_ + offset;
-          const std::uint8_t alpha = workspace.operation_alpha[at];
-          if (alpha == 0U) {
+        while (cursor.composite_row_ < cursor.operation_max_y_) {
+          const std::size_t row = cursor.composite_row_;
+          const std::size_t end = cursor.operation_max_x_[row];
+          if (cursor.composite_x_ >= end) {
+            ++cursor.composite_row_;
+            if (cursor.composite_row_ < cursor.operation_max_y_) {
+              cursor.composite_x_ = cursor.operation_min_x_[cursor.composite_row_];
+            }
             continue;
           }
-          const std::uint8_t accumulated = workspace.accumulated_alpha[at];
-          const auto contribution = static_cast<std::uint16_t>(
-              (static_cast<std::uint32_t>(alpha) * (255U - accumulated) + 127U) / 255U);
-          if (contribution == 0U) {
-            continue;
+          const std::size_t count = std::min(room(), end - cursor.composite_x_);
+          if (count == 0U) {
+            return {.status = SettledRenderStatus::kInProgress, .work_px = work};
           }
-          workspace.red[at] =
-              static_cast<std::uint16_t>(workspace.red[at] + color.red * contribution / 255U);
-          workspace.green[at] =
-              static_cast<std::uint16_t>(workspace.green[at] + color.green * contribution / 255U);
-          workspace.blue[at] =
-              static_cast<std::uint16_t>(workspace.blue[at] + color.blue * contribution / 255U);
-          const auto next_accumulated =
-              static_cast<std::uint8_t>(std::min<std::uint32_t>(255U, accumulated + contribution));
-          cursor.saturated_pixels_ += next_accumulated == 255U && accumulated != 255U ? 1U : 0U;
-          workspace.accumulated_alpha[at] = next_accumulated;
-        }
-        cursor.composite_at_ += count;
-        work += count;
-        if (cursor.composite_at_ != cursor.pixel_count_) {
-          return {.status = SettledRenderStatus::kInProgress, .work_px = work};
+          const std::size_t first_at =
+              row * static_cast<std::size_t>(cursor.width_) + cursor.composite_x_;
+          for (std::size_t offset = 0; offset < count; ++offset) {
+            const std::size_t at = first_at + offset;
+            const std::uint8_t alpha = workspace.operation_alpha[at];
+            if (alpha == 0U) {
+              continue;
+            }
+            const std::uint8_t accumulated = workspace.accumulated_alpha[at];
+            const auto contribution = static_cast<std::uint16_t>(
+                (static_cast<std::uint32_t>(alpha) * (255U - accumulated) + 127U) / 255U);
+            if (contribution == 0U) {
+              continue;
+            }
+            workspace.red[at] =
+                static_cast<std::uint16_t>(workspace.red[at] + color.red * contribution / 255U);
+            workspace.green[at] =
+                static_cast<std::uint16_t>(workspace.green[at] + color.green * contribution / 255U);
+            workspace.blue[at] =
+                static_cast<std::uint16_t>(workspace.blue[at] + color.blue * contribution / 255U);
+            const auto next_accumulated = static_cast<std::uint8_t>(
+                std::min<std::uint32_t>(255U, accumulated + contribution));
+            cursor.saturated_pixels_ += next_accumulated == 255U && accumulated != 255U ? 1U : 0U;
+            workspace.accumulated_alpha[at] = next_accumulated;
+          }
+          cursor.composite_x_ += count;
+          cursor.stats_.composite_pixels += count;
+          work += count;
+          if (work >= max_work_px) {
+            return {.status = SettledRenderStatus::kInProgress, .work_px = work};
+          }
         }
         if (cursor.saturated_pixels_ == cursor.pixel_count_) {
           cursor.stats_.saturated_early = true;
@@ -383,6 +440,7 @@ SettledRenderSlice render_settled_window_slice(const OperationLog& log, ZoomLeve
               static_cast<std::uint16_t>(((r8 >> 3U) << 11U) | ((g8 >> 2U) << 5U) | (b8 >> 3U));
         }
         cursor.fold_at_ += count;
+        cursor.stats_.fold_pixels += count;
         work += count;
         if (cursor.fold_at_ != cursor.pixel_count_) {
           return {.status = SettledRenderStatus::kInProgress, .work_px = work};
