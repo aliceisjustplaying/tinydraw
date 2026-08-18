@@ -674,6 +674,66 @@ TEST_CASE("operation chord batch sweep matches the production operation painter 
   }
 }
 
+TEST_CASE("unmasked operation replay yields inside a dense overview row") {
+  constexpr int kWidth = vector_v2::kOverviewWidth;
+  constexpr int kHeight = vector_v2::kOverviewHeight;
+  constexpr std::size_t kWork = 256U;
+  std::array<vector_v2::CompactOperationSample, 64> samples{};
+  for (std::size_t index = 0; index < samples.size(); ++index) {
+    samples[index] = {
+        .x_quarter = static_cast<std::uint16_t>(index % 2U == 0U ? 1'024U : 14'336U),
+        .y_quarter = 5'760U,
+        .radius_256 = 5'120U,
+    };
+  }
+  std::vector<std::uint16_t> reference(kWidth * kHeight, 0xFFFFU);
+  std::vector<std::uint16_t> sliced(kWidth * kHeight, 0xFFFFU);
+  const vector_v2::RasterSurface reference_surface{
+      .zoom = vector_v2::ZoomLevel::k25Percent,
+      .level_bounds = {0, 0, kWidth, kHeight},
+      .pixels = reference,
+      .stride = kWidth,
+  };
+  const vector_v2::RasterSurface sliced_surface{
+      .zoom = vector_v2::ZoomLevel::k25Percent,
+      .level_bounds = {0, 0, kWidth, kHeight},
+      .pixels = sliced,
+      .stride = kWidth,
+  };
+  REQUIRE(vector_v2::apply_incremental_operation({.color = 0x001FU, .samples = samples},
+                                                 reference_surface));
+
+  std::vector<std::uint32_t> storage(vector_v2::kOperationChordStorageBytes / 4U);
+  const auto bytes = std::as_writable_bytes(std::span(storage));
+  std::size_t endpoint = samples.size() - 1U;
+  bool paused_inside_row = false;
+  std::size_t slices = 0;
+  while (true) {
+    const auto batch = vector_v2::prepare_operation_chord_batch(
+        samples, endpoint, vector_v2::ZoomLevel::k25Percent, sliced_surface.level_bounds, bytes);
+    REQUIRE(batch.has_value());
+    if (batch->chord_count != 0U) {
+      vector_v2::OperationSweepCursor cursor{.next_row = batch->clipped_bounds.y0};
+      while (cursor.next_row < batch->clipped_bounds.y1) {
+        vector_v2::OperationSweepSlice slice{};
+        REQUIRE(vector_v2::apply_operation_chord_slice(vector_v2::OperationTool::kPen, 0x001FU,
+                                                       bytes, *batch, kWork, sliced_surface, cursor,
+                                                       slice));
+        CHECK(slice.work_px <= kWork + static_cast<std::size_t>(kWidth));
+        paused_inside_row = paused_inside_row || cursor.next_chord != 0U;
+        ++slices;
+      }
+    }
+    if (batch->next_endpoint == 0U) {
+      break;
+    }
+    endpoint = batch->next_endpoint;
+  }
+  CHECK(paused_inside_row);
+  CHECK(slices > 100U);
+  CHECK(sliced == reference);
+}
+
 TEST_CASE("operation chord sweep refreshes finalized windows between overlapping chords") {
   constexpr int kSize = 64;
   constexpr std::uint16_t kRadius = 20U * 256U;

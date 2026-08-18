@@ -135,7 +135,7 @@ struct OperationChordBatch {
     PixelRect surface_bounds, std::span<std::byte> chord_storage);
 
 struct OperationSweepSlice {
-  // First unswept row; the batch is complete when this reaches
+  // First unfinished row; the batch is complete when this reaches
   // clipped_bounds.y1.
   int next_row = 0;
   // Rows actually swept (rows with no live chord are jumped, not counted).
@@ -145,6 +145,14 @@ struct OperationSweepSlice {
   // honest slice cost — a fat batch with every chord active on a row pays
   // per chord, a hairline batch pays a few pixels per row.
   std::size_t work_px = 0;
+};
+
+// Persistent position inside an unmasked chord batch. next_chord indexes the
+// deterministic active-chord list for next_row, allowing dense rows to yield
+// without replaying chords already painted into the destination.
+struct OperationSweepCursor {
+  int next_row = 0;
+  std::size_t next_chord = 0;
 };
 
 // Sweeps rows of a prepared batch, resuming at first_row and stopping at a
@@ -167,6 +175,15 @@ struct OperationSweepSlice {
                                               const OperationChordBatch& batch, int first_row,
                                               std::size_t max_work_px, const RasterSurface& surface,
                                               OperationSweepSlice& slice);
+
+// Intra-row resumable unmasked replay. Stops at a chord boundary once the
+// work charge reaches max_work_px; one chord is the smallest atomic unit.
+// Initialize cursor to {batch.clipped_bounds.y0, 0}. Completion is
+// cursor.next_row == batch.clipped_bounds.y1 with next_chord == 0.
+[[nodiscard]] bool apply_operation_chord_slice(
+    OperationTool tool, std::uint16_t color, std::span<const std::byte> chord_storage,
+    const OperationChordBatch& batch, std::size_t max_work_px, const RasterSurface& surface,
+    OperationSweepCursor& cursor, OperationSweepSlice& slice);
 
 }  // namespace tinydraw::vector_v2
 
