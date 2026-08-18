@@ -567,6 +567,37 @@ bool replay_active_overview(const OperationLog& log, std::span<std::uint16_t> ou
   return true;
 }
 
+bool build_tiled_may_ink(const OperationLog& log, std::span<std::uint8_t> output) {
+  if (!log.ready() || output.size() != kOccupancyBytes ||
+      log.workspace_overlaps_storage(std::as_bytes(output))) {
+    return false;
+  }
+  std::fill(output.begin(), output.end(), 0U);
+  const AuthorityReadView view = log.read_view();
+  for (std::size_t index = 0; index < view.active_operation_count; ++index) {
+    const auto operation = log.operation(index);
+    if (!operation.has_value()) {
+      return false;
+    }
+    if (operation->tool == OperationTool::kEraser) {
+      continue;
+    }
+    const PixelRect bounds = operation->world_bounds;
+    const int first_column = bounds.x0 / kOccupancyCellWorldSize;
+    const int last_column = (bounds.x1 - 1) / kOccupancyCellWorldSize;
+    const int first_row = bounds.y0 / kOccupancyCellWorldSize;
+    const int last_row = (bounds.y1 - 1) / kOccupancyCellWorldSize;
+    for (int row = first_row; row <= last_row; ++row) {
+      for (int column = first_column; column <= last_column; ++column) {
+        const std::size_t bit =
+            static_cast<std::size_t>(row) * kOccupancyColumns + static_cast<std::size_t>(column);
+        output[bit / 8U] |= static_cast<std::uint8_t>(1U << (bit % 8U));
+      }
+    }
+  }
+  return true;
+}
+
 bool restore_document_snapshot(OperationLog& log, MaterializedCanvas& canvas,
                                DocumentRevision revision,
                                std::span<const std::uint16_t> overview_pixels) {

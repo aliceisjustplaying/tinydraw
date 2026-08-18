@@ -376,9 +376,17 @@ void run_vector_v2_app() {
                         : std::span(storage.overview, vector_v2::kOverviewPixels);
   const bool restored_overview =
       !autosave_restored || vector_v2::replay_active_overview(log, startup_overview);
-  if (!restored_overview || !canvas.publish_overview(log.current_revision(), startup_overview) ||
-      !log.ready() || !presenter.ready() || !touch.ready() || !touch_sampler.start() ||
-      !stroke.ready() || !producer.ready()) {
+  const auto startup_tiled_may_ink =
+      std::span(reinterpret_cast<std::uint8_t*>(storage.affected_keys), vector_v2::kOccupancyBytes);
+  const bool restored_may_ink =
+      !autosave_restored || vector_v2::build_tiled_may_ink(log, startup_tiled_may_ink);
+  const bool canvas_bootstrapped =
+      restored_overview && restored_may_ink &&
+      (autosave_restored ? canvas.restore_snapshot(log.current_revision(), startup_overview,
+                                                   startup_tiled_may_ink)
+                         : canvas.reset_blank(log.current_revision()));
+  if (!canvas_bootstrapped || !log.ready() || !presenter.ready() || !touch.ready() ||
+      !touch_sampler.start() || !stroke.ready() || !producer.ready()) {
     std::printf(
         "TINYDRAW_LIVE_FAIL reason=bootstrap canvas=%u log=%u presenter=%u touch=%u builder=%u "
         "producer=%u\n",

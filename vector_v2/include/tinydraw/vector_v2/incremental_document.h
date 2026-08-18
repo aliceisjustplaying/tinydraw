@@ -153,6 +153,10 @@ enum class HistoryDirection : std::uint8_t {
 // Redo operations are deliberately excluded. Failure leaves output unspecified.
 [[nodiscard]] bool replay_active_overview(const OperationLog& log, std::span<std::uint16_t> output);
 
+// Builds the conservative tiled may-ink proof for the active authority
+// prefix. Pen bounds set bits; erasers cannot add ink and are ignored.
+[[nodiscard]] bool build_tiled_may_ink(const OperationLog& log, std::span<std::uint8_t> output);
+
 // Coordinates an authoritative snapshot restore. The caller-owned pixels must
 // not alias log or canvas storage. Validation is completed before either state
 // module changes. Callers must serialize access.

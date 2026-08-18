@@ -196,12 +196,18 @@ class MaterializedCanvas {
   // a distinct source buffer. Callers must serialize all canvas operations.
   [[nodiscard]] bool publish_overview(DocumentRevision revision,
                                       std::span<const std::uint16_t> pixels);
-  // Replaces materialization from a complete 25% snapshot at any revision,
-  // rebuilds conservative paper occupancy, and invalidates every tile. This is
-  // not an ordinary revision publication. Fails when pixels alias owned
-  // canvas storage.
+  // Replaces materialization from a complete 25% snapshot at any revision and
+  // invalidates every tile. Without an authority-derived may-ink map the
+  // occupancy state is fully conservative. This is not an ordinary revision
+  // publication. Fails when pixels alias owned canvas storage.
   [[nodiscard]] bool restore_snapshot(DocumentRevision revision,
                                       std::span<const std::uint16_t> pixels);
+  // Exact bootstrap overload. tiled_may_ink has one bit per 16x16 world cell
+  // and must conservatively cover every pixel reachable by active pen
+  // authority. Both sources are validated before any canvas state changes.
+  [[nodiscard]] bool restore_snapshot(DocumentRevision revision,
+                                      std::span<const std::uint16_t> pixels,
+                                      std::span<const std::uint8_t> tiled_may_ink);
   // Resets materialization directly to uniform paper without requiring a
   // caller-owned full-overview snapshot.
   [[nodiscard]] bool reset_blank(DocumentRevision revision);
@@ -348,7 +354,6 @@ class MaterializedCanvas {
   void apply_overview_publication(const OverviewRevisionPublication& overview_publication);
   void finish_revision(DocumentRevision revision, PixelRect affected_world_bounds);
   void mark_occupied(PixelRect world_bounds);
-  void rebuild_occupancy_from_overview();
   void clear_uniforms();
   void touch(MaterializedSlotStorage& slot);
   // Sole occupancy transitions: every occupied_ flip goes through these so

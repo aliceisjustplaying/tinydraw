@@ -51,18 +51,6 @@ bool valid_overview_bounds(PixelRect bounds) {
          bounds.x1 <= kOverviewWidth && bounds.y1 <= kOverviewHeight;
 }
 
-bool overview_region_is_paper(std::span<const std::uint16_t> pixels, PixelRect bounds) {
-  for (int y = bounds.y0; y < bounds.y1; ++y) {
-    const auto row = pixels.subspan(
-        static_cast<std::size_t>(y) * kOverviewWidth + static_cast<std::size_t>(bounds.x0),
-        static_cast<std::size_t>(bounds.x1 - bounds.x0));
-    if (std::any_of(row.begin(), row.end(), [](std::uint16_t pixel) { return pixel != 0xFFFFU; })) {
-      return false;
-    }
-  }
-  return true;
-}
-
 }  // namespace
 
 int zoom_percent(ZoomLevel zoom) {
@@ -261,23 +249,6 @@ void MaterializedCanvas::invalidate_uniforms(PixelRect world_bounds,
   }
 }
 
-void MaterializedCanvas::rebuild_occupancy_from_overview() {
-  std::fill(occupancy_bits_.begin(), occupancy_bits_.end(), 0U);
-  for (int row = 0; row < kOccupancyRows; ++row) {
-    for (int column = 0; column < kOccupancyColumns; ++column) {
-      const int x0 = column * kOccupancyCellWorldSize / 4;
-      const int y0 = row * kOccupancyCellWorldSize / 4;
-      const int x1 = std::min(kOverviewWidth, (column + 1) * kOccupancyCellWorldSize / 4);
-      const int y1 = std::min(kOverviewHeight, (row + 1) * kOccupancyCellWorldSize / 4);
-      if (!overview_region_is_paper(overview_pixels_, {x0, y0, x1, y1})) {
-        const std::size_t bit =
-            static_cast<std::size_t>(row) * kOccupancyColumns + static_cast<std::size_t>(column);
-        occupancy_bits_[bit / 8U] |= static_cast<std::uint8_t>(1U << (bit % 8U));
-      }
-    }
-  }
-}
-
 void MaterializedCanvas::mark_occupied(PixelRect world_bounds) {
   const int first_column = world_bounds.x0 / kOccupancyCellWorldSize;
   const int last_column = (world_bounds.x1 - 1) / kOccupancyCellWorldSize;
@@ -342,7 +313,37 @@ bool MaterializedCanvas::restore_snapshot(DocumentRevision revision,
     }
   }
   clear_uniforms();
-  rebuild_occupancy_from_overview();
+  // A 25% snapshot cannot prove that a higher-zoom hairline is absent.
+  std::fill(occupancy_bits_.begin(), occupancy_bits_.end(), 0xFFU);
+  current_revision_ = revision;
+  overview_revision_ = revision;
+  overview_valid_ = true;
+  return true;
+}
+
+bool MaterializedCanvas::restore_snapshot(DocumentRevision revision,
+                                          std::span<const std::uint16_t> pixels,
+                                          std::span<const std::uint8_t> tiled_may_ink) {
+  const auto pixel_bytes = std::as_bytes(pixels);
+  const auto map_bytes = std::as_bytes(tiled_may_ink);
+  if (!ready() || pixels.size() != kOverviewPixels || tiled_may_ink.size() != kOccupancyBytes ||
+      !accepts_external_workspace(pixel_bytes) || !accepts_external_workspace(map_bytes) ||
+      storage_overlaps(pixel_bytes, map_bytes)) {
+    return false;
+  }
+  std::copy(pixels.begin(), pixels.end(), overview_pixels_.begin());
+  std::copy(tiled_may_ink.begin(), tiled_may_ink.end(), occupancy_bits_.begin());
+#ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
+  if (rerender_ledger_ != nullptr) {
+    rerender_ledger_->reset();
+  }
+#endif
+  for (std::size_t index = 0; index < slots_.size(); ++index) {
+    if (slots_[index].occupied_) {
+      release_slot(index);
+    }
+  }
+  clear_uniforms();
   current_revision_ = revision;
   overview_revision_ = revision;
   overview_valid_ = true;
@@ -476,6 +477,8 @@ void MaterializedCanvas::finish_revision(DocumentRevision revision,
     rerender_ledger_->mark_world_damage(affected_world_bounds);
   }
 #endif
+  // Damage can add ink but cannot prove its absence. Erasers deliberately
+  // remain conservative until the next authority-derived bootstrap.
   mark_occupied(affected_world_bounds);
   current_revision_ = revision;
   overview_revision_ = revision;
