@@ -7,6 +7,7 @@
 #include "tinydraw/vector_v2/incremental_document.h"
 #include "tinydraw/vector_v2/materialized_canvas.h"
 #include "tinydraw/vector_v2/operation_log.h"
+#include "tinydraw/vector_v2/settled_tile.h"
 #include "tinydraw/vector_v2/tile_producer.h"
 #include "vector_v2_export.h"
 #include "vector_v2_presenter.h"
@@ -23,6 +24,8 @@ namespace tinydraw::esp32 {
     const vector_v2::ChromeState& chrome, const vector_v2::InPlaceAppendWorkspace& workspace,
     VectorV2Export& exporter, std::span<const std::uint16_t> blank_snapshot,
     std::span<vector_v2::CompactOperationSample> conversion_storage,
-    std::span<std::uint16_t> tile_scratch, std::span<std::uint16_t> overview_scratch);
+    std::span<std::uint16_t> tile_scratch, std::span<std::uint16_t> overview_scratch,
+    const vector_v2::SettledTileWorkspace& settle_workspace,
+    std::span<std::uint16_t> settle_pixels);
 
 }  // namespace tinydraw::esp32

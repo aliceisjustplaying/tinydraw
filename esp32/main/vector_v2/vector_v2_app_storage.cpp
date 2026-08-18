@@ -97,12 +97,39 @@ bool AppStorage::allocate() {
   // Settled-AA workspace, allocated dead LAST so it shifts no other
   // allocation's cache sets (the first settle-build battery measured the
   // 400% cold wall +9 ms with these placed mid-heap).
-  settle_op_alpha = allocate_array<std::uint8_t>(vector_v2::kTilePixels);
-  settle_accumulated = allocate_array<std::uint8_t>(vector_v2::kTilePixels);
-  settle_red = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
-  settle_green = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
-  settle_blue = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
-  settle_pixels = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
+  // Settled-AA planes are per-pixel hot in every phase (clear, composite,
+  // fold): internal SRAM removes the external-RAM round trips that the
+  // 2026-08-18 host/device divergence receipts implicated. The PSRAM
+  // fallback keeps allocation infallible; removing all six from PSRAM
+  // shifts later allocations by exactly 40,960 B = five 8 KiB dcache ways,
+  // preserving the measured cache-set placement.
+  settle_op_alpha = allocate_internal<std::uint8_t>(vector_v2::kTilePixels);
+  settle_accumulated = allocate_internal<std::uint8_t>(vector_v2::kTilePixels);
+  settle_red = allocate_internal<std::uint16_t>(vector_v2::kTilePixels);
+  settle_green = allocate_internal<std::uint16_t>(vector_v2::kTilePixels);
+  settle_blue = allocate_internal<std::uint16_t>(vector_v2::kTilePixels);
+  settle_pixels = allocate_internal<std::uint16_t>(vector_v2::kTilePixels);
+  settle_internal = settle_op_alpha != nullptr && settle_accumulated != nullptr &&
+                    settle_red != nullptr && settle_green != nullptr &&
+                    settle_blue != nullptr && settle_pixels != nullptr;
+  if (settle_op_alpha == nullptr) {
+    settle_op_alpha = allocate_array<std::uint8_t>(vector_v2::kTilePixels);
+  }
+  if (settle_accumulated == nullptr) {
+    settle_accumulated = allocate_array<std::uint8_t>(vector_v2::kTilePixels);
+  }
+  if (settle_red == nullptr) {
+    settle_red = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
+  }
+  if (settle_green == nullptr) {
+    settle_green = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
+  }
+  if (settle_blue == nullptr) {
+    settle_blue = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
+  }
+  if (settle_pixels == nullptr) {
+    settle_pixels = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
+  }
   // Dense authority index and shared query output are allocated dead-last so
   // they do not move the cache-set placement of the measured render path.
   operation_spatial_cells = allocate_array<std::uint64_t>(
