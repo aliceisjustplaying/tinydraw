@@ -14,9 +14,16 @@ namespace vector_v2 = tinydraw::vector_v2;
 namespace {
 
 struct SettleRig {
-  std::array<vector_v2::OperationRecord, 8> records{};
+  static constexpr std::size_t kOperationCapacity = 8;
+  static constexpr std::size_t kSpatialWords =
+      vector_v2::operation_spatial_word_count(kOperationCapacity);
+  std::array<vector_v2::OperationRecord, kOperationCapacity> records{};
   std::array<vector_v2::CompactOperationSample, 64> samples{};
-  vector_v2::OperationLog log{records, samples};
+  std::array<std::uint64_t, vector_v2::kOperationSpatialCellCount * kSpatialWords> spatial_cells{};
+  std::array<std::uint64_t, kSpatialWords> spatial_large{};
+  std::array<std::uint16_t, kOperationCapacity> candidates{};
+  vector_v2::OperationSpatialIndex spatial_index{kOperationCapacity, spatial_cells, spatial_large};
+  vector_v2::OperationLog log{records, samples, &spatial_index};
   std::vector<std::uint8_t> operation_alpha = std::vector<std::uint8_t>(vector_v2::kTilePixels);
   std::vector<std::uint8_t> accumulated = std::vector<std::uint8_t>(vector_v2::kTilePixels);
   std::vector<std::uint16_t> red = std::vector<std::uint16_t>(vector_v2::kTilePixels);
@@ -28,11 +35,41 @@ struct SettleRig {
             .accumulated_alpha = accumulated,
             .red = red,
             .green = green,
-            .blue = blue};
+            .blue = blue,
+            .candidate_indices = candidates};
   }
 };
 
 }  // namespace
+
+TEST_CASE("settled spatial replay fetches only conservative local candidates") {
+  SettleRig rig;
+  const std::array local{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 16U * 16U, .y_quarter = 16U * 16U, .radius_256 = 256U},
+      vector_v2::CompactOperationSample{
+          .x_quarter = 16U * 24U, .y_quarter = 16U * 16U, .radius_256 = 256U, .elapsed_ms = 8U}};
+  const std::array distant{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 16U * 1'000U, .y_quarter = 16U * 1'000U, .radius_256 = 256U},
+      vector_v2::CompactOperationSample{.x_quarter = 16U * 1'008U,
+                                        .y_quarter = 16U * 1'000U,
+                                        .radius_256 = 256U,
+                                        .elapsed_ms = 8U}};
+  REQUIRE(rig.log.append({.color = 0x001FU, .samples = local}));
+  REQUIRE(rig.log.append({.color = 0xF800U, .samples = distant}));
+
+  std::vector<std::uint16_t> settled(vector_v2::kTilePixels);
+  vector_v2::SettledTileStats stats{};
+  REQUIRE(vector_v2::render_settled_tile(rig.log, {vector_v2::ZoomLevel::k100Percent, 0, 0},
+                                         rig.workspace(), settled, &stats));
+  CHECK(stats.operations_in_authority == 2U);
+  CHECK(stats.index_candidates == 1U);
+  CHECK(stats.deduplicated_candidates == 1U);
+  CHECK(stats.operations_scanned == 1U);
+  CHECK(stats.operations_intersecting == 1U);
+  CHECK(stats.operations_rendered == 1U);
+}
 
 TEST_CASE("settled tile matches hard-edged interiors and smooths boundaries") {
   SettleRig rig;

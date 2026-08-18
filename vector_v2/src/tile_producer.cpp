@@ -27,6 +27,22 @@ std::size_t distance_squared(int x, int y, int center_x, int center_y) {
   return static_cast<std::size_t>(delta_x * delta_x + delta_y * delta_y);
 }
 
+PixelRect conservative_world_bounds(PixelRect level_bounds, ZoomLevel zoom) {
+  const int percent = zoom_percent(zoom);
+  return {
+      .x0 = std::max(0, level_bounds.x0 * 100 / percent - 1),
+      .y0 = std::max(0, level_bounds.y0 * 100 / percent - 1),
+      .x1 = std::min(kWorldWidth, (level_bounds.x1 * 100 + percent - 1) / percent + 1),
+      .y1 = std::min(kWorldHeight, (level_bounds.y1 * 100 + percent - 1) / percent + 1),
+  };
+}
+
+bool prefer_spatial_candidates(std::size_t candidate_count, std::size_t authority_count) {
+  // Dense queries still pay the authority fetches and add a PSRAM candidate
+  // indirection. Require at least a 25% rejection before taking that path.
+  return candidate_count <= authority_count - authority_count / 4U;
+}
+
 }  // namespace
 
 TileProducer::TileProducer(OperationLog& log, MaterializedCanvas& canvas,
@@ -40,11 +56,13 @@ TileProducer::TileProducer(OperationLog& log, MaterializedCanvas& canvas,
       baseline_color_(baseline_color) {}
 
 bool TileProducer::ready() const {
-  const std::array<std::span<const std::byte>, 5> workspaces{
-      std::as_bytes(workspace_.supertask_pixels), std::as_bytes(workspace_.finalized_pixels),
+  const std::array<std::span<const std::byte>, 6> workspaces{
+      std::as_bytes(workspace_.supertask_pixels),
+      std::as_bytes(workspace_.finalized_pixels),
       std::as_bytes(workspace_.summary_row_unset),
       std::as_bytes(workspace_.summary_saturated_words),
-      std::span<const std::byte>(workspace_.operation_chord_plans)};
+      std::span<const std::byte>(workspace_.operation_chord_plans),
+      std::as_bytes(workspace_.candidate_indices)};
   bool workspace_invalid = false;
   for (std::size_t left = 0; left < workspaces.size(); ++left) {
     workspace_invalid = workspace_invalid ||
@@ -290,12 +308,26 @@ bool TileProducer::start_group(const ViewRequest& view, TileKey group_origin) {
                    .next_operation = replay->first_operation + replay->operation_count,
                    .next_sample = 0,
                    .active = true};
+  OperationSpatialQueryStats spatial_stats{};
+  spatial_stats.operations_in_authority = replay->operation_count;
+  const auto candidates =
+      log_.query_spatial(conservative_world_bounds(bounds, view.zoom), replay->first_operation,
+                         replay->operation_count, workspace_.candidate_indices, &spatial_stats);
+  if (candidates.has_value()) {
+    active_group_.candidate_count = *candidates;
+    active_group_.uses_spatial_index =
+        prefer_spatial_candidates(*candidates, replay->operation_count);
+  }
+  active_group_.spatial_stats = spatial_stats;
+  active_group_.spatial_stats_pending = true;
   return true;
 }
 
 bool TileProducer::active_group_has_work() const {
   return active_group_.cached_operation_index != kNoCachedOperation ||
-         active_group_.next_operation > active_group_.first_operation;
+         (active_group_.uses_spatial_index
+              ? active_group_.next_candidate < active_group_.candidate_count
+              : active_group_.next_operation > active_group_.first_operation);
 }
 
 void TileProducer::discard_active_group() { active_group_ = {}; }
@@ -315,10 +347,18 @@ TileProducer::OperationGate TileProducer::gate_active_operation(TileProductionSt
   if (active_group_.cached_operation_index != kNoCachedOperation) {
     return OperationGate::kReady;
   }
-  if (active_group_.next_operation <= active_group_.first_operation) {
-    return OperationGate::kConsumed;
+  std::size_t operation_index = 0U;
+  if (active_group_.uses_spatial_index) {
+    if (active_group_.next_candidate >= active_group_.candidate_count) {
+      return OperationGate::kConsumed;
+    }
+    operation_index = workspace_.candidate_indices[active_group_.next_candidate++];
+  } else {
+    if (active_group_.next_operation <= active_group_.first_operation) {
+      return OperationGate::kConsumed;
+    }
+    operation_index = --active_group_.next_operation;
   }
-  const std::size_t operation_index = --active_group_.next_operation;
   const auto stored = log_.operation(operation_index);
   if (!stored.has_value()) {
     return OperationGate::kFailed;
@@ -449,6 +489,12 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
     return std::nullopt;
   }
   TileProductionStep result{.level_bounds = active_group_.bounds};
+  if (active_group_.spatial_stats_pending) {
+    result.operations_in_authority = active_group_.spatial_stats.operations_in_authority;
+    result.index_candidates = active_group_.spatial_stats.index_candidates;
+    result.deduplicated_candidates = active_group_.spatial_stats.deduplicated_candidates;
+    active_group_.spatial_stats_pending = false;
+  }
   std::size_t operations_consumed = 0;
   std::size_t chords_consumed = 0;
   std::size_t work_consumed = 0;
@@ -463,6 +509,7 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
       // operations cannot change any pixel. Complete the replay immediately.
       TINYDRAW_V2_CENSUS_ADD(groups_saturated_early, 1);
       active_group_.next_operation = active_group_.first_operation;
+      active_group_.next_candidate = active_group_.candidate_count;
       active_group_.next_sample = 0U;
       active_group_.cached_operation_index = kNoCachedOperation;
       break;

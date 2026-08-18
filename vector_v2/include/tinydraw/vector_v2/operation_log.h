@@ -7,6 +7,7 @@
 #include <span>
 
 #include "tinydraw/vector_v2/operation.h"
+#include "tinydraw/vector_v2/operation_spatial_index.h"
 
 namespace tinydraw::vector_v2 {
 
@@ -98,7 +99,8 @@ class PreparedHistoryChange {
 // Callers must serialize reads, appends, and clear operations.
 class OperationLog {
  public:
-  OperationLog(std::span<OperationRecord> records, std::span<CompactOperationSample> samples);
+  OperationLog(std::span<OperationRecord> records, std::span<CompactOperationSample> samples,
+               OperationSpatialIndex* spatial_index = nullptr);
 
   [[nodiscard]] bool ready() const;
   [[nodiscard]] DocumentRevision current_revision() const;
@@ -117,6 +119,12 @@ class OperationLog {
   [[nodiscard]] AuthorityReadView read_view() const;
   [[nodiscard]] std::optional<StoredOperation> operation(std::size_t index) const;
   [[nodiscard]] std::optional<StoredOperation> retained_operation(std::size_t index) const;
+  // Emits conservative candidates newest-first. Null means the optional
+  // acceleration index is unavailable; callers must use the authority scan.
+  [[nodiscard]] std::optional<std::size_t> query_spatial(
+      PixelRect world_bounds, std::size_t first_operation, std::size_t requested_operation_count,
+      std::span<std::uint16_t> newest_first_candidates,
+      OperationSpatialQueryStats* stats = nullptr) const;
   [[nodiscard]] std::optional<PreparedHistoryChange> prepare_undo();
   [[nodiscard]] std::optional<PreparedHistoryChange> prepare_redo();
   // Returns the exact contiguous operations needed to advance a caller-owned
@@ -146,6 +154,8 @@ class OperationLog {
   [[nodiscard]] PixelRect bounds_for_range(std::size_t first, std::size_t last) const;
   [[nodiscard]] std::optional<StoredOperation> history_operation(
       const PreparedHistoryChange& prepared, std::size_t active_index) const;
+  [[nodiscard]] bool can_use_spatial_index() const;
+  void rebuild_spatial_index();
   void publish_history(const PreparedHistoryChange& prepared);
   void cancel_history(const PreparedHistoryChange& prepared);
 
@@ -159,6 +169,8 @@ class OperationLog {
   DocumentRevision revision_{};
   OperationLogEpoch epoch_{};
   bool history_pending_ = false;
+  OperationSpatialIndex* spatial_index_ = nullptr;
+  bool spatial_index_usable_ = false;
 };
 
 }  // namespace tinydraw::vector_v2

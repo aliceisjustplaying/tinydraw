@@ -51,7 +51,7 @@ struct PaperFixture {
 
   PaperFixture() {
     snapshot.fill(0xFFFFU);
-    REQUIRE(canvas.restore_snapshot({0}, snapshot));
+    REQUIRE(canvas.reset_blank({0}));
   }
 };
 
@@ -99,7 +99,10 @@ struct AdversarialFixture {
 };
 
 struct Fixture {
-  std::array<vector_v2::OperationRecord, 96> records{};
+  static constexpr std::size_t kOperationCapacity = 96;
+  static constexpr std::size_t kSpatialWords =
+      vector_v2::operation_spatial_word_count(kOperationCapacity);
+  std::array<vector_v2::OperationRecord, kOperationCapacity> records{};
   std::array<vector_v2::CompactOperationSample, 2'048> samples{};
   std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
   std::unique_ptr<
@@ -117,7 +120,11 @@ struct Fixture {
   std::array<std::uint16_t, vector_v2::kTileProducerSummaryRows> summary_rows{};
   std::array<std::uint32_t, vector_v2::kTileProducerSummaryWords> summary_words{};
   std::array<std::uint32_t, vector_v2::kOperationChordStorageBytes / 4U> chord_plans{};
-  vector_v2::OperationLog log{records, samples};
+  std::array<std::uint64_t, vector_v2::kOperationSpatialCellCount * kSpatialWords> spatial_cells{};
+  std::array<std::uint64_t, kSpatialWords> spatial_large{};
+  std::array<std::uint16_t, kOperationCapacity> candidates{};
+  vector_v2::OperationSpatialIndex spatial_index{kOperationCapacity, spatial_cells, spatial_large};
+  vector_v2::OperationLog log{records, samples, &spatial_index};
   vector_v2::MaterializedCanvas canvas{overview,  *uniforms, occupancy,          slots,
                                        tile_pool, {},        *raw_slot_directory};
   vector_v2::TileProducer producer{
@@ -127,7 +134,8 @@ struct Fixture {
        .finalized_pixels = mask,
        .summary_row_unset = summary_rows,
        .summary_saturated_words = summary_words,
-       .operation_chord_plans = std::as_writable_bytes(std::span(chord_plans))}};
+       .operation_chord_plans = std::as_writable_bytes(std::span(chord_plans)),
+       .candidate_indices = candidates}};
 
   Fixture() {
     overview.fill(0xFFFFU);
@@ -199,7 +207,10 @@ TEST_CASE("tile producer rebuilds invalidated pixels after Undo and Redo") {
        .level_bounds = {0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
        .pixels = fixture.snapshot,
        .stride = vector_v2::kOverviewWidth}));
-  REQUIRE(fixture.canvas.restore_snapshot(fixture.log.current_revision(), fixture.snapshot));
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> may_ink{};
+  REQUIRE(vector_v2::build_tiled_may_ink(fixture.log, may_ink));
+  REQUIRE(
+      fixture.canvas.restore_snapshot(fixture.log.current_revision(), fixture.snapshot, may_ink));
   REQUIRE(vector_v2::move_history_incrementally(
       fixture.log, fixture.canvas, vector_v2::HistoryDirection::kUndo, fixture.snapshot));
   REQUIRE(vector_v2::move_history_incrementally(
@@ -244,6 +255,70 @@ TEST_CASE("tile producer publishes certainly-paper tiles in natural supertask gr
             vector_v2::SourceKind::kUniform);
     }
   }
+}
+
+TEST_CASE("sparse autosave occupancy publishes blank high zoom group without authority scan") {
+  PaperFixture fixture;
+  const std::array distant{
+      vector_v2::CompactOperationSample{.x_quarter = 1'200U * vector_v2::kSampleUnitsPerWorldUnit,
+                                        .y_quarter = 1'500U * vector_v2::kSampleUnitsPerWorldUnit,
+                                        .radius_256 = 8U * 256U}};
+  REQUIRE(fixture.log.append(append(distant, 0x001FU)));
+  REQUIRE(vector_v2::replay_active_overview(fixture.log, fixture.snapshot));
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> may_ink{};
+  REQUIRE(vector_v2::build_tiled_may_ink(fixture.log, may_ink));
+  REQUIRE(
+      fixture.canvas.restore_snapshot(fixture.log.current_revision(), fixture.snapshot, may_ink));
+
+  const auto step = fixture.producer.produce_next(
+      {.zoom = vector_v2::ZoomLevel::k400Percent, .level_pixels = {0, 0, 128, 128}});
+  REQUIRE(step.has_value());
+  CHECK(step->complete);
+  CHECK(step->operations_scanned == 0U);
+  CHECK(step->tiles_published == 4U);
+  for (std::uint16_t row = 0; row < 2; ++row) {
+    for (std::uint16_t column = 0; column < 2; ++column) {
+      CHECK(fixture.canvas.lookup({vector_v2::ZoomLevel::k400Percent, column, row})->kind ==
+            vector_v2::SourceKind::kUniform);
+    }
+  }
+}
+
+TEST_CASE("authority may-ink preserves a 400 percent hairline on an occupancy boundary") {
+  PaperFixture fixture;
+  const std::array hairline{
+      vector_v2::CompactOperationSample{.x_quarter = 16U * vector_v2::kSampleUnitsPerWorldUnit,
+                                        .y_quarter = 16U * vector_v2::kSampleUnitsPerWorldUnit,
+                                        .radius_256 = 1U}};
+  REQUIRE(fixture.log.append(append(hairline, 0x001FU)));
+  REQUIRE(vector_v2::replay_active_overview(fixture.log, fixture.snapshot));
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> may_ink{};
+  REQUIRE(vector_v2::build_tiled_may_ink(fixture.log, may_ink));
+  REQUIRE(
+      fixture.canvas.restore_snapshot(fixture.log.current_revision(), fixture.snapshot, may_ink));
+
+  const vector_v2::ViewRequest view{.zoom = vector_v2::ZoomLevel::k400Percent,
+                                    .level_pixels = {64, 64, 128, 128}};
+  std::size_t scanned = 0U;
+  while (true) {
+    const auto step = fixture.producer.produce_next(view);
+    REQUIRE(step.has_value());
+    scanned += step->operations_scanned;
+    if (step->complete) {
+      break;
+    }
+  }
+  CHECK(scanned > 0U);
+  std::array<std::uint16_t, vector_v2::kTilePixels> composed{};
+  REQUIRE(fixture.canvas.compose_view(view, composed));
+  std::array<std::uint16_t, vector_v2::kTilePixels> direct{};
+  direct.fill(0xFFFFU);
+  REQUIRE(vector_v2::apply_incremental_operation(
+      append(hairline, 0x001FU),
+      {.zoom = view.zoom, .level_bounds = view.level_pixels, .pixels = direct, .stride = 64}));
+  CHECK(std::any_of(direct.begin(), direct.end(),
+                    [](std::uint16_t pixel) { return pixel != 0xFFFFU; }));
+  CHECK(composed == direct);
 }
 
 TEST_CASE("tile producer ignores overview fallback when finding missing resident tiles") {
@@ -345,7 +420,7 @@ TEST_CASE("tile producer scans painter order once per supertask and skips distan
   const std::array visible{
       vector_v2::CompactOperationSample{.x_quarter = 320, .y_quarter = 320, .radius_256 = 256}};
   const std::array distant{vector_v2::CompactOperationSample{
-      .x_quarter = 4U * 1'000U, .y_quarter = 4U * 1'000U, .radius_256 = 256}};
+      .x_quarter = 16U * 1'000U, .y_quarter = 16U * 1'000U, .radius_256 = 256}};
   REQUIRE(fixture.log.append(append(visible)));
   REQUIRE(fixture.log.append(append(distant)));
   std::array<std::uint16_t, vector_v2::kOverviewPixels> revised_overview{};
@@ -355,7 +430,11 @@ TEST_CASE("tile producer scans painter order once per supertask and skips distan
   const auto step = fixture.producer.produce_next(
       {.zoom = vector_v2::ZoomLevel::k100Percent, .level_pixels = {0, 0, 64, 64}});
   REQUIRE(step.has_value());
-  CHECK(step->operations_scanned == 2U);
+  CHECK(step->operations_in_authority == 2U);
+  CHECK(step->index_candidates == 1U);
+  CHECK(step->deduplicated_candidates == 1U);
+  CHECK(step->operations_scanned == 1U);
+  CHECK(step->operations_intersecting == 1U);
   CHECK(step->operations_rendered == 1U);
   CHECK(step->tiles_published == 1U);
 }

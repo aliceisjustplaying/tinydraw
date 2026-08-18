@@ -55,6 +55,7 @@ if(TINYDRAW_BUILD_TESTS)
     tests/incremental_document_test.cpp
     tests/operation_builder_test.cpp
     tests/operation_log_test.cpp
+    tests/operation_spatial_index_test.cpp
     tests/svg_export_test.cpp
     tests/world_export_test.cpp
   )

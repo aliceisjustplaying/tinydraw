@@ -28,10 +28,17 @@ struct SettledTileWorkspace {
   std::span<std::uint16_t> red;               // kTilePixels
   std::span<std::uint16_t> green;             // kTilePixels
   std::span<std::uint16_t> blue;              // kTilePixels
+  // Optional F11 newest-first candidate output. Short/absent storage selects
+  // the complete authority scan with identical pixels.
+  std::span<std::uint16_t> candidate_indices{};
 };
 
 struct SettledTileStats {
   std::size_t operations_scanned = 0;
+  std::size_t operations_in_authority = 0;
+  std::size_t index_candidates = 0;
+  std::size_t deduplicated_candidates = 0;
+  std::size_t operations_intersecting = 0;
   std::size_t operations_rendered = 0;
   bool saturated_early = false;
 };

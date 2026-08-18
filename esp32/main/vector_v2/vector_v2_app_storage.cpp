@@ -119,6 +119,13 @@ bool AppStorage::allocate() {
   settle_green = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
   settle_blue = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
   settle_pixels = allocate_array<std::uint16_t>(vector_v2::kTilePixels);
+  // Dense authority index and shared query output are allocated dead-last so
+  // they do not move the cache-set placement of the measured render path.
+  operation_spatial_cells = allocate_array<std::uint64_t>(
+      vector_v2::operation_spatial_cell_word_count(vector_v2::kOperationCapacity));
+  operation_spatial_large = allocate_array<std::uint64_t>(
+      vector_v2::operation_spatial_word_count(vector_v2::kOperationCapacity));
+  operation_candidates = allocate_array<std::uint16_t>(vector_v2::kOperationCapacity);
   const bool snapshot_layout_ready =
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
       snapshot != nullptr;
@@ -140,7 +147,9 @@ bool AppStorage::allocate() {
       records == nullptr || samples == nullptr || input_samples == nullptr ||
       !rerender_layout_ready || touch_events == nullptr || affected_keys == nullptr ||
       settle_op_alpha == nullptr || settle_accumulated == nullptr || settle_red == nullptr ||
-      settle_green == nullptr || settle_blue == nullptr || settle_pixels == nullptr) {
+      settle_green == nullptr || settle_blue == nullptr || settle_pixels == nullptr ||
+      operation_spatial_cells == nullptr || operation_spatial_large == nullptr ||
+      operation_candidates == nullptr) {
     return false;
   }
   for (std::size_t index = 0; index < vector_v2::kMaterializedTileIdentityCount; ++index) {
