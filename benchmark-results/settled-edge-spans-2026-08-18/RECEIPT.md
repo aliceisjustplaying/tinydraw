@@ -103,3 +103,43 @@ instrument, product default false. `SettledTileStats` gained
 historical. The first long-chord run rendered blank windows because of a
 ×4 conversion — caught by the tiles/slices/checksum telemetry before any
 conclusion was drawn.
+
+## Addendum (00:17, same night): saturation aggregation — dense-document treatment
+
+Owner-directed follow-up targeting dense documents. The work-charge probe
+attributed 60–75% of raster-walked pixels to saturated-destination skips
+that still cost traversal, plus curve prep and row setup for wholly
+buried operations. Treatment: per-row saturated-pixel counts maintained
+on the existing saturation transition in `composite_pixels`, gated by a
+`fully_saturated_rows_` counter; a fully saturated destination row is
+skipped without traversal, and an intersecting operation whose whole
+conservative window row-range is saturated is skipped before curve
+preparation. Exact by the accepted per-pixel skip's own certificate
+(saturation is monotone; a saturated destination receives nothing).
+
+Device, standing dense evil-corpus settle document, same corpus vs the
+three same-night pre-treatment builds (72,781–73,880 / 85,330–86,287 /
+173,336–175,112 / 400,720–403,649 / 1,072,845–1,076,781 µs at 25–400%):
+
+| Zoom | slices → | total_us → | Δ |
+|---:|---:|---:|---:|
+| 25 | 419→419 | 75,204 | +1.8…+3.3% |
+| 50 | 521→521 | 87,864 | +1.8…+3.0% |
+| 100 | 966→966 | 177,424 | +1.3…+2.4% |
+| 200 | 2,445→2,171 | 386,285 | **−3.6…−4.3%** |
+| 400 | 7,268→5,289 | 959,253 | **−10.6…−10.9%** |
+
+Battery all-ones; 25 frozen host checksums byte-identical; 31/31+31/31+
+13/13; `SETTLE_LONG` cross-check exact (FNV also identical across
+builds). Host pairs: dense 400 −22.3%, dense 200 −9.2%, hairline-eraser
+400 −12.6%.
+
+Honest assessment: the 25–100% deltas (+1.3–3.3%) sit at the edge of the
+±2–3% cross-build icache dice band and are not clearly attributable;
+absolute cost is ≤2.9 ms against −114 ms at 400%. The gate's 50–100%
+lines are one window with never-saturating ink-free margins — the
+unfavorable shape for full-row aggregation; real dense documents (zero
+ink-free windows) saturate rows the way the gate's 400% case does. An
+intermediate build without the `fully_saturated_rows_` gate measured
++2.6…+4.8% at 25–100%; the gate reduced that overhead by roughly half.
+Owner glass on the real dense document remains the decisive test.
