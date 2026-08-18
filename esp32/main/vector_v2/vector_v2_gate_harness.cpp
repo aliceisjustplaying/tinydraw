@@ -66,6 +66,20 @@ constexpr std::uint32_t kStressOperations = 1'000;
 constexpr std::uint32_t kStressSamplesPerOperation = 20;
 constexpr std::size_t kRealisticStrokeCapacity = 1'000;
 constexpr std::size_t kRealisticSampleCapacity = 24'576;
+constexpr std::int64_t kMixedDrawAbsorbSliceBudgetUs = 1'500;
+constexpr std::size_t kMixedDrawAbsorbRasterWorkPixels = 256U;
+constexpr std::int64_t kMixedDrawAbsorbSliceGuardUs = 4'000;
+constexpr std::int64_t kInkTraceAbsorbSliceBudgetUs = 1'500;
+constexpr std::size_t kInkTraceAbsorbRasterWorkPixels = 256U;
+constexpr std::int64_t kInkTraceAbsorbSliceGuardUs = 4'000;
+
+struct MixedDrawAbsorbLimit {
+  std::int64_t deadline_us = 0;
+
+  static bool requested(const void* context) {
+    return esp_timer_get_time() >= static_cast<const MixedDrawAbsorbLimit*>(context)->deadline_us;
+  }
+};
 
 template <typename Type>
 [[nodiscard]] std::unique_ptr<Type, decltype(&heap_caps_free)> allocate_external(
@@ -1472,10 +1486,12 @@ struct MixedDrawStrokeStats {
   std::size_t fallback_tiles = 0;
   std::size_t visible_fallback_tiles = 0;
   // Committed-overlay drain receipts: absorption work that ran off the
-  // input path (high-water fallbacks mid-stroke plus the post-stroke drain).
+  // input path in cooperative product-sized slices.
   std::size_t drain_ops = 0;
+  std::size_t drain_slices = 0;
+  std::size_t max_pending_operations = 0;
   std::int64_t drain_total_us = 0;
-  std::int64_t drain_max_us = 0;
+  std::int64_t drain_max_slice_us = 0;
   bool committed = false;
   bool authority = false;
   bool refresh_passed = false;
@@ -1549,8 +1565,9 @@ MixedDrawCensus census_zoom_tiles(const MaterializedCanvas& canvas, ZoomLevel zo
   return census;
 }
 
-bool run_mixed_zoom_stroke(VectorV2Presenter& presenter, OperationLog& log,
-                           MaterializedCanvas& canvas, const vector_v2::ChromeState& chrome,
+bool run_mixed_zoom_stroke(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
+                           OperationLog& log, MaterializedCanvas& canvas,
+                           const vector_v2::ChromeState& chrome,
                            const vector_v2::InPlaceAppendWorkspace& workspace,
                            std::span<CompactOperationSample> builder_storage, ZoomLevel zoom,
                            OperationTool tool, std::uint16_t color, std::uint16_t gesture_id,
@@ -1615,19 +1632,37 @@ bool run_mixed_zoom_stroke(VectorV2Presenter& presenter, OperationLog& log,
       world_bounds->y1 = std::max(world_bounds->y1, result.affected_world_bounds.y1);
     }
   };
-  const auto absorb_one = [&]() -> bool {
+  vector_v2::PendingOperationAbsorption absorption;
+  const auto absorb_slice = [&]() -> bool {
+    if (!absorption.active() && vector_v2::pending_operation_count(log, canvas) == 0U) {
+      return true;
+    }
+    if (!absorption.active()) {
+      // Producer batches retain prepared chords between calls. An absorption
+      // commit supersedes their canvas revision and shares the plan storage,
+      // so abandon unpublished producer work before the first slice.
+      producer.cancel_pending_work();
+    }
     const std::int64_t started_us = esp_timer_get_time();
-    const auto absorbed = vector_v2::absorb_pending_operation(
-        log, canvas, workspace, priority_view,
+    const MixedDrawAbsorbLimit limit{.deadline_us = started_us + kMixedDrawAbsorbSliceBudgetUs};
+    const auto absorbed = vector_v2::absorb_pending_operation_slice(
+        log, canvas, workspace, absorption, priority_view,
+        {.requested = &MixedDrawAbsorbLimit::requested,
+         .context = &limit,
+         .raster_work_px = kMixedDrawAbsorbRasterWorkPixels},
         {.now_us = &esp_timer_get_time, .budget_us = kIdleAbsorbBudgetUs});
     const std::int64_t elapsed_us = esp_timer_get_time() - started_us;
-    if (!absorbed.has_value()) {
+    ++stats.drain_slices;
+    stats.drain_total_us += elapsed_us;
+    stats.drain_max_slice_us = std::max(stats.drain_max_slice_us, elapsed_us);
+    if (absorbed.status == vector_v2::PendingAbsorptionStatus::kError) {
+      absorption.cancel();
       return false;
     }
-    ++stats.drain_ops;
-    stats.drain_total_us += elapsed_us;
-    stats.drain_max_us = std::max(stats.drain_max_us, elapsed_us);
-    accumulate(*absorbed);
+    if (absorbed.status == vector_v2::PendingAbsorptionStatus::kComplete) {
+      ++stats.drain_ops;
+      accumulate(absorbed.result);
+    }
     return true;
   };
   const auto commit_ready = [&](vector_v2::ChainedOperationStatus status)
@@ -1638,12 +1673,8 @@ bool run_mixed_zoom_stroke(VectorV2Presenter& presenter, OperationLog& log,
       if (!pending.has_value()) {
         return std::nullopt;
       }
-      // Mirror the product coordinator exactly: deferred authority commit
-      // with the high-water absorption fallback (committed-overlay §3.5).
-      if (vector_v2::pending_operation_count(log, canvas) >= kPendingOperationHighWater &&
-          !absorb_one()) {
-        return std::nullopt;
-      }
+      // Product input publishes authority directly; absorption never blocks a
+      // high-water append now that the pending overlay stays exact.
       const std::int64_t started_us = esp_timer_get_time();
       const auto committed =
           vector_v2::append_authority_only(log, *pending, {.now_us = &esp_timer_get_time});
@@ -1656,6 +1687,13 @@ bool run_mixed_zoom_stroke(VectorV2Presenter& presenter, OperationLog& log,
       ++stats.chunks;
       accumulate(*committed);
       status = builder.acknowledge_commit();
+      stats.max_pending_operations =
+          std::max(stats.max_pending_operations, vector_v2::pending_operation_count(log, canvas));
+      // Mirror the background opportunity after a handled input sample: one
+      // deadline-bounded slice, with remaining work carried to later ticks.
+      if (!absorb_slice()) {
+        return std::nullopt;
+      }
     }
     if (status != vector_v2::ChainedOperationStatus::kAccepted &&
         status != vector_v2::ChainedOperationStatus::kComplete) {
@@ -1690,8 +1728,8 @@ bool run_mixed_zoom_stroke(VectorV2Presenter& presenter, OperationLog& log,
   }
   // Post-stroke drain: production absorbs in idle slices; the gate
   // compresses that into one receipted loop before the exact swap refresh.
-  while (vector_v2::pending_operation_count(log, canvas) != 0U) {
-    if (!absorb_one()) {
+  while (absorption.active() || vector_v2::pending_operation_count(log, canvas) != 0U) {
+    if (!absorb_slice()) {
       return false;
     }
   }
@@ -1766,7 +1804,7 @@ bool run_mixed_zoom_draw_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
     for (const OperationTool tool : {OperationTool::kPen, OperationTool::kEraser}) {
       MixedDrawStrokeStats stats{};
       const bool run_ok = run_mixed_zoom_stroke(
-          presenter, log, canvas, chrome, workspace, builder_storage, zoom, tool,
+          presenter, producer, log, canvas, chrome, workspace, builder_storage, zoom, tool,
           tool == OperationTool::kPen ? 0x001FU : 0x0000U, gesture_id++, stats);
       const bool correct = run_ok && stats.committed && stats.authority && stats.refresh_passed &&
                            stats.chunks >= 24U;
@@ -1776,13 +1814,18 @@ bool run_mixed_zoom_draw_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
       // idle repair rebuilds them. 25% has no priority view and stays exempt.
       const bool visible_sharp =
           zoom == ZoomLevel::k25Percent || stats.visible_fallback_tiles == 0U;
-      const bool stroke_pass = correct && visible_sharp && stats.append_max_us < 15'000;
+      const bool cooperative_evidence = stats.drain_slices > stats.drain_ops &&
+                                        stats.drain_max_slice_us <= kMixedDrawAbsorbSliceGuardUs &&
+                                        stats.max_pending_operations <= kPendingOperationHighWater;
+      const bool stroke_pass =
+          correct && visible_sharp && stats.append_max_us < 15'000 && cooperative_evidence;
       std::printf(
           "TINYDRAW_GATE1_MIXED_DRAW zoom=%s tool=%s chunks=%lu append_max_us=%lld "
           "append_avg_us=%lld append_total_us=%lld affected_tiles=%lu published=%lu "
           "fallback=%lu visible_fallback=%lu drop_uni_slot=%lu drop_uni_paint=%lu "
           "drop_raw_edit=%lu drop_raw_paint=%lu off_skip=%lu "
-          "drain_ops=%lu drain_total_us=%lld drain_max_us=%lld "
+          "drain_ops=%lu drain_slices=%lu max_pending=%lu drain_total_us=%lld "
+          "drain_max_slice_us=%lld "
           "ph_prepare_max_us=%lld ph_overview_max_us=%lld "
           "ph_enumerate_max_us=%lld ph_uniform_max_us=%lld ph_raw_max_us=%lld "
           "ph_offscreen_max_us=%lld "
@@ -1803,8 +1846,11 @@ bool run_mixed_zoom_draw_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
           static_cast<unsigned long>(stats.drops.visible_raw_edit_fail),
           static_cast<unsigned long>(stats.drops.visible_raw_paint_fail),
           static_cast<unsigned long>(stats.drops.offscreen_skipped),
-          static_cast<unsigned long>(stats.drain_ops), static_cast<long long>(stats.drain_total_us),
-          static_cast<long long>(stats.drain_max_us),
+          static_cast<unsigned long>(stats.drain_ops),
+          static_cast<unsigned long>(stats.drain_slices),
+          static_cast<unsigned long>(stats.max_pending_operations),
+          static_cast<long long>(stats.drain_total_us),
+          static_cast<long long>(stats.drain_max_slice_us),
           static_cast<long long>(stats.phase_max.prepare_us),
           static_cast<long long>(stats.phase_max.overview_us),
           static_cast<long long>(stats.phase_max.enumerate_us),
@@ -2858,7 +2904,7 @@ bool run_idle_repair_gate(VectorV2Presenter& presenter, vector_v2::TileProducer&
   // The Alice scenario: an XL 25% stroke sweeps the world and drops warm
   // tiles at every other zoom.
   MixedDrawStrokeStats stroke_stats{};
-  if (!run_mixed_zoom_stroke(presenter, log, canvas, chrome, workspace, builder_storage,
+  if (!run_mixed_zoom_stroke(presenter, producer, log, canvas, chrome, workspace, builder_storage,
                              ZoomLevel::k25Percent, OperationTool::kPen, 0x001FU, 5'000,
                              stroke_stats) ||
       !stroke_stats.committed) {
@@ -3043,6 +3089,13 @@ class TouchTraceReplayer {
     return pending == 0U;
   }
 
+  [[nodiscard]] bool sample_ready() {
+    portENTER_CRITICAL(&lock_);
+    const bool ready = buffer_.pending() != 0U;
+    portEXIT_CRITICAL(&lock_);
+    return ready;
+  }
+
   [[nodiscard]] std::uint32_t offered() const { return offered_; }
   [[nodiscard]] std::uint32_t coalesced() const { return coalesced_; }
   [[nodiscard]] std::uint32_t overflows() const { return overflows_; }
@@ -3182,8 +3235,9 @@ ViewportFallbackProbe probe_viewport_overview_fallback(const VectorV2Presenter& 
 // authority commits) and reports the event->consumed->geometry->submit->DMA
 // chain per docs/INK_TRACE_HARNESS.md §3. The consumption loop polls
 // tighter than the product loop; the receipt notes that cadence.
-bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
-                               MaterializedCanvas& canvas, const vector_v2::ChromeState& chrome,
+bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
+                               OperationLog& log, MaterializedCanvas& canvas,
+                               const vector_v2::ChromeState& chrome,
                                const vector_v2::InPlaceAppendWorkspace& in_place_workspace,
                                std::span<CompactOperationSample> builder_storage) {
   const std::array<InkTraceSpec, 5> specs{{
@@ -3239,20 +3293,55 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
     std::uint32_t fallback_up_max = 0;
     vector_v2::InPlaceRetainDrops trace_drops{};
     std::uint32_t drain_ops = 0;
-    std::int64_t drain_max_us = 0;
-    const auto absorb_one = [&]() -> bool {
+    std::uint32_t drain_slices = 0;
+    std::uint32_t drain_skipped_ready = 0;
+    std::size_t max_pending_operations = 0;
+    std::int64_t drain_total_us = 0;
+    std::int64_t drain_max_slice_us = 0;
+    vector_v2::PendingOperationAbsorption absorption;
+    const std::optional<vector_v2::ViewRequest> priority_view =
+        spec.zoom == ZoomLevel::k25Percent
+            ? std::optional<vector_v2::ViewRequest>{}
+            : std::optional{vector_v2::ViewRequest{
+                  .zoom = spec.zoom,
+                  .level_pixels = {presenter.level_x(), presenter.level_y(),
+                                   presenter.level_x() + vector_v2::kOverviewWidth,
+                                   presenter.level_y() + vector_v2::kOverviewHeight}}};
+    const auto observe_pending = [&]() {
+      max_pending_operations =
+          std::max(max_pending_operations, vector_v2::pending_operation_count(log, canvas));
+    };
+    const auto absorb_slice = [&]() -> bool {
+      if (!absorption.active() && vector_v2::pending_operation_count(log, canvas) == 0U) {
+        return true;
+      }
+      if (!absorption.active()) {
+        producer.cancel_pending_work();
+      }
       const std::int64_t started_us = esp_timer_get_time();
-      const auto absorbed = stroke.absorb_one(kIdleAbsorbBudgetUs);
-      if (!absorbed.has_value()) {
+      const MixedDrawAbsorbLimit limit{.deadline_us = started_us + kInkTraceAbsorbSliceBudgetUs};
+      const auto absorbed = vector_v2::absorb_pending_operation_slice(
+          log, canvas, in_place_workspace, absorption, priority_view,
+          {.requested = &MixedDrawAbsorbLimit::requested,
+           .context = &limit,
+           .raster_work_px = kInkTraceAbsorbRasterWorkPixels},
+          {.now_us = &esp_timer_get_time, .budget_us = kIdleAbsorbBudgetUs});
+      const std::int64_t elapsed_us = esp_timer_get_time() - started_us;
+      ++drain_slices;
+      drain_total_us += elapsed_us;
+      drain_max_slice_us = std::max(drain_max_slice_us, elapsed_us);
+      if (absorbed.status == vector_v2::PendingAbsorptionStatus::kError) {
+        absorption.cancel();
         return false;
       }
-      ++drain_ops;
-      drain_max_us = std::max(drain_max_us, esp_timer_get_time() - started_us);
-      trace_drops.visible_uniform_no_slot += absorbed->drops.visible_uniform_no_slot;
-      trace_drops.visible_uniform_paint_fail += absorbed->drops.visible_uniform_paint_fail;
-      trace_drops.visible_raw_edit_fail += absorbed->drops.visible_raw_edit_fail;
-      trace_drops.visible_raw_paint_fail += absorbed->drops.visible_raw_paint_fail;
-      trace_drops.offscreen_skipped += absorbed->drops.offscreen_skipped;
+      if (absorbed.status == vector_v2::PendingAbsorptionStatus::kComplete) {
+        ++drain_ops;
+        trace_drops.visible_uniform_no_slot += absorbed.result.drops.visible_uniform_no_slot;
+        trace_drops.visible_uniform_paint_fail += absorbed.result.drops.visible_uniform_paint_fail;
+        trace_drops.visible_raw_edit_fail += absorbed.result.drops.visible_raw_edit_fail;
+        trace_drops.visible_raw_paint_fail += absorbed.result.drops.visible_raw_paint_fail;
+        trace_drops.offscreen_skipped += absorbed.result.drops.offscreen_skipped;
+      }
       return true;
     };
     LatencyDeltas event_to_consumed{delta_storage, 0};
@@ -3271,6 +3360,14 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
       all_pass = false;
       continue;
     }
+    const auto absorb_between_samples = [&]() -> bool {
+      observe_pending();
+      if (replayer.sample_ready()) {
+        ++drain_skipped_ready;
+        return true;
+      }
+      return absorb_slice();
+    };
     const std::uint16_t color = 0x0000U;
     bool pressed = false;
     std::uint32_t presentation_failures = 0;
@@ -3283,6 +3380,9 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
       if (!sampled.has_value()) {
         if (!pressed && replayer.exhausted()) {
           break;
+        }
+        if (!absorb_between_samples()) {
+          ++commit_failures;
         }
         vTaskDelay(1);
         continue;
@@ -3312,31 +3412,24 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
                          gesture_id, chrome);
         if (!started.accepted) {
           pressed = false;
+          if (!absorb_between_samples()) {
+            ++commit_failures;
+          }
           continue;
         }
         ++gesture_id;
         presentation_failures += !started.presentation.passed;
+        if (!absorb_between_samples()) {
+          ++commit_failures;
+        }
         continue;
       }
       if (sampled->kind == vector_v2::TouchEventKind::kUp && pressed) {
         const LiveStrokeFinishResult finished = stroke.finish(event_us, chrome);
         presentation_failures += !finished.preview.passed;
         commit_failures += finished.commit_failed;
-        drain_ops += finished.high_water_absorptions;
-        drain_max_us = std::max(drain_max_us, finished.high_water_absorb_max_us);
-        trace_drops.visible_uniform_no_slot += finished.high_water_drops.visible_uniform_no_slot;
-        trace_drops.visible_uniform_paint_fail +=
-            finished.high_water_drops.visible_uniform_paint_fail;
-        trace_drops.visible_raw_edit_fail += finished.high_water_drops.visible_raw_edit_fail;
-        trace_drops.visible_raw_paint_fail += finished.high_water_drops.visible_raw_paint_fail;
-        trace_drops.offscreen_skipped += finished.high_water_drops.offscreen_skipped;
-        // Production drains in idle slices after lift; the gate compresses
-        // that into one loop before the swap refresh.
-        while (vector_v2::pending_operation_count(log, canvas) != 0U) {
-          if (!absorb_one()) {
-            ++commit_failures;
-            break;
-          }
+        if (!absorb_between_samples()) {
+          ++commit_failures;
         }
         static_cast<void>(presenter.refresh(chrome, now_us()));
         fallback_up_max =
@@ -3346,6 +3439,9 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
         continue;
       }
       if (!pressed || !stroke.active()) {
+        if (!absorb_between_samples()) {
+          ++commit_failures;
+        }
         continue;
       }
       std::uint32_t geometry_delta = 0;
@@ -3371,8 +3467,20 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
         event_to_submit.push(submit_delta, kMaximumLatencySamples);
         event_to_complete.push(complete_delta, kMaximumLatencySamples);
       }
+      if (!absorb_between_samples()) {
+        ++commit_failures;
+      }
     }
     replayer.stop();
+    // No trace event remains urgent. Finish product-sized background slices
+    // before recording the terminal canvas/fallback state.
+    while (absorption.active() || vector_v2::pending_operation_count(log, canvas) != 0U) {
+      observe_pending();
+      if (!absorb_slice()) {
+        ++commit_failures;
+        break;
+      }
+    }
     const ViewportFallbackProbe fallback_end =
         probe_viewport_overview_fallback(presenter, canvas, spec.zoom);
 
@@ -3384,8 +3492,11 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
     const auto complete_line = summarize_deltas(event_to_complete);
     const bool conserved = counters.down_up_conserved();
     const bool latency_pass = complete_line.p95 <= 28'000U;
+    const bool cooperative_pass = drain_max_slice_us <= kInkTraceAbsorbSliceGuardUs &&
+                                  max_pending_operations <= kPendingOperationHighWater;
     const bool trace_pass = conserved && replayer.overflows() == 0U && replayer.resyncs() == 0U &&
-                            commit_failures == 0U && presentation_failures == 0U;
+                            commit_failures == 0U && presentation_failures == 0U &&
+                            cooperative_pass;
     std::printf(
         "TINYDRAW_INKTRACE trace=%s zoom=%s events=%lu consumed=%lu coalesced=%lu "
         "down=%lu/%lu up=%lu/%lu max_time_gap_us=%llu max_space_gap_px=%.2f "
@@ -3394,7 +3505,9 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
         "presentation_failures=%lu commit_failures=%lu overflows=%lu resyncs=%lu revision=%lu "
         "fb_tiles=%lu fb_start=%lu fb_mid_max=%lu fb_up_max=%lu fb_end=%lu "
         "drop_uni_slot=%lu drop_uni_paint=%lu drop_raw_edit=%lu drop_raw_paint=%lu "
-        "off_skip=%lu drain_ops=%lu drain_max_us=%lld latency_pass=%u pass=%u\n",
+        "off_skip=%lu drain_ops=%lu drain_slices=%lu drain_skipped_ready=%lu "
+        "max_pending=%lu drain_total_us=%lld drain_max_slice_us=%lld drain_guard_us=%lld "
+        "absorb_cadence=between_samples_skip_ready cooperative_pass=%u latency_pass=%u pass=%u\n",
         spec.name, zoom_name(spec.zoom), static_cast<unsigned long>(counters.received_events),
         static_cast<unsigned long>(counters.consumed_events),
         static_cast<unsigned long>(counters.coalesced_events),
@@ -3426,7 +3539,11 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, OperationLog& log,
         static_cast<unsigned long>(trace_drops.visible_raw_edit_fail),
         static_cast<unsigned long>(trace_drops.visible_raw_paint_fail),
         static_cast<unsigned long>(trace_drops.offscreen_skipped),
-        static_cast<unsigned long>(drain_ops), static_cast<long long>(drain_max_us), latency_pass,
+        static_cast<unsigned long>(drain_ops), static_cast<unsigned long>(drain_slices),
+        static_cast<unsigned long>(drain_skipped_ready),
+        static_cast<unsigned long>(max_pending_operations), static_cast<long long>(drain_total_us),
+        static_cast<long long>(drain_max_slice_us),
+        static_cast<long long>(kInkTraceAbsorbSliceGuardUs), cooperative_pass, latency_pass,
         trace_pass);
     std::fflush(stdout);
     all_pass = all_pass && trace_pass;
@@ -3612,8 +3729,8 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   // Runs after the cache gates on the deterministic post-idle-repair document
   // and before the long-gesture gate resets authority.
   const bool ink_trace_replay =
-      cache_tour &&
-      run_ink_trace_replay_gate(presenter, log, canvas, chrome, workspace, conversion_storage);
+      cache_tour && run_ink_trace_replay_gate(presenter, producer, log, canvas, chrome, workspace,
+                                              conversion_storage);
   // Cold timing already includes the evil hairlines. This later reset is the
   // specialized cache-capacity and repair-saturation gate for that corpus.
   const bool hairline_capacity =
