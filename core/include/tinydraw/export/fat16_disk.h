@@ -38,7 +38,10 @@ inline constexpr Fat83Name kDrawingSvgName{
 class Fat16ExportDisk {
  public:
   static constexpr std::uint16_t kBlockSize = 512;
-  static constexpr std::uint32_t kBlockCount = 16'384;
+  // Matches the colonized 0xA20000-byte export partition (2026-08-18):
+  // 20,736 x 512 B = 10.125 MiB. Cluster count stays well inside FAT16's
+  // 4,085..65,524 validity window at one sector per cluster.
+  static constexpr std::uint32_t kBlockCount = 20'736;
 
   explicit Fat16ExportDisk(const ReadOnlyFile& file, Fat83Name name = kDrawingPngName);
   Fat16ExportDisk(const ReadOnlyFile& first_file, Fat83Name first_name,
