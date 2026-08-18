@@ -134,6 +134,50 @@ TEST_CASE("operation authority filters undo redo and replaces branched postings"
   CHECK(candidates[1] == 0U);
 }
 
+TEST_CASE("prepared history query sees the exact Undo and Redo target prefixes") {
+  std::array<vector_v2::OperationRecord, 3> records{};
+  std::array<vector_v2::CompactOperationSample, 3> samples{};
+  IndexStorage<3> storage;
+  vector_v2::OperationLog log{records, samples, &storage.index};
+  const std::array local{point(16, 16)};
+  const std::array distant{point(800, 800)};
+  REQUIRE(log.append({.samples = local}));
+  REQUIRE(log.append({.samples = distant}));
+  REQUIRE(log.append({.samples = local}));
+
+  std::array<std::uint16_t, 3> candidates{};
+  auto undo = log.prepare_undo();
+  REQUIRE(undo.has_value());
+  REQUIRE(undo->query_target_spatial({0, 0, 128, 128}, candidates) == 1U);
+  CHECK(candidates[0] == 0U);
+  undo->publish();
+
+  auto redo = log.prepare_redo();
+  REQUIRE(redo.has_value());
+  REQUIRE(redo->query_target_spatial({0, 0, 128, 128}, candidates) == 2U);
+  CHECK(candidates[0] == 2U);
+  CHECK(candidates[1] == 0U);
+  redo->cancel();
+  CHECK_FALSE(redo->query_target_spatial({0, 0, 128, 128}, candidates).has_value());
+}
+
+TEST_CASE("prepared history query leaves dense target prefixes on the authority fallback") {
+  std::array<vector_v2::OperationRecord, 5> records{};
+  std::array<vector_v2::CompactOperationSample, 5> samples{};
+  IndexStorage<5> storage;
+  vector_v2::OperationLog log{records, samples, &storage.index};
+  const std::array local{point(16, 16)};
+  for (std::uint16_t gesture = 1; gesture <= 5; ++gesture) {
+    REQUIRE(log.append({.gesture_id = gesture, .samples = local}));
+  }
+
+  auto undo = log.prepare_undo();
+  REQUIRE(undo.has_value());
+  std::array<std::uint16_t, 5> candidates{};
+  vector_v2::OperationSpatialQueryStats stats;
+  CHECK_FALSE(undo->query_target_spatial({0, 0, 128, 128}, candidates, &stats).has_value());
+}
+
 TEST_CASE("two-operation branch clears every stale redo posting") {
   std::array<vector_v2::OperationRecord, 4> records{};
   std::array<vector_v2::CompactOperationSample, 8> samples{};

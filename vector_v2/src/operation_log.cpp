@@ -68,6 +68,14 @@ std::optional<StoredOperation> PreparedHistoryChange::target_operation(
   return owner_ != nullptr ? owner_->history_operation(*this, active_index) : std::nullopt;
 }
 
+std::optional<std::size_t> PreparedHistoryChange::query_target_spatial(
+    PixelRect world_bounds, std::span<std::uint16_t> newest_first_candidates,
+    OperationSpatialQueryStats* stats) const {
+  return owner_ != nullptr
+             ? owner_->query_history_spatial(*this, world_bounds, newest_first_candidates, stats)
+             : std::nullopt;
+}
+
 void PreparedHistoryChange::publish() {
   if (owner_ != nullptr) {
     owner_->publish_history(*this);
@@ -463,6 +471,18 @@ std::optional<StoredOperation> OperationLog::history_operation(
                        .y1 = record.bounds_y1},
       .samples = samples_.subspan(record.first_sample, record.sample_count),
   };
+}
+
+std::optional<std::size_t> OperationLog::query_history_spatial(
+    const PreparedHistoryChange& prepared, PixelRect world_bounds,
+    std::span<std::uint16_t> newest_first_candidates, OperationSpatialQueryStats* stats) const {
+  if (!spatial_index_usable_ || !history_pending_ || prepared.owner_ != this ||
+      prepared.change_.active_operation_count > retained_operation_count_ ||
+      workspace_overlaps_storage(std::as_bytes(newest_first_candidates))) {
+    return std::nullopt;
+  }
+  return spatial_index_->query(world_bounds, 0U, prepared.change_.active_operation_count,
+                               newest_first_candidates, stats);
 }
 
 bool OperationLog::can_use_spatial_index() const {

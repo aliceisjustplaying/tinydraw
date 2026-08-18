@@ -453,7 +453,19 @@ std::optional<HistoryChange> move_history_incrementally(OperationLog& log,
       .pixels = pixels,
       .stride = width,
   };
-  for (std::size_t index = 0; index < change.active_operation_count; ++index) {
+  const std::span<std::uint16_t> candidate_workspace = overview_scratch.subspan(pixel_count);
+  const PixelRect query_world_bounds{
+      .x0 = overview_bounds.x0 * 4,
+      .y0 = overview_bounds.y0 * 4,
+      .x1 = overview_bounds.x1 * 4,
+      .y1 = overview_bounds.y1 * 4,
+  };
+  const auto candidate_count =
+      prepared->query_target_spatial(query_world_bounds, candidate_workspace);
+  const std::size_t replay_count = candidate_count.value_or(change.active_operation_count);
+  for (std::size_t offset = 0; offset < replay_count; ++offset) {
+    const std::size_t index =
+        candidate_count.has_value() ? candidate_workspace[*candidate_count - offset - 1U] : offset;
     const auto stored = prepared->target_operation(index);
     if (!stored.has_value()) {
       prepared->cancel();
