@@ -1073,18 +1073,20 @@ void MaterializedCanvas::include_quality(MaterializationQuality quality,
 void MaterializedCanvas::compose_raw_pixels(std::size_t slot_index, PixelRect bounds,
                                             CompositionContext& context) {
   const PixelRect view = context.request.level_pixels;
+  const std::size_t tile_base = slot_index * kTilePixels;
+  const int local_x = bounds.x0 % kTileWidth;
+  const int width = bounds.x1 - bounds.x0;
   for (int y = bounds.y0; y < bounds.y1; ++y) {
-    for (int x = bounds.x0; x < bounds.x1; ++x) {
-      const std::size_t source = slot_index * kTilePixels +
-                                 static_cast<std::size_t>(y % kTileHeight) * kTileWidth +
-                                 static_cast<std::size_t>(x % kTileWidth);
-      const std::size_t destination =
-          static_cast<std::size_t>(y - view.y0) * static_cast<std::size_t>(context.view_width) +
-          static_cast<std::size_t>(x - view.x0);
-      context.destination[destination] = tile_pixels_[source];
-      ++context.stats.tile_pixels;
-    }
+    const std::size_t source = tile_base + static_cast<std::size_t>(y % kTileHeight) * kTileWidth +
+                               static_cast<std::size_t>(local_x);
+    const std::size_t destination =
+        static_cast<std::size_t>(y - view.y0) * static_cast<std::size_t>(context.view_width) +
+        static_cast<std::size_t>(bounds.x0 - view.x0);
+    std::copy_n(tile_pixels_.begin() + static_cast<std::ptrdiff_t>(source), width,
+                context.destination.begin() + static_cast<std::ptrdiff_t>(destination));
   }
+  context.stats.tile_pixels +=
+      static_cast<std::size_t>(width) * static_cast<std::size_t>(bounds.y1 - bounds.y0);
 }
 
 void MaterializedCanvas::compose_uniform_pixels(std::uint16_t color, PixelRect bounds,
@@ -1103,18 +1105,23 @@ void MaterializedCanvas::compose_uniform_pixels(std::uint16_t color, PixelRect b
 
 void MaterializedCanvas::compose_fallback_pixels(PixelRect bounds, CompositionContext& context) {
   const PixelRect view = context.request.level_pixels;
-  const int percent = zoom_percent(context.request.zoom);
+  const unsigned overview_shift = static_cast<unsigned>(context.request.zoom);
   for (int y = bounds.y0; y < bounds.y1; ++y) {
-    for (int x = bounds.x0; x < bounds.x1; ++x) {
-      const std::size_t source = static_cast<std::size_t>(y * 25 / percent) * kOverviewWidth +
-                                 static_cast<std::size_t>(x * 25 / percent);
+    const std::size_t source_row = static_cast<std::size_t>(y >> overview_shift) * kOverviewWidth;
+    for (int x = bounds.x0; x < bounds.x1;) {
+      const int source_x = x >> overview_shift;
+      const int run_end = std::min(bounds.x1, static_cast<int>((source_x + 1) << overview_shift));
+      const int run_width = run_end - x;
       const std::size_t destination =
           static_cast<std::size_t>(y - view.y0) * static_cast<std::size_t>(context.view_width) +
           static_cast<std::size_t>(x - view.x0);
-      context.destination[destination] = overview_pixels_[source];
-      ++context.stats.fallback_pixels;
+      std::fill_n(context.destination.begin() + static_cast<std::ptrdiff_t>(destination), run_width,
+                  overview_pixels_[source_row + static_cast<std::size_t>(source_x)]);
+      x = run_end;
     }
   }
+  context.stats.fallback_pixels += static_cast<std::size_t>(bounds.x1 - bounds.x0) *
+                                   static_cast<std::size_t>(bounds.y1 - bounds.y0);
 }
 
 void MaterializedCanvas::compose_tile(TileKey key, CompositionContext& context) {

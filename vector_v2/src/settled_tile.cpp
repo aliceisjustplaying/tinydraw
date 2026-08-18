@@ -177,12 +177,9 @@ bool render_settled_window(const OperationLog& log, ZoomLevel zoom, PixelRect wi
   }
   for (std::size_t at = 0; at < pixel_count; ++at) {
     const std::uint32_t remaining = 255U - workspace.accumulated_alpha[at];
-    const std::uint32_t r8 =
-        std::min<std::uint32_t>(255U, workspace.red[at] + 255U * remaining / 255U);
-    const std::uint32_t g8 =
-        std::min<std::uint32_t>(255U, workspace.green[at] + 255U * remaining / 255U);
-    const std::uint32_t b8 =
-        std::min<std::uint32_t>(255U, workspace.blue[at] + 255U * remaining / 255U);
+    const std::uint32_t r8 = std::min<std::uint32_t>(255U, workspace.red[at] + remaining);
+    const std::uint32_t g8 = std::min<std::uint32_t>(255U, workspace.green[at] + remaining);
+    const std::uint32_t b8 = std::min<std::uint32_t>(255U, workspace.blue[at] + remaining);
     out_pixels[at] =
         static_cast<std::uint16_t>(((r8 >> 3U) << 11U) | ((g8 >> 2U) << 5U) | (b8 >> 3U));
   }
