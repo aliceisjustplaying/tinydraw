@@ -354,19 +354,34 @@ bool run_hairline_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& pr
 }
 
 bool verify_export_reserve() {
+  // Honest envelope check (2026-08-18): the product sequences its two
+  // transient PSRAM peaks by construction - export is gated on
+  // autosave.flush() (worker staging freed) before its own allocation, and
+  // export mode is modal so no new checkpoint can arrive. The gate
+  // therefore holds each measured envelope in sequence and reports the
+  // slack above the tighter one. Receipts:
+  // benchmark-results/export-memory-math-2026-08-18/RECEIPT.md.
   const std::size_t free_before = heap_caps_get_free_size(kExternalCaps);
   const std::size_t largest_before = heap_caps_get_largest_free_block(kExternalCaps);
-  void* reserve = heap_caps_malloc(vector_v2::kTargetContiguousReserveBytes, kExternalCaps);
-  const std::size_t free_held = heap_caps_get_free_size(kExternalCaps);
-  const std::size_t largest_held = heap_caps_get_largest_free_block(kExternalCaps);
-  const bool passed = reserve != nullptr;
-  heap_caps_free(reserve);
+  void* autosave_reserve =
+      heap_caps_malloc(vector_v2::kAutosaveStagingReserveBytes, kExternalCaps);
+  const std::size_t autosave_slack = heap_caps_get_free_size(kExternalCaps);
+  const bool autosave_held = autosave_reserve != nullptr;
+  heap_caps_free(autosave_reserve);
+  void* export_reserve = heap_caps_malloc(vector_v2::kExportWorkspaceReserveBytes, kExternalCaps);
+  const std::size_t export_slack = heap_caps_get_free_size(kExternalCaps);
+  const bool export_held = export_reserve != nullptr;
+  heap_caps_free(export_reserve);
+  const bool passed = autosave_held && export_held;
   std::printf(
-      "TINYDRAW_EXPORT_RESERVE requested=%lu free_before=%lu largest_before=%lu free_held=%lu "
-      "largest_held=%lu pass=%u\n",
-      static_cast<unsigned long>(vector_v2::kTargetContiguousReserveBytes),
+      "TINYDRAW_EXPORT_RESERVE sequence=autosave_then_export autosave_requested=%lu "
+      "export_requested=%lu free_before=%lu largest_before=%lu autosave_slack=%lu "
+      "export_slack=%lu pass=%u\n",
+      static_cast<unsigned long>(vector_v2::kAutosaveStagingReserveBytes),
+      static_cast<unsigned long>(vector_v2::kExportWorkspaceReserveBytes),
       static_cast<unsigned long>(free_before), static_cast<unsigned long>(largest_before),
-      static_cast<unsigned long>(free_held), static_cast<unsigned long>(largest_held), passed);
+      static_cast<unsigned long>(autosave_slack), static_cast<unsigned long>(export_slack),
+      passed);
   return passed;
 }
 
