@@ -1,6 +1,15 @@
 # TinyDraw project state
 
-Last updated: 2026-08-18 late evening. The final performance round landed:
+Last updated: 2026-08-18 late night. Post-handover AA round: settled-AA
+exterior-capsule row narrowing is device-accepted on a same-image per-policy
+long-chord A/B (−24…−64% at 25–400%, byte-exact;
+[`receipt`](benchmark-results/settled-edge-spans-2026-08-18/RECEIPT.md),
+[`design`](docs/design/VECTOR_V2_SETTLED_EDGE_SPANS.md)); the work-charge
+recalibration and saturated-source-skip levers are receipted no-gos. The dense
+short-chord document is unmoved — real-document 50–200% walls remain the open
+target (owner glass is the arbiter; H7-style row sweep or persisted spans are
+the staged successors). Earlier the same day, the final performance round
+landed:
 COW preserved-tile Undo/Redo swaps (revisit repair 338,998→229 µs), a 604-slot
 pool with the fictional 1.5 MiB export reserve retired, fully colonized 16 MiB
 flash (10.125 MiB export volume), deterministic `history_latency` and
