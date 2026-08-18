@@ -552,8 +552,9 @@ override was removed and product behavior remains the literal 0.4 setting.
 5. Settled AA stays yellow. The retained local-span plus IRAM image passes the
    whole-view bound at 25% but exceeds it at 50–400%. Transient blue dots seen
    during incomplete refinement on both pan and zoom are recorded without
-   attribution; they need a separate reproduction before any correctness
-   conclusion.
+   attribution. The transient popup/chrome corruption and unintended Undo are
+   also recorded as inconclusive after a bounded 12,288-trace host diagnosis.
+   Both incidents require a natural red reproduction before a behavior change.
 6. Boundedness still has explicit atomic tails. A masked resident-tile row can
     charge roughly 12,676 raster work pixels in the static worst case, although
     the physical 50–400% corpora stayed below the guard. A settled spatial query
@@ -576,6 +577,7 @@ override was removed and product behavior remains the literal 0.4 setting.
 - F13 cross-tile reuse probe: [`SETTLED_AA_CROSS_TILE_REUSE_PROBE_2026_08_18.md`](../SETTLED_AA_CROSS_TILE_REUSE_PROBE_2026_08_18.md)
 - F21 cache commit scans: [`F21_CACHE_COMMIT_SCANS_2026_08_18.md`](F21_CACHE_COMMIT_SCANS_2026_08_18.md)
 - F24 raster IRAM map: [`F24_RASTER_IRAM_AB_2026_08_18.md`](F24_RASTER_IRAM_AB_2026_08_18.md)
+- Transient chrome/popup incident: [`TRANSIENT_CHROME_POPUP_INCIDENT_2026_08_18.md`](TRANSIENT_CHROME_POPUP_INCIDENT_2026_08_18.md)
 - Minimized hairline trace: [`HAIRLINE_PAN_TRACE_2026_08_18.md`](HAIRLINE_PAN_TRACE_2026_08_18.md)
 - Earlier cold campaign: `benchmark-results/wave3-cold-compute/COLD_COMPUTE_CAMPAIGN_RECEIPT.md`
 - Combined-corpus baseline: `benchmark-results/wave2-compositor/COLD_GENERAL_BASELINE_RECEIPT.md`
