@@ -2,6 +2,7 @@
 
 #include <doctest.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <vector>
@@ -41,6 +42,93 @@ struct SettleRig {
 };
 
 }  // namespace
+
+TEST_CASE("settled rendering resumes in bounded slices with exact pixels and stats") {
+  SettleRig rig;
+  const std::array first{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 4 * 16, .y_quarter = 8 * 16, .radius_256 = 5 * 256 + 73},
+      vector_v2::CompactOperationSample{
+          .x_quarter = 60 * 16, .y_quarter = 55 * 16, .radius_256 = 7 * 256 + 19, .elapsed_ms = 8},
+      vector_v2::CompactOperationSample{.x_quarter = 6 * 16,
+                                        .y_quarter = 48 * 16,
+                                        .radius_256 = 3 * 256 + 111,
+                                        .elapsed_ms = 16}};
+  const std::array erase{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 12 * 16, .y_quarter = 30 * 16, .radius_256 = 4 * 256 + 37},
+      vector_v2::CompactOperationSample{
+          .x_quarter = 52 * 16, .y_quarter = 30 * 16, .radius_256 = 4 * 256 + 37, .elapsed_ms = 8}};
+  REQUIRE(rig.log.append({.color = 0xF81FU, .samples = first}));
+  REQUIRE(rig.log.append({.tool = vector_v2::OperationTool::kEraser, .samples = erase}));
+
+  const vector_v2::PixelRect bounds{0, 0, vector_v2::kTileWidth, vector_v2::kTileHeight};
+  std::vector<std::uint16_t> expected(vector_v2::kTilePixels);
+  vector_v2::SettledTileStats expected_stats{};
+  REQUIRE(vector_v2::render_settled_window(rig.log, vector_v2::ZoomLevel::k100Percent, bounds,
+                                           rig.workspace(), expected, &expected_stats));
+
+  constexpr std::size_t kBudget = 512U;
+  std::vector<std::uint16_t> sliced(vector_v2::kTilePixels, 0x1234U);
+  vector_v2::SettledRenderCursor cursor;
+  std::size_t slices = 0U;
+  std::size_t max_slice_work = 0U;
+  while (true) {
+    const auto slice =
+        vector_v2::render_settled_window_slice(rig.log, vector_v2::ZoomLevel::k100Percent, bounds,
+                                               rig.workspace(), sliced, cursor, kBudget);
+    REQUIRE(slice.status != vector_v2::SettledRenderStatus::kError);
+    max_slice_work = std::max(max_slice_work, slice.work_px);
+    ++slices;
+    if (slice.status == vector_v2::SettledRenderStatus::kComplete) {
+      break;
+    }
+  }
+
+  CHECK(slices > 10U);
+  CHECK(max_slice_work <= kBudget + vector_v2::kTileWidth - 1U);
+  CHECK(sliced == expected);
+  CHECK(cursor.stats().operations_scanned == expected_stats.operations_scanned);
+  CHECK(cursor.stats().operations_in_authority == expected_stats.operations_in_authority);
+  CHECK(cursor.stats().index_candidates == expected_stats.index_candidates);
+  CHECK(cursor.stats().deduplicated_candidates == expected_stats.deduplicated_candidates);
+  CHECK(cursor.stats().operations_intersecting == expected_stats.operations_intersecting);
+  CHECK(cursor.stats().operations_rendered == expected_stats.operations_rendered);
+  CHECK(cursor.stats().saturated_early == expected_stats.saturated_early);
+  CHECK_FALSE(cursor.active());
+
+  std::vector<std::uint16_t> reused(vector_v2::kTilePixels, 0x4321U);
+  do {
+    const auto slice =
+        vector_v2::render_settled_window_slice(rig.log, vector_v2::ZoomLevel::k100Percent, bounds,
+                                               rig.workspace(), reused, cursor, kBudget);
+    REQUIRE(slice.status != vector_v2::SettledRenderStatus::kError);
+  } while (cursor.active());
+  CHECK(reused == expected);
+}
+
+TEST_CASE("settled rendering rejects authority changes between slices") {
+  SettleRig rig;
+  const std::array stroke{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 8 * 16, .y_quarter = 8 * 16, .radius_256 = 2 * 256},
+      vector_v2::CompactOperationSample{
+          .x_quarter = 56 * 16, .y_quarter = 56 * 16, .radius_256 = 2 * 256, .elapsed_ms = 8}};
+  REQUIRE(rig.log.append({.color = 0x001FU, .samples = stroke}));
+  std::vector<std::uint16_t> output(vector_v2::kTilePixels, 0xAAAAU);
+  vector_v2::SettledRenderCursor cursor;
+  const vector_v2::PixelRect bounds{0, 0, vector_v2::kTileWidth, vector_v2::kTileHeight};
+  const auto first = vector_v2::render_settled_window_slice(
+      rig.log, vector_v2::ZoomLevel::k100Percent, bounds, rig.workspace(), output, cursor, 16U);
+  REQUIRE(first.status == vector_v2::SettledRenderStatus::kInProgress);
+  REQUIRE(cursor.active());
+
+  REQUIRE(rig.log.append({.color = 0xF800U, .samples = stroke}));
+  const auto stale = vector_v2::render_settled_window_slice(
+      rig.log, vector_v2::ZoomLevel::k100Percent, bounds, rig.workspace(), output, cursor, 16U);
+  CHECK(stale.status == vector_v2::SettledRenderStatus::kError);
+  CHECK_FALSE(cursor.active());
+}
 
 TEST_CASE("settled spatial replay fetches only conservative local candidates") {
   SettleRig rig;
