@@ -15,9 +15,10 @@ Build `tinydraw_vector_v2_occupancy_history_benchmark` with the host-release
 preset and run it directly. It constructs overlap-erase, drifting-erase, Undo,
 Redo, branch-replacement, and adversarial full-Undo documents. At 25%, 50%,
 100%, 200%, and 400% it compares the current monotonic map with the existing
-authority-derived `build_tiled_may_ink` result, drives both through the real
-`TileProducer`, and checks composed pixels for exact equality. It also renders
-every raw-tile difference through settled AA.
+authority-derived `build_tiled_may_ink` result. At 50–400% it drives both
+through the real `TileProducer`, checks composed pixels for exact equality, and
+renders every raw-tile difference through settled AA. The six 25% rows record
+map counts and the direct-overview bypass; they do not run tiled composition.
 
 The predeclared GO gate required representative Undo/branch to remove at least
 20% of producer scans or settled work at two tiled zooms, with the map rebuild
@@ -72,10 +73,13 @@ AA latency bound.
 exact map size, and external non-aliasing storage before copying only the map.
 History reuses the first 1,288 bytes of its existing caller-owned overview
 scratch after commit. A short scratch span simply retains the conservative map;
-correctness never depends on the optimization.
+correctness never depends on the optimization. A focused integration test
+completes Undo with 256 bytes of scratch and confirms the conservative bit is
+retained.
 
-- Host ASan authority: 81/81 tests, 25,643 assertions.
+- Host ASan authority: 82/82 tests, 25,650 assertions.
 - Host ASan rendering: 126/126 tests, 63,098 assertions.
-- Focused may-ink coverage: 6/6 tests, 10,374 assertions.
-- Benchmark: all 30 map/view cases compose exact pixels; no product state or
+- Focused may-ink coverage: 7/7 tests, 10,381 assertions.
+- Benchmark: all 24 tiled map/view cases compose exact pixels. The six 25%
+  cases record the direct-overview bypass and map counts; no product state or
   persistent workspace was added.
