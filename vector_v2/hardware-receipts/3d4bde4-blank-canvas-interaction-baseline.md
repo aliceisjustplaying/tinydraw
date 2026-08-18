@@ -12,9 +12,8 @@ dense strokes, aggressive panning, and repeated 25% → 100% → 400% zoom cycli
 - 20 null producer steps were recorded. These remain a diagnostic for the later scheduler work.
 - 81 lift records were emitted. Five were intentionally dropped because the next gesture began
   before the prior report could be printed; `reports_dropped` preserved that count.
-- Source serial capture: `/tmp/v2-interaction-baseline-serial.log` (268,902 bytes, 1,060 lines).
-  This path is machine-local; the compact receipt is retained instead of adding the raw diagnostic
-  stream to repository history.
+- The source serial capture contained 268,902 bytes and 1,060 lines. It was temporary and is not
+  retained; the compact measurements below are the durable receipt.
 
 All timing values below are microseconds and are shown as minimum / p50 / p95 / maximum.
 Percentiles use the nearest-rank definition.
