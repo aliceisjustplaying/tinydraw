@@ -1,6 +1,7 @@
 #ifndef TINYDRAW_VECTOR_V2_SETTLED_TILE_H
 #define TINYDRAW_VECTOR_V2_SETTLED_TILE_H
 
+#include <array>
 #include <cstdint>
 #include <span>
 
@@ -41,6 +42,13 @@ struct SettledTileStats {
   std::size_t deduplicated_candidates = 0;
   std::size_t operations_intersecting = 0;
   std::size_t operations_rendered = 0;
+  std::size_t candidate_queries = 0;
+  std::size_t initialize_pixels = 0;
+  std::size_t operation_clear_pixels = 0;
+  std::size_t curve_units_prepared = 0;
+  std::size_t raster_pixels = 0;
+  std::size_t composite_pixels = 0;
+  std::size_t fold_pixels = 0;
   bool saturated_early = false;
 };
 
@@ -102,10 +110,11 @@ class SettledRenderCursor {
   std::size_t replay_count_ = 0;
   std::size_t replay_index_ = 0;
   std::size_t operation_index_ = 0;
-  std::size_t clear_at_ = 0;
+  std::size_t clear_row_ = 0;
   std::size_t endpoint_ = 0;
   std::size_t step_ = 0;
-  std::size_t composite_at_ = 0;
+  std::size_t composite_row_ = 0;
+  std::size_t composite_x_ = 0;
   std::size_t fold_at_ = 0;
   std::size_t saturated_pixels_ = 0;
   OperationTool operation_tool_ = OperationTool::kPen;
@@ -125,6 +134,10 @@ class SettledRenderCursor {
   float chord_inverse_length_squared_ = 0;
   float chord_first_radius_ = 0;
   float chord_radius_delta_ = 0;
+  std::array<std::uint8_t, kTileHeight> operation_min_x_{};
+  std::array<std::uint8_t, kTileHeight> operation_max_x_{};
+  std::uint8_t operation_min_y_ = 0;
+  std::uint8_t operation_max_y_ = 0;
 };
 
 // Advances one settled window render with a caller-selected work budget.

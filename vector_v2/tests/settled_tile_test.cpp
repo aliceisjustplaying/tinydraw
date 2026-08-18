@@ -94,6 +94,13 @@ TEST_CASE("settled rendering resumes in bounded slices with exact pixels and sta
   CHECK(cursor.stats().deduplicated_candidates == expected_stats.deduplicated_candidates);
   CHECK(cursor.stats().operations_intersecting == expected_stats.operations_intersecting);
   CHECK(cursor.stats().operations_rendered == expected_stats.operations_rendered);
+  CHECK(cursor.stats().candidate_queries == expected_stats.candidate_queries);
+  CHECK(cursor.stats().initialize_pixels == expected_stats.initialize_pixels);
+  CHECK(cursor.stats().operation_clear_pixels == expected_stats.operation_clear_pixels);
+  CHECK(cursor.stats().curve_units_prepared == expected_stats.curve_units_prepared);
+  CHECK(cursor.stats().raster_pixels == expected_stats.raster_pixels);
+  CHECK(cursor.stats().composite_pixels == expected_stats.composite_pixels);
+  CHECK(cursor.stats().fold_pixels == expected_stats.fold_pixels);
   CHECK(cursor.stats().saturated_early == expected_stats.saturated_early);
   CHECK_FALSE(cursor.active());
 
