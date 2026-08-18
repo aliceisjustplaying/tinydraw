@@ -1052,6 +1052,7 @@ struct OperationChordPlan {
   RowSeed seed{};
   PixelRect bounds{};
   bool constant = false;
+  bool covers_surface = false;
 };
 static_assert(sizeof(OperationChordPlan) <= kPreparedOperationChordBytes);
 static_assert(alignof(OperationChordPlan) <= kPreparedOperationChordAlign);
@@ -1081,6 +1082,26 @@ static_assert(alignof(OperationChordPlan) <= kPreparedOperationChordAlign);
                                                                     kPreparedOperationChordBytes);
 }
 
+bool constant_capsule_covers_surface(const Segment& segment, PixelRect surface_bounds) {
+  constexpr float kNumericGuard = 1.0F;
+  if (segment.first.radius != segment.second.radius || segment.first.radius <= kNumericGuard ||
+      surface_bounds.x1 <= surface_bounds.x0 || surface_bounds.y1 <= surface_bounds.y0) {
+    return false;
+  }
+  Segment guarded = segment;
+  guarded.first.radius -= kNumericGuard;
+  guarded.second.radius -= kNumericGuard;
+  // A constant-radius capsule is convex. If the four pixel-center corners
+  // lie inside the capsule shrunk by a full level pixel, every pixel center
+  // lies inside the authoritative capsule with ample float-rounding margin.
+  const float first_x = static_cast<float>(surface_bounds.x0) + 0.5F;
+  const float first_y = static_cast<float>(surface_bounds.y0) + 0.5F;
+  const float last_x = static_cast<float>(surface_bounds.x1) - 0.5F;
+  const float last_y = static_cast<float>(surface_bounds.y1) - 0.5F;
+  return covers_pixel(guarded, first_x, first_y) && covers_pixel(guarded, last_x, first_y) &&
+         covers_pixel(guarded, first_x, last_y) && covers_pixel(guarded, last_x, last_y);
+}
+
 }  // namespace
 
 std::optional<OperationChordBatch> prepare_operation_chord_batch(
@@ -1106,11 +1127,15 @@ std::optional<OperationChordBatch> prepare_operation_chord_batch(
       if (bounds.x1 <= bounds.x0 || bounds.y1 <= bounds.y0) {
         continue;
       }
+      const bool spans_surface = bounds.x0 == surface_bounds.x0 && bounds.y0 == surface_bounds.y0 &&
+                                 bounds.x1 == surface_bounds.x1 && bounds.y1 == surface_bounds.y1;
       plans[batch.chord_count++] = {
           .segment = segment,
           .seed = make_row_seed(segment),
           .bounds = bounds,
           .constant = segment.first.radius == segment.second.radius,
+          .covers_surface =
+              spans_surface && constant_capsule_covers_surface(segment, surface_bounds),
       };
       batch.raster_work += static_cast<std::size_t>(bounds.x1 - bounds.x0) *
                            static_cast<std::size_t>(bounds.y1 - bounds.y0);
@@ -1183,6 +1208,45 @@ bool apply_masked_operation_chord_rows(OperationTool tool, std::uint16_t color,
   const std::uint16_t applied = tool == OperationTool::kEraser ? kBackground : color;
   const OperationChordPlan* plans = chord_plans(chord_storage);
   const std::uint8_t* order = chord_order(chord_storage);
+  const int surface_width = surface.level_bounds.x1 - surface.level_bounds.x0;
+  const int surface_height = surface.level_bounds.y1 - surface.level_bounds.y0;
+  const std::size_t surface_pixel_count =
+      static_cast<std::size_t>(surface_width) * static_cast<std::size_t>(surface_height);
+  const std::size_t bulk_work = (surface_pixel_count + 1U) / 2U + required_mask_bytes +
+                                static_cast<std::size_t>(surface_height);
+  const bool contiguous_surface = surface.stride == surface_width &&
+                                  surface.pixels.size() == surface_pixel_count &&
+                                  surface_pixel_count % 8U == 0U;
+  const bool starts_at_surface_top = first_row == surface.level_bounds.y0;
+  const bool has_full_surface_chord =
+      std::any_of(plans, plans + batch.chord_count, [&](const OperationChordPlan& plan) {
+        return plan.covers_surface && plan.bounds.x0 == surface.level_bounds.x0 &&
+               plan.bounds.y0 == surface.level_bounds.y0 &&
+               plan.bounds.x1 == surface.level_bounds.x1 &&
+               plan.bounds.y1 == surface.level_bounds.y1;
+      });
+  const bool fresh_mask =
+      has_full_surface_chord && contiguous_surface &&
+      std::all_of(finalized_pixels.begin(),
+                  finalized_pixels.begin() + static_cast<std::ptrdiff_t>(required_mask_bytes),
+                  [](std::uint8_t byte) { return byte == 0U; });
+  if (starts_at_surface_top && fresh_mask && has_full_surface_chord && bulk_work <= max_work_px) {
+    TINYDRAW_V2_CENSUS_ADD(const_full_surface_fills, 1);
+    TINYDRAW_V2_CENSUS_ADD(const_full_surface_pixels, surface_pixel_count);
+    std::fill(surface.pixels.begin(), surface.pixels.end(), applied);
+    std::fill_n(finalized_pixels.begin(), required_mask_bytes, 0xFFU);
+    if (summary != nullptr) {
+      for (int row = 0; row < surface_height; ++row) {
+        summary->note_finalized(row, surface_width);
+      }
+    }
+    slice.next_row = surface.level_bounds.y1;
+    slice.rows_swept = surface_height;
+    // The bulk path writes packed RGB565 words, mask bytes, and one row-summary
+    // entry per row. Charge those actual memory operations to the slice budget.
+    slice.work_px = bulk_work;
+    return true;
+  }
   // Scanline state over the y0-sorted order: enter admits chords as the
   // sweep reaches their top row; the active list drops chords lazily once
   // the sweep passes their bottom row. Resume rebuilds both in one pass.
