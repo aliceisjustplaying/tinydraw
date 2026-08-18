@@ -170,7 +170,7 @@ class PendingOperationAbsorption {
   std::size_t scan_index_ = 0;
   std::size_t next_endpoint_ = 0;
   OperationChordBatch chord_batch_{};
-  int next_raster_row_ = 0;
+  OperationSweepCursor raster_cursor_{};
   InPlaceTileEdit tile_edit_{};
   TileKey tile_key_{};
   bool batch_ready_ = false;

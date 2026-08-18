@@ -660,7 +660,7 @@ PendingAbsorptionSliceResult absorb_pending_operation_slice(
         }
         continue;
       }
-      state.next_raster_row_ = prepared->clipped_bounds.y0;
+      state.raster_cursor_ = {.next_row = prepared->clipped_bounds.y0};
       state.batch_ready_ = true;
     }
     OperationSweepSlice slice{};
@@ -668,16 +668,18 @@ PendingAbsorptionSliceResult absorb_pending_operation_slice(
         masked
             ? apply_masked_operation_chord_rows(
                   operation.tool, operation.color, state.workspace_.operation_chord_plans,
-                  state.chord_batch_, state.next_raster_row_, limit.raster_work_px, surface,
+                  state.chord_batch_, state.raster_cursor_.next_row, limit.raster_work_px, surface,
                   state.workspace_.tile_mask, nullptr, slice)
-            : apply_operation_chord_rows(
+            : apply_operation_chord_slice(
                   operation.tool, operation.color, state.workspace_.operation_chord_plans,
-                  state.chord_batch_, state.next_raster_row_, limit.raster_work_px, surface, slice);
+                  state.chord_batch_, limit.raster_work_px, surface, state.raster_cursor_, slice);
     if (!okay) {
       return -1;
     }
-    state.next_raster_row_ = slice.next_row;
-    if (slice.next_row >= state.chord_batch_.clipped_bounds.y1) {
+    if (masked) {
+      state.raster_cursor_ = {.next_row = slice.next_row};
+    }
+    if (state.raster_cursor_.next_row >= state.chord_batch_.clipped_bounds.y1) {
       state.batch_ready_ = false;
       return state.next_endpoint_ == 0U ? 1 : 0;
     }
