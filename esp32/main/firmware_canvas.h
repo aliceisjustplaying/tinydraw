@@ -26,6 +26,7 @@ class FirmwareCanvas {
   [[nodiscard]] StrokeRaster& raster() { return *raster_; }
   [[nodiscard]] TileUndoHistory& undo_history() { return *undo_history_; }
   [[nodiscard]] WorldCanvas& world() { return *world_; }
+
  private:
   static constexpr std::size_t kPixelCount = static_cast<std::size_t>(kCanvasWidth * kCanvasHeight);
 

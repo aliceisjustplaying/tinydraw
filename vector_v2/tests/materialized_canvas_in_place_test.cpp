@@ -198,7 +198,9 @@ TEST_CASE("staged overview publication is row-bounded and fails closed on mismat
     }
     if (!rejected_metadata_mismatch) {
       const vector_v2::MaterializedCanvas::InPlaceCommitScope mismatch{
-          .priority_zoom = vector_v2::ZoomLevel::k100Percent};
+          .preserved_uniform_color = std::nullopt,
+          .priority_zoom = vector_v2::ZoomLevel::k100Percent,
+          .cross_zoom_invalidated = nullptr};
       const auto rejected =
           canvas.stage_in_place_metadata({1}, publication, world_bounds, {}, 1U, stage, mismatch);
       CHECK(rejected.status == vector_v2::OverviewStageStatus::kError);

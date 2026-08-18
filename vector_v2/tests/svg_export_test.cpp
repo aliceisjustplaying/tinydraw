@@ -207,6 +207,9 @@ tinydraw::InkPoint ink_point(vector_v2::CompactOperationSample sample) {
                    .y = static_cast<float>(sample.y_quarter) * 0.0625F},
       .pressure = 0.0F,
       .radius = static_cast<float>(sample.radius_256) / 256.0F,
+      .distance = 0.0F,
+      .running_length = 0.0F,
+      .timestamp_us = 0U,
   };
 }
 
