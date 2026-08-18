@@ -60,6 +60,7 @@ void add_stats(SettledTileStats& destination, const SettledTileStats& source) {
   destination.operation_clear_pixels += source.operation_clear_pixels;
   destination.curve_units_prepared += source.curve_units_prepared;
   destination.raster_pixels += source.raster_pixels;
+  destination.saturated_skip_pixels += source.saturated_skip_pixels;
   destination.composite_pixels += source.composite_pixels;
   destination.fold_pixels += source.fold_pixels;
   destination.saturated_early = destination.saturated_early || source.saturated_early;
@@ -339,6 +340,8 @@ void SettledRenderCursor::raster_chord_row() {
   const std::uint8_t* accumulated_row =
       workspace_.accumulated_alpha.data() +
       static_cast<std::size_t>(y) * static_cast<std::size_t>(width_);
+  std::size_t computed = 0;
+  std::size_t skipped = 0;
   for (int x = chord_x0_; x < chord_x1_; ++x) {
     // Newest-first compositing: a saturated destination pixel can receive
     // no further contribution, so its coverage math is skipped exactly
@@ -346,8 +349,10 @@ void SettledRenderCursor::raster_chord_row() {
     // Re-opened 2026-08-18 under the deterministic same-corpus settle gate;
     // the earlier rejection compared unlike corpora.
     if (accumulated_row[x] == 255U) {
+      ++skipped;
       continue;
     }
+    ++computed;
     const float sample_x = static_cast<float>(x) + 0.5F;
     const float ap_x = sample_x - chord_ax_;
     const float ap_y = sample_y - chord_ay_;
@@ -371,6 +376,8 @@ void SettledRenderCursor::raster_chord_row() {
     operation_min_y_ = std::min(operation_min_y_, static_cast<std::uint8_t>(y));
     operation_max_y_ = std::max(operation_max_y_, static_cast<std::uint8_t>(y + 1));
   }
+  stats_.raster_pixels += computed;
+  stats_.saturated_skip_pixels += skipped;
 }
 
 void SettledRenderCursor::advance_chord_raster(WorkBudget& budget) {
@@ -389,6 +396,12 @@ void SettledRenderCursor::advance_chord_raster(WorkBudget& budget) {
     }
   }
 
+  // Work-charge recalibration (final-round AA lever 1) is a measured
+  // no-go: a same-image per-policy settle A/B halved slice counts but
+  // moved totals <1.5% (per-slice overhead ~1.6 µs) while the worst atomic
+  // quantum grew 2.3→3.9 ms. Rows therefore still charge full width; see
+  // the 2026-08-18 work-charge probe receipt. The computed/skipped split
+  // in raster_chord_row is retained for attribution.
   const std::size_t row_work = static_cast<std::size_t>(chord_x1_ - chord_x0_);
   if (budget.stop_before(row_work)) {
     budget.pause();
@@ -396,7 +409,6 @@ void SettledRenderCursor::advance_chord_raster(WorkBudget& budget) {
   }
   raster_chord_row();
   budget.work += row_work;
-  stats_.raster_pixels += row_work;
   ++chord_next_y_;
   if (chord_next_y_ == chord_y1_) {
     ++step_;

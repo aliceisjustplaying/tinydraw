@@ -46,7 +46,12 @@ struct SettledTileStats {
   std::size_t initialize_pixels = 0;
   std::size_t operation_clear_pixels = 0;
   std::size_t curve_units_prepared = 0;
+  // Coverage evaluations actually computed by chord rasterization versus
+  // pixels elided by the saturated-destination skip. Attribution only: the
+  // slice budget still charges full row width (the 2026-08-18 work-charge
+  // recalibration probe was a measured no-go).
   std::size_t raster_pixels = 0;
+  std::size_t saturated_skip_pixels = 0;
   std::size_t composite_pixels = 0;
   std::size_t fold_pixels = 0;
   bool saturated_early = false;

@@ -210,6 +210,7 @@ void add_stats(vector_v2::SettledTileStats& destination,
   destination.operation_clear_pixels += source.operation_clear_pixels;
   destination.curve_units_prepared += source.curve_units_prepared;
   destination.raster_pixels += source.raster_pixels;
+  destination.saturated_skip_pixels += source.saturated_skip_pixels;
   destination.composite_pixels += source.composite_pixels;
   destination.fold_pixels += source.fold_pixels;
 #endif

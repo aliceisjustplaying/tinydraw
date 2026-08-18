@@ -104,6 +104,7 @@ TEST_CASE("settled rendering resumes in bounded slices with exact pixels and sta
   CHECK(cursor.stats().operation_clear_pixels == expected_stats.operation_clear_pixels);
   CHECK(cursor.stats().curve_units_prepared == expected_stats.curve_units_prepared);
   CHECK(cursor.stats().raster_pixels == expected_stats.raster_pixels);
+  CHECK(cursor.stats().saturated_skip_pixels == expected_stats.saturated_skip_pixels);
   CHECK(cursor.stats().composite_pixels == expected_stats.composite_pixels);
   CHECK(cursor.stats().fold_pixels == expected_stats.fold_pixels);
   CHECK(cursor.stats().saturated_early == expected_stats.saturated_early);
