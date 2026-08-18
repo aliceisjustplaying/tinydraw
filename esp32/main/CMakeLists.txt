@@ -91,6 +91,12 @@ else()
   if(TINYDRAW_VECTOR_V2_GATE_HARNESS)
     list(APPEND TINYDRAW_APP_SRCS
       "vector_v2/vector_v2_gate_harness.cpp"
+      "vector_v2/vector_v2_gate_harness_ink.cpp"
+      "vector_v2/vector_v2_gate_harness_mixed.cpp"
+      "vector_v2/vector_v2_gate_harness_pan.cpp"
+      "vector_v2/vector_v2_gate_harness_render.cpp"
+      "vector_v2/vector_v2_gate_harness_stress.cpp"
+      "vector_v2/vector_v2_gate_harness_trace.cpp"
       "${TINYDRAW_CORE}/src/realistic_workload.cpp"
       ${TINYDRAW_VECTOR_V2_DIAGNOSTIC_SRCS}
     )
