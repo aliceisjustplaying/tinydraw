@@ -142,6 +142,20 @@ TEST_CASE("settled world band renderer stitches the production AA windows exactl
   CHECK(blended_pixels > 0U);
 }
 
+TEST_CASE("settled world export renders a one-sample tap") {
+  ExportFixture fixture;
+  fixture.append_document();
+  std::vector<std::uint16_t> band(static_cast<std::size_t>(vector_v2::kWorldWidth) * 3U);
+  std::vector<std::uint16_t> window(vector_v2::kTilePixels);
+  SettledWorkspaceStorage storage;
+  vector_v2::SettledWorldBandRenderer renderer(fixture.log, band, window, storage.workspace());
+  REQUIRE(renderer.ready());
+
+  std::vector<std::uint16_t> row(vector_v2::kWorldWidth);
+  REQUIRE(renderer.render_row(5, row));
+  CHECK(row[1470] == 0x07E0U);
+}
+
 TEST_CASE("settled world rows stream through the production PNG encoder") {
   ExportFixture fixture;
   fixture.append_document();

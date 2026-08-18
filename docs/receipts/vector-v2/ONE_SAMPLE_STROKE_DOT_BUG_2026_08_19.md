@@ -1,6 +1,6 @@
 # Known bug — one-sample Strokes render inconsistently across tiers ("Schrödinger dots")
 
-Status: **open, diagnosed mechanism candidate, not yet fixed.** Recorded
+Status: **fixed and host-verified 2026-08-19.** Recorded
 2026-08-19 (~00:20) at owner request; owner has two live mystery dots in
 the current document and independently hypothesized the cause: taps that
 never became lines are stored as one-sample operations and surface only
@@ -46,16 +46,17 @@ lack them. Then let idle settle finish at the current zoom: dots should
 disappear from glass; pan away and back before settle: dots should
 reappear. Any deviation from that pattern falsifies this mechanism.
 
-## Fix direction (not started)
+## Fix shipped
 
-Decide the semantic first (owner call): a tap paints a dot (SVG already
-committed to this). Then settled rendering must paint size-1 operations
-as one degenerate capsule — the coverage math already guards zero-length
-chords (`chord_inverse_length_squared_ = 0` → distance-to-point), so a
-synthetic single chord with `first == second == sample` is the natural
-form. PNG inherits the fix through settled windows. Check whether the 25
-frozen AA checksums contain any one-sample operation (likely not, or the
-tier mismatch would have been caught); if any do, re-freezing needs
-owner-approved semantics. Also trace and align the live-draw path so
-draw-time and replay visuals agree. The world-export fixture contains a
-dot but does not assert its pixels — turn that into a real assertion.
+Tap operations are already defined as visible dots by the live builder,
+hard replay, SVG export, and existing tests. Settled replay now begins a
+one-sample operation at endpoint zero. The existing incremental curve
+preparer consequently produces its degenerate capsule without a second
+representation or special raster path. PNG export inherits the result
+through settled world windows.
+
+Two regressions lock the contract: settled synchronous and 17-pixel
+sliced rendering are bit-identical with a visible dot, and the existing
+world-export fixture's green tap is asserted at its center pixel. The
+complete 31-test host suite passes; all frozen AA checksums are unchanged
+because none of their fixtures contained a one-sample operation.

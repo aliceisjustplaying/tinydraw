@@ -340,7 +340,10 @@ void SettledRenderCursor::advance_operation_scan(WorkBudget& budget) {
   operation_samples_ = stored->samples;
   operation_touched_ = false;
   clear_row_ = operation_min_y_;
-  endpoint_ = 1U;
+  // A one-sample operation is a degenerate capsule at endpoint zero. Starting
+  // at one skipped it entirely, so taps appeared in SVG/hard replay but not in
+  // settled tiles or PNG export.
+  endpoint_ = operation_samples_.size() == 1U ? 0U : 1U;
   phase_ = Phase::kClearOperation;
 }
 
