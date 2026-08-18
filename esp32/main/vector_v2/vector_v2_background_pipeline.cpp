@@ -124,11 +124,14 @@ void VectorV2BackgroundPipeline::convert_history_hold(const vector_v2::ViewReque
     bounds.y1 = std::max(bounds.y1, history_hold_.published_union.y1);
   }
   if (history_hold_.busy_shown) {
+    // The hourglass rect is panel-space; pending_fill_ bounds are
+    // level-space. Translate through the hold's view origin before
+    // unioning, or the union explodes toward level (0,0) at high zoom.
     const vector_v2::ChromeRect busy = vector_v2::chrome_history_busy_region();
-    bounds.x0 = std::min(bounds.x0, busy.x0);
-    bounds.y0 = std::min(bounds.y0, busy.y0);
-    bounds.x1 = std::max(bounds.x1, busy.x1);
-    bounds.y1 = std::max(bounds.y1, busy.y1);
+    bounds.x0 = std::min(bounds.x0, busy.x0 + history_hold_.x);
+    bounds.y0 = std::min(bounds.y0, busy.y0 + history_hold_.y);
+    bounds.x1 = std::max(bounds.x1, busy.x1 + history_hold_.x);
+    bounds.y1 = std::max(bounds.y1, busy.y1 + history_hold_.y);
   }
   chrome_.history_busy = false;
   pending_fill_ = {.level_bounds = bounds,
@@ -675,11 +678,13 @@ BackgroundSliceResult VectorV2BackgroundPipeline::run_slice(const BackgroundSlic
     } else {
       vector_v2::PixelRect bounds = history_hold_.level_bounds;
       if (history_hold_.busy_shown) {
+        // Panel-space hourglass rect into level space (25% keeps a zero
+        // origin, but the translation is the correct general form).
         const vector_v2::ChromeRect busy = vector_v2::chrome_history_busy_region();
-        bounds.x0 = std::min(bounds.x0, busy.x0);
-        bounds.y0 = std::min(bounds.y0, busy.y0);
-        bounds.x1 = std::max(bounds.x1, busy.x1);
-        bounds.y1 = std::max(bounds.y1, busy.y1);
+        bounds.x0 = std::min(bounds.x0, busy.x0 + history_hold_.x);
+        bounds.y0 = std::min(bounds.y0, busy.y0 + history_hold_.y);
+        bounds.x1 = std::max(bounds.x1, busy.x1 + history_hold_.x);
+        bounds.y1 = std::max(bounds.y1, busy.y1 + history_hold_.y);
       }
       chrome_.history_busy = false;
       // refresh_region recomposes from the canvas: the overview already
