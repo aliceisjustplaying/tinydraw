@@ -19,3 +19,9 @@ entries:
 archive: libmain.a
 entries:
     tile_producer (noflash_text)
+
+# F24: device A/B measured a median 8.7% cold-compute win.
+[mapping:tinydraw_incremental_rasterizer]
+archive: libmain.a
+entries:
+    incremental_rasterizer (noflash_text)
