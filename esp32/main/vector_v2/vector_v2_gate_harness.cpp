@@ -837,8 +837,19 @@ bool run_draw_while_fill_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
                        presenter.level_x() + vector_v2::kOverviewWidth,
                        presenter.level_y() + vector_v2::kOverviewHeight},
   };
-  const auto initial = producer.produce_next(view);
-  if (!initial.has_value() || initial->complete || initial->tiles_published != 0U) {
+  std::size_t priming_steps = 0U;
+  std::size_t priming_publications = 0U;
+  bool fill_primed = false;
+  while (!fill_primed && priming_steps < 64U) {
+    const auto initial = producer.produce_next(view);
+    if (!initial.has_value() || initial->complete) {
+      return false;
+    }
+    ++priming_steps;
+    priming_publications += initial->tiles_published;
+    fill_primed = initial->tiles_published == 0U;
+  }
+  if (!fill_primed) {
     return false;
   }
 
@@ -914,13 +925,14 @@ bool run_draw_while_fill_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
   std::printf(
       "TINYDRAW_GATE1_DRAW_FILL zoom=400 revision=%lu append_us=%lld poll_gap_us=%lld "
       "event_submit_us=%lld event_complete_us=%lld max_compute_slice_us=%lld "
-      "max_display_slice_us=%lld fill_us=%lld "
+      "max_display_slice_us=%lld fill_us=%lld priming_steps=%lu priming_publications=%lu "
       "revision_restarted=%u pass=%u\n",
       static_cast<unsigned long>(canvas.current_revision().value),
       static_cast<long long>(append_us), static_cast<long long>(poll_gap_us),
       static_cast<long long>(live.first_submit_us), static_cast<long long>(live.first_complete_us),
       static_cast<long long>(maximum_compute_slice_us), static_cast<long long>(maximum_slice_us),
-      static_cast<long long>(fill_us), revision_restarted, passed);
+      static_cast<long long>(fill_us), static_cast<unsigned long>(priming_steps),
+      static_cast<unsigned long>(priming_publications), revision_restarted, passed);
   return passed;
 }
 
