@@ -1,6 +1,6 @@
 # Committed overlay — landing receipts (2026-08-16)
 
-Design: [`VECTOR_V2_COMMITTED_OVERLAY_DESIGN.md`](../../VECTOR_V2_COMMITTED_OVERLAY_DESIGN.md).
+Design: [`VECTOR_V2_COMMITTED_OVERLAY_DESIGN.md`](../../docs/design/VECTOR_V2_COMMITTED_OVERLAY_DESIGN.md).
 Machine: ESP32-S3 `/dev/cu.usbmodem101`, gate harness, frozen corpus.
 
 ## Step 1 — §8.4 phase split (visible/offscreen raw retention)

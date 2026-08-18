@@ -59,7 +59,7 @@ The retired prototype remains evidence and benchmark machinery. It is frozen exc
 
 ## Validated V2 foundation
 
-The initial production milestones and Gate 1 cache/interaction feasibility are complete. The vector-authoritative architecture is accepted for V2. See [`GATE_1_RECEIPT_2026_08_13.md`](GATE_1_RECEIPT_2026_08_13.md) and [`GATE_1_CACHE_CLOSURE_2026_08_13.md`](GATE_1_CACHE_CLOSURE_2026_08_13.md). Remaining work is tracked only in the V2 roadmap; the numbered sections below preserve architectural history and contracts rather than current task order.
+The initial production milestones and Gate 1 cache/interaction feasibility are complete. The vector-authoritative architecture is accepted for V2. See [`GATE_1_RECEIPT_2026_08_13.md`](../docs/archive/2026-08-vector-v2-performance/GATE_1_RECEIPT_2026_08_13.md) and [`GATE_1_CACHE_CLOSURE_2026_08_13.md`](../docs/archive/2026-08-vector-v2-performance/GATE_1_CACHE_CLOSURE_2026_08_13.md). Remaining work is tracked only in the V2 roadmap; the numbered sections below preserve architectural history and contracts rather than current task order.
 
 The SVG module streams renderer-derived ribbon geometry without document-sized
 storage. Adjacent internal chunks with one nonzero gesture ID become one
@@ -184,7 +184,7 @@ A two-minute private real-touch capture now supplies aggregate sizing evidence
 without committing the user's coordinates. Its 70 strokes and 1,189 points
 project to 67,942 source points at 4,000 strokes, but four independent LOD copies
 project to 225,600–254,057 points across the tested policies. See
-[`REAL_TOUCH_CHARACTERIZATION.md`](REAL_TOUCH_CHARACTERIZATION.md). This rejects
+[`REAL_TOUCH_CHARACTERIZATION.md`](../docs/archive/2026-08-vector-v2-performance/REAL_TOUCH_CHARACTERIZATION.md). This rejects
 the current 90,000-point capacity/model combination and requires a shared,
 nested, or on-demand LOD experiment before approving a simplifier. It is not a
 representative full-document capacity receipt.

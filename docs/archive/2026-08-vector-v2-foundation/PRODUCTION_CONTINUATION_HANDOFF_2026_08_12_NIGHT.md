@@ -40,7 +40,7 @@ origin/prototype/vector-materialized-cache = e311a46
 At handoff time there were no tracked modifications on the production branch.
 Six pre-existing, untracked hardware captures were subsequently reviewed and
 preserved under
-[`second_review_hardware_ab/archive/superseded-diagnostics/`](second_review_hardware_ab/archive/superseded-diagnostics/README.md).
+[`superseded-diagnostics/`](../2026-08-code-reviews/hardware-ab/superseded-diagnostics/README.md).
 They are historical prototype diagnostics, not current load-bearing receipts.
 The local `.pi/` directory remains untracked and must not be committed.
 

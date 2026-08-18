@@ -28,7 +28,7 @@ interaction ticks broke the 15 ms limit), and flat row-count slice budgets
 (blew the idle-step contract).
 
 The exhaustive cold-campaign rejection record is
-[`HANDOVER.md`](../review_findings_2026_08_16_cold_campaign/HANDOVER.md) §§4–5
+[`HANDOVER.md`](archive/2026-08-code-reviews/review-findings/2026-08-16-cold-campaign/HANDOVER.md) §§4–5
 with raw device conclusions in
 [`COLD_COMPUTE_CAMPAIGN_RECEIPT.md`](../benchmark-results/wave3-cold-compute/COLD_COMPUTE_CAMPAIGN_RECEIPT.md).
 The removed settled-AA prototype and ink-angularity characterization tools can

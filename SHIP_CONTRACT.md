@@ -169,7 +169,7 @@ not a valid V2 persistence or Undo mechanism.
    400% drawing lag is unacceptable; the 15 ms per-append harness budget
    stands. The fix is the committed-overlay / authority-revision split
    (external review §8.3–8.4,
-   `EXTERNAL_REVIEW_SYNTHESIS_2026-08-16.md` item 9), adopted as the
+   `docs/reviews/EXTERNAL_REVIEW_SYNTHESIS_2026-08-16.md` item 9), adopted as the
    Phase 2 execution design. Diagnosis first: the mid-stroke fallback
    observability pass supplies phase attribution before the design lands.
 2. **Cold 400% interim ceiling.** The 507.0 ms three-run development

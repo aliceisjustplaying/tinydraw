@@ -199,7 +199,7 @@ class PendingOperationAbsorption {
   bool painting_tile_ = false;
 };
 
-// Committed-overlay revision split (VECTOR_V2_COMMITTED_OVERLAY_DESIGN.md
+// Committed-overlay revision split (docs/design/VECTOR_V2_COMMITTED_OVERLAY_DESIGN.md
 // §3.1): the materialized canvas may trail operation authority when a caller
 // appends to the log without a paired canvas commit. The pending operation
 // range is derived, not stored: it is exactly the log operations between the
