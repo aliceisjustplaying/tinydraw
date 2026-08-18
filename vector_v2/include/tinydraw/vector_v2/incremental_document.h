@@ -140,6 +140,8 @@ struct PendingAbsorptionSliceResult {
   std::size_t checkpoints = 0;
 };
 
+struct PendingAbsorptionRequest;
+
 // Caller-owned continuation for one pending operation. While active, the
 // canvas, workspace spans, priority view, and retention budget are one
 // serialized transaction and must remain unchanged. Authority may append
@@ -156,10 +158,10 @@ class PendingOperationAbsorption {
   void cancel();
 
  private:
+  class Context;
+
   friend PendingAbsorptionSliceResult absorb_pending_operation_slice(
-      const OperationLog&, MaterializedCanvas&, const InPlaceAppendWorkspace&,
-      PendingOperationAbsorption&, std::optional<ViewRequest>, CooperativeWorkLimit,
-      InPlaceRetentionBudget);
+      const PendingAbsorptionRequest&);
 
   enum class Phase : std::uint8_t {
     kIdle,
@@ -197,6 +199,16 @@ class PendingOperationAbsorption {
   TileKey tile_key_{};
   bool batch_ready_ = false;
   bool painting_tile_ = false;
+};
+
+struct PendingAbsorptionRequest {
+  const OperationLog& log;
+  MaterializedCanvas& canvas;
+  const InPlaceAppendWorkspace& workspace;
+  PendingOperationAbsorption& state;
+  std::optional<ViewRequest> priority_view = std::nullopt;
+  CooperativeWorkLimit limit{};
+  InPlaceRetentionBudget retention{};
 };
 
 // Committed-overlay revision split (docs/design/VECTOR_V2_COMMITTED_OVERLAY_DESIGN.md
@@ -252,9 +264,7 @@ enum class HistoryDirection : std::uint8_t {
 // kIdle reset it for reuse. Initial kError leaves canvas unchanged; a mismatched
 // resume returns kError with the original continuation active and recoverable.
 [[nodiscard]] PendingAbsorptionSliceResult absorb_pending_operation_slice(
-    const OperationLog& log, MaterializedCanvas& canvas, const InPlaceAppendWorkspace& workspace,
-    PendingOperationAbsorption& state, std::optional<ViewRequest> priority_view = std::nullopt,
-    CooperativeWorkLimit limit = {}, InPlaceRetentionBudget retention = {});
+    const PendingAbsorptionRequest& request);
 
 // The committed overlay (design §3.2): paints the pending operation range —
 // the log operations the canvas has not yet absorbed — clipped to a

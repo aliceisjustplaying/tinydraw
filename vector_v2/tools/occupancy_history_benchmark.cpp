@@ -250,8 +250,13 @@ struct CanvasRun {
   std::vector<std::uint16_t> tile_pixels = std::vector<std::uint16_t>(kRawSlots * v2::kTilePixels);
   std::vector<std::uint16_t> raw_directory =
       std::vector<std::uint16_t>(v2::kMaterializedTileIdentityCount);
-  v2::MaterializedCanvas canvas{owned_overview, uniforms, occupancy,    slots,
-                                tile_pixels,    {0},      raw_directory};
+  v2::MaterializedCanvas canvas{{.overview_pixels = owned_overview,
+                                 .uniform_catalog = uniforms,
+                                 .occupancy_bits = occupancy,
+                                 .slots = slots,
+                                 .tile_pixels = tile_pixels,
+                                 .initial_revision = {0},
+                                 .raw_slot_directory = raw_directory}};
   std::array<std::uint16_t, v2::kTileProducerPixels> surface{};
   std::array<std::uint8_t, v2::kTileProducerMaskBytes> finalized{};
   std::array<std::uint16_t, v2::kTileProducerSummaryRows> summary_rows{};

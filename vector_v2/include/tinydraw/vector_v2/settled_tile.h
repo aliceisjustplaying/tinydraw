@@ -65,6 +65,18 @@ struct SettledRenderSlice {
   std::size_t work_px = 0;
 };
 
+class SettledRenderCursor;
+
+struct SettledRenderRequest {
+  const OperationLog& log;
+  ZoomLevel zoom;
+  PixelRect window_bounds;
+  const SettledTileWorkspace& workspace;
+  std::span<std::uint16_t> out_pixels;
+  SettledRenderCursor& cursor;
+  std::size_t max_work_px;
+};
+
 // Caller-owned continuation for settled rendering. It fingerprints the
 // authority, request, buffers, and workspace at the first slice; any change
 // while active fails closed. No heap storage is owned by the cursor.
@@ -77,10 +89,9 @@ class SettledRenderCursor {
   [[nodiscard]] const SettledTileStats& stats() const;
 
  private:
-  friend SettledRenderSlice render_settled_window_slice(const OperationLog&, ZoomLevel, PixelRect,
-                                                        const SettledTileWorkspace&,
-                                                        std::span<std::uint16_t>,
-                                                        SettledRenderCursor&, std::size_t);
+  friend SettledRenderSlice render_settled_window_slice(const SettledRenderRequest&);
+
+  struct WorkBudget;
 
   enum class Phase : std::uint8_t {
     kIdle,
@@ -93,6 +104,21 @@ class SettledRenderCursor {
     kCompositeOperation,
     kFinalFold,
   };
+
+  [[nodiscard]] bool bind(const SettledRenderRequest& request);
+  [[nodiscard]] SettledRenderSlice advance(WorkBudget& budget);
+  void advance_initialize(WorkBudget& budget);
+  void advance_candidate_query(WorkBudget& budget);
+  void advance_operation_scan(WorkBudget& budget);
+  void advance_operation_clear(WorkBudget& budget);
+  void advance_endpoint_preparation(WorkBudget& budget);
+  void advance_chord_raster(WorkBudget& budget);
+  void prepare_chord(const PreparedCurveStep& chord);
+  void raster_chord_row();
+  void advance_operation_composite(WorkBudget& budget);
+  void composite_pixels(std::size_t first_at, std::size_t count, std::uint16_t red,
+                        std::uint16_t green, std::uint16_t blue);
+  void advance_final_fold(WorkBudget& budget);
 
   Phase phase_ = Phase::kIdle;
   const OperationLog* log_ = nullptr;
@@ -144,10 +170,7 @@ class SettledRenderCursor {
 // Raster rows are indivisible to keep continuation state small; every other
 // pixel loop stops at max_work_px. A complete result is bit-identical to
 // render_settled_window, including replay stats.
-[[nodiscard]] SettledRenderSlice render_settled_window_slice(
-    const OperationLog& log, ZoomLevel zoom, PixelRect window_bounds,
-    const SettledTileWorkspace& workspace, std::span<std::uint16_t> out_pixels,
-    SettledRenderCursor& cursor, std::size_t max_work_px);
+[[nodiscard]] SettledRenderSlice render_settled_window_slice(const SettledRenderRequest& request);
 
 [[nodiscard]] bool render_settled_tile(const OperationLog& log, TileKey key,
                                        const SettledTileWorkspace& workspace,

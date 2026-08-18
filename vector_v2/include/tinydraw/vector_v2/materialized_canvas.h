@@ -274,6 +274,18 @@ class MaterializedSlotStorage {
   bool occupied_ = false;
 };
 
+// Caller-owned backing storage for one canvas. Every span must outlive the
+// canvas, and slot elements must already be constructed.
+struct MaterializedCanvasStorage {
+  std::span<std::uint16_t> overview_pixels{};
+  std::span<MaterializedUniformStorage> uniform_catalog{};
+  std::span<std::uint8_t> occupancy_bits{};
+  std::span<MaterializedSlotStorage> slots{};
+  std::span<std::uint16_t> tile_pixels{};
+  DocumentRevision initial_revision{};
+  std::span<std::uint16_t> raw_slot_directory{};
+};
+
 class RerenderLedger;
 
 class MaterializedCanvas {
@@ -283,12 +295,7 @@ class MaterializedCanvas {
   // The catalog, occupancy map, and raw-slot directory are part of the one
   // production storage shape. raw_slot_directory maps every tile identity to
   // its resident slot (kNoRawSlot when absent).
-  MaterializedCanvas(std::span<std::uint16_t> overview_pixels,
-                     std::span<MaterializedUniformStorage> uniform_catalog,
-                     std::span<std::uint8_t> occupancy_bits,
-                     std::span<MaterializedSlotStorage> slots, std::span<std::uint16_t> tile_pixels,
-                     DocumentRevision initial_revision,
-                     std::span<std::uint16_t> raw_slot_directory);
+  explicit MaterializedCanvas(const MaterializedCanvasStorage& storage);
 
   [[nodiscard]] bool ready() const;
   [[nodiscard]] DocumentRevision current_revision() const;
@@ -356,13 +363,22 @@ class MaterializedCanvas {
   // exempts no-op uniform targets from invalidation at every zoom;
   // cross_zoom_invalidated (when set) counts identities dropped at zooms
   // other than priority_zoom.
-  // No default member initializers: the {} default argument below requires
-  // the aggregate to be complete inside the class definition, and value
-  // initialization already empties the optionals and nulls the pointer.
+  // Value initialization through the default arguments below empties both
+  // optionals and nulls the pointer. Clang requires this nested aggregate to
+  // omit default member initializers until MaterializedCanvas is complete.
   struct InPlaceCommitScope {
     std::optional<std::uint16_t> preserved_uniform_color;
     std::optional<ZoomLevel> priority_zoom;
     std::size_t* cross_zoom_invalidated;
+  };
+  struct InPlaceMetadataRequest {
+    DocumentRevision revision{};
+    const OverviewRevisionPublication& overview_publication;
+    PixelRect affected_world_bounds{};
+    std::span<const TileKey> retained_keys{};
+    std::size_t max_work_items = 0;
+    InPlaceOverviewStage& stage;
+    InPlaceCommitScope scope{};
   };
   [[nodiscard]] bool commit_in_place_revision(
       DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
@@ -380,11 +396,7 @@ class MaterializedCanvas {
   // max_work_items caps identities, slots, damage groups, or occupancy cells;
   // a call never crosses a phase boundary. Resume inputs and the canvas epoch
   // must match the stage proof exactly.
-  [[nodiscard]] InPlaceMetadataSlice stage_in_place_metadata(
-      DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
-      PixelRect affected_world_bounds, std::span<const TileKey> retained_keys,
-      std::size_t max_work_items, InPlaceOverviewStage& stage,
-      const InPlaceCommitScope& scope = {});
+  [[nodiscard]] InPlaceMetadataSlice stage_in_place_metadata(const InPlaceMetadataRequest& request);
   // Metadata-only completion for a fully staged overview. Validation is
   // mutation-free; a mismatch leaves the stage live for its original caller.
   [[nodiscard]] bool commit_staged_in_place_revision(
@@ -460,6 +472,7 @@ class MaterializedCanvas {
 
  private:
   friend class InPlaceOverviewStage;
+  struct MetadataWork;
   [[nodiscard]] std::optional<std::size_t> find_tile(TileKey key) const;
   [[nodiscard]] std::optional<std::size_t> find_uniform(TileKey key) const;
   [[nodiscard]] std::optional<std::size_t> choose_slot() const;
@@ -499,6 +512,16 @@ class MaterializedCanvas {
                                 const InPlaceCommitScope& scope);
   void mark_retained_key(TileKey key, DocumentRevision revision);
   void clear_retained_marker(TileKey key);
+  [[nodiscard]] bool prepare_metadata_stage(const InPlaceMetadataRequest& request,
+                                            const RerenderLedger* ledger);
+  void stage_uniform_metadata(MetadataWork& work);
+  [[nodiscard]] bool stage_retained_metadata(MetadataWork& work);
+  void stage_uniform_zoom_metadata(MetadataWork& work);
+  void update_uniform_metadata(TileKey key, MetadataWork& work);
+  void stage_clear_retained_metadata(MetadataWork& work);
+  void stage_raw_slot_metadata(MetadataWork& work);
+  void stage_rerender_metadata(MetadataWork& work);
+  void stage_occupancy_metadata(MetadataWork& work);
   void finish_revision(DocumentRevision revision, PixelRect affected_world_bounds);
   void mark_occupied(PixelRect world_bounds);
   void cancel_in_place_stage(InPlaceOverviewStage& stage);

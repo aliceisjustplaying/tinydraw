@@ -457,15 +457,24 @@ bool TileProducer::render_active_operation_slice(TileProductionStep& result,
       .raster_work = active_group_.batch_work,
   };
   OperationSweepSlice slice{};
-  if (!apply_masked_operation_chord_rows(
-          operation.tool, operation.color,
-          workspace_.operation_chord_plans.first(kOperationChordStorageBytes), batch,
-          active_group_.batch_row, max_work,
-          {.zoom = active_group_.view.zoom,
-           .level_bounds = active_group_.bounds,
-           .pixels = surface,
-           .stride = kTileProducerWidth},
-          workspace_.finalized_pixels.first(kTileProducerMaskBytes), &summary_, slice)) {
+  const RasterSurface raster_surface{
+      .zoom = active_group_.view.zoom,
+      .level_bounds = active_group_.bounds,
+      .pixels = surface,
+      .stride = kTileProducerWidth,
+  };
+  if (!apply_masked_operation_chord_rows({
+          .tool = operation.tool,
+          .color = operation.color,
+          .chord_storage = workspace_.operation_chord_plans.first(kOperationChordStorageBytes),
+          .batch = batch,
+          .first_row = active_group_.batch_row,
+          .max_work_px = max_work,
+          .surface = raster_surface,
+          .finalized_pixels = workspace_.finalized_pixels.first(kTileProducerMaskBytes),
+          .summary = &summary_,
+          .slice = slice,
+      })) {
     return false;
   }
 #if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)

@@ -37,9 +37,13 @@ struct PaperFixture {
   std::array<std::uint32_t, vector_v2::kTileProducerSummaryWords> summary_words{};
   std::array<std::uint32_t, vector_v2::kOperationChordStorageBytes / 4U> chord_plans{};
   vector_v2::OperationLog log{records, samples};
-  vector_v2::MaterializedCanvas canvas{
-      overview,           *uniforms, occupancy, slots, tile_pool, vector_v2::DocumentRevision{},
-      *raw_slot_directory};
+  vector_v2::MaterializedCanvas canvas{{.overview_pixels = overview,
+                                        .uniform_catalog = *uniforms,
+                                        .occupancy_bits = occupancy,
+                                        .slots = slots,
+                                        .tile_pixels = tile_pool,
+                                        .initial_revision = {},
+                                        .raw_slot_directory = *raw_slot_directory}};
   vector_v2::TileProducer producer{
       log,
       canvas,
@@ -81,8 +85,13 @@ struct AdversarialFixture {
   std::array<std::uint32_t, vector_v2::kTileProducerSummaryWords> summary_words{};
   std::array<std::uint32_t, vector_v2::kOperationChordStorageBytes / 4U> chord_plans{};
   vector_v2::OperationLog log{records, samples};
-  vector_v2::MaterializedCanvas canvas{overview,  *uniforms, occupancy,          slots,
-                                       tile_pool, {},        *raw_slot_directory};
+  vector_v2::MaterializedCanvas canvas{{.overview_pixels = overview,
+                                        .uniform_catalog = *uniforms,
+                                        .occupancy_bits = occupancy,
+                                        .slots = slots,
+                                        .tile_pixels = tile_pool,
+                                        .initial_revision = {},
+                                        .raw_slot_directory = *raw_slot_directory}};
   vector_v2::TileProducer producer{
       log,
       canvas,
@@ -125,8 +134,13 @@ struct Fixture {
   std::array<std::uint16_t, kOperationCapacity> candidates{};
   vector_v2::OperationSpatialIndex spatial_index{kOperationCapacity, spatial_cells, spatial_large};
   vector_v2::OperationLog log{records, samples, &spatial_index};
-  vector_v2::MaterializedCanvas canvas{overview,  *uniforms, occupancy,          slots,
-                                       tile_pool, {},        *raw_slot_directory};
+  vector_v2::MaterializedCanvas canvas{{.overview_pixels = overview,
+                                        .uniform_catalog = *uniforms,
+                                        .occupancy_bits = occupancy,
+                                        .slots = slots,
+                                        .tile_pixels = tile_pool,
+                                        .initial_revision = {},
+                                        .raw_slot_directory = *raw_slot_directory}};
   vector_v2::TileProducer producer{
       log,
       canvas,

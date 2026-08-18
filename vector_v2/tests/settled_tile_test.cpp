@@ -75,8 +75,13 @@ TEST_CASE("settled rendering resumes in bounded slices with exact pixels and sta
   std::size_t max_slice_work = 0U;
   while (true) {
     const auto slice =
-        vector_v2::render_settled_window_slice(rig.log, vector_v2::ZoomLevel::k100Percent, bounds,
-                                               rig.workspace(), sliced, cursor, kBudget);
+        vector_v2::render_settled_window_slice({.log = rig.log,
+                                                .zoom = vector_v2::ZoomLevel::k100Percent,
+                                                .window_bounds = bounds,
+                                                .workspace = rig.workspace(),
+                                                .out_pixels = sliced,
+                                                .cursor = cursor,
+                                                .max_work_px = kBudget});
     REQUIRE(slice.status != vector_v2::SettledRenderStatus::kError);
     max_slice_work = std::max(max_slice_work, slice.work_px);
     ++slices;
@@ -107,8 +112,13 @@ TEST_CASE("settled rendering resumes in bounded slices with exact pixels and sta
   std::vector<std::uint16_t> reused(vector_v2::kTilePixels, 0x4321U);
   do {
     const auto slice =
-        vector_v2::render_settled_window_slice(rig.log, vector_v2::ZoomLevel::k100Percent, bounds,
-                                               rig.workspace(), reused, cursor, kBudget);
+        vector_v2::render_settled_window_slice({.log = rig.log,
+                                                .zoom = vector_v2::ZoomLevel::k100Percent,
+                                                .window_bounds = bounds,
+                                                .workspace = rig.workspace(),
+                                                .out_pixels = reused,
+                                                .cursor = cursor,
+                                                .max_work_px = kBudget});
     REQUIRE(slice.status != vector_v2::SettledRenderStatus::kError);
   } while (cursor.active());
   CHECK(reused == expected);
@@ -125,14 +135,26 @@ TEST_CASE("settled rendering rejects authority changes between slices") {
   std::vector<std::uint16_t> output(vector_v2::kTilePixels, 0xAAAAU);
   vector_v2::SettledRenderCursor cursor;
   const vector_v2::PixelRect bounds{0, 0, vector_v2::kTileWidth, vector_v2::kTileHeight};
-  const auto first = vector_v2::render_settled_window_slice(
-      rig.log, vector_v2::ZoomLevel::k100Percent, bounds, rig.workspace(), output, cursor, 16U);
+  const auto first =
+      vector_v2::render_settled_window_slice({.log = rig.log,
+                                              .zoom = vector_v2::ZoomLevel::k100Percent,
+                                              .window_bounds = bounds,
+                                              .workspace = rig.workspace(),
+                                              .out_pixels = output,
+                                              .cursor = cursor,
+                                              .max_work_px = 16U});
   REQUIRE(first.status == vector_v2::SettledRenderStatus::kInProgress);
   REQUIRE(cursor.active());
 
   REQUIRE(rig.log.append({.color = 0xF800U, .samples = stroke}));
-  const auto stale = vector_v2::render_settled_window_slice(
-      rig.log, vector_v2::ZoomLevel::k100Percent, bounds, rig.workspace(), output, cursor, 16U);
+  const auto stale =
+      vector_v2::render_settled_window_slice({.log = rig.log,
+                                              .zoom = vector_v2::ZoomLevel::k100Percent,
+                                              .window_bounds = bounds,
+                                              .workspace = rig.workspace(),
+                                              .out_pixels = output,
+                                              .cursor = cursor,
+                                              .max_work_px = 16U});
   CHECK(stale.status == vector_v2::SettledRenderStatus::kError);
   CHECK_FALSE(cursor.active());
 }

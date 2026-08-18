@@ -110,6 +110,7 @@ if(TINYDRAW_BUILD_TESTS)
   )
   tinydraw_add_vector_v2_tests(tinydraw_vector_v2_rendering_tests
     tests/idle_repair_test.cpp
+    tests/incremental_rasterizer_bulk_test.cpp
     tests/incremental_rasterizer_test.cpp
     tests/materialized_canvas_cache_test.cpp
     tests/materialized_canvas_composition_test.cpp
@@ -129,7 +130,10 @@ if(TINYDRAW_BUILD_TESTS)
     PASS_REGULAR_EXPRESSION
       "valid name=scribble-multistroke source=recorded events=848 strokes=7")
 
-  add_executable(tinydraw_vector_v2_raster_census tools/raster_census.cpp)
+  add_executable(tinydraw_vector_v2_raster_census
+    tools/raster_census.cpp
+    tools/raster_census_fuzz.cpp
+  )
   target_link_libraries(tinydraw_vector_v2_raster_census PRIVATE
     tinydraw::core
     tinydraw::vector_v2
