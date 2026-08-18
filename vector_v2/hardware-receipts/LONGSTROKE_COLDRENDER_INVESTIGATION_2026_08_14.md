@@ -3,14 +3,14 @@
 Working notes and evidence for the two funded defects at HEAD `4a1aada`:
 
 1. Interactive long strokes stall the coordinator ~70 ms at every 64-sample
-   chunk commit (`append_max_us=70214/72144` in
-   `/tmp/v2-correctness-closure/4a1aada-manual.log`), producing bursty ink and
+   chunk commit (`append_max_us=70214/72144` in the temporary manual capture),
+   producing bursty ink and
    the tester's "cold rendering of marks just drawn" impression.
 2. The 4× adversarial tapered 400% cold replay p95 is 1.452 s; the product
    target is now below 1.0 s with producer ticks under 15 ms.
 
-This document records measured root causes first, then design decisions, then
-before/after receipts. Raw logs referenced here are retained unedited.
+This document records measured root causes, design decisions, and before/after
+receipts. Temporary raw logs were not checked in.
 
 ## Measured baseline (clean 26a05f5 receipts, reconfirmed at 4a1aada)
 
@@ -190,8 +190,8 @@ The seed-7 +6% was isolated experimentally: feeding the painters a null
 summary (disabling all bookkeeping and skips) did not recover it, so it is
 attributable to the producer restructure / code layout, not to summary
 maintenance. It remains far below every alarm; the same restructure buys
-−22 ms at adversarial 200%. Raw logs: `/tmp/v2-inv/satsum-gate-run*.log`,
-`/tmp/v2-inv/exp1-gate.log` (isolation experiment).
+−22 ms at adversarial 200%. The temporary saturation-summary and isolation
+logs were not retained; their measurements are transcribed here.
 
 New tests: `MaskedRowSummary` unit coverage (word-boundary ranges, reset
 rearm, painter-fed exactness vs the mask bit-for-bit) and a behavioral
