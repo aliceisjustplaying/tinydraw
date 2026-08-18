@@ -57,6 +57,23 @@ struct SettledTileStats {
   bool saturated_early = false;
 };
 
+// Per-chord conservative row-span table for the settled raster (the
+// exterior capsule: chord radii + 0.5). Built once per chord in
+// prepare_chord; consumed per row. See settled_tile.cpp for the
+// derivation, mirrored from incremental_rasterizer.cpp.
+struct SettledChordSpanTable {
+  float origin_low = 0;
+  float delta_low = 0;
+  float inverse_low = 0;
+  float origin_high = 0;
+  float delta_high = 0;
+  float inverse_high = 0;
+  float left_origin = 0;
+  float left_delta = 0;
+  float right_origin = 0;
+  float right_delta = 0;
+};
+
 enum class SettledRenderStatus : std::uint8_t {
   kInProgress,
   kComplete,
@@ -83,6 +100,12 @@ struct SettledRenderRequest {
   std::span<std::uint16_t> out_pixels;
   SettledRenderCursor& cursor;
   std::size_t max_work_px;
+  // Same-image A/B instrument for the exterior-capsule row narrowing
+  // (final-round AA lever 2): true forces the pre-narrowing full-bbox row
+  // walk. Pixels are identical either way; only traversal cost differs.
+  // Product callers leave this false. Captured at first bind; not part of
+  // the continuation fingerprint.
+  bool disable_row_narrowing = false;
 };
 
 // Caller-owned continuation for settled rendering. It fingerprints the
@@ -122,7 +145,7 @@ class SettledRenderCursor {
   void advance_endpoint_preparation(WorkBudget& budget);
   void advance_chord_raster(WorkBudget& budget);
   void prepare_chord(const PreparedCurveStep& chord);
-  void raster_chord_row();
+  void raster_chord_row(int span_first, int span_last);
   void advance_operation_composite(WorkBudget& budget);
   void composite_pixels(std::size_t first_at, std::size_t count, std::uint16_t red,
                         std::uint16_t green, std::uint16_t blue);
@@ -168,6 +191,9 @@ class SettledRenderCursor {
   float chord_inverse_length_squared_ = 0;
   float chord_first_radius_ = 0;
   float chord_radius_delta_ = 0;
+  SettledChordSpanTable span_table_{};
+  bool chord_narrowed_ = false;
+  bool narrowing_disabled_ = false;
   std::array<std::uint8_t, kTileHeight> operation_min_x_{};
   std::array<std::uint8_t, kTileHeight> operation_max_x_{};
   std::uint8_t operation_min_y_ = 0;

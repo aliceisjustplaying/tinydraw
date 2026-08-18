@@ -1,0 +1,16 @@
+[23:57:04] TINYDRAW_GATE1_SETTLE_TIMING zoom=25 tiles=42 no_ink=41 slices=419 total_us=73475 max_slice_us=333 failures=0 pass=1
+[23:57:04] TINYDRAW_GATE1_SETTLE_TIMING zoom=50 tiles=1 no_ink=0 slices=521 total_us=86026 max_slice_us=309 failures=0 pass=1
+[23:57:04] TINYDRAW_GATE1_SETTLE_TIMING zoom=100 tiles=4 no_ink=0 slices=966 total_us=174965 max_slice_us=1381 failures=0 pass=1
+[23:57:05] TINYDRAW_GATE1_SETTLE_TIMING zoom=200 tiles=12 no_ink=0 slices=2445 total_us=403557 max_slice_us=2744 failures=0 pass=1
+[23:57:06] TINYDRAW_GATE1_SETTLE_TIMING zoom=400 tiles=42 no_ink=0 slices=7268 total_us=1076563 max_slice_us=3379 failures=0 pass=1
+[23:57:06] TINYDRAW_GATE1_SETTLE_LONG zoom=25 policy=full_bbox tiles=9 slices=257 total_us=20793 max_slice_us=264 checksum=377df09dcde7488d failures=0 exact=1 pass=1
+[23:57:06] TINYDRAW_GATE1_SETTLE_LONG zoom=25 policy=narrowed tiles=9 slices=205 total_us=15842 max_slice_us=288 checksum=377df09dcde7488d failures=0 exact=1 pass=1
+[23:57:06] TINYDRAW_GATE1_SETTLE_LONG zoom=50 policy=full_bbox tiles=9 slices=510 total_us=52694 max_slice_us=290 checksum=29cfe926dcc05ca5 failures=0 exact=1 pass=1
+[23:57:06] TINYDRAW_GATE1_SETTLE_LONG zoom=50 policy=narrowed tiles=9 slices=271 total_us=29503 max_slice_us=434 checksum=29cfe926dcc05ca5 failures=0 exact=1 pass=1
+[23:57:06] TINYDRAW_GATE1_SETTLE_LONG zoom=100 policy=full_bbox tiles=9 slices=1222 total_us=132662 max_slice_us=282 checksum=04c9ef7a849a0616 failures=0 exact=1 pass=1
+[23:57:06] TINYDRAW_GATE1_SETTLE_LONG zoom=100 policy=narrowed tiles=9 slices=385 total_us=52126 max_slice_us=623 checksum=04c9ef7a849a0616 failures=0 exact=1 pass=1
+[23:57:07] TINYDRAW_GATE1_SETTLE_LONG zoom=200 policy=full_bbox tiles=9 slices=1816 total_us=181814 max_slice_us=285 checksum=fe229abdbc8fb3a7 failures=0 exact=1 pass=1
+[23:57:07] TINYDRAW_GATE1_SETTLE_LONG zoom=200 policy=narrowed tiles=9 slices=507 total_us=65518 max_slice_us=635 checksum=fe229abdbc8fb3a7 failures=0 exact=1 pass=1
+[23:57:07] TINYDRAW_GATE1_SETTLE_LONG zoom=400 policy=full_bbox tiles=9 slices=1882 total_us=180661 max_slice_us=247 checksum=fed7120a743aa737 failures=0 exact=1 pass=1
+[23:57:07] TINYDRAW_GATE1_SETTLE_LONG zoom=400 policy=narrowed tiles=9 slices=616 total_us=68394 max_slice_us=623 checksum=fed7120a743aa737 failures=0 exact=1 pass=1
+[23:57:07] TINYDRAW_GATE1_AUTOMATED_DONE minimap_navigation=1 color_dialog=1 cooperative_compose=1 stress=1 stress_100=1 stress_400=1 overlap_ready=1 overlap_cold=1 general_cold_ready=1 general_cold=1 workload=1 paced_cold=1 hard_100=1 hard_400=1 pan_100=1 pan_400=1 ring_local=1 pan_seq=1 pan_boundary=1 live_overlay=1 draw_fill=1 cache=1 full_world_cache=1 cache_tour=1 mixed_draw=1 idle_repair=1 ink_trace=1 hairline_capacity=1 long_gesture=1 history_latency=1 settle_timing=1 export_encode=1 export_reserve=1 return=1 ssaa_receipt=yellow
