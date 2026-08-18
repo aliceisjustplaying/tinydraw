@@ -85,6 +85,9 @@ struct PanMetrics {
   std::uint32_t failures = 0;
 
   void include(const LivePresentationTiming& timing) {
+    if (timing.compose_pending) {
+      return;
+    }
     if (!timing.passed) {
       ++failures;
       return;
@@ -540,6 +543,20 @@ void run_vector_v2_app() {
   std::uint8_t background_ticks = 0U;
   std::uint8_t drained_touch_events = 0U;
 
+  const auto advance_full_refresh = [&](const char* kind, std::uint32_t event_us) {
+    const auto timing = presenter.refresh_slice(chrome, event_us);
+    if (!timing.compose_pending) {
+      std::printf(
+          "TINYDRAW_COOPERATIVE_COMPOSE kind=%s slices=%lu max_slice_us=%lld compose_us=%lld "
+          "passed=%u\n",
+          kind, static_cast<unsigned long>(timing.compose_slices),
+          static_cast<long long>(timing.compose_slice_max_us),
+          static_cast<long long>(timing.compose_us), timing.passed);
+      print_presentation(kind, presenter, timing);
+    }
+    return timing;
+  };
+
   const auto begin_pan = [&](Point start) {
     panning = true;
     pan_metrics.reset();
@@ -567,11 +584,17 @@ void run_vector_v2_app() {
     const std::uint32_t event_us = sample_ready ? sampled_touch->timestamp_us : loop_us;
     bool cosmetic_work = false;
 
+    if (!sample_ready && !touch_sampler.touch_urgent() && presenter.refresh_pending()) {
+      static_cast<void>(advance_full_refresh("deferred-full", loop_us));
+      // One input poll per bounded compose slice. Background canvas mutation
+      // waits until the complete frame has entered its single panel sweep.
+      continue;
+    }
+
     if (!sample_ready && chrome.export_status == vector_v2::ChromeExportStatus::kPresented &&
         !touch_sampler.touch_urgent() && exporter.usb_host_ejected()) {
       chrome.export_status = vector_v2::ChromeExportStatus::kHostEjected;
-      const auto timing = presenter.refresh(chrome, loop_us);
-      print_presentation("export-host-ejected", presenter, timing);
+      static_cast<void>(advance_full_refresh("export-host-ejected", loop_us));
       cosmetic_work = true;
     }
 
@@ -586,8 +609,7 @@ void run_vector_v2_app() {
       } else {
         time_sync_terminal_since.reset();
       }
-      const auto timing = presenter.refresh(chrome, loop_us);
-      print_presentation("time-sync", presenter, timing);
+      static_cast<void>(advance_full_refresh("time-sync", loop_us));
       cosmetic_work = true;
     }
     if (!sample_ready && !cosmetic_work && !touch_sampler.touch_urgent() &&
@@ -598,8 +620,7 @@ void run_vector_v2_app() {
       time_sync.dismiss();
       chrome.time_sync_status = vector_v2::ChromeTimeSyncStatus::kIdle;
       time_sync_terminal_since.reset();
-      const auto timing = presenter.refresh(chrome, loop_us);
-      print_presentation("time-sync-dismiss", presenter, timing);
+      static_cast<void>(advance_full_refresh("time-sync-dismiss", loop_us));
       cosmetic_work = true;
     }
 
@@ -671,7 +692,7 @@ void run_vector_v2_app() {
           }
           chrome.time_sync_status = vector_v2::ChromeTimeSyncStatus::kIdle;
           popup_dismissed_press = true;
-          static_cast<void>(presenter.refresh(chrome, loop_us));
+          static_cast<void>(advance_full_refresh("toast-dismiss", loop_us));
         }
         if (popup_dismissed_press) {
           // Consume the complete gesture that dismisses a terminal toast so
@@ -704,8 +725,7 @@ void run_vector_v2_app() {
           // complete gesture. It must never leak through as a stroke or pan.
           chrome.popup = vector_v2::ChromePopup::kNone;
           popup_dismissed_press = true;
-          const auto timing = presenter.refresh(chrome, loop_us);
-          print_presentation("chrome-dismiss", presenter, timing);
+          static_cast<void>(advance_full_refresh("chrome-dismiss", loop_us));
         } else if (chrome.tool == vector_v2::ChromeTool::kPan) {
           begin_pan(point);
         } else {
@@ -905,6 +925,12 @@ void run_vector_v2_app() {
         lift_timing = measured_lift;
         poll_max_us = 0;
       }
+    }
+
+    if (presenter.refresh_pending()) {
+      // The first slice can be requested from inside input handling. Keep the
+      // canvas source epoch stable until the next input poll advances it.
+      continue;
     }
 
     // Queue/resync failures collapse into one complete checkpoint after input

@@ -314,6 +314,36 @@ bool run_tearing_probe(VectorV2Presenter& presenter, const vector_v2::ChromeStat
 }
 #endif
 
+bool run_cooperative_compose_gate(VectorV2Presenter& presenter,
+                                  const vector_v2::ChromeState& chrome) {
+  presenter.display().reset_timing();
+  const std::uint32_t pushes_before = presenter.display().push_count();
+  LivePresentationTiming timing{};
+  bool incomplete_without_push = true;
+  std::uint32_t calls = 0;
+  do {
+    timing = presenter.refresh_slice(chrome, now_us());
+    ++calls;
+    if (timing.compose_pending) {
+      incomplete_without_push =
+          incomplete_without_push && presenter.display().push_count() == pushes_before;
+    }
+  } while (timing.compose_pending && calls <= 64U);
+  const bool pass = incomplete_without_push && timing.passed && calls == 56U &&
+                    timing.compose_slices == calls && timing.compose_slice_max_us > 0 &&
+                    timing.submitted_pixels == vector_v2::kOverviewPixels &&
+                    presenter.display().push_count() > pushes_before;
+  std::printf(
+      "TINYDRAW_GATE1_COOPERATIVE_COMPOSE calls=%lu slices=%lu max_slice_us=%lld compose_us=%lld "
+      "incomplete_no_push=%u submitted=%lu pass=%u\n",
+      static_cast<unsigned long>(calls), static_cast<unsigned long>(timing.compose_slices),
+      static_cast<long long>(timing.compose_slice_max_us),
+      static_cast<long long>(timing.compose_us), incomplete_without_push,
+      static_cast<unsigned long>(timing.submitted_pixels), pass);
+  std::fflush(stdout);
+  return pass;
+}
+
 bool run_tile_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
                    OperationLog& log, MaterializedCanvas& canvas,
                    const vector_v2::ChromeState& chrome, ZoomLevel zoom) {
@@ -3441,6 +3471,8 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   if (!color_close.passed) {
     color_close = presenter.refresh(chrome, now_us());
   }
+  const bool cooperative_compose =
+      color_close.passed && run_cooperative_compose_gate(presenter, chrome);
 
   const bool minimap_navigation = classify_minimap_navigation(presenter, chrome);
 
@@ -3596,7 +3628,8 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   print_rerender_ledger("final");
   std::printf(
       "TINYDRAW_GATE1_AUTOMATED_DONE minimap_navigation=%u "
-      "color_dialog=%u stress=%u stress_100=%u stress_400=%u overlap_ready=%u "
+      "color_dialog=%u cooperative_compose=%u stress=%u stress_100=%u stress_400=%u "
+      "overlap_ready=%u "
       "overlap_cold=%u general_cold_ready=%u general_cold=%u workload=%u paced_cold=%u "
       "hard_100=%u hard_400=%u pan_100=%u "
       "pan_400=%u ring_local=%u pan_seq=%u pan_boundary=%u live_overlay=%u draw_fill=%u cache=%u "
@@ -3604,14 +3637,15 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
       "cache_tour=%u mixed_draw=%u idle_repair=%u ink_trace=%u hairline_capacity=%u "
       "long_gesture=%u "
       "export_encode=%u export_reserve=%u return=%u ssaa_receipt=yellow\n",
-      minimap_navigation, color_dialog, stress_ready, stress_100, stress_400, overlap_ready,
-      overlap_cold, general_cold_ready, general_cold, workload_ready, paced_cold, gate_100,
-      gate_400, pan_100, pan_400, ring_local, pan_sequence, pan_boundary, live_overlay, draw_fill,
-      cache_retention, full_world_cache, cache_tour, mixed_draw, idle_repair, ink_trace_replay,
-      hairline_capacity, long_gesture, export_encode, export_reserve, return_overview.passed);
-  return minimap_navigation && color_dialog && return_overview.passed && export_reserve &&
-         overlap_cold && general_cold && mixed_draw && idle_repair && hairline_capacity &&
-         pan_100 && pan_400 && ring_local && pan_sequence && pan_boundary;
+      minimap_navigation, color_dialog, cooperative_compose, stress_ready, stress_100, stress_400,
+      overlap_ready, overlap_cold, general_cold_ready, general_cold, workload_ready, paced_cold,
+      gate_100, gate_400, pan_100, pan_400, ring_local, pan_sequence, pan_boundary, live_overlay,
+      draw_fill, cache_retention, full_world_cache, cache_tour, mixed_draw, idle_repair,
+      ink_trace_replay, hairline_capacity, long_gesture, export_encode, export_reserve,
+      return_overview.passed);
+  return minimap_navigation && color_dialog && cooperative_compose && return_overview.passed &&
+         export_reserve && overlap_cold && general_cold && mixed_draw && idle_repair &&
+         hairline_capacity && pan_100 && pan_400 && ring_local && pan_sequence && pan_boundary;
 #endif
 }
 

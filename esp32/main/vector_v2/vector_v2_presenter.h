@@ -74,6 +74,7 @@ inline constexpr std::size_t kRepairSaturationHeadroomTiles = 48;
 
 struct LivePresentationTiming {
   std::int64_t compose_us = 0;
+  std::int64_t compose_slice_max_us = 0;
   std::int64_t scroll_us = 0;
   std::int64_t exposed_compose_us = 0;
   std::int64_t chrome_us = 0;
@@ -92,6 +93,7 @@ struct LivePresentationTiming {
   // strip subdivision does not change this area.
   std::size_t submitted_pixels = 0;
   std::uint32_t pushes = 0;
+  std::uint32_t compose_slices = 0;
   std::int64_t tear_wait_us = 0;
   std::uint32_t tear_edge_isr_to_resume_us = 0;
   bool tear_edge_observed = false;
@@ -100,6 +102,7 @@ struct LivePresentationTiming {
   bool tear_heal_attempted = false;
   bool tear_heal_command_sent = false;
   bool frame_reused = false;
+  bool compose_pending = false;
   bool passed = false;
 };
 
@@ -146,6 +149,13 @@ class VectorV2Presenter {
 
   [[nodiscard]] LivePresentationTiming refresh(const vector_v2::ChromeState& chrome,
                                                std::uint32_t event_us = 0);
+  // Advances a full-frame CPU compose by one bounded row slice. Incomplete
+  // frames stay presenter-private; only the completed frame enters the
+  // existing single-window, TE-aligned panel sweep.
+  [[nodiscard]] LivePresentationTiming refresh_slice(const vector_v2::ChromeState& chrome,
+                                                     std::uint32_t event_us = 0);
+  [[nodiscard]] bool refresh_pending() const { return refresh_pending_; }
+  void cancel_refresh();
   // Re-composes and presents only the intersection between changed level-space
   // pixels and the visible canvas above the chrome.
   [[nodiscard]] LivePresentationTiming refresh_region(vector_v2::PixelRect level_bounds,
@@ -276,8 +286,16 @@ class VectorV2Presenter {
   // ring mapping; fixed chrome is applied only to transport staging.
   vector_v2::RingFrame frame_ring_{};
   int frame_ring_bottom_ = 0;
+  vector_v2::ViewCompositionCursor refresh_cursor_{};
+  vector_v2::ViewRequest refresh_view_{};
+  vector_v2::ChromeState refresh_chrome_{};
+  std::uint32_t refresh_event_us_ = 0;
+  std::int64_t refresh_compose_us_ = 0;
+  std::int64_t refresh_compose_slice_max_us_ = 0;
+  std::uint32_t refresh_compose_slices_ = 0;
   bool minimap_presented_ = false;
   bool frame_reusable_ = false;
+  bool refresh_pending_ = false;
 #ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
   bool optical_row_pattern_enabled_ = false;
   std::uint8_t optical_generation_ = 0;
