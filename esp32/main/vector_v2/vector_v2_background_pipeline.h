@@ -158,6 +158,7 @@ class VectorV2BackgroundPipeline {
   std::size_t settle_cursor_ = 0;
   bool settle_complete_ = false;
   std::uint32_t settle_tiles_ = 0;
+  std::uint32_t settle_no_ink_ = 0;
   std::uint32_t settle_slices_ = 0;
   std::uint64_t settle_work_ = 0;
   std::int64_t settle_total_us_ = 0;
