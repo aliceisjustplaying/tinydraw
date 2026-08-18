@@ -412,6 +412,71 @@ TEST_CASE("cancelled partial overview stage restarts with exact pending presenta
   CHECK(fixture.canvas.current_revision() == fixture.log.current_revision());
 }
 
+TEST_CASE("cancelled partial metadata stage rolls raw revisions back before exact restart") {
+  Fixture fixture;
+  std::array<std::uint16_t, vector_v2::kTilePixels> blue{};
+  blue.fill(0x001FU);
+  const vector_v2::TileKey key{vector_v2::ZoomLevel::k400Percent, 0, 0};
+  REQUIRE(
+      fixture.canvas.publish_tile(key, {0}, vector_v2::MaterializationQuality::kImmediate, blue));
+  const std::array samples{
+      vector_v2::CompactOperationSample{.x_quarter = 64, .y_quarter = 64, .radius_256 = 512},
+      vector_v2::CompactOperationSample{.x_quarter = 192, .y_quarter = 192, .radius_256 = 512},
+  };
+  const vector_v2::OperationAppend operation{
+      .color = 0xF800U, .gesture_id = 11U, .samples = samples};
+  REQUIRE(vector_v2::append_authority_only(fixture.log, operation));
+  const vector_v2::ViewRequest view{.zoom = vector_v2::ZoomLevel::k400Percent,
+                                    .level_pixels = {0, 0, 64, 64}};
+
+  struct YieldAfterOne {
+    mutable std::size_t checks = 0;
+    static bool requested(const void* context) {
+      auto& self = *static_cast<const YieldAfterOne*>(context);
+      return ++self.checks > 1U;
+    }
+  } yield;
+  vector_v2::PendingOperationAbsorption state;
+  bool raw_metadata_started = false;
+  for (std::size_t slice_index = 0; slice_index < 10'000U; ++slice_index) {
+    yield.checks = 0;
+    const auto slice = vector_v2::absorb_pending_operation_slice(
+        fixture.log, fixture.canvas, fixture.workspace(), state, view,
+        {.requested = &YieldAfterOne::requested, .context = &yield, .raster_work_px = 1U});
+    REQUIRE(slice.status == vector_v2::PendingAbsorptionStatus::kInProgress);
+    if (slice.work_unit == vector_v2::PendingAbsorptionWorkUnit::kStageRawSlots) {
+      raw_metadata_started = true;
+      break;
+    }
+  }
+  REQUIRE(raw_metadata_started);
+  REQUIRE(state.active());
+  const auto staged_source = fixture.canvas.lookup(key);
+  REQUIRE(staged_source.has_value());
+  CHECK(staged_source->kind == vector_v2::SourceKind::kTileSlot);
+  CHECK(staged_source->revision == vector_v2::DocumentRevision{0});
+  state.cancel();
+  CHECK_FALSE(state.active());
+  const auto rolled_back = fixture.canvas.lookup(key);
+  REQUIRE(rolled_back.has_value());
+  CHECK(rolled_back->kind == vector_v2::SourceKind::kTileSlot);
+  CHECK(rolled_back->revision == vector_v2::DocumentRevision{0});
+
+  const auto restarted = vector_v2::absorb_pending_operation_slice(
+      fixture.log, fixture.canvas, fixture.workspace(), state, view, {.raster_work_px = 64U});
+  REQUIRE(restarted.status == vector_v2::PendingAbsorptionStatus::kComplete);
+  auto expected = blue;
+  REQUIRE(
+      vector_v2::apply_incremental_operation(operation, {.zoom = vector_v2::ZoomLevel::k400Percent,
+                                                         .level_bounds = {0, 0, 64, 64},
+                                                         .pixels = expected,
+                                                         .stride = 64}));
+  std::array<std::uint16_t, vector_v2::kTilePixels> composed{};
+  REQUIRE(fixture.canvas.compose_view(view, composed));
+  CHECK(composed == expected);
+  CHECK(fixture.canvas.current_revision() == fixture.log.current_revision());
+}
+
 TEST_CASE("later authority may append while the oldest absorption is paused") {
   Fixture fixture;
   const std::array second{

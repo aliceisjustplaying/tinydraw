@@ -71,6 +71,11 @@ class RerenderLedger {
   // Marks every group intersecting the affected world bounds, at every zoom,
   // as legitimately damaged.
   void mark_world_damage(PixelRect world_bounds);
+  // Bounded companion. plane and offset are caller-owned cursors initialized
+  // to zero; returns true once every intersecting group is marked.
+  [[nodiscard]] bool mark_world_damage_slice(PixelRect world_bounds, std::size_t max_groups,
+                                             std::size_t& plane, std::size_t& offset,
+                                             std::size_t& groups_marked);
   // Marks the group containing this 64-px tile as having lost cached content.
   void mark_evicted(TileKey key);
   // Records one completed group render (origin in 64-px tile coordinates)

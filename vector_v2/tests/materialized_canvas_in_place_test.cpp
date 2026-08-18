@@ -1,6 +1,7 @@
 #include <doctest.h>
 
 #include "test_support/materialized_canvas_fixture.h"
+#include "tinydraw/vector_v2/rerender_ledger.h"
 
 TEST_CASE("canvas accepts caller-owned dynamically constructed slot storage") {
   std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
@@ -124,6 +125,10 @@ TEST_CASE("staged overview publication is row-bounded and fails closed on mismat
   std::array<std::uint16_t, vector_v2::kTilePixels> tile_pool{};
   TestCanvas canvas(overview, slots, tile_pool);
   REQUIRE(canvas.publish_overview({0}, overview));
+  auto original_entries = std::make_unique<
+      std::array<vector_v2::RerenderLedgerEntry, vector_v2::kRerenderLedgerEntryCount>>();
+  vector_v2::RerenderLedger original_ledger(*original_entries);
+  canvas.set_rerender_ledger(&original_ledger);
 
   const vector_v2::PixelRect world_bounds{0, 0, 96, 96};
   const vector_v2::PixelRect bounds = vector_v2::overview_bounds_for_world(world_bounds);
@@ -168,6 +173,51 @@ TEST_CASE("staged overview publication is row-bounded and fails closed on mismat
         canvas.stage_in_place_overview_rows({1}, publication, world_bounds, 1U, stage);
     REQUIRE(status != vector_v2::OverviewStageStatus::kError);
   }
+  std::array<bool, 4> saw_phase{};
+  bool rejected_metadata_mismatch = false;
+  while (true) {
+    const auto metadata =
+        canvas.stage_in_place_metadata({1}, publication, world_bounds, {}, 1U, stage);
+    REQUIRE(metadata.status != vector_v2::OverviewStageStatus::kError);
+    CHECK(metadata.work_items <= 1U);
+    switch (metadata.phase) {
+      case vector_v2::InPlaceMetadataPhase::kUniforms:
+        saw_phase[0] = true;
+        break;
+      case vector_v2::InPlaceMetadataPhase::kRawSlots:
+        saw_phase[1] = true;
+        break;
+      case vector_v2::InPlaceMetadataPhase::kRerenderDamage:
+        saw_phase[2] = true;
+        break;
+      case vector_v2::InPlaceMetadataPhase::kOccupancy:
+        saw_phase[3] = true;
+        break;
+      case vector_v2::InPlaceMetadataPhase::kComplete:
+        break;
+    }
+    if (!rejected_metadata_mismatch) {
+      const vector_v2::MaterializedCanvas::InPlaceCommitScope mismatch{
+          .priority_zoom = vector_v2::ZoomLevel::k100Percent};
+      const auto rejected =
+          canvas.stage_in_place_metadata({1}, publication, world_bounds, {}, 1U, stage, mismatch);
+      CHECK(rejected.status == vector_v2::OverviewStageStatus::kError);
+      CHECK(stage.active());
+      rejected_metadata_mismatch = true;
+    }
+    if (metadata.status == vector_v2::OverviewStageStatus::kComplete) {
+      break;
+    }
+  }
+  CHECK(std::all_of(saw_phase.begin(), saw_phase.end(), [](bool seen) { return seen; }));
+
+  auto replacement_entries = std::make_unique<
+      std::array<vector_v2::RerenderLedgerEntry, vector_v2::kRerenderLedgerEntryCount>>();
+  vector_v2::RerenderLedger replacement_ledger(*replacement_entries);
+  canvas.set_rerender_ledger(&replacement_ledger);
+  CHECK_FALSE(canvas.commit_staged_in_place_revision({1}, publication, world_bounds, {}, stage));
+  CHECK(stage.active());
+  canvas.set_rerender_ledger(&original_ledger);
   REQUIRE(canvas.commit_staged_in_place_revision({1}, publication, world_bounds, {}, stage));
   CHECK_FALSE(stage.active());
   CHECK(canvas.current_revision() == vector_v2::DocumentRevision{1});
@@ -179,6 +229,116 @@ TEST_CASE("staged overview publication is row-bounded and fails closed on mismat
                           static_cast<std::ptrdiff_t>(offset + static_cast<std::size_t>(width)),
                       [](std::uint16_t pixel) { return pixel == 0x001FU; }));
   }
+}
+
+TEST_CASE("staged metadata commit matches synchronous mixed materialization commit") {
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> direct_overview{};
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> staged_overview{};
+  std::array<vector_v2::MaterializedSlotStorage, 3> direct_slots{};
+  std::array<vector_v2::MaterializedSlotStorage, 3> staged_slots{};
+  std::array<std::uint16_t, 3U * vector_v2::kTilePixels> direct_pool{};
+  std::array<std::uint16_t, 3U * vector_v2::kTilePixels> staged_pool{};
+  TestCanvas direct(direct_overview, direct_slots, direct_pool);
+  TestCanvas staged(staged_overview, staged_slots, staged_pool);
+  REQUIRE(direct.reset_blank({0}));
+  REQUIRE(staged.reset_blank({0}));
+
+  auto direct_entries = std::make_unique<
+      std::array<vector_v2::RerenderLedgerEntry, vector_v2::kRerenderLedgerEntryCount>>();
+  auto staged_entries = std::make_unique<
+      std::array<vector_v2::RerenderLedgerEntry, vector_v2::kRerenderLedgerEntryCount>>();
+  vector_v2::RerenderLedger direct_ledger(*direct_entries);
+  vector_v2::RerenderLedger staged_ledger(*staged_entries);
+  direct.set_rerender_ledger(&direct_ledger);
+  staged.set_rerender_ledger(&staged_ledger);
+
+  const vector_v2::TileKey raw_kept{vector_v2::ZoomLevel::k100Percent, 0, 0};
+  const vector_v2::TileKey raw_dropped{vector_v2::ZoomLevel::k200Percent, 0, 0};
+  const vector_v2::TileKey raw_unaffected{vector_v2::ZoomLevel::k100Percent, 3, 3};
+  const vector_v2::TileKey uniform_kept{vector_v2::ZoomLevel::k100Percent, 1, 0};
+  const vector_v2::TileKey uniform_preserved{vector_v2::ZoomLevel::k50Percent, 0, 0};
+  const vector_v2::TileKey uniform_dropped{vector_v2::ZoomLevel::k400Percent, 0, 0};
+  const vector_v2::TileKey uniform_unaffected{vector_v2::ZoomLevel::k100Percent, 4, 4};
+  const std::array raw_keys{raw_kept, raw_dropped, raw_unaffected};
+  const std::array uniform_keys{uniform_kept, uniform_preserved, uniform_dropped,
+                                uniform_unaffected};
+  std::array<std::uint16_t, vector_v2::kTilePixels> tile{};
+  tile.fill(0x1234U);
+  for (const auto key : raw_keys) {
+    REQUIRE(direct.publish_tile(key, {0}, vector_v2::MaterializationQuality::kImmediate, tile));
+    REQUIRE(staged.publish_tile(key, {0}, vector_v2::MaterializationQuality::kImmediate, tile));
+  }
+  for (const auto key : uniform_keys) {
+    const std::uint16_t color = key == uniform_preserved ? 0xEEEEU : 0x4321U;
+    REQUIRE(direct.publish_uniform(key, {0}, vector_v2::MaterializationQuality::kImmediate, color));
+    REQUIRE(staged.publish_uniform(key, {0}, vector_v2::MaterializationQuality::kImmediate, color));
+  }
+  static_cast<void>(
+      direct_ledger.record_group_render(vector_v2::ZoomLevel::k400Percent, 0, 0, {0}));
+  static_cast<void>(
+      staged_ledger.record_group_render(vector_v2::ZoomLevel::k400Percent, 0, 0, {0}));
+
+  const vector_v2::PixelRect world_bounds{0, 0, 96, 96};
+  const vector_v2::PixelRect bounds = vector_v2::overview_bounds_for_world(world_bounds);
+  std::array<std::uint16_t, 24U * 24U> patch{};
+  patch.fill(0x001FU);
+  const vector_v2::OverviewRevisionPublication publication{
+      .bounds = bounds,
+      .pixels = std::span(patch).first(static_cast<std::size_t>(bounds.x1 - bounds.x0) *
+                                       static_cast<std::size_t>(bounds.y1 - bounds.y0)),
+  };
+  const std::array retained{raw_kept, uniform_kept};
+  std::size_t direct_cross_zoom = 0;
+  std::size_t staged_cross_zoom = 0;
+  const vector_v2::MaterializedCanvas::InPlaceCommitScope direct_scope{
+      .preserved_uniform_color = 0xEEEEU,
+      .priority_zoom = vector_v2::ZoomLevel::k100Percent,
+      .cross_zoom_invalidated = &direct_cross_zoom};
+  const vector_v2::MaterializedCanvas::InPlaceCommitScope staged_scope{
+      .preserved_uniform_color = 0xEEEEU,
+      .priority_zoom = vector_v2::ZoomLevel::k100Percent,
+      .cross_zoom_invalidated = &staged_cross_zoom};
+  REQUIRE(direct.commit_in_place_revision({1}, publication, world_bounds, retained, direct_scope));
+
+  vector_v2::InPlaceOverviewStage stage;
+  while (!stage.complete()) {
+    REQUIRE(staged.stage_in_place_overview_rows({1}, publication, world_bounds, 3U, stage) !=
+            vector_v2::OverviewStageStatus::kError);
+  }
+  while (true) {
+    const auto slice = staged.stage_in_place_metadata({1}, publication, world_bounds, retained, 3U,
+                                                      stage, staged_scope);
+    REQUIRE(slice.status != vector_v2::OverviewStageStatus::kError);
+    if (slice.status == vector_v2::OverviewStageStatus::kComplete) {
+      break;
+    }
+  }
+  REQUIRE(staged.commit_staged_in_place_revision({1}, publication, world_bounds, retained, stage,
+                                                 staged_scope));
+
+  CHECK(staged_overview == direct_overview);
+  CHECK(staged_cross_zoom == direct_cross_zoom);
+  CHECK(staged_cross_zoom == 2U);
+  CHECK(staged.resident_raw_tiles() == direct.resident_raw_tiles());
+  for (const auto key : std::array{raw_kept, raw_dropped, raw_unaffected, uniform_kept,
+                                   uniform_preserved, uniform_dropped, uniform_unaffected}) {
+    const auto direct_source = direct.lookup(key);
+    const auto staged_source = staged.lookup(key);
+    REQUIRE(direct_source.has_value());
+    REQUIRE(staged_source.has_value());
+    CHECK(staged_source->kind == direct_source->kind);
+    CHECK(staged_source->revision == direct_source->revision);
+    CHECK(staged_source->quality == direct_source->quality);
+    CHECK(staged.uniform_color(key) == direct.uniform_color(key));
+  }
+  CHECK(staged.certainly_paper(raw_kept) == direct.certainly_paper(raw_kept));
+  CHECK(staged.certainly_paper(raw_unaffected) == direct.certainly_paper(raw_unaffected));
+  CHECK_FALSE(staged.certainly_paper(raw_kept));
+  CHECK(staged.certainly_paper(raw_unaffected));
+  CHECK(direct_ledger.record_group_render(vector_v2::ZoomLevel::k400Percent, 0, 0, {1}) ==
+        vector_v2::RerenderCause::kExpectedDamage);
+  CHECK(staged_ledger.record_group_render(vector_v2::ZoomLevel::k400Percent, 0, 0, {1}) ==
+        vector_v2::RerenderCause::kExpectedDamage);
 }
 
 TEST_CASE("raw publication cannot downgrade a settled uniform") {

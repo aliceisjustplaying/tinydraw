@@ -82,6 +82,33 @@ TEST_CASE("world damage explains re-renders at every zoom it touches") {
   CHECK(ledger.totals().stale_revision == 1U);
 }
 
+TEST_CASE("world damage slicing bounds each call and matches whole damage") {
+  auto storage = ledger_storage();
+  vector_v2::RerenderLedger ledger(storage);
+  static_cast<void>(ledger.record_group_render(vector_v2::ZoomLevel::k25Percent, 0, 0,
+                                               vector_v2::DocumentRevision{1}));
+  static_cast<void>(ledger.record_group_render(vector_v2::ZoomLevel::k400Percent, 90, 110,
+                                               vector_v2::DocumentRevision{1}));
+  std::size_t plane = 0;
+  std::size_t offset = 0;
+  std::size_t slices = 0;
+  bool complete = false;
+  do {
+    std::size_t marked = 0;
+    complete = ledger.mark_world_damage_slice(
+        {0, 0, vector_v2::kWorldWidth, vector_v2::kWorldHeight}, 7U, plane, offset, marked);
+    CHECK(marked <= 7U);
+    ++slices;
+  } while (!complete);
+  CHECK(slices > 100U);
+  CHECK(ledger.record_group_render(vector_v2::ZoomLevel::k25Percent, 0, 0,
+                                   vector_v2::DocumentRevision{2}) ==
+        vector_v2::RerenderCause::kExpectedDamage);
+  CHECK(ledger.record_group_render(vector_v2::ZoomLevel::k400Percent, 90, 110,
+                                   vector_v2::DocumentRevision{2}) ==
+        vector_v2::RerenderCause::kExpectedDamage);
+}
+
 TEST_CASE("eviction explains a re-render after cached content was displaced") {
   auto storage = ledger_storage();
   vector_v2::RerenderLedger ledger(storage);

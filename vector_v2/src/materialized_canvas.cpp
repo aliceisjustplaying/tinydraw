@@ -24,6 +24,13 @@ void ViewCompositionCursor::cancel() {
   next_y_ = 0;
   active_ = false;
 }
+
+void InPlaceOverviewStage::cancel() {
+  if (canvas_ != nullptr) {
+    canvas_->cancel_in_place_stage(*this);
+  }
+  *this = {};
+}
 namespace {
 
 constexpr int ceil_div(int numerator, int denominator) {
@@ -705,23 +712,235 @@ OverviewStageStatus MaterializedCanvas::stage_in_place_overview_rows(
   return stage.complete() ? OverviewStageStatus::kComplete : OverviewStageStatus::kInProgress;
 }
 
+InPlaceMetadataSlice MaterializedCanvas::stage_in_place_metadata(
+    DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
+    PixelRect affected_world_bounds, std::span<const TileKey> retained_keys,
+    std::size_t max_work_items, InPlaceOverviewStage& stage, const InPlaceCommitScope& scope) {
+  InPlaceMetadataSlice output{};
+  if (max_work_items == 0U ||
+      !valid_incremental_revision(revision, overview_publication, affected_world_bounds, {}) ||
+      !stage.complete() || stage.canvas_ != this || stage.revision_ != revision ||
+      stage.bounds_ != overview_publication.bounds ||
+      stage.affected_world_bounds_ != affected_world_bounds ||
+      stage.source_ != overview_publication.pixels.data() ||
+      stage.source_size_ != overview_publication.pixels.size() ||
+      stage.expected_canvas_epoch_ != composition_epoch_ ||
+      (stage.raw_staging_started_ &&
+       (!staged_in_place_active_ || staged_in_place_revision_ != revision))) {
+    return output;
+  }
+#ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
+  const RerenderLedger* ledger = rerender_ledger_;
+#else
+  const RerenderLedger* ledger = nullptr;
+#endif
+  if (!stage.metadata_started_) {
+    stage.retained_keys_ = retained_keys.data();
+    stage.retained_count_ = retained_keys.size();
+    stage.preserved_uniform_color_ = scope.preserved_uniform_color;
+    stage.priority_zoom_ = scope.priority_zoom;
+    stage.rerender_ledger_ = ledger;
+    stage.metadata_started_ = true;
+  } else if (stage.retained_keys_ != retained_keys.data() ||
+             stage.retained_count_ != retained_keys.size() ||
+             stage.preserved_uniform_color_ != scope.preserved_uniform_color ||
+             stage.priority_zoom_ != scope.priority_zoom || stage.rerender_ledger_ != ledger) {
+    return output;
+  }
+
+  output.phase = stage.metadata_phase_;
+  output.status = OverviewStageStatus::kInProgress;
+  const auto retained = std::span(stage.retained_keys_, stage.retained_count_);
+  bool mutated = false;
+  switch (stage.metadata_phase_) {
+    case InPlaceMetadataPhase::kUniforms: {
+      constexpr std::array zooms{ZoomLevel::k50Percent, ZoomLevel::k100Percent,
+                                 ZoomLevel::k200Percent, ZoomLevel::k400Percent};
+      while (stage.metadata_zoom_ < zooms.size() && output.work_items < max_work_items) {
+        const ZoomLevel zoom = zooms[stage.metadata_zoom_];
+        const int percent = zoom_percent(zoom);
+        const TileGrid grid = tile_grid(zoom);
+        const int first_column = std::clamp(
+            affected_world_bounds.x0 * percent / 100 / kTileWidth - 1, 0, grid.columns - 1);
+        const int last_column =
+            std::clamp((ceil_div(affected_world_bounds.x1 * percent, 100) - 1) / kTileWidth + 1, 0,
+                       grid.columns - 1);
+        const int first_row = std::clamp(affected_world_bounds.y0 * percent / 100 / kTileHeight - 1,
+                                         0, grid.rows - 1);
+        const int last_row =
+            std::clamp((ceil_div(affected_world_bounds.y1 * percent, 100) - 1) / kTileHeight + 1, 0,
+                       grid.rows - 1);
+        const std::size_t columns = static_cast<std::size_t>(last_column - first_column + 1);
+        const std::size_t rows = static_cast<std::size_t>(last_row - first_row + 1);
+        const std::size_t count = columns * rows;
+        while (stage.metadata_offset_ < count && output.work_items < max_work_items) {
+          const TileKey key{
+              zoom,
+              static_cast<std::uint16_t>(first_column +
+                                         static_cast<int>(stage.metadata_offset_ % columns)),
+              static_cast<std::uint16_t>(first_row +
+                                         static_cast<int>(stage.metadata_offset_ / columns)),
+          };
+          const auto index = tile_identity_index(key);
+          if (index.has_value() && uniform_catalog_[*index].occupied_ &&
+              rectangles_intersect(tile_world_bounds(key), affected_world_bounds)) {
+            const bool keep = (scope.preserved_uniform_color.has_value() &&
+                               uniform_catalog_[*index].color_ == *scope.preserved_uniform_color) ||
+                              std::find(retained.begin(), retained.end(), key) != retained.end();
+            if (!keep) {
+              uniform_catalog_[*index].occupied_ = false;
+              stage.cross_zoom_invalidated_ += zoom != scope.priority_zoom ? 1U : 0U;
+              mutated = true;
+            }
+          }
+          ++stage.metadata_offset_;
+          ++output.work_items;
+        }
+        if (stage.metadata_offset_ == count) {
+          ++stage.metadata_zoom_;
+          stage.metadata_offset_ = 0;
+        }
+      }
+      if (stage.metadata_zoom_ == zooms.size()) {
+        stage.metadata_phase_ = InPlaceMetadataPhase::kRawSlots;
+      }
+      break;
+    }
+    case InPlaceMetadataPhase::kRawSlots: {
+      if (!stage.raw_staging_started_) {
+        staged_in_place_revision_ = revision;
+        staged_in_place_active_ = true;
+        stage.raw_staging_started_ = true;
+        mutated = true;
+      }
+      while (stage.raw_slot_ < slots_.size() && output.work_items < max_work_items) {
+        MaterializedSlotStorage& slot = slots_[stage.raw_slot_];
+        if (slot.occupied_) {
+          const bool affected =
+              rectangles_intersect(tile_world_bounds(slot.key_), affected_world_bounds);
+          const bool keep =
+              !affected || std::find(retained.begin(), retained.end(), slot.key_) != retained.end();
+          if (keep) {
+            slot.revision_ = revision;
+          } else {
+            stage.cross_zoom_invalidated_ += slot.key_.zoom != scope.priority_zoom ? 1U : 0U;
+            release_slot(stage.raw_slot_);
+          }
+          mutated = true;
+        }
+        ++stage.raw_slot_;
+        ++output.work_items;
+      }
+      if (stage.raw_slot_ == slots_.size()) {
+        stage.metadata_phase_ = InPlaceMetadataPhase::kRerenderDamage;
+      }
+      break;
+    }
+    case InPlaceMetadataPhase::kRerenderDamage: {
+#ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
+      if (rerender_ledger_ != nullptr) {
+        std::size_t marked = 0;
+        const bool complete = rerender_ledger_->mark_world_damage_slice(
+            affected_world_bounds, max_work_items, stage.rerender_plane_, stage.rerender_offset_,
+            marked);
+        output.work_items = marked;
+        mutated = marked != 0U;
+        if (!complete) {
+          break;
+        }
+      }
+#endif
+      stage.metadata_phase_ = InPlaceMetadataPhase::kOccupancy;
+      break;
+    }
+    case InPlaceMetadataPhase::kOccupancy: {
+      const int first_column = affected_world_bounds.x0 / kOccupancyCellWorldSize;
+      const int last_column = (affected_world_bounds.x1 - 1) / kOccupancyCellWorldSize;
+      const int first_row = affected_world_bounds.y0 / kOccupancyCellWorldSize;
+      const int last_row = (affected_world_bounds.y1 - 1) / kOccupancyCellWorldSize;
+      const std::size_t columns = static_cast<std::size_t>(last_column - first_column + 1);
+      const std::size_t rows = static_cast<std::size_t>(last_row - first_row + 1);
+      const std::size_t count = columns * rows;
+      while (stage.occupancy_offset_ < count && output.work_items < max_work_items) {
+        const int row = first_row + static_cast<int>(stage.occupancy_offset_ / columns);
+        const int column = first_column + static_cast<int>(stage.occupancy_offset_ % columns);
+        const std::size_t bit =
+            static_cast<std::size_t>(row) * kOccupancyColumns + static_cast<std::size_t>(column);
+        occupancy_bits_[bit / 8U] |= static_cast<std::uint8_t>(1U << (bit % 8U));
+        ++stage.occupancy_offset_;
+        ++output.work_items;
+      }
+      mutated = output.work_items != 0U;
+      if (stage.occupancy_offset_ == count) {
+        stage.metadata_phase_ = InPlaceMetadataPhase::kComplete;
+        output.status = OverviewStageStatus::kComplete;
+      }
+      break;
+    }
+    case InPlaceMetadataPhase::kComplete:
+      output.status = OverviewStageStatus::kComplete;
+      break;
+  }
+  if (mutated) {
+    ++composition_epoch_;
+  }
+  stage.expected_canvas_epoch_ = composition_epoch_;
+  return output;
+}
+
 bool MaterializedCanvas::commit_staged_in_place_revision(
     DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
     PixelRect affected_world_bounds, std::span<const TileKey> retained_keys,
     InPlaceOverviewStage& stage, const InPlaceCommitScope& scope) {
+#ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
+  const RerenderLedger* ledger = rerender_ledger_;
+#else
+  const RerenderLedger* ledger = nullptr;
+#endif
   if (!valid_incremental_revision(revision, overview_publication, affected_world_bounds, {}) ||
       !stage.complete() || stage.canvas_ != this || stage.revision_ != revision ||
       stage.bounds_ != overview_publication.bounds ||
       stage.affected_world_bounds_ != affected_world_bounds ||
       stage.source_ != overview_publication.pixels.data() ||
       stage.source_size_ != overview_publication.pixels.size() ||
-      stage.expected_canvas_epoch_ != composition_epoch_) {
+      stage.expected_canvas_epoch_ != composition_epoch_ || !stage.metadata_started_ ||
+      stage.retained_keys_ != retained_keys.data() ||
+      stage.retained_count_ != retained_keys.size() ||
+      stage.preserved_uniform_color_ != scope.preserved_uniform_color ||
+      stage.priority_zoom_ != scope.priority_zoom || stage.rerender_ledger_ != ledger ||
+      stage.metadata_phase_ != InPlaceMetadataPhase::kComplete || !stage.raw_staging_started_ ||
+      !staged_in_place_active_ || staged_in_place_revision_ != revision) {
     return false;
   }
   ++composition_epoch_;
-  finish_in_place_revision(revision, affected_world_bounds, retained_keys, scope);
+  current_revision_ = revision;
+  overview_revision_ = revision;
+  if (scope.cross_zoom_invalidated != nullptr) {
+    *scope.cross_zoom_invalidated += stage.cross_zoom_invalidated_;
+  }
+  staged_in_place_active_ = false;
+  stage.raw_staging_started_ = false;
   stage.cancel();
   return true;
+}
+
+void MaterializedCanvas::cancel_in_place_stage(InPlaceOverviewStage& stage) {
+  if (!stage.raw_staging_started_ || !staged_in_place_active_ ||
+      staged_in_place_revision_ != stage.revision_) {
+    return;
+  }
+  for (MaterializedSlotStorage& slot : slots_) {
+    if (slot.occupied_ && slot.revision_ == stage.revision_) {
+      slot.revision_ = current_revision_;
+    }
+  }
+  staged_in_place_active_ = false;
+  ++composition_epoch_;
+}
+
+bool MaterializedCanvas::raw_slot_is_current(const MaterializedSlotStorage& slot) const {
+  return slot.revision_ == current_revision_ ||
+         (staged_in_place_active_ && slot.revision_ == staged_in_place_revision_);
 }
 
 void MaterializedCanvas::invalidate_identity(TileKey key) {
@@ -1054,9 +1273,9 @@ std::optional<SourceSelection> MaterializedCanvas::lookup(TileKey key) const {
     return std::nullopt;
   }
   const std::optional<std::size_t> tile_index = find_tile(key);
-  if (tile_index.has_value() && slots_[*tile_index].revision_ == current_revision_) {
+  if (tile_index.has_value() && raw_slot_is_current(slots_[*tile_index])) {
     return SourceSelection{.kind = SourceKind::kTileSlot,
-                           .revision = slots_[*tile_index].revision_,
+                           .revision = current_revision_,
                            .quality = slots_[*tile_index].quality_};
   }
   if (const auto uniform = find_uniform(key); uniform.has_value()) {
@@ -1130,7 +1349,7 @@ bool MaterializedCanvas::has_complete_source(const ViewRequest& request) const {
       const TileKey key{request.zoom, static_cast<std::uint16_t>(column),
                         static_cast<std::uint16_t>(row)};
       const auto index = find_tile(key);
-      const bool raw_current = index.has_value() && slots_[*index].revision_ == current_revision_;
+      const bool raw_current = index.has_value() && raw_slot_is_current(slots_[*index]);
       if (!raw_current && !find_uniform(key).has_value()) {
         return false;
       }
@@ -1224,7 +1443,7 @@ void MaterializedCanvas::compose_tile(TileKey key, PixelRect band, CompositionCo
                          .y1 = std::min(band.y1, tile.y1)};
   const bool first_slice = bounds.y0 == std::max(view.y0, tile.y0);
   const auto raw = find_tile(key);
-  const bool raw_current = raw.has_value() && slots_[*raw].revision_ == current_revision_;
+  const bool raw_current = raw.has_value() && raw_slot_is_current(slots_[*raw]);
   if (raw_current) {
     if (first_slice) {
       touch(slots_[*raw]);
