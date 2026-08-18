@@ -2,9 +2,12 @@
 
 ## Verdict
 
-GO. Settled analytic AA now clears and composites only the alpha spans touched
-by the current operation. Exact output, painter order, self-overlap union,
-erasers, resumability, and the existing settle/export workspace are unchanged.
+**HOST GO; PHYSICAL NOT ACCEPTED.** Settled analytic AA now clears and
+composites only the alpha spans touched by the current operation. Exact output,
+painter order, self-overlap union, erasers, resumability, and the existing
+settle/export workspace are unchanged. The host treatment is a measured exact
+optimization, but the first product capture did not meet the whole-view
+latency target at 50–400%.
 
 ## Reproduction
 
@@ -68,5 +71,32 @@ workspace was added.
 - Focused sliced rendering: 8/8 tests, 197 assertions.
 - Focused world export: 3/3 tests, 83 assertions.
 
-Physical device timing remains the final acceptance gate because the saved
-alpha-plane traffic is PSRAM traffic on ESP32-S3.
+## Initial product result
+
+The normal-product captures used revision 156 and the centered zoom sequence.
+The telemetry does not confirm the presumed 109-operation document identity.
+They recorded:
+
+| Zoom | Origin | Tiles | Slices | Total | Maximum slice | Work | Failures |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 25% | overview | 42 | 1,607 | 396.111 ms | 2.308 ms | 806,067 | 0 |
+| 50% | 184,262 | 47 | 2,494 | 603.894 ms | 2.341 ms | 1,253,784 | 0 |
+| 100% | 552,710 | 51 | 3,895 | 902.751 ms | 2.133 ms | 1,957,497 | 0 |
+| 200% | 1288,1606 | 48 | 4,540 | 1,026.000 ms | 2.226 ms | 2,281,122 | 0 |
+| 400% | 2760,3398 | 48 | 3,584 | 788.944 ms | 2.065 ms | 1,792,223 | 0 |
+
+Every captured slice stayed well below the 15 ms interaction guard, and every
+render completed with zero transient and permanent failures. The 25% result
+passes the 500 ms bound at 396.111 ms; 50–400% all exceed it. The review’s
+older 152.945 ms 25% result is not like-for-like because this capture only
+confirms revision 156, not the same document identity. There is no same-tree
+physical full-alpha baseline, so these captures do not establish the device
+speedup attributable to local spans.
+
+During subsequent 400% panning, the owner saw transient blue dots. This
+receipt records the observation only; the capture does not identify its cause
+or connect it to the local-span treatment.
+
+Physical status remains yellow. Acceptance needs a same-tree device A/B, or a
+further treatment that brings the measured 50–400% whole-view latency within
+the requested bound while preserving the green slice and correctness results.

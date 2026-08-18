@@ -17,10 +17,11 @@ the accepted cold gate. The follow-up series `2191d6b..57f9910` adds the
 cooperative work required by F9, F19, and F28; their automated hardware battery
 and the owner’s final glass test are also green. A final host round accepts
 F10’s sparse spatial history replay, F13’s all-zoom local-span AA work, and
-F21’s direct retained-key markers. F13 still needs a physical timing run. F24
-is physically accepted with a green 11-case cold A/B and an all-ones full gate.
-Settled AA therefore remains the pre-existing yellow hardware receipt only for
-F13’s outstanding device run.
+F21’s direct retained-key markers. F13’s product timing kept every slice below
+2.341 ms with zero failures. Whole-view settle passed at 25% in 396.111 ms but
+took 603.894–1,026.000 ms at 50–400%. F13 is therefore a host-accepted
+optimization but is not physically accepted. F24 is physically accepted with
+a green 11-case cold A/B and an all-ones full gate. Settled AA remains yellow.
 
 ## Measurement baseline
 
@@ -215,7 +216,7 @@ its long-stroke win does not generalize and its larger form spends substantial
 memory. The exact tiled implementation remained while a different treatment
 was measured.
 
-### F13 all-zoom local-span AA — host accepted, physical pending
+### F13 all-zoom local-span AA — host accepted, physical not accepted
 
 The accepted host treatment tracks the x/y alpha span touched by each
 operation and clears/composites only that span. It keeps painter order,
@@ -227,9 +228,28 @@ host wall improves 17.6%, 13.0%, 13.8%, 13.1%, and 10.7% at 25%, 50%, 100%,
 
 All 25 frozen viewport checksums match. Alpha clear work falls 96.9% and
 composite work 94.3%; final full-viewport fold and publication remain
-unchanged. This is host acceptance only because the removed plane traffic is
-PSRAM traffic on ESP32-S3. Physical timing is still required. Full evidence is
-in [`SETTLED_AA_ALL_ZOOM_2026_08_18.md`](../SETTLED_AA_ALL_ZOOM_2026_08_18.md).
+unchanged. The host result is accepted; the physical result below is not. Full
+evidence is in
+[`SETTLED_AA_ALL_ZOOM_2026_08_18.md`](../SETTLED_AA_ALL_ZOOM_2026_08_18.md).
+
+The normal-product captures used revision 156 and the centered zoom sequence.
+The telemetry does not confirm the presumed 109-operation document identity:
+
+| Zoom | Tiles | Total settle | Maximum slice | Failures |
+|---:|---:|---:|---:|---:|
+| 25% | 42 | 396.111 ms | 2.308 ms | 0 |
+| 50% | 47 | 603.894 ms | 2.341 ms | 0 |
+| 100% | 51 | 902.751 ms | 2.133 ms | 0 |
+| 200% | 48 | 1,026.000 ms | 2.226 ms | 0 |
+| 400% | 48 | 788.944 ms | 2.065 ms | 0 |
+
+The bounded-slice result is green. The 25% total passes the 500 ms bound, but
+50–400% all exceed it. The review’s older 152.945 ms 25% result is not
+like-for-like because this capture confirms revision 156, not the same document
+identity. There is no same-tree device full-alpha baseline, so the run does not
+establish a physical local-span speedup. During later 400% panning the owner
+saw transient blue dots; this receipt does not assign a cause or connect them
+to F13.
 
 ### F20 autosave caller latency — accepted treatment
 
@@ -397,8 +417,9 @@ passed 2 cases / 793 assertions under all three configurations. Product
 firmware built at `0x103b70`, gate firmware at `0x130e50`, and Raster V1 at
 `0xe7a70`. The release cold scorecard and 29-step hairline-pan reproduction
 were exact. The final physical run returned the all-ones automated verdict
-described above. The owner’s follow-up glass test is green; SSAA remains yellow
-because the new F13 treatment has not run on the device.
+described above. The owner’s follow-up glass test is green for the earlier
+round. F13 later ran on product; 25% completed in 396.111 ms, but its 50–400%
+whole-view totals exceeded 500 ms, so settled AA remains yellow.
 
 The final performance round preserves exact output in all dedicated oracles.
 F10’s release authority suite passes 79/79 tests and 25,609
@@ -410,9 +431,11 @@ physical gate returns all ones.
 
 ## Remaining work
 
-1. F13 local-span AA needs the full physical A/B at every zoom and on the
-   recorded corpora. Its unchanged correctness, workspace, and publication
-   contracts are host-proven; device timing is the remaining acceptance gate.
+1. F13 local-span AA needs a same-tree device A/B at every zoom on the recorded
+   corpora. Its unchanged correctness, workspace, and publication contracts
+   are host-proven, its 2.341 ms worst product slice is green, and 25% passes
+   at 396.111 ms. The captured 603.894–1,026.000 ms totals at 50–400% are not
+   accepted as the all-zoom performance finish line.
 2. F10’s sparse prefix discovery and F21’s retained membership scans are
    closed. Dense history intentionally keeps full replay, and full-pool
    eviction intentionally keeps exact LRU. Revisit only after a measured dense
@@ -423,8 +446,10 @@ physical gate returns all ones.
    for this round.
 4. F29 perceptual AA ordering is deferred. It changes when refined pixels
    appear, not total AA work, and has no current glass failure.
-5. Settled AA stays yellow until F13’s physical run and a glass check of that
-   exact device image.
+5. Settled AA stays yellow. F13 passes the whole-view bound at 25% but exceeds
+   it at 50–400%. Transient blue dots seen during later 400% panning are
+   recorded without attribution and need a separate reproduction before any
+   correctness conclusion.
 6. Boundedness still has explicit atomic tails. A masked resident-tile row can
     charge roughly 12,676 raster work pixels in the static worst case, although
     the physical 50–400% corpora stayed below the guard. A settled spatial query
