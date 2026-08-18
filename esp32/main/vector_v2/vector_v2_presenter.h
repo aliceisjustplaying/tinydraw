@@ -88,6 +88,9 @@ struct LivePresentationTiming {
   std::size_t fallback_pixels = 0;
   std::size_t resident_tiles = 0;
   std::size_t fallback_tiles = 0;
+  // Exact logical panel pixels submitted by this presentation. Transport
+  // strip subdivision does not change this area.
+  std::size_t submitted_pixels = 0;
   std::uint32_t pushes = 0;
   std::int64_t tear_wait_us = 0;
   std::uint32_t tear_edge_isr_to_resume_us = 0;
