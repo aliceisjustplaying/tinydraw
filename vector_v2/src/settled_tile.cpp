@@ -336,7 +336,18 @@ void SettledRenderCursor::raster_chord_row() {
   const float sample_y = static_cast<float>(y) + 0.5F;
   std::uint8_t* row = workspace_.operation_alpha.data() +
                       static_cast<std::size_t>(y) * static_cast<std::size_t>(width_);
+  const std::uint8_t* accumulated_row =
+      workspace_.accumulated_alpha.data() +
+      static_cast<std::size_t>(y) * static_cast<std::size_t>(width_);
   for (int x = chord_x0_; x < chord_x1_; ++x) {
+    // Newest-first compositing: a saturated destination pixel can receive
+    // no further contribution, so its coverage math is skipped exactly
+    // (operation_alpha stays 0 and composite contributes 0 either way).
+    // Re-opened 2026-08-18 under the deterministic same-corpus settle gate;
+    // the earlier rejection compared unlike corpora.
+    if (accumulated_row[x] == 255U) {
+      continue;
+    }
     const float sample_x = static_cast<float>(x) + 0.5F;
     const float ap_x = sample_x - chord_ax_;
     const float ap_y = sample_y - chord_ay_;
