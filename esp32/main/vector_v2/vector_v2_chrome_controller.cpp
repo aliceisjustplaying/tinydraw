@@ -317,12 +317,40 @@ bool VectorV2ChromeController::apply(vector_v2::ChromeAction action, Point point
       // hold-back), showing the busy hourglass only if it runs long.
       history_damage_ =
           vector_v2::operation_level_bounds(change->affected_world_bounds, presenter_.zoom());
-      // The hourglass appears synchronously with the tap (owner direction);
-      // the background hold erases it with the exact swap.
-      chrome_.history_busy = true;
-      const vector_v2::ChromeRect busy = vector_v2::chrome_history_busy_region();
-      static_cast<void>(presenter_.present_frame_region({busy.x0, busy.y0, busy.x1, busy.y1},
-                                                        chrome_, now_us()));
+      // The hourglass appears synchronously with the tap, but only when the
+      // arriving state actually needs a producer rebuild in the visible
+      // viewport; preserved swaps and 25% overview moves present
+      // near-instantly and stay quiet (owner direction).
+      bool rebuild_expected = false;
+      if (presenter_.zoom() != vector_v2::ZoomLevel::k25Percent) {
+        const vector_v2::PixelRect visible{
+            presenter_.level_x(), presenter_.level_y(),
+            presenter_.level_x() + vector_v2::kOverviewWidth,
+            presenter_.level_y() + vector_v2::kOverviewHeight};
+        const vector_v2::PixelRect probe{std::max(history_damage_->x0, visible.x0),
+                                         std::max(history_damage_->y0, visible.y0),
+                                         std::min(history_damage_->x1, visible.x1),
+                                         std::min(history_damage_->y1, visible.y1)};
+        for (int row = probe.y0 / vector_v2::kTileHeight;
+             !rebuild_expected && row * vector_v2::kTileHeight < probe.y1; ++row) {
+          for (int column = probe.x0 / vector_v2::kTileWidth;
+               column * vector_v2::kTileWidth < probe.x1; ++column) {
+            const auto source = canvas_.lookup({presenter_.zoom(),
+                                                static_cast<std::uint16_t>(column),
+                                                static_cast<std::uint16_t>(row)});
+            if (!source.has_value() || source->kind == vector_v2::SourceKind::kOverview) {
+              rebuild_expected = true;
+              break;
+            }
+          }
+        }
+      }
+      if (rebuild_expected) {
+        chrome_.history_busy = true;
+        const vector_v2::ChromeRect busy = vector_v2::chrome_history_busy_region();
+        static_cast<void>(presenter_.present_frame_region({busy.x0, busy.y0, busy.x1, busy.y1},
+                                                          chrome_, now_us()));
+      }
       const auto dock_timing = present_history_controls(presenter_, chrome_, now_us());
       print_presentation(undo ? "undo-dock" : "redo-dock", presenter_, dock_timing);
       return dock_timing.passed;
