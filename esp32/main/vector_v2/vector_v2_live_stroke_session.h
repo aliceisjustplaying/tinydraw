@@ -81,11 +81,6 @@ class LiveStrokeSession {
   [[nodiscard]] LiveStrokeFinishResult finish(std::uint32_t event_us,
                                               const vector_v2::ChromeState& chrome);
 
-  // The gate uses the same view selection as the session when compressing
-  // the product's post-lift idle drain into a deterministic loop.
-  [[nodiscard]] std::optional<vector_v2::IncrementalAppendResult> absorb_one(
-      std::int64_t budget_us);
-
  private:
   [[nodiscard]] std::optional<vector_v2::ViewRequest> priority_view() const;
   [[nodiscard]] std::optional<vector_v2::ChainedOperationStatus> commit_ready_chunk();

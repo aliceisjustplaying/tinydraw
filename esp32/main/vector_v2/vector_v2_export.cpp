@@ -81,10 +81,6 @@ VectorV2Export::VectorV2Export()
 
 bool VectorV2Export::ready() const { return store_.ready(); }
 
-std::size_t VectorV2Export::file_size() const { return store_.size(); }
-
-std::size_t VectorV2Export::png_size() const { return store_.png_size(); }
-
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
 bool VectorV2Export::read_file(std::size_t offset, std::span<std::uint8_t> output) const {
   return store_.read(offset, output);
