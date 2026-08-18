@@ -309,6 +309,32 @@ void SettledRenderCursor::advance_operation_scan(WorkBudget& budget) {
     return;
   }
   ++stats_.operations_intersecting;
+  // Operation-level saturation skip: if every window row this operation
+  // could touch is already destination-saturated, no pixel of it can
+  // contribute (the per-pixel skip would elide all of them), so curve
+  // preparation, raster, and composite are skipped wholesale. The row
+  // range is conservative (outward rounding plus a two-row margin for the
+  // alpha fringe), which only makes skipping harder. Leftover
+  // operation-alpha dirt stays tracked in operation_min/max and is
+  // cleared by the next processed operation.
+  if (fully_saturated_rows_ != 0) {
+    const int percent = zoom_percent(zoom_);
+    int op_y0 = stored->world_bounds.y0 * percent / 100 - window_bounds_.y0 - 2;
+    int op_y1 = (stored->world_bounds.y1 * percent + 99) / 100 - window_bounds_.y0 + 2;
+    op_y0 = std::max(op_y0, 0);
+    op_y1 = std::min(op_y1, height_);
+    bool all_saturated = true;
+    for (int y = op_y0; y < op_y1; ++y) {
+      if (row_saturated_[static_cast<std::size_t>(y)] != static_cast<std::uint8_t>(width_)) {
+        all_saturated = false;
+        break;
+      }
+    }
+    if (all_saturated) {
+      ++replay_index_;
+      return;
+    }
+  }
   operation_tool_ = stored->tool;
   operation_color_ = stored->color;
   operation_samples_ = stored->samples;
@@ -494,6 +520,24 @@ void SettledRenderCursor::advance_chord_raster(WorkBudget& budget) {
   // (real work, unlike the rejected 2026-08-18 work-charge recalibration,
   // which repriced unchanged traversal); empty rows charge one pixel for
   // the span computation.
+  // Row-level saturation skip: a fully saturated destination row cannot
+  // receive any contribution; advance without traversal.
+  if (fully_saturated_rows_ != 0 && row_saturated_[static_cast<std::size_t>(chord_next_y_)] ==
+                                        static_cast<std::uint8_t>(width_)) {
+    if (budget.stop_before(1U)) {
+      budget.pause();
+      return;
+    }
+    budget.work += 1U;
+    ++chord_next_y_;
+    if (chord_next_y_ == chord_y1_) {
+      ++step_;
+      chord_next_y_ = 0;
+      chord_y1_ = 0;
+    }
+    return;
+  }
+
   const SettleRowSpan span =
       chord_narrowed_ ? settle_conservative_row_span(span_table_, chord_x0_, chord_x1_,
                                                      static_cast<float>(chord_next_y_) + 0.5F)
@@ -516,9 +560,10 @@ void SettledRenderCursor::advance_chord_raster(WorkBudget& budget) {
   }
 }
 
-void SettledRenderCursor::composite_pixels(std::size_t first_at, std::size_t count,
+void SettledRenderCursor::composite_pixels(std::size_t row, std::size_t first_at, std::size_t count,
                                            std::uint16_t red, std::uint16_t green,
                                            std::uint16_t blue) {
+  std::uint32_t newly_saturated = 0;
   for (std::size_t offset = 0; offset < count; ++offset) {
     const std::size_t at = first_at + offset;
     const std::uint8_t alpha = workspace_.operation_alpha[at];
@@ -540,8 +585,15 @@ void SettledRenderCursor::composite_pixels(std::size_t first_at, std::size_t cou
         static_cast<std::uint8_t>(std::min<std::uint32_t>(255U, accumulated + contribution));
     if (next_accumulated == 255U && accumulated != 255U) {
       ++saturated_pixels_;
+      ++newly_saturated;
     }
     workspace_.accumulated_alpha[at] = next_accumulated;
+  }
+  if (newly_saturated != 0U) {
+    row_saturated_[row] = static_cast<std::uint8_t>(row_saturated_[row] + newly_saturated);
+    if (row_saturated_[row] == static_cast<std::uint8_t>(width_)) {
+      ++fully_saturated_rows_;
+    }
   }
 }
 
@@ -564,7 +616,7 @@ void SettledRenderCursor::advance_operation_composite(WorkBudget& budget) {
       return;
     }
     const std::size_t first_at = row * static_cast<std::size_t>(width_) + composite_x_;
-    composite_pixels(first_at, count, color.red, color.green, color.blue);
+    composite_pixels(row, first_at, count, color.red, color.green, color.blue);
     composite_x_ += count;
     stats_.composite_pixels += count;
     budget.work += count;

@@ -147,7 +147,7 @@ class SettledRenderCursor {
   void prepare_chord(const PreparedCurveStep& chord);
   void raster_chord_row(int span_first, int span_last);
   void advance_operation_composite(WorkBudget& budget);
-  void composite_pixels(std::size_t first_at, std::size_t count, std::uint16_t red,
+  void composite_pixels(std::size_t row, std::size_t first_at, std::size_t count, std::uint16_t red,
                         std::uint16_t green, std::uint16_t blue);
   void advance_final_fold(WorkBudget& budget);
 
@@ -194,6 +194,19 @@ class SettledRenderCursor {
   SettledChordSpanTable span_table_{};
   bool chord_narrowed_ = false;
   bool narrowing_disabled_ = false;
+  // Saturation aggregation (final-round AA, dense-document treatment):
+  // per-row count of destination-saturated pixels, maintained on the
+  // existing saturation transition in composite_pixels. A fully saturated
+  // row is skipped without traversal, and an operation whose whole
+  // window row-range is saturated is skipped before curve preparation —
+  // the row/operation aggregation of the accepted per-pixel
+  // saturated-destination skip (saturation is monotone within a render).
+  std::array<std::uint8_t, kTileHeight> row_saturated_{};
+  // Count of fully saturated rows; both aggregation checks are gated on
+  // it being nonzero, so windows that never complete a row (low zoom,
+  // partial coverage) pay one compare instead of per-op row scans — the
+  // first device round measured +2.6–4.8% at 25–100% without this gate.
+  int fully_saturated_rows_ = 0;
   std::array<std::uint8_t, kTileHeight> operation_min_x_{};
   std::array<std::uint8_t, kTileHeight> operation_max_x_{};
   std::uint8_t operation_min_y_ = 0;
