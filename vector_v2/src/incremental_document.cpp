@@ -82,9 +82,9 @@ bool paint_operation_into_tile(const OperationAppend& operation, const InPlaceTi
 
 bool valid_in_place_workspace(const OperationLog& log, const MaterializedCanvas& canvas,
                               const InPlaceAppendWorkspace& workspace) {
-  const std::array<std::span<const std::byte>, 3> workspaces{
+  const std::array<std::span<const std::byte>, 4> workspaces{
       std::as_bytes(workspace.overview_scratch), std::as_bytes(workspace.affected_keys),
-      std::as_bytes(workspace.tile_mask)};
+      std::as_bytes(workspace.tile_mask), workspace.operation_chord_plans};
   bool workspace_invalid = workspace.tile_mask.size() < kInPlaceTileMaskBytes;
   for (std::size_t left = 0; left < workspaces.size(); ++left) {
     workspace_invalid = workspace_invalid || !canvas.accepts_external_workspace(workspaces[left]) ||
@@ -540,6 +540,432 @@ std::optional<IncrementalAppendResult> absorb_pending_operation(
   return run_in_place_phases(canvas, stored->identity, operation, stored->world_bounds, workspace,
                              priority_view, budget, prepare_started_us, deadline_us,
                              /*retain_all_zooms=*/true);
+}
+
+PendingAbsorptionSliceResult absorb_pending_operation_slice(
+    const OperationLog& log, MaterializedCanvas& canvas, const InPlaceAppendWorkspace& workspace,
+    PendingOperationAbsorption& state, std::optional<ViewRequest> priority_view,
+    CooperativeWorkLimit limit, InPlaceRetentionBudget retention) {
+  PendingAbsorptionSliceResult output{};
+  const auto reset = [&state]() { state = PendingOperationAbsorption{}; };
+  const auto stamp = [&state]() {
+    return state.retention_.now_us != nullptr ? state.retention_.now_us() : 0;
+  };
+  const auto checkpoint = [&]() {
+    ++output.checkpoints;
+    return limit.yield_requested();
+  };
+  const auto same_span = [](auto left, auto right) {
+    return left.data() == right.data() && left.size() == right.size();
+  };
+  if (limit.raster_work_px == 0U) {
+    output.status = PendingAbsorptionStatus::kError;
+    return output;
+  }
+  if (state.active()) {
+    if (state.log_ != &log || state.canvas_ != &canvas ||
+        !same_span(state.workspace_.overview_scratch, workspace.overview_scratch) ||
+        !same_span(state.workspace_.affected_keys, workspace.affected_keys) ||
+        !same_span(state.workspace_.tile_mask, workspace.tile_mask) ||
+        !same_span(state.workspace_.operation_chord_plans, workspace.operation_chord_plans) ||
+        state.priority_view_ != priority_view || state.retention_.now_us != retention.now_us ||
+        state.retention_.budget_us != retention.budget_us) {
+      // Keep the continuation live: the owner can resume with its original
+      // transaction after rejecting an accidental mismatched call.
+      output.status = PendingAbsorptionStatus::kError;
+      return output;
+    }
+  } else {
+    const std::int64_t prepare_started_us = retention.now_us != nullptr ? retention.now_us() : 0;
+    const bool chord_storage_ready =
+        workspace.operation_chord_plans.size() >= kOperationChordStorageBytes &&
+        reinterpret_cast<std::uintptr_t>(workspace.operation_chord_plans.data()) %
+                kPreparedOperationChordAlign ==
+            0U;
+    if (!canvas.ready() || !log.ready() || !valid_in_place_workspace(log, canvas, workspace) ||
+        !chord_storage_ready || canvas.overview_pixels().size() != kOverviewPixels ||
+        !valid_priority_view(priority_view)) {
+      output.status = PendingAbsorptionStatus::kError;
+      return output;
+    }
+    const auto range =
+        log.replay_range(log.epoch(), canvas.current_revision(), log.current_revision());
+    if (!range.has_value()) {
+      output.status = PendingAbsorptionStatus::kError;
+      return output;
+    }
+    if (range->operation_count == 0U) {
+      output.status = PendingAbsorptionStatus::kIdle;
+      return output;
+    }
+    const auto stored = log.operation(range->first_operation);
+    if (!stored.has_value()) {
+      output.status = PendingAbsorptionStatus::kError;
+      return output;
+    }
+    state.log_ = &log;
+    state.canvas_ = &canvas;
+    state.operation_ = *stored;
+    state.workspace_ = workspace;
+    state.priority_view_ = priority_view;
+    state.retention_ = retention;
+    state.deadline_us_ = retention_deadline_us(retention);
+    state.overview_bounds_ = overview_bounds_for_world(stored->world_bounds);
+    const int width = state.overview_bounds_.x1 - state.overview_bounds_.x0;
+    const int height = state.overview_bounds_.y1 - state.overview_bounds_.y0;
+    const std::size_t pixel_count =
+        static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+    if (width <= 0 || height <= 0 || workspace.overview_scratch.size() < pixel_count) {
+      reset();
+      output.status = PendingAbsorptionStatus::kError;
+      return output;
+    }
+    state.overview_publication_ = {.bounds = state.overview_bounds_,
+                                   .pixels = workspace.overview_scratch.first(pixel_count)};
+    state.phases_.prepare_us = stamp() - prepare_started_us;
+    state.phase_ = PendingOperationAbsorption::Phase::kCopyOverview;
+  }
+
+  const OperationAppend operation{.tool = state.operation_.tool,
+                                  .color = state.operation_.color,
+                                  .samples = state.operation_.samples};
+  const auto begin_raster = [&](const RasterSurface& surface, bool masked) {
+    state.next_endpoint_ = operation.samples.size() - 1U;
+    state.batch_ready_ = false;
+    if (masked) {
+      const std::size_t mask_bytes = (surface.pixels.size() + 7U) / 8U;
+      if (state.workspace_.tile_mask.size() < mask_bytes) {
+        return false;
+      }
+      std::fill_n(state.workspace_.tile_mask.begin(), mask_bytes, std::uint8_t{0});
+    }
+    return true;
+  };
+  // Returns -1 on invalid replay state, 0 after one bounded quantum, and 1
+  // once every chord batch for this surface is complete.
+  const auto raster_quantum = [&](const RasterSurface& surface, bool masked) {
+    while (!state.batch_ready_) {
+      const auto prepared = prepare_operation_chord_batch(
+          operation.samples, state.next_endpoint_, surface.zoom, surface.level_bounds,
+          state.workspace_.operation_chord_plans.first(kOperationChordStorageBytes));
+      if (!prepared.has_value()) {
+        return -1;
+      }
+      state.chord_batch_ = *prepared;
+      state.next_endpoint_ = prepared->next_endpoint;
+      if (prepared->chord_count == 0U) {
+        if (state.next_endpoint_ == 0U) {
+          return 1;
+        }
+        continue;
+      }
+      state.next_raster_row_ = prepared->clipped_bounds.y0;
+      state.batch_ready_ = true;
+    }
+    OperationSweepSlice slice{};
+    const bool okay =
+        masked
+            ? apply_masked_operation_chord_rows(
+                  operation.tool, operation.color, state.workspace_.operation_chord_plans,
+                  state.chord_batch_, state.next_raster_row_, limit.raster_work_px, surface,
+                  state.workspace_.tile_mask, nullptr, slice)
+            : apply_operation_chord_rows(
+                  operation.tool, operation.color, state.workspace_.operation_chord_plans,
+                  state.chord_batch_, state.next_raster_row_, limit.raster_work_px, surface, slice);
+    if (!okay) {
+      return -1;
+    }
+    state.next_raster_row_ = slice.next_row;
+    if (slice.next_row >= state.chord_batch_.clipped_bounds.y1) {
+      state.batch_ready_ = false;
+      return state.next_endpoint_ == 0U ? 1 : 0;
+    }
+    return 0;
+  };
+  const auto over_retention_budget = [&]() {
+    return state.retention_.now_us != nullptr && stamp() >= state.deadline_us_;
+  };
+  const auto start_tile = [&](const InPlaceTileEdit& edit, TileKey key) {
+    state.tile_edit_ = edit;
+    state.tile_key_ = key;
+    state.painting_tile_ = true;
+    const RasterSurface surface{
+        .zoom = edit.key.zoom,
+        .level_bounds = edit.bounds,
+        .pixels = edit.pixels.first(static_cast<std::size_t>(edit.bounds.y1 - edit.bounds.y0 - 1) *
+                                        kTileWidth +
+                                    static_cast<std::size_t>(edit.bounds.x1 - edit.bounds.x0)),
+        .stride = kTileWidth,
+    };
+    return begin_raster(surface, true);
+  };
+  const auto tile_surface = [&]() {
+    const InPlaceTileEdit& edit = state.tile_edit_;
+    return RasterSurface{
+        .zoom = edit.key.zoom,
+        .level_bounds = edit.bounds,
+        .pixels = edit.pixels.first(static_cast<std::size_t>(edit.bounds.y1 - edit.bounds.y0 - 1) *
+                                        kTileWidth +
+                                    static_cast<std::size_t>(edit.bounds.x1 - edit.bounds.x0)),
+        .stride = kTileWidth,
+    };
+  };
+  const std::uint16_t painted_color =
+      operation.tool == OperationTool::kEraser ? 0xFFFFU : operation.color;
+
+  while (true) {
+    if (checkpoint()) {
+      output.status = PendingAbsorptionStatus::kInProgress;
+      return output;
+    }
+    const std::int64_t unit_started_us = stamp();
+    switch (state.phase_) {
+      case PendingOperationAbsorption::Phase::kIdle:
+        output.status = PendingAbsorptionStatus::kError;
+        return output;
+      case PendingOperationAbsorption::Phase::kCopyOverview: {
+        const int width = state.overview_bounds_.x1 - state.overview_bounds_.x0;
+        const int height = state.overview_bounds_.y1 - state.overview_bounds_.y0;
+        const auto source = canvas.overview_pixels().begin() +
+                            static_cast<std::ptrdiff_t>(state.overview_bounds_.y0 +
+                                                        static_cast<int>(state.copy_row_)) *
+                                kOverviewWidth +
+                            state.overview_bounds_.x0;
+        const auto destination = state.workspace_.overview_scratch.begin() +
+                                 static_cast<std::ptrdiff_t>(state.copy_row_) * width;
+        std::copy_n(source, width, destination);
+        ++state.copy_row_;
+        if (state.copy_row_ == static_cast<std::size_t>(height)) {
+          const RasterSurface surface{.zoom = ZoomLevel::k25Percent,
+                                      .level_bounds = state.overview_bounds_,
+                                      .pixels = state.workspace_.overview_scratch.first(
+                                          state.overview_publication_.pixels.size()),
+                                      .stride = width};
+          if (!begin_raster(surface, false)) {
+            reset();
+            output.status = PendingAbsorptionStatus::kError;
+            return output;
+          }
+          state.phase_ = PendingOperationAbsorption::Phase::kRasterOverview;
+        }
+        state.phases_.overview_us += stamp() - unit_started_us;
+        break;
+      }
+      case PendingOperationAbsorption::Phase::kRasterOverview: {
+        const RasterSurface surface{
+            .zoom = ZoomLevel::k25Percent,
+            .level_bounds = state.overview_bounds_,
+            .pixels =
+                state.workspace_.overview_scratch.first(state.overview_publication_.pixels.size()),
+            .stride = state.overview_bounds_.x1 - state.overview_bounds_.x0};
+        const int replayed = raster_quantum(surface, false);
+        state.phases_.overview_us += stamp() - unit_started_us;
+        if (replayed < 0) {
+          reset();
+          output.status = PendingAbsorptionStatus::kError;
+          return output;
+        }
+        if (replayed > 0) {
+          state.phase_ = PendingOperationAbsorption::Phase::kEnumerate;
+        }
+        break;
+      }
+      case PendingOperationAbsorption::Phase::kEnumerate: {
+        const auto resident_count = canvas.materialized_tiles_intersecting(
+            state.operation_.world_bounds, state.workspace_.affected_keys, state.priority_view_,
+            false);
+        if (!resident_count.has_value() ||
+            !canvas.can_edit_in_place_revision(state.operation_.identity.revision,
+                                               state.overview_publication_,
+                                               state.operation_.world_bounds)) {
+          reset();
+          output.status = PendingAbsorptionStatus::kError;
+          return output;
+        }
+        state.affected_count_ = *resident_count;
+        const auto extended = canvas.append_recent_view_uniform_keys(
+            state.operation_.world_bounds,
+            state.priority_view_.has_value() ? std::optional{state.priority_view_->zoom}
+                                             : std::nullopt,
+            state.workspace_.affected_keys, state.affected_count_);
+        if (extended.has_value()) {
+          state.affected_count_ = *extended;
+        }
+        state.scan_index_ = 0U;
+        state.phases_.enumerate_us += stamp() - unit_started_us;
+        state.phase_ = PendingOperationAbsorption::Phase::kUniform;
+        break;
+      }
+      case PendingOperationAbsorption::Phase::kUniform: {
+        auto affected = state.workspace_.affected_keys.first(state.affected_count_);
+        if (state.painting_tile_) {
+          const int replayed = raster_quantum(tile_surface(), true);
+          if (replayed < 0) {
+            canvas.invalidate_identity(state.tile_key_);
+            if (in_priority_view(state.tile_key_, state.priority_view_)) {
+              ++state.drops_.visible_uniform_paint_fail;
+            } else {
+              ++state.drops_.offscreen_skipped;
+            }
+            state.painting_tile_ = false;
+            ++state.scan_index_;
+          } else if (replayed > 0) {
+            std::swap(affected[state.scan_index_], affected[state.retained_count_++]);
+            state.painting_tile_ = false;
+            ++state.scan_index_;
+          }
+        } else if (state.scan_index_ == state.affected_count_) {
+          state.scan_index_ = state.retained_count_;
+          state.phase_ = PendingOperationAbsorption::Phase::kVisibleRaw;
+        } else {
+          const TileKey key = affected[state.scan_index_];
+          const auto color = canvas.uniform_color(key);
+          if (!color.has_value()) {
+            ++state.scan_index_;
+          } else if (*color == painted_color) {
+            std::swap(affected[state.scan_index_++], affected[state.retained_count_++]);
+          } else {
+            const bool visible = in_priority_view(key, state.priority_view_);
+            const bool recent = in_recent_view(canvas, key);
+            if (visible || (recent && !over_retention_budget())) {
+              const auto edit = canvas.materialize_uniform_as_raw(key);
+              if (!edit.has_value()) {
+                if (visible) {
+                  ++state.drops_.visible_uniform_no_slot;
+                } else {
+                  ++state.drops_.offscreen_skipped;
+                }
+                ++state.scan_index_;
+              } else if (!start_tile(*edit, key)) {
+                canvas.invalidate_identity(key);
+                ++state.scan_index_;
+              }
+            } else {
+              if (state.priority_view_.has_value() && key.zoom == state.priority_view_->zoom) {
+                ++state.drops_.offscreen_skipped;
+              }
+              ++state.scan_index_;
+            }
+          }
+        }
+        state.phases_.uniform_retain_us += stamp() - unit_started_us;
+        break;
+      }
+      case PendingOperationAbsorption::Phase::kVisibleRaw: {
+        auto affected = state.workspace_.affected_keys.first(state.affected_count_);
+        if (state.painting_tile_) {
+          const int replayed = raster_quantum(tile_surface(), true);
+          if (replayed < 0) {
+            canvas.invalidate_identity(state.tile_key_);
+            ++state.drops_.visible_raw_paint_fail;
+            state.painting_tile_ = false;
+            ++state.scan_index_;
+          } else if (replayed > 0) {
+            std::swap(affected[state.scan_index_], affected[state.retained_count_++]);
+            state.painting_tile_ = false;
+            ++state.scan_index_;
+          }
+        } else if (state.scan_index_ == state.affected_count_) {
+          state.scan_index_ = state.retained_count_;
+          state.phase_ = PendingOperationAbsorption::Phase::kOffscreenRaw;
+        } else {
+          const TileKey key = affected[state.scan_index_];
+          if (!in_priority_view(key, state.priority_view_)) {
+            ++state.scan_index_;
+          } else {
+            const auto edit = canvas.edit_resident_tile(key);
+            if (!edit.has_value()) {
+              ++state.drops_.visible_raw_edit_fail;
+              ++state.scan_index_;
+            } else if (!start_tile(*edit, key)) {
+              canvas.invalidate_identity(key);
+              ++state.drops_.visible_raw_paint_fail;
+              ++state.scan_index_;
+            }
+          }
+        }
+        state.phases_.raw_retain_us += stamp() - unit_started_us;
+        break;
+      }
+      case PendingOperationAbsorption::Phase::kOffscreenRaw: {
+        auto affected = state.workspace_.affected_keys.first(state.affected_count_);
+        if (state.painting_tile_) {
+          const int replayed = raster_quantum(tile_surface(), true);
+          if (replayed < 0) {
+            canvas.invalidate_identity(state.tile_key_);
+            ++state.drops_.offscreen_skipped;
+            state.painting_tile_ = false;
+            ++state.scan_index_;
+          } else if (replayed > 0) {
+            std::swap(affected[state.scan_index_], affected[state.retained_count_++]);
+            state.painting_tile_ = false;
+            ++state.scan_index_;
+          }
+        } else if (state.scan_index_ == state.affected_count_) {
+          state.phase_ = PendingOperationAbsorption::Phase::kCommit;
+        } else {
+          const TileKey key = affected[state.scan_index_];
+          if (in_priority_view(key, state.priority_view_)) {
+            ++state.scan_index_;
+          } else if (over_retention_budget()) {
+            ++state.drops_.offscreen_skipped;
+            ++state.scan_index_;
+          } else {
+            const auto edit = canvas.edit_resident_tile(key);
+            if (!edit.has_value()) {
+              ++state.drops_.offscreen_skipped;
+              ++state.scan_index_;
+            } else if (!start_tile(*edit, key)) {
+              canvas.invalidate_identity(key);
+              ++state.drops_.offscreen_skipped;
+              ++state.scan_index_;
+            }
+          }
+        }
+        state.phases_.offscreen_retain_us += stamp() - unit_started_us;
+        break;
+      }
+      case PendingOperationAbsorption::Phase::kCommit: {
+        auto affected = state.workspace_.affected_keys.first(state.affected_count_);
+        std::size_t visible_fallback = 0;
+        for (std::size_t index = state.retained_count_; index < affected.size(); ++index) {
+          visible_fallback += in_priority_view(affected[index], state.priority_view_) ? 1U : 0U;
+        }
+        std::size_t cross_zoom_invalidated = 0;
+        const MaterializedCanvas::InPlaceCommitScope commit_scope{
+            .preserved_uniform_color = painted_color,
+            .priority_zoom = state.priority_view_.has_value()
+                                 ? std::optional{state.priority_view_->zoom}
+                                 : std::nullopt,
+            .cross_zoom_invalidated = &cross_zoom_invalidated,
+        };
+        if (!canvas.commit_in_place_revision(state.operation_.identity.revision,
+                                             state.overview_publication_,
+                                             state.operation_.world_bounds,
+                                             affected.first(state.retained_count_), commit_scope)) {
+          for (const TileKey key : affected.first(state.retained_count_)) {
+            canvas.invalidate_identity(key);
+          }
+          reset();
+          output.status = PendingAbsorptionStatus::kError;
+          return output;
+        }
+        state.phases_.commit_us += stamp() - unit_started_us;
+        output.result = {.identity = state.operation_.identity,
+                         .affected_world_bounds = state.operation_.world_bounds,
+                         .affected_resident_tiles = state.affected_count_,
+                         .published_tiles = state.retained_count_,
+                         .fallback_tiles = state.affected_count_ - state.retained_count_,
+                         .visible_fallback_tiles = visible_fallback,
+                         .cross_zoom_invalidated = cross_zoom_invalidated,
+                         .phases = state.phases_,
+                         .drops = state.drops_};
+        reset();
+        output.status = PendingAbsorptionStatus::kComplete;
+        return output;
+      }
+    }
+  }
 }
 
 bool replay_active_overview(const OperationLog& log, std::span<std::uint16_t> output) {

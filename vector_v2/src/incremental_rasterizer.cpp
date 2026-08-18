@@ -1367,4 +1367,85 @@ bool apply_masked_operation_chord_rows(OperationTool tool, std::uint16_t color,
   return true;
 }
 
+bool apply_operation_chord_rows(OperationTool tool, std::uint16_t color,
+                                std::span<const std::byte> chord_storage,
+                                const OperationChordBatch& batch, int first_row,
+                                std::size_t max_work_px, const RasterSurface& surface,
+                                OperationSweepSlice& slice) {
+  const PixelRect bounds = batch.clipped_bounds;
+  if (!valid_surface(surface) || batch.chord_count == 0U ||
+      !chord_storage_usable(chord_storage, batch.chord_count) || max_work_px == 0U ||
+      first_row < bounds.y0 || first_row >= bounds.y1 || bounds.x0 < surface.level_bounds.x0 ||
+      bounds.y0 < surface.level_bounds.y0 || bounds.x1 > surface.level_bounds.x1 ||
+      bounds.y1 > surface.level_bounds.y1) {
+    return false;
+  }
+  const std::uint16_t applied = tool == OperationTool::kEraser ? kBackground : color;
+  const OperationChordPlan* plans = chord_plans(chord_storage);
+  const std::uint8_t* order = chord_order(chord_storage);
+  std::array<std::uint8_t, kOperationChordCapacity> active{};
+  std::size_t active_count = 0;
+  std::size_t enter = 0;
+  while (enter < batch.chord_count && plans[order[enter]].bounds.y0 <= first_row) {
+    if (plans[order[enter]].bounds.y1 > first_row) {
+      active[active_count++] = order[enter];
+    }
+    ++enter;
+  }
+  int y = first_row;
+  slice.rows_swept = 0;
+  slice.work_px = 0;
+  while (y < bounds.y1 && (slice.rows_swept == 0 || slice.work_px < max_work_px)) {
+    while (enter < batch.chord_count && plans[order[enter]].bounds.y0 <= y) {
+      active[active_count++] = order[enter++];
+    }
+    for (std::size_t index = 0; index < active_count;) {
+      if (plans[active[index]].bounds.y1 <= y) {
+        active[index] = active[--active_count];
+      } else {
+        ++index;
+      }
+    }
+    if (active_count == 0U) {
+      if (enter >= batch.chord_count) {
+        y = bounds.y1;
+        break;
+      }
+      y = plans[order[enter]].bounds.y0;
+      continue;
+    }
+    ++slice.rows_swept;
+    const float pixel_y = static_cast<float>(y) + 0.5F;
+    const std::size_t row = static_cast<std::size_t>(y - surface.level_bounds.y0) *
+                            static_cast<std::size_t>(surface.stride);
+    for (std::size_t index = 0; index < active_count; ++index) {
+      const OperationChordPlan& plan = plans[active[index]];
+      const ScanSpan span = conservative_row_span(plan.seed, plan.bounds, pixel_y);
+      if (span.empty()) {
+        continue;
+      }
+      slice.work_px += static_cast<std::size_t>(span.last - span.first + 1);
+      if (plan.constant) {
+        const int first = first_covered_at_or_after(plan.segment, span.first, span.last, pixel_y);
+        if (first <= span.last) {
+          const int last = last_covered_at_or_before(plan.segment, first, span.last, pixel_y);
+          const auto begin = surface.pixels.begin() +
+                             static_cast<std::ptrdiff_t>(
+                                 row + static_cast<std::size_t>(first - surface.level_bounds.x0));
+          std::fill_n(begin, static_cast<std::size_t>(last - first + 1), applied);
+        }
+      } else {
+        for (int x = span.first; x <= span.last; ++x) {
+          if (covers_pixel(plan.segment, static_cast<float>(x) + 0.5F, pixel_y)) {
+            surface.pixels[row + static_cast<std::size_t>(x - surface.level_bounds.x0)] = applied;
+          }
+        }
+      }
+    }
+    ++y;
+  }
+  slice.next_row = y;
+  return true;
+}
+
 }  // namespace tinydraw::vector_v2

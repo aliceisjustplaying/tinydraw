@@ -70,6 +70,10 @@ struct InPlaceAppendWorkspace {
   // replay; overlapping fat-capsule segments would otherwise rewrite each
   // covered pixel several times per commit.
   std::span<std::uint8_t> tile_mask{};
+  // Shared operation-replay plans. Resumable absorption requires
+  // kOperationChordStorageBytes, 4-byte aligned. This may alias the idle tile
+  // producer's plan storage when producer and absorption are serialized.
+  std::span<std::byte> operation_chord_plans{};
 };
 
 inline constexpr std::size_t kInPlaceTileMaskBytes = (kTilePixels + 7U) / 8U;
@@ -86,6 +90,87 @@ inline constexpr std::size_t kInPlaceTileMaskBytes = (kTilePixels + 7U) / 8U;
 struct InPlaceRetentionBudget {
   std::int64_t (*now_us)() = nullptr;
   std::int64_t budget_us = 0;
+};
+
+// Core-owned cooperative cancellation seam. requested is called between
+// bounded useful-work quanta and may combine an input flag, a deadline, or
+// both in caller-owned context without allocation.
+struct CooperativeWorkLimit {
+  bool (*requested)(const void* context) = nullptr;
+  const void* context = nullptr;
+  // Approximate span pixels between cancellation checks while rasterizing.
+  // One live row always completes, so a row wider than this remains atomic.
+  std::size_t raster_work_px = 512;
+
+  [[nodiscard]] bool yield_requested() const { return requested != nullptr && requested(context); }
+};
+
+enum class PendingAbsorptionStatus : std::uint8_t {
+  kInProgress,
+  kComplete,
+  kIdle,
+  kError,
+};
+
+struct PendingAbsorptionSliceResult {
+  PendingAbsorptionStatus status = PendingAbsorptionStatus::kError;
+  // Valid only for kComplete.
+  IncrementalAppendResult result{};
+  // Cancellation checkpoints reached by this call. Useful for host bounds
+  // characterization without coupling the module to a platform clock.
+  std::size_t checkpoints = 0;
+};
+
+// Caller-owned continuation for one pending operation. While active, the
+// canvas, workspace spans, priority view, and retention budget are one
+// serialized transaction and must remain unchanged. Authority may append
+// later operations, but must not reset/rebase the captured log storage. Partial
+// tile pixels are safe to present because the pending overlay remains
+// authoritative until the final metadata commit.
+class PendingOperationAbsorption {
+ public:
+  [[nodiscard]] bool active() const { return phase_ != Phase::kIdle; }
+
+ private:
+  friend PendingAbsorptionSliceResult absorb_pending_operation_slice(
+      const OperationLog&, MaterializedCanvas&, const InPlaceAppendWorkspace&,
+      PendingOperationAbsorption&, std::optional<ViewRequest>, CooperativeWorkLimit,
+      InPlaceRetentionBudget);
+
+  enum class Phase : std::uint8_t {
+    kIdle,
+    kCopyOverview,
+    kRasterOverview,
+    kEnumerate,
+    kUniform,
+    kVisibleRaw,
+    kOffscreenRaw,
+    kCommit,
+  };
+
+  Phase phase_ = Phase::kIdle;
+  const OperationLog* log_ = nullptr;
+  MaterializedCanvas* canvas_ = nullptr;
+  StoredOperation operation_{};
+  InPlaceAppendWorkspace workspace_{};
+  std::optional<ViewRequest> priority_view_{};
+  InPlaceRetentionBudget retention_{};
+  PixelRect overview_bounds_{};
+  OverviewRevisionPublication overview_publication_{};
+  InPlaceAppendPhases phases_{};
+  InPlaceRetainDrops drops_{};
+  std::int64_t deadline_us_ = 0;
+  std::size_t copy_row_ = 0;
+  std::size_t affected_count_ = 0;
+  std::size_t retained_count_ = 0;
+  std::size_t scan_index_ = 0;
+  std::size_t next_endpoint_ = 0;
+  OperationChordBatch chord_batch_{};
+  int next_raster_row_ = 0;
+  InPlaceTileEdit tile_edit_{};
+  TileKey tile_key_{};
+  bool batch_ready_ = false;
+  bool painting_tile_ = false;
 };
 
 // Committed-overlay revision split (VECTOR_V2_COMMITTED_OVERLAY_DESIGN.md
@@ -135,6 +220,15 @@ enum class HistoryDirection : std::uint8_t {
 [[nodiscard]] std::optional<IncrementalAppendResult> absorb_pending_operation(
     const OperationLog& log, MaterializedCanvas& canvas, const InPlaceAppendWorkspace& workspace,
     std::optional<ViewRequest> priority_view = std::nullopt, InPlaceRetentionBudget budget = {});
+
+// Advances one pending operation until the cooperative limit requests a yield
+// or the revision commits. kInProgress retains all cursor state. kComplete and
+// kIdle reset it for reuse. Initial kError leaves canvas unchanged; a mismatched
+// resume returns kError with the original continuation active and recoverable.
+[[nodiscard]] PendingAbsorptionSliceResult absorb_pending_operation_slice(
+    const OperationLog& log, MaterializedCanvas& canvas, const InPlaceAppendWorkspace& workspace,
+    PendingOperationAbsorption& state, std::optional<ViewRequest> priority_view = std::nullopt,
+    CooperativeWorkLimit limit = {}, InPlaceRetentionBudget retention = {});
 
 // The committed overlay (design §3.2): paints the pending operation range —
 // the log operations the canvas has not yet absorbed — clipped to a
