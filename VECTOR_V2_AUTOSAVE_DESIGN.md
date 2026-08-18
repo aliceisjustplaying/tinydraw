@@ -47,14 +47,24 @@ bool encode_authority_journal(const AuthorityJournalPlan& plan,
                               std::uint64_t sequence,
                               std::span<std::byte> output);
 
+bool AuthorityJournalStager::start(const AuthorityJournalPlan& plan,
+                                   const OperationLog& log,
+                                   std::uint64_t sequence,
+                                   std::span<std::byte> output);
+
+AuthorityJournalStageResult AuthorityJournalStager::resume(
+    const OperationLog& log, std::size_t maximum_payload_bytes);
+
 JournalRecovery recover_authority_journal(
     const AuthorityJournalSource& source, std::size_t bytes,
     std::span<OperationRecord> records,
     std::span<CompactOperationSample> samples);
 ```
 
-Callers prepare and encode while holding the log's serialized ownership.
-Recovery writes into caller-owned bounded storage and returns an
+Every staging slice runs under the log's serialized ownership and revalidates
+the complete `AuthorityReadView`: epoch, generation, active and retained
+operation counts, and retained samples. A stale view abandons the unpublished
+buffer. Recovery writes into caller-owned bounded storage and returns an
 `AuthorityReadView`; the caller restores `OperationLog` only after the complete
 journal scan succeeds.
 
@@ -68,13 +78,17 @@ VectorV2AutosaveRestoreStatus restore(OperationLog& log);
 bool submit(JournalChange change, const OperationLog& log);
 bool submit_checkpoint(const OperationLog& log);
 bool checkpoint_required() const;
+bool checkpoint_staging() const;
 bool flush(std::uint32_t timeout_ms);
 ```
 
-`submit()` sizes and encodes one coherent transaction into PSRAM before it
-queues the immutable bytes. The worker never reads the live log or canvas.
-Allocation, encoding, queue, or write failure requests a later checkpoint and
-never publishes a partial delta.
+Stroke and history transactions stage coherent bytes synchronously. Checkpoints
+stage at most 16 KiB of payload per idle call, including operation metadata and
+sample bytes; one operation can therefore never hide an unbounded copy. The
+worker seals the transaction CRC after buffer ownership transfers, then owns
+erase, write, and readback. It never reads the live log or canvas. Allocation,
+staging, queue, seal, or write failure requests a later checkpoint and never
+publishes a partial delta.
 
 ## Wire and interruption rules
 
@@ -101,8 +115,10 @@ erases the partition on the worker before publishing the first checkpoint.
 A completed physical stroke queues one append after authority publication.
 Undo and Redo queue an update; New queues a blank checkpoint. An interrupted
 tail or failed delta sets `checkpoint_required()`. Export and other hardware
-ownership transitions call `flush()` and remain in drawing mode if it times out.
-Pan, zoom, tool, color, and other UI-only changes do not write flash.
+ownership transitions finish an in-progress checkpoint, call `flush()`, and
+remain in drawing mode if either step fails. Normal drawing advances only one
+checkpoint slice after an idle poll with no touch urgency. Pan, zoom, tool,
+color, and other UI-only changes do not write flash.
 
 The worker stays below touch sampling priority and performs bounded erase,
 write, marker, and readback units. Final performance evidence must exercise this
@@ -128,7 +144,9 @@ compaction and metadata are deferred until partition recycling is required.
 
 Host tests cover checkpoint, append-after-Undo branch replacement, history
 updates, blank reset, bounded restore capacity, truncation at every later-tail
-byte, single-byte corruption, and sector padding. Release closure additionally
+byte, single-byte corruption, sector padding, header-only slice resumption,
+maximum-sized single-operation slicing, stale-view abandonment, full-capacity
+recovery, and a corrupt full-capacity tail. Release closure additionally
 requires product/gate builds, normal-product performance with real journal
-writes, a physical authority-only recovery check, and export-flush verification. Destructive physical
-power-cut testing remains excluded by owner direction.
+writes, a physical authority-only recovery check, and export-flush verification.
+Destructive physical power-cut testing remains excluded by owner direction.
