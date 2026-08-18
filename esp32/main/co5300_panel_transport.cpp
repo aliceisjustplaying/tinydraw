@@ -122,6 +122,7 @@ const char* panel_reset_stage_name(PanelResetStage stage) {
 
 PanelResetResult reset_panel_power() {
   PanelResetResult result{};
+  bool power_cycled = false;
   i2c_master_bus_config_t bus_config{};
   bus_config.i2c_port = I2C_NUM_0;
   bus_config.sda_io_num = GPIO_NUM_15;
@@ -175,7 +176,7 @@ PanelResetResult reset_panel_power() {
         vTaskDelay(pdMS_TO_TICKS(20));
         const esp_err_t powered_up = write(kIoExpanderOutputRegister, kIoExpanderOutputs);
         if (powered_up == ESP_OK) {
-          result.succeeded = true;
+          power_cycled = true;
           vTaskDelay(pdMS_TO_TICKS(150));
           break;
         }
@@ -196,6 +197,7 @@ PanelResetResult reset_panel_power() {
   } else {
     result.bus_delete = ESP_ERR_INVALID_STATE;
   }
+  result.succeeded = power_cycled && result.device_remove == ESP_OK && result.bus_delete == ESP_OK;
   return result;
 }
 
@@ -222,6 +224,9 @@ class Co5300PanelTransport::Impl {
         panel_reset_stage_name(panel_reset.first_failure_stage),
         esp_err_to_name(panel_reset.first_failure), esp_err_to_name(panel_reset.last_bus_reset),
         esp_err_to_name(panel_reset.device_remove), esp_err_to_name(panel_reset.bus_delete));
+    if (!panel_reset.succeeded) {
+      return;
+    }
     std::printf("TINYDRAW_PANEL_TRANSPORT clock_mhz=%d\n", kPanelClockMHz);
 
     spi_bus_config_t bus_config{};
