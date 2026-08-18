@@ -17,8 +17,9 @@ the accepted cold gate. The follow-up series `2191d6b..57f9910` adds the
 cooperative work required by F9, F19, and F28; their automated hardware battery
 is now also green. The owner’s final glass test for this follow-up remains
 pending. Settled AA remains the pre-existing yellow receipt; this round does
-not claim closure of the review’s history-generation or banded-settle
-proposals.
+not claim product closure of the review’s history-generation or banded-settle
+proposals. Both were subsequently prototyped and rejected in their tested
+forms; the measurements are retained below.
 
 ## Measurement baseline
 
@@ -50,7 +51,10 @@ not a universal host-wall win.
 | F11, F22–F23 | An append-maintained 128-world-pixel dense bitset index covers 168 cells plus a large-operation set. Queries OR words, deduplicate without heap allocation, return newest first, and retain exact authority fallback. Producer and settled paths use the index only when it rejects at least 25%, avoiding the dense PSRAM-indirection regression. Product allocation is 93,176 bytes, dead-last in PSRAM, with authority/candidate/dedup counters. |
 | F14 | Settled compositing uses the exact remaining-white fold directly. Transient settled failures retain their cursor and retry up to three times; permanent failures are explicit. This closes F33’s silent-promotion bug as well. |
 | F15 | Raw materialized composition copies rows, and overview fallback uses zoom shifts and run fills; division/modulo is gone from the per-pixel loops. |
+| F20 | Checkpoint payload staging is resumable at 16 KiB per caller slice. Ownership then crosses a queue to the low-priority worker, which seals the immutable transaction and writes flash. The physical benchmark passes the 4 ms first-call and 2 ms slice guards for representative and full-capacity journals. |
 | F22 | Rerender cause, spatial candidate, touch resync, phase, and panel-reset receipts are present in the harness/product paths. |
+| F26 | Idle repair now uses the last completed pan to prioritize continued travel, then one-tile reverse and perpendicular runways. A deterministic 448-slot LRU benchmark accepted the ordering with equal 64-tile repair work and no external allocation; this later host acceptance does not amend the physical receipts above. |
+| F32 | Source warning fixes are green under Homebrew Clang 22 across four host suites. The remaining PNG CMake failure is an Xcode-beta SDK raw-`-isystem` toolchain limitation; the same source compiles when the SDK is supplied with `-isysroot`. Linux CI coverage remains open. |
 | F33 | Settled retry state advances only after success or an intentional skip; telemetry distinguishes transient and permanent failures. |
 
 Additional hardening: CO5300 warm reset retries the full expander
@@ -173,6 +177,99 @@ On device, the evil-hairline 400% capacity gate completed in 186.976 ms with a
 repeated the photographed pan on product glass with no tearing or white-block
 recurrence.
 
+## Post-closure experiment receipts
+
+### F10 history generations — no-go
+
+The host prototype confirmed the current replay floor: a four-pixel Undo in a
+sparse 4,000-operation document fetched and rejected 3,999 operations; Redo
+fetched 4,000 and rasterized one. The proposed two-generation directory was
+not integrated. `OperationLogEpoch` advances on every published Undo and Redo,
+so `{epoch, active prefix}` cannot identify the immediately reusable reverse
+generation. The proposed layout fit arithmetically but did not prove revision
+publication, raw-slot copy-on-write, failure atomicity, or gate-storage
+multiplexing. F21’s free-stack/CLOCK/directory redesign is independent work.
+
+The next admissible prototype is a host state model built on a stable lineage
+identity and the existing source representations. The full no-go receipt is
+[`HISTORY_GENERATION_PROTOTYPE_2026_08_18.md`](../HISTORY_GENERATION_PROTOTYPE_2026_08_18.md).
+
+### F13 banded 25% settle — exact rejection A/B
+
+All candidates produced exact pixels. On the distributed 1,000-operation
+corpus, the current 64×64 tiled pass had a 6.494 ms median, charged 42,000
+active-prefix entries across its queries, and fetched 4,312 candidate records.
+An eight-row band measured 8.779 ms (+35.2%), charged 56,000 entries, and
+fetched 7,938 records. An 11-row band measured 8.636 ms (+33.0%), charged
+41,000 entries, and fetched 5,437 records.
+
+The bands helped the constructed 256-operation long-crossing corpus: 8 rows
+measured 4.202 ms (-34.6%) and 11 rows 4.034 ms (-37.3%) versus 6.429 ms for
+the tiled pass. A 64-row band regressed the distributed corpus to 14.101 ms
+(+117%) and required 235,520 bytes of settle planes, 194,560 bytes above the
+existing 40,960-byte workspace. The broad-band proposal is rejected because
+its long-stroke win does not generalize and its larger form spends substantial
+memory. The exact tiled implementation remains.
+
+### F20 autosave caller latency — accepted treatment
+
+The original synchronous authority-journal encode spent 53.4 ms on the caller.
+Moving only CRC sealing to the worker was an incomplete treatment: caller
+p95/max still measured 8.924/9.224 ms for the representative corpus and
+35.641/35.791 ms at full capacity. That intermediate form was rejected.
+
+The final treatment makes payload staging resumable, including within one
+maximum-sized operation, and transfers the immutable staged transaction to the
+worker for sealing and flash. The representative corpus completed in 11
+caller slices: slice p95/max was 0.864/0.866 ms, first-call p95/max was
+1.273/1.708 ms, queue transfer p95/max was 5/12 µs, and worker seal p95/max was
+8.315/8.359 ms. The full-capacity corpus completed in 43 slices: slice p95/max
+was 0.818/0.822 ms, first-call p95/max was 2.999/3.194 ms, queue transfer
+p95/max was 4/6 µs, and worker seal p95/max was 32.708/32.726 ms.
+
+Both corpora pass the unchanged 4 ms first-call guard and the new 2 ms
+per-slice guard. The longer seal is worker-owned and does not cross the caller
+latency guard. Staging revalidates the authority view before each slice;
+ownership transfer precedes worker mutation of padding, CRC, and commit marker.
+
+### F25 producer selection — attributed no-go
+
+The minimized 400% hairline case spent about 9.15 ms in its instrumented
+producer call. Candidate selection cost 0.324 ms, remaining-key scans cost
+0.160 ms, and surface clearing cost 0.526 ms. Selection was only 3–5% of the
+measured call; exact dense painting remained dominant. The evidence does not
+justify a new producer-selection state machine, so F25 is closed as no-go in
+its reviewed form.
+
+### F26 pan-directed idle repair — accepted benchmark
+
+The deterministic benchmark used the real 448-slot `MaterializedCanvas` LRU
+and held every policy to 64 repaired tiles. Refill avoidance changed from the
+current symmetric plan to the pan-directed plan as follows: continued forward
+travel 16→48, immediate reverse 8→8, local random movement 11→18, and
+random navigation 13→15. Unused repaired tiles evicted before use fell 51→49.
+A universal one-tile runway comparator scored 8/8/22/0 on those same traces
+and was rejected.
+
+The accepted plan spends its first view one viewport ahead of the last pan,
+then repairs one-tile reverse and perpendicular runways. A zero pan delta keeps
+the existing symmetric cardinal plan. Product state grows by two integers and
+adds no heap or PSRAM allocation. This is a deterministic host policy receipt,
+not a new hardware or glass acceptance claim.
+
+### F32 warning cleanup — source accepted, CI coverage open
+
+Homebrew Clang 22 passed the vector authority suite (77/77; 25,589 assertions),
+interaction suite (62/62; 14,366), rendering suite (124/124; 63,115), and main
+native `tinydraw_tests` suite (152/152; 670,109). The build enabled `-Wall`,
+`-Wextra`, `-Wpedantic`, `-Wconversion`, and `-Wsign-conversion`, with warnings
+promoted to errors.
+
+The PNG target’s remaining CMake failure is caused by the Xcode-beta SDK being
+passed as a raw `-isystem` include tree; the source itself compiles when that
+SDK is selected with `-isysroot`. This is a local toolchain limitation, not a
+source-warning failure. Linux CI remains open.
+
 ## Rejected and reverted experiments
 
 - **Prepared geometry cache (F12):** exact caller-funded cache keyed by
@@ -257,15 +354,21 @@ described above; SSAA remains yellow and the owner’s glass test remains pendin
 1. F9/F19 absorption and F28 full composition now have persistent cursors and
    automated hardware acceptance. Their final optical interruption/no-tear
    acceptance remains pending on glass.
-2. F10 history generations remain architectural work; Undo/Redo can still
-   rebuild derived state from authority.
+2. F10 history generations remain architectural work; the first prototype is
+   rejected, and Undo/Redo can still rebuild derived state from authority. A
+   narrower prototype first needs a stable lineage identity and host state
+   model for revision, slot sharing, copy-on-write, and failure semantics.
 3. F12 prepared geometry reuse is not justified in its tested 100 KiB form.
    Revisit only with a paint-dominant design or a demonstrably smaller budget.
-4. F13 banded 25% settle remains open. The renderer can now yield within a
-   window, but the 25% pass still pays independent window-level authority
-   discovery. F21 cache-directory/commit complexity and F26 spatially
-   prioritized repair also remain open.
-5. F20 autosave encode/allocation remains main-task work.
+4. F13’s tested banded 25% settle is rejected: it improved the constructed
+   long-crossing corpus but regressed the distributed corpus 33–35%. The 25%
+   pass still pays independent window-level authority discovery. F21
+   cache-directory/commit complexity remains open. F25 is closed as an
+   attributed no-go; F26 pan-directed repair is host-accepted.
+5. F20 caller latency is closed by resumable payload staging and worker-owned
+   sealing; both physical corpora pass the 4 ms first-call and 2 ms slice
+   guards. Flash erase/write latency remains isolated on the low-priority
+   worker.
 6. F24 targeted IRAM placement was not attempted; the current evidence does
    not justify spending internal RAM without a kernel-level A/B.
 7. F28 is host- and device-complete but awaits the glass interruption test. F29
@@ -282,6 +385,9 @@ described above; SSAA remains yellow and the owner’s glass test remains pendin
     call. Cold fill also retains its measured approximately 11.2 ms producer
     boundary. These limits remain visible in telemetry and are not described as
     strict 0.5–2 ms guarantees.
+11. F32 source warnings are clean under the local Clang 22 verification. Linux
+    CI remains open, and the Xcode-beta PNG CMake invocation still needs a
+    toolchain-level SDK-path correction.
 
 ## Evidence and artifact paths
 
