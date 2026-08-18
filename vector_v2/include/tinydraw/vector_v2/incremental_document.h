@@ -130,6 +130,11 @@ struct PendingAbsorptionSliceResult {
 class PendingOperationAbsorption {
  public:
   [[nodiscard]] bool active() const { return phase_ != Phase::kIdle; }
+  // Abandons only the continuation; partial resident pixels are not rolled
+  // back. This is safe while the captured opaque pen/eraser operation remains
+  // pending because replay is idempotent. Keep tile production serialized
+  // until a restarted absorption drains that pending operation.
+  void cancel();
 
  private:
   friend PendingAbsorptionSliceResult absorb_pending_operation_slice(
@@ -159,7 +164,6 @@ class PendingOperationAbsorption {
   OverviewRevisionPublication overview_publication_{};
   InPlaceAppendPhases phases_{};
   InPlaceRetainDrops drops_{};
-  std::int64_t deadline_us_ = 0;
   std::size_t copy_row_ = 0;
   std::size_t affected_count_ = 0;
   std::size_t retained_count_ = 0;
