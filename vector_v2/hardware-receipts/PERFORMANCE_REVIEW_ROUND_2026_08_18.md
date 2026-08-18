@@ -16,8 +16,8 @@ blocks, and the previously slow dense hairline/eraser region completes within
 the accepted cold gate. The follow-up series `2191d6b..57f9910` adds the
 cooperative work required by F9, F19, and F28; their automated hardware battery
 and the owner’s final glass test are also green. A final host round accepts
-F10’s sparse spatial history replay, F13’s all-zoom local-span AA work, and
-F21’s direct retained-key markers. F13’s product timing kept every slice below
+F10’s sparse spatial history replay, F14’s all-zoom local-span AA work, and
+F21’s direct retained-key markers. Settled-AA product timing kept every slice below
 2.341 ms with zero failures. Whole-view settle passed at 25% in 396.111 ms but
 took 603.894–1,026.000 ms at 50–400%. The local-span treatment therefore lacks
 a same-tree physical baseline. A follow-up exact host treatment
@@ -29,6 +29,20 @@ settled-tile IRAM mapping with 6.52–7.45% gains at every zoom, identical work,
 and zero failures. F24 is physically accepted with a green 11-case cold A/B
 and an all-ones full gate. Settled AA remains yellow because 50–400% still
 exceed 500 ms.
+
+This cycle is formally closed. The 33 findings finish with this tally:
+
+| Status | Findings | Count |
+|---|---|---:|
+| fully accepted | F1, F3–F9, F11, F14, F15, F19, F20, F22, F24, F26, F28, F33 | 18 |
+| scoped or partial | F2, F10, F21, F32 | 4 |
+| open performance limit | F13, F16–F18 | 4 |
+| measured no-go | F12, F25, F27 | 3 |
+| reassessed through F11 | F23 | 1 |
+| deferred | F29–F31 | 3 |
+
+The consolidated measurements are in
+[`FINAL_PERFORMANCE_BASELINE_2026_08_18.md`](FINAL_PERFORMANCE_BASELINE_2026_08_18.md).
 
 ## Measurement baseline
 
@@ -49,16 +63,16 @@ bypass it measured 1.719, 3.299, and 1.319 ms respectively, with exact pixels.
 The index’s payoff is therefore work elimination and device slice reduction,
 not a universal host-wall win.
 
-## Accepted changes mapped to the review
+## Implemented changes mapped to the review
 
 | Review findings | Accepted change and evidence |
 |---|---|
 | F1; F2 | Blank boot uses `reset_blank`; autosave restore and completed Undo/Redo rebuild the exact conservative tiled-may-ink map. History reuses 1,288 bytes of caller scratch after commit; branch replacement inherits its preceding Undo rebuild and marks the new branch normally. There is no per-chunk scan or persistent-memory growth. Active pen bounds remain conservative after erase-only overlap because overview paper cannot disprove high-zoom hairlines. |
-| F3–F5, F16–F18 | Local refresh, settled staging, chrome, provisional ink, committed ink, and exposed-strip pending-authority overlays operate on the toroidal frame ring. Canvas and chrome bands remain separate, byte order is preserved, and partial failures drain queued display work. `TINYDRAW_GATE1_RING_LOCAL ... pass=1`; the next pan remains reusable. |
+| F3–F5 | Local refresh, settled staging, chrome, provisional ink, committed ink, and exposed-strip pending-authority overlays operate on the toroidal frame ring. Canvas and chrome bands remain separate, byte order is preserved, and partial failures drain queued display work. `TINYDRAW_GATE1_RING_LOCAL ... pass=1`; the next pan remains reusable. |
 | F6–F8 | The sampler now signals empty-to-nonempty through a binary semaphore, keeps stop signaling separate, publishes an allocation-free urgent atomic, and self-deletes after cross-core teardown. The main loop drains queued events before cosmetic work, handles one cosmetic transition per iteration, and blocks on the event wake when idle. |
 | F6–F9 | Hard queue overflow now resynchronizes to a valid Down/Up stream and reports `touch_resyncs`. Background fill, repair, settle, absorption, and presentation boundaries consult touch urgency. In the accepted gate, `touch_resyncs=0`; draw-while-fill measured 4.904 ms poll gap, 8.049 ms maximum compute slice, and passed. |
-| F11, F22–F23 | An append-maintained 128-world-pixel dense bitset index covers 168 cells plus a large-operation set. Queries OR words, deduplicate without heap allocation, return newest first, and retain exact authority fallback. Producer and settled paths use the index only when it rejects at least 25%, avoiding the dense PSRAM-indirection regression. Product allocation is 93,176 bytes, dead-last in PSRAM, with authority/candidate/dedup counters. |
-| F14 | Settled compositing uses the exact remaining-white fold directly. Transient settled failures retain their cursor and retry up to three times; permanent failures are explicit. This closes F33’s silent-promotion bug as well. |
+| F11, F22 | An append-maintained 128-world-pixel dense bitset index covers 168 cells plus a large-operation set. Queries OR words, deduplicate without heap allocation, return newest first, and retain exact authority fallback. Producer and settled paths use the index only when it rejects at least 25%, avoiding the dense PSRAM-indirection regression. Product allocation is 93,176 bytes, dead-last in PSRAM, with authority/candidate/dedup counters. |
+| F14 | Settled AA clears and composites only the alpha span touched by each operation, then uses the exact remaining-white fold. Transient settled failures retain their cursor and retry up to three times; permanent failures are explicit. This also closes F33’s silent-promotion bug. |
 | F15 | Raw materialized composition copies rows, and overview fallback uses zoom shifts and run fills; division/modulo is gone from the per-pixel loops. |
 | F20 | Checkpoint payload staging is resumable at 16 KiB per caller slice. Ownership then crosses a queue to the low-priority worker, which seals the immutable transaction and writes flash. The physical benchmark passes the 4 ms first-call and 2 ms slice guards for representative and full-capacity journals. |
 | F22 | Rerender cause, spatial candidate, touch resync, phase, and panel-reset receipts are present in the harness/product paths. |
@@ -80,7 +94,7 @@ accepted by the owner’s glass test.
 
 | Review findings | Accepted follow-up change and evidence |
 |---|---|
-| F3–F5, F16–F18 | Ring-local receipts now count exact logical panel pixels. A host oracle covers wrapped row/column staging and exposed-strip reconstruction; the device gate proves local canvas, chrome, provisional ink, and committed ink submissions are smaller than the full canvas while the next pan remains reusable. The owner’s glass test found no tearing. |
+| F3–F5 | Ring-local receipts now count exact logical panel pixels. A host oracle covers wrapped row/column staging and exposed-strip reconstruction; the device gate proves local canvas, chrome, provisional ink, and committed ink submissions are smaller than the full canvas while the next pan remains reusable. The owner’s glass test found no tearing. |
 | F9, F19 | Pending-operation absorption is a persistent phase machine covering overview copy/raster, affected identity enumeration, uniform/raw retention, offscreen retention, staged overview publication, bounded metadata, and a scalar final commit. Metadata resumes across uniforms, raw slots, rerender damage, and occupancy. The caller supplies a 256-pixel raster quantum and one slice between input samples. Cancellation abandons unpublished continuation state; restart converges to exact pixels while the pending overlay remains authority. |
 | F9 | Settled rendering retains its authority fingerprint, operation/chord position, compositing position, and final-fold position across 512-work-unit slices. Complete output and replay statistics are bit-identical to the synchronous path; transient retry state remains durable. |
 | F28 | Full refresh composition advances eight rows per slice, or 56 slices for the 448-row frame, and submits no panel pixels until the complete frame is ready. Pressed input and authority/canvas disagreement block progress. A live-ink interruption preserves refresh intent and restarts from row zero, preventing a partially composed frame from being published. Startup and other hard transition paths remain synchronous. |
@@ -157,8 +171,8 @@ The first acceptance glass pass found no tearing, but reproduced a severe
 400% regression after panning into dense minimum-radius hairlines covered by a
 dense eraser grid. Tiles appeared block by block, two blocks remained overview
 white beyond the expected 500 ms interval, and neighboring blocks completed
-visibly slowly. The owner photograph is
-`/Users/sarah/Downloads/IMG_2766.HEIC`.
+visibly slowly. The owner photograph was inspected during acceptance and was
+not checked in.
 
 The minimized host command is:
 
@@ -242,7 +256,7 @@ its long-stroke win does not generalize and its larger form spends substantial
 memory. The exact tiled implementation remained while a different treatment
 was measured.
 
-### F13 all-zoom local-span AA — host and IRAM accepted; follow-up rejected
+### F14 local-span AA and F13 total settle — scoped work accepted; F13 remains open
 
 The accepted host treatment tracks the x/y alpha span touched by each
 operation and clears/composites only that span. It keeps painter order,
@@ -532,48 +546,52 @@ despite its inward-pulling tail and harder circle closure. Both runs reported
 zero failures, touch overflows, and resynchronizations. The temporary build
 override was removed and product behavior remains the literal 0.4 setting.
 
-## Remaining work
+## Formal closeout
 
-1. F13 local spans remain host-accepted and settled-tile IRAM is physically
-   accepted, but settled AA still exceeds 500 ms at 50–400%.
-   Saturated-destination skipping, zero-memory cross-tile candidate batching,
-   adaptive 8/11-row band scheduling, constant-radius specialization, and loop
-   alignment are closed measured no-gos. Any future treatment needs a new
-   measured raster direction and product proof.
-2. F10’s sparse prefix discovery and F21’s retained membership scans are
-   closed. Dense history intentionally keeps full replay, and full-pool
-   eviction intentionally keeps exact LRU. Revisit only after a measured dense
-   history or eviction regression.
-3. F12 prepared geometry, F25 producer-selection state, and F27 streamline
-   tuning remain closed no-go experiments. F20 caller latency, F26 pan-directed
-   repair, F28 composition, F24 IRAM placement, and the prior ring/absorption
-   glass acceptance are closed for this round.
-4. F29 perceptual AA ordering is deferred. It changes when refined pixels
-   appear, not total AA work, and has no current glass failure.
-5. Settled AA stays yellow. The retained local-span plus IRAM image passes the
-   whole-view bound at 25% but exceeds it at 50–400%. Transient blue dots seen
-   during incomplete refinement on both pan and zoom are recorded without
-   attribution. The transient popup/chrome corruption and unintended Undo are
-   also recorded as inconclusive after a bounded 12,288-trace host diagnosis.
-   Both incidents require a natural red reproduction before a behavior change.
-6. Boundedness still has explicit atomic tails. A masked resident-tile row can
-    charge roughly 12,676 raster work pixels in the static worst case, although
-    the physical 50–400% corpora stayed below the guard. A settled spatial query
-    may merge 1,071 64-bit words and emit up to 4,000 candidates in one unit;
-    settled presentation follows the measured render slice as an atomic panel
-    call. Cold fill also retains its measured approximately 11.2 ms producer
-    boundary. These limits remain visible in telemetry and are not described as
-    strict 0.5–2 ms guarantees.
-7. F32 source warnings are clean under the local Clang 22 verification. Linux
-    CI remains open, and the Xcode-beta PNG CMake invocation still needs a
-    toolchain-level SDK-path correction.
+F13 remains yellow. Local alpha spans and settled-tile IRAM are retained, but
+the original 42-window discovery structure still exists and complete settled
+AA exceeds 500 ms at 50–400%. The saturated-destination, cross-tile candidate,
+adaptive-band, constant-radius, and loop-alignment treatments are measured
+no-gos.
+
+F2, F10, and F21 close useful scopes without claiming the complete reviewed
+designs. F2 rebuilds occupancy after completed history moves; ordinary erase
+absorption remains conservative. F10 accelerates sparse prefix discovery;
+dense history keeps exact full replay. F21 removes retained-membership scans;
+the 448-slot exact-LRU eviction scan remains. F23 needs no separate authority
+mirror because F11 rejects candidates before record fetch and retains dense
+fallback.
+
+F16–F18 remain open performance opportunities. Region updates still compose
+into `region_`, copy into the ring/frame, and then copy into DMA staging.
+Minimap damage still forms a bounding union, and history/drain can still
+present canvas and dock separately. The ring work reduced their cost and
+passed optical acceptance, but did not remove the reviewed mechanisms.
+
+Dense hairline and eraser Undo/Redo is a known retained limit of this cycle.
+It uses exact full-prefix overview replay, invalidates affected high-zoom
+detail, presents correct overview fallback, and repairs detail and AA
+progressively. F2 reduces false occupied work but does not make this path
+instant. No device end-to-end dense-history timing was recorded.
+
+F29 perceptual AA ordering, F30's deterministic PSRAM arena, and F31's second
+renderer core are deferred. F32 source warnings are fixed under local Clang 22;
+Linux CI and the Xcode-beta PNG SDK-path issue remain outside this cycle.
+
+Transient blue dots during incomplete refinement and the popup/chrome
+corruption with unintended Undo remain inconclusive. Both require a natural
+red reproduction before a behavior change. Boundedness also retains measured
+atomic tails: a roughly 12,676-work-pixel masked row, a 1,071-word/4,000-candidate
+spatial query, an atomic panel submission, and an approximately 11.2 ms cold
+producer boundary.
 
 ## Evidence and artifact paths
 
 - Review source: `tinydraw-v2-performance-review-20260818.md`
+- Final performance baseline: [`FINAL_PERFORMANCE_BASELINE_2026_08_18.md`](FINAL_PERFORMANCE_BASELINE_2026_08_18.md)
 - F2 history may-ink rebuild: [`F2_OCCUPANCY_HISTORY_REBUILD_2026_08_18.md`](../F2_OCCUPANCY_HISTORY_REBUILD_2026_08_18.md)
 - F10 sparse history replay: [`F10_HISTORY_SPATIAL_REPLAY_2026_08_18.md`](../F10_HISTORY_SPATIAL_REPLAY_2026_08_18.md)
-- F13 all-zoom AA: [`SETTLED_AA_ALL_ZOOM_2026_08_18.md`](../SETTLED_AA_ALL_ZOOM_2026_08_18.md)
+- F14 local-span AA and F13 total settle: [`SETTLED_AA_ALL_ZOOM_2026_08_18.md`](../SETTLED_AA_ALL_ZOOM_2026_08_18.md)
 - F13 adaptive band probe: [`SETTLED_AA_ADAPTIVE_BAND_PROBE_2026_08_18.md`](../SETTLED_AA_ADAPTIVE_BAND_PROBE_2026_08_18.md)
 - F13 cross-tile reuse probe: [`SETTLED_AA_CROSS_TILE_REUSE_PROBE_2026_08_18.md`](../SETTLED_AA_CROSS_TILE_REUSE_PROBE_2026_08_18.md)
 - F13 constant-radius probe: [`SETTLED_AA_CONSTANT_RADIUS_PROBE_2026_08_18.md`](../SETTLED_AA_CONSTANT_RADIUS_PROBE_2026_08_18.md)

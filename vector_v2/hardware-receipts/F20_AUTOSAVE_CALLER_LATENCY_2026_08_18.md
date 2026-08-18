@@ -4,7 +4,7 @@ Hardware: ESP32-S3 at 240 MHz with 8 MiB octal PSRAM. Measurements used the
 production authority capacities, allocation capabilities, wire format, and
 encoder. Each result is 20 runs after startup. The treatment queue measurement
 transferred the staged-buffer pointer without writing the drawing partition;
-normal-product flash telemetry remains a release gate.
+it does not measure normal-product flash I/O.
 
 ## Attempts
 
@@ -61,7 +61,7 @@ treatment. Product firmware was then restored; it recovered generation 140
 with 109 active/retained operations and reached Ready without a watchdog,
 crash, or stack failure.
 
-Still required: capture a normal-product checkpoint commit with separate
-`seal_us` and `io_us`, and verify the single-tap Export flush on hardware.
-Journal-full recycling remains open and requires a two-bank recovery design;
-the current journal fails closed at capacity.
+The owner later completed a single-tap product Export and accepted its glass
+latency. A controlled normal-product checkpoint with separate `seal_us` and
+`io_us` was not recorded. Journal-full recycling remains open and requires a
+two-bank recovery design; the current journal fails closed at capacity.
