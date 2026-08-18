@@ -34,6 +34,38 @@ struct AuthorityJournalPlan {
   std::size_t encoded_bytes = 0;
 };
 
+enum class AuthorityJournalStageResult : std::uint8_t {
+  kProgress,
+  kComplete,
+  kStale,
+  kError,
+};
+
+// Resumable staging state for one immutable transaction. resume() bounds
+// operation metadata and sample copying even within one maximum-sized
+// operation, and rejects any authority-view change before reading more bytes.
+class AuthorityJournalStager {
+ public:
+  [[nodiscard]] bool start(const AuthorityJournalPlan& plan, const OperationLog& log,
+                           std::uint64_t sequence, std::span<std::byte> output);
+  [[nodiscard]] AuthorityJournalStageResult resume(const OperationLog& log,
+                                                   std::size_t maximum_payload_bytes);
+  void reset();
+
+  [[nodiscard]] bool active() const { return active_; }
+  [[nodiscard]] bool complete() const { return complete_; }
+
+ private:
+  AuthorityJournalPlan plan_{};
+  std::span<std::byte> output_{};
+  std::size_t operation_offset_ = 0;
+  std::size_t sample_offset_ = 0;
+  std::size_t payload_position_ = 0;
+  bool operation_header_staged_ = false;
+  bool active_ = false;
+  bool complete_ = false;
+};
+
 class AuthorityJournalSource {
  public:
   virtual ~AuthorityJournalSource() = default;
@@ -62,8 +94,18 @@ struct JournalRecovery {
 [[nodiscard]] std::optional<AuthorityJournalPlan> prepare_authority_journal(
     JournalChange change, const OperationLog& log);
 
-// Encodes a prepared transaction. The final commit marker is part of the
-// returned bytes; flash adapters write that marker last.
+// Stages immutable header and payload bytes without spending the transaction
+// CRC on the caller. Ownership of output must transfer to one serialized
+// worker before seal_authority_journal() mutates its padding and marker.
+[[nodiscard]] bool stage_authority_journal(const AuthorityJournalPlan& plan,
+                                           const OperationLog& log, std::uint64_t sequence,
+                                           std::span<std::byte> output);
+
+// Completes one staged transaction without consulting live authority.
+[[nodiscard]] bool seal_authority_journal(std::span<std::byte> output);
+
+// Stages and seals synchronously. The final commit marker is part of the
+// returned bytes; flash adapters still write that marker last.
 [[nodiscard]] bool encode_authority_journal(const AuthorityJournalPlan& plan,
                                             const OperationLog& log, std::uint64_t sequence,
                                             std::span<std::byte> output);

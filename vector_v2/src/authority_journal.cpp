@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <optional>
 #include <span>
@@ -16,6 +18,21 @@ constexpr std::uint32_t kCommitMagic = 0x54494D43U;       // CMIT
 constexpr std::uint16_t kFormatVersion = 1U;
 constexpr std::size_t kOperationWireBytes = 16U;
 constexpr std::size_t kCrcChunkBytes = 512U;
+
+constexpr std::array<std::uint32_t, 256> make_crc32_table() {
+  std::array<std::uint32_t, 256> table{};
+  for (std::size_t index = 0; index < table.size(); ++index) {
+    std::uint32_t value = static_cast<std::uint32_t>(index);
+    for (int bit = 0; bit < 8; ++bit) {
+      const std::uint32_t mask = 0U - (value & 1U);
+      value = (value >> 1U) ^ (0xEDB8'8320U & mask);
+    }
+    table[index] = value;
+  }
+  return table;
+}
+
+constexpr auto kCrc32Table = make_crc32_table();
 
 std::uint8_t get_u8(std::span<const std::byte> bytes, std::size_t offset) {
   return std::to_integer<std::uint8_t>(bytes[offset]);
@@ -57,11 +74,9 @@ void put_u64(std::span<std::byte> bytes, std::size_t offset, std::uint64_t value
 
 std::uint32_t crc32_update(std::uint32_t crc, std::span<const std::byte> bytes) {
   for (const std::byte value : bytes) {
-    crc ^= std::to_integer<std::uint8_t>(value);
-    for (int bit = 0; bit < 8; ++bit) {
-      const std::uint32_t mask = 0U - (crc & 1U);
-      crc = (crc >> 1U) ^ (0xEDB8'8320U & mask);
-    }
+    const std::uint8_t index =
+        static_cast<std::uint8_t>(crc ^ std::to_integer<std::uint8_t>(value));
+    crc = (crc >> 8U) ^ kCrc32Table[index];
   }
   return crc;
 }
@@ -126,7 +141,7 @@ std::optional<AuthorityJournalPlan> describe_change(JournalChange change, const 
   };
 }
 
-void encode_operation(const StoredOperation& operation, std::span<std::byte> output) {
+void encode_operation_header(const StoredOperation& operation, std::span<std::byte> output) {
   put_u16(output, 0U, static_cast<std::uint16_t>(operation.samples.size()));
   put_u16(output, 2U, operation.color);
   put_u16(output, 4U, static_cast<std::uint16_t>(operation.world_bounds.x0));
@@ -136,8 +151,16 @@ void encode_operation(const StoredOperation& operation, std::span<std::byte> out
   put_u8(output, 12U, static_cast<std::uint8_t>(operation.tool));
   put_u8(output, 13U, 0U);
   put_u16(output, 14U, operation.gesture_id);
-  std::size_t position = kOperationWireBytes;
-  for (const CompactOperationSample sample : operation.samples) {
+}
+
+void encode_samples(std::span<const CompactOperationSample> samples, std::span<std::byte> output) {
+  if constexpr (std::endian::native == std::endian::little) {
+    static_assert(sizeof(CompactOperationSample) == 4U * sizeof(std::uint16_t));
+    std::memcpy(output.data(), samples.data(), samples.size_bytes());
+    return;
+  }
+  std::size_t position = 0U;
+  for (const CompactOperationSample sample : samples) {
     put_u16(output, position, sample.x_quarter);
     put_u16(output, position + 2U, sample.y_quarter);
     put_u16(output, position + 4U, sample.radius_256);
@@ -396,15 +419,21 @@ std::optional<AuthorityJournalPlan> prepare_authority_journal(JournalChange chan
   return describe_change(change, log);
 }
 
-bool encode_authority_journal(const AuthorityJournalPlan& plan, const OperationLog& log,
-                              std::uint64_t sequence, std::span<std::byte> output) {
-  if (output.size() < plan.encoded_bytes ||
-      output.size() > std::numeric_limits<std::uint32_t>::max() || sequence == 0U) {
+bool AuthorityJournalStager::start(const AuthorityJournalPlan& plan, const OperationLog& log,
+                                   std::uint64_t sequence, std::span<std::byte> output) {
+  reset();
+  if (log.read_view() != plan.authority ||
+      output.size() < kAuthorityJournalHeaderBytes + kAuthorityJournalCommitMarkerBytes ||
+      output.size() < plan.encoded_bytes ||
+      output.size() > std::numeric_limits<std::uint32_t>::max() || sequence == 0U ||
+      plan.payload_bytes >
+          output.size() - kAuthorityJournalHeaderBytes - kAuthorityJournalCommitMarkerBytes) {
     return false;
   }
-  std::fill(output.begin(), output.end(), std::byte{0xFF});
   auto header = output.first(kAuthorityJournalHeaderBytes);
   auto payload = output.subspan(kAuthorityJournalHeaderBytes, plan.payload_bytes);
+  std::fill(header.begin(), header.end(), std::byte{0xFF});
+  std::fill(output.last(kAuthorityJournalCommitMarkerBytes).begin(), output.end(), std::byte{0xFF});
   put_u32(header, 0U, kTransactionMagic);
   put_u16(header, 4U, kFormatVersion);
   put_u16(header, 6U, static_cast<std::uint16_t>(plan.change.kind));
@@ -419,24 +448,148 @@ bool encode_authority_journal(const AuthorityJournalPlan& plan, const OperationL
   put_u32(header, 56U, static_cast<std::uint32_t>(plan.authority.retained_operation_count));
   put_u32(header, 60U, static_cast<std::uint32_t>(plan.authority.retained_sample_count));
   if (!payload.empty()) {
-    put_u32(payload, 0U, static_cast<std::uint32_t>(plan.operation_count));
-    std::size_t position = sizeof(std::uint32_t);
-    for (std::size_t offset = 0; offset < plan.operation_count; ++offset) {
-      const std::size_t index = plan.first_operation + offset;
-      const auto operation = plan.change.kind == JournalChangeKind::kCheckpoint
-                                 ? log.retained_operation(index)
-                                 : log.operation(index);
-      if (!operation.has_value()) {
-        return false;
-      }
-      const std::size_t bytes =
-          kOperationWireBytes + operation->samples.size() * sizeof(CompactOperationSample);
-      encode_operation(*operation, payload.subspan(position, bytes));
-      position += bytes;
+    if (payload.size() < sizeof(std::uint32_t)) {
+      return false;
     }
+    put_u32(payload, 0U, static_cast<std::uint32_t>(plan.operation_count));
+    payload_position_ = sizeof(std::uint32_t);
   }
   put_u32(header, 20U, 0U);
   put_u32(header, 20U, crc32(header));
+  plan_ = plan;
+  output_ = output;
+  active_ = true;
+  complete_ = plan.operation_count == 0U;
+  return true;
+}
+
+AuthorityJournalStageResult AuthorityJournalStager::resume(const OperationLog& log,
+                                                           std::size_t maximum_payload_bytes) {
+  if (!active_ || maximum_payload_bytes < kOperationWireBytes) {
+    return AuthorityJournalStageResult::kError;
+  }
+  if (log.read_view() != plan_.authority) {
+    reset();
+    return AuthorityJournalStageResult::kStale;
+  }
+  if (complete_) {
+    return AuthorityJournalStageResult::kComplete;
+  }
+  auto payload = output_.subspan(kAuthorityJournalHeaderBytes, plan_.payload_bytes);
+  std::size_t spent = 0U;
+  while (operation_offset_ < plan_.operation_count) {
+    const std::size_t index = plan_.first_operation + operation_offset_;
+    const auto operation = plan_.change.kind == JournalChangeKind::kCheckpoint
+                               ? log.retained_operation(index)
+                               : log.operation(index);
+    if (!operation.has_value()) {
+      reset();
+      return AuthorityJournalStageResult::kError;
+    }
+    if (!operation_header_staged_) {
+      if (maximum_payload_bytes - spent < kOperationWireBytes) {
+        return AuthorityJournalStageResult::kProgress;
+      }
+      if (payload_position_ > payload.size() ||
+          kOperationWireBytes > payload.size() - payload_position_) {
+        reset();
+        return AuthorityJournalStageResult::kError;
+      }
+      encode_operation_header(*operation, payload.subspan(payload_position_, kOperationWireBytes));
+      payload_position_ += kOperationWireBytes;
+      spent += kOperationWireBytes;
+      operation_header_staged_ = true;
+    }
+    const std::size_t remaining_samples = operation->samples.size() - sample_offset_;
+    const std::size_t available_samples =
+        (maximum_payload_bytes - spent) / sizeof(CompactOperationSample);
+    const std::size_t copied_samples = std::min(remaining_samples, available_samples);
+    const std::size_t copied_bytes = copied_samples * sizeof(CompactOperationSample);
+    if (copied_samples != 0U) {
+      if (payload_position_ > payload.size() - copied_bytes) {
+        reset();
+        return AuthorityJournalStageResult::kError;
+      }
+      encode_samples(operation->samples.subspan(sample_offset_, copied_samples),
+                     payload.subspan(payload_position_, copied_bytes));
+      payload_position_ += copied_bytes;
+      sample_offset_ += copied_samples;
+      spent += copied_bytes;
+    }
+    if (sample_offset_ != operation->samples.size()) {
+      return AuthorityJournalStageResult::kProgress;
+    }
+    ++operation_offset_;
+    sample_offset_ = 0U;
+    operation_header_staged_ = false;
+    if (spent == maximum_payload_bytes && operation_offset_ < plan_.operation_count) {
+      return AuthorityJournalStageResult::kProgress;
+    }
+  }
+  if (payload_position_ != plan_.payload_bytes) {
+    reset();
+    return AuthorityJournalStageResult::kError;
+  }
+  complete_ = true;
+  return AuthorityJournalStageResult::kComplete;
+}
+
+void AuthorityJournalStager::reset() {
+  plan_ = {};
+  output_ = {};
+  operation_offset_ = 0U;
+  sample_offset_ = 0U;
+  payload_position_ = 0U;
+  operation_header_staged_ = false;
+  active_ = false;
+  complete_ = false;
+}
+
+bool stage_authority_journal(const AuthorityJournalPlan& plan, const OperationLog& log,
+                             std::uint64_t sequence, std::span<std::byte> output) {
+  AuthorityJournalStager stager;
+  if (!stager.start(plan, log, sequence, output)) {
+    return false;
+  }
+  while (!stager.complete()) {
+    if (stager.resume(log, std::numeric_limits<std::size_t>::max()) !=
+        AuthorityJournalStageResult::kComplete) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool seal_authority_journal(std::span<std::byte> output) {
+  if (output.size() < kAuthorityJournalHeaderBytes + kAuthorityJournalCommitMarkerBytes ||
+      output.size() > std::numeric_limits<std::uint32_t>::max()) {
+    return false;
+  }
+  auto header = output.first(kAuthorityJournalHeaderBytes);
+  const std::size_t payload_bytes = get_u32(header, 16U);
+  const std::uint64_t sequence = get_u64(header, 40U);
+  if (get_u32(header, 0U) != kTransactionMagic || get_u16(header, 4U) != kFormatVersion ||
+      get_u32(header, 8U) != kAuthorityJournalHeaderBytes ||
+      get_u32(header, 12U) != output.size() ||
+      payload_bytes >
+          output.size() - kAuthorityJournalHeaderBytes - kAuthorityJournalCommitMarkerBytes ||
+      sequence == 0U) {
+    return false;
+  }
+  const std::uint32_t expected_header_crc = get_u32(header, 20U);
+  put_u32(header, 20U, 0U);
+  const std::uint32_t actual_header_crc = crc32(header);
+  put_u32(header, 20U, expected_header_crc);
+  if (actual_header_crc != expected_header_crc) {
+    return false;
+  }
+  auto payload = output.subspan(kAuthorityJournalHeaderBytes, payload_bytes);
+  const std::size_t padding_offset = kAuthorityJournalHeaderBytes + payload_bytes;
+  const std::size_t padding_bytes =
+      output.size() - padding_offset - kAuthorityJournalCommitMarkerBytes;
+  std::fill(output.begin() + static_cast<std::ptrdiff_t>(padding_offset),
+            output.begin() + static_cast<std::ptrdiff_t>(padding_offset + padding_bytes),
+            std::byte{0xFF});
   std::uint32_t transaction_crc = crc32_update(0xFFFF'FFFFU, header);
   transaction_crc = ~crc32_update(transaction_crc, payload);
   auto marker = output.last(kAuthorityJournalCommitMarkerBytes);
@@ -444,6 +597,11 @@ bool encode_authority_journal(const AuthorityJournalPlan& plan, const OperationL
   put_u32(marker, 4U, transaction_crc);
   put_u64(marker, 8U, sequence);
   return true;
+}
+
+bool encode_authority_journal(const AuthorityJournalPlan& plan, const OperationLog& log,
+                              std::uint64_t sequence, std::span<std::byte> output) {
+  return stage_authority_journal(plan, log, sequence, output) && seal_authority_journal(output);
 }
 
 JournalRecovery recover_authority_journal(const AuthorityJournalSource& source, std::size_t bytes,

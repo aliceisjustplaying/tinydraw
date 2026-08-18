@@ -6,9 +6,11 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <vector>
 
+#include "tinydraw/vector_v2/memory_layout.h"
 #include "tinydraw/vector_v2/operation_log.h"
 
 namespace vector_v2 = tinydraw::vector_v2;
@@ -349,4 +351,172 @@ TEST_CASE("authority journal supports sector-aligned committed transactions") {
   CHECK(recovered.sequence == 70U);
   CHECK(recovered.bytes_consumed == 4096U);
   CHECK(recovered.state == source.read_view());
+}
+
+TEST_CASE("staged authority journal stays coherent after live authority mutates") {
+  std::array<vector_v2::OperationRecord, 2> records{};
+  std::array<vector_v2::CompactOperationSample, 2> samples{};
+  vector_v2::OperationLog log(records, samples);
+  const std::array first{vector_v2::CompactOperationSample{
+      .x_quarter = 160, .y_quarter = 320, .radius_256 = 256, .elapsed_ms = 0}};
+  const std::array second{vector_v2::CompactOperationSample{
+      .x_quarter = 640, .y_quarter = 800, .radius_256 = 512, .elapsed_ms = 0}};
+  REQUIRE(log.append({.color = 0x001FU, .gesture_id = 1U, .samples = first}));
+  const auto plan = vector_v2::prepare_authority_journal(
+      {.kind = vector_v2::JournalChangeKind::kCheckpoint}, log);
+  REQUIRE(plan.has_value());
+  const vector_v2::AuthorityReadView staged_view = plan->authority;
+  std::vector<std::byte> transaction(plan->encoded_bytes);
+  REQUIRE(vector_v2::stage_authority_journal(*plan, log, 80U, transaction));
+  CHECK(std::all_of(transaction.end() - vector_v2::kAuthorityJournalCommitMarkerBytes,
+                    transaction.end(), [](std::byte value) { return value == std::byte{0xFF}; }));
+
+  REQUIRE(log.append({.color = 0xF800U, .gesture_id = 2U, .samples = second}));
+  REQUIRE(vector_v2::seal_authority_journal(transaction));
+  std::array<vector_v2::OperationRecord, 2> recovered_records{};
+  std::array<vector_v2::CompactOperationSample, 2> recovered_samples{};
+  const MemoryJournalSource source(transaction);
+  const auto recovered = vector_v2::recover_authority_journal(source, transaction.size(),
+                                                              recovered_records, recovered_samples);
+  CHECK(recovered.status == vector_v2::JournalRecoveryStatus::kRecovered);
+  CHECK(recovered.state == staged_view);
+  CHECK(recovered_records[0].color == 0x001FU);
+  CHECK(recovered_samples[0].x_quarter == first.front().x_quarter);
+}
+
+TEST_CASE("authority journal staging resumes after a header-only slice and rejects stale history") {
+  std::array<vector_v2::OperationRecord, 1> records{};
+  std::array<vector_v2::CompactOperationSample, 2> samples{};
+  vector_v2::OperationLog log(records, samples);
+  const std::array operation_samples{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 160, .y_quarter = 320, .radius_256 = 256, .elapsed_ms = 0},
+      vector_v2::CompactOperationSample{
+          .x_quarter = 320, .y_quarter = 480, .radius_256 = 256, .elapsed_ms = 1},
+  };
+  REQUIRE(log.append({.gesture_id = 1U, .samples = operation_samples}));
+  const auto plan = vector_v2::prepare_authority_journal(
+      {.kind = vector_v2::JournalChangeKind::kCheckpoint}, log);
+  REQUIRE(plan.has_value());
+  std::vector<std::byte> transaction(plan->encoded_bytes);
+  vector_v2::AuthorityJournalStager stager;
+  REQUIRE(stager.start(*plan, log, 81U, transaction));
+  CHECK(stager.resume(log, 16U) == vector_v2::AuthorityJournalStageResult::kProgress);
+  CHECK(stager.resume(log, 16U) == vector_v2::AuthorityJournalStageResult::kComplete);
+  CHECK(stager.complete());
+  REQUIRE(vector_v2::seal_authority_journal(transaction));
+
+  vector_v2::AuthorityJournalStager stale_stager;
+  REQUIRE(stale_stager.start(*plan, log, 82U, transaction));
+  CHECK(stale_stager.resume(log, 16U) == vector_v2::AuthorityJournalStageResult::kProgress);
+  auto undo = log.prepare_undo();
+  REQUIRE(undo.has_value());
+  undo->publish();
+  CHECK(stale_stager.resume(log, 16U) == vector_v2::AuthorityJournalStageResult::kStale);
+  CHECK_FALSE(stale_stager.active());
+}
+
+TEST_CASE("authority journal staging bounds one maximum-sized operation") {
+  constexpr std::size_t kMaximumSamples = std::numeric_limits<std::uint16_t>::max();
+  std::array<vector_v2::OperationRecord, 1> records{};
+  std::vector<vector_v2::CompactOperationSample> storage(kMaximumSamples);
+  std::vector<vector_v2::CompactOperationSample> source_samples(kMaximumSamples,
+                                                                vector_v2::CompactOperationSample{
+                                                                    .x_quarter = 400,
+                                                                    .y_quarter = 800,
+                                                                    .radius_256 = 256,
+                                                                    .elapsed_ms = 0,
+                                                                });
+  vector_v2::OperationLog log(records, storage);
+  REQUIRE(log.append({.gesture_id = 1U, .samples = source_samples}));
+  const auto plan = vector_v2::prepare_authority_journal(
+      {.kind = vector_v2::JournalChangeKind::kCheckpoint}, log);
+  REQUIRE(plan.has_value());
+  std::vector<std::byte> transaction(plan->encoded_bytes);
+  vector_v2::AuthorityJournalStager stager;
+  REQUIRE(stager.start(*plan, log, 83U, transaction));
+  std::size_t slices = 0U;
+  vector_v2::AuthorityJournalStageResult result = vector_v2::AuthorityJournalStageResult::kProgress;
+  while (result == vector_v2::AuthorityJournalStageResult::kProgress) {
+    result = stager.resume(log, 1'024U);
+    ++slices;
+  }
+  CHECK(result == vector_v2::AuthorityJournalStageResult::kComplete);
+  CHECK(slices >= 512U);
+  REQUIRE(vector_v2::seal_authority_journal(transaction));
+  std::array<vector_v2::OperationRecord, 1> recovered_records{};
+  std::vector<vector_v2::CompactOperationSample> recovered_samples(kMaximumSamples);
+  const MemoryJournalSource source(transaction);
+  const auto recovered = vector_v2::recover_authority_journal(source, transaction.size(),
+                                                              recovered_records, recovered_samples);
+  CHECK(recovered.status == vector_v2::JournalRecoveryStatus::kRecovered);
+  CHECK(recovered.state == log.read_view());
+  CHECK(recovered_samples.front() == source_samples.front());
+  CHECK(recovered_samples.back() == source_samples.back());
+}
+
+TEST_CASE("full-capacity staged journal recovers and preserves its prior point after corruption") {
+  constexpr std::size_t kSectorBytes = 4096U;
+  constexpr std::size_t kSamplesPerOperation =
+      vector_v2::kOperationSampleCapacity / vector_v2::kOperationCapacity;
+  std::array<vector_v2::OperationRecord, 1> blank_records{};
+  std::array<vector_v2::CompactOperationSample, 1> blank_samples{};
+  vector_v2::OperationLog blank(blank_records, blank_samples);
+  const auto blank_plan = vector_v2::prepare_authority_journal(
+      {.kind = vector_v2::JournalChangeKind::kCheckpoint}, blank);
+  REQUIRE(blank_plan.has_value());
+  std::vector<std::byte> journal(kSectorBytes);
+  REQUIRE(vector_v2::encode_authority_journal(*blank_plan, blank, 90U, journal));
+  const std::size_t recovery_point_bytes = journal.size();
+
+  std::vector<vector_v2::OperationRecord> records(vector_v2::kOperationCapacity);
+  std::vector<vector_v2::CompactOperationSample> samples(vector_v2::kOperationSampleCapacity);
+  vector_v2::OperationLog log(records, samples);
+  std::array<vector_v2::CompactOperationSample, kSamplesPerOperation> operation_samples{};
+  for (std::size_t sample = 0; sample < operation_samples.size(); ++sample) {
+    operation_samples[sample] = {
+        .x_quarter = static_cast<std::uint16_t>(400U + sample),
+        .y_quarter = static_cast<std::uint16_t>(800U + sample),
+        .radius_256 = 256U,
+        .elapsed_ms = static_cast<std::uint16_t>(sample),
+    };
+  }
+  for (std::size_t operation = 0; operation < vector_v2::kOperationCapacity; ++operation) {
+    REQUIRE(log.append({.color = static_cast<std::uint16_t>(operation),
+                        .gesture_id = static_cast<std::uint16_t>(operation + 1U),
+                        .samples = operation_samples}));
+  }
+  const auto full_plan = vector_v2::prepare_authority_journal(
+      {.kind = vector_v2::JournalChangeKind::kCheckpoint}, log);
+  REQUIRE(full_plan.has_value());
+  const std::size_t full_bytes =
+      (full_plan->encoded_bytes + kSectorBytes - 1U) / kSectorBytes * kSectorBytes;
+  journal.resize(recovery_point_bytes + full_bytes);
+  auto full_transaction = std::span(journal).subspan(recovery_point_bytes, full_bytes);
+  REQUIRE(vector_v2::stage_authority_journal(*full_plan, log, 91U, full_transaction));
+  REQUIRE(vector_v2::seal_authority_journal(full_transaction));
+
+  std::vector<vector_v2::OperationRecord> recovered_records(vector_v2::kOperationCapacity);
+  std::vector<vector_v2::CompactOperationSample> recovered_samples(
+      vector_v2::kOperationSampleCapacity);
+  const MemoryJournalSource source(journal);
+  const auto recovered = vector_v2::recover_authority_journal(source, journal.size(),
+                                                              recovered_records, recovered_samples);
+  CHECK(recovered.status == vector_v2::JournalRecoveryStatus::kRecovered);
+  CHECK(recovered.sequence == 91U);
+  CHECK(recovered.transaction_count == 2U);
+  CHECK(recovered.state == log.read_view());
+  CHECK(recovered_samples.back() == operation_samples.back());
+
+  std::vector<std::byte> damaged = journal;
+  damaged[recovery_point_bytes + vector_v2::kAuthorityJournalHeaderBytes + 4U] ^= std::byte{0x01};
+  const MemoryJournalSource damaged_source(damaged);
+  const auto prior = vector_v2::recover_authority_journal(damaged_source, damaged.size(),
+                                                          recovered_records, recovered_samples);
+  CHECK(prior.status == vector_v2::JournalRecoveryStatus::kRecovered);
+  CHECK(prior.sequence == 90U);
+  CHECK(prior.transaction_count == 1U);
+  CHECK(prior.bytes_consumed == recovery_point_bytes);
+  CHECK(prior.discarded_tail);
+  CHECK(prior.state == blank.read_view());
 }
