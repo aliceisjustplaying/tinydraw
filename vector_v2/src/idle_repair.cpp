@@ -1,6 +1,7 @@
 #include "tinydraw/vector_v2/idle_repair.h"
 
 #include <algorithm>
+#include <cstdlib>
 
 #include "tinydraw/vector_v2/navigation_state.h"
 
@@ -38,7 +39,8 @@ void append_view(IdleRepairPlan& plan, ZoomLevel zoom, int x, int y,
 }  // namespace
 
 IdleRepairPlan plan_idle_repair(const ViewRequest& active_view,
-                                std::span<const ViewFootprint> remembered) {
+                                std::span<const ViewFootprint> remembered,
+                                IdleRepairPanDelta last_pan) {
   IdleRepairPlan plan{};
   if (active_view.zoom == ZoomLevel::k25Percent) {
     // The 25% view composes from overview authority and has no tiles to
@@ -47,10 +49,25 @@ IdleRepairPlan plan_idle_repair(const ViewRequest& active_view,
   }
   const int x = active_view.level_pixels.x0;
   const int y = active_view.level_pixels.y0;
-  append_view(plan, active_view.zoom, x - kOverviewWidth, y, &active_view);
-  append_view(plan, active_view.zoom, x + kOverviewWidth, y, &active_view);
-  append_view(plan, active_view.zoom, x, y - kOverviewHeight, &active_view);
-  append_view(plan, active_view.zoom, x, y + kOverviewHeight, &active_view);
+  if (last_pan.x == 0 && last_pan.y == 0) {
+    append_view(plan, active_view.zoom, x - kOverviewWidth, y, &active_view);
+    append_view(plan, active_view.zoom, x + kOverviewWidth, y, &active_view);
+    append_view(plan, active_view.zoom, x, y - kOverviewHeight, &active_view);
+    append_view(plan, active_view.zoom, x, y + kOverviewHeight, &active_view);
+  } else if (std::abs(static_cast<std::int64_t>(last_pan.x)) >=
+             std::abs(static_cast<std::int64_t>(last_pan.y))) {
+    const int direction = last_pan.x > 0 ? 1 : -1;
+    append_view(plan, active_view.zoom, x + direction * kOverviewWidth, y, &active_view);
+    append_view(plan, active_view.zoom, x - direction * kTileWidth, y, &active_view);
+    append_view(plan, active_view.zoom, x, y - kTileHeight, &active_view);
+    append_view(plan, active_view.zoom, x, y + kTileHeight, &active_view);
+  } else {
+    const int direction = last_pan.y > 0 ? 1 : -1;
+    append_view(plan, active_view.zoom, x, y + direction * kOverviewHeight, &active_view);
+    append_view(plan, active_view.zoom, x, y - direction * kTileHeight, &active_view);
+    append_view(plan, active_view.zoom, x - kTileWidth, y, &active_view);
+    append_view(plan, active_view.zoom, x + kTileWidth, y, &active_view);
+  }
   for (const ViewFootprint& footprint : remembered) {
     if (footprint.valid && footprint.zoom != active_view.zoom) {
       append_view(plan, footprint.zoom, footprint.level_pixels.x0, footprint.level_pixels.y0);

@@ -8,6 +8,7 @@
 
 namespace {
 
+using tinydraw::vector_v2::IdleRepairPanDelta;
 using tinydraw::vector_v2::IdleRepairPlan;
 using tinydraw::vector_v2::kOverviewHeight;
 using tinydraw::vector_v2::kOverviewWidth;
@@ -73,6 +74,41 @@ TEST_CASE("idle repair at 400 percent covers the cardinal neighborhood") {
   CHECK(contains(plan, ZoomLevel::k400Percent, 2760, 3360 + kOverviewHeight));
   CHECK(all_views_valid(plan));
   CHECK(all_views_unique(plan));
+}
+
+TEST_CASE("idle repair prioritizes continued horizontal travel and short runways") {
+  const auto active = view_at(ZoomLevel::k400Percent, 2760, 3360);
+  const auto plan = plan_idle_repair(active, {}, IdleRepairPanDelta{.x = 97, .y = 21});
+  REQUIRE(plan.count == 4U);
+  CHECK(plan.views[0] == view_at(ZoomLevel::k400Percent, 2760 + kOverviewWidth, 3360));
+  CHECK(plan.views[1] == view_at(ZoomLevel::k400Percent, 2760 - 64, 3360));
+  CHECK(plan.views[2] == view_at(ZoomLevel::k400Percent, 2760, 3360 - 64));
+  CHECK(plan.views[3] == view_at(ZoomLevel::k400Percent, 2760, 3360 + 64));
+  CHECK(all_views_valid(plan));
+  CHECK(all_views_unique(plan));
+}
+
+TEST_CASE("idle repair prioritizes continued vertical travel and short runways") {
+  const auto active = view_at(ZoomLevel::k400Percent, 2760, 3360);
+  const auto plan = plan_idle_repair(active, {}, IdleRepairPanDelta{.x = 12, .y = -80});
+  REQUIRE(plan.count == 4U);
+  CHECK(plan.views[0] == view_at(ZoomLevel::k400Percent, 2760, 3360 - kOverviewHeight));
+  CHECK(plan.views[1] == view_at(ZoomLevel::k400Percent, 2760, 3360 + 64));
+  CHECK(plan.views[2] == view_at(ZoomLevel::k400Percent, 2760 - 64, 3360));
+  CHECK(plan.views[3] == view_at(ZoomLevel::k400Percent, 2760 + 64, 3360));
+  CHECK(all_views_valid(plan));
+  CHECK(all_views_unique(plan));
+}
+
+TEST_CASE("idle repair zero pan delta preserves the symmetric plan") {
+  const auto active = view_at(ZoomLevel::k400Percent, 2760, 3360);
+  const auto implicit = plan_idle_repair(active, {});
+  const auto explicit_zero = plan_idle_repair(active, {}, {});
+  CHECK(explicit_zero.count == implicit.count);
+  CHECK(explicit_zero.grid_start == implicit.grid_start);
+  for (std::size_t index = 0; index < implicit.count; ++index) {
+    CHECK(explicit_zero.views[index] == implicit.views[index]);
+  }
 }
 
 TEST_CASE("idle repair clamps and deduplicates at the level corner") {

@@ -115,6 +115,7 @@ class VectorV2BackgroundPipeline {
   PendingFillPresentation pending_fill_{};
 
   vector_v2::IdleRepairPlan repair_plan_{};
+  vector_v2::IdleRepairPanDelta repair_pan_delta_{};
   std::size_t repair_cursor_ = 0;
   std::size_t repair_steps_ = 0;
   bool repair_planned_ = false;
