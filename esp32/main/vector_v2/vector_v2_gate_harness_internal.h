@@ -143,6 +143,13 @@ bool run_long_gesture_commit_gate(VectorV2Presenter& presenter, vector_v2::TileP
                                   const InPlaceAppendWorkspace& workspace,
                                   std::span<const std::uint16_t> blank_snapshot,
                                   std::span<CompactOperationSample> builder_storage);
+bool run_history_latency_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
+                              OperationLog& log, MaterializedCanvas& canvas,
+                              const vector_v2::ChromeState& chrome,
+                              const InPlaceAppendWorkspace& workspace,
+                              std::span<const std::uint16_t> blank_snapshot,
+                              std::span<CompactOperationSample> builder_storage,
+                              std::span<std::uint16_t> overview_scratch);
 bool run_export_encode_gate(VectorV2Export& exporter, OperationLog& log);
 
 bool run_cache_tour_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,

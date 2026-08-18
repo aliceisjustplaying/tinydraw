@@ -23,6 +23,6 @@ namespace tinydraw::esp32 {
     const vector_v2::ChromeState& chrome, const vector_v2::InPlaceAppendWorkspace& workspace,
     VectorV2Export& exporter, std::span<const std::uint16_t> blank_snapshot,
     std::span<vector_v2::CompactOperationSample> conversion_storage,
-    std::span<std::uint16_t> tile_scratch);
+    std::span<std::uint16_t> tile_scratch, std::span<std::uint16_t> overview_scratch);
 
 }  // namespace tinydraw::esp32

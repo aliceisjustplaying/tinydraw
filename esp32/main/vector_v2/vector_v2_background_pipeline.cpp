@@ -79,6 +79,78 @@ void VectorV2BackgroundPipeline::note_committed_bounds(PixelRect world_bounds) {
 
 void VectorV2BackgroundPipeline::mark_history_controls_dirty() { history_controls_dirty_ = true; }
 
+void VectorV2BackgroundPipeline::hold_history_damage(vector_v2::PixelRect level_bounds) {
+  // A rapid chain of history taps merges into one hold: the earliest tap
+  // keeps its start time (so the hourglass persists), the damage and any
+  // already-suppressed publications union, and one exact swap ends the
+  // chain. A hold from another view is replaced outright.
+  if (history_hold_.active && history_hold_.zoom == presenter_.zoom() &&
+      history_hold_.x == presenter_.level_x() && history_hold_.y == presenter_.level_y()) {
+    history_hold_.level_bounds.x0 = std::min(history_hold_.level_bounds.x0, level_bounds.x0);
+    history_hold_.level_bounds.y0 = std::min(history_hold_.level_bounds.y0, level_bounds.y0);
+    history_hold_.level_bounds.x1 = std::max(history_hold_.level_bounds.x1, level_bounds.x1);
+    history_hold_.level_bounds.y1 = std::max(history_hold_.level_bounds.y1, level_bounds.y1);
+    history_hold_.revision = canvas_.current_revision();
+    history_hold_.busy_shown = history_hold_.busy_shown || chrome_.history_busy;
+    return;
+  }
+  history_hold_ = {.level_bounds = level_bounds,
+                   .zoom = presenter_.zoom(),
+                   .x = presenter_.level_x(),
+                   .y = presenter_.level_y(),
+                   .revision = canvas_.current_revision(),
+                   .started_us = esp_timer_get_time(),
+                   .busy_shown = chrome_.history_busy,
+                   .active = true};
+}
+
+// Converts a completed hold into one pending exact presentation covering the
+// held damage, every suppressed publication, and the busy cue if shown.
+// Deferred without loss while another presentation is pending. Because the
+// damaged region kept its retained pixels at the history move, the final
+// present must always cover the complete hold, published or not.
+void VectorV2BackgroundPipeline::convert_history_hold(const vector_v2::ViewRequest& view) {
+  if (!history_hold_.active) {
+    return;
+  }
+  if (pending_fill_.pending) {
+    return;
+  }
+  vector_v2::PixelRect bounds = history_hold_.level_bounds;
+  if (history_hold_.union_valid) {
+    bounds.x0 = std::min(bounds.x0, history_hold_.published_union.x0);
+    bounds.y0 = std::min(bounds.y0, history_hold_.published_union.y0);
+    bounds.x1 = std::max(bounds.x1, history_hold_.published_union.x1);
+    bounds.y1 = std::max(bounds.y1, history_hold_.published_union.y1);
+  }
+  if (history_hold_.busy_shown) {
+    const vector_v2::ChromeRect busy = vector_v2::chrome_history_busy_region();
+    bounds.x0 = std::min(bounds.x0, busy.x0);
+    bounds.y0 = std::min(bounds.y0, busy.y0);
+    bounds.x1 = std::max(bounds.x1, busy.x1);
+    bounds.y1 = std::max(bounds.y1, busy.y1);
+  }
+  chrome_.history_busy = false;
+  pending_fill_ = {.level_bounds = bounds,
+                   .zoom = view.zoom,
+                   .x = view.level_pixels.x0,
+                   .y = view.level_pixels.y0,
+                   .pending = true};
+  // The settle pass that follows re-renders AA for this region; batch its
+  // window presents into one polish so the swap stays the only churn.
+  settle_hold_ = {.level_bounds = bounds,
+                  .zoom = history_hold_.zoom,
+                  .x = history_hold_.x,
+                  .y = history_hold_.y,
+                  .revision = canvas_.current_revision(),
+                  .active = true};
+  std::printf("TINYDRAW_LIVE_HISTORY_HOLD suppressed=%lu busy=%u union=%dx%d wall_us=%lld\n",
+              static_cast<unsigned long>(history_hold_.suppressed), history_hold_.busy_shown,
+              bounds.x1 - bounds.x0, bounds.y1 - bounds.y0,
+              static_cast<long long>(esp_timer_get_time() - history_hold_.started_us));
+  history_hold_ = {};
+}
+
 void VectorV2BackgroundPipeline::history_controls_presented() { history_controls_dirty_ = false; }
 
 void VectorV2BackgroundPipeline::reset_document_state() {
@@ -111,6 +183,10 @@ void VectorV2BackgroundPipeline::reset_document_state() {
   drain_failures_ = 0;
   drain_ready_to_present_ = false;
   history_controls_dirty_ = false;
+  // history_hold_ (and its busy cue) deliberately survives: a follow-up
+  // history tap merges into it, and any non-history revision change drops
+  // it through the run_fill/run_slice fingerprint checks.
+  settle_hold_ = {};
   reset_settle_pass();
 }
 
@@ -246,6 +322,17 @@ void VectorV2BackgroundPipeline::run_fill(const ViewRequest& view,
     repair_planned_ = false;
     reset_settle_pass();
   }
+  if (history_hold_.active &&
+      (history_hold_.zoom != view.zoom || history_hold_.x != view.level_pixels.x0 ||
+       history_hold_.y != view.level_pixels.y0 ||
+       history_hold_.revision != canvas_.current_revision())) {
+    // A pan, zoom, or newer authority supersedes the held damage; remaining
+    // refill presents per publication as usual, and the superseding view's
+    // own presentation erases any busy cue.
+    chrome_.history_busy = false;
+    history_hold_ = {};
+  }
+
 
   if (pending_fill_.pending) {
     const bool still_current = pending_fill_.zoom == view.zoom &&
@@ -271,6 +358,10 @@ void VectorV2BackgroundPipeline::run_fill(const ViewRequest& view,
   }
 
   if (fill_complete_) {
+    convert_history_hold(view);
+    if (pending_fill_.pending) {
+      return;
+    }
     if (fill_measurement_active_) {
       print_fill("complete");
       std::printf("TINYDRAW_LIVE_FILL_DONE zoom=%s x=%d y=%d revision=%lu\n", zoom_name(fill_zoom_),
@@ -301,17 +392,44 @@ void VectorV2BackgroundPipeline::run_fill(const ViewRequest& view,
       break;
     }
     if (step->tiles_published != 0U) {
-      pending_fill_ = {.level_bounds = step->level_bounds,
-                       .zoom = view.zoom,
-                       .x = view.level_pixels.x0,
-                       .y = view.level_pixels.y0,
-                       .pending = true};
+      const bool held = history_hold_.active &&
+                        step->level_bounds.x0 < history_hold_.level_bounds.x1 &&
+                        history_hold_.level_bounds.x0 < step->level_bounds.x1 &&
+                        step->level_bounds.y0 < history_hold_.level_bounds.y1 &&
+                        history_hold_.level_bounds.y0 < step->level_bounds.y1;
+      if (held) {
+        // Accumulate instead of presenting: the whole damaged region swaps
+        // exactly once when its refill completes.
+        if (history_hold_.union_valid) {
+          history_hold_.published_union.x0 =
+              std::min(history_hold_.published_union.x0, step->level_bounds.x0);
+          history_hold_.published_union.y0 =
+              std::min(history_hold_.published_union.y0, step->level_bounds.y0);
+          history_hold_.published_union.x1 =
+              std::max(history_hold_.published_union.x1, step->level_bounds.x1);
+          history_hold_.published_union.y1 =
+              std::max(history_hold_.published_union.y1, step->level_bounds.y1);
+        } else {
+          history_hold_.published_union = step->level_bounds;
+          history_hold_.union_valid = true;
+        }
+        ++history_hold_.suppressed;
+      } else {
+        pending_fill_ = {.level_bounds = step->level_bounds,
+                         .zoom = view.zoom,
+                         .x = view.level_pixels.x0,
+                         .y = view.level_pixels.y0,
+                         .pending = true};
+      }
     }
     fill_complete_ = step->complete;
   } while (!fill_complete_ && !pending_fill_.pending &&
            esp_timer_get_time() - tick_started < kColdFillSliceDeadlineUs);
   fill_timing_.tick_max_us =
       std::max(fill_timing_.tick_max_us, esp_timer_get_time() - tick_started);
+  if (fill_complete_) {
+    convert_history_hold(view);
+  }
   if (fill_complete_ && !pending_fill_.pending) {
     print_fill("complete");
     std::printf("TINYDRAW_LIVE_FILL_DONE zoom=%s x=%d y=%d revision=%lu\n", zoom_name(fill_zoom_),
@@ -360,6 +478,14 @@ void VectorV2BackgroundPipeline::run_repair(const ViewRequest& view,
 void VectorV2BackgroundPipeline::run_settle(std::uint32_t loop_us,
                                             TouchUrgencyProbe touch_urgency) {
   const bool overview = presenter_.zoom() == ZoomLevel::k25Percent;
+  if (settle_hold_.active &&
+      (settle_hold_.zoom != presenter_.zoom() || settle_hold_.x != presenter_.level_x() ||
+       settle_hold_.y != presenter_.level_y() ||
+       settle_hold_.revision != canvas_.current_revision())) {
+    // The held pass was superseded by navigation or newer authority; the
+    // fresh pass presents normally.
+    settle_hold_ = {};
+  }
   if (pending_settle_.pending) {
     if (touch_urgency.requested()) {
       return;
@@ -453,7 +579,23 @@ void VectorV2BackgroundPipeline::run_settle(std::uint32_t loop_us,
     settle_render_.cursor.cancel();
     settle_render_.active = false;
     if (rendered) {
-      include_bounds(batch_bounds, bounds);
+      const bool held = settle_hold_.active && bounds.x0 < settle_hold_.level_bounds.x1 &&
+                        settle_hold_.level_bounds.x0 < bounds.x1 &&
+                        bounds.y0 < settle_hold_.level_bounds.y1 &&
+                        settle_hold_.level_bounds.y0 < bounds.y1;
+      if (held) {
+        if (settle_hold_.union_valid) {
+          settle_hold_.union_bounds.x0 = std::min(settle_hold_.union_bounds.x0, bounds.x0);
+          settle_hold_.union_bounds.y0 = std::min(settle_hold_.union_bounds.y0, bounds.y0);
+          settle_hold_.union_bounds.x1 = std::max(settle_hold_.union_bounds.x1, bounds.x1);
+          settle_hold_.union_bounds.y1 = std::max(settle_hold_.union_bounds.y1, bounds.y1);
+        } else {
+          settle_hold_.union_bounds = bounds;
+          settle_hold_.union_valid = true;
+        }
+      } else {
+        include_bounds(batch_bounds, bounds);
+      }
       ++settle_tiles_;
       ++settle_cursor_;
       settle_retry_count_ = 0U;
@@ -485,6 +627,20 @@ void VectorV2BackgroundPipeline::run_settle(std::uint32_t loop_us,
       }
     }
   }
+  if (settle_cursor_ >= total && settle_hold_.active) {
+    // The held pass finished: one AA polish present covers every batched
+    // window over the history damage.
+    if (settle_hold_.union_valid && !pending_settle_.pending) {
+      pending_settle_ = {
+          .level_bounds = settle_hold_.union_bounds,
+          .overview = overview,
+          .pending = true,
+      };
+      settle_hold_ = {};
+    } else if (!settle_hold_.union_valid) {
+      settle_hold_ = {};
+    }
+  }
   if (settle_cursor_ >= total && !pending_settle_.pending) {
     settle_complete_ = true;
     if (settle_tiles_ != 0U || settle_failures_ != 0U) {
@@ -505,6 +661,47 @@ BackgroundSliceResult VectorV2BackgroundPipeline::run_slice(const BackgroundSlic
   BackgroundSliceResult result{};
   const bool fill_view_available =
       presenter_.zoom() != ZoomLevel::k25Percent && chrome_.popup == vector_v2::ChromePopup::kNone;
+  if (history_hold_.active && presenter_.zoom() == ZoomLevel::k25Percent &&
+      !input.touch_urgency.requested()) {
+    // 25% has no tile refill: the overview became exact inside the history
+    // move itself, so the hold converts to one immediate present here and
+    // AA progression is handed to the settle hold. A stale hold from
+    // another view or revision is dropped.
+    if (history_hold_.zoom != presenter_.zoom() || history_hold_.x != presenter_.level_x() ||
+        history_hold_.y != presenter_.level_y() ||
+        history_hold_.revision != canvas_.current_revision()) {
+      chrome_.history_busy = false;
+      history_hold_ = {};
+    } else {
+      vector_v2::PixelRect bounds = history_hold_.level_bounds;
+      if (history_hold_.busy_shown) {
+        const vector_v2::ChromeRect busy = vector_v2::chrome_history_busy_region();
+        bounds.x0 = std::min(bounds.x0, busy.x0);
+        bounds.y0 = std::min(bounds.y0, busy.y0);
+        bounds.x1 = std::max(bounds.x1, busy.x1);
+        bounds.y1 = std::max(bounds.y1, busy.y1);
+      }
+      chrome_.history_busy = false;
+      // refresh_region recomposes from the canvas: the overview already
+      // carries the post-history pixels, while the retained frame does not.
+      if (presenter_.refresh_region(bounds, chrome_, input.loop_us).passed) {
+        settle_hold_ = {.level_bounds = bounds,
+                        .zoom = history_hold_.zoom,
+                        .x = history_hold_.x,
+                        .y = history_hold_.y,
+                        .revision = canvas_.current_revision(),
+                        .active = true};
+        std::printf(
+            "TINYDRAW_LIVE_HISTORY_HOLD suppressed=%lu busy=%u union=%dx%d wall_us=%lld\n",
+            static_cast<unsigned long>(history_hold_.suppressed), history_hold_.busy_shown,
+            bounds.x1 - bounds.x0, bounds.y1 - bounds.y0,
+            static_cast<long long>(esp_timer_get_time() - history_hold_.started_us));
+        history_hold_ = {};
+      } else {
+        chrome_.history_busy = history_hold_.busy_shown;
+      }
+    }
+  }
   const bool fill_allowed =
       !input.pressed && !input.sample_ready && fill_view_available && !input.lift_report_pending;
   if (!input.pressed) {
