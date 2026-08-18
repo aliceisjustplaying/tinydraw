@@ -541,12 +541,6 @@ void run_vector_v2_app() {
   const auto begin_pan = [&](Point start) {
     panning = true;
     pan_metrics.reset();
-    // Boundary drain (committed-overlay design §3.4): the ring-reuse pan path
-    // composes exposed strips without the pending overlay, so the canvas must
-    // reach authority before the first pan present.
-    if (vector_v2::pending_operation_count(log, canvas) != 0U) {
-      static_cast<void>(background.drain_boundary(BackgroundDrainBoundary::kPan));
-    }
     pan_start = start;
     pan_start_x = presenter.level_x();
     pan_start_y = presenter.level_y();

@@ -9,6 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "tinydraw/vector_v2/incremental_document.h"
+#include "tinydraw/vector_v2/panel_staging.h"
 
 namespace tinydraw::esp32 {
 namespace {
@@ -156,12 +157,18 @@ bool VectorV2Presenter::stage_settled_pixels(vector_v2::PixelRect panel_bounds,
                                              std::span<const std::uint16_t> pixels, int stride) {
   const int width = panel_bounds.x1 - panel_bounds.x0;
   const int height = panel_bounds.y1 - panel_bounds.y0;
-  if (frame_ring_bottom_ != 0 || width <= 0 || height <= 0 || stride < width ||
-      panel_bounds.x0 < 0 || panel_bounds.y0 < 0 || panel_bounds.x1 > vector_v2::kOverviewWidth ||
-      panel_bounds.y1 > vector_v2::kOverviewHeight ||
+  if (width <= 0 || height <= 0 || stride < width || panel_bounds.x0 < 0 || panel_bounds.y0 < 0 ||
+      panel_bounds.x1 > vector_v2::kOverviewWidth || panel_bounds.y1 > vector_v2::kOverviewHeight ||
       pixels.size() < static_cast<std::size_t>(height - 1) * static_cast<std::size_t>(stride) +
                           static_cast<std::size_t>(width)) {
     return false;
+  }
+  if (frame_ring_bottom_ != 0) {
+    if (panel_bounds.y1 > frame_ring_bottom_) {
+      return false;
+    }
+    copy_pixels_to_ring(panel_bounds, pixels, stride);
+    return true;
   }
   for (int row = 0; row < height; ++row) {
     const auto source =
@@ -173,18 +180,12 @@ bool VectorV2Presenter::stage_settled_pixels(vector_v2::PixelRect panel_bounds,
                        static_cast<std::size_t>(width));
     std::copy(source.begin(), source.end(), target.begin());
   }
-  // Settled pixels diverge from a fresh canvas compose; pan reuse must not
-  // scroll them silently.
-  frame_reusable_ = false;
   return true;
 }
 
 LivePresentationTiming VectorV2Presenter::present_frame_region(vector_v2::PixelRect panel_bounds,
                                                                const vector_v2::ChromeState& chrome,
                                                                std::uint32_t event_us) {
-  if (frame_ring_bottom_ != 0) {
-    return {};
-  }
   return present_with_overlays(panel_bounds, chrome, event_us, 0, false);
 }
 
@@ -235,13 +236,8 @@ LivePresentationTiming VectorV2Presenter::refresh(const vector_v2::ChromeState& 
 LivePresentationTiming VectorV2Presenter::refresh_region(vector_v2::PixelRect level_bounds,
                                                          const vector_v2::ChromeState& chrome,
                                                          std::uint32_t event_us) {
-  if (frame_ring_bottom_ != 0) {
-    // The frame is ring-rotated from an active pan; a full refresh both
-    // materializes it and covers the requested region.
-    return refresh(chrome, event_us);
-  }
   // A successful region update writes exact current-revision pixels into the
-  // linear frame, so it preserves whatever pan-reusability the frame had.
+  // linear or ring frame, preserving its current addressing and reusability.
   const bool was_reusable = frame_reusable_;
   const int canvas_bottom = vector_v2::chrome_canvas_bottom(chrome);
   const vector_v2::PixelRect view{level_x(), level_y(), level_x() + vector_v2::kOverviewWidth,
@@ -348,13 +344,20 @@ LivePresentationTiming VectorV2Presenter::compose_and_present(vector_v2::PixelRe
     return {};
   }
   overlay_pending(level_bounds, destination, width);
-  for (int row = 0; row < height; ++row) {
-    const auto source = destination.subspan(static_cast<std::size_t>(row) * width, width);
-    auto target =
-        frame_.subspan(static_cast<std::size_t>(panel_bounds.y0 + row) * vector_v2::kOverviewWidth +
-                           static_cast<std::size_t>(panel_bounds.x0),
-                       static_cast<std::size_t>(width));
-    std::copy(source.begin(), source.end(), target.begin());
+  if (frame_ring_bottom_ != 0) {
+    if (panel_bounds.y1 > frame_ring_bottom_) {
+      return {};
+    }
+    copy_pixels_to_ring(panel_bounds, destination, width);
+  } else {
+    for (int row = 0; row < height; ++row) {
+      const auto source = destination.subspan(static_cast<std::size_t>(row) * width, width);
+      auto target = frame_.subspan(
+          static_cast<std::size_t>(panel_bounds.y0 + row) * vector_v2::kOverviewWidth +
+              static_cast<std::size_t>(panel_bounds.x0),
+          static_cast<std::size_t>(width));
+      std::copy(source.begin(), source.end(), target.begin());
+    }
   }
   auto timing = present_with_overlays(panel_bounds, chrome, event_us,
                                       esp_timer_get_time() - compose_started, true);
@@ -370,10 +373,9 @@ LivePresentationTiming VectorV2Presenter::compose_and_present(vector_v2::PixelRe
 LivePresentationTiming VectorV2Presenter::show_start(InkPoint point, std::uint16_t color,
                                                      const vector_v2::ChromeState& chrome,
                                                      std::uint32_t event_us) {
-  if (frame_ring_bottom_ != 0 && !refresh(chrome, event_us).passed) {
-    return {};
+  if (frame_ring_bottom_ == 0) {
+    frame_reusable_ = false;
   }
-  frame_reusable_ = false;
   const int canvas_bottom = vector_v2::chrome_input_bottom(chrome);
   if (canvas_bottom == 0) {
     return {.passed = true};
@@ -392,10 +394,9 @@ LivePresentationTiming VectorV2Presenter::show_update(const RibbonUpdate& update
                                                       std::uint16_t color,
                                                       const vector_v2::ChromeState& chrome,
                                                       std::uint32_t event_us) {
-  if (frame_ring_bottom_ != 0 && !refresh(chrome, event_us).passed) {
-    return {};
+  if (frame_ring_bottom_ == 0) {
+    frame_reusable_ = false;
   }
-  frame_reusable_ = false;
   const int canvas_bottom = vector_v2::chrome_input_bottom(chrome);
   if (canvas_bottom == 0) {
     clear_live_overlay();
@@ -404,8 +405,14 @@ LivePresentationTiming VectorV2Presenter::show_update(const RibbonUpdate& update
   const vector_v2::PixelRect old_provisional_bounds = live_provisional_bounds_;
   const auto committed = std::span(update.committed.begin(), update.committed.size());
   if (!committed.empty()) {
-    static_cast<void>(
-        renderer_->render(committed, frame_, vector_v2::kOverviewWidth, canvas_bottom, color));
+    if (frame_ring_bottom_ != 0) {
+      if (!render_into_ring(committed, color, primitive_bounds(committed, canvas_bottom))) {
+        return {};
+      }
+    } else {
+      static_cast<void>(
+          renderer_->render(committed, frame_, vector_v2::kOverviewWidth, canvas_bottom, color));
+    }
   }
   const vector_v2::PixelRect committed_bounds = primitive_bounds(committed, canvas_bottom);
 
@@ -546,7 +553,8 @@ LivePresentationTiming VectorV2Presenter::present_with_overlays(
       bounds = align_bounds(bounds);
     }
   }
-  auto timing = present(bounds, chrome, event_us, compose_us);
+  auto timing = frame_ring_bottom_ == 0 ? present(bounds, chrome, event_us, compose_us)
+                                        : present_ring_region(bounds, chrome, event_us, compose_us);
   if (refresh_minimap && timing.passed) {
     presented_minimap_revision_ = canvas_.current_revision();
     minimap_presented_ = true;
@@ -561,7 +569,86 @@ LivePresentationTiming VectorV2Presenter::present_unobscured(vector_v2::PixelRec
                                                              bool wait_for_completion) {
   // Fixed chrome is restored inside the same staged window, so intersecting
   // ink no longer splits into multiple panel submissions or completion drains.
-  return present(bounds, chrome, event_us, compose_us, wait_for_completion);
+  return frame_ring_bottom_ == 0
+             ? present(bounds, chrome, event_us, compose_us, wait_for_completion)
+             : present_ring_region(bounds, chrome, event_us, compose_us, wait_for_completion);
+}
+
+LivePresentationTiming VectorV2Presenter::present_ring_region(vector_v2::PixelRect bounds,
+                                                              const vector_v2::ChromeState& chrome,
+                                                              std::uint32_t event_us,
+                                                              std::int64_t compose_us,
+                                                              bool wait_for_completion) {
+  bounds = align_bounds(bounds);
+  LivePresentationTiming timing{.compose_us = compose_us};
+  if (bounds.x0 >= bounds.x1 || bounds.y0 >= bounds.y1) {
+    timing.passed = true;
+    return timing;
+  }
+  if (frame_ring_bottom_ <= 0) {
+    return present(bounds, chrome, event_us, compose_us, wait_for_completion);
+  }
+
+  const vector_v2::PixelRect canvas_bounds{bounds.x0, bounds.y0, bounds.x1,
+                                           std::min(bounds.y1, frame_ring_bottom_)};
+  const vector_v2::PixelRect chrome_bounds{bounds.x0, std::max(bounds.y0, frame_ring_bottom_),
+                                           bounds.x1, bounds.y1};
+  const std::uint32_t first_sequence = display_.submit_count() + 1U;
+  const std::int64_t present_started = esp_timer_get_time();
+  bool submitted = false;
+  const auto fail_after_drain = [&]() {
+    static_cast<void>(display_.wait_for_all(2'000'000));
+    timing.complete_us = esp_timer_get_time() - present_started;
+    timing.passed = false;
+    return timing;
+  };
+
+  if (canvas_bounds.y0 < canvas_bounds.y1) {
+    const std::span<const vector_v2::PixelRect> no_exposed{};
+    const auto part = present_ring(canvas_bounds, chrome, event_us, no_exposed);
+    timing.chrome_prepare_us += part.chrome_prepare_us;
+    timing.chrome_stage_us += part.chrome_stage_us;
+    timing.chrome_us += part.chrome_us;
+    timing.pushes += part.pushes;
+    timing.first_submit_us = part.first_submit_us;
+    if (!part.passed) {
+      return fail_after_drain();
+    }
+    submitted = part.pushes != 0U;
+  }
+
+  if (chrome_bounds.y0 < chrome_bounds.y1) {
+    const auto part = present(chrome_bounds, chrome, event_us, 0, false);
+    timing.chrome_prepare_us += part.chrome_prepare_us;
+    timing.chrome_stage_us += part.chrome_stage_us;
+    timing.chrome_us += part.chrome_us;
+    if (!submitted) {
+      timing.first_submit_us = part.first_submit_us;
+    }
+    timing.pushes += part.pushes;
+    if (!part.passed) {
+      return fail_after_drain();
+    }
+    submitted = submitted || part.pushes != 0U;
+  }
+
+  const bool completed = !wait_for_completion || display_.wait_for_all(2'000'000);
+  const std::int64_t finished = esp_timer_get_time();
+  timing.complete_us = finished - present_started;
+  if (event_us != 0U && submitted && wait_for_completion) {
+    const std::int64_t dma_complete = display_.complete_time_us(first_sequence);
+    if (dma_complete >= 0) {
+      timing.first_complete_us =
+          static_cast<std::uint32_t>(static_cast<std::uint32_t>(dma_complete) - event_us);
+    }
+  }
+  timing.passed = completed;
+  if (timing.passed) {
+    // Chrome is staged over a canvas-only ring, so a successful local chrome
+    // update advances the reuse identity without materializing the frame.
+    frame_chrome_ = chrome;
+  }
+  return timing;
 }
 
 LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
@@ -709,6 +796,7 @@ bool VectorV2Presenter::compose_into_ring(vector_v2::PixelRect panel_bounds) {
     if (!stats.has_value()) {
       return false;
     }
+    overlay_pending(strip_level, pixels, width);
     for (int row = 0; row < rows; ++row) {
       const auto source = pixels.subspan(static_cast<std::size_t>(row) * width, width);
       const int ring_y = vector_v2::ring_row(frame_ring_, ring_area, y + row);
@@ -725,12 +813,60 @@ bool VectorV2Presenter::compose_into_ring(vector_v2::PixelRect panel_bounds) {
   return true;
 }
 
+void VectorV2Presenter::copy_pixels_to_ring(vector_v2::PixelRect panel_bounds,
+                                            std::span<const std::uint16_t> pixels, int stride) {
+  const vector_v2::PixelRect ring_area{0, 0, vector_v2::kOverviewWidth, frame_ring_bottom_};
+  const int width = panel_bounds.x1 - panel_bounds.x0;
+  const int height = panel_bounds.y1 - panel_bounds.y0;
+  for (int row = 0; row < height; ++row) {
+    const int ring_y = vector_v2::ring_row(frame_ring_, ring_area, panel_bounds.y0 + row);
+    auto destination_row = frame_.subspan(
+        static_cast<std::size_t>(ring_y) * vector_v2::kOverviewWidth, vector_v2::kOverviewWidth);
+    vector_v2::copy_to_ring_row(pixels.data() + static_cast<std::ptrdiff_t>(row) * stride, width,
+                                destination_row.data(), vector_v2::kOverviewWidth,
+                                frame_ring_.shift_x, panel_bounds.x0);
+  }
+}
+
+bool VectorV2Presenter::render_into_ring(std::span<const RibbonPrimitive> primitives,
+                                         std::uint16_t color, vector_v2::PixelRect panel_bounds) {
+  const int width = panel_bounds.x1 - panel_bounds.x0;
+  const int height = panel_bounds.y1 - panel_bounds.y0;
+  if (primitives.empty() || width <= 0 || height <= 0) {
+    return true;
+  }
+  if (frame_ring_bottom_ <= 0 || panel_bounds.x0 < 0 || panel_bounds.y0 < 0 ||
+      panel_bounds.x1 > vector_v2::kOverviewWidth || panel_bounds.y1 > frame_ring_bottom_) {
+    return false;
+  }
+  const int rows_per_strip = static_cast<int>(region_.size() / static_cast<std::size_t>(width));
+  if (rows_per_strip <= 0) {
+    return false;
+  }
+  const vector_v2::PixelRect ring_area{0, 0, vector_v2::kOverviewWidth, frame_ring_bottom_};
+  for (int y = panel_bounds.y0; y < panel_bounds.y1; y += rows_per_strip) {
+    const int rows = std::min(rows_per_strip, panel_bounds.y1 - y);
+    auto pixels = region_.first(static_cast<std::size_t>(width) * rows);
+    for (int row = 0; row < rows; ++row) {
+      const int ring_y = vector_v2::ring_row(frame_ring_, ring_area, y + row);
+      const auto source_row = frame_.subspan(
+          static_cast<std::size_t>(ring_y) * vector_v2::kOverviewWidth, vector_v2::kOverviewWidth);
+      vector_v2::copy_ring_row(source_row.data(), vector_v2::kOverviewWidth, frame_ring_.shift_x,
+                               panel_bounds.x0, width,
+                               pixels.data() + static_cast<std::ptrdiff_t>(row) * width);
+    }
+    static_cast<void>(renderer_->render_surface(primitives, pixels, width, rows, width,
+                                                panel_bounds.x0, y, color));
+    copy_pixels_to_ring({panel_bounds.x0, y, panel_bounds.x1, y + rows}, pixels, width);
+  }
+  return true;
+}
+
 void VectorV2Presenter::copy_ring_to_stage(vector_v2::PixelRect panel_bounds,
                                            const PanelStageSurface& surface) {
   const vector_v2::PixelRect ring_area{0, 0, vector_v2::kOverviewWidth, frame_ring_bottom_};
   for (int y = panel_bounds.y0; y < panel_bounds.y1; ++y) {
     const int ring_y = vector_v2::ring_row(frame_ring_, ring_area, y);
-    const int ring_x = vector_v2::ring_column(frame_ring_, ring_area, panel_bounds.x0);
     const auto source_row =
         frame_.subspan(static_cast<std::size_t>(ring_y) * vector_v2::kOverviewWidth);
     auto destination = surface.pixels.subspan(
@@ -738,12 +874,12 @@ void VectorV2Presenter::copy_ring_to_stage(vector_v2::PixelRect panel_bounds,
             static_cast<std::size_t>(panel_bounds.x0 - surface.panel_x),
         static_cast<std::size_t>(panel_bounds.x1 - panel_bounds.x0));
     const int width = panel_bounds.x1 - panel_bounds.x0;
-    const int first = std::min(width, vector_v2::kOverviewWidth - ring_x);
-    std::copy(source_row.begin() + ring_x, source_row.begin() + ring_x + first,
-              destination.begin());
-    if (first < width) {
-      std::copy(source_row.begin(), source_row.begin() + (width - first),
-                destination.begin() + first);
+    if (surface.byte_swapped) {
+      vector_v2::stage_ring_row(source_row.data(), vector_v2::kOverviewWidth, frame_ring_.shift_x,
+                                panel_bounds.x0, width, destination.data());
+    } else {
+      vector_v2::copy_ring_row(source_row.data(), vector_v2::kOverviewWidth, frame_ring_.shift_x,
+                               panel_bounds.x0, width, destination.data());
     }
   }
 }
@@ -879,11 +1015,13 @@ LivePresentationTiming VectorV2Presenter::present_ring(
       .presenter = this, .chrome = &chrome, .navigation = navigation, .exposed = exposed};
   const std::uint32_t pushes_before = display_.push_count();
   const std::int64_t first_submitted = esp_timer_get_time();
-  const bool streamed = display_.stream_rect_ring(
-      band.x0, band.y0, band_width, band_height, ring_pixels.data(), vector_v2::kOverviewWidth,
-      frame_ring_.shift_x, frame_ring_.shift_y, vector_v2::kOverviewWidth, frame_ring_bottom_,
-      rows_per_strip,
-      {.context = &context, .paint = &paint_stage_thunk, .accepts_byte_swapped = true});
+  const bool streamed =
+      display_.stream_rect_ring(band.x0, band.y0, band_width, band_height, ring_pixels.data(),
+                                vector_v2::kOverviewWidth, frame_ring_.shift_x, frame_ring_.shift_y,
+                                vector_v2::kOverviewWidth, frame_ring_bottom_, rows_per_strip,
+                                {.context = &context,
+                                 .paint = &paint_stage_thunk,
+                                 .accepts_byte_swapped = live_provisional_count_ == 0U});
   if (!streamed) {
     return timing;
   }

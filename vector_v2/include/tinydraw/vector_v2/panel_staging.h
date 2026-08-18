@@ -48,6 +48,28 @@ inline void copy_ring_row(const std::uint16_t* source_row, int area_width, int s
   }
 }
 
+// Writes one logical panel run back into its ring-addressed backing row.
+// This is the inverse addressing operation of copy_ring_row and keeps local
+// canvas/ink damage in the toroidal frame without materializing the frame.
+inline void copy_to_ring_row(const std::uint16_t* source, int width, std::uint16_t* destination_row,
+                             int area_width, int shift_x, int x) {
+  int destination_column = x + shift_x;
+  if (destination_column >= area_width) {
+    destination_column -= area_width;
+  }
+  int read = 0;
+  while (read < width) {
+    const int chunk = area_width - destination_column < width - read
+                          ? area_width - destination_column
+                          : width - read;
+    for (int column = 0; column < chunk; ++column) {
+      destination_row[destination_column + column] = source[read + column];
+    }
+    read += chunk;
+    destination_column = 0;
+  }
+}
+
 inline void swap_pixels_in_place(std::span<std::uint16_t> pixels) {
   for (std::uint16_t& pixel : pixels) {
     pixel = static_cast<std::uint16_t>((pixel >> 8U) | (pixel << 8U));
