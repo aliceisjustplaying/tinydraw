@@ -8,6 +8,8 @@
 #include "tinydraw/vector_v2/storage_overlap.h"
 
 namespace tinydraw::vector_v2 {
+
+void PendingOperationAbsorption::cancel() { *this = PendingOperationAbsorption{}; }
 namespace {
 
 bool prepare_overview(const MaterializedCanvas& canvas, const OperationAppend& operation,
@@ -609,7 +611,6 @@ PendingAbsorptionSliceResult absorb_pending_operation_slice(
     state.workspace_ = workspace;
     state.priority_view_ = priority_view;
     state.retention_ = retention;
-    state.deadline_us_ = retention_deadline_us(retention);
     state.overview_bounds_ = overview_bounds_for_world(stored->world_bounds);
     const int width = state.overview_bounds_.x1 - state.overview_bounds_.x0;
     const int height = state.overview_bounds_.y1 - state.overview_bounds_.y0;
@@ -683,7 +684,20 @@ PendingAbsorptionSliceResult absorb_pending_operation_slice(
     return 0;
   };
   const auto over_retention_budget = [&]() {
-    return state.retention_.now_us != nullptr && stamp() >= state.deadline_us_;
+    if (state.retention_.now_us == nullptr) {
+      return false;
+    }
+    const InPlaceAppendPhases& phases = state.phases_;
+    std::int64_t remaining_us = state.retention_.budget_us;
+    for (const std::int64_t phase_us :
+         {phases.prepare_us, phases.overview_us, phases.enumerate_us, phases.uniform_retain_us,
+          phases.raw_retain_us, phases.offscreen_retain_us}) {
+      if (remaining_us <= 0 || phase_us >= remaining_us) {
+        return true;
+      }
+      remaining_us -= std::max<std::int64_t>(0, phase_us);
+    }
+    return false;
   };
   const auto start_tile = [&](const InPlaceTileEdit& edit, TileKey key) {
     state.tile_edit_ = edit;
