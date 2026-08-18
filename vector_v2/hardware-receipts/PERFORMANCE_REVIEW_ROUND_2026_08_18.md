@@ -537,8 +537,9 @@ override was removed and product behavior remains the literal 0.4 setting.
 1. F13 local spans remain host-accepted and settled-tile IRAM is physically
    accepted, but settled AA still exceeds 500 ms at 50–400%.
    Saturated-destination skipping, zero-memory cross-tile candidate batching,
-   and adaptive 8/11-row band scheduling are closed measured no-gos. Any future
-   treatment needs a new measured raster direction and product proof.
+   adaptive 8/11-row band scheduling, constant-radius specialization, and loop
+   alignment are closed measured no-gos. Any future treatment needs a new
+   measured raster direction and product proof.
 2. F10’s sparse prefix discovery and F21’s retained membership scans are
    closed. Dense history intentionally keeps full replay, and full-pool
    eviction intentionally keeps exact LRU. Revisit only after a measured dense
@@ -575,6 +576,8 @@ override was removed and product behavior remains the literal 0.4 setting.
 - F13 all-zoom AA: [`SETTLED_AA_ALL_ZOOM_2026_08_18.md`](../SETTLED_AA_ALL_ZOOM_2026_08_18.md)
 - F13 adaptive band probe: [`SETTLED_AA_ADAPTIVE_BAND_PROBE_2026_08_18.md`](../SETTLED_AA_ADAPTIVE_BAND_PROBE_2026_08_18.md)
 - F13 cross-tile reuse probe: [`SETTLED_AA_CROSS_TILE_REUSE_PROBE_2026_08_18.md`](../SETTLED_AA_CROSS_TILE_REUSE_PROBE_2026_08_18.md)
+- F13 constant-radius probe: [`SETTLED_AA_CONSTANT_RADIUS_PROBE_2026_08_18.md`](../SETTLED_AA_CONSTANT_RADIUS_PROBE_2026_08_18.md)
+- F13 loop-alignment probe: [`SETTLED_AA_LOOP_ALIGNMENT_PROBE_2026_08_18.md`](../SETTLED_AA_LOOP_ALIGNMENT_PROBE_2026_08_18.md)
 - F21 cache commit scans: [`F21_CACHE_COMMIT_SCANS_2026_08_18.md`](F21_CACHE_COMMIT_SCANS_2026_08_18.md)
 - F24 raster IRAM map: [`F24_RASTER_IRAM_AB_2026_08_18.md`](F24_RASTER_IRAM_AB_2026_08_18.md)
 - Transient chrome/popup incident: [`TRANSIENT_CHROME_POPUP_INCIDENT_2026_08_18.md`](TRANSIENT_CHROME_POPUP_INCIDENT_2026_08_18.md)
