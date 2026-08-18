@@ -7,6 +7,13 @@
 
 namespace vector_v2 = tinydraw::vector_v2;
 
+TEST_CASE("uniform tile classification exits without measurement data") {
+  constexpr std::array<std::uint16_t, 8> pixels{9, 9, 0, 9, 9, 0, 9, 9};
+  CHECK(vector_v2::tile_uniform_color(pixels, 2, 3, 3) == 9U);
+  CHECK_FALSE(vector_v2::tile_uniform_color(pixels, 3, 2, 3));
+  CHECK_FALSE(vector_v2::tile_uniform_color(pixels, 2, 3, 2));
+}
+
 TEST_CASE("tile payload analysis rejects malformed input") {
   std::array<std::uint16_t, 4> pixels{};
   CHECK_FALSE(vector_v2::analyze_tile_payload(pixels, 0, 4));

@@ -1367,31 +1367,6 @@ bool apply_masked_operation_chord_rows(OperationTool tool, std::uint16_t color,
   return true;
 }
 
-bool apply_operation_chord_rows(OperationTool tool, std::uint16_t color,
-                                std::span<const std::byte> chord_storage,
-                                const OperationChordBatch& batch, int first_row,
-                                std::size_t max_work_px, const RasterSurface& surface,
-                                OperationSweepSlice& slice) {
-  OperationSweepCursor cursor{.next_row = first_row};
-  slice = {};
-  do {
-    OperationSweepSlice part{};
-    const std::size_t remaining = slice.work_px < max_work_px ? max_work_px - slice.work_px : 1U;
-    if (!apply_operation_chord_slice(tool, color, chord_storage, batch, remaining, surface, cursor,
-                                     part)) {
-      return false;
-    }
-    slice.work_px += part.work_px;
-    slice.rows_swept += part.rows_swept;
-    // The row interface deliberately finishes its first live row even after
-    // the work target is crossed. Existing synchronous callers retain their
-    // historical row-boundary contract.
-  } while (cursor.next_row < batch.clipped_bounds.y1 &&
-           (cursor.next_chord != 0U || slice.work_px < max_work_px));
-  slice.next_row = cursor.next_row;
-  return true;
-}
-
 bool apply_operation_chord_slice(OperationTool tool, std::uint16_t color,
                                  std::span<const std::byte> chord_storage,
                                  const OperationChordBatch& batch, std::size_t max_work_px,

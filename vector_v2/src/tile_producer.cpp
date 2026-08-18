@@ -604,13 +604,10 @@ bool TileProducer::publish_surface_tile(TileKey key, PixelRect rendered_bounds,
                       static_cast<std::size_t>(bounds.x0 - rendered_bounds.x0);
   const auto strided = surface.subspan(
       origin, static_cast<std::size_t>(height - 1) * kStride + static_cast<std::size_t>(width));
-  const auto analysis = analyze_tile_payload(strided, width, height, kStride);
-  if (!analysis.has_value()) {
-    return false;
-  }
-  if (analysis->uniform) {
+  if (const auto uniform_color = tile_uniform_color(strided, width, height, kStride);
+      uniform_color.has_value()) {
     return canvas_
-        .publish_uniform(key, revision, MaterializationQuality::kImmediate, analysis->uniform_color)
+        .publish_uniform(key, revision, MaterializationQuality::kImmediate, *uniform_color)
         .has_value();
   }
   return canvas_.publish_tile(key, revision, MaterializationQuality::kImmediate, strided, kStride)
