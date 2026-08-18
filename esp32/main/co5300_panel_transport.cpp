@@ -11,6 +11,7 @@
 #include "driver/i2c_master.h"
 #include "driver/spi_master.h"
 #include "esp_check.h"
+#include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "esp_lcd_co5300.h"
 #include "esp_lcd_panel_io.h"
@@ -78,7 +79,49 @@ using vector_v2::stage_pixels_swapped;
 using vector_v2::stage_ring_row;
 using vector_v2::swap_pixels_in_place;
 
-bool reset_panel_power() {
+constexpr int kPanelResetAttempts = 3;
+constexpr int kPanelResetRetryDelayMs = 10;
+
+enum class PanelResetStage : std::uint8_t {
+  kNone,
+  kBusCreate,
+  kDeviceAdd,
+  kConfigure,
+  kPowerDown,
+  kPowerUp,
+};
+
+struct PanelResetResult {
+  bool succeeded = false;
+  int attempts = 0;
+  int bus_resets = 0;
+  PanelResetStage first_failure_stage = PanelResetStage::kNone;
+  esp_err_t first_failure = ESP_OK;
+  esp_err_t last_bus_reset = ESP_OK;
+  esp_err_t device_remove = ESP_OK;
+  esp_err_t bus_delete = ESP_OK;
+};
+
+const char* panel_reset_stage_name(PanelResetStage stage) {
+  switch (stage) {
+    case PanelResetStage::kNone:
+      return "none";
+    case PanelResetStage::kBusCreate:
+      return "bus_create";
+    case PanelResetStage::kDeviceAdd:
+      return "device_add";
+    case PanelResetStage::kConfigure:
+      return "configure";
+    case PanelResetStage::kPowerDown:
+      return "power_down";
+    case PanelResetStage::kPowerUp:
+      return "power_up";
+  }
+  return "unknown";
+}
+
+PanelResetResult reset_panel_power() {
+  PanelResetResult result{};
   i2c_master_bus_config_t bus_config{};
   bus_config.i2c_port = I2C_NUM_0;
   bus_config.sda_io_num = GPIO_NUM_15;
@@ -87,8 +130,11 @@ bool reset_panel_power() {
   bus_config.glitch_ignore_cnt = 7;
   bus_config.flags.enable_internal_pullup = true;
   i2c_master_bus_handle_t bus = nullptr;
-  if (i2c_new_master_bus(&bus_config, &bus) != ESP_OK) {
-    return false;
+  const esp_err_t bus_create = i2c_new_master_bus(&bus_config, &bus);
+  if (bus_create != ESP_OK) {
+    result.first_failure_stage = PanelResetStage::kBusCreate;
+    result.first_failure = bus_create;
+    return result;
   }
 
   i2c_device_config_t device_config{};
@@ -96,25 +142,61 @@ bool reset_panel_power() {
   device_config.device_address = kIoExpanderAddress;
   device_config.scl_speed_hz = 400000;
   i2c_master_dev_handle_t device = nullptr;
-  if (i2c_master_bus_add_device(bus, &device_config, &device) != ESP_OK) {
-    static_cast<void>(i2c_del_master_bus(bus));
-    return false;
+  const esp_err_t device_add = i2c_master_bus_add_device(bus, &device_config, &device);
+  if (device_add != ESP_OK) {
+    result.first_failure_stage = PanelResetStage::kDeviceAdd;
+    result.first_failure = device_add;
+    result.bus_delete = i2c_del_master_bus(bus);
+    return result;
   }
 
   const auto write = [&](std::uint8_t address, std::uint8_t value) {
     const std::array payload{address, value};
-    return i2c_master_transmit(device, payload.data(), payload.size(), 100) == ESP_OK;
+    return i2c_master_transmit(device, payload.data(), payload.size(), 100);
   };
-  const bool configured =
-      write(kIoExpanderConfigRegister, static_cast<std::uint8_t>(~kIoExpanderOutputs));
-  const bool powered_down = configured && write(kIoExpanderOutputRegister, kIoExpanderSdChipSelect);
-  vTaskDelay(pdMS_TO_TICKS(20));
-  const bool powered_up = powered_down && write(kIoExpanderOutputRegister, kIoExpanderOutputs);
-  vTaskDelay(pdMS_TO_TICKS(150));
+  const auto record_failure = [&](PanelResetStage stage, esp_err_t error) {
+    if (result.first_failure_stage == PanelResetStage::kNone) {
+      result.first_failure_stage = stage;
+      result.first_failure = error;
+    }
+  };
 
-  const bool removed = i2c_master_bus_rm_device(device) == ESP_OK;
-  const bool deleted = i2c_del_master_bus(bus) == ESP_OK;
-  return powered_up && removed && deleted;
+  for (int attempt = 1; attempt <= kPanelResetAttempts; ++attempt) {
+    result.attempts = attempt;
+    const esp_err_t configured =
+        write(kIoExpanderConfigRegister, static_cast<std::uint8_t>(~kIoExpanderOutputs));
+    if (configured != ESP_OK) {
+      record_failure(PanelResetStage::kConfigure, configured);
+    } else {
+      const esp_err_t powered_down = write(kIoExpanderOutputRegister, kIoExpanderSdChipSelect);
+      if (powered_down != ESP_OK) {
+        record_failure(PanelResetStage::kPowerDown, powered_down);
+      } else {
+        vTaskDelay(pdMS_TO_TICKS(20));
+        const esp_err_t powered_up = write(kIoExpanderOutputRegister, kIoExpanderOutputs);
+        if (powered_up == ESP_OK) {
+          result.succeeded = true;
+          vTaskDelay(pdMS_TO_TICKS(150));
+          break;
+        }
+        record_failure(PanelResetStage::kPowerUp, powered_up);
+      }
+    }
+
+    ++result.bus_resets;
+    result.last_bus_reset = i2c_master_bus_reset(bus);
+    if (attempt < kPanelResetAttempts) {
+      vTaskDelay(pdMS_TO_TICKS(kPanelResetRetryDelayMs));
+    }
+  }
+
+  result.device_remove = i2c_master_bus_rm_device(device);
+  if (result.device_remove == ESP_OK) {
+    result.bus_delete = i2c_del_master_bus(bus);
+  } else {
+    result.bus_delete = ESP_ERR_INVALID_STATE;
+  }
+  return result;
 }
 
 }  // namespace
@@ -132,7 +214,14 @@ class Co5300PanelTransport::Impl {
         tear_semaphore_ == nullptr) {
       return;
     }
-    std::printf("TINYDRAW_PANEL_HARD_RESET=%u\n", reset_panel_power());
+    const PanelResetResult panel_reset = reset_panel_power();
+    std::printf(
+        "TINYDRAW_PANEL_HARD_RESET=%u attempts=%d bus_resets=%d first_failure_stage=%s "
+        "first_failure=%s last_bus_reset=%s device_remove=%s bus_delete=%s\n",
+        static_cast<unsigned>(panel_reset.succeeded), panel_reset.attempts, panel_reset.bus_resets,
+        panel_reset_stage_name(panel_reset.first_failure_stage),
+        esp_err_to_name(panel_reset.first_failure), esp_err_to_name(panel_reset.last_bus_reset),
+        esp_err_to_name(panel_reset.device_remove), esp_err_to_name(panel_reset.bus_delete));
     std::printf("TINYDRAW_PANEL_TRANSPORT clock_mhz=%d\n", kPanelClockMHz);
 
     spi_bus_config_t bus_config{};
