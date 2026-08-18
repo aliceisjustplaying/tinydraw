@@ -4,18 +4,21 @@
 
 This receipt records the implementation round against
 [`tinydraw-v2-performance-review-20260818.md`](../../tinydraw-v2-performance-review-20260818.md),
-reviewed at `b63b07f905b40b3d435679911d2de89e57e1f062`. The accepted work is the
-commit series `594c218..af114d6`. It covers startup occupancy, ring-local presentation,
+reviewed at `b63b07f905b40b3d435679911d2de89e57e1f062`. The first accepted work is
+the commit series `594c218..af114d6`. It covers startup occupancy, ring-local presentation,
 input wake/drain behavior, the operation spatial index, composition cleanup,
 settled retry correctness, panel-reset recovery, and the 400% hairline/eraser
 glass regression found during acceptance.
 
-The current automated hardware battery is green. The owner’s final glass
-retest is green: no tearing, no persistent white blocks, and the previously
-slow dense hairline/eraser region now completes within the accepted cold gate.
-Settled AA remains the pre-existing yellow receipt; this round does not claim
-full closure of the review’s history-generation, banded-settle, or
-intra-operation preemption proposals.
+The accepted `594c218..af114d6` automated hardware battery is green. The
+owner’s glass retest for that series is green: no tearing, no persistent white
+blocks, and the previously slow dense hairline/eraser region completes within
+the accepted cold gate. The follow-up series `2191d6b..57f9910` adds the
+cooperative work required by F9, F19, and F28; their automated hardware battery
+is now also green. The owner’s final glass test for this follow-up remains
+pending. Settled AA remains the pre-existing yellow receipt; this round does
+not claim closure of the review’s history-generation or banded-settle
+proposals.
 
 ## Measurement baseline
 
@@ -56,6 +59,83 @@ failed attempts, and reports the first causal stage. Reset success also requires
 I²C device and bus cleanup; transport initialization fails closed otherwise.
 The accepted gate and normal product boot both completed on attempt 1 with no
 bus reset.
+
+## Cooperative follow-up — hardware accepted, glass pending
+
+The follow-up is host-verified and accepted by the automated physical gate.
+Its remaining acceptance step is the owner’s glass test.
+
+| Review findings | Accepted follow-up change and evidence |
+|---|---|
+| F3–F5, F16–F18 | Ring-local receipts now count exact logical panel pixels. A host oracle covers wrapped row/column staging and exposed-strip reconstruction; the device gate proves local canvas, chrome, provisional ink, and committed ink submissions are smaller than the full canvas while the next pan remains reusable. Optical no-tear remains a glass oracle. |
+| F9, F19 | Pending-operation absorption is a persistent phase machine covering overview copy/raster, affected identity enumeration, uniform/raw retention, offscreen retention, staged overview publication, bounded metadata, and a scalar final commit. Metadata resumes across uniforms, raw slots, rerender damage, and occupancy. The caller supplies a 256-pixel raster quantum and one slice between input samples. Cancellation abandons unpublished continuation state; restart converges to exact pixels while the pending overlay remains authority. |
+| F9 | Settled rendering retains its authority fingerprint, operation/chord position, compositing position, and final-fold position across 512-work-unit slices. Complete output and replay statistics are bit-identical to the synchronous path; transient retry state remains durable. |
+| F28 | Full refresh composition advances eight rows per slice, or 56 slices for the 448-row frame, and submits no panel pixels until the complete frame is ready. Pressed input and authority/canvas disagreement block progress. A live-ink interruption preserves refresh intent and restarts from row zero, preventing a partially composed frame from being published. Startup and other hard transition paths remain synchronous. |
+| F9, F28 | Tile production can explicitly abandon unpublished work before absorption borrows its chord-plan scratch. This keeps the scratch alias serialization explicit and makes cancellation safe. |
+
+The follow-up adds no external allocation. The final continuation layout is
+184 bytes for the overview/metadata stage, 632 bytes for
+`PendingOperationAbsorption`, and 240 bytes for `MaterializedCanvas`: 104 bytes
+of additional caller state and eight bytes of canvas state over the row-stage
+version, with no PSRAM growth. Composition uses the existing 329,728-byte
+frame. Absorption reuses the existing 329,728-byte overview scratch, 3,024-byte
+affected-key array, 512-byte tile mask, and 12,384-byte producer chord-plan
+storage. Settling reuses its existing 40,960-byte workspace.
+
+Several corrections were required before the follow-up matched the product
+contract:
+
+- retention carry-over is charged by completed work, so a paused absorption
+  restart does not spend its deadline while idle;
+- the gate offers an absorption slice after every input sample, matching the
+  product cadence and keeping observed backlog at one operation;
+- dense unmasked overview rows retain an intra-row cursor rather than treating
+  a complete wide row as one work unit;
+- refresh interruption retains deferred dirty intent and restarts a fresh
+  composition after live input or pending authority drains;
+- final overview publication copies one 368-pixel RGB565 row per slice, with a
+  validated canvas/revision/source/epoch proof and exact cancel/restart tests;
+- metadata invalidation advances through bounded uniform, raw-slot, rerender
+  damage, and occupancy phases before a scalar revision commit; the commit
+  revalidates the diagnostic-ledger identity captured by the continuation.
+
+### Superseded red diagnostic receipts
+
+The first cooperative device run exposed two independent test/model problems
+and one real publication boundary. Its mixed-draw model offered absorption only
+once per 32-sample chunk, allowing a 45–48-operation backlog. The dense 25%
+recorded trace then measured a 12.472 ms slice. After matching the product’s
+per-sample cadence, backlog fell to one; 25% mixed pen/eraser slices measured
+4.930/4.943 ms and all 50–400% mixed cases stayed at or below 3.040 ms. The
+dense 25% trace still measured 11.277 ms. Attribution identified the atomic
+329,728-byte overview publication, not geometry, while every other automated
+gate remained green.
+
+Row-staging removed that copy boundary. Two intermediate device confirmations
+reduced the dense 25% maximum to 4.386 and 4.751 ms and attributed both maxima
+to the metadata commit. The latest mixed-draw maximum is 3.012 ms, all other
+recorded traces are at or below 3.417 ms, cooperative full composition was 56
+slices with a 0.504 ms maximum, and the ring-local gate was green. The overall
+verdict remained red only because 4.751 ms exceeded the unchanged 4 ms
+absorption guard. These receipts isolated the next boundary; they are retained
+as diagnosis evidence and superseded by the final physical acceptance below.
+
+### Final physical acceptance
+
+The metadata continuation closes the final 4 ms failure without weakening the
+guard. Gate image `0x130e50` completed cooperative full composition in 56
+slices with a 0.499 ms maximum and no premature submission. The ring-local
+gate submitted at most 71,240 logical pixels for a local update versus 136,896
+for the full canvas, preserved the next reusable pan, and passed.
+
+At 25%, mixed pen absorption measured a 2.118 ms maximum in enumeration and
+mixed eraser measured 2.048 ms in enumeration; both held the pending backlog
+to one. The dense 25% recorded trace measured 1.896 ms while staging uniform
+metadata, every other trace stayed at or below 1.993 ms, and all traces reported
+zero overflow and resynchronization. The complete automated verdict is
+all-ones; SSAA remains the established yellow receipt. This is automated
+hardware acceptance. Optical no-tear and interruption behavior remain pending
+for the owner’s glass test.
 
 ## White-block glass regression and fix
 
@@ -162,26 +242,46 @@ ms worst tick; the broader mixed 400% corpus completed in 502.114 ms under its
 and all paced-cold runs reported zero touch overflows and resynchronizations.
 The restored product boot again reported complete panel/I²C cleanup and READY.
 
+For the final follow-up, the complete debug and release host suites passed
+31/31; ASan passed 13/13. Focused
+authority/absorption coverage passed 9 cases / 667 assertions under debug,
+release, and ASan; focused staged-publication and rerender-damage coverage
+passed 2 cases / 793 assertions under all three configurations. Product
+firmware built at `0x103b70`, gate firmware at `0x130e50`, and Raster V1 at
+`0xe7a70`. The release cold scorecard and 29-step hairline-pan reproduction
+were exact. The final physical run returned the all-ones automated verdict
+described above; SSAA remains yellow and the owner’s glass test remains pending.
+
 ## Remaining work
 
-1. F9 is incomplete inside the largest transaction units: absorption and full
-   composition still need persistent sub-operation cursors rather than urgency
-   checks only at phase boundaries.
+1. F9/F19 absorption and F28 full composition now have persistent cursors and
+   automated hardware acceptance. Their final optical interruption/no-tear
+   acceptance remains pending on glass.
 2. F10 history generations remain architectural work; Undo/Redo can still
    rebuild derived state from authority.
 3. F12 prepared geometry reuse is not justified in its tested 100 KiB form.
    Revisit only with a paint-dominant design or a demonstrably smaller budget.
-4. F13 banded 25% settle, F21 cache-directory complexity, and F26 spatially
-   prioritized repair remain open.
+4. F13 banded 25% settle remains open. The renderer can now yield within a
+   window, but the 25% pass still pays independent window-level authority
+   discovery. F21 cache-directory/commit complexity and F26 spatially
+   prioritized repair also remain open.
 5. F20 autosave encode/allocation remains main-task work.
 6. F24 targeted IRAM placement was not attempted; the current evidence does
    not justify spending internal RAM without a kernel-level A/B.
-7. F28/F29 cooperative full compose and perceptual AA ordering remain open.
+7. F28 is host- and device-complete but awaits the glass interruption test. F29
+   perceptual AA ordering remains open.
 8. Settled AA stays yellow pending its separate optical acceptance receipt.
-9. The ring-local hardware gate proves reuse and presentation success but does
-   not yet carry a framebuffer pixel oracle or submitted-area assertion. The
-   current address correctness evidence is host staging coverage plus the
-   no-tearing product glass pass.
+9. Ring locality now has a host pixel oracle and device submitted-area
+   assertion. A panel framebuffer readback still does not exist, so optical
+   no-tear remains a glass acceptance step.
+10. Boundedness still has explicit atomic tails. A masked resident-tile row can
+    charge roughly 12,676 raster work pixels in the static worst case, although
+    the physical 50–400% corpora stayed below the guard. A settled spatial query
+    may merge 1,071 64-bit words and emit up to 4,000 candidates in one unit;
+    settled presentation follows the measured render slice as an atomic panel
+    call. Cold fill also retains its measured approximately 11.2 ms producer
+    boundary. These limits remain visible in telemetry and are not described as
+    strict 0.5–2 ms guarantees.
 
 ## Evidence and artifact paths
 
