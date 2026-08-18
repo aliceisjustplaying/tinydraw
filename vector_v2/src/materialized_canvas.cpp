@@ -630,6 +630,14 @@ bool MaterializedCanvas::commit_in_place_revision(
   }
   ++composition_epoch_;
   apply_overview_publication(overview_publication);
+  finish_in_place_revision(revision, affected_world_bounds, retained_keys, scope);
+  return true;
+}
+
+void MaterializedCanvas::finish_in_place_revision(DocumentRevision revision,
+                                                  PixelRect affected_world_bounds,
+                                                  std::span<const TileKey> retained_keys,
+                                                  const InPlaceCommitScope& scope) {
   invalidate_uniforms(affected_world_bounds, retained_keys, scope);
   for (std::size_t index = 0; index < slots_.size(); ++index) {
     MaterializedSlotStorage& slot = slots_[index];
@@ -649,6 +657,70 @@ bool MaterializedCanvas::commit_in_place_revision(
     }
   }
   finish_revision(revision, affected_world_bounds);
+}
+
+OverviewStageStatus MaterializedCanvas::stage_in_place_overview_rows(
+    DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
+    PixelRect affected_world_bounds, std::size_t max_rows, InPlaceOverviewStage& stage) {
+  if (max_rows == 0U ||
+      !valid_incremental_revision(revision, overview_publication, affected_world_bounds, {})) {
+    return OverviewStageStatus::kError;
+  }
+  if (!stage.active()) {
+    stage.canvas_ = this;
+    stage.revision_ = revision;
+    stage.bounds_ = overview_publication.bounds;
+    stage.affected_world_bounds_ = affected_world_bounds;
+    stage.source_ = overview_publication.pixels.data();
+    stage.source_size_ = overview_publication.pixels.size();
+    stage.expected_canvas_epoch_ = composition_epoch_;
+    stage.next_row_ = overview_publication.bounds.y0;
+  } else if (stage.canvas_ != this || stage.revision_ != revision ||
+             stage.bounds_ != overview_publication.bounds ||
+             stage.affected_world_bounds_ != affected_world_bounds ||
+             stage.source_ != overview_publication.pixels.data() ||
+             stage.source_size_ != overview_publication.pixels.size() ||
+             stage.expected_canvas_epoch_ != composition_epoch_) {
+    return OverviewStageStatus::kError;
+  }
+  if (stage.complete()) {
+    return OverviewStageStatus::kComplete;
+  }
+
+  const int width = stage.bounds_.x1 - stage.bounds_.x0;
+  const std::size_t remaining_rows = static_cast<std::size_t>(stage.bounds_.y1 - stage.next_row_);
+  const int rows = static_cast<int>(std::min(remaining_rows, max_rows));
+  for (int offset = 0; offset < rows; ++offset) {
+    const int row = stage.next_row_ - stage.bounds_.y0 + offset;
+    const auto source =
+        overview_publication.pixels.begin() + static_cast<std::ptrdiff_t>(row) * width;
+    auto destination = overview_pixels_.begin() +
+                       static_cast<std::ptrdiff_t>(stage.next_row_ + offset) * kOverviewWidth +
+                       stage.bounds_.x0;
+    std::copy_n(source, width, destination);
+  }
+  stage.next_row_ += rows;
+  ++composition_epoch_;
+  stage.expected_canvas_epoch_ = composition_epoch_;
+  return stage.complete() ? OverviewStageStatus::kComplete : OverviewStageStatus::kInProgress;
+}
+
+bool MaterializedCanvas::commit_staged_in_place_revision(
+    DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
+    PixelRect affected_world_bounds, std::span<const TileKey> retained_keys,
+    InPlaceOverviewStage& stage, const InPlaceCommitScope& scope) {
+  if (!valid_incremental_revision(revision, overview_publication, affected_world_bounds, {}) ||
+      !stage.complete() || stage.canvas_ != this || stage.revision_ != revision ||
+      stage.bounds_ != overview_publication.bounds ||
+      stage.affected_world_bounds_ != affected_world_bounds ||
+      stage.source_ != overview_publication.pixels.data() ||
+      stage.source_size_ != overview_publication.pixels.size() ||
+      stage.expected_canvas_epoch_ != composition_epoch_) {
+    return false;
+  }
+  ++composition_epoch_;
+  finish_in_place_revision(revision, affected_world_bounds, retained_keys, scope);
+  stage.cancel();
   return true;
 }
 

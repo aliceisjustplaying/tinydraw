@@ -345,6 +345,73 @@ TEST_CASE("cancelled partial tile paint restarts exactly with a changed priority
   CHECK(composed == expected);
 }
 
+TEST_CASE("cancelled partial overview stage restarts with exact pending presentation") {
+  Fixture fixture;
+  std::array<vector_v2::CompactOperationSample, 64> samples{};
+  for (std::size_t index = 0; index < samples.size(); ++index) {
+    samples[index] = {
+        .x_quarter = static_cast<std::uint16_t>(index % 2U == 0U ? 80U : 5'800U),
+        .y_quarter = static_cast<std::uint16_t>(80U + index * 6'960U / (samples.size() - 1U)),
+        .radius_256 = 2'048U,
+    };
+  }
+  const vector_v2::OperationAppend operation{
+      .color = 0x07E0U, .gesture_id = 10U, .samples = samples};
+  REQUIRE(vector_v2::append_authority_only(fixture.log, operation));
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> expected{};
+  replay_prefix(fixture.log, 1U, expected);
+  const auto expected_ink =
+      static_cast<std::size_t>(std::count(expected.begin(), expected.end(), 0x07E0U));
+  REQUIRE(expected_ink > 1'000U);
+
+  struct YieldAfterOne {
+    mutable std::size_t checks = 0;
+    static bool requested(const void* context) {
+      auto& self = *static_cast<const YieldAfterOne*>(context);
+      return ++self.checks > 1U;
+    }
+  } yield;
+  vector_v2::PendingOperationAbsorption state;
+  bool partially_staged = false;
+  for (std::size_t slice_index = 0; slice_index < 10'000U; ++slice_index) {
+    yield.checks = 0;
+    const auto slice = vector_v2::absorb_pending_operation_slice(
+        fixture.log, fixture.canvas, fixture.workspace(), state, std::nullopt,
+        {.requested = &YieldAfterOne::requested, .context = &yield, .raster_work_px = 64U});
+    REQUIRE(slice.status == vector_v2::PendingAbsorptionStatus::kInProgress);
+    if (slice.work_unit != vector_v2::PendingAbsorptionWorkUnit::kStageOverview) {
+      continue;
+    }
+    const auto staged_ink = static_cast<std::size_t>(
+        std::count(fixture.overview.begin(), fixture.overview.end(), 0x07E0U));
+    if (staged_ink != 0U && staged_ink < expected_ink) {
+      partially_staged = true;
+      break;
+    }
+  }
+  REQUIRE(partially_staged);
+  CHECK(fixture.canvas.current_revision() == vector_v2::DocumentRevision{0});
+  CHECK(vector_v2::pending_operation_count(fixture.log, fixture.canvas) == 1U);
+
+  auto presented = fixture.overview;
+  REQUIRE(vector_v2::overlay_pending_operations(
+      fixture.log, fixture.canvas,
+      {.zoom = vector_v2::ZoomLevel::k25Percent,
+       .level_bounds = {0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
+       .pixels = presented,
+       .stride = vector_v2::kOverviewWidth}));
+  CHECK(presented == expected);
+
+  state.cancel();
+  CHECK_FALSE(state.active());
+  const auto restarted =
+      vector_v2::absorb_pending_operation_slice(fixture.log, fixture.canvas, fixture.workspace(),
+                                                state, std::nullopt, {.raster_work_px = 64U});
+  REQUIRE(restarted.status == vector_v2::PendingAbsorptionStatus::kComplete);
+  CHECK(fixture.overview == expected);
+  CHECK(fixture.canvas.current_revision() == fixture.log.current_revision());
+}
+
 TEST_CASE("later authority may append while the oldest absorption is paused") {
   Fixture fixture;
   const std::array second{

@@ -106,6 +106,37 @@ struct OverviewRevisionPublication {
   std::span<const std::uint16_t> pixels{};
 };
 
+enum class OverviewStageStatus : std::uint8_t {
+  kInProgress,
+  kComplete,
+  kError,
+};
+
+class MaterializedCanvas;
+
+// Caller-owned proof for a cooperatively staged overview publication. Partial
+// rows may be abandoned only while an idempotent pending overlay remains the
+// presentation authority; cancel() forgets the proof but does not roll pixels
+// back. A restarted opaque operation replay converges those pixels exactly.
+class InPlaceOverviewStage {
+ public:
+  [[nodiscard]] bool active() const { return canvas_ != nullptr; }
+  [[nodiscard]] bool complete() const { return active() && next_row_ == bounds_.y1; }
+  void cancel() { *this = {}; }
+
+ private:
+  friend class MaterializedCanvas;
+
+  MaterializedCanvas* canvas_ = nullptr;
+  DocumentRevision revision_{};
+  PixelRect bounds_{};
+  PixelRect affected_world_bounds_{};
+  const std::uint16_t* source_ = nullptr;
+  std::size_t source_size_ = 0;
+  std::uint64_t expected_canvas_epoch_ = 0;
+  int next_row_ = 0;
+};
+
 // Mutable window over one resident raw tile for an in-place revision commit.
 // bounds are level-space pixels; pixels rows use kTileWidth stride.
 struct InPlaceTileEdit {
@@ -296,6 +327,19 @@ class MaterializedCanvas {
       DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
       PixelRect affected_world_bounds, std::span<const TileKey> retained_keys,
       const InPlaceCommitScope& scope = {});
+  // Copies at most max_rows of a validated overview publication into owned
+  // storage and advances a caller-owned proof. Every resume must use the same
+  // canvas, revision, bounds, source span, affected bounds, and canvas epoch.
+  // One overview row is the smallest atomic unit.
+  [[nodiscard]] OverviewStageStatus stage_in_place_overview_rows(
+      DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
+      PixelRect affected_world_bounds, std::size_t max_rows, InPlaceOverviewStage& stage);
+  // Metadata-only completion for a fully staged overview. Validation is
+  // mutation-free; a mismatch leaves the stage live for its original caller.
+  [[nodiscard]] bool commit_staged_in_place_revision(
+      DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
+      PixelRect affected_world_bounds, std::span<const TileKey> retained_keys,
+      InPlaceOverviewStage& stage, const InPlaceCommitScope& scope = {});
   // Defensive recovery: drops any raw slot and uniform entry for key so the
   // identity falls back to the authoritative overview.
   void invalidate_identity(TileKey key);
@@ -400,6 +444,9 @@ class MaterializedCanvas {
   void invalidate_uniforms(PixelRect world_bounds, std::span<const TileKey> retained_keys = {},
                            const InPlaceCommitScope& scope = {});
   void apply_overview_publication(const OverviewRevisionPublication& overview_publication);
+  void finish_in_place_revision(DocumentRevision revision, PixelRect affected_world_bounds,
+                                std::span<const TileKey> retained_keys,
+                                const InPlaceCommitScope& scope);
   void finish_revision(DocumentRevision revision, PixelRect affected_world_bounds);
   void mark_occupied(PixelRect world_bounds);
   void clear_uniforms();

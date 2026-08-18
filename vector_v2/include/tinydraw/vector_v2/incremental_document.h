@@ -112,8 +112,23 @@ enum class PendingAbsorptionStatus : std::uint8_t {
   kError,
 };
 
+enum class PendingAbsorptionWorkUnit : std::uint8_t {
+  kNone,
+  kCopyOverview,
+  kRasterOverview,
+  kEnumerate,
+  kUniform,
+  kVisibleRaw,
+  kOffscreenRaw,
+  kStageOverview,
+  kCommit,
+};
+
 struct PendingAbsorptionSliceResult {
   PendingAbsorptionStatus status = PendingAbsorptionStatus::kError;
+  // Last bounded unit completed by this call; kNone means it yielded before
+  // mutation. Useful for attributing a caller-observed slice maximum.
+  PendingAbsorptionWorkUnit work_unit = PendingAbsorptionWorkUnit::kNone;
   // Valid only for kComplete.
   IncrementalAppendResult result{};
   // Cancellation checkpoints reached by this call. Useful for host bounds
@@ -150,6 +165,7 @@ class PendingOperationAbsorption {
     kUniform,
     kVisibleRaw,
     kOffscreenRaw,
+    kStageOverview,
     kCommit,
   };
 
@@ -171,6 +187,7 @@ class PendingOperationAbsorption {
   std::size_t next_endpoint_ = 0;
   OperationChordBatch chord_batch_{};
   OperationSweepCursor raster_cursor_{};
+  InPlaceOverviewStage overview_stage_{};
   InPlaceTileEdit tile_edit_{};
   TileKey tile_key_{};
   bool batch_ready_ = false;

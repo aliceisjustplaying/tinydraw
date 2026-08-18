@@ -740,6 +740,7 @@ PendingAbsorptionSliceResult absorb_pending_operation_slice(
         output.status = PendingAbsorptionStatus::kError;
         return output;
       case PendingOperationAbsorption::Phase::kCopyOverview: {
+        output.work_unit = PendingAbsorptionWorkUnit::kCopyOverview;
         const int width = state.overview_bounds_.x1 - state.overview_bounds_.x0;
         const int height = state.overview_bounds_.y1 - state.overview_bounds_.y0;
         const auto source = canvas.overview_pixels().begin() +
@@ -768,6 +769,7 @@ PendingAbsorptionSliceResult absorb_pending_operation_slice(
         break;
       }
       case PendingOperationAbsorption::Phase::kRasterOverview: {
+        output.work_unit = PendingAbsorptionWorkUnit::kRasterOverview;
         const RasterSurface surface{
             .zoom = ZoomLevel::k25Percent,
             .level_bounds = state.overview_bounds_,
@@ -787,6 +789,7 @@ PendingAbsorptionSliceResult absorb_pending_operation_slice(
         break;
       }
       case PendingOperationAbsorption::Phase::kEnumerate: {
+        output.work_unit = PendingAbsorptionWorkUnit::kEnumerate;
         const auto resident_count = canvas.materialized_tiles_intersecting(
             state.operation_.world_bounds, state.workspace_.affected_keys, state.priority_view_,
             false);
@@ -813,6 +816,7 @@ PendingAbsorptionSliceResult absorb_pending_operation_slice(
         break;
       }
       case PendingOperationAbsorption::Phase::kUniform: {
+        output.work_unit = PendingAbsorptionWorkUnit::kUniform;
         auto affected = state.workspace_.affected_keys.first(state.affected_count_);
         if (state.painting_tile_) {
           const int replayed = raster_quantum(tile_surface(), true);
@@ -868,6 +872,7 @@ PendingAbsorptionSliceResult absorb_pending_operation_slice(
         break;
       }
       case PendingOperationAbsorption::Phase::kVisibleRaw: {
+        output.work_unit = PendingAbsorptionWorkUnit::kVisibleRaw;
         auto affected = state.workspace_.affected_keys.first(state.affected_count_);
         if (state.painting_tile_) {
           const int replayed = raster_quantum(tile_surface(), true);
@@ -904,6 +909,7 @@ PendingAbsorptionSliceResult absorb_pending_operation_slice(
         break;
       }
       case PendingOperationAbsorption::Phase::kOffscreenRaw: {
+        output.work_unit = PendingAbsorptionWorkUnit::kOffscreenRaw;
         auto affected = state.workspace_.affected_keys.first(state.affected_count_);
         if (state.painting_tile_) {
           const int replayed = raster_quantum(tile_surface(), true);
@@ -918,7 +924,7 @@ PendingAbsorptionSliceResult absorb_pending_operation_slice(
             ++state.scan_index_;
           }
         } else if (state.scan_index_ == state.affected_count_) {
-          state.phase_ = PendingOperationAbsorption::Phase::kCommit;
+          state.phase_ = PendingOperationAbsorption::Phase::kStageOverview;
         } else {
           const TileKey key = affected[state.scan_index_];
           if (in_priority_view(key, state.priority_view_)) {
@@ -941,7 +947,24 @@ PendingAbsorptionSliceResult absorb_pending_operation_slice(
         state.phases_.offscreen_retain_us += stamp() - unit_started_us;
         break;
       }
+      case PendingOperationAbsorption::Phase::kStageOverview: {
+        output.work_unit = PendingAbsorptionWorkUnit::kStageOverview;
+        const OverviewStageStatus staged = canvas.stage_in_place_overview_rows(
+            state.operation_.identity.revision, state.overview_publication_,
+            state.operation_.world_bounds, 1U, state.overview_stage_);
+        state.phases_.overview_us += stamp() - unit_started_us;
+        if (staged == OverviewStageStatus::kError) {
+          reset();
+          output.status = PendingAbsorptionStatus::kError;
+          return output;
+        }
+        if (staged == OverviewStageStatus::kComplete) {
+          state.phase_ = PendingOperationAbsorption::Phase::kCommit;
+        }
+        break;
+      }
       case PendingOperationAbsorption::Phase::kCommit: {
+        output.work_unit = PendingAbsorptionWorkUnit::kCommit;
         auto affected = state.workspace_.affected_keys.first(state.affected_count_);
         std::size_t visible_fallback = 0;
         for (std::size_t index = state.retained_count_; index < affected.size(); ++index) {
@@ -955,10 +978,10 @@ PendingAbsorptionSliceResult absorb_pending_operation_slice(
                                  : std::nullopt,
             .cross_zoom_invalidated = &cross_zoom_invalidated,
         };
-        if (!canvas.commit_in_place_revision(state.operation_.identity.revision,
-                                             state.overview_publication_,
-                                             state.operation_.world_bounds,
-                                             affected.first(state.retained_count_), commit_scope)) {
+        if (!canvas.commit_staged_in_place_revision(
+                state.operation_.identity.revision, state.overview_publication_,
+                state.operation_.world_bounds, affected.first(state.retained_count_),
+                state.overview_stage_, commit_scope)) {
           for (const TileKey key : affected.first(state.retained_count_)) {
             canvas.invalidate_identity(key);
           }
