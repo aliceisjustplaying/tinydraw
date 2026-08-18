@@ -280,22 +280,19 @@ void run_vector_v2_app() {
   // The harness leaves the realistic document loaded for manual glass
   // testing, so a future red verdict must not exit the app before a human can
   // inspect the glass. Automation keys on the DONE-line verdict, not liveness.
-  const bool harness_verdict =
-      run_vector_v2_gate_harness(presenter, producer, log, canvas, touch_sampler, chrome, workspace,
-                                 exporter, std::span(storage.snapshot, vector_v2::kOverviewPixels),
-                                 std::span(storage.input_samples, kInputSampleCapacity),
-                                 std::span(storage.harness_tile_scratch, vector_v2::kTilePixels),
-                                 std::span(storage.overview_scratch, vector_v2::kOverviewPixels),
-                                 {.operation_alpha = std::span(storage.settle_op_alpha,
-                                                               vector_v2::kTilePixels),
-                                  .accumulated_alpha = std::span(storage.settle_accumulated,
-                                                                 vector_v2::kTilePixels),
-                                  .red = std::span(storage.settle_red, vector_v2::kTilePixels),
-                                  .green = std::span(storage.settle_green, vector_v2::kTilePixels),
-                                  .blue = std::span(storage.settle_blue, vector_v2::kTilePixels),
-                                  .candidate_indices = std::span(storage.operation_candidates,
-                                                                 vector_v2::kOperationCapacity)},
-                                 std::span(storage.settle_pixels, vector_v2::kTilePixels));
+  const bool harness_verdict = run_vector_v2_gate_harness(
+      presenter, producer, log, canvas, touch_sampler, chrome, workspace, exporter,
+      std::span(storage.snapshot, vector_v2::kOverviewPixels),
+      std::span(storage.input_samples, kInputSampleCapacity),
+      std::span(storage.harness_tile_scratch, vector_v2::kTilePixels),
+      std::span(storage.overview_scratch, vector_v2::kOverviewPixels),
+      {.operation_alpha = std::span(storage.settle_op_alpha, vector_v2::kTilePixels),
+       .accumulated_alpha = std::span(storage.settle_accumulated, vector_v2::kTilePixels),
+       .red = std::span(storage.settle_red, vector_v2::kTilePixels),
+       .green = std::span(storage.settle_green, vector_v2::kTilePixels),
+       .blue = std::span(storage.settle_blue, vector_v2::kTilePixels),
+       .candidate_indices = std::span(storage.operation_candidates, vector_v2::kOperationCapacity)},
+      std::span(storage.settle_pixels, vector_v2::kTilePixels));
   std::printf("TINYDRAW_VECTOR_V2_GATE_HARNESS_DONE pass=%u\n", harness_verdict);
 #endif
   const std::size_t overview_bytes = vector_v2::kOverviewPixels *

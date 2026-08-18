@@ -322,8 +322,8 @@ bool VectorV2ChromeController::apply(vector_v2::ChromeAction action, Point point
       // reads better than mixed feedback); the swap present erases it.
       chrome_.history_busy = true;
       const vector_v2::ChromeRect busy = vector_v2::chrome_history_busy_region();
-      static_cast<void>(presenter_.present_frame_region({busy.x0, busy.y0, busy.x1, busy.y1},
-                                                        chrome_, now_us()));
+      static_cast<void>(
+          presenter_.present_frame_region({busy.x0, busy.y0, busy.x1, busy.y1}, chrome_, now_us()));
       const auto dock_timing = present_history_controls(presenter_, chrome_, now_us());
       print_presentation(undo ? "undo-dock" : "redo-dock", presenter_, dock_timing);
       return dock_timing.passed;

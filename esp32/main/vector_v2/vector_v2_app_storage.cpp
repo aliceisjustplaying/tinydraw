@@ -110,8 +110,8 @@ bool AppStorage::allocate() {
   settle_blue = allocate_internal<std::uint16_t>(vector_v2::kTilePixels);
   settle_pixels = allocate_internal<std::uint16_t>(vector_v2::kTilePixels);
   settle_internal = settle_op_alpha != nullptr && settle_accumulated != nullptr &&
-                    settle_red != nullptr && settle_green != nullptr &&
-                    settle_blue != nullptr && settle_pixels != nullptr;
+                    settle_red != nullptr && settle_green != nullptr && settle_blue != nullptr &&
+                    settle_pixels != nullptr;
   if (settle_op_alpha == nullptr) {
     settle_op_alpha = allocate_array<std::uint8_t>(vector_v2::kTilePixels);
   }

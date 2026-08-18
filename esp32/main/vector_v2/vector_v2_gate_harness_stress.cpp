@@ -363,8 +363,7 @@ bool verify_export_reserve() {
   // benchmark-results/export-memory-math-2026-08-18/RECEIPT.md.
   const std::size_t free_before = heap_caps_get_free_size(kExternalCaps);
   const std::size_t largest_before = heap_caps_get_largest_free_block(kExternalCaps);
-  void* autosave_reserve =
-      heap_caps_malloc(vector_v2::kAutosaveStagingReserveBytes, kExternalCaps);
+  void* autosave_reserve = heap_caps_malloc(vector_v2::kAutosaveStagingReserveBytes, kExternalCaps);
   const std::size_t autosave_slack = heap_caps_get_free_size(kExternalCaps);
   const bool autosave_held = autosave_reserve != nullptr;
   heap_caps_free(autosave_reserve);
@@ -380,8 +379,7 @@ bool verify_export_reserve() {
       static_cast<unsigned long>(vector_v2::kAutosaveStagingReserveBytes),
       static_cast<unsigned long>(vector_v2::kExportWorkspaceReserveBytes),
       static_cast<unsigned long>(free_before), static_cast<unsigned long>(largest_before),
-      static_cast<unsigned long>(autosave_slack), static_cast<unsigned long>(export_slack),
-      passed);
+      static_cast<unsigned long>(autosave_slack), static_cast<unsigned long>(export_slack), passed);
   return passed;
 }
 

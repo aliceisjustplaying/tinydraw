@@ -220,9 +220,9 @@ std::uint8_t MaterializedCanvas::protection_rank(TileKey key) const {
 std::optional<std::size_t> MaterializedCanvas::choose_slot() const {
   // A full pool has no unoccupied slot by definition; skip the free scan.
   if (occupied_slots_ + preserved_slots_ < slots_.size()) {
-    const auto available =
-        std::find_if(slots_.begin(), slots_.end(),
-                     [](const auto& slot) { return !slot.occupied_ && !slot.preserved_; });
+    const auto available = std::find_if(slots_.begin(), slots_.end(), [](const auto& slot) {
+      return !slot.occupied_ && !slot.preserved_;
+    });
     if (available != slots_.end()) {
       return static_cast<std::size_t>(available - slots_.begin());
     }

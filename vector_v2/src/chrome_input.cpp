@@ -309,8 +309,7 @@ ChromeAction chrome_action_at(ChromePoint point, const ChromeState& state) {
 ChromeRect chrome_battery_region() { return kBatteryOverlayRect; }
 
 ChromeRect chrome_history_busy_region() {
-  return {kHistoryBusyLeft - 1, kHistoryBusyTop - 1, kHistoryBusyRight + 2,
-          kHistoryBusyBottom + 3};
+  return {kHistoryBusyLeft - 1, kHistoryBusyTop - 1, kHistoryBusyRight + 2, kHistoryBusyBottom + 3};
 }
 
 std::optional<ChromeRect> chrome_minimap_region(const ChromeState& state) {

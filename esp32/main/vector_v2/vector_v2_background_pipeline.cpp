@@ -337,7 +337,6 @@ void VectorV2BackgroundPipeline::run_fill(const ViewRequest& view,
     history_hold_ = {};
   }
 
-
   if (pending_fill_.pending) {
     const bool still_current = pending_fill_.zoom == view.zoom &&
                                pending_fill_.x == view.level_pixels.x0 &&
@@ -591,11 +590,10 @@ void VectorV2BackgroundPipeline::run_settle(std::uint32_t loop_us,
     settle_render_.cursor.cancel();
     settle_render_.active = false;
     if (rendered) {
-      const bool held = publishable && settle_hold_.active &&
-                        bounds.x0 < settle_hold_.level_bounds.x1 &&
-                        settle_hold_.level_bounds.x0 < bounds.x1 &&
-                        bounds.y0 < settle_hold_.level_bounds.y1 &&
-                        settle_hold_.level_bounds.y0 < bounds.y1;
+      const bool held =
+          publishable && settle_hold_.active && bounds.x0 < settle_hold_.level_bounds.x1 &&
+          settle_hold_.level_bounds.x0 < bounds.x1 && bounds.y0 < settle_hold_.level_bounds.y1 &&
+          settle_hold_.level_bounds.y0 < bounds.y1;
       if (held) {
         if (settle_hold_.union_valid) {
           settle_hold_.union_bounds.x0 = std::min(settle_hold_.union_bounds.x0, bounds.x0);
@@ -661,9 +659,9 @@ void VectorV2BackgroundPipeline::run_settle(std::uint32_t loop_us,
           "TINYDRAW_LIVE_SETTLE zoom=%s tiles=%lu no_ink=%lu slices=%lu total_us=%lld "
           "max_slice_us=%lld work=%llu failures=%lu permanent_failures=%lu\n",
           zoom_name(presenter_.zoom()), static_cast<unsigned long>(settle_tiles_),
-          static_cast<unsigned long>(settle_no_ink_),
-          static_cast<unsigned long>(settle_slices_), static_cast<long long>(settle_total_us_),
-          static_cast<long long>(settle_max_us_), static_cast<unsigned long long>(settle_work_),
+          static_cast<unsigned long>(settle_no_ink_), static_cast<unsigned long>(settle_slices_),
+          static_cast<long long>(settle_total_us_), static_cast<long long>(settle_max_us_),
+          static_cast<unsigned long long>(settle_work_),
           static_cast<unsigned long>(settle_failures_),
           static_cast<unsigned long>(settle_permanent_failures_));
       std::fflush(stdout);
@@ -707,11 +705,10 @@ BackgroundSliceResult VectorV2BackgroundPipeline::run_slice(const BackgroundSlic
                         .y = history_hold_.y,
                         .revision = canvas_.current_revision(),
                         .active = true};
-        std::printf(
-            "TINYDRAW_LIVE_HISTORY_HOLD suppressed=%lu busy=%u union=%dx%d wall_us=%lld\n",
-            static_cast<unsigned long>(history_hold_.suppressed), history_hold_.busy_shown,
-            bounds.x1 - bounds.x0, bounds.y1 - bounds.y0,
-            static_cast<long long>(esp_timer_get_time() - history_hold_.started_us));
+        std::printf("TINYDRAW_LIVE_HISTORY_HOLD suppressed=%lu busy=%u union=%dx%d wall_us=%lld\n",
+                    static_cast<unsigned long>(history_hold_.suppressed), history_hold_.busy_shown,
+                    bounds.x1 - bounds.x0, bounds.y1 - bounds.y0,
+                    static_cast<long long>(esp_timer_get_time() - history_hold_.started_us));
         history_hold_ = {};
       } else {
         chrome_.history_busy = history_hold_.busy_shown;
