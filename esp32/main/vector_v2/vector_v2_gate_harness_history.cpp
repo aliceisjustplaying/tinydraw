@@ -378,18 +378,20 @@ struct SettleTimingTotals {
 bool settle_one_window(OperationLog& log, ZoomLevel zoom, vector_v2::PixelRect bounds,
                        const vector_v2::SettledTileWorkspace& workspace,
                        std::span<std::uint16_t> settle_pixels, SettleTimingTotals& totals,
-                       bool& no_ink) {
+                       bool& no_ink, bool disable_row_narrowing = false) {
   vector_v2::SettledRenderCursor cursor;
   no_ink = false;
   while (true) {
     const std::int64_t started = esp_timer_get_time();
-    const auto slice = vector_v2::render_settled_window_slice({.log = log,
-                                                               .zoom = zoom,
-                                                               .window_bounds = bounds,
-                                                               .workspace = workspace,
-                                                               .out_pixels = settle_pixels,
-                                                               .cursor = cursor,
-                                                               .max_work_px = 512U});
+    const auto slice =
+        vector_v2::render_settled_window_slice({.log = log,
+                                                .zoom = zoom,
+                                                .window_bounds = bounds,
+                                                .workspace = workspace,
+                                                .out_pixels = settle_pixels,
+                                                .cursor = cursor,
+                                                .max_work_px = 512U,
+                                                .disable_row_narrowing = disable_row_narrowing});
     const std::int64_t elapsed = esp_timer_get_time() - started;
     ++totals.slices;
     totals.total_us += elapsed;
@@ -402,6 +404,102 @@ bool settle_one_window(OperationLog& log, ZoomLevel zoom, vector_v2::PixelRect b
       return true;
     }
   }
+}
+
+// Long-chord settle case: the history corpus's dense sampling produces
+// only short chords, so the exterior-capsule row narrowing never
+// activates on it. This local two-sample straight-stroke document
+// supplies the long-chord class (fast/straight strokes at speed) and
+// runs a same-image per-policy A/B — pass 0 forces the full-bbox walk,
+// pass 1 is the production policy — with an on-device FNV cross-check
+// proving both policies produce identical pixels. The shared gate
+// document is untouched.
+bool run_settle_long_chord_case(const vector_v2::SettledTileWorkspace& workspace,
+                                std::span<std::uint16_t> settle_pixels) {
+  constexpr std::size_t kOps = 28U;
+  static std::array<vector_v2::OperationRecord, kOps> records{};
+  static std::array<vector_v2::CompactOperationSample, kOps * 2U> samples{};
+  OperationLog log{records, samples};
+  if (!log.ready()) {
+    return false;
+  }
+  constexpr float kCenterX = 736.0F;
+  constexpr float kCenterY = 896.0F;
+  constexpr float kHalfLength = 120.0F;
+  constexpr std::array<std::uint16_t, 4> kColors{0x001FU, 0xF800U, 0x07E0U, 0x0000U};
+  // Sample coordinates are sixteenths of a world pixel
+  // (kSampleUnitsPerWorldUnit = 16; the _quarter field name is historical).
+  const auto sample_units = [](float world) {
+    return static_cast<std::uint16_t>(
+        lroundf(world * static_cast<float>(vector_v2::kSampleUnitsPerWorldUnit)));
+  };
+  for (std::size_t i = 0; i < kOps; ++i) {
+    const float angle = static_cast<float>(i) * 3.14159265F / static_cast<float>(kOps);
+    const float dx = cosf(angle) * kHalfLength;
+    const float dy = sinf(angle) * kHalfLength;
+    const std::uint16_t radius = i % 3U == 0U ? 154U : (i % 3U == 1U ? 640U : 1088U);
+    const std::array<vector_v2::CompactOperationSample, 2> stroke{{
+        {sample_units(kCenterX - dx), sample_units(kCenterY - dy), radius, 0},
+        {sample_units(kCenterX + dx), sample_units(kCenterY + dy), radius, 8},
+    }};
+    const bool eraser = i >= kOps - 4U;
+    if (!log.append(
+            {.tool = eraser ? vector_v2::OperationTool::kEraser : vector_v2::OperationTool::kPen,
+             .color = kColors[i % kColors.size()],
+             .samples = stroke})) {
+      return false;
+    }
+  }
+
+  constexpr std::array kZooms{ZoomLevel::k25Percent, ZoomLevel::k50Percent, ZoomLevel::k100Percent,
+                              ZoomLevel::k200Percent, ZoomLevel::k400Percent};
+  bool all_passed = true;
+  for (const ZoomLevel zoom : kZooms) {
+    const int percent = vector_v2::zoom_percent(zoom);
+    const int first_x = (static_cast<int>(kCenterX) * percent / 100 / 64 - 1) * 64;
+    const int first_y = (static_cast<int>(kCenterY) * percent / 100 / 64 - 1) * 64;
+    std::array<SettleTimingTotals, 2> totals{};
+    std::array<std::uint64_t, 2> checksums{};
+    for (int policy = 0; policy < 2; ++policy) {
+      const bool disable_row_narrowing = policy == 0;
+      std::uint64_t checksum = 1'469'598'103'934'665'603ULL;
+      for (int row = 0; row < 3; ++row) {
+        for (int column = 0; column < 3; ++column) {
+          const vector_v2::PixelRect bounds{first_x + column * 64, first_y + row * 64,
+                                            first_x + column * 64 + 64, first_y + row * 64 + 64};
+          bool no_ink = false;
+          if (!settle_one_window(log, zoom, bounds, workspace, settle_pixels,
+                                 totals[static_cast<std::size_t>(policy)], no_ink,
+                                 disable_row_narrowing)) {
+            ++totals[static_cast<std::size_t>(policy)].failures;
+            continue;
+          }
+          ++totals[static_cast<std::size_t>(policy)].tiles;
+          for (std::size_t at = 0; at < 4096U; ++at) {
+            checksum ^= settle_pixels[at];
+            checksum *= 1'099'511'628'211ULL;
+          }
+        }
+      }
+      checksums[static_cast<std::size_t>(policy)] = checksum;
+    }
+    const bool exact = checksums[0] == checksums[1];
+    for (int policy = 0; policy < 2; ++policy) {
+      const auto& t = totals[static_cast<std::size_t>(policy)];
+      const bool passed = t.failures == 0U && exact;
+      all_passed = all_passed && passed;
+      std::printf(
+          "TINYDRAW_GATE1_SETTLE_LONG zoom=%s policy=%s tiles=%lu slices=%lu total_us=%lld "
+          "max_slice_us=%lld checksum=%016llx failures=%lu exact=%u pass=%u\n",
+          zoom_name(zoom), policy == 0 ? "full_bbox" : "narrowed",
+          static_cast<unsigned long>(t.tiles), static_cast<unsigned long>(t.slices),
+          static_cast<long long>(t.total_us), static_cast<long long>(t.max_slice_us),
+          static_cast<unsigned long long>(checksums[static_cast<std::size_t>(policy)]),
+          static_cast<unsigned long>(t.failures), exact, passed);
+    }
+    std::fflush(stdout);
+  }
+  return all_passed;
 }
 
 }  // namespace
@@ -486,6 +584,7 @@ bool run_settle_timing_gate(VectorV2Presenter& presenter, vector_v2::TileProduce
         static_cast<unsigned long>(totals.failures), passed);
     std::fflush(stdout);
   }
+  all_passed = run_settle_long_chord_case(settle_workspace, settle_pixels) && all_passed;
   return all_passed;
 }
 

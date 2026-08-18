@@ -66,6 +66,68 @@ void add_stats(SettledTileStats& destination, const SettledTileStats& source) {
   destination.saturated_early = destination.saturated_early || source.saturated_early;
 }
 
+// Conservative exterior-capsule row span for the settled chord raster,
+// mirroring conservative_tapered_row_span in incremental_rasterizer.cpp
+// (same half-plane construction, rounding margin, and whole-pixel guard;
+// see that function's derivation comments). coverage_alpha(d^2, r) is
+// exactly zero iff d >= r + 0.5, so the span is computed for the chord
+// with both radii inflated by 0.5: every pixel outside the returned
+// interval provably evaluates to alpha 0 and is skipped without work.
+// The per-pixel evaluator remains the sole coverage authority inside.
+struct SettleRowSpan {
+  int first = 0;
+  int last = -1;  // inclusive; empty when last < first
+
+  [[nodiscard]] bool empty() const { return last < first; }
+};
+
+SettleRowSpan settle_conservative_row_span(const SettledChordSpanTable& table, int x0, int x1,
+                                           float pixel_y) {
+  constexpr float kRoundingMargin = 0.01F;
+  const SettleRowSpan empty{.first = 0, .last = -1};
+  float interval_first = 0.0F;
+  float interval_last = 1.0F;
+  if (table.delta_low == 0.0F) {
+    if (table.origin_low > pixel_y + kRoundingMargin) {
+      return empty;
+    }
+  } else {
+    const float crossing = (pixel_y + kRoundingMargin - table.origin_low) * table.inverse_low;
+    if (table.delta_low > 0.0F) {
+      interval_last = std::min(interval_last, crossing);
+    } else {
+      interval_first = std::max(interval_first, crossing);
+    }
+  }
+  if (table.delta_high == 0.0F) {
+    if (table.origin_high < pixel_y - kRoundingMargin) {
+      return empty;
+    }
+  } else {
+    const float crossing = (pixel_y - kRoundingMargin - table.origin_high) * table.inverse_high;
+    if (table.delta_high > 0.0F) {
+      interval_first = std::max(interval_first, crossing);
+    } else {
+      interval_last = std::min(interval_last, crossing);
+    }
+  }
+  if (interval_last < interval_first) {
+    return empty;
+  }
+  interval_first = std::clamp(interval_first, 0.0F, 1.0F);
+  interval_last = std::clamp(interval_last, 0.0F, 1.0F);
+  if (interval_last < interval_first) {
+    return empty;
+  }
+  const float minimum_x = std::min(table.left_origin + interval_first * table.left_delta,
+                                   table.left_origin + interval_last * table.left_delta);
+  const float maximum_x = std::max(table.right_origin + interval_first * table.right_delta,
+                                   table.right_origin + interval_last * table.right_delta);
+  const int first = std::max(x0, static_cast<int>(std::floor(minimum_x - kRoundingMargin)) - 1);
+  const int last = std::min(x1 - 1, static_cast<int>(std::ceil(maximum_x + kRoundingMargin)));
+  return {.first = first, .last = last};
+}
+
 std::uint8_t coverage_alpha(float distance_squared, float radius) {
   const float exterior = radius + 0.5F;
   if (distance_squared >= exterior * exterior) {
@@ -160,6 +222,7 @@ bool SettledRenderCursor::bind(const SettledRenderRequest& request) {
                    (request.window_bounds.y1 * 100 + percent - 1) / percent + 1};
   workspace_ = request.workspace;
   out_pixels_ = request.out_pixels;
+  narrowing_disabled_ = request.disable_row_narrowing;
   width_ = width;
   height_ = height;
   pixel_count_ = pixel_count;
@@ -330,9 +393,38 @@ void SettledRenderCursor::prepare_chord(const PreparedCurveStep& chord) {
   chord_inverse_length_squared_ = length_squared > 0.0F ? 1.0F / length_squared : 0.0F;
   chord_first_radius_ = chord.first_radius;
   chord_radius_delta_ = chord.second_radius - chord.first_radius;
+  // Narrow only chords with enough expected exterior per row for the
+  // per-row span solve (~a handful of pixel evaluations) to pay for
+  // itself. A row's savings is roughly the bbox width minus the capsule
+  // diameter (the |dx| of a slanted chord): fat short chords have wide
+  // bboxes but almost no exterior, and their exterior is often already
+  // saturated-skip cheap. Both paths are exact, so this is purely a
+  // cost-model gate (measured on the five-corpus host A/B: a plain width
+  // gate left dense 200/400% regressing 7–10%; this discriminator keeps
+  // the long-chord wins without them).
+  constexpr int kNarrowingMinimumExteriorWidth = 16;
+  chord_narrowed_ =
+      !narrowing_disabled_ && (chord_x1_ - chord_x0_) - static_cast<int>(2.0F * radius_max) - 3 >=
+                                  kNarrowingMinimumExteriorWidth;
+  if (!chord_narrowed_) {
+    return;
+  }
+  // Exterior-capsule span table: radii + 0.5 (the taper delta is
+  // unchanged by a uniform inflation).
+  const float exterior_first = chord.first_radius + 0.5F;
+  span_table_.origin_low = ay - exterior_first;
+  span_table_.delta_low = chord_delta_y_ - chord_radius_delta_;
+  span_table_.inverse_low = span_table_.delta_low != 0.0F ? 1.0F / span_table_.delta_low : 0.0F;
+  span_table_.origin_high = ay + exterior_first;
+  span_table_.delta_high = chord_delta_y_ + chord_radius_delta_;
+  span_table_.inverse_high = span_table_.delta_high != 0.0F ? 1.0F / span_table_.delta_high : 0.0F;
+  span_table_.left_origin = ax - exterior_first;
+  span_table_.left_delta = chord_delta_x_ - chord_radius_delta_;
+  span_table_.right_origin = ax + exterior_first;
+  span_table_.right_delta = chord_delta_x_ + chord_radius_delta_;
 }
 
-void SettledRenderCursor::raster_chord_row() {
+void SettledRenderCursor::raster_chord_row(int span_first, int span_last) {
   const int y = chord_next_y_;
   const float sample_y = static_cast<float>(y) + 0.5F;
   std::uint8_t* row = workspace_.operation_alpha.data() +
@@ -342,7 +434,7 @@ void SettledRenderCursor::raster_chord_row() {
       static_cast<std::size_t>(y) * static_cast<std::size_t>(width_);
   std::size_t computed = 0;
   std::size_t skipped = 0;
-  for (int x = chord_x0_; x < chord_x1_; ++x) {
+  for (int x = span_first; x <= span_last; ++x) {
     // Newest-first compositing: a saturated destination pixel can receive
     // no further contribution, so its coverage math is skipped exactly
     // (operation_alpha stays 0 and composite contributes 0 either way).
@@ -396,18 +488,25 @@ void SettledRenderCursor::advance_chord_raster(WorkBudget& budget) {
     }
   }
 
-  // Work-charge recalibration (final-round AA lever 1) is a measured
-  // no-go: a same-image per-policy settle A/B halved slice counts but
-  // moved totals <1.5% (per-slice overhead ~1.6 µs) while the worst atomic
-  // quantum grew 2.3→3.9 ms. Rows therefore still charge full width; see
-  // the 2026-08-18 work-charge probe receipt. The computed/skipped split
-  // in raster_chord_row is retained for attribution.
-  const std::size_t row_work = static_cast<std::size_t>(chord_x1_ - chord_x0_);
+  // Edge-span narrowing (final-round AA lever 2, stage 1): the row only
+  // traverses the conservative exterior-capsule interval; pixels outside
+  // provably evaluate to alpha 0. The charge equals the traversed width
+  // (real work, unlike the rejected 2026-08-18 work-charge recalibration,
+  // which repriced unchanged traversal); empty rows charge one pixel for
+  // the span computation.
+  const SettleRowSpan span =
+      chord_narrowed_ ? settle_conservative_row_span(span_table_, chord_x0_, chord_x1_,
+                                                     static_cast<float>(chord_next_y_) + 0.5F)
+                      : SettleRowSpan{.first = chord_x0_, .last = chord_x1_ - 1};
+  const std::size_t row_work =
+      span.empty() ? 1U : static_cast<std::size_t>(span.last - span.first + 1);
   if (budget.stop_before(row_work)) {
     budget.pause();
     return;
   }
-  raster_chord_row();
+  if (!span.empty()) {
+    raster_chord_row(span.first, span.last);
+  }
   budget.work += row_work;
   ++chord_next_y_;
   if (chord_next_y_ == chord_y1_) {
