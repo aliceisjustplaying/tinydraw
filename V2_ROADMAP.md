@@ -48,14 +48,19 @@ remain supported targets.
 - [x] Bring the binding `overlap` workload's 50% cold result under the 500 ms
       product limit. Per-chord finalized-window refresh reduced the full-gate
       result from 585.821 ms to 476.969 ms; that receipt's device battery passed.
-- [ ] Establish a deterministic high-zoom Undo/Redo baseline: affected bounds,
-      overview replay, invalidated/reused tiles, ledger causes, first-presentation
-      wall, and exact-presentation wall. Then reduce rebuild latency without
-      broadening damage or weakening exactness.
-- [ ] Fix settled-AA progression where it delays useful visible work. The
-      current 25% gate settles 42 tiles in 152.945 ms and reaches 76.416 ms for
-      one tile, above the nominal 8 ms cooperative slice; earlier 1.7–5.4/9.3 ms
-      tiled measurements are not a universal bound.
+- [x] **Done 2026-08-18:** deterministic Undo/Redo baseline (`history_latency`
+      gate) and the COW preserved-tile swap treatment. Revisit repair fell
+      338,998→229 µs; owner glass-accepted. Receipts:
+      `benchmark-results/history-latency-2026-08-18/RECEIPT.md`.
+- [ ] Finish settled-AA performance. Landed 2026-08-18: no_ink fast path,
+      internal planes, saturated-destination skip (−43% on the evil corpus),
+      and the deterministic `settle_timing` battery gate. Real documents now
+      settle 429–552 ms at 400% but 690–922 ms at 50–200%; the designated
+      next levers are slice work-charge recalibration and edge-span
+      recording (see `docs/HANDOVER_2026_08_18_FINAL_ROUND.md` §1).
+- [ ] Diagnose the transient color-popup byte-swap incident
+      (`docs/receipts/vector-v2/COLOR_POPUP_BYTESWAP_INCIDENT_2026_08_18.md`)
+      after the AA work, before release closure.
 - [ ] Split the remaining 166–184 ms one-shot full-frame refresh class into
       input-pollable bands, preserving exact presentation and pan cadence.
 - [ ] Re-run pan cadence, live-ink latency, cold, revisit retention, memory, and

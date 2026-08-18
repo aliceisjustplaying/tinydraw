@@ -58,9 +58,9 @@ bool append_history_stroke(OperationLog& log, MaterializedCanvas& canvas,
   float velocity_x = spec.velocity_x;
   float velocity_y = spec.velocity_y;
   std::uint32_t timestamp_us = now_us();
-  if (!builder.begin(spec.tool, spec.color, gesture_id,
-                     {.world_x = x, .world_y = y, .radius = spec.radius,
-                      .timestamp_us = timestamp_us})) {
+  if (!builder.begin(
+          spec.tool, spec.color, gesture_id,
+          {.world_x = x, .world_y = y, .radius = spec.radius, .timestamp_us = timestamp_us})) {
     return false;
   }
   for (std::size_t index = 1; index < spec.samples; ++index) {
@@ -140,8 +140,8 @@ bool measure_history_move(VectorV2Presenter& presenter, vector_v2::TileProducer&
   };
   producer.cancel_pending_work();
   const std::int64_t move_started = esp_timer_get_time();
-  const auto change = vector_v2::move_history_incrementally(log, canvas, direction,
-                                                            overview_scratch);
+  const auto change =
+      vector_v2::move_history_incrementally(log, canvas, direction, overview_scratch);
   measurement.move_us = esp_timer_get_time() - move_started;
   if (!change.has_value()) {
     return false;
@@ -172,11 +172,10 @@ bool measure_history_move(VectorV2Presenter& presenter, vector_v2::TileProducer&
     measurement.rendered += step->operations_rendered;
     complete = step->complete;
     if (step->tiles_published != 0U) {
-      const bool held = policy == HistoryPresentPolicy::kHoldback &&
-                        step->level_bounds.x0 < hold_bounds.x1 &&
-                        hold_bounds.x0 < step->level_bounds.x1 &&
-                        step->level_bounds.y0 < hold_bounds.y1 &&
-                        hold_bounds.y0 < step->level_bounds.y1;
+      const bool held =
+          policy == HistoryPresentPolicy::kHoldback && step->level_bounds.x0 < hold_bounds.x1 &&
+          hold_bounds.x0 < step->level_bounds.x1 && step->level_bounds.y0 < hold_bounds.y1 &&
+          hold_bounds.y0 < step->level_bounds.y1;
       if (held) {
         if (union_valid) {
           published_union.x0 = std::min(published_union.x0, step->level_bounds.x0);
@@ -310,8 +309,8 @@ bool run_history_latency_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
         const auto direction =
             undo ? vector_v2::HistoryDirection::kUndo : vector_v2::HistoryDirection::kRedo;
         HistoryMoveMeasurement measurement{};
-        if (!measure_history_move(presenter, producer, log, canvas, chrome, overview_scratch,
-                                  zoom, direction, policy, measurement)) {
+        if (!measure_history_move(presenter, producer, log, canvas, chrome, overview_scratch, zoom,
+                                  direction, policy, measurement)) {
           mechanical_ok = false;
           break;
         }
@@ -362,7 +361,6 @@ bool run_history_latency_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
   return mechanical_ok && log.current_revision() == canvas.current_revision();
 }
 
-
 namespace {
 
 struct SettleTimingTotals {
@@ -386,12 +384,12 @@ bool settle_one_window(OperationLog& log, ZoomLevel zoom, vector_v2::PixelRect b
   while (true) {
     const std::int64_t started = esp_timer_get_time();
     const auto slice = vector_v2::render_settled_window_slice({.log = log,
-                                                              .zoom = zoom,
-                                                              .window_bounds = bounds,
-                                                              .workspace = workspace,
-                                                              .out_pixels = settle_pixels,
-                                                              .cursor = cursor,
-                                                              .max_work_px = 512U});
+                                                               .zoom = zoom,
+                                                               .window_bounds = bounds,
+                                                               .workspace = workspace,
+                                                               .out_pixels = settle_pixels,
+                                                               .cursor = cursor,
+                                                               .max_work_px = 512U});
     const std::int64_t elapsed = esp_timer_get_time() - started;
     ++totals.slices;
     totals.total_us += elapsed;
@@ -417,9 +415,8 @@ bool run_settle_timing_gate(VectorV2Presenter& presenter, vector_v2::TileProduce
                             const vector_v2::ChromeState& chrome,
                             const vector_v2::SettledTileWorkspace& settle_workspace,
                             std::span<std::uint16_t> settle_pixels) {
-  constexpr std::array kZooms{ZoomLevel::k25Percent, ZoomLevel::k50Percent,
-                              ZoomLevel::k100Percent, ZoomLevel::k200Percent,
-                              ZoomLevel::k400Percent};
+  constexpr std::array kZooms{ZoomLevel::k25Percent, ZoomLevel::k50Percent, ZoomLevel::k100Percent,
+                              ZoomLevel::k200Percent, ZoomLevel::k400Percent};
   bool all_passed = true;
   for (const ZoomLevel zoom : kZooms) {
     if (!presenter.set_view(zoom, 0, 0, chrome, now_us()).passed) {
@@ -450,8 +447,7 @@ bool run_settle_timing_gate(VectorV2Presenter& presenter, vector_v2::TileProduce
         vector_v2::TileKey key{zoom, static_cast<std::uint16_t>(first_column + column),
                                static_cast<std::uint16_t>(first_row + row)};
         if (zoom == ZoomLevel::k25Percent) {
-          bounds = {column * 64, row * 64,
-                    std::min((column + 1) * 64, vector_v2::kOverviewWidth),
+          bounds = {column * 64, row * 64, std::min((column + 1) * 64, vector_v2::kOverviewWidth),
                     std::min((row + 1) * 64, vector_v2::kOverviewHeight)};
         } else {
           const auto source = canvas.lookup(key);

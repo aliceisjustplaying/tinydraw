@@ -186,3 +186,18 @@ result this session at 400% on the evil corpus: 1,765.3 → 1,010.4 ms
 (−42.8%). Residual attribution: slices still charge full row work while
 saturated pixels cost one byte load — true remaining overdraw is the
 edge-span target.
+
+## Product glass capture — real-document settle reference (22:51–22:56)
+
+Raw log preserved at `settle-glass-session.log` (this directory). The
+owner's accumulated document is adversarial-dense: zero ink-free windows
+across the whole world at 25%. Full-pass settle walls with all three AA
+treatments live: 25% 572.7–609.3 ms; 50% 809.0 ms; 100% 738.4–922.4 ms;
+200% 690.5–804.9 ms; 400% **429.3–551.9 ms**. Incremental after-stroke
+settles 14–50 ms. 47 history hold conversions; zero failures, overflows,
+resyncs, or watchdog events across rapid zoom/pan/undo/redo torture.
+Verdict: 400% reaches the ≤500 ms class on real documents; 50–200% still
+exceed it — edge-span recording is the designated structural follow-up.
+The session also produced the transient color-popup byte-swap incident
+(`docs/receipts/vector-v2/COLOR_POPUP_BYTESWAP_INCIDENT_2026_08_18.md`,
+photo archived here).

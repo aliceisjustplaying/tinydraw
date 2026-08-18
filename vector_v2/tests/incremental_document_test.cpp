@@ -947,8 +947,8 @@ TEST_CASE("history swaps preserved tiles back byte-for-byte") {
   REQUIRE(vector_v2::append_authority_only(fixture.log,
                                            {.color = 0x001FU, .gesture_id = 1U, .samples = stroke})
               .has_value());
-  REQUIRE(vector_v2::absorb_pending_operation(fixture.log, fixture.canvas, fixture.workspace(),
-                                              view));
+  REQUIRE(
+      vector_v2::absorb_pending_operation(fixture.log, fixture.canvas, fixture.workspace(), view));
   const auto inked_source = fixture.canvas.lookup(fine);
   REQUIRE(inked_source.has_value());
   REQUIRE(inked_source->kind == vector_v2::SourceKind::kTileSlot);
@@ -965,8 +965,7 @@ TEST_CASE("history swaps preserved tiles back byte-for-byte") {
   // The undone state is blank paper: the tile must no longer be a resident
   // raw slot (uniform paper fallback is the exact answer).
   const auto undone_source = fixture.canvas.lookup(fine);
-  CHECK((!undone_source.has_value() ||
-         undone_source->kind != vector_v2::SourceKind::kTileSlot));
+  CHECK((!undone_source.has_value() || undone_source->kind != vector_v2::SourceKind::kTileSlot));
 
   // Redo: the preserved tile swaps back as current, byte-for-byte.
   REQUIRE(vector_v2::move_history_incrementally(
@@ -994,8 +993,8 @@ TEST_CASE("history swaps preserved tiles back byte-for-byte") {
   REQUIRE(vector_v2::append_authority_only(fixture.log,
                                            {.color = 0xF800U, .gesture_id = 2U, .samples = branch})
               .has_value());
-  REQUIRE(vector_v2::absorb_pending_operation(fixture.log, fixture.canvas, fixture.workspace(),
-                                              view));
+  REQUIRE(
+      vector_v2::absorb_pending_operation(fixture.log, fixture.canvas, fixture.workspace(), view));
   std::array<std::uint16_t, 64U * 64U> branch_pixels{};
   REQUIRE(fixture.canvas.compose_view(view, branch_pixels).has_value());
   CHECK(branch_pixels != inked);

@@ -556,12 +556,12 @@ void draw_history_busy_toast(Painter& painter, const ChromeState& state) {
   if (!state.history_busy) {
     return;
   }
-  painter.rounded({kHistoryBusyLeft + 2, kHistoryBusyTop + 3, kHistoryBusyRight + 2,
-                   kHistoryBusyBottom + 3},
-                  8, kShadow);
-  painter.rounded({kHistoryBusyLeft - 1, kHistoryBusyTop - 1, kHistoryBusyRight + 1,
-                   kHistoryBusyBottom + 1},
-                  8, kBorder);
+  painter.rounded(
+      {kHistoryBusyLeft + 2, kHistoryBusyTop + 3, kHistoryBusyRight + 2, kHistoryBusyBottom + 3}, 8,
+      kShadow);
+  painter.rounded(
+      {kHistoryBusyLeft - 1, kHistoryBusyTop - 1, kHistoryBusyRight + 1, kHistoryBusyBottom + 1}, 8,
+      kBorder);
   painter.rounded({kHistoryBusyLeft, kHistoryBusyTop, kHistoryBusyRight, kHistoryBusyBottom}, 7,
                   kWhite);
   const int center_x = (kHistoryBusyLeft + kHistoryBusyRight) / 2;
