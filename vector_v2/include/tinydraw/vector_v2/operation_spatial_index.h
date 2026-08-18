@@ -67,7 +67,7 @@ class OperationSpatialIndex {
   std::span<std::uint64_t> cell_bits_{};
   std::span<std::uint64_t> large_bits_{};
   // Internal hot metadata avoids touching PSRAM bitsets/candidate output when
-  // a complete active prefix is provably too dense to save 25% of fetches.
+  // a zero-based authority prefix is provably too dense to save 25% of fetches.
   std::array<std::uint16_t, kOperationSpatialCellCount> cell_population_{};
   std::uint16_t large_population_ = 0;
   std::size_t indexed_prefix_count_ = 0;

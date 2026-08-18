@@ -82,6 +82,12 @@ class PreparedHistoryChange {
 
   [[nodiscard]] const HistoryChange& change() const;
   [[nodiscard]] std::optional<StoredOperation> target_operation(std::size_t active_index) const;
+  // Emits conservative target-prefix candidates newest-first while this
+  // preparation owns the history slot. Null means the optional acceleration
+  // index cannot serve the query; callers retain the exact authority scan.
+  [[nodiscard]] std::optional<std::size_t> query_target_spatial(
+      PixelRect world_bounds, std::span<std::uint16_t> newest_first_candidates,
+      OperationSpatialQueryStats* stats = nullptr) const;
   void publish();
   void cancel();
 
@@ -154,6 +160,9 @@ class OperationLog {
   [[nodiscard]] PixelRect bounds_for_range(std::size_t first, std::size_t last) const;
   [[nodiscard]] std::optional<StoredOperation> history_operation(
       const PreparedHistoryChange& prepared, std::size_t active_index) const;
+  [[nodiscard]] std::optional<std::size_t> query_history_spatial(
+      const PreparedHistoryChange& prepared, PixelRect world_bounds,
+      std::span<std::uint16_t> newest_first_candidates, OperationSpatialQueryStats* stats) const;
   [[nodiscard]] bool can_use_spatial_index() const;
   void rebuild_spatial_index();
   void publish_history(const PreparedHistoryChange& prepared);

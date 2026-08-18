@@ -140,7 +140,8 @@ std::optional<std::size_t> OperationSpatialIndex::query(
       operation_count > newest_first_candidates.size()) {
     return std::nullopt;
   }
-  if (first_operation == 0U && operation_count == indexed_prefix_count_) {
+  OperationSpatialQueryStats measured{.operations_in_authority = operation_count};
+  if (first_operation == 0U) {
     const std::size_t useful_candidate_limit = operation_count - operation_count / 4U;
     std::size_t unavoidable_candidates = large_population_;
     for (int y = cells->y0; y < cells->y1; ++y) {
@@ -150,11 +151,15 @@ std::optional<std::size_t> OperationSpatialIndex::query(
                                                  cell_population_[cell_index(x, y)]);
       }
     }
+    // Full-prefix populations may include a retained Redo tail. Removing the
+    // entire tail is a conservative lower bound for the requested prefix.
+    const std::size_t excluded_tail = indexed_prefix_count_ - operation_count;
+    unavoidable_candidates =
+        unavoidable_candidates > excluded_tail ? unavoidable_candidates - excluded_tail : 0U;
     if (unavoidable_candidates > useful_candidate_limit) {
       return std::nullopt;
     }
   }
-  OperationSpatialQueryStats measured{.operations_in_authority = operation_count};
   std::size_t written = 0U;
   if (operation_count == 0U) {
     if (stats != nullptr) {
