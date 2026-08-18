@@ -270,7 +270,13 @@ void run_vector_v2_app() {
                                  std::span(storage.harness_tile_scratch, vector_v2::kTilePixels));
   std::printf("TINYDRAW_VECTOR_V2_GATE_HARNESS_DONE pass=%u\n", harness_verdict);
 #endif
-  const std::size_t overview_bytes = vector_v2::kOverviewPixels * 4U * sizeof(std::uint16_t);
+  const std::size_t overview_bytes = vector_v2::kOverviewPixels *
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
+                                     4U *
+#else
+                                     3U *
+#endif
+                                     sizeof(std::uint16_t);
   const std::size_t raw_tile_bytes =
       vector_v2::kTileSlotCount * vector_v2::kTilePixels * sizeof(std::uint16_t);
   const std::size_t tile_metadata_bytes =

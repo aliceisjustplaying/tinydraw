@@ -6,7 +6,9 @@
 
 #include "tinydraw/vector_v2/materialized_canvas.h"
 #include "tinydraw/vector_v2/operation.h"
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
 #include "tinydraw/vector_v2/rerender_ledger.h"
+#endif
 #include "tinydraw/vector_v2/touch_event_buffer.h"
 
 namespace tinydraw::esp32 {
@@ -17,8 +19,6 @@ struct AppStorage {
   std::uint16_t* overview = nullptr;
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
   std::uint16_t* snapshot = nullptr;
-#else
-  void* blank_snapshot_layout_reservation = nullptr;
 #endif
   std::uint16_t* frame = nullptr;
   std::uint16_t* tile_pixels = nullptr;
@@ -61,8 +61,6 @@ struct AppStorage {
   std::uint16_t* operation_candidates = nullptr;
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
   vector_v2::RerenderLedgerEntry* rerender_entries = nullptr;
-#else
-  void* rerender_ledger_layout_reservation = nullptr;
 #endif
   vector_v2::TouchEvent* touch_events = nullptr;
   vector_v2::TileKey* affected_keys = nullptr;
