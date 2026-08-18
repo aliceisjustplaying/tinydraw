@@ -56,9 +56,8 @@ bool parse_integer(std::string_view text, Integer& value) {
   if (text.empty()) {
     return false;
   }
-  const char* const end = text.data() + text.size();
-  const auto result = std::from_chars(text.data(), end, value);
-  return result.ec == std::errc{} && result.ptr == end;
+  const auto result = std::from_chars(text.begin(), text.end(), value);
+  return result.ec == std::errc{} && result.ptr == text.end();
 }
 
 std::optional<TraceSource> parse_source(std::string_view text) {
@@ -196,6 +195,26 @@ InkLatencyPercentiles summarize_delta(std::span<const InkSampleTiming> timings,
   };
 }
 
+TraceValidationError update_stroke_state(TraceEventKind kind, bool& stroke_open) {
+  switch (kind) {
+    case TraceEventKind::kDown:
+      if (stroke_open) {
+        return TraceValidationError::kUnexpectedDown;
+      }
+      stroke_open = true;
+      return TraceValidationError::kNone;
+    case TraceEventKind::kMove:
+      return stroke_open ? TraceValidationError::kNone : TraceValidationError::kUnexpectedMove;
+    case TraceEventKind::kUp:
+      if (!stroke_open) {
+        return TraceValidationError::kUnexpectedUp;
+      }
+      stroke_open = false;
+      return TraceValidationError::kNone;
+  }
+  return TraceValidationError::kUnexpectedMove;
+}
+
 }  // namespace
 
 TraceValidationResult validate_ink_trace(const TraceHeader& header,
@@ -219,26 +238,9 @@ TraceValidationResult validate_ink_trace(const TraceHeader& header,
     if (event.x >= kInkTraceWidth || event.y >= kInkTraceHeight) {
       return {.error = TraceValidationError::kCoordinateOutOfBounds, .event_index = index};
     }
-    switch (event.kind) {
-      case TraceEventKind::kDown:
-        if (stroke_open) {
-          return {.error = TraceValidationError::kUnexpectedDown, .event_index = index};
-        }
-        stroke_open = true;
-        break;
-      case TraceEventKind::kMove:
-        if (!stroke_open) {
-          return {.error = TraceValidationError::kUnexpectedMove, .event_index = index};
-        }
-        break;
-      case TraceEventKind::kUp:
-        if (!stroke_open) {
-          return {.error = TraceValidationError::kUnexpectedUp, .event_index = index};
-        }
-        stroke_open = false;
-        break;
-      default:
-        return {.error = TraceValidationError::kUnexpectedMove, .event_index = index};
+    const TraceValidationError transition = update_stroke_state(event.kind, stroke_open);
+    if (transition != TraceValidationError::kNone) {
+      return {.error = transition, .event_index = index};
     }
     previous_timestamp = event.t_us;
   }
