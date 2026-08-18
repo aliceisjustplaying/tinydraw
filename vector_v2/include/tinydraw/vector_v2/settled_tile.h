@@ -63,6 +63,9 @@ struct SettledRenderSlice {
   // Scheduling charge consumed by this call. Raster rows are atomic, so a
   // call may exceed max_work_px by at most one tile row.
   std::size_t work_px = 0;
+  // Complete with zero intersecting ink: out_pixels are exact paper white
+  // and the caller may skip publication and presentation entirely.
+  bool no_ink = false;
 };
 
 class SettledRenderCursor;

@@ -109,6 +109,11 @@ struct SettledRenderCursor::WorkBudget {
   void complete() {
     result = SettledRenderSlice{.status = SettledRenderStatus::kComplete, .work_px = work};
   }
+
+  void complete_no_ink() {
+    result = SettledRenderSlice{
+        .status = SettledRenderStatus::kComplete, .work_px = work, .no_ink = true};
+  }
 };
 
 bool SettledRenderCursor::bind(const SettledRenderRequest& request) {
@@ -160,7 +165,9 @@ bool SettledRenderCursor::bind(const SettledRenderRequest& request) {
   operation_min_x_.fill(static_cast<std::uint8_t>(width));
   operation_max_x_.fill(0U);
   operation_min_y_ = static_cast<std::uint8_t>(height);
-  phase_ = Phase::kInitialize;
+  // Query first: an empty window then skips plane initialization and the
+  // final fold entirely through the white fast path.
+  phase_ = Phase::kQueryCandidates;
   return true;
 }
 
@@ -178,7 +185,7 @@ void SettledRenderCursor::advance_initialize(WorkBudget& budget) {
     budget.pause();
     return;
   }
-  phase_ = Phase::kQueryCandidates;
+  phase_ = Phase::kScanOperation;
 }
 
 void SettledRenderCursor::advance_candidate_query(WorkBudget& budget) {
@@ -198,8 +205,20 @@ void SettledRenderCursor::advance_candidate_query(WorkBudget& budget) {
   use_candidates_ = candidates.has_value() &&
                     prefer_spatial_candidates(*candidates, authority_.active_operation_count);
   replay_count_ = use_candidates_ ? *candidates : authority_.active_operation_count;
-  phase_ = Phase::kScanOperation;
   ++budget.work;
+  if (replay_count_ == 0U) {
+    // The conservative index proves no operation touches this window: the
+    // exact settled output is paper white. One atomic fill replaces plane
+    // initialization, scanning, and the final fold.
+    std::fill(out_pixels_.begin(), out_pixels_.begin() + static_cast<std::ptrdiff_t>(pixel_count_),
+              std::uint16_t{0xFFFFU});
+    stats_.fold_pixels += pixel_count_;
+    budget.work += pixel_count_;
+    phase_ = Phase::kIdle;
+    budget.complete_no_ink();
+    return;
+  }
+  phase_ = Phase::kInitialize;
 }
 
 void SettledRenderCursor::advance_operation_scan(WorkBudget& budget) {

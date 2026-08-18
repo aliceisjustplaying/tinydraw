@@ -255,6 +255,7 @@ void VectorV2BackgroundPipeline::reset_settle_pass() {
   settle_cursor_ = 0;
   settle_complete_ = false;
   settle_tiles_ = 0;
+  settle_no_ink_ = 0;
   settle_slices_ = 0;
   settle_work_ = 0;
   settle_total_us_ = 0;
@@ -561,14 +562,22 @@ void VectorV2BackgroundPipeline::run_settle(std::uint32_t loop_us,
          .max_work_px = kSettleWorkPixels});
     const PixelRect bounds = settle_render_.level_bounds;
     bool rendered = false;
+    bool publishable = false;
     if (slice.status == vector_v2::SettledRenderStatus::kComplete) {
-      rendered =
-          settle_render_.overview
-              ? presenter_.stage_settled_pixels(bounds, settle_pixels_, bounds.x1 - bounds.x0)
-              : canvas_
-                    .publish_tile(settle_render_.key, canvas_.current_revision(),
-                                  vector_v2::MaterializationQuality::kSettled, settle_pixels_)
-                    .has_value();
+      if (slice.no_ink) {
+        // Exact paper window: nothing to publish, stage, or present.
+        rendered = true;
+        ++settle_no_ink_;
+      } else {
+        publishable = true;
+        rendered =
+            settle_render_.overview
+                ? presenter_.stage_settled_pixels(bounds, settle_pixels_, bounds.x1 - bounds.x0)
+                : canvas_
+                      .publish_tile(settle_render_.key, canvas_.current_revision(),
+                                    vector_v2::MaterializationQuality::kSettled, settle_pixels_)
+                      .has_value();
+      }
     }
     const std::int64_t render_us = esp_timer_get_time() - render_started;
     ++settle_slices_;
@@ -582,7 +591,8 @@ void VectorV2BackgroundPipeline::run_settle(std::uint32_t loop_us,
     settle_render_.cursor.cancel();
     settle_render_.active = false;
     if (rendered) {
-      const bool held = settle_hold_.active && bounds.x0 < settle_hold_.level_bounds.x1 &&
+      const bool held = publishable && settle_hold_.active &&
+                        bounds.x0 < settle_hold_.level_bounds.x1 &&
                         settle_hold_.level_bounds.x0 < bounds.x1 &&
                         bounds.y0 < settle_hold_.level_bounds.y1 &&
                         settle_hold_.level_bounds.y0 < bounds.y1;
@@ -596,7 +606,7 @@ void VectorV2BackgroundPipeline::run_settle(std::uint32_t loop_us,
           settle_hold_.union_bounds = bounds;
           settle_hold_.union_valid = true;
         }
-      } else {
+      } else if (publishable) {
         include_bounds(batch_bounds, bounds);
       }
       ++settle_tiles_;
@@ -648,9 +658,10 @@ void VectorV2BackgroundPipeline::run_settle(std::uint32_t loop_us,
     settle_complete_ = true;
     if (settle_tiles_ != 0U || settle_failures_ != 0U) {
       std::printf(
-          "TINYDRAW_LIVE_SETTLE zoom=%s tiles=%lu slices=%lu total_us=%lld "
+          "TINYDRAW_LIVE_SETTLE zoom=%s tiles=%lu no_ink=%lu slices=%lu total_us=%lld "
           "max_slice_us=%lld work=%llu failures=%lu permanent_failures=%lu\n",
           zoom_name(presenter_.zoom()), static_cast<unsigned long>(settle_tiles_),
+          static_cast<unsigned long>(settle_no_ink_),
           static_cast<unsigned long>(settle_slices_), static_cast<long long>(settle_total_us_),
           static_cast<long long>(settle_max_us_), static_cast<unsigned long long>(settle_work_),
           static_cast<unsigned long>(settle_failures_),
