@@ -1,6 +1,7 @@
 #include <doctest.h>
 
 #include "test_support/materialized_canvas_fixture.h"
+#include "tinydraw/vector_v2/incremental_document.h"
 
 TEST_CASE("paper catalog consumes no raw slots and composes direct fills") {
   std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
@@ -89,7 +90,7 @@ TEST_CASE("catalog and occupancy storage are never accepted as external workspac
   CHECK_FALSE(canvas.accepts_external_workspace(std::as_bytes(std::span(occupancy))));
 }
 
-TEST_CASE("snapshot restore derives conservative occupancy from non-paper pixels") {
+TEST_CASE("snapshot restore without authority map remains fully conservative") {
   std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
   std::array<std::uint16_t, vector_v2::kOverviewPixels> snapshot{};
   snapshot.fill(0xFFFFU);
@@ -103,8 +104,37 @@ TEST_CASE("snapshot restore derives conservative occupancy from non-paper pixels
 
   REQUIRE(canvas.restore_snapshot({4}, snapshot));
   CHECK_FALSE(canvas.certainly_paper({vector_v2::ZoomLevel::k100Percent, 0, 0}));
-  CHECK(canvas.certainly_paper({vector_v2::ZoomLevel::k100Percent, 1, 0}));
+  CHECK_FALSE(canvas.certainly_paper({vector_v2::ZoomLevel::k100Percent, 1, 0}));
+  CHECK(std::all_of(occupancy.begin(), occupancy.end(),
+                    [](std::uint8_t byte) { return byte == 0xFFU; }));
   CHECK(canvas.overview_pixels()[3U * vector_v2::kOverviewWidth + 2U] == 0x001FU);
+}
+
+TEST_CASE("mapped snapshot restore validates both sources before changing canvas") {
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> snapshot{};
+  snapshot.fill(0xFFFFU);
+  auto uniforms = std::make_unique<std::array<vector_v2::MaterializedUniformStorage,
+                                              vector_v2::kMaterializedTileIdentityCount>>();
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> occupancy{};
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> may_ink{};
+  std::array<vector_v2::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, vector_v2::kTilePixels> tile_storage{};
+  TestCanvas canvas(overview, *uniforms, occupancy, slots, tile_storage);
+  REQUIRE(canvas.reset_blank({3}));
+
+  snapshot[0] = 0x001FU;
+  may_ink[0] = 1U;
+  CHECK_FALSE(
+      canvas.restore_snapshot({4}, snapshot, std::span(may_ink).first(may_ink.size() - 1U)));
+  CHECK(canvas.current_revision() == vector_v2::DocumentRevision{3});
+  CHECK(canvas.overview_pixels()[0] == 0xFFFFU);
+  CHECK(canvas.certainly_paper({vector_v2::ZoomLevel::k100Percent, 0, 0}));
+
+  REQUIRE(canvas.restore_snapshot({4}, snapshot, may_ink));
+  CHECK(canvas.current_revision() == vector_v2::DocumentRevision{4});
+  CHECK(canvas.overview_pixels()[0] == 0x001FU);
+  CHECK_FALSE(canvas.certainly_paper({vector_v2::ZoomLevel::k100Percent, 0, 0}));
 }
 
 TEST_CASE("blank reset clears materialization and restores paper occupancy") {
@@ -137,8 +167,143 @@ TEST_CASE("blank reset clears materialization and restores paper occupancy") {
   CHECK(canvas.lookup(uniform)->kind == vector_v2::SourceKind::kOverview);
   CHECK(canvas.certainly_paper(raw));
   CHECK(canvas.certainly_paper(uniform));
+  CHECK(std::all_of(occupancy.begin(), occupancy.end(),
+                    [](std::uint8_t byte) { return byte == 0U; }));
   CHECK(std::all_of(canvas.overview_pixels().begin(), canvas.overview_pixels().end(),
                     [](std::uint16_t pixel) { return pixel == 0xFFFFU; }));
+}
+
+TEST_CASE("blank and sparse autosave replay restore authority-derived may-ink") {
+  std::array<vector_v2::OperationRecord, 2> records{};
+  std::array<vector_v2::CompactOperationSample, 2> samples{};
+  vector_v2::OperationLog log(records, samples);
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> replay{};
+  auto uniforms = std::make_unique<std::array<vector_v2::MaterializedUniformStorage,
+                                              vector_v2::kMaterializedTileIdentityCount>>();
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> occupancy{};
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> may_ink{};
+  std::array<vector_v2::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, vector_v2::kTilePixels> tile_storage{};
+  TestCanvas canvas(overview, *uniforms, occupancy, slots, tile_storage);
+
+  REQUIRE(vector_v2::replay_active_overview(log, replay));
+  REQUIRE(vector_v2::build_tiled_may_ink(log, may_ink));
+  REQUIRE(canvas.restore_snapshot(log.current_revision(), replay, may_ink));
+  CHECK(std::all_of(occupancy.begin(), occupancy.end(),
+                    [](std::uint8_t byte) { return byte == 0U; }));
+
+  const std::array stroke{
+      vector_v2::CompactOperationSample{.x_quarter = 160U * vector_v2::kSampleUnitsPerWorldUnit,
+                                        .y_quarter = 240U * vector_v2::kSampleUnitsPerWorldUnit,
+                                        .radius_256 = 8U * 256U}};
+  REQUIRE(log.append({.color = 0x001FU, .samples = stroke}));
+  REQUIRE(vector_v2::replay_active_overview(log, replay));
+  REQUIRE(vector_v2::build_tiled_may_ink(log, may_ink));
+  REQUIRE(canvas.restore_snapshot(log.current_revision(), replay, may_ink));
+
+  const auto stored = log.operation(0U);
+  REQUIRE(stored.has_value());
+
+  std::size_t occupied_cells = 0U;
+  for (int row = 0; row < vector_v2::kOccupancyRows; ++row) {
+    for (int column = 0; column < vector_v2::kOccupancyColumns; ++column) {
+      const vector_v2::PixelRect cell{column * vector_v2::kOccupancyCellWorldSize,
+                                      row * vector_v2::kOccupancyCellWorldSize,
+                                      (column + 1) * vector_v2::kOccupancyCellWorldSize,
+                                      (row + 1) * vector_v2::kOccupancyCellWorldSize};
+      const bool expected_occupied =
+          stored->world_bounds.x0 < cell.x1 && cell.x0 < stored->world_bounds.x1 &&
+          stored->world_bounds.y0 < cell.y1 && cell.y0 < stored->world_bounds.y1;
+      const std::size_t bit = static_cast<std::size_t>(row) * vector_v2::kOccupancyColumns +
+                              static_cast<std::size_t>(column);
+      const bool actual_occupied =
+          (occupancy[bit / 8U] & static_cast<std::uint8_t>(1U << (bit % 8U))) != 0U;
+      CHECK(actual_occupied == expected_occupied);
+      occupied_cells += actual_occupied;
+    }
+  }
+  CHECK(occupied_cells > 0U);
+  CHECK(occupied_cells < vector_v2::kOccupancyCellCount);
+  CHECK(std::equal(replay.begin(), replay.end(), canvas.overview_pixels().begin()));
+}
+
+TEST_CASE("incremental erase keeps may-ink conservative") {
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> blank{};
+  blank.fill(0xFFFFU);
+  auto uniforms = std::make_unique<std::array<vector_v2::MaterializedUniformStorage,
+                                              vector_v2::kMaterializedTileIdentityCount>>();
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> occupancy{};
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> may_ink{};
+  std::array<vector_v2::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, vector_v2::kTilePixels> tile_storage{};
+  TestCanvas canvas(overview, *uniforms, occupancy, slots, tile_storage);
+  const vector_v2::TileKey key{vector_v2::ZoomLevel::k100Percent, 0, 0};
+  std::array<std::uint16_t, 4U * 4U> ink{};
+  std::array<std::uint16_t, 4U * 4U> paper{};
+  paper.fill(0xFFFFU);
+
+  REQUIRE(canvas.restore_snapshot({0}, blank, may_ink));
+  REQUIRE(canvas.commit_incremental_revision({1}, {.bounds = {0, 0, 4, 4}, .pixels = ink},
+                                             {0, 0, 16, 16}, {}));
+  REQUIRE_FALSE(canvas.certainly_paper(key));
+  REQUIRE(canvas.commit_incremental_revision({2}, {.bounds = {0, 0, 4, 4}, .pixels = paper},
+                                             {0, 0, 16, 16}, {}));
+  CHECK_FALSE(canvas.certainly_paper(key));
+}
+
+TEST_CASE("partial erase preserves occupancy for ink remaining in the same cell") {
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> snapshot{};
+  snapshot.fill(0xFFFFU);
+  snapshot[0] = 0x001FU;
+  snapshot[3U * vector_v2::kOverviewWidth + 3U] = 0x001FU;
+  auto uniforms = std::make_unique<std::array<vector_v2::MaterializedUniformStorage,
+                                              vector_v2::kMaterializedTileIdentityCount>>();
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> occupancy{};
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> may_ink{};
+  std::array<vector_v2::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, vector_v2::kTilePixels> tile_storage{};
+  TestCanvas canvas(overview, *uniforms, occupancy, slots, tile_storage);
+  const vector_v2::TileKey key{vector_v2::ZoomLevel::k100Percent, 0, 0};
+  const std::array<std::uint16_t, 1> paper{0xFFFFU};
+
+  may_ink[0] = 1U;
+  REQUIRE(canvas.restore_snapshot({0}, snapshot, may_ink));
+  REQUIRE(canvas.commit_incremental_revision({1}, {.bounds = {0, 0, 1, 1}, .pixels = paper},
+                                             {0, 0, 4, 4}, {}));
+  CHECK_FALSE(canvas.certainly_paper(key));
+}
+
+TEST_CASE("in-place history publications preserve conservative world-edge occupancy") {
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> blank{};
+  blank.fill(0xFFFFU);
+  auto uniforms = std::make_unique<std::array<vector_v2::MaterializedUniformStorage,
+                                              vector_v2::kMaterializedTileIdentityCount>>();
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> occupancy{};
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> may_ink{};
+  std::array<vector_v2::MaterializedSlotStorage, 1> slots{};
+  std::array<std::uint16_t, vector_v2::kTilePixels> tile_storage{};
+  TestCanvas canvas(overview, *uniforms, occupancy, slots, tile_storage);
+  const vector_v2::TileKey edge{vector_v2::ZoomLevel::k100Percent, 22, 27};
+  std::array<std::uint16_t, 4U * 4U> ink{};
+  std::array<std::uint16_t, 4U * 4U> paper{};
+  paper.fill(0xFFFFU);
+  constexpr vector_v2::PixelRect world_edge{1456, 1776, 1472, 1792};
+  constexpr vector_v2::PixelRect overview_edge{364, 444, 368, 448};
+
+  REQUIRE(canvas.restore_snapshot({7}, blank, may_ink));
+  REQUIRE(canvas.commit_in_place_revision({8}, {.bounds = overview_edge, .pixels = ink}, world_edge,
+                                          {}));
+  REQUIRE_FALSE(canvas.certainly_paper(edge));
+  REQUIRE(canvas.commit_in_place_revision({9}, {.bounds = overview_edge, .pixels = paper},
+                                          world_edge, {}));
+  CHECK_FALSE(canvas.certainly_paper(edge));
+  REQUIRE(canvas.commit_in_place_revision({10}, {.bounds = overview_edge, .pixels = ink},
+                                          world_edge, {}));
+  CHECK_FALSE(canvas.certainly_paper(edge));
 }
 
 TEST_CASE("invalidated learned paper composes updated overview until relearned") {
@@ -175,10 +340,11 @@ TEST_CASE("occupancy is conservative across every zoom and mutation invalidates 
   auto uniforms = std::make_unique<std::array<vector_v2::MaterializedUniformStorage,
                                               vector_v2::kMaterializedTileIdentityCount>>();
   std::array<std::uint8_t, vector_v2::kOccupancyBytes> occupancy{};
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> may_ink{};
   std::array<vector_v2::MaterializedSlotStorage, 1> slots{};
   std::array<std::uint16_t, vector_v2::kTilePixels> tile_storage{};
   TestCanvas canvas(overview, *uniforms, occupancy, slots, tile_storage);
-  REQUIRE(canvas.restore_snapshot({0}, snapshot));
+  REQUIRE(canvas.restore_snapshot({0}, snapshot, may_ink));
   const vector_v2::TileKey at_50{vector_v2::ZoomLevel::k50Percent, 0, 0};
   const vector_v2::TileKey at_100{vector_v2::ZoomLevel::k100Percent, 0, 0};
   const vector_v2::TileKey at_200{vector_v2::ZoomLevel::k200Percent, 1, 1};
