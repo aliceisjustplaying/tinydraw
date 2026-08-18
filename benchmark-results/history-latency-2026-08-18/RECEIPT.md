@@ -111,3 +111,37 @@ eviction policy are untouched; this is presentation policy only.
 - `first_us` (51–74 ms fallback present at 400%) is now the largest
   single visible latency component; it belongs to the F16/F17 composition
   class (compose→copy→stage double-copy).
+
+## COW preserved-tile swap — device accepted (same day, second round)
+
+Whole-Stroke history now swaps preserved pre-images instead of rebuilding.
+`MaterializedCanvas::commit_history_revision` retags affected current raw
+tiles as preserved pre-images of the departing active prefix and swaps in
+preserved tiles of the arriving prefix; preserved slots leave the
+directory, are invisible to composition and residency, and form the first
+eviction class in `choose_slot` (the "expendable" 604-slot policy). The
+validity key is the new `OperationLog::history_timeline()` — unlike epoch
+it survives pure Undo/Redo and changes only on redo-replacing append,
+reset, and restore. This closes the aliasing trap that rejected the first
+adjacent-generation prototype (epoch changes on every history publish).
+
+Exactness: host 31/31 release + 13/13 ASan, including a dedicated oracle
+(swap == cold rebuild byte-for-byte; branch replacement with a matching
+prefix number must not swap — timeline guard proven; quality restored
+exactly as preserved).
+
+Device (604-slot gate, all-ones battery, evil-hairline history corpus):
+
+| Metric, 400% | rebuild path | preserved swap |
+|---|---:|---:|
+| repair max | 338,998 µs | **229 µs** |
+| total max | 440,301 µs | **116,253 µs** |
+| producer work | 74 steps / 1,140 scans | 1 step / 0 scans |
+| 200% total max | 208,390 µs | **66,334 µs** |
+
+Round structure proves both directions: first-descent undos rebuild once;
+redos swap; second-round undos swap. Remaining per-move cost is the
+authority/overview patch replay (15–31 ms) and one exact presentation
+(62–87 ms at 400%) — F16/F17 composition work and a future preserved
+overview patch are the follow-on targets. Same-log adversarial paced cold:
+391.8/382.5/457.3/492.8 ms — within dice, ≤500 held.

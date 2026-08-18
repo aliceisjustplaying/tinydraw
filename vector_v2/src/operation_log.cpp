@@ -120,6 +120,8 @@ DocumentRevision OperationLog::current_revision() const { return revision_; }
 
 OperationLogEpoch OperationLog::epoch() const { return epoch_; }
 
+std::uint64_t OperationLog::history_timeline() const { return history_timeline_; }
+
 std::size_t OperationLog::operation_count() const { return operation_count_; }
 
 std::size_t OperationLog::sample_count() const { return sample_count_; }
@@ -196,6 +198,7 @@ OperationIdentity OperationLog::append_validated(const OperationAppend& append_r
     if (epoch_.value == 0U) {
       ++epoch_.value;
     }
+    ++history_timeline_;
   }
   if (spatial_index_usable_ && !spatial_index_->replace(operation_count_ - 1U, bounds)) {
     spatial_index_usable_ = false;
@@ -400,6 +403,7 @@ bool OperationLog::restore(const AuthorityRestore& restore) {
   base_revision_ = {static_cast<std::uint32_t>(base_revision)};
   revision_ = restore.generation;
   epoch_ = restore.epoch;
+  ++history_timeline_;
   history_pending_ = false;
   rebuild_spatial_index();
   return true;
@@ -419,6 +423,7 @@ bool OperationLog::reset(DocumentRevision revision) {
   if (epoch_.value == 0U) {
     ++epoch_.value;
   }
+  ++history_timeline_;
   rebuild_spatial_index();
   return true;
 }

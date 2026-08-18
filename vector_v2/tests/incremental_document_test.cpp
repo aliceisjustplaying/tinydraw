@@ -930,3 +930,82 @@ TEST_CASE("authority may-ink rebuild follows Undo Redo and branch replacement") 
   CHECK(marked(1'200, 1'600));
   CHECK_FALSE(marked(1'360, 240));
 }
+
+TEST_CASE("history swaps preserved tiles back byte-for-byte") {
+  Fixture fixture;
+  std::array<std::uint16_t, vector_v2::kTilePixels> paper{};
+  paper.fill(0xFFFFU);
+  const vector_v2::TileKey fine{vector_v2::ZoomLevel::k400Percent, 0, 0};
+  REQUIRE(
+      fixture.canvas.publish_tile(fine, {0}, vector_v2::MaterializationQuality::kSettled, paper));
+  const std::array stroke{
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 512},
+      vector_v2::CompactOperationSample{.x_quarter = 48, .y_quarter = 48, .radius_256 = 512},
+  };
+  const vector_v2::ViewRequest view{.zoom = vector_v2::ZoomLevel::k400Percent,
+                                    .level_pixels = {0, 0, 64, 64}};
+  REQUIRE(vector_v2::append_authority_only(fixture.log,
+                                           {.color = 0x001FU, .gesture_id = 1U, .samples = stroke})
+              .has_value());
+  REQUIRE(vector_v2::absorb_pending_operation(fixture.log, fixture.canvas, fixture.workspace(),
+                                              view));
+  const auto inked_source = fixture.canvas.lookup(fine);
+  REQUIRE(inked_source.has_value());
+  REQUIRE(inked_source->kind == vector_v2::SourceKind::kTileSlot);
+  std::array<std::uint16_t, 64U * 64U> inked{};
+  REQUIRE(fixture.canvas.compose_view(view, inked).has_value());
+
+  // First undo: the inked tile is preserved for redo; no pre-image exists
+  // yet for the arriving blank state.
+  REQUIRE(vector_v2::move_history_incrementally(
+      fixture.log, fixture.canvas, vector_v2::HistoryDirection::kUndo, fixture.scratch));
+  auto stats = fixture.canvas.last_history_commit_stats();
+  CHECK(stats.preserved >= 1U);
+  CHECK(stats.swapped_in == 0U);
+  // The undone state is blank paper: the tile must no longer be a resident
+  // raw slot (uniform paper fallback is the exact answer).
+  const auto undone_source = fixture.canvas.lookup(fine);
+  CHECK((!undone_source.has_value() ||
+         undone_source->kind != vector_v2::SourceKind::kTileSlot));
+
+  // Redo: the preserved tile swaps back as current, byte-for-byte.
+  REQUIRE(vector_v2::move_history_incrementally(
+      fixture.log, fixture.canvas, vector_v2::HistoryDirection::kRedo, fixture.scratch));
+  stats = fixture.canvas.last_history_commit_stats();
+  CHECK(stats.swapped_in >= 1U);
+  const auto swapped_source = fixture.canvas.lookup(fine);
+  REQUIRE(swapped_source.has_value());
+  CHECK(swapped_source->kind == vector_v2::SourceKind::kTileSlot);
+  // The swap restores exactly the quality the tile had when preserved (the
+  // in-place ink edit had already downgraded settled to immediate).
+  CHECK(swapped_source->quality == inked_source->quality);
+  std::array<std::uint16_t, 64U * 64U> swapped{};
+  REQUIRE(fixture.canvas.compose_view(view, swapped).has_value());
+  CHECK(swapped == inked);
+
+  // Branch replacement changes the timeline: a stale preserved tile with a
+  // matching prefix must never swap into the new branch.
+  REQUIRE(vector_v2::move_history_incrementally(
+      fixture.log, fixture.canvas, vector_v2::HistoryDirection::kUndo, fixture.scratch));
+  const std::array branch{
+      vector_v2::CompactOperationSample{.x_quarter = 32, .y_quarter = 16, .radius_256 = 512},
+      vector_v2::CompactOperationSample{.x_quarter = 32, .y_quarter = 48, .radius_256 = 512},
+  };
+  REQUIRE(vector_v2::append_authority_only(fixture.log,
+                                           {.color = 0xF800U, .gesture_id = 2U, .samples = branch})
+              .has_value());
+  REQUIRE(vector_v2::absorb_pending_operation(fixture.log, fixture.canvas, fixture.workspace(),
+                                              view));
+  std::array<std::uint16_t, 64U * 64U> branch_pixels{};
+  REQUIRE(fixture.canvas.compose_view(view, branch_pixels).has_value());
+  CHECK(branch_pixels != inked);
+  REQUIRE(vector_v2::move_history_incrementally(
+      fixture.log, fixture.canvas, vector_v2::HistoryDirection::kUndo, fixture.scratch));
+  stats = fixture.canvas.last_history_commit_stats();
+  CHECK(stats.swapped_in == 0U);
+  REQUIRE(vector_v2::move_history_incrementally(
+      fixture.log, fixture.canvas, vector_v2::HistoryDirection::kRedo, fixture.scratch));
+  std::array<std::uint16_t, 64U * 64U> redone_branch{};
+  REQUIRE(fixture.canvas.compose_view(view, redone_branch).has_value());
+  CHECK(redone_branch == branch_pixels);
+}

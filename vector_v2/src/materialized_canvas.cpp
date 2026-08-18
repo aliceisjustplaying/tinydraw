@@ -273,6 +273,7 @@ bool MaterializedCanvas::publish_overview(DocumentRevision revision,
       release_slot(index);
     }
   }
+  drop_preserved_slots();
   clear_uniforms();
   std::fill(occupancy_bits_.begin(), occupancy_bits_.end(), 0xFFU);
   current_revision_ = revision;
@@ -302,6 +303,7 @@ bool MaterializedCanvas::restore_snapshot(DocumentRevision revision,
       release_slot(index);
     }
   }
+  drop_preserved_slots();
   clear_uniforms();
   // A 25% snapshot cannot prove that a higher-zoom hairline is absent.
   std::fill(occupancy_bits_.begin(), occupancy_bits_.end(), 0xFFU);
@@ -334,6 +336,7 @@ bool MaterializedCanvas::restore_snapshot(DocumentRevision revision,
       release_slot(index);
     }
   }
+  drop_preserved_slots();
   clear_uniforms();
   current_revision_ = revision;
   overview_revision_ = revision;
@@ -368,6 +371,7 @@ bool MaterializedCanvas::reset_blank(DocumentRevision revision) {
       release_slot(index);
     }
   }
+  drop_preserved_slots();
   clear_uniforms();
   std::fill(occupancy_bits_.begin(), occupancy_bits_.end(), 0U);
   current_revision_ = revision;
@@ -486,6 +490,65 @@ void MaterializedCanvas::finish_revision(DocumentRevision revision,
   mark_occupied(affected_world_bounds);
   current_revision_ = revision;
   overview_revision_ = revision;
+}
+
+bool MaterializedCanvas::commit_history_revision(
+    DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
+    PixelRect affected_world_bounds, std::uint64_t authority_timeline,
+    std::uint16_t departing_prefix, std::uint16_t arriving_prefix) {
+  if (!valid_incremental_revision(revision, overview_publication, affected_world_bounds, {})) {
+    return false;
+  }
+  ++composition_epoch_;
+  last_history_commit_stats_ = {};
+  if (preserved_epoch_ != authority_timeline) {
+    // Branch replacement created new authority: every preserved pre-image
+    // belongs to a dead timeline.
+    drop_preserved_slots();
+    preserved_epoch_ = authority_timeline;
+  }
+  apply_overview_publication(overview_publication);
+  invalidate_uniforms(affected_world_bounds);
+  for (std::size_t index = 0; index < slots_.size(); ++index) {
+    MaterializedSlotStorage& slot = slots_[index];
+    if (!slot.occupied_) {
+      continue;
+    }
+    const bool affected = rectangles_intersect(tile_world_bounds(slot.key_), affected_world_bounds);
+    if (affected) {
+      // Retag instead of discarding: this content is the exact pre-image of
+      // the departing state and becomes the runway for the inverse move.
+      release_slot(index);
+      slot.preserved_ = true;
+      slot.preserved_prefix_ = departing_prefix;
+      ++preserved_slots_;
+      touch(slot);
+      ++last_history_commit_stats_.preserved;
+    } else {
+      slot.revision_ = revision;
+    }
+  }
+  for (std::size_t index = 0; index < slots_.size(); ++index) {
+    MaterializedSlotStorage& slot = slots_[index];
+    if (!slot.preserved_ || slot.preserved_prefix_ != arriving_prefix) {
+      continue;
+    }
+    if (find_tile(slot.key_).has_value()) {
+      // A current resident already covers this identity exactly.
+      continue;
+    }
+    slot.preserved_ = false;
+    --preserved_slots_;
+    slot.revision_ = revision;
+    claim_slot(index);
+    touch(slot);
+    ++last_history_commit_stats_.swapped_in;
+  }
+  // Every retagged tile left current residency; swap-ins are the arriving
+  // identities restored without rebuild.
+  last_history_commit_stats_.invalidated = last_history_commit_stats_.preserved;
+  finish_revision(revision, affected_world_bounds);
+  return true;
 }
 
 bool MaterializedCanvas::commit_incremental_revision(

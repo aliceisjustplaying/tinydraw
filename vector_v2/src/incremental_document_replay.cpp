@@ -67,9 +67,11 @@ std::optional<HistoryChange> move_history_incrementally(OperationLog& log,
       return std::nullopt;
     }
   }
-  if (!canvas.commit_incremental_revision(change.generation,
-                                          {.bounds = overview_bounds, .pixels = pixels},
-                                          change.affected_world_bounds, {})) {
+  if (!canvas.commit_history_revision(
+          change.generation, {.bounds = overview_bounds, .pixels = pixels},
+          change.affected_world_bounds, log.history_timeline(),
+          static_cast<std::uint16_t>(change.previous_active_operation_count),
+          static_cast<std::uint16_t>(change.active_operation_count))) {
     prepared->cancel();
     return std::nullopt;
   }
