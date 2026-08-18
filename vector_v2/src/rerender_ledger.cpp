@@ -99,8 +99,8 @@ bool RerenderLedger::mark_world_damage_slice(PixelRect world_bounds, std::size_t
     const int last_column = std::clamp((x1 - 1) / kGroupLevelPixels, 0, geometry.group_columns - 1);
     const int first_row = std::clamp(y0 / kGroupLevelPixels, 0, geometry.group_rows - 1);
     const int last_row = std::clamp((y1 - 1) / kGroupLevelPixels, 0, geometry.group_rows - 1);
-    const std::size_t columns = static_cast<std::size_t>(last_column - first_column + 1);
-    const std::size_t rows = static_cast<std::size_t>(last_row - first_row + 1);
+    const std::size_t columns = static_cast<std::size_t>(last_column - first_column) + 1U;
+    const std::size_t rows = static_cast<std::size_t>(last_row - first_row) + 1U;
     const std::size_t count = columns * rows;
     while (offset < count && groups_marked < max_groups) {
       const int row = first_row + static_cast<int>(offset / columns);
