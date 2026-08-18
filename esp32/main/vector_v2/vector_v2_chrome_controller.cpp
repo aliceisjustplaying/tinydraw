@@ -312,13 +312,17 @@ bool VectorV2ChromeController::apply(vector_v2::ChromeAction action, Point point
       }
       chrome_.popup = vector_v2::ChromePopup::kNone;
       static_cast<void>(sync_history_controls(chrome_, log_));
-      const auto canvas_timing = presenter_.refresh_region(
-          vector_v2::operation_level_bounds(change->affected_world_bounds, presenter_.zoom()),
-          chrome_, now_us());
-      print_presentation(undo ? "undo-canvas" : "redo-canvas", presenter_, canvas_timing);
-      if (!canvas_timing.passed) {
-        return false;
-      }
+      // The damaged canvas keeps its retained pixels: the background refill
+      // presents the region exactly once when it completes (owner-directed
+      // hold-back), showing the busy hourglass only if it runs long.
+      history_damage_ =
+          vector_v2::operation_level_bounds(change->affected_world_bounds, presenter_.zoom());
+      // The hourglass appears synchronously with the tap (owner direction);
+      // the background hold erases it with the exact swap.
+      chrome_.history_busy = true;
+      const vector_v2::ChromeRect busy = vector_v2::chrome_history_busy_region();
+      static_cast<void>(presenter_.present_frame_region({busy.x0, busy.y0, busy.x1, busy.y1},
+                                                        chrome_, now_us()));
       const auto dock_timing = present_history_controls(presenter_, chrome_, now_us());
       print_presentation(undo ? "undo-dock" : "redo-dock", presenter_, dock_timing);
       return dock_timing.passed;
@@ -336,6 +340,12 @@ bool VectorV2ChromeController::apply(vector_v2::ChromeAction action, Point point
   }
   print_presentation("chrome", presenter_, timing);
   return timing.passed;
+}
+
+std::optional<vector_v2::PixelRect> VectorV2ChromeController::take_history_damage() {
+  const auto damage = history_damage_;
+  history_damage_.reset();
+  return damage;
 }
 
 }  // namespace tinydraw::esp32

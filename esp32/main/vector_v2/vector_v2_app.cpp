@@ -283,7 +283,8 @@ void run_vector_v2_app() {
       run_vector_v2_gate_harness(presenter, producer, log, canvas, touch_sampler, chrome, workspace,
                                  exporter, std::span(storage.snapshot, vector_v2::kOverviewPixels),
                                  std::span(storage.input_samples, kInputSampleCapacity),
-                                 std::span(storage.harness_tile_scratch, vector_v2::kTilePixels));
+                                 std::span(storage.harness_tile_scratch, vector_v2::kTilePixels),
+                                 std::span(storage.overview_scratch, vector_v2::kOverviewPixels));
   std::printf("TINYDRAW_VECTOR_V2_GATE_HARNESS_DONE pass=%u\n", harness_verdict);
 #endif
   const std::size_t overview_bytes = vector_v2::kOverviewPixels *
@@ -672,6 +673,11 @@ void run_vector_v2_app() {
           if (applied &&
               (history_action || action == vector_v2::ChromeAction::kConfirmNewDrawing)) {
             background.reset_document_state();
+            if (const auto damage = chrome_controller.take_history_damage();
+                history_action && damage.has_value()) {
+              // The refill of this damage presents once, exactly, when done.
+              background.hold_history_damage(*damage);
+            }
           }
         }
       } else if (completed_interaction == InteractionMode::kPan) {

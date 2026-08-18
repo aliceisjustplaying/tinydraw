@@ -1,10 +1,12 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <span>
 
 #include "tinydraw/geometry.h"
 #include "tinydraw/vector_v2/chrome.h"
+#include "tinydraw/vector_v2/materialized_canvas.h"
 
 namespace tinydraw::vector_v2 {
 class MaterializedCanvas;
@@ -41,6 +43,10 @@ class VectorV2ChromeController {
 
   [[nodiscard]] bool apply(vector_v2::ChromeAction action, Point point);
 
+  // Level-space damage of the most recent successful Undo/Redo, consumed by
+  // the caller to arrange one held exact presentation of the refill.
+  [[nodiscard]] std::optional<vector_v2::PixelRect> take_history_damage();
+
  private:
   vector_v2::ChromeState& chrome_;
   vector_v2::OperationLog& log_;
@@ -50,6 +56,7 @@ class VectorV2ChromeController {
   std::span<const std::uint16_t> blank_snapshot_;
 #endif
   std::span<std::uint16_t> history_scratch_;
+  std::optional<vector_v2::PixelRect> history_damage_;
   VectorV2Presenter& presenter_;
   VectorV2Export& exporter_;
   TimeSyncController& time_sync_;

@@ -90,6 +90,9 @@ struct ChromeState {
   ChromeTimeSyncStatus time_sync_status = ChromeTimeSyncStatus::kIdle;
   int battery_percentage = -1;
   bool battery_charging = false;
+  // A history refill is still rebuilding its damaged region; presents show a
+  // small hourglass over the retained pixels until the exact swap.
+  bool history_busy = false;
   bool operator==(const ChromeState&) const = default;
 };
 
@@ -167,6 +170,10 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
 // The battery indicator's panel-space overlay bounds. A battery-only state
 // change needs to re-present just this region, not the full frame.
 [[nodiscard]] ChromeRect chrome_battery_region();
+
+// Outer bounds (including shadow) of the history busy hourglass toast; the
+// presenter uses this region to show and erase the cue.
+[[nodiscard]] ChromeRect chrome_history_busy_region();
 [[nodiscard]] bool chrome_minimap_refresh_required(const ChromeState& state, bool overview_changed,
                                                    bool allow_minimap_refresh);
 // A caller-owned pixel surface whose (0, 0) sits at panel coordinate

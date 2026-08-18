@@ -45,3 +45,19 @@ the unintended Undo, or a deterministic host/device trace makes the natural
 pixel/action oracle red. Preserve at minimum event kind, point, sequence,
 timestamp/age, popup before/after, resolved action, authority read view, ring
 state, and submitted panel bounds.
+
+## Second occurrence — 2026-08-18 owner glass session (history hold-back test)
+
+Reproduced on ordinary product firmware during the Undo hold-back glass
+test. While selecting a pen size, the owner also managed to hit the
+Undo/Redo control ("this time I tapped redo") in the same gesture; both
+actions fired and the UI corrupted ("the whole UI just gets fucked").
+This is no longer a single ambiguous event: the size popup and the history
+controls can trigger together with unpredictable ordering.
+
+Owner direction: fix after the performance round. This second occurrence
+upgrades the incident from "inconclusive, needs natural red reproduction"
+to a reproducible-by-hand interaction defect; the fix belongs with the
+roadmap §3 touch-target review (overlapping targets, pressed feedback,
+missed-tap check). The ordered-event capture requirements above still
+define the diagnostic bar.

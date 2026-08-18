@@ -139,7 +139,8 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
                                 const InPlaceAppendWorkspace& workspace, VectorV2Export& exporter,
                                 std::span<const std::uint16_t> blank_snapshot,
                                 std::span<CompactOperationSample> conversion_storage,
-                                std::span<std::uint16_t> tile_scratch) {
+                                std::span<std::uint16_t> tile_scratch,
+                                std::span<std::uint16_t> overview_scratch) {
   vector_v2::ChromeState palette = chrome;
   palette.popup = vector_v2::ChromePopup::kColors;
   const std::int64_t color_started = esp_timer_get_time();
@@ -320,6 +321,11 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
                                                  workspace, blank_snapshot, conversion_storage);
   const bool export_encode = long_gesture && run_export_encode_gate(exporter, log);
   const bool export_reserve = export_encode && verify_export_reserve();
+  // Runs last before the return so its evil-hairline history document is the
+  // one left on glass for manual Undo/Redo inspection.
+  const bool history_latency =
+      cache_tour && run_history_latency_gate(presenter, producer, log, canvas, chrome, workspace,
+                                             blank_snapshot, conversion_storage, overview_scratch);
   const auto return_overview = presenter.set_view(ZoomLevel::k25Percent, 0, 0, chrome, now_us());
   print_rerender_ledger("final");
   std::printf(
@@ -331,17 +337,18 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
       "pan_400=%u ring_local=%u pan_seq=%u pan_boundary=%u live_overlay=%u draw_fill=%u cache=%u "
       "full_world_cache=%u "
       "cache_tour=%u mixed_draw=%u idle_repair=%u ink_trace=%u hairline_capacity=%u "
-      "long_gesture=%u "
+      "long_gesture=%u history_latency=%u "
       "export_encode=%u export_reserve=%u return=%u ssaa_receipt=yellow\n",
       minimap_navigation, color_dialog, cooperative_compose, stress_ready, stress_100, stress_400,
       overlap_ready, overlap_cold, general_cold_ready, general_cold, workload_ready, paced_cold,
       gate_100, gate_400, pan_100, pan_400, ring_local, pan_sequence, pan_boundary, live_overlay,
       draw_fill, cache_retention, full_world_cache, cache_tour, mixed_draw, idle_repair,
-      ink_trace_replay, hairline_capacity, long_gesture, export_encode, export_reserve,
-      return_overview.passed);
+      ink_trace_replay, hairline_capacity, long_gesture, history_latency, export_encode,
+      export_reserve, return_overview.passed);
   return minimap_navigation && color_dialog && cooperative_compose && return_overview.passed &&
          export_reserve && overlap_cold && general_cold && mixed_draw && idle_repair &&
-         hairline_capacity && pan_100 && pan_400 && ring_local && pan_sequence && pan_boundary;
+         hairline_capacity && history_latency && pan_100 && pan_400 && ring_local &&
+         pan_sequence && pan_boundary;
 #endif
 }
 

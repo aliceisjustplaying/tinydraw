@@ -48,6 +48,11 @@ class VectorV2BackgroundPipeline {
                              vector_v2::ChromeState& chrome);
 
   void note_committed_bounds(vector_v2::PixelRect world_bounds);
+  // Suppresses per-publication fill presentations intersecting the damaged
+  // level region of a just-completed history move, accumulating their union
+  // for one exact presentation when the refill completes. The hold is
+  // dropped on any view or revision change.
+  void hold_history_damage(vector_v2::PixelRect level_bounds);
   void mark_history_controls_dirty();
   void history_controls_presented();
   void reset_document_state();
@@ -75,10 +80,37 @@ class VectorV2BackgroundPipeline {
     std::uint32_t presentation_failures = 0;
   };
 
+  struct HistoryDamageHold {
+    vector_v2::PixelRect level_bounds{};
+    vector_v2::PixelRect published_union{};
+    vector_v2::ZoomLevel zoom = vector_v2::ZoomLevel::k25Percent;
+    int x = 0;
+    int y = 0;
+    vector_v2::DocumentRevision revision{};
+    std::int64_t started_us = 0;
+    std::uint32_t suppressed = 0;
+    bool union_valid = false;
+    bool busy_shown = false;
+    bool active = false;
+  };
+
   struct PendingSettlePresentation {
     vector_v2::PixelRect level_bounds{};
     bool overview = false;
     bool pending = false;
+  };
+
+  // Batches the settle pass that follows a history swap into one AA polish
+  // presentation instead of window-by-window pops over the damaged region.
+  struct SettleHold {
+    vector_v2::PixelRect level_bounds{};
+    vector_v2::PixelRect union_bounds{};
+    vector_v2::ZoomLevel zoom = vector_v2::ZoomLevel::k25Percent;
+    int x = 0;
+    int y = 0;
+    vector_v2::DocumentRevision revision{};
+    bool union_valid = false;
+    bool active = false;
   };
 
   struct PendingSettleRender {
@@ -92,6 +124,7 @@ class VectorV2BackgroundPipeline {
   void reset_settle_fingerprint();
   void reset_settle_pass();
   void print_fill(const char* result) const;
+  void convert_history_hold(const vector_v2::ViewRequest& view);
   void run_fill(const vector_v2::ViewRequest& view, TouchUrgencyProbe touch_urgency);
   void run_repair(const vector_v2::ViewRequest& view, TouchUrgencyProbe touch_urgency);
   void run_settle(std::uint32_t loop_us, TouchUrgencyProbe touch_urgency);
@@ -113,6 +146,8 @@ class VectorV2BackgroundPipeline {
   FillTiming fill_timing_{};
   bool fill_measurement_active_ = false;
   PendingFillPresentation pending_fill_{};
+  HistoryDamageHold history_hold_{};
+  SettleHold settle_hold_{};
 
   vector_v2::IdleRepairPlan repair_plan_{};
   vector_v2::IdleRepairPanDelta repair_pan_delta_{};

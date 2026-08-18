@@ -550,6 +550,47 @@ void draw_export_toast(Painter& painter, const ChromeState& state) {
                saved ? kInk : 0xE186U, 3);
 }
 
+// Compact non-modal hourglass over the retained canvas pixels while a
+// history refill rebuilds. Drawn from rects: frame bars, two bulbs, sand.
+void draw_history_busy_toast(Painter& painter, const ChromeState& state) {
+  if (!state.history_busy) {
+    return;
+  }
+  painter.rounded({kHistoryBusyLeft + 2, kHistoryBusyTop + 3, kHistoryBusyRight + 2,
+                   kHistoryBusyBottom + 3},
+                  8, kShadow);
+  painter.rounded({kHistoryBusyLeft - 1, kHistoryBusyTop - 1, kHistoryBusyRight + 1,
+                   kHistoryBusyBottom + 1},
+                  8, kBorder);
+  painter.rounded({kHistoryBusyLeft, kHistoryBusyTop, kHistoryBusyRight, kHistoryBusyBottom}, 7,
+                  kWhite);
+  const int center_x = (kHistoryBusyLeft + kHistoryBusyRight) / 2;
+  const int glass_top = kHistoryBusyTop + 8;
+  const int glass_bottom = kHistoryBusyBottom - 8;
+  const int mid = (glass_top + glass_bottom) / 2;
+  // Frame bars.
+  painter.rect({center_x - 12, glass_top, center_x + 12, glass_top + 3}, kInk);
+  painter.rect({center_x - 12, glass_bottom - 3, center_x + 12, glass_bottom}, kInk);
+  // Bulb walls: three narrowing segments per side, mirrored.
+  painter.rect({center_x - 10, glass_top + 3, center_x - 8, glass_top + 9}, kInk);
+  painter.rect({center_x + 8, glass_top + 3, center_x + 10, glass_top + 9}, kInk);
+  painter.rect({center_x - 7, glass_top + 9, center_x - 5, glass_top + 14}, kInk);
+  painter.rect({center_x + 5, glass_top + 9, center_x + 7, glass_top + 14}, kInk);
+  painter.rect({center_x - 4, glass_top + 14, center_x - 2, mid}, kInk);
+  painter.rect({center_x + 2, glass_top + 14, center_x + 4, mid}, kInk);
+  painter.rect({center_x - 4, mid, center_x - 2, glass_bottom - 14}, kInk);
+  painter.rect({center_x + 2, mid, center_x + 4, glass_bottom - 14}, kInk);
+  painter.rect({center_x - 7, glass_bottom - 14, center_x - 5, glass_bottom - 9}, kInk);
+  painter.rect({center_x + 5, glass_bottom - 14, center_x + 7, glass_bottom - 9}, kInk);
+  painter.rect({center_x - 10, glass_bottom - 9, center_x - 8, glass_bottom - 3}, kInk);
+  painter.rect({center_x + 8, glass_bottom - 9, center_x + 10, glass_bottom - 3}, kInk);
+  // Sand: a little left up top, a pile below, one falling grain.
+  painter.rect({center_x - 5, glass_top + 5, center_x + 5, glass_top + 9}, kSelected);
+  painter.rect({center_x - 1, mid - 2, center_x + 1, mid + 6}, kSelected);
+  painter.rect({center_x - 5, glass_bottom - 9, center_x + 5, glass_bottom - 3}, kSelected);
+  painter.rect({center_x - 8, glass_bottom - 6, center_x + 8, glass_bottom - 3}, kSelected);
+}
+
 void draw_centered_toast_text(Painter& painter, std::string_view text, std::uint16_t color) {
   constexpr int scale = 3;
   const int text_width = static_cast<int>(text.size()) * 6 * scale - scale;
@@ -686,6 +727,7 @@ bool ChromeStagingCache::paint_prepared(const MinimapSurface& surface, const Chr
                     surface.origin_y);
     draw_export_toast(painter, state);
     draw_time_sync_toast(painter, state);
+    draw_history_busy_toast(painter, state);
     static_cast<void>(draw_strip_overlays(surface, state, navigation));
     return true;
   }
@@ -723,6 +765,11 @@ bool ChromeStagingCache::paint_prepared(const MinimapSurface& surface, const Chr
   }
   if (state.battery_percentage >= 0) {
     blend_cached_sprite(surface, kBatteryOverlayRect, battery);
+  }
+  if (state.history_busy) {
+    Painter painter(surface.pixels, surface.width, surface.height, surface.origin_x,
+                    surface.origin_y);
+    draw_history_busy_toast(painter, state);
   }
   return true;
 }
