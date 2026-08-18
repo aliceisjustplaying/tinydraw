@@ -121,6 +121,12 @@ bool run_overlap_cold_gates(VectorV2Presenter& presenter, vector_v2::TileProduce
 bool run_general_cold_gates(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
                             MaterializedCanvas& canvas, VectorV2TouchSampler& touch,
                             const vector_v2::ChromeState& chrome);
+bool run_owner_document_cold_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
+                                  OperationLog& log, MaterializedCanvas& canvas,
+                                  VectorV2TouchSampler& touch, const vector_v2::ChromeState& chrome,
+                                  const InPlaceAppendWorkspace& workspace,
+                                  std::span<const std::uint16_t> blank_snapshot,
+                                  std::span<CompactOperationSample> conversion_storage);
 
 bool run_edge_ink_case(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
                        OperationLog& log, MaterializedCanvas& canvas,

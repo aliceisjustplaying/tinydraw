@@ -94,6 +94,7 @@ else()
       "vector_v2/vector_v2_gate_harness_history.cpp"
       "vector_v2/vector_v2_gate_harness_ink.cpp"
       "vector_v2/vector_v2_gate_harness_mixed.cpp"
+      "vector_v2/vector_v2_gate_harness_owner.cpp"
       "vector_v2/vector_v2_gate_harness_pan.cpp"
       "vector_v2/vector_v2_gate_harness_render.cpp"
       "vector_v2/vector_v2_gate_harness_stress.cpp"
@@ -164,6 +165,9 @@ if(TINYDRAW_VECTOR_V2_GATE_HARNESS)
     target_add_binary_data(${COMPONENT_LIB}
       "${CMAKE_CURRENT_LIST_DIR}/../../testdata/ink-traces/${TINYDRAW_INK_TRACE}.csv" TEXT)
   endforeach()
+  # Compact authority captured from the owner's real release-stress document.
+  target_add_binary_data(${COMPONENT_LIB}
+    "${CMAKE_CURRENT_LIST_DIR}/../../testdata/documents/owner-torture-2026-08-19.tdoc" BINARY)
 endif()
 if(TINYDRAW_VECTOR_V2_TILE_CENSUS)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_V2_TILE_CENSUS=1)
