@@ -321,6 +321,8 @@ ChromeAction chrome_action_at(ChromePoint point, const ChromeState& state) {
 
 ChromeRect chrome_battery_region() { return kBatteryOverlayRect; }
 
+ChromeRect chrome_recording_region() { return kRecordingRect; }
+
 ChromeRect chrome_history_busy_region() {
   return {kHistoryBusyLeft - 1, kHistoryBusyTop - 1, kHistoryBusyRight + 2, kHistoryBusyBottom + 3};
 }

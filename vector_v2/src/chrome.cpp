@@ -32,7 +32,8 @@ static_assert([] {
 bool bottom_cache_matches(const ChromeState& cached, const ChromeState& current) {
   return cached.tool == current.tool && cached.size == current.size &&
          cached.palette_page == current.palette_page && cached.color_index == current.color_index &&
-         cached.can_undo == current.can_undo && cached.can_redo == current.can_redo;
+         cached.can_undo == current.can_undo && cached.can_redo == current.can_redo &&
+         cached.recording == current.recording;
 }
 
 bool surface_intersects(const MinimapSurface& surface, ChromeRect rect) {
@@ -171,6 +172,9 @@ void draw_bottom(Painter& painter, const ChromeState& state) {
   painter.circle(kMainCenters[4], 410, radius + 4, kSelected);
   painter.circle(kMainCenters[4], 410, radius, kInk);
   draw_document(painter, kMainCenters[5], 410, kInk);
+  if (state.recording) {
+    painter.circle(184, 382, 5, kRecording);
+  }
 }
 
 void draw_tools_popup(Painter& painter, const ChromeState& state) {

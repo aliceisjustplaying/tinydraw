@@ -108,6 +108,7 @@ if(TINYDRAW_BUILD_TESTS)
   )
   tinydraw_add_vector_v2_tests(tinydraw_vector_v2_interaction_tests
     tests/chrome_test.cpp
+    tests/demo_tape_test.cpp
     tests/frame_scroller_test.cpp
     tests/ink_trace_test.cpp
     tests/live_ink_coordinator_test.cpp

@@ -6,6 +6,7 @@ raster_v1_build="$root/out/build/esp32-raster-v1"
 qemu_build="$root/out/build/esp32-qemu"
 graphics_build="$root/out/build/esp32-graphics"
 vector_v2_build="$root/out/build/esp32-vector-v2"
+demo_build="$root/out/build/esp32-vector-v2-demo"
 gate_harness_build="$root/out/build/esp32-vector-v2-gate-harness"
 tile_census_build="$root/out/build/esp32-vector-v2-tile-census"
 tearing_probe_build="$root/out/build/esp32-vector-v2-tearing-probe"
@@ -61,6 +62,16 @@ case "$action" in
     eim run "idf.py -B '$vector_v2_build' -DTINYDRAW_FIRMWARE_VARIANT=product build"
     assert_config "$vector_v2_build/sdkconfig" OCT
     eim run "idf.py -B '$vector_v2_build' -p '$port' flash"
+    ;;
+  vector-v2-demo)
+    port="${2:-}"
+    rm -rf "$demo_build"
+    cd "$root/esp32"
+    eim run "idf.py -B '$demo_build' -DTINYDRAW_FIRMWARE_VARIANT=demo build"
+    assert_config "$demo_build/sdkconfig" OCT
+    if [[ -n "$port" ]]; then
+      eim run "idf.py -B '$demo_build' -p '$port' flash"
+    fi
     ;;
   vector-v2-gate-harness)
     port="${2:-}"
@@ -157,10 +168,10 @@ case "$action" in
     fi
     ;;
   clean)
-    rm -rf "$raster_v1_build" "$qemu_build" "$graphics_build" "$vector_v2_build" "$gate_harness_build" "$tile_census_build" "$tearing_probe_build" "$panel_probe_build"
+    rm -rf "$raster_v1_build" "$demo_build" "$qemu_build" "$graphics_build" "$vector_v2_build" "$gate_harness_build" "$tile_census_build" "$tearing_probe_build" "$panel_probe_build"
     ;;
   *)
-    echo "usage: $0 {build|raster-v1 [PORT]|vector-v2 PORT|vector-v2-gate-harness PORT [TILE_SLOTS] [verify]|vector-v2-tearing-probe PORT|panel-probe PORT [CELL]|vector-v2-tile-census PORT|qemu|graphics|graphics-test|clean}" >&2
+    echo "usage: $0 {build|raster-v1 [PORT]|vector-v2 PORT|vector-v2-demo [PORT]|vector-v2-gate-harness PORT [TILE_SLOTS] [verify]|vector-v2-tearing-probe PORT|panel-probe PORT [CELL]|vector-v2-tile-census PORT|qemu|graphics|graphics-test|clean}" >&2
     exit 2
     ;;
 esac

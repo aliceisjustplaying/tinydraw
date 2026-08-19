@@ -137,6 +137,17 @@ std::optional<SampledTouch> VectorV2TouchSampler::read_next() {
   };
 }
 
+void VectorV2TouchSampler::discard_pending() {
+  portENTER_CRITICAL(&event_lock_);
+  events_.reset();
+  touch_urgent_.store(false, std::memory_order_release);
+  portEXIT_CRITICAL(&event_lock_);
+  if (event_ready_ != nullptr) {
+    while (xSemaphoreTake(event_ready_, 0) == pdTRUE) {
+    }
+  }
+}
+
 TouchSamplerMetrics VectorV2TouchSampler::take_metrics() {
   return {
       .samples = samples_.exchange(0U, std::memory_order_relaxed),

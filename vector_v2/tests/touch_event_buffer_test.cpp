@@ -214,6 +214,18 @@ TEST_CASE("touch buffer rejects storage too small for bounded edge resynchroniza
   CHECK(events.pending() == 0U);
 }
 
+TEST_CASE("touch buffer reset discards contact and queued semantic state") {
+  std::array<vector_v2::TouchEvent, 8> storage{};
+  vector_v2::TouchEventBuffer events(storage);
+  REQUIRE(events.offer(vector_v2::TouchContactRead::kPoint, {1.0F, 2.0F}, 10U) ==
+          vector_v2::TouchOfferResult::kQueued);
+  events.reset();
+  CHECK(events.pending() == 0U);
+  CHECK(events.offer(vector_v2::TouchContactRead::kPoint, {3.0F, 4.0F}, 20U) ==
+        vector_v2::TouchOfferResult::kQueued);
+  REQUIRE(events.pop()->kind == vector_v2::TouchEventKind::kDown);
+}
+
 TEST_CASE("overflow stress always delivers a well-formed contact stream") {
   std::array<vector_v2::TouchEvent, 4> storage{};
   vector_v2::TouchEventBuffer events(storage);
