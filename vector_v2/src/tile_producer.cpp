@@ -3,9 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <limits>
-#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
-#include <chrono>
-#endif
 
 #include "tinydraw/vector_v2/raster_census.h"
 #ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
@@ -221,31 +218,15 @@ std::optional<TileProductionStep> TileProducer::produce_next(const ViewRequest& 
     // walks every visible tile through the PSRAM slot directory.
     return render_active_batch();
   }
+  if (!ready() || !valid_view(view)) {
+    discard_active_group();
+    return std::nullopt;
+  }
   if (!active_group_.active) {
     if (const auto paper = choose_certain_paper_group(view); paper.has_value()) {
       active_group_ = {};
       return publish_certain_paper_group(view, *paper);
     }
-  }
-#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
-  const auto remaining_scan_started = std::chrono::steady_clock::now();
-#endif
-  const auto remaining = visible_tiles_remaining(view);
-#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
-  TINYDRAW_V2_CENSUS_ADD(remaining_scans, 1);
-  TINYDRAW_V2_CENSUS_ADD(
-      remaining_scan_ns,
-      static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                     std::chrono::steady_clock::now() - remaining_scan_started)
-                                     .count()));
-#endif
-  if (!remaining.has_value()) {
-    discard_active_group();
-    return std::nullopt;
-  }
-  if (*remaining == 0U) {
-    discard_active_group();
-    return TileProductionStep{.complete = true};
   }
   const bool active_group_is_current = active_group_.active &&
                                        active_group_.epoch == log_.epoch() &&
@@ -255,7 +236,10 @@ std::optional<TileProductionStep> TileProducer::produce_next(const ViewRequest& 
                                     active_group_.view.level_pixels == view.level_pixels)) {
     const auto group = choose_missing_group(view);
     discard_active_group();
-    if (!group.has_value() || !start_group(view, *group)) {
+    if (!group.has_value()) {
+      return TileProductionStep{.complete = true};
+    }
+    if (!start_group(view, *group)) {
       active_group_ = {};
       return std::nullopt;
     }
