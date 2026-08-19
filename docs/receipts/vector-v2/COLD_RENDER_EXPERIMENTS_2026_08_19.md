@@ -1,6 +1,6 @@
 # Cold-render performance experiments — 2026-08-19
 
-Budget: at most five distinct measured hypotheses. One used. Baseline does not
+Budget: at most five distinct measured hypotheses. Two used. Baseline does not
 consume an attempt.
 
 ## Baseline
@@ -19,5 +19,11 @@ The owner torture document completes in 119/135/199/349 ms.
    contiguous internal-memory layout: `presenter=0`, free internal 144,892
    bytes at bootstrap. The harness failed closed before any benchmark, so no
    timing claim is made. The 2x2 product shape is restored.
+2. **1x2 narrow supertasks — rejected and reverted.** Halving group width was
+   intended to saturate dense masks earlier and reduce each spatial candidate
+   set. It duplicated enough operation setup across the viewport that the
+   first 100% stress fill starved CPU0's idle task for five seconds and tripped
+   the task watchdog before a timing result. The captured backtrace and
+   `failure_marker=True` make this an unconditional rejection.
 
-Four experiments remain.
+Three experiments remain.
