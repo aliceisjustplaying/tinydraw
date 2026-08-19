@@ -16,6 +16,7 @@ The current pre-final acceptance is
 - [`HISTORY_PERFORMANCE_EXPERIMENTS_2026_08_19.md`](HISTORY_PERFORMANCE_EXPERIMENTS_2026_08_19.md) — complete five-experiment Undo/Redo campaign: focused chrome, masked replay, saturation completion, and occupancy-proof reuse.
 - [`COLD_RENDER_EXPERIMENTS_2026_08_19.md`](COLD_RENDER_EXPERIMENTS_2026_08_19.md) — complete five-experiment cold-render campaign; fewer replay resumptions and directory scans survived the device battery.
 - [`ONE_SAMPLE_STROKE_DOT_BUG_2026_08_19.md`](ONE_SAMPLE_STROKE_DOT_BUG_2026_08_19.md) — one-sample tap dots now agree across settled tiles, PNG, SVG, and hard replay.
+- [`PHANTOM_TOP_EDGE_CONTACT_2026_08_19.md`](PHANTOM_TOP_EDGE_CONTACT_2026_08_19.md) — raw autosave and two physical export pairs trace unintended edge dots to motionless 25%-zoom contacts in the top sensor fringe; intentional interior taps remain valid.
 - [`TRANSIENT_CHROME_POPUP_INCIDENT_2026_08_18.md`](TRANSIENT_CHROME_POPUP_INCIDENT_2026_08_18.md) — confirmed popup/history split-contact bug and six-poll lift fix.
 - [`COLOR_POPUP_BYTESWAP_INCIDENT_2026_08_18.md`](COLOR_POPUP_BYTESWAP_INCIDENT_2026_08_18.md) — modal RGB565 staging-domain root cause and fix.
 - [`../../../benchmark-results/owner-document-battery-2026-08-19/RECEIPT.md`](../../../benchmark-results/owner-document-battery-2026-08-19/RECEIPT.md) — the owner's 102-operation/2,706-sample torture document is a gate-only physical cold-render corpus.
