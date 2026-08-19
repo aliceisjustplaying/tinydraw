@@ -12,9 +12,9 @@ vector_v2::TouchOfferResult confirm_lift(vector_v2::TouchEventBuffer& events,
                                          std::uint32_t final_timestamp_us) {
   vector_v2::TouchOfferResult result = vector_v2::TouchOfferResult::kIgnored;
   for (std::uint32_t read = 0; read < vector_v2::kTouchLiftConfirmationReads; ++read) {
-    result = events.offer(vector_v2::TouchContactRead::kNoTouch, {},
-                          final_timestamp_us -
-                              (vector_v2::kTouchLiftConfirmationReads - 1U - read));
+    result =
+        events.offer(vector_v2::TouchContactRead::kNoTouch, {},
+                     final_timestamp_us - (vector_v2::kTouchLiftConfirmationReads - 1U - read));
   }
   return result;
 }

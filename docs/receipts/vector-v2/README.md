@@ -9,6 +9,7 @@ The current pre-final acceptance is
 
 - [`SVG_ERASER_MASKS_2026_08_19.md`](SVG_ERASER_MASKS_2026_08_19.md) — SVG erasers are transparent painter-ordered masks; later ink can repaint erased areas.
 - [`SVG_SMOOTHNESS_EXPERIMENTS_2026_08_19.md`](SVG_SMOOTHNESS_EXPERIMENTS_2026_08_19.md) — bounded SVG smoothness campaign; physical-gesture chunks now share one continuous curve stream.
+- [`AA_PERFORMANCE_EXPERIMENTS_2026_08_19.md`](AA_PERFORMANCE_EXPERIMENTS_2026_08_19.md) — four measured AA hypotheses; opaque-first compositing survived host A/B, three no-gos were reverted.
 
 - [`../../../benchmark-results/v2-autosave-2026-08-17/RECEIPT.md`](../../../benchmark-results/v2-autosave-2026-08-17/RECEIPT.md) — single-journal authority autosave, exhaustive truncation/corruption recovery fixtures, background ESP flash adapter, normal firmware flash, blank and real multi-Stroke reboot restoration, and owner-confirmed Redo/session recovery; autosave-enabled performance joins the final optimization round.
 - [`../../../benchmark-results/svg-export-2026-08-17/RECEIPT.md`](../../../benchmark-results/svg-export-2026-08-17/RECEIPT.md) — original detailed SVG export: one filled variable-width path per operation chunk, transactional 4 KiB flash streaming, complete physical-device readback/CRC verification in 1.024 s, and no watchdog. The [owner-artifact follow-up](../../../benchmark-results/stroke-svg-minimap-acquire-2026-08-17/RECEIPT.md) groups chunks into one path per physical Stroke and removes the synthetic background rectangle.
