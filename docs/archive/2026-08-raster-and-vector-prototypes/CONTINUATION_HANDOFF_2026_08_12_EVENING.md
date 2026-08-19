@@ -87,7 +87,7 @@ out, not a demand to fill it.
   An 11.8 KB internal settled-scratch band allocates trivially; a full 35 KB
   band workspace fits the largest block with limited margin → prefer borrowing
   `active_coverage_` (164,864 B internal, idle during settled passes because
-  strokes pause the render task; needs an explicit ownership handshake).
+  strokes pause the render task; needs an explicit exclusive-access handshake).
 - Publication determinism: identical view+revision ⇒ identical hash across all
   cycles (100%: fallback `17300f6a` / settled `49a8e974`; 50%:
   `964586fc`/`a167c6e9`; 200%: `b3eb028d`/`bce1c492`).

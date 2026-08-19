@@ -31,7 +31,7 @@ Request changes. The immutable-fallback mechanism works for an unchanged documen
 
 6. **Display staging remains inside long cache critical sections.** `set_zoom()` holds `cache_mutex` from [line 1044](esp32/main/interactive_pan_benchmark.cpp:1044) through all resampling and strip queueing at [line 1197](esp32/main/interactive_pan_benchmark.cpp:1197). Settled publication similarly holds it across the full 17-transaction push. Pin `(arena, generation, revision, rect)` under the lock, release it, stage into owned DMA buffers, then submit.
 
-7. **No state-machine regression test covers the new ownership invariant.** The hardware cycle validates only one immutable document and does not inject document mutation, pan, cancellation at each publication boundary, telemetry-ring pressure, or allocation failure. Extract the two-arena coordinator behind a host-testable storage/display interface and exhaustively test generation changes before render, before lock, after copy, after submit, and before completion.
+7. **No state-machine regression test covers the new access invariant.** The hardware cycle validates only one immutable document and does not inject document mutation, pan, cancellation at each publication boundary, telemetry-ring pressure, or allocation failure. Extract the two-arena coordinator behind a host-testable storage/display interface and exhaustively test generation changes before render, before lock, after copy, after submit, and before completion.
 
 ## Medium
 

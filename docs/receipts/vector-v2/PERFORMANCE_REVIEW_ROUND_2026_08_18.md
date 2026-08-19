@@ -74,7 +74,7 @@ not a universal host-wall win.
 | F11, F22 | An append-maintained 128-world-pixel dense bitset index covers 168 cells plus a large-operation set. Queries OR words, deduplicate without heap allocation, return newest first, and retain exact authority fallback. Producer and settled paths use the index only when it rejects at least 25%, avoiding the dense PSRAM-indirection regression. Product allocation is 93,176 bytes, dead-last in PSRAM, with authority/candidate/dedup counters. |
 | F14 | Settled AA clears and composites only the alpha span touched by each operation, then uses the exact remaining-white fold. Transient settled failures retain their cursor and retry up to three times; permanent failures are explicit. This also closes F33’s silent-promotion bug. |
 | F15 | Raw materialized composition copies rows, and overview fallback uses zoom shifts and run fills; division/modulo is gone from the per-pixel loops. |
-| F20 | Checkpoint payload staging is resumable at 16 KiB per caller slice. Ownership then crosses a queue to the low-priority worker, which seals the immutable transaction and writes flash. The physical benchmark passes the 4 ms first-call and 2 ms slice guards for representative and full-capacity journals. |
+| F20 | Checkpoint payload staging is resumable at 16 KiB per caller slice. The immutable buffer then crosses a queue to the low-priority worker, which seals the transaction and writes flash. The physical benchmark passes the 4 ms first-call and 2 ms slice guards for representative and full-capacity journals. |
 | F22 | Rerender cause, spatial candidate, touch resync, phase, and panel-reset receipts are present in the harness/product paths. |
 | F26 | Idle repair now uses the last completed pan to prioritize continued travel, then one-tile reverse and perpendicular runways. A deterministic 448-slot LRU benchmark accepted the ordering with equal 64-tile repair work and no external allocation; this later host acceptance does not amend the physical receipts above. |
 | F32 | Source warning fixes are green under Homebrew Clang 22 across four host suites. The remaining PNG CMake failure is an Xcode-beta SDK raw-`-isystem` toolchain limitation; the same source compiles when the SDK is supplied with `-isysroot`. Linux CI coverage remains open. |
@@ -359,7 +359,7 @@ p95/max was 4/6 µs, and worker seal p95/max was 32.708/32.726 ms.
 Both corpora pass the unchanged 4 ms first-call guard and the new 2 ms
 per-slice guard. The longer seal is worker-owned and does not cross the caller
 latency guard. Staging revalidates the authority view before each slice;
-ownership transfer precedes worker mutation of padding, CRC, and commit marker.
+the buffer handoff precedes worker mutation of padding, CRC, and commit marker.
 
 ### F21 retained-key commit markers — accepted
 

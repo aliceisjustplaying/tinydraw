@@ -519,7 +519,7 @@ Keep counters for high-water entry count, maximum wall time, touch event age imm
 
 The worker owns flash I/O, but `VectorV2AutosaveStore::Impl::submit()` allocates a `PendingWrite`, allocates PSRAM storage, and encodes the transaction while holding a mutex on the caller (`vector_v2_autosave_store.cpp:205-278`). A full-capacity checkpoint could therefore create an input-age tail even though the actual write is asynchronous.
 
-Use two or three preallocated transaction buffers or a slab. Make checkpoint encoding incremental and interruptible, or snapshot compact immutable authority metadata and let the worker perform the bulk copy/CRC under a clearly defined ownership contract.
+Use two or three preallocated transaction buffers or a slab. Make checkpoint encoding incremental and interruptible, or snapshot compact immutable authority metadata and let the worker perform the bulk copy/CRC under a clearly defined handoff contract.
 
 Add an atomic “autosave submit/encode active” marker to latency receipts so unexplained touch tails can be correlated. This is a hypothesis until measured; it should not displace the confirmed ring and scheduling fixes.
 

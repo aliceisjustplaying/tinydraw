@@ -52,7 +52,7 @@ Isolated internal-vs-PSRAM effect for the identical banded workload:
 - composite: **4.62% faster**;
 - total wall: **1.69% faster**.
 
-The pre-registered prediction was a ≥40% raster reduction. It failed decisively. The settled capsule loop is primarily compute/algorithm bound for this workload, not coverage-scratch bandwidth bound. Do not build a borrowed-live-coverage ownership mechanism for this optimization.
+The pre-registered prediction was a ≥40% raster reduction. It failed decisively. The settled capsule loop is primarily compute/algorithm bound for this workload, not coverage-scratch bandwidth bound. Do not build a borrowed-live-coverage lease mechanism for this optimization.
 
 Banding itself repeated intersecting stroke/segment work: segment count increased 76.8%, and wall time increased 6.3% despite smaller scratch. Production must generate/project geometry once for a larger supertask, then bin it into smaller ordered coverage/publication tiles.
 

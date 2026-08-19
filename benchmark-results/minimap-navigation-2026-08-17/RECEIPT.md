@@ -46,7 +46,7 @@ did not yet exist.
 
 The final tests cover:
 
-- exact visible-frame ownership and popup suppression;
+- exact visible-frame control and popup suppression;
 - 3 px jitter remains a tap, 4 px promotes to drag;
 - exact top-left, center, and bottom-right projection at 200%;
 - captured movement clamps beyond the minimap frame;

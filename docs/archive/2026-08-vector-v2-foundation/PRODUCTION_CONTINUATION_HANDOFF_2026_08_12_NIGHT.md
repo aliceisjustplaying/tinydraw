@@ -142,7 +142,7 @@ AMOLED
 This module should hide:
 
 - bounded-world and zoom-level geometry;
-- complete overview ownership;
+- complete overview authority;
 - world-aligned tile keys and fixed-capacity slots;
 - tile state, quality, applied operation revision, and replacement policy;
 - lookup of the best valid source for a requested screen region;
@@ -357,7 +357,7 @@ Then run all host profiles and review the module interface before adding allocat
 
 ## Bottom line
 
-This is not a dead-end rescue attempt. Hardware has already demonstrated the critical interaction mechanisms. The prototype's remaining failures are specifically the mechanisms the production design removes: camera-aligned rebasing, stale-source repair, refusal, repeated band replay, and giant raster ownership.
+This is not a dead-end rescue attempt. Hardware has already demonstrated the critical interaction mechanisms. The prototype's remaining failures are specifically the mechanisms the production design removes: camera-aligned rebasing, stale-source repair, refusal, repeated band replay, and giant raster state.
 
 Start production now, but make the first two gates rigorous:
 

@@ -41,7 +41,7 @@ The caller gate is 4 ms and the per-slice gate is 2 ms. Payload budgeting
 includes each 16-byte operation record and copied sample bytes, including a
 single 65,535-sample operation. Every resume fingerprints the full authority
 view. The previous committed journal remains authoritative until complete
-staging transfers ownership to the worker.
+staging hands its buffer to the worker.
 
 ## Correctness and product impact
 

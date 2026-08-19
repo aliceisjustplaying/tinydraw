@@ -5,7 +5,7 @@
 **PASS.** The zoom rail no longer swallows a deliberate pan-tool drag.
 Stationary/short gestures remain zoom-control taps; movement reaching 8 pixels
 promotes the gesture into the existing canvas pan path from its original Down
-point. Draw and eraser tools retain ordinary zoom-control ownership.
+point. Draw and eraser tools retain ordinary zoom-control capture.
 
 ## State-machine change
 
@@ -15,7 +15,7 @@ entire gesture was consumed on Up, even with the pan tool selected.
 
 Now `chrome_promotes_pan_drag()` is the platform-neutral intent classifier. The
 app preserves the initial toolbar point. When the pan tool is active and a rail
-gesture crosses the 8 px threshold, it clears toolbar ownership, runs the same
+gesture crosses the 8 px threshold, it releases toolbar capture, runs the same
 pending-authority boundary drain used by ordinary canvas panning, starts pan at
 the original point/origin, and immediately presents the accumulated delta.
 Bottom-toolbar gestures, popup gestures, and non-pan tools cannot promote.

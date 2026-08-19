@@ -147,7 +147,7 @@ bands or a two-core settled rasterizer rather than more scalar micro-tuning.
 
 A GPT-5.6 Sol review (`SOL_REVIEW_ITERATION_1.md`) rejected the initial settled
 claim and found correctness gaps in the first LOD, publication endpoint,
-post-mutation source ownership, and cross-core display access. The follow-up
+post-mutation source lifetime, and cross-core display access. The follow-up
 iteration now:
 
 - uses an iterative centerline/radius error-bounded LOD and tests loops,
