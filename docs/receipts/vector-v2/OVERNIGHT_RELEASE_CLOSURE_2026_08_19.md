@@ -51,6 +51,13 @@ screen and PNG retain their raster-crack overlap. The red-first regression and
 all host suites pass. See
 [`SVG_EXTREME_ZOOM_EDGE_TEETH_2026_08_19.md`](SVG_EXTREME_ZOOM_EDGE_TEETH_2026_08_19.md).
 
+The same owner-check session then exposed USB Serial/JTAG not returning after
+mass-storage teardown, popup taps leaking to the toolbar below, and export text
+coverage/alignment regressions. Commits `4615a49`, `5ceb203`, and `b0d8ad2`
+close those issues; two physical eject-to-serial loops passed, including the
+final flashed product. See
+[`USB_EXPORT_EXIT_AND_CHROME_FOLLOWUP_2026_08_19.md`](USB_EXPORT_EXIT_AND_CHROME_FOLLOWUP_2026_08_19.md).
+
 ## Verification
 
 - Physical ESP32-S3 gate: every gate passed, including the 102-operation,
