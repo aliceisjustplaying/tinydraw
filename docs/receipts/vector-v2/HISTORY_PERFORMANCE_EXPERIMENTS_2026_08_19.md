@@ -1,6 +1,6 @@
 # Undo/Redo performance experiments — 2026-08-19
 
-Budget: at most five distinct measured hypotheses. Three used. The full hardware
+Budget: at most five distinct measured hypotheses. Four used. The full hardware
 battery is the authority; lower wall time is better.
 
 ## Baseline
@@ -36,5 +36,14 @@ presentation reached 87.5 ms in the diagnostic per-publication policy.
    does not saturate its broad damage rectangle and remained flat: 27.65 ms
    move, 114.26/63.34 ms holdback at 400/200%. All host suites and the full
    battery stayed green, so the large dense-stack win has no measured cost.
+4. **Preserve may-ink across eraser-only history — accepted.** Undo/Redo that
+   changes only eraser chunks cannot alter the union of active pen bounds, so
+   it keeps the existing conservative occupancy proof instead of scanning all
+   active operations to rebuild identical bytes. A new dense 4,000-eraser
+   benchmark remained exact and measured 0.00017 ms per move (roughly 900–
+   1,000x faster than forward replay; saturation also contributes). The device
+   corpus saved about 0.3 ms on its eraser moves at both zooms; overall maxima
+   were flat. The authority suite passed 25,711 assertions and the full battery
+   remained green.
 
-Two experiments remain.
+One experiment remains.
