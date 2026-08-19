@@ -3,8 +3,8 @@
 #include "vector_v2_gate_harness_internal.h"
 
 extern "C" {
-extern const char _binary_owner_torture_2026_08_19_tdoc_start[];
-extern const char _binary_owner_torture_2026_08_19_tdoc_end[];
+extern const char _binary_captured_drawing_2026_08_19_tdoc_start[];
+extern const char _binary_captured_drawing_2026_08_19_tdoc_end[];
 }
 
 namespace tinydraw::esp32::gate_harness {
@@ -34,9 +34,9 @@ std::optional<OwnerDocumentPosition> load_owner_document(
     OperationLog& log, MaterializedCanvas& canvas, const InPlaceAppendWorkspace& workspace,
     std::span<CompactOperationSample> conversion_storage) {
   const auto* begin =
-      reinterpret_cast<const std::uint8_t*>(_binary_owner_torture_2026_08_19_tdoc_start);
+      reinterpret_cast<const std::uint8_t*>(_binary_captured_drawing_2026_08_19_tdoc_start);
   const auto* end =
-      reinterpret_cast<const std::uint8_t*>(_binary_owner_torture_2026_08_19_tdoc_end);
+      reinterpret_cast<const std::uint8_t*>(_binary_captured_drawing_2026_08_19_tdoc_end);
   const std::size_t size = static_cast<std::size_t>(end - begin);
   if (size < kHeaderBytes || std::memcmp(begin, "TDOC", 4U) != 0) {
     return std::nullopt;
