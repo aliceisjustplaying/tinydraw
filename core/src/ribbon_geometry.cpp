@@ -106,8 +106,7 @@ InkPoint midpoint(InkPoint start, InkPoint end) {
 }
 
 template <typename Emit>
-void emit_quadratic(InkPoint start, InkPoint control, InkPoint end, Emit emit) {
-  constexpr float overlap = 0.75F;
+void emit_quadratic(InkPoint start, InkPoint control, InkPoint end, float overlap, Emit emit) {
   constexpr std::size_t subdivisions = 3U;
   std::array<InkPoint, subdivisions + 1> points{};
   std::array<Point, subdivisions + 1> directions{};
@@ -301,7 +300,8 @@ RibbonUpdate CurvedRibbonStream::append(InkPoint point, bool provisional_needed,
     update.committed.push_back(circle(first_.position, first_.radius));
     first_cap_pending_ = false;
   }
-  emit_quadratic(stable_, last_, stable_end,
+  const float overlap = span_join_ == RibbonSpanJoin::kRasterOverlap ? 0.75F : 0.0F;
+  emit_quadratic(stable_, last_, stable_end, overlap,
                  [&](RibbonPrimitive primitive) { update.committed.push_back(primitive); });
   if (sharp_turn(stable_.position, last_.position, point.position)) {
     update.committed.push_back(circle(last_.position, last_.radius));

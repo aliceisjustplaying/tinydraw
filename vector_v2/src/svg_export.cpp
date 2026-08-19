@@ -273,7 +273,7 @@ bool emit_eraser_masks(Writer& writer, const OperationLog& log, std::size_t oper
   }
   std::optional<StoredOperation> previous;
   std::optional<CompactOperationSample> last_sample;
-  CurvedRibbonStream ribbon;
+  CurvedRibbonStream ribbon{RibbonSpanJoin::kSharedBoundary};
   bool mask_open = false;
   std::size_t mask_index = 0U;
   for (std::size_t index = 0; index < operation_count; ++index) {
@@ -324,7 +324,7 @@ bool emit_operations(Writer& writer, const OperationLog& log, std::size_t operat
   }
   std::optional<StoredOperation> previous;
   std::optional<CompactOperationSample> last_sample;
-  CurvedRibbonStream ribbon;
+  CurvedRibbonStream ribbon{RibbonSpanJoin::kSharedBoundary};
   bool path_open = false;
   std::size_t groups_open = eraser_count;
   for (std::size_t index = 0; index < operation_count; ++index) {

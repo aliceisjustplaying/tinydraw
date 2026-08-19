@@ -34,11 +34,11 @@ struct SvgExportOptions {
 // path and one continuous curve stream: a physical finger-down/up stroke is
 // the logical export unit even when bounded live-input storage split it
 // internally. Ungrouped legacy operations
-// remain individual paths. Each path contains consistently wound subpaths for
-// the exact circles and convex shapes emitted by CurvedRibbonStream, the same
-// variable-width ribbon geometry used by the renderer. Nonzero filling makes
-// their union identical to the rendered stroke without a centerline or
-// stroke-width approximation. Eraser gestures become SVG masks around the
+// remain individual paths. Each path contains consistently wound subpaths from
+// the renderer's variable-width CurvedRibbonStream. Raster output retains a
+// 0.75 px tangent overlap to prevent fixed-grid cracks; SVG subspans meet at
+// their exact shared section so the vector outline has no overlap teeth.
+// Eraser gestures become SVG masks around the
 // content that precedes them, preserving painter order while leaving erased
 // areas transparent. Later pen gestures can paint into an erased area again.
 // Empty and pen-only documents have no synthetic background rectangle.
