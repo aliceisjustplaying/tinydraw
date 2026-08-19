@@ -47,7 +47,7 @@ struct Rig {
                                  .initial_revision = {0},
                                  .raw_slot_directory = raw_directory}};
 
-  bool initialize(bool dense) {
+  bool initialize(bool dense, v2::OperationTool tool = v2::OperationTool::kPen) {
     if (!log.ready() || !canvas.ready()) {
       return false;
     }
@@ -60,7 +60,8 @@ struct Rig {
               static_cast<std::uint16_t>((local ? 32 : 1'600) * v2::kSampleUnitsPerWorldUnit),
           .radius_256 = 256U,
       }};
-      if (!log.append({.color = static_cast<std::uint16_t>(0x001FU + (index & 1U)),
+      if (!log.append({.tool = tool,
+                       .color = static_cast<std::uint16_t>(0x001FU + (index & 1U)),
                        .gesture_id = static_cast<std::uint16_t>(index + 1U),
                        .samples = point})
                .has_value()) {
@@ -176,14 +177,16 @@ double time_cycles(Rig& rig, Move move) {
          static_cast<double>(kTimingCycles * 2);
 }
 
-bool run_corpus(const char* name, bool dense) {
+bool run_corpus(const char* name, bool dense,
+                v2::OperationTool tool = v2::OperationTool::kPen) {
   Rig query;
   Rig baseline;
   Rig treatment;
   Rig exact_baseline;
   Rig exact_treatment;
-  if (!query.initialize(dense) || !baseline.initialize(dense) || !treatment.initialize(dense) ||
-      !exact_baseline.initialize(dense) || !exact_treatment.initialize(dense)) {
+  if (!query.initialize(dense, tool) || !baseline.initialize(dense, tool) ||
+      !treatment.initialize(dense, tool) || !exact_baseline.initialize(dense, tool) ||
+      !exact_treatment.initialize(dense, tool)) {
     return false;
   }
   const QueryCounts counts = measure_queries(query);
@@ -211,7 +214,8 @@ bool run_corpus(const char* name, bool dense) {
 }  // namespace
 
 int main() {
-  if (!run_corpus("sparse", false) || !run_corpus("dense", true)) {
+  if (!run_corpus("sparse", false) || !run_corpus("dense", true) ||
+      !run_corpus("dense_eraser", true, v2::OperationTool::kEraser)) {
     std::fputs("history benchmark failed\n", stderr);
     return 1;
   }

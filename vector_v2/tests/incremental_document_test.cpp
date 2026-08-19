@@ -739,17 +739,21 @@ TEST_CASE("history moves whole gestures after pending work is drained") {
   };
   REQUIRE(fixture.append_and_absorb({.color = 0xF800U, .gesture_id = 1U, .samples = kPen}));
   const auto line_pixels = fixture.overview;
+  const auto line_occupancy = fixture.occupancy;
   REQUIRE(fixture.append_and_absorb(
       {.tool = vector_v2::OperationTool::kEraser, .gesture_id = 2U, .samples = eraser}));
   const auto erased_pixels = fixture.overview;
   CHECK(erased_pixels != line_pixels);
+  CHECK(fixture.occupancy == line_occupancy);
 
   REQUIRE(vector_v2::move_history_incrementally(
       fixture.log, fixture.canvas, vector_v2::HistoryDirection::kUndo, fixture.scratch));
   CHECK(fixture.overview == line_pixels);
+  CHECK(fixture.occupancy == line_occupancy);
   REQUIRE(vector_v2::move_history_incrementally(
       fixture.log, fixture.canvas, vector_v2::HistoryDirection::kRedo, fixture.scratch));
   CHECK(fixture.overview == erased_pixels);
+  CHECK(fixture.occupancy == line_occupancy);
 }
 
 TEST_CASE("history rebuilds may-ink and branch replacement preserves the rebuilt proof") {

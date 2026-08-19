@@ -19,6 +19,18 @@ std::optional<HistoryChange> move_history_incrementally(OperationLog& log,
     return std::nullopt;
   }
   const HistoryChange change = prepared->change();
+  const std::size_t changed_first =
+      std::min(change.previous_active_operation_count, change.active_operation_count);
+  const std::size_t changed_last =
+      std::max(change.previous_active_operation_count, change.active_operation_count);
+  bool pen_authority_unchanged = changed_first != changed_last;
+  for (std::size_t index = changed_first; pen_authority_unchanged && index < changed_last;
+       ++index) {
+    const auto changed = change.active_operation_count > change.previous_active_operation_count
+                             ? prepared->target_operation(index)
+                             : log.operation(index);
+    pen_authority_unchanged = changed.has_value() && changed->tool == OperationTool::kEraser;
+  }
   const PixelRect overview_bounds = overview_bounds_for_world(change.affected_world_bounds);
   const int width = overview_bounds.x1 - overview_bounds.x0;
   const int height = overview_bounds.y1 - overview_bounds.y0;
@@ -113,7 +125,7 @@ std::optional<HistoryChange> move_history_incrementally(OperationLog& log,
   }
   prepared->publish();
   auto map_storage = std::as_writable_bytes(overview_scratch);
-  if (map_storage.size() >= kOccupancyBytes) {
+  if (!pen_authority_unchanged && map_storage.size() >= kOccupancyBytes) {
     std::span<std::uint8_t> tiled_may_ink{reinterpret_cast<std::uint8_t*>(map_storage.data()),
                                           kOccupancyBytes};
     if (build_tiled_may_ink(log, tiled_may_ink)) {
