@@ -423,7 +423,7 @@ TEST_CASE("saving toast is modal and renders determinate progress") {
   CHECK(empty != half);
 }
 
-TEST_CASE("export UI names its work and gives return a large label") {
+TEST_CASE("export UI names its work and keeps exit inside the dialog") {
   constexpr int width = 368;
   constexpr int height = 448;
   constexpr std::uint16_t white = 0xFFFFU;
@@ -468,16 +468,18 @@ TEST_CASE("export UI names its work and gives return a large label") {
 
   pixels.assign(pixels.size(), white);
   paint_chrome(pixels, width, height, {.export_status = ChromeExportStatus::kPresented});
-  CHECK(tinydraw::vector_v2::chrome_action_at({20.0F, 268.0F},
+  CHECK(tinydraw::vector_v2::chrome_action_at({56.0F, 268.0F},
                                               {.export_status = ChromeExportStatus::kPresented}) ==
         ChromeAction::kExitExport);
-  CHECK(tinydraw::vector_v2::chrome_action_at({10.0F, 268.0F},
+  CHECK(tinydraw::vector_v2::chrome_action_at({48.0F, 268.0F},
                                               {.export_status = ChromeExportStatus::kPresented}) ==
         ChromeAction::kNone);
+  CHECK(pixels[268U * width + 20U] == white);
+  label_is_rendered(pixels, 78, 257, "EJECT & EXIT", white, 3);
 
   std::array return_bounds{width, -1};
   for (int y = 257; y < 278; ++y) {
-    for (int x = 16; x < 352; ++x) {
+    for (int x = 52; x < 316; ++x) {
       if (pixels[static_cast<std::size_t>(y * width + x)] == white) {
         return_bounds[0] = std::min(return_bounds[0], x);
         return_bounds[1] = std::max(return_bounds[1], x);
@@ -486,9 +488,9 @@ TEST_CASE("export UI names its work and gives return a large label") {
   }
   REQUIRE(return_bounds[1] >= return_bounds[0]);
   CHECK(return_bounds[0] + return_bounds[1] == doctest::Approx(367).epsilon(0.01));
-  CHECK(return_bounds[1] - return_bounds[0] > 280);
-  CHECK(return_bounds[0] - 16 >= 12);
-  CHECK(351 - return_bounds[1] >= 12);
+  CHECK(return_bounds[1] - return_bounds[0] < 220);
+  CHECK(return_bounds[0] - 52 >= 20);
+  CHECK(315 - return_bounds[1] >= 20);
 }
 
 TEST_CASE("USB export mode blocks drawing and offers an explicit return action") {
@@ -549,7 +551,7 @@ TEST_CASE("USB export screen font renders every displayed character") {
   check_label(96, 122, "USB EXPORT", ink, 3);
   check_label(95, 174, "READ-ONLY DRIVE", ink, 2);
   check_label(95, 205, "COPY YOUR FILES", muted, 2);
-  check_label(33, 257, "RETURN TO DRAWING", white, 3);
+  check_label(78, 257, "EJECT & EXIT", white, 3);
   CHECK(pixels[245U * width + 60U] == selected);
 
   const auto horizontal_bounds = [&](int y0, int y1, std::uint16_t color) {

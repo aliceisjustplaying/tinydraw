@@ -531,7 +531,7 @@ void draw_export_toast(Painter& painter, const ChromeState& state) {
     painter.rounded(
         {kExportExitRect.x0, kExportExitRect.y0, kExportExitRect.x1, kExportExitRect.y1}, 10,
         kSelected);
-    painter.text(33, 257, "RETURN TO DRAWING", kWhite, 3);
+    painter.text(78, 257, "EJECT & EXIT", kWhite, 3);
     return;
   }
   painter.rounded({kToastLeft + 2, kToastTop + 3, kToastRight + 2, kToastBottom + 3}, 12, kShadow);
