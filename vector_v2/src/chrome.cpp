@@ -523,7 +523,7 @@ void draw_export_toast(Painter& painter, const ChromeState& state) {
       painter.text(133, 205, "PLEASE TRY AGAIN", kMuted);
     } else {
       painter.text(95, 174, "READ-ONLY DRIVE", kInk, 2);
-      painter.text(139, 205, "COPY YOUR FILES", kMuted);
+      painter.text(95, 205, "COPY YOUR FILES", kMuted);
     }
     painter.rounded({kExportExitRect.x0 + 2, kExportExitRect.y0 + 3, kExportExitRect.x1 + 2,
                      kExportExitRect.y1 + 3},
