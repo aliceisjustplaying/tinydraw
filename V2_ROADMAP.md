@@ -127,4 +127,7 @@ restart behavior; and independent builds for every retained target.
 ## Post-ship backlog
 
 - Improve minimap navigation and optional visibility controls.
+- Add an ESP32 capture-only screen-dump build: mirror submitted panel rectangles
+  into a 368×448 RGB565 shadow buffer and convert its serial dump to PNG on the
+  host. Product firmware should keep the current allocation-free display path.
 - Demo record/replay, richer semantic SVG, and 800% zoom.
