@@ -10,6 +10,7 @@ The current pre-final acceptance is
 - [`OVERNIGHT_RELEASE_CLOSURE_2026_08_19.md`](OVERNIGHT_RELEASE_CLOSURE_2026_08_19.md) — final overnight bug, performance, device-battery, host-test, and production-flash handoff.
 - [`SVG_ERASER_MASKS_2026_08_19.md`](SVG_ERASER_MASKS_2026_08_19.md) — SVG erasers are transparent painter-ordered masks; later ink can repaint erased areas.
 - [`SVG_SMOOTHNESS_EXPERIMENTS_2026_08_19.md`](SVG_SMOOTHNESS_EXPERIMENTS_2026_08_19.md) — physical-gesture chunks share one curve stream and shared quadratics use three tangent spans; one divergent SVG-only trial was reverted.
+- [`SVG_EXTREME_ZOOM_EDGE_TEETH_2026_08_19.md`](SVG_EXTREME_ZOOM_EDGE_TEETH_2026_08_19.md) — accepted post-release debt: vector edges show tiny teeth only under extreme magnification; independent SVG renderers agree.
 - [`AA_PERFORMANCE_EXPERIMENTS_2026_08_19.md`](AA_PERFORMANCE_EXPERIMENTS_2026_08_19.md) — complete five-experiment AA campaign; opaque-first compositing survived host/device A/B and four no-gos were reverted.
 - [`HISTORY_PERFORMANCE_EXPERIMENTS_2026_08_19.md`](HISTORY_PERFORMANCE_EXPERIMENTS_2026_08_19.md) — complete five-experiment Undo/Redo campaign: focused chrome, masked replay, saturation completion, and occupancy-proof reuse.
 - [`COLD_RENDER_EXPERIMENTS_2026_08_19.md`](COLD_RENDER_EXPERIMENTS_2026_08_19.md) — complete five-experiment cold-render campaign; fewer replay resumptions and directory scans survived the device battery.
