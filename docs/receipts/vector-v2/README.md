@@ -8,6 +8,7 @@ The current pre-final acceptance is
 [`CODE_QUALITY_CLEANUP_2026_08_18.md`](CODE_QUALITY_CLEANUP_2026_08_18.md).
 
 - [`OVERNIGHT_RELEASE_CLOSURE_2026_08_19.md`](OVERNIGHT_RELEASE_CLOSURE_2026_08_19.md) — final overnight bug, performance, device-battery, host-test, and production-flash handoff.
+- [`USB_EXPORT_EXIT_AND_CHROME_FOLLOWUP_2026_08_19.md`](USB_EXPORT_EXIT_AND_CHROME_FOLLOWUP_2026_08_19.md) — fixed USB Serial/JTAG restoration, automatic host-eject return, popup input-layer leakage, missing export glyphs, and export-screen centering; includes physical red/green loops.
 - [`SVG_ERASER_MASKS_2026_08_19.md`](SVG_ERASER_MASKS_2026_08_19.md) — SVG erasers are transparent painter-ordered masks; later ink can repaint erased areas.
 - [`SVG_SMOOTHNESS_EXPERIMENTS_2026_08_19.md`](SVG_SMOOTHNESS_EXPERIMENTS_2026_08_19.md) — physical-gesture chunks share one curve stream and shared quadratics use three tangent spans; one divergent SVG-only trial was reverted.
 - [`SVG_EXTREME_ZOOM_EDGE_TEETH_2026_08_19.md`](SVG_EXTREME_ZOOM_EDGE_TEETH_2026_08_19.md) — fixed: SVG quadratic subspans now share exact boundaries, removing the vector-scale teeth while raster overlap remains intact.

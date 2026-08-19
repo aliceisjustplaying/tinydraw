@@ -88,3 +88,13 @@ missed-tap check). The ordered-event capture requirements above still
 define the diagnostic bar.
 
 The 2026-08-19 lift-confirmation fix closes this occurrence.
+
+## Input-layer follow-up — 2026-08-19
+
+Owner glass testing found a second route: a tap intended for a compact popup
+could resolve as an unrelated bottom-toolbar control occupying the same screen
+area, including Document **Export** becoming the pencil toggle. Commit
+`5ceb203` makes the active compact popup the exclusive input layer while it is
+open. The six-poll lift confirmation and input-layer confinement jointly cover
+split contacts and same-coordinate target leakage. See the
+[USB/chrome follow-up](USB_EXPORT_EXIT_AND_CHROME_FOLLOWUP_2026_08_19.md).

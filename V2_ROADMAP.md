@@ -27,7 +27,7 @@ remain supported targets.
 
 ## 1. Integrate and establish the post-cleanup baseline
 
-- [ ] Host debug and release pass 31/31; ASan/UBSan passes 13/13. Changed Vector
+- [x] Host debug and release pass 31/31; ASan/UBSan passes 13/13. Changed Vector
       V2 files are formatted and `git diff --check` passes. Whole-tree formatting
       still finds the pre-existing Raster V1 `firmware_canvas.h:28`; clang-tidy
       stops on authority-journal complexity, and cppcheck findings remain open.
@@ -52,13 +52,15 @@ remain supported targets.
       gate) and the COW preserved-tile swap treatment. Revisit repair fell
       338,998→229 µs; owner glass-accepted. Receipts:
       `benchmark-results/history-latency-2026-08-18/RECEIPT.md`.
-- [ ] Finish settled-AA performance. Landed 2026-08-18: no_ink fast path,
+- [x] Finish settled-AA performance. Landed 2026-08-18: no_ink fast path,
       internal planes, saturated-destination skip (−43% on the evil corpus),
       and the deterministic `settle_timing` battery gate. Real documents now
       settle 429–552 ms at 400% but 690–922 ms at 50–200%; the designated
       next levers are slice work-charge recalibration and edge-span
-      recording (see `docs/HANDOVER_2026_08_18_FINAL_ROUND.md` §1).
-- [ ] Diagnose the transient color-popup byte-swap incident
+      recording (see `docs/HANDOVER_2026_08_18_FINAL_ROUND.md` §1). The owner
+      closed the bounded five-experiment campaign on 2026-08-19; remaining
+      visual refinement is post-release work.
+- [x] Diagnose the transient color-popup byte-swap incident
       (`docs/receipts/vector-v2/COLOR_POPUP_BYTESWAP_INCIDENT_2026_08_18.md`)
       after the AA work, before release closure.
 - [ ] Split the remaining 166–184 ms one-shot full-frame refresh class into
@@ -75,13 +77,15 @@ remain supported targets.
 ## 3. Remaining product correctness and UI work
 
 - [ ] Show visible capacity, save, export, storage, and hardware failure states.
-- [ ] Encode SVG eraser strokes as transparent cutouts while retaining one
+- [x] Encode SVG eraser strokes as transparent cutouts while retaining one
       painter-ordered path per physical stroke.
-- [ ] Center the USB helper text from its measured width.
+- [x] Center the USB helper text from its measured width.
 - [ ] Review every physical touch target and overlap, add pressed feedback, and
-      run a missed-tap check on glass.
+      run a missed-tap check on glass. Compact popups now exclusively own their
+      input layer, closing the observed Export/pencil and size/history leaks.
 - [ ] Capture a physical mount/eject/return receipt for the SVG+PNG volume with
-      no watchdog, stale medium, or USB-mode wedge.
+      no watchdog, stale medium, or USB-mode wedge. Mount/eject/automatic serial
+      return now passes twice; a longer repeated-export soak remains.
 - [ ] Characterize representative long documents, capacity limits, cache
       pressure, and the 25% overview paths.
 - [ ] Recheck reset-storm startup presentation timeouts and expose a stable
