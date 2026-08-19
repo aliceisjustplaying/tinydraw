@@ -369,6 +369,29 @@ TEST_CASE("operation chunks from one physical gesture export as one path") {
   CHECK(vector_v2::svg_path_count(fixture.log) == 2U);
 }
 
+TEST_CASE("SVG geometry is continuous across overlapping physical-gesture chunks") {
+  LogFixture<2, 8> chunked;
+  LogFixture<1, 8> contiguous;
+  const vector_v2::CompactOperationSample a{.x_quarter = 40U, .y_quarter = 80U, .radius_256 = 256U};
+  const vector_v2::CompactOperationSample b{.x_quarter = 80U, .y_quarter = 60U, .radius_256 = 320U};
+  const vector_v2::CompactOperationSample c{
+      .x_quarter = 120U, .y_quarter = 80U, .radius_256 = 384U};
+  const vector_v2::CompactOperationSample d{
+      .x_quarter = 160U, .y_quarter = 40U, .radius_256 = 448U};
+  const std::array first{a, b, c};
+  const std::array second{c, d};
+  const std::array all{a, b, c, d};
+  REQUIRE(chunked.log.append({.color = 0x001FU, .gesture_id = 9U, .samples = first}).has_value());
+  REQUIRE(chunked.log.append({.color = 0x001FU, .gesture_id = 9U, .samples = second}).has_value());
+  REQUIRE(contiguous.log.append({.color = 0x001FU, .gesture_id = 9U, .samples = all}).has_value());
+
+  StringSink chunked_svg;
+  StringSink contiguous_svg;
+  REQUIRE(vector_v2::export_svg(chunked.log, chunked_svg));
+  REQUIRE(vector_v2::export_svg(contiguous.log, contiguous_svg));
+  CHECK(chunked_svg.text == contiguous_svg.text);
+}
+
 TEST_CASE("SVG export omits a synthetic background rectangle") {
   LogFixture<1, 1> fixture;
   StringSink sink;
