@@ -7,6 +7,7 @@ retains the interpreted receipts and closure documents.
 The current pre-final acceptance is
 [`CODE_QUALITY_CLEANUP_2026_08_18.md`](CODE_QUALITY_CLEANUP_2026_08_18.md).
 
+- [`OVERNIGHT_RELEASE_CLOSURE_2026_08_19.md`](OVERNIGHT_RELEASE_CLOSURE_2026_08_19.md) — final overnight bug, performance, device-battery, host-test, and production-flash handoff.
 - [`SVG_ERASER_MASKS_2026_08_19.md`](SVG_ERASER_MASKS_2026_08_19.md) — SVG erasers are transparent painter-ordered masks; later ink can repaint erased areas.
 - [`SVG_SMOOTHNESS_EXPERIMENTS_2026_08_19.md`](SVG_SMOOTHNESS_EXPERIMENTS_2026_08_19.md) — physical-gesture chunks share one curve stream and shared quadratics use three tangent spans; one divergent SVG-only trial was reverted.
 - [`AA_PERFORMANCE_EXPERIMENTS_2026_08_19.md`](AA_PERFORMANCE_EXPERIMENTS_2026_08_19.md) — complete five-experiment AA campaign; opaque-first compositing survived host/device A/B and four no-gos were reverted.
