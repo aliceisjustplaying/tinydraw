@@ -8,6 +8,11 @@
 
 namespace tinydraw::vector_v2 {
 
+// The controller occasionally reports a short no-contact gap while a finger
+// slides across chrome. Six 1 ms polls debounce that gap without adding a
+// perceptible release delay; two polls could split one finger into two taps.
+inline constexpr std::uint8_t kTouchLiftConfirmationReads = 6U;
+
 enum class TouchContactRead : std::uint8_t {
   kPoint,
   kNoTouch,
