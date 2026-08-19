@@ -13,12 +13,14 @@ The hardest representative ranges were 7.933–3.703 ms for long-crossing,
 
 ## Attempts
 
-1. **Opaque-first composite fast path — accepted pending device A/B.** When a
+1. **Opaque-first composite fast path — accepted.** When a
    coverage-255 pixel reaches an untouched destination, assign its RGB and
    saturation directly. This is algebraically identical and removes four
    rounded divisions plus accumulation. Host: long-crossing −0.3…−2.8%, dense
    −2.2…−5.0% at 50–400%, hairline −0.4…−1.8% except a flat +0.01% at 200%;
-   dense 25% was +0.55% (noise class).
+   dense 25% was +0.55% (noise class). The full device battery remained green;
+   settle totals were 75.102/87.647/176.885/383.594/946.849 ms, improvements
+   of 0.2/0.3/0.2/0.7/1.4% versus the pre-change battery.
 2. **Blank-pixel final-fold branch — rejected and reverted.** Directly writing
    white when accumulated alpha was zero regressed every representative case
    by roughly 2–11% versus attempt 1; branch cost exceeded saved arithmetic.
@@ -30,5 +32,9 @@ The hardest representative ranges were 7.933–3.703 ms for long-crossing,
    operation span metadata updates until the end of each chord row modestly
    helped long chords but regressed dense 50–200% by about 10–20%.
 
-One experiment remains available. It is reserved because the surviving host
-win needs the device battery before another hot-loop change can be judged.
+One experiment remains available. It is reserved because the accepted change
+is checksum-exact and the remaining ideas carry more branch cost than their
+saved arithmetic justified in the first four measurements.
+
+The post-change full gate finished with `failure_marker=False` and all battery
+sections green, including cold fill, history, export, and the owner document.
