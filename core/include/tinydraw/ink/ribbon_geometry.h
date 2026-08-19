@@ -22,9 +22,9 @@ struct RibbonPrimitive {
 };
 
 // Worst case is CurvedRibbonStream::finish on a sharp turn with every span
-// split: initial cap (1) + split two-span curve (4) + sharp-turn joint (1) +
-// split provisional tail (2) + final cap (1) = 9, plus one slot of margin.
-inline constexpr std::size_t kRibbonPrimitiveBatchCapacity = 10;
+// split: initial cap (1) + split three-span curve (6) + sharp-turn joint (1) +
+// split provisional tail (2) + final cap (1) = 11, plus one slot of margin.
+inline constexpr std::size_t kRibbonPrimitiveBatchCapacity = 12;
 
 class RibbonPrimitiveBatch {
  public:

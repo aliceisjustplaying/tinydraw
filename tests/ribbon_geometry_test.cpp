@@ -126,6 +126,18 @@ TEST_CASE("curved ribbon stabilizes midpoint curves while its tail reaches the l
   CHECK(third.provisional.end()[-1].radius == doctest::Approx(6.0F));
 }
 
+TEST_CASE("curved ribbon resolves a stable quadratic into three tangent spans") {
+  tinydraw::CurvedRibbonStream stream;
+  static_cast<void>(stream.append(ink_point(10.0F, 30.0F, 2.0F)));
+  static_cast<void>(stream.append(ink_point(30.0F, 10.0F, 2.0F)));
+  const auto update = stream.append(ink_point(50.0F, 30.0F, 2.0F));
+  const auto convex_count = static_cast<std::size_t>(
+      std::count_if(update.committed.begin(), update.committed.end(), [](const auto& primitive) {
+        return primitive.kind == tinydraw::RibbonPrimitiveKind::kConvex;
+      }));
+  CHECK(convex_count == 3U);
+}
+
 TEST_CASE("curved ribbon visual tip does not change smoothed committed geometry") {
   tinydraw::CurvedRibbonStream authority_only;
   tinydraw::CurvedRibbonStream responsive_preview;
@@ -207,7 +219,7 @@ TEST_CASE("curved ribbon output remains bounded for long sparse strokes") {
   for (int index = 0; index < 1'000; ++index) {
     const float coordinate = static_cast<float>(index);
     const auto update = stream.append(ink_point(coordinate, std::fmod(coordinate, 31.0F), 8.0F));
-    CHECK(update.committed.size() <= 5U);
+    CHECK(update.committed.size() <= 7U);
     CHECK(update.provisional.size() <= 3U);
   }
   CHECK(stream.active());
@@ -265,7 +277,7 @@ TEST_CASE("ribbon geometry remains finite for duplicate points") {
 
 TEST_CASE("worst-case curved finish stays within batch capacity without overflow") {
   // Sharp doubling-back with fat radii maximizes emitted pieces: initial cap,
-  // two curve spans (up to four when split), the sharp-turn joint circle, the
+  // three curve spans (up to six when split), the sharp-turn joint circle, the
   // split tail, and the final cap. The batch must absorb the maximum without
   // tripping the fail-closed overflow path.
   tinydraw::CurvedRibbonStream stream;
