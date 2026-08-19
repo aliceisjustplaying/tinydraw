@@ -51,4 +51,22 @@ are flat within run noise, with unchanged slicing and no responsiveness cost.
 The host ribbon, SVG authority, and rendering suites pass 366 cases and
 759,573 assertions.
 
-Two experiments remain.
+## Attempt 4 — exact SVG span boundaries (accepted)
+
+The tiny outward teeth visible only at extreme SVG magnification came from the
+renderer authority's deliberate `0.75 px` tangent overlap between adjacent
+quadratic subspans. That overlap prevents fixed-grid raster cracks, but in a
+vector renderer its two displaced corners protrude beyond the curve outline.
+
+SVG pen and eraser streams now request shared-boundary spans: adjacent convexes
+meet at the same two section vertices with no overlap. Screen and PNG rendering
+retain the overlap, so their crack prevention and performance are unchanged.
+A red-first regression reproduced the bug by finding zero shared vertices at
+both seams; it now finds exactly two at each seam. In the 64x32 raster-parity
+stress fixture, 79 of 2,048 pixels differ only in antialiased edge coverage and
+there are no fully covered black/white disagreements.
+
+Host Debug passes 31/31 CTest targets, host ASan passes 13/13, host Release
+passes 31/31, and the SVG authority suite passes 87 cases / 25,718 assertions.
+
+One experiment remains.

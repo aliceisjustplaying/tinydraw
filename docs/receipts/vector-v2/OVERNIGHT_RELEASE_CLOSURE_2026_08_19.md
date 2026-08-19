@@ -43,6 +43,14 @@ verification.
 Rejected experiments and their measurements are preserved in the linked AA,
 history, cold-render, and SVG campaign receipts.
 
+## Owner-check follow-up
+
+The subsequent extreme-zoom SVG check exposed small teeth at quadratic span
+seams. Commit `b6630d6` removes them by using exact shared boundaries for SVG;
+screen and PNG retain their raster-crack overlap. The red-first regression and
+all host suites pass. See
+[`SVG_EXTREME_ZOOM_EDGE_TEETH_2026_08_19.md`](SVG_EXTREME_ZOOM_EDGE_TEETH_2026_08_19.md).
+
 ## Verification
 
 - Physical ESP32-S3 gate: every gate passed, including the 102-operation,
@@ -52,4 +60,3 @@ history, cold-render, and SVG campaign receipts.
 - `./scripts/dev format-check`: passed.
 - Product image: `0x106be0` bytes with 41% of the app partition free; flashed and
   hash-verified on `/dev/cu.usbmodem1101`, followed by a hard reset.
-

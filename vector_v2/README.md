@@ -64,9 +64,11 @@ The initial production milestones and Gate 1 cache/interaction feasibility are c
 The SVG module streams renderer-derived ribbon geometry without document-sized
 storage. Adjacent internal chunks with one nonzero gesture ID become one
 painter-ordered filled path, so one physical finger-down/up Stroke remains one
-SVG path. Paths contain the exact round-cap and variable-width convex subpaths;
-erasers emit background-colored paths in operation order, and the root omits a
-synthetic background rectangle. The ESP adapter preserves those SVG bytes and
+SVG path. Paths contain round-cap and variable-width convex subpaths from the
+shared curve authority. SVG spans meet at exact section boundaries; device and
+PNG raster spans retain a 0.75 px overlap that prevents fixed-grid cracks.
+Erasers use painter-ordered masks, and the root omits a synthetic background
+rectangle. The ESP adapter preserves those SVG bytes and
 also streams `DRAWING.PNG` from production settled-AA windows. It retains one
 64-row world band, one 64×64 window, and fixed PNGenc workspace. The existing
 Saving progress bar advances across both PNG windows and SVG operations. A
