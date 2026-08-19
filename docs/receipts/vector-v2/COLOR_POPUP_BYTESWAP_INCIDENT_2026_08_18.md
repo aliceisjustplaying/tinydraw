@@ -1,9 +1,16 @@
 # Transient color-popup byte-swap incident — 2026-08-18
 
 During the settled-AA glass capture session (owner photo
-`benchmark-results/history-latency-2026-08-18/color-popup-byteswap-incident.png`,
-log `/tmp/settle-glass.log`), the color popup opened once with corrupted
-colors and recovered on its own. First occurrence ever.
+`benchmark-results/history-latency-2026-08-18/color-popup-byteswap-incident.jpg`,
+log `/tmp/settle-glass.log`), the color popup opened once with corrupted colors
+and recovered on its own. First occurrence ever.
+
+The retained 1025×850 crop is 216 KiB and has SHA-256
+`e9c74da7c97bcf56b1e4e1a40e73ba5bed696f6c80471a55e36b8f91ec4afbdc`.
+The original 4032×3024 lossless camera PNG was 11.3 MiB because sensor noise,
+fabric texture, and display moiré defeated PNG compression. Its SHA-256 was
+`c69b29a5b006fc9d8e7359ec8c78ac540e4fa024ac68f50518e96ea9dc44e27f`;
+Git history retains it before the release cleanup.
 
 ## Evidence read from the photo
 
