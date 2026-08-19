@@ -22,3 +22,14 @@ operation; the authority suite passes 86 cases / 25,708 assertions.
 This removes a known geometric discontinuity and redundant internal caps while
 retaining bounded streaming, logical path count, painter order, and all
 one-operation output. It also reduces export work for long physical strokes.
+
+## Attempt 2 — adaptive centerline subdivision (rejected and reverted)
+
+An SVG-only stream sampled each midpoint quadratic at one, two, or four
+segments and added round joins. The focused raster oracle found 142 pixels
+different from the displayed ribbon in its 64x32 authority fixture, including
+fully covered pixels absent from one representation. The experiment changed
+the stroke silhouette, not just its polygonal approximation, so it was
+reverted. SVG remains byte-for-byte tied to the renderer's geometry authority.
+
+Three experiments remain.
