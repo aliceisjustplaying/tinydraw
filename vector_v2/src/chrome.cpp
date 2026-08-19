@@ -531,18 +531,18 @@ void draw_export_toast(Painter& painter, const ChromeState& state) {
     painter.rounded(
         {kExportExitRect.x0, kExportExitRect.y0, kExportExitRect.x1, kExportExitRect.y1}, 10,
         kSelected);
-    painter.text(83, 260, "RETURN TO DRAWING", kWhite, 2);
+    painter.text(33, 257, "RETURN TO DRAWING", kWhite, 3);
     return;
   }
   painter.rounded({kToastLeft + 2, kToastTop + 3, kToastRight + 2, kToastBottom + 3}, 12, kShadow);
   painter.rounded({kToastLeft - 1, kToastTop - 1, kToastRight + 1, kToastBottom + 1}, 12, kBorder);
   painter.rounded({kToastLeft, kToastTop, kToastRight, kToastBottom}, 11, kWhite);
   if (state.export_status == ChromeExportStatus::kSaving) {
-    painter.text(130, 82, "SAVING", kInk, 3);
-    painter.rounded({120, 108, 248, 124}, 5, kBorder);
-    painter.rounded({123, 111, 245, 121}, 3, kWhite);
+    painter.text(105, 82, "EXPORTING", kInk, 3);
+    painter.rounded({96, 108, 272, 124}, 5, kBorder);
+    painter.rounded({99, 111, 269, 121}, 3, kWhite);
     const int progress = std::clamp<int>(state.export_progress, 0, 100);
-    painter.rect({123, 111, 123 + progress * 122 / 100, 121}, kSelected);
+    painter.rect({99, 111, 99 + progress * 170 / 100, 121}, kSelected);
     return;
   }
   const bool saved = state.export_status == ChromeExportStatus::kSaved;

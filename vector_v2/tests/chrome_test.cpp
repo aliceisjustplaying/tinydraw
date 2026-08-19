@@ -84,7 +84,7 @@ TEST_CASE("terminal time sync feedback expires but active work does not") {
         ChromeTimeSyncStatus::kSynchronizing);
 }
 
-TEST_CASE("time sync labels match SAVING size and stay centered") {
+TEST_CASE("time sync labels match EXPORTING size and stay centered") {
   constexpr int width = 368;
   constexpr int height = 448;
   std::vector<std::uint16_t> saving(static_cast<std::size_t>(width * height), 0xFFFFU);
@@ -423,6 +423,74 @@ TEST_CASE("saving toast is modal and renders determinate progress") {
   CHECK(empty != half);
 }
 
+TEST_CASE("export UI names its work and gives return a large label") {
+  constexpr int width = 368;
+  constexpr int height = 448;
+  constexpr std::uint16_t white = 0xFFFFU;
+  constexpr std::uint16_t ink = 0x2104U;
+
+  const auto label_is_rendered = [&](const std::vector<std::uint16_t>& pixels, int text_x,
+                                     int text_y, std::string_view text, std::uint16_t color,
+                                     int scale) {
+    int glyph_x = text_x;
+    for (const char character : text) {
+      if (character != ' ') {
+        bool rendered = false;
+        for (int y = text_y; y < text_y + 7 * scale; ++y) {
+          for (int x = glyph_x; x < glyph_x + 5 * scale; ++x) {
+            rendered = rendered || pixels[static_cast<std::size_t>(y * width + x)] == color;
+          }
+        }
+        CHECK_MESSAGE(rendered, "missing export UI glyph: ", character);
+      }
+      glyph_x += 6 * scale;
+    }
+  };
+
+  std::vector<std::uint16_t> pixels(static_cast<std::size_t>(width * height), white);
+  paint_chrome(pixels, width, height, {.export_status = ChromeExportStatus::kSaving});
+  label_is_rendered(pixels, 105, 82, "EXPORTING", ink, 3);
+  CHECK(pixels[100U * width + 79U] == 0xDEDBU);
+
+  std::array exporting_bounds{width, -1};
+  for (int y = 82; y < 103; ++y) {
+    for (int x = 0; x < width; ++x) {
+      if (pixels[static_cast<std::size_t>(y * width + x)] == ink) {
+        exporting_bounds[0] = std::min(exporting_bounds[0], x);
+        exporting_bounds[1] = std::max(exporting_bounds[1], x);
+      }
+    }
+  }
+  REQUIRE(exporting_bounds[1] >= exporting_bounds[0]);
+  CHECK(exporting_bounds[0] + exporting_bounds[1] == doctest::Approx(367).epsilon(0.01));
+  CHECK(exporting_bounds[0] - 80 >= 20);
+  CHECK(287 - exporting_bounds[1] >= 20);
+
+  pixels.assign(pixels.size(), white);
+  paint_chrome(pixels, width, height, {.export_status = ChromeExportStatus::kPresented});
+  CHECK(tinydraw::vector_v2::chrome_action_at({20.0F, 268.0F},
+                                              {.export_status = ChromeExportStatus::kPresented}) ==
+        ChromeAction::kExitExport);
+  CHECK(tinydraw::vector_v2::chrome_action_at({10.0F, 268.0F},
+                                              {.export_status = ChromeExportStatus::kPresented}) ==
+        ChromeAction::kNone);
+
+  std::array return_bounds{width, -1};
+  for (int y = 257; y < 278; ++y) {
+    for (int x = 16; x < 352; ++x) {
+      if (pixels[static_cast<std::size_t>(y * width + x)] == white) {
+        return_bounds[0] = std::min(return_bounds[0], x);
+        return_bounds[1] = std::max(return_bounds[1], x);
+      }
+    }
+  }
+  REQUIRE(return_bounds[1] >= return_bounds[0]);
+  CHECK(return_bounds[0] + return_bounds[1] == doctest::Approx(367).epsilon(0.01));
+  CHECK(return_bounds[1] - return_bounds[0] > 280);
+  CHECK(return_bounds[0] - 16 >= 12);
+  CHECK(351 - return_bounds[1] >= 12);
+}
+
 TEST_CASE("USB export mode blocks drawing and offers an explicit return action") {
   constexpr int width = 368;
   constexpr int height = 448;
@@ -481,7 +549,7 @@ TEST_CASE("USB export screen font renders every displayed character") {
   check_label(96, 122, "USB EXPORT", ink, 3);
   check_label(95, 174, "READ-ONLY DRIVE", ink, 2);
   check_label(95, 205, "COPY YOUR FILES", muted, 2);
-  check_label(83, 260, "RETURN TO DRAWING", white, 2);
+  check_label(33, 257, "RETURN TO DRAWING", white, 3);
   CHECK(pixels[245U * width + 60U] == selected);
 
   const auto horizontal_bounds = [&](int y0, int y1, std::uint16_t color) {
