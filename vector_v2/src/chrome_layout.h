@@ -35,7 +35,7 @@ inline constexpr int kExportDialogLeft = 24;
 inline constexpr int kExportDialogTop = 92;
 inline constexpr int kExportDialogRight = 344;
 inline constexpr int kExportDialogBottom = 326;
-inline constexpr ChromeRect kExportExitRect{16, 238, 352, 298};
+inline constexpr ChromeRect kExportExitRect{52, 238, 316, 298};
 inline constexpr int kTimeToastLeft = 80;
 inline constexpr int kTimeToastRight = 288;
 inline constexpr int kHistoryBusyLeft = 160;
