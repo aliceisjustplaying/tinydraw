@@ -3,7 +3,7 @@
 Updated: 2026-08-19. Vector V2 passed its same-revision final battery and product
 reflash. Raster V1 remains a supported, independently buildable product.
 
-## Release-candidate summary
+## V2 release summary
 
 - The host Debug and Release suites pass 31/31 targets. ASan/UBSan passes 13/13,
   and the format check passes.
@@ -26,7 +26,7 @@ reflash. Raster V1 remains a supported, independently buildable product.
 |---|---|---|
 | Pan | accepted | Tear-free glass at every zoom; about 29.4 FPS. The optical positive control tore and the rising-edge product cadence stayed clean across 1,495 analyzed frames. |
 | Ink | accepted | Zero lost Down/Up in the trace corpus. Ordinary-firmware drawing feel was accepted. |
-| Cold rendering | accepted | Every final corpus is below 500 ms. Final-RC 400% walls: overlap 216.970 ms, general 492.793 ms, captured drawing 344.796 ms. |
+| Cold rendering | accepted | Every final corpus is below 500 ms. Release 400% walls: overlap 216.970 ms, general 492.793 ms, captured drawing 344.796 ms. |
 | Revisit retention | accepted | Pure-revisit amplification is 1.000; accepted revisits return sharp without visible refill while retained. |
 | Undo/Redo | accepted | Whole-gesture exactness, retained Redo, and bounded damage pass. Physical interaction work is at most 27.3 ms; first visits may rebuild behind the hourglass. |
 | Settled AA | accepted | Appearance and exact checksums are accepted. The five-attempt speed campaign moved its five device workloads from 75.217/87.869/177.282/386.169/959.910 ms to 75.102/87.647/176.885/383.594/946.849 ms. |
@@ -78,7 +78,7 @@ Every attempted treatment, including rejections and measurements, remains in:
 
 The same-revision battery, host checks, production image, boot captures, and raw
 compressed gate log are recorded in
-[`FINAL_RELEASE_CANDIDATE_2026_08_19.md`](docs/receipts/vector-v2/FINAL_RELEASE_CANDIDATE_2026_08_19.md).
+[`VECTOR_V2_RELEASE_2026_08_19.md`](docs/receipts/vector-v2/VECTOR_V2_RELEASE_2026_08_19.md).
 
 The release contract is [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md). Deferred work is
 [`docs/POST_RELEASE.md`](docs/POST_RELEASE.md). Completed roadmaps, reviews, and

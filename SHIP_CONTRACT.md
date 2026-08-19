@@ -94,14 +94,13 @@ in
 
 ## Release evidence
 
-The current scorecard and final-RC status are in
+The current scorecard and V2 release status are in
 [`PROJECT_STATE.md`](PROJECT_STATE.md). Hardware limits live in
 [`CO5300_PANEL_LIMITS_2026-08-15.md`](docs/receipts/hardware/CO5300_PANEL_LIMITS_2026-08-15.md).
 The full optimization narrative, including rejected experiments, is in
 [`PERFORMANCE_CHRONICLE.md`](docs/PERFORMANCE_CHRONICLE.md) and the dated
 receipts. Deferred work is in [`POST_RELEASE.md`](docs/POST_RELEASE.md).
 
-The release candidate must pass host Debug, host Release, ASan/UBSan, formatting,
-the 604-slot physical battery, a normal product boot, and glass checks on
-the same source revision. The exact product binary is flashed again after the
-battery before tagging.
+The V2 release passed host Debug, host Release, ASan/UBSan, formatting, the
+604-slot physical battery, a normal product boot, and glass checks. The exact
+product binary was flashed again after the battery before tagging.
