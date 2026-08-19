@@ -65,12 +65,12 @@ centering, minimum side padding, white dialog pixels outside the button, and
 both inside/outside button contacts. The affected Debug and ASan/UBSan
 interaction/font targets pass.
 
-The final product image is `0x106dc0` bytes with 41% of the application
+The final product image is `0x106e00` bytes with 41% of the application
 partition free and SHA-256
-`bdbb339105550d6451763a180bd3083bbc2545ed782efd2ec796833b4731c9ad`.
+`c88907219794ec431db96c1208f398f7a8caabce6a92e2857c5203f124872ee3`.
 It was flashed and hash-verified on `/dev/cu.usbmodem1101`. The production boot
 reached `TINYDRAW_VECTOR_V2_READY` without a failure marker and restored
-generation 578 with 224 retained operations; the drawing partition was not
+generation 581 with all 226 retained operations; the drawing partition was not
 written by the firmware flash.
 
 ## Verification
