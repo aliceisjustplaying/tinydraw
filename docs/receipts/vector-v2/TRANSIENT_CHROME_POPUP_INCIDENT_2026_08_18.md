@@ -36,7 +36,25 @@ remained exact. This proved that the pixel oracle could detect the photographed
 selector-remnant class. The temporary oracle and host stubs were removed after
 the timeboxed investigation.
 
-## Verdict and reopen trigger
+## 2026-08-19 fix
+
+The only input path consistent with two individually valid actions from one
+physical press is a contact split: a brief controller no-contact gap was
+confirmed as a lift after only two 1 ms polls. The
+first semantic tap selected the size and closed the popup; continued physical
+contact then became a new Down over the newly exposed Undo/Redo target. This
+also explains why the two actions were individually valid and why the
+presentation paths could interleave so destructively.
+
+Lift confirmation now requires six consecutive 1 ms no-contact polls. A host
+regression drives five missing reads while sliding from the size row to the
+history row and proves that the stream remains exactly Down, Move, Up. The
+shared confirmation constant also drives the on-device trace replayer, keeping
+the battery faithful to production input semantics. The complete interaction
+suite passes (63 cases, 14,357 assertions). Device battery verification remains
+part of the release run.
+
+## Original verdict and reopen trigger
 
 **INCONCLUSIVE / deferred.** No production hypothesis or behavior change is
 supported by the available evidence. Reopen when either the device reproduces

@@ -6,6 +6,21 @@
 
 namespace vector_v2 = tinydraw::vector_v2;
 
+namespace {
+
+vector_v2::TouchOfferResult confirm_lift(vector_v2::TouchEventBuffer& events,
+                                         std::uint32_t final_timestamp_us) {
+  vector_v2::TouchOfferResult result = vector_v2::TouchOfferResult::kIgnored;
+  for (std::uint32_t read = 0; read < vector_v2::kTouchLiftConfirmationReads; ++read) {
+    result = events.offer(vector_v2::TouchContactRead::kNoTouch, {},
+                          final_timestamp_us -
+                              (vector_v2::kTouchLiftConfirmationReads - 1U - read));
+  }
+  return result;
+}
+
+}  // namespace
+
 TEST_CASE("touch errors hold contact and lift publishes the final point") {
   std::array<vector_v2::TouchEvent, 8> storage{};
   vector_v2::TouchEventBuffer events(storage);
@@ -14,12 +29,9 @@ TEST_CASE("touch errors hold contact and lift publishes the final point") {
         vector_v2::TouchOfferResult::kQueued);
   CHECK(events.offer(vector_v2::TouchContactRead::kPoint, {15.0F, 25.0F}, 200U) ==
         vector_v2::TouchOfferResult::kQueued);
-  CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 300U) ==
-        vector_v2::TouchOfferResult::kIgnored);
   CHECK(events.offer(vector_v2::TouchContactRead::kError, {}, 400U) ==
         vector_v2::TouchOfferResult::kErrorHeld);
-  CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 500U) ==
-        vector_v2::TouchOfferResult::kQueued);
+  CHECK(confirm_lift(events, 500U) == vector_v2::TouchOfferResult::kQueued);
 
   const auto down = events.pop();
   REQUIRE(down.has_value());
@@ -46,10 +58,7 @@ TEST_CASE("touch buffer coalesces moves without replacing gesture edges") {
         vector_v2::TouchOfferResult::kQueued);
   CHECK(events.offer(vector_v2::TouchContactRead::kPoint, {3.0F, 3.0F}, 30U) ==
         vector_v2::TouchOfferResult::kMoveCoalesced);
-  CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 40U) ==
-        vector_v2::TouchOfferResult::kIgnored);
-  CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 50U) ==
-        vector_v2::TouchOfferResult::kQueued);
+  CHECK(confirm_lift(events, 50U) == vector_v2::TouchOfferResult::kQueued);
 
   REQUIRE(events.pending() == 3U);
   CHECK(events.pop()->kind == vector_v2::TouchEventKind::kDown);
@@ -57,6 +66,26 @@ TEST_CASE("touch buffer coalesces moves without replacing gesture edges") {
   REQUIRE(move.has_value());
   CHECK(move->kind == vector_v2::TouchEventKind::kMove);
   CHECK(move->point.x == 3.0F);
+  CHECK(events.pop()->kind == vector_v2::TouchEventKind::kUp);
+}
+
+TEST_CASE("brief controller dropout does not split one finger into two taps") {
+  std::array<vector_v2::TouchEvent, 8> storage{};
+  vector_v2::TouchEventBuffer events(storage);
+
+  REQUIRE(events.offer(vector_v2::TouchContactRead::kPoint, {20.0F, 330.0F}, 10U) ==
+          vector_v2::TouchOfferResult::kQueued);
+  for (std::uint32_t read = 0; read + 1U < vector_v2::kTouchLiftConfirmationReads; ++read) {
+    CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 20U + read) ==
+          vector_v2::TouchOfferResult::kIgnored);
+  }
+  CHECK(events.offer(vector_v2::TouchContactRead::kPoint, {20.0F, 410.0F}, 30U) ==
+        vector_v2::TouchOfferResult::kQueued);
+  CHECK(confirm_lift(events, 50U) == vector_v2::TouchOfferResult::kQueued);
+
+  REQUIRE(events.pending() == 3U);
+  CHECK(events.pop()->kind == vector_v2::TouchEventKind::kDown);
+  CHECK(events.pop()->kind == vector_v2::TouchEventKind::kMove);
   CHECK(events.pop()->kind == vector_v2::TouchEventKind::kUp);
 }
 
@@ -68,16 +97,10 @@ TEST_CASE("gesture edges displace queued moves before overflowing") {
         vector_v2::TouchOfferResult::kQueued);
   CHECK(events.offer(vector_v2::TouchContactRead::kPoint, {2.0F, 2.0F}, 20U) ==
         vector_v2::TouchOfferResult::kQueued);
-  CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 30U) ==
-        vector_v2::TouchOfferResult::kIgnored);
-  CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 40U) ==
-        vector_v2::TouchOfferResult::kQueued);
+  CHECK(confirm_lift(events, 40U) == vector_v2::TouchOfferResult::kQueued);
   CHECK(events.offer(vector_v2::TouchContactRead::kPoint, {3.0F, 3.0F}, 50U) ==
         vector_v2::TouchOfferResult::kQueued);
-  CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 60U) ==
-        vector_v2::TouchOfferResult::kIgnored);
-  CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 70U) ==
-        vector_v2::TouchOfferResult::kQueued);
+  CHECK(confirm_lift(events, 70U) == vector_v2::TouchOfferResult::kQueued);
 
   REQUIRE(events.pending() == 4U);
   CHECK(events.pop()->kind == vector_v2::TouchEventKind::kDown);
@@ -92,10 +115,7 @@ TEST_CASE("a hard-overflow down edge resynchronizes to the current contact") {
   for (int gesture = 0; gesture < 2; ++gesture) {
     CHECK(events.offer(vector_v2::TouchContactRead::kPoint, {static_cast<float>(gesture), 0.0F},
                        10U) == vector_v2::TouchOfferResult::kQueued);
-    CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 20U) ==
-          vector_v2::TouchOfferResult::kIgnored);
-    CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 30U) ==
-          vector_v2::TouchOfferResult::kQueued);
+    CHECK(confirm_lift(events, 30U) == vector_v2::TouchOfferResult::kQueued);
   }
   CHECK(events.offer(vector_v2::TouchContactRead::kPoint, {9.0F, 9.0F}, 40U) ==
         vector_v2::TouchOfferResult::kResynchronized);
@@ -112,18 +132,12 @@ TEST_CASE("an edge-only overflow resynchronizes a complete brief tap") {
   for (int gesture = 0; gesture < 2; ++gesture) {
     CHECK(events.offer(vector_v2::TouchContactRead::kPoint, {static_cast<float>(gesture), 0.0F},
                        10U) == vector_v2::TouchOfferResult::kQueued);
-    CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 20U) ==
-          vector_v2::TouchOfferResult::kIgnored);
-    CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 30U) ==
-          vector_v2::TouchOfferResult::kQueued);
+    CHECK(confirm_lift(events, 30U) == vector_v2::TouchOfferResult::kQueued);
   }
 
   CHECK(events.offer(vector_v2::TouchContactRead::kPoint, {9.0F, 9.0F}, 40U) ==
         vector_v2::TouchOfferResult::kResynchronized);
-  CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 50U) ==
-        vector_v2::TouchOfferResult::kIgnored);
-  CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 60U) !=
-        vector_v2::TouchOfferResult::kOverflow);
+  CHECK(confirm_lift(events, 60U) != vector_v2::TouchOfferResult::kOverflow);
 
   REQUIRE(events.pending() == 2U);
   const auto down = events.pop();
@@ -142,17 +156,11 @@ TEST_CASE("hard-overflow lift preserves an undelivered active gesture") {
   for (int gesture = 0; gesture < 2; ++gesture) {
     CHECK(events.offer(vector_v2::TouchContactRead::kPoint, {static_cast<float>(gesture), 0.0F},
                        10U) == vector_v2::TouchOfferResult::kQueued);
-    CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 20U) ==
-          vector_v2::TouchOfferResult::kIgnored);
-    CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 30U) ==
-          vector_v2::TouchOfferResult::kQueued);
+    CHECK(confirm_lift(events, 30U) == vector_v2::TouchOfferResult::kQueued);
   }
   CHECK(events.offer(vector_v2::TouchContactRead::kPoint, {7.0F, 8.0F}, 40U) ==
         vector_v2::TouchOfferResult::kQueued);
-  CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 50U) ==
-        vector_v2::TouchOfferResult::kIgnored);
-  CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 60U) ==
-        vector_v2::TouchOfferResult::kResynchronized);
+  CHECK(confirm_lift(events, 60U) == vector_v2::TouchOfferResult::kResynchronized);
 
   REQUIRE(events.pending() == 2U);
   const auto down = events.pop();
@@ -176,17 +184,11 @@ TEST_CASE("hard-overflow down closes the delivered gesture before resynchronizin
         vector_v2::TouchOfferResult::kQueued);
   REQUIRE(events.pop()->kind == vector_v2::TouchEventKind::kDown);
   for (int gesture = 0; gesture < 2; ++gesture) {
-    CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 20U) ==
-          vector_v2::TouchOfferResult::kIgnored);
-    CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 30U) ==
-          vector_v2::TouchOfferResult::kQueued);
+    CHECK(confirm_lift(events, 30U) == vector_v2::TouchOfferResult::kQueued);
     CHECK(events.offer(vector_v2::TouchContactRead::kPoint, {static_cast<float>(gesture + 3), 4.0F},
                        40U) == vector_v2::TouchOfferResult::kQueued);
   }
-  CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 50U) ==
-        vector_v2::TouchOfferResult::kIgnored);
-  CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 60U) ==
-        vector_v2::TouchOfferResult::kQueued);
+  CHECK(confirm_lift(events, 60U) == vector_v2::TouchOfferResult::kQueued);
   CHECK(events.offer(vector_v2::TouchContactRead::kPoint, {9.0F, 10.0F}, 70U) ==
         vector_v2::TouchOfferResult::kResynchronized);
 

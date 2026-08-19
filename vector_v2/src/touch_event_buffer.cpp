@@ -6,7 +6,6 @@ namespace tinydraw::vector_v2 {
 namespace {
 
 constexpr std::size_t kMinimumEventCapacity = 4U;
-constexpr std::uint8_t kLiftConfirmationReads = 2U;
 
 }  // namespace
 
@@ -39,8 +38,8 @@ TouchOfferResult TouchEventBuffer::offer(TouchContactRead read, TouchContactPoin
     return TouchOfferResult::kIgnored;
   }
   no_touch_reads_ = std::min<std::uint8_t>(static_cast<std::uint8_t>(no_touch_reads_ + 1U),
-                                           kLiftConfirmationReads);
-  if (no_touch_reads_ < kLiftConfirmationReads) {
+                                           kTouchLiftConfirmationReads);
+  if (no_touch_reads_ < kTouchLiftConfirmationReads) {
     return TouchOfferResult::kIgnored;
   }
   const TouchOfferResult result =

@@ -118,11 +118,13 @@ class TouchTraceReplayer {
       }
       ++offered_;
       if (event.kind == vector_v2::TraceEventKind::kUp) {
-        // Two consecutive no-touch reads, one sampler period apart, mirror
-        // the production lift-confirmation debounce.
-        offer(vector_v2::TouchContactRead::kNoTouch, {});
-        vTaskDelay(pdMS_TO_TICKS(1));
-        offer(vector_v2::TouchContactRead::kNoTouch, {});
+        // Match the production lift-confirmation debounce exactly.
+        for (std::uint8_t read = 0; read < vector_v2::kTouchLiftConfirmationReads; ++read) {
+          offer(vector_v2::TouchContactRead::kNoTouch, {});
+          if (read + 1U < vector_v2::kTouchLiftConfirmationReads) {
+            vTaskDelay(pdMS_TO_TICKS(1));
+          }
+        }
       } else {
         offer(vector_v2::TouchContactRead::kPoint,
               {.x = static_cast<float>(event.x), .y = static_cast<float>(event.y)});
