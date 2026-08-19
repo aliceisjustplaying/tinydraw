@@ -4,9 +4,9 @@ Status: **fixed, host-verified, and device-battery verified 2026-08-19.** Six
 consecutive no-contact polls now guard a semantic lift, so one physical press
 cannot close the size popup and begin a second tap on the exposed history row.
 
-## Owner observation
+## Author observation
 
-At 100% zoom, after minimap navigation/panning to a blank corner, the owner
+At 100% zoom, after minimap navigation/panning to a blank corner, the author
 drew thick circles, opened the pen-size selector, selected the smallest size,
 and was about to draw a thin circle. The device log recorded three committed
 Strokes before an unintended Undo at 16:52:59. The photographed glass showed
@@ -71,16 +71,16 @@ state, and submitted panel bounds.
 This original verdict is superseded by the second physical occurrence and the
 confirmed contact-split mechanism above.
 
-## Second occurrence — 2026-08-18 owner glass session (history hold-back test)
+## Second occurrence — 2026-08-18 glass session (history hold-back test)
 
 Reproduced on ordinary product firmware during the Undo hold-back glass
-test. While selecting a pen size, the owner also managed to hit the
+test. While selecting a pen size, the author also managed to hit the
 Undo/Redo control ("this time I tapped redo") in the same gesture; both
 actions fired and the UI corrupted ("the whole UI just gets fucked").
 This is no longer a single ambiguous event: the size popup and the history
 controls can trigger together with unpredictable ordering.
 
-Owner direction: fix after the performance round. This second occurrence
+Author direction: fix after the performance round. This second occurrence
 upgrades the incident from "inconclusive, needs natural red reproduction"
 to a reproducible-by-hand interaction defect; the fix belongs with the
 roadmap §3 touch-target review (overlapping targets, pressed feedback,
@@ -91,7 +91,7 @@ The 2026-08-19 lift-confirmation fix closes this occurrence.
 
 ## Input-layer follow-up — 2026-08-19
 
-Owner glass testing found a second route: a tap intended for a compact popup
+Glass testing found a second route: a tap intended for a compact popup
 could resolve as an unrelated bottom-toolbar control occupying the same screen
 area, including Document **Export** becoming the pencil toggle. Commit
 `5ceb203` makes the active compact popup the exclusive input layer while it is

@@ -5,7 +5,7 @@ Branch: `feat/v2-performance-followup`
 
 ## Verdict
 
-**Green for the release scope; owner accepted.** The owner’s final glass
+**Green for the release scope; author accepted.** The author’s final glass
 verdict on `dbc4f67` was:
 
 > this will do let's consider this done. maybe put a pin in it for further
@@ -16,7 +16,7 @@ touch-target review; it is not a blocker for authority/storage and Undo/Redo.
 
 ## Problem
 
-Owner glass testing rejected the relative high-zoom mapping: the 0.25 drag
+Glass testing rejected the relative high-zoom mapping: the 0.25 drag
 scale exhausted physical finger travel, and touches near a bottom-corner
 viewport frequently became size/document dock taps. Moving the whole minimap
 up 16 px improved bottom acquisition but was aesthetically rejected and still
@@ -29,7 +29,7 @@ truthful dock-button tap. Movement is the available intent signal.
 
 ## Final contract
 
-1. The visible minimap remains at its original, owner-preferred position.
+1. The visible minimap remains at its original, preferred position.
 2. Every direct minimap Down immediately maps the pointer’s absolute minimap
    position to a centered viewport origin. Dragging continues that absolute
    mapping; there is no viewport-box grab requirement or zoom-dependent delta
@@ -39,7 +39,7 @@ truthful dock-button tap. Movement is the available intent signal.
    - 8 px horizontal/downward movement promotes to captured minimap control;
    - 2 px upward movement toward the visible map promotes early.
 4. The candidate spans the complete dock height `(250,372)..(368,448)`, based
-   on captured owner touches at `y=435..445` rather than an assumed finger
+   on captured captured touches at `y=435..445` rather than an assumed finger
    bound.
 5. Once promoted, the gesture stays captured outside the minimap and dock.
 
@@ -51,7 +51,7 @@ Relevant commits:
 - `62d8c8e` — dock/minimap intent arbitration; original map position restored.
 - `3980b90` — 2 px upward promotion based on measured directional stickiness.
 - `428b14a` — rejected coordinated vertical-stack layout experiment.
-- `4c8d144` — restores the uncluttered, owner-preferred layout.
+- `4c8d144` — restores the uncluttered, preferred layout.
 - `dbc4f67` — extends drag-only candidate arbitration through the full dock.
 
 ## Deterministic gates
@@ -81,7 +81,7 @@ edge_x=0 edge_y=0 ... pass=1
 ```
 
 Source: [`gate.log`](gate.log). Its only verdict red was the separately known,
-owner-scheduled overlap-50 cold workload (`604187 us > 500000 us`); every other
+requested overlap-50 cold workload (`604187 us > 500000 us`); every other
 automated verdict bit was 1.
 
 The repository-wide formatting gate is not claimed green: it still reports
@@ -102,9 +102,9 @@ Capture mechanics:
 The capture flag bits are pressed `0x01`, minimap `0x02`, pan `0x04`, toolbar
 `0x08`, ink `0x10`, and direct minimap hit `0x20`.
 
-## First owner capture and directional treatment
+## First author capture and directional treatment
 
-Artifact: [`owner-capture-arbitrated.log`](owner-capture-arbitrated.log)
+Artifact: [`author-capture-arbitrated.log`](author-capture-arbitrated.log)
 
 ```text
 events=866 offers=4916 duplicate_moves=4050 overflow=0
@@ -118,23 +118,23 @@ proving that the conflict extends well into the dock.
 
 A stationary direct minimap tap at `(332,342)` changed the origin on Down from
 `(2098,3618)` to `(4232,5958)` and retained it on Up (artifact lines 857–858).
-The owner called this version “way better than anything we had before.”
+The author called this version “way better than anything we had before.”
 
 Across those 14 candidates, the original 8 px threshold delayed ownership by
 118.4815 ms median / 225.993 ms max. Replaying the same events with a 2 px
 upward-only threshold predicted 78.9945 ms median while preserving 8 px for
 horizontal/downward dock ambiguity. That directional rule landed in `3980b90`.
 
-Artifact [`owner-capture-directional.log`](owner-capture-directional.log)
+Artifact [`author-capture-directional.log`](author-capture-directional.log)
 recorded 726 events from 5,352 offers, 4,626 duplicate Moves, zero overflow,
 71,852 us total append bookkeeping, and 90 us maximum. It also exposed four
 stationary lower touches at `y=435..443`, below the then-current candidate end
 at `y=424` (artifact lines 1055–1061). Those coordinates drove the full-dock
 regression rather than another visual-layout guess.
 
-## Final owner capture
+## Final author capture
 
-Artifact: [`owner-capture-full-dock.log`](owner-capture-full-dock.log)
+Artifact: [`author-capture-full-dock.log`](author-capture-full-dock.log)
 
 ```text
 events=778 offers=4074 duplicate_moves=3296 overflow=0

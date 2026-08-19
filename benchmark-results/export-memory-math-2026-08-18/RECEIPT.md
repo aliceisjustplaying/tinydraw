@@ -1,6 +1,6 @@
 # Export memory math — the 1.5 MiB reserve was never a measurement
 
-Date: 2026-08-18. Owner question: how much space does the SVG+PNG export
+Date: 2026-08-18. Author question: how much space does the SVG+PNG export
 *actually* need, best and worst case? Answer: about 300 KiB of PSRAM,
 document-size-independent. The 1.5 MiB figure is uninherited insurance.
 
@@ -55,7 +55,7 @@ project to ~7 MiB of `DRAWING.SVG` — a FAT-capacity concern that belongs
 to the roadmap's visible capacity/failure-state work, and no amount of
 PSRAM reserve helps it.
 
-## Consequence (owner decision 2026-08-18)
+## Consequence (author decision 2026-08-18)
 
 The contiguous reserve is not sacred. The replacement contract:
 

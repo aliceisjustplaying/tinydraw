@@ -1,6 +1,6 @@
 # Session handover — 2026-08-16 marathon (overlay → déjà-vu → AA day)
 
-Owner is asleep; no overnight work requested. Read
+Author is asleep; no overnight work requested. Read
 [`PERFORMANCE_CHRONICLE.md`](../../../../PERFORMANCE_CHRONICLE.md) for the
 full speed story with receipts. Everything below is committed and pushed
 through `9549e32` on `feat/v2-performance-followup`.
@@ -9,7 +9,7 @@ through `9549e32` on `feat/v2-performance-followup`.
 
 | Commits | What |
 |---|---|
-| `913a3b3`..`7900310` | Owner decisions recorded; 400% hold-the-line guard (now 520 ms after between-build recalibration) |
+| `913a3b3`..`7900310` | Author decisions recorded; 400% hold-the-line guard (now 520 ms after between-build recalibration) |
 | `fb2a05b` | Pixelation diagnosis: drop hypothesis falsified; `InPlaceRetainDrops` cause counters live on LIVE_STROKE/INKTRACE/MIXED_DRAW |
 | `39352d6`..`79ce37b` | **Committed overlay**: authority-only commits (19,324→173 µs), pending-range absorption, host-proven overlay exactness, deferred lift swap |
 | `902d016` | Drain only on empty polls (lift tail 10–34→4–5 ms) |
@@ -21,19 +21,19 @@ through `9549e32` on `feat/v2-performance-followup`.
 
 ## Current machine/tree state
 
-- Device runs the **plain app build** (`./scripts/esp32 vector-v2` — owner
+- Device runs the **plain app build** (`./scripts/esp32 vector-v2` — author
   wants app-only flashes for glass; the harness build is for batteries).
-- Only harness red: `overlap_cold` (owner-sequenced fix, todo #10).
+- Only harness red: `overlap_cold` (requested fix, todo #10).
 - Cold 400% wall 503–518 vs the 520 ceiling — margin is thin; the icache
   dice (unpinned producer) is the cause; todo #9 is the fix.
 - Host: 231 test cases green, ASan green, format clean.
 
-## Next-session queue (owner-approved order)
+## Next-session queue (approved order)
 
 1. **Overlap-50 cold** (todo #10) — the occlusion-aware replay question.
-2. **SVG export** — owner explicitly raised priority tonight.
+2. **SVG export** — author explicitly raised priority tonight.
 3. **IRAM-pin producer loops** (todo #9) — restores cold ceiling margin.
-4. **AA speed round 2** — owner wants the settle progression
+4. **AA speed round 2** — author wants the settle progression
    imperceptible. Ranked ideas:
    a. Exact span-interior fill per row (the review's real design): visit
       only boundary pixels analytically, memset-fill interiors — kills the
@@ -69,7 +69,7 @@ through `9549e32` on `feat/v2-performance-followup`.
 - 25% AA is presentation-only BY DESIGN (overview = replay authority);
   don't "fix" it into the overview.
 
-## Owner glass quotes (for the record)
+## Glass quotes (for the record)
 
 - Déjà-vu fix: "100% very impressive. I'm extremely impressed."
 - Sixteenth units: "Yes, it's much better… definitely a big improvement."

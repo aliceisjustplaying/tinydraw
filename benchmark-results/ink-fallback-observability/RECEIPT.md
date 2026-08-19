@@ -10,7 +10,7 @@ pass=1`.
 
 ## Question
 
-Owner-queued diagnosis (Stage B handover §4.1): during benchmark stroke
+Author-queued diagnosis (Stage B handover §4.1): during benchmark stroke
 replays, already-drawn content pixelates mid-stroke. Which mechanism drops
 sharp viewport tiles to overview fallback — `materialize_uniform_as_raw`
 returning nullopt, paint failure, or retention-budget exhaustion?
@@ -45,7 +45,7 @@ before any ink lands — `fb_start=30` of 42 tiles at 400%, 24/42 at 100%
 the upscaled overview inside those tiles, which reads as "already-drawn
 content pixelating" while the stroke replays.
 
-Owner confirmation (2026-08-16): the pixelation was only ever observed
+Author confirmation (2026-08-16): the pixelation was only ever observed
 during benchmark replays and has never reproduced in a glass session —
 consistent with this attribution, since glass drawing happens on settled,
 materialized viewports.
@@ -59,7 +59,7 @@ materialized viewports.
 - The counters stay: any future nonzero `drop_*` on a
   `TINYDRAW_LIVE_STROKE` line during a glass session falsifies this
   receipt and reopens the diagnosis with the cause already attributed.
-- Open follow-up (owner call): prewarm the replay-gate viewports so
+- Open follow-up (author call): prewarm the replay-gate viewports so
   `fb_start=0` and the probe becomes a zero-expected guard. That changes
   the gate substrate (commits would edit resident raw tiles instead of
   riding fallback), so it reopens the frozen

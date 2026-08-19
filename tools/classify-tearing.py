@@ -10,7 +10,7 @@ red/green field, four corner fiducials, 5-bit cell ID strip, blue guard
 columns). Output: per-frame CSV, verdict summary, and annotated evidence
 frames.
 
-Physics encoded here (see HARDWARE_LIMITS.md):
+Physics encoded here (see docs/receipts/hardware/CO5300_PANEL_LIMITS_2026-08-15.md):
 - Panel refresh 59.62 Hz; scan-in sweeps top->bottom in ~16.2 ms.
 - At 240 fps capture, a NORMAL frame transition appears as one red/green
   boundary moving DOWN ~90-130 panel rows per video frame across ~4 frames.

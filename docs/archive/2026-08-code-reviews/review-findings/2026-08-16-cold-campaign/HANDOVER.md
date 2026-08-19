@@ -176,9 +176,9 @@ both ways — the caller split is the answer).
 bounds/saturation/budget gate per unit). Producer scratch is internal SRAM
 with PSRAM fallback (`vector_v2_app.cpp`, `TINYDRAW_PRODUCER_SCRATCH`).
 
-## 8. Open owner decisions
+## 8. Open author decisions
 
-1. **mixed_draw 50% append budget** (18.8 vs 15 ms max): owner prefers a
+1. **mixed_draw 50% append budget** (18.8 vs 15 ms max): author prefers a
    glass test — warm canvas at 50%, fast scribbles over dense content; if
    feel is fine, raise the budget with a dated contract note. Failure
    predates this campaign (dating evidence in the wave-3 receipt, §mixed).
@@ -188,7 +188,7 @@ with PSRAM fallback (`vector_v2_app.cpp`, `TINYDRAW_PRODUCER_SCRATCH`).
    endpoint). Adaptive 1–4 chords by flatness would target the visible
    angularity directly. Changes committed authority geometry → reopens
    cold exactness, SVG parity, and the frozen-corpus statistics; needs an
-   owner go and a re-baseline.
+   author go and a re-baseline.
 3. **Settled AA prototype**: design in REVIEW.md §Settled AA. One-line
    version: keep live ink hard-edged; in idle, re-run the existing
    newest-first replay with the 1-bit mask widened to 8-bit accumulated
@@ -197,7 +197,7 @@ with PSRAM fallback (`vector_v2_app.cpp`, `TINYDRAW_PRODUCER_SCRATCH`).
    (`α ≈ clamp(0.5 + (r − d), 0, 1)`) composited front-to-back; publish as
    higher-quality cached tiles (déjà-vu safe). Est. ~1.3× immediate replay
    per group. First step: host prototype on one group to validate cost and
-   look (owner acceptance is explicitly "need to see it in action").
+   look (author acceptance is explicitly "need to see it in action").
 
 ## 9. Standing follow-ups (small)
 

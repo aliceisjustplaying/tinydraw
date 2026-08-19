@@ -19,7 +19,7 @@ snapshot.
   at 476.969 ms and general 400% at the 520 ms development guard;
 - normal Vector V2 product flashed and reached `TINYDRAW_VECTOR_V2_READY` with
   8,712 bytes of main-task stack headroom;
-- owner cursory glass sanity check: drawing looked normal after cleanup;
+- author cursory glass sanity check: drawing looked normal after cleanup;
 - `git diff --check`;
 - targeted formatting of changed Vector V2 files.
 

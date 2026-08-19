@@ -69,9 +69,9 @@ non-B2 builds sit at 660±3. B1's strip-8 headroom was only ~35–40 µs, so B2
 turns the gate into a coin flip or worse. Device-assert removal, placement,
 and padding each shaved a few µs; nothing recovered the baseline.
 
-## Open decision (owner) — RESOLVED later this session
+## Open decision (author) — RESOLVED later this session
 
-Owner chose "park B2, proceed to B3". B3 then hit the same strip razor,
+Author chose "park B2, proceed to B3". B3 then hit the same strip razor,
 which forced the mechanism to a conclusion (below); the razor fix un-shelved
 B2 the same day.
 
@@ -145,14 +145,14 @@ arrived (`tear_edge_observed=0 tear_edge_timeout=1 tear_heal_attempted=1`
 from startup), cascading every gate red. Panel bring-up flake, healed by
 the next reset; unrelated to any Stage B change.
 
-## Owner glass session (2026-08-16 18:42–18:50, log: `logs/glass-session-2026-08-16.log`)
+## Glass session (2026-08-16 18:42–18:50, log: `logs/glass-session-2026-08-16.log`)
 
 Drawing at 25→400% (long strokes, evil hairlines, fat lines, multiple
 colors), stress panning at every tiled zoom, draw-then-zoom-return.
 
 - **Tearing: none observed on glass**, and zero missed presentation
   bounds in the receipts (`submit_over_16ms=0 complete_over_33ms=0` on
-  all 18 strokes). Cold redraw content correct at every zoom. Owner
+  all 18 strokes). Cold redraw content correct at every zoom. Author
   verdict: cold render closable barring regressions.
 - **400% drawing lag (felt, slight)**: attributed to the known mixed_draw
   overrun — worst chunk commits 17–21.6 ms with `ph_uniform_max` up to
@@ -172,14 +172,14 @@ colors), stress panning at every tiled zoom, draw-then-zoom-return.
 ## Remaining to ≤500 ms at 400%
 
 ~7 ms of wall. Candidates: presentation/compute overlap (wave-3 §4.4,
-owner-gated), PIE fixed-point probing (§4.3), block-granular saturation
+approval-gated), PIE fixed-point probing (§4.3), block-granular saturation
 (§4.5), or accept after the 20-run closure statistic. 25%-zoom gates
 (present cost, append feel, zoom-out transition) are a noted future
 addition — 25% has no cold path by design (the overview IS the authority).
 
-## Addendum — owner ruling + hold-the-line guard (2026-08-16, later session)
+## Addendum — author ruling + hold-the-line guard (2026-08-16, later session)
 
-Owner accepted the 7 ms residual until autosave exists ("ignore as long as
+Author accepted the 7 ms residual until autosave exists ("ignore as long as
 it does not regress further"); micro-candidates parked. Encoded as
 `kColdViewport400HoldTheLineUs`, applied only to the frozen-corpus 400%
 gate. First calibrated at 510'000 (507.0 ms measured max + twice the
@@ -191,7 +191,7 @@ IRAM-pinning the producer hot loops is queued to let the ceiling tighten.
 Device verification (`logs/holdline-verify-1.log`): 400% wall 499,950 µs
 against budget 510,000, pass=1; verdict vector `general_cold=1` with only
 the pre-existing reds remaining (`overlap_cold=0` from the 50% overlap
-workload — 621.9 ms, red since wave-3, surfaced for owner triage — and
+workload — 621.9 ms, red since wave-3, surfaced for author triage — and
 `mixed_draw=0`); ledger amplification=1.000 stale=0 unexplained=0; all
-five INKTRACE pass=1. Full rulings in SHIP_CONTRACT.md "Owner decisions —
+five INKTRACE pass=1. Full rulings in SHIP_CONTRACT.md "Author decisions —
 2026-08-16".

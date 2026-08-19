@@ -12,17 +12,17 @@ No software receipt can turn these observations into an optical closure claim. T
 
 ## 2026-08-16 ~01:50 — final invariant build (126ff68 + reconciliation)
 
-Owner manual glass check: **tearing gone** at pan; fixed-spot tear no longer
+Author manual glass check: **tearing gone** at pan; fixed-spot tear no longer
 observable. Pacing subjectively slower than the burst build, as measured
 (p95 ~50.9 ms). Optical caveat: naked-eye verdict; ship closure still
 requires the torn-positive-control optical session per SHIP_CONTRACT.
 
 ## 2026-08-16 — chrome lifetime split (`52f63e0`)
 
-Owner product-glass verdict: **tearing fixed**. Manual panning was clean at
+Author product-glass verdict: **tearing fixed**. Manual panning was clean at
 50%, 100%, 200%, and 400% after drawing dense hairline/figure content, including
 content beneath fixed chrome. No fixed-row tear or notch was visible.
 
-This closes owner acceptance of the product defect. The formal release packet
+This closes author acceptance of the product defect. The formal release packet
 still needs an archived same-session torn-positive-control observation; the
 control firmware was briefly displayed but no control verdict was recorded.

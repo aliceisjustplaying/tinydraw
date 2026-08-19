@@ -1,15 +1,15 @@
 # Committed-overlay / authority-revision split — execution design
 
-Status: adopted design, implementation starting (owner decision 2026-08-16
+Status: adopted design, implementation starting (author decision 2026-08-16
 \#1 in [`SHIP_CONTRACT.md`](../../SHIP_CONTRACT.md)). Source: external review
 §8.2–8.4 (archived as `LATEST_tinydraw-review-report.md` in
 `archive/v2-correctness-fixes-e14e6e9`, commit `9be7a53`), adopted by
-[`EXTERNAL_REVIEW_SYNTHESIS_2026-08-16.md`](../reviews/EXTERNAL_REVIEW_SYNTHESIS_2026-08-16.md)
+[`EXTERNAL_REVIEW_SYNTHESIS_2026-08-16.md`](../archive/2026-08-code-reviews/2026-08-18-performance-review/EXTERNAL_REVIEW_SYNTHESIS_2026-08-16.md)
 item 9 as the Phase 2 execution design.
 
 ## 1. Problem, with receipts
 
-The felt 400% drawing lag (owner glass, 2026-08-16) is the synchronous
+The felt 400% drawing lag (glass, 2026-08-16) is the synchronous
 chunk commit blocking the input poll loop. Current per-chunk maxima
 ([`gate-dropattr-1.log`](https://github.com/aliceisjustplaying/tinydraw/blob/v2-feature-complete-pre-cleanup/benchmark-results/ink-fallback-observability/gate-dropattr-1.log),
 mixed_draw gate, warm multi-zoom cache):
@@ -22,7 +22,7 @@ mixed_draw gate, warm multi-zoom cache):
 | 200 | 15.4 ms | **12.2** | 4.5 | 1.1 | 0.9 |
 | 400 | 14.1 ms | **11.5** | 3.4 | 0.7 | 0.8 |
 
-Owner glass receipts add `ph_uniform` up to 18.3 ms at 400% (fresh paper
+Glass receipts add `ph_uniform` up to 18.3 ms at 400% (fresh paper
 tiles under real strokes) and a post-lift poll gap of 87–111 ms with a
 72–80 ms synchronous lift refresh (review §8.2).
 
@@ -83,7 +83,7 @@ already knows.
 This obeys the standing authority doctrine: ordered vector operations are
 the drawing authority; the overlay is a derived, transient view of the
 not-yet-absorbed suffix. There is no new pixel cache, no byte budget, no
-invalidation owner, no eviction — the "overlay" disappears naturally when
+invalidation authority, no eviction — the "overlay" disappears naturally when
 the pending range drains to empty. Cost is bounded by the staged window
 (move updates stage only the old∪new tail region) times the pending-range
 length, which drain keeps short.

@@ -1,7 +1,7 @@
 # Handover — final performance round, 2026-08-18 evening session
 
-For the next agent. Owner intent: finish the queue below, then the project
-is called. Priority order is owner-fixed: (1) faster anti-aliasing where
+For the next agent. Author intent: finish the queue below, then the project
+is called. Priority order is specified: (1) faster anti-aliasing where
 possible, (2) touch targets, (3) the byte-swap hunt, (4) SVG/PNG export
 parity and angularity. Read `PROJECT_STATE.md` and
 `docs/PERFORMANCE_CHRONICLE.md` first; this file covers only what this
@@ -84,11 +84,11 @@ settle staging interleavings).
 
 ## 4. SVG/PNG export
 
-Known deferred bugs (owner will close these last):
+Known deferred bugs (author will close these last):
 - PNG drops one-sample Strokes (receipted 2026-08-18: SVG emitted two
   blue dots, PNG painted neither — settled cursor completes one-sample
   operations without painting).
-- SVG angularity beyond the expected AA difference (owner-reported;
+- SVG angularity beyond the expected AA difference (reported;
   preserved physical pair exists).
 - SVG erasers are white paths, only correct over white (semantic).
 - Worst-case capacity: export volume is now 10.125 MiB, so ~7.3 MiB SVG
@@ -98,7 +98,7 @@ Known deferred bugs (owner will close these last):
 
 - **Never arm a serial capture in the same command as a flash** — the
   port reset kills it silently. Arm separately, then verify the file
-  exists and grows before telling the owner to test. One session's glass
+  exists and grows before telling the author to test. One session's glass
   telemetry was lost this way.
 - The gate script default is now 604 slots; partition tables are unified
   across variants (variant flips preserve the journal). A partition-table
@@ -110,11 +110,11 @@ Known deferred bugs (owner will close these last):
   publish and must NOT be used).
 - Internal SRAM is tight now: steady free ~182 KiB, export dip ~49 KiB.
   Anything new that wants internal memory must re-run the export gate.
-- The owner measures; never accept a rejection or a win without a
+- The author measures; never accept a rejection or a win without a
   same-corpus, same-head A/B (the saturated skip was a 40% win wrongly
   rejected on unlike corpora).
 
-## Definition of done (owner, verbatim intent)
+## Definition of done (author, verbatim intent)
 
 Faster AA where possible → tap targets → byte-swap hunt → SVG/PNG parity
 fixes → "and then I'm calling it a project."

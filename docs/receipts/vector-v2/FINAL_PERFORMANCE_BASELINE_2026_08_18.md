@@ -167,7 +167,7 @@ Source: [`PERFORMANCE_REVIEW_ROUND_2026_08_18.md`](PERFORMANCE_REVIEW_ROUND_2026
 | after SVG + PNG Export | 84,168 B | 2,187,528 B | export pass |
 | 1.5 MiB reserve held | not recorded | 614,660 B | largest 606,208 B; pass |
 
-The owner accepted the final Export interaction. A current combined SVG+PNG
+The author accepted the final Export interaction. A current combined SVG+PNG
 elapsed time and byte count were not preserved, so historical SVG-only and PNG
 measurements are not presented as the final baseline.
 

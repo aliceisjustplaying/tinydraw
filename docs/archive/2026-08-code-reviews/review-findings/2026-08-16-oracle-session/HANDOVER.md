@@ -1,6 +1,6 @@
 # Session handover — 2026-08-16 oracle session
 
-Written for the next session, which starts **Cold Stage B** (owner-approved).
+Written for the next session, which starts **Cold Stage B** (approved).
 Read this alongside the wave-3 handover
 ([`HANDOVER.md`](../2026-08-16-cold-campaign/HANDOVER.md))
 — its §3 A/B loop recipe and §6 device-physics cheat sheet remain THE
@@ -14,7 +14,7 @@ is [`EXTERNAL_REVIEW_SYNTHESIS_2026-08-16.md`](../../../../reviews/EXTERNAL_REVI
 | `02790e5` | fix: four release-build safety holes (RibbonRenderer runtime validation; batch fail-closed — true worst case is 9 primitives, capacity now 10 with `overflowed()`; InkStream inactive guard; stronger `OperationLog::ready`) |
 | `af9809a` | feat: ink-trace capture firmware (`./scripts/esp32 vector-v2-ink-capture PORT`) + host recorder (`tools/ink-trace-record.py`), upstream of coalescing |
 | `8712ac6` | feat: in-place append phase attribution + honest rename `InPlaceCommitBudget` → `InPlaceRetentionBudget` (it only bounds offscreen raw retention) |
-| `9e67220` | feat: recorded owner corpus (5 traces) + two capture bug fixes (WDT interleave on long dumps; missing header-columns line) |
+| `9e67220` | feat: recorded recorded touch corpus (5 traces) + two capture bug fixes (WDT interleave on long dumps; missing header-columns line) |
 | `7513aa1` | feat: under-overlay trace (9,284 events — proves the dump fixes) |
 | `16d223a` | feat: `tinydraw_vector_v2_ink_angularity` tool + baseline receipt |
 | `7a78dd7` | feat: re-render ledger (déjà-vu oracle) wired into product canvas/producer + harness receipts |
@@ -64,13 +64,13 @@ every A/B run's log must keep
 `TINYDRAW_RERENDER_LEDGER site=cache_tour … amplification=1.000 stale=0 unexplained=0`
 and all five `TINYDRAW_INKTRACE … pass=1`. Speed must not buy amplification.
 
-Expected residual gap after B: ~70–170 ms. Then the **owner gate C decision**:
+Expected residual gap after B: ~70–170 ms. Then the **author gate C decision**:
 the bundled authority change (conical capsule + flatness-adaptive 1/2/4
 subdivision). IMPORTANT INVERSION: subdivision is now justified by **cold +
 mixed_draw speed** (flat units on real input can drop to 1 chord at ≤0.35 px
 error), NOT smoothness — the smoothness case was falsified (§5).
 
-## 4. Queue after Stage B (owner-specified order)
+## 4. Queue after Stage B (author-specified order)
 
 1. **AA stuff**: settled-AA host prototype — internal design in
    `../review_findings_2026_08_16_cold_campaign/REVIEW.md` (8-bit accumulated
@@ -78,7 +78,7 @@ error), NOT smoothness — the smoothness case was falsified (§5).
    coverage), amended with two external-review constraints: within-operation
    self-overlap must UNION coverage, never composite twice (§10.3), and the
    RGB565 blend model must be frozen before implementation (§10.5). Output =
-   rendered before/afters for the owner. The **arc-length resampling sweep**
+   rendered before/afters for the author. The **arc-length resampling sweep**
    pairs with this (both are the real smoothness levers; grade with the
    angularity tool's joint metrics on the recorded traces; resampling does
    NOT reopen the frozen cold corpus but re-measures `mixed_draw`).
@@ -92,7 +92,7 @@ error), NOT smoothness — the smoothness case was falsified (§5).
 
 ## 5. Key facts established this session (do not re-derive)
 
-- **Angularity (falsification)**: on real 1 kHz owner input, 2-chord
+- **Angularity (falsification)**: on real 1 kHz recorded touch input, 2-chord
   deviation ≤0.11 px at 400%; 1-chord ≤0.35 px; extra subdivision does not
   reduce the joint-angle tail (input jitter + quarter-px quantization +
   32-sample chunk boundaries). Four-span-for-smoothness is dead; resampling +
@@ -102,7 +102,7 @@ error), NOT smoothness — the smoothness case was falsified (§5).
 - **mixed_draw attribution** (from the phase counters, 50% pen, 19.6 ms max):
   raw tile painting 12.3 ms, overview replay 3.9 ms, uniform
   materialize+paint 5.4 ms (pen only), commit 1.8 ms. It's the curved-path
-  tile painting. Owner glass check deferred until after the subdivision
+  tile painting. Glass check deferred until after the subdivision
   experiment (which targets exactly that term).
 - **Replay gate**: five traces embedded (~95 KiB, partition 44% free);
   event→DMA p95 2.3–5.3 ms, zero lost Down/Up, zero overflows.
@@ -115,13 +115,13 @@ error), NOT smoothness — the smoothness case was falsified (§5).
 - **Capture firmware**: dump yields every 256 lines (task-WDT + USB-drain);
   recorder validates per-line and rejects <100-event stray taps.
 
-## 6. Owner decisions pending (with what each needs)
+## 6. Author decisions pending (with what each needs)
 
 1. **Stage C authority bundle** — decide after B, with the residual cold gap
    + the angularity numbers (already in hand) + a conical pixel-delta A/B.
 2. **mixed_draw budget vs fix** — deferred; re-attribute after subdivision.
 3. **Dual-core guardrail relaxation** — only if B+C fall short of ≤500 ms.
-4. **Settled-AA go** — owner explicitly wants to see the prototype (queue §4.1).
+4. **Settled-AA go** — author explicitly wants to see the prototype (queue §4.1).
 
 ## 7. Gotchas for the next session
 

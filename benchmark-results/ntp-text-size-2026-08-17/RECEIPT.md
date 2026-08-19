@@ -1,8 +1,8 @@
 # NTP toast text-size receipt — 2026-08-17
 
-## Owner request
+## Author request
 
-The owner confirmed that unavailable-network handling terminates, successful
+The author confirmed that unavailable-network handling terminates, successful
 sync reaches `TIME SET`, and all labels are centered. The remaining request was
 to make `CONNECTING`, `SYNCING`, `TIME SET`, and `TIME ERROR` the same text size
 as export's `SAVING` label.
@@ -39,8 +39,8 @@ red color intentionally excludes it from the ink-color measurement.
 The combined product includes the fine 400% minimap mapping from commit
 `803bc97`.
 
-## Owner glass verdict
+## Glass verdict
 
-**Accepted 2026-08-17.** The owner observed `CONNECTING`, `SYNCING`, and
+**Accepted 2026-08-17.** The author observed `CONNECTING`, `SYNCING`, and
 `TIME SET`, confirmed unavailable-network handling terminates, and accepted the
 larger centered text. Clock sync is done for the current release scope.

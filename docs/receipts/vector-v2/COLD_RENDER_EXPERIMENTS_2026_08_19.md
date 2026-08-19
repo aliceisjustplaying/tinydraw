@@ -8,7 +8,7 @@ consume an attempt.
 The current full device battery is green. General cold fill at
 50/100/200/400% is approximately 397/389/464/499 ms in the latest run; the
 binding 400% case has a 520 ms development guard and a 500 ms release target.
-The owner torture document completes in 119/135/199/349 ms.
+The captured stress drawing completes in 119/135/199/349 ms.
 
 ## Attempts
 
@@ -30,13 +30,13 @@ The owner torture document completes in 119/135/199/349 ms.
    supertask, publication, or pixel. Device step counts fell 90→66 on overlap
    50% and 302→237 on general 400%; maximum ticks remained 10.62 ms. Overlap
    walls improved 5.1 ms at 50% and 6.0 ms at 400%; general 100/200% improved
-   2.2/4.3 ms. General 400% and owner-document timings were flat. The full
+   2.2/4.3 ms. General 400% and captured-drawing timings were flat. The full
    battery remained green with `failure_marker=False`.
 4. **96-operation scan batches — rejected and reverted.** Raising the
    per-resumption operation scan cap from 64 to 96 reduced general-corpus step
    counts by only 4/3/1 at 100/200/400%. Wall time was effectively unchanged
    (385/461/499 ms), while the binding 400% case's maximum tick rose from
-   10.62 to 12.57 ms. Overlap and owner-document timings were also flat. The
+   10.62 to 12.57 ms. Overlap and captured-drawing timings were also flat. The
    full battery was green, but the responsiveness cost had no material render
    payoff, so the 64-operation cap is restored.
 5. **Eliminate redundant preflight remaining scans — accepted.** A missing
@@ -45,7 +45,7 @@ The owner torture document completes in 119/135/199/349 ms.
    removing a second full visible-tile directory walk without changing group
    order, slicing, or pixels. General cold wall fell from
    393/386/461/498 to 390/379/456/491 ms at 50/100/200/400%; overlap fell
-   478/288/269/217 to 474/287/267/214 ms. The owner document improved from
+   478/288/269/217 to 474/287/267/214 ms. The captured drawing improved from
    118/134/200/347 to 117/133/199/345 ms. Step counts were identical, maximum
    ticks stayed at or below 10.72 ms, and the complete battery passed with
    `failure_marker=False`.

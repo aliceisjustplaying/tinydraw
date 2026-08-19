@@ -123,5 +123,5 @@ uv run --script tools/esp32-capture.py \
 ```
 
 No USB mass-storage command was run. A human glass-feel check remains useful,
-but no sleeping-owner action was required for the automated functional,
+but no hands-on action was required for the automated functional,
 pacing, cold, crash, or product-boot receipts.

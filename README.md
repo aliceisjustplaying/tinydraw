@@ -6,114 +6,87 @@
   <a href="assets/readme/tinydraw-sizes.jpg"><img src="assets/readme/tinydraw-sizes.jpg" alt="TinyDraw brush sizes" width="32%"></a>
 </p>
 
-TinyDraw is a small finger-drawing app for Waveshare's 368×448 ESP32-S3 and
-RP2350 Touch AMOLED 1.8-inch boards. The supported macOS frontend and QEMU
-target run Raster V1; ESP32 firmware supports both Raster V1 and Vector V2.
-All targets share the C++20 drawing and UI core where their models overlap.
+TinyDraw is a finger-drawing app for Waveshare's 368×448 ESP32-S3 and RP2350
+Touch AMOLED 1.8-inch boards. Raster V1 and Vector V2 are both supported ESP32
+products. The macOS frontend and QEMU use Raster V1; shared C++20 modules are
+tested natively.
 
-## Current state
+Vector V2 is at its release candidate. Current acceptance and measurements are
+in [`PROJECT_STATE.md`](PROJECT_STATE.md), the product contract is
+[`SHIP_CONTRACT.md`](SHIP_CONTRACT.md), and later work is in
+[`docs/POST_RELEASE.md`](docs/POST_RELEASE.md). The full history of successful
+and rejected performance experiments is preserved in
+[`docs/PERFORMANCE_CHRONICLE.md`](docs/PERFORMANCE_CHRONICLE.md) and dated
+receipts.
 
-The ESP32 has two supported product generations: raster-authoritative TinyDraw
-V1 and vector-authoritative TinyDraw V2. V2 feature work and the maintainability
-cleanup are complete; known bug fixes, release validation, and the final measured
-performance round remain. Current status lives in
-[`PROJECT_STATE.md`](PROJECT_STATE.md), and [`V2_ROADMAP.md`](V2_ROADMAP.md)
-owns the remaining V2 work. The receipt-backed history of wins and rejected
-performance experiments is [`docs/PERFORMANCE_CHRONICLE.md`](docs/PERFORMANCE_CHRONICLE.md).
+## Raster V1
 
-### TinyDraw V1 — Raster
+- Variable-width Perfect Freehand-style ink with 4×4 edge smoothing.
+- Twelve colors, four sizes, eraser, pan, ten Undos, New, and a 3×3 canvas.
+- Raster autosave, battery status, onboard clock, one-shot NTP, demos, hardware
+  power off/on, and USB PNG export.
+- Supported on ESP32. The native macOS app and QEMU also exercise this core.
 
-- Variable-width, Perfect Freehand-style ink with 4×4 edge smoothing
-- Solid self-overlaps, rounded sharp turns, twelve colors, and four sizes
-- Pan, ten Undos, a 3×3 canvas, autosave, battery status, and USB PNG export
-- Onboard clock, one-shot NTP correction, demos, and battery-powered off/on
+## Vector V2
 
-### TinyDraw V2 — Vector
+- Pen and eraser operations are document authority across a bounded 1472×1792
+  world at 25, 50, 100, 200, and 400 percent zoom.
+- Whole-gesture Undo/Redo, focus-centered zoom, absolute minimap navigation,
+  asynchronous authority journaling, and settled analytic antialiasing.
+- A complete overview and 604-slot world-aligned tile pool keep every viewport
+  covered while detail is rendered or retained.
+- The 4 MiB journal restores vector authority and Redo. Navigation, tool state,
+  and derived pixels restart from defaults.
+- Export creates settled `DRAWING.PNG` and editable `DRAWING.SVG` from one
+  authority snapshot. SVG preserves variable-width curves, transparent erasing,
+  and one painter-ordered path per physical gesture.
+- The synthesized FAT16 drive is read-only. Host eject or **EJECT & EXIT**
+  returns to drawing and restores USB Serial/JTAG without resetting the board.
+- New starts blank in product firmware. Clock sync, battery status, and the
+  four-second hardware shutdown are supported.
 
-- Vector operations are authoritative for pen and eraser strokes.
-- The bounded 1472×1792 world supports 25%, 50%, 100%, 200%, and 400% zoom.
-  Zoom preserves one world-space focus and derives each clamped origin; dormant
-  per-zoom camera origins are not retained.
-- A complete overview provides fallback while a 448-slot world-aligned tile
-  cache refines visible detail.
-- Touch sampling remains independent of cooperative rendering work.
-- The refined toolbar uses the V1 tool icons, reflects the active tool, and
-  opens compact tool, size, document, and two-page round-swatch color popups.
-  Span-rasterized swatches and frame reuse open the full color dialog in about
-  27.6 ms on device (4.81× faster than its captured baseline).
-- New has a confirmation dialog. Whole-Stroke Undo/Redo keeps internal chunks
-  grouped, preserves at least ten levels, and replays bounded pen/eraser damage.
-  Host, sanitizer, firmware, and owner glass checks are green; high-zoom cold
-  rebuilding remains in the final optimization round.
-- Autosave appends whole-Stroke, history, and New Journal commits to the 3 MiB
-  drawing partition. A low-priority flash worker publishes a CRC-checked final
-  marker last; startup restores vector authority and Redo, then rebuilds derived
-  pixels. Navigation and chrome selections restart from product defaults; the
-  next Stroke identity is derived from the restored active authority.
-  Full-journal compaction is deliberately deferred.
-- Export streams the vector authority to flash with visible progress, then
-  opens an explicit read-only USB mode with an on-screen **Return to Drawing**
-  action. Host eject keeps the medium absent
-  instead of allowing later probes to re-expose it.
-- The document popup's clock action performs an on-demand asynchronous
-  Wi-Fi/NTP correction, writes the onboard RTC, and shows connecting, syncing,
-  success, or error feedback. Terminal feedback appears only after Wi-Fi is
-  stopped and deinitialized.
-- Battery status, a five-level zoom rail, and a live interactive minimap are
-  visible over the canvas. Minimap Down maps absolutely into the world; promoted
-  drags stay captured across the right dock, while stationary dock taps retain
-  their size/document actions.
-- Export produces an editable `DRAWING.SVG` and a settled anti-aliased
-  `DRAWING.PNG` from one vector-authority snapshot. SVG retains one
-  painter-ordered filled path per physical finger-down/up Stroke and no
-  synthetic background rectangle. PNG rows stream through bounded settled
-  render and encoder workspaces. Both files are exposed read-only in one
-  synthesized FAT16 volume after a shared metadata-last commit.
-
-Immediate ink is refined to the accepted settled anti-aliased output after
-lift. Dated receipts preserve historical measurements; the scorecard in
-[`PROJECT_STATE.md`](PROJECT_STATE.md) is the current acceptance record.
-
-The RP2350 build currently provides screen-sized ink, erasing, colors, sizes,
-and New. It has no pan, Undo, or persistence. Native replays, exact snapshots,
-ASan/UBSan, QEMU, and device telemetry cover the shared core.
+The ESP32-S3 product owns the full 16 MiB flash: 1.75 MiB application, 4 MiB
+drawing journal, 10.125 MiB export volume, and 64 KiB coredump. Raster V1 files
+remain Raster V1 files and are not silently converted into V2 documents.
 
 ## Run the Raster V1 macOS app
+
 ```sh
 ./scripts/bootstrap-macos   # once
-./scripts/dev run           # use run-2x or run-3x for a larger demo window
+./scripts/dev run           # run-2x and run-3x open larger windows
 ```
 
-The window opens near the panel's physical size on a 14-inch 2021 MacBook Pro.
 Draw with the mouse, use `Cmd-Z` to undo, `C` for New, and `Esc` to quit.
 
-## Test and profile
+## Test
+
 ```sh
-./scripts/dev test          # native tests and end-to-end replays
-./scripts/dev release       # optimized build and tests
-./scripts/dev asan          # ASan and UBSan on the shared core
-./scripts/dev perf          # sustained XL work and memory traffic
+./scripts/dev test
+./scripts/dev release
+./scripts/dev asan
+./scripts/dev perf
+./scripts/dev vector-perf
 ./scripts/dev format-check
 ```
 
 ## Build ESP32 firmware
+
 ```sh
-./scripts/bootstrap-idf     # once; isolated ESP-IDF v6.0.2
-./scripts/esp32 build             # build TinyDraw V2
-./scripts/esp32 vector-v2 PORT    # build + flash TinyDraw V2
-./scripts/esp32 raster-v1         # build TinyDraw V1
-./scripts/esp32 raster-v1 PORT    # build + flash TinyDraw V1
-./scripts/esp32 graphics-test
+./scripts/bootstrap-idf                 # once; ESP-IDF v6.0.2
+./scripts/esp32 build                   # build Vector V2
+./scripts/esp32 vector-v2 PORT          # build and flash Vector V2
+./scripts/esp32 raster-v1               # build Raster V1
+./scripts/esp32 raster-v1 PORT          # build and flash Raster V1
+./scripts/esp32 graphics-test           # Raster V1 QEMU check
 ```
 
-V1 and V2 use separate build directories. Use an explicit serial port when flashing.
-Export temporarily replaces USB serial with a read-only drive;
-**Return to Drawing** stops the USB device stack without resetting the board.
-To flash again on battery, power off, hold BOOT, and short-press power for a cold
-boot. Short BOOT records/replays demos. Hold the lower button four seconds to
-power off; short-press it to start. There is no sleep mode yet.
+V1 and V2 use separate build directories. Supply an explicit serial port when
+flashing. Export temporarily replaces USB serial with mass storage. On battery,
+enter the ROM flasher by powering off, holding BOOT, and short-pressing power.
+Hold the lower button for four seconds to power off; short-press it to start.
 
 ## Build RP2350 firmware
+
 ```sh
 ./scripts/rp2350 bootstrap
 ./scripts/rp2350 build
@@ -121,10 +94,11 @@ power off; short-press it to start. There is no sleep mode yet.
 ./scripts/rp2350 trace PORT
 ```
 
-The RP2350 uses one SRAM framebuffer. Repeated arbitrary SH8601 rectangles were
-unreliable; full-width bands stay fast and physically stable. Historical
-measurements are archived in
-[`FINDINGS.md`](docs/archive/2026-08-raster-and-vector-prototypes/FINDINGS.md).
+The RP2350 build currently provides screen-sized ink, erasing, colors, sizes,
+and New. It has no pan, Undo, or persistence.
+
+Development details and both ESP32 product workflows are in
+[`DEVELOPING.md`](DEVELOPING.md).
 
 ## License
 

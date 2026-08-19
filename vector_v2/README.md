@@ -4,7 +4,9 @@ This directory contains TinyDraw V2's platform-independent,
 vector-authoritative architecture. TinyDraw V1 remains a separately supported
 raster product; V2 modules are integrated by the V2 firmware and host tests.
 
-Current state lives in [`PROJECT_STATE.md`](../PROJECT_STATE.md), and the complete forward worklist lives in [`V2_ROADMAP.md`](../V2_ROADMAP.md). Historical prototype plans belong in [`docs/archive/`](../docs/archive/).
+Current state lives in [`PROJECT_STATE.md`](../PROJECT_STATE.md), and deferred
+work lives in [`docs/POST_RELEASE.md`](../docs/POST_RELEASE.md). Historical
+plans and review packets belong in [`docs/archive/`](../docs/archive/).
 
 ## Dependency rule
 
@@ -91,7 +93,7 @@ implementation through `TimeSyncController`. The document popup supplies the
 only trigger; controller status crosses the task boundary atomically while the
 main loop alone owns Chrome state. Connecting and synchronizing are modal, and
 a terminal success/error becomes visible only after the task has stopped and
-deinitialized Wi-Fi. Credentials remain in the ignored local header. The owner
+deinitialized Wi-Fi. Credentials remain in the ignored local header. The author
 accepted unavailable-network handling, successful RTC sync, centering, and text
 size on glass. Evidence is in the
 [`NTP receipt`](../benchmark-results/v2-ntp-sync-2026-08-17/RECEIPT.md) and
@@ -106,8 +108,8 @@ active authority. Each
 transaction occupies aligned 4 KiB sectors and publishes its CRC-checked final
 marker last. The ESP worker performs erase/write/readback below the touch task,
 while startup replays only active authority into a fresh overview. The current
-3 MiB journal preserves existing Recovery points and reports full rather than
-compacting; owner direction defers two-arena recycling and metadata.
+4 MiB journal preserves existing Recovery points and reports full rather than
+compacting; author direction defers two-arena recycling and metadata.
 
 Navigation stores the current zoom/origin and one world-space focus. Every zoom
 transition derives and clamps its target origin from that focus; no dormant
@@ -279,8 +281,8 @@ transport. The former synchronous `DisplayScheduler` queue was removed because
 no production path ever queued behind an in-flight strip. Existing receipts
 collectively cover transport, cold replay, interaction pacing, cache retention,
 long gestures, and export. The cleanup/application split passed the current
-448-slot hardware battery; the final release candidate still needs its own
-same-head battery.
+604-slot hardware battery. The final release candidate still needs its own
+same-head battery after documentation cleanup.
 
 A separate PSRAM measurement compared full copy, swappable double buffers, and
 bounded dirty-region publication; its method and limits are archived in

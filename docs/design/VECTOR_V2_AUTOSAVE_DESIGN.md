@@ -6,7 +6,7 @@ session-state schema; current-head physical recovery and normal-product
 performance with real journal writes remain release work. Safe partition
 recycling remains deferred.
 
-Owner decision, 2026-08-17: persistence contains drawing authority only. The
+Author decision, 2026-08-17: persistence contains drawing authority only. The
 earlier session-state journal was deliberately narrowed; navigation and chrome
 state are not durable product data.
 
@@ -19,7 +19,7 @@ and are rebuilt.
 
 ## Authority model
 
-`OperationLog` remains the only live owner of painter-ordered operations. The
+`OperationLog` remains the only live authority for painter-ordered operations. The
 journal records immutable snapshots or deltas from a generation-checked
 `AuthorityReadView`:
 
@@ -149,4 +149,4 @@ maximum-sized single-operation slicing, stale-view abandonment, full-capacity
 recovery, and a corrupt full-capacity tail. Release closure additionally
 requires product/gate builds, normal-product performance with real journal
 writes, a physical authority-only recovery check, and export-flush verification.
-Destructive physical power-cut testing remains excluded by owner direction.
+Destructive physical power-cut testing remains excluded by author direction.

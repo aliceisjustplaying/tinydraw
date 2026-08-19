@@ -1,4 +1,4 @@
-source=benchmark-results/owner-glass-capture-2026-08-17/owner-400-controlled.log
+source=benchmark-results/drawing-glass-capture-2026-08-17/owner-400-controlled.log
 source_tag=v2-feature-complete-pre-cleanup
 events=2381 down=1 move=2379 up=1
 duration_us=2575977

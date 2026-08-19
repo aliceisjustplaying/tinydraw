@@ -1,6 +1,6 @@
 # Settled-AA edge spans — design note (2026-08-18/19 final round, lever 2)
 
-Owner-fixed goal: bring 50–200% whole-view settle (real-document glass
+Specified goal: bring 50–200% whole-view settle (real-document glass
 429–922 ms; deterministic evil-corpus gate 84–1,067 ms in-slice) toward
 the ≤500 ms class. Attribution says raster coverage math is 87–91% of
 renderer time and ~26× overdraw exists per dense window
@@ -92,7 +92,7 @@ The saturated-source skip variant was a host no-go (+0.4…+1.9% totals).
 The short-chord overdraw (consecutive-chord bbox overlap in dense
 documents) remains the open 50–200% target; candidate successors are an
 H7-style per-operation row sweep with per-pixel saturation early-out, or
-the persisted-span design in §Candidate treatments. The owner's
+the persisted-span design in §Candidate treatments. The author's
 real-document glass walls are the remaining arbiter.
 
 ## Measurement plan

@@ -171,7 +171,7 @@ retained because the physical gain is consistent at all five zooms with exact
 work and failure counters. The 25% treatment total passes 500 ms; 50–400%
 remain above the whole-view bound, so settled AA remains yellow.
 
-The owner first saw transient blue dots during later 400% panning, then
+The author first saw transient blue dots during later 400% panning, then
 reproduced one during a 50→100% zoom while cache/refinement was incomplete. It
 moved or disappeared as rendering progressed and did not recur on the immediate
 repeat. This rules out a pan-only trigger but does not identify a cause or tie

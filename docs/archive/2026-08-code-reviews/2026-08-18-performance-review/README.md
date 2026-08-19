@@ -1,6 +1,6 @@
 # Review material
 
-This directory holds the review documents that still explain current Vector V2 decisions:
+This directory preserves the completed review packet that informed Vector V2:
 
 - [`EXTERNAL_REVIEW_BRIEF_2026-08-18.md`](EXTERNAL_REVIEW_BRIEF_2026-08-18.md) — supplied context.
 - [`tinydraw-v2-performance-review-20260818.md`](tinydraw-v2-performance-review-20260818.md) —
@@ -12,4 +12,4 @@ This directory holds the review documents that still explain current Vector V2 d
   validation.
 
 Original handovers, proposed patches, and hardware A/B review material live in
-[`../archive/2026-08-code-reviews/`](../archive/2026-08-code-reviews/).
+the parent [`2026-08-code-reviews/`](../) archive.

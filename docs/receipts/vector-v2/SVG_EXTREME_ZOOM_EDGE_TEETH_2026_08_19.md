@@ -1,6 +1,6 @@
 # SVG extreme-zoom edge teeth — 2026-08-19
 
-Status: **fixed and host-verified in `b6630d6`.** Owner glass/export check on
+Status: **fixed and host-verified in `b6630d6`.** Glass/export check on
 2026-08-19 found the SVG and PNG effectively identical at normal viewing size,
 but exposed tiny outward teeth along some curved Stroke edges at extreme SVG
 magnification. PNG anti-aliasing masked them at its native resolution.
@@ -25,7 +25,7 @@ black/white disagreements. Host Debug (31/31), ASan (13/13), and Release
 (31/31) suites pass; the SVG authority suite passes 87 cases / 25,718
 assertions.
 
-External artifacts retained on the owner's Desktop:
+External artifacts retained on the author's Desktop:
 
 - extreme-zoom screenshot, SHA-256
   `80cacbf74ffdb38417b72b9c304ee80acf10f62c6f9b690f35beaf355b6af99c`;
@@ -34,5 +34,5 @@ External artifacts retained on the owner's Desktop:
 - SVG, SHA-256
   `d3ad7f8f59fdfb517fa92df80f5f14c2b42afe928cbc9b922ccbb8b0fef28ca0`.
 
-Final acceptance is an owner re-export and extreme-zoom outline check on the
+Final acceptance is an author re-export and extreme-zoom outline check on the
 fixed firmware.

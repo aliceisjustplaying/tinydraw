@@ -1,254 +1,107 @@
-# TinyDraw V2 Ship Contract
+# TinyDraw ship contract
 
-Frozen: 2026-08-15, by product owner decision. Changes require an explicit
-owner decision recorded here with a date; nothing below drifts silently.
+Updated: 2026-08-19. This is the product contract for the first Vector V2
+release. Raster V1 and Vector V2 are both supported ESP32 product generations.
+The complete pre-release contract and its dated author decisions are preserved
+in
+[`SHIP_CONTRACT_PRE_RELEASE_2026-08-19.md`](docs/archive/2026-08-vector-v2-performance/SHIP_CONTRACT_PRE_RELEASE_2026-08-19.md).
 
-Stable product priorities live in [`PRODUCT_TENETS.md`](PRODUCT_TENETS.md).
-This contract owns numeric gates and resolves any conflict.
+## Product tenets
 
-The governing rule: **a requirement is closed only when it has a permanent
-oracle, a guard band, and a known-good tagged revision. No new change may
-reopen a closed requirement. Stretch targets never justify regressing a
-required gate.** Software self-reports are never sufficient for glass-visible
-requirements (lesson of `tear_synchronized`, 2026-08-15).
+1. The newest visible touch truth comes first. Durable authority and derived
+   pixels may catch up through bounded background work.
+2. Glass-visible claims need glass evidence. Software timings explain a result;
+   they do not establish tearing, latency, or visual quality by themselves.
+3. Vector operations are V2 document authority. Overviews, tiles, chrome,
+   previews, settled pixels, and export buffers are derived or transient.
+4. Pay work at the lifetime of the change. A touch updates the live tail, a
+   camera move updates exposed canvas, a gesture updates authority and damage,
+   and idle time funds settled quality.
+5. Keep interaction work bounded and interruptible. Input and pending display
+   work take priority over replay, repair, autosave, and export.
+6. Preserve painter-order exactness across pen, eraser, Undo/Redo, recovery,
+   cold replay, PNG, and SVG.
+7. Keep the machine small. Use fixed-capacity state, measured caches, and narrow
+   platform adapters. Keep V1 and V2 independently buildable.
+8. Close a requirement with an oracle, a guard band where useful, and a known
+   good revision. Shared-path changes reopen their dependent checks.
 
-## Ship requirements
+## Release requirements
 
-### 1. Pan — tear-free at ≥24 FPS  (required)
+### Drawing and navigation
 
-| Gate | Threshold | Guard band | Oracle |
-|---|---|---|---|
-| Correctness | Zero tears, notches, stale bands, seams on glass | zero | Optical: probe cells + torn positive control; manual glass |
-| Pacing | PANSEQ frame p95 ≤41.7 ms (24 FPS) | p95 ≤38 ms | Gate harness PANSEQ receipts |
-| Stretch | ~29.8 FPS (2 TE periods/frame) | — | same |
+- Finger drawing must not lose Down or Up events. The immediate stroke follows
+  the raw clipped touch, and the committed stroke converges to shared ribbon
+  authority after lift.
+- Pen and eraser use whole-gesture authority. Intentional motionless taps are
+  valid dots; contacts that begin or leave through the non-canvas top fringe
+  must not create authority.
+- Whole-gesture Undo and Redo retain at least ten levels and preserve exact
+  painter order. A local history move invalidates only its damage region.
+- Pan is tear-free on glass and sustains at least 24 FPS. The measured product
+  cadence is about 29.4 FPS.
+- Zoom supports 25, 50, 100, 200, and 400 percent. Transitions preserve one
+  world-space focus. Minimap taps and drags navigate the complete world.
+- Popups exclusively own contacts while open. A popup tap cannot activate a
+  toolbar control underneath it.
+- The lower hardware button provides the existing four-second power-off flow.
 
-Status: correctness provisionally GREEN on the final invariant build (owner
-glass check, 2026-08-16); the same-session torn positive-control closure is
-still pending. Pacing is provisionally GREEN: PANSEQ p95 33.939 ms at 100%
-and 33.934 ms at 400% after the chrome-lifetime split
-(`benchmark-results/wave2-compositor/`). Hardware ceiling is 29.4 FPS
-full-frame (`HARDWARE_LIMITS.md`). Pan-tool drags that start on canvas overlays
-must enter pan after an 8 px intent threshold; stationary overlay taps retain
-their control action (owner-reported zoom-rail swallowing defect, fixed and
-gated 2026-08-17).
+### Rendering and quality
 
-### 2. Ink — no perceptible lag  (required)
+- The visible viewport must always have a complete source. Missing detail tiles
+  fall back to the complete overview and refine without checkerboards.
+- A cold viewport completes within 500 ms for the accepted release corpora.
+  The final battery records every zoom and includes the captured drawing.
+- A previously rendered view returns sharp without a visible cold-to-sharp
+  cycle while its materialization remains within cache capacity.
+- Live strokes may be hard-edged. Idle settlement applies the accepted analytic
+  antialiasing and caches the settled result. Further AA speed and extreme
+  pixel-edge polish are post-release work.
 
-| Gate | Threshold | Guard band | Oracle |
-|---|---|---|---|
-| Optical latency | finger-to-glass p95 ≤45 ms, p99 ≤60 ms | p95 ≤35 ms, p99 ≤50 ms | Ink trace harness (`docs/INK_TRACE_HARNESS.md`) + optical burst spot-checks |
-| Feel tiebreaker | Indistinguishable from Raster V1 in side-by-side scribble | — | Human, qualitative (V1 optical baseline was never measured) |
-| Fidelity | No lost Down/Up; bounded consumed-sample time/space gaps; final path exact vs authority | zero loss | Trace harness counters + exactness tests |
+### Documents and recovery
 
-### 3. Cold rendering & the déjà vu problem  (required)
+- A V2 document is a blank baseline plus ordered vector operations, active and
+  retained prefixes, generation, and epoch. Navigation, chrome, and derived
+  pixels restart from defaults.
+- Journal commits publish a CRC-checked final marker last. Recovery accepts only
+  complete transactions and keeps the last valid commit after truncation or
+  corruption.
+- Autosave is asynchronous and exercised by the device battery. The current
+  contract does not promise a time-based power-loss window; timed destructive
+  power-loss characterization is post-release work.
+- The 4 MiB journal reports capacity failure without overwriting the last valid
+  recovery point. Two-arena compaction is post-release.
+- New starts from the production blank-document path. Diagnostic firmware may
+  load its owned fixture; product firmware may not.
+- Raster V1 files remain Raster V1 files and accessible through the V1 build.
+  They are never silently reinterpreted as V2 vector documents.
 
-**Priority order per owner: the déjà vu (re-rendering already-rendered
-content) is the primary pre-ship complaint; the cold wait is second.**
+### Export and platform behavior
 
-| Gate | Threshold | Guard band | Oracle |
-|---|---|---|---|
-| Revisit retention ("déjà vu") | A view rendered this session re-displays sharp without re-render when revisited, within cache capacity; render amplification ≤1.25 renders per unique required tile-revision | ≤1.15 | Repair/producer work counters (durable keys) |
-| Cold wait | Current viewport exact ≤500 ms worst accepted case at 400% | ≤450 ms | Deterministic adversarial corpora, on-device receipts |
-| Cold stretch | ~300 ms | — | same |
+- One authority snapshot produces both `DRAWING.PNG` and `DRAWING.SVG`.
+- PNG uses the production settled renderer. SVG uses shared variable-width
+  ribbon geometry, one painter-ordered path per physical gesture, exact span
+  boundaries, no synthetic background, and transparent eraser masks.
+- Export is read-only USB mass storage. **EJECT & EXIT** and host eject both
+  tear down TinyUSB, return to drawing, and restore USB Serial/JTAG without a
+  reset.
+- Export progress says **EXPORTING**. Every export message is complete, centered,
+  and contained by its visible target.
+- Document → Clock performs the accepted one-shot NTP correction and writes the
+  onboard RTC. Network failure returns a visible terminal result.
+- Product firmware uses the 604-slot tile pool and the fixed 16 MiB partition
+  map: 1.75 MiB app, 4 MiB journal, 10.125 MiB export, and 64 KiB coredump.
 
-"Cold complete" means the **current visible viewport** is exact. Halo,
-remembered zooms, and background sweeps are quality tiers, not gates.
+## Release evidence
 
-The closure statistic is the maximum wall time across 20 reset-separated
-device runs of the frozen `adversarial_tapered_4x+evil_hairlines` corpus at
-400%, origin `(0,0)`, from discarded detail tiles through final exact viewport
-publication and DMA completion. The combined authority contains 910 operations
-and 12,157 samples. An accepted run has no crash, allocation failure, authority
-mismatch, touch-service violation, telemetry overflow, or presentation failure.
-The final 20-run closure uses normal product firmware and includes real journal
-activity, not only autosave service initialization in the gate harness.
+The current scorecard and final-RC status are in
+[`PROJECT_STATE.md`](PROJECT_STATE.md). Hardware limits live in
+[`CO5300_PANEL_LIMITS_2026-08-15.md`](docs/receipts/hardware/CO5300_PANEL_LIMITS_2026-08-15.md).
+The full optimization narrative, including rejected experiments, is in
+[`PERFORMANCE_CHRONICLE.md`](docs/PERFORMANCE_CHRONICLE.md) and the dated
+receipts. Deferred work is in [`POST_RELEASE.md`](docs/POST_RELEASE.md).
 
-Current gate results recorded across the 2026-08-17 cleanup and overlap receipts:
-50% **421.787 ms**, 100% **399.498 ms**, 200% **464.071 ms**,
-and 400% **515.123 ms** under its 520 ms development guard. The separate
-stacked-overlap 50% gate is **476.969 ms** under the 500 ms product line. See
-`benchmark-results/overlap-cold-fix-2026-08-17/RECEIPT.md`. The 400% result is
-inside the temporary 520 ms development guard but above the
-≤500 ms release requirement. The gate runs before the ordinary product loop and
-does not measure concurrent journal writes. The 20-run reset-separated normal-
-product 400% closure statistic remains open. The original
-1,269.157 ms baseline
-(`benchmark-results/wave2-compositor/COLD_GENERAL_BASELINE_RECEIPT.md`) and
-the older 663.829 ms straight-authority receipt are historical and no longer
-describe the product renderer or frozen corpus.
-
-The first pure-revisit measurement is 1.000 amplification with zero unexplained
-renders. Residual glass strays still require cause attribution in the gate build;
-`TINYDRAW_LIVE_LEDGER` is not compiled into ordinary product firmware.
-
-### 4. Anti-aliasing — settled refinement  (appearance accepted; progression open)
-
-Live strokes remain crisp/hard-edged while the finger is down; edges
-anti-alias during idle settling shortly after lift/settle. Brute-force
-supersampling is forbidden by measured physics (808 ms/frame probe).
-
-Constraint binding it to §3: settling must never cause visible
-cold-to-sharp cycling on revisit — settled output is cached content and
-falls under the déjà vu gate like any other rendered pixels.
-
-The analytic boundary-coverage implementation is functionally accepted on
-glass. Earlier tiled measurements were 1.7–5.4 ms mean / 9.3 ms maximum, but
-they are not a universal current bound: the current 25% gate settled 42 tiles in
-152.945 ms and recorded a 76.416 ms maximum tile, breaking the nominal 8 ms
-cooperative slice. Settled progression therefore remains an open measured
-performance gate even though AA correctness and appearance are accepted.
-
-### 5. Undo / Redo  (required)
-
-- Whole-gesture granularity. Redo required.
-- Depth: ≥10 guaranteed; opportunistically unlimited within document
-  capacity (active-prefix cursor makes depth ~free — no performance trade).
-- Oracle: exactness fixtures — undo/redo N steps reproduces pixel- and
-  authority-exact states; invalidation scope is bounded (undoing a local
-  stroke does not force unrelated re-renders — ties into §3 amplification).
-
-### 6. SVG export  (required)
-
-- **Exact variable-width Perfect-Freehand fidelity. Centerline/uniform-width
-  export is forbidden** (owner: "absolutely no").
-- Mechanism: exactly one filled outline path per physical finger-down/up
-  Stroke, even when bounded storage splits it into internal chunks; geometry
-  comes from the existing ribbon and is visually identical to glass. The SVG
-  has no synthetic background rectangle. File size is unconstrained for v1.
-- Delivered over the existing USB export flow; read-only authority snapshot;
-  no dependence on tile caches or presentation state.
-
-### 7. Autosave & data safety  (required)
-
-- By owner decision on 2026-08-17, authority (operations + samples +
-  active/retained prefixes + generation and epoch) persists; session UI state
-  and derived caches never persist. The next Stroke identity is derived from
-  restored active authority rather than stored separately.
-- Power loss loses at most the in-progress gesture plus ≤5 s of committed
-  work. (PROPOSED default — owner has not reviewed this number.)
-- Recovery is exact and verified by interrupted-write fixtures.
-- Autosave must be **enabled during all ink/pan gate measurements**, and
-  committed-Stroke workloads must exercise real queued journal writes. Service
-  initialization without product-loop writes is not final product evidence.
-
-### 8. Platform features  (required)
-
-- Power off/on flow: required (V1 parity).
-- Onboard clock + one-shot NTP: required (export timestamps). V2's on-demand
-  Document → Clock flow and post-teardown feedback landed 2026-08-17. The
-  owner accepted unavailable-network handling, successful RTC sync, centered
-  terminal feedback, and text size on glass
-  (`benchmark-results/v2-ntp-sync-2026-08-17/RECEIPT.md`).
-- Minimap: tap-to-jump and viewport-drag navigation required (owner elevated
-  drag from post-ship on 2026-08-17). Closed with absolute Down/Move mapping,
-  captured/clamped drag across the full right dock, 2 px upward and 8 px
-  horizontal/downward promotion, host geometry tests, an exact physical capture,
-  and owner glass acceptance
-  (`benchmark-results/minimap-absolute-pointer-2026-08-17/RECEIPT.md`).
-- Zoom: 25/50/100/200/400%. By owner decision on 2026-08-17, transitions keep
-  one world focus centered, derive and clamp the new origin, and retain no
-  dormant per-zoom origins. The complete cycle preserves focus within four
-  quarter-world units. The older exact-origin receipt describes the superseded
-  pre-cleanup model. 800% is out of contract.
-
-## Document authority policy
-
-Owner decision, 2026-08-16: V2 documents are **blank baseline plus ordered
-vector operations**. The operation sequence and active prefix are the complete
-durable drawing authority; raster overviews and tiles are rebuilt derivatives.
-
-Raster V1 documents remain explicitly Raster V1 and accessible through the V1
-build. They are never silently reinterpreted as V2 vector authority. A future
-flattened V2 import must declare an explicit raster baseline and either embed it
-in SVG or refuse vector-only SVG export. The V1 raster snapshot restore seam is
-not a valid V2 persistence or Undo mechanism.
-
-## Owner decisions — 2026-08-16 (post Cold Stage B glass session)
-
-1. **Mixed-draw append lag is a defect, not a budget problem.** The felt
-   400% drawing lag is unacceptable; the 15 ms per-append harness budget
-   stands. The fix is the committed-overlay / authority-revision split
-   (external review §8.3–8.4,
-   `docs/reviews/EXTERNAL_REVIEW_SYNTHESIS_2026-08-16.md` item 9), adopted as the
-   Phase 2 execution design. Diagnosis first: the mid-stroke fallback
-   observability pass supplies phase attribution before the design lands.
-2. **Cold 400% interim ceiling.** The 507.0 ms three-run development
-   maximum (frozen corpus wall, Stage B receipt) is accepted until
-   autosave exists; further regression is not. The firmware gate holds the
-   line at 520 ms (`kColdViewport400HoldTheLineUs`). Calibration history:
-   first set to 510 ms from the ≤1.5 ms within-build spread, then
-   recalibrated same-day after four builds measured walls of
-   499.95/507.98/508.98/512.27 ms — between-build flash-icache layout
-   variance (Stage B receipt, ±2–3%/build; producer cold loops are not
-   IRAM-pinned), including +6 ms between builds with no cold-path diff.
-   520 = observed max + ~2.5% of compute, so the guard catches real
-   ≥~10 ms regressions instead of coin-flipping on layout luck. Producer
-   IRAM-pinning landed 2026-08-17 after two unrelated-layout runs crossed the
-   hold line at 524.243/526.063 ms; the treated run was 496.693 ms with 290,860
-   bytes of free internal memory
-   (`benchmark-results/minimap-navigation-2026-08-17/RECEIPT.md`). The
-   ≤500 ms requirement in §3 is unchanged and governs the final
-   normal-product 20-run closure with real journal writes. The remaining micro-candidates
-   (block-granular saturation, PIE fixed-point probing,
-   presentation/compute overlap) are parked.
-3. **Stage C authority bundle declined.** Conical capsules + adaptive
-   subdivision had only a speed justification left after the angularity
-   tool falsified the smoothness case on recorded owner input
-   (`benchmark-results/ink-angularity-baseline/BASELINE.md`). Smoothness
-   work goes to arc-length resampling (external review §9.4) plus settled
-   AA instead; committed authority geometry stays frozen.
-4. **Settled-AA prototype approved.** The boundary-only analytic-coverage
-   design (8-bit alpha over the newest-first masked replay, interiors keep
-   exact span fills) proceeds to a host prototype with rendered
-   before/afters. On-device go/no-go after owner review of the prototype.
-5. **Overlap-50 cold red is binding and sequenced (2026-08-16).** The
-   overlap-workload 50% cold gate (628 ms vs 500; red since wave-3,
-   surfaced from no-scorecard invisibility the same day) gets fixed — not
-   re-scoped — but strictly after: the ink lag fix (committed overlay),
-   the settled-AA prototype review, and the déjà-vu fix. Owner was
-   explicit that its invisibility through multiple paid cold-render
-   sessions is unacceptable; process rule 8 below is the anti-recurrence
-   guard. **Closed 2026-08-17:** per-chord finalized-window refresh reduced the
-   full-battery result to 476.969 ms and every verdict flag passed.
-
-## Owner decisions — 2026-08-17 cleanup closure
-
-1. **Authority-only persistence.** Durable V2 state is the painter-ordered
-   operation/sample authority, active/retained boundary, generation, and epoch.
-   Navigation and chrome restart from defaults; next Stroke identity derives
-   from restored active authority. The earlier session-state receipt remains
-   historical evidence, not the current persistence contract.
-2. **Focus-centered zoom.** Navigation stores the current zoom/origin and one
-   world focus. Every transition derives its target origin from that focus;
-   dormant per-zoom origin arrays and exact-origin restoration are removed.
-3. **Functional AA accepted; progression still measured.** Appearance and
-   settled-cache correctness are accepted. The current 25% 76.416 ms tile tail
-   keeps progression performance open.
-
-### Post-ship (explicitly deferred, not cut)
-
-- Demo record/replay (owner: "rather nice — after shipping").
-- Semantic/editable SVG stroke export as alternate format.
-- 800% zoom.
-
-## Out of scope
-
-RP2350 port parity. Settled-AA quality beyond "no visible artifacts and no
-déjà vu violations."
-
-## Process rules (earned 2026-08-15, binding)
-
-1. Measure the substrate before optimizing on it.
-2. Every optical CLEAN requires a torn positive control in-session.
-3. Cheapest sufficient instrument first; automation for receipts after.
-4. One variable per experiment; interpretation pre-registered.
-5. Attribute before optimizing; decompositions are work orders.
-6. Full scorecard before/after every meaningful change; a change that wins
-   its target while pushing a closed metric out of guard band is rejected.
-7. Revert first, investigate second, when a closed metric regresses.
-8. Every red flag in the harness verdict vector must have a scorecard row
-   in `PROJECT_STATE.md` naming its number, its threshold, and its owner
-   decision (fix / hold-the-line / re-scope). "Pre-existing reds only" is
-   never an acceptable session summary on its own; an undocumented red is
-   a session-stopping finding. (Added 2026-08-16 after the overlap-50 cold
-   red rode invisibly through the entire cold campaign.)
+The release candidate must pass host Debug, host Release, ASan/UBSan, formatting,
+the 604-slot physical battery, a normal product boot, and glass checks on
+the same source revision. The exact product binary is flashed again after the
+battery before tagging.

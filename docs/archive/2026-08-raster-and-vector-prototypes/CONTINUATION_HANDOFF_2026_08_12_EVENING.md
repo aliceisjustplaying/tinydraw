@@ -164,7 +164,7 @@ incoherent view snapshots in `choose_job`/`map_sample` (F-09 partial),
 portability trio (F-20).
 
 Open, deliberately deferred to the production port: hard-refusal pan policy
-(F-05 — replaced by overview fallback), display single-owner task (F-08),
+(F-05 — replaced by overview fallback), display single-controller task (F-08),
 coordinator state extraction (F-09), macrogrid permanent global fallback +
 shared query scratch (F-10), double-precision camera (F-11; per-sample
 cleanup, NOT the bottleneck), large-stroke samples×tiles fallback (F-12),
@@ -208,7 +208,7 @@ never had an optimization pass; two-core (~1.7–2×) and analytic interiors
 5. **Production build** (fresh review §9 + assessment doc, now sized by the
    4×4/25–400% decision): compact vector log → complete 330 KB overview →
    world-aligned sparse tiles → host-testable coordinator state machine →
-   single-owner display task → incremental append updates → settled renderer
+   single-controller display task → incremental append updates → settled renderer
    per Step 0's answer. Add zoom levels one at a time with hardware gates.
 6. Assembly/PIE only after profiles are compute-bound; first candidate:
    packed RGB565 blend with a scalar bit-exact oracle.

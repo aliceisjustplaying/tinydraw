@@ -1,6 +1,6 @@
 # Transient color-popup byte-swap incident — 2026-08-18
 
-During the settled-AA glass capture session (owner photo
+During the settled-AA glass capture session (author photo
 `benchmark-results/history-latency-2026-08-18/color-popup-byteswap-incident.jpg`,
 log `/tmp/settle-glass.log`), the color popup opened once with corrupted colors
 and recovered on its own. First occurrence ever.

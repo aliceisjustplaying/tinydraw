@@ -15,7 +15,7 @@ prevents the unintended top-edge contacts from becoming authority at all.
 
 ## Physical reproduction and authority evidence
 
-The owner reported an unintended top-left dot visible at 50%, PNG, and SVG but
+The author reported an unintended top-left dot visible at 50%, PNG, and SVG but
 almost hidden at 25%, plus a later top-right dot visible on glass. The first
 export pair contained eight SVG paths. Its final path is a circular XL-brush
 operation centered at world `(64,4)` with radius `18.8516`; the PNG contains
@@ -38,7 +38,7 @@ prefix and produced a compact 40 KiB TDOC corpus.
 
 ## Intentional-dot control
 
-The owner then created multiple intentional interior dots and exported again.
+The author then created multiple intentional interior dots and exported again.
 The fresh SVG grew from eight to fifteen paths and both formats contain the
 new dots, including single-sample taps around `(1177,184)`, `(1249,188)`,
 `(1180,60)`, `(1125,276)`, and `(1353,117)`. The later top-right glass mark
@@ -76,7 +76,7 @@ ASan/UBSan 13/13, Release 31/31, format check, and ESP32 product build pass.
 ## Device closure
 
 The current-head 604-slot hardware battery passed every verdict, including the
-owner-document corpus, history, settled rendering, PNG/SVG export, and export
+captured-drawing corpus, history, settled rendering, PNG/SVG export, and export
 reserve. The capture ended at `TINYDRAW_GATE1_AUTOMATED_DONE` with
 `failure_marker=False`; the retained SSAA progression receipt remains yellow
 as documented performance debt, not a failure.
@@ -90,5 +90,5 @@ reported no watchdog, crash, or stack failure.
 The battery uses the physical drawing partition and replaced the live journal
 with its test state. After the product flash, the verified pre-battery capture
 was restored to the exact drawing partition range. Product recovery reported
-`status=2 generation=575 active=222 retained=232`, returning the owner's
+`status=2 generation=575 active=222 retained=232`, returning the author's
 drawing to glass for the final manual top-edge check.

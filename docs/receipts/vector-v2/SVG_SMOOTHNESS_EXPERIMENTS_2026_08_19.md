@@ -4,7 +4,7 @@ Budget: at most five measured hypotheses. Baseline does not consume an attempt.
 
 ## Baseline
 
-The owner's mounted `/Users/sarah/Desktop/DRAWING.SVG` is 480,475 bytes with
+The author's mounted `/Users/sarah/Desktop/DRAWING.SVG` is 480,475 bytes with
 29 logical paths and 6,502 primitive subpaths. Although chunks sharing a
 gesture ID were placed in one SVG `<path>`, each operation chunk constructed a
 fresh `CurvedRibbonStream`. Every 32-sample boundary therefore finalized a cap

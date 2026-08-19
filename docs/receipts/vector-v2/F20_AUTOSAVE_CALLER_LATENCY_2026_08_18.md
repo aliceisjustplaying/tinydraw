@@ -61,7 +61,7 @@ treatment. Product firmware was then restored; it recovered generation 140
 with 109 active/retained operations and reached Ready without a watchdog,
 crash, or stack failure.
 
-The owner later completed a single-tap product Export and accepted its glass
+The author later completed a single-tap product Export and accepted its glass
 latency. A controlled normal-product checkpoint with separate `seal_us` and
 `io_us` was not recorded. Journal-full recycling remains open and requires a
 two-bank recovery design; the current journal fails closed at capacity.

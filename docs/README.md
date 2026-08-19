@@ -1,14 +1,16 @@
 # Documentation map
 
-The repository root keeps only current project contracts and entry points.
+The repository root holds current product entry points and contracts.
 
-- [`design/`](design/) contains current Vector V2 design decisions.
-- [`reviews/`](reviews/) contains current and accepted external review material.
-- [`receipts/vector-v2/`](receipts/vector-v2/) contains compact hardware receipts.
-- [`PERFORMANCE_CHRONICLE.md`](PERFORMANCE_CHRONICLE.md) preserves the optimization narrative.
-- [`archive/`](archive/) contains completed prototypes, campaigns, probes, and original review
-  packets.
-- [`ARTIFACT_RETENTION.md`](ARTIFACT_RETENTION.md) defines what evidence belongs in Git.
+- [`../PROJECT_STATE.md`](../PROJECT_STATE.md): current release status and scorecard.
+- [`../SHIP_CONTRACT.md`](../SHIP_CONTRACT.md): shipping behavior and validation rules.
+- [`POST_RELEASE.md`](POST_RELEASE.md): active work after the first Vector V2 release.
+- [`design/`](design/): current Vector V2 architecture and design decisions.
+- [`receipts/vector-v2/`](receipts/vector-v2/): compact correctness and performance evidence.
+- [`receipts/hardware/`](receipts/hardware/): measured hardware limits and outcomes.
+- [`PERFORMANCE_CHRONICLE.md`](PERFORMANCE_CHRONICLE.md): the optimization narrative, including failed experiments.
+- [`archive/`](archive/): completed roadmaps, review packets, prototypes, and historical contracts.
+- [`ARTIFACT_RETENTION.md`](ARTIFACT_RETENTION.md): what evidence belongs in Git.
 
-Current product status remains in [`../PROJECT_STATE.md`](../PROJECT_STATE.md); forward work remains
-in [`../V2_ROADMAP.md`](../V2_ROADMAP.md).
+Historical receipts keep their original language and conclusions so the path
+from failure to fix remains reconstructable.

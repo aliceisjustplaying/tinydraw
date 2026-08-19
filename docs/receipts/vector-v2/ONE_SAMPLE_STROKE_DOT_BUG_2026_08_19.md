@@ -1,7 +1,7 @@
 # Known bug — one-sample Strokes render inconsistently across tiers ("Schrödinger dots")
 
 Status: **fixed, host-verified, and full-device-battery verified 2026-08-19.** Recorded
-2026-08-19 (~00:20) at owner request; owner has two live mystery dots in
+2026-08-19 (~00:20) at author request; author has two live mystery dots in
 the current document and independently hypothesized the cause: taps that
 never became lines are stored as one-sample operations and surface only
 in some views/undo levels.
@@ -40,10 +40,10 @@ republishes the tile at settled quality** — exactly the previously
 "inconclusive" transient blue dots during 400% pan and 50→100% zoom
 (F13/F14 receipts). Undo/Redo moving the active prefix additionally
 includes/excludes the operation entirely, so dots pop in and out at
-specific history levels. Owner adds: current dots may sit near a
+specific history levels. Author adds: current dots may sit near a
 boundary edge; the receipted SVG pair sat at y=4, near the world edge.
 
-## Cheap verification recipe (owner has two live dots)
+## Cheap verification recipe (author has two live dots)
 
 Export now: `DRAWING.SVG` should contain both dots as filled paths
 (identifying their exact operations/coordinates); `DRAWING.PNG` should
@@ -67,7 +67,7 @@ complete 31-test host suite passes; all frozen AA checksums are unchanged
 because none of their fixtures contained a one-sample operation.
 
 The final 604-slot device battery passed with `failure_marker=False`, including
-settled rendering, PNG/SVG export, history, and the real owner-document corpus.
+settled rendering, PNG/SVG export, history, and the real captured-drawing corpus.
 The unverified live-draw note above describes the pre-fix investigation and is
 not needed for the cross-tier consistency verdict. The follow-up receipt
 contains the later physical screen/PNG/SVG comparison and input-admission fix.

@@ -11,11 +11,11 @@ settled retry correctness, panel-reset recovery, and the 400% hairline/eraser
 glass regression found during acceptance.
 
 The accepted `594c218..af114d6` automated hardware battery is green. The
-owner’s glass retest for that series is green: no tearing, no persistent white
+author’s glass retest for that series is green: no tearing, no persistent white
 blocks, and the previously slow dense hairline/eraser region completes within
 the accepted cold gate. The follow-up series `2191d6b..57f9910` adds the
 cooperative work required by F9, F19, and F28; their automated hardware battery
-and the owner’s final glass test are also green. A final host round accepts
+and the author’s final glass test are also green. A final host round accepts
 F10’s sparse spatial history replay, F14’s all-zoom local-span AA work, and
 F21’s direct retained-key markers. Settled-AA product timing kept every slice below
 2.341 ms with zero failures. Whole-view settle passed at 25% in 396.111 ms but
@@ -90,11 +90,11 @@ bus reset.
 ## Cooperative follow-up — hardware and glass accepted
 
 The follow-up is host-verified, accepted by the automated physical gate, and
-accepted by the owner’s glass test.
+accepted by the author’s glass test.
 
 | Review findings | Accepted follow-up change and evidence |
 |---|---|
-| F3–F5 | Ring-local receipts now count exact logical panel pixels. A host oracle covers wrapped row/column staging and exposed-strip reconstruction; the device gate proves local canvas, chrome, provisional ink, and committed ink submissions are smaller than the full canvas while the next pan remains reusable. The owner’s glass test found no tearing. |
+| F3–F5 | Ring-local receipts now count exact logical panel pixels. A host oracle covers wrapped row/column staging and exposed-strip reconstruction; the device gate proves local canvas, chrome, provisional ink, and committed ink submissions are smaller than the full canvas while the next pan remains reusable. The author’s glass test found no tearing. |
 | F9, F19 | Pending-operation absorption is a persistent phase machine covering overview copy/raster, affected identity enumeration, uniform/raw retention, offscreen retention, staged overview publication, bounded metadata, and a scalar final commit. Metadata resumes across uniforms, raw slots, rerender damage, and occupancy. The caller supplies a 256-pixel raster quantum and one slice between input samples. Cancellation abandons unpublished continuation state; restart converges to exact pixels while the pending overlay remains authority. |
 | F9 | Settled rendering retains its authority fingerprint, operation/chord position, compositing position, and final-fold position across 512-work-unit slices. Complete output and replay statistics are bit-identical to the synchronous path; transient retry state remains durable. |
 | F28 | Full refresh composition advances eight rows per slice, or 56 slices for the 448-row frame, and submits no panel pixels until the complete frame is ready. Pressed input and authority/canvas disagreement block progress. A live-ink interruption preserves refresh intent and restarts from row zero, preventing a partially composed frame from being published. Startup and other hard transition paths remain synchronous. |
@@ -160,7 +160,7 @@ mixed eraser measured 2.048 ms in enumeration; both held the pending backlog
 to one. The dense 25% recorded trace measured 1.896 ms while staging uniform
 metadata, every other trace stayed at or below 1.993 ms, and all traces reported
 zero overflow and resynchronization. The complete automated verdict is
-all-ones; SSAA remains the established yellow receipt. The owner’s follow-up
+all-ones; SSAA remains the established yellow receipt. The author’s follow-up
 glass test found no tearing, persistent white blocks, or interruption
 regression. This optical result predates the new F13 treatment. F24 has separate
 automated physical acceptance below.
@@ -171,7 +171,7 @@ The first acceptance glass pass found no tearing, but reproduced a severe
 400% regression after panning into dense minimum-radius hairlines covered by a
 dense eraser grid. Tiles appeared block by block, two blocks remained overview
 white beyond the expected 500 ms interval, and neighboring blocks completed
-visibly slowly. The owner photograph was inspected during acceptance and was
+visibly slowly. The supplied photograph was inspected during acceptance and was
 not checked in.
 
 The minimized host command is:
@@ -197,7 +197,7 @@ missing blocks, zero fallback, zero mismatches, and `regression=0`.
 
 On device, the evil-hairline 400% capacity gate completed in 186.976 ms with a
 9.154 ms worst producer tick. The broader mixed 400% corpus completed in
-494.993 ms with a 9.343 ms worst tick. The complete gate passed, and the owner
+494.993 ms with a 9.343 ms worst tick. The complete gate passed, and the author
 repeated the photographed pan on product glass with no tearing or white-block
 recurrence.
 
@@ -287,7 +287,7 @@ The bounded-slice result is green. The 25% total passes the 500 ms bound, but
 50–400% all exceed it. The review’s older 152.945 ms 25% result is not
 like-for-like because this capture confirms revision 156, not the same document
 identity. There is no same-tree device full-alpha baseline, so the run does not
-establish a physical local-span speedup. During later 400% panning the owner
+establish a physical local-span speedup. During later 400% panning the author
 saw transient blue dots; this receipt does not assign a cause or connect them
 to F13.
 
@@ -335,7 +335,7 @@ in the 1.97–2.35 ms range. The mapping costs 4,528 bytes of text and 4,608
 bytes of internal heap and is physically accepted. The consistent all-zoom
 gain does not close the whole-view bound: 50–400% still exceed 500 ms.
 
-The owner also reproduced a transient blue dot during 50→100% zoom while
+The author also reproduced a transient blue dot during 50→100% zoom while
 cache/refinement was incomplete. It moved or disappeared as rendering
 progressed and did not recur on the immediate repeat. This rules out a pan-only
 trigger but does not identify a cause or connect it to either F13 treatment.
@@ -519,7 +519,7 @@ passed 2 cases / 793 assertions under all three configurations. Product
 firmware built at `0x103b70`, gate firmware at `0x130e50`, and Raster V1 at
 `0xe7a70`. The release cold scorecard and 29-step hairline-pan reproduction
 were exact. The final physical run returned the all-ones automated verdict
-described above. The owner’s follow-up glass test is green for the earlier
+described above. The author’s follow-up glass test is green for the earlier
 round. F13's retained IRAM mapping improves all zooms by 6.52–7.45% in its
 same-revision physical A/B, but the 50–400% whole-view totals still exceed
 500 ms, so settled AA remains yellow.
@@ -605,5 +605,5 @@ producer boundary.
 - Pan/staging evidence: `benchmark-results/wave2-compositor/STAGING_INVARIANT_RECEIPT.md`, `benchmark-results/wave2-compositor/CHROME_LIFETIME_RECEIPT.md`
 - Historical performance receipts: `docs/receipts/vector-v2/PERF_ROUND_2_BASELINES_2026_08_14.md`, `docs/receipts/vector-v2/PAN_FLOOR_CLOSURE_2026_08_15.md`, `docs/receipts/vector-v2/LONGSTROKE_COLDRENDER_INVESTIGATION_2026_08_14.md`
 
-Raw serial logs and the owner photograph were intentionally not checked in;
+Raw serial logs and the supplied photograph were intentionally not checked in;
 their acceptance measurements are transcribed above.

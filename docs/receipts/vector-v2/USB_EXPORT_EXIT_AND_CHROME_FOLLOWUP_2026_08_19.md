@@ -53,7 +53,7 @@ Commit `2093862` renames the progress state from **SAVING** to **EXPORTING**.
 The scale-3 label is centered in a widened 208 px toast, and its progress track
 is widened to 176 px.
 
-Owner glass review showed that the widened return button extended beyond the
+Glass review showed that the widened return button extended beyond the
 white dialog. Commit `255f0f6` changes the scale-3 action to **EJECT & EXIT**,
 restores the 264 px button fully inside the dialog, and keeps the hit target
 identical to the visible button. The shared pixel font now includes an

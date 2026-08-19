@@ -33,7 +33,13 @@ else()
   endif()
 endif()
 option(TINYDRAW_QEMU_GRAPHICS "Enable the QEMU-only virtual display" OFF)
-set(TINYDRAW_VECTOR_V2_TILE_SLOTS "448" CACHE STRING "Vector V2 raw tile cache slots (A/B builds only; product default 448)")
+set(TINYDRAW_VECTOR_V2_TILE_SLOTS "604" CACHE STRING "Vector V2 raw tile cache slots (A/B builds only; product default 604)")
+if(TINYDRAW_FIRMWARE_VARIANT STREQUAL "product")
+  # Product capacity is fixed. This also migrates build trees that cached the
+  # obsolete 448-slot CMake default while the header supplied 604.
+  set(TINYDRAW_VECTOR_V2_TILE_SLOTS "604" CACHE STRING
+      "Vector V2 raw tile cache slots (A/B builds only; product default 604)" FORCE)
+endif()
 if(TINYDRAW_QEMU_GRAPHICS AND NOT TINYDRAW_QEMU)
   message(FATAL_ERROR "TINYDRAW_QEMU_GRAPHICS requires the qemu firmware variant")
 endif()

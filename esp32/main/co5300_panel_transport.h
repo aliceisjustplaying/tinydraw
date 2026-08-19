@@ -10,7 +10,8 @@
 
 namespace tinydraw::esp32 {
 
-// Product/panel-probe policy validated in HARDWARE_LIMITS.md.
+// Product/panel-probe policy validated in
+// docs/receipts/hardware/CO5300_PANEL_LIMITS_2026-08-15.md.
 inline constexpr int kCo5300ClockMHz = 40;
 
 struct TearSignalTiming {

@@ -14,7 +14,7 @@ gate). Full battery remained all-ones with the new `history_latency=1` gate;
 
 `run_history_latency_gate` (`esp32/main/vector_v2/vector_v2_gate_harness_history.cpp`):
 20 whole Strokes inside the 400% viewport at level origin (0,0). Base layer
-is the owner-named "evil hairlines" — twelve minimum-radius (0.6 world px)
+is the nicknamed "evil hairlines" — twelve minimum-radius (0.6 world px)
 billiard-path strokes at varied angles, densely crossing. On top, a scribble
 stack: two erasers, one XL band, medium/thin scribbles, one broad closing
 scribble (~82 operations, ~2,700 samples). Strokes commit through
@@ -106,7 +106,7 @@ eviction policy are untouched; this is presentation policy only.
 
 ### Open
 
-- Owner glass verdict on the new undo/redo feel (two transitions instead
+- Glass verdict on the new undo/redo feel (two transitions instead
   of block churn) — the binding acceptance for this scorecard row.
 - `first_us` (51–74 ms fallback present at 400%) is now the largest
   single visible latency component; it belongs to the F16/F17 composition
@@ -190,7 +190,7 @@ edge-span target.
 ## Product glass capture — real-document settle reference (22:51–22:56)
 
 Raw log preserved at `settle-glass-session.log` (this directory). The
-owner's accumulated document is adversarial-dense: zero ink-free windows
+author's accumulated document is adversarial-dense: zero ink-free windows
 across the whole world at 25%. Full-pass settle walls with all three AA
 treatments live: 25% 572.7–609.3 ms; 50% 809.0 ms; 100% 738.4–922.4 ms;
 200% 690.5–804.9 ms; 400% **429.3–551.9 ms**. Incremental after-stroke

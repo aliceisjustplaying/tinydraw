@@ -3,7 +3,7 @@
 Recorded: 2026-08-16  
 Hardware: ESP32-S3 + CO5300 on `/dev/cu.usbmodem101`  
 Gate receipt: `gate-visual-first-ink.log`  
-Owner trace: `live-ink-visual-first-owner.log`
+Author trace: `live-ink-visual-first-author.log`
 
 This is provisional visual-lane closure. Formal five-trace injection, optical
 latency, resumable lift authority, and autosave-on closure remain open.
@@ -34,9 +34,9 @@ The gate exercised 48 clear-tail and 48 provisional-overlay replacements:
 Mixed draw, long-gesture, authority, pan, and staging gates remained green. The
 full device gate still fails only its pre-existing adversarial cold headline.
 
-## Owner trace and glass verdict
+## Author trace and glass verdict
 
-The owner drew dense hairlines and figure strokes across 25%, 50%, 200%, and
+The author drew dense hairlines and figure strokes across 25%, 50%, 200%, and
 400% zoom using several colors. Across four aggregate reports:
 
 | Samples | Event→submit average | Event→submit maximum | Event→DMA average | Event→DMA maximum |
@@ -48,7 +48,7 @@ The owner drew dense hairlines and figure strokes across 25%, 50%, 200%, and
   8 ms old.
 - 16 Down and 16 Up transitions were retained.
 - Every report ended with exact authority and a committed final state.
-- Owner glass verdict: inking feels fixed; visual-first inking is accepted
+- Glass verdict: inking feels fixed; visual-first inking is accepted
   provisionally.
 
 Two rare micro-flickers were reported but could not be reproduced. No live-ink
