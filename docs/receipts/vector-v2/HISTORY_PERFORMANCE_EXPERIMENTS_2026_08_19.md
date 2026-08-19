@@ -1,6 +1,6 @@
 # Undo/Redo performance experiments — 2026-08-19
 
-Budget: at most five distinct measured hypotheses. Two used. The full hardware
+Budget: at most five distinct measured hypotheses. Three used. The full hardware
 battery is the authority; lower wall time is better.
 
 ## Baseline
@@ -28,5 +28,13 @@ presentation reached 87.5 ms in the diagnostic per-publication policy.
    fell from 31.6 to 27.6 ms (12.7%). Holdback maxima fell 117.247 → 114.246 ms
    at 400% and 66.340 → 63.332 ms at 200%. Authority and rendering suites
    passed 89,463 assertions; the full battery remained green.
+3. **Row-saturation summary and early completion — accepted.** Reusing the
+   rasterizer's exact per-row counters lets history skip saturated row ranges
+   and stop once every damaged pixel has a newest writer. The dense 4,000-op
+   host case improved again from 0.143 to 0.033 ms per move (4.3x over attempt
+   2, 5.2x over forward replay), with exact output. The device torture corpus
+   does not saturate its broad damage rectangle and remained flat: 27.65 ms
+   move, 114.26/63.34 ms holdback at 400/200%. All host suites and the full
+   battery stayed green, so the large dense-stack win has no measured cost.
 
-Three experiments remain.
+Two experiments remain.
