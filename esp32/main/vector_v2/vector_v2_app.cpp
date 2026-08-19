@@ -654,6 +654,10 @@ void run_vector_v2_app() {
               const bool autosave_flushed = !autosave.ready() || autosave.flush(5'000U);
               touch_sampler.discard_pending();
               if (reset_demo_baseline(true)) {
+                // The full baseline present runs while the physical sampler is
+                // still live. Drop anything sampled during it so every tape
+                // timestamp is at or after the recording epoch.
+                touch_sampler.discard_pending();
                 demo.begin_recording(now_us());
                 std::printf("TINYDRAW_DEMO_RECORDING_BEGIN capacity=%lu autosave_flushed=%u\n",
                             static_cast<unsigned long>(kDemoCapacity), autosave_flushed);
