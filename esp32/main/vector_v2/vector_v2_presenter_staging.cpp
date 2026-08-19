@@ -511,13 +511,14 @@ LivePresentationTiming VectorV2Presenter::present_ring(
       .presenter = this, .chrome = &chrome, .navigation = navigation, .exposed = exposed};
   const std::uint32_t pushes_before = display_.push_count();
   const std::int64_t first_submitted = esp_timer_get_time();
-  const bool streamed =
-      display_.stream_rect_ring(band.x0, band.y0, band_width, band_height, ring_pixels.data(),
-                                vector_v2::kOverviewWidth, frame_ring_.shift_x, frame_ring_.shift_y,
-                                vector_v2::kOverviewWidth, frame_ring_bottom_, rows_per_strip,
-                                {.context = &context,
-                                 .paint = &paint_stage_thunk,
-                                 .accepts_byte_swapped = live_provisional_count_ == 0U});
+  const bool streamed = display_.stream_rect_ring(
+      band.x0, band.y0, band_width, band_height, ring_pixels.data(), vector_v2::kOverviewWidth,
+      frame_ring_.shift_x, frame_ring_.shift_y, vector_v2::kOverviewWidth, frame_ring_bottom_,
+      rows_per_strip,
+      {.context = &context,
+       .paint = &paint_stage_thunk,
+       .accepts_byte_swapped = live_provisional_count_ == 0U &&
+                               vector_v2::chrome_accepts_byte_swapped_staging(chrome)});
   if (!streamed) {
     return timing;
   }

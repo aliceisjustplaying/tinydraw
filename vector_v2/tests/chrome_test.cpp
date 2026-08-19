@@ -555,6 +555,32 @@ TEST_CASE("new drawing dialog preserves canvas outside its bounds") {
 
 }  // namespace
 
+TEST_CASE("only byte-order-aware chrome states accept a pre-swapped transfer surface") {
+  CHECK(tinydraw::vector_v2::chrome_accepts_byte_swapped_staging({}));
+  CHECK_FALSE(
+      tinydraw::vector_v2::chrome_accepts_byte_swapped_staging({.popup = ChromePopup::kColors}));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_accepts_byte_swapped_staging({.confirm_new = true}));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_accepts_byte_swapped_staging(
+      {.export_status = tinydraw::vector_v2::ChromeExportStatus::kSaved}));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_accepts_byte_swapped_staging({.history_busy = true}));
+
+  constexpr int width = 368;
+  constexpr int height = 448;
+  const ChromeState palette{.popup = ChromePopup::kColors};
+  const tinydraw::vector_v2::ChromeNavigation navigation{};
+  std::vector<std::uint16_t> cache_pixels(tinydraw::vector_v2::kChromeStagingCachePixels);
+  tinydraw::vector_v2::ChromeStagingCache cache(cache_pixels);
+  REQUIRE(cache.prepare(palette, navigation, 0U));
+  std::vector<std::uint16_t> swapped(static_cast<std::size_t>(width * height), 0x3412U);
+  const auto before = swapped;
+  CHECK_FALSE(cache.paint_prepared({swapped, width, height, 0, 0, true}, palette, navigation, 0U));
+  CHECK(swapped == before);
+
+  std::vector<std::uint16_t> host(static_cast<std::size_t>(width * height), 0x1234U);
+  REQUIRE(cache.paint_prepared({host, width, height, 0, 0}, palette, navigation, 0U));
+  CHECK(host[108U * width + 46U] == tinydraw::vector_v2::kPico8Palettes[0][0]);
+}
+
 TEST_CASE("prepared staging cache reproduces chrome without mutating canvas source") {
   constexpr int width = 368;
   constexpr int height = 448;
