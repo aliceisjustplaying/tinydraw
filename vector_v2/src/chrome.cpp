@@ -517,7 +517,7 @@ void draw_export_toast(Painter& painter, const ChromeState& state) {
     painter.text(96, 122, "USB EXPORT", kInk, 3);
     if (state.export_status == ChromeExportStatus::kHostEjected) {
       painter.text(107, 174, "DRIVE EJECTED", kSelected, 2);
-      painter.text(145, 205, "SAFE TO RETURN", kMuted);
+      painter.text(101, 205, "SAFE TO RETURN", kMuted);
     } else if (state.export_status == ChromeExportStatus::kExitError) {
       painter.text(107, 174, "RETURN FAILED", 0xE186U, 2);
       painter.text(133, 205, "PLEASE TRY AGAIN", kMuted);

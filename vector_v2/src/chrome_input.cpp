@@ -303,7 +303,15 @@ ChromeAction chrome_action_at(ChromePoint point, const ChromeState& state) {
                                ChromeAction::kToggleSizes, ChromeAction::kToggleDocument};
   const std::size_t index =
       std::min(static_cast<std::size_t>(point.x * 6.0F / kWidth), std::size_t{5});
-  return actions[index];
+  const ChromeAction action = actions[index];
+  if (state.popup == ChromePopup::kNone) {
+    return action;
+  }
+  const ChromeAction active_popup_toggle =
+      state.popup == ChromePopup::kTools   ? ChromeAction::kToggleTools
+      : state.popup == ChromePopup::kSizes ? ChromeAction::kToggleSizes
+                                           : ChromeAction::kToggleDocument;
+  return action == active_popup_toggle ? action : ChromeAction::kNone;
 }
 
 ChromeRect chrome_battery_region() { return kBatteryOverlayRect; }

@@ -66,6 +66,9 @@ TEST_CASE("document popup gives new export and time sync equal touch targets") {
   CHECK(tinydraw::vector_v2::chrome_action_at({60.0F, 331.0F}, state) == ChromeAction::kNewDrawing);
   CHECK(tinydraw::vector_v2::chrome_action_at({184.0F, 331.0F}, state) == ChromeAction::kExport);
   CHECK(tinydraw::vector_v2::chrome_action_at({306.0F, 331.0F}, state) == ChromeAction::kSyncTime);
+  CHECK(tinydraw::vector_v2::chrome_action_at({154.0F, 410.0F}, state) == ChromeAction::kNone);
+  CHECK(tinydraw::vector_v2::chrome_action_at({334.0F, 410.0F}, state) ==
+        ChromeAction::kToggleDocument);
 }
 
 TEST_CASE("terminal time sync feedback expires but active work does not") {
@@ -480,6 +483,30 @@ TEST_CASE("USB export screen font renders every displayed character") {
   check_label(139, 205, "COPY YOUR FILES", muted, 2);
   check_label(83, 260, "RETURN TO DRAWING", white, 2);
   CHECK(pixels[245U * width + 60U] == selected);
+
+  pixels.assign(pixels.size(), white);
+  paint_chrome(pixels, width, height, {.export_status = ChromeExportStatus::kHostEjected});
+  check_label(107, 174, "DRIVE EJECTED", selected, 2);
+  check_label(101, 205, "SAFE TO RETURN", muted, 2);
+
+  const auto horizontal_bounds = [&](int y0, int y1, std::uint16_t color) {
+    std::array bounds{width, -1};
+    for (int y = y0; y < y1; ++y) {
+      for (int x = 0; x < width; ++x) {
+        if (pixels[static_cast<std::size_t>(y * width + x)] == color) {
+          bounds[0] = std::min(bounds[0], x);
+          bounds[1] = std::max(bounds[1], x);
+        }
+      }
+    }
+    return bounds;
+  };
+  const auto title_bounds = horizontal_bounds(174, 188, selected);
+  const auto subtitle_bounds = horizontal_bounds(205, 219, muted);
+  REQUIRE(title_bounds[1] >= title_bounds[0]);
+  REQUIRE(subtitle_bounds[1] >= subtitle_bounds[0]);
+  CHECK(title_bounds[0] + title_bounds[1] == doctest::Approx(367).epsilon(0.01));
+  CHECK(subtitle_bounds[0] + subtitle_bounds[1] == doctest::Approx(367).epsilon(0.01));
 }
 
 TEST_CASE("palette hit testing gives large cells to the circular swatches") {
