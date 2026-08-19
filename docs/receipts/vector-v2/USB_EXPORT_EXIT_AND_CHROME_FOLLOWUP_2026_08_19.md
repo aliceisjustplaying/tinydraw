@@ -47,6 +47,26 @@ Commit `b0d8ad2` centers **COPY YOUR FILES**. The regression renders every
 export state and asserts both glyph presence and exact horizontal pixel bounds,
 covering **COPY YOUR FILES**, **DRIVE EJECTED**, and **SAFE TO RETURN**.
 
+## Final export presentation polish
+
+Commit `2093862` renames the progress state from **SAVING** to **EXPORTING**.
+The scale-3 label is centered in a widened 208 px toast, and its progress track
+is widened to 176 px. **RETURN TO DRAWING** is now scale 3 and centered in a
+widened 336 px button whose hit target matches its visible bounds.
+
+The focused regression failed against the prior presentation, then passed all
+25 assertions after the change. It checks rendered glyphs, exact centering,
+minimum side padding, and both inside/outside button contacts. The complete
+interaction suite passes 67/67 cases and 14,433/14,433 assertions.
+
+The final product image is `0x106dc0` bytes with 41% of the application
+partition free and SHA-256
+`bdbb339105550d6451763a180bd3083bbc2545ed782efd2ec796833b4731c9ad`.
+It was flashed and hash-verified on `/dev/cu.usbmodem1101`. The production boot
+reached `TINYDRAW_VECTOR_V2_READY` without a failure marker and restored
+generation 578 with 224 retained operations; the drawing partition was not
+written by the firmware flash.
+
 ## Verification
 
 - Focused interaction suite: 65/65 cases, 14,403/14,403 assertions.
