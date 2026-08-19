@@ -13,8 +13,8 @@ enum class UsbExportSessionState : std::uint8_t {
 };
 
 // Cross-task lifecycle for a read-only USB export volume. Host eject removes
-// the medium but deliberately keeps the session latched until the application
-// explicitly ends it; a later host probe cannot silently present it again.
+// the medium and latches the event until the application completes shutdown;
+// a later host probe cannot silently present it again.
 class UsbExportSession {
  public:
   [[nodiscard]] UsbExportSessionState state() const { return state_.load(); }

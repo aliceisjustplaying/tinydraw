@@ -425,7 +425,8 @@ void run_vector_v2_app() {
 
     if (!sample_ready && chrome.export_status == vector_v2::ChromeExportStatus::kPresented &&
         !touch_sampler.touch_urgent() && exporter.usb_host_ejected()) {
-      chrome.export_status = vector_v2::ChromeExportStatus::kHostEjected;
+      chrome.export_status = exporter.stop_usb() ? vector_v2::ChromeExportStatus::kIdle
+                                                 : vector_v2::ChromeExportStatus::kExitError;
       static_cast<void>(advance_full_refresh("export-host-ejected", loop_us));
       cosmetic_work = true;
     }

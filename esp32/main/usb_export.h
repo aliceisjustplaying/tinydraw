@@ -26,8 +26,8 @@ class UsbExport {
   [[nodiscard]] bool read(std::uint32_t lba, std::uint32_t offset,
                           std::span<std::uint8_t> output) const;
 
-  // TinyUSB callback boundary. Host eject and USB unmount remove the medium
-  // until stop() ends this session; later host probes cannot re-present it.
+  // TinyUSB callback boundary. Host eject and USB unmount remove the medium;
+  // the application then calls stop() to restore USB-Serial/JTAG.
   void note_host_ejected() { session_.note_host_ejected(); }
 
  private:

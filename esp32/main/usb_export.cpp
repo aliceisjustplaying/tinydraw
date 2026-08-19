@@ -50,12 +50,36 @@ constexpr std::array<std::string_view, 5> string_descriptors{
 
 std::atomic<tinydraw::esp32::UsbExport*> active_export{nullptr};
 std::atomic<usb_phy_handle_t> usb_phy{nullptr};
+std::atomic<usb_phy_handle_t> usb_serial_jtag_phy{nullptr};
 std::atomic<TaskHandle_t> usb_task_handle{nullptr};
 std::atomic<TaskHandle_t> usb_start_waiter{nullptr};
 std::atomic<TaskHandle_t> usb_stop_waiter{nullptr};
 std::atomic<bool> usb_stack_ready{false};
 std::atomic<bool> usb_stop_requested{false};
 std::atomic<bool> usb_stop_succeeded{false};
+
+bool restore_usb_serial_jtag() {
+  if (usb_serial_jtag_phy.load() != nullptr) {
+    return true;
+  }
+  const usb_phy_config_t config{
+      .controller = USB_PHY_CTRL_SERIAL_JTAG,
+      .target = USB_PHY_TARGET_INT,
+      .otg_mode = USB_PHY_MODE_DEFAULT,
+      .otg_speed = USB_PHY_SPEED_FULL,
+      .ext_io_conf = nullptr,
+      .otg_io_conf = nullptr,
+  };
+  usb_phy_handle_t created_phy = nullptr;
+  if (usb_new_phy(&config, &created_phy) != ESP_OK) {
+    return false;
+  }
+  usb_phy_handle_t expected = nullptr;
+  if (!usb_serial_jtag_phy.compare_exchange_strong(expected, created_phy)) {
+    static_cast<void>(usb_del_phy(created_phy));
+  }
+  return true;
+}
 
 void usb_device_task(void*) {
   const tusb_rhport_init_t config{
@@ -99,7 +123,7 @@ void usb_device_task(void*) {
         usb_phy.store(nullptr);
       }
     }
-    usb_stop_succeeded.store(phy_released);
+    usb_stop_succeeded.store(phy_released && restore_usb_serial_jtag());
     usb_task_handle.store(nullptr);
     if (const TaskHandle_t waiter = usb_stop_waiter.load(); waiter != nullptr) {
       xTaskNotifyGive(waiter);
@@ -146,6 +170,9 @@ bool UsbExport::stop() {
         return false;
       }
       usb_phy.store(nullptr);
+      if (!restore_usb_serial_jtag()) {
+        return false;
+      }
     }
     return finish_stop();
   }
@@ -176,6 +203,13 @@ bool UsbExport::start() {
   }
   UsbExport* expected = nullptr;
   if (!active_export.compare_exchange_strong(expected, this)) {
+    session_.end();
+    return false;
+  }
+
+  if (const usb_phy_handle_t serial_phy = usb_serial_jtag_phy.exchange(nullptr);
+      serial_phy != nullptr && usb_del_phy(serial_phy) != ESP_OK) {
+    active_export.store(nullptr);
     session_.end();
     return false;
   }
