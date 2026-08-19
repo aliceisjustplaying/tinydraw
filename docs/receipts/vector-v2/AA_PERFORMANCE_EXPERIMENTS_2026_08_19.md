@@ -1,6 +1,6 @@
 # Settled-AA performance experiments — 2026-08-19
 
-Budget: at most five distinct measured hypotheses. Four used. Baseline does not
+Budget: at most five distinct measured hypotheses. Five used. Baseline does not
 consume an attempt. Host-release results are five-run means over the frozen
 25-case corpus; lower is better and every checksum remained exact.
 
@@ -31,10 +31,16 @@ The hardest representative ranges were 7.933–3.703 ms for long-crossing,
 4. **Row-local touched-span merge — rejected and reverted.** Deferring
    operation span metadata updates until the end of each chord row modestly
    helped long chords but regressed dense 50–200% by about 10–20%.
+5. **Shift/add division by 255 — rejected and reverted.** An exhaustive
+   compile-time proof confirmed the shift/add identity for every composite
+   numerator, but replacing the four constant divisions regressed most
+   representative host cases. Long-crossing rose 0.5–2.2% at 25–200%,
+   hairline 0.8–1.9% at 25–100%, and dense 0.3–2.1% across all zooms. The
+   optimizing compilers already lower constant `/255` efficiently; the longer
+   dependency chain lost. Exact checksums were unchanged and the original
+   expressions are restored.
 
-One experiment remains available. It is reserved because the accepted change
-is checksum-exact and the remaining ideas carry more branch cost than their
-saved arithmetic justified in the first four measurements.
+The five-experiment budget is complete.
 
 The post-change full gate finished with `failure_marker=False` and all battery
 sections green, including cold fill, history, export, and the owner document.
