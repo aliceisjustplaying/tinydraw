@@ -1,8 +1,8 @@
-# Author-document battery integration — 2026-08-19
+# Captured-drawing battery integration — 2026-08-19
 
 ## Result
 
-The compact authority captured from the author's real torture document is now
+The compact authority captured from the author's real stress drawing is now
 embedded only in the 604-slot gate firmware. The loader validates the `TDOC`
 header and exact archived shape, decodes each sample without alignment or host
 endianness assumptions, and replays all operations through production append
@@ -19,8 +19,8 @@ Physical device (`/dev/cu.usbmodem1101`, ESP32-S3 at 240 MHz):
 
 The gate decoded 102 operations and 2,706 samples in 77.770 ms. All touch,
 watchdog, overflow, and resynchronization counters stayed clean. The final
-`TINYDRAW_GATE1_AUTOMATED_DONE` line reported every gate equal to one,
-including `owner_document=1`; settled AA retained its expected yellow receipt.
+`TINYDRAW_GATE1_AUTOMATED_DONE` line reported every gate equal to one, including
+the captured-drawing check; settled AA retained its expected yellow receipt.
 
 Baseline before integration was clean `8a24436`. The baseline battery and the
 treated battery both passed completely. The embedded corpus increased the gate

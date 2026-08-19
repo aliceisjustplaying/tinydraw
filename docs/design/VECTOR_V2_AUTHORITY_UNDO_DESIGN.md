@@ -95,7 +95,7 @@ prepared the replacement raster pixels.
 
 The app remains single-threaded and serializes mutation. A read view is a
 coherent value snapshot for metadata and persistence; indexed reads use the
-same serialized ownership boundary.
+same serialized access boundary.
 
 ## Required behavior
 

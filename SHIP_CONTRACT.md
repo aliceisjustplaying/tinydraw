@@ -42,7 +42,7 @@ in
   cadence is about 29.4 FPS.
 - Zoom supports 25, 50, 100, 200, and 400 percent. Transitions preserve one
   world-space focus. Minimap taps and drags navigate the complete world.
-- Popups exclusively own contacts while open. A popup tap cannot activate a
+- Popups exclusively capture contacts while open. A popup tap cannot activate a
   toolbar control underneath it.
 - The lower hardware button provides the existing four-second power-off flow.
 
@@ -72,7 +72,7 @@ in
 - The 4 MiB journal reports capacity failure without overwriting the last valid
   recovery point. Two-arena compaction is post-release.
 - New starts from the production blank-document path. Diagnostic firmware may
-  load its owned fixture; product firmware may not.
+  load its embedded fixture; product firmware may not.
 - Raster V1 files remain Raster V1 files and accessible through the V1 build.
   They are never silently reinterpreted as V2 vector documents.
 

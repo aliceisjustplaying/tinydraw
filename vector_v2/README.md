@@ -307,7 +307,7 @@ baseline revision, destination revision, and operation range together.
 Do not hide these requirements behind a `settle(current_pixels)` helper or copy
 the rejected prototype renderer into Vector V2.
 
-`OperationLog::replay_range()` is the first bounded ownership seam: it accepts an
+`OperationLog::replay_range()` is the first bounded access seam: it accepts an
 explicit log epoch, baseline revision, and destination revision and returns only
 a contiguous range that is still represented after the current snapshot base.
 Every reset advances the epoch, so revision values reused after restore cannot
@@ -319,5 +319,5 @@ A host-only settlement rehearsal snapshots the overview at an epoch/revision,
 revalidates and consumes an eight-operation range in two slices through the
 existing immediate rasterizer, and proves byte equality with live materialization.
 It then restores an older snapshot, rejects the held epoch, rebases, and repeats.
-This validates ordering and reset ownership only; it is not settled-renderer
+This validates ordering and reset responsibility only; it is not settled-renderer
 quality or performance evidence.

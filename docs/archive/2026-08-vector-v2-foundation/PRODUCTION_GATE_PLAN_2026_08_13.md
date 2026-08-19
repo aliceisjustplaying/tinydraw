@@ -35,7 +35,7 @@ does not supersede its correctness contracts, guardrails, or gates.
   500 ms gate (490–828 ms). See `PROTOTYPE_EXIT.md`.
 - **Production island: real modules, incomplete experience.** OperationLog,
   MaterializedCanvas, DisplayScheduler, incremental append, replay ranges,
-  LOD ownership experiment, and an opt-in live app
+  LOD lifetime experiment, and an opt-in live app
   (`TINYDRAW_PRODUCTION_LIVE_APP`).
 - **The missing piece is a high-resolution tile producer.**
   `append_incrementally` only updates tiles that are already resident, and

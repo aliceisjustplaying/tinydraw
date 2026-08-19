@@ -120,7 +120,7 @@ A stationary direct minimap tap at `(332,342)` changed the origin on Down from
 `(2098,3618)` to `(4232,5958)` and retained it on Up (artifact lines 857–858).
 The author called this version “way better than anything we had before.”
 
-Across those 14 candidates, the original 8 px threshold delayed ownership by
+Across those 14 candidates, the original 8 px threshold delayed contact capture by
 118.4815 ms median / 225.993 ms max. Replaying the same events with a 2 px
 upward-only threshold predicted 78.9945 ms median while preserving 8 px for
 horizontal/downward dock ambiguity. That directional rule landed in `3980b90`.

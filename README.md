@@ -45,7 +45,7 @@ receipts.
 - New starts blank in product firmware. Clock sync, battery status, and the
   four-second hardware shutdown are supported.
 
-The ESP32-S3 product owns the full 16 MiB flash: 1.75 MiB application, 4 MiB
+The ESP32-S3 product uses the full 16 MiB flash: 1.75 MiB application, 4 MiB
 drawing journal, 10.125 MiB export volume, and 64 KiB coredump. Raster V1 files
 remain Raster V1 files and are not silently converted into V2 documents.
 

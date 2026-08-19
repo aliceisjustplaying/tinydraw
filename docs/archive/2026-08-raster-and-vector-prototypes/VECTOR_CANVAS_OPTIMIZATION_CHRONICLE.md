@@ -114,7 +114,7 @@ Document traversal was not the dominant cost. Current profiles put roughly 360â€
 
 Once a user adds a stroke, the pinned overview belongs to the previous document revision. Zoom must not sample it until repair finishes.
 
-The benchmark now keeps fallback storage ownership pinned, marks intersecting source bands pending, redraws those bands canonically, and advances the source revision only after all pending bands complete. Zoom refuses while the source is stale.
+The benchmark now keeps fallback storage lifetime pinned, marks intersecting source bands pending, redraws those bands canonically, and advances the source revision only after all pending bands complete. Zoom refuses while the source is stale.
 
 The automated hardware mutation test reported:
 

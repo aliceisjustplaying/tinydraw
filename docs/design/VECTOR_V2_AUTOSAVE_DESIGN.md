@@ -61,7 +61,7 @@ JournalRecovery recover_authority_journal(
     std::span<CompactOperationSample> samples);
 ```
 
-Every staging slice runs under the log's serialized ownership and revalidates
+Every staging slice runs under the log's serialized access and revalidates
 the complete `AuthorityReadView`: epoch, generation, active and retained
 operation counts, and retained samples. A stale view abandons the unpublished
 buffer. Recovery writes into caller-owned bounded storage and returns an
@@ -85,7 +85,7 @@ bool flush(std::uint32_t timeout_ms);
 Stroke and history transactions stage coherent bytes synchronously. Checkpoints
 stage at most 16 KiB of payload per idle call, including operation metadata and
 sample bytes; one operation can therefore never hide an unbounded copy. The
-worker seals the transaction CRC after buffer ownership transfers, then owns
+worker seals the transaction CRC after the buffer handoff, then controls
 erase, write, and readback. It never reads the live log or canvas. Allocation,
 staging, queue, seal, or write failure requests a later checkpoint and never
 publishes a partial delta.
@@ -115,7 +115,7 @@ erases the partition on the worker before publishing the first checkpoint.
 A completed physical stroke queues one append after authority publication.
 Undo and Redo queue an update; New queues a blank checkpoint. An interrupted
 tail or failed delta sets `checkpoint_required()`. Export and other hardware
-ownership transitions finish an in-progress checkpoint, call `flush()`, and
+storage transitions finish an in-progress checkpoint, call `flush()`, and
 remain in drawing mode if either step fails. Normal drawing advances only one
 checkpoint slice after an idle poll with no touch urgency. Pan, zoom, tool,
 color, and other UI-only changes do not write flash.
