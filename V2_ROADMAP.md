@@ -122,9 +122,5 @@ restart behavior; and independent builds for every retained target.
 
 ## Post-ship backlog
 
-- Remove the tiny outward teeth visible on some SVG Stroke edges only under
-  extreme magnification. Preserve normal-scale SVG/PNG agreement and shared
-  renderer/export geometry authority. See
-  [`SVG_EXTREME_ZOOM_EDGE_TEETH_2026_08_19.md`](docs/receipts/vector-v2/SVG_EXTREME_ZOOM_EDGE_TEETH_2026_08_19.md).
-- Demo record/replay, richer semantic SVG, optional minimap visibility
-  controls, and 800% zoom.
+- Improve minimap navigation and optional visibility controls.
+- Demo record/replay, richer semantic SVG, and 800% zoom.
