@@ -574,6 +574,15 @@ void SettledRenderCursor::composite_pixels(std::size_t row, std::size_t first_at
       continue;
     }
     const std::uint8_t accumulated = workspace_.accumulated_alpha[at];
+    if (alpha == 255U && accumulated == 0U) {
+      workspace_.red[at] = red;
+      workspace_.green[at] = green;
+      workspace_.blue[at] = blue;
+      workspace_.accumulated_alpha[at] = 255U;
+      ++saturated_pixels_;
+      ++newly_saturated;
+      continue;
+    }
     const auto contribution = static_cast<std::uint16_t>(
         (static_cast<std::uint32_t>(alpha) * (255U - accumulated) + 127U) / 255U);
     if (contribution == 0U) {
