@@ -6,6 +6,11 @@ the current document and independently hypothesized the cause: taps that
 never became lines are stored as one-sample operations and surface only
 in some views/undo levels.
 
+Follow-up: the cross-renderer mismatch fixed here exposed a separate input
+admission bug. Physical authority proved that unintended top-edge exits were
+being stored as valid one-sample dots. That source is closed in
+[`PHANTOM_TOP_EDGE_CONTACT_2026_08_19.md`](PHANTOM_TOP_EDGE_CONTACT_2026_08_19.md).
+
 ## Confirmed code mechanism (partial)
 
 The settled renderer provably never paints a one-sample operation:
@@ -64,4 +69,5 @@ because none of their fixtures contained a one-sample operation.
 The final 604-slot device battery passed with `failure_marker=False`, including
 settled rendering, PNG/SVG export, history, and the real owner-document corpus.
 The unverified live-draw note above describes the pre-fix investigation and is
-not needed for the cross-tier consistency verdict.
+not needed for the cross-tier consistency verdict. The follow-up receipt
+contains the later physical screen/PNG/SVG comparison and input-admission fix.
