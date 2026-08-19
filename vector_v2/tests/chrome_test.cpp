@@ -523,6 +523,14 @@ TEST_CASE("palette hit testing gives large cells to the circular swatches") {
   CHECK(tinydraw::vector_v2::chrome_color_at({46.0F, 139.0F}, state) == 4U);
 }
 
+TEST_CASE("top-edge exit does not become a tap stroke") {
+  CHECK_FALSE(tinydraw::vector_v2::chrome_accepts_stroke_finish({193.0F, 0.0F}, false));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_accepts_stroke_finish({193.0F, 1.0F}, false));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_accepts_stroke_finish({193.0F, 3.0F}, false));
+  CHECK(tinydraw::vector_v2::chrome_accepts_stroke_finish({193.0F, 1.0F}, true));
+  CHECK(tinydraw::vector_v2::chrome_accepts_stroke_finish({193.0F, 4.0F}, false));
+}
+
 TEST_CASE("chrome rendering stays within the framebuffer") {
   constexpr int width = 368;
   constexpr int height = 448;

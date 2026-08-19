@@ -93,6 +93,7 @@ class LiveStrokeSession {
   vector_v2::ChainedOperationBuilder builder_;
   InkStream ink_;
   CurvedRibbonStream ribbon_;
+  Point start_touch_{};
   Point last_touch_{};
   Point last_canvas_touch_{};
   InkPoint last_ink_{};
