@@ -4,8 +4,8 @@ Raw artifacts named below are archived at
 [`v2-feature-complete-pre-cleanup`](../../EVIDENCE_ARCHIVE.md); this tree
 retains the interpreted receipts and closure documents.
 
-The final release-candidate acceptance is
-[`FINAL_RELEASE_CANDIDATE_2026_08_19.md`](FINAL_RELEASE_CANDIDATE_2026_08_19.md).
+The V2 release acceptance is
+[`VECTOR_V2_RELEASE_2026_08_19.md`](VECTOR_V2_RELEASE_2026_08_19.md).
 
 - [`OVERNIGHT_RELEASE_CLOSURE_2026_08_19.md`](OVERNIGHT_RELEASE_CLOSURE_2026_08_19.md) — final overnight bug, performance, device-battery, host-test, and production-flash handoff.
 - [`CODE_QUALITY_CLEANUP_2026_08_18.md`](CODE_QUALITY_CLEANUP_2026_08_18.md) — pre-final source and repository-structure cleanup.

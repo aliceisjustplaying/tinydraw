@@ -1,4 +1,4 @@
-# Vector V2 final release candidate — 2026-08-19
+# Vector V2 release — 2026-08-19
 
 Vector V2 passed the same-revision release battery and was restored to product
 firmware on the physical ESP32-S3 at `/dev/cu.usbmodem1101`. The tested source

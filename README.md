@@ -11,7 +11,7 @@ Touch AMOLED 1.8-inch boards. Raster V1 and Vector V2 are both supported ESP32
 products. The macOS frontend and QEMU use Raster V1; shared C++20 modules are
 tested natively.
 
-Vector V2 is at its release candidate. Current acceptance and measurements are
+Vector V2 is released. Current acceptance and measurements are
 in [`PROJECT_STATE.md`](PROJECT_STATE.md), the product contract is
 [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md), and later work is in
 [`docs/POST_RELEASE.md`](docs/POST_RELEASE.md). The full history of successful

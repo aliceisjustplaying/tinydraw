@@ -280,9 +280,8 @@ The current presenter validates each strip and sends it directly to the panel
 transport. The former synchronous `DisplayScheduler` queue was removed because
 no production path ever queued behind an in-flight strip. Existing receipts
 collectively cover transport, cold replay, interaction pacing, cache retention,
-long gestures, and export. The cleanup/application split passed the current
-604-slot hardware battery. The final release candidate still needs its own
-same-head battery after documentation cleanup.
+long gestures, and export. The cleanup/application split passed the 604-slot
+hardware battery used for the V2 release.
 
 A separate PSRAM measurement compared full copy, swappable double buffers, and
 bounded dirty-region publication; its method and limits are archived in
