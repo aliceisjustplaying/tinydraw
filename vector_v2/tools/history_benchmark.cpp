@@ -177,8 +177,7 @@ double time_cycles(Rig& rig, Move move) {
          static_cast<double>(kTimingCycles * 2);
 }
 
-bool run_corpus(const char* name, bool dense,
-                v2::OperationTool tool = v2::OperationTool::kPen) {
+bool run_corpus(const char* name, bool dense, v2::OperationTool tool = v2::OperationTool::kPen) {
   Rig query;
   Rig baseline;
   Rig treatment;
