@@ -1,5 +1,9 @@
 # Transient chrome/popup incident — 2026-08-18
 
+Status: **fixed, host-verified, and device-battery verified 2026-08-19.** Six
+consecutive no-contact polls now guard a semantic lift, so one physical press
+cannot close the size popup and begin a second tap on the exposed history row.
+
 ## Owner observation
 
 At 100% zoom, after minimap navigation/panning to a blank corner, the owner
@@ -51,10 +55,10 @@ regression drives five missing reads while sliding from the size row to the
 history row and proves that the stream remains exactly Down, Move, Up. The
 shared confirmation constant also drives the on-device trace replayer, keeping
 the battery faithful to production input semantics. The complete interaction
-suite passes (63 cases, 14,357 assertions). Device battery verification remains
-part of the release run.
+suite passes (63 cases, 14,357 assertions). The final 604-slot release battery
+also passed with `failure_marker=False`.
 
-## Original verdict and reopen trigger
+## Historical original verdict and reopen trigger
 
 **INCONCLUSIVE / deferred.** No production hypothesis or behavior change is
 supported by the available evidence. Reopen when either the device reproduces
@@ -63,6 +67,9 @@ the unintended Undo, or a deterministic host/device trace makes the natural
 pixel/action oracle red. Preserve at minimum event kind, point, sequence,
 timestamp/age, popup before/after, resolved action, authority read view, ring
 state, and submitted panel bounds.
+
+This original verdict is superseded by the second physical occurrence and the
+confirmed contact-split mechanism above.
 
 ## Second occurrence — 2026-08-18 owner glass session (history hold-back test)
 
@@ -79,3 +86,5 @@ to a reproducible-by-hand interaction defect; the fix belongs with the
 roadmap §3 touch-target review (overlapping targets, pressed feedback,
 missed-tap check). The ordered-event capture requirements above still
 define the diagnostic bar.
+
+The 2026-08-19 lift-confirmation fix closes this occurrence.

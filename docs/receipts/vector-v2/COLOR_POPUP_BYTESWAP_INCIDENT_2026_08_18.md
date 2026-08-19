@@ -39,7 +39,9 @@ unsafe pre-swapped state as a second contract guard. The regression covers the
 color popup, new dialog, export toast, and history busy state, including
 failure-before-mutation; all 64 interaction cases / 14,367 assertions pass.
 
-Status: **root cause fixed and host-verified; hardware battery pending.**
+Status: **root cause fixed, host-verified, and hardware-battery verified.** The
+complete 604-slot device gate passed repeatedly on 2026-08-19 with the modal
+color-dialog exercise green and `failure_marker=False`.
 
 ## Original hypothesis queue
 

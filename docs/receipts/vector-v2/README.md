@@ -8,8 +8,14 @@ The current pre-final acceptance is
 [`CODE_QUALITY_CLEANUP_2026_08_18.md`](CODE_QUALITY_CLEANUP_2026_08_18.md).
 
 - [`SVG_ERASER_MASKS_2026_08_19.md`](SVG_ERASER_MASKS_2026_08_19.md) — SVG erasers are transparent painter-ordered masks; later ink can repaint erased areas.
-- [`SVG_SMOOTHNESS_EXPERIMENTS_2026_08_19.md`](SVG_SMOOTHNESS_EXPERIMENTS_2026_08_19.md) — bounded SVG smoothness campaign; physical-gesture chunks now share one continuous curve stream.
-- [`AA_PERFORMANCE_EXPERIMENTS_2026_08_19.md`](AA_PERFORMANCE_EXPERIMENTS_2026_08_19.md) — four measured AA hypotheses; opaque-first compositing survived host A/B, three no-gos were reverted.
+- [`SVG_SMOOTHNESS_EXPERIMENTS_2026_08_19.md`](SVG_SMOOTHNESS_EXPERIMENTS_2026_08_19.md) — physical-gesture chunks share one curve stream and shared quadratics use three tangent spans; one divergent SVG-only trial was reverted.
+- [`AA_PERFORMANCE_EXPERIMENTS_2026_08_19.md`](AA_PERFORMANCE_EXPERIMENTS_2026_08_19.md) — complete five-experiment AA campaign; opaque-first compositing survived host/device A/B and four no-gos were reverted.
+- [`HISTORY_PERFORMANCE_EXPERIMENTS_2026_08_19.md`](HISTORY_PERFORMANCE_EXPERIMENTS_2026_08_19.md) — complete five-experiment Undo/Redo campaign: focused chrome, masked replay, saturation completion, and occupancy-proof reuse.
+- [`COLD_RENDER_EXPERIMENTS_2026_08_19.md`](COLD_RENDER_EXPERIMENTS_2026_08_19.md) — complete five-experiment cold-render campaign; fewer replay resumptions and directory scans survived the device battery.
+- [`ONE_SAMPLE_STROKE_DOT_BUG_2026_08_19.md`](ONE_SAMPLE_STROKE_DOT_BUG_2026_08_19.md) — one-sample tap dots now agree across settled tiles, PNG, SVG, and hard replay.
+- [`TRANSIENT_CHROME_POPUP_INCIDENT_2026_08_18.md`](TRANSIENT_CHROME_POPUP_INCIDENT_2026_08_18.md) — confirmed popup/history split-contact bug and six-poll lift fix.
+- [`COLOR_POPUP_BYTESWAP_INCIDENT_2026_08_18.md`](COLOR_POPUP_BYTESWAP_INCIDENT_2026_08_18.md) — modal RGB565 staging-domain root cause and fix.
+- [`../../../benchmark-results/owner-document-battery-2026-08-19/RECEIPT.md`](../../../benchmark-results/owner-document-battery-2026-08-19/RECEIPT.md) — the owner's 102-operation/2,706-sample torture document is a gate-only physical cold-render corpus.
 
 - [`../../../benchmark-results/v2-autosave-2026-08-17/RECEIPT.md`](../../../benchmark-results/v2-autosave-2026-08-17/RECEIPT.md) — single-journal authority autosave, exhaustive truncation/corruption recovery fixtures, background ESP flash adapter, normal firmware flash, blank and real multi-Stroke reboot restoration, and owner-confirmed Redo/session recovery; autosave-enabled performance joins the final optimization round.
 - [`../../../benchmark-results/svg-export-2026-08-17/RECEIPT.md`](../../../benchmark-results/svg-export-2026-08-17/RECEIPT.md) — original detailed SVG export: one filled variable-width path per operation chunk, transactional 4 KiB flash streaming, complete physical-device readback/CRC verification in 1.024 s, and no watchdog. The [owner-artifact follow-up](../../../benchmark-results/stroke-svg-minimap-acquire-2026-08-17/RECEIPT.md) groups chunks into one path per physical Stroke and removes the synthetic background rectangle.
