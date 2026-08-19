@@ -72,13 +72,13 @@ rectangle. The ESP adapter preserves those SVG bytes and
 also streams `DRAWING.PNG` from production settled-AA windows. It retains one
 64-row world band, one 64×64 window, and fixed PNGenc workspace. The centered
 **EXPORTING** progress bar advances across both PNG windows and SVG operations.
-The enlarged **RETURN TO DRAWING** label and its full-width hit target remain
-centered together. A
+The scale-3 **EJECT & EXIT** label and its matching hit target remain centered
+inside the export dialog. A
 shared metadata page commits the pair only after the authority epoch, revision,
 and operation count are rechecked. The generic FAT/USB adapter exposes both
 files read-only. Export presentation is an explicit app mode: host eject
 latches the medium absent and automatically returns to drawing. Host eject and
-the on-screen **Return to Drawing** action both deinitialize TinyUSB and
+the on-screen **Eject & Exit** action both deinitialize TinyUSB and
 reacquire the shared internal PHY for USB Serial/JTAG without a board reset. A
 failed shutdown remains modal and offers another return attempt without
 re-enabling drawing over a live USB stack. Host

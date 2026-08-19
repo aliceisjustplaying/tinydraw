@@ -51,13 +51,19 @@ covering **COPY YOUR FILES**, **DRIVE EJECTED**, and **SAFE TO RETURN**.
 
 Commit `2093862` renames the progress state from **SAVING** to **EXPORTING**.
 The scale-3 label is centered in a widened 208 px toast, and its progress track
-is widened to 176 px. **RETURN TO DRAWING** is now scale 3 and centered in a
-widened 336 px button whose hit target matches its visible bounds.
+is widened to 176 px.
 
-The focused regression failed against the prior presentation, then passed all
-25 assertions after the change. It checks rendered glyphs, exact centering,
-minimum side padding, and both inside/outside button contacts. The complete
-interaction suite passes 67/67 cases and 14,433/14,433 assertions.
+Owner glass review showed that the widened return button extended beyond the
+white dialog. Commit `255f0f6` changes the scale-3 action to **EJECT & EXIT**,
+restores the 264 px button fully inside the dialog, and keeps the hit target
+identical to the visible button. The shared pixel font now includes an
+ampersand glyph.
+
+The final focused regression failed against the overflowing presentation, then
+passed all 36 assertions after the change. It checks rendered glyphs, exact
+centering, minimum side padding, white dialog pixels outside the button, and
+both inside/outside button contacts. The affected Debug and ASan/UBSan
+interaction/font targets pass.
 
 The final product image is `0x106dc0` bytes with 41% of the application
 partition free and SHA-256
