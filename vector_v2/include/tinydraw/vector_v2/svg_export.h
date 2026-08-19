@@ -37,8 +37,10 @@ struct SvgExportOptions {
 // the exact circles and convex shapes emitted by CurvedRibbonStream, the same
 // variable-width ribbon geometry used by the renderer. Nonzero filling makes
 // their union identical to the rendered stroke without a centerline or
-// stroke-width approximation. The root has no synthetic background rectangle;
-// erasers use the requested opaque background color and retain painter order.
+// stroke-width approximation. Eraser gestures become SVG masks around the
+// content that precedes them, preserving painter order while leaving erased
+// areas transparent. Later pen gestures can paint into an erased area again.
+// Empty and pen-only documents have no synthetic background rectangle.
 //
 // No document-sized output or geometry buffer is allocated. Formatting and
 // sink batching use fixed stack storage plus RibbonPrimitiveBatch's bounded

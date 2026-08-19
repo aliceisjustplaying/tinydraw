@@ -279,16 +279,62 @@ TEST_CASE("SVG export has stable exact output and painter-ordered eraser geometr
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"30\" height=\"20\" "
         "viewBox=\"0 0 30 20\">\n"
+        "<defs>\n"
+        "<mask id=\"erase0\" maskUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"30\" "
+        "height=\"20\">\n"
+        "<rect x=\"0\" y=\"0\" width=\"30\" height=\"20\" fill=\"#FFFFFF\"/>\n"
+        "<path fill=\"#000000\" fill-rule=\"nonzero\" "
+        "d=\"M16 10A1 1 0 1 1 14 10A1 1 0 1 1 16 10Z\"/>\n"
+        "</mask>\n"
+        "</defs>\n"
+        "<g mask=\"url(#erase0)\">\n"
         "<path fill=\"#FF0000\" fill-rule=\"nonzero\" "
         "d=\"M12 10A2 2 0 1 1 8 10A2 2 0 1 1 12 10Z"
         "M10 8L20 6L20 14L10 12Z"
         "M24 10A4 4 0 1 1 16 10A4 4 0 1 1 24 10Z\"/>\n"
-        "<path fill=\"#FFFFFF\" fill-rule=\"nonzero\" "
-        "d=\"M16 10A1 1 0 1 1 14 10A1 1 0 1 1 16 10Z\"/>\n"
+        "</g>\n"
         "</svg>\n");
+  CHECK(sink.text.find("<path fill=\"#FFFFFF\"") == std::string::npos);
   CHECK(sink.maximum_fragment <= 1'024U);
   CHECK(progress.completed == std::vector<std::size_t>{0U, 1U, 2U});
   CHECK(progress.totals == std::vector<std::size_t>{2U, 2U, 2U});
+}
+
+TEST_CASE("SVG eraser masks preserve interleaved painter order and transparency") {
+  LogFixture<5, 5> fixture;
+  const auto append_dot = [&](vector_v2::OperationTool tool, std::uint16_t color, std::uint16_t x) {
+    const std::array sample{
+        vector_v2::CompactOperationSample{.x_quarter = x, .y_quarter = 160U, .radius_256 = 256U}};
+    return fixture.log.append({.tool = tool, .color = color, .samples = sample}).has_value();
+  };
+  REQUIRE(append_dot(vector_v2::OperationTool::kPen, 0xF800U, 80U));
+  REQUIRE(append_dot(vector_v2::OperationTool::kEraser, 0U, 96U));
+  REQUIRE(append_dot(vector_v2::OperationTool::kPen, 0x001FU, 112U));
+  REQUIRE(append_dot(vector_v2::OperationTool::kEraser, 0U, 128U));
+  REQUIRE(append_dot(vector_v2::OperationTool::kPen, 0x07E0U, 144U));
+
+  StringSink sink;
+  REQUIRE(vector_v2::export_svg(fixture.log, sink, {.world_bounds = {0, 0, 20, 20}}));
+  REQUIRE(well_formed_export(sink.text));
+  const std::size_t content = sink.text.find("</defs>\n");
+  REQUIRE(content != std::string::npos);
+  const std::string_view ordered(sink.text.data() + static_cast<std::ptrdiff_t>(content),
+                                 sink.text.size() - content);
+  const std::size_t outer = ordered.find("<g mask=\"url(#erase1)\">");
+  const std::size_t inner = ordered.find("<g mask=\"url(#erase0)\">");
+  const std::size_t red = ordered.find("<path fill=\"#FF0000\"");
+  const std::size_t close_inner = ordered.find("</g>", red);
+  const std::size_t blue = ordered.find("<path fill=\"#0000FF\"", close_inner);
+  const std::size_t close_outer = ordered.find("</g>", blue);
+  const std::size_t green = ordered.find("<path fill=\"#00FF00\"", close_outer);
+  CHECK(outer < inner);
+  CHECK(inner < red);
+  CHECK(red < close_inner);
+  CHECK(close_inner < blue);
+  CHECK(blue < close_outer);
+  CHECK(close_outer < green);
+  CHECK(sink.text.find("<path fill=\"#FFFFFF\"") == std::string::npos);
+  CHECK(vector_v2::svg_path_count(fixture.log) == 5U);
 }
 
 TEST_CASE("operation chunks from one physical gesture export as one path") {
