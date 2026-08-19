@@ -11,7 +11,7 @@ contract**: dcache-set placement receipts are inline there), `memory_layout.h`,
 | Allocation (boot order) | Bytes | Notes |
 |---|---:|---|
 | overview + frame + overview/region scratch | 1,318,912 | 4 × 329,728 full 368×448 RGB565 surfaces |
-| tile pool (604 × 8,192) | 4,947,968 | 448-slot working-set heritage + 156 owner-funded slots; preserved Undo/Redo pre-images are the first-evicted class inside this one pool |
+| tile pool (604 × 8,192) | 4,947,968 | 448-slot working-set heritage + 156 approved slots; preserved Undo/Redo pre-images are the first-evicted class inside this one pool |
 | chrome staging cache | 107,912 | sprite strips |
 | tile metadata (13,692 uniforms + 604 slots + occupancy) | ~102,768 | |
 | operation records + samples (4,000 / 80,000) | 720,000 | vector authority |
@@ -50,7 +50,7 @@ cache split, not pressure.
 | export (FAT16) | 0x5D0000 | 10.125 MiB | synthetic disk 20,736 × 512 B; covers worst-case ~7.3 MiB SVG |
 | coredump | 0xFF0000 | 64 KiB | |
 
-## Cache-policy balance (owner question, 2026-08-18)
+## Cache-policy balance (author question, 2026-08-18)
 
 `choose_slot` eviction order: (1) free slots, (2) **preserved history
 pre-images, stalest first**, (3) LRU current tiles. Pan/zoom retention

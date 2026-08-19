@@ -43,4 +43,4 @@ The hardest representative ranges were 7.933–3.703 ms for long-crossing,
 The five-experiment budget is complete.
 
 The post-change full gate finished with `failure_marker=False` and all battery
-sections green, including cold fill, history, export, and the owner document.
+sections green, including cold fill, history, export, and the captured drawing.

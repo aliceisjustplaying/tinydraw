@@ -1,8 +1,8 @@
 # Minimap missed-touch / short-stroke receipt — 2026-08-17
 
-## Owner artifact
+## Author artifact
 
-The owner supplied `$HOME/Desktop/DRAWING.SVG` after observing one short blue mark and overlapping short yellow marks on glass. The drawing itself is not copied into Git.
+The author supplied `$HOME/Desktop/DRAWING.SVG` after observing one short blue mark and overlapping short yellow marks on glass. The drawing itself is not copied into Git.
 
 ```text
 sha256=3e868c11689c251c79b4061ad6f028d50e2f7362adc0f7afaec4cb58c823086f
@@ -13,11 +13,11 @@ fat_birth=1970-01-01T01:00:00+0000
 fat_modified=1970-01-01T01:00:00+0000
 ```
 
-A command-aware M/L/A endpoint scan found one short blue authority path of roughly 82×69 world units. Four later yellow authority paths were roughly 11×17, 10×17, 10×16, and 8×37 world units. The first three yellow paths overlap closely. This matches the owner's glass count/appearance and proves the marks are committed vector operations: they are not settled-AA-only pixels and SVG export did not invent them.
+A command-aware M/L/A endpoint scan found one short blue authority path of roughly 82×69 world units. Four later yellow authority paths were roughly 11×17, 10×17, 10×16, and 8×37 world units. The first three yellow paths overlap closely. This matches the author's glass count/appearance and proves the marks are committed vector operations: they are not settled-AA-only pixels and SVG export did not invent them.
 
 ## Input diagnosis
 
-The owner independently reported that the 400% minimap felt harder to hit and suspected the marks came from minimap gestures. Before this correction, `chrome_minimap_contains` owned only the exact 92×114 rendered frame. A finger/calibration sample immediately outside that boundary fell through to `builder.begin(...)` when the draw tool was selected, turning an intended minimap interaction into a real short Stroke. Once committed, that Stroke correctly appeared both on glass and as its own SVG path.
+The author independently reported that the 400% minimap felt harder to hit and suspected the marks came from minimap gestures. Before this correction, `chrome_minimap_contains` owned only the exact 92×114 rendered frame. A finger/calibration sample immediately outside that boundary fell through to `builder.begin(...)` when the draw tool was selected, turning an intended minimap interaction into a real short Stroke. Once committed, that Stroke correctly appeared both on glass and as its own SVG path.
 
 The little 400% viewport had only a 28×28 invisible grab target. Starts elsewhere inside the frame acquired the viewport, but that did not protect near-frame misses from becoming ink.
 

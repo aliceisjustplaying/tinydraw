@@ -1,14 +1,14 @@
 # Fine 400% minimap control receipt — 2026-08-17
 
-## Owner verdict and scope
+## Author verdict and scope
 
-The owner accepted current ink as broadly usable and asked that ink remain
+The author accepted current ink as broadly usable and asked that ink remain
 unchanged. At 400%, circles, hairlines, long strokes, and thick strokes felt
 reasonably fast; mild diagonal XL-brush lag remains a documented lower-priority
 optimization. This change touches only minimap mapping, minimap tests/gates,
 and formatting violations already present in the responsive-ink call sites.
 
-The owner rejected the current 400% minimap on glass: it was too coarse, the
+The author rejected the current 400% minimap on glass: it was too coarse, the
 viewport was hard or apparently impossible to acquire, and returning to a small
 central drawing was unreliable.
 
@@ -28,7 +28,7 @@ Two independent problems were reproduced:
    of the 368 px viewport width. That made precise return navigation coarse.
 
 The prior test encoded the hidden-zone behavior as expected, so the old green
-classifier could not catch the owner's symptom.
+classifier could not catch the author's symptom.
 
 ## Fix
 
@@ -63,11 +63,11 @@ acquisition. Header comments describe the new contract.
   standing unrelated `overlap_cold=0` remains visible (`device-gate.log:245`).
 - No panic, watchdog, stack overflow, or mass-storage command occurred.
 
-## Owner glass verdict
+## Glass verdict
 
 **Rejected 2026-08-17.** The mapping was worse in the bottom-right→center case:
 acquisition took roughly five attempts, then the 0.25 400% drag scale exhausted
-the owner's physical finger travel before the viewport could reach center. The
+the author's physical finger travel before the viewport could reach center. The
 green deterministic classifier proved arithmetic endpoints but did not model
 acquisition reliability or finite finger travel.
 

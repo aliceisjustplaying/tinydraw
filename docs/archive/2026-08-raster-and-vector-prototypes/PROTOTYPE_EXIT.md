@@ -108,6 +108,6 @@ Banding itself repeated intersecting stroke/segment work: segment count increase
 Begin with host-testable production modules rather than porting the prototype coordinator:
 
 - **MaterializedCanvas** — owns the complete overview, world-aligned tile identities/slots, applied operation revisions, fallback resolution, invalidation, and incremental append application behind a small interface.
-- **DisplayScheduler** — single owner of overlay composition, staging, panel submission, completion, slot/version pinning, and physical timing behind a small interface.
+- **DisplayScheduler** — single author of overlay composition, staging, panel submission, completion, slot/version pinning, and physical timing behind a small interface.
 
 The first milestone is a memory/layout and state-machine spike: allocate the overview and bounded tile pool, prove overview-derived no-refusal pan on the host, and record the actual PSRAM/largest-block receipt on hardware before filling in all rendering tiers.

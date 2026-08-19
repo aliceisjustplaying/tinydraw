@@ -35,7 +35,7 @@ verification.
 - Cold rendering: five experiments completed. Fewer replay resumptions and the
   removal of a redundant preflight directory scan survived the battery. Final
   400% cold times were `213.970 ms` overlap, `490.747 ms` general, and
-  `344.686 ms` owner-document; maximum cooperative tick was `10.719 ms`.
+  `344.686 ms` captured-drawing; maximum cooperative tick was `10.719 ms`.
 - SVG smoothness: three measured experiments were sufficient. Two experiments
   remain unused because geometry parity and the requested smoothing were
   established by the shared curve change.
@@ -43,7 +43,7 @@ verification.
 Rejected experiments and their measurements are preserved in the linked AA,
 history, cold-render, and SVG campaign receipts.
 
-## Owner-check follow-up
+## Author-check follow-up
 
 The subsequent extreme-zoom SVG check exposed small teeth at quadratic span
 seams. Commit `b6630d6` removes them by using exact shared boundaries for SVG;
@@ -51,7 +51,7 @@ screen and PNG retain their raster-crack overlap. The red-first regression and
 all host suites pass. See
 [`SVG_EXTREME_ZOOM_EDGE_TEETH_2026_08_19.md`](SVG_EXTREME_ZOOM_EDGE_TEETH_2026_08_19.md).
 
-The same owner-check session then exposed USB Serial/JTAG not returning after
+The same author-check session then exposed USB Serial/JTAG not returning after
 mass-storage teardown, popup taps leaking to the toolbar below, and export text
 coverage/alignment regressions. Commits `4615a49`, `5ceb203`, and `b0d8ad2`
 close those issues; two physical eject-to-serial loops passed, including the
@@ -61,7 +61,7 @@ final flashed product. See
 ## Verification
 
 - Physical ESP32-S3 gate: every gate passed, including the 102-operation,
-  2,706-sample owner torture document; no failure marker.
+  2,706-sample captured stress drawing; no failure marker.
 - Host Debug: 31/31 CTest targets passed.
 - Host ASan: 13/13 CTest targets passed.
 - `./scripts/dev format-check`: passed.

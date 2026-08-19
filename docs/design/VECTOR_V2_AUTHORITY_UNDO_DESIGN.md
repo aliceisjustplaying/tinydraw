@@ -9,7 +9,7 @@ Progress:
 - [x] Slice 3: branch replacement after Undo.
 - [x] Slice 4: localized canvas transition, including exact mixed pen/eraser replay.
 - [x] Slice 5: product wiring, host suite, and credentials-enabled product/gate builds.
-- [x] Slice 6: normal firmware flash and cursory owner glass acceptance; high-zoom cold rebuild optimization is deferred to the final performance round.
+- [x] Slice 6: normal firmware flash and cursory glass acceptance; high-zoom cold rebuild optimization is deferred to the final performance round.
 
 This design covers the in-memory authority and whole-Stroke Undo/Redo. Autosave
 consumes the same serialized authority view.
@@ -28,13 +28,13 @@ Drawing after Undo replaces the inactive redo tail.
 Raster overview and tile pixels remain rebuildable copies. They are never the
 history authority.
 
-## One owner, not two
+## One authority, not two
 
 `OperationLog` is the complete in-memory drawing authority.
 A second `StrokeAuthority` wrapper would create two objects that could disagree
 about the active prefix, generation, or redo tail. Existing append, replay,
 SVG, producer, and canvas code already depend on `OperationLog`, so keeping one
-owner also gives migration a narrow compatibility path.
+authority also gives migration a narrow compatibility path.
 
 `OperationLog` owns these separate values:
 

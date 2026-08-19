@@ -632,7 +632,7 @@ The deterministic revisit gate is already green, so this is about residual human
 
 `LiveStrokeSession` sets `config.streamline = 0.4F` (`vector_v2_live_stroke_session.cpp:103-107`). The packet records that this improves joint smoothness but adds trailing lag; the raw clipped tip is shown provisionally to mask much of it.
 
-The owner's premise that all remaining finger lag is performance-related is therefore partly wrong. Scheduling stalls are the first target, but some gap is intentional filter phase delay.
+The author's premise that all remaining finger lag is performance-related is therefore partly wrong. Scheduling stalls are the first target, but some gap is intentional filter phase delay.
 
 After F3–F9 are fixed, run a blind glass A/B of:
 

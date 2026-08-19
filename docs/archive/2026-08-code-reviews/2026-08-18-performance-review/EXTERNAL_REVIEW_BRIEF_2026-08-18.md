@@ -2,8 +2,8 @@
 
 Date: 2026-08-18
 
-The product owner's message accompanying this packet controls the review. If
-anything here conflicts with that message, follow the owner's message. This
+The product author's message accompanying this packet controls the review. If
+anything here conflicts with that message, follow the author's message. This
 file supplies measurements, code entry points, and constraints for that broad
 review.
 
@@ -33,7 +33,7 @@ architecture supplies measured evidence and remains open to challenge.
 There is no finding limit. Report every worthwhile opportunity you can support
 from the code or the supplied measurements.
 
-## What the owner wants improved
+## What the author wants improved
 
 Performance is the main event:
 
@@ -45,7 +45,7 @@ Performance is the main event:
 - remove long uninterruptible presentation and background-work stalls;
 - find performance opportunities the current instrumentation has missed.
 
-The owner would like cold rendering near half the current time if the hardware
+The author would like cold rendering near half the current time if the hardware
 can do it. Please say whether roughly 250 ms is plausible, what would have to
 change, and which measurements would settle the question.
 
@@ -85,7 +85,7 @@ missed 4, 9, and 16 tiles at 50%, 100%, and 200%, causing 188 to 326 ms visible
 refills. The accepted gate now reports zero missing tiles and about 0.38 ms on
 each revisit. Pure-revisit amplification is 1.000.
 
-The owner still sees occasional stray rerenders. Known possible causes are slot
+The author still sees occasional stray rerenders. Known possible causes are slot
 eviction, off-view XL-stroke work dropped by the idle budget, and the pending
 range high-water fallback. The live rerender ledger currently exists only in
 the gate build, so ordinary product glass sessions cannot attribute those
@@ -102,7 +102,7 @@ Committed-operation overlay work reduced the worst interactive chunk append
 from 19.324 ms to 0.173 ms. The old 87 to 199 ms lift hitch fell to about 4 to
 5 ms in the accepted path. The provisional visual tail reaches the raw clipped
 touch point while committed authority stays filtered. Even with those numbers,
-the owner's intermittent lag report is real review scope. Look at sampling,
+the author's intermittent lag report is real review scope. Look at sampling,
 filtering, geometry, scheduling, TE wait, panel completion, and long work that
 can begin just before a Down event.
 
@@ -307,7 +307,7 @@ Find and report anything else.
 Start here:
 
 1. `PROJECT_STATE.md` for the current scorecard.
-2. `SHIP_CONTRACT.md` for product thresholds and owner decisions.
+2. `SHIP_CONTRACT.md` for product thresholds and author decisions.
 3. `docs/PERFORMANCE_CHRONICLE.md` for the readable speed ledger.
 4. `docs/archive/2026-08-code-reviews/review-findings/2026-08-16-cold-campaign/HANDOVER.md` sections 4 and 5 for
    the exhaustive cold-render experiments that did not work.

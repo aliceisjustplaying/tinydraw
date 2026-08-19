@@ -4,7 +4,7 @@ Date: 2026-08-16
 Firmware: gate harness at this commit, device ESP32-S3 (`/dev/cu.usbmodem101`)
 Log: two full gate-cascade runs; excerpts below are verbatim.
 
-## Ink-trace replay gate (production `offer()` path, recorded owner corpus)
+## Ink-trace replay gate (production `offer()` path, recorded recorded touch corpus)
 
 Five embedded recorded traces replayed from a core-1 priority-5 task at
 original relative timestamps through the production TouchEventBuffer, then
@@ -28,7 +28,7 @@ Findings:
   fidelity gate has its first recorded-corpus receipt.
 - **event→DMA p95 is 2.3–5.3 ms** on every trace — an order of magnitude
   under the ≤28 ms software proxy for the 45 ms optical requirement. The
-  latency lane confirmation matches the wave-2 owner receipts, now on the
+  latency lane confirmation matches the wave-2 author receipts, now on the
   real recorded corpus.
 - Coalescing is visible and modest (5–16% of moves), with the XL trace
   coalescing most (16%) because its commits are heaviest.
@@ -62,5 +62,5 @@ ledger; the tour-scoped receipt above is the meaningful number.
 Full cascade after both features: every previously green gate stayed green
 (`cache_tour=1 idle_repair=1 ink_trace=1 hairline_capacity=1 long_gesture=1
 export=1 pan*=1`), and the two known reds are unchanged and pre-existing
-(`mixed_draw=0` — the open 18.8 ms owner decision; cold gates red while the
+(`mixed_draw=0` — the open 18.8 ms author decision; cold gates red while the
 ≤500 ms campaign continues).

@@ -48,14 +48,14 @@ guards on every run:
 - Cache-tour ledger `amplification=1.000 stale=0 unexplained=0`.
 - Cold walls inside their lines (400%: 505.0 / 512.5 ms vs the 520
   hold-the-line ceiling); producer path untouched.
-- Verdict vector: every gate green except the owner-sequenced
+- Verdict vector: every gate green except the requested
   `overlap_cold` (ship contract decision #5).
 
-## Owner glass session (2026-08-16 21:23–21:29, `glass-session-overlay-2026-08-16.log`)
+## Glass session (2026-08-16 21:23–21:29, `glass-session-overlay-2026-08-16.log`)
 
 Content: evil hairlines at 25%, heavy overdraw at 50% ("20–30 overlapping
 strokes"), dense drawing at 100% and 400%, hairline figure-circles — one
-122-chunk mega-stroke. Owner verdict: 400% overlapping drawing "much
+122-chunk mega-stroke. Author verdict: 400% overlapping drawing "much
 better", "it does look fast".
 
 - **Input path confirmed on glass:** `append_max` 93–152 µs on 13 of 14
@@ -83,8 +83,8 @@ better", "it does look fast".
   113 → 24 events. Pre-existing class, at-or-better-than parity after the
   overlay; the drain swap refresh (≤79 ms) is now the largest sliceable
   contributor. Queued: band-sliced refreshes with polls between bands.
-- **Known consequences, owner-deprioritized:** minimap updates trail
+- **Known consequences, author-deprioritized:** minimap updates trail
   drawing by the drain latency (minimap base is keyed on the canvas
-  revision, which now trails during bursts; owner suspects it was always
+  revision, which now trails during bursts; author suspects it was always
   laggy — below déjà-vu and inking in priority). New UX bug logged: a pan
   starting over the zoom button is swallowed entirely (todo #11).

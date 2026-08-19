@@ -1,7 +1,8 @@
 # TinyDraw product tenets
 
 Restored: 2026-08-16. These are the stable design priorities behind the
-numeric requirements in [`SHIP_CONTRACT.md`](SHIP_CONTRACT.md). The ship
+numeric requirements in the archived
+[`SHIP_CONTRACT_PRE_RELEASE_2026-08-19.md`](SHIP_CONTRACT_PRE_RELEASE_2026-08-19.md). The ship
 contract wins if the two documents ever conflict.
 
 1. **The newest visible touch truth comes first.** Drawing must follow the

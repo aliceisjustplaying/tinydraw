@@ -1,8 +1,8 @@
-# Owner-document battery integration — 2026-08-19
+# Author-document battery integration — 2026-08-19
 
 ## Result
 
-The compact authority captured from the owner's real torture document is now
+The compact authority captured from the author's real torture document is now
 embedded only in the 604-slot gate firmware. The loader validates the `TDOC`
 header and exact archived shape, decodes each sample without alignment or host
 endianness assumptions, and replays all operations through production append

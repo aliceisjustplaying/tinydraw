@@ -17,7 +17,7 @@ strokes + "evil hairlines") rebuilt from scratch at 400% zoom:
 | Wave-2 baseline | **1,269.157 ms** | starting point (compute 1,165 ms) |
 | Wave 3 | **668.980 ms** | stateless windowed span search, device-native arithmetic (no per-row float libcalls), internal-SRAM producer scratch, once-per-endpoint prepared curve units, unit-merged masked row sweeps, caller-split painters (−47.3%) |
 | Cold Stage B | **507.0 ms** | strided publish straight from the supertask surface (−10 ms), H7 op-level chord sweep — one y-sorted row pass per operation (−120 ms), O(1) raw-slot metadata directory (−26 ms), honest work-budget slices |
-| Post-cleanup gate | **515.123 ms** | inside the owner-accepted 520 ms development guard; still above the ≤500 ms release requirement |
+| Post-cleanup gate | **515.123 ms** | inside the accepted 520 ms development guard; still above the ≤500 ms release requirement |
 
 50/100/200% finished under the ≤500 ms product line at Stage B
 (437.9/428.4/488.0 ms). Equally important were the *rejected* experiments
@@ -95,7 +95,7 @@ budget. It took three device iterations to land honestly: raw retention
 alone didn't move the gate (the drops were uniforms), enumeration had to
 be extended to remembered views, and the 10 ms input budget was silently
 skipping 150–208 retention tiles per XL stroke until the idle budget was
-split from the input budget. Owner glass verdict: "extremely impressed…
+split from the input budget. Glass verdict: "extremely impressed…
 way better. I see basically no redraws."
 
 ## 5. Optical smoothness: the three-lever stack
@@ -108,8 +108,8 @@ way better. I see basically no redraws."
    storage cost, 0.25 px at 400%. joint_p95 fell 30–40%
    (fast-curve max 90°→53°, sharp joints 69→27); regressions measured:
    cold walls unchanged within dice, ink latency ±34 µs, +3–10% samples
-   from reduced dedup. Owner: "much better."
-2. **Streamline 0.4** (owner-suggested): the dt-adaptive input filter cut
+   from reduced dedup. Author: "much better."
+2. **Streamline 0.4** (suggested): the dt-adaptive input filter cut
    slow-precise joint_p95 36.9°→22.8° for ~0.13 px of extra trailing lag.
    Measured surprise: at 1 kHz the filter's *real* trailing gap is tens
    of pixels on fast strokes at any setting (p95 37→40 px for

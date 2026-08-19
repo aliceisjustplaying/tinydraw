@@ -12,7 +12,7 @@ reached `TINYDRAW_VECTOR_V2_READY` with `pass=1`, nine TE edges, and 6,312 bytes
 of main-task stack margin (`product-boot.log`). No USB mass-storage command was
 run.
 
-Owner finger-on-glass acceptance remains pending.
+Author finger-on-glass acceptance remains pending.
 
 ## Cause and seam
 

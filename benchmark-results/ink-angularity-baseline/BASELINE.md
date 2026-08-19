@@ -1,8 +1,8 @@
-# Ink angularity baseline — recorded owner corpus
+# Ink angularity baseline — recorded recorded touch corpus
 
 Date: 2026-08-16
 Tool: `tinydraw_vector_v2_ink_angularity` (host-release)
-Corpus: the six recorded owner traces (`testdata/ink-traces/`, all
+Corpus: the six recorded recorded traces (`testdata/ink-traces/`, all
 source=recorded, ~1 kHz sampler cadence, commits `9e67220` + `7513aa1`)
 Pipeline: production `InkStream` (default config, size 5.0 / 20.0 for the XL
 trace) → `operation_point` mapping (camera at origin) →
@@ -49,7 +49,7 @@ slow-precise-100.csv       chords=4 chords_n=2118  dev_max=0.03   dev_p95=0.01  
 
 ## Findings
 
-1. **On real 1 kHz owner input, chord-vs-curve deviation is negligible:
+1. **On real 1 kHz recorded touch input, chord-vs-curve deviation is negligible:
    ≤0.11 px at 400% under the current 2-chord authority.** The prior
    14.65 px figure came from the synthetic/adversarial corpus with sparse,
    long segments; real curve units are 0.2–1.8 px long. The four-span
@@ -69,7 +69,7 @@ slow-precise-100.csv       chords=4 chords_n=2118  dev_max=0.03   dev_p95=0.01  
    quarter-px quantization plus 32-sample chunk boundaries — which is
    exactly what arc-length resampling (external review §9.4) conditions,
    and what hard-edge aliasing amplifies visually.
-4. The residual owner-visible angularity is therefore expected to live in
+4. The residual user-visible angularity is therefore expected to live in
    input-jitter conditioning (resampling), rendering (settled AA), and the
    live-preview lane — not in committed curve subdivision.
 

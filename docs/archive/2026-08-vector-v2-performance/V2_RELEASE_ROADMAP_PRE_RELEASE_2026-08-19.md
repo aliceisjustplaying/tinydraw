@@ -2,7 +2,7 @@
 
 Last updated: 2026-08-19. Feature implementation and the maintainability
 cleanup are complete. This file contains only forward work. Current evidence
-and accepted results live in [`PROJECT_STATE.md`](PROJECT_STATE.md); detailed
+and accepted results live in [`PROJECT_STATE.md`](../../../PROJECT_STATE.md); detailed
 history lives in receipts, tags, and Git history.
 
 Vector V2 is the ESP32 product generation. Raster V1, QEMU, and the macOS host
@@ -50,14 +50,14 @@ remain supported targets.
       result from 585.821 ms to 476.969 ms; that receipt's device battery passed.
 - [x] **Done 2026-08-18:** deterministic Undo/Redo baseline (`history_latency`
       gate) and the COW preserved-tile swap treatment. Revisit repair fell
-      338,998→229 µs; owner glass-accepted. Receipts:
+      338,998→229 µs; glass-accepted. Receipts:
       `benchmark-results/history-latency-2026-08-18/RECEIPT.md`.
 - [x] Finish settled-AA performance. Landed 2026-08-18: no_ink fast path,
       internal planes, saturated-destination skip (−43% on the evil corpus),
       and the deterministic `settle_timing` battery gate. Real documents now
       settle 429–552 ms at 400% but 690–922 ms at 50–200%; the designated
       next levers are slice work-charge recalibration and edge-span
-      recording (see `docs/HANDOVER_2026_08_18_FINAL_ROUND.md` §1). The owner
+      recording (see `docs/HANDOVER_2026_08_18_FINAL_ROUND.md` §1). The author
       closed the bounded five-experiment campaign on 2026-08-19; remaining
       visual refinement is post-release work.
 - [x] Diagnose the transient color-popup byte-swap incident
@@ -97,7 +97,7 @@ remain supported targets.
       world edges, and every zoom.
 - [ ] Soak repeated draw/pan/Undo/Redo/autosave/export/power cycles for hours.
 - [ ] Keep deterministic journal truncation and corruption fixtures green.
-      Destructive physical power-cut testing remains outside the owner-prioritized
+      Destructive physical power-cut testing remains outside the requested
       release work.
 - [ ] Run the complete host, sanitizer, firmware, hardware, optical, recovery,
       and export battery on the same release candidate.

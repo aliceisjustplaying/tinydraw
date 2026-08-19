@@ -2,7 +2,7 @@
 
 ## Status
 
-**Host and product firmware builds pass. The owner-triggered network attempt visibly completed `CONNECTING` → `SYNCING` → `TIME SET`; subsequent product boots retain the synchronized RTC. The latest combined product commit `c404456` is flashed in ordinary USB-Serial/JTAG mode. No mass-storage transition was invoked.**
+**Host and product firmware builds pass. The manually triggered network attempt visibly completed `CONNECTING` → `SYNCING` → `TIME SET`; subsequent product boots retain the synchronized RTC. The latest combined product commit `c404456` is flashed in ordinary USB-Serial/JTAG mode. No mass-storage transition was invoked.**
 
 ## Product behavior
 
@@ -61,7 +61,7 @@ failure: its startup presentation recorded zero TE edges, zero pushes,
 `tear_edge_timeout=1`, and `pass=0`, but the old app still printed READY
 ([`toast-fix-product-boot.log`](toast-fix-product-boot.log)). A normal serial
 hard reset, with no flash or mass-storage transition, immediately produced nine
-TE edges, eleven pushes, and `pass=1`; the owner confirmed the screen recovered
+TE edges, eleven pushes, and `pass=1`; the author confirmed the screen recovered
 ([`toast-fix-reset-recovery.log`](toast-fix-reset-recovery.log)).
 
 Commit `f1b2d47` now retries a failed startup presentation up to three times with
@@ -76,7 +76,7 @@ expiry are all present in the latest combined product. Its boot records startup
 
 ## Remaining physical receipt
 
-The owner has already observed a successful network sequence through `TIME SET`.
+The author has already observed a successful network sequence through `TIME SET`.
 A final combined-build glass check should confirm the corrected label centering,
 three-second dismissal, and an ordinary second attempt. Capturing the serial
 `TINYDRAW_NTP_PHASE`, `TINYDRAW_NTP_OK`, and `TINYDRAW_NTP_DONE success=1

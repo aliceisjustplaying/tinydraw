@@ -5,7 +5,7 @@ controller), panel-probe target (`./scripts/esp32 panel-probe PORT [CELL 0-6]`).
 Cell 0 runs the software suite; cells 1-5 select optical workloads and cell 6
 cycles the camera comparison set in one take.
 Receipts: `benchmark-results/blockA-panel-limits/probe-{40,50,60}mhz.log` at
-[`v2-feature-complete-pre-cleanup`](docs/EVIDENCE_ARCHIVE.md).
+[`v2-feature-complete-pre-cleanup`](../../EVIDENCE_ARCHIVE.md).
 
 This file records **software-measured physics only**. Nothing here is an
 optical tearing verdict; those belong to the Block B camera cells. Every
@@ -122,7 +122,7 @@ capture is the only tear instrument.**
 4. White-notch attribution to overclock signal integrity: there was no
    overclock; the mechanism is still unknown.
 
-## Product implications (pending optical confirmation)
+## Product implications at capture time
 
 - 24 FPS pan floor: physically comfortable at any region size.
 - 30 FPS pan target: full-frame edge-synced tops out at 29.4 FPS;
@@ -133,7 +133,7 @@ capture is the only tear instrument.**
   (27.2 vs 26.7 rows/ms). Whether that parity is optically safe is
   exactly what the Block B A/B decides — it cannot be decided in software.
 
-## Open questions for Block B (optical)
+## Open questions at capture time
 
 1. Does the rising-edge row-zero sweep produce zero tears at 29.4 FPS
    full-frame and at 58.8 FPS canvas-region?
@@ -142,3 +142,11 @@ capture is the only tear instrument.**
 4. White-notch reproduction and localization with guard columns.
 5. GETSCANLINE validation with an ID-read control; if reads work, a
    software beam oracle replaces most future camera sessions.
+
+## Later optical result
+
+Block B resolved the shipping question. Its unsynchronized positive control
+tore, while the rising-edge full-frame product cadence stayed clean across
+1,495 analyzed frames. Later product testing found no tearing in normal product
+pan at every supported zoom. The test method and limits are preserved in
+[`benchmark-results/blockB-optical/PROTOCOL.md`](../../../benchmark-results/blockB-optical/PROTOCOL.md).

@@ -2,10 +2,10 @@
 
 Recorded: 2026-08-16
 Hardware: ESP32-S3 + CO5300 on `/dev/cu.usbmodem101`
-Before: `live-ink-visual-first-owner.log`
+Before: `live-ink-visual-first-author.log`
 After: `gate-chrome-prestage.log`
 
-The owner reported two rare micro-flickers during the visual-first ink check.
+The author reported two rare micro-flickers during the visual-first ink check.
 They could not be reproduced on demand, and no live-ink failure appeared in the
 trace. One full-frame chrome refresh spent 82.192 ms inside staged chrome paint
 and 96.577 ms between transport start and drain, matching the visible symptom.

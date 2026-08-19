@@ -19,10 +19,10 @@ The current pre-final acceptance is
 - [`PHANTOM_TOP_EDGE_CONTACT_2026_08_19.md`](PHANTOM_TOP_EDGE_CONTACT_2026_08_19.md) — raw autosave and two physical export pairs trace unintended edge dots to motionless 25%-zoom contacts in the top sensor fringe; intentional interior taps remain valid.
 - [`TRANSIENT_CHROME_POPUP_INCIDENT_2026_08_18.md`](TRANSIENT_CHROME_POPUP_INCIDENT_2026_08_18.md) — confirmed popup/history split-contact bug and six-poll lift fix.
 - [`COLOR_POPUP_BYTESWAP_INCIDENT_2026_08_18.md`](COLOR_POPUP_BYTESWAP_INCIDENT_2026_08_18.md) — modal RGB565 staging-domain root cause and fix.
-- [`../../../benchmark-results/owner-document-battery-2026-08-19/RECEIPT.md`](../../../benchmark-results/owner-document-battery-2026-08-19/RECEIPT.md) — the owner's 102-operation/2,706-sample torture document is a gate-only physical cold-render corpus.
+- [`../../../benchmark-results/captured-drawing-battery-2026-08-19/RECEIPT.md`](../../../benchmark-results/captured-drawing-battery-2026-08-19/RECEIPT.md) — the captured 102-operation/2,706-sample stress drawing is a gate-only physical cold-render corpus.
 
-- [`../../../benchmark-results/v2-autosave-2026-08-17/RECEIPT.md`](../../../benchmark-results/v2-autosave-2026-08-17/RECEIPT.md) — single-journal authority autosave, exhaustive truncation/corruption recovery fixtures, background ESP flash adapter, normal firmware flash, blank and real multi-Stroke reboot restoration, and owner-confirmed Redo/session recovery; autosave-enabled performance joins the final optimization round.
-- [`../../../benchmark-results/svg-export-2026-08-17/RECEIPT.md`](../../../benchmark-results/svg-export-2026-08-17/RECEIPT.md) — original detailed SVG export: one filled variable-width path per operation chunk, transactional 4 KiB flash streaming, complete physical-device readback/CRC verification in 1.024 s, and no watchdog. The [owner-artifact follow-up](../../../benchmark-results/stroke-svg-minimap-acquire-2026-08-17/RECEIPT.md) groups chunks into one path per physical Stroke and removes the synthetic background rectangle.
+- [`../../../benchmark-results/v2-autosave-2026-08-17/RECEIPT.md`](../../../benchmark-results/v2-autosave-2026-08-17/RECEIPT.md) — single-journal authority autosave, exhaustive truncation/corruption recovery fixtures, background ESP flash adapter, normal firmware flash, blank and real multi-Stroke reboot restoration, and confirmed Redo/session recovery; autosave-enabled performance joins the final optimization round.
+- [`../../../benchmark-results/svg-export-2026-08-17/RECEIPT.md`](../../../benchmark-results/svg-export-2026-08-17/RECEIPT.md) — original detailed SVG export: one filled variable-width path per operation chunk, transactional 4 KiB flash streaming, complete physical-device readback/CRC verification in 1.024 s, and no watchdog. The [export-artifact follow-up](../../../benchmark-results/stroke-svg-minimap-acquire-2026-08-17/RECEIPT.md) groups chunks into one path per physical Stroke and removes the synthetic background rectangle.
 
 The archived logs are immutable evidence captured from the physical ESP32-S3.
 Historical log names and telemetry markers retain their original `production`
@@ -36,7 +36,7 @@ wording so they remain traceable to the commits and commands that produced them.
   failures; telemetry does not overrule the visible result.
 - [`espdraw-offline-review-2026-08-15.md`](../../archive/2026-08-code-reviews/external/espdraw-offline-review-2026-08-15.md) — independent source/evidence trace showing that the beam-race oracle is circular, full-refresh reuse fails open, provisional ink is omitted, and the drawing budget is not a preemption bound.
 - [`../../../PROJECT_STATE.md`](../../../PROJECT_STATE.md) — current verdict and
-  acceptance thresholds. The forward queue is [`../../../V2_ROADMAP.md`](../../../V2_ROADMAP.md).
+  acceptance record. Deferred work is [`../../POST_RELEASE.md`](../../POST_RELEASE.md).
 
 The closure documents below preserve what their automation established at the
 time. Their claims of tear-free pan, bounded interaction latency, or physical

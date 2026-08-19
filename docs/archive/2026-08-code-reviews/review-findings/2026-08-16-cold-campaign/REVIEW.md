@@ -70,7 +70,7 @@ are the next candidates worth a measured A/B.
 the failing state was masked because the gate cascade stopped at the cold
 gates. At 25%, with no in-place tile painting at all, appends already
 average 11.4 ms — overview replay plus commit bookkeeping consumes ~75% of
-the budget before any tile is painted. Owner decision needed: either the
+the budget before any tile is painted. Author decision needed: either the
 per-append budget reflects a per-chunk cost that curved authority
 legitimately raised, or the overview-replay-per-chunk design needs its own
 optimization pass (the overview repaints the chunk's full bounds through
@@ -116,7 +116,7 @@ natural first extraction (it is pure memory-plan code).
 
 ## Ink smoothness — the four-span experiment deserves a rematch
 
-The owner-visible complaint is live-curve angularity: committed authority
+The user-visible complaint is live-curve angularity: committed authority
 approximates each quadratic with **two chords**, and the four-span (four
 chord) variant was rejected as too costly. That cost model is now stale:
 
@@ -133,7 +133,7 @@ span) experiment on top of `a3e8ff8`. Adaptive subdivision would spend the
 chords only on tight curvature, which is where the angularity is seen.
 Caveat: this changes committed authority geometry, so per the dependency
 matrix it reopens cold exactness fixtures, SVG parity, and the frozen
-corpus statistics — it needs an owner decision and a re-baseline, but it
+corpus statistics — it needs an author decision and a re-baseline, but it
 is no longer expensive.
 
 ## Settled AA — a concrete design that fits the measured physics

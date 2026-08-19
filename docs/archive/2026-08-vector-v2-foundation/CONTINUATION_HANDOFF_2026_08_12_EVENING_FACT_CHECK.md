@@ -148,7 +148,7 @@ Internal scratch improved raster only 0.36% and total banded wall time 1.69%. Th
 1. `PROTOTYPE_EXIT.md` now freezes the camera-aligned atlas except for evidence fixes.
 2. Start production with two deep modules and host-test their interfaces:
    - **MaterializedCanvas:** complete overview, world-aligned tile keys/slots, revisions, overview-derived misses, incremental append application.
-   - **DisplayScheduler:** single owner of staging/submission/completion, overlay composition, slot/version pinning, and physical timing.
+   - **DisplayScheduler:** single author of staging/submission/completion, overlay composition, slot/version pinning, and physical timing.
 3. Before committing the final pool sizes, implement an allocation/memory spike for the 330 KB overview, compact operation log, LOD/index tiers, tile pool, renderer workspace, and 1–1.5 MiB largest-block reserve.
 4. Bring up zoom in gated order: 25%, 50%, 100%, 200%, 400%; treat 800% as optional. Measure first physical fallback, full fallback, settled, pan refusal count (must be zero in ordinary use), and full pen event-to-submit separately from touch-to-photon.
 5. Add persisted materializations and checkpointed replay after the in-RAM architecture is stable. Optimize assembly only after the production profile is compute-bound.

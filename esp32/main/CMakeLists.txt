@@ -144,7 +144,7 @@ endif()
 if(TINYDRAW_RASTER_V1)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_RASTER_V1=1)
 endif()
-if(NOT TINYDRAW_VECTOR_V2_TILE_SLOTS STREQUAL "448")
+if(NOT TINYDRAW_VECTOR_V2_TILE_SLOTS STREQUAL "604")
   target_compile_definitions(${COMPONENT_LIB} PRIVATE
     TINYDRAW_VECTOR_V2_TILE_SLOTS=${TINYDRAW_VECTOR_V2_TILE_SLOTS}
   )
@@ -167,7 +167,7 @@ if(TINYDRAW_VECTOR_V2_GATE_HARNESS)
   endforeach()
   # Compact authority captured from the owner's real release-stress document.
   target_add_binary_data(${COMPONENT_LIB}
-    "${CMAKE_CURRENT_LIST_DIR}/../../testdata/documents/owner-torture-2026-08-19.tdoc" BINARY)
+    "${CMAKE_CURRENT_LIST_DIR}/../../testdata/documents/captured-drawing-2026-08-19.tdoc" BINARY)
 endif()
 if(TINYDRAW_VECTOR_V2_TILE_CENSUS)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_V2_TILE_CENSUS=1)

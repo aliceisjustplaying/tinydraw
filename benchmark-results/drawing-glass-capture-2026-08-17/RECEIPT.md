@@ -1,8 +1,8 @@
-# Owner glass capture receipt — 2026-08-17
+# Glass capture receipt — 2026-08-17
 
 ## Scope
 
-The owner exercised the latest product logic under the dedicated
+The author exercised the latest product logic under the dedicated
 `TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE` firmware, including one stroke at 25%,
 the hardware zoom cycle, 400% drawing, and minimap navigation. The device was
 then restored to the ordinary `vector-v2` firmware. No mass-storage command was
@@ -10,11 +10,11 @@ run.
 
 ## Capture-firmware stall
 
-The owner observed a 2–3 second hang after drawing at 25% and pressing the
+The author observed a 2–3 second hang after drawing at 25% and pressing the
 hardware zoom button. The serial timeline attributes that hang to the
 diagnostic capture dump:
 
-- the 50% zoom presentation completed at 12:37:41 (`owner-actions.log`, line 8);
+- the 50% zoom presentation completed at 12:37:41 (`author-actions.log`, line 8);
 - `TINYDRAW_INKTRACE_CAPTURE_BEGIN events=1933` followed at 12:37:41 (line 10);
 - the synchronous 1,933-row CSV print ended at 12:37:44 (line 1947);
 - the next 100% zoom presentation ran immediately afterward (line 1948).
@@ -35,31 +35,31 @@ explicitly host-triggered.
 
 ## 400% ink observation
 
-The owner reported that 400% drawing still felt laggy under the capture build.
+The author reported that 400% drawing still felt laggy under the capture build.
 Two unblocked 400% strokes reported:
 
 | Stroke log line | submit avg / max | DMA-complete avg / max | event-age max | failures |
 |---|---:|---:|---:|---:|
-| `owner-actions.log:2004` | 1.791 / 3.641 ms | 3.019 / 5.479 ms | 6.230 ms | 0 |
-| `owner-actions.log:2013` | 1.868 / 4.598 ms | 3.110 / 7.956 ms | 1.240 ms | 0 |
+| `author-actions.log:2004` | 1.791 / 3.641 ms | 3.019 / 5.479 ms | 6.230 ms | 0 |
+| `author-actions.log:2013` | 1.868 / 4.598 ms | 3.110 / 7.956 ms | 1.240 ms | 0 |
 
 These counters do not explain the glass verdict and do not include optical
 scan-to-pixel latency. The first post-dump stroke is contaminated by the dump:
 `poll_max_us=3550173`, 14 old events, and `touch_event_age_max_us=1345935`
-(`owner-actions.log:1986`), so it is excluded from the clean pair above.
+(`author-actions.log:1986`), so it is excluded from the clean pair above.
 
-A second controlled capture isolated one medium curved stroke after the owner
-had reached 400% with the hardware button. The owner then remained hands-off
+A second controlled capture isolated one medium curved stroke after the author
+had reached 400% with the hardware button. The author then remained hands-off
 until the explicit end marker. It captured one Down, 2,379 Moves, and one Up
-over 2.576 seconds with no overflow (`owner-400-controlled.log`, lines 11–2396).
+over 2.576 seconds with no overflow (`author-400-controlled.log`, lines 11–2396).
 Only 190 events changed coordinate: the controller's distinct-position cadence
 was 73.758 Hz, with 12/13/14 ms minimum/median/p95 intervals. Position jumps
 were 9.220 px median and 28.000 px p95
-(`owner-400-controlled-analysis.txt`). The product consumed 1,044 events,
+(`drawing-400-controlled-analysis.txt`). The product consumed 1,044 events,
 coalesced 1,337 redundant Moves, and presented 192 changed ink samples. Event
 age was at most 1.241 ms; submit was 1.527/2.541 ms average/max and DMA completion
 was 2.353/3.810 ms average/max, with zero presentation failure or touch overflow
-(`owner-400-controlled.log:1`).
+(`author-400-controlled.log:1`).
 
 The current code already separates smoothed authority from the raw visual tip:
 `process_live_ink_move` receives `last_canvas_touch`
@@ -69,7 +69,7 @@ ribbon ends at that visual point (`core/src/ribbon_geometry.cpp`, lines
 interval after each coordinate becomes available. The remaining observable
 cadence is the controller's 12–14 ms distinct-position interval plus unmeasured
 optical scan-to-pixel latency. Hiding that would require predictive visual ink,
-which is not justified without an owner glass verdict because prediction can
+which is not justified without an glass verdict because prediction can
 overshoot corners.
 
 No product ink code changed during either capture.

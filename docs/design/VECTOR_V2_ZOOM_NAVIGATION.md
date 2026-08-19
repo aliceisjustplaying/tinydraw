@@ -229,7 +229,7 @@ Implemented behavior:
 
 Tapping the zoom percentage to toggle visibility remains optional. The earlier
 relative-drag and enlarged-grab-target iterations are historical. Absolute
-pointer control and full-dock arbitration were owner-accepted on 2026-08-17;
+pointer control and full-dock arbitration were accepted on 2026-08-17;
 the final compact capture recorded 778 events / 4,074 offers, zero overflow or
 failure marker, promoted drags through `y=441`, and stationary `y=443..445`
 taps with no camera movement. See the

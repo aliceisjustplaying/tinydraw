@@ -1,6 +1,6 @@
 # Sixteenth-world sample units — experiment receipt (2026-08-16)
 
-Owner: "let's try it and see if it causes regressions and if yes how much."
+Author: "let's try it and see if it causes regressions and if yes how much."
 Change: `kSampleUnitsPerWorldUnit` 4 → 16 (`operation.h`); every
 encode/decode site converted through the constant or geometry-preserving
 ×4 on generators/fixtures (field names unchanged pending experiment
@@ -9,7 +9,7 @@ zero (23,552 / 28,672 max coordinates fit the existing uint16).
 
 ## Wins (measured)
 
-Angularity at 400% (recorded owner traces, host tool):
+Angularity at 400% (recorded recorded traces, host tool):
 
 | trace | joint_p95 | joint_max | joints >20° |
 |---|---|---|---|
@@ -37,7 +37,7 @@ jitter (arc-length resampling's territory), per the stack model.
 - **Sample storage: +3–10% on recorded traces** (fewer quantized-duplicate
   drops: fast-curve units 381→392, slow-precise 525→579). Well inside
   capacity; visible in `operations=`/`samples=` on future receipts.
-- **Verdict vector: identical** (green except owner-sequenced
+- **Verdict vector: identical** (green except requested
   `overlap_cold`); ledger amplification=1.000; five INKTRACE pass=1;
   mixed_draw green (worst append 171 µs); host suites 229/229 + ASan.
 
@@ -52,9 +52,9 @@ jitter (arc-length resampling's territory), per the stack model.
 Logs: `/tmp/units16-1.log` archived as
 `../committed-overlay/units16-battery-1.log` (same battery format).
 
-## Addendum — streamline 0.4 (owner follow-up, same day)
+## Addendum — streamline 0.4 (author follow-up, same day)
 
-Owner glass verdict on units16: "much better," wants it even smoother;
+Glass verdict on units16: "much better," wants it even smoother;
 suggested raising the perfect-freehand streamline (0.445 was an STT
 artifact; corrected to 0.4). Mechanism: `InkConfig.streamline` scales the
 exponential trailing filter α = 0.15 + (1−s)·0.85 (`ink_stream.cpp:64`);

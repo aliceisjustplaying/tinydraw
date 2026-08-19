@@ -1,6 +1,6 @@
 # Settled-AA + arc-length resampling — host prototype receipts (2026-08-16)
 
-Tool: `tinydraw_vector_v2_settled_aa_prototype` (host-release). Owner
+Tool: `tinydraw_vector_v2_settled_aa_prototype` (host-release). Author
 decisions #3/#4: prototype approved; committed authority geometry frozen.
 
 Pipeline is the production one: recorded trace → `InkStream` → (optional
@@ -12,7 +12,7 @@ boundary-pixel pass will approximate: per-operation UNION tapered-capsule
 coverage (self-overlap never darkens), front-to-back newest-first
 compositing across operations, erasers as opaque white.
 
-**Frozen RGB565 blend model (proposal, owner review pending):** RGB565
+**Frozen RGB565 blend model (proposal, author review pending):** RGB565
 expands to 8-bit by bit replication, compositing accumulates in float,
 one final round to RGB565 over white.
 
@@ -60,12 +60,12 @@ densities.
 
 2 px spacing *adds* samples on fast strokes (gap filling) while slashing
 slow-stroke oversampling; 4 px shrinks both. The spacing constant is a
-real design choice; the renders let the owner judge the smoothness delta
+real design choice; the renders let the author judge the smoothness delta
 per spacing before any constant freezes.
 
-## Addendum — why Raster V1 is not jagged and Vector V2 is (owner question)
+## Addendum — why Raster V1 is not jagged and Vector V2 is (author question)
 
-Owner observation: AA looks nice but does not fix the optical jaggedness,
+Author observation: AA looks nice but does not fix the optical jaggedness,
 and Raster V1 has no such jaggedness. Answer, with receipts:
 
 1. **V1's historical jaggedness fix was shape smoothing** — commit
@@ -88,13 +88,13 @@ and Raster V1 has no such jaggedness. Answer, with receipts:
    at equal smoothing; resampling cleans the jitter component; the
    combination (float + resampled) is the cleanest — the V1 look.
 
-**Fix candidate (owner decision needed): sixteenth-world sample units.**
+**Fix candidate (author decision needed): sixteenth-world sample units.**
 Max coordinate 1472×16 = 23,552 fits the existing `uint16` — zero storage
 cost — and gives 0.25 px centerline resolution at 400%. It is an
 authority-format change: per the dependency matrix it reopens cold
 exactness, SVG parity, and the frozen corpus statistics (same reopen class
 as the declined Stage C, but with a verified, visible justification).
-Owner has already ruled backwards compatibility out of scope.
+Author has already ruled backwards compatibility out of scope.
 
 ## Reproduce
 

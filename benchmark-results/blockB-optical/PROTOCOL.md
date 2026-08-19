@@ -2,7 +2,7 @@
 
 Registered before capture: 2026-08-15. Product gate per SHIP decision:
 **≥24 FPS tear-free pan**. Full-frame TE-synced streaming delivers 29.4 FPS
-(`HARDWARE_LIMITS.md` §5), so a clean cell 1 satisfies the product gate with
+(`docs/receipts/hardware/CO5300_PANEL_LIMITS_2026-08-15.md` §5), so a clean cell 1 satisfies the product gate with
 margin.
 
 Rules of this protocol:

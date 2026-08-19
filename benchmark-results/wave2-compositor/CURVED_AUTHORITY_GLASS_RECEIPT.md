@@ -20,9 +20,9 @@ polygonal authority.
   48.659 ms, a 10.2% increase within the 15% experiment guard.
 - ESP-IDF production build passed; app image retained 61% partition headroom.
 
-## Owner glass pass
+## Glass pass
 
-The owner drew circles and dense hairlines, lifted, cycled through 25%, 50%,
+The author drew circles and dense hairlines, lifted, cycled through 25%, 50%,
 100%, 200%, and 400%, and panned at high zoom. Across the captured stroke
 groups:
 
@@ -41,7 +41,7 @@ maximum improved.
 ## Product verdict
 
 Authority replacement is much improved and the former overt angular regression
-is fixed. The owner still sees more angularity than desired in the live curve,
+is fixed. The author still sees more angularity than desired in the live curve,
 so smoothness remains **yellow**. There was no overt change at lift or zoom,
 which isolates the remaining issue to the live midpoint curve itself.
 

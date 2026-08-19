@@ -1,6 +1,6 @@
 # Déjà-vu fix — receipt (2026-08-16)
 
-Owner directive: "stop when you have a fix for deja vu." Delivered in one
+Author directive: "stop when you have a fix for deja vu." Delivered in one
 batch with the live ledger instrumentation and the battery-region refresh.
 
 ## Mechanism
@@ -34,7 +34,7 @@ multi-zoom cache, then revisit each zoom:
 | 200 | 16 | **0** | 326.3 ms | **0.37 ms** |
 | 400 | 0 | 0 | 0.3 ms | 0.32 ms |
 
-Every guard held: verdict vector identical (green except owner-sequenced
+Every guard held: verdict vector identical (green except requested
 overlap_cold), mixed_draw worst append 176 µs, five INKTRACE pass=1,
 cache-tour ledger amplification=1.000 stale=0 unexplained=0, cold 400%
 wall 503.0 ms inside the 520 ceiling, host 230/230 + ASan.
@@ -46,7 +46,7 @@ ground-truth full-log replay.
 
 ## Also in this batch
 
-- **Battery-region refresh** (owner question): a battery change now
+- **Battery-region refresh** (author question): a battery change now
   re-presents only `chrome_battery_region()` (124×44) instead of the full
   frame (was 60–140 ms; the measured "lift spike").
 - **Live ledger instrumentation** (`TINYDRAW_LIVE_LEDGER site=zoom|

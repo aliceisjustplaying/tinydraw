@@ -130,7 +130,7 @@ Vector operation log (authoritative)
 
 MaterializedCanvas state module
         ↓ immutable publication request / pinned slot revision
-DisplayScheduler single owner
+DisplayScheduler single author
         ↓ staging + overlays + panel queue + completion
 AMOLED
 ```
@@ -153,7 +153,7 @@ Its interface should be small and host-testable. Renderer and ESP display concer
 
 #### `DisplayScheduler`
 
-This module should be the single owner of:
+This module should be the single author of:
 
 - panel staging and queue submission;
 - overlay composition;

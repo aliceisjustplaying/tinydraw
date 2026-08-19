@@ -29,7 +29,7 @@ TraceEvent  { t_us (monotonic, from trace start), kind (Down|Move|Up), x, y }
      lift-drain backlog and stroke-boundary loss.
   5. `under-overlay` — stroke crossing zoom rail, minimap, toolbar regions.
 
-The canonical owner corpus is complete and frozen. The temporary firmware
+The canonical recorded touch corpus is complete and frozen. The temporary firmware
 capture mode and recorder were retired after producing it.
 
 Build the canonical validator with `cmake --build --preset host-debug --target
@@ -78,7 +78,7 @@ each stage delta, plus a final summary line with the gate verdicts.
 ## 5. Optical spot-check (no CV project)
 
 The eyeball-burst method from Block B: film one replayed trace at 240 fps
-(or the owner scribbles live), extract consecutive-frame bursts, measure
+(or the author scribbles live), extract consecutive-frame bursts, measure
 finger/stylus-to-tail distance in frames. Performed at Wave 2 ink closure and
 at ship closure; not per-commit. A torn/laggy positive control (old build)
 validates the method once.
@@ -92,7 +92,7 @@ validates the method once.
 
 ## 7. Implementation record
 
-The trace format, event-buffer replay, end-to-end timestamps, five owner traces,
+The trace format, event-buffer replay, end-to-end timestamps, five recorded traces,
 baseline receipts, responsive visual tail, and optical spot-check are complete.
 The gate harness and canonical C++ validator remain; capture-only firmware was
 removed after the corpus was frozen.

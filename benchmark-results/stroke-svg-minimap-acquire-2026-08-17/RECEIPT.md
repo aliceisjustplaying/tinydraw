@@ -4,11 +4,11 @@
 
 **Host and firmware builds pass; product commit `25abc19`, including these SVG
 and minimap corrections, was flashed and reached the ready marker on 2026-08-17.
-Owner glass/export follow-up remains pending.**
+Glass/export follow-up remains pending.**
 
-## Owner SVG artifact
+## Author SVG artifact
 
-The owner mounted the product export and opened `DRAWING.SVG` in Inkscape. The
+The author mounted the product export and opened `DRAWING.SVG` in Inkscape. The
 read-only mounted pre-fix artifact was inspected without copying its drawing
 geometry into Git:
 
@@ -55,7 +55,7 @@ damage unions.
 
 ## Minimap diagnosis and correction
 
-The owner's correction was valid: although the whole minimap frame passed the
+The author's correction was valid: although the whole minimap frame passed the
 hit-test, a drag beginning away from the tiny viewport applied only its small
 relative delta to the old origin. At 400%, that left the ~5×5 px viewport far
 from the finger and made the frame appear inactive.
@@ -84,7 +84,7 @@ The physical gate classifier contains the same far-acquisition check.
 - `./scripts/dev format-check`: pass.
 
 The first gate flash attempt in [`gate-flash.log`](gate-flash.log) stopped
-before connecting because `/dev/cu.usbmodem101` was absent while the owner's
+before connecting because `/dev/cu.usbmodem101` was absent while the author's
 `TINYDRAW` export volume was mounted. No flash write occurred in that attempt,
 and the agent did not invoke mass-storage mode. The later ordinary product flash
 and ready boot are recorded in

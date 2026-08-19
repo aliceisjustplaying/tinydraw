@@ -1,4 +1,4 @@
-# Session handover — 2026-08-16 Cold Stage B (+ owner glass session)
+# Session handover — 2026-08-16 Cold Stage B (+ glass session)
 
 Read alongside the Stage B receipt
 ([`RECEIPT.md`](../../../../../benchmark-results/cold-stage-b-2026-08-16/RECEIPT.md)
@@ -19,7 +19,7 @@ amended below.
 | `75c9145` | perf: O(1) raw-slot metadata, un-shelved after the IRAM fix (−26 ms more) |
 | `224f1b5` | docs: Stage B closed, receipts |
 | `88d3391` | fix: harness boots into interactive mode even on a red verdict (glass testing was impossible with standing known-reds) |
-| `436d84a` | docs: owner glass session recorded |
+| `436d84a` | docs: glass session recorded |
 
 Cold compute three-run maxima went 434/468/599/587 ms → **356/349/410/432 ms**
 (zooms 50/100/200/400). Walls 437.9/428.4/488.0 ms are under the ≤500 line;
@@ -30,14 +30,14 @@ five `TINYDRAW_INKTRACE pass=1`, verdict vector unchanged.
 ## 2. Machine and tree state
 
 - Device `/dev/cu.usbmodem101` runs the gate harness at HEAD and now stays
-  interactive after the cascade (owner document from the glass session is on
+  interactive after the cascade (captured drawing from the glass session is on
   it until next reflash).
 - Build dirs: `esp32-vector-v2-gate-harness` at HEAD; host-census /
   host-debug / host-asan all green (228 tests / 29 ctest / 11 ctest).
-- A parallel read-only correctness review (Grok, owner-spawned) produced
+- A parallel read-only correctness review (Grok, author-spawned) produced
   `CORRECTNESS_REVIEW_2026-08-16.md`, `CORRECTNESS_REVIEW_SYNTHESIS_2026-08-16.md`,
   and `review_findings_2026_08_16_correctness/` at the repo root — untracked,
-  not mine, needs an owner-directed triage pass.
+  not mine, needs an requested triage pass.
 - Untracked leftovers predate the session (review zip, wave1a dir, datasheet
   PDF, `LATEST_tinydraw-review-report.md`).
 
@@ -68,30 +68,30 @@ five `TINYDRAW_INKTRACE pass=1`, verdict vector unchanged.
   in this shell (no esptool module); the capture tool's default RTS reset is
   the reliable path.
 
-## 4. NEXT: owner-approved queue
+## 4. NEXT: approved queue
 
-1. **Mid-stroke pixelation diagnosis** (owner glass report; todo carries the
+1. **Mid-stroke pixelation diagnosis** (glass report; todo carries the
    full plan). Phase 1 loop: count viewport tiles whose `lookup()` falls to
    overview inside the ink-replay gate (mid-gesture max / at Up / settled),
    print on the `TINYDRAW_INKTRACE` line; then attribute drops
    (`materialize_uniform_as_raw` nullopt vs paint-fail vs budget) with
    counters in the retain passes. I was one edit into this when the session
    pivoted to glass testing — nothing committed.
-2. **Settled-AA + arc-length-resampling host prototypes** — owner wants
+2. **Settled-AA + arc-length-resampling host prototypes** — author wants
    rendered before/afters. Constraints already logged: within-op self-overlap
    must UNION coverage; freeze the RGB565 blend model first.
 3. **Déjà-vu campaign** — glass-confirmed open. Step 1: live ledger
    cause-histogram receipts during glass sessions; then draw-then-return and
    eviction-pressure gate scenarios; then fix per histogram.
 4. **Zoom-cycle return-position fix** (mechanical, roadmap Phase 6).
-5. **Correctness-review triage** with the owner.
+5. **Correctness-review triage** with the author.
 
 Convergence note: mixed_draw lag (ph_uniform 18.3 ms bursts, felt on glass at
 400%), the pixelation report, the lift hitch, and part of déjà-vu all point
 at the same committed-overlay / authority-revision-split design (external
 review §8.3–8.4). Expect one design to close several fronts.
 
-## 5. Owner decisions pending
+## 5. Author decisions pending
 
 1. **mixed_draw budget vs fix** — now with glass feel + phase attribution.
 2. **Stage C authority bundle** (conical capsule + adaptive subdivision) —
@@ -113,7 +113,7 @@ review §8.3–8.4). Expect one design to close several fronts.
   `75c9145`); don't re-apply it.
 - `general_cold` in the DONE line IS the adversarial corpus
   (`adversarial_tapered_4x+evil_hairlines`, frozen at `a560d20`); an optional
-  rename to `adversarial_cold` was floated with the owner but not approved —
+  rename to `adversarial_cold` was floated with the author but not approved —
   it would change the DONE-line format that log tooling greps.
 - `vector_v2_app.cpp` structural split stays deferred until performance
   gates close (standing guardrail).

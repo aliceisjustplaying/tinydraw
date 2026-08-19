@@ -24,7 +24,7 @@ traversal); empty rows charge one pixel.
 
 ## Devices and instruments
 
-ESP32-S3, 604-slot gate build, `/dev/cu.usbmodem1101`. Owner's rule
+ESP32-S3, 604-slot gate build, `/dev/cu.usbmodem1101`. Author's rule
 applied: host numbers do not accept anything; the receipt instrument is a
 **same-image per-policy device A/B** (`disable_row_narrowing` request
 flag, one boot, one icache layout), because the standing evil-hairline
@@ -69,8 +69,8 @@ retains the exactness oracle: 25 frozen RGB565 checksums byte-identical,
   (fast/straight strokes — at a 12–14 ms touch cadence, fast travel at
   200–400% produces exactly these chords).
 - Not claimed: movement of the dense short-chord evil-corpus document
-  (measured unchanged) or of the owner's real-document 50–200% full-pass
-  walls (690–922 ms). The owner's product glass session on the real
+  (measured unchanged) or of the author's real-document 50–200% full-pass
+  walls (690–922 ms). The author's product glass session on the real
   document remains the arbiter for those; the short-chord overdraw
   (consecutive-chord bbox overlap) is the remaining structural target —
   candidates are an H7-style per-operation row sweep with per-pixel
@@ -106,7 +106,7 @@ conclusion was drawn.
 
 ## Addendum (00:17, same night): saturation aggregation — dense-document treatment
 
-Owner-directed follow-up targeting dense documents. The work-charge probe
+Author-directed follow-up targeting dense documents. The work-charge probe
 attributed 60–75% of raster-walked pixels to saturated-destination skips
 that still cost traversal, plus curve prep and row setup for wholly
 buried operations. Treatment: per-row saturated-pixel counts maintained
@@ -142,4 +142,4 @@ unfavorable shape for full-row aggregation; real dense documents (zero
 ink-free windows) saturate rows the way the gate's 400% case does. An
 intermediate build without the `fully_saturated_rows_` gate measured
 +2.6…+4.8% at 25–100%; the gate reduced that overhead by roughly half.
-Owner glass on the real dense document remains the decisive test.
+Glass on the real dense document remains the decisive test.
