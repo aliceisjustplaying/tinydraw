@@ -103,6 +103,50 @@ bool fill_history_view(vector_v2::TileProducer& producer, const vector_v2::ViewR
   }
 }
 
+bool measure_history_dock_regions(VectorV2Presenter& presenter,
+                                  const vector_v2::ChromeState& chrome) {
+  constexpr std::size_t kRuns = 4U;
+  std::int64_t full_total_us = 0;
+  std::int64_t focused_total_us = 0;
+  std::int64_t full_min_us = std::numeric_limits<std::int64_t>::max();
+  std::int64_t focused_min_us = std::numeric_limits<std::int64_t>::max();
+  const vector_v2::ChromeRect focused = vector_v2::chrome_history_controls_region();
+  for (std::size_t run = 0; run < kRuns; ++run) {
+    const std::int64_t full_started = esp_timer_get_time();
+    if (!presenter
+             .present_frame_region({0, vector_v2::chrome_canvas_bottom(chrome),
+                                    vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
+                                   chrome, now_us())
+             .passed) {
+      return false;
+    }
+    const std::int64_t full_us = esp_timer_get_time() - full_started;
+    full_total_us += full_us;
+    full_min_us = std::min(full_min_us, full_us);
+
+    const std::int64_t focused_started = esp_timer_get_time();
+    if (!presenter
+             .present_frame_region({focused.x0, focused.y0, focused.x1, focused.y1}, chrome,
+                                   now_us())
+             .passed) {
+      return false;
+    }
+    const std::int64_t focused_us = esp_timer_get_time() - focused_started;
+    focused_total_us += focused_us;
+    focused_min_us = std::min(focused_min_us, focused_us);
+  }
+  std::printf(
+      "TINYDRAW_GATE1_HISTORY_DOCK_AB runs=%lu full_mean_us=%lld full_min_us=%lld "
+      "focused_mean_us=%lld focused_min_us=%lld full_pixels=%d focused_pixels=%d\n",
+      static_cast<unsigned long>(kRuns), static_cast<long long>(full_total_us / kRuns),
+      static_cast<long long>(full_min_us), static_cast<long long>(focused_total_us / kRuns),
+      static_cast<long long>(focused_min_us),
+      vector_v2::kOverviewWidth *
+          (vector_v2::kOverviewHeight - vector_v2::chrome_canvas_bottom(chrome)),
+      (focused.x1 - focused.x0) * (focused.y1 - focused.y0));
+  return true;
+}
+
 struct HistoryMoveMeasurement {
   std::int64_t move_us = 0;
   std::int64_t first_us = 0;
@@ -226,6 +270,9 @@ bool run_history_latency_gate(VectorV2Presenter& presenter, vector_v2::TileProdu
     return false;
   }
   if (!presenter.set_view(ZoomLevel::k400Percent, 0, 0, chrome, now_us()).passed) {
+    return false;
+  }
+  if (!measure_history_dock_regions(presenter, chrome)) {
     return false;
   }
   const vector_v2::ViewRequest build_view{

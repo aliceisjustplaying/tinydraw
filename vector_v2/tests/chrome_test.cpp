@@ -581,6 +581,12 @@ TEST_CASE("only byte-order-aware chrome states accept a pre-swapped transfer sur
   CHECK(host[108U * width + 46U] == tinydraw::vector_v2::kPico8Palettes[0][0]);
 }
 
+TEST_CASE("history control damage is limited to undo and redo dock cells") {
+  const auto region = tinydraw::vector_v2::chrome_history_controls_region();
+  CHECK(region == tinydraw::vector_v2::ChromeRect{0, 372, 124, 448});
+  CHECK(region.x1 < 140);
+}
+
 TEST_CASE("prepared staging cache reproduces chrome without mutating canvas source") {
   constexpr int width = 368;
   constexpr int height = 448;

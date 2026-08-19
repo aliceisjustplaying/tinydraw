@@ -312,6 +312,12 @@ ChromeRect chrome_history_busy_region() {
   return {kHistoryBusyLeft - 1, kHistoryBusyTop - 1, kHistoryBusyRight + 2, kHistoryBusyBottom + 3};
 }
 
+ChromeRect chrome_history_controls_region() {
+  // Undo and Redo are the first two 60 px dock cells. Include the seam's
+  // antialias fringe while keeping unrelated tool cells off the SPI wire.
+  return {0, kChromeCanvasBottom, 124, kHeight};
+}
+
 std::optional<ChromeRect> chrome_minimap_region(const ChromeState& state) {
   return canvas_overlays_visible(state) ? std::optional{kMinimapOverlayRect} : std::nullopt;
 }
