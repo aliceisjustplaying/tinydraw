@@ -614,11 +614,14 @@ TEST_CASE("cancelled producer work restarts exactly with reusable chord storage"
 
 TEST_CASE("tile producer isolates an oversized newest segment from older raster work") {
   Fixture fixture;
-  const std::array oversized_segments{
-      vector_v2::CompactOperationSample{.x_quarter = 80, .y_quarter = 80, .radius_256 = 256},
-      vector_v2::CompactOperationSample{.x_quarter = 800, .y_quarter = 800, .radius_256 = 256},
-      vector_v2::CompactOperationSample{.x_quarter = 192, .y_quarter = 192, .radius_256 = 5'120},
-  };
+  std::array<vector_v2::CompactOperationSample, 32> oversized_segments{};
+  for (std::size_t index = 0; index < oversized_segments.size(); ++index) {
+    oversized_segments[index] = {
+        .x_quarter = static_cast<std::uint16_t>((index & 1U) == 0U ? 80U : 1'600U),
+        .y_quarter = static_cast<std::uint16_t>((index & 2U) == 0U ? 80U : 1'600U),
+        .radius_256 = 2'048U,
+    };
+  }
   REQUIRE(fixture.log.append(append(oversized_segments, 0x001FU)));
   std::array<std::uint16_t, vector_v2::kOverviewPixels> revised_overview{};
   revised_overview.fill(0xFFFFU);

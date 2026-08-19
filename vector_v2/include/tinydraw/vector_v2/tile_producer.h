@@ -26,9 +26,9 @@ inline constexpr std::size_t kTileProducerSampleBatch = 96;
 // Per-slice work budget for the op-level chord sweep, in window-clipped
 // span pixels actually visited (plus a flat per-row scan charge). This is
 // the honest slice cost: dense fat batches stop after few rows, hairline
-// batches sweep hundreds. The value keeps the historical worst-slice bound
-// that the idle-repair step contract was calibrated against.
-inline constexpr std::size_t kTileProducerSweepWorkBatch = 16'000;
+// batches sweep hundreds. The 22k device gate keeps maximum ticks below
+// 10.7 ms while reducing producer resumptions.
+inline constexpr std::size_t kTileProducerSweepWorkBatch = 22'000;
 
 struct TileProducerWorkspace {
   // Row-major 128x128 supertask surface. Publication reads tiles straight

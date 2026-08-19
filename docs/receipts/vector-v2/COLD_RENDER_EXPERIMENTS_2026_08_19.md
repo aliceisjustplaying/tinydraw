@@ -1,6 +1,6 @@
 # Cold-render performance experiments — 2026-08-19
 
-Budget: at most five distinct measured hypotheses. Two used. Baseline does not
+Budget: at most five distinct measured hypotheses. Three used. Baseline does not
 consume an attempt.
 
 ## Baseline
@@ -25,5 +25,12 @@ The owner torture document completes in 119/135/199/349 ms.
    first 100% stress fill starved CPU0's idle task for five seconds and tripped
    the task watchdog before a timing result. The captured backtrace and
    `failure_marker=True` make this an unconditional rejection.
+3. **22k honest-work replay slices — accepted.** Raising the exact masked
+   sweep allowance from 16k to 22k reduces resumptions without changing a
+   supertask, publication, or pixel. Device step counts fell 90→66 on overlap
+   50% and 302→237 on general 400%; maximum ticks remained 10.62 ms. Overlap
+   walls improved 5.1 ms at 50% and 6.0 ms at 400%; general 100/200% improved
+   2.2/4.3 ms. General 400% and owner-document timings were flat. The full
+   battery remained green with `failure_marker=False`.
 
-Three experiments remain.
+Two experiments remain.
