@@ -1,6 +1,6 @@
 # TinyDraw V2 release queue
 
-Last updated: 2026-08-18. Feature implementation and the maintainability
+Last updated: 2026-08-19. Feature implementation and the maintainability
 cleanup are complete. This file contains only forward work. Current evidence
 and accepted results live in [`PROJECT_STATE.md`](PROJECT_STATE.md); detailed
 history lives in receipts, tags, and Git history.
@@ -120,5 +120,11 @@ normal services enabled; no unexplained quality regression on revisit; responsiv
 input during rendering, saving, recovery, and export; clean long-session and
 restart behavior; and independent builds for every retained target.
 
-Post-ship scope remains demo record/replay, richer semantic SVG, optional
-minimap visibility controls, and 800% zoom.
+## Post-ship backlog
+
+- Remove the tiny outward teeth visible on some SVG Stroke edges only under
+  extreme magnification. Preserve normal-scale SVG/PNG agreement and shared
+  renderer/export geometry authority. See
+  [`SVG_EXTREME_ZOOM_EDGE_TEETH_2026_08_19.md`](docs/receipts/vector-v2/SVG_EXTREME_ZOOM_EDGE_TEETH_2026_08_19.md).
+- Demo record/replay, richer semantic SVG, optional minimap visibility
+  controls, and 800% zoom.
