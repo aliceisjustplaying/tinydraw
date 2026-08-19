@@ -480,14 +480,9 @@ TEST_CASE("USB export screen font renders every displayed character") {
 
   check_label(96, 122, "USB EXPORT", ink, 3);
   check_label(95, 174, "READ-ONLY DRIVE", ink, 2);
-  check_label(139, 205, "COPY YOUR FILES", muted, 2);
+  check_label(95, 205, "COPY YOUR FILES", muted, 2);
   check_label(83, 260, "RETURN TO DRAWING", white, 2);
   CHECK(pixels[245U * width + 60U] == selected);
-
-  pixels.assign(pixels.size(), white);
-  paint_chrome(pixels, width, height, {.export_status = ChromeExportStatus::kHostEjected});
-  check_label(107, 174, "DRIVE EJECTED", selected, 2);
-  check_label(101, 205, "SAFE TO RETURN", muted, 2);
 
   const auto horizontal_bounds = [&](int y0, int y1, std::uint16_t color) {
     std::array bounds{width, -1};
@@ -501,6 +496,16 @@ TEST_CASE("USB export screen font renders every displayed character") {
     }
     return bounds;
   };
+  const auto presented_subtitle_bounds = horizontal_bounds(205, 219, muted);
+  REQUIRE(presented_subtitle_bounds[1] >= presented_subtitle_bounds[0]);
+  CHECK(presented_subtitle_bounds[0] + presented_subtitle_bounds[1] ==
+        doctest::Approx(367).epsilon(0.01));
+
+  pixels.assign(pixels.size(), white);
+  paint_chrome(pixels, width, height, {.export_status = ChromeExportStatus::kHostEjected});
+  check_label(107, 174, "DRIVE EJECTED", selected, 2);
+  check_label(101, 205, "SAFE TO RETURN", muted, 2);
+
   const auto title_bounds = horizontal_bounds(174, 188, selected);
   const auto subtitle_bounds = horizontal_bounds(205, 219, muted);
   REQUIRE(title_bounds[1] >= title_bounds[0]);
