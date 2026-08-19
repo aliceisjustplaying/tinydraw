@@ -1,6 +1,6 @@
 # Cold-render performance experiments — 2026-08-19
 
-Budget: at most five distinct measured hypotheses. Four used. Baseline does not
+Budget: at most five distinct measured hypotheses. Five used. Baseline does not
 consume an attempt.
 
 ## Baseline
@@ -39,5 +39,15 @@ The owner torture document completes in 119/135/199/349 ms.
    10.62 to 12.57 ms. Overlap and owner-document timings were also flat. The
    full battery was green, but the responsiveness cost had no material render
    payoff, so the 64-operation cap is restored.
+5. **Eliminate redundant preflight remaining scans — accepted.** A missing
+   group search already proves both whether work remains and which 2x2 group
+   is closest. The producer now uses that single scan when starting a group,
+   removing a second full visible-tile directory walk without changing group
+   order, slicing, or pixels. General cold wall fell from
+   393/386/461/498 to 390/379/456/491 ms at 50/100/200/400%; overlap fell
+   478/288/269/217 to 474/287/267/214 ms. The owner document improved from
+   118/134/200/347 to 117/133/199/345 ms. Step counts were identical, maximum
+   ticks stayed at or below 10.72 ms, and the complete battery passed with
+   `failure_marker=False`.
 
-One experiment remains.
+The five-experiment budget is complete.
