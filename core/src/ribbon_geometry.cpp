@@ -105,39 +105,38 @@ InkPoint midpoint(InkPoint start, InkPoint end) {
   return result;
 }
 
-InkPoint quadratic_middle(InkPoint start, InkPoint control, InkPoint end) {
-  InkPoint result = control;
-  result.position = add(multiply(start.position, 0.25F),
-                        add(multiply(control.position, 0.5F), multiply(end.position, 0.25F)));
-  result.radius = start.radius * 0.25F + control.radius * 0.5F + end.radius * 0.25F;
-  return result;
-}
-
-Point direction_or(Point start, Point end, Point fallback_start, Point fallback_end) {
-  const Point direction = unit(subtract(start, end));
-  return equal(direction, {}) ? unit(subtract(fallback_start, fallback_end)) : direction;
-}
-
 template <typename Emit>
 void emit_quadratic(InkPoint start, InkPoint control, InkPoint end, Emit emit) {
   constexpr float overlap = 0.75F;
-  const InkPoint middle = quadratic_middle(start, control, end);
-  const Point chord = unit(subtract(start.position, end.position));
-  const Point start_direction =
-      direction_or(start.position, control.position, start.position, end.position);
-  const Point middle_direction = equal(chord, {}) ? start_direction : chord;
-  const Point end_direction =
-      direction_or(control.position, end.position, start.position, end.position);
-  const Section start_section = section(start.position, start.radius, start_direction);
-  const Section middle_before = section(add(middle.position, multiply(middle_direction, overlap)),
-                                        middle.radius, middle_direction);
-  const Section middle_after =
-      section(subtract(middle.position, multiply(middle_direction, overlap)), middle.radius,
-              middle_direction);
-  const Section end_section =
-      section(subtract(end.position, multiply(end_direction, overlap)), end.radius, end_direction);
-  emit_span(start_section, middle_after, emit);
-  emit_span(middle_before, end_section, emit);
+  constexpr std::size_t subdivisions = 3U;
+  std::array<InkPoint, subdivisions + 1> points{};
+  std::array<Point, subdivisions + 1> directions{};
+  const Point fallback = unit(subtract(start.position, end.position));
+  for (std::size_t index = 0; index <= subdivisions; ++index) {
+    const float amount = static_cast<float>(index) / static_cast<float>(subdivisions);
+    const float remaining = 1.0F - amount;
+    points[index] = control;
+    points[index].position = add(multiply(start.position, remaining * remaining),
+                                 add(multiply(control.position, 2.0F * remaining * amount),
+                                     multiply(end.position, amount * amount)));
+    points[index].radius = start.radius * remaining * remaining +
+                           control.radius * 2.0F * remaining * amount +
+                           end.radius * amount * amount;
+    const Point derivative = add(multiply(subtract(start.position, control.position), remaining),
+                                 multiply(subtract(control.position, end.position), amount));
+    const Point tangent = unit(derivative);
+    directions[index] = equal(tangent, {}) ? fallback : tangent;
+  }
+  for (std::size_t index = 0; index < subdivisions; ++index) {
+    const Section first =
+        index == 0 ? section(points[index].position, points[index].radius, directions[index])
+                   : section(add(points[index].position, multiply(directions[index], overlap)),
+                             points[index].radius, directions[index]);
+    const Section last =
+        section(subtract(points[index + 1].position, multiply(directions[index + 1], overlap)),
+                points[index + 1].radius, directions[index + 1]);
+    emit_span(first, last, emit);
+  }
 }
 
 template <typename Emit>

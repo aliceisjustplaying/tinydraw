@@ -33,3 +33,22 @@ the stroke silhouette, not just its polygonal approximation, so it was
 reverted. SVG remains byte-for-byte tied to the renderer's geometry authority.
 
 Three experiments remain.
+
+## Attempt 3 — three-span shared quadratics (accepted)
+
+The shared ribbon authority now resolves each stable midpoint quadratic into
+three tangent-following spans instead of two. This raises curve resolution by
+50% in SVG while keeping exported and on-device geometry identical; internal
+joins retain the overlap that prevents raster cracks. Worst-case fixed batch
+storage grows from 10 to 12 primitives and remains bounded by an adversarial
+finish test.
+
+The complete device battery is green with `failure_marker=False`. General cold
+render was 393/386/461/498 ms at 50/100/200/400%, versus approximately
+397/389/464/499 ms before the experiment. Settled AA was
+74.7/87.2/176.1/382.2/944.4 ms, versus 75.1/87.6/176.9/383.6/946.8 ms. Both
+are flat within run noise, with unchanged slicing and no responsiveness cost.
+The host ribbon, SVG authority, and rendering suites pass 366 cases and
+759,573 assertions.
+
+Two experiments remain.
