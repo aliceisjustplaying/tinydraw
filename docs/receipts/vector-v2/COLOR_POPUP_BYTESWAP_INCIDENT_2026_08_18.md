@@ -21,7 +21,27 @@ colors and recovered on its own. First occurrence ever.
   around the 22:55:41 long 50% settle pass; the session log shows zero
   failures, overflows, resyncs, or watchdogs.
 
-## Hypothesis queue for the diagnosis session
+## 2026-08-19 root cause and fix
+
+The ring transport can fuse de-rotation and byte swapping before its chrome
+patch callback. Normal cached chrome explicitly converts each sprite color to
+that surface's byte domain. Modal chrome (`kColors`, the compact popups,
+dialogs/toasts) instead uses `PixelPainter` directly with host-order RGB565.
+`present_ring` advertised every no-live-ink patch as accepting pre-swapped
+surfaces, so a stale/reusable ring plus a modal-region present wrote popup
+colors in the wrong domain and the transport correctly skipped its final swap.
+That is the photographed hue rotation; invariant black/white pixels hid it.
+
+The fused path is now allowed only for normal cached chrome with no history
+busy toast. Modal and toast transfers remain host-order through painting and
+receive exactly one final transport swap. `ChromeStagingCache` rejects an
+unsafe pre-swapped state as a second contract guard. The regression covers the
+color popup, new dialog, export toast, and history busy state, including
+failure-before-mutation; all 64 interaction cases / 14,367 assertions pass.
+
+Status: **root cause fixed and host-verified; hardware battery pending.**
+
+## Original hypothesis queue
 
 1. The color dialog's frame re-presentation fast path re-pushing content
    that was already in the swapped/staged domain (double swap), exposed by

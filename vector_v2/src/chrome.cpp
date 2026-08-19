@@ -633,6 +633,14 @@ bool ChromeStagingCache::prepare(const ChromeState& state, const ChromeNavigatio
   return prepare_for({0, 0, kWidth, kHeight}, state, navigation, overview_revision);
 }
 
+bool chrome_accepts_byte_swapped_staging(const ChromeState& state) {
+  // The cached normal chrome path converts every sprite/color at the write
+  // boundary. Modal chrome and the busy toast use PixelPainter directly in
+  // host RGB565 order, so their transfer must remain host-order until the
+  // transport's final swap.
+  return canvas_overlays_visible(state) && !state.history_busy;
+}
+
 bool ChromeStagingCache::prepare_for(ChromeRect panel_bounds, const ChromeState& state,
                                      const ChromeNavigation& navigation,
                                      std::uint32_t overview_revision) {
@@ -719,6 +727,9 @@ bool ChromeStagingCache::paint_prepared(const MinimapSurface& surface, const Chr
   if (!ready() || surface.width <= 0 || surface.height <= 0 ||
       surface.pixels.size() <
           static_cast<std::size_t>(surface.width) * static_cast<std::size_t>(surface.height)) {
+    return false;
+  }
+  if (surface.byte_swapped && !chrome_accepts_byte_swapped_staging(state)) {
     return false;
   }
   if (!canvas_overlays_visible(state)) {

@@ -176,6 +176,9 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
 [[nodiscard]] ChromeRect chrome_history_busy_region();
 [[nodiscard]] bool chrome_minimap_refresh_required(const ChromeState& state, bool overview_changed,
                                                    bool allow_minimap_refresh);
+// True only when every chrome writer used by paint_prepared understands a
+// transfer surface that is already in panel byte order.
+[[nodiscard]] bool chrome_accepts_byte_swapped_staging(const ChromeState& state);
 // A caller-owned pixel surface whose (0, 0) sits at panel coordinate
 // (origin_x, origin_y).
 struct MinimapSurface {
