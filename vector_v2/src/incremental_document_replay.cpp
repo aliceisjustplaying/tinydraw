@@ -23,13 +23,19 @@ std::optional<HistoryChange> move_history_incrementally(OperationLog& log,
       std::min(change.previous_active_operation_count, change.active_operation_count);
   const std::size_t changed_last =
       std::max(change.previous_active_operation_count, change.active_operation_count);
-  bool pen_authority_unchanged = changed_first != changed_last;
-  for (std::size_t index = changed_first; pen_authority_unchanged && index < changed_last;
-       ++index) {
-    const auto changed = change.active_operation_count > change.previous_active_operation_count
-                             ? prepared->target_operation(index)
-                             : log.operation(index);
-    pen_authority_unchanged = changed.has_value() && changed->tool == OperationTool::kEraser;
+  // History commit conservatively marks the complete arriving damage bounds
+  // as may-ink. Adding authority therefore only sets occupancy bits and needs
+  // no full scan. Removal needs an exact rebuild only when a pen leaves; an
+  // eraser cannot have contributed to the pen-union map.
+  bool occupancy_rebuild_needed = false;
+  if (change.active_operation_count < change.previous_active_operation_count) {
+    for (std::size_t index = changed_first; index < changed_last; ++index) {
+      const auto changed = log.operation(index);
+      if (!changed.has_value() || changed->tool != OperationTool::kEraser) {
+        occupancy_rebuild_needed = true;
+        break;
+      }
+    }
   }
   const PixelRect overview_bounds = overview_bounds_for_world(change.affected_world_bounds);
   const int width = overview_bounds.x1 - overview_bounds.x0;
@@ -49,8 +55,8 @@ std::optional<HistoryChange> move_history_incrementally(OperationLog& log,
       .stride = width,
   };
   const std::size_t finalized_bytes = (pixel_count + 7U) / 8U;
-  const std::size_t finalized_words = (finalized_bytes + sizeof(std::uint16_t) - 1U) /
-                                      sizeof(std::uint16_t);
+  const std::size_t finalized_words =
+      (finalized_bytes + sizeof(std::uint16_t) - 1U) / sizeof(std::uint16_t);
   const std::span<std::uint16_t> replay_workspace = overview_scratch.subspan(pixel_count);
   const std::size_t masked_workspace_words = finalized_words + static_cast<std::size_t>(height);
   const bool masked_replay_available = replay_workspace.size() >= masked_workspace_words;
@@ -85,9 +91,9 @@ std::optional<HistoryChange> move_history_incrementally(OperationLog& log,
     // A finalized mask lets newest paint win immediately. Older operations
     // then skip every already-decided pixel, which is exact painter order
     // with substantially less overdraw in dense history damage.
-    const std::size_t index = candidate_count.has_value()
-                                  ? candidate_workspace[offset]
-                                  : masked_replay_available ? replay_count - offset - 1U : offset;
+    const std::size_t index = candidate_count.has_value() ? candidate_workspace[offset]
+                              : masked_replay_available   ? replay_count - offset - 1U
+                                                          : offset;
     const auto stored = prepared->target_operation(index);
     if (!stored.has_value()) {
       prepared->cancel();
@@ -103,10 +109,10 @@ std::optional<HistoryChange> move_history_incrementally(OperationLog& log,
     }
     const OperationAppend operation{
         .tool = stored->tool, .color = stored->color, .samples = stored->samples};
-    const bool applied = masked_replay_available
-                             ? apply_masked_incremental_operation(operation, surface,
-                                                                  finalized_pixels, &summary)
-                             : apply_incremental_operation(operation, surface);
+    const bool applied =
+        masked_replay_available
+            ? apply_masked_incremental_operation(operation, surface, finalized_pixels, &summary)
+            : apply_incremental_operation(operation, surface);
     if (!applied) {
       prepared->cancel();
       return std::nullopt;
@@ -125,7 +131,7 @@ std::optional<HistoryChange> move_history_incrementally(OperationLog& log,
   }
   prepared->publish();
   auto map_storage = std::as_writable_bytes(overview_scratch);
-  if (!pen_authority_unchanged && map_storage.size() >= kOccupancyBytes) {
+  if (occupancy_rebuild_needed && map_storage.size() >= kOccupancyBytes) {
     std::span<std::uint8_t> tiled_may_ink{reinterpret_cast<std::uint8_t*>(map_storage.data()),
                                           kOccupancyBytes};
     if (build_tiled_may_ink(log, tiled_may_ink)) {

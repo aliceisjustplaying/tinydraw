@@ -1,6 +1,6 @@
 # Undo/Redo performance experiments — 2026-08-19
 
-Budget: at most five distinct measured hypotheses. Four used. The full hardware
+Budget: at most five distinct measured hypotheses. Five used. The full hardware
 battery is the authority; lower wall time is better.
 
 ## Baseline
@@ -45,5 +45,15 @@ presentation reached 87.5 ms in the diagnostic per-publication policy.
    corpus saved about 0.3 ms on its eraser moves at both zooms; overall maxima
    were flat. The authority suite passed 25,711 assertions and the full battery
    remained green.
+5. **Preserve may-ink across redo additions — accepted.** A history commit
+   already marks the complete arriving damage bounds as conservatively
+   occupied, so adding pen authority cannot require a full active-log scan.
+   Pen removal still rebuilds the exact map; eraser-only moves retain attempt
+   4's fast path. The alternating 4,000-operation host benchmark stayed exact
+   and improved sparse moves from 0.0260 to 0.0133 ms and dense moves from
+   0.0336 to 0.0169 ms, both about 2x. On device, the authority/overview maximum
+   was 27.3 ms and the 400% holdback maximum was 112.3 ms, versus 27.65 and
+   114.3 ms in the prior battery. The full battery passed with
+   `failure_marker=False`.
 
-One experiment remains.
+The five-experiment budget is complete.
