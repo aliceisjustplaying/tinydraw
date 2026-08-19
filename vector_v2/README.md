@@ -70,8 +70,10 @@ PNG raster spans retain a 0.75 px overlap that prevents fixed-grid cracks.
 Erasers use painter-ordered masks, and the root omits a synthetic background
 rectangle. The ESP adapter preserves those SVG bytes and
 also streams `DRAWING.PNG` from production settled-AA windows. It retains one
-64-row world band, one 64×64 window, and fixed PNGenc workspace. The existing
-Saving progress bar advances across both PNG windows and SVG operations. A
+64-row world band, one 64×64 window, and fixed PNGenc workspace. The centered
+**EXPORTING** progress bar advances across both PNG windows and SVG operations.
+The enlarged **RETURN TO DRAWING** label and its full-width hit target remain
+centered together. A
 shared metadata page commits the pair only after the authority epoch, revision,
 and operation count are rechecked. The generic FAT/USB adapter exposes both
 files read-only. Export presentation is an explicit app mode: host eject
