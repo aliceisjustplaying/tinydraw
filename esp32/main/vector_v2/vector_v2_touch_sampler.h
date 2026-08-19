@@ -43,14 +43,12 @@ struct TouchSamplerMetrics {
 class TouchUrgencyProbe {
  public:
   TouchUrgencyProbe() = default;
+  explicit TouchUrgencyProbe(const std::atomic<bool>* urgent) : urgent_(urgent) {}
   [[nodiscard]] bool requested() const {
     return urgent_ != nullptr && urgent_->load(std::memory_order_acquire);
   }
 
  private:
-  friend class VectorV2TouchSampler;
-  explicit TouchUrgencyProbe(const std::atomic<bool>* urgent) : urgent_(urgent) {}
-
   const std::atomic<bool>* urgent_ = nullptr;
 };
 
@@ -75,6 +73,7 @@ class VectorV2TouchSampler {
   }
   [[nodiscard]] bool wait_for_event(TickType_t timeout_ticks);
   [[nodiscard]] std::optional<SampledTouch> read_next();
+  void discard_pending();
   [[nodiscard]] TouchSamplerMetrics take_metrics();
 
  private:

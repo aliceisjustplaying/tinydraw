@@ -68,6 +68,14 @@ std::optional<TouchEvent> TouchEventBuffer::pop() {
 
 std::size_t TouchEventBuffer::pending() const { return size_; }
 
+void TouchEventBuffer::reset() {
+  head_ = 0U;
+  size_ = 0U;
+  no_touch_reads_ = 0U;
+  touching_ = false;
+  consumer_touching_ = false;
+}
+
 std::size_t TouchEventBuffer::physical_index(std::size_t logical_index) const {
   return (head_ + logical_index) % storage_.size();
 }

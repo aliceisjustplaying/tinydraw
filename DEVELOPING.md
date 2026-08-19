@@ -93,12 +93,18 @@ appears as `/dev/cu.usbmodem*`.
 ```sh
 ./scripts/esp32 build
 ./scripts/esp32 vector-v2 PORT
+./scripts/esp32 vector-v2-demo [PORT]
 ```
 
 The product uses 604 cache slots. Its 16 MiB partition map is fixed across
 product and gate firmware: 1.75 MiB app at `0x10000`, 4 MiB drawing journal at
 `0x1D0000`, 10.125 MiB export at `0x5D0000`, and 64 KiB coredump at `0xFF0000`.
 Flashing the app does not erase the drawing partition.
+
+The demo variant preserves short-press zoom. Long-press the top button once to reset to a blank
+canvas and record (the red dot is lit), again to stop, and again to replay on the device. Later
+long presses replay the same take; reboot to discard it and record another. The tape lives only in
+PSRAM, and demo drawing authority is never written to autosave.
 
 Vector V2 journals vector authority through a low-priority flash worker. It
 exports `DRAWING.PNG` and `DRAWING.SVG` through read-only TinyUSB mass storage.

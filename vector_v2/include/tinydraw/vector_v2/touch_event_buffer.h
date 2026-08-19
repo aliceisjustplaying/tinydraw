@@ -63,6 +63,7 @@ class TouchEventBuffer {
                                        std::uint32_t timestamp_us);
   [[nodiscard]] std::optional<TouchEvent> pop();
   [[nodiscard]] std::size_t pending() const;
+  void reset();
 
  private:
   [[nodiscard]] std::size_t physical_index(std::size_t logical_index) const;

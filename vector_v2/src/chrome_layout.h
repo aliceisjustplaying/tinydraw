@@ -16,6 +16,7 @@ inline constexpr std::uint16_t kMuted = 0x8410U;
 inline constexpr std::uint16_t kBorder = 0xDEDBU;
 inline constexpr std::uint16_t kShadow = 0xBDF7U;
 inline constexpr std::uint16_t kSelected = 0x349FU;
+inline constexpr std::uint16_t kRecording = 0xE186U;
 inline constexpr int kWidth = 368;
 inline constexpr int kHeight = 448;
 inline constexpr int kMainTop = 374;
@@ -58,6 +59,7 @@ inline constexpr ChromeRect kMinimapOverlayRect{kMinimapRect.x0 - 1, kMinimapRec
 inline constexpr ChromeRect kBatteryOverlayRect{kBatteryLeft - 2, kBatteryTop - 2,
                                                 kBatteryRight + 4, kBatteryBottom + 6};
 inline constexpr ChromeRect kBottomCacheRect{0, kChromeCanvasBottom, kWidth, kHeight};
+inline constexpr ChromeRect kRecordingRect{178, 376, 191, 389};
 inline constexpr std::uint16_t kCacheTransparent = 0x0001U;
 inline constexpr int kMinimapLeft = 272;
 inline constexpr int kMinimapTop = 258;

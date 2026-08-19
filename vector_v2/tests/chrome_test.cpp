@@ -162,6 +162,22 @@ TEST_CASE("rectangular bottom toolbar owns the curved lower display corners") {
   CHECK(pixels[371U * width] == untouched);
 }
 
+TEST_CASE("recording indicator appears only while a V2 demo is recording") {
+  constexpr int width = 368;
+  constexpr int height = 448;
+  std::vector<std::uint16_t> idle(static_cast<std::size_t>(width * height), 0xFFFFU);
+  auto recording = idle;
+
+  paint_chrome(idle, width, height, {});
+  paint_chrome(recording, width, height, {.recording = true});
+
+  const auto indicator = static_cast<std::size_t>(382 * width + 184);
+  CHECK(idle[indicator] != 0xE186U);
+  CHECK(recording[indicator] == 0xE186U);
+  CHECK(tinydraw::vector_v2::chrome_recording_region() ==
+        tinydraw::vector_v2::ChromeRect{178, 376, 191, 389});
+}
+
 TEST_CASE("color palette is a second-level popup above the persistent toolbar") {
   constexpr int width = 368;
   constexpr int height = 448;

@@ -73,6 +73,7 @@ else()
     "vector_v2/vector_v2_autosave_store.cpp"
     "vector_v2/vector_v2_background_pipeline.cpp"
     "vector_v2/vector_v2_chrome_controller.cpp"
+    "vector_v2/vector_v2_demo_controller.cpp"
     "vector_v2/vector_v2_export.cpp"
     "vector_v2/vector_v2_live_stroke_session.cpp"
     "vector_v2/vector_v2_presenter.cpp"
@@ -174,6 +175,9 @@ if(TINYDRAW_VECTOR_V2_TILE_CENSUS)
 endif()
 if(TINYDRAW_VECTOR_V2_TEARING_PROBE)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_V2_TEARING_PROBE=1)
+endif()
+if(TINYDRAW_VECTOR_V2_DEMO)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_V2_DEMO=1)
 endif()
 if(TINYDRAW_QEMU)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_QEMU=1)
