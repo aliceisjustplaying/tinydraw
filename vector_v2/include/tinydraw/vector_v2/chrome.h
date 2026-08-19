@@ -141,6 +141,9 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
 [[nodiscard]] std::optional<ChromePoint> clip_canvas_segment(ChromePoint previous,
                                                              ChromePoint current,
                                                              const ChromeState& state);
+// A stationary contact in the top sensor fringe is an edge exit, not a tap.
+// Once the gesture produces a drawable segment it remains valid from any edge.
+[[nodiscard]] bool chrome_accepts_stroke_finish(ChromePoint start, bool has_drawn_segment);
 [[nodiscard]] bool chrome_contains(ChromePoint point, const ChromeState& state);
 // Minimap gestures own its visible frame regardless of the selected tool.
 [[nodiscard]] bool chrome_minimap_contains(ChromePoint point, const ChromeState& state);

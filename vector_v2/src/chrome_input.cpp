@@ -92,6 +92,11 @@ std::optional<ChromePoint> clip_canvas_segment(ChromePoint previous, ChromePoint
   return ChromePoint{previous.x + (current.x - previous.x) * progress, bottom};
 }
 
+bool chrome_accepts_stroke_finish(ChromePoint start, bool has_drawn_segment) {
+  constexpr float kTopSensorFringePixels = 4.0F;
+  return has_drawn_segment || start.y >= kTopSensorFringePixels;
+}
+
 static bool zoom_rail_contains(ChromePoint point, const ChromeState& state) {
   return canvas_overlays_visible(state) &&
          inside(point, static_cast<float>(kZoomRailRect.x0 - kHitSlop),

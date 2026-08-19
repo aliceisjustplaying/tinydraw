@@ -138,6 +138,7 @@ LiveStrokeStartResult LiveStrokeSession::begin(Point screen_point, std::uint32_t
   config.size = brush_size;
   ink_.set_config(config);
   color_ = color;
+  start_touch_ = screen_point;
   last_touch_ = screen_point;
   last_canvas_touch_ = screen_point;
   last_ink_ = ink_.begin({.x = screen_point.x, .y = screen_point.y, .timestamp_us = event_us});
@@ -232,6 +233,18 @@ LiveStrokeFinishResult LiveStrokeSession::finish(std::uint32_t event_us,
   LiveStrokeFinishResult result{};
   result.first_operation = first_operation_;
   if (!active()) {
+    return result;
+  }
+  const bool has_drawn_segment = chunks_ != 0U || builder_.sample_count() > 1U;
+  if (!vector_v2::chrome_accepts_stroke_finish({.x = start_touch_.x, .y = start_touch_.y},
+                                               has_drawn_segment)) {
+    builder_.cancel();
+    ribbon_.reset();
+    ink_.end();
+    const std::int64_t refresh_started = esp_timer_get_time();
+    result.refresh = presenter_.refresh(chrome, event_us);
+    result.refresh_wall_us = esp_timer_get_time() - refresh_started;
+    result.metrics = metrics_;
     return result;
   }
   const std::int64_t finish_preview_started = esp_timer_get_time();
