@@ -1,6 +1,6 @@
 # Known bug — one-sample Strokes render inconsistently across tiers ("Schrödinger dots")
 
-Status: **fixed and host-verified 2026-08-19.** Recorded
+Status: **fixed, host-verified, and full-device-battery verified 2026-08-19.** Recorded
 2026-08-19 (~00:20) at owner request; owner has two live mystery dots in
 the current document and independently hypothesized the cause: taps that
 never became lines are stored as one-sample operations and surface only
@@ -60,3 +60,8 @@ sliced rendering are bit-identical with a visible dot, and the existing
 world-export fixture's green tap is asserted at its center pixel. The
 complete 31-test host suite passes; all frozen AA checksums are unchanged
 because none of their fixtures contained a one-sample operation.
+
+The final 604-slot device battery passed with `failure_marker=False`, including
+settled rendering, PNG/SVG export, history, and the real owner-document corpus.
+The unverified live-draw note above describes the pre-fix investigation and is
+not needed for the cross-tier consistency verdict.
