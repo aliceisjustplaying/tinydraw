@@ -1,6 +1,6 @@
 # Cold-render performance experiments — 2026-08-19
 
-Budget: at most five distinct measured hypotheses. Three used. Baseline does not
+Budget: at most five distinct measured hypotheses. Four used. Baseline does not
 consume an attempt.
 
 ## Baseline
@@ -32,5 +32,12 @@ The owner torture document completes in 119/135/199/349 ms.
    walls improved 5.1 ms at 50% and 6.0 ms at 400%; general 100/200% improved
    2.2/4.3 ms. General 400% and owner-document timings were flat. The full
    battery remained green with `failure_marker=False`.
+4. **96-operation scan batches — rejected and reverted.** Raising the
+   per-resumption operation scan cap from 64 to 96 reduced general-corpus step
+   counts by only 4/3/1 at 100/200/400%. Wall time was effectively unchanged
+   (385/461/499 ms), while the binding 400% case's maximum tick rose from
+   10.62 to 12.57 ms. Overlap and owner-document timings were also flat. The
+   full battery was green, but the responsiveness cost had no material render
+   payoff, so the 64-operation cap is restored.
 
-Two experiments remain.
+One experiment remains.
