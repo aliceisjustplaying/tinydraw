@@ -177,10 +177,6 @@ bool emit_batch(Writer& writer, const RibbonPrimitiveBatch& batch) {
   return true;
 }
 
-std::uint16_t operation_color(const StoredOperation& operation, std::uint16_t background) {
-  return operation.tool == OperationTool::kEraser ? background : operation.color;
-}
-
 bool same_logical_gesture(const StoredOperation& previous, const StoredOperation& current) {
   // Gesture zero is reserved for imported/legacy operation records that do not
   // declare logical grouping. Keep those as independent paths.
@@ -188,8 +184,8 @@ bool same_logical_gesture(const StoredOperation& previous, const StoredOperation
          current.tool == previous.tool && current.color == previous.color;
 }
 
-bool begin_path(Writer& writer, const StoredOperation& operation, std::uint16_t background) {
-  return writer.append("<path fill=\"") && writer.color(operation_color(operation, background)) &&
+bool begin_path(Writer& writer, std::uint16_t color) {
+  return writer.append("<path fill=\"") && writer.color(color) &&
          writer.append("\" fill-rule=\"nonzero\" d=\"");
 }
 
@@ -222,10 +218,85 @@ bool emit_header(Writer& writer, PixelRect bounds) {
          writer.append(" ") && writer.integer(height) && writer.append("\">\n");
 }
 
+std::optional<std::size_t> eraser_gesture_count(const OperationLog& log,
+                                                std::size_t operation_count) {
+  std::optional<StoredOperation> previous;
+  std::size_t count = 0U;
+  for (std::size_t index = 0; index < operation_count; ++index) {
+    const auto operation = log.operation(index);
+    if (!operation.has_value()) {
+      return std::nullopt;
+    }
+    const bool continues = previous.has_value() && same_logical_gesture(*previous, *operation);
+    count += operation->tool == OperationTool::kEraser && !continues;
+    previous = operation;
+  }
+  return count;
+}
+
+bool begin_eraser_mask(Writer& writer, std::size_t mask_index, PixelRect bounds) {
+  return writer.append("<mask id=\"erase") && writer.integer(static_cast<int>(mask_index)) &&
+         writer.append("\" maskUnits=\"userSpaceOnUse\" x=\"") && writer.integer(bounds.x0) &&
+         writer.append("\" y=\"") && writer.integer(bounds.y0) && writer.append("\" width=\"") &&
+         writer.integer(bounds.x1 - bounds.x0) && writer.append("\" height=\"") &&
+         writer.integer(bounds.y1 - bounds.y0) && writer.append("\">\n<rect x=\"") &&
+         writer.integer(bounds.x0) && writer.append("\" y=\"") && writer.integer(bounds.y0) &&
+         writer.append("\" width=\"") && writer.integer(bounds.x1 - bounds.x0) &&
+         writer.append("\" height=\"") && writer.integer(bounds.y1 - bounds.y0) &&
+         writer.append("\" fill=\"#FFFFFF\"/>\n") && begin_path(writer, 0x0000U);
+}
+
+bool emit_eraser_masks(Writer& writer, const OperationLog& log, std::size_t operation_count,
+                       PixelRect bounds, std::size_t eraser_count) {
+  if (eraser_count == 0U) {
+    return true;
+  }
+  if (!writer.append("<defs>\n")) {
+    return false;
+  }
+  std::optional<StoredOperation> previous;
+  bool mask_open = false;
+  std::size_t mask_index = 0U;
+  for (std::size_t index = 0; index < operation_count; ++index) {
+    const auto operation = log.operation(index);
+    if (!operation.has_value()) {
+      return false;
+    }
+    const bool continues = previous.has_value() && same_logical_gesture(*previous, *operation);
+    if (operation->tool == OperationTool::kEraser) {
+      if (!continues) {
+        if ((mask_open && !writer.append("\"/>\n</mask>\n")) ||
+            !begin_eraser_mask(writer, mask_index++, bounds)) {
+          return false;
+        }
+        mask_open = true;
+      }
+      if (!emit_operation_geometry(writer, *operation)) {
+        return false;
+      }
+    } else if (mask_open) {
+      if (!writer.append("\"/>\n</mask>\n")) {
+        return false;
+      }
+      mask_open = false;
+    }
+    previous = operation;
+  }
+  return (!mask_open || writer.append("\"/>\n</mask>\n")) && mask_index == eraser_count &&
+         writer.append("</defs>\n");
+}
+
 bool emit_operations(Writer& writer, const OperationLog& log, std::size_t operation_count,
-                     const SvgExportOptions& options) {
+                     std::size_t eraser_count, const SvgExportOptions& options) {
+  for (std::size_t remaining = eraser_count; remaining > 0U; --remaining) {
+    if (!writer.append("<g mask=\"url(#erase") ||
+        !writer.integer(static_cast<int>(remaining - 1U)) || !writer.append(")\">\n")) {
+      return false;
+    }
+  }
   std::optional<StoredOperation> previous;
   bool path_open = false;
+  std::size_t groups_open = eraser_count;
   for (std::size_t index = 0; index < operation_count; ++index) {
     const auto operation = log.operation(index);
     if (!operation.has_value()) {
@@ -234,13 +305,22 @@ bool emit_operations(Writer& writer, const OperationLog& log, std::size_t operat
     const bool continues_gesture =
         previous.has_value() && same_logical_gesture(*previous, *operation);
     if (!continues_gesture) {
-      if ((path_open && !writer.append("\"/>\n")) ||
-          !begin_path(writer, *operation, options.background)) {
+      if (path_open && !writer.append("\"/>\n")) {
         return false;
       }
-      path_open = true;
+      path_open = false;
+      if (operation->tool == OperationTool::kEraser) {
+        if (groups_open == 0U || !writer.append("</g>\n")) {
+          return false;
+        }
+        --groups_open;
+      } else if (!begin_path(writer, operation->color)) {
+        return false;
+      } else {
+        path_open = true;
+      }
     }
-    if (!emit_operation_geometry(writer, *operation)) {
+    if (operation->tool != OperationTool::kEraser && !emit_operation_geometry(writer, *operation)) {
       return false;
     }
     previous = operation;
@@ -248,7 +328,7 @@ bool emit_operations(Writer& writer, const OperationLog& log, std::size_t operat
       options.progress(index + 1U, operation_count, options.progress_context);
     }
   }
-  return !path_open || writer.append("\"/>\n");
+  return (!path_open || writer.append("\"/>\n")) && groups_open == 0U;
 }
 
 }  // namespace
@@ -285,6 +365,10 @@ bool export_svg(const OperationLog& log, SvgByteSink& sink, SvgExportOptions opt
   const OperationLogEpoch epoch = log.epoch();
   const DocumentRevision revision = log.current_revision();
   const std::size_t operation_count = log.operation_count();
+  const auto eraser_count = eraser_gesture_count(log, operation_count);
+  if (!eraser_count.has_value()) {
+    return false;
+  }
   Writer writer(sink);
   if (!emit_header(writer, options.world_bounds)) {
     return false;
@@ -292,8 +376,9 @@ bool export_svg(const OperationLog& log, SvgByteSink& sink, SvgExportOptions opt
   if (options.progress != nullptr) {
     options.progress(0U, operation_count, options.progress_context);
   }
-  if (!emit_operations(writer, log, operation_count, options) || !writer.append("</svg>\n") ||
-      !writer.flush()) {
+  if (!emit_eraser_masks(writer, log, operation_count, options.world_bounds, *eraser_count) ||
+      !emit_operations(writer, log, operation_count, *eraser_count, options) ||
+      !writer.append("</svg>\n") || !writer.flush()) {
     return false;
   }
   return log.epoch() == epoch && log.current_revision() == revision &&
