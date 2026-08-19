@@ -35,7 +35,23 @@ std::optional<HistoryChange> move_history_incrementally(OperationLog& log,
       .pixels = pixels,
       .stride = width,
   };
-  const std::span<std::uint16_t> candidate_workspace = overview_scratch.subspan(pixel_count);
+  const std::size_t finalized_bytes = (pixel_count + 7U) / 8U;
+  const std::size_t finalized_words = (finalized_bytes + sizeof(std::uint16_t) - 1U) /
+                                      sizeof(std::uint16_t);
+  const std::span<std::uint16_t> replay_workspace = overview_scratch.subspan(pixel_count);
+  const bool masked_replay_available = replay_workspace.size() >= finalized_words;
+  const std::span<std::uint16_t> candidate_workspace =
+      masked_replay_available
+          ? replay_workspace.first(replay_workspace.size() - finalized_words)
+          : replay_workspace;
+  std::span<std::uint8_t> finalized_pixels;
+  if (masked_replay_available) {
+    const auto finalized_storage =
+        std::as_writable_bytes(replay_workspace.last(finalized_words)).first(finalized_bytes);
+    finalized_pixels = {reinterpret_cast<std::uint8_t*>(finalized_storage.data()),
+                        finalized_storage.size()};
+    std::fill(finalized_pixels.begin(), finalized_pixels.end(), std::uint8_t{0});
+  }
   const PixelRect query_world_bounds{
       .x0 = overview_bounds.x0 * 4,
       .y0 = overview_bounds.y0 * 4,
@@ -46,8 +62,12 @@ std::optional<HistoryChange> move_history_incrementally(OperationLog& log,
       prepared->query_target_spatial(query_world_bounds, candidate_workspace);
   const std::size_t replay_count = candidate_count.value_or(change.active_operation_count);
   for (std::size_t offset = 0; offset < replay_count; ++offset) {
-    const std::size_t index =
-        candidate_count.has_value() ? candidate_workspace[*candidate_count - offset - 1U] : offset;
+    // A finalized mask lets newest paint win immediately. Older operations
+    // then skip every already-decided pixel, which is exact painter order
+    // with substantially less overdraw in dense history damage.
+    const std::size_t index = candidate_count.has_value()
+                                  ? candidate_workspace[offset]
+                                  : masked_replay_available ? replay_count - offset - 1U : offset;
     const auto stored = prepared->target_operation(index);
     if (!stored.has_value()) {
       prepared->cancel();
@@ -61,8 +81,13 @@ std::optional<HistoryChange> move_history_incrementally(OperationLog& log,
     if (!intersects) {
       continue;
     }
-    if (!apply_incremental_operation(
-            {.tool = stored->tool, .color = stored->color, .samples = stored->samples}, surface)) {
+    const OperationAppend operation{
+        .tool = stored->tool, .color = stored->color, .samples = stored->samples};
+    const bool applied = masked_replay_available
+                             ? apply_masked_incremental_operation(operation, surface,
+                                                                  finalized_pixels)
+                             : apply_incremental_operation(operation, surface);
+    if (!applied) {
       prepared->cancel();
       return std::nullopt;
     }
