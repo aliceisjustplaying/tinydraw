@@ -52,6 +52,11 @@ struct RibbonUpdate {
   RibbonPrimitiveBatch provisional;
 };
 
+enum class RibbonSpanJoin {
+  kRasterOverlap,
+  kSharedBoundary,
+};
+
 // Emits geometry that has become append-stable plus a replacement tail for display.
 // InkPoint radii are immutable inputs, so initial pressure never revises older geometry.
 class RibbonStream {
@@ -76,6 +81,9 @@ class RibbonStream {
 // Stable curves lag by one input point; a replaceable straight tail still reaches the finger.
 class CurvedRibbonStream {
  public:
+  explicit CurvedRibbonStream(RibbonSpanJoin span_join = RibbonSpanJoin::kRasterOverlap)
+      : span_join_(span_join) {}
+
   // provisional_needed=false skips building the replaceable display tail for
   // offline replay. A visual_endpoint lets that replaceable tail reach an
   // unsmoothed touch position while all stream state and committed geometry
@@ -93,6 +101,7 @@ class CurvedRibbonStream {
   InkPoint last_{};
   std::size_t point_count_ = 0;
   bool first_cap_pending_ = false;
+  RibbonSpanJoin span_join_ = RibbonSpanJoin::kRasterOverlap;
 };
 
 // Build simple unionable pieces rather than one self-intersecting outline.

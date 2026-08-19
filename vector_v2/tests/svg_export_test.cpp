@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <iterator>
 #include <random>
 #include <span>
 #include <string>
@@ -247,6 +248,21 @@ bool contains(const ParsedShape& shape, tinydraw::Point point) {
   return !(positive && negative);
 }
 
+std::size_t shared_vertices(const ParsedShape& first, const ParsedShape& second) {
+  std::size_t shared = 0U;
+  for (std::uint8_t first_index = 0; first_index < first.point_count; ++first_index) {
+    const tinydraw::Point left = first.points[first_index];
+    const bool found =
+        std::any_of(second.points.begin(), second.points.begin() + second.point_count,
+                    [left](tinydraw::Point right) {
+                      return left.x == doctest::Approx(right.x).epsilon(0.0001) &&
+                             left.y == doctest::Approx(right.y).epsilon(0.0001);
+                    });
+    shared += found ? 1U : 0U;
+  }
+  return shared;
+}
+
 std::uint16_t black_over_white(std::uint8_t alpha) {
   const auto blend = [alpha](int destination) { return (destination * (255 - alpha) + 127) / 255; };
   return static_cast<std::uint16_t>((blend(31) << 11) | (blend(63) << 5) | blend(31));
@@ -392,6 +408,30 @@ TEST_CASE("SVG geometry is continuous across overlapping physical-gesture chunks
   CHECK(chunked_svg.text == contiguous_svg.text);
 }
 
+TEST_CASE("SVG quadratic subspans meet without outward overlap teeth") {
+  LogFixture<1, 3> fixture;
+  const std::array samples{
+      vector_v2::CompactOperationSample{.x_quarter = 160U, .y_quarter = 320U, .radius_256 = 2'560U},
+      vector_v2::CompactOperationSample{.x_quarter = 320U, .y_quarter = 160U, .radius_256 = 2'560U},
+      vector_v2::CompactOperationSample{.x_quarter = 480U, .y_quarter = 320U, .radius_256 = 2'560U},
+  };
+  REQUIRE(fixture.log.append({.color = 0x001FU, .samples = samples}).has_value());
+
+  StringSink sink;
+  REQUIRE(vector_v2::export_svg(fixture.log, sink));
+  std::vector<ParsedShape> shapes;
+  REQUIRE(parse_shapes(sink.text, shapes));
+
+  std::vector<ParsedShape> convexes;
+  std::copy_if(shapes.begin(), shapes.end(), std::back_inserter(convexes),
+               [](const ParsedShape& shape) {
+                 return shape.kind == tinydraw::RibbonPrimitiveKind::kConvex;
+               });
+  REQUIRE(convexes.size() >= 3U);
+  CHECK(shared_vertices(convexes[0], convexes[1]) == 2U);
+  CHECK(shared_vertices(convexes[1], convexes[2]) == 2U);
+}
+
 TEST_CASE("SVG export omits a synthetic background rectangle") {
   LogFixture<1, 1> fixture;
   StringSink sink;
@@ -399,7 +439,7 @@ TEST_CASE("SVG export omits a synthetic background rectangle") {
   CHECK(sink.text.find("<rect ") == std::string::npos);
 }
 
-TEST_CASE("exported primitive coverage exactly matches the ribbon renderer raster") {
+TEST_CASE("shared-boundary SVG differs from overlap raster only at antialiased seams") {
   LogFixture<2, 8> fixture;
   const std::array samples{
       vector_v2::CompactOperationSample{.x_quarter = 128, .y_quarter = 256, .radius_256 = 256},
@@ -424,6 +464,7 @@ TEST_CASE("exported primitive coverage exactly matches the ribbon renderer raste
 
   constexpr int samples_per_axis = 4;
   std::size_t differing_pixels = 0;
+  std::size_t hard_disagreements = 0;
   for (int y = 0; y < 32; ++y) {
     for (int x = 0; x < 64; ++x) {
       int covered = 0;
@@ -444,18 +485,24 @@ TEST_CASE("exported primitive coverage exactly matches the ribbon renderer raste
       if (rendered != mathematical) {
         ++differing_pixels;
       }
-      // CoverageTile's scan converter may classify a point exactly on either
-      // side of a shared convex edge differently from the direct half-plane
-      // predicate. No channel may differ by more than those two 4x4
-      // supersamples; all other coverage must be exact.
+      hard_disagreements += (rendered == 0x0000U && mathematical == 0xFFFFU) ||
+                                    (rendered == 0xFFFFU && mathematical == 0x0000U)
+                                ? 1U
+                                : 0U;
+      // Device raster primitives overlap by 0.75 px to prevent fixed-grid
+      // cracks. SVG subspans share exact boundaries to avoid vector-scale
+      // corner teeth. Their difference must stay within AA edge coverage;
+      // neither representation may add or remove a fully covered pixel.
       CHECK(std::abs(static_cast<int>((rendered >> 11U) & 31U) -
-                     static_cast<int>((mathematical >> 11U) & 31U)) <= 4);
+                     static_cast<int>((mathematical >> 11U) & 31U)) <= 12);
       CHECK(std::abs(static_cast<int>((rendered >> 5U) & 63U) -
-                     static_cast<int>((mathematical >> 5U) & 63U)) <= 8);
-      CHECK(std::abs(static_cast<int>(rendered & 31U) - static_cast<int>(mathematical & 31U)) <= 4);
+                     static_cast<int>((mathematical >> 5U) & 63U)) <= 24);
+      CHECK(std::abs(static_cast<int>(rendered & 31U) - static_cast<int>(mathematical & 31U)) <=
+            12);
     }
   }
-  CHECK(differing_pixels < 24U);
+  CHECK(differing_pixels < 96U);
+  CHECK(hard_disagreements == 0U);
   CHECK(contains(shapes.back(), {.x = 54.0F, .y = 20.0F}));
   CHECK_FALSE(contains(shapes.front(), {.x = 8.0F, .y = 20.0F}));
 }
