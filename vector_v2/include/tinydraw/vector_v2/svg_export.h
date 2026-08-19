@@ -31,8 +31,9 @@ struct SvgExportOptions {
 
 // Streams a standalone SVG from the painter-ordered operation authority.
 // Adjacent operation chunks with one nonzero gesture ID become one filled SVG
-// path: a physical finger-down/up stroke is the logical export unit even when
-// bounded live-input storage split it internally. Ungrouped legacy operations
+// path and one continuous curve stream: a physical finger-down/up stroke is
+// the logical export unit even when bounded live-input storage split it
+// internally. Ungrouped legacy operations
 // remain individual paths. Each path contains consistently wound subpaths for
 // the exact circles and convex shapes emitted by CurvedRibbonStream, the same
 // variable-width ribbon geometry used by the renderer. Nonzero filling makes

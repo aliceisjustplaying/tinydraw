@@ -189,15 +189,32 @@ bool begin_path(Writer& writer, std::uint16_t color) {
          writer.append("\" fill-rule=\"nonzero\" d=\"");
 }
 
-bool emit_operation_geometry(Writer& writer, const StoredOperation& operation) {
-  CurvedRibbonStream ribbon;
-  for (std::size_t index = 0; index < operation.samples.size(); ++index) {
-    const bool final = index + 1U == operation.samples.size();
+bool same_geometry(CompactOperationSample first, CompactOperationSample second) {
+  return first.x_quarter == second.x_quarter && first.y_quarter == second.y_quarter &&
+         first.radius_256 == second.radius_256;
+}
+
+bool emit_operation_geometry(Writer& writer, const StoredOperation& operation,
+                             CurvedRibbonStream& ribbon,
+                             std::optional<CompactOperationSample>& last_sample,
+                             bool continues_gesture, bool completes_gesture) {
+  std::size_t first = 0U;
+  if (continues_gesture && last_sample.has_value() && !operation.samples.empty() &&
+      same_geometry(*last_sample, operation.samples.front())) {
+    first = 1U;
+  }
+  if (first == operation.samples.size() && completes_gesture && last_sample.has_value()) {
+    const RibbonUpdate update = ribbon.finish(ink_point(*last_sample));
+    return emit_batch(writer, update.committed);
+  }
+  for (std::size_t index = first; index < operation.samples.size(); ++index) {
+    const bool final = completes_gesture && index + 1U == operation.samples.size();
     const RibbonUpdate update = final ? ribbon.finish(ink_point(operation.samples[index]))
                                       : ribbon.append(ink_point(operation.samples[index]), false);
     if (!emit_batch(writer, update.committed)) {
       return false;
     }
+    last_sample = operation.samples[index];
   }
   return true;
 }
@@ -255,6 +272,8 @@ bool emit_eraser_masks(Writer& writer, const OperationLog& log, std::size_t oper
     return false;
   }
   std::optional<StoredOperation> previous;
+  std::optional<CompactOperationSample> last_sample;
+  CurvedRibbonStream ribbon;
   bool mask_open = false;
   std::size_t mask_index = 0U;
   for (std::size_t index = 0; index < operation_count; ++index) {
@@ -263,6 +282,14 @@ bool emit_eraser_masks(Writer& writer, const OperationLog& log, std::size_t oper
       return false;
     }
     const bool continues = previous.has_value() && same_logical_gesture(*previous, *operation);
+    std::optional<StoredOperation> next;
+    if (index + 1U < operation_count) {
+      next = log.operation(index + 1U);
+      if (!next.has_value()) {
+        return false;
+      }
+    }
+    const bool completes = !next.has_value() || !same_logical_gesture(*operation, *next);
     if (operation->tool == OperationTool::kEraser) {
       if (!continues) {
         if ((mask_open && !writer.append("\"/>\n</mask>\n")) ||
@@ -271,7 +298,7 @@ bool emit_eraser_masks(Writer& writer, const OperationLog& log, std::size_t oper
         }
         mask_open = true;
       }
-      if (!emit_operation_geometry(writer, *operation)) {
+      if (!emit_operation_geometry(writer, *operation, ribbon, last_sample, continues, completes)) {
         return false;
       }
     } else if (mask_open) {
@@ -279,6 +306,7 @@ bool emit_eraser_masks(Writer& writer, const OperationLog& log, std::size_t oper
         return false;
       }
       mask_open = false;
+      last_sample.reset();
     }
     previous = operation;
   }
@@ -295,6 +323,8 @@ bool emit_operations(Writer& writer, const OperationLog& log, std::size_t operat
     }
   }
   std::optional<StoredOperation> previous;
+  std::optional<CompactOperationSample> last_sample;
+  CurvedRibbonStream ribbon;
   bool path_open = false;
   std::size_t groups_open = eraser_count;
   for (std::size_t index = 0; index < operation_count; ++index) {
@@ -304,6 +334,14 @@ bool emit_operations(Writer& writer, const OperationLog& log, std::size_t operat
     }
     const bool continues_gesture =
         previous.has_value() && same_logical_gesture(*previous, *operation);
+    std::optional<StoredOperation> next;
+    if (index + 1U < operation_count) {
+      next = log.operation(index + 1U);
+      if (!next.has_value()) {
+        return false;
+      }
+    }
+    const bool completes_gesture = !next.has_value() || !same_logical_gesture(*operation, *next);
     if (!continues_gesture) {
       if (path_open && !writer.append("\"/>\n")) {
         return false;
@@ -314,13 +352,16 @@ bool emit_operations(Writer& writer, const OperationLog& log, std::size_t operat
           return false;
         }
         --groups_open;
+        last_sample.reset();
       } else if (!begin_path(writer, operation->color)) {
         return false;
       } else {
         path_open = true;
       }
     }
-    if (operation->tool != OperationTool::kEraser && !emit_operation_geometry(writer, *operation)) {
+    if (operation->tool != OperationTool::kEraser &&
+        !emit_operation_geometry(writer, *operation, ribbon, last_sample, continues_gesture,
+                                 completes_gesture)) {
       return false;
     }
     previous = operation;
