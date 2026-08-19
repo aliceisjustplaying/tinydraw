@@ -138,10 +138,9 @@ bool sync_history_controls(vector_v2::ChromeState& chrome, const vector_v2::Oper
 LivePresentationTiming present_history_controls(VectorV2Presenter& presenter,
                                                 const vector_v2::ChromeState& chrome,
                                                 std::uint32_t event_us) {
-  auto timing =
-      presenter.present_frame_region({0, vector_v2::chrome_canvas_bottom(chrome),
-                                      vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
-                                     chrome, event_us);
+  const vector_v2::ChromeRect controls = vector_v2::chrome_history_controls_region();
+  auto timing = presenter.present_frame_region(
+      {controls.x0, controls.y0, controls.x1, controls.y1}, chrome, event_us);
   if (!timing.passed) {
     timing = presenter.refresh(chrome, event_us);
   }
