@@ -73,7 +73,6 @@ else()
     "vector_v2/vector_v2_autosave_store.cpp"
     "vector_v2/vector_v2_background_pipeline.cpp"
     "vector_v2/vector_v2_chrome_controller.cpp"
-    "vector_v2/vector_v2_demo_controller.cpp"
     "vector_v2/vector_v2_export.cpp"
     "vector_v2/vector_v2_live_stroke_session.cpp"
     "vector_v2/vector_v2_presenter.cpp"
@@ -106,6 +105,9 @@ else()
   endif()
   if(TINYDRAW_VECTOR_V2_TILE_CENSUS)
     list(APPEND TINYDRAW_APP_SRCS "vector_v2/vector_v2_tile_census.cpp")
+  endif()
+  if(TINYDRAW_VECTOR_V2_DEMO)
+    list(APPEND TINYDRAW_APP_SRCS "vector_v2/vector_v2_demo_controller.cpp")
   endif()
   set(TINYDRAW_PLATFORM_SRCS "")
   set(TINYDRAW_PLATFORM_REQUIRES esp_event esp_lcd_co5300 esp_lcd_touch_cst816s esp_netif esp_wifi nvs_flash pcf85063a)
