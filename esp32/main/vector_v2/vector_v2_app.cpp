@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <span>
 
@@ -361,24 +362,27 @@ void run_vector_v2_app() {
   std::fflush(stdout);
 
 #ifdef TINYDRAW_VECTOR_V2_DEMO
-  auto* demo_samples = static_cast<vector_v2::DemoSample*>(
-      heap_caps_malloc(kDemoCapacity * sizeof(vector_v2::DemoSample), kExternalCaps));
+  std::unique_ptr<vector_v2::DemoSample, decltype(&heap_caps_free)> demo_samples(
+      static_cast<vector_v2::DemoSample*>(
+          heap_caps_malloc(kDemoCapacity * sizeof(vector_v2::DemoSample), kExternalCaps)),
+      &heap_caps_free);
+  VectorV2DemoController demo(demo_samples == nullptr
+                                  ? std::span<vector_v2::DemoSample>{}
+                                  : std::span(demo_samples.get(), kDemoCapacity));
   if (demo_samples == nullptr) {
-    std::printf("TINYDRAW_DEMO_FAIL reason=allocation bytes=%lu free_psram=%lu\n",
+    std::printf("TINYDRAW_DEMO_DISABLED reason=allocation bytes=%lu free_psram=%lu\n",
                 static_cast<unsigned long>(kDemoCapacity * sizeof(vector_v2::DemoSample)),
                 static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)));
-    return;
+  } else if (!demo.ready()) {
+    demo_samples.reset();
+    std::printf("TINYDRAW_DEMO_DISABLED reason=timer\n");
+  } else {
+    std::printf(
+        "TINYDRAW_DEMO_READY capacity=%lu bytes=%lu controls=long_record_stop_replay "
+        "short=zoom\n",
+        static_cast<unsigned long>(kDemoCapacity),
+        static_cast<unsigned long>(kDemoCapacity * sizeof(vector_v2::DemoSample)));
   }
-  VectorV2DemoController demo(std::span(demo_samples, kDemoCapacity));
-  if (!demo.ready()) {
-    std::printf("TINYDRAW_DEMO_FAIL reason=timer\n");
-    return;
-  }
-  std::printf(
-      "TINYDRAW_DEMO_READY capacity=%lu bytes=%lu controls=long_record_stop_replay "
-      "short=zoom\n",
-      static_cast<unsigned long>(kDemoCapacity),
-      static_cast<unsigned long>(kDemoCapacity * sizeof(vector_v2::DemoSample)));
 #endif
 
   InteractionMode interaction = InteractionMode::kIdle;
@@ -406,6 +410,15 @@ void run_vector_v2_app() {
   std::uint32_t autosave_checkpoint_retry_us = 0U;
   std::uint8_t background_ticks = 0U;
   std::uint8_t drained_touch_events = 0U;
+
+  const auto wait_for_input = [&](TickType_t timeout_ticks) {
+#ifdef TINYDRAW_VECTOR_V2_DEMO
+    if (demo_sampler_stopped) {
+      return demo.wait_for_replay_event(timeout_ticks);
+    }
+#endif
+    return touch_sampler.wait_for_event(timeout_ticks);
+  };
 
   const auto advance_full_refresh = [&](const char* kind, std::uint32_t event_us) {
     const auto timing = presenter.refresh_slice(chrome, event_us, interaction_active(interaction));
@@ -484,13 +497,15 @@ void run_vector_v2_app() {
 
 #ifdef TINYDRAW_VECTOR_V2_DEMO
     if (demo_sampler_stopped && !demo.replaying()) {
+      const bool replay_failed = demo.replay_failed();
       touch_sampler.discard_pending();
       if (!touch_sampler.start()) {
         std::printf("TINYDRAW_DEMO_FAIL reason=touch_restart\n");
         return;
       }
       demo_sampler_stopped = false;
-      std::printf("TINYDRAW_DEMO_REPLAY_END count=%lu\n",
+      std::printf(replay_failed ? "TINYDRAW_DEMO_FAIL reason=replay_timer count=%lu\n"
+                                : "TINYDRAW_DEMO_REPLAY_END count=%lu\n",
                   static_cast<unsigned long>(demo.sample_count()));
     }
 #endif
@@ -501,6 +516,7 @@ void run_vector_v2_app() {
     std::optional<SampledTouch> sampled_touch;
     bool replay_zoom = false;
 #ifdef TINYDRAW_VECTOR_V2_DEMO
+    std::uint32_t replay_event_us = loop_us;
     const TouchUrgencyProbe input_urgency = demo_sampler_stopped
                                                 ? TouchUrgencyProbe(demo.replay_urgency_flag())
                                                 : touch_sampler.urgency_probe();
@@ -515,6 +531,7 @@ void run_vector_v2_app() {
           };
         } else {
           replay_zoom = true;
+          replay_event_us = replay_event->timestamp_us;
         }
       }
     } else if (!demo_sampler_stopped) {
@@ -545,7 +562,11 @@ void run_vector_v2_app() {
     }
     const bool lift_event = sample_ready && sampled_touch->kind == vector_v2::TouchEventKind::kUp;
     const bool point_event = sample_ready && (!lift_event || interaction_active(interaction));
-    const std::uint32_t event_us = sample_ready ? sampled_touch->timestamp_us : loop_us;
+    const std::uint32_t event_us = sample_ready ? sampled_touch->timestamp_us
+#ifdef TINYDRAW_VECTOR_V2_DEMO
+                                   : replay_zoom ? replay_event_us
+#endif
+                                                 : loop_us;
     bool cosmetic_work = false;
 #ifdef TINYDRAW_VECTOR_V2_DEMO
     const bool persist_authority = !demo.active();
@@ -649,20 +670,27 @@ void run_vector_v2_app() {
         if (!export_mode_owns_input) {
 #ifdef TINYDRAW_VECTOR_V2_DEMO
           const bool long_press = loop_us - button_pressed_us >= kDemoLongPressUs;
-          if (long_press && !interaction_active(interaction)) {
+          if (long_press && demo.ready() && !interaction_active(interaction)) {
             if (demo.mode() == VectorV2DemoMode::kEmpty) {
               const bool autosave_flushed = !autosave.ready() || autosave.flush(5'000U);
+              touch_sampler.stop();
               touch_sampler.discard_pending();
               if (reset_demo_baseline(true)) {
-                // The full baseline present runs while the physical sampler is
-                // still live. Drop anything sampled during it so every tape
-                // timestamp is at or after the recording epoch.
-                touch_sampler.discard_pending();
                 demo.begin_recording(now_us());
+                if (!touch_sampler.start()) {
+                  demo.stop_recording();
+                  chrome.recording = false;
+                  std::printf("TINYDRAW_DEMO_FAIL reason=touch_restart\n");
+                  return;
+                }
                 std::printf("TINYDRAW_DEMO_RECORDING_BEGIN capacity=%lu autosave_flushed=%u\n",
                             static_cast<unsigned long>(kDemoCapacity), autosave_flushed);
               } else {
                 chrome.recording = false;
+                if (!touch_sampler.start()) {
+                  std::printf("TINYDRAW_DEMO_FAIL reason=touch_restart\n");
+                  return;
+                }
                 std::printf("TINYDRAW_DEMO_FAIL reason=record_baseline\n");
               }
               cosmetic_work = true;
@@ -676,7 +704,8 @@ void run_vector_v2_app() {
               touch_sampler.stop();
               touch_sampler.discard_pending();
               demo_sampler_stopped = true;
-              if (reset_demo_baseline(false) && demo.begin_replay(now_us())) {
+              const bool baseline_ready = reset_demo_baseline(false);
+              if (baseline_ready && demo.begin_replay(now_us())) {
                 demo_replay_sequence = 0U;
                 std::printf("TINYDRAW_DEMO_REPLAY_BEGIN count=%lu\n",
                             static_cast<unsigned long>(demo.sample_count()));
@@ -686,7 +715,8 @@ void run_vector_v2_app() {
                   return;
                 }
                 demo_sampler_stopped = false;
-                std::printf("TINYDRAW_DEMO_FAIL reason=replay_baseline\n");
+                std::printf(baseline_ready ? "TINYDRAW_DEMO_FAIL reason=replay_timer\n"
+                                           : "TINYDRAW_DEMO_FAIL reason=replay_baseline\n");
               }
               cosmetic_work = true;
             }
@@ -1046,11 +1076,11 @@ void run_vector_v2_app() {
       // two-millisecond tax after every slice, but periodically unblock idle.
       if (++background_ticks == 8U) {
         background_ticks = 0U;
-        static_cast<void>(touch_sampler.wait_for_event(pdMS_TO_TICKS(1)));
+        static_cast<void>(wait_for_input(pdMS_TO_TICKS(1)));
       }
     } else {
       background_ticks = 0U;
-      static_cast<void>(touch_sampler.wait_for_event(pdMS_TO_TICKS(2)));
+      static_cast<void>(wait_for_input(pdMS_TO_TICKS(2)));
     }
   }
 }

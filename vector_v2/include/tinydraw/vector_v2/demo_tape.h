@@ -3,12 +3,18 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <span>
 
 #include "tinydraw/vector_v2/touch_event_buffer.h"
 
 namespace tinydraw::vector_v2 {
+
+// Replay clock comparisons use signed 32-bit deltas, so one take must remain
+// inside that unambiguous half of the wrapping microsecond clock.
+inline constexpr std::uint32_t kMaximumDemoDurationUs =
+    static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max());
 
 enum class DemoEventKind : std::uint8_t {
   kTouchDown,

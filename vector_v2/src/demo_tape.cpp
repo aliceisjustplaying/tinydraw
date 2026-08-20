@@ -1,6 +1,7 @@
 #include "tinydraw/vector_v2/demo_tape.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace tinydraw::vector_v2 {
 namespace {
@@ -37,6 +38,11 @@ void DemoTape::begin_recording(std::uint32_t started_us) {
 }
 
 bool DemoTape::record_touch(const TouchEvent& event) {
+  if (!std::isfinite(event.point.x) || !std::isfinite(event.point.y)) {
+    return false;
+  }
+  // The physical sampler supplies uint16 panel coordinates through Point's
+  // float-shaped interface, so this compact conversion is exact on-device.
   return record({.x = coordinate(event.point.x),
                  .y = coordinate(event.point.y),
                  .kind = demo_kind(event.kind)},
@@ -51,12 +57,13 @@ bool DemoTape::record(DemoSample sample, std::uint32_t timestamp_us) {
   if (!recording_) {
     return false;
   }
-  if (size_ == storage_.size()) {
+  const std::uint32_t offset_us = timestamp_us - recording_started_us_;
+  if (size_ == storage_.size() || offset_us > kMaximumDemoDurationUs) {
     overflowed_ = true;
     recording_ = false;
     return false;
   }
-  sample.offset_us = timestamp_us - recording_started_us_;
+  sample.offset_us = offset_us;
   storage_[size_++] = sample;
   return true;
 }

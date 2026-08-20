@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 
 namespace vector_v2 = tinydraw::vector_v2;
 
@@ -28,7 +29,9 @@ TEST_CASE("V2 demo tape preserves touch and zoom timing") {
   CHECK(down->point.y == 34.0F);
   CHECK(down->timestamp_us == 10'100U);
 
-  REQUIRE(tape.pop_replay(10'250U)->kind == vector_v2::DemoEventKind::kZoom);
+  const auto zoom = tape.pop_replay(10'250U);
+  REQUIRE(zoom.has_value());
+  CHECK(zoom->kind == vector_v2::DemoEventKind::kZoom);
   CHECK_FALSE(tape.replay_due(10'399U));
   const auto up = tape.pop_replay(10'400U);
   REQUIRE(up.has_value());
@@ -62,4 +65,33 @@ TEST_CASE("V2 demo replay handles wrapping microsecond clocks") {
   REQUIRE(tape.pop_replay(4U).has_value());
   CHECK_FALSE(tape.replay_due(23U));
   CHECK(tape.replay_due(24U));
+}
+
+TEST_CASE("V2 demo tape rejects non-finite touch coordinates") {
+  std::array<vector_v2::DemoSample, 2> storage{};
+  vector_v2::DemoTape tape(storage);
+  tape.begin_recording(100U);
+
+  CHECK_FALSE(tape.record_touch({{std::numeric_limits<float>::quiet_NaN(), 10.0F},
+                                 110U,
+                                 1U,
+                                 vector_v2::TouchEventKind::kDown}));
+  CHECK_FALSE(tape.record_touch({{10.0F, std::numeric_limits<float>::infinity()},
+                                 120U,
+                                 2U,
+                                 vector_v2::TouchEventKind::kMove}));
+  CHECK(tape.recording());
+  CHECK(tape.size() == 0U);
+}
+
+TEST_CASE("V2 demo tape stops before replay timing becomes ambiguous") {
+  std::array<vector_v2::DemoSample, 2> storage{};
+  vector_v2::DemoTape tape(storage);
+  tape.begin_recording(100U);
+
+  CHECK(tape.record_zoom(100U + vector_v2::kMaximumDemoDurationUs));
+  CHECK_FALSE(tape.record_zoom(100U + vector_v2::kMaximumDemoDurationUs + 1U));
+  CHECK(tape.overflowed());
+  CHECK_FALSE(tape.recording());
+  CHECK(tape.size() == 1U);
 }
