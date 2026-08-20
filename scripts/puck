@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ $# -gt 1 ]]; then
+  echo "usage: $0 [PUCK_REPO]" >&2
+  exit 2
+fi
+
+build="$root/out/build/puck"
+cxx="${WASI_CXX:-}"
+if [[ -z "$cxx" && -x /opt/homebrew/opt/llvm/bin/clang++ ]]; then
+  cxx=/opt/homebrew/opt/llvm/bin/clang++
+fi
+if [[ -z "$cxx" || ! -x "$cxx" ]]; then
+  echo "WASI clang++ not found; run ./scripts/bootstrap-wasm or set WASI_CXX" >&2
+  exit 1
+fi
+
+cmake -S "$root" -B "$build" -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_SYSTEM_NAME=Generic \
+  -DCMAKE_CXX_COMPILER="$cxx" \
+  -DCMAKE_CXX_COMPILER_TARGET=wasm32-wasip1 \
+  -DTINYDRAW_BUILD_HOST=OFF \
+  -DTINYDRAW_BUILD_TESTS=OFF \
+  -DTINYDRAW_BUILD_PUCK=ON \
+  -DTINYDRAW_WARNINGS_AS_ERRORS=ON
+cmake --build "$build" --target tinydraw_puck
+
+module="$build/puck/emu.wasm"
+owner="$root/testdata/documents/captured-drawing-2026-08-19.tdoc"
+runtimes=()
+command -v bun >/dev/null 2>&1 && runtimes+=(bun)
+command -v node >/dev/null 2>&1 && runtimes+=(node)
+if [[ ${#runtimes[@]} -eq 0 ]]; then
+  echo "bun or node is required to verify the Puck build" >&2
+  exit 1
+fi
+
+for runtime in "${runtimes[@]}"; do
+  echo "verifying Puck ABI with $runtime"
+  "$runtime" "$root/puck/abi_verify.mjs" "$module"
+  echo "running Puck product battery with $runtime"
+  "$runtime" "$root/puck/battery.mjs" "$module" "$owner"
+  echo "running Puck performance gates with $runtime"
+  "$runtime" "$root/puck/perf.mjs" "$module" "$owner"
+done
+if [[ $# == 0 ]]; then
+  echo "built and locally verified $module"
+  exit 0
+fi
+
+puck="$1"
+if [[ ! -f "$puck/package.json" || ! -d "$puck/wasm" ]]; then
+  echo "not a Puck checkout: $puck" >&2
+  exit 1
+fi
+
+destination="$puck/wasm/dist/emu.wasm"
+mkdir -p "$(dirname "$destination")"
+cp "$module" "$destination"
+if ! command -v bun >/dev/null 2>&1; then
+  echo "bun is required for Puck's deterministic and browser verification" >&2
+  exit 1
+fi
+bun "$root/puck/verify.mjs" "$puck" --no-build
+(
+  cd "$puck"
+  bun run typecheck
+  bun run test:wasi
+  bun run verify
+)
+echo "installed and verified $destination"

@@ -4,6 +4,7 @@ project(tinydraw VERSION 0.1.0 LANGUAGES CXX)
 
 option(TINYDRAW_BUILD_HOST "Build the SDL host application" ON)
 option(TINYDRAW_BUILD_TESTS "Build native tests" ON)
+option(TINYDRAW_BUILD_PUCK "Build the Puck WebAssembly adapter" OFF)
 option(TINYDRAW_BUILD_EXPERIMENTS "Build concluded characterization tools" OFF)
 option(TINYDRAW_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 option(TINYDRAW_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
@@ -40,6 +41,10 @@ endif()
 
 add_subdirectory(core)
 add_subdirectory(vector_v2)
+
+if(TINYDRAW_BUILD_PUCK)
+  add_subdirectory(puck)
+endif()
 
 if(TINYDRAW_BUILD_HOST)
   add_subdirectory(host)

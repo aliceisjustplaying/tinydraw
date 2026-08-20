@@ -1,4 +1,5 @@
 set(TINYDRAW_VECTOR_V2_SRCS
+  "${CMAKE_CURRENT_LIST_DIR}/src/application.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/authority_journal.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/chained_operation_builder.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/chrome.cpp"
@@ -20,6 +21,7 @@ set(TINYDRAW_VECTOR_V2_SRCS
   "${CMAKE_CURRENT_LIST_DIR}/src/operation_builder.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/operation_log.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/operation_spatial_index.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/src/rerender_ledger.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/settled_tile.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/svg_export.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/tile_producer.cpp"
@@ -30,6 +32,5 @@ set(TINYDRAW_VECTOR_V2_SRCS
 
 set(TINYDRAW_VECTOR_V2_DIAGNOSTIC_SRCS
   "${CMAKE_CURRENT_LIST_DIR}/src/ink_trace.cpp"
-  "${CMAKE_CURRENT_LIST_DIR}/src/rerender_ledger.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/src/tile_payload_analysis.cpp"
 )

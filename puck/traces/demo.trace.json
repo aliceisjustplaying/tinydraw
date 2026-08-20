@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-20T00:00:00.000Z",
+  "device": {
+    "name": "TinyDraw Vector V2",
+    "panel": { "w": 368, "h": 448, "format": "rgb565" },
+    "buttons": [{ "id": "boot", "label": "BOOT", "edge": "right", "at": 0.38, "longPressMs": 800 }],
+    "touch": { "points": 1 }
+  },
+  "events": [
+    { "t": 0, "k": "tick" },
+    { "t": 100, "k": "button", "i": 0, "down": 1 },
+    { "t": 100, "k": "tick" },
+    { "t": 900, "k": "verdict", "i": 0, "long": 1 },
+    { "t": 900, "k": "tick" },
+    { "t": 916, "k": "button", "i": 0, "down": 0 },
+    { "t": 916, "k": "tick" },
+
+    { "t": 932, "k": "touch", "down": 1, "x": 70, "y": 100 },
+    { "t": 932, "k": "tick" },
+    { "t": 948, "k": "touch", "down": 1, "x": 105, "y": 120 },
+    { "t": 948, "k": "tick" },
+    { "t": 964, "k": "touch", "down": 1, "x": 145, "y": 90 },
+    { "t": 964, "k": "tick" },
+    { "t": 980, "k": "touch", "down": 0, "x": 145, "y": 90 },
+    { "t": 980, "k": "tick" },
+    { "t": 996, "k": "button", "i": 0, "down": 1 },
+    { "t": 996, "k": "tick" },
+    { "t": 1012, "k": "button", "i": 0, "down": 0 },
+    { "t": 1012, "k": "verdict", "i": 0, "long": 0 },
+    { "t": 1012, "k": "tick" },
+
+    { "t": 1028, "k": "button", "i": 0, "down": 1 },
+    { "t": 1028, "k": "tick" },
+    { "t": 1828, "k": "verdict", "i": 0, "long": 1 },
+    { "t": 1828, "k": "tick" },
+    { "t": 1844, "k": "button", "i": 0, "down": 0 },
+    { "t": 1844, "k": "tick" },
+
+    { "t": 1860, "k": "button", "i": 0, "down": 1 },
+    { "t": 1860, "k": "tick" },
+    { "t": 2660, "k": "verdict", "i": 0, "long": 1 },
+    { "t": 2660, "k": "tick" },
+    { "t": 2676, "k": "button", "i": 0, "down": 0 },
+    { "t": 2676, "k": "tick" },
+    { "t": 2692, "k": "tick" },
+    { "t": 2708, "k": "tick" },
+    { "t": 2724, "k": "tick" },
+    { "t": 2740, "k": "tick" },
+    { "t": 2772, "k": "tick" }
+  ]
+}
