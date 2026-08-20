@@ -63,6 +63,7 @@ TEST_CASE("authority journal checkpoint restores drawing history") {
           .x_quarter = 640, .y_quarter = 800, .radius_256 = 256, .elapsed_ms = 0},
   };
   const std::array second_b{
+      second_a.front(),
       vector_v2::CompactOperationSample{
           .x_quarter = 960, .y_quarter = 1120, .radius_256 = 384, .elapsed_ms = 20},
   };

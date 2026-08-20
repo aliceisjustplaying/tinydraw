@@ -33,12 +33,6 @@ inline constexpr int kMaximumCachedPanDelta = 96;
 // Cached pan composition is strip-looped through the same bounded scratch as
 // progressive tile presentation, so wider reuse costs no additional PSRAM.
 inline constexpr std::size_t kLiveRegionScratchPixels = kMaximumProgressiveRegionPixels;
-// Interactive gestures commit in bounded chunks so intermediate authority
-// publication stays inside one input-poll slice. Visible tiles are exempt
-// from the commit budget, so the chunk size bounds the visible band a
-// commit must paint; the mixed-draw and long-gesture gates re-prove the
-// 15 ms slice bound with this exact constant.
-inline constexpr std::size_t kInteractiveChunkSampleLimit = 32;
 // Offscreen-retention policy for synchronous history/navigation boundaries.
 // Interactive authority publication no longer runs absorption inline.
 inline constexpr std::int64_t kInPlaceRetentionBudgetUs = 10'000;

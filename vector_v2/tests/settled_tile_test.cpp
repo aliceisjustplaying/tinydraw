@@ -90,6 +90,15 @@ TEST_CASE("settled rendering unions sharp-corner chunks as one logical Stroke") 
   const auto actual = settle(chunked, bounds);
   CHECK(std::equal(actual.begin(), actual.end(), expected.begin(), expected.end()));
 
+  std::vector<std::uint16_t> measured(vector_v2::kTilePixels);
+  vector_v2::SettledTileStats stats{};
+  REQUIRE(vector_v2::render_settled_window(chunked.log, vector_v2::ZoomLevel::k100Percent, bounds,
+                                           chunked.workspace(), measured, &stats));
+  CHECK(stats.operations_scanned == 2U);
+  CHECK(stats.operations_intersecting == 2U);
+  CHECK(stats.strokes_intersecting == 1U);
+  CHECK(stats.strokes_rendered == 1U);
+
   constexpr std::size_t kBudget = 17U;
   std::vector<std::uint16_t> sliced(vector_v2::kTilePixels);
   vector_v2::SettledRenderCursor cursor;
@@ -266,7 +275,8 @@ TEST_CASE("settled rendering resumes in bounded slices with exact pixels and sta
   CHECK(cursor.stats().index_candidates == expected_stats.index_candidates);
   CHECK(cursor.stats().deduplicated_candidates == expected_stats.deduplicated_candidates);
   CHECK(cursor.stats().operations_intersecting == expected_stats.operations_intersecting);
-  CHECK(cursor.stats().operations_rendered == expected_stats.operations_rendered);
+  CHECK(cursor.stats().strokes_intersecting == expected_stats.strokes_intersecting);
+  CHECK(cursor.stats().strokes_rendered == expected_stats.strokes_rendered);
   CHECK(cursor.stats().candidate_queries == expected_stats.candidate_queries);
   CHECK(cursor.stats().initialize_pixels == expected_stats.initialize_pixels);
   CHECK(cursor.stats().operation_clear_pixels == expected_stats.operation_clear_pixels);
@@ -354,7 +364,8 @@ TEST_CASE("settled spatial replay fetches only conservative local candidates") {
   CHECK(stats.deduplicated_candidates == 1U);
   CHECK(stats.operations_scanned == 1U);
   CHECK(stats.operations_intersecting == 1U);
-  CHECK(stats.operations_rendered == 1U);
+  CHECK(stats.strokes_intersecting == 1U);
+  CHECK(stats.strokes_rendered == 1U);
 }
 
 TEST_CASE("settled rendering preserves a one-sample tap as a visible dot") {
@@ -370,7 +381,7 @@ TEST_CASE("settled rendering preserves a one-sample tap as a visible dot") {
                                            rig.workspace(), settled, &stats));
 
   CHECK(settled[32U * vector_v2::kTileWidth + 32U] == 0x001FU);
-  CHECK(stats.operations_rendered == 1U);
+  CHECK(stats.strokes_rendered == 1U);
   CHECK(stats.curve_units_prepared == 1U);
 
   std::vector<std::uint16_t> sliced(vector_v2::kTilePixels, 0x1234U);
@@ -406,7 +417,7 @@ TEST_CASE("settled tile matches hard-edged interiors and smooths boundaries") {
   std::vector<std::uint16_t> settled(vector_v2::kTilePixels);
   vector_v2::SettledTileStats stats{};
   REQUIRE(vector_v2::render_settled_tile(rig.log, key, rig.workspace(), settled, &stats));
-  CHECK(stats.operations_rendered == 1U);
+  CHECK(stats.strokes_rendered == 1U);
 
   // The exact hard-edged reference for the same tile.
   std::vector<std::uint16_t> hard(vector_v2::kTilePixels, 0xFFFFU);

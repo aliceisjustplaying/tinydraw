@@ -16,10 +16,11 @@ consumes the same serialized authority view.
 
 ## Plain-English model
 
-The drawing is one ordered list of small vector-operation chunks. A physical
-finger-down through finger-up may produce several chunks, but all adjacent
-chunks with the same nonzero `gesture_id` are one **Stroke**. Undo and Redo
-move only across complete Strokes.
+The drawing is one ordered list of vector operations. The product publishes one
+operation for each complete finger-down/up **Stroke**. Restored legacy and
+diagnostic authorities may contain adjacent chunks; they form one Stroke only
+when tool, color, and nonzero `gesture_id` match and consecutive chunks share
+their boundary sample. Undo and Redo move only across complete Strokes.
 
 The list can contain a redo tail. `active_operation_count` says how much of the
 list is currently visible. Undo moves that boundary left; Redo moves it right.
@@ -99,9 +100,10 @@ same serialized access boundary.
 
 ## Required behavior
 
-- A nonzero `gesture_id` groups only adjacent chunks. This remains correct when
-  the 16-bit ID eventually wraps. A legacy/test chunk with ID zero is one
-  history item by itself.
+- One canonical Stroke identity is `(tool, color, nonzero gesture_id)`, used by
+  append/restore validation, Undo/Redo, settled rendering, and SVG export.
+  Adjacent legacy chunks must also share their boundary sample. Gesture zero
+  never joins records. These rules remain local when the 16-bit ID wraps.
 - Undo selects the final active Stroke. Redo selects the first inactive Stroke.
 - The damage rectangle is the union of all chunks in that Stroke.
 - A history request fails without mutation while another history change is

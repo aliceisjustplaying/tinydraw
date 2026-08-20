@@ -360,6 +360,7 @@ TEST_CASE("operation chunks from one physical gesture export as one path") {
       vector_v2::CompactOperationSample{.x_quarter = 80, .y_quarter = 40, .radius_256 = 256},
   };
   const std::array second{
+      first.back(),
       vector_v2::CompactOperationSample{.x_quarter = 120, .y_quarter = 40, .radius_256 = 256},
       vector_v2::CompactOperationSample{.x_quarter = 160, .y_quarter = 40, .radius_256 = 256},
   };

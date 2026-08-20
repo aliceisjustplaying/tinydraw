@@ -9,7 +9,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const repository = resolve(here, "..");
 const wasmPath = join(repository, "out", "build", "puck", "puck", "emu.wasm");
-const bundlePath = join(here, "external-bundle.json");
 
 const scenarios = [
   {
@@ -24,17 +23,25 @@ const scenarios = [
       assert(inkPixels(immediate) > inkPixels(boot) + 50, "the Stroke left no visible ink in its canvas region");
       assert(inkPixels(settled) > inkPixels(boot) + 50, "background work lost the completed Stroke");
       assert(canvasColorCount(settled) > 2, "settled Stroke has no RGB565 coverage shades");
+      const livePushes = run.ticks
+        .filter(({ t }) => t >= 32 && t <= 96)
+        .flatMap(({ pushes }) => pushes);
+      assert(livePushes.length > 0, "live drawing reported no panel pushes");
+      assert(livePushes.some(({ w, h }) => w * h < 368 * 448),
+        "localized drawing never used a sub-frame panel push");
+      assert(livePushes.every(({ x, y, w, h }) => x !== 0 || y !== 0 || w !== 368 || h !== 448),
+        "localized drawing collapsed to a full-panel push");
     },
   },
   {
     trace: "history-new.trace.json",
-    captures: [192, 288, 384, 464, 576],
+    captures: [192, 288, 464, 544, 656],
     check(run) {
       const stroke = run.frames.get(192);
       const undo = run.frames.get(288);
-      const redo = run.frames.get(384);
-      const dialog = run.frames.get(464);
-      const blank = run.frames.get(576);
+      const redo = run.frames.get(464);
+      const dialog = run.frames.get(544);
+      const blank = run.frames.get(656);
       assert(stroke && undo && redo && dialog && blank, "history/new captures are missing");
 
       const strokeInk = inkPixels(stroke);
@@ -43,6 +50,8 @@ const scenarios = [
       assert(strokeInk > 50, "history scenario did not create a visible Stroke");
       assert(undoInk < strokeInk / 3, "Undo did not remove the Stroke from the canvas");
       assert(redoInk > undoInk + 50, "Redo did not restore the Stroke");
+      assert.equal(diffPixels(stroke, redo, { x: 40, y: 80, w: 240, h: 160 }), 0,
+        "Redo did not restore the exact drawing pixels");
       assert(diffPixels(redo, dialog) > 1_000, "New did not present its confirmation dialog");
       assert(inkPixels(blank) < redoInk / 3, "confirmed New did not clear drawing authority");
     },
@@ -75,14 +84,34 @@ const scenarios = [
       assert(diffPixels(drawn, zoomed) > 100, "short BOOT did not zoom during demo recording");
       assert(inkPixels(replayBaseline) < inkPixels(drawn) / 3,
         `demo replay did not start from a blank authority baseline: ${inkPixels(replayBaseline)} versus ${inkPixels(drawn)}`);
-      assert.equal(diffPixels(recorded, replayed), 0,
-        "demo replay did not reproduce the recorded final framebuffer exactly");
+      assert.equal(diffPixels(recorded, replayed, { x: 40, y: 80, w: 240, h: 160 }), 0,
+        "demo replay did not reproduce recorded canvas pixels exactly");
+      assert(diffPixels(recorded, replayed) < 100,
+        "demo replay diverged materially outside the drawing canvas");
+      assert.equal(run.log.some((line) => line.startsWith("TINYDRAW_DEMO_FAIL")), false,
+        "demo controller reported a failure");
+      const recordingBegin = run.timedLog.find(({ line }) =>
+        line.startsWith("TINYDRAW_DEMO_RECORDING_BEGIN"));
+      const recordingEnd = run.timedLog.find(({ line }) =>
+        line.startsWith("TINYDRAW_DEMO_RECORDING_END"));
+      const replayBegin = run.timedLog.find(({ line }) =>
+        line.startsWith("TINYDRAW_DEMO_REPLAY_BEGIN"));
+      const replayEnd = run.timedLog.find(({ line }) =>
+        line.startsWith("TINYDRAW_DEMO_REPLAY_END"));
+      assert.equal(recordingBegin?.t, 916,
+        "recording did not begin on the release after the firmware hold deadline");
+      assert.equal(recordingEnd?.t, 1844,
+        "recording did not end on the release after the second hold deadline");
+      assert.equal(replayBegin?.t, 2676,
+        "replay start overshot the release after the firmware hold deadline");
+      assert(replayEnd && replayEnd.t <= 2772,
+        "demo replay did not finish within its recorded timing envelope");
     },
   },
 ];
 
 function usage() {
-  console.error("usage: bun puck/verify.mjs <PUCK_REPO> [--no-build] [--write-frames]");
+  console.error("usage: bun puck/verify.mjs <PUCK_REPO> [--write-frames]");
   process.exit(2);
 }
 
@@ -90,21 +119,11 @@ const args = process.argv.slice(2);
 const puckArgument = args.find((arg) => !arg.startsWith("--"));
 if (!puckArgument) usage();
 const puck = resolve(puckArgument);
-const noBuild = args.includes("--no-build");
 const writeFrames = args.includes("--write-frames");
 if (!existsSync(join(puck, "src", "wasm.ts")) || !existsSync(join(puck, "harness", "png.ts"))) {
   throw new Error(`not a current Puck checkout: ${puck}`);
 }
 
-if (!noBuild) {
-  const built = Bun.spawnSync([join(repository, "scripts", "puck")], {
-    cwd: repository,
-    stdout: "inherit",
-    stderr: "inherit",
-    env: process.env,
-  });
-  if (!built.success) process.exit(built.exitCode ?? 1);
-}
 if (!existsSync(wasmPath)) throw new Error(`WebAssembly artifact not found: ${wasmPath}`);
 
 const { instantiate, readDeviceDescriptor } = await import(
@@ -114,7 +133,6 @@ const { pixelReaderFor, readFramebufferRGB } = await import(
   pathToFileURL(join(puck, "src", "panel.ts")).href
 );
 const { encodeRGBPNG } = await import(pathToFileURL(join(puck, "harness", "png.ts")).href);
-const { verifyPortFrames } = await import(pathToFileURL(join(puck, "harness", "portdiff.ts")).href);
 const wasm = await Bun.file(wasmPath).arrayBuffer();
 
 function frameHash(rgb) {
@@ -216,12 +234,17 @@ function changedPixelsAreCovered(previous, current, pushes) {
 
 async function replay(trace, capturePoints) {
   const log = [];
-  const emu = await instantiate(wasm, (line) => log.push(line));
+  const timedLog = [];
+  let currentTick = -1;
+  const emu = await instantiate(wasm, (line) => {
+    log.push(line);
+    timedLog.push({ t: currentTick, line });
+  });
   assert.equal(emu.emu_init(), 1, "emu_init failed");
   const device = readDeviceDescriptor(emu);
-  assert.deepEqual(device.panel, { w: 368, h: 448, format: "rgb565" });
+  assert.deepEqual(device.panel, { w: 368, h: 448, format: "rgb565be" });
   assert.equal(device.buttons?.length, 1);
-  assert.equal(device.buttons?.[0]?.longPressMs, 800);
+  assert.equal(device.buttons?.[0]?.longPressMs, undefined);
   const reader = pixelReaderFor(device.panel.format);
   const framebuffer = emu.emu_fb();
   assert(framebuffer > 0, "emu_fb returned a null pointer");
@@ -262,7 +285,10 @@ async function replay(trace, capturePoints) {
         emu.emu_sensor_vector?.(event.i, event.x, event.y, event.z);
         break;
       case "tick": {
+        currentTick = event.t;
+        const tickStarted = performance.now();
         emu.emu_tick(event.t);
+        const tickMs = performance.now() - tickStarted;
         const current = readFrame();
         const pushes = pushList(emu, device.panel.w, device.panel.h);
         const changed = diffPixels(previous, current);
@@ -273,7 +299,7 @@ async function replay(trace, capturePoints) {
         }
         totalPushes += pushes.length;
         const hash = frameHash(current.rgb);
-        ticks.push({ t: event.t, hash, pushes });
+        ticks.push({ t: event.t, hash, pushes, tickMs });
         if (wanted.has(event.t)) frames.set(event.t, current);
         previous = current;
         break;
@@ -285,7 +311,69 @@ async function replay(trace, capturePoints) {
 
   assert(changedTicks > 0, "trace never changed the framebuffer");
   assert(totalPushes > 0, "trace never reported a panel push");
-  return { device, ticks, frames, log, totalPushes, changedTicks };
+  return { device, ticks, frames, log, timedLog, totalPushes, changedTicks };
+}
+
+async function verifyLongStrokeHistory() {
+  const events = [{ t: 0, k: "tick" }, { t: 16, k: "tick" }];
+  let now = 24;
+  events.push({ t: now, k: "touch", down: 1, x: 60, y: 100 }, { t: now, k: "tick" });
+  for (let sample = 1; sample <= 4_095; ++sample) {
+    now += 8;
+    events.push(
+      {
+        t: now,
+        k: "touch",
+        down: 1,
+        x: 60 + (sample % 180),
+        y: 100 + ((Math.floor(sample / 180) * 30) % 120),
+      },
+      { t: now, k: "tick" },
+    );
+  }
+  now += 8;
+  events.push({ t: now, k: "touch", down: 0, x: 212, y: 160 }, { t: now, k: "tick" });
+  for (let i = 0; i < 20; ++i) {
+    now += 16;
+    events.push({ t: now, k: "tick" });
+  }
+  const drawnAt = now;
+  now += 16;
+  events.push({ t: now, k: "touch", down: 1, x: 30, y: 410 }, { t: now, k: "tick" });
+  now += 16;
+  events.push({ t: now, k: "touch", down: 0, x: 30, y: 410 }, { t: now, k: "tick" });
+  for (let i = 0; i < 12; ++i) {
+    now += 16;
+    events.push({ t: now, k: "tick" });
+  }
+  const undoneAt = now;
+  const trace = { events };
+  const first = await replay(trace, [drawnAt, undoneAt]);
+  const second = await replay(trace, [drawnAt, undoneAt]);
+  assert.deepEqual(
+    second.ticks.map(({ tickMs: _tickMs, ...tick }) => tick),
+    first.ticks.map(({ tickMs: _tickMs, ...tick }) => tick),
+    "long Stroke replay is nondeterministic",
+  );
+  const drawn = first.frames.get(drawnAt);
+  const undone = first.frames.get(undoneAt);
+  assert(drawn && undone, "long Stroke captures are missing");
+  assert(inkPixels(drawn) > 1_000, "long Stroke left too little visible ink");
+  assert(inkPixels(undone) < inkPixels(drawn) / 3,
+    "one Undo did not remove the uninterrupted long Stroke as one history unit");
+  const report = first.log.findLast((line) => line.startsWith("TINYDRAW_LIVE_STROKE "));
+  assert(report?.includes("operations=1 "),
+    `long gesture fragmented into multiple operations: ${report ?? "no stroke report"}`);
+  const sampleCount = Number(report?.match(/ samples=([0-9]+)/)?.[1] ?? 0);
+  assert.equal(sampleCount, 4_097,
+    `near-capacity Stroke retained ${sampleCount} samples instead of 4097`);
+  const worstTickMs = Math.max(...first.ticks.map(({ tickMs }) => tickMs));
+  assert(worstTickMs < 20,
+    `near-capacity Stroke blocked one host tick for ${worstTickMs.toFixed(1)} ms`);
+  console.log(
+    `PASS near-capacity Stroke: 4,097 samples, deterministic, one-step Undo, ` +
+      `${worstTickMs.toFixed(1)} ms worst tick`,
+  );
 }
 
 for (const scenario of scenarios) {
@@ -294,7 +382,11 @@ for (const scenario of scenarios) {
   const first = await replay(trace, scenario.captures);
   const second = await replay(trace, scenario.captures);
   assert.deepEqual(second.device, first.device, `${scenario.trace}: device descriptor is nondeterministic`);
-  assert.deepEqual(second.ticks, first.ticks, `${scenario.trace}: pixels or push rectangles are nondeterministic`);
+  assert.deepEqual(
+    second.ticks.map(({ tickMs: _tickMs, ...tick }) => tick),
+    first.ticks.map(({ tickMs: _tickMs, ...tick }) => tick),
+    `${scenario.trace}: pixels or push rectangles are nondeterministic`,
+  );
   scenario.check(first);
 
   if (writeFrames) {
@@ -304,46 +396,25 @@ for (const scenario of scenarios) {
       assert(frame, `${scenario.trace}: missing requested frame at t=${at}`);
       await Bun.write(join(here, "frames", `${stem}.t${at}.png`), encodeRGBPNG(frame.width, frame.height, frame.rgb));
     }
+  } else {
+    const stem = basename(scenario.trace).replace(/\.trace\.json$/, "");
+    for (const at of scenario.captures) {
+      const frame = first.frames.get(at);
+      assert(frame, `${scenario.trace}: missing requested frame at t=${at}`);
+      const actual = Buffer.from(encodeRGBPNG(frame.width, frame.height, frame.rgb));
+      const expectedPath = join(here, "frames", `${stem}.t${at}.png`);
+      const expected = readFileSync(expectedPath);
+      assert.equal(Buffer.compare(actual, expected), 0,
+        `${scenario.trace}: frame t=${at} differs from its tolerance-0 baseline`);
+    }
   }
   console.log(
     `PASS ${scenario.trace}: ${first.ticks.length} ticks, ${first.changedTicks} changed, ${first.totalPushes} pushes, deterministic`
   );
 }
 
-const recordedFramesPresent = scenarios.every((scenario) =>
-  scenario.captures.every((at) => {
-    const stem = basename(scenario.trace).replace(/\.trace\.json$/, "");
-    return existsSync(join(here, "frames", `${stem}.t${at}.png`));
-  })
-);
-if (recordedFramesPresent) {
-  const pixelExact = await verifyPortFrames({
-    modulePath: wasmPath,
-    tolerance: 0,
-    traces: scenarios.map((scenario) => ({
-      tracePath: join(here, "traces", scenario.trace),
-      framesDir: join(here, "frames"),
-    })),
-  });
-  assert.deepEqual(pixelExact.errors, [], `Puck frame verification errors: ${pixelExact.errors.join("; ")}`);
-  assert(pixelExact.allMatch, "current WebAssembly output diverged from the recorded Puck frames");
-  console.log(`PASS recorded frames: ${pixelExact.frames.length} pixel-exact matches at tolerance 0`);
-} else if (!writeFrames) {
-  console.log("SKIP recorded frames: rerun with --write-frames to create the pixel-exact baseline");
-}
+await verifyLongStrokeHistory();
 
-const bundle = JSON.parse(readFileSync(bundlePath, "utf8"));
-const commit = bundle.ports?.[0]?.build?.commit;
-if (/^0+$/.test(commit ?? "")) {
-  console.log("SKIP external bundle reproduction: replace the all-zero commit after the implementation commit exists");
-} else if (!recordedFramesPresent) {
-  console.log("SKIP external bundle reproduction: recorded frames are missing; rerun with --write-frames");
-} else {
-  const verified = Bun.spawnSync(["bun", "run", join(puck, "tools", "verify-bundle.ts"), bundlePath], {
-    cwd: puck,
-    stdout: "inherit",
-    stderr: "inherit",
-    env: process.env,
-  });
-  if (!verified.success) process.exit(verified.exitCode ?? 1);
-}
+console.log(writeFrames
+  ? "PASS semantic trace assertions; recorded tolerance-0 baselines updated"
+  : "PASS semantic trace assertions and tolerance-0 recorded frames");

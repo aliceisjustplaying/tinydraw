@@ -490,7 +490,7 @@ bool run_long_gesture_commit_gate(VectorV2Presenter& presenter, vector_v2::TileP
   LongGestureMeasurement production{};
   const bool run_ok = run_long_gesture_pass(
       presenter, producer, log, canvas, chrome, blank_snapshot, builder_storage,
-      kInteractiveChunkSampleLimit,
+      kGateChunkSampleLimit,
       [&](const vector_v2::BuiltOperation& chunk, const vector_v2::ViewRequest& view) {
         return append_and_absorb(
             log, canvas, chunk, workspace, view,

@@ -264,7 +264,7 @@ bool run_mixed_zoom_stroke(VectorV2Presenter& presenter, vector_v2::TileProducer
   const float dx = (x_max - x_min) / 47.0F;
   const float dy = (y_max - y_min) / static_cast<float>(kSweeps);
 
-  vector_v2::ChainedOperationBuilder builder(builder_storage, kInteractiveChunkSampleLimit);
+  vector_v2::ChainedOperationBuilder builder(builder_storage, kGateChunkSampleLimit);
   std::optional<vector_v2::PixelRect> world_bounds;
   const auto accumulate = [&](const vector_v2::IncrementalAppendResult& result) {
     stats.phase_max.prepare_us = std::max(stats.phase_max.prepare_us, result.phases.prepare_us);

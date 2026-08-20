@@ -19,9 +19,12 @@ using vector_v2::ZoomLevel;
 // before every quantum, limiting preemption latency to one 512-work slice.
 constexpr std::int64_t kSettleSliceBudgetUs = 8'000;
 constexpr std::size_t kSettleWorkPixels = 512U;
+constexpr std::size_t kSettleWorkSlicesPerCall = 16U;
 constexpr std::int64_t kAbsorbSliceBudgetUs = 1'500;
 constexpr std::size_t kAbsorbRasterWorkPixels = 256U;
 constexpr std::uint8_t kSettleRetryLimit = 3U;
+constexpr std::size_t kFillProducerStepsPerCall = 8U;
+constexpr std::size_t kRepairProducerStepsPerCall = 8U;
 
 struct AbsorbSliceLimit {
   TouchUrgencyProbe touch_urgency{};
@@ -380,12 +383,14 @@ void VectorV2BackgroundPipeline::run_fill(const ViewRequest& view,
     fill_measurement_active_ = true;
   }
   const std::int64_t tick_started = esp_timer_get_time();
+  std::size_t producer_steps = 0U;
   do {
     if (touch_urgency.requested()) {
       break;
     }
     const std::int64_t compute_started = esp_timer_get_time();
     const auto step = producer_.produce_next(view);
+    ++producer_steps;
     const std::int64_t compute_us = esp_timer_get_time() - compute_started;
     ++fill_timing_.steps;
     fill_timing_.compute_total_us += compute_us;
@@ -426,7 +431,8 @@ void VectorV2BackgroundPipeline::run_fill(const ViewRequest& view,
       }
     }
     fill_complete_ = step->complete;
-  } while (!fill_complete_ && !pending_fill_.pending &&
+  } while (producer_steps < kFillProducerStepsPerCall && !fill_complete_ &&
+           !pending_fill_.pending &&
            esp_timer_get_time() - tick_started < kColdFillSliceDeadlineUs);
   fill_timing_.tick_max_us =
       std::max(fill_timing_.tick_max_us, esp_timer_get_time() - tick_started);
@@ -451,7 +457,8 @@ void VectorV2BackgroundPipeline::run_repair(const ViewRequest& view,
     repair_planned_ = true;
   }
   const std::int64_t tick_started = esp_timer_get_time();
-  while (repair_cursor_ < repair_plan_.count &&
+  std::size_t producer_steps = 0U;
+  while (producer_steps < kRepairProducerStepsPerCall && repair_cursor_ < repair_plan_.count &&
          esp_timer_get_time() - tick_started < kColdFillSliceDeadlineUs) {
     if (touch_urgency.requested()) {
       break;
@@ -462,6 +469,7 @@ void VectorV2BackgroundPipeline::run_repair(const ViewRequest& view,
       break;
     }
     const auto step = producer_.produce_next(repair_plan_.views[repair_cursor_]);
+    ++producer_steps;
     if (!step.has_value()) {
       std::printf("TINYDRAW_LIVE_REPAIR_ABANDON view=%u\n", static_cast<unsigned>(repair_cursor_));
       repair_cursor_ = repair_plan_.count;
@@ -520,8 +528,10 @@ void VectorV2BackgroundPipeline::run_settle(std::uint32_t loop_us,
                                      first_row + 1);
   const std::size_t total = columns * rows;
   const std::int64_t slice_started = esp_timer_get_time();
+  std::size_t work_slices = 0U;
   std::optional<PixelRect> batch_bounds;
-  while (settle_cursor_ < total && esp_timer_get_time() - slice_started < kSettleSliceBudgetUs) {
+  while (work_slices < kSettleWorkSlicesPerCall && settle_cursor_ < total &&
+         esp_timer_get_time() - slice_started < kSettleSliceBudgetUs) {
     if (touch_urgency.requested()) {
       break;
     }
@@ -559,6 +569,7 @@ void VectorV2BackgroundPipeline::run_settle(std::uint32_t loop_us,
          .out_pixels = settle_pixels_,
          .cursor = settle_render_.cursor,
          .max_work_px = kSettleWorkPixels});
+    ++work_slices;
     const PixelRect bounds = settle_render_.level_bounds;
     bool rendered = false;
     bool publishable = false;

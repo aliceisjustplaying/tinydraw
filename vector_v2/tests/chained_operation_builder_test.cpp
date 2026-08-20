@@ -104,7 +104,7 @@ TEST_CASE("chained builder rejects an unusable proactive chunk limit") {
   CHECK_FALSE(too_large.ready());
 }
 
-TEST_CASE("chained builder splits elapsed time and completes a three minute gesture") {
+TEST_CASE("chained builder saturates elapsed metadata without splitting a long gesture") {
   std::array<vector_v2::CompactOperationSample, 16> storage{};
   vector_v2::ChainedOperationBuilder chained(storage);
   REQUIRE(chained.begin(vector_v2::OperationTool::kEraser, 0xFFFFU, 7U, point(10.0F, 0U)));
@@ -126,7 +126,7 @@ TEST_CASE("chained builder splits elapsed time and completes a three minute gest
     CHECK((status == vector_v2::ChainedOperationStatus::kAccepted ||
            status == vector_v2::ChainedOperationStatus::kComplete));
   }
-  CHECK(chunks >= 3U);
+  CHECK(chunks == 1U);
   CHECK_FALSE(chained.active());
 }
 
@@ -136,9 +136,7 @@ TEST_CASE("operation log retains logical gesture identity across chunks") {
   const std::array first{
       vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 16, .radius_256 = 256},
   };
-  const std::array second{
-      vector_v2::CompactOperationSample{.x_quarter = 32, .y_quarter = 32, .radius_256 = 256},
-  };
+  const std::array second{first.back()};
   REQUIRE(log.append({.gesture_id = 91U, .samples = first}).has_value());
   REQUIRE(log.append({.gesture_id = 91U, .samples = second}).has_value());
   REQUIRE(log.operation(0).has_value());

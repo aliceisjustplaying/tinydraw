@@ -52,6 +52,9 @@ mid-heap cost +9 ms cold; placed last, 0 ms).
 The mixed-draw gate commits interactive 32-sample chunks over a fully
 warm multi-zoom cache. Worst chunk commit on the input path:
 
+As of 2026-08-20 this is a retained diagnostic absorption workload. The
+product input path keeps Move provisional and publishes one operation at lift.
+
 | Milestone | worst append | mechanism |
 |---|---|---|
 | Attributed | **19,324 µs** | synchronous in-place commit: 12 ms visible raw painting + 5 ms uniform materialization + overview replay, all inside the input poll |

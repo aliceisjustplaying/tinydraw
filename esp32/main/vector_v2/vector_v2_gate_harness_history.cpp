@@ -36,7 +36,7 @@ bool append_history_stroke(OperationLog& log, MaterializedCanvas& canvas,
                            const vector_v2::ViewRequest& view,
                            std::span<CompactOperationSample> builder_storage,
                            std::uint16_t gesture_id, const HistoryStrokeSpec& spec) {
-  vector_v2::ChainedOperationBuilder builder(builder_storage, kInteractiveChunkSampleLimit);
+  vector_v2::ChainedOperationBuilder builder(builder_storage, kGateChunkSampleLimit);
   const auto commit_ready = [&](vector_v2::ChainedOperationStatus status) -> bool {
     while (status == vector_v2::ChainedOperationStatus::kChunkReady ||
            status == vector_v2::ChainedOperationStatus::kFinalChunkReady) {

@@ -64,9 +64,10 @@ The retired prototype remains evidence and benchmark machinery. It is frozen exc
 The initial production milestones and Gate 1 cache/interaction feasibility are complete. The vector-authoritative architecture is accepted for V2. See [`GATE_1_RECEIPT_2026_08_13.md`](../docs/archive/2026-08-vector-v2-performance/GATE_1_RECEIPT_2026_08_13.md) and [`GATE_1_CACHE_CLOSURE_2026_08_13.md`](../docs/archive/2026-08-vector-v2-performance/GATE_1_CACHE_CLOSURE_2026_08_13.md). Remaining work is tracked only in the V2 roadmap; the numbered sections below preserve architectural history and contracts rather than current task order.
 
 The SVG module streams renderer-derived ribbon geometry without document-sized
-storage. Adjacent internal chunks with one nonzero gesture ID become one
-painter-ordered filled path, so one physical finger-down/up Stroke remains one
-SVG path. Paths contain round-cap and variable-width convex subpaths from the
+storage. The product publishes one operation per finger-down/up Stroke. Legacy
+or diagnostic authorities may retain adjacent chunks; a shared nonzero Stroke
+identity and exact boundary sample join those into one painter-ordered filled
+path. Paths contain round-cap and variable-width convex subpaths from the
 shared curve authority. SVG spans meet at exact section boundaries; device and
 PNG raster spans retain a 0.75 px overlap that prevents fixed-grid cracks.
 Erasers use painter-ordered masks, and the root omits a synthetic background

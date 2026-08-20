@@ -31,6 +31,15 @@ bool valid_samples(std::span<const CompactOperationSample> samples) {
   return true;
 }
 
+bool continues_stroke(const OperationRecord& previous, const OperationAppend& next) {
+  return same_stroke(stroke_identity(previous), stroke_identity(next));
+}
+
+bool has_shared_boundary(std::span<const CompactOperationSample> previous,
+                         std::span<const CompactOperationSample> next) {
+  return !previous.empty() && !next.empty() && same_sample_geometry(previous.back(), next.front());
+}
+
 }  // namespace
 
 PreparedHistoryChange::PreparedHistoryChange(OperationLog& owner, HistoryChange change,
@@ -167,22 +176,6 @@ std::optional<OperationIdentity> OperationLog::append(const BuiltOperation& buil
   return append_validated(operation, built.world_bounds());
 }
 
-std::optional<OperationIdentity> OperationLog::append_group(
-    std::span<const OperationAppend> append_requests) {
-  if (!valid_append_group(append_requests)) {
-    return std::nullopt;
-  }
-
-  OperationIdentity last_identity{};
-  for (const OperationAppend& append_request : append_requests) {
-    // Bounds were checked for the complete group before authority mutation.
-    // Group sources cannot alias log storage, so recalculation remains valid.
-    last_identity =
-        append_validated(append_request, *operation_world_bounds(append_request.samples));
-  }
-  return last_identity;
-}
-
 OperationIdentity OperationLog::append_validated(const OperationAppend& append_request,
                                                  PixelRect bounds) {
   const OperationIdentity identity{
@@ -291,11 +284,9 @@ std::optional<PreparedHistoryChange> OperationLog::prepare_undo() {
   }
   const std::size_t previous_count = operation_count_;
   std::size_t target_count = previous_count - 1U;
-  const std::uint16_t gesture_id = records_[target_count].gesture_id;
-  if (gesture_id != 0U) {
-    while (target_count != 0U && records_[target_count - 1U].gesture_id == gesture_id) {
-      --target_count;
-    }
+  const StrokeIdentity stroke = stroke_identity(records_[target_count]);
+  while (target_count != 0U && same_stroke(stroke_identity(records_[target_count - 1U]), stroke)) {
+    --target_count;
   }
   const HistoryChange change{
       .generation = {revision_.value + 1U},
@@ -313,12 +304,10 @@ std::optional<PreparedHistoryChange> OperationLog::prepare_redo() {
   }
   const std::size_t previous_count = operation_count_;
   std::size_t target_count = previous_count + 1U;
-  const std::uint16_t gesture_id = records_[previous_count].gesture_id;
-  if (gesture_id != 0U) {
-    while (target_count < retained_operation_count_ &&
-           records_[target_count].gesture_id == gesture_id) {
-      ++target_count;
-    }
+  const StrokeIdentity stroke = stroke_identity(records_[previous_count]);
+  while (target_count < retained_operation_count_ &&
+         same_stroke(stroke, stroke_identity(records_[target_count]))) {
+    ++target_count;
   }
   const HistoryChange change{
       .generation = {revision_.value + 1U},
@@ -381,6 +370,8 @@ bool OperationLog::restore(const AuthorityRestore& restore) {
     return false;
   }
   std::size_t expected_sample = 0;
+  const OperationRecord* previous_record = nullptr;
+  std::span<const CompactOperationSample> previous_samples;
   for (const OperationRecord& record : restore.records) {
     if (record.first_sample != expected_sample || record.sample_count == 0U || record.flags != 0U ||
         (record.tool != OperationTool::kPen && record.tool != OperationTool::kEraser) ||
@@ -396,6 +387,13 @@ bool OperationLog::restore(const AuthorityRestore& restore) {
                                                     record.bounds_x1, record.bounds_y1}) {
       return false;
     }
+    if (previous_record != nullptr &&
+        same_stroke(stroke_identity(*previous_record), stroke_identity(record)) &&
+        !has_shared_boundary(previous_samples, operation_samples)) {
+      return false;
+    }
+    previous_record = &record;
+    previous_samples = operation_samples;
     expected_sample += record.sample_count;
   }
   if (expected_sample != restore.samples.size()) {
@@ -403,9 +401,10 @@ bool OperationLog::restore(const AuthorityRestore& restore) {
   }
   if (restore.active_operation_count != 0U &&
       restore.active_operation_count < restore.records.size()) {
-    const std::uint16_t previous = restore.records[restore.active_operation_count - 1U].gesture_id;
-    const std::uint16_t next = restore.records[restore.active_operation_count].gesture_id;
-    if (previous != 0U && previous == next) {
+    const StrokeIdentity previous =
+        stroke_identity(restore.records[restore.active_operation_count - 1U]);
+    const StrokeIdentity next = stroke_identity(restore.records[restore.active_operation_count]);
+    if (same_stroke(previous, next)) {
       return false;
     }
   }
@@ -555,36 +554,6 @@ bool OperationLog::valid_append(const OperationAppend& append_request) const {
   return accepts_append(append_request) && valid_samples(append_request.samples);
 }
 
-bool OperationLog::valid_append_group(std::span<const OperationAppend> append_requests) const {
-  if (append_requests.empty() || !ready() || history_pending_ ||
-      workspace_overlaps_storage(std::as_bytes(append_requests)) ||
-      append_requests.size() > records_.size() - operation_count_ ||
-      append_requests.size() > std::numeric_limits<std::uint32_t>::max() - revision_.value) {
-    return false;
-  }
-
-  const OperationAppend& first = append_requests.front();
-  if (first.gesture_id == 0U) {
-    return false;
-  }
-  std::size_t remaining_samples = samples_.size() - sample_count_;
-  for (const OperationAppend& append_request : append_requests) {
-    if (append_request.gesture_id != first.gesture_id || append_request.tool != first.tool ||
-        append_request.color != first.color || append_request.samples.empty() ||
-        append_request.samples.size() > std::numeric_limits<std::uint16_t>::max() ||
-        append_request.samples.size() > remaining_samples ||
-        workspace_overlaps_storage(std::as_bytes(append_request.samples)) ||
-        (append_request.tool != OperationTool::kPen &&
-         append_request.tool != OperationTool::kEraser) ||
-        !valid_samples(append_request.samples) ||
-        !operation_world_bounds(append_request.samples).has_value()) {
-      return false;
-    }
-    remaining_samples -= append_request.samples.size();
-  }
-  return true;
-}
-
 bool OperationLog::accepts_append(const OperationAppend& append_request) const {
   if (!ready() || history_pending_ || append_request.samples.empty() ||
       append_request.samples.size() > std::numeric_limits<std::uint16_t>::max() ||
@@ -595,7 +564,13 @@ bool OperationLog::accepts_append(const OperationAppend& append_request) const {
        append_request.tool != OperationTool::kEraser)) {
     return false;
   }
-  return true;
+  if (operation_count_ == 0U ||
+      !continues_stroke(records_[operation_count_ - 1U], append_request)) {
+    return true;
+  }
+  const OperationRecord& previous = records_[operation_count_ - 1U];
+  return has_shared_boundary(samples_.subspan(previous.first_sample, previous.sample_count),
+                             append_request.samples);
 }
 
 }  // namespace tinydraw::vector_v2

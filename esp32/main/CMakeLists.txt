@@ -1,5 +1,6 @@
 set(TINYDRAW_CORE "${CMAKE_CURRENT_LIST_DIR}/../../core")
 include("${CMAKE_CURRENT_LIST_DIR}/../../vector_v2/sources.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/vector_v2/sources.cmake")
 set(TINYDRAW_PNGENC "${CMAKE_CURRENT_LIST_DIR}/../../third_party/pngenc/src")
 set(TINYDRAW_PNGENC_SRCS
   "${TINYDRAW_PNGENC}/PNGenc.cpp"
@@ -67,17 +68,9 @@ else()
     "time_sync.cpp"
     "usb_export.cpp"
     "vector_v2/svg_export_store.cpp"
-    "vector_v2/vector_v2_app.cpp"
-    "vector_v2/vector_v2_app_diagnostics.cpp"
-    "vector_v2/vector_v2_app_storage.cpp"
     "vector_v2/vector_v2_autosave_store.cpp"
-    "vector_v2/vector_v2_background_pipeline.cpp"
-    "vector_v2/vector_v2_chrome_controller.cpp"
     "vector_v2/vector_v2_export.cpp"
-    "vector_v2/vector_v2_live_stroke_session.cpp"
-    "vector_v2/vector_v2_presenter.cpp"
-    "vector_v2/vector_v2_presenter_staging.cpp"
-    "vector_v2/vector_v2_touch_sampler.cpp"
+    ${TINYDRAW_VECTOR_V2_FIRMWARE_SRCS}
     "${TINYDRAW_CORE}/src/coverage_tile.cpp"
     "${TINYDRAW_CORE}/src/fat16_disk.cpp"
     "${TINYDRAW_CORE}/src/ink_stream.cpp"
@@ -107,7 +100,7 @@ else()
     list(APPEND TINYDRAW_APP_SRCS "vector_v2/vector_v2_tile_census.cpp")
   endif()
   if(TINYDRAW_VECTOR_V2_DEMO)
-    list(APPEND TINYDRAW_APP_SRCS "vector_v2/vector_v2_demo_controller.cpp")
+    list(APPEND TINYDRAW_APP_SRCS ${TINYDRAW_VECTOR_V2_DEMO_SRCS})
   endif()
   set(TINYDRAW_PLATFORM_SRCS "")
   set(TINYDRAW_PLATFORM_REQUIRES esp_event esp_lcd_co5300 esp_lcd_touch_cst816s esp_netif esp_wifi nvs_flash pcf85063a)

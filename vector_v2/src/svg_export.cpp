@@ -177,21 +177,9 @@ bool emit_batch(Writer& writer, const RibbonPrimitiveBatch& batch) {
   return true;
 }
 
-bool same_logical_gesture(const StoredOperation& previous, const StoredOperation& current) {
-  // Gesture zero is reserved for imported/legacy operation records that do not
-  // declare logical grouping. Keep those as independent paths.
-  return current.gesture_id != 0U && current.gesture_id == previous.gesture_id &&
-         current.tool == previous.tool && current.color == previous.color;
-}
-
 bool begin_path(Writer& writer, std::uint16_t color) {
   return writer.append("<path fill=\"") && writer.color(color) &&
          writer.append("\" fill-rule=\"nonzero\" d=\"");
-}
-
-bool same_geometry(CompactOperationSample first, CompactOperationSample second) {
-  return first.x_quarter == second.x_quarter && first.y_quarter == second.y_quarter &&
-         first.radius_256 == second.radius_256;
 }
 
 bool emit_operation_geometry(Writer& writer, const StoredOperation& operation,
@@ -200,7 +188,7 @@ bool emit_operation_geometry(Writer& writer, const StoredOperation& operation,
                              bool continues_gesture, bool completes_gesture) {
   std::size_t first = 0U;
   if (continues_gesture && last_sample.has_value() && !operation.samples.empty() &&
-      same_geometry(*last_sample, operation.samples.front())) {
+      same_sample_geometry(*last_sample, operation.samples.front())) {
     first = 1U;
   }
   if (first == operation.samples.size() && completes_gesture && last_sample.has_value()) {
@@ -244,7 +232,8 @@ std::optional<std::size_t> eraser_gesture_count(const OperationLog& log,
     if (!operation.has_value()) {
       return std::nullopt;
     }
-    const bool continues = previous.has_value() && same_logical_gesture(*previous, *operation);
+    const bool continues = previous.has_value() &&
+                           same_stroke(stroke_identity(*previous), stroke_identity(*operation));
     count += operation->tool == OperationTool::kEraser && !continues;
     previous = operation;
   }
@@ -281,7 +270,8 @@ bool emit_eraser_masks(Writer& writer, const OperationLog& log, std::size_t oper
     if (!operation.has_value()) {
       return false;
     }
-    const bool continues = previous.has_value() && same_logical_gesture(*previous, *operation);
+    const bool continues = previous.has_value() &&
+                           same_stroke(stroke_identity(*previous), stroke_identity(*operation));
     std::optional<StoredOperation> next;
     if (index + 1U < operation_count) {
       next = log.operation(index + 1U);
@@ -289,7 +279,8 @@ bool emit_eraser_masks(Writer& writer, const OperationLog& log, std::size_t oper
         return false;
       }
     }
-    const bool completes = !next.has_value() || !same_logical_gesture(*operation, *next);
+    const bool completes =
+        !next.has_value() || !same_stroke(stroke_identity(*operation), stroke_identity(*next));
     if (operation->tool == OperationTool::kEraser) {
       if (!continues) {
         if ((mask_open && !writer.append("\"/>\n</mask>\n")) ||
@@ -332,8 +323,8 @@ bool emit_operations(Writer& writer, const OperationLog& log, std::size_t operat
     if (!operation.has_value()) {
       return false;
     }
-    const bool continues_gesture =
-        previous.has_value() && same_logical_gesture(*previous, *operation);
+    const bool continues_gesture = previous.has_value() && same_stroke(stroke_identity(*previous),
+                                                                       stroke_identity(*operation));
     std::optional<StoredOperation> next;
     if (index + 1U < operation_count) {
       next = log.operation(index + 1U);
@@ -341,7 +332,8 @@ bool emit_operations(Writer& writer, const OperationLog& log, std::size_t operat
         return false;
       }
     }
-    const bool completes_gesture = !next.has_value() || !same_logical_gesture(*operation, *next);
+    const bool completes_gesture =
+        !next.has_value() || !same_stroke(stroke_identity(*operation), stroke_identity(*next));
     if (!continues_gesture) {
       if (path_open && !writer.append("\"/>\n")) {
         return false;
@@ -388,7 +380,8 @@ std::optional<std::size_t> svg_path_count(const OperationLog& log) {
     if (!operation.has_value()) {
       return std::nullopt;
     }
-    paths += !previous.has_value() || !same_logical_gesture(*previous, *operation);
+    paths += !previous.has_value() ||
+             !same_stroke(stroke_identity(*previous), stroke_identity(*operation));
     previous = operation;
   }
   if (log.epoch() != epoch || log.current_revision() != revision ||

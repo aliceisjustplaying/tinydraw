@@ -9,9 +9,6 @@ namespace {
 
 constexpr float kQuarterUnitsPerWorldUnit = static_cast<float>(kSampleUnitsPerWorldUnit);
 constexpr float kRadiusUnitsPerWorldUnit = 256.0F;
-constexpr std::uint32_t kMaximumElapsedUs =
-    static_cast<std::uint32_t>(std::numeric_limits<std::uint16_t>::max()) * 1'000U + 999U;
-
 bool valid_point(OperationPoint point) {
   return std::isfinite(point.world_x) && std::isfinite(point.world_y) &&
          std::isfinite(point.radius) && point.world_x >= 0.0F &&
@@ -90,7 +87,7 @@ std::optional<BuiltOperation> OperationBuilder::finish(OperationPoint point) {
   if (!active_ || overflowed_) {
     return std::nullopt;
   }
-  if (!append_point(point, false) && !overflowed_) {
+  if (!append_point(point, false)) {
     active_ = false;
     return std::nullopt;
   }
@@ -126,15 +123,13 @@ bool OperationBuilder::append_point(OperationPoint point, bool retain_duplicate)
     last_reject_ = OperationBuilderReject::kTimestampRegression;
     return false;
   }
-  if (elapsed_us > kMaximumElapsedUs) {
-    last_reject_ = OperationBuilderReject::kElapsedOverflow;
-    return false;
-  }
+  const std::uint32_t elapsed_ms = std::min(
+      elapsed_us / 1'000U, static_cast<std::uint32_t>(std::numeric_limits<std::uint16_t>::max()));
   const CompactOperationSample sample{
       .x_quarter = quantize(point.world_x, kQuarterUnitsPerWorldUnit),
       .y_quarter = quantize(point.world_y, kQuarterUnitsPerWorldUnit),
       .radius_256 = quantize(point.radius, kRadiusUnitsPerWorldUnit),
-      .elapsed_ms = static_cast<std::uint16_t>(elapsed_us / 1'000U),
+      .elapsed_ms = static_cast<std::uint16_t>(elapsed_ms),
   };
   previous_us_ = point.timestamp_us;
   if (!retain_duplicate && sample_count_ != 0U &&

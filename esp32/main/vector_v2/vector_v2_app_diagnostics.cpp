@@ -105,19 +105,18 @@ void print_lift_baseline(const PendingStrokeReport& report, std::int64_t poll_st
   const std::int64_t detected_to_poll_us = poll_started_us - report.detected_us;
   std::printf(
       "TINYDRAW_LIFT_BASELINE id=%lu finish_preview_us=%lld builder_finish_us=%lld "
-      "append_us=%lld append_max_us=%lld refresh_wall_us=%lld refresh_x0=%d refresh_y0=%d "
+      "append_us=%lld publication=operation refresh_wall_us=%lld refresh_x0=%d refresh_y0=%d "
       "refresh_x1=%d refresh_y1=%d refresh_compose_us=%lld "
       "refresh_first_submit_us=%lld refresh_first_complete_us=%lld "
       "refresh_transfer_wait_us=%lld stroke_logging_us=%lld "
       "detected_to_poll_start_us=%lld detected_to_poll_complete_us=%lld poll_read_us=%lld "
-      "unattributed_tail_us=%lld reports_dropped=%lu chunks=%lu committed=%u refresh=%u "
+      "unattributed_tail_us=%lld reports_dropped=%lu committed=%u refresh=%u "
       "commit_failed=%u\n",
       static_cast<unsigned long>(report.id), static_cast<long long>(report.finish_preview_us),
       static_cast<long long>(report.builder_finish_us), static_cast<long long>(report.append_us),
-      static_cast<long long>(report.append_max_us), static_cast<long long>(report.refresh_wall_us),
-      report.refresh_level_bounds.x0, report.refresh_level_bounds.y0,
-      report.refresh_level_bounds.x1, report.refresh_level_bounds.y1,
-      static_cast<long long>(report.refresh.compose_us),
+      static_cast<long long>(report.refresh_wall_us), report.refresh_level_bounds.x0,
+      report.refresh_level_bounds.y0, report.refresh_level_bounds.x1,
+      report.refresh_level_bounds.y1, static_cast<long long>(report.refresh.compose_us),
       static_cast<long long>(report.refresh.first_submit_us),
       static_cast<long long>(report.refresh.first_complete_us),
       static_cast<long long>(report.refresh.complete_us),
@@ -125,28 +124,23 @@ void print_lift_baseline(const PendingStrokeReport& report, std::int64_t poll_st
       static_cast<long long>(poll_completed_us - report.detected_us),
       static_cast<long long>(poll_completed_us - poll_started_us),
       static_cast<long long>(detected_to_poll_us - measured_phase_us),
-      static_cast<unsigned long>(reports_dropped), static_cast<unsigned long>(report.chunks),
-      report.committed, report.refresh.passed, report.commit_failed);
+      static_cast<unsigned long>(reports_dropped), report.committed, report.refresh.passed,
+      report.commit_failed);
 }
 
 void print_stroke(const PendingStrokeReport& report) {
   std::printf(
       "TINYDRAW_LIVE_STROKE revision=%lu operations=%lu samples=%lu append_us=%lld "
-      "append_max_us=%lld refresh_compose_us=%lld refresh_complete_us=%lld ink_samples=%lu "
+      "publication=operation refresh_compose_us=%lld refresh_complete_us=%lld ink_samples=%lu "
       "read_submit_avg_us=%llu read_submit_max_us=%lu read_complete_avg_us=%llu "
       "read_complete_max_us=%lu submit_over_16ms=%lu complete_over_33ms=%lu "
       "presentation_failures=%lu poll_max_us=%lu touch_errors=%lu touch_overflows=%lu "
       "touch_resyncs=%lu touch_moves_coalesced=%lu touch_events=%lu touch_down=%lu touch_up=%lu "
-      "touch_events_ge_8ms=%lu touch_event_age_max_us=%lu chunks=%lu "
-      "ph_prepare_max_us=%lld ph_overview_max_us=%lld ph_enumerate_max_us=%lld "
-      "ph_uniform_max_us=%lld ph_raw_max_us=%lld ph_offscreen_max_us=%lld "
-      "ph_commit_max_us=%lld "
-      "drop_uni_slot=%lu drop_uni_paint=%lu drop_raw_edit=%lu drop_raw_paint=%lu "
-      "off_skip=%lu free_psram=%lu largest_psram=%lu authority_match=%u\n",
+      "touch_events_ge_8ms=%lu touch_event_age_max_us=%lu free_psram=%lu largest_psram=%lu "
+      "authority_match=%u\n",
       static_cast<unsigned long>(report.revision.value),
       static_cast<unsigned long>(report.operation_count),
       static_cast<unsigned long>(report.sample_count), static_cast<long long>(report.append_us),
-      static_cast<long long>(report.append_max_us),
       static_cast<long long>(report.refresh.compose_us),
       static_cast<long long>(report.refresh.complete_us),
       static_cast<unsigned long>(report.metrics.samples),
@@ -171,19 +165,6 @@ void print_stroke(const PendingStrokeReport& report) {
       static_cast<unsigned long>(report.touch.up_events),
       static_cast<unsigned long>(report.touch.events_at_least_8ms_old),
       static_cast<unsigned long>(report.touch.maximum_event_age_us),
-      static_cast<unsigned long>(report.chunks),
-      static_cast<long long>(report.phase_max.prepare_us),
-      static_cast<long long>(report.phase_max.overview_us),
-      static_cast<long long>(report.phase_max.enumerate_us),
-      static_cast<long long>(report.phase_max.uniform_retain_us),
-      static_cast<long long>(report.phase_max.raw_retain_us),
-      static_cast<long long>(report.phase_max.offscreen_retain_us),
-      static_cast<long long>(report.phase_max.commit_us),
-      static_cast<unsigned long>(report.drops.visible_uniform_no_slot),
-      static_cast<unsigned long>(report.drops.visible_uniform_paint_fail),
-      static_cast<unsigned long>(report.drops.visible_raw_edit_fail),
-      static_cast<unsigned long>(report.drops.visible_raw_paint_fail),
-      static_cast<unsigned long>(report.drops.offscreen_skipped),
       static_cast<unsigned long>(report.free_psram),
       static_cast<unsigned long>(report.largest_psram), report.authority_match);
 }

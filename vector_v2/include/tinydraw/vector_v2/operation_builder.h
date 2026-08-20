@@ -25,7 +25,6 @@ enum class OperationBuilderReject : std::uint8_t {
   kNotActive,
   kInvalidPoint,
   kTimestampRegression,
-  kElapsedOverflow,
   kCapacityOverflow,
 };
 
@@ -45,16 +44,17 @@ class BuiltOperation {
 
 // Fixed-capacity collector for one input operation. It quantizes world-space
 // points into the persistent append encoding and owns stroke lifecycle. Input
-// timestamps may wrap normally but may not move backward. The returned append
-// view remains valid until begin or cancel is called again.
+// timestamps may wrap normally but may not move backward; persisted elapsed
+// metadata saturates without truncating a long Stroke. The returned append view
+// remains valid until begin or cancel is called again.
 class OperationBuilder {
  public:
   explicit OperationBuilder(std::span<CompactOperationSample> storage);
 
   [[nodiscard]] bool ready() const;
   [[nodiscard]] bool active() const;
-  // True when an input point exceeded fixed capacity. finish may still return
-  // the already-collected operation when only its final lift point overflowed.
+  // True when an input point exceeded fixed capacity. Cancellation is required
+  // before this builder can begin another operation.
   [[nodiscard]] bool overflowed() const;
   [[nodiscard]] std::size_t sample_count() const;
   [[nodiscard]] OperationBuilderReject last_reject() const;

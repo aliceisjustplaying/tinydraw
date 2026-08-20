@@ -2,25 +2,58 @@ if(NOT CMAKE_CXX_COMPILER_TARGET STREQUAL "wasm32-wasip1")
   message(FATAL_ERROR "TINYDRAW_BUILD_PUCK requires CMAKE_CXX_COMPILER_TARGET=wasm32-wasip1")
 endif()
 
-add_executable(tinydraw_puck puck_abi.cpp)
+set(TINYDRAW_PUCK_FIRMWARE_DIR "${PROJECT_SOURCE_DIR}/esp32/main")
+set(TINYDRAW_PUCK_APP_DIR "${TINYDRAW_PUCK_FIRMWARE_DIR}/vector_v2")
+include("${TINYDRAW_PUCK_APP_DIR}/sources.cmake")
+
+add_executable(tinydraw_puck
+  src/tinydraw_emu.cpp
+  src/wasi_support.cpp
+  platform/board_stubs.cpp
+  platform/co5300_panel_transport.cpp
+  platform/esp_shim.cpp
+  platform/export_stubs.cpp
+  ${TINYDRAW_VECTOR_V2_FIRMWARE_SRCS}
+  ${TINYDRAW_VECTOR_V2_DEMO_SRCS}
+)
 target_link_libraries(tinydraw_puck PRIVATE
   tinydraw::vector_v2
   tinydraw::core
   tinydraw_project_options
 )
+target_include_directories(tinydraw_puck BEFORE PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/shim"
+  "${CMAKE_CURRENT_SOURCE_DIR}/platform"
+  "${TINYDRAW_PUCK_FIRMWARE_DIR}"
+  "${TINYDRAW_PUCK_APP_DIR}"
+)
+set(TINYDRAW_PUCK_ABI_INCLUDE_DIR "" CACHE PATH "Directory containing Puck emu_abi.h")
+if(EXISTS "${TINYDRAW_PUCK_ABI_INCLUDE_DIR}/emu_abi.h")
+  target_include_directories(tinydraw_puck PRIVATE "${TINYDRAW_PUCK_ABI_INCLUDE_DIR}")
+  target_compile_definitions(tinydraw_puck PRIVATE TINYDRAW_PUCK_HAVE_ABI_HEADER=1)
+endif()
+target_compile_definitions(tinydraw_puck PRIVATE
+  TINYDRAW_SINGLE_THREADED_TOUCH=1
+  TINYDRAW_VECTOR_V2_DEMO=1
+)
 
-# WebAssembly never unwinds and the application uses no runtime type queries.
-# Apply the same C++ runtime contract to every static library that can reach the
-# final module, so an unused exception path cannot pull a larger runtime in.
-foreach(target IN ITEMS tinydraw_puck tinydraw_vector_v2 tinydraw_core tinydraw_pngenc)
-  target_compile_options(${target} PRIVATE -fno-exceptions -fno-rtti)
+foreach(target IN ITEMS tinydraw_puck tinydraw_vector_v2 tinydraw_core)
+  target_compile_options(${target} PRIVATE -Oz -fno-exceptions -fno-rtti)
 endforeach()
-# PNGenc is unused and garbage-collected, but its static target must still
-# compile before the final link. Its upstream platform test predates WASI;
-# select the same standard-library branch used by TinyDraw's macOS host.
-target_compile_definitions(tinydraw_pngenc PRIVATE __MACH__=1)
-target_compile_definitions(tinydraw_core PRIVATE __MACH__=1)
-target_compile_options(tinydraw_puck PRIVATE -ffunction-sections -fdata-sections)
+target_compile_options(tinydraw_puck PRIVATE
+  -ffunction-sections
+  -fdata-sections
+)
+set_source_files_properties(
+  platform/board_stubs.cpp
+  platform/export_stubs.cpp
+  PROPERTIES COMPILE_OPTIONS "-Wno-unused-private-field"
+)
+set_source_files_properties(
+  "${TINYDRAW_PUCK_APP_DIR}/vector_v2_presenter.cpp"
+  "${TINYDRAW_PUCK_APP_DIR}/vector_v2_presenter_staging.cpp"
+  PROPERTIES COMPILE_OPTIONS "-Wno-sign-conversion"
+)
 
 set(TINYDRAW_PUCK_EXPORTS
   emu_device
@@ -36,43 +69,17 @@ set(TINYDRAW_PUCK_EXPORTS
   emu_button
   emu_button_verdict
   emu_sensor_event
-  tinydraw_owner_buffer
-  tinydraw_owner_capacity
-  tinydraw_owner_load
-  tinydraw_diag_production_enabled
-  tinydraw_diag_operation_count
-  tinydraw_diag_sample_count
-  tinydraw_diag_active_stroke_point_capacity
-  tinydraw_diag_stroke_active
-  tinydraw_diag_slot_capacity
-  tinydraw_diag_resident_raw_tiles
-  tinydraw_diag_visible_tiles_remaining
-  tinydraw_diag_recent_view_count
-  tinydraw_diag_maintenance_pending
-  tinydraw_diag_last_fallback_pixels
-  tinydraw_diag_last_fallback_tiles
-  tinydraw_diag_current_raw
-  tinydraw_diag_current_uniform
-  tinydraw_diag_current_fallback
-  tinydraw_diag_zoom100_raw
-  tinydraw_diag_zoom100_uniform
-  tinydraw_diag_zoom100_fallback
-  tinydraw_diag_rerender_renders
-  tinydraw_diag_rerender_unique
-  tinydraw_diag_rerender_cold
-  tinydraw_diag_rerender_damage
-  tinydraw_diag_rerender_eviction
-  tinydraw_diag_rerender_stale
-  tinydraw_diag_rerender_unexplained
 )
 
 set(TINYDRAW_PUCK_LINK_OPTIONS
+  -Oz
   -mexec-model=reactor
   -Wl,--export-memory
   -Wl,--gc-sections
-  -Wl,--initial-memory=33554432
+  -Wl,--strip-all
+  -Wl,--initial-memory=50331648
   -Wl,--max-memory=67108864
-  -Wl,-z,stack-size=1048576
+  -Wl,-z,stack-size=2097152
 )
 foreach(symbol IN LISTS TINYDRAW_PUCK_EXPORTS)
   list(APPEND TINYDRAW_PUCK_LINK_OPTIONS "-Wl,--export=${symbol}")

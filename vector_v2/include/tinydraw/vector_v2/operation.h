@@ -26,7 +26,8 @@ inline constexpr int kSampleUnitsPerWorldUnit = 16;
 // world units (the x_quarter/y_quarter field names predate the resolution
 // experiment; rename lands only if the experiment sticks). Centers may lie
 // on the clipped right/bottom world edge. Radius is 1/256 world units
-// across the full uint16 range; elapsed time is relative to operation start.
+// across the full uint16 range; elapsed time is relative to operation start
+// and saturates at 65,535 ms.
 struct CompactOperationSample {
   std::uint16_t x_quarter = 0;
   std::uint16_t y_quarter = 0;
@@ -60,6 +61,33 @@ struct OperationAppend {
   std::uint16_t gesture_id = 0;
   std::span<const CompactOperationSample> samples{};
 };
+
+// Canonical identity of one user Stroke. Gesture zero is reserved for
+// imported/legacy operations and never joins adjacent records.
+struct StrokeIdentity {
+  OperationTool tool = OperationTool::kPen;
+  std::uint16_t color = 0;
+  std::uint16_t gesture_id = 0;
+  bool operator==(const StrokeIdentity&) const = default;
+};
+
+[[nodiscard]] constexpr StrokeIdentity stroke_identity(const OperationRecord& operation) {
+  return {.tool = operation.tool, .color = operation.color, .gesture_id = operation.gesture_id};
+}
+
+[[nodiscard]] constexpr StrokeIdentity stroke_identity(const OperationAppend& operation) {
+  return {.tool = operation.tool, .color = operation.color, .gesture_id = operation.gesture_id};
+}
+
+[[nodiscard]] constexpr bool same_stroke(StrokeIdentity left, StrokeIdentity right) {
+  return left.gesture_id != 0U && left == right;
+}
+
+[[nodiscard]] constexpr bool same_sample_geometry(CompactOperationSample left,
+                                                  CompactOperationSample right) {
+  return left.x_quarter == right.x_quarter && left.y_quarter == right.y_quarter &&
+         left.radius_256 == right.radius_256;
+}
 
 static_assert(sizeof(CompactOperationSample) == 8);
 static_assert(sizeof(OperationRecord) == 20);

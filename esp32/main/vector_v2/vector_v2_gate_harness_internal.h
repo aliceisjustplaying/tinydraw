@@ -43,6 +43,7 @@ using vector_v2::ZoomLevel;
 namespace contract = vector_v2_ship_contract;
 
 inline constexpr std::uint32_t kExternalCaps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+inline constexpr std::size_t kGateChunkSampleLimit = 32U;
 inline constexpr std::uint32_t kStressOperations = 1'000;
 inline constexpr std::uint32_t kStressSamplesPerOperation = 20;
 inline constexpr std::size_t kRealisticStrokeCapacity = 1'000;

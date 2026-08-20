@@ -42,7 +42,8 @@ struct SettledTileStats {
   std::size_t index_candidates = 0;
   std::size_t deduplicated_candidates = 0;
   std::size_t operations_intersecting = 0;
-  std::size_t operations_rendered = 0;
+  std::size_t strokes_intersecting = 0;
+  std::size_t strokes_rendered = 0;
   std::size_t candidate_queries = 0;
   std::size_t initialize_pixels = 0;
   std::size_t operation_clear_pixels = 0;
@@ -192,9 +193,7 @@ class SettledRenderCursor {
   std::size_t composite_x_ = 0;
   std::size_t fold_at_ = 0;
   std::size_t saturated_pixels_ = 0;
-  OperationTool operation_tool_ = OperationTool::kPen;
-  std::uint16_t operation_color_ = 0;
-  std::uint16_t operation_gesture_id_ = 0;
+  StrokeIdentity operation_stroke_{};
   PixelRect stroke_world_bounds_{};
   bool stroke_count_has_sample_ = false;
   CompactOperationSample stroke_count_last_sample_{};

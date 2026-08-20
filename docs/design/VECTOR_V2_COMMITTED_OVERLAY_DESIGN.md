@@ -1,11 +1,19 @@
 # Committed-overlay / authority-revision split — execution design
 
-Status: adopted design, implementation starting (author decision 2026-08-16
-\#1 in [`SHIP_CONTRACT.md`](../../SHIP_CONTRACT.md)). Source: external review
+Status: implemented; product publication revised 2026-08-20 (author decision
+2026-08-16 \#1 in [`SHIP_CONTRACT.md`](../../SHIP_CONTRACT.md)). Source: external review
 §8.2–8.4 (archived as `LATEST_tinydraw-review-report.md` in
 `archive/v2-correctness-fixes-e14e6e9`, commit `9be7a53`), adopted by
 [`EXTERNAL_REVIEW_SYNTHESIS_2026-08-16.md`](../archive/2026-08-code-reviews/2026-08-18-performance-review/EXTERNAL_REVIEW_SYNTHESIS_2026-08-16.md)
 item 9 as the Phase 2 execution design.
+
+Update 2026-08-20: foreground publication is now atomic per Stroke. The live
+preview remains provisional during Move; TouchUp copies at most 4,097 compact
+samples into one authority operation, and the existing cooperative absorber
+materializes that operation after lift. Multi-record pending ranges remain a
+core compatibility contract for restored legacy authorities and diagnostic
+stress gates. References below to publishing and draining 32-sample chunks
+describe the superseded product coordinator, not the current input path.
 
 ## 1. Problem, with receipts
 

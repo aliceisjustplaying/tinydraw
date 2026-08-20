@@ -58,8 +58,7 @@ ChainedOperationStatus ChainedOperationBuilder::add(OperationPoint point) {
     return ChainedOperationStatus::kAccepted;
   }
   const OperationBuilderReject reject = builder_.last_reject();
-  if (reject == OperationBuilderReject::kCapacityOverflow ||
-      reject == OperationBuilderReject::kElapsedOverflow) {
+  if (reject == OperationBuilderReject::kCapacityOverflow) {
     return capture_boundary(point, false);
   }
   state_ = State::kRejected;
@@ -75,8 +74,7 @@ ChainedOperationStatus ChainedOperationBuilder::finish(OperationPoint point) {
   }
   if (!builder_.add(point)) {
     const OperationBuilderReject reject = builder_.last_reject();
-    if (reject == OperationBuilderReject::kCapacityOverflow ||
-        reject == OperationBuilderReject::kElapsedOverflow) {
+    if (reject == OperationBuilderReject::kCapacityOverflow) {
       return capture_boundary(point, true);
     }
     state_ = State::kRejected;

@@ -203,7 +203,8 @@ void add_stats(vector_v2::SettledTileStats& destination,
   destination.index_candidates += source.index_candidates;
   destination.deduplicated_candidates += source.deduplicated_candidates;
   destination.operations_intersecting += source.operations_intersecting;
-  destination.operations_rendered += source.operations_rendered;
+  destination.strokes_intersecting += source.strokes_intersecting;
+  destination.strokes_rendered += source.strokes_rendered;
 #ifndef TINYDRAW_AA_BASELINE
   destination.candidate_queries += source.candidate_queries;
   destination.initialize_pixels += source.initialize_pixels;
@@ -251,8 +252,8 @@ Measurement measure(Document& document, vector_v2::ZoomLevel zoom, const View& v
       }
       const std::size_t pixel_count = static_cast<std::size_t>(width * height);
       measurement.legacy_initialize_pixels += pixel_count;
-      measurement.legacy_clear_pixels += tile_stats.operations_intersecting * pixel_count;
-      measurement.legacy_composite_pixels += tile_stats.operations_rendered * pixel_count;
+      measurement.legacy_clear_pixels += tile_stats.strokes_intersecting * pixel_count;
+      measurement.legacy_composite_pixels += tile_stats.strokes_rendered * pixel_count;
       measurement.legacy_fold_pixels += pixel_count;
       add_stats(measurement.stats, tile_stats);
       const auto publish_start = Clock::now();
@@ -354,9 +355,9 @@ int main() {
                              vector_v2::ZoomLevel::k400Percent};
   constexpr std::array<std::string_view, 5> corpora{"distributed", "long-crossing",
                                                     "hairline-eraser", "sparse", "dense"};
-  std::cout
-      << "corpus,zoom,render_ms,publish_ms,checksum,authority,candidates,scanned,intersecting,"
-         "rendered,queries,initialize_px,clear_px,curve_units,raster_px,composite_px,fold_px\n";
+  std::cout << "corpus,zoom,render_ms,publish_ms,checksum,authority_operations,candidates,"
+               "operations_scanned,operations_intersecting,strokes_rendered,queries,initialize_px,"
+               "clear_px,curve_units,raster_px,composite_px,fold_px\n";
   for (const std::string_view corpus : corpora) {
     for (const vector_v2::ZoomLevel zoom : zooms) {
       const View view = centered_view(zoom);
@@ -392,7 +393,7 @@ int main() {
                 << static_cast<double>(median.publish_ns) / 1'000'000.0 << ",0x" << std::hex
                 << median.checksum << std::dec << ',' << median.stats.operations_in_authority << ','
                 << median.stats.index_candidates << ',' << median.stats.operations_scanned << ','
-                << median.stats.operations_intersecting << ',' << median.stats.operations_rendered
+                << median.stats.operations_intersecting << ',' << median.stats.strokes_rendered
                 << ',' << work.queries << ',' << work.initialize << ',' << work.clear << ','
                 << work.curve << ',' << work.raster << ',' << work.composite << ',' << work.fold
                 << '\n';

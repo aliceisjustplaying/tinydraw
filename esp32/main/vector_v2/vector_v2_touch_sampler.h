@@ -76,6 +76,10 @@ class VectorV2TouchSampler {
   void discard_pending();
   [[nodiscard]] TouchSamplerMetrics take_metrics();
 
+  // Runs the physical read/offer/urgency body once for single-threaded hosts.
+  // Device builds continue to call this from the sampler task at 1 ms cadence.
+  void poll_once();
+
  private:
   static void task_entry(void* argument);
   void run();
@@ -103,6 +107,7 @@ class VectorV2TouchSampler {
   std::uint32_t down_events_ = 0;
   std::uint32_t up_events_ = 0;
   std::uint32_t events_at_least_8ms_old_ = 0;
+  std::uint32_t previous_poll_us_ = 0;
 };
 
 }  // namespace tinydraw::esp32

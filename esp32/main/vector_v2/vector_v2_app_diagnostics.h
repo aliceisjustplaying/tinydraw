@@ -3,7 +3,6 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "tinydraw/vector_v2/incremental_document.h"
 #include "vector_v2_live_stroke_session.h"
 #include "vector_v2_presenter.h"
 #include "vector_v2_touch_sampler.h"
@@ -31,8 +30,6 @@ struct PendingStrokeReport {
   LivePresentationTiming refresh{};
   LiveStrokeMetrics metrics{};
   TouchSamplerMetrics touch{};
-  vector_v2::InPlaceAppendPhases phase_max{};
-  vector_v2::InPlaceRetainDrops drops{};
   std::size_t operation_count = 0;
   std::size_t sample_count = 0;
   std::size_t free_psram = 0;
@@ -41,12 +38,10 @@ struct PendingStrokeReport {
   std::int64_t finish_preview_us = 0;
   std::int64_t builder_finish_us = 0;
   std::int64_t append_us = 0;
-  std::int64_t append_max_us = 0;
   std::int64_t refresh_wall_us = 0;
   std::int64_t stroke_logging_us = 0;
   std::uint32_t id = 0;
   std::uint32_t poll_max_us = 0;
-  std::uint32_t chunks = 0;
   bool authority_match = false;
   bool committed = false;
   bool commit_failed = false;

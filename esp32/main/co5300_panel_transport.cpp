@@ -32,7 +32,7 @@ constexpr int kPanelClockMHz = kCo5300ClockMHz;
 // Vector V2 uses three 32 KiB bounce buffers to keep staging ahead of the
 // measured 20 MB/s wire. Raster V1 reserves the remaining contiguous internal
 // SRAM for its full-screen coverage plane and uses two queued transfers.
-constexpr int kTransferPixels = 16384;
+constexpr int kTransferPixels = kCo5300TransferPixels;
 #ifdef TINYDRAW_RASTER_V1
 constexpr int kTransferQueueDepth = 2;
 #else

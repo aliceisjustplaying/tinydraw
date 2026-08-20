@@ -70,6 +70,13 @@ void VectorV2TouchSampler::stop() {
     return;
   }
   stop_requested_.store(true, std::memory_order_release);
+#ifdef TINYDRAW_SINGLE_THREADED_TOUCH
+  // A cooperative host owns no worker that could post stopped_. Polling ends
+  // as soon as task_ is cleared, so acknowledge synchronously without moving
+  // virtual time through a fake semaphore wait.
+  task_ = nullptr;
+  return;
+#endif
   static_cast<void>(xSemaphoreTake(stopped_, portMAX_DELAY));
   task_ = nullptr;
 }
@@ -173,40 +180,47 @@ void VectorV2TouchSampler::task_entry(void* argument) {
   vTaskDelete(nullptr);
 }
 
-void VectorV2TouchSampler::run() {
-  std::uint32_t previous_us = 0;
-  while (!stop_requested_.load(std::memory_order_acquire)) {
-    Point point{};
-    const std::int64_t started_us = esp_timer_get_time();
-    const TouchRead read = touch_.read(point);
-    const std::uint32_t completed_us = static_cast<std::uint32_t>(esp_timer_get_time());
-    const std::uint32_t read_us = completed_us - static_cast<std::uint32_t>(started_us);
-    if (previous_us != 0U) {
-      include_max(maximum_interval_us_, completed_us - previous_us);
-    }
-    previous_us = completed_us;
-    include_max(maximum_read_us_, read_us);
-    samples_.fetch_add(1U, std::memory_order_relaxed);
-    errors_.fetch_add(read == TouchRead::kError, std::memory_order_relaxed);
+void VectorV2TouchSampler::poll_once() {
+  if (task_ == nullptr) {
+    return;
+  }
+  Point point{};
+  const std::int64_t started_us = esp_timer_get_time();
+  const TouchRead read = touch_.read(point);
+  const std::uint32_t completed_us = static_cast<std::uint32_t>(esp_timer_get_time());
+  const std::uint32_t read_us = completed_us - static_cast<std::uint32_t>(started_us);
+  if (previous_poll_us_ != 0U) {
+    include_max(maximum_interval_us_, completed_us - previous_poll_us_);
+  }
+  previous_poll_us_ = completed_us;
+  include_max(maximum_read_us_, read_us);
+  samples_.fetch_add(1U, std::memory_order_relaxed);
+  errors_.fetch_add(read == TouchRead::kError, std::memory_order_relaxed);
 
-    portENTER_CRITICAL(&event_lock_);
-    const bool was_empty = events_.pending() == 0U;
-    const vector_v2::TouchOfferResult offered =
-        events_.offer(contact_read(read), {.x = point.x, .y = point.y}, completed_us);
-    const bool became_nonempty = was_empty && events_.pending() != 0U;
-    if (became_nonempty) {
-      touch_urgent_.store(true, std::memory_order_release);
-    }
-    portEXIT_CRITICAL(&event_lock_);
-    if (became_nonempty) {
-      static_cast<void>(xSemaphoreGive(event_ready_));
-    }
-    queue_overflows_.fetch_add(offered == vector_v2::TouchOfferResult::kOverflow,
-                               std::memory_order_relaxed);
-    queue_resyncs_.fetch_add(offered == vector_v2::TouchOfferResult::kResynchronized,
+  portENTER_CRITICAL(&event_lock_);
+  const bool was_empty = events_.pending() == 0U;
+  const vector_v2::TouchOfferResult offered =
+      events_.offer(contact_read(read), {.x = point.x, .y = point.y}, completed_us);
+  const bool became_nonempty = was_empty && events_.pending() != 0U;
+  if (became_nonempty) {
+    touch_urgent_.store(true, std::memory_order_release);
+  }
+  portEXIT_CRITICAL(&event_lock_);
+  if (became_nonempty) {
+    static_cast<void>(xSemaphoreGive(event_ready_));
+  }
+  queue_overflows_.fetch_add(offered == vector_v2::TouchOfferResult::kOverflow,
                              std::memory_order_relaxed);
-    moves_coalesced_.fetch_add(offered == vector_v2::TouchOfferResult::kMoveCoalesced,
-                               std::memory_order_relaxed);
+  queue_resyncs_.fetch_add(offered == vector_v2::TouchOfferResult::kResynchronized,
+                           std::memory_order_relaxed);
+  moves_coalesced_.fetch_add(offered == vector_v2::TouchOfferResult::kMoveCoalesced,
+                             std::memory_order_relaxed);
+}
+
+void VectorV2TouchSampler::run() {
+  previous_poll_us_ = 0U;
+  while (!stop_requested_.load(std::memory_order_acquire)) {
+    poll_once();
     vTaskDelay(pdMS_TO_TICKS(1));
   }
   static_cast<void>(xSemaphoreGive(stopped_));

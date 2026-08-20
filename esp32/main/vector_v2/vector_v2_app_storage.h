@@ -13,7 +13,10 @@
 
 namespace tinydraw::esp32 {
 
-inline constexpr std::size_t kInputSampleCapacity = 4'096;
+// One slot beyond the advertised 4,096 input points retains a distinct lift
+// sample without splitting the Stroke into multiple authority records.
+inline constexpr std::size_t kInputPointCapacity = 4'096;
+inline constexpr std::size_t kInputSampleCapacity = kInputPointCapacity + 1U;
 
 struct AppStorage {
   std::uint16_t* overview = nullptr;

@@ -280,7 +280,6 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, vector_v2::TileProd
     // state after the whole trace. Counts, not verdicts: pass is unchanged.
     const ViewportFallbackProbe fallback_start =
         probe_viewport_overview_fallback(presenter, canvas, spec.zoom);
-    std::uint32_t fallback_mid_max = 0;
     std::uint32_t fallback_up_max = 0;
     vector_v2::InPlaceRetainDrops trace_drops{};
     std::uint32_t drain_ops = 0;
@@ -456,12 +455,6 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, vector_v2::TileProd
         submitted = true;
       }
       presentation_failures += move.presented && !move.presentation.passed;
-      commit_failures += move.commit_failed;
-      if (move.chunk_committed) {
-        fallback_mid_max =
-            std::max(fallback_mid_max,
-                     probe_viewport_overview_fallback(presenter, canvas, spec.zoom).fallback);
-      }
       if (submitted) {
         event_to_geometry.push(geometry_delta, kMaximumLatencySamples);
         event_to_submit.push(submit_delta, kMaximumLatencySamples);
@@ -503,12 +496,13 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, vector_v2::TileProd
         "e2c_p50=%lu e2c_p95=%lu e2c_max=%lu e2g_p95=%lu e2s_p95=%lu "
         "e2d_p50=%lu e2d_p95=%lu e2d_max=%lu latency_samples=%lu "
         "presentation_failures=%lu commit_failures=%lu overflows=%lu resyncs=%lu revision=%lu "
-        "fb_tiles=%lu fb_start=%lu fb_mid_max=%lu fb_up_max=%lu fb_end=%lu "
+        "fb_tiles=%lu fb_start=%lu fb_up_max=%lu fb_end=%lu "
         "drop_uni_slot=%lu drop_uni_paint=%lu drop_raw_edit=%lu drop_raw_paint=%lu "
         "off_skip=%lu drain_ops=%lu drain_slices=%lu drain_skipped_ready=%lu "
         "max_pending=%lu drain_total_us=%lld drain_max_slice_us=%lld drain_max_unit=%s "
         "drain_guard_us=%lld "
-        "absorb_cadence=between_samples_skip_ready cooperative_pass=%u latency_pass=%u pass=%u\n",
+        "publication=operation absorb_cadence=cooperative_after_lift cooperative_pass=%u "
+        "latency_pass=%u pass=%u\n",
         spec.name, zoom_name(spec.zoom), static_cast<unsigned long>(counters.received_events),
         static_cast<unsigned long>(counters.consumed_events),
         static_cast<unsigned long>(counters.coalesced_events),
@@ -533,7 +527,7 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, vector_v2::TileProd
         static_cast<unsigned long>(canvas.current_revision().value),
         static_cast<unsigned long>(fallback_start.tiles),
         static_cast<unsigned long>(fallback_start.fallback),
-        static_cast<unsigned long>(fallback_mid_max), static_cast<unsigned long>(fallback_up_max),
+        static_cast<unsigned long>(fallback_up_max),
         static_cast<unsigned long>(fallback_end.fallback),
         static_cast<unsigned long>(trace_drops.visible_uniform_no_slot),
         static_cast<unsigned long>(trace_drops.visible_uniform_paint_fail),

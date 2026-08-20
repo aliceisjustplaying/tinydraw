@@ -19,17 +19,6 @@ bool rects_intersect(PixelRect left, PixelRect right) {
   return left.x0 < right.x1 && right.x0 < left.x1 && left.y0 < right.y1 && right.y0 < left.y1;
 }
 
-bool same_sample_geometry(CompactOperationSample left, CompactOperationSample right) {
-  return left.x_quarter == right.x_quarter && left.y_quarter == right.y_quarter &&
-         left.radius_256 == right.radius_256;
-}
-
-bool same_stroke(const StoredOperation& operation, OperationTool tool, std::uint16_t color,
-                 std::uint16_t gesture_id) {
-  return gesture_id != 0U && operation.gesture_id == gesture_id && operation.tool == tool &&
-         operation.color == color;
-}
-
 PixelRect union_rect(PixelRect left, PixelRect right) {
   return {
       .x0 = std::min(left.x0, right.x0),
@@ -74,7 +63,8 @@ void add_stats(SettledTileStats& destination, const SettledTileStats& source) {
   destination.index_candidates += source.index_candidates;
   destination.deduplicated_candidates += source.deduplicated_candidates;
   destination.operations_intersecting += source.operations_intersecting;
-  destination.operations_rendered += source.operations_rendered;
+  destination.strokes_intersecting += source.strokes_intersecting;
+  destination.strokes_rendered += source.strokes_rendered;
   destination.candidate_queries += source.candidate_queries;
   destination.initialize_pixels += source.initialize_pixels;
   destination.operation_clear_pixels += source.operation_clear_pixels;
@@ -324,14 +314,12 @@ void SettledRenderCursor::advance_operation_scan(WorkBudget& budget) {
   }
   ++stats_.operations_scanned;
   ++budget.work;
-  operation_tool_ = stored->tool;
-  operation_color_ = stored->color;
-  operation_gesture_id_ = stored->gesture_id;
+  operation_stroke_ = stroke_identity(*stored);
   stroke_first_operation_ = operation_index_;
   stroke_last_operation_ = operation_index_ + 1U;
   stroke_world_bounds_ = stored->world_bounds;
   include_stroke_operation(*stored);
-  if (operation_gesture_id_ == 0U) {
+  if (operation_stroke_.gesture_id == 0U) {
     finish_stroke_scan();
     return;
   }
@@ -372,13 +360,13 @@ void SettledRenderCursor::advance_stroke_newer_scan(WorkBudget& budget) {
     budget.fail();
     return;
   }
-  if (!same_stroke(*stored, operation_tool_, operation_color_, operation_gesture_id_)) {
+  ++stats_.operations_scanned;
+  if (!same_stroke(stroke_identity(*stored), operation_stroke_)) {
     stroke_scan_at_ = stroke_first_operation_;
     phase_ = Phase::kScanStrokeOlder;
     return;
   }
   include_stroke_operation(*stored);
-  ++stats_.operations_scanned;
   ++stroke_scan_at_;
   stroke_last_operation_ = stroke_scan_at_;
 }
@@ -399,12 +387,12 @@ void SettledRenderCursor::advance_stroke_older_scan(WorkBudget& budget) {
     budget.fail();
     return;
   }
-  if (!same_stroke(*stored, operation_tool_, operation_color_, operation_gesture_id_)) {
+  ++stats_.operations_scanned;
+  if (!same_stroke(stroke_identity(*stored), operation_stroke_)) {
     finish_stroke_scan();
     return;
   }
   include_stroke_operation(*stored);
-  ++stats_.operations_scanned;
   --stroke_scan_at_;
   stroke_first_operation_ = stroke_scan_at_;
 }
@@ -429,6 +417,7 @@ void SettledRenderCursor::finish_stroke_scan() {
     phase_ = Phase::kScanOperation;
     return;
   }
+  ++stats_.strokes_intersecting;
   // Operation-level saturation skip: if every window row this operation
   // could touch is already destination-saturated, no pixel of it can
   // contribute (the per-pixel skip would elide all of them), so curve
@@ -485,9 +474,8 @@ void SettledRenderCursor::advance_stroke_sample_count(WorkBudget& budget) {
   }
   const auto stored = log_->operation(stroke_count_at_);
   ++budget.work;
-  if (!stored.has_value() ||
-      (operation_gesture_id_ != 0U &&
-       !same_stroke(*stored, operation_tool_, operation_color_, operation_gesture_id_))) {
+  if (!stored.has_value() || (operation_stroke_.gesture_id != 0U &&
+                              !same_stroke(stroke_identity(*stored), operation_stroke_))) {
     cancel();
     budget.fail();
     return;
@@ -534,7 +522,7 @@ void SettledRenderCursor::advance_endpoint_preparation(WorkBudget& budget) {
       phase_ = Phase::kScanOperation;
       return;
     }
-    ++stats_.operations_rendered;
+    ++stats_.strokes_rendered;
     composite_row_ = operation_min_y_;
     composite_x_ = operation_min_x_[composite_row_];
     phase_ = Phase::kCompositeOperation;
@@ -556,9 +544,8 @@ void SettledRenderCursor::advance_endpoint_preparation(WorkBudget& budget) {
       }
       const auto stored = log_->operation(stroke_stream_operation_);
       ++budget.work;
-      if (!stored.has_value() ||
-          (operation_gesture_id_ != 0U &&
-           !same_stroke(*stored, operation_tool_, operation_color_, operation_gesture_id_))) {
+      if (!stored.has_value() || (operation_stroke_.gesture_id != 0U &&
+                                  !same_stroke(stroke_identity(*stored), operation_stroke_))) {
         cancel();
         budget.fail();
         return;
@@ -836,8 +823,9 @@ void SettledRenderCursor::composite_pixels(std::size_t row, std::size_t first_at
 }
 
 void SettledRenderCursor::advance_operation_composite(WorkBudget& budget) {
-  const Channels color = expand_565(
-      operation_tool_ == OperationTool::kEraser ? std::uint16_t{0xFFFFU} : operation_color_);
+  const Channels color =
+      expand_565(operation_stroke_.tool == OperationTool::kEraser ? std::uint16_t{0xFFFFU}
+                                                                  : operation_stroke_.color);
   while (composite_row_ < operation_max_y_) {
     const std::size_t row = composite_row_;
     const std::size_t end = operation_max_x_[row];

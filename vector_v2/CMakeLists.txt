@@ -13,10 +13,6 @@ target_link_libraries(tinydraw_vector_v2
   PRIVATE tinydraw::core
   PUBLIC tinydraw_project_options
 )
-target_compile_definitions(tinydraw_vector_v2 PUBLIC
-  TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS=1
-)
-
 option(TINYDRAW_VECTOR_V2_RASTER_CENSUS "Compile raster census counters into vector_v2" OFF)
 if(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
   target_compile_definitions(tinydraw_vector_v2 PUBLIC TINYDRAW_VECTOR_V2_RASTER_CENSUS=1)
@@ -25,6 +21,9 @@ endif()
 if(TINYDRAW_BUILD_TESTS)
   target_sources(tinydraw_vector_v2 PRIVATE
     ${TINYDRAW_VECTOR_V2_DIAGNOSTIC_SRCS}
+  )
+  target_compile_definitions(tinydraw_vector_v2 PUBLIC
+    TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS=1
   )
   add_executable(tinydraw_ink_trace_check tools/ink_trace_check.cpp)
   target_link_libraries(tinydraw_ink_trace_check PRIVATE
@@ -106,7 +105,6 @@ if(TINYDRAW_BUILD_TESTS)
     tests/world_export_test.cpp
   )
   tinydraw_add_vector_v2_tests(tinydraw_vector_v2_interaction_tests
-    tests/application_test.cpp
     tests/chrome_test.cpp
     tests/demo_tape_test.cpp
     tests/frame_scroller_test.cpp
@@ -115,18 +113,6 @@ if(TINYDRAW_BUILD_TESTS)
     tests/navigation_state_test.cpp
     tests/panel_staging_test.cpp
     tests/touch_event_buffer_test.cpp
-  )
-  tinydraw_add_vector_v2_tests(tinydraw_vector_v2_application_demo_tests
-    tests/application_demo_test.cpp
-  )
-  tinydraw_add_vector_v2_tests(tinydraw_vector_v2_application_import_tests
-    tests/application_import_test.cpp
-  )
-  tinydraw_add_vector_v2_tests(tinydraw_vector_v2_application_production_tests
-    tests/application_production_test.cpp
-  )
-  target_compile_definitions(tinydraw_vector_v2_application_import_tests PRIVATE
-    TINYDRAW_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
   )
   tinydraw_add_vector_v2_tests(tinydraw_vector_v2_rendering_tests
     tests/idle_repair_test.cpp

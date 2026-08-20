@@ -9,8 +9,8 @@ is refined in bounded background work.
 ## Interactions
 
 - Drag on the canvas to draw one uninterrupted Stroke. (intent: ink follows the finger and one
-  finger-down/up gesture remains one Undo and Redo unit; the Puck target supports 4,096 logical
-  Down/Move/Up points in one active Stroke.)
+  finger-down/up gesture remains one Undo and Redo unit; the Puck target supports 4,096 sampled
+  contact points plus the distinct lift, for 4,097 stored samples in one active Stroke.)
 - Tap Undo or Redo in the bottom toolbar to move one Stroke through history. (intent: history is
   immediate and preserves Stroke identity.)
 - Tap the document control, choose New, and confirm to clear drawing authority. (intent: destructive
@@ -29,6 +29,7 @@ is refined in bounded background work.
 
 - Required: one 368 by 448 RGB565 panel, single-point touch input, deterministic millisecond ticks,
   and enough WebAssembly linear memory for the fixed-capacity Vector V2 application.
-- Preferred: one raw button with an 800 ms long-press verdict for zoom and demo control.
+- Preferred: one raw button. The firmware measures the press duration itself;
+  a short release zooms and an 800 ms hold controls demo record/replay.
 - Persistence, RTC synchronization, USB export, panel timing, and touch-controller defects are
   physical-device facilities and are not claimed by this Puck port.
