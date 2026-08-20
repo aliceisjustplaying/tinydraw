@@ -7,7 +7,7 @@
       "mode": "native",
       "build": {
         "repo": ".",
-        "commit": "91059945a32b6bd79e69791054283eae9e4e2d28",
+        "commit": "baf78ec84ba488b026c98b9ac24ad2487dddfa33",
         "command": "./scripts/puck",
         "artifact": "out/build/puck/puck/emu.wasm"
       },
