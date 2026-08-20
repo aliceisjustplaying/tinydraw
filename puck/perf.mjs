@@ -115,6 +115,14 @@ function equalPixels(left, right) {
   return true;
 }
 
+function canvasColorCount(frame) {
+  const colors = new Set();
+  for (let y = 0; y < 300; y += 1) {
+    for (let x = 0; x < 260; x += 1) colors.add(frame[y * panelWidth + x]);
+  }
+  return colors.size;
+}
+
 function validatePushes() {
   const count = emu.emu_push_count();
   check(Number.isInteger(count) && count >= 0 && count <= 256,
@@ -226,6 +234,84 @@ function shortButtonPress(index) {
   }
 }
 
+function settledAaRun() {
+  initializeAtZero();
+  emu.emu_touch(1, 60, 70);
+  timedTick();
+  emu.emu_touch(1, 145, 151);
+  timedTick();
+  emu.emu_touch(1, 230, 221);
+  timedTick();
+  emu.emu_touch(0, 0, 0);
+  timedTick();
+  check(typeof emu.tinydraw_diag_maintenance_pending === "function",
+        "missing maintenance diagnostic export");
+  const samples = [];
+  let ticks = 0;
+  let observed = emu.tinydraw_diag_maintenance_pending() !== 0;
+  while ((!observed || emu.tinydraw_diag_maintenance_pending() !== 0) &&
+         ticks < maximumConvergenceTicks) {
+    timedTick(samples);
+    observed ||= emu.tinydraw_diag_maintenance_pending() !== 0;
+    ticks += 1;
+  }
+  check(observed && emu.tinydraw_diag_maintenance_pending() === 0,
+        `settled AA did not converge within ${maximumConvergenceTicks} ticks`);
+  const colors = canvasColorCount(snapshot());
+  check(colors > 2, `settled AA canvas has only ${colors} RGB565 colors`);
+  return { samples, ticks, colors };
+}
+
+function longActiveStrokeRun() {
+  initializeAtZero();
+  const logicalPointCapacity = 4_096;
+  check(typeof emu.tinydraw_diag_active_stroke_point_capacity === "function" &&
+        emu.tinydraw_diag_active_stroke_point_capacity() === logicalPointCapacity,
+        "Puck did not expose its 4,096-point active-Stroke capacity");
+  check(typeof emu.tinydraw_diag_operation_count === "function" &&
+        typeof emu.tinydraw_diag_sample_count === "function" &&
+        typeof emu.tinydraw_diag_stroke_active === "function",
+        "missing active-Stroke performance diagnostics");
+
+  const live = [];
+  emu.emu_touch(1, 60, 80);
+  timedTick(live);
+  for (let move = 0; move < logicalPointCapacity - 2; move += 1) {
+    emu.emu_touch(1, move % 2 === 0 ? 240 : 60, move % 2 === 0 ? 250 : 80);
+    timedTick(live);
+  }
+  check(emu.tinydraw_diag_stroke_active() === 1,
+        "near-capacity Stroke was discarded before performance release");
+  check(emu.tinydraw_diag_operation_count() === 0,
+        "active near-capacity Stroke entered authority");
+
+  // Force the exact cold-render transition that used to expose provisional
+  // chunks. Its publication must remain authority-neutral and within one
+  // browser frame even at the declared active-Stroke capacity.
+  shortButtonPress(0);
+  const cold = [];
+  let coldPushes = 0;
+  let coldTicks = 0;
+  for (; coldTicks < maximumConvergenceTicks && coldPushes < 2; coldTicks += 1) {
+    coldPushes += timedTick(cold);
+  }
+  check(coldPushes >= 2,
+        "near-capacity active Stroke did not publish cold zoom fallback and final frames");
+  check(emu.tinydraw_diag_stroke_active() === 1 &&
+        emu.tinydraw_diag_operation_count() === 0,
+        "cold zoom published near-capacity provisional authority");
+
+  const release = [];
+  emu.emu_touch(0, 0, 0);
+  timedTick(release);
+  check(emu.tinydraw_diag_stroke_active() === 0,
+        "near-capacity release left the Stroke active");
+  check(emu.tinydraw_diag_operation_count() === 133 &&
+        emu.tinydraw_diag_sample_count() === 4_228,
+        "near-capacity release did not retain its exact provisional transaction");
+  return { live, cold, coldTicks, release };
+}
+
 function ownerProductionRun() {
   initializeAtZero();
   for (const name of ["tinydraw_owner_buffer", "tinydraw_owner_capacity", "tinydraw_owner_load"]) {
@@ -291,6 +377,8 @@ const redo = requestAndConverge(() => {
 check(equalPixels(zoomedDocumentFrame, snapshot()),
       "Redo publication did not byte-exactly restore the pre-Undo frame");
 const ownerProduction = ownerProductionRun();
+const settledAa = settledAaRun();
+const longActiveStroke = longActiveStrokeRun();
 
 // Repeated initialization must release and reuse its heap without growing the
 // WebAssembly memory on every lifetime. Measure after the largest document so
@@ -326,6 +414,12 @@ const commitStats = stats([...firstDocument.commit, ...secondDocument.commit]);
 const convergence = [...zoom.backgroundSamples, ...undo.backgroundSamples, ...redo.backgroundSamples];
 const convergenceStats = stats(convergence);
 const ownerQuantumStats = stats([...ownerProduction.importTicks, ...ownerProduction.tiledTicks]);
+const settledAaStats = stats(settledAa.samples);
+const longActiveStats = stats([
+  ...longActiveStroke.live,
+  ...longActiveStroke.cold,
+  ...longActiveStroke.release,
+]);
 const warmBootStats = stats(warmBoot);
 const repeatInitStats = stats(repeatInit);
 const interactiveP95LimitMs = 16.7;
@@ -352,6 +446,13 @@ console.log(formatStats("redo convergence", redo.backgroundSamples));
 console.log(formatStats("all convergence ticks", convergence));
 console.log(formatStats("owner import quanta", ownerProduction.importTicks));
 console.log(formatStats("owner tiled quanta", ownerProduction.tiledTicks));
+console.log(formatStats("settled AA ticks", settledAa.samples));
+console.log(formatStats(
+  "long active Stroke",
+  [...longActiveStroke.live, ...longActiveStroke.cold, ...longActiveStroke.release],
+));
+console.log(formatStats("long Stroke cold zoom", longActiveStroke.cold));
+console.log(formatStats("long Stroke release", longActiveStroke.release));
 console.log(formatStats("repeat init", repeatInit));
 console.log(`document run 1           strokes=512  total=${firstDocument.totalMs.toFixed(1)} ms  ` +
             `background_ticks=${firstDocument.background.length}  ` +
@@ -364,6 +465,8 @@ console.log(`zoom/history convergence zoom=${zoom.convergenceTicks} (fallback=${
             `redo=${redo.convergenceTicks} (fallback=${redo.fallbackTicks}) ticks`);
 console.log(`owner convergence        import=${ownerProduction.importConvergenceTicks}  ` +
             `tiled=${ownerProduction.tiledConvergenceTicks} ticks`);
+console.log(`settled AA convergence   ticks=${settledAa.ticks}  colors=${settledAa.colors}`);
+console.log(`long Stroke cold zoom    ticks=${longActiveStroke.coldTicks}`);
 console.log(`lifetime memory          pages=${pagesBeforeRepeatInit}->${pagesAfterRepeatInit}  ` +
             `peak=${(pagesAfterRepeatInit / 16).toFixed(1)} MiB/64.0 MiB  ` +
             `framebuffer_addresses=${framebufferPointers.size}`);
@@ -379,6 +482,12 @@ check(convergenceStats.p95 <= interactiveP95LimitMs,
       `background convergence p95 ${convergenceStats.p95.toFixed(3)} ms exceeds ${interactiveP95LimitMs} ms`);
 check(ownerQuantumStats.p95 <= interactiveP95LimitMs,
       `owner production p95 ${ownerQuantumStats.p95.toFixed(3)} ms exceeds ${interactiveP95LimitMs} ms`);
+check(settledAaStats.p95 <= interactiveP95LimitMs,
+      `settled-AA p95 ${settledAaStats.p95.toFixed(3)} ms exceeds ${interactiveP95LimitMs} ms`);
+check(longActiveStats.p95 <= interactiveP95LimitMs,
+      `long-active p95 ${longActiveStats.p95.toFixed(3)} ms exceeds ${interactiveP95LimitMs} ms`);
+check(longActiveStats.max <= interactiveP95LimitMs,
+      `long-active max ${longActiveStats.max.toFixed(3)} ms exceeds ${interactiveP95LimitMs} ms`);
 check(warmBootStats.p95 <= warmBootP95LimitMs,
       `warm-boot p95 ${warmBootStats.p95.toFixed(3)} ms exceeds ${warmBootP95LimitMs} ms`);
 check(repeatInitStats.p95 <= interactiveP95LimitMs,
@@ -391,5 +500,6 @@ check(Math.max(zoom.convergenceTicks, undo.convergenceTicks, redo.convergenceTic
 check(firstDocument.totalMs <= documentWallLimitMs && secondDocument.totalMs <= documentWallLimitMs,
       `512-stroke creation exceeded ${documentWallLimitMs} ms`);
 console.log(`performance gates        PASS (interactive/background p95 <= ${interactiveP95LimitMs} ms, ` +
+            `long-active max <= ${interactiveP95LimitMs} ms, ` +
             `warm boot p95 <= ${warmBootP95LimitMs} ms, fallback <= ${fallbackTickLimit} ticks, ` +
             `final <= ${finalConvergenceTickLimit} ticks)`);

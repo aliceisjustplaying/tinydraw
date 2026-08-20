@@ -116,6 +116,14 @@ function diffCanvas(left, right) {
   return changed;
 }
 
+function canvasColorCount(pixels) {
+  const colors = new Set();
+  for (let y = 0; y < 300; y += 1) {
+    for (let x = 0; x < 260; x += 1) colors.add(pixels[y * panelWidth + x]);
+  }
+  return colors.size;
+}
+
 function tick(nextClock = clockMs + 16) {
   clockMs = Math.max(clockMs + 1, nextClock);
   emu.emu_tick(clockMs);
@@ -712,18 +720,19 @@ await gate("history_latency_puck", () => {
   return `Puck tick p95=${p95.toFixed(3)}ms; evil-hairline ESP corpus is not asserted`;
 });
 
-await gate("settle_quiescence_proxy", () => {
+await gate("settled_aa", () => {
   initialize();
-  buildStressDocument(160);
-  const receipt = coldZoom();
-  const stableAfter = drainUntilStable();
+  draw([{ x: 60, y: 70 }, { x: 145, y: 151 }, { x: 230, y: 221 }]);
+  const { ticks: settledAfter } = drainMaterialization();
   const converged = frame();
+  const colorCount = canvasColorCount(converged);
+  check(colorCount > 2,
+    `converged canvas has ${colorCount} colors; expected RGB565 AA coverage shades`);
   for (let idle = 0; idle < 8; idle += 1) {
     check(tick() === 0 && equalPixels(converged, frame()),
       `post-convergence tick ${idle} was not stable`);
   }
-  return `first publication=${receipt.ticks} ticks, stable window after ${stableAfter}; ` +
-    "analytic settled-AA is not asserted";
+  return `settled after ${settledAfter} ticks; RGB565 canvas colors=${colorCount}`;
 });
 
 await gate("raster_framebuffer_census", () => {

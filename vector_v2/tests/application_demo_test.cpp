@@ -17,20 +17,26 @@ class DemoApplicationFixture {
       : records(32U),
         samples(512U),
         stroke_samples(128U),
+        staged_stroke_samples(512U),
+        staged_stroke_appends(records.size()),
         demo_samples(demo_capacity),
         canvas(vector_v2::kOverviewPixels),
         working(vector_v2::kOverviewPixels),
         frame(vector_v2::kOverviewPixels),
+        live(vector_v2::kOverviewPixels),
         overview(vector_v2::kOverviewPixels),
         working_overview(vector_v2::kOverviewPixels),
         chrome_cache(vector_v2::kChromeStagingCachePixels),
         app({.records = records,
              .samples = samples,
              .stroke_samples = stroke_samples,
+             .staged_stroke_samples = staged_stroke_samples,
+             .staged_stroke_appends = staged_stroke_appends,
              .demo_samples = demo_samples,
              .canvas_pixels = canvas,
              .working_pixels = working,
              .frame_pixels = frame,
+             .live_pixels = live,
              .overview_pixels = overview,
              .working_overview_pixels = working_overview,
              .chrome_cache_pixels = chrome_cache}) {
@@ -69,10 +75,13 @@ class DemoApplicationFixture {
   std::vector<vector_v2::OperationRecord> records;
   std::vector<vector_v2::CompactOperationSample> samples;
   std::vector<vector_v2::CompactOperationSample> stroke_samples;
+  std::vector<vector_v2::CompactOperationSample> staged_stroke_samples;
+  std::vector<vector_v2::OperationAppend> staged_stroke_appends;
   std::vector<vector_v2::DemoSample> demo_samples;
   std::vector<std::uint16_t> canvas;
   std::vector<std::uint16_t> working;
   std::vector<std::uint16_t> frame;
+  std::vector<std::uint16_t> live;
   std::vector<std::uint16_t> overview;
   std::vector<std::uint16_t> working_overview;
   std::vector<std::uint16_t> chrome_cache;

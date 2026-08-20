@@ -6,15 +6,20 @@ entry point has not yet been cut over to this top-level application seam, so
 the two hosts do not currently share their presenter and background scheduler.
 Puck receives deterministic ticks, a direct RGB565 framebuffer, and truthful
 damage for each changed frame. Its WebAssembly host funds the production
-604-slot materialized canvas and advances eight bounded rendering quanta per
-tick. The module is capped at 64 MiB and currently remains at 32 MiB under the
-full performance battery. Panel timing, PSRAM placement, touch-controller
-defects, USB export, RTC sync, and autosave remain hardware concerns and are
-not simulated.
+604-slot materialized canvas plus the analytic-coverage settled-AA pass. It
+advances eight bounded rendering quanta on input ticks and 32 while idle, so a
+hard-edged interactive Stroke is polished without blocking touch. The module
+is capped at 64 MiB and currently remains at 32 MiB under the full performance
+battery. Panel timing, PSRAM placement, touch-controller defects, USB export,
+RTC sync, and autosave remain hardware concerns and are not simulated.
 
 Short BOOT presses cycle zoom. An 800 ms BOOT press starts a deterministic
 demo recording from a blank document; the next long press stops, and the next
 replays the take from the same blank baseline.
+
+One uninterrupted active Stroke supports 4,096 logical Down/Move/Up points
+(about 68 seconds at 60 Hz). Its 4,228 stored samples and 133 overlapped chunks
+remain provisional until TouchUp publishes the complete Stroke atomically.
 
 ## Run it
 

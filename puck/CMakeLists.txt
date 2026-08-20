@@ -40,6 +40,10 @@ set(TINYDRAW_PUCK_EXPORTS
   tinydraw_owner_capacity
   tinydraw_owner_load
   tinydraw_diag_production_enabled
+  tinydraw_diag_operation_count
+  tinydraw_diag_sample_count
+  tinydraw_diag_active_stroke_point_capacity
+  tinydraw_diag_stroke_active
   tinydraw_diag_slot_capacity
   tinydraw_diag_resident_raw_tiles
   tinydraw_diag_visible_tiles_remaining

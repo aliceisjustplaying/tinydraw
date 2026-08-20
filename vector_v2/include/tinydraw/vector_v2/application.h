@@ -16,7 +16,29 @@
 
 namespace tinydraw::vector_v2 {
 
-// Caller-owned, fixed-capacity storage for one complete application. The five
+inline constexpr std::size_t kApplicationStrokeChunkSampleLimit = 32U;
+
+// Chunks after the first retain one boundary sample so their raster geometry
+// remains continuous. These helpers size a provisional transaction for a
+// maximum number of logical Down/Move/Up points without release-time loss.
+[[nodiscard]] constexpr std::size_t application_staged_sample_capacity(
+    std::size_t logical_point_capacity) {
+  return logical_point_capacity +
+         (logical_point_capacity >= 2U
+              ? (logical_point_capacity - 2U) / (kApplicationStrokeChunkSampleLimit - 1U)
+              : 0U);
+}
+
+[[nodiscard]] constexpr std::size_t application_staged_append_capacity(
+    std::size_t logical_point_capacity) {
+  return logical_point_capacity == 0U
+             ? 0U
+             : 1U + (logical_point_capacity >= 2U
+                         ? (logical_point_capacity - 2U) / (kApplicationStrokeChunkSampleLimit - 1U)
+                         : 0U);
+}
+
+// Caller-owned, fixed-capacity storage for one complete application. The six
 // panel/overview buffers contain exactly kOverviewPixels entries; chrome and
 // production spans use their subsystem-specific constants. Authority capacity
 // is selected by the records/samples spans. No allocation is performed while
@@ -25,6 +47,11 @@ struct ApplicationStorage {
   std::span<OperationRecord> records{};
   std::span<CompactOperationSample> samples{};
   std::span<CompactOperationSample> stroke_samples{};
+  // Provisional Stroke transaction storage. Chunks remain outside document
+  // authority until TouchUp publishes the complete logical Stroke. Size these
+  // with application_staged_*_capacity() for the host's logical point limit.
+  std::span<CompactOperationSample> staged_stroke_samples{};
+  std::span<OperationAppend> staged_stroke_appends{};
   // Optional fixed-capacity transaction workspace for import_tdoc(). It must
   // be disjoint from authority and all other Application storage.
   std::span<OperationRecord> import_records{};
@@ -34,6 +61,7 @@ struct ApplicationStorage {
   std::span<std::uint16_t> canvas_pixels{};
   std::span<std::uint16_t> working_pixels{};
   std::span<std::uint16_t> frame_pixels{};
+  std::span<std::uint16_t> live_pixels{};
   std::span<std::uint16_t> overview_pixels{};
   std::span<std::uint16_t> working_overview_pixels{};
   std::span<std::uint16_t> chrome_cache_pixels{};
@@ -51,6 +79,15 @@ struct ApplicationStorage {
   std::span<std::uint32_t> producer_summary_words{};
   std::span<std::byte> producer_chord_plans{};
   std::span<std::uint16_t> producer_candidate_indices{};
+  // Settled analytic-coverage AA scratch. This group is required with the
+  // production view cache. Candidate storage is shared with TileProducer;
+  // production, repair, and settle phases are serialized by Application.
+  std::span<std::uint8_t> settle_operation_alpha{};
+  std::span<std::uint8_t> settle_accumulated_alpha{};
+  std::span<std::uint16_t> settle_red{};
+  std::span<std::uint16_t> settle_green{};
+  std::span<std::uint16_t> settle_blue{};
+  std::span<std::uint16_t> settle_pixels{};
   // Optional diagnostic ledger. Empty disables cause attribution.
   std::span<RerenderLedgerEntry> rerender_ledger_entries{};
 };

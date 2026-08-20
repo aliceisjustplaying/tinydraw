@@ -93,6 +93,14 @@ function inkPixels(frame, x0, y0, x1, y1) {
   return count;
 }
 
+function canvasColorCount(frame) {
+  const colors = new Set();
+  for (let y = 0; y < 360; y += 1) {
+    for (let x = 0; x < 260; x += 1) colors.add(frame[y * panelWidth + x]);
+  }
+  return colors.size;
+}
+
 function validatePushes(requirePush = false) {
   const count = emu.emu_push_count();
   check(Number.isInteger(count) && count >= 0 && count <= 256,
@@ -128,6 +136,19 @@ function convergePublications(firstMs, requiredPushes = 1, maximumTicks = 4_096)
 
 function convergePush(firstMs, maximumTicks = 4_096) {
   return convergePublications(firstMs, 1, maximumTicks);
+}
+
+function convergeMaintenance(firstMs, maximumTicks = 4_096) {
+  check(typeof emu.tinydraw_diag_maintenance_pending === "function",
+        "missing maintenance diagnostic export");
+  let observed = emu.tinydraw_diag_maintenance_pending() !== 0;
+  for (let attempt = 0; attempt < maximumTicks; attempt += 1) {
+    const nowMs = firstMs + attempt * 16;
+    tick(nowMs);
+    observed ||= emu.tinydraw_diag_maintenance_pending() !== 0;
+    if (observed && emu.tinydraw_diag_maintenance_pending() === 0) return nowMs;
+  }
+  fail("settled maintenance did not converge");
 }
 
 function initialize() {
@@ -179,6 +200,89 @@ convergePush(48);
 check(inkPixels(snapshot(), 35, 60, 330, 112) > 0,
       "queue saturation lost Up and merged two gestures");
 
+// Chained storage is only a live presentation detail until TouchUp. Even if a
+// navigation event forces a cold render mid-gesture, no partial chunk may
+// enter authority; TouchUp publishes all chunks together and Undo removes the
+// complete logical Stroke.
+initialize();
+check(typeof emu.tinydraw_diag_operation_count === "function" &&
+      typeof emu.tinydraw_diag_stroke_active === "function",
+      "missing active-Stroke authority diagnostics");
+emu.emu_touch(1, 60, 80);
+tick(16, true);
+let longStrokeNow = 32;
+for (let move = 0; move < 80; move += 1) {
+  emu.emu_touch(1, 60 + (move % 25) * 8, 80 + (move * 17) % 200);
+  tick(longStrokeNow);
+  longStrokeNow += 16;
+}
+check(emu.tinydraw_diag_stroke_active() === 1, "long Stroke became inactive before TouchUp");
+check(emu.tinydraw_diag_operation_count() === 0,
+      "active multi-chunk Stroke leaked into document authority");
+emu.emu_button_verdict(0, 0);
+for (let tickIndex = 0; tickIndex < 12; tickIndex += 1) {
+  tick(longStrokeNow);
+  longStrokeNow += 16;
+  check(emu.tinydraw_diag_operation_count() === 0,
+        "cold render published an unfinished Stroke chunk");
+}
+emu.emu_touch(0, 0, 0);
+tick(longStrokeNow, true);
+longStrokeNow += 16;
+check(emu.tinydraw_diag_stroke_active() === 0, "TouchUp left the long Stroke active");
+check(emu.tinydraw_diag_operation_count() > 1,
+      "TouchUp did not atomically publish the multi-chunk Stroke");
+emu.emu_touch(1, 30, 410);
+emu.emu_touch(0, 0, 0);
+convergePush(longStrokeNow);
+check(emu.tinydraw_diag_operation_count() === 0,
+      "Undo did not remove the complete multi-chunk Stroke");
+
+// Puck's declared active-Stroke contract is 4,096 logical Down/Move/Up
+// points. The provisional transaction includes overlapped chunk boundaries,
+// so release at the exact limit must remain atomic and retain every sample.
+initialize();
+logs.length = 0;
+const activeStrokeLogicalPointCapacity = 4_096;
+check(typeof emu.tinydraw_diag_active_stroke_point_capacity === "function" &&
+      emu.tinydraw_diag_active_stroke_point_capacity() === activeStrokeLogicalPointCapacity,
+      "Puck did not expose its 4,096-point active-Stroke capacity");
+check(typeof emu.tinydraw_diag_sample_count === "function",
+      "missing authority sample-count diagnostic");
+emu.emu_touch(1, 60, 80);
+tick(16, true);
+let nearCapacityNow = 32;
+for (let move = 0; move < activeStrokeLogicalPointCapacity - 2; move += 1) {
+  emu.emu_touch(1, move % 2 === 0 ? 240 : 60, move % 2 === 0 ? 250 : 80);
+  tick(nearCapacityNow);
+  nearCapacityNow += 16;
+}
+check(emu.tinydraw_diag_stroke_active() === 1,
+      "near-capacity Stroke was discarded before TouchUp");
+check(emu.tinydraw_diag_operation_count() === 0,
+      "near-capacity Stroke entered authority before TouchUp");
+emu.emu_touch(0, 0, 0);
+tick(nearCapacityNow, true);
+check(logs.length === 0, `near-capacity Stroke logged an error: ${logs.at(-1)}`);
+check(emu.tinydraw_diag_stroke_active() === 0,
+      "near-capacity TouchUp left the Stroke active");
+check(emu.tinydraw_diag_operation_count() === 133,
+      `near-capacity Stroke published ${emu.tinydraw_diag_operation_count()} chunks, expected 133`);
+check(emu.tinydraw_diag_sample_count() === 4_228,
+      `near-capacity Stroke retained ${emu.tinydraw_diag_sample_count()} samples, expected 4,228`);
+nearCapacityNow += 16;
+emu.emu_touch(1, 30, 410);
+emu.emu_touch(0, 0, 0);
+nearCapacityNow = convergePush(nearCapacityNow) + 16;
+check(emu.tinydraw_diag_operation_count() === 0,
+      "one Undo did not remove the complete near-capacity Stroke");
+emu.emu_touch(1, 90, 410);
+emu.emu_touch(0, 0, 0);
+convergePush(nearCapacityNow);
+check(emu.tinydraw_diag_operation_count() === 133 &&
+      emu.tinydraw_diag_sample_count() === 4_228,
+      "one Redo did not restore the complete near-capacity Stroke");
+
 // Application reports the invalid points, then applies the valid toolbar tap
 // in the same serialized advance. The ABI must still publish that new frame.
 initialize();
@@ -190,6 +294,21 @@ emu.emu_touch(0, 0, 0);
 tick(16, true);
 check(logs.some((line) => line.includes("advance failed")),
       "invalid input did not exercise Application's recoverable-error path");
+
+// Puck funds the production settled renderer. A converged diagonal must have
+// RGB565 coverage shades between its solid blue interior and white paper.
+initialize();
+emu.emu_touch(1, 60, 70);
+tick(16, true);
+emu.emu_touch(1, 145, 151);
+tick(32, true);
+emu.emu_touch(1, 230, 221);
+tick(48, true);
+emu.emu_touch(0, 0, 0);
+tick(64, true);
+convergeMaintenance(80);
+check(canvasColorCount(snapshot()) > 2,
+      "converged Puck frame has only binary ink/paper; settled AA was not published");
 
 // The captured owner TDOC crosses the ABI as an explicit two-phase latch:
 // load validates and snapshots bytes, then the next tick begins the bounded,
@@ -340,5 +459,6 @@ check(replayMatched,
       "BOOT demo replay did not reproduce its recorded final framebuffer");
 
 console.log(
-  `Puck ABI verified: ${panelWidth}x${panelHeight}, edge-safe input, damage, lifetime, owner TDOC, zoom, demo`,
+  `Puck ABI verified: ${panelWidth}x${panelHeight}, 4096-point Stroke, settled AA, ` +
+    "edge-safe input, damage, lifetime, owner TDOC, zoom, demo",
 );

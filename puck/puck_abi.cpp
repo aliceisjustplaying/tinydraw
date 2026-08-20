@@ -23,15 +23,27 @@ using tinydraw::vector_v2::CompactOperationSample;
 using tinydraw::vector_v2::DemoSample;
 using tinydraw::vector_v2::MaterializedSlotStorage;
 using tinydraw::vector_v2::MaterializedUniformStorage;
+using tinydraw::vector_v2::OperationAppend;
 using tinydraw::vector_v2::OperationRecord;
 using tinydraw::vector_v2::PixelRect;
 using tinydraw::vector_v2::RerenderLedgerEntry;
 
-constexpr std::size_t kStrokeSampleCapacity = 4'096U;
+constexpr std::size_t kActiveStrokeLogicalPointCapacity = 4'096U;
+constexpr std::size_t kStrokeSampleCapacity =
+    tinydraw::vector_v2::kApplicationStrokeChunkSampleLimit;
+constexpr std::size_t kStagedStrokeSampleCapacity =
+    tinydraw::vector_v2::application_staged_sample_capacity(kActiveStrokeLogicalPointCapacity);
+constexpr std::size_t kStagedStrokeAppendCapacity =
+    tinydraw::vector_v2::application_staged_append_capacity(kActiveStrokeLogicalPointCapacity);
+static_assert(kStagedStrokeSampleCapacity == 4'228U);
+static_assert(kStagedStrokeAppendCapacity == 133U);
+static_assert(kStagedStrokeSampleCapacity <= tinydraw::vector_v2::kOperationSampleCapacity);
+static_assert(kStagedStrokeAppendCapacity <= tinydraw::vector_v2::kOperationCapacity);
 constexpr std::size_t kDemoSampleCapacity = 16'384U;
 constexpr std::size_t kPendingEventCapacity = 32U;
 constexpr std::size_t kMaximumPushes = 256U;
-constexpr std::size_t kWorkQuantaPerTick = 8U;
+constexpr std::size_t kForegroundWorkQuantaPerTick = 8U;
+constexpr std::size_t kIdleWorkQuantaPerTick = 32U;
 constexpr std::size_t kOwnerDocumentCapacity = 32U * 1'024U;
 constexpr std::size_t kOwnerHeaderBytes = 12U;
 constexpr std::size_t kOwnerOperationBytes = 5U;
@@ -285,6 +297,10 @@ struct WasmState {
       std::vector<CompactOperationSample>(tinydraw::vector_v2::kOperationSampleCapacity);
   std::vector<CompactOperationSample> stroke_samples =
       std::vector<CompactOperationSample>(kStrokeSampleCapacity);
+  std::vector<CompactOperationSample> staged_stroke_samples =
+      std::vector<CompactOperationSample>(kStagedStrokeSampleCapacity);
+  std::vector<OperationAppend> staged_stroke_appends =
+      std::vector<OperationAppend>(kStagedStrokeAppendCapacity);
   std::vector<OperationRecord> import_records =
       std::vector<OperationRecord>(tinydraw::vector_v2::kOperationCapacity);
   std::vector<CompactOperationSample> import_samples =
@@ -295,6 +311,8 @@ struct WasmState {
   std::vector<std::uint16_t> working =
       std::vector<std::uint16_t>(tinydraw::vector_v2::kOverviewPixels, 0xFFFFU);
   std::vector<std::uint16_t> frame =
+      std::vector<std::uint16_t>(tinydraw::vector_v2::kOverviewPixels, 0xFFFFU);
+  std::vector<std::uint16_t> live =
       std::vector<std::uint16_t>(tinydraw::vector_v2::kOverviewPixels, 0xFFFFU);
   std::vector<std::uint16_t> overview =
       std::vector<std::uint16_t>(tinydraw::vector_v2::kOverviewPixels, 0xFFFFU);
@@ -327,18 +345,33 @@ struct WasmState {
       sizeof(std::uint32_t));
   std::vector<std::uint16_t> producer_candidate_indices =
       std::vector<std::uint16_t>(tinydraw::vector_v2::kOperationCapacity);
+  std::vector<std::uint8_t> settle_operation_alpha =
+      std::vector<std::uint8_t>(tinydraw::vector_v2::kTilePixels);
+  std::vector<std::uint8_t> settle_accumulated_alpha =
+      std::vector<std::uint8_t>(tinydraw::vector_v2::kTilePixels);
+  std::vector<std::uint16_t> settle_red =
+      std::vector<std::uint16_t>(tinydraw::vector_v2::kTilePixels);
+  std::vector<std::uint16_t> settle_green =
+      std::vector<std::uint16_t>(tinydraw::vector_v2::kTilePixels);
+  std::vector<std::uint16_t> settle_blue =
+      std::vector<std::uint16_t>(tinydraw::vector_v2::kTilePixels);
+  std::vector<std::uint16_t> settle_pixels =
+      std::vector<std::uint16_t>(tinydraw::vector_v2::kTilePixels);
   std::vector<RerenderLedgerEntry> rerender_ledger_entries =
       std::vector<RerenderLedgerEntry>(tinydraw::vector_v2::kRerenderLedgerEntryCount);
   Application application{
       {.records = records,
        .samples = samples,
        .stroke_samples = stroke_samples,
+       .staged_stroke_samples = staged_stroke_samples,
+       .staged_stroke_appends = staged_stroke_appends,
        .import_records = import_records,
        .import_samples = import_samples,
        .demo_samples = demo_samples,
        .canvas_pixels = canvas,
        .working_pixels = working,
        .frame_pixels = frame,
+       .live_pixels = live,
        .overview_pixels = overview,
        .working_overview_pixels = working_overview,
        .chrome_cache_pixels = chrome_cache,
@@ -354,6 +387,12 @@ struct WasmState {
        .producer_chord_plans = std::as_writable_bytes(std::span(producer_chord_words))
                                    .first(tinydraw::vector_v2::kOperationChordStorageBytes),
        .producer_candidate_indices = producer_candidate_indices,
+       .settle_operation_alpha = settle_operation_alpha,
+       .settle_accumulated_alpha = settle_accumulated_alpha,
+       .settle_red = settle_red,
+       .settle_green = settle_green,
+       .settle_blue = settle_blue,
+       .settle_pixels = settle_pixels,
        .rerender_ledger_entries = rerender_ledger_entries}};
   PendingEvents pending{};
   std::array<PushRect, kMaximumPushes> pushes{};
@@ -459,6 +498,18 @@ int tinydraw_owner_load(int size) {
 
 int tinydraw_diag_production_enabled() {
   return state != nullptr && state->application.diagnostics().production_enabled ? 1 : 0;
+}
+int tinydraw_diag_operation_count() {
+  return state == nullptr ? 0 : static_cast<int>(state->application.status().operation_count);
+}
+int tinydraw_diag_sample_count() {
+  return state == nullptr ? 0 : static_cast<int>(state->application.status().sample_count);
+}
+int tinydraw_diag_active_stroke_point_capacity() {
+  return static_cast<int>(kActiveStrokeLogicalPointCapacity);
+}
+int tinydraw_diag_stroke_active() {
+  return state != nullptr && state->application.status().stroke_active ? 1 : 0;
 }
 int tinydraw_diag_slot_capacity() {
   return state == nullptr ? 0 : static_cast<int>(state->application.diagnostics().slot_capacity);
@@ -571,7 +622,9 @@ void emu_tick(std::uint32_t now_ms) {
   }
   const std::uint32_t now_us = now_ms * 1'000U;
   const std::span<ApplicationEvent> events = state->pending.stamp_and_take(now_us);
-  const auto result = state->application.advance(now_us, events, kWorkQuantaPerTick);
+  const std::size_t work_quanta =
+      events.empty() ? kIdleWorkQuantaPerTick : kForegroundWorkQuantaPerTick;
+  const auto result = state->application.advance(now_us, events, work_quanta);
   state->pending.consumed();
   if (state->first_tick) {
     state->record_damage({0, 0, kPanelWidth, kPanelHeight});

@@ -167,6 +167,22 @@ std::optional<OperationIdentity> OperationLog::append(const BuiltOperation& buil
   return append_validated(operation, built.world_bounds());
 }
 
+std::optional<OperationIdentity> OperationLog::append_group(
+    std::span<const OperationAppend> append_requests) {
+  if (!valid_append_group(append_requests)) {
+    return std::nullopt;
+  }
+
+  OperationIdentity last_identity{};
+  for (const OperationAppend& append_request : append_requests) {
+    // Bounds were checked for the complete group before authority mutation.
+    // Group sources cannot alias log storage, so recalculation remains valid.
+    last_identity =
+        append_validated(append_request, *operation_world_bounds(append_request.samples));
+  }
+  return last_identity;
+}
+
 OperationIdentity OperationLog::append_validated(const OperationAppend& append_request,
                                                  PixelRect bounds) {
   const OperationIdentity identity{
@@ -537,6 +553,36 @@ void OperationLog::cancel_history(const PreparedHistoryChange&) {
 
 bool OperationLog::valid_append(const OperationAppend& append_request) const {
   return accepts_append(append_request) && valid_samples(append_request.samples);
+}
+
+bool OperationLog::valid_append_group(std::span<const OperationAppend> append_requests) const {
+  if (append_requests.empty() || !ready() || history_pending_ ||
+      workspace_overlaps_storage(std::as_bytes(append_requests)) ||
+      append_requests.size() > records_.size() - operation_count_ ||
+      append_requests.size() > std::numeric_limits<std::uint32_t>::max() - revision_.value) {
+    return false;
+  }
+
+  const OperationAppend& first = append_requests.front();
+  if (first.gesture_id == 0U) {
+    return false;
+  }
+  std::size_t remaining_samples = samples_.size() - sample_count_;
+  for (const OperationAppend& append_request : append_requests) {
+    if (append_request.gesture_id != first.gesture_id || append_request.tool != first.tool ||
+        append_request.color != first.color || append_request.samples.empty() ||
+        append_request.samples.size() > std::numeric_limits<std::uint16_t>::max() ||
+        append_request.samples.size() > remaining_samples ||
+        workspace_overlaps_storage(std::as_bytes(append_request.samples)) ||
+        (append_request.tool != OperationTool::kPen &&
+         append_request.tool != OperationTool::kEraser) ||
+        !valid_samples(append_request.samples) ||
+        !operation_world_bounds(append_request.samples).has_value()) {
+      return false;
+    }
+    remaining_samples -= append_request.samples.size();
+  }
+  return true;
 }
 
 bool OperationLog::accepts_append(const OperationAppend& append_request) const {

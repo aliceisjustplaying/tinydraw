@@ -14,15 +14,16 @@ const bundlePath = join(here, "external-bundle.json");
 const scenarios = [
   {
     trace: "boot-draw.trace.json",
-    captures: [16, 128, 256],
+    captures: [16, 128, 256, 512],
     check(run) {
       const boot = run.frames.get(16);
       const immediate = run.frames.get(128);
-      const settled = run.frames.get(256);
+      const settled = run.frames.get(512);
       assert(boot && immediate && settled, "boot/draw captures are missing");
       assert(diffPixels(boot, immediate) > 100, "drawing a Stroke did not visibly change the canvas");
       assert(inkPixels(immediate) > inkPixels(boot) + 50, "the Stroke left no visible ink in its canvas region");
       assert(inkPixels(settled) > inkPixels(boot) + 50, "background work lost the completed Stroke");
+      assert(canvasColorCount(settled) > 2, "settled Stroke has no RGB565 coverage shades");
     },
   },
   {
@@ -153,6 +154,17 @@ function inkPixels(frame) {
     }
   }
   return ink;
+}
+
+function canvasColorCount(frame) {
+  const colors = new Set();
+  for (let y = 0; y < 300; ++y) {
+    for (let x = 0; x < 260; ++x) {
+      const offset = (y * frame.width + x) * 3;
+      colors.add(`${frame.rgb[offset]},${frame.rgb[offset + 1]},${frame.rgb[offset + 2]}`);
+    }
+  }
+  return colors.size;
 }
 
 function pushList(emu, width, height) {

@@ -36,12 +36,15 @@ class ImportApplicationFixture {
       : records(record_capacity),
         samples(sample_capacity),
         stroke_samples(128U),
+        staged_stroke_samples(sample_capacity),
+        staged_stroke_appends(record_capacity),
         import_records(import_record_capacity),
         import_samples(import_sample_capacity),
         demo_samples(64U),
         canvas(vector_v2::kOverviewPixels),
         working(vector_v2::kOverviewPixels),
         frame(vector_v2::kOverviewPixels),
+        live(vector_v2::kOverviewPixels),
         overview(vector_v2::kOverviewPixels),
         working_overview(vector_v2::kOverviewPixels),
         chrome_cache(vector_v2::kChromeStagingCachePixels),
@@ -56,15 +59,24 @@ class ImportApplicationFixture {
         producer_words(vector_v2::kTileProducerSummaryWords),
         producer_plans(vector_v2::kOperationChordStorageBytes),
         producer_candidates(record_capacity),
+        settle_operation_alpha(vector_v2::kTilePixels),
+        settle_accumulated_alpha(vector_v2::kTilePixels),
+        settle_red(vector_v2::kTilePixels),
+        settle_green(vector_v2::kTilePixels),
+        settle_blue(vector_v2::kTilePixels),
+        settle_pixels(vector_v2::kTilePixels),
         app({.records = records,
              .samples = samples,
              .stroke_samples = stroke_samples,
+             .staged_stroke_samples = staged_stroke_samples,
+             .staged_stroke_appends = staged_stroke_appends,
              .import_records = import_records,
              .import_samples = import_samples,
              .demo_samples = demo_samples,
              .canvas_pixels = canvas,
              .working_pixels = working,
              .frame_pixels = frame,
+             .live_pixels = live,
              .overview_pixels = overview,
              .working_overview_pixels = working_overview,
              .chrome_cache_pixels = chrome_cache,
@@ -78,7 +90,13 @@ class ImportApplicationFixture {
              .producer_summary_rows = producer_rows,
              .producer_summary_words = producer_words,
              .producer_chord_plans = producer_plans,
-             .producer_candidate_indices = producer_candidates}) {
+             .producer_candidate_indices = producer_candidates,
+             .settle_operation_alpha = settle_operation_alpha,
+             .settle_accumulated_alpha = settle_accumulated_alpha,
+             .settle_red = settle_red,
+             .settle_green = settle_green,
+             .settle_blue = settle_blue,
+             .settle_pixels = settle_pixels}) {
     REQUIRE(app.ready());
   }
 
@@ -109,12 +127,15 @@ class ImportApplicationFixture {
   std::vector<vector_v2::OperationRecord> records;
   std::vector<vector_v2::CompactOperationSample> samples;
   std::vector<vector_v2::CompactOperationSample> stroke_samples;
+  std::vector<vector_v2::CompactOperationSample> staged_stroke_samples;
+  std::vector<vector_v2::OperationAppend> staged_stroke_appends;
   std::vector<vector_v2::OperationRecord> import_records;
   std::vector<vector_v2::CompactOperationSample> import_samples;
   std::vector<vector_v2::DemoSample> demo_samples;
   std::vector<std::uint16_t> canvas;
   std::vector<std::uint16_t> working;
   std::vector<std::uint16_t> frame;
+  std::vector<std::uint16_t> live;
   std::vector<std::uint16_t> overview;
   std::vector<std::uint16_t> working_overview;
   std::vector<std::uint16_t> chrome_cache;
@@ -129,6 +150,12 @@ class ImportApplicationFixture {
   std::vector<std::uint32_t> producer_words;
   std::vector<std::byte> producer_plans;
   std::vector<std::uint16_t> producer_candidates;
+  std::vector<std::uint8_t> settle_operation_alpha;
+  std::vector<std::uint8_t> settle_accumulated_alpha;
+  std::vector<std::uint16_t> settle_red;
+  std::vector<std::uint16_t> settle_green;
+  std::vector<std::uint16_t> settle_blue;
+  std::vector<std::uint16_t> settle_pixels;
   vector_v2::Application app;
 };
 
@@ -182,7 +209,7 @@ TEST_CASE("Application imports the owner TDOC exactly and rebuilds in bounded wo
   CHECK(advance.error == vector_v2::ApplicationError::kNone);
   CHECK(advance.wants_immediate_advance);
   CHECK_FALSE(advance.frame_changed);
-  for (std::uint32_t tick = 1U; tick < 256U && fixture.app.status().background_pending; ++tick) {
+  for (std::uint32_t tick = 1U; tick < 8'192U && fixture.app.status().background_pending; ++tick) {
     advance = fixture.app.advance(220'000U + tick * 10'000U, {}, 1U);
     CHECK(advance.error == vector_v2::ApplicationError::kNone);
   }

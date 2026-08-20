@@ -9,7 +9,8 @@ is refined in bounded background work.
 ## Interactions
 
 - Drag on the canvas to draw one uninterrupted Stroke. (intent: ink follows the finger and one
-  finger-down/up gesture remains one Undo and Redo unit.)
+  finger-down/up gesture remains one Undo and Redo unit; the Puck target supports 4,096 logical
+  Down/Move/Up points in one active Stroke.)
 - Tap Undo or Redo in the bottom toolbar to move one Stroke through history. (intent: history is
   immediate and preserves Stroke identity.)
 - Tap the document control, choose New, and confirm to clear drawing authority. (intent: destructive

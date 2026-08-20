@@ -41,7 +41,175 @@ struct SettleRig {
   }
 };
 
+std::vector<std::uint16_t> settle(SettleRig& rig, vector_v2::PixelRect bounds) {
+  const std::size_t width = static_cast<std::size_t>(bounds.x1 - bounds.x0);
+  const std::size_t height = static_cast<std::size_t>(bounds.y1 - bounds.y0);
+  std::vector<std::uint16_t> pixels(width * height);
+  const bool rendered = vector_v2::render_settled_window(rig.log, vector_v2::ZoomLevel::k100Percent,
+                                                         bounds, rig.workspace(), pixels);
+  REQUIRE(rendered);
+  return pixels;
+}
+
 }  // namespace
+
+TEST_CASE("settled rendering unions sharp-corner chunks as one logical Stroke") {
+  SettleRig contiguous;
+  SettleRig chunked;
+  const std::array stroke{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 8U * 16U, .y_quarter = 48U * 16U, .radius_256 = 2U * 256U + 73U},
+      vector_v2::CompactOperationSample{.x_quarter = 28U * 16U,
+                                        .y_quarter = 48U * 16U,
+                                        .radius_256 = 2U * 256U + 73U,
+                                        .elapsed_ms = 8U},
+      vector_v2::CompactOperationSample{.x_quarter = 32U * 16U,
+                                        .y_quarter = 44U * 16U,
+                                        .radius_256 = 2U * 256U + 73U,
+                                        .elapsed_ms = 16U},
+      vector_v2::CompactOperationSample{.x_quarter = 32U * 16U,
+                                        .y_quarter = 24U * 16U,
+                                        .radius_256 = 2U * 256U + 73U,
+                                        .elapsed_ms = 24U},
+      vector_v2::CompactOperationSample{.x_quarter = 32U * 16U,
+                                        .y_quarter = 8U * 16U,
+                                        .radius_256 = 2U * 256U + 73U,
+                                        .elapsed_ms = 32U},
+  };
+  const std::array first{stroke[0], stroke[1], stroke[2]};
+  std::array second{stroke[2], stroke[3], stroke[4]};
+  second[0].elapsed_ms = 0U;
+  second[1].elapsed_ms = 8U;
+  second[2].elapsed_ms = 16U;
+  REQUIRE(contiguous.log.append({.color = 0x001FU, .gesture_id = 17U, .samples = stroke}));
+  REQUIRE(chunked.log.append({.color = 0x001FU, .gesture_id = 17U, .samples = first}));
+  REQUIRE(chunked.log.append({.color = 0x001FU, .gesture_id = 17U, .samples = second}));
+
+  const vector_v2::PixelRect bounds{0, 0, vector_v2::kTileWidth, vector_v2::kTileHeight};
+  const auto expected = settle(contiguous, bounds);
+  const auto actual = settle(chunked, bounds);
+  CHECK(std::equal(actual.begin(), actual.end(), expected.begin(), expected.end()));
+
+  constexpr std::size_t kBudget = 17U;
+  std::vector<std::uint16_t> sliced(vector_v2::kTilePixels);
+  vector_v2::SettledRenderCursor cursor;
+  std::size_t maximum_work = 0U;
+  do {
+    const auto slice =
+        vector_v2::render_settled_window_slice({.log = chunked.log,
+                                                .zoom = vector_v2::ZoomLevel::k100Percent,
+                                                .window_bounds = bounds,
+                                                .workspace = chunked.workspace(),
+                                                .out_pixels = sliced,
+                                                .cursor = cursor,
+                                                .max_work_px = kBudget});
+    REQUIRE(slice.status != vector_v2::SettledRenderStatus::kError);
+    maximum_work = std::max(maximum_work, slice.work_px);
+  } while (cursor.active());
+  CHECK(maximum_work <= kBudget + vector_v2::kTileWidth - 1U);
+  CHECK(std::equal(sliced.begin(), sliced.end(), expected.begin(), expected.end()));
+}
+
+TEST_CASE("settled rendering unions eraser chunks before compositing paper") {
+  SettleRig contiguous;
+  SettleRig chunked;
+  const std::array ink{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 4U * 16U, .y_quarter = 32U * 16U, .radius_256 = 10U * 256U},
+      vector_v2::CompactOperationSample{.x_quarter = 60U * 16U,
+                                        .y_quarter = 32U * 16U,
+                                        .radius_256 = 10U * 256U,
+                                        .elapsed_ms = 8U},
+  };
+  const std::array erase{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 12U * 16U, .y_quarter = 40U * 16U, .radius_256 = 3U * 256U + 91U},
+      vector_v2::CompactOperationSample{.x_quarter = 24U * 16U,
+                                        .y_quarter = 40U * 16U,
+                                        .radius_256 = 3U * 256U + 91U,
+                                        .elapsed_ms = 8U},
+      vector_v2::CompactOperationSample{.x_quarter = 32U * 16U,
+                                        .y_quarter = 36U * 16U,
+                                        .radius_256 = 3U * 256U + 91U,
+                                        .elapsed_ms = 16U},
+      vector_v2::CompactOperationSample{.x_quarter = 40U * 16U,
+                                        .y_quarter = 24U * 16U,
+                                        .radius_256 = 3U * 256U + 91U,
+                                        .elapsed_ms = 24U},
+      vector_v2::CompactOperationSample{.x_quarter = 52U * 16U,
+                                        .y_quarter = 20U * 16U,
+                                        .radius_256 = 3U * 256U + 91U,
+                                        .elapsed_ms = 32U},
+  };
+  const std::array first{erase[0], erase[1], erase[2]};
+  std::array second{erase[2], erase[3], erase[4]};
+  second[0].elapsed_ms = 0U;
+  second[1].elapsed_ms = 8U;
+  second[2].elapsed_ms = 16U;
+  REQUIRE(contiguous.log.append({.color = 0x0000U, .gesture_id = 1U, .samples = ink}));
+  REQUIRE(chunked.log.append({.color = 0x0000U, .gesture_id = 1U, .samples = ink}));
+  REQUIRE(contiguous.log.append({.tool = vector_v2::OperationTool::kEraser,
+                                 .color = 0xFFFFU,
+                                 .gesture_id = 23U,
+                                 .samples = erase}));
+  REQUIRE(chunked.log.append({.tool = vector_v2::OperationTool::kEraser,
+                              .color = 0xFFFFU,
+                              .gesture_id = 23U,
+                              .samples = first}));
+  REQUIRE(chunked.log.append({.tool = vector_v2::OperationTool::kEraser,
+                              .color = 0xFFFFU,
+                              .gesture_id = 23U,
+                              .samples = second}));
+
+  const vector_v2::PixelRect bounds{0, 0, vector_v2::kTileWidth, vector_v2::kTileHeight};
+  const auto expected = settle(contiguous, bounds);
+  const auto actual = settle(chunked, bounds);
+  CHECK(std::equal(actual.begin(), actual.end(), expected.begin(), expected.end()));
+}
+
+TEST_CASE("settled logical Stroke stays exact across clipped window boundaries") {
+  SettleRig contiguous;
+  SettleRig chunked;
+  const std::array stroke{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 48U * 16U, .y_quarter = 92U * 16U, .radius_256 = 2U * 256U + 37U},
+      vector_v2::CompactOperationSample{.x_quarter = 58U * 16U,
+                                        .y_quarter = 84U * 16U,
+                                        .radius_256 = 2U * 256U + 37U,
+                                        .elapsed_ms = 8U},
+      vector_v2::CompactOperationSample{.x_quarter = 64U * 16U,
+                                        .y_quarter = 72U * 16U,
+                                        .radius_256 = 2U * 256U + 37U,
+                                        .elapsed_ms = 16U},
+      vector_v2::CompactOperationSample{.x_quarter = 72U * 16U,
+                                        .y_quarter = 64U * 16U,
+                                        .radius_256 = 2U * 256U + 37U,
+                                        .elapsed_ms = 24U},
+      vector_v2::CompactOperationSample{.x_quarter = 84U * 16U,
+                                        .y_quarter = 58U * 16U,
+                                        .radius_256 = 2U * 256U + 37U,
+                                        .elapsed_ms = 32U},
+      vector_v2::CompactOperationSample{.x_quarter = 96U * 16U,
+                                        .y_quarter = 48U * 16U,
+                                        .radius_256 = 2U * 256U + 37U,
+                                        .elapsed_ms = 40U},
+  };
+  const std::array first{stroke[0], stroke[1], stroke[2], stroke[3]};
+  std::array second{stroke[3], stroke[4], stroke[5]};
+  second[0].elapsed_ms = 0U;
+  second[1].elapsed_ms = 8U;
+  second[2].elapsed_ms = 16U;
+  REQUIRE(contiguous.log.append({.color = 0xF800U, .gesture_id = 29U, .samples = stroke}));
+  REQUIRE(chunked.log.append({.color = 0xF800U, .gesture_id = 29U, .samples = first}));
+  REQUIRE(chunked.log.append({.color = 0xF800U, .gesture_id = 29U, .samples = second}));
+
+  for (const vector_v2::PixelRect bounds :
+       std::array{vector_v2::PixelRect{0, 64, 64, 128}, vector_v2::PixelRect{64, 64, 128, 128}}) {
+    const auto expected = settle(contiguous, bounds);
+    const auto actual = settle(chunked, bounds);
+    CHECK(std::equal(actual.begin(), actual.end(), expected.begin(), expected.end()));
+  }
+}
 
 TEST_CASE("settled rendering resumes in bounded slices with exact pixels and stats") {
   SettleRig rig;

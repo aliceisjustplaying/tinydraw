@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -14,14 +15,15 @@
 #include "tinydraw/vector_v2/incremental_document.h"
 #include "tinydraw/vector_v2/incremental_rasterizer.h"
 #include "tinydraw/vector_v2/operation_log.h"
+#include "tinydraw/vector_v2/settled_tile.h"
 
 namespace tinydraw::vector_v2 {
 namespace {
 
 constexpr std::uint16_t kPaper = 0xFFFFU;
-constexpr std::size_t kInteractiveChunkSampleLimit = 32U;
 constexpr std::size_t kOperationsPerWorkQuantum = 32U;
 constexpr std::size_t kCompositionSlicesPerWorkQuantum = 8U;
+constexpr std::size_t kSettleWorkPixelsPerQuantum = 512U;
 constexpr std::size_t kImportHeaderBytes = 12U;
 constexpr std::size_t kImportOperationHeaderBytes = 5U;
 constexpr std::size_t kImportSampleBytes = sizeof(CompactOperationSample);
@@ -52,12 +54,15 @@ bool disjoint_storage(const ApplicationStorage& storage) {
       bytes_of(storage.records),
       bytes_of(storage.samples),
       bytes_of(storage.stroke_samples),
+      bytes_of(storage.staged_stroke_samples),
+      bytes_of(storage.staged_stroke_appends),
       bytes_of(storage.import_records),
       bytes_of(storage.import_samples),
       bytes_of(storage.demo_samples),
       bytes_of(storage.canvas_pixels),
       bytes_of(storage.working_pixels),
       bytes_of(storage.frame_pixels),
+      bytes_of(storage.live_pixels),
       bytes_of(storage.overview_pixels),
       bytes_of(storage.working_overview_pixels),
       bytes_of(storage.chrome_cache_pixels),
@@ -72,6 +77,12 @@ bool disjoint_storage(const ApplicationStorage& storage) {
       bytes_of(storage.producer_summary_words),
       bytes_of(storage.producer_chord_plans),
       bytes_of(storage.producer_candidate_indices),
+      bytes_of(storage.settle_operation_alpha),
+      bytes_of(storage.settle_accumulated_alpha),
+      bytes_of(storage.settle_red),
+      bytes_of(storage.settle_green),
+      bytes_of(storage.settle_blue),
+      bytes_of(storage.settle_pixels),
       bytes_of(storage.rerender_ledger_entries),
   };
   for (std::size_t first = 0U; first < ranges.size(); ++first) {
@@ -100,7 +111,17 @@ bool has_production_storage(const ApplicationStorage& storage) {
          !storage.materialized_raw_slot_directory.empty() ||
          !storage.producer_supertask_pixels.empty() || !storage.producer_finalized_pixels.empty() ||
          !storage.producer_summary_rows.empty() || !storage.producer_summary_words.empty() ||
-         !storage.producer_chord_plans.empty() || !storage.producer_candidate_indices.empty();
+         !storage.producer_chord_plans.empty() || !storage.producer_candidate_indices.empty() ||
+         !storage.settle_operation_alpha.empty() || !storage.settle_accumulated_alpha.empty() ||
+         !storage.settle_red.empty() || !storage.settle_green.empty() ||
+         !storage.settle_blue.empty() || !storage.settle_pixels.empty();
+}
+
+bool valid_settle_storage(const ApplicationStorage& storage) {
+  return storage.settle_operation_alpha.size() >= kTilePixels &&
+         storage.settle_accumulated_alpha.size() >= kTilePixels &&
+         storage.settle_red.size() >= kTilePixels && storage.settle_green.size() >= kTilePixels &&
+         storage.settle_blue.size() >= kTilePixels && storage.settle_pixels.size() >= kTilePixels;
 }
 
 void mark_may_ink(PixelRect bounds, std::span<std::uint8_t> occupancy) {
@@ -228,28 +249,37 @@ class Application::Impl {
         canvas_(storage.canvas_pixels),
         working_(storage.working_pixels),
         frame_(storage.frame_pixels),
+        live_(storage.live_pixels),
         overview_(storage.overview_pixels),
         working_overview_(storage.working_overview_pixels),
         log_(storage.records, storage.samples),
         demo_(storage.demo_samples),
-        preview_storage_(std::min(storage.stroke_samples.size(), kInteractiveChunkSampleLimit)),
+        preview_storage_(
+            std::min(storage.stroke_samples.size(), kApplicationStrokeChunkSampleLimit)),
         builder_(storage.stroke_samples,
-                 std::min(storage.stroke_samples.size(), kInteractiveChunkSampleLimit)),
+                 std::min(storage.stroke_samples.size(), kApplicationStrokeChunkSampleLimit)),
         preview_builder_(preview_storage_),
         chrome_cache_(storage.chrome_cache_pixels) {
     ready_ = !storage.records.empty() && !storage.samples.empty() &&
-             !storage.stroke_samples.empty() && valid_pixels(canvas_) && valid_pixels(working_) &&
-             valid_pixels(frame_) && valid_pixels(overview_) && valid_pixels(working_overview_) &&
-             log_.ready() && builder_.ready() && preview_builder_.ready() &&
-             chrome_cache_.ready() && disjoint_storage(storage);
+             !storage.stroke_samples.empty() && !storage.staged_stroke_samples.empty() &&
+             !storage.staged_stroke_appends.empty() && valid_pixels(canvas_) &&
+             valid_pixels(working_) && valid_pixels(frame_) && valid_pixels(overview_) &&
+             valid_pixels(live_) && valid_pixels(working_overview_) && log_.ready() &&
+             builder_.ready() && preview_builder_.ready() && chrome_cache_.ready() &&
+             disjoint_storage(storage);
     if (!ready_) {
       return;
     }
     std::fill(canvas_.begin(), canvas_.end(), kPaper);
     std::fill(working_.begin(), working_.end(), kPaper);
+    std::fill(live_.begin(), live_.end(), kPaper);
     std::fill(overview_.begin(), overview_.end(), kPaper);
     std::fill(working_overview_.begin(), working_overview_.end(), kPaper);
     if (has_production_storage(storage_)) {
+      if (!valid_settle_storage(storage_)) {
+        ready_ = false;
+        return;
+      }
       materialized_ = std::make_unique<MaterializedCanvas>(MaterializedCanvasStorage{
           .overview_pixels = overview_,
           .uniform_catalog = storage_.materialized_uniforms,
@@ -294,6 +324,7 @@ class Application::Impl {
     chrome_.tool = ChromeTool::kDraw;
     chrome_.size = ChromeSize::kLarge;
     chrome_.color_index = 12U;
+    canvas_view_ = navigation_.view();
     sync_history();
     ready_ = publish_frame();
   }
@@ -413,6 +444,14 @@ class Application::Impl {
     kError,
   };
 
+  struct SettleRender {
+    SettledRenderCursor cursor{};
+    TileKey key{};
+    PixelRect level_bounds{};
+    bool overview = false;
+    bool active = false;
+  };
+
   static void record_first_error(ApplicationError error, ApplicationAdvanceResult& result) {
     if (result.error == ApplicationError::kNone && error != ApplicationError::kNone) {
       result.error = error;
@@ -458,12 +497,210 @@ class Application::Impl {
     }
   }
 
+  void cancel_settle() {
+    settle_render_.cursor.cancel();
+    settle_render_ = {};
+    settle_cursor_ = 0U;
+    settle_pending_ = false;
+    settle_final_compose_ = false;
+    settle_changed_ = false;
+  }
+
+  [[nodiscard]] std::size_t settle_column_count() const {
+    if (settle_view_.zoom == ZoomLevel::k25Percent) {
+      return (static_cast<std::size_t>(kOverviewWidth) + kTileWidth - 1U) / kTileWidth;
+    }
+    const int first = settle_view_.level_pixels.x0 / static_cast<int>(kTileWidth);
+    const int last = (settle_view_.level_pixels.x1 - 1) / static_cast<int>(kTileWidth);
+    return static_cast<std::size_t>(last) - static_cast<std::size_t>(first) + 1U;
+  }
+
+  [[nodiscard]] std::size_t settle_row_count() const {
+    if (settle_view_.zoom == ZoomLevel::k25Percent) {
+      return (static_cast<std::size_t>(kOverviewHeight) + kTileHeight - 1U) / kTileHeight;
+    }
+    const int first = settle_view_.level_pixels.y0 / static_cast<int>(kTileHeight);
+    const int last = (settle_view_.level_pixels.y1 - 1) / static_cast<int>(kTileHeight);
+    return static_cast<std::size_t>(last) - static_cast<std::size_t>(first) + 1U;
+  }
+
+  void begin_settle() {
+    cancel_settle();
+    if (materialized_ == nullptr || log_.operation_count() == 0U) {
+      maintenance_pending_ = false;
+      return;
+    }
+    settle_authority_ = log_.read_view();
+    settle_view_ = navigation_.view();
+    if (settle_view_.zoom == ZoomLevel::k25Percent) {
+      std::copy(canvas_.begin(), canvas_.end(), working_.begin());
+    }
+    settle_pending_ = true;
+    maintenance_pending_ = true;
+  }
+
+  [[nodiscard]] bool prepare_settle_window() {
+    const std::size_t columns = settle_column_count();
+    const std::size_t rows = settle_row_count();
+    const std::size_t total = columns * rows;
+    while (settle_cursor_ < total) {
+      const int column = static_cast<int>(settle_cursor_ % columns);
+      const int row = static_cast<int>(settle_cursor_ / columns);
+      settle_render_.overview = settle_view_.zoom == ZoomLevel::k25Percent;
+      if (settle_render_.overview) {
+        settle_render_.level_bounds = {
+            column * static_cast<int>(kTileWidth), row * static_cast<int>(kTileHeight),
+            std::min((column + 1) * static_cast<int>(kTileWidth), kOverviewWidth),
+            std::min((row + 1) * static_cast<int>(kTileHeight), kOverviewHeight)};
+      } else {
+        const int first_column = settle_view_.level_pixels.x0 / static_cast<int>(kTileWidth);
+        const int first_row = settle_view_.level_pixels.y0 / static_cast<int>(kTileHeight);
+        settle_render_.key = {settle_view_.zoom, static_cast<std::uint16_t>(first_column + column),
+                              static_cast<std::uint16_t>(first_row + row)};
+        const auto source = materialized_->lookup(settle_render_.key);
+        if (!source.has_value() || source->kind != SourceKind::kTileSlot ||
+            source->quality >= MaterializationQuality::kSettled) {
+          ++settle_cursor_;
+          continue;
+        }
+        settle_render_.level_bounds = tile_pixel_bounds(settle_render_.key);
+      }
+      settle_render_.cursor.cancel();
+      settle_render_.active = true;
+      return true;
+    }
+    return false;
+  }
+
+  void stage_settled_overview_window(PixelRect bounds, std::span<const std::uint16_t> pixels) {
+    const int source_width = bounds.x1 - bounds.x0;
+    const std::size_t source_stride = static_cast<std::size_t>(source_width);
+    for (int row = bounds.y0; row < bounds.y1; ++row) {
+      const std::size_t source_at = static_cast<std::size_t>(row - bounds.y0) * source_stride;
+      const std::size_t destination_at =
+          static_cast<std::size_t>(row) * kOverviewWidth + static_cast<std::size_t>(bounds.x0);
+      std::copy_n(pixels.begin() + static_cast<std::ptrdiff_t>(source_at), source_width,
+                  working_.begin() + static_cast<std::ptrdiff_t>(destination_at));
+    }
+  }
+
+  [[nodiscard]] bool settled_overview_window_changes(PixelRect bounds,
+                                                     std::span<const std::uint16_t> pixels) const {
+    const int width = bounds.x1 - bounds.x0;
+    const std::size_t source_stride = static_cast<std::size_t>(width);
+    for (int row = bounds.y0; row < bounds.y1; ++row) {
+      const std::size_t source_at = static_cast<std::size_t>(row - bounds.y0) * source_stride;
+      const std::size_t destination_at =
+          static_cast<std::size_t>(row) * kOverviewWidth + static_cast<std::size_t>(bounds.x0);
+      if (!std::equal(pixels.begin() + static_cast<std::ptrdiff_t>(source_at),
+                      pixels.begin() + static_cast<std::ptrdiff_t>(source_at + source_stride),
+                      working_.begin() + static_cast<std::ptrdiff_t>(destination_at))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  [[nodiscard]] bool publish_settle_window(bool no_ink) {
+    if (no_ink) {
+      return true;
+    }
+    const PixelRect bounds = settle_render_.level_bounds;
+    if (settle_render_.overview) {
+      if (!settled_overview_window_changes(bounds, storage_.settle_pixels)) {
+        return true;
+      }
+      stage_settled_overview_window(bounds, storage_.settle_pixels);
+    } else if (!materialized_
+                    ->publish_tile(settle_render_.key, materialized_->current_revision(),
+                                   MaterializationQuality::kSettled, storage_.settle_pixels)
+                    .has_value()) {
+      return false;
+    }
+    settle_changed_ = true;
+    return true;
+  }
+
+  void finish_settle() {
+    cancel_settle();
+    maintenance_pending_ = false;
+  }
+
+  [[nodiscard]] bool run_settle_quantum() {
+    if (!settle_pending_) {
+      return true;
+    }
+    if (log_.read_view() != settle_authority_ || navigation_.view() != settle_view_ ||
+        materialized_->current_revision() != log_.current_revision()) {
+      finish_settle();
+      return true;
+    }
+    if (settle_final_compose_) {
+      const ComposeProgress progress = compose_production_view();
+      if (progress == ComposeProgress::kError) {
+        return false;
+      }
+      if (progress == ComposeProgress::kComplete) {
+        finish_settle();
+      }
+      return true;
+    }
+    if (!settle_render_.active && !prepare_settle_window()) {
+      if (!settle_changed_) {
+        finish_settle();
+        return true;
+      }
+      if (settle_view_.zoom == ZoomLevel::k25Percent) {
+        std::swap(canvas_, working_);
+        ++canvas_epoch_;
+        canvas_view_ = settle_view_;
+        mark_frame_dirty();
+        finish_settle();
+      } else {
+        composition_.cancel();
+        settle_final_compose_ = true;
+      }
+      return true;
+    }
+    const SettledRenderSlice slice = render_settled_window_slice(
+        {.log = log_,
+         .zoom = settle_view_.zoom,
+         .window_bounds = settle_render_.level_bounds,
+         .workspace = {.operation_alpha = storage_.settle_operation_alpha,
+                       .accumulated_alpha = storage_.settle_accumulated_alpha,
+                       .red = storage_.settle_red,
+                       .green = storage_.settle_green,
+                       .blue = storage_.settle_blue,
+                       .candidate_indices = storage_.producer_candidate_indices},
+         .out_pixels = storage_.settle_pixels,
+         .cursor = settle_render_.cursor,
+         .max_work_px = kSettleWorkPixelsPerQuantum});
+    if (slice.status == SettledRenderStatus::kError) {
+      return false;
+    }
+    if (slice.status == SettledRenderStatus::kComplete) {
+      if (!publish_settle_window(slice.no_ink)) {
+        return false;
+      }
+      settle_render_.cursor.cancel();
+      settle_render_.active = false;
+      ++settle_cursor_;
+    }
+    return true;
+  }
+
   void run_maintenance_work(std::size_t& work_quanta, ApplicationAdvanceResult& result) {
     while (work_quanta > 0U && maintenance_pending_) {
+      if (settle_pending_ && (interaction_ != Interaction::kIdle ||
+                              chrome_.popup != ChromePopup::kNone || chrome_.confirm_new)) {
+        break;
+      }
       --work_quanta;
-      if (!run_idle_repair_quantum()) {
+      const bool advanced = settle_pending_ ? run_settle_quantum() : run_idle_repair_quantum();
+      if (!advanced) {
         result.error = ApplicationError::kRenderFailed;
         maintenance_pending_ = false;
+        cancel_settle();
       }
     }
   }
@@ -475,6 +712,9 @@ class Application::Impl {
 
   void publish_advance_frame(ApplicationAdvanceResult& result) {
     if (!frame_dirty_) {
+      return;
+    }
+    if (canvas_view_ != navigation_.view()) {
       return;
     }
     if (!publish_frame()) {
@@ -595,6 +835,7 @@ class Application::Impl {
     interaction_ = Interaction::kIdle;
     builder_.cancel();
     preview_builder_.cancel();
+    clear_staged_stroke();
     cancel_rebuild();
     demo_.begin_recording(0U);
     demo_.stop_recording();
@@ -681,18 +922,50 @@ class Application::Impl {
     return apply_incremental_operation(operation.operation(), surface);
   }
 
+  [[nodiscard]] static bool render_operation(const OperationAppend& operation,
+                                             const RasterSurface& surface) {
+    return apply_incremental_operation(operation, surface);
+  }
+
+  [[nodiscard]] bool render_staged_stroke(const RasterSurface& surface) const {
+    const auto appends = storage_.staged_stroke_appends.first(staged_stroke_count_);
+    return std::all_of(appends.begin(), appends.end(), [&](const OperationAppend& operation) {
+      return render_operation(operation, surface);
+    });
+  }
+
+  [[nodiscard]] bool live_canvas_current() const {
+    return live_canvas_epoch_ == canvas_epoch_ && live_view_ == canvas_view_;
+  }
+
+  [[nodiscard]] bool rebase_live_canvas() {
+    std::copy(canvas_.begin(), canvas_.end(), live_.begin());
+    if (!render_staged_stroke(view_surface(live_))) {
+      return false;
+    }
+    live_canvas_epoch_ = canvas_epoch_;
+    live_view_ = canvas_view_;
+    return true;
+  }
+
   void sync_history() {
     chrome_.can_undo = log_.can_undo();
     chrome_.can_redo = log_.can_redo();
   }
 
   [[nodiscard]] bool publish_frame() {
-    std::copy(canvas_.begin(), canvas_.end(), frame_.begin());
     if (interaction_ == Interaction::kStroke) {
-      const auto live = preview_builder_.collected();
-      if (live.has_value() && !render_operation(*live, view_surface(frame_))) {
+      if (!live_canvas_current() && !rebase_live_canvas()) {
         return false;
       }
+      std::copy(live_.begin(), live_.end(), frame_.begin());
+      const auto live = preview_builder_.collected();
+      const RasterSurface surface = view_surface(frame_);
+      if (live.has_value() && !render_operation(*live, surface)) {
+        return false;
+      }
+    } else {
+      std::copy(canvas_.begin(), canvas_.end(), frame_.begin());
     }
     const ChromeNavigation navigation = chrome_navigation(navigation_, overview_);
     const std::uint32_t revision = log_.current_revision().value;
@@ -715,6 +988,7 @@ class Application::Impl {
 
   void start_rebuild() {
     if (materialized_ != nullptr) {
+      cancel_settle();
       composition_.cancel();
       producer_->cancel_pending_work();
       rebuild_authority_ = log_.read_view();
@@ -738,6 +1012,7 @@ class Application::Impl {
   }
 
   void cancel_rebuild() {
+    cancel_settle();
     composition_.cancel();
     if (producer_ != nullptr) {
       producer_->cancel_pending_work();
@@ -749,6 +1024,8 @@ class Application::Impl {
 
   void finish_rebuild() {
     std::swap(canvas_, working_);
+    ++canvas_epoch_;
+    canvas_view_ = rebuild_view_;
     std::swap(overview_, working_overview_);
     rebuild_pending_ = false;
     rebuild_cursor_ = 0U;
@@ -792,6 +1069,8 @@ class Application::Impl {
         last_composition_ = result.stats;
         composition_.cancel();
         std::swap(canvas_, working_);
+        ++canvas_epoch_;
+        canvas_view_ = rebuild_view_;
         mark_frame_dirty();
         return ComposeProgress::kComplete;
       }
@@ -806,7 +1085,7 @@ class Application::Impl {
     }
     if (progress == ComposeProgress::kComplete) {
       if (rebuild_view_.zoom == ZoomLevel::k25Percent) {
-        finish_production_rebuild();
+        begin_idle_repair();
       } else {
         rebuild_phase_ = RebuildPhase::kProduce;
       }
@@ -864,6 +1143,9 @@ class Application::Impl {
     idle_repair_cursor_ = 0U;
     maintenance_pending_ = idle_repair_.count != 0U;
     finish_production_rebuild();
+    if (!maintenance_pending_) {
+      begin_settle();
+    }
   }
 
   [[nodiscard]] bool run_idle_repair_quantum() {
@@ -879,7 +1161,7 @@ class Application::Impl {
     if (idle_repair_cursor_ >= idle_repair_.count ||
         (idle_repair_cursor_ >= idle_repair_.grid_start &&
          materialized_->resident_raw_tiles() >= materialized_->slot_capacity())) {
-      maintenance_pending_ = false;
+      begin_settle();
       return true;
     }
     const auto step = producer_->produce_next(idle_repair_.views[idle_repair_cursor_]);
@@ -978,6 +1260,7 @@ class Application::Impl {
     interaction_ = Interaction::kIdle;
     builder_.cancel();
     preview_builder_.cancel();
+    clear_staged_stroke();
     cancel_rebuild();
     if (!reset_authority_blank({log_.current_revision().value + 1U})) {
       return ApplicationError::kAuthorityFull;
@@ -1149,6 +1432,7 @@ class Application::Impl {
         chrome_.tool == ChromeTool::kErase ? OperationTool::kEraser : OperationTool::kPen;
     const std::uint16_t color = tool == OperationTool::kEraser ? kPaper : selected_color(chrome_);
     const OperationPoint first = operation_point(ink);
+    clear_staged_stroke();
     if (!builder_.begin(tool, color, next_gesture_, first) ||
         !preview_builder_.begin(tool, color, first, next_gesture_)) {
       ink_.end();
@@ -1156,6 +1440,9 @@ class Application::Impl {
       preview_builder_.cancel();
       return ApplicationError::kAuthorityFull;
     }
+    std::copy(canvas_.begin(), canvas_.end(), live_.begin());
+    live_canvas_epoch_ = canvas_epoch_;
+    live_view_ = canvas_view_;
     interaction_ = Interaction::kStroke;
     stroke_start_ = point;
     last_canvas_touch_ = point;
@@ -1167,13 +1454,62 @@ class Application::Impl {
     return ApplicationError::kNone;
   }
 
-  [[nodiscard]] std::optional<ChainedOperationStatus> commit_pending_chunk() {
+  void clear_staged_stroke() {
+    std::fill_n(storage_.staged_stroke_appends.begin(), staged_stroke_count_, OperationAppend{});
+    staged_stroke_count_ = 0U;
+    staged_stroke_sample_count_ = 0U;
+  }
+
+  [[nodiscard]] std::optional<ChainedOperationStatus> stage_pending_chunk() {
     const auto built = builder_.pending_append();
-    if (!built.has_value() || !log_.append(*built).has_value()) {
+    if (!built.has_value() || staged_stroke_count_ == storage_.staged_stroke_appends.size() ||
+        built->operation().samples.size() >
+            storage_.staged_stroke_samples.size() - staged_stroke_sample_count_) {
       return std::nullopt;
     }
-    if (materialized_ != nullptr) {
-      const PixelRect overview_bounds = overview_bounds_for_world(built->world_bounds());
+    const bool update_live = canvas_view_ == navigation_.view();
+    if (update_live && !live_canvas_current() && !rebase_live_canvas()) {
+      return std::nullopt;
+    }
+    auto destination = storage_.staged_stroke_samples.subspan(staged_stroke_sample_count_,
+                                                              built->operation().samples.size());
+    std::copy(built->operation().samples.begin(), built->operation().samples.end(),
+              destination.begin());
+    const OperationAppend staged{
+        .tool = built->operation().tool,
+        .color = built->operation().color,
+        .gesture_id = built->operation().gesture_id,
+        .samples = destination,
+    };
+    if (update_live && !render_operation(staged, view_surface(live_))) {
+      return std::nullopt;
+    }
+    storage_.staged_stroke_appends[staged_stroke_count_] = staged;
+    staged_stroke_sample_count_ += destination.size();
+    ++staged_stroke_count_;
+    return builder_.acknowledge_commit();
+  }
+
+  void recover_materialization_from_authority() {
+    const bool recovered =
+        replay_active_overview(log_, working_overview_) &&
+        materialized_->restore_snapshot(log_.current_revision(), working_overview_);
+    assert(recovered);
+    static_cast<void>(recovered);
+  }
+
+  void commit_staged_materialization(DocumentRevision initial_revision) {
+    const bool can_adopt_live =
+        !rebuild_pending_ && live_canvas_current() && canvas_view_ == navigation_.view();
+    for (std::size_t index = 0U; index < staged_stroke_count_; ++index) {
+      const OperationAppend& operation = storage_.staged_stroke_appends[index];
+      const auto world_bounds = operation_world_bounds(operation.samples);
+      if (!world_bounds.has_value()) {
+        recover_materialization_from_authority();
+        start_rebuild();
+        return;
+      }
+      const PixelRect overview_bounds = overview_bounds_for_world(*world_bounds);
       const int width = overview_bounds.x1 - overview_bounds.x0;
       const int height = overview_bounds.y1 - overview_bounds.y0;
       const std::size_t patch_width = static_cast<std::size_t>(width);
@@ -1193,27 +1529,50 @@ class Application::Impl {
           .pixels = overview_patch,
           .stride = width,
       };
-      if (!render_operation(*built, patch_surface) ||
+      const DocumentRevision revision{initial_revision.value + static_cast<std::uint32_t>(index) +
+                                      1U};
+      if (!render_operation(operation, patch_surface) ||
           !materialized_->commit_incremental_revision(
-              log_.current_revision(), {.bounds = overview_bounds, .pixels = overview_patch},
-              built->world_bounds(), {})) {
-        return std::nullopt;
+              revision, {.bounds = overview_bounds, .pixels = overview_patch}, *world_bounds, {})) {
+        recover_materialization_from_authority();
+        start_rebuild();
+        return;
       }
-      if (!rebuild_pending_ && !render_operation(*built, view_surface(canvas_))) {
-        return std::nullopt;
-      }
-      start_rebuild();
+    }
+    if (can_adopt_live) {
+      std::copy(live_.begin(), live_.end(), canvas_.begin());
+      ++canvas_epoch_;
+    }
+    start_rebuild();
+  }
+
+  [[nodiscard]] bool commit_staged_stroke() {
+    const auto appends = storage_.staged_stroke_appends.first(staged_stroke_count_);
+    if (appends.empty()) {
+      return false;
+    }
+    const DocumentRevision initial_revision = log_.current_revision();
+    if (!log_.append_group(appends).has_value()) {
+      return false;
+    }
+    if (materialized_ != nullptr) {
+      commit_staged_materialization(initial_revision);
     } else if (!rebuild_pending_) {
-      if (!render_operation(*built, view_surface(canvas_)) ||
-          !render_operation(*built, overview_surface(overview_))) {
-        return std::nullopt;
+      for (const OperationAppend& operation : appends) {
+        if (!render_operation(operation, view_surface(canvas_)) ||
+            !render_operation(operation, overview_surface(overview_))) {
+          start_rebuild();
+          break;
+        }
+        ++canvas_epoch_;
       }
     } else {
       start_rebuild();
     }
+    clear_staged_stroke();
     sync_history();
     mark_frame_dirty();
-    return builder_.acknowledge_commit();
+    return true;
   }
 
   [[nodiscard]] bool reset_preview_chunk(OperationPoint boundary, OperationPoint next) {
@@ -1234,6 +1593,7 @@ class Application::Impl {
   [[nodiscard]] ApplicationError reject_stroke_move() {
     builder_.cancel();
     preview_builder_.cancel();
+    clear_staged_stroke();
     ink_.end();
     interaction_ = Interaction::kIdle;
     mark_frame_dirty();
@@ -1243,17 +1603,25 @@ class Application::Impl {
   [[nodiscard]] ApplicationError append_stroke_move(OperationPoint next, OperationPoint boundary) {
     const ChainedOperationStatus chain_result = builder_.add(next);
     if (chain_result == ChainedOperationStatus::kAccepted) {
-      return preview_builder_.add(next) ? ApplicationError::kNone : ApplicationError::kRenderFailed;
+      if (preview_builder_.add(next)) {
+        return ApplicationError::kNone;
+      }
+      static_cast<void>(reject_stroke_move());
+      return ApplicationError::kRenderFailed;
     }
     if (chain_result != ChainedOperationStatus::kChunkReady) {
       return reject_stroke_move();
     }
-    const auto continued = commit_pending_chunk();
+    const auto continued = stage_pending_chunk();
     if (!continued.has_value() || *continued != ChainedOperationStatus::kAccepted) {
+      static_cast<void>(reject_stroke_move());
       return ApplicationError::kAuthorityFull;
     }
-    return reset_preview_chunk(boundary, next) ? ApplicationError::kNone
-                                               : ApplicationError::kRenderFailed;
+    if (reset_preview_chunk(boundary, next)) {
+      return ApplicationError::kNone;
+    }
+    static_cast<void>(reject_stroke_move());
+    return ApplicationError::kRenderFailed;
   }
 
   [[nodiscard]] ApplicationError move_stroke(ChromePoint point, std::uint32_t event_us) {
@@ -1323,11 +1691,13 @@ class Application::Impl {
       const OperationPoint boundary = last_authority_point_;
       ChainedOperationStatus chain_result = builder_.finish(final);
       if (chain_result == ChainedOperationStatus::kChunkReady) {
-        const auto continued = commit_pending_chunk();
+        const auto continued = stage_pending_chunk();
         if (!continued.has_value() || *continued != ChainedOperationStatus::kFinalChunkReady ||
             !reset_preview_chunk(boundary, final) || !preview_builder_.finish().has_value()) {
           builder_.cancel();
           preview_builder_.cancel();
+          clear_staged_stroke();
+          mark_frame_dirty();
           return ApplicationError::kAuthorityFull;
         }
         chain_result = *continued;
@@ -1335,23 +1705,31 @@ class Application::Impl {
                  !preview_builder_.finish(final).has_value()) {
         builder_.cancel();
         preview_builder_.cancel();
+        clear_staged_stroke();
+        mark_frame_dirty();
         return ApplicationError::kRenderFailed;
       }
       if (chain_result != ChainedOperationStatus::kFinalChunkReady) {
         builder_.cancel();
         preview_builder_.cancel();
+        clear_staged_stroke();
+        mark_frame_dirty();
         return ApplicationError::kInvalidEvent;
       }
-      const auto complete = commit_pending_chunk();
-      if (!complete.has_value() || *complete != ChainedOperationStatus::kComplete) {
+      const auto complete = stage_pending_chunk();
+      if (!complete.has_value() || *complete != ChainedOperationStatus::kComplete ||
+          !commit_staged_stroke()) {
         builder_.cancel();
         preview_builder_.cancel();
+        clear_staged_stroke();
+        mark_frame_dirty();
         return ApplicationError::kAuthorityFull;
       }
     } else {
       ink_.end();
       builder_.cancel();
       preview_builder_.cancel();
+      clear_staged_stroke();
       mark_frame_dirty();
       return ApplicationError::kInvalidEvent;
     }
@@ -1532,6 +1910,7 @@ class Application::Impl {
   std::span<std::uint16_t> canvas_{};
   std::span<std::uint16_t> working_{};
   std::span<std::uint16_t> frame_{};
+  std::span<std::uint16_t> live_{};
   std::span<std::uint16_t> overview_{};
   std::span<std::uint16_t> working_overview_{};
   OperationLog log_;
@@ -1542,10 +1921,16 @@ class Application::Impl {
   ViewCompositionStats last_composition_{};
   IdleRepairPlan idle_repair_{};
   std::size_t idle_repair_cursor_ = 0U;
+  SettleRender settle_render_{};
+  AuthorityReadView settle_authority_{};
+  ViewRequest settle_view_{};
+  std::size_t settle_cursor_ = 0U;
   DemoTape demo_;
   std::vector<CompactOperationSample> preview_storage_;
   ChainedOperationBuilder builder_;
   OperationBuilder preview_builder_;
+  std::size_t staged_stroke_count_ = 0U;
+  std::size_t staged_stroke_sample_count_ = 0U;
   ChromeStagingCache chrome_cache_;
   NavigationState navigation_{};
   ChromeState chrome_{};
@@ -1562,6 +1947,10 @@ class Application::Impl {
   std::size_t rebuild_cursor_ = 0U;
   RebuildPhase rebuild_phase_ = RebuildPhase::kIdle;
   std::uint32_t frame_epoch_ = 0U;
+  std::uint64_t canvas_epoch_ = 1U;
+  std::uint64_t live_canvas_epoch_ = 0U;
+  ViewRequest canvas_view_{};
+  ViewRequest live_view_{};
   std::uint16_t next_gesture_ = 1U;
   OperationTool stroke_tool_ = OperationTool::kPen;
   std::uint16_t stroke_color_ = 0U;
@@ -1570,6 +1959,9 @@ class Application::Impl {
   bool initial_frame_pending_ = true;
   bool rebuild_pending_ = false;
   bool maintenance_pending_ = false;
+  bool settle_pending_ = false;
+  bool settle_final_compose_ = false;
+  bool settle_changed_ = false;
   bool stroke_has_segment_ = false;
 };
 

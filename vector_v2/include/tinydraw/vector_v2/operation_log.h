@@ -128,6 +128,11 @@ class OperationLog {
 
   [[nodiscard]] std::optional<OperationIdentity> append(const OperationAppend& append_request);
   [[nodiscard]] std::optional<OperationIdentity> append(const BuiltOperation& operation);
+  // Appends every bounded chunk of one Stroke as one externally atomic
+  // authority change. All chunks must share one nonzero gesture identity,
+  // tool, and color. Failure leaves active and retained authority unchanged.
+  [[nodiscard]] std::optional<OperationIdentity> append_group(
+      std::span<const OperationAppend> append_requests);
   [[nodiscard]] AuthorityReadView read_view() const;
   [[nodiscard]] std::optional<StoredOperation> operation(std::size_t index) const;
   [[nodiscard]] std::optional<StoredOperation> retained_operation(std::size_t index) const;
@@ -159,6 +164,7 @@ class OperationLog {
  private:
   friend class PreparedHistoryChange;
   [[nodiscard]] bool valid_append(const OperationAppend& append_request) const;
+  [[nodiscard]] bool valid_append_group(std::span<const OperationAppend> append_requests) const;
   [[nodiscard]] bool accepts_append(const OperationAppend& append_request) const;
   [[nodiscard]] OperationIdentity append_validated(const OperationAppend& append_request,
                                                    PixelRect bounds);

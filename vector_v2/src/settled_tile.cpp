@@ -19,6 +19,26 @@ bool rects_intersect(PixelRect left, PixelRect right) {
   return left.x0 < right.x1 && right.x0 < left.x1 && left.y0 < right.y1 && right.y0 < left.y1;
 }
 
+bool same_sample_geometry(CompactOperationSample left, CompactOperationSample right) {
+  return left.x_quarter == right.x_quarter && left.y_quarter == right.y_quarter &&
+         left.radius_256 == right.radius_256;
+}
+
+bool same_stroke(const StoredOperation& operation, OperationTool tool, std::uint16_t color,
+                 std::uint16_t gesture_id) {
+  return gesture_id != 0U && operation.gesture_id == gesture_id && operation.tool == tool &&
+         operation.color == color;
+}
+
+PixelRect union_rect(PixelRect left, PixelRect right) {
+  return {
+      .x0 = std::min(left.x0, right.x0),
+      .y0 = std::min(left.y0, right.y0),
+      .x1 = std::max(left.x1, right.x1),
+      .y1 = std::max(left.y1, right.y1),
+  };
+}
+
 struct Channels {
   std::uint16_t red = 0;
   std::uint16_t green = 0;
@@ -304,11 +324,111 @@ void SettledRenderCursor::advance_operation_scan(WorkBudget& budget) {
   }
   ++stats_.operations_scanned;
   ++budget.work;
-  if (!rects_intersect(stored->world_bounds, world_bounds_)) {
-    ++replay_index_;
+  operation_tool_ = stored->tool;
+  operation_color_ = stored->color;
+  operation_gesture_id_ = stored->gesture_id;
+  stroke_first_operation_ = operation_index_;
+  stroke_last_operation_ = operation_index_ + 1U;
+  stroke_world_bounds_ = stored->world_bounds;
+  include_stroke_operation(*stored);
+  if (operation_gesture_id_ == 0U) {
+    finish_stroke_scan();
     return;
   }
-  ++stats_.operations_intersecting;
+  if (use_candidates_) {
+    // A spatial query may omit newer chunks whose own bounds miss this
+    // window even though their shared curve neighborhood affects its edge.
+    stroke_scan_at_ = operation_index_ + 1U;
+    phase_ = Phase::kScanStrokeNewer;
+  } else {
+    // Full replay is newest-first, so this is already the newest chunk of
+    // its Stroke.
+    stroke_scan_at_ = operation_index_;
+    phase_ = Phase::kScanStrokeOlder;
+  }
+}
+
+void SettledRenderCursor::include_stroke_operation(const StoredOperation& operation) {
+  stroke_world_bounds_ = union_rect(stroke_world_bounds_, operation.world_bounds);
+  if (rects_intersect(operation.world_bounds, world_bounds_)) {
+    ++stats_.operations_intersecting;
+  }
+}
+
+void SettledRenderCursor::advance_stroke_newer_scan(WorkBudget& budget) {
+  if (stroke_scan_at_ == authority_.active_operation_count) {
+    stroke_scan_at_ = stroke_first_operation_;
+    phase_ = Phase::kScanStrokeOlder;
+    return;
+  }
+  if (budget.stop_before(1U)) {
+    budget.pause();
+    return;
+  }
+  const auto stored = log_->operation(stroke_scan_at_);
+  ++budget.work;
+  if (!stored.has_value()) {
+    cancel();
+    budget.fail();
+    return;
+  }
+  if (!same_stroke(*stored, operation_tool_, operation_color_, operation_gesture_id_)) {
+    stroke_scan_at_ = stroke_first_operation_;
+    phase_ = Phase::kScanStrokeOlder;
+    return;
+  }
+  include_stroke_operation(*stored);
+  ++stats_.operations_scanned;
+  ++stroke_scan_at_;
+  stroke_last_operation_ = stroke_scan_at_;
+}
+
+void SettledRenderCursor::advance_stroke_older_scan(WorkBudget& budget) {
+  if (stroke_scan_at_ == 0U) {
+    finish_stroke_scan();
+    return;
+  }
+  if (budget.stop_before(1U)) {
+    budget.pause();
+    return;
+  }
+  const auto stored = log_->operation(stroke_scan_at_ - 1U);
+  ++budget.work;
+  if (!stored.has_value()) {
+    cancel();
+    budget.fail();
+    return;
+  }
+  if (!same_stroke(*stored, operation_tool_, operation_color_, operation_gesture_id_)) {
+    finish_stroke_scan();
+    return;
+  }
+  include_stroke_operation(*stored);
+  ++stats_.operations_scanned;
+  --stroke_scan_at_;
+  stroke_first_operation_ = stroke_scan_at_;
+}
+
+void SettledRenderCursor::advance_replay_past_stroke() {
+  if (!use_candidates_) {
+    replay_index_ = authority_.active_operation_count - stroke_first_operation_;
+    return;
+  }
+  while (replay_index_ < replay_count_) {
+    const std::size_t candidate = workspace_.candidate_indices[replay_index_];
+    if (candidate < stroke_first_operation_ || candidate >= stroke_last_operation_) {
+      break;
+    }
+    ++replay_index_;
+  }
+}
+
+void SettledRenderCursor::finish_stroke_scan() {
+  if (!rects_intersect(stroke_world_bounds_, world_bounds_)) {
+    advance_replay_past_stroke();
+    phase_ = Phase::kScanOperation;
+    return;
+  }
   // Operation-level saturation skip: if every window row this operation
   // could touch is already destination-saturated, no pixel of it can
   // contribute (the per-pixel skip would elide all of them), so curve
@@ -319,8 +439,8 @@ void SettledRenderCursor::advance_operation_scan(WorkBudget& budget) {
   // cleared by the next processed operation.
   if (fully_saturated_rows_ != 0) {
     const int percent = zoom_percent(zoom_);
-    int op_y0 = stored->world_bounds.y0 * percent / 100 - window_bounds_.y0 - 2;
-    int op_y1 = (stored->world_bounds.y1 * percent + 99) / 100 - window_bounds_.y0 + 2;
+    int op_y0 = stroke_world_bounds_.y0 * percent / 100 - window_bounds_.y0 - 2;
+    int op_y1 = (stroke_world_bounds_.y1 * percent + 99) / 100 - window_bounds_.y0 + 2;
     op_y0 = std::max(op_y0, 0);
     op_y1 = std::min(op_y1, height_);
     bool all_saturated = true;
@@ -331,20 +451,54 @@ void SettledRenderCursor::advance_operation_scan(WorkBudget& budget) {
       }
     }
     if (all_saturated) {
-      ++replay_index_;
+      advance_replay_past_stroke();
+      phase_ = Phase::kScanOperation;
       return;
     }
   }
-  operation_tool_ = stored->tool;
-  operation_color_ = stored->color;
-  operation_samples_ = stored->samples;
-  operation_touched_ = false;
-  clear_row_ = operation_min_y_;
-  // A one-sample operation is a degenerate capsule at endpoint zero. Starting
-  // at one skipped it entirely, so taps appeared in SVG/hard replay but not in
-  // settled tiles or PNG export.
-  endpoint_ = operation_samples_.size() == 1U ? 0U : 1U;
-  phase_ = Phase::kClearOperation;
+  stroke_count_at_ = stroke_first_operation_;
+  stroke_sample_count_ = 0U;
+  stroke_count_has_sample_ = false;
+  phase_ = Phase::kCountStrokeSamples;
+}
+
+void SettledRenderCursor::advance_stroke_sample_count(WorkBudget& budget) {
+  if (stroke_count_at_ == stroke_last_operation_) {
+    if (stroke_sample_count_ == 0U) {
+      cancel();
+      budget.fail();
+      return;
+    }
+    stroke_stream_operation_ = stroke_first_operation_;
+    stroke_stream_at_ = 0U;
+    stroke_stream_samples_ = {};
+    stroke_loaded_samples_ = 0U;
+    endpoint_ = stroke_sample_count_ <= 2U ? stroke_sample_count_ - 1U : 2U;
+    operation_touched_ = false;
+    clear_row_ = operation_min_y_;
+    phase_ = Phase::kClearOperation;
+    return;
+  }
+  if (budget.stop_before(1U)) {
+    budget.pause();
+    return;
+  }
+  const auto stored = log_->operation(stroke_count_at_);
+  ++budget.work;
+  if (!stored.has_value() ||
+      (operation_gesture_id_ != 0U &&
+       !same_stroke(*stored, operation_tool_, operation_color_, operation_gesture_id_))) {
+    cancel();
+    budget.fail();
+    return;
+  }
+  const bool duplicate_boundary =
+      stroke_count_has_sample_ &&
+      same_sample_geometry(stroke_count_last_sample_, stored->samples.front());
+  stroke_sample_count_ += stored->samples.size() - static_cast<std::size_t>(duplicate_boundary);
+  stroke_count_last_sample_ = stored->samples.back();
+  stroke_count_has_sample_ = true;
+  ++stroke_count_at_;
 }
 
 void SettledRenderCursor::advance_operation_clear(WorkBudget& budget) {
@@ -374,9 +528,9 @@ void SettledRenderCursor::advance_operation_clear(WorkBudget& budget) {
 }
 
 void SettledRenderCursor::advance_endpoint_preparation(WorkBudget& budget) {
-  if (endpoint_ == operation_samples_.size()) {
+  if (endpoint_ == stroke_sample_count_) {
     if (!operation_touched_) {
-      ++replay_index_;
+      advance_replay_past_stroke();
       phase_ = Phase::kScanOperation;
       return;
     }
@@ -386,11 +540,83 @@ void SettledRenderCursor::advance_endpoint_preparation(WorkBudget& budget) {
     phase_ = Phase::kCompositeOperation;
     return;
   }
+
+  const std::size_t samples_needed =
+      stroke_sample_count_ <= 2U ? stroke_sample_count_ : endpoint_ + 1U;
+  while (stroke_loaded_samples_ < samples_needed) {
+    if (stroke_stream_at_ == stroke_stream_samples_.size()) {
+      if (stroke_stream_operation_ == stroke_last_operation_) {
+        cancel();
+        budget.fail();
+        return;
+      }
+      if (budget.stop_before(1U)) {
+        budget.pause();
+        return;
+      }
+      const auto stored = log_->operation(stroke_stream_operation_);
+      ++budget.work;
+      if (!stored.has_value() ||
+          (operation_gesture_id_ != 0U &&
+           !same_stroke(*stored, operation_tool_, operation_color_, operation_gesture_id_))) {
+        cancel();
+        budget.fail();
+        return;
+      }
+      stroke_stream_samples_ = stored->samples;
+      stroke_stream_at_ = 0U;
+      ++stroke_stream_operation_;
+      if (stroke_loaded_samples_ != 0U &&
+          same_sample_geometry(stroke_recent_samples_[(stroke_loaded_samples_ - 1U) % 3U],
+                               stroke_stream_samples_.front())) {
+        ++stroke_stream_at_;
+      }
+      continue;
+    }
+    if (budget.stop_before(1U)) {
+      budget.pause();
+      return;
+    }
+    stroke_recent_samples_[stroke_loaded_samples_ % 3U] = stroke_stream_samples_[stroke_stream_at_];
+    ++stroke_stream_at_;
+    ++stroke_loaded_samples_;
+    ++budget.work;
+  }
   if (budget.stop_before(1U)) {
     budget.pause();
     return;
   }
-  const auto unit = prepare_incremental_curve_unit(operation_samples_, endpoint_, zoom_);
+  std::optional<PreparedCurveUnit> unit;
+  if (stroke_sample_count_ <= 2U) {
+    for (std::size_t sample = 0U; sample < stroke_sample_count_; ++sample) {
+      curve_samples_[sample] = stroke_recent_samples_[sample];
+    }
+    unit = prepare_incremental_curve_unit(
+        std::span<const CompactOperationSample>(curve_samples_).first(stroke_sample_count_),
+        endpoint_, zoom_);
+  } else {
+    const CompactOperationSample prior = stroke_recent_samples_[(endpoint_ - 2U) % 3U];
+    const CompactOperationSample control = stroke_recent_samples_[(endpoint_ - 1U) % 3U];
+    const CompactOperationSample current = stroke_recent_samples_[endpoint_ % 3U];
+    if (endpoint_ == 2U) {
+      curve_samples_[0] = prior;
+      curve_samples_[1] = control;
+      curve_samples_[2] = current;
+      curve_samples_[3] = current;
+      const std::size_t sample_count = endpoint_ + 1U == stroke_sample_count_ ? 3U : 4U;
+      unit = prepare_incremental_curve_unit(
+          std::span<const CompactOperationSample>(curve_samples_).first(sample_count), 2U, zoom_);
+    } else {
+      curve_samples_[0] = prior;
+      curve_samples_[1] = prior;
+      curve_samples_[2] = control;
+      curve_samples_[3] = current;
+      curve_samples_[4] = current;
+      const std::size_t sample_count = endpoint_ + 1U == stroke_sample_count_ ? 4U : 5U;
+      unit = prepare_incremental_curve_unit(
+          std::span<const CompactOperationSample>(curve_samples_).first(sample_count), 3U, zoom_);
+    }
+  }
   ++budget.work;
   if (!unit.has_value()) {
     ++endpoint_;
@@ -642,7 +868,7 @@ void SettledRenderCursor::advance_operation_composite(WorkBudget& budget) {
     phase_ = Phase::kFinalFold;
     return;
   }
-  ++replay_index_;
+  advance_replay_past_stroke();
   phase_ = Phase::kScanOperation;
 }
 
@@ -682,6 +908,15 @@ SettledRenderSlice SettledRenderCursor::advance(WorkBudget& budget) {
         break;
       case Phase::kScanOperation:
         advance_operation_scan(budget);
+        break;
+      case Phase::kScanStrokeNewer:
+        advance_stroke_newer_scan(budget);
+        break;
+      case Phase::kScanStrokeOlder:
+        advance_stroke_older_scan(budget);
+        break;
+      case Phase::kCountStrokeSamples:
+        advance_stroke_sample_count(budget);
         break;
       case Phase::kClearOperation:
         advance_operation_clear(budget);

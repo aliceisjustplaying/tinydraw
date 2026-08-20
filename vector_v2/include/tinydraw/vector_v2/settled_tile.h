@@ -14,9 +14,10 @@ namespace tinydraw::vector_v2 {
 // Settled analytic-coverage anti-aliasing for one tile (ship contract §4;
 // prototype receipts in benchmark-results/settled-aa-prototype/). Replays
 // the operations intersecting the tile newest-first with tapered-capsule
-// coverage: within one operation self-overlap UNIONs (never darkens),
-// across operations coverage composites front-to-back, erasers composite
-// opaque white. The frozen RGB565 blend model: 565 expands by bit
+// coverage: adjacent chunks with one nonzero Stroke identity, tool, and color
+// reconstruct and UNION one continuous source (never darkens); distinct
+// Strokes composite front-to-back, and erasers composite opaque white. The
+// frozen RGB565 blend model: 565 expands by bit
 // replication, integer accumulation (sum of contributions is bounded by
 // 255 so 16-bit channel accumulators are exact), one final round over a
 // white background.
@@ -129,6 +130,9 @@ class SettledRenderCursor {
     kInitialize,
     kQueryCandidates,
     kScanOperation,
+    kScanStrokeNewer,
+    kScanStrokeOlder,
+    kCountStrokeSamples,
     kClearOperation,
     kPrepareEndpoint,
     kRasterChord,
@@ -141,6 +145,9 @@ class SettledRenderCursor {
   void advance_initialize(WorkBudget& budget);
   void advance_candidate_query(WorkBudget& budget);
   void advance_operation_scan(WorkBudget& budget);
+  void advance_stroke_newer_scan(WorkBudget& budget);
+  void advance_stroke_older_scan(WorkBudget& budget);
+  void advance_stroke_sample_count(WorkBudget& budget);
   void advance_operation_clear(WorkBudget& budget);
   void advance_endpoint_preparation(WorkBudget& budget);
   void advance_chord_raster(WorkBudget& budget);
@@ -150,6 +157,9 @@ class SettledRenderCursor {
   void composite_pixels(std::size_t row, std::size_t first_at, std::size_t count, std::uint16_t red,
                         std::uint16_t green, std::uint16_t blue);
   void advance_final_fold(WorkBudget& budget);
+  void include_stroke_operation(const StoredOperation& operation);
+  void finish_stroke_scan();
+  void advance_replay_past_stroke();
 
   Phase phase_ = Phase::kIdle;
   const OperationLog* log_ = nullptr;
@@ -167,6 +177,14 @@ class SettledRenderCursor {
   std::size_t replay_count_ = 0;
   std::size_t replay_index_ = 0;
   std::size_t operation_index_ = 0;
+  std::size_t stroke_first_operation_ = 0;
+  std::size_t stroke_last_operation_ = 0;
+  std::size_t stroke_scan_at_ = 0;
+  std::size_t stroke_count_at_ = 0;
+  std::size_t stroke_sample_count_ = 0;
+  std::size_t stroke_stream_operation_ = 0;
+  std::size_t stroke_stream_at_ = 0;
+  std::size_t stroke_loaded_samples_ = 0;
   std::size_t clear_row_ = 0;
   std::size_t endpoint_ = 0;
   std::size_t step_ = 0;
@@ -176,7 +194,13 @@ class SettledRenderCursor {
   std::size_t saturated_pixels_ = 0;
   OperationTool operation_tool_ = OperationTool::kPen;
   std::uint16_t operation_color_ = 0;
-  std::span<const CompactOperationSample> operation_samples_{};
+  std::uint16_t operation_gesture_id_ = 0;
+  PixelRect stroke_world_bounds_{};
+  bool stroke_count_has_sample_ = false;
+  CompactOperationSample stroke_count_last_sample_{};
+  std::span<const CompactOperationSample> stroke_stream_samples_{};
+  std::array<CompactOperationSample, 3> stroke_recent_samples_{};
+  std::array<CompactOperationSample, 5> curve_samples_{};
   PreparedCurveUnit prepared_unit_{};
   bool use_candidates_ = false;
   bool operation_touched_ = false;
