@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+sdk_version=33.0
+sdk_tag=wasi-sdk-33
+
+if [[ -n "${WASI_CXX:-}" ]]; then
+  cxx="$WASI_CXX"
+else
+  case "$(uname -s):$(uname -m)" in
+    Darwin:arm64)
+      asset="wasi-sdk-${sdk_version}-arm64-macos.tar.gz"
+      expected_sha=85c997a2665ead91673b5bb88b7d0df3fc8900df3bfa244f720d478187bbdc78
+      ;;
+    Darwin:x86_64)
+      asset="wasi-sdk-${sdk_version}-x86_64-macos.tar.gz"
+      expected_sha=18f3f201ba9734e6a4455b0b6410690395a55e9ffa9f6f5066f66083a94b93b3
+      ;;
+    Linux:x86_64)
+      asset="wasi-sdk-${sdk_version}-x86_64-linux.tar.gz"
+      expected_sha=0ba8b5bfaeb2adf3f29bab5841d76cf5318ab8e1642ea195f88baba1abd47bce
+      ;;
+    Linux:aarch64|Linux:arm64)
+      asset="wasi-sdk-${sdk_version}-arm64-linux.tar.gz"
+      expected_sha=4f98ee738c7abb45c81a94d1461fc53cc569d1cd01498951c8184d841a027844
+      ;;
+    *)
+      echo "unsupported Puck build host: $(uname -s) $(uname -m)" >&2
+      exit 1
+      ;;
+  esac
+
+  toolchains="$root/out/toolchains"
+  sdk="$toolchains/${asset%.tar.gz}"
+  cxx="$sdk/bin/clang++"
+  if [[ ! -x "$cxx" ]]; then
+    command -v curl >/dev/null 2>&1 || { echo "curl is required to fetch wasi-sdk" >&2; exit 1; }
+    mkdir -p "$toolchains"
+    archive="$toolchains/$asset"
+    curl --fail --location --silent --show-error \
+      "https://github.com/WebAssembly/wasi-sdk/releases/download/$sdk_tag/$asset" \
+      --output "$archive"
+    if command -v sha256sum >/dev/null 2>&1; then
+      actual_sha="$(sha256sum "$archive" | awk '{print $1}')"
+    else
+      actual_sha="$(shasum -a 256 "$archive" | awk '{print $1}')"
+    fi
+    if [[ "$actual_sha" != "$expected_sha" ]]; then
+      echo "wasi-sdk checksum mismatch: expected $expected_sha, found $actual_sha" >&2
+      exit 1
+    fi
+    staging="$(mktemp -d "$toolchains/.wasi-sdk.XXXXXX")"
+    cleanup() { rm -rf "$staging"; }
+    trap cleanup EXIT
+    mkdir -p "$staging/sdk"
+    tar -xzf "$archive" -C "$staging/sdk" --strip-components=1
+    rm -rf "$sdk"
+    mv "$staging/sdk" "$sdk"
+    rm -f "$archive"
+    trap - EXIT
+    rmdir "$staging"
+  fi
+fi
+
+if [[ ! -x "$cxx" ]]; then
+  echo "WASI clang++ is not executable: $cxx" >&2
+  exit 1
+fi
+command -v cmake >/dev/null 2>&1 || { echo "cmake is required to build TinyDraw Puck" >&2; exit 1; }
+command -v ninja >/dev/null 2>&1 || { echo "ninja is required to build TinyDraw Puck" >&2; exit 1; }
+
+build="$root/out/build/puck-package"
+cmake -S "$root" -B "$build" -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_SYSTEM_NAME=Generic \
+  -DCMAKE_CXX_COMPILER="$cxx" \
+  -DCMAKE_CXX_COMPILER_TARGET=wasm32-wasip1 \
+  -DTINYDRAW_BUILD_HOST=OFF \
+  -DTINYDRAW_BUILD_TESTS=OFF \
+  -DTINYDRAW_BUILD_PUCK=ON \
+  -DTINYDRAW_WARNINGS_AS_ERRORS=ON
+cmake --build "$build" --target tinydraw_puck
+
+echo "$build/puck/emu.wasm"
