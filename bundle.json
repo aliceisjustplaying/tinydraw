@@ -8,7 +8,7 @@
       "verdict": "go",
       "build": {
         "repo": "https://github.com/aliceisjustplaying/tinydraw.git",
-        "commit": "abc4e7262574469f10b796144394407517a8dd01",
+        "commit": "102180c8081bcb638f82d600b622606b5602a534",
         "command": "./scripts/build-puck-wasm",
         "artifact": "out/build/puck-package/puck/emu.wasm"
       },
