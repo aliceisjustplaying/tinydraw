@@ -10,7 +10,7 @@ I spent nine days building a vector graphics editor on a $40 microcontroller wit
 
 ## Origin
 
-I've been following Steve Ruiz on Twitter for a while now, and he kept posting these cool projects built on microcontroller-powered tiny little devices. And then I saw there's going to be a whole meetup about them, and I wanted to go, and I'm like, well, if I'm going, I want to present something.
+I've been following [Steve Ruiz](https://twitter.com/steveruizok) on Twitter for a while now, and he kept posting all these cool projects built on microcontroller-powered tiny little devices. And then I saw there's going to be a whole meetup about them, and I wanted to go, and I'm like, well, if I'm going, I want to present something.
 
 But I still didn't know what to build. A mini tldraw seemed like the obvious answer, but surely someone has done it, or surely this was Steve's very first project. So I scrolled his entire timeline and I did not find a mini tldraw at all.
 
@@ -20,19 +20,15 @@ I ordered the Waveshare from Amazon, and I asked my coding agent what we could b
 
 And then when the presentations came up, there was no order yet, and Steve just pointed at me: You first. And I presented it, and people liked it, and afterwards people came to me to try it, and that was nice.
 
-V1 was raster, and that's easy. It's just far easier to make a raster editor for a microcontroller than a vector one.
+V1 was raster, and that's easy. It's just far easier to make a raster editor for a microcontroller than a vector one. And even before the presentation I contemplated the idea of building a real infinite canvas. And after I was like oh yeah, we *are* doing this. 
 
-## The Commitment
-
-The next evening: alright. We're making this a real infinite canvas. By god, we are doing this.
-
-My first ambition was to actually see if I can make a mini tldraw — vector, arbitrary zoom levels, really fast. The agents tempered my expectations, and they were right. I really wanted 25% to 800% zoom, but I settled at 400%. It was a big compromise.
+My first ambition was to see if I can make a mini tldraw; vector, arbitrary zoom levels, really fast. The agents tempered my expectations, and they were right. I really wanted 25% to 800% zoom, but I settled at 400%. It was a big compromise.
 
 ## The Fever Dream
 
-I spent the next couple of days in a fever dream chipping away at the problem. Nominally I was trying to answer the question if this is possible, but I think in reality I never doubted it was possible. I had to find an approach that worked.
+I spent the next or so in a fever dream chipping away at the problem. Nominally I was trying to answer the question if this is possible, but I think in reality I never doubted it was possible. I had to find an approach that worked.
 
-I call it a fever dream because a lot of it was just: I don't know what the agents are doing, but I'm just gonna keep going. In hindsight, I would have done this differently, but hindsight is 20/20.
+I call it a fever dream because a lot of it was just: I barely know what the agents are doing, but I'm just gonna keep going. In hindsight, I would have done this differently, but hindsight is 20/20.
 
 [FACT: The fever dream was ~26 hours, Aug 11 evening → Aug 12 night]
 
