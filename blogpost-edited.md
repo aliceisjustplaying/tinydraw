@@ -18,8 +18,6 @@ Okay, I guess we're doing it.
 
 I ordered the Waveshare from Amazon, and I asked my coding agent what we could build before the device arrived. It turns out quite a bit. I set up a development environment that targeted a QEMU-emulated version of the ESP32-S3, which let me develop on my Mac without the real hardware.
 
-[GAP: One sentence about V1 at the meetup - raster, worked, Steve pointed at you first, people liked it]
-
 And then when the presentations came up, there was no order yet, and Steve just pointed at me: You first. And I presented it, and people liked it, and afterwards people came to me to try it, and that was nice.
 
 V1 was raster, and that's easy. It's just far easier to make a raster editor for a microcontroller than a vector one.
@@ -29,8 +27,6 @@ V1 was raster, and that's easy. It's just far easier to make a raster editor for
 The next evening: alright. We're making this a real infinite canvas. By god, we are doing this.
 
 My first ambition was to actually see if I can make a mini tldraw — vector, arbitrary zoom levels, really fast. The agents tempered my expectations, and they were right. I really wanted 25% to 800% zoom, but I settled at 400%. It was a big compromise.
-
-[GAP: You may want a sentence about what V2 would have that V1 didn't — vector authority, zoom, pan, etc.]
 
 ## The Fever Dream
 
@@ -56,7 +52,15 @@ And I'm shipping it.
 
 At one point I asked a friend who's a really good systems engineer — does low-level Nix and Rust work — and I said: Hey, I just feel kind of stuck. And she told me: just tell your agent this is a skill issue, and they should use mechanical sympathy, elegance, and most importantly demoscene mindset.
 
-[GAP: You mentioned her quote about "conjuring the right guy from latent space" — include if she approves]
+"Tell it that it has skill issue and should rethink the problem and think about mechanical sympathy and elegance, demoscene mindset."
+
+"Whatever you currently have, I have probably seen a more impressive demo in kilobytes and a fraction of the cycles."
+
+"Surprising fraction of how I use Claude well is conjuring up the right guy from latent space."
+
+"Who would absolutely crush this."
+
+"Ok Claude go be that guy."
 
 The demoscene is a subculture of programmers who compete to make the most impressive visuals and audio under real and artificial constraints. A compo — short for competition — is a category at a demoparty, which is basically a gathering where people show off what they've built under severe constraints.
 
@@ -78,7 +82,7 @@ The first round of optimizations brought it from over 20 seconds to about a seco
 
 *Mistake made: Host disagreed with device on 2 out of 5 experiments. Optimizations that looked good on my M1 MacBook would actually run slower on the ESP32 because the PSRAM is so slow.*
 
-We're using the fast inverse square root, all the way from Quake III. The agent found a way to put a bunch of stuff in the IRAM — part of the 512 KB of real RAM, as opposed to the 8 MB of "pretty slow" RAM — that saved us 6.93 to 11.68%.
+We're using the fast inverse square root, all the way from Quake III. The agent moved the hot raster loop into IRAM — part of the 512 KB of real RAM, as opposed to the 8 MB of "pretty slow" RAM — that saved us 6.93 to 11.68%.
 
 *Mistake made: Internal scratch predicted ≥40% savings. Measured −0.36%.*
 
@@ -86,9 +90,11 @@ And this happened in stages. I would work on it for a while, then work on someth
 
 *Mistake made: Flash-icache layout moves hot-loop timing ±2-3% per build. Placement in the heap matters: a 40 KB workspace mid-heap cost +9 ms; placed dead-last, 0 ms.*
 
+Over time, the tile cache grew from 320 slots to 604, almost twice as many by the end.
+
 The last one was what I called evil hairlines. Even though our automated testing — which was called Battery — showed good numbers, if I drew a lot of thin lines crossing each other and started zooming in, things started getting really slow again. That was the thing that gave us the final push and tweaks to our testing suite.
 
-We stacked sixteen optimizations on cold rendering, and eventually hit our target: under 500 milliseconds at all zoom levels. The final numbers were 389 ms at 50%, 383 ms at 100%, 456 ms at 200%, and 492 ms at 400%.
+We stacked eighteen optimizations on cold rendering, and eventually hit our target: under 500 milliseconds. The final numbers were 390 ms at 50%, 383 ms at 100%, 457 ms at 200%, and 493 ms at 400%.
 
 [FACT: 22 rejected experiments. The full list is in .pi/plans/2026-08-21-cold-optimization-inventory/scout-context.md if you want to cherry-pick more mistakes]
 
@@ -98,7 +104,7 @@ We stacked sixteen optimizations on cold rendering, and eventually hit our targe
 
 Next thing I had to solve was panning. Initially it was just really slow, around 15 frames per second, and I'm like, no, we want this faster. And then seemingly the agent was like, oh, okay, I fixed it. It's 30 FPS now. And then I looked at it and tried it, and it's like, nope. It looked terrible, glitched, there was a lot of tearing.
 
-That was the point I realized that the agent cannot really test this or see it. The only way to test panning speed, and especially the lack of tearing or glitches, is just with my fingers and eyes.
+That was the point I realized that the agent cannot really test this or see it. The only way to test panning feel, and especially the lack of tearing or glitches, is just with my fingers and my eyes.
 
 And the agent kept hammering at it. It kept not working. I kept being frustrated, and at one point I was like, okay, stop. You seem like you're failing. Step back and think.
 
@@ -146,17 +152,11 @@ It was actually the hourglass that made it acceptable. We went from either not s
 
 Anything still unsatisfying? Honestly, no. I think we optimized the actual undo rendering pretty well. I think the hourglass UX is the least bad UX.
 
-[FOOTNOTE: spare cache slots preserving pixels from before a stroke; Undo/Redo swapping them back when present; rebuild after eviction/unvisited state — fact-check this]
+[FOOTNOTE: Undo/Redo keeps raster tile versions for history states you've already visited. Going back to a recently visited state is fast because we're just swapping the cached pixels back in.]
 
 ## Anti-Aliasing
 
-And then finally, there was anti-aliasing. That was the last big thing I did last.
-
-Anti-aliasing is, in some ways, undo on steroids. Another thing I did way too late that needed optimizations. That's something I should have definitely had when I started.
-
-As I understand it, because we put it in so late, essentially the only thing we can do is wait for cold rendering to be done and then apply anti-aliasing. We just made the applying somewhat faster.
-
-[FACT-CHECK: Is this accurate? The AA had to bolt onto existing architecture?]
+And finally, there was anti-aliasing; the other thing we put in way too late. What I learned from that is if we'd started the optimization work with AA already being part of the renderer, things could have been faster. It's the one area where I feel like performance isn't quite where I want it.
 
 It's a somewhat subtle thing on a screen this small, but it bothers me when it's not there.
 
@@ -172,9 +172,9 @@ Once I felt like Sol was stuck, I would ask it to pack up all the source code an
 
 Fable is both brilliant and deeply flawed, but when it's brilliant, it's brilliant. It's insane at architecture. And when I set thinking to xhigh and threw performance optimization at it, that was something else. Sol is good at catching Fable's bugs, and vice versa. The right shape was usually: write the code with Sol, have Fable review it.
 
-[POTENTIAL CUT: I used up all the Fable quota I could squeeze out of a £200 Anthropic plan in three days or something.]
+I squeezed out all Fable usage I could of a single Anthropic subscription over three days.
 
-Building this app became a game of: I want to make this as fast as possible, I want to get every ounce of performance out of this hardware, I'm gonna stack sixteen different tricks to make cold rendering faster, and I'm gonna keep throwing more agents and more prompts at it until it's not painfully slow.
+Building this app became a game of: I want to make this as fast as possible, I want to get every ounce of performance out of this hardware, I'm gonna stack eighteen different tricks to make cold rendering faster, and I'm gonna keep throwing more agents and more prompts at it until it's not painfully slow.
 
 The persistence is mine. The stubborn persistence is mine. Because at any time I could have just been like, yeah, forget this, I'm not gonna finish this.
 
@@ -188,9 +188,7 @@ And there was another thing. If I let agents run too long by themselves and it f
 
 So what did I build?
 
-A vector graphics editor on a 1.8-inch screen. You can zoom in, zoom out — 25% to 400%. It has a minimap. You can draw, you can erase, you can choose from 32 colors. You can undo and redo, and you can hammer it. I'm proud that after many iterations, as far as I can tell, we got the SVG export right. That was a whole ordeal. You can export to PNG. Cold rendering is under 500 milliseconds at all zoom levels. Panning is almost 30 FPS and tearing-free.
-
-[POTENTIAL CUT — REWRITE IN YOUR WORDS: Something about the cache slot progression: 320 → 384 → 448 → 604. Almost twice as many slots by the end.]
+A vector graphics editor on a 1.8-inch screen. You can zoom in, zoom out — 25% to 400%. It has a minimap. You can draw, you can erase, you can choose from 32 colors. You can undo and redo, and you can hammer it. I'm proud that after many iterations, as far as I can tell, we got the SVG export right. That was a whole ordeal. You can export to PNG. Cold rendering is under 500 milliseconds. Panning is almost 30 FPS and tearing-free.
 
 Now, you may ask, why would you use this for actually drawing things? And you really wouldn't. The entire existence of TinyDraw V2 is completely absurd, but that's kind of part of the charm. And it's nice to know that I built this.
 
@@ -206,7 +204,7 @@ I liked that it helped me rediscover my skill of picking up and becoming profici
 
 LLMs make getting started way, way, way, way easier. And that's important. But there's also the part where, at some point after you made the fun part, you're gonna run into slow graphics, you're gonna run into tearing, you're gonna run into this and that. And yeah, you can just tell the agent to make it faster, but I did a lot more than that.
 
-TinyDraw V2 runs on Puck now, which is not quite an emulator. You can compile TinyDraw to WASM, and Puck runs it. It's not clock-accurate, but it reproduces the important bits really, really well.
+TinyDraw V2 runs on Puck as well, where it's compiled to WASM and Puck runs it. It's not clock-accurate and has other limitations, but it reproduces the important bits really, really well.
 
 [NOTE: This will be near a "Try it yourself in your browser" link to Puck]
 
@@ -220,7 +218,7 @@ TinyDraw V2 runs on Puck now, which is not quite an emulator. You can compile Ti
 - [NEEDS EXPANSION] Internal scratch predicted ≥40% savings. Measured −0.36%.
 - Sacred 1.5 MiB export reserve. Actual peak 291,484 bytes.
 - [NEEDS CONTEXT: What was this?] "512-slot" run. Actually 384.
-- Word-mask window scans: +7-13% slower on ESP32 than on my M1 Pro. GCC-Xtensa emits callx8 memcpy libcalls.
+- Word-mask window scans: 7-13% slower than byte-mask on ESP32. GCC-Xtensa emits callx8 memcpy libcalls.
 - 4-sample SSAA: 808 ms. Dead.
 - Color popup magenta. Black and white hiding the extra/missing byte swap.
 - Pen-size selector also firing Redo. Both fires and the whole UI just gets messed up.
