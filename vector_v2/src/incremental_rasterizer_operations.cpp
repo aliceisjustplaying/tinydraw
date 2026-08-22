@@ -457,7 +457,7 @@ bool try_bulk_masked_fill(const MaskedOperationChordRowsRequest& sweep,
 }
 
 struct ActiveChords {
-  std::array<std::uint8_t, kOperationChordCapacity> indices{};
+  std::array<std::uint8_t, kOperationChordCapacity> indices;
   std::size_t count = 0;
   std::size_t enter = 0;
 
@@ -651,7 +651,7 @@ bool valid_unmasked_sweep(const OperationChordSliceRequest& sweep) {
 }
 
 struct RowChords {
-  std::array<std::uint8_t, kOperationChordCapacity> active{};
+  std::array<std::uint8_t, kOperationChordCapacity> active;
   std::size_t count = 0;
   std::size_t entered = 0;
 };

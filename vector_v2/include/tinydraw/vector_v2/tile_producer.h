@@ -149,10 +149,11 @@ class TileProducer {
   static constexpr std::size_t kNoCachedOperation = static_cast<std::size_t>(-1);
 
   [[nodiscard]] static bool valid_view(const ViewRequest& view);
+  void produce_next_into(const ViewRequest& view, std::optional<TileProductionStep>& result);
   [[nodiscard]] bool tile_satisfies(TileKey key, MaterializationQuality quality) const;
   [[nodiscard]] std::optional<TileKey> choose_certain_paper_group(const ViewRequest& view) const;
-  [[nodiscard]] std::optional<TileProductionStep> publish_certain_paper_group(
-      const ViewRequest& view, TileKey origin);
+  [[nodiscard]] bool publish_certain_paper_group(const ViewRequest& view, TileKey origin,
+                                                 TileProductionStep& result);
   [[nodiscard]] std::optional<std::size_t> visible_tiles_remaining(
       const ViewRequest& view, MaterializationQuality quality) const;
   [[nodiscard]] std::optional<TileKey> choose_missing_group(const ViewRequest& view) const;
@@ -167,7 +168,7 @@ class TileProducer {
                                                    std::size_t& operations_consumed,
                                                    std::size_t& chords_consumed,
                                                    std::size_t& work_consumed);
-  [[nodiscard]] std::optional<TileProductionStep> render_active_batch();
+  [[nodiscard]] bool render_active_batch(TileProductionStep& result);
   [[nodiscard]] std::optional<GroupPublication> publish_group(PixelRect rendered_bounds,
                                                               PixelRect visible_bounds,
                                                               ZoomLevel zoom,

@@ -206,25 +206,6 @@ AuthorityReadView OperationLog::read_view() const {
   };
 }
 
-std::optional<StoredOperation> OperationLog::operation(std::size_t index) const {
-  if (index >= operation_count_) {
-    return std::nullopt;
-  }
-  const OperationRecord& record = records_[index];
-  return StoredOperation{
-      .identity = {.revision = {base_revision_.value + static_cast<std::uint32_t>(index) + 1U},
-                   .operation_index = static_cast<std::uint32_t>(index)},
-      .tool = record.tool,
-      .color = record.color,
-      .gesture_id = record.gesture_id,
-      .world_bounds = {.x0 = record.bounds_x0,
-                       .y0 = record.bounds_y0,
-                       .x1 = record.bounds_x1,
-                       .y1 = record.bounds_y1},
-      .samples = samples_.subspan(record.first_sample, record.sample_count),
-  };
-}
-
 std::optional<StoredOperation> OperationLog::retained_operation(std::size_t index) const {
   if (index >= retained_operation_count_) {
     return std::nullopt;

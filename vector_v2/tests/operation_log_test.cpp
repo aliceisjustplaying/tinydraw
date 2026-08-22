@@ -38,6 +38,17 @@ TEST_CASE("operation log appends ordered samples and advances one revision") {
   CHECK(stored->samples.size() == 2U);
   CHECK(stored->samples[1].elapsed_ms == 12U);
   CHECK(stored->world_bounds == vector_v2::PixelRect{8, 18, 33, 43});
+
+  vector_v2::StoredOperation caller_owned;
+  REQUIRE(log.operation(0, caller_owned));
+  CHECK(caller_owned.identity == stored->identity);
+  CHECK(caller_owned.tool == stored->tool);
+  CHECK(caller_owned.color == stored->color);
+  CHECK(caller_owned.gesture_id == stored->gesture_id);
+  CHECK(caller_owned.world_bounds == stored->world_bounds);
+  CHECK(caller_owned.samples.data() == stored->samples.data());
+  CHECK(caller_owned.samples.size() == stored->samples.size());
+  CHECK_FALSE(log.operation(1, caller_owned));
 }
 
 TEST_CASE("Stroke continuations require an exact shared sample boundary") {

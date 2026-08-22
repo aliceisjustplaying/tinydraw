@@ -73,6 +73,7 @@ struct HistoryChange {
 
 class OperationLog;
 class BuiltOperation;
+class TileProducer;
 
 // Move-only whole-Stroke history transition. Destruction or cancel leaves
 // authority unchanged; publish is infallible for a live preparation.
@@ -137,7 +138,18 @@ class OperationLog {
   [[nodiscard]] std::optional<OperationIdentity> append(const OperationAppend& append_request);
   [[nodiscard]] std::optional<OperationIdentity> append(const BuiltOperation& operation);
   [[nodiscard]] AuthorityReadView read_view() const;
-  [[nodiscard]] std::optional<StoredOperation> operation(std::size_t index) const;
+  [[nodiscard]] inline std::optional<StoredOperation> operation(std::size_t index) const {
+    StoredOperation result{};
+    if (!read_operation(index, result)) {
+      return std::nullopt;
+    }
+    return result;
+  }
+  // Populates caller-owned storage, avoiding aggregate return materialization
+  // for cursors that retain the operation only for the current step.
+  [[nodiscard]] inline bool operation(std::size_t index, StoredOperation& result) const {
+    return read_operation(index, result);
+  }
   [[nodiscard]] std::optional<StoredOperation> retained_operation(std::size_t index) const;
   // Emits conservative candidates newest-first. Null means the optional
   // acceleration index is unavailable; callers must use the authority scan.
@@ -166,6 +178,26 @@ class OperationLog {
 
  private:
   friend class PreparedHistoryChange;
+  friend class TileProducer;
+  // Writes directly into long-lived producer state so Xtensa GCC never has
+  // to materialize and copy the 40-byte StoredOperation return aggregate.
+  [[nodiscard]] inline bool read_operation(std::size_t index, StoredOperation& result) const {
+    if (index >= operation_count_) {
+      return false;
+    }
+    const OperationRecord& record = records_[index];
+    result.identity.revision = {base_revision_.value + static_cast<std::uint32_t>(index) + 1U};
+    result.identity.operation_index = static_cast<std::uint32_t>(index);
+    result.tool = record.tool;
+    result.color = record.color;
+    result.gesture_id = record.gesture_id;
+    result.world_bounds.x0 = record.bounds_x0;
+    result.world_bounds.y0 = record.bounds_y0;
+    result.world_bounds.x1 = record.bounds_x1;
+    result.world_bounds.y1 = record.bounds_y1;
+    result.samples = samples_.subspan(record.first_sample, record.sample_count);
+    return true;
+  }
   [[nodiscard]] bool valid_append(const OperationAppend& append_request) const;
   [[nodiscard]] bool accepts_append(const OperationAppend& append_request) const;
   [[nodiscard]] OperationIdentity append_validated(const OperationAppend& append_request,

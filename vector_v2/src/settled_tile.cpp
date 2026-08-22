@@ -360,19 +360,19 @@ void SettledRenderCursor::advance_operation_scan(WorkBudget& budget) {
   }
   operation_index_ = use_candidates_ ? workspace_.candidate_indices[replay_index_]
                                      : authority_.active_operation_count - 1U - replay_index_;
-  const auto stored = log_->operation(operation_index_);
-  if (!stored.has_value()) {
+  StoredOperation stored;
+  if (!log_->operation(operation_index_, stored)) {
     cancel();
     budget.fail();
     return;
   }
   ++stats_.operations_scanned;
   ++budget.work;
-  operation_stroke_ = stroke_identity(*stored);
+  operation_stroke_ = stroke_identity(stored);
   stroke_first_operation_ = operation_index_;
   stroke_last_operation_ = operation_index_ + 1U;
-  stroke_world_bounds_ = stored->world_bounds;
-  include_stroke_operation(*stored);
+  stroke_world_bounds_ = stored.world_bounds;
+  include_stroke_operation(stored);
   if (operation_stroke_.gesture_id == 0U) {
     finish_stroke_scan();
     return;
@@ -407,20 +407,21 @@ void SettledRenderCursor::advance_stroke_newer_scan(WorkBudget& budget) {
     budget.pause();
     return;
   }
-  const auto stored = log_->operation(stroke_scan_at_);
+  StoredOperation stored;
+  const bool found = log_->operation(stroke_scan_at_, stored);
   ++budget.work;
-  if (!stored.has_value()) {
+  if (!found) {
     cancel();
     budget.fail();
     return;
   }
   ++stats_.operations_scanned;
-  if (!same_stroke(stroke_identity(*stored), operation_stroke_)) {
+  if (!same_stroke(stroke_identity(stored), operation_stroke_)) {
     stroke_scan_at_ = stroke_first_operation_;
     phase_ = Phase::kScanStrokeOlder;
     return;
   }
-  include_stroke_operation(*stored);
+  include_stroke_operation(stored);
   ++stroke_scan_at_;
   stroke_last_operation_ = stroke_scan_at_;
 }
@@ -434,19 +435,20 @@ void SettledRenderCursor::advance_stroke_older_scan(WorkBudget& budget) {
     budget.pause();
     return;
   }
-  const auto stored = log_->operation(stroke_scan_at_ - 1U);
+  StoredOperation stored;
+  const bool found = log_->operation(stroke_scan_at_ - 1U, stored);
   ++budget.work;
-  if (!stored.has_value()) {
+  if (!found) {
     cancel();
     budget.fail();
     return;
   }
   ++stats_.operations_scanned;
-  if (!same_stroke(stroke_identity(*stored), operation_stroke_)) {
+  if (!same_stroke(stroke_identity(stored), operation_stroke_)) {
     finish_stroke_scan();
     return;
   }
-  include_stroke_operation(*stored);
+  include_stroke_operation(stored);
   --stroke_scan_at_;
   stroke_first_operation_ = stroke_scan_at_;
 }
@@ -526,19 +528,20 @@ void SettledRenderCursor::advance_stroke_sample_count(WorkBudget& budget) {
     budget.pause();
     return;
   }
-  const auto stored = log_->operation(stroke_count_at_);
+  StoredOperation stored;
+  const bool found = log_->operation(stroke_count_at_, stored);
   ++budget.work;
-  if (!stored.has_value() || (operation_stroke_.gesture_id != 0U &&
-                              !same_stroke(stroke_identity(*stored), operation_stroke_))) {
+  if (!found || (operation_stroke_.gesture_id != 0U &&
+                 !same_stroke(stroke_identity(stored), operation_stroke_))) {
     cancel();
     budget.fail();
     return;
   }
   const bool duplicate_boundary =
       stroke_count_has_sample_ &&
-      same_sample_geometry(stroke_count_last_sample_, stored->samples.front());
-  stroke_sample_count_ += stored->samples.size() - static_cast<std::size_t>(duplicate_boundary);
-  stroke_count_last_sample_ = stored->samples.back();
+      same_sample_geometry(stroke_count_last_sample_, stored.samples.front());
+  stroke_sample_count_ += stored.samples.size() - static_cast<std::size_t>(duplicate_boundary);
+  stroke_count_last_sample_ = stored.samples.back();
   stroke_count_has_sample_ = true;
   ++stroke_count_at_;
 }
@@ -596,15 +599,16 @@ void SettledRenderCursor::advance_endpoint_preparation(WorkBudget& budget) {
         budget.pause();
         return;
       }
-      const auto stored = log_->operation(stroke_stream_operation_);
+      StoredOperation stored;
+      const bool found = log_->operation(stroke_stream_operation_, stored);
       ++budget.work;
-      if (!stored.has_value() || (operation_stroke_.gesture_id != 0U &&
-                                  !same_stroke(stroke_identity(*stored), operation_stroke_))) {
+      if (!found || (operation_stroke_.gesture_id != 0U &&
+                     !same_stroke(stroke_identity(stored), operation_stroke_))) {
         cancel();
         budget.fail();
         return;
       }
-      stroke_stream_samples_ = stored->samples;
+      stroke_stream_samples_ = stored.samples;
       stroke_stream_at_ = 0U;
       ++stroke_stream_operation_;
       if (stroke_loaded_samples_ != 0U &&

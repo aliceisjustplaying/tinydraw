@@ -352,8 +352,8 @@ std::optional<TileKey> TileProducer::choose_certain_paper_group(const ViewReques
   return std::nullopt;
 }
 
-std::optional<TileProductionStep> TileProducer::publish_certain_paper_group(const ViewRequest& view,
-                                                                            TileKey origin) {
+bool TileProducer::publish_certain_paper_group(const ViewRequest& view, TileKey origin,
+                                               TileProductionStep& result) {
   const TileGrid grid = tile_grid(view.zoom);
   GroupPublication publication{};
   for (int row = origin.row; row < std::min(grid.rows, static_cast<int>(origin.row) + 2); ++row) {
@@ -369,23 +369,31 @@ std::optional<TileProductionStep> TileProducer::publish_certain_paper_group(cons
       }
       if (!canvas_.publish_uniform(key, canvas_.current_revision(),
                                    MaterializationQuality::kImmediate, baseline_color_)) {
-        return std::nullopt;
+        return false;
       }
       include_bounds(bounds, publication);
     }
   }
   const auto remaining = visible_tiles_remaining(view);
   if (publication.tiles_published == 0U || !remaining.has_value()) {
-    return std::nullopt;
+    return false;
   }
-  return TileProductionStep{.level_bounds = publication.level_bounds,
-                            .groups_published = 1,
-                            .tiles_published = publication.tiles_published,
-                            .visible_tiles_remaining = *remaining,
-                            .complete = *remaining == 0U};
+  result.level_bounds = publication.level_bounds;
+  result.groups_published = 1U;
+  result.tiles_published = publication.tiles_published;
+  result.visible_tiles_remaining = *remaining;
+  result.complete = *remaining == 0U;
+  return true;
 }
 
 std::optional<TileProductionStep> TileProducer::produce_next(const ViewRequest& view) {
+  std::optional<TileProductionStep> result;
+  produce_next_into(view, result);
+  return result;
+}
+
+inline __attribute__((always_inline)) void TileProducer::produce_next_into(
+    const ViewRequest& view, std::optional<TileProductionStep>& result) {
   if (active_group_.active && active_group_.epoch == log_.epoch() &&
       active_group_.revision == log_.current_revision() &&
       active_group_.revision == canvas_.current_revision() &&
@@ -395,16 +403,25 @@ std::optional<TileProductionStep> TileProducer::produce_next(const ViewRequest& 
     // published until its newest-first replay completes, so the visible
     // missing count cannot change; skip the per-slice remaining scan that
     // walks every visible tile through the PSRAM slot directory.
-    return render_active_batch();
+    result.emplace();
+    if (!render_active_batch(*result)) {
+      result.reset();
+    }
+    return;
   }
   if (!ready() || !valid_view(view)) {
     discard_active_group();
-    return std::nullopt;
+    result.reset();
+    return;
   }
   if (!active_group_.active) {
     if (const auto paper = choose_certain_paper_group(view); paper.has_value()) {
-      active_group_ = {};
-      return publish_certain_paper_group(view, *paper);
+      discard_active_group();
+      result.emplace();
+      if (!publish_certain_paper_group(view, *paper, *result)) {
+        result.reset();
+      }
+      return;
     }
   }
   const bool active_group_is_current = active_group_.active &&
@@ -416,14 +433,20 @@ std::optional<TileProductionStep> TileProducer::produce_next(const ViewRequest& 
     const auto group = choose_missing_group(view);
     discard_active_group();
     if (!group.has_value()) {
-      return TileProductionStep{.complete = true};
+      result.emplace();
+      result->complete = true;
+      return;
     }
     if (!start_group(view, *group)) {
-      active_group_ = {};
-      return std::nullopt;
+      discard_active_group();
+      result.reset();
+      return;
     }
   }
-  return render_active_batch();
+  result.emplace();
+  if (!render_active_batch(*result)) {
+    result.reset();
+  }
 }
 
 void TileProducer::cancel_pending_work() { discard_active_group(); }
@@ -464,15 +487,26 @@ bool TileProducer::start_group(const ViewRequest& view, TileKey group_origin) {
   buffer_initialization_internal::initialize_raster_buffers(
       surface, baseline_color_, workspace_.finalized_pixels.first(kTileProducerMaskBytes));
   summary_.reset(bounds.y1 - bounds.y0, bounds.x1 - bounds.x0);
-  active_group_ = {.view = view,
-                   .origin = group_origin,
-                   .bounds = bounds,
-                   .epoch = epoch,
-                   .revision = revision,
-                   .first_operation = replay->first_operation,
-                   .next_operation = replay->first_operation + replay->operation_count,
-                   .next_sample = 0,
-                   .active = true};
+  // Initialize the reusable state in place. Building an aggregate temporary
+  // makes Xtensa GCC clear and copy the entire ActiveGroup, including the
+  // invalid cached operation, through ROM memcpy on every cold group.
+  active_group_.active = false;
+  active_group_.view.zoom = view.zoom;
+  active_group_.view.level_pixels = view.level_pixels;
+  active_group_.origin.zoom = group_origin.zoom;
+  active_group_.origin.column = group_origin.column;
+  active_group_.origin.row = group_origin.row;
+  active_group_.bounds = bounds;
+  active_group_.epoch = epoch;
+  active_group_.revision = revision;
+  active_group_.first_operation = replay->first_operation;
+  active_group_.next_operation = replay->first_operation + replay->operation_count;
+  active_group_.candidate_count = 0U;
+  active_group_.next_candidate = 0U;
+  active_group_.uses_spatial_index = false;
+  active_group_.next_sample = 0U;
+  active_group_.batch_active = false;
+  active_group_.cached_operation_index = kNoCachedOperation;
   OperationSpatialQueryStats spatial_stats{};
   spatial_stats.operations_in_authority = replay->operation_count;
   const auto candidates =
@@ -485,6 +519,7 @@ bool TileProducer::start_group(const ViewRequest& view, TileKey group_origin) {
   }
   active_group_.spatial_stats = spatial_stats;
   active_group_.spatial_stats_pending = true;
+  active_group_.active = true;
   return true;
 }
 
@@ -495,7 +530,11 @@ bool TileProducer::active_group_has_work() const {
               : active_group_.next_operation > active_group_.first_operation);
 }
 
-void TileProducer::discard_active_group() { active_group_ = {}; }
+void TileProducer::discard_active_group() {
+  active_group_.active = false;
+  active_group_.batch_active = false;
+  active_group_.cached_operation_index = kNoCachedOperation;
+}
 
 void TileProducer::consume_active_operation(TileProductionStep&, std::size_t& operations_consumed) {
   active_group_.next_sample = 0U;
@@ -524,13 +563,12 @@ TileProducer::OperationGate TileProducer::gate_active_operation(TileProductionSt
     }
     operation_index = --active_group_.next_operation;
   }
-  const auto stored = log_.operation(operation_index);
-  if (!stored.has_value()) {
+  if (!log_.read_operation(operation_index, active_group_.cached_operation)) {
     return OperationGate::kFailed;
   }
   ++result.operations_scanned;
   const PixelRect operation_bounds =
-      operation_level_bounds(stored->world_bounds, active_group_.view.zoom);
+      operation_level_bounds(active_group_.cached_operation.world_bounds, active_group_.view.zoom);
   if (!intersects(operation_bounds, active_group_.bounds)) {
     TINYDRAW_V2_CENSUS_ADD(operations_bbox_rejected, 1);
     consume_active_operation(result, operations_consumed);
@@ -547,7 +585,6 @@ TileProducer::OperationGate TileProducer::gate_active_operation(TileProductionSt
     return OperationGate::kConsumed;
   }
   active_group_.cached_operation_index = operation_index;
-  active_group_.cached_operation = *stored;
   return OperationGate::kReady;
 }
 
@@ -656,14 +693,26 @@ bool TileProducer::render_active_operation_slice(TileProductionStep& result,
   return true;
 }
 
-std::optional<TileProductionStep> TileProducer::render_active_batch() {
+bool TileProducer::render_active_batch(TileProductionStep& result) {
   if (!active_group_.active || log_.epoch() != active_group_.epoch ||
       log_.current_revision() != active_group_.revision ||
       canvas_.current_revision() != active_group_.revision) {
     discard_active_group();
-    return std::nullopt;
+    return false;
   }
-  TileProductionStep result{.level_bounds = active_group_.bounds};
+  result.level_bounds = active_group_.bounds;
+  result.operations_scanned = 0U;
+  result.operations_in_authority = 0U;
+  result.index_candidates = 0U;
+  result.deduplicated_candidates = 0U;
+  result.operations_intersecting = 0U;
+  result.operations_rendered = 0U;
+  result.groups_published = 0U;
+  result.raster_steps = 0U;
+  result.raster_work = 0U;
+  result.tiles_published = 0U;
+  result.visible_tiles_remaining = 0U;
+  result.complete = false;
   if (active_group_.spatial_stats_pending) {
     result.operations_in_authority = active_group_.spatial_stats.operations_in_authority;
     result.index_candidates = active_group_.spatial_stats.index_candidates;
@@ -695,7 +744,7 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
 #endif
     if (gate == OperationGate::kFailed) {
       discard_active_group();
-      return std::nullopt;
+      return false;
     }
     if (gate == OperationGate::kConsumed) {
       continue;
@@ -703,19 +752,19 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
     if (!render_active_operation_slice(result, operations_consumed, chords_consumed,
                                        work_consumed)) {
       discard_active_group();
-      return std::nullopt;
+      return false;
     }
   }
   if (active_group_has_work()) {
     // No tile can be published until this exact newest-first group replay is
     // complete, so the visible missing count cannot change during a slice.
     // Avoid rescanning PSRAM slot metadata on every resumable batch.
-    return result;
+    return true;
   }
   if (work_consumed >= kTileProducerSweepWorkBatch) {
     // Preserve the interaction boundary after a slice-filling final sweep.
     // The completed group publishes on the next producer call.
-    return result;
+    return true;
   }
 #if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
   const std::uint32_t publish_started = raster_census_now();
@@ -727,7 +776,7 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
 #endif
   if (!published.has_value()) {
     discard_active_group();
-    return std::nullopt;
+    return false;
   }
   if (published->tiles_published != 0U) {
     result.level_bounds = published->level_bounds;
@@ -741,15 +790,14 @@ std::optional<TileProductionStep> TileProducer::render_active_batch() {
     }
 #endif
   }
-  const ViewRequest view = active_group_.view;
-  active_group_ = {};
-  const auto remaining = visible_tiles_remaining(view);
+  const auto remaining = visible_tiles_remaining(active_group_.view);
+  discard_active_group();
   if (!remaining.has_value()) {
-    return std::nullopt;
+    return false;
   }
   result.visible_tiles_remaining = *remaining;
   result.complete = *remaining == 0U;
-  return result;
+  return true;
 }
 
 void TileProducer::include_bounds(PixelRect bounds, GroupPublication& publication) {

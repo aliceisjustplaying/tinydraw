@@ -612,10 +612,14 @@ TEST_CASE("tile producer sliced long strokes equal direct painter replay") {
       .level_pixels = {0, 0, 128, 128},
   };
   std::size_t partial_steps = 0;
+  std::size_t operations_scanned = 0;
+  std::size_t operations_intersecting = 0;
   while (true) {
     const auto step = fixture.producer.produce_next(view);
     REQUIRE(step.has_value());
     partial_steps += step->tiles_published == 0U;
+    operations_scanned += step->operations_scanned;
+    operations_intersecting += step->operations_intersecting;
     if (step->complete) {
       break;
     }
@@ -625,6 +629,10 @@ TEST_CASE("tile producer sliced long strokes equal direct painter replay") {
   // work budgets; the op-level chord sweep (H7) saturates this fat stroke's
   // group within fewer, still-bounded slices.
   CHECK(partial_steps >= 1U);
+  // The accepted operation remains cached across every resumable return.
+  // Diagnostics are credited once at its gate, never once per slice.
+  CHECK(operations_scanned == 1U);
+  CHECK(operations_intersecting == 1U);
 
   std::vector<std::uint16_t> composed(128U * 128U);
   REQUIRE(fixture.canvas.compose_view(view, composed));
@@ -674,6 +682,51 @@ TEST_CASE("cancelled producer work restarts exactly with reusable chord storage"
   REQUIRE(vector_v2::apply_incremental_operation(
       append(long_stroke, 0x001FU),
       {.zoom = view.zoom, .level_bounds = view.level_pixels, .pixels = direct, .stride = 128}));
+  CHECK(composed == direct);
+}
+
+TEST_CASE("producer view switch replaces every in-flight group field") {
+  Fixture fixture;
+  std::vector<vector_v2::CompactOperationSample> long_stroke(400);
+  for (std::size_t index = 0; index < long_stroke.size(); ++index) {
+    long_stroke[index] = {
+        .x_quarter = static_cast<std::uint16_t>(64U + index),
+        .y_quarter = static_cast<std::uint16_t>(96U + index % 96U),
+        .radius_256 = static_cast<std::uint16_t>(index % 2U == 0U ? 5'120U : 3'328U),
+    };
+  }
+  REQUIRE(fixture.log.append(append(long_stroke, 0x07E0U)));
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> revised_overview{};
+  revised_overview.fill(0xFFFFU);
+  REQUIRE(fixture.canvas.publish_overview({1}, revised_overview));
+  const vector_v2::ViewRequest first_view{
+      .zoom = vector_v2::ZoomLevel::k400Percent,
+      .level_pixels = {0, 0, 128, 128},
+  };
+  const vector_v2::ViewRequest second_view{
+      .zoom = vector_v2::ZoomLevel::k400Percent,
+      .level_pixels = {128, 0, 256, 128},
+  };
+  const auto partial = fixture.producer.produce_next(first_view);
+  REQUIRE(partial.has_value());
+  REQUIRE(partial->tiles_published == 0U);
+
+  while (true) {
+    const auto step = fixture.producer.produce_next(second_view);
+    REQUIRE(step.has_value());
+    if (step->complete) {
+      break;
+    }
+  }
+
+  std::vector<std::uint16_t> composed(128U * 128U);
+  REQUIRE(fixture.canvas.compose_view(second_view, composed));
+  std::vector<std::uint16_t> direct(composed.size(), 0xFFFFU);
+  REQUIRE(vector_v2::apply_incremental_operation(append(long_stroke, 0x07E0U),
+                                                 {.zoom = second_view.zoom,
+                                                  .level_bounds = second_view.level_pixels,
+                                                  .pixels = direct,
+                                                  .stride = 128}));
   CHECK(composed == direct);
 }
 
