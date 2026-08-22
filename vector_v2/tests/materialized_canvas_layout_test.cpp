@@ -18,6 +18,13 @@ TEST_CASE("production geometry has fixed world overview and committed zoom ident
   CHECK(vector_v2::zoom_percent(vector_v2::ZoomLevel::k400Percent) == 400);
 }
 
+static_assert(vector_v2::zoom_percent(vector_v2::ZoomLevel::k25Percent) == 25);
+static_assert(vector_v2::zoom_percent(vector_v2::ZoomLevel::k50Percent) == 50);
+static_assert(vector_v2::zoom_percent(vector_v2::ZoomLevel::k100Percent) == 100);
+static_assert(vector_v2::zoom_percent(vector_v2::ZoomLevel::k200Percent) == 200);
+static_assert(vector_v2::zoom_percent(vector_v2::ZoomLevel::k400Percent) == 400);
+static_assert(vector_v2::zoom_percent(static_cast<vector_v2::ZoomLevel>(0xFFU)) == 0);
+
 TEST_CASE("production memory plan records every fixed-capacity region") {
   CHECK(sizeof(vector_v2::CompactOperationSample) == 8U);
   CHECK(vector_v2::kOverviewPublicationBytes == 329'728U);

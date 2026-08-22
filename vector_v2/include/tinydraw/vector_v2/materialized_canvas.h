@@ -588,7 +588,22 @@ class MaterializedCanvas {
   bool overview_valid_ = false;
 };
 
-[[nodiscard]] int zoom_percent(ZoomLevel zoom);
+[[nodiscard]] inline constexpr int zoom_percent(ZoomLevel zoom) {
+  switch (zoom) {
+    case ZoomLevel::k25Percent:
+      return 25;
+    case ZoomLevel::k50Percent:
+      return 50;
+    case ZoomLevel::k100Percent:
+      return 100;
+    case ZoomLevel::k200Percent:
+      return 200;
+    case ZoomLevel::k400Percent:
+      return 400;
+  }
+  return 0;
+}
+
 // Maps valid world bounds to the complete set of overview pixels that can be
 // affected by the immediate rasterizer. The operation-bounds halo and
 // center-sampled minimum raster radius must preserve this contract.

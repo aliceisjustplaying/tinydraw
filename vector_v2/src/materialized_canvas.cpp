@@ -46,22 +46,6 @@ bool valid_overview_bounds(PixelRect bounds) {
 
 }  // namespace
 
-int zoom_percent(ZoomLevel zoom) {
-  switch (zoom) {
-    case ZoomLevel::k25Percent:
-      return 25;
-    case ZoomLevel::k50Percent:
-      return 50;
-    case ZoomLevel::k100Percent:
-      return 100;
-    case ZoomLevel::k200Percent:
-      return 200;
-    case ZoomLevel::k400Percent:
-      return 400;
-  }
-  return 0;
-}
-
 PixelRect overview_bounds_for_world(PixelRect world_bounds) {
   if (!valid_world_bounds(world_bounds)) {
     return {};

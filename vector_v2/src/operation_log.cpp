@@ -125,20 +125,6 @@ bool OperationLog::ready() const {
   return records_.size() <= kMaximumIndex && samples_.size() <= kMaximumIndex;
 }
 
-DocumentRevision OperationLog::current_revision() const { return revision_; }
-
-OperationLogEpoch OperationLog::epoch() const { return epoch_; }
-
-std::uint64_t OperationLog::history_timeline() const { return history_timeline_; }
-
-std::size_t OperationLog::operation_count() const { return operation_count_; }
-
-std::size_t OperationLog::sample_count() const { return sample_count_; }
-
-std::size_t OperationLog::operation_capacity() const { return records_.size(); }
-
-std::size_t OperationLog::sample_capacity() const { return samples_.size(); }
-
 bool OperationLog::can_reset() const { return !history_pending_; }
 
 bool OperationLog::can_undo() const {

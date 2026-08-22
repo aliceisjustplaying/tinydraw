@@ -113,18 +113,18 @@ class OperationLog {
                OperationSpatialIndex* spatial_index = nullptr);
 
   [[nodiscard]] bool ready() const;
-  [[nodiscard]] DocumentRevision current_revision() const;
-  [[nodiscard]] OperationLogEpoch epoch() const;
+  [[nodiscard]] constexpr DocumentRevision current_revision() const { return revision_; }
+  [[nodiscard]] constexpr OperationLogEpoch epoch() const { return epoch_; }
   // Identifies one immutable operations-array timeline. Unlike epoch(), it
   // survives pure Undo/Redo (only the active prefix moves) and changes only
   // when array content changes meaning: redo-replacing append, reset, and
   // journal restore. Preserved history pre-images are valid within one
   // timeline.
-  [[nodiscard]] std::uint64_t history_timeline() const;
-  [[nodiscard]] std::size_t operation_count() const;
-  [[nodiscard]] std::size_t sample_count() const;
-  [[nodiscard]] std::size_t operation_capacity() const;
-  [[nodiscard]] std::size_t sample_capacity() const;
+  [[nodiscard]] constexpr std::uint64_t history_timeline() const { return history_timeline_; }
+  [[nodiscard]] constexpr std::size_t operation_count() const { return operation_count_; }
+  [[nodiscard]] constexpr std::size_t sample_count() const { return sample_count_; }
+  [[nodiscard]] constexpr std::size_t operation_capacity() const { return records_.size(); }
+  [[nodiscard]] constexpr std::size_t sample_capacity() const { return samples_.size(); }
   [[nodiscard]] bool can_reset() const;
   [[nodiscard]] bool can_undo() const;
   [[nodiscard]] bool can_redo() const;
