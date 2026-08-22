@@ -99,10 +99,11 @@ bool vector_v2_app_start(VectorV2AppSession& session) {
   }
   std::printf(
       "TINYDRAW_PRODUCER_SCRATCH supertask_internal=%u settle_internal=%u free_internal=%lu "
-      "free_psram=%lu\n",
+      "free_psram=%lu frame_phase=%u\n",
       storage.supertask_internal, storage.settle_internal,
       static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
-      static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)));
+      static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)),
+      static_cast<unsigned>(reinterpret_cast<std::uintptr_t>(storage.frame) & 0x0FU));
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
   std::fill_n(storage.snapshot, vector_v2::kOverviewPixels, 0xFFFFU);
 #endif

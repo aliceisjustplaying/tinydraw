@@ -23,6 +23,12 @@ template <typename Type>
 }
 
 template <typename Type>
+[[nodiscard]] Type* allocate_aligned_array(std::size_t alignment, std::size_t count) {
+  return static_cast<Type*>(
+      heap_caps_aligned_alloc(alignment, count * sizeof(Type), kExternalCaps));
+}
+
+template <typename Type>
 [[nodiscard]] Type* allocate_internal(std::size_t count) {
   return static_cast<Type*>(
       heap_caps_malloc(count * sizeof(Type), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
@@ -35,7 +41,7 @@ bool AppStorage::allocate() {
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
   snapshot = allocate_array<std::uint16_t>(vector_v2::kOverviewPixels);
 #endif
-  frame = allocate_array<std::uint16_t>(vector_v2::kOverviewPixels);
+  frame = allocate_aligned_array<std::uint16_t>(16U, vector_v2::kOverviewPixels);
   tile_pixels = allocate_array<std::uint16_t>(vector_v2::kTileSlotCount * vector_v2::kTilePixels);
   overview_scratch = allocate_array<std::uint16_t>(vector_v2::kOverviewPixels);
   region_scratch = allocate_array<std::uint16_t>(kLiveRegionScratchPixels);

@@ -1,6 +1,7 @@
 #include <algorithm>
 
 #include "tinydraw/vector_v2/materialized_canvas.h"
+#include "tinydraw/vector_v2/pixel_memory.h"
 #include "tinydraw/vector_v2/storage_overlap.h"
 
 namespace tinydraw::vector_v2 {
@@ -56,31 +57,31 @@ void MaterializedCanvas::compose_raw_pixels(std::size_t slot_index, PixelRect bo
   const std::size_t tile_base = slot_index * kTilePixels;
   const int local_x = bounds.x0 % kTileWidth;
   const int width = bounds.x1 - bounds.x0;
-  for (int y = bounds.y0; y < bounds.y1; ++y) {
-    const std::size_t source = tile_base + static_cast<std::size_t>(y % kTileHeight) * kTileWidth +
-                               static_cast<std::size_t>(local_x);
-    const std::size_t destination =
-        static_cast<std::size_t>(y - view.y0) * static_cast<std::size_t>(context.view_width) +
-        static_cast<std::size_t>(bounds.x0 - view.x0);
-    std::copy_n(tile_pixels_.begin() + static_cast<std::ptrdiff_t>(source), width,
-                context.destination.begin() + static_cast<std::ptrdiff_t>(destination));
-  }
-  context.stats.tile_pixels +=
-      static_cast<std::size_t>(width) * static_cast<std::size_t>(bounds.y1 - bounds.y0);
+  const int height = bounds.y1 - bounds.y0;
+  const std::size_t source = tile_base +
+                             static_cast<std::size_t>(bounds.y0 % kTileHeight) * kTileWidth +
+                             static_cast<std::size_t>(local_x);
+  const std::size_t destination =
+      static_cast<std::size_t>(bounds.y0 - view.y0) * static_cast<std::size_t>(context.view_width) +
+      static_cast<std::size_t>(bounds.x0 - view.x0);
+  copy_pixel_rows_disjoint(tile_pixels_.data() + static_cast<std::ptrdiff_t>(source), kTileWidth,
+                           context.destination.data() + static_cast<std::ptrdiff_t>(destination),
+                           context.view_width, width, height);
+  context.stats.tile_pixels += static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
 }
 
 void MaterializedCanvas::compose_uniform_pixels(std::uint16_t color, PixelRect bounds,
                                                 CompositionContext& context) {
   const PixelRect view = context.request.level_pixels;
-  for (int y = bounds.y0; y < bounds.y1; ++y) {
-    const auto offset =
-        static_cast<std::size_t>(y - view.y0) * static_cast<std::size_t>(context.view_width) +
-        static_cast<std::size_t>(bounds.x0 - view.x0);
-    std::fill_n(context.destination.begin() + static_cast<std::ptrdiff_t>(offset),
-                bounds.x1 - bounds.x0, color);
-  }
-  context.stats.uniform_pixels += static_cast<std::size_t>(bounds.x1 - bounds.x0) *
-                                  static_cast<std::size_t>(bounds.y1 - bounds.y0);
+  const int width = bounds.x1 - bounds.x0;
+  const int height = bounds.y1 - bounds.y0;
+  const std::size_t offset =
+      static_cast<std::size_t>(bounds.y0 - view.y0) * static_cast<std::size_t>(context.view_width) +
+      static_cast<std::size_t>(bounds.x0 - view.x0);
+  fill_pixel_rows_unchecked(context.destination.data() + static_cast<std::ptrdiff_t>(offset),
+                            context.view_width, width, height, color);
+  context.stats.uniform_pixels +=
+      static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
 }
 
 void MaterializedCanvas::compose_fallback_pixels(PixelRect bounds, CompositionContext& context) {

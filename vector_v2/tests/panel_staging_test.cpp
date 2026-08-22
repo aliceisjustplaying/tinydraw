@@ -10,8 +10,11 @@
 
 namespace {
 
+using tinydraw::vector_v2::copy_pixel_rows_nonoverlapping;
+using tinydraw::vector_v2::copy_pixel_rows_to_ring;
 using tinydraw::vector_v2::copy_ring_row;
 using tinydraw::vector_v2::copy_to_ring_row;
+using tinydraw::vector_v2::fill_pixel_rows;
 using tinydraw::vector_v2::PixelRect;
 using tinydraw::vector_v2::RingFrame;
 using tinydraw::vector_v2::stage_full_ring_rows_swapped;
@@ -142,6 +145,183 @@ TEST_CASE("staged runs equal the naive byte-swap model at aligned and odd source
       }
     }
   }
+}
+
+TEST_CASE("rectangular pixel copy preserves every halfword phase stride and row guard") {
+  constexpr int kRows = 3;
+  constexpr int kStoragePixels = 192;
+  std::array<std::uint16_t, kStoragePixels> source{};
+  std::array<std::uint16_t, kStoragePixels> destination{};
+  for (std::size_t index = 0; index < source.size(); ++index) {
+    source[index] = static_cast<std::uint16_t>(index * 313U + 0x1957U);
+  }
+
+  for (int source_phase = 0; source_phase < 8; ++source_phase) {
+    for (int destination_phase = 0; destination_phase < 8; ++destination_phase) {
+      for (const int width : {1, 7, 8, 9, 16, 31}) {
+        for (const int source_stride : {31, 32, 37}) {
+          for (const int destination_stride : {31, 32, 41}) {
+            if (source_stride < width || destination_stride < width) {
+              continue;
+            }
+            destination.fill(0xDEADU);
+            REQUIRE(copy_pixel_rows_nonoverlapping(source.data() + source_phase, source_stride,
+                                                   destination.data() + destination_phase,
+                                                   destination_stride, width, kRows));
+            for (int row = 0; row < kRows; ++row) {
+              for (int column = 0; column < width; ++column) {
+                CAPTURE(source_phase);
+                CAPTURE(destination_phase);
+                CAPTURE(source_stride);
+                CAPTURE(destination_stride);
+                CAPTURE(width);
+                CAPTURE(row);
+                CAPTURE(column);
+                CHECK(
+                    destination[static_cast<std::size_t>(destination_phase) +
+                                static_cast<std::size_t>(row) *
+                                    static_cast<std::size_t>(destination_stride) +
+                                static_cast<std::size_t>(column)] ==
+                    source[static_cast<std::size_t>(source_phase) +
+                           static_cast<std::size_t>(row) * static_cast<std::size_t>(source_stride) +
+                           static_cast<std::size_t>(column)]);
+              }
+              if (destination_stride > width) {
+                CHECK(destination[static_cast<std::size_t>(destination_phase) +
+                                  static_cast<std::size_t>(row) *
+                                      static_cast<std::size_t>(destination_stride) +
+                                  static_cast<std::size_t>(width)] == 0xDEADU);
+              }
+            }
+            if (destination_phase != 0) {
+              CHECK(destination[static_cast<std::size_t>(destination_phase - 1)] == 0xDEADU);
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST_CASE("rectangular pixel fill preserves every phase stride and row guard") {
+  constexpr int kRows = 3;
+  constexpr int kStoragePixels = 192;
+  constexpr std::uint16_t kColor = 0x39E7U;
+  std::array<std::uint16_t, kStoragePixels> destination{};
+  for (int phase = 0; phase < 8; ++phase) {
+    for (const int width : {1, 7, 8, 9, 16, 31}) {
+      for (const int stride : {31, 32, 41}) {
+        if (stride < width) {
+          continue;
+        }
+        destination.fill(0xDEADU);
+        REQUIRE(fill_pixel_rows(destination.data() + phase, stride, width, kRows, kColor));
+        for (int row = 0; row < kRows; ++row) {
+          for (int column = 0; column < width; ++column) {
+            CAPTURE(phase);
+            CAPTURE(stride);
+            CAPTURE(width);
+            CAPTURE(row);
+            CAPTURE(column);
+            CHECK(destination[static_cast<std::size_t>(phase) +
+                              static_cast<std::size_t>(row) * static_cast<std::size_t>(stride) +
+                              static_cast<std::size_t>(column)] == kColor);
+          }
+          if (stride > width) {
+            CHECK(destination[static_cast<std::size_t>(phase) +
+                              static_cast<std::size_t>(row) * static_cast<std::size_t>(stride) +
+                              static_cast<std::size_t>(width)] == 0xDEADU);
+          }
+        }
+        if (phase != 0) {
+          CHECK(destination[static_cast<std::size_t>(phase - 1)] == 0xDEADU);
+        }
+      }
+    }
+  }
+}
+
+TEST_CASE("rectangular pixel helpers reject overlap and invalid geometry before writing") {
+  std::array<std::uint16_t, 64> storage{};
+  for (std::size_t index = 0; index < storage.size(); ++index) {
+    storage[index] = static_cast<std::uint16_t>(index * 17U);
+  }
+  const auto before = storage;
+  CHECK_FALSE(copy_pixel_rows_nonoverlapping(storage.data(), 16, storage.data() + 1, 16, 8, 2));
+  CHECK(storage == before);
+  CHECK_FALSE(copy_pixel_rows_nonoverlapping(storage.data(), 7, storage.data() + 32, 8, 8, 2));
+  CHECK_FALSE(fill_pixel_rows(storage.data(), 7, 8, 2, 0x1234U));
+  CHECK(copy_pixel_rows_nonoverlapping(nullptr, 0, nullptr, 0, 0, 0));
+  CHECK(fill_pixel_rows(nullptr, 0, 0, 0, 0x1234U));
+}
+
+TEST_CASE("rectangular ring copy preserves arbitrary phases strides and both seams") {
+  constexpr int kAreaWidth = 13;
+  constexpr int kAreaHeight = 7;
+  constexpr int kStoragePixels = 128;
+  struct Window {
+    int x;
+    int width;
+  };
+  constexpr Window kWindows[]{{0, 13}, {0, 5}, {9, 4}, {3, 7}};
+  std::array<std::uint16_t, kStoragePixels> source{};
+  std::array<std::uint16_t, kStoragePixels> destination{};
+  for (std::size_t index = 0; index < source.size(); ++index) {
+    source[index] = static_cast<std::uint16_t>(index * 251U + 0x3179U);
+  }
+
+  for (int source_phase = 0; source_phase < 8; ++source_phase) {
+    for (int shift_x = 0; shift_x < kAreaWidth; ++shift_x) {
+      for (const auto window : kWindows) {
+        for (int first_row = 0; first_row < kAreaHeight; ++first_row) {
+          for (const int height : {1, 3, kAreaHeight}) {
+            for (const int source_stride : {window.width, window.width + 3}) {
+              destination.fill(0xDEADU);
+              REQUIRE(copy_pixel_rows_to_ring(
+                  source.data() + source_phase, source_stride, window.width, height,
+                  destination.data() + 1, kAreaWidth, kAreaHeight, first_row, shift_x, window.x));
+              for (int row = 0; row < height; ++row) {
+                for (int column = 0; column < window.width; ++column) {
+                  const std::size_t source_index =
+                      static_cast<std::size_t>(source_phase) +
+                      static_cast<std::size_t>(row) * static_cast<std::size_t>(source_stride) +
+                      static_cast<std::size_t>(column);
+                  const int destination_x = (window.x + shift_x + column) % kAreaWidth;
+                  const int destination_y = (first_row + row) % kAreaHeight;
+                  const std::size_t destination_index =
+                      1U + static_cast<std::size_t>(destination_y) * kAreaWidth +
+                      static_cast<std::size_t>(destination_x);
+                  CAPTURE(source_phase);
+                  CAPTURE(shift_x);
+                  CAPTURE(window.x);
+                  CAPTURE(window.width);
+                  CAPTURE(first_row);
+                  CAPTURE(height);
+                  CAPTURE(source_stride);
+                  CAPTURE(row);
+                  CAPTURE(column);
+                  CHECK(destination[destination_index] == source[source_index]);
+                }
+              }
+              CHECK(destination.front() == 0xDEADU);
+              CHECK(destination[1U + kAreaWidth * kAreaHeight] == 0xDEADU);
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST_CASE("rectangular ring copy rejects overlap before the first seam write") {
+  std::array<std::uint16_t, 128> storage{};
+  for (std::size_t index = 0; index < storage.size(); ++index) {
+    storage[index] = static_cast<std::uint16_t>(index * 19U + 7U);
+  }
+  const auto before = storage;
+  CHECK_FALSE(
+      copy_pixel_rows_to_ring(storage.data() + 4, 8, 8, 3, storage.data(), 13, 7, 6, 12, 5));
+  CHECK(storage == before);
 }
 
 TEST_CASE("staged runs preserve byte order across every 16-byte pointer phase") {

@@ -260,7 +260,6 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
 }
 
 bool VectorV2Presenter::compose_into_ring(vector_v2::PixelRect panel_bounds) {
-  const vector_v2::PixelRect ring_area{0, 0, vector_v2::kOverviewWidth, frame_ring_bottom_};
   const int width = panel_bounds.x1 - panel_bounds.x0;
   const int height = panel_bounds.y1 - panel_bounds.y0;
   if (width <= 0 || height <= 0) {
@@ -293,18 +292,7 @@ bool VectorV2Presenter::compose_into_ring(vector_v2::PixelRect panel_bounds) {
       return false;
     }
     overlay_pending(strip_level, pixels, width);
-    for (int row = 0; row < rows; ++row) {
-      const auto source = pixels.subspan(static_cast<std::size_t>(row) * width, width);
-      const int ring_y = vector_v2::ring_row(frame_ring_, ring_area, y + row);
-      const int ring_x = vector_v2::ring_column(frame_ring_, ring_area, panel_bounds.x0);
-      auto destination_row =
-          frame_.subspan(static_cast<std::size_t>(ring_y) * vector_v2::kOverviewWidth);
-      const int first = std::min(width, vector_v2::kOverviewWidth - ring_x);
-      std::copy(source.begin(), source.begin() + first, destination_row.begin() + ring_x);
-      if (first < width) {
-        std::copy(source.begin() + first, source.end(), destination_row.begin());
-      }
-    }
+    copy_pixels_to_ring({panel_bounds.x0, y, panel_bounds.x1, y + rows}, pixels, width);
   }
   return true;
 }
@@ -314,13 +302,21 @@ void VectorV2Presenter::copy_pixels_to_ring(vector_v2::PixelRect panel_bounds,
   const vector_v2::PixelRect ring_area{0, 0, vector_v2::kOverviewWidth, frame_ring_bottom_};
   const int width = panel_bounds.x1 - panel_bounds.x0;
   const int height = panel_bounds.y1 - panel_bounds.y0;
+  int ring_y = vector_v2::ring_row(frame_ring_, ring_area, panel_bounds.y0);
+  if (vector_v2::copy_pixel_rows_to_ring(pixels.data(), stride, width, height, frame_.data(),
+                                         vector_v2::kOverviewWidth, frame_ring_bottom_, ring_y,
+                                         frame_ring_.shift_x, panel_bounds.x0)) {
+    return;
+  }
   for (int row = 0; row < height; ++row) {
-    const int ring_y = vector_v2::ring_row(frame_ring_, ring_area, panel_bounds.y0 + row);
     auto destination_row = frame_.subspan(
         static_cast<std::size_t>(ring_y) * vector_v2::kOverviewWidth, vector_v2::kOverviewWidth);
     vector_v2::copy_to_ring_row(pixels.data() + static_cast<std::ptrdiff_t>(row) * stride, width,
                                 destination_row.data(), vector_v2::kOverviewWidth,
                                 frame_ring_.shift_x, panel_bounds.x0);
+    if (++ring_y == ring_area.y1) {
+      ring_y = ring_area.y0;
+    }
   }
 }
 
@@ -343,13 +339,16 @@ bool VectorV2Presenter::render_into_ring(std::span<const RibbonPrimitive> primit
   for (int y = panel_bounds.y0; y < panel_bounds.y1; y += rows_per_strip) {
     const int rows = std::min(rows_per_strip, panel_bounds.y1 - y);
     auto pixels = region_.first(static_cast<std::size_t>(width) * rows);
+    int ring_y = vector_v2::ring_row(frame_ring_, ring_area, y);
     for (int row = 0; row < rows; ++row) {
-      const int ring_y = vector_v2::ring_row(frame_ring_, ring_area, y + row);
       const auto source_row = frame_.subspan(
           static_cast<std::size_t>(ring_y) * vector_v2::kOverviewWidth, vector_v2::kOverviewWidth);
       vector_v2::copy_ring_row(source_row.data(), vector_v2::kOverviewWidth, frame_ring_.shift_x,
                                panel_bounds.x0, width,
                                pixels.data() + static_cast<std::ptrdiff_t>(row) * width);
+      if (++ring_y == ring_area.y1) {
+        ring_y = ring_area.y0;
+      }
     }
     static_cast<void>(renderer_->render_surface(primitives, pixels, width, rows, width,
                                                 panel_bounds.x0, y, color));

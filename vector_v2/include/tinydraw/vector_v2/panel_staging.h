@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <span>
 
+#include "tinydraw/vector_v2/pixel_memory.h"
+
 namespace tinydraw::vector_v2 {
 
 #if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32S3) && \
@@ -130,12 +132,66 @@ inline void copy_to_ring_row(const std::uint16_t* source, int width, std::uint16
     const int chunk = area_width - destination_column < width - read
                           ? area_width - destination_column
                           : width - read;
-    for (int column = 0; column < chunk; ++column) {
-      destination_row[destination_column + column] = source[read + column];
-    }
+    copy_pixel_rows_disjoint(source + read, chunk, destination_row + destination_column, chunk,
+                             chunk, 1);
     read += chunk;
     destination_column = 0;
   }
+}
+
+// Writes a source rectangle into a toroidal RGB565 frame in at most four 2D
+// copies (the Cartesian product of its horizontal and vertical seam splits).
+// Overlap is rejected before the first write so callers can retain any legacy
+// in-place behavior in their scalar fallback.
+[[nodiscard]] inline bool copy_pixel_rows_to_ring(const std::uint16_t* source, int source_stride,
+                                                  int width, int height, std::uint16_t* destination,
+                                                  int area_width, int area_height,
+                                                  int first_destination_row, int shift_x, int x) {
+  if (width < 0 || height < 0 || source_stride < width || area_width <= 0 || area_height <= 0 ||
+      first_destination_row < 0 || first_destination_row >= area_height || shift_x < 0 ||
+      shift_x >= area_width || x < 0 || x + width > area_width) {
+    return false;
+  }
+  if (width == 0 || height == 0) {
+    return true;
+  }
+  if (source == nullptr || destination == nullptr || height > area_height) {
+    return false;
+  }
+  const std::size_t source_extent =
+      static_cast<std::size_t>(height - 1) * static_cast<std::size_t>(source_stride) +
+      static_cast<std::size_t>(width);
+  const std::size_t destination_extent =
+      static_cast<std::size_t>(area_width) * static_cast<std::size_t>(area_height);
+  if (storage_overlaps(std::as_bytes(std::span(source, source_extent)),
+                       std::as_bytes(std::span(destination, destination_extent)))) {
+    return false;
+  }
+
+  int destination_x = x + shift_x;
+  if (destination_x >= area_width) {
+    destination_x -= area_width;
+  }
+  int destination_y = first_destination_row;
+  int copied_rows = 0;
+  while (copied_rows < height) {
+    const int rows = std::min(height - copied_rows, area_height - destination_y);
+    int row_destination_x = destination_x;
+    int copied_columns = 0;
+    while (copied_columns < width) {
+      const int columns = std::min(width - copied_columns, area_width - row_destination_x);
+      copy_pixel_rows_disjoint(
+          source + static_cast<std::ptrdiff_t>(copied_rows) * source_stride + copied_columns,
+          source_stride,
+          destination + static_cast<std::ptrdiff_t>(destination_y) * area_width + row_destination_x,
+          area_width, columns, rows);
+      copied_columns += columns;
+      row_destination_x = 0;
+    }
+    copied_rows += rows;
+    destination_y = 0;
+  }
+  return true;
 }
 
 inline void swap_pixels_in_place(std::span<std::uint16_t> pixels) {
