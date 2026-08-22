@@ -58,6 +58,7 @@ struct Push {
 Push g_pushes[kMaxPushes];
 std::size_t g_push_count = 0;
 bool g_pushes_collapsed = false;
+std::uint32_t g_panel_stream_failures = 0;
 
 std::int64_t g_now_us = 0;
 std::int64_t g_host_floor_us = 0;
@@ -119,6 +120,14 @@ int push_x(std::size_t index) { return index < g_push_count ? g_pushes[index].x 
 int push_y(std::size_t index) { return index < g_push_count ? g_pushes[index].y : 0; }
 int push_w(std::size_t index) { return index < g_push_count ? g_pushes[index].w : 0; }
 int push_h(std::size_t index) { return index < g_push_count ? g_pushes[index].h : 0; }
+
+void fail_next_panel_streams(std::uint32_t count) { g_panel_stream_failures = count; }
+
+bool consume_panel_stream_failure() {
+  if (g_panel_stream_failures == 0U) return false;
+  --g_panel_stream_failures;
+  return true;
+}
 
 void clock_set_floor_ms(std::uint32_t now_ms) {
   if (!g_host_clock_started) {

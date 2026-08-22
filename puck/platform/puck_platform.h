@@ -44,6 +44,12 @@ void reset_pushes();
 [[nodiscard]] int push_w(std::size_t index);
 [[nodiscard]] int push_h(std::size_t index);
 
+// Deterministic transport-failure seam for the TinyDraw verification harness.
+// The device descriptor declares no sensors; a negative emu_sensor_event()
+// arms this counter without widening the public emulator ABI.
+void fail_next_panel_streams(std::uint32_t count);
+[[nodiscard]] bool consume_panel_stream_failure();
+
 // ---- the clock -------------------------------------------------------------
 //
 // esp_timer_get_time()'s only source. emu_tick(nowMs) sets the floor; each

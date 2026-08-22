@@ -325,7 +325,10 @@ bool VectorV2ChromeController::apply(vector_v2::ChromeAction action, Point point
           presenter_.present_frame_region({busy.x0, busy.y0, busy.x1, busy.y1}, chrome_, now_us()));
       const auto dock_timing = present_history_controls(presenter_, chrome_, now_us());
       print_presentation(undo ? "undo-dock" : "redo-dock", presenter_, dock_timing);
-      return dock_timing.passed;
+      // The history move already committed authority and published damage.
+      // Report semantic success so the caller owns the refill even when this
+      // immediate feedback present fails.
+      return true;
     }
     case vector_v2::ChromeAction::kNone:
       break;

@@ -151,6 +151,10 @@ void emu_button_verdict(int, int) {}
 
 // TinyDraw currently declares no sensors. Keep the ABI total so replay code
 // never needs a sensorless-device special case.
-void emu_sensor_event(int) {}
+void emu_sensor_event(int index) {
+  if (index < 0) {
+    tinydraw::puck::fail_next_panel_streams(static_cast<std::uint32_t>(-index));
+  }
+}
 
 }  // extern "C"

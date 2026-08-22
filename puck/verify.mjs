@@ -376,6 +376,40 @@ async function verifyLongStrokeHistory() {
   );
 }
 
+async function verifyHistoryPresentationFailure() {
+  const events = [{ t: 0, k: "tick" }, { t: 16, k: "tick" }];
+  for (const event of [
+    { t: 32, k: "touch", down: 1, x: 80, y: 120 },
+    { t: 48, k: "touch", down: 1, x: 120, y: 140 },
+    { t: 64, k: "touch", down: 1, x: 160, y: 160 },
+    { t: 80, k: "touch", down: 1, x: 200, y: 180 },
+    { t: 96, k: "touch", down: 1, x: 240, y: 200 },
+    { t: 112, k: "touch", down: 0, x: 240, y: 200 },
+  ]) {
+    events.push(event, { t: event.t, k: "tick" });
+  }
+  for (let t = 128; t <= 192; t += 16) events.push({ t, k: "tick" });
+  events.push(
+    { t: 208, k: "sensor", i: -3 },
+    { t: 208, k: "touch", down: 1, x: 30, y: 410 },
+    { t: 208, k: "tick" },
+    { t: 224, k: "touch", down: 0, x: 30, y: 410 },
+    { t: 224, k: "tick" },
+  );
+  for (let t = 240; t <= 1_200; t += 16) events.push({ t, k: "tick" });
+
+  const run = await replay({ events }, [192, 1_200]);
+  const drawn = run.frames.get(192);
+  const settled = run.frames.get(1_200);
+  assert(drawn && settled, "history presentation-failure captures are missing");
+  assert(inkPixels(drawn) > 50, "presentation-failure scenario did not draw a Stroke");
+  assert(inkPixels(settled) < inkPixels(drawn) / 3,
+    "failed history feedback left the 25% frame stale after authority Undo");
+  assert(run.log.some((line) => line.includes("kind=undo-dock") && line.includes("pass=0")),
+    "history scenario did not force the dock presentation failure");
+  console.log("PASS failed history feedback preserves semantic Undo and repairs the 25% frame");
+}
+
 for (const scenario of scenarios) {
   const tracePath = join(here, "traces", scenario.trace);
   const trace = JSON.parse(readFileSync(tracePath, "utf8"));
@@ -414,6 +448,7 @@ for (const scenario of scenarios) {
 }
 
 await verifyLongStrokeHistory();
+await verifyHistoryPresentationFailure();
 
 console.log(writeFrames
   ? "PASS semantic trace assertions; recorded tolerance-0 baselines updated"

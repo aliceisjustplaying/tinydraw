@@ -139,6 +139,10 @@ class Co5300PanelTransport::Impl {
   bool stream(int x, int y, int width, int height, const std::uint16_t* area_pixels, int stride,
               int shift_x, int shift_y, int area_width, int area_height, int strip_rows,
               PanelStagePatch patch, bool linear) {
+    if (puck::consume_panel_stream_failure()) {
+      ++rejected;
+      return false;
+    }
     const bool invalid_ring = !linear &&
                               (stride < area_width || x + width > area_width ||
                                y + height > area_height);
