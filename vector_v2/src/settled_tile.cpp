@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstring>
 #include <limits>
 #include <optional>
@@ -11,6 +12,16 @@
 #include "tinydraw/vector_v2/incremental_rasterizer.h"
 
 namespace tinydraw::vector_v2 {
+#if defined(__XTENSA__)
+extern "C" std::uint32_t tinydraw_settled_composite_esp32s3(const SettledTileWorkspace* workspace,
+                                                            std::size_t first_at, std::size_t count,
+                                                            std::uint32_t packed_color);
+static_assert(offsetof(SettledTileWorkspace, operation_alpha) == 0U);
+static_assert(offsetof(SettledTileWorkspace, accumulated_alpha) == 8U);
+static_assert(offsetof(SettledTileWorkspace, red) == 16U);
+static_assert(offsetof(SettledTileWorkspace, green) == 24U);
+static_assert(offsetof(SettledTileWorkspace, blue) == 32U);
+#endif
 namespace {
 
 bool prefer_spatial_candidates(std::size_t candidate_count, std::size_t authority_count) {
@@ -848,23 +859,31 @@ void SettledRenderCursor::advance_chord_raster(WorkBudget& budget) {
   }
 }
 
-void SettledRenderCursor::composite_pixels(std::size_t row, std::size_t first_at, std::size_t count,
-                                           std::uint16_t red, std::uint16_t green,
-                                           std::uint16_t blue) {
+std::uint32_t SettledRenderCursor::composite_pixels(std::size_t first_at, std::size_t count,
+                                                    std::uint32_t packed_color) {
+#if defined(__XTENSA__)
+  return tinydraw_settled_composite_esp32s3(&workspace_, first_at, count, packed_color);
+#else
+  auto* operation_alpha = workspace_.operation_alpha.data() + first_at;
+  auto* accumulated_alpha = workspace_.accumulated_alpha.data() + first_at;
+  auto* red_plane = workspace_.red.data() + first_at;
+  auto* green_plane = workspace_.green.data() + first_at;
+  auto* blue_plane = workspace_.blue.data() + first_at;
+  const auto red = static_cast<std::uint16_t>(packed_color & 0xFFU);
+  const auto green = static_cast<std::uint16_t>((packed_color >> 8U) & 0xFFU);
+  const auto blue = static_cast<std::uint16_t>((packed_color >> 16U) & 0xFFU);
   std::uint32_t newly_saturated = 0;
   for (std::size_t offset = 0; offset < count; ++offset) {
-    const std::size_t at = first_at + offset;
-    const std::uint8_t alpha = workspace_.operation_alpha[at];
+    const std::uint8_t alpha = operation_alpha[offset];
     if (alpha == 0U) {
       continue;
     }
-    const std::uint8_t accumulated = workspace_.accumulated_alpha[at];
+    const std::uint8_t accumulated = accumulated_alpha[offset];
     if (alpha == 255U && accumulated == 0U) {
-      workspace_.red[at] = red;
-      workspace_.green[at] = green;
-      workspace_.blue[at] = blue;
-      workspace_.accumulated_alpha[at] = 255U;
-      ++saturated_pixels_;
+      red_plane[offset] = red;
+      green_plane[offset] = green;
+      blue_plane[offset] = blue;
+      accumulated_alpha[offset] = 255U;
       ++newly_saturated;
       continue;
     }
@@ -873,31 +892,31 @@ void SettledRenderCursor::composite_pixels(std::size_t row, std::size_t first_at
     if (contribution == 0U) {
       continue;
     }
-    workspace_.red[at] = static_cast<std::uint16_t>(workspace_.red[at] + red * contribution / 255U);
-    workspace_.green[at] =
-        static_cast<std::uint16_t>(workspace_.green[at] + green * contribution / 255U);
-    workspace_.blue[at] =
-        static_cast<std::uint16_t>(workspace_.blue[at] + blue * contribution / 255U);
-    const auto next_accumulated =
-        static_cast<std::uint8_t>(std::min<std::uint32_t>(255U, accumulated + contribution));
-    if (next_accumulated == 255U && accumulated != 255U) {
-      ++saturated_pixels_;
+    red_plane[offset] = static_cast<std::uint16_t>(red_plane[offset] + red * contribution / 255U);
+    green_plane[offset] =
+        static_cast<std::uint16_t>(green_plane[offset] + green * contribution / 255U);
+    blue_plane[offset] =
+        static_cast<std::uint16_t>(blue_plane[offset] + blue * contribution / 255U);
+    // contribution <= 255 - accumulated, and a nonzero contribution implies
+    // accumulated != 255, so neither a clamp nor a second old-alpha test is
+    // needed at the saturation transition.
+    const auto next_accumulated = static_cast<std::uint8_t>(accumulated + contribution);
+    if (next_accumulated == 255U) {
       ++newly_saturated;
     }
-    workspace_.accumulated_alpha[at] = next_accumulated;
+    accumulated_alpha[offset] = next_accumulated;
   }
-  if (newly_saturated != 0U) {
-    row_saturated_[row] = static_cast<std::uint8_t>(row_saturated_[row] + newly_saturated);
-    if (row_saturated_[row] == static_cast<std::uint8_t>(width_)) {
-      ++fully_saturated_rows_;
-    }
-  }
+  return newly_saturated;
+#endif
 }
 
 void SettledRenderCursor::advance_operation_composite(WorkBudget& budget) {
   const Channels color =
       expand_565(operation_stroke_.tool == OperationTool::kEraser ? std::uint16_t{0xFFFFU}
                                                                   : operation_stroke_.color);
+  const std::uint32_t packed_color = static_cast<std::uint32_t>(color.red) |
+                                     (static_cast<std::uint32_t>(color.green) << 8U) |
+                                     (static_cast<std::uint32_t>(color.blue) << 16U);
   while (composite_row_ < operation_max_y_) {
     const std::size_t row = composite_row_;
     const std::size_t end = operation_max_x_[row];
@@ -914,7 +933,14 @@ void SettledRenderCursor::advance_operation_composite(WorkBudget& budget) {
       return;
     }
     const std::size_t first_at = row * static_cast<std::size_t>(width_) + composite_x_;
-    composite_pixels(row, first_at, count, color.red, color.green, color.blue);
+    const std::uint32_t newly_saturated = composite_pixels(first_at, count, packed_color);
+    if (newly_saturated != 0U) {
+      saturated_pixels_ += newly_saturated;
+      row_saturated_[row] = static_cast<std::uint8_t>(row_saturated_[row] + newly_saturated);
+      if (row_saturated_[row] == static_cast<std::uint8_t>(width_)) {
+        ++fully_saturated_rows_;
+      }
+    }
     composite_x_ += count;
     stats_.composite_pixels += count;
     budget.work += count;
@@ -934,12 +960,15 @@ void SettledRenderCursor::advance_operation_composite(WorkBudget& budget) {
 
 void SettledRenderCursor::advance_final_fold(WorkBudget& budget) {
   const std::size_t count = std::min(budget.room(), pixel_count_ - fold_at_);
+  // Each channel contribution is at most its alpha contribution, so the
+  // channel planes stay <= accumulated_alpha. Adding the unpainted white
+  // remainder is therefore already bounded by 255.
   for (std::size_t offset = 0; offset < count; ++offset) {
     const std::size_t at = fold_at_ + offset;
     const std::uint32_t remaining = 255U - workspace_.accumulated_alpha[at];
-    const std::uint32_t r8 = std::min<std::uint32_t>(255U, workspace_.red[at] + remaining);
-    const std::uint32_t g8 = std::min<std::uint32_t>(255U, workspace_.green[at] + remaining);
-    const std::uint32_t b8 = std::min<std::uint32_t>(255U, workspace_.blue[at] + remaining);
+    const std::uint32_t r8 = workspace_.red[at] + remaining;
+    const std::uint32_t g8 = workspace_.green[at] + remaining;
+    const std::uint32_t b8 = workspace_.blue[at] + remaining;
     out_pixels_[at] =
         static_cast<std::uint16_t>(((r8 >> 3U) << 11U) | ((g8 >> 2U) << 5U) | (b8 >> 3U));
   }

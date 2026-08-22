@@ -358,6 +358,27 @@ TEST_CASE("settled sliced plane initialization is exact at every packed phase") 
   }
 }
 
+TEST_CASE("settled channel accumulation proves the final clamp redundant exhaustively") {
+  bool contribution_bounded = true;
+  bool white_fold_bounded = true;
+  for (std::uint32_t accumulated = 0U; accumulated <= 255U; ++accumulated) {
+    const std::uint32_t remaining = 255U - accumulated;
+    for (std::uint32_t channel_plane = 0U; channel_plane <= accumulated; ++channel_plane) {
+      white_fold_bounded = white_fold_bounded && channel_plane + remaining <= 255U;
+    }
+    for (std::uint32_t alpha = 0U; alpha <= 255U; ++alpha) {
+      const std::uint32_t contribution = (alpha * remaining + 127U) / 255U;
+      contribution_bounded = contribution_bounded && contribution <= remaining;
+      for (std::uint32_t channel = 0U; channel <= 255U; ++channel) {
+        contribution_bounded =
+            contribution_bounded && channel * contribution / 255U <= contribution;
+      }
+    }
+  }
+  CHECK(contribution_bounded);
+  CHECK(white_fold_bounded);
+}
+
 TEST_CASE("settled rendering rejects authority changes between slices") {
   SettleRig rig;
   const std::array stroke{

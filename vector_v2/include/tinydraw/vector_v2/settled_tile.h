@@ -155,8 +155,8 @@ class SettledRenderCursor {
   void prepare_chord(const PreparedCurveStep& chord);
   void raster_chord_row(int span_first, int span_last);
   void advance_operation_composite(WorkBudget& budget);
-  void composite_pixels(std::size_t row, std::size_t first_at, std::size_t count, std::uint16_t red,
-                        std::uint16_t green, std::uint16_t blue);
+  [[nodiscard]] std::uint32_t composite_pixels(std::size_t first_at, std::size_t count,
+                                               std::uint32_t packed_color);
   void advance_final_fold(WorkBudget& budget);
   void include_stroke_operation(const StoredOperation& operation);
   void finish_stroke_scan();
