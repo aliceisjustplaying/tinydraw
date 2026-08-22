@@ -573,31 +573,32 @@ bool TileProducer::render_active_operation_slice(TileProductionStep& result,
     if (active_group_.next_sample == 0U) {
       active_group_.next_sample = operation.samples.size() - 1U;
     }
-    const auto batch = prepare_operation_chord_batch(
-        operation.samples, active_group_.next_sample, active_group_.view.zoom, active_group_.bounds,
-        workspace_.operation_chord_plans.first(kOperationChordStorageBytes));
-    if (!batch.has_value()) {
+    OperationChordBatch batch;
+    if (!prepare_operation_chord_batch(
+            operation.samples, active_group_.next_sample, active_group_.view.zoom,
+            active_group_.bounds,
+            workspace_.operation_chord_plans.first(kOperationChordStorageBytes), batch)) {
       return false;
     }
     // Preparation moves the endpoint cursor; count it against the per-call
     // chord budget even when every chord clipped away.
-    chords_consumed += std::max<std::size_t>(batch->chord_count, 1U);
-    active_group_.batch_chords = batch->chord_count;
-    active_group_.batch_next_endpoint = batch->next_endpoint;
-    active_group_.batch_bounds = batch->clipped_bounds;
-    active_group_.batch_work = batch->raster_work;
-    active_group_.batch_row = batch->clipped_bounds.y0;
+    chords_consumed += std::max<std::size_t>(batch.chord_count, 1U);
+    active_group_.batch_chords = batch.chord_count;
+    active_group_.batch_next_endpoint = batch.next_endpoint;
+    active_group_.batch_bounds = batch.clipped_bounds;
+    active_group_.batch_work = batch.raster_work;
+    active_group_.batch_row = batch.clipped_bounds.y0;
     active_group_.batch_active = true;
 #if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
     TINYDRAW_V2_CENSUS_ADD(setup_ticks, raster_census_now() - setup_started);
 #endif
-    if (batch->chord_count == 0U) {
+    if (batch.chord_count == 0U) {
       TINYDRAW_V2_CENSUS_ADD(segments_bbox_rejected, 1);
       finish_active_batch(result, operations_consumed);
       return true;
     }
-    if (summary_.rows_saturated(batch->clipped_bounds.y0 - active_group_.bounds.y0,
-                                batch->clipped_bounds.y1 - 1 - active_group_.bounds.y0)) {
+    if (summary_.rows_saturated(batch.clipped_bounds.y0 - active_group_.bounds.y0,
+                                batch.clipped_bounds.y1 - 1 - active_group_.bounds.y0)) {
       // The whole batch footprint lies in saturated rows.
       TINYDRAW_V2_CENSUS_ADD(segments_saturation_skipped, 1);
       finish_active_batch(result, operations_consumed);

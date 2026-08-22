@@ -76,16 +76,34 @@ Segment make_segment(const Sample& first, const Sample& second) {
   };
 }
 
-Sample scaled_sample(CompactOperationSample sample, ZoomLevel zoom) {
+static void make_segment_in_place(const Sample& first, const Sample& second, Segment& segment) {
+  const float delta_x = second.x - first.x;
+  const float delta_y = second.y - first.y;
+  const float length_squared = delta_x * delta_x + delta_y * delta_y;
+  segment.first.x = first.x;
+  segment.first.y = first.y;
+  segment.first.radius = first.radius;
+  segment.second.x = second.x;
+  segment.second.y = second.y;
+  segment.second.radius = second.radius;
+  segment.delta_x = delta_x;
+  segment.delta_y = delta_y;
+  segment.inverse_length_squared = length_squared > 0.0F ? 1.0F / length_squared : 0.0F;
+}
+
+static Sample scaled_sample(CompactOperationSample sample, float scale) {
   // 1/16 is an exact binary fraction, so this stays bit-identical to a
   // division by kSampleUnitsPerWorldUnit without the libcall.
-  const float scale = zoom_scale(zoom);
   return {
       .x = static_cast<float>(sample.x_quarter) * 0.0625F * scale,
       .y = static_cast<float>(sample.y_quarter) * 0.0625F * scale,
       .radius =
           std::max(static_cast<float>(sample.radius_256) / 256.0F * scale, kMinimumScreenRadius),
   };
+}
+
+Sample scaled_sample(CompactOperationSample sample, ZoomLevel zoom) {
+  return scaled_sample(sample, zoom_scale(zoom));
 }
 
 bool valid_surface(const RasterSurface& surface) {
@@ -194,22 +212,23 @@ struct ParameterInterval {
 // native multiplies only. The reciprocal changes crossings by at most a few
 // ulp, which the rounding margin and whole-pixel guard absorb; covers_pixel
 // remains the sole geometry authority inside the conservative interval.
-TaperedSpanTable make_tapered_span_table(const Segment& segment) {
+static void make_tapered_span_table(const Segment& segment, TaperedSpanTable& table) {
   const float radius_delta = segment.second.radius - segment.first.radius;
-  TaperedSpanTable table{
-      .origin_low = segment.first.y - segment.first.radius,
-      .delta_low = segment.delta_y - radius_delta,
-      .inverse_low = 0.0F,
-      .origin_high = segment.first.y + segment.first.radius,
-      .delta_high = segment.delta_y + radius_delta,
-      .inverse_high = 0.0F,
-      .left_origin = segment.first.x - segment.first.radius,
-      .left_delta = segment.delta_x - radius_delta,
-      .right_origin = segment.first.x + segment.first.radius,
-      .right_delta = segment.delta_x + radius_delta,
-  };
+  table.origin_low = segment.first.y - segment.first.radius;
+  table.delta_low = segment.delta_y - radius_delta;
+  table.origin_high = segment.first.y + segment.first.radius;
+  table.delta_high = segment.delta_y + radius_delta;
+  table.left_origin = segment.first.x - segment.first.radius;
+  table.left_delta = segment.delta_x - radius_delta;
+  table.right_origin = segment.first.x + segment.first.radius;
+  table.right_delta = segment.delta_x + radius_delta;
   table.inverse_low = table.delta_low != 0.0F ? 1.0F / table.delta_low : 0.0F;
   table.inverse_high = table.delta_high != 0.0F ? 1.0F / table.delta_high : 0.0F;
+}
+
+TaperedSpanTable make_tapered_span_table(const Segment& segment) {
+  TaperedSpanTable table;
+  make_tapered_span_table(segment, table);
   return table;
 }
 
@@ -447,22 +466,26 @@ int last_covered_at_or_before(const Segment& segment, int first, int last, float
 // shorter than its radius is contained in the circle at its midpoint with
 // radius r + len/2. Every tier is conservative; covers_pixel remains the
 // sole geometry authority via the probe searches that follow.
-RowSeed make_row_seed(const Segment& segment) {
+void make_row_seed(const Segment& segment, RowSeed& seed) {
   const float length_squared =
       segment.delta_x * segment.delta_x + segment.delta_y * segment.delta_y;
   const float radius = std::max(segment.first.radius, segment.second.radius);
   if (length_squared > radius * radius) {
-    return {.table = make_tapered_span_table(segment)};
+    seed.circular = false;
+    seed.center_x = 0.0F;
+    seed.center_y = 0.0F;
+    seed.radius = 0.0F;
+    make_tapered_span_table(segment, seed.table);
+    return;
   }
   // The padded radius keeps the containment argument conservative against
   // float rounding in the length and midpoint arithmetic.
   const float half_length = 0.5F * conservative_sqrt_upper(length_squared);
-  return {
-      .circular = true,
-      .center_x = segment.first.x + 0.5F * segment.delta_x,
-      .center_y = segment.first.y + 0.5F * segment.delta_y,
-      .radius = radius + half_length + 0.01F,
-  };
+  seed.circular = true;
+  seed.center_x = segment.first.x + 0.5F * segment.delta_x;
+  seed.center_y = segment.first.y + 0.5F * segment.delta_y;
+  seed.radius = radius + half_length + 0.01F;
+  seed.table = {};
 }
 
 ScanSpan conservative_row_span(const RowSeed& seed, PixelRect bounds, float pixel_y) {
@@ -675,35 +698,70 @@ Sample midpoint(const Sample& first, const Sample& second) {
   };
 }
 
-std::optional<CurveUnit> curved_unit(std::span<const CompactOperationSample> samples,
-                                     std::size_t endpoint, ZoomLevel zoom) {
+static void make_curved_unit(const Sample& start, const Sample& control, const Sample& current,
+                             bool last, CurveUnit& unit) {
+  const Sample end = midpoint(control, current);
+  const Sample curve_midpoint = midpoint(midpoint(start, control), midpoint(control, end));
+  make_segment_in_place(start, curve_midpoint, unit.segments[0]);
+  make_segment_in_place(curve_midpoint, end, unit.segments[1]);
+  unit.count = 2U;
+  if (last) {
+    make_segment_in_place(end, current, unit.segments[2]);
+    unit.count = 3U;
+  }
+}
+
+void initialize_curve_sample_window(std::span<const CompactOperationSample> samples,
+                                    std::size_t endpoint, ZoomLevel zoom, CurveSampleWindow& window,
+                                    CurveUnit& unit) {
+  window.scale = zoom_scale(zoom);
+  window.prior = scaled_sample(samples[endpoint - 2U], window.scale);
+  window.control = scaled_sample(samples[endpoint - 1U], window.scale);
+  window.current = scaled_sample(samples[endpoint], window.scale);
+  const Sample start = endpoint == 2U ? window.prior : midpoint(window.prior, window.control);
+  make_curved_unit(start, window.control, window.current, endpoint + 1U == samples.size(), unit);
+}
+
+void advance_curve_sample_window(CurveSampleWindow& window, CompactOperationSample next, bool last,
+                                 CurveUnit& unit) {
+  window.prior = window.control;
+  window.control = window.current;
+  window.current = scaled_sample(next, window.scale);
+  // The previous unit already carries this exact midpoint as its final
+  // chord endpoint. Reuse its rounded bits instead of recomputing it.
+  make_curved_unit(unit.segments[1].second, window.control, window.current, last, unit);
+}
+
+void retreat_curve_sample_window(CurveSampleWindow& window, CompactOperationSample prior,
+                                 bool first, CurveUnit& unit) {
+  window.current = window.control;
+  window.control = window.prior;
+  window.prior = scaled_sample(prior, window.scale);
+  const Sample start = first ? window.prior : midpoint(window.prior, window.control);
+  make_curved_unit(start, window.control, window.current, false, unit);
+}
+
+bool curved_unit(std::span<const CompactOperationSample> samples, std::size_t endpoint,
+                 ZoomLevel zoom, CurveUnit& unit) {
   if (samples.empty()) {
-    return std::nullopt;
+    return false;
   }
   if (samples.size() <= 2U) {
     if (endpoint + 1U != samples.size()) {
-      return std::nullopt;
+      return false;
     }
-    return CurveUnit{.segments = {make_segment(scaled_sample(samples.front(), zoom),
-                                               scaled_sample(samples.back(), zoom))},
-                     .count = 1U};
+    const Sample first = scaled_sample(samples.front(), zoom);
+    const Sample second = scaled_sample(samples.back(), zoom);
+    make_segment_in_place(first, second, unit.segments[0]);
+    unit.count = 1U;
+    return true;
   }
   if (endpoint < 2U || endpoint >= samples.size()) {
-    return std::nullopt;
+    return false;
   }
-  const Sample prior = scaled_sample(samples[endpoint - 2U], zoom);
-  const Sample control = scaled_sample(samples[endpoint - 1U], zoom);
-  const Sample current = scaled_sample(samples[endpoint], zoom);
-  const Sample start = endpoint == 2U ? prior : midpoint(prior, control);
-  const Sample end = midpoint(control, current);
-  const Sample curve_midpoint = midpoint(midpoint(start, control), midpoint(control, end));
-  CurveUnit unit;
-  unit.segments[unit.count++] = make_segment(start, curve_midpoint);
-  unit.segments[unit.count++] = make_segment(curve_midpoint, end);
-  if (endpoint + 1U == samples.size()) {
-    unit.segments[unit.count++] = make_segment(end, current);
-  }
-  return unit;
+  CurveSampleWindow window;
+  initialize_curve_sample_window(samples, endpoint, zoom, window, unit);
+  return true;
 }
 
 // Warm-start row sweep over one curve unit's chords for the interactive
@@ -730,13 +788,16 @@ std::size_t prepare_warm_chords(const CurveUnit& unit, const RasterSurface& surf
       continue;
     }
     const bool constant = segment.first.radius == segment.second.radius;
-    chords[chord_count++] = {
-        .segment = segment,
-        .table = constant ? TaperedSpanTable{} : make_tapered_span_table(segment),
-        .bounds = bounds,
-        .prior = {.first = bounds.x0, .last = bounds.x0 - 1},
-        .constant = constant,
-    };
+    WarmChord& chord = chords[chord_count++];
+    copy_segment(segment, chord.segment);
+    if (constant) {
+      chord.table = {};
+    } else {
+      make_tapered_span_table(segment, chord.table);
+    }
+    chord.bounds = bounds;
+    chord.prior = {.first = bounds.x0, .last = bounds.x0 - 1};
+    chord.constant = constant;
     union_bounds.x0 = std::min(union_bounds.x0, bounds.x0);
     union_bounds.y0 = std::min(union_bounds.y0, bounds.y0);
     union_bounds.x1 = std::max(union_bounds.x1, bounds.x1);

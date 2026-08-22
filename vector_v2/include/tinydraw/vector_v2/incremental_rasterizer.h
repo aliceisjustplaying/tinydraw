@@ -136,6 +136,13 @@ struct OperationChordBatch {
     std::span<const CompactOperationSample> samples, std::size_t first_endpoint, ZoomLevel zoom,
     PixelRect surface_bounds, std::span<std::byte> chord_storage);
 
+// Copy-free form for hot replay paths that already own their batch state.
+[[nodiscard]] bool prepare_operation_chord_batch(std::span<const CompactOperationSample> samples,
+                                                 std::size_t first_endpoint, ZoomLevel zoom,
+                                                 PixelRect surface_bounds,
+                                                 std::span<std::byte> chord_storage,
+                                                 OperationChordBatch& batch);
+
 struct OperationSweepSlice {
   // First unfinished row; the batch is complete when this reaches
   // clipped_bounds.y1.

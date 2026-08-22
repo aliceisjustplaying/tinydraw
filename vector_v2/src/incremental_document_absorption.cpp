@@ -176,21 +176,20 @@ class PendingOperationAbsorption::Context {
   // once every chord batch for this surface is complete.
   int raster_quantum(const RasterSurface& surface, bool masked) {
     while (!state_.batch_ready_) {
-      const auto prepared = prepare_operation_chord_batch(
-          operation_.samples, state_.next_endpoint_, surface.zoom, surface.level_bounds,
-          state_.workspace_.operation_chord_plans.first(kOperationChordStorageBytes));
-      if (!prepared.has_value()) {
+      if (!prepare_operation_chord_batch(
+              operation_.samples, state_.next_endpoint_, surface.zoom, surface.level_bounds,
+              state_.workspace_.operation_chord_plans.first(kOperationChordStorageBytes),
+              state_.chord_batch_)) {
         return -1;
       }
-      state_.chord_batch_ = *prepared;
-      state_.next_endpoint_ = prepared->next_endpoint;
-      if (prepared->chord_count == 0U) {
+      state_.next_endpoint_ = state_.chord_batch_.next_endpoint;
+      if (state_.chord_batch_.chord_count == 0U) {
         if (state_.next_endpoint_ == 0U) {
           return 1;
         }
         continue;
       }
-      state_.raster_cursor_ = {.next_row = prepared->clipped_bounds.y0};
+      state_.raster_cursor_ = {.next_row = state_.chord_batch_.clipped_bounds.y0};
       state_.batch_ready_ = true;
     }
     OperationSweepSlice slice{};

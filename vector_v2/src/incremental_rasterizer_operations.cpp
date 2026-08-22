@@ -12,11 +12,15 @@
 
 namespace tinydraw::vector_v2 {
 
+using raster_internal::advance_curve_sample_window;
 using raster_internal::conservative_row_span;
+using raster_internal::copy_segment;
 using raster_internal::covers_pixel;
 using raster_internal::curved_unit;
+using raster_internal::CurveSampleWindow;
 using raster_internal::CurveUnit;
 using raster_internal::first_covered_at_or_after;
+using raster_internal::initialize_curve_sample_window;
 using raster_internal::kBackground;
 using raster_internal::last_covered_at_or_before;
 using raster_internal::make_row_seed;
@@ -27,6 +31,7 @@ using raster_internal::paint_masked_curve_unit_warm;
 using raster_internal::paint_masked_segment;
 using raster_internal::paint_masked_tapered_row;
 using raster_internal::paint_segment;
+using raster_internal::retreat_curve_sample_window;
 using raster_internal::RowSeed;
 using raster_internal::Sample;
 using raster_internal::scaled_sample;
@@ -46,14 +51,19 @@ bool apply_incremental_operation(const OperationAppend& operation, const RasterS
                   scaled_sample(operation.samples.back(), surface.zoom), color, surface);
     return true;
   }
-  for (std::size_t endpoint = 2U; endpoint < operation.samples.size(); ++endpoint) {
-    const auto unit = curved_unit(operation.samples, endpoint, surface.zoom);
-    if (!unit.has_value()) {
-      return false;
+  CurveSampleWindow window;
+  CurveUnit unit;
+  initialize_curve_sample_window(operation.samples, 2U, surface.zoom, window, unit);
+  for (std::size_t endpoint = 2U;;) {
+    for (std::size_t step = 0U; step < unit.count; ++step) {
+      paint_segment(unit.segments[step].first, unit.segments[step].second, color, surface);
     }
-    for (std::size_t step = 0U; step < unit->count; ++step) {
-      paint_segment(unit->segments[step].first, unit->segments[step].second, color, surface);
+    ++endpoint;
+    if (endpoint == operation.samples.size()) {
+      break;
     }
+    advance_curve_sample_window(window, operation.samples[endpoint],
+                                endpoint + 1U == operation.samples.size(), unit);
   }
   return true;
 }
@@ -81,12 +91,17 @@ bool apply_masked_incremental_operation(const OperationAppend& operation,
                          finalized_pixels, summary);
     return true;
   }
-  for (std::size_t endpoint = 2U; endpoint < operation.samples.size(); ++endpoint) {
-    const auto unit = curved_unit(operation.samples, endpoint, surface.zoom);
-    if (!unit.has_value()) {
-      return false;
+  CurveSampleWindow window;
+  CurveUnit unit;
+  initialize_curve_sample_window(operation.samples, 2U, surface.zoom, window, unit);
+  for (std::size_t endpoint = 2U;;) {
+    paint_masked_curve_unit_warm(unit, color, surface, finalized_pixels, summary);
+    ++endpoint;
+    if (endpoint == operation.samples.size()) {
+      break;
     }
-    paint_masked_curve_unit_warm(*unit, color, surface, finalized_pixels, summary);
+    advance_curve_sample_window(window, operation.samples[endpoint],
+                                endpoint + 1U == operation.samples.size(), unit);
   }
   return true;
 }
@@ -111,13 +126,13 @@ PreparedCurveStep pack_prepared_step(const Segment& segment) {
 
 std::optional<PreparedCurveUnit> prepare_incremental_curve_unit(
     std::span<const CompactOperationSample> samples, std::size_t endpoint, ZoomLevel zoom) {
-  const auto unit = curved_unit(samples, endpoint, zoom);
-  if (!unit.has_value()) {
+  CurveUnit unit;
+  if (!curved_unit(samples, endpoint, zoom, unit)) {
     return std::nullopt;
   }
-  PreparedCurveUnit prepared{.step_count = unit->count};
-  for (std::size_t step = 0; step < unit->count; ++step) {
-    prepared.steps[step] = pack_prepared_step(unit->segments[step]);
+  PreparedCurveUnit prepared{.step_count = unit.count};
+  for (std::size_t step = 0; step < unit.count; ++step) {
+    prepared.steps[step] = pack_prepared_step(unit.segments[step]);
   }
   return prepared;
 }
@@ -167,7 +182,8 @@ bool constant_capsule_covers_surface(const Segment& segment, PixelRect surface_b
       surface_bounds.x1 <= surface_bounds.x0 || surface_bounds.y1 <= surface_bounds.y0) {
     return false;
   }
-  Segment guarded = segment;
+  Segment guarded;
+  copy_segment(segment, guarded);
   guarded.first.radius -= kNumericGuard;
   guarded.second.radius -= kNumericGuard;
   // A constant-radius capsule is convex. If the four pixel-center corners
@@ -186,17 +202,21 @@ struct ChordBatchBuilder {
   ZoomLevel zoom;
   PixelRect surface_bounds;
   OperationChordPlan* plans;
-  OperationChordBatch batch;
+  OperationChordBatch& batch;
 
-  [[nodiscard]] bool append(std::size_t endpoint) {
-    const auto unit = curved_unit(samples, endpoint, zoom);
-    if (!unit.has_value()) {
+  [[nodiscard]] bool append_endpoint(std::size_t endpoint) {
+    CurveUnit unit;
+    if (!curved_unit(samples, endpoint, zoom, unit)) {
       return false;
     }
-    for (std::size_t step = 0; step < unit->count; ++step) {
-      append(unit->segments[step]);
-    }
+    append(unit);
     return true;
+  }
+
+  void append(const CurveUnit& unit) {
+    for (std::size_t step = 0; step < unit.count; ++step) {
+      append(unit.segments[step]);
+    }
   }
 
   void append(const Segment& segment) {
@@ -206,13 +226,12 @@ struct ChordBatchBuilder {
     }
     const bool spans_surface = bounds.x0 == surface_bounds.x0 && bounds.y0 == surface_bounds.y0 &&
                                bounds.x1 == surface_bounds.x1 && bounds.y1 == surface_bounds.y1;
-    plans[batch.chord_count++] = {
-        .segment = segment,
-        .seed = make_row_seed(segment),
-        .bounds = bounds,
-        .constant = segment.first.radius == segment.second.radius,
-        .covers_surface = spans_surface && constant_capsule_covers_surface(segment, surface_bounds),
-    };
+    OperationChordPlan& plan = plans[batch.chord_count++];
+    copy_segment(segment, plan.segment);
+    make_row_seed(segment, plan.seed);
+    plan.bounds = bounds;
+    plan.constant = segment.first.radius == segment.second.radius;
+    plan.covers_surface = spans_surface && constant_capsule_covers_surface(segment, surface_bounds);
     batch.raster_work += static_cast<std::size_t>(bounds.x1 - bounds.x0) *
                          static_cast<std::size_t>(bounds.y1 - bounds.y0);
     batch.clipped_bounds.x0 = std::min(batch.clipped_bounds.x0, bounds.x0);
@@ -224,21 +243,23 @@ struct ChordBatchBuilder {
   [[nodiscard]] bool prepare(std::size_t first_endpoint) {
     if (samples.size() <= 2U) {
       batch.next_endpoint = 0U;
-      return append(first_endpoint);
+      return append_endpoint(first_endpoint);
     }
     if (first_endpoint < 2U || first_endpoint >= samples.size()) {
       return false;
     }
+    CurveSampleWindow window;
+    CurveUnit unit;
     std::size_t endpoint = first_endpoint;
+    initialize_curve_sample_window(samples, endpoint, zoom, window, unit);
     while (batch.chord_count + 3U <= kOperationChordCapacity) {
-      if (!append(endpoint)) {
-        return false;
-      }
+      append(unit);
       if (endpoint == 2U) {
         batch.next_endpoint = 0U;
         return true;
       }
       --endpoint;
+      retreat_curve_sample_window(window, samples[endpoint - 2U], endpoint == 2U, unit);
     }
     batch.next_endpoint = endpoint;
     return true;
@@ -260,23 +281,36 @@ struct ChordBatchBuilder {
 std::optional<OperationChordBatch> prepare_operation_chord_batch(
     std::span<const CompactOperationSample> samples, std::size_t first_endpoint, ZoomLevel zoom,
     PixelRect surface_bounds, std::span<std::byte> chord_storage) {
-  const std::size_t capacity = kOperationChordCapacity;
-  if (samples.empty() || !chord_storage_usable(chord_storage, capacity)) {
+  OperationChordBatch batch;
+  if (!prepare_operation_chord_batch(samples, first_endpoint, zoom, surface_bounds, chord_storage,
+                                     batch)) {
     return std::nullopt;
   }
+  return batch;
+}
+
+bool prepare_operation_chord_batch(std::span<const CompactOperationSample> samples,
+                                   std::size_t first_endpoint, ZoomLevel zoom,
+                                   PixelRect surface_bounds, std::span<std::byte> chord_storage,
+                                   OperationChordBatch& batch) {
+  const std::size_t capacity = kOperationChordCapacity;
+  if (samples.empty() || !chord_storage_usable(chord_storage, capacity)) {
+    return false;
+  }
+  batch = {.clipped_bounds = {surface_bounds.x1, surface_bounds.y1, surface_bounds.x0,
+                              surface_bounds.y0}};
   ChordBatchBuilder builder{
       .samples = samples,
       .zoom = zoom,
       .surface_bounds = surface_bounds,
       .plans = chord_plans(chord_storage),
-      .batch = {.clipped_bounds = {surface_bounds.x1, surface_bounds.y1, surface_bounds.x0,
-                                   surface_bounds.y0}},
+      .batch = batch,
   };
   if (!builder.prepare(first_endpoint)) {
-    return std::nullopt;
+    return false;
   }
   builder.sort(chord_storage);
-  return builder.batch;
+  return true;
 }
 
 namespace {

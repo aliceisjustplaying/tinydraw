@@ -46,18 +46,30 @@ inline constexpr std::uint16_t kBackground = 0xFFFFU;
 // initialization. Their construction sites either value-initialize them
 // explicitly or fill every field before exposing the record.
 struct Sample {
-  float x = 0;
-  float y = 0;
-  float radius = 0;
+  float x;
+  float y;
+  float radius;
 };
 
 struct Segment {
-  Sample first{};
-  Sample second{};
-  float delta_x = 0;
-  float delta_y = 0;
-  float inverse_length_squared = 0;
+  Sample first;
+  Sample second;
+  float delta_x;
+  float delta_y;
+  float inverse_length_squared;
 };
+
+inline void copy_segment(const Segment& source, Segment& destination) {
+  destination.first.x = source.first.x;
+  destination.first.y = source.first.y;
+  destination.first.radius = source.first.radius;
+  destination.second.x = source.second.x;
+  destination.second.y = source.second.y;
+  destination.second.radius = source.second.radius;
+  destination.delta_x = source.delta_x;
+  destination.delta_y = source.delta_y;
+  destination.inverse_length_squared = source.inverse_length_squared;
+}
 
 struct ScanSpan {
   int first = 0;
@@ -93,8 +105,18 @@ struct RowSeed {
 };
 
 struct CurveUnit {
-  std::array<Segment, 3> segments{};
-  std::size_t count = 0U;
+  std::array<Segment, 3> segments;
+  std::size_t count;
+};
+
+// Rolling scaled samples for callers that visit adjacent curve endpoints.
+// The zoom scale is resolved once and each subsequent endpoint converts only
+// the one CompactOperationSample entering the three-sample window.
+struct CurveSampleWindow {
+  Sample prior;
+  Sample control;
+  Sample current;
+  float scale;
 };
 
 struct MaskedRowTarget {
@@ -117,7 +139,7 @@ struct MaskedRowTarget {
                                             float pixel_y);
 [[nodiscard]] int last_covered_at_or_before(const Segment& segment, int first, int last,
                                             float pixel_y);
-[[nodiscard]] RowSeed make_row_seed(const Segment& segment);
+void make_row_seed(const Segment& segment, RowSeed& seed);
 [[nodiscard]] ScanSpan conservative_row_span(const RowSeed& seed, PixelRect bounds, float pixel_y);
 [[nodiscard]] int paint_masked_const_row(const Segment& segment, const RowSeed& seed,
                                          PixelRect bounds, const MaskedRowTarget& target);
@@ -129,8 +151,15 @@ void paint_segment(const Sample& start, const Sample& end, std::uint16_t color,
 void paint_masked_segment(const Sample& start, const Sample& end, std::uint16_t color,
                           const RasterSurface& surface, std::span<std::uint8_t> finalized,
                           MaskedRowSummary* summary);
-[[nodiscard]] std::optional<CurveUnit> curved_unit(std::span<const CompactOperationSample> samples,
-                                                   std::size_t endpoint, ZoomLevel zoom);
+[[nodiscard]] bool curved_unit(std::span<const CompactOperationSample> samples,
+                               std::size_t endpoint, ZoomLevel zoom, CurveUnit& unit);
+void initialize_curve_sample_window(std::span<const CompactOperationSample> samples,
+                                    std::size_t endpoint, ZoomLevel zoom, CurveSampleWindow& window,
+                                    CurveUnit& unit);
+void advance_curve_sample_window(CurveSampleWindow& window, CompactOperationSample next, bool last,
+                                 CurveUnit& unit);
+void retreat_curve_sample_window(CurveSampleWindow& window, CompactOperationSample prior,
+                                 bool first, CurveUnit& unit);
 void paint_masked_curve_unit_warm(const CurveUnit& unit, std::uint16_t color,
                                   const RasterSurface& surface, std::span<std::uint8_t> finalized,
                                   MaskedRowSummary* summary);
