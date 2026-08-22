@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstring>
 #include <tuple>
 
 #include "tinydraw/vector_v2/materialized_canvas.h"
@@ -12,6 +13,50 @@
 
 namespace tinydraw::vector_v2 {
 using namespace materialized_canvas_detail;
+
+namespace {
+
+#if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32S3) && !defined(TINYDRAW_QEMU) && \
+    !defined(TINYDRAW_DISABLE_PIE_TILE_PUBLICATION)
+extern "C" void tinydraw_publish_tile_64x64_stride128_pie(const std::uint16_t* source,
+                                                          std::uint16_t* destination);
+#endif
+
+[[gnu::always_inline]] inline void copy_publication_rows(const std::uint16_t* source,
+                                                         std::size_t source_stride,
+                                                         std::uint16_t* destination, int width,
+                                                         int height) {
+#if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32S3) && !defined(TINYDRAW_QEMU) && \
+    !defined(TINYDRAW_DISABLE_PIE_TILE_PUBLICATION)
+  // Production immediate tiles are 64x64 windows of the aligned 128x128
+  // producer surface. Tile-pool slots are 8192-byte aligned relative to the
+  // allocation base, so one phase check covers every source and destination
+  // row before using address-rounding PIE vector loads and stores.
+  if (width == kTileWidth && height == kTileHeight && source_stride == 128U &&
+      ((reinterpret_cast<std::uintptr_t>(source) | reinterpret_cast<std::uintptr_t>(destination)) &
+       0x0FU) == 0U) {
+    tinydraw_publish_tile_64x64_stride128_pie(source, destination);
+    return;
+  }
+#endif
+
+  const std::size_t row_bytes = static_cast<std::size_t>(width) * sizeof(std::uint16_t);
+  for (int row = 0; row < height; ++row) {
+    std::memmove(destination + static_cast<std::size_t>(row) * kTileWidth,
+                 source + static_cast<std::size_t>(row) * source_stride, row_bytes);
+  }
+}
+
+}  // namespace
+
+#if defined(TINYDRAW_VECTOR_V2_GATE_HARNESS)
+extern "C" void tinydraw_gate_copy_publication_rows(const std::uint16_t* source,
+                                                    std::size_t source_stride,
+                                                    std::uint16_t* destination, int width,
+                                                    int height) {
+  copy_publication_rows(source, source_stride, destination, width, height);
+}
+#endif
 
 void MaterializedCanvas::cancel_in_place_stage(InPlaceOverviewStage& stage) {
   if (!stage.raw_staging_started_ || !staged_in_place_active_ ||
@@ -335,13 +380,7 @@ std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, Documen
 #endif
   release_slot(index);
   auto destination = tile_pixels_.subspan(index * kTilePixels, kTilePixels);
-  for (int row = 0; row < height; ++row) {
-    const auto source_offset = static_cast<std::size_t>(row) * source_stride;
-    const auto destination_offset =
-        static_cast<std::size_t>(row) * static_cast<std::size_t>(kTileWidth);
-    std::copy_n(pixels.begin() + static_cast<std::ptrdiff_t>(source_offset), width,
-                destination.begin() + static_cast<std::ptrdiff_t>(destination_offset));
-  }
+  copy_publication_rows(pixels.data(), source_stride, destination.data(), width, height);
   slot.key_ = key;
   slot.revision_ = revision;
   slot.quality_ = quality;

@@ -42,7 +42,8 @@ bool AppStorage::allocate() {
   snapshot = allocate_array<std::uint16_t>(vector_v2::kOverviewPixels);
 #endif
   frame = allocate_aligned_array<std::uint16_t>(16U, vector_v2::kOverviewPixels);
-  tile_pixels = allocate_array<std::uint16_t>(vector_v2::kTileSlotCount * vector_v2::kTilePixels);
+  tile_pixels = allocate_aligned_array<std::uint16_t>(
+      16U, vector_v2::kTileSlotCount * vector_v2::kTilePixels);
   overview_scratch = allocate_array<std::uint16_t>(vector_v2::kOverviewPixels);
   region_scratch = allocate_array<std::uint16_t>(kLiveRegionScratchPixels);
   chrome_cache = allocate_array<std::uint16_t>(vector_v2::kChromeStagingCachePixels);

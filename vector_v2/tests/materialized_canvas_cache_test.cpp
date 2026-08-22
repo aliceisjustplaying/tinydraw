@@ -1,7 +1,93 @@
 #include <doctest.h>
 
+#include <algorithm>
+#include <vector>
+
 #include "test_support/materialized_canvas_fixture.h"
 #include "tinydraw/vector_v2/memory_layout.h"
+
+TEST_CASE("strided full-tile publication is exact at every 16-byte pointer phase") {
+  constexpr std::size_t kSourceStride = 128U;
+  constexpr std::size_t kSourcePixels =
+      (vector_v2::kTileHeight - 1U) * kSourceStride + vector_v2::kTileWidth;
+  constexpr std::uint16_t kGuard = 0xDEADU;
+  const vector_v2::TileKey key{vector_v2::ZoomLevel::k100Percent, 0, 0};
+
+  auto overview = std::make_unique<std::array<std::uint16_t, vector_v2::kOverviewPixels>>();
+  for (std::size_t source_phase = 0; source_phase < 8U; ++source_phase) {
+    for (std::size_t destination_phase = 0; destination_phase < 8U; ++destination_phase) {
+      std::vector<std::uint16_t> source_storage(kSourcePixels + 9U, kGuard);
+      std::vector<std::uint16_t> tile_storage(vector_v2::kTilePixels + 9U, kGuard);
+      std::array<vector_v2::MaterializedSlotStorage, 1> slots{};
+      auto source = std::span(source_storage).subspan(source_phase, kSourcePixels);
+      auto destination = std::span(tile_storage).subspan(destination_phase, vector_v2::kTilePixels);
+
+      for (int row = 0; row < vector_v2::kTileHeight; ++row) {
+        for (int column = 0; column < vector_v2::kTileWidth; ++column) {
+          source[static_cast<std::size_t>(row) * kSourceStride + static_cast<std::size_t>(column)] =
+              static_cast<std::uint16_t>(row * 257 + column * 17 + 0x1234);
+        }
+      }
+
+      TestCanvas canvas(*overview, slots, destination);
+      CAPTURE(source_phase);
+      CAPTURE(destination_phase);
+      REQUIRE(canvas.publish_tile(key, {0}, vector_v2::MaterializationQuality::kImmediate, source,
+                                  kSourceStride));
+      for (int row = 0; row < vector_v2::kTileHeight; ++row) {
+        for (int column = 0; column < vector_v2::kTileWidth; ++column) {
+          CHECK(destination[static_cast<std::size_t>(row) * vector_v2::kTileWidth +
+                            static_cast<std::size_t>(column)] ==
+                source[static_cast<std::size_t>(row) * kSourceStride +
+                       static_cast<std::size_t>(column)]);
+        }
+      }
+      CHECK(tile_storage[destination_phase + vector_v2::kTilePixels] == kGuard);
+      if (destination_phase != 0U) {
+        CHECK(tile_storage[destination_phase - 1U] == kGuard);
+      }
+    }
+  }
+}
+
+TEST_CASE("tile publication keeps clipped stride guards and rejects pool overlap") {
+  constexpr std::size_t kSourceStride = 128U;
+  constexpr int kWidth = 32;
+  constexpr int kHeight = 64;
+  constexpr std::size_t kSourcePixels =
+      (kHeight - 1U) * kSourceStride + static_cast<std::size_t>(kWidth);
+  constexpr std::uint16_t kGuard = 0xA55AU;
+  const vector_v2::TileKey edge{vector_v2::ZoomLevel::k50Percent, 11, 13};
+  auto overview = std::make_unique<std::array<std::uint16_t, vector_v2::kOverviewPixels>>();
+  std::array<vector_v2::MaterializedSlotStorage, 1> slots{};
+  std::vector<std::uint16_t> source_storage(kSourcePixels + 4U, kGuard);
+  std::vector<std::uint16_t> tile_storage(vector_v2::kTilePixels + 4U, kGuard);
+  auto source = std::span(source_storage).subspan(2U, kSourcePixels);
+  auto destination = std::span(tile_storage).subspan(3U, vector_v2::kTilePixels);
+  for (int row = 0; row < kHeight; ++row) {
+    for (int column = 0; column < kWidth; ++column) {
+      source[static_cast<std::size_t>(row) * kSourceStride + static_cast<std::size_t>(column)] =
+          static_cast<std::uint16_t>(row * 101 + column + 7);
+    }
+  }
+
+  TestCanvas canvas(*overview, slots, destination);
+  REQUIRE(canvas.publish_tile(edge, {0}, vector_v2::MaterializationQuality::kImmediate, source,
+                              kSourceStride));
+  for (int row = 0; row < kHeight; ++row) {
+    for (int column = 0; column < kWidth; ++column) {
+      CHECK(
+          destination[static_cast<std::size_t>(row) * vector_v2::kTileWidth +
+                      static_cast<std::size_t>(column)] ==
+          source[static_cast<std::size_t>(row) * kSourceStride + static_cast<std::size_t>(column)]);
+    }
+  }
+  CHECK(tile_storage[2] == kGuard);
+  CHECK(tile_storage[3U + vector_v2::kTilePixels] == kGuard);
+
+  CHECK_FALSE(canvas.publish_tile(edge, {0}, vector_v2::MaterializationQuality::kSettled,
+                                  destination, vector_v2::kTileWidth));
+}
 
 TEST_CASE("cache retains every zoom viewport across a disjoint pan fill") {
   constexpr std::array zooms{
