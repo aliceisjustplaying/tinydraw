@@ -25,6 +25,7 @@ entries:
 archive: libmain.a
 entries:
     incremental_rasterizer (noflash_text)
+    incremental_rasterizer_operations (noflash_text)
 
 # F13: device A/B measured a 6.5-7.4% all-zoom settled-AA win.
 [mapping:tinydraw_settled_tile]
