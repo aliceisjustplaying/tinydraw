@@ -361,21 +361,39 @@ bool VectorV2Presenter::render_into_ring(std::span<const RibbonPrimitive> primit
 void VectorV2Presenter::copy_ring_to_stage(vector_v2::PixelRect panel_bounds,
                                            const PanelStageSurface& surface) {
   const vector_v2::PixelRect ring_area{0, 0, vector_v2::kOverviewWidth, frame_ring_bottom_};
+  int ring_y = vector_v2::ring_row(frame_ring_, ring_area, panel_bounds.y0);
+  const int width = panel_bounds.x1 - panel_bounds.x0;
+  const int height = panel_bounds.y1 - panel_bounds.y0;
+  auto destination = surface.pixels.subspan(
+      static_cast<std::size_t>(panel_bounds.y0 - surface.panel_y) *
+              static_cast<std::size_t>(surface.stride) +
+          static_cast<std::size_t>(panel_bounds.x0 - surface.panel_x),
+      static_cast<std::size_t>(height - 1) * static_cast<std::size_t>(surface.stride) +
+          static_cast<std::size_t>(width));
+  if (surface.byte_swapped && panel_bounds.x0 == 0 &&
+      panel_bounds.x1 == vector_v2::kOverviewWidth && surface.panel_x == 0 &&
+      surface.width == vector_v2::kOverviewWidth &&
+      vector_v2::stage_full_ring_rows_swapped(frame_.data(), vector_v2::kOverviewWidth, ring_y,
+                                              height, frame_ring_bottom_, frame_ring_.shift_x,
+                                              destination.data(), surface.stride)) {
+    return;
+  }
   for (int y = panel_bounds.y0; y < panel_bounds.y1; ++y) {
-    const int ring_y = vector_v2::ring_row(frame_ring_, ring_area, y);
     const auto source_row =
         frame_.subspan(static_cast<std::size_t>(ring_y) * vector_v2::kOverviewWidth);
-    auto destination = surface.pixels.subspan(
+    auto destination_row = surface.pixels.subspan(
         static_cast<std::size_t>(y - surface.panel_y) * static_cast<std::size_t>(surface.stride) +
             static_cast<std::size_t>(panel_bounds.x0 - surface.panel_x),
-        static_cast<std::size_t>(panel_bounds.x1 - panel_bounds.x0));
-    const int width = panel_bounds.x1 - panel_bounds.x0;
+        static_cast<std::size_t>(width));
     if (surface.byte_swapped) {
       vector_v2::stage_ring_row(source_row.data(), vector_v2::kOverviewWidth, frame_ring_.shift_x,
-                                panel_bounds.x0, width, destination.data());
+                                panel_bounds.x0, width, destination_row.data());
     } else {
       vector_v2::copy_ring_row(source_row.data(), vector_v2::kOverviewWidth, frame_ring_.shift_x,
-                               panel_bounds.x0, width, destination.data());
+                               panel_bounds.x0, width, destination_row.data());
+    }
+    if (++ring_y == ring_area.y1) {
+      ring_y = ring_area.y0;
     }
   }
 }

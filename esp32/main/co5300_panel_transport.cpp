@@ -75,6 +75,7 @@ const std::array<co5300_lcd_init_cmd_t, 11> panel_init{{
 }};
 
 using vector_v2::copy_ring_row;
+using vector_v2::stage_full_ring_rows_swapped;
 using vector_v2::stage_pixels_swapped;
 using vector_v2::stage_ring_row;
 using vector_v2::swap_pixels_in_place;
@@ -206,7 +207,8 @@ PanelResetResult reset_panel_power() {
 class Co5300PanelTransport::Impl {
  public:
   Impl() {
-    transfer_pixels_ = static_cast<std::uint16_t*>(heap_caps_malloc(
+    transfer_pixels_ = static_cast<std::uint16_t*>(heap_caps_aligned_alloc(
+        16U,
         static_cast<std::size_t>(kTransferQueueDepth * kTransferPixels) * sizeof(std::uint16_t),
         kDmaCaps));
     transfer_semaphore_ = xSemaphoreCreateCountingStatic(kTransferQueueDepth, kTransferQueueDepth,
@@ -227,7 +229,8 @@ class Co5300PanelTransport::Impl {
     if (!panel_reset.succeeded) {
       return;
     }
-    std::printf("TINYDRAW_PANEL_TRANSPORT clock_mhz=%d\n", kPanelClockMHz);
+    std::printf("TINYDRAW_PANEL_TRANSPORT clock_mhz=%d transfer_phase=%u\n", kPanelClockMHz,
+                static_cast<unsigned>(reinterpret_cast<std::uintptr_t>(transfer_pixels_) & 0x0FU));
 
     spi_bus_config_t bus_config{};
     bus_config.sclk_io_num = GPIO_NUM_11;
@@ -776,17 +779,28 @@ class Co5300PanelTransport::Impl {
 
       const std::int64_t prepare_started = acquired;
       const std::int64_t copy_started = acquired;
-      for (int strip_row = 0; strip_row < rows; ++strip_row) {
-        int source_row = y + row + strip_row + shift_y;
-        if (source_row >= area_height) {
-          source_row -= area_height;
+      bool copied = false;
+      if (patch.accepts_byte_swapped && x == 0 && width == area_width && stride == area_width) {
+        int first_source_row = y + row + shift_y;
+        if (first_source_row >= area_height) {
+          first_source_row -= area_height;
         }
-        const auto* source = area_pixels + static_cast<std::ptrdiff_t>(source_row) * stride;
-        auto* destination = transfer + static_cast<std::ptrdiff_t>(strip_row * width);
-        if (patch.accepts_byte_swapped) {
-          stage_ring_row(source, area_width, shift_x, x, width, destination);
-        } else {
-          copy_ring_row(source, area_width, shift_x, x, width, destination);
+        copied = stage_full_ring_rows_swapped(area_pixels, area_width, first_source_row, rows,
+                                              area_height, shift_x, transfer, width);
+      }
+      if (!copied) {
+        for (int strip_row = 0; strip_row < rows; ++strip_row) {
+          int source_row = y + row + strip_row + shift_y;
+          if (source_row >= area_height) {
+            source_row -= area_height;
+          }
+          const auto* source = area_pixels + static_cast<std::ptrdiff_t>(source_row) * stride;
+          auto* destination = transfer + static_cast<std::ptrdiff_t>(strip_row * width);
+          if (patch.accepts_byte_swapped) {
+            stage_ring_row(source, area_width, shift_x, x, width, destination);
+          } else {
+            copy_ring_row(source, area_width, shift_x, x, width, destination);
+          }
         }
       }
       const auto staged =

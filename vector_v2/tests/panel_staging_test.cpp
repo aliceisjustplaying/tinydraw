@@ -14,6 +14,7 @@ using tinydraw::vector_v2::copy_ring_row;
 using tinydraw::vector_v2::copy_to_ring_row;
 using tinydraw::vector_v2::PixelRect;
 using tinydraw::vector_v2::RingFrame;
+using tinydraw::vector_v2::stage_full_ring_rows_swapped;
 using tinydraw::vector_v2::stage_pixels_swapped;
 using tinydraw::vector_v2::stage_ring_row;
 using tinydraw::vector_v2::swap_pixels_in_place;
@@ -143,6 +144,30 @@ TEST_CASE("staged runs equal the naive byte-swap model at aligned and odd source
   }
 }
 
+TEST_CASE("staged runs preserve byte order across every 16-byte pointer phase") {
+  constexpr int kWidth = 368;
+  const auto source = pattern(kWidth + 8, 0x51A6U);
+  for (int source_offset = 0; source_offset < 8; ++source_offset) {
+    for (int destination_offset = 0; destination_offset < 8; ++destination_offset) {
+      std::vector<std::uint16_t> storage(kWidth + 16, 0xDEADU);
+      auto* destination = storage.data() + destination_offset;
+      for (const int width : {2, 6, 16, 18, 32, 34, kWidth}) {
+        std::fill(storage.begin(), storage.end(), 0xDEADU);
+        stage_pixels_swapped(source.data() + source_offset, destination, width);
+        for (int column = 0; column < width; ++column) {
+          CAPTURE(source_offset);
+          CAPTURE(destination_offset);
+          CAPTURE(width);
+          CAPTURE(column);
+          CHECK(destination[column] ==
+                byte_swapped(source[static_cast<std::size_t>(source_offset + column)]));
+        }
+        CHECK(storage[static_cast<std::size_t>(destination_offset + width)] == 0xDEADU);
+      }
+    }
+  }
+}
+
 TEST_CASE("host-order ring copy can be patched before one in-place byte swap") {
   constexpr int kAreaWidth = 368;
   const auto source_row = pattern(kAreaWidth, 0xCAFEU);
@@ -266,6 +291,51 @@ TEST_CASE("44-row strip staging equals single-pass staging across seams") {
       CHECK(stripped[index] == byte_swapped(frame[index]));
     }
   }
+}
+
+TEST_CASE("full ring row staging covers horizontal and vertical wrap") {
+  constexpr int kWidth = 368;
+  constexpr int kHeight = 7;
+  constexpr int kRows = 5;
+  constexpr int kDestinationStride = kWidth + 4;
+  const auto source = pattern(static_cast<std::size_t>(kWidth) * kHeight, 0x2D5EU);
+
+  for (const int first_row : {0, 4, 6}) {
+    for (const int shift_x : {0, 1, 3, 8, 24, 72, 360, 367}) {
+      std::vector<std::uint16_t> destination(static_cast<std::size_t>(kDestinationStride) * kRows,
+                                             0xDEADU);
+      REQUIRE(stage_full_ring_rows_swapped(source.data(), kWidth, first_row, kRows, kHeight,
+                                           shift_x, destination.data(), kDestinationStride));
+      for (int row = 0; row < kRows; ++row) {
+        const int source_row = (first_row + row) % kHeight;
+        for (int column = 0; column < kWidth; ++column) {
+          CAPTURE(first_row);
+          CAPTURE(shift_x);
+          CAPTURE(row);
+          CAPTURE(column);
+          const std::size_t source_index = static_cast<std::size_t>(source_row) * kWidth +
+                                           static_cast<std::size_t>((column + shift_x) % kWidth);
+          const std::size_t destination_index =
+              static_cast<std::size_t>(row) * kDestinationStride + static_cast<std::size_t>(column);
+          CHECK(destination[destination_index] == byte_swapped(source[source_index]));
+        }
+        for (int column = kWidth; column < kDestinationStride; ++column) {
+          CHECK(destination[static_cast<std::size_t>(row) * kDestinationStride +
+                            static_cast<std::size_t>(column)] == 0xDEADU);
+        }
+      }
+    }
+  }
+}
+
+TEST_CASE("full ring row staging rejects invalid geometry") {
+  std::array<std::uint16_t, 32> source{};
+  std::array<std::uint16_t, 32> destination{};
+  CHECK_FALSE(stage_full_ring_rows_swapped(source.data(), 8, -1, 1, 4, 0, destination.data(), 8));
+  CHECK_FALSE(stage_full_ring_rows_swapped(source.data(), 8, 0, 5, 4, 0, destination.data(), 8));
+  CHECK_FALSE(stage_full_ring_rows_swapped(source.data(), 8, 0, 1, 4, 8, destination.data(), 8));
+  CHECK_FALSE(stage_full_ring_rows_swapped(source.data(), 8, 0, 1, 4, 0, destination.data(), 7));
+  CHECK(stage_full_ring_rows_swapped(source.data(), 8, 0, 0, 4, 0, destination.data(), 8));
 }
 
 TEST_CASE("ring-local presentation sequence matches the pixel oracle across x and y wraps") {
