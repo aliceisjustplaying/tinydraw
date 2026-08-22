@@ -11,6 +11,7 @@ set(TINYDRAW_VECTOR_V2_FIRMWARE_SRCS
   "${CMAKE_CURRENT_LIST_DIR}/producer_fill_esp32s3.S"
   "${CMAKE_CURRENT_LIST_DIR}/settled_composite_esp32s3.S"
   "${CMAKE_CURRENT_LIST_DIR}/tile_publish_esp32s3.S"
+  "${CMAKE_CURRENT_LIST_DIR}/tile_uniform_esp32s3.S"
   "${CMAKE_CURRENT_LIST_DIR}/vector_v2_presenter.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/vector_v2_presenter_staging.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/vector_v2_touch_sampler.cpp"
