@@ -56,6 +56,7 @@ struct AppStorage {
   vector_v2::MaterializedUniformStorage* uniforms = nullptr;
   std::uint8_t* occupancy = nullptr;
   vector_v2::MaterializedSlotStorage* slots = nullptr;
+  std::uint16_t* eviction_links = nullptr;
   std::uint16_t* raw_slot_directory = nullptr;
   vector_v2::OperationRecord* records = nullptr;
   vector_v2::CompactOperationSample* samples = nullptr;

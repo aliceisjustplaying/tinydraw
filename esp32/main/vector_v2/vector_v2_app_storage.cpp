@@ -73,7 +73,15 @@ bool AppStorage::allocate() {
   uniforms = allocate_array<vector_v2::MaterializedUniformStorage>(
       vector_v2::kMaterializedTileIdentityCount);
   occupancy = allocate_array<std::uint8_t>(vector_v2::kOccupancyBytes);
-  slots = allocate_array<vector_v2::MaterializedSlotStorage>(vector_v2::kTileSlotCount);
+  // MaterializedSlotStorage is densely packed for faster full-cache scans.
+  // Retain the old allocation footprint as trailing padding: allocations
+  // below this one keep the dcache-set phase established by device receipts.
+  slots = static_cast<vector_v2::MaterializedSlotStorage*>(
+      heap_caps_malloc(vector_v2::kTileSlotAllocationBytes, kExternalCaps));
+  if (slots != nullptr) {
+    eviction_links = reinterpret_cast<std::uint16_t*>(reinterpret_cast<std::byte*>(slots) +
+                                                      vector_v2::kTileSlotStorageBytes);
+  }
   records = allocate_array<vector_v2::OperationRecord>(vector_v2::kOperationCapacity);
   samples = allocate_array<vector_v2::CompactOperationSample>(vector_v2::kOperationSampleCapacity);
   input_samples = allocate_array<vector_v2::CompactOperationSample>(kInputSampleCapacity);

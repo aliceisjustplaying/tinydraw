@@ -57,9 +57,21 @@ inline constexpr std::size_t kAutosaveStagingReserveBytes = 704'512U;
 inline constexpr std::size_t kExportWorkspaceReserveBytes = 320U * 1024U;
 
 inline constexpr std::size_t kTilePoolBytes = kTileSlotCount * kTileBytes;
+inline constexpr std::size_t kTileSlotStorageBytes =
+    kTileSlotCount * sizeof(MaterializedSlotStorage);
+// Keep the ESP32 allocation at its measured pre-packing footprint so records
+// and every later PSRAM allocation retain their established dcache-set phase.
+inline constexpr std::size_t kTileSlotAllocationStrideBytes = 32U;
+static_assert(sizeof(MaterializedSlotStorage) <= kTileSlotAllocationStrideBytes);
+inline constexpr std::size_t kTileSlotAllocationBytes =
+    kTileSlotCount * kTileSlotAllocationStrideBytes;
+inline constexpr std::size_t kTileSlotAllocationPaddingBytes =
+    kTileSlotAllocationBytes - kTileSlotStorageBytes;
+inline constexpr std::size_t kTileEvictionLinkBytes = kTileSlotCount * 2U * sizeof(std::uint16_t);
+static_assert(kTileEvictionLinkBytes <= kTileSlotAllocationPaddingBytes);
 inline constexpr std::size_t kTileMetadataBytes =
-    kTileSlotCount * sizeof(MaterializedSlotStorage) +
-    kMaterializedTileIdentityCount * sizeof(MaterializedUniformStorage) + kOccupancyBytes;
+    kTileSlotAllocationBytes + kMaterializedTileIdentityCount * sizeof(MaterializedUniformStorage) +
+    kOccupancyBytes;
 inline constexpr std::size_t kOperationRecordBytes = kOperationCapacity * sizeof(OperationRecord);
 inline constexpr std::size_t kOperationSampleBytes =
     kOperationSampleCapacity * sizeof(CompactOperationSample);

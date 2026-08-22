@@ -203,6 +203,32 @@ TEST_CASE("recent view footprints softly outrank global LRU eviction") {
   CHECK(canvas.lookup(protected_active)->kind == vector_v2::SourceKind::kTileSlot);
 }
 
+TEST_CASE("view protection uses half-open tile boundaries") {
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
+  std::array<vector_v2::MaterializedSlotStorage, 3> slots{};
+  std::array<std::uint16_t, slots.size() * vector_v2::kTilePixels> tile_storage{};
+  std::array<std::uint16_t, vector_v2::kTilePixels> tile{};
+  TestCanvas canvas(overview, slots, tile_storage);
+  REQUIRE(canvas.publish_overview({0}, overview));
+  const vector_v2::TileKey boundary_left{vector_v2::ZoomLevel::k100Percent, 0, 0};
+  const vector_v2::TileKey protected_tile{vector_v2::ZoomLevel::k100Percent, 1, 0};
+  const vector_v2::TileKey unprotected_newer{vector_v2::ZoomLevel::k100Percent, 2, 0};
+  REQUIRE(
+      canvas.publish_tile(boundary_left, {0}, vector_v2::MaterializationQuality::kImmediate, tile));
+  REQUIRE(canvas.publish_tile(protected_tile, {0}, vector_v2::MaterializationQuality::kImmediate,
+                              tile));
+  REQUIRE(canvas.publish_tile(unprotected_newer, {0}, vector_v2::MaterializationQuality::kImmediate,
+                              tile));
+  REQUIRE(canvas.remember_view(
+      {.zoom = vector_v2::ZoomLevel::k100Percent, .level_pixels = {64, 0, 128, 64}}));
+
+  REQUIRE(canvas.publish_tile({vector_v2::ZoomLevel::k100Percent, 3, 0}, {0},
+                              vector_v2::MaterializationQuality::kImmediate, tile));
+  CHECK(canvas.lookup(boundary_left)->kind == vector_v2::SourceKind::kOverview);
+  CHECK(canvas.lookup(protected_tile)->kind == vector_v2::SourceKind::kTileSlot);
+  CHECK(canvas.lookup(unprotected_newer)->kind == vector_v2::SourceKind::kTileSlot);
+}
+
 TEST_CASE("composing a tile refreshes its LRU recency") {
   std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
   std::array<vector_v2::MaterializedSlotStorage, 2> slots{};
@@ -223,4 +249,146 @@ TEST_CASE("composing a tile refreshes its LRU recency") {
   CHECK(canvas.lookup(first)->kind == vector_v2::SourceKind::kTileSlot);
   CHECK(canvas.lookup(second)->kind == vector_v2::SourceKind::kOverview);
   CHECK(canvas.lookup(third)->kind == vector_v2::SourceKind::kTileSlot);
+}
+
+TEST_CASE("compact eviction index exactly matches the scan policy under randomized mutations") {
+  constexpr std::size_t kSlots = 17U;
+  constexpr std::size_t kKeyCount = 96U;
+  auto overview_scan = std::make_unique<std::array<std::uint16_t, vector_v2::kOverviewPixels>>();
+  auto overview_index = std::make_unique<std::array<std::uint16_t, vector_v2::kOverviewPixels>>();
+  auto uniforms_scan = std::make_unique<std::array<vector_v2::MaterializedUniformStorage,
+                                                   vector_v2::kMaterializedTileIdentityCount>>();
+  auto uniforms_index = std::make_unique<std::array<vector_v2::MaterializedUniformStorage,
+                                                    vector_v2::kMaterializedTileIdentityCount>>();
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> occupancy_scan{};
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> occupancy_index{};
+  std::array<vector_v2::MaterializedSlotStorage, kSlots> slots_scan{};
+  std::array<vector_v2::MaterializedSlotStorage, kSlots> slots_index{};
+  auto pixels_scan = std::make_unique<std::array<std::uint16_t, kSlots * vector_v2::kTilePixels>>();
+  auto pixels_index =
+      std::make_unique<std::array<std::uint16_t, kSlots * vector_v2::kTilePixels>>();
+  auto directory_scan =
+      std::make_unique<std::array<std::uint16_t, vector_v2::kMaterializedTileIdentityCount>>();
+  auto directory_index =
+      std::make_unique<std::array<std::uint16_t, vector_v2::kMaterializedTileIdentityCount>>();
+  std::array<std::uint16_t, kSlots * 2U> links{};
+  TestCanvas scan(*overview_scan, *uniforms_scan, occupancy_scan, slots_scan, *pixels_scan, {0},
+                  *directory_scan);
+  TestCanvas indexed(*overview_index, *uniforms_index, occupancy_index, slots_index, *pixels_index,
+                     {0}, *directory_index, links);
+  REQUIRE(scan.publish_overview({0}, *overview_scan));
+  REQUIRE(indexed.publish_overview({0}, *overview_index));
+
+  std::array<vector_v2::TileKey, kKeyCount> keys{};
+  for (std::size_t index = 0; index < keys.size(); ++index) {
+    keys[index] = {vector_v2::ZoomLevel::k400Percent, static_cast<std::uint16_t>(index % 24U),
+                   static_cast<std::uint16_t>(index / 24U)};
+  }
+  std::array<std::uint16_t, vector_v2::kTilePixels> tile{};
+  std::array<std::uint16_t, vector_v2::kTilePixels> composed_scan{};
+  std::array<std::uint16_t, vector_v2::kTilePixels> composed_index{};
+  std::uint32_t random = 0x51ED270BU;
+  const auto next_random = [&random]() {
+    random = random * 1'664'525U + 1'013'904'223U;
+    return random;
+  };
+
+  for (std::size_t iteration = 0; iteration < 5'000U; ++iteration) {
+    const vector_v2::TileKey key = keys[next_random() % keys.size()];
+    const std::uint32_t action = next_random() % 11U;
+    CAPTURE(iteration);
+    CAPTURE(action);
+    CAPTURE(key.column);
+    CAPTURE(key.row);
+    if (action < 5U) {
+      tile.fill(static_cast<std::uint16_t>(iteration * 37U + 11U));
+      const auto scan_slot =
+          scan.publish_tile(key, {0}, vector_v2::MaterializationQuality::kImmediate, tile);
+      const auto indexed_slot =
+          indexed.publish_tile(key, {0}, vector_v2::MaterializationQuality::kImmediate, tile);
+      CHECK(scan_slot == indexed_slot);
+    } else if (action == 5U) {
+      const int x0 = static_cast<int>((next_random() % 20U) * 64U);
+      const int y0 = static_cast<int>((next_random() % 12U) * 64U);
+      const vector_v2::ViewRequest view{
+          .zoom = vector_v2::ZoomLevel::k400Percent,
+          .level_pixels = {x0, y0, x0 + 256, y0 + 256},
+      };
+      CHECK(scan.remember_view(view) == indexed.remember_view(view));
+    } else if (action == 6U) {
+      const vector_v2::PixelRect bounds = vector_v2::tile_pixel_bounds(key);
+      const vector_v2::ViewRequest view{.zoom = key.zoom, .level_pixels = bounds};
+      const auto scan_stats = scan.compose_view(view, composed_scan);
+      const auto index_stats = indexed.compose_view(view, composed_index);
+      CHECK(scan_stats.has_value() == index_stats.has_value());
+      CHECK(composed_scan == composed_index);
+    } else if (action == 7U) {
+      scan.invalidate_identity(key);
+      indexed.invalidate_identity(key);
+    } else if (action == 8U) {
+      const auto scan_uniform =
+          scan.publish_uniform(key, {0}, vector_v2::MaterializationQuality::kImmediate,
+                               static_cast<std::uint16_t>(iteration));
+      const auto index_uniform =
+          indexed.publish_uniform(key, {0}, vector_v2::MaterializationQuality::kImmediate,
+                                  static_cast<std::uint16_t>(iteration));
+      CHECK(scan_uniform == index_uniform);
+    } else if (action == 9U) {
+      const auto scan_edit = scan.materialize_uniform_as_raw(key);
+      const auto index_edit = indexed.materialize_uniform_as_raw(key);
+      CHECK(scan_edit.has_value() == index_edit.has_value());
+    } else {
+      CHECK(scan.discard_tiles() == indexed.discard_tiles());
+    }
+
+    CHECK(scan.resident_raw_tiles() == indexed.resident_raw_tiles());
+    for (const vector_v2::TileKey probe : keys) {
+      const auto scan_source = scan.lookup(probe);
+      const auto indexed_source = indexed.lookup(probe);
+      REQUIRE(scan_source.has_value() == indexed_source.has_value());
+      if (scan_source.has_value()) {
+        CHECK(scan_source->kind == indexed_source->kind);
+        CHECK(scan_source->revision == indexed_source->revision);
+        CHECK(scan_source->quality == indexed_source->quality);
+      }
+    }
+  }
+
+  REQUIRE(scan.discard_tiles());
+  REQUIRE(indexed.discard_tiles());
+  for (std::size_t index = 0; index < kSlots; ++index) {
+    const auto scan_slot =
+        scan.publish_tile(keys[index], {0}, vector_v2::MaterializationQuality::kImmediate, tile);
+    const auto indexed_slot =
+        indexed.publish_tile(keys[index], {0}, vector_v2::MaterializationQuality::kImmediate, tile);
+    REQUIRE(scan_slot == indexed_slot);
+  }
+  const vector_v2::PixelRect whole_world{0, 0, vector_v2::kWorldWidth, vector_v2::kWorldHeight};
+  auto history_patch = std::make_unique<std::array<std::uint16_t, vector_v2::kOverviewPixels>>();
+  const vector_v2::OverviewRevisionPublication history_overview{
+      .bounds = {0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight},
+      .pixels = *history_patch,
+  };
+  REQUIRE(scan.commit_history_revision({1}, history_overview, whole_world, 99U, 10U, 0U));
+  const vector_v2::OverviewRevisionPublication indexed_history_overview{
+      .bounds = history_overview.bounds,
+      .pixels = *history_patch,
+  };
+  REQUIRE(
+      indexed.commit_history_revision({1}, indexed_history_overview, whole_world, 99U, 10U, 0U));
+  CHECK(scan.last_history_commit_stats() == indexed.last_history_commit_stats());
+  const auto scan_reuse =
+      scan.publish_tile(keys[30], {1}, vector_v2::MaterializationQuality::kImmediate, tile);
+  const auto indexed_reuse =
+      indexed.publish_tile(keys[30], {1}, vector_v2::MaterializationQuality::kImmediate, tile);
+  CHECK(scan_reuse == indexed_reuse);
+  REQUIRE(scan.commit_history_revision({2}, history_overview, whole_world, 99U, 20U, 10U));
+  REQUIRE(
+      indexed.commit_history_revision({2}, indexed_history_overview, whole_world, 99U, 20U, 10U));
+  CHECK(scan.last_history_commit_stats() == indexed.last_history_commit_stats());
+  const auto scan_after_swap =
+      scan.publish_tile(keys[31], {2}, vector_v2::MaterializationQuality::kImmediate, tile);
+  const auto indexed_after_swap =
+      indexed.publish_tile(keys[31], {2}, vector_v2::MaterializationQuality::kImmediate, tile);
+  CHECK(scan_after_swap == indexed_after_swap);
 }

@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <cstring>
-#include <tuple>
 
 #include "tinydraw/vector_v2/materialized_canvas.h"
 
@@ -247,7 +246,7 @@ std::uint16_t MaterializedCanvas::find_uniform(TileKey key) const {
   return index;
 }
 
-std::uint8_t MaterializedCanvas::protection_rank(TileKey key) const {
+std::uint8_t MaterializedCanvas::eviction_protection_rank(TileKey key) const {
   if (key.zoom == ZoomLevel::k25Percent) {
     return 0U;
   }
@@ -256,13 +255,156 @@ std::uint8_t MaterializedCanvas::protection_rank(TileKey key) const {
     return 0U;
   }
   const ViewFootprint& footprint = recent_views_[index];
-  if (!footprint.valid || !rectangles_intersect(tile_pixel_bounds(key), footprint.level_pixels)) {
+  const int tile_x0 = static_cast<int>(key.column) * kTileWidth;
+  const int tile_y0 = static_cast<int>(key.row) * kTileHeight;
+  const PixelRect& bounds = footprint.level_pixels;
+  if (!footprint.valid || tile_x0 >= bounds.x1 || tile_y0 >= bounds.y1 ||
+      tile_x0 + kTileWidth <= bounds.x0 || tile_y0 + kTileHeight <= bounds.y0) {
     return 0U;
   }
   return key.zoom == active_view_zoom_ ? 2U : 1U;
 }
 
-std::optional<std::size_t> MaterializedCanvas::choose_slot() const {
+std::uint8_t MaterializedCanvas::eviction_class(const MaterializedSlotStorage& slot) const {
+  return slot.preserved_ ? kPreservedEvictionClass : eviction_protection_rank(slot.key_);
+}
+
+bool MaterializedCanvas::eviction_index_ready() const { return eviction_index_enabled_; }
+
+std::uint16_t MaterializedCanvas::eviction_previous(std::size_t index) const {
+  return eviction_links_[index * 2U];
+}
+
+std::uint16_t MaterializedCanvas::eviction_next(std::size_t index) const {
+  return eviction_links_[index * 2U + 1U];
+}
+
+void MaterializedCanvas::set_eviction_previous(std::size_t index, std::uint16_t previous) {
+  eviction_links_[index * 2U] = previous;
+}
+
+void MaterializedCanvas::set_eviction_next(std::size_t index, std::uint16_t next) {
+  eviction_links_[index * 2U + 1U] = next;
+}
+
+bool MaterializedCanvas::eviction_slot_linked(std::size_t index) const {
+  return eviction_lru_head_ == index || eviction_previous(index) != kNoEvictionSlot ||
+         eviction_next(index) != kNoEvictionSlot;
+}
+
+void MaterializedCanvas::unlink_eviction_slot(std::size_t index) {
+  if (!eviction_index_ready() || !eviction_slot_linked(index)) {
+    return;
+  }
+  const std::uint16_t previous = eviction_previous(index);
+  const std::uint16_t next = eviction_next(index);
+  if (!eviction_candidates_dirty_) {
+    const std::uint8_t removed_class = eviction_class(slots_[index]);
+    if (oldest_eviction_by_class_[removed_class] == index) {
+      std::uint16_t candidate = next;
+      while (candidate != kNoEvictionSlot && eviction_class(slots_[candidate]) != removed_class) {
+        candidate = eviction_next(candidate);
+      }
+      oldest_eviction_by_class_[removed_class] = candidate;
+    }
+  }
+  if (previous == kNoEvictionSlot) {
+    eviction_lru_head_ = next;
+  } else {
+    set_eviction_next(previous, next);
+  }
+  if (next == kNoEvictionSlot) {
+    eviction_lru_tail_ = previous;
+  } else {
+    set_eviction_previous(next, previous);
+  }
+  set_eviction_previous(index, kNoEvictionSlot);
+  set_eviction_next(index, kNoEvictionSlot);
+}
+
+void MaterializedCanvas::append_eviction_slot(std::size_t index) {
+  if (!eviction_index_ready()) {
+    return;
+  }
+  set_eviction_previous(index, eviction_lru_tail_);
+  set_eviction_next(index, kNoEvictionSlot);
+  if (eviction_lru_tail_ == kNoEvictionSlot) {
+    eviction_lru_head_ = static_cast<std::uint16_t>(index);
+  } else {
+    set_eviction_next(eviction_lru_tail_, static_cast<std::uint16_t>(index));
+  }
+  eviction_lru_tail_ = static_cast<std::uint16_t>(index);
+  if (!eviction_candidates_dirty_) {
+    const std::uint8_t added_class = eviction_class(slots_[index]);
+    if (oldest_eviction_by_class_[added_class] == kNoEvictionSlot) {
+      oldest_eviction_by_class_[added_class] = static_cast<std::uint16_t>(index);
+    }
+  }
+}
+
+void MaterializedCanvas::rebuild_eviction_candidates() {
+  oldest_eviction_by_class_.fill(kNoEvictionSlot);
+  std::uint16_t index = eviction_lru_head_;
+  while (index != kNoEvictionSlot) {
+    const std::uint8_t candidate_class = eviction_class(slots_[index]);
+    if (oldest_eviction_by_class_[candidate_class] == kNoEvictionSlot) {
+      oldest_eviction_by_class_[candidate_class] = index;
+    }
+    index = eviction_next(index);
+  }
+  eviction_candidates_dirty_ = false;
+}
+
+void MaterializedCanvas::consume_free_slot(std::size_t index) {
+  if (!eviction_index_ready() || lowest_free_slot_ != index) {
+    return;
+  }
+  if (occupied_slots_ + preserved_slots_ == slots_.size()) {
+    lowest_free_slot_ = kNoEvictionSlot;
+    return;
+  }
+  lowest_free_slot_ = kNoEvictionSlot;
+  for (std::size_t candidate = index + 1U; candidate < slots_.size(); ++candidate) {
+    if (!slots_[candidate].occupied_ && !slots_[candidate].preserved_) {
+      lowest_free_slot_ = static_cast<std::uint16_t>(candidate);
+      break;
+    }
+  }
+}
+
+std::optional<std::size_t> MaterializedCanvas::choose_slot() {
+  if (eviction_index_ready()) {
+    if (occupied_slots_ + preserved_slots_ < slots_.size()) {
+      if (lowest_free_slot_ == kNoEvictionSlot) {
+        for (std::size_t index = 0; index < slots_.size(); ++index) {
+          if (!slots_[index].occupied_ && !slots_[index].preserved_) {
+            lowest_free_slot_ = static_cast<std::uint16_t>(index);
+            break;
+          }
+        }
+      }
+      if (lowest_free_slot_ != kNoEvictionSlot) {
+        return lowest_free_slot_;
+      }
+    }
+    if (slots_.empty()) {
+      return std::nullopt;
+    }
+    if (eviction_candidates_dirty_) {
+      rebuild_eviction_candidates();
+    }
+    if (preserved_slots_ != 0U) {
+      return oldest_eviction_by_class_[kPreservedEvictionClass];
+    }
+    for (std::size_t candidate_class = 0; candidate_class < kPreservedEvictionClass;
+         ++candidate_class) {
+      if (oldest_eviction_by_class_[candidate_class] != kNoEvictionSlot) {
+        return oldest_eviction_by_class_[candidate_class];
+      }
+    }
+    return std::nullopt;
+  }
+
   // A full pool has no unoccupied slot by definition; skip the free scan.
   if (occupied_slots_ + preserved_slots_ < slots_.size()) {
     const auto available = std::find_if(slots_.begin(), slots_.end(), [](const auto& slot) {
@@ -286,26 +428,47 @@ std::optional<std::size_t> MaterializedCanvas::choose_slot() const {
       return static_cast<std::size_t>(oldest_preserved - slots_.data());
     }
   }
-  const auto oldest =
-      std::min_element(slots_.begin(), slots_.end(), [this](const auto& left, const auto& right) {
-        return std::tuple(protection_rank(left.key_), left.last_use_) <
-               std::tuple(protection_rank(right.key_), right.last_use_);
-      });
-  if (oldest == slots_.end()) {
+  if (slots_.empty()) {
     return std::nullopt;
   }
-  return static_cast<std::size_t>(oldest - slots_.begin());
+  // std::min_element's comparator evaluates both ranks for every candidate.
+  // Cache the current minimum's rank so a full scan classifies each slot once.
+  const MaterializedSlotStorage* oldest = slots_.data();
+  std::uint8_t oldest_rank = 3U;
+  for (const MaterializedSlotStorage& candidate : slots_) {
+    const std::uint8_t candidate_rank = eviction_protection_rank(candidate.key_);
+    if (candidate_rank < oldest_rank ||
+        (candidate_rank == oldest_rank && candidate.last_use_ < oldest->last_use_)) {
+      oldest = &candidate;
+      oldest_rank = candidate_rank;
+    }
+  }
+  return static_cast<std::size_t>(oldest - slots_.data());
 }
 
-void MaterializedCanvas::touch(MaterializedSlotStorage& slot) { slot.last_use_ = ++use_clock_; }
+void MaterializedCanvas::touch(MaterializedSlotStorage& slot) {
+  if (eviction_index_ready()) {
+    const std::size_t index = static_cast<std::size_t>(&slot - slots_.data());
+    unlink_eviction_slot(index);
+    slot.last_use_ = ++use_clock_;
+    append_eviction_slot(index);
+    return;
+  }
+  slot.last_use_ = ++use_clock_;
+}
 
 void MaterializedCanvas::release_slot(std::size_t index) {
   MaterializedSlotStorage& slot = slots_[index];
   if (!slot.occupied_) {
     return;
   }
+  unlink_eviction_slot(index);
   slot.occupied_ = false;
   --occupied_slots_;
+  if (eviction_index_ready() &&
+      (lowest_free_slot_ == kNoEvictionSlot || index < lowest_free_slot_)) {
+    lowest_free_slot_ = static_cast<std::uint16_t>(index);
+  }
   if (const auto identity = tile_identity_index(slot.key_);
       identity.has_value() && raw_slot_directory_[*identity] == static_cast<std::uint16_t>(index)) {
     raw_slot_directory_[*identity] = kNoRawSlot;
@@ -316,12 +479,15 @@ void MaterializedCanvas::claim_slot(std::size_t index) {
   MaterializedSlotStorage& slot = slots_[index];
   if (slot.preserved_) {
     // Any ordinary claim of a preserved slot consumes the pre-image.
+    unlink_eviction_slot(index);
     slot.preserved_ = false;
     --preserved_slots_;
   }
   if (!slot.occupied_) {
     slot.occupied_ = true;
     ++occupied_slots_;
+    consume_free_slot(index);
+    append_eviction_slot(index);
   }
   if (const auto identity = tile_identity_index(slot.key_); identity.has_value()) {
     raw_slot_directory_[*identity] = static_cast<std::uint16_t>(index);
@@ -457,6 +623,9 @@ bool MaterializedCanvas::remember_view(const ViewRequest& view) {
   }
   recent_views_[index] = {.zoom = view.zoom, .level_pixels = view.level_pixels, .valid = true};
   active_view_zoom_ = view.zoom;
+  if (eviction_index_ready()) {
+    eviction_candidates_dirty_ = true;
+  }
   return true;
 }
 
@@ -481,10 +650,29 @@ void MaterializedCanvas::drop_preserved_slots() {
     return;
   }
   for (MaterializedSlotStorage& slot : slots_) {
+    if (!slot.preserved_) {
+      continue;
+    }
+    const std::size_t index = static_cast<std::size_t>(&slot - slots_.data());
+    unlink_eviction_slot(index);
     slot.preserved_ = false;
     slot.preserved_prefix_ = 0U;
+    if (eviction_index_ready() &&
+        (lowest_free_slot_ == kNoEvictionSlot || index < lowest_free_slot_)) {
+      lowest_free_slot_ = static_cast<std::uint16_t>(index);
+    }
   }
   preserved_slots_ = 0U;
+}
+
+void MaterializedCanvas::preserve_slot(std::size_t index, std::uint16_t prefix) {
+  release_slot(index);
+  MaterializedSlotStorage& slot = slots_[index];
+  slot.preserved_ = true;
+  slot.preserved_prefix_ = prefix;
+  ++preserved_slots_;
+  consume_free_slot(index);
+  touch(slot);
 }
 
 bool MaterializedCanvas::valid_view(const ViewRequest& request,

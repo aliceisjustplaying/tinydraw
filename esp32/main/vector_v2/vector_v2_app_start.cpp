@@ -119,6 +119,7 @@ bool vector_v2_app_start(VectorV2AppSession& session) {
       .initial_revision = DocumentRevision{},
       .raw_slot_directory =
           std::span(storage.raw_slot_directory, vector_v2::kMaterializedTileIdentityCount),
+      .eviction_links = std::span(storage.eviction_links, vector_v2::kTileSlotCount * 2U),
   });
   MaterializedCanvas& canvas = *session.canvas;
   session.operation_spatial_index.emplace(
@@ -306,7 +307,7 @@ bool vector_v2_app_start(VectorV2AppSession& session) {
   const std::size_t raw_tile_bytes =
       vector_v2::kTileSlotCount * vector_v2::kTilePixels * sizeof(std::uint16_t);
   const std::size_t tile_metadata_bytes =
-      vector_v2::kTileSlotCount * sizeof(MaterializedSlotStorage) +
+      vector_v2::kTileSlotAllocationBytes +
       vector_v2::kMaterializedTileIdentityCount * sizeof(MaterializedUniformStorage) +
       vector_v2::kMaterializedTileIdentityCount * sizeof(std::uint16_t) +
       vector_v2::kOccupancyBytes;

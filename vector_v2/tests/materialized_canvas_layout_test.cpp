@@ -27,15 +27,21 @@ static_assert(vector_v2::zoom_percent(static_cast<vector_v2::ZoomLevel>(0xFFU)) 
 
 TEST_CASE("production memory plan records every fixed-capacity region") {
   CHECK(sizeof(vector_v2::CompactOperationSample) == 8U);
+  CHECK(sizeof(vector_v2::MaterializedSlotStorage) == 24U);
   CHECK(vector_v2::kOverviewPublicationBytes == 329'728U);
   CHECK(vector_v2::kTileSlotCount == 604U);
   CHECK(vector_v2::kTileSlotCount >= 5U * vector_v2::kMaximumVisibleTiles);
   CHECK(vector_v2::kTilePoolBytes == 4'947'968U);
-  CHECK(vector_v2::kTileMetadataBytes ==
-        vector_v2::kTileSlotCount * sizeof(vector_v2::MaterializedSlotStorage) +
-            vector_v2::kMaterializedTileIdentityCount *
-                sizeof(vector_v2::MaterializedUniformStorage) +
-            vector_v2::kOccupancyBytes);
+  CHECK(vector_v2::kTileSlotStorageBytes == 14'496U);
+  CHECK(vector_v2::kTileSlotAllocationBytes == 19'328U);
+  CHECK(vector_v2::kTileSlotAllocationPaddingBytes == 4'832U);
+  CHECK(vector_v2::kTileEvictionLinkBytes == 2'416U);
+  CHECK(vector_v2::kTileEvictionLinkBytes <= vector_v2::kTileSlotAllocationPaddingBytes);
+  CHECK(vector_v2::kTileMetadataBytes == 75'384U);
+  CHECK(vector_v2::kTileMetadataBytes == vector_v2::kTileSlotAllocationBytes +
+                                             vector_v2::kMaterializedTileIdentityCount *
+                                                 sizeof(vector_v2::MaterializedUniformStorage) +
+                                             vector_v2::kOccupancyBytes);
   CHECK(vector_v2::kOperationStorageBytes == 720'000U);
   CHECK(vector_v2::kRendererWorkspaceBytes == 163'840U);
   CHECK(vector_v2::kDisplayWorkspaceBytes == 103'040U);

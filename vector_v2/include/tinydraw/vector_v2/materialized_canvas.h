@@ -267,19 +267,24 @@ class MaterializedSlotStorage {
  private:
   friend class MaterializedCanvas;
 
+  // Keep the eviction scan's LRU word and tile identity in the first 16
+  // bytes. Packing the 32-bit revision after the 16-bit preserved prefix
+  // avoids the two alignment holes in the former field order.
+  std::uint64_t last_use_ = 0;
   TileKey key_{};
+  std::uint16_t preserved_prefix_ = 0;
   DocumentRevision revision_{};
   MaterializationQuality quality_ = MaterializationQuality::kImmediate;
-  std::uint64_t last_use_ = 0;
   // A preserved slot holds the exact pixels this tile had at active-prefix
   // preserved_prefix_ within the canvas's preserved epoch. It is not in the
   // raw-slot directory, is invisible to composition and residency counts,
   // and is the first eviction class under pool pressure. Whole-Stroke
   // Undo/Redo swaps preserved slots back to current instead of rebuilding.
-  std::uint16_t preserved_prefix_ = 0;
   bool preserved_ = false;
   bool occupied_ = false;
 };
+
+static_assert(sizeof(MaterializedSlotStorage) == 24U);
 
 // Caller-owned backing storage for one canvas. Every span must outlive the
 // canvas, and slot elements must already be constructed.
@@ -291,6 +296,11 @@ struct MaterializedCanvasStorage {
   std::span<std::uint16_t> tile_pixels{};
   DocumentRevision initial_revision{};
   std::span<std::uint16_t> raw_slot_directory{};
+  // Optional compact eviction index: two uint16_t links per raw slot. The
+  // ESP32 storage maps this into the trailing padding of the established
+  // slot allocation, so it changes neither the slot ABI nor heap phases.
+  // Empty keeps the exact scan implementation for small callers and tests.
+  std::span<std::uint16_t> eviction_links{};
 };
 
 class RerenderLedger;
@@ -507,8 +517,7 @@ class MaterializedCanvas {
   // can never reach kNoRawSlot because ready() caps the caller-owned pool.
   [[nodiscard]] std::uint16_t find_tile(TileKey key) const;
   [[nodiscard]] std::uint16_t find_uniform(TileKey key) const;
-  [[nodiscard]] std::optional<std::size_t> choose_slot() const;
-  [[nodiscard]] std::uint8_t protection_rank(TileKey key) const;
+  [[nodiscard]] std::optional<std::size_t> choose_slot();
   [[nodiscard]] bool valid_incremental_revision(
       DocumentRevision revision, const OverviewRevisionPublication& overview_publication,
       PixelRect affected_world_bounds,
@@ -559,6 +568,19 @@ class MaterializedCanvas {
   void cancel_in_place_stage(InPlaceOverviewStage& stage);
   [[nodiscard]] bool raw_slot_is_current(const MaterializedSlotStorage& slot) const;
   void clear_uniforms();
+  [[nodiscard]] std::uint8_t eviction_protection_rank(TileKey key) const;
+  [[nodiscard]] std::uint8_t eviction_class(const MaterializedSlotStorage& slot) const;
+  [[nodiscard]] bool eviction_index_ready() const;
+  [[nodiscard]] bool eviction_slot_linked(std::size_t index) const;
+  [[nodiscard]] std::uint16_t eviction_previous(std::size_t index) const;
+  [[nodiscard]] std::uint16_t eviction_next(std::size_t index) const;
+  void set_eviction_previous(std::size_t index, std::uint16_t previous);
+  void set_eviction_next(std::size_t index, std::uint16_t next);
+  void unlink_eviction_slot(std::size_t index);
+  void append_eviction_slot(std::size_t index);
+  void rebuild_eviction_candidates();
+  void consume_free_slot(std::size_t index);
+  void preserve_slot(std::size_t index, std::uint16_t prefix);
   void touch(MaterializedSlotStorage& slot);
   // Sole occupancy transitions: every occupied_ flip goes through these so
   // occupied_slots_ and the raw-slot directory can never desynchronize.
@@ -575,6 +597,7 @@ class MaterializedCanvas {
 #endif
   std::span<std::uint16_t> tile_pixels_;
   std::span<std::uint16_t> raw_slot_directory_;
+  std::span<std::uint16_t> eviction_links_;
   std::size_t occupied_slots_ = 0;
   std::size_t preserved_slots_ = 0;
   std::uint64_t preserved_epoch_ = 0;
@@ -582,6 +605,16 @@ class MaterializedCanvas {
   DocumentRevision current_revision_{};
   DocumentRevision overview_revision_{};
   std::uint64_t use_clock_ = 0;
+  static constexpr std::uint16_t kNoEvictionSlot = 0xFFFFU;
+  static constexpr std::size_t kEvictionClassCount = 4U;
+  static constexpr std::uint8_t kPreservedEvictionClass = 3U;
+  std::uint16_t eviction_lru_head_ = kNoEvictionSlot;
+  std::uint16_t eviction_lru_tail_ = kNoEvictionSlot;
+  std::array<std::uint16_t, kEvictionClassCount> oldest_eviction_by_class_{
+      kNoEvictionSlot, kNoEvictionSlot, kNoEvictionSlot, kNoEvictionSlot};
+  std::uint16_t lowest_free_slot_ = kNoEvictionSlot;
+  bool eviction_candidates_dirty_ = false;
+  bool eviction_index_enabled_ = false;
   std::array<ViewFootprint, kTiledZoomCount> recent_views_{};
   ZoomLevel active_view_zoom_ = ZoomLevel::k25Percent;
   std::uint64_t composition_epoch_ = 0;

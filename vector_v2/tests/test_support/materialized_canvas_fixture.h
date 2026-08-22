@@ -62,4 +62,18 @@ class TestCanvas : private TestCanvasMetadata, public vector_v2::MaterializedCan
                                        .tile_pixels = tile_pixels,
                                        .initial_revision = revision,
                                        .raw_slot_directory = directory}) {}
+
+  TestCanvas(std::span<std::uint16_t> overview,
+             std::span<vector_v2::MaterializedUniformStorage> uniforms,
+             std::span<std::uint8_t> occupancy, std::span<vector_v2::MaterializedSlotStorage> slots,
+             std::span<std::uint16_t> tile_pixels, vector_v2::DocumentRevision revision,
+             std::span<std::uint16_t> directory, std::span<std::uint16_t> eviction_links)
+      : vector_v2::MaterializedCanvas({.overview_pixels = overview,
+                                       .uniform_catalog = uniforms,
+                                       .occupancy_bits = occupancy,
+                                       .slots = slots,
+                                       .tile_pixels = tile_pixels,
+                                       .initial_revision = revision,
+                                       .raw_slot_directory = directory,
+                                       .eviction_links = eviction_links}) {}
 };

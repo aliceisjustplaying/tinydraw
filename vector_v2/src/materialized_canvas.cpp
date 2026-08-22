@@ -107,19 +107,26 @@ MaterializedCanvas::MaterializedCanvas(const MaterializedCanvasStorage& storage)
       slots_(storage.slots),
       tile_pixels_(storage.tile_pixels),
       raw_slot_directory_(storage.raw_slot_directory),
+      eviction_links_(storage.eviction_links),
       current_revision_(storage.initial_revision) {
   std::fill(uniform_catalog_.begin(), uniform_catalog_.end(), MaterializedUniformStorage{});
   std::fill(occupancy_bits_.begin(), occupancy_bits_.end(), 0U);
   std::fill(slots_.begin(), slots_.end(), MaterializedSlotStorage{});
   std::fill(raw_slot_directory_.begin(), raw_slot_directory_.end(), kNoRawSlot);
+  std::fill(eviction_links_.begin(), eviction_links_.end(), kNoEvictionSlot);
+  eviction_index_enabled_ =
+      !eviction_links_.empty() && eviction_links_.size() == slots_.size() * 2U;
   storage_ready_ = overview_pixels_.size() == kOverviewPixels &&
                    uniform_catalog_.size() == kMaterializedTileIdentityCount &&
                    occupancy_bits_.size() == kOccupancyBytes &&
                    raw_slot_directory_.size() == kMaterializedTileIdentityCount &&
                    slots_.size() < static_cast<std::size_t>(kRetainedUniformSlot) &&
-                   tile_pixels_.size() == slots_.size() * kTilePixels;
+                   tile_pixels_.size() == slots_.size() * kTilePixels &&
+                   (eviction_links_.empty() || eviction_index_enabled_);
+  if (storage_ready_ && eviction_index_ready() && !slots_.empty()) {
+    lowest_free_slot_ = 0U;
+  }
 }
-
 
 std::size_t MaterializedCanvas::resident_raw_tiles() const { return occupied_slots_; }
 
@@ -484,11 +491,7 @@ bool MaterializedCanvas::commit_history_revision(
     if (affected) {
       // Retag instead of discarding: this content is the exact pre-image of
       // the departing state and becomes the runway for the inverse move.
-      release_slot(index);
-      slot.preserved_ = true;
-      slot.preserved_prefix_ = departing_prefix;
-      ++preserved_slots_;
-      touch(slot);
+      preserve_slot(index, departing_prefix);
       ++last_history_commit_stats_.preserved;
     } else {
       slot.revision_ = revision;
@@ -503,8 +506,6 @@ bool MaterializedCanvas::commit_history_revision(
       // A current resident already covers this identity exactly.
       continue;
     }
-    slot.preserved_ = false;
-    --preserved_slots_;
     slot.revision_ = revision;
     claim_slot(index);
     touch(slot);

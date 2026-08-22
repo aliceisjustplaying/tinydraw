@@ -31,16 +31,22 @@ struct Rig {
       std::vector<std::uint16_t>(v2::kTileSlotCount * v2::kTilePixels);
   std::vector<std::uint16_t> directory =
       std::vector<std::uint16_t>(v2::kMaterializedTileIdentityCount);
+  std::vector<std::uint16_t> eviction_links = std::vector<std::uint16_t>(v2::kTileSlotCount * 2U);
   std::array<std::uint16_t, v2::kTilePixels> tile{};
-  v2::MaterializedCanvas canvas{{.overview_pixels = overview,
-                                 .uniform_catalog = uniforms,
-                                 .occupancy_bits = occupancy,
-                                 .slots = slots,
-                                 .tile_pixels = tile_pixels,
-                                 .initial_revision = {0},
-                                 .raw_slot_directory = directory}};
+  v2::MaterializedCanvas canvas;
 
-  Rig() { tile.fill(0x39E7U); }
+  explicit Rig(bool indexed = true)
+      : canvas(
+            {.overview_pixels = overview,
+             .uniform_catalog = uniforms,
+             .occupancy_bits = occupancy,
+             .slots = slots,
+             .tile_pixels = tile_pixels,
+             .initial_revision = {0},
+             .raw_slot_directory = directory,
+             .eviction_links = indexed ? std::span(eviction_links) : std::span<std::uint16_t>{}}) {
+    tile.fill(0x39E7U);
+  }
 
   bool ready() { return canvas.ready() && canvas.publish_overview({0}, overview); }
 };
@@ -48,6 +54,7 @@ struct Rig {
 struct Measurement {
   const char* name = "";
   double median_us = 0.0;
+  double reference_us = 0.0;
   std::size_t iterations = 0U;
   std::size_t slot_scans = 0U;
   std::size_t uniform_window_scans = 0U;
@@ -335,6 +342,69 @@ Measurement aa_eviction_publication(std::span<const v2::TileKey> keys) {
           .slot_scans = v2::kTileSlotCount * kIterations};
 }
 
+double measure_view_tour(std::span<const v2::TileKey> keys, bool indexed) {
+  constexpr std::array<int, 4> kTourX{200, 1'900, 3'600, 5'300};
+  constexpr std::array<int, 4> kTourY{300, 2'400, 4'500, 6'600};
+  return measured_median([&](std::size_t) {
+    Rig rig(indexed);
+    if (!rig.ready()) {
+      return false;
+    }
+    std::size_t next_filler = 0U;
+    for (std::uint16_t row = 0; row < 8U; ++row) {
+      for (std::uint16_t column = 0; column < 7U; ++column) {
+        if (!publish_raw(rig, {v2::ZoomLevel::k100Percent, column, row},
+                         v2::MaterializationQuality::kImmediate)) {
+          return false;
+        }
+      }
+    }
+    while (rig.canvas.resident_raw_tiles() != v2::kTileSlotCount) {
+      if (!publish_raw(rig, keys[next_filler++], v2::MaterializationQuality::kImmediate)) {
+        return false;
+      }
+    }
+    if (!rig.canvas.remember_view(
+            {.zoom = v2::ZoomLevel::k100Percent, .level_pixels = {0, 0, 448, 512}})) {
+      return false;
+    }
+    for (const int y : kTourY) {
+      for (const int x : kTourX) {
+        const v2::PixelRect bounds{x, y, x + v2::kOverviewWidth, y + v2::kOverviewHeight};
+        if (!rig.canvas.remember_view(
+                {.zoom = v2::ZoomLevel::k400Percent, .level_pixels = bounds})) {
+          return false;
+        }
+        const int first_column = bounds.x0 / v2::kTileWidth;
+        const int last_column = (bounds.x1 - 1) / v2::kTileWidth;
+        const int first_row = bounds.y0 / v2::kTileHeight;
+        const int last_row = (bounds.y1 - 1) / v2::kTileHeight;
+        for (int row = first_row; row <= last_row; ++row) {
+          for (int column = first_column; column <= last_column; ++column) {
+            if (!publish_raw(rig,
+                             {v2::ZoomLevel::k400Percent, static_cast<std::uint16_t>(column),
+                              static_cast<std::uint16_t>(row)},
+                             v2::MaterializationQuality::kImmediate)) {
+              return false;
+            }
+          }
+        }
+      }
+    }
+    return true;
+  });
+}
+
+Measurement eviction_view_tour(std::span<const v2::TileKey> keys) {
+  const double indexed = measure_view_tour(keys, true);
+  const double scanned = measure_view_tour(keys, false);
+  return {.name = "eviction_view_tour_indexed_vs_scan",
+          .median_us = indexed,
+          .reference_us = scanned,
+          .iterations = 16U,
+          .slot_scans = v2::kTileSlotCount};
+}
+
 Measurement absorption_commit(std::span<const v2::TileKey> keys) {
   constexpr std::size_t kRetained = v2::kMaximumVisibleTiles;
   const auto resident = absorption_resident_keys(keys);
@@ -385,18 +455,22 @@ int main() {
     return EXIT_FAILURE;
   }
   const std::array measurements{
-      aa_warm_publication(raw_keys),     aa_free_publication(raw_keys),
-      aa_eviction_publication(raw_keys), absorption_commit(raw_keys),
-      history_raw_commit(raw_keys),      history_uniform_commit(keys),
+      aa_warm_publication(raw_keys),
+      aa_free_publication(raw_keys),
+      aa_eviction_publication(raw_keys),
+      eviction_view_tour(raw_keys),
+      absorption_commit(raw_keys),
+      history_raw_commit(raw_keys),
+      history_uniform_commit(keys),
   };
   bool ok = true;
   for (const auto& measurement : measurements) {
     ok = ok && measurement.name[0] != '\0' && measurement.median_us >= 0.0;
     std::printf(
-        "cache_benchmark name=%s median_us=%.3f iterations=%zu slot_scans=%zu "
+        "cache_benchmark name=%s median_us=%.3f reference_us=%.3f iterations=%zu slot_scans=%zu "
         "uniform_window_scans=%zu retained_comparisons=%zu retained_marks=%zu\n",
-        measurement.name, measurement.median_us, measurement.iterations, measurement.slot_scans,
-        measurement.uniform_window_scans, measurement.retained_comparisons,
+        measurement.name, measurement.median_us, measurement.reference_us, measurement.iterations,
+        measurement.slot_scans, measurement.uniform_window_scans, measurement.retained_comparisons,
         measurement.retained_marks);
   }
   std::printf("cache_benchmark exact=%u slots=%zu identities=%zu verdict=%s\n", ok ? 1U : 0U,
