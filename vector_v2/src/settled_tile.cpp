@@ -6,6 +6,7 @@
 #include <limits>
 #include <optional>
 
+#include "incremental_rasterizer_internal.h"
 #include "tinydraw/vector_v2/incremental_rasterizer.h"
 
 namespace tinydraw::vector_v2 {
@@ -26,6 +27,53 @@ PixelRect union_rect(PixelRect left, PixelRect right) {
       .x1 = std::max(left.x1, right.x1),
       .y1 = std::max(left.y1, right.y1),
   };
+}
+
+// LX7 implements square root as an FP instruction sequence.  Picolibc keeps
+// that sequence in flash behind two calls; settled rasterization is in IRAM
+// and reaches it for every antialiased boundary pixel.  Keep the same
+// sequence in the hot loop so those pixels do not leave IRAM.
+[[gnu::always_inline]] inline float coverage_sqrt(float value) {
+#if defined(__XTENSA__)
+  asm volatile(
+      "mov.s f0, %0\n"
+      "sqrt0.s f2, f0\n"
+      "const.s f5, 0\n"
+      "maddn.s f5, f2, f2\n"
+      "nexp01.s f3, f0\n"
+      "const.s f4, 3\n"
+      "addexp.s f3, f4\n"
+      "maddn.s f4, f5, f3\n"
+      "nexp01.s f5, f0\n"
+      "neg.s f6, f5\n"
+      "maddn.s f2, f4, f2\n"
+      "const.s f1, 0\n"
+      "const.s f4, 0\n"
+      "const.s f7, 0\n"
+      "maddn.s f1, f6, f2\n"
+      "maddn.s f4, f2, f3\n"
+      "const.s f6, 3\n"
+      "maddn.s f7, f6, f2\n"
+      "maddn.s f5, f1, f1\n"
+      "maddn.s f6, f4, f2\n"
+      "neg.s f3, f7\n"
+      "maddn.s f1, f5, f3\n"
+      "maddn.s f7, f6, f7\n"
+      "mksadj.s f2, f0\n"
+      "nexp01.s f5, f0\n"
+      "maddn.s f5, f1, f1\n"
+      "neg.s f3, f7\n"
+      "addexpm.s f1, f2\n"
+      "addexp.s f3, f2\n"
+      "divn.s f1, f5, f3\n"
+      "mov.s %0, f1\n"
+      : "+f"(value)
+      :
+      : "f0", "f1", "f2", "f3", "f4", "f5", "f6", "f7");
+  return value;
+#else
+  return std::sqrt(value);
+#endif
 }
 
 struct Channels {
@@ -133,8 +181,8 @@ SettleRowSpan settle_conservative_row_span(const SettledChordSpanTable& table, i
                                    table.left_origin + interval_last * table.left_delta);
   const float maximum_x = std::max(table.right_origin + interval_first * table.right_delta,
                                    table.right_origin + interval_last * table.right_delta);
-  const int first = std::max(x0, static_cast<int>(std::floor(minimum_x - kRoundingMargin)) - 1);
-  const int last = std::min(x1 - 1, static_cast<int>(std::ceil(maximum_x + kRoundingMargin)));
+  const int first = std::max(x0, raster_internal::fast_floor(minimum_x - kRoundingMargin) - 1);
+  const int last = std::min(x1 - 1, raster_internal::fast_ceil(maximum_x + kRoundingMargin));
   return {.first = first, .last = last};
 }
 
@@ -147,9 +195,11 @@ std::uint8_t coverage_alpha(float distance_squared, float radius) {
   if (interior > 0.0F && distance_squared <= interior * interior) {
     return 255U;
   }
-  const float distance = std::sqrt(distance_squared);
+  const float distance = coverage_sqrt(distance_squared);
   const float alpha = std::clamp(0.5F + (radius - distance), 0.0F, 1.0F);
-  return alpha > 0.0F ? static_cast<std::uint8_t>(std::lround(alpha * 255.0F)) : 0U;
+  // alpha is positive and clamped to one here, so trunc(alpha * 255 + 0.5)
+  // is exactly lround's positive-domain result without its flash call.
+  return alpha > 0.0F ? static_cast<std::uint8_t>(alpha * 255.0F + 0.5F) : 0U;
 }
 
 }  // namespace
@@ -623,10 +673,10 @@ void SettledRenderCursor::prepare_chord(const PreparedCurveStep& chord) {
   const float bx = chord.second_x - static_cast<float>(window_bounds_.x0);
   const float by = chord.second_y - static_cast<float>(window_bounds_.y0);
   const float radius_max = std::max(chord.first_radius, chord.second_radius);
-  chord_x0_ = std::max(0, static_cast<int>(std::floor(std::min(ax, bx) - radius_max - 1.5F)));
-  chord_next_y_ = std::max(0, static_cast<int>(std::floor(std::min(ay, by) - radius_max - 1.5F)));
-  chord_x1_ = std::min(width_, static_cast<int>(std::ceil(std::max(ax, bx) + radius_max + 1.5F)));
-  chord_y1_ = std::min(height_, static_cast<int>(std::ceil(std::max(ay, by) + radius_max + 1.5F)));
+  chord_x0_ = std::max(0, raster_internal::fast_floor(std::min(ax, bx) - radius_max - 1.5F));
+  chord_next_y_ = std::max(0, raster_internal::fast_floor(std::min(ay, by) - radius_max - 1.5F));
+  chord_x1_ = std::min(width_, raster_internal::fast_ceil(std::max(ax, bx) + radius_max + 1.5F));
+  chord_y1_ = std::min(height_, raster_internal::fast_ceil(std::max(ay, by) + radius_max + 1.5F));
   chord_ax_ = ax;
   chord_ay_ = ay;
   chord_delta_x_ = bx - ax;

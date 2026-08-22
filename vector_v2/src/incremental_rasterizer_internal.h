@@ -13,6 +13,38 @@ namespace tinydraw::vector_v2::raster_internal {
 
 inline constexpr std::uint16_t kBackground = 0xFFFFU;
 
+// Xtensa lowers these to TRUNC.S plus one native comparison.  Keeping them
+// inline avoids the flash-resident floorf/ceilf calls in both rasterizers.
+[[nodiscard]] inline int fast_floor(float value) {
+  const int truncated = static_cast<int>(value);
+  return truncated - static_cast<int>(static_cast<float>(truncated) > value);
+}
+
+[[nodiscard]] inline int fast_ceil(float value) {
+  const int truncated = static_cast<int>(value);
+  return truncated + static_cast<int>(static_cast<float>(truncated) < value);
+}
+
+// GCC materializes 0.5F through a literal load and a GPR-to-FPR transfer in
+// pixel loops. LX7 can create it directly in one FP instruction.
+[[nodiscard, gnu::always_inline]] inline float pixel_center(int coordinate) {
+#if defined(__XTENSA__)
+  float centered;
+  float half;
+  asm("float.s %0, %2, 0\n"
+      "const.s %1, 3\n"
+      "add.s %0, %0, %1"
+      : "=&f"(centered), "=&f"(half)
+      : "r"(coordinate));
+  return centered;
+#else
+  return static_cast<float>(coordinate) + 0.5F;
+#endif
+}
+
+// These hot-path geometry records deliberately have no default member
+// initialization. Their construction sites either value-initialize them
+// explicitly or fill every field before exposing the record.
 struct Sample {
   float x = 0;
   float y = 0;

@@ -29,19 +29,6 @@ namespace raster_internal {
 // presence survives every committed zoom.
 constexpr float kMinimumScreenRadius = 0.75F;
 
-// floor/ceil for in-range values without the floorf/ceilf libcalls the
-// Xtensa toolchain emits: TRUNC.S plus one native compare. Bit-identical to
-// std::floor/std::ceil for every |value| < 2^31.
-int fast_floor(float value) {
-  const int truncated = static_cast<int>(value);
-  return truncated - static_cast<int>(static_cast<float>(truncated) > value);
-}
-
-int fast_ceil(float value) {
-  const int truncated = static_cast<int>(value);
-  return truncated + static_cast<int>(static_cast<float>(truncated) < value);
-}
-
 // Conservative upper bound on sqrt(value) from the classic reciprocal-sqrt
 // bit seed with one Newton step (relative error under 0.2%), padded by a
 // 0.5% margin. Native FPU only — the toolchain's sqrtf is a library call.
