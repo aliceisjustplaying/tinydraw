@@ -7,6 +7,7 @@ retains the interpreted receipts and closure documents.
 The V2 release acceptance is
 [`VECTOR_V2_RELEASE_2026_08_19.md`](VECTOR_V2_RELEASE_2026_08_19.md).
 
+- [`ESP32S3_NATIVE_DISASSEMBLY_PERFORMANCE_2026_08_22.md`](ESP32S3_NATIVE_DISASSEMBLY_PERFORMANCE_2026_08_22.md) — native LX7/PIE disassembly audit, physical A/B campaign, accepted assembly/cache/compiler changes, and measured no-gos.
 - [`OVERNIGHT_RELEASE_CLOSURE_2026_08_19.md`](OVERNIGHT_RELEASE_CLOSURE_2026_08_19.md) — final overnight bug, performance, device-battery, host-test, and production-flash handoff.
 - [`CODE_QUALITY_CLEANUP_2026_08_18.md`](CODE_QUALITY_CLEANUP_2026_08_18.md) — pre-final source and repository-structure cleanup.
 - [`USB_EXPORT_EXIT_AND_CHROME_FOLLOWUP_2026_08_19.md`](USB_EXPORT_EXIT_AND_CHROME_FOLLOWUP_2026_08_19.md) — fixed USB Serial/JTAG restoration, automatic host-eject return, popup input-layer leakage, missing export glyphs, and export-screen centering; includes physical red/green loops.
