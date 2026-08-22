@@ -756,6 +756,101 @@ TEST_CASE("history moves whole gestures after pending work is drained") {
   CHECK(fixture.occupancy == line_occupancy);
 }
 
+TEST_CASE("repeated five-step mixed history stays exact at every intermediate state") {
+  Fixture fixture;
+  constexpr std::size_t kStrokeCount = 6U;
+  constexpr std::size_t kChunksPerStroke = 2U;
+  constexpr std::size_t kSamplesPerStroke = 4U;
+  constexpr std::size_t kRounds = 32U;
+  const auto append_stroke = [&](vector_v2::OperationTool tool, std::uint16_t color,
+                                 std::uint16_t gesture_id, std::uint16_t y_quarter) {
+    const vector_v2::CompactOperationSample first{
+        .x_quarter = 3'200U,
+        .y_quarter = y_quarter,
+        .radius_256 = 5'120U,
+        .elapsed_ms = 0U,
+    };
+    const vector_v2::CompactOperationSample middle{
+        .x_quarter = 6'400U,
+        .y_quarter = y_quarter,
+        .radius_256 = 5'120U,
+        .elapsed_ms = 10U,
+    };
+    const vector_v2::CompactOperationSample last{
+        .x_quarter = 9'600U,
+        .y_quarter = y_quarter,
+        .radius_256 = 5'120U,
+        .elapsed_ms = 20U,
+    };
+    const std::array first_chunk{first, middle};
+    const std::array second_chunk{middle, last};
+    REQUIRE(fixture.append_and_absorb(
+        {.tool = tool, .color = color, .gesture_id = gesture_id, .samples = first_chunk}));
+    REQUIRE(fixture.append_and_absorb(
+        {.tool = tool, .color = color, .gesture_id = gesture_id, .samples = second_chunk}));
+  };
+
+  append_stroke(vector_v2::OperationTool::kPen, 0xF800U, 1U, 4'800U);
+  append_stroke(vector_v2::OperationTool::kEraser, 0U, 2U, 4'800U);
+  append_stroke(vector_v2::OperationTool::kPen, 0x07E0U, 3U, 6'400U);
+  append_stroke(vector_v2::OperationTool::kEraser, 0U, 4U, 6'400U);
+  append_stroke(vector_v2::OperationTool::kPen, 0x001FU, 5U, 8'000U);
+  append_stroke(vector_v2::OperationTool::kEraser, 0U, 6U, 8'000U);
+
+  const auto complete_pixels = fixture.overview;
+  const std::uint64_t history_timeline = fixture.log.history_timeline();
+  std::uint32_t expected_revision = fixture.log.current_revision().value;
+  std::array<std::uint16_t, vector_v2::kOverviewPixels> replayed{};
+  std::array<std::uint8_t, vector_v2::kOccupancyBytes> replayed_occupancy{};
+  REQUIRE(vector_v2::build_tiled_may_ink(fixture.log, replayed_occupancy));
+  REQUIRE(fixture.canvas.replace_tiled_may_ink(fixture.log.current_revision(), replayed_occupancy));
+  const auto check_state = [&](std::size_t active_strokes) {
+    const auto authority = fixture.log.read_view();
+    CHECK(authority.generation == fixture.log.current_revision());
+    CHECK(authority.active_operation_count == active_strokes * kChunksPerStroke);
+    CHECK(authority.retained_operation_count == kStrokeCount * kChunksPerStroke);
+    CHECK(authority.retained_sample_count == kStrokeCount * kSamplesPerStroke);
+    CHECK(fixture.log.sample_count() == active_strokes * kSamplesPerStroke);
+    CHECK(fixture.log.current_revision() == vector_v2::DocumentRevision{expected_revision});
+    CHECK(fixture.canvas.current_revision() == fixture.log.current_revision());
+    CHECK(fixture.log.history_timeline() == history_timeline);
+    CHECK(fixture.log.can_undo());
+    CHECK(fixture.log.can_redo() == (active_strokes < kStrokeCount));
+    replay_prefix(fixture.log, fixture.log.operation_count(), replayed);
+    CHECK(fixture.overview == replayed);
+    REQUIRE(vector_v2::build_tiled_may_ink(fixture.log, replayed_occupancy));
+    CHECK(fixture.occupancy == replayed_occupancy);
+  };
+
+  check_state(kStrokeCount);
+  for (std::size_t round = 0; round < kRounds; ++round) {
+    CAPTURE(round);
+    for (std::size_t step = 0; step < 5U; ++step) {
+      CAPTURE(step);
+      const auto previous_epoch = fixture.log.epoch();
+      REQUIRE(vector_v2::move_history_incrementally(
+          fixture.log, fixture.canvas, vector_v2::HistoryDirection::kUndo, fixture.scratch));
+      ++expected_revision;
+      CHECK(fixture.log.epoch() != previous_epoch);
+      check_state(kStrokeCount - step - 1U);
+      if (step == 0U) {
+        CHECK(fixture.overview != complete_pixels);
+      }
+    }
+    for (std::size_t step = 0; step < 5U; ++step) {
+      CAPTURE(step);
+      const auto previous_epoch = fixture.log.epoch();
+      REQUIRE(vector_v2::move_history_incrementally(
+          fixture.log, fixture.canvas, vector_v2::HistoryDirection::kRedo, fixture.scratch));
+      ++expected_revision;
+      CHECK(fixture.log.epoch() != previous_epoch);
+      check_state(step + 2U);
+    }
+    CHECK(fixture.overview == complete_pixels);
+    CHECK_FALSE(fixture.log.can_redo());
+  }
+}
+
 TEST_CASE("history rebuilds may-ink and branch replacement preserves the rebuilt proof") {
   Fixture fixture;
   const auto point = [](int x, int y) {
