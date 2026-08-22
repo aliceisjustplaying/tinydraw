@@ -128,6 +128,12 @@ set_source_files_properties(
   "${CMAKE_CURRENT_LIST_DIR}/../../vector_v2/src/incremental_document_replay.cpp"
   PROPERTIES COMPILE_OPTIONS "-finline-stringops=memcpy"
 )
+# Selective register pressure reduction removes spills from the masked raster
+# loops. Applying the pass component-wide regresses other translation units.
+set_source_files_properties(
+  "${CMAKE_CURRENT_LIST_DIR}/../../vector_v2/src/incremental_rasterizer_operations.cpp"
+  PROPERTIES COMPILE_OPTIONS "-fira-loop-pressure"
+)
 target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_20)
 idf_component_get_property(TINYUSB_LIB espressif__tinyusb COMPONENT_LIB)
 target_include_directories(${TINYUSB_LIB} PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
