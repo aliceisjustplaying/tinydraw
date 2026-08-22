@@ -434,6 +434,38 @@ TEST_CASE("thin stroke bounds include the coarsest tiled paint halo") {
   CHECK(vector_v2::operation_world_bounds(samples) == vector_v2::PixelRect{62, 62, 66, 66});
 }
 
+TEST_CASE("operation level bounds preserve exact legacy scaling at every world coordinate") {
+  constexpr std::array zooms{
+      vector_v2::ZoomLevel::k25Percent,  vector_v2::ZoomLevel::k50Percent,
+      vector_v2::ZoomLevel::k100Percent, vector_v2::ZoomLevel::k200Percent,
+      vector_v2::ZoomLevel::k400Percent,
+  };
+  const auto legacy_bounds = [](vector_v2::PixelRect bounds, vector_v2::ZoomLevel zoom) {
+    const int percent = vector_v2::zoom_percent(zoom);
+    return vector_v2::PixelRect{
+        .x0 = bounds.x0 * percent / 100,
+        .y0 = bounds.y0 * percent / 100,
+        .x1 = std::min(vector_v2::kWorldWidth * percent / 100, (bounds.x1 * percent + 99) / 100),
+        .y1 = std::min(vector_v2::kWorldHeight * percent / 100, (bounds.y1 * percent + 99) / 100),
+    };
+  };
+
+  for (const vector_v2::ZoomLevel zoom : zooms) {
+    for (int coordinate = 0; coordinate <= vector_v2::kWorldWidth; ++coordinate) {
+      const vector_v2::PixelRect bounds{coordinate, 0, coordinate, vector_v2::kWorldHeight};
+      CHECK(vector_v2::operation_level_bounds(bounds, zoom) == legacy_bounds(bounds, zoom));
+    }
+    for (int coordinate = 0; coordinate <= vector_v2::kWorldHeight; ++coordinate) {
+      const vector_v2::PixelRect bounds{0, coordinate, vector_v2::kWorldWidth, coordinate};
+      CHECK(vector_v2::operation_level_bounds(bounds, zoom) == legacy_bounds(bounds, zoom));
+    }
+  }
+
+  CHECK(vector_v2::operation_level_bounds({0, 0, vector_v2::kWorldWidth, vector_v2::kWorldHeight},
+                                          static_cast<vector_v2::ZoomLevel>(0xFFU)) ==
+        vector_v2::PixelRect{});
+}
+
 TEST_CASE("all committed zooms paint the same world center") {
   constexpr std::array zooms{
       vector_v2::ZoomLevel::k25Percent,  vector_v2::ZoomLevel::k50Percent,

@@ -21,6 +21,8 @@ struct RasterSurface {
 
 // Converts conservative world bounds to the corresponding level-space bounds.
 // This is shared by raster clipping and cold-producer culling.
+// world_bounds must be normalized and contained by the nonnegative world
+// extent. Committed OperationLog records satisfy this contract.
 [[nodiscard]] PixelRect operation_level_bounds(PixelRect world_bounds, ZoomLevel zoom);
 
 // Applies one operation to an existing RGB565 materialization. Samples are in

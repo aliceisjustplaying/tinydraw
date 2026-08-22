@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cassert>
 #if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS) && !defined(__XTENSA__)
 #include <chrono>
 #endif
@@ -886,13 +887,47 @@ void MaskedRowSummary::note_finalized(int row, int newly_finalized) {
 }
 
 PixelRect operation_level_bounds(PixelRect world_bounds, ZoomLevel zoom) {
-  const int percent = zoom_percent(zoom);
-  return {
-      .x0 = world_bounds.x0 * percent / 100,
-      .y0 = world_bounds.y0 * percent / 100,
-      .x1 = std::min(kWorldWidth * percent / 100, (world_bounds.x1 * percent + 99) / 100),
-      .y1 = std::min(kWorldHeight * percent / 100, (world_bounds.y1 * percent + 99) / 100),
-  };
+  assert(world_bounds.x0 >= 0 && world_bounds.y0 >= 0 && world_bounds.x0 <= world_bounds.x1 &&
+         world_bounds.y0 <= world_bounds.y1 && world_bounds.x1 <= kWorldWidth &&
+         world_bounds.y1 <= kWorldHeight);
+  switch (zoom) {
+    case ZoomLevel::k25Percent:
+      return {
+          .x0 = world_bounds.x0 >> 2,
+          .y0 = world_bounds.y0 >> 2,
+          .x1 = std::min(kWorldWidth >> 2, (world_bounds.x1 + 3) >> 2),
+          .y1 = std::min(kWorldHeight >> 2, (world_bounds.y1 + 3) >> 2),
+      };
+    case ZoomLevel::k50Percent:
+      return {
+          .x0 = world_bounds.x0 >> 1,
+          .y0 = world_bounds.y0 >> 1,
+          .x1 = std::min(kWorldWidth >> 1, (world_bounds.x1 + 1) >> 1),
+          .y1 = std::min(kWorldHeight >> 1, (world_bounds.y1 + 1) >> 1),
+      };
+    case ZoomLevel::k100Percent:
+      return {
+          .x0 = world_bounds.x0,
+          .y0 = world_bounds.y0,
+          .x1 = std::min(kWorldWidth, world_bounds.x1),
+          .y1 = std::min(kWorldHeight, world_bounds.y1),
+      };
+    case ZoomLevel::k200Percent:
+      return {
+          .x0 = world_bounds.x0 * 2,
+          .y0 = world_bounds.y0 * 2,
+          .x1 = std::min(kWorldWidth * 2, world_bounds.x1 * 2),
+          .y1 = std::min(kWorldHeight * 2, world_bounds.y1 * 2),
+      };
+    case ZoomLevel::k400Percent:
+      return {
+          .x0 = world_bounds.x0 * 4,
+          .y0 = world_bounds.y0 * 4,
+          .x1 = std::min(kWorldWidth * 4, world_bounds.x1 * 4),
+          .y1 = std::min(kWorldHeight * 4, world_bounds.y1 * 4),
+      };
+  }
+  return {};
 }
 
 }  // namespace tinydraw::vector_v2
