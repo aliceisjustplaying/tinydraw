@@ -1,10 +1,10 @@
 #ifndef TINYDRAW_VECTOR_V2_INCREMENTAL_RASTERIZER_INTERNAL_H
 #define TINYDRAW_VECTOR_V2_INCREMENTAL_RASTERIZER_INTERNAL_H
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <span>
 
 #include "tinydraw/vector_v2/incremental_rasterizer.h"
@@ -71,6 +71,52 @@ inline void copy_segment(const Segment& source, Segment& destination) {
   destination.inverse_length_squared = source.inverse_length_squared;
 }
 
+// Scalar copy of one segment's geometry specialized for a fixed pixel row.
+// Keeping this record independent from the destination surface proves to the
+// compiler that pixel stores cannot change the geometry mid-loop.  y_delta
+// and radius_delta hoist only individually-rounded subtractions; the
+// multiply-adds stay in the predicate so Xtensa keeps the exact MADD.S
+// evaluation used by covers_pixel.
+struct PixelCoverageRow {
+  float first_x;
+  float first_y;
+  float first_radius;
+  float delta_x;
+  float delta_y;
+  float inverse_length_squared;
+  float pixel_y;
+  float y_delta;
+  float radius_delta;
+};
+
+[[nodiscard, gnu::always_inline]] inline PixelCoverageRow make_pixel_coverage_row(
+    const Segment& segment, float pixel_y) {
+  return {
+      .first_x = segment.first.x,
+      .first_y = segment.first.y,
+      .first_radius = segment.first.radius,
+      .delta_x = segment.delta_x,
+      .delta_y = segment.delta_y,
+      .inverse_length_squared = segment.inverse_length_squared,
+      .pixel_y = pixel_y,
+      .y_delta = pixel_y - segment.first.y,
+      .radius_delta = segment.second.radius - segment.first.radius,
+  };
+}
+
+[[nodiscard, gnu::always_inline]] inline bool covers_pixel(const PixelCoverageRow& row,
+                                                           float pixel_x) {
+  const float projection = ((pixel_x - row.first_x) * row.delta_x + row.y_delta * row.delta_y) *
+                           row.inverse_length_squared;
+  const float amount = std::clamp(projection, 0.0F, 1.0F);
+  const float center_x = row.first_x + amount * row.delta_x;
+  const float center_y = row.first_y + amount * row.delta_y;
+  const float radius = row.first_radius + amount * row.radius_delta;
+  const float distance_x = pixel_x - center_x;
+  const float distance_y = row.pixel_y - center_y;
+  return distance_x * distance_x + distance_y * distance_y <= radius * radius;
+}
+
 struct ScanSpan {
   int first = 0;
   int last = -1;
@@ -135,6 +181,11 @@ struct MaskedRowTarget {
 [[nodiscard]] bool covers_pixel(const Segment& segment, float pixel_x, float pixel_y);
 [[nodiscard]] std::optional<UnsetWindow> mask_unset_window(std::span<const std::uint8_t> finalized,
                                                            std::size_t first, std::size_t last);
+[[nodiscard]] bool mask_range_all_set(std::span<const std::uint8_t> finalized, std::size_t first,
+                                      std::size_t last);
+[[nodiscard]] int paint_masked_exact_span(int first_covered, int last_covered, std::size_t row,
+                                          std::uint16_t color, const RasterSurface& surface,
+                                          std::span<std::uint8_t> finalized);
 [[nodiscard]] int first_covered_at_or_after(const Segment& segment, int first, int last,
                                             float pixel_y);
 [[nodiscard]] int last_covered_at_or_before(const Segment& segment, int first, int last,

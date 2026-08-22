@@ -23,6 +23,7 @@ using raster_internal::first_covered_at_or_after;
 using raster_internal::initialize_curve_sample_window;
 using raster_internal::kBackground;
 using raster_internal::last_covered_at_or_before;
+using raster_internal::make_pixel_coverage_row;
 using raster_internal::make_row_seed;
 using raster_internal::mask_unset_window;
 using raster_internal::MaskedRowTarget;
@@ -31,6 +32,8 @@ using raster_internal::paint_masked_curve_unit_warm;
 using raster_internal::paint_masked_segment;
 using raster_internal::paint_masked_tapered_row;
 using raster_internal::paint_segment;
+using raster_internal::pixel_center;
+using raster_internal::PixelCoverageRow;
 using raster_internal::retreat_curve_sample_window;
 using raster_internal::RowSeed;
 using raster_internal::Sample;
@@ -668,8 +671,9 @@ RowChords chords_for_row(const OperationChordPlan* plans, const std::uint8_t* or
 void paint_unmasked_tapered_chord(const OperationChordPlan& plan, ScanSpan span, float pixel_y,
                                   std::size_t row, std::uint16_t color,
                                   const RasterSurface& surface) {
+  const PixelCoverageRow coverage = make_pixel_coverage_row(plan.segment, pixel_y);
   for (int x = span.first; x <= span.last; ++x) {
-    if (covers_pixel(plan.segment, static_cast<float>(x) + 0.5F, pixel_y)) {
+    if (covers_pixel(coverage, pixel_center(x))) {
       surface.pixels[row + static_cast<std::size_t>(x - surface.level_bounds.x0)] = color;
     }
   }

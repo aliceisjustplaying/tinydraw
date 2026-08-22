@@ -117,6 +117,7 @@ if(TINYDRAW_BUILD_TESTS)
   tinydraw_add_vector_v2_tests(tinydraw_vector_v2_rendering_tests
     tests/idle_repair_test.cpp
     tests/incremental_rasterizer_bulk_test.cpp
+    tests/incremental_rasterizer_mask_test.cpp
     tests/incremental_rasterizer_test.cpp
     tests/materialized_canvas_cache_test.cpp
     tests/materialized_canvas_composition_test.cpp

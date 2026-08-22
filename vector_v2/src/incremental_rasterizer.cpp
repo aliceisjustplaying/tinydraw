@@ -8,6 +8,7 @@
 #include <chrono>
 #endif
 #include <cmath>
+#include <cstring>
 
 #include "incremental_rasterizer_internal.h"
 #include "tinydraw/vector_v2/raster_census.h"
@@ -153,24 +154,24 @@ bool covers_pixel(const Segment& segment, float pixel_x, float pixel_y) {
   return distance_x * distance_x + distance_y * distance_y <= radius * radius;
 }
 
-int find_first_covered(const Segment& segment, PixelRect bounds, float pixel_y, ScanSpan prior) {
+int find_first_covered(const PixelCoverageRow& coverage, PixelRect bounds, ScanSpan prior) {
   int x = prior.empty() ? bounds.x0 : std::clamp(prior.first, bounds.x0, bounds.x1 - 1);
-  while (x > bounds.x0 && covers_pixel(segment, static_cast<float>(x - 1) + 0.5F, pixel_y)) {
+  while (x > bounds.x0 && covers_pixel(coverage, pixel_center(x - 1))) {
     --x;
   }
-  while (x < bounds.x1 && !covers_pixel(segment, static_cast<float>(x) + 0.5F, pixel_y)) {
+  while (x < bounds.x1 && !covers_pixel(coverage, pixel_center(x))) {
     ++x;
   }
   return x;
 }
 
-int find_last_covered(const Segment& segment, PixelRect bounds, float pixel_y, ScanSpan prior,
+int find_last_covered(const PixelCoverageRow& coverage, PixelRect bounds, ScanSpan prior,
                       int first_covered) {
   int x = prior.empty() ? bounds.x1 - 1 : std::clamp(prior.last, first_covered, bounds.x1 - 1);
-  while (x + 1 < bounds.x1 && covers_pixel(segment, static_cast<float>(x + 1) + 0.5F, pixel_y)) {
+  while (x + 1 < bounds.x1 && covers_pixel(coverage, pixel_center(x + 1))) {
     ++x;
   }
-  while (x > first_covered && !covers_pixel(segment, static_cast<float>(x) + 0.5F, pixel_y)) {
+  while (x > first_covered && !covers_pixel(coverage, pixel_center(x))) {
     --x;
   }
   return x;
@@ -181,12 +182,13 @@ void paint_constant_radius_segment(const Segment& segment, PixelRect bounds, std
   ScanSpan prior{.first = bounds.x0, .last = bounds.x0 - 1};
   for (int y = bounds.y0; y < bounds.y1; ++y) {
     const float pixel_y = static_cast<float>(y) + 0.5F;
-    const int first_covered = find_first_covered(segment, bounds, pixel_y, prior);
+    const PixelCoverageRow coverage = make_pixel_coverage_row(segment, pixel_y);
+    const int first_covered = find_first_covered(coverage, bounds, prior);
     if (first_covered == bounds.x1) {
       prior.last = prior.first - 1;
       continue;
     }
-    const int last_covered = find_last_covered(segment, bounds, pixel_y, prior, first_covered);
+    const int last_covered = find_last_covered(coverage, bounds, prior, first_covered);
     prior = {.first = first_covered, .last = last_covered};
 
     const std::size_t row = static_cast<std::size_t>(y - surface.level_bounds.y0) *
@@ -294,8 +296,9 @@ void paint_tapered_segment(const Segment& segment, PixelRect bounds, std::uint16
     if (row_span.empty()) {
       continue;
     }
+    const PixelCoverageRow coverage = make_pixel_coverage_row(segment, pixel_y);
     for (int x = row_span.first; x <= row_span.last; ++x) {
-      if (!covers_pixel(segment, static_cast<float>(x) + 0.5F, pixel_y)) {
+      if (!covers_pixel(coverage, pixel_center(x))) {
         continue;
       }
       const std::size_t row = static_cast<std::size_t>(y - surface.level_bounds.y0) *
@@ -311,6 +314,67 @@ void finalize_pixel(std::span<std::uint8_t> finalized, std::size_t pixel) {
   finalized[pixel >> 3U] = static_cast<std::uint8_t>(finalized[pixel >> 3U] | bit);
 }
 
+// The finalized mask may begin at any byte phase in internal RAM or PSRAM.
+// Once a scan reaches a four-byte boundary, an aligned native word load is
+// safe on ESP32-S3 and skips four saturated bytes at once.  The host fallback
+// preserves the byte array's effective type for strict-aliasing sanitizers.
+[[nodiscard, gnu::always_inline]] inline std::uint32_t load_aligned_mask_word(
+    const std::uint8_t* bytes) {
+#if defined(__XTENSA__)
+  std::uint32_t word;
+  asm("l32i %0, %1, 0" : "=r"(word) : "r"(bytes) : "memory");
+  return word;
+#else
+  std::uint32_t word;
+  std::memcpy(&word, bytes, sizeof(word));
+  return word;
+#endif
+}
+
+[[nodiscard]] const std::uint8_t* first_non_full_mask_byte(const std::uint8_t* first,
+                                                           const std::uint8_t* last) {
+  while (first != last && (reinterpret_cast<std::uintptr_t>(first) & 3U) != 0U) {
+    if (*first != 0xFFU) {
+      return first;
+    }
+    ++first;
+  }
+  while (static_cast<std::size_t>(last - first) >= sizeof(std::uint32_t)) {
+    if (load_aligned_mask_word(first) != UINT32_MAX) {
+      break;
+    }
+    first += sizeof(std::uint32_t);
+  }
+  while (first != last && *first == 0xFFU) {
+    ++first;
+  }
+  return first;
+}
+
+[[nodiscard]] const std::uint8_t* last_non_full_mask_byte(const std::uint8_t* first,
+                                                          const std::uint8_t* last) {
+  while (first != last && (reinterpret_cast<std::uintptr_t>(last) & 3U) != 0U) {
+    --last;
+    if (*last != 0xFFU) {
+      return last;
+    }
+  }
+  while (static_cast<std::size_t>(last - first) >= sizeof(std::uint32_t)) {
+    const std::uint8_t* word = last - sizeof(std::uint32_t);
+    if (load_aligned_mask_word(word) != UINT32_MAX) {
+      break;
+    }
+    last = word;
+  }
+  while (first != last) {
+    --last;
+    if (*last != 0xFFU) {
+      return last;
+    }
+  }
+  return nullptr;
+}
+
 // Inclusive pixel range of not-yet-finalized pixels within [first, last], or
 // nullopt when every mask bit in the range is set. Pixels outside the window
 // are finalized, so exact masked painting may clamp both the span search and
@@ -321,43 +385,55 @@ std::optional<UnsetWindow> mask_unset_window(std::span<const std::uint8_t> final
   const std::size_t last_byte = last >> 3U;
   const std::uint8_t first_mask = static_cast<std::uint8_t>(0xFFU << (first & 7U));
   const std::uint8_t last_mask = static_cast<std::uint8_t>(0xFFU >> (7U - (last & 7U)));
-  std::size_t byte = first_byte;
-  std::uint8_t unset = 0;
-  while (byte <= last_byte) {
-    std::uint8_t candidate = static_cast<std::uint8_t>(~finalized[byte]);
-    if (byte == first_byte) {
-      candidate &= first_mask;
+  if (first_byte == last_byte) {
+    const std::uint8_t unset =
+        static_cast<std::uint8_t>(~finalized[first_byte]) & first_mask & last_mask;
+    if (unset == 0U) {
+      return std::nullopt;
     }
-    if (byte == last_byte) {
-      candidate &= last_mask;
-    }
-    if (candidate != 0U) {
-      unset = candidate;
-      break;
-    }
-    ++byte;
+    return UnsetWindow{
+        .first = (first_byte << 3U) + static_cast<std::size_t>(std::countr_zero(unset)),
+        .last = (first_byte << 3U) + (7U - static_cast<std::size_t>(std::countl_zero(unset))),
+    };
   }
-  if (byte > last_byte) {
+
+  std::size_t byte = first_byte;
+  std::uint8_t unset = static_cast<std::uint8_t>(~finalized[first_byte]) & first_mask;
+  if (unset == 0U) {
+    const std::uint8_t* const begin = finalized.data() + first_byte + 1U;
+    const std::uint8_t* const end = finalized.data() + last_byte;
+    const std::uint8_t* const found = first_non_full_mask_byte(begin, end);
+    if (found != end) {
+      byte = static_cast<std::size_t>(found - finalized.data());
+      unset = static_cast<std::uint8_t>(~*found);
+    } else {
+      byte = last_byte;
+      unset = static_cast<std::uint8_t>(~finalized[last_byte]) & last_mask;
+    }
+  }
+  if (unset == 0U) {
     return std::nullopt;
   }
-  UnsetWindow window{};
-  window.first = (byte << 3U) + static_cast<std::size_t>(std::countr_zero(unset));
+
+  UnsetWindow window{
+      .first = (byte << 3U) + static_cast<std::size_t>(std::countr_zero(unset)),
+  };
   std::size_t tail_byte = last_byte;
-  while (true) {
-    std::uint8_t candidate = static_cast<std::uint8_t>(~finalized[tail_byte]);
-    if (tail_byte == first_byte) {
-      candidate &= first_mask;
+  unset = static_cast<std::uint8_t>(~finalized[last_byte]) & last_mask;
+  if (unset == 0U) {
+    const std::uint8_t* const begin = finalized.data() + first_byte + 1U;
+    const std::uint8_t* const end = finalized.data() + last_byte;
+    const std::uint8_t* const found = last_non_full_mask_byte(begin, end);
+    if (found != nullptr) {
+      tail_byte = static_cast<std::size_t>(found - finalized.data());
+      unset = static_cast<std::uint8_t>(~*found);
+    } else {
+      tail_byte = first_byte;
+      unset = static_cast<std::uint8_t>(~finalized[first_byte]) & first_mask;
     }
-    if (tail_byte == last_byte) {
-      candidate &= last_mask;
-    }
-    if (candidate != 0U) {
-      window.last =
-          (tail_byte << 3U) + (7U - static_cast<std::size_t>(std::countl_zero(candidate)));
-      break;
-    }
-    --tail_byte;
   }
+  assert(unset != 0U);
+  window.last = (tail_byte << 3U) + (7U - static_cast<std::size_t>(std::countl_zero(unset)));
   return window;
 }
 
@@ -376,9 +452,8 @@ bool mask_range_all_set(std::span<const std::uint8_t> finalized, std::size_t fir
       (finalized[last_byte] & last_mask) != last_mask) {
     return false;
   }
-  return std::all_of(finalized.begin() + static_cast<std::ptrdiff_t>(first_byte + 1U),
-                     finalized.begin() + static_cast<std::ptrdiff_t>(last_byte),
-                     [](std::uint8_t byte) { return byte == 0xFFU; });
+  const std::uint8_t* const end = finalized.data() + last_byte;
+  return first_non_full_mask_byte(finalized.data() + first_byte + 1U, end) == end;
 }
 
 // Per-bit fallback for a chunk that mixes finalized and free pixels. Every
@@ -401,6 +476,42 @@ int paint_covered_chunk_bits(std::size_t pixel, int count, std::uint16_t color,
   return newly_finalized;
 }
 
+// GCC 15 emits an eight-iteration halfword loop for fill_n here, even though
+// a free mask byte proves that all eight RGB565 stores are unconditional.
+// Every uint16_t pointer has one of two word phases. The common aligned path
+// takes four word stores; the other phase peels both outside halfwords around
+// three aligned words. Neither path reads or writes outside the proven-free
+// chunk.
+[[gnu::always_inline]] inline void paint_free_mask_byte(std::uint16_t* pixels,
+                                                        std::uint16_t color) {
+#if defined(__XTENSA__)
+  std::uint32_t replicated;
+  std::uint16_t* interior;
+  asm volatile(
+      "slli %0, %3, 16\n"
+      "or %0, %0, %3\n"
+      "bbsi %2, 1, 1f\n"
+      "s32i %0, %2, 0\n"
+      "s32i %0, %2, 4\n"
+      "s32i %0, %2, 8\n"
+      "s32i %0, %2, 12\n"
+      "j 2f\n"
+      "1:\n"
+      "s16i %3, %2, 0\n"
+      "addi %1, %2, 2\n"
+      "s32i %0, %1, 0\n"
+      "s32i %0, %1, 4\n"
+      "s32i %0, %1, 8\n"
+      "s16i %3, %2, 14\n"
+      "2:"
+      : "=&r"(replicated), "=&r"(interior)
+      : "r"(pixels), "r"(color)
+      : "memory");
+#else
+  std::fill_n(pixels, 8U, color);
+#endif
+}
+
 // Writes one exactly-covered span in mask-byte chunks: fully-finalized
 // chunks are skipped, fully-free chunks are filled whole, and mixed chunks
 // fall back to per-bit writes. Every span pixel is covered by construction,
@@ -421,8 +532,12 @@ int paint_masked_exact_span(int first_covered, int last_covered, std::size_t row
     if ((have & chunk_mask) == chunk_mask) {
       TINYDRAW_V2_CENSUS_ADD(const_mask_skips, static_cast<std::uint64_t>(in_byte));
     } else if ((have & chunk_mask) == 0U) {
-      std::fill_n(surface.pixels.begin() + static_cast<std::ptrdiff_t>(pixel),
-                  static_cast<std::size_t>(in_byte), color);
+      auto* const output = surface.pixels.data() + pixel;
+      if (in_byte == 8) {
+        paint_free_mask_byte(output, color);
+      } else {
+        std::fill_n(output, static_cast<std::size_t>(in_byte), color);
+      }
       finalized[byte] = static_cast<std::uint8_t>(have | chunk_mask);
       newly_finalized += in_byte;
     } else {
@@ -438,9 +553,10 @@ int paint_masked_exact_span(int first_covered, int last_covered, std::size_t row
 // guarantees no covered-and-relevant pixel exists left of first, so the walk
 // is monotone right and never misses coverage.
 int first_covered_at_or_after(const Segment& segment, int first, int last, float pixel_y) {
+  const PixelCoverageRow row = make_pixel_coverage_row(segment, pixel_y);
   int x = first;
-  while (x <= last && (TINYDRAW_V2_CENSUS_ADD(const_search_calls, 1),
-                       !covers_pixel(segment, static_cast<float>(x) + 0.5F, pixel_y))) {
+  while (x <= last &&
+         (TINYDRAW_V2_CENSUS_ADD(const_search_calls, 1), !covers_pixel(row, pixel_center(x)))) {
     ++x;
   }
   return x;
@@ -449,10 +565,11 @@ int first_covered_at_or_after(const Segment& segment, int first, int last, float
 // Last covered pixel in [first, last]; the caller guarantees first is covered
 // and no relevant covered pixel exists right of last.
 int last_covered_at_or_before(const Segment& segment, int first, int last, float pixel_y) {
+  const PixelCoverageRow row = make_pixel_coverage_row(segment, pixel_y);
   int x = last;
   while (x > first && (TINYDRAW_V2_CENSUS_ADD(const_search_calls, 1),
                        TINYDRAW_V2_CENSUS_ADD(const_search_last_calls, 1),
-                       !covers_pixel(segment, static_cast<float>(x) + 0.5F, pixel_y))) {
+                       !covers_pixel(row, pixel_center(x)))) {
     --x;
   }
   return x;
@@ -559,12 +676,13 @@ void paint_masked_constant_radius_segment(const Segment& segment, PixelRect boun
       continue;
     }
     const float pixel_y = static_cast<float>(y) + 0.5F;
-    const int first_covered = find_first_covered(segment, bounds, pixel_y, prior);
+    const PixelCoverageRow coverage = make_pixel_coverage_row(segment, pixel_y);
+    const int first_covered = find_first_covered(coverage, bounds, prior);
     if (first_covered == bounds.x1) {
       prior.last = prior.first - 1;
       continue;
     }
-    const int last_covered = find_last_covered(segment, bounds, pixel_y, prior, first_covered);
+    const int last_covered = find_last_covered(coverage, bounds, prior, first_covered);
     prior = {.first = first_covered, .last = last_covered};
     TINYDRAW_V2_CENSUS_ADD(const_span_pixels,
                            static_cast<std::uint64_t>(last_covered - first_covered + 1));
@@ -583,6 +701,7 @@ void paint_masked_constant_radius_segment(const Segment& segment, PixelRect boun
 int paint_masked_tapered_row(const Segment& segment, int y, ScanSpan row_span, std::uint16_t color,
                              const RasterSurface& surface, std::span<std::uint8_t> finalized) {
   const float pixel_y = static_cast<float>(y) + 0.5F;
+  const PixelCoverageRow coverage = make_pixel_coverage_row(segment, pixel_y);
   const std::size_t row = static_cast<std::size_t>(y - surface.level_bounds.y0) *
                           static_cast<std::size_t>(surface.stride);
   int newly_finalized = 0;
@@ -607,7 +726,7 @@ int paint_masked_tapered_row(const Segment& segment, int y, ScanSpan row_span, s
         continue;
       }
       TINYDRAW_V2_CENSUS_ADD(covers_calls, 1);
-      if (!covers_pixel(segment, static_cast<float>(x + offset) + 0.5F, pixel_y)) {
+      if (!covers_pixel(coverage, pixel_center(x + offset))) {
         continue;
       }
       TINYDRAW_V2_CENSUS_ADD(covers_hits, 1);
@@ -819,13 +938,13 @@ int paint_warm_chord_row(WarmChord& chord, int y, std::size_t row, std::uint16_t
   }
   const float pixel_y = static_cast<float>(y) + 0.5F;
   if (chord.constant) {
-    const int first_covered = find_first_covered(chord.segment, chord.bounds, pixel_y, chord.prior);
+    const PixelCoverageRow coverage = make_pixel_coverage_row(chord.segment, pixel_y);
+    const int first_covered = find_first_covered(coverage, chord.bounds, chord.prior);
     if (first_covered == chord.bounds.x1) {
       chord.prior.last = chord.prior.first - 1;
       return 0;
     }
-    const int last_covered =
-        find_last_covered(chord.segment, chord.bounds, pixel_y, chord.prior, first_covered);
+    const int last_covered = find_last_covered(coverage, chord.bounds, chord.prior, first_covered);
     chord.prior = {.first = first_covered, .last = last_covered};
     TINYDRAW_V2_CENSUS_ADD(const_span_pixels,
                            static_cast<std::uint64_t>(last_covered - first_covered + 1));
