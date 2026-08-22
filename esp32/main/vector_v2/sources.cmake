@@ -7,6 +7,7 @@ set(TINYDRAW_VECTOR_V2_FIRMWARE_SRCS
   "${CMAKE_CURRENT_LIST_DIR}/vector_v2_chrome_controller.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/vector_v2_live_stroke_session.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/panel_staging_esp32s3.S"
+  "${CMAKE_CURRENT_LIST_DIR}/producer_fill_esp32s3.S"
   "${CMAKE_CURRENT_LIST_DIR}/vector_v2_presenter.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/vector_v2_presenter_staging.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/vector_v2_touch_sampler.cpp"

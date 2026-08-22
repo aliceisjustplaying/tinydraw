@@ -2,16 +2,184 @@
 
 #include <algorithm>
 #include <array>
+#include <cstring>
 #include <limits>
 
 #include "tinydraw/vector_v2/raster_census.h"
 #ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
 #include "tinydraw/vector_v2/rerender_ledger.h"
 #endif
+#include "buffer_initialization_internal.h"
 #include "tinydraw/vector_v2/storage_overlap.h"
 #include "tinydraw/vector_v2/tile_uniform.h"
 
 namespace tinydraw::vector_v2 {
+namespace {
+
+#if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32S3) && !defined(TINYDRAW_QEMU) && \
+    !defined(TINYDRAW_DISABLE_PIE_INITIALIZATION)
+extern "C" void tinydraw_initialize_raster_buffers_pie(std::uint16_t* surface,
+                                                       std::uint32_t packed_color,
+                                                       std::size_t surface_blocks,
+                                                       std::uint8_t* mask, std::size_t mask_blocks);
+#endif
+
+// The producer initializes 34 KiB for every cold 2x2 tile group. The S3 path
+// aligns both spans and hands their 16-byte interiors to the PIE kernel. These
+// packed 32-bit stores remain the Xtensa fallback and let host sanitizer tests
+// exercise the same scalar prefix/tail control flow without aliasing UB.
+inline void store_aligned_word(void* output, std::uint32_t value) {
+#if defined(__XTENSA__)
+  asm volatile("s32i.n %[value], %[output], 0"
+               :
+               : [output] "a"(output), [value] "a"(value)
+               : "memory");
+#else
+  std::memcpy(output, &value, sizeof(value));
+#endif
+}
+
+inline void store_byte(std::uint8_t* output, std::uint8_t value) {
+#if defined(__XTENSA__)
+  asm volatile("s8i %[value], %[output], 0"
+               :
+               : [output] "a"(output), [value] "a"(value)
+               : "memory");
+#else
+  *output = value;
+#endif
+}
+
+inline void* store_aligned_word_blocks(void* output, std::size_t blocks, std::uint32_t value) {
+  auto* bytes = static_cast<std::byte*>(output);
+#if defined(__XTENSA__)
+  asm volatile(
+      "loopnez %[blocks], 1f\n"
+      "s32i.n %[value], %[output], 0\n"
+      "s32i.n %[value], %[output], 4\n"
+      "s32i.n %[value], %[output], 8\n"
+      "s32i.n %[value], %[output], 12\n"
+      "addi.n %[output], %[output], 16\n"
+      "1:"
+      : [output] "+a"(bytes)
+      : [blocks] "a"(blocks), [value] "a"(value)
+      : "memory");
+#else
+  while (blocks != 0U) {
+    store_aligned_word(bytes, value);
+    store_aligned_word(bytes + 4, value);
+    store_aligned_word(bytes + 8, value);
+    store_aligned_word(bytes + 12, value);
+    bytes += 16;
+    --blocks;
+  }
+#endif
+  return bytes;
+}
+
+[[maybe_unused]] void fill_producer_surface(std::span<std::uint16_t> pixels, std::uint16_t color) {
+  auto* output = pixels.data();
+  std::size_t remaining = pixels.size();
+  if (remaining != 0U && (reinterpret_cast<std::uintptr_t>(output) & 3U) != 0U) {
+    *output++ = color;
+    --remaining;
+  }
+
+  const std::uint32_t pair =
+      static_cast<std::uint32_t>(color) | (static_cast<std::uint32_t>(color) << 16U);
+  std::size_t words = remaining / 2U;
+  const std::size_t blocks = words / 4U;
+  if (blocks != 0U) {
+    output = static_cast<std::uint16_t*>(store_aligned_word_blocks(output, blocks, pair));
+    words &= 3U;
+  }
+  while (words != 0U) {
+    store_aligned_word(output, pair);
+    output += 2;
+    --words;
+  }
+  if ((remaining & 1U) != 0U) {
+    *output = color;
+  }
+}
+
+[[maybe_unused]] void clear_producer_mask(std::span<std::uint8_t> mask) {
+  auto* output = mask.data();
+  std::size_t remaining = mask.size();
+  while (remaining != 0U && (reinterpret_cast<std::uintptr_t>(output) & 3U) != 0U) {
+    store_byte(output++, 0U);
+    --remaining;
+  }
+
+  std::size_t words = remaining / 4U;
+  const std::size_t blocks = words / 4U;
+  if (blocks != 0U) {
+    output = static_cast<std::uint8_t*>(store_aligned_word_blocks(output, blocks, 0U));
+    words &= 3U;
+  }
+  while (words != 0U) {
+    store_aligned_word(output, 0U);
+    output += 4;
+    --words;
+  }
+  std::size_t tail = remaining & 3U;
+  while (tail != 0U) {
+    store_byte(output++, 0U);
+    --tail;
+  }
+}
+
+}  // namespace
+
+void buffer_initialization_internal::initialize_raster_buffers(std::span<std::uint16_t> pixels,
+                                                               std::uint16_t color,
+                                                               std::span<std::uint8_t> mask) {
+#if defined(ESP_PLATFORM) && defined(CONFIG_IDF_TARGET_ESP32S3) && !defined(TINYDRAW_QEMU) && \
+    !defined(TINYDRAW_DISABLE_PIE_INITIALIZATION)
+  auto* surface_output = pixels.data();
+  std::size_t surface_remaining = pixels.size();
+  const std::size_t surface_prefix =
+      std::min(surface_remaining,
+               ((16U - (reinterpret_cast<std::uintptr_t>(surface_output) & 0x0FU)) & 0x0FU) / 2U);
+  for (std::size_t index = 0; index < surface_prefix; ++index) {
+    *surface_output++ = color;
+  }
+  surface_remaining -= surface_prefix;
+
+  auto* mask_output = mask.data();
+  std::size_t mask_remaining = mask.size();
+  const std::size_t mask_prefix = std::min(
+      mask_remaining, (16U - (reinterpret_cast<std::uintptr_t>(mask_output) & 0x0FU)) & 0x0FU);
+  for (std::size_t index = 0; index < mask_prefix; ++index) {
+    store_byte(mask_output++, 0U);
+  }
+  mask_remaining -= mask_prefix;
+
+  constexpr std::size_t kSurfacePixelsPerBlock = 8U;
+  constexpr std::size_t kMaskBytesPerBlock = 16U;
+  const std::size_t surface_blocks = surface_remaining / kSurfacePixelsPerBlock;
+  const std::size_t mask_blocks = mask_remaining / kMaskBytesPerBlock;
+  const std::uint32_t packed_color =
+      static_cast<std::uint32_t>(color) | (static_cast<std::uint32_t>(color) << 16U);
+  if (surface_blocks != 0U || mask_blocks != 0U) {
+    tinydraw_initialize_raster_buffers_pie(surface_output, packed_color, surface_blocks,
+                                           mask_output, mask_blocks);
+  }
+
+  surface_output += surface_blocks * kSurfacePixelsPerBlock;
+  for (std::size_t tail = surface_remaining % kSurfacePixelsPerBlock; tail != 0U; --tail) {
+    *surface_output++ = color;
+  }
+  mask_output += mask_blocks * kMaskBytesPerBlock;
+  for (std::size_t tail = mask_remaining % kMaskBytesPerBlock; tail != 0U; --tail) {
+    store_byte(mask_output++, 0U);
+  }
+#else
+  fill_producer_surface(pixels, color);
+  clear_producer_mask(mask);
+#endif
+}
+
 namespace {
 
 bool intersects(PixelRect left, PixelRect right) {
@@ -41,6 +209,17 @@ bool prefer_spatial_candidates(std::size_t candidate_count, std::size_t authorit
 }
 
 }  // namespace
+
+#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
+extern "C" void tinydraw_gate_initialize_producer_buffers(std::uint16_t* pixels,
+                                                          std::size_t pixel_count,
+                                                          std::uint8_t* mask,
+                                                          std::size_t mask_count,
+                                                          std::uint16_t color) {
+  buffer_initialization_internal::initialize_raster_buffers(std::span(pixels, pixel_count), color,
+                                                            std::span(mask, mask_count));
+}
+#endif
 
 TileProducer::TileProducer(OperationLog& log, MaterializedCanvas& canvas,
                            TileProducerWorkspace workspace,
@@ -282,8 +461,8 @@ bool TileProducer::start_group(const ViewRequest& view, TileKey group_origin) {
     return false;
   }
   auto surface = workspace_.supertask_pixels.first(kTileProducerPixels);
-  std::fill(surface.begin(), surface.end(), baseline_color_);
-  std::fill_n(workspace_.finalized_pixels.begin(), kTileProducerMaskBytes, std::uint8_t{0});
+  buffer_initialization_internal::initialize_raster_buffers(
+      surface, baseline_color_, workspace_.finalized_pixels.first(kTileProducerMaskBytes));
   summary_.reset(bounds.y1 - bounds.y0, bounds.x1 - bounds.x0);
   active_group_ = {.view = view,
                    .origin = group_origin,

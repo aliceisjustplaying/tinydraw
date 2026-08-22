@@ -303,6 +303,61 @@ TEST_CASE("settled rendering resumes in bounded slices with exact pixels and sta
   CHECK(reused == expected);
 }
 
+TEST_CASE("settled sliced plane initialization is exact at every packed phase") {
+  SettleRig rig;
+  const std::array stroke{
+      vector_v2::CompactOperationSample{
+          .x_quarter = 2U * 16U, .y_quarter = 2U * 16U, .radius_256 = 256U + 37U},
+      vector_v2::CompactOperationSample{.x_quarter = 9U * 16U,
+                                        .y_quarter = 5U * 16U,
+                                        .radius_256 = 2U * 256U + 19U,
+                                        .elapsed_ms = 8U}};
+  REQUIRE(rig.log.append({.color = 0xA35CU, .samples = stroke}));
+
+  constexpr vector_v2::PixelRect kBounds{0, 0, 11, 7};
+  constexpr std::size_t kPixels = 77U;
+  const auto expected = settle(rig, kBounds);
+  constexpr std::uint8_t kByteGuard = 0xA5U;
+  constexpr std::uint16_t kPlaneGuard = 0xA55AU;
+  for (std::size_t phase = 0U; phase < 4U; ++phase) {
+    for (std::size_t budget = 1U; budget <= 17U; ++budget) {
+      CAPTURE(phase);
+      CAPTURE(budget);
+      std::array<std::uint8_t, kPixels + 8U> operation_alpha;
+      std::array<std::uint8_t, kPixels + 8U> accumulated;
+      std::array<std::uint16_t, kPixels + 8U> red;
+      std::array<std::uint16_t, kPixels + 8U> green;
+      std::array<std::uint16_t, kPixels + 8U> blue;
+      operation_alpha.fill(kByteGuard);
+      accumulated.fill(kByteGuard);
+      red.fill(kPlaneGuard);
+      green.fill(kPlaneGuard);
+      blue.fill(kPlaneGuard);
+      const vector_v2::SettledTileWorkspace workspace{
+          .operation_alpha = std::span(operation_alpha).subspan(phase, kPixels),
+          .accumulated_alpha = std::span(accumulated).subspan((phase + 1U) & 3U, kPixels),
+          .red = std::span(red).subspan((phase + 2U) & 3U, kPixels),
+          .green = std::span(green).subspan((phase + 3U) & 3U, kPixels),
+          .blue = std::span(blue).subspan(phase, kPixels),
+          .candidate_indices = rig.candidates};
+      std::array<std::uint16_t, kPixels> actual{};
+      vector_v2::SettledRenderCursor cursor;
+      do {
+        const auto slice =
+            vector_v2::render_settled_window_slice({.log = rig.log,
+                                                    .zoom = vector_v2::ZoomLevel::k100Percent,
+                                                    .window_bounds = kBounds,
+                                                    .workspace = workspace,
+                                                    .out_pixels = actual,
+                                                    .cursor = cursor,
+                                                    .max_work_px = budget});
+        REQUIRE(slice.status != vector_v2::SettledRenderStatus::kError);
+      } while (cursor.active());
+      CHECK(std::equal(actual.begin(), actual.end(), expected.begin(), expected.end()));
+    }
+  }
+}
+
 TEST_CASE("settled rendering rejects authority changes between slices") {
   SettleRig rig;
   const std::array stroke{

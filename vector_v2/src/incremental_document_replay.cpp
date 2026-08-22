@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 
+#include "buffer_initialization_internal.h"
 #include "tinydraw/vector_v2/incremental_document.h"
 
 namespace tinydraw::vector_v2 {
@@ -47,7 +48,6 @@ std::optional<HistoryChange> move_history_incrementally(OperationLog& log,
     return std::nullopt;
   }
   auto pixels = overview_scratch.first(pixel_count);
-  std::fill(pixels.begin(), pixels.end(), 0xFFFFU);
   const RasterSurface surface{
       .zoom = ZoomLevel::k25Percent,
       .level_bounds = overview_bounds,
@@ -65,19 +65,19 @@ std::optional<HistoryChange> move_history_incrementally(OperationLog& log,
           ? replay_workspace.first(replay_workspace.size() - masked_workspace_words)
           : replay_workspace;
   std::span<std::uint8_t> finalized_pixels;
-  std::array<std::uint32_t, (kOverviewHeight + 31U) / 32U> saturated_rows{};
+  std::array<std::uint32_t, (kOverviewHeight + 31U) / 32U> saturated_rows;
   MaskedRowSummary summary;
   if (masked_replay_available) {
     const auto finalized_storage =
         std::as_writable_bytes(replay_workspace.last(finalized_words)).first(finalized_bytes);
     finalized_pixels = {reinterpret_cast<std::uint8_t*>(finalized_storage.data()),
                         finalized_storage.size()};
-    std::fill(finalized_pixels.begin(), finalized_pixels.end(), std::uint8_t{0});
     const auto unset_counts = replay_workspace.subspan(
         replay_workspace.size() - masked_workspace_words, static_cast<std::size_t>(height));
     summary = MaskedRowSummary(unset_counts, saturated_rows);
     summary.reset(height, width);
   }
+  buffer_initialization_internal::initialize_raster_buffers(pixels, 0xFFFFU, finalized_pixels);
   const PixelRect query_world_bounds{
       .x0 = overview_bounds.x0 * 4,
       .y0 = overview_bounds.y0 * 4,

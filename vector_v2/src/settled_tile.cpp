@@ -6,6 +6,7 @@
 #include <limits>
 #include <optional>
 
+#include "buffer_initialization_internal.h"
 #include "incremental_rasterizer_internal.h"
 #include "tinydraw/vector_v2/incremental_rasterizer.h"
 
@@ -297,11 +298,14 @@ bool SettledRenderCursor::bind(const SettledRenderRequest& request) {
 
 void SettledRenderCursor::advance_initialize(WorkBudget& budget) {
   const std::size_t count = std::min(budget.room(), pixel_count_ - initialize_at_);
-  std::memset(workspace_.accumulated_alpha.data() + initialize_at_, 0, count);
-  std::memset(workspace_.red.data() + initialize_at_, 0, count * sizeof(std::uint16_t));
-  std::memset(workspace_.green.data() + initialize_at_, 0, count * sizeof(std::uint16_t));
-  std::memset(workspace_.blue.data() + initialize_at_, 0, count * sizeof(std::uint16_t));
-  std::memset(workspace_.operation_alpha.data() + initialize_at_, 0, count);
+  buffer_initialization_internal::initialize_raster_buffers(
+      workspace_.red.subspan(initialize_at_, count), 0U,
+      workspace_.operation_alpha.subspan(initialize_at_, count));
+  buffer_initialization_internal::initialize_raster_buffers(
+      workspace_.green.subspan(initialize_at_, count), 0U,
+      workspace_.accumulated_alpha.subspan(initialize_at_, count));
+  buffer_initialization_internal::initialize_raster_buffers(
+      workspace_.blue.subspan(initialize_at_, count), 0U, {});
   initialize_at_ += count;
   stats_.initialize_pixels += count;
   budget.work += count;

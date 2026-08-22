@@ -377,6 +377,71 @@ TEST_CASE("tile producer publishes one completed supertask as a group") {
   CHECK(step->level_bounds.y1 - step->level_bounds.y0 == vector_v2::kTileProducerHeight);
 }
 
+TEST_CASE("tile producer initializes misaligned surface and every mask alignment exactly") {
+  Fixture fixture;
+  constexpr std::uint16_t kGuardPixel = 0xA55AU;
+  constexpr std::uint8_t kGuardByte = 0xA5U;
+  std::array<std::uint16_t, vector_v2::kTileProducerPixels + 3U> surface_storage{};
+  std::array<std::uint8_t, vector_v2::kTileProducerMaskBytes + 8U> mask_storage{};
+
+  std::size_t surface_offset = 1U;
+  while ((reinterpret_cast<std::uintptr_t>(&surface_storage[surface_offset]) & 3U) != 2U) {
+    ++surface_offset;
+  }
+  REQUIRE(surface_offset <= 2U);
+  auto surface = std::span(surface_storage).subspan(surface_offset, vector_v2::kTileProducerPixels);
+
+  for (std::uintptr_t phase = 0U; phase < 4U; ++phase) {
+    CAPTURE(phase);
+    surface_storage.fill(kGuardPixel);
+    mask_storage.fill(kGuardByte);
+    std::size_t mask_offset = 1U;
+    while ((reinterpret_cast<std::uintptr_t>(&mask_storage[mask_offset]) & 3U) != phase) {
+      ++mask_offset;
+    }
+    REQUIRE(mask_offset <= 4U);
+    auto mask = std::span(mask_storage).subspan(mask_offset, vector_v2::kTileProducerMaskBytes);
+    const auto baseline = static_cast<std::uint16_t>(0x1020U + phase);
+    vector_v2::TileProducer producer{
+        fixture.log,
+        fixture.canvas,
+        {.supertask_pixels = surface,
+         .finalized_pixels = mask,
+         .summary_row_unset = fixture.summary_rows,
+         .summary_saturated_words = fixture.summary_words,
+         .operation_chord_plans = std::as_writable_bytes(std::span(fixture.chord_plans)),
+         .candidate_indices = fixture.candidates},
+        {},
+        baseline};
+    REQUIRE(producer.ready());
+
+    const int x = static_cast<int>(phase) * vector_v2::kTileProducerWidth;
+    const auto step =
+        producer.produce_next({.zoom = vector_v2::ZoomLevel::k100Percent,
+                               .level_pixels = {x, 0, x + vector_v2::kTileProducerWidth,
+                                                vector_v2::kTileProducerHeight}});
+    REQUIRE(step.has_value());
+    CHECK(step->complete);
+    CHECK(step->tiles_published == 4U);
+    CHECK(std::all_of(surface.begin(), surface.end(),
+                      [baseline](std::uint16_t pixel) { return pixel == baseline; }));
+    CHECK(std::all_of(mask.begin(), mask.end(), [](std::uint8_t byte) { return byte == 0U; }));
+    CHECK(std::all_of(surface_storage.begin(),
+                      surface_storage.begin() + static_cast<std::ptrdiff_t>(surface_offset),
+                      [](std::uint16_t pixel) { return pixel == kGuardPixel; }));
+    CHECK(std::all_of(
+        surface_storage.begin() +
+            static_cast<std::ptrdiff_t>(surface_offset + vector_v2::kTileProducerPixels),
+        surface_storage.end(), [](std::uint16_t pixel) { return pixel == kGuardPixel; }));
+    CHECK(std::all_of(mask_storage.begin(),
+                      mask_storage.begin() + static_cast<std::ptrdiff_t>(mask_offset),
+                      [](std::uint8_t byte) { return byte == kGuardByte; }));
+    CHECK(std::all_of(mask_storage.begin() + static_cast<std::ptrdiff_t>(
+                                                 mask_offset + vector_v2::kTileProducerMaskBytes),
+                      mask_storage.end(), [](std::uint8_t byte) { return byte == kGuardByte; }));
+  }
+}
+
 TEST_CASE("tile producer output equals direct painter-ordered viewport replay") {
   Fixture fixture;
   const std::array first{
