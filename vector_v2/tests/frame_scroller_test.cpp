@@ -3,6 +3,8 @@
 #include <doctest.h>
 
 #include <array>
+#include <cstdint>
+#include <limits>
 
 namespace vector_v2 = tinydraw::vector_v2;
 
@@ -43,4 +45,60 @@ TEST_CASE("ring addressing remains stable across a drag") {
   }
   CHECK(ring.active());
   CHECK_FALSE(vector_v2::ring_scroll(ring, area, kW, 0).has_value());
+}
+
+TEST_CASE("ring scroll matches modulo for every bounded shift and delta") {
+  constexpr int kMaximumExtent = 64;
+  for (int extent = 1; extent <= kMaximumExtent; ++extent) {
+    const vector_v2::PixelRect horizontal_area{19, -23, 19 + extent, -22};
+    const vector_v2::PixelRect vertical_area{19, -23, 20, -23 + extent};
+    for (int shift = 0; shift < extent; ++shift) {
+      for (int delta = 1 - extent; delta < extent; ++delta) {
+        const auto expected =
+            static_cast<int>((static_cast<std::int64_t>(shift) + delta + extent) % extent);
+
+        vector_v2::RingFrame horizontal{shift, 0};
+        const auto horizontal_result =
+            vector_v2::ring_scroll(horizontal, horizontal_area, delta, 0);
+        REQUIRE(horizontal_result.has_value());
+        CHECK(horizontal.shift_x == expected);
+        CHECK(horizontal.shift_y == 0);
+        CHECK(horizontal_result->exposed_count == (delta == 0 ? 0U : 1U));
+
+        vector_v2::RingFrame vertical{0, shift};
+        const auto vertical_result = vector_v2::ring_scroll(vertical, vertical_area, 0, delta);
+        REQUIRE(vertical_result.has_value());
+        CHECK(vertical.shift_x == 0);
+        CHECK(vertical.shift_y == expected);
+        CHECK(vertical_result->exposed_count == (delta == 0 ? 0U : 1U));
+      }
+    }
+  }
+}
+
+TEST_CASE("ring scroll handles the extreme supported int deltas") {
+  constexpr int kExtent = std::numeric_limits<int>::max();
+  constexpr vector_v2::PixelRect kArea{0, 0, kExtent, kExtent};
+  constexpr std::array<int, 5> kShiftsAndDeltas{0, 1, kExtent / 2, kExtent - 2, kExtent - 1};
+
+  for (const int shift : kShiftsAndDeltas) {
+    for (const int magnitude : kShiftsAndDeltas) {
+      for (const int delta : {magnitude, -magnitude}) {
+        vector_v2::RingFrame ring{shift, shift};
+        const auto result = vector_v2::ring_scroll(ring, kArea, delta, delta);
+        REQUIRE(result.has_value());
+        const auto expected =
+            static_cast<int>((static_cast<std::int64_t>(shift) + delta + kExtent) % kExtent);
+        CHECK(ring.shift_x == expected);
+        CHECK(ring.shift_y == expected);
+      }
+    }
+  }
+
+  for (const int invalid_delta : {std::numeric_limits<int>::min(), kExtent}) {
+    vector_v2::RingFrame ring{17, 29};
+    CHECK_FALSE(vector_v2::ring_scroll(ring, kArea, invalid_delta, 0).has_value());
+    CHECK(ring.shift_x == 17);
+    CHECK(ring.shift_y == 29);
+  }
 }
