@@ -116,6 +116,18 @@ idf_component_register(
   LDFRAGMENTS "linker.lf"
 )
 
+# ESP-IDF disables builtin memcpy component-wide. These three translation
+# units make frequent fixed 20-36 byte value copies; expanding only those
+# copies removes ROM call overhead without bloating the IRAM raster loops.
+set_source_files_properties(
+  "${CMAKE_CURRENT_LIST_DIR}/../../vector_v2/src/materialized_canvas_composition.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/../../vector_v2/src/operation_log.cpp"
+  PROPERTIES COMPILE_OPTIONS "-finline-stringops=memcpy"
+)
+set_source_files_properties(
+  "${CMAKE_CURRENT_LIST_DIR}/../../vector_v2/src/incremental_document_replay.cpp"
+  PROPERTIES COMPILE_OPTIONS "-finline-stringops=memcpy"
+)
 target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_20)
 idf_component_get_property(TINYUSB_LIB espressif__tinyusb COMPONENT_LIB)
 target_include_directories(${TINYUSB_LIB} PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
