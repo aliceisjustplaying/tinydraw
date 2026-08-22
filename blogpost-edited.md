@@ -1,40 +1,64 @@
 # TinyDraw V2
 
+<!-- CANONICAL WORKING DRAFT -->
+
 [VIDEO]
 
 [Try it now on Puck!](https://example.com)
 
 ## Hook
 
-I spent nine days building a vector graphics editor on a $40 microcontroller with a 1.8-inch touchscreen. I knew it was possible. I wanted to see how far I could take the project and how fast I could make it. 
+I spent nine days building a vector graphics editor on a $40 microcontroller with a 1.8-inch touchscreen. I knew it was possible. I wanted to see how fast I could make it.
 
 ## Origin
 
-I've been following [Steve Ruiz](https://twitter.com/steveruizok) on Twitter for a while now, and he kept posting all these cool projects built on microcontroller-powered tiny little devices. And then I saw there's going to be a whole meetup about them, and I wanted to go, and I'm like, well, if I'm going, I want to present something.
+I've been following [Steve Ruiz](https://twitter.com/steveruizok) on Twitter for a while now, and he kept posting all these cool projects built on microcontroller-powered tiny little devices. And then I saw there was going to be a whole meetup about them, and I wanted to go, and I'm like, well, if I'm going, I want to present something.
 
-But I still didn't know what to build. A mini [tldraw](https://tldraw.com/) seemed like the obvious answer, but surely someone has done it, surely this was Steve's very first project. So I scrolled his entire timeline and I did not find a mini tldraw at all. So I was like, okay, I guess we're doing it.
+But I still didn't know what to build. A mini [tldraw](https://tldraw.com/) seemed like the obvious answer, but surely someone has done it. Surely this was Steve's very first project. So I scrolled his entire timeline and I did not find a mini tldraw at all. So I was like, okay, I guess we're doing it.
 
-I ordered the Waveshare from Amazon, and I asked my coding agent what we could build before the device arrived. It turns out quite a bit. I set up a development environment that first built a native macOS app then one that targeted a QEMU-emulated version of the ESP32-S3, that wasn't cycle-accurate, but was still helpful, and helped me work out the initial performance kinks. 
+I ordered the Waveshare from Amazon, and I asked my coding agent what we could build before the device arrived. It turns out quite a bit. I set up a development environment that first built a native macOS app, then one that targeted a QEMU-emulated version of the ESP32-S3. That wasn't cycle-accurate, but was still helpful, and helped me work out the initial performance kinks.
 
-Even while building the first version, I was already dreaming of having a truly infinite canvas.
+The device finally arrived, and I was able to test things Monday morning. I was immediately faced with the fact that drawing was extremely slow. My circles had way too many angles.
 
-The device finally arrived and I was able to test things Monday morning, where I was immediately faced with the fact, that drawing is extremely slow, my circles have way too many angles. Over the day, we fixed performance, we made our curves a whole lot more curvy and added the rest of the features: autosave, undo, later export over USB, synchronizing the time over wifi with NTP and a battery meter.
+It used Steve's Perfect Freehand library, the first version of which powered tldraw, which simulates pressure with velocity and makes lines nice. There was never a question not to use Perfect Freehand.
+
+> I draw the stroke and I can see the tile-updating-thingy under my finger.
+
+> Angularity correlates with speed. The faster I draw it, the more angular it is.
+
+> No change in angularity. Drawing feels maybe a bit slower now.
+
+Over the day, we fixed performance. We made our curves a whole lot more curvy. By the evening, before the meetup, I had something pretty good, pretty fast.
+
+> Quick question while I test it: should we have done a vector canvas in the first place?
 
 And then when the presentations came up, there was no order yet, and Steve just pointed at me: You first. And I presented it, and people liked it, and afterwards people came to me to try it, and that was nice.
 
-V1 was raster, and that's easy. It's just far easier to make a raster editor for a microcontroller than a vector one. And even before the presentation I contemplated the idea of building a real infinite canvas. And a day after I was like oh yeah, we *are* doing this. 
+V1 was raster, and that's easy. It's just far easier to make a raster editor for a microcontroller than a vector one.
 
-My first ambition was to see if I can make a mini "real" tldraw; vector, arbitrary zoom levels, really fast. The agents tempered my expectations, and they were right. I really wanted 25% to 800% zoom, but I settled at 400%. It was a big compromise.
+And in the end, I had an editor, a raster-based editor that had a 3×3-screen-size canvas. You could draw, you could erase, you had a couple of colors, ten levels of undo, and you could export things to PNG, and it would simulate USB mass storage, simulate being a flash drive, really.
+
+> Yeah, it works. Update README, merge to main, commit, push, because we are starting something a lot more exciting next.
+
+The next evening: alright. Check `V2_INITIAL_SPEC.md`. We're making this a real infinite canvas. By god, we are doing this.
+
+A mini "real" tldraw: vector, arbitrary zoom levels, really fast. The agents tempered my expectations, and they were right. I really wanted 25% to 800% zoom, but I settled at 400%.
 
 ## The Fever Dream
 
-I spent the next or so in a fever dream chipping away at the problem. Nominally I was trying to answer the question if this is possible, but I think in reality I never doubted it was possible. I had to find an approach that worked.
+I spent the next 26 hours in a fever dream chipping away at the problem. Nominally I was trying to answer the question if this was possible, but I think in reality I never doubted it was possible. I had to find an approach that worked.
 
-I call it a fever dream because a lot of it was just: I barely know what the agents are doing, but I'm just gonna keep going. In hindsight, I would have done this differently, but hindsight is 20/20.
+I call it a fever dream because a lot of it was just: I barely know what the agents are doing, but I'm just gonna keep going.
 
-[FACT: The fever dream was ~26 hours, Aug 11 evening → Aug 12 night]
+> I tested visually at 50%, and there are many cache misses there too. Switching between the zoom levels takes five seconds. That's a lot. I'm happy to put more work into this if there's a good chance that this can be something.
 
-After a couple days I had a prototype that I had to throw out — the camera-aligned 3×3 atlas was explicitly rejected after 103 rejected pan requests and up to 12 seconds of cumulative repair during a six-stroke burst. But on the other hand, I had the direction to go.
+> A brief pixelated zoom is fine, but brief is under half a second, not several seconds. That's not good user experience.
+
+> Before we change anything else, I really feel like we're already getting lost in the woods. I asked for a second set of eyes.
+
+After 26 hours, I had a prototype that I had to throw out. But on the other hand, I had the direction to go.
+
+> Clean production island inside this repository. Yeah, let's do that.
 
 And that's when the real building began.
 
@@ -66,11 +90,71 @@ It was a slow realization: okay, yeah, this is a compo. In hindsight, the whole 
 
 And this actually helped a lot, because from then on we incorporated a whole host of tricks.
 
+## Inking
+
+One of my first thoughts was that, like, obviously we're using Perfect Freehand, because that's what tldraw uses. There was never a question not to use Perfect Freehand. The raster version had a pretty damn good implementation. We started working on V2 without the Perfect Freehand-style inking.
+
+I remember in the beginning doing a lot of tests where I would just draw. I think that was actually the fever dream prototype phase, where I would draw lines really fast. And I would see the chords show up, which I should not be seeing. I was like, no, this is too slow. This is too slow. I just need this to feel fast.
+
+One drawing should always have the lowest latency. That's by far number one.
+
+I did a very, very long thin hairline and it just disappeared. That's really bad. Then I did an evil line slowly. I switched colors, and suddenly the evil line that seemingly stopped disappeared. It was a 1,024-sample cap.
+
+<!--
+CONFIRMED: the fixed input-builder buffer held 1,024 samples. On overflow,
+the whole stroke was cancelled, while temporary preview pixels remained until
+a refresh such as changing color. This is separate from the later 64-sample stall.
+-->
+
+Once we fixed disappearing, our goal was basically smooth long strokes that did not have a 70-millisecond delay, which was way too much. Mechanical sympathy and elegance, demoscene mindset were the keywords here.
+
+<!--
+CONFIRMED: split-and-chain removed the 1,024-sample cliff. The next version
+committed every 64 samples, but each commit froze visible ink for about 70 ms.
+Validate-first, in-place commits later removed the expensive defensive copying.
+-->
+
+The thing with inking is that it happened in several bursts. We hadn't touched ink speed at all, and that was one of the biggest regressions. When does that happen?
+
+Once again, the agent thought something was fast, but the glass test disagreed. The drawing lag was visible. It was unacceptable.
+
+This is when the 111× thing happened: the worst mixed-draw append went from 19.3 milliseconds to 173 microseconds. The authority-only commit was an important bit. I don't remember how it came together.
+
+<!--
+YOU NEED TO EXPLAIN THIS IN YOUR WORDS: authority-only commit recorded the
+vector stroke immediately, then let the cached pixel version catch up during
+idle time. The 111× number applies to that input-path append, not the whole app.
+-->
+
+This controller samples touches about 38% less often than an iPhone X. Faster polling didn't help, because that was just the hardware limit or the driver limit or whatever. So a lot of work went into that. A lot of architecture work.
+
+AA helps and looks nice, and ideally we should have AA. But AA does not fix jaggedness optically. What I did not understand was why the raster version didn't have the jaggedness.
+
+The stored points snapped to a grid. We made the grid four times finer along each axis. Yes, it's much better. Honestly, I would like it to be even less angly. Definitely a big improvement.
+
+<!-- At 400% zoom, the rounding step fell from one screen pixel to a quarter pixel. -->
+
+We tweaked the Perfect Freehand constant from 0.35 to 0.4. I think 0.4 was the sweet spot. My slow circles looked a hell of a lot less jagged.
+
+Wait, if what I'm noticing is trailing from streamlining, that is bad. Drawing at 400% feels laggy. I don't love this lag at all. Is it possible to keep it at 0.4 and not have lag?
+
+There was a tail thing. There was another one of those felt-right-or-didn't-feel-right things.
+
+<!--
+ANSWER TO “IS THIS WHAT I CALL LAGGING?”: yes. The 0.4-smoothed saved line
+naturally ended behind the current finger position. The final display drew a
+temporary replaceable tip to the newest raw touch while the finger was down,
+but kept the saved and exported line smooth. Sarah needs to write this in her
+own words before the comment can be removed.
+-->
+
+I'm gonna draw a circle. Visually, it's quite good. Do a long stroke; that seems reasonably fast. The only one that lags a little bit is the diagonal stroke in XL, but honestly that's a lower-priority thing.
+
+Inking was another thing that I needed to solve. The feel, the performance went from not too bad to, okay, this actually feels good now. Inking is in a pretty good place, although I think starting strokes sometimes feels a bit laggy.
+
 ## Cold Rendering
 
 [DEFINITION: A "cold render" is when you have to render something from scratch because it's not cached. The vector strokes are the source of truth. The raster tiles are just cached pixels. The whole point of the optimization work was to avoid cold renders as much as possible — and when you couldn't avoid them, make them fast.]
-
-[FACT-CHECK: Is "cold render" the standard term, or is this project-specific naming?]
 
 The agent built me the first version where I could draw and it would render it. However, it was excruciatingly slow. Almost 24 seconds once you zoomed into 400% on our overlap torture testing.
 
@@ -186,7 +270,7 @@ And there was another thing. If I let agents run too long by themselves and it f
 
 So what did I build?
 
-A vector graphics editor on a 1.8-inch screen. You can zoom in, zoom out — 25% to 400%. It has a minimap. You can draw, you can erase, you can choose from 32 colors. You can undo and redo, and you can hammer it. I'm proud that after many iterations, as far as I can tell, we got the SVG export right. That was a whole ordeal. You can export to PNG. Cold rendering is under 500 milliseconds. Panning is almost 30 FPS and tearing-free.
+A vector graphics editor on a 1.8-inch screen. You can zoom in, zoom out — 25% to 400%. It has a minimap. You can draw, you can erase, you can choose from 32 colors. You have near-infinite undo and redo. I'm proud that after many iterations, as far as I can tell, we got the SVG export right. That was a whole ordeal. You can export to PNG. Cold rendering is under 500 milliseconds. Panning is almost 30 FPS and tearing-free.
 
 Now, you may ask, why would you use this for actually drawing things? And you really wouldn't. The entire existence of TinyDraw V2 is completely absurd, but that's kind of part of the charm. And it's nice to know that I built this.
 

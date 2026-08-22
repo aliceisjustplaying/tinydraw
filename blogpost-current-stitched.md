@@ -1,3 +1,5 @@
+<!-- HISTORICAL DRAFT. Canonical working draft: blogpost-edited.md -->
+
 # [TITLE]
 
 I guess we're doing it.
