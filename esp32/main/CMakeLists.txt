@@ -134,6 +134,10 @@ set_source_files_properties(
   "${CMAKE_CURRENT_LIST_DIR}/../../vector_v2/src/incremental_rasterizer_operations.cpp"
   PROPERTIES COMPILE_OPTIONS "-fira-loop-pressure"
 )
+set_source_files_properties(
+  "${CMAKE_CURRENT_LIST_DIR}/../../vector_v2/src/settled_tile.cpp"
+  PROPERTIES COMPILE_OPTIONS "-fno-caller-saves"
+)
 target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_20)
 idf_component_get_property(TINYUSB_LIB espressif__tinyusb COMPONENT_LIB)
 target_include_directories(${TINYUSB_LIB} PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
