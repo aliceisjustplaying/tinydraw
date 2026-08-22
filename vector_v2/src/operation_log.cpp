@@ -72,11 +72,6 @@ PreparedHistoryChange& PreparedHistoryChange::operator=(PreparedHistoryChange&& 
 
 const HistoryChange& PreparedHistoryChange::change() const { return change_; }
 
-std::optional<StoredOperation> PreparedHistoryChange::target_operation(
-    std::size_t active_index) const {
-  return owner_ != nullptr ? owner_->history_operation(*this, active_index) : std::nullopt;
-}
-
 std::optional<std::size_t> PreparedHistoryChange::query_target_spatial(
     PixelRect world_bounds, std::span<std::uint16_t> newest_first_candidates,
     OperationSpatialQueryStats* stats) const {
@@ -450,33 +445,6 @@ PixelRect OperationLog::bounds_for_range(std::size_t first, std::size_t last) co
     bounds.y1 = std::max(bounds.y1, static_cast<int>(record.bounds_y1));
   }
   return bounds;
-}
-
-std::optional<StoredOperation> OperationLog::history_operation(
-    const PreparedHistoryChange& prepared, std::size_t active_index) const {
-  if (!history_pending_ || active_index >= prepared.change_.active_operation_count ||
-      active_index >= retained_operation_count_) {
-    return std::nullopt;
-  }
-  const OperationRecord& record = records_[active_index];
-  const std::uint32_t base_revision =
-      prepared.change_.generation.value -
-      static_cast<std::uint32_t>(prepared.change_.active_operation_count);
-  return StoredOperation{
-      .identity =
-          {
-              .revision = {base_revision + static_cast<std::uint32_t>(active_index) + 1U},
-              .operation_index = static_cast<std::uint32_t>(active_index),
-          },
-      .tool = record.tool,
-      .color = record.color,
-      .gesture_id = record.gesture_id,
-      .world_bounds = {.x0 = record.bounds_x0,
-                       .y0 = record.bounds_y0,
-                       .x1 = record.bounds_x1,
-                       .y1 = record.bounds_y1},
-      .samples = samples_.subspan(record.first_sample, record.sample_count),
-  };
 }
 
 std::optional<std::size_t> OperationLog::query_history_spatial(

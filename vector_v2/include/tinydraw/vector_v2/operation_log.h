@@ -85,7 +85,11 @@ class PreparedHistoryChange {
   PreparedHistoryChange& operator=(PreparedHistoryChange&& other) noexcept;
 
   [[nodiscard]] const HistoryChange& change() const;
-  [[nodiscard]] std::optional<StoredOperation> target_operation(std::size_t active_index) const;
+  // Borrows the target record and its samples directly from the authority
+  // storage. Both outputs remain valid until this preparation is published or
+  // canceled. Failure clears both outputs.
+  [[nodiscard]] bool target_operation(std::size_t active_index, const OperationRecord*& record,
+                                      std::span<const CompactOperationSample>& samples) const;
   // Emits conservative target-prefix candidates newest-first while this
   // preparation owns the history slot. Null means the optional acceleration
   // index cannot serve the query; callers retain the exact authority scan.
@@ -168,8 +172,6 @@ class OperationLog {
                                                    PixelRect bounds);
   [[nodiscard]] std::size_t sample_count_for_prefix(std::size_t operation_count) const;
   [[nodiscard]] PixelRect bounds_for_range(std::size_t first, std::size_t last) const;
-  [[nodiscard]] std::optional<StoredOperation> history_operation(
-      const PreparedHistoryChange& prepared, std::size_t active_index) const;
   [[nodiscard]] std::optional<std::size_t> query_history_spatial(
       const PreparedHistoryChange& prepared, PixelRect world_bounds,
       std::span<std::uint16_t> newest_first_candidates, OperationSpatialQueryStats* stats) const;
@@ -192,6 +194,19 @@ class OperationLog {
   OperationSpatialIndex* spatial_index_ = nullptr;
   bool spatial_index_usable_ = false;
 };
+
+inline bool PreparedHistoryChange::target_operation(
+    std::size_t active_index, const OperationRecord*& record,
+    std::span<const CompactOperationSample>& samples) const {
+  record = nullptr;
+  samples = {};
+  if (owner_ == nullptr || active_index >= change_.active_operation_count) {
+    return false;
+  }
+  record = &owner_->records_[active_index];
+  samples = owner_->samples_.subspan(record->first_sample, record->sample_count);
+  return true;
+}
 
 }  // namespace tinydraw::vector_v2
 

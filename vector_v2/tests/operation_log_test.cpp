@@ -70,6 +70,52 @@ TEST_CASE("Stroke identity includes tool and color in history") {
   CHECK(undo->change().active_operation_count == 1U);
 }
 
+TEST_CASE("prepared history borrows target records and samples without materialization") {
+  vector_v2::test::OperationLogFixture<2, 3> fixture;
+  auto& log = fixture.log;
+  const std::array first{
+      vector_v2::CompactOperationSample{.x_quarter = 16, .y_quarter = 32, .radius_256 = 256},
+      vector_v2::CompactOperationSample{.x_quarter = 48, .y_quarter = 64, .radius_256 = 512},
+  };
+  const std::array second{
+      vector_v2::CompactOperationSample{.x_quarter = 80, .y_quarter = 96, .radius_256 = 768}};
+  REQUIRE(log.append({.color = 0x07E0U, .gesture_id = 1U, .samples = first}));
+  REQUIRE(log.append({.color = 0xF800U, .gesture_id = 2U, .samples = second}));
+
+  auto undo = log.prepare_undo();
+  REQUIRE(undo.has_value());
+  const vector_v2::OperationRecord* record = &fixture.records.back();
+  std::span<const vector_v2::CompactOperationSample> samples = std::span(fixture.samples).last(1U);
+  REQUIRE(undo->target_operation(0U, record, samples));
+  CHECK(record == fixture.records.data());
+  CHECK(record->color == 0x07E0U);
+  CHECK(samples.data() == fixture.samples.data());
+  CHECK(samples.size() == first.size());
+  CHECK(samples[0] == first[0]);
+  CHECK(samples[1] == first[1]);
+
+  CHECK_FALSE(undo->target_operation(1U, record, samples));
+  CHECK(record == nullptr);
+  CHECK(samples.empty());
+  undo->cancel();
+  CHECK_FALSE(undo->target_operation(0U, record, samples));
+  CHECK(record == nullptr);
+  CHECK(samples.empty());
+
+  undo = log.prepare_undo();
+  REQUIRE(undo.has_value());
+  undo->publish();
+  auto redo = log.prepare_redo();
+  REQUIRE(redo.has_value());
+  REQUIRE(redo->target_operation(1U, record, samples));
+  CHECK(record == fixture.records.data() + 1U);
+  CHECK(record->color == 0xF800U);
+  CHECK(samples.data() == fixture.samples.data() + first.size());
+  CHECK(samples.size() == second.size());
+  CHECK(samples.front() == second.front());
+  redo->cancel();
+}
+
 TEST_CASE("authority read views snapshot generation and retained counts") {
   vector_v2::test::OperationLogFixture<2, 2> fixture;
   auto& log = fixture.log;

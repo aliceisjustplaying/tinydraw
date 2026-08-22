@@ -96,17 +96,18 @@ bool baseline_move(Rig& rig, v2::HistoryDirection direction) {
       .stride = width,
   };
   for (std::size_t index = 0; index < change.active_operation_count; ++index) {
-    const auto operation = prepared->target_operation(index);
-    if (!operation.has_value()) {
+    const v2::OperationRecord* operation = nullptr;
+    std::span<const v2::CompactOperationSample> samples;
+    if (!prepared->target_operation(index, operation, samples)) {
       return false;
     }
-    if (!intersects(v2::operation_level_bounds(operation->world_bounds, v2::ZoomLevel::k25Percent),
-                    bounds)) {
+    const v2::PixelRect world_bounds{operation->bounds_x0, operation->bounds_y0,
+                                     operation->bounds_x1, operation->bounds_y1};
+    if (!intersects(v2::operation_level_bounds(world_bounds, v2::ZoomLevel::k25Percent), bounds)) {
       continue;
     }
     if (!v2::apply_incremental_operation(
-            {.tool = operation->tool, .color = operation->color, .samples = operation->samples},
-            surface)) {
+            {.tool = operation->tool, .color = operation->color, .samples = samples}, surface)) {
       return false;
     }
   }

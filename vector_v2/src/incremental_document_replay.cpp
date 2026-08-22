@@ -94,13 +94,15 @@ std::optional<HistoryChange> move_history_incrementally(OperationLog& log,
     const std::size_t index = candidate_count.has_value() ? candidate_workspace[offset]
                               : masked_replay_available   ? replay_count - offset - 1U
                                                           : offset;
-    const auto stored = prepared->target_operation(index);
-    if (!stored.has_value()) {
+    const OperationRecord* stored = nullptr;
+    std::span<const CompactOperationSample> stored_samples;
+    if (!prepared->target_operation(index, stored, stored_samples)) {
       prepared->cancel();
       return std::nullopt;
     }
-    const PixelRect level_bounds =
-        operation_level_bounds(stored->world_bounds, ZoomLevel::k25Percent);
+    const PixelRect world_bounds{stored->bounds_x0, stored->bounds_y0, stored->bounds_x1,
+                                 stored->bounds_y1};
+    const PixelRect level_bounds = operation_level_bounds(world_bounds, ZoomLevel::k25Percent);
     const bool intersects =
         level_bounds.x0 < overview_bounds.x1 && overview_bounds.x0 < level_bounds.x1 &&
         level_bounds.y0 < overview_bounds.y1 && overview_bounds.y0 < level_bounds.y1;
@@ -108,7 +110,7 @@ std::optional<HistoryChange> move_history_incrementally(OperationLog& log,
       continue;
     }
     const OperationAppend operation{
-        .tool = stored->tool, .color = stored->color, .samples = stored->samples};
+        .tool = stored->tool, .color = stored->color, .samples = stored_samples};
     const bool applied =
         masked_replay_available
             ? apply_masked_incremental_operation(operation, surface, finalized_pixels, &summary)
