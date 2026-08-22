@@ -251,6 +251,22 @@ extern "C" void* heap_caps_calloc(std::size_t count, std::size_t size, std::uint
   return std::calloc(count, size);
 }
 
+extern "C" void* heap_caps_aligned_alloc(std::size_t alignment, std::size_t size,
+                                          std::uint32_t) {
+  if (alignment == 0U || (alignment & (alignment - 1U)) != 0U) {
+    return nullptr;
+  }
+  const std::size_t remainder = size % alignment;
+  if (remainder != 0U) {
+    const std::size_t padding = alignment - remainder;
+    if (size > std::numeric_limits<std::size_t>::max() - padding) {
+      return nullptr;
+    }
+    size += padding;
+  }
+  return std::aligned_alloc(alignment, size);
+}
+
 extern "C" void heap_caps_free(void* pointer) { std::free(pointer); }
 
 // A flat wasm allocator cannot truthfully report ESP-IDF capability heaps.
