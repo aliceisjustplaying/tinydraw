@@ -1,3 +1,5 @@
+<!-- HISTORICAL DRAFT. Canonical working draft: blogpost-edited.md -->
+
 # [TITLE]
 
 I've made a vector drawing application for a Waveshare device that has a 1.8-inch AMOLED touchscreen and runs on the ESP32-S3 microcontroller is pretty fucking fast.

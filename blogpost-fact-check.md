@@ -1,3 +1,5 @@
+<!-- HISTORICAL FACT-CHECK DRAFT. Canonical working draft: blogpost-edited.md -->
+
 # Fact-check of `blogpost-edited.md`
 
 Checked 21 August 2026 against the repository, `.codex-archaeology`, surviving Codex/Pi transcripts, benchmark receipts, current source/tests, and the external primary sources linked below. The draft itself was not edited.
