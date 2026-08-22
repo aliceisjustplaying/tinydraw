@@ -231,6 +231,23 @@ float cross(tinydraw::Point first, tinydraw::Point second, tinydraw::Point point
   return (second.x - first.x) * (point.y - first.y) - (second.y - first.y) * (point.x - first.x);
 }
 
+float squared_distance_to_segment(tinydraw::Point point, tinydraw::Point first,
+                                  tinydraw::Point second) {
+  const float delta_x = second.x - first.x;
+  const float delta_y = second.y - first.y;
+  const float length_squared = delta_x * delta_x + delta_y * delta_y;
+  if (length_squared == 0.0F) {
+    const float x = point.x - first.x;
+    const float y = point.y - first.y;
+    return x * x + y * y;
+  }
+  const float projection = std::clamp(
+      ((point.x - first.x) * delta_x + (point.y - first.y) * delta_y) / length_squared, 0.0F, 1.0F);
+  const float x = point.x - (first.x + projection * delta_x);
+  const float y = point.y - (first.y + projection * delta_y);
+  return x * x + y * y;
+}
+
 bool contains(const ParsedShape& shape, tinydraw::Point point) {
   if (shape.kind == tinydraw::RibbonPrimitiveKind::kCircle) {
     const float delta_x = point.x - shape.center.x;
@@ -246,6 +263,25 @@ bool contains(const ParsedShape& shape, tinydraw::Point point) {
     negative = negative || value < 0.0F;
   }
   return !(positive && negative);
+}
+
+bool circle_intersects_convex(const ParsedShape& circle, const ParsedShape& convex) {
+  if (circle.kind != tinydraw::RibbonPrimitiveKind::kCircle ||
+      convex.kind != tinydraw::RibbonPrimitiveKind::kConvex || convex.point_count < 3U) {
+    return false;
+  }
+  if (contains(convex, circle.center)) {
+    return true;
+  }
+  const float radius_squared = circle.radius * circle.radius;
+  for (std::uint8_t index = 0; index < convex.point_count; ++index) {
+    if (squared_distance_to_segment(circle.center, convex.points[index],
+                                    convex.points[(index + 1U) % convex.point_count]) <=
+        radius_squared) {
+      return true;
+    }
+  }
+  return false;
 }
 
 std::size_t shared_vertices(const ParsedShape& first, const ParsedShape& second) {
@@ -431,6 +467,29 @@ TEST_CASE("SVG quadratic subspans meet without outward overlap teeth") {
   REQUIRE(convexes.size() >= 3U);
   CHECK(shared_vertices(convexes[0], convexes[1]) == 2U);
   CHECK(shared_vertices(convexes[1], convexes[2]) == 2U);
+}
+
+TEST_CASE("SVG sharp reversals keep round joints attached to the stroke") {
+  LogFixture<1, 3> fixture;
+  const std::array samples{
+      vector_v2::CompactOperationSample{.x_quarter = 320U, .y_quarter = 320U, .radius_256 = 1'024U},
+      vector_v2::CompactOperationSample{.x_quarter = 320U, .y_quarter = 640U, .radius_256 = 1'024U},
+      vector_v2::CompactOperationSample{.x_quarter = 320U, .y_quarter = 0U, .radius_256 = 1'024U},
+  };
+  REQUIRE(fixture.log.append({.color = 0x001FU, .samples = samples}).has_value());
+
+  StringSink sink;
+  REQUIRE(vector_v2::export_svg(fixture.log, sink));
+  std::vector<ParsedShape> shapes;
+  REQUIRE(parse_shapes(sink.text, shapes));
+  const auto joint = std::find_if(shapes.begin(), shapes.end(), [](const ParsedShape& shape) {
+    return shape.kind == tinydraw::RibbonPrimitiveKind::kCircle &&
+           shape.center.x == doctest::Approx(20.0F) && shape.center.y == doctest::Approx(40.0F);
+  });
+  REQUIRE(joint != shapes.end());
+  CHECK(std::any_of(shapes.begin(), shapes.end(), [&](const ParsedShape& shape) {
+    return circle_intersects_convex(*joint, shape);
+  }));
 }
 
 TEST_CASE("SVG export omits a synthetic background rectangle") {

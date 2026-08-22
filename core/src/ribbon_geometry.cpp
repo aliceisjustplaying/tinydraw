@@ -301,9 +301,20 @@ RibbonUpdate CurvedRibbonStream::append(InkPoint point, bool provisional_needed,
     first_cap_pending_ = false;
   }
   const float overlap = span_join_ == RibbonSpanJoin::kRasterOverlap ? 0.75F : 0.0F;
-  emit_quadratic(stable_, last_, stable_end, overlap,
-                 [&](RibbonPrimitive primitive) { update.committed.push_back(primitive); });
-  if (sharp_turn(stable_.position, last_.position, point.position)) {
+  const bool turns_sharply = sharp_turn(stable_.position, last_.position, point.position);
+  if (turns_sharply && span_join_ == RibbonSpanJoin::kSharedBoundary) {
+    // A midpoint quadratic can cut so far inside a reversal that it no longer
+    // reaches the round joint at the raw control point. SVG has no raster
+    // overlap to conceal that gap, so preserve both legs through the joint.
+    emit_tail(stable_, last_,
+              [&](RibbonPrimitive primitive) { update.committed.push_back(primitive); });
+    emit_tail(last_, stable_end,
+              [&](RibbonPrimitive primitive) { update.committed.push_back(primitive); });
+  } else {
+    emit_quadratic(stable_, last_, stable_end, overlap,
+                   [&](RibbonPrimitive primitive) { update.committed.push_back(primitive); });
+  }
+  if (turns_sharply) {
     update.committed.push_back(circle(last_.position, last_.radius));
   }
 
