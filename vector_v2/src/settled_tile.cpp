@@ -727,6 +727,14 @@ void SettledRenderCursor::prepare_chord(const PreparedCurveStep& chord) {
 void SettledRenderCursor::raster_chord_row(int span_first, int span_last) {
   const int y = chord_next_y_;
   const float sample_y = static_cast<float>(y) + 0.5F;
+  const float chord_ax = chord_ax_;
+  const float chord_delta_x = chord_delta_x_;
+  const float chord_delta_y = chord_delta_y_;
+  const float chord_inverse_length_squared = chord_inverse_length_squared_;
+  const float chord_first_radius = chord_first_radius_;
+  const float chord_radius_delta = chord_radius_delta_;
+  const float ap_y = sample_y - chord_ay_;
+  const float ap_y_delta_y = ap_y * chord_delta_y;
   std::uint8_t* row = workspace_.operation_alpha.data() +
                       static_cast<std::size_t>(y) * static_cast<std::size_t>(width_);
   const std::uint8_t* accumulated_row =
@@ -734,6 +742,10 @@ void SettledRenderCursor::raster_chord_row(int span_first, int span_last) {
       static_cast<std::size_t>(y) * static_cast<std::size_t>(width_);
   std::size_t computed = 0;
   std::size_t skipped = 0;
+  // x is monotone, so the first and last improvements describe this row's
+  // complete dirty interval; publish the bounds once after traversal.
+  int first_changed_x = span_last + 1;
+  int last_changed_x = span_first - 1;
   for (int x = span_first; x <= span_last; ++x) {
     // Newest-first compositing: a saturated destination pixel can receive
     // no further contribution, so its coverage math is skipped exactly
@@ -746,25 +758,27 @@ void SettledRenderCursor::raster_chord_row(int span_first, int span_last) {
     }
     ++computed;
     const float sample_x = static_cast<float>(x) + 0.5F;
-    const float ap_x = sample_x - chord_ax_;
-    const float ap_y = sample_y - chord_ay_;
-    const float t =
-        std::clamp((ap_x * chord_delta_x_ + ap_y * chord_delta_y_) * chord_inverse_length_squared_,
-                   0.0F, 1.0F);
-    const float dx = ap_x - t * chord_delta_x_;
-    const float dy = ap_y - t * chord_delta_y_;
+    const float ap_x = sample_x - chord_ax;
+    const float t = std::clamp((ap_x * chord_delta_x + ap_y_delta_y) * chord_inverse_length_squared,
+                               0.0F, 1.0F);
+    const float dx = ap_x - t * chord_delta_x;
+    const float dy = ap_y - t * chord_delta_y;
     const std::uint8_t alpha =
-        coverage_alpha(dx * dx + dy * dy, chord_first_radius_ + chord_radius_delta_ * t);
+        coverage_alpha(dx * dx + dy * dy, chord_first_radius + chord_radius_delta * t);
     if (alpha <= row[x]) {
       continue;
     }
     row[x] = alpha;
+    first_changed_x = std::min(first_changed_x, x);
+    last_changed_x = x;
+  }
+  if (last_changed_x >= first_changed_x) {
     operation_touched_ = true;
     const std::size_t row_index = static_cast<std::size_t>(y);
     operation_min_x_[row_index] =
-        std::min(operation_min_x_[row_index], static_cast<std::uint8_t>(x));
+        std::min(operation_min_x_[row_index], static_cast<std::uint8_t>(first_changed_x));
     operation_max_x_[row_index] =
-        std::max(operation_max_x_[row_index], static_cast<std::uint8_t>(x + 1));
+        std::max(operation_max_x_[row_index], static_cast<std::uint8_t>(last_changed_x + 1));
     operation_min_y_ = std::min(operation_min_y_, static_cast<std::uint8_t>(y));
     operation_max_y_ = std::max(operation_max_y_, static_cast<std::uint8_t>(y + 1));
   }
