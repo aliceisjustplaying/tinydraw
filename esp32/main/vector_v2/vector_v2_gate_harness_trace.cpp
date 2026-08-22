@@ -273,7 +273,7 @@ bool run_ink_trace_replay_gate(VectorV2Presenter& presenter, vector_v2::TileProd
       all_pass = false;
       continue;
     }
-    LiveStrokeSession stroke(builder_storage, log, canvas, in_place_workspace, presenter);
+    LiveStrokeSession stroke(builder_storage, log, presenter);
     // Mid-stroke pixelation observability: fb_start is the pre-ink state of
     // the viewport, fb_mid_max the worst overview fallback seen right after
     // any chunk commit, fb_up_max the worst state at any lift, fb_end the
