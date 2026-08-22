@@ -86,6 +86,7 @@ else()
       "vector_v2/vector_v2_gate_harness.cpp"
       "vector_v2/vector_v2_gate_harness_history.cpp"
       "vector_v2/vector_v2_gate_harness_ink.cpp"
+      "vector_v2/vector_v2_gate_harness_kernels.cpp"
       "vector_v2/vector_v2_gate_harness_mixed.cpp"
       "vector_v2/vector_v2_gate_harness_owner.cpp"
       "vector_v2/vector_v2_gate_harness_pan.cpp"

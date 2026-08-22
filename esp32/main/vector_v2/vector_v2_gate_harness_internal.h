@@ -99,6 +99,7 @@ bool load_realistic_document(OperationLog& log, MaterializedCanvas& canvas,
                              std::span<VectorStroke> stroke_storage,
                              std::span<StrokeSample> sample_storage,
                              std::span<CompactOperationSample> conversion_storage);
+bool run_native_kernel_gate();
 
 bool run_tearing_probe(VectorV2Presenter& presenter, const vector_v2::ChromeState& chrome);
 bool run_cooperative_compose_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,

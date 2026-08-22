@@ -143,6 +143,7 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
                                 std::span<std::uint16_t> overview_scratch,
                                 const vector_v2::SettledTileWorkspace& settle_workspace,
                                 std::span<std::uint16_t> settle_pixels) {
+  const bool native_kernels = run_native_kernel_gate();
   vector_v2::ChromeState palette = chrome;
   palette.popup = vector_v2::ChromePopup::kColors;
   const std::int64_t color_started = esp_timer_get_time();
@@ -341,7 +342,7 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
   const auto return_overview = presenter.set_view(ZoomLevel::k25Percent, 0, 0, chrome, now_us());
   print_rerender_ledger("final");
   std::printf(
-      "TINYDRAW_GATE1_AUTOMATED_DONE minimap_navigation=%u "
+      "TINYDRAW_GATE1_AUTOMATED_DONE native_kernels=%u minimap_navigation=%u "
       "color_dialog=%u cooperative_compose=%u stress=%u stress_100=%u stress_400=%u "
       "overlap_ready=%u "
       "overlap_cold=%u general_cold_ready=%u general_cold=%u owner_document=%u "
@@ -352,16 +353,16 @@ bool run_vector_v2_gate_harness(VectorV2Presenter& presenter, vector_v2::TilePro
       "cache_tour=%u mixed_draw=%u idle_repair=%u ink_trace=%u hairline_capacity=%u "
       "long_gesture=%u history_latency=%u settle_timing=%u "
       "export_encode=%u export_reserve=%u return=%u ssaa_receipt=yellow\n",
-      minimap_navigation, color_dialog, cooperative_compose, stress_ready, stress_100, stress_400,
-      overlap_ready, overlap_cold, general_cold_ready, general_cold, owner_document, workload_ready,
-      paced_cold, gate_100, gate_400, pan_100, pan_400, ring_local, pan_sequence, pan_boundary,
-      live_overlay, draw_fill, cache_retention, full_world_cache, cache_tour, mixed_draw,
-      idle_repair, ink_trace_replay, hairline_capacity, long_gesture, history_latency,
-      settle_timing, export_encode, export_reserve, return_overview.passed);
-  return minimap_navigation && color_dialog && cooperative_compose && return_overview.passed &&
-         export_reserve && overlap_cold && general_cold && owner_document && mixed_draw &&
-         idle_repair && hairline_capacity && history_latency && settle_timing && pan_100 &&
-         pan_400 && ring_local && pan_sequence && pan_boundary;
+      native_kernels, minimap_navigation, color_dialog, cooperative_compose, stress_ready,
+      stress_100, stress_400, overlap_ready, overlap_cold, general_cold_ready, general_cold,
+      owner_document, workload_ready, paced_cold, gate_100, gate_400, pan_100, pan_400, ring_local,
+      pan_sequence, pan_boundary, live_overlay, draw_fill, cache_retention, full_world_cache,
+      cache_tour, mixed_draw, idle_repair, ink_trace_replay, hairline_capacity, long_gesture,
+      history_latency, settle_timing, export_encode, export_reserve, return_overview.passed);
+  return native_kernels && minimap_navigation && color_dialog && cooperative_compose &&
+         return_overview.passed && export_reserve && overlap_cold && general_cold &&
+         owner_document && mixed_draw && idle_repair && hairline_capacity && history_latency &&
+         settle_timing && pan_100 && pan_400 && ring_local && pan_sequence && pan_boundary;
 #endif
 }
 
