@@ -507,6 +507,70 @@ induction, and an IRAM ring-copy mapping all failed physical measurement.
 - CP3/PIE state is managed by FreeRTOS and costs context space on first use.
   Assembly kernels must remain task-only and preserve the configured ABI.
 
+## Glass-test follow-up — 2026-08-23
+
+The first post-optimization glass test found no tearing, raster corruption, or
+PNG mismatch. It did expose one pre-existing SVG defect and one independent
+history/presentation integration defect. The follow-up experiments were:
+
+### Accepted fixes and coverage
+
+1. **Attached sharp-reversal SVG caps:** the downloaded SVG contained six
+   detached internal cap circles (two in path 36 and four in path 37). A
+   three-sample reversal reproduced the defect deterministically. Shared-boundary
+   export now emits both tails through the sharp sample before its round joint,
+   so the joint intersects the ribbon. The PNG/live raster path is unchanged.
+2. **Proved the SVG defect predates this optimization round:** none of the
+   optimized commits changed ribbon geometry or SVG export before the fix. Git
+   history identifies `0a5fad8` (`fix: round sharp curved stroke joins`,
+   2026-08-10) as the introduction point.
+3. **Committed repeated mixed-history coverage:** six alternating pen/eraser
+   Strokes, each split across two operations, survive 32 rounds of five Undo
+   and five Redo moves. All 320 intermediate states match independent replay,
+   tiled occupancy, counts, revisions, epochs, timeline, and availability.
+4. **Repaired history after immediate feedback failure:** deterministic Puck
+   transport fault injection proved that a committed Undo could return false
+   only because its dock and fallback presentations failed. The app then
+   skipped autosave, damage handoff, and the 25% hard-pixel refill, leaving the
+   old stroke on screen for at least 992 ms. A committed history move now
+   reports semantic success; presentation failure remains in telemetry and the
+   normal held refill repairs the frame.
+5. **Restored the Puck aligned-allocation shim:** the native tile-pool alignment
+   change exposed a missing `heap_caps_aligned_alloc` implementation in the
+   emulator. The shim validates power-of-two alignment, rounds size safely,
+   and restores the Puck build used by the history fault test.
+
+### Investigated and not changed
+
+1. **Empty SVG G2/G3 groups:** these are the first two logical eraser gestures,
+   nested before any of the 43 pen gestures. They are valid, visually inert
+   masks. Empty wrappers cost 58 bytes (0.0046%); removing the complete no-op
+   erasers would save about 1.08% but break the one-path-per-gesture export
+   contract and change Inkscape's path count from 45 to 43.
+2. **SVG-wide geometry scan:** all 17,496 subpaths parse. The six sharp-turn
+   circles above are the only detached internal circles; path 19 is a valid
+   standalone dot. No second SVG defect was found.
+3. **Core Undo/Redo corruption:** not reproduced. Three fixed corpora survived
+   2,000 cycles, a temporary mixed harness survived 10,000 byte-exact
+   transitions, 128 randomized documents survived 1,280 differential
+   transitions, and the committed 320-transition property test passes under
+   Debug, Release, and ASan/UBSan.
+4. **Six-poll touch lift debounce:** two contacts separated by fewer than six
+   no-touch polls intentionally merge into one gesture; an Undo-to-Redo jump
+   can therefore resolve as one averaged tap. This was reproduced but not
+   changed because the same debounce prevents documented controller dropouts
+   from splitting one finger into two actions.
+5. **Sixteen-event touch queue saturation:** one through eight queued taps keep
+   every edge; a ninth edge-only tap invokes the documented resynchronization
+   policy and drops older backlog. This needs much more extreme input than the
+   narrated five-step sequence and was not changed. The ordinary Puck history
+   trace, full Puck suite, and semantic touch-buffer tests remain green.
+
+The follow-up commits are intentionally granular: `e327864` fixes SVG caps,
+`11762a1` adds mixed-history stress coverage, `a601f3b` repairs the Puck
+allocation shim, and `de3345c` fixes history presentation recovery with its
+fault-injection regression.
+
 ## Evidence retained for this session
 
 Baseline and accepted physical logs:
