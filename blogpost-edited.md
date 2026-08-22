@@ -1,14 +1,155 @@
-# TinyDraw V2
+Backdrop: people oneshotting vs me doing this
+Who did what
 
-<!-- CANONICAL WORKING DRAFT -->
+this is a story of project management
+
+managing agents with tunnel vision, very bad at telling me no -> more responsibility, sort of the architect, i got myself in a situation where i didn't think thru the broad picture how undo would fit into the app faster and i pushed the team and then re-do a bunch of work bc i didn't thikn it thru bc my team "didn't tell me about it"
+
+"if this was a team of programmers it'd be very dysfunctional"
+
+just because you're a software engineer it doesn't mean you're a good project manager (seconds 100x PM)
+
+i got better at managing agents
+
+i'm also the QA
+
+i'm the evaluatior/judge
+
+i'm steve jobs/idea guy
+
+i had the vision
+
+me: finger, eyes, certail level of understanding, persistence, historical intuition (i'm more sure this will work more than the agents), setting a direction, discernment (which agent, when to stop and think) looking at it from a meta level, conjuring up the right kind of guy ("demoscene mindset"), UX, "taste", worked hard, asking how to make this better, effort, passion
+
+i find it cool that the models found these optimizations
+
+weird future where you're a project manager
+
+agents: write all the code, find optimizations, review each other's code, help with architecture etc. 
+
+writing a spec for 2 days vs figuring out as we go
+
+what i find that they do if they run too long and what i need to know then
+
+overnight runs concrete steps
+
+reflection on my role in the process
+
+what if not a linear timeline?
+
+undo and aa
+
+
+
+Engineering mindset
+"what is a contact sheet?"
+
+motivation. why? 
+
+v1 -> actually i can make this better -> quest
+
+hero's journey?
+
+me doing: "what's worth working on?"
+
+going to a meetup and ahving people think thing i made cool
+
+people being excited about what i build is a normal thing to be motivated by
+
+what are the optimizations i find fun?
+
+vector authority
+
+getting rid of tearing and 30 fps panning
+
+how all 18 tricks stack on each other
+
+moving stuff to iram 
+
+esp32-s3r8 
+
+512 kb sram -> 384 kb sram and 128 kb iram
+
+squeeze out everything of psram/performance so the bottleneck is the cpu
+
+pinning touch to the 2nd core
+
+meta: i don't understand it enough still
+
+you can finish it with less knowledge but writing about it is a different story
+
+"cached chrome" chrome wording not intuitive
+
+"how i got it fast" i still don't fully understand
+
+but i still played an active role
+
+"How I didn't make a vector drawing app (my agents did)"
+
+"How I made a vector drawing app [that's very impressive] and i still don't know how it works entirely"
+
+
+"I'm at a point where I just want to ship the thing and this post is part of it"
+
+"We talked about digging in but I didn't want to"
+
+owning it (all)
+
+i think this is an impressive thing to build and i'm really proud of it. historically it's correlated with how it works. now it's not and it feels strange but i still feel like i did.
+
+ozempic problem narrative violation effort/suffering
+
+demoscene outcome is cool the point is the craft, the process is the point -> but this *is* the new process
+
+their reaction to ai tools breeds insecurity
+
+i care more about the outcome
+
+
+meta: finding a different blogpost during writing a blogpost
+
+this isn't obvious
+
+---
+
+# So You Want To Make A Vector Drawing App
+
+## And decided to do it on a 1.8" AMOLED touch screen driven by the ESP32-S3 microcontroller
+
+## And decided to build it on a microcontroller-driven $40 gadget with a tiny touchscreen and no framebuffer
+
+
+---
+
+# So You Want To Make A Fast Vector Drawing App (on a very underpowered hardware)
+
+# How to make a vector drawing app that's fast enough
+
+# Title goes here
+## Subtitle
 
 [VIDEO]
 
 [Try it now on Puck!](https://example.com)
 
+
+
+
 ## Hook
 
-I spent nine days building a vector graphics editor on a $40 microcontroller with a 1.8-inch touchscreen. I knew it was possible. I wanted to see how fast I could make it.
+I spent nine days building a vector graphics editor on a $40 microcontroller with a 1.8-inch touchscreen. I knew it was possible. I wanted to see how  I could make it.
+
+[i wanted to make it faster bc i wanted to vs. vs. i had to optimize it to make it work the first place]
+
+doom-like drive
+
+modern hardware lets you get away with a lot, this hardware does not 
+
+visualize the 18 stacked optimizations
+
+architecture 
+
+
 
 ## Origin
 
@@ -64,9 +205,7 @@ And that's when the real building began.
 
 ## The Graveyard
 
-In August 2026, every software engineer has a giant graveyard of vibe-coded things they started and never shipped. I have it. Everyone I know has that. That's the reality of August 2026.
-
-And I'm shipping it.
+In August 2026, every software engineer has a giant graveyard of vibe-coded things they started and never shipped. I have it. Most people I know have that. And I'm shipping it.
 
 ## The Demoscene Moment
 
@@ -80,9 +219,7 @@ At one point I asked a friend who's a really good systems engineer — does low-
 
 "Surprising fraction of how I use Claude well is conjuring up the right guy from latent space."
 
-"Who would absolutely crush this."
-
-"Ok Claude go be that guy."
+"Who would absolutely crush this." "Ok Claude go be that guy."
 
 The demoscene is a subculture of programmers who compete to make the most impressive visuals and audio under real and artificial constraints. A compo — short for competition — is a category at a demoparty, which is basically a gathering where people show off what they've built under severe constraints.
 
