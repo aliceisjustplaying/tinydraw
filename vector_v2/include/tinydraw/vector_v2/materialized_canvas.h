@@ -304,9 +304,9 @@ class MaterializedCanvas {
   // its resident slot (kNoRawSlot when absent).
   explicit MaterializedCanvas(const MaterializedCanvasStorage& storage);
 
-  [[nodiscard]] bool ready() const;
-  [[nodiscard]] DocumentRevision current_revision() const;
-  [[nodiscard]] std::size_t slot_capacity() const;
+  [[nodiscard]] constexpr bool ready() const { return storage_ready_; }
+  [[nodiscard]] constexpr DocumentRevision current_revision() const { return current_revision_; }
+  [[nodiscard]] constexpr std::size_t slot_capacity() const { return slots_.size(); }
 
   // Receipt for the most recent whole-Stroke history commit.
   struct HistoryCommitStats {
@@ -503,8 +503,10 @@ class MaterializedCanvas {
  private:
   friend class InPlaceOverviewStage;
   struct MetadataWork;
-  [[nodiscard]] std::optional<std::size_t> find_tile(TileKey key) const;
-  [[nodiscard]] std::optional<std::size_t> find_uniform(TileKey key) const;
+  // Scalar sentinels keep the cache probes leaf-sized on Xtensa. Slot indices
+  // can never reach kNoRawSlot because ready() caps the caller-owned pool.
+  [[nodiscard]] std::uint16_t find_tile(TileKey key) const;
+  [[nodiscard]] std::uint16_t find_uniform(TileKey key) const;
   [[nodiscard]] std::optional<std::size_t> choose_slot() const;
   [[nodiscard]] std::uint8_t protection_rank(TileKey key) const;
   [[nodiscard]] bool valid_incremental_revision(
@@ -586,6 +588,7 @@ class MaterializedCanvas {
   DocumentRevision staged_in_place_revision_{};
   bool staged_in_place_active_ = false;
   bool overview_valid_ = false;
+  bool storage_ready_ = false;
 };
 
 [[nodiscard]] inline constexpr int zoom_percent(ZoomLevel zoom) {

@@ -1,6 +1,8 @@
 #ifndef TINYDRAW_VECTOR_V2_MATERIALIZED_CANVAS_INTERNAL_H
 #define TINYDRAW_VECTOR_V2_MATERIALIZED_CANVAS_INTERNAL_H
 
+#include <array>
+
 #include "tinydraw/vector_v2/materialized_canvas.h"
 
 namespace tinydraw::vector_v2 {
@@ -9,6 +11,34 @@ namespace materialized_canvas_detail {
 // Zero-byte transient mark in the raw-slot directory during retained-uniform
 // staging. The adjacent value remains the serialized no-slot sentinel.
 inline constexpr std::uint16_t kRetainedUniformSlot = 0xFFFEU;
+
+// Fixed geometry lets cache probes validate a key and derive its dense
+// identity with two indexed loads. Keep this scalar: std::optional's Xtensa
+// windowed-ABI return forces otherwise-leaf probes through stack temporaries.
+inline constexpr std::array<TileGrid, 5> kTileGrids{{
+    {6, 7},
+    {12, 14},
+    {23, 28},
+    {46, 56},
+    {92, 112},
+}};
+inline constexpr std::array<std::uint16_t, kTiledZoomCount> kTileIdentityOffsets{0U, 168U, 812U,
+                                                                                 3'388U};
+
+[[nodiscard, gnu::always_inline]] inline std::uint16_t tile_identity_or_no_slot(TileKey key) {
+  const unsigned zoom = static_cast<unsigned>(key.zoom);
+  if (zoom == 0U || zoom >= kTileGrids.size()) {
+    return kNoRawSlot;
+  }
+  const TileGrid grid = kTileGrids[zoom];
+  if (key.column >= static_cast<unsigned>(grid.columns) ||
+      key.row >= static_cast<unsigned>(grid.rows)) {
+    return kNoRawSlot;
+  }
+  return static_cast<std::uint16_t>(
+      kTileIdentityOffsets[zoom - 1U] +
+      static_cast<unsigned>(key.row) * static_cast<unsigned>(grid.columns) + key.column);
+}
 
 [[nodiscard]] constexpr int ceil_div(int numerator, int denominator) {
   return (numerator + denominator - 1) / denominator;

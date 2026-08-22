@@ -59,31 +59,19 @@ PixelRect overview_bounds_for_world(PixelRect world_bounds) {
 }
 
 TileGrid tile_grid(ZoomLevel zoom) {
-  return {
-      .columns = ceil_div(scaled_extent(kWorldWidth, zoom), kTileWidth),
-      .rows = ceil_div(scaled_extent(kWorldHeight, zoom), kTileHeight),
-  };
+  const unsigned index = static_cast<unsigned>(zoom);
+  return index < kTileGrids.size() ? kTileGrids[index] : TileGrid{};
 }
 
 std::optional<std::size_t> tile_identity_index(TileKey key) {
-  if (!valid_tile_key(key)) {
+  const std::uint16_t identity = tile_identity_or_no_slot(key);
+  if (identity == kNoRawSlot) {
     return std::nullopt;
   }
-  constexpr std::array offsets{std::size_t{0}, std::size_t{168}, std::size_t{812},
-                               std::size_t{3'388}};
-  const std::size_t zoom_index = static_cast<std::size_t>(key.zoom) - 1U;
-  const TileGrid grid = tile_grid(key.zoom);
-  return offsets[zoom_index] +
-         static_cast<std::size_t>(key.row) * static_cast<std::size_t>(grid.columns) + key.column;
+  return identity;
 }
 
-bool valid_tile_key(TileKey key) {
-  if (key.zoom == ZoomLevel::k25Percent) {
-    return false;
-  }
-  const TileGrid grid = tile_grid(key.zoom);
-  return static_cast<int>(key.column) < grid.columns && static_cast<int>(key.row) < grid.rows;
-}
+bool valid_tile_key(TileKey key) { return tile_identity_or_no_slot(key) != kNoRawSlot; }
 
 std::optional<TileKey> tile_key_for_world(ZoomLevel zoom, WorldPoint point) {
   if (zoom == ZoomLevel::k25Percent || point.x < 0 || point.y < 0 || point.x >= kWorldWidth ||
@@ -124,20 +112,14 @@ MaterializedCanvas::MaterializedCanvas(const MaterializedCanvasStorage& storage)
   std::fill(occupancy_bits_.begin(), occupancy_bits_.end(), 0U);
   std::fill(slots_.begin(), slots_.end(), MaterializedSlotStorage{});
   std::fill(raw_slot_directory_.begin(), raw_slot_directory_.end(), kNoRawSlot);
+  storage_ready_ = overview_pixels_.size() == kOverviewPixels &&
+                   uniform_catalog_.size() == kMaterializedTileIdentityCount &&
+                   occupancy_bits_.size() == kOccupancyBytes &&
+                   raw_slot_directory_.size() == kMaterializedTileIdentityCount &&
+                   slots_.size() < static_cast<std::size_t>(kRetainedUniformSlot) &&
+                   tile_pixels_.size() == slots_.size() * kTilePixels;
 }
 
-bool MaterializedCanvas::ready() const {
-  return overview_pixels_.size() == kOverviewPixels &&
-         uniform_catalog_.size() == kMaterializedTileIdentityCount &&
-         occupancy_bits_.size() == kOccupancyBytes &&
-         raw_slot_directory_.size() == kMaterializedTileIdentityCount &&
-         slots_.size() < static_cast<std::size_t>(kRetainedUniformSlot) &&
-         tile_pixels_.size() == slots_.size() * kTilePixels;
-}
-
-DocumentRevision MaterializedCanvas::current_revision() const { return current_revision_; }
-
-std::size_t MaterializedCanvas::slot_capacity() const { return slots_.size(); }
 
 std::size_t MaterializedCanvas::resident_raw_tiles() const { return occupied_slots_; }
 
@@ -403,7 +385,7 @@ bool MaterializedCanvas::valid_incremental_revision(
                      [&publication](const auto& prior) { return prior.key == publication.key; }) ==
         tile_publications.begin() + static_cast<std::ptrdiff_t>(index);
     const bool resident =
-        find_tile(publication.key).has_value() || find_uniform(publication.key).has_value();
+        find_tile(publication.key) != kNoRawSlot || find_uniform(publication.key) != kNoRawSlot;
     const auto classified_color =
         tile_uniform_color(publication.pixels, width, height, static_cast<std::size_t>(width));
     if (!key_is_affected || !publication_is_unique || !resident ||
@@ -517,7 +499,7 @@ bool MaterializedCanvas::commit_history_revision(
     if (!slot.preserved_ || slot.preserved_prefix_ != arriving_prefix) {
       continue;
     }
-    if (find_tile(slot.key_).has_value()) {
+    if (find_tile(slot.key_) != kNoRawSlot) {
       // A current resident already covers this identity exactly.
       continue;
     }
@@ -568,8 +550,8 @@ bool MaterializedCanvas::commit_incremental_revision(
                            static_cast<std::size_t>(bounds.x1 - bounds.x0));
     const auto uniform_index = tile_identity_index(publication.key);
     if (classified_color.has_value() && uniform_index.has_value()) {
-      if (const auto slot_index = find_tile(publication.key); slot_index.has_value()) {
-        release_slot(*slot_index);
+      if (const std::uint16_t slot_index = find_tile(publication.key); slot_index != kNoRawSlot) {
+        release_slot(slot_index);
       }
       MaterializedUniformStorage& uniform = uniform_catalog_[*uniform_index];
       uniform.color_ = *classified_color;
@@ -577,8 +559,9 @@ bool MaterializedCanvas::commit_incremental_revision(
       uniform.occupied_ = true;
       continue;
     }
-    const auto existing = find_tile(publication.key);
-    const auto selected = existing.has_value() ? existing : choose_slot();
+    const std::uint16_t existing = find_tile(publication.key);
+    const auto selected =
+        existing != kNoRawSlot ? std::optional<std::size_t>{existing} : choose_slot();
     if (!selected.has_value()) {
       return false;
     }
@@ -595,11 +578,11 @@ bool MaterializedCanvas::can_edit_in_place_revision(
 }
 
 std::optional<InPlaceTileEdit> MaterializedCanvas::edit_resident_tile(TileKey key) {
-  const auto slot_index = find_tile(key);
-  if (!slot_index.has_value()) {
+  const std::uint16_t slot_index = find_tile(key);
+  if (slot_index == kNoRawSlot) {
     return std::nullopt;
   }
-  MaterializedSlotStorage& slot = slots_[*slot_index];
+  MaterializedSlotStorage& slot = slots_[slot_index];
   if (slot.revision_ != current_revision_) {
     return std::nullopt;
   }
@@ -612,13 +595,14 @@ std::optional<InPlaceTileEdit> MaterializedCanvas::edit_resident_tile(TileKey ke
   return InPlaceTileEdit{
       .key = key,
       .bounds = tile_pixel_bounds(key),
-      .pixels = tile_pixels_.subspan(*slot_index * kTilePixels, kTilePixels),
+      .pixels =
+          tile_pixels_.subspan(static_cast<std::size_t>(slot_index) * kTilePixels, kTilePixels),
   };
 }
 
 std::optional<InPlaceTileEdit> MaterializedCanvas::materialize_uniform_as_raw(TileKey key) {
-  const auto uniform_index = find_uniform(key);
-  if (!uniform_index.has_value()) {
+  const std::uint16_t uniform_index = find_uniform(key);
+  if (uniform_index == kNoRawSlot) {
     return std::nullopt;
   }
   const auto selected = choose_slot();
@@ -626,7 +610,7 @@ std::optional<InPlaceTileEdit> MaterializedCanvas::materialize_uniform_as_raw(Ti
     return std::nullopt;
   }
   ++composition_epoch_;
-  MaterializedUniformStorage& uniform = uniform_catalog_[*uniform_index];
+  MaterializedUniformStorage& uniform = uniform_catalog_[uniform_index];
   MaterializedSlotStorage& slot = slots_[*selected];
 #ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
   if (rerender_ledger_ != nullptr && slot.occupied_ && !(slot.key_ == key)) {
@@ -650,11 +634,11 @@ std::optional<InPlaceTileEdit> MaterializedCanvas::materialize_uniform_as_raw(Ti
 }
 
 std::optional<std::uint16_t> MaterializedCanvas::uniform_color(TileKey key) const {
-  const auto index = find_uniform(key);
-  if (!index.has_value()) {
+  const std::uint16_t index = find_uniform(key);
+  if (index == kNoRawSlot) {
     return std::nullopt;
   }
-  return uniform_catalog_[*index].color_;
+  return uniform_catalog_[index].color_;
 }
 
 bool MaterializedCanvas::commit_in_place_revision(
@@ -701,12 +685,12 @@ void MaterializedCanvas::finish_in_place_revision(DocumentRevision revision,
 }
 
 void MaterializedCanvas::mark_retained_key(TileKey key, DocumentRevision revision) {
-  if (const auto raw = find_tile(key); raw.has_value()) {
-    slots_[*raw].revision_ = revision;
+  if (const std::uint16_t raw = find_tile(key); raw != kNoRawSlot) {
+    slots_[raw].revision_ = revision;
     return;
   }
-  if (const auto uniform = find_uniform(key); uniform.has_value()) {
-    raw_slot_directory_[*uniform] = kRetainedUniformSlot;
+  if (const std::uint16_t uniform = find_uniform(key); uniform != kNoRawSlot) {
+    raw_slot_directory_[uniform] = kRetainedUniformSlot;
   }
 }
 

@@ -19,9 +19,9 @@ bool MaterializedCanvas::has_complete_source(const ViewRequest& request) const {
     for (int column = first_column; column <= last_column; ++column) {
       const TileKey key{request.zoom, static_cast<std::uint16_t>(column),
                         static_cast<std::uint16_t>(row)};
-      const auto index = find_tile(key);
-      const bool raw_current = index.has_value() && raw_slot_is_current(slots_[*index]);
-      if (!raw_current && !find_uniform(key).has_value()) {
+      const std::uint16_t index = find_tile(key);
+      const bool raw_current = index != kNoRawSlot && raw_slot_is_current(slots_[index]);
+      if (!raw_current && find_uniform(key) == kNoRawSlot) {
         return false;
       }
     }
@@ -113,22 +113,22 @@ void MaterializedCanvas::compose_tile(TileKey key, PixelRect band, CompositionCo
                          .x1 = std::min(view.x1, tile.x1),
                          .y1 = std::min(band.y1, tile.y1)};
   const bool first_slice = bounds.y0 == std::max(view.y0, tile.y0);
-  const auto raw = find_tile(key);
-  const bool raw_current = raw.has_value() && raw_slot_is_current(slots_[*raw]);
+  const std::uint16_t raw = find_tile(key);
+  const bool raw_current = raw != kNoRawSlot && raw_slot_is_current(slots_[raw]);
   if (raw_current) {
     if (first_slice) {
-      touch(slots_[*raw]);
-      include_quality(slots_[*raw].quality_, context.stats);
+      touch(slots_[raw]);
+      include_quality(slots_[raw].quality_, context.stats);
     }
-    compose_raw_pixels(*raw, bounds, context);
+    compose_raw_pixels(raw, bounds, context);
     return;
   }
-  const auto uniform = find_uniform(key);
-  if (uniform.has_value()) {
+  const std::uint16_t uniform = find_uniform(key);
+  if (uniform != kNoRawSlot) {
     if (first_slice) {
-      include_quality(uniform_catalog_[*uniform].quality_, context.stats);
+      include_quality(uniform_catalog_[uniform].quality_, context.stats);
     }
-    compose_uniform_pixels(uniform_catalog_[*uniform].color_, bounds, context);
+    compose_uniform_pixels(uniform_catalog_[uniform].color_, bounds, context);
     return;
   }
   context.stats.fallback_tiles += first_slice;

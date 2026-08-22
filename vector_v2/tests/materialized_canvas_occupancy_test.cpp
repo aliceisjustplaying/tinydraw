@@ -413,6 +413,35 @@ TEST_CASE("tile identity catalog densely covers every tiled zoom") {
   CHECK(std::all_of(seen.begin(), seen.end(), [](bool value) { return value; }));
 }
 
+TEST_CASE("tile identity boundaries reject every coordinate outside the fixed grids") {
+  struct ExpectedGrid {
+    vector_v2::ZoomLevel zoom;
+    vector_v2::TileGrid grid;
+    std::size_t first_identity;
+  };
+  constexpr std::array expected{
+      ExpectedGrid{vector_v2::ZoomLevel::k50Percent, {12, 14}, 0U},
+      ExpectedGrid{vector_v2::ZoomLevel::k100Percent, {23, 28}, 168U},
+      ExpectedGrid{vector_v2::ZoomLevel::k200Percent, {46, 56}, 812U},
+      ExpectedGrid{vector_v2::ZoomLevel::k400Percent, {92, 112}, 3'388U},
+  };
+  for (const ExpectedGrid& item : expected) {
+    CHECK(vector_v2::tile_grid(item.zoom) == item.grid);
+    CHECK(vector_v2::tile_identity_index({item.zoom, 0, 0}) == item.first_identity);
+    CHECK(vector_v2::tile_identity_index({item.zoom,
+                                          static_cast<std::uint16_t>(item.grid.columns - 1),
+                                          static_cast<std::uint16_t>(item.grid.rows - 1)}) ==
+          item.first_identity + static_cast<std::size_t>(item.grid.columns * item.grid.rows) - 1U);
+    CHECK_FALSE(vector_v2::tile_identity_index(
+        {item.zoom, static_cast<std::uint16_t>(item.grid.columns), 0}));
+    CHECK_FALSE(
+        vector_v2::tile_identity_index({item.zoom, 0, static_cast<std::uint16_t>(item.grid.rows)}));
+  }
+  CHECK_FALSE(vector_v2::tile_identity_index({vector_v2::ZoomLevel::k25Percent, 0, 0}));
+  CHECK_FALSE(vector_v2::tile_identity_index({static_cast<vector_v2::ZoomLevel>(5), 0, 0}));
+  CHECK(vector_v2::tile_grid(static_cast<vector_v2::ZoomLevel>(5)) == vector_v2::TileGrid{});
+}
+
 TEST_CASE("same-revision publication cannot downgrade settled quality") {
   std::array<std::uint16_t, vector_v2::kOverviewPixels> overview{};
   std::array<vector_v2::MaterializedSlotStorage, 1> slots{};
