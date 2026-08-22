@@ -265,14 +265,89 @@ struct ChordBatchBuilder {
     return true;
   }
 
+  [[nodiscard]] static int chord_area(const OperationChordPlan& plan) {
+    return (plan.bounds.x1 - plan.bounds.x0) * (plan.bounds.y1 - plan.bounds.y0);
+  }
+
+  [[nodiscard]] bool chord_before(std::uint8_t candidate, std::uint8_t prior) const {
+    const int candidate_y = plans[candidate].bounds.y0;
+    const int prior_y = plans[prior].bounds.y0;
+    return candidate_y < prior_y ||
+           (candidate_y == prior_y && chord_area(plans[candidate]) > chord_area(plans[prior]));
+  }
+
+  void insertion_sort(std::uint8_t* order) const {
+    for (std::size_t index = 0; index < batch.chord_count; ++index) {
+      const std::uint8_t chord = static_cast<std::uint8_t>(index);
+      std::size_t position = index;
+      while (position != 0U && chord_before(chord, order[position - 1U])) {
+        order[position] = order[position - 1U];
+        --position;
+      }
+      order[position] = chord;
+    }
+  }
+
+  void prioritize_equal_row_chords(std::uint8_t* order) const {
+    for (std::size_t index = 1; index < batch.chord_count; ++index) {
+      const std::uint8_t chord = order[index];
+      const int y = plans[chord].bounds.y0;
+      const int area = chord_area(plans[chord]);
+      std::size_t position = index;
+      while (position != 0U) {
+        const std::uint8_t prior = order[position - 1U];
+        if (plans[prior].bounds.y0 != y || chord_area(plans[prior]) >= area) {
+          break;
+        }
+        order[position] = prior;
+        --position;
+      }
+      order[position] = chord;
+    }
+  }
+
   void sort(std::span<std::byte> storage) const {
     std::uint8_t* order = chord_order(storage);
-    for (std::size_t index = 0; index < batch.chord_count; ++index) {
-      order[index] = static_cast<std::uint8_t>(index);
+    constexpr int kBucketRows = 128;
+    constexpr std::size_t kInsertionSortThreshold = 12U;
+    const int first_row = batch.clipped_bounds.y0;
+    const int row_count = batch.clipped_bounds.y1 - first_row;
+    if (batch.chord_count <= kInsertionSortThreshold || row_count <= 0 || row_count > kBucketRows) {
+      insertion_sort(order);
+      return;
     }
-    std::sort(order, order + batch.chord_count, [this](std::uint8_t left, std::uint8_t right) {
-      return plans[left].bounds.y0 < plans[right].bounds.y0;
-    });
+
+    // Clear only the live row range. A word backing array gives GCC aligned
+    // native stores and keeps this free of libc/ROM string calls on Xtensa.
+    std::array<std::uint32_t, kBucketRows / 4> bucket_words;
+    const std::size_t live_words = (static_cast<std::size_t>(row_count) + 3U) / 4U;
+    for (std::size_t word = 0; word < live_words; ++word) {
+#if defined(__XTENSA__)
+      // IDF disables the memset builtin, so a variable-size C++ clear becomes
+      // a ROM call. One aligned store keeps the short live-range clear local.
+      std::uint32_t* destination = bucket_words.data() + word;
+      asm volatile("s32i %1, %0, 0" : : "r"(destination), "r"(0U) : "memory");
+#else
+      bucket_words[word] = 0U;
+#endif
+    }
+    auto* next = reinterpret_cast<std::uint8_t*>(bucket_words.data());
+    for (std::size_t index = 0; index < batch.chord_count; ++index) {
+      ++next[static_cast<std::size_t>(plans[index].bounds.y0 - first_row)];
+    }
+    std::uint8_t position = 0;
+    for (int row = 0; row < row_count; ++row) {
+      const std::uint8_t count = next[static_cast<std::size_t>(row)];
+      next[static_cast<std::size_t>(row)] = position;
+      position = static_cast<std::uint8_t>(position + count);
+    }
+    for (std::size_t index = 0; index < batch.chord_count; ++index) {
+      const std::size_t row = static_cast<std::size_t>(plans[index].bounds.y0 - first_row);
+      order[next[row]++] = static_cast<std::uint8_t>(index);
+    }
+    // Equal-y0 ordering affects masked replay cost: broad chords first
+    // finalize more of the row before narrower chords inspect it.
+    prioritize_equal_row_chords(order);
   }
 };
 

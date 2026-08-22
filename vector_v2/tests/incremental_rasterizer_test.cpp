@@ -832,5 +832,78 @@ TEST_CASE("operation chord sweep refreshes finalized windows between overlapping
       .slice = slice,
   }));
   CHECK(slice.next_row == batch->clipped_bounds.y1);
-  CHECK(slice.work_px < 15'000U);
+  // Broad-first equal-y0 ordering saturates this overlap in 8,878 work
+  // pixels; stable input order needs 10,758 for the same exact authority.
+  CHECK(slice.work_px < 9'000U);
+}
+
+TEST_CASE("operation chord bucket and tall-span fallback sorts preserve exact raster authority") {
+  constexpr int kWidth = 64;
+  constexpr std::array kHeights{64, 128, 129, 193};
+  std::uint32_t random = 0xB0C7E7A5U;
+  const auto next = [&random]() {
+    random = random * 1'664'525U + 1'013'904'223U;
+    return random;
+  };
+
+  for (const int height : kHeights) {
+    for (int iteration = 0; iteration < 48; ++iteration) {
+      CAPTURE(height);
+      CAPTURE(iteration);
+      const std::size_t sample_count = 3U + next() % 38U;
+      std::vector<vector_v2::CompactOperationSample> samples;
+      samples.reserve(sample_count);
+      for (std::size_t index = 0; index < sample_count; ++index) {
+        samples.push_back({
+            .x_quarter = static_cast<std::uint16_t>(next() % (kWidth * 16U)),
+            .y_quarter =
+                static_cast<std::uint16_t>(next() % (static_cast<std::uint32_t>(height) * 16U)),
+            .radius_256 = static_cast<std::uint16_t>(32U + next() % (8U * 256U)),
+        });
+      }
+
+      std::vector<std::uint16_t> reference(static_cast<std::size_t>(kWidth * height), 0xFFFFU);
+      std::vector<std::uint16_t> actual(reference.size(), 0xFFFFU);
+      const vector_v2::PixelRect bounds{0, 0, kWidth, height};
+      REQUIRE(vector_v2::apply_incremental_operation(
+          {.tool = vector_v2::OperationTool::kPen, .color = 0x07E0U, .samples = samples},
+          {.zoom = vector_v2::ZoomLevel::k100Percent,
+           .level_bounds = bounds,
+           .pixels = reference,
+           .stride = kWidth}));
+
+      std::vector<std::uint32_t> storage(vector_v2::kOperationChordStorageBytes / 4U);
+      const auto bytes = std::as_writable_bytes(std::span(storage));
+      std::size_t endpoint = samples.size() - 1U;
+      while (true) {
+        vector_v2::OperationChordBatch batch;
+        REQUIRE(vector_v2::prepare_operation_chord_batch(
+            samples, endpoint, vector_v2::ZoomLevel::k100Percent, bounds, bytes, batch));
+        if (batch.chord_count != 0U) {
+          vector_v2::OperationSweepCursor cursor{.next_row = batch.clipped_bounds.y0};
+          while (cursor.next_row < batch.clipped_bounds.y1) {
+            vector_v2::OperationSweepSlice slice;
+            REQUIRE(vector_v2::apply_operation_chord_slice({
+                .tool = vector_v2::OperationTool::kPen,
+                .color = 0x07E0U,
+                .chord_storage = bytes,
+                .batch = batch,
+                .max_work_px = std::numeric_limits<std::size_t>::max(),
+                .surface = {.zoom = vector_v2::ZoomLevel::k100Percent,
+                            .level_bounds = bounds,
+                            .pixels = actual,
+                            .stride = kWidth},
+                .cursor = cursor,
+                .slice = slice,
+            }));
+          }
+        }
+        if (batch.next_endpoint == 0U) {
+          break;
+        }
+        endpoint = batch.next_endpoint;
+      }
+      CHECK(actual == reference);
+    }
+  }
 }
