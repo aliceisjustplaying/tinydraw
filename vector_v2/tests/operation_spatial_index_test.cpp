@@ -49,6 +49,10 @@ TEST_CASE("spatial index merges cell bits newest-first across partial authority 
   CHECK(stats.operations_in_authority == 3U);
   CHECK(stats.index_candidates == 4U);
   CHECK(stats.deduplicated_candidates == 3U);
+
+  std::array<std::uint16_t, 3> unmeasured_candidates{};
+  REQUIRE(storage.index.query({0, 0, 256, 64}, 63U, 3U, unmeasured_candidates) == 3U);
+  CHECK(unmeasured_candidates == candidates);
 }
 
 TEST_CASE("large operations stay conservative without filling every grid cell") {

@@ -85,19 +85,26 @@ struct CandidateWordRequest {
   std::span<const std::uint64_t> large_bits{};
 };
 
+template <bool MeasureCandidates>
 std::uint64_t merge_candidate_word(const CandidateWordRequest& request,
                                    OperationSpatialQueryStats& measured) {
   std::uint64_t merged = request.large_bits[request.word] & request.range_mask;
-  measured.index_candidates += static_cast<std::size_t>(std::popcount(merged));
+  if constexpr (MeasureCandidates) {
+    measured.index_candidates += static_cast<std::size_t>(std::popcount(merged));
+  }
   for (int y = request.cells.y0; y < request.cells.y1; ++y) {
     for (int x = request.cells.x0; x < request.cells.x1; ++x) {
       const std::size_t offset = cell_index(x, y) * request.words_per_cell + request.word;
       const std::uint64_t source = request.cell_bits[offset] & request.range_mask;
-      measured.index_candidates += static_cast<std::size_t>(std::popcount(source));
+      if constexpr (MeasureCandidates) {
+        measured.index_candidates += static_cast<std::size_t>(std::popcount(source));
+      }
       merged |= source;
     }
   }
-  measured.deduplicated_candidates += static_cast<std::size_t>(std::popcount(merged));
+  if constexpr (MeasureCandidates) {
+    measured.deduplicated_candidates += static_cast<std::size_t>(std::popcount(merged));
+  }
   return merged;
 }
 
@@ -108,6 +115,33 @@ void append_newest_candidates(std::uint64_t merged, std::size_t word,
     candidates[written++] = static_cast<std::uint16_t>(word * 64U + static_cast<std::size_t>(bit));
     merged &= ~(std::uint64_t{1} << bit);
   }
+}
+
+template <bool MeasureCandidates>
+std::size_t append_candidate_words(CellRect cells, std::size_t first_operation,
+                                   std::size_t operation_count, std::size_t words_per_cell,
+                                   std::span<const std::uint64_t> cell_bits,
+                                   std::span<const std::uint64_t> large_bits,
+                                   std::span<std::uint16_t> candidates,
+                                   OperationSpatialQueryStats& measured) {
+  const std::size_t last_operation = first_operation + operation_count;
+  const std::size_t first_word = first_operation / 64U;
+  const std::size_t last_word = (last_operation - 1U) / 64U;
+  std::size_t written = 0U;
+  for (std::size_t word = last_word + 1U; word-- > first_word;) {
+    const std::uint64_t range_mask =
+        operation_range_mask(word, first_word, last_word, first_operation, last_operation);
+    const std::uint64_t merged =
+        merge_candidate_word<MeasureCandidates>({.cells = cells,
+                                                 .word = word,
+                                                 .range_mask = range_mask,
+                                                 .words_per_cell = words_per_cell,
+                                                 .cell_bits = cell_bits,
+                                                 .large_bits = large_bits},
+                                                measured);
+    append_newest_candidates(merged, word, candidates, written);
+  }
+  return written;
 }
 
 std::size_t finish_query(std::size_t written, const OperationSpatialQueryStats& measured,
@@ -228,25 +262,16 @@ std::optional<std::size_t> OperationSpatialIndex::query(
                                     cell_population_, large_population_)) {
     return std::nullopt;
   }
-  std::size_t written = 0U;
   if (operation_count == 0U) {
-    return finish_query(written, measured, stats);
+    return finish_query(0U, measured, stats);
   }
-  const std::size_t last_operation = first_operation + operation_count;
-  const std::size_t first_word = first_operation / 64U;
-  const std::size_t last_word = (last_operation - 1U) / 64U;
-  for (std::size_t word = last_word + 1U; word-- > first_word;) {
-    const std::uint64_t range_mask =
-        operation_range_mask(word, first_word, last_word, first_operation, last_operation);
-    const std::uint64_t merged = merge_candidate_word({.cells = *cells,
-                                                       .word = word,
-                                                       .range_mask = range_mask,
-                                                       .words_per_cell = words_per_cell_,
-                                                       .cell_bits = cell_bits_,
-                                                       .large_bits = large_bits_},
-                                                      measured);
-    append_newest_candidates(merged, word, newest_first_candidates, written);
-  }
+  const std::size_t written =
+      stats == nullptr ? append_candidate_words<false>(*cells, first_operation, operation_count,
+                                                       words_per_cell_, cell_bits_, large_bits_,
+                                                       newest_first_candidates, measured)
+                       : append_candidate_words<true>(*cells, first_operation, operation_count,
+                                                      words_per_cell_, cell_bits_, large_bits_,
+                                                      newest_first_candidates, measured);
   return finish_query(written, measured, stats);
 }
 
