@@ -621,7 +621,16 @@ bool MaterializedCanvas::remember_view(const ViewRequest& view) {
   if (index >= recent_views_.size()) {
     return false;
   }
-  recent_views_[index] = {.zoom = view.zoom, .level_pixels = view.level_pixels, .valid = true};
+  // GCC 15 lowers the 21-byte aggregate assignment to a stack temporary and
+  // a ROM memcpy on Xtensa. These six scalar stores execute on every pan and
+  // zoom view registration and preserve the exact field representation.
+  ViewFootprint& footprint = recent_views_[index];
+  footprint.zoom = view.zoom;
+  footprint.level_pixels.x0 = view.level_pixels.x0;
+  footprint.level_pixels.y0 = view.level_pixels.y0;
+  footprint.level_pixels.x1 = view.level_pixels.x1;
+  footprint.level_pixels.y1 = view.level_pixels.y1;
+  footprint.valid = true;
   active_view_zoom_ = view.zoom;
   if (eviction_index_ready()) {
     eviction_candidates_dirty_ = true;

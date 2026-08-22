@@ -405,6 +405,26 @@ Measurement eviction_view_tour(std::span<const v2::TileKey> keys) {
           .slot_scans = v2::kTileSlotCount};
 }
 
+Measurement remember_view_update() {
+  constexpr std::size_t kIterations = 16'384U;
+  Rig rig;
+  if (!rig.ready()) {
+    return {};
+  }
+  const double wall = measured_median([&](std::size_t run) {
+    for (std::size_t iteration = 0; iteration < kIterations; ++iteration) {
+      const int x = static_cast<int>((iteration + run) & 255U);
+      if (!rig.canvas.remember_view(
+              {.zoom = v2::ZoomLevel::k400Percent,
+               .level_pixels = {x, 300, x + v2::kOverviewWidth, 300 + v2::kOverviewHeight}})) {
+        return false;
+      }
+    }
+    return true;
+  });
+  return {.name = "remember_view_update", .median_us = wall, .iterations = kIterations};
+}
+
 Measurement absorption_commit(std::span<const v2::TileKey> keys) {
   constexpr std::size_t kRetained = v2::kMaximumVisibleTiles;
   const auto resident = absorption_resident_keys(keys);
@@ -459,6 +479,7 @@ int main() {
       aa_free_publication(raw_keys),
       aa_eviction_publication(raw_keys),
       eviction_view_tour(raw_keys),
+      remember_view_update(),
       absorption_commit(raw_keys),
       history_raw_commit(raw_keys),
       history_uniform_commit(keys),
