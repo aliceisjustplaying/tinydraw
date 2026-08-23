@@ -14,17 +14,19 @@ At the meetup I showed tinydraw to Steve and he liked it so much when it was tim
 
 I met a lot of cool people at the meetup, saw many interesting projects, found future collaborators and tinydraw impressed many others as well, which made me happy and proud.
 
-Even before my talk though, I wanted to aim higher. What if tinydraw would be a more real tldraw? Vector graphics, infinite canvas, arbitrary zoom levels, the works, with it being fast to boot? People have been writing drawing programs like this since at least the 80s for computers slower than the ESP32-S3 today.
+Even before my talk though, I wanted to aim higher. What if tinydraw would be a more real tldraw? Vector graphics, infinite canvas, arbitrary zoom levels, the works, with it being fast to boot? People have been writing drawing programs like this since at least the 80s for computers slower than the ESP32-S3 today. Adobe Illustrator 1.0 was released in March 1987 on the Macintosh, the fastest one at the time running an 8 MHz Motorola 68000 CPU.
 
-[NOTE: in one of the documents i have some stuff how i did research on adobe illustrator 1.0 and what was the fastest mac at the time and how that compares to the esp32-s3; idk if to include that or not my inner nerd wants to but if it breaks the structure/whatever or weakens it then no]
+So a day after the meetup, I started working on the tinydraw v2 feasibility prototype and spent the next 26 hours in a fever dream to get something that proves this was possible. At least that was my agents' perspective. I was only an hour in when I told Sol
 
-So a day after the meetup, I started working on the tinydraw v2 feasibility prototype and spent the next 26 hours in a fever dream to get something that proves this was possible. At least that was my agents' perspective. They had far more doubt about it than I ever did, but even I started questioning things around hour 20 when I told Sol 
+> please step back and think it feels like you're flailing. worth stepping back and thinking at these times. you got this.
+
+They had far more doubt about it than I ever did, but even I started questioning things a few hours in when I told Sol 
 
 > "I put in quite a bit of time and money and tokens in this already... I need to know if it's worth investing more"
 
 This was maybe the first big moment when I made the mistake of letting the agents work way too long without me understanding what they're doing and why and getting increasingly frustrated. Stopping and asking helped.
 
-[NOTE: still not happy with the transition into this but I do think this needs to be said somehow]
+My doubt came from not understanding, from not being able to judge whether continuing was worth it because I no longer knew what the agents were doing.
 
 And the research during the prototype did temper my ambitions a bit. I compromised on a not having a truly infinite canvas and only fixed power of two zoom levels. 
 
@@ -32,13 +34,11 @@ But by the end, I had something; a renderer system that was proven to be not rig
 
 We as in: me and my agents, with GPT 5.6 Sol (high) as the workhorse and GPT 5.6 Pro and Fable 5 for code reviews, architecture and further optimizations. They wrote and reviewed all the code and came up with most of the architecture while I provided the persistence, the historical intuition, my nascent project management skills and perhaps most importantly my eyes and fingers.
 
-[NOTE: am i giving conclusion-shaped stuff to readers too early or is this fine?]
-
 By the end of the fever dream prototyping phase I had certain performance targets I wanted to hit: cold renders under 500ms at all zoom levels (25%-400%) tear free panning as fast as possible, later targeting 24 fps with the stretch goal of 30; undo and redo limited only by how much you've drawn, anti-aliasing and proper SVG export next to the PNG one we've already had in v1.
 
 Nine days and change after starting we (me managing my agents) hit those targets and then some, with some bumps along the way and I tagged tinydraw v2's release version.
 
-Not that I expected any users. I did this because I wanted to prove I can do this, to impress others and because I'm lonely and it numbs the pain. [NOTE: yeah unsure about that last one]
+Not that I expected any users. I did this because I wanted to prove I can do this and to impress others.
 
 The bumps along the way were many. At one point I was pointing a Fuji X-T5 with the Sigma 56mm f/1.4 lens (which has terrible magnification) at the screen of the Waveshare device's 1.8" AMOLED screen recording a video of different flashing patterns at 1080p@240fps, set to 1/1024 (to reduce flicker) at f/4 handheld as I had no tripod for over 2 minutes in order to help my agent debug tearing; the video was going to tell it if the screen does something in a certain way or the opposite. And it worked! This was the turning point and the penultimate step in getting panning both fast and tear-free, almost 30 fps, at the physical limit of the panel/controller.
 
@@ -50,17 +50,15 @@ And it's something I have not done often enough: a recurring pattern was variati
 
 The most extreme example were what I christened evil hairlines. I repeatedly ran into something passing our increasingly growing performance test suite but as soon as I busted out the smallest pen and started scribbling evil hairlines on the screen - dense, overlapping, long thin strokes, often a few of them stacked on top of each other, it was often time to go back and optimize cold rendering or caching or inking more.
 
-> please step back and think it feels like you're flailing. worth stepping back and thinking at these times. you got this.
-
-[✎ 8/11, 20:37. NOTE: i suppose this is a bit cheating bc this comes from the fever dream phase so idk if this should be elsewhere or idk]
-
 If the issue seemed bad enough I'd have them pack up the source code and the logs for 5.6 Pro and wait ~40-100 minutes for the result then feed that to Fable, or get Fable working on it already and give it Pro's report inbetween and tell them this was done against a slightly older version of the code.
 
 And Fable. Fable is brilliant. It's not particularly detail-oriented (I have Sol for that) but as of now they feel unparalleled when it comes to architecture and optimizing code for microcontrollers, especially when set to xhigh effort. This made an already scarce resource even more one; I did what I could to get the most out of a single Anthropic subscription and still blew thru it in like 3 days...
 
 Keeping Fable around for the tough bits paid off though; discernment is another thing I brought to the table, sharing some but most definitely not all with the agents. Perhaps a gestalt of this is what people refer to as "taste" these days.
 
-That, and persistence. I always knew this was possible, my confidence barely wavered and the agents were the ones always more skeptical. And yet, I kept pushing them for more again and again, and when you *do that the right way* their results went way beyond what they thought was possible.
+That, and persistence. I always knew this was possible, my confidence barely wavered and the agents were the ones always more skeptical. And yet, I kept pushing them for more again and again, and when you *do that the right way* their results went way beyond what they thought was possible. 
+
+I sign off many of my messages to agents with some form of "thank you and good luck, you got this."
 
 Early in the project I felt stuck and asked a friend to help, a friend who is likely in the top 100 system engineers in the world and I'm not exaggerating here, and she just went: 
 
@@ -80,9 +78,7 @@ I know the ESP32-S3 has two cores and pinning inking to the second core helped a
 
 AI can massively compress how a beginner can go from zero to one, but most of the time without the domain knowledge you do hit a wall and need to start thinking more while managing your agents, to dial in how much you need to know for them to work efficiently.
 
-For a software development project it was normal and expected to be able to explain it and it still is at most places. Both socially and innately we reward effort and suffering, and there was a lot in this. I'm proud of what I've shipped but it *feels* weird to say "I built this" knowing that it does not conform to changing social expectations.
-
-[NOTE: the above paragraph feels like the sentences don't quite flow together idk thoughts?]
+For a software development project it was normal and expected to be able to explain it and it still is at most places. I'm proud of what I've shipped but it *feels* weird to say "I built this" knowing that it does not conform to changing social expectations.
 
 Being a project manager does not often come naturally to a software engineer as it's a different and at best only somewhat overlapping set of skills. You need to delegate but you need to know what your people or indeed agents are capable of, how much they need managing, how they need to be managed and so on.
 
@@ -90,9 +86,7 @@ If I tell Claude to make atomic commits of a large number of changes it makes gr
 
 The [best Vibecoder I know](https://x.com/seconds_0) is a 100x PM who still does not know how to code and yet he built and shipped very impressive projects like [ChinaRxiv](https://chinarxiv.org/) and [SovietRxiv](https://sovietrxiv.org/).
 
-[NOTE: again, does this flow well as i go back and forth between... philsophizing vs more harder facts like below? v unsure]
-
-I also know that adding Undo/Redo only towards the end bit me hard; the first version was very slow, indeed I was watching a line render block by block in the middle of the screen and it was around then it dawned on me that an undo is a re-render, and those are very expensive even after optimizations unless cached. I'm proud that we got it to a speed and UX I'm mostly happy about.
+I also know that adding Undo/Redo only towards the end bit me hard; the first version was very slow, indeed I was watching a line render block by block in the middle of the screen and it was around then it dawned on me that an undo is a re-render, and those are very expensive even after optimizations unless cached. We got it to a speed and UX I'm mostly happy about.
 
 And if we're talking about taste, UX is also your responsibility. We've iterated through many versions of how Undo/Redo should feel, many suggestions from the agents just *feeling wrong* until we settled on the hourglass + not showing intermediate rendering setup.
 
@@ -102,11 +96,11 @@ Anti-Aliasing was Undo on steroids; that came last and the recurring pattern of 
 
 A lot of care went into making inking feel good, be fast and accurate. I know that switching to a Vector-first Authority was one of the biggest unlocks. I only somewhat grok how it works. Or changing perfect freehand's streamline constant (how much smoothing it applies) from 0.35 to 0.4 was the sweet spot. One of the last bugs we hunted down before releasing were phantom dots that would show up on the SVG export on the top of the document, render as tiny squares on the screen and not be present at all on the PNG export. These were related to how taps were interpreted at the edge. Hell, this was only one of two phantom dots bugs, the other being related to putting your finger down but then deciding not to draw a line. 
 
-I'm proud our SVG exports have proper paths for all the lines.
+And our SVG exports have proper paths for all the lines.
 
-I have these and so many more stories. I'm proud [NOTE: is it a refrain or is it one too many I'm proud bc it might be the latter] of the final product and mostly happy with performance with the exception of the aforementioned AA. tinydraw v1 was mostly the fun vibecoding version while v2 slowly but surely turned into a compo for a demoparty of all the people who scroll the timeline or read my substack/blog.
+I have these and so many more stories. I'm proud of the final product and mostly happy with performance with the exception of the aforementioned AA. tinydraw v1 was mostly the fun vibecoding version while v2 slowly but surely turned into a compo for a demoparty of all the people who scroll the timeline or read my substack/blog.
 
-[NOTE: we have not introduced the demoscene at all so far we still need to do that ugh]
+Both socially and innately we reward effort and suffering. There was a lot of both in it. The demoscene rewards craft. Does this count as craft? A whole lot of people would say no. I'm currently undecided. 
 
 And the thing is, I kind of prefer tinydraw v1 for drawing. The absurdity of v2 is part of the charm. Who in their right mind would draw anything serious in a vector graphics editor running on a microcontroller and a tiny 1.8" screen? Definitely not me. If you want to though, it's here, it's shipped do DM me on twitter your creations I'd love to see them.
 
@@ -144,13 +138,15 @@ Then around 10:40 p.m. they did finally wrap up and they sure delivered:
 
 35 experiments accepted, 23 rejected or superseded. 
 
+(Note: none of the assembly wins are in the WASM build due to their nature of being written for the hardware specifically)
+
 And I do feel extremely vindicated. I let them go to town, they ran the benchmarks. I have not glass tested yet. It's quite possible that once I glass test it, I find some bugs, like many times before. I may be repeating the mistake of not glass testing early enough. I'm also a little mad at myself that I wasn't pushing them earlier, but here we are.
 
 # Coda of the Coda
 
 I just did a glass test, and as far as I can tell, the only thing broken is the SVG export in a way that seems not too hard to fix. They did not break anything — famous last words — but the PNG export is fine, the performance is as they said, cold rendering got faster, anti-aliasing got faster. Free wins in assembly. The SVG fix landed the next day.
 
-[✎ SCREENSHOT: the DM exchange with the PM friend I got approval now] [NOTE: if the screenshot will go as is, it honestly holds up on its own with no explanation imo]
+[✎ SCREENSHOT: the DM exchange with the PM friend I got approval now]
 
 if it wasn't for the Janka call, I might not have run this assembly thing. I cannot know. But I would like to think that talking all this about project management contributed to me being like: yeah, you know what, I should actually just tell them to disassemble it. And lo and behold, they kept finding optimizations.
 
