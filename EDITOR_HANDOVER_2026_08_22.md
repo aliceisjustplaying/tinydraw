@@ -8,7 +8,7 @@
 
 ## The one-paragraph state
 
-On 8/22 Sarah had the breakthrough call with her friend Janka (transcript:
+On 8/22 Alice had the breakthrough call with her friend Janka (transcript:
 `~/Dropbox/Monologue/20260822_FRIEND_CONVERSATION_001.md` — read it in full).
 The post's center changed from tech-explainer to: **"This is a story of project
 management"** — she's the finger, the eyes, the persistence, the evaluator; the

@@ -361,6 +361,6 @@ Primary local evidence used most heavily:
 - `.codex-archaeology/README.md`, `git-history.md`, `session-history.md`, `meetup-day-timeline.md`, `docs-performance.md`, `supplement.md`, and `two-episodes-writing-memory.md`
 - `docs/receipts/vector-v2/`, `docs/receipts/hardware/`, and `benchmark-results/`
 - `docs/design/`, current `vector_v2/` and `esp32/` source/tests, `README.md`, `PROJECT_STATE.md`, and `puck/README.md`
-- surviving raw Pi sessions under `/Users/sarah/.pi/agent/sessions/`
+- surviving raw Pi sessions under `/Users/alice/.pi/agent/sessions/`
 
 External primary sources were used only for hardware, camera/lens, demoscene terminology, ESP-IDF memory terminology, and the Quake III source attribution; all are linked beside the relevant claims.

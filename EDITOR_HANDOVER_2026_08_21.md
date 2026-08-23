@@ -2,8 +2,8 @@
 
 **Date:** 2026-08-21  
 **Status:** First editing pass complete, awaiting fact-check round  
-**Working file:** `/Users/sarah/src/a/tinydraw/blogpost-edited.md`  
-**Original draft:** `/Users/sarah/src/a/tinydraw/blogpost-current-stitched.md`
+**Working file:** `/Users/alice/src/a/tinydraw/blogpost-edited.md`  
+**Original draft:** `/Users/alice/src/a/tinydraw/blogpost-current-stitched.md`
 
 ---
 
