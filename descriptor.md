@@ -25,9 +25,9 @@ is refined in bounded background work.
   requires explicit confirmation and cancellation leaves the document untouched.)
 - Tap zoom minus or zoom plus to change magnification while retaining the Camera focus. (intent:
   zoom keeps the drawing location under consideration.)
-- Short-press BOOT to hide the battery, minimap, zoom controls, and bottom toolbar; short-press it
-  again to restore them. (intent: the complete 368 by 448 display becomes drawable without losing
-  the current tool, color, size, zoom, Camera, or history.)
+- Short-press BOOT to hide the battery, minimap, and zoom controls; short-press it again to restore
+  them. The bottom toolbar remains visible and interactive. (intent: canvas HUD overlays disappear
+  without hiding drawing actions or changing the current tool, color, size, zoom, Camera, or history.)
 - Long-press BOOT to record from a blank drawing, long-press again to stop, and long-press once more
   to replay the same touch and chrome-visibility stream from the same blank baseline. (intent:
   demos are deterministic and never depend on persisted drawing state.)
@@ -41,6 +41,6 @@ is refined in bounded background work.
 - Required: one 368 by 448 RGB565 panel, single-point touch input, deterministic millisecond ticks,
   and enough WebAssembly linear memory for the fixed-capacity Vector V2 application.
 - Preferred: one raw button. The firmware measures the press duration itself; a short release
-  toggles chrome and an 800 ms hold controls demo record/replay.
+  toggles the HUD and an 800 ms hold controls demo record/replay.
 - Persistence, RTC synchronization, USB export, panel timing, and touch-controller defects are
   physical-device facilities and are not claimed by this Puck port.
