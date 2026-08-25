@@ -12,6 +12,7 @@ namespace {
 using tinydraw::vector_v2::ChromeAction;
 using tinydraw::vector_v2::ChromeExportStatus;
 using tinydraw::vector_v2::ChromePopup;
+using tinydraw::vector_v2::ChromePoint;
 using tinydraw::vector_v2::ChromeState;
 using tinydraw::vector_v2::ChromeTimeSyncStatus;
 using tinydraw::vector_v2::ChromeTool;
@@ -392,6 +393,50 @@ TEST_CASE("chrome canvas clipping follows the visible overlay") {
   CHECK(tinydraw::vector_v2::chrome_canvas_bottom(state) == 0);
   CHECK_FALSE(tinydraw::vector_v2::clip_canvas_segment({100.0F, 100.0F}, {120.0F, 120.0F}, state)
                   .has_value());
+
+  state.visible = false;
+  CHECK(tinydraw::vector_v2::chrome_canvas_bottom(state) == 448);
+  CHECK(tinydraw::vector_v2::chrome_input_bottom(state) == 448);
+  CHECK(tinydraw::vector_v2::chrome_ink_bottom(state) == 448);
+}
+
+TEST_CASE("hidden chrome gives every ordinary control pixel to the canvas") {
+  const ChromeState state{.visible = false};
+  for (const auto point : std::array{ChromePoint{230.0F, 28.0F}, ChromePoint{332.0F, 98.0F},
+                                     ChromePoint{300.0F, 300.0F},
+                                     ChromePoint{180.0F, 410.0F}}) {
+    CHECK_FALSE(tinydraw::vector_v2::chrome_contains(point, state));
+    CHECK(tinydraw::vector_v2::chrome_action_at(point, state) == ChromeAction::kNone);
+  }
+  CHECK_FALSE(tinydraw::vector_v2::chrome_minimap_region(state).has_value());
+  CHECK_FALSE(tinydraw::vector_v2::chrome_minimap_refresh_required(state, true, true));
+}
+
+TEST_CASE("hidden chrome leaves the complete frame untouched") {
+  constexpr int width = 368;
+  constexpr int height = 448;
+  std::vector<std::uint16_t> pixels(static_cast<std::size_t>(width * height));
+  for (std::size_t index = 0; index < pixels.size(); ++index) {
+    pixels[index] = static_cast<std::uint16_t>((index * 73U + 19U) & 0xFFFFU);
+  }
+  const auto before = pixels;
+
+  paint_chrome(pixels, width, height, {.visible = false});
+
+  CHECK(pixels == before);
+}
+
+TEST_CASE("critical dialogs remain visible when ordinary chrome is hidden") {
+  constexpr int width = 368;
+  constexpr int height = 448;
+  std::vector<std::uint16_t> pixels(static_cast<std::size_t>(width * height), 0x1234U);
+  const ChromeState state{.visible = false, .confirm_new = true};
+
+  CHECK(tinydraw::vector_v2::chrome_contains({10.0F, 10.0F}, state));
+  CHECK(tinydraw::vector_v2::chrome_input_bottom(state) == 0);
+  paint_chrome(pixels, width, height, state);
+  CHECK(pixels[140U * width + 180U] == 0xFFFFU);
+  CHECK(pixels[410U * width + 180U] == 0x1234U);
 }
 
 TEST_CASE("new drawing confirmation is modal and exposes large Raster V1 choices") {
@@ -683,6 +728,7 @@ TEST_CASE("new drawing dialog preserves canvas outside its bounds") {
 
 TEST_CASE("only byte-order-aware chrome states accept a pre-swapped transfer surface") {
   CHECK(tinydraw::vector_v2::chrome_accepts_byte_swapped_staging({}));
+  CHECK(tinydraw::vector_v2::chrome_accepts_byte_swapped_staging({.visible = false}));
   CHECK_FALSE(
       tinydraw::vector_v2::chrome_accepts_byte_swapped_staging({.popup = ChromePopup::kColors}));
   CHECK_FALSE(tinydraw::vector_v2::chrome_accepts_byte_swapped_staging({.confirm_new = true}));

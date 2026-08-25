@@ -75,6 +75,9 @@ enum class ChromeAction {
 };
 
 struct ChromeState {
+  // The physical top button hides ordinary controls so the complete display
+  // becomes canvas. Critical dialogs and progress states still render.
+  bool visible = true;
   ChromeTool tool = ChromeTool::kDraw;
   ChromeSize size = ChromeSize::kLarge;
   ChromePopup popup = ChromePopup::kNone;

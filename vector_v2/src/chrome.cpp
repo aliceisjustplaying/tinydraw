@@ -469,34 +469,36 @@ void draw_fixed_chrome(const MinimapSurface& surface, const ChromeState& state) 
   };
   Painter painter(surface.pixels, surface.width, surface.height, surface.origin_x,
                   surface.origin_y);
-  if (intersects_rows(kChromeCanvasBottom, kHeight)) {
-    draw_bottom(painter, state);
-  }
-  if (state.popup == ChromePopup::kColors && !state.confirm_new &&
-      state.export_status == ChromeExportStatus::kIdle &&
-      state.time_sync_status == ChromeTimeSyncStatus::kIdle) {
-    if (intersects_rows(kColorPopupTop, kColorPopupBottom)) {
-      draw_palette(painter, state);
+  if (state.visible) {
+    if (intersects_rows(kChromeCanvasBottom, kHeight)) {
+      draw_bottom(painter, state);
     }
-    return;
-  }
-  if (state.popup != ChromePopup::kNone &&
-      intersects_rows(chrome_canvas_bottom(state), kPopupBottom + 4)) {
-    painter.rect({0, chrome_canvas_bottom(state), kWidth, kPopupTop}, kWhite);
-    draw_dock(painter, kPopupTop, kPopupBottom);
-    switch (state.popup) {
-      case ChromePopup::kTools:
-        draw_tools_popup(painter, state);
-        break;
-      case ChromePopup::kSizes:
-        draw_sizes_popup(painter, state);
-        break;
-      case ChromePopup::kDocument:
-        draw_document_popup(painter, state);
-        break;
-      case ChromePopup::kNone:
-      case ChromePopup::kColors:
-        break;
+    if (state.popup == ChromePopup::kColors && !state.confirm_new &&
+        state.export_status == ChromeExportStatus::kIdle &&
+        state.time_sync_status == ChromeTimeSyncStatus::kIdle) {
+      if (intersects_rows(kColorPopupTop, kColorPopupBottom)) {
+        draw_palette(painter, state);
+      }
+      return;
+    }
+    if (state.popup != ChromePopup::kNone &&
+        intersects_rows(chrome_canvas_bottom(state), kPopupBottom + 4)) {
+      painter.rect({0, chrome_canvas_bottom(state), kWidth, kPopupTop}, kWhite);
+      draw_dock(painter, kPopupTop, kPopupBottom);
+      switch (state.popup) {
+        case ChromePopup::kTools:
+          draw_tools_popup(painter, state);
+          break;
+        case ChromePopup::kSizes:
+          draw_sizes_popup(painter, state);
+          break;
+        case ChromePopup::kDocument:
+          draw_document_popup(painter, state);
+          break;
+        case ChromePopup::kNone:
+        case ChromePopup::kColors:
+          break;
+      }
     }
   }
   if (state.confirm_new && intersects_rows(kDialogTop - 1, kDialogBottom + 5)) {
@@ -642,7 +644,11 @@ bool chrome_accepts_byte_swapped_staging(const ChromeState& state) {
   // boundary. Modal chrome and the busy toast use PixelPainter directly in
   // host RGB565 order, so their transfer must remain host-order until the
   // transport's final swap.
-  return canvas_overlays_visible(state) && !state.history_busy;
+  const bool hidden_without_painter_overlays =
+      !state.visible && !state.confirm_new && state.export_status == ChromeExportStatus::kIdle &&
+      state.time_sync_status == ChromeTimeSyncStatus::kIdle;
+  return !state.history_busy &&
+         (canvas_overlays_visible(state) || hidden_without_painter_overlays);
 }
 
 bool ChromeStagingCache::prepare_for(ChromeRect panel_bounds, const ChromeState& state,

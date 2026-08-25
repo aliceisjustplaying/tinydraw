@@ -98,7 +98,7 @@ inline constexpr int kPaletteRowHeight = 75;
 }
 
 [[nodiscard]] inline bool canvas_overlays_visible(const ChromeState& state) {
-  return state.popup == ChromePopup::kNone && !state.confirm_new &&
+  return state.visible && state.popup == ChromePopup::kNone && !state.confirm_new &&
          state.export_status == ChromeExportStatus::kIdle &&
          state.time_sync_status == ChromeTimeSyncStatus::kIdle;
 }
