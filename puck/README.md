@@ -14,7 +14,7 @@ checks exact Redo restoration.
 Only physical facilities are replaced. The Puck panel transport preserves the
 firmware's strip staging, ring addressing, RGB565 byte swap, and partial push
 windows. Browser touch is sampled through `PhysicalTouch`; raw GPIO0 press and
-release timing drives the firmware's short-zoom and long demo-record controls.
+release timing drives the firmware's short chrome-toggle and long demo-record controls.
 Autosave, USB export, RTC sync, battery state, panel scan timing, and physical
 touch-controller faults are reported unavailable because the browser has no
 equivalent hardware.

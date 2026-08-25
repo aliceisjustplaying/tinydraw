@@ -48,7 +48,7 @@ assert.deepEqual(
 const device = readDeviceDescriptor(emu);
 assert.deepEqual(device.panel, { w: 368, h: 448, format: "rgb565be" });
 assert.equal(device.buttons?.length, 1);
-assert.equal(device.buttons?.[0]?.id, "zoom");
+assert.equal(device.buttons?.[0]?.id, "chrome");
 assert.equal(device.buttons?.[0]?.longPressMs, undefined);
 assert.equal(device.touch?.points, 1);
 assert.equal(device.sensors, undefined);

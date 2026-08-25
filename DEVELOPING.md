@@ -101,10 +101,11 @@ product and gate firmware: 1.75 MiB app at `0x10000`, 4 MiB drawing journal at
 `0x1D0000`, 10.125 MiB export at `0x5D0000`, and 64 KiB coredump at `0xFF0000`.
 Flashing the app does not erase the drawing partition.
 
-The demo variant preserves short-press zoom. Long-press the top button once to reset to a blank
-canvas and record (the red dot is lit), again to stop, and again to replay on the device. Later
-long presses replay the same take; reboot to discard it and record another. The tape lives only in
-PSRAM, and demo drawing authority is never written to autosave.
+A short press of the top button hides or restores the battery, minimap, zoom controls, and bottom
+toolbar, giving the complete display to the canvas. Long-press it once in the demo variant to reset
+to a blank canvas and record (the red dot is lit), again to stop, and again to replay on the device.
+Later long presses replay the same take; reboot to discard it and record another. The tape lives
+only in PSRAM, and demo drawing authority is never written to autosave.
 
 Vector V2 journals vector authority through a low-priority flash worker. It
 exports `DRAWING.PNG` and `DRAWING.SVG` through read-only TinyUSB mass storage.

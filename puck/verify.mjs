@@ -71,23 +71,49 @@ const scenarios = [
     },
   },
   {
+    trace: "chrome-toggle.trace.json",
+    captures: [160, 1024, 1200, 1408, 1776],
+    check(run) {
+      const hidden = run.frames.get(160);
+      const drawn = run.frames.get(1024);
+      const shown = run.frames.get(1200);
+      const hiddenAgain = run.frames.get(1408);
+      const hiddenFinal = run.frames.get(1776);
+      assert(hidden && drawn && shown && hiddenAgain && hiddenFinal,
+        "chrome-toggle captures are missing");
+
+      const formerChromeRegions = [
+        { name: "battery", rect: { x: 220, y: 16, w: 124, h: 44 } },
+        { name: "zoom rail", rect: { x: 303, y: 71, w: 59, h: 158 } },
+        { name: "minimap", rect: { x: 265, y: 251, w: 95, h: 118 } },
+        { name: "bottom toolbar", rect: { x: 0, y: 372, w: 368, h: 76 } },
+      ];
+      for (const { name, rect } of formerChromeRegions) {
+        assert.equal(nonPaperPixels(hidden, rect), 0, `${name} remained visible after hiding chrome`);
+        assert(nonPaperPixels(drawn, rect) > 0, `drawing did not enter the former ${name} region`);
+      }
+      assert(diffPixels(drawn, shown) > 1_000, "showing chrome did not restore the controls");
+      assert.equal(diffPixels(hiddenAgain, hiddenFinal), 0,
+        "repeated show/hide cycles did not preserve the exact full-canvas drawing");
+    },
+  },
+  {
     trace: "demo.trace.json",
-    captures: [900, 980, 1012, 1844, 2660, 2772],
+    captures: [900, 980, 1940, 2772, 3060],
     check(run) {
       const drawn = run.frames.get(980);
-      const zoomed = run.frames.get(1012);
-      const recorded = run.frames.get(1844);
-      const replayBaseline = run.frames.get(2660);
-      const replayed = run.frames.get(2772);
-      assert(drawn && zoomed && recorded && replayBaseline && replayed, "demo captures are missing");
+      const recorded = run.frames.get(1940);
+      const replayBaseline = run.frames.get(2772);
+      const replayed = run.frames.get(3060);
+      assert(drawn && recorded && replayBaseline && replayed, "demo captures are missing");
       assert(inkPixels(drawn) > 50, "demo recording did not capture a visible Stroke");
-      assert(diffPixels(drawn, zoomed) > 100, "short BOOT did not zoom during demo recording");
+      assert.equal(nonPaperPixels(recorded, { x: 0, y: 372, w: 368, h: 76 }), 0,
+        "short BOOT did not hide the toolbar during demo recording");
+      assert(inkPixels(recorded) > 50, "hiding chrome lost the demo recording's Stroke");
       assert(inkPixels(replayBaseline) < inkPixels(drawn) / 3,
         `demo replay did not start from a blank authority baseline: ${inkPixels(replayBaseline)} versus ${inkPixels(drawn)}`);
-      assert.equal(diffPixels(recorded, replayed, { x: 40, y: 80, w: 240, h: 160 }), 0,
-        "demo replay did not reproduce recorded canvas pixels exactly");
-      assert(diffPixels(recorded, replayed) < 100,
-        "demo replay diverged materially outside the drawing canvas");
+      assert.equal(diffPixels(recorded, replayed), 0,
+        "demo replay did not reproduce the hidden-chrome recording exactly");
       assert.equal(run.log.some((line) => line.startsWith("TINYDRAW_DEMO_FAIL")), false,
         "demo controller reported a failure");
       const recordingBegin = run.timedLog.find(({ line }) =>
@@ -100,11 +126,11 @@ const scenarios = [
         line.startsWith("TINYDRAW_DEMO_REPLAY_END"));
       assert.equal(recordingBegin?.t, 916,
         "recording did not begin on the release after the firmware hold deadline");
-      assert.equal(recordingEnd?.t, 1844,
+      assert.equal(recordingEnd?.t, 1940,
         "recording did not end on the release after the second hold deadline");
-      assert.equal(replayBegin?.t, 2676,
+      assert.equal(replayBegin?.t, 2772,
         "replay start overshot the release after the firmware hold deadline");
-      assert(replayEnd && replayEnd.t <= 2772,
+      assert(replayEnd && replayEnd.t <= 3060,
         "demo replay did not finish within its recorded timing envelope");
     },
   },
@@ -156,6 +182,19 @@ function diffPixels(a, b, rect = { x: 0, y: 0, w: a.width, h: a.height }) {
     }
   }
   return changed;
+}
+
+function nonPaperPixels(frame, rect) {
+  let count = 0;
+  for (let y = rect.y; y < rect.y + rect.h; ++y) {
+    for (let x = rect.x; x < rect.x + rect.w; ++x) {
+      const offset = (y * frame.width + x) * 3;
+      if (frame.rgb[offset] !== 255 || frame.rgb[offset + 1] !== 255 || frame.rgb[offset + 2] !== 255) {
+        ++count;
+      }
+    }
+  }
+  return count;
 }
 
 // The exercised Stroke stays inside this rectangle. It excludes every

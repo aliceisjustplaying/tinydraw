@@ -4,7 +4,7 @@
 // Part of TinyDraw's puck module. See ../../README.md.
 //
 // GPIO0 is the board's one user button, and the firmware maps a release edge
-// on it to "cycle to the next zoom level" (vector_v2_app.cpp). puck declares
+// on it to "show or hide ordinary chrome" (vector_v2_app.cpp). puck declares
 // exactly one button, and emu_button(0, down) drives the level this shim
 // reports, so the app's own edge detection is what decides, unchanged.
 #ifndef TINYDRAW_PUCK_SHIM_DRIVER_GPIO_H

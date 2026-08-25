@@ -4,7 +4,7 @@
   "device": {
     "name": "TinyDraw V2",
     "panel": { "w": 368, "h": 448, "format": "rgb565be" },
-    "buttons": [{ "id": "zoom", "label": "ZOOM / DEMO", "edge": "right", "at": 0.5 }],
+    "buttons": [{ "id": "chrome", "label": "CHROME / DEMO", "edge": "right", "at": 0.5 }],
     "touch": { "points": 1 }
   },
   "events": [

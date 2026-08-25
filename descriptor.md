@@ -23,12 +23,14 @@ is refined in bounded background work.
   immediate and preserves Stroke identity.)
 - Tap the document control, choose New, then confirm or cancel. (intent: destructive clearing
   requires explicit confirmation and cancellation leaves the document untouched.)
-- Tap zoom minus or zoom plus to change magnification while retaining the Camera focus. A short
-  BOOT press advances through the same zoom levels. (intent: zoom keeps the drawing location under
-  consideration and remains available through either touch or the physical control.)
+- Tap zoom minus or zoom plus to change magnification while retaining the Camera focus. (intent:
+  zoom keeps the drawing location under consideration.)
+- Short-press BOOT to hide the battery, minimap, zoom controls, and bottom toolbar; short-press it
+  again to restore them. (intent: the complete 368 by 448 display becomes drawable without losing
+  the current tool, color, size, zoom, Camera, or history.)
 - Long-press BOOT to record from a blank drawing, long-press again to stop, and long-press once more
-  to replay the same touch and zoom stream from the same blank baseline. (intent: demos are
-  deterministic and never depend on persisted drawing state.)
+  to replay the same touch and chrome-visibility stream from the same blank baseline. (intent:
+  demos are deterministic and never depend on persisted drawing state.)
 - Drag on the canvas in Pan mode to move the Camera without drawing. (intent: navigation never
   changes drawing authority.)
 - Drag on the minimap to move the Camera directly through the bounded world. (intent: distant areas
@@ -38,7 +40,7 @@ is refined in bounded background work.
 
 - Required: one 368 by 448 RGB565 panel, single-point touch input, deterministic millisecond ticks,
   and enough WebAssembly linear memory for the fixed-capacity Vector V2 application.
-- Preferred: one raw button. The firmware measures the press duration itself; a short release zooms
-  and an 800 ms hold controls demo record/replay.
+- Preferred: one raw button. The firmware measures the press duration itself; a short release
+  toggles chrome and an 800 ms hold controls demo record/replay.
 - Persistence, RTC synchronization, USB export, panel timing, and touch-controller defects are
   physical-device facilities and are not claimed by this Puck port.

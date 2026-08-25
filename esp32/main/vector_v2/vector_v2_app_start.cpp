@@ -370,7 +370,7 @@ bool vector_v2_app_start(VectorV2AppSession& session) {
   } else {
     std::printf(
         "TINYDRAW_DEMO_READY capacity=%lu bytes=%lu controls=long_record_stop_replay "
-        "short=zoom\n",
+        "short=toggle_chrome\n",
         static_cast<unsigned long>(kDemoCapacity),
         static_cast<unsigned long>(kDemoCapacity * sizeof(vector_v2::DemoSample)));
   }

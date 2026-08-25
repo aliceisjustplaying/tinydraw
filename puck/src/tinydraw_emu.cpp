@@ -69,19 +69,19 @@ constexpr int kMaximumStepsPerTick = 40;
 // output.
 //
 // One button, GPIO0, which is the board's only user button. The firmware maps
-// its release edge to "cycle to the next zoom level" and there are five of
-// them, so the label says so.
+// a short release to ordinary-chrome visibility and a long release to the
+// demo controller.
 const char g_device_json[] =
     "{"
     "\"name\":\"TinyDraw V2\","
     "\"panel\":{\"w\":368,\"h\":448,\"format\":\"rgb565be\"},"
-    "\"buttons\":[{\"id\":\"zoom\",\"label\":\"ZOOM / DEMO\",\"edge\":\"right\","
+    "\"buttons\":[{\"id\":\"chrome\",\"label\":\"CHROME / DEMO\",\"edge\":\"right\","
     "\"at\":0.5}],"
     "\"touch\":{\"points\":1},"
-    "\"gestures\":[{\"id\":\"zoom-cycle\",\"label\":\"cycle zoom\","
-    "\"how\":\"Press and release the ZOOM button. Each release steps to the next zoom level "
-    "(25%, 50%, 100%, 200%, 400%) and wraps back to 25% from the last one. The on-screen "
-    "toolbar can do the same thing, and the minimap navigates the 1472x1792 world directly.\"}]"
+    "\"gestures\":[{\"id\":\"chrome-toggle\",\"label\":\"show / hide controls\","
+    "\"how\":\"Press and release the CHROME button to hide the battery, zoom controls, "
+    "minimap, and bottom toolbar. The complete 368 by 448 display then accepts drawing. "
+    "Press and release it again to restore the controls.\"}]"
     "}";
 
 }  // namespace
