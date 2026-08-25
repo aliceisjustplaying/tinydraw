@@ -21,29 +21,11 @@ const { instantiate, readDeviceDescriptor, readFramebufferPointer } = await impo
 const { pixelReaderFor, readFramebufferRGB } = await import(
   pathToFileURL(join(puck, "src", "panel.ts")).href
 );
-const { ENV_IMPORT_NAMES, REQUIRED_EMU_EXPORT_NAMES, WASI_PREVIEW1_IMPORT_NAMES } = await import(
-  pathToFileURL(join(puck, "src", "abiSurface.ts")).href
-);
 const bytes = await Bun.file(modulePath).arrayBuffer();
-const module = await WebAssembly.compile(bytes);
-const expectedExports = [...REQUIRED_EMU_EXPORT_NAMES, "memory"];
-const exports = new Set(WebAssembly.Module.exports(module).map(({ name }) => name));
-assert.deepEqual(expectedExports.filter((name) => !exports.has(name)), [], "missing ABI exports");
-const allowedExports = new Set([...expectedExports, "_initialize"]);
-assert.deepEqual([...exports].filter((name) => !allowedExports.has(name)), [],
-  "unexpected public exports");
-
-const allowedWasi = new Set(WASI_PREVIEW1_IMPORT_NAMES);
-const allowedEnv = new Set(ENV_IMPORT_NAMES);
-for (const imported of WebAssembly.Module.imports(module)) {
-  assert(
-    (imported.module === "wasi_snapshot_preview1" && allowedWasi.has(imported.name)) ||
-      (imported.module === "env" && allowedEnv.has(imported.name)),
-    `unsupported import ${imported.module}.${imported.name}`,
-  );
-}
-
 const log = [];
+// Puck owns ABI and import validation in instantiate(). Keeping that check at
+// the host boundary also follows new optional exports without depending on a
+// private source module (abiSurface.ts was removed upstream).
 const emu = await instantiate(bytes, (line) => log.push(line));
 assert.equal(emu.emu_init(), 1, "emu_init failed");
 const startupPushes = Array.from({ length: emu.emu_push_count() }, (_, index) => ({
