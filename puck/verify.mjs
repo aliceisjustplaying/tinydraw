@@ -72,29 +72,36 @@ const scenarios = [
   },
   {
     trace: "chrome-toggle.trace.json",
-    captures: [160, 1024, 1200, 1408, 1776],
+    captures: [160, 1024, 1200, 1408, 1776, 1840],
     check(run) {
       const hidden = run.frames.get(160);
       const drawn = run.frames.get(1024);
       const shown = run.frames.get(1200);
       const hiddenAgain = run.frames.get(1408);
       const hiddenFinal = run.frames.get(1776);
-      assert(hidden && drawn && shown && hiddenAgain && hiddenFinal,
-        "chrome-toggle captures are missing");
+      const toolbarPopup = run.frames.get(1840);
+      assert(hidden && drawn && shown && hiddenAgain && hiddenFinal && toolbarPopup,
+        "HUD-toggle captures are missing");
 
-      const formerChromeRegions = [
+      const hiddenHudRegions = [
         { name: "battery", rect: { x: 220, y: 16, w: 124, h: 44 } },
         { name: "zoom rail", rect: { x: 303, y: 71, w: 59, h: 158 } },
         { name: "minimap", rect: { x: 265, y: 251, w: 95, h: 118 } },
-        { name: "bottom toolbar", rect: { x: 0, y: 372, w: 368, h: 76 } },
       ];
-      for (const { name, rect } of formerChromeRegions) {
-        assert.equal(nonPaperPixels(hidden, rect), 0, `${name} remained visible after hiding chrome`);
+      for (const { name, rect } of hiddenHudRegions) {
+        assert.equal(nonPaperPixels(hidden, rect), 0, `${name} remained visible after hiding the HUD`);
         assert(nonPaperPixels(drawn, rect) > 0, `drawing did not enter the former ${name} region`);
       }
-      assert(diffPixels(drawn, shown) > 1_000, "showing chrome did not restore the controls");
+      const toolbar = { x: 0, y: 372, w: 368, h: 76 };
+      for (const [name, frame] of [["hidden", hidden], ["drawn", drawn],
+        ["hidden-again", hiddenAgain], ["hidden-final", hiddenFinal]]) {
+        assert(nonPaperPixels(frame, toolbar) > 100, `bottom toolbar disappeared in ${name} frame`);
+      }
+      assert(diffPixels(drawn, shown) > 1_000, "showing the HUD did not restore its controls");
       assert.equal(diffPixels(hiddenAgain, hiddenFinal), 0,
-        "repeated show/hide cycles did not preserve the exact full-canvas drawing");
+        "repeated HUD show/hide cycles did not preserve the exact drawing and toolbar");
+      assert(nonPaperPixels(toolbarPopup, { x: 108, y: 284, w: 84, h: 88 }) > 100,
+        "bottom toolbar did not open its tools popup while the HUD was hidden");
     },
   },
   {
@@ -107,13 +114,13 @@ const scenarios = [
       const replayed = run.frames.get(3060);
       assert(drawn && recorded && replayBaseline && replayed, "demo captures are missing");
       assert(inkPixels(drawn) > 50, "demo recording did not capture a visible Stroke");
-      assert.equal(nonPaperPixels(recorded, { x: 0, y: 372, w: 368, h: 76 }), 0,
-        "short BOOT did not hide the toolbar during demo recording");
-      assert(inkPixels(recorded) > 50, "hiding chrome lost the demo recording's Stroke");
+      assert(nonPaperPixels(recorded, { x: 0, y: 372, w: 368, h: 76 }) > 100,
+        "short BOOT hid the bottom toolbar during demo recording");
+      assert(inkPixels(recorded) > 50, "hiding the HUD lost the demo recording's Stroke");
       assert(inkPixels(replayBaseline) < inkPixels(drawn) / 3,
         `demo replay did not start from a blank authority baseline: ${inkPixels(replayBaseline)} versus ${inkPixels(drawn)}`);
       assert.equal(diffPixels(recorded, replayed), 0,
-        "demo replay did not reproduce the hidden-chrome recording exactly");
+        "demo replay did not reproduce the hidden-HUD recording exactly");
       assert.equal(run.log.some((line) => line.startsWith("TINYDRAW_DEMO_FAIL")), false,
         "demo controller reported a failure");
       const recordingBegin = run.timedLog.find(({ line }) =>
