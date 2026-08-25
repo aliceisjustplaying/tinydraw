@@ -309,15 +309,6 @@ void vector_v2_app_step(VectorV2AppSession& session) {
     return;
   }
 
-  if (!input_ready && !input_urgency.requested() && presenter.refresh_pending()) {
-    static_cast<void>(advance_full_refresh("deferred-full", loop_us));
-    // One input poll per bounded compose slice. Background canvas mutation
-    // waits until the complete frame has entered its single panel sweep.
-    if (presenter.refresh_composing()) {
-      return;
-    }
-  }
-
   if (!input_ready && chrome.export_status == vector_v2::ChromeExportStatus::kPresented &&
       !input_urgency.requested() && exporter.usb_host_ejected()) {
     chrome.export_status = exporter.stop_usb() ? vector_v2::ChromeExportStatus::kIdle
@@ -473,6 +464,14 @@ void vector_v2_app_step(VectorV2AppSession& session) {
   }
   if (cosmetic_work) {
     return;
+  }
+  if (!input_ready && !input_urgency.requested() && presenter.refresh_pending()) {
+    static_cast<void>(advance_full_refresh("deferred-full", loop_us));
+    // One input poll per bounded compose slice. Background canvas mutation
+    // waits until the complete frame has entered its single panel sweep.
+    if (presenter.refresh_composing()) {
+      return;
+    }
   }
   if (point_event) {
     if (!interaction_active(interaction) &&
