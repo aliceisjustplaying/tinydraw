@@ -135,6 +135,8 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
 [[nodiscard]] float brush_size(ChromeSize size);
 [[nodiscard]] int chrome_canvas_bottom(const ChromeState& state);
 [[nodiscard]] int chrome_input_bottom(const ChromeState& state);
+[[nodiscard]] bool chrome_can_toggle_visibility(const ChromeState& state);
+[[nodiscard]] bool toggle_chrome_visibility(ChromeState& state);
 // The bottom bound for committed ink. Deeper than the render/input bottoms:
 // with no popup open, strokes continue under the dock into the hidden world
 // rows; modal states still block ink entirely.

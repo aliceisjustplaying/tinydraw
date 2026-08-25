@@ -49,8 +49,8 @@ bool DemoTape::record_touch(const TouchEvent& event) {
                 event.timestamp_us);
 }
 
-bool DemoTape::record_zoom(std::uint32_t timestamp_us) {
-  return record({.kind = DemoEventKind::kZoom}, timestamp_us);
+bool DemoTape::record_chrome_toggle(std::uint32_t timestamp_us) {
+  return record({.kind = DemoEventKind::kChromeToggle}, timestamp_us);
 }
 
 bool DemoTape::record(DemoSample sample, std::uint32_t timestamp_us) {
@@ -120,7 +120,7 @@ std::optional<TouchEventKind> demo_touch_kind(DemoEventKind kind) {
       return TouchEventKind::kMove;
     case DemoEventKind::kTouchUp:
       return TouchEventKind::kUp;
-    case DemoEventKind::kZoom:
+    case DemoEventKind::kChromeToggle:
       return std::nullopt;
   }
   return std::nullopt;

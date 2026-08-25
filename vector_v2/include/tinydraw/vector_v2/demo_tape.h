@@ -20,7 +20,7 @@ enum class DemoEventKind : std::uint8_t {
   kTouchDown,
   kTouchMove,
   kTouchUp,
-  kZoom,
+  kChromeToggle,
 };
 
 struct DemoSample {
@@ -40,7 +40,7 @@ struct DemoEvent {
 
 // Caller-funded, allocation-free capture of the semantic input stream seen by
 // the V2 application. The tape stores only accepted touch events and physical
-// zoom-button releases, so recording is one bounded sequential write per
+// chrome-button releases, so recording is one bounded sequential write per
 // application input event.
 class DemoTape {
  public:
@@ -48,7 +48,7 @@ class DemoTape {
 
   void begin_recording(std::uint32_t started_us);
   [[nodiscard]] bool record_touch(const TouchEvent& event);
-  [[nodiscard]] bool record_zoom(std::uint32_t timestamp_us);
+  [[nodiscard]] bool record_chrome_toggle(std::uint32_t timestamp_us);
   void stop_recording();
 
   [[nodiscard]] bool begin_replay(std::uint32_t started_us);

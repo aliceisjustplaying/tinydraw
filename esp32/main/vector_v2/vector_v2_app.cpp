@@ -44,7 +44,6 @@ using vector_v2::DocumentRevision;
 using vector_v2::MaterializedCanvas;
 using vector_v2::OperationLog;
 using vector_v2::OperationTool;
-using vector_v2::ZoomLevel;
 
 constexpr std::uint32_t kExternalCaps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
 constexpr gpio_num_t kModeButton = GPIO_NUM_0;
@@ -153,6 +152,15 @@ void vector_v2_app_step(VectorV2AppSession& session) {
     return timing;
   };
 
+  const auto toggle_chrome = [&](std::uint32_t event_us) {
+    if (interaction_active(interaction) || !vector_v2::toggle_chrome_visibility(chrome)) {
+      return false;
+    }
+    static_cast<void>(
+        advance_full_refresh(chrome.visible ? "chrome-show" : "chrome-hide", event_us));
+    return true;
+  };
+
   const auto begin_pan = [&](Point start, InteractionMode mode) {
     interaction = mode;
     pan_metrics.reset();
@@ -167,6 +175,9 @@ void vector_v2_app_step(VectorV2AppSession& session) {
       return;
     }
     chrome.recording = recording;
+    if (!chrome.visible) {
+      return;
+    }
     const vector_v2::ChromeRect region = vector_v2::chrome_recording_region();
     const auto timing = presenter.present_frame_region({region.x0, region.y0, region.x1, region.y1},
                                                        chrome, event_us);
@@ -233,7 +244,7 @@ void vector_v2_app_step(VectorV2AppSession& session) {
   const bool idle_before_poll = !interaction_active(interaction);
   const std::int64_t poll_started_us = esp_timer_get_time();
   std::optional<SampledTouch> sampled_touch;
-  bool replay_zoom = false;
+  bool replay_chrome_toggle = false;
 #ifdef TINYDRAW_VECTOR_V2_DEMO
   std::uint32_t replay_event_us = loop_us;
   const TouchUrgencyProbe input_urgency = demo_sampler_stopped
@@ -249,7 +260,7 @@ void vector_v2_app_step(VectorV2AppSession& session) {
             .kind = *kind,
         };
       } else {
-        replay_zoom = true;
+        replay_chrome_toggle = true;
         replay_event_us = replay_event->timestamp_us;
       }
     }
@@ -275,7 +286,7 @@ void vector_v2_app_step(VectorV2AppSession& session) {
 #endif
   const std::int64_t poll_completed_us = esp_timer_get_time();
   const bool sample_ready = sampled_touch.has_value();
-  const bool input_ready = sample_ready || replay_zoom;
+  const bool input_ready = sample_ready || replay_chrome_toggle;
   if (sample_ready) {
     point = sampled_touch->point;
   }
@@ -283,7 +294,7 @@ void vector_v2_app_step(VectorV2AppSession& session) {
   const bool point_event = sample_ready && (!lift_event || interaction_active(interaction));
   const std::uint32_t event_us = sample_ready ? sampled_touch->timestamp_us
 #ifdef TINYDRAW_VECTOR_V2_DEMO
-                                 : replay_zoom ? replay_event_us
+                                 : replay_chrome_toggle ? replay_event_us
 #endif
                                                : loop_us;
   bool cosmetic_work = false;
@@ -293,11 +304,8 @@ void vector_v2_app_step(VectorV2AppSession& session) {
   constexpr bool persist_authority = true;
 #endif
 
-  if (replay_zoom) {
-    const ZoomLevel zoom = vector_v2::next_zoom(presenter.zoom());
-    const ZoomLevel target = zoom == presenter.zoom() ? ZoomLevel::k25Percent : zoom;
-    const auto timing = presenter.set_zoom(target, chrome, event_us);
-    print_presentation("zoom-demo", presenter, timing);
+  if (replay_chrome_toggle) {
+    static_cast<void>(toggle_chrome(event_us));
     return;
   }
 
@@ -364,20 +372,19 @@ void vector_v2_app_step(VectorV2AppSession& session) {
       // A battery change re-presents only the battery overlay region
       // (owner question 2026-08-16: the full-frame refresh here cost
       // 60-140 ms on dense content for a cosmetic glyph).
-      const vector_v2::ChromeRect battery = vector_v2::chrome_battery_region();
-      const auto timing = presenter.refresh_region(
-          {presenter.level_x() + battery.x0, presenter.level_y() + battery.y0,
-           presenter.level_x() + battery.x1, presenter.level_y() + battery.y1},
-          chrome, loop_us);
-      print_presentation("power", presenter, timing);
+      if (chrome.visible) {
+        const vector_v2::ChromeRect battery = vector_v2::chrome_battery_region();
+        const auto timing = presenter.refresh_region(
+            {presenter.level_x() + battery.x0, presenter.level_y() + battery.y0,
+             presenter.level_x() + battery.x1, presenter.level_y() + battery.y1},
+            chrome, loop_us);
+        print_presentation("power", presenter, timing);
+      }
     }
   }
 
   if (!input_ready && !cosmetic_work && !input_urgency.requested()) {
-    const bool export_mode_owns_input =
-        chrome.export_status == vector_v2::ChromeExportStatus::kPresented ||
-        chrome.export_status == vector_v2::ChromeExportStatus::kHostEjected ||
-        chrome.export_status == vector_v2::ChromeExportStatus::kExitError;
+    const bool button_action_allowed = vector_v2::chrome_can_toggle_visibility(chrome);
     const bool next_button_down = gpio_get_level(kModeButton) == 0;
     if (next_button_down && !button_down) {
       button_down = true;
@@ -386,7 +393,7 @@ void vector_v2_app_step(VectorV2AppSession& session) {
 #endif
     } else if (!next_button_down && button_down) {
       button_down = false;
-      if (!export_mode_owns_input) {
+      if (button_action_allowed) {
 #ifdef TINYDRAW_VECTOR_V2_DEMO
         const bool long_press = loop_us - button_pressed_us >= kDemoLongPressUs;
         if (long_press && demo.ready() && !interaction_active(interaction)) {
@@ -442,29 +449,23 @@ void vector_v2_app_step(VectorV2AppSession& session) {
             }
             cosmetic_work = true;
           }
-        } else if (!long_press && !demo.replaying()) {
+        } else if (!long_press && !demo.replaying() && !interaction_active(interaction)) {
           if (demo.recording()) {
-            static_cast<void>(demo.record_zoom(loop_us));
+            static_cast<void>(demo.record_chrome_toggle(loop_us));
             if (!demo.recording()) {
               set_recording_indicator(false, loop_us);
               std::printf("TINYDRAW_DEMO_RECORDING_END count=%lu overflow=1\n",
                           static_cast<unsigned long>(demo.sample_count()));
             }
           }
-          const ZoomLevel zoom = vector_v2::next_zoom(presenter.zoom());
-          const ZoomLevel target = zoom == presenter.zoom() ? ZoomLevel::k25Percent : zoom;
-          const auto timing = presenter.set_zoom(target, chrome, loop_us);
-          print_presentation("zoom", presenter, timing);
-          cosmetic_work = true;
+          cosmetic_work = toggle_chrome(loop_us);
         }
 #else
-        const ZoomLevel zoom = vector_v2::next_zoom(presenter.zoom());
-        const ZoomLevel target = zoom == presenter.zoom() ? ZoomLevel::k25Percent : zoom;
-        const auto timing = presenter.set_zoom(target, chrome, loop_us);
-        print_presentation("zoom", presenter, timing);
-        cosmetic_work = true;
+        cosmetic_work = toggle_chrome(loop_us);
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
-        print_live_ledger("zoom");
+        if (cosmetic_work) {
+          print_live_ledger("chrome-toggle");
+        }
 #endif
 #endif
       }

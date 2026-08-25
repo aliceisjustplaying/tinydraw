@@ -43,7 +43,7 @@ class VectorV2DemoController {
 
   void begin_recording(std::uint32_t started_us);
   [[nodiscard]] bool record_touch(const vector_v2::TouchEvent& event);
-  [[nodiscard]] bool record_zoom(std::uint32_t timestamp_us);
+  [[nodiscard]] bool record_chrome_toggle(std::uint32_t timestamp_us);
   void stop_recording();
 
   [[nodiscard]] bool begin_replay(std::uint32_t started_us);

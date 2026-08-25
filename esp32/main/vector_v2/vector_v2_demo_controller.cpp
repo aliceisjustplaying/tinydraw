@@ -68,8 +68,8 @@ bool VectorV2DemoController::record_touch(const vector_v2::TouchEvent& event) {
   return recorded;
 }
 
-bool VectorV2DemoController::record_zoom(std::uint32_t timestamp_us) {
-  const bool recorded = tape_.record_zoom(timestamp_us);
+bool VectorV2DemoController::record_chrome_toggle(std::uint32_t timestamp_us) {
+  const bool recorded = tape_.record_chrome_toggle(timestamp_us);
   finish_if_full(recorded);
   return recorded;
 }

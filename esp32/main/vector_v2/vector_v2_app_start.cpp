@@ -335,7 +335,7 @@ bool vector_v2_app_start(VectorV2AppSession& session) {
                                          live_scratch_bytes;
   const auto tear_signal = display.tear_signal_timing();
   std::printf(
-      "TINYDRAW_VECTOR_V2_READY zoom=25 controls=chrome button=cycle_all_zooms "
+      "TINYDRAW_VECTOR_V2_READY zoom=25 controls=chrome button=toggle_chrome "
       "operations_capacity=%lu samples_capacity=%lu live_storage_bytes=%lu "
       "overview_bytes=%lu raw_tile_bytes=%lu tile_metadata_bytes=%lu operation_bytes=%lu "
       "operation_index_bytes=%lu live_scratch_bytes=%lu free_psram=%lu largest_psram=%lu "

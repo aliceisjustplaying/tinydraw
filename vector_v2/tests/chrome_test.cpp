@@ -426,6 +426,25 @@ TEST_CASE("hidden chrome leaves the complete frame untouched") {
   CHECK(pixels == before);
 }
 
+TEST_CASE("visibility toggle closes ordinary popups and preserves critical screens") {
+  ChromeState state{.popup = ChromePopup::kTools};
+  CHECK(tinydraw::vector_v2::toggle_chrome_visibility(state));
+  CHECK_FALSE(state.visible);
+  CHECK(state.popup == ChromePopup::kNone);
+  CHECK(tinydraw::vector_v2::toggle_chrome_visibility(state));
+  CHECK(state.visible);
+
+  for (const ChromeState blocked :
+       std::array{ChromeState{.confirm_new = true},
+                  ChromeState{.export_status = ChromeExportStatus::kSaving},
+                  ChromeState{.time_sync_status = ChromeTimeSyncStatus::kConnecting}}) {
+    auto candidate = blocked;
+    CHECK_FALSE(tinydraw::vector_v2::chrome_can_toggle_visibility(candidate));
+    CHECK_FALSE(tinydraw::vector_v2::toggle_chrome_visibility(candidate));
+    CHECK(candidate == blocked);
+  }
+}
+
 TEST_CASE("critical dialogs remain visible when ordinary chrome is hidden") {
   constexpr int width = 368;
   constexpr int height = 448;

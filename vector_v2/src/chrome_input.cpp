@@ -80,6 +80,22 @@ int chrome_ink_bottom(const ChromeState& state) {
   return state.popup == ChromePopup::kColors ? 0 : kChromePopupInputBottom;
 }
 
+bool chrome_can_toggle_visibility(const ChromeState& state) {
+  return !state.confirm_new && state.export_status == ChromeExportStatus::kIdle &&
+         state.time_sync_status == ChromeTimeSyncStatus::kIdle;
+}
+
+bool toggle_chrome_visibility(ChromeState& state) {
+  if (!chrome_can_toggle_visibility(state)) {
+    return false;
+  }
+  state.visible = !state.visible;
+  if (!state.visible) {
+    state.popup = ChromePopup::kNone;
+  }
+  return true;
+}
+
 std::optional<ChromePoint> clip_canvas_segment(ChromePoint previous, ChromePoint current,
                                                const ChromeState& state) {
   const int input_bottom = chrome_ink_bottom(state);

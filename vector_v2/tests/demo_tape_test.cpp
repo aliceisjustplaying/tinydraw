@@ -8,13 +8,13 @@
 
 namespace vector_v2 = tinydraw::vector_v2;
 
-TEST_CASE("V2 demo tape preserves touch and zoom timing") {
+TEST_CASE("V2 demo tape preserves touch and chrome-toggle timing") {
   std::array<vector_v2::DemoSample, 8> storage{};
   vector_v2::DemoTape tape(storage);
   tape.begin_recording(1'000U);
 
   CHECK(tape.record_touch({{12.0F, 34.0F}, 1'100U, 7U, vector_v2::TouchEventKind::kDown}));
-  CHECK(tape.record_zoom(1'250U));
+  CHECK(tape.record_chrome_toggle(1'250U));
   CHECK(tape.record_touch({{56.0F, 78.0F}, 1'400U, 8U, vector_v2::TouchEventKind::kUp}));
   tape.stop_recording();
 
@@ -29,9 +29,9 @@ TEST_CASE("V2 demo tape preserves touch and zoom timing") {
   CHECK(down->point.y == 34.0F);
   CHECK(down->timestamp_us == 10'100U);
 
-  const auto zoom = tape.pop_replay(10'250U);
-  REQUIRE(zoom.has_value());
-  CHECK(zoom->kind == vector_v2::DemoEventKind::kZoom);
+  const auto chrome_toggle = tape.pop_replay(10'250U);
+  REQUIRE(chrome_toggle.has_value());
+  CHECK(chrome_toggle->kind == vector_v2::DemoEventKind::kChromeToggle);
   CHECK_FALSE(tape.replay_due(10'399U));
   const auto up = tape.pop_replay(10'400U);
   REQUIRE(up.has_value());
@@ -43,9 +43,9 @@ TEST_CASE("V2 demo tape stops at capacity without overwriting the take") {
   std::array<vector_v2::DemoSample, 2> storage{};
   vector_v2::DemoTape tape(storage);
   tape.begin_recording(100U);
-  CHECK(tape.record_zoom(110U));
-  CHECK(tape.record_zoom(120U));
-  CHECK_FALSE(tape.record_zoom(130U));
+  CHECK(tape.record_chrome_toggle(110U));
+  CHECK(tape.record_chrome_toggle(120U));
+  CHECK_FALSE(tape.record_chrome_toggle(130U));
   CHECK(tape.overflowed());
   CHECK_FALSE(tape.recording());
   CHECK(tape.size() == 2U);
@@ -55,8 +55,8 @@ TEST_CASE("V2 demo replay handles wrapping microsecond clocks") {
   std::array<vector_v2::DemoSample, 2> storage{};
   vector_v2::DemoTape tape(storage);
   tape.begin_recording(UINT32_MAX - 20U);
-  CHECK(tape.record_zoom(UINT32_MAX - 10U));
-  CHECK(tape.record_zoom(9U));
+  CHECK(tape.record_chrome_toggle(UINT32_MAX - 10U));
+  CHECK(tape.record_chrome_toggle(9U));
   tape.stop_recording();
 
   REQUIRE(tape.begin_replay(UINT32_MAX - 5U));
@@ -89,8 +89,8 @@ TEST_CASE("V2 demo tape stops before replay timing becomes ambiguous") {
   vector_v2::DemoTape tape(storage);
   tape.begin_recording(100U);
 
-  CHECK(tape.record_zoom(100U + vector_v2::kMaximumDemoDurationUs));
-  CHECK_FALSE(tape.record_zoom(100U + vector_v2::kMaximumDemoDurationUs + 1U));
+  CHECK(tape.record_chrome_toggle(100U + vector_v2::kMaximumDemoDurationUs));
+  CHECK_FALSE(tape.record_chrome_toggle(100U + vector_v2::kMaximumDemoDurationUs + 1U));
   CHECK(tape.overflowed());
   CHECK_FALSE(tape.recording());
   CHECK(tape.size() == 1U);
