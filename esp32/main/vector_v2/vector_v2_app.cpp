@@ -296,7 +296,7 @@ void vector_v2_app_step(VectorV2AppSession& session) {
 #ifdef TINYDRAW_VECTOR_V2_DEMO
                                  : replay_chrome_toggle ? replay_event_us
 #endif
-                                               : loop_us;
+                                                        : loop_us;
   bool cosmetic_work = false;
 #ifdef TINYDRAW_VECTOR_V2_DEMO
   const bool persist_authority = !demo.active();

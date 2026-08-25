@@ -47,8 +47,8 @@ namespace {
 
 // The session outlives every tick, so it is placement-new'd into static
 // storage rather than being a function-local with a guard variable.
-alignas(tinydraw::esp32::VectorV2AppSession) unsigned char
-    g_session_storage[sizeof(tinydraw::esp32::VectorV2AppSession)];
+alignas(tinydraw::esp32::VectorV2AppSession) unsigned char g_session_storage[sizeof(
+    tinydraw::esp32::VectorV2AppSession)];
 tinydraw::esp32::VectorV2AppSession* g_session = nullptr;
 bool g_running = false;
 std::uint32_t g_last_now_ms = 0;
@@ -110,9 +110,8 @@ void emu_tick(std::uint32_t now_ms) {
   if (!g_running) return;
   tinydraw::puck::clock_set_floor_ms(now_ms);
 
-  std::int64_t budget_us = g_ticked
-                               ? static_cast<std::int64_t>(now_ms - g_last_now_ms) * 1000
-                               : kMinimumFrameBudgetUs;
+  std::int64_t budget_us =
+      g_ticked ? static_cast<std::int64_t>(now_ms - g_last_now_ms) * 1000 : kMinimumFrameBudgetUs;
   if (budget_us < kMinimumFrameBudgetUs) budget_us = kMinimumFrameBudgetUs;
   if (budget_us > kMaximumFrameBudgetUs) budget_us = kMaximumFrameBudgetUs;
   g_last_now_ms = now_ms;

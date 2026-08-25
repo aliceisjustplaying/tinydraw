@@ -11,8 +11,8 @@ namespace {
 
 using tinydraw::vector_v2::ChromeAction;
 using tinydraw::vector_v2::ChromeExportStatus;
-using tinydraw::vector_v2::ChromePopup;
 using tinydraw::vector_v2::ChromePoint;
+using tinydraw::vector_v2::ChromePopup;
 using tinydraw::vector_v2::ChromeState;
 using tinydraw::vector_v2::ChromeTimeSyncStatus;
 using tinydraw::vector_v2::ChromeTool;
@@ -403,8 +403,7 @@ TEST_CASE("chrome canvas clipping follows the visible overlay") {
 TEST_CASE("hidden chrome gives every ordinary control pixel to the canvas") {
   const ChromeState state{.visible = false};
   for (const auto point : std::array{ChromePoint{230.0F, 28.0F}, ChromePoint{332.0F, 98.0F},
-                                     ChromePoint{300.0F, 300.0F},
-                                     ChromePoint{180.0F, 410.0F}}) {
+                                     ChromePoint{300.0F, 300.0F}, ChromePoint{180.0F, 410.0F}}) {
     CHECK_FALSE(tinydraw::vector_v2::chrome_contains(point, state));
     CHECK(tinydraw::vector_v2::chrome_action_at(point, state) == ChromeAction::kNone);
   }

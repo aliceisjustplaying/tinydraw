@@ -647,8 +647,7 @@ bool chrome_accepts_byte_swapped_staging(const ChromeState& state) {
   const bool hidden_without_painter_overlays =
       !state.visible && !state.confirm_new && state.export_status == ChromeExportStatus::kIdle &&
       state.time_sync_status == ChromeTimeSyncStatus::kIdle;
-  return !state.history_busy &&
-         (canvas_overlays_visible(state) || hidden_without_painter_overlays);
+  return !state.history_busy && (canvas_overlays_visible(state) || hidden_without_painter_overlays);
 }
 
 bool ChromeStagingCache::prepare_for(ChromeRect panel_bounds, const ChromeState& state,
