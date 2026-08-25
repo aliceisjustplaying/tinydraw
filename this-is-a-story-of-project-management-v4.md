@@ -1,4 +1,4 @@
-This is a story of project management.
+# This is a story of project management.
 
 It did not start out as one. It started as a fun vibecoding project for [a meetup of small microcontroller-powered devices](https://luma.com/tldraw-vp8y) hosted by [Steve Ruiz](https://x.com/steveruizok) of [tldraw](https://tldraw.com) who's been shilling them on the timeline for months now. My RSVP being accepted on Luma was the push I needed to order one of these for myself; I wanted to demo something there. This was on a Friday; the device would not arrive until Sunday and I wouldn't be able to start testing on it until Monday morning.
 
@@ -28,7 +28,7 @@ This was maybe the first big moment when I made the mistake of letting the agent
 
 My doubt came from not understanding, from not being able to judge whether continuing was worth it because I no longer knew what the agents were doing.
 
-And the research during the prototype did temper my ambitions a bit. I compromised on a not having a truly infinite canvas and only fixed power of two zoom levels. 
+And the research during the prototype did temper my ambitions a bit. I compromised on not having a truly infinite canvas and only fixed power of two zoom levels. 
 
 But by the end, I had something; a renderer system that was proven to be not right for this and yet more proof this was doable. So we scrapped most of the prototype and started working on the real version.
 
@@ -102,9 +102,9 @@ I have these and so many more stories. I'm proud of the final product and mostly
 
 Both socially and innately we reward effort and suffering. There was a lot of both in it. The demoscene rewards craft. Does this count as craft? A whole lot of people would say no. I'm currently undecided. 
 
-And the thing is, I kind of prefer tinydraw v1 for drawing. The absurdity of v2 is part of the charm. Who in their right mind would draw anything serious in a vector graphics editor running on a microcontroller and a tiny 1.8" screen? Definitely not me. If you want to though, it's here, it's shipped do DM me on twitter your creations I'd love to see them.
+And the thing is, I kind of prefer tinydraw v1 for drawing. The absurdity of v2 is part of the charm. Who in their right mind would draw anything serious in a vector graphics editor running on a microcontroller and a tiny 1.8" screen? Definitely not me. If you want to though, it's here, it's shipped, do DM me on twitter your creations I'd love to see them.
 
-I did it, I persisted, I learned a lot about managing agents, I shipped and by the end started having follow-up ambitions that I'd love to do but am constrained on tokens.
+I did it, I persisted, I learned a lot about managing agents, I shipped and by the end started having follow-up ambitions that I'd love to do but am constrained on tokens. More on that below.
 
 I'm particularly proud of shipping something complex: like most vibecoders I know, I also have a large graveyard of unfinished and never-shipped projects. But not this one. This one's out there.
 
@@ -126,7 +126,7 @@ Did I know there's probably more for a fact? No. But it's a reasonable guess, an
 
 Sent at 6:48 p.m. As I'm dictating this, it's 9:22 p.m., and they're still going. So far there have been 43 subagents doing research and trying things. It just kicked off three more. It already used up 22% of my tokens since my reset, at least I have a banked reset. It's talking about the final three audits and I'm pretty sure this is not the first time it said final.
 
-Then around 10:40 p.m. they did finally wrap up and they sure delivered:
+Then around 10:40 p.m. they did finally wrap and my god they sure delivered:
 
 - cold render compute 18.92–41.87% faster (all 15 corpora/zooms)
 - direct pan composition 51.59–51.65% faster
@@ -144,11 +144,11 @@ And I do feel extremely vindicated. I let them go to town, they ran the benchmar
 
 # Coda of the Coda
 
-I just did a glass test, and as far as I can tell, the only thing broken is the SVG export in a way that seems not too hard to fix. They did not break anything — famous last words — but the PNG export is fine, the performance is as they said, cold rendering got faster, anti-aliasing got faster. Free wins in assembly. The SVG fix landed the next day.
+I just did a glass test, and as far as I can tell, the only thing broken is the SVG export in a way that seems not too hard to fix. They did not break anything — famous last words — but the PNG export is fine, the performance is as they said, cold rendering got faster, anti-aliasing got faster. Free wins in assembly. The SVG fix would land the next day
 
-[✎ SCREENSHOT: the DM exchange with the PM friend I got approval now]
+[✎ SCREENSHOT: DM exchange with seconds]
 
-if it wasn't for the Janka call, I might not have run this assembly thing. I cannot know. But I would like to think that talking all this about project management contributed to me being like: yeah, you know what, I should actually just tell them to disassemble it. And lo and behold, they kept finding optimizations.
+Would I have ran this if it wasn't for the call with my friend Janka? I don't know. But I would like to think that talking all this about project management contributed to me being like: yeah, you know what, I should actually just tell them to disassemble it. And it paid off.
 
 # Coda of the Coda of the Coda
 
@@ -162,14 +162,14 @@ This project gave me confidence to aim much higher to the point that I'm now con
 
 # P.S.: mistakes made of which I sure did a lot
 
-- Wi-Fi blamed for psychedelic vertical stripes. Wi-Fi removed. Stripes remained.
-- Requested 40/50/60 MHz SPI. All actually 40 MHz.
-- GETSCANLINE and every control-register read: all zero.
+- Wi-Fi was blamed for psychedelic vertical stripes, it was actually 80 MHz SPI causing issues
+- Requesting 40/50/60 MHz SPI all gives you 40 MHz
+- GETSCANLINE and every control-register read returns zero which is... yeah.
 - Internal scratch predicted ≥40% savings. Measured −0.36%.
-- Sacred 1.5 MiB export reserve. Actual peak 291,484 bytes.
+- We had a whole "sacred" 1.5 MiB reserved for the SVG/PNG exports. The actual peak was 291,484 bytes which freed up a lot of space for more caching.
 - "512-slot" run. Actually 384.
 - Word-mask window scans: 7-13% slower than byte-mask on ESP32. GCC-Xtensa emits callx8 memcpy libcalls.
-- 4-sample SSAA: 808 ms. Dead.
+- 4-sample SSAA: 808 ms. Nope
 - Color popup magenta. Black and white hiding the extra/missing byte swap.
 - Pen-size selector also firing Redo. Both fires and the whole UI just gets messed up.
 - There was a whole thing when I was testing exports, and there were two dots in the SVG on the top, and none in the PNG, and two squares on the actual app. Schrödinger's dot. Long story short, we did a render parity fix and a separate top-edge contact fix.
