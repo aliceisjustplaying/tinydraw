@@ -75,9 +75,9 @@ enum class ChromeAction {
 };
 
 struct ChromeState {
-  // The physical top button hides ordinary controls so the complete display
-  // becomes canvas. Critical dialogs and progress states still render.
-  bool visible = true;
+  // The physical side button hides canvas HUD overlays. The bottom toolbar,
+  // its popups, and critical dialogs remain visible and interactive.
+  bool hud_visible = true;
   ChromeTool tool = ChromeTool::kDraw;
   ChromeSize size = ChromeSize::kLarge;
   ChromePopup popup = ChromePopup::kNone;
@@ -135,8 +135,8 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
 [[nodiscard]] float brush_size(ChromeSize size);
 [[nodiscard]] int chrome_canvas_bottom(const ChromeState& state);
 [[nodiscard]] int chrome_input_bottom(const ChromeState& state);
-[[nodiscard]] bool chrome_can_toggle_visibility(const ChromeState& state);
-[[nodiscard]] bool toggle_chrome_visibility(ChromeState& state);
+[[nodiscard]] bool chrome_can_toggle_hud(const ChromeState& state);
+[[nodiscard]] bool toggle_hud_visibility(ChromeState& state);
 // The bottom bound for committed ink. Deeper than the render/input bottoms:
 // with no popup open, strokes continue under the dock into the hidden world
 // rows; modal states still block ink entirely.

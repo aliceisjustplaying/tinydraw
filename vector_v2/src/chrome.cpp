@@ -469,36 +469,34 @@ void draw_fixed_chrome(const MinimapSurface& surface, const ChromeState& state) 
   };
   Painter painter(surface.pixels, surface.width, surface.height, surface.origin_x,
                   surface.origin_y);
-  if (state.visible) {
-    if (intersects_rows(kChromeCanvasBottom, kHeight)) {
-      draw_bottom(painter, state);
+  if (intersects_rows(kChromeCanvasBottom, kHeight)) {
+    draw_bottom(painter, state);
+  }
+  if (state.popup == ChromePopup::kColors && !state.confirm_new &&
+      state.export_status == ChromeExportStatus::kIdle &&
+      state.time_sync_status == ChromeTimeSyncStatus::kIdle) {
+    if (intersects_rows(kColorPopupTop, kColorPopupBottom)) {
+      draw_palette(painter, state);
     }
-    if (state.popup == ChromePopup::kColors && !state.confirm_new &&
-        state.export_status == ChromeExportStatus::kIdle &&
-        state.time_sync_status == ChromeTimeSyncStatus::kIdle) {
-      if (intersects_rows(kColorPopupTop, kColorPopupBottom)) {
-        draw_palette(painter, state);
-      }
-      return;
-    }
-    if (state.popup != ChromePopup::kNone &&
-        intersects_rows(chrome_canvas_bottom(state), kPopupBottom + 4)) {
-      painter.rect({0, chrome_canvas_bottom(state), kWidth, kPopupTop}, kWhite);
-      draw_dock(painter, kPopupTop, kPopupBottom);
-      switch (state.popup) {
-        case ChromePopup::kTools:
-          draw_tools_popup(painter, state);
-          break;
-        case ChromePopup::kSizes:
-          draw_sizes_popup(painter, state);
-          break;
-        case ChromePopup::kDocument:
-          draw_document_popup(painter, state);
-          break;
-        case ChromePopup::kNone:
-        case ChromePopup::kColors:
-          break;
-      }
+    return;
+  }
+  if (state.popup != ChromePopup::kNone &&
+      intersects_rows(chrome_canvas_bottom(state), kPopupBottom + 4)) {
+    painter.rect({0, chrome_canvas_bottom(state), kWidth, kPopupTop}, kWhite);
+    draw_dock(painter, kPopupTop, kPopupBottom);
+    switch (state.popup) {
+      case ChromePopup::kTools:
+        draw_tools_popup(painter, state);
+        break;
+      case ChromePopup::kSizes:
+        draw_sizes_popup(painter, state);
+        break;
+      case ChromePopup::kDocument:
+        draw_document_popup(painter, state);
+        break;
+      case ChromePopup::kNone:
+      case ChromePopup::kColors:
+        break;
     }
   }
   if (state.confirm_new && intersects_rows(kDialogTop - 1, kDialogBottom + 5)) {
@@ -644,10 +642,7 @@ bool chrome_accepts_byte_swapped_staging(const ChromeState& state) {
   // boundary. Modal chrome and the busy toast use PixelPainter directly in
   // host RGB565 order, so their transfer must remain host-order until the
   // transport's final swap.
-  const bool hidden_without_painter_overlays =
-      !state.visible && !state.confirm_new && state.export_status == ChromeExportStatus::kIdle &&
-      state.time_sync_status == ChromeTimeSyncStatus::kIdle;
-  return !state.history_busy && (canvas_overlays_visible(state) || hidden_without_painter_overlays);
+  return !state.history_busy && bottom_chrome_cacheable(state);
 }
 
 bool ChromeStagingCache::prepare_for(ChromeRect panel_bounds, const ChromeState& state,
@@ -656,7 +651,7 @@ bool ChromeStagingCache::prepare_for(ChromeRect panel_bounds, const ChromeState&
   if (!ready()) {
     return false;
   }
-  if (!canvas_overlays_visible(state)) {
+  if (!bottom_chrome_cacheable(state)) {
     return true;
   }
 
@@ -671,7 +666,7 @@ bool ChromeStagingCache::prepare_for(ChromeRect panel_bounds, const ChromeState&
   const auto minimap = sprite(kMinimapOverlayRect);
   const auto battery = sprite(kBatteryOverlayRect);
   const auto bottom = sprite(kBottomCacheRect);
-  if (rects_intersect(panel_bounds, kZoomRailOverlayRect) &&
+  if (canvas_overlays_visible(state) && rects_intersect(panel_bounds, kZoomRailOverlayRect) &&
       (!zoom_valid_ || zoom_percent_ != navigation.zoom_percent)) {
     std::fill(zoom.begin(), zoom.end(), kCacheTransparent);
     Painter zoom_painter(zoom, kZoomRailOverlayRect.x1 - kZoomRailOverlayRect.x0,
@@ -684,7 +679,7 @@ bool ChromeStagingCache::prepare_for(ChromeRect panel_bounds, const ChromeState&
     ++stats_.zoom_redraws;
 #endif
   }
-  if (rects_intersect(panel_bounds, kMinimapOverlayRect) &&
+  if (canvas_overlays_visible(state) && rects_intersect(panel_bounds, kMinimapOverlayRect) &&
       (!minimap_base_valid_ || overview_revision_ != overview_revision)) {
     std::fill(minimap.begin(), minimap.end(), kCacheTransparent);
     draw_minimap_base({minimap, kMinimapOverlayRect.x1 - kMinimapOverlayRect.x0,
@@ -697,7 +692,7 @@ bool ChromeStagingCache::prepare_for(ChromeRect panel_bounds, const ChromeState&
     ++stats_.minimap_base_redraws;
 #endif
   }
-  if (rects_intersect(panel_bounds, kBatteryOverlayRect) &&
+  if (canvas_overlays_visible(state) && rects_intersect(panel_bounds, kBatteryOverlayRect) &&
       (!battery_valid_ || battery_percentage_ != state.battery_percentage ||
        battery_charging_ != state.battery_charging)) {
     std::fill(battery.begin(), battery.end(), kCacheTransparent);
@@ -741,7 +736,7 @@ bool ChromeStagingCache::paint_prepared(const MinimapSurface& surface, const Chr
   if (surface.byte_swapped && !chrome_accepts_byte_swapped_staging(state)) {
     return false;
   }
-  if (!canvas_overlays_visible(state)) {
+  if (!bottom_chrome_cacheable(state)) {
     draw_fixed_chrome(surface, state);
     Painter painter(surface.pixels, surface.width, surface.height, surface.origin_x,
                     surface.origin_y);
@@ -754,11 +749,11 @@ bool ChromeStagingCache::paint_prepared(const MinimapSurface& surface, const Chr
   const ChromeRect panel_bounds{surface.origin_x, surface.origin_y,
                                 surface.origin_x + surface.width,
                                 surface.origin_y + surface.height};
-  if ((rects_intersect(panel_bounds, kZoomRailOverlayRect) &&
+  if ((canvas_overlays_visible(state) && rects_intersect(panel_bounds, kZoomRailOverlayRect) &&
        (!zoom_valid_ || zoom_percent_ != navigation.zoom_percent)) ||
-      (rects_intersect(panel_bounds, kMinimapOverlayRect) &&
+      (canvas_overlays_visible(state) && rects_intersect(panel_bounds, kMinimapOverlayRect) &&
        (!minimap_base_valid_ || overview_revision_ != overview_revision)) ||
-      (rects_intersect(panel_bounds, kBatteryOverlayRect) &&
+      (canvas_overlays_visible(state) && rects_intersect(panel_bounds, kBatteryOverlayRect) &&
        (!battery_valid_ || battery_percentage_ != state.battery_percentage ||
         battery_charging_ != state.battery_charging)) ||
       (rects_intersect(panel_bounds, kBottomCacheRect) &&
@@ -778,13 +773,15 @@ bool ChromeStagingCache::paint_prepared(const MinimapSurface& surface, const Chr
   const auto battery = sprite(kBatteryOverlayRect);
   const auto bottom = sprite(kBottomCacheRect);
   blend_cached_sprite(surface, kBottomCacheRect, bottom);
-  blend_cached_sprite(surface, kZoomRailOverlayRect, zoom);
-  blend_cached_sprite(surface, kMinimapOverlayRect, minimap);
-  if (surface_intersects(surface, kMinimapOverlayRect)) {
-    draw_minimap_viewport(surface, navigation);
-  }
-  if (state.battery_percentage >= 0) {
-    blend_cached_sprite(surface, kBatteryOverlayRect, battery);
+  if (canvas_overlays_visible(state)) {
+    blend_cached_sprite(surface, kZoomRailOverlayRect, zoom);
+    blend_cached_sprite(surface, kMinimapOverlayRect, minimap);
+    if (surface_intersects(surface, kMinimapOverlayRect)) {
+      draw_minimap_viewport(surface, navigation);
+    }
+    if (state.battery_percentage >= 0) {
+      blend_cached_sprite(surface, kBatteryOverlayRect, battery);
+    }
   }
   if (state.history_busy) {
     Painter painter(surface.pixels, surface.width, surface.height, surface.origin_x,

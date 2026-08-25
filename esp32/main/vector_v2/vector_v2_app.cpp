@@ -152,12 +152,11 @@ void vector_v2_app_step(VectorV2AppSession& session) {
     return timing;
   };
 
-  const auto toggle_chrome = [&](std::uint32_t event_us) {
-    if (interaction_active(interaction) || !vector_v2::toggle_chrome_visibility(chrome)) {
+  const auto toggle_hud = [&](std::uint32_t event_us) {
+    if (interaction_active(interaction) || !vector_v2::toggle_hud_visibility(chrome)) {
       return false;
     }
-    static_cast<void>(
-        advance_full_refresh(chrome.visible ? "chrome-show" : "chrome-hide", event_us));
+    static_cast<void>(advance_full_refresh(chrome.hud_visible ? "hud-show" : "hud-hide", event_us));
     return true;
   };
 
@@ -175,9 +174,6 @@ void vector_v2_app_step(VectorV2AppSession& session) {
       return;
     }
     chrome.recording = recording;
-    if (!chrome.visible) {
-      return;
-    }
     const vector_v2::ChromeRect region = vector_v2::chrome_recording_region();
     const auto timing = presenter.present_frame_region({region.x0, region.y0, region.x1, region.y1},
                                                        chrome, event_us);
@@ -305,7 +301,7 @@ void vector_v2_app_step(VectorV2AppSession& session) {
 #endif
 
   if (replay_chrome_toggle) {
-    static_cast<void>(toggle_chrome(event_us));
+    static_cast<void>(toggle_hud(event_us));
     return;
   }
 
@@ -363,7 +359,7 @@ void vector_v2_app_step(VectorV2AppSession& session) {
       // A battery change re-presents only the battery overlay region
       // (owner question 2026-08-16: the full-frame refresh here cost
       // 60-140 ms on dense content for a cosmetic glyph).
-      if (chrome.visible) {
+      if (chrome.hud_visible) {
         const vector_v2::ChromeRect battery = vector_v2::chrome_battery_region();
         const auto timing = presenter.refresh_region(
             {presenter.level_x() + battery.x0, presenter.level_y() + battery.y0,
@@ -375,7 +371,7 @@ void vector_v2_app_step(VectorV2AppSession& session) {
   }
 
   if (!input_ready && !cosmetic_work && !input_urgency.requested()) {
-    const bool button_action_allowed = vector_v2::chrome_can_toggle_visibility(chrome);
+    const bool button_action_allowed = vector_v2::chrome_can_toggle_hud(chrome);
     const bool next_button_down = gpio_get_level(kModeButton) == 0;
     if (next_button_down && !button_down) {
       button_down = true;
@@ -449,10 +445,10 @@ void vector_v2_app_step(VectorV2AppSession& session) {
                           static_cast<unsigned long>(demo.sample_count()));
             }
           }
-          cosmetic_work = toggle_chrome(loop_us);
+          cosmetic_work = toggle_hud(loop_us);
         }
 #else
-        cosmetic_work = toggle_chrome(loop_us);
+        cosmetic_work = toggle_hud(loop_us);
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
         if (cosmetic_work) {
           print_live_ledger("chrome-toggle");

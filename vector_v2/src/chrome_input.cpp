@@ -40,9 +40,6 @@ int chrome_canvas_bottom(const ChromeState& state) {
   if (export_mode_active(state)) {
     return 0;
   }
-  if (!state.visible) {
-    return kHeight;
-  }
   if (state.popup == ChromePopup::kNone) {
     return kChromeCanvasBottom;
   }
@@ -53,9 +50,6 @@ int chrome_input_bottom(const ChromeState& state) {
   if (state.confirm_new || state.export_status == ChromeExportStatus::kSaving ||
       export_mode_active(state) || time_sync_active(state)) {
     return 0;
-  }
-  if (!state.visible) {
-    return kHeight;
   }
   if (state.popup == ChromePopup::kNone) {
     return kChromeCanvasBottom;
@@ -68,9 +62,6 @@ int chrome_ink_bottom(const ChromeState& state) {
       export_mode_active(state) || time_sync_active(state)) {
     return 0;
   }
-  if (!state.visible) {
-    return kHeight;
-  }
   if (state.popup == ChromePopup::kNone) {
     // Committed ink continues under the dock: the rows behind it are real
     // world content, chrome renders on top, and the stroke reappears when
@@ -80,19 +71,16 @@ int chrome_ink_bottom(const ChromeState& state) {
   return state.popup == ChromePopup::kColors ? 0 : kChromePopupInputBottom;
 }
 
-bool chrome_can_toggle_visibility(const ChromeState& state) {
+bool chrome_can_toggle_hud(const ChromeState& state) {
   return !state.confirm_new && state.export_status == ChromeExportStatus::kIdle &&
          state.time_sync_status == ChromeTimeSyncStatus::kIdle;
 }
 
-bool toggle_chrome_visibility(ChromeState& state) {
-  if (!chrome_can_toggle_visibility(state)) {
+bool toggle_hud_visibility(ChromeState& state) {
+  if (!chrome_can_toggle_hud(state)) {
     return false;
   }
-  state.visible = !state.visible;
-  if (!state.visible) {
-    state.popup = ChromePopup::kNone;
-  }
+  state.hud_visible = !state.hud_visible;
   return true;
 }
 
@@ -195,9 +183,6 @@ bool chrome_contains(ChromePoint point, const ChromeState& state) {
       export_mode_active(state) || time_sync_active(state)) {
     return inside(point, 0.0F, 0.0F, static_cast<float>(kWidth), static_cast<float>(kHeight));
   }
-  if (!state.visible) {
-    return false;
-  }
   if (state.popup == ChromePopup::kColors) {
     return inside(point, 0.0F, 0.0F, static_cast<float>(kWidth), static_cast<float>(kHeight));
   }
@@ -222,7 +207,7 @@ bool chrome_promotes_pan_drag(ChromePoint start, ChromePoint current, const Chro
 }
 
 std::optional<std::uint8_t> chrome_color_at(ChromePoint point, const ChromeState& state) {
-  if (!state.visible || state.popup != ChromePopup::kColors || point.y < kPaletteControlsBottom ||
+  if (state.popup != ChromePopup::kColors || point.y < kPaletteControlsBottom ||
       point.y >= kPaletteControlsBottom + kPaletteRowHeight * 4) {
     return std::nullopt;
   }
@@ -305,9 +290,6 @@ ChromeAction chrome_action_at(ChromePoint point, const ChromeState& state) {
                : ChromeAction::kNone;
   }
   if (state.export_status == ChromeExportStatus::kSaving || time_sync_active(state)) {
-    return ChromeAction::kNone;
-  }
-  if (!state.visible) {
     return ChromeAction::kNone;
   }
   if (state.popup == ChromePopup::kColors) {

@@ -138,11 +138,6 @@ bool sync_history_controls(vector_v2::ChromeState& chrome, const vector_v2::Oper
 LivePresentationTiming present_history_controls(VectorV2Presenter& presenter,
                                                 const vector_v2::ChromeState& chrome,
                                                 std::uint32_t event_us) {
-  if (!chrome.visible) {
-    LivePresentationTiming timing{};
-    timing.passed = true;
-    return timing;
-  }
   const vector_v2::ChromeRect controls = vector_v2::chrome_history_controls_region();
   auto timing = presenter.present_frame_region({controls.x0, controls.y0, controls.x1, controls.y1},
                                                chrome, event_us);
