@@ -376,6 +376,34 @@ TEST_CASE("navigation overlays render overview viewport zoom and battery") {
   CHECK(pixels[100U * width + 100U] == 0x1234U);
 }
 
+TEST_CASE("minimap viewport appears only above the whole-canvas zoom") {
+  constexpr int width = 368;
+  constexpr int height = 448;
+  constexpr std::uint16_t white = 0xFFFFU;
+  constexpr std::uint16_t selected = 0x349FU;
+  const std::size_t pixel_count = static_cast<std::size_t>(width * height);
+  std::vector<std::uint16_t> overview(pixel_count, white);
+
+  const auto viewport_pixel_count = [&](int zoom_percent, int level_width, int level_height) {
+    std::vector<std::uint16_t> pixels(pixel_count, white);
+    paint_chrome(pixels, width, height, {},
+                 {.zoom_percent = zoom_percent,
+                  .level_width = level_width,
+                  .level_height = level_height,
+                  .overview_pixels = overview});
+    std::size_t count = 0;
+    for (int y = 251; y < 369; ++y) {
+      for (int x = 265; x < 360; ++x) {
+        count += pixels[static_cast<std::size_t>(y * width + x)] == selected ? 1U : 0U;
+      }
+    }
+    return count;
+  };
+
+  CHECK(viewport_pixel_count(25, 368, 448) == 0U);
+  CHECK(viewport_pixel_count(50, 736, 896) > 0U);
+}
+
 TEST_CASE("chrome canvas clipping follows the visible overlay") {
   ChromeState state;
   CHECK(tinydraw::vector_v2::chrome_canvas_bottom(state) == 372);

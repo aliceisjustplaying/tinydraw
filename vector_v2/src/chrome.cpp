@@ -351,6 +351,9 @@ ChromeRect minimap_viewport_rect(const ChromeNavigation& navigation) {
 // Draws the viewport rectangle over the minimap interior in absolute panel
 // coordinates; the painter translates and clips.
 void draw_minimap_viewport(const MinimapSurface& surface, const ChromeNavigation& navigation) {
+  if (navigation.zoom_percent == 25) {
+    return;
+  }
   Painter painter(surface.pixels, surface.width, surface.height, surface.origin_x,
                   surface.origin_y);
   const ChromeRect viewport = minimap_viewport_rect(navigation);
