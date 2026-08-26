@@ -30,7 +30,8 @@ receipts.
 ## Vector V2
 
 - Pen and eraser operations are document authority across a bounded 1472×1792
-  world at 25, 50, 100, 200, and 400 percent zoom.
+  world at five user-facing zoom levels: 1×, 2×, 4×, 8×, and 16×. Internally,
+  those remain the 25–400 percent rendering scales.
 - Whole-gesture Undo/Redo, focus-centered zoom, absolute minimap navigation,
   asynchronous authority journaling, and settled analytic antialiasing.
 - A complete overview and 604-slot world-aligned tile pool keep every viewport

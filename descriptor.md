@@ -23,8 +23,9 @@ is refined in bounded background work.
   immediate and preserves Stroke identity.)
 - Tap the document control, choose New, then confirm or cancel. (intent: destructive clearing
   requires explicit confirmation and cancellation leaves the document untouched.)
-- Tap zoom minus or zoom plus to change magnification while retaining the Camera focus. (intent:
-  zoom keeps the drawing location under consideration.)
+- Tap zoom minus or zoom plus to move through 1×, 2×, 4×, 8×, and 16× while retaining the Camera
+  focus. (intent: 1× is the opening whole-canvas view, and zoom keeps the drawing location under
+  consideration.)
 - Short-press BOOT to hide the battery, minimap, and zoom controls; short-press it again to restore
   them. The bottom toolbar remains visible and interactive. (intent: canvas HUD overlays disappear
   without hiding drawing actions or changing the current tool, color, size, zoom, Camera, or history.)
@@ -33,8 +34,9 @@ is refined in bounded background work.
   demos are deterministic and never depend on persisted drawing state.)
 - Drag on the canvas in Pan mode to move the Camera without drawing. (intent: navigation never
   changes drawing authority.)
-- Drag on the minimap to move the Camera directly through the bounded world. (intent: distant areas
-  remain reachable without repeated canvas drags.)
+- Drag on the minimap to move the Camera directly through the bounded world. The blue viewport box
+  appears from 2× onward; at 1× the whole world is already visible. (intent: distant areas remain
+  reachable without repeated canvas drags.)
 
 ## Demands
 
