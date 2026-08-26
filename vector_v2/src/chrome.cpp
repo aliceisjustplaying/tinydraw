@@ -288,17 +288,15 @@ void draw_zoom_rail(Painter& painter, const ChromeNavigation& navigation) {
   painter.line({332, 86, 332, 110}, plus, 2);
   painter.line({320, 200, 344, 200}, minus, 2);
 
-  std::array<char, 4> label{};
+  std::array<char, 3> label{};
   std::size_t length = 0;
-  int value = std::clamp(navigation.zoom_percent, 0, 999);
-  if (value >= 100) {
-    label[length++] = static_cast<char>('0' + value / 100);
+  const int multiplier = chrome_zoom_display_multiplier(navigation.zoom_percent);
+  if (multiplier >= 10) {
+    label[length++] = static_cast<char>('0' + multiplier / 10);
   }
-  if (value >= 10) {
-    label[length++] = static_cast<char>('0' + (value / 10) % 10);
-  }
-  label[length++] = static_cast<char>('0' + value % 10);
-  label[length++] = '%';
+  label[length++] = static_cast<char>('0' + multiplier % 10);
+  // PixelPainter's uppercase X is the small-font multiplication mark.
+  label[length++] = 'X';
   const int text_x = 332 - static_cast<int>(length) * 6;
   painter.text(text_x, 142, std::string_view(label.data(), length), kInk);
 }
@@ -631,6 +629,10 @@ void draw_time_sync_toast(Painter& painter, const ChromeState& state) {
 }
 
 }  // namespace
+
+int chrome_zoom_display_multiplier(int zoom_percent) {
+  return std::clamp(zoom_percent / 25, 1, 16);
+}
 
 bool ChromeStagingCache::prepare(const ChromeState& state, const ChromeNavigation& navigation,
                                  std::uint32_t overview_revision) {

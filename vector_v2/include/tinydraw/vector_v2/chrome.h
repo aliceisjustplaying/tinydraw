@@ -130,6 +130,9 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
 }};
 
 [[nodiscard]] std::uint16_t selected_color(const ChromeState& state);
+// Presents the internal 25%-to-400% rendering scale as the user-facing
+// 1x-to-16x magnification shown in the zoom rail.
+[[nodiscard]] int chrome_zoom_display_multiplier(int zoom_percent);
 [[nodiscard]] ChromeTimeSyncStatus chrome_time_sync_status_after(ChromeTimeSyncStatus status,
                                                                  std::uint32_t elapsed_us);
 [[nodiscard]] float brush_size(ChromeSize size);

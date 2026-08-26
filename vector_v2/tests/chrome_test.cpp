@@ -235,6 +235,14 @@ TEST_CASE("right zoom rail exposes plus and minus without stealing its label") {
   CHECK(tinydraw::vector_v2::chrome_action_at({332.0F, 98.0F}, popup) == ChromeAction::kNone);
 }
 
+TEST_CASE("zoom rail presents internal render scales as user-facing multipliers") {
+  CHECK(tinydraw::vector_v2::chrome_zoom_display_multiplier(25) == 1);
+  CHECK(tinydraw::vector_v2::chrome_zoom_display_multiplier(50) == 2);
+  CHECK(tinydraw::vector_v2::chrome_zoom_display_multiplier(100) == 4);
+  CHECK(tinydraw::vector_v2::chrome_zoom_display_multiplier(200) == 8);
+  CHECK(tinydraw::vector_v2::chrome_zoom_display_multiplier(400) == 16);
+}
+
 TEST_CASE("pan drags promote through the zoom rail while taps stay controls") {
   const ChromeState pan{.tool = tinydraw::vector_v2::ChromeTool::kPan};
   CHECK_FALSE(
