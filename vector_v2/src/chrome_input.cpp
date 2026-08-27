@@ -112,9 +112,17 @@ bool chrome_accepts_stroke_finish(ChromePoint start, bool has_drawn_segment) {
 
 static bool zoom_rail_contains(ChromePoint point, const ChromeState& state) {
   return canvas_overlays_visible(state) &&
-         inside(point, static_cast<float>(kZoomRailRect.x0 - kHitSlop),
-                static_cast<float>(kZoomRailRect.y0 - kHitSlop), static_cast<float>(kWidth),
-                static_cast<float>(kZoomRailRect.y1 + kHitSlop));
+         inside(point, static_cast<float>(kZoomRailRect.x0 - kZoomRailHitSlop),
+                static_cast<float>(kZoomRailRect.y0 - kZoomRailHitSlop), static_cast<float>(kWidth),
+                static_cast<float>(kZoomRailRect.y1 + kZoomRailHitSlop));
+}
+
+static bool navigation_guard_contains(ChromePoint point, const ChromeState& state) {
+  return canvas_overlays_visible(state) &&
+         inside(point, static_cast<float>(kNavigationGuardRect.x0),
+                static_cast<float>(kNavigationGuardRect.y0),
+                static_cast<float>(kNavigationGuardRect.x1),
+                static_cast<float>(kNavigationGuardRect.y1));
 }
 
 bool chrome_minimap_contains(ChromePoint point, const ChromeState& state) {
@@ -194,7 +202,8 @@ bool chrome_contains(ChromePoint point, const ChromeState& state) {
   const bool popup = state.popup != ChromePopup::kNone &&
                      inside(point, 0.0F, static_cast<float>(kPopupTop - kHitSlop),
                             static_cast<float>(kWidth), static_cast<float>(kMainTop));
-  return main || popup || zoom_rail_contains(point, state) || chrome_minimap_contains(point, state);
+  return main || popup || navigation_guard_contains(point, state) ||
+         zoom_rail_contains(point, state) || chrome_minimap_contains(point, state);
 }
 
 bool chrome_promotes_pan_drag(ChromePoint start, ChromePoint current, const ChromeState& state) {
@@ -307,12 +316,7 @@ ChromeAction chrome_action_at(ChromePoint point, const ChromeState& state) {
   if (in_popup) {
     return popup_action_at(point, state.popup);
   }
-  const bool in_zoom =
-      canvas_overlays_visible(state) &&
-      inside(point, static_cast<float>(kZoomRailRect.x0 - kHitSlop),
-             static_cast<float>(kZoomRailRect.y0 - kHitSlop), static_cast<float>(kWidth),
-             static_cast<float>(kZoomRailRect.y1 + kHitSlop));
-  if (in_zoom) {
+  if (zoom_rail_contains(point, state)) {
     return zoom_action_at(point);
   }
   if (!inside(point, 0.0F, static_cast<float>(kChromeCanvasBottom), static_cast<float>(kWidth),

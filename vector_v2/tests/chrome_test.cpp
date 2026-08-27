@@ -227,12 +227,24 @@ TEST_CASE("right zoom rail exposes plus and minus without stealing its label") {
   const ChromeState state;
   CHECK(tinydraw::vector_v2::chrome_contains({332.0F, 98.0F}, state));
   CHECK(tinydraw::vector_v2::chrome_action_at({332.0F, 98.0F}, state) == ChromeAction::kZoomIn);
+  CHECK(tinydraw::vector_v2::chrome_contains({336.0F, 57.0F}, state));
+  CHECK(tinydraw::vector_v2::chrome_action_at({336.0F, 57.0F}, state) == ChromeAction::kZoomIn);
   CHECK(tinydraw::vector_v2::chrome_action_at({332.0F, 150.0F}, state) == ChromeAction::kNone);
   CHECK(tinydraw::vector_v2::chrome_action_at({332.0F, 200.0F}, state) == ChromeAction::kZoomOut);
+  CHECK(tinydraw::vector_v2::chrome_contains({300.0F, 235.0F}, state));
+  CHECK(tinydraw::vector_v2::chrome_action_at({300.0F, 235.0F}, state) == ChromeAction::kZoomOut);
+
+  // The complete navigation gutter consumes imprecise taps. The region above
+  // the enlarged Plus target has no action, but it must not begin a Stroke.
+  CHECK(tinydraw::vector_v2::chrome_contains({354.0F, 42.0F}, state));
+  CHECK(tinydraw::vector_v2::chrome_action_at({354.0F, 42.0F}, state) == ChromeAction::kNone);
+  CHECK_FALSE(tinydraw::vector_v2::chrome_contains({287.0F, 42.0F}, state));
 
   const ChromeState popup{.popup = ChromePopup::kTools};
   CHECK_FALSE(tinydraw::vector_v2::chrome_contains({332.0F, 98.0F}, popup));
   CHECK(tinydraw::vector_v2::chrome_action_at({332.0F, 98.0F}, popup) == ChromeAction::kNone);
+  const ChromeState hidden{.hud_visible = false};
+  CHECK_FALSE(tinydraw::vector_v2::chrome_contains({354.0F, 42.0F}, hidden));
 }
 
 TEST_CASE("zoom rail presents internal render scales as user-facing multipliers") {

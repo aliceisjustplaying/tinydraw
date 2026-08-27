@@ -48,10 +48,13 @@ inline constexpr int kBatteryTop = 18;
 inline constexpr int kBatteryRight = 340;
 inline constexpr int kBatteryBottom = 54;
 inline constexpr ChromeRect kZoomRailRect{304, 72, 360, 226};
+inline constexpr int kZoomRailHitSlop = 16;
 inline constexpr ChromeRect kZoomRailOverlayRect{kZoomRailRect.x0 - 1, kZoomRailRect.y0 - 1,
                                                  kZoomRailRect.x1 + 2, kZoomRailRect.y1 + 3};
 inline constexpr ChromeRect kMinimapRect{266, 252, 358, 366};
 inline constexpr ChromeRect kMinimapHitRect{250, 236, 368, kChromeCanvasBottom};
+inline constexpr ChromeRect kNavigationGuardRect{kZoomRailRect.x0 - kZoomRailHitSlop, 0, kWidth,
+                                                 kMinimapHitRect.y0};
 inline constexpr ChromeRect kMinimapDockDragRect{kMinimapHitRect.x0, kChromeCanvasBottom,
                                                  kMinimapHitRect.x1, kHeight};
 inline constexpr ChromeRect kMinimapOverlayRect{kMinimapRect.x0 - 1, kMinimapRect.y0 - 1,
