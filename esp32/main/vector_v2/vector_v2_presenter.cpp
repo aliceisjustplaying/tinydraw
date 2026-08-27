@@ -161,6 +161,7 @@ LivePresentationTiming VectorV2Presenter::refresh(const vector_v2::ChromeState& 
   if (!stats.has_value()) {
     return {};
   }
+  ++frame_compose_epoch_;
   overlay_pending(view.level_pixels, frame_, vector_v2::kOverviewWidth);
   auto timing =
       present_with_overlays({0, 0, vector_v2::kOverviewWidth, vector_v2::kOverviewHeight}, chrome,
@@ -245,6 +246,7 @@ LivePresentationTiming VectorV2Presenter::refresh_slice(const vector_v2::ChromeS
     return timing;
   }
 
+  ++frame_compose_epoch_;
   overlay_pending(refresh_view_.level_pixels, frame_, vector_v2::kOverviewWidth);
   const auto stats = result.stats;
   const auto completed_view = refresh_view_;

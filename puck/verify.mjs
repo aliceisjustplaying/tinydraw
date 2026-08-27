@@ -231,6 +231,17 @@ function canvasColorCount(frame) {
   return colors.size;
 }
 
+function regionColorCount(frame, rect) {
+  const colors = new Set();
+  for (let y = rect.y; y < rect.y + rect.h; ++y) {
+    for (let x = rect.x; x < rect.x + rect.w; ++x) {
+      const offset = (y * frame.width + x) * 3;
+      colors.add(`${frame.rgb[offset]},${frame.rgb[offset + 1]},${frame.rgb[offset + 2]}`);
+    }
+  }
+  return colors.size;
+}
+
 function pushList(emu, width, height) {
   const count = emu.emu_push_count();
   assert(Number.isInteger(count) && count >= 0 && count <= 256, `invalid push count ${count}`);
@@ -456,6 +467,66 @@ async function verifyHistoryPresentationFailure() {
   console.log("PASS failed history feedback preserves semantic Undo and repairs the 25% frame");
 }
 
+async function verifyRecordedStrokeAaSurvivesHudToggle() {
+  const events = [
+    { t: 0, k: "tick" },
+    { t: 100, k: "button", i: 0, down: 1 },
+    { t: 100, k: "tick" },
+    { t: 900, k: "tick" },
+    { t: 916, k: "button", i: 0, down: 0 },
+    { t: 916, k: "tick" },
+  ];
+  for (const event of [
+    { t: 932, k: "touch", down: 1, x: 70, y: 100 },
+    { t: 948, k: "touch", down: 1, x: 105, y: 120 },
+    { t: 964, k: "touch", down: 1, x: 145, y: 90 },
+    { t: 980, k: "touch", down: 0, x: 145, y: 90 },
+  ]) {
+    events.push(event, { t: event.t, k: "tick" });
+  }
+  const shortButtonPress = (downAt) => {
+    events.push(
+      { t: downAt, k: "button", i: 0, down: 1 },
+      { t: downAt, k: "tick" },
+      { t: downAt + 16, k: "button", i: 0, down: 0 },
+      { t: downAt + 16, k: "tick" },
+    );
+  };
+  const tap = (downAt, x, y) => {
+    events.push(
+      { t: downAt, k: "touch", down: 1, x, y },
+      { t: downAt, k: "tick" },
+      { t: downAt + 16, k: "touch", down: 0, x, y },
+      { t: downAt + 16, k: "tick" },
+    );
+  };
+  const idleThrough = (from, through) => {
+    for (let t = from; t <= through; t += 8) events.push({ t, k: "tick" });
+  };
+
+  shortButtonPress(996);  // Hide the HUD immediately after lift.
+  idleThrough(1_020, 1_200);
+  shortButtonPress(1_216);  // Show it so zoom controls are available.
+  idleThrough(1_240, 1_400);
+  tap(1_416, 332, 98);      // Zoom in.
+  idleThrough(1_440, 1_700);
+  tap(1_716, 332, 200);     // Zoom back out to 1x.
+  idleThrough(1_740, 2_000);
+
+  const run = await replay({ events }, [1_196, 1_696, 1_996]);
+  const hiddenAfterDraw = run.frames.get(1_196);
+  const zoomed = run.frames.get(1_696);
+  const afterZoomCycle = run.frames.get(1_996);
+  assert(hiddenAfterDraw && zoomed && afterZoomCycle, "recording/HUD AA captures are missing");
+  const strokeRegion = { x: 50, y: 70, w: 120, h: 75 };
+  assert(regionColorCount(hiddenAfterDraw, strokeRegion) > 2,
+    "hiding the HUD left the recorded 1x Stroke without AA coverage shades");
+  assert(diffPixels(hiddenAfterDraw, zoomed) > 100, "zoom-in did not change the recorded Stroke view");
+  assert.equal(diffPixels(hiddenAfterDraw, afterZoomCycle, strokeRegion), 0,
+    "hiding the HUD presented a different 1x Stroke than a subsequent zoom-in/out settle");
+  console.log("PASS recorded 1x Stroke keeps exact AA pixels across HUD hide and zoom cycle");
+}
+
 for (const scenario of scenarios) {
   const tracePath = join(here, "traces", scenario.trace);
   const trace = JSON.parse(readFileSync(tracePath, "utf8"));
@@ -495,6 +566,7 @@ for (const scenario of scenarios) {
 
 await verifyLongStrokeHistory();
 await verifyHistoryPresentationFailure();
+await verifyRecordedStrokeAaSurvivesHudToggle();
 
 console.log(writeFrames
   ? "PASS semantic trace assertions; recorded tolerance-0 baselines updated"

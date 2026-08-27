@@ -169,6 +169,7 @@ class VectorV2BackgroundPipeline {
   PendingSettleRender settle_render_{};
   PendingSettlePresentation pending_settle_{};
   vector_v2::DocumentRevision settle_revision_{};
+  std::uint64_t settle_frame_compose_epoch_ = 0;
   vector_v2::ZoomLevel settle_zoom_ = vector_v2::ZoomLevel::k25Percent;
   int settle_x_ = -1;
   int settle_y_ = -1;

@@ -127,6 +127,9 @@ class VectorV2Presenter {
   [[nodiscard]] int level_x() const;
   [[nodiscard]] int level_y() const;
   [[nodiscard]] float scale() const;
+  // Full-frame composition rewrites the presentation-only 1x AA pixels.
+  // Background polish includes this epoch in its completion fingerprint.
+  [[nodiscard]] std::uint64_t frame_compose_epoch() const { return frame_compose_epoch_; }
   [[nodiscard]] vector_v2::OperationPoint operation_point(InkPoint point) const;
 
   [[nodiscard]] LivePresentationTiming refresh(const vector_v2::ChromeState& chrome,
@@ -281,6 +284,7 @@ class VectorV2Presenter {
   std::uint32_t refresh_compose_slices_ = 0;
   bool minimap_presented_ = false;
   bool frame_reusable_ = false;
+  std::uint64_t frame_compose_epoch_ = 0;
   bool refresh_pending_ = false;
   bool refresh_deferred_ = false;
 #ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE

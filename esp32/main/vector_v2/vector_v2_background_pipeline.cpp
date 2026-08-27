@@ -271,13 +271,15 @@ void VectorV2BackgroundPipeline::reset_settle_pass() {
 
 void VectorV2BackgroundPipeline::reset_settle_fingerprint() {
   if (settle_zoom_ == presenter_.zoom() && settle_revision_ == canvas_.current_revision() &&
-      settle_x_ == presenter_.level_x() && settle_y_ == presenter_.level_y()) {
+      settle_x_ == presenter_.level_x() && settle_y_ == presenter_.level_y() &&
+      settle_frame_compose_epoch_ == presenter_.frame_compose_epoch()) {
     return;
   }
   settle_zoom_ = presenter_.zoom();
   settle_revision_ = canvas_.current_revision();
   settle_x_ = presenter_.level_x();
   settle_y_ = presenter_.level_y();
+  settle_frame_compose_epoch_ = presenter_.frame_compose_epoch();
   reset_settle_pass();
 }
 
