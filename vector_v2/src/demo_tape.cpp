@@ -26,6 +26,10 @@ bool reached(std::uint32_t now_us, std::uint32_t target_us) {
   return static_cast<std::int32_t>(now_us - target_us) >= 0;
 }
 
+bool is_active_touch_sample(DemoEventKind kind) {
+  return kind == DemoEventKind::kTouchDown || kind == DemoEventKind::kTouchMove;
+}
+
 }  // namespace
 
 void DemoTape::begin_recording(std::uint32_t started_us) {
@@ -58,7 +62,21 @@ bool DemoTape::record(DemoSample sample, std::uint32_t timestamp_us) {
     return false;
   }
   const std::uint32_t offset_us = timestamp_us - recording_started_us_;
-  if (size_ == storage_.size() || offset_us > kMaximumDemoDurationUs) {
+  if (offset_us > kMaximumDemoDurationUs) {
+    overflowed_ = true;
+    recording_ = false;
+    return false;
+  }
+  // LiveStrokeSession discards a Move whose integer panel position has not
+  // changed. Keeping those 1 ms hardware polls made a short take consume the
+  // entire tape without affecting drawing, navigation, or replay output.
+  if (sample.kind == DemoEventKind::kTouchMove && size_ != 0U) {
+    const DemoSample& previous = storage_[size_ - 1U];
+    if (is_active_touch_sample(previous.kind) && previous.x == sample.x && previous.y == sample.y) {
+      return true;
+    }
+  }
+  if (size_ == storage_.size()) {
     overflowed_ = true;
     recording_ = false;
     return false;

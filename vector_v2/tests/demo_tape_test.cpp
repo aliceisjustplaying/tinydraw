@@ -51,6 +51,38 @@ TEST_CASE("V2 demo tape stops at capacity without overwriting the take") {
   CHECK(tape.size() == 2U);
 }
 
+TEST_CASE("V2 demo tape does not spend capacity on stationary touch polls") {
+  std::array<vector_v2::DemoSample, 3> storage{};
+  vector_v2::DemoTape tape(storage);
+  tape.begin_recording(100U);
+
+  REQUIRE(tape.record_touch({{12.0F, 34.0F}, 110U, 1U, vector_v2::TouchEventKind::kDown}));
+  bool all_recorded = true;
+  for (std::uint32_t index = 0U; index < 10'000U; ++index) {
+    all_recorded &= tape.record_touch(
+        {{12.0F, 34.0F}, 120U + index, index + 2U, vector_v2::TouchEventKind::kMove});
+  }
+  REQUIRE(tape.record_touch({{56.0F, 78.0F}, 10'120U, 10'002U, vector_v2::TouchEventKind::kMove}));
+  for (std::uint32_t index = 0U; index < 10'000U; ++index) {
+    all_recorded &= tape.record_touch(
+        {{56.0F, 78.0F}, 10'121U + index, index + 10'003U, vector_v2::TouchEventKind::kMove});
+  }
+  REQUIRE(all_recorded);
+  REQUIRE(tape.record_touch({{56.0F, 78.0F}, 20'121U, 20'003U, vector_v2::TouchEventKind::kUp}));
+
+  CHECK(tape.recording());
+  CHECK_FALSE(tape.overflowed());
+  REQUIRE(tape.size() == 3U);
+  REQUIRE(tape.begin_replay(30'000U));
+  REQUIRE(tape.pop_replay(30'010U).has_value());
+  const auto move = tape.pop_replay(40'020U);
+  REQUIRE(move.has_value());
+  CHECK(move->kind == vector_v2::DemoEventKind::kTouchMove);
+  CHECK(move->point.x == 56.0F);
+  CHECK(move->point.y == 78.0F);
+  CHECK(move->timestamp_us == 40'020U);
+}
+
 TEST_CASE("V2 demo replay handles wrapping microsecond clocks") {
   std::array<vector_v2::DemoSample, 2> storage{};
   vector_v2::DemoTape tape(storage);
