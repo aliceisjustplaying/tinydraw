@@ -242,6 +242,17 @@ function regionColorCount(frame, rect) {
   return colors.size;
 }
 
+function nonPaperColumnSpan(frame, rect) {
+  let first = null;
+  let last = null;
+  for (let x = rect.x; x < rect.x + rect.w; ++x) {
+    if (nonPaperPixels(frame, { x, y: rect.y, w: 1, h: rect.h }) === 0) continue;
+    if (first === null) first = x;
+    last = x;
+  }
+  return first === null ? 0 : last - first + 1;
+}
+
 function pushList(emu, width, height) {
   const count = emu.emu_push_count();
   assert(Number.isInteger(count) && count >= 0 && count <= 256, `invalid push count ${count}`);
@@ -527,6 +538,95 @@ async function verifyRecordedStrokeAaSurvivesHudToggle() {
   console.log("PASS recorded 1x Stroke keeps exact AA pixels across HUD hide and zoom cycle");
 }
 
+async function verifyStrokeAfterHudToggle() {
+  for (const startDelay of [1, 2, 4, 8, 12, 16, 24, 32, 48, 64]) {
+    const events = [{ t: 0, k: "tick" }, { t: 16, k: "tick" }];
+    const touch = (t, down, x, y) => events.push(
+      { t, k: "touch", down, x, y },
+      { t, k: "tick" },
+    );
+    touch(32, 1, 70, 100);
+    touch(48, 1, 140, 130);
+    touch(64, 1, 220, 100);
+    touch(80, 0, 220, 100);
+    for (let t = 96; t <= 240; t += 8) events.push({ t, k: "tick" });
+    events.push(
+      { t: 256, k: "button", i: 0, down: 1 },
+      { t: 256, k: "tick" },
+      { t: 272, k: "button", i: 0, down: 0 },
+      { t: 272, k: "tick" },
+    );
+
+    let now = 272 + startDelay;
+    touch(now, 1, 40, 260);
+    for (const x of [80, 120, 160, 200, 240, 280]) {
+      now += 8;
+      touch(now, 1, x, 260);
+    }
+    now += 8;
+    touch(now, 0, 280, 260);
+    for (let t = now + 8; t <= now + 400; t += 8) events.push({ t, k: "tick" });
+    const beforeRepair = now + 400;
+
+    now = beforeRepair + 16;
+    touch(now, 1, 210, 410);
+    now += 16;
+    touch(now, 0, 210, 410);
+    for (let t = now + 8; t <= now + 120; t += 8) events.push({ t, k: "tick" });
+    now += 136;
+    touch(now, 1, 210, 410);
+    now += 16;
+    touch(now, 0, 210, 410);
+    for (let t = now + 8; t <= now + 400; t += 8) events.push({ t, k: "tick" });
+    const afterRepair = now + 400;
+
+    const run = await replay({ events }, [beforeRepair, afterRepair]);
+    const before = run.frames.get(beforeRepair);
+    const after = run.frames.get(afterRepair);
+    assert(before && after, `HUD/draw captures are missing at ${startDelay} ms`);
+    const strokeRegion = { x: 30, y: 245, w: 260, h: 30 };
+    const beforeSpan = nonPaperColumnSpan(before, strokeRegion);
+    const afterSpan = nonPaperColumnSpan(after, strokeRegion);
+    assert(beforeSpan > 200,
+      `post-HUD Stroke collapsed to ${beforeSpan}px at ${startDelay} ms; color-popup repair restored ${afterSpan}px`);
+    assert(afterSpan > 200,
+      `post-HUD Stroke authority retained only ${afterSpan}px at ${startDelay} ms`);
+  }
+  console.log("PASS post-HUD Stroke stays full-length across refresh timing windows");
+}
+
+async function verifyHudHideDismissesColorsInputShield() {
+  const events = [{ t: 0, k: "tick" }, { t: 16, k: "tick" }];
+  const touch = (t, down, x, y) => events.push(
+    { t, k: "touch", down, x, y },
+    { t, k: "tick" },
+  );
+  touch(32, 1, 210, 410);
+  touch(48, 0, 210, 410);
+  for (let t = 64; t <= 160; t += 8) events.push({ t, k: "tick" });
+  events.push(
+    { t: 176, k: "button", i: 0, down: 1 },
+    { t: 176, k: "tick" },
+    { t: 192, k: "button", i: 0, down: 0 },
+    { t: 192, k: "tick" },
+  );
+  for (let t = 200; t <= 320; t += 8) events.push({ t, k: "tick" });
+  touch(336, 1, 40, 260);
+  for (const [t, x] of [[344, 80], [352, 120], [360, 160], [368, 200], [376, 240], [384, 280]]) {
+    touch(t, 1, x, 260);
+  }
+  touch(392, 0, 280, 260);
+  for (let t = 400; t <= 800; t += 8) events.push({ t, k: "tick" });
+
+  const run = await replay({ events }, [800]);
+  const frame = run.frames.get(800);
+  assert(frame, "Colors/HUD input-shield capture is missing");
+  const span = nonPaperColumnSpan(frame, { x: 30, y: 245, w: 260, h: 30 });
+  assert(span > 200,
+    `HUD hide retained the Colors input shield; intended 240px Stroke rendered only ${span}px`);
+  console.log("PASS HUD hide dismisses the Colors input shield before drawing");
+}
+
 for (const scenario of scenarios) {
   const tracePath = join(here, "traces", scenario.trace);
   const trace = JSON.parse(readFileSync(tracePath, "utf8"));
@@ -567,6 +667,8 @@ for (const scenario of scenarios) {
 await verifyLongStrokeHistory();
 await verifyHistoryPresentationFailure();
 await verifyRecordedStrokeAaSurvivesHudToggle();
+await verifyStrokeAfterHudToggle();
+await verifyHudHideDismissesColorsInputShield();
 
 console.log(writeFrames
   ? "PASS semantic trace assertions; recorded tolerance-0 baselines updated"

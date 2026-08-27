@@ -81,6 +81,9 @@ bool toggle_hud_visibility(ChromeState& state) {
     return false;
   }
   state.hud_visible = !state.hud_visible;
+  if (!state.hud_visible) {
+    state.popup = ChromePopup::kNone;
+  }
   return true;
 }
 

@@ -488,14 +488,15 @@ TEST_CASE("hidden HUD leaves the canvas untouched and paints the bottom toolbar"
   CHECK(pixels[410U * width + 180U] != before[410U * width + 180U]);
 }
 
-TEST_CASE("HUD toggle preserves bottom popups and critical screens") {
-  ChromeState state{.popup = ChromePopup::kTools};
-  CHECK(tinydraw::vector_v2::toggle_hud_visibility(state));
-  CHECK_FALSE(state.hud_visible);
-  CHECK(state.popup == ChromePopup::kTools);
-  CHECK(tinydraw::vector_v2::toggle_hud_visibility(state));
-  CHECK(state.hud_visible);
-  CHECK(state.popup == ChromePopup::kTools);
+TEST_CASE("hiding the HUD dismisses transient popups and critical screens block the toggle") {
+  for (const ChromePopup popup :
+       std::array{ChromePopup::kTools, ChromePopup::kColors, ChromePopup::kSizes,
+                  ChromePopup::kDocument}) {
+    ChromeState state{.popup = popup};
+    CHECK(tinydraw::vector_v2::toggle_hud_visibility(state));
+    CHECK_FALSE(state.hud_visible);
+    CHECK(state.popup == ChromePopup::kNone);
+  }
 
   for (const ChromeState blocked :
        std::array{ChromeState{.confirm_new = true},
