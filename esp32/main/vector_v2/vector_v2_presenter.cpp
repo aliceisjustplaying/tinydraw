@@ -71,7 +71,7 @@ vector_v2::OperationPoint VectorV2Presenter::operation_point(InkPoint point) con
   };
 }
 
-void VectorV2Presenter::set_demo_pointer(std::optional<Point> point) {
+void VectorV2Presenter::set_demo_pointer(std::optional<Point> point, std::uint8_t opacity) {
   const auto include = [this](Point candidate) {
     const vector_v2::ChromeRect chrome_bounds =
         vector_v2::chrome_demo_pointer_region({candidate.x, candidate.y});
@@ -90,6 +90,7 @@ void VectorV2Presenter::set_demo_pointer(std::optional<Point> point) {
     include(*demo_pointer_);
   }
   demo_pointer_ = point;
+  demo_pointer_opacity_ = opacity;
   if (demo_pointer_.has_value()) {
     include(*demo_pointer_);
   }

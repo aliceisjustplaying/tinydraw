@@ -106,14 +106,15 @@ const scenarios = [
   },
   {
     trace: "demo.trace.json",
-    captures: [900, 980, 1940, 2772, 2804, 3060],
+    captures: [900, 980, 1940, 2772, 2804, 2884, 3060],
     check(run) {
       const drawn = run.frames.get(980);
       const recorded = run.frames.get(1940);
       const replayBaseline = run.frames.get(2772);
       const replayPointer = run.frames.get(2804);
+      const replayPointerAfterLift = run.frames.get(2884);
       const replayed = run.frames.get(3060);
-      assert(drawn && recorded && replayBaseline && replayPointer && replayed,
+      assert(drawn && recorded && replayBaseline && replayPointer && replayPointerAfterLift && replayed,
         "demo captures are missing");
       assert(inkPixels(drawn) > 50, "demo recording did not capture a visible Stroke");
       assert(nonPaperPixels(recorded, { x: 0, y: 372, w: 368, h: 76 }) > 100,
@@ -123,6 +124,10 @@ const scenarios = [
         `demo replay did not start from a blank authority baseline: ${inkPixels(replayBaseline)} versus ${inkPixels(drawn)}`);
       assert(nonPaperPixels(replayPointer, { x: 84, y: 99, w: 43, h: 43 }) > 300,
         "demo replay did not show the virtual finger at the replayed touch point");
+      const lingeringPointerPixels = diffPixels(replayPointerAfterLift, replayed,
+        { x: 124, y: 69, w: 43, h: 43 });
+      assert(lingeringPointerPixels > 150,
+        `demo replay pointer did not linger after the quick tap: ${lingeringPointerPixels} pixels`);
       assert.equal(diffPixels(recorded, replayed), 0,
         "demo replay did not reproduce the hidden-HUD recording exactly");
       assert.equal(run.log.some((line) => line.startsWith("TINYDRAW_DEMO_FAIL")), false,

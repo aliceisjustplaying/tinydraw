@@ -50,6 +50,8 @@ constexpr gpio_num_t kModeButton = GPIO_NUM_0;
 constexpr std::uint32_t kPowerRefreshUs = 30'000'000U;
 #ifdef TINYDRAW_VECTOR_V2_DEMO
 constexpr std::uint32_t kDemoLongPressUs = 800'000U;
+constexpr std::uint32_t kDemoPointerReleaseHoldUs = 160'000U;
+constexpr std::uint8_t kDemoPointerReleasedOpacity = 160U;
 constexpr std::size_t kDemoCapacity = 16'384U;
 #endif
 
@@ -109,6 +111,7 @@ void vector_v2_app_step(VectorV2AppSession& session) {
   VectorV2DemoController& demo = *session.demo;
   std::uint32_t& button_pressed_us = session.button_pressed_us;
   std::uint32_t& demo_replay_sequence = session.demo_replay_sequence;
+  std::optional<std::uint32_t>& demo_pointer_hide_us = session.demo_pointer_hide_us;
   bool& demo_sampler_stopped = session.demo_sampler_stopped;
 #endif
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
@@ -186,6 +189,7 @@ void vector_v2_app_step(VectorV2AppSession& session) {
     interaction = InteractionMode::kIdle;
     minimap_release_us.reset();
     stroke_report.pending = false;
+    demo_pointer_hide_us.reset();
     presenter.set_demo_pointer(std::nullopt);
     navigation = vector_v2::NavigationState{};
     const int battery_percentage = chrome.battery_percentage;
@@ -227,10 +231,6 @@ void vector_v2_app_step(VectorV2AppSession& session) {
 #ifdef TINYDRAW_VECTOR_V2_DEMO
   if (demo_sampler_stopped && !demo.replaying()) {
     const bool replay_failed = demo.replay_failed();
-    presenter.set_demo_pointer(std::nullopt);
-    if (presenter.demo_pointer_refresh_pending()) {
-      static_cast<void>(presenter.present_demo_pointer(chrome, loop_us));
-    }
     touch_sampler.discard_pending();
     if (!touch_sampler.start()) {
       std::printf("TINYDRAW_DEMO_FAIL reason=touch_restart\n");
@@ -241,6 +241,15 @@ void vector_v2_app_step(VectorV2AppSession& session) {
     std::printf(replay_failed ? "TINYDRAW_DEMO_FAIL reason=replay_timer count=%lu\n"
                               : "TINYDRAW_DEMO_REPLAY_END count=%lu\n",
                 static_cast<unsigned long>(demo.sample_count()));
+  }
+  if (demo_pointer_hide_us.has_value() &&
+      static_cast<std::int32_t>(loop_us - *demo_pointer_hide_us) >= 0) {
+    presenter.set_demo_pointer(std::nullopt);
+    if (presenter.present_demo_pointer(chrome, loop_us).passed) {
+      demo_pointer_hide_us.reset();
+    } else {
+      *demo_pointer_hide_us = loop_us + 10'000U;
+    }
   }
 #endif
 
@@ -305,7 +314,13 @@ void vector_v2_app_step(VectorV2AppSession& session) {
                                                         : loop_us;
 #ifdef TINYDRAW_VECTOR_V2_DEMO
   if (replay_touch_event) {
-    presenter.set_demo_pointer(lift_event ? std::nullopt : std::optional<Point>{point});
+    if (lift_event) {
+      presenter.set_demo_pointer(point, kDemoPointerReleasedOpacity);
+      demo_pointer_hide_us = loop_us + kDemoPointerReleaseHoldUs;
+    } else {
+      demo_pointer_hide_us.reset();
+      presenter.set_demo_pointer(point);
+    }
   }
 #endif
   bool cosmetic_work = false;

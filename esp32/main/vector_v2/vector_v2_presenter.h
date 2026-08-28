@@ -135,7 +135,7 @@ class VectorV2Presenter {
 
   // Presentation-only demo pointer. Movement accumulates the union of the
   // old and new circles so the next ordinary present also erases the old one.
-  void set_demo_pointer(std::optional<Point> point);
+  void set_demo_pointer(std::optional<Point> point, std::uint8_t opacity = 255U);
   [[nodiscard]] bool demo_pointer_refresh_pending() const {
     return demo_pointer_damage_.has_value();
   }
@@ -275,6 +275,7 @@ class VectorV2Presenter {
   vector_v2::PixelRect live_provisional_bounds_{};
   std::uint16_t live_provisional_color_ = 0;
   std::optional<Point> demo_pointer_;
+  std::uint8_t demo_pointer_opacity_ = 255U;
   std::optional<vector_v2::PixelRect> demo_pointer_damage_;
   vector_v2::ZoomLevel frame_zoom_ = vector_v2::ZoomLevel::k25Percent;
   int frame_level_x_ = 0;

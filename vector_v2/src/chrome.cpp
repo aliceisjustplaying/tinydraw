@@ -661,7 +661,7 @@ ChromeRect chrome_demo_pointer_region(ChromePoint point) {
   };
 }
 
-bool paint_demo_pointer(const MinimapSurface& surface, ChromePoint point) {
+bool paint_demo_pointer(const MinimapSurface& surface, ChromePoint point, std::uint8_t opacity) {
   if (surface.byte_swapped || surface.width <= 0 || surface.height <= 0 ||
       surface.pixels.size() <
           static_cast<std::size_t>(surface.width) * static_cast<std::size_t>(surface.height)) {
@@ -677,7 +677,7 @@ bool paint_demo_pointer(const MinimapSurface& surface, ChromePoint point) {
   constexpr int outer_squared = kChromeDemoPointerRadius * kChromeDemoPointerRadius;
   constexpr int inner_radius = kChromeDemoPointerRadius - 3;
   constexpr int inner_squared = inner_radius * inner_radius;
-  constexpr std::uint16_t fill_weight = 72U;
+  const auto fill_weight = static_cast<std::uint16_t>(72U * opacity / 255U);
   for (int y = y0; y < y1; ++y) {
     const int dy = y - center_y;
     for (int x = x0; x < x1; ++x) {
@@ -689,8 +689,8 @@ bool paint_demo_pointer(const MinimapSurface& surface, ChromePoint point) {
       auto& pixel = surface.pixels[static_cast<std::size_t>(y - surface.origin_y) *
                                        static_cast<std::size_t>(surface.width) +
                                    static_cast<std::size_t>(x - surface.origin_x)];
-      pixel =
-          squared_distance >= inner_squared ? kSelected : blend_rgb565(pixel, kWhite, fill_weight);
+      pixel = squared_distance >= inner_squared ? blend_rgb565(pixel, kSelected, opacity)
+                                                : blend_rgb565(pixel, kWhite, fill_weight);
     }
   }
   return true;

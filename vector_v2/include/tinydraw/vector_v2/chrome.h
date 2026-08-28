@@ -215,7 +215,8 @@ struct MinimapSurface {
 // pixels, so it never mutates drawing authority or the presenter's frame.
 inline constexpr int kChromeDemoPointerRadius = 20;
 [[nodiscard]] ChromeRect chrome_demo_pointer_region(ChromePoint point);
-[[nodiscard]] bool paint_demo_pointer(const MinimapSurface& surface, ChromePoint point);
+[[nodiscard]] bool paint_demo_pointer(const MinimapSurface& surface, ChromePoint point,
+                                      std::uint8_t opacity = 255U);
 
 // Caller-funded PSRAM for prerendered fixed chrome sprites. The cache keeps
 // rasterization out of per-strip DMA staging while the canvas ring remains

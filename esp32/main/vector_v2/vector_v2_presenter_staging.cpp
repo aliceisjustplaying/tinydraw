@@ -487,7 +487,7 @@ bool VectorV2Presenter::paint_stage_surface(StageContext& context,
   if (demo_pointer_.has_value() &&
       !vector_v2::paint_demo_pointer({surface.pixels, surface.width, surface.height,
                                       surface.panel_x, surface.panel_y, surface.byte_swapped},
-                                     {demo_pointer_->x, demo_pointer_->y})) {
+                                     {demo_pointer_->x, demo_pointer_->y}, demo_pointer_opacity_)) {
     return false;
   }
   context.chrome_us += esp_timer_get_time() - chrome_started;

@@ -445,6 +445,13 @@ TEST_CASE("demo pointer blends a clipped translucent disk with an opaque rim") {
   CHECK(pixels[32U * width + 52U] == 0x349FU);
   CHECK(pixels[32U * width + 53U] == background);
 
+  std::vector<std::uint16_t> faded(static_cast<std::size_t>(width * height), background);
+  REQUIRE(tinydraw::vector_v2::paint_demo_pointer({faded, width, height, 0, 0}, center, 160U));
+  CHECK(faded[32U * width + 52U] != background);
+  CHECK(faded[32U * width + 52U] != pixels[32U * width + 52U]);
+  CHECK(faded[32U * width + 32U] != background);
+  CHECK(faded[32U * width + 32U] != pixels[32U * width + 32U]);
+
   const auto before_swapped = pixels;
   CHECK_FALSE(tinydraw::vector_v2::paint_demo_pointer({pixels, width, height, 0, 0, true}, center));
   CHECK(pixels == before_swapped);
