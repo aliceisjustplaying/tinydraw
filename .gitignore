@@ -24,3 +24,6 @@ __pycache__/
 .raw
 .block
 thursday-talk.txt
+.proof-doc.json
+video-edit
+_writing_final_push
