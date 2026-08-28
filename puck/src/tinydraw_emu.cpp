@@ -75,7 +75,7 @@ const char g_device_json[] =
     "\"name\":\"TinyDraw V2\","
     "\"panel\":{\"w\":368,\"h\":448,\"format\":\"rgb565be\"},"
     "\"buttons\":[{\"id\":\"hud\",\"label\":\"HUD / DEMO\",\"edge\":\"right\","
-    "\"at\":0.5}],"
+    "\"at\":0.16}],"
     "\"touch\":{\"points\":1},"
     "\"gestures\":[{\"id\":\"hud-toggle\",\"label\":\"show / hide HUD\","
     "\"how\":\"Press and release the HUD button to hide the battery, zoom controls, and "

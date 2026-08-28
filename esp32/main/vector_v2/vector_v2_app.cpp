@@ -50,7 +50,7 @@ constexpr gpio_num_t kModeButton = GPIO_NUM_0;
 constexpr std::uint32_t kPowerRefreshUs = 30'000'000U;
 #ifdef TINYDRAW_VECTOR_V2_DEMO
 constexpr std::uint32_t kDemoLongPressUs = 800'000U;
-constexpr std::uint32_t kDemoPointerReleaseHoldUs = 160'000U;
+constexpr std::uint32_t kDemoOverlayHoldUs = 240'000U;
 constexpr std::uint8_t kDemoPointerReleasedOpacity = 160U;
 constexpr std::size_t kDemoCapacity = 16'384U;
 #endif
@@ -112,6 +112,7 @@ void vector_v2_app_step(VectorV2AppSession& session) {
   std::uint32_t& button_pressed_us = session.button_pressed_us;
   std::uint32_t& demo_replay_sequence = session.demo_replay_sequence;
   std::optional<std::uint32_t>& demo_pointer_hide_us = session.demo_pointer_hide_us;
+  std::optional<std::uint32_t>& demo_side_button_hide_us = session.demo_side_button_hide_us;
   bool& demo_sampler_stopped = session.demo_sampler_stopped;
 #endif
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
@@ -190,7 +191,9 @@ void vector_v2_app_step(VectorV2AppSession& session) {
     minimap_release_us.reset();
     stroke_report.pending = false;
     demo_pointer_hide_us.reset();
+    demo_side_button_hide_us.reset();
     presenter.set_demo_pointer(std::nullopt);
+    presenter.set_demo_side_button_pressed(false);
     navigation = vector_v2::NavigationState{};
     const int battery_percentage = chrome.battery_percentage;
     const bool battery_charging = chrome.battery_charging;
@@ -245,10 +248,19 @@ void vector_v2_app_step(VectorV2AppSession& session) {
   if (demo_pointer_hide_us.has_value() &&
       static_cast<std::int32_t>(loop_us - *demo_pointer_hide_us) >= 0) {
     presenter.set_demo_pointer(std::nullopt);
-    if (presenter.present_demo_pointer(chrome, loop_us).passed) {
+    if (presenter.present_demo_overlay(chrome, loop_us).passed) {
       demo_pointer_hide_us.reset();
     } else {
       *demo_pointer_hide_us = loop_us + 10'000U;
+    }
+  }
+  if (demo_side_button_hide_us.has_value() &&
+      static_cast<std::int32_t>(loop_us - *demo_side_button_hide_us) >= 0) {
+    presenter.set_demo_side_button_pressed(false);
+    if (presenter.present_demo_overlay(chrome, loop_us).passed) {
+      demo_side_button_hide_us.reset();
+    } else {
+      *demo_side_button_hide_us = loop_us + 10'000U;
     }
   }
 #endif
@@ -316,7 +328,7 @@ void vector_v2_app_step(VectorV2AppSession& session) {
   if (replay_touch_event) {
     if (lift_event) {
       presenter.set_demo_pointer(point, kDemoPointerReleasedOpacity);
-      demo_pointer_hide_us = loop_us + kDemoPointerReleaseHoldUs;
+      demo_pointer_hide_us = loop_us + kDemoOverlayHoldUs;
     } else {
       demo_pointer_hide_us.reset();
       presenter.set_demo_pointer(point);
@@ -331,7 +343,16 @@ void vector_v2_app_step(VectorV2AppSession& session) {
 #endif
 
   if (replay_chrome_toggle) {
+#ifdef TINYDRAW_VECTOR_V2_DEMO
+    presenter.set_demo_side_button_pressed(true);
+    demo_side_button_hide_us = loop_us + kDemoOverlayHoldUs;
+#endif
     static_cast<void>(toggle_hud(event_us));
+#ifdef TINYDRAW_VECTOR_V2_DEMO
+    if (presenter.demo_overlay_refresh_pending()) {
+      static_cast<void>(presenter.present_demo_overlay(chrome, event_us));
+    }
+#endif
     return;
   }
 
@@ -760,8 +781,8 @@ void vector_v2_app_step(VectorV2AppSession& session) {
   // Drawing and navigation presents absorb this damage into their existing
   // panel update. Stationary toolbar contacts need this small standalone
   // update so the replay finger is still visible before the tap resolves.
-  if (replay_touch_event && presenter.demo_pointer_refresh_pending()) {
-    static_cast<void>(presenter.present_demo_pointer(chrome, event_us));
+  if (replay_touch_event && presenter.demo_overlay_refresh_pending()) {
+    static_cast<void>(presenter.present_demo_overlay(chrome, event_us));
   }
 #endif
 

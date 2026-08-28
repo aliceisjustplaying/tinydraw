@@ -217,6 +217,10 @@ inline constexpr int kChromeDemoPointerRadius = 20;
 [[nodiscard]] ChromeRect chrome_demo_pointer_region(ChromePoint point);
 [[nodiscard]] bool paint_demo_pointer(const MinimapSurface& surface, ChromePoint point,
                                       std::uint8_t opacity = 255U);
+// A right-edge tab makes replayed presses of the physical side button
+// visible in screen recordings.
+[[nodiscard]] ChromeRect chrome_demo_side_button_region();
+[[nodiscard]] bool paint_demo_side_button(const MinimapSurface& surface);
 
 // Caller-funded PSRAM for prerendered fixed chrome sprites. The cache keeps
 // rasterization out of per-strip DMA staging while the canvas ring remains

@@ -98,6 +98,7 @@ struct VectorV2AppSession {
   std::uint32_t button_pressed_us = 0U;
   std::uint32_t demo_replay_sequence = 0U;
   std::optional<std::uint32_t> demo_pointer_hide_us;
+  std::optional<std::uint32_t> demo_side_button_hide_us;
   bool demo_sampler_stopped = false;
 #endif
   std::uint16_t next_gesture = 1U;

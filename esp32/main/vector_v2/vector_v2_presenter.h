@@ -136,10 +136,11 @@ class VectorV2Presenter {
   // Presentation-only demo pointer. Movement accumulates the union of the
   // old and new circles so the next ordinary present also erases the old one.
   void set_demo_pointer(std::optional<Point> point, std::uint8_t opacity = 255U);
-  [[nodiscard]] bool demo_pointer_refresh_pending() const {
-    return demo_pointer_damage_.has_value();
+  void set_demo_side_button_pressed(bool pressed);
+  [[nodiscard]] bool demo_overlay_refresh_pending() const {
+    return demo_overlay_damage_.has_value();
   }
-  [[nodiscard]] LivePresentationTiming present_demo_pointer(const vector_v2::ChromeState& chrome,
+  [[nodiscard]] LivePresentationTiming present_demo_overlay(const vector_v2::ChromeState& chrome,
                                                             std::uint32_t event_us);
 
   [[nodiscard]] LivePresentationTiming refresh(const vector_v2::ChromeState& chrome,
@@ -261,6 +262,7 @@ class VectorV2Presenter {
   void overlay_pending(vector_v2::PixelRect level_bounds, std::span<std::uint16_t> pixels,
                        int stride);
   void interrupt_refresh();
+  void include_demo_overlay_damage(vector_v2::PixelRect bounds);
 
   vector_v2::MaterializedCanvas& canvas_;
   const vector_v2::OperationLog* authority_ = nullptr;
@@ -276,7 +278,8 @@ class VectorV2Presenter {
   std::uint16_t live_provisional_color_ = 0;
   std::optional<Point> demo_pointer_;
   std::uint8_t demo_pointer_opacity_ = 255U;
-  std::optional<vector_v2::PixelRect> demo_pointer_damage_;
+  bool demo_side_button_pressed_ = false;
+  std::optional<vector_v2::PixelRect> demo_overlay_damage_;
   vector_v2::ZoomLevel frame_zoom_ = vector_v2::ZoomLevel::k25Percent;
   int frame_level_x_ = 0;
   int frame_level_y_ = 0;

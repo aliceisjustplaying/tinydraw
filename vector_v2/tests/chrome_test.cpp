@@ -459,6 +459,26 @@ TEST_CASE("demo pointer blends a clipped translucent disk with an opaque rim") {
         tinydraw::vector_v2::ChromeRect{0, 0, 22, 22});
 }
 
+TEST_CASE("demo side button press paints a clipped right-edge tab") {
+  constexpr int width = 40;
+  constexpr int height = 68;
+  constexpr int origin_x = 328;
+  constexpr int origin_y = 36;
+  constexpr std::uint16_t background = 0xFFFFU;
+  std::vector<std::uint16_t> pixels(static_cast<std::size_t>(width * height), background);
+
+  CHECK(tinydraw::vector_v2::chrome_demo_side_button_region() ==
+        tinydraw::vector_v2::ChromeRect{338, 40, 368, 100});
+  REQUIRE(tinydraw::vector_v2::paint_demo_side_button({pixels, width, height, origin_x, origin_y}));
+  CHECK(pixels[static_cast<std::size_t>(70 - origin_y) * width + (344 - origin_x)] != background);
+  CHECK(pixels[static_cast<std::size_t>(70 - origin_y) * width + (350 - origin_x)] == background);
+
+  const auto painted = pixels;
+  CHECK_FALSE(tinydraw::vector_v2::paint_demo_side_button(
+      {pixels, width, height, origin_x, origin_y, true}));
+  CHECK(pixels == painted);
+}
+
 TEST_CASE("chrome canvas clipping follows the visible overlay") {
   ChromeState state;
   CHECK(tinydraw::vector_v2::chrome_canvas_bottom(state) == 372);

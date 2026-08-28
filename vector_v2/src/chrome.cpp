@@ -696,6 +696,26 @@ bool paint_demo_pointer(const MinimapSurface& surface, ChromePoint point, std::u
   return true;
 }
 
+ChromeRect chrome_demo_side_button_region() { return {338, 40, kWidth, 100}; }
+
+bool paint_demo_side_button(const MinimapSurface& surface) {
+  if (surface.byte_swapped || surface.width <= 0 || surface.height <= 0 ||
+      surface.pixels.size() <
+          static_cast<std::size_t>(surface.width) * static_cast<std::size_t>(surface.height)) {
+    return false;
+  }
+  Painter painter(surface.pixels, surface.width, surface.height, surface.origin_x,
+                  surface.origin_y);
+  // The capsule continues beyond the panel edge, reading as the physical
+  // side button momentarily pushing into the display. The chevron points in
+  // the direction of travel.
+  painter.rounded({340, 42, 376, 98}, 12, kBorder);
+  painter.rounded({342, 44, 376, 96}, 10, kInk);
+  painter.line({360, 60, 350, 70}, kWhite, 2);
+  painter.line({350, 70, 360, 80}, kWhite, 2);
+  return true;
+}
+
 int chrome_zoom_display_multiplier(int zoom_percent) {
   return std::clamp(zoom_percent / 25, 1, 16);
 }

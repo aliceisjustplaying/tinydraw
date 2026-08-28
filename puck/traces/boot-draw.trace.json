@@ -4,7 +4,7 @@
   "device": {
     "name": "TinyDraw V2",
     "panel": { "w": 368, "h": 448, "format": "rgb565be" },
-    "buttons": [{ "id": "hud", "label": "HUD / DEMO", "edge": "right", "at": 0.5 }],
+    "buttons": [{ "id": "hud", "label": "HUD / DEMO", "edge": "right", "at": 0.16 }],
     "touch": { "points": 1 }
   },
   "events": [
