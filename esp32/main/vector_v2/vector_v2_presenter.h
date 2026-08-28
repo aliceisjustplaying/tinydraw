@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 
 #include "co5300_panel_transport.h"
@@ -131,6 +132,15 @@ class VectorV2Presenter {
   // Background polish includes this epoch in its completion fingerprint.
   [[nodiscard]] std::uint64_t frame_compose_epoch() const { return frame_compose_epoch_; }
   [[nodiscard]] vector_v2::OperationPoint operation_point(InkPoint point) const;
+
+  // Presentation-only demo pointer. Movement accumulates the union of the
+  // old and new circles so the next ordinary present also erases the old one.
+  void set_demo_pointer(std::optional<Point> point);
+  [[nodiscard]] bool demo_pointer_refresh_pending() const {
+    return demo_pointer_damage_.has_value();
+  }
+  [[nodiscard]] LivePresentationTiming present_demo_pointer(const vector_v2::ChromeState& chrome,
+                                                            std::uint32_t event_us);
 
   [[nodiscard]] LivePresentationTiming refresh(const vector_v2::ChromeState& chrome,
                                                std::uint32_t event_us = 0);
@@ -264,6 +274,8 @@ class VectorV2Presenter {
   std::size_t live_provisional_count_ = 0;
   vector_v2::PixelRect live_provisional_bounds_{};
   std::uint16_t live_provisional_color_ = 0;
+  std::optional<Point> demo_pointer_;
+  std::optional<vector_v2::PixelRect> demo_pointer_damage_;
   vector_v2::ZoomLevel frame_zoom_ = vector_v2::ZoomLevel::k25Percent;
   int frame_level_x_ = 0;
   int frame_level_y_ = 0;

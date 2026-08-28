@@ -429,6 +429,29 @@ TEST_CASE("minimap viewport appears only above the whole-canvas zoom") {
   CHECK(viewport_pixel_count(50, 736, 896) > 0U);
 }
 
+TEST_CASE("demo pointer blends a clipped translucent disk with an opaque rim") {
+  constexpr int width = 64;
+  constexpr int height = 64;
+  constexpr std::uint16_t background = 0x001FU;
+  std::vector<std::uint16_t> pixels(static_cast<std::size_t>(width * height), background);
+
+  const ChromePoint center{32.0F, 32.0F};
+  CHECK(tinydraw::vector_v2::chrome_demo_pointer_region(center) ==
+        tinydraw::vector_v2::ChromeRect{11, 11, 54, 54});
+  REQUIRE(tinydraw::vector_v2::paint_demo_pointer({pixels, width, height, 0, 0}, center));
+
+  CHECK(pixels[32U * width + 32U] != background);
+  CHECK(pixels[32U * width + 32U] != 0xFFFFU);
+  CHECK(pixels[32U * width + 52U] == 0x349FU);
+  CHECK(pixels[32U * width + 53U] == background);
+
+  const auto before_swapped = pixels;
+  CHECK_FALSE(tinydraw::vector_v2::paint_demo_pointer({pixels, width, height, 0, 0, true}, center));
+  CHECK(pixels == before_swapped);
+  CHECK(tinydraw::vector_v2::chrome_demo_pointer_region({0.0F, 0.0F}) ==
+        tinydraw::vector_v2::ChromeRect{0, 0, 22, 22});
+}
+
 TEST_CASE("chrome canvas clipping follows the visible overlay") {
   ChromeState state;
   CHECK(tinydraw::vector_v2::chrome_canvas_bottom(state) == 372);

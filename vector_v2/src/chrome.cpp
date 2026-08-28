@@ -45,6 +45,22 @@ bool rects_intersect(ChromeRect lhs, ChromeRect rhs) {
   return lhs.x0 < rhs.x1 && lhs.x1 > rhs.x0 && lhs.y0 < rhs.y1 && lhs.y1 > rhs.y0;
 }
 
+std::uint16_t blend_rgb565(std::uint16_t background, std::uint16_t foreground,
+                           std::uint16_t foreground_weight) {
+  constexpr std::uint16_t denominator = 256U;
+  const std::uint16_t background_weight = denominator - foreground_weight;
+  const auto blend_channel = [=](std::uint16_t background_channel,
+                                 std::uint16_t foreground_channel) {
+    return static_cast<std::uint16_t>(
+        (background_channel * background_weight + foreground_channel * foreground_weight + 128U) /
+        denominator);
+  };
+  const std::uint16_t red = blend_channel((background >> 11U) & 0x1FU, (foreground >> 11U) & 0x1FU);
+  const std::uint16_t green = blend_channel((background >> 5U) & 0x3FU, (foreground >> 5U) & 0x3FU);
+  const std::uint16_t blue = blend_channel(background & 0x1FU, foreground & 0x1FU);
+  return static_cast<std::uint16_t>((red << 11U) | (green << 5U) | blue);
+}
+
 void draw_dock(Painter& painter, int top, int bottom) {
   painter.rounded({6, top + 3, kWidth - 2, bottom + 3}, 11, kShadow);
   painter.rounded({3, top - 1, kWidth - 3, bottom + 1}, 11, kBorder);
@@ -632,6 +648,53 @@ void draw_time_sync_toast(Painter& painter, const ChromeState& state) {
 }
 
 }  // namespace
+
+ChromeRect chrome_demo_pointer_region(ChromePoint point) {
+  constexpr int padding = kChromeDemoPointerRadius + 1;
+  const int center_x = static_cast<int>(std::lround(point.x));
+  const int center_y = static_cast<int>(std::lround(point.y));
+  return {
+      .x0 = std::clamp(center_x - padding, 0, kWidth),
+      .y0 = std::clamp(center_y - padding, 0, kHeight),
+      .x1 = std::clamp(center_x + padding + 1, 0, kWidth),
+      .y1 = std::clamp(center_y + padding + 1, 0, kHeight),
+  };
+}
+
+bool paint_demo_pointer(const MinimapSurface& surface, ChromePoint point) {
+  if (surface.byte_swapped || surface.width <= 0 || surface.height <= 0 ||
+      surface.pixels.size() <
+          static_cast<std::size_t>(surface.width) * static_cast<std::size_t>(surface.height)) {
+    return false;
+  }
+  const int center_x = static_cast<int>(std::lround(point.x));
+  const int center_y = static_cast<int>(std::lround(point.y));
+  const ChromeRect pointer = chrome_demo_pointer_region(point);
+  const int x0 = std::max(pointer.x0, surface.origin_x);
+  const int y0 = std::max(pointer.y0, surface.origin_y);
+  const int x1 = std::min(pointer.x1, surface.origin_x + surface.width);
+  const int y1 = std::min(pointer.y1, surface.origin_y + surface.height);
+  constexpr int outer_squared = kChromeDemoPointerRadius * kChromeDemoPointerRadius;
+  constexpr int inner_radius = kChromeDemoPointerRadius - 3;
+  constexpr int inner_squared = inner_radius * inner_radius;
+  constexpr std::uint16_t fill_weight = 72U;
+  for (int y = y0; y < y1; ++y) {
+    const int dy = y - center_y;
+    for (int x = x0; x < x1; ++x) {
+      const int dx = x - center_x;
+      const int squared_distance = dx * dx + dy * dy;
+      if (squared_distance > outer_squared) {
+        continue;
+      }
+      auto& pixel = surface.pixels[static_cast<std::size_t>(y - surface.origin_y) *
+                                       static_cast<std::size_t>(surface.width) +
+                                   static_cast<std::size_t>(x - surface.origin_x)];
+      pixel =
+          squared_distance >= inner_squared ? kSelected : blend_rgb565(pixel, kWhite, fill_weight);
+    }
+  }
+  return true;
+}
 
 int chrome_zoom_display_multiplier(int zoom_percent) {
   return std::clamp(zoom_percent / 25, 1, 16);

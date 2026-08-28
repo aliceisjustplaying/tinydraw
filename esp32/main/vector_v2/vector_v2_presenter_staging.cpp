@@ -484,6 +484,12 @@ bool VectorV2Presenter::paint_stage_surface(StageContext& context,
                                     canvas_.current_revision().value)) {
     return false;
   }
+  if (demo_pointer_.has_value() &&
+      !vector_v2::paint_demo_pointer({surface.pixels, surface.width, surface.height,
+                                      surface.panel_x, surface.panel_y, surface.byte_swapped},
+                                     {demo_pointer_->x, demo_pointer_->y})) {
+    return false;
+  }
   context.chrome_us += esp_timer_get_time() - chrome_started;
 #ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
   if (optical_row_pattern_enabled_) {
@@ -534,7 +540,7 @@ LivePresentationTiming VectorV2Presenter::present_ring(
       rows_per_strip,
       {.context = &context,
        .paint = &paint_stage_thunk,
-       .accepts_byte_swapped = live_provisional_count_ == 0U &&
+       .accepts_byte_swapped = live_provisional_count_ == 0U && !demo_pointer_.has_value() &&
                                vector_v2::chrome_accepts_byte_swapped_staging(chrome)});
   if (!streamed) {
     return timing;

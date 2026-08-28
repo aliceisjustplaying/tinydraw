@@ -186,6 +186,7 @@ void vector_v2_app_step(VectorV2AppSession& session) {
     interaction = InteractionMode::kIdle;
     minimap_release_us.reset();
     stroke_report.pending = false;
+    presenter.set_demo_pointer(std::nullopt);
     navigation = vector_v2::NavigationState{};
     const int battery_percentage = chrome.battery_percentage;
     const bool battery_charging = chrome.battery_charging;
@@ -226,6 +227,10 @@ void vector_v2_app_step(VectorV2AppSession& session) {
 #ifdef TINYDRAW_VECTOR_V2_DEMO
   if (demo_sampler_stopped && !demo.replaying()) {
     const bool replay_failed = demo.replay_failed();
+    presenter.set_demo_pointer(std::nullopt);
+    if (presenter.demo_pointer_refresh_pending()) {
+      static_cast<void>(presenter.present_demo_pointer(chrome, loop_us));
+    }
     touch_sampler.discard_pending();
     if (!touch_sampler.start()) {
       std::printf("TINYDRAW_DEMO_FAIL reason=touch_restart\n");
@@ -245,6 +250,7 @@ void vector_v2_app_step(VectorV2AppSession& session) {
   std::optional<SampledTouch> sampled_touch;
   bool replay_chrome_toggle = false;
 #ifdef TINYDRAW_VECTOR_V2_DEMO
+  bool replay_touch_event = false;
   std::uint32_t replay_event_us = loop_us;
   const TouchUrgencyProbe input_urgency = demo_sampler_stopped
                                               ? TouchUrgencyProbe(demo.replay_urgency_flag())
@@ -252,6 +258,7 @@ void vector_v2_app_step(VectorV2AppSession& session) {
   if (demo.replaying()) {
     if (const auto replay_event = demo.pop_due(loop_us); replay_event.has_value()) {
       if (const auto kind = vector_v2::demo_touch_kind(replay_event->kind); kind.has_value()) {
+        replay_touch_event = true;
         sampled_touch = SampledTouch{
             .point = {.x = replay_event->point.x, .y = replay_event->point.y},
             .timestamp_us = replay_event->timestamp_us,
@@ -296,6 +303,11 @@ void vector_v2_app_step(VectorV2AppSession& session) {
                                  : replay_chrome_toggle ? replay_event_us
 #endif
                                                         : loop_us;
+#ifdef TINYDRAW_VECTOR_V2_DEMO
+  if (replay_touch_event) {
+    presenter.set_demo_pointer(lift_event ? std::nullopt : std::optional<Point>{point});
+  }
+#endif
   bool cosmetic_work = false;
 #ifdef TINYDRAW_VECTOR_V2_DEMO
   const bool persist_authority = !demo.active();
@@ -728,6 +740,15 @@ void vector_v2_app_step(VectorV2AppSession& session) {
       poll_max_us = 0;
     }
   }
+
+#ifdef TINYDRAW_VECTOR_V2_DEMO
+  // Drawing and navigation presents absorb this damage into their existing
+  // panel update. Stationary toolbar contacts need this small standalone
+  // update so the replay finger is still visible before the tap resolves.
+  if (replay_touch_event && presenter.demo_pointer_refresh_pending()) {
+    static_cast<void>(presenter.present_demo_pointer(chrome, event_us));
+  }
+#endif
 
   if (presenter.refresh_composing()) {
     // The first slice can be requested from inside input handling. Keep the

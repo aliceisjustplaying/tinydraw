@@ -71,6 +71,38 @@ vector_v2::OperationPoint VectorV2Presenter::operation_point(InkPoint point) con
   };
 }
 
+void VectorV2Presenter::set_demo_pointer(std::optional<Point> point) {
+  const auto include = [this](Point candidate) {
+    const vector_v2::ChromeRect chrome_bounds =
+        vector_v2::chrome_demo_pointer_region({candidate.x, candidate.y});
+    const vector_v2::PixelRect bounds{chrome_bounds.x0, chrome_bounds.y0, chrome_bounds.x1,
+                                      chrome_bounds.y1};
+    if (!demo_pointer_damage_.has_value()) {
+      demo_pointer_damage_ = bounds;
+      return;
+    }
+    demo_pointer_damage_->x0 = std::min(demo_pointer_damage_->x0, bounds.x0);
+    demo_pointer_damage_->y0 = std::min(demo_pointer_damage_->y0, bounds.y0);
+    demo_pointer_damage_->x1 = std::max(demo_pointer_damage_->x1, bounds.x1);
+    demo_pointer_damage_->y1 = std::max(demo_pointer_damage_->y1, bounds.y1);
+  };
+  if (demo_pointer_.has_value()) {
+    include(*demo_pointer_);
+  }
+  demo_pointer_ = point;
+  if (demo_pointer_.has_value()) {
+    include(*demo_pointer_);
+  }
+}
+
+LivePresentationTiming VectorV2Presenter::present_demo_pointer(const vector_v2::ChromeState& chrome,
+                                                               std::uint32_t event_us) {
+  if (!demo_pointer_damage_.has_value()) {
+    return {.passed = true};
+  }
+  return present_with_overlays(*demo_pointer_damage_, chrome, event_us, 0, false);
+}
+
 void VectorV2Presenter::overlay_pending(vector_v2::PixelRect level_bounds,
                                         std::span<std::uint16_t> pixels, int stride) {
   // Lockstep is the overwhelmingly common case; the revision check keeps the
@@ -594,6 +626,13 @@ vector_v2::ChromeNavigation VectorV2Presenter::chrome_navigation() const {
 LivePresentationTiming VectorV2Presenter::present_with_overlays(
     vector_v2::PixelRect bounds, const vector_v2::ChromeState& chrome, std::uint32_t event_us,
     std::int64_t compose_us, bool allow_minimap_refresh) {
+  const bool includes_demo_pointer_damage = demo_pointer_damage_.has_value();
+  if (demo_pointer_damage_.has_value()) {
+    bounds.x0 = std::min(bounds.x0, demo_pointer_damage_->x0);
+    bounds.y0 = std::min(bounds.y0, demo_pointer_damage_->y0);
+    bounds.x1 = std::max(bounds.x1, demo_pointer_damage_->x1);
+    bounds.y1 = std::max(bounds.y1, demo_pointer_damage_->y1);
+  }
   const bool overview_changed =
       !minimap_presented_ || presented_minimap_revision_ != canvas_.current_revision();
   const bool refresh_minimap =
@@ -609,6 +648,9 @@ LivePresentationTiming VectorV2Presenter::present_with_overlays(
   }
   auto timing = frame_ring_bottom_ == 0 ? present(bounds, chrome, event_us, compose_us)
                                         : present_ring_region(bounds, chrome, event_us, compose_us);
+  if (includes_demo_pointer_damage && timing.passed) {
+    demo_pointer_damage_.reset();
+  }
   if (refresh_minimap && timing.passed) {
     presented_minimap_revision_ = canvas_.current_revision();
     minimap_presented_ = true;

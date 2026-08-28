@@ -211,6 +211,12 @@ struct MinimapSurface {
   bool byte_swapped = false;
 };
 
+// Demo replay's presentation-only finger. The fill is blended over staged
+// pixels, so it never mutates drawing authority or the presenter's frame.
+inline constexpr int kChromeDemoPointerRadius = 20;
+[[nodiscard]] ChromeRect chrome_demo_pointer_region(ChromePoint point);
+[[nodiscard]] bool paint_demo_pointer(const MinimapSurface& surface, ChromePoint point);
+
 // Caller-funded PSRAM for prerendered fixed chrome sprites. The cache keeps
 // rasterization out of per-strip DMA staging while the canvas ring remains
 // presentation-pure. Popup/modal states use the uncached general renderer.

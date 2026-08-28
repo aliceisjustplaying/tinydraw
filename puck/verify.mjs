@@ -106,19 +106,23 @@ const scenarios = [
   },
   {
     trace: "demo.trace.json",
-    captures: [900, 980, 1940, 2772, 3060],
+    captures: [900, 980, 1940, 2772, 2804, 3060],
     check(run) {
       const drawn = run.frames.get(980);
       const recorded = run.frames.get(1940);
       const replayBaseline = run.frames.get(2772);
+      const replayPointer = run.frames.get(2804);
       const replayed = run.frames.get(3060);
-      assert(drawn && recorded && replayBaseline && replayed, "demo captures are missing");
+      assert(drawn && recorded && replayBaseline && replayPointer && replayed,
+        "demo captures are missing");
       assert(inkPixels(drawn) > 50, "demo recording did not capture a visible Stroke");
       assert(nonPaperPixels(recorded, { x: 0, y: 372, w: 368, h: 76 }) > 100,
         "short BOOT hid the bottom toolbar during demo recording");
       assert(inkPixels(recorded) > 50, "hiding the HUD lost the demo recording's Stroke");
       assert(inkPixels(replayBaseline) < inkPixels(drawn) / 3,
         `demo replay did not start from a blank authority baseline: ${inkPixels(replayBaseline)} versus ${inkPixels(drawn)}`);
+      assert(nonPaperPixels(replayPointer, { x: 84, y: 99, w: 43, h: 43 }) > 300,
+        "demo replay did not show the virtual finger at the replayed touch point");
       assert.equal(diffPixels(recorded, replayed), 0,
         "demo replay did not reproduce the hidden-HUD recording exactly");
       assert.equal(run.log.some((line) => line.startsWith("TINYDRAW_DEMO_FAIL")), false,
