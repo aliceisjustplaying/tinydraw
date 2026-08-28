@@ -86,6 +86,8 @@ void vector_v2_app_step(VectorV2AppSession& session) {
   Point& toolbar_start = session.toolbar_start;
   Point& toolbar_sum = session.toolbar_sum;
   std::uint32_t& toolbar_samples = session.toolbar_samples;
+  std::optional<std::uint32_t>& minimap_release_us = session.minimap_release_us;
+  Point& minimap_release_point = session.minimap_release_point;
   Point& pan_start = session.pan_start;
   int& pan_start_x = session.pan_start_x;
   int& pan_start_y = session.pan_start_y;
@@ -182,6 +184,7 @@ void vector_v2_app_step(VectorV2AppSession& session) {
 
   const auto reset_demo_baseline = [&](bool recording) {
     interaction = InteractionMode::kIdle;
+    minimap_release_us.reset();
     stroke_report.pending = false;
     navigation = vector_v2::NavigationState{};
     const int battery_percentage = chrome.battery_percentage;
@@ -487,9 +490,19 @@ void vector_v2_app_step(VectorV2AppSession& session) {
         interaction = InteractionMode::kDismissOverlay;
         static_cast<void>(advance_full_refresh("toast-dismiss", loop_us));
       }
+      const bool suppress_minimap_recontact =
+          minimap_release_us.has_value() &&
+          vector_v2::chrome_suppresses_minimap_recontact(
+              {minimap_release_point.x, minimap_release_point.y}, {point.x, point.y},
+              event_us - *minimap_release_us, chrome);
+      if (minimap_release_us.has_value() && !suppress_minimap_recontact) {
+        minimap_release_us.reset();
+      }
       if (interaction == InteractionMode::kDismissOverlay) {
         // Consume the complete gesture that dismisses a terminal toast so
         // it cannot also begin a stroke or navigation gesture beneath it.
+      } else if (suppress_minimap_recontact) {
+        interaction = InteractionMode::kDismissOverlay;
       } else if (vector_v2::chrome_minimap_contains({point.x, point.y}, chrome)) {
         // The minimap is an absolute pointer for every tool: Down acquires
         // immediately, then every changed Move follows the finger without a
@@ -594,6 +607,8 @@ void vector_v2_app_step(VectorV2AppSession& session) {
     if (completed_interaction == InteractionMode::kDismissOverlay) {
       // The gesture was fully consumed when the overlay was dismissed.
     } else if (completed_interaction == InteractionMode::kMinimapPan) {
+      minimap_release_us = event_us;
+      minimap_release_point = point;
       print_pan_baseline(presenter, pan_metrics);
 #ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
       print_live_ledger("minimap_pointer_end");

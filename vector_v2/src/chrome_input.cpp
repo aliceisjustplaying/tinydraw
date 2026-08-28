@@ -189,6 +189,18 @@ bool chrome_promotes_minimap_dock_drag(ChromePoint start, ChromePoint current,
              kMinimapDockDragPromotionPixels * kMinimapDockDragPromotionPixels;
 }
 
+bool chrome_suppresses_minimap_recontact(ChromePoint released, ChromePoint current,
+                                         std::uint32_t elapsed_us, const ChromeState& state) {
+  constexpr std::uint32_t kRecontactWindowUs = 120'000U;
+  constexpr float kRecontactRadiusPixels = 32.0F;
+  if (elapsed_us > kRecontactWindowUs || !chrome_contains(current, state)) {
+    return false;
+  }
+  const float delta_x = current.x - released.x;
+  const float delta_y = current.y - released.y;
+  return delta_x * delta_x + delta_y * delta_y <= kRecontactRadiusPixels * kRecontactRadiusPixels;
+}
+
 bool chrome_contains(ChromePoint point, const ChromeState& state) {
   if (state.confirm_new || state.export_status == ChromeExportStatus::kSaving ||
       export_mode_active(state) || time_sync_active(state)) {

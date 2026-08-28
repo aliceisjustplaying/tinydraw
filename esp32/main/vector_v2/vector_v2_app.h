@@ -84,6 +84,8 @@ struct VectorV2AppSession {
   Point toolbar_start{};
   Point toolbar_sum{};
   std::uint32_t toolbar_samples = 0;
+  std::optional<std::uint32_t> minimap_release_us;
+  Point minimap_release_point{};
   Point pan_start{};
   int pan_start_x = 0;
   int pan_start_y = 0;

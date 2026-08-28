@@ -327,6 +327,19 @@ TEST_CASE("ambiguous minimap dock presses preserve taps and promote deliberate d
       {274.0F, 400.0F}, {.popup = ChromePopup::kSizes}));
 }
 
+TEST_CASE("minimap release keeps ownership across a split contact over chrome") {
+  const ChromeState state;
+  const ChromePoint released{332.0F, 150.0F};
+  CHECK(tinydraw::vector_v2::chrome_suppresses_minimap_recontact(released, {334.0F, 153.0F}, 8'000U,
+                                                                 state));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_suppresses_minimap_recontact(released, {334.0F, 153.0F},
+                                                                       120'001U, state));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_suppresses_minimap_recontact(released, {280.0F, 150.0F},
+                                                                       8'000U, state));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_suppresses_minimap_recontact(released, {280.0F, 200.0F},
+                                                                       8'000U, state));
+}
+
 TEST_CASE("minimap pointer absolutely centers the viewport at every zoom") {
   constexpr tinydraw::vector_v2::ChromeLevelPoint focus{184, 186};
   const tinydraw::vector_v2::ChromeNavigation navigation{
@@ -489,9 +502,8 @@ TEST_CASE("hidden HUD leaves the canvas untouched and paints the bottom toolbar"
 }
 
 TEST_CASE("hiding the HUD dismisses transient popups and critical screens block the toggle") {
-  for (const ChromePopup popup :
-       std::array{ChromePopup::kTools, ChromePopup::kColors, ChromePopup::kSizes,
-                  ChromePopup::kDocument}) {
+  for (const ChromePopup popup : std::array{ChromePopup::kTools, ChromePopup::kColors,
+                                            ChromePopup::kSizes, ChromePopup::kDocument}) {
     ChromeState state{.popup = popup};
     CHECK(tinydraw::vector_v2::toggle_hud_visibility(state));
     CHECK_FALSE(state.hud_visible);

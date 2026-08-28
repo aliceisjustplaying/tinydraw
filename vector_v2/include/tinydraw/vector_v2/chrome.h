@@ -171,6 +171,12 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
 [[nodiscard]] bool chrome_minimap_dock_drag_candidate(ChromePoint point, const ChromeState& state);
 [[nodiscard]] bool chrome_promotes_minimap_dock_drag(ChromePoint start, ChromePoint current,
                                                      const ChromeState& state);
+// Some touch-controller releases briefly reappear as a second contact. A
+// minimap drag keeps ownership across that nearby recontact so lifting over a
+// chrome control cannot activate it.
+[[nodiscard]] bool chrome_suppresses_minimap_recontact(ChromePoint released, ChromePoint current,
+                                                       std::uint32_t elapsed_us,
+                                                       const ChromeState& state);
 // Zoom controls own stationary taps, but a deliberate drag that starts on the
 // rail becomes a canvas pan when the pan tool is active.
 [[nodiscard]] bool chrome_promotes_pan_drag(ChromePoint start, ChromePoint current,
