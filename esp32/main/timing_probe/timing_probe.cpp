@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iterator>
+#include <unistd.h>
 
 #include "esp_attr.h"
 #include "esp_cache.h"
@@ -82,6 +83,11 @@ std::atomic<bool> g_contention_ready{false};
 std::atomic<bool> g_contention_done{false};
 std::atomic<std::uint32_t> g_contention_checksum{0};
 DRAM_ATTR volatile std::uint32_t g_prepare_checksum = 0;
+
+void flush_console() {
+  std::fflush(stdout);
+  static_cast<void>(::fsync(::fileno(stdout)));
+}
 
 const char* reset_reason_name(esp_reset_reason_t reason) {
   switch (reason) {
@@ -198,7 +204,7 @@ void print_error(const char* phase, const char* reason, esp_err_t error = ESP_OK
   std::fputs(",\"reason\":", stdout);
   print_json_string(reason);
   std::printf(",\"espError\":%d}\n", static_cast<int>(error));
-  std::fflush(stdout);
+  flush_console();
 }
 
 void print_metadata(const ProbeContext& context) {
@@ -262,7 +268,7 @@ void print_metadata(const ProbeContext& context) {
       static_cast<unsigned long>(kSramStreamBytes), static_cast<unsigned long>(kPsramHotBytes),
       static_cast<unsigned long>(kPsramColdBytes), static_cast<unsigned long>(kFlashMapBytes),
       static_cast<unsigned long>(kContentionBytes));
-  std::fflush(stdout);
+  flush_console();
   static_cast<void>(context);
 }
 
@@ -471,7 +477,7 @@ void print_measurement_start(const Measurement& measurement, const char* measure
               ",\"warmupIterations\":%" PRIu32 "}}\n",
               measurement.bytes_per_iteration, measurement.iterations_per_sample,
               measurement.warmup_iterations);
-  std::fflush(stdout);
+  flush_console();
 }
 
 bool run_measurement(const ProbeContext& context, const Measurement& measurement,
@@ -508,7 +514,7 @@ bool run_measurement(const ProbeContext& context, const Measurement& measurement
               kRecordPrefix, kProtocolVersion);
   print_json_string(measurement_id);
   std::printf(",\"samples\":%d}\n", kSamplesPerMeasurement);
-  std::fflush(stdout);
+  flush_console();
   vTaskDelay(1);
   return true;
 }
@@ -665,7 +671,7 @@ void probe_task(void*) {
               kRecordPrefix, kProtocolVersion,
               static_cast<unsigned long>(std::size(kMeasurements) * 2U), kSamplesPerMeasurement,
               passed ? "true" : "false");
-  std::fflush(stdout);
+  flush_console();
   // The console driver drains asynchronously after stdio has flushed. Keep the
   // producer task alive long enough for the one-shot completion record to leave.
   vTaskDelay(pdMS_TO_TICKS(100));
