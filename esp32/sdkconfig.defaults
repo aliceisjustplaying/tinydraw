@@ -4,6 +4,13 @@ CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_USE_CAPS_ALLOC=y
+# Keep cache geometry explicit because timing receipts are only comparable when
+# size, associativity, and line width agree across firmware builds.
+CONFIG_ESP32S3_INSTRUCTION_CACHE_16KB=y
+CONFIG_ESP32S3_INSTRUCTION_CACHE_8WAYS=y
+CONFIG_ESP32S3_INSTRUCTION_CACHE_LINE_32B=y
+CONFIG_ESP32S3_DATA_CACHE_32KB=y
+CONFIG_ESP32S3_DATA_CACHE_8WAYS=y
 # A 64-byte D-cache line matches the long sequential PSRAM transfers used by
 # raster buffers and panel staging. The physical gate improves without changing
 # the 32 KiB cache allocation or export-time internal-heap reserve.

@@ -25,6 +25,12 @@ assert_config() {
   grep -q '^CONFIG_COMPILER_OPTIMIZATION_PERF=y$' "$config"
   grep -q '^CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240$' "$config"
   grep -q '^CONFIG_ESPTOOLPY_FLASHFREQ_80M=y$' "$config"
+  grep -q '^CONFIG_ESP32S3_INSTRUCTION_CACHE_SIZE=0x4000$' "$config"
+  grep -q '^CONFIG_ESP32S3_ICACHE_ASSOCIATED_WAYS=8$' "$config"
+  grep -q '^CONFIG_ESP32S3_INSTRUCTION_CACHE_LINE_SIZE=32$' "$config"
+  grep -q '^CONFIG_ESP32S3_DATA_CACHE_SIZE=0x8000$' "$config"
+  grep -q '^CONFIG_ESP32S3_DCACHE_ASSOCIATED_WAYS=8$' "$config"
+  grep -q '^CONFIG_ESP32S3_DATA_CACHE_LINE_SIZE=64$' "$config"
   grep -q "^CONFIG_SPIRAM_MODE_${memory_mode}=y$" "$config"
 }
 
