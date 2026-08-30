@@ -665,6 +665,9 @@ void probe_task(void*) {
               static_cast<unsigned long>(std::size(kMeasurements) * 2U), kSamplesPerMeasurement,
               passed ? "true" : "false");
   std::fflush(stdout);
+  // The console driver drains asynchronously after stdio has flushed. Keep the
+  // producer task alive long enough for the one-shot completion record to leave.
+  vTaskDelay(pdMS_TO_TICKS(100));
   // This one-shot firmware keeps its probe buffers alive until the next reset.
   // The core-1 contention task may still be leaving its final PSRAM pass here.
   vTaskDelete(nullptr);
