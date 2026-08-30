@@ -542,10 +542,6 @@ bool start_contention(ProbeContext& context) {
   return true;
 }
 
-void stop_contention() {
-  g_contention_run.store(false, std::memory_order_release);
-}
-
 bool initialize_context(ProbeContext& context) {
   context.sram_dependent = static_cast<std::uint32_t*>(heap_caps_malloc(
       kDependentEntries * sizeof(std::uint32_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
@@ -658,7 +654,6 @@ void probe_task(void*) {
   bool passed = run_suite(context, "single_core");
   if (passed && start_contention(context)) {
     passed = run_suite(context, "core1_contended");
-    stop_contention();
   } else if (passed) {
     passed = false;
   }
