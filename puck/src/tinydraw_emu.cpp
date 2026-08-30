@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <new>
 
+#include "esp32s3_timing.h"
 #include "puck_platform.h"
 #include "vector_v2_app.h"
 
@@ -91,6 +92,7 @@ int emu_device(void) { return static_cast<int>(reinterpret_cast<std::uintptr_t>(
 
 int emu_init(void) {
   if (g_session != nullptr) return g_running ? 1 : 0;
+  tinydraw::puck::timing::reset_all();
   g_session = new (static_cast<void*>(g_session_storage)) tinydraw::esp32::VectorV2AppSession();
   // The app's own bring-up: allocate ~7.6 MiB of document working set, restore
   // authority, bootstrap the canvas, build the chrome, present the first
@@ -106,6 +108,7 @@ int emu_init(void) {
 
 void emu_tick(std::uint32_t now_ms) {
   tinydraw::puck::reset_pushes();
+  tinydraw::puck::timing::reset_observations();
   if (!g_running) return;
   tinydraw::puck::clock_set_floor_ms(now_ms);
 
@@ -153,6 +156,21 @@ void emu_sensor_event(int index) {
   if (index < 0) {
     tinydraw::puck::fail_next_panel_streams(static_cast<std::uint32_t>(-index));
   }
+}
+
+// Optional timing-lab exports. They are intentionally outside Puck's device
+// ABI: normal Puck ignores them, while the lab reads one versioned ledger of
+// explicitly accounted events. Host trace time remains emu_tick(now_ms).
+int emu_timing_schema(void) {
+  return static_cast<int>(reinterpret_cast<std::uintptr_t>(tinydraw::puck::timing::schema_json()));
+}
+
+int emu_timing_snapshot(void) {
+  return static_cast<int>(reinterpret_cast<std::uintptr_t>(&tinydraw::puck::timing::snapshot()));
+}
+
+int emu_timing_snapshot_size(void) {
+  return static_cast<int>(sizeof(tinydraw::puck::timing::SnapshotV1));
 }
 
 }  // extern "C"

@@ -27,6 +27,7 @@
 #include <limits>
 
 #include "driver/gpio.h"
+#include "esp32s3_timing.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -244,24 +245,39 @@ extern "C" esp_err_t esp_timer_delete(esp_timer_handle_t timer) {
 
 // ---- <esp_heap_caps.h> -----------------------------------------------------
 //
-// One flat heap. The capability bits are ignored, which loses the board's
-// internal-vs-PSRAM placement (a speed property, and emu_abi.h says never to
-// trust speed here) and keeps the allocation order and sizes exactly as
-// AppStorage asks for them.
+// One flat allocator, plus a shadow capability registry for the opt-in timing
+// ledger. Pointer behavior remains wasm's; the registry records only the
+// placement class requested by the real firmware.
 
 namespace {
+tinydraw::puck::timing::MemoryClass memory_class_for_caps(std::uint32_t caps) {
+  if ((caps & MALLOC_CAP_SPIRAM) != 0U) {
+    return tinydraw::puck::timing::MemoryClass::kPsram;
+  }
+  if ((caps & MALLOC_CAP_INTERNAL) != 0U) {
+    return tinydraw::puck::timing::MemoryClass::kInternal;
+  }
+  return tinydraw::puck::timing::MemoryClass::kUnclassified;
+}
 }  // namespace
 
-extern "C" void* heap_caps_malloc(std::size_t size, std::uint32_t) {
-  return std::malloc(size);
+extern "C" void* heap_caps_malloc(std::size_t size, std::uint32_t caps) {
+  void* pointer = std::malloc(size);
+  tinydraw::puck::timing::register_allocation(pointer, size, memory_class_for_caps(caps));
+  return pointer;
 }
 
-extern "C" void* heap_caps_calloc(std::size_t count, std::size_t size, std::uint32_t) {
-  return std::calloc(count, size);
+extern "C" void* heap_caps_calloc(std::size_t count, std::size_t size, std::uint32_t caps) {
+  void* pointer = std::calloc(count, size);
+  const std::size_t bytes =
+      size != 0U && count > std::numeric_limits<std::size_t>::max() / size ? 0U : count * size;
+  tinydraw::puck::timing::register_allocation(pointer, bytes, memory_class_for_caps(caps));
+  tinydraw::puck::timing::record_write(pointer, bytes);
+  return pointer;
 }
 
 extern "C" void* heap_caps_aligned_alloc(std::size_t alignment, std::size_t size,
-                                          std::uint32_t) {
+                                          std::uint32_t caps) {
   if (alignment == 0U || (alignment & (alignment - 1U)) != 0U) {
     return nullptr;
   }
@@ -273,10 +289,15 @@ extern "C" void* heap_caps_aligned_alloc(std::size_t alignment, std::size_t size
     }
     size += padding;
   }
-  return std::aligned_alloc(alignment, size);
+  void* pointer = std::aligned_alloc(alignment, size);
+  tinydraw::puck::timing::register_allocation(pointer, size, memory_class_for_caps(caps));
+  return pointer;
 }
 
-extern "C" void heap_caps_free(void* pointer) { std::free(pointer); }
+extern "C" void heap_caps_free(void* pointer) {
+  tinydraw::puck::timing::unregister_allocation(pointer);
+  std::free(pointer);
+}
 
 // A flat wasm allocator cannot truthfully report ESP-IDF capability heaps.
 extern "C" std::size_t heap_caps_get_free_size(std::uint32_t) { return 0U; }

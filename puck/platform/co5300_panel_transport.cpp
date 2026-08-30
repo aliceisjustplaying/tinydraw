@@ -42,6 +42,7 @@
 #include <array>
 #include <cstring>
 
+#include "esp32s3_timing.h"
 #include "esp_timer.h"
 #include "puck_platform.h"
 
@@ -115,6 +116,10 @@ class Co5300PanelTransport::Impl {
 
   void publish(int panel_x, int panel_y, int width, int height, const std::uint16_t* staged,
                int staged_stride, bool staged_swapped) {
+    const std::size_t transfer_bytes =
+        static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * sizeof(*staged);
+    puck::timing::record_internal_read(transfer_bytes);
+    puck::timing::record_panel_write(transfer_bytes);
     std::uint16_t* frame = puck::framebuffer();
     for (int row = 0; row < height; ++row) {
       std::uint16_t* out = frame + static_cast<std::size_t>(panel_y + row) * kPanelWidth + panel_x;
@@ -165,8 +170,12 @@ class Co5300PanelTransport::Impl {
       const std::int64_t staged_started = esp_timer_get_time();
       for (int row = 0; row < strip_height; ++row) {
         const int source_row = linear ? top + row - y : (top + row + shift_y) % area_height;
-        stage_row(area_pixels + static_cast<std::ptrdiff_t>(source_row) * stride, shift_x,
-                  area_width, x, width,
+        const std::uint16_t* source =
+            area_pixels + static_cast<std::ptrdiff_t>(source_row) * stride;
+        const std::size_t row_bytes = static_cast<std::size_t>(width) * sizeof(*source);
+        puck::timing::record_read(source, row_bytes);
+        puck::timing::record_internal_write(row_bytes);
+        stage_row(source, shift_x, area_width, x, width,
                   staging.data() +
                       static_cast<std::size_t>(row) * static_cast<std::size_t>(width),
                   swapped, linear);

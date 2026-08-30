@@ -11,6 +11,7 @@ add_executable(tinydraw_puck
   src/wasi_support.cpp
   platform/board_stubs.cpp
   platform/co5300_panel_transport.cpp
+  platform/esp32s3_timing.cpp
   platform/esp_shim.cpp
   platform/export_stubs.cpp
   ${TINYDRAW_VECTOR_V2_FIRMWARE_SRCS}
@@ -32,6 +33,24 @@ if(EXISTS "${TINYDRAW_PUCK_ABI_INCLUDE_DIR}/emu_abi.h")
   target_include_directories(tinydraw_puck PRIVATE "${TINYDRAW_PUCK_ABI_INCLUDE_DIR}")
   target_compile_definitions(tinydraw_puck PRIVATE TINYDRAW_PUCK_HAVE_ABI_HEADER=1)
 endif()
+
+set(TINYDRAW_PUCK_TIMING_PROFILE "" CACHE FILEPATH "Puck ESP32-S3 timing.json")
+if(NOT EXISTS "${TINYDRAW_PUCK_TIMING_PROFILE}")
+  message(FATAL_ERROR "TINYDRAW_PUCK_TIMING_PROFILE must name Puck's ESP32-S3 timing.json")
+endif()
+file(READ "${TINYDRAW_PUCK_TIMING_PROFILE}" TINYDRAW_PUCK_TIMING_JSON)
+string(JSON TINYDRAW_TIMING_CPU_HZ GET "${TINYDRAW_PUCK_TIMING_JSON}" cpu hz)
+string(JSON TINYDRAW_TIMING_PANEL_BUS_HZ GET "${TINYDRAW_PUCK_TIMING_JSON}" panel busHz)
+string(JSON TINYDRAW_TIMING_PANEL_LANES GET "${TINYDRAW_PUCK_TIMING_JSON}" panel lanes)
+string(JSON TINYDRAW_TIMING_PANEL_PAYLOAD_BPS GET "${TINYDRAW_PUCK_TIMING_JSON}" panel payloadBytesPerSecond)
+set(TINYDRAW_TIMING_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+file(MAKE_DIRECTORY "${TINYDRAW_TIMING_GENERATED_DIR}")
+configure_file(
+  platform/esp32s3_timing_profile.h.in
+  "${TINYDRAW_TIMING_GENERATED_DIR}/esp32s3_timing_profile.h"
+  @ONLY
+)
+target_include_directories(tinydraw_puck PRIVATE "${TINYDRAW_TIMING_GENERATED_DIR}")
 target_compile_definitions(tinydraw_puck PRIVATE
   TINYDRAW_SINGLE_THREADED_TOUCH=1
   TINYDRAW_VECTOR_V2_DEMO=1
@@ -69,6 +88,9 @@ set(TINYDRAW_PUCK_EXPORTS
   emu_button
   emu_button_verdict
   emu_sensor_event
+  emu_timing_schema
+  emu_timing_snapshot
+  emu_timing_snapshot_size
 )
 
 set(TINYDRAW_PUCK_LINK_OPTIONS

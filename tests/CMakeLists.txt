@@ -39,6 +39,28 @@ target_include_directories(tinydraw_tests SYSTEM PRIVATE
 
 add_test(NAME tinydraw_tests COMMAND tinydraw_tests)
 
+set(TINYDRAW_TIMING_CPU_HZ 240000000)
+set(TINYDRAW_TIMING_PANEL_BUS_HZ 40000000)
+set(TINYDRAW_TIMING_PANEL_LANES 4)
+set(TINYDRAW_TIMING_PANEL_PAYLOAD_BPS 20000000)
+set(TINYDRAW_PUCK_TIMING_TEST_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/puck_timing_generated")
+file(MAKE_DIRECTORY "${TINYDRAW_PUCK_TIMING_TEST_GENERATED_DIR}")
+configure_file(
+  "${PROJECT_SOURCE_DIR}/puck/platform/esp32s3_timing_profile.h.in"
+  "${TINYDRAW_PUCK_TIMING_TEST_GENERATED_DIR}/esp32s3_timing_profile.h"
+  @ONLY
+)
+add_executable(tinydraw_puck_timing_tests
+  puck_timing_test.cpp
+  "${PROJECT_SOURCE_DIR}/puck/platform/esp32s3_timing.cpp"
+)
+target_include_directories(tinydraw_puck_timing_tests PRIVATE
+  "${PROJECT_SOURCE_DIR}/puck/platform"
+  "${TINYDRAW_PUCK_TIMING_TEST_GENERATED_DIR}"
+)
+target_link_libraries(tinydraw_puck_timing_tests PRIVATE tinydraw_project_options)
+add_test(NAME tinydraw_puck_timing_tests COMMAND tinydraw_puck_timing_tests)
+
 add_executable(tinydraw_fat16_image fat16_image.cpp)
 target_link_libraries(tinydraw_fat16_image PRIVATE tinydraw::core tinydraw_project_options)
 set(FAT16_IMAGE "${CMAKE_CURRENT_BINARY_DIR}/tinydraw-fat16.img")

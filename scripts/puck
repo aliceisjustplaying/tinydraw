@@ -51,6 +51,7 @@ cmake -S "$root" -B "$build" -G Ninja \
   -DCMAKE_CXX_COMPILER="$cxx" \
   -DCMAKE_CXX_COMPILER_TARGET=wasm32-wasip1 \
   -DTINYDRAW_PUCK_ABI_INCLUDE_DIR="$puck/wasm" \
+  -DTINYDRAW_PUCK_TIMING_PROFILE="$puck/packs/esp32-s3-touch-amoled-18/timing.json" \
   -DTINYDRAW_BUILD_HOST=OFF \
   -DTINYDRAW_BUILD_TESTS=OFF \
   -DTINYDRAW_BUILD_PUCK=ON \
@@ -59,6 +60,7 @@ cmake --build "$build" --target tinydraw_puck
 
 module="$build/puck/emu.wasm"
 bun "$root/puck/loader_verify.mjs" "$module" "$puck"
+bun "$root/puck/timing_verify.ts" "$module" "$puck"
 bun "$root/puck/verify.mjs" "$puck"
 release_build_lock
 trap - EXIT INT TERM HUP

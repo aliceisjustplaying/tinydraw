@@ -1,0 +1,21 @@
+#ifndef TINYDRAW_PUCK_ESP32S3_TIMING_PROFILE_H
+#define TINYDRAW_PUCK_ESP32S3_TIMING_PROFILE_H
+
+#include <cstdint>
+
+#define TINYDRAW_TIMING_CPU_HZ_JSON "@TINYDRAW_TIMING_CPU_HZ@"
+#define TINYDRAW_TIMING_PANEL_BUS_HZ_JSON "@TINYDRAW_TIMING_PANEL_BUS_HZ@"
+#define TINYDRAW_TIMING_PANEL_LANES_JSON "@TINYDRAW_TIMING_PANEL_LANES@"
+#define TINYDRAW_TIMING_PANEL_PAYLOAD_BPS_JSON "@TINYDRAW_TIMING_PANEL_PAYLOAD_BPS@"
+
+namespace tinydraw::puck::timing::profile {
+
+inline constexpr std::uint64_t kCpuHz = @TINYDRAW_TIMING_CPU_HZ@ULL;
+inline constexpr std::uint64_t kPanelBusHz = @TINYDRAW_TIMING_PANEL_BUS_HZ@ULL;
+inline constexpr std::uint64_t kPanelLanes = @TINYDRAW_TIMING_PANEL_LANES@ULL;
+inline constexpr std::uint64_t kPanelPayloadBytesPerSecond =
+    @TINYDRAW_TIMING_PANEL_PAYLOAD_BPS@ULL;
+
+}  // namespace tinydraw::puck::timing::profile
+
+#endif  // TINYDRAW_PUCK_ESP32S3_TIMING_PROFILE_H
