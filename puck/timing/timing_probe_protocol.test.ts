@@ -205,6 +205,8 @@ describe("standalone timing-probe firmware structure", () => {
     expect(source).toContain('run_suite(context, "single_core")');
     expect(source).toContain('run_suite(context, "core1_contended")');
     expect(source).toContain("IRAM_ATTR NOINLINE_ATTR measure_once");
+    expect(source).toContain("CONFIG_ESP32S3_INSTRUCTION_CACHE_LINE_SIZE");
+    expect(source).not.toContain("esp_cache_get_line_size_by_addr");
     expect(source).toContain("esp_partition_mmap");
     expect(source).not.toContain("esp_partition_erase");
     expect(source).not.toContain("esp_flash_erase");

@@ -437,10 +437,8 @@ esp_err_t prepare_flash_cold(const ProbeContext& context, Kernel, std::uint32_t)
 
 esp_err_t prepare_flash_instruction_cold(const ProbeContext&, Kernel, std::uint32_t) {
   const auto address = reinterpret_cast<std::uintptr_t>(&flash_instruction_body);
-  const std::size_t line_size = esp_cache_get_line_size_by_addr(reinterpret_cast<const void*>(address));
-  if (line_size == 0U) {
-    return ESP_ERR_NOT_SUPPORTED;
-  }
+  constexpr std::size_t line_size = CONFIG_ESP32S3_INSTRUCTION_CACHE_LINE_SIZE;
+  static_assert(line_size > 0U && (line_size & (line_size - 1U)) == 0U);
   const auto aligned_start = address & ~(static_cast<std::uintptr_t>(line_size) - 1U);
   const auto aligned_end =
       (address + 64U + line_size - 1U) & ~(static_cast<std::uintptr_t>(line_size) - 1U);
