@@ -33,6 +33,14 @@ NDJSON records for 100-sample SRAM, PSRAM, read-only flash-mmap, and safe
 instruction-fetch probes in solo and second-core-PSRAM-contention modes. It
 never programs or erases data partitions.
 
+The benchmark tasks intentionally saturate both cores at high priority, which
+starves the idle tasks during long PSRAM and contention probes. This firmware
+variant therefore disables the task watchdog while retaining the interrupt
+watchdog on both cores. Product firmware still uses the base watchdog config.
+The generated timing-probe sdkconfig, including this benchmark-only setting,
+is SHA-256 hashed into every receipt so captures with different watchdog or
+hardware settings cannot enter the same calibration cohort.
+
 Capture the complete serial log through the `run-complete` record, then turn
 it into strict receipts. The collector hashes the captured boot log and uses
 the capture file timestamp; it does not synthesize calibration values. The

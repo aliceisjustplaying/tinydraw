@@ -34,6 +34,13 @@ assert_config() {
   grep -q "^CONFIG_SPIRAM_MODE_${memory_mode}=y$" "$config"
 }
 
+assert_timing_probe_config() {
+  local config="$1"
+  grep -q '^CONFIG_ESP_INT_WDT=y$' "$config"
+  grep -q '^CONFIG_ESP_INT_WDT_CHECK_CPU1=y$' "$config"
+  grep -q '^# CONFIG_ESP_TASK_WDT_EN is not set$' "$config"
+}
+
 enable_qemu() {
   local executable
   executable="$(find "$HOME/.espressif/tools" -path '*qemu-system-xtensa' -type f ! -name '._*' -perm -111 -print -quit)"
@@ -135,8 +142,12 @@ case "$action" in
   timing-probe)
     port="${2:-}"
     cd "$root/esp32"
+    # Receipt provenance is generated during CMake configure. Force that step
+    # so a clean build after a commit cannot reuse a dirty/stale metadata header.
+    eim run "idf.py -B '$timing_probe_build' -DTINYDRAW_FIRMWARE_VARIANT=timing-probe reconfigure"
     eim run "idf.py -B '$timing_probe_build' -DTINYDRAW_FIRMWARE_VARIANT=timing-probe build"
     assert_config "$timing_probe_build/sdkconfig" OCT
+    assert_timing_probe_config "$timing_probe_build/sdkconfig"
     if [[ -n "$port" ]]; then
       eim run "idf.py -B '$timing_probe_build' -p '$port' flash"
     fi

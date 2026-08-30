@@ -210,18 +210,29 @@ describe("standalone timing-probe firmware structure", () => {
     expect(source).not.toContain("esp_flash_erase");
   });
 
-  test("routes an independent variant and pins the flash bus assertion", async () => {
+  test("routes an independent variant with benchmark-only task-WDT settings", async () => {
     const root = join(import.meta.dir, "../..");
-    const [projectCmake, componentCmake, script, sdkconfig] = await Promise.all([
+    const [projectCmake, componentCmake, script, sdkconfig, timingProbeSdkconfig] = await Promise.all([
       Bun.file(join(root, "esp32/CMakeLists.txt")).text(),
       Bun.file(join(root, "esp32/main/CMakeLists.txt")).text(),
       Bun.file(join(root, "scripts/esp32")).text(),
       Bun.file(join(root, "esp32/sdkconfig.defaults")).text(),
+      Bun.file(join(root, "esp32/sdkconfig.timing-probe.defaults")).text(),
     ]);
     expect(projectCmake).toContain("timing-probe");
+    expect(projectCmake).toContain('if(TINYDRAW_TIMING_PROBE)');
+    expect(projectCmake).toContain('sdkconfig.timing-probe.defaults');
     expect(componentCmake).toContain('set(TINYDRAW_APP_SRCS "timing_probe/timing_probe.cpp")');
     expect(script).toContain("CONFIG_ESPTOOLPY_FLASHFREQ_80M=y");
+    expect(script).toContain("assert_timing_probe_config");
+    expect(script).toContain("TINYDRAW_FIRMWARE_VARIANT=timing-probe reconfigure");
+    expect(script).toContain("# CONFIG_ESP_TASK_WDT_EN is not set");
+    expect(script).toContain("CONFIG_ESP_INT_WDT=y");
     expect(script).toContain("timing-probe)");
     expect(sdkconfig).toContain("CONFIG_ESPTOOLPY_FLASHFREQ_80M=y");
+    expect(sdkconfig).not.toContain("CONFIG_ESP_TASK_WDT_EN");
+    expect(timingProbeSdkconfig).toContain("# CONFIG_ESP_TASK_WDT_EN is not set");
+    expect(timingProbeSdkconfig).toContain("CONFIG_ESP_INT_WDT=y");
+    expect(timingProbeSdkconfig).toContain("CONFIG_ESP_INT_WDT_CHECK_CPU1=y");
   });
 });

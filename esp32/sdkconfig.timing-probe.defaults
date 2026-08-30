@@ -1,0 +1,7 @@
+# The standalone timing probe deliberately saturates both cores at high task
+# priority. Idle task starvation is the workload, so the task watchdog cannot
+# distinguish it from a firmware hang. Keep the interrupt watchdog enabled to
+# retain detection of stuck interrupt handlers and disabled tick interrupts.
+CONFIG_ESP_INT_WDT=y
+CONFIG_ESP_INT_WDT_CHECK_CPU1=y
+# CONFIG_ESP_TASK_WDT_EN is not set
