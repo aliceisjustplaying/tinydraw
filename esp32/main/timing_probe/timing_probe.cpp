@@ -509,6 +509,7 @@ bool run_measurement(const ProbeContext& context, const Measurement& measurement
   print_json_string(measurement_id);
   std::printf(",\"samples\":%d}\n", kSamplesPerMeasurement);
   std::fflush(stdout);
+  vTaskDelay(1);
   return true;
 }
 
