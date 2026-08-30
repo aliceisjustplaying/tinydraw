@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "co5300_panel_transport.h"
+#include "esp_cpu.h"
 #include "esp_heap_caps.h"
 #include "esp_rom_sys.h"
 #include "esp_timer.h"
@@ -91,6 +92,8 @@ void probe_tear_signal(Co5300PanelTransport& display, TearSignalEdge edge, int s
 void probe_staging_bandwidth(const std::uint16_t* frame, std::uint16_t* scratch) {
   constexpr int kRepetitions = 20;
   const auto measure = [&](const char* kind, auto&& stage_chunk) {
+    const int start_core = xPortGetCoreID();
+    const std::uint32_t start_ccount = esp_cpu_get_cycle_count();
     const std::int64_t started = esp_timer_get_time();
     for (int repetition = 0; repetition < kRepetitions; ++repetition) {
       std::size_t offset = 0;
@@ -101,10 +104,18 @@ void probe_staging_bandwidth(const std::uint16_t* frame, std::uint16_t* scratch)
       }
     }
     const std::int64_t elapsed = esp_timer_get_time() - started;
+    const std::uint32_t end_ccount = esp_cpu_get_cycle_count();
+    const int end_core = xPortGetCoreID();
     const double frame_us = static_cast<double>(elapsed) / kRepetitions;
     const double bytes = static_cast<double>(kFramePixels) * 2.0;
     std::printf("TINYDRAW_PROBE_STAGING kind=%s frame_us=%.0f mb_per_s=%.1f\n", kind, frame_us,
                 bytes / frame_us);
+    std::printf(
+        "TINYDRAW_PROBE_CCOUNT kind=kernel kernel=staging_%s sample=0 start=%lu end=%lu "
+        "cycles=%lu start_core=%d end_core=%d bytes_per_iteration=%lu iterations=%d\n",
+        kind, static_cast<unsigned long>(start_ccount), static_cast<unsigned long>(end_ccount),
+        static_cast<unsigned long>(end_ccount - start_ccount), start_core, end_core,
+        static_cast<unsigned long>(kFramePixels * sizeof(std::uint16_t)), kRepetitions);
     std::fflush(stdout);
   };
   measure("memcpy", [&](const std::uint16_t* source, std::size_t pixels) {
@@ -115,6 +126,8 @@ void probe_staging_bandwidth(const std::uint16_t* frame, std::uint16_t* scratch)
   });
   // Ring staging visits whole rows with a rotation; measure a full frame of
   // row-shaped work with a nonzero shift so the wrap path is exercised.
+  const int start_core = xPortGetCoreID();
+  const std::uint32_t start_ccount = esp_cpu_get_cycle_count();
   const std::int64_t started = esp_timer_get_time();
   for (int repetition = 0; repetition < kRepetitions; ++repetition) {
     for (int row = 0; row < kPanelHeight; ++row) {
@@ -123,9 +136,17 @@ void probe_staging_bandwidth(const std::uint16_t* frame, std::uint16_t* scratch)
     }
   }
   const std::int64_t elapsed = esp_timer_get_time() - started;
+  const std::uint32_t end_ccount = esp_cpu_get_cycle_count();
+  const int end_core = xPortGetCoreID();
   const double frame_us = static_cast<double>(elapsed) / kRepetitions;
   std::printf("TINYDRAW_PROBE_STAGING kind=ring_swap frame_us=%.0f mb_per_s=%.1f\n", frame_us,
               static_cast<double>(kFramePixels) * 2.0 / frame_us);
+  std::printf(
+      "TINYDRAW_PROBE_CCOUNT kind=kernel kernel=staging_ring_swap sample=0 start=%lu end=%lu "
+      "cycles=%lu start_core=%d end_core=%d bytes_per_iteration=%lu iterations=%d\n",
+      static_cast<unsigned long>(start_ccount), static_cast<unsigned long>(end_ccount),
+      static_cast<unsigned long>(end_ccount - start_ccount), start_core, end_core,
+      static_cast<unsigned long>(kFramePixels * sizeof(std::uint16_t)), kRepetitions);
   std::fflush(stdout);
 }
 
@@ -142,6 +163,8 @@ void probe_frame_throughput(Co5300PanelTransport& display, const std::uint16_t* 
       bool passed = true;
       for (int repetition = 0; repetition < kRepetitions && passed; ++repetition) {
         passed = display.wait_for_all(100'000);
+        const int start_core = xPortGetCoreID();
+        const std::uint32_t start_ccount = esp_cpu_get_cycle_count();
         const std::int64_t started = esp_timer_get_time();
         if (streamed) {
           passed =
@@ -154,7 +177,20 @@ void probe_frame_throughput(Co5300PanelTransport& display, const std::uint16_t* 
           }
         }
         passed = passed && display.wait_for_all(200'000);
+        const std::uint32_t end_ccount = esp_cpu_get_cycle_count();
+        const int end_core = xPortGetCoreID();
         walls.push_back(esp_timer_get_time() - started);
+        const int transactions = (kPanelHeight + strip_rows - 1) / strip_rows;
+        std::printf(
+            "TINYDRAW_PROBE_CCOUNT kind=panel operation=%s sample=%d start=%lu end=%lu "
+            "cycles=%lu start_core=%d end_core=%d width=%d height=%d bits_per_pixel=16 "
+            "payload_bytes=%lu strip_rows=%d transactions=%d pass=%u\n",
+            streamed ? "stream_continuation" : "windowed_push", repetition,
+            static_cast<unsigned long>(start_ccount), static_cast<unsigned long>(end_ccount),
+            static_cast<unsigned long>(end_ccount - start_ccount), start_core, end_core, kPanelWidth,
+            kPanelHeight, static_cast<unsigned long>(kFramePixels * sizeof(std::uint16_t)),
+            strip_rows, transactions, passed);
+        std::fflush(stdout);
       }
       const int transactions = (kPanelHeight + strip_rows - 1) / strip_rows;
       std::printf("TINYDRAW_PROBE_FRAME path=%s strip_rows=%d transactions=%d pass=%u\n",

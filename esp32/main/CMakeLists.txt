@@ -27,7 +27,11 @@ set(TINYDRAW_APP_SRCS
   "${TINYDRAW_CORE}/src/toolbar.cpp"
   "${TINYDRAW_CORE}/src/world_canvas.cpp"
 )
-if(TINYDRAW_QEMU)
+if(TINYDRAW_TIMING_PROBE)
+  set(TINYDRAW_APP_SRCS "timing_probe/timing_probe.cpp")
+  set(TINYDRAW_PLATFORM_SRCS "")
+  set(TINYDRAW_PLATFORM_REQUIRES app_update esp_hw_support esp_mm spi_flash)
+elseif(TINYDRAW_QEMU)
   set(TINYDRAW_PLATFORM_SRCS "qemu_display.cpp")
   set(TINYDRAW_PLATFORM_REQUIRES esp_lcd_qemu_rgb)
 elseif(TINYDRAW_PANEL_PROBE)
@@ -113,9 +117,46 @@ idf_component_register(
     ${TINYDRAW_PLATFORM_SRCS}
   INCLUDE_DIRS "." "vector_v2" "${TINYDRAW_CORE}/include" "${CMAKE_CURRENT_LIST_DIR}/../../vector_v2/include"
   PRIV_INCLUDE_DIRS "${TINYDRAW_PNGENC}"
-  PRIV_REQUIRES ${TINYDRAW_PLATFORM_REQUIRES} esp_partition esp_psram esp_timer espcoredump
+  PRIV_REQUIRES ${TINYDRAW_PLATFORM_REQUIRES} app_update esp_hw_support esp_mm esp_partition
+                esp_psram esp_timer espcoredump spi_flash
   LDFRAGMENTS "linker.lf"
 )
+
+if(TINYDRAW_TIMING_PROBE)
+  execute_process(
+    COMMAND git -C "${CMAKE_CURRENT_LIST_DIR}/../.." rev-parse HEAD
+    OUTPUT_VARIABLE TINYDRAW_TIMING_GIT_COMMIT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    COMMAND_ERROR_IS_FATAL ANY)
+  execute_process(
+    COMMAND git -C "${CMAKE_CURRENT_LIST_DIR}/../.." remote get-url origin
+    OUTPUT_VARIABLE TINYDRAW_TIMING_GIT_REPOSITORY
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE TINYDRAW_TIMING_GIT_REMOTE_RESULT)
+  if(NOT TINYDRAW_TIMING_GIT_REMOTE_RESULT EQUAL 0)
+    set(TINYDRAW_TIMING_GIT_REPOSITORY "local:${CMAKE_CURRENT_LIST_DIR}/../..")
+  endif()
+  execute_process(
+    COMMAND git -C "${CMAKE_CURRENT_LIST_DIR}/../.." status --porcelain --untracked-files=normal
+    OUTPUT_VARIABLE TINYDRAW_TIMING_GIT_STATUS
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    COMMAND_ERROR_IS_FATAL ANY)
+  if(TINYDRAW_TIMING_GIT_STATUS STREQUAL "")
+    set(TINYDRAW_TIMING_GIT_DIRTY "false")
+  else()
+    set(TINYDRAW_TIMING_GIT_DIRTY "true")
+  endif()
+  file(SHA256 "${SDKCONFIG}" TINYDRAW_TIMING_SDKCONFIG_SHA256)
+  set(TINYDRAW_TIMING_SDKCONFIG_PATH "${SDKCONFIG}")
+  set(TINYDRAW_TIMING_COMPILER "${CMAKE_CXX_COMPILER_ID}")
+  set(TINYDRAW_TIMING_COMPILER_VERSION "${CMAKE_CXX_COMPILER_VERSION}")
+  configure_file(
+    "${CMAKE_CURRENT_LIST_DIR}/timing_probe/timing_probe_build_metadata.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/timing_probe_build_metadata.h"
+    @ONLY)
+  target_include_directories(${COMPONENT_LIB} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_TIMING_PROBE=1)
+endif()
 
 # ESP-IDF disables builtin memcpy component-wide. These three translation
 # units make frequent fixed 20-36 byte value copies; expanding only those

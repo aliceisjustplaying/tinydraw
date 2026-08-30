@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "receiptKind": "esp32s3-hardware-calibration",
+  "captureMode": "schema-fixture",
+  "capturedAt": "2000-01-01T00:00:00Z",
+  "git": {
+    "repository": "schema-fixture",
+    "commit": "0123456789abcdef0123456789abcdef01234567",
+    "dirty": false
+  },
+  "toolchain": {
+    "target": "esp32s3",
+    "espIdfVersion": "schema-fixture",
+    "compiler": "schema-fixture",
+    "compilerVersion": "schema-fixture"
+  },
+  "sdkconfig": {
+    "path": "schema-fixture/sdkconfig",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "cpuHz": 4,
+    "psramMode": "schema-fixture",
+    "psramBusHz": null,
+    "flashMode": "schema-fixture",
+    "flashBusHz": null
+  },
+  "boot": {
+    "bootId": "schema-fixture-kernel-invalid",
+    "bootLogSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "resetReason": "schema-fixture",
+    "chipModel": "ESP32-S3",
+    "chipRevision": 0,
+    "cpuCores": 2,
+    "psramBytes": 0,
+    "flashBytes": 1
+  },
+  "counter": {
+    "source": "xtensa-ccount",
+    "bits": 32,
+    "hz": 4,
+    "core": 0
+  },
+  "measurement": {
+    "kind": "ccount-kernel",
+    "kernel": "schema-fixture-bad-delta",
+    "memoryPath": "other",
+    "bytesPerIteration": 8,
+    "iterationsPerSample": 2,
+    "warmupIterations": 1,
+    "samples": [
+      {
+        "ordinal": 0,
+        "startCore": 0,
+        "endCore": 0,
+        "startCcount": 4294967290,
+        "endCcount": 5,
+        "cycles": 12
+      }
+    ]
+  }
+}

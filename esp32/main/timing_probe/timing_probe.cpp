@@ -1,0 +1,701 @@
+#include <algorithm>
+#include <atomic>
+#include <cinttypes>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <iterator>
+
+#include "esp_attr.h"
+#include "esp_cache.h"
+#include "esp_chip_info.h"
+#include "esp_compiler.h"
+#include "esp_cpu.h"
+#include "esp_flash.h"
+#include "esp_heap_caps.h"
+#include "esp_mac.h"
+#include "esp_ota_ops.h"
+#include "esp_partition.h"
+#include "esp_psram.h"
+#include "esp_random.h"
+#include "esp_system.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "sdkconfig.h"
+#include "timing_probe_build_metadata.h"
+
+namespace tinydraw::esp32::timing_probe {
+namespace {
+
+constexpr char kRecordPrefix[] = "TINYDRAW_TIMING_NDJSON ";
+constexpr std::uint32_t kProtocolVersion = 1;
+constexpr int kSamplesPerMeasurement = 100;
+constexpr int kWarmupIterations = 8;
+constexpr std::size_t kSramStreamBytes = 32U * 1024U;
+constexpr std::size_t kDependentEntries = 4096U;
+constexpr std::size_t kUnalignedStride = 5U;
+constexpr std::size_t kPsramBytes = 1024U * 1024U;
+constexpr std::size_t kPsramHotBytes = 4U * 1024U;
+constexpr std::size_t kPsramColdBytes = 512U * 1024U;
+constexpr std::size_t kFlashMapBytes = 256U * 1024U;
+constexpr std::size_t kContentionBytes = 512U * 1024U;
+constexpr std::uint32_t kDependentLoads = 4096U;
+constexpr std::uint32_t kRandomHotLoads = 4096U;
+constexpr std::uint32_t kRandomColdLoads = 16384U;
+
+struct ProbeContext {
+  std::uint32_t* sram_dependent = nullptr;
+  std::uint8_t* sram_unaligned_dependent = nullptr;
+  std::uint8_t* sram_stream = nullptr;
+  std::uint32_t* psram = nullptr;
+  std::uint32_t* contention = nullptr;
+  const std::uint32_t* flash = nullptr;
+  esp_partition_mmap_handle_t flash_handle = 0;
+};
+
+struct RawSample {
+  std::uint32_t start_ccount;
+  std::uint32_t end_ccount;
+  std::uint32_t cycles;
+  std::uint32_t checksum;
+  int start_core;
+  int end_core;
+};
+
+using Kernel = std::uint32_t (*)(const ProbeContext&, std::uint32_t);
+using Prepare = esp_err_t (*)(const ProbeContext&, Kernel, std::uint32_t);
+
+struct Measurement {
+  const char* id;
+  const char* memory_path;
+  std::uint32_t bytes_per_iteration;
+  std::uint32_t iterations_per_sample;
+  std::uint32_t warmup_iterations;
+  Kernel kernel;
+  Prepare prepare;
+};
+
+std::atomic<bool> g_contention_run{false};
+std::atomic<bool> g_contention_ready{false};
+std::atomic<bool> g_contention_done{false};
+std::atomic<std::uint32_t> g_contention_checksum{0};
+DRAM_ATTR volatile std::uint32_t g_prepare_checksum = 0;
+
+const char* reset_reason_name(esp_reset_reason_t reason) {
+  switch (reason) {
+    case ESP_RST_POWERON:
+      return "power-on";
+    case ESP_RST_EXT:
+      return "external-pin";
+    case ESP_RST_SW:
+      return "software";
+    case ESP_RST_PANIC:
+      return "panic";
+    case ESP_RST_INT_WDT:
+      return "interrupt-watchdog";
+    case ESP_RST_TASK_WDT:
+      return "task-watchdog";
+    case ESP_RST_WDT:
+      return "watchdog";
+    case ESP_RST_DEEPSLEEP:
+      return "deep-sleep";
+    case ESP_RST_BROWNOUT:
+      return "brownout";
+    case ESP_RST_SDIO:
+      return "sdio";
+    case ESP_RST_USB:
+      return "usb";
+    case ESP_RST_JTAG:
+      return "jtag";
+    case ESP_RST_EFUSE:
+      return "efuse";
+    case ESP_RST_PWR_GLITCH:
+      return "power-glitch";
+    case ESP_RST_CPU_LOCKUP:
+      return "cpu-lockup";
+    case ESP_RST_UNKNOWN:
+    default:
+      return "unknown";
+  }
+}
+
+const char* psram_mode() {
+#if CONFIG_SPIRAM_MODE_OCT
+  return "octal";
+#elif CONFIG_SPIRAM_MODE_QUAD
+  return "quad";
+#else
+  return "unknown";
+#endif
+}
+
+const char* flash_mode() {
+#if CONFIG_ESPTOOLPY_FLASHMODE_QIO
+  return "qio";
+#elif CONFIG_ESPTOOLPY_FLASHMODE_QOUT
+  return "qout";
+#elif CONFIG_ESPTOOLPY_FLASHMODE_DIO
+  return "dio";
+#elif CONFIG_ESPTOOLPY_FLASHMODE_DOUT
+  return "dout";
+#else
+  return "unknown";
+#endif
+}
+
+constexpr std::uint32_t flash_bus_hz() {
+#if CONFIG_ESPTOOLPY_FLASHFREQ_120M
+  return 120'000'000U;
+#elif CONFIG_ESPTOOLPY_FLASHFREQ_80M
+  return 80'000'000U;
+#elif CONFIG_ESPTOOLPY_FLASHFREQ_40M
+  return 40'000'000U;
+#elif CONFIG_ESPTOOLPY_FLASHFREQ_20M
+  return 20'000'000U;
+#else
+  return 0U;
+#endif
+}
+
+void print_json_string(const char* value) {
+  std::putchar('"');
+  for (const auto* cursor = reinterpret_cast<const unsigned char*>(value); *cursor != 0U;
+       ++cursor) {
+    switch (*cursor) {
+      case '"':
+        std::fputs("\\\"", stdout);
+        break;
+      case '\\':
+        std::fputs("\\\\", stdout);
+        break;
+      case '\n':
+        std::fputs("\\n", stdout);
+        break;
+      case '\r':
+        std::fputs("\\r", stdout);
+        break;
+      case '\t':
+        std::fputs("\\t", stdout);
+        break;
+      default:
+        if (*cursor < 0x20U) {
+          std::printf("\\u%04x", static_cast<unsigned>(*cursor));
+        } else {
+          std::putchar(static_cast<int>(*cursor));
+        }
+        break;
+    }
+  }
+  std::putchar('"');
+}
+
+void print_error(const char* phase, const char* reason, esp_err_t error = ESP_OK) {
+  std::printf("%s{\"protocolVersion\":%" PRIu32 ",\"record\":\"error\",\"phase\":",
+              kRecordPrefix, kProtocolVersion);
+  print_json_string(phase);
+  std::fputs(",\"reason\":", stdout);
+  print_json_string(reason);
+  std::printf(",\"espError\":%d}\n", static_cast<int>(error));
+  std::fflush(stdout);
+}
+
+void print_metadata(const ProbeContext& context) {
+  esp_chip_info_t chip{};
+  esp_chip_info(&chip);
+  std::uint32_t flash_bytes = 0;
+  if (esp_flash_get_size(nullptr, &flash_bytes) != ESP_OK) {
+    print_error("metadata", "flash-size");
+    return;
+  }
+  std::uint8_t mac[6]{};
+  if (esp_efuse_mac_get_default(mac) != ESP_OK) {
+    print_error("metadata", "efuse-mac");
+    return;
+  }
+  char boot_id[64]{};
+  std::snprintf(boot_id, sizeof(boot_id), "%02x%02x%02x%02x%02x%02x-%08" PRIx32 "-%08" PRIx32,
+                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], esp_random(),
+                static_cast<std::uint32_t>(esp_timer_get_time()));
+
+  std::printf("%s{\"protocolVersion\":%" PRIu32
+              ",\"record\":\"metadata\",\"schemaVersion\":1,"
+              "\"receiptKind\":\"esp32s3-hardware-calibration\",\"captureMode\":\"hardware\","
+              "\"git\":{\"repository\":",
+              kRecordPrefix, kProtocolVersion);
+  print_json_string(build_metadata::kGitRepository);
+  std::fputs(",\"commit\":", stdout);
+  print_json_string(build_metadata::kGitCommit);
+  std::printf(",\"dirty\":%s},\"toolchain\":{\"target\":\"esp32s3\",\"espIdfVersion\":",
+              build_metadata::kGitDirty ? "true" : "false");
+  print_json_string(esp_get_idf_version());
+  std::fputs(",\"compiler\":", stdout);
+  print_json_string(build_metadata::kCompiler);
+  std::fputs(",\"compilerVersion\":", stdout);
+  print_json_string(build_metadata::kCompilerVersion);
+  std::fputs("},\"sdkconfig\":{\"path\":", stdout);
+  print_json_string(build_metadata::kSdkconfigPath);
+  std::fputs(",\"sha256\":", stdout);
+  print_json_string(build_metadata::kSdkconfigSha256);
+  std::printf(",\"cpuHz\":%u,\"psramMode\":", CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ * 1'000'000U);
+  print_json_string(psram_mode());
+  std::printf(",\"psramBusHz\":%u,\"flashMode\":", CONFIG_SPIRAM_SPEED * 1'000'000U);
+  print_json_string(flash_mode());
+  if (flash_bus_hz() == 0U) {
+    std::fputs(",\"flashBusHz\":null},\"boot\":{\"bootId\":", stdout);
+  } else {
+    std::printf(",\"flashBusHz\":%" PRIu32 "},\"boot\":{\"bootId\":", flash_bus_hz());
+  }
+  print_json_string(boot_id);
+  std::fputs(",\"resetReason\":", stdout);
+  print_json_string(reset_reason_name(esp_reset_reason()));
+  std::printf(
+      ",\"chipModel\":\"ESP32-S3\",\"chipRevision\":%u,\"cpuCores\":%u,"
+      "\"psramBytes\":%lu,\"flashBytes\":%" PRIu32 "},"
+      "\"counter\":{\"source\":\"xtensa-ccount\",\"bits\":32,\"hz\":%u,\"core\":%d},"
+      "\"workingSets\":{\"sramStreamBytes\":%lu,\"psramHotBytes\":%lu,"
+      "\"psramColdBytes\":%lu,\"flashMapBytes\":%lu,\"contentionBytes\":%lu}}\n",
+      static_cast<unsigned>(chip.revision), static_cast<unsigned>(chip.cores),
+      static_cast<unsigned long>(esp_psram_get_size()), flash_bytes,
+      CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ * 1'000'000U, esp_cpu_get_core_id(),
+      static_cast<unsigned long>(kSramStreamBytes), static_cast<unsigned long>(kPsramHotBytes),
+      static_cast<unsigned long>(kPsramColdBytes), static_cast<unsigned long>(kFlashMapBytes),
+      static_cast<unsigned long>(kContentionBytes));
+  std::fflush(stdout);
+  static_cast<void>(context);
+}
+
+FORCE_INLINE_ATTR std::uint32_t read_unaligned_le(const volatile std::uint8_t* bytes) {
+  return static_cast<std::uint32_t>(bytes[0]) |
+         (static_cast<std::uint32_t>(bytes[1]) << 8U) |
+         (static_cast<std::uint32_t>(bytes[2]) << 16U) |
+         (static_cast<std::uint32_t>(bytes[3]) << 24U);
+}
+
+std::uint32_t IRAM_ATTR NOINLINE_ATTR sram_aligned_dependent(const ProbeContext& context,
+                                                             std::uint32_t seed) {
+  const volatile std::uint32_t* chain = context.sram_dependent;
+  std::uint32_t index = seed & (kDependentEntries - 1U);
+  for (std::uint32_t load = 0; load < kDependentLoads; ++load) {
+    index = chain[index];
+  }
+  return index;
+}
+
+std::uint32_t IRAM_ATTR NOINLINE_ATTR sram_unaligned_dependent(const ProbeContext& context,
+                                                               std::uint32_t seed) {
+  const volatile std::uint8_t* chain = context.sram_unaligned_dependent;
+  std::uint32_t index = seed & (kDependentEntries - 1U);
+  for (std::uint32_t load = 0; load < kDependentLoads; ++load) {
+    index = read_unaligned_le(chain + index * kUnalignedStride + 1U);
+  }
+  return index;
+}
+
+std::uint32_t IRAM_ATTR NOINLINE_ATTR sram_aligned_stream(const ProbeContext& context,
+                                                          std::uint32_t seed) {
+  constexpr std::size_t kWords = kSramStreamBytes / sizeof(std::uint32_t);
+  const volatile std::uint32_t* words = reinterpret_cast<const std::uint32_t*>(context.sram_stream);
+  std::uint32_t sum = seed;
+  const std::size_t start = seed & (kWords - 1U);
+  for (std::size_t index = 0; index < kWords; ++index) {
+    sum += words[(start + index) & (kWords - 1U)];
+  }
+  return sum;
+}
+
+std::uint32_t IRAM_ATTR NOINLINE_ATTR sram_unaligned_stream(const ProbeContext& context,
+                                                            std::uint32_t seed) {
+  constexpr std::size_t kWords = kSramStreamBytes / sizeof(std::uint32_t);
+  const volatile std::uint8_t* bytes = context.sram_stream + 1U;
+  std::uint32_t sum = seed;
+  for (std::size_t index = 0; index < kWords; ++index) {
+    sum += read_unaligned_le(bytes + index * sizeof(std::uint32_t));
+  }
+  return sum;
+}
+
+FORCE_INLINE_ATTR std::uint32_t psram_sequential(const ProbeContext& context, std::uint32_t seed,
+                                                 std::size_t bytes) {
+  const volatile std::uint32_t* words = context.psram;
+  const std::size_t count = bytes / sizeof(std::uint32_t);
+  std::uint32_t sum = seed;
+  for (std::size_t index = 0; index < count; ++index) {
+    sum += words[index];
+  }
+  return sum;
+}
+
+std::uint32_t IRAM_ATTR NOINLINE_ATTR psram_hot_sequential(const ProbeContext& context,
+                                                           std::uint32_t seed) {
+  return psram_sequential(context, seed, kPsramHotBytes);
+}
+
+std::uint32_t IRAM_ATTR NOINLINE_ATTR psram_cold_sequential(const ProbeContext& context,
+                                                            std::uint32_t seed) {
+  return psram_sequential(context, seed, kPsramColdBytes);
+}
+
+FORCE_INLINE_ATTR std::uint32_t random_reads(const volatile std::uint32_t* words,
+                                             std::size_t working_set_words, std::uint32_t loads,
+                                             std::uint32_t seed) {
+  std::uint32_t state = seed | 1U;
+  std::uint32_t sum = seed;
+  const std::size_t mask = working_set_words - 1U;
+  for (std::uint32_t load = 0; load < loads; ++load) {
+    state = state * 1'664'525U + 1'013'904'223U;
+    sum += words[(state >> 2U) & mask];
+  }
+  return sum;
+}
+
+std::uint32_t IRAM_ATTR NOINLINE_ATTR psram_hot_random(const ProbeContext& context,
+                                                       std::uint32_t seed) {
+  return random_reads(context.psram, kPsramHotBytes / sizeof(std::uint32_t), kRandomHotLoads, seed);
+}
+
+std::uint32_t IRAM_ATTR NOINLINE_ATTR psram_cold_random(const ProbeContext& context,
+                                                        std::uint32_t seed) {
+  return random_reads(context.psram, kPsramColdBytes / sizeof(std::uint32_t), kRandomColdLoads,
+                      seed);
+}
+
+std::uint32_t IRAM_ATTR NOINLINE_ATTR flash_hot_sequential(const ProbeContext& context,
+                                                           std::uint32_t seed) {
+  const volatile std::uint32_t* words = context.flash;
+  std::uint32_t sum = seed;
+  for (std::size_t index = 0; index < kPsramHotBytes / sizeof(std::uint32_t); ++index) {
+    sum += words[index];
+  }
+  return sum;
+}
+
+std::uint32_t IRAM_ATTR NOINLINE_ATTR flash_cold_sequential(const ProbeContext& context,
+                                                            std::uint32_t seed) {
+  const volatile std::uint32_t* words = context.flash;
+  std::uint32_t sum = seed;
+  for (std::size_t index = 0; index < kFlashMapBytes / sizeof(std::uint32_t); ++index) {
+    sum += words[index];
+  }
+  return sum;
+}
+
+std::uint32_t IRAM_ATTR NOINLINE_ATTR flash_hot_random(const ProbeContext& context,
+                                                       std::uint32_t seed) {
+  return random_reads(context.flash, kPsramHotBytes / sizeof(std::uint32_t), kRandomHotLoads, seed);
+}
+
+std::uint32_t IRAM_ATTR NOINLINE_ATTR flash_cold_random(const ProbeContext& context,
+                                                        std::uint32_t seed) {
+  return random_reads(context.flash, kFlashMapBytes / sizeof(std::uint32_t), kRandomColdLoads,
+                      seed);
+}
+
+std::uint32_t NOINLINE_ATTR flash_instruction_body(std::uint32_t seed) {
+  std::uint32_t value = seed;
+  for (std::uint32_t index = 0; index < 256U; ++index) {
+    asm volatile("nop; nop; nop; nop" ::: "memory");
+    value = (value << 5U) ^ (value >> 2U) ^ index;
+  }
+  return value;
+}
+
+std::uint32_t IRAM_ATTR NOINLINE_ATTR flash_instruction_probe(const ProbeContext&,
+                                                              std::uint32_t seed) {
+  return flash_instruction_body(seed);
+}
+
+esp_err_t prepare_none(const ProbeContext&, Kernel, std::uint32_t) { return ESP_OK; }
+
+esp_err_t prepare_hot(const ProbeContext& context, Kernel kernel, std::uint32_t seed) {
+  g_prepare_checksum = kernel(context, seed ^ 0xa5a5'a5a5U);
+  return ESP_OK;
+}
+
+esp_err_t prepare_psram_hot(const ProbeContext& context, Kernel kernel, std::uint32_t seed) {
+  g_prepare_checksum = psram_hot_sequential(context, seed);
+  g_prepare_checksum ^= kernel(context, seed ^ 0x55aa'55aaU);
+  return ESP_OK;
+}
+
+esp_err_t prepare_psram_cold(const ProbeContext& context, Kernel, std::uint32_t) {
+  return esp_cache_msync(context.psram, kPsramColdBytes,
+                         ESP_CACHE_MSYNC_FLAG_DIR_M2C | ESP_CACHE_MSYNC_FLAG_INVALIDATE);
+}
+
+esp_err_t prepare_flash_hot(const ProbeContext& context, Kernel kernel, std::uint32_t seed) {
+  g_prepare_checksum = flash_hot_sequential(context, seed);
+  g_prepare_checksum ^= kernel(context, seed ^ 0xc3c3'c3c3U);
+  return ESP_OK;
+}
+
+esp_err_t prepare_flash_cold(const ProbeContext& context, Kernel, std::uint32_t) {
+  return esp_cache_msync(const_cast<std::uint32_t*>(context.flash), kFlashMapBytes,
+                         ESP_CACHE_MSYNC_FLAG_DIR_M2C | ESP_CACHE_MSYNC_FLAG_INVALIDATE);
+}
+
+esp_err_t prepare_flash_instruction_cold(const ProbeContext&, Kernel, std::uint32_t) {
+  const auto address = reinterpret_cast<std::uintptr_t>(&flash_instruction_body);
+  const std::size_t line_size = esp_cache_get_line_size_by_addr(reinterpret_cast<const void*>(address));
+  if (line_size == 0U) {
+    return ESP_ERR_NOT_SUPPORTED;
+  }
+  const auto aligned_start = address & ~(static_cast<std::uintptr_t>(line_size) - 1U);
+  const auto aligned_end =
+      (address + 64U + line_size - 1U) & ~(static_cast<std::uintptr_t>(line_size) - 1U);
+  return esp_cache_msync(reinterpret_cast<void*>(aligned_start), aligned_end - aligned_start,
+                         ESP_CACHE_MSYNC_FLAG_DIR_M2C | ESP_CACHE_MSYNC_FLAG_TYPE_INST);
+}
+
+RawSample IRAM_ATTR NOINLINE_ATTR measure_once(const ProbeContext& context, Kernel kernel,
+                                               std::uint32_t seed) {
+  RawSample sample{};
+  sample.start_core = esp_cpu_get_core_id();
+  sample.start_ccount = esp_cpu_get_cycle_count();
+  sample.checksum = kernel(context, seed);
+  sample.end_ccount = esp_cpu_get_cycle_count();
+  sample.end_core = esp_cpu_get_core_id();
+  sample.cycles = sample.end_ccount - sample.start_ccount;
+  return sample;
+}
+
+void print_measurement_start(const Measurement& measurement, const char* measurement_id) {
+  std::printf("%s{\"protocolVersion\":%" PRIu32
+              ",\"record\":\"measurement-start\",\"measurementId\":",
+              kRecordPrefix, kProtocolVersion);
+  print_json_string(measurement_id);
+  std::fputs(",\"measurement\":{\"kind\":\"ccount-kernel\",\"kernel\":", stdout);
+  print_json_string(measurement_id);
+  std::fputs(",\"memoryPath\":", stdout);
+  print_json_string(measurement.memory_path);
+  std::printf(",\"bytesPerIteration\":%" PRIu32 ",\"iterationsPerSample\":%" PRIu32
+              ",\"warmupIterations\":%" PRIu32 "}}\n",
+              measurement.bytes_per_iteration, measurement.iterations_per_sample,
+              measurement.warmup_iterations);
+  std::fflush(stdout);
+}
+
+bool run_measurement(const ProbeContext& context, const Measurement& measurement,
+                     const char* contention_mode) {
+  char measurement_id[96]{};
+  std::snprintf(measurement_id, sizeof(measurement_id), "%s_%s", measurement.id, contention_mode);
+  for (std::uint32_t warmup = 0; warmup < measurement.warmup_iterations; ++warmup) {
+    g_prepare_checksum = measurement.kernel(context, warmup + 1U);
+  }
+  print_measurement_start(measurement, measurement_id);
+  for (int ordinal = 0; ordinal < kSamplesPerMeasurement; ++ordinal) {
+    const std::uint32_t seed = 0x9e37'79b9U * static_cast<std::uint32_t>(ordinal + 1);
+    const esp_err_t prepared = measurement.prepare(context, measurement.kernel, seed);
+    if (prepared != ESP_OK) {
+      print_error(measurement_id, "cache-prepare", prepared);
+      return false;
+    }
+    const RawSample sample = measure_once(context, measurement.kernel, seed);
+    std::printf(
+        "%s{\"protocolVersion\":%" PRIu32
+        ",\"record\":\"sample\",\"measurementId\":",
+        kRecordPrefix, kProtocolVersion);
+    print_json_string(measurement_id);
+    std::printf(
+        ",\"sample\":{\"ordinal\":%d,\"startCore\":%d,\"endCore\":%d,"
+        "\"startCcount\":%" PRIu32 ",\"endCcount\":%" PRIu32
+        ",\"cycles\":%" PRIu32 "},\"checksum\":%" PRIu32 "}\n",
+        ordinal, sample.start_core, sample.end_core, sample.start_ccount, sample.end_ccount,
+        sample.cycles, sample.checksum);
+  }
+  std::printf("%s{\"protocolVersion\":%" PRIu32
+              ",\"record\":\"measurement-complete\",\"measurementId\":",
+              kRecordPrefix, kProtocolVersion);
+  print_json_string(measurement_id);
+  std::printf(",\"samples\":%d}\n", kSamplesPerMeasurement);
+  std::fflush(stdout);
+  return true;
+}
+
+void IRAM_ATTR contention_task(void* argument) {
+  auto* words = static_cast<volatile std::uint32_t*>(argument);
+  constexpr std::size_t kWords = kContentionBytes / sizeof(std::uint32_t);
+  std::uint32_t sum = 0;
+  g_contention_ready.store(true, std::memory_order_release);
+  while (g_contention_run.load(std::memory_order_acquire)) {
+    for (std::size_t index = 0; index < kWords; index += 4U) {
+      sum += words[index];
+    }
+    g_contention_checksum.store(sum, std::memory_order_relaxed);
+  }
+  g_contention_done.store(true, std::memory_order_release);
+  vTaskDelete(nullptr);
+}
+
+bool start_contention(ProbeContext& context) {
+  g_contention_done.store(false, std::memory_order_relaxed);
+  g_contention_ready.store(false, std::memory_order_relaxed);
+  g_contention_run.store(true, std::memory_order_release);
+  if (xTaskCreatePinnedToCore(contention_task, "timing_contend", 4096U, context.contention,
+                              configMAX_PRIORITIES - 2U, nullptr, 1) != pdPASS) {
+    g_contention_run.store(false, std::memory_order_release);
+    print_error("contention", "task-create");
+    return false;
+  }
+  while (!g_contention_ready.load(std::memory_order_acquire)) {
+    vTaskDelay(1);
+  }
+  return true;
+}
+
+void stop_contention() {
+  g_contention_run.store(false, std::memory_order_release);
+  while (!g_contention_done.load(std::memory_order_acquire)) {
+    vTaskDelay(1);
+  }
+}
+
+bool initialize_context(ProbeContext& context) {
+  context.sram_dependent = static_cast<std::uint32_t*>(heap_caps_malloc(
+      kDependentEntries * sizeof(std::uint32_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+  context.sram_unaligned_dependent = static_cast<std::uint8_t*>(heap_caps_malloc(
+      kDependentEntries * kUnalignedStride + 8U, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+  context.sram_stream = static_cast<std::uint8_t*>(
+      heap_caps_malloc(kSramStreamBytes + 8U, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+  context.psram = static_cast<std::uint32_t*>(
+      heap_caps_aligned_alloc(64U, kPsramBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  context.contention = static_cast<std::uint32_t*>(
+      heap_caps_aligned_alloc(64U, kContentionBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (context.sram_dependent == nullptr || context.sram_unaligned_dependent == nullptr ||
+      context.sram_stream == nullptr || context.psram == nullptr || context.contention == nullptr) {
+    print_error("initialize", "allocation");
+    return false;
+  }
+
+  for (std::size_t index = 0; index < kDependentEntries; ++index) {
+    const std::uint32_t next = static_cast<std::uint32_t>((index + 257U) & (kDependentEntries - 1U));
+    context.sram_dependent[index] = next;
+    auto* destination = context.sram_unaligned_dependent + index * kUnalignedStride + 1U;
+    destination[0] = static_cast<std::uint8_t>(next);
+    destination[1] = static_cast<std::uint8_t>(next >> 8U);
+    destination[2] = static_cast<std::uint8_t>(next >> 16U);
+    destination[3] = static_cast<std::uint8_t>(next >> 24U);
+  }
+  for (std::size_t index = 0; index < kSramStreamBytes + 8U; ++index) {
+    context.sram_stream[index] = static_cast<std::uint8_t>(index * 37U + 11U);
+  }
+  for (std::size_t index = 0; index < kPsramBytes / sizeof(std::uint32_t); ++index) {
+    context.psram[index] = static_cast<std::uint32_t>(index * 2'654'435'761U + 17U);
+  }
+  for (std::size_t index = 0; index < kContentionBytes / sizeof(std::uint32_t); ++index) {
+    context.contention[index] = static_cast<std::uint32_t>(index * 2'246'822'519U + 31U);
+  }
+  const esp_err_t psram_sync =
+      esp_cache_msync(context.psram, kPsramBytes, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+  const esp_err_t contention_sync =
+      esp_cache_msync(context.contention, kContentionBytes, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+  if (psram_sync != ESP_OK || contention_sync != ESP_OK) {
+    print_error("initialize", "psram-cache-sync",
+                psram_sync != ESP_OK ? psram_sync : contention_sync);
+    return false;
+  }
+
+  const esp_partition_t* running = esp_ota_get_running_partition();
+  if (running == nullptr || running->size < kFlashMapBytes) {
+    print_error("initialize", "running-partition");
+    return false;
+  }
+  const void* mapped = nullptr;
+  const esp_err_t mapped_result = esp_partition_mmap(running, 0, kFlashMapBytes,
+                                                     ESP_PARTITION_MMAP_DATA, &mapped,
+                                                     &context.flash_handle);
+  if (mapped_result != ESP_OK || mapped == nullptr) {
+    print_error("initialize", "flash-mmap", mapped_result);
+    return false;
+  }
+  context.flash = static_cast<const std::uint32_t*>(mapped);
+  return true;
+}
+
+void release_context(ProbeContext& context) {
+  if (context.flash != nullptr) {
+    esp_partition_munmap(context.flash_handle);
+  }
+  heap_caps_free(context.contention);
+  heap_caps_free(context.psram);
+  heap_caps_free(context.sram_stream);
+  heap_caps_free(context.sram_unaligned_dependent);
+  heap_caps_free(context.sram_dependent);
+}
+
+constexpr Measurement kMeasurements[] = {
+    {"sram_aligned_dependent", "internal-to-internal", kDependentLoads * 4U, 1U,
+     kWarmupIterations, sram_aligned_dependent, prepare_none},
+    {"sram_unaligned_dependent", "internal-to-internal", kDependentLoads * 4U, 1U,
+     kWarmupIterations, sram_unaligned_dependent, prepare_none},
+    {"sram_aligned_stream", "internal-to-internal", kSramStreamBytes, 1U, kWarmupIterations,
+     sram_aligned_stream, prepare_none},
+    {"sram_unaligned_stream", "internal-to-internal", kSramStreamBytes, 1U, kWarmupIterations,
+     sram_unaligned_stream, prepare_none},
+    {"psram_hot_sequential", "psram-to-internal", kPsramHotBytes, 1U, kWarmupIterations,
+     psram_hot_sequential, prepare_psram_hot},
+    {"psram_cold_sequential", "psram-to-internal", kPsramColdBytes, 1U, 0U,
+     psram_cold_sequential, prepare_psram_cold},
+    {"psram_hot_random", "psram-to-internal", kRandomHotLoads * 4U, 1U, kWarmupIterations,
+     psram_hot_random, prepare_psram_hot},
+    {"psram_cold_random", "psram-to-internal", kRandomColdLoads * 4U, 1U, 0U,
+     psram_cold_random, prepare_psram_cold},
+    {"flash_mmap_hot_sequential", "flash-to-internal", kPsramHotBytes, 1U, kWarmupIterations,
+     flash_hot_sequential, prepare_flash_hot},
+    {"flash_mmap_cold_sequential", "flash-to-internal", kFlashMapBytes, 1U, 0U,
+     flash_cold_sequential, prepare_flash_cold},
+    {"flash_mmap_hot_random", "flash-to-internal", kRandomHotLoads * 4U, 1U,
+     kWarmupIterations, flash_hot_random, prepare_flash_hot},
+    {"flash_mmap_cold_random", "flash-to-internal", kRandomColdLoads * 4U, 1U, 0U,
+     flash_cold_random, prepare_flash_cold},
+    {"flash_instruction_hot", "other", 0U, 1U, kWarmupIterations, flash_instruction_probe,
+     prepare_hot},
+    {"flash_instruction_cold", "other", 0U, 1U, 0U, flash_instruction_probe,
+     prepare_flash_instruction_cold},
+};
+
+bool run_suite(const ProbeContext& context, const char* contention_mode) {
+  for (const auto& measurement : kMeasurements) {
+    if (!run_measurement(context, measurement, contention_mode)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void probe_task(void*) {
+  ProbeContext context;
+  if (!initialize_context(context)) {
+    vTaskDelete(nullptr);
+    return;
+  }
+  print_metadata(context);
+  bool passed = run_suite(context, "single_core");
+  if (passed && start_contention(context)) {
+    passed = run_suite(context, "core1_contended");
+    stop_contention();
+  } else if (passed) {
+    passed = false;
+  }
+  std::printf("%s{\"protocolVersion\":%" PRIu32
+              ",\"record\":\"run-complete\",\"measurements\":%lu,\"samplesPerMeasurement\":%d,"
+              "\"pass\":%s}\n",
+              kRecordPrefix, kProtocolVersion,
+              static_cast<unsigned long>(std::size(kMeasurements) * 2U), kSamplesPerMeasurement,
+              passed ? "true" : "false");
+  std::fflush(stdout);
+  release_context(context);
+  vTaskDelete(nullptr);
+}
+
+}  // namespace
+}  // namespace tinydraw::esp32::timing_probe
+
+extern "C" void app_main() {
+  if (xTaskCreatePinnedToCore(tinydraw::esp32::timing_probe::probe_task, "timing_probe", 12'288U,
+                              nullptr, configMAX_PRIORITIES - 3U, nullptr, 0) != pdPASS) {
+    std::printf("TINYDRAW_TIMING_NDJSON {\"protocolVersion\":1,\"record\":\"error\","
+                "\"phase\":\"startup\",\"reason\":\"task-create\",\"espError\":0}\n");
+  }
+}

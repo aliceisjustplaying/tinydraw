@@ -1,0 +1,13 @@
+#pragma once
+
+namespace tinydraw::esp32::timing_probe::build_metadata {
+
+inline constexpr char kGitRepository[] = R"timing(@TINYDRAW_TIMING_GIT_REPOSITORY@)timing";
+inline constexpr char kGitCommit[] = "@TINYDRAW_TIMING_GIT_COMMIT@";
+inline constexpr bool kGitDirty = @TINYDRAW_TIMING_GIT_DIRTY@;
+inline constexpr char kSdkconfigPath[] = R"timing(@TINYDRAW_TIMING_SDKCONFIG_PATH@)timing";
+inline constexpr char kSdkconfigSha256[] = "@TINYDRAW_TIMING_SDKCONFIG_SHA256@";
+inline constexpr char kCompiler[] = "@TINYDRAW_TIMING_COMPILER@";
+inline constexpr char kCompilerVersion[] = "@TINYDRAW_TIMING_COMPILER_VERSION@";
+
+}  // namespace tinydraw::esp32::timing_probe::build_metadata

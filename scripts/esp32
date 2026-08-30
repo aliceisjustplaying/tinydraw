@@ -11,6 +11,7 @@ gate_harness_build="$root/out/build/esp32-vector-v2-gate-harness"
 tile_census_build="$root/out/build/esp32-vector-v2-tile-census"
 tearing_probe_build="$root/out/build/esp32-vector-v2-tearing-probe"
 panel_probe_build="$root/out/build/esp32-panel-probe"
+timing_probe_build="$root/out/build/esp32-timing-probe"
 action="${1:-build}"
 
 if ! command -v eim >/dev/null 2>&1; then
@@ -23,6 +24,7 @@ assert_config() {
   local memory_mode="$2"
   grep -q '^CONFIG_COMPILER_OPTIMIZATION_PERF=y$' "$config"
   grep -q '^CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240$' "$config"
+  grep -q '^CONFIG_ESPTOOLPY_FLASHFREQ_80M=y$' "$config"
   grep -q "^CONFIG_SPIRAM_MODE_${memory_mode}=y$" "$config"
 }
 
@@ -124,6 +126,15 @@ case "$action" in
     assert_config "$panel_probe_build/sdkconfig" OCT
     eim run "idf.py -B '$panel_probe_build' -p '$port' flash"
     ;;
+  timing-probe)
+    port="${2:-}"
+    cd "$root/esp32"
+    eim run "idf.py -B '$timing_probe_build' -DTINYDRAW_FIRMWARE_VARIANT=timing-probe build"
+    assert_config "$timing_probe_build/sdkconfig" OCT
+    if [[ -n "$port" ]]; then
+      eim run "idf.py -B '$timing_probe_build' -p '$port' flash"
+    fi
+    ;;
   vector-v2-tearing-probe)
     port="${2:-}"
     if [[ -z "$port" ]]; then
@@ -168,10 +179,10 @@ case "$action" in
     fi
     ;;
   clean)
-    rm -rf "$raster_v1_build" "$demo_build" "$qemu_build" "$graphics_build" "$vector_v2_build" "$gate_harness_build" "$tile_census_build" "$tearing_probe_build" "$panel_probe_build"
+    rm -rf "$raster_v1_build" "$demo_build" "$qemu_build" "$graphics_build" "$vector_v2_build" "$gate_harness_build" "$tile_census_build" "$tearing_probe_build" "$panel_probe_build" "$timing_probe_build"
     ;;
   *)
-    echo "usage: $0 {build|raster-v1 [PORT]|vector-v2 PORT|vector-v2-demo [PORT]|vector-v2-gate-harness PORT [TILE_SLOTS] [verify]|vector-v2-tearing-probe PORT|panel-probe PORT [CELL]|vector-v2-tile-census PORT|qemu|graphics|graphics-test|clean}" >&2
+    echo "usage: $0 {build|raster-v1 [PORT]|vector-v2 PORT|vector-v2-demo [PORT]|vector-v2-gate-harness PORT [TILE_SLOTS] [verify]|vector-v2-tearing-probe PORT|panel-probe PORT [CELL]|timing-probe [PORT]|vector-v2-tile-census PORT|qemu|graphics|graphics-test|clean}" >&2
     exit 2
     ;;
 esac

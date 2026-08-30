@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "receiptKind": "esp32s3-hardware-calibration",
+  "captureMode": "schema-fixture",
+  "capturedAt": "2000-01-01T00:00:00Z",
+  "git": {
+    "repository": "schema-fixture",
+    "commit": "0123456789abcdef0123456789abcdef01234567",
+    "dirty": false
+  },
+  "toolchain": {
+    "target": "esp32s3",
+    "espIdfVersion": "schema-fixture",
+    "compiler": "schema-fixture",
+    "compilerVersion": "schema-fixture"
+  },
+  "sdkconfig": {
+    "path": "schema-fixture/sdkconfig",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "cpuHz": 4,
+    "psramMode": "schema-fixture",
+    "psramBusHz": null,
+    "flashMode": "schema-fixture",
+    "flashBusHz": null
+  },
+  "counter": {
+    "source": "xtensa-ccount",
+    "bits": 32,
+    "hz": 4,
+    "core": 0
+  },
+  "measurement": {
+    "kind": "ccount-kernel",
+    "kernel": "schema-fixture-missing-boot",
+    "memoryPath": "other",
+    "bytesPerIteration": 1,
+    "iterationsPerSample": 1,
+    "warmupIterations": 0,
+    "samples": [
+      {
+        "ordinal": 0,
+        "startCore": 0,
+        "endCore": 0,
+        "startCcount": 1,
+        "endCcount": 2,
+        "cycles": 1
+      }
+    ]
+  }
+}
