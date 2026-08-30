@@ -501,6 +501,7 @@ bool run_measurement(const ProbeContext& context, const Measurement& measurement
         ",\"cycles\":%" PRIu32 "},\"checksum\":%" PRIu32 "}\n",
         ordinal, sample.start_core, sample.end_core, sample.start_ccount, sample.end_ccount,
         sample.cycles, sample.checksum);
+    vTaskDelay(1);
   }
   std::printf("%s{\"protocolVersion\":%" PRIu32
               ",\"record\":\"measurement-complete\",\"measurementId\":",
@@ -629,10 +630,10 @@ constexpr Measurement kMeasurements[] = {
      kWarmupIterations, flash_hot_random, prepare_flash_hot},
     {"flash_mmap_cold_random", "flash-to-internal", kRandomColdLoads * 4U, 1U, 0U,
      flash_cold_random, prepare_flash_cold},
-    {"flash_instruction_hot", "other", 0U, 1U, kWarmupIterations, flash_instruction_probe,
-     prepare_hot},
     {"flash_instruction_cold", "other", 0U, 1U, 0U, flash_instruction_probe,
      prepare_flash_instruction_cold},
+    {"flash_instruction_hot", "other", 0U, 1U, kWarmupIterations, flash_instruction_probe,
+     prepare_hot},
 };
 
 bool run_suite(const ProbeContext& context, const char* contention_mode) {
