@@ -544,9 +544,6 @@ bool start_contention(ProbeContext& context) {
 
 void stop_contention() {
   g_contention_run.store(false, std::memory_order_release);
-  while (!g_contention_done.load(std::memory_order_acquire)) {
-    vTaskDelay(1);
-  }
 }
 
 bool initialize_context(ProbeContext& context) {
@@ -611,17 +608,6 @@ bool initialize_context(ProbeContext& context) {
   return true;
 }
 
-void release_context(ProbeContext& context) {
-  if (context.flash != nullptr) {
-    esp_partition_munmap(context.flash_handle);
-  }
-  heap_caps_free(context.contention);
-  heap_caps_free(context.psram);
-  heap_caps_free(context.sram_stream);
-  heap_caps_free(context.sram_unaligned_dependent);
-  heap_caps_free(context.sram_dependent);
-}
-
 constexpr Measurement kMeasurements[] = {
     {"sram_aligned_dependent", "internal-to-internal", kDependentLoads * 4U, 1U,
      kWarmupIterations, sram_aligned_dependent, prepare_none},
@@ -683,7 +669,8 @@ void probe_task(void*) {
               static_cast<unsigned long>(std::size(kMeasurements) * 2U), kSamplesPerMeasurement,
               passed ? "true" : "false");
   std::fflush(stdout);
-  release_context(context);
+  // This one-shot firmware keeps its probe buffers alive until the next reset.
+  // The core-1 contention task may still be leaving its final PSRAM pass here.
   vTaskDelete(nullptr);
 }
 

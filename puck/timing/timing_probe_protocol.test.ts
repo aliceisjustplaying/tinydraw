@@ -204,6 +204,7 @@ describe("standalone timing-probe firmware structure", () => {
     expect(source).toContain("constexpr int kSamplesPerMeasurement = 100;");
     expect(source).toContain('run_suite(context, "single_core")');
     expect(source).toContain('run_suite(context, "core1_contended")');
+    expect(source).toContain("keeps its probe buffers alive until the next reset");
     expect(source).toContain("IRAM_ATTR NOINLINE_ATTR measure_once");
     expect(source).toContain("CONFIG_ESP32S3_INSTRUCTION_CACHE_LINE_SIZE");
     expect(source).not.toContain("esp_cache_get_line_size_by_addr");
