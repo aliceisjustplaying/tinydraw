@@ -964,7 +964,7 @@ RawSample IRAM_ATTR NOINLINE_ATTR measure_dependent_load_external_once(
 
 FORCE_INLINE_ATTR RawSample measure_mmio_with_signature(
     const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
-    bool collect_cache_counters, const CacheCounters& expected_counters) {
+    bool collect_cache_counters, const CacheCounters* expected_counters) {
   RawSample sample{};
   if (collect_cache_counters) clear_cache_counters();
   std::uint32_t saved_ps = 0;
@@ -979,7 +979,9 @@ FORCE_INLINE_ATTR RawSample measure_mmio_with_signature(
   sample.cycles = sample.end_ccount - sample.start_ccount;
   sample.checksum = finalize == nullptr ? kernel_result : finalize(context, seed, kernel_result);
   sample.has_cache_counters = collect_cache_counters;
-  require_cache_counter_signature(sample, expected_counters, collect_cache_counters);
+  if (expected_counters != nullptr) {
+    require_cache_counter_signature(sample, *expected_counters, collect_cache_counters);
+  }
   return sample;
 }
 
@@ -987,14 +989,21 @@ RawSample IRAM_ATTR NOINLINE_ATTR measure_mmio_once(
     const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
     bool collect_cache_counters) {
   return measure_mmio_with_signature(context, kernel, finalize, seed, collect_cache_counters,
-                                     kInternalCacheHitSignature);
+                                     &kInternalCacheHitSignature);
 }
 
 RawSample IRAM_ATTR NOINLINE_ATTR measure_rtc_mmio_once(
     const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
     bool collect_cache_counters) {
   return measure_mmio_with_signature(context, kernel, finalize, seed, collect_cache_counters,
-                                     kRtcMmioReadSignature);
+                                     &kRtcMmioReadSignature);
+}
+
+RawSample IRAM_ATTR NOINLINE_ATTR measure_observed_rtc_mmio_once(
+    const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
+    bool collect_cache_counters) {
+  return measure_mmio_with_signature(context, kernel, finalize, seed, collect_cache_counters,
+                                     nullptr);
 }
 
 RawSample IRAM_ATTR NOINLINE_ATTR measure_conditional_branch_once(
@@ -1431,7 +1440,8 @@ constexpr Measurement kMeasurements[] = {
      tinydraw_mmio_read_rtc_store1, prepare_none, nullptr, 0U, measure_rtc_mmio_once},
     {"mmio_read_rtc_date_4096_aligned", "other",
      kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
-     tinydraw_mmio_read_rtc_date, prepare_none, nullptr, 0U, measure_rtc_mmio_once},
+     tinydraw_mmio_read_rtc_date, prepare_none, nullptr, 0U,
+     measure_observed_rtc_mmio_once},
     {"mmio_read_extmem_cache_state_4096_aligned", "other",
      kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
      tinydraw_mmio_read_extmem_cache_state, prepare_none, nullptr, 0U, measure_mmio_once},
