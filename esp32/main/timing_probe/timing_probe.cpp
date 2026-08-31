@@ -21,6 +21,7 @@
 #include "esp_partition.h"
 #include "esp_psram.h"
 #include "esp_random.h"
+#include "esp_rom_sys.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -73,6 +74,9 @@ constexpr std::uint32_t kConditionalBranchChecksum = kConditionalBranchIteration
 constexpr std::uint32_t kMmioOperations = 4096U;
 constexpr std::uint32_t kMmioHalfOperations = 2048U;
 constexpr std::uint32_t kMmioStatePreservedChecksum = 0x7374'6174U;
+constexpr std::size_t kRomMemsetBytes = 0x52e0U;
+constexpr std::uint8_t kRomMemsetFill = 0xa5U;
+constexpr std::uint32_t kRomCallbackStatePreservedChecksum = 0x524f'4d53U;
 constexpr std::uint32_t kSramStoreCompletionChecksum = 0x5352'414dU;
 constexpr std::size_t kRgb565StagePixels = 5U;
 constexpr std::size_t kRgb565OracleCodeBytes = 41U;
@@ -114,6 +118,10 @@ struct ProbeContext {
   std::uint32_t mmio_same_value_extmem_icache_autoload_ctrl = 0U;
   volatile std::uint32_t* mmio_rtc_date = nullptr;
   esp_partition_mmap_handle_t flash_handle = 0;
+  std::uint8_t* rom_memset_buffer = nullptr;
+  std::uint32_t rom_cpu_ticks_per_us = 0U;
+  std::uint32_t rom_reset_reason_core0 = 0U;
+  std::uint32_t rom_reset_reason_core1 = 0U;
 };
 
 static_assert(offsetof(ProbeContext, sram_dependent) == 0U);
@@ -139,6 +147,11 @@ static_assert(offsetof(ProbeContext, mmio_same_value_extmem_dcache_autoload_ctrl
 static_assert(offsetof(ProbeContext, mmio_same_value_extmem_icache_ctrl1) == 88U);
 static_assert(offsetof(ProbeContext, mmio_same_value_extmem_icache_autoload_ctrl) == 92U);
 static_assert(offsetof(ProbeContext, mmio_rtc_date) == 96U);
+static_assert(offsetof(ProbeContext, flash_handle) == 100U);
+static_assert(offsetof(ProbeContext, rom_memset_buffer) == 104U);
+static_assert(offsetof(ProbeContext, rom_cpu_ticks_per_us) == 108U);
+static_assert(offsetof(ProbeContext, rom_reset_reason_core0) == 112U);
+static_assert(offsetof(ProbeContext, rom_reset_reason_core1) == 116U);
 static_assert(SYSTEM_CPU_PER_CONF_REG == 0x600c'0010U);
 static_assert(SYSTEM_SYSCLK_CONF_REG == 0x600c'0060U);
 static_assert(RTC_CNTL_STORE1_REG == 0x6000'8054U);
@@ -212,6 +225,26 @@ extern "C" std::uint32_t tinydraw_mmio_write_same_value_extmem_dcache_ctrl1_2048
     const ProbeContext& context, std::uint32_t seed);
 extern "C" std::uint32_t tinydraw_mmio_write_same_value_extmem_icache_ctrl1_2048(
     const ProbeContext& context, std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_rom_baseline_reset_reason_core0(
+    const ProbeContext& context, std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_rom_reset_reason_core0(const ProbeContext& context,
+                                                           std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_rom_baseline_reset_reason_core1(
+    const ProbeContext& context, std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_rom_reset_reason_core1(const ProbeContext& context,
+                                                           std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_rom_baseline_memset_zero(const ProbeContext& context,
+                                                             std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_rom_memset_zero(const ProbeContext& context,
+                                                    std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_rom_baseline_memset_52e0(const ProbeContext& context,
+                                                             std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_rom_memset_52e0(const ProbeContext& context,
+                                                    std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_rom_baseline_set_cpu_ticks(const ProbeContext& context,
+                                                               std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_rom_set_cpu_ticks(const ProbeContext& context,
+                                                      std::uint32_t seed);
 
 #define DECLARE_DCACHE_BURST_PROBE(path, lines)                                                  \
   extern "C" std::uint32_t tinydraw_dcache_##path##_##lines##_lines(const ProbeContext& context, \
@@ -631,6 +664,56 @@ std::uint32_t finalize_mmio_same_value_extmem_icache_ctrl1(const ProbeContext& c
                               context.mmio_same_value_extmem_icache_ctrl1);
 }
 
+std::uint32_t rom_callback_state(bool preserved) {
+  return preserved ? kRomCallbackStatePreservedChecksum : 0U;
+}
+
+std::uint32_t finalize_rom_baseline_reset_reason_core0(const ProbeContext& context,
+                                                        std::uint32_t, std::uint32_t result) {
+  return rom_callback_state(result == 0U &&
+                            esp_rom_get_cpu_ticks_per_us() == context.rom_cpu_ticks_per_us);
+}
+
+std::uint32_t finalize_rom_reset_reason_core0(const ProbeContext& context, std::uint32_t,
+                                               std::uint32_t result) {
+  return rom_callback_state(result == context.rom_reset_reason_core0);
+}
+
+std::uint32_t finalize_rom_baseline_reset_reason_core1(const ProbeContext& context,
+                                                        std::uint32_t, std::uint32_t result) {
+  return rom_callback_state(result == 1U &&
+                            esp_rom_get_cpu_ticks_per_us() == context.rom_cpu_ticks_per_us);
+}
+
+std::uint32_t finalize_rom_reset_reason_core1(const ProbeContext& context, std::uint32_t,
+                                               std::uint32_t result) {
+  return rom_callback_state(result == context.rom_reset_reason_core1);
+}
+
+std::uint32_t finalize_rom_memset_fill(const ProbeContext& context, std::uint32_t,
+                                       std::uint32_t result) {
+  const bool pointer_matches = result == reinterpret_cast<std::uintptr_t>(context.rom_memset_buffer);
+  const bool fill_matches = std::all_of(context.rom_memset_buffer,
+                                        context.rom_memset_buffer + kRomMemsetBytes,
+                                        [](std::uint8_t value) { return value == kRomMemsetFill; });
+  return rom_callback_state(pointer_matches && fill_matches);
+}
+
+std::uint32_t finalize_rom_memset_zeroed(const ProbeContext& context, std::uint32_t,
+                                         std::uint32_t result) {
+  const bool pointer_matches = result == reinterpret_cast<std::uintptr_t>(context.rom_memset_buffer);
+  const bool zeroed = std::all_of(context.rom_memset_buffer,
+                                  context.rom_memset_buffer + kRomMemsetBytes,
+                                  [](std::uint8_t value) { return value == 0U; });
+  return rom_callback_state(pointer_matches && zeroed);
+}
+
+std::uint32_t finalize_rom_cpu_ticks(const ProbeContext& context, std::uint32_t,
+                                     std::uint32_t result) {
+  return rom_callback_state(result == 0U &&
+                            esp_rom_get_cpu_ticks_per_us() == context.rom_cpu_ticks_per_us);
+}
+
 FORCE_INLINE_ATTR std::uint32_t psram_sequential(const ProbeContext& context, std::uint32_t seed,
                                                  std::size_t bytes) {
   const volatile std::uint32_t* words = context.psram;
@@ -722,6 +805,12 @@ std::uint32_t IRAM_ATTR NOINLINE_ATTR flash_instruction_probe(const ProbeContext
 }
 
 esp_err_t prepare_none(const ProbeContext&, Kernel, std::uint32_t) { return ESP_OK; }
+
+esp_err_t prepare_rom_memset_fill(const ProbeContext& context, Kernel, std::uint32_t) {
+  std::fill(context.rom_memset_buffer, context.rom_memset_buffer + kRomMemsetBytes,
+            kRomMemsetFill);
+  return ESP_OK;
+}
 
 esp_err_t prepare_hot(const ProbeContext& context, Kernel kernel, std::uint32_t seed) {
   g_prepare_checksum = kernel(context, seed ^ 0xa5a5'a5a5U);
@@ -1000,6 +1089,13 @@ RawSample IRAM_ATTR NOINLINE_ATTR measure_rtc_mmio_once(
 }
 
 RawSample IRAM_ATTR NOINLINE_ATTR measure_observed_rtc_mmio_once(
+    const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
+    bool collect_cache_counters) {
+  return measure_mmio_with_signature(context, kernel, finalize, seed, collect_cache_counters,
+                                     nullptr);
+}
+
+RawSample IRAM_ATTR NOINLINE_ATTR measure_rom_callback_once(
     const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
     bool collect_cache_counters) {
   return measure_mmio_with_signature(context, kernel, finalize, seed, collect_cache_counters,
@@ -1291,6 +1387,13 @@ bool initialize_context(ProbeContext& context) {
       context.mmio_same_value_extmem_dcache_autoload_ctrl,
       context.mmio_same_value_extmem_icache_ctrl1,
       context.mmio_same_value_extmem_icache_autoload_ctrl);
+  context.rom_cpu_ticks_per_us = esp_rom_get_cpu_ticks_per_us();
+  context.rom_reset_reason_core0 = esp_rom_get_reset_reason(0);
+  context.rom_reset_reason_core1 = esp_rom_get_reset_reason(1);
+  std::printf("TINYDRAW_ROM_CALLBACK_VALUES reset_core0=%" PRIu32
+              " reset_core1=%" PRIu32 " cpu_ticks_per_us=%" PRIu32 "\n",
+              context.rom_reset_reason_core0, context.rom_reset_reason_core1,
+              context.rom_cpu_ticks_per_us);
   context.sram_dependent = static_cast<std::uint32_t*>(heap_caps_malloc(
       kDependentEntries * sizeof(std::uint32_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
   context.sram_unaligned_dependent = static_cast<std::uint8_t*>(heap_caps_malloc(
@@ -1305,9 +1408,12 @@ bool initialize_context(ProbeContext& context) {
       64U, kDependentEntries * sizeof(std::uint32_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
   context.psram_load_use = static_cast<std::uint32_t*>(heap_caps_aligned_alloc(
       64U, kDependentEntries * sizeof(std::uint32_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  context.rom_memset_buffer = static_cast<std::uint8_t*>(
+      heap_caps_aligned_alloc(16U, kRomMemsetBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
   if (context.sram_dependent == nullptr || context.sram_unaligned_dependent == nullptr ||
       context.sram_stream == nullptr || context.psram == nullptr || context.contention == nullptr ||
-      context.sram_load_use == nullptr || context.psram_load_use == nullptr) {
+      context.sram_load_use == nullptr || context.psram_load_use == nullptr ||
+      context.rom_memset_buffer == nullptr) {
     print_error("initialize", "allocation");
     return false;
   }
@@ -1429,6 +1535,38 @@ bool initialize_context(ProbeContext& context) {
   }
 
 constexpr Measurement kMeasurements[] = {
+    {"rom_baseline_reset_reason_core0", "internal-to-internal", 0U, 1U, 0U,
+     tinydraw_rom_baseline_reset_reason_core0, prepare_none,
+     finalize_rom_baseline_reset_reason_core0, kRomCallbackStatePreservedChecksum,
+     measure_rom_callback_once},
+    {"rom_reset_reason_core0", "other", 0U, 1U, 0U, tinydraw_rom_reset_reason_core0,
+     prepare_none, finalize_rom_reset_reason_core0, kRomCallbackStatePreservedChecksum,
+     measure_rom_callback_once},
+    {"rom_baseline_reset_reason_core1", "internal-to-internal", 0U, 1U, 0U,
+     tinydraw_rom_baseline_reset_reason_core1, prepare_none,
+     finalize_rom_baseline_reset_reason_core1, kRomCallbackStatePreservedChecksum,
+     measure_rom_callback_once},
+    {"rom_reset_reason_core1", "other", 0U, 1U, 0U, tinydraw_rom_reset_reason_core1,
+     prepare_none, finalize_rom_reset_reason_core1, kRomCallbackStatePreservedChecksum,
+     measure_rom_callback_once},
+    {"rom_baseline_memset_zero_length", "internal-to-internal", 0U, 1U, 0U,
+     tinydraw_rom_baseline_memset_zero, prepare_rom_memset_fill, finalize_rom_memset_fill,
+     kRomCallbackStatePreservedChecksum, measure_rom_callback_once},
+    {"rom_memset_zero_length", "internal-to-internal", 0U, 1U, 0U,
+     tinydraw_rom_memset_zero, prepare_rom_memset_fill, finalize_rom_memset_fill,
+     kRomCallbackStatePreservedChecksum, measure_rom_callback_once},
+    {"rom_baseline_memset_0x52e0", "internal-to-internal", kRomMemsetBytes, 1U, 0U,
+     tinydraw_rom_baseline_memset_52e0, prepare_rom_memset_fill, finalize_rom_memset_fill,
+     kRomCallbackStatePreservedChecksum, measure_rom_callback_once},
+    {"rom_memset_0x52e0", "internal-to-internal", kRomMemsetBytes, 1U, 0U,
+     tinydraw_rom_memset_52e0, prepare_rom_memset_fill, finalize_rom_memset_zeroed,
+     kRomCallbackStatePreservedChecksum, measure_rom_callback_once},
+    {"rom_baseline_set_cpu_ticks_per_us", "internal-to-internal", 0U, 1U, 0U,
+     tinydraw_rom_baseline_set_cpu_ticks, prepare_none, finalize_rom_cpu_ticks,
+     kRomCallbackStatePreservedChecksum, measure_rom_callback_once},
+    {"rom_set_cpu_ticks_per_us_same_value", "internal-to-internal", 0U, 1U, 0U,
+     tinydraw_rom_set_cpu_ticks, prepare_none, finalize_rom_cpu_ticks,
+     kRomCallbackStatePreservedChecksum, measure_rom_callback_once},
     {"mmio_read_sram_4096_aligned", "internal-to-internal",
      kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations, tinydraw_mmio_read_sram,
      prepare_none, nullptr, 0U, measure_mmio_once},
@@ -1607,11 +1745,13 @@ constexpr Measurement kMeasurements[] = {
 #undef DCACHE_BURST_MEASUREMENTS
 #undef ICACHE_BURST_MEASUREMENTS
 
-// This provenance commit is intentionally a bounded capture firmware. The
-// following evidence commit restores the aggregate suite after two complete
-// boots have bound these ten matched cells to one ELF.
+// Capture-mode provenance commits bind one bounded cohort to one ELF. Evidence
+// commits restore the aggregate suite after two complete boots.
 constexpr bool kMmioSlopeCaptureMode = false;
 constexpr std::size_t kMmioSlopeMeasurementCount = 10U;
+constexpr bool kRomCallbackCaptureMode = true;
+constexpr std::size_t kRomCallbackMeasurementCount = 10U;
+static_assert(!(kMmioSlopeCaptureMode && kRomCallbackCaptureMode));
 
 bool is_mmio_slope_measurement(const Measurement& measurement) {
   constexpr const char* kIds[] = {
@@ -1633,8 +1773,29 @@ bool is_mmio_slope_measurement(const Measurement& measurement) {
   return false;
 }
 
+bool is_rom_callback_measurement(const Measurement& measurement) {
+  constexpr const char* kIds[] = {
+      "rom_baseline_reset_reason_core0",
+      "rom_reset_reason_core0",
+      "rom_baseline_reset_reason_core1",
+      "rom_reset_reason_core1",
+      "rom_baseline_memset_zero_length",
+      "rom_memset_zero_length",
+      "rom_baseline_memset_0x52e0",
+      "rom_memset_0x52e0",
+      "rom_baseline_set_cpu_ticks_per_us",
+      "rom_set_cpu_ticks_per_us_same_value",
+  };
+  static_assert(std::size(kIds) == kRomCallbackMeasurementCount);
+  for (const char* id : kIds) {
+    if (std::strcmp(measurement.id, id) == 0) return true;
+  }
+  return false;
+}
+
 bool run_suite(const ProbeContext& context, const char* contention_mode) {
   for (const auto& measurement : kMeasurements) {
+    if (kRomCallbackCaptureMode && !is_rom_callback_measurement(measurement)) continue;
     if (kMmioSlopeCaptureMode && !is_mmio_slope_measurement(measurement)) continue;
     if (!run_measurement(context, measurement, contention_mode)) {
       return false;
@@ -1660,8 +1821,11 @@ void probe_task(void*) {
               ",\"record\":\"run-complete\",\"measurements\":%lu,\"samplesPerMeasurement\":%d,"
               "\"pass\":%s}\n",
               kRecordPrefix, kProtocolVersion,
-              static_cast<unsigned long>((kMmioSlopeCaptureMode ? kMmioSlopeMeasurementCount
-                                                                 : std::size(kMeasurements)) *
+              static_cast<unsigned long>((kRomCallbackCaptureMode
+                                              ? kRomCallbackMeasurementCount
+                                              : (kMmioSlopeCaptureMode
+                                                     ? kMmioSlopeMeasurementCount
+                                                     : std::size(kMeasurements))) *
                                          2U),
               kSamplesPerMeasurement,
               passed ? "true" : "false");
