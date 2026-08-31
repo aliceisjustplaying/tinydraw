@@ -225,11 +225,18 @@ describe("standalone timing-probe firmware structure", () => {
     const rgbWindowAssembly = await Bun.file(
       join(root, "esp32/main/timing_probe/rgb565_call_window_esp32s3.S"),
     ).text();
+    const sramAssembly = await Bun.file(
+      join(root, "esp32/main/timing_probe/sram_microprobes_esp32s3.S"),
+    ).text();
     for (const kernel of [
       "sram_aligned_dependent",
       "sram_unaligned_dependent",
       "sram_aligned_stream",
       "sram_unaligned_stream",
+      "sram_instruction_issue",
+      "sram_l32_dependent",
+      "sram_l32_independent",
+      "sram_s32_store_complete",
       "rgb565_stage_five_scalar_oracle_hot",
       "rgb565_stage_five_scalar_oracle_cold",
       "psram_hot_sequential",
@@ -254,6 +261,9 @@ describe("standalone timing-probe firmware structure", () => {
     expect(source).toContain("EXTMEM_IBUS_ACS_MISS_CNT_REG");
     expect(source).toContain("EXTMEM_DBUS_ACS_FLASH_MISS_CNT_REG");
     expect(source).toContain("EXTMEM_DBUS_ACS_SPIRAM_MISS_CNT_REG");
+    expect(source).toContain("EXTMEM_DBUS_TO_FLASH_START_VADDR_REG");
+    expect(source).toContain("EXTMEM_DBUS_TO_FLASH_END_VADDR_REG");
+    expect(source).toContain("TINYDRAW_TIMING_COUNTER_RANGE");
     expect(source).toContain("0x1234U, 0xabcdU, 0x00ffU, 0xf81fU, 0x07e0U");
     expect(source).toContain("kRgb565StageOutputChecksum = 0x471e'969fU");
     expect(source).toContain(
@@ -262,6 +272,43 @@ describe("standalone timing-probe firmware structure", () => {
     expect(source).toContain("prepare_rgb565_stage_hot");
     expect(source).toContain("prepare_rgb565_stage_cold");
     expect(source).toContain("measure_rgb565_stage_once");
+    expect(source).toContain("finalize_sram_store_complete");
+    expect(source).toContain("kSramStoreCompletionChecksum");
+    for (const symbol of [
+      "tinydraw_sram_instruction_issue",
+      "tinydraw_sram_l32_dependent",
+      "tinydraw_sram_l32_independent",
+      "tinydraw_sram_s32_store_complete",
+    ]) {
+      expect(sramAssembly).toContain(`.global ${symbol}`);
+    }
+    const issueProbe = sramAssembly.slice(
+      sramAssembly.indexOf("tinydraw_sram_instruction_issue:"),
+      sramAssembly.indexOf(".size tinydraw_sram_instruction_issue"),
+    );
+    expect(issueProbe.match(/\baddi\b/g)).toHaveLength(9);
+    expect(issueProbe).toContain("movi    a8, 1024");
+    const dependentProbe = sramAssembly.slice(
+      sramAssembly.indexOf("tinydraw_sram_l32_dependent:"),
+      sramAssembly.indexOf(".size tinydraw_sram_l32_dependent"),
+    );
+    expect(dependentProbe.match(/\bl32i\b/g)).toHaveLength(2);
+    expect(dependentProbe).not.toContain("memw");
+    const independentProbe = sramAssembly.slice(
+      sramAssembly.indexOf("tinydraw_sram_l32_independent:"),
+      sramAssembly.indexOf(".size tinydraw_sram_l32_independent"),
+    );
+    expect(independentProbe.match(/\bl32i\b/g)).toHaveLength(9);
+    expect(independentProbe.match(/\baddi\b/g)).toHaveLength(1);
+    expect(independentProbe).toContain("movi    a14, 1024");
+    expect(independentProbe).not.toContain("memw");
+    const storeProbe = sramAssembly.slice(
+      sramAssembly.indexOf("tinydraw_sram_s32_store_complete:"),
+      sramAssembly.indexOf(".size tinydraw_sram_s32_store_complete"),
+    );
+    expect(storeProbe.match(/\bs32i\b/g)).toHaveLength(8);
+    expect(storeProbe.match(/\bmemw\b/g)).toHaveLength(1);
+    expect(storeProbe.indexOf("s32i    a3, a8, 28")).toBeLessThan(storeProbe.indexOf("memw"));
     const rgbSampler = source.slice(
       source.indexOf("RawSample IRAM_ATTR NOINLINE_ATTR measure_rgb565_stage_once"),
       source.indexOf("void print_measurement_start"),
@@ -282,6 +329,7 @@ describe("standalone timing-probe firmware structure", () => {
     expect(source).toContain("esp_partition_mmap");
     expect(source).not.toContain("esp_partition_erase");
     expect(source).not.toContain("esp_flash_erase");
+    expect(source).toContain("flush_console();\n    vTaskDelay(pdMS_TO_TICKS(5));");
   });
 
   test("routes an independent variant with benchmark-only task-WDT settings", async () => {
@@ -298,6 +346,7 @@ describe("standalone timing-probe firmware structure", () => {
     expect(projectCmake).toContain('sdkconfig.timing-probe.defaults');
     expect(componentCmake).toContain('"timing_probe/timing_probe.cpp"');
     expect(componentCmake).toContain('"timing_probe/rgb565_call_window_esp32s3.S"');
+    expect(componentCmake).toContain('"timing_probe/sram_microprobes_esp32s3.S"');
     expect(script).toContain("CONFIG_ESPTOOLPY_FLASHFREQ_80M=y");
     expect(script).toContain("assert_timing_probe_config");
     expect(script).toContain("TINYDRAW_FIRMWARE_VARIANT=timing-probe reconfigure");

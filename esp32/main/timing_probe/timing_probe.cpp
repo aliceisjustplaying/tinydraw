@@ -48,6 +48,7 @@ constexpr std::size_t kContentionBytes = 512U * 1024U;
 constexpr std::uint32_t kDependentLoads = 4096U;
 constexpr std::uint32_t kRandomHotLoads = 4096U;
 constexpr std::uint32_t kRandomColdLoads = 16384U;
+constexpr std::uint32_t kSramStoreCompletionChecksum = 0x5352'414dU;
 constexpr std::size_t kRgb565StagePixels = 5U;
 constexpr std::size_t kRgb565OracleCodeBytes = 41U;
 constexpr std::array<std::uint16_t, kRgb565StagePixels> kRgb565StageInput = {
@@ -69,6 +70,18 @@ struct ProbeContext {
   const std::uint32_t* flash = nullptr;
   esp_partition_mmap_handle_t flash_handle = 0;
 };
+
+static_assert(offsetof(ProbeContext, sram_dependent) == 0U);
+static_assert(offsetof(ProbeContext, sram_stream) == 8U);
+
+extern "C" std::uint32_t tinydraw_sram_instruction_issue(const ProbeContext& context,
+                                                          std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_sram_l32_dependent(const ProbeContext& context,
+                                                      std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_sram_l32_independent(const ProbeContext& context,
+                                                        std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_sram_s32_store_complete(const ProbeContext& context,
+                                                           std::uint32_t seed);
 
 struct CacheCounters {
   std::uint32_t ibus_accesses;
@@ -384,6 +397,20 @@ std::uint32_t finalize_rgb565_stage(const ProbeContext&, std::uint32_t,
   return checksum;
 }
 
+std::uint32_t finalize_sram_store_complete(const ProbeContext& context, std::uint32_t seed,
+                                           std::uint32_t kernel_result) {
+  bool valid = kernel_result == seed;
+  for (std::size_t offset = 0; offset < kSramStreamBytes; offset += sizeof(std::uint32_t)) {
+    std::uint32_t word = 0;
+    std::memcpy(&word, context.sram_stream + offset, sizeof(word));
+    valid = valid && word == seed;
+  }
+  for (std::size_t index = 0; index < kSramStreamBytes + 8U; ++index) {
+    context.sram_stream[index] = static_cast<std::uint8_t>(index * 37U + 11U);
+  }
+  return valid ? kSramStoreCompletionChecksum : 0U;
+}
+
 FORCE_INLINE_ATTR std::uint32_t psram_sequential(const ProbeContext& context, std::uint32_t seed,
                                                  std::size_t bytes) {
   const volatile std::uint32_t* words = context.psram;
@@ -660,7 +687,10 @@ bool run_measurement(const ProbeContext& context, const Measurement& measurement
           sample.cache_counters.dbus_psram_misses);
     }
     std::printf("},\"checksum\":%" PRIu32 "}\n", sample.checksum);
-    vTaskDelay(1);
+    // USB Serial/JTAG has a small transmit FIFO. Drain each complete evidence record before the
+    // next sample so sustained probe output cannot silently lose bytes on the host boundary.
+    flush_console();
+    vTaskDelay(pdMS_TO_TICKS(5));
   }
   std::printf("%s{\"protocolVersion\":%" PRIu32
               ",\"record\":\"measurement-complete\",\"measurementId\":",
@@ -762,6 +792,23 @@ bool initialize_context(ProbeContext& context) {
     return false;
   }
   context.flash = static_cast<const std::uint32_t*>(mapped);
+
+  // ESP32-S3 resets the DBUS flash-classifier range to 0..0. Flash and PSRAM share the
+  // external-data virtual window, so the miss counters only distinguish them after software
+  // constrains the mapped flash interval explicitly.
+  const auto flash_start = reinterpret_cast<std::uintptr_t>(context.flash);
+  const auto flash_end = flash_start + kFlashMapBytes - 1U;
+  REG_WRITE(EXTMEM_DBUS_TO_FLASH_START_VADDR_REG, flash_start);
+  REG_WRITE(EXTMEM_DBUS_TO_FLASH_END_VADDR_REG, flash_end);
+  if (REG_READ(EXTMEM_DBUS_TO_FLASH_START_VADDR_REG) != flash_start ||
+      REG_READ(EXTMEM_DBUS_TO_FLASH_END_VADDR_REG) != flash_end) {
+    print_error("initialize", "dbus-flash-counter-range");
+    return false;
+  }
+  std::printf("TINYDRAW_TIMING_COUNTER_RANGE flashStart=0x%08" PRIxPTR
+              " flashEnd=0x%08" PRIxPTR " psramStart=0x%08" PRIxPTR "\n",
+              flash_start, flash_end, reinterpret_cast<std::uintptr_t>(context.psram));
+  flush_console();
   return true;
 }
 
@@ -774,6 +821,15 @@ constexpr Measurement kMeasurements[] = {
      sram_aligned_stream, prepare_none},
     {"sram_unaligned_stream", "internal-to-internal", kSramStreamBytes, 1U, kWarmupIterations,
      sram_unaligned_stream, prepare_none},
+    {"sram_instruction_issue", "internal-to-internal", 0U, 1U, kWarmupIterations,
+     tinydraw_sram_instruction_issue, prepare_none},
+    {"sram_l32_dependent", "internal-to-internal", kDependentLoads * 4U, 1U,
+     kWarmupIterations, tinydraw_sram_l32_dependent, prepare_none},
+    {"sram_l32_independent", "internal-to-internal", kSramStreamBytes, 1U,
+     kWarmupIterations, tinydraw_sram_l32_independent, prepare_none},
+    {"sram_s32_store_complete", "internal-to-internal", kSramStreamBytes, 1U,
+     kWarmupIterations, tinydraw_sram_s32_store_complete, prepare_none,
+     finalize_sram_store_complete, kSramStoreCompletionChecksum},
     {"rgb565_stage_five_scalar_oracle_hot", "internal-to-internal", kRgb565StagePixels * 4U, 1U,
      kWarmupIterations, rgb565_stage_five_scalar_oracle, prepare_rgb565_stage_hot,
      finalize_rgb565_stage, kRgb565StageOutputChecksum, measure_rgb565_stage_once},
