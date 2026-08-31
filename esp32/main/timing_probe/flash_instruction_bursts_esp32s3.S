@@ -62,6 +62,15 @@ tinydraw_measure_flash_instruction_burst_window:
     .size \function, \end-\function
     .endm
 
+// Exact IRAM peer for the eight-line flash target. Both targets execute 120
+// instructions before returning: 112 leading NOPs, six final-line NOPs,
+// one sentinel move, and one return. The eight trailing NOPs are prefetch
+// padding and never execute.
+    .section .iram1, "ax"
+DEFINE_FLASH_INSTRUCTION_BURST tinydraw_iram_instruction_hit_8_lines, tinydraw_iram_instruction_hit_8_lines_start, tinydraw_iram_instruction_hit_8_lines_end, 8
+
+    .section .text.tinydraw_flash_instruction_bursts, "ax"
+    .balign 32
 DEFINE_FLASH_INSTRUCTION_BURST tinydraw_flash_instruction_burst_1_lines, tinydraw_flash_instruction_burst_1_lines_start, tinydraw_flash_instruction_burst_1_lines_end, 1
 DEFINE_FLASH_INSTRUCTION_BURST tinydraw_flash_instruction_burst_2_lines, tinydraw_flash_instruction_burst_2_lines_start, tinydraw_flash_instruction_burst_2_lines_end, 2
 DEFINE_FLASH_INSTRUCTION_BURST tinydraw_flash_instruction_burst_4_lines, tinydraw_flash_instruction_burst_4_lines_start, tinydraw_flash_instruction_burst_4_lines_end, 4

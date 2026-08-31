@@ -41,6 +41,10 @@
     .endm
 
 // ProbeContext::psram is at byte offset 12; ProbeContext::flash is at 20.
+// ProbeContext::sram_stream is at byte offset 8. Its sixteen-load peer uses
+// the identical macro body as the hot PSRAM and flash measurements.
+DEFINE_DCACHE_BURST_PROBE tinydraw_dcache_sram_16_lines, 8, 16
+
 DEFINE_DCACHE_BURST_PROBE tinydraw_dcache_psram_1_lines, 12, 1
 DEFINE_DCACHE_BURST_PROBE tinydraw_dcache_psram_2_lines, 12, 2
 DEFINE_DCACHE_BURST_PROBE tinydraw_dcache_psram_4_lines, 12, 4

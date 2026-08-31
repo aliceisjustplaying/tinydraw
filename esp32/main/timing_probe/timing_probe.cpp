@@ -39,6 +39,8 @@ extern const std::uint8_t tinydraw_flash_instruction_burst_4_lines_start[];
 extern const std::uint8_t tinydraw_flash_instruction_burst_4_lines_end[];
 extern const std::uint8_t tinydraw_flash_instruction_burst_8_lines_start[];
 extern const std::uint8_t tinydraw_flash_instruction_burst_8_lines_end[];
+extern const std::uint8_t tinydraw_iram_instruction_hit_8_lines_start[];
+extern const std::uint8_t tinydraw_iram_instruction_hit_8_lines_end[];
 }
 
 namespace tinydraw::esp32::timing_probe {
@@ -61,6 +63,9 @@ constexpr std::uint32_t kRandomHotLoads = 4096U;
 constexpr std::uint32_t kRandomColdLoads = 16384U;
 constexpr std::size_t kIcacheLineBytes = 32U;
 constexpr std::size_t kDcacheLineBytes = 64U;
+constexpr std::size_t kMatchedIcacheLines = 8U;
+constexpr std::uint32_t kMatchedIcacheExecutedInstructions = 120U;
+constexpr std::uint32_t kMatchedDcacheLoads = 16U;
 constexpr std::uint32_t kSramStoreCompletionChecksum = 0x5352'414dU;
 constexpr std::size_t kRgb565StagePixels = 5U;
 constexpr std::size_t kRgb565OracleCodeBytes = 41U;
@@ -114,6 +119,7 @@ DECLARE_DCACHE_BURST_PROBE(flash, 2);
 DECLARE_DCACHE_BURST_PROBE(flash, 4);
 DECLARE_DCACHE_BURST_PROBE(flash, 8);
 DECLARE_DCACHE_BURST_PROBE(flash, 16);
+DECLARE_DCACHE_BURST_PROBE(sram, 16);
 
 #undef DECLARE_DCACHE_BURST_PROBE
 
@@ -124,6 +130,26 @@ struct CacheCounters {
   std::uint32_t dbus_flash_misses;
   std::uint32_t dbus_psram_misses;
 };
+
+constexpr CacheCounters kInternalCacheHitSignature{};
+constexpr CacheCounters kFlashIcacheHitSignature{
+    .ibus_accesses = 62U,
+    .ibus_misses = 0U,
+    .dbus_accesses = 0U,
+    .dbus_flash_misses = 0U,
+    .dbus_psram_misses = 0U,
+};
+constexpr CacheCounters kExternalDcacheHitSignature{
+    .ibus_accesses = 0U,
+    .ibus_misses = 0U,
+    .dbus_accesses = kMatchedDcacheLoads,
+    .dbus_flash_misses = 0U,
+    .dbus_psram_misses = 0U,
+};
+static_assert(kMatchedIcacheExecutedInstructions ==
+              (kMatchedIcacheLines - 1U) * 16U + 6U + 2U);
+static_assert(kFlashIcacheHitSignature.ibus_accesses ==
+              kMatchedIcacheExecutedInstructions / 2U + 2U);
 
 struct Rgb565CallWindow {
   std::uint32_t start_ccount;
@@ -612,6 +638,16 @@ struct FlashInstructionBurstRange {
 template <std::size_t Lines>
 struct FlashInstructionBurstSymbols;
 
+FORCE_INLINE_ATTR FlashInstructionBurstRange matched_iram_instruction_range() {
+  return {tinydraw_iram_instruction_hit_8_lines_start,
+          tinydraw_iram_instruction_hit_8_lines_end};
+}
+
+FORCE_INLINE_ATTR FlashInstructionBurstRange matched_flash_instruction_range() {
+  return {tinydraw_flash_instruction_burst_8_lines_start,
+          tinydraw_flash_instruction_burst_8_lines_end};
+}
+
 #define DEFINE_FLASH_INSTRUCTION_BURST_RANGE(lines)                   \
   template <>                                                         \
   struct FlashInstructionBurstSymbols<lines> {                        \
@@ -634,6 +670,22 @@ std::uint32_t IRAM_ATTR NOINLINE_ATTR flash_instruction_burst_kernel(const Probe
   const FlashInstructionBurstRange range = FlashInstructionBurstSymbols<Lines>::range();
   FlashInstructionBurstWindow window{};
   tinydraw_measure_flash_instruction_burst_window(&window, range.start);
+  return window.sentinel;
+}
+
+std::uint32_t IRAM_ATTR NOINLINE_ATTR matched_iram_instruction_kernel(const ProbeContext&,
+                                                                      std::uint32_t) {
+  FlashInstructionBurstWindow window{};
+  tinydraw_measure_flash_instruction_burst_window(&window,
+                                                   matched_iram_instruction_range().start);
+  return window.sentinel;
+}
+
+std::uint32_t IRAM_ATTR NOINLINE_ATTR matched_flash_instruction_kernel(const ProbeContext&,
+                                                                       std::uint32_t) {
+  FlashInstructionBurstWindow window{};
+  tinydraw_measure_flash_instruction_burst_window(&window,
+                                                   matched_flash_instruction_range().start);
   return window.sentinel;
 }
 
@@ -681,6 +733,23 @@ FORCE_INLINE_ATTR CacheCounters read_cache_counters() {
   };
 }
 
+FORCE_INLINE_ATTR bool cache_counters_equal(const CacheCounters& actual,
+                                            const CacheCounters& expected) {
+  return actual.ibus_accesses == expected.ibus_accesses &&
+         actual.ibus_misses == expected.ibus_misses &&
+         actual.dbus_accesses == expected.dbus_accesses &&
+         actual.dbus_flash_misses == expected.dbus_flash_misses &&
+         actual.dbus_psram_misses == expected.dbus_psram_misses;
+}
+
+FORCE_INLINE_ATTR void require_cache_counter_signature(RawSample& sample,
+                                                       const CacheCounters& expected,
+                                                       bool collect_cache_counters) {
+  if (collect_cache_counters && !cache_counters_equal(sample.cache_counters, expected)) {
+    sample.preparation_error = ESP_ERR_INVALID_RESPONSE;
+  }
+}
+
 RawSample IRAM_ATTR NOINLINE_ATTR measure_once(const ProbeContext& context, Kernel kernel,
                                                Finalize finalize, std::uint32_t seed,
                                                bool collect_cache_counters) {
@@ -695,6 +764,25 @@ RawSample IRAM_ATTR NOINLINE_ATTR measure_once(const ProbeContext& context, Kern
   sample.cycles = sample.end_ccount - sample.start_ccount;
   sample.checksum = finalize == nullptr ? kernel_result : finalize(context, seed, kernel_result);
   sample.has_cache_counters = collect_cache_counters;
+  return sample;
+}
+
+RawSample IRAM_ATTR NOINLINE_ATTR measure_matched_dcache_internal_once(
+    const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
+    bool collect_cache_counters) {
+  RawSample sample =
+      measure_once(context, kernel, finalize, seed, collect_cache_counters);
+  require_cache_counter_signature(sample, kInternalCacheHitSignature, collect_cache_counters);
+  return sample;
+}
+
+RawSample IRAM_ATTR NOINLINE_ATTR measure_matched_dcache_external_once(
+    const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
+    bool collect_cache_counters) {
+  RawSample sample =
+      measure_once(context, kernel, finalize, seed, collect_cache_counters);
+  require_cache_counter_signature(sample, kExternalDcacheHitSignature,
+                                  collect_cache_counters);
   return sample;
 }
 
@@ -767,6 +855,55 @@ RawSample IRAM_ATTR NOINLINE_ATTR measure_flash_instruction_burst_once(
   sample.checksum = window.sentinel;
   sample.has_cache_counters = collect_cache_counters;
   return sample;
+}
+
+RawSample IRAM_ATTR NOINLINE_ATTR measure_matched_icache_target_once(
+    const FlashInstructionBurstRange& range, const CacheCounters& expected_counters,
+    bool collect_cache_counters) {
+  RawSample sample{};
+  const auto start = reinterpret_cast<std::uintptr_t>(range.start);
+  const auto end = reinterpret_cast<std::uintptr_t>(range.end);
+  if ((start & (kIcacheLineBytes - 1U)) != 0U ||
+      end - start != kMatchedIcacheLines * kIcacheLineBytes) {
+    sample.preparation_error = ESP_ERR_INVALID_SIZE;
+    return sample;
+  }
+
+  FlashInstructionBurstWindow warm_window{};
+  tinydraw_measure_flash_instruction_burst_window(&warm_window, range.start);
+  if (warm_window.sentinel != kMatchedIcacheLines) {
+    sample.preparation_error = ESP_ERR_INVALID_RESPONSE;
+    return sample;
+  }
+
+  sample.start_core = esp_cpu_get_core_id();
+  if (collect_cache_counters) clear_cache_counters();
+  FlashInstructionBurstWindow window{};
+  tinydraw_measure_flash_instruction_burst_window(&window, range.start);
+  sample.end_core = esp_cpu_get_core_id();
+  if (collect_cache_counters) sample.cache_counters = read_cache_counters();
+
+  sample.start_ccount = window.start_ccount;
+  sample.end_ccount = window.end_ccount;
+  sample.cycles = sample.end_ccount - sample.start_ccount;
+  sample.checksum = window.sentinel;
+  sample.has_cache_counters = collect_cache_counters;
+  require_cache_counter_signature(sample, expected_counters, collect_cache_counters);
+  return sample;
+}
+
+RawSample IRAM_ATTR NOINLINE_ATTR measure_matched_icache_iram_once(
+    const ProbeContext&, Kernel, Finalize, std::uint32_t, bool collect_cache_counters) {
+  return measure_matched_icache_target_once(matched_iram_instruction_range(),
+                                            kInternalCacheHitSignature,
+                                            collect_cache_counters);
+}
+
+RawSample IRAM_ATTR NOINLINE_ATTR measure_matched_icache_flash_once(
+    const ProbeContext&, Kernel, Finalize, std::uint32_t, bool collect_cache_counters) {
+  return measure_matched_icache_target_once(matched_flash_instruction_range(),
+                                            kFlashIcacheHitSignature,
+                                            collect_cache_counters);
 }
 
 void print_measurement_start(const Measurement& measurement, const char* measurement_id) {
@@ -1033,6 +1170,21 @@ constexpr Measurement kMeasurements[] = {
      kWarmupIterations, flash_hot_random, prepare_flash_hot},
     {"flash_mmap_cold_random", "flash-to-internal", kRandomColdLoads * 4U, 1U, 0U,
      flash_cold_random, prepare_flash_cold},
+    {"icache_hit_iram_120_instructions", "internal-to-internal", 0U, 1U,
+     kWarmupIterations, matched_iram_instruction_kernel, prepare_none, nullptr,
+     kMatchedIcacheLines, measure_matched_icache_iram_once},
+    {"icache_hit_flash_120_instructions", "other", 0U, 1U, kWarmupIterations,
+     matched_flash_instruction_kernel, prepare_none, nullptr, kMatchedIcacheLines,
+     measure_matched_icache_flash_once},
+    {"dcache_hit_sram_16_loads", "internal-to-internal", kMatchedDcacheLoads * 4U, 1U,
+     kWarmupIterations, tinydraw_dcache_sram_16_lines, prepare_dcache_burst_hot, nullptr,
+     0U, measure_matched_dcache_internal_once},
+    {"dcache_hit_psram_16_loads", "psram-to-internal", kMatchedDcacheLoads * 4U, 1U,
+     kWarmupIterations, tinydraw_dcache_psram_16_lines, prepare_dcache_burst_hot, nullptr,
+     0U, measure_matched_dcache_external_once},
+    {"dcache_hit_flash_16_loads", "flash-to-internal", kMatchedDcacheLoads * 4U, 1U,
+     kWarmupIterations, tinydraw_dcache_flash_16_lines, prepare_dcache_burst_hot, nullptr,
+     0U, measure_matched_dcache_external_once},
     DCACHE_BURST_MEASUREMENTS(psram, "psram-to-internal", 1),
     DCACHE_BURST_MEASUREMENTS(psram, "psram-to-internal", 2),
     DCACHE_BURST_MEASUREMENTS(psram, "psram-to-internal", 4),
