@@ -69,6 +69,49 @@ DEFINE_DEPENDENT_LOAD_PROBE tinydraw_dependent_load_flash, 20
 DEFINE_DEPENDENT_LOAD_PROBE tinydraw_dependent_load_sram, 24
 DEFINE_DEPENDENT_LOAD_PROBE tinydraw_dependent_load_psram, 28
 
+// Repeated conditional-branch probes. Every loop iteration executes exactly
+// four body instructions: the probe instruction, one increment, one
+// unconditional join, and one common no-op add. Taken and not-taken kernels
+// have byte-identical loop bodies and differ only in the condition initialized
+// before the loop. The baseline follows the not-taken route and replaces beqz
+// with one three-byte OR instruction.
+    .macro DEFINE_CONDITIONAL_BRANCH_PROBE name, condition, baseline
+    .balign 32
+    .global \name
+    .type   \name, @function
+\name:
+    .begin no-transform
+    entry   a1, 16
+    movi    a2, \condition
+    movi.n  a3, 0
+    movi    a9, 1
+    slli    a9, a9, 12
+    loop    a9, .Lbranch_done\@
+.Lbranch_loop\@:
+    .if \baseline
+    or      a4, a2, a2
+    .else
+    beqz    a2, .Lbranch_taken\@
+    .endif
+.Lbranch_not_taken\@:
+    addi.n  a3, a3, 1
+    j       .Lbranch_join\@
+.Lbranch_taken\@:
+    addi.n  a3, a3, 1
+    j       .Lbranch_join\@
+.Lbranch_join\@:
+    addi    a3, a3, 0
+.Lbranch_done\@:
+    mov.n   a2, a3
+    retw.n
+    .end no-transform
+    .size \name, .-\name
+    .endm
+
+DEFINE_CONDITIONAL_BRANCH_PROBE tinydraw_branch_baseline, 1, 1
+DEFINE_CONDITIONAL_BRANCH_PROBE tinydraw_branch_not_taken, 1, 0
+DEFINE_CONDITIONAL_BRANCH_PROBE tinydraw_branch_taken, 0, 0
+
 // ProbeContext::psram is at byte offset 12; ProbeContext::flash is at 20.
 // ProbeContext::sram_stream is at byte offset 8. Its sixteen-load peer uses
 // the identical macro body as the hot PSRAM and flash measurements.

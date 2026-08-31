@@ -66,6 +66,8 @@ constexpr std::size_t kDcacheLineBytes = 64U;
 constexpr std::size_t kMatchedIcacheLines = 8U;
 constexpr std::uint32_t kMatchedIcacheExecutedInstructions = 120U;
 constexpr std::uint32_t kMatchedDcacheLoads = 16U;
+constexpr std::uint32_t kConditionalBranchIterations = 4096U;
+constexpr std::uint32_t kConditionalBranchChecksum = kConditionalBranchIterations;
 constexpr std::uint32_t kSramStoreCompletionChecksum = 0x5352'414dU;
 constexpr std::size_t kRgb565StagePixels = 5U;
 constexpr std::size_t kRgb565OracleCodeBytes = 41U;
@@ -114,6 +116,12 @@ extern "C" std::uint32_t tinydraw_dependent_load_psram(const ProbeContext& conte
                                                         std::uint32_t seed);
 extern "C" std::uint32_t tinydraw_dependent_load_flash(const ProbeContext& context,
                                                         std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_branch_baseline(const ProbeContext& context,
+                                                   std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_branch_not_taken(const ProbeContext& context,
+                                                    std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_branch_taken(const ProbeContext& context,
+                                                std::uint32_t seed);
 
 #define DECLARE_DCACHE_BURST_PROBE(path, lines)                                                  \
   extern "C" std::uint32_t tinydraw_dcache_##path##_##lines##_lines(const ProbeContext& context, \
@@ -829,6 +837,15 @@ RawSample IRAM_ATTR NOINLINE_ATTR measure_dependent_load_external_once(
   return sample;
 }
 
+RawSample IRAM_ATTR NOINLINE_ATTR measure_conditional_branch_once(
+    const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
+    bool collect_cache_counters) {
+  RawSample sample =
+      measure_once(context, kernel, finalize, seed, collect_cache_counters);
+  require_cache_counter_signature(sample, kInternalCacheHitSignature, collect_cache_counters);
+  return sample;
+}
+
 RawSample IRAM_ATTR NOINLINE_ATTR measure_rgb565_stage_once(const ProbeContext& context, Kernel,
                                                             Finalize finalize, std::uint32_t seed,
                                                             bool collect_cache_counters) {
@@ -1197,6 +1214,15 @@ bool initialize_context(ProbeContext& context) {
   }
 
 constexpr Measurement kMeasurements[] = {
+    {"conditional_branch_baseline_4096_iterations", "internal-to-internal", 0U, 1U,
+     kWarmupIterations, tinydraw_branch_baseline, prepare_none, nullptr,
+     kConditionalBranchChecksum, measure_conditional_branch_once},
+    {"conditional_branch_not_taken_4096_iterations", "internal-to-internal", 0U, 1U,
+     kWarmupIterations, tinydraw_branch_not_taken, prepare_none, nullptr,
+     kConditionalBranchChecksum, measure_conditional_branch_once},
+    {"conditional_branch_taken_4096_iterations", "internal-to-internal", 0U, 1U,
+     kWarmupIterations, tinydraw_branch_taken, prepare_none, nullptr,
+     kConditionalBranchChecksum, measure_conditional_branch_once},
     {"dependent_load_sram_4096_steps", "internal-to-internal", kDependentLoads * 4U, 1U,
      kWarmupIterations, tinydraw_dependent_load_sram, prepare_dependent_load_hot, nullptr,
      0U, measure_dependent_load_internal_once},
