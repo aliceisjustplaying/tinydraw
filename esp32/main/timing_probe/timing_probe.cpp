@@ -21,6 +21,7 @@
 #include "esp_partition.h"
 #include "esp_psram.h"
 #include "esp_random.h"
+#include "esp_rom_regi2c.h"
 #include "esp_rom_sys.h"
 #include "esp_system.h"
 #include "esp_timer.h"
@@ -28,6 +29,7 @@
 #include "freertos/task.h"
 #include "sdkconfig.h"
 #include "soc/extmem_reg.h"
+#include "soc/regi2c_brownout.h"
 #include "soc/rtc_cntl_reg.h"
 #include "soc/soc.h"
 #include "soc/system_reg.h"
@@ -122,6 +124,7 @@ struct ProbeContext {
   std::uint32_t rom_cpu_ticks_per_us = 0U;
   std::uint32_t rom_reset_reason_core0 = 0U;
   std::uint32_t rom_reset_reason_core1 = 0U;
+  std::uint32_t rom_i2c_bod_threshold = 0U;
 };
 
 static_assert(offsetof(ProbeContext, sram_dependent) == 0U);
@@ -152,6 +155,10 @@ static_assert(offsetof(ProbeContext, rom_memset_buffer) == 104U);
 static_assert(offsetof(ProbeContext, rom_cpu_ticks_per_us) == 108U);
 static_assert(offsetof(ProbeContext, rom_reset_reason_core0) == 112U);
 static_assert(offsetof(ProbeContext, rom_reset_reason_core1) == 116U);
+static_assert(offsetof(ProbeContext, rom_i2c_bod_threshold) == 120U);
+static_assert(I2C_BOD == 0x61);
+static_assert(I2C_BOD_HOSTID == 1);
+static_assert(I2C_BOD_THRESHOLD == 0x5);
 static_assert(SYSTEM_CPU_PER_CONF_REG == 0x600c'0010U);
 static_assert(SYSTEM_SYSCLK_CONF_REG == 0x600c'0060U);
 static_assert(RTC_CNTL_STORE1_REG == 0x6000'8054U);
@@ -245,6 +252,10 @@ extern "C" std::uint32_t tinydraw_rom_baseline_set_cpu_ticks(const ProbeContext&
                                                                std::uint32_t seed);
 extern "C" std::uint32_t tinydraw_rom_set_cpu_ticks(const ProbeContext& context,
                                                       std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_rom_i2c_baseline_write_same_bod_threshold(
+    const ProbeContext& context, std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_rom_i2c_write_same_bod_threshold(
+    const ProbeContext& context, std::uint32_t seed);
 
 #define DECLARE_DCACHE_BURST_PROBE(path, lines)                                                  \
   extern "C" std::uint32_t tinydraw_dcache_##path##_##lines##_lines(const ProbeContext& context, \
@@ -714,6 +725,13 @@ std::uint32_t finalize_rom_cpu_ticks(const ProbeContext& context, std::uint32_t,
                             esp_rom_get_cpu_ticks_per_us() == context.rom_cpu_ticks_per_us);
 }
 
+std::uint32_t finalize_rom_i2c_same_bod_threshold(const ProbeContext& context,
+                                                   std::uint32_t, std::uint32_t result) {
+  const std::uint8_t after =
+      esp_rom_regi2c_read(I2C_BOD, I2C_BOD_HOSTID, I2C_BOD_THRESHOLD);
+  return rom_callback_state(result == 0U && after == context.rom_i2c_bod_threshold);
+}
+
 FORCE_INLINE_ATTR std::uint32_t psram_sequential(const ProbeContext& context, std::uint32_t seed,
                                                  std::size_t bytes) {
   const volatile std::uint32_t* words = context.psram;
@@ -1102,6 +1120,29 @@ RawSample IRAM_ATTR NOINLINE_ATTR measure_rom_callback_once(
                                      nullptr);
 }
 
+RawSample IRAM_ATTR NOINLINE_ATTR measure_rom_i2c_callback_once(
+    const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
+    bool collect_cache_counters) {
+  RawSample sample{};
+  if (collect_cache_counters) clear_cache_counters();
+  std::uint32_t saved_ps = 0U;
+  // The pinned full-boot callback arrives at interrupt level 3. Retain that
+  // exact caller state while excluding ordinary task and peripheral IRQs.
+  asm volatile("rsil %0, 3" : "=a"(saved_ps) : : "memory");
+  sample.start_core = esp_cpu_get_core_id();
+  sample.start_ccount = esp_cpu_get_cycle_count();
+  const std::uint32_t kernel_result = kernel(context, seed);
+  sample.end_ccount = esp_cpu_get_cycle_count();
+  sample.end_core = esp_cpu_get_core_id();
+  if (collect_cache_counters) sample.cache_counters = read_cache_counters();
+  asm volatile("wsr %0, ps\nrsync" : : "a"(saved_ps) : "memory");
+  sample.cycles = sample.end_ccount - sample.start_ccount;
+  sample.checksum = finalize == nullptr ? kernel_result : finalize(context, seed, kernel_result);
+  sample.has_cache_counters = collect_cache_counters;
+  require_cache_counter_signature(sample, kInternalCacheHitSignature, collect_cache_counters);
+  return sample;
+}
+
 RawSample IRAM_ATTR NOINLINE_ATTR measure_conditional_branch_once(
     const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
     bool collect_cache_counters) {
@@ -1394,6 +1435,10 @@ bool initialize_context(ProbeContext& context) {
               " reset_core1=%" PRIu32 " cpu_ticks_per_us=%" PRIu32 "\n",
               context.rom_reset_reason_core0, context.rom_reset_reason_core1,
               context.rom_cpu_ticks_per_us);
+  context.rom_i2c_bod_threshold =
+      esp_rom_regi2c_read(I2C_BOD, I2C_BOD_HOSTID, I2C_BOD_THRESHOLD);
+  std::printf("TINYDRAW_ROM_I2C_VALUES bod_threshold_register=0x%02" PRIx32 "\n",
+              context.rom_i2c_bod_threshold);
   context.sram_dependent = static_cast<std::uint32_t*>(heap_caps_malloc(
       kDependentEntries * sizeof(std::uint32_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
   context.sram_unaligned_dependent = static_cast<std::uint8_t*>(heap_caps_malloc(
@@ -1567,6 +1612,14 @@ constexpr Measurement kMeasurements[] = {
     {"rom_set_cpu_ticks_per_us_same_value", "internal-to-internal", 0U, 1U, 0U,
      tinydraw_rom_set_cpu_ticks, prepare_none, finalize_rom_cpu_ticks,
      kRomCallbackStatePreservedChecksum, measure_rom_callback_once},
+    {"rom_i2c_baseline_write_same_bod_threshold", "other", 0U, 1U, 0U,
+     tinydraw_rom_i2c_baseline_write_same_bod_threshold, prepare_none,
+     finalize_rom_i2c_same_bod_threshold, kRomCallbackStatePreservedChecksum,
+     measure_rom_i2c_callback_once},
+    {"rom_i2c_write_same_bod_threshold", "other", 0U, 1U, 0U,
+     tinydraw_rom_i2c_write_same_bod_threshold, prepare_none,
+     finalize_rom_i2c_same_bod_threshold, kRomCallbackStatePreservedChecksum,
+     measure_rom_i2c_callback_once},
     {"mmio_read_sram_4096_aligned", "internal-to-internal",
      kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations, tinydraw_mmio_read_sram,
      prepare_none, nullptr, 0U, measure_mmio_once},
@@ -1751,7 +1804,12 @@ constexpr bool kMmioSlopeCaptureMode = false;
 constexpr std::size_t kMmioSlopeMeasurementCount = 10U;
 constexpr bool kRomCallbackCaptureMode = false;
 constexpr std::size_t kRomCallbackMeasurementCount = 10U;
-static_assert(!(kMmioSlopeCaptureMode && kRomCallbackCaptureMode));
+constexpr bool kRomI2cWriteCaptureMode = true;
+constexpr std::size_t kRomI2cWriteMeasurementCount = 2U;
+static_assert(static_cast<unsigned>(kMmioSlopeCaptureMode) +
+                  static_cast<unsigned>(kRomCallbackCaptureMode) +
+                  static_cast<unsigned>(kRomI2cWriteCaptureMode) <=
+              1U);
 
 bool is_mmio_slope_measurement(const Measurement& measurement) {
   constexpr const char* kIds[] = {
@@ -1793,8 +1851,21 @@ bool is_rom_callback_measurement(const Measurement& measurement) {
   return false;
 }
 
+bool is_rom_i2c_write_measurement(const Measurement& measurement) {
+  constexpr const char* kIds[] = {
+      "rom_i2c_baseline_write_same_bod_threshold",
+      "rom_i2c_write_same_bod_threshold",
+  };
+  static_assert(std::size(kIds) == kRomI2cWriteMeasurementCount);
+  for (const char* id : kIds) {
+    if (std::strcmp(measurement.id, id) == 0) return true;
+  }
+  return false;
+}
+
 bool run_suite(const ProbeContext& context, const char* contention_mode) {
   for (const auto& measurement : kMeasurements) {
+    if (kRomI2cWriteCaptureMode && !is_rom_i2c_write_measurement(measurement)) continue;
     if (kRomCallbackCaptureMode && !is_rom_callback_measurement(measurement)) continue;
     if (kMmioSlopeCaptureMode && !is_mmio_slope_measurement(measurement)) continue;
     if (!run_measurement(context, measurement, contention_mode)) {
@@ -1821,11 +1892,13 @@ void probe_task(void*) {
               ",\"record\":\"run-complete\",\"measurements\":%lu,\"samplesPerMeasurement\":%d,"
               "\"pass\":%s}\n",
               kRecordPrefix, kProtocolVersion,
-              static_cast<unsigned long>((kRomCallbackCaptureMode
-                                              ? kRomCallbackMeasurementCount
-                                              : (kMmioSlopeCaptureMode
-                                                     ? kMmioSlopeMeasurementCount
-                                                     : std::size(kMeasurements))) *
+              static_cast<unsigned long>((kRomI2cWriteCaptureMode
+                                              ? kRomI2cWriteMeasurementCount
+                                              : (kRomCallbackCaptureMode
+                                                     ? kRomCallbackMeasurementCount
+                                                     : (kMmioSlopeCaptureMode
+                                                            ? kMmioSlopeMeasurementCount
+                                                            : std::size(kMeasurements)))) *
                                          2U),
               kSamplesPerMeasurement,
               passed ? "true" : "false");
