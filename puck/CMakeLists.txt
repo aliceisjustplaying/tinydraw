@@ -5,6 +5,11 @@ endif()
 set(TINYDRAW_PUCK_FIRMWARE_DIR "${PROJECT_SOURCE_DIR}/esp32/main")
 set(TINYDRAW_PUCK_APP_DIR "${TINYDRAW_PUCK_FIRMWARE_DIR}/vector_v2")
 include("${TINYDRAW_PUCK_APP_DIR}/sources.cmake")
+option(TINYDRAW_PUCK_DEMO "Include TinyDraw's record/replay demo controller in Puck" ON)
+set(TINYDRAW_PUCK_APP_SRCS ${TINYDRAW_VECTOR_V2_FIRMWARE_SRCS})
+if(TINYDRAW_PUCK_DEMO)
+  list(APPEND TINYDRAW_PUCK_APP_SRCS ${TINYDRAW_VECTOR_V2_DEMO_SRCS})
+endif()
 
 add_executable(tinydraw_puck
   src/tinydraw_emu.cpp
@@ -13,8 +18,7 @@ add_executable(tinydraw_puck
   platform/co5300_panel_transport.cpp
   platform/esp_shim.cpp
   platform/export_stubs.cpp
-  ${TINYDRAW_VECTOR_V2_FIRMWARE_SRCS}
-  ${TINYDRAW_VECTOR_V2_DEMO_SRCS}
+  ${TINYDRAW_PUCK_APP_SRCS}
 )
 target_link_libraries(tinydraw_puck PRIVATE
   tinydraw::vector_v2
@@ -32,10 +36,10 @@ if(EXISTS "${TINYDRAW_PUCK_ABI_INCLUDE_DIR}/emu_abi.h")
   target_include_directories(tinydraw_puck PRIVATE "${TINYDRAW_PUCK_ABI_INCLUDE_DIR}")
   target_compile_definitions(tinydraw_puck PRIVATE TINYDRAW_PUCK_HAVE_ABI_HEADER=1)
 endif()
-target_compile_definitions(tinydraw_puck PRIVATE
-  TINYDRAW_SINGLE_THREADED_TOUCH=1
-  TINYDRAW_VECTOR_V2_DEMO=1
-)
+target_compile_definitions(tinydraw_puck PRIVATE TINYDRAW_SINGLE_THREADED_TOUCH=1)
+if(TINYDRAW_PUCK_DEMO)
+  target_compile_definitions(tinydraw_puck PRIVATE TINYDRAW_VECTOR_V2_DEMO=1)
+endif()
 
 foreach(target IN ITEMS tinydraw_puck tinydraw_vector_v2 tinydraw_core)
   target_compile_options(${target} PRIVATE -Oz -fno-exceptions -fno-rtti)

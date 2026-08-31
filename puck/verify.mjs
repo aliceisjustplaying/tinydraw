@@ -8,7 +8,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repository = resolve(here, "..");
-const wasmPath = join(repository, "out", "build", "puck", "puck", "emu.wasm");
 
 const scenarios = [
   {
@@ -161,15 +160,28 @@ const scenarios = [
 ];
 
 function usage() {
-  console.error("usage: bun puck/verify.mjs <PUCK_REPO> [--write-frames]");
+  console.error("usage: bun puck/verify.mjs <PUCK_REPO> [--product] [--wasm <PATH>] [--write-frames]");
   process.exit(2);
 }
 
 const args = process.argv.slice(2);
-const puckArgument = args.find((arg) => !arg.startsWith("--"));
-if (!puckArgument) usage();
-const puck = resolve(puckArgument);
-const writeFrames = args.includes("--write-frames");
+if (args.length === 0 || args[0].startsWith("--")) usage();
+const puck = resolve(args.shift());
+let product = false;
+let writeFrames = false;
+let wasmPath = join(repository, "out", "build", "puck", "puck", "emu.wasm");
+while (args.length > 0) {
+  const argument = args.shift();
+  if (argument === "--product") {
+    product = true;
+  } else if (argument === "--write-frames") {
+    writeFrames = true;
+  } else if (argument === "--wasm" && args.length > 0) {
+    wasmPath = resolve(args.shift());
+  } else {
+    usage();
+  }
+}
 if (!existsSync(join(puck, "src", "wasm.ts")) || !existsSync(join(puck, "harness", "png.ts"))) {
   throw new Error(`not a current Puck checkout: ${puck}`);
 }
@@ -746,7 +758,11 @@ async function verifyHudHideDismissesColorsInputShield() {
   console.log("PASS HUD hide dismisses the Colors input shield before drawing");
 }
 
-for (const scenario of scenarios) {
+const activeScenarios = product
+  ? scenarios.filter(({ trace }) => trace !== "demo.trace.json")
+  : scenarios;
+
+for (const scenario of activeScenarios) {
   const tracePath = join(here, "traces", scenario.trace);
   const trace = JSON.parse(readFileSync(tracePath, "utf8"));
   const first = await replay(trace, scenario.captures);
@@ -791,6 +807,7 @@ await verifyTwoLargestBrushSelections();
 await verifyPhysicalEdgeInsetStillReachesCanvasEdges();
 await verifyHudHideDismissesColorsInputShield();
 
+const variant = product ? "product" : "demo";
 console.log(writeFrames
-  ? "PASS semantic trace assertions; recorded tolerance-0 baselines updated"
-  : "PASS semantic trace assertions and tolerance-0 recorded frames");
+  ? `PASS ${variant} semantic trace assertions; recorded tolerance-0 baselines updated`
+  : `PASS ${variant} semantic trace assertions and tolerance-0 recorded frames`);

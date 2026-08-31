@@ -68,19 +68,23 @@ constexpr int kMaximumStepsPerTick = 40;
 // (../platform/co5300_panel_transport.cpp) and the framebuffer holds its
 // output.
 //
-// One button, GPIO0, which is the board's only user button. The firmware maps
-// a short release to HUD visibility and a long release to the demo controller.
+// One button, GPIO0, which is the board's only user button. Every build maps
+// a short release to all-chrome visibility; demo builds additionally map a
+// long release to the record/replay controller.
 const char g_device_json[] =
     "{"
     "\"name\":\"TinyDraw V2\","
     "\"panel\":{\"w\":368,\"h\":448,\"format\":\"rgb565be\"},"
-    "\"buttons\":[{\"id\":\"hud\",\"label\":\"HUD / DEMO\",\"edge\":\"right\","
+#ifdef TINYDRAW_VECTOR_V2_DEMO
+    "\"buttons\":[{\"id\":\"hud\",\"label\":\"CHROME / DEMO\",\"edge\":\"right\","
+#else
+    "\"buttons\":[{\"id\":\"hud\",\"label\":\"CHROME\",\"edge\":\"right\","
+#endif
     "\"at\":0.16}],"
     "\"touch\":{\"points\":1},"
-    "\"gestures\":[{\"id\":\"hud-toggle\",\"label\":\"show / hide HUD\","
-    "\"how\":\"Press and release the HUD button to hide the battery, zoom controls, and "
-    "minimap. The bottom toolbar remains visible and interactive. Press and release it "
-    "again to restore the HUD.\"}]"
+    "\"gestures\":[{\"id\":\"hud-toggle\",\"label\":\"show / hide chrome\","
+    "\"how\":\"Press and release the side button to hide every chrome control and draw "
+    "across the complete panel. Press and release it again to restore the controls.\"}]"
     "}";
 
 }  // namespace
