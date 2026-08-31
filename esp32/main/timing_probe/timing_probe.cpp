@@ -331,6 +331,20 @@ constexpr CacheCounters kRtcMmioReadSignature{
     .dbus_flash_misses = 0U,
     .dbus_psram_misses = 0U,
 };
+constexpr CacheCounters kRtcResetState4096ReadSignature{
+    .ibus_accesses = 176U,
+    .ibus_misses = 0U,
+    .dbus_accesses = 0U,
+    .dbus_flash_misses = 0U,
+    .dbus_psram_misses = 0U,
+};
+constexpr CacheCounters kRtcResetState2048ReadSignature{
+    .ibus_accesses = 88U,
+    .ibus_misses = 0U,
+    .dbus_accesses = 0U,
+    .dbus_flash_misses = 0U,
+    .dbus_psram_misses = 0U,
+};
 static_assert(kMatchedIcacheExecutedInstructions ==
               (kMatchedIcacheLines - 1U) * 16U + 6U + 2U);
 static_assert(kFlashIcacheHitSignature.ibus_accesses ==
@@ -1132,6 +1146,27 @@ RawSample IRAM_ATTR NOINLINE_ATTR measure_observed_rtc_mmio_once(
                                      nullptr);
 }
 
+RawSample IRAM_ATTR NOINLINE_ATTR measure_reset_state_sram_once(
+    const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
+    bool collect_cache_counters) {
+  return measure_mmio_with_signature(context, kernel, finalize, seed, collect_cache_counters,
+                                     &kInternalCacheHitSignature);
+}
+
+RawSample IRAM_ATTR NOINLINE_ATTR measure_reset_state_rtc_4096_once(
+    const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
+    bool collect_cache_counters) {
+  return measure_mmio_with_signature(context, kernel, finalize, seed, collect_cache_counters,
+                                     &kRtcResetState4096ReadSignature);
+}
+
+RawSample IRAM_ATTR NOINLINE_ATTR measure_reset_state_rtc_2048_once(
+    const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
+    bool collect_cache_counters) {
+  return measure_mmio_with_signature(context, kernel, finalize, seed, collect_cache_counters,
+                                     &kRtcResetState2048ReadSignature);
+}
+
 RawSample IRAM_ATTR NOINLINE_ATTR measure_rom_callback_once(
     const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
     bool collect_cache_counters) {
@@ -1644,35 +1679,35 @@ constexpr Measurement kMeasurements[] = {
     {"reset_reason_core0_read_sram_4096", "internal-to-internal",
      kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
      tinydraw_reset_reason_core0_read_sram_4096, prepare_none, nullptr, 0U,
-     measure_observed_rtc_mmio_once},
+     measure_reset_state_sram_once},
     {"reset_reason_core0_read_rtc_state_4096", "other",
      kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
      tinydraw_reset_reason_core0_read_rtc_state_4096, prepare_none, nullptr, 0U,
-     measure_observed_rtc_mmio_once},
+     measure_reset_state_rtc_4096_once},
     {"reset_reason_core1_read_sram_4096", "internal-to-internal",
      kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
      tinydraw_reset_reason_core1_read_sram_4096, prepare_none, nullptr, 0U,
-     measure_observed_rtc_mmio_once},
+     measure_reset_state_sram_once},
     {"reset_reason_core1_read_rtc_state_4096", "other",
      kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
      tinydraw_reset_reason_core1_read_rtc_state_4096, prepare_none, nullptr, 0U,
-     measure_observed_rtc_mmio_once},
+     measure_reset_state_rtc_4096_once},
     {"reset_reason_core0_read_sram_2048", "internal-to-internal",
      kMmioHalfOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
      tinydraw_reset_reason_core0_read_sram_2048, prepare_none, nullptr, 0U,
-     measure_observed_rtc_mmio_once},
+     measure_reset_state_sram_once},
     {"reset_reason_core0_read_rtc_state_2048", "other",
      kMmioHalfOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
      tinydraw_reset_reason_core0_read_rtc_state_2048, prepare_none, nullptr, 0U,
-     measure_observed_rtc_mmio_once},
+     measure_reset_state_rtc_2048_once},
     {"reset_reason_core1_read_sram_2048", "internal-to-internal",
      kMmioHalfOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
      tinydraw_reset_reason_core1_read_sram_2048, prepare_none, nullptr, 0U,
-     measure_observed_rtc_mmio_once},
+     measure_reset_state_sram_once},
     {"reset_reason_core1_read_rtc_state_2048", "other",
      kMmioHalfOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
      tinydraw_reset_reason_core1_read_rtc_state_2048, prepare_none, nullptr, 0U,
-     measure_observed_rtc_mmio_once},
+     measure_reset_state_rtc_2048_once},
     {"mmio_read_sram_4096_aligned", "internal-to-internal",
      kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations, tinydraw_mmio_read_sram,
      prepare_none, nullptr, 0U, measure_mmio_once},
