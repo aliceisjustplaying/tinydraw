@@ -441,6 +441,9 @@ describe("standalone timing-probe firmware structure", () => {
     const sramAssembly = await Bun.file(
       join(root, "esp32/main/timing_probe/sram_microprobes_esp32s3.S"),
     ).text();
+    const dcacheAssembly = await Bun.file(
+      join(root, "esp32/main/timing_probe/dcache_burst_probes_esp32s3.S"),
+    ).text();
     for (const kernel of [
       "sram_aligned_dependent",
       "sram_unaligned_dependent",
@@ -487,6 +490,28 @@ describe("standalone timing-probe firmware structure", () => {
     expect(source).toContain("measure_rgb565_stage_once");
     expect(source).toContain("finalize_sram_store_complete");
     expect(source).toContain("kSramStoreCompletionChecksum");
+    expect(source).toContain("CONFIG_ESP32S3_DATA_CACHE_LINE_SIZE == kDcacheLineBytes");
+    expect(source).toContain("Lines * kDcacheLineBytes");
+    expect(source).toContain('print_error("initialize", "dcache-burst-alignment")');
+    for (const [path, memoryPath] of [
+      ["psram", "psram-to-internal"],
+      ["flash", "flash-to-internal"],
+    ]) {
+      for (const lines of [1, 2, 4, 8, 16]) {
+        expect(source).toContain(
+          `DCACHE_BURST_MEASUREMENTS(${path}, "${memoryPath}", ${lines})`,
+        );
+        expect(dcacheAssembly).toContain(
+          `DEFINE_DCACHE_BURST_PROBE tinydraw_dcache_${path}_${lines}_lines`,
+        );
+      }
+    }
+    expect(dcacheAssembly).toContain(".balign 32");
+    expect(
+      [...dcacheAssembly.matchAll(/l32i\s+a4, a8, (\d+)/g)].map((match) => Number(match[1])),
+    ).toEqual(Array.from({ length: 16 }, (_, index) => index * 64));
+    expect(dcacheAssembly).not.toContain("s32i");
+    expect(dcacheAssembly).not.toContain("loop");
     for (const symbol of [
       "tinydraw_sram_instruction_issue",
       "tinydraw_sram_l32_dependent",
@@ -560,6 +585,7 @@ describe("standalone timing-probe firmware structure", () => {
     expect(componentCmake).toContain('"timing_probe/timing_probe.cpp"');
     expect(componentCmake).toContain('"timing_probe/rgb565_call_window_esp32s3.S"');
     expect(componentCmake).toContain('"timing_probe/sram_microprobes_esp32s3.S"');
+    expect(componentCmake).toContain('"timing_probe/dcache_burst_probes_esp32s3.S"');
     expect(script).toContain("CONFIG_ESPTOOLPY_FLASHFREQ_80M=y");
     expect(script).toContain("assert_timing_probe_config");
     expect(script).toContain("TINYDRAW_FIRMWARE_VARIANT=timing-probe reconfigure");

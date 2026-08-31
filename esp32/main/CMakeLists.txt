@@ -30,6 +30,7 @@ set(TINYDRAW_APP_SRCS
 if(TINYDRAW_TIMING_PROBE)
   set(TINYDRAW_APP_SRCS
     "timing_probe/timing_probe.cpp"
+    "timing_probe/dcache_burst_probes_esp32s3.S"
     "timing_probe/rgb565_call_window_esp32s3.S"
     "timing_probe/sram_microprobes_esp32s3.S"
   )

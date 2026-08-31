@@ -48,6 +48,7 @@ constexpr std::size_t kContentionBytes = 512U * 1024U;
 constexpr std::uint32_t kDependentLoads = 4096U;
 constexpr std::uint32_t kRandomHotLoads = 4096U;
 constexpr std::uint32_t kRandomColdLoads = 16384U;
+constexpr std::size_t kDcacheLineBytes = 64U;
 constexpr std::uint32_t kSramStoreCompletionChecksum = 0x5352'414dU;
 constexpr std::size_t kRgb565StagePixels = 5U;
 constexpr std::size_t kRgb565OracleCodeBytes = 41U;
@@ -73,6 +74,9 @@ struct ProbeContext {
 
 static_assert(offsetof(ProbeContext, sram_dependent) == 0U);
 static_assert(offsetof(ProbeContext, sram_stream) == 8U);
+static_assert(offsetof(ProbeContext, psram) == 12U);
+static_assert(offsetof(ProbeContext, flash) == 20U);
+static_assert(CONFIG_ESP32S3_DATA_CACHE_LINE_SIZE == kDcacheLineBytes);
 
 extern "C" std::uint32_t tinydraw_sram_instruction_issue(const ProbeContext& context,
                                                           std::uint32_t seed);
@@ -82,6 +86,23 @@ extern "C" std::uint32_t tinydraw_sram_l32_independent(const ProbeContext& conte
                                                         std::uint32_t seed);
 extern "C" std::uint32_t tinydraw_sram_s32_store_complete(const ProbeContext& context,
                                                            std::uint32_t seed);
+
+#define DECLARE_DCACHE_BURST_PROBE(path, lines)                                                  \
+  extern "C" std::uint32_t tinydraw_dcache_##path##_##lines##_lines(const ProbeContext& context, \
+                                                                    std::uint32_t seed)
+
+DECLARE_DCACHE_BURST_PROBE(psram, 1);
+DECLARE_DCACHE_BURST_PROBE(psram, 2);
+DECLARE_DCACHE_BURST_PROBE(psram, 4);
+DECLARE_DCACHE_BURST_PROBE(psram, 8);
+DECLARE_DCACHE_BURST_PROBE(psram, 16);
+DECLARE_DCACHE_BURST_PROBE(flash, 1);
+DECLARE_DCACHE_BURST_PROBE(flash, 2);
+DECLARE_DCACHE_BURST_PROBE(flash, 4);
+DECLARE_DCACHE_BURST_PROBE(flash, 8);
+DECLARE_DCACHE_BURST_PROBE(flash, 16);
+
+#undef DECLARE_DCACHE_BURST_PROBE
 
 struct CacheCounters {
   std::uint32_t ibus_accesses;
@@ -530,6 +551,25 @@ esp_err_t prepare_flash_cold(const ProbeContext& context, Kernel, std::uint32_t)
                          ESP_CACHE_MSYNC_FLAG_DIR_M2C | ESP_CACHE_MSYNC_FLAG_INVALIDATE);
 }
 
+esp_err_t prepare_dcache_burst_hot(const ProbeContext& context, Kernel kernel, std::uint32_t seed) {
+  g_prepare_checksum = kernel(context, seed ^ 0xdca0'0000U);
+  return ESP_OK;
+}
+
+template <std::size_t Lines>
+esp_err_t prepare_psram_dcache_burst_cold(const ProbeContext& context, Kernel, std::uint32_t) {
+  static_assert(Lines >= 1U && Lines <= 16U);
+  return esp_cache_msync(context.psram, Lines * kDcacheLineBytes,
+                         ESP_CACHE_MSYNC_FLAG_DIR_M2C | ESP_CACHE_MSYNC_FLAG_INVALIDATE);
+}
+
+template <std::size_t Lines>
+esp_err_t prepare_flash_dcache_burst_cold(const ProbeContext& context, Kernel, std::uint32_t) {
+  static_assert(Lines >= 1U && Lines <= 16U);
+  return esp_cache_msync(const_cast<std::uint32_t*>(context.flash), Lines * kDcacheLineBytes,
+                         ESP_CACHE_MSYNC_FLAG_DIR_M2C | ESP_CACHE_MSYNC_FLAG_INVALIDATE);
+}
+
 esp_err_t prepare_flash_instruction_cold(const ProbeContext&, Kernel, std::uint32_t) {
   const auto address = reinterpret_cast<std::uintptr_t>(&flash_instruction_body);
   constexpr std::size_t line_size = CONFIG_ESP32S3_INSTRUCTION_CACHE_LINE_SIZE;
@@ -793,6 +833,12 @@ bool initialize_context(ProbeContext& context) {
   }
   context.flash = static_cast<const std::uint32_t*>(mapped);
 
+  if ((reinterpret_cast<std::uintptr_t>(context.psram) & (kDcacheLineBytes - 1U)) != 0U ||
+      (reinterpret_cast<std::uintptr_t>(context.flash) & (kDcacheLineBytes - 1U)) != 0U) {
+    print_error("initialize", "dcache-burst-alignment");
+    return false;
+  }
+
   // ESP32-S3 resets the DBUS flash-classifier range to 0..0. Flash and PSRAM share the
   // external-data virtual window, so the miss counters only distinguish them after software
   // constrains the mapped flash interval explicitly.
@@ -811,6 +857,19 @@ bool initialize_context(ProbeContext& context) {
   flush_console();
   return true;
 }
+
+#define DCACHE_BURST_MEASUREMENTS(path, memory_path, lines)                                 \
+  {"dcache_" #path "_burst_" #lines "_lines_hot",                                           \
+   memory_path,                                                                             \
+   lines * 4U,                                                                              \
+   1U,                                                                                      \
+   kWarmupIterations,                                                                       \
+   tinydraw_dcache_##path##_##lines##_lines,                                                \
+   prepare_dcache_burst_hot},                                                               \
+  {                                                                                         \
+    "dcache_" #path "_burst_" #lines "_lines_cold", memory_path, lines * 4U, 1U, 0U,        \
+        tinydraw_dcache_##path##_##lines##_lines, prepare_##path##_dcache_burst_cold<lines> \
+  }
 
 constexpr Measurement kMeasurements[] = {
     {"sram_aligned_dependent", "internal-to-internal", kDependentLoads * 4U, 1U,
@@ -852,11 +911,23 @@ constexpr Measurement kMeasurements[] = {
      kWarmupIterations, flash_hot_random, prepare_flash_hot},
     {"flash_mmap_cold_random", "flash-to-internal", kRandomColdLoads * 4U, 1U, 0U,
      flash_cold_random, prepare_flash_cold},
+    DCACHE_BURST_MEASUREMENTS(psram, "psram-to-internal", 1),
+    DCACHE_BURST_MEASUREMENTS(psram, "psram-to-internal", 2),
+    DCACHE_BURST_MEASUREMENTS(psram, "psram-to-internal", 4),
+    DCACHE_BURST_MEASUREMENTS(psram, "psram-to-internal", 8),
+    DCACHE_BURST_MEASUREMENTS(psram, "psram-to-internal", 16),
+    DCACHE_BURST_MEASUREMENTS(flash, "flash-to-internal", 1),
+    DCACHE_BURST_MEASUREMENTS(flash, "flash-to-internal", 2),
+    DCACHE_BURST_MEASUREMENTS(flash, "flash-to-internal", 4),
+    DCACHE_BURST_MEASUREMENTS(flash, "flash-to-internal", 8),
+    DCACHE_BURST_MEASUREMENTS(flash, "flash-to-internal", 16),
     {"flash_instruction_cold", "other", 0U, 1U, 0U, flash_instruction_probe,
      prepare_flash_instruction_cold},
     {"flash_instruction_hot", "other", 0U, 1U, kWarmupIterations, flash_instruction_probe,
      prepare_hot},
 };
+
+#undef DCACHE_BURST_MEASUREMENTS
 
 bool run_suite(const ProbeContext& context, const char* contention_mode) {
   for (const auto& measurement : kMeasurements) {
