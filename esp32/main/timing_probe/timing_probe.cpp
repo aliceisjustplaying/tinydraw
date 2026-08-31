@@ -75,6 +75,7 @@ constexpr std::uint32_t kConditionalBranchIterations = 4096U;
 constexpr std::uint32_t kConditionalBranchChecksum = kConditionalBranchIterations;
 constexpr std::uint32_t kMmioOperations = 4096U;
 constexpr std::uint32_t kMmioHalfOperations = 2048U;
+constexpr std::uintptr_t kRtcResetStateRegister = 0x6000'8038U;
 constexpr std::uint32_t kMmioStatePreservedChecksum = 0x7374'6174U;
 constexpr std::size_t kRomMemsetBytes = 0x52e0U;
 constexpr std::uint8_t kRomMemsetFill = 0xa5U;
@@ -125,6 +126,7 @@ struct ProbeContext {
   std::uint32_t rom_reset_reason_core0 = 0U;
   std::uint32_t rom_reset_reason_core1 = 0U;
   std::uint32_t rom_i2c_bod_threshold = 0U;
+  volatile std::uint32_t* mmio_rtc_reset_state = nullptr;
 };
 
 static_assert(offsetof(ProbeContext, sram_dependent) == 0U);
@@ -156,6 +158,7 @@ static_assert(offsetof(ProbeContext, rom_cpu_ticks_per_us) == 108U);
 static_assert(offsetof(ProbeContext, rom_reset_reason_core0) == 112U);
 static_assert(offsetof(ProbeContext, rom_reset_reason_core1) == 116U);
 static_assert(offsetof(ProbeContext, rom_i2c_bod_threshold) == 120U);
+static_assert(offsetof(ProbeContext, mmio_rtc_reset_state) == 124U);
 static_assert(I2C_BOD == 0x61);
 static_assert(I2C_BOD_HOSTID == 1);
 static_assert(I2C_BOD_THRESHOLD == 0x5);
@@ -255,6 +258,22 @@ extern "C" std::uint32_t tinydraw_rom_set_cpu_ticks(const ProbeContext& context,
 extern "C" std::uint32_t tinydraw_rom_i2c_baseline_write_same_bod_threshold(
     const ProbeContext& context, std::uint32_t seed);
 extern "C" std::uint32_t tinydraw_rom_i2c_write_same_bod_threshold(
+    const ProbeContext& context, std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_reset_reason_core0_read_sram_4096(
+    const ProbeContext& context, std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_reset_reason_core0_read_rtc_state_4096(
+    const ProbeContext& context, std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_reset_reason_core1_read_sram_4096(
+    const ProbeContext& context, std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_reset_reason_core1_read_rtc_state_4096(
+    const ProbeContext& context, std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_reset_reason_core0_read_sram_2048(
+    const ProbeContext& context, std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_reset_reason_core0_read_rtc_state_2048(
+    const ProbeContext& context, std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_reset_reason_core1_read_sram_2048(
+    const ProbeContext& context, std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_reset_reason_core1_read_rtc_state_2048(
     const ProbeContext& context, std::uint32_t seed);
 
 #define DECLARE_DCACHE_BURST_PROBE(path, lines)                                                  \
@@ -1402,6 +1421,8 @@ bool initialize_context(ProbeContext& context) {
   context.mmio_extmem_icache_autoload_ctrl =
       reinterpret_cast<volatile std::uint32_t*>(EXTMEM_ICACHE_AUTOLOAD_CTRL_REG);
   context.mmio_rtc_date = reinterpret_cast<volatile std::uint32_t*>(RTC_CNTL_DATE_REG);
+  context.mmio_rtc_reset_state =
+      reinterpret_cast<volatile std::uint32_t*>(kRtcResetStateRegister);
   context.mmio_same_value_sram = g_mmio_sram_peer;
   context.mmio_same_value_system_sysclk_conf = *context.mmio_system_sysclk_conf;
   context.mmio_same_value_extmem_dcache_ctrl1 = *context.mmio_extmem_dcache_ctrl1;
@@ -1620,6 +1641,38 @@ constexpr Measurement kMeasurements[] = {
      tinydraw_rom_i2c_write_same_bod_threshold, prepare_none,
      finalize_rom_i2c_same_bod_threshold, kRomCallbackStatePreservedChecksum,
      measure_rom_i2c_callback_once},
+    {"reset_reason_core0_read_sram_4096", "internal-to-internal",
+     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_reset_reason_core0_read_sram_4096, prepare_none, nullptr, 0U,
+     measure_observed_rtc_mmio_once},
+    {"reset_reason_core0_read_rtc_state_4096", "other",
+     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_reset_reason_core0_read_rtc_state_4096, prepare_none, nullptr, 0U,
+     measure_observed_rtc_mmio_once},
+    {"reset_reason_core1_read_sram_4096", "internal-to-internal",
+     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_reset_reason_core1_read_sram_4096, prepare_none, nullptr, 0U,
+     measure_observed_rtc_mmio_once},
+    {"reset_reason_core1_read_rtc_state_4096", "other",
+     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_reset_reason_core1_read_rtc_state_4096, prepare_none, nullptr, 0U,
+     measure_observed_rtc_mmio_once},
+    {"reset_reason_core0_read_sram_2048", "internal-to-internal",
+     kMmioHalfOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_reset_reason_core0_read_sram_2048, prepare_none, nullptr, 0U,
+     measure_observed_rtc_mmio_once},
+    {"reset_reason_core0_read_rtc_state_2048", "other",
+     kMmioHalfOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_reset_reason_core0_read_rtc_state_2048, prepare_none, nullptr, 0U,
+     measure_observed_rtc_mmio_once},
+    {"reset_reason_core1_read_sram_2048", "internal-to-internal",
+     kMmioHalfOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_reset_reason_core1_read_sram_2048, prepare_none, nullptr, 0U,
+     measure_observed_rtc_mmio_once},
+    {"reset_reason_core1_read_rtc_state_2048", "other",
+     kMmioHalfOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_reset_reason_core1_read_rtc_state_2048, prepare_none, nullptr, 0U,
+     measure_observed_rtc_mmio_once},
     {"mmio_read_sram_4096_aligned", "internal-to-internal",
      kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations, tinydraw_mmio_read_sram,
      prepare_none, nullptr, 0U, measure_mmio_once},
@@ -1806,9 +1859,12 @@ constexpr bool kRomCallbackCaptureMode = false;
 constexpr std::size_t kRomCallbackMeasurementCount = 10U;
 constexpr bool kRomI2cWriteCaptureMode = false;
 constexpr std::size_t kRomI2cWriteMeasurementCount = 2U;
+constexpr bool kResetStateReadCaptureMode = true;
+constexpr std::size_t kResetStateReadMeasurementCount = 8U;
 static_assert(static_cast<unsigned>(kMmioSlopeCaptureMode) +
                   static_cast<unsigned>(kRomCallbackCaptureMode) +
-                  static_cast<unsigned>(kRomI2cWriteCaptureMode) <=
+                  static_cast<unsigned>(kRomI2cWriteCaptureMode) +
+                  static_cast<unsigned>(kResetStateReadCaptureMode) <=
               1U);
 
 bool is_mmio_slope_measurement(const Measurement& measurement) {
@@ -1863,8 +1919,27 @@ bool is_rom_i2c_write_measurement(const Measurement& measurement) {
   return false;
 }
 
+bool is_reset_state_read_measurement(const Measurement& measurement) {
+  constexpr const char* kIds[] = {
+      "reset_reason_core0_read_sram_4096",
+      "reset_reason_core0_read_rtc_state_4096",
+      "reset_reason_core1_read_sram_4096",
+      "reset_reason_core1_read_rtc_state_4096",
+      "reset_reason_core0_read_sram_2048",
+      "reset_reason_core0_read_rtc_state_2048",
+      "reset_reason_core1_read_sram_2048",
+      "reset_reason_core1_read_rtc_state_2048",
+  };
+  static_assert(std::size(kIds) == kResetStateReadMeasurementCount);
+  for (const char* id : kIds) {
+    if (std::strcmp(measurement.id, id) == 0) return true;
+  }
+  return false;
+}
+
 bool run_suite(const ProbeContext& context, const char* contention_mode) {
   for (const auto& measurement : kMeasurements) {
+    if (kResetStateReadCaptureMode && !is_reset_state_read_measurement(measurement)) continue;
     if (kRomI2cWriteCaptureMode && !is_rom_i2c_write_measurement(measurement)) continue;
     if (kRomCallbackCaptureMode && !is_rom_callback_measurement(measurement)) continue;
     if (kMmioSlopeCaptureMode && !is_mmio_slope_measurement(measurement)) continue;
@@ -1892,13 +1967,15 @@ void probe_task(void*) {
               ",\"record\":\"run-complete\",\"measurements\":%lu,\"samplesPerMeasurement\":%d,"
               "\"pass\":%s}\n",
               kRecordPrefix, kProtocolVersion,
-              static_cast<unsigned long>((kRomI2cWriteCaptureMode
+              static_cast<unsigned long>((kResetStateReadCaptureMode
+                                              ? kResetStateReadMeasurementCount
+                                              : (kRomI2cWriteCaptureMode
                                               ? kRomI2cWriteMeasurementCount
                                               : (kRomCallbackCaptureMode
                                                      ? kRomCallbackMeasurementCount
                                                      : (kMmioSlopeCaptureMode
                                                             ? kMmioSlopeMeasurementCount
-                                                            : std::size(kMeasurements)))) *
+                                                            : std::size(kMeasurements))))) *
                                          2U),
               kSamplesPerMeasurement,
               passed ? "true" : "false");

@@ -27,6 +27,29 @@
     .size \name, .-\name
     .endm
 
+    .macro DEFINE_RESET_REASON_READ_PROBE name, context_offset, field_shift, count_shift
+    .balign 32
+    .global \name
+    .type   \name, @function
+\name:
+    .begin no-transform
+    entry   a1, 16
+    l32i    a8, a2, \context_offset
+    movi.n  a2, 0
+    movi    a9, 1
+    slli    a9, a9, \count_shift
+    loop    a9, .Lreset_reason_read_done\@
+.Lreset_reason_read_loop\@:
+    memw
+    l32i    a4, a8, 0
+    extui   a4, a4, \field_shift, 6
+    xor     a2, a2, a4
+.Lreset_reason_read_done\@:
+    retw.n
+    .end no-transform
+    .size \name, .-\name
+    .endm
+
     .macro DEFINE_MMIO_WRITE_PROBE name, context_offset
     .balign 32
     .global \name
@@ -106,6 +129,18 @@ DEFINE_MMIO_READ_PROBE tinydraw_mmio_read_extmem_dcache_autoload_ctrl, 60
 DEFINE_MMIO_READ_PROBE tinydraw_mmio_read_extmem_icache_ctrl1, 64
 DEFINE_MMIO_READ_PROBE tinydraw_mmio_read_extmem_icache_autoload_ctrl, 68
 DEFINE_MMIO_READ_PROBE tinydraw_mmio_read_rtc_date, 96
+
+// The reset-state peers reproduce the real ROM read body: one memw, one
+// aligned l32i, and the core-specific six-bit field extraction per iteration.
+// Offset 32 is the matched SRAM cell; offset 124 is RTCCNTL + 0x38.
+DEFINE_RESET_REASON_READ_PROBE tinydraw_reset_reason_core0_read_sram_4096, 32, 0, 12
+DEFINE_RESET_REASON_READ_PROBE tinydraw_reset_reason_core0_read_rtc_state_4096, 124, 0, 12
+DEFINE_RESET_REASON_READ_PROBE tinydraw_reset_reason_core1_read_sram_4096, 32, 6, 12
+DEFINE_RESET_REASON_READ_PROBE tinydraw_reset_reason_core1_read_rtc_state_4096, 124, 6, 12
+DEFINE_RESET_REASON_READ_PROBE tinydraw_reset_reason_core0_read_sram_2048, 32, 0, 11
+DEFINE_RESET_REASON_READ_PROBE tinydraw_reset_reason_core0_read_rtc_state_2048, 124, 0, 11
+DEFINE_RESET_REASON_READ_PROBE tinydraw_reset_reason_core1_read_sram_2048, 32, 6, 11
+DEFINE_RESET_REASON_READ_PROBE tinydraw_reset_reason_core1_read_rtc_state_2048, 124, 6, 11
 
 DEFINE_MMIO_WRITE_PROBE tinydraw_mmio_write_sram, 32
 DEFINE_MMIO_WRITE_PROBE tinydraw_mmio_write_extmem_cache_counter_clear, 48
