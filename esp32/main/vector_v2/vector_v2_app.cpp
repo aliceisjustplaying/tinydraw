@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <limits>
 #include <optional>
 #include <span>
@@ -207,18 +208,67 @@ void vector_v2_app_step(VectorV2AppSession& session) {
     chrome.recording = recording;
     time_sync_terminal_since.reset();
 
-    const std::uint32_t current_generation =
-        std::max(log.current_revision().value, canvas.current_revision().value);
-    if (current_generation == std::numeric_limits<std::uint32_t>::max()) {
+    // Demo baselines preserve the pre-demo drawing instead of wiping it.
+    // Starting a recording snapshots current drawing authority into RAM;
+    // recording and every replay then restore through this same path, so
+    // takes repeat deterministically over the same pre-drawn document. The
+    // flash Recovery point stays untouched throughout (persistence is
+    // disabled whenever the demo controller is active).
+    if (recording) {
+      if (session.demo_baseline_records == nullptr || session.demo_baseline_samples == nullptr) {
+        return false;
+      }
+      const vector_v2::AuthorityReadView view = log.read_view();
+      // The log's caller-owned arrays hold the retained prefix contiguously
+      // from index zero in painter order (Undo only moves the active prefix),
+      // so a raw copy is a valid AuthorityRestore payload. log.restore()
+      // re-validates every record on the way back in.
+      std::memcpy(session.demo_baseline_records.get(), session.storage.records,
+                  view.retained_operation_count * sizeof(vector_v2::OperationRecord));
+      std::memcpy(session.demo_baseline_samples.get(), session.storage.samples,
+                  view.retained_sample_count * sizeof(vector_v2::CompactOperationSample));
+      session.demo_baseline_view = view;
+      session.demo_baseline_valid = true;
+    }
+    if (!session.demo_baseline_valid) {
       return false;
     }
-    const vector_v2::DocumentRevision revision{current_generation + 1U};
-    if (!vector_v2::reset_blank_document(log, canvas, revision) ||
-        !producer.reset_uniform_baseline(revision)) {
+    const vector_v2::AuthorityReadView& baseline = session.demo_baseline_view;
+    if (!log.restore({.epoch = baseline.epoch,
+                      .generation = baseline.generation,
+                      .active_operation_count = baseline.active_operation_count,
+                      .records = std::span<const vector_v2::OperationRecord>(
+                          session.demo_baseline_records.get(), baseline.retained_operation_count),
+                      .samples = std::span<const vector_v2::CompactOperationSample>(
+                          session.demo_baseline_samples.get(), baseline.retained_sample_count)})) {
+      return false;
+    }
+    // Boot-path materialization recipe (vector_v2_app_start.cpp): rebuild the
+    // 25% overview and conservative may-ink from restored vector truth, then
+    // republish the canvas snapshot, invalidating every tile.
+    producer.cancel_pending_work();
+    const auto baseline_overview =
+        std::span(session.storage.overview_scratch, vector_v2::kOverviewPixels);
+    const auto baseline_may_ink = std::span(
+        reinterpret_cast<std::uint8_t*>(session.storage.affected_keys), vector_v2::kOccupancyBytes);
+    if (!vector_v2::replay_active_overview(log, baseline_overview) ||
+        !vector_v2::build_tiled_may_ink(log, baseline_may_ink) ||
+        !canvas.restore_snapshot(log.current_revision(), baseline_overview, baseline_may_ink)) {
       return false;
     }
     background.reset_document_state();
-    next_gesture = 1U;
+    next_gesture = [&log]() -> std::uint16_t {
+      // Same derivation as next_gesture_id() in vector_v2_app_start.cpp.
+      if (log.operation_count() == 0U) {
+        return 1U;
+      }
+      const auto operation = log.operation(log.operation_count() - 1U);
+      if (!operation.has_value()) {
+        return 1U;
+      }
+      const auto next = static_cast<std::uint16_t>(operation->gesture_id + 1U);
+      return next == 0U ? 1U : next;
+    }();
     static_cast<void>(sync_history_controls(chrome, log));
     const auto timing = presenter.refresh(chrome, now_us());
     print_presentation(recording ? "demo-record-baseline" : "demo-replay-baseline", presenter,

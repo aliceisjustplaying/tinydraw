@@ -75,6 +75,15 @@ struct VectorV2AppSession {
   std::unique_ptr<vector_v2::DemoSample, decltype(&heap_caps_free)> demo_samples{nullptr,
                                                                                  &heap_caps_free};
   std::optional<VectorV2DemoController> demo;
+  // Demo baseline: RAM snapshot of pre-demo drawing authority. Captured when
+  // a recording starts; restored before recording and before every replay so
+  // takes repeat deterministically over the same pre-drawn document.
+  std::unique_ptr<vector_v2::OperationRecord, decltype(&heap_caps_free)> demo_baseline_records{
+      nullptr, &heap_caps_free};
+  std::unique_ptr<vector_v2::CompactOperationSample, decltype(&heap_caps_free)>
+      demo_baseline_samples{nullptr, &heap_caps_free};
+  vector_v2::AuthorityReadView demo_baseline_view{};
+  bool demo_baseline_valid = false;
 #endif
 
   InteractionMode interaction = InteractionMode::kIdle;

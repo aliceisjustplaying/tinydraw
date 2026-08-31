@@ -357,15 +357,30 @@ bool vector_v2_app_start(VectorV2AppSession& session) {
 #ifdef TINYDRAW_VECTOR_V2_DEMO
   session.demo_samples.reset(static_cast<vector_v2::DemoSample*>(
       heap_caps_malloc(kDemoCapacity * sizeof(vector_v2::DemoSample), kExternalCaps)));
-  session.demo.emplace(session.demo_samples == nullptr
-                           ? std::span<vector_v2::DemoSample>{}
-                           : std::span(session.demo_samples.get(), kDemoCapacity));
-  if (session.demo_samples == nullptr) {
+  // Baseline snapshot buffers mirror the operation log's full retained
+  // capacity so any pre-drawn document can be captured and restored per take.
+  session.demo_baseline_records.reset(static_cast<vector_v2::OperationRecord*>(
+      heap_caps_malloc(vector_v2::kOperationRecordBytes, kExternalCaps)));
+  session.demo_baseline_samples.reset(static_cast<vector_v2::CompactOperationSample*>(
+      heap_caps_malloc(vector_v2::kOperationSampleBytes, kExternalCaps)));
+  const bool demo_allocated = session.demo_samples != nullptr &&
+                              session.demo_baseline_records != nullptr &&
+                              session.demo_baseline_samples != nullptr;
+  session.demo.emplace(demo_allocated ? std::span(session.demo_samples.get(), kDemoCapacity)
+                                      : std::span<vector_v2::DemoSample>{});
+  if (!demo_allocated) {
+    session.demo_samples.reset();
+    session.demo_baseline_records.reset();
+    session.demo_baseline_samples.reset();
     std::printf("TINYDRAW_DEMO_DISABLED reason=allocation bytes=%lu free_psram=%lu\n",
-                static_cast<unsigned long>(kDemoCapacity * sizeof(vector_v2::DemoSample)),
+                static_cast<unsigned long>(kDemoCapacity * sizeof(vector_v2::DemoSample) +
+                                           vector_v2::kOperationRecordBytes +
+                                           vector_v2::kOperationSampleBytes),
                 static_cast<unsigned long>(heap_caps_get_free_size(kExternalCaps)));
   } else if (!session.demo->ready()) {
     session.demo_samples.reset();
+    session.demo_baseline_records.reset();
+    session.demo_baseline_samples.reset();
     std::printf("TINYDRAW_DEMO_DISABLED reason=timer\n");
   } else {
     std::printf(
