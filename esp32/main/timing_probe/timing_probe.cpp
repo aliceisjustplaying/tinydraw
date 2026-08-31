@@ -1438,10 +1438,6 @@ constexpr Measurement kMeasurements[] = {
     {"mmio_read_rtc_store1_4096_aligned", "other",
      kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
      tinydraw_mmio_read_rtc_store1, prepare_none, nullptr, 0U, measure_rtc_mmio_once},
-    {"mmio_read_rtc_date_4096_aligned", "other",
-     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
-     tinydraw_mmio_read_rtc_date, prepare_none, nullptr, 0U,
-     measure_observed_rtc_mmio_once},
     {"mmio_read_extmem_cache_state_4096_aligned", "other",
      kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
      tinydraw_mmio_read_extmem_cache_state, prepare_none, nullptr, 0U, measure_mmio_once},
@@ -1574,9 +1570,13 @@ constexpr Measurement kMeasurements[] = {
      prepare_flash_instruction_cold},
     {"flash_instruction_hot", "other", 0U, 1U, kWarmupIterations, flash_instruction_probe,
      prepare_hot},
-    // The second operation count is the new variable in this calibration.
-    // Keep it after every cache-sensitive measurement so a transient controller
-    // effect cannot invalidate an earlier strict receipt.
+    // These are the new variables in this calibration. Keep them after every
+    // cache-sensitive measurement so an observed counter-state change cannot
+    // invalidate an earlier strict receipt.
+    {"mmio_read_rtc_date_4096_aligned", "other",
+     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_mmio_read_rtc_date, prepare_none, nullptr, 0U,
+     measure_observed_rtc_mmio_once},
     {"mmio_write_same_value_sram_2048_aligned", "internal-to-internal",
      kMmioHalfOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
      tinydraw_mmio_write_same_value_sram_2048, prepare_none, finalize_mmio_same_value_sram,
