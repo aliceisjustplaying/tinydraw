@@ -12,9 +12,9 @@
 
 ## **This is a story of project management.**
 
-It did not start out as one. It started as a fun vibecoding project for [a meetup of small microcontroller-powered devices](https://luma.com/tldraw-vp8y) hosted by [Steve Ruiz](https://x.com/steveruizok) of [tldraw](https://tldraw.com/) who’s been shilling them on the timeline for months now. My RSVP being accepted on Luma was the push I needed to order one of these for myself; I wanted to demo something there. This was on a Friday; the device would not arrive until Sunday and I wouldn’t be able to start testing on it until Monday morning.
+It did not start out as one. It started as a fun vibecoding project for [a meetup of small microcontroller-powered devices](https://luma.com/tldraw-vp8y) hosted by [Steve Ruiz](https://x.com/steveruizok) of [tldraw](https://tldraw.com/) who’s been shilling them on the timeline for months now. My RSVP being accepted on Luma was the push I needed to order one of these for myself and I wanted to demo something there. This was on a Friday but the device would not arrive until Sunday and I wouldn’t be able to start testing on it until Monday morning.
 
-I needed an idea and usually I have a hard time finding one. I did have one I thought was obvious, *too obvious*, surely someone has written a tiny tldraw clone for that [Waveshare ESP32-S3 touchscreen thing](https://www.waveshare.com/esp32-s3-touch-amoled-1.8.htm), right? *Right?* After scrolling Steve’s timeline the answer was, as far as I could tell, surprisingly a “no”. So on a Sunday afternoon I got working. I asked GPT-5.6 Pro if it’s possible and it helped me with the initial steps, then I started working with Sol first with an SDL native macOS target and then a QEMU one.
+I needed an idea and usually I have a hard time finding one. I did have one I thought was obvious, *too obvious*, surely someone has written a tiny tldraw clone for that [Waveshare ESP32-S3 touchscreen thing](https://www.waveshare.com/esp32-s3-touch-amoled-1.8.htm), right? *Right?* After scrolling Steve’s timeline the answer was, as far as I could tell, surprisingly a “no”. So on a Sunday afternoon I got working. I asked GPT-5.6 Pro if it’s possible and they helped me with the initial steps, then I started working with Sol first with an SDL native macOS target and then a QEMU one.
 
 [
 
@@ -62,7 +62,7 @@ Not that I expected any users. I did this because I wanted to prove I can do thi
 
 ## The bumps along the way were many.
 
-The bumps along the way were many. At one point I was hand-holding a [Fuji X-T5](https://www.fujifilm-x.com/en-us/products/cameras/x-t5/) with the [Sigma 56mm f/1.4](https://sigmauk.com/56mm-f1-4-dc-dn-c) lens (which has terrible magnification) at the screen of the Waveshare device’s 1.8” AMOLED screen. I had no tripod. So I was recording a video of different flashing patterns at 1080p@240fps, set to 1/1024 (to reduce flicker) at f/4 for over 2 minutes in order to help my agent debug tearing. The video was going to tell it if the screen does something in a certain way or the opposite. And it worked! This was the turning point and the penultimate step in getting panning both fast and tear-free, almost 30 fps, at the physical limit of the panel/controller.
+At one point I was hand-holding a [Fuji X-T5](https://www.fujifilm-x.com/en-us/products/cameras/x-t5/) with the [Sigma 56mm f/1.4](https://sigmauk.com/56mm-f1-4-dc-dn-c) lens (which has terrible magnification) pointing at the Waveshare device’s 1.8” AMOLED screen. I had no tripod. And I recorded a video of different flashing patterns at 1080p@240fps, set to 1/1024 (to reduce flicker) at f/4 for over 2 minutes in order to help my agent debug tearing. The video was going to tell them if the screen does something in a certain way or the opposite. And it worked! This was the turning point and the penultimate step in getting panning both fast and tear-free, almost 30 fps, at the physical limit of the panel/controller.
 
 **Glass testing**, as my agents called it, was something only I can do, finger on screen. The agent would say “tearing is fixed and panning is fast now” and I’d try it and it’s tearing and glitching like crazy and be like actually no, here’s a picture, it looks bad, let’s get back to work. Fingers and eyes, that only I could do.
 
@@ -88,9 +88,13 @@ If the issue seemed bad enough I’d have them pack up the source code and the l
 
 And Fable. Fable is brilliant. They're not particularly detail-oriented (I have Sol for that) but as of now they feel unparalleled when it comes to architecture and optimizing code for microcontrollers, especially when set to xhigh effort. This made an already scarce resource even more of one; I did what I could to get the most out of a single Anthropic subscription and still blew thru it in like 3 days...
 
-Keeping Fable around for the tough bits paid off though; discernment is another thing I brought to the table, sharing some but most definitely not all with the agents. Perhaps a gestalt of this is what people refer to as “taste” these days.
+And yet, and yet. Keeping Fable around for the tough bits paid off.
 
-**That, and persistence.** I always knew this was possible, my confidence barely wavered and the agents were the ones always more skeptical. And yet, I kept pushing them for more again and again, and when you *do that the right way* their results go way beyond what they thought was possible.
+## Discernment is another thing I brought to the table.
+
+That, and persistence. I always knew this was possible, my confidence barely wavered and the agents were the ones always more skeptical. And yet, I kept pushing them for more again and again, and when you *do that the right way* their results go way beyond what they thought was possible. Like, I got things a whole lot faster than my targets after I formally wrapped the project! More on that later.
+
+Is this what people refer to as “taste” these days?
 
 I sign off many of my messages to agents with some form of “thank you and good luck, you got this.”
 
@@ -116,7 +120,7 @@ Five years ago, if you wrote a piece of software, it was normal and even expecte
 
 Being a project manager does not often come naturally to a software engineer as it’s a different and at best only somewhat overlapping set of skills. You need to delegate but you need to know what your people or indeed agents are capable of, how much they need managing, how they need to be managed and so on.
 
-If I tell Claude to make atomic commits of a large number of changes it makes granular commits. If I tell GPT-5.6, it interprets it the opposite way and makes one giant commit. So I’ve finally learned to just say “granular”.
+If I tell Claude to make atomic commits of a large number of changes they make granular commits. If I tell GPT-5.6, they interpret it the opposite way and make one giant commit. So I’ve finally learned to just say “granular”.
 
 [Seconds_0](https://twitter.com/seconds_0), the best Vibecoder I know is a 100x PM who still does not know how to code and yet he built and shipped very impressive projects like [ChinaRxiv](https://chinarxiv.org/) and [SovietRxiv](https://sovietrxiv.org/).
 
@@ -128,7 +132,7 @@ And if we’re talking about taste, UX is also your responsibility. We’ve iter
 
 Anti-Aliasing was Undo on steroids; that came last and the recurring pattern of optimizing one bottleneck hurting another showed hard. If we had designed the cold rendering pipeline with AA in mind from the start it could have been a whole lot faster than it is now.
 
-A lot of care went into making inking feel good, be fast and accurate. I know that switching to a Vector-first Authority was one of the biggest unlocks. I only somewhat grok how it works. Or changing perfect-freehand’s streamline constant (how much smoothing it applies) from 0.35 to 0.4 was the sweet spot. One of the last bugs we hunted down before releasing was phantom dots that would show up on the SVG export on the top of the document, render as tiny squares on the screen and not be present at all on the PNG export. These were related to how taps were interpreted at the edge. Hell, this was only one of two phantom dots bugs, the other being related to putting your finger down but then deciding not to draw a line. But hey, after fixing all these, we finally had a correct SVG export with proper paths for all lines.
+A lot of care went into making inking feel good, be fast and accurate. I know that switching to a "Vector-first Authority" was one of the biggest unlocks. I only somewhat grok how it works. Or changing perfect-freehand’s streamline constant (how much smoothing it applies) from 0.35 to 0.4 was the sweet spot. One of the last bugs we hunted down before releasing was phantom dots that would show up on the SVG export on the top of the document, render as tiny squares on the screen and not be present at all on the PNG export. These were related to how taps were interpreted at the edge. Hell, this was only one of two phantom dots bugs, the other being related to putting your finger down but then deciding not to draw a line. But hey, after fixing all these, we finally had a correct SVG export with proper paths for all lines.
 
 *[after finishing most of this section, I have, of course, stumbled upon another SVG bug we had to fix.]*
 
@@ -156,7 +160,11 @@ I tagged the codebase as v2 on Wednesday, added the [WASM](https://en.wikipedia.
 
 ![IMG c30d73ca-f792-4c9d-8e37-758da80bb8ee_1704x1398.jpg]
 
-](https://substackcdn.com/image/fetch/$s_!88ou!,f_auto,q_auto:good,fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2Fc30d73ca-f792-4c9d-8e37-758da80bb8ee_1704x1398.jpeg)As I was writing this blogpost slowly and painfully, way too late on [@literalbanana](https://twitter.com/literalbanana)’s curve I spent a couple hours on Saturday talking with my friend [Janka](https://x.com/lubieowoce), who helped me write this post and reframe it into what it is today. As I was looking at the time, impatiently waiting for my Anthropic reset at 8pm, I checked Codex and I had like 20 minutes until my Codex reset and 18% of my quota left, and I’m like, okay. I asked the agents many times now if it’s worth doing assembly, and each time they were like, no, it’s not appropriate at this time, or it’s only worth doing assembly after settling many other things. And I was like, yeah, I’m just gonna tell this to GPT-5.6 Sol set to xhigh, turn on fast mode, yolo, let it rip:
+](https://substackcdn.com/image/fetch/$s_!88ou!,f_auto,q_auto:good,fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2Fc30d73ca-f792-4c9d-8e37-758da80bb8ee_1704x1398.jpeg)As I was writing this blogpost slowly and painfully, way too late on [@literalbanana](https://twitter.com/literalbanana)’s curve I spent a couple hours on Saturday talking with my friend [Janka](https://x.com/lubieowoce), who helped me write this post and reframe it into what it is today. 
+
+That evening I kept checking the time, waiting for my Anthropic reset at 8pm because in 2026 I pay $200 to use arguably the most powerful AI model in the world, and that money doesn't even go that far.
+
+Around this time I checked Codex and saw I had 20 minutes until my Codex reset with 18% of my quota left, and I’m like, okay. I asked the agents many times now if it’s worth doing assembly, and each time they were like, no, it’s not appropriate at this time, or it’s only worth doing assembly after settling many other things. And I was like, yeah, I’m just gonna tell this to GPT-5.6 Sol set to xhigh, turn on fast mode, yolo, let it rip:
 
 > *oh hey i have a lot of tokens to burn so let’s go. do a disassembly on the esp32s3 binary (the native one, not the wasm one) and see if there are places where we can get performance wins in all areas (cold renders, panning speed, undo/redo, anti-aliasing, caching etc.) feel free to use subagents liberally be thorrough and be fully autonomous. i am very happy to hand-roll assembly or change our c++20 code to generate better assembly to squeeze out more performance, especially if the xtensa gcc is inefficient in some ways you can also research that i vaguely remember that we want to avoid memcpy for example but there’s probably more!! anyways. fully autonomous! go as long as possible! good luck you go this*
 
@@ -166,7 +174,7 @@ Two minutes later I added:
 
 Did I know there’s probably more for a fact? No. But it’s a reasonable guess, and it’s a way to motivate the agent.
 
-Sent at 6:48 p.m. As I’m dictating this, it’s 9:22 p.m., and they’re still going. So far there have been 43 subagents doing research and trying things. It just kicked off three more. It already used up 22% of my tokens since my reset, at least I have a banked reset. It’s talking about the final three audits and I’m pretty sure this is not the first time it said final.
+Sent at 6:48 p.m. As I’m dictating this, it’s 9:22 p.m., and they’re still going. So far there have been 43 subagents doing research and trying things. They just kicked off three more. They already used up 22% of my tokens since my reset, at least I have a banked reset. They’re talking about the final three audits and I’m pretty sure this is not the first time they said final.
 
 Then around 10:40 p.m. they did finally wrap and my god they sure delivered:
 
@@ -179,9 +187,11 @@ Then around 10:40 p.m. they did finally wrap and my god they sure delivered:
 
 Almost everything got faster! Sometimes a lot faster!
 
-And I do feel extremely vindicated. I let them go to town, they ran the benchmarks. I have not glass tested yet. It’s quite possible that once I glass test it, I find some bugs, like many times before. I may be repeating the mistake of not glass testing early enough. I’m also a little mad at myself that I wasn’t pushing them earlier, but here we are.
+And I do feel extremely vindicated. I let them go to town, they ran the benchmarks. I have not glass tested yet. It’s quite possible that once I glass test it, I find some bugs, like many times before. I may be repeating the mistake of not glass testing early enough. I’m also a little mad at myself that I wasn’t pushing them earlier, but here we are. 
 
-## **Coda of the Coda**
+These four hours were the project again, just on a smaller scale.
+
+## **Coda**
 
 I just did a glass test, and as far as I can tell, the only thing broken is the SVG export in a way that seems not too hard to fix. They did not break anything — famous last words — but the PNG export is fine, the performance is as they said, cold rendering got faster, anti-aliasing got faster. Free wins in assembly. The SVG fix would land the next day.
 
@@ -193,9 +203,9 @@ I just did a glass test, and as far as I can tell, the only thing broken is the 
 
 Would I have run this if it wasn’t for the call with my friend Janka? I don’t know. But I would like to think that talking all this about project management contributed to me being like: yeah, you know what, I should actually just tell them to disassemble it. And it paid off.
 
-## **Coda of the Coda of the Coda**
+## **Coda of the Coda**
 
-Tibo announced another reset Monday 10pm my time so I just asked 5.6 Pro to write me a plan to rearchitect cold rendering incorporating AA. And oh my god I need to start telling 5.6 more to cut all the “do thing X instead of obviously wrong thing Y” bits because I know why it does it but it drives me up the wall and is almost always pointless information I did not need. I asked 5.6 Pro to rewrite the whole rearch document with the “do not”s limited to a bulleted list at the very end on the off chance they are possibly, maybe useful.
+[Tibo announced another reset](https://x.com/thsottiaux/status/2091407991736332689) so I just asked 5.6 Pro to write me a plan to rearchitect cold rendering incorporating AA. And oh my god I need to start telling 5.6 more to cut all the “do thing X instead of obviously wrong thing Y” bits because I know why they do it but it drives me up the wall and is almost always pointless information I did not need. I asked 5.6 Pro to rewrite the whole rearch document with the negative stuff limited to a bulleted list at the very end on the off chance they are possibly, maybe useful.
 
 Then I fed that to Fable for adversarial reviewing and more research (with 5.6 Sol subagents) and then fed that back to 5.6 Pro for an adversarial review of the...
 
@@ -218,7 +228,7 @@ As I was writing this I asked my editor (Fable) to just dump as many interesting
 - There was a byte swap bug that made the color popup outline magenta instead of blue. “Black and white hiding” is what I’m being told was the problem
 - During a late glass test I did one where the pen-size selector also fired Redo — the button below it on the screen — at the same time because getting tap targets right on a screen this small is hard. This glitched the UI up really bad. The tap targets are now 30% less bad.
 - There was a whole thing when I was testing exports, and there were two dots in the SVG on the top, and none in the PNG, and two squares on the actual app. Schrödinger’s dot. Long story short, we did a *checks notes* “render parity fix” and later a “top-edge contact fix” and that was that.
-- After I gave the agent the slo-mo video from my Fuji to figure out whatever it needed it spent way too long trying and failing to build a classifier (*“We’ve been at this for... over an hour?”*) anyways after I stopped it in frustration it switched to making a [contact sheet](https://en.wikipedia.org/wiki/Contact_print) instead which solved the problem.
+- After I gave the agent the slo-mo video from my Fuji to figure out whatever they needed they spent way too long trying and failing to build a classifier (*“We’ve been at this for... over an hour?”*) anyways after I stopped them in frustration they switched to making a [contact sheet](https://en.wikipedia.org/wiki/Contact_print) instead which solved the problem.
 - Flash-icache layout moves hot-loop timing ±2-3% per build. This was very silly and I don’t think we actually fixed it we just made some benchmark numbers fail less hard or something? Especially when at 16× zoom we were juuuuuust above the 500ms target.
 - PSRAM placement matters: a 40 KB workspace mid-heap cost +9 ms but if placed dead-last it’s 0 ms. Uh, what Fable said.
 - Had a sub-500 ms cold rendering benchmark that stopped before the pixels actually reached the glass. I honestly forgot why or when it happened but it sounds bad but hey at least we caught it.
