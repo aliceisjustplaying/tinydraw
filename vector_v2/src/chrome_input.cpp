@@ -32,6 +32,10 @@ float brush_size(ChromeSize size) {
       return 13.0F;
     case ChromeSize::kExtraLarge:
       return 20.0F;
+    case ChromeSize::kDoubleExtraLarge:
+      return 30.0F;
+    case ChromeSize::kTripleExtraLarge:
+      return 45.0F;
   }
   return 8.0F;
 }
@@ -307,11 +311,16 @@ ChromeAction popup_action_at(ChromePoint point, ChromePopup popup) {
       return actions[third];
     }
     case ChromePopup::kSizes: {
-      const std::size_t quarter =
-          std::min(static_cast<std::size_t>(point.x * 4.0F / kWidth), std::size_t{3});
-      constexpr std::array actions{ChromeAction::kSelectSmall, ChromeAction::kSelectMedium,
-                                   ChromeAction::kSelectLarge, ChromeAction::kSelectExtraLarge};
-      return actions[quarter];
+      const std::size_t column = std::min(
+          static_cast<std::size_t>(std::max(0.0F, point.x) * 3.0F / kWidth), std::size_t{2});
+      const int popup_height = kPopupBottom - kPopupTop;
+      const int row = std::clamp((static_cast<int>(point.y) - kPopupTop) * 2 / popup_height, 0, 1);
+      constexpr std::array actions{
+          ChromeAction::kSelectSmall,            ChromeAction::kSelectMedium,
+          ChromeAction::kSelectLarge,            ChromeAction::kSelectExtraLarge,
+          ChromeAction::kSelectDoubleExtraLarge, ChromeAction::kSelectTripleExtraLarge,
+      };
+      return actions[static_cast<std::size_t>(row) * 3U + column];
     }
     case ChromePopup::kDocument: {
       constexpr std::array actions{ChromeAction::kNewDrawing, ChromeAction::kExport,

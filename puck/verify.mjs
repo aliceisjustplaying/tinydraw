@@ -612,6 +612,55 @@ async function verifyStrokeAfterHudToggle() {
   console.log("PASS post-HUD Stroke stays full-length across refresh timing windows");
 }
 
+async function verifyTwoLargestBrushSelections() {
+  const events = [{ t: 0, k: "tick" }, { t: 16, k: "tick" }];
+  const event = (t, value) => events.push(value, { t, k: "tick" });
+  let now = 32;
+  const tap = (x, y) => {
+    event(now, { t: now, k: "touch", down: 1, x, y });
+    now += 16;
+    event(now, { t: now, k: "touch", down: 0, x, y });
+    now += 16;
+  };
+  const horizontalStroke = (y) => {
+    for (let x = 80; x <= 280; x += 4) {
+      event(now, { t: now, k: "touch", down: 1, x, y });
+      now += 8;
+    }
+    event(now, { t: now, k: "touch", down: 0, x: 280, y });
+    now += 64;
+  };
+
+  tap(270, 410);
+  tap(184, 349);
+  horizontalStroke(150);
+  tap(270, 410);
+  tap(306, 349);
+  horizontalStroke(250);
+  const settledAt = now + 1_000;
+  for (let t = now; t <= settledAt; t += 8) events.push({ t, k: "tick" });
+
+  const run = await replay({ events }, [settledAt]);
+  const frame = run.frames.get(settledAt);
+  assert(frame, "large-brush selection capture is missing");
+  const verticalInkSpan = (x, y0, y1) => {
+    let first = null;
+    let last = null;
+    for (let y = y0; y < y1; ++y) {
+      if (nonPaperPixels(frame, { x, y, w: 1, h: 1 }) === 0) continue;
+      if (first === null) first = y;
+      last = y;
+    }
+    return first === null ? 0 : last - first + 1;
+  };
+  const thirty = verticalInkSpan(180, 100, 200);
+  const fortyFive = verticalInkSpan(180, 200, 300);
+  assert(thirty >= 20, `30px brush rendered only ${thirty}px wide`);
+  assert(fortyFive >= thirty + 8,
+    `45px brush was not materially larger than 30px: ${fortyFive}px versus ${thirty}px`);
+  console.log(`PASS 3x2 picker selects 30px (${thirty}px ink) and 45px (${fortyFive}px ink) brushes`);
+}
+
 async function verifyPhysicalEdgeInsetStillReachesCanvasEdges() {
   const events = [{ t: 0, k: "tick" }, { t: 16, k: "tick" }];
   const event = (t, value) => events.push(value, { t, k: "tick" });
@@ -738,6 +787,7 @@ await verifyLongStrokeHistory();
 await verifyHistoryPresentationFailure();
 await verifyRecordedStrokeAaSurvivesHudToggle();
 await verifyStrokeAfterHudToggle();
+await verifyTwoLargestBrushSelections();
 await verifyPhysicalEdgeInsetStillReachesCanvasEdges();
 await verifyHudHideDismissesColorsInputShield();
 

@@ -33,7 +33,14 @@ inline constexpr int kChromePopupCanvasBottom = 294;
 inline constexpr std::size_t kPaletteColorCount = 16;
 
 enum class ChromeTool { kDraw, kErase, kPan };
-enum class ChromeSize { kSmall, kMedium, kLarge, kExtraLarge };
+enum class ChromeSize {
+  kSmall,
+  kMedium,
+  kLarge,
+  kExtraLarge,
+  kDoubleExtraLarge,
+  kTripleExtraLarge,
+};
 enum class ChromePopup { kNone, kTools, kColors, kSizes, kDocument };
 enum class ChromeExportStatus {
   kIdle,
@@ -61,6 +68,8 @@ enum class ChromeAction {
   kSelectMedium,
   kSelectLarge,
   kSelectExtraLarge,
+  kSelectDoubleExtraLarge,
+  kSelectTripleExtraLarge,
   kPreviousPalette,
   kNextPalette,
   kSelectColor,

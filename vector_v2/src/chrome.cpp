@@ -137,6 +137,10 @@ int size_radius(ChromeSize size) {
       return 14;
     case ChromeSize::kExtraLarge:
       return 18;
+    case ChromeSize::kDoubleExtraLarge:
+      return 20;
+    case ChromeSize::kTripleExtraLarge:
+      return 22;
   }
   return 10;
 }
@@ -207,14 +211,22 @@ void draw_tools_popup(Painter& painter, const ChromeState& state) {
 }
 
 void draw_sizes_popup(Painter& painter, const ChromeState& state) {
-  constexpr std::array sizes{ChromeSize::kSmall, ChromeSize::kMedium, ChromeSize::kLarge,
-                             ChromeSize::kExtraLarge};
+  constexpr std::array sizes{
+      ChromeSize::kSmall,            ChromeSize::kMedium,          ChromeSize::kLarge,
+      ChromeSize::kExtraLarge,       ChromeSize::kDoubleExtraLarge,
+      ChromeSize::kTripleExtraLarge,
+  };
+  // Popup samples are deliberately scaled down independently of brush pixels
+  // so six increasingly large choices remain legible in two compact rows.
+  constexpr std::array display_radii{5, 7, 9, 11, 14, 17};
   for (std::size_t index = 0; index < sizes.size(); ++index) {
-    const int radius = size_radius(sizes[index]);
+    const std::size_t column = index % kSizeCentersX.size();
+    const std::size_t row = index / kSizeCentersX.size();
+    const int radius = display_radii[index];
     if (state.size == sizes[index]) {
-      painter.circle(kSizeCenters[index], 331, radius + 5, kSelected);
+      painter.circle(kSizeCentersX[column], kSizeCentersY[row], radius + 5, kSelected);
     }
-    painter.circle(kSizeCenters[index], 331, radius, kInk);
+    painter.circle(kSizeCentersX[column], kSizeCentersY[row], radius, kInk);
   }
 }
 

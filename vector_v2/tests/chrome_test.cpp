@@ -13,6 +13,7 @@ using tinydraw::vector_v2::ChromeAction;
 using tinydraw::vector_v2::ChromeExportStatus;
 using tinydraw::vector_v2::ChromePoint;
 using tinydraw::vector_v2::ChromePopup;
+using tinydraw::vector_v2::ChromeSize;
 using tinydraw::vector_v2::ChromeState;
 using tinydraw::vector_v2::ChromeTimeSyncStatus;
 using tinydraw::vector_v2::ChromeTool;
@@ -65,6 +66,29 @@ TEST_CASE("tools popup contains draw erase and pan") {
   CHECK(tinydraw::vector_v2::chrome_action_at({306.0F, 331.0F}, state) == ChromeAction::kSelectPan);
   state.tool = ChromeTool::kErase;
   CHECK(tinydraw::vector_v2::chrome_contains({184.0F, 331.0F}, state));
+}
+
+TEST_CASE("sizes popup maps six brushes in a three by two grid") {
+  const ChromeState state{.popup = ChromePopup::kSizes};
+  CHECK(tinydraw::vector_v2::chrome_action_at({62.0F, 313.0F}, state) ==
+        ChromeAction::kSelectSmall);
+  CHECK(tinydraw::vector_v2::chrome_action_at({184.0F, 313.0F}, state) ==
+        ChromeAction::kSelectMedium);
+  CHECK(tinydraw::vector_v2::chrome_action_at({306.0F, 313.0F}, state) ==
+        ChromeAction::kSelectLarge);
+  CHECK(tinydraw::vector_v2::chrome_action_at({62.0F, 349.0F}, state) ==
+        ChromeAction::kSelectExtraLarge);
+  CHECK(tinydraw::vector_v2::chrome_action_at({184.0F, 349.0F}, state) ==
+        ChromeAction::kSelectDoubleExtraLarge);
+  CHECK(tinydraw::vector_v2::chrome_action_at({306.0F, 349.0F}, state) ==
+        ChromeAction::kSelectTripleExtraLarge);
+
+  CHECK(tinydraw::vector_v2::brush_size(ChromeSize::kSmall) == 5.0F);
+  CHECK(tinydraw::vector_v2::brush_size(ChromeSize::kMedium) == 8.0F);
+  CHECK(tinydraw::vector_v2::brush_size(ChromeSize::kLarge) == 13.0F);
+  CHECK(tinydraw::vector_v2::brush_size(ChromeSize::kExtraLarge) == 20.0F);
+  CHECK(tinydraw::vector_v2::brush_size(ChromeSize::kDoubleExtraLarge) == 30.0F);
+  CHECK(tinydraw::vector_v2::brush_size(ChromeSize::kTripleExtraLarge) == 45.0F);
 }
 
 TEST_CASE("document popup gives new export and time sync equal touch targets") {

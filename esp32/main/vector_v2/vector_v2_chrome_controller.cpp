@@ -214,11 +214,30 @@ bool VectorV2ChromeController::apply(vector_v2::ChromeAction action, Point point
     case vector_v2::ChromeAction::kSelectMedium:
     case vector_v2::ChromeAction::kSelectLarge:
     case vector_v2::ChromeAction::kSelectExtraLarge:
-      chrome_.size =
-          action == vector_v2::ChromeAction::kSelectSmall    ? vector_v2::ChromeSize::kSmall
-          : action == vector_v2::ChromeAction::kSelectMedium ? vector_v2::ChromeSize::kMedium
-          : action == vector_v2::ChromeAction::kSelectLarge  ? vector_v2::ChromeSize::kLarge
-                                                             : vector_v2::ChromeSize::kExtraLarge;
+    case vector_v2::ChromeAction::kSelectDoubleExtraLarge:
+    case vector_v2::ChromeAction::kSelectTripleExtraLarge:
+      switch (action) {
+        case vector_v2::ChromeAction::kSelectSmall:
+          chrome_.size = vector_v2::ChromeSize::kSmall;
+          break;
+        case vector_v2::ChromeAction::kSelectMedium:
+          chrome_.size = vector_v2::ChromeSize::kMedium;
+          break;
+        case vector_v2::ChromeAction::kSelectLarge:
+          chrome_.size = vector_v2::ChromeSize::kLarge;
+          break;
+        case vector_v2::ChromeAction::kSelectExtraLarge:
+          chrome_.size = vector_v2::ChromeSize::kExtraLarge;
+          break;
+        case vector_v2::ChromeAction::kSelectDoubleExtraLarge:
+          chrome_.size = vector_v2::ChromeSize::kDoubleExtraLarge;
+          break;
+        case vector_v2::ChromeAction::kSelectTripleExtraLarge:
+          chrome_.size = vector_v2::ChromeSize::kTripleExtraLarge;
+          break;
+        default:
+          break;
+      }
       chrome_.popup = vector_v2::ChromePopup::kNone;
       break;
     case vector_v2::ChromeAction::kPreviousPalette:
