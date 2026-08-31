@@ -14,7 +14,8 @@ Run it on the physical board with:
 
 The serial capture retains every raw CCOUNT sample. `result.json` adds median,
 p90, range, latency, and bandwidth derivations while keeping the raw samples.
-It also records the flashed application binary's SHA-256 digest.
+It also records the flashed application binary's SHA-256 digest and the commit
+that last changed the firmware source/configuration inputs.
 Random external-memory figures subtract the measured LCG/index-only baseline.
 Sequential figures include loop/index overhead. Use medians for emulator
 calibration and the raw min-to-p90 range to model timing uncertainty.

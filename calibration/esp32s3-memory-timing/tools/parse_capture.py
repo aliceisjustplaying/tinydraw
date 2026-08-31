@@ -24,6 +24,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("capture", type=pathlib.Path)
 parser.add_argument("output", type=pathlib.Path)
 parser.add_argument("--firmware-binary", type=pathlib.Path, required=True)
+parser.add_argument("--firmware-source-commit", required=True)
 args = parser.parse_args()
 
 records = []
@@ -75,6 +76,7 @@ result = {
     "captured_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
     "source_capture": args.capture.name,
     "firmware_binary_sha256": hashlib.sha256(args.firmware_binary.read_bytes()).hexdigest(),
+    "firmware_source_commit": args.firmware_source_commit,
     "configuration": config,
     "metrics": metrics,
 }

@@ -1,10 +1,10 @@
 {
   "schema_version": "1.0.0",
   "runs": [
-    "calibration/esp32s3-memory-timing/results/2026-08-31-physical/run-6/result.json",
-    "calibration/esp32s3-memory-timing/results/2026-08-31-physical/run-7/result.json"
+    "calibration/esp32s3-memory-timing/results/2026-08-31-physical/run-8/result.json",
+    "calibration/esp32s3-memory-timing/results/2026-08-31-physical/run-9/result.json"
   ],
-  "maximum_relative_delta": 0.0,
+  "maximum_relative_delta": 1.3272891115363704e-05,
   "metrics": [
     {
       "name": "iram_call_loop_baseline",
@@ -18,25 +18,25 @@
       "name": "iram_instruction_fetch",
       "median_cycles_per_operation": [
         1.0059247016906738,
-        1.0059247016906738
+        1.0059113502502441
       ],
-      "relative_delta": 0.0
+      "relative_delta": 1.3272891115363704e-05
     },
     {
       "name": "sram_read_hit",
       "median_cycles_per_operation": [
         8.047554016113281,
-        8.047554016113281
+        8.0475492477417
       ],
-      "relative_delta": 0.0
+      "relative_delta": 5.925245093319352e-07
     },
     {
       "name": "sram_read_sequential",
       "median_cycles_per_operation": [
         10.058876991271973,
-        10.058876991271973
+        10.0587739944458
       ],
-      "relative_delta": 0.0
+      "relative_delta": 1.023944855639419e-05
     },
     {
       "name": "sram_write_sequential",
@@ -50,49 +50,49 @@
       "name": "flash_read_hit",
       "median_cycles_per_operation": [
         8.0475492477417,
-        8.0475492477417
+        8.04754638671875
       ],
-      "relative_delta": 0.0
+      "relative_delta": 3.5551487412018215e-07
     },
     {
       "name": "flash_read_sequential",
       "median_cycles_per_operation": [
         36.56242561340332,
-        36.56242561340332
+        36.56242847442627
       ],
-      "relative_delta": 0.0
+      "relative_delta": 7.825035645971756e-08
     },
     {
       "name": "flash_random_index_baseline",
       "median_cycles_per_operation": [
         9.053909301757812,
-        9.053909301757812
+        9.053894996643066
       ],
-      "relative_delta": 0.0
+      "relative_delta": 1.579994405766474e-06
     },
     {
       "name": "flash_read_random",
       "median_cycles_per_operation": [
         257.9781103134155,
-        257.9781103134155
+        257.97974967956543
       ],
-      "relative_delta": 0.0
+      "relative_delta": 6.354651327240738e-06
     },
     {
       "name": "psram_read_hit",
       "median_cycles_per_operation": [
         8.0475492477417,
-        8.0475492477417
+        8.04754638671875
       ],
-      "relative_delta": 0.0
+      "relative_delta": 3.5551487412018215e-07
     },
     {
       "name": "psram_read_sequential",
       "median_cycles_per_operation": [
         20.365431785583496,
-        20.365431785583496
+        20.36537456512451
       ],
-      "relative_delta": 0.0
+      "relative_delta": 2.80968947639704e-06
     },
     {
       "name": "psram_write_sequential",
@@ -106,17 +106,17 @@
       "name": "psram_random_index_baseline",
       "median_cycles_per_operation": [
         9.053909301757812,
-        9.053909301757812
+        9.053894996643066
       ],
-      "relative_delta": 0.0
+      "relative_delta": 1.579994405766474e-06
     },
     {
       "name": "psram_read_random",
       "median_cycles_per_operation": [
         109.39023685455322,
-        109.39023685455322
+        109.38988780975342
       ],
-      "relative_delta": 0.0
+      "relative_delta": 3.190827323462378e-06
     }
   ]
 }

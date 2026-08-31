@@ -9,6 +9,7 @@
     "captured_at_utc": {"type": "string", "format": "date-time"},
     "source_capture": {"type": "string"},
     "firmware_binary_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "firmware_source_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
     "configuration": {
       "type": "object",
       "required": ["schema_version", "harness_version", "idf_version", "target", "cpu_hz", "ccount_hz", "flash_bytes", "flash_mode", "flash_image_header_mode", "flash_frequency_mhz", "psram_bytes", "psram_mode", "psram_frequency_mhz", "data_cache_bytes", "data_cache_line_bytes", "instruction_cache_bytes", "external_working_set_bytes", "internal_working_set_bytes", "trials", "uncertainty_notes"]
