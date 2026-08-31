@@ -124,7 +124,7 @@ test("MMIO peers repeat exact aligned read and write cells", async () => {
   expect(firmware).toContain("kRtcMmioReadSignature");
   expect(firmware).toContain(".ibus_accesses = 176U");
   expect(firmware).toContain("measure_rtc_mmio_once");
-  expect(firmware).toContain("tinydraw_mmio_read_rtc_date, prepare_none, nullptr, 0U, measure_rtc_boot_4096_once");
+  expect(firmware).toContain("tinydraw_mmio_read_rtc_date, prepare_none, nullptr, 0U,\n     measure_rtc_date_boot_4096_once");
   expect(firmware).toContain("autoload-clear-active");
   expect(firmware).toContain("TINYDRAW_MMIO_BOOT_VALUES system_sysclk_conf=0x%08");
   expect(firmware).toContain('asm volatile("rsil %0, 15"');
