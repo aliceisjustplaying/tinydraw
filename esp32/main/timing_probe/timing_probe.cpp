@@ -356,6 +356,20 @@ constexpr CacheCounters kRtcResetState2048ReadSignature{
     .dbus_flash_misses = 0U,
     .dbus_psram_misses = 0U,
 };
+constexpr CacheCounters kRtcBoot4096ReadSignature{
+    .ibus_accesses = 176U,
+    .ibus_misses = 0U,
+    .dbus_accesses = 0U,
+    .dbus_flash_misses = 0U,
+    .dbus_psram_misses = 0U,
+};
+constexpr CacheCounters kRtcBoot2048ReadSignature{
+    .ibus_accesses = 88U,
+    .ibus_misses = 0U,
+    .dbus_accesses = 0U,
+    .dbus_flash_misses = 0U,
+    .dbus_psram_misses = 0U,
+};
 static_assert(kMatchedIcacheExecutedInstructions ==
               (kMatchedIcacheLines - 1U) * 16U + 6U + 2U);
 static_assert(kFlashIcacheHitSignature.ibus_accesses ==
@@ -1150,11 +1164,32 @@ RawSample IRAM_ATTR NOINLINE_ATTR measure_rtc_mmio_once(
                                      &kRtcMmioReadSignature);
 }
 
-RawSample IRAM_ATTR NOINLINE_ATTR measure_observed_rtc_mmio_once(
+template <const CacheCounters& Signature>
+RawSample IRAM_ATTR NOINLINE_ATTR measure_rtc_boot_mmio_once(
     const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
     bool collect_cache_counters) {
+  static Kernel primed_kernel = nullptr;
+  if (collect_cache_counters && primed_kernel != kernel) {
+    static_cast<void>(measure_mmio_with_signature(context, kernel, finalize, seed,
+                                                  collect_cache_counters, nullptr));
+    primed_kernel = kernel;
+  }
   return measure_mmio_with_signature(context, kernel, finalize, seed, collect_cache_counters,
-                                     nullptr);
+                                     &Signature);
+}
+
+RawSample IRAM_ATTR NOINLINE_ATTR measure_rtc_boot_4096_once(
+    const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
+    bool collect_cache_counters) {
+  return measure_rtc_boot_mmio_once<kRtcBoot4096ReadSignature>(
+      context, kernel, finalize, seed, collect_cache_counters);
+}
+
+RawSample IRAM_ATTR NOINLINE_ATTR measure_rtc_boot_2048_once(
+    const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
+    bool collect_cache_counters) {
+  return measure_rtc_boot_mmio_once<kRtcBoot2048ReadSignature>(
+      context, kernel, finalize, seed, collect_cache_counters);
 }
 
 RawSample IRAM_ATTR NOINLINE_ATTR measure_reset_state_sram_once(
@@ -1867,23 +1902,22 @@ constexpr Measurement kMeasurements[] = {
     // invalidate an earlier strict receipt.
     {"mmio_read_rtc_date_4096_aligned", "other",
      kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
-     tinydraw_mmio_read_rtc_date, prepare_none, nullptr, 0U,
-     measure_observed_rtc_mmio_once},
+     tinydraw_mmio_read_rtc_date, prepare_none, nullptr, 0U, measure_rtc_boot_4096_once},
     {"mmio_read_rtc_xtal_freq_4096_aligned", "other",
      kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
      tinydraw_mmio_read_rtc_xtal_freq, prepare_none, nullptr, 0U,
-     measure_observed_rtc_mmio_once},
+     measure_rtc_boot_4096_once},
     {"mmio_read_sram_2048_aligned", "internal-to-internal",
      kMmioHalfOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
      tinydraw_mmio_read_sram_2048, prepare_none, nullptr, 0U, measure_mmio_once},
     {"mmio_read_rtc_date_2048_aligned", "other",
      kMmioHalfOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
      tinydraw_mmio_read_rtc_date_2048, prepare_none, nullptr, 0U,
-     measure_observed_rtc_mmio_once},
+     measure_rtc_boot_2048_once},
     {"mmio_read_rtc_xtal_freq_2048_aligned", "other",
      kMmioHalfOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
      tinydraw_mmio_read_rtc_xtal_freq_2048, prepare_none, nullptr, 0U,
-     measure_observed_rtc_mmio_once},
+     measure_rtc_boot_2048_once},
     {"mmio_write_same_value_sram_2048_aligned", "internal-to-internal",
      kMmioHalfOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
      tinydraw_mmio_write_same_value_sram_2048, prepare_none, finalize_mmio_same_value_sram,
