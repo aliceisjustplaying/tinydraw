@@ -27,7 +27,9 @@
 #include "freertos/task.h"
 #include "sdkconfig.h"
 #include "soc/extmem_reg.h"
+#include "soc/rtc_cntl_reg.h"
 #include "soc/soc.h"
+#include "soc/system_reg.h"
 #include "timing_probe_build_metadata.h"
 
 extern "C" {
@@ -68,6 +70,7 @@ constexpr std::uint32_t kMatchedIcacheExecutedInstructions = 120U;
 constexpr std::uint32_t kMatchedDcacheLoads = 16U;
 constexpr std::uint32_t kConditionalBranchIterations = 4096U;
 constexpr std::uint32_t kConditionalBranchChecksum = kConditionalBranchIterations;
+constexpr std::uint32_t kMmioOperations = 4096U;
 constexpr std::uint32_t kSramStoreCompletionChecksum = 0x5352'414dU;
 constexpr std::size_t kRgb565StagePixels = 5U;
 constexpr std::size_t kRgb565OracleCodeBytes = 41U;
@@ -80,6 +83,7 @@ DRAM_ATTR std::uint16_t g_rgb565_stage_source[kRgb565StagePixels] = {
     0x1234U, 0xabcdU, 0x00ffU, 0xf81fU, 0x07e0U,
 };
 DRAM_ATTR std::uint16_t g_rgb565_stage_destination[kRgb565StagePixels] = {};
+DRAM_ATTR volatile std::uint32_t g_mmio_sram_peer = 0x6d6d'696fU;
 
 struct ProbeContext {
   std::uint32_t* sram_dependent = nullptr;
@@ -90,6 +94,11 @@ struct ProbeContext {
   const std::uint32_t* flash = nullptr;
   std::uint32_t* sram_load_use = nullptr;
   std::uint32_t* psram_load_use = nullptr;
+  volatile std::uint32_t* mmio_sram_peer = nullptr;
+  volatile std::uint32_t* mmio_system_cpu_per_conf = nullptr;
+  volatile std::uint32_t* mmio_rtc_store1 = nullptr;
+  volatile std::uint32_t* mmio_extmem_cache_state = nullptr;
+  volatile std::uint32_t* mmio_extmem_cache_counter_clear = nullptr;
   esp_partition_mmap_handle_t flash_handle = 0;
 };
 
@@ -99,6 +108,15 @@ static_assert(offsetof(ProbeContext, psram) == 12U);
 static_assert(offsetof(ProbeContext, flash) == 20U);
 static_assert(offsetof(ProbeContext, sram_load_use) == 24U);
 static_assert(offsetof(ProbeContext, psram_load_use) == 28U);
+static_assert(offsetof(ProbeContext, mmio_sram_peer) == 32U);
+static_assert(offsetof(ProbeContext, mmio_system_cpu_per_conf) == 36U);
+static_assert(offsetof(ProbeContext, mmio_rtc_store1) == 40U);
+static_assert(offsetof(ProbeContext, mmio_extmem_cache_state) == 44U);
+static_assert(offsetof(ProbeContext, mmio_extmem_cache_counter_clear) == 48U);
+static_assert(SYSTEM_CPU_PER_CONF_REG == 0x600c'0010U);
+static_assert(RTC_CNTL_STORE1_REG == 0x6000'8054U);
+static_assert(EXTMEM_CACHE_STATE_REG == 0x600c'4130U);
+static_assert(EXTMEM_CACHE_ACS_CNT_CLR_REG == 0x600c'40c4U);
 static_assert(CONFIG_ESP32S3_INSTRUCTION_CACHE_LINE_SIZE == kIcacheLineBytes);
 static_assert(CONFIG_ESP32S3_DATA_CACHE_LINE_SIZE == kDcacheLineBytes);
 
@@ -122,6 +140,18 @@ extern "C" std::uint32_t tinydraw_branch_not_taken(const ProbeContext& context,
                                                     std::uint32_t seed);
 extern "C" std::uint32_t tinydraw_branch_taken(const ProbeContext& context,
                                                 std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_mmio_read_sram(const ProbeContext& context,
+                                                  std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_mmio_read_system_cpu_per_conf(const ProbeContext& context,
+                                                                 std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_mmio_read_rtc_store1(const ProbeContext& context,
+                                                        std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_mmio_read_extmem_cache_state(const ProbeContext& context,
+                                                                std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_mmio_write_sram(const ProbeContext& context,
+                                                   std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_mmio_write_extmem_cache_counter_clear(
+    const ProbeContext& context, std::uint32_t seed);
 
 #define DECLARE_DCACHE_BURST_PROBE(path, lines)                                                  \
   extern "C" std::uint32_t tinydraw_dcache_##path##_##lines##_lines(const ProbeContext& context, \
@@ -846,6 +876,15 @@ RawSample IRAM_ATTR NOINLINE_ATTR measure_conditional_branch_once(
   return sample;
 }
 
+RawSample IRAM_ATTR NOINLINE_ATTR measure_mmio_once(
+    const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
+    bool collect_cache_counters) {
+  RawSample sample =
+      measure_once(context, kernel, finalize, seed, collect_cache_counters);
+  require_cache_counter_signature(sample, kInternalCacheHitSignature, collect_cache_counters);
+  return sample;
+}
+
 RawSample IRAM_ATTR NOINLINE_ATTR measure_rgb565_stage_once(const ProbeContext& context, Kernel,
                                                             Finalize finalize, std::uint32_t seed,
                                                             bool collect_cache_counters) {
@@ -1076,6 +1115,15 @@ bool start_contention(ProbeContext& context) {
 }
 
 bool initialize_context(ProbeContext& context) {
+  context.mmio_sram_peer = &g_mmio_sram_peer;
+  context.mmio_system_cpu_per_conf =
+      reinterpret_cast<volatile std::uint32_t*>(SYSTEM_CPU_PER_CONF_REG);
+  context.mmio_rtc_store1 =
+      reinterpret_cast<volatile std::uint32_t*>(RTC_CNTL_STORE1_REG);
+  context.mmio_extmem_cache_state =
+      reinterpret_cast<volatile std::uint32_t*>(EXTMEM_CACHE_STATE_REG);
+  context.mmio_extmem_cache_counter_clear =
+      reinterpret_cast<volatile std::uint32_t*>(EXTMEM_CACHE_ACS_CNT_CLR_REG);
   context.sram_dependent = static_cast<std::uint32_t*>(heap_caps_malloc(
       kDependentEntries * sizeof(std::uint32_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
   context.sram_unaligned_dependent = static_cast<std::uint8_t*>(heap_caps_malloc(
@@ -1214,6 +1262,25 @@ bool initialize_context(ProbeContext& context) {
   }
 
 constexpr Measurement kMeasurements[] = {
+    {"mmio_read_sram_4096_aligned", "internal-to-internal",
+     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations, tinydraw_mmio_read_sram,
+     prepare_none, nullptr, 0U, measure_mmio_once},
+    {"mmio_read_system_cpu_per_conf_4096_aligned", "other",
+     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_mmio_read_system_cpu_per_conf, prepare_none, nullptr, 0U, measure_mmio_once},
+    {"mmio_read_rtc_store1_4096_aligned", "other",
+     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_mmio_read_rtc_store1, prepare_none, nullptr, 0U, measure_mmio_once},
+    {"mmio_read_extmem_cache_state_4096_aligned", "other",
+     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_mmio_read_extmem_cache_state, prepare_none, nullptr, 0U, measure_mmio_once},
+    {"mmio_write_sram_4096_aligned", "internal-to-internal",
+     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations, tinydraw_mmio_write_sram,
+     prepare_none, nullptr, 0U, measure_mmio_once},
+    {"mmio_write_extmem_cache_counter_clear_4096_aligned", "other",
+     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_mmio_write_extmem_cache_counter_clear, prepare_none, nullptr, 0U,
+     measure_mmio_once},
     {"conditional_branch_baseline_4096_iterations", "internal-to-internal", 0U, 1U,
      kWarmupIterations, tinydraw_branch_baseline, prepare_none, nullptr,
      kConditionalBranchChecksum, measure_conditional_branch_once},

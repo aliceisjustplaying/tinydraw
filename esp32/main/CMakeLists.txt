@@ -32,6 +32,7 @@ if(TINYDRAW_TIMING_PROBE)
     "timing_probe/timing_probe.cpp"
     "timing_probe/dcache_burst_probes_esp32s3.S"
     "timing_probe/flash_instruction_bursts_esp32s3.S"
+    "timing_probe/mmio_probes_esp32s3.S"
     "timing_probe/rgb565_call_window_esp32s3.S"
     "timing_probe/sram_microprobes_esp32s3.S"
   )
