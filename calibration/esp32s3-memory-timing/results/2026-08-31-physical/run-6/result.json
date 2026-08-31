@@ -1,0 +1,473 @@
+{
+  "$schema": "../../../schema/result-v1.schema.json",
+  "schema_version": "1.0.0",
+  "captured_at_utc": "2026-08-31T09:38:15.313880+00:00",
+  "source_capture": "serial.log",
+  "firmware_binary_sha256": "0d8f1dc571d73209ff7593dcd8ae6df7adb9d841f6cc1abb7981892f0f3de57c",
+  "configuration": {
+    "type": "configuration",
+    "schema_version": "1.0.0",
+    "harness_version": "1.0.0",
+    "idf_version": "v6.0.2",
+    "target": "esp32s3",
+    "chip_revision": 2,
+    "cores": 2,
+    "cpu_hz": 240000000,
+    "ccount_hz": 240000000,
+    "flash_bytes": 16777216,
+    "flash_mode": "qio",
+    "flash_image_header_mode": "dio",
+    "flash_frequency_mhz": 80,
+    "psram_bytes": 8388608,
+    "psram_mode": "octal",
+    "psram_frequency_mhz": 80,
+    "data_cache_bytes": 32768,
+    "data_cache_line_bytes": 32,
+    "instruction_cache_bytes": 16384,
+    "external_working_set_bytes": 524288,
+    "internal_working_set_bytes": 131072,
+    "trials": 9,
+    "uncertainty_notes": [
+      "CCOUNT includes interrupt and loop overhead; medians and minima are retained.",
+      "Random external-memory results subtract an identical LCG/index loop baseline.",
+      "Random 512 KiB working sets are miss-dominated, not guaranteed one miss per access.",
+      "IRAM bandwidth uses the two-byte Xtensa density nop encoding confirmed from the ELF symbol size."
+    ]
+  },
+  "metrics": [
+    {
+      "type": "metric",
+      "name": "iram_call_loop_baseline",
+      "memory": "iram",
+      "access_pattern": "empty_calls",
+      "operations_per_trial": 8192,
+      "bytes_per_operation": 0,
+      "ccount_samples": [
+        98306,
+        98306,
+        98306,
+        98306,
+        98306,
+        98306,
+        98306,
+        98306,
+        98306
+      ],
+      "baseline": null,
+      "note": "Function-call and loop baseline for the IRAM nop block.",
+      "statistics": {
+        "min_total_cycles": 98306,
+        "median_total_cycles": 98306,
+        "p90_total_cycles": 98306.0,
+        "max_total_cycles": 98306,
+        "median_cycles_per_operation": 12.000244140625,
+        "median_nanoseconds_per_operation": 50.001017252604164,
+        "median_mib_per_second": null,
+        "relative_sample_range": 0.0
+      }
+    },
+    {
+      "type": "metric",
+      "name": "iram_instruction_fetch",
+      "memory": "iram",
+      "access_pattern": "sequential_nops",
+      "operations_per_trial": 2097152,
+      "bytes_per_operation": 2,
+      "ccount_samples": [
+        2207889,
+        2207889,
+        2207883,
+        2207883,
+        2207883,
+        2207883,
+        2207883,
+        2207883,
+        2207883
+      ],
+      "baseline": "iram_call_loop_baseline",
+      "note": "256 two-byte sequential IRAM-resident nops per call; baseline is one empty call per block.",
+      "statistics": {
+        "min_total_cycles": 2207883,
+        "median_total_cycles": 2207883,
+        "p90_total_cycles": 2207889.0,
+        "max_total_cycles": 2207889,
+        "median_cycles_per_operation": 1.0059247016906738,
+        "median_nanoseconds_per_operation": 4.191352923711141,
+        "median_mib_per_second": 455.0675324958511,
+        "relative_sample_range": 2.7175353041805205e-06
+      }
+    },
+    {
+      "type": "metric",
+      "name": "sram_read_hit",
+      "memory": "internal_sram",
+      "access_pattern": "same_word",
+      "operations_per_trial": 1048576,
+      "bytes_per_operation": 4,
+      "ccount_samples": [
+        8438548,
+        8438472,
+        8438472,
+        8438472,
+        8438472,
+        8438472,
+        8438472,
+        8438472,
+        8438472
+      ],
+      "baseline": null,
+      "note": "Repeated volatile reads from one warm internal-SRAM word.",
+      "statistics": {
+        "min_total_cycles": 8438472,
+        "median_total_cycles": 8438472,
+        "p90_total_cycles": 8438487.2,
+        "max_total_cycles": 8438548,
+        "median_cycles_per_operation": 8.047554016113281,
+        "median_nanoseconds_per_operation": 33.53147506713867,
+        "median_mib_per_second": 113.7646720875533,
+        "relative_sample_range": 9.006369873597968e-06
+      }
+    },
+    {
+      "type": "metric",
+      "name": "sram_read_sequential",
+      "memory": "internal_sram",
+      "access_pattern": "sequential_128k",
+      "operations_per_trial": 1048576,
+      "bytes_per_operation": 4,
+      "ccount_samples": [
+        10548825,
+        10547497,
+        10547497,
+        10547497,
+        10547497,
+        10547497,
+        10547497,
+        10547497,
+        10547497
+      ],
+      "baseline": null,
+      "note": "Eight complete passes through a 128 KiB internal-SRAM working set.",
+      "statistics": {
+        "min_total_cycles": 10547497,
+        "median_total_cycles": 10547497,
+        "p90_total_cycles": 10547762.6,
+        "max_total_cycles": 10548825,
+        "median_cycles_per_operation": 10.058876991271973,
+        "median_nanoseconds_per_operation": 41.91198746363322,
+        "median_mib_per_second": 91.01685452008188,
+        "relative_sample_range": 0.00012590664875277991
+      }
+    },
+    {
+      "type": "metric",
+      "name": "sram_write_sequential",
+      "memory": "internal_sram",
+      "access_pattern": "sequential_128k",
+      "operations_per_trial": 1048576,
+      "bytes_per_operation": 4,
+      "ccount_samples": [
+        6326425,
+        6326425,
+        6326425,
+        6326425,
+        6326425,
+        6326425,
+        6326425,
+        6326425,
+        6326425
+      ],
+      "baseline": null,
+      "note": "Eight complete volatile-write passes through internal SRAM.",
+      "statistics": {
+        "min_total_cycles": 6326425,
+        "median_total_cycles": 6326425,
+        "p90_total_cycles": 6326425.0,
+        "max_total_cycles": 6326425,
+        "median_cycles_per_operation": 6.03334903717041,
+        "median_nanoseconds_per_operation": 25.138954321543377,
+        "median_mib_per_second": 151.74446863750063,
+        "relative_sample_range": 0.0
+      }
+    },
+    {
+      "type": "metric",
+      "name": "flash_read_hit",
+      "memory": "mapped_flash",
+      "access_pattern": "same_word",
+      "operations_per_trial": 1048576,
+      "bytes_per_operation": 4,
+      "ccount_samples": [
+        8438466,
+        8438475,
+        8438467,
+        8438467,
+        8438467,
+        8438467,
+        8438467,
+        8438467,
+        8438467
+      ],
+      "baseline": null,
+      "note": "Repeated volatile reads from one warm flash-cache word.",
+      "statistics": {
+        "min_total_cycles": 8438466,
+        "median_total_cycles": 8438467,
+        "p90_total_cycles": 8438468.6,
+        "max_total_cycles": 8438475,
+        "median_cycles_per_operation": 8.0475492477417,
+        "median_nanoseconds_per_operation": 33.531455198923744,
+        "median_mib_per_second": 113.76473949592977,
+        "relative_sample_range": 1.0665444327743415e-06
+      }
+    },
+    {
+      "type": "metric",
+      "name": "flash_read_sequential",
+      "memory": "mapped_flash",
+      "access_pattern": "sequential_512k",
+      "operations_per_trial": 1048576,
+      "bytes_per_operation": 4,
+      "ccount_samples": [
+        38339728,
+        38338482,
+        38338482,
+        38338482,
+        38338482,
+        38338482,
+        38338482,
+        38338482,
+        38338482
+      ],
+      "baseline": null,
+      "note": "Four sequential passes through mapped flash; includes line fills and cache hits.",
+      "statistics": {
+        "min_total_cycles": 38338482,
+        "median_total_cycles": 38338482,
+        "p90_total_cycles": 38338731.2,
+        "max_total_cycles": 38339728,
+        "median_cycles_per_operation": 36.56242561340332,
+        "median_nanoseconds_per_operation": 152.34344005584717,
+        "median_mib_per_second": 25.040115046808584,
+        "relative_sample_range": 3.249998265450364e-05
+      }
+    },
+    {
+      "type": "metric",
+      "name": "flash_random_index_baseline",
+      "memory": "internal_registers",
+      "access_pattern": "lcg_index_only",
+      "operations_per_trial": 1048576,
+      "bytes_per_operation": 0,
+      "ccount_samples": [
+        9495057,
+        9493712,
+        9493712,
+        9493712,
+        9493712,
+        9493712,
+        9493712,
+        9493712,
+        9493712
+      ],
+      "baseline": null,
+      "note": "Identical LCG/index arithmetic used by flash_read_random.",
+      "statistics": {
+        "min_total_cycles": 9493712,
+        "median_total_cycles": 9493712,
+        "p90_total_cycles": 9493981.0,
+        "max_total_cycles": 9495057,
+        "median_cycles_per_operation": 9.053909301757812,
+        "median_nanoseconds_per_operation": 37.724622090657554,
+        "median_mib_per_second": null,
+        "relative_sample_range": 0.00014167271979600814
+      }
+    },
+    {
+      "type": "metric",
+      "name": "flash_read_random",
+      "memory": "mapped_flash",
+      "access_pattern": "random_512k",
+      "operations_per_trial": 1048576,
+      "bytes_per_operation": 4,
+      "ccount_samples": [
+        279999978,
+        280003367,
+        280003367,
+        280003367,
+        280003367,
+        280003367,
+        280003367,
+        280003367,
+        280003367
+      ],
+      "baseline": "flash_random_index_baseline",
+      "note": "Pseudo-random reads over 512 KiB; cache-miss-dominated.",
+      "statistics": {
+        "min_total_cycles": 279999978,
+        "median_total_cycles": 280003367,
+        "p90_total_cycles": 280003367.0,
+        "max_total_cycles": 280003367,
+        "median_cycles_per_operation": 257.9781103134155,
+        "median_nanoseconds_per_operation": 1074.9087929725647,
+        "median_mib_per_second": 3.54885669422779,
+        "relative_sample_range": 1.2103425884875162e-05
+      }
+    },
+    {
+      "type": "metric",
+      "name": "psram_read_hit",
+      "memory": "octal_psram",
+      "access_pattern": "same_word",
+      "operations_per_trial": 1048576,
+      "bytes_per_operation": 4,
+      "ccount_samples": [
+        8438466,
+        8438467,
+        8438467,
+        8438467,
+        8438467,
+        8438467,
+        8438467,
+        8438467,
+        8438467
+      ],
+      "baseline": null,
+      "note": "Repeated volatile reads from one warm PSRAM-cache word.",
+      "statistics": {
+        "min_total_cycles": 8438466,
+        "median_total_cycles": 8438467,
+        "p90_total_cycles": 8438467.0,
+        "max_total_cycles": 8438467,
+        "median_cycles_per_operation": 8.0475492477417,
+        "median_nanoseconds_per_operation": 33.531455198923744,
+        "median_mib_per_second": 113.76473949592977,
+        "relative_sample_range": 1.1850493697492684e-07
+      }
+    },
+    {
+      "type": "metric",
+      "name": "psram_read_sequential",
+      "memory": "octal_psram",
+      "access_pattern": "sequential_512k",
+      "operations_per_trial": 1048576,
+      "bytes_per_operation": 4,
+      "ccount_samples": [
+        21355915,
+        21354703,
+        21354703,
+        21354703,
+        21354703,
+        21354703,
+        21354703,
+        21354703,
+        21354703
+      ],
+      "baseline": null,
+      "note": "Four sequential passes through PSRAM; includes line fills and cache hits.",
+      "statistics": {
+        "min_total_cycles": 21354703,
+        "median_total_cycles": 21354703,
+        "p90_total_cycles": 21354945.4,
+        "max_total_cycles": 21355915,
+        "median_cycles_per_operation": 20.365431785583496,
+        "median_nanoseconds_per_operation": 84.85596577326457,
+        "median_mib_per_second": 44.954968467601724,
+        "relative_sample_range": 5.675564769034718e-05
+      }
+    },
+    {
+      "type": "metric",
+      "name": "psram_write_sequential",
+      "memory": "octal_psram",
+      "access_pattern": "sequential_512k",
+      "operations_per_trial": 1048576,
+      "bytes_per_operation": 4,
+      "ccount_samples": [
+        28853330,
+        28853245,
+        28853245,
+        28853245,
+        28853245,
+        28853245,
+        28853245,
+        28853245,
+        28853245
+      ],
+      "baseline": null,
+      "note": "Four sequential volatile-write passes through PSRAM.",
+      "statistics": {
+        "min_total_cycles": 28853245,
+        "median_total_cycles": 28853245,
+        "p90_total_cycles": 28853262.0,
+        "max_total_cycles": 28853330,
+        "median_cycles_per_operation": 27.51659870147705,
+        "median_nanoseconds_per_operation": 114.65249458948772,
+        "median_mib_per_second": 33.27182089917443,
+        "relative_sample_range": 2.9459424754477357e-06
+      }
+    },
+    {
+      "type": "metric",
+      "name": "psram_random_index_baseline",
+      "memory": "internal_registers",
+      "access_pattern": "lcg_index_only",
+      "operations_per_trial": 1048576,
+      "bytes_per_operation": 0,
+      "ccount_samples": [
+        9493710,
+        9493712,
+        9493712,
+        9493712,
+        9493712,
+        9493712,
+        9493712,
+        9493712,
+        9493712
+      ],
+      "baseline": null,
+      "note": "Identical LCG/index arithmetic used by psram_read_random.",
+      "statistics": {
+        "min_total_cycles": 9493710,
+        "median_total_cycles": 9493712,
+        "p90_total_cycles": 9493712.0,
+        "max_total_cycles": 9493712,
+        "median_cycles_per_operation": 9.053909301757812,
+        "median_nanoseconds_per_operation": 37.724622090657554,
+        "median_mib_per_second": null,
+        "relative_sample_range": 2.1066575434350653e-07
+      }
+    },
+    {
+      "type": "metric",
+      "name": "psram_read_random",
+      "memory": "octal_psram",
+      "access_pattern": "random_512k",
+      "operations_per_trial": 1048576,
+      "bytes_per_operation": 4,
+      "ccount_samples": [
+        124199205,
+        124197689,
+        124197689,
+        124197689,
+        124197689,
+        124197689,
+        124197689,
+        124197689,
+        124197689
+      ],
+      "baseline": "psram_random_index_baseline",
+      "note": "Pseudo-random reads over 512 KiB; cache-miss-dominated.",
+      "statistics": {
+        "min_total_cycles": 124197689,
+        "median_total_cycles": 124197689,
+        "p90_total_cycles": 124197992.2,
+        "max_total_cycles": 124199205,
+        "median_cycles_per_operation": 109.39023685455322,
+        "median_nanoseconds_per_operation": 455.7926535606384,
+        "median_mib_per_second": 8.369369790900972,
+        "relative_sample_range": 1.2206346287168033e-05
+      }
+    }
+  ]
+}

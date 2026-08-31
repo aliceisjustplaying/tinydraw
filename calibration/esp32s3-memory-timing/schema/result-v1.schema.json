@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tinydraw.local/schema/esp32s3-memory-timing-result-v1.json",
+  "title": "TinyDraw ESP32-S3 memory timing calibration result",
+  "type": "object",
+  "required": ["schema_version", "captured_at_utc", "source_capture", "firmware_binary_sha256", "configuration", "metrics"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "captured_at_utc": {"type": "string", "format": "date-time"},
+    "source_capture": {"type": "string"},
+    "firmware_binary_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "configuration": {
+      "type": "object",
+      "required": ["schema_version", "harness_version", "idf_version", "target", "cpu_hz", "ccount_hz", "flash_bytes", "flash_mode", "flash_image_header_mode", "flash_frequency_mhz", "psram_bytes", "psram_mode", "psram_frequency_mhz", "data_cache_bytes", "data_cache_line_bytes", "instruction_cache_bytes", "external_working_set_bytes", "internal_working_set_bytes", "trials", "uncertainty_notes"]
+    },
+    "metrics": {
+      "type": "array",
+      "minItems": 12,
+      "items": {
+        "type": "object",
+        "required": ["type", "name", "memory", "access_pattern", "operations_per_trial", "bytes_per_operation", "ccount_samples", "baseline", "note", "statistics"],
+        "properties": {
+          "type": {"const": "metric"},
+          "name": {"type": "string"},
+          "memory": {"type": "string"},
+          "access_pattern": {"type": "string"},
+          "operations_per_trial": {"type": "integer", "minimum": 1},
+          "bytes_per_operation": {"type": "integer", "minimum": 0},
+          "ccount_samples": {"type": "array", "minItems": 5, "items": {"type": "integer", "minimum": 1}},
+          "baseline": {"type": ["string", "null"]},
+          "note": {"type": "string"},
+          "statistics": {
+            "type": "object",
+            "required": ["min_total_cycles", "median_total_cycles", "p90_total_cycles", "max_total_cycles", "median_cycles_per_operation", "median_nanoseconds_per_operation", "median_mib_per_second", "relative_sample_range"]
+          }
+        }
+      }
+    }
+  }
+}
