@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <new>
 
+#include "esp32s3_timing.h"
 #include "puck_platform.h"
 #include "vector_v2_app.h"
 
@@ -47,8 +48,8 @@ namespace {
 
 // The session outlives every tick, so it is placement-new'd into static
 // storage rather than being a function-local with a guard variable.
-alignas(tinydraw::esp32::VectorV2AppSession) unsigned char
-    g_session_storage[sizeof(tinydraw::esp32::VectorV2AppSession)];
+alignas(tinydraw::esp32::VectorV2AppSession) unsigned char g_session_storage[sizeof(
+    tinydraw::esp32::VectorV2AppSession)];
 tinydraw::esp32::VectorV2AppSession* g_session = nullptr;
 bool g_running = false;
 std::uint32_t g_last_now_ms = 0;
@@ -92,6 +93,7 @@ int emu_device(void) { return static_cast<int>(reinterpret_cast<std::uintptr_t>(
 
 int emu_init(void) {
   if (g_session != nullptr) return g_running ? 1 : 0;
+  tinydraw::puck::timing::reset_all();
   g_session = new (static_cast<void*>(g_session_storage)) tinydraw::esp32::VectorV2AppSession();
   // The app's own bring-up: allocate ~7.6 MiB of document working set, restore
   // authority, bootstrap the canvas, build the chrome, present the first
@@ -107,12 +109,12 @@ int emu_init(void) {
 
 void emu_tick(std::uint32_t now_ms) {
   tinydraw::puck::reset_pushes();
+  tinydraw::puck::timing::reset_observations();
   if (!g_running) return;
   tinydraw::puck::clock_set_floor_ms(now_ms);
 
-  std::int64_t budget_us = g_ticked
-                               ? static_cast<std::int64_t>(now_ms - g_last_now_ms) * 1000
-                               : kMinimumFrameBudgetUs;
+  std::int64_t budget_us =
+      g_ticked ? static_cast<std::int64_t>(now_ms - g_last_now_ms) * 1000 : kMinimumFrameBudgetUs;
   if (budget_us < kMinimumFrameBudgetUs) budget_us = kMinimumFrameBudgetUs;
   if (budget_us > kMaximumFrameBudgetUs) budget_us = kMaximumFrameBudgetUs;
   g_last_now_ms = now_ms;
@@ -152,5 +154,20 @@ void emu_button_verdict(int, int) {}
 // TinyDraw currently declares no sensors. Keep the ABI total so replay code
 // never needs a sensorless-device special case.
 void emu_sensor_event(int) {}
+
+// Optional timing-lab exports. They are intentionally outside Puck's device
+// ABI: normal Puck ignores them, while the lab reads one versioned ledger of
+// explicitly accounted events. Host trace time remains emu_tick(now_ms).
+int emu_timing_schema(void) {
+  return static_cast<int>(reinterpret_cast<std::uintptr_t>(tinydraw::puck::timing::schema_json()));
+}
+
+int emu_timing_snapshot(void) {
+  return static_cast<int>(reinterpret_cast<std::uintptr_t>(&tinydraw::puck::timing::snapshot()));
+}
+
+int emu_timing_snapshot_size(void) {
+  return static_cast<int>(sizeof(tinydraw::puck::timing::SnapshotV1));
+}
 
 }  // extern "C"

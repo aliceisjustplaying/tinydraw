@@ -42,6 +42,7 @@
 #include <array>
 #include <cstring>
 
+#include "esp32s3_timing.h"
 #include "esp_timer.h"
 #include "puck_platform.h"
 
@@ -53,8 +54,7 @@ constexpr int kPanelHeight = puck::kPanelHeight;
 
 // Match the real transport's DMA transfer capacity so the presenter emits the
 // same strip geometry here and on glass.
-constexpr std::size_t kStagingPixels =
-    static_cast<std::size_t>(kCo5300TransferPixels);
+constexpr std::size_t kStagingPixels = static_cast<std::size_t>(kCo5300TransferPixels);
 
 // One virtual tear edge per 60 Hz frame of virtual time. The presenter waits
 // for one before a full-frame present; on the board that wait is a real
@@ -115,6 +115,10 @@ class Co5300PanelTransport::Impl {
 
   void publish(int panel_x, int panel_y, int width, int height, const std::uint16_t* staged,
                int staged_stride, bool staged_swapped) {
+    const std::size_t transfer_bytes =
+        static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * sizeof(*staged);
+    puck::timing::record_internal_read(transfer_bytes);
+    puck::timing::record_panel_write(transfer_bytes);
     std::uint16_t* frame = puck::framebuffer();
     for (int row = 0; row < height; ++row) {
       std::uint16_t* out = frame + static_cast<std::size_t>(panel_y + row) * kPanelWidth + panel_x;
@@ -139,9 +143,8 @@ class Co5300PanelTransport::Impl {
   bool stream(int x, int y, int width, int height, const std::uint16_t* area_pixels, int stride,
               int shift_x, int shift_y, int area_width, int area_height, int strip_rows,
               PanelStagePatch patch, bool linear) {
-    const bool invalid_ring = !linear &&
-                              (stride < area_width || x + width > area_width ||
-                               y + height > area_height);
+    const bool invalid_ring =
+        !linear && (stride < area_width || x + width > area_width || y + height > area_height);
     if (!valid_window(x, y, width, height) || area_pixels == nullptr || stride < width ||
         area_width <= 0 || area_height <= 0 || shift_x < 0 || shift_x >= area_width ||
         shift_y < 0 || shift_y >= area_height || invalid_ring) {
@@ -161,10 +164,13 @@ class Co5300PanelTransport::Impl {
       const std::int64_t staged_started = esp_timer_get_time();
       for (int row = 0; row < strip_height; ++row) {
         const int source_row = linear ? top + row - y : (top + row + shift_y) % area_height;
-        stage_row(area_pixels + static_cast<std::ptrdiff_t>(source_row) * stride, shift_x,
-                  area_width, x, width,
-                  staging.data() +
-                      static_cast<std::size_t>(row) * static_cast<std::size_t>(width),
+        const std::uint16_t* source =
+            area_pixels + static_cast<std::ptrdiff_t>(source_row) * stride;
+        const std::size_t row_bytes = static_cast<std::size_t>(width) * sizeof(*source);
+        puck::timing::record_read(source, row_bytes);
+        puck::timing::record_internal_write(row_bytes);
+        stage_row(source, shift_x, area_width, x, width,
+                  staging.data() + static_cast<std::size_t>(row) * static_cast<std::size_t>(width),
                   swapped, linear);
       }
       ring_copy_us += esp_timer_get_time() - staged_started;
@@ -175,9 +181,9 @@ class Co5300PanelTransport::Impl {
           .width = width,
           .height = strip_height,
           .stride = width,
-          .pixels = std::span<std::uint16_t>(staging.data(),
-                                             static_cast<std::size_t>(width) *
-                                                 static_cast<std::size_t>(strip_height)),
+          .pixels =
+              std::span<std::uint16_t>(staging.data(), static_cast<std::size_t>(width) *
+                                                           static_cast<std::size_t>(strip_height)),
           .byte_swapped = swapped,
       };
       const std::int64_t patch_started = esp_timer_get_time();

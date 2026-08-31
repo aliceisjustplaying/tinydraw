@@ -27,6 +27,7 @@
 #include <limits>
 
 #include "driver/gpio.h"
+#include "esp32s3_timing.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -190,7 +191,7 @@ int button_level() { return g_button_down ? 0 : 1; }
 extern "C" std::int64_t esp_timer_get_time(void) { return tinydraw::puck::clock_now_us(); }
 
 extern "C" esp_err_t esp_timer_create(const esp_timer_create_args_t* args,
-                                       esp_timer_handle_t* out_handle) {
+                                      esp_timer_handle_t* out_handle) {
   if (args == nullptr || args->callback == nullptr || out_handle == nullptr) {
     return ESP_ERR_INVALID_ARG;
   }
@@ -241,17 +242,36 @@ extern "C" esp_err_t esp_timer_delete(esp_timer_handle_t timer) {
 // AppStorage asks for them.
 
 namespace {
+tinydraw::puck::timing::MemoryClass memory_class_for_caps(std::uint32_t caps) {
+  if ((caps & MALLOC_CAP_SPIRAM) != 0U) {
+    return tinydraw::puck::timing::MemoryClass::kPsram;
+  }
+  if ((caps & MALLOC_CAP_INTERNAL) != 0U) {
+    return tinydraw::puck::timing::MemoryClass::kInternal;
+  }
+  return tinydraw::puck::timing::MemoryClass::kUnclassified;
+}
 }  // namespace
 
-extern "C" void* heap_caps_malloc(std::size_t size, std::uint32_t) {
-  return std::malloc(size);
+extern "C" void* heap_caps_malloc(std::size_t size, std::uint32_t caps) {
+  void* pointer = std::malloc(size);
+  tinydraw::puck::timing::register_allocation(pointer, size, memory_class_for_caps(caps));
+  return pointer;
 }
 
-extern "C" void* heap_caps_calloc(std::size_t count, std::size_t size, std::uint32_t) {
-  return std::calloc(count, size);
+extern "C" void* heap_caps_calloc(std::size_t count, std::size_t size, std::uint32_t caps) {
+  void* pointer = std::calloc(count, size);
+  const std::size_t bytes =
+      size != 0U && count > std::numeric_limits<std::size_t>::max() / size ? 0U : count * size;
+  tinydraw::puck::timing::register_allocation(pointer, bytes, memory_class_for_caps(caps));
+  tinydraw::puck::timing::record_write(pointer, bytes);
+  return pointer;
 }
 
-extern "C" void heap_caps_free(void* pointer) { std::free(pointer); }
+extern "C" void heap_caps_free(void* pointer) {
+  tinydraw::puck::timing::unregister_allocation(pointer);
+  std::free(pointer);
+}
 
 // A flat wasm allocator cannot truthfully report ESP-IDF capability heaps.
 extern "C" std::size_t heap_caps_get_free_size(std::uint32_t) { return 0U; }
@@ -329,7 +349,8 @@ extern "C" SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t* stor
   return storage;
 }
 
-extern "C" SemaphoreHandle_t xSemaphoreCreateCountingStatic(UBaseType_t maximum, UBaseType_t initial,
+extern "C" SemaphoreHandle_t xSemaphoreCreateCountingStatic(UBaseType_t maximum,
+                                                            UBaseType_t initial,
                                                             StaticSemaphore_t* storage) {
   if (storage == nullptr) return nullptr;
   storage->count = static_cast<int>(initial);
