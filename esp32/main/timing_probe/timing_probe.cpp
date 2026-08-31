@@ -71,6 +71,7 @@ constexpr std::uint32_t kMatchedDcacheLoads = 16U;
 constexpr std::uint32_t kConditionalBranchIterations = 4096U;
 constexpr std::uint32_t kConditionalBranchChecksum = kConditionalBranchIterations;
 constexpr std::uint32_t kMmioOperations = 4096U;
+constexpr std::uint32_t kMmioStatePreservedChecksum = 0x7374'6174U;
 constexpr std::uint32_t kSramStoreCompletionChecksum = 0x5352'414dU;
 constexpr std::size_t kRgb565StagePixels = 5U;
 constexpr std::size_t kRgb565OracleCodeBytes = 41U;
@@ -99,6 +100,17 @@ struct ProbeContext {
   volatile std::uint32_t* mmio_rtc_store1 = nullptr;
   volatile std::uint32_t* mmio_extmem_cache_state = nullptr;
   volatile std::uint32_t* mmio_extmem_cache_counter_clear = nullptr;
+  volatile std::uint32_t* mmio_system_sysclk_conf = nullptr;
+  volatile std::uint32_t* mmio_extmem_dcache_ctrl1 = nullptr;
+  volatile std::uint32_t* mmio_extmem_dcache_autoload_ctrl = nullptr;
+  volatile std::uint32_t* mmio_extmem_icache_ctrl1 = nullptr;
+  volatile std::uint32_t* mmio_extmem_icache_autoload_ctrl = nullptr;
+  std::uint32_t mmio_same_value_sram = 0U;
+  std::uint32_t mmio_same_value_system_sysclk_conf = 0U;
+  std::uint32_t mmio_same_value_extmem_dcache_ctrl1 = 0U;
+  std::uint32_t mmio_same_value_extmem_dcache_autoload_ctrl = 0U;
+  std::uint32_t mmio_same_value_extmem_icache_ctrl1 = 0U;
+  std::uint32_t mmio_same_value_extmem_icache_autoload_ctrl = 0U;
   esp_partition_mmap_handle_t flash_handle = 0;
 };
 
@@ -113,8 +125,24 @@ static_assert(offsetof(ProbeContext, mmio_system_cpu_per_conf) == 36U);
 static_assert(offsetof(ProbeContext, mmio_rtc_store1) == 40U);
 static_assert(offsetof(ProbeContext, mmio_extmem_cache_state) == 44U);
 static_assert(offsetof(ProbeContext, mmio_extmem_cache_counter_clear) == 48U);
+static_assert(offsetof(ProbeContext, mmio_system_sysclk_conf) == 52U);
+static_assert(offsetof(ProbeContext, mmio_extmem_dcache_ctrl1) == 56U);
+static_assert(offsetof(ProbeContext, mmio_extmem_dcache_autoload_ctrl) == 60U);
+static_assert(offsetof(ProbeContext, mmio_extmem_icache_ctrl1) == 64U);
+static_assert(offsetof(ProbeContext, mmio_extmem_icache_autoload_ctrl) == 68U);
+static_assert(offsetof(ProbeContext, mmio_same_value_sram) == 72U);
+static_assert(offsetof(ProbeContext, mmio_same_value_system_sysclk_conf) == 76U);
+static_assert(offsetof(ProbeContext, mmio_same_value_extmem_dcache_ctrl1) == 80U);
+static_assert(offsetof(ProbeContext, mmio_same_value_extmem_dcache_autoload_ctrl) == 84U);
+static_assert(offsetof(ProbeContext, mmio_same_value_extmem_icache_ctrl1) == 88U);
+static_assert(offsetof(ProbeContext, mmio_same_value_extmem_icache_autoload_ctrl) == 92U);
 static_assert(SYSTEM_CPU_PER_CONF_REG == 0x600c'0010U);
+static_assert(SYSTEM_SYSCLK_CONF_REG == 0x600c'0060U);
 static_assert(RTC_CNTL_STORE1_REG == 0x6000'8054U);
+static_assert(EXTMEM_DCACHE_CTRL1_REG == 0x600c'4004U);
+static_assert(EXTMEM_DCACHE_AUTOLOAD_CTRL_REG == 0x600c'404cU);
+static_assert(EXTMEM_ICACHE_CTRL1_REG == 0x600c'4064U);
+static_assert(EXTMEM_ICACHE_AUTOLOAD_CTRL_REG == 0x600c'40a0U);
 static_assert(EXTMEM_CACHE_STATE_REG == 0x600c'4130U);
 static_assert(EXTMEM_CACHE_ACS_CNT_CLR_REG == 0x600c'40c4U);
 static_assert(CONFIG_ESP32S3_INSTRUCTION_CACHE_LINE_SIZE == kIcacheLineBytes);
@@ -148,9 +176,31 @@ extern "C" std::uint32_t tinydraw_mmio_read_rtc_store1(const ProbeContext& conte
                                                         std::uint32_t seed);
 extern "C" std::uint32_t tinydraw_mmio_read_extmem_cache_state(const ProbeContext& context,
                                                                 std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_mmio_read_system_sysclk_conf(const ProbeContext& context,
+                                                                std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_mmio_read_extmem_dcache_ctrl1(const ProbeContext& context,
+                                                                 std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_mmio_read_extmem_dcache_autoload_ctrl(
+    const ProbeContext& context, std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_mmio_read_extmem_icache_ctrl1(const ProbeContext& context,
+                                                                 std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_mmio_read_extmem_icache_autoload_ctrl(
+    const ProbeContext& context, std::uint32_t seed);
 extern "C" std::uint32_t tinydraw_mmio_write_sram(const ProbeContext& context,
                                                    std::uint32_t seed);
 extern "C" std::uint32_t tinydraw_mmio_write_extmem_cache_counter_clear(
+    const ProbeContext& context, std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_mmio_write_same_value_sram(const ProbeContext& context,
+                                                              std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_mmio_write_same_value_system_sysclk_conf(
+    const ProbeContext& context, std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_mmio_write_same_value_extmem_dcache_ctrl1(
+    const ProbeContext& context, std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_mmio_write_same_value_extmem_dcache_autoload_ctrl(
+    const ProbeContext& context, std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_mmio_write_same_value_extmem_icache_ctrl1(
+    const ProbeContext& context, std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_mmio_write_same_value_extmem_icache_autoload_ctrl(
     const ProbeContext& context, std::uint32_t seed);
 
 #define DECLARE_DCACHE_BURST_PROBE(path, lines)                                                  \
@@ -541,6 +591,46 @@ std::uint32_t finalize_sram_store_complete(const ProbeContext& context, std::uin
     context.sram_stream[index] = static_cast<std::uint8_t>(index * 37U + 11U);
   }
   return valid ? kSramStoreCompletionChecksum : 0U;
+}
+
+std::uint32_t mmio_state_preserved(volatile std::uint32_t* address,
+                                   std::uint32_t expected_value) {
+  return *address == expected_value ? kMmioStatePreservedChecksum : 0U;
+}
+
+std::uint32_t finalize_mmio_same_value_sram(const ProbeContext& context, std::uint32_t,
+                                            std::uint32_t) {
+  return mmio_state_preserved(context.mmio_sram_peer, context.mmio_same_value_sram);
+}
+
+std::uint32_t finalize_mmio_same_value_system_sysclk_conf(const ProbeContext& context,
+                                                          std::uint32_t, std::uint32_t) {
+  return mmio_state_preserved(context.mmio_system_sysclk_conf,
+                              context.mmio_same_value_system_sysclk_conf);
+}
+
+std::uint32_t finalize_mmio_same_value_extmem_dcache_ctrl1(const ProbeContext& context,
+                                                           std::uint32_t, std::uint32_t) {
+  return mmio_state_preserved(context.mmio_extmem_dcache_ctrl1,
+                              context.mmio_same_value_extmem_dcache_ctrl1);
+}
+
+std::uint32_t finalize_mmio_same_value_extmem_dcache_autoload_ctrl(
+    const ProbeContext& context, std::uint32_t, std::uint32_t) {
+  return mmio_state_preserved(context.mmio_extmem_dcache_autoload_ctrl,
+                              context.mmio_same_value_extmem_dcache_autoload_ctrl);
+}
+
+std::uint32_t finalize_mmio_same_value_extmem_icache_ctrl1(const ProbeContext& context,
+                                                           std::uint32_t, std::uint32_t) {
+  return mmio_state_preserved(context.mmio_extmem_icache_ctrl1,
+                              context.mmio_same_value_extmem_icache_ctrl1);
+}
+
+std::uint32_t finalize_mmio_same_value_extmem_icache_autoload_ctrl(
+    const ProbeContext& context, std::uint32_t, std::uint32_t) {
+  return mmio_state_preserved(context.mmio_extmem_icache_autoload_ctrl,
+                              context.mmio_same_value_extmem_icache_autoload_ctrl);
 }
 
 FORCE_INLINE_ATTR std::uint32_t psram_sequential(const ProbeContext& context, std::uint32_t seed,
@@ -1157,6 +1247,42 @@ bool initialize_context(ProbeContext& context) {
       reinterpret_cast<volatile std::uint32_t*>(EXTMEM_CACHE_STATE_REG);
   context.mmio_extmem_cache_counter_clear =
       reinterpret_cast<volatile std::uint32_t*>(EXTMEM_CACHE_ACS_CNT_CLR_REG);
+  context.mmio_system_sysclk_conf =
+      reinterpret_cast<volatile std::uint32_t*>(SYSTEM_SYSCLK_CONF_REG);
+  context.mmio_extmem_dcache_ctrl1 =
+      reinterpret_cast<volatile std::uint32_t*>(EXTMEM_DCACHE_CTRL1_REG);
+  context.mmio_extmem_dcache_autoload_ctrl =
+      reinterpret_cast<volatile std::uint32_t*>(EXTMEM_DCACHE_AUTOLOAD_CTRL_REG);
+  context.mmio_extmem_icache_ctrl1 =
+      reinterpret_cast<volatile std::uint32_t*>(EXTMEM_ICACHE_CTRL1_REG);
+  context.mmio_extmem_icache_autoload_ctrl =
+      reinterpret_cast<volatile std::uint32_t*>(EXTMEM_ICACHE_AUTOLOAD_CTRL_REG);
+  context.mmio_same_value_sram = g_mmio_sram_peer;
+  context.mmio_same_value_system_sysclk_conf = *context.mmio_system_sysclk_conf;
+  context.mmio_same_value_extmem_dcache_ctrl1 = *context.mmio_extmem_dcache_ctrl1;
+  context.mmio_same_value_extmem_dcache_autoload_ctrl =
+      *context.mmio_extmem_dcache_autoload_ctrl;
+  context.mmio_same_value_extmem_icache_ctrl1 = *context.mmio_extmem_icache_ctrl1;
+  context.mmio_same_value_extmem_icache_autoload_ctrl =
+      *context.mmio_extmem_icache_autoload_ctrl;
+  if ((context.mmio_same_value_extmem_dcache_autoload_ctrl &
+       EXTMEM_DCACHE_AUTOLOAD_BUFFER_CLEAR_M) != 0U ||
+      (context.mmio_same_value_extmem_icache_autoload_ctrl &
+       EXTMEM_ICACHE_AUTOLOAD_BUFFER_CLEAR_M) != 0U) {
+    print_error("initialize", "autoload-clear-active");
+    return false;
+  }
+  std::printf(
+      "TINYDRAW_MMIO_BOOT_VALUES system_sysclk_conf=0x%08" PRIx32
+      " extmem_dcache_ctrl1=0x%08" PRIx32
+      " extmem_dcache_autoload_ctrl=0x%08" PRIx32
+      " extmem_icache_ctrl1=0x%08" PRIx32
+      " extmem_icache_autoload_ctrl=0x%08" PRIx32 "\n",
+      context.mmio_same_value_system_sysclk_conf,
+      context.mmio_same_value_extmem_dcache_ctrl1,
+      context.mmio_same_value_extmem_dcache_autoload_ctrl,
+      context.mmio_same_value_extmem_icache_ctrl1,
+      context.mmio_same_value_extmem_icache_autoload_ctrl);
   context.sram_dependent = static_cast<std::uint32_t*>(heap_caps_malloc(
       kDependentEntries * sizeof(std::uint32_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
   context.sram_unaligned_dependent = static_cast<std::uint8_t*>(heap_caps_malloc(
@@ -1310,6 +1436,52 @@ constexpr Measurement kMeasurements[] = {
     {"mmio_write_sram_4096_aligned", "internal-to-internal",
      kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations, tinydraw_mmio_write_sram,
      prepare_none, nullptr, 0U, measure_mmio_once},
+    {"mmio_read_system_sysclk_conf_4096_aligned", "other",
+     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_mmio_read_system_sysclk_conf, prepare_none, nullptr, 0U, measure_mmio_once},
+    {"mmio_read_extmem_dcache_ctrl1_4096_aligned", "other",
+     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_mmio_read_extmem_dcache_ctrl1, prepare_none, nullptr, 0U, measure_mmio_once},
+    {"mmio_read_extmem_dcache_autoload_ctrl_4096_aligned", "other",
+     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_mmio_read_extmem_dcache_autoload_ctrl, prepare_none, nullptr, 0U,
+     measure_mmio_once},
+    {"mmio_read_extmem_icache_ctrl1_4096_aligned", "other",
+     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_mmio_read_extmem_icache_ctrl1, prepare_none, nullptr, 0U, measure_mmio_once},
+    {"mmio_read_extmem_icache_autoload_ctrl_4096_aligned", "other",
+     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_mmio_read_extmem_icache_autoload_ctrl, prepare_none, nullptr, 0U,
+     measure_mmio_once},
+    {"mmio_write_same_value_sram_4096_aligned", "internal-to-internal",
+     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_mmio_write_same_value_sram, prepare_none, finalize_mmio_same_value_sram,
+     kMmioStatePreservedChecksum, measure_mmio_once},
+    {"mmio_write_same_value_system_sysclk_conf_4096_aligned", "other",
+     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_mmio_write_same_value_system_sysclk_conf, prepare_none,
+     finalize_mmio_same_value_system_sysclk_conf, kMmioStatePreservedChecksum,
+     measure_mmio_once},
+    {"mmio_write_same_value_extmem_dcache_ctrl1_4096_aligned", "other",
+     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_mmio_write_same_value_extmem_dcache_ctrl1, prepare_none,
+     finalize_mmio_same_value_extmem_dcache_ctrl1, kMmioStatePreservedChecksum,
+     measure_mmio_once},
+    {"mmio_write_same_value_extmem_dcache_autoload_ctrl_4096_aligned", "other",
+     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_mmio_write_same_value_extmem_dcache_autoload_ctrl, prepare_none,
+     finalize_mmio_same_value_extmem_dcache_autoload_ctrl, kMmioStatePreservedChecksum,
+     measure_mmio_once},
+    {"mmio_write_same_value_extmem_icache_ctrl1_4096_aligned", "other",
+     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_mmio_write_same_value_extmem_icache_ctrl1, prepare_none,
+     finalize_mmio_same_value_extmem_icache_ctrl1, kMmioStatePreservedChecksum,
+     measure_mmio_once},
+    {"mmio_write_same_value_extmem_icache_autoload_ctrl_4096_aligned", "other",
+     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_mmio_write_same_value_extmem_icache_autoload_ctrl, prepare_none,
+     finalize_mmio_same_value_extmem_icache_autoload_ctrl, kMmioStatePreservedChecksum,
+     measure_mmio_once},
     {"conditional_branch_baseline_4096_iterations", "internal-to-internal", 0U, 1U,
      kWarmupIterations, tinydraw_branch_baseline, prepare_none, nullptr,
      kConditionalBranchChecksum, measure_conditional_branch_once},
