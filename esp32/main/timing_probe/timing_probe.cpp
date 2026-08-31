@@ -1993,7 +1993,10 @@ void probe_task(void*) {
   }
   print_metadata(context);
   bool passed = run_suite(context, "single_core");
-  if (passed && start_contention(context)) {
+  if (passed && kResetStateReadCaptureMode) {
+    // This cohort calibrates the core-0 ROM caller and requires attributable
+    // SoC-global cache counters; a contended pass cannot satisfy that boundary.
+  } else if (passed && start_contention(context)) {
     passed = run_suite(context, "core1_contended");
   } else if (passed) {
     passed = false;
@@ -2011,7 +2014,7 @@ void probe_task(void*) {
                                                      : (kMmioSlopeCaptureMode
                                                             ? kMmioSlopeMeasurementCount
                                                             : std::size(kMeasurements))))) *
-                                         2U),
+                                         (kResetStateReadCaptureMode ? 1U : 2U)),
               kSamplesPerMeasurement,
               passed ? "true" : "false");
   flush_console();

@@ -50,6 +50,8 @@ test("reset-state peers repeat the exact ROM read and core extraction shapes", a
   expect(firmware).toContain("offsetof(ProbeContext, mmio_rtc_reset_state) == 124U");
   expect(firmware).toContain("kResetStateReadCaptureMode = true");
   expect(firmware).toContain("kResetStateReadMeasurementCount = 8U");
+  expect(firmware).toContain("passed && kResetStateReadCaptureMode");
+  expect(firmware).toContain("kResetStateReadCaptureMode ? 1U : 2U");
   expect(firmware).toContain("kRtcResetState4096ReadSignature");
   expect(firmware).toContain(".ibus_accesses = 176U");
   expect(firmware).toContain("kRtcResetState2048ReadSignature");
