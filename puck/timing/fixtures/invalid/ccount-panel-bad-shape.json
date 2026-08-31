@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "receiptKind": "esp32s3-hardware-calibration",
+  "captureMode": "schema-fixture",
+  "capturedAt": "2000-01-01T00:00:00Z",
+  "git": {
+    "repository": "schema-fixture",
+    "commit": "fedcba9876543210fedcba9876543210fedcba98",
+    "dirty": true
+  },
+  "toolchain": {
+    "target": "esp32s3",
+    "espIdfVersion": "schema-fixture",
+    "compiler": "schema-fixture",
+    "compilerVersion": "schema-fixture"
+  },
+  "sdkconfig": {
+    "path": "schema-fixture/sdkconfig",
+    "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "cpuHz": 8,
+    "psramMode": "schema-fixture",
+    "psramBusHz": null,
+    "flashMode": "schema-fixture",
+    "flashBusHz": null
+  },
+  "boot": {
+    "bootId": "schema-fixture-panel-invalid",
+    "bootLogSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "resetReason": "schema-fixture",
+    "chipModel": "ESP32-S3",
+    "chipRevision": 0,
+    "cpuCores": 2,
+    "psramBytes": 0,
+    "flashBytes": 1
+  },
+  "counter": {
+    "source": "xtensa-ccount",
+    "bits": 32,
+    "hz": 8,
+    "core": 1
+  },
+  "measurement": {
+    "kind": "ccount-panel",
+    "operation": "schema-fixture-panel-submit",
+    "width": 2,
+    "height": 2,
+    "bitsPerPixel": 16,
+    "payloadBytes": 7,
+    "stripRows": 1,
+    "transactionsPerSample": 1,
+    "warmupFrames": 1,
+    "samples": [
+      {
+        "ordinal": 0,
+        "startCore": 1,
+        "endCore": 1,
+        "startCcount": 10,
+        "endCcount": 30,
+        "cycles": 20
+      }
+    ]
+  }
+}

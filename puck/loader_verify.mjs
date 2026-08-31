@@ -21,19 +21,42 @@ const { instantiate, readDeviceDescriptor, readFramebufferPointer } = await impo
 const { pixelReaderFor, readFramebufferRGB } = await import(
   pathToFileURL(join(puck, "src", "panel.ts")).href
 );
-const { ENV_IMPORT_NAMES, REQUIRED_EMU_EXPORT_NAMES, WASI_PREVIEW1_IMPORT_NAMES } = await import(
-  pathToFileURL(join(puck, "src", "abiSurface.ts")).href
+const { SUPPORTED_WASI_IMPORTS } = await import(
+  pathToFileURL(join(puck, "src", "wasiLite.ts")).href
 );
+// Keep this verifier compatible with the public ABI of current Puck. These
+// names come from wasm/emu_abi.h and src/wasiLite.ts; they intentionally live
+// here because Puck no longer exports an abiSurface.ts policy module.
+const ENV_IMPORT_NAMES = [
+  "sinf", "cosf", "atan2f", "sqrtf", "fabsf", "floorf", "fmodf", "powf", "expf", "js_log",
+];
+const REQUIRED_EMU_EXPORT_NAMES = [
+  "emu_button",
+  "emu_button_verdict",
+  "emu_device",
+  "emu_fb",
+  "emu_init",
+  "emu_push_count",
+  "emu_push_h",
+  "emu_push_w",
+  "emu_push_x",
+  "emu_push_y",
+  "emu_sensor_event",
+  "emu_tick",
+  "emu_touch",
+];
 const bytes = await Bun.file(modulePath).arrayBuffer();
 const module = await WebAssembly.compile(bytes);
 const expectedExports = [...REQUIRED_EMU_EXPORT_NAMES, "memory"];
 const exports = new Set(WebAssembly.Module.exports(module).map(({ name }) => name));
 assert.deepEqual(expectedExports.filter((name) => !exports.has(name)), [], "missing ABI exports");
-const allowedExports = new Set([...expectedExports, "_initialize"]);
+const timingExports = ["emu_timing_schema", "emu_timing_snapshot", "emu_timing_snapshot_size"];
+assert.deepEqual(timingExports.filter((name) => !exports.has(name)), [], "missing timing-lab exports");
+const allowedExports = new Set([...expectedExports, ...timingExports, "_initialize"]);
 assert.deepEqual([...exports].filter((name) => !allowedExports.has(name)), [],
   "unexpected public exports");
 
-const allowedWasi = new Set(WASI_PREVIEW1_IMPORT_NAMES);
+const allowedWasi = new Set(SUPPORTED_WASI_IMPORTS);
 const allowedEnv = new Set(ENV_IMPORT_NAMES);
 for (const imported of WebAssembly.Module.imports(module)) {
   assert(
