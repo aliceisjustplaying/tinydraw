@@ -75,9 +75,7 @@ test("MMIO peers repeat exact aligned read and write cells", async () => {
     ["sram", 32, 72],
     ["system_sysclk_conf", 52, 76],
     ["extmem_dcache_ctrl1", 56, 80],
-    ["extmem_dcache_autoload_ctrl", 60, 84],
     ["extmem_icache_ctrl1", 64, 88],
-    ["extmem_icache_autoload_ctrl", 68, 92],
   ] as const) {
     expect(assembly).toContain(
       `DEFINE_MMIO_SAME_VALUE_WRITE_PROBE tinydraw_mmio_write_same_value_${name}, ${pointerOffset}, ${valueOffset}`,
@@ -188,9 +186,7 @@ test.skipIf(!existsSync(elfPath) || !existsSync(objdumpPath))(
       ["tinydraw_mmio_write_same_value_sram", "082282", "122242"],
       ["tinydraw_mmio_write_same_value_system_sysclk_conf", "0d2282", "132242"],
       ["tinydraw_mmio_write_same_value_extmem_dcache_ctrl1", "0e2282", "142242"],
-      ["tinydraw_mmio_write_same_value_extmem_dcache_autoload_ctrl", "0f2282", "152242"],
       ["tinydraw_mmio_write_same_value_extmem_icache_ctrl1", "102282", "162242"],
-      ["tinydraw_mmio_write_same_value_extmem_icache_autoload_ctrl", "112282", "172242"],
     ] as const) {
       expect(disassemble(symbol)).toEqual([
         { bytes: "002136", mnemonic: "entry" },

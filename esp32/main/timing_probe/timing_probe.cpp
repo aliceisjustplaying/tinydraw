@@ -196,11 +196,7 @@ extern "C" std::uint32_t tinydraw_mmio_write_same_value_system_sysclk_conf(
     const ProbeContext& context, std::uint32_t seed);
 extern "C" std::uint32_t tinydraw_mmio_write_same_value_extmem_dcache_ctrl1(
     const ProbeContext& context, std::uint32_t seed);
-extern "C" std::uint32_t tinydraw_mmio_write_same_value_extmem_dcache_autoload_ctrl(
-    const ProbeContext& context, std::uint32_t seed);
 extern "C" std::uint32_t tinydraw_mmio_write_same_value_extmem_icache_ctrl1(
-    const ProbeContext& context, std::uint32_t seed);
-extern "C" std::uint32_t tinydraw_mmio_write_same_value_extmem_icache_autoload_ctrl(
     const ProbeContext& context, std::uint32_t seed);
 
 #define DECLARE_DCACHE_BURST_PROBE(path, lines)                                                  \
@@ -615,22 +611,10 @@ std::uint32_t finalize_mmio_same_value_extmem_dcache_ctrl1(const ProbeContext& c
                               context.mmio_same_value_extmem_dcache_ctrl1);
 }
 
-std::uint32_t finalize_mmio_same_value_extmem_dcache_autoload_ctrl(
-    const ProbeContext& context, std::uint32_t, std::uint32_t) {
-  return mmio_state_preserved(context.mmio_extmem_dcache_autoload_ctrl,
-                              context.mmio_same_value_extmem_dcache_autoload_ctrl);
-}
-
 std::uint32_t finalize_mmio_same_value_extmem_icache_ctrl1(const ProbeContext& context,
                                                            std::uint32_t, std::uint32_t) {
   return mmio_state_preserved(context.mmio_extmem_icache_ctrl1,
                               context.mmio_same_value_extmem_icache_ctrl1);
-}
-
-std::uint32_t finalize_mmio_same_value_extmem_icache_autoload_ctrl(
-    const ProbeContext& context, std::uint32_t, std::uint32_t) {
-  return mmio_state_preserved(context.mmio_extmem_icache_autoload_ctrl,
-                              context.mmio_same_value_extmem_icache_autoload_ctrl);
 }
 
 FORCE_INLINE_ATTR std::uint32_t psram_sequential(const ProbeContext& context, std::uint32_t seed,
@@ -1467,20 +1451,10 @@ constexpr Measurement kMeasurements[] = {
      tinydraw_mmio_write_same_value_extmem_dcache_ctrl1, prepare_none,
      finalize_mmio_same_value_extmem_dcache_ctrl1, kMmioStatePreservedChecksum,
      measure_mmio_once},
-    {"mmio_write_same_value_extmem_dcache_autoload_ctrl_4096_aligned", "other",
-     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
-     tinydraw_mmio_write_same_value_extmem_dcache_autoload_ctrl, prepare_none,
-     finalize_mmio_same_value_extmem_dcache_autoload_ctrl, kMmioStatePreservedChecksum,
-     measure_mmio_once},
     {"mmio_write_same_value_extmem_icache_ctrl1_4096_aligned", "other",
      kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
      tinydraw_mmio_write_same_value_extmem_icache_ctrl1, prepare_none,
      finalize_mmio_same_value_extmem_icache_ctrl1, kMmioStatePreservedChecksum,
-     measure_mmio_once},
-    {"mmio_write_same_value_extmem_icache_autoload_ctrl_4096_aligned", "other",
-     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
-     tinydraw_mmio_write_same_value_extmem_icache_autoload_ctrl, prepare_none,
-     finalize_mmio_same_value_extmem_icache_autoload_ctrl, kMmioStatePreservedChecksum,
      measure_mmio_once},
     {"conditional_branch_baseline_4096_iterations", "internal-to-internal", 0U, 1U,
      kWarmupIterations, tinydraw_branch_baseline, prepare_none, nullptr,
