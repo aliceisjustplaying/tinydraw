@@ -32,7 +32,14 @@
           "note": {"type": "string"},
           "statistics": {
             "type": "object",
-            "required": ["min_total_cycles", "median_total_cycles", "p90_total_cycles", "max_total_cycles", "median_cycles_per_operation", "median_nanoseconds_per_operation", "median_mib_per_second", "relative_sample_range"]
+            "required": ["min_total_cycles", "median_total_cycles", "p90_total_cycles", "max_total_cycles", "median_cycles_per_operation", "median_nanoseconds_per_operation", "median_mib_per_second", "relative_sample_range"],
+            "properties": {
+              "cycles_per_operation_samples": {"type": "array", "items": {"type": "number"}},
+              "min_cycles_per_operation": {"type": "number"},
+              "p90_cycles_per_operation": {"type": "number"},
+              "max_cycles_per_operation": {"type": "number"},
+              "population_stdev_cycles_per_operation": {"type": "number", "minimum": 0}
+            }
           }
         }
       }

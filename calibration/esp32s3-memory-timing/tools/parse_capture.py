@@ -44,30 +44,36 @@ cpu_hz = config["ccount_hz"]
 for metric in metrics:
     samples = metric["ccount_samples"]
     operations = metric["operations_per_trial"]
-    median_cycles = statistics.median(samples)
-    effective_cycles = median_cycles
+    effective_samples = list(samples)
     baseline_name = metric["baseline"]
     if baseline_name:
         baseline = by_name[baseline_name]
-        baseline_cycles = statistics.median(baseline["ccount_samples"])
-        if metric["name"] == "iram_instruction_fetch":
-            effective_cycles -= baseline_cycles
-        else:
-            effective_cycles -= baseline_cycles
-    cycles_per_operation = effective_cycles / operations
+        baseline_samples = baseline["ccount_samples"]
+        if len(samples) != len(baseline_samples):
+            raise SystemExit(f"sample count mismatch for {metric['name']} and {baseline_name}")
+        effective_samples = [sample - base for sample, base in zip(samples, baseline_samples)]
+    cycles_per_operation_samples = [sample / operations for sample in effective_samples]
+    cycles_per_operation = statistics.median(cycles_per_operation_samples)
     metric["statistics"] = {
         "min_total_cycles": min(samples),
-        "median_total_cycles": median_cycles,
+        "median_total_cycles": statistics.median(samples),
         "p90_total_cycles": percentile(samples, 0.9),
         "max_total_cycles": max(samples),
+        "cycles_per_operation_samples": cycles_per_operation_samples,
+        "min_cycles_per_operation": min(cycles_per_operation_samples),
         "median_cycles_per_operation": cycles_per_operation,
+        "p90_cycles_per_operation": percentile(cycles_per_operation_samples, 0.9),
+        "max_cycles_per_operation": max(cycles_per_operation_samples),
+        "population_stdev_cycles_per_operation": statistics.pstdev(cycles_per_operation_samples),
         "median_nanoseconds_per_operation": cycles_per_operation * 1e9 / cpu_hz,
         "median_mib_per_second": (
             metric["bytes_per_operation"] * cpu_hz / cycles_per_operation / (1024 * 1024)
             if metric["bytes_per_operation"] and cycles_per_operation > 0
             else None
         ),
-        "relative_sample_range": (max(samples) - min(samples)) / median_cycles,
+        "relative_sample_range": (
+            max(cycles_per_operation_samples) - min(cycles_per_operation_samples)
+        ) / cycles_per_operation,
     }
 
 result = {
