@@ -75,8 +75,9 @@ enum class ChromeAction {
 };
 
 struct ChromeState {
-  // The physical side button hides canvas HUD overlays. The bottom toolbar,
-  // its popups, and critical dialogs remain visible and interactive.
+  // The physical side button hides all noncritical chrome, including the
+  // bottom toolbar, so the complete panel becomes drawable. Critical dialogs
+  // remain visible and interactive.
   bool hud_visible = true;
   ChromeTool tool = ChromeTool::kDraw;
   ChromeSize size = ChromeSize::kLarge;
@@ -150,6 +151,11 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
 [[nodiscard]] std::optional<ChromePoint> clip_canvas_segment(ChromePoint previous,
                                                              ChromePoint current,
                                                              const ChromeState& state);
+// Pulls physical finger centroids near drawable panel edges outward so a
+// brush can paint full bleed. The inner half of the attraction band maps to
+// the edge; the outer half transitions continuously to 1:1. Bottom attraction
+// activates only while the toolbar is hidden.
+[[nodiscard]] ChromePoint attract_canvas_edges(ChromePoint point, const ChromeState& state);
 // A stationary contact in the top sensor fringe is an edge exit, not a tap.
 // Once the gesture produces a drawable segment it remains valid from any edge.
 [[nodiscard]] bool chrome_accepts_stroke_finish(ChromePoint start, bool has_drawn_segment);

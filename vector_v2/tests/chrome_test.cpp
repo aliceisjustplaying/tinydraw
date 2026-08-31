@@ -52,9 +52,9 @@ TEST_CASE("bottom chrome maps six stable actions") {
   CHECK_FALSE(tinydraw::vector_v2::chrome_contains({180.0F, 200.0F}, state));
 
   const ChromeState hidden_hud{.hud_visible = false};
-  CHECK(tinydraw::vector_v2::chrome_contains({150.0F, 410.0F}, hidden_hud));
+  CHECK_FALSE(tinydraw::vector_v2::chrome_contains({150.0F, 410.0F}, hidden_hud));
   CHECK(tinydraw::vector_v2::chrome_action_at({150.0F, 410.0F}, hidden_hud) ==
-        ChromeAction::kToggleTools);
+        ChromeAction::kNone);
 }
 
 TEST_CASE("tools popup contains draw erase and pan") {
@@ -512,26 +512,27 @@ TEST_CASE("chrome canvas clipping follows the visible overlay") {
 
   state.popup = ChromePopup::kNone;
   state.hud_visible = false;
-  CHECK(tinydraw::vector_v2::chrome_canvas_bottom(state) == 372);
-  CHECK(tinydraw::vector_v2::chrome_input_bottom(state) == 372);
+  CHECK(tinydraw::vector_v2::chrome_canvas_bottom(state) == 448);
+  CHECK(tinydraw::vector_v2::chrome_input_bottom(state) == 448);
   CHECK(tinydraw::vector_v2::chrome_ink_bottom(state) == 448);
 }
 
-TEST_CASE("hidden HUD gives overlay pixels to the canvas but retains the bottom toolbar") {
+TEST_CASE("hidden chrome gives the complete panel to canvas input") {
   const ChromeState state{.hud_visible = false};
   for (const auto point : std::array{ChromePoint{230.0F, 28.0F}, ChromePoint{332.0F, 98.0F},
-                                     ChromePoint{300.0F, 300.0F}}) {
+                                     ChromePoint{300.0F, 300.0F},
+                                     ChromePoint{180.0F, 410.0F}}) {
     CHECK_FALSE(tinydraw::vector_v2::chrome_contains(point, state));
     CHECK(tinydraw::vector_v2::chrome_action_at(point, state) == ChromeAction::kNone);
   }
-  CHECK(tinydraw::vector_v2::chrome_contains({180.0F, 410.0F}, state));
-  CHECK(tinydraw::vector_v2::chrome_action_at({180.0F, 410.0F}, state) ==
-        ChromeAction::kToggleTools);
+  CHECK(tinydraw::vector_v2::chrome_canvas_bottom(state) == 448);
+  CHECK(tinydraw::vector_v2::chrome_input_bottom(state) == 448);
+  CHECK(tinydraw::vector_v2::chrome_ink_bottom(state) == 448);
   CHECK_FALSE(tinydraw::vector_v2::chrome_minimap_region(state).has_value());
   CHECK_FALSE(tinydraw::vector_v2::chrome_minimap_refresh_required(state, true, true));
 }
 
-TEST_CASE("hidden HUD leaves the canvas untouched and paints the bottom toolbar") {
+TEST_CASE("hidden chrome leaves every canvas pixel untouched") {
   constexpr int width = 368;
   constexpr int height = 448;
   std::vector<std::uint16_t> pixels(static_cast<std::size_t>(width * height));
@@ -542,13 +543,7 @@ TEST_CASE("hidden HUD leaves the canvas untouched and paints the bottom toolbar"
 
   paint_chrome(pixels, width, height, {.hud_visible = false});
 
-  for (int y = 0; y < tinydraw::vector_v2::kChromeCanvasBottom; ++y) {
-    for (int x = 0; x < width; ++x) {
-      const std::size_t index = static_cast<std::size_t>(y * width + x);
-      CHECK(pixels[index] == before[index]);
-    }
-  }
-  CHECK(pixels[410U * width + 180U] != before[410U * width + 180U]);
+  CHECK(pixels == before);
 }
 
 TEST_CASE("hiding the HUD dismisses transient popups and critical screens block the toggle") {
@@ -581,7 +576,7 @@ TEST_CASE("critical dialogs remain visible when the HUD is hidden") {
   CHECK(tinydraw::vector_v2::chrome_input_bottom(state) == 0);
   paint_chrome(pixels, width, height, state);
   CHECK(pixels[140U * width + 180U] == 0xFFFFU);
-  CHECK(pixels[410U * width + 180U] != 0x1234U);
+  CHECK(pixels[410U * width + 180U] == 0x1234U);
 }
 
 TEST_CASE("new drawing confirmation is modal and exposes large Raster V1 choices") {
@@ -799,6 +794,28 @@ TEST_CASE("palette hit testing gives large cells to the circular swatches") {
   CHECK(tinydraw::vector_v2::chrome_color_at({46.0F, 139.0F}, state) == 4U);
 }
 
+TEST_CASE("canvas edge attraction supports full-bleed ink without a discontinuity") {
+  const ChromeState shown;
+  const ChromeState hidden{.hud_visible = false};
+  const auto snapped_low = tinydraw::vector_v2::attract_canvas_edges({18.0F, 18.0F}, shown);
+  CHECK(snapped_low.x == 0.0F);
+  CHECK(snapped_low.y == 0.0F);
+  const auto transition = tinydraw::vector_v2::attract_canvas_edges({27.0F, 27.0F}, shown);
+  CHECK(transition.x == 18.0F);
+  CHECK(transition.y == 18.0F);
+  const auto unchanged = tinydraw::vector_v2::attract_canvas_edges({36.0F, 36.0F}, shown);
+  CHECK(unchanged.x == 36.0F);
+  CHECK(unchanged.y == 36.0F);
+  const auto snapped_right =
+      tinydraw::vector_v2::attract_canvas_edges({349.0F, 430.0F}, shown);
+  CHECK(snapped_right.x == 367.0F);
+  CHECK(snapped_right.y == 430.0F);
+  const auto snapped_bottom =
+      tinydraw::vector_v2::attract_canvas_edges({349.0F, 430.0F}, hidden);
+  CHECK(snapped_bottom.x == 367.0F);
+  CHECK(snapped_bottom.y == 447.0F);
+}
+
 TEST_CASE("top-edge exit does not become a tap stroke") {
   CHECK_FALSE(tinydraw::vector_v2::chrome_accepts_stroke_finish({193.0F, 0.0F}, false));
   CHECK_FALSE(tinydraw::vector_v2::chrome_accepts_stroke_finish({193.0F, 1.0F}, false));
@@ -901,7 +918,7 @@ TEST_CASE("only byte-order-aware chrome states accept a pre-swapped transfer sur
   REQUIRE(cache.prepare(hidden_hud, navigation, 0U));
   swapped.assign(swapped.size(), 0x3412U);
   REQUIRE(cache.paint_prepared({swapped, width, height, 0, 0, true}, hidden_hud, navigation, 0U));
-  CHECK(swapped[428U * width + 140U] == 0x0421U);
+  CHECK(swapped[428U * width + 140U] == 0x3412U);
 }
 
 TEST_CASE("history control damage is limited to undo and redo dock cells") {

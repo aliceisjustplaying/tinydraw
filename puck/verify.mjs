@@ -93,15 +93,16 @@ const scenarios = [
         assert(nonPaperPixels(drawn, rect) > 0, `drawing did not enter the former ${name} region`);
       }
       const toolbar = { x: 0, y: 372, w: 368, h: 76 };
-      for (const [name, frame] of [["hidden", hidden], ["drawn", drawn],
-        ["hidden-again", hiddenAgain], ["hidden-final", hiddenFinal]]) {
-        assert(nonPaperPixels(frame, toolbar) > 100, `bottom toolbar disappeared in ${name} frame`);
-      }
-      assert(diffPixels(drawn, shown) > 1_000, "showing the HUD did not restore its controls");
+      assert.equal(nonPaperPixels(hidden, toolbar), 0,
+        "bottom toolbar remained visible after hiding chrome");
+      assert(nonPaperPixels(drawn, toolbar) > 100,
+        "drawing did not enter the former bottom-toolbar region");
+      assert(nonPaperPixels(shown, toolbar) > 1_000,
+        "showing chrome did not restore the bottom toolbar");
       assert.equal(diffPixels(hiddenAgain, hiddenFinal), 0,
-        "repeated HUD show/hide cycles did not preserve the exact drawing and toolbar");
-      assert(nonPaperPixels(toolbarPopup, { x: 108, y: 284, w: 84, h: 88 }) > 100,
-        "bottom toolbar did not open its tools popup while the HUD was hidden");
+        "repeated chrome show/hide cycles did not preserve the exact drawing");
+      assert(diffPixels(hiddenFinal, toolbarPopup, toolbar) > 0,
+        "a bottom-edge tap did not draw while chrome was hidden");
     },
   },
   {
@@ -120,8 +121,8 @@ const scenarios = [
         replayPointerAfter200ms && replaySideButton && replayed,
         "demo captures are missing");
       assert(inkPixels(drawn) > 50, "demo recording did not capture a visible Stroke");
-      assert(nonPaperPixels(recorded, { x: 0, y: 372, w: 368, h: 76 }) > 100,
-        "short BOOT hid the bottom toolbar during demo recording");
+      assert.equal(nonPaperPixels(recorded, { x: 0, y: 372, w: 368, h: 76 }), 0,
+        "short BOOT left the bottom toolbar visible during demo recording");
       assert(inkPixels(recorded) > 50, "hiding the HUD lost the demo recording's Stroke");
       assert(inkPixels(replayBaseline) < inkPixels(drawn) / 3,
         `demo replay did not start from a blank authority baseline: ${inkPixels(replayBaseline)} versus ${inkPixels(drawn)}`);
@@ -611,6 +612,59 @@ async function verifyStrokeAfterHudToggle() {
   console.log("PASS post-HUD Stroke stays full-length across refresh timing windows");
 }
 
+async function verifyPhysicalEdgeInsetStillReachesCanvasEdges() {
+  const events = [{ t: 0, k: "tick" }, { t: 16, k: "tick" }];
+  const event = (t, value) => events.push(value, { t, k: "tick" });
+  event(32, { t: 32, k: "button", i: 0, down: 1 });
+  event(48, { t: 48, k: "button", i: 0, down: 0 });
+  for (let t = 56; t <= 160; t += 8) events.push({ t, k: "tick" });
+
+  let now = 168;
+  const stroke = (points) => {
+    for (let index = 0; index < points.length; ++index) {
+      const [x, y] = points[index];
+      event(now, { t: now, k: "touch", down: 1, x, y });
+      now += 8;
+    }
+    const [x, y] = points.at(-1);
+    event(now, { t: now, k: "touch", down: 0, x, y });
+    now += 8;
+  };
+  const samples = 111;
+  stroke(Array.from({ length: samples }, (_, index) => [
+    7 + Math.round(index * 11 / (samples - 1)),
+    40 + index * 2,
+  ]));
+  stroke(Array.from({ length: samples }, (_, index) => [
+    363 - Math.round(index * 8 / (samples - 1)),
+    40 + index * 2,
+  ]));
+  stroke(Array.from({ length: 145 }, (_, index) => [
+    40 + index * 2,
+    14,
+  ]));
+  stroke(Array.from({ length: 145 }, (_, index) => [
+    40 + index * 2,
+    433,
+  ]));
+  const settledAt = now + 1_000;
+  for (let t = now; t <= settledAt; t += 8) events.push({ t, k: "tick" });
+
+  const run = await replay({ events }, [settledAt]);
+  const frame = run.frames.get(settledAt);
+  assert(frame, "edge-inset Stroke capture is missing");
+  const whitePixels = (rect) => rect.w * rect.h - nonPaperPixels(frame, rect);
+  assert.equal(whitePixels({ x: 0, y: 60, w: 1, h: 180 }), 0,
+    "physical left-edge inset left a white canvas gutter");
+  assert.equal(whitePixels({ x: 367, y: 60, w: 1, h: 180 }), 0,
+    "physical right-edge inset left a white canvas gutter");
+  assert.equal(whitePixels({ x: 60, y: 0, w: 240, h: 1 }), 0,
+    "physical top-edge inset left a white canvas gutter");
+  assert.equal(whitePixels({ x: 60, y: 447, w: 240, h: 1 }), 0,
+    "physical bottom-edge inset left a white canvas gutter while chrome was hidden");
+  console.log("PASS physical edge insets still paint every canvas-edge pixel");
+}
+
 async function verifyHudHideDismissesColorsInputShield() {
   const events = [{ t: 0, k: "tick" }, { t: 16, k: "tick" }];
   const touch = (t, down, x, y) => events.push(
@@ -684,6 +738,7 @@ await verifyLongStrokeHistory();
 await verifyHistoryPresentationFailure();
 await verifyRecordedStrokeAaSurvivesHudToggle();
 await verifyStrokeAfterHudToggle();
+await verifyPhysicalEdgeInsetStillReachesCanvasEdges();
 await verifyHudHideDismissesColorsInputShield();
 
 console.log(writeFrames

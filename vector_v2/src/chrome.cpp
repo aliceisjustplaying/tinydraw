@@ -30,7 +30,8 @@ static_assert([] {
 }());
 
 bool bottom_cache_matches(const ChromeState& cached, const ChromeState& current) {
-  return cached.tool == current.tool && cached.size == current.size &&
+  return cached.hud_visible == current.hud_visible && cached.tool == current.tool &&
+         cached.size == current.size &&
          cached.palette_page == current.palette_page && cached.color_index == current.color_index &&
          cached.can_undo == current.can_undo && cached.can_redo == current.can_redo &&
          cached.recording == current.recording;
@@ -486,7 +487,7 @@ void draw_fixed_chrome(const MinimapSurface& surface, const ChromeState& state) 
   };
   Painter painter(surface.pixels, surface.width, surface.height, surface.origin_x,
                   surface.origin_y);
-  if (intersects_rows(kChromeCanvasBottom, kHeight)) {
+  if (state.hud_visible && intersects_rows(kChromeCanvasBottom, kHeight)) {
     draw_bottom(painter, state);
   }
   if (state.popup == ChromePopup::kColors && !state.confirm_new &&
@@ -803,7 +804,9 @@ bool ChromeStagingCache::prepare_for(ChromeRect panel_bounds, const ChromeState&
     Painter bottom_painter(bottom, kBottomCacheRect.x1 - kBottomCacheRect.x0,
                            kBottomCacheRect.y1 - kBottomCacheRect.y0, kBottomCacheRect.x0,
                            kBottomCacheRect.y0);
-    draw_bottom(bottom_painter, state);
+    if (state.hud_visible) {
+      draw_bottom(bottom_painter, state);
+    }
     bottom_state_ = state;
     bottom_valid_ = true;
 #ifdef TINYDRAW_VECTOR_V2_RERENDER_DIAGNOSTICS
@@ -860,7 +863,9 @@ bool ChromeStagingCache::paint_prepared(const MinimapSurface& surface, const Chr
   const auto minimap = sprite(kMinimapOverlayRect);
   const auto battery = sprite(kBatteryOverlayRect);
   const auto bottom = sprite(kBottomCacheRect);
-  blend_cached_sprite(surface, kBottomCacheRect, bottom);
+  if (state.hud_visible) {
+    blend_cached_sprite(surface, kBottomCacheRect, bottom);
+  }
   if (canvas_overlays_visible(state)) {
     blend_cached_sprite(surface, kZoomRailOverlayRect, zoom);
     blend_cached_sprite(surface, kMinimapOverlayRect, minimap);

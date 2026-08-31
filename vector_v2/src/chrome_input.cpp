@@ -40,6 +40,9 @@ int chrome_canvas_bottom(const ChromeState& state) {
   if (export_mode_active(state)) {
     return 0;
   }
+  if (!state.hud_visible) {
+    return kHeight;
+  }
   if (state.popup == ChromePopup::kNone) {
     return kChromeCanvasBottom;
   }
@@ -50,6 +53,9 @@ int chrome_input_bottom(const ChromeState& state) {
   if (state.confirm_new || state.export_status == ChromeExportStatus::kSaving ||
       export_mode_active(state) || time_sync_active(state)) {
     return 0;
+  }
+  if (!state.hud_visible) {
+    return kHeight;
   }
   if (state.popup == ChromePopup::kNone) {
     return kChromeCanvasBottom;
@@ -106,6 +112,29 @@ std::optional<ChromePoint> clip_canvas_segment(ChromePoint previous, ChromePoint
   }
   const float progress = (bottom - previous.y) / vertical_distance;
   return ChromePoint{previous.x + (current.x - previous.x) * progress, bottom};
+}
+
+ChromePoint attract_canvas_edges(ChromePoint point, const ChromeState& state) {
+  constexpr float kEdgeAttractionBandPixels = 36.0F;
+  constexpr float kRightEdge = static_cast<float>(kWidth - 1);
+  constexpr float kBottomEdge = static_cast<float>(kHeight - 1);
+  const auto attract_low = [=](float coordinate) {
+    return coordinate < kEdgeAttractionBandPixels
+               ? std::max(0.0F, coordinate * 2.0F - kEdgeAttractionBandPixels)
+               : coordinate;
+  };
+  const auto attract_high = [=](float coordinate, float edge) {
+    const float distance = edge - coordinate;
+    return distance < kEdgeAttractionBandPixels
+               ? edge - std::max(0.0F, distance * 2.0F - kEdgeAttractionBandPixels)
+               : coordinate;
+  };
+  point.x = attract_high(attract_low(point.x), kRightEdge);
+  point.y = attract_low(point.y);
+  if (!state.hud_visible) {
+    point.y = attract_high(point.y, kBottomEdge);
+  }
+  return point;
 }
 
 bool chrome_accepts_stroke_finish(ChromePoint start, bool has_drawn_segment) {
@@ -205,6 +234,9 @@ bool chrome_contains(ChromePoint point, const ChromeState& state) {
   if (state.confirm_new || state.export_status == ChromeExportStatus::kSaving ||
       export_mode_active(state) || time_sync_active(state)) {
     return inside(point, 0.0F, 0.0F, static_cast<float>(kWidth), static_cast<float>(kHeight));
+  }
+  if (!state.hud_visible) {
+    return false;
   }
   if (state.popup == ChromePopup::kColors) {
     return inside(point, 0.0F, 0.0F, static_cast<float>(kWidth), static_cast<float>(kHeight));
@@ -314,6 +346,9 @@ ChromeAction chrome_action_at(ChromePoint point, const ChromeState& state) {
                : ChromeAction::kNone;
   }
   if (state.export_status == ChromeExportStatus::kSaving || time_sync_active(state)) {
+    return ChromeAction::kNone;
+  }
+  if (!state.hud_visible) {
     return ChromeAction::kNone;
   }
   if (state.popup == ChromePopup::kColors) {
