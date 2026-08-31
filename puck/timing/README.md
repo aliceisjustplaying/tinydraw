@@ -69,3 +69,21 @@ overwritten.
 ```sh
 bun puck/timing/collect_timing_probe.ts capture.log receipts/
 ```
+
+The collector is strict by default. If USB logging damages one protocol line,
+an explicit recovery mode can retain only independently complete measurements:
+
+```sh
+bun puck/timing/collect_timing_probe.ts --recover-complete-measurements capture.log recovered-receipts/
+```
+
+Recovery still requires one valid metadata record and a `pass=true`
+`run-complete` record. The first valid metadata record anchors the boot, so a
+torn prior-boot tail at the start of a serial file is ignored. A malformed
+protocol fragment after that boundary invalidates the measurement active at
+that point. `run-complete` is terminal: an active group is incomplete when it
+arrives, and any later measurement record rejects recovery. Each remaining
+group is placed in a one-measurement canonical envelope and passed through the
+normal strict assembler. The command reports every omitted measurement and its
+reasons, and all emitted receipts retain the SHA-256 of the original
+unmodified boot log.

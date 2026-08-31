@@ -19,10 +19,27 @@ export interface AssembleTimingProbeOptions {
   allowSchemaFixtures?: boolean;
 }
 
+export interface OmittedTimingProbeMeasurement {
+  measurementId: string;
+  reasons: string[];
+}
+
+export interface RecoveredTimingProbeReceipts {
+  receipts: CalibrationReceipt[];
+  omittedMeasurements: OmittedTimingProbeMeasurement[];
+}
+
 interface MeasurementGroup {
   descriptor: MeasurementDescriptor;
   samples: CcountSample[];
   completedSamples: number | null;
+}
+
+interface RecoveryGroup {
+  records: JsonObject[];
+  reasons: Set<string>;
+  started: boolean;
+  completed: boolean;
 }
 
 function object(value: unknown, path: string): JsonObject {
@@ -286,4 +303,334 @@ export function assembleTimingProbeReceipts(
     );
   }
   return receipts;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function recoveryFragments(log: string): Array<{ lineNumber: number; payload: string }> {
+  const fragments: Array<{ lineNumber: number; payload: string }> = [];
+  const lines = log.split(/\r?\n/);
+  for (let index = 0; index < lines.length; ++index) {
+    const line = lines[index]!;
+    const prefixIndexes: number[] = [];
+    let searchFrom = 0;
+    while (true) {
+      const prefixIndex = line.indexOf(TIMING_PROBE_RECORD_PREFIX, searchFrom);
+      if (prefixIndex < 0) break;
+      prefixIndexes.push(prefixIndex);
+      searchFrom = prefixIndex + TIMING_PROBE_RECORD_PREFIX.length;
+    }
+    for (let fragment = 0; fragment < prefixIndexes.length; ++fragment) {
+      const payloadStart = prefixIndexes[fragment]! + TIMING_PROBE_RECORD_PREFIX.length;
+      const payloadEnd = prefixIndexes[fragment + 1] ?? line.length;
+      fragments.push({ lineNumber: index + 1, payload: line.slice(payloadStart, payloadEnd) });
+    }
+  }
+  return fragments;
+}
+
+function validateRecoveryMetadata(
+  metadata: JsonObject,
+  options: AssembleTimingProbeOptions,
+): void {
+  const boot = object(metadata.boot, "metadata.boot");
+  const counter = object(metadata.counter, "metadata.counter");
+  const core = counter.core === 1 ? 1 : 0;
+  const samples: CcountSample[] = Array.from(
+    { length: MINIMUM_TIMING_PROBE_SAMPLES },
+    (_, ordinal) => ({
+      ordinal,
+      startCore: core,
+      endCore: core,
+      startCcount: ordinal,
+      endCcount: ordinal + 1,
+      cycles: 1,
+    }),
+  );
+  parseCalibrationReceiptValue(
+    {
+      schemaVersion: metadata.schemaVersion,
+      receiptKind: metadata.receiptKind,
+      captureMode: metadata.captureMode,
+      capturedAt: options.capturedAt,
+      git: metadata.git,
+      toolchain: metadata.toolchain,
+      sdkconfig: metadata.sdkconfig,
+      boot: { ...boot, bootLogSha256: options.bootLogSha256 },
+      counter,
+      measurement: {
+        kind: "ccount-kernel",
+        kernel: "timing_probe_recovery_metadata_validation",
+        memoryPath: "internal-to-internal",
+        bytesPerIteration: 1,
+        iterationsPerSample: 1,
+        warmupIterations: 0,
+        samples,
+      },
+    },
+    { allowSchemaFixtures: options.allowSchemaFixtures },
+  );
+}
+
+/**
+ * Recover independently complete measurements from a damaged USB capture.
+ *
+ * This is deliberately separate from the default strict assembler. A malformed
+ * protocol fragment invalidates the measurement active at that point. Every
+ * candidate that remains is then reassembled by the strict path in isolation.
+ */
+export function recoverCompleteTimingProbeReceipts(
+  log: string,
+  options: AssembleTimingProbeOptions,
+): RecoveredTimingProbeReceipts {
+  let metadata: JsonObject | null = null;
+  let runComplete: JsonObject | null = null;
+  let activeMeasurementId: string | null = null;
+  let measurementStarts = 0;
+  const groups = new Map<string, RecoveryGroup>();
+  const globalProblems: string[] = [];
+
+  const groupFor = (id: string): RecoveryGroup => {
+    let group = groups.get(id);
+    if (!group) {
+      group = { records: [], reasons: new Set(), started: false, completed: false };
+      groups.set(id, group);
+    }
+    return group;
+  };
+  const rejectActiveOrGlobal = (reason: string): void => {
+    if (activeMeasurementId === null) {
+      globalProblems.push(reason);
+    } else {
+      groupFor(activeMeasurementId).reasons.add(reason);
+    }
+  };
+
+  for (const fragment of recoveryFragments(log)) {
+    let record: JsonObject;
+    try {
+      record = protocolRecord(JSON.parse(fragment.payload), fragment.lineNumber);
+    } catch (error) {
+      if (metadata === null && groups.size === 0 && runComplete === null) {
+        continue;
+      }
+      rejectActiveOrGlobal(
+        `line ${fragment.lineNumber} has malformed timing-probe fragment: ${errorMessage(error)}`,
+      );
+      continue;
+    }
+
+    // A serial capture can begin with the torn tail of a previous boot. The
+    // first valid metadata record is the recovery envelope's boot boundary.
+    if (metadata === null && record.record !== "metadata") continue;
+
+    if (
+      runComplete !== null &&
+      (record.record === "measurement-start" ||
+        record.record === "sample" ||
+        record.record === "measurement-complete")
+    ) {
+      globalProblems.push(
+        `line ${fragment.lineNumber} ${String(record.record)} appeared after run-complete`,
+      );
+      continue;
+    }
+
+    try {
+      switch (record.record) {
+        case "metadata": {
+          exactKeys(
+            record,
+            `line ${fragment.lineNumber}`,
+            [
+              "protocolVersion",
+              "record",
+              "schemaVersion",
+              "receiptKind",
+              "captureMode",
+              "git",
+              "toolchain",
+              "sdkconfig",
+              "boot",
+              "counter",
+              "workingSets",
+            ],
+          );
+          if (metadata) throw new Error("timing-probe log contains multiple metadata records");
+          if (activeMeasurementId !== null || groups.size > 0) {
+            throw new Error("metadata appeared after measurements began");
+          }
+          metadata = record;
+          break;
+        }
+        case "measurement-start": {
+          exactKeys(record, `line ${fragment.lineNumber}`, [
+            "protocolVersion",
+            "record",
+            "measurementId",
+            "measurement",
+          ]);
+          const id = string(record.measurementId, `line ${fragment.lineNumber}.measurementId`);
+          if (activeMeasurementId !== null) {
+            groupFor(activeMeasurementId).reasons.add(
+              `measurement was interrupted by measurement-start for ${id}`,
+            );
+          }
+          const group = groupFor(id);
+          if (group.started) group.reasons.add(`measurement ${id} started more than once`);
+          group.started = true;
+          group.records.push(record);
+          activeMeasurementId = id;
+          measurementStarts += 1;
+          break;
+        }
+        case "sample": {
+          exactKeys(record, `line ${fragment.lineNumber}`, [
+            "protocolVersion",
+            "record",
+            "measurementId",
+            "sample",
+            "checksum",
+          ]);
+          const id = string(record.measurementId, `line ${fragment.lineNumber}.measurementId`);
+          const group = groupFor(id);
+          if (!group.started) group.reasons.add(`sample for ${id} appeared before measurement-start`);
+          if (activeMeasurementId !== id) {
+            group.reasons.add(`sample for ${id} appeared while ${activeMeasurementId ?? "no measurement"} was active`);
+            if (activeMeasurementId !== null) {
+              groupFor(activeMeasurementId).reasons.add(`unexpected sample for ${id}`);
+            }
+          }
+          group.records.push(record);
+          break;
+        }
+        case "measurement-complete": {
+          exactKeys(record, `line ${fragment.lineNumber}`, [
+            "protocolVersion",
+            "record",
+            "measurementId",
+            "samples",
+          ]);
+          const id = string(record.measurementId, `line ${fragment.lineNumber}.measurementId`);
+          const group = groupFor(id);
+          if (!group.started) {
+            group.reasons.add(`measurement-complete for unknown measurement ${id}`);
+          }
+          if (group.completed) group.reasons.add(`measurement ${id} completed more than once`);
+          if (activeMeasurementId !== id) {
+            group.reasons.add(
+              `measurement ${id} completed while ${activeMeasurementId ?? "no measurement"} was active`,
+            );
+          }
+          group.completed = true;
+          group.records.push(record);
+          if (activeMeasurementId === id) activeMeasurementId = null;
+          break;
+        }
+        case "run-complete": {
+          exactKeys(record, `line ${fragment.lineNumber}`, [
+            "protocolVersion",
+            "record",
+            "measurements",
+            "samplesPerMeasurement",
+            "pass",
+          ]);
+          if (runComplete) throw new Error("timing-probe log contains multiple run-complete records");
+          if (record.pass !== true) throw new Error("timing-probe firmware reported pass=false");
+          integer(record.measurements, "run-complete.measurements", 1);
+          integer(
+            record.samplesPerMeasurement,
+            "run-complete.samplesPerMeasurement",
+            MINIMUM_TIMING_PROBE_SAMPLES,
+          );
+          if (activeMeasurementId !== null) {
+            groupFor(activeMeasurementId).reasons.add(
+              "run-complete arrived before measurement-complete",
+            );
+            activeMeasurementId = null;
+          }
+          runComplete = record;
+          break;
+        }
+        case "error": {
+          const phase = typeof record.phase === "string" ? record.phase : "unknown";
+          const reason = typeof record.reason === "string" ? record.reason : "unknown";
+          throw new Error(`timing-probe firmware error during ${phase}: ${reason}`);
+        }
+        default:
+          throw new Error(
+            `line ${fragment.lineNumber}.record has unknown value ${String(record.record)}`,
+          );
+      }
+    } catch (error) {
+      const reason = errorMessage(error);
+      if (record.record === "metadata" || record.record === "run-complete" || record.record === "error") {
+        globalProblems.push(reason);
+      } else {
+        rejectActiveOrGlobal(reason);
+      }
+    }
+  }
+
+  if (!metadata) globalProblems.push("timing-probe log is missing valid metadata");
+  if (metadata) {
+    try {
+      validateRecoveryMetadata(metadata, options);
+    } catch (error) {
+      globalProblems.push(`timing-probe metadata is invalid: ${errorMessage(error)}`);
+    }
+  }
+  if (!runComplete) globalProblems.push("timing-probe log is missing valid pass=true run-complete");
+  if (groups.size === 0) globalProblems.push("timing-probe log contains no measurements");
+  if (metadata && runComplete) {
+    const reportedMeasurements = integer(
+      runComplete.measurements,
+      "run-complete.measurements",
+      1,
+    );
+    if (reportedMeasurements !== measurementStarts) {
+      globalProblems.push(
+        `run-complete reported ${reportedMeasurements} measurements, found ${measurementStarts} measurement-start records`,
+      );
+    }
+  }
+  if (globalProblems.length > 0) {
+    throw new Error(`timing-probe recovery rejected global envelope: ${globalProblems.join("; ")}`);
+  }
+
+  const receipts: CalibrationReceipt[] = [];
+  const omittedMeasurements: OmittedTimingProbeMeasurement[] = [];
+  for (const [id, group] of groups) {
+    if (!group.started) group.reasons.add("measurement-start is missing");
+    if (!group.completed) group.reasons.add("measurement-complete is missing");
+    if (group.reasons.size === 0) {
+      const canonicalLog = [
+        `${TIMING_PROBE_RECORD_PREFIX}${JSON.stringify(metadata)}`,
+        ...group.records.map(
+          (record) => `${TIMING_PROBE_RECORD_PREFIX}${JSON.stringify(record)}`,
+        ),
+        `${TIMING_PROBE_RECORD_PREFIX}${JSON.stringify({ ...runComplete, measurements: 1 })}`,
+      ].join("\n");
+      try {
+        const recovered = assembleTimingProbeReceipts(canonicalLog, options);
+        if (
+          recovered.length !== 1 ||
+          recovered[0]!.measurement.kind !== "ccount-kernel" ||
+          recovered[0]!.measurement.kernel !== id
+        ) {
+          throw new Error(`canonical group produced an unexpected receipt for ${id}`);
+        }
+        receipts.push(recovered[0]!);
+      } catch (error) {
+        group.reasons.add(`strict validation failed: ${errorMessage(error)}`);
+      }
+    }
+    if (group.reasons.size > 0) {
+      omittedMeasurements.push({ measurementId: id, reasons: [...group.reasons] });
+    }
+  }
+
+  return { receipts, omittedMeasurements };
 }

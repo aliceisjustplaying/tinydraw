@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   assembleTimingProbeReceipts,
   MINIMUM_TIMING_PROBE_SAMPLES,
+  recoverCompleteTimingProbeReceipts,
   TIMING_PROBE_RECORD_PREFIX,
 } from "./timing_probe_protocol";
 
@@ -129,6 +130,75 @@ function fixtureLog(
   return `${lines.join("\n")}\n`;
 }
 
+function fixtureGroupRecords(
+  id: string,
+  samples = MINIMUM_TIMING_PROBE_SAMPLES,
+  badDelta = false,
+): string[] {
+  const records = [
+    record({
+      protocolVersion: 1,
+      record: "measurement-start",
+      measurementId: id,
+      measurement: {
+        kind: "ccount-kernel",
+        kernel: id,
+        memoryPath: "internal-to-internal",
+        bytesPerIteration: 32,
+        iterationsPerSample: 1,
+        warmupIterations: 8,
+      },
+    }),
+  ];
+  for (let ordinal = 0; ordinal < samples; ++ordinal) {
+    const start = 1000 + ordinal * 20;
+    records.push(
+      record({
+        protocolVersion: 1,
+        record: "sample",
+        measurementId: id,
+        sample: {
+          ordinal,
+          startCore: 0,
+          endCore: 0,
+          startCcount: start,
+          endCcount: start + 10,
+          cycles: badDelta && ordinal === 0 ? 11 : 10,
+        },
+        checksum: ordinal,
+      }),
+    );
+  }
+  records.push(
+    record({
+      protocolVersion: 1,
+      record: "measurement-complete",
+      measurementId: id,
+      samples,
+    }),
+  );
+  return records;
+}
+
+function fixtureMultiMeasurementLog(
+  groups: Array<{ id: string; badDelta?: boolean }>,
+): string {
+  return [
+    "ROM boot text ignored by the protocol parser",
+    record(fixtureMetadata),
+    ...groups.flatMap(({ id, badDelta }) =>
+      fixtureGroupRecords(id, MINIMUM_TIMING_PROBE_SAMPLES, badDelta),
+    ),
+    record({
+      protocolVersion: 1,
+      record: "run-complete",
+      measurements: groups.length,
+      samplesPerMeasurement: MINIMUM_TIMING_PROBE_SAMPLES,
+      pass: true,
+    }),
+  ].join("\n");
+}
+
 const assembleOptions = {
   capturedAt: "2000-01-01T00:00:00Z",
   bootLogSha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -214,6 +284,149 @@ describe("timing-probe capture protocol", () => {
     ].join("\n");
     expect(() => assembleTimingProbeReceipts(log, assembleOptions)).toThrow(
       "firmware error during flash_instruction_cold_single_core: cache-prepare",
+    );
+  });
+});
+
+describe("timing-probe complete-measurement recovery", () => {
+  test("omits the active group when a truncated sample is concatenated with the next prefixed sample", () => {
+    const damagedId = "sram_aligned_stream_single_core";
+    const retainedId = "sram_unaligned_stream_single_core";
+    const intact = fixtureMultiMeasurementLog([{ id: damagedId }, { id: retainedId }]);
+    const lines = intact.split("\n");
+    const firstSampleIndex = lines.findIndex(
+      (line) => line.includes(`\"measurementId\":\"${damagedId}\"`) && line.includes('"ordinal":49'),
+    );
+    expect(firstSampleIndex).toBeGreaterThan(-1);
+    const truncated = lines[firstSampleIndex]!.slice(0, -8);
+    lines.splice(firstSampleIndex, 2, `${truncated}${lines[firstSampleIndex + 1]!}`);
+    const damagedLog = lines.join("\n");
+
+    expect(() => assembleTimingProbeReceipts(damagedLog, assembleOptions)).toThrow(
+      "invalid timing-probe JSON",
+    );
+    const recovered = recoverCompleteTimingProbeReceipts(damagedLog, assembleOptions);
+    expect(
+      recovered.receipts.map((receipt) =>
+        receipt.measurement.kind === "ccount-kernel" ? receipt.measurement.kernel : "unexpected",
+      ),
+    ).toEqual([retainedId]);
+    expect(recovered.receipts[0]!.boot.bootLogSha256).toBe(assembleOptions.bootLogSha256);
+    expect(recovered.omittedMeasurements).toHaveLength(1);
+    expect(recovered.omittedMeasurements[0]!.measurementId).toBe(damagedId);
+    expect(recovered.omittedMeasurements[0]!.reasons.join(" ")).toContain(
+      "malformed timing-probe fragment",
+    );
+  });
+
+  test("runs each complete candidate through the existing strict receipt assembler", () => {
+    const invalidId = "sram_aligned_stream_single_core";
+    const retainedId = "sram_unaligned_stream_single_core";
+    const recovered = recoverCompleteTimingProbeReceipts(
+      fixtureMultiMeasurementLog([
+        { id: invalidId, badDelta: true },
+        { id: retainedId },
+      ]),
+      assembleOptions,
+    );
+    expect(
+      recovered.receipts.map((receipt) =>
+        receipt.measurement.kind === "ccount-kernel" ? receipt.measurement.kernel : "unexpected",
+      ),
+    ).toEqual([retainedId]);
+    expect(recovered.omittedMeasurements[0]!.measurementId).toBe(invalidId);
+    expect(recovered.omittedMeasurements[0]!.reasons.join(" ")).toContain(
+      "strict validation failed",
+    );
+    expect(recovered.omittedMeasurements[0]!.reasons.join(" ")).toContain(
+      "unsigned 32-bit CCOUNT delta 10",
+    );
+  });
+
+  test("still requires a valid global metadata and pass=true run-complete envelope", () => {
+    const valid = fixtureMultiMeasurementLog([
+      { id: "sram_aligned_stream_single_core" },
+    ]);
+    expect(() =>
+      recoverCompleteTimingProbeReceipts(
+        valid.replace(record(fixtureMetadata), "malformed metadata"),
+        assembleOptions,
+      ),
+    ).toThrow("missing valid metadata");
+    expect(() =>
+      recoverCompleteTimingProbeReceipts(valid.replace('"pass":true', '"pass":false'), assembleOptions),
+    ).toThrow("missing valid pass=true run-complete");
+    expect(() =>
+      recoverCompleteTimingProbeReceipts(
+        valid.replace('"cpuHz":240000000', '"cpuHz":160000000'),
+        assembleOptions,
+      ),
+    ).toThrow("timing-probe metadata is invalid");
+  });
+
+  test("anchors recovery at the first valid metadata record after a torn prior-boot tail", () => {
+    const id = "sram_aligned_stream_single_core";
+    const valid = fixtureMultiMeasurementLog([{ id }]);
+    const recovered = recoverCompleteTimingProbeReceipts(
+      `${TIMING_PROBE_RECORD_PREFIX}{\n${valid}`,
+      assembleOptions,
+    );
+    expect(recovered.receipts).toHaveLength(1);
+    expect(recovered.receipts[0]!.measurement.kind).toBe("ccount-kernel");
+    expect(recovered.omittedMeasurements).toEqual([]);
+  });
+
+  test("rejects a malformed protocol fragment that cannot be attributed to an active group", () => {
+    const valid = fixtureMultiMeasurementLog([
+      { id: "sram_aligned_stream_single_core" },
+    ]);
+    const damaged = valid.replace(
+      record(fixtureMetadata),
+      `${record(fixtureMetadata)}\n${TIMING_PROBE_RECORD_PREFIX}{`,
+    );
+    expect(() => recoverCompleteTimingProbeReceipts(damaged, assembleOptions)).toThrow(
+      "rejected global envelope",
+    );
+  });
+
+  test("rejects measurement records that appear after run-complete", () => {
+    const id = "sram_aligned_stream_single_core";
+    const valid = fixtureMultiMeasurementLog([{ id }]);
+    const groupRecords = fixtureGroupRecords(id);
+    for (const lateRecord of [groupRecords[0]!, groupRecords[1]!, groupRecords.at(-1)!]) {
+      expect(() =>
+        recoverCompleteTimingProbeReceipts(`${valid}\n${lateRecord}`, assembleOptions),
+      ).toThrow("appeared after run-complete");
+    }
+  });
+
+  test("omits an active incomplete group when run-complete arrives", () => {
+    const completeId = "sram_aligned_stream_single_core";
+    const incompleteId = "sram_unaligned_stream_single_core";
+    const incompleteRecords = fixtureGroupRecords(incompleteId).slice(0, -1);
+    const log = [
+      record(fixtureMetadata),
+      ...fixtureGroupRecords(completeId),
+      ...incompleteRecords,
+      record({
+        protocolVersion: 1,
+        record: "run-complete",
+        measurements: 2,
+        samplesPerMeasurement: MINIMUM_TIMING_PROBE_SAMPLES,
+        pass: true,
+      }),
+    ].join("\n");
+
+    const recovered = recoverCompleteTimingProbeReceipts(log, assembleOptions);
+    expect(recovered.receipts).toHaveLength(1);
+    expect(recovered.receipts[0]!.measurement.kind).toBe("ccount-kernel");
+    expect(recovered.omittedMeasurements).toHaveLength(1);
+    expect(recovered.omittedMeasurements[0]!.measurementId).toBe(incompleteId);
+    expect(recovered.omittedMeasurements[0]!.reasons).toContain(
+      "run-complete arrived before measurement-complete",
+    );
+    expect(recovered.omittedMeasurements[0]!.reasons).toContain(
+      "measurement-complete is missing",
     );
   });
 });
