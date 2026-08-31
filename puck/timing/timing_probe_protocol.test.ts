@@ -510,11 +510,15 @@ describe("standalone timing-probe firmware structure", () => {
       }
     }
     expect(dcacheAssembly).toContain(".balign 32");
+    const dcacheBurstBody = dcacheAssembly.slice(
+      dcacheAssembly.indexOf(".macro DEFINE_DCACHE_BURST_PROBE"),
+      dcacheAssembly.indexOf(".endm") + ".endm".length,
+    );
     expect(
-      [...dcacheAssembly.matchAll(/l32i\s+a4, a8, (\d+)/g)].map((match) => Number(match[1])),
+      [...dcacheBurstBody.matchAll(/l32i\s+a4, a8, (\d+)/g)].map((match) => Number(match[1])),
     ).toEqual(Array.from({ length: 16 }, (_, index) => index * 64));
-    expect(dcacheAssembly).not.toContain("s32i");
-    expect(dcacheAssembly).not.toContain("loop");
+    expect(dcacheBurstBody).not.toContain("s32i");
+    expect(dcacheBurstBody).not.toContain("loop");
     for (const symbol of [
       "tinydraw_sram_instruction_issue",
       "tinydraw_sram_l32_dependent",

@@ -99,3 +99,44 @@ test("single-core samples require the exact hot-hit counter signatures", async (
     "require_cache_counter_signature(sample, kExternalDcacheHitSignature,",
   );
 });
+
+test("dependent load-use peers repeat one exact 4,096-step address chain", async () => {
+  const [assembly, firmware] = await Promise.all([
+    Bun.file(dataSourcePath).text(),
+    Bun.file(firmwarePath).text(),
+  ]);
+  const body = assembly.slice(
+    assembly.indexOf(".macro DEFINE_DEPENDENT_LOAD_PROBE"),
+    assembly.indexOf(".endm", assembly.indexOf(".macro DEFINE_DEPENDENT_LOAD_PROBE")) +
+      ".endm".length,
+  );
+  expect(body.match(/\baddx4\b/g)).toHaveLength(1);
+  expect(body.match(/\bl32i\s+a2, a10, 0\b/g)).toHaveLength(1);
+  expect(body.match(/\bextui\s+a2, a2, 0, 12\b/g)).toHaveLength(1);
+  expect(body).toContain("slli    a9, a9, 12");
+  expect(body).toContain("loop    a9, .Ldependent_done\\@");
+  for (const [path, offset] of [
+    ["flash", 20],
+    ["sram", 24],
+    ["psram", 28],
+  ] as const) {
+    expect(assembly).toContain(
+      `DEFINE_DEPENDENT_LOAD_PROBE tinydraw_dependent_load_${path}, ${offset}`,
+    );
+  }
+
+  for (const id of [
+    "dependent_load_sram_4096_steps",
+    "dependent_load_psram_hot_4096_steps",
+    "dependent_load_flash_hot_4096_steps",
+  ]) {
+    expect(firmware).toContain(`"${id}"`);
+  }
+  expect(firmware).toContain("kDependentExternalDcacheHitSignature");
+  expect(firmware).toContain(".dbus_accesses = kDependentLoads");
+  expect(firmware).toContain("g_prepare_checksum = kernel(context, seed);");
+  expect(firmware).toContain("const std::uint32_t value = context.flash[index];");
+  expect(firmware).toContain("context.sram_load_use[index] = value;");
+  expect(firmware).toContain("context.psram_load_use[index] = value;");
+  expect(firmware).toContain('print_error("initialize", "load-use-cache-sync"');
+});

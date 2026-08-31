@@ -40,6 +40,35 @@
     .size \name, .-\name
     .endm
 
+// Matched dependent load-use probes. Every iteration computes an address from
+// the preceding load, performs one aligned load, and masks that result into the
+// next 4,096-word index. The three instantiations differ only in the context
+// pointer field selected before the loop.
+    .macro DEFINE_DEPENDENT_LOAD_PROBE name, context_offset
+    .balign 32
+    .global \name
+    .type   \name, @function
+\name:
+    entry   a1, 16
+    l32i    a8, a2, \context_offset
+    extui   a2, a3, 0, 12
+    movi    a9, 1
+    slli    a9, a9, 12
+    loop    a9, .Ldependent_done\@
+.Ldependent_loop\@:
+    addx4   a10, a2, a8
+    l32i    a2, a10, 0
+    extui   a2, a2, 0, 12
+.Ldependent_done\@:
+    retw.n
+    .size \name, .-\name
+    .endm
+
+// ProbeContext::flash is at 20; the appended SRAM and PSRAM peers are 24/28.
+DEFINE_DEPENDENT_LOAD_PROBE tinydraw_dependent_load_flash, 20
+DEFINE_DEPENDENT_LOAD_PROBE tinydraw_dependent_load_sram, 24
+DEFINE_DEPENDENT_LOAD_PROBE tinydraw_dependent_load_psram, 28
+
 // ProbeContext::psram is at byte offset 12; ProbeContext::flash is at 20.
 // ProbeContext::sram_stream is at byte offset 8. Its sixteen-load peer uses
 // the identical macro body as the hot PSRAM and flash measurements.

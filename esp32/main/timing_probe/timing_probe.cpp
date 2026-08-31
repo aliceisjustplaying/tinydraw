@@ -86,6 +86,8 @@ struct ProbeContext {
   std::uint32_t* psram = nullptr;
   std::uint32_t* contention = nullptr;
   const std::uint32_t* flash = nullptr;
+  std::uint32_t* sram_load_use = nullptr;
+  std::uint32_t* psram_load_use = nullptr;
   esp_partition_mmap_handle_t flash_handle = 0;
 };
 
@@ -93,6 +95,8 @@ static_assert(offsetof(ProbeContext, sram_dependent) == 0U);
 static_assert(offsetof(ProbeContext, sram_stream) == 8U);
 static_assert(offsetof(ProbeContext, psram) == 12U);
 static_assert(offsetof(ProbeContext, flash) == 20U);
+static_assert(offsetof(ProbeContext, sram_load_use) == 24U);
+static_assert(offsetof(ProbeContext, psram_load_use) == 28U);
 static_assert(CONFIG_ESP32S3_INSTRUCTION_CACHE_LINE_SIZE == kIcacheLineBytes);
 static_assert(CONFIG_ESP32S3_DATA_CACHE_LINE_SIZE == kDcacheLineBytes);
 
@@ -104,6 +108,12 @@ extern "C" std::uint32_t tinydraw_sram_l32_independent(const ProbeContext& conte
                                                         std::uint32_t seed);
 extern "C" std::uint32_t tinydraw_sram_s32_store_complete(const ProbeContext& context,
                                                            std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_dependent_load_sram(const ProbeContext& context,
+                                                       std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_dependent_load_psram(const ProbeContext& context,
+                                                        std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_dependent_load_flash(const ProbeContext& context,
+                                                        std::uint32_t seed);
 
 #define DECLARE_DCACHE_BURST_PROBE(path, lines)                                                  \
   extern "C" std::uint32_t tinydraw_dcache_##path##_##lines##_lines(const ProbeContext& context, \
@@ -143,6 +153,13 @@ constexpr CacheCounters kExternalDcacheHitSignature{
     .ibus_accesses = 0U,
     .ibus_misses = 0U,
     .dbus_accesses = kMatchedDcacheLoads,
+    .dbus_flash_misses = 0U,
+    .dbus_psram_misses = 0U,
+};
+constexpr CacheCounters kDependentExternalDcacheHitSignature{
+    .ibus_accesses = 0U,
+    .ibus_misses = 0U,
+    .dbus_accesses = kDependentLoads,
     .dbus_flash_misses = 0U,
     .dbus_psram_misses = 0U,
 };
@@ -605,6 +622,13 @@ esp_err_t prepare_dcache_burst_hot(const ProbeContext& context, Kernel kernel, s
   return ESP_OK;
 }
 
+esp_err_t prepare_dependent_load_hot(const ProbeContext& context, Kernel kernel,
+                                     std::uint32_t seed) {
+  // Warm the exact seed-dependent address chain that the following sample repeats.
+  g_prepare_checksum = kernel(context, seed);
+  return ESP_OK;
+}
+
 template <std::size_t Lines>
 esp_err_t prepare_psram_dcache_burst_cold(const ProbeContext& context, Kernel, std::uint32_t) {
   static_assert(Lines >= 1U && Lines <= 16U);
@@ -782,6 +806,25 @@ RawSample IRAM_ATTR NOINLINE_ATTR measure_matched_dcache_external_once(
   RawSample sample =
       measure_once(context, kernel, finalize, seed, collect_cache_counters);
   require_cache_counter_signature(sample, kExternalDcacheHitSignature,
+                                  collect_cache_counters);
+  return sample;
+}
+
+RawSample IRAM_ATTR NOINLINE_ATTR measure_dependent_load_internal_once(
+    const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
+    bool collect_cache_counters) {
+  RawSample sample =
+      measure_once(context, kernel, finalize, seed, collect_cache_counters);
+  require_cache_counter_signature(sample, kInternalCacheHitSignature, collect_cache_counters);
+  return sample;
+}
+
+RawSample IRAM_ATTR NOINLINE_ATTR measure_dependent_load_external_once(
+    const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
+    bool collect_cache_counters) {
+  RawSample sample =
+      measure_once(context, kernel, finalize, seed, collect_cache_counters);
+  require_cache_counter_signature(sample, kDependentExternalDcacheHitSignature,
                                   collect_cache_counters);
   return sample;
 }
@@ -1026,8 +1069,13 @@ bool initialize_context(ProbeContext& context) {
       heap_caps_aligned_alloc(64U, kPsramBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   context.contention = static_cast<std::uint32_t*>(
       heap_caps_aligned_alloc(64U, kContentionBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  context.sram_load_use = static_cast<std::uint32_t*>(heap_caps_aligned_alloc(
+      64U, kDependentEntries * sizeof(std::uint32_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+  context.psram_load_use = static_cast<std::uint32_t*>(heap_caps_aligned_alloc(
+      64U, kDependentEntries * sizeof(std::uint32_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   if (context.sram_dependent == nullptr || context.sram_unaligned_dependent == nullptr ||
-      context.sram_stream == nullptr || context.psram == nullptr || context.contention == nullptr) {
+      context.sram_stream == nullptr || context.psram == nullptr || context.contention == nullptr ||
+      context.sram_load_use == nullptr || context.psram_load_use == nullptr) {
     print_error("initialize", "allocation");
     return false;
   }
@@ -1075,9 +1123,27 @@ bool initialize_context(ProbeContext& context) {
   }
   context.flash = static_cast<const std::uint32_t*>(mapped);
 
-  if ((reinterpret_cast<std::uintptr_t>(context.psram) & (kDcacheLineBytes - 1U)) != 0U ||
+  if ((reinterpret_cast<std::uintptr_t>(context.sram_load_use) & (kDcacheLineBytes - 1U)) != 0U ||
+      (reinterpret_cast<std::uintptr_t>(context.psram_load_use) &
+       (kDcacheLineBytes - 1U)) != 0U ||
+      (reinterpret_cast<std::uintptr_t>(context.psram) & (kDcacheLineBytes - 1U)) != 0U ||
       (reinterpret_cast<std::uintptr_t>(context.flash) & (kDcacheLineBytes - 1U)) != 0U) {
     print_error("initialize", "dcache-burst-alignment");
+    return false;
+  }
+
+  // All three dependent probes traverse identical values and therefore identical indices.
+  // The flash-mapped firmware bytes are the immutable source; every load masks to 12 bits.
+  for (std::size_t index = 0; index < kDependentEntries; ++index) {
+    const std::uint32_t value = context.flash[index];
+    context.sram_load_use[index] = value;
+    context.psram_load_use[index] = value;
+  }
+  const esp_err_t load_use_sync = esp_cache_msync(
+      context.psram_load_use, kDependentEntries * sizeof(std::uint32_t),
+      ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+  if (load_use_sync != ESP_OK) {
+    print_error("initialize", "load-use-cache-sync", load_use_sync);
     return false;
   }
 
@@ -1131,6 +1197,15 @@ bool initialize_context(ProbeContext& context) {
   }
 
 constexpr Measurement kMeasurements[] = {
+    {"dependent_load_sram_4096_steps", "internal-to-internal", kDependentLoads * 4U, 1U,
+     kWarmupIterations, tinydraw_dependent_load_sram, prepare_dependent_load_hot, nullptr,
+     0U, measure_dependent_load_internal_once},
+    {"dependent_load_psram_hot_4096_steps", "psram-to-internal", kDependentLoads * 4U, 1U,
+     kWarmupIterations, tinydraw_dependent_load_psram, prepare_dependent_load_hot, nullptr,
+     0U, measure_dependent_load_external_once},
+    {"dependent_load_flash_hot_4096_steps", "flash-to-internal", kDependentLoads * 4U, 1U,
+     kWarmupIterations, tinydraw_dependent_load_flash, prepare_dependent_load_hot, nullptr,
+     0U, measure_dependent_load_external_once},
     {"sram_aligned_dependent", "internal-to-internal", kDependentLoads * 4U, 1U,
      kWarmupIterations, sram_aligned_dependent, prepare_none},
     {"sram_unaligned_dependent", "internal-to-internal", kDependentLoads * 4U, 1U,
