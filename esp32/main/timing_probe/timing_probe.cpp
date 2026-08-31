@@ -30,6 +30,17 @@
 #include "soc/soc.h"
 #include "timing_probe_build_metadata.h"
 
+extern "C" {
+extern const std::uint8_t tinydraw_flash_instruction_burst_1_lines_start[];
+extern const std::uint8_t tinydraw_flash_instruction_burst_1_lines_end[];
+extern const std::uint8_t tinydraw_flash_instruction_burst_2_lines_start[];
+extern const std::uint8_t tinydraw_flash_instruction_burst_2_lines_end[];
+extern const std::uint8_t tinydraw_flash_instruction_burst_4_lines_start[];
+extern const std::uint8_t tinydraw_flash_instruction_burst_4_lines_end[];
+extern const std::uint8_t tinydraw_flash_instruction_burst_8_lines_start[];
+extern const std::uint8_t tinydraw_flash_instruction_burst_8_lines_end[];
+}
+
 namespace tinydraw::esp32::timing_probe {
 namespace {
 
@@ -48,6 +59,7 @@ constexpr std::size_t kContentionBytes = 512U * 1024U;
 constexpr std::uint32_t kDependentLoads = 4096U;
 constexpr std::uint32_t kRandomHotLoads = 4096U;
 constexpr std::uint32_t kRandomColdLoads = 16384U;
+constexpr std::size_t kIcacheLineBytes = 32U;
 constexpr std::size_t kDcacheLineBytes = 64U;
 constexpr std::uint32_t kSramStoreCompletionChecksum = 0x5352'414dU;
 constexpr std::size_t kRgb565StagePixels = 5U;
@@ -76,6 +88,7 @@ static_assert(offsetof(ProbeContext, sram_dependent) == 0U);
 static_assert(offsetof(ProbeContext, sram_stream) == 8U);
 static_assert(offsetof(ProbeContext, psram) == 12U);
 static_assert(offsetof(ProbeContext, flash) == 20U);
+static_assert(CONFIG_ESP32S3_INSTRUCTION_CACHE_LINE_SIZE == kIcacheLineBytes);
 static_assert(CONFIG_ESP32S3_DATA_CACHE_LINE_SIZE == kDcacheLineBytes);
 
 extern "C" std::uint32_t tinydraw_sram_instruction_issue(const ProbeContext& context,
@@ -117,9 +130,18 @@ struct Rgb565CallWindow {
   std::uint32_t end_ccount;
 };
 
+struct FlashInstructionBurstWindow {
+  std::uint32_t start_ccount;
+  std::uint32_t end_ccount;
+  std::uint32_t sentinel;
+};
+
 extern "C" void tinydraw_measure_rgb565_call_window(
     Rgb565CallWindow* endpoints, const std::uint16_t* source, std::uint16_t* destination,
     int width, void (*oracle)(const std::uint16_t*, std::uint16_t*, int));
+
+extern "C" void tinydraw_measure_flash_instruction_burst_window(FlashInstructionBurstWindow* window,
+                                                                const void* call0_target);
 
 struct RawSample {
   std::uint32_t start_ccount;
@@ -130,6 +152,7 @@ struct RawSample {
   int end_core;
   CacheCounters cache_counters;
   bool has_cache_counters;
+  esp_err_t preparation_error;
 };
 
 using Kernel = std::uint32_t (*)(const ProbeContext&, std::uint32_t);
@@ -581,6 +604,39 @@ esp_err_t prepare_flash_instruction_cold(const ProbeContext&, Kernel, std::uint3
                          ESP_CACHE_MSYNC_FLAG_DIR_M2C | ESP_CACHE_MSYNC_FLAG_TYPE_INST);
 }
 
+struct FlashInstructionBurstRange {
+  const void* start;
+  const void* end;
+};
+
+template <std::size_t Lines>
+struct FlashInstructionBurstSymbols;
+
+#define DEFINE_FLASH_INSTRUCTION_BURST_RANGE(lines)                   \
+  template <>                                                         \
+  struct FlashInstructionBurstSymbols<lines> {                        \
+    FORCE_INLINE_ATTR FlashInstructionBurstRange range() {            \
+      return {tinydraw_flash_instruction_burst_##lines##_lines_start, \
+              tinydraw_flash_instruction_burst_##lines##_lines_end};  \
+    }                                                                 \
+  };
+
+DEFINE_FLASH_INSTRUCTION_BURST_RANGE(1)
+DEFINE_FLASH_INSTRUCTION_BURST_RANGE(2)
+DEFINE_FLASH_INSTRUCTION_BURST_RANGE(4)
+DEFINE_FLASH_INSTRUCTION_BURST_RANGE(8)
+
+#undef DEFINE_FLASH_INSTRUCTION_BURST_RANGE
+
+template <std::size_t Lines>
+std::uint32_t IRAM_ATTR NOINLINE_ATTR flash_instruction_burst_kernel(const ProbeContext&,
+                                                                     std::uint32_t) {
+  const FlashInstructionBurstRange range = FlashInstructionBurstSymbols<Lines>::range();
+  FlashInstructionBurstWindow window{};
+  tinydraw_measure_flash_instruction_burst_window(&window, range.start);
+  return window.sentinel;
+}
+
 void reset_rgb565_stage_data() {
   std::copy(kRgb565StageInput.begin(), kRgb565StageInput.end(),
             std::begin(g_rgb565_stage_source));
@@ -668,6 +724,51 @@ RawSample IRAM_ATTR NOINLINE_ATTR measure_rgb565_stage_once(const ProbeContext& 
   return sample;
 }
 
+template <std::size_t Lines, bool Cold>
+RawSample IRAM_ATTR NOINLINE_ATTR measure_flash_instruction_burst_once(
+    const ProbeContext&, Kernel, Finalize, std::uint32_t, bool collect_cache_counters) {
+  static_assert(Lines == 1U || Lines == 2U || Lines == 4U || Lines == 8U);
+  RawSample sample{};
+  const FlashInstructionBurstRange range = FlashInstructionBurstSymbols<Lines>::range();
+  const auto start = reinterpret_cast<std::uintptr_t>(range.start);
+  const auto end = reinterpret_cast<std::uintptr_t>(range.end);
+  if ((start & (kIcacheLineBytes - 1U)) != 0U || end - start != Lines * kIcacheLineBytes) {
+    sample.preparation_error = ESP_ERR_INVALID_SIZE;
+    return sample;
+  }
+
+  if constexpr (Cold) {
+    sample.preparation_error =
+        esp_cache_msync(reinterpret_cast<void*>(start), end - start,
+                        ESP_CACHE_MSYNC_FLAG_DIR_M2C | ESP_CACHE_MSYNC_FLAG_INVALIDATE |
+                            ESP_CACHE_MSYNC_FLAG_TYPE_INST);
+    if (sample.preparation_error != ESP_OK) return sample;
+  } else {
+    FlashInstructionBurstWindow warm_window{};
+    tinydraw_measure_flash_instruction_burst_window(&warm_window, range.start);
+    if (warm_window.sentinel != Lines) {
+      sample.preparation_error = ESP_ERR_INVALID_RESPONSE;
+      return sample;
+    }
+  }
+
+  // The cold invalidation or hot helper warmup is complete before this clear. The only external
+  // instruction fetch in the CCOUNT interval is the helper's one call0 target invocation.
+  sample.start_core = esp_cpu_get_core_id();
+  if (collect_cache_counters) clear_cache_counters();
+  FlashInstructionBurstWindow window{};
+  tinydraw_measure_flash_instruction_burst_window(&window, range.start);
+  sample.end_core = esp_cpu_get_core_id();
+  if (collect_cache_counters) sample.cache_counters = read_cache_counters();
+
+  sample.start_ccount = window.start_ccount;
+  sample.end_ccount = window.end_ccount;
+  sample.cycles = sample.end_ccount - sample.start_ccount;
+  sample.checksum = window.sentinel;
+  sample.has_cache_counters = collect_cache_counters;
+  return sample;
+}
+
 void print_measurement_start(const Measurement& measurement, const char* measurement_id) {
   std::printf("%s{\"protocolVersion\":%" PRIu32
               ",\"record\":\"measurement-start\",\"measurementId\":",
@@ -703,6 +804,10 @@ bool run_measurement(const ProbeContext& context, const Measurement& measurement
     const Sampler sampler = measurement.sampler == nullptr ? measure_once : measurement.sampler;
     const RawSample sample = sampler(context, measurement.kernel, measurement.finalize, seed,
                                      collect_cache_counters);
+    if (sample.preparation_error != ESP_OK) {
+      print_error(measurement_id, "cache-prepare", sample.preparation_error);
+      return false;
+    }
     if (measurement.expected_checksum != 0U && sample.checksum != measurement.expected_checksum) {
       print_error(measurement_id, "checksum");
       return false;
@@ -871,6 +976,23 @@ bool initialize_context(ProbeContext& context) {
         tinydraw_dcache_##path##_##lines##_lines, prepare_##path##_dcache_burst_cold<lines> \
   }
 
+#define ICACHE_BURST_MEASUREMENTS(lines)                                     \
+  {"icache_flash_burst_" #lines "_lines_hot",                                \
+   "other",                                                                  \
+   0U,                                                                       \
+   1U,                                                                       \
+   kWarmupIterations,                                                        \
+   flash_instruction_burst_kernel<lines>,                                    \
+   prepare_none,                                                             \
+   nullptr,                                                                  \
+   lines,                                                                    \
+   measure_flash_instruction_burst_once<lines, false>},                      \
+  {                                                                          \
+    "icache_flash_burst_" #lines "_lines_cold", "other", 0U, 1U, 0U,         \
+        flash_instruction_burst_kernel<lines>, prepare_none, nullptr, lines, \
+        measure_flash_instruction_burst_once<lines, true>                    \
+  }
+
 constexpr Measurement kMeasurements[] = {
     {"sram_aligned_dependent", "internal-to-internal", kDependentLoads * 4U, 1U,
      kWarmupIterations, sram_aligned_dependent, prepare_none},
@@ -921,6 +1043,10 @@ constexpr Measurement kMeasurements[] = {
     DCACHE_BURST_MEASUREMENTS(flash, "flash-to-internal", 4),
     DCACHE_BURST_MEASUREMENTS(flash, "flash-to-internal", 8),
     DCACHE_BURST_MEASUREMENTS(flash, "flash-to-internal", 16),
+    ICACHE_BURST_MEASUREMENTS(1),
+    ICACHE_BURST_MEASUREMENTS(2),
+    ICACHE_BURST_MEASUREMENTS(4),
+    ICACHE_BURST_MEASUREMENTS(8),
     {"flash_instruction_cold", "other", 0U, 1U, 0U, flash_instruction_probe,
      prepare_flash_instruction_cold},
     {"flash_instruction_hot", "other", 0U, 1U, kWarmupIterations, flash_instruction_probe,
@@ -928,6 +1054,7 @@ constexpr Measurement kMeasurements[] = {
 };
 
 #undef DCACHE_BURST_MEASUREMENTS
+#undef ICACHE_BURST_MEASUREMENTS
 
 bool run_suite(const ProbeContext& context, const char* contention_mode) {
   for (const auto& measurement : kMeasurements) {

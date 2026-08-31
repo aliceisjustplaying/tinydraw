@@ -468,6 +468,9 @@ describe("standalone timing-probe firmware structure", () => {
     ]) {
       expect(source).toContain(`\"${kernel}\"`);
     }
+    for (const lines of [1, 2, 4, 8]) {
+      expect(source).toContain(`ICACHE_BURST_MEASUREMENTS(${lines})`);
+    }
     expect(source).toContain("constexpr int kSamplesPerMeasurement = 100;");
     expect(source).toContain('run_suite(context, "single_core")');
     expect(source).toContain('run_suite(context, "core1_contended")');
@@ -586,6 +589,7 @@ describe("standalone timing-probe firmware structure", () => {
     expect(componentCmake).toContain('"timing_probe/rgb565_call_window_esp32s3.S"');
     expect(componentCmake).toContain('"timing_probe/sram_microprobes_esp32s3.S"');
     expect(componentCmake).toContain('"timing_probe/dcache_burst_probes_esp32s3.S"');
+    expect(componentCmake).toContain('"timing_probe/flash_instruction_bursts_esp32s3.S"');
     expect(script).toContain("CONFIG_ESPTOOLPY_FLASHFREQ_80M=y");
     expect(script).toContain("assert_timing_probe_config");
     expect(script).toContain("TINYDRAW_FIRMWARE_VARIANT=timing-probe reconfigure");
