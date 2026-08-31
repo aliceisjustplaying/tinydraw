@@ -1969,7 +1969,7 @@ constexpr bool kRomI2cWriteCaptureMode = false;
 constexpr std::size_t kRomI2cWriteMeasurementCount = 2U;
 constexpr bool kResetStateReadCaptureMode = false;
 constexpr std::size_t kResetStateReadMeasurementCount = 8U;
-constexpr bool kRtcBootReadCaptureMode = true;
+constexpr bool kRtcBootReadCaptureMode = false;
 constexpr std::size_t kRtcBootReadMeasurementCount = 6U;
 static_assert(static_cast<unsigned>(kMmioSlopeCaptureMode) +
                   static_cast<unsigned>(kRomCallbackCaptureMode) +
