@@ -12,7 +12,32 @@
     "firmware_source_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
     "configuration": {
       "type": "object",
-      "required": ["schema_version", "harness_version", "idf_version", "target", "cpu_hz", "ccount_hz", "flash_bytes", "flash_mode", "flash_image_header_mode", "flash_frequency_mhz", "psram_bytes", "psram_mode", "psram_frequency_mhz", "data_cache_bytes", "data_cache_line_bytes", "instruction_cache_bytes", "external_working_set_bytes", "internal_working_set_bytes", "trials", "uncertainty_notes"]
+      "required": ["schema_version", "harness_version", "idf_version", "target", "chip_revision", "cores", "cpu_hz", "ccount_hz", "flash_bytes", "flash_mode", "flash_image_header_mode", "flash_frequency_mhz", "psram_bytes", "psram_mode", "psram_frequency_mhz", "data_cache_bytes", "data_cache_line_bytes", "instruction_cache_bytes", "external_working_set_bytes", "internal_working_set_bytes", "trials", "uncertainty_notes"],
+      "properties": {
+        "type": {"const": "configuration"},
+        "schema_version": {"const": "1.0.0"},
+        "harness_version": {"type": "string"},
+        "idf_version": {"type": "string"},
+        "target": {"const": "esp32s3"},
+        "chip_revision": {"type": "integer", "minimum": 0},
+        "cores": {"type": "integer", "minimum": 1},
+        "cpu_hz": {"type": "integer", "minimum": 1},
+        "ccount_hz": {"type": "integer", "minimum": 1},
+        "flash_bytes": {"type": "integer", "minimum": 1},
+        "flash_mode": {"type": "string"},
+        "flash_image_header_mode": {"type": "string"},
+        "flash_frequency_mhz": {"type": "integer", "minimum": 1},
+        "psram_bytes": {"type": "integer", "minimum": 0},
+        "psram_mode": {"type": "string"},
+        "psram_frequency_mhz": {"type": "integer", "minimum": 0},
+        "data_cache_bytes": {"type": "integer", "minimum": 0},
+        "data_cache_line_bytes": {"type": "integer", "minimum": 0},
+        "instruction_cache_bytes": {"type": "integer", "minimum": 0},
+        "external_working_set_bytes": {"type": "integer", "minimum": 1},
+        "internal_working_set_bytes": {"type": "integer", "minimum": 1},
+        "trials": {"type": "integer", "minimum": 5},
+        "uncertainty_notes": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+      }
     },
     "metrics": {
       "type": "array",
@@ -34,11 +59,19 @@
             "type": "object",
             "required": ["min_total_cycles", "median_total_cycles", "p90_total_cycles", "max_total_cycles", "median_cycles_per_operation", "median_nanoseconds_per_operation", "median_mib_per_second", "relative_sample_range"],
             "properties": {
+              "min_total_cycles": {"type": "integer", "minimum": 1},
+              "median_total_cycles": {"type": "number", "minimum": 1},
+              "p90_total_cycles": {"type": "number", "minimum": 1},
+              "max_total_cycles": {"type": "integer", "minimum": 1},
               "cycles_per_operation_samples": {"type": "array", "items": {"type": "number"}},
               "min_cycles_per_operation": {"type": "number"},
+              "median_cycles_per_operation": {"type": "number"},
               "p90_cycles_per_operation": {"type": "number"},
               "max_cycles_per_operation": {"type": "number"},
-              "population_stdev_cycles_per_operation": {"type": "number", "minimum": 0}
+              "population_stdev_cycles_per_operation": {"type": "number", "minimum": 0},
+              "median_nanoseconds_per_operation": {"type": "number", "minimum": 0},
+              "median_mib_per_second": {"type": ["number", "null"]},
+              "relative_sample_range": {"type": "number", "minimum": 0}
             }
           }
         }
