@@ -1749,7 +1749,7 @@ constexpr Measurement kMeasurements[] = {
 // commits restore the aggregate suite after two complete boots.
 constexpr bool kMmioSlopeCaptureMode = false;
 constexpr std::size_t kMmioSlopeMeasurementCount = 10U;
-constexpr bool kRomCallbackCaptureMode = true;
+constexpr bool kRomCallbackCaptureMode = false;
 constexpr std::size_t kRomCallbackMeasurementCount = 10U;
 static_assert(!(kMmioSlopeCaptureMode && kRomCallbackCaptureMode));
 

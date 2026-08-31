@@ -46,7 +46,7 @@ test("ROM callback peers preserve exact replay arguments and state", async () =>
   expect(firmware).toContain("heap_caps_aligned_alloc(");
   expect(firmware).toContain("16U, kRomMemsetBytes, MALLOC_CAP_INTERNAL");
   expect(firmware).toContain("esp_rom_get_cpu_ticks_per_us() == context.rom_cpu_ticks_per_us");
-  expect(firmware).toContain("kRomCallbackCaptureMode = true");
+  expect(firmware).toContain("kRomCallbackCaptureMode = false");
   expect(firmware).toContain("kRomCallbackMeasurementCount = 10U");
   expect(firmware).toContain("measure_rom_callback_once");
   expect(firmware).toContain('asm volatile("rsil %0, 15"');
