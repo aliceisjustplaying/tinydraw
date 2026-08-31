@@ -34,6 +34,11 @@ test("MMIO peers repeat exact aligned read and write cells", async () => {
     sameValueWriteStart,
     assembly.indexOf(".endm", sameValueWriteStart) + ".endm".length,
   );
+  const halfWriteStart = assembly.indexOf(".macro DEFINE_MMIO_SAME_VALUE_WRITE_2048_PROBE");
+  const halfWriteBody = assembly.slice(
+    halfWriteStart,
+    assembly.indexOf(".endm", halfWriteStart) + ".endm".length,
+  );
 
   expect(readBody).toContain(".begin no-transform");
   expect(readBody.match(/\bl32i\s+a4, a8, 0/g)).toHaveLength(1);
@@ -50,6 +55,10 @@ test("MMIO peers repeat exact aligned read and write cells", async () => {
   expect(sameValueWriteBody.match(/\bmemw\b/g)).toHaveLength(1);
   expect(sameValueWriteBody.match(/\bnop\.n\b/g)).toHaveLength(1);
   expect(sameValueWriteBody).toContain("loop    a9, .Lmmio_same_value_write_done\\@");
+  expect(halfWriteBody).toContain("slli    a9, a9, 11");
+  expect(halfWriteBody.match(/\bs32i\s+a4, a8, 0/g)).toHaveLength(1);
+  expect(halfWriteBody.match(/\bmemw\b/g)).toHaveLength(1);
+  expect(halfWriteBody).toContain("loop    a9, .Lmmio_same_value_write_2048_done\\@");
 
   for (const [name, offset] of [
     ["read_sram", 32],
@@ -61,6 +70,7 @@ test("MMIO peers repeat exact aligned read and write cells", async () => {
     ["read_extmem_dcache_autoload_ctrl", 60],
     ["read_extmem_icache_ctrl1", 64],
     ["read_extmem_icache_autoload_ctrl", 68],
+    ["read_rtc_date", 96],
     ["write_sram", 32],
     ["write_extmem_cache_counter_clear", 48],
   ] as const) {
@@ -84,9 +94,22 @@ test("MMIO peers repeat exact aligned read and write cells", async () => {
     expect(firmware).toContain(`finalize_mmio_same_value_${name}`);
   }
 
+  for (const [name, pointerOffset, valueOffset] of [
+    ["sram", 32, 72],
+    ["system_sysclk_conf", 52, 76],
+    ["extmem_dcache_ctrl1", 56, 80],
+    ["extmem_icache_ctrl1", 64, 88],
+  ] as const) {
+    expect(assembly).toContain(
+      `DEFINE_MMIO_SAME_VALUE_WRITE_2048_PROBE tinydraw_mmio_write_same_value_${name}_2048, ${pointerOffset}, ${valueOffset}`,
+    );
+    expect(firmware).toContain(`"mmio_write_same_value_${name}_2048_aligned"`);
+  }
+
   expect(firmware).toContain("static_assert(SYSTEM_CPU_PER_CONF_REG == 0x600c'0010U)");
   expect(firmware).toContain("static_assert(SYSTEM_SYSCLK_CONF_REG == 0x600c'0060U)");
   expect(firmware).toContain("static_assert(RTC_CNTL_STORE1_REG == 0x6000'8054U)");
+  expect(firmware).toContain("static_assert(RTC_CNTL_DATE_REG == 0x6000'81fcU)");
   expect(firmware).toContain("static_assert(EXTMEM_DCACHE_CTRL1_REG == 0x600c'4004U)");
   expect(firmware).toContain("static_assert(EXTMEM_DCACHE_AUTOLOAD_CTRL_REG == 0x600c'404cU)");
   expect(firmware).toContain("static_assert(EXTMEM_ICACHE_CTRL1_REG == 0x600c'4064U)");
@@ -94,6 +117,7 @@ test("MMIO peers repeat exact aligned read and write cells", async () => {
   expect(firmware).toContain("static_assert(EXTMEM_CACHE_STATE_REG == 0x600c'4130U)");
   expect(firmware).toContain("static_assert(EXTMEM_CACHE_ACS_CNT_CLR_REG == 0x600c'40c4U)");
   expect(firmware).toContain("kMmioOperations = 4096U");
+  expect(firmware).toContain("kMmioHalfOperations = 2048U");
   expect(firmware).toContain("measure_mmio_once");
   expect(firmware).toContain("kRtcMmioReadSignature");
   expect(firmware).toContain(".ibus_accesses = 176U");
@@ -143,6 +167,7 @@ test.skipIf(!existsSync(elfPath) || !existsSync(objdumpPath))(
       ["tinydraw_mmio_read_extmem_dcache_autoload_ctrl", "0f2282"],
       ["tinydraw_mmio_read_extmem_icache_ctrl1", "102282"],
       ["tinydraw_mmio_read_extmem_icache_autoload_ctrl", "112282"],
+      ["tinydraw_mmio_read_rtc_date", "182282"],
     ] as const) {
       expect(disassemble(symbol)).toEqual([
         { bytes: "002136", mnemonic: "entry" },
@@ -193,6 +218,25 @@ test.skipIf(!existsSync(elfPath) || !existsSync(objdumpPath))(
         { bytes: pointerLoad, mnemonic: "l32i" },
         { bytes: valueLoad, mnemonic: "l32i" },
         ...sameValueWriteTail,
+      ]);
+    }
+
+    const halfWriteTail = sameValueWriteTail.map((instruction) =>
+      instruction.mnemonic === "slli"
+        ? { bytes: "119950", mnemonic: "slli" }
+        : instruction
+    );
+    for (const [symbol, pointerLoad, valueLoad] of [
+      ["tinydraw_mmio_write_same_value_sram_2048", "082282", "122242"],
+      ["tinydraw_mmio_write_same_value_system_sysclk_conf_2048", "0d2282", "132242"],
+      ["tinydraw_mmio_write_same_value_extmem_dcache_ctrl1_2048", "0e2282", "142242"],
+      ["tinydraw_mmio_write_same_value_extmem_icache_ctrl1_2048", "102282", "162242"],
+    ] as const) {
+      expect(disassemble(symbol)).toEqual([
+        { bytes: "002136", mnemonic: "entry" },
+        { bytes: pointerLoad, mnemonic: "l32i" },
+        { bytes: valueLoad, mnemonic: "l32i" },
+        ...halfWriteTail,
       ]);
     }
   },
