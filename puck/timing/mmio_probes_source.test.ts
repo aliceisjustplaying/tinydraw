@@ -131,6 +131,9 @@ test("MMIO peers repeat exact aligned read and write cells", async () => {
   expect(
     firmware.indexOf('"mmio_write_extmem_cache_counter_clear_4096_aligned"'),
   ).toBeGreaterThan(firmware.indexOf('"flash_instruction_hot"'));
+  expect(
+    firmware.indexOf('"mmio_write_same_value_system_sysclk_conf_4096_aligned"'),
+  ).toBeGreaterThan(firmware.indexOf('"flash_instruction_hot"'));
 });
 
 interface DecodedInstruction {
