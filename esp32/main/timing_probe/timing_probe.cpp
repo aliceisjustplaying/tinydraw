@@ -1610,7 +1610,7 @@ constexpr Measurement kMeasurements[] = {
 // This provenance commit is intentionally a bounded capture firmware. The
 // following evidence commit restores the aggregate suite after two complete
 // boots have bound these ten matched cells to one ELF.
-constexpr bool kMmioSlopeCaptureMode = true;
+constexpr bool kMmioSlopeCaptureMode = false;
 constexpr std::size_t kMmioSlopeMeasurementCount = 10U;
 
 bool is_mmio_slope_measurement(const Measurement& measurement) {
