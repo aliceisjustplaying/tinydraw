@@ -47,7 +47,9 @@ test("RTC boot-register peers define matched 2048- and 4096-read cohorts", async
   expect(firmware).toContain("offsetof(ProbeContext, mmio_rtc_xtal_freq) == 128U");
   expect(firmware).toContain("kRtcBootReadCaptureMode = false");
   expect(firmware).toContain("kRtcBootReadMeasurementCount = 6U");
-  expect(firmware).toContain("passed && (kResetStateReadCaptureMode || kRtcBootReadCaptureMode)");
+  expect(firmware).toContain(
+    "kResetStateReadCaptureMode || kRtcBootReadCaptureMode || kXtosIntlevelCaptureMode",
+  );
   expect(firmware).toContain("kRtcBoot4096ReadSignature");
   expect(firmware).toContain(".ibus_accesses = 176U");
   expect(firmware).toContain("kRtcBoot2048ReadSignature");

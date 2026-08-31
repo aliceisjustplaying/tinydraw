@@ -80,6 +80,7 @@ constexpr std::uint32_t kMmioStatePreservedChecksum = 0x7374'6174U;
 constexpr std::size_t kRomMemsetBytes = 0x52e0U;
 constexpr std::uint8_t kRomMemsetFill = 0xa5U;
 constexpr std::uint32_t kRomCallbackStatePreservedChecksum = 0x524f'4d53U;
+constexpr std::uint32_t kXtosRestorePs = 0x0004'0c00U;
 constexpr std::uint32_t kSramStoreCompletionChecksum = 0x5352'414dU;
 constexpr std::size_t kRgb565StagePixels = 5U;
 constexpr std::size_t kRgb565OracleCodeBytes = 41U;
@@ -266,6 +267,10 @@ extern "C" std::uint32_t tinydraw_rom_baseline_set_cpu_ticks(const ProbeContext&
                                                                std::uint32_t seed);
 extern "C" std::uint32_t tinydraw_rom_set_cpu_ticks(const ProbeContext& context,
                                                       std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_rom_baseline_xtos_set_intlevel_restore_ps_40c00(
+    const ProbeContext& context, std::uint32_t seed);
+extern "C" std::uint32_t tinydraw_rom_xtos_set_intlevel_restore_ps_40c00(
+    const ProbeContext& context, std::uint32_t seed);
 extern "C" std::uint32_t tinydraw_rom_i2c_baseline_write_same_bod_threshold(
     const ProbeContext& context, std::uint32_t seed);
 extern "C" std::uint32_t tinydraw_rom_i2c_write_same_bod_threshold(
@@ -783,6 +788,16 @@ std::uint32_t finalize_rom_cpu_ticks(const ProbeContext& context, std::uint32_t,
                             esp_rom_get_cpu_ticks_per_us() == context.rom_cpu_ticks_per_us);
 }
 
+std::uint32_t finalize_rom_baseline_xtos_intlevel(const ProbeContext&, std::uint32_t,
+                                                   std::uint32_t result) {
+  return rom_callback_state(result == kXtosRestorePs);
+}
+
+std::uint32_t finalize_rom_xtos_intlevel(const ProbeContext&, std::uint32_t,
+                                          std::uint32_t result) {
+  return rom_callback_state((result & 0xfU) == 3U);
+}
+
 std::uint32_t finalize_rom_i2c_same_bod_threshold(const ProbeContext& context,
                                                    std::uint32_t, std::uint32_t result) {
   const std::uint8_t after =
@@ -1248,6 +1263,31 @@ RawSample IRAM_ATTR NOINLINE_ATTR measure_rom_i2c_callback_once(
   asm volatile("wsr %0, ps\nrsync" : : "a"(saved_ps) : "memory");
   sample.cycles = sample.end_ccount - sample.start_ccount;
   sample.checksum = finalize == nullptr ? kernel_result : finalize(context, seed, kernel_result);
+  sample.has_cache_counters = collect_cache_counters;
+  require_cache_counter_signature(sample, kInternalCacheHitSignature, collect_cache_counters);
+  return sample;
+}
+
+RawSample IRAM_ATTR NOINLINE_ATTR measure_xtos_intlevel_once(
+    const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
+    bool collect_cache_counters) {
+  RawSample sample{};
+  if (collect_cache_counters) clear_cache_counters();
+  std::uint32_t saved_ps = 0U;
+  std::uint32_t raised_ps = 0U;
+  std::uint32_t restored_ps = 0U;
+  asm volatile("rsil %0, 3\nrsr %1, ps" : "=a"(saved_ps), "=a"(raised_ps) : : "memory");
+  sample.start_core = esp_cpu_get_core_id();
+  sample.start_ccount = esp_cpu_get_cycle_count();
+  const std::uint32_t kernel_result = kernel(context, seed);
+  sample.end_ccount = esp_cpu_get_cycle_count();
+  sample.end_core = esp_cpu_get_core_id();
+  asm volatile("rsr %0, ps" : "=a"(restored_ps) : : "memory");
+  if (collect_cache_counters) sample.cache_counters = read_cache_counters();
+  asm volatile("wsr %0, ps\nrsync" : : "a"(saved_ps) : "memory");
+  sample.cycles = sample.end_ccount - sample.start_ccount;
+  sample.checksum = finalize == nullptr ? kernel_result : finalize(context, seed, kernel_result);
+  if (restored_ps != raised_ps) sample.checksum = 0U;
   sample.has_cache_counters = collect_cache_counters;
   require_cache_counter_signature(sample, kInternalCacheHitSignature, collect_cache_counters);
   return sample;
@@ -1726,6 +1766,14 @@ constexpr Measurement kMeasurements[] = {
     {"rom_set_cpu_ticks_per_us_same_value", "internal-to-internal", 0U, 1U, 0U,
      tinydraw_rom_set_cpu_ticks, prepare_none, finalize_rom_cpu_ticks,
      kRomCallbackStatePreservedChecksum, measure_rom_callback_once},
+    {"rom_baseline_xtos_set_intlevel_restore_ps_40c00", "internal-to-internal", 0U, 1U, 0U,
+     tinydraw_rom_baseline_xtos_set_intlevel_restore_ps_40c00, prepare_none,
+     finalize_rom_baseline_xtos_intlevel, kRomCallbackStatePreservedChecksum,
+     measure_xtos_intlevel_once},
+    {"rom_xtos_set_intlevel_restore_ps_40c00", "internal-to-internal", 0U, 1U, 0U,
+     tinydraw_rom_xtos_set_intlevel_restore_ps_40c00, prepare_none,
+     finalize_rom_xtos_intlevel, kRomCallbackStatePreservedChecksum,
+     measure_xtos_intlevel_once},
     {"rom_i2c_baseline_write_same_bod_threshold", "other", 0U, 1U, 0U,
      tinydraw_rom_i2c_baseline_write_same_bod_threshold, prepare_none,
      finalize_rom_i2c_same_bod_threshold, kRomCallbackStatePreservedChecksum,
@@ -1971,11 +2019,14 @@ constexpr bool kResetStateReadCaptureMode = false;
 constexpr std::size_t kResetStateReadMeasurementCount = 8U;
 constexpr bool kRtcBootReadCaptureMode = false;
 constexpr std::size_t kRtcBootReadMeasurementCount = 6U;
+constexpr bool kXtosIntlevelCaptureMode = true;
+constexpr std::size_t kXtosIntlevelMeasurementCount = 2U;
 static_assert(static_cast<unsigned>(kMmioSlopeCaptureMode) +
                   static_cast<unsigned>(kRomCallbackCaptureMode) +
                   static_cast<unsigned>(kRomI2cWriteCaptureMode) +
                   static_cast<unsigned>(kResetStateReadCaptureMode) +
-                  static_cast<unsigned>(kRtcBootReadCaptureMode) <=
+                  static_cast<unsigned>(kRtcBootReadCaptureMode) +
+                  static_cast<unsigned>(kXtosIntlevelCaptureMode) <=
               1U);
 
 bool is_mmio_slope_measurement(const Measurement& measurement) {
@@ -2064,8 +2115,21 @@ bool is_rtc_boot_read_measurement(const Measurement& measurement) {
   return false;
 }
 
+bool is_xtos_intlevel_measurement(const Measurement& measurement) {
+  constexpr const char* kIds[] = {
+      "rom_baseline_xtos_set_intlevel_restore_ps_40c00",
+      "rom_xtos_set_intlevel_restore_ps_40c00",
+  };
+  static_assert(std::size(kIds) == kXtosIntlevelMeasurementCount);
+  for (const char* id : kIds) {
+    if (std::strcmp(measurement.id, id) == 0) return true;
+  }
+  return false;
+}
+
 bool run_suite(const ProbeContext& context, const char* contention_mode) {
   for (const auto& measurement : kMeasurements) {
+    if (kXtosIntlevelCaptureMode && !is_xtos_intlevel_measurement(measurement)) continue;
     if (kRtcBootReadCaptureMode && !is_rtc_boot_read_measurement(measurement)) continue;
     if (kResetStateReadCaptureMode && !is_reset_state_read_measurement(measurement)) continue;
     if (kRomI2cWriteCaptureMode && !is_rom_i2c_write_measurement(measurement)) continue;
@@ -2086,7 +2150,8 @@ void probe_task(void*) {
   }
   print_metadata(context);
   bool passed = run_suite(context, "single_core");
-  if (passed && (kResetStateReadCaptureMode || kRtcBootReadCaptureMode)) {
+  if (passed &&
+      (kResetStateReadCaptureMode || kRtcBootReadCaptureMode || kXtosIntlevelCaptureMode)) {
     // These cohorts require attributable SoC-global cache counters; a
     // contended pass cannot satisfy that boundary.
   } else if (passed && start_contention(context)) {
@@ -2098,8 +2163,10 @@ void probe_task(void*) {
               ",\"record\":\"run-complete\",\"measurements\":%lu,\"samplesPerMeasurement\":%d,"
               "\"pass\":%s}\n",
               kRecordPrefix, kProtocolVersion,
-              static_cast<unsigned long>((kRtcBootReadCaptureMode
-                                              ? kRtcBootReadMeasurementCount
+              static_cast<unsigned long>((kXtosIntlevelCaptureMode
+                                              ? kXtosIntlevelMeasurementCount
+                                              : (kRtcBootReadCaptureMode
+                                                     ? kRtcBootReadMeasurementCount
                                               : (kResetStateReadCaptureMode
                                                      ? kResetStateReadMeasurementCount
                                                      : (kRomI2cWriteCaptureMode
@@ -2108,8 +2175,9 @@ void probe_task(void*) {
                                                                    ? kRomCallbackMeasurementCount
                                                                    : (kMmioSlopeCaptureMode
                                                                           ? kMmioSlopeMeasurementCount
-                                                                          : std::size(kMeasurements)))))) *
-                                         ((kResetStateReadCaptureMode || kRtcBootReadCaptureMode)
+                                                                          : std::size(kMeasurements))))))) *
+                                         ((kResetStateReadCaptureMode || kRtcBootReadCaptureMode ||
+                                           kXtosIntlevelCaptureMode)
                                               ? 1U
                                               : 2U)),
               kSamplesPerMeasurement,

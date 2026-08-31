@@ -35,6 +35,29 @@ tinydraw_rom_noop_void_u32:
     .end no-transform
     .size tinydraw_rom_noop_void_u32, .-tinydraw_rom_noop_void_u32
 
+    .macro DEFINE_XTOS_INTLEVEL_WRAPPER name, target
+    .literal .Lxtos_intlevel_restore_ps_\@, 0x00040c00
+    .literal .Lxtos_intlevel_target_\@, \target
+    .balign 32
+    .global \name
+    .type \name, @function
+\name:
+    .begin no-transform
+    entry   a1, 32
+    rsr.ps  a9
+    s32i    a9, a1, 16
+    l32r    a10, .Lxtos_intlevel_restore_ps_\@
+    l32r    a8, .Lxtos_intlevel_target_\@
+    callx8  a8
+    l32i    a9, a1, 16
+    wsr.ps  a9
+    rsync
+    mov.n   a2, a10
+    retw.n
+    .end no-transform
+    .size \name, .-\name
+    .endm
+
     .macro DEFINE_RESET_REASON_WRAPPER name, target, core
     .literal .Lrom_reset_target_\@, \target
     .balign 32
@@ -101,3 +124,6 @@ DEFINE_MEMSET_WRAPPER tinydraw_rom_memset_52e0, memset, 0x52e
 
 DEFINE_CPU_TICKS_WRAPPER tinydraw_rom_baseline_set_cpu_ticks, tinydraw_rom_noop_void_u32
 DEFINE_CPU_TICKS_WRAPPER tinydraw_rom_set_cpu_ticks, esp_rom_set_cpu_ticks_per_us
+
+DEFINE_XTOS_INTLEVEL_WRAPPER tinydraw_rom_baseline_xtos_set_intlevel_restore_ps_40c00, tinydraw_rom_noop_u32
+DEFINE_XTOS_INTLEVEL_WRAPPER tinydraw_rom_xtos_set_intlevel_restore_ps_40c00, _xtos_set_intlevel
