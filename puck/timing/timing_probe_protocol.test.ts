@@ -52,6 +52,11 @@ const fixtureMetadata = {
   },
 };
 
+const fixtureCacheCounters = {
+  ibus: { accesses: 43, misses: 2 },
+  dbus: { accesses: 10, flashMisses: 0, psramMisses: 0 },
+};
+
 function record(value: unknown): string {
   return `${TIMING_PROBE_RECORD_PREFIX}${JSON.stringify(value)}`;
 }
@@ -62,6 +67,7 @@ function fixtureLog(
   badEndCore = false,
   descriptorKernel?: string,
   counterCore: 0 | 1 = 0,
+  includeCacheCounters: boolean | ((ordinal: number) => boolean) = false,
 ): string {
   const id = "sram_aligned_stream_single_core";
   const lines = [
@@ -83,6 +89,10 @@ function fixtureLog(
   ];
   for (let ordinal = 0; ordinal < samples; ++ordinal) {
     const start = 1000 + ordinal * 20;
+    const includeCounters =
+      typeof includeCacheCounters === "function"
+        ? includeCacheCounters(ordinal)
+        : includeCacheCounters;
     lines.push(
       record({
         protocolVersion: 1,
@@ -95,6 +105,7 @@ function fixtureLog(
           startCcount: start,
           endCcount: start + 10,
           cycles: badDelta && ordinal === 0 ? 11 : 10,
+          ...(includeCounters ? { cacheCounters: fixtureCacheCounters } : {}),
         },
         checksum: ordinal,
       }),
@@ -130,6 +141,34 @@ describe("timing-probe capture protocol", () => {
     expect(receipts).toHaveLength(1);
     expect(receipts[0]!.measurement.samples).toHaveLength(100);
     expect(receipts[0]!.boot.bootLogSha256).toBe(assembleOptions.bootLogSha256);
+    expect(receipts[0]!.measurement.samples[0]!.cacheCounters).toBeUndefined();
+  });
+
+  test("retains optional uint32 cache counters from sample records", () => {
+    const receipts = assembleTimingProbeReceipts(
+      fixtureLog(100, false, false, undefined, 0, true),
+      assembleOptions,
+    );
+    expect(receipts[0]!.measurement.samples[0]!.cacheCounters).toEqual(fixtureCacheCounters);
+  });
+
+  test("requires cache counters on every sample when a measurement includes them", () => {
+    expect(() =>
+      assembleTimingProbeReceipts(
+        fixtureLog(100, false, false, undefined, 0, (ordinal) => ordinal !== 50),
+        assembleOptions,
+      ),
+    ).toThrow("cacheCounters must be present on every sample or absent from every sample");
+  });
+
+  test("rejects cache counters outside the uint32 domain", () => {
+    const log = fixtureLog(100, false, false, undefined, 0, true).replace(
+      '"accesses":43',
+      '"accesses":4294967296',
+    );
+    expect(() => assembleTimingProbeReceipts(log, assembleOptions)).toThrow(
+      "cacheCounters.ibus.accesses must be an integer from 0 through 4294967295",
+    );
   });
 
   test("rejects a truncated measurement below the sample floor", () => {
@@ -183,11 +222,16 @@ describe("standalone timing-probe firmware structure", () => {
   test("covers every requested memory shape in both contention modes", async () => {
     const root = join(import.meta.dir, "../..");
     const source = await Bun.file(join(root, "esp32/main/timing_probe/timing_probe.cpp")).text();
+    const rgbWindowAssembly = await Bun.file(
+      join(root, "esp32/main/timing_probe/rgb565_call_window_esp32s3.S"),
+    ).text();
     for (const kernel of [
       "sram_aligned_dependent",
       "sram_unaligned_dependent",
       "sram_aligned_stream",
       "sram_unaligned_stream",
+      "rgb565_stage_five_scalar_oracle_hot",
+      "rgb565_stage_five_scalar_oracle_cold",
       "psram_hot_sequential",
       "psram_cold_sequential",
       "psram_hot_random",
@@ -207,6 +251,33 @@ describe("standalone timing-probe firmware structure", () => {
     expect(source).toContain("keeps its probe buffers alive until the next reset");
     expect(source).toContain("IRAM_ATTR NOINLINE_ATTR measure_once");
     expect(source).toContain("CONFIG_ESP32S3_INSTRUCTION_CACHE_LINE_SIZE");
+    expect(source).toContain("EXTMEM_IBUS_ACS_MISS_CNT_REG");
+    expect(source).toContain("EXTMEM_DBUS_ACS_FLASH_MISS_CNT_REG");
+    expect(source).toContain("EXTMEM_DBUS_ACS_SPIRAM_MISS_CNT_REG");
+    expect(source).toContain("0x1234U, 0xabcdU, 0x00ffU, 0xf81fU, 0x07e0U");
+    expect(source).toContain("kRgb565StageOutputChecksum = 0x471e'969fU");
+    expect(source).toContain(
+      "[[gnu::noipa, gnu::aligned(32)]] void stage_pixels_swapped_scalar_oracle",
+    );
+    expect(source).toContain("prepare_rgb565_stage_hot");
+    expect(source).toContain("prepare_rgb565_stage_cold");
+    expect(source).toContain("measure_rgb565_stage_once");
+    const rgbSampler = source.slice(
+      source.indexOf("RawSample IRAM_ATTR NOINLINE_ATTR measure_rgb565_stage_once"),
+      source.indexOf("void print_measurement_start"),
+    );
+    expect(rgbSampler).toContain("tinydraw_measure_rgb565_call_window(&call_window");
+    expect(rgbSampler).not.toContain("sample.start_ccount = esp_cpu_get_cycle_count();");
+    expect(rgbSampler).not.toContain("sample.end_ccount = esp_cpu_get_cycle_count();");
+    expect(rgbWindowAssembly.match(/callx8\s+a8/g)).toHaveLength(1);
+    const startRead = rgbWindowAssembly.indexOf("rsr.ccount  a4");
+    const oracleCall = rgbWindowAssembly.indexOf("callx8      a8");
+    const endRead = rgbWindowAssembly.indexOf("rsr.ccount  a5");
+    const firstStore = rgbWindowAssembly.indexOf("s32i        a4");
+    expect(startRead).toBeGreaterThan(-1);
+    expect(startRead).toBeLessThan(oracleCall);
+    expect(oracleCall).toBeLessThan(endRead);
+    expect(endRead).toBeLessThan(firstStore);
     expect(source).not.toContain("esp_cache_get_line_size_by_addr");
     expect(source).toContain("esp_partition_mmap");
     expect(source).not.toContain("esp_partition_erase");
@@ -225,7 +296,8 @@ describe("standalone timing-probe firmware structure", () => {
     expect(projectCmake).toContain("timing-probe");
     expect(projectCmake).toContain('if(TINYDRAW_TIMING_PROBE)');
     expect(projectCmake).toContain('sdkconfig.timing-probe.defaults');
-    expect(componentCmake).toContain('set(TINYDRAW_APP_SRCS "timing_probe/timing_probe.cpp")');
+    expect(componentCmake).toContain('"timing_probe/timing_probe.cpp"');
+    expect(componentCmake).toContain('"timing_probe/rgb565_call_window_esp32s3.S"');
     expect(script).toContain("CONFIG_ESPTOOLPY_FLASHFREQ_80M=y");
     expect(script).toContain("assert_timing_probe_config");
     expect(script).toContain("TINYDRAW_FIRMWARE_VARIANT=timing-probe reconfigure");

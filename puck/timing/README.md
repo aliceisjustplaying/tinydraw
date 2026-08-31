@@ -33,6 +33,25 @@ NDJSON records for 100-sample SRAM, PSRAM, read-only flash-mmap, and safe
 instruction-fetch probes in solo and second-core-PSRAM-contention modes. It
 never programs or erases data partitions.
 
+Solo samples optionally carry the ESP32-S3's SoC-global IBus and DBus access
+and miss counters. The firmware clears them before the sample's start CCOUNT
+and reads the registers sequentially after its end CCOUNT, so their window is
+slightly wider than the raw cycle interval and is not an atomic snapshot. A
+receipt either carries these counters on every sample in a measurement or on
+none. Contended samples omit them because the shared registers cannot
+coherently attribute core-1 traffic to the core-0 kernel.
+
+The five-pixel RGB565 scalar oracle has separate hot and cold measurements.
+An IRAM assembly boundary materializes the target and ABI arguments before the
+start CCOUNT, keeps that endpoint live in its caller register window, executes
+exactly one `callx8` plus the exact 41-byte body, and reads the end CCOUNT
+immediately on return. It stores both endpoints afterward. Generic sampler
+dispatch and setup are outside the window. The body is 32-byte aligned and
+therefore occupies two instruction-cache lines.
+The cold preparation invalidates those two lines after resetting the input and
+output, while the hot measurement uses only its declared suite warmup and does
+not call the oracle during per-sample preparation.
+
 The benchmark tasks intentionally saturate both cores at high priority, which
 starves the idle tasks during long PSRAM and contention probes. This firmware
 variant therefore disables the task watchdog while retaining the interrupt

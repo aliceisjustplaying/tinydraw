@@ -1,6 +1,7 @@
 import {
   parseCalibrationReceiptValue,
   type CalibrationReceipt,
+  type CachePerformanceCounters,
   type CcountKernelMeasurement,
   type CcountSample,
 } from "./calibration_receipt";
@@ -31,8 +32,13 @@ function object(value: unknown, path: string): JsonObject {
   return value as JsonObject;
 }
 
-function exactKeys(value: JsonObject, path: string, keys: readonly string[]): void {
-  const allowed = new Set(keys);
+function exactKeys(
+  value: JsonObject,
+  path: string,
+  keys: readonly string[],
+  optional: readonly string[] = [],
+): void {
+  const allowed = new Set([...keys, ...optional]);
   for (const key of keys) {
     if (!Object.hasOwn(value, key)) throw new Error(`${path}.${key} is required`);
   }
@@ -48,11 +54,37 @@ function string(value: unknown, path: string): string {
   return value;
 }
 
-function integer(value: unknown, path: string, minimum = 0): number {
-  if (!Number.isSafeInteger(value) || (value as number) < minimum) {
-    throw new Error(`${path} must be an integer >= ${minimum}`);
+function integer(
+  value: unknown,
+  path: string,
+  minimum = 0,
+  maximum = Number.MAX_SAFE_INTEGER,
+): number {
+  if (!Number.isSafeInteger(value) || (value as number) < minimum || (value as number) > maximum) {
+    throw new Error(`${path} must be an integer from ${minimum} through ${maximum}`);
   }
   return value as number;
+}
+
+function parseCacheCounters(value: unknown, path: string): CachePerformanceCounters {
+  const counters = object(value, path);
+  exactKeys(counters, path, ["ibus", "dbus"]);
+  const ibus = object(counters.ibus, `${path}.ibus`);
+  exactKeys(ibus, `${path}.ibus`, ["accesses", "misses"]);
+  const dbus = object(counters.dbus, `${path}.dbus`);
+  exactKeys(dbus, `${path}.dbus`, ["accesses", "flashMisses", "psramMisses"]);
+  const uint32Max = 0xffff_ffff;
+  return {
+    ibus: {
+      accesses: integer(ibus.accesses, `${path}.ibus.accesses`, 0, uint32Max),
+      misses: integer(ibus.misses, `${path}.ibus.misses`, 0, uint32Max),
+    },
+    dbus: {
+      accesses: integer(dbus.accesses, `${path}.dbus.accesses`, 0, uint32Max),
+      flashMisses: integer(dbus.flashMisses, `${path}.dbus.flashMisses`, 0, uint32Max),
+      psramMisses: integer(dbus.psramMisses, `${path}.dbus.psramMisses`, 0, uint32Max),
+    },
+  };
 }
 
 function protocolRecord(value: unknown, line: number): JsonObject {
@@ -91,8 +123,13 @@ function parseDescriptor(value: unknown, path: string): MeasurementDescriptor {
 
 function parseSample(value: unknown, path: string): CcountSample {
   const sample = object(value, path);
-  exactKeys(sample, path, ["ordinal", "startCore", "endCore", "startCcount", "endCcount", "cycles"]);
-  return {
+  exactKeys(
+    sample,
+    path,
+    ["ordinal", "startCore", "endCore", "startCcount", "endCcount", "cycles"],
+    ["cacheCounters"],
+  );
+  const parsed: CcountSample = {
     ordinal: integer(sample.ordinal, `${path}.ordinal`),
     startCore: integer(sample.startCore, `${path}.startCore`) as 0 | 1,
     endCore: integer(sample.endCore, `${path}.endCore`) as 0 | 1,
@@ -100,6 +137,10 @@ function parseSample(value: unknown, path: string): CcountSample {
     endCcount: integer(sample.endCcount, `${path}.endCcount`),
     cycles: integer(sample.cycles, `${path}.cycles`, 1),
   };
+  if (sample.cacheCounters !== undefined) {
+    parsed.cacheCounters = parseCacheCounters(sample.cacheCounters, `${path}.cacheCounters`);
+  }
+  return parsed;
 }
 
 export function assembleTimingProbeReceipts(

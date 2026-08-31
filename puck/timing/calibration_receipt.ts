@@ -43,6 +43,18 @@ export interface CounterMetadata {
   core: 0 | 1;
 }
 
+export interface CachePerformanceCounters {
+  ibus: {
+    accesses: number;
+    misses: number;
+  };
+  dbus: {
+    accesses: number;
+    flashMisses: number;
+    psramMisses: number;
+  };
+}
+
 export interface CcountSample {
   ordinal: number;
   startCore: 0 | 1;
@@ -50,6 +62,7 @@ export interface CcountSample {
   startCcount: number;
   endCcount: number;
   cycles: number;
+  cacheCounters?: CachePerformanceCounters;
 }
 
 export interface CcountKernelMeasurement {
@@ -141,8 +154,9 @@ function exactKeys(
   path: string,
   required: readonly string[],
   issues: string[],
+  optional: readonly string[] = [],
 ): void {
-  const allowed = new Set(required);
+  const allowed = new Set([...required, ...optional]);
   for (const key of required) {
     if (!Object.hasOwn(object, key)) {
       issues.push(`${path}.${key} is required`);
@@ -152,6 +166,32 @@ function exactKeys(
     if (!allowed.has(key)) {
       issues.push(`${path}.${key} is not allowed`);
     }
+  }
+}
+
+function validateCacheCounters(value: unknown, path: string, issues: string[]): void {
+  const counters = asObject(value, path, issues);
+  if (!counters) return;
+  exactKeys(counters, path, ["ibus", "dbus"], issues);
+
+  const ibus = asObject(counters.ibus, `${path}.ibus`, issues);
+  if (ibus) {
+    exactKeys(ibus, `${path}.ibus`, ["accesses", "misses"], issues);
+    requireInteger(ibus.accesses, `${path}.ibus.accesses`, issues, 0, UINT32_MAX);
+    requireInteger(ibus.misses, `${path}.ibus.misses`, issues, 0, UINT32_MAX);
+  }
+
+  const dbus = asObject(counters.dbus, `${path}.dbus`, issues);
+  if (dbus) {
+    exactKeys(
+      dbus,
+      `${path}.dbus`,
+      ["accesses", "flashMisses", "psramMisses"],
+      issues,
+    );
+    requireInteger(dbus.accesses, `${path}.dbus.accesses`, issues, 0, UINT32_MAX);
+    requireInteger(dbus.flashMisses, `${path}.dbus.flashMisses`, issues, 0, UINT32_MAX);
+    requireInteger(dbus.psramMisses, `${path}.dbus.psramMisses`, issues, 0, UINT32_MAX);
   }
 }
 
@@ -307,6 +347,7 @@ function validateSamples(value: unknown, path: string, issues: string[]): void {
       samplePath,
       ["ordinal", "startCore", "endCore", "startCcount", "endCcount", "cycles"],
       issues,
+      ["cacheCounters"],
     );
     const { ordinal, startCore, endCore, startCcount, endCcount, cycles } = sample;
     const ordinalOk = requireInteger(ordinal, `${samplePath}.ordinal`, issues, 0);
@@ -315,6 +356,9 @@ function validateSamples(value: unknown, path: string, issues: string[]): void {
     const startOk = requireInteger(startCcount, `${samplePath}.startCcount`, issues, 0, UINT32_MAX);
     const endOk = requireInteger(endCcount, `${samplePath}.endCcount`, issues, 0, UINT32_MAX);
     const cyclesOk = requireInteger(cycles, `${samplePath}.cycles`, issues, 1, UINT32_MAX);
+    if (sample.cacheCounters !== undefined) {
+      validateCacheCounters(sample.cacheCounters, `${samplePath}.cacheCounters`, issues);
+    }
     if (ordinalOk && ordinal !== index) {
       issues.push(`${samplePath}.ordinal must equal its zero-based array index ${index}`);
     }
@@ -328,6 +372,16 @@ function validateSamples(value: unknown, path: string, issues: string[]): void {
       }
     }
   });
+  const counterSamples = value.filter(
+    (sampleValue) =>
+      sampleValue !== null &&
+      typeof sampleValue === "object" &&
+      !Array.isArray(sampleValue) &&
+      Object.hasOwn(sampleValue, "cacheCounters"),
+  ).length;
+  if (counterSamples !== 0 && counterSamples !== value.length) {
+    issues.push(`${path}.cacheCounters must be present on every sample or absent from every sample`);
+  }
 }
 
 function validateKernelMeasurement(object: JsonObject, issues: string[]): void {

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cinttypes>
 #include <cstddef>
@@ -25,6 +26,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "sdkconfig.h"
+#include "soc/extmem_reg.h"
+#include "soc/soc.h"
 #include "timing_probe_build_metadata.h"
 
 namespace tinydraw::esp32::timing_probe {
@@ -45,6 +48,17 @@ constexpr std::size_t kContentionBytes = 512U * 1024U;
 constexpr std::uint32_t kDependentLoads = 4096U;
 constexpr std::uint32_t kRandomHotLoads = 4096U;
 constexpr std::uint32_t kRandomColdLoads = 16384U;
+constexpr std::size_t kRgb565StagePixels = 5U;
+constexpr std::size_t kRgb565OracleCodeBytes = 41U;
+constexpr std::array<std::uint16_t, kRgb565StagePixels> kRgb565StageInput = {
+    0x1234U, 0xabcdU, 0x00ffU, 0xf81fU, 0x07e0U,
+};
+constexpr std::uint32_t kRgb565StageOutputChecksum = 0x471e'969fU;
+
+DRAM_ATTR std::uint16_t g_rgb565_stage_source[kRgb565StagePixels] = {
+    0x1234U, 0xabcdU, 0x00ffU, 0xf81fU, 0x07e0U,
+};
+DRAM_ATTR std::uint16_t g_rgb565_stage_destination[kRgb565StagePixels] = {};
 
 struct ProbeContext {
   std::uint32_t* sram_dependent = nullptr;
@@ -56,6 +70,23 @@ struct ProbeContext {
   esp_partition_mmap_handle_t flash_handle = 0;
 };
 
+struct CacheCounters {
+  std::uint32_t ibus_accesses;
+  std::uint32_t ibus_misses;
+  std::uint32_t dbus_accesses;
+  std::uint32_t dbus_flash_misses;
+  std::uint32_t dbus_psram_misses;
+};
+
+struct Rgb565CallWindow {
+  std::uint32_t start_ccount;
+  std::uint32_t end_ccount;
+};
+
+extern "C" void tinydraw_measure_rgb565_call_window(
+    Rgb565CallWindow* endpoints, const std::uint16_t* source, std::uint16_t* destination,
+    int width, void (*oracle)(const std::uint16_t*, std::uint16_t*, int));
+
 struct RawSample {
   std::uint32_t start_ccount;
   std::uint32_t end_ccount;
@@ -63,10 +94,14 @@ struct RawSample {
   std::uint32_t checksum;
   int start_core;
   int end_core;
+  CacheCounters cache_counters;
+  bool has_cache_counters;
 };
 
 using Kernel = std::uint32_t (*)(const ProbeContext&, std::uint32_t);
 using Prepare = esp_err_t (*)(const ProbeContext&, Kernel, std::uint32_t);
+using Finalize = std::uint32_t (*)(const ProbeContext&, std::uint32_t, std::uint32_t);
+using Sampler = RawSample (*)(const ProbeContext&, Kernel, Finalize, std::uint32_t, bool);
 
 struct Measurement {
   const char* id;
@@ -76,6 +111,9 @@ struct Measurement {
   std::uint32_t warmup_iterations;
   Kernel kernel;
   Prepare prepare;
+  Finalize finalize = nullptr;
+  std::uint32_t expected_checksum = 0U;
+  Sampler sampler = nullptr;
 };
 
 std::atomic<bool> g_contention_run{false};
@@ -322,6 +360,30 @@ std::uint32_t IRAM_ATTR NOINLINE_ATTR sram_unaligned_stream(const ProbeContext& 
   return sum;
 }
 
+[[gnu::noipa, gnu::aligned(32)]] void stage_pixels_swapped_scalar_oracle(
+    const std::uint16_t* source, std::uint16_t* destination, int width) {
+  for (int column = 0; column < width; ++column) {
+    const std::uint16_t value = source[column];
+    destination[column] = static_cast<std::uint16_t>((value >> 8U) | (value << 8U));
+  }
+}
+
+std::uint32_t IRAM_ATTR NOINLINE_ATTR rgb565_stage_five_scalar_oracle(const ProbeContext&,
+                                                                      std::uint32_t) {
+  stage_pixels_swapped_scalar_oracle(g_rgb565_stage_source, g_rgb565_stage_destination,
+                                     static_cast<int>(kRgb565StagePixels));
+  return 0U;
+}
+
+std::uint32_t finalize_rgb565_stage(const ProbeContext&, std::uint32_t,
+                                    std::uint32_t) {
+  std::uint32_t checksum = 2'166'136'261U;
+  for (const std::uint16_t pixel : g_rgb565_stage_destination) {
+    checksum = (checksum ^ pixel) * 16'777'619U;
+  }
+  return checksum;
+}
+
 FORCE_INLINE_ATTR std::uint32_t psram_sequential(const ProbeContext& context, std::uint32_t seed,
                                                  std::size_t bytes) {
   const volatile std::uint32_t* words = context.psram;
@@ -452,15 +514,90 @@ esp_err_t prepare_flash_instruction_cold(const ProbeContext&, Kernel, std::uint3
                          ESP_CACHE_MSYNC_FLAG_DIR_M2C | ESP_CACHE_MSYNC_FLAG_TYPE_INST);
 }
 
+void reset_rgb565_stage_data() {
+  std::copy(kRgb565StageInput.begin(), kRgb565StageInput.end(),
+            std::begin(g_rgb565_stage_source));
+  std::fill(std::begin(g_rgb565_stage_destination), std::end(g_rgb565_stage_destination), 0U);
+}
+
+esp_err_t prepare_rgb565_stage_hot(const ProbeContext&, Kernel, std::uint32_t) {
+  reset_rgb565_stage_data();
+  return ESP_OK;
+}
+
+esp_err_t prepare_rgb565_stage_cold(const ProbeContext&, Kernel, std::uint32_t) {
+  reset_rgb565_stage_data();
+  const auto address = reinterpret_cast<std::uintptr_t>(&stage_pixels_swapped_scalar_oracle);
+  constexpr std::size_t line_size = CONFIG_ESP32S3_INSTRUCTION_CACHE_LINE_SIZE;
+  static_assert(line_size == 32U);
+  static_assert(kRgb565OracleCodeBytes > line_size && kRgb565OracleCodeBytes <= line_size * 2U);
+  const auto aligned_start = address & ~(static_cast<std::uintptr_t>(line_size) - 1U);
+  const auto aligned_end =
+      (address + kRgb565OracleCodeBytes + line_size - 1U) &
+      ~(static_cast<std::uintptr_t>(line_size) - 1U);
+  return esp_cache_msync(
+      reinterpret_cast<void*>(aligned_start), aligned_end - aligned_start,
+      ESP_CACHE_MSYNC_FLAG_DIR_M2C | ESP_CACHE_MSYNC_FLAG_INVALIDATE |
+          ESP_CACHE_MSYNC_FLAG_TYPE_INST);
+}
+
+FORCE_INLINE_ATTR void clear_cache_counters() {
+  REG_WRITE(EXTMEM_CACHE_ACS_CNT_CLR_REG,
+            EXTMEM_ICACHE_ACS_CNT_CLR | EXTMEM_DCACHE_ACS_CNT_CLR);
+  asm volatile("memw" ::: "memory");
+}
+
+FORCE_INLINE_ATTR CacheCounters read_cache_counters() {
+  asm volatile("memw" ::: "memory");
+  return {
+      .ibus_accesses = REG_READ(EXTMEM_IBUS_ACS_CNT_REG),
+      .ibus_misses = REG_READ(EXTMEM_IBUS_ACS_MISS_CNT_REG),
+      .dbus_accesses = REG_READ(EXTMEM_DBUS_ACS_CNT_REG),
+      .dbus_flash_misses = REG_READ(EXTMEM_DBUS_ACS_FLASH_MISS_CNT_REG),
+      .dbus_psram_misses = REG_READ(EXTMEM_DBUS_ACS_SPIRAM_MISS_CNT_REG),
+  };
+}
+
 RawSample IRAM_ATTR NOINLINE_ATTR measure_once(const ProbeContext& context, Kernel kernel,
-                                               std::uint32_t seed) {
+                                               Finalize finalize, std::uint32_t seed,
+                                               bool collect_cache_counters) {
   RawSample sample{};
+  if (collect_cache_counters) clear_cache_counters();
   sample.start_core = esp_cpu_get_core_id();
   sample.start_ccount = esp_cpu_get_cycle_count();
-  sample.checksum = kernel(context, seed);
+  const std::uint32_t kernel_result = kernel(context, seed);
   sample.end_ccount = esp_cpu_get_cycle_count();
   sample.end_core = esp_cpu_get_core_id();
+  if (collect_cache_counters) sample.cache_counters = read_cache_counters();
   sample.cycles = sample.end_ccount - sample.start_ccount;
+  sample.checksum = finalize == nullptr ? kernel_result : finalize(context, seed, kernel_result);
+  sample.has_cache_counters = collect_cache_counters;
+  return sample;
+}
+
+RawSample IRAM_ATTR NOINLINE_ATTR measure_rgb565_stage_once(const ProbeContext& context, Kernel,
+                                                            Finalize finalize, std::uint32_t seed,
+                                                            bool collect_cache_counters) {
+  RawSample sample{};
+  Rgb565CallWindow call_window{};
+  const std::uint16_t* const source = g_rgb565_stage_source;
+  std::uint16_t* const destination = g_rgb565_stage_destination;
+  constexpr int width = static_cast<int>(kRgb565StagePixels);
+  if (collect_cache_counters) clear_cache_counters();
+
+  // The assembly boundary materializes these arguments before reading CCOUNT, keeps the start in
+  // its caller register window, and stores both endpoints only after the oracle returns.
+  sample.start_core = esp_cpu_get_core_id();
+  tinydraw_measure_rgb565_call_window(&call_window, source, destination, width,
+                                      &stage_pixels_swapped_scalar_oracle);
+  sample.end_core = esp_cpu_get_core_id();
+  sample.start_ccount = call_window.start_ccount;
+  sample.end_ccount = call_window.end_ccount;
+
+  if (collect_cache_counters) sample.cache_counters = read_cache_counters();
+  sample.cycles = sample.end_ccount - sample.start_ccount;
+  sample.checksum = finalize(context, seed, 0U);
+  sample.has_cache_counters = collect_cache_counters;
   return sample;
 }
 
@@ -495,7 +632,14 @@ bool run_measurement(const ProbeContext& context, const Measurement& measurement
       print_error(measurement_id, "cache-prepare", prepared);
       return false;
     }
-    const RawSample sample = measure_once(context, measurement.kernel, seed);
+    const bool collect_cache_counters = std::strcmp(contention_mode, "single_core") == 0;
+    const Sampler sampler = measurement.sampler == nullptr ? measure_once : measurement.sampler;
+    const RawSample sample = sampler(context, measurement.kernel, measurement.finalize, seed,
+                                     collect_cache_counters);
+    if (measurement.expected_checksum != 0U && sample.checksum != measurement.expected_checksum) {
+      print_error(measurement_id, "checksum");
+      return false;
+    }
     std::printf(
         "%s{\"protocolVersion\":%" PRIu32
         ",\"record\":\"sample\",\"measurementId\":",
@@ -503,10 +647,19 @@ bool run_measurement(const ProbeContext& context, const Measurement& measurement
     print_json_string(measurement_id);
     std::printf(
         ",\"sample\":{\"ordinal\":%d,\"startCore\":%d,\"endCore\":%d,"
-        "\"startCcount\":%" PRIu32 ",\"endCcount\":%" PRIu32
-        ",\"cycles\":%" PRIu32 "},\"checksum\":%" PRIu32 "}\n",
+        "\"startCcount\":%" PRIu32 ",\"endCcount\":%" PRIu32 ",\"cycles\":%" PRIu32,
         ordinal, sample.start_core, sample.end_core, sample.start_ccount, sample.end_ccount,
-        sample.cycles, sample.checksum);
+        sample.cycles);
+    if (sample.has_cache_counters) {
+      std::printf(
+          ",\"cacheCounters\":{\"ibus\":{\"accesses\":%" PRIu32 ",\"misses\":%" PRIu32
+          "},\"dbus\":{\"accesses\":%" PRIu32 ",\"flashMisses\":%" PRIu32
+          ",\"psramMisses\":%" PRIu32 "}}",
+          sample.cache_counters.ibus_accesses, sample.cache_counters.ibus_misses,
+          sample.cache_counters.dbus_accesses, sample.cache_counters.dbus_flash_misses,
+          sample.cache_counters.dbus_psram_misses);
+    }
+    std::printf("},\"checksum\":%" PRIu32 "}\n", sample.checksum);
     vTaskDelay(1);
   }
   std::printf("%s{\"protocolVersion\":%" PRIu32
@@ -621,6 +774,12 @@ constexpr Measurement kMeasurements[] = {
      sram_aligned_stream, prepare_none},
     {"sram_unaligned_stream", "internal-to-internal", kSramStreamBytes, 1U, kWarmupIterations,
      sram_unaligned_stream, prepare_none},
+    {"rgb565_stage_five_scalar_oracle_hot", "internal-to-internal", kRgb565StagePixels * 4U, 1U,
+     kWarmupIterations, rgb565_stage_five_scalar_oracle, prepare_rgb565_stage_hot,
+     finalize_rgb565_stage, kRgb565StageOutputChecksum, measure_rgb565_stage_once},
+    {"rgb565_stage_five_scalar_oracle_cold", "internal-to-internal", kRgb565StagePixels * 4U, 1U,
+     0U, rgb565_stage_five_scalar_oracle, prepare_rgb565_stage_cold, finalize_rgb565_stage,
+     kRgb565StageOutputChecksum, measure_rgb565_stage_once},
     {"psram_hot_sequential", "psram-to-internal", kPsramHotBytes, 1U, kWarmupIterations,
      psram_hot_sequential, prepare_psram_hot},
     {"psram_cold_sequential", "psram-to-internal", kPsramColdBytes, 1U, 0U,

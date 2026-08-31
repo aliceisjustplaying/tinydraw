@@ -28,9 +28,12 @@ set(TINYDRAW_APP_SRCS
   "${TINYDRAW_CORE}/src/world_canvas.cpp"
 )
 if(TINYDRAW_TIMING_PROBE)
-  set(TINYDRAW_APP_SRCS "timing_probe/timing_probe.cpp")
+  set(TINYDRAW_APP_SRCS
+    "timing_probe/timing_probe.cpp"
+    "timing_probe/rgb565_call_window_esp32s3.S"
+  )
   set(TINYDRAW_PLATFORM_SRCS "")
-  set(TINYDRAW_PLATFORM_REQUIRES app_update esp_hw_support esp_mm spi_flash)
+  set(TINYDRAW_PLATFORM_REQUIRES app_update esp_hw_support esp_mm soc spi_flash)
 elseif(TINYDRAW_QEMU)
   set(TINYDRAW_PLATFORM_SRCS "qemu_display.cpp")
   set(TINYDRAW_PLATFORM_REQUIRES esp_lcd_qemu_rgb)

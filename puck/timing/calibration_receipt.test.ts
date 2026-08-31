@@ -122,6 +122,53 @@ describe("calibration receipt provenance boundary", () => {
     );
   });
 
+  test("retains optional ESP32-S3 cache performance counters", async () => {
+    const candidate = JSON.parse(await fixture("valid/ccount-kernel.json")) as {
+      measurement: { samples: Array<Record<string, unknown>> };
+    };
+    for (const sample of candidate.measurement.samples) {
+      sample.cacheCounters = {
+        ibus: { accesses: 43, misses: 2 },
+        dbus: { accesses: 10, flashMisses: 0, psramMisses: 0 },
+      };
+    }
+    const receipt = parseCalibrationReceiptValue(candidate, { allowSchemaFixtures: true });
+    expect(receipt.measurement.samples[0]!.cacheCounters).toEqual({
+      ibus: { accesses: 43, misses: 2 },
+      dbus: { accesses: 10, flashMisses: 0, psramMisses: 0 },
+    });
+  });
+
+  test("requires optional cache counters on the whole measurement", async () => {
+    const candidate = JSON.parse(await fixture("valid/ccount-kernel.json")) as {
+      measurement: { samples: Array<Record<string, unknown>> };
+    };
+    candidate.measurement.samples[0]!.cacheCounters = {
+      ibus: { accesses: 43, misses: 2 },
+      dbus: { accesses: 10, flashMisses: 0, psramMisses: 0 },
+    };
+    expect(validateCalibrationReceipt(candidate)).toContain(
+      "$.measurement.samples.cacheCounters must be present on every sample or absent from every sample",
+    );
+  });
+
+  test("rejects malformed or out-of-range cache performance counters", async () => {
+    const candidate = JSON.parse(await fixture("valid/ccount-kernel.json")) as {
+      measurement: { samples: Array<Record<string, unknown>> };
+    };
+    candidate.measurement.samples[0]!.cacheCounters = {
+      ibus: { accesses: 0x1_0000_0000, misses: 2 },
+      dbus: { accesses: 10, flashMisses: 0 },
+    };
+    const issues = validateCalibrationReceipt(candidate);
+    expect(issues).toContain(
+      "$.measurement.samples[0].cacheCounters.ibus.accesses must be an integer from 0 through 4294967295",
+    );
+    expect(issues).toContain(
+      "$.measurement.samples[0].cacheCounters.dbus.psramMisses is required",
+    );
+  });
+
   test("reports malformed JSON as a receipt error", () => {
     expect(() => parseCalibrationReceipt("{")).toThrow(CalibrationReceiptError);
   });
@@ -133,10 +180,16 @@ describe("machine-readable schema", () => {
     const schema = (await Bun.file(join(import.meta.dir, "calibration-receipt.schema.json")).json()) as {
       properties: { schemaVersion: { const: number } };
       required: string[];
+      $defs: {
+        ccountSample: { properties: Record<string, unknown> };
+        samples: { allOf: unknown[] };
+      };
     };
     expect(schema.properties.schemaVersion.const).toBe(1);
     expect(schema.required).toEqual(
       expect.arrayContaining(["git", "toolchain", "sdkconfig", "boot", "counter", "measurement"]),
     );
+    expect(schema.$defs.ccountSample.properties).toHaveProperty("cacheCounters");
+    expect(schema.$defs.samples.allOf).toHaveLength(1);
   });
 });
