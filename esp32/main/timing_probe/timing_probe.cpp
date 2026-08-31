@@ -1172,6 +1172,7 @@ RawSample IRAM_ATTR NOINLINE_ATTR measure_rtc_boot_mmio_once(
   if (collect_cache_counters && primed_kernel != kernel) {
     static_cast<void>(measure_mmio_with_signature(context, kernel, finalize, seed,
                                                   collect_cache_counters, nullptr));
+    esp_rom_delay_us(5'000U);
     primed_kernel = kernel;
   }
   return measure_mmio_with_signature(context, kernel, finalize, seed, collect_cache_counters,

@@ -53,6 +53,7 @@ test("RTC boot-register peers define matched 2048- and 4096-read cohorts", async
   expect(firmware).toContain("kRtcBoot2048ReadSignature");
   expect(firmware).toContain(".ibus_accesses = 88U");
   expect(firmware).toContain("primed_kernel != kernel");
+  expect(firmware).toContain("esp_rom_delay_us(5'000U)");
   expect(firmware).toContain("measure_rtc_boot_4096_once");
   expect(firmware).toContain("measure_rtc_boot_2048_once");
 });
