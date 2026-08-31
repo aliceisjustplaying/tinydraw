@@ -1,6 +1,6 @@
-// Matched windowed-ABI callers for the exact full-boot ROM REGI2C write.
-// The firmware refuses to enter this pair unless a read-only preflight proves
-// that BBPLL block 0x66, host 1, register 4 already contains 0x6b.
+// Matched windowed-ABI callers for one state-preserving ROM REGI2C write.
+// Both peers materialize the documented BOD block, host, threshold register,
+// and boot-captured same value before one literal-backed callx8.
 
     .section .iram1, "ax"
 
@@ -22,10 +22,10 @@ tinydraw_rom_i2c_noop_write:
 \name:
     .begin no-transform
     entry   a1, 16
-    movi    a10, 0x66
+    movi    a10, 0x61
     movi.n  a11, 1
-    movi.n  a12, 4
-    movi    a13, 0x6b
+    movi.n  a12, 5
+    l32i    a13, a2, 120
     l32r    a8, .Lrom_i2c_write_target_\@
     callx8  a8
     movi.n  a2, 0
@@ -34,5 +34,5 @@ tinydraw_rom_i2c_noop_write:
     .size \name, .-\name
     .endm
 
-DEFINE_ROM_I2C_WRITE_WRAPPER tinydraw_rom_i2c_baseline_write_same_bbpll_mode, tinydraw_rom_i2c_noop_write
-DEFINE_ROM_I2C_WRITE_WRAPPER tinydraw_rom_i2c_write_same_bbpll_mode, rom_i2c_writeReg
+DEFINE_ROM_I2C_WRITE_WRAPPER tinydraw_rom_i2c_baseline_write_same_bod_threshold, tinydraw_rom_i2c_noop_write
+DEFINE_ROM_I2C_WRITE_WRAPPER tinydraw_rom_i2c_write_same_bod_threshold, rom_i2c_writeReg
