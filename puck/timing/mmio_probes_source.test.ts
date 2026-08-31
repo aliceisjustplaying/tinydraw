@@ -61,6 +61,14 @@ test("MMIO peers repeat exact aligned read and write cells", async () => {
   expect(firmware).toContain("static_assert(EXTMEM_CACHE_ACS_CNT_CLR_REG == 0x600c'40c4U)");
   expect(firmware).toContain("kMmioOperations = 4096U");
   expect(firmware).toContain("measure_mmio_once");
+  expect(firmware).toContain("kRtcMmioReadSignature");
+  expect(firmware).toContain(".ibus_accesses = 176U");
+  expect(firmware).toContain("measure_rtc_mmio_once");
+  expect(firmware).toContain('asm volatile("rsil %0, 15"');
+  expect(firmware).toContain('asm volatile("wsr %0, ps\\nrsync"');
+  expect(
+    firmware.indexOf('"mmio_write_extmem_cache_counter_clear_4096_aligned"'),
+  ).toBeGreaterThan(firmware.indexOf('"flash_instruction_hot"'));
 });
 
 interface DecodedInstruction {

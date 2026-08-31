@@ -201,6 +201,13 @@ constexpr CacheCounters kDependentExternalDcacheHitSignature{
     .dbus_flash_misses = 0U,
     .dbus_psram_misses = 0U,
 };
+constexpr CacheCounters kRtcMmioReadSignature{
+    .ibus_accesses = 176U,
+    .ibus_misses = 0U,
+    .dbus_accesses = 0U,
+    .dbus_flash_misses = 0U,
+    .dbus_psram_misses = 0U,
+};
 static_assert(kMatchedIcacheExecutedInstructions ==
               (kMatchedIcacheLines - 1U) * 16U + 6U + 2U);
 static_assert(kFlashIcacheHitSignature.ibus_accesses ==
@@ -867,16 +874,42 @@ RawSample IRAM_ATTR NOINLINE_ATTR measure_dependent_load_external_once(
   return sample;
 }
 
-RawSample IRAM_ATTR NOINLINE_ATTR measure_conditional_branch_once(
+FORCE_INLINE_ATTR RawSample measure_mmio_with_signature(
     const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
-    bool collect_cache_counters) {
-  RawSample sample =
-      measure_once(context, kernel, finalize, seed, collect_cache_counters);
-  require_cache_counter_signature(sample, kInternalCacheHitSignature, collect_cache_counters);
+    bool collect_cache_counters, const CacheCounters& expected_counters) {
+  RawSample sample{};
+  if (collect_cache_counters) clear_cache_counters();
+  std::uint32_t saved_ps = 0;
+  asm volatile("rsil %0, 15" : "=a"(saved_ps) : : "memory");
+  sample.start_core = esp_cpu_get_core_id();
+  sample.start_ccount = esp_cpu_get_cycle_count();
+  const std::uint32_t kernel_result = kernel(context, seed);
+  sample.end_ccount = esp_cpu_get_cycle_count();
+  sample.end_core = esp_cpu_get_core_id();
+  if (collect_cache_counters) sample.cache_counters = read_cache_counters();
+  asm volatile("wsr %0, ps\nrsync" : : "a"(saved_ps) : "memory");
+  sample.cycles = sample.end_ccount - sample.start_ccount;
+  sample.checksum = finalize == nullptr ? kernel_result : finalize(context, seed, kernel_result);
+  sample.has_cache_counters = collect_cache_counters;
+  require_cache_counter_signature(sample, expected_counters, collect_cache_counters);
   return sample;
 }
 
 RawSample IRAM_ATTR NOINLINE_ATTR measure_mmio_once(
+    const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
+    bool collect_cache_counters) {
+  return measure_mmio_with_signature(context, kernel, finalize, seed, collect_cache_counters,
+                                     kInternalCacheHitSignature);
+}
+
+RawSample IRAM_ATTR NOINLINE_ATTR measure_rtc_mmio_once(
+    const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
+    bool collect_cache_counters) {
+  return measure_mmio_with_signature(context, kernel, finalize, seed, collect_cache_counters,
+                                     kRtcMmioReadSignature);
+}
+
+RawSample IRAM_ATTR NOINLINE_ATTR measure_conditional_branch_once(
     const ProbeContext& context, Kernel kernel, Finalize finalize, std::uint32_t seed,
     bool collect_cache_counters) {
   RawSample sample =
@@ -1270,17 +1303,13 @@ constexpr Measurement kMeasurements[] = {
      tinydraw_mmio_read_system_cpu_per_conf, prepare_none, nullptr, 0U, measure_mmio_once},
     {"mmio_read_rtc_store1_4096_aligned", "other",
      kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
-     tinydraw_mmio_read_rtc_store1, prepare_none, nullptr, 0U, measure_mmio_once},
+     tinydraw_mmio_read_rtc_store1, prepare_none, nullptr, 0U, measure_rtc_mmio_once},
     {"mmio_read_extmem_cache_state_4096_aligned", "other",
      kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
      tinydraw_mmio_read_extmem_cache_state, prepare_none, nullptr, 0U, measure_mmio_once},
     {"mmio_write_sram_4096_aligned", "internal-to-internal",
      kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations, tinydraw_mmio_write_sram,
      prepare_none, nullptr, 0U, measure_mmio_once},
-    {"mmio_write_extmem_cache_counter_clear_4096_aligned", "other",
-     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
-     tinydraw_mmio_write_extmem_cache_counter_clear, prepare_none, nullptr, 0U,
-     measure_mmio_once},
     {"conditional_branch_baseline_4096_iterations", "internal-to-internal", 0U, 1U,
      kWarmupIterations, tinydraw_branch_baseline, prepare_none, nullptr,
      kConditionalBranchChecksum, measure_conditional_branch_once},
@@ -1371,6 +1400,12 @@ constexpr Measurement kMeasurements[] = {
      prepare_flash_instruction_cold},
     {"flash_instruction_hot", "other", 0U, 1U, kWarmupIterations, flash_instruction_probe,
      prepare_hot},
+    // Counter-clear is a documented write-only strobe. Keep it last so no
+    // later strict counter signature observes the controller's clear pulse.
+    {"mmio_write_extmem_cache_counter_clear_4096_aligned", "other",
+     kMmioOperations * sizeof(std::uint32_t), 1U, kWarmupIterations,
+     tinydraw_mmio_write_extmem_cache_counter_clear, prepare_none, nullptr, 0U,
+     measure_mmio_once},
 };
 
 #undef DCACHE_BURST_MEASUREMENTS
