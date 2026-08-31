@@ -30,6 +30,8 @@ struct ChromeRect {
 inline constexpr int kChromeCanvasBottom = 372;
 inline constexpr int kChromePopupInputBottom = 288;
 inline constexpr int kChromePopupCanvasBottom = 294;
+inline constexpr int kChromeSizePopupInputBottom = 208;
+inline constexpr int kChromeSizePopupCanvasBottom = 214;
 inline constexpr std::size_t kPaletteColorCount = 16;
 
 enum class ChromeTool { kDraw, kErase, kPan };

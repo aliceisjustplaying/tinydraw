@@ -50,7 +50,11 @@ int chrome_canvas_bottom(const ChromeState& state) {
   if (state.popup == ChromePopup::kNone) {
     return kChromeCanvasBottom;
   }
-  return state.popup == ChromePopup::kColors ? 0 : kChromePopupCanvasBottom;
+  if (state.popup == ChromePopup::kColors) {
+    return 0;
+  }
+  return state.popup == ChromePopup::kSizes ? kChromeSizePopupCanvasBottom
+                                            : kChromePopupCanvasBottom;
 }
 
 int chrome_input_bottom(const ChromeState& state) {
@@ -64,7 +68,11 @@ int chrome_input_bottom(const ChromeState& state) {
   if (state.popup == ChromePopup::kNone) {
     return kChromeCanvasBottom;
   }
-  return state.popup == ChromePopup::kColors ? 0 : kChromePopupInputBottom;
+  if (state.popup == ChromePopup::kColors) {
+    return 0;
+  }
+  return state.popup == ChromePopup::kSizes ? kChromeSizePopupInputBottom
+                                            : kChromePopupInputBottom;
 }
 
 int chrome_ink_bottom(const ChromeState& state) {
@@ -78,7 +86,11 @@ int chrome_ink_bottom(const ChromeState& state) {
     // the view pans. This matches drawing under the minimap and zoom rail.
     return kHeight;
   }
-  return state.popup == ChromePopup::kColors ? 0 : kChromePopupInputBottom;
+  if (state.popup == ChromePopup::kColors) {
+    return 0;
+  }
+  return state.popup == ChromePopup::kSizes ? kChromeSizePopupInputBottom
+                                            : kChromePopupInputBottom;
 }
 
 bool chrome_can_toggle_hud(const ChromeState& state) {
@@ -250,8 +262,9 @@ bool chrome_contains(ChromePoint point, const ChromeState& state) {
   // beneath the dock.
   const bool main = inside(point, 0.0F, static_cast<float>(kChromeCanvasBottom),
                            static_cast<float>(kWidth), static_cast<float>(kHeight));
+  const int popup_top = state.popup == ChromePopup::kSizes ? kSizePopupTop : kPopupTop;
   const bool popup = state.popup != ChromePopup::kNone &&
-                     inside(point, 0.0F, static_cast<float>(kPopupTop - kHitSlop),
+                     inside(point, 0.0F, static_cast<float>(popup_top - kHitSlop),
                             static_cast<float>(kWidth), static_cast<float>(kMainTop));
   return main || popup || navigation_guard_contains(point, state) ||
          zoom_rail_contains(point, state) || chrome_minimap_contains(point, state);
@@ -313,8 +326,9 @@ ChromeAction popup_action_at(ChromePoint point, ChromePopup popup) {
     case ChromePopup::kSizes: {
       const std::size_t column = std::min(
           static_cast<std::size_t>(std::max(0.0F, point.x) * 3.0F / kWidth), std::size_t{2});
-      const int popup_height = kPopupBottom - kPopupTop;
-      const int row = std::clamp((static_cast<int>(point.y) - kPopupTop) * 2 / popup_height, 0, 1);
+      const int popup_height = kPopupBottom - kSizePopupTop;
+      const int row =
+          std::clamp((static_cast<int>(point.y) - kSizePopupTop) * 2 / popup_height, 0, 1);
       constexpr std::array actions{
           ChromeAction::kSelectSmall,            ChromeAction::kSelectMedium,
           ChromeAction::kSelectLarge,            ChromeAction::kSelectExtraLarge,
@@ -369,8 +383,9 @@ ChromeAction chrome_action_at(ChromePoint point, const ChromeState& state) {
     }
     return palette_action_at(point, state);
   }
+  const int popup_top = state.popup == ChromePopup::kSizes ? kSizePopupTop : kPopupTop;
   const bool in_popup = state.popup != ChromePopup::kNone &&
-                        inside(point, 0.0F, static_cast<float>(kPopupTop - kHitSlop),
+                        inside(point, 0.0F, static_cast<float>(popup_top - kHitSlop),
                                static_cast<float>(kWidth), static_cast<float>(kMainTop));
   if (in_popup) {
     return popup_action_at(point, state.popup);

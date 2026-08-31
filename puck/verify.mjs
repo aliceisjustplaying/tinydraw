@@ -632,10 +632,10 @@ async function verifyTwoLargestBrushSelections() {
   };
 
   tap(270, 410);
-  tap(184, 349);
+  tap(184, 329);
   horizontalStroke(150);
   tap(270, 410);
-  tap(306, 349);
+  tap(306, 329);
   horizontalStroke(250);
   const settledAt = now + 1_000;
   for (let t = now; t <= settledAt; t += 8) events.push({ t, k: "tick" });

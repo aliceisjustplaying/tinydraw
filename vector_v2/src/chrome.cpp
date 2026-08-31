@@ -512,8 +512,9 @@ void draw_fixed_chrome(const MinimapSurface& surface, const ChromeState& state) 
   }
   if (state.popup != ChromePopup::kNone &&
       intersects_rows(chrome_canvas_bottom(state), kPopupBottom + 4)) {
-    painter.rect({0, chrome_canvas_bottom(state), kWidth, kPopupTop}, kWhite);
-    draw_dock(painter, kPopupTop, kPopupBottom);
+    const int popup_top = state.popup == ChromePopup::kSizes ? kSizePopupTop : kPopupTop;
+    painter.rect({0, chrome_canvas_bottom(state), kWidth, popup_top}, kWhite);
+    draw_dock(painter, popup_top, kPopupBottom);
     switch (state.popup) {
       case ChromePopup::kTools:
         draw_tools_popup(painter, state);
