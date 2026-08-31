@@ -27,6 +27,27 @@
     .size \name, .-\name
     .endm
 
+    .macro DEFINE_MMIO_READ_2048_PROBE name, context_offset
+    .balign 32
+    .global \name
+    .type   \name, @function
+\name:
+    .begin no-transform
+    entry   a1, 16
+    l32i    a8, a2, \context_offset
+    movi.n  a2, 0
+    movi    a9, 1
+    slli    a9, a9, 11
+    loop    a9, .Lmmio_read_2048_done\@
+.Lmmio_read_2048_loop\@:
+    l32i    a4, a8, 0
+    xor     a2, a2, a4
+.Lmmio_read_2048_done\@:
+    retw.n
+    .end no-transform
+    .size \name, .-\name
+    .endm
+
     .macro DEFINE_RESET_REASON_READ_PROBE name, context_offset, field_shift, count_shift
     .balign 32
     .global \name
@@ -129,6 +150,11 @@ DEFINE_MMIO_READ_PROBE tinydraw_mmio_read_extmem_dcache_autoload_ctrl, 60
 DEFINE_MMIO_READ_PROBE tinydraw_mmio_read_extmem_icache_ctrl1, 64
 DEFINE_MMIO_READ_PROBE tinydraw_mmio_read_extmem_icache_autoload_ctrl, 68
 DEFINE_MMIO_READ_PROBE tinydraw_mmio_read_rtc_date, 96
+DEFINE_MMIO_READ_PROBE tinydraw_mmio_read_rtc_xtal_freq, 128
+
+DEFINE_MMIO_READ_2048_PROBE tinydraw_mmio_read_sram_2048, 32
+DEFINE_MMIO_READ_2048_PROBE tinydraw_mmio_read_rtc_date_2048, 96
+DEFINE_MMIO_READ_2048_PROBE tinydraw_mmio_read_rtc_xtal_freq_2048, 128
 
 // The reset-state peers reproduce the real ROM read body: one memw, one
 // aligned l32i, and the core-specific six-bit field extraction per iteration.
