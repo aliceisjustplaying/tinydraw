@@ -1804,7 +1804,7 @@ constexpr bool kMmioSlopeCaptureMode = false;
 constexpr std::size_t kMmioSlopeMeasurementCount = 10U;
 constexpr bool kRomCallbackCaptureMode = false;
 constexpr std::size_t kRomCallbackMeasurementCount = 10U;
-constexpr bool kRomI2cWriteCaptureMode = true;
+constexpr bool kRomI2cWriteCaptureMode = false;
 constexpr std::size_t kRomI2cWriteMeasurementCount = 2U;
 static_assert(static_cast<unsigned>(kMmioSlopeCaptureMode) +
                   static_cast<unsigned>(kRomCallbackCaptureMode) +

@@ -38,7 +38,7 @@ test("ROM REGI2C write peer is one non-clock-changing same-value cell", async ()
   expect(firmware).toContain('asm volatile("rsil %0, 3"');
   expect(firmware).toContain('"rom_i2c_baseline_write_same_bod_threshold"');
   expect(firmware).toContain('"rom_i2c_write_same_bod_threshold"');
-  expect(firmware).toContain("kRomI2cWriteCaptureMode = true");
+  expect(firmware).toContain("kRomI2cWriteCaptureMode = false");
   expect(firmware).toContain("kRomI2cWriteMeasurementCount = 2U");
 });
 
