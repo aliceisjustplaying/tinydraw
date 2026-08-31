@@ -29,12 +29,12 @@ test("ROM REGI2C write peer is one non-clock-changing same-value cell", async ()
   expect(assembly).toContain("movi.n  a12, 5");
   expect(assembly).toContain("l32i    a13, a2, 120");
   expect(assembly).toContain(
-    "DEFINE_ROM_I2C_WRITE_WRAPPER tinydraw_rom_i2c_write_same_bod_threshold, rom_i2c_writeReg",
+    "DEFINE_ROM_I2C_WRITE_WRAPPER tinydraw_rom_i2c_write_same_bod_threshold, _regi2c_impl_write",
   );
   expect(firmware).toContain("static_assert(I2C_BOD == 0x61)");
   expect(firmware).toContain("static_assert(I2C_BOD_HOSTID == 1)");
   expect(firmware).toContain("static_assert(I2C_BOD_THRESHOLD == 0x5)");
-  expect(firmware).toContain("esp_rom_regi2c_read(I2C_BOD, I2C_BOD_HOSTID, I2C_BOD_THRESHOLD)");
+  expect(firmware).toContain("_regi2c_impl_read(I2C_BOD, I2C_BOD_HOSTID, I2C_BOD_THRESHOLD)");
   expect(firmware).toContain('asm volatile("rsil %0, 3"');
   expect(firmware).toContain('"rom_i2c_baseline_write_same_bod_threshold"');
   expect(firmware).toContain('"rom_i2c_write_same_bod_threshold"');
@@ -64,6 +64,6 @@ test.skipIf(!existsSync(elfPath) || !existsSync(objdumpPath))(
     expect(instructions(target)).toEqual([
       "entry", "movi", "movi.n", "movi.n", "l32i", "l32r", "callx8", "movi.n", "retw.n",
     ]);
-    expect(target).toContain("(40005d60 <esp_rom_regi2c_write>)");
+    expect(target).toContain("(40005d60 <_regi2c_impl_write>)");
   },
 );

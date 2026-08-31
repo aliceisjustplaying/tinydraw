@@ -76,7 +76,7 @@ dependencies:
   idf:
     source:
       type: idf
-    version: 6.0.2
+    version: 6.1.0
   waveshare/pcf85063a:
     component_hash: 13696b7d953566b8eaf50b904754d002ef602a352fc3dc9e22d2137e8dd40ca2
     dependencies:

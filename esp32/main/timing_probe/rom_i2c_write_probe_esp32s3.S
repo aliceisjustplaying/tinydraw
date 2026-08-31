@@ -35,4 +35,4 @@ tinydraw_rom_i2c_noop_write:
     .endm
 
 DEFINE_ROM_I2C_WRITE_WRAPPER tinydraw_rom_i2c_baseline_write_same_bod_threshold, tinydraw_rom_i2c_noop_write
-DEFINE_ROM_I2C_WRITE_WRAPPER tinydraw_rom_i2c_write_same_bod_threshold, rom_i2c_writeReg
+DEFINE_ROM_I2C_WRITE_WRAPPER tinydraw_rom_i2c_write_same_bod_threshold, _regi2c_impl_write

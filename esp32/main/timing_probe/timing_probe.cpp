@@ -21,12 +21,12 @@
 #include "esp_partition.h"
 #include "esp_psram.h"
 #include "esp_random.h"
-#include "esp_rom_regi2c.h"
 #include "esp_rom_sys.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "hal/regi2c_impl.h"
 #include "sdkconfig.h"
 #include "soc/extmem_reg.h"
 #include "soc/regi2c_brownout.h"
@@ -801,7 +801,7 @@ std::uint32_t finalize_rom_xtos_intlevel(const ProbeContext&, std::uint32_t,
 std::uint32_t finalize_rom_i2c_same_bod_threshold(const ProbeContext& context,
                                                    std::uint32_t, std::uint32_t result) {
   const std::uint8_t after =
-      esp_rom_regi2c_read(I2C_BOD, I2C_BOD_HOSTID, I2C_BOD_THRESHOLD);
+      _regi2c_impl_read(I2C_BOD, I2C_BOD_HOSTID, I2C_BOD_THRESHOLD);
   return rom_callback_state(result == 0U && after == context.rom_i2c_bod_threshold);
 }
 
@@ -1590,7 +1590,7 @@ bool initialize_context(ProbeContext& context) {
               context.rom_reset_reason_core0, context.rom_reset_reason_core1,
               context.rom_cpu_ticks_per_us);
   context.rom_i2c_bod_threshold =
-      esp_rom_regi2c_read(I2C_BOD, I2C_BOD_HOSTID, I2C_BOD_THRESHOLD);
+      _regi2c_impl_read(I2C_BOD, I2C_BOD_HOSTID, I2C_BOD_THRESHOLD);
   std::printf("TINYDRAW_ROM_I2C_VALUES bod_threshold_register=0x%02" PRIx32 "\n",
               context.rom_i2c_bod_threshold);
   context.sram_dependent = static_cast<std::uint32_t*>(heap_caps_malloc(
