@@ -1607,8 +1607,35 @@ constexpr Measurement kMeasurements[] = {
 #undef DCACHE_BURST_MEASUREMENTS
 #undef ICACHE_BURST_MEASUREMENTS
 
+// This provenance commit is intentionally a bounded capture firmware. The
+// following evidence commit restores the aggregate suite after two complete
+// boots have bound these ten matched cells to one ELF.
+constexpr bool kMmioSlopeCaptureMode = true;
+constexpr std::size_t kMmioSlopeMeasurementCount = 10U;
+
+bool is_mmio_slope_measurement(const Measurement& measurement) {
+  constexpr const char* kIds[] = {
+      "mmio_read_sram_4096_aligned",
+      "mmio_read_rtc_date_4096_aligned",
+      "mmio_write_same_value_sram_4096_aligned",
+      "mmio_write_same_value_system_sysclk_conf_4096_aligned",
+      "mmio_write_same_value_extmem_dcache_ctrl1_4096_aligned",
+      "mmio_write_same_value_extmem_icache_ctrl1_4096_aligned",
+      "mmio_write_same_value_sram_2048_aligned",
+      "mmio_write_same_value_system_sysclk_conf_2048_aligned",
+      "mmio_write_same_value_extmem_dcache_ctrl1_2048_aligned",
+      "mmio_write_same_value_extmem_icache_ctrl1_2048_aligned",
+  };
+  static_assert(std::size(kIds) == kMmioSlopeMeasurementCount);
+  for (const char* id : kIds) {
+    if (std::strcmp(measurement.id, id) == 0) return true;
+  }
+  return false;
+}
+
 bool run_suite(const ProbeContext& context, const char* contention_mode) {
   for (const auto& measurement : kMeasurements) {
+    if (kMmioSlopeCaptureMode && !is_mmio_slope_measurement(measurement)) continue;
     if (!run_measurement(context, measurement, contention_mode)) {
       return false;
     }
@@ -1633,7 +1660,10 @@ void probe_task(void*) {
               ",\"record\":\"run-complete\",\"measurements\":%lu,\"samplesPerMeasurement\":%d,"
               "\"pass\":%s}\n",
               kRecordPrefix, kProtocolVersion,
-              static_cast<unsigned long>(std::size(kMeasurements) * 2U), kSamplesPerMeasurement,
+              static_cast<unsigned long>((kMmioSlopeCaptureMode ? kMmioSlopeMeasurementCount
+                                                                 : std::size(kMeasurements)) *
+                                         2U),
+              kSamplesPerMeasurement,
               passed ? "true" : "false");
   flush_console();
   // The console driver drains asynchronously after stdio has flushed. Keep the

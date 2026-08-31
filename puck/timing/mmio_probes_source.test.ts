@@ -118,6 +118,8 @@ test("MMIO peers repeat exact aligned read and write cells", async () => {
   expect(firmware).toContain("static_assert(EXTMEM_CACHE_ACS_CNT_CLR_REG == 0x600c'40c4U)");
   expect(firmware).toContain("kMmioOperations = 4096U");
   expect(firmware).toContain("kMmioHalfOperations = 2048U");
+  expect(firmware).toContain("kMmioSlopeCaptureMode = true");
+  expect(firmware).toContain("kMmioSlopeMeasurementCount = 10U");
   expect(firmware).toContain("measure_mmio_once");
   expect(firmware).toContain("kRtcMmioReadSignature");
   expect(firmware).toContain(".ibus_accesses = 176U");
