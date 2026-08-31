@@ -370,7 +370,7 @@ constexpr CacheCounters kRtcBoot2048ReadSignature{
     .dbus_flash_misses = 0U,
     .dbus_psram_misses = 0U,
 };
-constexpr bool kRtcBootRequireStrictCounterSignature = false;
+constexpr bool kRtcBootRequireStrictCounterSignature = true;
 static_assert(kMatchedIcacheExecutedInstructions ==
               (kMatchedIcacheLines - 1U) * 16U + 6U + 2U);
 static_assert(kFlashIcacheHitSignature.ibus_accesses ==
@@ -1171,9 +1171,11 @@ RawSample IRAM_ATTR NOINLINE_ATTR measure_rtc_boot_mmio_once(
     bool collect_cache_counters) {
   static Kernel primed_kernel = nullptr;
   if (collect_cache_counters && primed_kernel != kernel) {
-    static_cast<void>(measure_mmio_with_signature(context, kernel, finalize, seed,
-                                                  collect_cache_counters, nullptr));
-    esp_rom_delay_us(5'000U);
+    for (unsigned prime = 0; prime < 2U; ++prime) {
+      static_cast<void>(measure_mmio_with_signature(context, kernel, finalize, seed,
+                                                    collect_cache_counters, nullptr));
+      esp_rom_delay_us(5'000U);
+    }
     primed_kernel = kernel;
   }
   return measure_mmio_with_signature(context, kernel, finalize, seed, collect_cache_counters,
