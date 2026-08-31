@@ -2019,7 +2019,7 @@ constexpr bool kResetStateReadCaptureMode = false;
 constexpr std::size_t kResetStateReadMeasurementCount = 8U;
 constexpr bool kRtcBootReadCaptureMode = false;
 constexpr std::size_t kRtcBootReadMeasurementCount = 6U;
-constexpr bool kXtosIntlevelCaptureMode = true;
+constexpr bool kXtosIntlevelCaptureMode = false;
 constexpr std::size_t kXtosIntlevelMeasurementCount = 2U;
 static_assert(static_cast<unsigned>(kMmioSlopeCaptureMode) +
                   static_cast<unsigned>(kRomCallbackCaptureMode) +

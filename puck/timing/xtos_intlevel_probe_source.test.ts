@@ -30,7 +30,7 @@ test("_xtos_set_intlevel peer restores the raised caller PS immediately", async 
   expect(firmware).toContain("kXtosRestorePs = 0x0004'0c00U");
   expect(firmware).toContain('asm volatile("rsil %0, 3\\nrsr %1, ps"');
   expect(firmware).toContain("if (restored_ps != raised_ps) sample.checksum = 0U");
-  expect(firmware).toContain("kXtosIntlevelCaptureMode = true");
+  expect(firmware).toContain("kXtosIntlevelCaptureMode = false");
   expect(firmware).toContain("kXtosIntlevelMeasurementCount = 2U");
 });
 
