@@ -43,7 +43,11 @@ so its timed bytes cannot be interpreted by the panel.
 Build and verify both images before any capture. The verifier disassembles the
 Tier-B issue blocks, checks their exact encodings, checks every 1, 2, 4, 8, and
 16 cache-line ladder span and residue, checks five fresh one-line instruction
-targets, and confirms XIP ladder placement. The store issue block gate requires
+targets, and confirms XIP ladder placement. Every C-callable assembly target
+uses the windowed ABI. The ladder and first-line gates require exact
+`entry a1,16`, deterministic padding, `retw.n`, aligned spans, and CCOUNT
+boundaries around the timed `call8` or `callx8`. The store issue block gate
+requires
 the windowed `entry a1,16` and `callx8` ABI, 256 exact stores, `memw`, and
 `retw.n`, with CCOUNT read immediately after each timed call. The verifier also
 requires

@@ -48,6 +48,7 @@ assert "spi_config.spics_io_num = GPIO_NUM_NC" in source, "raw SPI must not sele
 assert "tier_b_store_issue_block" in source and "baseline_cycles" in source
 assert "entry a1, 16" in assembly and "retw.n" in assembly
 assert ".begin no-transform" in assembly and ".end no-transform" in assembly
+assert re.search(r"^\s*ret\.n\s*$", assembly, re.MULTILINE) is None
 assert "tier_b_first_line_i_0" in source and "fresh one-line" in source
 assert "aggressor_iterations" in source and "runtime evidence failed" in source
 assert "g_aggressor_active" in source
@@ -114,6 +115,24 @@ psram_end = store_body.index("const std::uint32_t end = read_ccount();", psram_c
 psram_counters = store_body.index("const CacheCounters counters", psram_end)
 assert baseline_call < baseline_end < baseline_counters
 assert psram_call < psram_end < psram_counters
+range_start = source.index("Sample call_instruction_range")
+range_end = source.index("\nSample probe_instruction_psram", range_start)
+range_body = source[range_start:range_end]
+range_call = range_body.index("range.function();")
+range_cycle_end = range_body.index("const std::uint32_t end = read_ccount();", range_call)
+range_counters = range_body.index("const CacheCounters counters", range_cycle_end)
+assert range_call < range_cycle_end < range_counters
+first_line_start = source.index("Sample probe_first_line_i_flash")
+first_line_end = source.index("\nSample probe_first_line_data", first_line_start)
+first_line_body = source[first_line_start:first_line_end]
+first_line_call = first_line_body.index("function();")
+first_line_cycle_end = first_line_body.index(
+    "const std::uint32_t cycle_end = read_ccount();", first_line_call
+)
+first_line_counters = first_line_body.index(
+    "const CacheCounters counters", first_line_cycle_end
+)
+assert first_line_call < first_line_cycle_end < first_line_counters
 assert "RESTART_MARKERS" in capture and "restart_marker(line, selection_sent)" in capture
 assert 'REQUIRED_IDF_VERSION = "v6.1"' in validator
 assert 'IDF_VERSION}" STREQUAL "6.1.0"' in component

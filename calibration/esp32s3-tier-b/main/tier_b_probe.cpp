@@ -687,8 +687,8 @@ Sample probe_first_line_i_flash(Context&, const Cell&, std::uint32_t ordinal) {
   clear_cache_counters();
   const std::uint32_t cycle_start = read_ccount();
   function();
-  const CacheCounters counters = read_cache_counters();
   const std::uint32_t cycle_end = read_ccount();
+  const CacheCounters counters = read_cache_counters();
   if (counters.ibus_accesses == 0 || counters.ibus_misses == 0) {
     return {.reason = "first-line instruction counters were not observed",
             .tier_candidate = "exact"};
