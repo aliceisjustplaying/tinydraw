@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any
 
 from tier_b_ndjson import (
+    DBUS_FLASH_CLASSIFIER_ALIGNMENT,
+    DBUS_FLASH_CLASSIFIER_BYTES,
     DEFAULT_MANIFEST,
     REQUIRED_IDF_VERSION,
     CaptureValidator,
@@ -57,6 +59,7 @@ BUILD_KEYS = {
     "elfSha256",
     "manifestSha256",
     "toolchain",
+    "dbusFlashClassifier",
 }
 GIT_COMMIT = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -118,6 +121,42 @@ def load_preflight(data: bytes, path: Path, variant: str, manifest_sha256: str) 
         raise ValidationError("ELF preflight toolchain fields must be non-empty strings")
     if toolchain["compilerVersion"] != payload["compilerVersion"]:
         raise ValidationError("ELF preflight compiler versions disagree")
+    classifier = payload["dbusFlashClassifier"]
+    classifier_keys = {
+        "alignmentBytes",
+        "end",
+        "section",
+        "sizeBytes",
+        "start",
+        "storage",
+        "symbol",
+        "xipPsram",
+    }
+    if not isinstance(classifier, dict) or set(classifier) != classifier_keys:
+        raise ValidationError("ELF preflight DBUS flash classifier is malformed")
+    start = classifier["start"]
+    end = classifier["end"]
+    if (
+        not isinstance(start, int)
+        or isinstance(start, bool)
+        or not isinstance(end, int)
+        or isinstance(end, bool)
+        or start == 0
+        or start % DBUS_FLASH_CLASSIFIER_ALIGNMENT != 0
+        or end - start + 1 != DBUS_FLASH_CLASSIFIER_BYTES
+        or classifier["sizeBytes"] != DBUS_FLASH_CLASSIFIER_BYTES
+        or classifier["alignmentBytes"] != DBUS_FLASH_CLASSIFIER_ALIGNMENT
+        or classifier["section"] != ".flash.rodata"
+        or classifier["storage"] != "flash-rodata"
+        or classifier["xipPsram"] is not False
+        or not isinstance(classifier["symbol"], str)
+        or not classifier["symbol"]
+        or (
+            classifier["symbol"] != "g_flash_pool"
+            and not classifier["symbol"].endswith("g_flash_poolE")
+        )
+    ):
+        raise ValidationError("ELF preflight DBUS flash classifier range is invalid")
     return payload
 
 

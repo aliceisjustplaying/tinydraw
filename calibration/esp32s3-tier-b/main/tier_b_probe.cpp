@@ -90,6 +90,39 @@ alignas(kDcacheLine) const std::array<std::uint32_t, 64 * 1024> g_flash_pool = [
   }
   return values;
 }();
+static_assert(sizeof(g_flash_pool) == 0x40000);
+
+struct DbusFlashClassifierRange {
+  std::uint32_t start = 0;
+  std::uint32_t end = 0;
+};
+
+DbusFlashClassifierRange expected_dbus_flash_classifier_range() {
+  const auto start = reinterpret_cast<std::uintptr_t>(g_flash_pool.data());
+  return {
+      .start = static_cast<std::uint32_t>(start),
+      .end = static_cast<std::uint32_t>(start + sizeof(g_flash_pool) - 1),
+  };
+}
+
+DbusFlashClassifierRange read_dbus_flash_classifier_range() {
+  return {
+      .start = REG_READ(EXTMEM_DBUS_TO_FLASH_START_VADDR_REG),
+      .end = REG_READ(EXTMEM_DBUS_TO_FLASH_END_VADDR_REG),
+  };
+}
+
+DbusFlashClassifierRange configure_dbus_flash_classifier() {
+  const DbusFlashClassifierRange expected = expected_dbus_flash_classifier_range();
+  REG_WRITE(EXTMEM_DBUS_TO_FLASH_START_VADDR_REG, expected.start);
+  REG_WRITE(EXTMEM_DBUS_TO_FLASH_END_VADDR_REG, expected.end);
+  asm volatile("memw" ::: "memory");
+  return read_dbus_flash_classifier_range();
+}
+
+bool ranges_equal(const DbusFlashClassifierRange& left, const DbusFlashClassifierRange& right) {
+  return left.start == right.start && left.end == right.end;
+}
 
 volatile std::uint32_t g_sink;
 
@@ -1102,17 +1135,21 @@ void emit_metadata(const std::array<bool, kCells.size()>& selected) {
   std::array<char, 40> boot_id{};
   std::snprintf(boot_id.data(), boot_id.size(), "%u-%08" PRIx32 "%08" PRIx32, reset_reason,
                 esp_random(), esp_random());
+  const DbusFlashClassifierRange classifier = read_dbus_flash_classifier_range();
   std::printf("%s{\"protocolVersion\":%" PRIu32
               ",\"record\":\"metadata\",\"suite\":\"tier-b\",\"harnessVersion\":\"%s\","
               "\"idfVersion\":\"%s\",\"gitCommit\":\"%s\",\"gitDirty\":%s,"
               "\"variant\":\"%s\",\"sdkconfigSha256\":\"%s\","
               "\"compilerVersion\":\"%s\",\"elfSha256\":\"%s\","
+              "\"dbusFlashClassifier\":{\"start\":%" PRIu32 ",\"end\":%" PRIu32
+              "},"
               "\"chipModel\":\"ESP32-S3\",\"chipRevision\":%u,\"resetReason\":%u,"
               "\"bootId\":\"%s\",\"availableCells\":[",
               kPrefix, kProtocolVersion, kHarnessVersion, esp_get_idf_version(),
               TINYDRAW_GIT_COMMIT, TINYDRAW_GIT_DIRTY ? "true" : "false", TINYDRAW_BUILD_VARIANT,
               TINYDRAW_SDKCONFIG_SHA256, __VERSION__, esp_app_get_elf_sha256_str(),
-              static_cast<unsigned>(chip_info.revision), reset_reason, boot_id.data());
+              classifier.start, classifier.end, static_cast<unsigned>(chip_info.revision),
+              reset_reason, boot_id.data());
   emit_string_array(selected, true);
   std::printf("],\"selectedCells\":[");
   emit_string_array(selected, false);
@@ -1130,6 +1167,15 @@ extern "C" void app_main() {
   }
   if (esp_cpu_get_core_id() != 0) {
     std::printf("TINYDRAW_TIER_B_FAILED app task is not pinned to core 0\n");
+    return;
+  }
+  const DbusFlashClassifierRange expected_classifier = expected_dbus_flash_classifier_range();
+  const DbusFlashClassifierRange actual_classifier = configure_dbus_flash_classifier();
+  if (!ranges_equal(actual_classifier, expected_classifier)) {
+    std::printf("TINYDRAW_TIER_B_FAILED DBUS flash classifier expected=%08" PRIx32 "-%08" PRIx32
+                " actual=%08" PRIx32 "-%08" PRIx32 "\n",
+                expected_classifier.start, expected_classifier.end, actual_classifier.start,
+                actual_classifier.end);
     return;
   }
   Context context{};

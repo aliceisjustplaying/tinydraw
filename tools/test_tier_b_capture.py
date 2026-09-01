@@ -15,6 +15,39 @@ CAPTURE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CAPTURE)
 
 
+def preflight(**updates: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "ok": True,
+        "fixture": False,
+        "variant": "normal",
+        "idfVersion": "v6.1",
+        "gitCommit": "a" * 40,
+        "gitDirty": False,
+        "sdkconfigSha256": "b" * 64,
+        "compilerVersion": "15.2.0",
+        "elfSha256": "c" * 64,
+        "manifestSha256": "d" * 64,
+        "toolchain": {
+            "compiler": "xtensa-esp32s3-elf-gcc",
+            "compilerVersion": "15.2.0",
+            "objdump": "xtensa-esp32s3-elf-objdump",
+            "objdumpVersion": "2.45",
+        },
+        "dbusFlashClassifier": {
+            "alignmentBytes": 64,
+            "end": 0x3C06ABFF,
+            "section": ".flash.rodata",
+            "sizeBytes": 0x40000,
+            "start": 0x3C02AC00,
+            "storage": "flash-rodata",
+            "symbol": "g_flash_pool",
+            "xipPsram": False,
+        },
+    }
+    payload.update(updates)
+    return payload
+
+
 class RestartMarkerTest(unittest.TestCase):
     def test_hardware_failure_marker_is_recognized(self) -> None:
         line = b"TINYDRAW_TIER_B_FAILED invalid selection"
@@ -45,25 +78,22 @@ class RestartMarkerTest(unittest.TestCase):
         self.assertIsNone(CAPTURE.restart_marker(b"ordinary log line", True))
 
     def test_preflight_requires_exact_idf_version(self) -> None:
-        payload = {
-            "ok": True,
-            "fixture": False,
-            "variant": "normal",
-            "idfVersion": "v6.0.2",
-            "gitCommit": "a" * 40,
-            "gitDirty": False,
-            "sdkconfigSha256": "b" * 64,
-            "compilerVersion": "15.2.0",
-            "elfSha256": "c" * 64,
-            "manifestSha256": "d" * 64,
-            "toolchain": {
-                "compiler": "xtensa-esp32s3-elf-gcc",
-                "compilerVersion": "15.2.0",
-                "objdump": "xtensa-esp32s3-elf-objdump",
-                "objdumpVersion": "2.45",
-            },
-        }
         with self.assertRaisesRegex(CAPTURE.ValidationError, "expected 'v6.1'"):
+            CAPTURE.load_preflight(
+                json.dumps(preflight(idfVersion="v6.0.2")).encode(),
+                Path("preflight.json"),
+                "normal",
+                "d" * 64,
+            )
+
+    def test_preflight_rejects_reset_default_classifier(self) -> None:
+        payload = preflight()
+        payload["dbusFlashClassifier"] = {
+            **payload["dbusFlashClassifier"],
+            "start": 0,
+            "end": 0,
+        }
+        with self.assertRaisesRegex(CAPTURE.ValidationError, "range is invalid"):
             CAPTURE.load_preflight(
                 json.dumps(payload).encode(), Path("preflight.json"), "normal", "d" * 64
             )
