@@ -576,13 +576,13 @@ class CaptureValidator:
         if cell.startswith("arbitration_"):
             if counters["dbusAccesses"] == 0 or counters["dbusPsramMisses"] == 0:
                 raise ValidationError(f"{path} lacks PSRAM victim counter attribution")
-        if cell in {"instruction_psram_hot", "instruction_psram_cold", "first_line_i_flash"}:
+        if cell in {"instruction_psram_cold", "first_line_i_flash"}:
             if counters["ibusAccesses"] == 0:
                 raise ValidationError(f"{path} lacks instruction-cache accesses")
-            if cell != "instruction_psram_hot" and counters["ibusMisses"] == 0:
+            if counters["ibusMisses"] == 0:
                 raise ValidationError(f"{path} lacks the expected instruction-cache miss")
-            if cell == "instruction_psram_hot" and counters["ibusMisses"] != 0:
-                raise ValidationError(f"{path} hot instruction probe reports an I-cache miss")
+        if cell == "instruction_psram_hot" and counters["ibusMisses"] != 0:
+            raise ValidationError(f"{path} hot instruction probe reports an I-cache miss")
         if cell == "first_line_d_flash" and (
             counters["dbusAccesses"] == 0 or counters["dbusFlashMisses"] == 0
         ):

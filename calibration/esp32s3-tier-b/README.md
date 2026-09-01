@@ -20,7 +20,11 @@ store-hit cell with an internal-SRAM baseline and internal-RAM issue block,
 clean and dirty writeback
 ladders, instruction-PSRAM fetches, first-line pooling, selective cohort
 reruns, and display-path and DMA cost families. Counter-dependent cells check
-the expected access and miss counters. The hardware cache-counter registers
+the expected access and miss counters. A fully resident hot instruction-PSRAM
+sample may report zero I-cache accesses and zero misses, so the hot cell requires
+only zero misses. Its verified ELF placement, verified caller, and positive
+CCOUNT delta establish execution. The cold cell still requires nonzero I-cache
+accesses and misses. The hardware cache-counter registers
 are shared across both cores. Before concurrent timing, core 1 runs a bounded,
 isolated lap over the selected source and records its counters and exact
 checksum. Flash and PSRAM laps require their matching access and miss counters
