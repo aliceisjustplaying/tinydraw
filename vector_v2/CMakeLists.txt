@@ -10,8 +10,9 @@ target_include_directories(tinydraw_vector_v2 PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>"
 )
 target_link_libraries(tinydraw_vector_v2
-  PRIVATE tinydraw::core
-  PUBLIC tinydraw_project_options
+  PUBLIC
+    tinydraw::core
+    tinydraw_project_options
 )
 option(TINYDRAW_VECTOR_V2_RASTER_CENSUS "Compile raster census counters into vector_v2" OFF)
 if(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
@@ -82,7 +83,6 @@ if(TINYDRAW_BUILD_TESTS)
     add_executable(${target} tests/test_main.cpp ${ARGN})
     target_link_libraries(${target} PRIVATE
       tinydraw::vector_v2
-      tinydraw::core
       tinydraw_project_options
     )
     target_include_directories(${target} PRIVATE
@@ -142,7 +142,6 @@ if(TINYDRAW_BUILD_TESTS)
     tools/raster_census_fuzz.cpp
   )
   target_link_libraries(tinydraw_vector_v2_raster_census PRIVATE
-    tinydraw::core
     tinydraw::vector_v2
     tinydraw_project_options
   )
