@@ -1,0 +1,3 @@
+# Separate image for instruction-PSRAM cells. This changes every flash-text
+# fetch path, so I-flash cells are unavailable in this build.
+CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y
