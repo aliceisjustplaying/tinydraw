@@ -159,12 +159,101 @@ def verify_flash_pool(
     }
 
 
-def through_return(instructions: list[Instruction], symbol: str) -> list[Instruction]:
+def through_windowed_return(
+    instructions: list[Instruction], symbol: str
+) -> list[Instruction]:
     try:
-        end = next(index for index, instruction in enumerate(instructions) if instruction.encoding == "f00d")
+        end = next(
+            index
+            for index, instruction in enumerate(instructions)
+            if instruction.encoding == "f01d"
+        )
     except StopIteration as error:
-        raise VerificationError(f"{symbol} has no exact ret.n endpoint") from error
+        raise VerificationError(f"{symbol} has no exact retw.n endpoint") from error
     return instructions[: end + 1]
+
+
+def require_single_function_containing(
+    functions: dict[str, list[Instruction]], fragment: str
+) -> tuple[str, list[Instruction]]:
+    matches = [
+        (name, instructions)
+        for name, instructions in functions.items()
+        if fragment in name
+    ]
+    if len(matches) != 1:
+        raise VerificationError(f"expected exactly one {fragment} disassembly")
+    return matches[0]
+
+
+def verify_instruction_callers(
+    functions: dict[str, list[Instruction]],
+) -> dict[str, dict[str, int | str]]:
+    ladder_name, ladder_caller = require_single_function_containing(
+        functions, "probe_instruction_psram"
+    )
+    ladder_calls = [
+        index
+        for index, instruction in enumerate(ladder_caller)
+        if "<tier_b_instruction_8_lines>" in instruction.operands
+        and instruction.mnemonic.startswith("call")
+    ]
+    if len(ladder_calls) != 2 or any(
+        ladder_caller[index].mnemonic != "call8" for index in ladder_calls
+    ):
+        raise VerificationError(
+            "probe_instruction_psram ladder calls are not windowed call8"
+        )
+    timed_ladder_calls = [
+        index
+        for index in ladder_calls
+        if index > 0
+        and index + 1 < len(ladder_caller)
+        and ladder_caller[index - 1].mnemonic == "rsr.ccount"
+        and ladder_caller[index + 1].mnemonic == "rsr.ccount"
+    ]
+    if len(timed_ladder_calls) != 1:
+        raise VerificationError(
+            "probe_instruction_psram does not bracket one ladder call with CCOUNT"
+        )
+
+    first_line_name, first_line_caller = require_single_function_containing(
+        functions, "probe_first_line_i_flash"
+    )
+    timed_first_line_calls = [
+        index
+        for index, instruction in enumerate(first_line_caller)
+        if instruction.mnemonic.startswith("callx")
+        and index > 0
+        and index + 1 < len(first_line_caller)
+        and first_line_caller[index - 1].mnemonic == "rsr.ccount"
+        and first_line_caller[index + 1].mnemonic == "rsr.ccount"
+    ]
+    if len(timed_first_line_calls) != 1:
+        raise VerificationError(
+            "probe_first_line_i_flash does not bracket one indirect call with CCOUNT"
+        )
+    first_line_call = first_line_caller[timed_first_line_calls[0]]
+    if first_line_call.mnemonic != "callx8":
+        raise VerificationError(
+            "probe_first_line_i_flash target is not called with windowed callx8"
+        )
+    return {
+        "instructionLadder": {
+            "caller": ladder_name,
+            "abi": "windowed-call8",
+            "target": "tier_b_instruction_8_lines",
+            "targetCalls": len(ladder_calls),
+            "timedCalls": len(timed_ladder_calls),
+            "timedBoundary": "ccount-call8-ccount",
+        },
+        "firstLineInstruction": {
+            "caller": first_line_name,
+            "abi": "windowed-callx8",
+            "timedCalls": len(timed_first_line_calls),
+            "timedBoundary": "ccount-callx8-ccount",
+        },
+    }
 
 
 def verify_ladders(
@@ -184,17 +273,29 @@ def verify_ladders(
             )
         if start.address % 32 != 0 or end.address % 32 != 0:
             raise VerificationError(f"{name} boundaries are not cache-line aligned")
-        instructions = through_return(require_function(functions, name), name)
+        instructions = through_windowed_return(require_function(functions, name), name)
         if instructions[0].address != start.address:
             raise VerificationError(f"{name} disassembly does not start at its ELF symbol")
-        expected = ["f03d"] * ((expected_bytes - 2) // 2) + ["f00d"]
+        expected_nops = (expected_bytes - 8) // 2
+        expected = ["002136", "208880"] + ["f03d"] * expected_nops + ["f01d"]
         if [instruction.encoding for instruction in instructions] != expected:
-            raise VerificationError(f"{name} does not contain exact nop.n ladder bytes")
+            raise VerificationError(
+                f"{name} is not exact entry, deterministic padding, nop.n ladder, retw.n"
+            )
+        if instructions[2].address % 32 != 6 or instructions[-1].address % 32 != 30:
+            raise VerificationError(f"{name} body or return residue is wrong")
         results.append(
             {
                 "symbol": name,
+                "abi": "windowed-call8",
                 "spanBytes": expected_bytes,
+                "nopOperations": expected_nops,
+                "prologueEncoding": "002136",
+                "paddingEncoding": "208880",
+                "returnEncoding": "f01d",
                 "startResidueMod32": start.address % 32,
+                "bodyResidueMod32": instructions[2].address % 32,
+                "returnResidueMod32": instructions[-1].address % 32,
                 "endResidueMod32": end.address % 32,
             }
         )
@@ -285,16 +386,37 @@ def verify_first_line_pool(
     functions: dict[str, list[Instruction]], symbols: dict[str, Symbol]
 ) -> list[dict[str, int | str]]:
     results: list[dict[str, int | str]] = []
-    expected = ["f03d"] * 15 + ["f00d"]
+    expected = ["002136", "208880"] + ["f03d"] * 12 + ["f01d"]
     for index in range(5):
         name = f"tier_b_first_line_i_{index}"
         symbol = require_symbol(symbols, name)
-        if symbol.section != ".flash.text" or symbol.address % 32 != 0:
+        if (
+            symbol.section != ".flash.text"
+            or symbol.address % 32 != 0
+            or symbol.size != 32
+        ):
             raise VerificationError(f"{name} is not an aligned flash-text target")
-        instructions = through_return(require_function(functions, name), name)
+        instructions = through_windowed_return(require_function(functions, name), name)
         if [instruction.encoding for instruction in instructions] != expected:
-            raise VerificationError(f"{name} is not an exact one-line instruction target")
-        results.append({"symbol": name, "spanBytes": 32, "startResidueMod32": 0})
+            raise VerificationError(
+                f"{name} is not exact entry, deterministic padding, one-line body, retw.n"
+            )
+        if instructions[2].address % 32 != 6 or instructions[-1].address % 32 != 30:
+            raise VerificationError(f"{name} body or return residue is wrong")
+        results.append(
+            {
+                "symbol": name,
+                "abi": "windowed-callx8",
+                "spanBytes": symbol.size,
+                "nopOperations": 12,
+                "prologueEncoding": "002136",
+                "paddingEncoding": "208880",
+                "returnEncoding": "f01d",
+                "startResidueMod32": symbol.address % 32,
+                "bodyResidueMod32": instructions[2].address % 32,
+                "returnResidueMod32": instructions[-1].address % 32,
+            }
+        )
     return results
 
 
@@ -385,6 +507,7 @@ def main() -> int:
         symbols = parse_symbols(symbol_text)
         sections = parse_sections(section_text)
         ladders = verify_ladders(functions, symbols)
+        instruction_callers = verify_instruction_callers(functions)
         issue_blocks = verify_issue_blocks(functions, symbols)
         first_line_pool = verify_first_line_pool(functions, symbols)
         flash_classifier = verify_flash_pool(symbols, sections)
@@ -422,6 +545,7 @@ def main() -> int:
             "issueBlocks": issue_blocks,
             "firstLineInstructionPool": first_line_pool,
             "instructionLadders": ladders,
+            "instructionCallAbi": instruction_callers,
             "instructionPlacement": placement,
             "dbusFlashClassifier": flash_classifier,
         }

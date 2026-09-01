@@ -21,13 +21,31 @@ def function(name: str, address: int, encodings: list[tuple[str, str]]) -> str:
     return "\n".join(lines)
 
 
+def replace_in_function(text: str, name: str, old: str, new: str) -> str:
+    start = text.index(f"<{name}>:")
+    end = text.find("\n\n", start)
+    if end < 0:
+        end = len(text)
+    body = text[start:end]
+    replaced = body.replace(old, new, 1)
+    if replaced == body:
+        raise AssertionError(f"{old!r} not found in {name}")
+    return text[:start] + replaced + text[end:]
+
+
 def fixtures(xip: bool = False) -> tuple[str, str, str, str]:
     functions: list[str] = []
     symbols: list[str] = []
+    ladder_addresses: dict[int, int] = {}
     address = 0x42000100
     for lines in (1, 2, 4, 8, 16):
+        ladder_addresses[lines] = address
         name = f"tier_b_instruction_{lines}_lines"
-        body = [("f03d", "nop.n")] * ((lines * 32 - 2) // 2) + [("f00d", "ret.n")]
+        body = (
+            [("002136", "entry a1, 16"), ("208880", "or a8, a8, a8")]
+            + [("f03d", "nop.n")] * ((lines * 32 - 8) // 2)
+            + [("f01d", "retw.n")]
+        )
         functions.append(function(name, address, body))
         symbols.extend(
             (
@@ -39,7 +57,11 @@ def fixtures(xip: bool = False) -> tuple[str, str, str, str]:
         address += lines * 32
     for index in range(5):
         name = f"tier_b_first_line_i_{index}"
-        body = [("f03d", "nop.n")] * 15 + [("f00d", "ret.n")]
+        body = (
+            [("002136", "entry a1, 16"), ("208880", "or a8, a8, a8")]
+            + [("f03d", "nop.n")] * 12
+            + [("f01d", "retw.n")]
+        )
         functions.append(function(name, address, body))
         symbols.append(f"{address:08x} g F .flash.text 00000020 {name}")
         address += 32
@@ -76,6 +98,36 @@ def fixtures(xip: bool = False) -> tuple[str, str, str, str]:
             )
         )
     functions.append(function("probe_store_hit", 0x42020000, caller))
+    functions.append(
+        function(
+            "probe_instruction_psram",
+            0x42020100,
+            [
+                (
+                    "000000",
+                    f"call8 {ladder_addresses[8]:08x} <tier_b_instruction_8_lines>",
+                ),
+                ("f03d", "nop.n"),
+                ("03e800", "rsr.ccount a8"),
+                (
+                    "000000",
+                    f"call8 {ladder_addresses[8]:08x} <tier_b_instruction_8_lines>",
+                ),
+                ("03e900", "rsr.ccount a9"),
+            ],
+        )
+    )
+    functions.append(
+        function(
+            "probe_first_line_i_flash",
+            0x42020200,
+            [
+                ("03e800", "rsr.ccount a8"),
+                ("0005e0", "callx8 a5"),
+                ("03e900", "rsr.ccount a9"),
+            ],
+        )
+    )
     if xip:
         symbols.extend(
             (
@@ -162,6 +214,10 @@ class VerifyTierBElfTest(unittest.TestCase):
         self.assertEqual(payload["issueBlocks"][0]["verifiedCallSites"], 4)
         self.assertEqual(len(payload["firstLineInstructionPool"]), 5)
         self.assertEqual(
+            payload["instructionCallAbi"]["firstLineInstruction"]["abi"],
+            "windowed-callx8",
+        )
+        self.assertEqual(
             payload["dbusFlashClassifier"],
             {
                 "alignmentBytes": 64,
@@ -196,7 +252,9 @@ class VerifyTierBElfTest(unittest.TestCase):
 
     def test_issue_missing_entry_leaves_no_result(self) -> None:
         disassembly, symbols, sections, sdkconfig = fixtures()
-        broken = disassembly.replace("002136", "000000", 1)
+        broken = replace_in_function(
+            disassembly, "tier_b_store_issue_block", "002136", "000000"
+        )
         process, result = self.run_gate(broken, symbols, sections, sdkconfig)
         self.assertEqual(process.returncode, 2)
         self.assertIn("windowed ABI entry", process.stderr)
@@ -204,7 +262,12 @@ class VerifyTierBElfTest(unittest.TestCase):
 
     def test_issue_ret_n_leaves_no_result(self) -> None:
         disassembly, symbols, sections, sdkconfig = fixtures()
-        broken = disassembly.replace("f01d     retw.n", "f00d     ret.n", 1)
+        broken = replace_in_function(
+            disassembly,
+            "tier_b_store_issue_block",
+            "f01d     retw.n",
+            "f00d     ret.n",
+        )
         process, result = self.run_gate(broken, symbols, sections, sdkconfig)
         self.assertEqual(process.returncode, 2)
         self.assertIn("no exact retw.n endpoint", process.stderr)
@@ -224,6 +287,50 @@ class VerifyTierBElfTest(unittest.TestCase):
         process, result = self.run_gate(broken, symbols, sections, sdkconfig)
         self.assertEqual(process.returncode, 2)
         self.assertIn("read CCOUNT immediately", process.stderr)
+        self.assertFalse(result.exists())
+
+    def test_ladder_missing_entry_leaves_no_result(self) -> None:
+        disassembly, symbols, sections, sdkconfig = fixtures()
+        broken = replace_in_function(
+            disassembly, "tier_b_instruction_1_lines", "002136", "000000"
+        )
+        process, result = self.run_gate(broken, symbols, sections, sdkconfig)
+        self.assertEqual(process.returncode, 2)
+        self.assertIn("not exact entry", process.stderr)
+        self.assertFalse(result.exists())
+
+    def test_ladder_ret_n_leaves_no_result(self) -> None:
+        disassembly, symbols, sections, sdkconfig = fixtures()
+        broken = replace_in_function(
+            disassembly,
+            "tier_b_instruction_1_lines",
+            "f01d     retw.n",
+            "f00d     ret.n",
+        )
+        process, result = self.run_gate(broken, symbols, sections, sdkconfig)
+        self.assertEqual(process.returncode, 2)
+        self.assertIn("no exact retw.n endpoint", process.stderr)
+        self.assertFalse(result.exists())
+
+    def test_first_line_callx0_leaves_no_result(self) -> None:
+        disassembly, symbols, sections, sdkconfig = fixtures()
+        broken = replace_in_function(
+            disassembly, "probe_first_line_i_flash", "callx8", "callx0"
+        )
+        process, result = self.run_gate(broken, symbols, sections, sdkconfig)
+        self.assertEqual(process.returncode, 2)
+        self.assertIn("windowed callx8", process.stderr)
+        self.assertFalse(result.exists())
+
+    def test_ladder_span_drift_leaves_no_result(self) -> None:
+        disassembly, symbols, sections, sdkconfig = fixtures()
+        broken = symbols.replace(
+            "42000120 g .flash.text 00000000 tier_b_instruction_1_lines_end",
+            "42000122 g .flash.text 00000000 tier_b_instruction_1_lines_end",
+        )
+        process, result = self.run_gate(disassembly, broken, sections, sdkconfig)
+        self.assertEqual(process.returncode, 2)
+        self.assertIn("spans 34 bytes", process.stderr)
         self.assertFalse(result.exists())
 
     def test_ladder_residue_mismatch_leaves_no_result(self) -> None:

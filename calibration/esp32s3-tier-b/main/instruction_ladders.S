@@ -13,10 +13,14 @@
   .type tier_b_instruction_\lines\()_lines,@function
 tier_b_instruction_\lines\()_lines_start:
 tier_b_instruction_\lines\()_lines:
-  .rept ((\lines * 32 - 2) / 2)
+  entry a1, 16
+  .begin no-transform
+  _or a8, a8, a8
+  .rept ((\lines * 32 - 8) / 2)
   nop.n
   .endr
-  ret.n
+  .end no-transform
+  retw.n
 tier_b_instruction_\lines\()_lines_end:
   .size tier_b_instruction_\lines\()_lines, .-tier_b_instruction_\lines\()_lines
 .endm
@@ -32,10 +36,14 @@ instruction_ladder 16
   .global tier_b_first_line_i_\index\()
   .type tier_b_first_line_i_\index\(),@function
 tier_b_first_line_i_\index\():
-  .rept 15
+  entry a1, 16
+  .begin no-transform
+  _or a8, a8, a8
+  .rept 12
   nop.n
   .endr
-  ret.n
+  .end no-transform
+  retw.n
   .size tier_b_first_line_i_\index\(), .-tier_b_first_line_i_\index\()
 .endm
 
