@@ -386,7 +386,14 @@ class CaptureValidator:
                 "endCore",
                 "cacheCounters",
             },
-            {"baselineCycles", "baselineCacheCounters", "aggressorIterations", "note"},
+            {
+                "baselineCycles",
+                "baselineCacheCounters",
+                "aggressorCore",
+                "aggressorCacheCounters",
+                "aggressorIterations",
+                "note",
+            },
         )
         cell = _string(record["cell"], f"{path}.cell")
         if cell != self.active_cell:
@@ -416,10 +423,24 @@ class CaptureValidator:
             )
         if "aggressorIterations" in record:
             _integer(record["aggressorIterations"], f"{path}.aggressorIterations", 1)
+        aggressor_counters = None
+        if "aggressorCacheCounters" in record:
+            aggressor_counters = self._cache_counters(
+                record["aggressorCacheCounters"], f"{path}.aggressorCacheCounters"
+            )
+        if "aggressorCore" in record:
+            aggressor_core = _integer(record["aggressorCore"], f"{path}.aggressorCore")
+            if aggressor_core != 1:
+                raise ValidationError(f"{path}.aggressorCore must be 1")
         if "note" in record:
             _string(record["note"], f"{path}.note")
         needs_contention = cell.startswith("arbitration_") or cell.endswith("_cross_core")
-        if needs_contention and (baseline_counters is None or "aggressorIterations" not in record):
+        if needs_contention and (
+            baseline_counters is None
+            or "aggressorIterations" not in record
+            or "aggressorCore" not in record
+            or aggressor_counters is None
+        ):
             raise ValidationError(f"{path} lacks contention baseline or aggressor attribution")
         if cell == "store_hit_psram":
             if baseline_counters is None or record["bytes"] != 1024:
@@ -429,13 +450,18 @@ class CaptureValidator:
         if cell.startswith("arbitration_"):
             if counters["dbusAccesses"] == 0 or counters["dbusPsramMisses"] == 0:
                 raise ValidationError(f"{path} lacks PSRAM victim counter attribution")
-            if "flash_aggressor" in cell and counters["dbusFlashMisses"] == 0:
-                raise ValidationError(f"{path} lacks flash aggressor counter attribution")
-            if "psram_aggressor" in cell and (
-                baseline_counters is None
-                or counters["dbusPsramMisses"] <= baseline_counters["dbusPsramMisses"]
+            if "flash_aggressor" in cell and (
+                aggressor_counters is None
+                or aggressor_counters["dbusAccesses"] == 0
+                or aggressor_counters["dbusFlashMisses"] == 0
             ):
-                raise ValidationError(f"{path} lacks additional PSRAM aggressor misses")
+                raise ValidationError(f"{path} lacks core-1 flash aggressor attribution")
+            if "psram_aggressor" in cell and (
+                aggressor_counters is None
+                or aggressor_counters["dbusAccesses"] == 0
+                or aggressor_counters["dbusPsramMisses"] == 0
+            ):
+                raise ValidationError(f"{path} lacks core-1 PSRAM aggressor attribution")
         if cell in {"instruction_psram_hot", "instruction_psram_cold", "first_line_i_flash"}:
             if counters["ibusAccesses"] == 0:
                 raise ValidationError(f"{path} lacks instruction-cache accesses")
@@ -455,6 +481,12 @@ class CaptureValidator:
             counters["dbusAccesses"] == 0 or counters["dbusFlashMisses"] == 0
         ):
             raise ValidationError(f"{path} lacks D-flash counters")
+        if cell.endswith("_cross_core") and (
+            aggressor_counters is None
+            or aggressor_counters["dbusAccesses"] == 0
+            or aggressor_counters["dbusPsramMisses"] == 0
+        ):
+            raise ValidationError(f"{path} lacks core-1 PSRAM aggressor attribution")
         self.samples[cell] += 1
 
     def _refusal(self, record: dict[str, Any], path: str) -> None:

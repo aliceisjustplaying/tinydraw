@@ -31,6 +31,25 @@ def contract() -> ManifestContract:
     )
 
 
+def contention_contract() -> ManifestContract:
+    return ManifestContract(
+        protocol_version=2,
+        harness_version="0.2.0-review",
+        chip_model="ESP32-S3",
+        chip_revision=2,
+        cells=tuple(
+            CellContract(cell, 1, ("normal",))
+            for cell in (
+                "arbitration_psram_victim_internal_aggressor",
+                "arbitration_psram_victim_flash_aggressor",
+                "arbitration_psram_victim_psram_aggressor",
+                "psram_bandwidth_cross_core",
+                "flash_bandwidth_cross_core",
+            )
+        ),
+    )
+
+
 def line(record: str, **fields: object) -> str:
     return PREFIX + json.dumps({"protocolVersion": 2, "record": record, **fields})
 
@@ -111,6 +130,43 @@ def complete_lines() -> list[str]:
 class CaptureValidatorTest(unittest.TestCase):
     def validator(self, expected_build: dict[str, object] | None = None) -> CaptureValidator:
         return CaptureValidator(contract(), "normal", "store_hit_psram", expected_build)
+
+    def contention_validator(self, cell: str) -> CaptureValidator:
+        actual = contention_contract()
+        validator = CaptureValidator(actual, "normal", cell)
+        validator.feed_line(
+            metadata(
+                availableCells=[item.id for item in actual.available("normal")],
+                selectedCells=[cell],
+            ),
+            1,
+        )
+        validator.feed_line(line("cell-start", cell=cell, expectedSamples=1), 2)
+        return validator
+
+    def contention_sample(
+        self, cell: str, aggressor_counters: dict[str, int]
+    ) -> str:
+        victim = (
+            counters(dbusAccesses=32, dbusFlashMisses=4, dbusPsramMisses=0)
+            if cell == "flash_bandwidth_cross_core"
+            else counters(dbusAccesses=32, dbusFlashMisses=4, dbusPsramMisses=4)
+        )
+        return line(
+            "sample",
+            cell=cell,
+            ordinal=0,
+            cycles=100,
+            bytes=4096,
+            startCore=0,
+            endCore=0,
+            cacheCounters=victim,
+            baselineCycles=80,
+            baselineCacheCounters=victim,
+            aggressorCore=1,
+            aggressorCacheCounters=aggressor_counters,
+            aggressorIterations=64,
+        )
 
     def test_complete_capture_uses_manifest_counts(self) -> None:
         validator = self.validator()
@@ -213,6 +269,45 @@ class CaptureValidatorTest(unittest.TestCase):
                 ),
                 3,
             )
+
+    def test_flash_attribution_uses_core1_counters(self) -> None:
+        cell = "arbitration_psram_victim_flash_aggressor"
+        validator = self.contention_validator(cell)
+        with self.assertRaisesRegex(ValidationError, "core-1 flash aggressor attribution"):
+            validator.feed_line(
+                self.contention_sample(
+                    cell,
+                    counters(dbusAccesses=32, dbusFlashMisses=0, dbusPsramMisses=0),
+                ),
+                3,
+            )
+
+    def test_cross_core_requires_core1_psram_counters(self) -> None:
+        cell = "flash_bandwidth_cross_core"
+        validator = self.contention_validator(cell)
+        with self.assertRaisesRegex(ValidationError, "core-1 PSRAM aggressor attribution"):
+            validator.feed_line(
+                self.contention_sample(cell, counters(dbusAccesses=32, dbusPsramMisses=0)),
+                3,
+            )
+
+    def test_contention_cells_accept_typed_core1_attribution(self) -> None:
+        for cell in (
+            "arbitration_psram_victim_internal_aggressor",
+            "arbitration_psram_victim_flash_aggressor",
+            "arbitration_psram_victim_psram_aggressor",
+            "psram_bandwidth_cross_core",
+            "flash_bandwidth_cross_core",
+        ):
+            aggressor = counters(dbusAccesses=0)
+            if "flash_aggressor" in cell:
+                aggressor = counters(dbusAccesses=32, dbusFlashMisses=4)
+            elif "psram_aggressor" in cell or cell.endswith("_cross_core"):
+                aggressor = counters(dbusAccesses=32, dbusPsramMisses=4)
+            with self.subTest(cell=cell):
+                self.contention_validator(cell).feed_line(
+                    self.contention_sample(cell, aggressor), 3
+                )
 
     def test_post_completion_record_fails_tail(self) -> None:
         validator = self.validator()

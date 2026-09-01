@@ -21,8 +21,10 @@ clean and dirty writeback
 ladders, instruction-PSRAM fetches, first-line pooling, selective cohort
 reruns, and display-path and DMA cost families. Counter-dependent cells check
 the expected access and miss counters. Contended cells also record the
-aggressor iteration count and require counter attribution to the selected
-aggressor. The invalidate cell measures a clean `M2C | INVALIDATE` operation;
+aggressor iteration count and a core 1 counter snapshot. Flash and PSRAM
+aggressors must report their own nonzero access and miss counters, separately
+from the core 0 victim and baseline counters. The invalidate cell measures a
+clean `M2C | INVALIDATE` operation;
 dirty `C2M` writeback is measured separately.
 
 Panel and touch initialization power-cycles their TCA9554 rails between boots
