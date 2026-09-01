@@ -47,7 +47,24 @@ assert "tier_b_store_issue_block" in source and "baseline_cycles" in source
 assert "tier_b_first_line_i_0" in source and "fresh one-line" in source
 assert "aggressor_iterations" in source and "cache attribution failed" in source
 assert "g_aggressor_active" in source
-assert source.count("const std::uint32_t end = read_ccount();\n  const CacheCounters counters") >= 2
+assert "struct AggressorReport" in source and "aggressorCacheCounters" in source
+assert "g_aggressor_report" in source and "g_aggressor_iterations" not in source
+assert ".counters = read_cache_counters()" in source
+assert "core-1 flash aggressor attribution" in validator
+assert "core-1 PSRAM aggressor attribution" in validator
+for probe in ("probe_arbitration", "probe_cross_core_bandwidth"):
+    body_start = source.index(f"Sample {probe}")
+    body_end = source.find("\nSample ", body_start + 1)
+    if body_end < 0:
+        body_end = source.index("\n#define CELL", body_start + 1)
+    body = source[body_start:body_end]
+    timed_start = body.index("const std::uint32_t start = read_ccount();")
+    victim = body.index("const std::uint32_t sum = read_stride", timed_start)
+    timed_end = body.index("const std::uint32_t end = read_ccount();", victim)
+    counters = body.index("const CacheCounters counters = read_cache_counters();", timed_end)
+    report = body.index("const AggressorReport aggressor = stop_aggressor();", counters)
+    assert timed_start < victim < timed_end < counters < report
+    assert "g_aggressor" not in body[timed_start:timed_end]
 assert "(!cold && counters.ibus_misses != 0)" in source
 assert "mmu_psram_check_ptr_addr_in_xip_psram_instruction_region" in source
 assert "kExpanderPoweredDown" in source and "kExpectedIdentity" in source

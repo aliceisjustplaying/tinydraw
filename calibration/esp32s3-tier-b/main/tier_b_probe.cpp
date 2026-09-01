@@ -108,6 +108,8 @@ struct Sample {
   bool has_baseline = false;
   std::uint32_t baseline_cycles = 0;
   CacheCounters baseline_counters{};
+  bool has_aggressor_counters = false;
+  CacheCounters aggressor_counters{};
   std::uint32_t aggressor_iterations = 0;
   const char* reason = "probe failed";
   const char* tier_candidate = "exact";
@@ -142,13 +144,18 @@ struct Context {
 
 enum class Aggressor : std::uint32_t { kInternal, kFlash, kPsram };
 
+struct AggressorReport {
+  CacheCounters counters{};
+  std::uint32_t iterations = 0;
+  std::uint32_t checksum = 0;
+};
+
 std::atomic<bool> g_aggressor_ready{false};
 std::atomic<bool> g_aggressor_start{false};
 std::atomic<bool> g_aggressor_stop{false};
 std::atomic<bool> g_aggressor_done{false};
-std::atomic<std::uint32_t> g_aggressor_checksum{0};
-std::atomic<std::uint32_t> g_aggressor_iterations{0};
 std::atomic<bool> g_aggressor_active{false};
+AggressorReport g_aggressor_report{};
 Context* g_aggressor_context = nullptr;
 Aggressor g_aggressor_kind = Aggressor::kInternal;
 
@@ -207,6 +214,10 @@ void emit_sample(const Cell& cell, std::uint32_t ordinal, const Sample& sample) 
                 sample.baseline_cycles);
     emit_cache_counters(sample.baseline_counters);
   }
+  if (sample.has_aggressor_counters) {
+    std::printf(",\"aggressorCore\":1,\"aggressorCacheCounters\":");
+    emit_cache_counters(sample.aggressor_counters);
+  }
   if (sample.aggressor_iterations != 0) {
     std::printf(",\"aggressorIterations\":%" PRIu32, sample.aggressor_iterations);
   }
@@ -222,6 +233,7 @@ void IRAM_ATTR aggressor_task(void*) {
   g_aggressor_ready.store(true, std::memory_order_release);
   while (!g_aggressor_start.load(std::memory_order_acquire)) {
   }
+  clear_cache_counters();
   g_aggressor_active.store(true, std::memory_order_release);
   std::uint32_t sum = 0;
   std::size_t offset = 0;
@@ -238,12 +250,12 @@ void IRAM_ATTR aggressor_task(void*) {
         break;
     }
     offset += kDcacheLine;
-    g_aggressor_iterations.store(static_cast<std::uint32_t>(offset / kDcacheLine),
-                                 std::memory_order_release);
   }
-  g_aggressor_checksum.store(sum, std::memory_order_release);
-  g_aggressor_iterations.store(static_cast<std::uint32_t>(offset / kDcacheLine),
-                               std::memory_order_release);
+  g_aggressor_report = {
+      .counters = read_cache_counters(),
+      .iterations = static_cast<std::uint32_t>(offset / kDcacheLine),
+      .checksum = sum,
+  };
   g_aggressor_done.store(true, std::memory_order_release);
   vTaskDelete(nullptr);
 }
@@ -255,8 +267,8 @@ bool start_aggressor(Context& context, Aggressor kind) {
   g_aggressor_start.store(false, std::memory_order_relaxed);
   g_aggressor_stop.store(false, std::memory_order_relaxed);
   g_aggressor_done.store(false, std::memory_order_relaxed);
-  g_aggressor_iterations.store(0, std::memory_order_relaxed);
   g_aggressor_active.store(false, std::memory_order_relaxed);
+  g_aggressor_report = {};
   if (xTaskCreatePinnedToCore(aggressor_task, "tier_b_aggress", 4096, nullptr,
                               configMAX_PRIORITIES - 2, nullptr, 1) != pdPASS) {
     return false;
@@ -267,13 +279,14 @@ bool start_aggressor(Context& context, Aggressor kind) {
   return true;
 }
 
-std::uint32_t stop_aggressor() {
+AggressorReport stop_aggressor() {
   g_aggressor_stop.store(true, std::memory_order_release);
   while (!g_aggressor_done.load(std::memory_order_acquire)) {
     taskYIELD();
   }
-  g_sink ^= g_aggressor_checksum.load(std::memory_order_acquire);
-  return g_aggressor_iterations.load(std::memory_order_acquire);
+  const AggressorReport report = g_aggressor_report;
+  g_sink ^= report.checksum;
+  return report;
 }
 
 std::uint32_t read_stride(const std::uint8_t* data, std::size_t size) {
@@ -328,16 +341,16 @@ Sample probe_arbitration(Context& context, const Cell& cell, std::uint32_t) {
   const std::uint32_t start = read_ccount();
   const std::uint32_t sum = read_stride(context.psram, kBandwidthBytes);
   const std::uint32_t end = read_ccount();
-  const CacheCounters counters = read_cache_counters();
-  const std::uint32_t aggressor_iterations = g_aggressor_iterations.load(std::memory_order_acquire);
-  stop_aggressor();
   g_sink ^= sum;
-  const bool attributed = aggressor_iterations != 0 &&
+  const CacheCounters counters = read_cache_counters();
+  const AggressorReport aggressor = stop_aggressor();
+  const bool attributed = aggressor.iterations != 0 &&
                           has_expected_data_counters(counters, false) &&
                           (kind == Aggressor::kInternal ||
-                           (kind == Aggressor::kFlash && counters.dbus_flash_misses != 0) ||
-                           (kind == Aggressor::kPsram &&
-                            counters.dbus_psram_misses > baseline.counters.dbus_psram_misses));
+                           (kind == Aggressor::kFlash && aggressor.counters.dbus_accesses != 0 &&
+                            aggressor.counters.dbus_flash_misses != 0) ||
+                           (kind == Aggressor::kPsram && aggressor.counters.dbus_accesses != 0 &&
+                            aggressor.counters.dbus_psram_misses != 0));
   if (!attributed) {
     return {.reason = "contended aggressor cache attribution failed", .tier_candidate = "affine"};
   }
@@ -346,7 +359,9 @@ Sample probe_arbitration(Context& context, const Cell& cell, std::uint32_t) {
   result.has_baseline = true;
   result.baseline_cycles = baseline.cycles;
   result.baseline_counters = baseline.counters;
-  result.aggressor_iterations = aggressor_iterations;
+  result.has_aggressor_counters = true;
+  result.aggressor_counters = aggressor.counters;
+  result.aggressor_iterations = aggressor.iterations;
   return result;
 }
 
@@ -815,12 +830,11 @@ Sample probe_cross_core_bandwidth(Context& context, const Cell& cell, std::uint3
   const std::uint32_t start = read_ccount();
   const std::uint32_t sum = read_stride(data, kBandwidthBytes);
   const std::uint32_t end = read_ccount();
-  const CacheCounters counters = read_cache_counters();
-  const std::uint32_t aggressor_iterations = g_aggressor_iterations.load(std::memory_order_acquire);
-  stop_aggressor();
   g_sink ^= sum;
-  if (aggressor_iterations == 0 || !has_expected_data_counters(counters, flash_victim) ||
-      counters.dbus_psram_misses <= baseline.counters.dbus_psram_misses) {
+  const CacheCounters counters = read_cache_counters();
+  const AggressorReport aggressor = stop_aggressor();
+  if (aggressor.iterations == 0 || !has_expected_data_counters(counters, flash_victim) ||
+      aggressor.counters.dbus_accesses == 0 || aggressor.counters.dbus_psram_misses == 0) {
     return {.reason = "cross-core PSRAM contention was not attributable in counters",
             .tier_candidate = "distribution"};
   }
@@ -829,7 +843,9 @@ Sample probe_cross_core_bandwidth(Context& context, const Cell& cell, std::uint3
   result.has_baseline = true;
   result.baseline_cycles = baseline.cycles;
   result.baseline_counters = baseline.counters;
-  result.aggressor_iterations = aggressor_iterations;
+  result.has_aggressor_counters = true;
+  result.aggressor_counters = aggressor.counters;
+  result.aggressor_iterations = aggressor.iterations;
   return result;
 }
 
