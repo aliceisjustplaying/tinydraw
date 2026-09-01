@@ -54,8 +54,7 @@ TEST_CASE("bottom chrome maps six stable actions") {
 
   const ChromeState hidden_hud{.hud_visible = false};
   CHECK_FALSE(tinydraw::vector_v2::chrome_contains({150.0F, 410.0F}, hidden_hud));
-  CHECK(tinydraw::vector_v2::chrome_action_at({150.0F, 410.0F}, hidden_hud) ==
-        ChromeAction::kNone);
+  CHECK(tinydraw::vector_v2::chrome_action_at({150.0F, 410.0F}, hidden_hud) == ChromeAction::kNone);
 }
 
 TEST_CASE("tools popup contains draw erase and pan") {
@@ -548,8 +547,7 @@ TEST_CASE("chrome canvas clipping follows the visible overlay") {
 TEST_CASE("hidden chrome gives the complete panel to canvas input") {
   const ChromeState state{.hud_visible = false};
   for (const auto point : std::array{ChromePoint{230.0F, 28.0F}, ChromePoint{332.0F, 98.0F},
-                                     ChromePoint{300.0F, 300.0F},
-                                     ChromePoint{180.0F, 410.0F}}) {
+                                     ChromePoint{300.0F, 300.0F}, ChromePoint{180.0F, 410.0F}}) {
     CHECK_FALSE(tinydraw::vector_v2::chrome_contains(point, state));
     CHECK(tinydraw::vector_v2::chrome_action_at(point, state) == ChromeAction::kNone);
   }
@@ -834,12 +832,10 @@ TEST_CASE("canvas edge attraction supports full-bleed ink without a discontinuit
   const auto unchanged = tinydraw::vector_v2::attract_canvas_edges({36.0F, 36.0F}, shown);
   CHECK(unchanged.x == 36.0F);
   CHECK(unchanged.y == 36.0F);
-  const auto snapped_right =
-      tinydraw::vector_v2::attract_canvas_edges({349.0F, 430.0F}, shown);
+  const auto snapped_right = tinydraw::vector_v2::attract_canvas_edges({349.0F, 430.0F}, shown);
   CHECK(snapped_right.x == 367.0F);
   CHECK(snapped_right.y == 430.0F);
-  const auto snapped_bottom =
-      tinydraw::vector_v2::attract_canvas_edges({349.0F, 430.0F}, hidden);
+  const auto snapped_bottom = tinydraw::vector_v2::attract_canvas_edges({349.0F, 430.0F}, hidden);
   CHECK(snapped_bottom.x == 367.0F);
   CHECK(snapped_bottom.y == 447.0F);
 }

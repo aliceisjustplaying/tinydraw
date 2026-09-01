@@ -86,8 +86,8 @@ LiveStrokeStartResult LiveStrokeSession::begin(Point screen_point, std::uint32_t
   const vector_v2::ChromePoint attracted =
       vector_v2::attract_canvas_edges({.x = screen_point.x, .y = screen_point.y}, chrome);
   last_canvas_touch_ = Point{.x = attracted.x, .y = attracted.y};
-  last_ink_ = ink_.begin(
-      {.x = last_canvas_touch_.x, .y = last_canvas_touch_.y, .timestamp_us = event_us});
+  last_ink_ =
+      ink_.begin({.x = last_canvas_touch_.x, .y = last_canvas_touch_.y, .timestamp_us = event_us});
   first_operation_ = log_.operation_count();
   reset_stroke_stats();
   const vector_v2::OperationPoint begin_point = presenter_.operation_point(last_ink_);
@@ -130,8 +130,8 @@ LiveStrokeMoveResult LiveStrokeSession::move(Point screen_point, std::uint32_t e
   }
   const vector_v2::ChromePoint attracted = vector_v2::attract_canvas_edges(*clipped, chrome);
   last_canvas_touch_ = Point{.x = attracted.x, .y = attracted.y};
-  last_ink_ = ink_.update(
-      {.x = last_canvas_touch_.x, .y = last_canvas_touch_.y, .timestamp_us = event_us});
+  last_ink_ =
+      ink_.update({.x = last_canvas_touch_.x, .y = last_canvas_touch_.y, .timestamp_us = event_us});
   const vector_v2::OperationPoint add_point = presenter_.operation_point(last_ink_);
   const RibbonUpdate update = ribbon_.append(last_ink_, true, last_canvas_touch_);
   result.geometry_us = static_cast<std::uint32_t>(esp_timer_get_time()) - event_us;

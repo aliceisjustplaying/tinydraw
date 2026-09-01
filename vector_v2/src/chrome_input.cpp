@@ -71,8 +71,7 @@ int chrome_input_bottom(const ChromeState& state) {
   if (state.popup == ChromePopup::kColors) {
     return 0;
   }
-  return state.popup == ChromePopup::kSizes ? kChromeSizePopupInputBottom
-                                            : kChromePopupInputBottom;
+  return state.popup == ChromePopup::kSizes ? kChromeSizePopupInputBottom : kChromePopupInputBottom;
 }
 
 int chrome_ink_bottom(const ChromeState& state) {
@@ -89,8 +88,7 @@ int chrome_ink_bottom(const ChromeState& state) {
   if (state.popup == ChromePopup::kColors) {
     return 0;
   }
-  return state.popup == ChromePopup::kSizes ? kChromeSizePopupInputBottom
-                                            : kChromePopupInputBottom;
+  return state.popup == ChromePopup::kSizes ? kChromeSizePopupInputBottom : kChromePopupInputBottom;
 }
 
 bool chrome_can_toggle_hud(const ChromeState& state) {
@@ -330,9 +328,12 @@ ChromeAction popup_action_at(ChromePoint point, ChromePopup popup) {
       const int row =
           std::clamp((static_cast<int>(point.y) - kSizePopupTop) * 2 / popup_height, 0, 1);
       constexpr std::array actions{
-          ChromeAction::kSelectSmall,            ChromeAction::kSelectMedium,
-          ChromeAction::kSelectLarge,            ChromeAction::kSelectExtraLarge,
-          ChromeAction::kSelectDoubleExtraLarge, ChromeAction::kSelectTripleExtraLarge,
+          ChromeAction::kSelectSmall,
+          ChromeAction::kSelectMedium,
+          ChromeAction::kSelectLarge,
+          ChromeAction::kSelectExtraLarge,
+          ChromeAction::kSelectDoubleExtraLarge,
+          ChromeAction::kSelectTripleExtraLarge,
       };
       return actions[static_cast<std::size_t>(row) * 3U + column];
     }
