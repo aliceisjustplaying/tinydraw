@@ -26,7 +26,9 @@ isolated lap over the selected source and records its counters and exact
 checksum. Flash and PSRAM laps require their matching access and miss counters
 and refuse cross-source misses. The internal lap requires zero external data
 accesses or misses. Instruction counters are recorded but do not determine
-data-source attribution. The concurrent phase records runtime iterations and checksum,
+data-source attribution. At startup the probe programs the ESP32-S3 DBUS flash
+classifier to the exact `g_flash_pool` interval, executes `memw`, and refuses a
+readback mismatch. The concurrent phase records runtime iterations and checksum,
 while the core 0
 CCOUNT window contains only the victim traversal. The invalidate cell measures
 a clean `M2C | INVALIDATE` operation;
@@ -41,8 +43,12 @@ so its timed bytes cannot be interpreted by the panel.
 Build and verify both images before any capture. The verifier disassembles the
 Tier-B issue blocks, checks their exact encodings, checks every 1, 2, 4, 8, and
 16 cache-line ladder span and residue, checks five fresh one-line instruction
-targets, and confirms XIP ladder placement. A
+targets, and confirms XIP ladder placement. The verifier also requires
+`g_flash_pool` to be 64-byte aligned, exactly
+`0x40000` bytes, and wholly linked in `.flash.rodata`, not XIP/PSRAM storage. A
 mismatch exits 2 and creates no verification result.
+Both compilation and preflight reject `CONFIG_SPIRAM_RODATA=y`; the preflight
+and runtime metadata record `spiramRodata=false` for host validation.
 
 ```text
 python3 calibration/esp32s3-tier-b/verify_draft.py
@@ -76,8 +82,9 @@ python3 -m unittest \
 The verification result pins the repository commit and dirty state, image
 variant, ELF and sdkconfig hashes, compiler, objdump, exact issue-block
 encodings, ladder spans, residues, and instruction placement. Runtime metadata
-must match it and also reports chip model and revision, reset reason, and a
-per-boot identity. Fixture-generated verifier results cannot authorize a
+must match it, including the exact DBUS flash-classifier range, and also reports
+chip model and revision, reset reason, and a per-boot identity. Fixture-generated
+verifier results cannot authorize a
 capture. Building and verifying do not flash or open serial.
 
 ## Maintainer hardware session, after review

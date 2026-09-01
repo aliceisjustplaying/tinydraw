@@ -69,17 +69,23 @@ def counters(**updates: int) -> dict[str, int]:
     return result
 
 
+def classifier(start: int = 0x3C02AC00, end: int = 0x3C06ABFF) -> dict[str, int]:
+    return {"start": start, "end": end}
+
+
 def metadata(**updates: object) -> str:
     fields: dict[str, object] = {
         "suite": "tier-b",
         "harnessVersion": "0.2.0-review",
         "idfVersion": "v6.1",
+        "spiramRodata": False,
         "gitCommit": "a" * 40,
         "gitDirty": False,
         "variant": "normal",
         "sdkconfigSha256": "b" * 64,
         "compilerVersion": "15.2.0",
         "elfSha256": "c" * 64,
+        "dbusFlashClassifier": classifier(),
         "chipModel": "ESP32-S3",
         "chipRevision": 2,
         "resetReason": 1,
@@ -239,12 +245,14 @@ class CaptureValidatorTest(unittest.TestCase):
     def test_runtime_build_must_match_preflight(self) -> None:
         expected = {
             "idfVersion": "v6.1",
+            "spiramRodata": False,
             "gitCommit": "a" * 40,
             "gitDirty": False,
             "variant": "normal",
             "sdkconfigSha256": "b" * 64,
             "compilerVersion": "15.2.0",
             "elfSha256": "d" * 64,
+            "dbusFlashClassifier": classifier(),
         }
         with self.assertRaisesRegex(ValidationError, "verified ELF preflight"):
             self.validator(expected).feed_line(metadata(), 1)
@@ -252,6 +260,42 @@ class CaptureValidatorTest(unittest.TestCase):
     def test_runtime_requires_exact_idf_version(self) -> None:
         with self.assertRaisesRegex(ValidationError, "expected 'v6.1'"):
             self.validator().feed_line(metadata(idfVersion="v6.0.2"), 1)
+
+    def test_runtime_rejects_spiram_rodata(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "spiramRodata must be false"):
+            self.validator().feed_line(metadata(spiramRodata=True), 1)
+
+    def test_classifier_reset_default_range_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "reset default"):
+            self.validator().feed_line(
+                metadata(dbusFlashClassifier=classifier(0, 0)), 1
+            )
+
+    def test_classifier_zero_start_range_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "reset default"):
+            self.validator().feed_line(
+                metadata(dbusFlashClassifier=classifier(0, 0x3FFFF)), 1
+            )
+
+    def test_classifier_wrong_range_does_not_match_preflight(self) -> None:
+        expected = {
+            "idfVersion": "v6.1",
+            "spiramRodata": False,
+            "gitCommit": "a" * 40,
+            "gitDirty": False,
+            "variant": "normal",
+            "sdkconfigSha256": "b" * 64,
+            "compilerVersion": "15.2.0",
+            "elfSha256": "c" * 64,
+            "dbusFlashClassifier": classifier(),
+        }
+        with self.assertRaisesRegex(ValidationError, "verified ELF preflight"):
+            self.validator(expected).feed_line(
+                metadata(
+                    dbusFlashClassifier=classifier(0x3C02AC40, 0x3C06AC3F)
+                ),
+                1,
+            )
 
     def test_hot_instruction_sample_rejects_any_icache_miss(self) -> None:
         validator = CaptureValidator(contract(), "xip-psram", "instruction_psram_hot")

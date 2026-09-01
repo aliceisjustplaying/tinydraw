@@ -15,6 +15,8 @@ PREFIX = "TINYDRAW_TIER_B_NDJSON "
 PROTOCOL_VERSION = 2
 REQUIRED_IDF_VERSION = "v6.1"
 ATTRIBUTION_ITERATIONS = 128
+DBUS_FLASH_CLASSIFIER_BYTES = 0x40000
+DBUS_FLASH_CLASSIFIER_ALIGNMENT = 64
 ATTRIBUTION_CHECKSUMS = {
     "internal": 0x00003280,
     "flash": 0xE5C43380,
@@ -88,6 +90,20 @@ def _object(value: Any, path: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValidationError(f"{path} must be an object")
     return value
+
+
+def _dbus_flash_classifier(value: Any, path: str) -> dict[str, int]:
+    classifier = _object(value, path)
+    _exact_keys(classifier, path, {"start", "end"})
+    start = _integer(classifier["start"], f"{path}.start")
+    end = _integer(classifier["end"], f"{path}.end")
+    if start == 0:
+        raise ValidationError(f"{path}.start must not be the reset default")
+    if start % DBUS_FLASH_CLASSIFIER_ALIGNMENT != 0:
+        raise ValidationError(f"{path}.start is not 64-byte aligned")
+    if end - start + 1 != DBUS_FLASH_CLASSIFIER_BYTES:
+        raise ValidationError(f"{path} does not span the exact flash pool")
+    return {"start": start, "end": end}
 
 
 def _exact_keys(
@@ -340,9 +356,11 @@ class CaptureValidator:
                 "gitCommit",
                 "gitDirty",
                 "variant",
+                "spiramRodata",
                 "sdkconfigSha256",
                 "compilerVersion",
                 "elfSha256",
+                "dbusFlashClassifier",
                 "chipModel",
                 "chipRevision",
                 "resetReason",
@@ -370,11 +388,17 @@ class CaptureValidator:
             raise ValidationError(
                 f"{path}.idfVersion is {idf_version!r}, expected {REQUIRED_IDF_VERSION!r}"
             )
+        spiram_rodata = _boolean(record["spiramRodata"], f"{path}.spiramRodata")
+        if spiram_rodata:
+            raise ValidationError(f"{path}.spiramRodata must be false")
         _string(record["gitCommit"], f"{path}.gitCommit")
         _boolean(record["gitDirty"], f"{path}.gitDirty")
         _sha256(record["sdkconfigSha256"], f"{path}.sdkconfigSha256")
         _string(record["compilerVersion"], f"{path}.compilerVersion")
         _sha256(record["elfSha256"], f"{path}.elfSha256")
+        classifier = _dbus_flash_classifier(
+            record["dbusFlashClassifier"], f"{path}.dbusFlashClassifier"
+        )
         _integer(record["resetReason"], f"{path}.resetReason")
         _string(record["bootId"], f"{path}.bootId")
         if self.expected_build is not None:
@@ -383,6 +407,7 @@ class CaptureValidator:
                 "gitCommit",
                 "gitDirty",
                 "variant",
+                "spiramRodata",
                 "sdkconfigSha256",
                 "compilerVersion",
                 "elfSha256",
@@ -391,6 +416,14 @@ class CaptureValidator:
                     raise ValidationError(
                         f"{path}.{key} does not match the verified ELF preflight"
                     )
+            expected_classifier = self.expected_build.get("dbusFlashClassifier")
+            if not isinstance(expected_classifier, dict) or classifier != {
+                "start": expected_classifier.get("start"),
+                "end": expected_classifier.get("end"),
+            }:
+                raise ValidationError(
+                    f"{path}.dbusFlashClassifier does not match the verified ELF preflight"
+                )
         self.metadata = record.copy()
 
     def _cell_start(self, record: dict[str, Any], path: str) -> None:

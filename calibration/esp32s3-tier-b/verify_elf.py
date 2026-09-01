@@ -18,6 +18,8 @@ INSTRUCTION = re.compile(
     r"^\s*([0-9a-fA-F]+):\s+([0-9a-fA-F]+)\s+([a-zA-Z0-9_.]+)(?:\s+(.*))?$"
 )
 LADDER_LINES = (1, 2, 4, 8, 16)
+FLASH_POOL_BYTES = 0x40000
+FLASH_POOL_ALIGNMENT = 64
 REPO = Path(__file__).resolve().parents[2]
 MANIFEST = Path(__file__).resolve().with_name("probe-cells.json")
 REQUIRED_IDF_VERSION = "v6.1"
@@ -38,6 +40,13 @@ class Instruction:
 class Symbol:
     address: int
     section: str
+    size: int
+
+
+@dataclass(frozen=True)
+class Section:
+    address: int
+    size: int
 
 
 def parse_disassembly(text: str) -> dict[str, list[Instruction]]:
@@ -71,8 +80,27 @@ def parse_symbols(text: str) -> dict[str, Symbol]:
             (part for part in parts[1:-1] if part.startswith(".") or part == "*ABS*"), None
         )
         if section is not None:
-            symbols[parts[-1]] = Symbol(int(parts[0], 16), section)
+            try:
+                size = int(parts[-2], 16)
+            except ValueError:
+                continue
+            symbols[parts[-1]] = Symbol(int(parts[0], 16), section, size)
     return symbols
+
+
+def parse_sections(text: str) -> dict[str, Section]:
+    sections: dict[str, Section] = {}
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) < 4 or not parts[0].isdigit() or not parts[1].startswith("."):
+            continue
+        try:
+            size = int(parts[2], 16)
+            address = int(parts[3], 16)
+        except ValueError:
+            continue
+        sections[parts[1]] = Section(address, size)
+    return sections
 
 
 def require_function(
@@ -89,6 +117,44 @@ def require_symbol(symbols: dict[str, Symbol], name: str) -> Symbol:
     if symbol is None:
         raise VerificationError(f"missing ELF symbol {name}")
     return symbol
+
+
+def verify_flash_pool(
+    symbols: dict[str, Symbol], sections: dict[str, Section]
+) -> dict[str, int | str | bool]:
+    matches = [
+        (name, symbol)
+        for name, symbol in symbols.items()
+        if name == "g_flash_pool" or name.endswith("g_flash_poolE")
+    ]
+    if len(matches) != 1:
+        raise VerificationError(f"expected one g_flash_pool ELF symbol, found {len(matches)}")
+    symbol_name, pool = matches[0]
+    if pool.section != ".flash.rodata":
+        raise VerificationError("g_flash_pool is not linked in .flash.rodata")
+    if pool.size != FLASH_POOL_BYTES:
+        raise VerificationError(
+            f"g_flash_pool is {pool.size:#x} bytes, expected {FLASH_POOL_BYTES:#x}"
+        )
+    if pool.address % FLASH_POOL_ALIGNMENT != 0:
+        raise VerificationError("g_flash_pool is not 64-byte aligned")
+    section = sections.get(".flash.rodata")
+    if section is None:
+        raise VerificationError("ELF has no .flash.rodata section header")
+    pool_end = pool.address + pool.size
+    section_end = section.address + section.size
+    if not section.address <= pool.address < pool_end <= section_end:
+        raise VerificationError("g_flash_pool falls outside .flash.rodata")
+    return {
+        "symbol": symbol_name,
+        "section": pool.section,
+        "storage": "flash-rodata",
+        "xipPsram": False,
+        "start": pool.address,
+        "end": pool_end - 1,
+        "sizeBytes": pool.size,
+        "alignmentBytes": FLASH_POOL_ALIGNMENT,
+    }
 
 
 def through_return(instructions: list[Instruction], symbol: str) -> list[Instruction]:
@@ -209,6 +275,14 @@ def verify_placement(
     }
 
 
+def verify_spiram_rodata_disabled(sdkconfig: str) -> bool:
+    if "CONFIG_SPIRAM_RODATA=y" in sdkconfig:
+        raise VerificationError("CONFIG_SPIRAM_RODATA must be disabled")
+    if "# CONFIG_SPIRAM_RODATA is not set" not in sdkconfig:
+        raise VerificationError("sdkconfig does not state that CONFIG_SPIRAM_RODATA is disabled")
+    return False
+
+
 def run(command: list[str]) -> str:
     return subprocess.run(command, check=True, text=True, capture_output=True).stdout
 
@@ -231,26 +305,37 @@ def main() -> int:
     parser.add_argument("--compiler")
     parser.add_argument("--disassembly", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--symbols", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--sections", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--compiler-version", help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.result.exists():
         print(f"refusing to overwrite result: {args.result}", file=sys.stderr)
         return 2
     try:
-        if (args.disassembly is None) != (args.symbols is None):
-            raise VerificationError("disassembly and symbol fixtures must be supplied together")
+        fixtures = (args.disassembly, args.symbols, args.sections)
+        if any(value is not None for value in fixtures) and not all(
+            value is not None for value in fixtures
+        ):
+            raise VerificationError(
+                "disassembly, symbol, and section fixtures must be supplied together"
+            )
         if args.disassembly is not None:
             disassembly = args.disassembly.read_text()
             symbol_text = args.symbols.read_text()
+            section_text = args.sections.read_text()
         else:
             disassembly = run([args.objdump, "-d", str(args.elf)])
             symbol_text = run([args.objdump, "-t", str(args.elf)])
+            section_text = run([args.objdump, "-h", str(args.elf)])
         functions = parse_disassembly(disassembly)
         symbols = parse_symbols(symbol_text)
+        sections = parse_sections(section_text)
         ladders = verify_ladders(functions, symbols)
         issue_blocks = verify_issue_blocks(functions, symbols)
         first_line_pool = verify_first_line_pool(functions, symbols)
+        flash_classifier = verify_flash_pool(symbols, sections)
         sdkconfig = args.sdkconfig.read_text()
+        spiram_rodata = verify_spiram_rodata_disabled(sdkconfig)
         placement = verify_placement(args.variant, sdkconfig, symbols)
         compiler = args.compiler or str(Path(args.objdump).with_name("xtensa-esp32s3-elf-gcc"))
         compiler_version = args.compiler_version or run(
@@ -267,6 +352,7 @@ def main() -> int:
             "fixture": args.disassembly is not None,
             "variant": args.variant,
             "idfVersion": REQUIRED_IDF_VERSION,
+            "spiramRodata": spiram_rodata,
             "gitCommit": commit,
             "gitDirty": dirty,
             "sdkconfigSha256": hashlib.sha256(args.sdkconfig.read_bytes()).hexdigest(),
@@ -283,6 +369,7 @@ def main() -> int:
             "firstLineInstructionPool": first_line_pool,
             "instructionLadders": ladders,
             "instructionPlacement": placement,
+            "dbusFlashClassifier": flash_classifier,
         }
     except (OSError, subprocess.CalledProcessError, VerificationError) as error:
         print(f"Tier-B ELF verification failed: {error}", file=sys.stderr)
