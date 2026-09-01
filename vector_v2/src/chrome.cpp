@@ -31,10 +31,9 @@ static_assert([] {
 
 bool bottom_cache_matches(const ChromeState& cached, const ChromeState& current) {
   return cached.hud_visible == current.hud_visible && cached.tool == current.tool &&
-         cached.size == current.size &&
-         cached.palette_page == current.palette_page && cached.color_index == current.color_index &&
-         cached.can_undo == current.can_undo && cached.can_redo == current.can_redo &&
-         cached.recording == current.recording;
+         cached.size == current.size && cached.palette_page == current.palette_page &&
+         cached.color_index == current.color_index && cached.can_undo == current.can_undo &&
+         cached.can_redo == current.can_redo && cached.recording == current.recording;
 }
 
 bool surface_intersects(const MinimapSurface& surface, ChromeRect rect) {
@@ -212,9 +211,8 @@ void draw_tools_popup(Painter& painter, const ChromeState& state) {
 
 void draw_sizes_popup(Painter& painter, const ChromeState& state) {
   constexpr std::array sizes{
-      ChromeSize::kSmall,            ChromeSize::kMedium,          ChromeSize::kLarge,
-      ChromeSize::kExtraLarge,       ChromeSize::kDoubleExtraLarge,
-      ChromeSize::kTripleExtraLarge,
+      ChromeSize::kSmall,      ChromeSize::kMedium,           ChromeSize::kLarge,
+      ChromeSize::kExtraLarge, ChromeSize::kDoubleExtraLarge, ChromeSize::kTripleExtraLarge,
   };
   // Popup samples are deliberately scaled down independently of brush pixels
   // so six increasingly large choices remain legible in two compact rows.
