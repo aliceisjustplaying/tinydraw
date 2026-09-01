@@ -76,6 +76,7 @@ constexpr std::uint32_t kSweepSamples = 6;
 constexpr std::uint32_t kFirstLineSamples = 5;
 constexpr std::uint32_t kStoreIterations = 256;
 constexpr std::uint32_t kBandwidthBytes = 256 * 1024;
+constexpr std::uint32_t kAttributionIterations = 128;
 constexpr std::uint8_t kExpanderOutputs = 0x87;
 constexpr std::uint8_t kExpanderPoweredDown = 0x80;
 
@@ -100,6 +101,15 @@ struct CacheCounters {
   std::uint32_t dbus_psram_misses = 0;
 };
 
+enum class Aggressor : std::uint32_t { kInternal, kFlash, kPsram };
+
+struct AttributionEvidence {
+  Aggressor source = Aggressor::kInternal;
+  CacheCounters counters{};
+  std::uint32_t iterations = 0;
+  std::uint32_t checksum = 0;
+};
+
 struct Sample {
   bool ok = false;
   std::uint32_t cycles = 0;
@@ -108,9 +118,10 @@ struct Sample {
   bool has_baseline = false;
   std::uint32_t baseline_cycles = 0;
   CacheCounters baseline_counters{};
-  bool has_aggressor_counters = false;
-  CacheCounters aggressor_counters{};
+  bool has_attribution = false;
+  AttributionEvidence attribution{};
   std::uint32_t aggressor_iterations = 0;
+  std::uint32_t aggressor_checksum = 0;
   const char* reason = "probe failed";
   const char* tier_candidate = "exact";
   const char* note = nullptr;
@@ -142,12 +153,16 @@ struct Context {
   SemaphoreHandle_t gdma_done = nullptr;
 };
 
-enum class Aggressor : std::uint32_t { kInternal, kFlash, kPsram };
-
 struct AggressorReport {
-  CacheCounters counters{};
+  AttributionEvidence attribution{};
   std::uint32_t iterations = 0;
   std::uint32_t checksum = 0;
+};
+
+struct AggressorStart {
+  bool active = false;
+  const char* failure = "core-1 aggressor task creation failed";
+  AggressorReport report{};
 };
 
 std::atomic<bool> g_aggressor_ready{false};
@@ -156,6 +171,7 @@ std::atomic<bool> g_aggressor_stop{false};
 std::atomic<bool> g_aggressor_done{false};
 std::atomic<bool> g_aggressor_active{false};
 AggressorReport g_aggressor_report{};
+const char* g_aggressor_failure = nullptr;
 Context* g_aggressor_context = nullptr;
 Aggressor g_aggressor_kind = Aggressor::kInternal;
 
@@ -194,12 +210,39 @@ void emit_cache_counters(const CacheCounters& counters) {
               counters.dbus_flash_misses, counters.dbus_psram_misses);
 }
 
+const char* attribution_source_name(Aggressor source) {
+  switch (source) {
+    case Aggressor::kInternal:
+      return "internal";
+    case Aggressor::kFlash:
+      return "flash";
+    case Aggressor::kPsram:
+      return "psram";
+  }
+  return "unknown";
+}
+
+void emit_attribution(const Sample& sample) {
+  if (!sample.has_attribution) return;
+  std::printf(",\"attributionSource\":\"%s\",\"isolatedAttributionIterations\":%" PRIu32
+              ",\"isolatedAttributionChecksum\":%" PRIu32 ",\"isolatedAttributionCounters\":",
+              attribution_source_name(sample.attribution.source), sample.attribution.iterations,
+              sample.attribution.checksum);
+  emit_cache_counters(sample.attribution.counters);
+  if (sample.aggressor_iterations != 0) {
+    std::printf(",\"aggressorIterations\":%" PRIu32 ",\"aggressorChecksum\":%" PRIu32,
+                sample.aggressor_iterations, sample.aggressor_checksum);
+  }
+}
+
 void emit_sample(const Cell& cell, std::uint32_t ordinal, const Sample& sample) {
   if (!sample.ok) {
     std::printf("%s{\"protocolVersion\":%" PRIu32
                 ",\"record\":\"refusal\",\"cell\":\"%s\",\"ordinal\":%" PRIu32
-                ",\"reason\":\"%s\",\"tierCandidate\":\"%s\"}\n",
+                ",\"reason\":\"%s\",\"tierCandidate\":\"%s\"",
                 kPrefix, kProtocolVersion, cell.id, ordinal, sample.reason, sample.tier_candidate);
+    emit_attribution(sample);
+    std::printf("}\n");
     std::fflush(stdout);
     return;
   }
@@ -214,13 +257,7 @@ void emit_sample(const Cell& cell, std::uint32_t ordinal, const Sample& sample) 
                 sample.baseline_cycles);
     emit_cache_counters(sample.baseline_counters);
   }
-  if (sample.has_aggressor_counters) {
-    std::printf(",\"aggressorCore\":1,\"aggressorCacheCounters\":");
-    emit_cache_counters(sample.aggressor_counters);
-  }
-  if (sample.aggressor_iterations != 0) {
-    std::printf(",\"aggressorIterations\":%" PRIu32, sample.aggressor_iterations);
-  }
+  emit_attribution(sample);
   if (sample.note != nullptr) {
     std::printf(",\"note\":\"%s\"", sample.note);
   }
@@ -228,39 +265,119 @@ void emit_sample(const Cell& cell, std::uint32_t ordinal, const Sample& sample) 
   std::fflush(stdout);
 }
 
+bool invalidate_data(const std::uint8_t* data, std::size_t bytes);
+
+std::uint32_t IRAM_ATTR aggressor_load(Context& context, Aggressor kind, std::size_t offset) {
+  switch (kind) {
+    case Aggressor::kInternal:
+      return reinterpret_cast<volatile const std::uint8_t*>(
+          context.internal)[offset & (kInternalBytes - 1)];
+    case Aggressor::kFlash:
+      return reinterpret_cast<volatile const std::uint32_t*>(
+          g_flash_pool.data())[(offset >> 2) & (g_flash_pool.size() - 1)];
+    case Aggressor::kPsram:
+      return reinterpret_cast<volatile const std::uint8_t*>(
+          context.psram)[(kPsramBytes / 2) + (offset & ((kPsramBytes / 2) - 1))];
+  }
+  return 0;
+}
+
+std::uint32_t expected_aggressor_value(Aggressor kind, std::size_t offset) {
+  switch (kind) {
+    case Aggressor::kInternal:
+      return static_cast<std::uint8_t>((offset & (kInternalBytes - 1)) * 29U + 5U);
+    case Aggressor::kFlash:
+      return static_cast<std::uint32_t>(
+          static_cast<std::uint32_t>((offset >> 2) & (g_flash_pool.size() - 1)) * 2'246'822'519U +
+          31U);
+    case Aggressor::kPsram:
+      return static_cast<std::uint8_t>(
+          ((kPsramBytes / 2) + (offset & ((kPsramBytes / 2) - 1))) * 17U + 3U);
+  }
+  return 0;
+}
+
+std::uint32_t expected_aggressor_checksum(Aggressor kind, std::uint32_t iterations) {
+  std::uint32_t checksum = 0;
+  for (std::uint32_t iteration = 0; iteration < iterations; ++iteration) {
+    checksum += expected_aggressor_value(kind, iteration * kDcacheLine);
+  }
+  return checksum;
+}
+
+bool prepare_attribution(Context& context, Aggressor kind) {
+  constexpr std::size_t kAttributionBytes = kAttributionIterations * kDcacheLine;
+  switch (kind) {
+    case Aggressor::kInternal:
+      return true;
+    case Aggressor::kFlash:
+      return invalidate_data(reinterpret_cast<const std::uint8_t*>(g_flash_pool.data()),
+                             kAttributionBytes);
+    case Aggressor::kPsram:
+      return invalidate_data(context.psram + kPsramBytes / 2, kAttributionBytes);
+  }
+  return false;
+}
+
+const char* validate_attribution(const AttributionEvidence& evidence) {
+  if (evidence.iterations != kAttributionIterations ||
+      evidence.checksum != expected_aggressor_checksum(evidence.source, evidence.iterations)) {
+    return "isolated aggressor attribution checksum mismatch";
+  }
+  if (evidence.source == Aggressor::kFlash &&
+      (evidence.counters.dbus_accesses == 0 || evidence.counters.dbus_flash_misses == 0)) {
+    return "isolated flash attribution lacks flash access or miss counters";
+  }
+  if (evidence.source == Aggressor::kPsram &&
+      (evidence.counters.dbus_accesses == 0 || evidence.counters.dbus_psram_misses == 0)) {
+    return "isolated PSRAM attribution lacks PSRAM access or miss counters";
+  }
+  return nullptr;
+}
+
 void IRAM_ATTR aggressor_task(void*) {
   Context& context = *g_aggressor_context;
   g_aggressor_ready.store(true, std::memory_order_release);
   while (!g_aggressor_start.load(std::memory_order_acquire)) {
+  }
+  if (!prepare_attribution(context, g_aggressor_kind)) {
+    g_aggressor_failure = "isolated aggressor attribution invalidation failed";
+    g_aggressor_done.store(true, std::memory_order_release);
+    vTaskDelete(nullptr);
+    return;
+  }
+  clear_cache_counters();
+  std::uint32_t attribution_checksum = 0;
+  for (std::uint32_t iteration = 0; iteration < kAttributionIterations; ++iteration) {
+    attribution_checksum += aggressor_load(context, g_aggressor_kind, iteration * kDcacheLine);
+  }
+  g_aggressor_report.attribution = {
+      .source = g_aggressor_kind,
+      .counters = read_cache_counters(),
+      .iterations = kAttributionIterations,
+      .checksum = attribution_checksum,
+  };
+  g_aggressor_failure = validate_attribution(g_aggressor_report.attribution);
+  if (g_aggressor_failure != nullptr) {
+    g_aggressor_done.store(true, std::memory_order_release);
+    vTaskDelete(nullptr);
+    return;
   }
   clear_cache_counters();
   g_aggressor_active.store(true, std::memory_order_release);
   std::uint32_t sum = 0;
   std::size_t offset = 0;
   while (!g_aggressor_stop.load(std::memory_order_acquire)) {
-    switch (g_aggressor_kind) {
-      case Aggressor::kInternal:
-        sum += context.internal[offset & (kInternalBytes - 1)];
-        break;
-      case Aggressor::kFlash:
-        sum += g_flash_pool[(offset >> 2) & (g_flash_pool.size() - 1)];
-        break;
-      case Aggressor::kPsram:
-        sum += context.psram[(kPsramBytes / 2) + (offset & ((kPsramBytes / 2) - 1))];
-        break;
-    }
+    sum += aggressor_load(context, g_aggressor_kind, offset);
     offset += kDcacheLine;
   }
-  g_aggressor_report = {
-      .counters = read_cache_counters(),
-      .iterations = static_cast<std::uint32_t>(offset / kDcacheLine),
-      .checksum = sum,
-  };
+  g_aggressor_report.iterations = static_cast<std::uint32_t>(offset / kDcacheLine);
+  g_aggressor_report.checksum = sum;
   g_aggressor_done.store(true, std::memory_order_release);
   vTaskDelete(nullptr);
 }
 
-bool start_aggressor(Context& context, Aggressor kind) {
+AggressorStart start_aggressor(Context& context, Aggressor kind) {
   g_aggressor_context = &context;
   g_aggressor_kind = kind;
   g_aggressor_ready.store(false, std::memory_order_relaxed);
@@ -269,14 +386,21 @@ bool start_aggressor(Context& context, Aggressor kind) {
   g_aggressor_done.store(false, std::memory_order_relaxed);
   g_aggressor_active.store(false, std::memory_order_relaxed);
   g_aggressor_report = {};
+  g_aggressor_failure = nullptr;
   if (xTaskCreatePinnedToCore(aggressor_task, "tier_b_aggress", 4096, nullptr,
                               configMAX_PRIORITIES - 2, nullptr, 1) != pdPASS) {
-    return false;
+    return {};
   }
   while (!g_aggressor_ready.load(std::memory_order_acquire)) {
     taskYIELD();
   }
-  return true;
+  g_aggressor_start.store(true, std::memory_order_release);
+  while (!g_aggressor_active.load(std::memory_order_acquire)) {
+    if (g_aggressor_done.load(std::memory_order_acquire)) {
+      return {.failure = g_aggressor_failure, .report = g_aggressor_report};
+    }
+  }
+  return {.active = true, .failure = nullptr};
 }
 
 AggressorReport stop_aggressor() {
@@ -287,6 +411,30 @@ AggressorReport stop_aggressor() {
   const AggressorReport report = g_aggressor_report;
   g_sink ^= report.checksum;
   return report;
+}
+
+Sample failed_aggressor_sample(const AggressorStart& start, const char* tier_candidate) {
+  Sample sample{
+      .reason = start.failure == nullptr ? "isolated aggressor attribution failed" : start.failure,
+      .tier_candidate = tier_candidate,
+  };
+  if (start.report.attribution.iterations != 0) {
+    sample.has_attribution = true;
+    sample.attribution = start.report.attribution;
+  }
+  return sample;
+}
+
+Sample failed_runtime_sample(const AggressorReport& report, const char* reason,
+                             const char* tier_candidate) {
+  return {
+      .has_attribution = true,
+      .attribution = report.attribution,
+      .aggressor_iterations = report.iterations,
+      .aggressor_checksum = report.checksum,
+      .reason = reason,
+      .tier_candidate = tier_candidate,
+  };
 }
 
 std::uint32_t read_stride(const std::uint8_t* data, std::size_t size) {
@@ -331,37 +479,29 @@ Sample probe_arbitration(Context& context, const Cell& cell, std::uint32_t) {
   if (!invalidate_data(context.psram, kBandwidthBytes)) {
     return {.reason = "contended victim invalidation failed", .tier_candidate = "affine"};
   }
-  if (!start_aggressor(context, kind)) {
-    return {.reason = "core-1 aggressor task creation failed", .tier_candidate = "affine"};
-  }
-  clear_cache_counters();
-  g_aggressor_start.store(true, std::memory_order_release);
-  while (!g_aggressor_active.load(std::memory_order_acquire)) {
-  }
+  const AggressorStart startup = start_aggressor(context, kind);
+  if (!startup.active) return failed_aggressor_sample(startup, "affine");
   const std::uint32_t start = read_ccount();
   const std::uint32_t sum = read_stride(context.psram, kBandwidthBytes);
   const std::uint32_t end = read_ccount();
   g_sink ^= sum;
   const CacheCounters counters = read_cache_counters();
   const AggressorReport aggressor = stop_aggressor();
-  const bool attributed = aggressor.iterations != 0 &&
-                          has_expected_data_counters(counters, false) &&
-                          (kind == Aggressor::kInternal ||
-                           (kind == Aggressor::kFlash && aggressor.counters.dbus_accesses != 0 &&
-                            aggressor.counters.dbus_flash_misses != 0) ||
-                           (kind == Aggressor::kPsram && aggressor.counters.dbus_accesses != 0 &&
-                            aggressor.counters.dbus_psram_misses != 0));
-  if (!attributed) {
-    return {.reason = "contended aggressor cache attribution failed", .tier_candidate = "affine"};
+  if (aggressor.iterations == 0 ||
+      aggressor.checksum != expected_aggressor_checksum(kind, aggressor.iterations) ||
+      !has_expected_data_counters(counters, false)) {
+    return failed_runtime_sample(aggressor, "contended aggressor runtime evidence failed",
+                                 "affine");
   }
   Sample result = timed_result(start, end, kBandwidthBytes, counters,
-                               "core0 PSRAM victim with attributed core1 aggressor");
+                               "core0 PSRAM victim with isolated source attribution");
   result.has_baseline = true;
   result.baseline_cycles = baseline.cycles;
   result.baseline_counters = baseline.counters;
-  result.has_aggressor_counters = true;
-  result.aggressor_counters = aggressor.counters;
+  result.has_attribution = true;
+  result.attribution = aggressor.attribution;
   result.aggressor_iterations = aggressor.iterations;
+  result.aggressor_checksum = aggressor.checksum;
   return result;
 }
 
@@ -819,33 +959,29 @@ Sample probe_cross_core_bandwidth(Context& context, const Cell& cell, std::uint3
   if (!invalidate_data(data, kBandwidthBytes)) {
     return {.reason = "contended bandwidth invalidation failed", .tier_candidate = "distribution"};
   }
-  if (!start_aggressor(context, Aggressor::kPsram)) {
-    return {.reason = "core-1 PSRAM aggressor task creation failed",
-            .tier_candidate = "distribution"};
-  }
-  clear_cache_counters();
-  g_aggressor_start.store(true, std::memory_order_release);
-  while (!g_aggressor_active.load(std::memory_order_acquire)) {
-  }
+  const AggressorStart startup = start_aggressor(context, Aggressor::kPsram);
+  if (!startup.active) return failed_aggressor_sample(startup, "distribution");
   const std::uint32_t start = read_ccount();
   const std::uint32_t sum = read_stride(data, kBandwidthBytes);
   const std::uint32_t end = read_ccount();
   g_sink ^= sum;
   const CacheCounters counters = read_cache_counters();
   const AggressorReport aggressor = stop_aggressor();
-  if (aggressor.iterations == 0 || !has_expected_data_counters(counters, flash_victim) ||
-      aggressor.counters.dbus_accesses == 0 || aggressor.counters.dbus_psram_misses == 0) {
-    return {.reason = "cross-core PSRAM contention was not attributable in counters",
-            .tier_candidate = "distribution"};
+  if (aggressor.iterations == 0 ||
+      aggressor.checksum != expected_aggressor_checksum(Aggressor::kPsram, aggressor.iterations) ||
+      !has_expected_data_counters(counters, flash_victim)) {
+    return failed_runtime_sample(aggressor, "cross-core PSRAM runtime evidence failed",
+                                 "distribution");
   }
   Sample result = timed_result(start, end, kBandwidthBytes, counters,
-                               "victim baseline plus attributed core1 PSRAM contention");
+                               "victim baseline plus isolated PSRAM source attribution");
   result.has_baseline = true;
   result.baseline_cycles = baseline.cycles;
   result.baseline_counters = baseline.counters;
-  result.has_aggressor_counters = true;
-  result.aggressor_counters = aggressor.counters;
+  result.has_attribution = true;
+  result.attribution = aggressor.attribution;
   result.aggressor_iterations = aggressor.iterations;
+  result.aggressor_checksum = aggressor.checksum;
   return result;
 }
 
