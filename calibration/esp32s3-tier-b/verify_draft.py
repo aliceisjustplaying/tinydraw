@@ -45,13 +45,17 @@ assert "SPI2_HOST" in source and "esp_async_memcpy" in source, "DMA/SPI2 probes 
 assert "spi_config.spics_io_num = GPIO_NUM_NC" in source, "raw SPI must not select the panel"
 assert "tier_b_store_issue_block" in source and "baseline_cycles" in source
 assert "tier_b_first_line_i_0" in source and "fresh one-line" in source
-assert "aggressor_iterations" in source and "cache attribution failed" in source
+assert "aggressor_iterations" in source and "runtime evidence failed" in source
 assert "g_aggressor_active" in source
-assert "struct AggressorReport" in source and "aggressorCacheCounters" in source
+assert "struct AggressorReport" in source and "isolatedAttributionCounters" in source
 assert "g_aggressor_report" in source and "g_aggressor_iterations" not in source
-assert ".counters = read_cache_counters()" in source
-assert "core-1 flash aggressor attribution" in validator
-assert "core-1 PSRAM aggressor attribution" in validator
+assert "kAttributionIterations = 128" in source
+assert "validate_attribution" in source and "clear_cache_counters();" in source
+assert "isolated flash attribution" in validator
+assert "isolated PSRAM attribution" in validator
+assert "internal attribution has external data-cache traffic" in validator
+assert "aggressor runtime fields must appear together" in validator
+assert "aggressorCore" not in source and "aggressorCore" not in validator
 for probe in ("probe_arbitration", "probe_cross_core_bandwidth"):
     body_start = source.index(f"Sample {probe}")
     body_end = source.find("\nSample ", body_start + 1)

@@ -14,6 +14,12 @@ from typing import Any
 PREFIX = "TINYDRAW_TIER_B_NDJSON "
 PROTOCOL_VERSION = 2
 REQUIRED_IDF_VERSION = "v6.1"
+ATTRIBUTION_ITERATIONS = 128
+ATTRIBUTION_CHECKSUMS = {
+    "internal": 0x00003280,
+    "flash": 0xE5C43380,
+    "psram": 0x00003180,
+}
 DEFAULT_MANIFEST = (
     Path(__file__).resolve().parents[1]
     / "calibration"
@@ -25,6 +31,57 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 class ValidationError(ValueError):
     """A malformed, refused, or incomplete Tier-B capture."""
+
+
+def expected_aggressor_checksum(source: str, iterations: int) -> int:
+    checksum = 0
+    for iteration in range(iterations):
+        offset = iteration * 64
+        if source == "internal":
+            value = ((offset & (64 * 1024 - 1)) * 29 + 5) & 0xFF
+        elif source == "flash":
+            index = (offset >> 2) & (64 * 1024 - 1)
+            value = (index * 2_246_822_519 + 31) & 0xFFFFFFFF
+        elif source == "psram":
+            index = 512 * 1024 + (offset & (512 * 1024 - 1))
+            value = (index * 17 + 3) & 0xFF
+        else:
+            raise ValidationError(f"unknown attribution source {source!r}")
+        checksum = (checksum + value) & 0xFFFFFFFF
+    return checksum
+
+
+def _expected_attribution_source(cell: str) -> str | None:
+    if cell.endswith("_cross_core") or "psram_aggressor" in cell:
+        return "psram"
+    if "flash_aggressor" in cell:
+        return "flash"
+    if cell.startswith("arbitration_"):
+        return "internal"
+    return None
+
+
+def _validate_attribution_counters(
+    source: str, counters: dict[str, int], path: str
+) -> None:
+    if source == "internal" and (
+        counters["dbusAccesses"] != 0
+        or counters["dbusFlashMisses"] != 0
+        or counters["dbusPsramMisses"] != 0
+    ):
+        raise ValidationError(f"{path} internal attribution has external data-cache traffic")
+    if source == "flash" and (
+        counters["dbusAccesses"] == 0
+        or counters["dbusFlashMisses"] == 0
+        or counters["dbusPsramMisses"] != 0
+    ):
+        raise ValidationError(f"{path} lacks exclusive isolated flash attribution")
+    if source == "psram" and (
+        counters["dbusAccesses"] == 0
+        or counters["dbusPsramMisses"] == 0
+        or counters["dbusFlashMisses"] != 0
+    ):
+        raise ValidationError(f"{path} lacks exclusive isolated PSRAM attribution")
 
 
 def _object(value: Any, path: str) -> dict[str, Any]:
@@ -389,9 +446,12 @@ class CaptureValidator:
             {
                 "baselineCycles",
                 "baselineCacheCounters",
-                "aggressorCore",
-                "aggressorCacheCounters",
+                "attributionSource",
+                "isolatedAttributionIterations",
+                "isolatedAttributionChecksum",
+                "isolatedAttributionCounters",
                 "aggressorIterations",
+                "aggressorChecksum",
                 "note",
             },
         )
@@ -421,25 +481,58 @@ class CaptureValidator:
             baseline_counters = self._cache_counters(
                 record["baselineCacheCounters"], f"{path}.baselineCacheCounters"
             )
+        aggressor_iterations = None
         if "aggressorIterations" in record:
-            _integer(record["aggressorIterations"], f"{path}.aggressorIterations", 1)
-        aggressor_counters = None
-        if "aggressorCacheCounters" in record:
-            aggressor_counters = self._cache_counters(
-                record["aggressorCacheCounters"], f"{path}.aggressorCacheCounters"
+            aggressor_iterations = _integer(
+                record["aggressorIterations"], f"{path}.aggressorIterations", 1
             )
-        if "aggressorCore" in record:
-            aggressor_core = _integer(record["aggressorCore"], f"{path}.aggressorCore")
-            if aggressor_core != 1:
-                raise ValidationError(f"{path}.aggressorCore must be 1")
+        aggressor_checksum = None
+        if "aggressorChecksum" in record:
+            aggressor_checksum = _integer(
+                record["aggressorChecksum"], f"{path}.aggressorChecksum"
+            )
+        attribution_counters = None
+        if "isolatedAttributionCounters" in record:
+            attribution_counters = self._cache_counters(
+                record["isolatedAttributionCounters"],
+                f"{path}.isolatedAttributionCounters",
+            )
+        attribution_source = record.get("attributionSource")
+        if attribution_source is not None:
+            attribution_source = _string(attribution_source, f"{path}.attributionSource")
+            if attribution_source not in ATTRIBUTION_CHECKSUMS:
+                raise ValidationError(f"{path}.attributionSource is unknown")
+        if "isolatedAttributionIterations" in record:
+            isolated_iterations = _integer(
+                record["isolatedAttributionIterations"],
+                f"{path}.isolatedAttributionIterations",
+                1,
+            )
+            if isolated_iterations != ATTRIBUTION_ITERATIONS:
+                raise ValidationError(
+                    f"{path}.isolatedAttributionIterations must be {ATTRIBUTION_ITERATIONS}"
+                )
+        if "isolatedAttributionChecksum" in record:
+            isolated_checksum = _integer(
+                record["isolatedAttributionChecksum"],
+                f"{path}.isolatedAttributionChecksum",
+            )
+            if (
+                attribution_source is not None
+                and isolated_checksum != ATTRIBUTION_CHECKSUMS[attribution_source]
+            ):
+                raise ValidationError(f"{path} isolated attribution checksum mismatch")
         if "note" in record:
             _string(record["note"], f"{path}.note")
         needs_contention = cell.startswith("arbitration_") or cell.endswith("_cross_core")
         if needs_contention and (
             baseline_counters is None
             or "aggressorIterations" not in record
-            or "aggressorCore" not in record
-            or aggressor_counters is None
+            or "aggressorChecksum" not in record
+            or attribution_source is None
+            or "isolatedAttributionIterations" not in record
+            or "isolatedAttributionChecksum" not in record
+            or attribution_counters is None
         ):
             raise ValidationError(f"{path} lacks contention baseline or aggressor attribution")
         if cell == "store_hit_psram":
@@ -450,18 +543,6 @@ class CaptureValidator:
         if cell.startswith("arbitration_"):
             if counters["dbusAccesses"] == 0 or counters["dbusPsramMisses"] == 0:
                 raise ValidationError(f"{path} lacks PSRAM victim counter attribution")
-            if "flash_aggressor" in cell and (
-                aggressor_counters is None
-                or aggressor_counters["dbusAccesses"] == 0
-                or aggressor_counters["dbusFlashMisses"] == 0
-            ):
-                raise ValidationError(f"{path} lacks core-1 flash aggressor attribution")
-            if "psram_aggressor" in cell and (
-                aggressor_counters is None
-                or aggressor_counters["dbusAccesses"] == 0
-                or aggressor_counters["dbusPsramMisses"] == 0
-            ):
-                raise ValidationError(f"{path} lacks core-1 PSRAM aggressor attribution")
         if cell in {"instruction_psram_hot", "instruction_psram_cold", "first_line_i_flash"}:
             if counters["ibusAccesses"] == 0:
                 raise ValidationError(f"{path} lacks instruction-cache accesses")
@@ -481,25 +562,85 @@ class CaptureValidator:
             counters["dbusAccesses"] == 0 or counters["dbusFlashMisses"] == 0
         ):
             raise ValidationError(f"{path} lacks D-flash counters")
-        if cell.endswith("_cross_core") and (
-            aggressor_counters is None
-            or aggressor_counters["dbusAccesses"] == 0
-            or aggressor_counters["dbusPsramMisses"] == 0
-        ):
-            raise ValidationError(f"{path} lacks core-1 PSRAM aggressor attribution")
+        if needs_contention:
+            expected_source = _expected_attribution_source(cell)
+            assert expected_source is not None
+            if attribution_source != expected_source:
+                raise ValidationError(
+                    f"{path}.attributionSource is {attribution_source!r}, expected {expected_source!r}"
+                )
+            assert attribution_counters is not None
+            assert aggressor_iterations is not None and aggressor_checksum is not None
+            if aggressor_checksum != expected_aggressor_checksum(
+                expected_source, aggressor_iterations
+            ):
+                raise ValidationError(f"{path} aggressor runtime checksum mismatch")
+            _validate_attribution_counters(expected_source, attribution_counters, path)
         self.samples[cell] += 1
 
     def _refusal(self, record: dict[str, Any], path: str) -> None:
         self._require_metadata(path)
+        diagnostic_keys = {
+            "attributionSource",
+            "isolatedAttributionIterations",
+            "isolatedAttributionChecksum",
+            "isolatedAttributionCounters",
+        }
+        runtime_keys = {"aggressorIterations", "aggressorChecksum"}
         _exact_keys(
             record,
             path,
             {"protocolVersion", "record", "cell", "ordinal", "reason", "tierCandidate"},
+            diagnostic_keys | runtime_keys,
         )
         cell = _string(record["cell"], f"{path}.cell")
         ordinal = _integer(record["ordinal"], f"{path}.ordinal")
         reason = _string(record["reason"], f"{path}.reason")
         tier = _string(record["tierCandidate"], f"{path}.tierCandidate")
+        present_diagnostics = diagnostic_keys & record.keys()
+        present_runtime = runtime_keys & record.keys()
+        if present_diagnostics and present_diagnostics != diagnostic_keys:
+            raise ValidationError(f"{path} has incomplete isolated attribution diagnostics")
+        if present_runtime and present_runtime != runtime_keys:
+            raise ValidationError(f"{path} aggressor runtime fields must appear together")
+        attribution_counters = None
+        if present_diagnostics:
+            source = _string(record["attributionSource"], f"{path}.attributionSource")
+            if source not in ATTRIBUTION_CHECKSUMS:
+                raise ValidationError(f"{path}.attributionSource is unknown")
+            expected_source = _expected_attribution_source(cell)
+            if expected_source is not None and source != expected_source:
+                raise ValidationError(
+                    f"{path}.attributionSource is {source!r}, expected {expected_source!r}"
+                )
+            iterations = _integer(
+                record["isolatedAttributionIterations"],
+                f"{path}.isolatedAttributionIterations",
+                1,
+            )
+            checksum = _integer(
+                record["isolatedAttributionChecksum"],
+                f"{path}.isolatedAttributionChecksum",
+            )
+            attribution_counters = self._cache_counters(
+                record["isolatedAttributionCounters"],
+                f"{path}.isolatedAttributionCounters",
+            )
+            if iterations != ATTRIBUTION_ITERATIONS or checksum != ATTRIBUTION_CHECKSUMS[source]:
+                raise ValidationError(f"{path} has invalid isolated attribution diagnostics")
+        if present_runtime:
+            if not present_diagnostics:
+                raise ValidationError(f"{path} runtime evidence lacks attribution diagnostics")
+            assert attribution_counters is not None
+            _validate_attribution_counters(source, attribution_counters, path)
+            runtime_iterations = _integer(
+                record["aggressorIterations"], f"{path}.aggressorIterations", 1
+            )
+            runtime_checksum = _integer(
+                record["aggressorChecksum"], f"{path}.aggressorChecksum"
+            )
+            if runtime_checksum != expected_aggressor_checksum(source, runtime_iterations):
+                raise ValidationError(f"{path} aggressor runtime checksum mismatch")
         raise ValidationError(
             f"{path} refused {cell!r} sample {ordinal}, tier candidate {tier}: {reason}"
         )

@@ -9,11 +9,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from tier_b_ndjson import (
+    ATTRIBUTION_CHECKSUMS,
+    ATTRIBUTION_ITERATIONS,
     PREFIX,
     CaptureValidator,
     CellContract,
     ManifestContract,
     ValidationError,
+    expected_aggressor_checksum,
     validate_path,
 )
 
@@ -152,6 +155,11 @@ class CaptureValidatorTest(unittest.TestCase):
             if cell == "flash_bandwidth_cross_core"
             else counters(dbusAccesses=32, dbusFlashMisses=4, dbusPsramMisses=4)
         )
+        source = "internal"
+        if "flash_aggressor" in cell:
+            source = "flash"
+        elif "psram_aggressor" in cell or cell.endswith("_cross_core"):
+            source = "psram"
         return line(
             "sample",
             cell=cell,
@@ -163,9 +171,12 @@ class CaptureValidatorTest(unittest.TestCase):
             cacheCounters=victim,
             baselineCycles=80,
             baselineCacheCounters=victim,
-            aggressorCore=1,
-            aggressorCacheCounters=aggressor_counters,
+            attributionSource=source,
+            isolatedAttributionIterations=ATTRIBUTION_ITERATIONS,
+            isolatedAttributionChecksum=ATTRIBUTION_CHECKSUMS[source],
+            isolatedAttributionCounters=aggressor_counters,
             aggressorIterations=64,
+            aggressorChecksum=expected_aggressor_checksum(source, 64),
         )
 
     def test_complete_capture_uses_manifest_counts(self) -> None:
@@ -270,10 +281,10 @@ class CaptureValidatorTest(unittest.TestCase):
                 3,
             )
 
-    def test_flash_attribution_uses_core1_counters(self) -> None:
+    def test_flash_attribution_uses_isolated_counters(self) -> None:
         cell = "arbitration_psram_victim_flash_aggressor"
         validator = self.contention_validator(cell)
-        with self.assertRaisesRegex(ValidationError, "core-1 flash aggressor attribution"):
+        with self.assertRaisesRegex(ValidationError, "isolated flash attribution"):
             validator.feed_line(
                 self.contention_sample(
                     cell,
@@ -282,16 +293,63 @@ class CaptureValidatorTest(unittest.TestCase):
                 3,
             )
 
-    def test_cross_core_requires_core1_psram_counters(self) -> None:
+    def test_cross_core_requires_isolated_psram_counters(self) -> None:
         cell = "flash_bandwidth_cross_core"
         validator = self.contention_validator(cell)
-        with self.assertRaisesRegex(ValidationError, "core-1 PSRAM aggressor attribution"):
+        with self.assertRaisesRegex(ValidationError, "isolated PSRAM attribution"):
             validator.feed_line(
                 self.contention_sample(cell, counters(dbusAccesses=32, dbusPsramMisses=0)),
                 3,
             )
 
-    def test_contention_cells_accept_typed_core1_attribution(self) -> None:
+    def test_internal_attribution_rejects_external_data_traffic(self) -> None:
+        cell = "arbitration_psram_victim_internal_aggressor"
+        for contamination in (
+            {"dbusAccesses": 1},
+            {"dbusFlashMisses": 1},
+            {"dbusPsramMisses": 1},
+        ):
+            with self.subTest(contamination=contamination):
+                with self.assertRaisesRegex(ValidationError, "external data-cache traffic"):
+                    self.contention_validator(cell).feed_line(
+                        self.contention_sample(cell, counters(**contamination)), 3
+                    )
+
+    def test_flash_attribution_rejects_psram_cross_contamination(self) -> None:
+        cell = "arbitration_psram_victim_flash_aggressor"
+        with self.assertRaisesRegex(ValidationError, "exclusive isolated flash"):
+            self.contention_validator(cell).feed_line(
+                self.contention_sample(
+                    cell,
+                    counters(dbusAccesses=32, dbusFlashMisses=4, dbusPsramMisses=1),
+                ),
+                3,
+            )
+
+    def test_psram_attribution_rejects_flash_cross_contamination(self) -> None:
+        cell = "arbitration_psram_victim_psram_aggressor"
+        with self.assertRaisesRegex(ValidationError, "exclusive isolated PSRAM"):
+            self.contention_validator(cell).feed_line(
+                self.contention_sample(
+                    cell,
+                    counters(dbusAccesses=32, dbusFlashMisses=1, dbusPsramMisses=4),
+                ),
+                3,
+            )
+
+    def test_instruction_counters_do_not_disqualify_data_attribution(self) -> None:
+        cell = "arbitration_psram_victim_flash_aggressor"
+        attribution = counters(
+            ibusAccesses=7,
+            ibusMisses=3,
+            dbusAccesses=32,
+            dbusFlashMisses=4,
+        )
+        self.contention_validator(cell).feed_line(
+            self.contention_sample(cell, attribution), 3
+        )
+
+    def test_contention_cells_accept_isolated_attribution(self) -> None:
         for cell in (
             "arbitration_psram_victim_internal_aggressor",
             "arbitration_psram_victim_flash_aggressor",
@@ -308,6 +366,98 @@ class CaptureValidatorTest(unittest.TestCase):
                 self.contention_validator(cell).feed_line(
                     self.contention_sample(cell, aggressor), 3
                 )
+
+    def test_isolated_attribution_checksum_is_exact(self) -> None:
+        cell = "arbitration_psram_victim_flash_aggressor"
+        payload = json.loads(
+            self.contention_sample(cell, counters(dbusAccesses=32, dbusFlashMisses=4))[
+                len(PREFIX) :
+            ]
+        )
+        payload["isolatedAttributionChecksum"] += 1
+        with self.assertRaisesRegex(ValidationError, "checksum mismatch"):
+            self.contention_validator(cell).feed_line(PREFIX + json.dumps(payload), 3)
+
+    def test_isolated_checksum_constants_match_bounded_lap(self) -> None:
+        for source, checksum in ATTRIBUTION_CHECKSUMS.items():
+            with self.subTest(source=source):
+                self.assertEqual(
+                    checksum,
+                    expected_aggressor_checksum(source, ATTRIBUTION_ITERATIONS),
+                )
+
+    def test_runtime_checksum_matches_iterations_and_source(self) -> None:
+        cell = "arbitration_psram_victim_psram_aggressor"
+        payload = json.loads(
+            self.contention_sample(cell, counters(dbusAccesses=32, dbusPsramMisses=4))[
+                len(PREFIX) :
+            ]
+        )
+        payload["aggressorChecksum"] += 1
+        with self.assertRaisesRegex(ValidationError, "runtime checksum mismatch"):
+            self.contention_validator(cell).feed_line(PREFIX + json.dumps(payload), 3)
+
+    def test_refusal_preserves_isolated_attribution_diagnostics(self) -> None:
+        validator = self.contention_validator(
+            "arbitration_psram_victim_flash_aggressor"
+        )
+        with self.assertRaisesRegex(ValidationError, "refused"):
+            validator.feed_line(
+                line(
+                    "refusal",
+                    cell="arbitration_psram_victim_flash_aggressor",
+                    ordinal=0,
+                    reason="isolated flash attribution lacks flash access or miss counters",
+                    tierCandidate="affine",
+                    attributionSource="flash",
+                    isolatedAttributionIterations=ATTRIBUTION_ITERATIONS,
+                    isolatedAttributionChecksum=ATTRIBUTION_CHECKSUMS["flash"],
+                    isolatedAttributionCounters=counters(dbusAccesses=0),
+                ),
+                3,
+            )
+
+    def runtime_refusal(self, **overrides: object) -> str:
+        source = "psram"
+        values: dict[str, object] = {
+            "cell": "arbitration_psram_victim_psram_aggressor",
+            "ordinal": 0,
+            "reason": "contended aggressor runtime evidence failed",
+            "tierCandidate": "affine",
+            "attributionSource": source,
+            "isolatedAttributionIterations": ATTRIBUTION_ITERATIONS,
+            "isolatedAttributionChecksum": ATTRIBUTION_CHECKSUMS[source],
+            "isolatedAttributionCounters": counters(
+                dbusAccesses=32, dbusPsramMisses=4
+            ),
+            "aggressorIterations": 64,
+            "aggressorChecksum": expected_aggressor_checksum(source, 64),
+        }
+        values.update(overrides)
+        return line("refusal", **values)
+
+    def test_runtime_refusal_accepts_paired_exact_evidence(self) -> None:
+        validator = self.contention_validator(
+            "arbitration_psram_victim_psram_aggressor"
+        )
+        with self.assertRaisesRegex(ValidationError, "refused"):
+            validator.feed_line(self.runtime_refusal(), 3)
+
+    def test_runtime_refusal_requires_paired_evidence(self) -> None:
+        payload = json.loads(self.runtime_refusal()[len(PREFIX) :])
+        del payload["aggressorChecksum"]
+        validator = self.contention_validator(
+            "arbitration_psram_victim_psram_aggressor"
+        )
+        with self.assertRaisesRegex(ValidationError, "must appear together"):
+            validator.feed_line(PREFIX + json.dumps(payload), 3)
+
+    def test_runtime_refusal_requires_source_derived_checksum(self) -> None:
+        validator = self.contention_validator(
+            "arbitration_psram_victim_psram_aggressor"
+        )
+        with self.assertRaisesRegex(ValidationError, "runtime checksum mismatch"):
+            validator.feed_line(self.runtime_refusal(aggressorChecksum=1), 3)
 
     def test_post_completion_record_fails_tail(self) -> None:
         validator = self.validator()

@@ -20,11 +20,16 @@ store-hit cell with an internal-SRAM baseline and internal-RAM issue block,
 clean and dirty writeback
 ladders, instruction-PSRAM fetches, first-line pooling, selective cohort
 reruns, and display-path and DMA cost families. Counter-dependent cells check
-the expected access and miss counters. Contended cells also record the
-aggressor iteration count and a core 1 counter snapshot. Flash and PSRAM
-aggressors must report their own nonzero access and miss counters, separately
-from the core 0 victim and baseline counters. The invalidate cell measures a
-clean `M2C | INVALIDATE` operation;
+the expected access and miss counters. The hardware cache-counter registers
+are shared across both cores. Before concurrent timing, core 1 runs a bounded,
+isolated lap over the selected source and records its counters and exact
+checksum. Flash and PSRAM laps require their matching access and miss counters
+and refuse cross-source misses. The internal lap requires zero external data
+accesses or misses. Instruction counters are recorded but do not determine
+data-source attribution. The concurrent phase records runtime iterations and checksum,
+while the core 0
+CCOUNT window contains only the victim traversal. The invalidate cell measures
+a clean `M2C | INVALIDATE` operation;
 dirty `C2M` writeback is measured separately.
 
 Panel and touch initialization power-cycles their TCA9554 rails between boots
