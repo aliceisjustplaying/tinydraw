@@ -34,6 +34,10 @@
 #include "soc/extmem_reg.h"
 #include "soc/soc.h"
 
+#if defined(CONFIG_SPIRAM_RODATA) && CONFIG_SPIRAM_RODATA
+#error "Tier-B flash attribution requires CONFIG_SPIRAM_RODATA disabled"
+#endif
+
 extern "C" {
 void tier_b_instruction_1_lines(void);
 void tier_b_instruction_2_lines(void);
@@ -1139,7 +1143,7 @@ void emit_metadata(const std::array<bool, kCells.size()>& selected) {
   std::printf("%s{\"protocolVersion\":%" PRIu32
               ",\"record\":\"metadata\",\"suite\":\"tier-b\",\"harnessVersion\":\"%s\","
               "\"idfVersion\":\"%s\",\"gitCommit\":\"%s\",\"gitDirty\":%s,"
-              "\"variant\":\"%s\",\"sdkconfigSha256\":\"%s\","
+              "\"variant\":\"%s\",\"spiramRodata\":false,\"sdkconfigSha256\":\"%s\","
               "\"compilerVersion\":\"%s\",\"elfSha256\":\"%s\","
               "\"dbusFlashClassifier\":{\"start\":%" PRIu32 ",\"end\":%" PRIu32
               "},"

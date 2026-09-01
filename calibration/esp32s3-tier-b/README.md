@@ -47,6 +47,8 @@ targets, and confirms XIP ladder placement. The verifier also requires
 `g_flash_pool` to be 64-byte aligned, exactly
 `0x40000` bytes, and wholly linked in `.flash.rodata`, not XIP/PSRAM storage. A
 mismatch exits 2 and creates no verification result.
+Both compilation and preflight reject `CONFIG_SPIRAM_RODATA=y`; the preflight
+and runtime metadata record `spiramRodata=false` for host validation.
 
 ```text
 python3 calibration/esp32s3-tier-b/verify_draft.py

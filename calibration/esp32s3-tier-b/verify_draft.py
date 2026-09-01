@@ -61,6 +61,8 @@ assert "EXTMEM_DBUS_TO_FLASH_START_VADDR_REG" in source
 assert "EXTMEM_DBUS_TO_FLASH_END_VADDR_REG" in source
 assert 'asm volatile("memw"' in source
 assert "configure_dbus_flash_classifier" in source and "ranges_equal" in source
+assert '#error "Tier-B flash attribution requires CONFIG_SPIRAM_RODATA disabled"' in source
+assert "verify_spiram_rodata_disabled" in elf_gate
 assert "verify_flash_pool" in elf_gate and '"xipPsram": False' in elf_gate
 for probe in ("probe_arbitration", "probe_cross_core_bandwidth"):
     body_start = source.index(f"Sample {probe}")
@@ -85,6 +87,7 @@ for field in (
     "compilerVersion",
     "elfSha256",
     "dbusFlashClassifier",
+    "spiramRodata",
     "chipRevision",
     "bootId",
 ):
@@ -96,6 +99,7 @@ assert "fixture ELF preflight cannot authorize capture" in capture
 assert "--elf" in capture and "archived_elf" in capture
 assert 'payload["manifestSha256"] != manifest_sha256' in capture
 assert 'payload["dbusFlashClassifier"]' in capture
+assert 'payload["spiramRodata"] is not False' in capture
 assert "RESTART_MARKERS" in capture and "restart_marker(line, selection_sent)" in capture
 assert 'REQUIRED_IDF_VERSION = "v6.1"' in validator
 assert 'IDF_VERSION}" STREQUAL "6.1.0"' in component

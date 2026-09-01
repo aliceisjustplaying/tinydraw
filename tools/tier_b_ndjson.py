@@ -356,6 +356,7 @@ class CaptureValidator:
                 "gitCommit",
                 "gitDirty",
                 "variant",
+                "spiramRodata",
                 "sdkconfigSha256",
                 "compilerVersion",
                 "elfSha256",
@@ -387,6 +388,9 @@ class CaptureValidator:
             raise ValidationError(
                 f"{path}.idfVersion is {idf_version!r}, expected {REQUIRED_IDF_VERSION!r}"
             )
+        spiram_rodata = _boolean(record["spiramRodata"], f"{path}.spiramRodata")
+        if spiram_rodata:
+            raise ValidationError(f"{path}.spiramRodata must be false")
         _string(record["gitCommit"], f"{path}.gitCommit")
         _boolean(record["gitDirty"], f"{path}.gitDirty")
         _sha256(record["sdkconfigSha256"], f"{path}.sdkconfigSha256")
@@ -403,6 +407,7 @@ class CaptureValidator:
                 "gitCommit",
                 "gitDirty",
                 "variant",
+                "spiramRodata",
                 "sdkconfigSha256",
                 "compilerVersion",
                 "elfSha256",

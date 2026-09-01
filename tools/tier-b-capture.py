@@ -52,6 +52,7 @@ BUILD_KEYS = {
     "fixture",
     "variant",
     "idfVersion",
+    "spiramRodata",
     "gitCommit",
     "gitDirty",
     "sdkconfigSha256",
@@ -99,6 +100,8 @@ def load_preflight(data: bytes, path: Path, variant: str, manifest_sha256: str) 
         raise ValidationError(
             f"ELF preflight ESP-IDF is {payload['idfVersion']!r}, expected {REQUIRED_IDF_VERSION!r}"
         )
+    if payload["spiramRodata"] is not False:
+        raise ValidationError("ELF preflight requires spiramRodata=false")
     if payload["manifestSha256"] != manifest_sha256:
         raise ValidationError("ELF preflight does not match the committed manifest")
     if (

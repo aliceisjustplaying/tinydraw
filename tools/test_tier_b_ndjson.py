@@ -78,6 +78,7 @@ def metadata(**updates: object) -> str:
         "suite": "tier-b",
         "harnessVersion": "0.2.0-review",
         "idfVersion": "v6.1",
+        "spiramRodata": False,
         "gitCommit": "a" * 40,
         "gitDirty": False,
         "variant": "normal",
@@ -244,6 +245,7 @@ class CaptureValidatorTest(unittest.TestCase):
     def test_runtime_build_must_match_preflight(self) -> None:
         expected = {
             "idfVersion": "v6.1",
+            "spiramRodata": False,
             "gitCommit": "a" * 40,
             "gitDirty": False,
             "variant": "normal",
@@ -258,6 +260,10 @@ class CaptureValidatorTest(unittest.TestCase):
     def test_runtime_requires_exact_idf_version(self) -> None:
         with self.assertRaisesRegex(ValidationError, "expected 'v6.1'"):
             self.validator().feed_line(metadata(idfVersion="v6.0.2"), 1)
+
+    def test_runtime_rejects_spiram_rodata(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "spiramRodata must be false"):
+            self.validator().feed_line(metadata(spiramRodata=True), 1)
 
     def test_classifier_reset_default_range_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValidationError, "reset default"):
@@ -274,6 +280,7 @@ class CaptureValidatorTest(unittest.TestCase):
     def test_classifier_wrong_range_does_not_match_preflight(self) -> None:
         expected = {
             "idfVersion": "v6.1",
+            "spiramRodata": False,
             "gitCommit": "a" * 40,
             "gitDirty": False,
             "variant": "normal",

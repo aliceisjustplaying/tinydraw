@@ -68,6 +68,7 @@ def fixtures(xip: bool = False) -> tuple[str, str, str, str]:
             )
         )
     sdkconfig = "CONFIG_APP_RETRIEVE_LEN_ELF_SHA=64\n"
+    sdkconfig += "# CONFIG_SPIRAM_RODATA is not set\n"
     sdkconfig += (
         "CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y\n"
         if xip
@@ -137,6 +138,7 @@ class VerifyTierBElfTest(unittest.TestCase):
         payload = json.loads(result.read_text())
         self.assertEqual(payload["variant"], "normal")
         self.assertEqual(payload["idfVersion"], "v6.1")
+        self.assertIs(payload["spiramRodata"], False)
         self.assertTrue(payload["fixture"])
         self.assertEqual(payload["issueBlocks"][0]["operations"], 256)
         self.assertEqual(len(payload["firstLineInstructionPool"]), 5)
@@ -209,6 +211,16 @@ class VerifyTierBElfTest(unittest.TestCase):
         )
         process, result = self.run_gate(disassembly, broken, sections, sdkconfig)
         self.assertEqual(process.returncode, 2)
+        self.assertFalse(result.exists())
+
+    def test_spiram_rodata_enabled_leaves_no_result(self) -> None:
+        disassembly, symbols, sections, sdkconfig = fixtures()
+        broken = sdkconfig.replace(
+            "# CONFIG_SPIRAM_RODATA is not set", "CONFIG_SPIRAM_RODATA=y"
+        )
+        process, result = self.run_gate(disassembly, symbols, sections, broken)
+        self.assertEqual(process.returncode, 2)
+        self.assertIn("CONFIG_SPIRAM_RODATA must be disabled", process.stderr)
         self.assertFalse(result.exists())
 
 

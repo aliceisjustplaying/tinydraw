@@ -21,6 +21,7 @@ def preflight(**updates: object) -> dict[str, object]:
         "fixture": False,
         "variant": "normal",
         "idfVersion": "v6.1",
+        "spiramRodata": False,
         "gitCommit": "a" * 40,
         "gitDirty": False,
         "sdkconfigSha256": "b" * 64,
@@ -96,6 +97,15 @@ class RestartMarkerTest(unittest.TestCase):
         with self.assertRaisesRegex(CAPTURE.ValidationError, "range is invalid"):
             CAPTURE.load_preflight(
                 json.dumps(payload).encode(), Path("preflight.json"), "normal", "d" * 64
+            )
+
+    def test_preflight_rejects_spiram_rodata(self) -> None:
+        with self.assertRaisesRegex(CAPTURE.ValidationError, "spiramRodata=false"):
+            CAPTURE.load_preflight(
+                json.dumps(preflight(spiramRodata=True)).encode(),
+                Path("preflight.json"),
+                "normal",
+                "d" * 64,
             )
 
 

@@ -275,6 +275,14 @@ def verify_placement(
     }
 
 
+def verify_spiram_rodata_disabled(sdkconfig: str) -> bool:
+    if "CONFIG_SPIRAM_RODATA=y" in sdkconfig:
+        raise VerificationError("CONFIG_SPIRAM_RODATA must be disabled")
+    if "# CONFIG_SPIRAM_RODATA is not set" not in sdkconfig:
+        raise VerificationError("sdkconfig does not state that CONFIG_SPIRAM_RODATA is disabled")
+    return False
+
+
 def run(command: list[str]) -> str:
     return subprocess.run(command, check=True, text=True, capture_output=True).stdout
 
@@ -327,6 +335,7 @@ def main() -> int:
         first_line_pool = verify_first_line_pool(functions, symbols)
         flash_classifier = verify_flash_pool(symbols, sections)
         sdkconfig = args.sdkconfig.read_text()
+        spiram_rodata = verify_spiram_rodata_disabled(sdkconfig)
         placement = verify_placement(args.variant, sdkconfig, symbols)
         compiler = args.compiler or str(Path(args.objdump).with_name("xtensa-esp32s3-elf-gcc"))
         compiler_version = args.compiler_version or run(
@@ -343,6 +352,7 @@ def main() -> int:
             "fixture": args.disassembly is not None,
             "variant": args.variant,
             "idfVersion": REQUIRED_IDF_VERSION,
+            "spiramRodata": spiram_rodata,
             "gitCommit": commit,
             "gitDirty": dirty,
             "sdkconfigSha256": hashlib.sha256(args.sdkconfig.read_bytes()).hexdigest(),
