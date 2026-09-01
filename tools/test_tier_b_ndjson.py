@@ -15,8 +15,11 @@ from tier_b_ndjson import (
     CaptureValidator,
     CellContract,
     ManifestContract,
+    PSRAM_SERVICE_BYTES,
     ValidationError,
+    design_ranks,
     expected_aggressor_checksum,
+    expected_psram_clock_register,
     validate_path,
 )
 
@@ -84,6 +87,7 @@ def metadata(**updates: object) -> str:
         "gitDirty": False,
         "variant": "normal",
         "sdkconfigSha256": "b" * 64,
+        "manifestSha256": "d" * 64,
         "compilerVersion": "15.2.0",
         "elfSha256": "c" * 64,
         "dbusFlashClassifier": classifier(),
@@ -171,6 +175,81 @@ class CaptureValidatorTest(unittest.TestCase):
         validator.feed_line(line("cell-start", cell=cell, expectedSamples=1), 2)
         return validator
 
+    def decomposition_validator(self, cell: CellContract) -> CaptureValidator:
+        actual = ManifestContract(
+            protocol_version=2,
+            harness_version="0.2.0-review",
+            chip_model="ESP32-S3",
+            chip_revision=2,
+            cells=(cell,),
+        )
+        validator = CaptureValidator(actual, "normal", cell.id)
+        validator.feed_line(
+            metadata(availableCells=[cell.id], selectedCells=[cell.id]), 1
+        )
+        validator.feed_line(
+            line("cell-start", cell=cell.id, expectedSamples=cell.samples), 2
+        )
+        return validator
+
+    @staticmethod
+    def msync_cell() -> CellContract:
+        return CellContract(
+            "msync_decompose_l16_d0_p40",
+            1,
+            ("normal", "xip-psram"),
+            family="msync-decomposition",
+            factors=(("bytes", 1024), ("dirtyLines", 0), ("psramClockHz", 40_000_000)),
+        )
+
+    @staticmethod
+    def spi2_cell() -> CellContract:
+        return CellContract(
+            "spi2_phased_b4096_c20",
+            1,
+            ("normal", "xip-psram"),
+            family="spi2-decomposition",
+            factors=(("bytes", 4096), ("spiClockHz", 20_000_000)),
+        )
+
+    @staticmethod
+    def msync_sample(**updates: object) -> str:
+        fields: dict[str, object] = {
+            "cell": "msync_decompose_l16_d0_p40",
+            "ordinal": 0,
+            "cycles": 30,
+            "bytes": 1024,
+            "startCore": 0,
+            "endCore": 0,
+            "cacheCounters": counters(dbusAccesses=0),
+            "dirtyLines": 0,
+            "psramClockHz": 40_000_000,
+            "psramClockRegister": expected_psram_clock_register(40_000_000),
+            "psramCoreClockRegister": 2,
+            "psramServiceBytes": PSRAM_SERVICE_BYTES,
+            "psramServiceCycles": 80,
+            "psramServiceCounters": counters(dbusAccesses=64, dbusPsramMisses=64),
+        }
+        fields.update(updates)
+        return line("sample", **fields)
+
+    @staticmethod
+    def spi2_sample(**updates: object) -> str:
+        fields: dict[str, object] = {
+            "cell": "spi2_phased_b4096_c20",
+            "ordinal": 0,
+            "cycles": 100,
+            "bytes": 4096,
+            "startCore": 0,
+            "endCore": 0,
+            "cacheCounters": counters(dbusAccesses=0),
+            "spiClockHz": 20_000_000,
+            "submissionCycles": 15,
+            "completionCycles": 85,
+        }
+        fields.update(updates)
+        return line("sample", **fields)
+
     @staticmethod
     def instruction_sample(cell: str, accesses: int, misses: int) -> str:
         return line(
@@ -239,6 +318,132 @@ class CaptureValidatorTest(unittest.TestCase):
         self.assertIn("instruction_psram_hot", [cell.id for cell in actual.available("xip-psram")])
         self.assertNotIn("gpio21_edge", [cell.id for cell in actual.available("normal")])
 
+    def test_committed_decomposition_matrices_are_full_rank(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        actual = ManifestContract.load(
+            root / "calibration" / "esp32s3-tier-b" / "probe-cells.json"
+        )
+        self.assertEqual(
+            design_ranks(actual.cells),
+            {"msync-decomposition": 6, "spi2-decomposition": 8},
+        )
+        msync = [cell for cell in actual.cells if cell.family == "msync-decomposition"]
+        spi2 = [cell for cell in actual.cells if cell.family == "spi2-decomposition"]
+        self.assertEqual((len(msync), sum(cell.samples for cell in msync)), (12, 108))
+        self.assertEqual((len(spi2), sum(cell.samples for cell in spi2)), (6, 54))
+        normal = actual.available("normal")
+        xip = actual.available("xip-psram")
+        self.assertEqual((len(normal), sum(cell.samples for cell in normal)), (43, 360))
+        self.assertEqual((len(xip), sum(cell.samples for cell in xip)), (44, 373))
+
+    def test_manifest_rejects_a_missing_noop_control(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        path = root / "calibration" / "esp32s3-tier-b" / "probe-cells.json"
+        payload = json.loads(path.read_text())
+        payload["cells"] = [
+            cell
+            for cell in payload["cells"]
+            if cell["id"] != "msync_decompose_l512_d0_p40"
+        ]
+        with self.assertRaisesRegex(ValidationError, "incomplete or duplicated"):
+            ManifestContract.from_bytes(json.dumps(payload).encode())
+
+    def test_manifest_rejects_coupled_service_factors(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        path = root / "calibration" / "esp32s3-tier-b" / "probe-cells.json"
+        payload = json.loads(path.read_text())
+        cell = next(
+            item for item in payload["cells"] if item["id"] == "msync_decompose_l1_d0_p40"
+        )
+        cell["factors"]["psramClockHz"] = 80_000_000
+        with self.assertRaisesRegex(ValidationError, "incomplete or duplicated"):
+            ManifestContract.from_bytes(json.dumps(payload).encode())
+
+    def test_manifest_rejects_a_missing_spi_clock_point(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        path = root / "calibration" / "esp32s3-tier-b" / "probe-cells.json"
+        payload = json.loads(path.read_text())
+        payload["cells"] = [
+            cell for cell in payload["cells"] if cell["id"] != "spi2_phased_b32768_c20"
+        ]
+        with self.assertRaisesRegex(ValidationError, "incomplete or duplicated"):
+            ManifestContract.from_bytes(json.dumps(payload).encode())
+
+    def test_runtime_manifest_provenance_is_pinned(self) -> None:
+        base = contract()
+        actual = ManifestContract(
+            protocol_version=base.protocol_version,
+            harness_version=base.harness_version,
+            chip_model=base.chip_model,
+            chip_revision=base.chip_revision,
+            cells=base.cells,
+            manifest_sha256="e" * 64,
+        )
+        with self.assertRaisesRegex(ValidationError, "committed manifest"):
+            CaptureValidator(actual, "normal", "store_hit_psram").feed_line(metadata(), 1)
+
+    def test_msync_control_accepts_exact_independent_factors(self) -> None:
+        self.decomposition_validator(self.msync_cell()).feed_line(self.msync_sample(), 3)
+
+    def test_msync_control_rejects_factor_or_clock_drift(self) -> None:
+        for update in (
+            {"dirtyLines": 16},
+            {"psramClockHz": 80_000_000},
+            {"psramClockRegister": expected_psram_clock_register(80_000_000)},
+            {"psramCoreClockRegister": 0},
+            {"bytes": 64},
+        ):
+            with self.subTest(update=update):
+                with self.assertRaises(ValidationError):
+                    self.decomposition_validator(self.msync_cell()).feed_line(
+                        self.msync_sample(**update), 3
+                    )
+
+    def test_msync_control_requires_service_counter_evidence(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "exclusive PSRAM service evidence"):
+            self.decomposition_validator(self.msync_cell()).feed_line(
+                self.msync_sample(
+                    psramServiceCounters=counters(dbusAccesses=0, dbusPsramMisses=0)
+                ),
+                3,
+            )
+
+    def test_decomposition_refusal_fails_closed(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "tier candidate affine"):
+            self.decomposition_validator(self.msync_cell()).feed_line(
+                line(
+                    "refusal",
+                    cell=self.msync_cell().id,
+                    ordinal=0,
+                    reason="PSRAM service clock readback mismatch",
+                    tierCandidate="affine",
+                ),
+                3,
+            )
+
+    def test_spi2_control_accepts_separate_reconciled_phases(self) -> None:
+        self.decomposition_validator(self.spi2_cell()).feed_line(self.spi2_sample(), 3)
+
+    def test_spi2_control_rejects_missing_or_combined_phases(self) -> None:
+        payload = json.loads(self.spi2_sample()[len(PREFIX) :])
+        del payload["completionCycles"]
+        with self.assertRaisesRegex(ValidationError, "separate SPI2 phase"):
+            self.decomposition_validator(self.spi2_cell()).feed_line(
+                PREFIX + json.dumps(payload), 3
+            )
+        with self.assertRaisesRegex(ValidationError, "do not reconcile"):
+            self.decomposition_validator(self.spi2_cell()).feed_line(
+                self.spi2_sample(completionCycles=84), 3
+            )
+
+    def test_spi2_control_rejects_payload_or_clock_drift(self) -> None:
+        for update in ({"bytes": 64}, {"spiClockHz": 40_000_000}):
+            with self.subTest(update=update):
+                with self.assertRaisesRegex(ValidationError, "manifest SPI2 factors"):
+                    self.decomposition_validator(self.spi2_cell()).feed_line(
+                        self.spi2_sample(**update), 3
+                    )
+
     def test_refusal_fails_immediately(self) -> None:
         validator = self.validator()
         validator.feed_line(metadata(), 1)
@@ -285,6 +490,7 @@ class CaptureValidatorTest(unittest.TestCase):
             "gitDirty": False,
             "variant": "normal",
             "sdkconfigSha256": "b" * 64,
+            "manifestSha256": "d" * 64,
             "compilerVersion": "15.2.0",
             "elfSha256": "d" * 64,
             "dbusFlashClassifier": classifier(),
@@ -320,6 +526,7 @@ class CaptureValidatorTest(unittest.TestCase):
             "gitDirty": False,
             "variant": "normal",
             "sdkconfigSha256": "b" * 64,
+            "manifestSha256": "d" * 64,
             "compilerVersion": "15.2.0",
             "elfSha256": "c" * 64,
             "dbusFlashClassifier": classifier(),

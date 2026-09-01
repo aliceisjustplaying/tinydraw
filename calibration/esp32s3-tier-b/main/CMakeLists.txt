@@ -1,7 +1,7 @@
 idf_component_register(
   SRCS "tier_b_probe.cpp" "instruction_ladders.S"
   INCLUDE_DIRS "."
-  PRIV_REQUIRES esp_app_format esp_driver_gpio esp_driver_i2c esp_driver_spi esp_driver_dma esp_lcd esp_mm esp_psram spi_flash
+  PRIV_REQUIRES esp_app_format esp_driver_gpio esp_driver_i2c esp_driver_spi esp_driver_dma esp_hw_support esp_lcd esp_mm esp_psram spi_flash
 )
 
 if(NOT "$ENV{IDF_VERSION}" STREQUAL "6.1.0")
@@ -33,11 +33,13 @@ else()
   set(TINYDRAW_BUILD_VARIANT "normal")
 endif()
 file(SHA256 "${SDKCONFIG}" TINYDRAW_SDKCONFIG_SHA256)
+file(SHA256 "${PROJECT_DIR}/probe-cells.json" TINYDRAW_MANIFEST_SHA256)
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
   TINYDRAW_BUILD_VARIANT="${TINYDRAW_BUILD_VARIANT}"
   TINYDRAW_GIT_COMMIT="${TINYDRAW_GIT_COMMIT}"
   TINYDRAW_GIT_DIRTY=${TINYDRAW_GIT_DIRTY}
   TINYDRAW_SDKCONFIG_SHA256="${TINYDRAW_SDKCONFIG_SHA256}"
+  TINYDRAW_MANIFEST_SHA256="${TINYDRAW_MANIFEST_SHA256}"
 )
 
 set_source_files_properties(tier_b_probe.cpp PROPERTIES

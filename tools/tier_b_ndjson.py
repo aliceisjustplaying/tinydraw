@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from dataclasses import dataclass
+from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +31,11 @@ DEFAULT_MANIFEST = (
     / "probe-cells.json"
 )
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+PSRAM_SERVICE_BYTES = 4096
+PSRAM_CLOCKS = (40_000_000, 80_000_000)
+MSYNC_BYTES = (64, 1024, 32768)
+SPI2_CLOCKS = (20_000_000, 40_000_000)
+SPI2_BYTES = (64, 4096, 32768)
 
 
 class ValidationError(ValueError):
@@ -158,6 +165,107 @@ class CellContract:
     samples: int
     variants: tuple[str, ...]
     status: str = "ready"
+    family: str = ""
+    factors: tuple[tuple[str, int], ...] = ()
+
+    def factor_map(self) -> dict[str, int]:
+        return dict(self.factors)
+
+
+def _matrix_rank(rows: list[list[int]]) -> int:
+    matrix = [[Fraction(value) for value in row] for row in rows]
+    rank = 0
+    columns = len(matrix[0]) if matrix else 0
+    for column in range(columns):
+        pivot = next(
+            (row for row in range(rank, len(matrix)) if matrix[row][column] != 0),
+            None,
+        )
+        if pivot is None:
+            continue
+        matrix[rank], matrix[pivot] = matrix[pivot], matrix[rank]
+        divisor = matrix[rank][column]
+        matrix[rank] = [value / divisor for value in matrix[rank]]
+        for row in range(len(matrix)):
+            if row == rank or matrix[row][column] == 0:
+                continue
+            scale = matrix[row][column]
+            matrix[row] = [
+                value - scale * pivot_value
+                for value, pivot_value in zip(matrix[row], matrix[rank], strict=True)
+            ]
+        rank += 1
+    return rank
+
+
+def design_ranks(cells: tuple[CellContract, ...]) -> dict[str, int]:
+    msync = [cell for cell in cells if cell.family == "msync-decomposition"]
+    spi2 = [cell for cell in cells if cell.family == "spi2-decomposition"]
+    ranks: dict[str, int] = {}
+    if msync:
+        if any(
+            set(cell.factor_map()) != {"bytes", "dirtyLines", "psramClockHz"}
+            for cell in msync
+        ):
+            raise ValidationError("manifest msync decomposition factors have unexpected keys")
+        expected = {
+            (byte_count, dirty_lines, clock_hz)
+            for byte_count in MSYNC_BYTES
+            for dirty_lines in (0, byte_count // 64)
+            for clock_hz in PSRAM_CLOCKS
+        }
+        actual = {
+            (
+                cell.factor_map().get("bytes"),
+                cell.factor_map().get("dirtyLines"),
+                cell.factor_map().get("psramClockHz"),
+            )
+            for cell in msync
+        }
+        if actual != expected or len(msync) != len(expected):
+            raise ValidationError("manifest msync decomposition factors are incomplete or duplicated")
+        if any(cell.samples != 9 or set(cell.variants) != {"normal", "xip-psram"} for cell in msync):
+            raise ValidationError("manifest msync decomposition provenance is inconsistent")
+        rows = []
+        for byte_count, dirty_lines, clock_hz in sorted(expected):
+            lines = byte_count // 64
+            slow = int(clock_hz == PSRAM_CLOCKS[0])
+            rows.append([1, lines, dirty_lines, slow, lines * slow, dirty_lines * slow])
+        ranks["msync-decomposition"] = _matrix_rank(rows)
+        if ranks["msync-decomposition"] != 6:
+            raise ValidationError("manifest msync decomposition design is rank deficient")
+    if spi2:
+        if any(set(cell.factor_map()) != {"bytes", "spiClockHz"} for cell in spi2):
+            raise ValidationError("manifest SPI2 decomposition factors have unexpected keys")
+        expected = {
+            (byte_count, clock_hz)
+            for byte_count in SPI2_BYTES
+            for clock_hz in SPI2_CLOCKS
+        }
+        actual = {
+            (cell.factor_map().get("bytes"), cell.factor_map().get("spiClockHz"))
+            for cell in spi2
+        }
+        if actual != expected or len(spi2) != len(expected):
+            raise ValidationError("manifest SPI2 decomposition factors are incomplete or duplicated")
+        if any(cell.samples != 9 or set(cell.variants) != {"normal", "xip-psram"} for cell in spi2):
+            raise ValidationError("manifest SPI2 decomposition provenance is inconsistent")
+        rows = []
+        for byte_count, clock_hz in sorted(expected):
+            slow = int(clock_hz == SPI2_CLOCKS[0])
+            rows.append([1, byte_count, slow, byte_count * slow, 0, 0, 0, 0])
+            rows.append([0, 0, 0, 0, 1, byte_count, slow, byte_count * slow])
+        ranks["spi2-decomposition"] = _matrix_rank(rows)
+        if ranks["spi2-decomposition"] != 8:
+            raise ValidationError("manifest SPI2 decomposition design is rank deficient")
+    return ranks
+
+
+def expected_psram_clock_register(clock_hz: int) -> int:
+    if clock_hz not in PSRAM_CLOCKS:
+        raise ValidationError(f"unsupported PSRAM clock {clock_hz}")
+    divider = 160_000_000 // clock_hz
+    return ((divider - 1) << 16) | ((divider // 2 - 1) << 8) | (divider - 1)
 
 
 @dataclass(frozen=True)
@@ -167,6 +275,7 @@ class ManifestContract:
     chip_model: str
     chip_revision: int
     cells: tuple[CellContract, ...]
+    manifest_sha256: str = ""
 
     @classmethod
     def load(cls, path: Path = DEFAULT_MANIFEST) -> "ManifestContract":
@@ -199,8 +308,13 @@ class ManifestContract:
         for index, raw_cell in enumerate(raw_cells):
             path_name = f"manifest.cells[{index}]"
             cell = _object(raw_cell, path_name)
-            _exact_keys(cell, path_name, {"id", "family", "samples", "variants"}, {"status"})
-            _string(cell["family"], f"{path_name}.family")
+            _exact_keys(
+                cell,
+                path_name,
+                {"id", "family", "samples", "variants"},
+                {"status", "factors"},
+            )
+            family = _string(cell["family"], f"{path_name}.family")
             if "status" in cell:
                 status = _string(cell["status"], f"{path_name}.status")
             else:
@@ -210,24 +324,43 @@ class ManifestContract:
             variants = tuple(_string_list(cell["variants"], f"{path_name}.variants"))
             if not variants or set(variants) - {"normal", "xip-psram"}:
                 raise ValidationError(f"{path_name}.variants contains an unsupported variant")
+            factors: tuple[tuple[str, int], ...] = ()
+            if "factors" in cell:
+                raw_factors = _object(cell["factors"], f"{path_name}.factors")
+                if not raw_factors:
+                    raise ValidationError(f"{path_name}.factors must not be empty")
+                factors = tuple(
+                    sorted(
+                        (
+                            _string(key, f"{path_name}.factors key"),
+                            _integer(value, f"{path_name}.factors.{key}"),
+                        )
+                        for key, value in raw_factors.items()
+                    )
+                )
             cells.append(
                 CellContract(
                     id=_string(cell["id"], f"{path_name}.id"),
                     samples=_integer(cell["samples"], f"{path_name}.samples", 1),
                     variants=variants,
                     status=status,
+                    family=family,
+                    factors=factors,
                 )
             )
         ids = [cell.id for cell in cells]
         if len(ids) != len(set(ids)):
             raise ValidationError("manifest.cells contains duplicate IDs")
-        return cls(
+        contract = cls(
             protocol_version=protocol_version,
             harness_version=_string(payload["harnessVersion"], "manifest.harnessVersion"),
             chip_model=_string(payload["chipModel"], "manifest.chipModel"),
             chip_revision=_integer(payload["chipRevision"], "manifest.chipRevision"),
             cells=tuple(cells),
+            manifest_sha256=hashlib.sha256(data).hexdigest(),
         )
+        design_ranks(contract.cells)
+        return contract
 
     def available(self, variant: str) -> list[CellContract]:
         if variant not in {"normal", "xip-psram"}:
@@ -297,6 +430,7 @@ class CaptureValidator:
         self.available = [cell.id for cell in contract.available(variant)]
         selected = contract.select(variant, request)
         self.selected = [cell.id for cell in selected]
+        self.selected_contracts = {cell.id: cell for cell in selected}
         self.expected_samples = {cell.id: cell.samples for cell in selected}
         self.expected_build = expected_build
         self.metadata: dict[str, Any] | None = None
@@ -358,6 +492,7 @@ class CaptureValidator:
                 "variant",
                 "spiramRodata",
                 "sdkconfigSha256",
+                "manifestSha256",
                 "compilerVersion",
                 "elfSha256",
                 "dbusFlashClassifier",
@@ -394,6 +529,9 @@ class CaptureValidator:
         _string(record["gitCommit"], f"{path}.gitCommit")
         _boolean(record["gitDirty"], f"{path}.gitDirty")
         _sha256(record["sdkconfigSha256"], f"{path}.sdkconfigSha256")
+        manifest_sha256 = _sha256(record["manifestSha256"], f"{path}.manifestSha256")
+        if self.contract.manifest_sha256 and manifest_sha256 != self.contract.manifest_sha256:
+            raise ValidationError(f"{path}.manifestSha256 does not match the committed manifest")
         _string(record["compilerVersion"], f"{path}.compilerVersion")
         _sha256(record["elfSha256"], f"{path}.elfSha256")
         classifier = _dbus_flash_classifier(
@@ -409,6 +547,7 @@ class CaptureValidator:
                 "variant",
                 "spiramRodata",
                 "sdkconfigSha256",
+                "manifestSha256",
                 "compilerVersion",
                 "elfSha256",
             ):
@@ -485,6 +624,16 @@ class CaptureValidator:
                 "isolatedAttributionCounters",
                 "aggressorIterations",
                 "aggressorChecksum",
+                "dirtyLines",
+                "psramClockHz",
+                "psramClockRegister",
+                "psramCoreClockRegister",
+                "psramServiceBytes",
+                "psramServiceCycles",
+                "psramServiceCounters",
+                "spiClockHz",
+                "submissionCycles",
+                "completionCycles",
                 "note",
             },
         )
@@ -496,8 +645,8 @@ class CaptureValidator:
             raise ValidationError(
                 f"{path}.ordinal is {ordinal}, expected {self.samples[cell]} for {cell!r}"
             )
-        _integer(record["cycles"], f"{path}.cycles", 1)
-        _integer(record["bytes"], f"{path}.bytes")
+        cycles = _integer(record["cycles"], f"{path}.cycles", 1)
+        byte_count = _integer(record["bytes"], f"{path}.bytes")
         for key in ("startCore", "endCore"):
             core = _integer(record[key], f"{path}.{key}")
             if core not in (0, 1):
@@ -557,6 +706,81 @@ class CaptureValidator:
                 raise ValidationError(f"{path} isolated attribution checksum mismatch")
         if "note" in record:
             _string(record["note"], f"{path}.note")
+        contract = self.selected_contracts[cell]
+        factors = contract.factor_map()
+        msync_fields = {
+            "dirtyLines",
+            "psramClockHz",
+            "psramClockRegister",
+            "psramCoreClockRegister",
+            "psramServiceBytes",
+            "psramServiceCycles",
+            "psramServiceCounters",
+        }
+        spi2_fields = {"spiClockHz", "submissionCycles", "completionCycles"}
+        if contract.family == "msync-decomposition":
+            if msync_fields - record.keys():
+                raise ValidationError(f"{path} lacks cache-msync decomposition evidence")
+            if spi2_fields & record.keys():
+                raise ValidationError(f"{path} mixes SPI2 phases into cache-msync evidence")
+            expected_bytes = factors["bytes"]
+            expected_dirty = factors["dirtyLines"]
+            expected_clock = factors["psramClockHz"]
+            if (
+                byte_count != expected_bytes
+                or _integer(record["dirtyLines"], f"{path}.dirtyLines") != expected_dirty
+                or _integer(record["psramClockHz"], f"{path}.psramClockHz") != expected_clock
+            ):
+                raise ValidationError(f"{path} does not match its manifest msync factors")
+            clock_register = _integer(
+                record["psramClockRegister"], f"{path}.psramClockRegister"
+            )
+            if clock_register != expected_psram_clock_register(expected_clock):
+                raise ValidationError(f"{path} PSRAM clock register does not match its factor")
+            if (
+                _integer(
+                    record["psramCoreClockRegister"],
+                    f"{path}.psramCoreClockRegister",
+                )
+                != 2
+            ):
+                raise ValidationError(f"{path} PSRAM core clock register is not 160 MHz")
+            if (
+                _integer(record["psramServiceBytes"], f"{path}.psramServiceBytes")
+                != PSRAM_SERVICE_BYTES
+            ):
+                raise ValidationError(f"{path} PSRAM service control has the wrong byte count")
+            _integer(record["psramServiceCycles"], f"{path}.psramServiceCycles", 1)
+            service = self._cache_counters(
+                record["psramServiceCounters"], f"{path}.psramServiceCounters"
+            )
+            if (
+                service["dbusAccesses"] == 0
+                or service["dbusPsramMisses"] == 0
+                or service["dbusFlashMisses"] != 0
+            ):
+                raise ValidationError(f"{path} lacks exclusive PSRAM service evidence")
+        elif contract.family == "spi2-decomposition":
+            if spi2_fields - record.keys():
+                raise ValidationError(f"{path} lacks separate SPI2 phase timing")
+            if msync_fields & record.keys():
+                raise ValidationError(f"{path} mixes cache-msync evidence into SPI2 phases")
+            if (
+                byte_count != factors["bytes"]
+                or _integer(record["spiClockHz"], f"{path}.spiClockHz")
+                != factors["spiClockHz"]
+            ):
+                raise ValidationError(f"{path} does not match its manifest SPI2 factors")
+            submission = _integer(
+                record["submissionCycles"], f"{path}.submissionCycles", 1
+            )
+            completion = _integer(
+                record["completionCycles"], f"{path}.completionCycles", 1
+            )
+            if submission + completion != cycles:
+                raise ValidationError(f"{path} SPI2 phases do not reconcile to total cycles")
+        elif (msync_fields | spi2_fields) & record.keys():
+            raise ValidationError(f"{path} carries decomposition evidence for a canonical cell")
         needs_contention = cell.startswith("arbitration_") or cell.endswith("_cross_core")
         if needs_contention and (
             baseline_counters is None

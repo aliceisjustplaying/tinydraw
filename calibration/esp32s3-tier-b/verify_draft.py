@@ -3,10 +3,14 @@
 
 import json
 import re
+import sys
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT.parents[1] / "tools"))
+from tier_b_ndjson import ManifestContract, design_ranks
+
 manifest = json.loads((ROOT / "probe-cells.json").read_text())
 source = (ROOT / "main" / "tier_b_probe.cpp").read_text()
 readme = (ROOT / "README.md").read_text()
@@ -20,6 +24,8 @@ required_families = {
     "arbitration-aggressors",
     "store-hit",
     "writeback-ladders",
+    "msync-decomposition",
+    "spi2-decomposition",
     "instruction-psram",
     "first-line-pooling",
     "display-path",
@@ -34,9 +40,34 @@ assert all(cell["samples"] > 0 for cell in cells)
 assert all(set(cell["variants"]) <= {"normal", "xip-psram"} for cell in cells)
 gpio = next(cell for cell in cells if cell["id"] == "gpio21_edge")
 assert gpio["status"] == "open-refusal"
+contract = ManifestContract.load(ROOT / "probe-cells.json")
+assert design_ranks(contract.cells) == {
+    "msync-decomposition": 6,
+    "spi2-decomposition": 8,
+}
+assert sum(cell.samples for cell in contract.cells if cell.family == "msync-decomposition") == 108
+assert sum(cell.samples for cell in contract.cells if cell.family == "spi2-decomposition") == 54
 
 table_ids = re.findall(r'CELL\("([a-z0-9_]+)"', source)
 assert table_ids == ids, "C++ cell table must match probe-cells.json in order"
+clock_names = {40_000_000: "kPsramSlowClockHz", 80_000_000: "kPsramFastClockHz"}
+for cell in (item for item in cells if item["family"] == "msync-decomposition"):
+    factors = cell["factors"]
+    expected = (
+        f'CELL("{cell["id"]}", probe_msync_decomposition, kDefaultSamples,\n'
+        f'         msync_decomposition_parameter({factors["bytes"]}, '
+        f'{factors["dirtyLines"]}, {clock_names[factors["psramClockHz"]]}))'
+    )
+    assert expected in source, f"firmware factors do not match {cell['id']}"
+spi_clock_names = {20_000_000: "kSpi2SlowClockHz", 40_000_000: "kSpi2FastClockHz"}
+for cell in (item for item in cells if item["family"] == "spi2-decomposition"):
+    factors = cell["factors"]
+    expected = (
+        f'CELL("{cell["id"]}", probe_spi2_phased, kDefaultSamples,\n'
+        f'         spi2_decomposition_parameter({factors["bytes"]}, '
+        f'{spi_clock_names[factors["spiClockHz"]]}))'
+    )
+    assert expected in source, f"firmware factors do not match {cell['id']}"
 assert "TIER_B_SELECT" in source, "runtime selective cohort command is missing"
 assert "xTaskCreatePinnedToCore" in source, "cross-core probes must be structurally dual-core"
 assert "ESP_CACHE_MSYNC_FLAG_DIR_C2M" in source, "writeback probes are missing"
@@ -90,6 +121,7 @@ for field in (
     "gitCommit",
     "gitDirty",
     "sdkconfigSha256",
+    "manifestSha256",
     "compilerVersion",
     "elfSha256",
     "dbusFlashClassifier",
@@ -135,9 +167,35 @@ first_line_counters = first_line_body.index(
     "const CacheCounters counters", first_line_cycle_end
 )
 assert first_line_call < first_line_cycle_end < first_line_counters
+msync_start = source.index("Sample probe_msync_decomposition")
+msync_end = source.index("\nusing InstructionFunction", msync_start)
+msync_body = source[msync_start:msync_end]
+assert msync_body.index("set_psram_service_clock") < msync_body.index("measure_psram_service")
+assert msync_body.index("const std::uint32_t start = read_ccount();") < msync_body.index(
+    "esp_cache_msync(data, bytes, ESP_CACHE_MSYNC_FLAG_DIR_C2M)"
+)
+assert msync_body.index("const std::uint32_t end = read_ccount();") < msync_body.index(
+    "cache-msync decomposition verification invalidation failed"
+)
+assert "psramClockRegister" in source and "psramCoreClockRegister" in source
+assert "psramServiceCounters" in source
+spi_start = source.index("Sample probe_spi2_phased")
+spi_end = source.index("\nSample probe_touch_i2c", spi_start)
+spi_body = source[spi_start:spi_end]
+assert spi_body.index("spi_device_get_actual_freq") < spi_body.index(
+    "const std::uint32_t start = read_ccount();"
+)
+assert spi_body.index("spi_device_queue_trans") < spi_body.index(
+    "const std::uint32_t submitted = read_ccount();"
+)
+assert spi_body.index("spi_device_get_trans_result") < spi_body.index(
+    "const std::uint32_t end = read_ccount();"
+)
+assert "submissionCycles" in source and "completionCycles" in source
 assert "RESTART_MARKERS" in capture and "restart_marker(line, selection_sent)" in capture
 assert 'REQUIRED_IDF_VERSION = "v6.1"' in validator
 assert 'IDF_VERSION}" STREQUAL "6.1.0"' in component
+assert "TINYDRAW_MANIFEST_SHA256" in component
 assert (ROOT / "verify_elf.py").exists()
 assert "TINYDRAW_TIER_B_XIP_PSRAM" in (ROOT / "CMakeLists.txt").read_text()
 assert "CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y" in (

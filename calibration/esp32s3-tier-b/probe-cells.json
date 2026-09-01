@@ -31,6 +31,24 @@
     {"id": "cache_msync_writeback_sweep", "family": "display-path", "samples": 6, "variants": ["normal", "xip-psram"]},
     {"id": "cache_msync_invalidate_clean_sweep", "family": "display-path", "samples": 6, "variants": ["normal", "xip-psram"]},
     {"id": "psram_bandwidth_cross_core", "family": "display-path", "samples": 9, "variants": ["normal", "xip-psram"]},
-    {"id": "flash_bandwidth_cross_core", "family": "display-path", "samples": 9, "variants": ["normal", "xip-psram"]}
+    {"id": "flash_bandwidth_cross_core", "family": "display-path", "samples": 9, "variants": ["normal", "xip-psram"]},
+    {"id": "msync_decompose_l1_d0_p40", "family": "msync-decomposition", "samples": 9, "variants": ["normal", "xip-psram"], "factors": {"bytes": 64, "dirtyLines": 0, "psramClockHz": 40000000}},
+    {"id": "msync_decompose_l1_d0_p80", "family": "msync-decomposition", "samples": 9, "variants": ["normal", "xip-psram"], "factors": {"bytes": 64, "dirtyLines": 0, "psramClockHz": 80000000}},
+    {"id": "msync_decompose_l1_d1_p40", "family": "msync-decomposition", "samples": 9, "variants": ["normal", "xip-psram"], "factors": {"bytes": 64, "dirtyLines": 1, "psramClockHz": 40000000}},
+    {"id": "msync_decompose_l1_d1_p80", "family": "msync-decomposition", "samples": 9, "variants": ["normal", "xip-psram"], "factors": {"bytes": 64, "dirtyLines": 1, "psramClockHz": 80000000}},
+    {"id": "msync_decompose_l16_d0_p40", "family": "msync-decomposition", "samples": 9, "variants": ["normal", "xip-psram"], "factors": {"bytes": 1024, "dirtyLines": 0, "psramClockHz": 40000000}},
+    {"id": "msync_decompose_l16_d0_p80", "family": "msync-decomposition", "samples": 9, "variants": ["normal", "xip-psram"], "factors": {"bytes": 1024, "dirtyLines": 0, "psramClockHz": 80000000}},
+    {"id": "msync_decompose_l16_d16_p40", "family": "msync-decomposition", "samples": 9, "variants": ["normal", "xip-psram"], "factors": {"bytes": 1024, "dirtyLines": 16, "psramClockHz": 40000000}},
+    {"id": "msync_decompose_l16_d16_p80", "family": "msync-decomposition", "samples": 9, "variants": ["normal", "xip-psram"], "factors": {"bytes": 1024, "dirtyLines": 16, "psramClockHz": 80000000}},
+    {"id": "msync_decompose_l512_d0_p40", "family": "msync-decomposition", "samples": 9, "variants": ["normal", "xip-psram"], "factors": {"bytes": 32768, "dirtyLines": 0, "psramClockHz": 40000000}},
+    {"id": "msync_decompose_l512_d0_p80", "family": "msync-decomposition", "samples": 9, "variants": ["normal", "xip-psram"], "factors": {"bytes": 32768, "dirtyLines": 0, "psramClockHz": 80000000}},
+    {"id": "msync_decompose_l512_d512_p40", "family": "msync-decomposition", "samples": 9, "variants": ["normal", "xip-psram"], "factors": {"bytes": 32768, "dirtyLines": 512, "psramClockHz": 40000000}},
+    {"id": "msync_decompose_l512_d512_p80", "family": "msync-decomposition", "samples": 9, "variants": ["normal", "xip-psram"], "factors": {"bytes": 32768, "dirtyLines": 512, "psramClockHz": 80000000}},
+    {"id": "spi2_phased_b64_c20", "family": "spi2-decomposition", "samples": 9, "variants": ["normal", "xip-psram"], "factors": {"bytes": 64, "spiClockHz": 20000000}},
+    {"id": "spi2_phased_b64_c40", "family": "spi2-decomposition", "samples": 9, "variants": ["normal", "xip-psram"], "factors": {"bytes": 64, "spiClockHz": 40000000}},
+    {"id": "spi2_phased_b4096_c20", "family": "spi2-decomposition", "samples": 9, "variants": ["normal", "xip-psram"], "factors": {"bytes": 4096, "spiClockHz": 20000000}},
+    {"id": "spi2_phased_b4096_c40", "family": "spi2-decomposition", "samples": 9, "variants": ["normal", "xip-psram"], "factors": {"bytes": 4096, "spiClockHz": 40000000}},
+    {"id": "spi2_phased_b32768_c20", "family": "spi2-decomposition", "samples": 9, "variants": ["normal", "xip-psram"], "factors": {"bytes": 32768, "spiClockHz": 20000000}},
+    {"id": "spi2_phased_b32768_c40", "family": "spi2-decomposition", "samples": 9, "variants": ["normal", "xip-psram"], "factors": {"bytes": 32768, "spiClockHz": 40000000}}
   ]
 }

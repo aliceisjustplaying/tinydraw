@@ -38,6 +38,27 @@ CCOUNT window contains only the victim traversal. The invalidate cell measures
 a clean `M2C | INVALIDATE` operation;
 dirty `C2M` writeback is measured separately.
 
+The decomposition controls add a crossed cache-msync matrix with addressed
+line counts 1, 16, and 512, clean or fully dirty residency, and verified PSRAM
+clocks of 40 and 80 MHz. Each of the 12 conditions has nine repeats. The clean
+rows are byte-matched no-op `C2M` controls. Every sample reads back the exact
+PSRAM divider and 160 MHz core-clock selector registers, then independently
+times a cold 4 KiB PSRAM traversal with
+exclusive PSRAM access and miss counters before timing cache-msync. Unsupported
+clock readbacks or missing service evidence refuse the affine tier candidate.
+The design matrix `[1,L,D,S40,L*S40,D*S40]` has rank 6, so its six named
+coefficients are identifiable before hardware capture.
+
+SPI2 decomposition uses payloads 64, 4,096, and 32,768 bytes at read-back
+verified 20 and 40 MHz clocks, with nine repeats per payload and clock. Queue
+submission and DMA/peripheral completion occupy separate adjacent CCOUNT
+windows and must reconcile exactly to the recorded total. Expanding each
+condition into its two phases gives rank 8 for separate submission and
+completion intercept, byte, clock, and byte-by-clock terms. The canonical
+blocking SPI2 sweep remains unchanged for reconciliation with the earlier
+receipt. These controls remain unmeasured until a new hardware cohort is
+captured and committed.
+
 Panel and touch initialization power-cycles their TCA9554 rails between boots
 and checks the CST820 identity. The raw SPI2 transfer probe has no chip-select,
 so its timed bytes cannot be interpreted by the panel.

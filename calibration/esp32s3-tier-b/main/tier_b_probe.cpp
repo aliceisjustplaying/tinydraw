@@ -23,6 +23,7 @@
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_io_interface.h"
 #include "esp_private/mmu_psram_flash.h"
+#include "esp_private/mspi_timing_config.h"
 #include "esp_psram.h"
 #include "esp_random.h"
 #include "esp_rom_sys.h"
@@ -33,9 +34,14 @@
 #include "sdkconfig.h"
 #include "soc/extmem_reg.h"
 #include "soc/soc.h"
+#include "soc/spi_mem_reg.h"
 
 #if defined(CONFIG_SPIRAM_RODATA) && CONFIG_SPIRAM_RODATA
 #error "Tier-B flash attribution requires CONFIG_SPIRAM_RODATA disabled"
+#endif
+#if !defined(CONFIG_SPIRAM_MODE_OCT) || !CONFIG_SPIRAM_MODE_OCT || \
+    !defined(CONFIG_SPIRAM_SPEED_80M) || !CONFIG_SPIRAM_SPEED_80M
+#error "Tier-B decomposition controls require 80 MHz octal PSRAM"
 #endif
 
 extern "C" {
@@ -81,6 +87,12 @@ constexpr std::uint32_t kFirstLineSamples = 5;
 constexpr std::uint32_t kStoreIterations = 256;
 constexpr std::uint32_t kBandwidthBytes = 256 * 1024;
 constexpr std::uint32_t kAttributionIterations = 128;
+constexpr std::size_t kPsramServiceBytes = 4 * 1024;
+constexpr std::uint32_t kPsramFastClockHz = 80 * 1000 * 1000;
+constexpr std::uint32_t kPsramSlowClockHz = 40 * 1000 * 1000;
+constexpr std::uint32_t kMspiCoreClockHz = 160 * 1000 * 1000;
+constexpr std::uint32_t kSpi2SlowClockHz = 20 * 1000 * 1000;
+constexpr std::uint32_t kSpi2FastClockHz = 40 * 1000 * 1000;
 constexpr std::uint8_t kExpanderOutputs = 0x87;
 constexpr std::uint8_t kExpanderPoweredDown = 0x80;
 
@@ -169,6 +181,17 @@ struct Sample {
   AttributionEvidence attribution{};
   std::uint32_t aggressor_iterations = 0;
   std::uint32_t aggressor_checksum = 0;
+  bool has_msync_factors = false;
+  std::size_t dirty_lines = 0;
+  std::uint32_t psram_clock_hz = 0;
+  std::uint32_t psram_clock_register = 0;
+  std::uint32_t psram_core_clock_register = 0;
+  std::uint32_t psram_service_cycles = 0;
+  CacheCounters psram_service_counters{};
+  bool has_spi2_phases = false;
+  std::uint32_t spi2_clock_hz = 0;
+  std::uint32_t submission_cycles = 0;
+  std::uint32_t completion_cycles = 0;
   const char* reason = "probe failed";
   const char* tier_candidate = "exact";
   const char* note = nullptr;
@@ -195,6 +218,7 @@ struct Context {
   i2c_master_dev_handle_t touch = nullptr;
   esp_lcd_panel_io_handle_t panel_io = nullptr;
   spi_device_handle_t spi = nullptr;
+  std::array<spi_device_handle_t, 2> phased_spi{};
   async_memcpy_handle_t gdma = nullptr;
   SemaphoreHandle_t panel_done = nullptr;
   SemaphoreHandle_t gdma_done = nullptr;
@@ -242,6 +266,29 @@ CacheCounters read_cache_counters() {
   };
 }
 
+constexpr std::uint32_t expected_psram_clock_register(std::uint32_t clock_hz) {
+  const std::uint32_t divider = kMspiCoreClockHz / clock_hz;
+  return ((divider - 1) << SPI_MEM_SCLKCNT_N_S) |
+         ((divider / 2 - 1) << SPI_MEM_SCLKCNT_H_S) |
+         ((divider - 1) << SPI_MEM_SCLKCNT_L_S);
+}
+
+static_assert(kMspiCoreClockHz % kPsramFastClockHz == 0);
+static_assert(kMspiCoreClockHz % kPsramSlowClockHz == 0);
+static_assert(expected_psram_clock_register(kPsramFastClockHz) !=
+              expected_psram_clock_register(kPsramSlowClockHz));
+
+bool set_psram_service_clock(std::uint32_t clock_hz, std::uint32_t& register_value,
+                             std::uint32_t& core_register_value) {
+  if (clock_hz != kPsramFastClockHz && clock_hz != kPsramSlowClockHz) return false;
+  mspi_timing_config_set_psram_clock(clock_hz / 1000 / 1000,
+                                     MSPI_TIMING_SPEED_MODE_NORMAL_PERF, false);
+  asm volatile("memw" ::: "memory");
+  register_value = REG_READ(SPI_MEM_SRAM_CLK_REG(0));
+  core_register_value = REG_GET_FIELD(SPI_MEM_CORE_CLK_SEL_REG(0), SPI_MEM_CORE_CLK_SEL);
+  return register_value == expected_psram_clock_register(clock_hz) && core_register_value == 2;
+}
+
 Sample timed_result(std::uint32_t start, std::uint32_t end, std::size_t bytes,
                     CacheCounters counters = {}, const char* note = nullptr) {
   if (end == start) {
@@ -282,6 +329,24 @@ void emit_attribution(const Sample& sample) {
   }
 }
 
+void emit_control_evidence(const Sample& sample) {
+  if (sample.has_msync_factors) {
+    std::printf(
+        ",\"dirtyLines\":%zu,\"psramClockHz\":%" PRIu32
+        ",\"psramClockRegister\":%" PRIu32 ",\"psramCoreClockRegister\":%" PRIu32
+        ",\"psramServiceBytes\":%zu,"
+        "\"psramServiceCycles\":%" PRIu32 ",\"psramServiceCounters\":",
+        sample.dirty_lines, sample.psram_clock_hz, sample.psram_clock_register,
+        sample.psram_core_clock_register, kPsramServiceBytes, sample.psram_service_cycles);
+    emit_cache_counters(sample.psram_service_counters);
+  }
+  if (sample.has_spi2_phases) {
+    std::printf(",\"spiClockHz\":%" PRIu32 ",\"submissionCycles\":%" PRIu32
+                ",\"completionCycles\":%" PRIu32,
+                sample.spi2_clock_hz, sample.submission_cycles, sample.completion_cycles);
+  }
+}
+
 void emit_sample(const Cell& cell, std::uint32_t ordinal, const Sample& sample) {
   if (!sample.ok) {
     std::printf("%s{\"protocolVersion\":%" PRIu32
@@ -305,6 +370,7 @@ void emit_sample(const Cell& cell, std::uint32_t ordinal, const Sample& sample) 
     emit_cache_counters(sample.baseline_counters);
   }
   emit_attribution(sample);
+  emit_control_evidence(sample);
   if (sample.note != nullptr) {
     std::printf(",\"note\":\"%s\"", sample.note);
   }
@@ -638,6 +704,129 @@ Sample probe_writeback(Context& context, const Cell& cell, std::uint32_t ordinal
                             : "clean C2M writeback verified after invalidated reload");
 }
 
+Sample restore_psram_clock(Sample sample) {
+  std::uint32_t register_value = 0;
+  std::uint32_t core_register_value = 0;
+  if (!set_psram_service_clock(kPsramFastClockHz, register_value, core_register_value)) {
+    return {.reason = "PSRAM service clock restore readback mismatch",
+            .tier_candidate = "affine"};
+  }
+  return sample;
+}
+
+const char* measure_psram_service(Context& context, Sample& sample) {
+  std::uint8_t* data = context.psram + (kPsramBytes * 3 / 4);
+  if (!invalidate_data(data, kPsramServiceBytes)) {
+    return "PSRAM service control invalidation failed";
+  }
+  clear_cache_counters();
+  const std::uint32_t start = read_ccount();
+  const std::uint32_t sum = read_stride(data, kPsramServiceBytes);
+  const std::uint32_t end = read_ccount();
+  g_sink ^= sum;
+  sample.psram_service_cycles = end - start;
+  sample.psram_service_counters = read_cache_counters();
+  if (sample.psram_service_cycles == 0 || sample.psram_service_counters.dbus_accesses == 0 ||
+      sample.psram_service_counters.dbus_psram_misses == 0 ||
+      sample.psram_service_counters.dbus_flash_misses != 0) {
+    return "PSRAM service control lacks exclusive PSRAM counter evidence";
+  }
+  return nullptr;
+}
+
+Sample probe_msync_decomposition(Context& context, const Cell& cell, std::uint32_t ordinal) {
+  const std::size_t bytes = cell.parameter & 0xffffU;
+  const std::size_t dirty_lines = (cell.parameter >> 16U) & 0x7fffU;
+  const std::uint32_t clock_hz =
+      (cell.parameter & 0x80000000U) != 0 ? kPsramSlowClockHz : kPsramFastClockHz;
+  const std::size_t addressed_lines = bytes / kDcacheLine;
+  if ((addressed_lines != 1 && addressed_lines != 16 && addressed_lines != 512) ||
+      (dirty_lines != 0 && dirty_lines != addressed_lines)) {
+    return {.reason = "unsupported cache-msync decomposition factors",
+            .tier_candidate = "affine"};
+  }
+
+  Sample result{
+      .bytes = bytes,
+      .has_msync_factors = true,
+      .dirty_lines = dirty_lines,
+      .psram_clock_hz = clock_hz,
+  };
+  if (!set_psram_service_clock(clock_hz, result.psram_clock_register,
+                               result.psram_core_clock_register)) {
+    return restore_psram_clock(
+        {.reason = "PSRAM service clock readback mismatch", .tier_candidate = "affine"});
+  }
+  if (const char* failure = measure_psram_service(context, result); failure != nullptr) {
+    result.reason = failure;
+    result.tier_candidate = "affine";
+    return restore_psram_clock(result);
+  }
+
+  const std::size_t region_offset = (ordinal * 32 * kDcacheLine) % (kPsramBytes / 4);
+  std::uint8_t* data = context.psram + region_offset;
+  for (std::size_t offset = 0; offset < bytes; offset += kDcacheLine) {
+    data[offset] = static_cast<std::uint8_t>((region_offset + offset) * 17U + 3U);
+  }
+  if (esp_cache_msync(data, bytes,
+                      ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_INVALIDATE) != ESP_OK) {
+    result.reason = "cache-msync decomposition preparation failed";
+    result.tier_candidate = "affine";
+    return restore_psram_clock(result);
+  }
+  g_sink ^= read_stride(data, bytes);
+  for (std::size_t line = 0; line < dirty_lines; ++line) {
+    const std::size_t offset = line * kDcacheLine;
+    data[offset] = static_cast<std::uint8_t>(ordinal + offset + 0x6dU);
+  }
+
+  const std::uint32_t start = read_ccount();
+  const esp_err_t error = esp_cache_msync(data, bytes, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+  const std::uint32_t end = read_ccount();
+  if (error != ESP_OK) {
+    result.reason = "cache-msync decomposition writeback failed";
+    result.tier_candidate = "affine";
+    return restore_psram_clock(result);
+  }
+  if (esp_cache_msync(data, bytes,
+                      ESP_CACHE_MSYNC_FLAG_DIR_M2C | ESP_CACHE_MSYNC_FLAG_INVALIDATE) != ESP_OK) {
+    result.reason = "cache-msync decomposition verification invalidation failed";
+    result.tier_candidate = "affine";
+    return restore_psram_clock(result);
+  }
+  clear_cache_counters();
+  for (std::size_t offset = 0; offset < bytes; offset += kDcacheLine) {
+    const std::uint8_t value = data[offset];
+    const std::uint8_t expected = offset < dirty_lines * kDcacheLine
+                                      ? static_cast<std::uint8_t>(ordinal + offset + 0x6dU)
+                                      : static_cast<std::uint8_t>((region_offset + offset) * 17U +
+                                                                  3U);
+    g_sink ^= value;
+    if (value != expected) {
+      result.reason = "cache-msync decomposition backing value mismatch";
+      result.tier_candidate = "affine";
+      return restore_psram_clock(result);
+    }
+  }
+  const CacheCounters verification = read_cache_counters();
+  if (verification.dbus_accesses == 0 || verification.dbus_psram_misses == 0 ||
+      verification.dbus_flash_misses != 0) {
+    result.reason = "cache-msync decomposition reload lacks exclusive PSRAM evidence";
+    result.tier_candidate = "affine";
+    return restore_psram_clock(result);
+  }
+
+  result.ok = end != start;
+  result.cycles = end - start;
+  result.note = dirty_lines == 0 ? "matched clean no-op C2M control"
+                                 : "crossed dirty-line and PSRAM-service C2M writeback";
+  if (!result.ok) {
+    result.reason = "zero cache-msync decomposition CCOUNT delta";
+    result.tier_candidate = "affine";
+  }
+  return restore_psram_clock(result);
+}
+
 using InstructionFunction = void (*)(void);
 
 struct InstructionRange {
@@ -822,6 +1011,15 @@ esp_err_t init_spi_and_panel(Context& context) {
   error = spi_bus_add_device(SPI2_HOST, &spi_config, &context.spi);
   if (error != ESP_OK) return error;
 
+  context.phased_spi[1] = context.spi;
+  spi_device_interface_config_t phased_config{};
+  phased_config.clock_speed_hz = static_cast<int>(kSpi2SlowClockHz);
+  phased_config.mode = 0;
+  phased_config.spics_io_num = GPIO_NUM_NC;
+  phased_config.queue_size = 1;
+  error = spi_bus_add_device(SPI2_HOST, &phased_config, &context.phased_spi[0]);
+  if (error != ESP_OK) return error;
+
   static constexpr std::array<std::uint8_t, 1> fe{0x00};
   static constexpr std::array<std::uint8_t, 1> c4{0x80};
   static constexpr std::array<std::uint8_t, 1> format{0x55};
@@ -945,6 +1143,64 @@ Sample probe_spi2(Context& context, const Cell&, std::uint32_t ordinal) {
   return timed_result(start, end, bytes);
 }
 
+Sample probe_spi2_phased(Context& context, const Cell& cell, std::uint32_t ordinal) {
+  static_cast<void>(ordinal);
+  const std::size_t bytes = cell.parameter & 0xffffU;
+  const std::uint32_t clock_hz =
+      (cell.parameter & 0x80000000U) != 0 ? kSpi2SlowClockHz : kSpi2FastClockHz;
+  if (bytes != 64 && bytes != 4096 && bytes != 32768) {
+    return {.reason = "unsupported SPI2 decomposition payload",
+            .tier_candidate = "affine"};
+  }
+  std::size_t handle_index = 0;
+  if (clock_hz == kSpi2SlowClockHz) {
+    handle_index = 0;
+  } else if (clock_hz == kSpi2FastClockHz) {
+    handle_index = 1;
+  } else {
+    return {.reason = "unsupported SPI2 decomposition clock",
+            .tier_candidate = "affine"};
+  }
+  spi_device_handle_t handle = context.phased_spi[handle_index];
+  int actual_khz = 0;
+  if (spi_device_get_actual_freq(handle, &actual_khz) != ESP_OK || actual_khz <= 0 ||
+      static_cast<std::uint32_t>(actual_khz) * 1000U != clock_hz) {
+    return {.reason = "SPI2 decomposition clock readback mismatch",
+            .tier_candidate = "affine"};
+  }
+
+  spi_transaction_t transaction{};
+  transaction.length = bytes * 8;
+  transaction.tx_buffer = context.dma_source;
+  const std::uint32_t start = read_ccount();
+  const esp_err_t queued = spi_device_queue_trans(handle, &transaction, portMAX_DELAY);
+  const std::uint32_t submitted = read_ccount();
+  if (queued != ESP_OK) {
+    return {.reason = "SPI2 decomposition submission failed",
+            .tier_candidate = "affine"};
+  }
+  spi_transaction_t* completed_transaction = nullptr;
+  const esp_err_t completed =
+      spi_device_get_trans_result(handle, &completed_transaction, portMAX_DELAY);
+  const std::uint32_t end = read_ccount();
+  if (completed != ESP_OK || completed_transaction != &transaction) {
+    return {.reason = "SPI2 decomposition completion failed",
+            .tier_candidate = "affine"};
+  }
+  Sample result = timed_result(start, end, bytes);
+  result.has_spi2_phases = true;
+  result.spi2_clock_hz = clock_hz;
+  result.submission_cycles = submitted - start;
+  result.completion_cycles = end - submitted;
+  result.note = "CPU submission and DMA peripheral completion timed separately";
+  if (result.submission_cycles == 0 || result.completion_cycles == 0 ||
+      result.submission_cycles + result.completion_cycles != result.cycles) {
+    return {.reason = "SPI2 decomposition phase timing invalid",
+            .tier_candidate = "affine"};
+  }
+  return result;
+}
+
 Sample probe_touch_i2c(Context& context, const Cell&, std::uint32_t ordinal) {
   const std::uint8_t register_address = static_cast<std::uint8_t>(0x02U + (ordinal % 5U));
   std::array<std::uint8_t, 5> response{};
@@ -1047,6 +1303,18 @@ Sample probe_cross_core_bandwidth(Context& context, const Cell& cell, std::uint3
 #define CELL(id, probe, samples, parameter) \
   Cell { id, probe, samples, parameter }
 
+constexpr std::uint32_t msync_decomposition_parameter(std::uint32_t bytes,
+                                                       std::uint32_t dirty_lines,
+                                                       std::uint32_t clock_hz) {
+  return bytes | (dirty_lines << 16U) |
+         (clock_hz == kPsramSlowClockHz ? 0x80000000U : 0U);
+}
+
+constexpr std::uint32_t spi2_decomposition_parameter(std::uint32_t bytes,
+                                                      std::uint32_t clock_hz) {
+  return bytes | (clock_hz == kSpi2SlowClockHz ? 0x80000000U : 0U);
+}
+
 constexpr std::array kCells{
     CELL("arbitration_psram_victim_internal_aggressor", probe_arbitration, kDefaultSamples,
          static_cast<std::uint32_t>(Aggressor::kInternal)),
@@ -1079,6 +1347,42 @@ constexpr std::array kCells{
     CELL("cache_msync_invalidate_clean_sweep", probe_msync_sweep, kSweepSamples, 1),
     CELL("psram_bandwidth_cross_core", probe_cross_core_bandwidth, kDefaultSamples, 0),
     CELL("flash_bandwidth_cross_core", probe_cross_core_bandwidth, kDefaultSamples, 1),
+    CELL("msync_decompose_l1_d0_p40", probe_msync_decomposition, kDefaultSamples,
+         msync_decomposition_parameter(64, 0, kPsramSlowClockHz)),
+    CELL("msync_decompose_l1_d0_p80", probe_msync_decomposition, kDefaultSamples,
+         msync_decomposition_parameter(64, 0, kPsramFastClockHz)),
+    CELL("msync_decompose_l1_d1_p40", probe_msync_decomposition, kDefaultSamples,
+         msync_decomposition_parameter(64, 1, kPsramSlowClockHz)),
+    CELL("msync_decompose_l1_d1_p80", probe_msync_decomposition, kDefaultSamples,
+         msync_decomposition_parameter(64, 1, kPsramFastClockHz)),
+    CELL("msync_decompose_l16_d0_p40", probe_msync_decomposition, kDefaultSamples,
+         msync_decomposition_parameter(1024, 0, kPsramSlowClockHz)),
+    CELL("msync_decompose_l16_d0_p80", probe_msync_decomposition, kDefaultSamples,
+         msync_decomposition_parameter(1024, 0, kPsramFastClockHz)),
+    CELL("msync_decompose_l16_d16_p40", probe_msync_decomposition, kDefaultSamples,
+         msync_decomposition_parameter(1024, 16, kPsramSlowClockHz)),
+    CELL("msync_decompose_l16_d16_p80", probe_msync_decomposition, kDefaultSamples,
+         msync_decomposition_parameter(1024, 16, kPsramFastClockHz)),
+    CELL("msync_decompose_l512_d0_p40", probe_msync_decomposition, kDefaultSamples,
+         msync_decomposition_parameter(32768, 0, kPsramSlowClockHz)),
+    CELL("msync_decompose_l512_d0_p80", probe_msync_decomposition, kDefaultSamples,
+         msync_decomposition_parameter(32768, 0, kPsramFastClockHz)),
+    CELL("msync_decompose_l512_d512_p40", probe_msync_decomposition, kDefaultSamples,
+         msync_decomposition_parameter(32768, 512, kPsramSlowClockHz)),
+    CELL("msync_decompose_l512_d512_p80", probe_msync_decomposition, kDefaultSamples,
+         msync_decomposition_parameter(32768, 512, kPsramFastClockHz)),
+    CELL("spi2_phased_b64_c20", probe_spi2_phased, kDefaultSamples,
+         spi2_decomposition_parameter(64, kSpi2SlowClockHz)),
+    CELL("spi2_phased_b64_c40", probe_spi2_phased, kDefaultSamples,
+         spi2_decomposition_parameter(64, kSpi2FastClockHz)),
+    CELL("spi2_phased_b4096_c20", probe_spi2_phased, kDefaultSamples,
+         spi2_decomposition_parameter(4096, kSpi2SlowClockHz)),
+    CELL("spi2_phased_b4096_c40", probe_spi2_phased, kDefaultSamples,
+         spi2_decomposition_parameter(4096, kSpi2FastClockHz)),
+    CELL("spi2_phased_b32768_c20", probe_spi2_phased, kDefaultSamples,
+         spi2_decomposition_parameter(32768, kSpi2SlowClockHz)),
+    CELL("spi2_phased_b32768_c40", probe_spi2_phased, kDefaultSamples,
+         spi2_decomposition_parameter(32768, kSpi2FastClockHz)),
 };
 
 #undef CELL
@@ -1154,14 +1458,15 @@ void emit_metadata(const std::array<bool, kCells.size()>& selected) {
               ",\"record\":\"metadata\",\"suite\":\"tier-b\",\"harnessVersion\":\"%s\","
               "\"idfVersion\":\"%s\",\"gitCommit\":\"%s\",\"gitDirty\":%s,"
               "\"variant\":\"%s\",\"spiramRodata\":false,\"sdkconfigSha256\":\"%s\","
-              "\"compilerVersion\":\"%s\",\"elfSha256\":\"%s\","
+              "\"manifestSha256\":\"%s\",\"compilerVersion\":\"%s\",\"elfSha256\":\"%s\","
               "\"dbusFlashClassifier\":{\"start\":%" PRIu32 ",\"end\":%" PRIu32
               "},"
               "\"chipModel\":\"ESP32-S3\",\"chipRevision\":%u,\"resetReason\":%u,"
               "\"bootId\":\"%s\",\"availableCells\":[",
               kPrefix, kProtocolVersion, kHarnessVersion, esp_get_idf_version(),
               TINYDRAW_GIT_COMMIT, TINYDRAW_GIT_DIRTY ? "true" : "false", TINYDRAW_BUILD_VARIANT,
-              TINYDRAW_SDKCONFIG_SHA256, __VERSION__, esp_app_get_elf_sha256_str(),
+              TINYDRAW_SDKCONFIG_SHA256, TINYDRAW_MANIFEST_SHA256, __VERSION__,
+              esp_app_get_elf_sha256_str(),
               classifier.start, classifier.end, static_cast<unsigned>(chip_info.revision),
               reset_reason, boot_id.data());
   emit_string_array(selected, true);
