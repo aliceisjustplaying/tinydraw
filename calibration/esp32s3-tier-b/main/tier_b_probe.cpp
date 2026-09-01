@@ -324,13 +324,25 @@ const char* validate_attribution(const AttributionEvidence& evidence) {
       evidence.checksum != expected_aggressor_checksum(evidence.source, evidence.iterations)) {
     return "isolated aggressor attribution checksum mismatch";
   }
-  if (evidence.source == Aggressor::kFlash &&
-      (evidence.counters.dbus_accesses == 0 || evidence.counters.dbus_flash_misses == 0)) {
-    return "isolated flash attribution lacks flash access or miss counters";
-  }
-  if (evidence.source == Aggressor::kPsram &&
-      (evidence.counters.dbus_accesses == 0 || evidence.counters.dbus_psram_misses == 0)) {
-    return "isolated PSRAM attribution lacks PSRAM access or miss counters";
+  switch (evidence.source) {
+    case Aggressor::kInternal:
+      if (evidence.counters.dbus_accesses != 0 || evidence.counters.dbus_flash_misses != 0 ||
+          evidence.counters.dbus_psram_misses != 0) {
+        return "isolated internal attribution observed external data-cache traffic";
+      }
+      break;
+    case Aggressor::kFlash:
+      if (evidence.counters.dbus_accesses == 0 || evidence.counters.dbus_flash_misses == 0 ||
+          evidence.counters.dbus_psram_misses != 0) {
+        return "isolated flash attribution lacks exclusive flash access or miss counters";
+      }
+      break;
+    case Aggressor::kPsram:
+      if (evidence.counters.dbus_accesses == 0 || evidence.counters.dbus_psram_misses == 0 ||
+          evidence.counters.dbus_flash_misses != 0) {
+        return "isolated PSRAM attribution lacks exclusive PSRAM access or miss counters";
+      }
+      break;
   }
   return nullptr;
 }

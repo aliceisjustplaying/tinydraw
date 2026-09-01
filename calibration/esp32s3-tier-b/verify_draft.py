@@ -53,6 +53,8 @@ assert "kAttributionIterations = 128" in source
 assert "validate_attribution" in source and "clear_cache_counters();" in source
 assert "isolated flash attribution" in validator
 assert "isolated PSRAM attribution" in validator
+assert "internal attribution has external data-cache traffic" in validator
+assert "aggressor runtime fields must appear together" in validator
 assert "aggressorCore" not in source and "aggressorCore" not in validator
 for probe in ("probe_arbitration", "probe_cross_core_bandwidth"):
     body_start = source.index(f"Sample {probe}")
