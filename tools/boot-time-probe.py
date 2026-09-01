@@ -10,51 +10,71 @@ The result includes USB re-enumeration time, so it is an upper bound on
 boot-to-app time. Used 2026-08-31 to size a full ESP-IDF boot for the
 puck-cycle-accurate emulator work: 0.577 to 0.595 s across three runs.
 
-usage: uv run --script tools/boot-time-probe.py PORT RUNS [MARKER]
+usage: uv run --script tools/boot-time-probe.py PORT RUNS [MARKER] [--output PATH]
 """
 
+import argparse
+import json
+import re
 import sys
 import time
+from pathlib import Path
 
 import serial
 
-USAGE = "usage: uv run --script tools/boot-time-probe.py PORT RUNS [MARKER]"
+FAIL_MARKERS = (
+    b"Guru Meditation Error",
+    b"Stack canary watchpoint triggered",
+    b"assert failed:",
+    b"abort() was called",
+    b"task_wdt",
+)
 
-if len(sys.argv) not in (3, 4):
-    raise SystemExit(USAGE)
+parser = argparse.ArgumentParser()
+parser.add_argument("port")
+parser.add_argument("runs", type=int)
+parser.add_argument("marker", nargs="?", default="CAL_RECORD")
+parser.add_argument(
+    "--output",
+    type=Path,
+    help="write one JSON cohort after every run succeeds",
+)
+parser.add_argument(
+    "--line-regex",
+    help="require the marker line to match this regular expression",
+)
+args = parser.parse_args()
 
-port = sys.argv[1]
-try:
-    runs = int(sys.argv[2])
-except ValueError as error:
-    raise SystemExit("RUNS must be a positive integer") from error
-marker = (sys.argv[3] if len(sys.argv) == 4 else "CAL_RECORD").encode()
+port = args.port
+runs = args.runs
+marker = args.marker.encode()
 if runs <= 0:
     raise SystemExit("RUNS must be a positive integer")
 if not marker:
     raise SystemExit("MARKER must not be empty")
+if args.output is not None and args.output.exists():
+    raise SystemExit(f"refusing to overwrite result: {args.output}")
+line_pattern = re.compile(args.line_regex) if args.line_regex is not None else None
 
-failed_runs = []
+records = []
 for run in range(runs):
-    ser = serial.Serial(baudrate=115200, timeout=0)
-    ser.port = port
+    ser = serial.Serial(port, 115200, timeout=0.25)
     ser.dtr = False
     ser.rts = True
-    ser.open()
-    time.sleep(0.1)
+    time.sleep(0.2)
     ser.reset_input_buffer()
     ser.rts = False
     start = time.monotonic()
     first_rom = None
     entry = None
     first_app = None
+    ready_line = None
+    failure_line = None
     buffer = b""
     while time.monotonic() - start < 8.0:
-        waiting = ser.in_waiting
-        if waiting == 0:
-            time.sleep(0.001)
+        chunk = ser.read(4096)
+        if not chunk:
             continue
-        chunk = ser.read(waiting)
         arrived = time.monotonic() - start
         buffer += chunk
         while b"\n" in buffer:
@@ -63,15 +83,40 @@ for run in range(runs):
                 first_rom = arrived
             if entry is None and line.startswith(b"entry 0x"):
                 entry = arrived
+            if any(fail_marker in line for fail_marker in FAIL_MARKERS):
+                failure_line = line.rstrip(b"\r").decode("utf-8")
+                break
             if first_app is None and marker in line:
                 first_app = arrived
-        if first_app is not None:
+                ready_line = line.rstrip(b"\r").decode("utf-8")
+                if line_pattern is not None and line_pattern.search(ready_line) is None:
+                    failure_line = "marker line did not match --line-regex"
+        if first_app is not None or failure_line is not None:
             break
     ser.close()
-    print({"run": run, "firstRomLine": first_rom, "bootloaderEntry": entry,
-           "firstAppOutput": first_app})
-    if first_app is None:
-        failed_runs.append(run)
-
-if failed_runs:
-    raise SystemExit(f"marker {marker!r} was not observed in runs {failed_runs}")
+    if first_app is None or failure_line is not None:
+        reason = failure_line or "marker timeout"
+        raise SystemExit(f"run {run} failed before {marker!r}: {reason}")
+    records.append(
+        {
+            "run": run,
+            "firstRomLineSeconds": first_rom,
+            "bootloaderEntrySeconds": entry,
+            "firstAppOutputSeconds": first_app,
+            "readyLine": ready_line,
+        }
+    )
+result = {
+    "schemaVersion": 1,
+    "port": port,
+    "marker": args.marker,
+    "runs": runs,
+    "samples": records,
+}
+rendered = json.dumps(result, indent=2, sort_keys=True) + "\n"
+if args.output is None:
+    sys.stdout.write(rendered)
+else:
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(rendered)
+    print(f"capture complete: {args.output} runs={runs}")
