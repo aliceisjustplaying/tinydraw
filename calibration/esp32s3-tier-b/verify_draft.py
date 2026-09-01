@@ -14,6 +14,7 @@ capture = (ROOT.parents[1] / "tools" / "tier-b-capture.py").read_text()
 validator = (ROOT.parents[1] / "tools" / "tier_b_ndjson.py").read_text()
 component = (ROOT / "main" / "CMakeLists.txt").read_text()
 elf_gate = (ROOT / "verify_elf.py").read_text()
+assembly = (ROOT / "main" / "instruction_ladders.S").read_text()
 
 required_families = {
     "arbitration-aggressors",
@@ -45,6 +46,8 @@ assert "GPIO21 electrical edge timestamp is unavailable" in source
 assert "SPI2_HOST" in source and "esp_async_memcpy" in source, "DMA/SPI2 probes are missing"
 assert "spi_config.spics_io_num = GPIO_NUM_NC" in source, "raw SPI must not select the panel"
 assert "tier_b_store_issue_block" in source and "baseline_cycles" in source
+assert "entry a1, 16" in assembly and "retw.n" in assembly
+assert ".begin no-transform" in assembly and ".end no-transform" in assembly
 assert "tier_b_first_line_i_0" in source and "fresh one-line" in source
 assert "aggressor_iterations" in source and "runtime evidence failed" in source
 assert "g_aggressor_active" in source
@@ -100,6 +103,17 @@ assert "--elf" in capture and "archived_elf" in capture
 assert 'payload["manifestSha256"] != manifest_sha256' in capture
 assert 'payload["dbusFlashClassifier"]' in capture
 assert 'payload["spiramRodata"] is not False' in capture
+store_start = source.index("Sample probe_store_hit")
+store_end = source.index("\nSample probe_writeback", store_start)
+store_body = source[store_start:store_end]
+baseline_call = store_body.index("tier_b_store_issue_block(internal_word, ordinal + 1);")
+baseline_end = store_body.index("const std::uint32_t baseline_end = read_ccount();")
+baseline_counters = store_body.index("const CacheCounters baseline_counters", baseline_end)
+psram_call = store_body.index("tier_b_store_issue_block(psram_word, ordinal + 1);")
+psram_end = store_body.index("const std::uint32_t end = read_ccount();", psram_call)
+psram_counters = store_body.index("const CacheCounters counters", psram_end)
+assert baseline_call < baseline_end < baseline_counters
+assert psram_call < psram_end < psram_counters
 assert "RESTART_MARKERS" in capture and "restart_marker(line, selection_sent)" in capture
 assert 'REQUIRED_IDF_VERSION = "v6.1"' in validator
 assert 'IDF_VERSION}" STREQUAL "6.1.0"' in component

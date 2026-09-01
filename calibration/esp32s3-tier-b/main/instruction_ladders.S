@@ -53,10 +53,13 @@ first_line_target 4
 .type tier_b_store_issue_block,@function
 tier_b_store_issue_block_start:
 tier_b_store_issue_block:
+  entry a1, 16
+  .begin no-transform
   .rept 256
   s32i.n a3, a2, 0
   .endr
   memw
-  ret.n
+  .end no-transform
+  retw.n
 tier_b_store_issue_block_end:
 .size tier_b_store_issue_block, .-tier_b_store_issue_block

@@ -44,21 +44,38 @@ def fixtures(xip: bool = False) -> tuple[str, str, str, str]:
         symbols.append(f"{address:08x} g F .flash.text 00000020 {name}")
         address += 32
     address = (address + 31) & ~31
-    store = [("0239", "s32i.n a3, a2, 0")] * 256 + [
-        ("0020c0", "memw"),
-        ("f00d", "ret.n"),
-    ]
+    store = (
+        [("002136", "entry a1, 16")]
+        + [("0239", "s32i.n a3, a2, 0")] * 256
+        + [
+            ("0020c0", "memw"),
+            ("f01d", "retw.n"),
+        ]
+    )
     functions.append(function("tier_b_store_issue_block", address, store))
     symbols.extend(
         (
             f"{address:08x} g .iram0.text 00000000 tier_b_store_issue_block_start",
-            f"{address:08x} g F .iram0.text 00000205 tier_b_store_issue_block",
-            f"{address + 517:08x} g .iram0.text 00000000 tier_b_store_issue_block_end",
+            f"{address:08x} g F .iram0.text 00000208 tier_b_store_issue_block",
+            f"{address + 520:08x} g .iram0.text 00000000 tier_b_store_issue_block_end",
             "42000020 g *ABS* 00000000 _instruction_reserved_start",
             "42010000 g *ABS* 00000000 _instruction_reserved_end",
             "3c02ac00 l O .flash.rodata 00040000 _ZN12_GLOBAL__N_1L12g_flash_poolE",
         )
     )
+    caller = []
+    for index in range(4):
+        caller.extend(
+            (
+                (
+                    "000081",
+                    f"l32r a8, target ({address:08x} <tier_b_store_issue_block>)",
+                ),
+                ("0008e0", "callx8 a8"),
+                ("03e800", "rsr.ccount a8") if index in (1, 3) else ("f03d", "nop.n"),
+            )
+        )
+    functions.append(function("probe_store_hit", 0x42020000, caller))
     if xip:
         symbols.extend(
             (
@@ -141,6 +158,8 @@ class VerifyTierBElfTest(unittest.TestCase):
         self.assertIs(payload["spiramRodata"], False)
         self.assertTrue(payload["fixture"])
         self.assertEqual(payload["issueBlocks"][0]["operations"], 256)
+        self.assertEqual(payload["issueBlocks"][0]["abi"], "windowed-call8")
+        self.assertEqual(payload["issueBlocks"][0]["verifiedCallSites"], 4)
         self.assertEqual(len(payload["firstLineInstructionPool"]), 5)
         self.assertEqual(
             payload["dbusFlashClassifier"],
@@ -173,6 +192,38 @@ class VerifyTierBElfTest(unittest.TestCase):
         broken = disassembly.replace("0239", "f03d", 1)
         process, result = self.run_gate(broken, symbols, sections, sdkconfig)
         self.assertEqual(process.returncode, 2)
+        self.assertFalse(result.exists())
+
+    def test_issue_missing_entry_leaves_no_result(self) -> None:
+        disassembly, symbols, sections, sdkconfig = fixtures()
+        broken = disassembly.replace("002136", "000000", 1)
+        process, result = self.run_gate(broken, symbols, sections, sdkconfig)
+        self.assertEqual(process.returncode, 2)
+        self.assertIn("windowed ABI entry", process.stderr)
+        self.assertFalse(result.exists())
+
+    def test_issue_ret_n_leaves_no_result(self) -> None:
+        disassembly, symbols, sections, sdkconfig = fixtures()
+        broken = disassembly.replace("f01d     retw.n", "f00d     ret.n", 1)
+        process, result = self.run_gate(broken, symbols, sections, sdkconfig)
+        self.assertEqual(process.returncode, 2)
+        self.assertIn("no exact retw.n endpoint", process.stderr)
+        self.assertFalse(result.exists())
+
+    def test_issue_nonwindowed_call_leaves_no_result(self) -> None:
+        disassembly, symbols, sections, sdkconfig = fixtures()
+        broken = disassembly.replace("0008e0   callx8 a8", "0000c0   callx0 a8", 1)
+        process, result = self.run_gate(broken, symbols, sections, sdkconfig)
+        self.assertEqual(process.returncode, 2)
+        self.assertIn("not called with callx8", process.stderr)
+        self.assertFalse(result.exists())
+
+    def test_issue_timing_boundary_leaves_no_result(self) -> None:
+        disassembly, symbols, sections, sdkconfig = fixtures()
+        broken = disassembly.replace("03e800   rsr.ccount a8", "f03d     nop.n", 1)
+        process, result = self.run_gate(broken, symbols, sections, sdkconfig)
+        self.assertEqual(process.returncode, 2)
+        self.assertIn("read CCOUNT immediately", process.stderr)
         self.assertFalse(result.exists())
 
     def test_ladder_residue_mismatch_leaves_no_result(self) -> None:

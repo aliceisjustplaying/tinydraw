@@ -34,6 +34,7 @@ class Instruction:
     address: int
     encoding: str
     mnemonic: str
+    operands: str
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,7 @@ def parse_disassembly(text: str) -> dict[str, list[Instruction]]:
                     address=int(instruction.group(1), 16),
                     encoding=instruction.group(2).lower(),
                     mnemonic=instruction.group(3),
+                    operands=(instruction.group(4) or "").strip(),
                 )
             )
     return functions
@@ -207,22 +209,74 @@ def verify_issue_blocks(
     end = require_symbol(symbols, name + "_end")
     if start.section != ".iram0.text" or end.section != ".iram0.text":
         raise VerificationError(f"{name} is not wholly linked in internal instruction RAM")
-    instructions = through_return(require_function(functions, name), name)
+    instructions = require_function(functions, name)
+    try:
+        return_index = next(
+            index
+            for index, instruction in enumerate(instructions)
+            if instruction.encoding == "f01d"
+        )
+    except StopIteration as error:
+        raise VerificationError(f"{name} has no exact retw.n endpoint") from error
+    instructions = instructions[: return_index + 1]
     if instructions[0].address != start.address:
         raise VerificationError(f"{name} disassembly does not start at its ELF symbol")
-    expected = ["0239"] * 256 + ["0020c0", "f00d"]
+    expected = ["002136"] + ["0239"] * 256 + ["0020c0", "f01d"]
     if [instruction.encoding for instruction in instructions] != expected:
-        raise VerificationError(f"{name} does not contain 256 exact s32i.n encodings")
-    if end.address - start.address != 517 or start.address % 32 != 0:
+        raise VerificationError(
+            f"{name} is not exact windowed ABI entry, 256 s32i.n, memw, retw.n"
+        )
+    if end.address - start.address != 520 or start.address % 32 != 0:
         raise VerificationError(f"{name} span or alignment is wrong")
+    store_callers = [
+        instructions
+        for function_name, instructions in functions.items()
+        if "probe_store_hit" in function_name
+    ]
+    if len(store_callers) != 1:
+        raise VerificationError("expected exactly one probe_store_hit disassembly")
+    caller = store_callers[0]
+    target_loads = [
+        index
+        for index, instruction in enumerate(caller)
+        if instruction.mnemonic == "l32r"
+        and "<tier_b_store_issue_block>" in instruction.operands
+    ]
+    if len(target_loads) != 4:
+        raise VerificationError("probe_store_hit does not reference the issue block four times")
+    calls: list[int] = []
+    for load_index in target_loads:
+        call_index = load_index + 1
+        if call_index >= len(caller):
+            raise VerificationError("probe_store_hit issue-block target load has no call")
+        call = caller[call_index]
+        if (
+            call.encoding != "0008e0"
+            or call.mnemonic != "callx8"
+            or call.operands != "a8"
+        ):
+            raise VerificationError("probe_store_hit issue block is not called with callx8 a8")
+        calls.append(call_index)
+    for timed_call in (calls[1], calls[3]):
+        if (
+            timed_call + 1 >= len(caller)
+            or caller[timed_call + 1].mnemonic != "rsr.ccount"
+        ):
+            raise VerificationError(
+                "probe_store_hit does not read CCOUNT immediately after timed call"
+            )
     return [
         {
             "symbol": name,
+            "abi": "windowed-call8",
             "operations": 256,
             "encoding": "0239",
             "startResidueMod32": start.address % 32,
             "spanBytes": end.address - start.address,
+            "prologueEncoding": "002136",
             "completionBarrierEncoding": "0020c0",
+            "returnEncoding": "f01d",
+            "verifiedCallSites": len(calls),
         }
     ]
 
