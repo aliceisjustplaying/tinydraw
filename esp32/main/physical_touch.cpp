@@ -46,14 +46,12 @@ TouchRead PhysicalTouch::read(Point& point) {
   if (!ready_ || esp_lcd_touch_read_data(touch_) != ESP_OK) {
     return TouchRead::kError;
   }
-  std::uint16_t x = 0;
-  std::uint16_t y = 0;
-  std::uint16_t strength = 0;
+  esp_lcd_touch_point_data_t touch_data{};
   std::uint8_t count = 0;
-  if (!esp_lcd_touch_get_coordinates(touch_, &x, &y, &strength, &count, 1) || count == 0U) {
+  if (esp_lcd_touch_get_data(touch_, &touch_data, &count, 1) != ESP_OK || count == 0U) {
     return TouchRead::kNoTouch;
   }
-  point = {.x = static_cast<float>(x), .y = static_cast<float>(y)};
+  point = {.x = static_cast<float>(touch_data.x), .y = static_cast<float>(touch_data.y)};
   return TouchRead::kPoint;
 }
 
