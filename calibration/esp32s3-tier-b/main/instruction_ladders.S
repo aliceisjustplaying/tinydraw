@@ -26,3 +26,37 @@ instruction_ladder 2
 instruction_ladder 4
 instruction_ladder 8
 instruction_ladder 16
+
+.macro first_line_target index
+  .align 32
+  .global tier_b_first_line_i_\index\()
+  .type tier_b_first_line_i_\index\(),@function
+tier_b_first_line_i_\index\():
+  .rept 15
+  nop.n
+  .endr
+  ret.n
+  .size tier_b_first_line_i_\index\(), .-tier_b_first_line_i_\index\()
+.endm
+
+first_line_target 0
+first_line_target 1
+first_line_target 2
+first_line_target 3
+first_line_target 4
+
+.section .iram1,"ax",@progbits
+.align 32
+.global tier_b_store_issue_block_start
+.global tier_b_store_issue_block_end
+.global tier_b_store_issue_block
+.type tier_b_store_issue_block,@function
+tier_b_store_issue_block_start:
+tier_b_store_issue_block:
+  .rept 256
+  s32i.n a3, a2, 0
+  .endr
+  memw
+  ret.n
+tier_b_store_issue_block_end:
+.size tier_b_store_issue_block, .-tier_b_store_issue_block

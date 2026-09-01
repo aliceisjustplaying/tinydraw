@@ -12,6 +12,7 @@
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
 #include "driver/spi_master.h"
+#include "esp_app_desc.h"
 #include "esp_async_memcpy.h"
 #include "esp_attr.h"
 #include "esp_cache.h"
@@ -21,7 +22,9 @@
 #include "esp_heap_caps.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_io_interface.h"
+#include "esp_private/mmu_psram_flash.h"
 #include "esp_psram.h"
+#include "esp_random.h"
 #include "esp_rom_sys.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
@@ -37,6 +40,12 @@ void tier_b_instruction_2_lines(void);
 void tier_b_instruction_4_lines(void);
 void tier_b_instruction_8_lines(void);
 void tier_b_instruction_16_lines(void);
+void tier_b_store_issue_block(volatile std::uint32_t* word, std::uint32_t value);
+void tier_b_first_line_i_0(void);
+void tier_b_first_line_i_1(void);
+void tier_b_first_line_i_2(void);
+void tier_b_first_line_i_3(void);
+void tier_b_first_line_i_4(void);
 extern const std::uint8_t tier_b_instruction_1_lines_start[];
 extern const std::uint8_t tier_b_instruction_1_lines_end[];
 extern const std::uint8_t tier_b_instruction_2_lines_start[];
@@ -47,13 +56,16 @@ extern const std::uint8_t tier_b_instruction_8_lines_start[];
 extern const std::uint8_t tier_b_instruction_8_lines_end[];
 extern const std::uint8_t tier_b_instruction_16_lines_start[];
 extern const std::uint8_t tier_b_instruction_16_lines_end[];
+extern const std::uint8_t tier_b_store_issue_block_start[];
+extern const std::uint8_t tier_b_store_issue_block_end[];
 }
 
 namespace {
 
 constexpr char kPrefix[] = "TINYDRAW_TIER_B_NDJSON ";
-constexpr char kHarnessVersion[] = "0.1.0-draft";
-constexpr std::uint32_t kProtocolVersion = 1;
+constexpr char kHarnessVersion[] = "0.2.0-review";
+constexpr char kRequiredIdfVersion[] = "v6.1";
+constexpr std::uint32_t kProtocolVersion = 2;
 constexpr std::size_t kIcacheLine = 32;
 constexpr std::size_t kDcacheLine = 64;
 constexpr std::size_t kPsramBytes = 1024 * 1024;
@@ -62,8 +74,10 @@ constexpr std::size_t kDmaBytes = 32 * 1024;
 constexpr std::uint32_t kDefaultSamples = 9;
 constexpr std::uint32_t kSweepSamples = 6;
 constexpr std::uint32_t kFirstLineSamples = 5;
-constexpr std::uint32_t kStoreIterations = 4096;
+constexpr std::uint32_t kStoreIterations = 256;
 constexpr std::uint32_t kBandwidthBytes = 256 * 1024;
+constexpr std::uint8_t kExpanderOutputs = 0x87;
+constexpr std::uint8_t kExpanderPoweredDown = 0x80;
 
 static_assert(CONFIG_ESP32S3_INSTRUCTION_CACHE_LINE_SIZE == kIcacheLine);
 static_assert(CONFIG_ESP32S3_DATA_CACHE_LINE_SIZE == kDcacheLine);
@@ -91,6 +105,10 @@ struct Sample {
   std::uint32_t cycles = 0;
   std::size_t bytes = 0;
   CacheCounters counters{};
+  bool has_baseline = false;
+  std::uint32_t baseline_cycles = 0;
+  CacheCounters baseline_counters{};
+  std::uint32_t aggressor_iterations = 0;
   const char* reason = "probe failed";
   const char* tier_candidate = "exact";
   const char* note = nullptr;
@@ -120,9 +138,6 @@ struct Context {
   async_memcpy_handle_t gdma = nullptr;
   SemaphoreHandle_t panel_done = nullptr;
   SemaphoreHandle_t gdma_done = nullptr;
-  SemaphoreHandle_t gpio_edge = nullptr;
-  volatile std::uint32_t gpio_start = 0;
-  volatile std::uint32_t gpio_edge_ccount = 0;
 };
 
 enum class Aggressor : std::uint32_t { kInternal, kFlash, kPsram };
@@ -132,6 +147,8 @@ std::atomic<bool> g_aggressor_start{false};
 std::atomic<bool> g_aggressor_stop{false};
 std::atomic<bool> g_aggressor_done{false};
 std::atomic<std::uint32_t> g_aggressor_checksum{0};
+std::atomic<std::uint32_t> g_aggressor_iterations{0};
+std::atomic<bool> g_aggressor_active{false};
 Context* g_aggressor_context = nullptr;
 Aggressor g_aggressor_kind = Aggressor::kInternal;
 
@@ -163,6 +180,13 @@ Sample timed_result(std::uint32_t start, std::uint32_t end, std::size_t bytes,
   return {.ok = true, .cycles = end - start, .bytes = bytes, .counters = counters, .note = note};
 }
 
+void emit_cache_counters(const CacheCounters& counters) {
+  std::printf("{\"ibusAccesses\":%" PRIu32 ",\"ibusMisses\":%" PRIu32 ",\"dbusAccesses\":%" PRIu32
+              ",\"dbusFlashMisses\":%" PRIu32 ",\"dbusPsramMisses\":%" PRIu32 "}",
+              counters.ibus_accesses, counters.ibus_misses, counters.dbus_accesses,
+              counters.dbus_flash_misses, counters.dbus_psram_misses);
+}
+
 void emit_sample(const Cell& cell, std::uint32_t ordinal, const Sample& sample) {
   if (!sample.ok) {
     std::printf("%s{\"protocolVersion\":%" PRIu32
@@ -175,14 +199,21 @@ void emit_sample(const Cell& cell, std::uint32_t ordinal, const Sample& sample) 
   std::printf("%s{\"protocolVersion\":%" PRIu32
               ",\"record\":\"sample\",\"cell\":\"%s\",\"ordinal\":%" PRIu32 ",\"cycles\":%" PRIu32
               ",\"bytes\":%zu,\"startCore\":0,\"endCore\":0,"
-              "\"cacheCounters\":{\"ibusAccesses\":%" PRIu32 ",\"ibusMisses\":%" PRIu32
-              ",\"dbusAccesses\":%" PRIu32 ",\"dbusFlashMisses\":%" PRIu32
-              ",\"dbusPsramMisses\":%" PRIu32 "}%s%s%s}\n",
-              kPrefix, kProtocolVersion, cell.id, ordinal, sample.cycles, sample.bytes,
-              sample.counters.ibus_accesses, sample.counters.ibus_misses,
-              sample.counters.dbus_accesses, sample.counters.dbus_flash_misses,
-              sample.counters.dbus_psram_misses, sample.note == nullptr ? "" : ",\"note\":\"",
-              sample.note == nullptr ? "" : sample.note, sample.note == nullptr ? "" : "\"");
+              "\"cacheCounters\":",
+              kPrefix, kProtocolVersion, cell.id, ordinal, sample.cycles, sample.bytes);
+  emit_cache_counters(sample.counters);
+  if (sample.has_baseline) {
+    std::printf(",\"baselineCycles\":%" PRIu32 ",\"baselineCacheCounters\":",
+                sample.baseline_cycles);
+    emit_cache_counters(sample.baseline_counters);
+  }
+  if (sample.aggressor_iterations != 0) {
+    std::printf(",\"aggressorIterations\":%" PRIu32, sample.aggressor_iterations);
+  }
+  if (sample.note != nullptr) {
+    std::printf(",\"note\":\"%s\"", sample.note);
+  }
+  std::printf("}\n");
   std::fflush(stdout);
 }
 
@@ -191,6 +222,7 @@ void IRAM_ATTR aggressor_task(void*) {
   g_aggressor_ready.store(true, std::memory_order_release);
   while (!g_aggressor_start.load(std::memory_order_acquire)) {
   }
+  g_aggressor_active.store(true, std::memory_order_release);
   std::uint32_t sum = 0;
   std::size_t offset = 0;
   while (!g_aggressor_stop.load(std::memory_order_acquire)) {
@@ -202,12 +234,16 @@ void IRAM_ATTR aggressor_task(void*) {
         sum += g_flash_pool[(offset >> 2) & (g_flash_pool.size() - 1)];
         break;
       case Aggressor::kPsram:
-        sum += context.psram[offset & (kPsramBytes - 1)];
+        sum += context.psram[(kPsramBytes / 2) + (offset & ((kPsramBytes / 2) - 1))];
         break;
     }
     offset += kDcacheLine;
+    g_aggressor_iterations.store(static_cast<std::uint32_t>(offset / kDcacheLine),
+                                 std::memory_order_release);
   }
   g_aggressor_checksum.store(sum, std::memory_order_release);
+  g_aggressor_iterations.store(static_cast<std::uint32_t>(offset / kDcacheLine),
+                               std::memory_order_release);
   g_aggressor_done.store(true, std::memory_order_release);
   vTaskDelete(nullptr);
 }
@@ -219,6 +255,8 @@ bool start_aggressor(Context& context, Aggressor kind) {
   g_aggressor_start.store(false, std::memory_order_relaxed);
   g_aggressor_stop.store(false, std::memory_order_relaxed);
   g_aggressor_done.store(false, std::memory_order_relaxed);
+  g_aggressor_iterations.store(0, std::memory_order_relaxed);
+  g_aggressor_active.store(false, std::memory_order_relaxed);
   if (xTaskCreatePinnedToCore(aggressor_task, "tier_b_aggress", 4096, nullptr,
                               configMAX_PRIORITIES - 2, nullptr, 1) != pdPASS) {
     return false;
@@ -229,12 +267,13 @@ bool start_aggressor(Context& context, Aggressor kind) {
   return true;
 }
 
-void stop_aggressor() {
+std::uint32_t stop_aggressor() {
   g_aggressor_stop.store(true, std::memory_order_release);
   while (!g_aggressor_done.load(std::memory_order_acquire)) {
     taskYIELD();
   }
   g_sink ^= g_aggressor_checksum.load(std::memory_order_acquire);
+  return g_aggressor_iterations.load(std::memory_order_acquire);
 }
 
 std::uint32_t read_stride(const std::uint8_t* data, std::size_t size) {
@@ -245,34 +284,103 @@ std::uint32_t read_stride(const std::uint8_t* data, std::size_t size) {
   return sum;
 }
 
+bool invalidate_data(const std::uint8_t* data, std::size_t bytes) {
+  return esp_cache_msync(const_cast<std::uint8_t*>(data), bytes,
+                         ESP_CACHE_MSYNC_FLAG_DIR_M2C | ESP_CACHE_MSYNC_FLAG_INVALIDATE) == ESP_OK;
+}
+
+bool has_expected_data_counters(const CacheCounters& counters, bool flash) {
+  return counters.dbus_accesses != 0 &&
+         (flash ? counters.dbus_flash_misses != 0 : counters.dbus_psram_misses != 0);
+}
+
+Sample measure_cold_read(const std::uint8_t* data, std::size_t bytes, bool flash) {
+  if (!invalidate_data(data, bytes)) {
+    return {.reason = "data-cache invalidation failed", .tier_candidate = "affine"};
+  }
+  clear_cache_counters();
+  const std::uint32_t start = read_ccount();
+  const std::uint32_t sum = read_stride(data, bytes);
+  const std::uint32_t end = read_ccount();
+  g_sink ^= sum;
+  const CacheCounters counters = read_cache_counters();
+  if (!has_expected_data_counters(counters, flash)) {
+    return {.reason = "expected victim cache counters were not observed",
+            .tier_candidate = "affine"};
+  }
+  return timed_result(start, end, bytes, counters);
+}
+
 Sample probe_arbitration(Context& context, const Cell& cell, std::uint32_t) {
   const auto kind = static_cast<Aggressor>(cell.parameter);
+  const Sample baseline = measure_cold_read(context.psram, kBandwidthBytes, false);
+  if (!baseline.ok) return baseline;
+  if (!invalidate_data(context.psram, kBandwidthBytes)) {
+    return {.reason = "contended victim invalidation failed", .tier_candidate = "affine"};
+  }
   if (!start_aggressor(context, kind)) {
     return {.reason = "core-1 aggressor task creation failed", .tier_candidate = "affine"};
   }
   clear_cache_counters();
-  const std::uint32_t start = read_ccount();
   g_aggressor_start.store(true, std::memory_order_release);
+  while (!g_aggressor_active.load(std::memory_order_acquire)) {
+  }
+  const std::uint32_t start = read_ccount();
   const std::uint32_t sum = read_stride(context.psram, kBandwidthBytes);
   const std::uint32_t end = read_ccount();
+  const CacheCounters counters = read_cache_counters();
+  const std::uint32_t aggressor_iterations = g_aggressor_iterations.load(std::memory_order_acquire);
   stop_aggressor();
   g_sink ^= sum;
-  return timed_result(start, end, kBandwidthBytes, read_cache_counters(),
-                      "core0 PSRAM victim with core1 start barrier");
+  const bool attributed = aggressor_iterations != 0 &&
+                          has_expected_data_counters(counters, false) &&
+                          (kind == Aggressor::kInternal ||
+                           (kind == Aggressor::kFlash && counters.dbus_flash_misses != 0) ||
+                           (kind == Aggressor::kPsram &&
+                            counters.dbus_psram_misses > baseline.counters.dbus_psram_misses));
+  if (!attributed) {
+    return {.reason = "contended aggressor cache attribution failed", .tier_candidate = "affine"};
+  }
+  Sample result = timed_result(start, end, kBandwidthBytes, counters,
+                               "core0 PSRAM victim with attributed core1 aggressor");
+  result.has_baseline = true;
+  result.baseline_cycles = baseline.cycles;
+  result.baseline_counters = baseline.counters;
+  result.aggressor_iterations = aggressor_iterations;
+  return result;
 }
 
 Sample probe_store_hit(Context& context, const Cell&, std::uint32_t ordinal) {
-  auto* word = reinterpret_cast<volatile std::uint32_t*>(
+  auto* psram_word = reinterpret_cast<volatile std::uint32_t*>(
       context.psram + (ordinal * kDcacheLine) % (kPsramBytes - kDcacheLine));
-  *word = ordinal;
-  g_sink ^= *word;
+  auto* internal_word = reinterpret_cast<volatile std::uint32_t*>(
+      context.internal + (ordinal * kDcacheLine) % (kInternalBytes - kDcacheLine));
+  tier_b_store_issue_block(internal_word, ordinal);
+  clear_cache_counters();
+  const std::uint32_t baseline_start = read_ccount();
+  tier_b_store_issue_block(internal_word, ordinal + 1);
+  const CacheCounters baseline_counters = read_cache_counters();
+  const std::uint32_t baseline_end = read_ccount();
+  tier_b_store_issue_block(psram_word, ordinal);
+  clear_cache_counters();
   const std::uint32_t start = read_ccount();
-  for (std::uint32_t index = 0; index < kStoreIterations; ++index) {
-    *word = index;
-  }
+  tier_b_store_issue_block(psram_word, ordinal + 1);
+  const CacheCounters counters = read_cache_counters();
   const std::uint32_t end = read_ccount();
-  g_sink ^= *word;
-  return timed_result(start, end, kStoreIterations * sizeof(std::uint32_t));
+  g_sink ^= *psram_word ^ *internal_word;
+  if (counters.dbus_accesses == 0 || counters.dbus_psram_misses != 0) {
+    return {.reason = "hot PSRAM store counters did not show hit-only accesses",
+            .tier_candidate = "exact"};
+  }
+  Sample result = timed_result(start, end, kStoreIterations * sizeof(std::uint32_t), counters,
+                               "PSRAM hot store issue block with internal-SRAM baseline");
+  if (baseline_end == baseline_start) {
+    return {.reason = "zero internal-SRAM store baseline", .tier_candidate = "exact"};
+  }
+  result.has_baseline = true;
+  result.baseline_cycles = baseline_end - baseline_start;
+  result.baseline_counters = baseline_counters;
+  return result;
 }
 
 Sample probe_writeback(Context& context, const Cell& cell, std::uint32_t ordinal) {
@@ -287,7 +395,7 @@ Sample probe_writeback(Context& context, const Cell& cell, std::uint32_t ordinal
   g_sink ^= read_stride(data, bytes);
   if (dirty) {
     for (std::size_t offset = 0; offset < bytes; offset += kDcacheLine) {
-      data[offset] ^= static_cast<std::uint8_t>(ordinal + offset);
+      data[offset] = static_cast<std::uint8_t>(ordinal + offset + 0x5aU);
     }
   }
   const std::uint32_t start = read_ccount();
@@ -296,7 +404,24 @@ Sample probe_writeback(Context& context, const Cell& cell, std::uint32_t ordinal
   if (error != ESP_OK) {
     return {.reason = "esp_cache_msync writeback failed", .tier_candidate = "affine"};
   }
-  return timed_result(start, end, bytes);
+  if (esp_cache_msync(data, bytes,
+                      ESP_CACHE_MSYNC_FLAG_DIR_M2C | ESP_CACHE_MSYNC_FLAG_INVALIDATE) != ESP_OK) {
+    return {.reason = "writeback verification invalidation failed", .tier_candidate = "affine"};
+  }
+  clear_cache_counters();
+  for (std::size_t offset = 0; offset < bytes; offset += kDcacheLine) {
+    const std::uint8_t value = data[offset];
+    g_sink ^= value;
+    if (dirty && value != static_cast<std::uint8_t>(ordinal + offset + 0x5aU)) {
+      return {.reason = "dirty writeback did not reach backing PSRAM", .tier_candidate = "affine"};
+    }
+  }
+  if (read_cache_counters().dbus_psram_misses == 0) {
+    return {.reason = "writeback verification reload did not miss", .tier_candidate = "affine"};
+  }
+  return timed_result(start, end, bytes, {},
+                      dirty ? "dirty C2M writeback verified after invalidated reload"
+                            : "clean C2M writeback verified after invalidated reload");
 }
 
 using InstructionFunction = void (*)(void);
@@ -316,6 +441,10 @@ constexpr std::array<InstructionRange, kFirstLineSamples> kInstructionRanges{{
      tier_b_instruction_16_lines_end},
 }};
 
+constexpr std::array<InstructionFunction, kFirstLineSamples> kFirstLineInstructionTargets{
+    tier_b_first_line_i_0, tier_b_first_line_i_1, tier_b_first_line_i_2, tier_b_first_line_i_3,
+    tier_b_first_line_i_4};
+
 Sample call_instruction_range(const InstructionRange& range, bool cold) {
   const std::size_t bytes = static_cast<std::size_t>(range.end - range.start);
   if (cold && esp_cache_msync(const_cast<std::uint8_t*>(range.start), bytes,
@@ -327,7 +456,13 @@ Sample call_instruction_range(const InstructionRange& range, bool cold) {
   const std::uint32_t start = read_ccount();
   range.function();
   const std::uint32_t end = read_ccount();
-  return timed_result(start, end, bytes, read_cache_counters());
+  const CacheCounters counters = read_cache_counters();
+  if (counters.ibus_accesses == 0 || (cold && counters.ibus_misses == 0) ||
+      (!cold && counters.ibus_misses != 0)) {
+    return {.reason = "expected instruction-cache counters were not observed",
+            .tier_candidate = "exact"};
+  }
+  return timed_result(start, end, bytes, counters);
 }
 
 Sample probe_instruction_psram(Context&, const Cell& cell, std::uint32_t) {
@@ -337,25 +472,37 @@ Sample probe_instruction_psram(Context&, const Cell& cell, std::uint32_t) {
 }
 
 Sample probe_first_line_i_flash(Context&, const Cell&, std::uint32_t ordinal) {
-  return call_instruction_range(kInstructionRanges[ordinal], true);
+  constexpr std::size_t kBytes = 32;
+  auto function = kFirstLineInstructionTargets[ordinal];
+  auto* start = reinterpret_cast<std::uint8_t*>(function);
+  if (esp_cache_msync(start, kBytes,
+                      ESP_CACHE_MSYNC_FLAG_DIR_M2C | ESP_CACHE_MSYNC_FLAG_TYPE_INST |
+                          ESP_CACHE_MSYNC_FLAG_INVALIDATE) != ESP_OK) {
+    return {.reason = "first-line instruction invalidation failed", .tier_candidate = "exact"};
+  }
+  clear_cache_counters();
+  const std::uint32_t cycle_start = read_ccount();
+  function();
+  const CacheCounters counters = read_cache_counters();
+  const std::uint32_t cycle_end = read_ccount();
+  if (counters.ibus_accesses == 0 || counters.ibus_misses == 0) {
+    return {.reason = "first-line instruction counters were not observed",
+            .tier_candidate = "exact"};
+  }
+  return timed_result(cycle_start, cycle_end, kBytes, counters,
+                      "fresh one-line instruction target");
 }
 
 Sample probe_first_line_data(Context& context, const Cell& cell, std::uint32_t ordinal) {
-  const std::size_t lines = std::size_t{1} << ordinal;
-  const std::size_t bytes = lines * kDcacheLine;
+  const std::size_t bytes = kDcacheLine;
   const bool psram = cell.parameter != 0;
+  const std::size_t offset = ordinal * kDcacheLine;
   const std::uint8_t* data =
-      psram ? context.psram : reinterpret_cast<const std::uint8_t*>(g_flash_pool.data());
-  if (esp_cache_msync(const_cast<std::uint8_t*>(data), bytes,
-                      ESP_CACHE_MSYNC_FLAG_DIR_M2C | ESP_CACHE_MSYNC_FLAG_INVALIDATE) != ESP_OK) {
-    return {.reason = "data-cache invalidation failed", .tier_candidate = "exact"};
-  }
-  clear_cache_counters();
-  const std::uint32_t start = read_ccount();
-  const std::uint32_t sum = read_stride(data, bytes);
-  const std::uint32_t end = read_ccount();
-  g_sink ^= sum;
-  return timed_result(start, end, bytes, read_cache_counters());
+      (psram ? context.psram : reinterpret_cast<const std::uint8_t*>(g_flash_pool.data())) + offset;
+  Sample sample = measure_cold_read(data, bytes, !psram);
+  if (!sample.ok) sample.tier_candidate = "exact";
+  if (sample.ok) sample.note = "fresh one-line data target";
+  return sample;
 }
 
 bool panel_transfer_done(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t*, void* user) {
@@ -370,16 +517,6 @@ bool gdma_transfer_done(async_memcpy_handle_t, async_memcpy_event_t*, void* user
   BaseType_t woken = pdFALSE;
   xSemaphoreGiveFromISR(context->gdma_done, &woken);
   return woken == pdTRUE;
-}
-
-void IRAM_ATTR gpio_edge_handler(void* user) {
-  auto* context = static_cast<Context*>(user);
-  context->gpio_edge_ccount = read_ccount();
-  BaseType_t woken = pdFALSE;
-  xSemaphoreGiveFromISR(context->gpio_edge, &woken);
-  if (woken == pdTRUE) {
-    portYIELD_FROM_ISR();
-  }
 }
 
 esp_err_t init_i2c(Context& context) {
@@ -403,11 +540,30 @@ esp_err_t init_i2c(Context& context) {
   error = i2c_master_bus_add_device(context.i2c_bus, &device_config, &context.touch);
   if (error != ESP_OK) return error;
 
-  const std::array<std::uint8_t, 2> configure{0x03, 0x78};
-  const std::array<std::uint8_t, 2> power{0x01, 0x87};
-  error = i2c_master_transmit(context.io_expander, configure.data(), configure.size(), 100);
+  const auto write_expander = [&](std::uint8_t address, std::uint8_t value) {
+    const std::array payload{address, value};
+    return i2c_master_transmit(context.io_expander, payload.data(), payload.size(), 100);
+  };
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    error = write_expander(0x03, static_cast<std::uint8_t>(~kExpanderOutputs));
+    if (error == ESP_OK) error = write_expander(0x01, kExpanderPoweredDown);
+    if (error == ESP_OK) {
+      vTaskDelay(pdMS_TO_TICKS(20));
+      error = write_expander(0x01, kExpanderOutputs);
+    }
+    if (error == ESP_OK) break;
+    static_cast<void>(i2c_master_bus_reset(context.i2c_bus));
+  }
   if (error != ESP_OK) return error;
-  return i2c_master_transmit(context.io_expander, power.data(), power.size(), 100);
+  vTaskDelay(pdMS_TO_TICKS(150));
+
+  constexpr std::uint8_t kIdentityRegister = 0xa7;
+  std::array<std::uint8_t, 3> identity{};
+  error = i2c_master_transmit_receive(context.touch, &kIdentityRegister, 1, identity.data(),
+                                      identity.size(), 100);
+  if (error != ESP_OK) return error;
+  constexpr std::array<std::uint8_t, 3> kExpectedIdentity{0xb7, 0x41, 0x02};
+  return identity == kExpectedIdentity ? ESP_OK : ESP_ERR_INVALID_RESPONSE;
 }
 
 esp_err_t panel_command(Context& context, std::uint8_t command, const void* data,
@@ -446,7 +602,8 @@ esp_err_t init_spi_and_panel(Context& context) {
   spi_device_interface_config_t spi_config{};
   spi_config.clock_speed_hz = 40 * 1000 * 1000;
   spi_config.mode = 0;
-  spi_config.spics_io_num = GPIO_NUM_12;
+  // This transport cell measures SPI2 and DMA without selecting the panel.
+  spi_config.spics_io_num = GPIO_NUM_NC;
   spi_config.queue_size = 1;
   error = spi_bus_add_device(SPI2_HOST, &spi_config, &context.spi);
   if (error != ESP_OK) return error;
@@ -482,6 +639,14 @@ esp_err_t init_spi_and_panel(Context& context) {
 }
 
 esp_err_t init_context(Context& context) {
+#if CONFIG_SPIRAM_FETCH_INSTRUCTIONS
+  for (const auto& range : kInstructionRanges) {
+    if (!mmu_psram_check_ptr_addr_in_xip_psram_instruction_region(
+            reinterpret_cast<const void*>(range.function))) {
+      return ESP_ERR_INVALID_STATE;
+    }
+  }
+#endif
   context.psram = static_cast<std::uint8_t*>(
       heap_caps_aligned_alloc(kDcacheLine, kPsramBytes, MALLOC_CAP_SPIRAM));
   context.internal = static_cast<std::uint8_t*>(
@@ -506,9 +671,7 @@ esp_err_t init_context(Context& context) {
 
   context.panel_done = xSemaphoreCreateBinary();
   context.gdma_done = xSemaphoreCreateBinary();
-  context.gpio_edge = xSemaphoreCreateBinary();
-  if (context.panel_done == nullptr || context.gdma_done == nullptr ||
-      context.gpio_edge == nullptr) {
+  if (context.panel_done == nullptr || context.gdma_done == nullptr) {
     return ESP_ERR_NO_MEM;
   }
   esp_err_t error = init_i2c(context);
@@ -519,18 +682,7 @@ esp_err_t init_context(Context& context) {
   async_memcpy_config_t dma_config = ASYNC_MEMCPY_DEFAULT_CONFIG();
   dma_config.backlog = 1;
   error = esp_async_memcpy_install(&dma_config, &context.gdma);
-  if (error != ESP_OK) return error;
-
-  gpio_config_t edge_config{};
-  edge_config.pin_bit_mask = 1ULL << GPIO_NUM_21;
-  edge_config.mode = GPIO_MODE_INPUT;
-  edge_config.pull_up_en = GPIO_PULLUP_ENABLE;
-  edge_config.intr_type = GPIO_INTR_ANYEDGE;
-  error = gpio_config(&edge_config);
-  if (error != ESP_OK) return error;
-  error = gpio_install_isr_service(0);
-  if (error != ESP_OK && error != ESP_ERR_INVALID_STATE) return error;
-  return gpio_isr_handler_add(GPIO_NUM_21, gpio_edge_handler, &context);
+  return error;
 }
 
 constexpr std::array<std::size_t, kSweepSamples> kSweepBytes{64, 256, 1024, 4096, 16384, 32768};
@@ -593,50 +745,92 @@ Sample probe_touch_i2c(Context& context, const Cell&, std::uint32_t ordinal) {
   return timed_result(start, end, response.size() + 1);
 }
 
-Sample probe_gpio21_edge(Context& context, const Cell&, std::uint32_t) {
-  while (xSemaphoreTake(context.gpio_edge, 0) == pdTRUE) {
-  }
-  context.gpio_start = read_ccount();
-  if (xSemaphoreTake(context.gpio_edge, pdMS_TO_TICKS(5000)) != pdTRUE) {
-    return {.reason = "no GPIO 21 edge observed within 5 seconds",
-            .tier_candidate = "distribution"};
-  }
-  return timed_result(context.gpio_start, context.gpio_edge_ccount, 0, {},
-                      "task armed to GPIO21 ISR entry");
+Sample probe_gpio21_edge(Context&, const Cell&, std::uint32_t) {
+  return {.reason = "GPIO21 electrical edge timestamp is unavailable; ISR latency remains open",
+          .tier_candidate = "distribution"};
 }
 
 Sample probe_msync_sweep(Context& context, const Cell& cell, std::uint32_t ordinal) {
   const std::size_t bytes = kSweepBytes[ordinal];
-  for (std::size_t offset = 0; offset < bytes; offset += kDcacheLine) {
-    context.psram[offset] ^= static_cast<std::uint8_t>(ordinal + offset);
+  const bool clean_invalidate = cell.parameter != 0;
+  if (clean_invalidate) {
+    if (esp_cache_msync(context.psram, bytes,
+                        ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_INVALIDATE) != ESP_OK) {
+      return {.reason = "clean invalidation preparation failed", .tier_candidate = "affine"};
+    }
+    g_sink ^= read_stride(context.psram, bytes);
+  } else {
+    for (std::size_t offset = 0; offset < bytes; offset += kDcacheLine) {
+      context.psram[offset] = static_cast<std::uint8_t>(ordinal + offset + 0xa5U);
+    }
   }
-  const int flags =
-      ESP_CACHE_MSYNC_FLAG_DIR_C2M | (cell.parameter != 0 ? ESP_CACHE_MSYNC_FLAG_INVALIDATE : 0);
+  const int flags = clean_invalidate
+                        ? ESP_CACHE_MSYNC_FLAG_DIR_M2C | ESP_CACHE_MSYNC_FLAG_INVALIDATE
+                        : ESP_CACHE_MSYNC_FLAG_DIR_C2M;
   const std::uint32_t start = read_ccount();
   const esp_err_t error = esp_cache_msync(context.psram, bytes, flags);
   const std::uint32_t end = read_ccount();
   if (error != ESP_OK) {
     return {.reason = "esp_cache_msync sweep failed", .tier_candidate = "affine"};
   }
-  return timed_result(start, end, bytes);
+  if (!clean_invalidate &&
+      esp_cache_msync(context.psram, bytes,
+                      ESP_CACHE_MSYNC_FLAG_DIR_M2C | ESP_CACHE_MSYNC_FLAG_INVALIDATE) != ESP_OK) {
+    return {.reason = "writeback sweep verification invalidation failed",
+            .tier_candidate = "affine"};
+  }
+  clear_cache_counters();
+  for (std::size_t offset = 0; offset < bytes; offset += kDcacheLine) {
+    const std::uint8_t value = context.psram[offset];
+    g_sink ^= value;
+    if (!clean_invalidate && value != static_cast<std::uint8_t>(ordinal + offset + 0xa5U)) {
+      return {.reason = "writeback sweep did not reach backing PSRAM", .tier_candidate = "affine"};
+    }
+  }
+  if (read_cache_counters().dbus_psram_misses == 0) {
+    return {.reason = "msync verification reload did not miss", .tier_candidate = "affine"};
+  }
+  return timed_result(start, end, bytes, {},
+                      clean_invalidate ? "clean M2C invalidate verified by cold reload"
+                                       : "dirty C2M writeback verified by cold reload");
 }
 
 Sample probe_cross_core_bandwidth(Context& context, const Cell& cell, std::uint32_t) {
   const bool flash_victim = cell.parameter != 0;
+  const std::uint8_t* data =
+      flash_victim ? reinterpret_cast<const std::uint8_t*>(g_flash_pool.data()) : context.psram;
+  const Sample baseline = measure_cold_read(data, kBandwidthBytes, flash_victim);
+  if (!baseline.ok) return baseline;
+  if (!invalidate_data(data, kBandwidthBytes)) {
+    return {.reason = "contended bandwidth invalidation failed", .tier_candidate = "distribution"};
+  }
   if (!start_aggressor(context, Aggressor::kPsram)) {
     return {.reason = "core-1 PSRAM aggressor task creation failed",
             .tier_candidate = "distribution"};
   }
   clear_cache_counters();
   g_aggressor_start.store(true, std::memory_order_release);
+  while (!g_aggressor_active.load(std::memory_order_acquire)) {
+  }
   const std::uint32_t start = read_ccount();
-  const std::uint32_t sum = read_stride(
-      flash_victim ? reinterpret_cast<const std::uint8_t*>(g_flash_pool.data()) : context.psram,
-      kBandwidthBytes);
+  const std::uint32_t sum = read_stride(data, kBandwidthBytes);
   const std::uint32_t end = read_ccount();
+  const CacheCounters counters = read_cache_counters();
+  const std::uint32_t aggressor_iterations = g_aggressor_iterations.load(std::memory_order_acquire);
   stop_aggressor();
   g_sink ^= sum;
-  return timed_result(start, end, kBandwidthBytes, read_cache_counters());
+  if (aggressor_iterations == 0 || !has_expected_data_counters(counters, flash_victim) ||
+      counters.dbus_psram_misses <= baseline.counters.dbus_psram_misses) {
+    return {.reason = "cross-core PSRAM contention was not attributable in counters",
+            .tier_candidate = "distribution"};
+  }
+  Sample result = timed_result(start, end, kBandwidthBytes, counters,
+                               "victim baseline plus attributed core1 PSRAM contention");
+  result.has_baseline = true;
+  result.baseline_cycles = baseline.cycles;
+  result.baseline_counters = baseline.counters;
+  result.aggressor_iterations = aggressor_iterations;
+  return result;
 }
 
 #define CELL(id, probe, samples, parameter) \
@@ -671,7 +865,7 @@ constexpr std::array kCells{
     CELL("touch_i2c_transaction", probe_touch_i2c, kDefaultSamples, 0),
     CELL("gpio21_edge", probe_gpio21_edge, 1, 0),
     CELL("cache_msync_writeback_sweep", probe_msync_sweep, kSweepSamples, 0),
-    CELL("cache_msync_invalidate_sweep", probe_msync_sweep, kSweepSamples, 1),
+    CELL("cache_msync_invalidate_clean_sweep", probe_msync_sweep, kSweepSamples, 1),
     CELL("psram_bandwidth_cross_core", probe_cross_core_bandwidth, kDefaultSamples, 0),
     CELL("flash_bandwidth_cross_core", probe_cross_core_bandwidth, kDefaultSamples, 1),
 };
@@ -679,6 +873,7 @@ constexpr std::array kCells{
 #undef CELL
 
 bool cell_available(const Cell& cell) {
+  if (std::strcmp(cell.id, "gpio21_edge") == 0) return false;
 #if CONFIG_SPIRAM_FETCH_INSTRUCTIONS
   return std::strcmp(cell.id, "first_line_i_flash") != 0;
 #else
@@ -731,10 +926,23 @@ bool read_selection(std::array<bool, kCells.size()>& selected) {
 }
 
 void emit_metadata(const std::array<bool, kCells.size()>& selected) {
+  esp_chip_info_t chip_info{};
+  esp_chip_info(&chip_info);
+  const auto reset_reason = static_cast<unsigned>(esp_reset_reason());
+  std::array<char, 40> boot_id{};
+  std::snprintf(boot_id.data(), boot_id.size(), "%u-%08" PRIx32 "%08" PRIx32, reset_reason,
+                esp_random(), esp_random());
   std::printf("%s{\"protocolVersion\":%" PRIu32
               ",\"record\":\"metadata\",\"suite\":\"tier-b\",\"harnessVersion\":\"%s\","
-              "\"idfVersion\":\"%s\",\"availableCells\":[",
-              kPrefix, kProtocolVersion, kHarnessVersion, esp_get_idf_version());
+              "\"idfVersion\":\"%s\",\"gitCommit\":\"%s\",\"gitDirty\":%s,"
+              "\"variant\":\"%s\",\"sdkconfigSha256\":\"%s\","
+              "\"compilerVersion\":\"%s\",\"elfSha256\":\"%s\","
+              "\"chipModel\":\"ESP32-S3\",\"chipRevision\":%u,\"resetReason\":%u,"
+              "\"bootId\":\"%s\",\"availableCells\":[",
+              kPrefix, kProtocolVersion, kHarnessVersion, esp_get_idf_version(),
+              TINYDRAW_GIT_COMMIT, TINYDRAW_GIT_DIRTY ? "true" : "false", TINYDRAW_BUILD_VARIANT,
+              TINYDRAW_SDKCONFIG_SHA256, __VERSION__, esp_app_get_elf_sha256_str(),
+              static_cast<unsigned>(chip_info.revision), reset_reason, boot_id.data());
   emit_string_array(selected, true);
   std::printf("],\"selectedCells\":[");
   emit_string_array(selected, false);
@@ -745,6 +953,11 @@ void emit_metadata(const std::array<bool, kCells.size()>& selected) {
 }  // namespace
 
 extern "C" void app_main() {
+  if (std::strcmp(esp_get_idf_version(), kRequiredIdfVersion) != 0) {
+    std::printf("TINYDRAW_TIER_B_FAILED ESP-IDF must be %s, got %s\n", kRequiredIdfVersion,
+                esp_get_idf_version());
+    return;
+  }
   if (esp_cpu_get_core_id() != 0) {
     std::printf("TINYDRAW_TIER_B_FAILED app task is not pinned to core 0\n");
     return;
