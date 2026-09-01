@@ -23,7 +23,9 @@ reruns, and display-path and DMA cost families. Counter-dependent cells check
 the expected access and miss counters. A fully resident hot instruction-PSRAM
 sample may report zero I-cache accesses and zero misses, so the hot cell requires
 only zero misses. Its verified ELF placement, verified caller, and positive
-CCOUNT delta establish execution. The cold cell still requires nonzero I-cache
+CCOUNT delta establish execution. The hot cell runs the exact counter and timed
+call path once before recording its second pass, so cold caller instructions
+cannot contaminate the measured pass. The cold cell still requires nonzero I-cache
 accesses and misses. The hardware cache-counter registers
 are shared across both cores. Before concurrent timing, core 1 runs a bounded,
 isolated lap over the selected source and records its counters and exact

@@ -149,13 +149,21 @@ psram_end = store_body.index("const std::uint32_t end = read_ccount();", psram_c
 psram_counters = store_body.index("const CacheCounters counters", psram_end)
 assert baseline_call < baseline_end < baseline_counters
 assert psram_call < psram_end < psram_counters
+measure_start = source.index("InstructionPass measure_instruction_8_lines")
+measure_end = source.index("\nSample call_instruction_range", measure_start)
+measure_body = source[measure_start:measure_end]
+measure_call = measure_body.index("tier_b_instruction_8_lines();")
+measure_cycle_end = measure_body.index("const std::uint32_t end = read_ccount();", measure_call)
+measure_counters = measure_body.index("read_cache_counters()", measure_cycle_end)
+assert measure_call < measure_cycle_end < measure_counters
 range_start = source.index("Sample call_instruction_range")
 range_end = source.index("\nSample probe_instruction_psram", range_start)
 range_body = source[range_start:range_end]
-range_call = range_body.index("range.function();")
-range_cycle_end = range_body.index("const std::uint32_t end = read_ccount();", range_call)
-range_counters = range_body.index("const CacheCounters counters", range_cycle_end)
-assert range_call < range_cycle_end < range_counters
+assert "const std::uint32_t passes = cold ? 1U : 2U;" in range_body
+range_loop = range_body.index("for (std::uint32_t pass = 0; pass < passes; ++pass)")
+range_measure = range_body.index("measurement = measure_instruction_8_lines();", range_loop)
+range_validate = range_body.index("valid_instruction_counters", range_measure)
+assert range_loop < range_measure < range_validate
 first_line_start = source.index("Sample probe_first_line_i_flash")
 first_line_end = source.index("\nSample probe_first_line_data", first_line_start)
 first_line_body = source[first_line_start:first_line_end]

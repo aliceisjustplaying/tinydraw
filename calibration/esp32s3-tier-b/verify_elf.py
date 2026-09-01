@@ -190,7 +190,7 @@ def verify_instruction_callers(
     functions: dict[str, list[Instruction]],
 ) -> dict[str, dict[str, int | str]]:
     ladder_name, ladder_caller = require_single_function_containing(
-        functions, "probe_instruction_psram"
+        functions, "measure_instruction_8_lines"
     )
     ladder_calls = [
         index
@@ -198,11 +198,11 @@ def verify_instruction_callers(
         if "<tier_b_instruction_8_lines>" in instruction.operands
         and instruction.mnemonic.startswith("call")
     ]
-    if len(ladder_calls) != 2 or any(
+    if len(ladder_calls) != 1 or any(
         ladder_caller[index].mnemonic != "call8" for index in ladder_calls
     ):
         raise VerificationError(
-            "probe_instruction_psram ladder calls are not windowed call8"
+            "measure_instruction_8_lines ladder call is not windowed call8"
         )
     timed_ladder_calls = [
         index
@@ -214,7 +214,7 @@ def verify_instruction_callers(
     ]
     if len(timed_ladder_calls) != 1:
         raise VerificationError(
-            "probe_instruction_psram does not bracket one ladder call with CCOUNT"
+            "measure_instruction_8_lines does not bracket its ladder call with CCOUNT"
         )
 
     first_line_name, first_line_caller = require_single_function_containing(

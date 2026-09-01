@@ -100,14 +100,9 @@ def fixtures(xip: bool = False) -> tuple[str, str, str, str]:
     functions.append(function("probe_store_hit", 0x42020000, caller))
     functions.append(
         function(
-            "probe_instruction_psram",
+            "measure_instruction_8_lines",
             0x42020100,
             [
-                (
-                    "000000",
-                    f"call8 {ladder_addresses[8]:08x} <tier_b_instruction_8_lines>",
-                ),
-                ("f03d", "nop.n"),
                 ("03e800", "rsr.ccount a8"),
                 (
                     "000000",
@@ -310,6 +305,20 @@ class VerifyTierBElfTest(unittest.TestCase):
         process, result = self.run_gate(broken, symbols, sections, sdkconfig)
         self.assertEqual(process.returncode, 2)
         self.assertIn("no exact retw.n endpoint", process.stderr)
+        self.assertFalse(result.exists())
+
+    def test_ladder_separate_warm_call_leaves_no_result(self) -> None:
+        disassembly, symbols, sections, sdkconfig = fixtures()
+        broken = replace_in_function(
+            disassembly,
+            "measure_instruction_8_lines",
+            "rsr.ccount a8",
+            "call8 420001e0 <tier_b_instruction_8_lines>\n"
+            " 42020103: 03e800   rsr.ccount a8",
+        )
+        process, result = self.run_gate(broken, symbols, sections, sdkconfig)
+        self.assertEqual(process.returncode, 2)
+        self.assertIn("ladder call is not windowed call8", process.stderr)
         self.assertFalse(result.exists())
 
     def test_first_line_callx0_leaves_no_result(self) -> None:

@@ -848,6 +848,20 @@ constexpr std::array<InstructionFunction, kFirstLineSamples> kFirstLineInstructi
     tier_b_first_line_i_0, tier_b_first_line_i_1, tier_b_first_line_i_2, tier_b_first_line_i_3,
     tier_b_first_line_i_4};
 
+struct InstructionPass {
+  std::uint32_t start;
+  std::uint32_t end;
+  CacheCounters counters;
+};
+
+__attribute__((noinline)) InstructionPass measure_instruction_8_lines() {
+  clear_cache_counters();
+  const std::uint32_t start = read_ccount();
+  tier_b_instruction_8_lines();
+  const std::uint32_t end = read_ccount();
+  return {start, end, read_cache_counters()};
+}
+
 Sample call_instruction_range(const InstructionRange& range, bool cold) {
   const std::size_t bytes = static_cast<std::size_t>(range.end - range.start);
   if (cold && esp_cache_msync(const_cast<std::uint8_t*>(range.start), bytes,
@@ -855,22 +869,22 @@ Sample call_instruction_range(const InstructionRange& range, bool cold) {
                                   ESP_CACHE_MSYNC_FLAG_INVALIDATE) != ESP_OK) {
     return {.reason = "instruction-cache invalidation failed", .tier_candidate = "exact"};
   }
-  clear_cache_counters();
-  const std::uint32_t start = read_ccount();
-  range.function();
-  const std::uint32_t end = read_ccount();
-  const CacheCounters counters = read_cache_counters();
-  if (!valid_instruction_counters(cold, counters.ibus_accesses, counters.ibus_misses)) {
+  InstructionPass measurement{};
+  const std::uint32_t passes = cold ? 1U : 2U;
+  for (std::uint32_t pass = 0; pass < passes; ++pass) {
+    measurement = measure_instruction_8_lines();
+  }
+  if (!valid_instruction_counters(cold, measurement.counters.ibus_accesses,
+                                  measurement.counters.ibus_misses)) {
     return {.reason = cold ? "cold instruction probe lacks I-cache access or miss evidence"
                            : "hot instruction probe reports an I-cache miss",
             .tier_candidate = "exact"};
   }
-  return timed_result(start, end, bytes, counters);
+  return timed_result(measurement.start, measurement.end, bytes, measurement.counters);
 }
 
 Sample probe_instruction_psram(Context&, const Cell& cell, std::uint32_t) {
   const auto& range = kInstructionRanges[3];
-  range.function();
   return call_instruction_range(range, cell.parameter != 0);
 }
 
