@@ -86,12 +86,12 @@ TEST_CASE("sizes popup maps six brushes in a three by two grid") {
   CHECK(tinydraw::vector_v2::chrome_input_bottom(state) ==
         tinydraw::vector_v2::kChromeSizePopupInputBottom);
 
-  CHECK(tinydraw::vector_v2::brush_size(ChromeSize::kSmall) == 5.0F);
-  CHECK(tinydraw::vector_v2::brush_size(ChromeSize::kMedium) == 8.0F);
-  CHECK(tinydraw::vector_v2::brush_size(ChromeSize::kLarge) == 13.0F);
-  CHECK(tinydraw::vector_v2::brush_size(ChromeSize::kExtraLarge) == 20.0F);
-  CHECK(tinydraw::vector_v2::brush_size(ChromeSize::kDoubleExtraLarge) == 30.0F);
-  CHECK(tinydraw::vector_v2::brush_size(ChromeSize::kTripleExtraLarge) == 45.0F);
+  CHECK(tinydraw::vector_v2::brush_size(ChromeSize::kSmall) == 3.0F);
+  CHECK(tinydraw::vector_v2::brush_size(ChromeSize::kMedium) == 6.0F);
+  CHECK(tinydraw::vector_v2::brush_size(ChromeSize::kLarge) == 12.0F);
+  CHECK(tinydraw::vector_v2::brush_size(ChromeSize::kExtraLarge) == 24.0F);
+  CHECK(tinydraw::vector_v2::brush_size(ChromeSize::kDoubleExtraLarge) == 36.0F);
+  CHECK(tinydraw::vector_v2::brush_size(ChromeSize::kTripleExtraLarge) == 64.0F);
 }
 
 TEST_CASE("document popup gives new export and time sync equal touch targets") {
@@ -820,24 +820,70 @@ TEST_CASE("palette hit testing gives large cells to the circular swatches") {
   CHECK(tinydraw::vector_v2::chrome_color_at({46.0F, 139.0F}, state) == 4U);
 }
 
-TEST_CASE("canvas edge attraction supports full-bleed ink without a discontinuity") {
+TEST_CASE("canvas edge attraction preserves full bleed for edge-following Strokes") {
   const ChromeState shown;
   const ChromeState hidden{.hud_visible = false};
-  const auto snapped_low = tinydraw::vector_v2::attract_canvas_edges({18.0F, 18.0F}, shown);
+  const auto stationary = [&](ChromePoint point, const ChromeState& state) {
+    return tinydraw::vector_v2::attract_canvas_edges(point, point, state);
+  };
+  const auto snapped_low = stationary({18.0F, 18.0F}, shown);
   CHECK(snapped_low.x == 0.0F);
   CHECK(snapped_low.y == 0.0F);
-  const auto transition = tinydraw::vector_v2::attract_canvas_edges({27.0F, 27.0F}, shown);
+  const auto transition = stationary({27.0F, 27.0F}, shown);
   CHECK(transition.x == 18.0F);
   CHECK(transition.y == 18.0F);
-  const auto unchanged = tinydraw::vector_v2::attract_canvas_edges({36.0F, 36.0F}, shown);
+  const auto unchanged = stationary({36.0F, 36.0F}, shown);
   CHECK(unchanged.x == 36.0F);
   CHECK(unchanged.y == 36.0F);
-  const auto snapped_right = tinydraw::vector_v2::attract_canvas_edges({349.0F, 430.0F}, shown);
+  const auto snapped_right = stationary({349.0F, 430.0F}, shown);
   CHECK(snapped_right.x == 367.0F);
   CHECK(snapped_right.y == 430.0F);
-  const auto snapped_bottom = tinydraw::vector_v2::attract_canvas_edges({349.0F, 430.0F}, hidden);
+  const auto snapped_bottom = stationary({349.0F, 430.0F}, hidden);
   CHECK(snapped_bottom.x == 367.0F);
   CHECK(snapped_bottom.y == 447.0F);
+
+  const auto follows_left =
+      tinydraw::vector_v2::attract_canvas_edges({18.0F, 260.0F}, {7.0F, 40.0F}, shown);
+  CHECK(follows_left.x == 0.0F);
+  CHECK(follows_left.y == 260.0F);
+  const auto follows_top =
+      tinydraw::vector_v2::attract_canvas_edges({260.0F, 18.0F}, {40.0F, 14.0F}, shown);
+  CHECK(follows_top.x == 260.0F);
+  CHECK(follows_top.y == 0.0F);
+
+  const auto approaches_left =
+      tinydraw::vector_v2::attract_canvas_edges({7.0F, 100.0F}, {100.0F, 100.0F}, shown);
+  CHECK(approaches_left.x == 0.0F);
+  const auto approaches_right =
+      tinydraw::vector_v2::attract_canvas_edges({363.0F, 180.0F}, {267.0F, 180.0F}, shown);
+  CHECK(approaches_right.x == 367.0F);
+  const auto approaches_top =
+      tinydraw::vector_v2::attract_canvas_edges({150.0F, 14.0F}, {150.0F, 100.0F}, shown);
+  CHECK(approaches_top.y == 0.0F);
+  const auto approaches_bottom =
+      tinydraw::vector_v2::attract_canvas_edges({220.0F, 433.0F}, {220.0F, 348.0F}, hidden);
+  CHECK(approaches_bottom.y == 447.0F);
+}
+
+TEST_CASE("canvas edge attraction preserves diagonals that leave an edge") {
+  const ChromeState shown;
+  const auto leaves_left =
+      tinydraw::vector_v2::attract_canvas_edges({24.0F, 113.0F}, {7.0F, 60.0F}, shown);
+  CHECK(leaves_left.x == 24.0F);
+  CHECK(leaves_left.y == 113.0F);
+  const auto leaves_right =
+      tinydraw::vector_v2::attract_canvas_edges({343.0F, 113.0F}, {360.0F, 60.0F}, shown);
+  CHECK(leaves_right.x == 343.0F);
+  CHECK(leaves_right.y == 113.0F);
+  const auto leaves_top =
+      tinydraw::vector_v2::attract_canvas_edges({113.0F, 24.0F}, {60.0F, 7.0F}, shown);
+  CHECK(leaves_top.x == 113.0F);
+  CHECK(leaves_top.y == 24.0F);
+  const ChromeState hidden{.hud_visible = false};
+  const auto leaves_bottom =
+      tinydraw::vector_v2::attract_canvas_edges({113.0F, 423.0F}, {60.0F, 440.0F}, hidden);
+  CHECK(leaves_bottom.x == 113.0F);
+  CHECK(leaves_bottom.y == 423.0F);
 }
 
 TEST_CASE("top-edge exit does not become a tap stroke") {

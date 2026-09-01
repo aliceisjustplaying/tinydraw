@@ -83,9 +83,12 @@ class LiveStrokeSession {
   InkStream ink_;
   CurvedRibbonStream ribbon_;
   Point start_touch_{};
+  Point previous_touch_{};
   Point last_touch_{};
   Point last_canvas_touch_{};
   InkPoint last_ink_{};
+  std::uint32_t previous_touch_us_ = 0;
+  std::uint32_t last_touch_us_ = 0;
   std::uint16_t color_ = 0;
   std::size_t first_operation_ = 0;
   std::optional<vector_v2::PixelRect> world_bounds_;

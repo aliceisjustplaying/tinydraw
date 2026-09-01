@@ -163,10 +163,12 @@ inline constexpr std::array<std::array<std::uint16_t, kPaletteColorCount>, 2> kP
                                                              ChromePoint current,
                                                              const ChromeState& state);
 // Pulls physical finger centroids near drawable panel edges outward so a
-// brush can paint full bleed. The inner half of the attraction band maps to
-// the edge; the outer half transitions continuously to 1:1. Bottom attraction
-// activates only while the toolbar is hidden.
-[[nodiscard]] ChromePoint attract_canvas_edges(ChromePoint point, const ChromeState& state);
+// brush can paint full bleed. Attraction applies only on axes where the Stroke
+// starts near that edge and stays parallel to it, or when an interior-origin
+// Stroke approaches it. Movement away from an edge keeps its true diagonal.
+// Bottom attraction activates only while the toolbar is hidden.
+[[nodiscard]] ChromePoint attract_canvas_edges(ChromePoint point, ChromePoint stroke_origin,
+                                               const ChromeState& state);
 // A stationary contact in the top sensor fringe is an edge exit, not a tap.
 // Once the gesture produces a drawable segment it remains valid from any edge.
 [[nodiscard]] bool chrome_accepts_stroke_finish(ChromePoint start, bool has_drawn_segment);

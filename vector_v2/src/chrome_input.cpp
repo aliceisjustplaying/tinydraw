@@ -25,19 +25,19 @@ ChromeTimeSyncStatus chrome_time_sync_status_after(ChromeTimeSyncStatus status,
 float brush_size(ChromeSize size) {
   switch (size) {
     case ChromeSize::kSmall:
-      return 5.0F;
+      return 3.0F;
     case ChromeSize::kMedium:
-      return 8.0F;
+      return 6.0F;
     case ChromeSize::kLarge:
-      return 13.0F;
+      return 12.0F;
     case ChromeSize::kExtraLarge:
-      return 20.0F;
+      return 24.0F;
     case ChromeSize::kDoubleExtraLarge:
-      return 30.0F;
+      return 36.0F;
     case ChromeSize::kTripleExtraLarge:
-      return 45.0F;
+      return 64.0F;
   }
-  return 8.0F;
+  return 6.0F;
 }
 
 int chrome_canvas_bottom(const ChromeState& state) {
@@ -128,8 +128,11 @@ std::optional<ChromePoint> clip_canvas_segment(ChromePoint previous, ChromePoint
   return ChromePoint{previous.x + (current.x - previous.x) * progress, bottom};
 }
 
-ChromePoint attract_canvas_edges(ChromePoint point, const ChromeState& state) {
+ChromePoint attract_canvas_edges(ChromePoint point, ChromePoint stroke_origin,
+                                 const ChromeState& state) {
   constexpr float kEdgeAttractionBandPixels = 36.0F;
+  constexpr float kDirectionDeadZonePixels = 2.0F;
+  constexpr float kMaximumNormalPerTangent = 0.125F;
   constexpr float kRightEdge = static_cast<float>(kWidth - 1);
   constexpr float kBottomEdge = static_cast<float>(kHeight - 1);
   const auto attract_low = [=](float coordinate) {
@@ -143,9 +146,28 @@ ChromePoint attract_canvas_edges(ChromePoint point, const ChromeState& state) {
                ? edge - std::max(0.0F, distance * 2.0F - kEdgeAttractionBandPixels)
                : coordinate;
   };
-  point.x = attract_high(attract_low(point.x), kRightEdge);
-  point.y = attract_low(point.y);
-  if (!state.hud_visible) {
+  const float horizontal_travel = std::abs(point.x - stroke_origin.x);
+  const float vertical_travel = std::abs(point.y - stroke_origin.y);
+  const bool follows_vertical_edge =
+      horizontal_travel <=
+      std::max(kDirectionDeadZonePixels, vertical_travel * kMaximumNormalPerTangent);
+  const bool follows_horizontal_edge =
+      vertical_travel <=
+      std::max(kDirectionDeadZonePixels, horizontal_travel * kMaximumNormalPerTangent);
+  const bool started_near_left = stroke_origin.x < kEdgeAttractionBandPixels;
+  const bool started_near_right = kRightEdge - stroke_origin.x < kEdgeAttractionBandPixels;
+  const bool started_near_top = stroke_origin.y < kEdgeAttractionBandPixels;
+  const bool started_near_bottom = kBottomEdge - stroke_origin.y < kEdgeAttractionBandPixels;
+  if (!started_near_left || follows_vertical_edge) {
+    point.x = attract_low(point.x);
+  }
+  if (!started_near_right || follows_vertical_edge) {
+    point.x = attract_high(point.x, kRightEdge);
+  }
+  if (!started_near_top || follows_horizontal_edge) {
+    point.y = attract_low(point.y);
+  }
+  if (!state.hud_visible && (!started_near_bottom || follows_horizontal_edge)) {
     point.y = attract_high(point.y, kBottomEdge);
   }
   return point;

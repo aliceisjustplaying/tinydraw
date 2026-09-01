@@ -125,8 +125,10 @@ const scenarios = [
       assert(inkPixels(recorded) > 50, "hiding the HUD lost the demo recording's Stroke");
       assert(inkPixels(replayBaseline) < inkPixels(drawn) / 3,
         `demo replay did not start from a blank authority baseline: ${inkPixels(replayBaseline)} versus ${inkPixels(drawn)}`);
-      assert(nonPaperPixels(replayPointer, { x: 84, y: 99, w: 43, h: 43 }) > 300,
-        "demo replay did not show the virtual finger at the replayed touch point");
+      const replayPointerPixels =
+        nonPaperPixels(replayPointer, { x: 84, y: 99, w: 43, h: 43 });
+      assert(replayPointerPixels > 200,
+        `demo replay did not show the virtual finger at the replayed touch point: ${replayPointerPixels}px`);
       const lingeringPointerPixels = diffPixels(replayPointerAfterLift, replayed,
         { x: 124, y: 69, w: 43, h: 43 });
       assert(lingeringPointerPixels > 150,
@@ -160,19 +162,22 @@ const scenarios = [
 ];
 
 function usage() {
-  console.error("usage: bun puck/verify.mjs <PUCK_REPO> [--product] [--wasm <PATH>] [--write-frames]");
+  console.error("usage: bun puck/verify.mjs <PUCK_REPO> [--edge-diagonal-only] [--product] [--wasm <PATH>] [--write-frames]");
   process.exit(2);
 }
 
 const args = process.argv.slice(2);
 if (args.length === 0 || args[0].startsWith("--")) usage();
 const puck = resolve(args.shift());
+let edgeDiagonalOnly = false;
 let product = false;
 let writeFrames = false;
 let wasmPath = join(repository, "out", "build", "puck", "puck", "emu.wasm");
 while (args.length > 0) {
   const argument = args.shift();
-  if (argument === "--product") {
+  if (argument === "--edge-diagonal-only") {
+    edgeDiagonalOnly = true;
+  } else if (argument === "--product") {
     product = true;
   } else if (argument === "--write-frames") {
     writeFrames = true;
@@ -665,12 +670,109 @@ async function verifyTwoLargestBrushSelections() {
     }
     return first === null ? 0 : last - first + 1;
   };
-  const thirty = verticalInkSpan(180, 100, 200);
-  const fortyFive = verticalInkSpan(180, 200, 300);
-  assert(thirty >= 20, `30px brush rendered only ${thirty}px wide`);
-  assert(fortyFive >= thirty + 8,
-    `45px brush was not materially larger than 30px: ${fortyFive}px versus ${thirty}px`);
-  console.log(`PASS 3x2 picker selects 30px (${thirty}px ink) and 45px (${fortyFive}px ink) brushes`);
+  const thirtySix = verticalInkSpan(180, 100, 200);
+  const sixtyFour = verticalInkSpan(180, 200, 300);
+  assert(thirtySix >= 28, `36px brush rendered only ${thirtySix}px wide`);
+  assert(sixtyFour >= thirtySix + 16,
+    `64px brush was not materially larger than 36px: ${sixtyFour}px versus ${thirtySix}px`);
+  console.log(`PASS 3x2 picker selects 36px (${thirtySix}px ink) and 64px (${sixtyFour}px ink) brushes`);
+}
+
+async function verifyEdgeOriginDiagonalDoesNotStick() {
+  const events = [{ t: 0, k: "tick" }, { t: 16, k: "tick" }];
+  const event = (t, value) => events.push(value, { t, k: "tick" });
+  event(32, { t: 32, k: "button", i: 0, down: 1 });
+  event(48, { t: 48, k: "button", i: 0, down: 0 });
+  for (let t = 56; t <= 160; t += 8) events.push({ t, k: "tick" });
+
+  let now = 168;
+  const samples = 4;
+  for (let index = 0; index < samples; ++index) {
+    event(now, {
+      t: now,
+      k: "touch",
+      down: 1,
+      x: 7 + Math.round(index * 50 / (samples - 1)),
+      y: 60 + Math.round(index * 160 / (samples - 1)),
+    });
+    now += 8;
+  }
+  event(now, { t: now, k: "touch", down: 0, x: 57, y: 220 });
+  const settledAt = now + 1_000;
+  for (let t = now; t <= settledAt; t += 8) events.push({ t, k: "tick" });
+
+  const run = await replay({ events }, [settledAt]);
+  const frame = run.frames.get(settledAt);
+  assert(frame, "edge-origin diagonal capture is missing");
+  const edgeInk = nonPaperPixels(frame, { x: 0, y: 50, w: 1, h: 180 });
+  assert(edgeInk <= 24,
+    `edge-origin diagonal stuck vertically to the left edge for ${edgeInk}px`);
+  console.log(`PASS edge-origin diagonal leaves the left edge after ${edgeInk}px`);
+}
+
+async function verifyFastSlideOffReachesCanvasEdge() {
+  const events = [{ t: 0, k: "tick" }, { t: 16, k: "tick" }];
+  const event = (t, value) => events.push(value, { t, k: "tick" });
+  event(32, { t: 32, k: "button", i: 0, down: 1 });
+  event(48, { t: 48, k: "button", i: 0, down: 0 });
+  for (let t = 56; t <= 160; t += 8) events.push({ t, k: "tick" });
+
+  event(168, { t: 168, k: "touch", down: 1, x: 220, y: 120 });
+  event(176, { t: 176, k: "touch", down: 1, x: 130, y: 120 });
+  event(184, { t: 184, k: "touch", down: 1, x: 50, y: 120 });
+  event(192, { t: 192, k: "touch", down: 0, x: 0, y: 120 });
+  event(208, { t: 208, k: "touch", down: 1, x: 147, y: 200 });
+  event(216, { t: 216, k: "touch", down: 1, x: 237, y: 200 });
+  event(224, { t: 224, k: "touch", down: 1, x: 317, y: 200 });
+  event(232, { t: 232, k: "touch", down: 0, x: 367, y: 200 });
+  for (let t = 240; t <= 1_200; t += 8) events.push({ t, k: "tick" });
+
+  const run = await replay({ events }, [1_200]);
+  const frame = run.frames.get(1_200);
+  assert(frame, "fast slide-off capture is missing");
+  assert(nonPaperPixels(frame, { x: 0, y: 114, w: 1, h: 13 }) > 0,
+    "fast leftward slide-off stopped before the canvas edge");
+  assert(nonPaperPixels(frame, { x: 367, y: 194, w: 1, h: 13 }) > 0,
+    "fast rightward slide-off stopped before the canvas edge");
+  console.log("PASS fast left/right slide-offs reach the canvas edge");
+}
+
+async function verifyInteriorStrokesReachCanvasEdges() {
+  const events = [{ t: 0, k: "tick" }, { t: 16, k: "tick" }];
+  const event = (t, value) => events.push(value, { t, k: "tick" });
+  event(32, { t: 32, k: "button", i: 0, down: 1 });
+  event(48, { t: 48, k: "button", i: 0, down: 0 });
+  for (let t = 56; t <= 160; t += 8) events.push({ t, k: "tick" });
+
+  let now = 168;
+  const stroke = (points) => {
+    for (const [x, y] of points) {
+      event(now, { t: now, k: "touch", down: 1, x, y });
+      now += 8;
+    }
+    const [x, y] = points.at(-1);
+    event(now, { t: now, k: "touch", down: 0, x, y });
+    now += 16;
+  };
+  stroke([[100, 100], [75, 100], [50, 100], [25, 100], [7, 100]]);
+  stroke([[267, 180], [292, 180], [317, 180], [342, 180], [363, 180]]);
+  stroke([[150, 100], [150, 75], [150, 50], [150, 25], [150, 14]]);
+  stroke([[220, 348], [220, 373], [220, 398], [220, 423], [220, 433]]);
+  const settledAt = now + 1_000;
+  for (let t = now; t <= settledAt; t += 8) events.push({ t, k: "tick" });
+
+  const run = await replay({ events }, [settledAt]);
+  const frame = run.frames.get(settledAt);
+  assert(frame, "interior-to-edge Stroke capture is missing");
+  assert(nonPaperPixels(frame, { x: 0, y: 94, w: 1, h: 13 }) > 0,
+    "interior-to-left Stroke did not reach the canvas edge");
+  assert(nonPaperPixels(frame, { x: 367, y: 174, w: 1, h: 13 }) > 0,
+    "interior-to-right Stroke did not reach the canvas edge");
+  assert(nonPaperPixels(frame, { x: 144, y: 0, w: 13, h: 1 }) > 0,
+    "interior-to-top Stroke did not reach the canvas edge");
+  assert(nonPaperPixels(frame, { x: 214, y: 447, w: 13, h: 1 }) > 0,
+    "interior-to-bottom Stroke did not reach the canvas edge");
+  console.log("PASS interior-origin Strokes reach all four canvas edges");
 }
 
 async function verifyPhysicalEdgeInsetStillReachesCanvasEdges() {
@@ -758,6 +860,14 @@ async function verifyHudHideDismissesColorsInputShield() {
   console.log("PASS HUD hide dismisses the Colors input shield before drawing");
 }
 
+if (edgeDiagonalOnly) {
+  await verifyEdgeOriginDiagonalDoesNotStick();
+  await verifyFastSlideOffReachesCanvasEdge();
+  await verifyInteriorStrokesReachCanvasEdges();
+  await verifyPhysicalEdgeInsetStillReachesCanvasEdges();
+  process.exit(0);
+}
+
 const activeScenarios = product
   ? scenarios.filter(({ trace }) => trace !== "demo.trace.json")
   : scenarios;
@@ -804,6 +914,9 @@ await verifyHistoryPresentationFailure();
 await verifyRecordedStrokeAaSurvivesHudToggle();
 await verifyStrokeAfterHudToggle();
 await verifyTwoLargestBrushSelections();
+await verifyEdgeOriginDiagonalDoesNotStick();
+await verifyFastSlideOffReachesCanvasEdge();
+await verifyInteriorStrokesReachCanvasEdges();
 await verifyPhysicalEdgeInsetStillReachesCanvasEdges();
 await verifyHudHideDismissesColorsInputShield();
 

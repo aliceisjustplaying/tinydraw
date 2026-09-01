@@ -82,9 +82,13 @@ LiveStrokeStartResult LiveStrokeSession::begin(Point screen_point, std::uint32_t
   ink_.set_config(config);
   color_ = color;
   start_touch_ = screen_point;
+  previous_touch_ = screen_point;
   last_touch_ = screen_point;
+  previous_touch_us_ = event_us;
+  last_touch_us_ = event_us;
   const vector_v2::ChromePoint attracted =
-      vector_v2::attract_canvas_edges({.x = screen_point.x, .y = screen_point.y}, chrome);
+      vector_v2::attract_canvas_edges({.x = screen_point.x, .y = screen_point.y},
+                                      {.x = start_touch_.x, .y = start_touch_.y}, chrome);
   last_canvas_touch_ = Point{.x = attracted.x, .y = attracted.y};
   last_ink_ =
       ink_.begin({.x = last_canvas_touch_.x, .y = last_canvas_touch_.y, .timestamp_us = event_us});
@@ -124,11 +128,15 @@ LiveStrokeMoveResult LiveStrokeSession::move(Point screen_point, std::uint32_t e
   }
   const auto clipped = vector_v2::clip_canvas_segment(
       {.x = last_touch_.x, .y = last_touch_.y}, {.x = screen_point.x, .y = screen_point.y}, chrome);
+  previous_touch_ = last_touch_;
+  previous_touch_us_ = last_touch_us_;
   last_touch_ = screen_point;
+  last_touch_us_ = event_us;
   if (!clipped.has_value()) {
     return result;
   }
-  const vector_v2::ChromePoint attracted = vector_v2::attract_canvas_edges(*clipped, chrome);
+  const vector_v2::ChromePoint attracted =
+      vector_v2::attract_canvas_edges(*clipped, {.x = start_touch_.x, .y = start_touch_.y}, chrome);
   last_canvas_touch_ = Point{.x = attracted.x, .y = attracted.y};
   last_ink_ =
       ink_.update({.x = last_canvas_touch_.x, .y = last_canvas_touch_.y, .timestamp_us = event_us});
@@ -170,6 +178,43 @@ LiveStrokeFinishResult LiveStrokeSession::finish(std::uint32_t event_us,
     result.metrics = metrics_;
     return result;
   }
+  const std::uint32_t sample_interval_us = last_touch_us_ - previous_touch_us_;
+  const std::uint32_t release_interval_us = event_us - last_touch_us_;
+  if (sample_interval_us > 0U && release_interval_us > 0U) {
+    const float projection = static_cast<float>(std::min(release_interval_us, sample_interval_us)) /
+                             static_cast<float>(sample_interval_us);
+    const Point estimated{
+        .x = last_touch_.x + (last_touch_.x - previous_touch_.x) * projection,
+        .y = last_touch_.y + (last_touch_.y - previous_touch_.y) * projection,
+    };
+    Point projected = last_touch_;
+    bool crossed_edge = false;
+    if (estimated.x <= 0.0F) {
+      projected.x = 0.0F;
+      crossed_edge = true;
+    } else if (estimated.x >= static_cast<float>(vector_v2::kOverviewWidth - 1)) {
+      projected.x = static_cast<float>(vector_v2::kOverviewWidth - 1);
+      crossed_edge = true;
+    }
+    if (estimated.y <= 0.0F) {
+      projected.y = 0.0F;
+      crossed_edge = true;
+    } else if (!chrome.hud_visible &&
+               estimated.y >= static_cast<float>(vector_v2::kOverviewHeight - 1)) {
+      projected.y = static_cast<float>(vector_v2::kOverviewHeight - 1);
+      crossed_edge = true;
+    }
+    if (crossed_edge) {
+      const auto clipped = vector_v2::clip_canvas_segment(
+          {.x = last_touch_.x, .y = last_touch_.y}, {.x = projected.x, .y = projected.y}, chrome);
+      if (clipped.has_value()) {
+        const vector_v2::ChromePoint attracted = vector_v2::attract_canvas_edges(
+            *clipped, {.x = start_touch_.x, .y = start_touch_.y}, chrome);
+        last_canvas_touch_ = Point{.x = attracted.x, .y = attracted.y};
+      }
+    }
+  }
+
   const std::int64_t finish_preview_started = esp_timer_get_time();
   last_ink_ =
       ink_.finish({.x = last_canvas_touch_.x, .y = last_canvas_touch_.y, .timestamp_us = event_us});
