@@ -20,11 +20,20 @@ label inside a no-transform region).
 ```text
 cd calibration/esp32s3-core-timing
 eim run "idf.py -B ../../out/build/esp32s3-core-timing-calibration build"
+eim run 'python verify_elf.py \
+  ../../out/build/esp32s3-core-timing-calibration/esp32s3_core_timing_calibration.elf \
+  ../../out/build/esp32s3-core-timing-calibration/elf-verification.json \
+  --objdump "$(command -v xtensa-esp32s3-elf-objdump)"'
 eim run "idf.py -B ../../out/build/esp32s3-core-timing-calibration -p /dev/cu.usbmodem101 flash"
 uv run --script ../../tools/esp32-capture.py /dev/cu.usbmodem101 results/boot-N/serial.log 120 \
   --end-marker CALIBRATION_DONE \
   --failure-regex 'Guru Meditation|assert failed|CALIBRATION_FAILED|task_wdt'
 ```
+
+`verify_elf.py` checks all five 256-operation issue blocks byte for byte and
+asserts loop-body residues 0, 1, 2, and 3 modulo 4 from the disassembly. It
+writes the JSON result only after every check passes. A mismatch exits 2 and
+does not create a result file.
 
 ## Results, 2026-08-31, two boots
 
