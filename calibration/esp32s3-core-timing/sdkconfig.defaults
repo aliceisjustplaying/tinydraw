@@ -1,5 +1,5 @@
-# Match the physical TinyDraw ESP32-S3R8 production memory configuration,
-# identical to calibration/esp32s3-memory-timing/sdkconfig.defaults.
+# Match the physical TinyDraw ESP32-S3R8 production memory configuration:
+# octal PSRAM at 80 MHz, 16 MB QIO flash at 80 MHz, and a 240 MHz CPU.
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
@@ -11,5 +11,6 @@ CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_FREERTOS_HZ=1000
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+CONFIG_ESP_MAIN_TASK_AFFINITY_CPU0=y
 CONFIG_LOG_DEFAULT_LEVEL_WARN=y
 CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y

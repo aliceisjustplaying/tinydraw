@@ -276,9 +276,9 @@ static void run_interrupt_probe(const char *suffix, int flags) {
                INTR_SAMPLES, NULL,
                "CCOUNT from WSR INTSET in the interrupted task to the first instruction of the IRAM handler, through the ESP-IDF dispatcher.");
   snprintf(name, sizeof(name), "intr_resume_%s", suffix);
-  emit_samples(name, "iram", "handler_exit_to_task", 1, resume_samples,
+  emit_samples(name, "iram", "handler_tail_to_task", 1, resume_samples,
                INTR_SAMPLES, NULL,
-               "CCOUNT from the handler's last instruction back to the interrupted spin loop; includes dispatcher epilogue, restore, and up to one spin iteration.");
+               "CCOUNT from the handler body's final timestamp read back to the interrupted spin loop; includes the timestamp store, compiler-generated handler tail, dispatcher epilogue, restore, and up to one spin iteration.");
 }
 
 void app_main(void) {
@@ -299,6 +299,7 @@ void app_main(void) {
          "\"Window and issue trials run at INTLEVEL 15; ticks cannot land inside a window.\","
          "\"Encodings are verified from the built ELF by the capture tooling, not assumed.\","
          "\"Interrupt latencies include the ESP-IDF dispatcher on purpose: that is what firmware experiences.\","
+         "\"Resume latency starts at the handler body's final timestamp read and includes its assignment store and compiler-generated tail.\","
          "\"Resume latency includes up to one spin-loop iteration of quantization.\"]}\n",
          SCHEMA_VERSION, HARNESS_VERSION, esp_get_idf_version(), chip.revision,
          chip.cores, cpu_hz, cpu_hz, TRIALS, CHAIN_ITERATIONS, ISSUE_CALLS,

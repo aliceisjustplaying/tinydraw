@@ -4,7 +4,6 @@ idf_component_register(
   PRIV_REQUIRES esp_psram spi_flash xtensa esp_hw_support
 )
 
-target_compile_options(${COMPONENT_LIB} PRIVATE
-  -fno-tree-vectorize
-  -fno-unroll-loops
+set_source_files_properties(core_timing.c PROPERTIES
+  COMPILE_OPTIONS "-fno-tree-vectorize;-fno-unroll-loops"
 )

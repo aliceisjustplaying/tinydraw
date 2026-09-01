@@ -1,13 +1,14 @@
 # ESP32-S3 core-timing calibration
 
-CPU-side cost categories the memory-timing harness does not cover: window
+CPU-side cost categories: window
 overflow/underflow exceptions, straight-line issue rate by instruction
 width and dependency, zero-overhead-loop body alignment, and interrupt
 entry/resume latency through the ESP-IDF dispatcher.
 
-Same board, same CAL_RECORD line format, same sdkconfig as
-`../esp32s3-memory-timing/`. Window and issue trials run at INTLEVEL 15 so
-no tick lands inside a measured window. Instruction encodings and loop-body
+The harness uses the physical TinyDraw ESP32-S3R8 production memory
+configuration and emits the shared CAL_RECORD line format. Window and issue
+trials run at INTLEVEL 15 so no tick lands inside a measured window.
+Instruction encodings and loop-body
 alignments are verified from the built ELF with objdump before flashing
 (plain `or`/`addi` get narrowed by the assembler; the probes use `_or` and
 `_addi` no-transform forms, and the loop probes live in
@@ -47,14 +48,16 @@ chain call:
 | --- | --- | --- |
 | 0 | 20 | |
 | 1 to 5 | 36 to 100 | exactly 16 |
-| 6 to 32 | 151 to 1,478 | exactly 51 (16 + 35) |
+| 6 to 32 | 151 to 1,478 | normally 51 (16 + 35); depth 32 measured one cycle higher |
 
 A call level without window pressure costs 16 cycles (callx8 + entry +
 add + retw.n in this shape). From depth 6 on, every additional level pays
 one WindowOverflow8 plus one WindowUnderflow8, together 35 cycles. The
 knee at depth 6 matches the 64-entry physical register file with the
-harness frames below the chain. Deep trials show at most 3 distinct sample
-values in 9; medians are boot-identical.
+harness frames below the chain. The depth-32 median is 378,358 cycles for
+256 chains, or 1,477.961 cycles per chain, which rounds to the displayed
+1,478 and is about one cycle above the linear per-level model. Deep trials
+show at most 3 distinct sample values in 9; medians are boot-identical.
 
 ### Straight-line issue: 1.000 cycles per instruction, width-insensitive
 
@@ -92,7 +95,7 @@ transformations enabled, gas re-aligns Xtensa loop targets on its own
 in the fast case, and a timing model that ignores alignment is wrong
 exactly on the loops the assembler could not fix.
 
-### Interrupt entry and resume: 228 and 142 cycles, deterministic
+### Interrupt entry and handler-tail resume: 228 and 142 cycles, deterministic
 
 Software interrupt (INTSET) through the ESP-IDF dispatcher to an IRAM
 handler, 33 samples per level, min = median in every cell, identical
@@ -101,7 +104,7 @@ across boots:
 | Path | Level 1 | Level 3 |
 | --- | --- | --- |
 | WSR INTSET to handler first instruction | 228 | 223 |
-| handler last instruction to interrupted task | 142 | 138 |
+| handler body final timestamp to interrupted task | 142 | 138 |
 
 About 1.5 microseconds round trip at 240 MHz. These are exact-tier
 candidates for the dispatcher-inclusive path real ESP-IDF firmware
@@ -119,6 +122,9 @@ alignment rule as an `exact` conditional cost).
 
 ## Board state
 
-This firmware replaces whatever was previously flashed (it was the
-`esp32s3-memory-timing` calibration firmware). Restore it with that
-project's `run.sh`, which rebuilds and reflashes.
+This firmware replaces whatever was previously flashed. Restore the normal
+TinyDraw Vector V2 product with:
+
+```text
+./scripts/esp32 vector-v2 /dev/cu.usbmodem101
+```

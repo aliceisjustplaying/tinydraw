@@ -36,7 +36,11 @@
   nop.n
   _or a9, a9, a9
   .endif
-  loopnez a8, 8f
+  /* Exact encoding of `loopnez a8, . + 19`. The fixed 16-byte body makes the
+   * displacement invariant. Encoding it directly preserves the deliberately
+   * unaligned r3 target without turning that calibration case into an
+   * assembler warning. The built ELF is disassembled and checked before use. */
+  .byte 0x76, 0x98, 0x0f
   .rept 8
   nop.n
   .endr
