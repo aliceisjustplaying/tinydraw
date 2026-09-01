@@ -16,6 +16,13 @@ SPEC.loader.exec_module(CAPTURE)
 
 
 class RestartMarkerTest(unittest.TestCase):
+    def test_hardware_failure_marker_is_recognized(self) -> None:
+        line = b"TINYDRAW_TIER_B_FAILED invalid selection"
+        self.assertEqual(CAPTURE.failure_marker(line), b"TINYDRAW_TIER_B_FAILED")
+
+    def test_normal_line_has_no_hardware_failure_marker(self) -> None:
+        self.assertIsNone(CAPTURE.failure_marker(b"ordinary log line"))
+
     def test_initial_ready_is_allowed(self) -> None:
         self.assertIsNone(CAPTURE.restart_marker(CAPTURE.READY, False))
 

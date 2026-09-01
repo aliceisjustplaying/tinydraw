@@ -68,6 +68,10 @@ def restart_marker(line: bytes, selection_sent: bool) -> bytes | None:
     return next((marker for marker in RESTART_MARKERS if marker in line), None)
 
 
+def failure_marker(line: bytes) -> bytes | None:
+    return next((marker for marker in FAIL_MARKERS if marker in line), None)
+
+
 def stamp(line: bytes) -> bytes:
     now = datetime.datetime.now().strftime("[%H:%M:%S] ").encode()
     return now + line.rstrip(b"\r") + b"\n"
@@ -227,8 +231,13 @@ def main() -> int:
                     line_number += 1
                     output.write(stamp(line))
                     output.flush()
-                    if any(marker in line for marker in FAIL_MARKERS):
+                    failure = failure_marker(line)
+                    if failure is not None:
                         hardware_failure = True
+                        validation_error = (
+                            "hardware failure marker: " + line.decode(errors="replace")
+                        )
+                        break
                     restart = restart_marker(line, selection_sent)
                     if restart is not None:
                         hardware_failure = True
@@ -251,8 +260,12 @@ def main() -> int:
             if buffer.strip():
                 line_number += 1
                 output.write(stamp(buffer))
-                if any(marker in buffer for marker in FAIL_MARKERS):
+                failure = failure_marker(buffer)
+                if failure is not None:
                     hardware_failure = True
+                    validation_error = (
+                        "hardware failure marker: " + buffer.decode(errors="replace")
+                    )
                 restart = restart_marker(buffer, selection_sent)
                 if restart is not None:
                     hardware_failure = True

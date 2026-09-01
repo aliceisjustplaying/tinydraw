@@ -894,7 +894,13 @@ bool read_selection(std::array<bool, kCells.size()>& selected) {
   std::printf("TINYDRAW_TIER_B_SELECT_READY use: TIER_B_SELECT all|cell,cell\n");
   std::fflush(stdout);
   std::array<char, 1024> command{};
-  if (std::fgets(command.data(), command.size(), stdin) == nullptr) return false;
+  constexpr std::uint32_t kSelectionPolls = 3000;
+  for (std::uint32_t poll = 0; poll < kSelectionPolls; ++poll) {
+    if (std::fgets(command.data(), command.size(), stdin) != nullptr) break;
+    std::clearerr(stdin);
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+  if (command[0] == '\0') return false;
   constexpr char kCommand[] = "TIER_B_SELECT ";
   if (std::strncmp(command.data(), kCommand, sizeof(kCommand) - 1) != 0) return false;
   char* value = command.data() + sizeof(kCommand) - 1;
