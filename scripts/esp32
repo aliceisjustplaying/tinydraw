@@ -11,6 +11,7 @@ gate_harness_build="$root/out/build/esp32-vector-v2-gate-harness"
 tile_census_build="$root/out/build/esp32-vector-v2-tile-census"
 tearing_probe_build="$root/out/build/esp32-vector-v2-tearing-probe"
 panel_probe_build="$root/out/build/esp32-panel-probe"
+touch_identity_probe_build="$root/out/build/esp32-touch-identity-probe"
 action="${1:-build}"
 
 if ! command -v eim >/dev/null 2>&1; then
@@ -124,6 +125,17 @@ case "$action" in
     assert_config "$panel_probe_build/sdkconfig" OCT
     eim run "idf.py -B '$panel_probe_build' -p '$port' flash"
     ;;
+  touch-identity-probe)
+    port="${2:-}"
+    if [[ -z "$port" ]]; then
+      echo "usage: $0 touch-identity-probe PORT" >&2
+      exit 2
+    fi
+    rm -rf "$touch_identity_probe_build"
+    cd "$root/esp32"
+    eim run "idf.py -B '$touch_identity_probe_build' -DTINYDRAW_FIRMWARE_VARIANT=touch-identity-probe build" v6.1
+    eim run "idf.py -B '$touch_identity_probe_build' -p '$port' flash" v6.1
+    ;;
   vector-v2-tearing-probe)
     port="${2:-}"
     if [[ -z "$port" ]]; then
@@ -168,10 +180,10 @@ case "$action" in
     fi
     ;;
   clean)
-    rm -rf "$raster_v1_build" "$demo_build" "$qemu_build" "$graphics_build" "$vector_v2_build" "$gate_harness_build" "$tile_census_build" "$tearing_probe_build" "$panel_probe_build"
+    rm -rf "$raster_v1_build" "$demo_build" "$qemu_build" "$graphics_build" "$vector_v2_build" "$gate_harness_build" "$tile_census_build" "$tearing_probe_build" "$panel_probe_build" "$touch_identity_probe_build"
     ;;
   *)
-    echo "usage: $0 {build|raster-v1 [PORT]|vector-v2 PORT|vector-v2-demo [PORT]|vector-v2-gate-harness PORT [TILE_SLOTS] [verify]|vector-v2-tearing-probe PORT|panel-probe PORT [CELL]|vector-v2-tile-census PORT|qemu|graphics|graphics-test|clean}" >&2
+    echo "usage: $0 {build|raster-v1 [PORT]|vector-v2 PORT|vector-v2-demo [PORT]|vector-v2-gate-harness PORT [TILE_SLOTS] [verify]|vector-v2-tearing-probe PORT|panel-probe PORT [CELL]|touch-identity-probe PORT|vector-v2-tile-census PORT|qemu|graphics|graphics-test|clean}" >&2
     exit 2
     ;;
 esac

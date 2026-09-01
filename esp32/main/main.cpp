@@ -14,6 +14,9 @@
 #ifdef TINYDRAW_PANEL_PROBE
 #include "panel_probe.h"
 #endif
+#ifdef TINYDRAW_TOUCH_IDENTITY_PROBE
+#include "touch_identity_probe.h"
+#endif
 #include "tinydraw/geometry.h"
 #include "tinydraw/ink/ink_stream.h"
 #include "tinydraw/ink/ribbon_geometry.h"
@@ -155,7 +158,10 @@ void run_hardware_app();
 #endif
 
 extern "C" void app_main() {
-#ifdef TINYDRAW_PANEL_PROBE
+#ifdef TINYDRAW_TOUCH_IDENTITY_PROBE
+  tinydraw::esp32::run_touch_identity_probe();
+  return;
+#elif defined(TINYDRAW_PANEL_PROBE)
   tinydraw::esp32::run_panel_probe();
   return;
 #elif defined(TINYDRAW_RASTER_V1)

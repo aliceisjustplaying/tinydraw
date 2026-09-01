@@ -30,6 +30,13 @@ set(TINYDRAW_APP_SRCS
 if(TINYDRAW_QEMU)
   set(TINYDRAW_PLATFORM_SRCS "qemu_display.cpp")
   set(TINYDRAW_PLATFORM_REQUIRES esp_lcd_qemu_rgb)
+elseif(TINYDRAW_TOUCH_IDENTITY_PROBE)
+  set(TINYDRAW_APP_SRCS
+    "main.cpp"
+    "touch_identity_probe.cpp"
+  )
+  set(TINYDRAW_PLATFORM_SRCS "")
+  set(TINYDRAW_PLATFORM_REQUIRES esp_driver_i2c)
 elseif(TINYDRAW_PANEL_PROBE)
   set(TINYDRAW_APP_SRCS
     "main.cpp"
@@ -159,6 +166,9 @@ if(TINYDRAW_PANEL_PROBE)
   endif()
   target_compile_definitions(${COMPONENT_LIB} PRIVATE
     TINYDRAW_PANEL_PROBE_CELL=${TINYDRAW_PANEL_PROBE_CELL})
+endif()
+if(TINYDRAW_TOUCH_IDENTITY_PROBE)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_TOUCH_IDENTITY_PROBE=1)
 endif()
 if(TINYDRAW_RASTER_V1)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_RASTER_V1=1)
