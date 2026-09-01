@@ -4,6 +4,10 @@ idf_component_register(
   PRIV_REQUIRES esp_app_format esp_driver_gpio esp_driver_i2c esp_driver_spi esp_driver_dma esp_lcd esp_mm esp_psram spi_flash
 )
 
+if(NOT "$ENV{IDF_VERSION}" STREQUAL "6.1.0")
+  message(FATAL_ERROR "Tier-B capture images require ESP-IDF v6.1 exactly")
+endif()
+
 execute_process(
   COMMAND git rev-parse HEAD
   WORKING_DIRECTORY "${PROJECT_DIR}"

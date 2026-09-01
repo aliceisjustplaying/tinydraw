@@ -11,6 +11,8 @@ manifest = json.loads((ROOT / "probe-cells.json").read_text())
 source = (ROOT / "main" / "tier_b_probe.cpp").read_text()
 readme = (ROOT / "README.md").read_text()
 capture = (ROOT.parents[1] / "tools" / "tier-b-capture.py").read_text()
+validator = (ROOT.parents[1] / "tools" / "tier_b_ndjson.py").read_text()
+component = (ROOT / "main" / "CMakeLists.txt").read_text()
 
 required_families = {
     "arbitration-aggressors",
@@ -45,6 +47,8 @@ assert "tier_b_store_issue_block" in source and "baseline_cycles" in source
 assert "tier_b_first_line_i_0" in source and "fresh one-line" in source
 assert "aggressor_iterations" in source and "cache attribution failed" in source
 assert "g_aggressor_active" in source
+assert source.count("const std::uint32_t end = read_ccount();\n  const CacheCounters counters") >= 2
+assert "(!cold && counters.ibus_misses != 0)" in source
 assert "mmu_psram_check_ptr_addr_in_xip_psram_instruction_region" in source
 assert "kExpanderPoweredDown" in source and "kExpectedIdentity" in source
 for field in (
@@ -63,6 +67,9 @@ assert "write_receipt" in capture and "--preflight" in capture
 assert "fixture ELF preflight cannot authorize capture" in capture
 assert "--elf" in capture and "archived_elf" in capture
 assert 'payload["manifestSha256"] != manifest_sha256' in capture
+assert "RESTART_MARKERS" in capture and "restart_marker(line, selection_sent)" in capture
+assert 'REQUIRED_IDF_VERSION = "v6.1"' in validator
+assert 'IDF_VERSION}" STREQUAL "6.1.0"' in component
 assert (ROOT / "verify_elf.py").exists()
 assert "TINYDRAW_TIER_B_XIP_PSRAM" in (ROOT / "CMakeLists.txt").read_text()
 assert "CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y" in (
@@ -70,4 +77,6 @@ assert "CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y" in (
 ).read_text()
 assert "draft" in readme.lower() and "unmeasured" in readme.lower()
 assert "serial" in readme.lower() and "flash" in readme.lower()
+assert "`.idf-version` remains `v6.0.2`" in readme
+assert readme.count('flash" v6.1') == 4
 print(f"tier-b draft verified: {len(ids)} cells across {len(families)} families")

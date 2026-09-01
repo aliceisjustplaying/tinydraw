@@ -16,10 +16,9 @@ import time
 from pathlib import Path
 from typing import Any
 
-import serial
-
 from tier_b_ndjson import (
     DEFAULT_MANIFEST,
+    REQUIRED_IDF_VERSION,
     CaptureValidator,
     ManifestContract,
     ValidationError,
@@ -34,10 +33,23 @@ FAIL_MARKERS = (
     b"abort() was called",
     b"TINYDRAW_TIER_B_FAILED",
 )
+RESTART_MARKERS = (
+    READY,
+    b"ESP-ROM:",
+    b"rst:",
+    b"Saved PC:",
+    b"Rebooting...",
+    b"Brownout detector was triggered",
+    b"CPU reset",
+    b"software reset",
+    b"hardware reset",
+    b"watchdog reset",
+)
 BUILD_KEYS = {
     "ok",
     "fixture",
     "variant",
+    "idfVersion",
     "gitCommit",
     "gitDirty",
     "sdkconfigSha256",
@@ -48,6 +60,12 @@ BUILD_KEYS = {
 }
 GIT_COMMIT = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+
+def restart_marker(line: bytes, selection_sent: bool) -> bytes | None:
+    if not selection_sent:
+        return None
+    return next((marker for marker in RESTART_MARKERS if marker in line), None)
 
 
 def stamp(line: bytes) -> bytes:
@@ -69,6 +87,10 @@ def load_preflight(data: bytes, path: Path, variant: str, manifest_sha256: str) 
     if payload["variant"] != variant:
         raise ValidationError(
             f"ELF preflight variant is {payload['variant']!r}, expected {variant!r}"
+        )
+    if payload["idfVersion"] != REQUIRED_IDF_VERSION:
+        raise ValidationError(
+            f"ELF preflight ESP-IDF is {payload['idfVersion']!r}, expected {REQUIRED_IDF_VERSION!r}"
         )
     if payload["manifestSha256"] != manifest_sha256:
         raise ValidationError("ELF preflight does not match the committed manifest")
@@ -143,6 +165,8 @@ def main() -> int:
     parser.add_argument("--no-reset", action="store_true")
     args = parser.parse_args()
 
+    import serial
+
     receipt = args.receipt or Path(str(args.output) + ".receipt.json")
     try:
         if args.output.resolve() == receipt.resolve():
@@ -205,6 +229,14 @@ def main() -> int:
                     output.flush()
                     if any(marker in line for marker in FAIL_MARKERS):
                         hardware_failure = True
+                    restart = restart_marker(line, selection_sent)
+                    if restart is not None:
+                        hardware_failure = True
+                        validation_error = (
+                            "restart marker after selection: "
+                            + restart.decode(errors="replace")
+                        )
+                        break
                     if not selection_sent and READY in line:
                         device.write(f"TIER_B_SELECT {args.cells}\n".encode())
                         device.flush()
@@ -221,8 +253,15 @@ def main() -> int:
                 output.write(stamp(buffer))
                 if any(marker in buffer for marker in FAIL_MARKERS):
                     hardware_failure = True
+                restart = restart_marker(buffer, selection_sent)
+                if restart is not None:
+                    hardware_failure = True
+                    validation_error = (
+                        "restart marker after selection: " + restart.decode(errors="replace")
+                    )
                 try:
-                    validator.feed_line(buffer.decode(), line_number)
+                    if validation_error is None:
+                        validator.feed_line(buffer.decode(), line_number)
                 except (UnicodeDecodeError, ValidationError) as error:
                     validation_error = str(error)
     finally:

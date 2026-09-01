@@ -20,6 +20,7 @@ INSTRUCTION = re.compile(
 LADDER_LINES = (1, 2, 4, 8, 16)
 REPO = Path(__file__).resolve().parents[2]
 MANIFEST = Path(__file__).resolve().with_name("probe-cells.json")
+REQUIRED_IDF_VERSION = "v6.1"
 
 
 class VerificationError(ValueError):
@@ -265,6 +266,7 @@ def main() -> int:
             "ok": True,
             "fixture": args.disassembly is not None,
             "variant": args.variant,
+            "idfVersion": REQUIRED_IDF_VERSION,
             "gitCommit": commit,
             "gitDirty": dirty,
             "sdkconfigSha256": hashlib.sha256(args.sdkconfig.read_bytes()).hexdigest(),

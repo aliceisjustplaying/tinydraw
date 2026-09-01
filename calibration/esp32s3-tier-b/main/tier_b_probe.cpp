@@ -64,6 +64,7 @@ namespace {
 
 constexpr char kPrefix[] = "TINYDRAW_TIER_B_NDJSON ";
 constexpr char kHarnessVersion[] = "0.2.0-review";
+constexpr char kRequiredIdfVersion[] = "v6.1";
 constexpr std::uint32_t kProtocolVersion = 2;
 constexpr std::size_t kIcacheLine = 32;
 constexpr std::size_t kDcacheLine = 64;
@@ -321,14 +322,14 @@ Sample probe_arbitration(Context& context, const Cell& cell, std::uint32_t) {
     return {.reason = "core-1 aggressor task creation failed", .tier_candidate = "affine"};
   }
   clear_cache_counters();
-  const std::uint32_t start = read_ccount();
   g_aggressor_start.store(true, std::memory_order_release);
   while (!g_aggressor_active.load(std::memory_order_acquire)) {
   }
+  const std::uint32_t start = read_ccount();
   const std::uint32_t sum = read_stride(context.psram, kBandwidthBytes);
+  const std::uint32_t end = read_ccount();
   const CacheCounters counters = read_cache_counters();
   const std::uint32_t aggressor_iterations = g_aggressor_iterations.load(std::memory_order_acquire);
-  const std::uint32_t end = read_ccount();
   stop_aggressor();
   g_sink ^= sum;
   const bool attributed = aggressor_iterations != 0 &&
@@ -456,7 +457,8 @@ Sample call_instruction_range(const InstructionRange& range, bool cold) {
   range.function();
   const std::uint32_t end = read_ccount();
   const CacheCounters counters = read_cache_counters();
-  if (counters.ibus_accesses == 0 || (cold && counters.ibus_misses == 0)) {
+  if (counters.ibus_accesses == 0 || (cold && counters.ibus_misses == 0) ||
+      (!cold && counters.ibus_misses != 0)) {
     return {.reason = "expected instruction-cache counters were not observed",
             .tier_candidate = "exact"};
   }
@@ -812,9 +814,9 @@ Sample probe_cross_core_bandwidth(Context& context, const Cell& cell, std::uint3
   }
   const std::uint32_t start = read_ccount();
   const std::uint32_t sum = read_stride(data, kBandwidthBytes);
+  const std::uint32_t end = read_ccount();
   const CacheCounters counters = read_cache_counters();
   const std::uint32_t aggressor_iterations = g_aggressor_iterations.load(std::memory_order_acquire);
-  const std::uint32_t end = read_ccount();
   stop_aggressor();
   g_sink ^= sum;
   if (aggressor_iterations == 0 || !has_expected_data_counters(counters, flash_victim) ||
@@ -951,6 +953,11 @@ void emit_metadata(const std::array<bool, kCells.size()>& selected) {
 }  // namespace
 
 extern "C" void app_main() {
+  if (std::strcmp(esp_get_idf_version(), kRequiredIdfVersion) != 0) {
+    std::printf("TINYDRAW_TIER_B_FAILED ESP-IDF must be %s, got %s\n", kRequiredIdfVersion,
+                esp_get_idf_version());
+    return;
+  }
   if (esp_cpu_get_core_id() != 0) {
     std::printf("TINYDRAW_TIER_B_FAILED app task is not pinned to core 0\n");
     return;

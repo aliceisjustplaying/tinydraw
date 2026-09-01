@@ -171,6 +171,7 @@ class CaptureValidatorTest(unittest.TestCase):
 
     def test_runtime_build_must_match_preflight(self) -> None:
         expected = {
+            "idfVersion": "v6.1",
             "gitCommit": "a" * 40,
             "gitDirty": False,
             "variant": "normal",
@@ -180,6 +181,38 @@ class CaptureValidatorTest(unittest.TestCase):
         }
         with self.assertRaisesRegex(ValidationError, "verified ELF preflight"):
             self.validator(expected).feed_line(metadata(), 1)
+
+    def test_runtime_requires_exact_idf_version(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "expected 'v6.1'"):
+            self.validator().feed_line(metadata(idfVersion="v6.0.2"), 1)
+
+    def test_hot_instruction_sample_rejects_any_icache_miss(self) -> None:
+        validator = CaptureValidator(contract(), "xip-psram", "instruction_psram_hot")
+        validator.feed_line(
+            metadata(
+                variant="xip-psram",
+                availableCells=["store_hit_psram", "instruction_psram_hot"],
+                selectedCells=["instruction_psram_hot"],
+            ),
+            1,
+        )
+        validator.feed_line(
+            line("cell-start", cell="instruction_psram_hot", expectedSamples=1), 2
+        )
+        with self.assertRaisesRegex(ValidationError, "reports an I-cache miss"):
+            validator.feed_line(
+                line(
+                    "sample",
+                    cell="instruction_psram_hot",
+                    ordinal=0,
+                    cycles=9,
+                    bytes=256,
+                    startCore=0,
+                    endCore=0,
+                    cacheCounters=counters(ibusAccesses=8, ibusMisses=1, dbusAccesses=0),
+                ),
+                3,
+            )
 
     def test_post_completion_record_fails_tail(self) -> None:
         validator = self.validator()

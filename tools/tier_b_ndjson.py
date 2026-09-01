@@ -13,6 +13,7 @@ from typing import Any
 
 PREFIX = "TINYDRAW_TIER_B_NDJSON "
 PROTOCOL_VERSION = 2
+REQUIRED_IDF_VERSION = "v6.1"
 DEFAULT_MANIFEST = (
     Path(__file__).resolve().parents[1]
     / "calibration"
@@ -307,7 +308,11 @@ class CaptureValidator:
         for key, value in expected.items():
             if record[key] != value:
                 raise ValidationError(f"{path}.{key} is {record[key]!r}, expected {value!r}")
-        _string(record["idfVersion"], f"{path}.idfVersion")
+        idf_version = _string(record["idfVersion"], f"{path}.idfVersion")
+        if idf_version != REQUIRED_IDF_VERSION:
+            raise ValidationError(
+                f"{path}.idfVersion is {idf_version!r}, expected {REQUIRED_IDF_VERSION!r}"
+            )
         _string(record["gitCommit"], f"{path}.gitCommit")
         _boolean(record["gitDirty"], f"{path}.gitDirty")
         _sha256(record["sdkconfigSha256"], f"{path}.sdkconfigSha256")
@@ -317,6 +322,7 @@ class CaptureValidator:
         _string(record["bootId"], f"{path}.bootId")
         if self.expected_build is not None:
             for key in (
+                "idfVersion",
                 "gitCommit",
                 "gitDirty",
                 "variant",
@@ -435,6 +441,8 @@ class CaptureValidator:
                 raise ValidationError(f"{path} lacks instruction-cache accesses")
             if cell != "instruction_psram_hot" and counters["ibusMisses"] == 0:
                 raise ValidationError(f"{path} lacks the expected instruction-cache miss")
+            if cell == "instruction_psram_hot" and counters["ibusMisses"] != 0:
+                raise ValidationError(f"{path} hot instruction probe reports an I-cache miss")
         if cell == "first_line_d_flash" and (
             counters["dbusAccesses"] == 0 or counters["dbusFlashMisses"] == 0
         ):

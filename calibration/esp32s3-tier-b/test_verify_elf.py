@@ -120,6 +120,7 @@ class VerifyTierBElfTest(unittest.TestCase):
         self.assertEqual(process.returncode, 0, process.stderr)
         payload = json.loads(result.read_text())
         self.assertEqual(payload["variant"], "normal")
+        self.assertEqual(payload["idfVersion"], "v6.1")
         self.assertTrue(payload["fixture"])
         self.assertEqual(payload["issueBlocks"][0]["operations"], 256)
         self.assertEqual(len(payload["firstLineInstructionPool"]), 5)
