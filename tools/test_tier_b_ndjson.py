@@ -30,6 +30,7 @@ def contract() -> ManifestContract:
         cells=(
             CellContract("store_hit_psram", 2, ("normal", "xip-psram")),
             CellContract("instruction_psram_hot", 1, ("xip-psram",)),
+            CellContract("instruction_psram_cold", 1, ("xip-psram",)),
         ),
     )
 
@@ -152,6 +153,40 @@ class CaptureValidatorTest(unittest.TestCase):
         )
         validator.feed_line(line("cell-start", cell=cell, expectedSamples=1), 2)
         return validator
+
+    def instruction_validator(self, cell: str) -> CaptureValidator:
+        validator = CaptureValidator(contract(), "xip-psram", cell)
+        validator.feed_line(
+            metadata(
+                variant="xip-psram",
+                availableCells=[
+                    "store_hit_psram",
+                    "instruction_psram_hot",
+                    "instruction_psram_cold",
+                ],
+                selectedCells=[cell],
+            ),
+            1,
+        )
+        validator.feed_line(line("cell-start", cell=cell, expectedSamples=1), 2)
+        return validator
+
+    @staticmethod
+    def instruction_sample(cell: str, accesses: int, misses: int) -> str:
+        return line(
+            "sample",
+            cell=cell,
+            ordinal=0,
+            cycles=9,
+            bytes=256,
+            startCore=0,
+            endCore=0,
+            cacheCounters=counters(
+                ibusAccesses=accesses,
+                ibusMisses=misses,
+                dbusAccesses=0,
+            ),
+        )
 
     def contention_sample(
         self, cell: str, aggressor_counters: dict[str, int]
@@ -297,32 +332,26 @@ class CaptureValidatorTest(unittest.TestCase):
                 1,
             )
 
+    def test_hot_instruction_sample_accepts_zero_accesses_and_zero_misses(self) -> None:
+        self.instruction_validator("instruction_psram_hot").feed_line(
+            self.instruction_sample("instruction_psram_hot", 0, 0), 3
+        )
+
+    def test_hot_instruction_sample_accepts_accesses_without_misses(self) -> None:
+        self.instruction_validator("instruction_psram_hot").feed_line(
+            self.instruction_sample("instruction_psram_hot", 8, 0), 3
+        )
+
     def test_hot_instruction_sample_rejects_any_icache_miss(self) -> None:
-        validator = CaptureValidator(contract(), "xip-psram", "instruction_psram_hot")
-        validator.feed_line(
-            metadata(
-                variant="xip-psram",
-                availableCells=["store_hit_psram", "instruction_psram_hot"],
-                selectedCells=["instruction_psram_hot"],
-            ),
-            1,
-        )
-        validator.feed_line(
-            line("cell-start", cell="instruction_psram_hot", expectedSamples=1), 2
-        )
         with self.assertRaisesRegex(ValidationError, "reports an I-cache miss"):
-            validator.feed_line(
-                line(
-                    "sample",
-                    cell="instruction_psram_hot",
-                    ordinal=0,
-                    cycles=9,
-                    bytes=256,
-                    startCore=0,
-                    endCore=0,
-                    cacheCounters=counters(ibusAccesses=8, ibusMisses=1, dbusAccesses=0),
-                ),
-                3,
+            self.instruction_validator("instruction_psram_hot").feed_line(
+                self.instruction_sample("instruction_psram_hot", 8, 1), 3
+            )
+
+    def test_cold_instruction_sample_rejects_zero_counters(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "lacks instruction-cache accesses"):
+            self.instruction_validator("instruction_psram_cold").feed_line(
+                self.instruction_sample("instruction_psram_cold", 0, 0), 3
             )
 
     def test_flash_attribution_uses_isolated_counters(self) -> None:

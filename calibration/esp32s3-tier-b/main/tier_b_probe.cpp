@@ -138,6 +138,16 @@ struct CacheCounters {
   std::uint32_t dbus_psram_misses = 0;
 };
 
+constexpr bool valid_instruction_counters(bool cold, std::uint32_t accesses,
+                                          std::uint32_t misses) {
+  return cold ? accesses != 0 && misses != 0 : misses == 0;
+}
+
+static_assert(valid_instruction_counters(false, 0, 0));
+static_assert(valid_instruction_counters(false, 8, 0));
+static_assert(!valid_instruction_counters(false, 8, 1));
+static_assert(!valid_instruction_counters(true, 0, 0));
+
 enum class Aggressor : std::uint32_t { kInternal, kFlash, kPsram };
 
 struct AttributionEvidence {
@@ -661,9 +671,9 @@ Sample call_instruction_range(const InstructionRange& range, bool cold) {
   range.function();
   const std::uint32_t end = read_ccount();
   const CacheCounters counters = read_cache_counters();
-  if (counters.ibus_accesses == 0 || (cold && counters.ibus_misses == 0) ||
-      (!cold && counters.ibus_misses != 0)) {
-    return {.reason = "expected instruction-cache counters were not observed",
+  if (!valid_instruction_counters(cold, counters.ibus_accesses, counters.ibus_misses)) {
+    return {.reason = cold ? "cold instruction probe lacks I-cache access or miss evidence"
+                           : "hot instruction probe reports an I-cache miss",
             .tier_candidate = "exact"};
   }
   return timed_result(start, end, bytes, counters);

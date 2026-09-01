@@ -81,7 +81,9 @@ for probe in ("probe_arbitration", "probe_cross_core_bandwidth"):
     report = body.index("const AggressorReport aggressor = stop_aggressor();", counters)
     assert timed_start < victim < timed_end < counters < report
     assert "g_aggressor" not in body[timed_start:timed_end]
-assert "(!cold && counters.ibus_misses != 0)" in source
+assert "valid_instruction_counters" in source
+assert "static_assert(valid_instruction_counters(false, 0, 0))" in source
+assert "static_assert(!valid_instruction_counters(true, 0, 0))" in source
 assert "mmu_psram_check_ptr_addr_in_xip_psram_instruction_region" in source
 assert "kExpanderPoweredDown" in source and "kExpectedIdentity" in source
 for field in (
