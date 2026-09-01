@@ -563,14 +563,14 @@ Sample probe_store_hit(Context& context, const Cell&, std::uint32_t ordinal) {
   clear_cache_counters();
   const std::uint32_t baseline_start = read_ccount();
   tier_b_store_issue_block(internal_word, ordinal + 1);
-  const CacheCounters baseline_counters = read_cache_counters();
   const std::uint32_t baseline_end = read_ccount();
+  const CacheCounters baseline_counters = read_cache_counters();
   tier_b_store_issue_block(psram_word, ordinal);
   clear_cache_counters();
   const std::uint32_t start = read_ccount();
   tier_b_store_issue_block(psram_word, ordinal + 1);
-  const CacheCounters counters = read_cache_counters();
   const std::uint32_t end = read_ccount();
+  const CacheCounters counters = read_cache_counters();
   g_sink ^= *psram_word ^ *internal_word;
   if (counters.dbus_accesses == 0 || counters.dbus_psram_misses != 0) {
     return {.reason = "hot PSRAM store counters did not show hit-only accesses",
