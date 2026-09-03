@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# Prepare a blogpost markdown file for manual distribution to
+# Substack, Twitter Articles, and Leaflet.
+#
+# Usage: scripts/blog-dist <post.md> [--open] [--leaflet] [--image-base URL]
+#   --open            open post.html (Substack) and post-twitter.html in the browser
+#   --leaflet         copy body-leaflet.md to the clipboard
+#   --image-base URL  rewrite image URLs in the Leaflet variant to URL/NN.ext
+#                     (Leaflet fetches pasted images client-side, so the host
+#                     must send CORS headers; substackcdn does not,
+#                     raw.githubusercontent.com does)
+#
+# Conventions the markdown must follow (same as v4..v7):
+#   line 1: "# Title"
+#   line 3: "*subtitle*"
+#   body follows; images are ![](https://...) on their own line.
+#
+# Outputs to out/blog/<basename>/:
+#   post.html          Substack: body only (title/subtitle go in Substack's fields).
+#                      Browser -> Cmd+A, Cmd+C -> paste into the draft body.
+#   post-twitter.html  Twitter Articles: same, but the subtitle is the first
+#                      (italic) paragraph since Articles have no subtitle field.
+#                      Images do not paste; insert images/NN.* by hand.
+#   body-leaflet.md    Leaflet: body only (subtitle goes in Leaflet's
+#                      "description" field). Paste as plain text. Images only
+#                      auto-upload with --image-base.
+#   title.txt          title + subtitle
+#   images/NN.ext      every image in the post, for manual upload
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$root"
+
+src="${1:?usage: scripts/blog-dist <post.md> [--open] [--leaflet] [--image-base URL]}"
+shift
+open_after=""; copy_md=""; image_base=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --open) open_after=1 ;;
+    --leaflet) copy_md=1 ;;
+    --image-base) image_base="${2:?--image-base needs a URL}"; shift ;;
+    *) echo "unknown flag: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+name="$(basename "${src%.md}")"
+out="out/blog/$name"
+mkdir -p "$out/images"
+
+IMAGE_BASE="$image_base" python3 - "$src" "$out" <<'PY'
+import os, re, sys, pathlib, urllib.request
+src, out = sys.argv[1], pathlib.Path(sys.argv[2])
+image_base = os.environ.get("IMAGE_BASE", "").rstrip("/")
+lines = pathlib.Path(src).read_text().split("\n")
+assert lines[0].startswith("# ") and lines[2].startswith("*"), "line 1 must be '# Title', line 3 '*subtitle*'"
+title = lines[0][2:].strip()
+subtitle = lines[2].strip().strip("*")
+body = "\n".join(lines[3:]).lstrip("\n")
+(out / "title.txt").write_text(f"{title}\n{subtitle}\n")
+(out / "body.md").write_text(body)
+(out / "body-twitter.md").write_text(f"*{subtitle}*\n\n{body}")
+
+# CDNs with f_auto (substackcdn) ignore the URL's extension, so name the
+# file by its magic bytes instead.
+def sniff(data):
+    if data[:8] == b"\x89PNG\r\n\x1a\n": return ".png"
+    if data[:3] == b"\xff\xd8\xff": return ".jpg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP": return ".webp"
+    if data[:6] in (b"GIF87a", b"GIF89a"): return ".gif"
+    return ".bin"
+urls = re.findall(r"!\[[^\]]*\]\((https?://[^)\s]+)\)", body)
+local = []
+for i, url in enumerate(urls, 1):
+    existing = list((out / "images").glob(f"{i:02d}.*"))
+    if existing:
+        dest = existing[0]
+        print(f"image {i:02d}: {dest} (cached)")
+    else:
+        with urllib.request.urlopen(url) as r:
+            data = r.read()
+        dest = out / "images" / f"{i:02d}{sniff(data)}"
+        dest.write_bytes(data)
+        print(f"image {i:02d}: {dest}")
+    local.append(dest.name)
+
+leaflet = body
+if image_base:
+    for url, fname in zip(urls, local):
+        leaflet = leaflet.replace(f"({url})", f"({image_base}/{fname})", 1)
+(out / "body-leaflet.md").write_text(leaflet)
+print(f"title: {title}")
+print(f"subtitle: {subtitle}")
+PY
+
+for variant in body body-twitter; do
+  html="$out/${variant/body/post}.html"
+  pandoc "$out/$variant.md" -f markdown+smart -t html -s --wrap=none \
+    --metadata title="$name" -o "$html"
+  echo "$html  (img $(grep -c '<img' "$html"), h2 $(grep -c '<h2' "$html"), hr $(grep -c '<hr' "$html"), blockquote $(grep -c '<blockquote' "$html"), br $(grep -c '<br' "$html"))"
+done
+echo "leaflet: $out/body-leaflet.md$([[ -n "$image_base" ]] && echo " (images -> $image_base)" || echo " (images: drop images/* in by hand)")"
+
+if [[ -n "$copy_md" ]]; then
+  pbcopy < "$out/body-leaflet.md"
+  echo "copied body-leaflet.md to clipboard"
+fi
+if [[ -n "$open_after" ]]; then
+  open "$out/post.html" "$out/post-twitter.html"
+fi
