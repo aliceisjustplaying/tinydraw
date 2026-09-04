@@ -5,6 +5,7 @@
 
 #include "esp_timer.h"
 #include "tinydraw/vector_v2/incremental_document.h"
+#include "vector_v2_frame_trace.h"
 namespace tinydraw::esp32 {
 namespace {
 
@@ -76,7 +77,8 @@ void LiveStrokeSession::reset_stroke_stats() {
 LiveStrokeStartResult LiveStrokeSession::begin(Point screen_point, std::uint32_t event_us,
                                                float brush_size, vector_v2::OperationTool tool,
                                                std::uint16_t color, std::uint16_t gesture_id,
-                                               const vector_v2::ChromeState& chrome) {
+                                               const vector_v2::ChromeState& chrome,
+                                               std::uint32_t event_sequence) {
   InkConfig config = ink_.config();
   config.size = brush_size;
   ink_.set_config(config);
@@ -102,7 +104,9 @@ LiveStrokeStartResult LiveStrokeSession::begin(Point screen_point, std::uint32_t
   }
   ribbon_.reset();
   static_cast<void>(ribbon_.append(last_ink_, true));
+  FrameTraceScope frame_trace("stroke_start", event_sequence, event_us);
   const LivePresentationTiming timing = presenter_.show_start(last_ink_, color_, chrome, event_us);
+  frame_trace.finish(timing);
   metrics_.include(timing);
   return {.presentation = timing, .accepted = true};
 }
@@ -121,7 +125,8 @@ bool LiveStrokeSession::commit_operation(const vector_v2::BuiltOperation& operat
 }
 
 LiveStrokeMoveResult LiveStrokeSession::move(Point screen_point, std::uint32_t event_us,
-                                             const vector_v2::ChromeState& chrome) {
+                                             const vector_v2::ChromeState& chrome,
+                                             std::uint32_t event_sequence) {
   LiveStrokeMoveResult result;
   if (!active() || (screen_point.x == last_touch_.x && screen_point.y == last_touch_.y)) {
     return result;
@@ -143,7 +148,9 @@ LiveStrokeMoveResult LiveStrokeSession::move(Point screen_point, std::uint32_t e
   const vector_v2::OperationPoint add_point = presenter_.operation_point(last_ink_);
   const RibbonUpdate update = ribbon_.append(last_ink_, true, last_canvas_touch_);
   result.geometry_us = static_cast<std::uint32_t>(esp_timer_get_time()) - event_us;
+  FrameTraceScope frame_trace("stroke_move", event_sequence, event_us);
   result.presentation = presenter_.show_update(update, color_, chrome, event_us);
+  frame_trace.finish(result.presentation);
   result.presented = true;
   metrics_.include(result.presentation);
   if (builder_.add(add_point)) {
@@ -154,13 +161,16 @@ LiveStrokeMoveResult LiveStrokeSession::move(Point screen_point, std::uint32_t e
   builder_.cancel();
   ribbon_.reset();
   ink_.end();
+  FrameTraceScope recovery_trace("stroke_recover", event_sequence, event_us);
   result.rejection_refresh = presenter_.refresh(chrome, event_us);
+  recovery_trace.finish(result.rejection_refresh);
   result.rejected = true;
   return result;
 }
 
 LiveStrokeFinishResult LiveStrokeSession::finish(std::uint32_t event_us,
-                                                 const vector_v2::ChromeState& chrome) {
+                                                 const vector_v2::ChromeState& chrome,
+                                                 std::uint32_t event_sequence) {
   LiveStrokeFinishResult result{};
   result.first_operation = first_operation_;
   if (!active()) {
@@ -173,7 +183,9 @@ LiveStrokeFinishResult LiveStrokeSession::finish(std::uint32_t event_us,
     ribbon_.reset();
     ink_.end();
     const std::int64_t refresh_started = esp_timer_get_time();
+    FrameTraceScope recovery_trace("stroke_cancel", event_sequence, event_us);
     result.refresh = presenter_.refresh(chrome, event_us);
+    recovery_trace.finish(result.refresh);
     result.refresh_wall_us = esp_timer_get_time() - refresh_started;
     result.metrics = metrics_;
     return result;
@@ -218,7 +230,9 @@ LiveStrokeFinishResult LiveStrokeSession::finish(std::uint32_t event_us,
   const std::int64_t finish_preview_started = esp_timer_get_time();
   last_ink_ =
       ink_.finish({.x = last_canvas_touch_.x, .y = last_canvas_touch_.y, .timestamp_us = event_us});
+  FrameTraceScope preview_trace("stroke_finish", event_sequence, event_us);
   result.preview = presenter_.show_update(ribbon_.finish(last_ink_), color_, chrome, event_us);
+  preview_trace.finish(result.preview);
   metrics_.include(result.preview);
   result.finish_preview_us = esp_timer_get_time() - finish_preview_started;
 
@@ -241,7 +255,9 @@ LiveStrokeFinishResult LiveStrokeSession::finish(std::uint32_t event_us,
 
   const std::int64_t refresh_started = esp_timer_get_time();
   if (!result.committed) {
+    FrameTraceScope recovery_trace("stroke_recover", event_sequence, event_us);
     result.refresh = presenter_.refresh(chrome, event_us);
+    recovery_trace.finish(result.refresh);
   } else {
     result.refresh.passed = true;
   }

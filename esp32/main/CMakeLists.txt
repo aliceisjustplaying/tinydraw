@@ -103,6 +103,9 @@ else()
   if(TINYDRAW_VECTOR_V2_DEMO)
     list(APPEND TINYDRAW_APP_SRCS ${TINYDRAW_VECTOR_V2_DEMO_SRCS})
   endif()
+  if(TINYDRAW_FRAME_TRACE)
+    list(APPEND TINYDRAW_APP_SRCS "vector_v2/vector_v2_frame_trace.cpp")
+  endif()
   set(TINYDRAW_PLATFORM_SRCS "")
   set(TINYDRAW_PLATFORM_REQUIRES esp_event esp_lcd_co5300 esp_lcd_touch_cst816s esp_netif esp_wifi nvs_flash pcf85063a)
 endif()
@@ -196,6 +199,25 @@ if(TINYDRAW_VECTOR_V2_TEARING_PROBE)
 endif()
 if(TINYDRAW_VECTOR_V2_DEMO)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_VECTOR_V2_DEMO=1)
+endif()
+if(TINYDRAW_FRAME_TRACE)
+  set(TINYDRAW_FRAME_TRACE_BUNDLE_ID "" CACHE STRING
+      "Stable identifier mapped to one frozen frame-trace bundle")
+  if(TINYDRAW_FRAME_TRACE_BUNDLE_ID STREQUAL "")
+    message(FATAL_ERROR "TINYDRAW_FRAME_TRACE_BUNDLE_ID is required for frame-trace builds")
+  endif()
+  execute_process(
+    COMMAND git rev-parse --verify HEAD
+    WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/../.."
+    OUTPUT_VARIABLE TINYDRAW_FRAME_TRACE_SOURCE
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    COMMAND_ERROR_IS_FATAL ANY
+  )
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    TINYDRAW_FRAME_TRACE=1
+    TINYDRAW_FRAME_TRACE_BUNDLE_ID=\"${TINYDRAW_FRAME_TRACE_BUNDLE_ID}\"
+    TINYDRAW_FRAME_TRACE_SOURCE=\"${TINYDRAW_FRAME_TRACE_SOURCE}\"
+  )
 endif()
 if(TINYDRAW_QEMU)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE TINYDRAW_QEMU=1)

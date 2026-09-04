@@ -10,6 +10,8 @@ demo_build="$root/out/build/esp32-vector-v2-demo"
 gate_harness_build="$root/out/build/esp32-vector-v2-gate-harness"
 tile_census_build="$root/out/build/esp32-vector-v2-tile-census"
 tearing_probe_build="$root/out/build/esp32-vector-v2-tearing-probe"
+frame_trace_80_build="$root/out/build/esp32-vector-v2-frame-trace-80"
+frame_trace_40_build="$root/out/build/esp32-vector-v2-frame-trace-40"
 panel_probe_build="$root/out/build/esp32-panel-probe"
 action="${1:-build}"
 
@@ -21,9 +23,34 @@ fi
 assert_config() {
   local config="$1"
   local memory_mode="$2"
+  local memory_speed="${3:-80}"
   grep -q '^CONFIG_COMPILER_OPTIMIZATION_PERF=y$' "$config"
   grep -q '^CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240$' "$config"
   grep -q "^CONFIG_SPIRAM_MODE_${memory_mode}=y$" "$config"
+  grep -q "^CONFIG_SPIRAM_SPEED_${memory_speed}M=y$" "$config"
+}
+
+build_frame_trace() {
+  local speed="$1"
+  local port="$2"
+  local build="$frame_trace_80_build"
+  if [[ "$speed" == "40" ]]; then
+    build="$frame_trace_40_build"
+  fi
+  if ! git -C "$root" diff --quiet || ! git -C "$root" diff --cached --quiet; then
+    echo "frame-trace builds require a committed source tree" >&2
+    exit 2
+  fi
+  local source_id
+  source_id="$(git -C "$root" rev-parse HEAD)"
+  local bundle_id="tinydraw-frame-v1-${speed}-${source_id:0:12}"
+  rm -rf "$build"
+  cd "$root/esp32"
+  eim run "idf.py -B '$build' -DTINYDRAW_FIRMWARE_VARIANT=frame-trace-$speed -DTINYDRAW_FRAME_TRACE_BUNDLE_ID='$bundle_id' build" v6.1
+  assert_config "$build/sdkconfig" OCT "$speed"
+  if [[ -n "$port" ]]; then
+    eim run "idf.py -B '$build' -p '$port' flash" v6.1
+  fi
 }
 
 enable_qemu() {
@@ -72,6 +99,12 @@ case "$action" in
     if [[ -n "$port" ]]; then
       eim run "idf.py -B '$demo_build' -p '$port' flash"
     fi
+    ;;
+  vector-v2-frame-trace-80)
+    build_frame_trace 80 "${2:-}"
+    ;;
+  vector-v2-frame-trace-40)
+    build_frame_trace 40 "${2:-}"
     ;;
   vector-v2-gate-harness)
     port="${2:-}"
@@ -168,10 +201,10 @@ case "$action" in
     fi
     ;;
   clean)
-    rm -rf "$raster_v1_build" "$demo_build" "$qemu_build" "$graphics_build" "$vector_v2_build" "$gate_harness_build" "$tile_census_build" "$tearing_probe_build" "$panel_probe_build"
+    rm -rf "$raster_v1_build" "$demo_build" "$qemu_build" "$graphics_build" "$vector_v2_build" "$gate_harness_build" "$tile_census_build" "$tearing_probe_build" "$frame_trace_80_build" "$frame_trace_40_build" "$panel_probe_build"
     ;;
   *)
-    echo "usage: $0 {build|raster-v1 [PORT]|vector-v2 PORT|vector-v2-demo [PORT]|vector-v2-gate-harness PORT [TILE_SLOTS] [verify]|vector-v2-tearing-probe PORT|panel-probe PORT [CELL]|vector-v2-tile-census PORT|qemu|graphics|graphics-test|clean}" >&2
+    echo "usage: $0 {build|raster-v1 [PORT]|vector-v2 PORT|vector-v2-demo [PORT]|vector-v2-frame-trace-80 [PORT]|vector-v2-frame-trace-40 [PORT]|vector-v2-gate-harness PORT [TILE_SLOTS] [verify]|vector-v2-tearing-probe PORT|panel-probe PORT [CELL]|vector-v2-tile-census PORT|qemu|graphics|graphics-test|clean}" >&2
     exit 2
     ;;
 esac

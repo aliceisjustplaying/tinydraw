@@ -67,11 +67,14 @@ class LiveStrokeSession {
   [[nodiscard]] LiveStrokeStartResult begin(Point screen_point, std::uint32_t event_us,
                                             float brush_size, vector_v2::OperationTool tool,
                                             std::uint16_t color, std::uint16_t gesture_id,
-                                            const vector_v2::ChromeState& chrome);
+                                            const vector_v2::ChromeState& chrome,
+                                            std::uint32_t event_sequence = 0U);
   [[nodiscard]] LiveStrokeMoveResult move(Point screen_point, std::uint32_t event_us,
-                                          const vector_v2::ChromeState& chrome);
+                                          const vector_v2::ChromeState& chrome,
+                                          std::uint32_t event_sequence = 0U);
   [[nodiscard]] LiveStrokeFinishResult finish(std::uint32_t event_us,
-                                              const vector_v2::ChromeState& chrome);
+                                              const vector_v2::ChromeState& chrome,
+                                              std::uint32_t event_sequence = 0U);
 
  private:
   [[nodiscard]] bool commit_operation(const vector_v2::BuiltOperation& operation);

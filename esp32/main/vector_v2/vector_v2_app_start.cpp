@@ -27,6 +27,7 @@
 #include "vector_v2_demo_controller.h"
 #endif
 #include "vector_v2_export.h"
+#include "vector_v2_frame_trace.h"
 #include "vector_v2_live_stroke_session.h"
 #include "vector_v2_presenter.h"
 #include "vector_v2_touch_sampler.h"
@@ -229,6 +230,10 @@ bool vector_v2_app_start(VectorV2AppSession& session) {
         producer.ready());
     return false;
   }
+  if (!start_frame_trace()) {
+    std::printf("TINYDRAW_LIVE_FAIL reason=psram_clock_readback\n");
+    return false;
+  }
 
   gpio_config_t button_config{};
   button_config.pin_bit_mask = 1ULL << static_cast<unsigned>(kModeButton);
@@ -388,6 +393,12 @@ bool vector_v2_app_start(VectorV2AppSession& session) {
         "short=toggle_hud\n",
         static_cast<unsigned long>(kDemoCapacity),
         static_cast<unsigned long>(kDemoCapacity * sizeof(vector_v2::DemoSample)));
+#ifdef TINYDRAW_FRAME_TRACE
+    if (!load_frame_trace_workload(*session.demo)) {
+      std::printf("TINYDRAW_FRAME_TRACE_FAIL reason=workload\n");
+      return false;
+    }
+#endif
   }
 #endif
 
@@ -409,6 +420,9 @@ bool vector_v2_app_start(VectorV2AppSession& session) {
   session.button_pressed_us = 0U;
   session.demo_replay_sequence = 0U;
   session.demo_sampler_stopped = false;
+#ifdef TINYDRAW_FRAME_TRACE
+  session.frame_trace_started = false;
+#endif
 #endif
   session.next_lift_id = 1U;
   session.lift_reports_dropped = 0U;

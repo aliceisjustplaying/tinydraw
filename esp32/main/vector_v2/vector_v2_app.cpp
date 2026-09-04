@@ -34,6 +34,7 @@
 #include "vector_v2_demo_controller.h"
 #endif
 #include "vector_v2_export.h"
+#include "vector_v2_frame_trace.h"
 #include "vector_v2_live_stroke_session.h"
 #include "vector_v2_presenter.h"
 #include "vector_v2_touch_sampler.h"
@@ -63,6 +64,20 @@ constexpr bool navigation_active(InteractionMode mode) {
 }
 
 std::uint32_t now_us() { return static_cast<std::uint32_t>(esp_timer_get_time()); }
+
+#ifdef TINYDRAW_FRAME_TRACE
+const char* touch_kind_name(vector_v2::TouchEventKind kind) {
+  switch (kind) {
+    case vector_v2::TouchEventKind::kDown:
+      return "down";
+    case vector_v2::TouchEventKind::kMove:
+      return "move";
+    case vector_v2::TouchEventKind::kUp:
+      return "up";
+  }
+  return "unknown";
+}
+#endif
 
 }  // namespace
 
@@ -282,6 +297,24 @@ void vector_v2_app_step(VectorV2AppSession& session) {
   poll_previous_us = loop_us;
 
 #ifdef TINYDRAW_VECTOR_V2_DEMO
+#ifdef TINYDRAW_FRAME_TRACE
+  if (!session.frame_trace_started) {
+    session.frame_trace_started = true;
+    touch_sampler.stop();
+    touch_sampler.discard_pending();
+    demo_sampler_stopped = true;
+    const bool baseline_ready = reset_demo_baseline(true) && reset_demo_baseline(false);
+    if (!baseline_ready || !demo.begin_replay(now_us())) {
+      std::printf(baseline_ready ? "TINYDRAW_FRAME_TRACE_FAIL reason=replay_timer\n"
+                                 : "TINYDRAW_FRAME_TRACE_FAIL reason=replay_baseline\n");
+      session.running = false;
+      return;
+    }
+    demo_replay_sequence = 0U;
+    std::printf("TINYDRAW_FRAME_TRACE_REPLAY_BEGIN count=%lu core1_touch_stopped=1\n",
+                static_cast<unsigned long>(demo.sample_count()));
+  }
+#endif
   if (demo_sampler_stopped && !demo.replaying()) {
     const bool replay_failed = demo.replay_failed();
     touch_sampler.discard_pending();
@@ -374,6 +407,18 @@ void vector_v2_app_step(VectorV2AppSession& session) {
                                  : replay_chrome_toggle ? replay_event_us
 #endif
                                                         : loop_us;
+#ifdef TINYDRAW_FRAME_TRACE
+  if (sample_ready) {
+    trace_input(sampled_touch->sequence, touch_kind_name(sampled_touch->kind), point.x, point.y,
+                event_us,
+#ifdef TINYDRAW_VECTOR_V2_DEMO
+                replay_touch_event
+#else
+                false
+#endif
+    );
+  }
+#endif
 #ifdef TINYDRAW_VECTOR_V2_DEMO
   if (replay_touch_event) {
     if (lift_event) {
@@ -607,8 +652,11 @@ void vector_v2_app_step(VectorV2AppSession& session) {
         // tiny-viewport grab requirement or a delayed promotion threshold.
         toolbar_start = point;
         begin_pan(point, InteractionMode::kMinimapPan);
-        pan_metrics.include(
-            presenter.pan_minimap_from(pan_start_x, pan_start_y, point, chrome, event_us));
+        FrameTraceScope frame_trace("minimap_pan", sampled_touch->sequence, event_us);
+        const auto timing =
+            presenter.pan_minimap_from(pan_start_x, pan_start_y, point, chrome, event_us);
+        frame_trace.finish(timing);
+        pan_metrics.include(timing);
       } else if (vector_v2::chrome_minimap_dock_drag_candidate({point.x, point.y}, chrome)) {
         // This physical finger zone overlaps the size/document buttons.
         // Preserve a stationary toolbar tap, but let deliberate movement
@@ -642,7 +690,7 @@ void vector_v2_app_step(VectorV2AppSession& session) {
           next_gesture = 1U;
         }
         static_cast<void>(stroke.begin(point, event_us, vector_v2::brush_size(chrome.size), tool,
-                                       color, gesture_id, chrome));
+                                       color, gesture_id, chrome, sampled_touch->sequence));
       }
     } else if (interaction == InteractionMode::kMinimapPan &&
                (point.x != last_touch.x || point.y != last_touch.y)) {
@@ -656,8 +704,11 @@ void vector_v2_app_step(VectorV2AppSession& session) {
         toolbar_samples = 0;
         begin_pan(toolbar_start, InteractionMode::kMinimapPan);
         last_touch = point;
-        pan_metrics.include(
-            presenter.pan_minimap_from(pan_start_x, pan_start_y, point, chrome, event_us));
+        FrameTraceScope frame_trace("minimap_pan", sampled_touch->sequence, event_us);
+        const auto timing =
+            presenter.pan_minimap_from(pan_start_x, pan_start_y, point, chrome, event_us);
+        frame_trace.finish(timing);
+        pan_metrics.include(timing);
       } else {
         toolbar_sum.x += point.x;
         toolbar_sum.y += point.y;
@@ -671,8 +722,11 @@ void vector_v2_app_step(VectorV2AppSession& session) {
         toolbar_samples = 0;
         begin_pan(toolbar_start, InteractionMode::kPan);
         last_touch = point;
-        pan_metrics.include(
-            presenter.pan_from(pan_start_x, pan_start_y, pan_start, point, chrome, event_us));
+        FrameTraceScope frame_trace("pan", sampled_touch->sequence, event_us);
+        const auto timing =
+            presenter.pan_from(pan_start_x, pan_start_y, pan_start, point, chrome, event_us);
+        frame_trace.finish(timing);
+        pan_metrics.include(timing);
       } else {
         toolbar_sum.x += point.x;
         toolbar_sum.y += point.y;
@@ -682,13 +736,16 @@ void vector_v2_app_step(VectorV2AppSession& session) {
     } else if (interaction == InteractionMode::kPan &&
                (point.x != last_touch.x || point.y != last_touch.y)) {
       last_touch = point;
+      FrameTraceScope frame_trace("pan", sampled_touch->sequence, event_us);
       const auto timing =
           presenter.pan_from(pan_start_x, pan_start_y, pan_start, point, chrome, event_us);
+      frame_trace.finish(timing);
       pan_metrics.include(timing);
     } else if (interaction == InteractionMode::kStroke && stroke.active() &&
                (point.x != last_touch.x || point.y != last_touch.y)) {
       last_touch = point;
-      const LiveStrokeMoveResult move = stroke.move(point, event_us, chrome);
+      const LiveStrokeMoveResult move =
+          stroke.move(point, event_us, chrome, sampled_touch->sequence);
       if (move.rejected) {
         if (sync_history_controls(chrome, log)) {
           background.mark_history_controls_dirty();
@@ -771,7 +828,8 @@ void vector_v2_app_step(VectorV2AppSession& session) {
       report.detected_us = esp_timer_get_time();
       report.id = next_lift_id++;
       const std::uint32_t finished_us = event_us;
-      const LiveStrokeFinishResult finished = stroke.finish(finished_us, chrome);
+      const LiveStrokeFinishResult finished =
+          stroke.finish(finished_us, chrome, sampled_touch->sequence);
       report.finish_preview_us = finished.finish_preview_us;
       report.builder_finish_us = finished.builder_finish_us;
       report.committed = finished.committed;

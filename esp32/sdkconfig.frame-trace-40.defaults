@@ -1,0 +1,4 @@
+# The paired frame trace changes only PSRAM service frequency. Runtime code
+# reads back the MSPI divider and refuses to start if it is not exactly 40 MHz.
+# CONFIG_SPIRAM_SPEED_80M is not set
+CONFIG_SPIRAM_SPEED_40M=y

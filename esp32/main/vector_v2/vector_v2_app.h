@@ -109,6 +109,9 @@ struct VectorV2AppSession {
   std::optional<std::uint32_t> demo_pointer_hide_us;
   std::optional<std::uint32_t> demo_side_button_hide_us;
   bool demo_sampler_stopped = false;
+#ifdef TINYDRAW_FRAME_TRACE
+  bool frame_trace_started = false;
+#endif
 #endif
   std::uint16_t next_gesture = 1U;
   std::uint32_t next_lift_id = 1U;
