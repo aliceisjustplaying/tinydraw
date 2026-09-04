@@ -25,7 +25,6 @@
 namespace tinydraw::esp32 {
 namespace {
 
-constexpr std::uint32_t kMspiCoreClockHz = 160'000'000U;
 constexpr const char* kWorkloadId = "tinydraw-v2-fixed-stroke-v1";
 std::uint32_t frame_sequence = 0U;
 
@@ -51,8 +50,9 @@ CacheCounters read_cache_counters() {
   };
 }
 
-constexpr std::uint32_t expected_psram_clock_register(std::uint32_t clock_hz) {
-  const std::uint32_t divider = kMspiCoreClockHz / clock_hz;
+constexpr std::uint32_t expected_psram_clock_register(std::uint32_t core_clock_hz,
+                                                      std::uint32_t clock_hz) {
+  const std::uint32_t divider = core_clock_hz / clock_hz;
   return ((divider - 1U) << SPI_MEM_SCLKCNT_N_S) | ((divider / 2U - 1U) << SPI_MEM_SCLKCNT_H_S) |
          ((divider - 1U) << SPI_MEM_SCLKCNT_L_S);
 }
@@ -73,24 +73,29 @@ extern "C" __attribute__((noinline, used)) std::uint32_t tinydraw_frame_trace_en
 bool start_frame_trace() {
   constexpr std::uint32_t psram_clock_hz = CONFIG_SPIRAM_SPEED * 1'000'000U;
   static_assert(psram_clock_hz == 40'000'000U || psram_clock_hz == 80'000'000U);
+  constexpr std::uint32_t psram_core_clock_hz =
+      psram_clock_hz == 80'000'000U ? 160'000'000U : 80'000'000U;
+  constexpr std::uint32_t expected_core_clock_register =
+      psram_core_clock_hz == 160'000'000U ? 2U : 0U;
   const std::uint32_t clock_register = REG_READ(SPI_MEM_SRAM_CLK_REG(0));
   const std::uint32_t core_clock_register =
       REG_GET_FIELD(SPI_MEM_CORE_CLK_SEL_REG(0), SPI_MEM_CORE_CLK_SEL);
   const bool verified =
-      clock_register == expected_psram_clock_register(psram_clock_hz) && core_clock_register == 2U;
+      clock_register == expected_psram_clock_register(psram_core_clock_hz, psram_clock_hz) &&
+      core_clock_register == expected_core_clock_register;
   std::printf(
       "TINYDRAW_TRACE_V1 {\"schema\":\"tinydraw-trace-v1\","
       "\"bundle_id\":\"%s\",\"source_commit\":\"%s\","
       "\"board\":\"waveshare-esp32-s3-touch-amoled-1.8-v2\","
       "\"idf\":\"%s\",\"workload_id\":\"%s\","
       "\"cpu_hz\":%u,\"counter_source\":\"esp32s3_ccount32\","
-      "\"psram_clock_hz\":%" PRIu32 ",\"psram_clock_register\":%" PRIu32
-      ",\"psram_core_clock_register\":%" PRIu32
+      "\"psram_clock_hz\":%" PRIu32 ",\"psram_core_clock_hz\":%" PRIu32
+      ",\"psram_clock_register\":%" PRIu32 ",\"psram_core_clock_register\":%" PRIu32
       ",\"psram_clock_verified\":%s,"
       "\"comparison_tier_candidate\":\"distribution_or_affine\"}\n",
       TINYDRAW_FRAME_TRACE_BUNDLE_ID, TINYDRAW_FRAME_TRACE_SOURCE, esp_get_idf_version(),
-      kWorkloadId, CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ * 1'000'000U, psram_clock_hz, clock_register,
-      core_clock_register, verified ? "true" : "false");
+      kWorkloadId, CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ * 1'000'000U, psram_clock_hz,
+      psram_core_clock_hz, clock_register, core_clock_register, verified ? "true" : "false");
   std::fflush(stdout);
   return verified;
 }
