@@ -1,0 +1,335 @@
+From 2492849b72e83bafb2a2de810955a837c4161b7c Mon Sep 17 00:00:00 2001
+From: TKTK <TKTK>
+Date: Sun, 16 Aug 2026 17:28:39 +0100
+Subject: [PATCH 04/10] fix: make raster metrics match production behavior
+
+---
+ tools/ink-trace-check              | 26 +++++++-----
+ vector_v2/src/ink_trace.cpp        |  4 +-
+ vector_v2/src/tile_producer.cpp    | 19 +++++++--
+ vector_v2/tests/ink_trace_test.cpp | 14 +++++++
+ vector_v2/tools/ink_angularity.cpp | 67 +++++++++++++++++++-----------
+ vector_v2/tools/raster_census.cpp  |  8 +++-
+ 6 files changed, 97 insertions(+), 41 deletions(-)
+
+diff --git a/tools/ink-trace-check b/tools/ink-trace-check
+index 0067c28..bed87b6 100755
+--- a/tools/ink-trace-check
++++ b/tools/ink-trace-check
+@@ -15,6 +15,18 @@ WIDTH = 368
+ HEIGHT = 448
+ HEADER_COLUMNS = ["magic", "version", "name", "source", "sample_rate_note"]
+ EVENT_COLUMNS = ["t_us", "kind", "x", "y"]
++UINT16_MAX = (1 << 16) - 1
++UINT32_MAX = (1 << 32) - 1
++UINT64_MAX = (1 << 64) - 1
++
++
++def unsigned_decimal(text: str, maximum: int, line_number: int, field: str) -> int:
++    if not text or any(character < "0" or character > "9" for character in text):
++        raise ValueError(f"line {line_number}: {field} is not an unsigned ASCII decimal")
++    value = int(text, 10)
++    if value > maximum:
++        raise ValueError(f"line {line_number}: {field} is out of range")
++    return value
+ 
+ 
+ def fields(line: str, count: int, line_number: int) -> list[str]:
+@@ -32,10 +44,7 @@ def parse_trace(path: Path) -> tuple[dict[str, str], list[tuple[int, str, int, i
+     header = dict(zip(HEADER_COLUMNS, header_values, strict=True))
+     if header["magic"] != MAGIC:
+         raise ValueError("line 2: invalid magic")
+-    try:
+-        version = int(header["version"])
+-    except ValueError as error:
+-        raise ValueError("line 2: version is not an integer") from error
++    version = unsigned_decimal(header["version"], UINT32_MAX, 2, "version")
+     if version != VERSION:
+         raise ValueError(f"line 2: unsupported version {version}")
+     if not header["name"] or not header["sample_rate_note"]:
+@@ -50,13 +59,10 @@ def parse_trace(path: Path) -> tuple[dict[str, str], list[tuple[int, str, int, i
+     previous_t = 0
+     for line_number, line in enumerate(lines[3:], start=4):
+         values = fields(line, 4, line_number)
+-        try:
+-            timestamp, x, y = int(values[0]), int(values[2]), int(values[3])
+-        except ValueError as error:
+-            raise ValueError(f"line {line_number}: timestamp and coordinates must be integers") from error
++        timestamp = unsigned_decimal(values[0], UINT64_MAX, line_number, "timestamp")
++        x = unsigned_decimal(values[2], UINT16_MAX, line_number, "x")
++        y = unsigned_decimal(values[3], UINT16_MAX, line_number, "y")
+         kind = values[1]
+-        if timestamp < 0:
+-            raise ValueError(f"line {line_number}: timestamp must be non-negative")
+         if events and timestamp < previous_t:
+             raise ValueError(f"line {line_number}: timestamp is not monotonic")
+         if not (0 <= x < WIDTH and 0 <= y < HEIGHT):
+diff --git a/vector_v2/src/ink_trace.cpp b/vector_v2/src/ink_trace.cpp
+index eca6f96..aa59dbf 100644
+--- a/vector_v2/src/ink_trace.cpp
++++ b/vector_v2/src/ink_trace.cpp
+@@ -320,7 +320,9 @@ TraceParseResult parse_ink_trace_csv(std::string_view csv, std::span<TraceEvent>
+     return {.status = TraceParseStatus::kInvalidTrace,
+             .header = header,
+             .event_count = event_count,
+-            .line = 4U + validation.event_index,
++            .line = validation.error == TraceValidationError::kInvalidHeader
++                        ? 2U
++                        : 4U + validation.event_index,
+             .validation = validation};
+   }
+   return {.status = TraceParseStatus::kOk,
+diff --git a/vector_v2/src/tile_producer.cpp b/vector_v2/src/tile_producer.cpp
+index 82a894e..e0e91e8 100644
+--- a/vector_v2/src/tile_producer.cpp
++++ b/vector_v2/src/tile_producer.cpp
+@@ -429,6 +429,15 @@ bool TileProducer::render_active_segment(TileProductionStep& result,
+                                          std::size_t& raster_work_consumed) {
+ #if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+   const std::uint32_t setup_started = raster_census_now();
++  bool setup_recorded = false;
++  const auto record_setup = [&] {
++    if (!setup_recorded) {
++      TINYDRAW_V2_CENSUS_ADD(setup_ticks, raster_census_now() - setup_started);
++      setup_recorded = true;
++    }
++  };
++#else
++  const auto record_setup = [] {};
+ #endif
+   const StoredOperation& operation = active_group_.cached_operation;
+   if (active_group_.next_sample == 0U) {
+@@ -439,6 +448,7 @@ bool TileProducer::render_active_segment(TileProductionStep& result,
+     const auto prepared =
+         prepare_incremental_curve_unit(operation.samples, endpoint, active_group_.view.zoom);
+     if (!prepared.has_value() || prepared->step_count == 0U) {
++      record_setup();
+       return false;
+     }
+     active_group_.prepared_unit = *prepared;
+@@ -483,6 +493,7 @@ bool TileProducer::render_active_segment(TileProductionStep& result,
+     // Count a rejected unit against the per-call cursor budget.
+     raster_steps_consumed += unit_steps;
+     finish_unit();
++    record_setup();
+     return true;
+   }
+   if (summary_.rows_saturated(clipped.y0 - active_group_.bounds.y0,
+@@ -491,13 +502,14 @@ bool TileProducer::render_active_segment(TileProductionStep& result,
+     TINYDRAW_V2_CENSUS_ADD(segments_saturation_skipped, 1);
+     raster_steps_consumed += unit_steps;
+     finish_unit();
++    record_setup();
+     return true;
+   }
+ 
+   const auto surface = workspace_.supertask_pixels.first(kTileProducerPixels);
++  record_setup();
+ #if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
+   const std::uint32_t paint_started = raster_census_now();
+-  TINYDRAW_V2_CENSUS_ADD(setup_ticks, paint_started - setup_started);
+ #endif
+   if (!apply_masked_prepared_curve_unit(
+           operation.tool, operation.color, active_group_.prepared_unit,
+@@ -633,9 +645,8 @@ bool TileProducer::publish_surface_tile(TileKey key, PixelRect rendered_bounds,
+   const auto surface = workspace_.supertask_pixels.first(kTileProducerPixels);
+   // Publish straight from the supertask surface: one strided read replaces
+   // the former supertask->packed->pool double copy.
+-  const auto origin =
+-      static_cast<std::size_t>(bounds.y0 - rendered_bounds.y0) * kStride +
+-      static_cast<std::size_t>(bounds.x0 - rendered_bounds.x0);
++  const auto origin = static_cast<std::size_t>(bounds.y0 - rendered_bounds.y0) * kStride +
++                      static_cast<std::size_t>(bounds.x0 - rendered_bounds.x0);
+   const auto strided = surface.subspan(
+       origin, static_cast<std::size_t>(height - 1) * kStride + static_cast<std::size_t>(width));
+   const auto analysis = analyze_tile_payload(strided, width, height, kStride);
+diff --git a/vector_v2/tests/ink_trace_test.cpp b/vector_v2/tests/ink_trace_test.cpp
+index 749b8f3..ddacfc9 100644
+--- a/vector_v2/tests/ink_trace_test.cpp
++++ b/vector_v2/tests/ink_trace_test.cpp
+@@ -59,6 +59,20 @@ TEST_CASE("ink trace parsing reports caller capacity and malformed lifecycle") {
+   CHECK(invalid.line == 4U);
+ }
+ 
++TEST_CASE("ink trace validation reports malformed metadata on line two") {
++  constexpr std::string_view csv =
++      "magic,version,name,source,sample_rate_note\n"
++      "WRONG,1,metadata,recorded,125Hz touch sampler\n"
++      "t_us,kind,x,y\n"
++      "0,Down,10,20\n"
++      "8,Up,10,20\n";
++  std::array<vector_v2::TraceEvent, 2> storage{};
++  const auto invalid = vector_v2::parse_ink_trace_csv(csv, storage);
++  CHECK(invalid.status == vector_v2::TraceParseStatus::kInvalidTrace);
++  CHECK(invalid.validation.error == vector_v2::TraceValidationError::kInvalidHeader);
++  CHECK(invalid.line == 2U);
++}
++
+ TEST_CASE("ink trace validation enforces time coordinates and stroke edges") {
+   const vector_v2::TraceHeader header{
+       .name = "validation",
+diff --git a/vector_v2/tools/ink_angularity.cpp b/vector_v2/tools/ink_angularity.cpp
+index f9c3209..45de10c 100644
+--- a/vector_v2/tools/ink_angularity.cpp
++++ b/vector_v2/tools/ink_angularity.cpp
+@@ -124,9 +124,14 @@ std::optional<vector_v2::ZoomLevel> zoom_from_percent(int percent) {
+   return std::nullopt;
+ }
+ 
++struct ReconstructedOperation {
++  std::vector<vector_v2::CompactOperationSample> samples;
++  std::uint16_t gesture_id = 0;
++};
++
+ // Collects the committed operations (chunked exactly like the product) for
+ // one trace at one brush size and zoom.
+-std::vector<std::vector<vector_v2::CompactOperationSample>> committed_operations(
++std::vector<ReconstructedOperation> committed_operations(
+     std::span<const vector_v2::TraceEvent> events, float brush_size, vector_v2::ZoomLevel zoom) {
+   const float inverse_scale = 1.0F / zoom_scale_of(zoom);
+   tinydraw::InkConfig config;
+@@ -137,13 +142,16 @@ std::vector<std::vector<vector_v2::CompactOperationSample>> committed_operations
+   constexpr std::size_t kProductChunkSampleLimit = 32;  // kInteractiveChunkSampleLimit
+   vector_v2::ChainedOperationBuilder builder(storage, kProductChunkSampleLimit);
+ 
+-  std::vector<std::vector<vector_v2::CompactOperationSample>> operations;
++  std::vector<ReconstructedOperation> operations;
++  std::uint16_t gesture_id = 0;
+   const auto capture_chunk = [&]() {
+     const auto pending = builder.pending_append();
+-    if (pending.has_value()) {
+-      operations.emplace_back(pending->samples.begin(), pending->samples.end());
++    if (!pending.has_value()) {
++      return vector_v2::ChainedOperationStatus::kRejected;
+     }
+-    static_cast<void>(builder.acknowledge_commit());
++    operations.push_back(
++        {.samples = {pending->samples.begin(), pending->samples.end()}, .gesture_id = gesture_id});
++    return builder.acknowledge_commit();
+   };
+   const auto operation_point = [&](tinydraw::InkPoint point) {
+     return vector_v2::OperationPoint{
+@@ -165,31 +173,26 @@ std::vector<std::vector<vector_v2::CompactOperationSample>> committed_operations
+     };
+     if (event.kind == vector_v2::TraceEventKind::kDown) {
+       const tinydraw::InkPoint begun = ink.begin(touch);
+-      stroke_active =
+-          builder.begin(vector_v2::OperationTool::kPen, 0x0000U, 1U, operation_point(begun));
++      ++gesture_id;
++      stroke_active = builder.begin(vector_v2::OperationTool::kPen, 0x0000U, gesture_id,
++                                    operation_point(begun));
+       continue;
+     }
+     if (!stroke_active) {
+       continue;
+     }
+     if (event.kind == vector_v2::TraceEventKind::kMove) {
+-      auto status = builder.add(operation_point(ink.update(touch)));
++      const tinydraw::InkPoint updated = ink.update(touch);
++      auto status = builder.add(operation_point(updated));
+       while (status == vector_v2::ChainedOperationStatus::kChunkReady) {
+-        capture_chunk();
+-        status = builder.add(operation_point(ink.update(touch)));
+-        break;  // The product re-offers the rejected point once; mirror that.
++        status = capture_chunk();
+       }
+       continue;
+     }
+     auto status = builder.finish(operation_point(ink.finish(touch)));
+     while (status == vector_v2::ChainedOperationStatus::kChunkReady ||
+            status == vector_v2::ChainedOperationStatus::kFinalChunkReady) {
+-      capture_chunk();
+-      status = builder.acknowledge_commit();
+-      if (status == vector_v2::ChainedOperationStatus::kComplete ||
+-          status == vector_v2::ChainedOperationStatus::kAccepted) {
+-        break;
+-      }
++      status = capture_chunk();
+     }
+     stroke_active = false;
+   }
+@@ -199,7 +202,8 @@ std::vector<std::vector<vector_v2::CompactOperationSample>> committed_operations
+ // Rebuilds the polyline the authority paints for one operation and folds the
+ // unit deviations/joint angles into the metrics.
+ void measure_operation(std::span<const vector_v2::CompactOperationSample> samples,
+-                       vector_v2::ZoomLevel zoom, int chord_override, TraceMetrics& metrics) {
++                       vector_v2::ZoomLevel zoom, int chord_override, TraceMetrics& metrics,
++                       std::optional<Chord>& previous_terminal) {
+   if (samples.empty()) {
+     return;
+   }
+@@ -275,18 +279,25 @@ void measure_operation(std::span<const vector_v2::CompactOperationSample> sample
+     metrics.radius_total += chord.mean_radius;
+     ++metrics.radius_samples;
+   }
+-  for (std::size_t index = 0; index + 1U < chain.size(); ++index) {
+-    const Point a{chain[index].second.x - chain[index].first.x,
+-                  chain[index].second.y - chain[index].first.y};
+-    const Point b{chain[index + 1U].second.x - chain[index + 1U].first.x,
+-                  chain[index + 1U].second.y - chain[index + 1U].first.y};
++  const auto include_joint = [&metrics](const Chord& first, const Chord& second) {
++    const Point a{first.second.x - first.first.x, first.second.y - first.first.y};
++    const Point b{second.second.x - second.first.x, second.second.y - second.first.y};
+     const float la = std::sqrt(a.x * a.x + a.y * a.y);
+     const float lb = std::sqrt(b.x * b.x + b.y * b.y);
+     if (la <= 1e-6F || lb <= 1e-6F) {
+-      continue;
++      return;
+     }
+     const float cosine = std::clamp((a.x * b.x + a.y * b.y) / (la * lb), -1.0F, 1.0F);
+     metrics.joint_degrees.push_back(std::acos(cosine) * 180.0F / 3.14159265F);
++  };
++  if (!chain.empty() && previous_terminal.has_value()) {
++    include_joint(*previous_terminal, chain.front());
++  }
++  for (std::size_t index = 0; index + 1U < chain.size(); ++index) {
++    include_joint(chain[index], chain[index + 1U]);
++  }
++  if (!chain.empty()) {
++    previous_terminal = chain.back();
+   }
+ }
+ 
+@@ -319,8 +330,14 @@ int run_trace(const char* path, float brush_size, int zoom_percent, int chord_ov
+   const auto operations =
+       committed_operations(std::span(events.data(), parsed.event_count), brush_size, *zoom);
+   TraceMetrics metrics;
++  std::optional<Chord> previous_terminal;
++  std::uint16_t previous_gesture = 0;
+   for (const auto& operation : operations) {
+-    measure_operation(operation, *zoom, chord_override, metrics);
++    if (operation.gesture_id != previous_gesture) {
++      previous_terminal.reset();
++      previous_gesture = operation.gesture_id;
++    }
++    measure_operation(operation.samples, *zoom, chord_override, metrics, previous_terminal);
+   }
+ 
+   const float deviation_max =
+diff --git a/vector_v2/tools/raster_census.cpp b/vector_v2/tools/raster_census.cpp
+index 829bf49..a5628b8 100644
+--- a/vector_v2/tools/raster_census.cpp
++++ b/vector_v2/tools/raster_census.cpp
+@@ -143,12 +143,18 @@ SweepResult run_cold_fill(Rig& rig, const v2::ViewRequest& view) {
+   result.wall_ms =
+       std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+   result.candidates = rig.producer.candidate_counters();
++#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
++  const v2::RasterCensus cold_census = v2::g_raster_census;
++#endif
+   // One immediate revisit exercises reuse accounting without affecting cold
+-  // wall time or candidate-discovery totals.
++  // wall time, candidate-discovery totals, or the cold raster census.
+   if (!rig.producer.produce_next(view).has_value()) {
+     return result;
+   }
+   result.accounting = rig.accounting.totals();
++#if defined(TINYDRAW_VECTOR_V2_RASTER_CENSUS)
++  v2::g_raster_census = cold_census;
++#endif
+   result.ok = true;
+   return result;
+ }
+-- 
+2.54.0 (Apple Git-156)
+

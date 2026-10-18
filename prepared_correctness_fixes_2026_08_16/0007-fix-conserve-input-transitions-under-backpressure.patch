@@ -1,0 +1,575 @@
+From a369b8d93f06fbc5c1f3fad15dab36394e054588 Mon Sep 17 00:00:00 2001
+From: TKTK <TKTK>
+Date: Sun, 16 Aug 2026 17:47:25 +0100
+Subject: [PATCH 07/10] fix: conserve input transitions under backpressure
+
+---
+ docs/INK_TRACE_HARNESS.md                     |  8 +-
+ esp32/main/hardware_app.cpp                   | 22 ++---
+ esp32/main/physical_display.cpp               |  3 +-
+ esp32/main/vector_v2/vector_v2_app.cpp        | 80 ++++++++++++++++++-
+ .../vector_v2/vector_v2_ink_trace_capture.cpp | 23 ++----
+ .../vector_v2/vector_v2_ink_trace_capture.h   | 24 ++----
+ .../vector_v2/vector_v2_touch_sampler.cpp     | 20 +++--
+ .../main/vector_v2/vector_v2_touch_sampler.h  |  9 ++-
+ rp2350/src/main.cpp                           | 14 ++--
+ .../tinydraw/vector_v2/touch_event_buffer.h   |  3 +
+ vector_v2/src/touch_event_buffer.cpp          | 19 +++++
+ vector_v2/tests/touch_event_buffer_test.cpp   | 45 +++++++++++
+ 12 files changed, 201 insertions(+), 69 deletions(-)
+
+diff --git a/docs/INK_TRACE_HARNESS.md b/docs/INK_TRACE_HARNESS.md
+index 761b77c..b901b1f 100644
+--- a/docs/INK_TRACE_HARNESS.md
++++ b/docs/INK_TRACE_HARNESS.md
+@@ -29,9 +29,11 @@ TraceEvent  { t_us (monotonic, from trace start), kind (Down|Move|Up), x, y }
+      lift-drain backlog and stroke-boundary loss.
+   5. `under-overlay` — stroke crossing zoom rail, minimap, toolbar regions.
+ 
+-Capture mode: a firmware flag records real finger input (event timestamps from
+-the touch sampler) to serial; a host script converts to trace format. One
+-session of the owner's real scribbling becomes the canonical corpus.
++Capture mode: a firmware flag records the exact semantic events consumed by
++the app after the production buffer's coalescing and overflow policy (retaining
++the sampler timestamps), then writes them to serial while sampling is paused.
++A host script converts the output to trace format. One session of the owner's
++real scribbling becomes the canonical corpus.
+ 
+ ## 2. Replay mode
+ 
+diff --git a/esp32/main/hardware_app.cpp b/esp32/main/hardware_app.cpp
+index 87d18a2..8f98552 100644
+--- a/esp32/main/hardware_app.cpp
++++ b/esp32/main/hardware_app.cpp
+@@ -96,18 +96,22 @@ struct TouchTaskContext {
+   std::span<const tinydraw::DemoSample> built_in_demo;
+   tinydraw::esp32::PowerManager* power = nullptr;
+   tinydraw::esp32::PowerStatus power_status{};
++  // State of the newest touch event accepted by the app queue. It is
++  // producer-owned and lets backpressure discard only redundant moves.
++  bool queued_touching = false;
+ #ifdef TINYDRAW_PHASE2_PROTOTYPE
+   tinydraw::esp32::Phase2TouchProbe* phase2_probe = nullptr;
+ #endif
+ };
+ 
+-void enqueue_latest(QueueHandle_t queue, const AppEvent& event) {
+-  if (xQueueSend(queue, &event, 0) == pdTRUE) {
+-    return;
++void enqueue_touch(TouchTaskContext& context, const TouchEvent& touch) {
++  const AppEvent event{.touch = touch};
++  const bool transition = touch.touching != context.queued_touching;
++  if (xQueueSend(context.queue, &event, transition ? portMAX_DELAY : 0) == pdTRUE) {
++    context.queued_touching = touch.touching;
+   }
+-  AppEvent discarded;
+-  static_cast<void>(xQueueReceive(queue, &discarded, 0));
+-  static_cast<void>(xQueueSend(queue, &event, 0));
++  // A full queue may discard an intermediate move, but never evicts an
++  // existing control or gesture edge and never drops the incoming edge.
+ }
+ 
+ void enqueue_control(QueueHandle_t queue, AppEventKind kind) {
+@@ -119,7 +123,7 @@ void emit_touch(TouchTaskContext& context, const TouchEvent& event) {
+   if (context.tape->recording()) {
+     static_cast<void>(context.tape->record(event));
+   }
+-  enqueue_latest(context.queue, {.touch = event});
++  enqueue_touch(context, event);
+ }
+ 
+ void dump_demo(std::span<const tinydraw::DemoSample> samples, bool overflowed) {
+@@ -154,6 +158,7 @@ void replay_demo(TouchTaskContext& context, std::span<const tinydraw::DemoSample
+     return;
+   }
+   xQueueReset(context.queue);
++  context.queued_touching = false;
+   enqueue_control(context.queue, AppEventKind::kDemoReplayStarted);
+   enqueue_control(context.queue, AppEventKind::kResetForDemo);
+ 
+@@ -161,8 +166,7 @@ void replay_demo(TouchTaskContext& context, std::span<const tinydraw::DemoSample
+   const std::uint32_t replay_started_us = timestamp_us();
+   for (const auto& sample : samples) {
+     wait_for_demo_offset(replay_started_us, sample.offset_us);
+-    enqueue_latest(context.queue,
+-                   {.touch = tinydraw::replay_demo_sample(sample, replay_started_us)});
++    enqueue_touch(context, tinydraw::replay_demo_sample(sample, replay_started_us));
+   }
+   enqueue_control(context.queue, AppEventKind::kDemoReplayStopped);
+   std::printf("TINYDRAW_DEMO_REPLAY_END\n");
+diff --git a/esp32/main/physical_display.cpp b/esp32/main/physical_display.cpp
+index d191884..88e300c 100644
+--- a/esp32/main/physical_display.cpp
++++ b/esp32/main/physical_display.cpp
+@@ -81,7 +81,8 @@ class PhysicalDisplay::Impl {
+                                  toolbar_.external_power != toolbar.external_power;
+     const bool toast_changed = toolbar_.export_toast != toolbar.export_toast ||
+                                ((toolbar_.export_toast || toolbar.export_toast) &&
+-                                toolbar_.export_ready != toolbar.export_ready);
++                                (toolbar_.export_ready != toolbar.export_ready ||
++                                 toolbar_.exporting != toolbar.exporting));
+     const bool palette_changed =
+         toolbar_.tools_open != toolbar.tools_open || toolbar_.colors_open != toolbar.colors_open ||
+         toolbar_.sizes_open != toolbar.sizes_open || toolbar_.can_export != toolbar.can_export ||
+diff --git a/esp32/main/vector_v2/vector_v2_app.cpp b/esp32/main/vector_v2/vector_v2_app.cpp
+index 28b73ef..ca344b1 100644
+--- a/esp32/main/vector_v2/vector_v2_app.cpp
++++ b/esp32/main/vector_v2/vector_v2_app.cpp
+@@ -186,6 +186,11 @@ struct PendingStrokeReport {
+ };
+ 
+ struct AppStorage {
++  AppStorage() = default;
++  ~AppStorage() { release(); }
++  AppStorage(const AppStorage&) = delete;
++  AppStorage& operator=(const AppStorage&) = delete;
++
+   std::uint16_t* overview = nullptr;
+   std::uint16_t* snapshot = nullptr;
+   std::uint16_t* frame = nullptr;
+@@ -289,6 +294,7 @@ struct AppStorage {
+         records == nullptr || samples == nullptr || input_samples == nullptr ||
+         rerender_entries == nullptr || touch_events == nullptr || !ink_trace_ready ||
+         affected_keys == nullptr) {
++      release();
+       return false;
+     }
+     for (std::size_t index = 0; index < vector_v2::kMaterializedTileIdentityCount; ++index) {
+@@ -297,10 +303,62 @@ struct AppStorage {
+     for (std::size_t index = 0; index < vector_v2::kTileSlotCount; ++index) {
+       std::construct_at(slots + index);
+     }
++    metadata_constructed_ = true;
+     return true;
+   }
+ 
+  private:
++  template <typename Type>
++  static void free_and_clear(Type*& pointer) {
++    if (pointer != nullptr) {
++      heap_caps_free(pointer);
++      pointer = nullptr;
++    }
++  }
++
++  void release() {
++    if (metadata_constructed_) {
++      std::destroy_n(uniforms, vector_v2::kMaterializedTileIdentityCount);
++      std::destroy_n(slots, vector_v2::kTileSlotCount);
++      metadata_constructed_ = false;
++    }
++    free_and_clear(overview);
++    free_and_clear(snapshot);
++    free_and_clear(frame);
++    free_and_clear(tile_pixels);
++    free_and_clear(overview_scratch);
++#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
++    free_and_clear(tile_scratch);
++#endif
++    free_and_clear(region_scratch);
++    free_and_clear(chrome_cache);
++    free_and_clear(producer_supertask);
++#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
++    free_and_clear(harness_tile_scratch);
++#endif
++    free_and_clear(producer_mask);
++    free_and_clear(producer_summary_rows);
++    free_and_clear(producer_summary_words);
++    free_and_clear(chunk_mask);
++    free_and_clear(uniforms);
++    free_and_clear(occupancy);
++    free_and_clear(slots);
++    free_and_clear(records);
++    free_and_clear(samples);
++    free_and_clear(input_samples);
++    free_and_clear(rerender_entries);
++    free_and_clear(touch_events);
++#ifdef TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE
++    free_and_clear(ink_trace_records);
++#endif
++#ifdef TINYDRAW_VECTOR_V2_GATE_HARNESS
++    free_and_clear(publications);
++#endif
++    free_and_clear(affected_keys);
++  }
++
++  bool metadata_constructed_ = false;
++
+   template <typename Type>
+   [[nodiscard]] static Type* allocate_array(std::size_t count) {
+     return static_cast<Type*>(heap_caps_malloc(count * sizeof(Type), kExternalCaps));
+@@ -984,10 +1042,15 @@ void run_vector_v2_app() {
+       button_down = true;
+     } else if (!next_button_down && button_down) {
+       button_down = false;
+-      const ZoomLevel zoom = vector_v2::next_zoom(presenter.zoom());
+-      const ZoomLevel target = zoom == presenter.zoom() ? ZoomLevel::k25Percent : zoom;
+-      const auto timing = presenter.set_zoom(target, chrome, loop_us);
+-      print_presentation("zoom", presenter, timing);
++      // A physical-button release can race a touch gesture. Changing the
++      // view here would reinterpret the active builder's remaining points in
++      // a different coordinate system, so defer the action until idle.
++      if (!pressed && !panning && !ink.active()) {
++        const ZoomLevel zoom = vector_v2::next_zoom(presenter.zoom());
++        const ZoomLevel target = zoom == presenter.zoom() ? ZoomLevel::k25Percent : zoom;
++        const auto timing = presenter.set_zoom(target, chrome, loop_us);
++        print_presentation("zoom", presenter, timing);
++      }
+     }
+ 
+     Point point{};
+@@ -1228,7 +1291,16 @@ void run_vector_v2_app() {
+     // enough that the serial burst cannot perturb a gesture.
+     if (!pressed && !ink_trace_ring.touching() && ink_trace_ring.size() != 0U &&
+         loop_us - ink_trace_ring.last_activity_us() > 2'000'000U) {
++      // Serial output is intentionally blocking. Pause the producer so that
++      // its finite queue cannot overflow with gesture edges during the dump;
++      // reset derivation so a contact present after restart begins with Down.
++      touch_sampler.stop();
++      touch_sampler.reset_pending();
+       ink_trace_ring.dump_and_reset();
++      if (!touch_sampler.start()) {
++        std::printf("TINYDRAW_LIVE_FAIL reason=touch_restart_after_capture\n");
++        return;
++      }
+     }
+ #endif
+ 
+diff --git a/esp32/main/vector_v2/vector_v2_ink_trace_capture.cpp b/esp32/main/vector_v2/vector_v2_ink_trace_capture.cpp
+index 07457dc..46cabf8 100644
+--- a/esp32/main/vector_v2/vector_v2_ink_trace_capture.cpp
++++ b/esp32/main/vector_v2/vector_v2_ink_trace_capture.cpp
+@@ -36,22 +36,13 @@ const char* kind_text(vector_v2::TouchEventKind kind) {
+ }  // namespace
+ 
+ InkTraceCaptureRing::InkTraceCaptureRing(std::span<InkTraceCaptureRecord> storage)
+-    : storage_(storage), drain_(drain_storage_) {}
++    : storage_(storage) {}
+ 
+-bool InkTraceCaptureRing::ready() const { return !storage_.empty() && drain_.ready(); }
++bool InkTraceCaptureRing::ready() const { return !storage_.empty(); }
+ 
+-void InkTraceCaptureRing::record_contact_read(vector_v2::TouchContactRead read,
+-                                              vector_v2::TouchContactPoint point,
+-                                              std::uint32_t timestamp_us) {
+-  if (!enabled_.load(std::memory_order_relaxed)) {
+-    return;
+-  }
+-  // The drain buffer receives the identical offer stream as the production
+-  // buffer, so its Down/Move/Up derivation and lift debounce stay in
+-  // lockstep. Popping every event immediately means no Move can coalesce.
+-  static_cast<void>(drain_.offer(read, point, timestamp_us));
+-  while (const auto event = drain_.pop()) {
+-    append(*event);
++void InkTraceCaptureRing::record_consumed_event(const vector_v2::TouchEvent& event) {
++  if (enabled_.load(std::memory_order_relaxed)) {
++    append(event);
+   }
+ }
+ 
+@@ -91,10 +82,6 @@ std::uint32_t InkTraceCaptureRing::last_activity_us() const {
+ 
+ void InkTraceCaptureRing::dump_and_reset() {
+   enabled_.store(false, std::memory_order_relaxed);
+-  // The 1 kHz producer iteration is microseconds long; two ticks guarantee
+-  // any in-flight append has finished before the consumer reads.
+-  vTaskDelay(pdMS_TO_TICKS(2));
+-
+   const std::size_t count = count_.load(std::memory_order_acquire);
+   std::printf("TINYDRAW_INKTRACE_CAPTURE_BEGIN events=%u strokes=%u overflow=%u\n",
+               static_cast<unsigned>(count), static_cast<unsigned>(strokes_.load()),
+diff --git a/esp32/main/vector_v2/vector_v2_ink_trace_capture.h b/esp32/main/vector_v2/vector_v2_ink_trace_capture.h
+index 9f107d8..b06abb7 100644
+--- a/esp32/main/vector_v2/vector_v2_ink_trace_capture.h
++++ b/esp32/main/vector_v2/vector_v2_ink_trace_capture.h
+@@ -1,7 +1,6 @@
+ #ifndef TINYDRAW_ESP32_VECTOR_V2_INK_TRACE_CAPTURE_H
+ #define TINYDRAW_ESP32_VECTOR_V2_INK_TRACE_CAPTURE_H
+ 
+-#include <array>
+ #include <atomic>
+ #include <cstddef>
+ #include <cstdint>
+@@ -25,25 +24,17 @@ struct InkTraceCaptureRecord {
+ // sampler cadence, comfortably above every canonical gesture.
+ inline constexpr std::size_t kInkTraceCaptureCapacity = 12'288U;
+ 
+-// Records the semantic touch stream upstream of coalescing, per
+-// docs/INK_TRACE_HARNESS.md §1. The core-1 sampler task feeds every raw
+-// contact read through a private, immediately drained TouchEventBuffer, so
+-// Down/Move/Up derivation and the lift debounce match production exactly
+-// while no Move is ever coalesced (coalescing only merges *pending* moves).
+-// The core-0 app dumps the accumulated events as canonical trace CSV between
+-// serial markers once the owner has been idle, then resets.
+-//
+-// Concurrency: single producer (sampler task), single consumer (app task).
+-// The consumer must pause capture before reading; dump_and_reset() does.
++// Records the exact semantic touch events consumed by the product, after
++// production coalescing and overflow policy. Recording and dump both run on
++// the core-0 consumer, so snapshot/reset needs no cross-core timing guess.
+ class InkTraceCaptureRing {
+  public:
+   explicit InkTraceCaptureRing(std::span<InkTraceCaptureRecord> storage);
+ 
+   [[nodiscard]] bool ready() const;
+ 
+-  // Producer side: called from the sampler task for every raw contact read.
+-  void record_contact_read(vector_v2::TouchContactRead read, vector_v2::TouchContactPoint point,
+-                           std::uint32_t timestamp_us);
++  // Called by the product consumer immediately after it pops an event.
++  void record_consumed_event(const vector_v2::TouchEvent& event);
+ 
+   // Consumer side.
+   [[nodiscard]] std::size_t size() const;
+@@ -51,8 +42,7 @@ class InkTraceCaptureRing {
+   [[nodiscard]] std::uint32_t stroke_count() const;
+   [[nodiscard]] bool touching() const;
+   [[nodiscard]] std::uint32_t last_activity_us() const;
+-  // Pauses capture, waits out any in-flight producer iteration, prints the
+-  // accumulated events as canonical trace CSV between
++  // Prints accumulated events as canonical trace CSV between
+   // TINYDRAW_INKTRACE_CAPTURE_BEGIN/END markers, resets, and resumes.
+   void dump_and_reset();
+ 
+@@ -60,8 +50,6 @@ class InkTraceCaptureRing {
+   void append(const vector_v2::TouchEvent& event);
+ 
+   std::span<InkTraceCaptureRecord> storage_;
+-  std::array<vector_v2::TouchEvent, 8> drain_storage_{};
+-  vector_v2::TouchEventBuffer drain_;
+   std::atomic<std::size_t> count_{0};
+   std::atomic<bool> enabled_{true};
+   std::atomic<bool> overflowed_{false};
+diff --git a/esp32/main/vector_v2/vector_v2_touch_sampler.cpp b/esp32/main/vector_v2/vector_v2_touch_sampler.cpp
+index e80ab37..8392ffc 100644
+--- a/esp32/main/vector_v2/vector_v2_touch_sampler.cpp
++++ b/esp32/main/vector_v2/vector_v2_touch_sampler.cpp
+@@ -58,6 +58,15 @@ void VectorV2TouchSampler::stop() {
+   stop_waiter_ = nullptr;
+ }
+ 
++void VectorV2TouchSampler::reset_pending() {
++  if (task_ != nullptr) {
++    return;
++  }
++  portENTER_CRITICAL(&event_lock_);
++  events_.reset_pending();
++  portEXIT_CRITICAL(&event_lock_);
++}
++
+ std::optional<SampledTouch> VectorV2TouchSampler::read_next() {
+   portENTER_CRITICAL(&event_lock_);
+   const auto event = events_.pop();
+@@ -65,6 +74,11 @@ std::optional<SampledTouch> VectorV2TouchSampler::read_next() {
+   if (!event.has_value()) {
+     return std::nullopt;
+   }
++#ifdef TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE
++  if (capture_ring_ != nullptr) {
++    capture_ring_->record_consumed_event(*event);
++  }
++#endif
+   const std::uint32_t event_age_us =
+       static_cast<std::uint32_t>(esp_timer_get_time()) - event->timestamp_us;
+   include_max(maximum_event_age_us_, event_age_us);
+@@ -125,12 +139,6 @@ void VectorV2TouchSampler::run() {
+                                std::memory_order_relaxed);
+     moves_coalesced_.fetch_add(offered == vector_v2::TouchOfferResult::kMoveCoalesced,
+                                std::memory_order_relaxed);
+-#ifdef TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE
+-    if (capture_ring_ != nullptr) {
+-      capture_ring_->record_contact_read(contact_read(read), {.x = point.x, .y = point.y},
+-                                         completed_us);
+-    }
+-#endif
+     vTaskDelay(pdMS_TO_TICKS(1));
+   }
+   const TaskHandle_t waiter = stop_waiter_;
+diff --git a/esp32/main/vector_v2/vector_v2_touch_sampler.h b/esp32/main/vector_v2/vector_v2_touch_sampler.h
+index e36d385..26ccb2e 100644
+--- a/esp32/main/vector_v2/vector_v2_touch_sampler.h
++++ b/esp32/main/vector_v2/vector_v2_touch_sampler.h
+@@ -16,7 +16,7 @@
+ 
+ namespace tinydraw::esp32 {
+ 
+-inline constexpr std::size_t kVectorV2TouchEventCapacity = 16U;
++inline constexpr std::size_t kVectorV2TouchEventCapacity = 64U;
+ 
+ struct SampledTouch {
+   Point point{};
+@@ -53,11 +53,14 @@ class VectorV2TouchSampler {
+ 
+   [[nodiscard]] bool start();
+   void stop();
++  // Valid while stopped. Discards stale semantic state so the first point
++  // after restart is derived as a Down rather than a Move.
++  void reset_pending();
+   [[nodiscard]] std::optional<SampledTouch> read_next();
+   [[nodiscard]] TouchSamplerMetrics take_metrics();
+ #ifdef TINYDRAW_VECTOR_V2_INK_TRACE_CAPTURE
+-  // Capture-firmware only: mirrors every raw contact read into the trace
+-  // ring, upstream of coalescing. Must be set before start().
++  // Capture-firmware only: records each event the app actually consumes,
++  // after the production buffer's coalescing policy. Set before start().
+   void set_capture_ring(InkTraceCaptureRing* ring) { capture_ring_ = ring; }
+ #endif
+ 
+diff --git a/rp2350/src/main.cpp b/rp2350/src/main.cpp
+index c93ab82..4440358 100644
+--- a/rp2350/src/main.cpp
++++ b/rp2350/src/main.cpp
+@@ -81,13 +81,13 @@ struct TouchEvent {
+ 
+ queue_t touch_events;
+ 
+-void enqueue_touch(TouchEvent event) {
+-  if (queue_try_add(&touch_events, &event)) {
++void enqueue_touch(TouchEvent event, bool transition) {
++  if (queue_try_add(&touch_events, &event) || !transition) {
+     return;
+   }
+-  TouchEvent discarded{};
+-  static_cast<void>(queue_try_remove(&touch_events, &discarded));
+-  static_cast<void>(queue_try_add(&touch_events, &event));
++  // Moves may thin under backpressure, but Down/Up define the gesture state
++  // machine and must reach the consumer in order.
++  queue_add_blocking(&touch_events, &event);
+ }
+ 
+ void sample_touch() {
+@@ -102,7 +102,7 @@ void sample_touch() {
+       const auto x = static_cast<std::uint16_t>(FT3168.x_point);
+       const auto y = static_cast<std::uint16_t>(FT3168.y_point);
+       if (!touching || x != last_x || y != last_y) {
+-        enqueue_touch({.x = x, .y = y, .timestamp_us = time_us_32(), .touching = true});
++        enqueue_touch({.x = x, .y = y, .timestamp_us = time_us_32(), .touching = true}, !touching);
+         last_x = x;
+         last_y = y;
+       }
+@@ -112,7 +112,7 @@ void sample_touch() {
+       if (no_touch_started_us == 0) {
+         no_touch_started_us = now;
+       } else if (now - no_touch_started_us >= 10'000U) {
+-        enqueue_touch({.x = last_x, .y = last_y, .timestamp_us = now, .touching = false});
++        enqueue_touch({.x = last_x, .y = last_y, .timestamp_us = now, .touching = false}, true);
+         touching = false;
+         no_touch_started_us = 0;
+       }
+diff --git a/vector_v2/include/tinydraw/vector_v2/touch_event_buffer.h b/vector_v2/include/tinydraw/vector_v2/touch_event_buffer.h
+index 3bf1af4..8c6dd4c 100644
+--- a/vector_v2/include/tinydraw/vector_v2/touch_event_buffer.h
++++ b/vector_v2/include/tinydraw/vector_v2/touch_event_buffer.h
+@@ -55,6 +55,9 @@ class TouchEventBuffer {
+                                        std::uint32_t timestamp_us);
+   [[nodiscard]] std::optional<TouchEvent> pop();
+   [[nodiscard]] std::size_t pending() const;
++  // Discards queued events and contact derivation while preserving the
++  // monotonic sequence counter. The next point is therefore a fresh Down.
++  void reset_pending();
+ 
+  private:
+   [[nodiscard]] std::size_t physical_index(std::size_t logical_index) const;
+diff --git a/vector_v2/src/touch_event_buffer.cpp b/vector_v2/src/touch_event_buffer.cpp
+index 9f1ed4a..f4c5d02 100644
+--- a/vector_v2/src/touch_event_buffer.cpp
++++ b/vector_v2/src/touch_event_buffer.cpp
+@@ -6,6 +6,7 @@ namespace tinydraw::vector_v2 {
+ namespace {
+ 
+ constexpr std::size_t kMinimumEventCapacity = 4U;
++constexpr std::size_t kReservedEdgeSlots = 2U;
+ constexpr std::uint8_t kLiftConfirmationReads = 2U;
+ 
+ }  // namespace
+@@ -62,6 +63,14 @@ std::optional<TouchEvent> TouchEventBuffer::pop() {
+ 
+ std::size_t TouchEventBuffer::pending() const { return size_; }
+ 
++void TouchEventBuffer::reset_pending() {
++  head_ = 0U;
++  size_ = 0U;
++  last_point_ = {};
++  no_touch_reads_ = 0U;
++  touching_ = false;
++}
++
+ std::size_t TouchEventBuffer::physical_index(std::size_t logical_index) const {
+   return (head_ + logical_index) % storage_.size();
+ }
+@@ -88,6 +97,16 @@ TouchOfferResult TouchEventBuffer::enqueue(const TouchEvent& event) {
+       return TouchOfferResult::kMoveCoalesced;
+     }
+   }
++  // Keep enough room for a complete Down/Up pair even when the consumer is
++  // briefly backpressured. A displaced Move is safe because Up carries the
++  // latest sampled point; gesture edges are not reconstructible.
++  if (event.kind == TouchEventKind::kMove && size_ >= storage_.size() - kReservedEdgeSlots) {
++    if (remove_oldest_move()) {
++      storage_[physical_index(size_)] = event;
++      ++size_;
++    }
++    return TouchOfferResult::kMoveCoalesced;
++  }
+   if (size_ == storage_.size() && !remove_oldest_move()) {
+     return TouchOfferResult::kOverflow;
+   }
+diff --git a/vector_v2/tests/touch_event_buffer_test.cpp b/vector_v2/tests/touch_event_buffer_test.cpp
+index 1fe5ae1..e127510 100644
+--- a/vector_v2/tests/touch_event_buffer_test.cpp
++++ b/vector_v2/tests/touch_event_buffer_test.cpp
+@@ -86,6 +86,51 @@ TEST_CASE("gesture edges displace queued moves before overflowing") {
+   CHECK(events.pop()->kind == vector_v2::TouchEventKind::kUp);
+ }
+ 
++TEST_CASE("reset_pending starts a fresh gesture without reusing queued state") {
++  std::array<vector_v2::TouchEvent, 4> storage{};
++  vector_v2::TouchEventBuffer events(storage);
++
++  CHECK(events.offer(vector_v2::TouchContactRead::kPoint, {1.0F, 1.0F}, 10U) ==
++        vector_v2::TouchOfferResult::kQueued);
++  CHECK(events.offer(vector_v2::TouchContactRead::kPoint, {2.0F, 2.0F}, 20U) ==
++        vector_v2::TouchOfferResult::kQueued);
++  events.reset_pending();
++
++  CHECK(events.pending() == 0U);
++  CHECK(events.offer(vector_v2::TouchContactRead::kPoint, {3.0F, 3.0F}, 30U) ==
++        vector_v2::TouchOfferResult::kQueued);
++  const auto down = events.pop();
++  REQUIRE(down.has_value());
++  CHECK(down->kind == vector_v2::TouchEventKind::kDown);
++  CHECK(down->sequence == 3U);
++}
++
++TEST_CASE("moves leave room for a complete gesture edge pair") {
++  std::array<vector_v2::TouchEvent, 4> storage{};
++  vector_v2::TouchEventBuffer events(storage);
++
++  CHECK(events.offer(vector_v2::TouchContactRead::kPoint, {1.0F, 1.0F}, 10U) ==
++        vector_v2::TouchOfferResult::kQueued);
++  CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 20U) ==
++        vector_v2::TouchOfferResult::kIgnored);
++  CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 30U) ==
++        vector_v2::TouchOfferResult::kQueued);
++  CHECK(events.offer(vector_v2::TouchContactRead::kPoint, {2.0F, 2.0F}, 40U) ==
++        vector_v2::TouchOfferResult::kQueued);
++  CHECK(events.offer(vector_v2::TouchContactRead::kPoint, {3.0F, 3.0F}, 50U) ==
++        vector_v2::TouchOfferResult::kMoveCoalesced);
++  CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 60U) ==
++        vector_v2::TouchOfferResult::kIgnored);
++  CHECK(events.offer(vector_v2::TouchContactRead::kNoTouch, {}, 70U) ==
++        vector_v2::TouchOfferResult::kQueued);
++
++  REQUIRE(events.pending() == 4U);
++  CHECK(events.pop()->kind == vector_v2::TouchEventKind::kDown);
++  CHECK(events.pop()->kind == vector_v2::TouchEventKind::kUp);
++  CHECK(events.pop()->kind == vector_v2::TouchEventKind::kDown);
++  CHECK(events.pop()->kind == vector_v2::TouchEventKind::kUp);
++}
++
+ TEST_CASE("a refused down edge is retried instead of changing contact state") {
+   std::array<vector_v2::TouchEvent, 4> storage{};
+   vector_v2::TouchEventBuffer events(storage);
+-- 
+2.54.0 (Apple Git-156)
+

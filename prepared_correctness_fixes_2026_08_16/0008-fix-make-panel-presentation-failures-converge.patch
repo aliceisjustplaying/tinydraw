@@ -1,0 +1,485 @@
+From 78c7a84e9b89e7697a9240c6f092dfce972f0a80 Mon Sep 17 00:00:00 2001
+From: TKTK <TKTK>
+Date: Sun, 16 Aug 2026 17:56:17 +0100
+Subject: [PATCH 08/10] fix: make panel presentation failures converge
+
+---
+ esp32/main/co5300_panel_transport.cpp         | 77 +++++++++++++------
+ esp32/main/vector_v2/vector_v2_app.cpp        | 27 ++++++-
+ esp32/main/vector_v2/vector_v2_presenter.cpp  | 24 +++++-
+ rp2350/vendor/amoled/AMOLED_1in8.c            |  2 +
+ vector_v2/include/tinydraw/vector_v2/chrome.h | 19 ++++-
+ vector_v2/src/chrome.cpp                      | 40 ++++++++--
+ vector_v2/tests/chrome_test.cpp               | 22 ++++++
+ 7 files changed, 174 insertions(+), 37 deletions(-)
+
+diff --git a/esp32/main/co5300_panel_transport.cpp b/esp32/main/co5300_panel_transport.cpp
+index ee13b34..7e7282c 100644
+--- a/esp32/main/co5300_panel_transport.cpp
++++ b/esp32/main/co5300_panel_transport.cpp
+@@ -41,6 +41,7 @@ static_assert(kPanelClockMHz == 40 || kPanelClockMHz == 50 || kPanelClockMHz ==
+ // ~90 us; a one-window RAMWR/RAMWRC stream minimizes both.
+ constexpr int kTransferPixels = 16384;
+ constexpr int kTransferQueueDepth = 3;
++constexpr TickType_t kTransferAcquireTimeout = pdMS_TO_TICKS(2'000U);
+ constexpr std::size_t kTransferHistory = 64U;
+ constexpr std::uint16_t kIoExpanderAddress = 0x20;
+ constexpr std::uint8_t kIoExpanderOutputRegister = 0x01;
+@@ -193,7 +194,11 @@ class Co5300PanelTransport::Impl {
+     tear_config.mode = GPIO_MODE_INPUT;
+     tear_config.pull_up_en = GPIO_PULLUP_DISABLE;
+     tear_config.pull_down_en = GPIO_PULLDOWN_DISABLE;
+-    tear_config.intr_type = GPIO_INTR_ANYEDGE;
++#ifdef TINYDRAW_VECTOR_V2_TE_EDGE_FALLING
++    tear_config.intr_type = GPIO_INTR_NEGEDGE;
++#else
++    tear_config.intr_type = GPIO_INTR_POSEDGE;
++#endif
+     const esp_err_t isr_service = gpio_install_isr_service(0);
+     if (gpio_config(&tear_config) != ESP_OK ||
+         (isr_service != ESP_OK && isr_service != ESP_ERR_INVALID_STATE) ||
+@@ -255,9 +260,14 @@ class Co5300PanelTransport::Impl {
+     const std::uint32_t falling = tear_falling_edges_.load(std::memory_order_acquire);
+     const std::uint32_t period = tear_period_us_.load(std::memory_order_relaxed);
+     const std::uint32_t high = tear_high_us_.load(std::memory_order_relaxed);
++#ifdef TINYDRAW_VECTOR_V2_TE_EDGE_FALLING
++    const std::uint32_t period_edges = falling;
++#else
++    const std::uint32_t period_edges = rising;
++#endif
+     return {.rising_edges = rising,
+             .falling_edges = falling,
+-            .period_us = rising < 2U ? -1 : static_cast<std::int64_t>(period),
++            .period_us = period_edges < 2U ? -1 : static_cast<std::int64_t>(period),
+             .high_us = high == 0U ? -1 : static_cast<std::int64_t>(high),
+             .level = gpio_get_level(kTearPin) != 0};
+   }
+@@ -333,8 +343,7 @@ class Co5300PanelTransport::Impl {
+         }
+         const TickType_t ticks = std::max<TickType_t>(
+             1, pdMS_TO_TICKS(static_cast<std::uint64_t>(remaining_us + 999) / 1'000U));
+-        // Either edge posts this semaphore. A wake from the unselected edge is
+-        // ignored unless the selected counter also advanced.
++        // The GPIO is configured for the selected edge only.
+         static_cast<void>(xSemaphoreTake(tear_semaphore_, ticks));
+       }
+     };
+@@ -376,14 +385,22 @@ class Co5300PanelTransport::Impl {
+         paged && esp_lcd_panel_io_tx_param(io_, 0x35, init_35.data(), init_35.size()) == ESP_OK;
+     // Sample the pin across roughly two frame periods: a toggling level
+     // means the panel emits TE and the interrupt side lost it.
++#ifdef TINYDRAW_VECTOR_V2_TE_EDGE_FALLING
+     const std::uint32_t edges_before = tear_falling_edges_.load(std::memory_order_acquire);
++#else
++    const std::uint32_t edges_before = tear_rising_edges_.load(std::memory_order_acquire);
++#endif
+     int high_samples = 0;
+     constexpr int kProbes = 34;
+     for (int probe = 0; probe < kProbes; ++probe) {
+       high_samples += gpio_get_level(kTearPin) != 0;
+       vTaskDelay(pdMS_TO_TICKS(1));
+     }
++#ifdef TINYDRAW_VECTOR_V2_TE_EDGE_FALLING
+     const std::uint32_t edges_after = tear_falling_edges_.load(std::memory_order_acquire);
++#else
++    const std::uint32_t edges_after = tear_rising_edges_.load(std::memory_order_acquire);
++#endif
+     const bool pin_toggles = high_samples != 0 && high_samples != kProbes;
+     bool isr_reinstalled = false;
+     if (pin_toggles && edges_after == edges_before) {
+@@ -392,7 +409,7 @@ class Co5300PanelTransport::Impl {
+     }
+     std::printf(
+         "TINYDRAW_PANEL_TE_HEAL drained=%u paged=%u sent=%u high=%d/%d edges_delta=%lu "
+-        "isr_reinstall=%u falling_edges=%lu\n",
++        "isr_reinstall=%u selected_edges=%lu\n",
+         drained, paged, sent, high_samples, kProbes,
+         static_cast<unsigned long>(edges_after - edges_before), isr_reinstalled,
+         static_cast<unsigned long>(edges_after));
+@@ -419,6 +436,9 @@ class Co5300PanelTransport::Impl {
+     // counter rollover.
+     while (static_cast<std::int32_t>(complete_count() - target) < 0) {
+       if (esp_timer_get_time() - started >= timeout_us) {
++        // A missing completion callback means slot ownership is unknowable.
++        // Fail closed instead of letting a later acquire block forever.
++        ready_ = false;
+         return false;
+       }
+       vTaskDelay(pdMS_TO_TICKS(1));
+@@ -460,8 +480,11 @@ class Co5300PanelTransport::Impl {
+     }
+ 
+     const std::int64_t transfer_started = esp_timer_get_time();
+-    ESP_ERROR_CHECK(xSemaphoreTake(transfer_semaphore_, portMAX_DELAY) == pdTRUE ? ESP_OK
+-                                                                                 : ESP_FAIL);
++    if (xSemaphoreTake(transfer_semaphore_, kTransferAcquireTimeout) != pdTRUE) {
++      ready_ = false;
++      ++rejected_push_count_;
++      return;
++    }
+     auto* transfer =
+         transfer_pixels_ + static_cast<std::ptrdiff_t>(transfer_index_ * kTransferPixels);
+     transfer_index_ = (transfer_index_ + 1U) % kTransferQueueDepth;
+@@ -522,8 +545,11 @@ class Co5300PanelTransport::Impl {
+     }
+ 
+     const std::int64_t transfer_started = esp_timer_get_time();
+-    ESP_ERROR_CHECK(xSemaphoreTake(transfer_semaphore_, portMAX_DELAY) == pdTRUE ? ESP_OK
+-                                                                                 : ESP_FAIL);
++    if (xSemaphoreTake(transfer_semaphore_, kTransferAcquireTimeout) != pdTRUE) {
++      ready_ = false;
++      ++rejected_push_count_;
++      return;
++    }
+     auto* transfer =
+         transfer_pixels_ + static_cast<std::ptrdiff_t>(transfer_index_ * kTransferPixels);
+     transfer_index_ = (transfer_index_ + 1U) % kTransferQueueDepth;
+@@ -580,7 +606,8 @@ class Co5300PanelTransport::Impl {
+     for (int row = 0; row < height; row += rows_per_transfer) {
+       const int rows = std::min(rows_per_transfer, height - row);
+       const std::int64_t transfer_started = esp_timer_get_time();
+-      if (xSemaphoreTake(transfer_semaphore_, portMAX_DELAY) != pdTRUE) {
++      if (xSemaphoreTake(transfer_semaphore_, kTransferAcquireTimeout) != pdTRUE) {
++        ready_ = false;
+         return false;
+       }
+       auto* transfer =
+@@ -675,7 +702,8 @@ class Co5300PanelTransport::Impl {
+     for (int row = 0; row < height; row += rows_per_transfer, ++strip_index) {
+       const int rows = std::min(rows_per_transfer, height - row);
+       const std::int64_t transfer_started = esp_timer_get_time();
+-      if (xSemaphoreTake(transfer_semaphore_, portMAX_DELAY) != pdTRUE) {
++      if (xSemaphoreTake(transfer_semaphore_, kTransferAcquireTimeout) != pdTRUE) {
++        ready_ = false;
+         return false;
+       }
+       auto* transfer =
+@@ -799,20 +827,21 @@ class Co5300PanelTransport::Impl {
+   static void on_tear_edge(void* context) {
+     auto& self = *static_cast<Impl*>(context);
+     const std::uint32_t now = static_cast<std::uint32_t>(esp_timer_get_time());
+-    if (gpio_get_level(kTearPin) != 0) {
+-      const std::uint32_t prior = self.tear_last_rise_us_.exchange(now, std::memory_order_relaxed);
+-      if (prior != 0U) {
+-        self.tear_period_us_.store(now - prior, std::memory_order_relaxed);
+-      }
+-      self.tear_rising_edges_.fetch_add(1U, std::memory_order_release);
+-    } else {
+-      const std::uint32_t rise = self.tear_last_rise_us_.load(std::memory_order_relaxed);
+-      if (rise != 0U) {
+-        self.tear_high_us_.store(now - rise, std::memory_order_relaxed);
+-      }
+-      self.tear_last_fall_us_.store(now, std::memory_order_relaxed);
+-      self.tear_falling_edges_.fetch_add(1U, std::memory_order_release);
++    // The GPIO peripheral, rather than a delayed pin sample, classifies the
++    // only edge used by this build's presentation policy.
++#ifdef TINYDRAW_VECTOR_V2_TE_EDGE_FALLING
++    const std::uint32_t prior = self.tear_last_fall_us_.exchange(now, std::memory_order_relaxed);
++    if (prior != 0U) {
++      self.tear_period_us_.store(now - prior, std::memory_order_relaxed);
+     }
++    self.tear_falling_edges_.fetch_add(1U, std::memory_order_release);
++#else
++    const std::uint32_t prior = self.tear_last_rise_us_.exchange(now, std::memory_order_relaxed);
++    if (prior != 0U) {
++      self.tear_period_us_.store(now - prior, std::memory_order_relaxed);
++    }
++    self.tear_rising_edges_.fetch_add(1U, std::memory_order_release);
++#endif
+     BaseType_t woke = pdFALSE;
+     xSemaphoreGiveFromISR(self.tear_semaphore_, &woke);
+     if (woke == pdTRUE) {
+diff --git a/esp32/main/vector_v2/vector_v2_app.cpp b/esp32/main/vector_v2/vector_v2_app.cpp
+index ca344b1..2dbb95c 100644
+--- a/esp32/main/vector_v2/vector_v2_app.cpp
++++ b/esp32/main/vector_v2/vector_v2_app.cpp
+@@ -1117,7 +1117,17 @@ void run_vector_v2_app() {
+           } else {
+             ribbon.reset();
+             static_cast<void>(ribbon.append(last_ink, true));
+-            live_metrics.include(presenter.show_start(last_ink, color, chrome, event_us));
++            const auto start_timing = presenter.show_start(last_ink, color, chrome, event_us);
++            live_metrics.include(start_timing);
++            if (!start_timing.passed) {
++              // Do not let authority continue from a panel state whose damage
++              // is unknown. Discard the uncommitted gesture and repaint the
++              // last durable document before accepting more input.
++              builder.cancel();
++              ribbon.reset();
++              ink.end();
++              static_cast<void>(presenter.refresh(chrome, event_us));
++            }
+           }
+         }
+       } else if (toolbar_pressed && (point.x != last_touch.x || point.y != last_touch.y)) {
+@@ -1157,7 +1167,15 @@ void run_vector_v2_app() {
+               });
+           const ChainedOperationStatus add_status = move.status;
+           stroke_commit_failed = move.commit_failed;
+-          if (add_status != ChainedOperationStatus::kAccepted) {
++          if (!move.visual_passed) {
++            // The coordinator may have committed a ready chunk after the
++            // failed visual attempt. Keep that durable prefix, discard only
++            // the transient tail, and converge the panel with a full compose.
++            builder.cancel();
++            ribbon.reset();
++            ink.end();
++            static_cast<void>(presenter.refresh(chrome, event_us));
++          } else if (add_status != ChainedOperationStatus::kAccepted) {
+             // Accepted streaming policy: chunks already committed stay in
+             // the document like physical ink; only the uncommitted tail of
+             // the gesture is discarded on capacity rejection.
+@@ -1194,6 +1212,11 @@ void run_vector_v2_app() {
+       } else if (panning) {
+         panning = false;
+         print_pan_baseline(presenter, pan_metrics);
++        // A failed final ring sweep may leave navigation ahead of the panel.
++        // Lift is the transaction boundary: always materialize and present
++        // the selected origin before the gesture is considered complete.
++        const auto timing = presenter.refresh(chrome, event_us);
++        print_presentation("pan-lift", presenter, timing);
+         std::fflush(stdout);
+       } else if (ink.active()) {
+         LiftBaselineTiming measured_lift{
+diff --git a/esp32/main/vector_v2/vector_v2_presenter.cpp b/esp32/main/vector_v2/vector_v2_presenter.cpp
+index 1142a0f..ce5b81f 100644
+--- a/esp32/main/vector_v2/vector_v2_presenter.cpp
++++ b/esp32/main/vector_v2/vector_v2_presenter.cpp
+@@ -33,6 +33,7 @@ namespace {
+ 
+ constexpr std::uint16_t kBackground = 0xFFFFU;
+ constexpr std::int64_t kTearWaitTimeoutUs = 40'000;
++constexpr int kPartialTearSyncRows = 32;
+ #ifdef TINYDRAW_VECTOR_V2_TEARING_PROBE
+ constexpr int kOpticalPatternX = 176;
+ constexpr int kOpticalPatternWidth = 16;
+@@ -619,6 +620,13 @@ LivePresentationTiming VectorV2Presenter::refresh_pan(int old_x, int old_y,
+   timing.tear_edge_isr_to_resume_us = edge_timing.tear_edge_isr_to_resume_us;
+   timing.tear_edge_wait_resumed = edge_timing.tear_edge_wait_resumed;
+   std::int64_t band_wait_us = 0;
++  if (timing.passed && start_row > 0) {
++    // The second window has independent CASET/RASET commands. Drain the
++    // first band's color queue before programming those registers.
++    if (!display_.wait_for_all(2'000'000)) {
++      timing.passed = false;
++    }
++  }
+   if (timing.passed && start_row > 0) {
+     const std::int64_t band_started = esp_timer_get_time();
+     bool band_ready = false;
+@@ -786,6 +794,11 @@ void VectorV2Presenter::copy_ring_to_stage(vector_v2::PixelRect panel_bounds,
+       std::copy(source_row.begin(), source_row.begin() + (width - first),
+                 destination.begin() + first);
+     }
++    if (surface.byte_swapped) {
++      for (std::uint16_t& pixel : destination) {
++        pixel = static_cast<std::uint16_t>((pixel >> 8U) | (pixel << 8U));
++      }
++    }
+   }
+ }
+ 
+@@ -934,10 +947,14 @@ LivePresentationTiming VectorV2Presenter::present_ring(
+       scheduled->strip.source_area_width, scheduled->strip.source_area_height, rows_per_strip,
+       {.context = &context, .paint = &paint_stage_thunk, .accepts_byte_swapped = true});
+   if (!streamed) {
++    // A later strip may fail after earlier color transactions were queued.
++    // Never allow the next CASET/RASET sequence to overtake that tail.
++    static_cast<void>(display_.wait_for_all(2'000'000));
+     static_cast<void>(scheduler_.abort(*sequence));
+     return timing;
+   }
+   if (!scheduler_.complete(*sequence)) {
++    static_cast<void>(display_.wait_for_all(2'000'000));
+     return timing;
+   }
+   timing.pushes = display_.push_count() - pushes_before;
+@@ -995,7 +1012,10 @@ LivePresentationTiming VectorV2Presenter::present_pixels(
+   const bool full_frame = bounds.x0 == 0 && bounds.y0 == 0 &&
+                           bounds.x1 == vector_v2::kOverviewWidth &&
+                           bounds.y1 == vector_v2::kOverviewHeight;
+-  if (full_frame) {
++  // Small live-tail windows are intentionally asynchronous. Region/fill
++  // windows span enough scanlines to race scanout and get their own edge.
++  const bool tear_synchronized = full_frame || height >= kPartialTearSyncRows;
++  if (tear_synchronized) {
+     const std::int64_t tear_wait_started = esp_timer_get_time();
+     const auto wait = display_.wait_for_tear_edge(selected_tear_edge(), kTearWaitTimeoutUs);
+     timing.tear_wait_us = esp_timer_get_time() - tear_wait_started;
+@@ -1023,10 +1043,12 @@ LivePresentationTiming VectorV2Presenter::present_pixels(
+       bounds.x0, bounds.y0, width, height, scheduled->strip.pixels.data(), scheduled->strip.stride,
+       rows_per_strip, {.context = &context, .paint = &paint_stage_thunk});
+   if (!streamed) {
++    static_cast<void>(display_.wait_for_all(2'000'000));
+     static_cast<void>(scheduler_.abort(*sequence));
+     return timing;
+   }
+   if (!scheduler_.complete(*sequence)) {
++    static_cast<void>(display_.wait_for_all(2'000'000));
+     return timing;
+   }
+ 
+diff --git a/rp2350/vendor/amoled/AMOLED_1in8.c b/rp2350/vendor/amoled/AMOLED_1in8.c
+index f6e9e69..f3f7868 100644
+--- a/rp2350/vendor/amoled/AMOLED_1in8.c
++++ b/rp2350/vendor/amoled/AMOLED_1in8.c
+@@ -248,6 +248,8 @@ void AMOLED_1IN8_DisplayWindowPacked(uint32_t Xstart, uint32_t Ystart, uint32_t
+                           (Xend - Xstart) * (Yend - Ystart) * 2,
+                           true);
+     while(dma_channel_is_busy(dma_tx));
++    // Match the full-frame path: DMA completion precedes the PIO shifter.
++    busy_wait_us_32(1);
+     QSPI_Deselect(qspi);
+ }
+ 
+diff --git a/vector_v2/include/tinydraw/vector_v2/chrome.h b/vector_v2/include/tinydraw/vector_v2/chrome.h
+index 95d1c2a..b460988 100644
+--- a/vector_v2/include/tinydraw/vector_v2/chrome.h
++++ b/vector_v2/include/tinydraw/vector_v2/chrome.h
+@@ -159,16 +159,19 @@ struct MinimapSurface {
+   bool byte_swapped = false;
+ };
+ 
+-// Caller-funded PSRAM for prerendered fixed chrome sprites. The cache keeps
+-// rasterization out of per-strip DMA staging while the canvas ring remains
+-// presentation-pure. Popup/modal states use the uncached general renderer.
+-inline constexpr std::size_t kChromeStagingCachePixels = 53'956U;
++// Caller-funded PSRAM for prerendered fixed chrome sprites and one transparent
++// full-panel modal overlay. Rasterization always finishes before DMA staging.
++inline constexpr std::size_t kChromeSpriteCachePixels = 53'956U;
++inline constexpr std::size_t kChromeModalCachePixels = 368U * 448U;
++inline constexpr std::size_t kChromeStagingCachePixels =
++    kChromeSpriteCachePixels + kChromeModalCachePixels;
+ 
+ struct ChromeStagingCacheStats {
+   std::uint32_t bottom_redraws = 0;
+   std::uint32_t battery_redraws = 0;
+   std::uint32_t zoom_redraws = 0;
+   std::uint32_t minimap_base_redraws = 0;
++  std::uint32_t modal_redraws = 0;
+ };
+ 
+ class ChromeStagingCache {
+@@ -198,6 +201,13 @@ class ChromeStagingCache {
+  private:
+   std::span<std::uint16_t> pixels_{};
+   ChromeState bottom_state_{};
++  ChromeState modal_state_{};
++  int modal_zoom_percent_ = 0;
++  int modal_level_x_ = 0;
++  int modal_level_y_ = 0;
++  int modal_level_width_ = 0;
++  int modal_level_height_ = 0;
++  std::uint32_t modal_overview_revision_ = 0;
+   int battery_percentage_ = -1;
+   bool battery_charging_ = false;
+   int zoom_percent_ = 0;
+@@ -207,6 +217,7 @@ class ChromeStagingCache {
+   bool battery_valid_ = false;
+   bool zoom_valid_ = false;
+   bool minimap_base_valid_ = false;
++  bool modal_valid_ = false;
+ };
+ // Draws the minimap into the surface; the pan path composes the overlay into
+ // a small scratch surface instead of writing into the (possibly
+diff --git a/vector_v2/src/chrome.cpp b/vector_v2/src/chrome.cpp
+index c264012..83cd5b0 100644
+--- a/vector_v2/src/chrome.cpp
++++ b/vector_v2/src/chrome.cpp
+@@ -49,7 +49,7 @@ constexpr std::size_t rect_pixels(ChromeRect rect) {
+ }
+ static_assert(rect_pixels(kZoomRailOverlayRect) + rect_pixels(kMinimapOverlayRect) +
+                       rect_pixels(kBatteryOverlayRect) + rect_pixels(kBottomCacheRect) ==
+-                  kChromeStagingCachePixels,
++                  kChromeSpriteCachePixels,
+               "chrome staging cache layout must match its caller-funded size");
+ static_assert([] {
+   for (const auto& palette : kPico8Palettes) {
+@@ -903,6 +903,29 @@ bool ChromeStagingCache::prepare_for(ChromeRect panel_bounds, const ChromeState&
+     return false;
+   }
+   if (!canvas_overlays_visible(state)) {
++    const bool navigation_matches =
++        modal_zoom_percent_ == navigation.zoom_percent && modal_level_x_ == navigation.level_x &&
++        modal_level_y_ == navigation.level_y && modal_level_width_ == navigation.level_width &&
++        modal_level_height_ == navigation.level_height &&
++        modal_overview_revision_ == overview_revision;
++    if (!modal_valid_ || modal_state_ != state || !navigation_matches) {
++      auto modal = pixels_.subspan(kChromeSpriteCachePixels, kChromeModalCachePixels);
++      std::fill(modal.begin(), modal.end(), kCacheTransparent);
++      const MinimapSurface surface{modal, kWidth, kHeight, 0, 0};
++      draw_fixed_chrome(surface, state);
++      Painter painter(modal, kWidth, kHeight);
++      draw_export_toast(painter, state);
++      static_cast<void>(draw_strip_overlays(surface, state, navigation));
++      modal_state_ = state;
++      modal_zoom_percent_ = navigation.zoom_percent;
++      modal_level_x_ = navigation.level_x;
++      modal_level_y_ = navigation.level_y;
++      modal_level_width_ = navigation.level_width;
++      modal_level_height_ = navigation.level_height;
++      modal_overview_revision_ = overview_revision;
++      modal_valid_ = true;
++      ++stats_.modal_redraws;
++    }
+     return true;
+   }
+ 
+@@ -994,11 +1017,16 @@ bool ChromeStagingCache::paint_prepared(const MinimapSurface& surface, const Chr
+     return false;
+   }
+   if (!canvas_overlays_visible(state)) {
+-    draw_fixed_chrome(surface, state);
+-    Painter painter(surface.pixels, surface.width, surface.height, surface.origin_x,
+-                    surface.origin_y);
+-    draw_export_toast(painter, state);
+-    static_cast<void>(draw_strip_overlays(surface, state, navigation));
++    const bool navigation_matches =
++        modal_zoom_percent_ == navigation.zoom_percent && modal_level_x_ == navigation.level_x &&
++        modal_level_y_ == navigation.level_y && modal_level_width_ == navigation.level_width &&
++        modal_level_height_ == navigation.level_height &&
++        modal_overview_revision_ == overview_revision;
++    if (!modal_valid_ || modal_state_ != state || !navigation_matches) {
++      return false;
++    }
++    blend_cached_sprite(surface, {0, 0, kWidth, kHeight},
++                        pixels_.subspan(kChromeSpriteCachePixels, kChromeModalCachePixels));
+     return true;
+   }
+   const ChromeRect panel_bounds{surface.origin_x, surface.origin_y,
+diff --git a/vector_v2/tests/chrome_test.cpp b/vector_v2/tests/chrome_test.cpp
+index cfc9844..35d58e1 100644
+--- a/vector_v2/tests/chrome_test.cpp
++++ b/vector_v2/tests/chrome_test.cpp
+@@ -590,6 +590,28 @@ TEST_CASE("staging strips reproduce all fixed chrome without mutating canvas sou
+   }
+   CHECK(swapped_cached == swapped_reference);
+ 
++  const ChromeState modal_state{.popup = tinydraw::vector_v2::ChromePopup::kColors};
++  std::vector<std::uint16_t> modal_reference = canvas;
++  tinydraw::vector_v2::draw_chrome(modal_reference, width, height, modal_state);
++  tinydraw::vector_v2::draw_chrome_canvas_overlays(modal_reference, width, height, modal_state,
++                                                   navigation);
++  std::vector<std::uint16_t> modal_cache_pixels(
++      tinydraw::vector_v2::kChromeStagingCachePixels);
++  tinydraw::vector_v2::ChromeStagingCache modal_cache(modal_cache_pixels);
++  REQUIRE(modal_cache.prepare(modal_state, navigation, 7U));
++  const auto modal_stats = modal_cache.stats();
++  CHECK(modal_stats.modal_redraws == 1U);
++  std::vector<std::uint16_t> modal_staged = canvas;
++  for (int y = 0; y < height; y += rows_per_strip) {
++    const int rows = std::min(rows_per_strip, height - y);
++    auto strip =
++        std::span(modal_staged)
++            .subspan(static_cast<std::size_t>(y) * width, static_cast<std::size_t>(rows) * width);
++    REQUIRE(modal_cache.paint_prepared({strip, width, rows, 0, y}, modal_state, navigation, 7U));
++  }
++  CHECK(modal_staged == modal_reference);
++  CHECK(modal_cache.stats().modal_redraws == modal_stats.modal_redraws);
++
+   auto moved = navigation;
+   moved.level_x += 137;
+   moved.level_y += 211;
+-- 
+2.54.0 (Apple Git-156)
+

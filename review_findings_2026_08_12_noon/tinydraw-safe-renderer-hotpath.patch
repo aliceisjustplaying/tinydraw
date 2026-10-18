@@ -1,0 +1,171 @@
+--- a/core/src/viewport_renderer.cpp
++++ b/core/src/viewport_renderer.cpp
+@@ -235,49 +235,55 @@
+     };
+     const bool final = index + 1U == samples.size();
+     const RibbonUpdate update = final ? ribbon.finish(point) : ribbon.append(point, false);
+-    if (update.committed.size() > arena.size() - batch.primitive_count) {
+-      stats.geometry_ticks += static_cast<std::uint32_t>(tick(options.now) - geometry_started);
+-      return GeometryResult::kCapacity;
+-    }
+     for (const RibbonPrimitive& primitive : update.committed) {
+-      const std::size_t slot = batch.primitive_count;
+-      arena[slot] = primitive;
+-      TileRect rect;
+       const PrimitiveBounds bounds = bounds_of(primitive);
+-      if (std::isfinite(bounds.x0) && std::isfinite(bounds.y0) && std::isfinite(bounds.x1) &&
+-          std::isfinite(bounds.y1) && bounds.x1 >= 0.0F && bounds.y1 >= 0.0F &&
+-          bounds.x0 < static_cast<float>(kCanvasWidth) &&
+-          bounds.y0 < static_cast<float>(kCanvasHeight)) {
+-        const int first_x =
+-            std::clamp(static_cast<int>(std::floor(bounds.x0)), 0, kCanvasWidth - 1);
+-        const int first_y =
+-            std::clamp(static_cast<int>(std::floor(bounds.y0)), 0, kCanvasHeight - 1);
+-        const int last_x = std::clamp(static_cast<int>(std::ceil(bounds.x1)), 0, kCanvasWidth - 1);
+-        const int last_y = std::clamp(static_cast<int>(std::ceil(bounds.y1)), 0, kCanvasHeight - 1);
+-        const int first_tile_x = std::max(first_x / kTileSize, region.x0 / kTileSize);
+-        const int first_tile_y = std::max(first_y / kTileSize, region.y0 / kTileSize);
+-        const int last_tile_x = std::min(last_x / kTileSize, (region.x1 - 1) / kTileSize);
+-        const int last_tile_y = std::min(last_y / kTileSize, (region.y1 - 1) / kTileSize);
+-        if (first_tile_x <= last_tile_x && first_tile_y <= last_tile_y) {
+-          rect.x0 = static_cast<std::uint8_t>(first_tile_x);
+-          rect.y0 = static_cast<std::uint8_t>(first_tile_y);
+-          rect.x1 = static_cast<std::uint8_t>(last_tile_x);
+-          rect.y1 = static_cast<std::uint8_t>(last_tile_y);
+-          const std::size_t touched = static_cast<std::size_t>(rect.x1 - rect.x0 + 1) *
+-                                      static_cast<std::size_t>(rect.y1 - rect.y0 + 1);
+-          if (touched > kBatchEntryCapacity - batch.entry_count) {
+-            stats.geometry_ticks +=
+-                static_cast<std::uint32_t>(tick(options.now) - geometry_started);
+-            return GeometryResult::kCapacity;
+-          }
+-          batch.entry_count += touched;
+-        }
++      if (!std::isfinite(bounds.x0) || !std::isfinite(bounds.y0) ||
++          !std::isfinite(bounds.x1) || !std::isfinite(bounds.y1) ||
++          bounds.x1 < static_cast<float>(region.x0) ||
++          bounds.y1 < static_cast<float>(region.y0) ||
++          bounds.x0 >= static_cast<float>(region.x1) ||
++          bounds.y0 >= static_cast<float>(region.y1)) {
++        continue;
++      }
++
++      const int first_x =
++          std::clamp(static_cast<int>(std::floor(bounds.x0)), 0, kCanvasWidth - 1);
++      const int first_y =
++          std::clamp(static_cast<int>(std::floor(bounds.y0)), 0, kCanvasHeight - 1);
++      const int last_x = std::clamp(static_cast<int>(std::ceil(bounds.x1)), 0, kCanvasWidth - 1);
++      const int last_y = std::clamp(static_cast<int>(std::ceil(bounds.y1)), 0, kCanvasHeight - 1);
++      const int first_tile_x = std::max(first_x / kTileSize, region.x0 / kTileSize);
++      const int first_tile_y = std::max(first_y / kTileSize, region.y0 / kTileSize);
++      const int last_tile_x = std::min(last_x / kTileSize, (region.x1 - 1) / kTileSize);
++      const int last_tile_y = std::min(last_y / kTileSize, (region.y1 - 1) / kTileSize);
++      if (first_tile_x > last_tile_x || first_tile_y > last_tile_y) {
++        continue;
+       }
+-      rects[slot] = rect;
+-      ++batch.primitive_count;
++
++      const std::size_t touched = static_cast<std::size_t>(last_tile_x - first_tile_x + 1) *
++                                  static_cast<std::size_t>(last_tile_y - first_tile_y + 1);
++      if (batch.primitive_count >= arena.size() ||
++          touched > kBatchEntryCapacity - batch.entry_count) {
++        stats.geometry_ticks += static_cast<std::uint32_t>(tick(options.now) - geometry_started);
++        return GeometryResult::kCapacity;
++      }
++
++      const std::size_t slot = batch.primitive_count++;
++      arena[slot] = primitive;
++      rects[slot] = {
++          .x0 = static_cast<std::uint8_t>(first_tile_x),
++          .y0 = static_cast<std::uint8_t>(first_tile_y),
++          .x1 = static_cast<std::uint8_t>(last_tile_x),
++          .y1 = static_cast<std::uint8_t>(last_tile_y),
++      };
++      batch.entry_count += touched;
+     }
+   }
+ 
++  if (batch.primitive_count == first_primitive) {
++    stats.geometry_ticks += static_cast<std::uint32_t>(tick(options.now) - geometry_started);
++    return GeometryResult::kComplete;
++  }
+   if (batch.range_count >= ranges().size()) {
+     stats.geometry_ticks += static_cast<std::uint32_t>(tick(options.now) - geometry_started);
+     return GeometryResult::kCapacity;
+@@ -516,14 +522,19 @@
+     std::size_t range_index = 0;
+     std::size_t entry = offset;
+     const std::size_t entry_end = static_cast<std::size_t>(offset) + count;
++    coverage.reset(tile_x, tile_y, width, height);
++    bool first_range = true;
+     while (entry < entry_end) {
++      if (!first_range) {
++        coverage.clear();
++      }
++      first_range = false;
+       const std::uint16_t first_slot = entry_pool[entry];
+       while (first_slot >= range_list[range_index].first + range_list[range_index].count) {
+         ++range_index;
+       }
+       const StrokeRange range = range_list[range_index];
+       const std::uint32_t raster_started = tick(options.now);
+-      coverage.reset(tile_x, tile_y, width, height);
+       while (entry < entry_end && entry_pool[entry] < range.first + range.count) {
+         const RibbonPrimitive& primitive = arena[entry_pool[entry]];
+         if (primitive.kind == RibbonPrimitiveKind::kCircle) {
+--- a/core/src/coverage_tile.cpp
++++ b/core/src/coverage_tile.cpp
+@@ -325,6 +325,10 @@
+         continue;
+       }
+       const std::size_t index = static_cast<std::size_t>(y * coverage.width() + x);
++      if (alpha == 255) {
++        destination[index] = source;
++        continue;
++      }
+       const std::uint16_t current = destination[index];
+       const int red = blend_channel((current >> 11U) & 0x1FU, source_red, alpha);
+       const int green = blend_channel((current >> 5U) & 0x3FU, source_green, alpha);
+--- a/tests/viewport_renderer_test.cpp
++++ b/tests/viewport_renderer_test.cpp
+@@ -159,6 +159,39 @@
+   }
+ }
+ 
++TEST_CASE("region rendering does not spend primitive capacity on off-region geometry") {
++  constexpr std::size_t kSampleCount = 900U;
++  std::array<tinydraw::VectorStroke, 1> stroke_storage;
++  std::array<tinydraw::StrokeSample, kSampleCount> sample_storage;
++  tinydraw::VectorDocument document(stroke_storage, sample_storage);
++  REQUIRE(document.begin_stroke(kBlue, tinydraw::VectorTool::kPen,
++                                {.x = 20.0F, .y = 16.0F, .radius = 1.5F}));
++  REQUIRE(document.append({.x = 100.0F, .y = 16.0F, .radius = 1.5F}));
++  for (std::size_t index = 2; index < kSampleCount; ++index) {
++    REQUIRE(document.append({.x = 30.0F + static_cast<float>(index % 300U),
++                             .y = index % 2U == 0U ? 300.0F : 304.0F,
++                             .radius = 1.5F}));
++  }
++  REQUIRE(document.finish_stroke());
++
++  std::vector<std::uint8_t> scratch(kPixels);
++  std::vector<std::uint16_t> full(kPixels);
++  std::vector<std::uint16_t> partial(kPixels, 0x1234U);
++  tinydraw::ViewportRenderer renderer(scratch);
++  static_cast<void>(renderer.render(document, {}, full));
++  const tinydraw::Rect region{.x0 = 0, .y0 = 0, .x1 = tinydraw::kCanvasWidth, .y1 = 32};
++  const auto stats = renderer.render_region(document, {}, partial, region);
++
++  REQUIRE(stats.complete);
++  CHECK(stats.primitives_rasterized < renderer.primitive_capacity());
++  for (int y = 0; y < tinydraw::kCanvasHeight; ++y) {
++    for (int x = 0; x < tinydraw::kCanvasWidth; ++x) {
++      const bool inside = y < region.y1;
++      CHECK(partial[pixel(x, y)] == (inside ? full[pixel(x, y)] : 0x1234U));
++    }
++  }
++}
++
+ TEST_CASE("cached integer pan plus exposed strip render equals a full rebuild") {
+   std::array<tinydraw::VectorStroke, 3> stroke_storage;
+   std::array<tinydraw::StrokeSample, 9> sample_storage;

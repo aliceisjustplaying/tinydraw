@@ -1,0 +1,578 @@
+From 8c92b65922e71f828c7720c1b068e9e39887c964 Mon Sep 17 00:00:00 2001
+From: TKTK <TKTK>
+Date: Sun, 16 Aug 2026 17:23:13 +0100
+Subject: [PATCH 02/10] fix: validate raster and staging descriptors
+
+---
+ core/include/tinydraw/checked_surface.h       | 24 ++++++++++++++
+ .../include/tinydraw/graphics/coverage_tile.h |  5 ++-
+ core/include/tinydraw/ui/pixel_painter.h      | 33 +++++++++++++++----
+ core/src/coverage_tile.cpp                    | 20 ++++++++---
+ core/src/ribbon_renderer.cpp                  | 19 +++++++----
+ core/src/stroke_raster.cpp                    |  4 ++-
+ core/src/viewport_renderer.cpp                |  4 +--
+ esp32/main/co5300_panel_transport.cpp         | 10 +++---
+ tests/coverage_tile_test.cpp                  | 19 +++++++++++
+ tests/toolbar_test.cpp                        | 18 ++++++++++
+ vector_v2/src/incremental_rasterizer.cpp      | 15 +++++----
+ vector_v2/src/materialized_canvas.cpp         |  7 ++--
+ vector_v2/src/operation_log.cpp               |  3 +-
+ vector_v2/src/tile_payload_analysis.cpp       |  8 +++--
+ .../tests/incremental_rasterizer_test.cpp     | 20 +++++++++++
+ vector_v2/tests/operation_log_test.cpp        | 12 +++++++
+ .../tests/tile_payload_analysis_test.cpp      | 17 ++++++++++
+ 17 files changed, 198 insertions(+), 40 deletions(-)
+ create mode 100644 core/include/tinydraw/checked_surface.h
+
+diff --git a/core/include/tinydraw/checked_surface.h b/core/include/tinydraw/checked_surface.h
+new file mode 100644
+index 0000000..81a7614
+--- /dev/null
++++ b/core/include/tinydraw/checked_surface.h
+@@ -0,0 +1,24 @@
++#pragma once
++
++#include <cstddef>
++#include <limits>
++#include <optional>
++
++namespace tinydraw {
++
++// Returns the number of elements needed to address a width x height window
++// whose row starts are stride elements apart. Rejects zero dimensions, short
++// strides, and multiplication/addition overflow before callers index rows.
++[[nodiscard]] constexpr std::optional<std::size_t> checked_surface_extent(std::size_t width,
++                                                                          std::size_t height,
++                                                                          std::size_t stride) {
++  if (width == 0U || height == 0U || stride < width) {
++    return std::nullopt;
++  }
++  if (height - 1U > (std::numeric_limits<std::size_t>::max() - width) / stride) {
++    return std::nullopt;
++  }
++  return (height - 1U) * stride + width;
++}
++
++}  // namespace tinydraw
+diff --git a/core/include/tinydraw/graphics/coverage_tile.h b/core/include/tinydraw/graphics/coverage_tile.h
+index 0491f42..4ff521c 100644
+--- a/core/include/tinydraw/graphics/coverage_tile.h
++++ b/core/include/tinydraw/graphics/coverage_tile.h
+@@ -15,12 +15,15 @@ class CoverageTile {
+  public:
+   CoverageTile(int origin_x, int origin_y, int width = kTileSize, int height = kTileSize);
+ 
+-  void reset(int origin_x, int origin_y, int width = kTileSize, int height = kTileSize);
++  [[nodiscard]] bool reset(int origin_x, int origin_y, int width = kTileSize,
++                           int height = kTileSize);
+   void clear();
+   void union_coverage(int x, int y, std::uint8_t coverage);
+   [[nodiscard]] std::uint8_t coverage_at(int x, int y) const;
+ 
+   void rasterize_circle(Point center, float radius);
++  // Ribbon geometry emits at most quads. Larger polygons are rejected rather
++  // than overflowing the fixed four-edge scan-conversion workspace.
+   void rasterize_convex(std::span<const Point> polygon);
+ 
+   [[nodiscard]] int origin_x() const { return origin_x_; }
+diff --git a/core/include/tinydraw/ui/pixel_painter.h b/core/include/tinydraw/ui/pixel_painter.h
+index 40d6359..dcf39ca 100644
+--- a/core/include/tinydraw/ui/pixel_painter.h
++++ b/core/include/tinydraw/ui/pixel_painter.h
+@@ -8,6 +8,8 @@
+ #include <span>
+ #include <string_view>
+ 
++#include "tinydraw/checked_surface.h"
++
+ namespace tinydraw {
+ 
+ struct UiPixelRect {
+@@ -20,19 +22,37 @@ struct UiPixelRect {
+ class PixelPainter {
+  public:
+   PixelPainter(std::span<std::uint16_t> pixels, int width, int height)
+-      : pixels_(pixels), width_(width), height_(height) {}
++      : PixelPainter(pixels, width, height, width, 0, 0) {}
+   // A painter whose surface's (0, 0) sits at logical coordinate
+   // (origin_x, origin_y): callers keep drawing in absolute coordinates and
+   // every primitive translates and clips. This lets full-frame drawing code
+   // render into small offset scratch surfaces unchanged.
+   PixelPainter(std::span<std::uint16_t> pixels, int width, int height, int origin_x, int origin_y)
+-      : pixels_(pixels), width_(width), height_(height), origin_x_(origin_x), origin_y_(origin_y) {}
++      : PixelPainter(pixels, width, height, width, origin_x, origin_y) {}
++  PixelPainter(std::span<std::uint16_t> pixels, int width, int height, int stride, int origin_x,
++               int origin_y)
++      : pixels_(pixels), origin_x_(origin_x), origin_y_(origin_y) {
++    if (width <= 0 || height <= 0 || stride < width) {
++      return;
++    }
++    const auto required =
++        checked_surface_extent(static_cast<std::size_t>(width), static_cast<std::size_t>(height),
++                               static_cast<std::size_t>(stride));
++    if (!required.has_value() || pixels.size() < *required) {
++      return;
++    }
++    width_ = width;
++    height_ = height;
++    stride_ = stride;
++  }
++
++  [[nodiscard]] bool ready() const { return width_ > 0 && height_ > 0; }
+ 
+   void pixel(int x, int y, std::uint16_t color) {
+     x -= origin_x_;
+     y -= origin_y_;
+     if (x >= 0 && x < width_ && y >= 0 && y < height_) {
+-      pixels_[static_cast<std::size_t>(y) * static_cast<std::size_t>(width_) +
++      pixels_[static_cast<std::size_t>(y) * static_cast<std::size_t>(stride_) +
+               static_cast<std::size_t>(x)] = color;
+     }
+   }
+@@ -42,7 +62,7 @@ class PixelPainter {
+     const int x1 = std::clamp(bounds.x1 - origin_x_, x0, width_);
+     for (int y = std::clamp(bounds.y0 - origin_y_, 0, height_);
+          y < std::clamp(bounds.y1 - origin_y_, 0, height_); ++y) {
+-      const auto start = pixels_.begin() + static_cast<std::ptrdiff_t>(y) * width_ + x0;
++      const auto start = pixels_.begin() + static_cast<std::ptrdiff_t>(y) * stride_ + x0;
+       std::fill(start, start + (x1 - x0), color);
+     }
+   }
+@@ -171,8 +191,9 @@ class PixelPainter {
+   }
+ 
+   std::span<std::uint16_t> pixels_;
+-  int width_;
+-  int height_;
++  int width_ = 0;
++  int height_ = 0;
++  int stride_ = 0;
+   int origin_x_ = 0;
+   int origin_y_ = 0;
+ };
+diff --git a/core/src/coverage_tile.cpp b/core/src/coverage_tile.cpp
+index 8218256..30f25f8 100644
+--- a/core/src/coverage_tile.cpp
++++ b/core/src/coverage_tile.cpp
+@@ -36,12 +36,21 @@ void include_strip_x(float x, float& minimum_x, float& maximum_x, bool& found) {
+ }  // namespace
+ 
+ CoverageTile::CoverageTile(int origin_x, int origin_y, int width, int height) {
+-  reset(origin_x, origin_y, width, height);
++  static_cast<void>(reset(origin_x, origin_y, width, height));
+ }
+ 
+-void CoverageTile::reset(int origin_x, int origin_y, int width, int height) {
+-  assert(width > 0 && width <= kTileSize);
+-  assert(height > 0 && height <= kTileSize);
++bool CoverageTile::reset(int origin_x, int origin_y, int width, int height) {
++  if (width <= 0 || width > kTileSize || height <= 0 || height > kTileSize) {
++    origin_x_ = origin_x;
++    origin_y_ = origin_y;
++    width_ = 0;
++    height_ = 0;
++    dirty_left_ = 0;
++    dirty_top_ = 0;
++    dirty_right_ = -1;
++    dirty_bottom_ = -1;
++    return false;
++  }
+   origin_x_ = origin_x;
+   origin_y_ = origin_y;
+   width_ = width;
+@@ -51,6 +60,7 @@ void CoverageTile::reset(int origin_x, int origin_y, int width, int height) {
+   dirty_top_ = 0;
+   dirty_right_ = -1;
+   dirty_bottom_ = -1;
++  return true;
+ }
+ 
+ void CoverageTile::clear() {
+@@ -189,7 +199,7 @@ void CoverageTile::rasterize_circle(Point center, float radius) {
+ }
+ 
+ void CoverageTile::rasterize_convex(std::span<const Point> polygon) {
+-  if (polygon.size() < 3U) {
++  if (polygon.size() < 3U || polygon.size() > 4U || width_ <= 0 || height_ <= 0) {
+     return;
+   }
+   float minimum_x = polygon.front().x;
+diff --git a/core/src/ribbon_renderer.cpp b/core/src/ribbon_renderer.cpp
+index 478aace..ac0c79b 100644
+--- a/core/src/ribbon_renderer.cpp
++++ b/core/src/ribbon_renderer.cpp
+@@ -5,6 +5,8 @@
+ #include <cmath>
+ #include <limits>
+ 
++#include "tinydraw/checked_surface.h"
++
+ namespace tinydraw {
+ namespace {
+ 
+@@ -82,11 +84,14 @@ RibbonRenderStats RibbonRenderer::render_surface(std::span<const RibbonPrimitive
+   if (width <= 0 || height <= 0 || stride < width) {
+     return {};
+   }
+-  const std::size_t required =
+-      static_cast<std::size_t>(height - 1) * static_cast<std::size_t>(stride) +
+-      static_cast<std::size_t>(width);
+-  assert(surface.size() >= required);
+-  if (surface.size() < required) {
++  const auto required =
++      checked_surface_extent(static_cast<std::size_t>(width), static_cast<std::size_t>(height),
++                             static_cast<std::size_t>(stride));
++  if (!required.has_value()) {
++    return {};
++  }
++  assert(surface.size() >= *required);
++  if (surface.size() < *required) {
+     return {};
+   }
+   if (primitives.empty()) {
+@@ -119,7 +124,9 @@ RibbonRenderStats RibbonRenderer::render_surface(std::span<const RibbonPrimitive
+     for (int tile_x = first_tile_x; tile_x <= last_x; tile_x += kTileSize) {
+       const int tile_width = std::min(kTileSize, origin_x + width - tile_x);
+       const int tile_height = std::min(kTileSize, origin_y + height - tile_y);
+-      coverage_.reset(tile_x, tile_y, tile_width, tile_height);
++      if (!coverage_.reset(tile_x, tile_y, tile_width, tile_height)) {
++        continue;
++      }
+       for (const RibbonPrimitive& primitive : primitives) {
+         if (!valid(primitive)) {
+           continue;
+diff --git a/core/src/stroke_raster.cpp b/core/src/stroke_raster.cpp
+index ec543bc..ef10a4c 100644
+--- a/core/src/stroke_raster.cpp
++++ b/core/src/stroke_raster.cpp
+@@ -254,7 +254,9 @@ void StrokeRaster::mark_tiles(const RibbonPrimitiveBatch& primitives, TileFlags&
+ void StrokeRaster::load_coverage_tile(int tile_x, int tile_y, StrokeRasterStats& stats) {
+   const int tile_width = std::min(kTileSize, kCanvasWidth - tile_x);
+   const int tile_height = std::min(kTileSize, kCanvasHeight - tile_y);
+-  coverage_.reset(tile_x, tile_y, tile_width, tile_height);
++  if (!coverage_.reset(tile_x, tile_y, tile_width, tile_height)) {
++    return;
++  }
+   for (int y = 0; y < tile_height; ++y) {
+     const auto index = static_cast<std::size_t>((tile_y + y) * kCanvasWidth + tile_x);
+     std::copy_n(active_coverage_.begin() + static_cast<std::ptrdiff_t>(index), tile_width,
+diff --git a/core/src/viewport_renderer.cpp b/core/src/viewport_renderer.cpp
+index 58dddb4..c246a6b 100644
+--- a/core/src/viewport_renderer.cpp
++++ b/core/src/viewport_renderer.cpp
+@@ -353,7 +353,7 @@ bool ViewportRenderer::render_large_stroke(const VectorStroke& stroke,
+       const int tile_bottom = std::min({grid_y + kTileSize, kCanvasHeight, region.y1});
+       const int width = tile_right - tile_x;
+       const int height = tile_bottom - tile_y;
+-      lane.coverage.reset(tile_x, tile_y, width, height);
++      static_cast<void>(lane.coverage.reset(tile_x, tile_y, width, height));
+ 
+       CurvedRibbonStream ribbon;
+       std::uint32_t tile_primitive_count = 0U;
+@@ -529,7 +529,7 @@ void ViewportRenderer::composite_lane(void* raw, int lane) {
+     std::size_t range_index = 0;
+     std::size_t entry = offset;
+     const std::size_t entry_end = static_cast<std::size_t>(offset) + count;
+-    coverage.reset(tile_x, tile_y, width, height);
++    static_cast<void>(coverage.reset(tile_x, tile_y, width, height));
+     bool first_range = true;
+     while (entry < entry_end) {
+       if (!first_range) {
+diff --git a/esp32/main/co5300_panel_transport.cpp b/esp32/main/co5300_panel_transport.cpp
+index 7124715..ee13b34 100644
+--- a/esp32/main/co5300_panel_transport.cpp
++++ b/esp32/main/co5300_panel_transport.cpp
+@@ -545,7 +545,7 @@ class Co5300PanelTransport::Impl {
+ 
+   bool stream_rect(int x, int y, int width, int height, const std::uint16_t* pixels, int stride,
+                    int strip_rows, PanelStagePatch patch) {
+-    if (!ready_ || pixels == nullptr || width <= 0 || height <= 0) {
++    if (!ready_ || pixels == nullptr || width <= 0 || height <= 0 || (width & 1) != 0) {
+       return false;
+     }
+     const int source_stride = stride == 0 ? width : stride;
+@@ -643,10 +643,10 @@ class Co5300PanelTransport::Impl {
+   bool stream_rect_ring(int x, int y, int width, int height, const std::uint16_t* area_pixels,
+                         int stride, int shift_x, int shift_y, int area_width, int area_height,
+                         int strip_rows, PanelStagePatch patch) {
+-    if (!ready_ || area_pixels == nullptr || width <= 0 || height <= 0 || stride < area_width ||
+-        shift_x < 0 || shift_x >= area_width || shift_y < 0 || shift_y >= area_height || x < 0 ||
+-        y < 0 || x + width > area_width || y + height > area_height || x + width > kCanvasWidth ||
+-        y + height > kCanvasHeight) {
++    if (!ready_ || area_pixels == nullptr || width <= 0 || height <= 0 || (width & 1) != 0 ||
++        stride < area_width || shift_x < 0 || shift_x >= area_width || shift_y < 0 ||
++        shift_y >= area_height || x < 0 || y < 0 || x + width > area_width ||
++        y + height > area_height || x + width > kCanvasWidth || y + height > kCanvasHeight) {
+       return false;
+     }
+     const int rows_per_transfer = std::min(strip_rows, kTransferPixels / width);
+diff --git a/tests/coverage_tile_test.cpp b/tests/coverage_tile_test.cpp
+index 3011a58..646005f 100644
+--- a/tests/coverage_tile_test.cpp
++++ b/tests/coverage_tile_test.cpp
+@@ -65,6 +65,25 @@ TEST_CASE("degenerate and non-finite shapes produce no coverage") {
+   CHECK(tile.coverage_at(15, 15) == 0U);
+ }
+ 
++TEST_CASE("coverage tile rejects invalid dimensions without writing") {
++  tinydraw::CoverageTile tile(0, 0, 2, 2);
++  tile.union_coverage(0, 0, 255U);
++  CHECK_FALSE(tile.reset(0, 0, tinydraw::kTileSize + 1, 1));
++  CHECK(tile.width() == 0);
++  CHECK(tile.height() == 0);
++  tile.rasterize_circle({.x = 0.0F, .y = 0.0F}, 10.0F);
++}
++
++TEST_CASE("coverage tile rejects polygons larger than its edge workspace") {
++  tinydraw::CoverageTile tile(0, 0, 32, 32);
++  constexpr std::array pentagon{
++      tinydraw::Point{16.0F, 2.0F}, tinydraw::Point{29.0F, 12.0F}, tinydraw::Point{24.0F, 28.0F},
++      tinydraw::Point{8.0F, 28.0F}, tinydraw::Point{3.0F, 12.0F},
++  };
++  tile.rasterize_convex(pentagon);
++  CHECK(tile.coverage_at(16, 16) == 0U);
++}
++
+ TEST_CASE("RGB565 coverage composites once in stored channel space") {
+   tinydraw::CoverageTile tile(0, 0, 2, 1);
+   tile.union_coverage(0, 0, 255U);
+diff --git a/tests/toolbar_test.cpp b/tests/toolbar_test.cpp
+index 01353b4..1222787 100644
+--- a/tests/toolbar_test.cpp
++++ b/tests/toolbar_test.cpp
+@@ -5,6 +5,24 @@
+ #include <array>
+ #include <vector>
+ 
++#include "tinydraw/ui/pixel_painter.h"
++
++TEST_CASE("pixel painter rejects undersized surfaces and honors stride") {
++  std::array<std::uint16_t, 3> short_pixels{1U, 2U, 3U};
++  tinydraw::PixelPainter invalid(short_pixels, 2, 2);
++  CHECK_FALSE(invalid.ready());
++  invalid.rect({0, 0, 2, 2}, 9U);
++  constexpr std::array<std::uint16_t, 3> unchanged{1U, 2U, 3U};
++  CHECK(short_pixels == unchanged);
++
++  std::array<std::uint16_t, 6> strided{};
++  tinydraw::PixelPainter painter(strided, 2, 2, 4, 0, 0);
++  REQUIRE(painter.ready());
++  painter.pixel(1, 1, 7U);
++  CHECK(strided[5] == 7U);
++  CHECK(strided[3] == 0U);
++}
++
+ TEST_CASE("default toolbar keeps every control in one full-width row") {
+   const tinydraw::ToolbarState state;
+ 
+diff --git a/vector_v2/src/incremental_rasterizer.cpp b/vector_v2/src/incremental_rasterizer.cpp
+index 0b5a4b8..d818113 100644
+--- a/vector_v2/src/incremental_rasterizer.cpp
++++ b/vector_v2/src/incremental_rasterizer.cpp
+@@ -8,6 +8,7 @@
+ #endif
+ #include <cmath>
+ 
++#include "tinydraw/checked_surface.h"
+ #include "tinydraw/vector_v2/raster_census.h"
+ #include "tinydraw/vector_v2/storage_overlap.h"
+ 
+@@ -123,10 +124,10 @@ bool valid_surface(const RasterSurface& surface) {
+       surface.stride < width) {
+     return false;
+   }
+-  const std::size_t required =
+-      static_cast<std::size_t>(height - 1) * static_cast<std::size_t>(surface.stride) +
+-      static_cast<std::size_t>(width);
+-  return surface.pixels.size() >= required;
++  const auto required =
++      checked_surface_extent(static_cast<std::size_t>(width), static_cast<std::size_t>(height),
++                             static_cast<std::size_t>(surface.stride));
++  return required.has_value() && surface.pixels.size() >= *required;
+ }
+ 
+ PixelRect segment_bounds(const Segment& segment, PixelRect clip) {
+@@ -1121,7 +1122,7 @@ std::optional<PreparedCurveUnit> prepare_incremental_curve_unit(
+ 
+ std::optional<PixelRect> prepared_curve_step_level_bounds(const PreparedCurveUnit& unit,
+                                                           std::size_t step_index, ZoomLevel zoom) {
+-  if (step_index >= unit.step_count) {
++  if (unit.step_count > unit.steps.size() || step_index >= unit.step_count) {
+     return std::nullopt;
+   }
+   const PixelRect clip{0, 0, kWorldWidth * zoom_percent(zoom) / 100,
+@@ -1135,7 +1136,7 @@ bool apply_masked_prepared_curve_step(OperationTool tool, std::uint16_t color,
+                                       const RasterSurface& surface,
+                                       std::span<std::uint8_t> finalized_pixels,
+                                       MaskedRowSummary* summary) {
+-  if (step_index >= unit.step_count) {
++  if (unit.step_count > unit.steps.size() || step_index >= unit.step_count) {
+     return false;
+   }
+   // One chord is a one-step unit; the unit painter carries the windowed
+@@ -1197,7 +1198,7 @@ bool apply_masked_prepared_curve_unit(OperationTool tool, std::uint16_t color,
+       std::as_bytes(std::span(finalized_pixels)
+                         .first(std::min(finalized_pixels.size(), required_mask_bytes))));
+   const int surface_rows = surface.level_bounds.y1 - surface.level_bounds.y0;
+-  if (!valid_surface(surface) || unit.step_count == 0U ||
++  if (!valid_surface(surface) || unit.step_count == 0U || unit.step_count > unit.steps.size() ||
+       finalized_pixels.size() < required_mask_bytes || mask_aliases_pixels ||
+       (summary != nullptr && !summary->ready(static_cast<std::size_t>(surface_rows)))) {
+     return false;
+diff --git a/vector_v2/src/materialized_canvas.cpp b/vector_v2/src/materialized_canvas.cpp
+index 843bb1d..5d98af2 100644
+--- a/vector_v2/src/materialized_canvas.cpp
++++ b/vector_v2/src/materialized_canvas.cpp
+@@ -5,6 +5,7 @@
+ #include <numeric>
+ #include <tuple>
+ 
++#include "tinydraw/checked_surface.h"
+ #include "tinydraw/vector_v2/rerender_ledger.h"
+ #include "tinydraw/vector_v2/storage_overlap.h"
+ #include "tinydraw/vector_v2/tile_payload_analysis.h"
+@@ -919,9 +920,9 @@ std::optional<std::size_t> MaterializedCanvas::publish_tile(TileKey key, Documen
+       source_stride < static_cast<std::size_t>(width)) {
+     return std::nullopt;
+   }
+-  const std::size_t expected_pixels =
+-      static_cast<std::size_t>(height - 1) * source_stride + static_cast<std::size_t>(width);
+-  if (pixels.size() != expected_pixels) {
++  const auto expected_pixels = checked_surface_extent(
++      static_cast<std::size_t>(width), static_cast<std::size_t>(height), source_stride);
++  if (!expected_pixels.has_value() || pixels.size() != *expected_pixels) {
+     return std::nullopt;
+   }
+   const auto existing = find_tile(key);
+diff --git a/vector_v2/src/operation_log.cpp b/vector_v2/src/operation_log.cpp
+index 3ee6c1a..cce7717 100644
+--- a/vector_v2/src/operation_log.cpp
++++ b/vector_v2/src/operation_log.cpp
+@@ -114,7 +114,8 @@ bool OperationLog::workspace_overlaps_storage(std::span<const std::byte> workspa
+ }
+ 
+ std::optional<PreparedAppend> OperationLog::prepare(const OperationAppend& append_request) {
+-  if (!valid_append(append_request)) {
++  if (!valid_append(append_request) ||
++      workspace_overlaps_storage(std::as_bytes(append_request.samples))) {
+     return std::nullopt;
+   }
+   const auto calculated_bounds = operation_world_bounds(append_request.samples);
+diff --git a/vector_v2/src/tile_payload_analysis.cpp b/vector_v2/src/tile_payload_analysis.cpp
+index 3db9c42..364ca5b 100644
+--- a/vector_v2/src/tile_payload_analysis.cpp
++++ b/vector_v2/src/tile_payload_analysis.cpp
+@@ -2,6 +2,8 @@
+ 
+ #include <limits>
+ 
++#include "tinydraw/checked_surface.h"
++
+ namespace tinydraw::vector_v2 {
+ 
+ std::optional<TilePayloadAnalysis> analyze_tile_payload(std::span<const std::uint16_t> pixels,
+@@ -16,9 +18,9 @@ std::optional<TilePayloadAnalysis> analyze_tile_payload(std::span<const std::uin
+       source_stride < static_cast<std::size_t>(width)) {
+     return std::nullopt;
+   }
+-  const std::size_t expected =
+-      static_cast<std::size_t>(height - 1) * source_stride + static_cast<std::size_t>(width);
+-  if (pixels.size() != expected || pixels.empty()) {
++  const auto expected = checked_surface_extent(static_cast<std::size_t>(width),
++                                               static_cast<std::size_t>(height), source_stride);
++  if (!expected.has_value() || pixels.size() != *expected || pixels.empty()) {
+     return std::nullopt;
+   }
+ 
+diff --git a/vector_v2/tests/incremental_rasterizer_test.cpp b/vector_v2/tests/incremental_rasterizer_test.cpp
+index 8baa569..6fa0c9f 100644
+--- a/vector_v2/tests/incremental_rasterizer_test.cpp
++++ b/vector_v2/tests/incremental_rasterizer_test.cpp
+@@ -46,6 +46,26 @@ bool reference_covers(vector_v2::CompactOperationSample first,
+ 
+ }  // namespace
+ 
++TEST_CASE("prepared curve APIs reject a step count beyond fixed storage") {
++  vector_v2::PreparedCurveUnit malformed{};
++  malformed.step_count = malformed.steps.size() + 1U;
++  CHECK_FALSE(vector_v2::prepared_curve_step_level_bounds(malformed, 0U,
++                                                          vector_v2::ZoomLevel::k100Percent));
++
++  std::array<std::uint16_t, 16> pixels{};
++  std::array<std::uint8_t, 2> mask{};
++  const vector_v2::RasterSurface surface{
++      .zoom = vector_v2::ZoomLevel::k100Percent,
++      .level_bounds = {0, 0, 4, 4},
++      .pixels = pixels,
++      .stride = 4,
++  };
++  CHECK_FALSE(vector_v2::apply_masked_prepared_curve_step(vector_v2::OperationTool::kPen, 0U,
++                                                          malformed, 0U, surface, mask));
++  CHECK_FALSE(vector_v2::apply_masked_prepared_curve_unit(vector_v2::OperationTool::kPen, 0U,
++                                                          malformed, surface, mask));
++}
++
+ TEST_CASE("incremental operation paints one stroke without clearing prior pixels") {
+   std::array<std::uint16_t, 32U * 32U> pixels{};
+   pixels.fill(0x1111U);
+diff --git a/vector_v2/tests/operation_log_test.cpp b/vector_v2/tests/operation_log_test.cpp
+index d85f11c..53ee3eb 100644
+--- a/vector_v2/tests/operation_log_test.cpp
++++ b/vector_v2/tests/operation_log_test.cpp
+@@ -247,6 +247,18 @@ TEST_CASE("operation log reset adopts snapshot revision and retains caller stora
+   CHECK(log.current_revision() == vector_v2::DocumentRevision{0});
+ }
+ 
++TEST_CASE("operation log rejects append samples aliased into its storage") {
++  std::array<vector_v2::OperationRecord, 1> records{};
++  std::array<vector_v2::CompactOperationSample, 2> storage{
++      vector_v2::CompactOperationSample{.x_quarter = 4, .y_quarter = 4, .radius_256 = 256},
++      vector_v2::CompactOperationSample{.x_quarter = 8, .y_quarter = 8, .radius_256 = 256},
++  };
++  vector_v2::OperationLog log(records, storage);
++  CHECK_FALSE(log.prepare({.samples = std::span(storage).subspan(0, 2)}));
++  CHECK(log.operation_count() == 0U);
++  CHECK(log.sample_count() == 0U);
++}
++
+ TEST_CASE("operation log with overlapping record and sample storage is not ready") {
+   std::array<vector_v2::OperationRecord, 4> records{};
+   // Alias the record storage as sample storage; ready() must reject the
+diff --git a/vector_v2/tests/tile_payload_analysis_test.cpp b/vector_v2/tests/tile_payload_analysis_test.cpp
+index 0dcc430..efb63c0 100644
+--- a/vector_v2/tests/tile_payload_analysis_test.cpp
++++ b/vector_v2/tests/tile_payload_analysis_test.cpp
+@@ -4,6 +4,9 @@
+ 
+ #include <array>
+ #include <cstdint>
++#include <limits>
++
++#include "tinydraw/checked_surface.h"
+ 
+ namespace vector_v2 = tinydraw::vector_v2;
+ 
+@@ -15,6 +18,20 @@ TEST_CASE("tile payload analysis rejects malformed input") {
+   CHECK_FALSE(vector_v2::analyze_tile_payload(pixels, 2, 3));
+ }
+ 
++TEST_CASE("strided extent overflow is rejected before row access") {
++  std::array<std::uint16_t, 1> pixel{};
++  CHECK_FALSE(
++      vector_v2::analyze_tile_payload(pixel, 2, 2, std::numeric_limits<std::size_t>::max()));
++  const auto esp32_overflow = tinydraw::checked_surface_extent(1U, 65'537U, 65'536U);
++  if constexpr (sizeof(std::size_t) == 4U) {
++    CHECK_FALSE(esp32_overflow);
++  } else {
++    REQUIRE(esp32_overflow);
++    CHECK(*esp32_overflow == 4'294'967'297ULL);
++  }
++  CHECK_FALSE(tinydraw::checked_surface_extent(2U, 2U, std::numeric_limits<std::size_t>::max()));
++}
++
+ TEST_CASE("uniform tile has one row run per row") {
+   constexpr std::array<std::uint16_t, 12> pixels{
+       0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
+-- 
+2.54.0 (Apple Git-156)
+
