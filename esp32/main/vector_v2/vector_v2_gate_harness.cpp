@@ -812,9 +812,19 @@ std::int64_t pan_sequence_percentile(std::span<const std::int64_t> sorted, int p
 
 bool run_pan_sequence_gate(VectorV2Presenter& presenter, vector_v2::TileProducer& producer,
                            const vector_v2::ChromeState& chrome, ZoomLevel zoom) {
+  // 16 typical forward steps, then 4 fast forward and 4 fast backward steps.
+  // The out-and-back fast leg keeps the swept footprint at roughly 17x15
+  // tile identities so the 320-slot pool never evicts the sequence's own
+  // tiles (a one-way fast leg at 400% needs ~21x19 mostly-raw identities and
+  // loses reuse on the earliest origins), and it exercises exposed-strip
+  // composition on both leading edges.
   const auto step_delta = [](std::size_t step) {
-    return step < kPanSequenceTypicalFrames ? vector_v2::NavigationPoint{24, 18}
-                                            : vector_v2::NavigationPoint{72, 54};
+    if (step < kPanSequenceTypicalFrames) {
+      return vector_v2::NavigationPoint{24, 18};
+    }
+    return step < kPanSequenceTypicalFrames + kPanSequenceFastFrames / 2U
+               ? vector_v2::NavigationPoint{72, 54}
+               : vector_v2::NavigationPoint{-72, -54};
   };
   const auto prewarm = [&](int x, int y) {
     const vector_v2::ViewRequest view{
